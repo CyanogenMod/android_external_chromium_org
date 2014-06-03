@@ -11,7 +11,7 @@ import build_version
 import getos
 from buildbot_common import ErrorExit
 from easy_template import RunTemplateFileIfChanged
-from build_paths import SCRIPT_DIR, SDK_EXAMPLE_DIR
+from build_paths import SDK_RESOURCE_DIR
 
 def Trace(msg):
   if Trace.verbose:
@@ -21,11 +21,16 @@ Trace.verbose = False
 
 def IsExample(desc):
   dest = desc['DEST']
-  return dest.startswith('examples') or dest.startswith('tests')
+  return dest.startswith(('examples', 'tests', 'getting_started'))
 
 
 def GenerateSourceCopyList(desc):
   sources = []
+  # Some examples use their own Makefile/sources/etc.
+  if 'TARGETS' not in desc:
+    # Only copy the DATA files.
+    return desc.get('DATA', [])
+
   # Add sources for each target
   for target in desc['TARGETS']:
     sources.extend(target['SOURCES'])
@@ -34,7 +39,9 @@ def GenerateSourceCopyList(desc):
   sources.extend(desc.get('DATA', []))
 
   if IsExample(desc):
-    sources.extend(['common.js', 'icon128.png', 'background.js'])
+    sources.append('common.js')
+    if not desc.get('NO_PACKAGE_FILES'):
+      sources.extend(['icon128.png', 'background.js'])
 
   return sources
 
@@ -137,7 +144,7 @@ def ProcessHTML(srcroot, dstroot, desc, toolchains, configs, first_toolchain):
 
 def GenerateManifest(srcroot, dstroot, desc):
   outdir = os.path.join(dstroot, desc['DEST'], desc['NAME'])
-  srcpath = os.path.join(SDK_EXAMPLE_DIR, 'resources', 'manifest.json.template')
+  srcpath = os.path.join(SDK_RESOURCE_DIR, 'manifest.json.template')
   dstpath = os.path.join(outdir, 'manifest.json')
   permissions = desc.get('PERMISSIONS', [])
   socket_permissions = desc.get('SOCKET_PERMISSIONS', [])
@@ -150,6 +157,7 @@ def GenerateManifest(srcroot, dstroot, desc):
       'name': desc['TITLE'],
       'description': '%s Example' % desc['TITLE'],
       'key': True,
+      'channel': None,
       'permissions': pretty_permissions,
       'version': build_version.ChromeVersionNoTrunk()
   }
@@ -182,8 +190,7 @@ def ProcessProject(pepperdir, srcroot, dstroot, desc, toolchains, configs=None,
   name = desc['NAME']
   out_dir = os.path.join(dstroot, desc['DEST'], name)
   buildbot_common.MakeDir(out_dir)
-  srcdirs = desc.get('SEARCH', ['.', '..', '../..'])
-  srcdirs.append(os.path.join(SDK_EXAMPLE_DIR, 'resources'))
+  srcdirs = desc.get('SEARCH', ['.', SDK_RESOURCE_DIR])
 
   # Copy sources to example directory
   sources = GenerateSourceCopyList(desc)
@@ -197,10 +204,18 @@ def ProcessProject(pepperdir, srcroot, dstroot, desc, toolchains, configs=None,
 
   make_path = os.path.join(out_dir, 'Makefile')
 
+  outdir = os.path.dirname(os.path.abspath(make_path))
+  if getos.GetPlatform() == 'win':
+    AddMakeBat(pepperdir, outdir)
+
+  # If this project has no TARGETS, then we don't need to generate anything.
+  if 'TARGETS' not in desc:
+    return (name, desc['DEST'])
+
   if IsNexe(desc):
-    template = os.path.join(SCRIPT_DIR, 'template.mk')
+    template = os.path.join(SDK_RESOURCE_DIR, 'Makefile.example.template')
   else:
-    template = os.path.join(SCRIPT_DIR, 'library.mk')
+    template = os.path.join(SDK_RESOURCE_DIR, 'Makefile.library.template')
 
   # Ensure the order of |tools| is the same as toolchains; that way if
   # first_toolchain is set, it will choose based on the order of |toolchains|.
@@ -212,6 +227,7 @@ def ProcessProject(pepperdir, srcroot, dstroot, desc, toolchains, configs=None,
     target['CXXFLAGS'].insert(0, '-Wall')
 
   template_dict = {
+    'desc': desc,
     'rel_sdk': '/'.join(['..'] * (len(desc['DEST'].split('/')) + 1)),
     'pre': desc.get('PRE', ''),
     'post': desc.get('POST', ''),
@@ -220,14 +236,11 @@ def ProcessProject(pepperdir, srcroot, dstroot, desc, toolchains, configs=None,
   }
   RunTemplateFileIfChanged(template, make_path, template_dict)
 
-  outdir = os.path.dirname(os.path.abspath(make_path))
-  if getos.GetPlatform() == 'win':
-    AddMakeBat(pepperdir, outdir)
-
   if IsExample(desc):
     ProcessHTML(srcroot, dstroot, desc, toolchains, configs,
                 first_toolchain)
-    GenerateManifest(srcroot, dstroot, desc)
+    if not desc.get('NO_PACKAGE_FILES'):
+      GenerateManifest(srcroot, dstroot, desc)
 
   return (name, desc['DEST'])
 
@@ -240,7 +253,7 @@ def GenerateMasterMakefile(pepperdir, out_path, targets):
     out_path: Root for output such that out_path+NAME = full path
     targets: List of targets names
   """
-  in_path = os.path.join(SDK_EXAMPLE_DIR, 'Makefile')
+  in_path = os.path.join(SDK_RESOURCE_DIR, 'Makefile.index.template')
   out_path = os.path.join(out_path, 'Makefile')
   rel_path = os.path.relpath(pepperdir, os.path.dirname(out_path))
   template_dict = {

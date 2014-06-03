@@ -7,6 +7,8 @@
 
 #include "nacl_io/mount_node.h"
 
+#include <vector>
+
 namespace nacl_io {
 
 class MountNodeMem : public MountNode {
@@ -18,16 +20,20 @@ class MountNodeMem : public MountNode {
 
  public:
   // Normal read/write operations on a file
-  virtual Error Read(size_t offs, void* buf, size_t count, int* out_bytes);
-  virtual Error Write(size_t offs,
+  virtual Error Read(const HandleAttr& attr,
+                     void* buf,
+                     size_t count,
+                     int* out_bytes);
+  virtual Error Write(const HandleAttr& attr,
                       const void* buf,
                       size_t count,
                       int* out_bytes);
   virtual Error FTruncate(off_t size);
 
  private:
-  char* data_;
-  size_t capacity_;
+  void Resize(off_t size);
+
+  std::vector<char> data_;
   friend class MountMem;
 };
 

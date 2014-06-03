@@ -80,7 +80,6 @@ TEST_F(GpuBlacklistTest, CurrentBlacklistValidation) {
   scoped_ptr<GpuBlacklist> blacklist(GpuBlacklist::Create());
   EXPECT_TRUE(blacklist->LoadList(
       kSoftwareRenderingListJson, GpuBlacklist::kAllOs));
-  EXPECT_FALSE(blacklist->contains_unknown_fields());
 }
 
 #define GPU_BLACKLIST_FEATURE_TEST(test_name, feature_name, feature_type) \
@@ -123,6 +122,10 @@ GPU_BLACKLIST_FEATURE_TEST(TextureSharing,
 GPU_BLACKLIST_FEATURE_TEST(AcceleratedVideoDecode,
                            "accelerated_video_decode",
                            GPU_FEATURE_TYPE_ACCELERATED_VIDEO_DECODE)
+
+GPU_BLACKLIST_FEATURE_TEST(AcceleratedVideoEncode,
+                           "accelerated_video_encode",
+                           GPU_FEATURE_TYPE_ACCELERATED_VIDEO_ENCODE)
 
 GPU_BLACKLIST_FEATURE_TEST(Css3D,
                            "3d_css",

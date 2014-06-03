@@ -22,6 +22,7 @@
 #include "chrome/test/perf/perf_test.h"
 #include "chrome/test/ui/ui_perf_test.h"
 #include "net/base/net_util.h"
+#include "testing/perf/perf_test.h"
 #include "url/gurl.h"
 
 using base::TimeDelta;
@@ -113,8 +114,7 @@ class TabSwitchingUITest : public UIPerfTest {
       std::string contents;
       int max_tries = 20;
       do {
-        log_has_been_dumped = file_util::ReadFileToString(log_file_name_,
-                                                          &contents);
+        log_has_been_dumped = base::ReadFileToString(log_file_name_, &contents);
         if (!log_has_been_dumped)
           base::PlatformThread::Sleep(base::TimeDelta::FromMilliseconds(100));
       } while (!log_has_been_dumped && max_tries--);

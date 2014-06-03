@@ -7,19 +7,20 @@
 
 #include <vector>
 
+#include "base/basictypes.h"
+#include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/prefs/pref_change_registrar.h"
 #include "base/prefs/pref_member.h"
-#include "base/time/time.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/search_engines/template_url_service_observer.h"
 #include "chrome/browser/shell_integration.h"
 #include "chrome/browser/sync/profile_sync_service_observer.h"
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/webui/options/options_ui.h"
+#include "google_apis/gaia/google_service_auth_error.h"
 #include "ui/base/models/table_model_observer.h"
 #include "ui/shell_dialogs/select_file_dialog.h"
 
@@ -30,8 +31,15 @@
 class AutocompleteController;
 class CloudPrintSetupHandler;
 class CustomHomePagesTableModel;
-class ManagedUserRegistrationUtility;
 class TemplateURLService;
+
+namespace base {
+class Value;
+}
+
+namespace policy {
+class PolicyChangeRegistrar;
+}
 
 namespace options {
 
@@ -55,6 +63,7 @@ class BrowserOptionsHandler
   virtual void InitializeHandler() OVERRIDE;
   virtual void InitializePage() OVERRIDE;
   virtual void RegisterMessages() OVERRIDE;
+  virtual void Uninitialize() OVERRIDE;
 
   // ProfileSyncServiceObserver implementation.
   virtual void OnStateChanged() OVERRIDE;
@@ -86,6 +95,10 @@ class BrowserOptionsHandler
   // PointerDeviceObserver::Observer implementation.
   virtual void TouchpadExists(bool exists) OVERRIDE;
   virtual void MouseExists(bool exists) OVERRIDE;
+
+  // Will be called when the policy::key::kUserAvatarImage policy changes.
+  void OnUserImagePolicyChanged(const base::Value* previous_policy,
+                                const base::Value* current_policy);
 #endif
 
   void UpdateSyncState();
@@ -141,55 +154,9 @@ class BrowserOptionsHandler
   // Sends an array of Profile objects to javascript.
   void SendProfilesInfo();
 
-  // Returns the current desktop type.
-  chrome::HostDesktopType GetDesktopType();
-
-  // Asynchronously creates and initializes a new profile.
-  // The arguments are as follows:
-  //   0: name (string)
-  //   1: icon (string)
-  //   2: a flag stating whether we should create a profile desktop shortcut
-  //      (optional, boolean)
-  //   3: a flag stating whether the user should be managed (optional, boolean)
-  void CreateProfile(const base::ListValue* args);
-
-  // After a new managed-user profile has been created, registers the user with
-  // the management server.
-  void RegisterManagedUser(const ProfileManager::CreateCallback& callback,
-                           const std::string& managed_user_id,
-                           Profile* new_profile,
-                           Profile::CreateStatus status);
-
-  // Records UMA histograms relevant to profile creation.
-  void RecordProfileCreationMetrics(Profile::CreateStatus status);
-
-  // Updates the UI as the final task after a new profile has been created.
-  void ShowProfileCreationFeedback(
-      chrome::HostDesktopType desktop_type,
-      bool is_managed,
-      Profile* profile,
-      Profile::CreateStatus status);
-
   // Deletes the given profile. Expects one argument:
   //   0: profile file path (string)
   void DeleteProfile(const base::ListValue* args);
-
-  // Deletes the profile at the given |file_path|.
-  void DeleteProfileAtPath(base::FilePath file_path);
-
-  // Cancels creation of a managed-user profile currently in progress, as
-  // indicated by profile_path_being_created_, removing the object and files
-  // and canceling managed-user registration. This is the handler for the
-  // "cancelCreateProfile" message. |args| is not used.
-  // TODO(pamg): Move all the profile-handling methods into a more appropriate
-  // class.
-  void HandleCancelProfileCreation(const base::ListValue* args);
-
-  // Internal implementation. This may safely be called whether profile creation
-  // or registration is in progress or not. |user_initiated| should be true if
-  // the cancellation was deliberately requested by the user, and false if it
-  // was caused implicitly, e.g. by shutting down the browser.
-  void CancelProfileRegistration(bool user_initiated);
 
   void ObserveThemeChanged();
   void ThemesReset(const base::ListValue* args);
@@ -199,6 +166,11 @@ class BrowserOptionsHandler
 
 #if defined(OS_CHROMEOS)
   void UpdateAccountPicture();
+
+  // Updates the UI, allowing the user to change the avatar image if |managed|
+  // is |false| and preventing the user from changing the avatar image if
+  // |managed| is |true|.
+  void OnAccountPictureManagedChanged(bool managed);
 #endif
 
   // Callback for the "selectDownloadLocation" message. This will prompt the
@@ -243,6 +215,10 @@ class BrowserOptionsHandler
   // Callback for the "showManageSSLCertificates" message. This will invoke
   // an appropriate certificate management action based on the platform.
   void ShowManageSSLCertificates(const ListValue* args);
+#endif
+
+#if defined(ENABLE_MDNS)
+  void ShowCloudPrintDevicesPage(const ListValue* args);
 #endif
 
 #if defined(ENABLE_FULL_PRINTING)
@@ -307,13 +283,16 @@ class BrowserOptionsHandler
   // Setup the proxy settings section UI.
   void SetupProxySettingsSection();
 
+  // Setup the manage certificates section UI.
+  void SetupManageCertificatesSection();
+
+  // Setup the UI specific to managing supervised users.
+  void SetupManagingSupervisedUsers();
+
 #if defined(OS_CHROMEOS)
   // Setup the accessibility features for ChromeOS.
   void SetupAccessibilityFeatures();
 #endif
-
-  bool IsValidExistingManagedUserId(
-      const std::string& existing_managed_user_id) const;
 
   // Returns a newly created dictionary with a number of properties that
   // correspond to the status of sync.
@@ -328,17 +307,6 @@ class BrowserOptionsHandler
 
   TemplateURLService* template_url_service_;  // Weak.
 
-  // Used to allow cancelling a profile creation (particularly a managed-user
-  // registration) in progress. Set when profile creation is begun, and
-  // cleared when all the callbacks have been run and creation is complete.
-  base::FilePath profile_path_being_created_;
-
-  // Used to track how long profile creation takes.
-  base::TimeTicks profile_creation_start_time_;
-
-  // Used to get WeakPtr to self for use on the UI thread.
-  base::WeakPtrFactory<BrowserOptionsHandler> weak_ptr_factory_;
-
   scoped_refptr<ui::SelectFileDialog> select_folder_dialog_;
 
 #if defined(ENABLE_FULL_PRINTING) && !defined(OS_CHROMEOS)
@@ -347,12 +315,18 @@ class BrowserOptionsHandler
   bool cloud_print_connector_ui_enabled_;
 #endif
 
+  bool cloud_print_mdns_ui_enabled_;
+
   StringPrefMember auto_open_files_;
   DoublePrefMember default_zoom_level_;
 
   PrefChangeRegistrar profile_pref_registrar_;
+#if defined(OS_CHROMEOS)
+  scoped_ptr<policy::PolicyChangeRegistrar> policy_registrar_;
+#endif
 
-  scoped_ptr<ManagedUserRegistrationUtility> managed_user_registration_utility_;
+  // Used to get WeakPtr to self for use on the UI thread.
+  base::WeakPtrFactory<BrowserOptionsHandler> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserOptionsHandler);
 };

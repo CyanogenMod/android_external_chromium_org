@@ -106,7 +106,7 @@ void OmniboxPopupModel::SetSelectedLine(size_t line,
   // Update the edit with the new data for this match.
   // TODO(pkasting): If |selected_line_| moves to the controller, this can be
   // eliminated and just become a call to the observer on the edit.
-  string16 keyword;
+  base::string16 keyword;
   bool is_keyword_hint;
   match.GetKeywordUIState(edit_model_->profile(), &keyword, &is_keyword_hint);
 
@@ -192,7 +192,8 @@ gfx::Image OmniboxPopupModel::GetIconIfExtensionMatch(
     const AutocompleteMatch& match) const {
   Profile* profile = edit_model_->profile();
   const TemplateURL* template_url = match.GetTemplateURL(profile, false);
-  if (template_url && template_url->IsExtensionKeyword()) {
+  if (template_url &&
+      (template_url->GetType() == TemplateURL::OMNIBOX_API_EXTENSION)) {
     return extensions::OmniboxAPI::Get(profile)->GetOmniboxPopupIcon(
         template_url->GetExtensionId());
   }

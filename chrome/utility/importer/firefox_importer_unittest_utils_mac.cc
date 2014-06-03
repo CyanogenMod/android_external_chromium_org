@@ -10,6 +10,7 @@
 #include "base/file_util.h"
 #include "base/files/file_path.h"
 #include "base/message_loop/message_loop.h"
+#include "base/posix/global_descriptors.h"
 #include "base/process/kill.h"
 #include "base/process/launch.h"
 #include "base/test/test_timeouts.h"
@@ -43,11 +44,8 @@ bool LaunchNSSDecrypterChildProcess(const base::FilePath& nss_path,
   // Set env variable needed for FF encryption libs to load.
   // See "chrome/utility/importer/nss_decryptor_mac.mm" for an explanation of
   // why we need this.
-  base::EnvironmentVector env;
-  std::pair<std::string, std::string> dyld_override;
-  dyld_override.first = "DYLD_FALLBACK_LIBRARY_PATH";
-  dyld_override.second = nss_path.value();
-  env.push_back(dyld_override);
+  base::LaunchOptions options;
+  options.environ["DYLD_FALLBACK_LIBRARY_PATH"] = nss_path.value();
 
   int ipcfd = channel->TakeClientFileDescriptor();
   if (ipcfd == -1)
@@ -55,12 +53,11 @@ bool LaunchNSSDecrypterChildProcess(const base::FilePath& nss_path,
 
   file_util::ScopedFD client_file_descriptor_closer(&ipcfd);
   base::FileHandleMappingVector fds_to_map;
-  fds_to_map.push_back(std::pair<int,int>(ipcfd, kPrimaryIPCChannel + 3));
+  fds_to_map.push_back(std::pair<int,int>(ipcfd,
+      kPrimaryIPCChannel + base::GlobalDescriptors::kBaseDescriptor));
 
   bool debug_on_start = CommandLine::ForCurrentProcess()->HasSwitch(
                             switches::kDebugChildren);
-  base::LaunchOptions options;
-  options.environ = &env;
   options.fds_to_remap = &fds_to_map;
   options.wait = debug_on_start;
   return base::LaunchProcess(cl.argv(), options, handle);

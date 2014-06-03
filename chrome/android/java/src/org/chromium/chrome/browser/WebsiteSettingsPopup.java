@@ -1,4 +1,4 @@
-// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,7 +8,6 @@ import android.app.Dialog;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
-import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.provider.Browser;
 import android.text.Html;
@@ -44,7 +43,7 @@ class WebsiteSettingsPopup implements OnClickListener {
     private String mLinkUrl;
 
     private WebsiteSettingsPopup(Context context, ContentViewCore contentViewCore,
-            final int nativeWebsiteSettingsPopup) {
+            final long nativeWebsiteSettingsPopup) {
         mContext = context;
         mDialog = new Dialog(mContext);
         mDialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
@@ -146,10 +145,10 @@ class WebsiteSettingsPopup implements OnClickListener {
 
     @CalledByNative
     private static WebsiteSettingsPopup create(Context context, ContentViewCore contentViewCore,
-            int nativeWebsiteSettingsPopup) {
+            long nativeWebsiteSettingsPopup) {
         return new WebsiteSettingsPopup(context, contentViewCore, nativeWebsiteSettingsPopup);
     }
 
-    private native void nativeDestroy(int nativeWebsiteSettingsPopupAndroid);
+    private native void nativeDestroy(long nativeWebsiteSettingsPopupAndroid);
     private native byte[][] nativeGetCertificateChain(ContentViewCore contentViewCore);
 }

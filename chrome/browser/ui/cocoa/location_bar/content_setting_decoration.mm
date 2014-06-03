@@ -20,7 +20,9 @@
 #include "chrome/browser/ui/content_settings/content_setting_image_model.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/web_contents.h"
+#include "grit/theme_resources.h"
 #include "net/base/net_util.h"
+#include "ui/base/cocoa/appkit_utils.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/image/image.h"
@@ -30,9 +32,9 @@ using content::WebContents;
 
 namespace {
 
-// How far to offset up from the bottom of the view to get the top
-// border of the popup 2px below the bottom of the Omnibox.
-const CGFloat kPopupPointYOffset = 2.0;
+// The bubble point should look like it points to the bottom of the respective
+// icon. The offset should be 2px.
+const CGFloat kPageBubblePointYOffset = 2.0;
 
 // Duration of animation, 3 seconds. The ContentSettingAnimationState breaks
 // this up into different states of varying lengths.
@@ -254,7 +256,7 @@ NSPoint ContentSettingDecoration::GetBubblePointInFrame(NSRect frame) {
 
   const NSRect draw_frame = GetDrawRectInFrame(frame);
   return NSMakePoint(NSMidX(draw_frame),
-                     NSMaxY(draw_frame) - kPopupPointYOffset);
+                     NSMaxY(draw_frame) + kPageBubblePointYOffset);
 }
 
 bool ContentSettingDecoration::AcceptsMousePress() {
@@ -330,26 +332,20 @@ CGFloat ContentSettingDecoration::GetWidthForSpace(CGFloat width) {
 
 void ContentSettingDecoration::DrawInFrame(NSRect frame, NSView* control_view) {
   if ([animation_ animationState] != kNoAnimation) {
-    // Draw the background. Cache the gradient.
-    if (!gradient_) {
-      // Colors chosen to match Windows code.
-      NSColor* start_color =
-          [NSColor colorWithCalibratedRed:1.0 green:0.97 blue:0.83 alpha:1.0];
-      NSColor* end_color =
-          [NSColor colorWithCalibratedRed:1.0 green:0.90 blue:0.68 alpha:1.0];
-      NSArray* color_array =
-          [NSArray arrayWithObjects:start_color, end_color, nil];
-      gradient_.reset([[NSGradient alloc] initWithColors:color_array]);
-    }
-
-    gfx::ScopedNSGraphicsContextSaveGState scopedGState;
-
     NSRect background_rect = NSInsetRect(frame, 0.0, kBorderPadding);
-    [gradient_ drawInRect:background_rect angle:90.0];
-    NSColor* border_color =
-        [NSColor colorWithCalibratedRed:0.91 green:0.73 blue:0.4 alpha:1.0];
-    [border_color set];
-    NSFrameRect(background_rect);
+    const ui::NinePartImageIds image_ids = {
+      IDR_OMNIBOX_CONTENT_SETTING_BUBBLE_TOP_LEFT,
+      IDR_OMNIBOX_CONTENT_SETTING_BUBBLE_TOP,
+      IDR_OMNIBOX_CONTENT_SETTING_BUBBLE_TOP_RIGHT,
+      IDR_OMNIBOX_CONTENT_SETTING_BUBBLE_LEFT,
+      IDR_OMNIBOX_CONTENT_SETTING_BUBBLE_CENTER,
+      IDR_OMNIBOX_CONTENT_SETTING_BUBBLE_RIGHT,
+      IDR_OMNIBOX_CONTENT_SETTING_BUBBLE_BOTTOM_LEFT,
+      IDR_OMNIBOX_CONTENT_SETTING_BUBBLE_BOTTOM,
+      IDR_OMNIBOX_CONTENT_SETTING_BUBBLE_BOTTOM_RIGHT
+    };
+    ui::DrawNinePartImage(
+        background_rect, image_ids, NSCompositeSourceOver, 1.0, true);
 
     // Draw the icon.
     NSImage* icon = GetImage();

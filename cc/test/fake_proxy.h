@@ -32,9 +32,11 @@ class FakeProxy : public Proxy {
   virtual void SetNeedsUpdateLayers() OVERRIDE {}
   virtual void SetNeedsCommit() OVERRIDE {}
   virtual void SetNeedsRedraw(gfx::Rect damage_rect) OVERRIDE {}
+  virtual void SetNextCommitWaitsForActivation() OVERRIDE {}
   virtual void NotifyInputThrottledUntilCommit() OVERRIDE {}
   virtual void SetDeferCommits(bool defer_commits) OVERRIDE {}
   virtual void MainThreadHasStoppedFlinging() OVERRIDE {}
+  virtual bool BeginMainFrameRequested() const OVERRIDE;
   virtual bool CommitRequested() const OVERRIDE;
   virtual void Start(scoped_ptr<OutputSurface> first_output_surface) OVERRIDE {}
   virtual void Stop() OVERRIDE {}

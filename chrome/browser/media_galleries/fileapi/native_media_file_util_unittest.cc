@@ -16,6 +16,7 @@
 #include "chrome/browser/media_galleries/fileapi/media_file_system_backend.h"
 #include "chrome/browser/media_galleries/fileapi/native_media_file_util.h"
 #include "content/public/test/test_browser_thread.h"
+#include "content/public/test/test_file_system_options.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "webkit/browser/fileapi/external_mount_points.h"
 #include "webkit/browser/fileapi/file_system_backend.h"
@@ -23,7 +24,6 @@
 #include "webkit/browser/fileapi/file_system_operation_runner.h"
 #include "webkit/browser/fileapi/file_system_url.h"
 #include "webkit/browser/fileapi/isolated_context.h"
-#include "webkit/browser/fileapi/mock_file_system_options.h"
 #include "webkit/browser/fileapi/native_file_util.h"
 #include "webkit/browser/quota/mock_special_storage_policy.h"
 
@@ -31,8 +31,6 @@
 
 using fileapi::FileSystemOperation;
 using fileapi::FileSystemURL;
-
-namespace chrome {
 
 namespace {
 
@@ -100,7 +98,7 @@ void PopulateDirectoryWithTestCases(const base::FilePath& dir,
   for (size_t i = 0; i < n; ++i) {
     base::FilePath path = dir.Append(test_cases[i].path);
     if (test_cases[i].is_directory) {
-      ASSERT_TRUE(file_util::CreateDirectory(path));
+      ASSERT_TRUE(base::CreateDirectory(path));
     } else {
       ASSERT_TRUE(test_cases[i].content != NULL);
       int len = strlen(test_cases[i].content);
@@ -119,7 +117,7 @@ class NativeMediaFileUtilTest : public testing::Test {
 
   virtual void SetUp() {
     ASSERT_TRUE(data_dir_.CreateUniqueTempDir());
-    ASSERT_TRUE(file_util::CreateDirectory(root_path()));
+    ASSERT_TRUE(base::CreateDirectory(root_path()));
 
     scoped_refptr<quota::SpecialStoragePolicy> storage_policy =
         new quota::MockSpecialStoragePolicy();
@@ -289,7 +287,7 @@ TEST_F(NativeMediaFileUtilTest, CopySourceFiltering) {
       // Always start with an empty destination directory.
       // Copying to a non-empty destination directory is an invalid operation.
       ASSERT_TRUE(base::DeleteFile(dest_path, true));
-      ASSERT_TRUE(file_util::CreateDirectory(dest_path));
+      ASSERT_TRUE(base::CreateDirectory(dest_path));
 
       FileSystemURL root_url = CreateURL(FPL(""));
       FileSystemURL url = CreateURL(kFilteringTestCases[i].path);
@@ -305,7 +303,10 @@ TEST_F(NativeMediaFileUtilTest, CopySourceFiltering) {
         expectation = base::PLATFORM_FILE_ERROR_INVALID_OPERATION;
       }
       operation_runner()->Copy(
-          url, dest_url, base::Bind(&ExpectEqHelper, test_name, expectation));
+          url, dest_url,
+          fileapi::FileSystemOperation::OPTION_NONE,
+          fileapi::FileSystemOperationRunner::CopyProgressCallback(),
+          base::Bind(&ExpectEqHelper, test_name, expectation));
       base::MessageLoop::current()->RunUntilIdle();
     }
   }
@@ -319,7 +320,7 @@ TEST_F(NativeMediaFileUtilTest, CopyDestFiltering) {
       // Reset the test directory between the two loops to remove old
       // directories and create new ones that should pre-exist.
       ASSERT_TRUE(base::DeleteFile(root_path(), true));
-      ASSERT_TRUE(file_util::CreateDirectory(root_path()));
+      ASSERT_TRUE(base::CreateDirectory(root_path()));
       PopulateDirectoryWithTestCases(root_path(),
                                      kFilteringTestCases,
                                      arraysize(kFilteringTestCases));
@@ -367,7 +368,10 @@ TEST_F(NativeMediaFileUtilTest, CopyDestFiltering) {
         }
       }
       operation_runner()->Copy(
-          src_url, url, base::Bind(&ExpectEqHelper, test_name, expectation));
+          src_url, url,
+          fileapi::FileSystemOperation::OPTION_NONE,
+          fileapi::FileSystemOperationRunner::CopyProgressCallback(),
+          base::Bind(&ExpectEqHelper, test_name, expectation));
       base::MessageLoop::current()->RunUntilIdle();
     }
   }
@@ -388,7 +392,7 @@ TEST_F(NativeMediaFileUtilTest, MoveSourceFiltering) {
       // Always start with an empty destination directory.
       // Moving to a non-empty destination directory is an invalid operation.
       ASSERT_TRUE(base::DeleteFile(dest_path, true));
-      ASSERT_TRUE(file_util::CreateDirectory(dest_path));
+      ASSERT_TRUE(base::CreateDirectory(dest_path));
 
       FileSystemURL root_url = CreateURL(FPL(""));
       FileSystemURL url = CreateURL(kFilteringTestCases[i].path);
@@ -404,7 +408,8 @@ TEST_F(NativeMediaFileUtilTest, MoveSourceFiltering) {
         expectation = base::PLATFORM_FILE_ERROR_INVALID_OPERATION;
       }
       operation_runner()->Move(
-          url, dest_url, base::Bind(&ExpectEqHelper, test_name, expectation));
+          url, dest_url, fileapi::FileSystemOperation::OPTION_NONE,
+          base::Bind(&ExpectEqHelper, test_name, expectation));
       base::MessageLoop::current()->RunUntilIdle();
     }
   }
@@ -418,7 +423,7 @@ TEST_F(NativeMediaFileUtilTest, MoveDestFiltering) {
       // Reset the test directory between the two loops to remove old
       // directories and create new ones that should pre-exist.
       ASSERT_TRUE(base::DeleteFile(root_path(), true));
-      ASSERT_TRUE(file_util::CreateDirectory(root_path()));
+      ASSERT_TRUE(base::CreateDirectory(root_path()));
       PopulateDirectoryWithTestCases(root_path(),
                                      kFilteringTestCases,
                                      arraysize(kFilteringTestCases));
@@ -468,7 +473,8 @@ TEST_F(NativeMediaFileUtilTest, MoveDestFiltering) {
         }
       }
       operation_runner()->Move(
-          src_url, url, base::Bind(&ExpectEqHelper, test_name, expectation));
+          src_url, url, fileapi::FileSystemOperation::OPTION_NONE,
+          base::Bind(&ExpectEqHelper, test_name, expectation));
       base::MessageLoop::current()->RunUntilIdle();
     }
   }
@@ -504,6 +510,34 @@ TEST_F(NativeMediaFileUtilTest, GetMetadataFiltering) {
   }
 }
 
+TEST_F(NativeMediaFileUtilTest, RemoveFileFiltering) {
+  // Run the loop twice. The first run has no files. The second run does.
+  for (int loop_count = 0; loop_count < 2; ++loop_count) {
+    if (loop_count == 1) {
+      PopulateDirectoryWithTestCases(root_path(),
+                                     kFilteringTestCases,
+                                     arraysize(kFilteringTestCases));
+    }
+    for (size_t i = 0; i < arraysize(kFilteringTestCases); ++i) {
+      FileSystemURL root_url = CreateURL(FPL(""));
+      FileSystemURL url = CreateURL(kFilteringTestCases[i].path);
+
+      std::string test_name = base::StringPrintf(
+          "RemoveFiltering run %d test %" PRIuS, loop_count, i);
+      base::PlatformFileError expectation = base::PLATFORM_FILE_OK;
+      if (loop_count == 0 || !kFilteringTestCases[i].visible) {
+        // Cannot remove files that do not exist or are not visible.
+        expectation = base::PLATFORM_FILE_ERROR_NOT_FOUND;
+      } else if (kFilteringTestCases[i].is_directory) {
+        expectation = base::PLATFORM_FILE_ERROR_NOT_A_FILE;
+      }
+      operation_runner()->RemoveFile(
+          url, base::Bind(&ExpectEqHelper, test_name, expectation));
+      base::MessageLoop::current()->RunUntilIdle();
+    }
+  }
+}
+
 void CreateSnapshotCallback(base::PlatformFileError* error,
     base::PlatformFileError result, const base::PlatformFileInfo&,
     const base::FilePath&,
@@ -534,5 +568,3 @@ TEST_F(NativeMediaFileUtilTest, CreateSnapshot) {
     ASSERT_EQ(expected_error, error);
   }
 }
-
-}  // namespace chrome

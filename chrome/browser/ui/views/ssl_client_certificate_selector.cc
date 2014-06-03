@@ -10,6 +10,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/certificate_viewer.h"
 #include "chrome/browser/ui/views/constrained_window_views.h"
+#include "components/web_modal/web_contents_modal_dialog_host.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "components/web_modal/web_contents_modal_dialog_manager_delegate.h"
 #include "content/public/browser/browser_thread.h"
@@ -30,9 +31,14 @@
 #include "ui/views/widget/widget.h"
 #include "ui/views/window/dialog_client_view.h"
 
+#if defined(USE_NSS)
+#include "chrome/browser/ui/crypto_module_password_dialog_nss.h"
+#endif
+
 using content::BrowserThread;
 using content::WebContents;
 using web_modal::WebContentsModalDialogManager;
+using web_modal::WebContentsModalDialogManagerDelegate;
 
 namespace {
 
@@ -52,11 +58,11 @@ class CertificateSelectorTableModel : public ui::TableModel {
 
   // ui::TableModel implementation:
   virtual int RowCount() OVERRIDE;
-  virtual string16 GetText(int index, int column_id) OVERRIDE;
+  virtual base::string16 GetText(int index, int column_id) OVERRIDE;
   virtual void SetObserver(ui::TableModelObserver* observer) OVERRIDE;
 
  private:
-  std::vector<string16> items_;
+  std::vector<base::string16> items_;
 
   DISALLOW_COPY_AND_ASSIGN(CertificateSelectorTableModel);
 };
@@ -65,7 +71,7 @@ CertificateSelectorTableModel::CertificateSelectorTableModel(
     net::SSLCertRequestInfo* cert_request_info) {
   for (size_t i = 0; i < cert_request_info->client_certs.size(); ++i) {
     net::X509Certificate* cert = cert_request_info->client_certs[i].get();
-    string16 text = l10n_util::GetStringFUTF16(
+    base::string16 text = l10n_util::GetStringFUTF16(
         IDS_CERT_SELECTOR_TABLE_CERT_FORMAT,
         UTF8ToUTF16(cert->subject().GetDisplayName()),
         UTF8ToUTF16(cert->issuer().GetDisplayName()));
@@ -77,7 +83,8 @@ int CertificateSelectorTableModel::RowCount() {
   return items_.size();
 }
 
-string16 CertificateSelectorTableModel::GetText(int index, int column_id) {
+base::string16 CertificateSelectorTableModel::GetText(int index,
+                                                      int column_id) {
   DCHECK_EQ(column_id, 0);
   DCHECK_GE(index, 0);
   DCHECK_LT(index, static_cast<int>(items_.size()));
@@ -121,7 +128,7 @@ void SSLClientCertificateSelector::Init() {
       1, views::GridLayout::USE_PREF, 0, 0);
 
   layout->StartRow(0, column_set_id);
-  string16 text = l10n_util::GetStringFUTF16(
+  base::string16 text = l10n_util::GetStringFUTF16(
       IDS_CLIENT_CERT_DIALOG_TEXT,
       ASCIIToUTF16(cert_request_info()->host_and_port));
   views::Label* label = new views::Label(text);
@@ -144,11 +151,11 @@ void SSLClientCertificateSelector::Init() {
 
   WebContentsModalDialogManager* web_contents_modal_dialog_manager =
       WebContentsModalDialogManager::FromWebContents(web_contents_);
-  window_ = CreateWebContentsModalDialogViews(
-      this,
-      web_contents_->GetView()->GetNativeView(),
-      web_contents_modal_dialog_manager->delegate()->
-          GetWebContentsModalDialogHost());
+  WebContentsModalDialogManagerDelegate* modal_delegate =
+      web_contents_modal_dialog_manager->delegate();
+  DCHECK(modal_delegate);
+  window_ = views::Widget::CreateWindowAsFramelessChild(
+      this, modal_delegate->GetWebContentsModalDialogHost()->GetHostView());
   web_contents_modal_dialog_manager->ShowDialog(window_->GetNativeView());
 
   // Select the first row automatically.  This must be done after the dialog has
@@ -181,7 +188,7 @@ bool SSLClientCertificateSelector::CanResize() const {
   return true;
 }
 
-string16 SSLClientCertificateSelector::GetWindowTitle() const {
+base::string16 SSLClientCertificateSelector::GetWindowTitle() const {
   return l10n_util::GetStringUTF16(IDS_CLIENT_CERT_DIALOG_TITLE);
 }
 
@@ -207,11 +214,25 @@ bool SSLClientCertificateSelector::Cancel() {
 
 bool SSLClientCertificateSelector::Accept() {
   DVLOG(1) << __FUNCTION__;
-  net::X509Certificate* cert = GetSelectedCert();
+  scoped_refptr<net::X509Certificate> cert = GetSelectedCert();
   if (cert) {
+    // Remove the observer before we try unlocking, otherwise we might act on a
+    // notification while waiting for the unlock dialog, causing us to delete
+    // ourself before the Unlocked callback gets called.
     StopObserving();
-    CertificateSelected(cert);
-    return true;
+#if defined(USE_NSS)
+    chrome::UnlockCertSlotIfNecessary(
+        cert,
+        chrome::kCryptoModulePasswordClientAuth,
+        cert_request_info()->host_and_port,
+        window_->GetNativeView(),
+        base::Bind(&SSLClientCertificateSelector::Unlocked,
+                   base::Unretained(this),
+                   cert));
+#else
+    Unlocked(cert);
+#endif
+    return false;  // Unlocked() will close the dialog.
   }
 
   return false;
@@ -283,6 +304,12 @@ void SSLClientCertificateSelector::CreateCertTable() {
                                 views::TEXT_ONLY,
                                 true /* single_selection */);
   table_->SetObserver(this);
+}
+
+void SSLClientCertificateSelector::Unlocked(net::X509Certificate* cert) {
+  DVLOG(1) << __FUNCTION__;
+  CertificateSelected(cert);
+  window_->Close();
 }
 
 namespace chrome {

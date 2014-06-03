@@ -148,13 +148,12 @@ class MockPrinter {
 
   // Specifies whether to retain/crop/scale source page size to fit the
   // given printable area.
-  WebKit::WebPrintScalingOption print_scaling_option_;
+  blink::WebPrintScalingOption print_scaling_option_;
 
   // Used for displaying headers and footers.
   bool display_header_footer_;
-  string16 date_;
-  string16 title_;
-  string16 url_;
+  base::string16 title_;
+  base::string16 url_;
 
   // Used for generating invalid settings.
   bool use_invalid_settings_;

@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 static_library("libevent") {
+  external = true
   sources = [
     "buffer.c",
     "epoll.c",
@@ -25,14 +26,15 @@ static_library("libevent") {
   defines = [ "HAVE_CONFIG_H" ]
 
   if (is_linux) {
-    ldflags = [ "-lrt" ]
+    libs = [ "rt" ]
   } else {
     sources -= [ "epoll.c", "epoll_sub.c" ]
   }
 
   if (is_mac) {
-    includes = [ "mac" ]
-  } else {
+    include_dirs = [ "mac" ]
+  } else if (is_linux) {
+    include_dirs = [ "linux" ]
     sources -= [ "kqueue.c" ]
   }
 

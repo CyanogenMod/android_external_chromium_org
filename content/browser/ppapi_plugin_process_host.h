@@ -21,10 +21,6 @@
 #include "ipc/ipc_sender.h"
 #include "ppapi/shared_impl/ppapi_permissions.h"
 
-namespace net {
-class HostResolver;
-}
-
 namespace content {
 class BrowserChildProcessHostImpl;
 class ResourceContext;
@@ -76,8 +72,7 @@ class PpapiPluginProcessHost : public BrowserChildProcessHostDelegate,
 
   static PpapiPluginProcessHost* CreatePluginHost(
       const PepperPluginInfo& info,
-      const base::FilePath& profile_data_directory,
-      net::HostResolver* host_resolver);
+      const base::FilePath& profile_data_directory);
   static PpapiPluginProcessHost* CreateBrokerHost(
       const PepperPluginInfo& info);
 
@@ -97,7 +92,7 @@ class PpapiPluginProcessHost : public BrowserChildProcessHostDelegate,
 
   // Returns the instances that match the specified process name.
   // It can only be called on the IO thread.
-  static void FindByName(const string16& name,
+  static void FindByName(const base::string16& name,
                          std::vector<PpapiPluginProcessHost*>* hosts);
 
   // IPC::Sender implementation:
@@ -122,8 +117,7 @@ class PpapiPluginProcessHost : public BrowserChildProcessHostDelegate,
   // Constructors for plugin and broker process hosts, respectively.
   // You must call Init before doing anything else.
   PpapiPluginProcessHost(const PepperPluginInfo& info,
-                         const base::FilePath& profile_data_directory,
-                         net::HostResolver* host_resolver);
+                         const base::FilePath& profile_data_directory);
   PpapiPluginProcessHost();
 
   // Actually launches the process with the given plugin info. Returns true

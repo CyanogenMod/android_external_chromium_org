@@ -5,13 +5,18 @@
 #include "chrome/browser/ui/ash/launcher/shell_window_launcher_controller.h"
 
 #include "apps/shell_window.h"
+#include "ash/shelf/shelf_util.h"
 #include "ash/shell.h"
 #include "ash/wm/window_util.h"
-#include "base/stl_util.h"
 #include "base/strings/stringprintf.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/ash/launcher/chrome_launcher_controller.h"
 #include "chrome/browser/ui/ash/launcher/shell_window_launcher_item_controller.h"
+#include "chrome/browser/ui/ash/multi_user/multi_user_window_manager.h"
+#include "chrome/browser/ui/host_desktop.h"
+#include "extensions/common/extension.h"
 #include "ui/aura/client/activation_client.h"
+#include "ui/aura/root_window.h"
 
 using apps::ShellWindow;
 
@@ -23,14 +28,21 @@ std::string GetAppLauncherId(ShellWindow* shell_window) {
   return shell_window->extension()->id();
 }
 
+bool ControlsWindow(aura::Window* window) {
+  return chrome::GetHostDesktopTypeForNativeWindow(window) ==
+      chrome::HOST_DESKTOP_TYPE_ASH;
+}
+
 }  // namespace
 
 ShellWindowLauncherController::ShellWindowLauncherController(
     ChromeLauncherController* owner)
     : owner_(owner),
-      registry_(apps::ShellWindowRegistry::Get(owner->profile())),
       activation_client_(NULL) {
-  registry_->AddObserver(this);
+  apps::ShellWindowRegistry* registry =
+      apps::ShellWindowRegistry::Get(owner->profile());
+  registry_.insert(registry);
+  registry->AddObserver(this);
   if (ash::Shell::HasInstance()) {
     if (ash::Shell::GetInstance()->GetPrimaryRootWindow()) {
       activation_client_ = aura::client::GetActivationClient(
@@ -41,9 +53,11 @@ ShellWindowLauncherController::ShellWindowLauncherController(
   }
 }
 
-
 ShellWindowLauncherController::~ShellWindowLauncherController() {
-  registry_->RemoveObserver(this);
+  for (std::set<apps::ShellWindowRegistry*>::iterator it = registry_.begin();
+      it != registry_.end(); ++it)
+    (*it)->RemoveObserver(this);
+
   if (activation_client_)
     activation_client_->RemoveObserver(this);
   for (WindowToAppLauncherIdMap::iterator iter =
@@ -51,12 +65,80 @@ ShellWindowLauncherController::~ShellWindowLauncherController() {
        iter != window_to_app_launcher_id_map_.end(); ++iter) {
     iter->first->RemoveObserver(this);
   }
-  STLDeleteContainerPairSecondPointers(
-      app_controller_map_.begin(), app_controller_map_.end());
+}
+
+void ShellWindowLauncherController::AdditionalUserAddedToSession(
+    Profile* profile) {
+  // TODO(skuhne): This was added for the legacy side by side mode in M32. If
+  // this mode gets no longer pursued this special case can be removed.
+  if (chrome::MultiUserWindowManager::GetMultiProfileMode() !=
+          chrome::MultiUserWindowManager::MULTI_PROFILE_MODE_MIXED)
+    return;
+
+  apps::ShellWindowRegistry* registry = apps::ShellWindowRegistry::Get(profile);
+  if (registry_.find(registry) != registry_.end())
+    return;
+
+  registry->AddObserver(this);
+  registry_.insert(registry);
 }
 
 void ShellWindowLauncherController::OnShellWindowAdded(
     ShellWindow* shell_window) {
+  if (!ControlsWindow(shell_window->GetNativeWindow()))
+    return;
+  RegisterApp(shell_window);
+}
+
+void ShellWindowLauncherController::OnShellWindowIconChanged(
+    ShellWindow* shell_window) {
+  if (!ControlsWindow(shell_window->GetNativeWindow()))
+    return;
+
+  const std::string app_launcher_id = GetAppLauncherId(shell_window);
+  AppControllerMap::iterator iter = app_controller_map_.find(app_launcher_id);
+  if (iter == app_controller_map_.end())
+    return;
+  ShellWindowLauncherItemController* controller = iter->second;
+  controller->set_image_set_by_controller(true);
+  owner_->SetLauncherItemImage(controller->launcher_id(),
+                               shell_window->app_icon().AsImageSkia());
+}
+
+void ShellWindowLauncherController::OnShellWindowRemoved(
+    ShellWindow* shell_window) {
+  // Do nothing here; shell_window->window() has already been deleted and
+  // OnWindowDestroying() has been called, doing the removal.
+}
+
+// Called from aura::Window::~Window(), before delegate_->OnWindowDestroyed()
+// which destroys ShellWindow, so both |window| and the associated ShellWindow
+// are valid here.
+void ShellWindowLauncherController::OnWindowDestroying(aura::Window* window) {
+  if (!ControlsWindow(window))
+    return;
+  UnregisterApp(window);
+}
+
+void ShellWindowLauncherController::OnWindowActivated(
+    aura::Window* new_active,
+    aura::Window* old_active) {
+  // Make the newly active window the active (first) entry in the controller.
+  ShellWindowLauncherItemController* new_controller =
+      ControllerForWindow(new_active);
+  if (new_controller) {
+    new_controller->SetActiveWindow(new_active);
+    owner_->SetItemStatus(new_controller->launcher_id(), ash::STATUS_ACTIVE);
+  }
+
+  // Mark the old active window's launcher item as running (if different).
+  ShellWindowLauncherItemController* old_controller =
+      ControllerForWindow(old_active);
+  if (old_controller && old_controller != new_controller)
+    owner_->SetItemStatus(old_controller->launcher_id(), ash::STATUS_RUNNING);
+}
+
+void ShellWindowLauncherController::RegisterApp(ShellWindow* shell_window) {
   aura::Window* window = shell_window->GetNativeWindow();
   // Get the app's launcher identifier and add an entry to the map.
   DCHECK(window_to_app_launcher_id_map_.find(window) ==
@@ -96,30 +178,10 @@ void ShellWindowLauncherController::OnShellWindowAdded(
     app_controller_map_[app_launcher_id] = controller;
   }
   owner_->SetItemStatus(launcher_id, status);
+  ash::SetLauncherIDForWindow(launcher_id, window);
 }
 
-void ShellWindowLauncherController::OnShellWindowIconChanged(
-    ShellWindow* shell_window) {
-  const std::string app_launcher_id = GetAppLauncherId(shell_window);
-  AppControllerMap::iterator iter = app_controller_map_.find(app_launcher_id);
-  if (iter == app_controller_map_.end())
-    return;
-  ShellWindowLauncherItemController* controller = iter->second;
-  controller->set_image_set_by_controller(true);
-  owner_->SetLauncherItemImage(controller->launcher_id(),
-                               shell_window->app_icon().AsImageSkia());
-}
-
-void ShellWindowLauncherController::OnShellWindowRemoved(
-    ShellWindow* shell_window) {
-  // Do nothing here; shell_window->window() has allready been deleted and
-  // OnWindowDestroying() has been called, doing the removal.
-}
-
-// Called from ~aura::Window(), before delegate_->OnWindowDestroyed() which
-// destroys ShellWindow, so both |window| and the associated ShellWindow
-// are valid here.
-void ShellWindowLauncherController::OnWindowDestroying(aura::Window* window) {
+void ShellWindowLauncherController::UnregisterApp(aura::Window* window) {
   WindowToAppLauncherIdMap::iterator iter1 =
       window_to_app_launcher_id_map_.find(window);
   DCHECK(iter1 != window_to_app_launcher_id_map_.end());
@@ -137,26 +199,12 @@ void ShellWindowLauncherController::OnWindowDestroying(aura::Window* window) {
     ash::LauncherID launcher_id = controller->launcher_id();
     owner_->CloseLauncherItem(launcher_id);
     app_controller_map_.erase(iter2);
-    delete controller;
   }
 }
 
-void ShellWindowLauncherController::OnWindowActivated(
-    aura::Window* new_active,
-    aura::Window* old_active) {
-  // Make the newly active window the active (first) entry in the controller.
-  ShellWindowLauncherItemController* new_controller =
-      ControllerForWindow(new_active);
-  if (new_controller) {
-    new_controller->SetActiveWindow(new_active);
-    owner_->SetItemStatus(new_controller->launcher_id(), ash::STATUS_ACTIVE);
-  }
-
-  // Mark the old active window's launcher item as running (if different).
-  ShellWindowLauncherItemController* old_controller =
-      ControllerForWindow(old_active);
-  if (old_controller && old_controller != new_controller)
-    owner_->SetItemStatus(old_controller->launcher_id(), ash::STATUS_RUNNING);
+bool ShellWindowLauncherController::IsRegisteredApp(aura::Window* window) {
+  return window_to_app_launcher_id_map_.find(window) !=
+      window_to_app_launcher_id_map_.end();
 }
 
 // Private Methods

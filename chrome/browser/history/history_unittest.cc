@@ -95,7 +95,6 @@ class BackendDelegate : public HistoryBackend::Delegate {
   virtual void BroadcastNotifications(int type,
                                       HistoryDetails* details) OVERRIDE;
   virtual void DBLoaded(int backend_id) OVERRIDE {}
-  virtual void StartTopSitesMigration(int backend_id) OVERRIDE {}
   virtual void NotifyVisitDBObserversOnAddVisit(
       const BriefVisitInfo& info) OVERRIDE {}
  private:
@@ -141,7 +140,7 @@ class HistoryBackendDBTest : public HistoryUnitTestBase {
   virtual void SetUp() {
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
     history_dir_ = temp_dir_.path().AppendASCII("HistoryBackendDBTest");
-    ASSERT_TRUE(file_util::CreateDirectory(history_dir_));
+    ASSERT_TRUE(base::CreateDirectory(history_dir_));
   }
 
   void DeleteBackend() {
@@ -913,7 +912,7 @@ class HistoryTest : public testing::Test {
   virtual void SetUp() {
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
     history_dir_ = temp_dir_.path().AppendASCII("HistoryTest");
-    ASSERT_TRUE(file_util::CreateDirectory(history_dir_));
+    ASSERT_TRUE(base::CreateDirectory(history_dir_));
     history_service_.reset(new HistoryService);
     if (!history_service_->Init(history_dir_, NULL)) {
       history_service_.reset();
@@ -1275,7 +1274,7 @@ TEST_F(HistoryTest, SetTitle) {
       existing_url, base::Time::Now(), history::SOURCE_BROWSED);
 
   // Set some title.
-  const string16 existing_title = UTF8ToUTF16("Google");
+  const base::string16 existing_title = UTF8ToUTF16("Google");
   history_service_->SetPageTitle(existing_url, existing_title);
 
   // Make sure the title got set.
@@ -1284,12 +1283,12 @@ TEST_F(HistoryTest, SetTitle) {
 
   // set a title on a nonexistent page
   const GURL nonexistent_url("http://news.google.com/");
-  const string16 nonexistent_title = UTF8ToUTF16("Google News");
+  const base::string16 nonexistent_title = UTF8ToUTF16("Google News");
   history_service_->SetPageTitle(nonexistent_url, nonexistent_title);
 
   // Make sure nothing got written.
   EXPECT_FALSE(QueryURL(history_service_.get(), nonexistent_url));
-  EXPECT_EQ(string16(), query_url_row_.title());
+  EXPECT_EQ(base::string16(), query_url_row_.title());
 
   // TODO(brettw) this should also test redirects, which get the title of the
   // destination page.
@@ -1554,6 +1553,11 @@ class TestChangeProcessor : public syncer::SyncChangeProcessor {
     return syncer::SyncError();
   }
 
+  virtual syncer::SyncDataList GetAllSyncData(syncer::ModelType type) const
+      OVERRIDE {
+    return syncer::SyncDataList();
+  }
+
   const syncer::SyncChangeList& GetChanges() const {
     return changes_;
   }
@@ -1583,6 +1587,11 @@ class SyncChangeProcessorDelegate : public syncer::SyncChangeProcessor {
       const tracked_objects::Location& from_here,
       const syncer::SyncChangeList& change_list) OVERRIDE {
     return recipient_->ProcessSyncChanges(from_here, change_list);
+  }
+
+  virtual syncer::SyncDataList GetAllSyncData(syncer::ModelType type) const
+      OVERRIDE {
+    return recipient_->GetAllSyncData(type);
   }
 
  private:
@@ -1817,7 +1826,7 @@ TEST_F(HistoryBackendDBTest, MigratePresentations) {
   const URLID url_id = 3;
   const GURL url("http://www.foo.com");
   const std::string url_name(VisitSegmentDatabase::ComputeSegmentName(url));
-  const string16 title(ASCIIToUTF16("Title1"));
+  const base::string16 title(ASCIIToUTF16("Title1"));
   const Time segment_time(Time::Now());
 
   {

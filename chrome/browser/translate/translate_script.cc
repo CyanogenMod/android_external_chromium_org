@@ -8,10 +8,13 @@
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
+#include "base/strings/string_piece.h"
 #include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "chrome/browser/translate/translate_url_fetcher.h"
 #include "chrome/browser/translate/translate_url_util.h"
 #include "chrome/common/chrome_switches.h"
+#include "components/translate/common/translate_util.h"
 #include "google_apis/google_api_keys.h"
 #include "grit/browser_resources.h"
 #include "net/base/escape.h"
@@ -22,24 +25,30 @@ namespace {
 
 const int kExpirationDelayDays = 1;
 
-const char kScriptURL[] =
-    "https://translate.google.com/translate_a/element.js";
-const char kRequestHeader[] = "Google-Translate-Element-Mode: library";
-
-// Used in kTranslateScriptURL to specify a callback function name.
-const char kCallbackQueryName[] = "cb";
-const char kCallbackQueryValue[] =
-    "cr.googleTranslate.onTranslateElementLoad";
-
 }  // namespace
 
+const char TranslateScript::kScriptURL[] =
+    "https://translate.google.com/translate_a/element.js";
+const char TranslateScript::kRequestHeader[] =
+    "Google-Translate-Element-Mode: library";
+const char TranslateScript::kAlwaysUseSslQueryName[] = "aus";
+const char TranslateScript::kAlwaysUseSslQueryValue[] = "true";
+const char TranslateScript::kCallbackQueryName[] = "cb";
+const char TranslateScript::kCallbackQueryValue[] =
+    "cr.googleTranslate.onTranslateElementLoad";
+const char TranslateScript::kCssLoaderCallbackQueryName[] = "clc";
+const char TranslateScript::kCssLoaderCallbackQueryValue[] =
+    "cr.googleTranslate.onLoadCSS";
+const char TranslateScript::kJavascriptLoaderCallbackQueryName[] = "jlc";
+const char TranslateScript::kJavascriptLoaderCallbackQueryValue[] =
+    "cr.googleTranslate.onLoadJavascript";
+
 TranslateScript::TranslateScript()
-    : weak_method_factory_(this),
-      expiration_delay_(base::TimeDelta::FromDays(kExpirationDelayDays)) {
+    : expiration_delay_(base::TimeDelta::FromDays(kExpirationDelayDays)),
+      weak_method_factory_(this) {
 }
 
 TranslateScript::~TranslateScript() {
-  weak_method_factory_.InvalidateWeakPtrs();
 }
 
 void TranslateScript::Request(const Callback& callback) {
@@ -74,6 +83,21 @@ void TranslateScript::Request(const Callback& callback) {
       translate_script_url,
       kCallbackQueryName,
       kCallbackQueryValue);
+  translate_script_url = net::AppendQueryParameter(
+      translate_script_url,
+      kAlwaysUseSslQueryName,
+      kAlwaysUseSslQueryValue);
+#if !defined(OS_IOS)
+  // iOS doesn't need to use specific loaders for the isolated world.
+  translate_script_url = net::AppendQueryParameter(
+      translate_script_url,
+      kCssLoaderCallbackQueryName,
+      kCssLoaderCallbackQueryValue);
+  translate_script_url = net::AppendQueryParameter(
+      translate_script_url,
+      kJavascriptLoaderCallbackQueryName,
+      kJavascriptLoaderCallbackQueryValue);
+#endif  // !defined(OS_IOS)
 
   translate_script_url =
       TranslateURLUtil::AddHostLocaleToUrl(translate_script_url);
@@ -96,15 +120,20 @@ void TranslateScript::OnScriptFetchComplete(
   scoped_ptr<const TranslateURLFetcher> delete_ptr(fetcher_.release());
 
   if (success) {
+    DCHECK(data_.empty());
+    // Insert variable definitions on API Key and security origin.
+    data_ = base::StringPrintf("var translateApiKey = '%s';\n",
+                               google_apis::GetAPIKey().c_str());
+
+    GURL security_origin = translate::GetTranslateSecurityOrigin();
+    base::StringAppendF(
+        &data_, "var securityOrigin = '%s';", security_origin.spec().c_str());
+
+    // Append embedded translate.js and a remote element library.
     base::StringPiece str = ResourceBundle::GetSharedInstance().
         GetRawDataResource(IDR_TRANSLATE_JS);
-    DCHECK(data_.empty());
-    str.CopyToString(&data_);
-    std::string argument = "('";
-    std::string api_key = google_apis::GetAPIKey();
-    argument += net::EscapeQueryParamValue(api_key, true);
-    argument += "');\n";
-    data_ += argument + data;
+    str.AppendToString(&data_);
+    data_ += data;
 
     // We'll expire the cached script after some time, to make sure long
     // running browsers still get fixes that might get pushed with newer

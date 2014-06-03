@@ -13,9 +13,8 @@ gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared)
 GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,gpu_gpu_gyp)/gpu.stamp \
 	$(call intermediates-dir-for,GYP,skia_skia_gyp)/skia.stamp \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_gl_gl_gyp)/ui_gl_gl_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_ui_gyp)/ui_ui_gyp.a \
-	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_minimal_gyp)/blink_minimal.stamp
+	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_minimal_gyp)/blink_minimal.stamp \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_gl_gl_gyp)/ui_gl_gl_gyp.a
 
 GYP_GENERATED_OUTPUTS :=
 
@@ -35,30 +34,46 @@ LOCAL_SRC_FILES := \
 	cc/animation/animation_registrar.cc \
 	cc/animation/keyframed_animation_curve.cc \
 	cc/animation/layer_animation_controller.cc \
+	cc/animation/scroll_offset_animation_curve.cc \
 	cc/animation/scrollbar_animation_controller_linear_fade.cc \
+	cc/animation/scrollbar_animation_controller_thinning.cc \
 	cc/animation/timing_function.cc \
 	cc/animation/transform_operation.cc \
 	cc/animation/transform_operations.cc \
 	cc/base/invalidation_region.cc \
+	cc/base/latency_info_swap_promise.cc \
+	cc/base/latency_info_swap_promise_monitor.cc \
 	cc/base/math_util.cc \
 	cc/base/region.cc \
+	cc/base/swap_promise_monitor.cc \
 	cc/base/switches.cc \
 	cc/base/tiling_data.cc \
+	cc/debug/benchmark_instrumentation.cc \
 	cc/debug/debug_colors.cc \
 	cc/debug/debug_rect_history.cc \
-	cc/debug/fake_web_graphics_context_3d.cc \
 	cc/debug/frame_rate_counter.cc \
 	cc/debug/layer_tree_debug_state.cc \
+	cc/debug/micro_benchmark.cc \
+	cc/debug/micro_benchmark_impl.cc \
+	cc/debug/micro_benchmark_controller.cc \
+	cc/debug/micro_benchmark_controller_impl.cc \
 	cc/debug/overdraw_metrics.cc \
 	cc/debug/paint_time_counter.cc \
+	cc/debug/picture_record_benchmark.cc \
+	cc/debug/rasterize_and_record_benchmark.cc \
+	cc/debug/rasterize_and_record_benchmark_impl.cc \
 	cc/debug/rendering_stats.cc \
 	cc/debug/rendering_stats_instrumentation.cc \
 	cc/debug/traced_picture.cc \
 	cc/debug/traced_value.cc \
+	cc/debug/unittest_only_benchmark.cc \
+	cc/debug/unittest_only_benchmark_impl.cc \
 	cc/input/page_scale_animation.cc \
 	cc/input/top_controls_manager.cc \
 	cc/layers/content_layer.cc \
 	cc/layers/contents_scaling_layer.cc \
+	cc/layers/delegated_frame_provider.cc \
+	cc/layers/delegated_frame_resource_collection.cc \
 	cc/layers/delegated_renderer_layer.cc \
 	cc/layers/delegated_renderer_layer_impl.cc \
 	cc/layers/heads_up_display_layer.cc \
@@ -73,20 +88,25 @@ LOCAL_SRC_FILES := \
 	cc/layers/layer_position_constraint.cc \
 	cc/layers/nine_patch_layer.cc \
 	cc/layers/nine_patch_layer_impl.cc \
+	cc/layers/painted_scrollbar_layer.cc \
+	cc/layers/painted_scrollbar_layer_impl.cc \
 	cc/layers/picture_image_layer.cc \
 	cc/layers/picture_image_layer_impl.cc \
 	cc/layers/picture_layer.cc \
 	cc/layers/picture_layer_impl.cc \
 	cc/layers/render_surface.cc \
 	cc/layers/render_surface_impl.cc \
-	cc/layers/scrollbar_layer.cc \
-	cc/layers/scrollbar_layer_impl.cc \
+	cc/layers/scrollbar_layer_impl_base.cc \
 	cc/layers/solid_color_layer.cc \
 	cc/layers/solid_color_layer_impl.cc \
+	cc/layers/solid_color_scrollbar_layer.cc \
+	cc/layers/solid_color_scrollbar_layer_impl.cc \
 	cc/layers/texture_layer.cc \
 	cc/layers/texture_layer_impl.cc \
 	cc/layers/tiled_layer.cc \
 	cc/layers/tiled_layer_impl.cc \
+	cc/layers/ui_resource_layer.cc \
+	cc/layers/ui_resource_layer_impl.cc \
 	cc/layers/video_frame_provider_client_impl.cc \
 	cc/layers/video_layer.cc \
 	cc/layers/video_layer_impl.cc \
@@ -94,6 +114,7 @@ LOCAL_SRC_FILES := \
 	cc/output/compositor_frame.cc \
 	cc/output/compositor_frame_ack.cc \
 	cc/output/compositor_frame_metadata.cc \
+	cc/output/context_provider.cc \
 	cc/output/copy_output_request.cc \
 	cc/output/copy_output_result.cc \
 	cc/output/delegated_frame_data.cc \
@@ -132,6 +153,7 @@ LOCAL_SRC_FILES := \
 	cc/resources/bitmap_skpicture_content_layer_updater.cc \
 	cc/resources/caching_bitmap_content_layer_updater.cc \
 	cc/resources/content_layer_updater.cc \
+	cc/resources/etc1_pixel_ref.cc \
 	cc/resources/image_layer_updater.cc \
 	cc/resources/image_raster_worker_pool.cc \
 	cc/resources/layer_quad.cc \
@@ -153,6 +175,7 @@ LOCAL_SRC_FILES := \
 	cc/resources/raster_mode.cc \
 	cc/resources/raster_worker_pool.cc \
 	cc/resources/resource.cc \
+	cc/resources/resource_format.cc \
 	cc/resources/resource_pool.cc \
 	cc/resources/resource_provider.cc \
 	cc/resources/resource_update.cc \
@@ -160,24 +183,27 @@ LOCAL_SRC_FILES := \
 	cc/resources/resource_update_queue.cc \
 	cc/resources/scoped_resource.cc \
 	cc/resources/scoped_ui_resource.cc \
+	cc/resources/shared_bitmap.cc \
+	cc/resources/single_release_callback.cc \
 	cc/resources/skpicture_content_layer_updater.cc \
-	cc/resources/sync_point_helper.cc \
 	cc/resources/texture_mailbox.cc \
+	cc/resources/texture_mailbox_deleter.cc \
 	cc/resources/tile.cc \
 	cc/resources/tile_manager.cc \
 	cc/resources/tile_priority.cc \
 	cc/resources/transferable_resource.cc \
 	cc/resources/ui_resource_bitmap.cc \
+	cc/resources/ui_resource_request.cc \
 	cc/resources/video_resource_updater.cc \
 	cc/resources/worker_pool.cc \
 	cc/scheduler/delay_based_time_source.cc \
 	cc/scheduler/frame_rate_controller.cc \
-	cc/scheduler/rate_limiter.cc \
 	cc/scheduler/rolling_time_delta_history.cc \
 	cc/scheduler/scheduler.cc \
 	cc/scheduler/scheduler_settings.cc \
 	cc/scheduler/scheduler_state_machine.cc \
 	cc/scheduler/texture_uploader.cc \
+	cc/trees/blocking_task_runner.cc \
 	cc/trees/damage_tracker.cc \
 	cc/trees/layer_sorter.cc \
 	cc/trees/layer_tree_host.cc \
@@ -230,26 +256,27 @@ MY_CFLAGS_Debug := \
 	-ffunction-sections
 
 MY_DEFS_Debug := \
-	'-DANGLE_DX11' \
+	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
-	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
-	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DLOGGING_IS_OFFICIAL_BUILD=1' \
-	'-DTRACING_IS_OFFICIAL_BUILD=1' \
-	'-DENABLE_GPU=1' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
+	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
+	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-DCC_IMPLEMENTATION=1' \
 	'-DMEDIA_DISABLE_LIBVPX' \
-	'-DMESA_EGL_NO_X11_HEADERS' \
+	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DU_USING_ICU_NAMESPACE=0' \
+	'-DMESA_EGL_NO_X11_HEADERS' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \
@@ -264,20 +291,23 @@ MY_DEFS_Debug := \
 
 # Include paths placed before CFLAGS/CPPFLAGS
 LOCAL_C_INCLUDES_Debug := \
+	$(gyp_shared_intermediate_dir)/shim_headers/skia_library/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
-	$(gyp_shared_intermediate_dir)/shim_headers/skia_library/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
 	$(LOCAL_PATH) \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
+	$(LOCAL_PATH)/skia/config \
+	$(LOCAL_PATH)/third_party/WebKit/Source \
+	$(PWD)/external/skia/include \
+	$(PWD)/external/skia/include/core \
 	$(LOCAL_PATH)/third_party/skia/src/core \
 	$(LOCAL_PATH)/skia/ext \
-	$(gyp_shared_intermediate_dir)/ui/gl \
-	$(LOCAL_PATH)/third_party/mesa/src/include \
 	$(PWD)/external/icu4c/common \
 	$(PWD)/external/icu4c/i18n \
-	$(LOCAL_PATH)/v8/include \
+	$(gyp_shared_intermediate_dir)/ui/gl \
+	$(LOCAL_PATH)/third_party/mesa/src/include \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport
@@ -333,26 +363,27 @@ MY_CFLAGS_Release := \
 	-fno-asynchronous-unwind-tables
 
 MY_DEFS_Release := \
-	'-DANGLE_DX11' \
+	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
-	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
-	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DLOGGING_IS_OFFICIAL_BUILD=1' \
-	'-DTRACING_IS_OFFICIAL_BUILD=1' \
-	'-DENABLE_GPU=1' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
+	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
+	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-DCC_IMPLEMENTATION=1' \
 	'-DMEDIA_DISABLE_LIBVPX' \
-	'-DMESA_EGL_NO_X11_HEADERS' \
+	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DU_USING_ICU_NAMESPACE=0' \
+	'-DMESA_EGL_NO_X11_HEADERS' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \
@@ -368,20 +399,23 @@ MY_DEFS_Release := \
 
 # Include paths placed before CFLAGS/CPPFLAGS
 LOCAL_C_INCLUDES_Release := \
+	$(gyp_shared_intermediate_dir)/shim_headers/skia_library/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
-	$(gyp_shared_intermediate_dir)/shim_headers/skia_library/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
 	$(LOCAL_PATH) \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
+	$(LOCAL_PATH)/skia/config \
+	$(LOCAL_PATH)/third_party/WebKit/Source \
+	$(PWD)/external/skia/include \
+	$(PWD)/external/skia/include/core \
 	$(LOCAL_PATH)/third_party/skia/src/core \
 	$(LOCAL_PATH)/skia/ext \
-	$(gyp_shared_intermediate_dir)/ui/gl \
-	$(LOCAL_PATH)/third_party/mesa/src/include \
 	$(PWD)/external/icu4c/common \
 	$(PWD)/external/icu4c/i18n \
-	$(LOCAL_PATH)/v8/include \
+	$(gyp_shared_intermediate_dir)/ui/gl \
+	$(LOCAL_PATH)/third_party/mesa/src/include \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport
@@ -440,8 +474,7 @@ LOCAL_LDFLAGS_Release := \
 LOCAL_LDFLAGS := $(LOCAL_LDFLAGS_$(GYP_CONFIGURATION))
 
 LOCAL_STATIC_LIBRARIES := \
-	ui_gl_gl_gyp \
-	ui_ui_gyp
+	ui_gl_gl_gyp
 
 # Enable grouping to fix circular references
 LOCAL_GROUP_STATIC_LIBRARIES := true

@@ -18,8 +18,9 @@ using std::vector;
 namespace net {
 
 const size_t kMaxPrematurelyClosedStreamsTracked = 20;
+const size_t kMaxZombieStreams = 20;
 
-#define ENDPOINT (is_server_ ? "Server: " : " Client: ")
+#define ENDPOINT (is_server() ? "Server: " : " Client: ")
 
 // We want to make sure we delete any closed streams in a safe manner.
 // To avoid deleting a stream in mid-operation, we have a simple shim between
@@ -32,12 +33,8 @@ class VisitorShim : public QuicConnectionVisitorInterface {
  public:
   explicit VisitorShim(QuicSession* session) : session_(session) {}
 
-  virtual bool OnPacket(const IPEndPoint& self_address,
-                        const IPEndPoint& peer_address,
-                        const QuicPacketHeader& header,
-                        const vector<QuicStreamFrame>& frame) OVERRIDE {
-    bool accepted = session_->OnPacket(self_address, peer_address, header,
-                                       frame);
+  virtual bool OnStreamFrames(const vector<QuicStreamFrame>& frames) OVERRIDE {
+    bool accepted = session_->OnStreamFrames(frames);
     session_->PostProcessAfterData();
     return accepted;
   }
@@ -51,20 +48,29 @@ class VisitorShim : public QuicConnectionVisitorInterface {
     session_->PostProcessAfterData();
   }
 
-  virtual void OnAck(const SequenceNumberSet& acked_packets) OVERRIDE {
-    session_->OnAck(acked_packets);
-    session_->PostProcessAfterData();
-  }
-
   virtual bool OnCanWrite() OVERRIDE {
     bool rc = session_->OnCanWrite();
     session_->PostProcessAfterData();
     return rc;
   }
 
-  virtual void ConnectionClose(QuicErrorCode error, bool from_peer) OVERRIDE {
-    session_->ConnectionClose(error, from_peer);
+  virtual void OnSuccessfulVersionNegotiation(
+      const QuicVersion& version) OVERRIDE {
+    session_->OnSuccessfulVersionNegotiation(version);
+  }
+
+  virtual void OnConfigNegotiated() OVERRIDE {
+    session_->OnConfigNegotiated();
+  }
+
+  virtual void OnConnectionClosed(QuicErrorCode error,
+                                  bool from_peer) OVERRIDE {
+    session_->OnConnectionClosed(error, from_peer);
     // The session will go away, so don't bother with cleanup.
+  }
+
+  virtual bool HasPendingHandshake() const OVERRIDE {
+    return session_->HasPendingHandshake();
   }
 
  private:
@@ -72,26 +78,24 @@ class VisitorShim : public QuicConnectionVisitorInterface {
 };
 
 QuicSession::QuicSession(QuicConnection* connection,
-                         const QuicConfig& config,
-                         bool is_server)
+                         const QuicConfig& config)
     : connection_(connection),
       visitor_shim_(new VisitorShim(this)),
       config_(config),
       max_open_streams_(config_.max_streams_per_connection()),
-      next_stream_id_(is_server ? 2 : 3),
-      is_server_(is_server),
+      next_stream_id_(is_server() ? 2 : 3),
       largest_peer_created_stream_id_(0),
       error_(QUIC_NO_ERROR),
       goaway_received_(false),
-      goaway_sent_(false) {
+      goaway_sent_(false),
+      has_pending_handshake_(false) {
 
   connection_->set_visitor(visitor_shim_.get());
-  connection_->SetIdleNetworkTimeout(config_.idle_connection_state_lifetime());
+  connection_->SetFromConfig(config_);
   if (connection_->connected()) {
     connection_->SetOverallConnectionTimeout(
         config_.max_time_before_crypto_handshake());
   }
-  // TODO(satyamshekhar): Set congestion control and ICSL also.
 }
 
 QuicSession::~QuicSession() {
@@ -99,16 +103,7 @@ QuicSession::~QuicSession() {
   STLDeleteValues(&stream_map_);
 }
 
-bool QuicSession::OnPacket(const IPEndPoint& self_address,
-                           const IPEndPoint& peer_address,
-                           const QuicPacketHeader& header,
-                           const vector<QuicStreamFrame>& frames) {
-  if (header.public_header.guid != connection()->guid()) {
-    DLOG(INFO) << ENDPOINT << "Got packet header for invalid GUID: "
-               << header.public_header.guid;
-    return false;
-  }
-
+bool QuicSession::OnStreamFrames(const vector<QuicStreamFrame>& frames) {
   for (size_t i = 0; i < frames.size(); ++i) {
     // TODO(rch) deal with the error case of stream id 0
     if (IsClosedStream(frames[i].stream_id)) {
@@ -133,9 +128,19 @@ bool QuicSession::OnPacket(const IPEndPoint& self_address,
   }
 
   for (size_t i = 0; i < frames.size(); ++i) {
-    ReliableQuicStream* stream = GetStream(frames[i].stream_id);
-    if (stream) {
-      stream->OnStreamFrame(frames[i]);
+    QuicStreamId stream_id = frames[i].stream_id;
+    ReliableQuicStream* stream = GetStream(stream_id);
+    if (!stream) {
+      continue;
+    }
+    stream->OnStreamFrame(frames[i]);
+
+    // If the stream is a data stream had been prematurely closed, and the
+    // headers are now decompressed, then we are finally finished
+    // with this stream.
+    if (ContainsKey(zombie_streams_, stream_id) &&
+        static_cast<QuicDataStream*>(stream)->headers_decompressed()) {
+      CloseZombieStream(stream_id);
     }
   }
 
@@ -146,7 +151,7 @@ bool QuicSession::OnPacket(const IPEndPoint& self_address,
     }
     QuicStreamId stream_id = decompression_blocked_streams_.begin()->second;
     decompression_blocked_streams_.erase(header_id);
-    ReliableQuicStream* stream = GetStream(stream_id);
+    QuicDataStream* stream = GetDataStream(stream_id);
     if (!stream) {
       connection()->SendConnectionClose(
           QUIC_STREAM_RST_BEFORE_HEADERS_DECOMPRESSED);
@@ -158,9 +163,29 @@ bool QuicSession::OnPacket(const IPEndPoint& self_address,
 }
 
 void QuicSession::OnRstStream(const QuicRstStreamFrame& frame) {
-  ReliableQuicStream* stream = GetStream(frame.stream_id);
+  if (frame.stream_id == kCryptoStreamId) {
+    connection()->SendConnectionCloseWithDetails(
+        QUIC_INVALID_STREAM_ID,
+        "Attempt to reset the crypto stream");
+    return;
+  }
+  QuicDataStream* stream = GetDataStream(frame.stream_id);
   if (!stream) {
     return;  // Errors are handled by GetStream.
+  }
+  if (ContainsKey(zombie_streams_, stream->id())) {
+    // If this was a zombie stream then we close it out now.
+    CloseZombieStream(stream->id());
+    // However, since the headers still have not been decompressed, we want to
+    // mark it a prematurely closed so that if we ever receive frames
+    // for this stream we can close the connection.
+    DCHECK(!stream->headers_decompressed());
+    AddPrematurelyClosedStream(frame.stream_id);
+    return;
+  }
+  if (stream->stream_bytes_read() > 0 && !stream->headers_decompressed()) {
+    connection()->SendConnectionClose(
+        QUIC_STREAM_RST_BEFORE_HEADERS_DECOMPRESSED);
   }
   stream->OnStreamReset(frame.error_code);
 }
@@ -170,18 +195,20 @@ void QuicSession::OnGoAway(const QuicGoAwayFrame& frame) {
   goaway_received_ = true;
 }
 
-void QuicSession::ConnectionClose(QuicErrorCode error, bool from_peer) {
+void QuicSession::OnConnectionClosed(QuicErrorCode error, bool from_peer) {
+  DCHECK(!connection_->connected());
   if (error_ == QUIC_NO_ERROR) {
     error_ = error;
   }
 
-  while (stream_map_.size() != 0) {
-    ReliableStreamMap::iterator it = stream_map_.begin();
+  while (!stream_map_.empty()) {
+    DataStreamMap::iterator it = stream_map_.begin();
     QuicStreamId id = it->first;
-    it->second->ConnectionClose(error, from_peer);
-    // The stream should call CloseStream as part of ConnectionClose.
+    it->second->OnConnectionClosed(error, from_peer);
+    // The stream should call CloseStream as part of OnConnectionClosed.
     if (stream_map_.find(id) != stream_map_.end()) {
-      LOG(DFATAL) << ENDPOINT << "Stream failed to close under ConnectionClose";
+      LOG(DFATAL) << ENDPOINT
+                  << "Stream failed to close under OnConnectionClosed";
       CloseStream(id);
     }
   }
@@ -190,13 +217,22 @@ void QuicSession::ConnectionClose(QuicErrorCode error, bool from_peer) {
 bool QuicSession::OnCanWrite() {
   // We latch this here rather than doing a traditional loop, because streams
   // may be modifying the list as we loop.
-  int remaining_writes = write_blocked_streams_.NumObjects();
+  int remaining_writes = write_blocked_streams_.NumBlockedStreams();
 
   while (!connection_->HasQueuedData() &&
          remaining_writes > 0) {
-    DCHECK(!write_blocked_streams_.IsEmpty());
-    ReliableQuicStream* stream =
-        GetStream(write_blocked_streams_.GetNextBlockedObject());
+    DCHECK(write_blocked_streams_.HasWriteBlockedStreams());
+    if (!write_blocked_streams_.HasWriteBlockedStreams()) {
+      LOG(DFATAL) << "WriteBlockedStream is missing";
+      connection_->CloseConnection(QUIC_INTERNAL_ERROR, false);
+      return true;  // We have no write blocked streams.
+    }
+    int index = write_blocked_streams_.GetHighestPriorityWriteBlockedList();
+    QuicStreamId stream_id = write_blocked_streams_.PopFront(index);
+    if (stream_id == kCryptoStreamId) {
+      has_pending_handshake_ = false;  // We just popped it.
+    }
+    ReliableQuicStream* stream = GetStream(stream_id);
     if (stream != NULL) {
       // If the stream can't write all bytes, it'll re-add itself to the blocked
       // list.
@@ -205,20 +241,30 @@ bool QuicSession::OnCanWrite() {
     --remaining_writes;
   }
 
-  return write_blocked_streams_.IsEmpty();
+  return !write_blocked_streams_.HasWriteBlockedStreams();
 }
 
-QuicConsumedData QuicSession::WriteData(QuicStreamId id,
-                                        StringPiece data,
-                                        QuicStreamOffset offset,
-                                        bool fin) {
-  return connection_->SendStreamData(id, data, offset, fin);
+bool QuicSession::HasPendingHandshake() const {
+  return has_pending_handshake_;
+}
+
+QuicConsumedData QuicSession::WritevData(
+    QuicStreamId id,
+    const struct iovec* iov,
+    int iov_count,
+    QuicStreamOffset offset,
+    bool fin,
+    QuicAckNotifier::DelegateInterface* ack_notifier_delegate) {
+  IOVector data;
+  data.AppendIovec(iov, iov_count);
+  return connection_->SendStreamData(id, data, offset, fin,
+                                     ack_notifier_delegate);
 }
 
 void QuicSession::SendRstStream(QuicStreamId id,
                                 QuicRstStreamErrorCode error) {
   connection_->SendRstStream(id, error);
-  CloseStream(id);
+  CloseStreamInner(id, true);
 }
 
 void QuicSession::SendGoAway(QuicErrorCode error_code, const string& reason) {
@@ -227,24 +273,76 @@ void QuicSession::SendGoAway(QuicErrorCode error_code, const string& reason) {
 }
 
 void QuicSession::CloseStream(QuicStreamId stream_id) {
-  DLOG(INFO) << ENDPOINT << "Closing stream " << stream_id;
+  CloseStreamInner(stream_id, false);
+}
 
-  ReliableStreamMap::iterator it = stream_map_.find(stream_id);
+void QuicSession::CloseStreamInner(QuicStreamId stream_id,
+                                   bool locally_reset) {
+  DVLOG(1) << ENDPOINT << "Closing stream " << stream_id;
+
+  DataStreamMap::iterator it = stream_map_.find(stream_id);
   if (it == stream_map_.end()) {
-    DLOG(INFO) << ENDPOINT << "Stream is already closed: " << stream_id;
+    DVLOG(1) << ENDPOINT << "Stream is already closed: " << stream_id;
     return;
   }
-  ReliableQuicStream* stream = it->second;
-  if (!stream->headers_decompressed()) {
-    if (prematurely_closed_streams_.size() ==
-        kMaxPrematurelyClosedStreamsTracked) {
-      prematurely_closed_streams_.erase(prematurely_closed_streams_.begin());
+  QuicDataStream* stream = it->second;
+  if (connection_->connected() && !stream->headers_decompressed()) {
+    // If the stream is being closed locally (for example a client cancelling
+    // a request before receiving the response) then we need to make sure that
+    // we keep the stream alive long enough to process any response or
+    // RST_STREAM frames.
+    if (locally_reset && !is_server()) {
+      AddZombieStream(stream_id);
+      return;
     }
-    prematurely_closed_streams_.insert(make_pair(stream->id(), true));
+
+    // This stream has been closed before the headers were decompressed.
+    // This might cause problems with head of line blocking of headers.
+    // If the peer sent headers which were lost but we now close the stream
+    // we will never be able to decompress headers for other streams.
+    // To deal with this, we keep track of streams which have been closed
+    // prematurely.  If we ever receive data frames for this steam, then we
+    // know there actually has been a problem and we close the connection.
+    AddPrematurelyClosedStream(stream->id());
   }
   closed_streams_.push_back(it->second);
+  if (ContainsKey(zombie_streams_, stream->id())) {
+    zombie_streams_.erase(stream->id());
+  }
   stream_map_.erase(it);
   stream->OnClose();
+}
+
+void QuicSession::AddZombieStream(QuicStreamId stream_id) {
+  if (zombie_streams_.size() == kMaxZombieStreams) {
+    QuicStreamId oldest_zombie_stream_id = zombie_streams_.begin()->first;
+    CloseZombieStream(oldest_zombie_stream_id);
+    // However, since the headers still have not been decompressed, we want to
+    // mark it a prematurely closed so that if we ever receive frames
+    // for this stream we can close the connection.
+    AddPrematurelyClosedStream(oldest_zombie_stream_id);
+  }
+  zombie_streams_.insert(make_pair(stream_id, true));
+}
+
+void QuicSession::CloseZombieStream(QuicStreamId stream_id) {
+  DCHECK(ContainsKey(zombie_streams_, stream_id));
+  zombie_streams_.erase(stream_id);
+  QuicDataStream* stream = GetDataStream(stream_id);
+  if (!stream) {
+    return;
+  }
+  stream_map_.erase(stream_id);
+  stream->OnClose();
+  closed_streams_.push_back(stream);
+}
+
+void QuicSession::AddPrematurelyClosedStream(QuicStreamId stream_id) {
+  if (prematurely_closed_streams_.size() ==
+      kMaxPrematurelyClosedStreamsTracked) {
+    prematurely_closed_streams_.erase(prematurely_closed_streams_.begin());
+  }
+  prematurely_closed_streams_.insert(make_pair(stream_id, true));
 }
 
 bool QuicSession::IsEncryptionEstablished() {
@@ -253,6 +351,10 @@ bool QuicSession::IsEncryptionEstablished() {
 
 bool QuicSession::IsCryptoHandshakeConfirmed() {
   return GetCryptoStream()->handshake_confirmed();
+}
+
+void QuicSession::OnConfigNegotiated() {
+  connection_->SetFromConfig(config_);
 }
 
 void QuicSession::OnCryptoHandshakeEvent(CryptoHandshakeEvent event) {
@@ -265,15 +367,12 @@ void QuicSession::OnCryptoHandshakeEvent(CryptoHandshakeEvent event) {
     case ENCRYPTION_REESTABLISHED:
       // Retransmit originally packets that were sent, since they can't be
       // decrypted by the peer.
-      connection_->RetransmitUnackedPackets(
-          QuicConnection::INITIAL_ENCRYPTION_ONLY);
+      connection_->RetransmitUnackedPackets(INITIAL_ENCRYPTION_ONLY);
       break;
 
     case HANDSHAKE_CONFIRMED:
       LOG_IF(DFATAL, !config_.negotiated()) << ENDPOINT
           << "Handshake confirmed without parameter negotiation.";
-      connection_->SetIdleNetworkTimeout(
-          config_.idle_connection_state_lifetime());
       connection_->SetOverallConnectionTimeout(QuicTime::Delta::Infinite());
       max_open_streams_ = config_.max_streams_per_connection();
       break;
@@ -283,14 +382,22 @@ void QuicSession::OnCryptoHandshakeEvent(CryptoHandshakeEvent event) {
   }
 }
 
+void QuicSession::OnCryptoHandshakeMessageSent(
+    const CryptoHandshakeMessage& message) {
+}
+
+void QuicSession::OnCryptoHandshakeMessageReceived(
+    const CryptoHandshakeMessage& message) {
+}
+
 QuicConfig* QuicSession::config() {
   return &config_;
 }
 
-void QuicSession::ActivateStream(ReliableQuicStream* stream) {
-  DLOG(INFO) << ENDPOINT << "num_streams: " << stream_map_.size()
+void QuicSession::ActivateStream(QuicDataStream* stream) {
+  DVLOG(1) << ENDPOINT << "num_streams: " << stream_map_.size()
              << ". activating " << stream->id();
-  DCHECK(stream_map_.count(stream->id()) == 0);
+  DCHECK_EQ(stream_map_.count(stream->id()), 0u);
   stream_map_[stream->id()] = stream;
 }
 
@@ -304,8 +411,16 @@ ReliableQuicStream* QuicSession::GetStream(const QuicStreamId stream_id) {
   if (stream_id == kCryptoStreamId) {
     return GetCryptoStream();
   }
+  return GetDataStream(stream_id);
+}
 
-  ReliableStreamMap::iterator it = stream_map_.find(stream_id);
+QuicDataStream* QuicSession::GetDataStream(const QuicStreamId stream_id) {
+  if (stream_id == kCryptoStreamId) {
+    DLOG(FATAL) << "Attempt to call GetDataStream with the crypto stream id";
+    return NULL;
+  }
+
+  DataStreamMap::iterator it = stream_map_.find(stream_id);
   if (it != stream_map_.end()) {
     return it->second;
   }
@@ -324,7 +439,7 @@ ReliableQuicStream* QuicSession::GetStream(const QuicStreamId stream_id) {
   return GetIncomingReliableStream(stream_id);
 }
 
-ReliableQuicStream* QuicSession::GetIncomingReliableStream(
+QuicDataStream* QuicSession::GetIncomingReliableStream(
     QuicStreamId stream_id) {
   if (IsClosedStream(stream_id)) {
     return NULL;
@@ -343,16 +458,17 @@ ReliableQuicStream* QuicSession::GetIncomingReliableStream(
       connection()->SendConnectionClose(QUIC_INVALID_STREAM_ID);
       return NULL;
     }
-    if (largest_peer_created_stream_id_ != 0) {
-      for (QuicStreamId id = largest_peer_created_stream_id_ + 2;
-           id < stream_id;
-           id += 2) {
-        implicitly_created_streams_.insert(id);
-      }
+    if (largest_peer_created_stream_id_ == 0) {
+      largest_peer_created_stream_id_= 1;
+    }
+    for (QuicStreamId id = largest_peer_created_stream_id_ + 2;
+         id < stream_id;
+         id += 2) {
+      implicitly_created_streams_.insert(id);
     }
     largest_peer_created_stream_id_ = stream_id;
   }
-  ReliableQuicStream* stream = CreateIncomingReliableStream(stream_id);
+  QuicDataStream* stream = CreateIncomingDataStream(stream_id);
   if (stream == NULL) {
     return NULL;
   }
@@ -365,7 +481,10 @@ bool QuicSession::IsClosedStream(QuicStreamId id) {
   if (id == kCryptoStreamId) {
     return false;
   }
-  if (stream_map_.count(id) != 0) {
+  if (ContainsKey(zombie_streams_, id)) {
+    return true;
+  }
+  if (ContainsKey(stream_map_, id)) {
     // Stream is active
     return false;
   }
@@ -381,11 +500,25 @@ bool QuicSession::IsClosedStream(QuicStreamId id) {
 }
 
 size_t QuicSession::GetNumOpenStreams() const {
-  return stream_map_.size() + implicitly_created_streams_.size();
+  return stream_map_.size() + implicitly_created_streams_.size() -
+      zombie_streams_.size();
 }
 
-void QuicSession::MarkWriteBlocked(QuicStreamId id) {
-  write_blocked_streams_.AddBlockedObject(id);
+void QuicSession::MarkWriteBlocked(QuicStreamId id, QuicPriority priority) {
+  if (id == kCryptoStreamId) {
+    DCHECK(!has_pending_handshake_);
+    has_pending_handshake_ = true;
+    // TODO(jar): Be sure to use the highest priority for the crypto stream,
+    // perhaps by adding a "special" priority for it that is higher than
+    // kHighestPriority.
+    priority = kHighestPriority;
+  }
+  write_blocked_streams_.PushBack(id, priority);
+}
+
+bool QuicSession::HasQueuedData() const {
+  return write_blocked_streams_.NumBlockedStreams() ||
+      connection_->HasQueuedData();
 }
 
 void QuicSession::MarkDecompressionBlocked(QuicHeaderId header_id,

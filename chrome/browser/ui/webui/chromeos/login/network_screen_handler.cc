@@ -4,13 +4,19 @@
 
 #include "chrome/browser/ui/webui/chromeos/login/network_screen_handler.h"
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
+#include "base/memory/weak_ptr.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chromeos/base/locale_util.h"
 #include "chrome/browser/chromeos/input_method/input_method_util.h"
-#include "chrome/browser/chromeos/login/language_switch_menu.h"
+#include "chrome/browser/chromeos/login/input_events_blocker.h"
 #include "chrome/browser/chromeos/login/screens/core_oobe_actor.h"
+#include "chrome/browser/chromeos/system/input_device_settings.h"
+#include "chrome/browser/chromeos/system/timezone_util.h"
 #include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
 #include "chrome/browser/ui/webui/options/chromeos/cros_language_options_handler.h"
 #include "chromeos/ime/input_method_manager.h"
@@ -28,6 +34,7 @@ const char kJsScreenPath[] = "login.NetworkScreen";
 const char kJsApiNetworkOnExit[] = "networkOnExit";
 const char kJsApiNetworkOnLanguageChanged[] = "networkOnLanguageChanged";
 const char kJsApiNetworkOnInputMethodChanged[] = "networkOnInputMethodChanged";
+const char kJsApiNetworkOnTimezoneChanged[] = "networkOnTimezoneChanged";
 
 }  // namespace
 
@@ -40,7 +47,8 @@ NetworkScreenHandler::NetworkScreenHandler(CoreOobeActor* core_oobe_actor)
       screen_(NULL),
       core_oobe_actor_(core_oobe_actor),
       is_continue_enabled_(false),
-      show_on_init_(false) {
+      show_on_init_(false),
+      weak_ptr_factory_(this) {
   DCHECK(core_oobe_actor_);
 }
 
@@ -70,7 +78,7 @@ void NetworkScreenHandler::Show() {
 void NetworkScreenHandler::Hide() {
 }
 
-void NetworkScreenHandler::ShowError(const string16& message) {
+void NetworkScreenHandler::ShowError(const base::string16& message) {
   CallJS("showError", message);
 }
 
@@ -81,8 +89,8 @@ void NetworkScreenHandler::ClearErrors() {
 
 void NetworkScreenHandler::ShowConnectingStatus(
     bool connecting,
-    const string16& network_id) {
-  // string16 connecting_label =
+    const base::string16& network_id) {
+  // base::string16 connecting_label =
   //     l10n_util::GetStringFUTF16(IDS_NETWORK_SELECTION_CONNECTING,
   //                                network_id);
   // CallJS("cr.ui.Oobe.showConnectingStatus",
@@ -101,11 +109,16 @@ void NetworkScreenHandler::EnableContinue(bool enabled) {
 
 void NetworkScreenHandler::DeclareLocalizedValues(
     LocalizedValuesBuilder* builder) {
-  builder->Add("networkScreenGreeting", IDS_WELCOME_SCREEN_GREETING);
+  if (system::keyboard_settings::ForceKeyboardDrivenUINavigation())
+    builder->Add("networkScreenGreeting", IDS_REMORA_CONFIRM_MESSAGE);
+  else
+    builder->Add("networkScreenGreeting", IDS_WELCOME_SCREEN_GREETING);
+
   builder->Add("networkScreenTitle", IDS_WELCOME_SCREEN_TITLE);
   builder->Add("selectLanguage", IDS_LANGUAGE_SELECTION_SELECT);
   builder->Add("selectKeyboard", IDS_KEYBOARD_SELECTION_SELECT);
   builder->Add("selectNetwork", IDS_NETWORK_SELECTION_SELECT);
+  builder->Add("selectTimezone", IDS_OPTIONS_SETTINGS_TIMEZONE_DESCRIPTION);
   builder->Add("proxySettings", IDS_OPTIONS_PROXIES_CONFIGURE_BUTTON);
   builder->Add("continueButton", IDS_NETWORK_SELECTION_CONTINUE_BUTTON);
 }
@@ -114,6 +127,7 @@ void NetworkScreenHandler::GetAdditionalParameters(
     base::DictionaryValue* dict) {
   dict->Set("languageList", GetLanguageList());
   dict->Set("inputMethodsList", GetInputMethods());
+  dict->Set("timezoneList", GetTimezoneList());
 }
 
 void NetworkScreenHandler::Initialize() {
@@ -122,6 +136,12 @@ void NetworkScreenHandler::Initialize() {
     show_on_init_ = false;
     Show();
   }
+
+  timezone_subscription_ = CrosSettings::Get()->AddSettingsObserver(
+      kSystemTimezone,
+      base::Bind(&NetworkScreenHandler::OnSystemTimezoneChanged,
+                 base::Unretained(this)));
+  OnSystemTimezoneChanged();
 }
 
 // NetworkScreenHandler, WebUIMessageHandler implementation: -------------------
@@ -132,6 +152,8 @@ void NetworkScreenHandler::RegisterMessages() {
               &NetworkScreenHandler::HandleOnLanguageChanged);
   AddCallback(kJsApiNetworkOnInputMethodChanged,
               &NetworkScreenHandler::HandleOnInputMethodChanged);
+  AddCallback(kJsApiNetworkOnTimezoneChanged,
+              &NetworkScreenHandler::HandleOnTimezoneChanged);
 }
 
 // NetworkScreenHandler, private: ----------------------------------------------
@@ -142,27 +164,74 @@ void NetworkScreenHandler::HandleOnExit() {
     screen_->OnContinuePressed();
 }
 
+struct NetworkScreenHandlerOnLanguageChangedCallbackData {
+  explicit NetworkScreenHandlerOnLanguageChangedCallbackData(
+      base::WeakPtr<NetworkScreenHandler>& handler)
+      : handler_(handler) {}
+
+  base::WeakPtr<NetworkScreenHandler> handler_;
+
+  // Block UI while resource bundle is being reloaded.
+  chromeos::InputEventsBlocker input_events_blocker;
+};
+
+// static
+void NetworkScreenHandler::OnLanguageChangedCallback(
+    scoped_ptr<NetworkScreenHandlerOnLanguageChangedCallbackData> context,
+    const std::string& /*requested locale*/,
+    const std::string& /*loaded_locale*/,
+    const bool /*success*/) {
+  if (!context or !context->handler_)
+    return;
+
+  NetworkScreenHandler* const self = context->handler_.get();
+
+  DictionaryValue localized_strings;
+  static_cast<OobeUI*>(self->web_ui()->GetController())
+      ->GetLocalizedStrings(&localized_strings);
+  self->core_oobe_actor_->ReloadContent(localized_strings);
+
+  // Buttons are recreated, updated "Continue" button state.
+  self->EnableContinue(self->is_continue_enabled_);
+}
+
 void NetworkScreenHandler::HandleOnLanguageChanged(const std::string& locale) {
   const std::string app_locale = g_browser_process->GetApplicationLocale();
   if (app_locale == locale)
     return;
 
-  // TODO(altimofeev): make language change async.
-  LanguageSwitchMenu::SwitchLanguageAndEnableKeyboardLayouts(locale);
-
-  DictionaryValue localized_strings;
-  static_cast<OobeUI*>(web_ui()->GetController())->GetLocalizedStrings(
-      &localized_strings);
-  core_oobe_actor_->ReloadContent(localized_strings);
-
-  // Buttons are recreated, updated "Continue" button state.
-  EnableContinue(is_continue_enabled_);
+  base::WeakPtr<NetworkScreenHandler> weak_self =
+      weak_ptr_factory_.GetWeakPtr();
+  scoped_ptr<NetworkScreenHandlerOnLanguageChangedCallbackData> callback_data(
+      new NetworkScreenHandlerOnLanguageChangedCallbackData(weak_self));
+  scoped_ptr<locale_util::SwitchLanguageCallback> callback(
+      new locale_util::SwitchLanguageCallback(
+          base::Bind(&NetworkScreenHandler::OnLanguageChangedCallback,
+                     base::Passed(callback_data.Pass()))));
+  locale_util::SwitchLanguage(locale, true, callback.Pass());
 }
 
 void NetworkScreenHandler::HandleOnInputMethodChanged(const std::string& id) {
   input_method::InputMethodManager::Get()->ChangeInputMethod(id);
 }
 
+void NetworkScreenHandler::HandleOnTimezoneChanged(
+    const std::string& timezone_id) {
+  std::string current_timezone_id;
+  CrosSettings::Get()->GetString(kSystemTimezone, &current_timezone_id);
+  if (current_timezone_id == timezone_id)
+    return;
+
+  CrosSettings::Get()->SetString(kSystemTimezone, timezone_id);
+}
+
+void NetworkScreenHandler::OnSystemTimezoneChanged() {
+  std::string current_timezone_id;
+  CrosSettings::Get()->GetString(kSystemTimezone, &current_timezone_id);
+  CallJS("setTimezone", current_timezone_id);
+}
+
+// static
 ListValue* NetworkScreenHandler::GetLanguageList() {
   const std::string app_locale = g_browser_process->GetApplicationLocale();
   input_method::InputMethodManager* manager =
@@ -196,6 +265,7 @@ ListValue* NetworkScreenHandler::GetLanguageList() {
   return languages_list;
 }
 
+// static
 ListValue* NetworkScreenHandler::GetInputMethods() {
   ListValue* input_methods_list = new ListValue;
   input_method::InputMethodManager* manager =
@@ -216,6 +286,34 @@ ListValue* NetworkScreenHandler::GetInputMethods() {
     input_methods_list->Append(input_method);
   }
   return input_methods_list;
+}
+
+// static
+base::ListValue* NetworkScreenHandler::GetTimezoneList() {
+  std::string current_timezone_id;
+  CrosSettings::Get()->GetString(kSystemTimezone, &current_timezone_id);
+
+  scoped_ptr<base::ListValue> timezone_list(new base::ListValue);
+  scoped_ptr<base::ListValue> timezones = system::GetTimezoneList().Pass();
+  for (size_t i = 0; i < timezones->GetSize(); ++i) {
+    const base::ListValue* timezone = NULL;
+    CHECK(timezones->GetList(i, &timezone));
+
+    std::string timezone_id;
+    CHECK(timezone->GetString(0, &timezone_id));
+
+    std::string timezone_name;
+    CHECK(timezone->GetString(1, &timezone_name));
+
+    scoped_ptr<base::DictionaryValue> timezone_option(
+        new base::DictionaryValue);
+    timezone_option->SetString("value", timezone_id);
+    timezone_option->SetString("title", timezone_name);
+    timezone_option->SetBoolean("selected", timezone_id == current_timezone_id);
+    timezone_list->Append(timezone_option.release());
+  }
+
+  return timezone_list.release();
 }
 
 }  // namespace chromeos

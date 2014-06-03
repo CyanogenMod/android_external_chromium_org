@@ -5,6 +5,7 @@
 #ifndef CC_RESOURCES_PICTURE_PILE_BASE_H_
 #define CC_RESOURCES_PICTURE_PILE_BASE_H_
 
+#include <bitset>
 #include <list>
 #include <utility>
 
@@ -32,14 +33,18 @@ class CC_EXPORT PicturePileBase : public base::RefCounted<PicturePileBase> {
   gfx::Size size() const { return tiling_.total_size(); }
   void SetMinContentsScale(float min_contents_scale);
 
-  void UpdateRecordedRegion();
-  const Region& recorded_region() const { return recorded_region_; }
-
   int num_tiles_x() const { return tiling_.num_tiles_x(); }
   int num_tiles_y() const { return tiling_.num_tiles_y(); }
   gfx::Rect tile_bounds(int x, int y) const { return tiling_.TileBounds(x, y); }
   bool HasRecordingAt(int x, int y);
   bool CanRaster(float contents_scale, gfx::Rect content_rect);
+
+  // If this pile contains any valid recordings. May have false positives.
+  bool HasRecordings() const { return has_any_recordings_; }
+
+
+  static void ComputeTileGridInfo(gfx::Size tile_grid_size,
+                                  SkTileGridPicture::TileGridInfo* info);
 
   void SetTileGridSize(gfx::Size tile_grid_size);
   TilingData& tiling() { return tiling_; }
@@ -47,28 +52,67 @@ class CC_EXPORT PicturePileBase : public base::RefCounted<PicturePileBase> {
   scoped_ptr<base::Value> AsValue() const;
 
  protected:
+  class CC_EXPORT PictureInfo {
+   public:
+    enum {
+      INVALIDATION_FRAMES_TRACKED = 32
+    };
+
+    PictureInfo();
+    ~PictureInfo();
+
+    bool Invalidate(int frame_number);
+    bool NeedsRecording(int frame_number, int distance_to_visible);
+    PictureInfo CloneForThread(int thread_index) const;
+    void SetPicture(scoped_refptr<Picture> picture);
+    Picture* GetPicture() const;
+
+    float GetInvalidationFrequencyForTesting() const {
+      return GetInvalidationFrequency();
+    }
+
+   private:
+    void AdvanceInvalidationHistory(int frame_number);
+    float GetInvalidationFrequency() const;
+
+    int last_frame_number_;
+    scoped_refptr<Picture> picture_;
+    std::bitset<INVALIDATION_FRAMES_TRACKED> invalidation_history_;
+  };
+
+  typedef std::pair<int, int> PictureMapKey;
+  typedef base::hash_map<PictureMapKey, PictureInfo> PictureMap;
+
   virtual ~PicturePileBase();
 
   int num_raster_threads() { return num_raster_threads_; }
   int buffer_pixels() const { return tiling_.border_texels(); }
   void Clear();
 
-  typedef std::pair<int, int> PictureListMapKey;
-  typedef std::list<scoped_refptr<Picture> > PictureList;
-  typedef base::hash_map<PictureListMapKey, PictureList> PictureListMap;
+  gfx::Rect PaddedRect(const PictureMapKey& key);
+  gfx::Rect PadRect(gfx::Rect rect);
 
-  // A picture pile is a tiled set of picture lists.  The picture list map
-  // is a map of tile indices to picture lists.
-  PictureListMap picture_list_map_;
+  // An internal CanRaster check that goes to the picture_map rather than
+  // using the recorded_viewport hint.
+  bool CanRasterSlowTileCheck(const gfx::Rect& layer_rect) const;
+
+  // A picture pile is a tiled set of pictures. The picture map is a map of tile
+  // indices to picture infos.
+  PictureMap picture_map_;
   TilingData tiling_;
-  Region recorded_region_;
+  // If non-empty, all pictures tiles inside this rect are recorded.
+  gfx::Rect recorded_viewport_;
   float min_contents_scale_;
   SkTileGridPicture::TileGridInfo tile_grid_info_;
   SkColor background_color_;
-  bool contents_opaque_;
   int slow_down_raster_scale_factor_for_debug_;
+  bool contents_opaque_;
   bool show_debug_picture_borders_;
+  bool clear_canvas_with_debug_color_;
   int num_raster_threads_;
+  // A hint about whether there are any recordings. This may be a false
+  // positive.
+  bool has_any_recordings_;
 
  private:
   void SetBufferPixels(int buffer_pixels);

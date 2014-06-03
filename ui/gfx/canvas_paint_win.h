@@ -6,9 +6,9 @@
 #define UI_GFX_CANVAS_PAINT_WIN_H_
 
 #include "skia/ext/platform_canvas.h"
-#include "ui/base/win/dpi.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/size.h"
+#include "ui/gfx/win/dpi.h"
 
 namespace gfx {
 
@@ -33,7 +33,7 @@ namespace gfx {
 //     return 0;
 //   }
 // Note: The created context is always inialized to (0, 0, 0, 0).
-class UI_EXPORT CanvasSkiaPaint : public Canvas {
+class GFX_EXPORT CanvasSkiaPaint : public Canvas {
  public:
   // This constructor assumes the canvas is opaque.
   CanvasSkiaPaint(HWND hwnd, HDC dc, const PAINTSTRUCT& ps);

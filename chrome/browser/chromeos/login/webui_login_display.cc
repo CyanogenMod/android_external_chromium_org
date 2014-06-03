@@ -4,6 +4,7 @@
 
 #include "chrome/browser/chromeos/login/webui_login_display.h"
 
+#include "ash/shell.h"
 #include "ash/wm/user_activity_detector.h"
 #include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
 #include "chrome/browser/chromeos/login/login_display_host_impl.h"
@@ -125,6 +126,21 @@ void WebUILoginDisplay::SetUIEnabled(bool is_enabled) {
 void WebUILoginDisplay::SelectPod(int index) {
 }
 
+void WebUILoginDisplay::ShowBannerMessage(const std::string& message) {
+  if (!webui_handler_)
+    return;
+  webui_handler_->ShowBannerMessage(message);
+}
+
+void WebUILoginDisplay::ShowUserPodButton(
+    const std::string& username,
+    const std::string& iconURL,
+    const base::Closure& click_callback) {
+  if (!webui_handler_)
+    return;
+  webui_handler_->ShowUserPodButton(username, iconURL, click_callback);
+}
+
 void WebUILoginDisplay::ShowError(int error_msg_id,
                                   int login_attempts,
                                   HelpAppLauncher::HelpTopic help_topic_id) {
@@ -184,7 +200,6 @@ void WebUILoginDisplay::ShowError(int error_msg_id,
 
   webui_handler_->ShowError(login_attempts, error_text, help_link,
                             help_topic_id);
-  AccessibilityManager::Get()->MaybeSpeak(error_text);
 }
 
 void WebUILoginDisplay::ShowErrorScreen(LoginDisplay::SigninError error_id) {
@@ -362,6 +377,10 @@ void WebUILoginDisplay::SetDisplayEmail(const std::string& email) {
 
 void WebUILoginDisplay::Signout() {
   delegate_->Signout();
+}
+
+void WebUILoginDisplay::LoginAsKioskApp(const std::string& app_id) {
+  delegate_->LoginAsKioskApp(app_id);
 }
 
 void WebUILoginDisplay::OnUserActivity(const ui::Event* event) {

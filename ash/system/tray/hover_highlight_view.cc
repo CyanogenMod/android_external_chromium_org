@@ -8,8 +8,10 @@
 #include "ash/system/tray/tray_constants.h"
 #include "ash/system/tray/view_click_listener.h"
 #include "grit/ui_resources.h"
+#include "ui/base/accessibility/accessible_view_state.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
+#include "ui/views/border.h"
 #include "ui/views/controls/image_view.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/layout/box_layout.h"
@@ -17,7 +19,6 @@
 
 namespace {
 
-const int kPopupDetailLabelExtraLeftMargin = 8;
 const int kCheckLabelPadding = 4;
 
 }  // namespace
@@ -33,7 +34,9 @@ HoverHighlightView::HoverHighlightView(ViewClickListener* listener)
       text_highlight_color_(0),
       text_default_color_(0),
       hover_(false),
-      expandable_(false) {
+      expandable_(false),
+      checkable_(false),
+      checked_(false) {
   set_notify_enter_exit_on_child(true);
 }
 
@@ -64,7 +67,8 @@ views::Label* HoverHighlightView::AddLabel(const base::string16& text,
                                            gfx::Font::FontStyle style) {
   SetLayoutManager(new views::FillLayout());
   text_label_ = new views::Label(text);
-  int margin = kTrayPopupPaddingHorizontal + kPopupDetailLabelExtraLeftMargin;
+  int margin = kTrayPopupPaddingHorizontal +
+      kTrayPopupDetailsLabelExtraLeftMargin;
   int left_margin = 0;
   int right_margin = 0;
   if (base::i18n::IsRTL())
@@ -89,12 +93,14 @@ views::Label* HoverHighlightView::AddLabel(const base::string16& text,
 views::Label* HoverHighlightView::AddCheckableLabel(const base::string16& text,
                                                     gfx::Font::FontStyle style,
                                                     bool checked) {
+  checkable_ = true;
+  checked_ = checked;
   if (checked) {
     ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
     const gfx::ImageSkia* check =
         rb.GetImageNamed(IDR_MENU_CHECK).ToImageSkia();
-    int margin = kTrayPopupPaddingHorizontal + kPopupDetailLabelExtraLeftMargin
-        - kCheckLabelPadding;
+    int margin = kTrayPopupPaddingHorizontal +
+        kTrayPopupDetailsLabelExtraLeftMargin - kCheckLabelPadding;
     SetLayoutManager(new views::BoxLayout(
         views::BoxLayout::kHorizontal, 0, 3, kCheckLabelPadding));
     views::ImageView* image_view = new FixedSizedImageView(margin, 0);
@@ -128,6 +134,15 @@ bool HoverHighlightView::PerformAction(const ui::Event& event) {
     return false;
   listener_->OnViewClicked(this);
   return true;
+}
+
+void HoverHighlightView::GetAccessibleState(ui::AccessibleViewState* state) {
+  ActionableView::GetAccessibleState(state);
+
+  if (checkable_) {
+    state->role = ui::AccessibilityTypes::ROLE_CHECKBUTTON;
+    state->state = checked_ ? ui::AccessibilityTypes::STATE_CHECKED : 0;
+  }
 }
 
 gfx::Size HoverHighlightView::GetPreferredSize() {

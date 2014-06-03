@@ -23,16 +23,29 @@ class SourceFile;
 // Two slashes at the beginning indicate a path relative to the source root.
 class SourceDir {
  public:
+  enum SwapIn { SWAP_IN };
+
   SourceDir();
   explicit SourceDir(const base::StringPiece& p);
+  // Swaps the given string in without copies. The given string will be empty
+  // after this call.
+  SourceDir(SwapIn, std::string* s);
   ~SourceDir();
 
   // Resolves a file or dir name relative to this source directory. Will return
   // an empty SourceDir/File on error. Empty input is always an error (it's
   // possible we should say ResolveRelativeDir vs. an empty string should be
   // the source dir, but we require "." instead).
-  SourceFile ResolveRelativeFile(const base::StringPiece& p) const;
-  SourceDir ResolveRelativeDir(const base::StringPiece& p) const;
+  //
+  // If source_root is supplied, these functions will additionally handle the
+  // case where the input is a system-absolute but still inside the source
+  // tree. This is the case for some external tools.
+  SourceFile ResolveRelativeFile(
+      const base::StringPiece& p,
+      const base::StringPiece& source_root = base::StringPiece()) const;
+  SourceDir ResolveRelativeDir(
+      const base::StringPiece& p,
+      const base::StringPiece& source_root = base::StringPiece()) const;
 
   // Resolves this source file relative to some given source root. Returns
   // an empty file path on error.
@@ -65,7 +78,7 @@ class SourceDir {
     return base::StringPiece(&value_[1], value_.size() - 1);
   }
 
-  void SwapInValue(std::string* v);
+  void SwapValue(std::string* v);
 
   bool operator==(const SourceDir& other) const {
     return value_ == other.value_;

@@ -13,12 +13,9 @@
 #include "chrome/common/content_settings.h"
 #include "content/public/renderer/render_process_observer.h"
 
+class ChromeContentRendererClient;
 class GURL;
 struct ContentSettings;
-
-namespace chrome {
-class ChromeContentRendererClient;
-}
 
 namespace content {
 class ResourceDispatcherDelegate;
@@ -31,14 +28,10 @@ class ResourceDispatcherDelegate;
 class ChromeRenderProcessObserver : public content::RenderProcessObserver {
  public:
   explicit ChromeRenderProcessObserver(
-      chrome::ChromeContentRendererClient* client);
+      ChromeContentRendererClient* client);
   virtual ~ChromeRenderProcessObserver();
 
   static bool is_incognito_process() { return is_incognito_process_; }
-
-  static bool extension_activity_log_enabled() {
-    return extension_activity_log_enabled_;
-  }
 
   // Needs to be called by RenderViews in case of navigations to execute
   // any 'clear cache' commands that were delayed until the next navigation.
@@ -52,9 +45,9 @@ class ChromeRenderProcessObserver : public content::RenderProcessObserver {
   // RenderProcessObserver implementation.
   virtual bool OnControlMessageReceived(const IPC::Message& message) OVERRIDE;
   virtual void WebKitInitialized() OVERRIDE;
+  virtual void OnRenderProcessShutdown() OVERRIDE;
 
   void OnSetIsIncognitoProcess(bool is_incognito_process);
-  void OnSetExtensionActivityLogEnabled(bool extension_activity_log_enabled);
   void OnSetContentSettingsForCurrentURL(
       const GURL& url, const ContentSettings& content_settings);
   void OnSetContentSettingRules(const RendererContentSettingRules& rules);
@@ -72,12 +65,16 @@ class ChromeRenderProcessObserver : public content::RenderProcessObserver {
   void OnToggleWebKitSharedTimer(bool suspend);
 
   static bool is_incognito_process_;
-  static bool extension_activity_log_enabled_;
   scoped_ptr<content::ResourceDispatcherDelegate> resource_delegate_;
-  chrome::ChromeContentRendererClient* client_;
+  ChromeContentRendererClient* client_;
   // If true, the web cache shall be cleared before the next navigation event.
   bool clear_cache_pending_;
   RendererContentSettingRules content_setting_rules_;
+
+  bool webkit_initialized_;
+  size_t pending_cache_min_dead_capacity_;
+  size_t pending_cache_max_dead_capacity_;
+  size_t pending_cache_capacity_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromeRenderProcessObserver);
 };

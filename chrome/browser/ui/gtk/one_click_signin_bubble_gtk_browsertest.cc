@@ -18,30 +18,32 @@
 class OneClickSigninBubbleGtkTest : public InProcessBrowserTest {
  public:
   OneClickSigninBubbleGtkTest()
-      : weak_ptr_factory_(this),
-        start_sync_callback_(
-            base::Bind(&OneClickSigninBubbleGtkTest::OnStartSync,
-                       weak_ptr_factory_.GetWeakPtr())),
-        bubble_(NULL) {}
+      : bubble_(NULL),
+        weak_ptr_factory_(this) {
+    start_sync_callback_ = base::Bind(&OneClickSigninBubbleGtkTest::OnStartSync,
+                                      weak_ptr_factory_.GetWeakPtr());
+
+  }
 
   virtual OneClickSigninBubbleGtk* MakeBubble(
     BrowserWindow::OneClickSigninBubbleType bubbleType) {
     return new OneClickSigninBubbleGtk(
         static_cast<BrowserWindowGtk*>(browser()->window()),
         bubbleType,
-        string16(),
-        string16(),
+        base::string16(),
+        base::string16(),
         start_sync_callback_);
   }
 
   MOCK_METHOD1(OnStartSync, void(OneClickSigninSyncStarter::StartSyncMode));
 
  protected:
-  base::WeakPtrFactory<OneClickSigninBubbleGtkTest> weak_ptr_factory_;
   BrowserWindow::StartSyncCallback start_sync_callback_;
 
   // Owns itself.
   OneClickSigninBubbleGtk* bubble_;
+
+  base::WeakPtrFactory<OneClickSigninBubbleGtkTest> weak_ptr_factory_;
 };
 
 // Test that the dialog calls the callback if the OK button is clicked.
@@ -79,7 +81,7 @@ IN_PROC_BROWSER_TEST_F(OneClickSigninBubbleGtkTest, DialogShowAndClickAdvanced){
 // Callback should be called to setup sync with default settings.
 IN_PROC_BROWSER_TEST_F(OneClickSigninBubbleGtkTest, DialogShowAndClose) {
   EXPECT_CALL(*this, OnStartSync(
-      OneClickSigninSyncStarter::SYNC_WITH_DEFAULT_SETTINGS)).Times(1);
+      OneClickSigninSyncStarter::UNDO_SYNC)).Times(1);
 
   MakeBubble(
     BrowserWindow::ONE_CLICK_SIGNIN_BUBBLE_TYPE_MODAL_DIALOG)->bubble_->Close();

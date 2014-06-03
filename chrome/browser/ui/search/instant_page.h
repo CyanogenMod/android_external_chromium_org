@@ -12,16 +12,12 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string16.h"
-#include "chrome/browser/search/instant_service_observer.h"
 #include "chrome/browser/ui/search/instant_ipc_sender.h"
 #include "chrome/browser/ui/search/search_model_observer.h"
-#include "chrome/common/instant_types.h"
-#include "chrome/common/omnibox_focus_state.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/page_transition_types.h"
 
 class GURL;
-class InstantService;
 class Profile;
 
 namespace content {
@@ -39,7 +35,6 @@ class Rect;
 // InstantPage is not used directly but via one of its derived classes,
 // InstantNTP and InstantTab.
 class InstantPage : public content::WebContentsObserver,
-                    public InstantServiceObserver,
                     public SearchModelObserver {
  public:
   // InstantPage calls its delegate in response to messages received from the
@@ -56,35 +51,6 @@ class InstantPage : public content::WebContentsObserver,
     virtual void InstantPageAboutToNavigateMainFrame(
         const content::WebContents* contents,
         const GURL& url) = 0;
-
-    // Called when the page wants the omnibox to be focused. |state| specifies
-    // the omnibox focus state.
-    virtual void FocusOmnibox(const content::WebContents* contents,
-                              OmniboxFocusState state) = 0;
-
-    // Called when the page wants to navigate to |url|. Usually used by the
-    // page to navigate to privileged destinations (e.g. chrome:// URLs) or to
-    // navigate to URLs that are hidden from the page using Restricted IDs (rid
-    // in the API).
-    virtual void NavigateToURL(const content::WebContents* contents,
-                               const GURL& url,
-                               content::PageTransition transition,
-                               WindowOpenDisposition disposition,
-                               bool is_search_type) = 0;
-
-    // Called when the page wants to paste the |text| (or the clipboard content
-    // if the |text| is empty) into the omnibox.
-    virtual void PasteIntoOmnibox(const content::WebContents* contents,
-                                  const string16& text) = 0;
-
-    // Called when the SearchBox wants to delete a Most Visited item.
-    virtual void DeleteMostVisitedItem(const GURL& url) = 0;
-
-    // Called when the SearchBox wants to undo a Most Visited deletion.
-    virtual void UndoMostVisitedDeletion(const GURL& url) = 0;
-
-    // Called when the SearchBox wants to undo all Most Visited deletions.
-    virtual void UndoAllMostVisitedDeletions() = 0;
 
     // Called when the page fails to load for whatever reason.
     virtual void InstantPageLoadFailed(content::WebContents* contents) = 0;
@@ -115,10 +81,6 @@ class InstantPage : public content::WebContentsObserver,
   // chrome::kChromeSearchLocalNTPURL).
   virtual bool IsLocal() const;
 
-  void InitializeFonts();
-
-  void InitializePromos();
-
  protected:
   InstantPage(Delegate* delegate, const std::string& instant_url,
               Profile* profile, bool is_incognito);
@@ -136,31 +98,23 @@ class InstantPage : public content::WebContentsObserver,
   // choose to ignore some or all of the received messages by overriding these
   // methods.
   virtual bool ShouldProcessAboutToNavigateMainFrame();
-  virtual bool ShouldProcessFocusOmnibox();
-  virtual bool ShouldProcessNavigateToURL();
-  virtual bool ShouldProcessPasteIntoOmnibox();
-  virtual bool ShouldProcessDeleteMostVisitedItem();
-  virtual bool ShouldProcessUndoMostVisitedDeletion();
-  virtual bool ShouldProcessUndoAllMostVisitedDeletions();
 
  private:
+  FRIEND_TEST_ALL_PREFIXES(InstantPageTest, IsLocal);
   FRIEND_TEST_ALL_PREFIXES(InstantPageTest,
-                           DispatchRequestToDeleteMostVisitedItem);
+                           DetermineIfPageSupportsInstant_Local);
   FRIEND_TEST_ALL_PREFIXES(InstantPageTest,
-                           DispatchRequestToUndoMostVisitedDeletion);
+                           DetermineIfPageSupportsInstant_NonLocal);
   FRIEND_TEST_ALL_PREFIXES(InstantPageTest,
-                           DispatchRequestToUndoAllMostVisitedDeletions);
+                           PageURLDoesntBelongToInstantRenderer);
+  FRIEND_TEST_ALL_PREFIXES(InstantPageTest, PageSupportsInstant);
   FRIEND_TEST_ALL_PREFIXES(InstantPageTest,
-                           IgnoreMessageIfThePageIsNotActive);
-  FRIEND_TEST_ALL_PREFIXES(InstantPageTest,
-                           IgnoreMessageReceivedFromThePage);
-  FRIEND_TEST_ALL_PREFIXES(InstantPageTest,
-                           IgnoreMessageReceivedFromIncognitoPage);
+                           AppropriateMessagesSentToIncognitoPages);
 
   // Overridden from content::WebContentsObserver:
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
   virtual void DidCommitProvisionalLoadForFrame(
       int64 frame_id,
+      const base::string16& frame_unique_name,
       bool is_main_frame,
       const GURL& url,
       content::PageTransition transition_type,
@@ -170,16 +124,12 @@ class InstantPage : public content::WebContentsObserver,
       const content::FrameNavigateParams& params) OVERRIDE;
   virtual void DidFailProvisionalLoad(
       int64 frame_id,
+      const base::string16& frame_unique_name,
       bool is_main_frame,
       const GURL& validated_url,
       int error_code,
-      const string16& error_description,
+      const base::string16& error_description,
       content::RenderViewHost* render_view_host) OVERRIDE;
-
-  // Overridden from InstantServiceObserver:
-  virtual void ThemeInfoChanged(const ThemeBackgroundInfo& theme_info) OVERRIDE;
-  virtual void MostVisitedItemsChanged(
-      const std::vector<InstantMostVisitedItem>& items) OVERRIDE;
 
   // Overridden from SearchModelObserver:
   virtual void ModelChanged(const SearchModel::State& old_state,
@@ -188,29 +138,12 @@ class InstantPage : public content::WebContentsObserver,
   // Update the status of Instant support.
   void InstantSupportDetermined(bool supports_instant);
 
-  void OnFocusOmnibox(int page_id, OmniboxFocusState state);
-  void OnSearchBoxNavigate(int page_id,
-                           const GURL& url,
-                           content::PageTransition transition,
-                           WindowOpenDisposition disposition,
-                           bool is_search_type);
-  void OnSearchBoxPaste(int page_id, const string16& text);
-  void OnCountMouseover(int page_id);
-  void OnDeleteMostVisitedItem(int page_id, const GURL& url);
-  void OnUndoMostVisitedDeletion(int page_id, const GURL& url);
-  void OnUndoAllMostVisitedDeletions(int page_id);
-
   void ClearContents();
 
-  // Removes recommended URLs if a matching URL is already open in the Browser,
-  // if the Most Visited Tile Placement experiment is enabled, and the client is
-  // in the experiment group.
-  void MaybeRemoveMostVisitedItems(std::vector<InstantMostVisitedItem>* items);
-
-  // Returns the InstantService for the |profile_|.
-  InstantService* GetInstantService();
-
+  // TODO(kmadhusu): Remove |profile_| from here and update InstantNTP to get
+  // |profile| from InstantNTPPrerenderer.
   Profile* profile_;
+
   Delegate* const delegate_;
   scoped_ptr<InstantIPCSender> ipc_sender_;
   const std::string instant_url_;

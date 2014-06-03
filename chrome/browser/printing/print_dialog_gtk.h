@@ -36,15 +36,13 @@ class PrintDialogGtk
 
   // printing::PrintDialogGtkInterface implementation.
   virtual void UseDefaultSettings() OVERRIDE;
-  virtual bool UpdateSettings(const base::DictionaryValue& job_settings,
-                              const printing::PageRanges& ranges,
-                              printing::PrintSettings* settings) OVERRIDE;
+  virtual bool UpdateSettings(printing::PrintSettings* settings) OVERRIDE;
   virtual void ShowDialog(
       gfx::NativeView parent_view,
       bool has_selection,
       const PrintingContextGtk::PrintSettingsCallback& callback) OVERRIDE;
   virtual void PrintDocument(const printing::Metafile* metafile,
-                             const string16& document_name) OVERRIDE;
+                             const base::string16& document_name) OVERRIDE;
   virtual void AddRefToDialog() OVERRIDE;
   virtual void ReleaseDialog() OVERRIDE;
 
@@ -60,7 +58,7 @@ class PrintDialogGtk
   CHROMEGTK_CALLBACK_1(PrintDialogGtk, void, OnResponse, int);
 
   // Prints document named |document_name|.
-  void SendDocumentToPrinter(const string16& document_name);
+  void SendDocumentToPrinter(const base::string16& document_name);
 
   // Handles print job response.
   static void OnJobCompletedThunk(GtkPrintJob* print_job,
@@ -69,9 +67,8 @@ class PrintDialogGtk
   void OnJobCompleted(GtkPrintJob* print_job, GError* error);
 
   // Helper function for initializing |context_|'s PrintSettings with a given
-  // set of |page_ranges| and |settings|.
-  void InitPrintSettings(const printing::PageRanges& page_ranges,
-                         printing::PrintSettings* settings);
+  // |settings|.
+  void InitPrintSettings(printing::PrintSettings* settings);
 
   // Printing dialog callback.
   PrintingContextGtk::PrintSettingsCallback callback_;

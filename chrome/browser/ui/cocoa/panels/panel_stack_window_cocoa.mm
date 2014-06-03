@@ -82,6 +82,11 @@ void PanelStackWindowCocoa::AddPanel(Panel* panel) {
 }
 
 void PanelStackWindowCocoa::RemovePanel(Panel* panel) {
+  if (IsAnimatingPanelBounds()) {
+    // This panel is gone. We should not perform any update to it.
+    bounds_updates_.erase(panel);
+  }
+
   panels_.remove(panel);
 
   // If the native panel is closed, the native window should already be gone.
@@ -293,7 +298,7 @@ void PanelStackWindowCocoa::Minimize() {
   // Provide the custom miniwindow image since there is nothing painted for
   // the background stack window.
   gfx::Size stack_window_size = GetStackWindowBounds().size();
-  gfx::Canvas canvas(stack_window_size, ui::SCALE_FACTOR_100P, true);
+  gfx::Canvas canvas(stack_window_size, 1.0f, true);
   int y = 0;
   Panels::const_iterator iter = panels_.begin();
   for (; iter != panels_.end(); ++iter) {

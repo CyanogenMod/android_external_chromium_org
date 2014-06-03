@@ -46,7 +46,7 @@ PepperPlatformVideoCapture::PepperPlatformVideoCapture(
 
 void PepperPlatformVideoCapture::StartCapture(
     media::VideoCapture::EventHandler* handler,
-    const media::VideoCaptureCapability& capability) {
+    const media::VideoCaptureParams& params) {
   DCHECK(handler == handler_);
 
   if (unbalanced_start_)
@@ -55,7 +55,7 @@ void PepperPlatformVideoCapture::StartCapture(
   if (video_capture_) {
     unbalanced_start_ = true;
     AddRef();  // Will be balanced in OnRemoved().
-    video_capture_->StartCapture(handler_proxy_.get(), capability);
+    video_capture_->StartCapture(handler_proxy_.get(), params);
   }
 }
 
@@ -71,22 +71,8 @@ void PepperPlatformVideoCapture::StopCapture(
   }
 }
 
-void PepperPlatformVideoCapture::FeedBuffer(
-    scoped_refptr<VideoFrameBuffer> buffer) {
-  if (video_capture_)
-    video_capture_->FeedBuffer(buffer);
-}
-
 bool PepperPlatformVideoCapture::CaptureStarted() {
   return handler_proxy_->state().started;
-}
-
-int PepperPlatformVideoCapture::CaptureWidth() {
-  return handler_proxy_->state().width;
-}
-
-int PepperPlatformVideoCapture::CaptureHeight() {
-  return handler_proxy_->state().height;
 }
 
 int PepperPlatformVideoCapture::CaptureFrameRate() {
@@ -145,23 +131,11 @@ void PepperPlatformVideoCapture::OnRemoved(VideoCapture* capture) {
   Release();  // Balance the AddRef() in StartCapture().
 }
 
-void PepperPlatformVideoCapture::OnBufferReady(
+void PepperPlatformVideoCapture::OnFrameReady(
     VideoCapture* capture,
-    scoped_refptr<VideoFrameBuffer> buffer) {
-  if (handler_) {
-    handler_->OnBufferReady(capture, buffer);
-  } else {
-    // Even after handler_ is detached, we have to return buffers that are in
-    // flight to us. Otherwise VideoCaptureController will not tear down.
-    FeedBuffer(buffer);
-  }
-}
-
-void PepperPlatformVideoCapture::OnDeviceInfoReceived(
-    VideoCapture* capture,
-    const media::VideoCaptureParams& device_info) {
+    const scoped_refptr<media::VideoFrame>& frame) {
   if (handler_)
-    handler_->OnDeviceInfoReceived(capture, device_info);
+    handler_->OnFrameReady(capture, frame);
 }
 
 PepperPlatformVideoCapture::~PepperPlatformVideoCapture() {

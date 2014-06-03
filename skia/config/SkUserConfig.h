@@ -123,12 +123,6 @@
 #define SK_SFNTLY_SUBSETTER \
     "third_party/sfntly/cpp/src/sample/chromium/font_subsetter.h"
 
-/*  Define this to remove dimension checks on bitmaps. Not all blits will be
-    correct yet, so this is mostly for debugging the implementation.
- */
-//#define SK_ALLOW_OVER_32K_BITMAPS
-
-
 /*  To write debug messages to a console, skia will call SkDebugf(...) following
     printf conventions (e.g. const char* format, ...). If you want to redirect
     this to something other than printf, define yours here
@@ -158,11 +152,17 @@
 
 // ===== Begin Chrome-specific definitions =====
 
+#ifdef SK_DEBUG
+#define SK_REF_CNT_MIXIN_INCLUDE "sk_ref_cnt_ext_debug.h"
+#else
+#define SK_REF_CNT_MIXIN_INCLUDE "sk_ref_cnt_ext_release.h"
+#endif
+
 #define SK_SCALAR_IS_FLOAT
 #undef SK_SCALAR_IS_FIXED
 
-#define SK_MSCALAR_IS_DOUBLE
-#undef SK_MSCALAR_IS_FLOAT
+#define SK_MSCALAR_IS_FLOAT
+#undef SK_MSCALAR_IS_DOUBLE
 
 #define GR_MAX_OFFSCREEN_AA_DIM     512
 
@@ -188,19 +188,6 @@ SK_API void SkDebugf_FileLine(const char* file, int line, bool fatal,
 #if defined(SK_BUILD_FOR_WIN32)
 
 #define SK_BUILD_FOR_WIN
-
-// VC8 doesn't support stdint.h, so we define those types here.
-#define SK_IGNORE_STDINT_DOT_H
-typedef signed char int8_t;
-typedef unsigned char uint8_t;
-typedef short int16_t;
-typedef unsigned short uint16_t;
-typedef int int32_t;
-typedef unsigned uint32_t;
-
-// VC doesn't support __restrict__, so make it a NOP.
-#undef SK_RESTRICT
-#define SK_RESTRICT
 
 // Skia uses this deprecated bzero function to fill zeros into a string.
 #define bzero(str, len) memset(str, 0, len)

@@ -84,7 +84,7 @@ class ScopedTempDirectory {
   // Creates a temporary directory.
   bool Initialize() {
     DCHECK(directory_.empty());
-    if (!file_util::CreateNewTempDirectory(&kTempDirPrefix[0], &directory_)) {
+    if (!base::CreateNewTempDirectory(&kTempDirPrefix[0], &directory_)) {
       LOG(DFATAL) << "Failed creating temporary directory.";
       return false;
     }
@@ -210,13 +210,13 @@ bool MappedFile::Initialize(base::PlatformFile file) {
 bool RunProcessAndWait(const wchar_t* exe_path, const std::wstring& cmdline,
                        int* exit_code) {
   bool result = true;
-  base::ProcessHandle process;
+  base::win::ScopedHandle process;
   base::LaunchOptions options;
   options.wait = true;
   options.start_hidden = true;
   if (base::LaunchProcess(cmdline, options, &process)) {
     if (exit_code) {
-      if (!GetExitCodeProcess(process,
+      if (!GetExitCodeProcess(process.Get(),
                               reinterpret_cast<DWORD*>(exit_code))) {
         PLOG(DFATAL) << "Failed getting the exit code for \""
                      << cmdline << "\".";
@@ -229,7 +229,6 @@ bool RunProcessAndWait(const wchar_t* exe_path, const std::wstring& cmdline,
     result = false;
   }
 
-  CloseHandle(process);
   return result;
 }
 

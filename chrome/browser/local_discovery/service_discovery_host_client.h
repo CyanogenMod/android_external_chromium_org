@@ -7,10 +7,13 @@
 
 #include <map>
 #include <string>
+#include <vector>
 
-#include "base/threading/non_thread_safe.h"
+#include "base/memory/scoped_vector.h"
 #include "chrome/common/local_discovery/service_discovery_client.h"
 #include "content/public/browser/utility_process_host_client.h"
+
+struct LocalDiscoveryMsg_SocketInfo;
 
 namespace base {
 class TaskRunner;
@@ -22,16 +25,20 @@ class UtilityProcessHost;
 
 namespace local_discovery {
 
+#if defined(OS_POSIX)
+typedef std::vector<LocalDiscoveryMsg_SocketInfo> SocketInfoList;
+#endif  // OS_POSIX
+
 // Implementation of ServiceDiscoveryClient that delegates all functionality to
 // utility process.
-class ServiceDiscoveryHostClient : public base::NonThreadSafe,
-                                   public ServiceDiscoveryClient,
-                                   public content::UtilityProcessHostClient {
+class ServiceDiscoveryHostClient
+    : public ServiceDiscoveryClient,
+      public content::UtilityProcessHostClient {
  public:
   ServiceDiscoveryHostClient();
 
   // Starts utility process with ServiceDiscoveryClient.
-  void Start();
+  void Start(const base::Closure& error_callback);
 
   // Shutdowns utility process.
   void Shutdown();
@@ -49,6 +56,7 @@ class ServiceDiscoveryHostClient : public base::NonThreadSafe,
       const LocalDomainResolver::IPAddressCallback& callback) OVERRIDE;
 
   // UtilityProcessHostClient implementation.
+  virtual void OnProcessCrashed(int exit_code) OVERRIDE;
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
  protected:
@@ -58,6 +66,7 @@ class ServiceDiscoveryHostClient : public base::NonThreadSafe,
   class ServiceWatcherProxy;
   class ServiceResolverProxy;
   class LocalDomainResolverProxy;
+  friend class ServiceDiscoveryClientMdns;
 
   typedef std::map<uint64, ServiceWatcher::UpdatedCallback> WatcherCallbacks;
   typedef std::map<uint64, ServiceResolver::ResolveCompleteCallback>
@@ -67,6 +76,12 @@ class ServiceDiscoveryHostClient : public base::NonThreadSafe,
 
   void StartOnIOThread();
   void ShutdownOnIOThread();
+
+#if defined(OS_POSIX)
+  void OnSocketsReady(const SocketInfoList& interfaces);
+#endif  // OS_POSIX
+
+  void InvalidateWatchers();
 
   void Send(IPC::Message* msg);
   void SendOnIOThread(IPC::Message* msg);
@@ -83,6 +98,7 @@ class ServiceDiscoveryHostClient : public base::NonThreadSafe,
   void UnregisterLocalDomainResolverCallback(uint64 id);
 
   // IPC Message handlers.
+  void OnError();
   void OnWatcherCallback(uint64 id,
                          ServiceWatcher::UpdateType update,
                          const std::string& service_name);
@@ -91,7 +107,8 @@ class ServiceDiscoveryHostClient : public base::NonThreadSafe,
                           const ServiceDescription& description);
   void OnLocalDomainResolverCallback(uint64 id,
                                      bool success,
-                                     const net::IPAddressNumber& address);
+                                     const net::IPAddressNumber& address_ipv4,
+                                     const net::IPAddressNumber& address_ipv6);
 
 
   // Runs watcher callback on owning thread.
@@ -105,17 +122,21 @@ class ServiceDiscoveryHostClient : public base::NonThreadSafe,
   // Runs local domain resolver callback on owning thread.
   void RunLocalDomainResolverCallback(uint64 id,
                                       bool success,
-                                      const net::IPAddressNumber& address);
+                                      const net::IPAddressNumber& address_ipv4,
+                                      const net::IPAddressNumber& address_ipv6);
 
 
   base::WeakPtr<content::UtilityProcessHost> utility_host_;
 
   // Incrementing counter to assign ID to watchers and resolvers.
   uint64 current_id_;
+  base::Closure error_callback_;
   WatcherCallbacks service_watcher_callbacks_;
   ResolverCallbacks service_resolver_callbacks_;
   DomainResolverCallbacks domain_resolver_callbacks_;
   scoped_refptr<base::TaskRunner> callback_runner_;
+  scoped_refptr<base::TaskRunner> io_runner_;
+  ScopedVector<IPC::Message> delayed_messages_;
 
   DISALLOW_COPY_AND_ASSIGN(ServiceDiscoveryHostClient);
 };

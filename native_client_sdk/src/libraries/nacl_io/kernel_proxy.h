@@ -8,18 +8,23 @@
 #include <map>
 #include <string>
 
+#include "nacl_io/event_emitter.h"
 #include "nacl_io/host_resolver.h"
 #include "nacl_io/kernel_object.h"
 #include "nacl_io/mount_factory.h"
+#include "nacl_io/mount_stream.h"
+#include "nacl_io/ossignal.h"
 #include "nacl_io/ossocket.h"
 #include "nacl_io/ostypes.h"
 #include "nacl_io/osutime.h"
 
+struct fuse_operations;
 struct timeval;
 
 namespace nacl_io {
 
 class PepperInterface;
+
 
 // KernelProxy provide one-to-one mapping for libc kernel calls.  Calls to the
 // proxy will result in IO access to the provided Mount and MountNode objects.
@@ -43,13 +48,20 @@ class KernelProxy : protected KernelObject {
 
   // Takes ownership of |ppapi|.
   // |ppapi| may be NULL. If so, no mount that uses pepper calls can be mounted.
-  virtual void Init(PepperInterface* ppapi);
+  virtual Error Init(PepperInterface* ppapi);
+
+  // Register/Unregister a new mount type. See the documentation in nacl_io.h
+  // for more info.
+  bool RegisterMountType(const char* mount_type, fuse_operations* fuse_ops);
+  bool UnregisterMountType(const char* mount_type);
+
+  virtual int pipe(int pipefds[2]);
 
   // NaCl-only function to read resources specified in the NMF file.
   virtual int open_resource(const char* file);
 
   // KernelHandle and FD allocation and manipulation functions.
-  virtual int open(const char* path, int oflag);
+  virtual int open(const char* path, int open_flags);
   virtual int close(int fd);
   virtual int dup(int fd);
   virtual int dup2(int fd, int newfd);
@@ -89,12 +101,15 @@ class KernelProxy : protected KernelObject {
   virtual ssize_t write(int fd, const void *buf, size_t nbyte);
 
   virtual int fchmod(int fd, int prot);
+  virtual int fcntl(int fd, int request, va_list args);
   virtual int fstat(int fd, struct stat *buf);
   virtual int getdents(int fd, void *buf, unsigned int count);
+  virtual int fchdir(int fd);
   virtual int ftruncate(int fd, off_t length);
   virtual int fsync(int fd);
+  virtual int fdatasync(int fd);
   virtual int isatty(int fd);
-  virtual int ioctl(int d, int request, char *argp);
+  virtual int ioctl(int fd, int request, va_list args);
 
   // lseek() relies on the mount's Stat() to determine whether or not the
   // file handle corresponding to fd is a directory
@@ -106,8 +121,13 @@ class KernelProxy : protected KernelObject {
   virtual int remove(const char* path);
   // unlink() is a simple wrapper around the mount's Unlink function.
   virtual int unlink(const char* path);
+  virtual int truncate(const char* path, off_t len);
+  virtual int lstat(const char* path, struct stat* buf);
+  virtual int rename(const char* path, const char* newpath);
   // access() uses the Mount's Stat().
   virtual int access(const char* path, int amode);
+  virtual int readlink(const char *path, char *buf, size_t count);
+  virtual int utimes(const char *filename, const struct timeval times[2]);
 
   virtual int link(const char* oldpath, const char* newpath);
   virtual int symlink(const char* oldpath, const char* newpath);
@@ -123,6 +143,10 @@ class KernelProxy : protected KernelObject {
   virtual int tcgetattr(int fd, struct termios* termios_p);
   virtual int tcsetattr(int fd, int optional_actions,
                            const struct termios *termios_p);
+
+  virtual int kill(pid_t pid, int sig);
+  virtual int sigaction(int signum, const struct sigaction* action,
+                        struct sigaction* oaction);
 
 #ifdef PROVIDES_SOCKET_API
   virtual int select(int nfds, fd_set* readfds, fd_set* writefds,
@@ -174,9 +198,11 @@ class KernelProxy : protected KernelObject {
 
  protected:
   MountFactoryMap_t factories_;
+  sdk_util::ScopedRef<MountStream> stream_mount_;
   int dev_;
   PepperInterface* ppapi_;
   static KernelProxy *s_instance_;
+  struct sigaction sigwinch_handler_;
 #ifdef PROVIDES_SOCKET_API
   HostResolver host_resolver_;
 #endif
@@ -185,6 +211,7 @@ class KernelProxy : protected KernelObject {
   virtual int AcquireSocketHandle(int fd, ScopedKernelHandle* handle);
 #endif
 
+  ScopedEventEmitter signal_emitter_;
   DISALLOW_COPY_AND_ASSIGN(KernelProxy);
 };
 

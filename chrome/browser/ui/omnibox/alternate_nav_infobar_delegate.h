@@ -5,32 +5,43 @@
 #ifndef CHROME_BROWSER_UI_OMNIBOX_ALTERNATE_NAV_INFOBAR_DELEGATE_H_
 #define CHROME_BROWSER_UI_OMNIBOX_ALTERNATE_NAV_INFOBAR_DELEGATE_H_
 
-#include "base/basictypes.h"
-#include "base/compiler_specific.h"
+#include "base/memory/scoped_ptr.h"
+#include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/infobars/infobar_delegate.h"
-#include "url/gurl.h"
 
 class AlternateNavInfoBarDelegate : public InfoBarDelegate {
  public:
-  // Creates an alternate nav infobar delegate and adds it to |infobar_service|.
-  static void Create(InfoBarService* infobar_service,
-                     const GURL& alternate_nav_url);
+  virtual ~AlternateNavInfoBarDelegate();
 
-  string16 GetMessageTextWithOffset(size_t* link_offset) const;
-  string16 GetLinkText() const;
+  // Creates an alternate nav infobar and delegate and adds the infobar to the
+  // infobar service for |web_contents|.
+  static void Create(content::WebContents* web_contents,
+                     const base::string16& text,
+                     const AutocompleteMatch& match,
+                     const GURL& search_url);
+
+  base::string16 GetMessageTextWithOffset(size_t* link_offset) const;
+  base::string16 GetLinkText() const;
   bool LinkClicked(WindowOpenDisposition disposition);
 
  private:
-  AlternateNavInfoBarDelegate(InfoBarService* owner,
-                              const GURL& alternate_nav_url);
-  virtual ~AlternateNavInfoBarDelegate();
+  AlternateNavInfoBarDelegate(Profile* profile,
+                              const base::string16& text,
+                              const AutocompleteMatch& match,
+                              const GURL& search_url);
+
+  // Returns an alternate nav infobar that owns |delegate|.
+  static scoped_ptr<InfoBar> CreateInfoBar(
+      scoped_ptr<AlternateNavInfoBarDelegate> delegate);
 
   // InfoBarDelegate:
-  virtual InfoBar* CreateInfoBar(InfoBarService* owner) OVERRIDE;
   virtual int GetIconID() const OVERRIDE;
   virtual Type GetInfoBarType() const OVERRIDE;
 
-  GURL alternate_nav_url_;
+  Profile* profile_;
+  const base::string16 text_;
+  const AutocompleteMatch match_;
+  const GURL search_url_;
 
   DISALLOW_COPY_AND_ASSIGN(AlternateNavInfoBarDelegate);
 };

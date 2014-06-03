@@ -20,6 +20,8 @@
 #include "ui/views/controls/menu/menu_item_view.h"
 #include "ui/views/controls/menu/menu_runner.h"
 
+namespace app_list {
+
 namespace {
 
 const int kPreferredWidth = 300;
@@ -36,32 +38,30 @@ const int kActionButtonRightMargin = 8;
 // Creates a RenderText of given |text| and |styles|. Caller takes ownership
 // of returned RenderText.
 gfx::RenderText* CreateRenderText(const base::string16& text,
-                                  const app_list::SearchResult::Tags& tags) {
+                                  const SearchResult::Tags& tags) {
   gfx::RenderText* render_text = gfx::RenderText::CreateInstance();
   render_text->SetText(text);
-  render_text->SetColor(app_list::kResultDefaultTextColor);
+  render_text->SetColor(kResultDefaultTextColor);
 
-  for (app_list::SearchResult::Tags::const_iterator it = tags.begin();
+  for (SearchResult::Tags::const_iterator it = tags.begin();
        it != tags.end();
        ++it) {
     // NONE means default style so do nothing.
-    if (it->styles == app_list::SearchResult::Tag::NONE)
+    if (it->styles == SearchResult::Tag::NONE)
       continue;
 
-    if (it->styles & app_list::SearchResult::Tag::MATCH)
+    if (it->styles & SearchResult::Tag::MATCH)
       render_text->ApplyStyle(gfx::BOLD, true, it->range);
-    if (it->styles & app_list::SearchResult::Tag::DIM)
-      render_text->ApplyColor(app_list::kResultDimmedTextColor, it->range);
-    else if (it->styles & app_list::SearchResult::Tag::URL)
-      render_text->ApplyColor(app_list::kResultURLTextColor, it->range);
+    if (it->styles & SearchResult::Tag::DIM)
+      render_text->ApplyColor(kResultDimmedTextColor, it->range);
+    else if (it->styles & SearchResult::Tag::URL)
+      render_text->ApplyColor(kResultURLTextColor, it->range);
   }
 
   return render_text;
 }
 
 }  // namespace
-
-namespace app_list {
 
 // static
 const char SearchResultView::kViewClassName[] = "ui/app_list/SearchResultView";
@@ -108,12 +108,18 @@ void SearchResultView::ClearResultNoRepaint() {
   result_ = NULL;
 }
 
+void SearchResultView::ClearSelectedAction() {
+  actions_view_->SetSelectedAction(-1);
+}
+
 void SearchResultView::UpdateTitleText() {
   if (!result_ || result_->title().empty()) {
     title_text_.reset();
+    SetAccessibleName(base::string16());
   } else {
     title_text_.reset(CreateRenderText(result_->title(),
                                        result_->title_tags()));
+    SetAccessibleName(result_->title());
   }
 }
 
@@ -163,6 +169,34 @@ void SearchResultView::Layout() {
       progress_width,
       progress_height);
   progress_bar_->SetBoundsRect(progress_bounds);
+}
+
+bool SearchResultView::OnKeyPressed(const ui::KeyEvent& event) {
+  // |result_| could be NULL when result list is changing.
+  if (!result_)
+    return false;
+
+  switch (event.key_code()) {
+    case ui::VKEY_TAB: {
+      int new_selected = actions_view_->selected_action()
+          + (event.IsShiftDown() ? -1 : 1);
+      actions_view_->SetSelectedAction(new_selected);
+      return actions_view_->IsValidActionIndex(new_selected);
+    }
+    case ui::VKEY_RETURN: {
+      int selected = actions_view_->selected_action();
+      if (actions_view_->IsValidActionIndex(selected)) {
+        OnSearchResultActionActivated(selected, event.flags());
+      } else {
+        delegate_->SearchResultActivated(this, event.flags());
+      }
+      return true;
+    }
+    default:
+      break;
+  }
+
+  return false;
 }
 
 void SearchResultView::ChildPreferredSizeChanged(views::View* child) {
@@ -257,6 +291,11 @@ void SearchResultView::OnIconChanged() {
     icon_->ResetImageSize();
   }
 
+  // Set the image to an empty image before we reset the image because
+  // since we're using the same backing store for our images, sometimes
+  // ImageView won't detect that we have a new image set due to the pixel
+  // buffer pointers remaining the same despite the image changing.
+  icon_->SetImage(gfx::ImageSkia());
   icon_->SetImage(image);
 }
 
@@ -272,7 +311,7 @@ void SearchResultView::OnIsInstallingChanged() {
 }
 
 void SearchResultView::OnPercentDownloadedChanged() {
-  progress_bar_->SetValue(result_->percent_downloaded() / 100.0);
+  progress_bar_->SetValue(result_ ? result_->percent_downloaded() / 100.0 : 0);
 }
 
 void SearchResultView::OnItemInstalled() {
@@ -285,7 +324,10 @@ void SearchResultView::OnItemUninstalled() {
 
 void SearchResultView::OnSearchResultActionActivated(size_t index,
                                                      int event_flags) {
-  DCHECK(result_);
+  // |result_| could be NULL when result list is changing.
+  if (!result_)
+    return;
+
   DCHECK_LT(index, result_->actions().size());
 
   delegate_->SearchResultActionActivated(this, index, event_flags);
@@ -294,6 +336,10 @@ void SearchResultView::OnSearchResultActionActivated(size_t index,
 void SearchResultView::ShowContextMenuForView(views::View* source,
                                               const gfx::Point& point,
                                               ui::MenuSourceType source_type) {
+  // |result_| could be NULL when result list is changing.
+  if (!result_)
+    return;
+
   ui::MenuModel* menu_model = result_->GetContextMenuModel();
   if (!menu_model)
     return;

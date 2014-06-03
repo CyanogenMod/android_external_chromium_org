@@ -16,8 +16,7 @@ namespace ash {
 namespace internal {
 class RootWindowController;
 
-// This class hides difference between two possible background implementations:
-// effective Layer-based for solid color, and Widget-based for images.
+// This class implements a widget-based wallpaper.
 // DesktopBackgroundWidgetController is owned by RootWindowController.
 // When the animation completes the old DesktopBackgroundWidgetController is
 // destroyed. Exported for tests.
@@ -26,7 +25,6 @@ class ASH_EXPORT DesktopBackgroundWidgetController
  public:
   // Create
   explicit DesktopBackgroundWidgetController(views::Widget* widget);
-  explicit DesktopBackgroundWidgetController(ui::Layer* layer);
 
   virtual ~DesktopBackgroundWidgetController();
 
@@ -39,7 +37,7 @@ class ASH_EXPORT DesktopBackgroundWidgetController
   // Move component from |src_container| in |root_window| to |dest_container|.
   // It is required for lock screen, when we need to move background so that
   // it hides user's windows. Returns true if there was something to reparent.
-  bool Reparent(aura::RootWindow* root_window,
+  bool Reparent(aura::Window* root_window,
                 int src_container,
                 int dest_container);
 
@@ -49,11 +47,9 @@ class ASH_EXPORT DesktopBackgroundWidgetController
   void StartAnimating(RootWindowController* root_window_controller);
 
   views::Widget* widget() { return widget_; }
-  ui::Layer* layer() { return layer_.get(); }
 
  private:
   views::Widget* widget_;
-  scoped_ptr<ui::Layer> layer_;
 
   DISALLOW_COPY_AND_ASSIGN(DesktopBackgroundWidgetController);
 };

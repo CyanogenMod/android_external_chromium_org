@@ -10,8 +10,6 @@
 #include "chrome/browser/storage_monitor/removable_storage_observer.h"
 #include "chrome/browser/storage_monitor/transient_device_ids.h"
 
-namespace chrome {
-
 StorageMonitor::Receiver::~Receiver() {
 }
 
@@ -82,7 +80,7 @@ void StorageMonitor::EnsureInitialized(base::Closure callback) {
   Init();
 }
 
-bool StorageMonitor::IsInitialized() {
+bool StorageMonitor::IsInitialized() const {
   return initialized_;
 }
 
@@ -174,5 +172,3 @@ void StorageMonitor::ProcessDetach(const std::string& id) {
         &RemovableStorageObserver::OnRemovableStorageDetached, info);
   }
 }
-
-}  // namespace chrome

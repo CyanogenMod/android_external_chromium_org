@@ -41,9 +41,9 @@ bool WebContentsDelegate::ShouldSuppressDialogs() {
 
 bool WebContentsDelegate::AddMessageToConsole(WebContents* source,
                                               int32 level,
-                                              const string16& message,
+                                              const base::string16& message,
                                               int32 line_no,
-                                              const string16& source_id) {
+                                              const base::string16& source_id) {
   return false;
 }
 
@@ -113,7 +113,7 @@ bool WebContentsDelegate::PreHandleKeyboardEvent(
 bool WebContentsDelegate::CanDragEnter(
     WebContents* source,
     const DropData& data,
-    WebKit::WebDragOperationsMask operations_allowed) {
+    blink::WebDragOperationsMask operations_allowed) {
   return true;
 }
 
@@ -125,18 +125,19 @@ bool WebContentsDelegate::ShouldCreateWebContents(
     WebContents* web_contents,
     int route_id,
     WindowContainerType window_container_type,
-    const string16& frame_name,
+    const base::string16& frame_name,
     const GURL& target_url,
-    const Referrer& referrer,
-    WindowOpenDisposition disposition,
-    const WebKit::WebWindowFeatures& features,
-    bool user_gesture,
-    bool opener_suppressed) {
+    const std::string& partition_id,
+    SessionStorageNamespace* session_storage_namespace) {
   return true;
 }
 
 JavaScriptDialogManager* WebContentsDelegate::GetJavaScriptDialogManager() {
   return NULL;
+}
+
+bool WebContentsDelegate::EmbedsFullscreenWidget() const {
+  return false;
 }
 
 bool WebContentsDelegate::IsFullscreenForTabOrPending(
@@ -145,7 +146,9 @@ bool WebContentsDelegate::IsFullscreenForTabOrPending(
 }
 
 content::ColorChooser* WebContentsDelegate::OpenColorChooser(
-    WebContents* web_contents, SkColor color) {
+    WebContents* web_contents,
+    SkColor color,
+    const std::vector<ColorSuggestion>& suggestions) {
   return NULL;
 }
 
@@ -180,6 +183,11 @@ void WebContentsDelegate::Attach(WebContents* web_contents) {
 void WebContentsDelegate::Detach(WebContents* web_contents) {
   DCHECK(attached_contents_.find(web_contents) != attached_contents_.end());
   attached_contents_.erase(web_contents);
+}
+
+gfx::Size WebContentsDelegate::GetSizeForNewRenderView(
+    const WebContents* web_contents) const {
+  return gfx::Size();
 }
 
 }  // namespace content

@@ -7,9 +7,6 @@
 #include "components/web_modal/web_contents_modal_dialog_manager_delegate.h"
 #include "content/public/browser/navigation_details.h"
 #include "content/public/browser/navigation_entry.h"
-#include "content/public/browser/notification_details.h"
-#include "content/public/browser/notification_source.h"
-#include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
@@ -25,9 +22,16 @@ WebContentsModalDialogManager::~WebContentsModalDialogManager() {
   DCHECK(child_dialogs_.empty());
 }
 
+void WebContentsModalDialogManager::SetDelegate(
+    WebContentsModalDialogManagerDelegate* d) {
+  delegate_ = d;
+  // Delegate can be NULL on Views/Win32 during tab drag.
+  native_manager_->HostChanged(d ? d->GetWebContentsModalDialogHost() : NULL);
+}
+
 void WebContentsModalDialogManager::ShowDialog(
     NativeWebContentsModalDialog dialog) {
-  child_dialogs_.push_back(dialog);
+  child_dialogs_.push_back(DialogState(dialog));
 
   native_manager_->ManageDialog(dialog);
 
@@ -38,13 +42,21 @@ void WebContentsModalDialogManager::ShowDialog(
   }
 }
 
-bool WebContentsModalDialogManager::IsShowingDialog() const {
+bool WebContentsModalDialogManager::IsDialogActive() const {
   return !child_dialogs_.empty();
 }
 
 void WebContentsModalDialogManager::FocusTopmostDialog() {
   DCHECK(!child_dialogs_.empty());
-  native_manager_->FocusDialog(child_dialogs_.front());
+  native_manager_->FocusDialog(child_dialogs_.front().dialog);
+}
+
+void WebContentsModalDialogManager::SetCloseOnInterstitialPage(
+    NativeWebContentsModalDialog dialog,
+    bool close) {
+  WebContentsModalDialogList::iterator loc = FindDialogState(dialog);
+  DCHECK(loc != child_dialogs_.end());
+  loc->close_on_interstitial_webui = close;
 }
 
 content::WebContents* WebContentsModalDialogManager::GetWebContents() const {
@@ -53,8 +65,7 @@ content::WebContents* WebContentsModalDialogManager::GetWebContents() const {
 
 void WebContentsModalDialogManager::WillClose(
     NativeWebContentsModalDialog dialog) {
-  WebContentsModalDialogList::iterator i(
-      std::find(child_dialogs_.begin(), child_dialogs_.end(), dialog));
+  WebContentsModalDialogList::iterator i = FindDialogState(dialog);
 
   // The Views tab contents modal dialog calls WillClose twice.  Ignore the
   // second invocation.
@@ -65,25 +76,9 @@ void WebContentsModalDialogManager::WillClose(
   child_dialogs_.erase(i);
   if (!child_dialogs_.empty() && removed_topmost_dialog &&
       !closing_all_dialogs_)
-    native_manager_->ShowDialog(child_dialogs_.front());
+    native_manager_->ShowDialog(child_dialogs_.front().dialog);
 
   BlockWebContentsInteraction(!child_dialogs_.empty());
-}
-
-void WebContentsModalDialogManager::Observe(
-    int type,
-    const content::NotificationSource& source,
-    const content::NotificationDetails& details) {
-  DCHECK(type == content::NOTIFICATION_WEB_CONTENTS_VISIBILITY_CHANGED);
-
-  if (child_dialogs_.empty())
-    return;
-
-  bool visible = *content::Details<bool>(details).ptr();
-  if (visible)
-    native_manager_->ShowDialog(child_dialogs_.front());
-  else
-    native_manager_->HideDialog(child_dialogs_.front());
 }
 
 WebContentsModalDialogManager::WebContentsModalDialogManager(
@@ -93,9 +88,31 @@ WebContentsModalDialogManager::WebContentsModalDialogManager(
       native_manager_(CreateNativeManager(this)),
       closing_all_dialogs_(false) {
   DCHECK(native_manager_);
-  registrar_.Add(this,
-                 content::NOTIFICATION_WEB_CONTENTS_VISIBILITY_CHANGED,
-                 content::Source<content::WebContents>(web_contents));
+}
+
+WebContentsModalDialogManager::DialogState::DialogState(
+    NativeWebContentsModalDialog dialog)
+    : dialog(dialog),
+#if defined(OS_WIN) || defined(USE_AURA)
+      close_on_interstitial_webui(true)
+#else
+      // TODO(wittman): Test that closing on interstitial webui works properly
+      // on Mac and use the true default for all platforms.
+      close_on_interstitial_webui(false)
+#endif
+                                         {
+}
+
+WebContentsModalDialogManager::WebContentsModalDialogList::iterator
+    WebContentsModalDialogManager::FindDialogState(
+        NativeWebContentsModalDialog dialog) {
+  WebContentsModalDialogList::iterator i;
+  for (i = child_dialogs_.begin(); i != child_dialogs_.end(); ++i) {
+    if (i->dialog == dialog)
+      break;
+  }
+
+  return i;
 }
 
 void WebContentsModalDialogManager::BlockWebContentsInteraction(bool blocked) {
@@ -118,7 +135,7 @@ void WebContentsModalDialogManager::CloseAllDialogs() {
 
   // Clear out any dialogs since we are leaving this page entirely.
   while (!child_dialogs_.empty())
-    native_manager_->CloseDialog(child_dialogs_.front());
+    native_manager_->CloseDialog(child_dialogs_.front().dialog);
 
   closing_all_dialogs_ = false;
 }
@@ -135,7 +152,17 @@ void WebContentsModalDialogManager::DidNavigateMainFrame(
 
 void WebContentsModalDialogManager::DidGetIgnoredUIEvent() {
   if (!child_dialogs_.empty())
-    native_manager_->FocusDialog(child_dialogs_.front());
+    native_manager_->FocusDialog(child_dialogs_.front().dialog);
+}
+
+void WebContentsModalDialogManager::WasShown() {
+  if (!child_dialogs_.empty())
+    native_manager_->ShowDialog(child_dialogs_.front().dialog);
+}
+
+void WebContentsModalDialogManager::WasHidden() {
+  if (!child_dialogs_.empty())
+    native_manager_->HideDialog(child_dialogs_.front().dialog);
 }
 
 void WebContentsModalDialogManager::WebContentsDestroyed(WebContents* tab) {
@@ -144,6 +171,17 @@ void WebContentsModalDialogManager::WebContentsDestroyed(WebContents* tab) {
   // some of these to close.  CloseAllDialogs is async, so it might get called
   // twice before it runs.
   CloseAllDialogs();
+}
+
+void WebContentsModalDialogManager::DidAttachInterstitialPage() {
+  // Copy the dialogs so we can close and remove them while iterating over the
+  // list.
+  WebContentsModalDialogList dialogs(child_dialogs_);
+  for (WebContentsModalDialogList::iterator it = dialogs.begin();
+       it != dialogs.end(); ++it) {
+    if (it->close_on_interstitial_webui)
+      native_manager_->CloseDialog(it->dialog);
+  }
 }
 
 }  // namespace web_modal

@@ -10,13 +10,13 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/extensions/api/profile_keyed_api_factory.h"
-#include "chrome/browser/extensions/event_router.h"
-#include "chrome/browser/extensions/extension_function.h"
+#include "chrome/browser/extensions/chrome_extension_function.h"
 #include "chrome/browser/task_manager/task_manager.h"
 #include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_widget_host.h"
+#include "extensions/browser/event_router.h"
 
 class Profile;
 
@@ -66,7 +66,7 @@ class ProcessesEventRouter : public TaskManagerModelObserver,
       content::RenderProcessHost* rph,
       content::RenderProcessHost::RendererClosedDetails* details);
 
-  void DispatchEvent(const char* event_name,
+  void DispatchEvent(const std::string& event_name,
                      scoped_ptr<base::ListValue> event_args);
 
   // Determines whether there is a registered listener for the specified event.
@@ -131,8 +131,7 @@ class ProcessesAPI : public ProfileKeyedAPI,
 
 // This extension function returns the Process object for the renderer process
 // currently in use by the specified Tab.
-class GetProcessIdForTabFunction : public AsyncExtensionFunction,
-                                   public content::NotificationObserver {
+class GetProcessIdForTabFunction : public ChromeAsyncExtensionFunction {
  public:
   GetProcessIdForTabFunction();
 
@@ -140,20 +139,13 @@ class GetProcessIdForTabFunction : public AsyncExtensionFunction,
   virtual ~GetProcessIdForTabFunction() {}
   virtual bool RunImpl() OVERRIDE;
 
-  // content::NotificationObserver implementation.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
-
   void GetProcessIdForTab();
-
-  content::NotificationRegistrar registrar_;
 
   // Storage for the tab ID parameter.
   int tab_id_;
 
-  DECLARE_EXTENSION_FUNCTION("experimental.processes.getProcessIdForTab",
-                             EXPERIMENTAL_PROCESSES_GETPROCESSIDFORTAB)
+  DECLARE_EXTENSION_FUNCTION("processes.getProcessIdForTab",
+                             PROCESSES_GETPROCESSIDFORTAB)
 };
 
 // Extension function that allows terminating Chrome subprocesses, by supplying
@@ -161,8 +153,7 @@ class GetProcessIdForTabFunction : public AsyncExtensionFunction,
 // Using unique IDs instead of OS process IDs allows two advantages:
 // * guaranteed uniqueness, since OS process IDs can be reused
 // * guards against killing non-Chrome processes
-class TerminateFunction : public AsyncExtensionFunction,
-                          public content::NotificationObserver {
+class TerminateFunction : public ChromeAsyncExtensionFunction {
  public:
   TerminateFunction();
 
@@ -170,26 +161,19 @@ class TerminateFunction : public AsyncExtensionFunction,
   virtual ~TerminateFunction() {}
   virtual bool RunImpl() OVERRIDE;
 
-  // content::NotificationObserver implementation.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
 
   void TerminateProcess();
-
-  content::NotificationRegistrar registrar_;
 
   // Storage for the process ID parameter.
   int process_id_;
 
-  DECLARE_EXTENSION_FUNCTION("experimental.processes.terminate",
-                             EXPERIMENTAL_PROCESSES_TERMINATE)
+  DECLARE_EXTENSION_FUNCTION("processes.terminate",
+                             PROCESSES_TERMINATE)
 };
 
 // Extension function which returns a set of Process objects, containing the
 // details corresponding to the process IDs supplied as input.
-class GetProcessInfoFunction : public AsyncExtensionFunction,
-                               public content::NotificationObserver {
+class GetProcessInfoFunction : public ChromeAsyncExtensionFunction {
  public:
   GetProcessInfoFunction();
 
@@ -197,14 +181,7 @@ class GetProcessInfoFunction : public AsyncExtensionFunction,
   virtual ~GetProcessInfoFunction();
   virtual bool RunImpl() OVERRIDE;
 
-  // content::NotificationObserver implementation.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
-
   void GatherProcessInfo();
-
-  content::NotificationRegistrar registrar_;
 
   // Member variables to store the function parameters
   std::vector<int> process_ids_;
@@ -212,8 +189,8 @@ class GetProcessInfoFunction : public AsyncExtensionFunction,
   bool memory_;
 #endif
 
-  DECLARE_EXTENSION_FUNCTION("experimental.processes.getProcessInfo",
-                             EXPERIMENTAL_PROCESSES_GETPROCESSINFO)
+  DECLARE_EXTENSION_FUNCTION("processes.getProcessInfo",
+                             PROCESSES_GETPROCESSINFO)
 };
 
 }  // namespace extensions

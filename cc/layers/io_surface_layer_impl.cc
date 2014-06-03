@@ -11,7 +11,7 @@
 #include "cc/quads/io_surface_draw_quad.h"
 #include "cc/trees/layer_tree_impl.h"
 #include "gpu/GLES2/gl2extchromium.h"
-#include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
+#include "gpu/command_buffer/client/gles2_interface.h"
 #include "third_party/khronos/GLES2/gl2.h"
 #include "third_party/khronos/GLES2/gl2ext.h"
 
@@ -21,7 +21,8 @@ IOSurfaceLayerImpl::IOSurfaceLayerImpl(LayerTreeImpl* tree_impl, int id)
     : LayerImpl(tree_impl, id),
       io_surface_id_(0),
       io_surface_changed_(false),
-      io_surface_texture_id_(0) {}
+      io_surface_texture_id_(0),
+      io_surface_resource_id_(0) {}
 
 IOSurfaceLayerImpl::~IOSurfaceLayerImpl() {
   if (!io_surface_texture_id_)
@@ -39,11 +40,11 @@ void IOSurfaceLayerImpl::DestroyTexture() {
   }
 
   if (io_surface_texture_id_) {
-    OutputSurface* output_surface = layer_tree_impl()->output_surface();
+    ContextProvider* context_provider =
+        layer_tree_impl()->output_surface()->context_provider().get();
     // TODO(skaslev): Implement this path for software compositing.
-    WebKit::WebGraphicsContext3D* context3d = output_surface->context3d();
-    if (context3d)
-      context3d->deleteTexture(io_surface_texture_id_);
+    if (context_provider)
+      context_provider->ContextGL()->DeleteTextures(1, &io_surface_texture_id_);
     io_surface_texture_id_ = 0;
   }
 }
@@ -67,30 +68,30 @@ bool IOSurfaceLayerImpl::WillDraw(DrawMode draw_mode,
     return false;
 
   if (io_surface_changed_) {
-    WebKit::WebGraphicsContext3D* context3d =
-        resource_provider->GraphicsContext3D();
-    if (!context3d) {
+    ContextProvider* context_provider =
+        layer_tree_impl()->output_surface()->context_provider().get();
+    if (!context_provider) {
       // TODO(skaslev): Implement this path for software compositing.
       return false;
     }
 
+    gpu::gles2::GLES2Interface* gl = context_provider->ContextGL();
+
     // TODO(ernstm): Do this in a way that we can track memory usage.
     if (!io_surface_texture_id_) {
-      io_surface_texture_id_ = context3d->createTexture();
+      gl->GenTextures(1, &io_surface_texture_id_);
       io_surface_resource_id_ =
           resource_provider->CreateResourceFromExternalTexture(
               GL_TEXTURE_RECTANGLE_ARB,
               io_surface_texture_id_);
     }
 
-    GLC(context3d,
-        context3d->bindTexture(GL_TEXTURE_RECTANGLE_ARB,
-                               io_surface_texture_id_));
-    context3d->texImageIOSurface2DCHROMIUM(GL_TEXTURE_RECTANGLE_ARB,
-                                           io_surface_size_.width(),
-                                           io_surface_size_.height(),
-                                           io_surface_id_,
-                                           0);
+    GLC(gl, gl->BindTexture(GL_TEXTURE_RECTANGLE_ARB, io_surface_texture_id_));
+    gl->TexImageIOSurface2DCHROMIUM(GL_TEXTURE_RECTANGLE_ARB,
+                                    io_surface_size_.width(),
+                                    io_surface_size_.height(),
+                                    io_surface_id_,
+                                    0);
     // Do not check for error conditions. texImageIOSurface2DCHROMIUM() is
     // supposed to hold on to the last good IOSurface if the new one is already
     // closed. This is only a possibility during live resizing of plugins.

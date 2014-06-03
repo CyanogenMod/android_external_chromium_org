@@ -24,8 +24,8 @@
 #include "content/public/common/content_switches.h"
 #include "gpu/command_buffer/service/in_process_command_buffer.h"
 #include "third_party/skia/include/core/SkBitmap.h"
+#include "third_party/skia/include/core/SkBitmapDevice.h"
 #include "third_party/skia/include/core/SkCanvas.h"
-#include "third_party/skia/include/core/SkDevice.h"
 #include "third_party/skia/include/core/SkGraphics.h"
 #include "third_party/skia/include/core/SkPicture.h"
 #include "third_party/skia/include/utils/SkCanvasStateUtils.h"
@@ -93,7 +93,7 @@ bool RasterizeIntoBitmap(JNIEnv* env,
                      bitmap_info.stride);
     bitmap.setPixels(pixels);
 
-    SkDevice device(bitmap);
+    SkBitmapDevice device(bitmap);
     SkCanvas canvas(&device);
     canvas.translate(-scroll_x, -scroll_y);
     succeeded = renderer.Run(&canvas);
@@ -105,11 +105,6 @@ bool RasterizeIntoBitmap(JNIEnv* env,
   }
 
   return succeeded;
-}
-
-bool RenderPictureToCanvas(SkPicture* picture, SkCanvas* canvas) {
-  canvas->drawPicture(*picture);
-  return true;
 }
 
 class ScopedPixelAccess {
@@ -178,7 +173,8 @@ ScopedAllowGL::~ScopedAllowGL() {
 
 bool ScopedAllowGL::allow_gl = false;
 
-base::LazyInstance<GLViewRendererManager>::Leaky g_view_renderer_manager;
+base::LazyInstance<GLViewRendererManager>::Leaky g_view_renderer_manager =
+    LAZY_INSTANCE_INITIALIZER;
 
 void RequestProcessGLOnUIThread() {
   if (!BrowserThread::CurrentlyOn(BrowserThread::UI)) {
@@ -195,23 +191,94 @@ void RequestProcessGLOnUIThread() {
   }
 }
 
-}  // namespace
+class DeferredGpuCommandService
+    : public gpu::InProcessCommandBuffer::Service,
+      public base::RefCountedThreadSafe<DeferredGpuCommandService> {
+ public:
+  DeferredGpuCommandService();
+
+  virtual void ScheduleTask(const base::Closure& task) OVERRIDE;
+  virtual void ScheduleIdleWork(const base::Closure& task) OVERRIDE;
+  virtual bool UseVirtualizedGLContexts() OVERRIDE;
+
+  void RunTasks();
+
+  virtual void AddRef() const OVERRIDE {
+    base::RefCountedThreadSafe<DeferredGpuCommandService>::AddRef();
+  }
+  virtual void Release() const OVERRIDE {
+    base::RefCountedThreadSafe<DeferredGpuCommandService>::Release();
+  }
+
+ protected:
+  virtual ~DeferredGpuCommandService();
+  friend class base::RefCountedThreadSafe<DeferredGpuCommandService>;
+
+ private:
+  base::Lock tasks_lock_;
+  std::queue<base::Closure> tasks_;
+  DISALLOW_COPY_AND_ASSIGN(DeferredGpuCommandService);
+};
+
+DeferredGpuCommandService::DeferredGpuCommandService() {}
+
+DeferredGpuCommandService::~DeferredGpuCommandService() {
+  base::AutoLock lock(tasks_lock_);
+  DCHECK(tasks_.empty());
+}
 
 // Called from different threads!
-static void ScheduleGpuWork() {
+void DeferredGpuCommandService::ScheduleTask(const base::Closure& task) {
+  {
+    base::AutoLock lock(tasks_lock_);
+    tasks_.push(task);
+  }
   if (ScopedAllowGL::IsAllowed()) {
-    gpu::InProcessCommandBuffer::ProcessGpuWorkOnCurrentThread();
+    RunTasks();
   } else {
     RequestProcessGLOnUIThread();
   }
 }
 
+void DeferredGpuCommandService::ScheduleIdleWork(
+    const base::Closure& callback) {
+  // TODO(sievers): Should this do anything?
+}
+
+bool DeferredGpuCommandService::UseVirtualizedGLContexts() { return true; }
+
+void DeferredGpuCommandService::RunTasks() {
+  bool has_more_tasks;
+  {
+    base::AutoLock lock(tasks_lock_);
+    has_more_tasks = tasks_.size() > 0;
+  }
+
+  while (has_more_tasks) {
+    base::Closure task;
+    {
+      base::AutoLock lock(tasks_lock_);
+      task = tasks_.front();
+      tasks_.pop();
+    }
+    task.Run();
+    {
+      base::AutoLock lock(tasks_lock_);
+      has_more_tasks = tasks_.size() > 0;
+    }
+
+  }
+}
+
+base::LazyInstance<scoped_refptr<DeferredGpuCommandService> > g_service =
+    LAZY_INSTANCE_INITIALIZER;
+
+}  // namespace
+
 // static
 void BrowserViewRenderer::SetAwDrawSWFunctionTable(
     AwDrawSWFunctionTable* table) {
   g_sw_draw_functions = table;
-  gpu::InProcessCommandBuffer::SetScheduleCallback(
-      base::Bind(&ScheduleGpuWork));
 }
 
 // static
@@ -258,18 +325,11 @@ InProcessViewRenderer::~InProcessViewRenderer() {
   DCHECK(web_contents_ == NULL);  // WebContentsGone should have been called.
 }
 
-
-// TODO(boliu): Should also call this when we know for sure we are no longer,
-// for example, when visible rect becomes 0.
 void InProcessViewRenderer::NoLongerExpectsDrawGL() {
   GLViewRendererManager& mru = g_view_renderer_manager.Get();
   if (manager_key_ != mru.NullKey()) {
     mru.NoLongerExpectsDrawGL(manager_key_);
     manager_key_ = mru.NullKey();
-
-    // TODO(boliu): If this is the first one and there are GL pending,
-    // requestDrawGL on next one.
-    // TODO(boliu): If this is the last one, lose all global contexts.
   }
 }
 
@@ -362,7 +422,7 @@ void InProcessViewRenderer::TrimMemory(int level) {
   TRACE_EVENT0("android_webview", "InProcessViewRenderer::TrimMemory");
   ScopedAppGLStateRestore state_restore(
       ScopedAppGLStateRestore::MODE_RESOURCE_MANAGEMENT);
-  gpu::InProcessCommandBuffer::ProcessGpuWorkOnCurrentThread();
+  g_service.Get()->RunTasks();
   ScopedAllowGL allow_gl;
 
   SetMemoryPolicy(policy);
@@ -400,7 +460,11 @@ bool InProcessViewRenderer::OnDraw(jobject java_canvas,
 bool InProcessViewRenderer::InitializeHwDraw() {
   TRACE_EVENT0("android_webview", "InitializeHwDraw");
   DCHECK(!gl_surface_);
-  gl_surface_  = new AwGLSurface;
+  gl_surface_ = new AwGLSurface;
+  if (!g_service.Get()) {
+    g_service.Get() = new DeferredGpuCommandService;
+    content::SynchronousCompositor::SetGpuService(g_service.Get());
+  }
   hardware_failed_ = !compositor_->InitializeHwDraw(gl_surface_);
   hardware_initialized_ = true;
 
@@ -425,7 +489,8 @@ void InProcessViewRenderer::DrawGL(AwDrawGLInfo* draw_info) {
   }
 
   ScopedAppGLStateRestore state_restore(ScopedAppGLStateRestore::MODE_DRAW);
-  gpu::InProcessCommandBuffer::ProcessGpuWorkOnCurrentThread();
+  if (g_service.Get())
+    g_service.Get()->RunTasks();
   ScopedAllowGL allow_gl;
 
   if (!attached_to_window_) {
@@ -702,7 +767,7 @@ void InProcessViewRenderer::OnDetachedFromWindow() {
 
     ScopedAppGLStateRestore state_restore(
         ScopedAppGLStateRestore::MODE_RESOURCE_MANAGEMENT);
-    gpu::InProcessCommandBuffer::ProcessGpuWorkOnCurrentThread();
+    g_service.Get()->RunTasks();
     ScopedAllowGL allow_gl;
     compositor_->ReleaseHwDraw();
     hardware_initialized_ = false;
@@ -896,15 +961,7 @@ void InProcessViewRenderer::EnsureContinuousInvalidation(
   if (!need_invalidate || block_invalidates_)
     return;
 
-  if (draw_info) {
-    draw_info->dirty_left = cached_global_visible_rect_.x();
-    draw_info->dirty_top = cached_global_visible_rect_.y();
-    draw_info->dirty_right = cached_global_visible_rect_.right();
-    draw_info->dirty_bottom = cached_global_visible_rect_.bottom();
-    draw_info->status_mask |= AwDrawGLInfo::kStatusMaskDraw;
-  } else {
-    client_->PostInvalidate();
-  }
+  client_->PostInvalidate();
 
   bool throttle_fallback_tick = (is_paused_ && !on_new_picture_enable_) ||
                                 (attached_to_window_ && !window_visible_);
@@ -946,7 +1003,7 @@ void InProcessViewRenderer::FallbackTickFired() {
 
 void InProcessViewRenderer::ForceFakeCompositeSW() {
   DCHECK(compositor_);
-  SkDevice device(SkBitmap::kARGB_8888_Config, 1, 1);
+  SkBitmapDevice device(SkBitmap::kARGB_8888_Config, 1, 1);
   SkCanvas canvas(&device);
   CompositeSW(&canvas);
 }

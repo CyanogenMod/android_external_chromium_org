@@ -22,6 +22,7 @@
 #include "base/win/windows_version.h"
 #include "base/win/wrapped_window_proc.h"
 #include "chrome/browser/browser_util_win.h"
+#include "chrome/browser/install_verification/win/install_verification.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_shortcut_manager.h"
 #include "chrome/browser/shell_integration.h"
@@ -30,6 +31,7 @@
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_result_codes.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/chrome_version_info.h"
 #include "chrome/common/env_vars.h"
 #include "chrome/installer/launcher_support/chrome_launcher_support.h"
 #include "chrome/installer/util/browser_distribution.h"
@@ -37,6 +39,7 @@
 #include "chrome/installer/util/install_util.h"
 #include "chrome/installer/util/l10n_string_util.h"
 #include "chrome/installer/util/shell_util.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/common/main_function_params.h"
 #include "grit/app_locale_settings.h"
 #include "grit/chromium_strings.h"
@@ -48,6 +51,7 @@
 #include "ui/base/ui_base_switches.h"
 #include "ui/base/win/message_box_win.h"
 #include "ui/gfx/platform_font_win.h"
+#include "ui/gfx/switches.h"
 
 namespace {
 
@@ -80,8 +84,12 @@ int GetMinimumFontSize() {
 
 class TranslationDelegate : public installer::TranslationDelegate {
  public:
-  virtual string16 GetLocalizedString(int installer_string_id) OVERRIDE;
+  virtual base::string16 GetLocalizedString(int installer_string_id) OVERRIDE;
 };
+
+bool IsSafeModeStart() {
+  return ::GetEnvironmentVariableA(chrome::kSafeModeEnvVar, NULL, 0) != 0;
+}
 
 }  // namespace
 
@@ -116,6 +124,8 @@ int DoUninstallTasks(bool chrome_still_running) {
 
   if (result != chrome::RESULT_CODE_UNINSTALL_USER_CANCEL) {
     // The following actions are just best effort.
+    // TODO(gab): Look into removing this code which is now redundant with the
+    // work done by setup.exe on uninstall.
     VLOG(1) << "Executing uninstall actions";
     if (!first_run::RemoveSentinel())
       VLOG(1) << "Failed to delete sentinel file.";
@@ -124,7 +134,8 @@ int DoUninstallTasks(bool chrome_still_running) {
       ShellUtil::ShortcutLocation user_shortcut_locations[] = {
         ShellUtil::SHORTCUT_LOCATION_DESKTOP,
         ShellUtil::SHORTCUT_LOCATION_QUICK_LAUNCH,
-        ShellUtil::SHORTCUT_LOCATION_START_MENU,
+        ShellUtil::SHORTCUT_LOCATION_START_MENU_CHROME_DIR,
+        ShellUtil::SHORTCUT_LOCATION_START_MENU_CHROME_APPS_DIR,
       };
       BrowserDistribution* dist = BrowserDistribution::GetDistribution();
       for (size_t i = 0; i < arraysize(user_shortcut_locations); ++i) {
@@ -141,18 +152,33 @@ int DoUninstallTasks(bool chrome_still_running) {
   return result;
 }
 
+void MaybeEnableHighResolutionTimeEverywhere() {
+  chrome::VersionInfo::Channel channel = chrome::VersionInfo::GetChannel();
+  bool user_enabled = CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kEnableHighResolutionTime);
+  if (user_enabled || channel == chrome::VersionInfo::CHANNEL_CANARY) {
+    bool is_enabled = base::TimeTicks::SetNowIsHighResNowIfSupported();
+    if (is_enabled && !user_enabled) {
+      // Ensure that all of the renderers will enable it too.
+      CommandLine::ForCurrentProcess()->AppendSwitch(
+          switches::kEnableHighResolutionTime);
+    }
+  }
+}
+
 // ChromeBrowserMainPartsWin ---------------------------------------------------
 
 ChromeBrowserMainPartsWin::ChromeBrowserMainPartsWin(
     const content::MainFunctionParams& parameters)
     : ChromeBrowserMainParts(parameters) {
+  MaybeEnableHighResolutionTimeEverywhere();
   if (base::win::IsMetroProcess()) {
     typedef const wchar_t* (*GetMetroSwitches)(void);
     GetMetroSwitches metro_switches_proc = reinterpret_cast<GetMetroSwitches>(
         GetProcAddress(base::win::GetMetroModule(),
                        "GetMetroCommandLineSwitches"));
     if (metro_switches_proc) {
-      string16 metro_switches = (*metro_switches_proc)();
+      base::string16 metro_switches = (*metro_switches_proc)();
       if (!metro_switches.empty()) {
         CommandLine extra_switches(CommandLine::NO_PROGRAM);
         extra_switches.ParseFromString(metro_switches);
@@ -190,6 +216,13 @@ void ChromeBrowserMainPartsWin::PreMainMessageLoopStart() {
 int ChromeBrowserMainPartsWin::PreCreateThreads() {
   int rv = ChromeBrowserMainParts::PreCreateThreads();
 
+  if (IsSafeModeStart()) {
+    // TODO(cpu): disable other troublesome features for safe mode.
+    CommandLine::ForCurrentProcess()->AppendSwitch(
+        switches::kDisableGpu);
+    CommandLine::ForCurrentProcess()->AppendSwitchASCII(
+        switches::kHighDPISupport, "0");
+  }
   // TODO(viettrungluu): why don't we run this earlier?
   if (!parsed_command_line().HasSwitch(switches::kNoErrorDialogs) &&
       base::win::GetVersion() < base::win::VERSION_XP) {
@@ -206,6 +239,18 @@ void ChromeBrowserMainPartsWin::ShowMissingLocaleMessageBox() {
   ui::MessageBox(NULL, ASCIIToUTF16(chrome_browser::kMissingLocaleDataMessage),
                  ASCIIToUTF16(chrome_browser::kMissingLocaleDataTitle),
                  MB_OK | MB_ICONERROR | MB_TOPMOST);
+}
+
+void ChromeBrowserMainPartsWin::PostBrowserStart() {
+  ChromeBrowserMainParts::PostBrowserStart();
+
+  // Set up a task to verify installed modules in the current process. Use a
+  // delay to reduce the impact on startup time.
+  content::BrowserThread::GetMessageLoopProxyForThread(
+      content::BrowserThread::UI)->PostDelayedTask(
+          FROM_HERE,
+          base::Bind(&VerifyInstallation),
+          base::TimeDelta::FromSeconds(45));
 }
 
 // static
@@ -229,9 +274,9 @@ void ChromeBrowserMainPartsWin::PrepareRestartOnCrashEnviroment(
   // The encoding we use for the info is "title|context|direction" where
   // direction is either env_vars::kRtlLocale or env_vars::kLtrLocale depending
   // on the current locale.
-  string16 dlg_strings(l10n_util::GetStringUTF16(IDS_CRASH_RECOVERY_TITLE));
+  base::string16 dlg_strings(l10n_util::GetStringUTF16(IDS_CRASH_RECOVERY_TITLE));
   dlg_strings.push_back('|');
-  string16 adjusted_string(
+  base::string16 adjusted_string(
       l10n_util::GetStringUTF16(IDS_CRASH_RECOVERY_CONTENT));
   base::i18n::AdjustStringForLocaleDirection(&adjusted_string);
   dlg_strings.append(adjusted_string);
@@ -281,7 +326,7 @@ void ChromeBrowserMainPartsWin::RegisterApplicationRestart(
 int ChromeBrowserMainPartsWin::HandleIconsCommands(
     const CommandLine& parsed_command_line) {
   if (parsed_command_line.HasSwitch(switches::kHideIcons)) {
-    string16 cp_applet;
+    base::string16 cp_applet;
     base::win::Version version = base::win::GetVersion();
     if (version >= base::win::VERSION_VISTA) {
       cp_applet.assign(L"Programs and Features");  // Windows Vista and later.
@@ -291,9 +336,9 @@ int ChromeBrowserMainPartsWin::HandleIconsCommands(
       return chrome::RESULT_CODE_UNSUPPORTED_PARAM;  // Not supported
     }
 
-    const string16 msg =
+    const base::string16 msg =
         l10n_util::GetStringFUTF16(IDS_HIDE_ICONS_NOT_SUPPORTED, cp_applet);
-    const string16 caption = l10n_util::GetStringUTF16(IDS_PRODUCT_NAME);
+    const base::string16 caption = l10n_util::GetStringUTF16(IDS_PRODUCT_NAME);
     const UINT flags = MB_OKCANCEL | MB_ICONWARNING | MB_TOPMOST;
     if (IDOK == ui::MessageBox(NULL, msg, caption, flags))
       ShellExecute(NULL, NULL, L"appwiz.cpl", NULL, NULL, SW_SHOWNORMAL);
@@ -324,9 +369,9 @@ bool ChromeBrowserMainPartsWin::CheckMachineLevelInstall() {
         // an invisible dialog.
         // TODO (gab): Get rid of this dialog altogether and auto-launch
         // system-level Chrome instead.
-        const string16 text =
+        const base::string16 text =
             l10n_util::GetStringUTF16(IDS_MACHINE_LEVEL_INSTALL_CONFLICT);
-        const string16 caption = l10n_util::GetStringUTF16(IDS_PRODUCT_NAME);
+        const base::string16 caption = l10n_util::GetStringUTF16(IDS_PRODUCT_NAME);
         const UINT flags = MB_OK | MB_ICONERROR | MB_TOPMOST;
         ui::MessageBox(NULL, text, caption, flags);
       }
@@ -339,7 +384,7 @@ bool ChromeBrowserMainPartsWin::CheckMachineLevelInstall() {
             installer::switches::kDoNotRemoveSharedItems);
 
         const base::FilePath setup_exe(uninstall_cmd.GetProgram());
-        const string16 params(uninstall_cmd.GetArgumentsString());
+        const base::string16 params(uninstall_cmd.GetArgumentsString());
 
         SHELLEXECUTEINFO sei = { sizeof(sei) };
         sei.fMask = SEE_MASK_NOASYNC;
@@ -360,7 +405,8 @@ bool ChromeBrowserMainPartsWin::CheckMachineLevelInstall() {
   return false;
 }
 
-string16 TranslationDelegate::GetLocalizedString(int installer_string_id) {
+base::string16 TranslationDelegate::GetLocalizedString(
+    int installer_string_id) {
   int resource_id = 0;
   switch (installer_string_id) {
   // HANDLE_STRING is used by the DO_INSTALLER_STRING_MAPPING macro which is in
@@ -376,7 +422,7 @@ string16 TranslationDelegate::GetLocalizedString(int installer_string_id) {
   }
   if (resource_id)
     return l10n_util::GetStringUTF16(resource_id);
-  return string16();
+  return base::string16();
 }
 
 // static

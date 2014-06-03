@@ -26,12 +26,12 @@ MockTabModalConfirmDialogDelegate::MockTabModalConfirmDialogDelegate(
 MockTabModalConfirmDialogDelegate::~MockTabModalConfirmDialogDelegate() {
 }
 
-string16 MockTabModalConfirmDialogDelegate::GetTitle() {
-  return string16();
+base::string16 MockTabModalConfirmDialogDelegate::GetTitle() {
+  return base::string16();
 }
 
-string16 MockTabModalConfirmDialogDelegate::GetMessage() {
-  return string16();
+base::string16 MockTabModalConfirmDialogDelegate::GetMessage() {
+  return base::string16();
 }
 
 void MockTabModalConfirmDialogDelegate::OnAccepted() {

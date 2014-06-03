@@ -8,7 +8,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/extensions/browser_event_router.h"
+#include "chrome/browser/extensions/api/extension_action/extension_action_api.h"
 #include "chrome/browser/extensions/extension_action.h"
 #include "chrome/browser/extensions/extension_action_manager.h"
 #include "chrome/browser/extensions/extension_service.h"
@@ -16,7 +16,6 @@
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sessions/session_id.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_messages.h"
 #include "chrome/common/extensions/extension_set.h"
 #include "content/public/browser/navigation_controller.h"
@@ -24,6 +23,7 @@
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/common/extension.h"
 #include "ipc/ipc_message.h"
 #include "ipc/ipc_message_macros.h"
 #include "url/gurl.h"
@@ -106,7 +106,7 @@ LocationBarController::Action ScriptBadgeController::OnClicked(
         NotifyChange();
 
       // Fire the scriptBadge.onClicked event.
-      GetExtensionService()->browser_event_router()->ScriptBadgeExecuted(
+      ExtensionActionAPI::ScriptBadgeExecuted(
           profile(), *script_badge, SessionID::IdForTab(web_contents()));
 
       // TODO(jyasskin): The fallback order should be user-defined popup ->
@@ -167,16 +167,24 @@ void ScriptBadgeController::OnScriptsExecuted(
 }
 
 Profile* ScriptBadgeController::profile() const {
-  return Profile::FromBrowserContext(web_contents()->GetBrowserContext());
+  content::WebContents* web_contents = this->web_contents();
+  if (web_contents)
+    return Profile::FromBrowserContext(web_contents->GetBrowserContext());
+
+  return NULL;
 }
 
 ExtensionService* ScriptBadgeController::GetExtensionService() const {
-  return ExtensionSystem::Get(profile())->extension_service();
+  Profile* profile = this->profile();
+  if (profile)
+    return ExtensionSystem::Get(profile)->extension_service();
+
+  return NULL;
 }
 
 int32 ScriptBadgeController::GetPageID() {
   content::NavigationEntry* nav_entry =
-      web_contents()->GetController().GetActiveEntry();
+      web_contents()->GetController().GetVisibleEntry();
   return nav_entry ? nav_entry->GetPageID() : -1;
 }
 

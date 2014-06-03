@@ -16,13 +16,11 @@
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "content/public/browser/browser_thread.h"
-#include "content/public/browser/notification_source.h"
 
 using content::BrowserThread;
 
 ExternalProcessImporterHost::ExternalProcessImporterHost()
-    : weak_ptr_factory_(this),
-      headless_(false),
+    : headless_(false),
       parent_window_(NULL),
       observer_(NULL),
       profile_(NULL),
@@ -32,12 +30,13 @@ ExternalProcessImporterHost::ExternalProcessImporterHost()
       client_(NULL),
       items_(0),
       cancelled_(false),
-      import_process_launched_(false) {
+      weak_ptr_factory_(this) {
 }
 
 void ExternalProcessImporterHost::Cancel() {
   cancelled_ = true;
-  if (import_process_launched_)
+  // There is only a |client_| if the import was started.
+  if (client_)
     client_->Cancel();
   NotifyImportEnded();  // Tells the observer that we're done, and deletes us.
 }
@@ -99,7 +98,7 @@ ExternalProcessImporterHost::~ExternalProcessImporterHost() {
 }
 
 void ExternalProcessImporterHost::LaunchImportIfReady() {
-  if (waiting_for_bookmarkbar_model_ || !registrar_.IsEmpty() ||
+  if (waiting_for_bookmarkbar_model_ || template_service_subscription_.get() ||
       !is_source_readable_ || cancelled_)
     return;
 
@@ -111,9 +110,8 @@ void ExternalProcessImporterHost::LaunchImportIfReady() {
   InProcessImporterBridge* bridge =
       new InProcessImporterBridge(writer_.get(),
                                   weak_ptr_factory_.GetWeakPtr());
-  client_ = new ExternalProcessImporterClient(this, source_profile_, items_,
-                                              bridge);
-  import_process_launched_ = true;
+  client_ = new ExternalProcessImporterClient(
+      weak_ptr_factory_.GetWeakPtr(), source_profile_, items_, bridge);
   client_->Start();
 }
 
@@ -135,11 +133,8 @@ void ExternalProcessImporterHost::BookmarkModelBeingDeleted(
 void ExternalProcessImporterHost::BookmarkModelChanged() {
 }
 
-void ExternalProcessImporterHost::Observe(int type,
-                           const content::NotificationSource& source,
-                           const content::NotificationDetails& details) {
-  DCHECK_EQ(type, chrome::NOTIFICATION_TEMPLATE_URL_SERVICE_LOADED);
-  registrar_.RemoveAll();
+void ExternalProcessImporterHost::OnTemplateURLServiceLoaded() {
+  template_service_subscription_.reset();
   LaunchImportIfReady();
 }
 
@@ -208,8 +203,9 @@ void ExternalProcessImporterHost::CheckForLoadedModels(uint16 items) {
     if (!writer_->TemplateURLServiceIsLoaded()) {
       TemplateURLService* model =
           TemplateURLServiceFactory::GetForProfile(profile_);
-      registrar_.Add(this, chrome::NOTIFICATION_TEMPLATE_URL_SERVICE_LOADED,
-                     content::Source<TemplateURLService>(model));
+      template_service_subscription_ = model->RegisterOnLoadedCallback(
+          base::Bind(&ExternalProcessImporterHost::OnTemplateURLServiceLoaded,
+                     weak_ptr_factory_.GetWeakPtr()));
       model->Load();
     }
   }

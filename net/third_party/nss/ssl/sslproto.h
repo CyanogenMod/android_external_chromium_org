@@ -162,11 +162,20 @@
 
 #define TLS_RSA_WITH_SEED_CBC_SHA		0x0096
 
+#define TLS_RSA_WITH_AES_128_GCM_SHA256         0x009C
+#define TLS_DHE_RSA_WITH_AES_128_GCM_SHA256     0x009E
+#define TLS_DHE_DSS_WITH_AES_128_GCM_SHA256     0x00A2
+
 /* TLS "Signaling Cipher Suite Value" (SCSV). May be requested by client.
  * Must NEVER be chosen by server.  SSL 3.0 server acknowledges by sending
  * back an empty Renegotiation Info (RI) server hello extension.
  */
 #define TLS_EMPTY_RENEGOTIATION_INFO_SCSV	0x00FF
+
+/* TLS_FALLBACK_SCSV is a signaling cipher suite value that indicates that a
+ * handshake is the result of TLS version fallback. This value is not IANA
+ * assigned. */
+#define TLS_FALLBACK_SCSV			0x5600
 
 /* Cipher Suite Values starting with 0xC000 are defined in informational
  * RFCs.
@@ -203,6 +212,14 @@
 
 #define TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256 0xC023
 #define TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256   0xC027
+
+#define TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256 0xC02B
+#define TLS_ECDH_ECDSA_WITH_AES_128_GCM_SHA256  0xC02D
+#define TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256   0xC02F
+#define TLS_ECDH_RSA_WITH_AES_128_GCM_SHA256    0xC031
+
+#define TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305	0xCC13
+#define TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305	0xCC14
 
 /* Netscape "experimental" cipher suites. */
 #define SSL_RSA_OLDFIPS_WITH_3DES_EDE_CBC_SHA	0xffe0

@@ -11,13 +11,13 @@
 #include "ash/screen_ash.h"
 #include "ash/shell.h"
 #include "ash/test/ash_test_base.h"
+#include "base/prefs/scoped_user_pref_update.h"
 #include "base/prefs/testing_pref_service.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/chromeos/display/display_configuration_observer.h"
 #include "chrome/browser/chromeos/login/mock_user_manager.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
-#include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chromeos/display/output_configurator.h"
@@ -60,22 +60,16 @@ class DisplayPreferencesTest : public ash::test::AshTestBase {
   void LoggedInAsUser() {
     EXPECT_CALL(*mock_user_manager_, IsUserLoggedIn())
         .WillRepeatedly(testing::Return(true));
-    EXPECT_CALL(*mock_user_manager_, IsLoggedInAsDemoUser())
-        .WillRepeatedly(testing::Return(false));
-    EXPECT_CALL(*mock_user_manager_, IsLoggedInAsGuest())
-        .WillRepeatedly(testing::Return(false));
-    EXPECT_CALL(*mock_user_manager_, IsLoggedInAsStub())
-        .WillRepeatedly(testing::Return(false));
+    EXPECT_CALL(*mock_user_manager_, IsLoggedInAsRegularUser())
+        .WillRepeatedly(testing::Return(true));
   }
 
   void LoggedInAsGuest() {
     EXPECT_CALL(*mock_user_manager_, IsUserLoggedIn())
         .WillRepeatedly(testing::Return(true));
-    EXPECT_CALL(*mock_user_manager_, IsLoggedInAsDemoUser())
+    EXPECT_CALL(*mock_user_manager_, IsLoggedInAsRegularUser())
         .WillRepeatedly(testing::Return(false));
-    EXPECT_CALL(*mock_user_manager_, IsLoggedInAsGuest())
-        .WillRepeatedly(testing::Return(true));
-    EXPECT_CALL(*mock_user_manager_, IsLoggedInAsStub())
+    EXPECT_CALL(*mock_user_manager_, IsLoggedInAsLocallyManagedUser())
         .WillRepeatedly(testing::Return(false));
   }
 
@@ -140,7 +134,7 @@ class DisplayPreferencesTest : public ash::test::AshTestBase {
         GetRegisteredDisplayLayout(pair).ToString();
   }
 
-  const PrefService* local_state() const { return &local_state_; }
+  PrefService* local_state() { return &local_state_; }
 
  private:
   MockUserManager* mock_user_manager_;  // Not owned.
@@ -175,11 +169,10 @@ TEST_F(DisplayPreferencesTest, PairedLayoutOverrides) {
   shell->display_manager()->UpdateDisplays();
   // Check if the layout settings are notified to the system properly.
   // The paired layout overrides old layout.
-  ash::DisplayController* display_controller = shell->display_controller();
   // Inverted one of for specified pair (id1, id2).  Not used for the pair
   // (id1, dummy_id) since dummy_id is not connected right now.
   EXPECT_EQ("top, 20",
-            display_controller->GetCurrentDisplayLayout().ToString());
+            shell->display_manager()->GetCurrentDisplayLayout().ToString());
   EXPECT_EQ("top, 20", GetRegisteredDisplayLayoutStr(id1, id2));
   EXPECT_EQ("left, 30", GetRegisteredDisplayLayoutStr(id1, dummy_id));
 }
@@ -190,7 +183,7 @@ TEST_F(DisplayPreferencesTest, BasicStores) {
   ash::internal::DisplayManager* display_manager =
       ash::Shell::GetInstance()->display_manager();
 
-  UpdateDisplay("200x200*2,400x300");
+  UpdateDisplay("200x200*2, 400x300#400x400|300x200");
   int64 id1 = gfx::Screen::GetNativeScreen()->GetPrimaryDisplay().id();
   gfx::Display::SetInternalDisplayId(id1);
   int64 id2 = ash::ScreenAsh::GetSecondaryDisplay().id();
@@ -271,7 +264,7 @@ TEST_F(DisplayPreferencesTest, BasicStores) {
   EXPECT_FALSE(property->GetInteger("width", &width));
   EXPECT_FALSE(property->GetInteger("height", &height));
 
-  display_manager->SetDisplayResolution(id2, gfx::Size(400, 300));
+  display_manager->SetDisplayResolution(id2, gfx::Size(300, 200));
 
   display_controller->SetPrimaryDisplayId(id2);
 
@@ -282,12 +275,13 @@ TEST_F(DisplayPreferencesTest, BasicStores) {
   EXPECT_FALSE(property->GetInteger("width", &width));
   EXPECT_FALSE(property->GetInteger("height", &height));
 
-  // External dispaly's resolution must be stored this time.
+  // External dispaly's resolution must be stored this time because
+  // it's not best.
   EXPECT_TRUE(properties->GetDictionary(base::Int64ToString(id2), &property));
   EXPECT_TRUE(property->GetInteger("width", &width));
   EXPECT_TRUE(property->GetInteger("height", &height));
-  EXPECT_EQ(400, width);
-  EXPECT_EQ(300, height);
+  EXPECT_EQ(300, width);
+  EXPECT_EQ(200, height);
 
   // The layout remains the same.
   EXPECT_TRUE(displays->GetDictionary(key, &layout_value));
@@ -331,12 +325,18 @@ TEST_F(DisplayPreferencesTest, BasicStores) {
   EXPECT_TRUE(properties->GetDictionary(base::Int64ToString(id2), &property));
   EXPECT_TRUE(property->GetInteger("width", &width));
   EXPECT_TRUE(property->GetInteger("height", &height));
-  EXPECT_EQ(400, width);
-  EXPECT_EQ(300, height);
+  EXPECT_EQ(300, width);
+  EXPECT_EQ(200, height);
 
   // Set new display's selected resolution.
-  display_manager->SetDisplayResolution(id2 + 1, gfx::Size(500, 400));
-  UpdateDisplay("200x200*2,500x400");
+  display_manager->RegisterDisplayProperty(id2 + 1,
+                                           gfx::Display::ROTATE_0,
+                                           1.0f,
+                                           NULL,
+                                           gfx::Size(500, 400));
+
+  UpdateDisplay("200x200*2, 600x500#600x500|500x400");
+
   // Update key as the 2nd display gets new id.
   id2 = ash::ScreenAsh::GetSecondaryDisplay().id();
   key = base::Int64ToString(id1) + "," + base::Int64ToString(id2);
@@ -362,14 +362,14 @@ TEST_F(DisplayPreferencesTest, BasicStores) {
 TEST_F(DisplayPreferencesTest, PreventStore) {
   ResolutionNotificationController::SuppressTimerForTest();
   LoggedInAsUser();
-  UpdateDisplay("400x300");
+  UpdateDisplay("400x300#500x400|400x300|300x200");
   int64 id = ash::Shell::GetScreen()->GetPrimaryDisplay().id();
   // Set display's resolution in single display. It creates the notification and
   // display preferences should not stored meanwhile.
   ash::Shell::GetInstance()->resolution_notification_controller()->
       SetDisplayResolutionAndNotify(
           id, gfx::Size(400, 300), gfx::Size(500, 400), base::Closure());
-  UpdateDisplay("500x400");
+  UpdateDisplay("500x400#500x400|400x300|300x200");
 
   const base::DictionaryValue* properties =
       local_state()->GetDictionary(prefs::kDisplayProperties);
@@ -390,7 +390,7 @@ TEST_F(DisplayPreferencesTest, PreventStore) {
   // by SetDisplayResolution.
   ash::Shell::GetInstance()->display_manager()->SetDisplayResolution(
       id, gfx::Size(300, 200));
-  UpdateDisplay("300x200");
+  UpdateDisplay("300x200#500x400|400x300|300x200");
 
   property = NULL;
   EXPECT_TRUE(properties->GetDictionary(base::Int64ToString(id), &property));
@@ -468,20 +468,44 @@ TEST_F(DisplayPreferencesTest, DontStoreInGuestMode) {
   gfx::Screen* screen = gfx::Screen::GetNativeScreen();
   EXPECT_EQ(id2, screen->GetPrimaryDisplay().id());
   EXPECT_EQ(ash::DisplayLayout::BOTTOM,
-            display_controller->GetCurrentDisplayLayout().position);
-  EXPECT_EQ(-10, display_controller->GetCurrentDisplayLayout().offset);
+            display_manager->GetCurrentDisplayLayout().position);
+  EXPECT_EQ(-10, display_manager->GetCurrentDisplayLayout().offset);
   const gfx::Display& primary_display = screen->GetPrimaryDisplay();
   EXPECT_EQ("178x176", primary_display.bounds().size().ToString());
   EXPECT_EQ(gfx::Display::ROTATE_90, primary_display.rotation());
 
   const ash::internal::DisplayInfo& info1 =
       display_manager->GetDisplayInfo(id1);
-  EXPECT_EQ(1.25f, info1.ui_scale());
+  EXPECT_EQ(1.25f, info1.configured_ui_scale());
 
   const ash::internal::DisplayInfo& info_primary =
       display_manager->GetDisplayInfo(new_primary);
   EXPECT_EQ(gfx::Display::ROTATE_90, info_primary.rotation());
-  EXPECT_EQ(1.0f, info_primary.ui_scale());
+  EXPECT_EQ(1.0f, info_primary.configured_ui_scale());
+}
+
+TEST_F(DisplayPreferencesTest, StorePowerStateNoLogin) {
+  EXPECT_FALSE(local_state()->HasPrefPath(prefs::kDisplayPowerState));
+
+  // Stores display prefs without login, which still stores the power state.
+  StoreDisplayPrefs();
+  EXPECT_TRUE(local_state()->HasPrefPath(prefs::kDisplayPowerState));
+}
+
+TEST_F(DisplayPreferencesTest, StorePowerStateGuest) {
+  EXPECT_FALSE(local_state()->HasPrefPath(prefs::kDisplayPowerState));
+
+  LoggedInAsGuest();
+  StoreDisplayPrefs();
+  EXPECT_TRUE(local_state()->HasPrefPath(prefs::kDisplayPowerState));
+}
+
+TEST_F(DisplayPreferencesTest, StorePowerStateNormalUser) {
+  EXPECT_FALSE(local_state()->HasPrefPath(prefs::kDisplayPowerState));
+
+  LoggedInAsUser();
+  StoreDisplayPrefs();
+  EXPECT_TRUE(local_state()->HasPrefPath(prefs::kDisplayPowerState));
 }
 
 TEST_F(DisplayPreferencesTest, DisplayPowerStateAfterRestart) {
@@ -491,6 +515,29 @@ TEST_F(DisplayPreferencesTest, DisplayPowerStateAfterRestart) {
   EXPECT_EQ(
       chromeos::DISPLAY_POWER_INTERNAL_OFF_EXTERNAL_ON,
       ash::Shell::GetInstance()->output_configurator()->power_state());
+}
+
+TEST_F(DisplayPreferencesTest, DontSaveAndRestoreAllOff) {
+  ash::Shell* shell = ash::Shell::GetInstance();
+  StoreDisplayPowerStateForTest(
+      chromeos::DISPLAY_POWER_INTERNAL_OFF_EXTERNAL_ON);
+  LoadDisplayPreferences(false);
+  // DisplayPowerState should be ignored at boot.
+  EXPECT_EQ(chromeos::DISPLAY_POWER_INTERNAL_OFF_EXTERNAL_ON,
+            shell->output_configurator()->power_state());
+
+  StoreDisplayPowerStateForTest(
+      chromeos::DISPLAY_POWER_ALL_OFF);
+  EXPECT_EQ(chromeos::DISPLAY_POWER_INTERNAL_OFF_EXTERNAL_ON,
+            shell->output_configurator()->power_state());
+  EXPECT_EQ("internal_off_external_on",
+            local_state()->GetString(prefs::kDisplayPowerState));
+
+  // Don't try to load
+  local_state()->SetString(prefs::kDisplayPowerState, "all_off");
+  LoadDisplayPreferences(false);
+  EXPECT_EQ(chromeos::DISPLAY_POWER_INTERNAL_OFF_EXTERNAL_ON,
+            shell->output_configurator()->power_state());
 }
 
 }  // namespace chromeos

@@ -9,12 +9,12 @@
 #include "base/logging.h"
 #include "base/strings/stringprintf.h"
 #include "base/values.h"
-#include "chrome/browser/signin/oauth2_token_service.h"
 #include "google_apis/gaia/gaia_constants.h"
 #include "google_apis/gaia/gaia_oauth_client.h"
 #include "google_apis/gaia/gaia_urls.h"
 #include "google_apis/gaia/google_service_auth_error.h"
 #include "google_apis/gaia/oauth2_api_call_flow.h"
+#include "google_apis/gaia/oauth2_token_service.h"
 #include "net/base/escape.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_errors.h"
@@ -52,7 +52,8 @@ class ManagedUserRefreshTokenFetcherImpl
       public GaiaOAuthClient::Delegate {
  public:
   ManagedUserRefreshTokenFetcherImpl(OAuth2TokenService* oauth2_token_service,
-                              URLRequestContextGetter* context);
+                                     const std::string& account_id,
+                                     URLRequestContextGetter* context);
   virtual ~ManagedUserRefreshTokenFetcherImpl();
 
   // ManagedUserRefreshTokenFetcher implementation:
@@ -89,6 +90,7 @@ class ManagedUserRefreshTokenFetcherImpl
   void DispatchGoogleServiceAuthError(const GoogleServiceAuthError& error,
                                       const std::string& token);
   OAuth2TokenService* oauth2_token_service_;
+  std::string account_id_;
   URLRequestContextGetter* context_;
 
   std::string device_name_;
@@ -104,8 +106,10 @@ class ManagedUserRefreshTokenFetcherImpl
 
 ManagedUserRefreshTokenFetcherImpl::ManagedUserRefreshTokenFetcherImpl(
     OAuth2TokenService* oauth2_token_service,
+    const std::string& account_id,
     URLRequestContextGetter* context)
     : oauth2_token_service_(oauth2_token_service),
+      account_id_(account_id),
       context_(context),
       access_token_expired_(false) {}
 
@@ -125,7 +129,8 @@ void ManagedUserRefreshTokenFetcherImpl::Start(
 void ManagedUserRefreshTokenFetcherImpl::StartFetching() {
   OAuth2TokenService::ScopeSet scopes;
   scopes.insert(GaiaUrls::GetInstance()->oauth1_login_scope());
-  access_token_request_ = oauth2_token_service_->StartRequest(scopes, this);
+  access_token_request_ = oauth2_token_service_->StartRequest(
+      account_id_, scopes, this);
 }
 
 void ManagedUserRefreshTokenFetcherImpl::OnGetTokenSuccess(
@@ -180,7 +185,8 @@ void ManagedUserRefreshTokenFetcherImpl::OnURLFetchComplete(
   int response_code = source->GetResponseCode();
   if (response_code == net::HTTP_UNAUTHORIZED && !access_token_expired_) {
     access_token_expired_ = true;
-    oauth2_token_service_->InvalidateToken(OAuth2TokenService::ScopeSet(),
+    oauth2_token_service_->InvalidateToken(account_id_,
+                                           OAuth2TokenService::ScopeSet(),
                                            access_token_);
     StartFetching();
     return;
@@ -265,9 +271,11 @@ void ManagedUserRefreshTokenFetcherImpl::DispatchGoogleServiceAuthError(
 // static
 scoped_ptr<ManagedUserRefreshTokenFetcher>
 ManagedUserRefreshTokenFetcher::Create(OAuth2TokenService* oauth2_token_service,
+                                       const std::string& account_id,
                                        URLRequestContextGetter* context) {
   scoped_ptr<ManagedUserRefreshTokenFetcher> fetcher(
-      new ManagedUserRefreshTokenFetcherImpl(oauth2_token_service, context));
+      new ManagedUserRefreshTokenFetcherImpl(oauth2_token_service, account_id,
+          context));
   return fetcher.Pass();
 }
 

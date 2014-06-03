@@ -17,6 +17,7 @@
 namespace ui {
 class MenuModel;
 }
+
 namespace views {
 class ImageButton;
 class ImageView;
@@ -27,14 +28,14 @@ class LinkListener;
 class MenuButton;
 class MenuButtonListener;
 class MenuRunner;
-}
+}  // namespace views
 
 class InfoBarView : public InfoBar,
                     public views::View,
                     public views::ButtonListener,
                     public views::ExternalFocusTracker {
  public:
-  InfoBarView(InfoBarService* owner, InfoBarDelegate* delegate);
+  explicit InfoBarView(scoped_ptr<InfoBarDelegate> delegate);
 
   const SkPath& fill_path() const { return fill_path_; }
   const SkPath& stroke_path() const { return stroke_path_; }
@@ -46,23 +47,23 @@ class InfoBarView : public InfoBar,
   virtual ~InfoBarView();
 
   // Creates a label with the appropriate font and color for an infobar.
-  views::Label* CreateLabel(const string16& text) const;
+  views::Label* CreateLabel(const base::string16& text) const;
 
   // Creates a link with the appropriate font and color for an infobar.
   // NOTE: Subclasses must ignore link clicks if we're unowned.
-  views::Link* CreateLink(const string16& text,
+  views::Link* CreateLink(const base::string16& text,
                           views::LinkListener* listener) const;
 
   // Creates a menu button with an infobar-specific appearance.
   // NOTE: Subclasses must ignore button presses if we're unowned.
   static views::MenuButton* CreateMenuButton(
-      const string16& text,
+      const base::string16& text,
       views::MenuButtonListener* menu_button_listener);
 
   // Creates a button with an infobar-specific appearance.
   // NOTE: Subclasses must ignore button presses if we're unowned.
   static views::LabelButton* CreateLabelButton(views::ButtonListener* listener,
-                                               const string16& text,
+                                               const base::string16& text,
                                                bool needs_elevation);
 
   // views::View:
@@ -86,6 +87,11 @@ class InfoBarView : public InfoBar,
   int StartX() const;
   int EndX() const;
 
+  // Given a control with size |prefsize|, returns the centered y position
+  // within us, taking into account animation so the control "slides in" (or
+  // out) as we animate open and closed.
+  int OffsetY(const gfx::Size& prefsize) const;
+
   // Convenience getter.
   const InfoBarContainer::Delegate* container_delegate() const;
 
@@ -98,6 +104,7 @@ class InfoBarView : public InfoBar,
 
  private:
   static const int kHorizontalPadding;
+  static const int kCloseButtonSpacing;
 
   // InfoBar:
   virtual void PlatformSpecificShow(bool animate) OVERRIDE;

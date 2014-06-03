@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-
 #import <Foundation/Foundation.h>
 #import <ImageCaptureCore/ImageCaptureCore.h>
 
@@ -11,12 +10,12 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/mac/foundation_util.h"
 #include "base/memory/weak_ptr.h"
-#include "base/message_loop/message_loop.h"
+#include "base/run_loop.h"
 #include "chrome/browser/storage_monitor/image_capture_device.h"
 #include "chrome/browser/storage_monitor/image_capture_device_manager.h"
 #include "chrome/browser/storage_monitor/test_storage_monitor.h"
-#include "chrome/test/base/testing_browser_process.h"
-#include "content/public/test/test_browser_thread.h"
+#include "content/public/browser/browser_thread.h"
+#include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 #if !defined(MAC_OS_X_VERSION_10_7) || \
@@ -256,14 +255,14 @@ class TestCameraListener
 class ImageCaptureDeviceManagerTest : public testing::Test {
  public:
   virtual void SetUp() OVERRIDE {
-    ui_thread_.reset(new content::TestBrowserThread(
-        content::BrowserThread::UI, &message_loop_));
-
-    monitor_ = chrome::test::TestStorageMonitor::CreateAndInstall();
+    monitor_ = TestStorageMonitor::CreateAndInstall();
   }
 
-  MockICCameraDevice* AttachDevice(
-      chrome::ImageCaptureDeviceManager* manager) {
+  virtual void TearDown() OVERRIDE {
+    TestStorageMonitor::RemoveSingleton();
+  }
+
+  MockICCameraDevice* AttachDevice(ImageCaptureDeviceManager* manager) {
     // Ownership will be passed to the device browser delegate.
     base::scoped_nsobject<MockICCameraDevice> device(
         [[MockICCameraDevice alloc] init]);
@@ -272,26 +271,23 @@ class ImageCaptureDeviceManagerTest : public testing::Test {
     return device.autorelease();
   }
 
-  void DetachDevice(chrome::ImageCaptureDeviceManager* manager,
+  void DetachDevice(ImageCaptureDeviceManager* manager,
                     ICCameraDevice* device) {
     id<ICDeviceBrowserDelegate> delegate = manager->device_browser();
     [delegate deviceBrowser:nil didRemoveDevice:device moreGoing:NO];
   }
 
  protected:
-  base::MessageLoopForUI message_loop_;
-  scoped_ptr<content::TestBrowserThread> ui_thread_;
-
-  chrome::test::TestStorageMonitor* monitor_;
+  content::TestBrowserThreadBundle thread_bundle_;
+  TestStorageMonitor* monitor_;
   TestCameraListener listener_;
 };
 
 TEST_F(ImageCaptureDeviceManagerTest, TestAttachDetach) {
-  chrome::ImageCaptureDeviceManager manager;
+  ImageCaptureDeviceManager manager;
   manager.SetNotifications(monitor_->receiver());
   ICCameraDevice* device = AttachDevice(&manager);
-  std::vector<chrome::StorageInfo> devices =
-      monitor_->GetAllAvailableStorages();
+  std::vector<StorageInfo> devices = monitor_->GetAllAvailableStorages();
 
   ASSERT_EQ(1U, devices.size());
   EXPECT_EQ(std::string("ic:") + kDeviceId, devices[0].device_id());
@@ -302,15 +298,15 @@ TEST_F(ImageCaptureDeviceManagerTest, TestAttachDetach) {
 };
 
 TEST_F(ImageCaptureDeviceManagerTest, OpenCamera) {
-  chrome::ImageCaptureDeviceManager manager;
+  ImageCaptureDeviceManager manager;
   manager.SetNotifications(monitor_->receiver());
   ICCameraDevice* device = AttachDevice(&manager);
 
-  EXPECT_FALSE(chrome::ImageCaptureDeviceManager::deviceForUUID(
+  EXPECT_FALSE(ImageCaptureDeviceManager::deviceForUUID(
       "nonexistent"));
 
   base::scoped_nsobject<ImageCaptureDevice> camera(
-      [chrome::ImageCaptureDeviceManager::deviceForUUID(kDeviceId) retain]);
+      [ImageCaptureDeviceManager::deviceForUUID(kDeviceId) retain]);
 
   [camera setListener:listener_.AsWeakPtr()];
   [camera open];
@@ -333,17 +329,16 @@ TEST_F(ImageCaptureDeviceManagerTest, OpenCamera) {
 
   [camera close];
   DetachDevice(&manager, device);
-  EXPECT_FALSE(chrome::ImageCaptureDeviceManager::deviceForUUID(
-      kDeviceId));
+  EXPECT_FALSE(ImageCaptureDeviceManager::deviceForUUID(kDeviceId));
 }
 
 TEST_F(ImageCaptureDeviceManagerTest, RemoveCamera) {
-  chrome::ImageCaptureDeviceManager manager;
+  ImageCaptureDeviceManager manager;
   manager.SetNotifications(monitor_->receiver());
   ICCameraDevice* device = AttachDevice(&manager);
 
   base::scoped_nsobject<ImageCaptureDevice> camera(
-      [chrome::ImageCaptureDeviceManager::deviceForUUID(kDeviceId) retain]);
+      [ImageCaptureDeviceManager::deviceForUUID(kDeviceId) retain]);
 
   [camera setListener:listener_.AsWeakPtr()];
   [camera open];
@@ -353,16 +348,12 @@ TEST_F(ImageCaptureDeviceManagerTest, RemoveCamera) {
 }
 
 TEST_F(ImageCaptureDeviceManagerTest, DownloadFile) {
-  scoped_ptr<content::TestBrowserThread> file_thread(
-      new content::TestBrowserThread(
-          content::BrowserThread::FILE, &message_loop_));
-
-  chrome::ImageCaptureDeviceManager manager;
+  ImageCaptureDeviceManager manager;
   manager.SetNotifications(monitor_->receiver());
   MockICCameraDevice* device = AttachDevice(&manager);
 
   base::scoped_nsobject<ImageCaptureDevice> camera(
-      [chrome::ImageCaptureDeviceManager::deviceForUUID(kDeviceId) retain]);
+      [ImageCaptureDeviceManager::deviceForUUID(kDeviceId) retain]);
 
   [camera setListener:listener_.AsWeakPtr()];
   [camera open];
@@ -383,7 +374,7 @@ TEST_F(ImageCaptureDeviceManagerTest, DownloadFile) {
   // return us a not-found error.
   base::FilePath temp_file = temp_dir.path().Append("tempfile");
   [camera downloadFile:std::string("nonexistent") localPath:temp_file];
-  message_loop_.RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
   ASSERT_EQ(1U, listener_.downloads().size());
   EXPECT_EQ("nonexistent", listener_.downloads()[0]);
   EXPECT_EQ(base::PLATFORM_FILE_ERROR_NOT_FOUND, listener_.last_error());
@@ -394,14 +385,14 @@ TEST_F(ImageCaptureDeviceManagerTest, DownloadFile) {
   // library behavior. Our code then renames the file onto the requested
   // destination.
   [camera downloadFile:kTestFileName localPath:temp_file];
-  message_loop_.RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
 
   ASSERT_EQ(2U, listener_.downloads().size());
   EXPECT_EQ(kTestFileName, listener_.downloads()[1]);
   ASSERT_EQ(base::PLATFORM_FILE_OK, listener_.last_error());
   char file_contents[5];
-  ASSERT_EQ(4, file_util::ReadFile(temp_file, file_contents,
-                                   strlen(kTestFileContents)));
+  ASSERT_EQ(4, base::ReadFile(temp_file, file_contents,
+                              strlen(kTestFileContents)));
   EXPECT_EQ(kTestFileContents,
             std::string(file_contents, strlen(kTestFileContents)));
 
@@ -409,16 +400,12 @@ TEST_F(ImageCaptureDeviceManagerTest, DownloadFile) {
 }
 
 TEST_F(ImageCaptureDeviceManagerTest, TestSubdirectories) {
-  scoped_ptr<content::TestBrowserThread> file_thread(
-      new content::TestBrowserThread(
-          content::BrowserThread::FILE, &message_loop_));
-
-  chrome::ImageCaptureDeviceManager manager;
+  ImageCaptureDeviceManager manager;
   manager.SetNotifications(monitor_->receiver());
   MockICCameraDevice* device = AttachDevice(&manager);
 
   base::scoped_nsobject<ImageCaptureDevice> camera(
-      [chrome::ImageCaptureDeviceManager::deviceForUUID(kDeviceId) retain]);
+      [ImageCaptureDeviceManager::deviceForUUID(kDeviceId) retain]);
 
   [camera setListener:listener_.AsWeakPtr()];
   [camera open];
@@ -435,11 +422,11 @@ TEST_F(ImageCaptureDeviceManagerTest, TestSubdirectories) {
   base::FilePath temp_file = temp_dir.path().Append("tempfile");
 
   [camera downloadFile:("dir/" + kTestFileName) localPath:temp_file];
-  message_loop_.RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
 
   char file_contents[5];
-  ASSERT_EQ(4, file_util::ReadFile(temp_file, file_contents,
-                                   strlen(kTestFileContents)));
+  ASSERT_EQ(4, base::ReadFile(temp_file, file_contents,
+                              strlen(kTestFileContents)));
   EXPECT_EQ(kTestFileContents,
             std::string(file_contents, strlen(kTestFileContents)));
 

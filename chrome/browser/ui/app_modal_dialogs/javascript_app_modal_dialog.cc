@@ -8,10 +8,11 @@
 #include "chrome/browser/ui/app_modal_dialogs/native_app_modal_dialog.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
-#include "ui/base/text/text_elider.h"
+#include "ui/gfx/text_elider.h"
 
 #if defined(USE_AURA)
 #include "ui/aura/root_window.h"
+#include "ui/aura/window.h"
 #endif
 
 using content::JavaScriptDialogManager;
@@ -28,12 +29,14 @@ const int kMessageTextMaxRows = 32;
 const int kMessageTextMaxCols = 132;
 const int kDefaultPromptMaxRows = 24;
 const int kDefaultPromptMaxCols = 132;
-void EnforceMaxTextSize(const string16& in_string, string16* out_string) {
-  ui::ElideRectangleString(in_string, kMessageTextMaxRows,
+void EnforceMaxTextSize(const base::string16& in_string,
+                        base::string16* out_string) {
+  gfx::ElideRectangleString(in_string, kMessageTextMaxRows,
                            kMessageTextMaxCols, false, out_string);
 }
-void EnforceMaxPromptSize(const string16& in_string, string16* out_string) {
-  ui::ElideRectangleString(in_string, kDefaultPromptMaxRows,
+void EnforceMaxPromptSize(const base::string16& in_string,
+                          base::string16* out_string) {
+  gfx::ElideRectangleString(in_string, kDefaultPromptMaxRows,
                            kDefaultPromptMaxCols, false, out_string);
 }
 #else
@@ -41,11 +44,13 @@ void EnforceMaxPromptSize(const string16& in_string, string16* out_string) {
 // appropriately, but limit its overall length to something reasonable.
 const int kMessageTextMaxSize = 3000;
 const int kDefaultPromptMaxSize = 2000;
-void EnforceMaxTextSize(const string16& in_string, string16* out_string) {
-  ui::ElideString(in_string, kMessageTextMaxSize, out_string);
+void EnforceMaxTextSize(const base::string16& in_string,
+                        base::string16* out_string) {
+  gfx::ElideString(in_string, kMessageTextMaxSize, out_string);
 }
-void EnforceMaxPromptSize(const string16& in_string, string16* out_string) {
-  ui::ElideString(in_string, kDefaultPromptMaxSize, out_string);
+void EnforceMaxPromptSize(const base::string16& in_string,
+                          base::string16* out_string) {
+  gfx::ElideString(in_string, kDefaultPromptMaxSize, out_string);
 }
 #endif
 
@@ -58,10 +63,10 @@ ChromeJavaScriptDialogExtraData::ChromeJavaScriptDialogExtraData()
 JavaScriptAppModalDialog::JavaScriptAppModalDialog(
     WebContents* web_contents,
     ExtraDataMap* extra_data_map,
-    const string16& title,
+    const base::string16& title,
     content::JavaScriptMessageType javascript_message_type,
-    const string16& message_text,
-    const string16& default_prompt_text,
+    const base::string16& message_text,
+    const base::string16& default_prompt_text,
     bool display_suppress_checkbox,
     bool is_before_unload_dialog,
     bool is_reload,
@@ -106,17 +111,15 @@ void JavaScriptAppModalDialog::Invalidate() {
     return;
 
   AppModalDialog::Invalidate();
-  callback_.Reset();
+  if (!callback_.is_null()) {
+    callback_.Run(false, base::string16());
+    callback_.Reset();
+  }
   if (native_dialog())
     CloseModalDialog();
 }
 
 void JavaScriptAppModalDialog::OnCancel(bool suppress_js_messages) {
-  // If we are shutting down and this is an onbeforeunload dialog, cancel the
-  // shutdown.
-  if (is_before_unload_dialog_)
-    browser_shutdown::SetTryingToQuit(false);
-
   // We need to do this before WM_DESTROY (WindowClosing()) as any parent frame
   // will receive its activation messages before this dialog receives
   // WM_DESTROY. The parent frame would then try to activate any modal dialogs
@@ -125,12 +128,12 @@ void JavaScriptAppModalDialog::OnCancel(bool suppress_js_messages) {
   // is a temporary workaround.
   CompleteDialog();
 
-  NotifyDelegate(false, string16(), suppress_js_messages);
+  NotifyDelegate(false, base::string16(), suppress_js_messages);
 }
 
-void JavaScriptAppModalDialog::OnAccept(const string16& prompt_text,
+void JavaScriptAppModalDialog::OnAccept(const base::string16& prompt_text,
                                         bool suppress_js_messages) {
-  string16 prompt_text_to_use = prompt_text;
+  base::string16 prompt_text_to_use = prompt_text;
   // This is only for testing.
   if (use_override_prompt_text_)
     prompt_text_to_use = override_prompt_text_;
@@ -140,22 +143,25 @@ void JavaScriptAppModalDialog::OnAccept(const string16& prompt_text,
 }
 
 void JavaScriptAppModalDialog::OnClose() {
-  NotifyDelegate(false, string16(), false);
+  NotifyDelegate(false, base::string16(), false);
 }
 
 void JavaScriptAppModalDialog::SetOverridePromptText(
-    const string16& override_prompt_text) {
+    const base::string16& override_prompt_text) {
   override_prompt_text_ = override_prompt_text;
   use_override_prompt_text_ = true;
 }
 
 void JavaScriptAppModalDialog::NotifyDelegate(bool success,
-                                              const string16& user_input,
+                                              const base::string16& user_input,
                                               bool suppress_js_messages) {
   if (!IsValid())
     return;
 
-  callback_.Run(success, user_input);
+  if (!callback_.is_null()) {
+    callback_.Run(success, user_input);
+    callback_.Reset();
+  }
 
   // The callback_ above may delete web_contents_, thus removing the extra
   // data from the map owned by ChromeJavaScriptDialogManager. Make sure

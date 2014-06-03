@@ -50,88 +50,6 @@ std::vector<std::vector<DesktopRect> > MakeTestRectLists(DesktopSize size) {
 
 namespace remoting {
 
-// A class to test the message output of the encoder.
-class VideoEncoderMessageTester {
- public:
-  VideoEncoderMessageTester()
-      : begin_rect_(0),
-        rect_data_(0),
-        end_rect_(0),
-        state_(kWaitingForBeginRect),
-        strict_(false) {
-  }
-
-  ~VideoEncoderMessageTester() {
-    EXPECT_EQ(begin_rect_, end_rect_);
-    EXPECT_GT(begin_rect_, 0);
-    EXPECT_EQ(kWaitingForBeginRect, state_);
-    if (strict_) {
-      EXPECT_TRUE(region_.Equals(received_region_));
-    }
-  }
-
-  // Test that we received the correct packet.
-  void ReceivedPacket(VideoPacket* packet) {
-    if (state_ == kWaitingForBeginRect) {
-      EXPECT_TRUE((packet->flags() & VideoPacket::FIRST_PACKET) != 0);
-      state_ = kWaitingForRectData;
-      ++begin_rect_;
-
-      if (strict_) {
-        received_region_.AddRect(webrtc::DesktopRect::MakeXYWH(
-            packet->format().x(), packet->format().y(),
-            packet->format().width(), packet->format().height()));
-      }
-    } else {
-      EXPECT_FALSE((packet->flags() & VideoPacket::FIRST_PACKET) != 0);
-    }
-
-    if (state_ == kWaitingForRectData) {
-      if (packet->has_data()) {
-        ++rect_data_;
-      }
-
-      if ((packet->flags() & VideoPacket::LAST_PACKET) != 0) {
-        // Expect that we have received some data.
-        EXPECT_GT(rect_data_, 0);
-        rect_data_ = 0;
-        state_ = kWaitingForBeginRect;
-        ++end_rect_;
-      }
-
-      if ((packet->flags() & VideoPacket::LAST_PARTITION) != 0) {
-        // LAST_PARTITION must always be marked with LAST_PACKET.
-        EXPECT_TRUE((packet->flags() & VideoPacket::LAST_PACKET) != 0);
-      }
-    }
-  }
-
-  void set_strict(bool strict) {
-    strict_ = strict;
-  }
-
-  void AddRects(const DesktopRect* rects, int count) {
-    region_.AddRects(rects, count);
-  }
-
- private:
-  enum State {
-    kWaitingForBeginRect,
-    kWaitingForRectData,
-  };
-
-  int begin_rect_;
-  int rect_data_;
-  int end_rect_;
-  State state_;
-  bool strict_;
-
-  DesktopRegion region_;
-  DesktopRegion received_region_;
-
-  DISALLOW_COPY_AND_ASSIGN(VideoEncoderMessageTester);
-};
-
 class VideoDecoderTester {
  public:
   VideoDecoderTester(VideoDecoder* decoder,
@@ -140,17 +58,18 @@ class VideoDecoderTester {
       : screen_size_(screen_size),
         view_size_(view_size),
         strict_(false),
-        decoder_(decoder) {
+        decoder_(decoder),
+        frame_(NULL) {
     image_data_.reset(new uint8[
         view_size_.width() * view_size_.height() * kBytesPerPixel]);
     EXPECT_TRUE(image_data_.get());
     decoder_->Initialize(
-        SkISize::Make(screen_size_.width(), screen_size_.height()));
+        webrtc::DesktopSize(screen_size_.width(), screen_size_.height()));
   }
 
   void Reset() {
     expected_region_.Clear();
-    update_region_.setEmpty();
+    update_region_.Clear();
   }
 
   void ResetRenderedData() {
@@ -159,21 +78,16 @@ class VideoDecoderTester {
   }
 
   void ReceivedPacket(VideoPacket* packet) {
-    VideoDecoder::DecodeResult result = decoder_->DecodePacket(packet);
+    ASSERT_TRUE(decoder_->DecodePacket(*packet));
 
-    ASSERT_NE(VideoDecoder::DECODE_ERROR, result);
-
-    if (result == VideoDecoder::DECODE_DONE) {
-      RenderFrame();
-    }
+    RenderFrame();
   }
 
   void RenderFrame() {
     decoder_->RenderFrame(
-        SkISize::Make(view_size_.width(), view_size_.height()),
-        SkIRect::MakeWH(view_size_.width(), view_size_.height()),
-        image_data_.get(),
-        view_size_.width() * kBytesPerPixel,
+        webrtc::DesktopSize(view_size_.width(), view_size_.height()),
+        webrtc::DesktopRect::MakeWH(view_size_.width(), view_size_.height()),
+        image_data_.get(), view_size_.width() * kBytesPerPixel,
         &update_region_);
   }
 
@@ -206,20 +120,10 @@ class VideoDecoderTester {
     ASSERT_TRUE(frame_);
 
     // Test the content of the update region.
-    //
-    // TODO(sergeyu): Change this to use DesktopRegion when it's capable of
-    // merging the rectangles.
-    SkRegion expected_region;
-    for (webrtc::DesktopRegion::Iterator it(expected_region_);
-         !it.IsAtEnd(); it.Advance()) {
-      expected_region.op(
-          SkIRect::MakeXYWH(it.rect().top(), it.rect().left(),
-                            it.rect().width(), it.rect().height()),
-      SkRegion::kUnion_Op);
-    }
-    EXPECT_EQ(expected_region, update_region_);
+    EXPECT_TRUE(expected_region_.Equals(update_region_));
 
-    for (SkRegion::Iterator i(update_region_); !i.done(); i.next()) {
+    for (webrtc::DesktopRegion::Iterator i(update_region_); !i.IsAtEnd();
+         i.Advance()) {
       const int stride = view_size_.width() * kBytesPerPixel;
       EXPECT_EQ(stride, frame_->stride());
       const int offset =  stride * i.rect().top() +
@@ -244,7 +148,8 @@ class VideoDecoderTester {
     double max_error = 0.0;
     double sum_error = 0.0;
     int error_num = 0;
-    for (SkRegion::Iterator i(update_region_); !i.done(); i.next()) {
+    for (webrtc::DesktopRegion::Iterator i(update_region_); !i.IsAtEnd();
+         i.Advance()) {
       const int stride = view_size_.width() * kBytesPerPixel;
       const int offset =  stride * i.rect().top() +
           kBytesPerPixel * i.rect().left();
@@ -264,8 +169,8 @@ class VideoDecoderTester {
     EXPECT_LE(max_error, max_error_limit);
     double mean_error = sum_error / error_num;
     EXPECT_LE(mean_error, mean_error_limit);
-    LOG(INFO) << "Max error: " << max_error;
-    LOG(INFO) << "Mean error: " << mean_error;
+    VLOG(0) << "Max error: " << max_error;
+    VLOG(0) << "Mean error: " << mean_error;
   }
 
   double CalculateError(const uint8* original, const uint8* decoded) {
@@ -286,7 +191,7 @@ class VideoDecoderTester {
   DesktopSize view_size_;
   bool strict_;
   webrtc::DesktopRegion expected_region_;
-  SkRegion update_region_;
+  webrtc::DesktopRegion update_region_;
   VideoDecoder* decoder_;
   scoped_ptr<uint8[]> image_data_;
   webrtc::DesktopFrame* frame_;
@@ -298,9 +203,8 @@ class VideoDecoderTester {
 // the message to other subprograms for validaton.
 class VideoEncoderTester {
  public:
-  VideoEncoderTester(VideoEncoderMessageTester* message_tester)
-      : message_tester_(message_tester),
-        decoder_tester_(NULL),
+  VideoEncoderTester()
+      : decoder_tester_(NULL),
         data_available_(0) {
   }
 
@@ -310,16 +214,10 @@ class VideoEncoderTester {
 
   void DataAvailable(scoped_ptr<VideoPacket> packet) {
     ++data_available_;
-    message_tester_->ReceivedPacket(packet.get());
-
     // Send the message to the VideoDecoderTester.
     if (decoder_tester_) {
       decoder_tester_->ReceivedPacket(packet.get());
     }
-  }
-
-  void AddRects(const DesktopRect* rects, int count) {
-    message_tester_->AddRects(rects, count);
   }
 
   void set_decoder_tester(VideoDecoderTester* decoder_tester) {
@@ -327,7 +225,6 @@ class VideoEncoderTester {
   }
 
  private:
-  VideoEncoderMessageTester* message_tester_;
   VideoDecoderTester* decoder_tester_;
   int data_available_;
 
@@ -355,19 +252,15 @@ static void TestEncodingRects(VideoEncoder* encoder,
   for (int i = 0; i < count; ++i) {
     frame->mutable_updated_region()->AddRect(rects[i]);
   }
-  tester->AddRects(rects, count);
 
-  encoder->Encode(frame, base::Bind(
-      &VideoEncoderTester::DataAvailable, base::Unretained(tester)));
+  scoped_ptr<VideoPacket> packet = encoder->Encode(*frame);
+  tester->DataAvailable(packet.Pass());
 }
 
 void TestVideoEncoder(VideoEncoder* encoder, bool strict) {
   const int kSizes[] = {320, 319, 317, 150};
 
-  VideoEncoderMessageTester message_tester;
-  message_tester.set_strict(strict);
-
-  VideoEncoderTester tester(&message_tester);
+  VideoEncoderTester tester;
 
   for (size_t xi = 0; xi < arraysize(kSizes); ++xi) {
     for (size_t yi = 0; yi < arraysize(kSizes); ++yi) {
@@ -393,7 +286,6 @@ static void TestEncodeDecodeRects(VideoEncoder* encoder,
   for (int i = 0; i < count; ++i) {
     frame->mutable_updated_region()->AddRect(rects[i]);
   }
-  encoder_tester->AddRects(rects, count);
   decoder_tester->AddRects(rects, count);
 
   // Generate random data for the updated region.
@@ -411,8 +303,8 @@ static void TestEncodeDecodeRects(VideoEncoder* encoder,
     }
   }
 
-  encoder->Encode(frame, base::Bind(&VideoEncoderTester::DataAvailable,
-                                    base::Unretained(encoder_tester)));
+  scoped_ptr<VideoPacket> packet = encoder->Encode(*frame);
+  encoder_tester->DataAvailable(packet.Pass());
   decoder_tester->VerifyResults();
   decoder_tester->Reset();
 }
@@ -421,10 +313,7 @@ void TestVideoEncoderDecoder(
     VideoEncoder* encoder, VideoDecoder* decoder, bool strict) {
   DesktopSize kSize = DesktopSize(320, 240);
 
-  VideoEncoderMessageTester message_tester;
-  message_tester.set_strict(strict);
-
-  VideoEncoderTester encoder_tester(&message_tester);
+  VideoEncoderTester encoder_tester;
 
   scoped_ptr<webrtc::DesktopFrame> frame = PrepareFrame(kSize);
 
@@ -474,9 +363,8 @@ void TestVideoEncoderDecoderGradient(VideoEncoder* encoder,
   decoder_tester.set_frame(frame.get());
   decoder_tester.AddRegion(frame->updated_region());
 
-  encoder->Encode(frame.get(),
-                  base::Bind(&VideoDecoderTester::ReceivedScopedPacket,
-                             base::Unretained(&decoder_tester)));
+  scoped_ptr<VideoPacket> packet = encoder->Encode(*frame);
+  decoder_tester.ReceivedScopedPacket(packet.Pass());
 
   decoder_tester.VerifyResultsApprox(expected_result->data(),
                                      max_error_limit, mean_error_limit);
@@ -485,8 +373,9 @@ void TestVideoEncoderDecoderGradient(VideoEncoder* encoder,
   // invalidates the frame.
   decoder_tester.ResetRenderedData();
   decoder->Invalidate(
-      SkISize::Make(view_size.width(), view_size.height()),
-      SkRegion(SkIRect::MakeWH(view_size.width(), view_size.height())));
+      webrtc::DesktopSize(view_size.width(), view_size.height()),
+      webrtc::DesktopRegion(
+          webrtc::DesktopRect::MakeWH(view_size.width(), view_size.height())));
   decoder_tester.RenderFrame();
   decoder_tester.VerifyResultsApprox(expected_result->data(),
                                      max_error_limit, mean_error_limit);

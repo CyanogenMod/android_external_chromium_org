@@ -16,18 +16,16 @@
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/path_service.h"
+#include "base/safe_numerics.h"
 #include "base/sequenced_task_runner.h"
-#include "base/strings/utf_string_conversions.h"  // TODO(viettrungluu): delete me.
+#include "base/strings/utf_string_conversions.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_utility_messages.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_file_util.h"
 #include "chrome/common/extensions/extension_l10n_util.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/common/extensions/manifest_handlers/icons_handler.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/utility_process_host.h"
@@ -35,7 +33,9 @@
 #include "crypto/signature_verifier.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/crx_file.h"
+#include "extensions/common/extension.h"
 #include "extensions/common/id_util.h"
+#include "extensions/common/manifest_constants.h"
 #include "grit/generated_resources.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -72,7 +72,7 @@ void RecordSuccessfulUnpackTimeHistograms(
   // To get a sense of how CRX size impacts unpack time, record unpack
   // time for several increments of CRX size.
   int64 crx_file_size;
-  if (!file_util::GetFileSize(crx_path, &crx_file_size)) {
+  if (!base::GetFileSize(crx_path, &crx_file_size)) {
     UMA_HISTOGRAM_COUNTS("Extensions.SandboxUnpackSuccessCantGetCrxSize", 1);
     return;
   }
@@ -124,18 +124,18 @@ bool VerifyJunctionFreeLocation(base::FilePath* temp_dir) {
     return false;
 
   base::FilePath temp_file;
-  if (!file_util::CreateTemporaryFileInDir(*temp_dir, &temp_file)) {
+  if (!base::CreateTemporaryFileInDir(*temp_dir, &temp_file)) {
     LOG(ERROR) << temp_dir->value() << " is not writable";
     return false;
   }
   // NormalizeFilePath requires a non-empty file, so write some data.
   // If you change the exit points of this function please make sure all
   // exit points delete this temp file!
-  file_util::WriteFile(temp_file, ".", 1);
+  if (file_util::WriteFile(temp_file, ".", 1) != 1)
+    return false;
 
   base::FilePath normalized_temp_file;
-  bool normalized =
-      file_util::NormalizeFilePath(temp_file, &normalized_temp_file);
+  bool normalized = base::NormalizeFilePath(temp_file, &normalized_temp_file);
   if (!normalized) {
     // If |temp_file| contains a link, the sandbox will block al file system
     // operations, and the install will fail.
@@ -183,7 +183,7 @@ bool ReadImagesFromFile(const base::FilePath& extension_path,
   base::FilePath path =
       extension_path.AppendASCII(kDecodedImagesFilename);
   std::string file_str;
-  if (!file_util::ReadFileToString(path, &file_str))
+  if (!base::ReadFileToString(path, &file_str))
     return false;
 
   IPC::Message pickle(file_str.data(), file_str.size());
@@ -199,7 +199,7 @@ bool ReadMessageCatalogsFromFile(const base::FilePath& extension_path,
   base::FilePath path = extension_path.AppendASCII(
       kDecodedMessageCatalogsFilename);
   std::string file_str;
-  if (!file_util::ReadFileToString(path, &file_str))
+  if (!base::ReadFileToString(path, &file_str))
     return false;
 
   IPC::Message pickle(file_str.data(), file_str.size());
@@ -292,7 +292,7 @@ void SandboxedUnpacker::Start() {
   // will cause file system access outside the sandbox path, and the sandbox
   // will deny the operation.
   base::FilePath link_free_crx_path;
-  if (!file_util::NormalizeFilePath(temp_crx_path, &link_free_crx_path)) {
+  if (!base::NormalizeFilePath(temp_crx_path, &link_free_crx_path)) {
     LOG(ERROR) << "Could not get the normalized path of "
                << temp_crx_path.value();
     ReportFailure(
@@ -368,7 +368,7 @@ void SandboxedUnpacker::OnUnpackExtensionSucceeded(
   // Localize manifest now, so confirm UI gets correct extension name.
 
   // TODO(rdevlin.cronin): Continue removing std::string errors and replacing
-  // with string16
+  // with base::string16
   std::string utf8_error;
   if (!extension_l10n_util::LocalizeExtension(extension_root_,
                                               final_manifest.get(),
@@ -404,7 +404,7 @@ void SandboxedUnpacker::OnUnpackExtensionSucceeded(
   ReportSuccess(manifest, install_icon);
 }
 
-void SandboxedUnpacker::OnUnpackExtensionFailed(const string16& error) {
+void SandboxedUnpacker::OnUnpackExtensionFailed(const base::string16& error) {
   CHECK(unpacker_io_task_runner_->RunsTasksOnCurrentThread());
   got_response_ = true;
   ReportFailure(
@@ -415,7 +415,7 @@ void SandboxedUnpacker::OnUnpackExtensionFailed(const string16& error) {
 }
 
 bool SandboxedUnpacker::ValidateSignature() {
-  ScopedStdioHandle file(file_util::OpenFile(crx_path_, "rb"));
+  ScopedStdioHandle file(base::OpenFile(crx_path_, "rb"));
 
   if (!file.get()) {
     // Could not open crx file for reading.
@@ -577,7 +577,7 @@ bool SandboxedUnpacker::ValidateSignature() {
 }
 
 void SandboxedUnpacker::ReportFailure(FailureReason reason,
-                                      const string16& error) {
+                                      const base::string16& error) {
   UMA_HISTOGRAM_ENUMERATION("Extensions.SandboxUnpackFailureReason",
                             reason, NUM_FAILURE_REASONS);
   UMA_HISTOGRAM_TIMES("Extensions.SandboxUnpackFailureTime",
@@ -607,7 +607,7 @@ DictionaryValue* SandboxedUnpacker::RewriteManifestFile(
   // the original manifest. We do this to ensure the manifest doesn't contain an
   // exploitable bug that could be used to compromise the browser.
   scoped_ptr<DictionaryValue> final_manifest(manifest.DeepCopy());
-  final_manifest->SetString(extension_manifest_keys::kPublicKey, public_key_);
+  final_manifest->SetString(manifest_keys::kPublicKey, public_key_);
 
   std::string manifest_json;
   JSONStringValueSerializer serializer(&manifest_json);
@@ -624,8 +624,8 @@ DictionaryValue* SandboxedUnpacker::RewriteManifestFile(
 
   base::FilePath manifest_path =
       extension_root_.Append(kManifestFilename);
-  if (!file_util::WriteFile(manifest_path,
-                            manifest_json.data(), manifest_json.size())) {
+  int size = base::checked_numeric_cast<int>(manifest_json.size());
+  if (file_util::WriteFile(manifest_path, manifest_json.data(), size) != size) {
     // Error saving manifest.json.
     ReportFailure(
         ERROR_SAVING_MANIFEST_JSON,
@@ -737,7 +737,8 @@ bool SandboxedUnpacker::RewriteImageFiles(SkBitmap* install_icon) {
     // Note: we're overwriting existing files that the utility process wrote,
     // so we can be sure the directory exists.
     const char* image_data_ptr = reinterpret_cast<const char*>(&image_data[0]);
-    if (!file_util::WriteFile(path, image_data_ptr, image_data.size())) {
+    int size = base::checked_numeric_cast<int>(image_data.size());
+    if (file_util::WriteFile(path, image_data_ptr, size) != size) {
       // Error saving theme image.
       ReportFailure(
           ERROR_SAVING_THEME_IMAGE,
@@ -776,10 +777,7 @@ bool SandboxedUnpacker::RewriteCatalogFiles() {
       return false;
     }
 
-    // TODO(viettrungluu): Fix the |FilePath::FromWStringHack(UTF8ToWide())|
-    // hack and remove the corresponding #include.
-    base::FilePath relative_path =
-        base::FilePath::FromWStringHack(UTF8ToWide(it.key()));
+    base::FilePath relative_path = base::FilePath::FromUTF8Unsafe(it.key());
     relative_path = relative_path.Append(kMessagesFilename);
     if (relative_path.IsAbsolute() || relative_path.ReferencesParent()) {
       // Invalid path for catalog.
@@ -807,9 +805,8 @@ bool SandboxedUnpacker::RewriteCatalogFiles() {
 
     // Note: we're overwriting existing files that the utility process read,
     // so we can be sure the directory exists.
-    if (!file_util::WriteFile(path,
-                              catalog_json.c_str(),
-                              catalog_json.size())) {
+    int size = base::checked_numeric_cast<int>(catalog_json.size());
+    if (file_util::WriteFile(path, catalog_json.c_str(), size) != size) {
       // Error saving catalog.
       ReportFailure(
           ERROR_SAVING_CATALOG,

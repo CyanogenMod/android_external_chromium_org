@@ -29,8 +29,25 @@ class PrefixSetTest : public PlatformTest {
 
   // Generate a set of random prefixes to share between tests.  For
   // most tests this generation was a large fraction of the test time.
+  //
+  // The set should contain sparse areas where adjacent items are more
+  // than 2^16 apart, and dense areas where adjacent items are less
+  // than 2^16 apart.
   static void SetUpTestCase() {
-    for (size_t i = 0; i < 50000; ++i) {
+    // Distribute clusters of prefixes.
+    for (size_t i = 0; i < 250; ++i) {
+      // Unsigned for overflow characteristics.
+      const uint32 base = static_cast<uint32>(base::RandUint64());
+      for (size_t j = 0; j < 10; ++j) {
+        const uint32 delta = static_cast<uint32>(base::RandUint64() & 0xFFFF);
+        const SBPrefix prefix = static_cast<SBPrefix>(base + delta);
+        shared_prefixes_.push_back(prefix);
+      }
+    }
+
+    // Lay down a sparsely-distributed layer.
+    const size_t count = shared_prefixes_.size();
+    for (size_t i = 0; i < count; ++i) {
       const SBPrefix prefix = static_cast<SBPrefix>(base::RandUint64());
       shared_prefixes_.push_back(prefix);
     }
@@ -132,15 +149,15 @@ class PrefixSetTest : public PlatformTest {
   void ModifyAndCleanChecksum(const base::FilePath& filename, long offset,
                               int inc) {
     int64 size_64;
-    ASSERT_TRUE(file_util::GetFileSize(filename, &size_64));
+    ASSERT_TRUE(base::GetFileSize(filename, &size_64));
 
-    file_util::ScopedFILE file(file_util::OpenFile(filename, "r+b"));
+    file_util::ScopedFILE file(base::OpenFile(filename, "r+b"));
     IncrementIntAt(file.get(), offset, inc);
     CleanChecksum(file.get());
     file.reset();
 
     int64 new_size_64;
-    ASSERT_TRUE(file_util::GetFileSize(filename, &new_size_64));
+    ASSERT_TRUE(base::GetFileSize(filename, &new_size_64));
     ASSERT_EQ(new_size_64, size_64);
   }
 
@@ -356,7 +373,7 @@ TEST_F(PrefixSetTest, CorruptionHelpers) {
   ASSERT_TRUE(GetPrefixSetFile(&filename));
 
   // This will modify data in |index_|, which will fail the digest check.
-  file_util::ScopedFILE file(file_util::OpenFile(filename, "r+b"));
+  file_util::ScopedFILE file(base::OpenFile(filename, "r+b"));
   IncrementIntAt(file.get(), kPayloadOffset, 1);
   file.reset();
   scoped_ptr<safe_browsing::PrefixSet>
@@ -365,7 +382,7 @@ TEST_F(PrefixSetTest, CorruptionHelpers) {
 
   // Fix up the checksum and it will read successfully (though the
   // data will be wrong).
-  file.reset(file_util::OpenFile(filename, "r+b"));
+  file.reset(base::OpenFile(filename, "r+b"));
   CleanChecksum(file.get());
   file.reset();
   prefix_set.reset(safe_browsing::PrefixSet::LoadFile(filename));
@@ -426,7 +443,7 @@ TEST_F(PrefixSetTest, CorruptionPayload) {
   base::FilePath filename;
   ASSERT_TRUE(GetPrefixSetFile(&filename));
 
-  file_util::ScopedFILE file(file_util::OpenFile(filename, "r+b"));
+  file_util::ScopedFILE file(base::OpenFile(filename, "r+b"));
   ASSERT_NO_FATAL_FAILURE(IncrementIntAt(file.get(), 666, 1));
   file.reset();
   scoped_ptr<safe_browsing::PrefixSet>
@@ -440,8 +457,8 @@ TEST_F(PrefixSetTest, CorruptionDigest) {
   ASSERT_TRUE(GetPrefixSetFile(&filename));
 
   int64 size_64;
-  ASSERT_TRUE(file_util::GetFileSize(filename, &size_64));
-  file_util::ScopedFILE file(file_util::OpenFile(filename, "r+b"));
+  ASSERT_TRUE(base::GetFileSize(filename, &size_64));
+  file_util::ScopedFILE file(base::OpenFile(filename, "r+b"));
   long digest_offset = static_cast<long>(size_64 - sizeof(base::MD5Digest));
   ASSERT_NO_FATAL_FAILURE(IncrementIntAt(file.get(), digest_offset, 1));
   file.reset();
@@ -456,7 +473,7 @@ TEST_F(PrefixSetTest, CorruptionExcess) {
   ASSERT_TRUE(GetPrefixSetFile(&filename));
 
   // Add some junk to the trunk.
-  file_util::ScopedFILE file(file_util::OpenFile(filename, "ab"));
+  file_util::ScopedFILE file(base::OpenFile(filename, "ab"));
   const char buf[] = "im in ur base, killing ur d00dz.";
   ASSERT_EQ(strlen(buf), fwrite(buf, 1, strlen(buf), file.get()));
   file.reset();

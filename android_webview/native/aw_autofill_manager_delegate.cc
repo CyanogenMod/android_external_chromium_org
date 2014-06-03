@@ -6,6 +6,7 @@
 
 #include "android_webview/browser/aw_browser_context.h"
 #include "android_webview/browser/aw_content_browser_client.h"
+#include "android_webview/browser/aw_form_database_service.h"
 #include "android_webview/browser/aw_pref_store.h"
 #include "android_webview/native/aw_contents.h"
 #include "base/android/jni_android.h"
@@ -14,9 +15,9 @@
 #include "base/logging.h"
 #include "base/prefs/pref_registry_simple.h"
 #include "base/prefs/pref_service.h"
-#include "base/prefs/pref_service_builder.h"
-#include "components/autofill/content/browser/autocheckout/whitelist_manager.h"
+#include "base/prefs/pref_service_factory.h"
 #include "components/autofill/core/browser/autofill_popup_delegate.h"
+#include "components/autofill/core/browser/webdata/autofill_webdata_service.h"
 #include "components/autofill/core/common/autofill_pref_names.h"
 #include "components/user_prefs/user_prefs.h"
 #include "content/public/browser/web_contents.h"
@@ -42,7 +43,8 @@ AwAutofillManagerDelegate::AwAutofillManagerDelegate(WebContents* contents)
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jobject> delegate;
   delegate.Reset(
-      Java_AwAutofillManagerDelegate_create(env, reinterpret_cast<jint>(this)));
+      Java_AwAutofillManagerDelegate_create(
+          env, reinterpret_cast<intptr_t>(this)));
 
   AwContents* aw_contents = AwContents::FromWebContents(web_contents_);
   aw_contents->SetAwAutofillManagerDelegate(delegate.obj());
@@ -71,9 +73,12 @@ AwAutofillManagerDelegate::GetPersonalDataManager() {
   return NULL;
 }
 
-autofill::autocheckout::WhitelistManager*
-AwAutofillManagerDelegate::GetAutocheckoutWhitelistManager() const {
-  return NULL;
+scoped_refptr<autofill::AutofillWebDataService>
+AwAutofillManagerDelegate::GetDatabase() {
+  android_webview::AwFormDatabaseService* service =
+      static_cast<android_webview::AwBrowserContext*>(
+          web_contents_->GetBrowserContext())->GetFormDatabaseService();
+  return service->get_autofill_webdata_service();
 }
 
 void AwAutofillManagerDelegate::ShowAutofillPopup(
@@ -159,6 +164,9 @@ bool AwAutofillManagerDelegate::IsAutocompleteEnabled() {
   return GetSaveFormData();
 }
 
+void AwAutofillManagerDelegate::DetectAccountCreationForms(
+    const std::vector<autofill::FormStructure*>& forms) {}
+
 void AwAutofillManagerDelegate::SuggestionSelected(JNIEnv* env,
                                                    jobject object,
                                                    jint position) {
@@ -170,54 +178,20 @@ void AwAutofillManagerDelegate::HideRequestAutocompleteDialog() {
   NOTIMPLEMENTED();
 }
 
-void AwAutofillManagerDelegate::OnAutocheckoutError() {
-  NOTIMPLEMENTED();
-}
-
-void AwAutofillManagerDelegate::OnAutocheckoutSuccess() {
-  NOTIMPLEMENTED();
-}
-
 void AwAutofillManagerDelegate::ShowAutofillSettings() {
   NOTIMPLEMENTED();
 }
 
 void AwAutofillManagerDelegate::ConfirmSaveCreditCard(
     const autofill::AutofillMetrics& metric_logger,
-    const autofill::CreditCard& credit_card,
     const base::Closure& save_card_callback) {
-  NOTIMPLEMENTED();
-}
-
-bool AwAutofillManagerDelegate::ShowAutocheckoutBubble(
-    const gfx::RectF& bounding_box,
-    bool is_google_user,
-    const base::Callback<void(autofill::AutocheckoutBubbleState)>& callback) {
-  NOTIMPLEMENTED();
-  return false;
-}
-
-void AwAutofillManagerDelegate::HideAutocheckoutBubble() {
   NOTIMPLEMENTED();
 }
 
 void AwAutofillManagerDelegate::ShowRequestAutocompleteDialog(
     const autofill::FormData& form,
     const GURL& source_url,
-    autofill::DialogType dialog_type,
-    const base::Callback<void(const autofill::FormStructure*,
-                              const std::string&)>& callback) {
-  NOTIMPLEMENTED();
-}
-
-void AwAutofillManagerDelegate::AddAutocheckoutStep(
-    autofill::AutocheckoutStepType step_type) {
-  NOTIMPLEMENTED();
-}
-
-void AwAutofillManagerDelegate::UpdateAutocheckoutStep(
-    autofill::AutocheckoutStepType step_type,
-    autofill::AutocheckoutStepStatus step_status) {
+    const base::Callback<void(const autofill::FormStructure*)>& callback) {
   NOTIMPLEMENTED();
 }
 

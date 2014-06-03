@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/callback_forward.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/singleton.h"
@@ -163,27 +164,27 @@ class TaskManagerModel : public base::RefCountedThreadSafe<TaskManagerModel> {
 
   // Catchall method that calls off to the appropriate GetResourceXXX method
   // based on |col_id|. |col_id| is an IDS_ value used to identify the column.
-  string16 GetResourceById(int index, int col_id) const;
+  base::string16 GetResourceById(int index, int col_id) const;
 
   // Methods to return formatted resource information.
-  const string16& GetResourceTitle(int index) const;
-  const string16& GetResourceProfileName(int index) const;
-  string16 GetResourceNetworkUsage(int index) const;
-  string16 GetResourceCPUUsage(int index) const;
-  string16 GetResourcePrivateMemory(int index) const;
-  string16 GetResourceSharedMemory(int index) const;
-  string16 GetResourcePhysicalMemory(int index) const;
-  string16 GetResourceProcessId(int index) const;
-  string16 GetResourceGDIHandles(int index) const;
-  string16 GetResourceUSERHandles(int index) const;
-  string16 GetResourceWebCoreImageCacheSize(int index) const;
-  string16 GetResourceWebCoreScriptsCacheSize(int index) const;
-  string16 GetResourceWebCoreCSSCacheSize(int index) const;
-  string16 GetResourceVideoMemory(int index) const;
-  string16 GetResourceFPS(int index) const;
-  string16 GetResourceSqliteMemoryUsed(int index) const;
-  string16 GetResourceGoatsTeleported(int index) const;
-  string16 GetResourceV8MemoryAllocatedSize(int index) const;
+  const base::string16& GetResourceTitle(int index) const;
+  const base::string16& GetResourceProfileName(int index) const;
+  base::string16 GetResourceNetworkUsage(int index) const;
+  base::string16 GetResourceCPUUsage(int index) const;
+  base::string16 GetResourcePrivateMemory(int index) const;
+  base::string16 GetResourceSharedMemory(int index) const;
+  base::string16 GetResourcePhysicalMemory(int index) const;
+  base::string16 GetResourceProcessId(int index) const;
+  base::string16 GetResourceGDIHandles(int index) const;
+  base::string16 GetResourceUSERHandles(int index) const;
+  base::string16 GetResourceWebCoreImageCacheSize(int index) const;
+  base::string16 GetResourceWebCoreScriptsCacheSize(int index) const;
+  base::string16 GetResourceWebCoreCSSCacheSize(int index) const;
+  base::string16 GetResourceVideoMemory(int index) const;
+  base::string16 GetResourceFPS(int index) const;
+  base::string16 GetResourceSqliteMemoryUsed(int index) const;
+  base::string16 GetResourceGoatsTeleported(int index) const;
+  base::string16 GetResourceV8MemoryAllocatedSize(int index) const;
 
   // Gets the private memory (in bytes) that should be displayed for the passed
   // resource index. Caches the result since this calculation can take time on
@@ -208,7 +209,7 @@ class TaskManagerModel : public base::RefCountedThreadSafe<TaskManagerModel> {
   // Gets the statuses of webkit. Return false if the resource for the given row
   // isn't a renderer.
   bool GetWebCoreCacheStats(int index,
-                            WebKit::WebCache::ResourceTypeStats* result) const;
+                            blink::WebCache::ResourceTypeStats* result) const;
 
   // Gets the GPU memory allocated of the given page.
   bool GetVideoMemory(int index,
@@ -305,9 +306,12 @@ class TaskManagerModel : public base::RefCountedThreadSafe<TaskManagerModel> {
   // changes to the model.
   void ModelChanged();
 
+   // Updates the values for all rows.
+  void Refresh();
+
   void NotifyResourceTypeStats(
         base::ProcessId renderer_id,
-        const WebKit::WebCache::ResourceTypeStats& stats);
+        const blink::WebCache::ResourceTypeStats& stats);
 
   void NotifyFPS(base::ProcessId renderer_id,
                  int routing_id,
@@ -322,9 +326,13 @@ class TaskManagerModel : public base::RefCountedThreadSafe<TaskManagerModel> {
 
   void NotifyBytesRead(const net::URLRequest& request, int bytes_read);
 
+  void RegisterOnDataReadyCallback(const base::Closure& callback);
+
+  void NotifyDataReady();
+
  private:
   friend class base::RefCountedThreadSafe<TaskManagerModel>;
-  friend class TaskManagerBrowserTest;
+  friend class TaskManagerNoShowBrowserTest;
   FRIEND_TEST_ALL_PREFIXES(ExtensionApiTest, ProcessesVsTaskManager);
   FRIEND_TEST_ALL_PREFIXES(TaskManagerTest, RefreshCalled);
   FRIEND_TEST_ALL_PREFIXES(TaskManagerWindowControllerTest,
@@ -351,10 +359,10 @@ class TaskManagerModel : public base::RefCountedThreadSafe<TaskManagerModel> {
     ~PerResourceValues();
 
     bool is_title_valid;
-    string16 title;
+    base::string16 title;
 
     bool is_profile_name_valid;
-    string16 profile_name;
+    base::string16 profile_name;
 
     // No is_network_usage since default (0) is fine.
     int64 network_usage;
@@ -366,7 +374,7 @@ class TaskManagerModel : public base::RefCountedThreadSafe<TaskManagerModel> {
     int goats_teleported;
 
     bool is_webcore_stats_valid;
-    WebKit::WebCache::ResourceTypeStats webcore_stats;
+    blink::WebCache::ResourceTypeStats webcore_stats;
 
     bool is_fps_valid;
     float fps;
@@ -445,9 +453,6 @@ class TaskManagerModel : public base::RefCountedThreadSafe<TaskManagerModel> {
   // Callback from the timer to refresh. Invokes Refresh() as appropriate.
   void RefreshCallback();
 
-   // Updates the values for all rows.
-  void Refresh();
-
   void RefreshVideoMemoryUsageStats();
 
   // Returns the network usage (in bytes per seconds) for the specified
@@ -476,7 +481,7 @@ class TaskManagerModel : public base::RefCountedThreadSafe<TaskManagerModel> {
 
   // Given a number, this function returns the formatted string that should be
   // displayed in the task manager's memory cell.
-  string16 GetMemCellText(int64 number) const;
+  base::string16 GetMemCellText(int64 number) const;
 
   // Verifies the private and shared memory for |handle| is valid in
   // |per_process_cache_|. Returns true if the data in |per_process_cache_| is
@@ -553,6 +558,8 @@ class TaskManagerModel : public base::RefCountedThreadSafe<TaskManagerModel> {
   // Buffer for coalescing BytesReadParam so we don't have to post a task on
   // each NotifyBytesRead() call.
   std::vector<BytesReadParam> bytes_read_buffer_;
+
+  std::vector<base::Closure> on_data_ready_callbacks_;
 
   // All per-Resource values are stored here.
   mutable PerResourceCache per_resource_cache_;

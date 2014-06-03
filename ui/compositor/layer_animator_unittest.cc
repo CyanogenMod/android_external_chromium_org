@@ -10,6 +10,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/time/time.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "ui/compositor/layer.h"
 #include "ui/compositor/layer_animation_delegate.h"
 #include "ui/compositor/layer_animation_element.h"
 #include "ui/compositor/layer_animation_sequence.h"
@@ -19,8 +20,11 @@
 #include "ui/compositor/test/test_layer_animation_delegate.h"
 #include "ui/compositor/test/test_layer_animation_observer.h"
 #include "ui/compositor/test/test_utils.h"
+#include "ui/gfx/frame_time.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/transform.h"
+
+using gfx::AnimationContainerElement;
 
 namespace ui {
 
@@ -112,7 +116,6 @@ class DeletingLayerAnimationObserver : public LayerAnimationObserver {
 
  private:
   LayerAnimator* animator_;
-  LayerAnimationSequence* sequence_;
 
   DISALLOW_COPY_AND_ASSIGN(DeletingLayerAnimationObserver);
 };
@@ -166,7 +169,7 @@ TEST(LayerAnimatorTest, ImplicitAnimation) {
   animator->set_disable_timer_for_test(true);
   TestLayerAnimationDelegate delegate;
   animator->SetDelegate(&delegate);
-  base::TimeTicks now = base::TimeTicks::Now();
+  base::TimeTicks now = gfx::FrameTime::Now();
   animator->SetBrightness(0.5);
   EXPECT_TRUE(animator->is_animating());
   element->Step(now + base::TimeDelta::FromSeconds(1));
@@ -1033,7 +1036,7 @@ TEST(LayerAnimatorTest, StartTogetherSetsLastStepTime) {
   // miniscule (fractions of a millisecond). If set correctly, then the delta
   // should be enormous. Arbitrarily choosing 1 minute as the threshold,
   // though a much smaller value would probably have sufficed.
-  delta = base::TimeTicks::Now() - animator->last_step_time();
+  delta = gfx::FrameTime::Now() - animator->last_step_time();
   EXPECT_GT(60.0, delta.InSecondsF());
 }
 
@@ -1764,13 +1767,13 @@ TEST(LayerAnimatorTest, ObserverReleasedBeforeAnimationSequenceEnds) {
   animator->StartAnimation(sequence);
 
   // |observer| should be attached to |sequence|.
-  EXPECT_EQ(static_cast<size_t>(1), sequence->observers_.size());
+  EXPECT_TRUE(sequence->observers_.might_have_observers());
 
   // Now, release |observer|
   observer.reset();
 
   // And |sequence| should no longer be attached to |observer|.
-  EXPECT_EQ(static_cast<size_t>(0), sequence->observers_.size());
+  EXPECT_FALSE(sequence->observers_.might_have_observers());
 }
 
 TEST(LayerAnimatorTest, ObserverAttachedAfterAnimationStarted) {
@@ -1895,6 +1898,68 @@ TEST(LayerAnimatorTest, ObserverDeletesAnimationsOnEnd) {
   ASSERT_FALSE(animator->IsAnimatingProperty(LayerAnimationElement::BOUNDS));
 
   animator->RemoveObserver(observer.get());
+}
+
+// Ensure that stopping animation in a bounds change does not crash and that
+// animation gets stopped correctly.
+// This scenario is possible when animation is restarted from inside a
+// callback triggered by the animation progress.
+TEST(LayerAnimatorTest, CallbackDeletesAnimationInProgress) {
+
+  class TestLayerAnimationDeletingDelegate : public TestLayerAnimationDelegate {
+   public:
+    TestLayerAnimationDeletingDelegate(LayerAnimator* animator, int max_width)
+      : animator_(animator),
+        max_width_(max_width) {
+    }
+
+    virtual void SetBoundsFromAnimation(const gfx::Rect& bounds) OVERRIDE {
+      TestLayerAnimationDelegate::SetBoundsFromAnimation(bounds);
+      if (bounds.width() > max_width_)
+        animator_->StopAnimating();
+    }
+   private:
+    LayerAnimator* animator_;
+    int max_width_;
+    // Allow copy and assign.
+  };
+
+  ScopedAnimationDurationScaleMode normal_duration_mode(
+      ScopedAnimationDurationScaleMode::NORMAL_DURATION);
+  scoped_refptr<LayerAnimator> animator(new TestLayerAnimator());
+  AnimationContainerElement* element = animator.get();
+  animator->set_disable_timer_for_test(true);
+  TestLayerAnimationDeletingDelegate delegate(animator.get(), 30);
+  animator->SetDelegate(&delegate);
+
+  gfx::Rect start_bounds(0, 0, 0, 0);
+  gfx::Rect target_bounds(5, 5, 50, 50);
+
+  delegate.SetBoundsFromAnimation(start_bounds);
+
+  base::TimeDelta bounds_delta1 = base::TimeDelta::FromMilliseconds(333);
+  base::TimeDelta bounds_delta2 = base::TimeDelta::FromMilliseconds(666);
+  base::TimeDelta bounds_delta = base::TimeDelta::FromMilliseconds(1000);
+  base::TimeDelta final_delta = base::TimeDelta::FromMilliseconds(1500);
+
+  animator->StartAnimation(new LayerAnimationSequence(
+      LayerAnimationElement::CreateBoundsElement(
+          target_bounds, bounds_delta)));
+  ASSERT_TRUE(animator->IsAnimatingProperty(LayerAnimationElement::BOUNDS));
+
+  base::TimeTicks start_time = animator->last_step_time();
+  ASSERT_NO_FATAL_FAILURE(element->Step(start_time + bounds_delta1));
+  ASSERT_TRUE(animator->IsAnimatingProperty(LayerAnimationElement::BOUNDS));
+
+  // The next step should change the animated bounds past the threshold and
+  // cause the animaton to stop.
+  ASSERT_NO_FATAL_FAILURE(element->Step(start_time + bounds_delta2));
+  ASSERT_FALSE(animator->IsAnimatingProperty(LayerAnimationElement::BOUNDS));
+  ASSERT_NO_FATAL_FAILURE(element->Step(start_time + final_delta));
+
+  // Completing the animation should have stopped the bounds
+  // animation.
+  ASSERT_FALSE(animator->IsAnimatingProperty(LayerAnimationElement::BOUNDS));
 }
 
 // Similar to the ObserverDeletesAnimationsOnEnd test above except that it
@@ -2085,9 +2150,9 @@ TEST(LayerAnimatorTest, Color) {
   TestLayerAnimationDelegate delegate;
   animator->SetDelegate(&delegate);
 
-  SkColor start_color  = SkColorSetARGB(  0, 20, 40,  60);
-  SkColor middle_color = SkColorSetARGB(127, 30, 60, 100);
-  SkColor target_color = SkColorSetARGB(254, 40, 80, 140);
+  SkColor start_color  = SkColorSetARGB( 64, 20, 40,  60);
+  SkColor middle_color = SkColorSetARGB(128, 35, 70, 120);
+  SkColor target_color = SkColorSetARGB(192, 40, 80, 140);
 
   base::TimeDelta delta = base::TimeDelta::FromSeconds(1);
 
@@ -2374,6 +2439,35 @@ TEST(LayerAnimatorTest, TestSetterRespectEnqueueStrategy) {
   animator->SetOpacity(magic_opacity);
 
   EXPECT_EQ(start_opacity, delegate.GetOpacityForAnimation());
+}
+
+TEST(LayerAnimatorTest, TestScopedCounterAnimation) {
+  Layer parent, child;
+  parent.Add(&child);
+
+  gfx::Transform parent_begin, parent_end;
+
+  parent_end.Scale3d(2.0, 0.5, 1.0);
+
+  // Parent animates from identity to the end value. The counter animation will
+  // start at the end value and animate back to identity.
+  gfx::Transform child_begin(parent_end);
+
+  child.SetTransform(child_begin);
+  parent.SetTransform(parent_begin);
+
+  EXPECT_FALSE(child.GetAnimator()->is_animating());
+
+  ScopedLayerAnimationSettings settings(parent.GetAnimator());
+  settings.SetInverselyAnimatedBaseLayer(&parent);
+  settings.AddInverselyAnimatedLayer(&child);
+
+  parent.SetTransform(parent_end);
+
+  EXPECT_TRUE(child.GetAnimator()->is_animating());
+  EXPECT_TRUE(child.GetTargetTransform().IsIdentity())
+    << child.GetTargetTransform().ToString();
+
 }
 
 }  // namespace ui

@@ -11,17 +11,7 @@ on the following experimental APIs:
 </p>
 {{/is_apps}}
 
-<ul>
-  {{?is_apps}}
-  {{#api_list.apps.experimental}}
-  <li><a href="{{name}}.html">{{name}}</a></li>
-  {{/}}
-  {{:is_apps}}
-  {{#api_list.extensions.experimental}}
-  <li><a href="{{name}}.html">{{name}}</a></li>
-  {{/}}
-  {{/is_apps}}
-</ul>
+{{+partials.api_table apis:apis is_stable:false/}}
 
 {{^is_apps}}
 <p class="doc-family extensions">
@@ -62,7 +52,7 @@ upload items that use experimental APIs.
     Specify the "experimental"
     <a href="declare_permissions.html">permission</a>
     in your manifest, like this:
-<pre>
+<pre data-filename="manifest.json">
 "permissions": [
   <b>"experimental"</b>,
   ...

@@ -14,10 +14,10 @@
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
+#include "chrome/browser/bookmarks/bookmark_test_helpers.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/bookmarks/bookmark_utils.h"
 #include "chrome/test/base/testing_profile.h"
-#include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/page_navigator.h"
 #include "content/public/test/test_browser_thread.h"
 #include "grit/generated_resources.h"
@@ -61,7 +61,7 @@ class BookmarkContextMenuTest : public testing::Test {
     profile_->CreateBookmarkModel(true);
 
     model_ = BookmarkModelFactory::GetForProfile(profile_.get());
-    ui_test_utils::WaitForBookmarkModelToLoad(model_);
+    test::WaitForBookmarkModelToLoad(model_);
 
     AddTestData();
   }
@@ -260,9 +260,12 @@ TEST_F(BookmarkContextMenuTest, MultipleFoldersWithURLs) {
 TEST_F(BookmarkContextMenuTest, DisableIncognito) {
   std::vector<const BookmarkNode*> nodes;
   nodes.push_back(model_->bookmark_bar_node()->GetChild(0));
+  TestingProfile::Builder builder;
+  builder.SetIncognito();
+  scoped_ptr<TestingProfile> incognito_ = builder.Build().Pass();
+  incognito_->SetOriginalProfile(profile_.get());
   BookmarkContextMenu controller(
-      NULL, NULL, profile_.get(), NULL, nodes[0]->parent(), nodes, false);
-  profile_->set_incognito(true);
+      NULL, NULL, incognito_.get(), NULL, nodes[0]->parent(), nodes, false);
   EXPECT_FALSE(controller.IsCommandEnabled(IDC_BOOKMARK_BAR_OPEN_INCOGNITO));
   EXPECT_FALSE(
       controller.IsCommandEnabled(IDC_BOOKMARK_BAR_OPEN_ALL_INCOGNITO));

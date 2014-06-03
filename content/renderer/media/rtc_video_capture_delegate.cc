@@ -5,6 +5,7 @@
 #include "content/renderer/media/rtc_video_capture_delegate.h"
 
 #include "base/bind.h"
+#include "media/base/video_frame.h"
 
 namespace content {
 
@@ -26,7 +27,7 @@ RtcVideoCaptureDelegate::~RtcVideoCaptureDelegate() {
 }
 
 void RtcVideoCaptureDelegate::StartCapture(
-    const media::VideoCaptureCapability& capability,
+    const media::VideoCaptureParams& params,
     const FrameCapturedCallback& captured_callback,
     const StateChangeCallback& state_callback) {
   DVLOG(3) << " RtcVideoCaptureDelegate::StartCapture ";
@@ -39,7 +40,7 @@ void RtcVideoCaptureDelegate::StartCapture(
   // Increase the reference count to ensure we are not deleted until
   // The we are unregistered in RtcVideoCaptureDelegate::OnRemoved.
   AddRef();
-  capture_engine_->StartCapture(this, capability);
+  capture_engine_->StartCapture(this, params);
 }
 
 void RtcVideoCaptureDelegate::StopCapture() {
@@ -57,7 +58,6 @@ void RtcVideoCaptureDelegate::OnStopped(media::VideoCapture* capture) {
 }
 
 void RtcVideoCaptureDelegate::OnPaused(media::VideoCapture* capture) {
-  NOTIMPLEMENTED();
 }
 
 void RtcVideoCaptureDelegate::OnError(media::VideoCapture* capture,
@@ -82,30 +82,20 @@ void RtcVideoCaptureDelegate::OnRemoved(media::VideoCapture* capture) {
   Release();
 }
 
-void RtcVideoCaptureDelegate::OnBufferReady(
+void RtcVideoCaptureDelegate::OnFrameReady(
     media::VideoCapture* capture,
-    scoped_refptr<media::VideoCapture::VideoFrameBuffer> buf) {
+    const scoped_refptr<media::VideoFrame>& frame) {
   message_loop_proxy_->PostTask(
       FROM_HERE,
-      base::Bind(&RtcVideoCaptureDelegate::OnBufferReadyOnCaptureThread,
-                 this, capture, buf));
+      base::Bind(&RtcVideoCaptureDelegate::OnFrameReadyOnCaptureThread,
+                 this,
+                 capture,
+                 frame));
 }
 
-void RtcVideoCaptureDelegate::OnDeviceInfoReceived(
+void RtcVideoCaptureDelegate::OnFrameReadyOnCaptureThread(
     media::VideoCapture* capture,
-    const media::VideoCaptureParams& device_info) {
-  NOTIMPLEMENTED();
-}
-
-void RtcVideoCaptureDelegate::OnDeviceInfoChanged(
-    media::VideoCapture* capture,
-    const media::VideoCaptureParams& device_info) {
-  NOTIMPLEMENTED();
-}
-
-void RtcVideoCaptureDelegate::OnBufferReadyOnCaptureThread(
-    media::VideoCapture* capture,
-    scoped_refptr<media::VideoCapture::VideoFrameBuffer> buf) {
+    const scoped_refptr<media::VideoFrame>& frame) {
   if (!captured_callback_.is_null()) {
     if (!got_first_frame_) {
       got_first_frame_ = true;
@@ -113,9 +103,8 @@ void RtcVideoCaptureDelegate::OnBufferReadyOnCaptureThread(
         state_callback_.Run(CAPTURE_RUNNING);
     }
 
-    captured_callback_.Run(*buf.get());
+    captured_callback_.Run(frame);
   }
-  capture->FeedBuffer(buf);
 }
 
 void RtcVideoCaptureDelegate::OnErrorOnCaptureThread(

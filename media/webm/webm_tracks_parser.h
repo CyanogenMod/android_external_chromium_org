@@ -14,7 +14,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "media/base/audio_decoder_config.h"
 #include "media/base/media_log.h"
-#include "media/base/text_track.h"
+#include "media/base/text_track_config.h"
 #include "media/base/video_decoder_config.h"
 #include "media/webm/webm_audio_client.h"
 #include "media/webm/webm_content_encodings_client.h"
@@ -56,13 +56,7 @@ class MEDIA_EXPORT WebMTracksParser : public WebMParserClient {
     return video_decoder_config_;
   }
 
-  struct TextTrackInfo {
-    TextKind kind;
-    std::string name;
-    std::string language;
-  };
-
-  typedef std::map<int64, TextTrackInfo> TextTracks;
+  typedef std::map<int, TextTrackConfig> TextTracks;
 
   const TextTracks& text_tracks() const {
     return text_tracks_;
@@ -79,10 +73,13 @@ class MEDIA_EXPORT WebMTracksParser : public WebMParserClient {
 
   int64 track_type_;
   int64 track_num_;
+  int64 track_uid_;
   std::string track_name_;
   std::string track_language_;
   std::string codec_id_;
   std::vector<uint8> codec_private_;
+  int64 seek_preroll_;
+  int64 codec_delay_;
   scoped_ptr<WebMContentEncodingsClient> track_content_encodings_client_;
 
   int64 audio_track_num_;

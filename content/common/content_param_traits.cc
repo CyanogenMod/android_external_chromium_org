@@ -5,27 +5,9 @@
 #include "content/common/content_param_traits.h"
 
 #include "base/strings/string_number_conversions.h"
+#include "content/common/input/web_input_event_traits.h"
 #include "net/base/ip_endpoint.h"
-#include "ui/base/range/range.h"
-
-namespace {
-
-int WebInputEventSizeForType(WebKit::WebInputEvent::Type type) {
-  if (WebKit::WebInputEvent::isMouseEventType(type))
-    return sizeof(WebKit::WebMouseEvent);
-  if (type == WebKit::WebInputEvent::MouseWheel)
-    return sizeof(WebKit::WebMouseWheelEvent);
-  if (WebKit::WebInputEvent::isKeyboardEventType(type))
-    return sizeof(WebKit::WebKeyboardEvent);
-  if (WebKit::WebInputEvent::isTouchEventType(type))
-    return sizeof(WebKit::WebTouchEvent);
-  if (WebKit::WebInputEvent::isGestureEventType(type))
-    return sizeof(WebKit::WebGestureEvent);
-  NOTREACHED() << "Unknown webkit event type " << type;
-  return 0;
-}
-
-}  // namespace
+#include "ui/gfx/range/range.h"
 
 namespace IPC {
 
@@ -48,14 +30,14 @@ void ParamTraits<net::IPEndPoint>::Log(const param_type& p, std::string* l) {
   LogParam("IPEndPoint:" + p.ToString(), l);
 }
 
-void ParamTraits<ui::Range>::Write(Message* m, const ui::Range& r) {
+void ParamTraits<gfx::Range>::Write(Message* m, const gfx::Range& r) {
   m->WriteUInt64(r.start());
   m->WriteUInt64(r.end());
 }
 
-bool ParamTraits<ui::Range>::Read(const Message* m,
+bool ParamTraits<gfx::Range>::Read(const Message* m,
                                   PickleIterator* iter,
-                                  ui::Range* r) {
+                                  gfx::Range* r) {
   uint64 start, end;
   if (!m->ReadUInt64(iter, &start) || !m->ReadUInt64(iter, &end))
     return false;
@@ -64,7 +46,7 @@ bool ParamTraits<ui::Range>::Read(const Message* m,
   return true;
 }
 
-void ParamTraits<ui::Range>::Log(const ui::Range& r, std::string* l) {
+void ParamTraits<gfx::Range>::Log(const gfx::Range& r, std::string* l) {
   l->append(base::StringPrintf("(%" PRIuS ", %" PRIuS ")", r.start(), r.end()));
 }
 
@@ -81,7 +63,7 @@ bool ParamTraits<WebInputEventPointer>::Read(const Message* m,
     NOTREACHED();
     return false;
   }
-  if (data_length < static_cast<int>(sizeof(WebKit::WebInputEvent))) {
+  if (data_length < static_cast<int>(sizeof(blink::WebInputEvent))) {
     NOTREACHED();
     return false;
   }
@@ -91,7 +73,9 @@ bool ParamTraits<WebInputEventPointer>::Read(const Message* m,
     NOTREACHED();
     return false;
   }
-  if (data_length != WebInputEventSizeForType(event->type)) {
+  const size_t expected_size_for_type =
+      content::WebInputEventTraits::GetSize(event->type);
+  if (data_length != static_cast<int>(expected_size_for_type)) {
     NOTREACHED();
     return false;
   }

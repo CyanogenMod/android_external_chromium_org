@@ -19,7 +19,8 @@
 #include "base/win/windows_version.h"
 #include "chrome/browser/web_applications/web_app.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/installer/launcher_support/chrome_launcher_support.h"
+#include "chrome/installer/util/browser_distribution.h"
+#include "chrome/installer/util/shell_util.h"
 #include "chrome/installer/util/util_constants.h"
 #include "content/public/browser/browser_thread.h"
 #include "ui/gfx/icon_util.h"
@@ -80,7 +81,7 @@ bool ShouldUpdateIcon(const base::FilePath& icon_file,
     return true;
 
   base::MD5Digest persisted_image_checksum;
-  if (sizeof(persisted_image_checksum) != file_util::ReadFile(checksum_file,
+  if (sizeof(persisted_image_checksum) != base::ReadFile(checksum_file,
                       reinterpret_cast<char*>(&persisted_image_checksum),
                       sizeof(persisted_image_checksum)))
     return true;
@@ -97,7 +98,7 @@ bool ShouldUpdateIcon(const base::FilePath& icon_file,
 // an --app-id flag.
 bool IsAppShortcutForProfile(const base::FilePath& shortcut_file_name,
                              const base::FilePath& profile_path) {
-  string16 cmd_line_string;
+  base::string16 cmd_line_string;
   if (base::win::ResolveShortcut(shortcut_file_name, NULL, &cmd_line_string)) {
     cmd_line_string = L"program " + cmd_line_string;
     CommandLine shortcut_cmd_line = CommandLine::FromString(cmd_line_string);
@@ -116,7 +117,7 @@ bool IsAppShortcutForProfile(const base::FilePath& shortcut_file_name,
 std::vector<base::FilePath> FindAppShortcutsByProfileAndTitle(
     const base::FilePath& shortcut_path,
     const base::FilePath& profile_path,
-    const string16& shortcut_name) {
+    const base::string16& shortcut_name) {
   std::vector<base::FilePath> shortcut_paths;
 
   if (shortcut_name.empty()) {
@@ -167,7 +168,7 @@ bool CreateShortcutsInPaths(
     std::vector<base::FilePath>* out_filenames) {
   // Ensure web_app_path exists.
   if (!base::PathExists(web_app_path) &&
-      !file_util::CreateDirectory(web_app_path)) {
+      !base::CreateDirectory(web_app_path)) {
     return false;
   }
 
@@ -199,16 +200,16 @@ bool CreateShortcutsInPaths(
   // properly quoted for a Windows command line.  The method on
   // CommandLine should probably be renamed to better reflect that
   // fact.
-  string16 wide_switches(cmd_line.GetCommandLineString());
+  base::string16 wide_switches(cmd_line.GetCommandLineString());
 
   // Sanitize description
-  string16 description = shortcut_info.description;
+  base::string16 description = shortcut_info.description;
   if (description.length() >= MAX_PATH)
     description.resize(MAX_PATH - 1);
 
   // Generates app id from web app url and profile path.
   std::string app_name(web_app::GenerateApplicationNameFromInfo(shortcut_info));
-  string16 app_id(ShellIntegration::GetAppModelIdForProfile(
+  base::string16 app_id(ShellIntegration::GetAppModelIdForProfile(
       UTF8ToUTF16(app_name), shortcut_info.profile_path));
 
   bool success = true;
@@ -244,7 +245,7 @@ bool CreateShortcutsInPaths(
     shortcut_properties.set_app_id(app_id);
     shortcut_properties.set_dual_mode(false);
     if (!base::PathExists(shortcut_file.DirName()) &&
-        !file_util::CreateDirectory(shortcut_file.DirName())) {
+        !base::CreateDirectory(shortcut_file.DirName())) {
       NOTREACHED();
       return false;
     }
@@ -273,21 +274,20 @@ bool CreateShortcutsInPaths(
 void GetShortcutLocationsAndDeleteShortcuts(
     const base::FilePath& web_app_path,
     const base::FilePath& profile_path,
-    const string16& title,
+    const base::string16& title,
     bool* was_pinned_to_taskbar,
     std::vector<base::FilePath>* shortcut_paths) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::FILE));
 
   // Get all possible locations for shortcuts.
   ShellIntegration::ShortcutLocations all_shortcut_locations;
-  all_shortcut_locations.in_applications_menu = true;
   all_shortcut_locations.in_quick_launch_bar = true;
   all_shortcut_locations.on_desktop = true;
   // Delete shortcuts from the Chrome Apps subdirectory.
   // This matches the subdir name set by CreateApplicationShortcutView::Accept
   // for Chrome apps (not URL apps, but this function does not apply for them).
-  all_shortcut_locations.applications_menu_subdir =
-      web_app::GetAppShortcutsSubdirName();
+  all_shortcut_locations.applications_menu_location =
+      ShellIntegration::APP_MENU_LOCATION_SUBDIR_CHROMEAPPS;
   std::vector<base::FilePath> all_paths = web_app::internals::GetShortcutPaths(
       all_shortcut_locations);
   if (base::win::GetVersion() >= base::win::VERSION_WIN7 &&
@@ -407,7 +407,7 @@ bool CreatePlatformShortcuts(
 
 void UpdatePlatformShortcuts(
     const base::FilePath& web_app_path,
-    const string16& old_app_title,
+    const base::string16& old_app_title,
     const ShellIntegration::ShortcutInfo& shortcut_info) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::FILE));
 
@@ -458,9 +458,12 @@ void DeletePlatformShortcuts(
 
   // If there are no more shortcuts in the Chrome Apps subdirectory, remove it.
   base::FilePath chrome_apps_dir;
-  if (PathService::Get(base::DIR_START_MENU, &chrome_apps_dir)) {
-    chrome_apps_dir = chrome_apps_dir.Append(GetAppShortcutsSubdirName());
-    if (file_util::IsDirectoryEmpty(chrome_apps_dir))
+  if (ShellUtil::GetShortcutPath(
+          ShellUtil::SHORTCUT_LOCATION_START_MENU_CHROME_APPS_DIR,
+          BrowserDistribution::GetDistribution(),
+          ShellUtil::CURRENT_USER,
+          &chrome_apps_dir)) {
+    if (base::IsDirectoryEmpty(chrome_apps_dir))
       base::DeleteFile(chrome_apps_dir, false);
   }
 }
@@ -471,9 +474,12 @@ void DeleteAllShortcutsForProfile(const base::FilePath& profile_path) {
 
   // If there are no more shortcuts in the Chrome Apps subdirectory, remove it.
   base::FilePath chrome_apps_dir;
-  if (PathService::Get(base::DIR_START_MENU, &chrome_apps_dir)) {
-    chrome_apps_dir = chrome_apps_dir.Append(GetAppShortcutsSubdirName());
-    if (file_util::IsDirectoryEmpty(chrome_apps_dir))
+  if (ShellUtil::GetShortcutPath(
+          ShellUtil::SHORTCUT_LOCATION_START_MENU_CHROME_APPS_DIR,
+          BrowserDistribution::GetDistribution(),
+          ShellUtil::CURRENT_USER,
+          &chrome_apps_dir)) {
+    if (base::IsDirectoryEmpty(chrome_apps_dir))
       base::DeleteFile(chrome_apps_dir, false);
   }
 }
@@ -485,43 +491,44 @@ std::vector<base::FilePath> GetShortcutPaths(
   // Locations to add to shortcut_paths.
   struct {
     bool use_this_location;
-    int location_id;
-    const wchar_t* subdir;
+    ShellUtil::ShortcutLocation location_id;
   } locations[] = {
     {
       creation_locations.on_desktop,
-      base::DIR_USER_DESKTOP,
-      NULL
+      ShellUtil::SHORTCUT_LOCATION_DESKTOP
     }, {
-      creation_locations.in_applications_menu,
-      base::DIR_START_MENU,
-      creation_locations.applications_menu_subdir.empty() ? NULL :
-          creation_locations.applications_menu_subdir.c_str()
+      creation_locations.applications_menu_location ==
+          ShellIntegration::APP_MENU_LOCATION_ROOT,
+      ShellUtil::SHORTCUT_LOCATION_START_MENU_ROOT
     }, {
-      creation_locations.in_quick_launch_bar,
-      // For Win7, in_quick_launch_bar means pinning to taskbar. Use
-      // base::PATH_START as a flag for this case.
-      (base::win::GetVersion() >= base::win::VERSION_WIN7) ?
-          base::PATH_START : base::DIR_APP_DATA,
-      (base::win::GetVersion() >= base::win::VERSION_WIN7) ?
-          NULL : L"Microsoft\\Internet Explorer\\Quick Launch"
+      creation_locations.applications_menu_location ==
+          ShellIntegration::APP_MENU_LOCATION_SUBDIR_CHROME,
+      ShellUtil::SHORTCUT_LOCATION_START_MENU_CHROME_DIR
+    }, {
+      creation_locations.applications_menu_location ==
+          ShellIntegration::APP_MENU_LOCATION_SUBDIR_CHROMEAPPS,
+      ShellUtil::SHORTCUT_LOCATION_START_MENU_CHROME_APPS_DIR
+    }, {
+      // For Win7+, |in_quick_launch_bar| indicates that we are pinning to
+      // taskbar. This needs to be handled by callers.
+      creation_locations.in_quick_launch_bar &&
+          base::win::GetVersion() < base::win::VERSION_WIN7,
+      ShellUtil::SHORTCUT_LOCATION_QUICK_LAUNCH
     }
   };
+
+  BrowserDistribution* dist = BrowserDistribution::GetDistribution();
   // Populate shortcut_paths.
   for (int i = 0; i < arraysize(locations); ++i) {
     if (locations[i].use_this_location) {
       base::FilePath path;
-
-      // Skip the Win7 case.
-      if (locations[i].location_id == base::PATH_START)
-        continue;
-
-      if (!PathService::Get(locations[i].location_id, &path)) {
+      if (!ShellUtil::GetShortcutPath(locations[i].location_id,
+                                      dist,
+                                      ShellUtil::CURRENT_USER,
+                                      &path)) {
+        NOTREACHED();
         continue;
       }
-
-      if (locations[i].subdir != NULL)
-        path = path.Append(locations[i].subdir);
       shortcut_paths.push_back(path);
     }
   }

@@ -34,8 +34,8 @@
 #include "net/base/escape.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/webui/jstemplate_builder.h"
-#include "ui/webui/web_ui_util.h"
+#include "ui/base/webui/jstemplate_builder.h"
+#include "ui/base/webui/web_ui_util.h"
 
 using content::WebContents;
 using content::WebUIMessageHandler;
@@ -127,16 +127,21 @@ void SystemInfoUIHTMLSource::RequestComplete() {
   strings.SetString("title", l10n_util::GetStringUTF16(IDS_ABOUT_SYS_TITLE));
   strings.SetString("description",
                     l10n_util::GetStringUTF16(IDS_ABOUT_SYS_DESC));
-  strings.SetString("table_title",
+  strings.SetString("tableTitle",
                     l10n_util::GetStringUTF16(IDS_ABOUT_SYS_TABLE_TITLE));
-  strings.SetString("expand_all_btn",
+  strings.SetString(
+      "logFileTableTitle",
+      l10n_util::GetStringUTF16(IDS_ABOUT_SYS_LOG_FILE_TABLE_TITLE));
+  strings.SetString("expandAllBtn",
                     l10n_util::GetStringUTF16(IDS_ABOUT_SYS_EXPAND_ALL));
-  strings.SetString("collapse_all_btn",
+  strings.SetString("collapseAllBtn",
                     l10n_util::GetStringUTF16(IDS_ABOUT_SYS_COLLAPSE_ALL));
-  strings.SetString("expand_btn",
+  strings.SetString("expandBtn",
                     l10n_util::GetStringUTF16(IDS_ABOUT_SYS_EXPAND));
-  strings.SetString("collapse_btn",
+  strings.SetString("collapseBtn",
                     l10n_util::GetStringUTF16(IDS_ABOUT_SYS_COLLAPSE));
+  strings.SetString("parseError",
+                    l10n_util::GetStringUTF16(IDS_ABOUT_SYS_PARSE_ERROR));
   webui::SetFontAndTextDirection(&strings);
   if (response_.get()) {
     ListValue* details = new ListValue();
@@ -145,11 +150,10 @@ void SystemInfoUIHTMLSource::RequestComplete() {
          it != response_->end();
          ++it) {
       DictionaryValue* val = new DictionaryValue;
-      val->SetString("stat_name", it->first);
-      val->SetString("stat_value", it->second);
+      val->SetString("statName", it->first);
+      val->SetString("statValue", it->second);
       details->Append(val);
     }
-    strings.SetString("anchor", path_);
   }
   static const base::StringPiece systeminfo_html(
       ResourceBundle::GetSharedInstance().GetRawDataResource(

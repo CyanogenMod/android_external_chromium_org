@@ -57,17 +57,21 @@ class SpeechRecognitionBubble {
 
   // Factory method to create new instances.
   // Creates the bubble, call |Show| to display it on screen.
-  // |web_contents| is the WebContents hosting the page.
+  // |render_process_id| and |render_view_id| is used to extract the
+  // correct WebContents.
   // |element_rect| is the display bounds of the html element requesting speech
   // recognition (in page coordinates).
-  static SpeechRecognitionBubble* Create(content::WebContents* web_contents,
-                                         Delegate* delegate,
-                                         const gfx::Rect& element_rect);
+  static SpeechRecognitionBubble* Create(
+      int render_process_id,
+      int render_view_id,
+      Delegate* delegate,
+      const gfx::Rect& element_rect);
 
   // This is implemented by platform specific code to create the underlying
   // bubble window. Not to be called directly by users of this class.
   static SpeechRecognitionBubble* CreateNativeBubble(
-      content::WebContents* web_contents,
+      int render_process_id,
+      int render_view_id,
       Delegate* delegate,
       const gfx::Rect& element_rect);
 
@@ -99,7 +103,7 @@ class SpeechRecognitionBubble {
 
   // Displays the given string with the 'Try again' and 'Cancel' buttons. If the
   // bubble is hidden, |Show| must be called to make it appear on screen.
-  virtual void SetMessage(const string16& text) = 0;
+  virtual void SetMessage(const base::string16& text) = 0;
 
   // Brings up the bubble on screen.
   virtual void Show() = 0;
@@ -135,14 +139,14 @@ class SpeechRecognitionBubbleBase : public SpeechRecognitionBubble {
     DISPLAY_MODE_MESSAGE
   };
 
-  explicit SpeechRecognitionBubbleBase(content::WebContents* web_contents);
+  SpeechRecognitionBubbleBase(int render_process_id, int render_view_id);
   virtual ~SpeechRecognitionBubbleBase();
 
   // SpeechRecognitionBubble methods
   virtual void SetWarmUpMode() OVERRIDE;
   virtual void SetRecordingMode() OVERRIDE;
   virtual void SetRecognizingMode() OVERRIDE;
-  virtual void SetMessage(const string16& text) OVERRIDE;
+  virtual void SetMessage(const base::string16& text) OVERRIDE;
   virtual void SetInputVolume(float volume, float noise_volume) OVERRIDE;
   virtual content::WebContents* GetWebContents() OVERRIDE;
 
@@ -155,7 +159,7 @@ class SpeechRecognitionBubbleBase : public SpeechRecognitionBubble {
 
   DisplayMode display_mode() const { return display_mode_; }
 
-  const string16& message_text() const { return message_text_; }
+  const base::string16& message_text() const { return message_text_; }
 
   gfx::ImageSkia icon_image();
 
@@ -173,18 +177,21 @@ class SpeechRecognitionBubbleBase : public SpeechRecognitionBubble {
   int animation_step_;  // Current index/step of the animation.
 
   DisplayMode display_mode_;
-  string16 message_text_;  // Text displayed in DISPLAY_MODE_MESSAGE
+  base::string16 message_text_;  // Text displayed in DISPLAY_MODE_MESSAGE
 
   // The current microphone image with volume level indication.
   scoped_ptr<SkBitmap> mic_image_;
   // A temporary buffer image used in creating the above mic image.
   scoped_ptr<SkBitmap> buffer_image_;
-  // WebContents in which this this bubble gets displayed.
-  content::WebContents* web_contents_;
+
+  // Content in which this bubble gets displayed.
+  int render_process_id_;
+  int render_view_id_;
+
   // The current image displayed in the bubble's icon widget.
   gfx::ImageSkia icon_image_;
   // The scale factor used for the web-contents.
-  ui::ScaleFactor scale_factor_;
+  float scale_;
 
   DISALLOW_COPY_AND_ASSIGN(SpeechRecognitionBubbleBase);
 };

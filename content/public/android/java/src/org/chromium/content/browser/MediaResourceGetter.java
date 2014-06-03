@@ -1,4 +1,4 @@
-// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -60,6 +60,10 @@ class MediaResourceGetter {
         int width = 0;
         int height = 0;
         boolean success = false;
+        if ("GT-I9100".contentEquals(android.os.Build.MODEL)
+                && android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.JELLY_BEAN) {
+            return new MediaMetadata(0, 0, 0, success);
+        }
         // TODO(qinmin): use ConnectionTypeObserver to listen to the network type change.
         ConnectivityManager mConnectivityManager =
                 (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
@@ -107,12 +111,18 @@ class MediaResourceGetter {
                 }
                 retriever.setDataSource(url, headersMap);
             }
-            durationInMilliseconds = Integer.parseInt(
-                    retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION));
-            width = Integer.parseInt(
-                    retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH));
-            height = Integer.parseInt(
-                    retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT));
+            String duration = retriever.extractMetadata(
+                    MediaMetadataRetriever.METADATA_KEY_DURATION);
+            String videoWidth = retriever.extractMetadata(
+                    MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH);
+            String videoHeight = retriever.extractMetadata(
+                    MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT);
+            if (duration == null || videoWidth == null || videoHeight == null) {
+                return new MediaMetadata(durationInMilliseconds, width, height, success);
+            }
+            durationInMilliseconds = Integer.parseInt(duration);
+            width = Integer.parseInt(videoWidth);
+            height = Integer.parseInt(videoHeight);
             success = true;
         } catch (IllegalArgumentException e) {
             Log.e(TAG, "Invalid url: " + e);

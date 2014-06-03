@@ -19,7 +19,7 @@ class CryptoModulePasswordDialogViewTest : public testing::Test {
   CryptoModulePasswordDialogViewTest() {}
   virtual ~CryptoModulePasswordDialogViewTest() {}
 
-  void Capture(const char* text) {
+  void Capture(const std::string& text) {
     text_ = text;
   }
 
@@ -44,7 +44,7 @@ TEST_F(CryptoModulePasswordDialogViewTest, TestAccept) {
   dialog_->password_entry_->SetText(ASCIIToUTF16(kPassword));
   EXPECT_TRUE(dialog_->Accept());
   EXPECT_EQ(kPassword, text_);
-  const string16 empty;
+  const base::string16 empty;
   EXPECT_EQ(empty, dialog_->password_entry_->text());
 }
 

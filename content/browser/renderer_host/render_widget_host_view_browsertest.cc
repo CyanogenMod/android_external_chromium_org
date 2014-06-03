@@ -6,29 +6,31 @@
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/path_service.h"
 #include "base/run_loop.h"
+#include "content/browser/gpu/compositor_util.h"
 #include "content/browser/gpu/gpu_data_manager_impl.h"
 #include "content/browser/renderer_host/dip_util.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/port/browser/render_widget_host_view_frame_subscriber.h"
 #include "content/port/browser/render_widget_host_view_port.h"
-#include "content/public/browser/compositor_util.h"
+#include "content/public/browser/gpu_data_manager.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_paths.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/test/browser_test_utils.h"
-#include "content/shell/shell.h"
+#include "content/shell/browser/shell.h"
 #include "content/test/content_browser_test.h"
 #include "content/test/content_browser_test_utils.h"
 #include "media/base/video_frame.h"
 #include "media/filters/skcanvas_video_renderer.h"
 #include "net/base/net_util.h"
 #include "third_party/skia/include/core/SkBitmap.h"
+#include "third_party/skia/include/core/SkBitmapDevice.h"
 #include "third_party/skia/include/core/SkCanvas.h"
-#include "third_party/skia/include/core/SkDevice.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/gfx/size_conversions.h"
+#include "ui/gfx/switches.h"
 #include "ui/gl/gl_switches.h"
 
 #if defined(OS_MACOSX)
@@ -36,7 +38,8 @@
 #endif
 
 #if defined(OS_WIN)
-#include "ui/base/win/dpi.h"
+#include "base/win/windows_version.h"
+#include "ui/gfx/win/dpi.h"
 #endif
 
 namespace content {
@@ -55,7 +58,7 @@ namespace {
 // Convenience macro: Short-circuit a pass for platforms where setting up
 // high-DPI fails.
 #define PASS_TEST_IF_SCALE_FACTOR_NOT_SUPPORTED(factor) \
-  if (ui::GetScaleFactorScale( \
+  if (ui::GetImageScale( \
           GetScaleFactorForView(GetRenderWidgetHostViewPort())) != factor) {  \
     LOG(WARNING) << "Blindly passing this test: failed to set up "  \
                     "scale factor: " << factor;  \
@@ -373,8 +376,18 @@ IN_PROC_BROWSER_TEST_F(CompositingRenderWidgetHostViewBrowserTest,
 // Tests that the callback passed to CopyFromCompositingSurfaceToVideoFrame is
 // always called, even when the RenderWidgetHost is deleting in the middle of
 // an async copy.
+//
+// Test is flaky on Win Aura. http://crbug.com/276783
+#if (defined(OS_WIN) && defined(USE_AURA)) || \
+    (defined(OS_CHROMEOS) && !defined(NDEBUG))
+#define MAYBE_CopyFromCompositingSurface_CallbackDespiteDelete \
+  DISABLED_CopyFromCompositingSurface_CallbackDespiteDelete
+#else
+#define MAYBE_CopyFromCompositingSurface_CallbackDespiteDelete \
+  CopyFromCompositingSurface_CallbackDespiteDelete
+#endif
 IN_PROC_BROWSER_TEST_F(CompositingRenderWidgetHostViewBrowserTest,
-                       CopyFromCompositingSurface_CallbackDespiteDelete) {
+                       MAYBE_CopyFromCompositingSurface_CallbackDespiteDelete) {
   SET_UP_SURFACE_OR_PASS_TEST(NULL);
   RenderWidgetHostViewPort* const view = GetRenderWidgetHostViewPort();
   if (!view->CanCopyToVideoFrame()) {
@@ -554,11 +567,11 @@ class CompositingRenderWidgetHostViewBrowserTestTabCapture
     SkBitmap bitmap;
     bitmap.setConfig(SkBitmap::kARGB_8888_Config,
                      video_frame->visible_rect().width(),
-                     video_frame->visible_rect().height());
+                     video_frame->visible_rect().height(),
+                     0, kOpaque_SkAlphaType);
     bitmap.allocPixels();
-    bitmap.setIsOpaque(true);
 
-    SkDevice device(bitmap);
+    SkBitmapDevice device(bitmap);
     SkCanvas canvas(&device);
 
     video_renderer.Paint(video_frame.get(),
@@ -635,10 +648,25 @@ class CompositingRenderWidgetHostViewBrowserTestTabCapture
       return;
 
     RenderWidgetHostViewPort* rwhvp = GetRenderWidgetHostViewPort();
+    if (video_frame && !rwhvp->CanCopyToVideoFrame()) {
+      // This should only happen on Mac when using the software compositor.
+      // Otherwise, raise an error. This can be removed when Mac is moved to a
+      // browser compositor.
+      // http://crbug.com/314190
+#if defined(OS_MACOSX)
+      if (!content::GpuDataManager::GetInstance()->GpuAccessAllowed(NULL)) {
+        LOG(WARNING) << ("Blindly passing this test because copying to "
+                         "video frames is not supported on this platform.");
+        return;
+      }
+#endif
+      NOTREACHED();
+    }
 
     // The page is loaded in the renderer, wait for a new frame to arrive.
     uint32 frame = rwhvp->RendererFrameNumber();
-    GetRenderWidgetHost()->ScheduleComposite();
+    while (!GetRenderWidgetHost()->ScheduleComposite())
+      GiveItSomeTime();
     while (rwhvp->RendererFrameNumber() == frame)
       GiveItSomeTime();
 
@@ -671,6 +699,17 @@ class CompositingRenderWidgetHostViewBrowserTestTabCapture
                                                     video_frame,
                                                     callback);
     } else {
+#if defined(USE_AURA)
+      if (!content::GpuDataManager::GetInstance()
+               ->CanUseGpuBrowserCompositor()) {
+        // Skia rendering can cause color differences, particularly in the
+        // middle two columns.
+        SetAllowableError(2);
+        SetExcludeRect(
+            gfx::Rect(output_size.width() / 2 - 1, 0, 2, output_size.height()));
+      }
+#endif
+
       base::Callback<void(bool, const SkBitmap&)> callback =
           base::Bind(&CompositingRenderWidgetHostViewBrowserTestTabCapture::
                        CopyFromCompositingSurfaceCallback,
@@ -824,7 +863,7 @@ class CompositingRenderWidgetHostViewTabCaptureHighDPI
                            base::StringPrintf("%f", scale()));
 #if defined(OS_WIN)
     cmd->AppendSwitchASCII(switches::kHighDPISupport, "1");
-    ui::EnableHighDPISupport();
+    gfx::EnableHighDPISupport();
 #endif
   }
 

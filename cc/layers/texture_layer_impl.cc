@@ -4,12 +4,15 @@
 
 #include "cc/layers/texture_layer_impl.h"
 
+#include <vector>
+
 #include "base/strings/stringprintf.h"
 #include "cc/layers/quad_sink.h"
 #include "cc/output/renderer.h"
 #include "cc/quads/texture_draw_quad.h"
 #include "cc/resources/platform_color.h"
 #include "cc/resources/scoped_resource.h"
+#include "cc/resources/single_release_callback.h"
 #include "cc/trees/layer_tree_impl.h"
 
 namespace cc {
@@ -36,10 +39,14 @@ TextureLayerImpl::TextureLayerImpl(LayerTreeImpl* tree_impl,
 
 TextureLayerImpl::~TextureLayerImpl() { FreeTextureMailbox(); }
 
-void TextureLayerImpl::SetTextureMailbox(const TextureMailbox& mailbox) {
+void TextureLayerImpl::SetTextureMailbox(
+    const TextureMailbox& mailbox,
+    scoped_ptr<SingleReleaseCallback> release_callback) {
   DCHECK(uses_mailbox_);
+  DCHECK_EQ(mailbox.IsValid(), !!release_callback);
   FreeTextureMailbox();
   texture_mailbox_ = mailbox;
+  release_callback_ = release_callback.Pass();
   own_mailbox_ = true;
   valid_texture_copy_ = false;
 }
@@ -59,8 +66,10 @@ void TextureLayerImpl::PushPropertiesTo(LayerImpl* layer) {
   texture_layer->set_uv_bottom_right(uv_bottom_right_);
   texture_layer->set_vertex_opacity(vertex_opacity_);
   texture_layer->set_premultiplied_alpha(premultiplied_alpha_);
+  texture_layer->set_blend_background_color(blend_background_color_);
   if (uses_mailbox_ && own_mailbox_) {
-    texture_layer->SetTextureMailbox(texture_mailbox_);
+    texture_layer->SetTextureMailbox(texture_mailbox_,
+                                     release_callback_.Pass());
     own_mailbox_ = false;
   } else {
     texture_layer->set_texture_id(texture_id_);
@@ -80,7 +89,8 @@ bool TextureLayerImpl::WillDraw(DrawMode draw_mode,
            texture_mailbox_.IsSharedMemory())) {
         external_texture_resource_ =
             resource_provider->CreateResourceFromTextureMailbox(
-                texture_mailbox_);
+                texture_mailbox_,
+                release_callback_.Pass());
         DCHECK(external_texture_resource_);
         texture_copy_.reset();
         valid_texture_copy_ = false;
@@ -95,15 +105,15 @@ bool TextureLayerImpl::WillDraw(DrawMode draw_mode,
       // Have to upload a copy to a texture for it to be used in a
       // hardware draw.
       if (!texture_copy_)
-        texture_copy_ = ScopedResource::create(resource_provider);
+        texture_copy_ = ScopedResource::Create(resource_provider);
       if (texture_copy_->size() != texture_mailbox_.shared_memory_size() ||
           resource_provider->InUseByConsumer(texture_copy_->id()))
         texture_copy_->Free();
 
       if (!texture_copy_->id()) {
         texture_copy_->Allocate(texture_mailbox_.shared_memory_size(),
-                                resource_provider->best_texture_format(),
-                                ResourceProvider::TextureUsageAny);
+                                ResourceProvider::TextureUsageAny,
+                                resource_provider->best_texture_format());
       }
 
       if (texture_copy_->id()) {
@@ -174,12 +184,7 @@ void TextureLayerImpl::AppendQuads(QuadSink* quad_sink,
                bg_color,
                vertex_opacity_,
                flipped_);
-
-  // Perform explicit clipping on a quad to avoid setting a scissor later.
-  if (shared_quad_state->is_clipped && quad->PerformClipping())
-    shared_quad_state->is_clipped = false;
-  if (!quad->rect.IsEmpty())
-    quad_sink->Append(quad.PassAs<DrawQuad>(), append_quads_data);
+  quad_sink->Append(quad.PassAs<DrawQuad>(), append_quads_data);
 }
 
 void TextureLayerImpl::DidDraw(ResourceProvider* resource_provider) {
@@ -209,6 +214,8 @@ void TextureLayerImpl::DidLoseOutputSurface() {
     ResourceProvider* resource_provider =
         layer_tree_impl()->resource_provider();
     resource_provider->DeleteResource(external_texture_resource_);
+  } else {
+    FreeTextureMailbox();
   }
   texture_copy_.reset();
   texture_id_ = 0;
@@ -220,16 +227,15 @@ const char* TextureLayerImpl::LayerTypeAsString() const {
   return "cc::TextureLayerImpl";
 }
 
-bool TextureLayerImpl::CanClipSelf() const {
-  return true;
-}
-
 void TextureLayerImpl::FreeTextureMailbox() {
   if (!uses_mailbox_)
     return;
   if (own_mailbox_) {
     DCHECK(!external_texture_resource_);
-    texture_mailbox_.RunReleaseCallback(texture_mailbox_.sync_point(), false);
+    if (release_callback_)
+      release_callback_->Run(texture_mailbox_.sync_point(), false);
+    texture_mailbox_ = TextureMailbox();
+    release_callback_.reset();
   } else if (external_texture_resource_) {
     DCHECK(!own_mailbox_);
     ResourceProvider* resource_provider =

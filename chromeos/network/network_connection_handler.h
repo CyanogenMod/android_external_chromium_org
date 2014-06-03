@@ -91,8 +91,8 @@ class CHROMEOS_EXPORT NetworkConnectionHandler
   // ConnectToNetwork() will start an asynchronous connection attempt.
   // On success, |success_callback| will be called.
   // On failure, |error_callback| will be called with |error_name| one of the
-  //   constants defined above, or flimflam::kErrorConnectFailed or
-  //   flimflam::kErrorBadPassphrase if the Shill Error property (from a
+  //   constants defined above, or shill::kErrorConnectFailed or
+  //   shill::kErrorBadPassphrase if the Shill Error property (from a
   //   previous connect attempt) was set to one of those.
   // |error_message| will contain an additional error string for debugging.
   // If |check_error_state| is true, the current state of the network is
@@ -114,28 +114,19 @@ class CHROMEOS_EXPORT NetworkConnectionHandler
                          const base::Closure& success_callback,
                          const network_handler::ErrorCallback& error_callback);
 
-  // ActivateNetwork() will start an asynchronous activation attempt.
-  // |carrier| may be empty or may specify a carrier to activate.
-  // On success, |success_callback| will be called.
-  // On failure, |error_callback| will be called with |error_name| one of:
-  //  kErrorNotFound if no network matching |service_path| is found.
-  //  kErrorShillError if a DBus or Shill error occurred.
-  // TODO(stevenjb/armansito): Move this to a separate NetworkActivationHandler.
-  void ActivateNetwork(const std::string& service_path,
-                       const std::string& carrier,
-                       const base::Closure& success_callback,
-                       const network_handler::ErrorCallback& error_callback);
-
   // Returns true if ConnectToNetwork has been called with |service_path| and
   // has not completed (i.e. success or error callback has been called).
   bool HasConnectingNetwork(const std::string& service_path);
+
+  // Returns true if there are any pending connect requests.
+  bool HasPendingConnectRequest();
 
   // NetworkStateHandlerObserver
   virtual void NetworkListChanged() OVERRIDE;
   virtual void NetworkPropertiesUpdated(const NetworkState* network) OVERRIDE;
 
   // LoginState::Observer
-  virtual void LoggedInStateChanged(LoginState::LoggedInState state) OVERRIDE;
+  virtual void LoggedInStateChanged() OVERRIDE;
 
   // CertLoader::Observer
   virtual void OnCertificatesLoaded(const net::CertificateList& cert_list,
@@ -197,16 +188,6 @@ class CHROMEOS_EXPORT NetworkConnectionHandler
   void HandleShillDisconnectSuccess(const std::string& service_path,
                                     const base::Closure& success_callback);
 
-  // Calls Shill.Manager.Activate asynchronously.
-  void CallShillActivate(
-      const std::string& service_path,
-      const std::string& carrier,
-      const base::Closure& success_callback,
-      const network_handler::ErrorCallback& error_callback);
-
-  // Handle success from Shill.Service.ActivateCellularModem.
-  void HandleShillActivateSuccess(const std::string& service_path,
-                                  const base::Closure& success_callback);
 
   // Local references to the associated handler instances.
   CertLoader* cert_loader_;

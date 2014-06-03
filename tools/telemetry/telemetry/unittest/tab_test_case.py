@@ -19,8 +19,7 @@ class TabTestCase(unittest.TestCase):
     self.CustomizeBrowserOptions(options)
 
     if self._extra_browser_args:
-      for arg in self._extra_browser_args:
-        options.extra_browser_args.append(arg)
+      options.AppendExtraBrowserArgs(self._extra_browser_args)
 
     browser_to_create = browser_finder.FindBrowser(options)
     if not browser_to_create:
@@ -29,6 +28,8 @@ class TabTestCase(unittest.TestCase):
       self._browser = browser_to_create.Create()
       self._browser.Start()
       self._tab = self._browser.tabs[0]
+      self._tab.Navigate('about:blank')
+
     except:
       self.tearDown()
       raise

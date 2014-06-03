@@ -4,7 +4,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import fnmatch
 import optparse
 import os
 import sys
@@ -15,11 +14,15 @@ from util import md5_check
 
 def DoDex(options, paths):
   dx_binary = os.path.join(options.android_sdk_tools, 'dx')
-  dex_cmd = [dx_binary, '--dex', '--output', options.dex_path] + paths
+  # See http://crbug.com/272064 for context on --force-jumbo.
+  dex_cmd = [dx_binary, '--dex', '--force-jumbo', '--output', options.dex_path]
+  if options.no_locals != '0':
+    dex_cmd.append('--no-locals')
+  dex_cmd += paths
 
   record_path = '%s.md5.stamp' % options.dex_path
   md5_check.CallAndRecordIfStale(
-      lambda: build_utils.CheckCallDie(dex_cmd, suppress_output=True),
+      lambda: build_utils.CheckOutput(dex_cmd, print_stderr=False),
       record_path=record_path,
       input_paths=paths,
       input_strings=dex_cmd)
@@ -33,11 +36,14 @@ def main(argv):
                     help='Android sdk build tools directory.')
   parser.add_option('--dex-path', help='Dex output path.')
   parser.add_option('--configuration-name',
-      help='The build CONFIGURATION_NAME.')
+                    help='The build CONFIGURATION_NAME.')
   parser.add_option('--proguard-enabled',
-      help='"true" if proguard is enabled.')
+                    help='"true" if proguard is enabled.')
   parser.add_option('--proguard-enabled-input-path',
-      help='Path to dex in Release mode when proguard is enabled.')
+                    help=('Path to dex in Release mode when proguard '
+                          'is enabled.'))
+  parser.add_option('--no-locals',
+                    help='Exclude locals list from the dex file.')
   parser.add_option('--stamp', help='Path to touch on success.')
 
   # TODO(newt): remove this once http://crbug.com/177552 is fixed in ninja.
@@ -45,8 +51,8 @@ def main(argv):
 
   options, paths = parser.parse_args()
 
-  if (options.proguard_enabled == "true"
-      and options.configuration_name == "Release"):
+  if (options.proguard_enabled == 'true'
+      and options.configuration_name == 'Release'):
     paths = [options.proguard_enabled_input_path]
 
   DoDex(options, paths)
@@ -57,4 +63,3 @@ def main(argv):
 
 if __name__ == '__main__':
   sys.exit(main(sys.argv))
-

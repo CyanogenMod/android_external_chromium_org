@@ -49,11 +49,7 @@ std::string WrapAt64(const std::string &str) {
 
 std::string GetBase64String(net::X509Certificate::OSCertHandle cert) {
   std::string base64;
-  if (!base::Base64Encode(
-      x509_certificate_model::GetDerString(cert), &base64)) {
-    LOG(ERROR) << "base64 encoding error";
-    return std::string();
-  }
+  base::Base64Encode(x509_certificate_model::GetDerString(cert), &base64);
   return "-----BEGIN CERTIFICATE-----\r\n" +
       WrapAt64(base64) +
       "-----END CERTIFICATE-----\r\n";
@@ -171,7 +167,7 @@ void ShowCertSelectFileDialog(ui::SelectFileDialog* select_file_dialog,
       l10n_util::GetStringUTF16(IDS_CERT_EXPORT_TYPE_PKCS7_CHAIN));
   file_type_info.include_all_files = true;
   select_file_dialog->SelectFile(
-      type, string16(),
+      type, base::string16(),
       suggested_path, &file_type_info,
       1,  // 1-based index for |file_type_info.extensions| to specify default.
       FILE_PATH_LITERAL("crt"),

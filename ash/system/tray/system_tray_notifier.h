@@ -10,10 +10,6 @@
 
 #include "ash/ash_export.h"
 #include "ash/system/bluetooth/bluetooth_observer.h"
-#include "ash/system/brightness/brightness_observer.h"
-#include "ash/system/chromeos/enterprise/enterprise_domain_observer.h"
-#include "ash/system/chromeos/network/network_observer.h"
-#include "ash/system/chromeos/network/sms_observer.h"
 #include "ash/system/chromeos/tray_tracing.h"
 #include "ash/system/date/clock_observer.h"
 #include "ash/system/drive/drive_observer.h"
@@ -28,8 +24,8 @@
 #include "base/observer_list.h"
 
 #if defined(OS_CHROMEOS)
+#include "ash/system/chromeos/enterprise/enterprise_domain_observer.h"
 #include "ash/system/chromeos/network/network_observer.h"
-#include "ash/system/chromeos/network/sms_observer.h"
 #include "ash/system/chromeos/screen_security/screen_capture_observer.h"
 #include "ash/system/chromeos/screen_security/screen_share_observer.h"
 #endif
@@ -50,9 +46,6 @@ public:
 
   void AddBluetoothObserver(BluetoothObserver* observer);
   void RemoveBluetoothObserver(BluetoothObserver* observer);
-
-  void AddBrightnessObserver(BrightnessObserver* observer);
-  void RemoveBrightnessObserver(BrightnessObserver* observer);
 
   void AddCapsLockObserver(CapsLockObserver* observer);
   void RemoveCapsLockObserver(CapsLockObserver* observer);
@@ -88,9 +81,6 @@ public:
   void AddNetworkObserver(NetworkObserver* observer);
   void RemoveNetworkObserver(NetworkObserver* observer);
 
-  void AddSmsObserver(SmsObserver* observer);
-  void RemoveSmsObserver(SmsObserver* observer);
-
   void AddEnterpriseDomainObserver(EnterpriseDomainObserver* observer);
   void RemoveEnterpriseDomainObserver(EnterpriseDomainObserver* observer);
 
@@ -106,7 +96,6 @@ public:
   void NotifyTracingModeChanged(bool value);
   void NotifyRefreshBluetooth();
   void NotifyBluetoothDiscoveringChanged();
-  void NotifyBrightnessChanged(double level, bool user_initialted);
   void NotifyCapsLockChanged(bool enabled, bool search_mapped_to_caps_lock);
   void NotifyRefreshClock();
   void NotifyDateFormatChanged();
@@ -122,16 +111,9 @@ public:
   void NotifySessionLengthLimitChanged();
   void NotifyUpdateRecommended(UpdateObserver::UpdateSeverity severity);
   void NotifyUserUpdate();
+  void NotifyUserAddedToSession();
 #if defined(OS_CHROMEOS)
-  void NotifySetNetworkMessage(NetworkTrayDelegate* delegate,
-                               NetworkObserver::MessageType message_type,
-                               NetworkObserver::NetworkType network_type,
-                               const base::string16& title,
-                               const base::string16& message,
-                               const std::vector<base::string16>& links);
-  void NotifyClearNetworkMessage(NetworkObserver::MessageType message_type);
   void NotifyRequestToggleWifi();
-  void NotifyAddSmsMessage(const base::DictionaryValue& message);
   void NotifyEnterpriseDomainChanged();
   void NotifyScreenCaptureStart(const base::Closure& stop_callback,
                                 const base::string16& sharing_app_name);
@@ -148,7 +130,6 @@ public:
  private:
   ObserverList<AccessibilityObserver> accessibility_observers_;
   ObserverList<BluetoothObserver> bluetooth_observers_;
-  ObserverList<BrightnessObserver> brightness_observers_;
   ObserverList<CapsLockObserver> caps_lock_observers_;
   ObserverList<ClockObserver> clock_observers_;
   ObserverList<DriveObserver> drive_observers_;
@@ -161,7 +142,6 @@ public:
   ObserverList<UserObserver> user_observers_;
 #if defined(OS_CHROMEOS)
   ObserverList<NetworkObserver> network_observers_;
-  ObserverList<SmsObserver> sms_observers_;
   ObserverList<EnterpriseDomainObserver> enterprise_domain_observers_;
   ObserverList<ScreenCaptureObserver> screen_capture_observers_;
   ObserverList<ScreenShareObserver> screen_share_observers_;

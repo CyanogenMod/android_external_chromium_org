@@ -15,10 +15,12 @@ class InputMethodEventFilter;
 
 namespace ash {
 class AshNativeCursorManager;
+class ShelfDelegate;
+class ShelfModel;
 class Shell;
-class LauncherModel;
 
 namespace internal {
+class AppListController;
 class DragDropController;
 class RootWindowLayoutManager;
 class ScreenPositionController;
@@ -39,10 +41,14 @@ public:
   internal::WorkspaceController* workspace_controller();
   internal::ScreenPositionController* screen_position_controller();
   AshNativeCursorManager* ash_native_cursor_manager();
-  LauncherModel* launcher_model();
+  ShelfModel* shelf_model();
   internal::DragDropController* drag_drop_controller();
+  internal::AppListController* app_list_controller();
 
   void DisableOutputConfiguratorAnimation();
+
+  // Set ShelfDelegate.
+  void SetShelfDelegate(ShelfDelegate* delegate);
 
  private:
   Shell* shell_;  // not owned

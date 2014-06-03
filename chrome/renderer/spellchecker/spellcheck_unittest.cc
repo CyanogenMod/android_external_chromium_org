@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "webkit/glue/webkit_glue.h"
-
 #include "base/file_util.h"
 #include "base/message_loop/message_loop.h"
 #include "base/path_service.h"
@@ -87,16 +85,16 @@ class SpellCheckTest : public testing::Test {
 #if !defined(OS_MACOSX)
  protected:
   void TestSpellCheckParagraph(
-      const string16& input,
+      const base::string16& input,
       const std::vector<SpellCheckResult>& expected) {
-    WebKit::WebVector<WebKit::WebTextCheckingResult> results;
+    blink::WebVector<blink::WebTextCheckingResult> results;
     spell_check()->SpellCheckParagraph(input,
                                        &results);
 
     EXPECT_EQ(results.size(), expected.size());
     size_t size = std::min(results.size(), expected.size());
     for (size_t j = 0; j < size; ++j) {
-      EXPECT_EQ(results[j].type, WebKit::WebTextCheckingTypeSpelling);
+      EXPECT_EQ(results[j].decoration, blink::WebTextDecorationTypeSpelling);
       EXPECT_EQ(results[j].location, expected[j].location);
       EXPECT_EQ(results[j].length, expected[j].length);
     }
@@ -109,14 +107,14 @@ class SpellCheckTest : public testing::Test {
 };
 
 // A fake completion object for verification.
-class MockTextCheckingCompletion : public WebKit::WebTextCheckingCompletion {
+class MockTextCheckingCompletion : public blink::WebTextCheckingCompletion {
  public:
   MockTextCheckingCompletion()
       : completion_count_(0) {
   }
 
   virtual void didFinishCheckingText(
-      const WebKit::WebVector<WebKit::WebTextCheckingResult>& results)
+      const blink::WebVector<blink::WebTextCheckingResult>& results)
           OVERRIDE {
     completion_count_++;
     last_results_ = results;
@@ -127,7 +125,7 @@ class MockTextCheckingCompletion : public WebKit::WebTextCheckingCompletion {
   }
 
   size_t completion_count_;
-  WebKit::WebVector<WebKit::WebTextCheckingResult> last_results_;
+  blink::WebVector<blink::WebTextCheckingResult> last_results_;
 };
 
 // Operates unit tests for the webkit_glue::SpellCheckWord() function
@@ -433,7 +431,7 @@ TEST_F(SpellCheckTest, SpellCheckSuggestions_EN_US) {
   };
 
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kTestCases); ++i) {
-    std::vector<string16> suggestions;
+    std::vector<base::string16> suggestions;
     size_t input_length = 0;
     if (kTestCases[i].input != NULL) {
       input_length = wcslen(kTestCases[i].input);
@@ -843,10 +841,10 @@ TEST_F(SpellCheckTest, GetAutoCorrectionWord_EN_US) {
   EnableAutoCorrect(true);
 
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kTestCases); ++i) {
-    string16 misspelled_word(UTF8ToUTF16(kTestCases[i].input));
-    string16 expected_autocorrect_word(
+    base::string16 misspelled_word(UTF8ToUTF16(kTestCases[i].input));
+    base::string16 expected_autocorrect_word(
         UTF8ToUTF16(kTestCases[i].expected_result));
-    string16 autocorrect_word = spell_check()->GetAutoCorrectionWord(
+    base::string16 autocorrect_word = spell_check()->GetAutoCorrectionWord(
         misspelled_word, 0);
 
     // Check for spelling.
@@ -887,7 +885,7 @@ TEST_F(SpellCheckTest, MisspelledWords) {
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kTestCases); ++i) {
     ReinitializeSpellCheck(kTestCases[i].language);
 
-    string16 word(WideToUTF16(kTestCases[i].input));
+    base::string16 word(WideToUTF16(kTestCases[i].input));
     int word_length = static_cast<int>(word.length());
     int misspelling_start = 0;
     int misspelling_length = 0;
@@ -915,14 +913,14 @@ TEST_F(SpellCheckTest, SpellCheckParagraphEmptyParagraph) {
 
 // A simple test case having no misspellings.
 TEST_F(SpellCheckTest, SpellCheckParagraphNoMisspellings) {
-  const string16 text = UTF8ToUTF16("apple");
+  const base::string16 text = UTF8ToUTF16("apple");
   std::vector<SpellCheckResult> expected;
   TestSpellCheckParagraph(text, expected);
 }
 
 // A simple test case having one misspelling.
 TEST_F(SpellCheckTest, SpellCheckParagraphSingleMisspellings) {
-  const string16 text = UTF8ToUTF16("zz");
+  const base::string16 text = UTF8ToUTF16("zz");
   std::vector<SpellCheckResult> expected;
   expected.push_back(SpellCheckResult(
       SpellCheckResult::SPELLING, 0, 2));
@@ -932,7 +930,7 @@ TEST_F(SpellCheckTest, SpellCheckParagraphSingleMisspellings) {
 
 // A simple test case having multiple misspellings.
 TEST_F(SpellCheckTest, SpellCheckParagraphMultipleMisspellings) {
-  const string16 text = UTF8ToUTF16("zz, zz");
+  const base::string16 text = UTF8ToUTF16("zz, zz");
   std::vector<SpellCheckResult> expected;
   expected.push_back(SpellCheckResult(
       SpellCheckResult::SPELLING, 0, 2));
@@ -946,7 +944,7 @@ TEST_F(SpellCheckTest, SpellCheckParagraphMultipleMisspellings) {
 TEST_F(SpellCheckTest, SpellCheckParagraphLongSentence) {
   std::vector<SpellCheckResult> expected;
   // The text is taken from US constitution preamble.
-  const string16 text = UTF8ToUTF16(
+  const base::string16 text = UTF8ToUTF16(
       "We the people of the United States, in order to form a more perfect "
       "union, establish justice, insure domestic tranquility, provide for "
       "the common defense, promote the general welfare, and secure the "
@@ -961,7 +959,7 @@ TEST_F(SpellCheckTest, SpellCheckParagraphLongSentenceMultipleMisspellings) {
   std::vector<SpellCheckResult> expected;
 
   // All 'the' are converted to 'hte' in US consitition preamble.
-  const string16 text = UTF8ToUTF16(
+  const base::string16 text = UTF8ToUTF16(
       "We hte people of hte United States, in order to form a more perfect "
       "union, establish justice, insure domestic tranquility, provide for "
       "hte common defense, promote hte general welfare, and secure hte "
@@ -991,7 +989,7 @@ TEST_F(SpellCheckTest, SpellCheckParagraphLongSentenceMultipleMisspellings) {
 TEST_F(SpellCheckTest, RequestSpellCheckWithEmptyString) {
   MockTextCheckingCompletion completion;
 
-  spell_check()->RequestTextChecking(string16(), &completion);
+  spell_check()->RequestTextChecking(base::string16(), &completion);
 
   base::MessageLoop::current()->RunUntilIdle();
 
@@ -1002,7 +1000,7 @@ TEST_F(SpellCheckTest, RequestSpellCheckWithEmptyString) {
 TEST_F(SpellCheckTest, RequestSpellCheckWithoutMisspelling) {
   MockTextCheckingCompletion completion;
 
-  const string16 text = ASCIIToUTF16("hello");
+  const base::string16 text = ASCIIToUTF16("hello");
   spell_check()->RequestTextChecking(text, &completion);
 
   base::MessageLoop::current()->RunUntilIdle();
@@ -1014,7 +1012,7 @@ TEST_F(SpellCheckTest, RequestSpellCheckWithoutMisspelling) {
 TEST_F(SpellCheckTest, RequestSpellCheckWithSingleMisspelling) {
   MockTextCheckingCompletion completion;
 
-  const string16 text = ASCIIToUTF16("apple, zz");
+  const base::string16 text = ASCIIToUTF16("apple, zz");
   spell_check()->RequestTextChecking(text, &completion);
 
   base::MessageLoop::current()->RunUntilIdle();
@@ -1029,7 +1027,7 @@ TEST_F(SpellCheckTest, RequestSpellCheckWithSingleMisspelling) {
 TEST_F(SpellCheckTest, RequestSpellCheckWithMisspellings) {
   MockTextCheckingCompletion completion;
 
-  const string16 text = ASCIIToUTF16("apple, zz, orange, zz");
+  const base::string16 text = ASCIIToUTF16("apple, zz, orange, zz");
   spell_check()->RequestTextChecking(text, &completion);
 
   base::MessageLoop::current()->RunUntilIdle();
@@ -1047,7 +1045,7 @@ TEST_F(SpellCheckTest, RequestSpellCheckWithMisspellings) {
 TEST_F(SpellCheckTest, RequestSpellCheckWithMultipleRequests) {
   MockTextCheckingCompletion completion[3];
 
-  const string16 text[3] = {
+  const base::string16 text[3] = {
     ASCIIToUTF16("what, zz"),
     ASCIIToUTF16("apple, zz"),
     ASCIIToUTF16("orange, zz")
@@ -1072,7 +1070,7 @@ TEST_F(SpellCheckTest, RequestSpellCheckWithoutInitialization) {
   UninitializeSpellCheck();
 
   MockTextCheckingCompletion completion;
-  const string16 text = ASCIIToUTF16("zz");
+  const base::string16 text = ASCIIToUTF16("zz");
 
   spell_check()->RequestTextChecking(text, &completion);
 
@@ -1087,7 +1085,7 @@ TEST_F(SpellCheckTest, RequestSpellCheckMultipleTimesWithoutInitialization) {
   UninitializeSpellCheck();
 
   MockTextCheckingCompletion completion[3];
-  const string16 text[3] = {
+  const base::string16 text[3] = {
     ASCIIToUTF16("what, zz"),
     ASCIIToUTF16("apple, zz"),
     ASCIIToUTF16("orange, zz")
@@ -1119,18 +1117,19 @@ TEST_F(SpellCheckTest, CreateTextCheckingResults) {
   // Verify that the SpellCheck class keeps the spelling marker added to a
   // misspelled word "zz".
   {
-    string16 text = ASCIIToUTF16("zz");
+    base::string16 text = ASCIIToUTF16("zz");
     std::vector<SpellCheckResult> spellcheck_results;
     spellcheck_results.push_back(SpellCheckResult(
-        SpellCheckResult::SPELLING, 0, 2, string16()));
-    WebKit::WebVector<WebKit::WebTextCheckingResult> textcheck_results;
+        SpellCheckResult::SPELLING, 0, 2, base::string16()));
+    blink::WebVector<blink::WebTextCheckingResult> textcheck_results;
     spell_check()->CreateTextCheckingResults(SpellCheck::USE_NATIVE_CHECKER,
                                              0,
                                              text,
                                              spellcheck_results,
                                              &textcheck_results);
     EXPECT_EQ(spellcheck_results.size(), textcheck_results.size());
-    EXPECT_EQ(WebKit::WebTextCheckingTypeSpelling, textcheck_results[0].type);
+    EXPECT_EQ(blink::WebTextDecorationTypeSpelling,
+              textcheck_results[0].decoration);
     EXPECT_EQ(spellcheck_results[0].location, textcheck_results[0].location);
     EXPECT_EQ(spellcheck_results[0].length, textcheck_results[0].length);
   }
@@ -1138,18 +1137,19 @@ TEST_F(SpellCheckTest, CreateTextCheckingResults) {
   // Verify that the SpellCheck class replaces the spelling marker added to a
   // contextually-misspelled word "bean" with a grammar marker.
   {
-    string16 text = ASCIIToUTF16("I have bean to USA.");
+    base::string16 text = ASCIIToUTF16("I have bean to USA.");
     std::vector<SpellCheckResult> spellcheck_results;
     spellcheck_results.push_back(SpellCheckResult(
-        SpellCheckResult::SPELLING, 7, 4, string16()));
-    WebKit::WebVector<WebKit::WebTextCheckingResult> textcheck_results;
+        SpellCheckResult::SPELLING, 7, 4, base::string16()));
+    blink::WebVector<blink::WebTextCheckingResult> textcheck_results;
     spell_check()->CreateTextCheckingResults(SpellCheck::USE_NATIVE_CHECKER,
                                              0,
                                              text,
                                              spellcheck_results,
                                              &textcheck_results);
     EXPECT_EQ(spellcheck_results.size(), textcheck_results.size());
-    EXPECT_EQ(WebKit::WebTextCheckingTypeGrammar, textcheck_results[0].type);
+    EXPECT_EQ(blink::WebTextDecorationTypeGrammar,
+              textcheck_results[0].decoration);
     EXPECT_EQ(spellcheck_results[0].location, textcheck_results[0].location);
     EXPECT_EQ(spellcheck_results[0].length, textcheck_results[0].length);
   }
@@ -1254,7 +1254,7 @@ TEST_F(SpellCheckTest, NoSuggest) {
         " in " << kTestCases[i].locale;
 
     // Now verify that this test case does not show up as a suggestion.
-    std::vector<string16> suggestions;
+    std::vector<base::string16> suggestions;
     size_t input_length = 0;
     if (kTestCases[i].input != NULL)
       input_length = strlen(kTestCases[i].input);
@@ -1347,7 +1347,7 @@ TEST_F(SpellCheckTest, LogicalSuggestions) {
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kTestCases); ++i) {
     int misspelling_start = 0;
     int misspelling_length = 0;
-    std::vector<string16> suggestions;
+    std::vector<base::string16> suggestions;
     EXPECT_FALSE(spell_check()->SpellCheckWord(
         ASCIIToUTF16(kTestCases[i].misspelled).c_str(),
         strlen(kTestCases[i].misspelled),

@@ -6,6 +6,7 @@
 
 #include "base/android/jni_android.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/profiles/profile_manager.h"
 #include "jni/Profile_jni.h"
 
 using base::android::AttachCurrentThread;
@@ -45,11 +46,33 @@ bool ProfileAndroid::RegisterProfileAndroid(JNIEnv* env) {
   return RegisterNativesImpl(env);
 }
 
+// static
+jobject ProfileAndroid::GetLastUsedProfile(JNIEnv* env, jclass clazz) {
+  Profile* profile = ProfileManager::GetLastUsedProfile();
+  if (profile == NULL) {
+    NOTREACHED() << "Profile not found.";
+    return NULL;
+  }
+
+  ProfileAndroid* profile_android = ProfileAndroid::FromProfile(profile);
+  if (profile_android == NULL) {
+    NOTREACHED() << "ProfileAndroid not found.";
+    return NULL;
+  }
+
+  return profile_android->obj_.obj();
+}
+
+// static
+jobject GetLastUsedProfile(JNIEnv* env, jclass clazz) {
+  return ProfileAndroid::GetLastUsedProfile(env, clazz);
+}
+
 ProfileAndroid::ProfileAndroid(Profile* profile)
     : profile_(profile) {
   JNIEnv* env = AttachCurrentThread();
   base::android::ScopedJavaLocalRef<jobject> jprofile =
-      Java_Profile_create(env, reinterpret_cast<int>(this));
+      Java_Profile_create(env, reinterpret_cast<intptr_t>(this));
   obj_.Reset(env, jprofile.obj());
 
 }

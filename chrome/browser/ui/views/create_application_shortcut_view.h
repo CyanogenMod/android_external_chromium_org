@@ -50,10 +50,11 @@ class CreateApplicationShortcutView : public views::DialogDelegateView,
   virtual gfx::Size GetPreferredSize() OVERRIDE;
 
   // Overridden from views::DialogDelegate:
-  virtual string16 GetDialogButtonLabel(ui::DialogButton button) const OVERRIDE;
+  virtual base::string16 GetDialogButtonLabel(
+      ui::DialogButton button) const OVERRIDE;
   virtual bool IsDialogButtonEnabled(ui::DialogButton button) const OVERRIDE;
   virtual ui::ModalType GetModalType() const OVERRIDE;
-  virtual string16 GetWindowTitle() const OVERRIDE;
+  virtual base::string16 GetWindowTitle() const OVERRIDE;
   virtual bool Accept() OVERRIDE;
 
   // Overridden from views::ButtonListener:
@@ -62,7 +63,7 @@ class CreateApplicationShortcutView : public views::DialogDelegateView,
 
  protected:
   // Adds a new check-box as a child to the view.
-  views::Checkbox* AddCheckbox(const string16& text, bool checked);
+  views::Checkbox* AddCheckbox(const base::string16& text, bool checked);
 
   // Profile in which the shortcuts will be created.
   Profile* profile_;
@@ -76,7 +77,8 @@ class CreateApplicationShortcutView : public views::DialogDelegateView,
 
   // Target shortcut info.
   ShellIntegration::ShortcutInfo shortcut_info_;
-  string16 shortcut_menu_subdir_;
+  // If false, the shortcut will be created in the root level of the Start Menu.
+  bool create_in_chrome_apps_subdir_;
 
   DISALLOW_COPY_AND_ASSIGN(CreateApplicationShortcutView);
 };
@@ -96,11 +98,12 @@ class CreateUrlApplicationShortcutView : public CreateApplicationShortcutView {
 
   // Favicon download callback.
   void DidDownloadFavicon(
+      int requested_size,
       int id,
       int http_status_code,
       const GURL& image_url,
-      int requested_size,
-      const std::vector<SkBitmap>& bitmaps);
+      const std::vector<SkBitmap>& bitmaps,
+      const std::vector<gfx::Size>& original_bitmap_sizes);
 
   // The tab whose URL is being turned into an app.
   content::WebContents* web_contents_;
@@ -110,6 +113,8 @@ class CreateUrlApplicationShortcutView : public CreateApplicationShortcutView {
 
   // Unprocessed icons from the WebApplicationInfo passed in.
   web_app::IconInfoList unprocessed_icons_;
+
+  base::WeakPtrFactory<CreateUrlApplicationShortcutView> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(CreateUrlApplicationShortcutView);
 };

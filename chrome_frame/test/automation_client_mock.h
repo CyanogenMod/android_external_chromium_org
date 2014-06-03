@@ -57,8 +57,6 @@ struct MockCFDelegate : public ChromeFrameDelegateImpl {
   MOCK_METHOD2(OnRequestRead, void(int request_id, int bytes_to_read));
   MOCK_METHOD2(OnRequestEnd, void(int request_id,
       const net::URLRequestStatus& status));
-  MOCK_METHOD2(OnSetCookieAsync, void(const GURL& url,
-      const std::string& cookie));
 
   // Use for sending network responses
   void SetRequestDelegate(PluginUrlRequestDelegate* request_delegate) {
@@ -67,7 +65,7 @@ struct MockCFDelegate : public ChromeFrameDelegateImpl {
 
   void ReplyStarted(int request_id, const char* headers) {
     request_delegate_->OnResponseStarted(request_id, "text/html", headers,
-      0, base::Time::Now(), EmptyString(), 0, net::HostPortPair(), 0);
+      0, base::Time::Now(), std::string(), 0, net::HostPortPair(), 0);
   }
 
   void ReplyData(int request_id, const std::string* data) {

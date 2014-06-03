@@ -146,7 +146,7 @@ var MainView = (function() {
     stopCapturing: function() {
       g_browser.disable();
       document.styleSheets[0].insertRule(
-          '.hide-when-not-capturing { display: none; }');
+          '.hide-when-not-capturing { display: none; }', 0);
     },
 
     initTabs_: function() {
@@ -195,7 +195,7 @@ var MainView = (function() {
       addTab(HttpCacheView);
       addTab(ModulesView);
       addTab(TestView);
-      addTab(CrosLogAnalyzerView);
+      addTab(CrosLogVisualizerView);
       addTab(HSTSView);
       addTab(LogsView);
       addTab(BandwidthView);
@@ -204,7 +204,8 @@ var MainView = (function() {
 
       this.tabSwitcher_.showMenuItem(LogsView.TAB_ID, cr.isChromeOS);
       this.tabSwitcher_.showMenuItem(CrosView.TAB_ID, cr.isChromeOS);
-      this.tabSwitcher_.showMenuItem(CrosLogAnalyzerView.TAB_ID, cr.isChromeOS);
+      this.tabSwitcher_.showMenuItem(CrosLogVisualizerView.TAB_ID,
+                                     cr.isChromeOS);
     },
 
     /**

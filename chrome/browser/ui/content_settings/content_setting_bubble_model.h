@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "base/compiler_specific.h"
+#include "chrome/browser/content_settings/tab_specific_content_settings.h"
 #include "chrome/common/content_settings.h"
 #include "chrome/common/custom_handlers/protocol_handler.h"
 #include "content/public/browser/notification_observer.h"
@@ -34,19 +35,11 @@ class ContentSettingBubbleModel : public content::NotificationObserver {
   typedef ContentSettingBubbleModelDelegate Delegate;
 
   struct PopupItem {
-    PopupItem(const gfx::Image& image,
-              const std::string& title,
-              content::WebContents* web_contents)
-        : image(image),
-          title(title),
-          web_contents(web_contents),
-          popup_id(-1) {}
     PopupItem(const gfx::Image& image, const std::string& title, int32 popup_id)
-        : image(image), title(title), web_contents(NULL), popup_id(popup_id) {}
+        : image(image), title(title), popup_id(popup_id) {}
 
     gfx::Image image;
     std::string title;
-    content::WebContents* web_contents;
     int32 popup_id;
   };
   typedef std::vector<PopupItem> PopupItems;
@@ -71,9 +64,13 @@ class ContentSettingBubbleModel : public content::NotificationObserver {
   };
 
   struct MediaMenu {
+    MediaMenu();
+    ~MediaMenu();
+
     std::string label;
     content::MediaStreamDevice default_device;
     content::MediaStreamDevice selected_device;
+    bool disabled;
   };
   typedef std::map<content::MediaStreamType, MediaMenu> MediaMenuMap;
 
@@ -86,7 +83,6 @@ class ContentSettingBubbleModel : public content::NotificationObserver {
     RadioGroup radio_group;
     bool radio_group_enabled;
     std::vector<DomainList> domain_lists;
-    std::set<std::string> resource_identifiers;
     std::string custom_link;
     bool custom_link_enabled;
     std::string manage_link;
@@ -161,7 +157,6 @@ class ContentSettingBubbleModel : public content::NotificationObserver {
   void set_selected_device(const content::MediaStreamDevice& device) {
     bubble_content_.media_menus[device.type].selected_device = device;
   }
-  void AddBlockedResource(const std::string& resource_identifier);
 
  private:
   content::WebContents* web_contents_;
@@ -184,7 +179,6 @@ class ContentSettingTitleAndLinkModel : public ContentSettingBubbleModel {
   Delegate* delegate() const { return delegate_; }
 
  private:
-  void SetBlockedResources();
   void SetTitle();
   void SetManageLink();
   virtual void OnManageLinkClicked() OVERRIDE;

@@ -215,26 +215,28 @@ void GetFileInfo(const base::FilePath& file_path,
                  const GetFileInfoCallback& callback,
                  FileSystemInterface* file_system) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  file_system->GetResourceEntryByPath(
+  file_system->GetResourceEntry(
       file_path,
       base::Bind(&RunGetFileInfoCallback, callback));
 }
 
 void Copy(const base::FilePath& src_file_path,
           const base::FilePath& dest_file_path,
+          bool preserve_last_modified,
           const StatusCallback& callback,
           FileSystemInterface* file_system) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  file_system->Copy(src_file_path, dest_file_path,
+  file_system->Copy(src_file_path, dest_file_path, preserve_last_modified,
                     base::Bind(&RunStatusCallbackByFileError, callback));
 }
 
 void Move(const base::FilePath& src_file_path,
           const base::FilePath& dest_file_path,
+          bool preserve_last_modified,
           const StatusCallback& callback,
           FileSystemInterface* file_system) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  file_system->Move(src_file_path, dest_file_path,
+  file_system->Move(src_file_path, dest_file_path, preserve_last_modified,
                     base::Bind(&RunStatusCallbackByFileError, callback));
 }
 
@@ -252,9 +254,8 @@ void ReadDirectory(const base::FilePath& file_path,
                    const ReadDirectoryCallback& callback,
                    FileSystemInterface* file_system) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  file_system->ReadDirectoryByPath(
-      file_path,
-      base::Bind(&RunReadDirectoryCallback, callback));
+  file_system->ReadDirectory(file_path,
+                             base::Bind(&RunReadDirectoryCallback, callback));
 }
 
 void Remove(const base::FilePath& file_path,
@@ -283,6 +284,7 @@ void CreateFile(const base::FilePath& file_path,
                 FileSystemInterface* file_system) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   file_system->CreateFile(file_path, is_exclusive,
+                          std::string(),  // no mime type; guess from file_path
                           base::Bind(&RunStatusCallbackByFileError, callback));
 }
 
@@ -300,9 +302,8 @@ void CreateSnapshotFile(const base::FilePath& file_path,
                         const CreateSnapshotFileCallback& callback,
                         FileSystemInterface* file_system) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  file_system->GetFileByPath(
-      file_path,
-      base::Bind(&RunCreateSnapshotFileCallback, callback));
+  file_system->GetFile(file_path,
+                       base::Bind(&RunCreateSnapshotFileCallback, callback));
 }
 
 void CreateWritableSnapshotFile(
@@ -313,6 +314,7 @@ void CreateWritableSnapshotFile(
   file_system->OpenFile(
       file_path,
       OPEN_FILE,
+      std::string(),  // no mime type; we never create a new file here.
       base::Bind(&RunCreateWritableSnapshotFileCallback, callback));
 }
 
@@ -343,6 +345,7 @@ void OpenFile(const base::FilePath& file_path,
 
   file_system->OpenFile(
       file_path, GetOpenMode(file_flags),
+      std::string(),  // no mime type; guess from file_path
       base::Bind(&OpenFileAfterFileSystemOpenFile, file_flags, callback));
 }
 

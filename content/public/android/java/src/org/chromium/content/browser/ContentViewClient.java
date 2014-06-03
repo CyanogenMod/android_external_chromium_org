@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -52,15 +52,6 @@ public class ContentViewClient {
             float topControlsOffsetYPix, float contentOffsetYPix, float overdrawBottomHeightPix) {
     }
 
-    /**
-     * Notifies the client that the renderer backing the ContentView has crashed.
-     * @param crashedWhileOomProtected True iff the renderer died while being bound with a high
-     * priority binding, which indicates that it was probably an actual crash (as opposed to the
-     * renderer being killed by the OS out-of-memory killer).
-     */
-    public void onRendererCrash(boolean processWasOomProtected) {
-    }
-
     public boolean shouldOverrideKeyEvent(KeyEvent event) {
         int keyCode = event.getKeyCode();
         // We need to send almost every key to WebKit. However:
@@ -96,8 +87,10 @@ public class ContentViewClient {
         return false;
     }
 
-    // Called when an ImeEvent is sent to the page. Can be used to know when some text is entered
-    // in a page.
+    /**
+     * Called when an ImeEvent is sent to the page. Can be used to know when some text is entered
+     * in a page.
+     */
     public void onImeEvent() {
     }
 
@@ -108,20 +101,6 @@ public class ContentViewClient {
      *                    though).
      */
     public void onImeStateChangeRequested(boolean requestShow) {
-    }
-
-    // TODO (dtrainor): Should expose getScrollX/Y from ContentView or make
-    // computeHorizontalScrollOffset()/computeVerticalScrollOffset() public.
-    /**
-     * Gives the UI the chance to override each scroll event.
-     * @param dx The amount scrolled in the X direction (in physical pixels).
-     * @param dy The amount scrolled in the Y direction (in physical pixels).
-     * @param scrollX The current X scroll offset (in physical pixels).
-     * @param scrollY The current Y scroll offset (in physical pixels).
-     * @return Whether or not the UI consumed and handled this event.
-     */
-    public boolean shouldOverrideScroll(float dx, float dy, float scrollX, float scrollY) {
-        return false;
     }
 
     /**
@@ -142,6 +121,24 @@ public class ContentViewClient {
      * Called when the contextual ActionBar is hidden.
      */
     public void onContextualActionBarHidden() {
+    }
+
+    /**
+     * Perform a search on {@code searchQuery}.  This method is only called if
+     * {@link #doesPerformWebSearch()} returns {@code true}.
+     * @param searchQuery The string to search for.
+     */
+    public void performWebSearch(String searchQuery) {
+    }
+
+    /**
+     * If this returns {@code true} contextual web search attempts will be forwarded to
+     * {@link #performWebSearch(String)}.
+     * @return {@code true} iff this {@link ContentViewClient} wants to consume web search queries
+     *         and override the default intent behavior.
+     */
+    public boolean doesPerformWebSearch() {
+        return false;
     }
 
     /**

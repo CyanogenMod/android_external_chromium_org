@@ -10,7 +10,7 @@
 #include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/extensions/extension_function.h"
+#include "chrome/browser/extensions/chrome_extension_function.h"
 #include "chrome/common/extensions/api/enterprise_platform_keys_private.h"
 #include "chromeos/attestation/attestation_constants.h"
 #include "chromeos/attestation/attestation_flow.h"
@@ -38,7 +38,7 @@ class PrefRegistrySyncable;
 
 namespace extensions {
 
-class EPKPChallengeKeyBase : public AsyncExtensionFunction {
+class EPKPChallengeKeyBase : public ChromeAsyncExtensionFunction {
  public:
   static const char kChallengeBadBase64Error[];
   static const char kDevicePolicyDisabledError[];
@@ -53,6 +53,7 @@ class EPKPChallengeKeyBase : public AsyncExtensionFunction {
     PREPARE_KEY_DBUS_ERROR,
     PREPARE_KEY_USER_REJECTED,
     PREPARE_KEY_GET_CERTIFICATE_FAILED,
+    PREPARE_KEY_RESET_REQUIRED
   };
 
   EPKPChallengeKeyBase();
@@ -92,6 +93,7 @@ class EPKPChallengeKeyBase : public AsyncExtensionFunction {
   // user consent before calling GetCertificate().
   void PrepareKey(
       chromeos::attestation::AttestationKeyType key_type,
+      const std::string& user_id,
       const std::string& key_name,
       chromeos::attestation::AttestationCertificateProfile certificate_profile,
       bool require_user_consent,
@@ -103,16 +105,37 @@ class EPKPChallengeKeyBase : public AsyncExtensionFunction {
   scoped_ptr<chromeos::attestation::AttestationFlow> default_attestation_flow_;
 
  private:
+  // Holds the context of a PrepareKey() operation.
+  struct PrepareKeyContext {
+    PrepareKeyContext(
+        chromeos::attestation::AttestationKeyType key_type,
+        const std::string& user_id,
+        const std::string& key_name,
+        chromeos::attestation::AttestationCertificateProfile
+            certificate_profile,
+        bool require_user_consent,
+        const base::Callback<void(PrepareKeyResult)>& callback);
+    ~PrepareKeyContext();
+
+    chromeos::attestation::AttestationKeyType key_type;
+    const std::string user_id;
+    const std::string key_name;
+    chromeos::attestation::AttestationCertificateProfile certificate_profile;
+    bool require_user_consent;
+    const base::Callback<void(PrepareKeyResult)> callback;
+  };
+
+  void IsAttestationPreparedCallback(
+      const PrepareKeyContext& context,
+      chromeos::DBusMethodCallStatus status,
+      bool result);
   void DoesKeyExistCallback(
-      chromeos::attestation::AttestationCertificateProfile certificate_profile,
-      bool require_user_consent,
-      const base::Callback<void(PrepareKeyResult)>& callback,
+      const PrepareKeyContext& context,
       chromeos::DBusMethodCallStatus status,
       bool result);
   void AskForUserConsent(const base::Callback<void(bool)>& callback) const;
   void AskForUserConsentCallback(
-      chromeos::attestation::AttestationCertificateProfile certificate_profile,
-      const base::Callback<void(PrepareKeyResult)>& callback,
+      const PrepareKeyContext& context,
       bool result);
   void GetCertificateCallback(
       const base::Callback<void(PrepareKeyResult)>& callback,

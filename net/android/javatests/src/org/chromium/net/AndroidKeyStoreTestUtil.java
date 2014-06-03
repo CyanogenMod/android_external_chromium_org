@@ -1,25 +1,20 @@
-// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 package org.chromium.net;
 
-import android.os.Build;
 import android.util.Log;
-
-import java.security.PrivateKey;
-import java.security.PrivateKey;
-import java.security.Signature;
-import java.security.KeyFactory;
-import java.security.spec.KeySpec;
-import java.security.spec.PKCS8EncodedKeySpec;
-import java.security.KeyStoreException;
-import java.security.spec.InvalidKeySpecException;
-import java.security.NoSuchAlgorithmException;
 
 import org.chromium.base.CalledByNative;
 import org.chromium.base.JNINamespace;
-import org.chromium.net.PrivateKeyType;
+
+import java.security.KeyFactory;
+import java.security.NoSuchAlgorithmException;
+import java.security.PrivateKey;
+import java.security.spec.InvalidKeySpecException;
+import java.security.spec.KeySpec;
+import java.security.spec.PKCS8EncodedKeySpec;
 
 @JNINamespace("net::android")
 public class AndroidKeyStoreTestUtil {
@@ -33,8 +28,7 @@ public class AndroidKeyStoreTestUtil {
      * @return new PrivateKey handle, or null in case of error.
      */
     @CalledByNative
-    public static PrivateKey createPrivateKeyFromPKCS8(int type,
-                                                       byte[] encoded_key) {
+    public static PrivateKey createPrivateKeyFromPKCS8(int type, byte[] encodedKey) {
         String algorithm = null;
         switch (type) {
             case PrivateKeyType.RSA:
@@ -52,7 +46,7 @@ public class AndroidKeyStoreTestUtil {
 
         try {
             KeyFactory factory = KeyFactory.getInstance(algorithm);
-            KeySpec ks = new PKCS8EncodedKeySpec(encoded_key);
+            KeySpec ks = new PKCS8EncodedKeySpec(encodedKey);
             PrivateKey key = factory.generatePrivate(ks);
             return key;
 

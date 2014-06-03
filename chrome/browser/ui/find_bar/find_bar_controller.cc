@@ -80,6 +80,11 @@ void FindBarController::ChangeWebContents(WebContents* contents) {
   if (web_contents_) {
     registrar_.RemoveAll();
     find_bar_->StopAnimation();
+
+    FindTabHelper* find_tab_helper =
+        FindTabHelper::FromWebContents(web_contents_);
+    if (find_tab_helper)
+      find_tab_helper->set_selected_range(find_bar_->GetSelectedRange());
   }
 
   web_contents_ = contents;
@@ -135,8 +140,9 @@ void FindBarController::Observe(int type,
       UpdateFindBarForCurrentResult();
       if (find_tab_helper->find_result().final_update() &&
           find_tab_helper->find_result().number_of_matches() == 0) {
-        const string16& last_search = find_tab_helper->previous_find_text();
-        const string16& current_search = find_tab_helper->find_text();
+        const base::string16& last_search =
+            find_tab_helper->previous_find_text();
+        const base::string16& current_search = find_tab_helper->find_text();
         if (last_search.find(current_search) != 0)
           find_bar_->AudibleAlert();
       }
@@ -244,7 +250,7 @@ void FindBarController::MaybeSetPrepopulateText() {
   // we use the last search string (from any tab).
   FindTabHelper* find_tab_helper =
       FindTabHelper::FromWebContents(web_contents_);
-  string16 find_string = find_tab_helper->find_text();
+  base::string16 find_string = find_tab_helper->find_text();
   if (find_string.empty())
     find_string = find_tab_helper->previous_find_text();
   if (find_string.empty()) {
@@ -258,5 +264,6 @@ void FindBarController::MaybeSetPrepopulateText() {
   // shown it is showing the right state for this tab. We update the find text
   // _first_ since the FindBarView checks its emptiness to see if it should
   // clear the result count display when there's nothing in the box.
-  find_bar_->SetFindText(find_string);
+  find_bar_->SetFindTextAndSelectedRange(find_string,
+                                         find_tab_helper->selected_range());
 }

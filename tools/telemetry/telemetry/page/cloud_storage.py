@@ -16,7 +16,8 @@ import urllib2
 from telemetry.core import util
 
 
-DEFAULT_BUCKET = 'chromium-wpr'
+PUBLIC_BUCKET = 'chromium-telemetry'
+INTERNAL_BUCKET = 'chrome-telemetry'
 
 
 _GSUTIL_URL = 'http://storage.googleapis.com/pub/gsutil.tar.gz'
@@ -24,6 +25,29 @@ _DOWNLOAD_PATH = os.path.join(util.GetTelemetryDir(), 'third_party', 'gsutil')
 
 
 class CloudStorageError(Exception):
+  @staticmethod
+  def _GetConfigInstructions(gsutil_path):
+    return ('To configure your credentials:\n'
+            '  1. Run "%s config" and follow its instructions.\n'
+            '  2. If you have a @google.com account, use that one.\n'
+            '  3. Leave the project-id field blank.' % gsutil_path)
+
+
+class PermissionError(CloudStorageError):
+  def __init__(self, gsutil_path):
+    super(PermissionError, self).__init__(
+        'Attempted to access a file from Cloud Storage but you don\'t '
+        'have permission. ' + self._GetConfigInstructions(gsutil_path))
+
+
+class CredentialsError(CloudStorageError):
+  def __init__(self, gsutil_path):
+    super(CredentialsError, self).__init__(
+        'Attempted to access a file from Cloud Storage but you have no '
+        'configured credentials. ' + self._GetConfigInstructions(gsutil_path))
+
+
+class NotFoundError(CloudStorageError):
   pass
 
 
@@ -64,7 +88,14 @@ def _RunCommand(args):
   stdout, stderr = gsutil.communicate()
 
   if gsutil.returncode:
-    raise CloudStorageError(stderr.splitlines()[-1])
+    if stderr.startswith('You are attempting to access protected data with '
+        'no configured credentials.'):
+      raise CredentialsError(gsutil_path)
+    if 'status=403' in stderr:
+      raise PermissionError(gsutil_path)
+    if stderr.startswith('InvalidUriError') or 'No such object' in stderr:
+      raise NotFoundError(stderr)
+    raise CloudStorageError(stderr)
 
   return stdout
 
@@ -93,15 +124,28 @@ def Insert(bucket, remote_path, local_path):
 
 
 def GetIfChanged(bucket, file_path):
-  """Gets the file at file_path if it has a hash file that doesn't match."""
+  """Gets the file at file_path if it has a hash file that doesn't match.
+
+  If the file is not in Cloud Storage, log a warning instead of raising an
+  exception. We assume that the user just hasn't uploaded the file yet.
+
+  Returns:
+    True if the binary was changed.
+  """
   hash_path = file_path + '.sha1'
   if not os.path.exists(hash_path):
-    return
+    return False
 
   with open(hash_path, 'rb') as f:
     expected_hash = f.read(1024).rstrip()
-  if not os.path.exists(file_path) or GetHash(file_path) != expected_hash:
+  if os.path.exists(file_path) and GetHash(file_path) == expected_hash:
+    return False
+
+  try:
     Get(bucket, expected_hash, file_path)
+  except NotFoundError:
+    logging.warning('Unable to update file %s from Cloud Storage.' % file_path)
+  return True
 
 
 def GetHash(file_path):

@@ -4,13 +4,11 @@
 
 package org.chromium.android_webview.test;
 
-import android.test.suitebuilder.annotation.SmallTest;
 import android.view.View;
 
 import org.chromium.android_webview.AwContents;
 import org.chromium.android_webview.test.util.VideoTestWebServer;
 import org.chromium.base.test.util.DisabledTest;
-import org.chromium.base.test.util.Feature;
 import org.chromium.content.browser.test.util.CallbackHelper;
 import org.chromium.content.browser.test.util.TouchCommon;
 
@@ -42,7 +40,8 @@ public class AwContentsClientGetVideoLoadingProgressViewTest extends AwTestBase
     }
 
     private void waitForViewAttached() throws InterruptedException, TimeoutException {
-        mViewAttachedCallbackHelper.waitForCallback(0, 1, 20, TimeUnit.SECONDS);
+        mViewAttachedCallbackHelper.waitForCallback(0, 1, WAIT_TIMEOUT_MS,
+                TimeUnit.MILLISECONDS);
     }
 
 
@@ -56,14 +55,14 @@ public class AwContentsClientGetVideoLoadingProgressViewTest extends AwTestBase
     public void testGetVideoLoadingProgressView() throws Throwable {
         TestAwContentsClient contentsClient =
                 new FullScreenVideoTestAwContentsClient(getActivity()) {
-            @Override
-            protected View getVideoLoadingProgressView() {
-                View view = new View(getInstrumentation().getTargetContext());
-                view.addOnAttachStateChangeListener(
-                        AwContentsClientGetVideoLoadingProgressViewTest.this);
-                return view;
-            }
-        };
+                    @Override
+                    protected View getVideoLoadingProgressView() {
+                        View view = new View(getInstrumentation().getTargetContext());
+                        view.addOnAttachStateChangeListener(
+                                AwContentsClientGetVideoLoadingProgressViewTest.this);
+                        return view;
+                    }
+                };
         final AwTestContainerView testContainerView =
                 createAwTestContainerViewOnMainSync(contentsClient);
         final AwContents awContents = testContainerView.getAwContents();

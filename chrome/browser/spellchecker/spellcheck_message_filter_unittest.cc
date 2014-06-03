@@ -33,7 +33,7 @@ class TestingSpellCheckMessageFilter : public SpellCheckMessageFilter {
                            int identifier,
                            const std::vector<SpellCheckMarker>& markers,
                            bool success,
-                           const string16& text,
+                           const base::string16& text,
                            const std::vector<SpellCheckResult>& results) {
     SpellCheckMessageFilter::OnTextCheckComplete(
         route_id, identifier, markers, success, text, results);
@@ -80,17 +80,19 @@ TEST(SpellCheckMessageFilterTest, OnTextCheckCompleteTestCustomDictionary) {
   static const int kRouteId = 0;
   static const int kCallbackId = 0;
   static const std::vector<SpellCheckMarker> kMarkers;
-  static const string16 kText = ASCIIToUTF16("Helllo warld.");
+  static const base::string16 kText = ASCIIToUTF16("Helllo warld.");
   static const bool kSuccess = true;
-  static const SpellCheckResult::Type kType = SpellCheckResult::SPELLING;
+  static const SpellCheckResult::Decoration kDecoration =
+      SpellCheckResult::SPELLING;
   static const int kLocation = 7;
   static const int kLength = 5;
-  static const string16 kReplacement = ASCIIToUTF16("world");
+  static const base::string16 kReplacement = ASCIIToUTF16("world");
 
   std::vector<SpellCheckResult> results;
   results.push_back(SpellCheckResult(
       SpellCheckResult::SPELLING, 0, 6, ASCIIToUTF16("Hello")));
-  results.push_back(SpellCheckResult(kType, kLocation, kLength, kReplacement));
+  results.push_back(
+      SpellCheckResult(kDecoration, kLocation, kLength, kReplacement));
 
   scoped_refptr<TestingSpellCheckMessageFilter> filter(
       new TestingSpellCheckMessageFilter);
@@ -101,7 +103,7 @@ TEST(SpellCheckMessageFilterTest, OnTextCheckCompleteTestCustomDictionary) {
 
   int sent_identifier = -1;
   bool sent_success = false;
-  string16 sent_text;
+  base::string16 sent_text;
   std::vector<SpellCheckResult> sent_results;
   bool ok = SpellCheckMsg_RespondSpellingService::Read(filter->sent_messages[0],
                                                        &sent_identifier,
@@ -113,7 +115,7 @@ TEST(SpellCheckMessageFilterTest, OnTextCheckCompleteTestCustomDictionary) {
   EXPECT_EQ(kSuccess, sent_success);
   EXPECT_EQ(kText, sent_text);
   EXPECT_EQ(static_cast<size_t>(1), sent_results.size());
-  EXPECT_EQ(kType, sent_results[0].type);
+  EXPECT_EQ(kDecoration, sent_results[0].decoration);
   EXPECT_EQ(kLocation, sent_results[0].location);
   EXPECT_EQ(kLength, sent_results[0].length);
   EXPECT_EQ(kReplacement, sent_results[0].replacement);
@@ -134,7 +136,7 @@ TEST(SpellCheckMessageFilterTest, OnTextCheckCompleteTest) {
 
   int sent_identifier = -1;
   bool sent_success = false;
-  string16 sent_text;
+  base::string16 sent_text;
   std::vector<SpellCheckResult> sent_results;
   bool ok = SpellCheckMsg_RespondSpellingService::Read(filter->sent_messages[0],
                                                        &sent_identifier,

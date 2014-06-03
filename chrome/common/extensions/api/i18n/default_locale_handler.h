@@ -7,8 +7,8 @@
 
 #include <string>
 
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/manifest_handler.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/manifest_handler.h"
 
 namespace extensions {
 
@@ -26,7 +26,7 @@ class DefaultLocaleHandler : public ManifestHandler {
   DefaultLocaleHandler();
   virtual ~DefaultLocaleHandler();
 
-  virtual bool Parse(Extension* extension, string16* error) OVERRIDE;
+  virtual bool Parse(Extension* extension, base::string16* error) OVERRIDE;
 
   // Validates locale info. Doesn't check if messages.json files are valid.
   virtual bool Validate(const Extension* extension,

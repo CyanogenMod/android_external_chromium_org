@@ -11,8 +11,8 @@
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "extensions/common/extension.h"
 #include "extensions/common/switches.h"
 
 namespace extensions {
@@ -108,7 +108,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, UnloadPageAction) {
   ui_test_utils::NavigateToURL(browser(), feed_url);
   ASSERT_TRUE(WaitForPageActionCountChangeTo(1));
 
-  UnloadExtension(last_loaded_extension_id_);
+  UnloadExtension(last_loaded_extension_id());
 
   // Make sure the page action goes away when it's unloaded.
   ASSERT_TRUE(WaitForPageActionCountChangeTo(0));

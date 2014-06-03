@@ -8,6 +8,7 @@
 
 #include "ash/ash_constants.h"
 #include "ash/ash_switches.h"
+#include "ash/metrics/user_metrics_recorder.h"
 #include "ash/shell.h"
 #include "ash/system/tray/actionable_view.h"
 #include "ash/system/tray/fixed_sized_scroll_view.h"
@@ -76,6 +77,32 @@ int GetAudioDeviceIconId(chromeos::AudioDeviceType type) {
     return IDR_AURA_UBER_TRAY_AUDIO_HDMI;
   else
     return kNoAudioDeviceIcon;
+}
+
+base::string16 GetAudioDeviceName(const chromeos::AudioDevice& device) {
+  switch(device.type) {
+    case chromeos::AUDIO_TYPE_HEADPHONE:
+      return l10n_util::GetStringUTF16(IDS_ASH_STATUS_TRAY_AUDIO_HEADPHONE);
+    case chromeos::AUDIO_TYPE_INTERNAL_SPEAKER:
+      return l10n_util::GetStringUTF16(
+          IDS_ASH_STATUS_TRAY_AUDIO_INTERNAL_SPEAKER);
+    case chromeos::AUDIO_TYPE_INTERNAL_MIC:
+      return l10n_util::GetStringUTF16(IDS_ASH_STATUS_TRAY_AUDIO_INTERNAL_MIC);
+    case chromeos::AUDIO_TYPE_USB:
+      return l10n_util::GetStringFUTF16(
+          IDS_ASH_STATUS_TRAY_AUDIO_USB_DEVICE,
+          UTF8ToUTF16(device.display_name));
+    case chromeos::AUDIO_TYPE_BLUETOOTH:
+      return l10n_util::GetStringFUTF16(
+          IDS_ASH_STATUS_TRAY_AUDIO_BLUETOOTH_DEVICE,
+          UTF8ToUTF16(device.display_name));
+    case chromeos::AUDIO_TYPE_HDMI:
+      return l10n_util::GetStringFUTF16(
+          IDS_ASH_STATUS_TRAY_AUDIO_HDMI_DEVICE,
+          UTF8ToUTF16(device.display_name));
+    default:
+      return UTF8ToUTF16(device.display_name);
+  }
 }
 
 }  // namespace
@@ -179,7 +206,7 @@ class VolumeView : public ActionableView,
         device_type_(NULL),
         more_(NULL),
         is_default_view_(is_default_view) {
-    set_focusable(false);
+    SetFocusable(false);
     SetLayoutManager(new views::BoxLayout(views::BoxLayout::kHorizontal,
           kTrayPopupPaddingHorizontal, 0, kTrayPopupPaddingBetweenItems));
 
@@ -354,6 +381,10 @@ class VolumeView : public ActionableView,
       // 1%, which is beyond cras audio api's granularity for output volume.
       if (std::abs(volume - old_volume) < 1)
         return;
+      Shell::GetInstance()->metrics()->RecordUserMetricsAction(
+          is_default_view_ ?
+          ash::UMA_STATUS_AREA_CHANGED_VOLUME_MENU :
+          ash::UMA_STATUS_AREA_CHANGED_VOLUME_POPUP);
       if (volume > old_volume)
         HandleVolumeUp(volume);
       else
@@ -362,7 +393,7 @@ class VolumeView : public ActionableView,
     icon_->Update();
   }
 
-  // Overriden from ActinableView.
+  // Overriden from ActionableView.
   virtual bool PerformAction(const ui::Event& event) OVERRIDE {
     if (!more_->visible())
       return false;
@@ -428,13 +459,11 @@ class AudioDetailedView : public TrayDetailsView,
     device_map_.clear();
 
     // Add audio output devices.
-    AddScrollListItem(
-        l10n_util::GetStringUTF16(IDS_ASH_STATUS_TRAY_AUDIO_OUTPUT),
-        gfx::Font::BOLD,
-        false);  /* no checkmark */
+    AddScrollListInfoItem(
+        l10n_util::GetStringUTF16(IDS_ASH_STATUS_TRAY_AUDIO_OUTPUT));
     for (size_t i = 0; i < output_devices_.size(); ++i) {
       HoverHighlightView* container = AddScrollListItem(
-          UTF8ToUTF16(output_devices_[i].display_name),
+          GetAudioDeviceName(output_devices_[i]),
           gfx::Font::NORMAL,
           output_devices_[i].active);  /* checkmark if active */
       device_map_[container] = output_devices_[i];
@@ -443,13 +472,11 @@ class AudioDetailedView : public TrayDetailsView,
     AddScrollSeparator();
 
     // Add audio input devices.
-    AddScrollListItem(
-        l10n_util::GetStringUTF16(IDS_ASH_STATUS_TRAY_AUDIO_INPUT),
-        gfx::Font::BOLD,
-        false);  /* no checkmark */
+    AddScrollListInfoItem(
+        l10n_util::GetStringUTF16(IDS_ASH_STATUS_TRAY_AUDIO_INPUT));
     for (size_t i = 0; i < input_devices_.size(); ++i) {
       HoverHighlightView* container = AddScrollListItem(
-          UTF8ToUTF16(input_devices_[i].display_name),
+          GetAudioDeviceName(input_devices_[i]),
           gfx::Font::NORMAL,
           input_devices_[i].active);  /* checkmark if active */
       device_map_[container] = input_devices_[i];
@@ -457,6 +484,31 @@ class AudioDetailedView : public TrayDetailsView,
 
     scroll_content()->SizeToPreferredSize();
     scroller()->Layout();
+  }
+
+  void AddScrollListInfoItem(const string16& text) {
+    views::Label* label = new views::Label(text);
+
+    //  Align info item with checkbox items
+    int margin = kTrayPopupPaddingHorizontal +
+        kTrayPopupDetailsLabelExtraLeftMargin;
+    int left_margin = 0;
+    int right_margin = 0;
+    if (base::i18n::IsRTL())
+      right_margin = margin;
+    else
+      left_margin = margin;
+
+    label->set_border(views::Border::CreateEmptyBorder(
+        ash::kTrayPopupPaddingBetweenItems,
+        left_margin,
+        ash::kTrayPopupPaddingBetweenItems,
+        right_margin));
+    label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
+    label->SetEnabledColor(SkColorSetARGB(192, 0, 0, 0));
+    label->SetFont(label->font().DeriveFont(0, gfx::Font::BOLD));
+
+    scroll_content()->AddChildView(label);
   }
 
   HoverHighlightView* AddScrollListItem(const string16& text,
@@ -471,7 +523,7 @@ class AudioDetailedView : public TrayDetailsView,
   // Overridden from ViewClickListener.
   virtual void OnViewClicked(views::View* sender) OVERRIDE {
     if (sender == footer()->content()) {
-      owner()->system_tray()->ShowDefaultView(BUBBLE_USE_EXISTING);
+      TransitionToDefaultView();
     } else {
       AudioDeviceMap::iterator iter = device_map_.find(sender);
       if (iter == device_map_.end())
@@ -520,6 +572,8 @@ views::View* TrayAudio::CreateDetailedView(user::LoginStatus status) {
     volume_view_ = new tray::VolumeView(this, false);
     return volume_view_;
   } else {
+    Shell::GetInstance()->metrics()->RecordUserMetricsAction(
+        ash::UMA_STATUS_AREA_DETAILED_AUDIO_VIEW);
     audio_detail_ = new tray::AudioDetailedView(this, status);
     return audio_detail_;
   }
@@ -543,7 +597,7 @@ bool TrayAudio::ShouldHideArrow() const {
 }
 
 bool TrayAudio::ShouldShowLauncher() const {
-  return false;
+  return ash::switches::ShowAudioDeviceMenu() && !pop_up_volume_view_;
 }
 
 void TrayAudio::OnOutputVolumeChanged() {

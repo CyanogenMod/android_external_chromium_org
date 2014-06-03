@@ -6,17 +6,17 @@
 #define CONTENT_RENDERER_ACCESSIBILITY_ACCESSIBILITY_NODE_SERIALIZER_H_
 
 #include "content/common/accessibility_node_data.h"
-#include "third_party/WebKit/public/web/WebAccessibilityObject.h"
+#include "third_party/WebKit/public/web/WebAXObject.h"
 
 namespace content {
 
 void SerializeAccessibilityNode(
-    const WebKit::WebAccessibilityObject& src,
+    const blink::WebAXObject& src,
     AccessibilityNodeData* dst);
 
 bool ShouldIncludeChildNode(
-    const WebKit::WebAccessibilityObject& parent,
-    const WebKit::WebAccessibilityObject& child);
+    const blink::WebAXObject& parent,
+    const blink::WebAXObject& child);
 
 }  // namespace content
 

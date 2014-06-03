@@ -4,24 +4,81 @@
 
 #include "ui/app_list/test/app_list_test_view_delegate.h"
 
+#include <string>
+
 #include "base/callback.h"
 #include "base/files/file_path.h"
+#include "ui/app_list/app_list_model.h"
+#include "ui/app_list/app_list_view_delegate_observer.h"
+#include "ui/app_list/signin_delegate.h"
+#include "ui/app_list/test/app_list_test_model.h"
 #include "ui/gfx/image/image_skia.h"
 
 namespace app_list {
 namespace test {
 
+class TestSigninDelegate : public SigninDelegate {
+ public:
+  TestSigninDelegate() : signed_in_(true) {}
+
+  void set_signed_in(bool signed_in) { signed_in_ = signed_in; }
+
+  // SigninDelegate overrides:
+  virtual bool NeedSignin() OVERRIDE { return !signed_in_; }
+  virtual void ShowSignin() OVERRIDE {}
+  virtual void OpenLearnMore() OVERRIDE {}
+  virtual void OpenSettings() OVERRIDE {}
+
+  virtual base::string16 GetSigninHeading() OVERRIDE {
+    return base::string16();
+  }
+  virtual base::string16 GetSigninText() OVERRIDE { return base::string16(); }
+  virtual base::string16 GetSigninButtonText() OVERRIDE {
+    return base::string16();
+  }
+  virtual base::string16 GetLearnMoreLinkText() OVERRIDE {
+    return base::string16();
+  }
+  virtual base::string16 GetSettingsLinkText() OVERRIDE {
+    return base::string16();
+  }
+
+ private:
+  bool signed_in_;
+
+  DISALLOW_COPY_AND_ASSIGN(TestSigninDelegate);
+};
+
 AppListTestViewDelegate::AppListTestViewDelegate()
-    : activate_count_(0),
-      dismiss_count_(0),
-      last_activated_(NULL),
-      test_signin_delegate_(NULL) {
+    : dismiss_count_(0),
+      open_search_result_count_(0),
+      test_signin_delegate_(new TestSigninDelegate),
+      model_(new AppListTestModel) {
 }
 
 AppListTestViewDelegate::~AppListTestViewDelegate() {}
 
+void AppListTestViewDelegate::SetSignedIn(bool signed_in) {
+  test_signin_delegate_->set_signed_in(signed_in);
+  FOR_EACH_OBSERVER(AppListViewDelegateObserver,
+                    observers_,
+                    OnProfilesChanged());
+}
+
+bool AppListTestViewDelegate::ForceNativeDesktop() const {
+  return false;
+}
+
+AppListModel* AppListTestViewDelegate::GetModel() {
+  return model_.get();
+}
+
 SigninDelegate* AppListTestViewDelegate::GetSigninDelegate() {
-  return test_signin_delegate_;
+  return test_signin_delegate_.get();
+}
+
+SpeechUIModel* AppListTestViewDelegate::GetSpeechUI() {
+  return &speech_ui_;
 }
 
 void AppListTestViewDelegate::GetShortcutPathForApp(
@@ -30,10 +87,9 @@ void AppListTestViewDelegate::GetShortcutPathForApp(
   callback.Run(base::FilePath());
 }
 
-void AppListTestViewDelegate::ActivateAppListItem(AppListItemModel* item,
-                                                  int event_flags) {
-  last_activated_ = item;
-  ++activate_count_;
+void AppListTestViewDelegate::OpenSearchResult(SearchResult* result,
+                                               int event_flags) {
+  ++open_search_result_count_;
 }
 
 void AppListTestViewDelegate::Dismiss() {
@@ -44,12 +100,27 @@ gfx::ImageSkia AppListTestViewDelegate::GetWindowIcon() {
   return gfx::ImageSkia();
 }
 
-base::string16 AppListTestViewDelegate::GetCurrentUserName() {
-  return base::string16();
+content::WebContents* AppListTestViewDelegate::GetStartPageContents() {
+  return NULL;
 }
 
-base::string16 AppListTestViewDelegate::GetCurrentUserEmail() {
-  return base::string16();
+const AppListViewDelegate::Users& AppListTestViewDelegate::GetUsers() const {
+  return users_;
+}
+
+void AppListTestViewDelegate::ReplaceTestModel(int item_count) {
+  model_.reset(new AppListTestModel);
+  model_->PopulateApps(item_count);
+}
+
+void AppListTestViewDelegate::AddObserver(
+    AppListViewDelegateObserver* observer) {
+  observers_.AddObserver(observer);
+}
+
+void AppListTestViewDelegate::RemoveObserver(
+    AppListViewDelegateObserver* observer) {
+  observers_.RemoveObserver(observer);
 }
 
 }  // namespace test

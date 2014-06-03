@@ -4,11 +4,11 @@
 
 #include "chrome/browser/ui/ash/launcher/launcher_application_menu_item_model.h"
 
-#include "chrome/browser/ui/ash/launcher/chrome_launcher_controller_per_app.h"
+#include "chrome/browser/ui/ash/launcher/chrome_launcher_app_menu_item.h"
 
 LauncherApplicationMenuItemModel::LauncherApplicationMenuItemModel(
     ChromeLauncherAppMenuItems item_list)
-    : ash::LauncherMenuModel(this),
+    : ash::ShelfMenuModel(this),
       launcher_items_(item_list.Pass()) {
   Build();
 }

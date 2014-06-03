@@ -19,12 +19,11 @@
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
-#include "chrome/common/extensions/permissions/permission_set.h"
-#include "chrome/common/extensions/permissions/permissions_data.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/permissions/permission_set.h"
+#include "extensions/common/permissions/permissions_data.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -97,8 +96,8 @@ void BundleInstaller::SetAutoApproveForTesting(bool auto_approve) {
 
 BundleInstaller::Item::Item() : state(STATE_PENDING) {}
 
-string16 BundleInstaller::Item::GetNameForDisplay() {
-  string16 name = UTF8ToUTF16(localized_name);
+base::string16 BundleInstaller::Item::GetNameForDisplay() {
+  base::string16 name = UTF8ToUTF16(localized_name);
   base::i18n::AdjustStringForLocaleDirection(&name);
   return l10n_util::GetStringFUTF16(IDS_EXTENSION_PERMISSION_LINE, name);
 }
@@ -162,7 +161,7 @@ void BundleInstaller::CompleteInstall(NavigationController* controller,
             profile_,
             i->first,
             scoped_ptr<base::DictionaryValue>(
-                parsed_manifests_[i->first]->DeepCopy())));
+                parsed_manifests_[i->first]->DeepCopy()), true));
     approval->use_app_installed_bubble = false;
     approval->skip_post_install_ui = true;
 
@@ -172,18 +171,18 @@ void BundleInstaller::CompleteInstall(NavigationController* controller,
         controller,
         i->first,
         approval.Pass(),
-        WebstoreInstaller::FLAG_NONE);
+        WebstoreInstaller::INSTALL_SOURCE_OTHER);
     installer->Start();
   }
 }
 
-string16 BundleInstaller::GetHeadingTextFor(Item::State state) const {
+base::string16 BundleInstaller::GetHeadingTextFor(Item::State state) const {
   // For STATE_FAILED, we can't tell if the items were apps or extensions
   // so we always show the same message.
   if (state == Item::STATE_FAILED) {
     if (GetItemsWithState(state).size())
       return l10n_util::GetStringUTF16(IDS_EXTENSION_BUNDLE_ERROR_HEADING);
-    return string16();
+    return base::string16();
   }
 
   size_t total = GetItemsWithState(state).size();
@@ -199,7 +198,7 @@ string16 BundleInstaller::GetHeadingTextFor(Item::State state) const {
 
   int msg_id = kHeadingIds[state][index];
   if (!msg_id)
-    return string16();
+    return base::string16();
 
   return l10n_util::GetStringUTF16(msg_id);
 }

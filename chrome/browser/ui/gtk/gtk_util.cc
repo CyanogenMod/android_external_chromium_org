@@ -35,16 +35,16 @@
 #include "grit/chrome_unscaled_resources.h"
 #include "grit/theme_resources.h"
 #include "ui/base/accelerators/menu_label_accelerator_util_linux.h"
-#include "ui/base/gtk/gtk_compat.h"
 #include "ui/base/gtk/gtk_hig_constants.h"
 #include "ui/base/gtk/gtk_screen_util.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/base/text/text_elider.h"
 #include "ui/base/x/x11_util.h"
+#include "ui/gfx/gtk_compat.h"
 #include "ui/gfx/image/cairo_cached_surface.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/pango_util.h"
+#include "ui/gfx/text_elider.h"
 #include "url/gurl.h"
 
 // These conflict with base/tracked_objects.h, so need to come last.
@@ -644,11 +644,11 @@ GdkPoint MakeBidiGdkPoint(gint x, gint y, gint width, bool ltr) {
   return point;
 }
 
-std::string BuildTooltipTitleFor(string16 title, const GURL& url) {
+std::string BuildTooltipTitleFor(base::string16 title, const GURL& url) {
   const std::string& url_str = url.possibly_invalid_spec();
   const std::string& title_str = UTF16ToUTF8(title);
 
-  std::string truncated_url = UTF16ToUTF8(ui::TruncateString(
+  std::string truncated_url = UTF16ToUTF8(gfx::TruncateString(
       UTF8ToUTF16(url_str), kMaxTooltipURLLength));
   gchar* escaped_url_cstr = g_markup_escape_text(truncated_url.c_str(),
                                                  truncated_url.size());
@@ -658,7 +658,7 @@ std::string BuildTooltipTitleFor(string16 title, const GURL& url) {
   if (url_str == title_str || title.empty()) {
     return escaped_url;
   } else {
-    std::string truncated_title = UTF16ToUTF8(ui::TruncateString(
+    std::string truncated_title = UTF16ToUTF8(gfx::TruncateString(
         title, kMaxTooltipTitleLength));
     gchar* escaped_title_cstr = g_markup_escape_text(truncated_title.c_str(),
                                                      truncated_title.size());
@@ -708,7 +708,7 @@ void DrawTextEntryBackground(GtkWidget* offscreen_entry,
   g_object_unref(our_style);
 }
 
-void SetLayoutText(PangoLayout* layout, const string16& text) {
+void SetLayoutText(PangoLayout* layout, const base::string16& text) {
   // Pango is really easy to overflow and send into a computational death
   // spiral that can corrupt the screen. Assume that we'll never have more than
   // 2000 characters, which should be a safe assumption until we all get robot
@@ -942,12 +942,12 @@ gfx::Rect GetDialogBounds(GtkWidget* dialog) {
   return gfx::Rect(x, y, width, height);
 }
 
-string16 GetStockPreferencesMenuLabel() {
+base::string16 GetStockPreferencesMenuLabel() {
   GtkStockItem stock_item;
-  string16 preferences;
+  base::string16 preferences;
   if (gtk_stock_lookup(GTK_STOCK_PREFERENCES, &stock_item)) {
     const char16 kUnderscore[] = { '_', 0 };
-    RemoveChars(UTF8ToUTF16(stock_item.label), kUnderscore, &preferences);
+    base::RemoveChars(UTF8ToUTF16(stock_item.label), kUnderscore, &preferences);
   }
   return preferences;
 }

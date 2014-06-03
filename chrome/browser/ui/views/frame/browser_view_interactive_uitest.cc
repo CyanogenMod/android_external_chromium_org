@@ -8,7 +8,6 @@
 #include "chrome/browser/autocomplete/autocomplete_controller.h"
 #include "chrome/browser/search/search.h"
 #include "chrome/browser/ui/browser_commands.h"
-#include "chrome/browser/ui/immersive_fullscreen_configuration.h"
 #include "chrome/browser/ui/omnibox/omnibox_view.h"
 #include "chrome/browser/ui/search/instant_test_utils.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
@@ -18,7 +17,7 @@
 #include "chrome/browser/ui/views/frame/top_container_view.h"
 #include "chrome/browser/ui/views/location_bar/location_bar_view.h"
 #include "chrome/browser/ui/views/tabs/tab.h"
-#include "chrome/browser/ui/views/toolbar_view.h"
+#include "chrome/browser/ui/views/toolbar/toolbar_view.h"
 #include "chrome/common/instant_types.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/in_process_browser_test.h"
@@ -35,15 +34,6 @@
 #endif
 
 using views::FocusManager;
-
-namespace {
-
-// Returns the bounds of |view| in widget coordinates.
-gfx::Rect GetRectInWidget(views::View* view) {
-  return view->ConvertRectToWidget(view->GetLocalBounds());
-}
-
-}
 
 typedef InProcessBrowserTest BrowserViewTest;
 

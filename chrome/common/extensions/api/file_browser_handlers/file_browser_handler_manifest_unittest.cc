@@ -4,14 +4,15 @@
 
 #include "base/strings/string_number_conversions.h"
 #include "chrome/common/extensions/api/file_browser_handlers/file_browser_handler.h"
-#include "chrome/common/extensions/extension_builder.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
+#include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/manifest_tests/extension_manifest_test.h"
-#include "chrome/common/extensions/value_builder.h"
 #include "extensions/common/error_utils.h"
+#include "extensions/common/extension_builder.h"
+#include "extensions/common/manifest_constants.h"
+#include "extensions/common/value_builder.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace errors = extension_manifest_errors;
+namespace errors = extensions::manifest_errors;
 
 using extensions::DictionaryBuilder;
 using extensions::Extension;
@@ -147,31 +148,6 @@ TEST_F(FileBrowserHandlerManifestTest, ValidFileBrowserHandlerWithCreate) {
   EXPECT_TRUE(action->HasCreateAccessPermission());
   EXPECT_FALSE(action->CanRead());
   EXPECT_FALSE(action->CanWrite());
-}
-
-TEST_F(FileBrowserHandlerManifestTest, FileManagerURLOverride) {
-  scoped_ptr<DictionaryValue> manifest_value =
-      DictionaryBuilder()
-          .Set("name", "override_files")
-          .Set("version", "1.0.0")
-          .Set("manifest_version", 2)
-          .Set("chrome_url_overrides", DictionaryBuilder()
-              .Set("files", "main.html"))
-      .Build();
-
-  // Non component extensions can't override chrome://files/ URL.
-  LoadAndExpectError(Manifest(manifest_value.get(), "override_files"),
-                     errors::kInvalidChromeURLOverrides);
-
-  // A component extension can override chrome://files/ URL.
-  std::string error;
-  LoadExtension(Manifest(manifest_value.get(), "override_files"),
-                &error, extensions::Manifest::COMPONENT, Extension::NO_FLAGS);
-#if defined(FILE_MANAGER_EXTENSION)
-  EXPECT_EQ("", error);
-#else
-  EXPECT_EQ(std::string(errors::kInvalidChromeURLOverrides), error);
-#endif
 }
 
 }  // namespace

@@ -39,7 +39,7 @@ class InputMethodUtil {
   // into Chrome's string ID, then pulls internationalized resource string from
   // the resource bundle and returns it. These functions are not thread-safe.
   // Non-UI threads are not allowed to call them.
-  string16 TranslateString(const std::string& english_string) const;
+  base::string16 TranslateString(const std::string& english_string) const;
 
   // Converts an input method ID to a language code of the IME. Returns "Eng"
   // when |input_method_id| is unknown.
@@ -53,11 +53,11 @@ class InputMethodUtil {
   std::string GetInputMethodDisplayNameFromId(
       const std::string& input_method_id) const;
 
-  string16 GetInputMethodShortName(
+  base::string16 GetInputMethodShortName(
       const InputMethodDescriptor& input_method) const;
-  string16 GetInputMethodMediumName(
+  base::string16 GetInputMethodMediumName(
       const InputMethodDescriptor& input_method) const;
-  string16 GetInputMethodLongName(
+  base::string16 GetInputMethodLongName(
       const InputMethodDescriptor& input_method) const;
 
   // Converts an input method ID to an input method descriptor. Returns NULL
@@ -103,14 +103,6 @@ class InputMethodUtil {
   // Returns true if the given input method id is for a keyboard layout.
   static bool IsKeyboardLayout(const std::string& input_method_id);
 
-  // Returns extra language code list associated with |input_method_id|. If
-  // there is no associated langauge code, this function returns empty list.
-  std::vector<std::string> GetExtraLanguageCodesFromId(
-      const std::string& input_method_id) const;
-
-  // Returns all extra language code list.
-  std::vector<std::string> GetExtraLanguageCodeList() const;
-
   // Sets the list of component extension IMEs.
   void SetComponentExtensions(const InputMethodDescriptors& imes);
 
@@ -148,7 +140,7 @@ class InputMethodUtil {
 
  private:
   bool TranslateStringInternal(const std::string& english_string,
-                               string16 *out_string) const;
+                               base::string16 *out_string) const;
 
   // Map from language code to associated input method IDs, etc.
   typedef std::multimap<std::string, std::string> LanguageCodeToIdsMap;

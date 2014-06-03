@@ -5,29 +5,26 @@
 #include "chrome/browser/ui/ash/launcher/launcher_context_menu.h"
 
 #include "ash/launcher/launcher.h"
-#include "ash/launcher/launcher_model.h"
 #include "ash/launcher/launcher_types.h"
+#include "ash/shelf/shelf_model.h"
 #include "ash/test/ash_test_base.h"
 #include "base/prefs/pref_service.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/ash/launcher/chrome_launcher_controller.h"
-#include "chrome/browser/ui/ash/launcher/chrome_launcher_controller_per_browser.h"
 #include "chrome/test/base/testing_profile.h"
 #include "ui/aura/root_window.h"
 
-class TestChromeLauncherControllerPerBrowser :
-    public ChromeLauncherControllerPerBrowser {
+class TestChromeLauncherController : public ChromeLauncherController {
  public:
-  TestChromeLauncherControllerPerBrowser(
-      Profile* profile, ash::LauncherModel* model)
-      : ChromeLauncherControllerPerBrowser(profile, model) {}
+  TestChromeLauncherController(Profile* profile, ash::ShelfModel* model)
+      : ChromeLauncherController(profile, model) {}
   virtual bool IsLoggedInAsGuest() OVERRIDE {
     return false;
   }
  private:
-  DISALLOW_COPY_AND_ASSIGN(TestChromeLauncherControllerPerBrowser);
+  DISALLOW_COPY_AND_ASSIGN(TestChromeLauncherController);
 };
 
 class LauncherContextMenuTest : public ash::test::AshTestBase {
@@ -43,8 +40,7 @@ class LauncherContextMenuTest : public ash::test::AshTestBase {
   virtual void SetUp() OVERRIDE {
     ash::test::AshTestBase::SetUp();
     controller_.reset(
-        new TestChromeLauncherControllerPerBrowser(profile(),
-                                                   &launcher_model_));
+        new TestChromeLauncherController(profile(), &shelf_model_));
   }
 
   virtual void TearDown() OVERRIDE {
@@ -64,7 +60,7 @@ class LauncherContextMenuTest : public ash::test::AshTestBase {
 
  private:
   scoped_ptr<TestingProfile> profile_;
-  ash::LauncherModel launcher_model_;
+  ash::ShelfModel shelf_model_;
   scoped_ptr<ChromeLauncherController> controller_;
 
   DISALLOW_COPY_AND_ASSIGN(LauncherContextMenuTest);

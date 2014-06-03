@@ -169,6 +169,7 @@ typedef enum IEVersion {
   IE_8,
   IE_9,
   IE_10,
+  IE_11,
 };
 
 // The renderer to be used for a page.  Values for Chrome also convey the
@@ -275,6 +276,11 @@ bool IsUnpinnedMode();
 
 // Returns true if all HTML pages should be rendered in GCF by default.
 bool IsGcfDefaultRenderer();
+
+// Returns true if the presence of
+// <meta http-equiv="X-UA-Compatible" content="chrome=1">
+// in HTML pages should be ignored
+bool SkipMetadataCheck();
 
 // Check if this url is opting into Chrome Frame based on static settings.
 // Returns one of:

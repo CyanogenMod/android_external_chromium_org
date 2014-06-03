@@ -69,7 +69,7 @@ class NetworkSmsHandlerTest : public testing::Test {
     ShillDeviceClient::TestInterface* device_test =
         DBusThreadManager::Get()->GetShillDeviceClient()->GetTestInterface();
     ASSERT_TRUE(device_test);
-    device_test->AddDevice("stub_cellular_device2", flimflam::kTypeCellular,
+    device_test->AddDevice("stub_cellular_device2", shill::kTypeCellular,
                            "/org/freedesktop/ModemManager1/stub/0");
 
     // This relies on the stub dbus implementations for ShillManagerClient,
@@ -103,7 +103,7 @@ TEST_F(NetworkSmsHandlerTest, SmsHandlerDbusStub) {
   // Note: The following string corresponds to values in
   // ModemMessagingClientStubImpl and SmsClientStubImpl.
   // TODO(stevenjb): Use a TestInterface to set this up to remove dependency.
-  const char kMessage1[] = "SMSClientStubImpl: Test Message: /SMS/0";
+  const char kMessage1[] = "FakeSMSClient: Test Message: /SMS/0";
   EXPECT_EQ(messages.find(kMessage1), messages.end());
 
   // Test for messages delivered by signals.

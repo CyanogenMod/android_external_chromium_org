@@ -7,7 +7,9 @@
 
 #include <map>
 #include <string>
+#include <vector>
 
+#include "nacl_io/getdents_helper.h"
 #include "nacl_io/mount_node.h"
 
 namespace nacl_io {
@@ -33,8 +35,9 @@ class MountNodeDir : public MountNode {
                          struct dirent* pdir,
                          size_t count,
                          int* out_bytes);
-  virtual Error Read(size_t offs, void *buf, size_t count, int* out_bytes);
-  virtual Error Write(size_t offs, const void *buf,
+  virtual Error Read(const HandleAttr& attr, void *buf,
+                     size_t count, int* out_bytes);
+  virtual Error Write(const HandleAttr& attr, const void *buf,
                       size_t count, int* out_bytes);
 
   // Adds a finds or adds a directory entry as an INO, updating the refcount
@@ -43,14 +46,14 @@ class MountNodeDir : public MountNode {
   virtual Error FindChild(const std::string& name, ScopedMountNode* out_node);
   virtual int ChildCount();
 
-
 protected:
-   void ClearCache();
-   void BuildCache();
+  void BuildCache_Locked();
+  void ClearCache_Locked();
 
 private:
-  struct dirent* cache_;
+  GetDentsHelper cache_;
   MountNodeMap_t map_;
+  bool cache_built_;
 
   friend class MountDev;
   friend class MountMem;

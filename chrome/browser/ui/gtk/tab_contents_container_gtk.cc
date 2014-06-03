@@ -7,9 +7,7 @@
 #include <algorithm>
 
 #include "base/i18n/rtl.h"
-#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/ui/gtk/status_bubble_gtk.h"
-#include "content/public/browser/notification_source.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
@@ -17,18 +15,17 @@
 #include "ui/base/gtk/gtk_floating_container.h"
 #include "ui/gfx/native_widget_types.h"
 
-TabContentsContainerGtk::TabContentsContainerGtk(StatusBubbleGtk* status_bubble)
-    : tab_(NULL),
-      overlay_(NULL),
-      status_bubble_(status_bubble) {
-  Init();
+namespace {
+void HideWidget(GtkWidget* widget, gpointer ignored) {
+  gtk_widget_hide(widget);
 }
+}  // namespace
 
-TabContentsContainerGtk::~TabContentsContainerGtk() {
-  floating_.Destroy();
-}
-
-void TabContentsContainerGtk::Init() {
+TabContentsContainerGtk::TabContentsContainerGtk(StatusBubbleGtk* status_bubble,
+                                                 bool embed_fullscreen_widget)
+    : status_bubble_(status_bubble),
+      should_embed_fullscreen_widgets_(embed_fullscreen_widget),
+      is_embedding_fullscreen_widget_(false) {
   // A high level overview of the TabContentsContainer:
   //
   // +- GtkFloatingContainer |floating_| -------------------------------+
@@ -44,7 +41,6 @@ void TabContentsContainerGtk::Init() {
 
   floating_.Own(gtk_floating_container_new());
   gtk_widget_set_name(floating_.get(), "chrome-tab-contents-container");
-  g_signal_connect(floating_.get(), "focus", G_CALLBACK(OnFocusThunk), this);
 
   expanded_ = gtk_expanded_container_new();
   gtk_container_add(GTK_CONTAINER(floating_.get()), expanded_);
@@ -62,120 +58,99 @@ void TabContentsContainerGtk::Init() {
   ViewIDUtil::SetDelegateForWidget(widget(), this);
 }
 
+TabContentsContainerGtk::~TabContentsContainerGtk() {
+  floating_.Destroy();
+}
+
 void TabContentsContainerGtk::SetTab(content::WebContents* tab) {
-  if (tab_ == tab)
+  if (tab == web_contents())
     return;
 
-  if (tab_)
-    HideTab(tab_);
-
-  tab_ = tab;
-
-  if (tab_) {
-    // If the overlay is becoming the new permanent tab, we just reassign some
-    // pointers. Otherwise, we have to actually add it to the widget hierarchy.
-    if (tab_ == overlay_)
-      overlay_ = NULL;
-    else
-      PackTab(tab_);
-
-    // Make sure that the tab is below the find bar. Sometimes the content
-    // native view will be null.
-    GtkWidget* widget = tab_->GetView()->GetContentNativeView();
-    if (widget) {
-      GdkWindow* content_gdk_window = gtk_widget_get_window(widget);
-      if (content_gdk_window)
-        gdk_window_lower(content_gdk_window);
-    }
-  }
+  HideTab();
+  WebContentsObserver::Observe(tab);
+  is_embedding_fullscreen_widget_ =
+      should_embed_fullscreen_widgets_ &&
+      tab && tab->GetFullscreenRenderWidgetHostView();
+  PackTab();
 }
 
-void TabContentsContainerGtk::SetOverlay(content::WebContents* overlay) {
-  if (overlay_ == overlay)
+void TabContentsContainerGtk::PackTab() {
+  content::WebContents* const tab = web_contents();
+  if (!tab)
     return;
 
-  if (overlay_) {
-    HideTab(overlay_);
-    GtkWidget* overlay_widget = overlay_->GetView()->GetNativeView();
-    if (overlay_widget)
-      gtk_container_remove(GTK_CONTAINER(expanded_), overlay_widget);
-  }
-
-  overlay_ = overlay;
-
-  if (overlay_)
-    PackTab(overlay_);
-}
-
-void TabContentsContainerGtk::PackTab(content::WebContents* tab) {
-  gfx::NativeView widget = tab->GetView()->GetNativeView();
+  const gfx::NativeView widget = is_embedding_fullscreen_widget_ ?
+      tab->GetFullscreenRenderWidgetHostView()->GetNativeView() :
+      tab->GetView()->GetNativeView();
   if (widget) {
     if (gtk_widget_get_parent(widget) != expanded_)
       gtk_container_add(GTK_CONTAINER(expanded_), widget);
     gtk_widget_show(widget);
   }
 
+  if (is_embedding_fullscreen_widget_)
+    return;
+
   tab->WasShown();
-  registrar_.Add(this, content::NOTIFICATION_WEB_CONTENTS_DESTROYED,
-                 content::Source<content::WebContents>(tab));
+
+  // Make sure that the tab is below the find bar. Sometimes the content
+  // native view will be null.
+  GtkWidget* const content_widget = tab->GetView()->GetContentNativeView();
+  if (content_widget) {
+    GdkWindow* const content_gdk_window = gtk_widget_get_window(content_widget);
+    if (content_gdk_window)
+      gdk_window_lower(content_gdk_window);
+  }
 }
 
-void TabContentsContainerGtk::HideTab(content::WebContents* tab) {
-  gfx::NativeView widget = tab->GetView()->GetNativeView();
-  if (widget)
-    gtk_widget_hide(widget);
+void TabContentsContainerGtk::HideTab() {
+  content::WebContents* const tab = web_contents();
+  if (!tab)
+    return;
 
+  gtk_container_foreach(GTK_CONTAINER(expanded_), &HideWidget, NULL);
+  if (is_embedding_fullscreen_widget_)
+    return;
   tab->WasHidden();
-  registrar_.Remove(this, content::NOTIFICATION_WEB_CONTENTS_DESTROYED,
-                    content::Source<content::WebContents>(tab));
 }
 
 void TabContentsContainerGtk::DetachTab(content::WebContents* tab) {
-  gfx::NativeView widget = tab->GetView()->GetNativeView();
+  if (!tab)
+    return;
+  if (tab == web_contents()) {
+    HideTab();
+    WebContentsObserver::Observe(NULL);
+  }
+
+  const gfx::NativeView widget = tab->GetView()->GetNativeView();
+  const gfx::NativeView fs_widget =
+      (should_embed_fullscreen_widgets_ &&
+       tab->GetFullscreenRenderWidgetHostView()) ?
+          tab->GetFullscreenRenderWidgetHostView()->GetNativeView() : NULL;
 
   // It is possible to detach an unrealized, unparented WebContents if you
   // slow things down enough in valgrind. Might happen in the real world, too.
   if (widget) {
-    GtkWidget* parent = gtk_widget_get_parent(widget);
+    GtkWidget* const parent = gtk_widget_get_parent(widget);
     if (parent) {
       DCHECK_EQ(parent, expanded_);
       gtk_container_remove(GTK_CONTAINER(expanded_), widget);
     }
   }
-}
-
-void TabContentsContainerGtk::Observe(
-    int type,
-    const content::NotificationSource& source,
-    const content::NotificationDetails& details) {
-  DCHECK_EQ(content::NOTIFICATION_WEB_CONTENTS_DESTROYED, type);
-  WebContentsDestroyed(content::Source<content::WebContents>(source).ptr());
+  if (fs_widget) {
+    GtkWidget* const parent = gtk_widget_get_parent(fs_widget);
+    if (parent) {
+      DCHECK_EQ(parent, expanded_);
+      gtk_container_remove(GTK_CONTAINER(expanded_), fs_widget);
+    }
+  }
 }
 
 void TabContentsContainerGtk::WebContentsDestroyed(
     content::WebContents* contents) {
   // Sometimes, a WebContents is destroyed before we know about it. This allows
   // us to clean up our state in case this happens.
-  if (contents == overlay_)
-    SetOverlay(NULL);
-  else if (contents == tab_)
-    SetTab(NULL);
-  else
-    NOTREACHED();
-}
-
-// Prevent |overlay_| from getting focus via the tab key. If |tab_| exists, try
-// to focus that. Otherwise, do nothing, but stop event propagation. See bug
-// http://crbug.com/63365
-gboolean TabContentsContainerGtk::OnFocus(GtkWidget* widget,
-                                          GtkDirectionType focus) {
-  if (overlay_) {
-    gtk_widget_child_focus(tab_->GetView()->GetContentNativeView(), focus);
-    return TRUE;
-  }
-
-  // No overlay contents; let the default handler run.
-  return FALSE;
+  DetachTab(contents);
 }
 
 // -----------------------------------------------------------------------------
@@ -189,6 +164,23 @@ GtkWidget* TabContentsContainerGtk::GetWidgetForViewID(ViewID view_id) {
 }
 
 // -----------------------------------------------------------------------------
+
+void TabContentsContainerGtk::DidShowFullscreenWidget(int routing_id) {
+  if (!should_embed_fullscreen_widgets_)
+    return;
+  HideTab();
+  is_embedding_fullscreen_widget_ =
+      web_contents() && web_contents()->GetFullscreenRenderWidgetHostView();
+  PackTab();
+}
+
+void TabContentsContainerGtk::DidDestroyFullscreenWidget(int routing_id) {
+  if (!should_embed_fullscreen_widgets_)
+    return;
+  HideTab();
+  is_embedding_fullscreen_widget_ = false;
+  PackTab();
+}
 
 // static
 void TabContentsContainerGtk::OnSetFloatingPosition(

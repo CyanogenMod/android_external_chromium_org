@@ -1,19 +1,18 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef ANDROID_WEBVIEW_BROWSER_RENDER_HOST_PRINT_MANAGER_H_
 #define ANDROID_WEBVIEW_BROWSER_RENDER_HOST_PRINT_MANAGER_H_
 
-#include "content/public/browser/web_contents_observer.h"
-
 #include "base/callback_forward.h"
 #include "base/threading/non_thread_safe.h"
+#include "content/public/browser/web_contents_observer.h"
 
 class GURL;
 
 namespace base {
-class FileDescriptor;
+struct FileDescriptor;
 }
 
 namespace printing {
@@ -53,8 +52,8 @@ class PrintManager : public content::WebContentsObserver,
   // asynchronous, the actual printing will not be completed on the return of
   // this function. Returns false if printing is impossible at the moment.
   //
-  // Note for webview: Returns false immediately if this print manager is already
-  // busy printing.
+  // Note for webview: Returns false immediately if this print manager is
+  // already busy printing.
   bool PrintNow();
 
  private:

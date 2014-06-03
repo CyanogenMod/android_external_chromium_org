@@ -10,8 +10,6 @@
 
 #include "base/strings/utf_string_conversions.h"
 
-namespace chrome {
-namespace test {
 namespace {
 
 // Sample MTP device storage information.
@@ -26,15 +24,15 @@ const char kStorageUniqueIdB[] =
 // Returns the storage name of the device specified by |pnp_device_id|.
 // |storage_object_id| specifies the string ID that uniquely identifies the
 // object on the device.
-string16 GetMTPStorageName(const string16& pnp_device_id,
-                           const string16& storage_object_id) {
+base::string16 GetMTPStorageName(const base::string16& pnp_device_id,
+                                 const base::string16& storage_object_id) {
   if (pnp_device_id == TestPortableDeviceWatcherWin::kMTPDeviceWithInvalidInfo)
-    return string16();
+    return base::string16();
 
   if (storage_object_id == kStorageObjectIdA)
     return kStorageLabelA;
   return (storage_object_id == kStorageObjectIdB) ?
-      kStorageLabelB : string16();
+      kStorageLabelB : base::string16();
 }
 
 }  // namespace
@@ -60,8 +58,8 @@ TestPortableDeviceWatcherWin::~TestPortableDeviceWatcherWin() {
 
 // static
 std::string TestPortableDeviceWatcherWin::GetMTPStorageUniqueId(
-    const string16& pnp_device_id,
-    const string16& storage_object_id) {
+    const base::string16& pnp_device_id,
+    const base::string16& storage_object_id) {
   if (storage_object_id == kStorageObjectIdA)
     return TestPortableDeviceWatcherWin::kStorageUniqueIdA;
   return (storage_object_id == kStorageObjectIdB) ?
@@ -71,7 +69,7 @@ std::string TestPortableDeviceWatcherWin::GetMTPStorageUniqueId(
 // static
 PortableDeviceWatcherWin::StorageObjectIDs
 TestPortableDeviceWatcherWin::GetMTPStorageObjectIds(
-    const string16& pnp_device_id) {
+    const base::string16& pnp_device_id) {
   PortableDeviceWatcherWin::StorageObjectIDs storage_object_ids;
   storage_object_ids.push_back(kStorageObjectIdA);
   if (pnp_device_id == kMTPDeviceWithMultipleStorages)
@@ -81,11 +79,11 @@ TestPortableDeviceWatcherWin::GetMTPStorageObjectIds(
 
 // static
 void TestPortableDeviceWatcherWin::GetMTPStorageDetails(
-    const string16& pnp_device_id,
-    const string16& storage_object_id,
-    string16* device_location,
+    const base::string16& pnp_device_id,
+    const base::string16& storage_object_id,
+    base::string16* device_location,
     std::string* unique_id,
-    string16* name) {
+    base::string16* name) {
   std::string storage_unique_id = GetMTPStorageUniqueId(pnp_device_id,
                                                         storage_object_id);
   if (device_location)
@@ -101,7 +99,7 @@ void TestPortableDeviceWatcherWin::GetMTPStorageDetails(
 // static
 PortableDeviceWatcherWin::StorageObjects
 TestPortableDeviceWatcherWin::GetDeviceStorageObjects(
-    const string16& pnp_device_id) {
+    const base::string16& pnp_device_id) {
   PortableDeviceWatcherWin::StorageObjects storage_objects;
   PortableDeviceWatcherWin::StorageObjectIDs storage_object_ids =
       GetMTPStorageObjectIds(pnp_device_id);
@@ -118,10 +116,10 @@ void TestPortableDeviceWatcherWin::EnumerateAttachedDevices() {
 }
 
 void TestPortableDeviceWatcherWin::HandleDeviceAttachEvent(
-    const string16& pnp_device_id) {
+    const base::string16& pnp_device_id) {
   DeviceDetails device_details = {
       (pnp_device_id != kMTPDeviceWithInvalidInfo) ?
-           kMTPDeviceFriendlyName : string16(),
+           kMTPDeviceFriendlyName : base::string16(),
       pnp_device_id,
       GetDeviceStorageObjects(pnp_device_id)
   };
@@ -130,8 +128,8 @@ void TestPortableDeviceWatcherWin::HandleDeviceAttachEvent(
 
 bool TestPortableDeviceWatcherWin::GetMTPStorageInfoFromDeviceId(
     const std::string& storage_device_id,
-    string16* device_location,
-    string16* storage_object_id) const {
+    base::string16* device_location,
+    base::string16* storage_object_id) const {
   DCHECK(!storage_device_id.empty());
   if (use_dummy_mtp_storage_info_) {
     if (storage_device_id == TestPortableDeviceWatcherWin::kStorageUniqueIdA) {
@@ -144,6 +142,3 @@ bool TestPortableDeviceWatcherWin::GetMTPStorageInfoFromDeviceId(
   return PortableDeviceWatcherWin::GetMTPStorageInfoFromDeviceId(
       storage_device_id, device_location, storage_object_id);
 }
-
-}  // namespace test
-}  // namespace chrome

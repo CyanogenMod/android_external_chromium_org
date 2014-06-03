@@ -7,12 +7,17 @@
 
 #include <string>
 
+#include "base/callback_forward.h"
 #include "base/files/file_path.h"
 #include "webkit/browser/fileapi/file_system_url.h"
 
 namespace fileapi {
 class FileSystemContext;
 class FileSystemURL;
+}
+
+namespace tracked_objects {
+class Location;
 }
 
 namespace sync_file_system {
@@ -85,6 +90,19 @@ void SetEnableSyncFSDirectoryOperation(bool flag);
 // away when we fully support directory operations. (http://crbug.com/161442)
 bool IsSyncFSDirectoryOperationEnabled();
 
+// Checks the same as above, but takes |origin| and sees if directory operation
+// is enabled specifically for this |origin|.
+bool IsSyncFSDirectoryOperationEnabled(const GURL& origin);
+
+// Returns true if V2 is enabled.
+bool IsV2Enabled();
+
+// Returns true if the given |origin| is supposed to run in V2 mode.
+bool IsV2EnabledForOrigin(const GURL& origin);
+
+// Returns SyncFileSystem sub-directory path.
+base::FilePath GetSyncFileSystemDir(const base::FilePath& profile_base_dir);
+
 // Enables directory operation for syncable filesystems temporarily for testing.
 class ScopedEnableSyncFSDirectoryOperation {
  public:
@@ -96,6 +114,10 @@ class ScopedEnableSyncFSDirectoryOperation {
 
   DISALLOW_COPY_AND_ASSIGN(ScopedEnableSyncFSDirectoryOperation);
 };
+
+// Posts |callback| to the current thread.
+void RunSoon(const tracked_objects::Location& from_here,
+             const base::Closure& callback);
 
 }  // namespace sync_file_system
 

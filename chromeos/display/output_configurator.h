@@ -36,12 +36,52 @@ enum OutputState {
   STATE_DUAL_EXTENDED,
 };
 
+// Video output types.
+enum OutputType {
+  OUTPUT_TYPE_NONE = 0,
+  OUTPUT_TYPE_UNKNOWN = 1 << 0,
+  OUTPUT_TYPE_INTERNAL = 1 << 1,
+  OUTPUT_TYPE_VGA = 1 << 2,
+  OUTPUT_TYPE_HDMI = 1 << 3,
+  OUTPUT_TYPE_DVI = 1 << 4,
+  OUTPUT_TYPE_DISPLAYPORT = 1 << 5,
+  OUTPUT_TYPE_NETWORK = 1 << 6,
+};
+
+// Content protection methods applied on video output.
+enum OutputProtectionMethod {
+  OUTPUT_PROTECTION_METHOD_NONE = 0,
+  OUTPUT_PROTECTION_METHOD_HDCP = 1 << 0,
+};
+
+// HDCP protection state.
+enum HDCPState {
+  HDCP_STATE_UNDESIRED,
+  HDCP_STATE_DESIRED,
+  HDCP_STATE_ENABLED
+};
+
 // This class interacts directly with the underlying Xrandr API to manipulate
 // CTRCs and Outputs.
 class CHROMEOS_EXPORT OutputConfigurator
     : public base::MessageLoop::Dispatcher,
       public base::MessagePumpObserver {
  public:
+  typedef uint64_t OutputProtectionClientId;
+  static const OutputProtectionClientId kInvalidClientId = 0;
+
+  struct ModeInfo {
+    ModeInfo();
+    ModeInfo(int width, int height, bool interlaced, float refresh_rate);
+
+    int width;
+    int height;
+    bool interlaced;
+    float refresh_rate;
+  };
+
+  typedef std::map<RRMode, ModeInfo> ModeInfoMap;
+
   struct CoordinateTransformation {
     // Initialized to the identity transformation.
     CoordinateTransformation();
@@ -55,6 +95,7 @@ class CHROMEOS_EXPORT OutputConfigurator
   // Information about an output's current state.
   struct OutputSnapshot {
     OutputSnapshot();
+    ~OutputSnapshot();
 
     RROutput output;
 
@@ -78,8 +119,19 @@ class CHROMEOS_EXPORT OutputConfigurator
     int x;
     int y;
 
+    // Output's physical dimensions.
+    uint64 width_mm;
+    uint64 height_mm;
+
+    // TODO(kcwu): Remove this. Check type == OUTPUT_TYPE_INTERNAL instead.
     bool is_internal;
     bool is_aspect_preserving_scaling;
+
+    // The type of output.
+    OutputType type;
+
+    // Map from mode IDs to details about the corresponding modes.
+    ModeInfoMap mode_infos;
 
     // XInput device ID or 0 if this output isn't a touchscreen.
     int touch_device_id;
@@ -90,18 +142,25 @@ class CHROMEOS_EXPORT OutputConfigurator
     int64 display_id;
 
     bool has_display_id;
+
+    // This output's index in the array returned by XRandR. Stable even as
+    // outputs are connected or disconnected.
+    int index;
   };
 
   class Observer {
    public:
     virtual ~Observer() {}
 
-    // Called when the change of the display mode finished.  It will usually
-    // start the fading in the displays.
-    virtual void OnDisplayModeChanged() {}
+    // Called after the display mode has been changed. |output| contains the
+    // just-applied configuration. Note that the X server is no longer grabbed
+    // when this method is called, so the actual configuration could've changed
+    // already.
+    virtual void OnDisplayModeChanged(
+        const std::vector<OutputSnapshot>& outputs) {}
 
-    // Called when the change of the display mode is issued but failed.
-    // |failed_new_state| is the new state which the system failed to enter.
+    // Called after a display mode change attempt failed. |failed_new_state| is
+    // the new state which the system failed to enter.
     virtual void OnDisplayModeChangeFailed(OutputState failed_new_state) {}
   };
 
@@ -136,8 +195,6 @@ class CHROMEOS_EXPORT OutputConfigurator
    public:
     virtual ~Delegate() {}
 
-    virtual void SetPanelFittingEnabled(bool enabled) = 0;
-
     // Initializes the XRandR extension, saving the base event ID to
     // |event_base|.
     virtual void InitXRandRExtension(int* event_base) = 0;
@@ -163,17 +220,14 @@ class CHROMEOS_EXPORT OutputConfigurator
     // Enables DPMS and forces it to the "on" state.
     virtual void ForceDPMSOn() = 0;
 
-    // Returns information about the current outputs.
-    // This method may block for 60 milliseconds or more.
-    virtual std::vector<OutputSnapshot> GetOutputs(
-        const StateController* state_controller) = 0;
+    // Returns information about the current outputs. This method may block for
+    // 60 milliseconds or more. The returned outputs are not fully initialized;
+    // the rest of the work happens in
+    // OutputConfigurator::UpdateCachedOutputs().
+    virtual std::vector<OutputSnapshot> GetOutputs() = 0;
 
-    // Gets details corresponding to |mode|.  Parameters may be NULL.
-    // Returns true on success.
-    virtual bool GetModeDetails(RRMode mode,
-                                int* width,
-                                int* height,
-                                bool* interlaced) = 0;
+    // Adds |mode| to |output|.
+    virtual void AddOutputMode(RROutput output, RRMode mode) = 0;
 
     // Calls XRRSetCrtcConfig() with the given options but some of our default
     // output count and rotation arguments. Returns true on success.
@@ -201,6 +255,12 @@ class CHROMEOS_EXPORT OutputConfigurator
     // Sends a D-Bus message to the power manager telling it that the
     // machine is or is not projecting.
     virtual void SendProjectingStateToPowerManager(bool projecting) = 0;
+
+    // Gets HDCP state of output.
+    virtual bool GetHDCPState(RROutput id, HDCPState* state) = 0;
+
+    // Sets HDCP state of output.
+    virtual bool SetHDCPState(RROutput id, HDCPState state) = 0;
   };
 
   // Helper class used by tests.
@@ -211,10 +271,22 @@ class CHROMEOS_EXPORT OutputConfigurator
           xrandr_event_base_(xrandr_event_base) {}
     ~TestApi() {}
 
-    // Dispatches RRScreenChangeNotify and RRNotify_OutputChange events to
-    // |configurator_| and runs ConfigureOutputs().  Returns false if
-    // |configure_timer_| wasn't started.
-    bool SendOutputChangeEvents(bool connected);
+    const std::vector<OutputSnapshot>& cached_outputs() const {
+      return configurator_->cached_outputs_;
+    }
+
+    // Dispatches an RRScreenChangeNotify event to |configurator_|.
+    void SendScreenChangeEvent();
+
+    // Dispatches an RRNotify_OutputChange event to |configurator_|.
+    void SendOutputChangeEvent(RROutput output,
+                               RRCrtc crtc,
+                               RRMode mode,
+                               bool connected);
+
+    // If |configure_timer_| is started, stops the timer, runs
+    // ConfigureOutputs(), and returns true; returns false otherwise.
+    bool TriggerConfigureTimeout();
 
    private:
     OutputConfigurator* configurator_;  // not owned
@@ -240,6 +312,17 @@ class CHROMEOS_EXPORT OutputConfigurator
   // need to use for the DPI calculation.
   // See crbug.com/130188 for initial discussion.
   static const int kVerticalGap = 60;
+
+  // Returns a pointer to the ModeInfo struct in |output| corresponding to
+  // |mode|, or NULL if the struct isn't present.
+  static const ModeInfo* GetModeInfo(const OutputSnapshot& output,
+                                     RRMode mode);
+
+  // Returns the mode within |output| that matches the given size with highest
+  // refresh rate. Returns None if no matching output was found.
+  static RRMode FindOutputModeMatchingSize(const OutputSnapshot& output,
+                                           int width,
+                                           int height);
 
   OutputConfigurator();
   virtual ~OutputConfigurator();
@@ -295,8 +378,7 @@ class CHROMEOS_EXPORT OutputConfigurator
   // Overridden from base::MessagePumpObserver:
   virtual base::EventStatus WillProcessEvent(
       const base::NativeEvent& event) OVERRIDE;
-  virtual void DidProcessEvent(
-      const base::NativeEvent& event) OVERRIDE;
+  virtual void DidProcessEvent(const base::NativeEvent& event) OVERRIDE;
 
   void AddObserver(Observer* observer);
   void RemoveObserver(Observer* observer);
@@ -318,12 +400,67 @@ class CHROMEOS_EXPORT OutputConfigurator
   // so that time-consuming ConfigureOutputs() won't be called multiple times.
   void ScheduleConfigureOutputs();
 
+  // Registers a client for output protection and requests a client id. Returns
+  // 0 if requesting failed.
+  OutputProtectionClientId RegisterOutputProtectionClient();
+
+  // Unregisters the client.
+  void UnregisterOutputProtectionClient(OutputProtectionClientId client_id);
+
+  // Queries link status and protection status.
+  // |link_mask| is the type of connected output links, which is a bitmask of
+  // OutputType values. |protection_mask| is the desired protection methods,
+  // which is a bitmask of the OutputProtectionMethod values.
+  // Returns true on success.
+  bool QueryOutputProtectionStatus(
+      OutputProtectionClientId client_id,
+      int64 display_id,
+      uint32_t* link_mask,
+      uint32_t* protection_mask);
+
+  // Requests the desired protection methods.
+  // |protection_mask| is the desired protection methods, which is a bitmask
+  // of the OutputProtectionMethod values.
+  // Returns true when the protection request has been made.
+  bool EnableOutputProtection(
+      OutputProtectionClientId client_id,
+      int64 display_id,
+      uint32_t desired_protection_mask);
+
  private:
-  // Configure outputs.
+  // Mapping a display_id to a protection request bitmask.
+  typedef std::map<int64, uint32_t> DisplayProtections;
+  // Mapping a client to its protection request.
+  typedef std::map<OutputProtectionClientId,
+                   DisplayProtections> ProtectionRequests;
+
+  // Updates |cached_outputs_| to contain currently-connected outputs. Calls
+  // |delegate_->GetOutputs()| and then does additional work, like finding the
+  // mirror mode and setting user-preferred modes. Note that the server must be
+  // grabbed via |delegate_->GrabServer()| first.
+  void UpdateCachedOutputs();
+
+  // Helper method for UpdateCachedOutputs() that initializes the passed-in
+  // outputs' |mirror_mode| fields by looking for a mode in |internal_output|
+  // and |external_output| having the same resolution. Returns false if a shared
+  // mode wasn't found or created.
+  //
+  // |try_panel_fitting| allows creating a panel-fitting mode for
+  // |internal_output| instead of only searching for a matching mode (note that
+  // it may lead to a crash if |internal_info| is not capable of panel fitting).
+  //
+  // |preserve_aspect| limits the search/creation only to the modes having the
+  // native aspect ratio of |external_output|.
+  bool FindMirrorMode(OutputSnapshot* internal_output,
+                      OutputSnapshot* external_output,
+                      bool try_panel_fitting,
+                      bool preserve_aspect);
+
+  // Configures outputs.
   void ConfigureOutputs();
 
-  // Fires OnDisplayModeChanged() event to the observers.
-  void NotifyOnDisplayChanged();
+  // Notifies observers about an attempted state change.
+  void NotifyObservers(bool success, OutputState attempted_state);
 
   // Switches to the state specified in |output_state| and |power_state|.
   // If the hardware mirroring failed and |mirroring_controller_| is set,
@@ -333,35 +470,46 @@ class CHROMEOS_EXPORT OutputConfigurator
   // and returns true.
   bool EnterStateOrFallBackToSoftwareMirroring(
       OutputState output_state,
-      DisplayPowerState power_state,
-      const std::vector<OutputSnapshot>& outputs);
+      DisplayPowerState power_state);
 
   // Switches to the state specified in |output_state| and |power_state|.
   // On success, updates |output_state_|, |power_state_|, and
   // |cached_outputs_| and returns true.
-  bool EnterState(OutputState output_state,
-                  DisplayPowerState power_state,
-                  const std::vector<OutputSnapshot>& outputs);
+  bool EnterState(OutputState output_state, DisplayPowerState power_state);
 
-  // Returns the output state that should be used with |outputs| connected
-  // while in |power_state|.
-  OutputState GetOutputState(const std::vector<OutputSnapshot>& outputs,
-                             DisplayPowerState power_state) const;
+  // Returns the output state that should be used with |cached_outputs_| while
+  // in |power_state|.
+  OutputState ChooseOutputState(DisplayPowerState power_state) const;
 
   // Computes the relevant transformation for mirror mode.
   // |output| is the output on which mirror mode is being applied.
   // Returns the transformation or identity if computations fail.
   CoordinateTransformation GetMirrorModeCTM(
-      const OutputConfigurator::OutputSnapshot* output);
+      const OutputConfigurator::OutputSnapshot& output);
+
+  // Computes the relevant transformation for extended mode.
+  // |output| is the output on which extended mode is being applied.
+  // |width| and |height| are the width and height of the combined framebuffer.
+  // Returns the transformation or identity if computations fail.
+  CoordinateTransformation GetExtendedModeCTM(
+      const OutputConfigurator::OutputSnapshot& output,
+      int framebuffer_width,
+      int frame_buffer_height);
 
   // Returns the ratio between mirrored mode area and native mode area:
   // (mirror_mode_width * mirrow_mode_height) / (native_width * native_height)
   float GetMirroredDisplayAreaRatio(
-      const OutputConfigurator::OutputSnapshot* output);
+      const OutputConfigurator::OutputSnapshot& output);
+
+  // Applies output protections according to requests.
+  bool ApplyProtections(const DisplayProtections& requests);
 
   StateController* state_controller_;
   SoftwareMirroringController* mirroring_controller_;
   scoped_ptr<Delegate> delegate_;
+
+  // Used to enable modes which rely on panel fitting.
+  bool is_panel_fitting_enabled_;
 
   // Key of the map is the touch display's id, and the value of the map is the
   // touch display's area ratio in mirror mode defined as :
@@ -397,6 +545,12 @@ class CHROMEOS_EXPORT OutputConfigurator
   // The timer to delay configuring outputs. See also the comments in
   // Dispatch().
   scoped_ptr<base::OneShotTimer<OutputConfigurator> > configure_timer_;
+
+  // Id for next output protection client.
+  OutputProtectionClientId next_output_protection_client_id_;
+
+  // Output protection requests of each client.
+  ProtectionRequests client_protection_requests_;
 
   DISALLOW_COPY_AND_ASSIGN(OutputConfigurator);
 };

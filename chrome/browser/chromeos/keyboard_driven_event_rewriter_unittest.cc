@@ -7,8 +7,8 @@
 #include "base/strings/stringprintf.h"
 #include "chrome/browser/chromeos/keyboard_driven_event_rewriter.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "ui/base/events/event.h"
-#include "ui/base/x/x11_util.h"
+#include "ui/events/event.h"
+#include "ui/events/test/events_test_utils_x11.h"
 
 #include <X11/keysym.h>
 #include <X11/XF86keysym.h>
@@ -16,32 +16,17 @@
 
 namespace chromeos {
 
-// Creates an XKeyEvent to initialize a ui::KeyEvent that is passed to
-// KeyboardDrivenEventRewriter for processing.
-void InitXKeyEvent(ui::KeyboardCode ui_keycode,
-                   int ui_flags,
-                   ui::EventType ui_type,
-                   KeyCode x_keycode,
-                   unsigned int x_state,
-                   XEvent* event) {
-  ui::InitXKeyEventForTesting(ui_type,
-                              ui_keycode,
-                              ui_flags,
-                              event);
-  event->xkey.keycode = x_keycode;
-  event->xkey.state = x_state;
-}
-
 class KeyboardDrivenEventRewriterTest : public testing::Test {
  public:
   KeyboardDrivenEventRewriterTest()
-      : display_(ui::GetXDisplay()),
+      : display_(gfx::GetXDisplay()),
         keycode_a_(XKeysymToKeycode(display_, XK_a)),
         keycode_up_(XKeysymToKeycode(display_, XK_Up)),
         keycode_down_(XKeysymToKeycode(display_, XK_Down)),
         keycode_left_(XKeysymToKeycode(display_, XK_Left)),
         keycode_right_(XKeysymToKeycode(display_, XK_Right)),
-        keycode_return_(XKeysymToKeycode(display_, XK_Return)) {
+        keycode_return_(XKeysymToKeycode(display_, XK_Return)),
+        keycode_f6_(XKeysymToKeycode(display_, XK_F6)) {
   }
 
   virtual ~KeyboardDrivenEventRewriterTest() {}
@@ -52,25 +37,34 @@ class KeyboardDrivenEventRewriterTest : public testing::Test {
                                         ui::EventType ui_type,
                                         KeyCode x_keycode,
                                         unsigned int x_state) {
-    XEvent xev;
-    InitXKeyEvent(ui_keycode, ui_flags, ui_type, x_keycode, x_state, &xev);
-    ui::KeyEvent keyevent(&xev, false /* is_char */);
-    rewriter_.RewriteForTesting(&keyevent);
+    ui::ScopedXI2Event xev;
+    xev.InitKeyEvent(ui_type, ui_keycode, ui_flags);
+    XEvent* xevent = xev;
+    xevent->xkey.keycode = x_keycode;
+    xevent->xkey.state = x_state;
+    ui::KeyEvent keyevent(xev, false /* is_char */);
+    bool changed = rewriter_.RewriteForTesting(&keyevent);
+    return base::StringPrintf("ui_flags=%d x_state=%u changed=%d",
+                              keyevent.flags(),
+                              xevent->xkey.state,
+                              changed);
+  }
+
+  std::string GetExpectedResultAsString(int ui_flags,
+                                        unsigned int x_state,
+                                        bool changed) {
     return base::StringPrintf(
-        "ui_flags=%d x_state=%u", keyevent.flags(), xev.xkey.state);
+        "ui_flags=%d x_state=%u changed=%d", ui_flags, x_state, changed);
   }
 
-  std::string GetExpectedResultAsString(int ui_flags, unsigned int x_state) {
-    return base::StringPrintf("ui_flags=%d x_state=%u", ui_flags, x_state);
-  }
-
-  Display* display_;
+  XDisplay* display_;
   const KeyCode keycode_a_;
   const KeyCode keycode_up_;
   const KeyCode keycode_down_;
   const KeyCode keycode_left_;
   const KeyCode keycode_right_;
   const KeyCode keycode_return_;
+  const KeyCode keycode_f6_;
 
   KeyboardDrivenEventRewriter rewriter_;
 
@@ -122,7 +116,8 @@ TEST_F(KeyboardDrivenEventRewriterTest, PassThrough) {
 
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kTests); ++i) {
     EXPECT_EQ(GetExpectedResultAsString(kTests[i].ui_flags,
-                                        kTests[i].x_state),
+                                        kTests[i].x_state,
+                                        false),
               GetRewrittenEventAsString(kTests[i].ui_keycode,
                                         kTests[i].ui_flags,
                                         ui::ET_KEY_PRESSED,
@@ -147,10 +142,11 @@ TEST_F(KeyboardDrivenEventRewriterTest, Rewrite) {
     { ui::VKEY_UP, kModifierMask, keycode_up_, kXState },
     { ui::VKEY_DOWN, kModifierMask, keycode_down_, kXState },
     { ui::VKEY_RETURN, kModifierMask, keycode_return_, kXState },
+    { ui::VKEY_F6, kModifierMask, keycode_f6_, kXState },
   };
 
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kTests); ++i) {
-    EXPECT_EQ(GetExpectedResultAsString(ui::EF_NONE, 0),
+    EXPECT_EQ(GetExpectedResultAsString(ui::EF_NONE, 0, true),
               GetRewrittenEventAsString(kTests[i].ui_keycode,
                                         kTests[i].ui_flags,
                                         ui::ET_KEY_PRESSED,

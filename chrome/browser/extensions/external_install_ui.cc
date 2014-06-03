@@ -26,13 +26,13 @@
 #include "chrome/browser/ui/global_error/global_error_service.h"
 #include "chrome/browser/ui/global_error/global_error_service_factory.h"
 #include "chrome/browser/ui/host_desktop.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/manifest_url_handler.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_source.h"
+#include "extensions/common/extension.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
@@ -90,7 +90,7 @@ class ExternalInstallDialogDelegate
 
 // Only shows a menu item, no bubble. Clicking the menu item shows
 // an external install dialog.
-class ExternalInstallMenuAlert : public GlobalError,
+class ExternalInstallMenuAlert : public GlobalErrorWithStandardBubble,
                                  public content::NotificationObserver {
  public:
   ExternalInstallMenuAlert(ExtensionService* service,
@@ -103,13 +103,13 @@ class ExternalInstallMenuAlert : public GlobalError,
   virtual Severity GetSeverity() OVERRIDE;
   virtual bool HasMenuItem() OVERRIDE;
   virtual int MenuItemCommandID() OVERRIDE;
-  virtual string16 MenuItemLabel() OVERRIDE;
+  virtual base::string16 MenuItemLabel() OVERRIDE;
   virtual void ExecuteMenuItem(Browser* browser) OVERRIDE;
   virtual bool HasBubbleView() OVERRIDE;
-  virtual string16 GetBubbleViewTitle() OVERRIDE;
-  virtual std::vector<string16> GetBubbleViewMessages() OVERRIDE;
-  virtual string16 GetBubbleViewAcceptButtonLabel() OVERRIDE;
-  virtual string16 GetBubbleViewCancelButtonLabel() OVERRIDE;
+  virtual base::string16 GetBubbleViewTitle() OVERRIDE;
+  virtual std::vector<base::string16> GetBubbleViewMessages() OVERRIDE;
+  virtual base::string16 GetBubbleViewAcceptButtonLabel() OVERRIDE;
+  virtual base::string16 GetBubbleViewCancelButtonLabel() OVERRIDE;
   virtual void OnBubbleViewDidClose(Browser* browser) OVERRIDE;
   virtual void BubbleViewAcceptButtonPressed(Browser* browser) OVERRIDE;
   virtual void BubbleViewCancelButtonPressed(Browser* browser) OVERRIDE;
@@ -137,10 +137,10 @@ class ExternalInstallGlobalError : public ExternalInstallMenuAlert {
   virtual void ExecuteMenuItem(Browser* browser) OVERRIDE;
   virtual bool HasBubbleView() OVERRIDE;
   virtual gfx::Image GetBubbleViewIcon() OVERRIDE;
-  virtual string16 GetBubbleViewTitle() OVERRIDE;
-  virtual std::vector<string16> GetBubbleViewMessages() OVERRIDE;
-  virtual string16 GetBubbleViewAcceptButtonLabel() OVERRIDE;
-  virtual string16 GetBubbleViewCancelButtonLabel() OVERRIDE;
+  virtual base::string16 GetBubbleViewTitle() OVERRIDE;
+  virtual std::vector<base::string16> GetBubbleViewMessages() OVERRIDE;
+  virtual base::string16 GetBubbleViewAcceptButtonLabel() OVERRIDE;
+  virtual base::string16 GetBubbleViewCancelButtonLabel() OVERRIDE;
   virtual void OnBubbleViewDidClose(Browser* browser) OVERRIDE;
   virtual void BubbleViewAcceptButtonPressed(Browser* browser) OVERRIDE;
   virtual void BubbleViewCancelButtonPressed(Browser* browser) OVERRIDE;
@@ -263,7 +263,7 @@ int ExternalInstallMenuAlert::MenuItemCommandID() {
   return kMenuCommandId;
 }
 
-string16 ExternalInstallMenuAlert::MenuItemLabel() {
+base::string16 ExternalInstallMenuAlert::MenuItemLabel() {
   int id = -1;
   if (extension_->is_app())
     id = IDS_EXTENSION_EXTERNAL_INSTALL_ALERT_APP;
@@ -281,20 +281,20 @@ void ExternalInstallMenuAlert::ExecuteMenuItem(Browser* browser) {
 bool ExternalInstallMenuAlert::HasBubbleView() {
   return false;
 }
-string16 ExternalInstallMenuAlert::GetBubbleViewTitle() {
-  return string16();
+base::string16 ExternalInstallMenuAlert::GetBubbleViewTitle() {
+  return base::string16();
 }
 
-std::vector<string16> ExternalInstallMenuAlert::GetBubbleViewMessages() {
-  return std::vector<string16>();
+std::vector<base::string16> ExternalInstallMenuAlert::GetBubbleViewMessages() {
+  return std::vector<base::string16>();
 }
 
-string16 ExternalInstallMenuAlert::GetBubbleViewAcceptButtonLabel() {
-  return string16();
+base::string16 ExternalInstallMenuAlert::GetBubbleViewAcceptButtonLabel() {
+  return base::string16();
 }
 
-string16 ExternalInstallMenuAlert::GetBubbleViewCancelButtonLabel() {
-  return string16();
+base::string16 ExternalInstallMenuAlert::GetBubbleViewCancelButtonLabel() {
+  return base::string16();
 }
 
 void ExternalInstallMenuAlert::OnBubbleViewDidClose(Browser* browser) {
@@ -355,7 +355,7 @@ bool ExternalInstallGlobalError::HasBubbleView() {
 
 gfx::Image ExternalInstallGlobalError::GetBubbleViewIcon() {
   if (prompt_->icon().IsEmpty())
-    return GlobalError::GetBubbleViewIcon();
+    return GlobalErrorWithStandardBubble::GetBubbleViewIcon();
   // Scale icon to a reasonable size.
   return gfx::Image(gfx::ImageSkiaOperations::CreateResizedImage(
       *prompt_->icon().ToImageSkia(),
@@ -364,12 +364,13 @@ gfx::Image ExternalInstallGlobalError::GetBubbleViewIcon() {
                 extension_misc::EXTENSION_ICON_SMALL)));
 }
 
-string16 ExternalInstallGlobalError::GetBubbleViewTitle() {
+base::string16 ExternalInstallGlobalError::GetBubbleViewTitle() {
   return prompt_->GetDialogTitle();
 }
 
-std::vector<string16> ExternalInstallGlobalError::GetBubbleViewMessages() {
-  std::vector<string16> messages;
+std::vector<base::string16>
+ExternalInstallGlobalError::GetBubbleViewMessages() {
+  std::vector<base::string16> messages;
   messages.push_back(prompt_->GetHeading());
   if (prompt_->GetPermissionCount()) {
     messages.push_back(prompt_->GetPermissionsHeading());
@@ -383,11 +384,11 @@ std::vector<string16> ExternalInstallGlobalError::GetBubbleViewMessages() {
   return messages;
 }
 
-string16 ExternalInstallGlobalError::GetBubbleViewAcceptButtonLabel() {
+base::string16 ExternalInstallGlobalError::GetBubbleViewAcceptButtonLabel() {
   return prompt_->GetAcceptButtonLabel();
 }
 
-string16 ExternalInstallGlobalError::GetBubbleViewCancelButtonLabel() {
+base::string16 ExternalInstallGlobalError::GetBubbleViewCancelButtonLabel() {
   return prompt_->GetAbortButtonLabel();
 }
 

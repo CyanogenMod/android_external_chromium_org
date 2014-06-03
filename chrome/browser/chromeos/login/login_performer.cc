@@ -20,13 +20,14 @@
 #include "chrome/browser/chromeos/login/managed/locally_managed_user_login_flow.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/policy/device_local_account_policy_service.h"
+#include "chrome/browser/chromeos/policy/wildcard_login_checker.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
-#include "chrome/browser/chromeos/settings/cros_settings_names.h"
 #include "chrome/browser/policy/browser_policy_connector.h"
 #include "chrome/common/pref_names.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/session_manager_client.h"
+#include "chromeos/settings/cros_settings_names.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
@@ -90,32 +91,14 @@ void LoginPerformer::OnRetailModeLoginSuccess(
   LoginStatusConsumer::OnRetailModeLoginSuccess(user_context);
 }
 
-void LoginPerformer::OnLoginSuccess(
-    const UserContext& user_context,
-    bool pending_requests,
-    bool using_oauth) {
+void LoginPerformer::OnLoginSuccess(const UserContext& user_context) {
   content::RecordAction(UserMetricsAction("Login_Success"));
-  // The value of |pending_requests| indicates:
-  // 0 - New regular user, login success offline and online.
-  //     - or -
-  //     Existing regular user, login success offline and online, offline
-  //     authentication took longer than online authentication.
-  //     - or -
-  //     Public account user, login successful.
-  // 1 - Existing regular user, login success offline only.
-  UMA_HISTOGRAM_ENUMERATION("Login.SuccessReason", pending_requests, 2);
-
-  VLOG(1) << "LoginSuccess hash: " << user_context.username_hash
-          << ", pending_requests " << pending_requests;
+  VLOG(1) << "LoginSuccess hash: " << user_context.username_hash;
   DCHECK(delegate_);
   // After delegate_->OnLoginSuccess(...) is called, delegate_ releases
   // LoginPerformer ownership. LP now manages it's lifetime on its own.
-  DCHECK(!pending_requests);
   base::MessageLoop::current()->DeleteSoon(FROM_HERE, this);
-
-  delegate_->OnLoginSuccess(user_context,
-                            pending_requests,
-                            using_oauth);
+  delegate_->OnLoginSuccess(user_context);
 }
 
 void LoginPerformer::OnOffTheRecordLoginSuccess() {
@@ -178,13 +161,27 @@ void LoginPerformer::PerformLogin(const UserContext& user_context,
     return;
   }
 
-  bool is_whitelisted = LoginUtils::IsWhitelisted(
-      gaia::CanonicalizeEmail(user_context.username));
+  bool wildcard_match = false;
+  std::string email = gaia::CanonicalizeEmail(user_context.username);
+  bool is_whitelisted = LoginUtils::IsWhitelisted(email, &wildcard_match);
   if (is_whitelisted) {
     switch (auth_mode_) {
-      case AUTH_MODE_EXTENSION:
-        StartLoginCompletion();
+      case AUTH_MODE_EXTENSION: {
+        // On enterprise devices, reconfirm login permission with the server.
+        policy::BrowserPolicyConnector* connector =
+            g_browser_process->browser_policy_connector();
+        if (connector->IsEnterpriseManaged() && wildcard_match &&
+            !connector->IsNonEnterpriseUser(email)) {
+          wildcard_login_checker_.reset(new policy::WildcardLoginChecker());
+          wildcard_login_checker_->Start(
+                  ProfileHelper::GetSigninProfile()->GetRequestContext(),
+                  base::Bind(&LoginPerformer::OnlineWildcardLoginCheckCompleted,
+                             weak_factory_.GetWeakPtr()));
+        } else {
+          StartLoginCompletion();
+        }
         break;
+      }
       case AUTH_MODE_INTERNAL:
         StartAuthentication();
         break;
@@ -201,7 +198,32 @@ void LoginPerformer::LoginAsLocallyManagedUser(
     const UserContext& user_context) {
   DCHECK_EQ(UserManager::kLocallyManagedUserDomain,
             gaia::ExtractDomainName(user_context.username));
-  // TODO(nkostylev): Check that policy allows locally managed user login.
+
+  CrosSettings* cros_settings = CrosSettings::Get();
+  CrosSettingsProvider::TrustedStatus status =
+        cros_settings->PrepareTrustedValues(
+            base::Bind(&LoginPerformer::LoginAsLocallyManagedUser,
+                       weak_factory_.GetWeakPtr(),
+                       user_context_));
+  // Must not proceed without signature verification.
+  if (status == CrosSettingsProvider::PERMANENTLY_UNTRUSTED) {
+    if (delegate_)
+      delegate_->PolicyLoadFailed();
+    else
+      NOTREACHED();
+    return;
+  } else if (status != CrosSettingsProvider::TRUSTED) {
+    // Value of kAccountsPrefSupervisedUsersEnabled setting is still not
+    // verified. Another attempt will be invoked after verification completion.
+    return;
+  }
+
+  if (!UserManager::Get()->AreLocallyManagedUsersAllowed()) {
+    LOG(ERROR) << "Login attempt of locally managed user detected.";
+    delegate_->WhiteListCheckFailed(user_context.username);
+    return;
+  }
+
   UserFlow* new_flow = new LocallyManagedUserLoginFlow(user_context.username);
   new_flow->set_host(
       UserManager::Get()->GetUserFlow(user_context.username)->host());
@@ -246,6 +268,14 @@ void LoginPerformer::LoginAsPublicAccount(const std::string& username) {
       BrowserThread::UI, FROM_HERE,
       base::Bind(&Authenticator::LoginAsPublicAccount, authenticator_.get(),
                  username));
+}
+
+void LoginPerformer::LoginAsKioskAccount(const std::string& app_user_id) {
+  authenticator_ = LoginUtils::Get()->CreateAuthenticator(this);
+  BrowserThread::PostTask(
+      BrowserThread::UI, FROM_HERE,
+      base::Bind(&Authenticator::LoginAsKioskAccount, authenticator_.get(),
+                 app_user_id));
 }
 
 void LoginPerformer::RecoverEncryptedData(const std::string& old_password) {
@@ -299,6 +329,15 @@ void LoginPerformer::StartAuthentication() {
   }
   user_context_.password.clear();
   user_context_.auth_code.clear();
+}
+
+void LoginPerformer::OnlineWildcardLoginCheckCompleted(bool result) {
+  if (result) {
+    StartLoginCompletion();
+  } else {
+    if (delegate_)
+      delegate_->WhiteListCheckFailed(user_context_.username);
+  }
 }
 
 }  // namespace chromeos

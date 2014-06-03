@@ -30,14 +30,14 @@ class WimaxConfigView : public ChildNetworkConfigView,
                         public views::TextfieldController,
                         public views::ButtonListener {
  public:
-  // Wimax login dialog for wimax network |wimax|. |wimax| must be a non NULL
-  // pointer to a WimaxNetwork in NetworkLibrary.
+  // Configuration dialog for a WiMax network. If |service_path| is not empty
+  // it identifies the network to be configured.
   WimaxConfigView(NetworkConfigView* parent, const std::string& service_path);
   virtual ~WimaxConfigView();
 
   // views::TextfieldController:
   virtual void ContentsChanged(views::Textfield* sender,
-                               const string16& new_contents) OVERRIDE;
+                               const base::string16& new_contents) OVERRIDE;
   virtual bool HandleKeyEvent(views::Textfield* sender,
                               const ui::KeyEvent& key_event) OVERRIDE;
 
@@ -46,7 +46,7 @@ class WimaxConfigView : public ChildNetworkConfigView,
                              const ui::Event& event) OVERRIDE;
 
   // ChildNetworkConfigView:
-  virtual string16 GetTitle() const OVERRIDE;
+  virtual base::string16 GetTitle() const OVERRIDE;
   virtual views::View* GetInitiallyFocusedView() OVERRIDE;
   virtual bool CanLogin() OVERRIDE;
   virtual bool Login() OVERRIDE;

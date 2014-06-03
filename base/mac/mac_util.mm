@@ -298,129 +298,6 @@ bool SetFileBackupExclusion(const FilePath& file_path) {
   return os_err == noErr;
 }
 
-void SetProcessName(CFStringRef process_name) {
-  if (!process_name || CFStringGetLength(process_name) == 0) {
-    NOTREACHED() << "SetProcessName given bad name.";
-    return;
-  }
-
-  if (![NSThread isMainThread]) {
-    NOTREACHED() << "Should only set process name from main thread.";
-    return;
-  }
-
-  // Warning: here be dragons! This is SPI reverse-engineered from WebKit's
-  // plugin host, and could break at any time (although realistically it's only
-  // likely to break in a new major release).
-  // When 10.7 is available, check that this still works, and update this
-  // comment for 10.8.
-
-  // Private CFType used in these LaunchServices calls.
-  typedef CFTypeRef PrivateLSASN;
-  typedef PrivateLSASN (*LSGetCurrentApplicationASNType)();
-  typedef OSStatus (*LSSetApplicationInformationItemType)(int, PrivateLSASN,
-                                                          CFStringRef,
-                                                          CFStringRef,
-                                                          CFDictionaryRef*);
-
-  static LSGetCurrentApplicationASNType ls_get_current_application_asn_func =
-      NULL;
-  static LSSetApplicationInformationItemType
-      ls_set_application_information_item_func = NULL;
-  static CFStringRef ls_display_name_key = NULL;
-
-  static bool did_symbol_lookup = false;
-  if (!did_symbol_lookup) {
-    did_symbol_lookup = true;
-    CFBundleRef launch_services_bundle =
-        CFBundleGetBundleWithIdentifier(CFSTR("com.apple.LaunchServices"));
-    if (!launch_services_bundle) {
-      DLOG(ERROR) << "Failed to look up LaunchServices bundle";
-      return;
-    }
-
-    ls_get_current_application_asn_func =
-        reinterpret_cast<LSGetCurrentApplicationASNType>(
-            CFBundleGetFunctionPointerForName(
-                launch_services_bundle, CFSTR("_LSGetCurrentApplicationASN")));
-    if (!ls_get_current_application_asn_func)
-      DLOG(ERROR) << "Could not find _LSGetCurrentApplicationASN";
-
-    ls_set_application_information_item_func =
-        reinterpret_cast<LSSetApplicationInformationItemType>(
-            CFBundleGetFunctionPointerForName(
-                launch_services_bundle,
-                CFSTR("_LSSetApplicationInformationItem")));
-    if (!ls_set_application_information_item_func)
-      DLOG(ERROR) << "Could not find _LSSetApplicationInformationItem";
-
-    CFStringRef* key_pointer = reinterpret_cast<CFStringRef*>(
-        CFBundleGetDataPointerForName(launch_services_bundle,
-                                      CFSTR("_kLSDisplayNameKey")));
-    ls_display_name_key = key_pointer ? *key_pointer : NULL;
-    if (!ls_display_name_key)
-      DLOG(ERROR) << "Could not find _kLSDisplayNameKey";
-
-    // Internally, this call relies on the Mach ports that are started up by the
-    // Carbon Process Manager.  In debug builds this usually happens due to how
-    // the logging layers are started up; but in release, it isn't started in as
-    // much of a defined order.  So if the symbols had to be loaded, go ahead
-    // and force a call to make sure the manager has been initialized and hence
-    // the ports are opened.
-    ProcessSerialNumber psn;
-    GetCurrentProcess(&psn);
-  }
-  if (!ls_get_current_application_asn_func ||
-      !ls_set_application_information_item_func ||
-      !ls_display_name_key) {
-    return;
-  }
-
-  PrivateLSASN asn = ls_get_current_application_asn_func();
-  // Constant used by WebKit; what exactly it means is unknown.
-  const int magic_session_constant = -2;
-  OSErr err =
-      ls_set_application_information_item_func(magic_session_constant, asn,
-                                               ls_display_name_key,
-                                               process_name,
-                                               NULL /* optional out param */);
-  OSSTATUS_DLOG_IF(ERROR, err != noErr, err)
-      << "Call to set process name failed";
-}
-
-// Converts a NSImage to a CGImageRef.  Normally, the system frameworks can do
-// this fine, especially on 10.6.  On 10.5, however, CGImage cannot handle
-// converting a PDF-backed NSImage into a CGImageRef.  This function will
-// rasterize the PDF into a bitmap CGImage.  The caller is responsible for
-// releasing the return value.
-CGImageRef CopyNSImageToCGImage(NSImage* image) {
-  // This is based loosely on http://www.cocoadev.com/index.pl?CGImageRef .
-  NSSize size = [image size];
-  ScopedCFTypeRef<CGContextRef> context(
-      CGBitmapContextCreate(NULL,  // Allow CG to allocate memory.
-                            size.width,
-                            size.height,
-                            8,  // bitsPerComponent
-                            0,  // bytesPerRow - CG will calculate by default.
-                            [[NSColorSpace genericRGBColorSpace] CGColorSpace],
-                            kCGBitmapByteOrder32Host |
-                                kCGImageAlphaPremultipliedFirst));
-  if (!context.get())
-    return NULL;
-
-  [NSGraphicsContext saveGraphicsState];
-  [NSGraphicsContext setCurrentContext:
-      [NSGraphicsContext graphicsContextWithGraphicsPort:context.get()
-                                                 flipped:NO]];
-  [image drawInRect:NSMakeRect(0,0, size.width, size.height)
-           fromRect:NSZeroRect
-          operation:NSCompositeCopy
-           fraction:1.0];
-  [NSGraphicsContext restoreGraphicsState];
-
-  return CGBitmapContextCreateImage(context);
-}
-
 bool CheckLoginItemStatus(bool* is_hidden) {
   ScopedCFTypeRef<LSSharedFileListItemRef> item(GetLoginItemForApp());
   if (!item.get())
@@ -592,7 +469,7 @@ int MacOSXMinorVersionInternal() {
   // immediate death.
   CHECK(darwin_major_version >= 6);
   int mac_os_x_minor_version = darwin_major_version - 4;
-  DLOG_IF(WARNING, darwin_major_version > 12) << "Assuming Darwin "
+  DLOG_IF(WARNING, darwin_major_version > 13) << "Assuming Darwin "
       << base::IntToString(darwin_major_version) << " is Mac OS X 10."
       << base::IntToString(mac_os_x_minor_version);
 
@@ -610,6 +487,7 @@ enum {
   SNOW_LEOPARD_MINOR_VERSION = 6,
   LION_MINOR_VERSION = 7,
   MOUNTAIN_LION_MINOR_VERSION = 8,
+  MAVERICKS_MINOR_VERSION = 9,
 };
 
 }  // namespace
@@ -623,12 +501,6 @@ bool IsOSSnowLeopard() {
 #if !defined(BASE_MAC_MAC_UTIL_H_INLINED_GT_10_7)
 bool IsOSLion() {
   return MacOSXMinorVersion() == LION_MINOR_VERSION;
-}
-#endif
-
-#if !defined(BASE_MAC_MAC_UTIL_H_INLINED_GT_10_7)
-bool IsOSLionOrEarlier() {
-  return MacOSXMinorVersion() <= LION_MINOR_VERSION;
 }
 #endif
 
@@ -650,9 +522,21 @@ bool IsOSMountainLionOrLater() {
 }
 #endif
 
-#if !defined(BASE_MAC_MAC_UTIL_H_INLINED_GT_10_8)
-bool IsOSLaterThanMountainLion_DontCallThis() {
-  return MacOSXMinorVersion() > MOUNTAIN_LION_MINOR_VERSION;
+#if !defined(BASE_MAC_MAC_UTIL_H_INLINED_GT_10_9)
+bool IsOSMavericks() {
+  return MacOSXMinorVersion() == MAVERICKS_MINOR_VERSION;
+}
+#endif
+
+#if !defined(BASE_MAC_MAC_UTIL_H_INLINED_GE_10_9)
+bool IsOSMavericksOrLater() {
+  return MacOSXMinorVersion() >= MAVERICKS_MINOR_VERSION;
+}
+#endif
+
+#if !defined(BASE_MAC_MAC_UTIL_H_INLINED_GT_10_9)
+bool IsOSLaterThanMavericks_DontCallThis() {
+  return MacOSXMinorVersion() > MAVERICKS_MINOR_VERSION;
 }
 #endif
 

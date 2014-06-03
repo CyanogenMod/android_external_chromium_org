@@ -19,9 +19,10 @@
 #include "content/public/browser/user_metrics.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
-#include "ui/base/keycodes/keyboard_codes.h"
+#include "ui/base/accessibility/accessible_view_state.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/views/bubble/bubble_frame_view.h"
 #include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/combobox/combobox.h"
@@ -46,46 +47,15 @@ const int kControlBorderWidth = 2;
 
 }  // namespace
 
-// Declared in browser_dialogs.h so callers don't have to depend on our header.
-
-namespace chrome {
-
-void ShowBookmarkBubbleView(views::View* anchor_view,
-                            BookmarkBubbleViewObserver* observer,
-                            scoped_ptr<BookmarkBubbleDelegate> delegate,
-                            Profile* profile,
-                            const GURL& url,
-                            bool newly_bookmarked) {
-  BookmarkBubbleView::ShowBubble(anchor_view,
-                                 observer,
-                                 delegate.Pass(),
-                                 profile,
-                                 url,
-                                 newly_bookmarked);
-}
-
-void HideBookmarkBubbleView() {
-  BookmarkBubbleView::Hide();
-}
-
-bool IsBookmarkBubbleViewShowing() {
-  return BookmarkBubbleView::IsShowing();
-}
-
-}  // namespace chrome
-
-// BookmarkBubbleView ---------------------------------------------------------
-
 BookmarkBubbleView* BookmarkBubbleView::bookmark_bubble_ = NULL;
 
 // static
-void BookmarkBubbleView::ShowBubble(
-    views::View* anchor_view,
-    BookmarkBubbleViewObserver* observer,
-    scoped_ptr<BookmarkBubbleDelegate> delegate,
-    Profile* profile,
-    const GURL& url,
-    bool newly_bookmarked) {
+void BookmarkBubbleView::ShowBubble(views::View* anchor_view,
+                                    BookmarkBubbleViewObserver* observer,
+                                    scoped_ptr<BookmarkBubbleDelegate> delegate,
+                                    Profile* profile,
+                                    const GURL& url,
+                                    bool newly_bookmarked) {
   if (IsShowing())
     return;
 
@@ -123,6 +93,9 @@ BookmarkBubbleView::~BookmarkBubbleView() {
     if (node)
       model->Remove(node->parent(), node->parent()->GetIndexOf(node));
   }
+  // |parent_combobox_| needs to be destroyed before |parent_model_| as it
+  // uses |parent_model_| in its destructor.
+  delete parent_combobox_;
 }
 
 views::View* BookmarkBubbleView::GetInitiallyFocusedView() {
@@ -160,8 +133,8 @@ void BookmarkBubbleView::Init() {
       l10n_util::GetStringUTF16(
           newly_bookmarked_ ? IDS_BOOKMARK_BUBBLE_PAGE_BOOKMARKED :
                               IDS_BOOKMARK_BUBBLE_PAGE_BOOKMARK));
-  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
-  title_label->SetFont(rb.GetFont(ui::ResourceBundle::MediumFont));
+  ui::ResourceBundle* rb = &ui::ResourceBundle::GetSharedInstance();
+  title_label->SetFont(rb->GetFont(ui::ResourceBundle::MediumFont));
 
   remove_button_ = new views::LabelButton(this, l10n_util::GetStringUTF16(
       IDS_BOOKMARK_BUBBLE_REMOVE_BOOKMARK));
@@ -181,7 +154,8 @@ void BookmarkBubbleView::Init() {
 
   parent_combobox_ = new views::Combobox(&parent_model_);
   parent_combobox_->set_listener(this);
-  parent_combobox_->SetAccessibleName(combobox_label->text());
+  parent_combobox_->SetAccessibleName(
+      l10n_util::GetStringUTF16(IDS_BOOKMARK_AX_BUBBLE_FOLDER_TEXT));
 
   GridLayout* layout = new GridLayout(this);
   SetLayoutManager(layout);
@@ -227,6 +201,9 @@ void BookmarkBubbleView::Init() {
   layout->AddView(label);
   title_tf_ = new views::Textfield();
   title_tf_->SetText(GetTitle());
+  title_tf_->SetAccessibleName(
+      l10n_util::GetStringUTF16(IDS_BOOKMARK_AX_BUBBLE_TITLE_TEXT));
+
   layout->AddView(title_tf_, 5, 1);
 
   layout->AddPaddingRow(0, views::kUnrelatedControlHorizontalSpacing);
@@ -293,13 +270,14 @@ BookmarkBubbleView::BookmarkBubbleView(
   const SkColor background_color = GetNativeTheme()->GetSystemColor(
       ui::NativeTheme::kColorId_DialogBackground);
   set_color(background_color);
+  set_move_with_anchor(true);
   set_background(views::Background::CreateSolidBackground(background_color));
   set_margins(gfx::Insets(views::kPanelVertMargin, 0, 0, 0));
   // Compensate for built-in vertical padding in the anchor view's image.
-  set_anchor_view_insets(gfx::Insets(7, 0, 7, 0));
+  set_anchor_view_insets(gfx::Insets(2, 0, 2, 0));
 }
 
-string16 BookmarkBubbleView::GetTitle() {
+base::string16 BookmarkBubbleView::GetTitle() {
   BookmarkModel* bookmark_model =
       BookmarkModelFactory::GetForProfile(profile_);
   const BookmarkNode* node =
@@ -308,13 +286,21 @@ string16 BookmarkBubbleView::GetTitle() {
     return node->GetTitle();
   else
     NOTREACHED();
-  return string16();
+  return base::string16();
 }
 
 gfx::Size BookmarkBubbleView::GetMinimumSize() {
   gfx::Size size(views::BubbleDelegateView::GetPreferredSize());
   size.SetToMax(gfx::Size(kMinBubbleWidth, 0));
   return size;
+}
+
+void BookmarkBubbleView::GetAccessibleState(ui::AccessibleViewState* state) {
+  BubbleDelegateView::GetAccessibleState(state);
+  state->name =
+      l10n_util::GetStringUTF16(
+          newly_bookmarked_ ? IDS_BOOKMARK_BUBBLE_PAGE_BOOKMARKED :
+                              IDS_BOOKMARK_AX_BUBBLE_PAGE_BOOKMARK);
 }
 
 void BookmarkBubbleView::ButtonPressed(views::Button* sender,
@@ -368,7 +354,7 @@ void BookmarkBubbleView::ApplyEdits() {
   BookmarkModel* model = BookmarkModelFactory::GetForProfile(profile_);
   const BookmarkNode* node = model->GetMostRecentlyAddedNodeForURL(url_);
   if (node) {
-    const string16 new_title = title_tf_->text();
+    const base::string16 new_title = title_tf_->text();
     if (new_title != node->GetTitle()) {
       model->SetTitle(node, new_title);
       content::RecordAction(

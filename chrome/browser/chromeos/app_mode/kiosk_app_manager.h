@@ -11,17 +11,23 @@
 #include "base/basictypes.h"
 #include "base/callback_forward.h"
 #include "base/lazy_instance.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/observer_list.h"
 #include "chrome/browser/chromeos/app_mode/kiosk_app_data_delegate.h"
 #include "chrome/browser/chromeos/policy/enterprise_install_attributes.h"
-#include "content/public/browser/notification_observer.h"
+#include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "ui/gfx/image/image_skia.h"
 
 class PrefRegistrySimple;
+class Profile;
 
 namespace base {
 class RefCountedString;
+}
+
+namespace extensions {
+class Extension;
 }
 
 namespace chromeos {
@@ -30,8 +36,7 @@ class KioskAppData;
 class KioskAppManagerObserver;
 
 // KioskAppManager manages cached app data.
-class KioskAppManager : public content::NotificationObserver,
-                        public KioskAppDataDelegate {
+class KioskAppManager : public KioskAppDataDelegate {
  public:
   enum ConsumerKioskModeStatus {
     // Consumer kiosk mode can be enabled on this machine.
@@ -124,6 +129,18 @@ class KioskAppManager : public content::NotificationObserver,
   // Gets whether the bailout shortcut is disabled.
   bool GetDisableBailoutShortcut() const;
 
+  // Clears locally cached app data.
+  void ClearAppData(const std::string& app_id);
+
+  // Updates app data from the |app| in |profile|. |app| is provided to cover
+  // the case of app update case where |app| is the new version and is not
+  // finished installing (e.g. because old version is still running). Otherwise,
+  // |app| could be NULL and the current installed app in |profile| will be
+  // used.
+  void UpdateAppDataFromProfile(const std::string& app_id,
+                                Profile* profile,
+                                const extensions::Extension* app);
+
   void AddObserver(KioskAppManagerObserver* observer);
   void RemoveObserver(KioskAppManagerObserver* observer);
 
@@ -148,14 +165,10 @@ class KioskAppManager : public content::NotificationObserver,
 
   // Gets KioskAppData for the given app id.
   const KioskAppData* GetAppData(const std::string& app_id) const;
+  KioskAppData* GetAppDataMutable(const std::string& app_id);
 
   // Update app data |apps_| based on CrosSettings.
   void UpdateAppData();
-
-  // content::NotificationObserver overrides:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
 
   // KioskAppDataDelegate overrides:
   virtual void GetKioskAppIconCacheDir(base::FilePath* cache_dir) OVERRIDE;
@@ -176,7 +189,7 @@ class KioskAppManager : public content::NotificationObserver,
   // Callback for reading handling checks of the owner public.
   void OnOwnerFileChecked(
       const GetConsumerKioskModeStatusCallback& callback,
-      bool *owner_present);
+      bool* owner_present);
 
   // Reads/writes auto login state from/to local state.
   AutoLoginState GetAutoLoginState() const;
@@ -187,6 +200,11 @@ class KioskAppManager : public content::NotificationObserver,
   ScopedVector<KioskAppData> apps_;
   std::string auto_launch_app_id_;
   ObserverList<KioskAppManagerObserver, true> observers_;
+
+  scoped_ptr<CrosSettings::ObserverSubscription>
+      local_accounts_subscription_;
+  scoped_ptr<CrosSettings::ObserverSubscription>
+      local_account_auto_login_id_subscription_;
 
   DISALLOW_COPY_AND_ASSIGN(KioskAppManager);
 };

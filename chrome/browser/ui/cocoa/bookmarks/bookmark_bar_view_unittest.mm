@@ -7,6 +7,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
+#include "chrome/browser/bookmarks/bookmark_test_helpers.h"
 #include "chrome/browser/profiles/profile.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_bar_controller.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_bar_view.h"
@@ -16,7 +17,7 @@
 #include "chrome/browser/ui/cocoa/cocoa_profile_test.h"
 #import "chrome/browser/ui/cocoa/cocoa_test_helper.h"
 #import "chrome/browser/ui/cocoa/url_drop_target.h"
-#include "chrome/test/base/ui_test_utils.h"
+#include "chrome/test/base/testing_profile.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
 #import "third_party/mozilla/NSPasteboard+Utils.h"
@@ -256,7 +257,7 @@ TEST_F(BookmarkBarViewTest, BookmarkButtonDragAndDropAcrossProfiles) {
 
   BookmarkModel* bookmark_model =
       BookmarkModelFactory::GetForProfile(profile());
-  ui_test_utils::WaitForBookmarkModelToLoad(bookmark_model);
+  test::WaitForBookmarkModelToLoad(bookmark_model);
 
   const BookmarkNode* node =
       bookmark_model->AddURL(bookmark_model->bookmark_bar_node(),

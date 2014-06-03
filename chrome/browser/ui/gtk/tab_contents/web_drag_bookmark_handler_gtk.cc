@@ -36,24 +36,21 @@ void WebDragBookmarkHandlerGtk::DragInitialize(WebContents* contents) {
 
 GdkAtom WebDragBookmarkHandlerGtk::GetBookmarkTargetAtom() const {
   // For GTK, bookmark drag data is encoded as pickle and associated with
-  // ui::CHROME_BOOKMARK_ITEM. See bookmark_utils::WriteBookmarksToSelection()
-  // for details.
+  // ui::CHROME_BOOKMARK_ITEM. See WriteBookmarksToSelection() for details.
   return ui::GetAtomForTarget(ui::CHROME_BOOKMARK_ITEM);
 }
 
 void WebDragBookmarkHandlerGtk::OnReceiveDataFromGtk(GtkSelectionData* data) {
   Profile* profile =
       Profile::FromBrowserContext(web_contents_->GetBrowserContext());
-  bookmark_drag_data_.ReadFromVector(
-      bookmark_utils::GetNodesFromSelection(
-          NULL, data,
-          ui::CHROME_BOOKMARK_ITEM,
-          profile, NULL, NULL));
+  bookmark_drag_data_.ReadFromVector(GetNodesFromSelection(
+      NULL, data, ui::CHROME_BOOKMARK_ITEM, profile, NULL, NULL));
   bookmark_drag_data_.SetOriginatingProfile(profile);
 }
 
-void WebDragBookmarkHandlerGtk::OnReceiveProcessedData(const GURL& url,
-                                                       const string16& title) {
+void WebDragBookmarkHandlerGtk::OnReceiveProcessedData(
+    const GURL& url,
+    const base::string16& title) {
   bookmark_drag_data_.ReadFromTuple(url, title);
 }
 

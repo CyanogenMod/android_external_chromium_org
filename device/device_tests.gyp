@@ -11,11 +11,13 @@
       'target_name': 'device_unittests',
       'type': '<(gtest_target_type)',
       'dependencies': [
+        '../base/base.gyp:run_all_unittests',
         '../base/base.gyp:test_support_base',
         '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
         'bluetooth/bluetooth.gyp:device_bluetooth',
         'bluetooth/bluetooth.gyp:device_bluetooth_mocks',
+        'nfc/nfc.gyp:device_nfc',
         'usb/usb.gyp:device_usb',
       ],
       'sources': [
@@ -28,7 +30,8 @@
         'bluetooth/bluetooth_service_record_win_unittest.cc',
         'bluetooth/bluetooth_task_manager_win_unittest.cc',
         'bluetooth/bluetooth_utils_unittest.cc',
-        'test/run_all_unittests.cc',
+        'nfc/nfc_chromeos_unittest.cc',
+        'nfc/nfc_ndef_record_unittest.cc',
         'usb/usb_ids_unittest.cc',
       ],
       'conditions': [

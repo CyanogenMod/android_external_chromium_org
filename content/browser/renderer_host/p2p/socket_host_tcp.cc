@@ -26,6 +26,8 @@ const int kPacketHeaderSize = sizeof(PacketLength);
 const int kReadBufferSize = 4096;
 const int kPacketLengthOffset = 2;
 const int kTurnChannelDataHeaderSize = 4;
+const int kRecvSocketBufferSize = 128 * 1024;
+const int kSendSocketBufferSize = 128 * 1024;
 
 bool IsTlsClientSocket(content::P2PSocketType type) {
   return (type == content::P2P_SOCKET_STUN_TLS_CLIENT ||
@@ -134,18 +136,23 @@ void P2PSocketHostTcpBase::OnConnected(int result) {
   if (IsTlsClientSocket(type_)) {
     state_ = STATE_TLS_CONNECTING;
     StartTls();
-  } else {
-    if (IsPseudoTlsClientSocket(type_)) {
-      socket_.reset(new jingle_glue::FakeSSLClientSocket(socket_.release()));
+  } else if (IsPseudoTlsClientSocket(type_)) {
+    scoped_ptr<net::StreamSocket> transport_socket = socket_.Pass();
+    socket_.reset(
+        new jingle_glue::FakeSSLClientSocket(transport_socket.Pass()));
+    state_ = STATE_TLS_CONNECTING;
+    int status = socket_->Connect(
+        base::Bind(&P2PSocketHostTcpBase::ProcessTlsSslConnectDone,
+                   base::Unretained(this)));
+    if (status != net::ERR_IO_PENDING) {
+      ProcessTlsSslConnectDone(status);
     }
-
+  } else {
     // If we are not doing TLS, we are ready to send data now.
     // In case of TLS, SignalConnect will be sent only after TLS handshake is
     // successfull. So no buffering will be done at socket handlers if any
     // packets sent before that by the application.
-    state_ = STATE_OPEN;
-    DoSendSocketCreateMsg();
-    DoRead();
+    OnOpen();
   }
 }
 
@@ -155,7 +162,7 @@ void P2PSocketHostTcpBase::StartTls() {
 
   scoped_ptr<net::ClientSocketHandle> socket_handle(
       new net::ClientSocketHandle());
-  socket_handle->set_socket(socket_.release());
+  socket_handle->SetSocket(socket_.Pass());
 
   net::SSLClientSocketContext context;
   context.cert_verifier = url_context_->GetURLRequestContext()->cert_verifier();
@@ -171,25 +178,39 @@ void P2PSocketHostTcpBase::StartTls() {
       net::ClientSocketFactory::GetDefaultFactory();
   DCHECK(socket_factory);
 
-  socket_.reset(socket_factory->CreateSSLClientSocket(
-      socket_handle.release(), dest_host_port_pair, ssl_config, context));
+  socket_ = socket_factory->CreateSSLClientSocket(
+      socket_handle.Pass(), dest_host_port_pair, ssl_config, context);
   int status = socket_->Connect(
-      base::Bind(&P2PSocketHostTcpBase::ProcessTlsConnectDone,
+      base::Bind(&P2PSocketHostTcpBase::ProcessTlsSslConnectDone,
                  base::Unretained(this)));
   if (status != net::ERR_IO_PENDING) {
-    ProcessTlsConnectDone(status);
+    ProcessTlsSslConnectDone(status);
   }
 }
 
-void P2PSocketHostTcpBase::ProcessTlsConnectDone(int status) {
+void P2PSocketHostTcpBase::ProcessTlsSslConnectDone(int status) {
   DCHECK_NE(status, net::ERR_IO_PENDING);
   DCHECK_EQ(state_, STATE_TLS_CONNECTING);
   if (status != net::OK) {
     OnError();
     return;
   }
+  OnOpen();
+}
 
+void P2PSocketHostTcpBase::OnOpen() {
   state_ = STATE_OPEN;
+  // Setting socket send and receive buffer size.
+  if (!socket_->SetReceiveBufferSize(kRecvSocketBufferSize)) {
+    LOG(WARNING) << "Failed to set socket receive buffer size to "
+                 << kRecvSocketBufferSize;
+  }
+
+  if (!socket_->SetSendBufferSize(kSendSocketBufferSize)) {
+    LOG(WARNING) << "Failed to set socket send buffer size to "
+                 << kSendSocketBufferSize;
+  }
+
   DoSendSocketCreateMsg();
   DoRead();
 }
@@ -260,11 +281,16 @@ void P2PSocketHostTcpBase::OnPacket(const std::vector<char>& data) {
     }
   }
 
-  message_sender_->Send(new P2PMsg_OnDataReceived(id_, remote_address_, data));
+  message_sender_->Send(new P2PMsg_OnDataReceived(
+      id_, remote_address_, data, base::TimeTicks::Now()));
 }
 
+// Note: dscp is not actually used on TCP sockets as this point,
+// but may be honored in the future.
 void P2PSocketHostTcpBase::Send(const net::IPEndPoint& to,
-                                const std::vector<char>& data) {
+                                const std::vector<char>& data,
+                                net::DiffServCodePoint dscp,
+                                uint64 packet_id) {
   if (!socket_) {
     // The Send message may be sent after the an OnError message was
     // sent by hasn't been processed the renderer.
@@ -279,7 +305,7 @@ void P2PSocketHostTcpBase::Send(const net::IPEndPoint& to,
   }
 
   if (!connected_) {
-    P2PSocketHost::StunMessageType type;
+    P2PSocketHost::StunMessageType type = P2PSocketHost::StunMessageType();
     bool stun = GetStunPacketType(&*data.begin(), data.size(), &type);
     if (!stun || type == STUN_DATA_INDICATION) {
       LOG(ERROR) << "Page tried to send a data packet to " << to.ToString()

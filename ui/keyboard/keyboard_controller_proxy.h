@@ -7,6 +7,7 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "content/public/common/media_stream_request.h"
+#include "ui/base/ime/text_input_type.h"
 #include "ui/keyboard/keyboard_export.h"
 
 namespace aura {
@@ -37,6 +38,18 @@ class KEYBOARD_EXPORT KeyboardControllerProxy {
   // with the proxy.
   virtual aura::Window* GetKeyboardWindow();
 
+  // Sets the override content url.
+  void SetOverrideContentUrl(const GURL& url);
+
+  // Whether the keyboard window is resizing from its web contents.
+  bool resizing_from_contents() const { return resizing_from_contents_; }
+
+  // Sets the flag of whether the keyboard window is resizing from
+  // its web contents.
+  void set_resizing_from_contents(bool resizing) {
+    resizing_from_contents_ = resizing;
+  }
+
   // Gets the InputMethod that will provide notifications about changes in the
   // text input context.
   virtual ui::InputMethod* GetInputMethod() = 0;
@@ -56,6 +69,11 @@ class KEYBOARD_EXPORT KeyboardControllerProxy {
   // necesasry animation, or delay the visibility change as it desires.
   virtual void HideKeyboardContainer(aura::Window* container);
 
+  // Updates the type of the focused text input box. The default implementation
+  // calls OnTextInputBoxFocused javascript function through webui to update the
+  // type the of focused input box.
+  virtual void SetUpdateInputType(ui::TextInputType type);
+
  protected:
   // Gets the BrowserContext to use for creating the WebContents hosting the
   // keyboard.
@@ -68,7 +86,19 @@ class KEYBOARD_EXPORT KeyboardControllerProxy {
   virtual void SetupWebContents(content::WebContents* contents);
 
  private:
+  // Reloads the web contents to the valid url from GetValidUrl().
+  void ReloadContents();
+
+  // Gets the valid url from default url or override url.
+  const GURL& GetValidUrl();
+
+  const GURL default_url_;
+  GURL override_url_;
+
   scoped_ptr<content::WebContents> keyboard_contents_;
+
+  // Whether the current keyboard window is resizing from its web content.
+  bool resizing_from_contents_;
 
   DISALLOW_COPY_AND_ASSIGN(KeyboardControllerProxy);
 };

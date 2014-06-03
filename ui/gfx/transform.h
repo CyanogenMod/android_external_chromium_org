@@ -9,10 +9,12 @@
 
 #include "base/compiler_specific.h"
 #include "third_party/skia/include/utils/SkMatrix44.h"
-#include "ui/base/ui_export.h"
+#include "ui/gfx/gfx_export.h"
+#include "ui/gfx/vector2d_f.h"
 
 namespace gfx {
 
+class BoxF;
 class RectF;
 class Point;
 class Point3F;
@@ -20,7 +22,7 @@ class Vector3dF;
 
 // 4x4 transformation matrix. Transform is cheap and explicitly allows
 // copy/assign.
-class UI_EXPORT Transform {
+class GFX_EXPORT Transform {
  public:
 
   enum SkipInitialization {
@@ -39,16 +41,31 @@ class UI_EXPORT Transform {
       : matrix_(lhs.matrix_, rhs.matrix_) {}
   // Constructs a transform from explicit 16 matrix elements. Elements
   // should be given in row-major order.
-  Transform(double col1row1, double col2row1, double col3row1, double col4row1,
-            double col1row2, double col2row2, double col3row2, double col4row2,
-            double col1row3, double col2row3, double col3row3, double col4row3,
-            double col1row4, double col2row4, double col3row4, double col4row4);
+  Transform(SkMScalar col1row1,
+            SkMScalar col2row1,
+            SkMScalar col3row1,
+            SkMScalar col4row1,
+            SkMScalar col1row2,
+            SkMScalar col2row2,
+            SkMScalar col3row2,
+            SkMScalar col4row2,
+            SkMScalar col1row3,
+            SkMScalar col2row3,
+            SkMScalar col3row3,
+            SkMScalar col4row3,
+            SkMScalar col1row4,
+            SkMScalar col2row4,
+            SkMScalar col3row4,
+            SkMScalar col4row4);
   // Constructs a transform from explicit 2d elements. All other matrix
   // elements remain the same as the corresponding elements of an identity
   // matrix.
-  Transform(double col1row1, double col2row1,
-            double col1row2, double col2row2,
-            double x_translation, double y_translation);
+  Transform(SkMScalar col1row1,
+            SkMScalar col2row1,
+            SkMScalar col1row2,
+            SkMScalar col2row2,
+            SkMScalar x_translation,
+            SkMScalar y_translation);
   ~Transform() {}
 
   bool operator==(const Transform& rhs) const { return matrix_ == rhs.matrix_; }
@@ -70,13 +87,13 @@ class UI_EXPORT Transform {
 
   // Applies the current transformation on a scaling and assigns the result
   // to |this|.
-  void Scale(double x, double y);
-  void Scale3d(double x, double y, double z);
+  void Scale(SkMScalar x, SkMScalar y);
+  void Scale3d(SkMScalar x, SkMScalar y, SkMScalar z);
 
   // Applies the current transformation on a translation and assigns the result
   // to |this|.
-  void Translate(double x, double y);
-  void Translate3d(double x, double y, double z);
+  void Translate(SkMScalar x, SkMScalar y);
+  void Translate3d(SkMScalar x, SkMScalar y, SkMScalar z);
 
   // Applies the current transformation on a skew and assigns the result
   // to |this|.
@@ -85,7 +102,7 @@ class UI_EXPORT Transform {
 
   // Applies the current transformation on a perspective transform and assigns
   // the result to |this|.
-  void ApplyPerspectiveDepth(double depth);
+  void ApplyPerspectiveDepth(SkMScalar depth);
 
   // Applies a transformation on the current transformation
   // (i.e. 'this = this * transform;').
@@ -103,13 +120,16 @@ class UI_EXPORT Transform {
     return !(matrix_.getType() & ~SkMatrix44::kTranslate_Mask);
   }
 
+  // Returns true if the matrix is either identity or pure translation,
+  // allowing for an amount of inaccuracy as specified by the parameter.
+  bool IsApproximatelyIdentityOrTranslation(SkMScalar tolerance) const;
+
   // Returns true if the matrix is either a positive scale and/or a translation.
   bool IsPositiveScaleOrTranslation() const {
     if (!IsScaleOrTranslation())
       return false;
-    return matrix_.getDouble(0, 0) > 0.0 &&
-        matrix_.getDouble(1, 1) > 0.0 &&
-        matrix_.getDouble(2, 2) > 0.0;
+    return matrix_.get(0, 0) > 0.0 && matrix_.get(1, 1) > 0.0 &&
+           matrix_.get(2, 2) > 0.0;
   }
 
   // Returns true if the matrix is either identity or pure, non-fractional
@@ -161,32 +181,44 @@ class UI_EXPORT Transform {
   //
   void FlattenTo2d();
 
-  // Applies the transformation on the point. Returns true if the point is
-  // transformed successfully.
-  void TransformPoint(Point3F& point) const;
+  // Returns the x and y translation components of the matrix.
+  Vector2dF To2dTranslation() const;
 
-  // Applies the transformation on the point. Returns true if the point is
-  // transformed successfully. Rounds the result to the nearest point.
-  void TransformPoint(Point& point) const;
+  // Applies the transformation to the point.
+  void TransformPoint(Point3F* point) const;
+
+  // Applies the transformation to the point.
+  void TransformPoint(Point* point) const;
 
   // Applies the reverse transformation on the point. Returns true if the
   // transformation can be inverted.
-  bool TransformPointReverse(Point3F& point) const;
+  bool TransformPointReverse(Point3F* point) const;
 
   // Applies the reverse transformation on the point. Returns true if the
   // transformation can be inverted. Rounds the result to the nearest point.
-  bool TransformPointReverse(Point& point) const;
+  bool TransformPointReverse(Point* point) const;
 
-  // Applies transformation on the rectangle. Returns true if the transformed
-  // rectangle was axis aligned. If it returns false, rect will be the
-  // smallest axis aligned bounding box containing the transformed rect.
+  // Applies transformation on the given rect. After the function completes,
+  // |rect| will be the smallest axis aligned bounding rect containing the
+  // transformed rect.
   void TransformRect(RectF* rect) const;
 
-  // Applies the reverse transformation on the rectangle. Returns true if
-  // the transformed rectangle was axis aligned. If it returns false,
-  // rect will be the smallest axis aligned bounding box containing the
-  // transformed rect.
+  // Applies the reverse transformation on the given rect. After the function
+  // completes, |rect| will be the smallest axis aligned bounding rect
+  // containing the transformed rect. Returns false if the matrix cannot be
+  // inverted.
   bool TransformRectReverse(RectF* rect) const;
+
+  // Applies transformation on the given box. After the function completes,
+  // |box| will be the smallest axis aligned bounding box containing the
+  // transformed box.
+  void TransformBox(BoxF* box) const;
+
+  // Applies the reverse transformation on the given box. After the function
+  // completes, |box| will be the smallest axis aligned bounding box
+  // containing the transformed box. Returns false if the matrix cannot be
+  // inverted.
+  bool TransformBoxReverse(BoxF* box) const;
 
   // Decomposes |this| and |from|, interpolates the decomposed values, and
   // sets |this| to the reconstituted result. Returns false if either matrix
@@ -218,10 +250,10 @@ class UI_EXPORT Transform {
 
  private:
   void TransformPointInternal(const SkMatrix44& xform,
-                              Point& point) const;
+                              Point* point) const;
 
   void TransformPointInternal(const SkMatrix44& xform,
-                              Point3F& point) const;
+                              Point3F* point) const;
 
   SkMatrix44 matrix_;
 

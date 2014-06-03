@@ -7,6 +7,7 @@
 #include <string>
 
 #include "base/strings/string16.h"
+#include "base/strings/stringprintf.h"
 #include "base/values.h"
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/sync/profile_sync_service.h"
@@ -18,7 +19,7 @@
 using base::DictionaryValue;
 using base::ListValue;
 
-const char kCredentialsTitle[] = "Credentials";
+const char kIdentityTitle[] = "Identity";
 const char kDetailsKey[] = "details";
 
 namespace {
@@ -26,11 +27,26 @@ namespace {
 // Creates a 'section' for display on about:sync, consisting of a title and a
 // list of fields.  Returns a pointer to the new section.  Note that
 // |parent_list|, not the caller, owns the newly added section.
-ListValue* AddSection(ListValue* parent_list, const std::string& title) {
+ListValue* AddSection(ListValue* parent_list,
+                      const std::string& title) {
   DictionaryValue* section = new DictionaryValue();
   ListValue* section_contents = new ListValue();
   section->SetString("title", title);
   section->Set("data", section_contents);
+  section->SetBoolean("is_sensitive", false);
+  parent_list->Append(section);
+  return section_contents;
+}
+
+// Same as AddSection, but for data that should be elided when dumped into text
+// form and posted in a public forum (e.g. unique identifiers).
+ListValue* AddSensitiveSection(ListValue* parent_list,
+                               const std::string& title) {
+  DictionaryValue* section = new DictionaryValue();
+  ListValue* section_contents = new ListValue();
+  section->SetString("title", title);
+  section->Set("data", section_contents);
+  section->SetBoolean("is_sensitive", true);
   parent_list->Append(section);
   return section_contents;
 }
@@ -46,7 +62,7 @@ class StringSyncStat {
  public:
   StringSyncStat(ListValue* section, const std::string& key);
   void SetValue(const std::string& value);
-  void SetValue(const string16& value);
+  void SetValue(const base::string16& value);
 
  private:
   // Owned by the |section| passed in during construction.
@@ -66,7 +82,7 @@ void StringSyncStat::SetValue(const std::string& value) {
   stat_->SetBoolean("is_valid", true);
 }
 
-void StringSyncStat::SetValue(const string16& value) {
+void StringSyncStat::SetValue(const base::string16& value) {
   stat_->SetString("stat_value", value);
   stat_->SetBoolean("is_valid", true);
 }
@@ -155,6 +171,34 @@ std::string GetTimeStr(base::Time time, const std::string& default_msg) {
   return time_str;
 }
 
+std::string GetConnectionStatus(
+    const ProfileSyncService::SyncTokenStatus& status) {
+  std::string message;
+  switch (status.connection_status) {
+    case syncer::CONNECTION_NOT_ATTEMPTED:
+      base::StringAppendF(&message, "not attempted");
+      break;
+    case syncer::CONNECTION_OK:
+      base::StringAppendF(
+          &message, "OK since %s",
+          GetTimeStr(status.connection_status_update_time, "n/a").c_str());
+      break;
+    case syncer::CONNECTION_AUTH_ERROR:
+      base::StringAppendF(
+          &message, "auth error since %s",
+          GetTimeStr(status.connection_status_update_time, "n/a").c_str());
+      break;
+    case syncer::CONNECTION_SERVER_ERROR:
+      base::StringAppendF(
+          &message, "server error since %s",
+          GetTimeStr(status.connection_status_update_time, "n/a").c_str());
+      break;
+    default:
+      NOTREACHED();
+  }
+  return message;
+}
+
 }  // namespace
 
 namespace sync_ui_util {
@@ -178,19 +222,29 @@ scoped_ptr<DictionaryValue> ConstructAboutInformation(
   StringSyncStat client_version(section_version, "Client Version");
   StringSyncStat server_url(section_version, "Server URL");
 
-  ListValue* section_credentials = AddSection(stats_list, kCredentialsTitle);
-  StringSyncStat sync_id(section_credentials, "Sync Client ID");
-  StringSyncStat invalidator_id(section_credentials, "Invalidator Client ID");
-  StringSyncStat username(section_credentials, "Username");
-  BoolSyncStat is_token_available(section_credentials, "Sync Token Available");
+  ListValue* section_identity = AddSensitiveSection(stats_list, kIdentityTitle);
+  StringSyncStat sync_id(section_identity, "Sync Client ID");
+  StringSyncStat invalidator_id(section_identity, "Invalidator Client ID");
+  StringSyncStat username(section_identity, "Username");
+
+  ListValue* section_credentials = AddSection(stats_list, "Credentials");
+  StringSyncStat request_token_time(section_credentials, "Requested Token");
+  StringSyncStat receive_token_time(section_credentials, "Received Token");
+  StringSyncStat token_request_status(section_credentials,
+                                      "Token Request Status");
+  StringSyncStat next_token_request(section_credentials,
+                                    "Next Token Request");
 
   ListValue* section_local = AddSection(stats_list, "Local State");
+  StringSyncStat server_connection(section_local,
+                                   "Server Connection");
   StringSyncStat last_synced(section_local, "Last Synced");
   BoolSyncStat is_setup_complete(section_local,
                                  "Sync First-Time Setup Complete");
   StringSyncStat backend_initialization(section_local,
                                         "Sync Backend Initialization");
   BoolSyncStat is_syncing(section_local, "Syncing");
+  BoolSyncStat is_token_available(section_local, "Sync Token Available");
 
   ListValue* section_network = AddSection(stats_list, "Network");
   BoolSyncStat is_throttled(section_network, "Throttled");
@@ -227,14 +281,14 @@ scoped_ptr<DictionaryValue> ConstructAboutInformation(
   IntSyncStat notifications_received(section_counters,
                                      "Notifications Received");
   IntSyncStat empty_get_updates(section_counters, "Cycles Without Updates");
-  IntSyncStat non_empty_get_updates(section_counters, "Cycles With Updated");
+  IntSyncStat non_empty_get_updates(section_counters, "Cycles With Updates");
   IntSyncStat sync_cycles_without_commits(section_counters,
                                           "Cycles Without Commits");
   IntSyncStat sync_cycles_with_commits(section_counters, "Cycles With Commits");
   IntSyncStat useless_sync_cycles(section_counters,
                            "Cycles Without Commits or Updates");
   IntSyncStat useful_sync_cycles(section_counters,
-                                 "Cycles With Commit or Update");
+                                 "Cycles With Commits or Updates");
   IntSyncStat updates_received(section_counters, "Updates Downloaded");
   IntSyncStat tombstone_updates(section_counters, "Tombstone Updates");
   IntSyncStat reflected_updates(section_counters, "Reflected Updates");
@@ -286,7 +340,7 @@ scoped_ptr<DictionaryValue> ConstructAboutInformation(
       syncer::sessions::SyncSessionSnapshot();
 
   if (is_status_valid)
-    summary_string.SetValue(service->QuerySyncStatusSummary());
+    summary_string.SetValue(service->QuerySyncStatusSummaryString());
 
   server_url.SetValue(service->sync_service_url().spec());
 
@@ -296,7 +350,18 @@ scoped_ptr<DictionaryValue> ConstructAboutInformation(
     invalidator_id.SetValue(full_status.invalidator_client_id);
   if (service->signin())
     username.SetValue(service->signin()->GetAuthenticatedUsername());
-  is_token_available.SetValue(service->IsOAuthRefreshTokenAvailable());
+
+  const ProfileSyncService::SyncTokenStatus& token_status =
+      service->GetSyncTokenStatus();
+  server_connection.SetValue(GetConnectionStatus(token_status));
+  request_token_time.SetValue(GetTimeStr(token_status.token_request_time,
+                                         "n/a"));
+  receive_token_time.SetValue(GetTimeStr(token_status.token_receive_time,
+                                         "n/a"));
+  std::string err = token_status.last_get_token_error.error_message();
+  token_request_status.SetValue(err.empty() ? "OK" : err);
+  next_token_request.SetValue(
+      GetTimeStr(token_status.next_token_request_time, "not scheduled"));
 
   last_synced.SetValue(service->GetLastSyncedTimeString());
   is_setup_complete.SetValue(service->HasSyncSetupCompleted());

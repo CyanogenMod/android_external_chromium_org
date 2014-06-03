@@ -26,8 +26,8 @@ class WebRTCIdentityStore;
 // ERR_INSUFFICIENT_RESOURCES will be sent back to the renderer.
 class CONTENT_EXPORT WebRTCIdentityServiceHost : public BrowserMessageFilter {
  public:
-  explicit WebRTCIdentityServiceHost(int renderer_process_id,
-                                     WebRTCIdentityStore* identity_store);
+  WebRTCIdentityServiceHost(int renderer_process_id,
+                            scoped_refptr<WebRTCIdentityStore> identity_store);
 
  protected:
   virtual ~WebRTCIdentityServiceHost();
@@ -37,23 +37,31 @@ class CONTENT_EXPORT WebRTCIdentityServiceHost : public BrowserMessageFilter {
                                  bool* message_was_ok) OVERRIDE;
 
  private:
+  // |sequence_number| is the same as in the OnRequestIdentity call.
   // See WebRTCIdentityStore for the meaning of the parameters.
-  void OnComplete(int status,
+  void OnComplete(int sequence_number,
+                  int status,
                   const std::string& certificate,
                   const std::string& private_key);
 
-  // See WebRTCIdentityStore for the meaning of the parameters.
-  void OnRequestIdentity(const GURL& origin,
+  // |sequence_number| is a renderer wide unique number for each request and
+  // will be echoed in the response to handle the possibility that the renderer
+  // cancels the request after the browser sends the response and before it's
+  // received by the renderer.
+  // See WebRTCIdentityStore for the meaning of the other parameters.
+  void OnRequestIdentity(int sequence_number,
+                         const GURL& origin,
                          const std::string& identity_name,
                          const std::string& common_name);
 
   void OnCancelRequest();
 
-  void SendErrorMessage(int error);
+  void SendErrorMessage(int sequence_number, int error);
 
   int renderer_process_id_;
   base::Closure cancel_callback_;
-  WebRTCIdentityStore* identity_store_;
+  scoped_refptr<WebRTCIdentityStore> identity_store_;
+  base::WeakPtrFactory<WebRTCIdentityServiceHost> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(WebRTCIdentityServiceHost);
 };

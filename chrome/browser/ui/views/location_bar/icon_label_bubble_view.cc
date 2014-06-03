@@ -18,15 +18,14 @@
 IconLabelBubbleView::IconLabelBubbleView(const int background_images[],
                                          const int hover_background_images[],
                                          int contained_image,
-                                         const gfx::Font& font,
-                                         int font_y_offset,
+                                         const gfx::FontList& font_list,
                                          SkColor text_color,
                                          SkColor parent_background_color,
                                          bool elide_in_middle)
     : background_painter_(
           views::Painter::CreateImageGridPainter(background_images)),
       image_(new views::ImageView()),
-      label_(new views::Label()),
+      label_(new views::Label(base::string16(), font_list)),
       is_extension_icon_(false),
       in_hover_(false) {
   image_->SetImage(
@@ -43,8 +42,6 @@ IconLabelBubbleView::IconLabelBubbleView(const int background_images[],
         views::Painter::CreateImageGridPainter(hover_background_images));
   }
 
-  label_->set_border(views::Border::CreateEmptyBorder(font_y_offset, 0, 0, 0));
-  label_->SetFont(font);
   label_->SetEnabledColor(text_color);
   // Calculate the actual background color for the label.  The background images
   // are painted atop |parent_background_color|.  We grab the color of the
@@ -55,8 +52,7 @@ IconLabelBubbleView::IconLabelBubbleView(const int background_images[],
   // sit atop.
   const SkBitmap& bitmap(
       ui::ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
-          background_images[4])->GetRepresentation(
-          ui::SCALE_FACTOR_100P).sk_bitmap());
+          background_images[4])->GetRepresentation(1.0f).sk_bitmap());
   SkAutoLockPixels pixel_lock(bitmap);
   SkColor background_image_color =
       bitmap.getColor(bitmap.width() / 2, bitmap.height() / 2);
@@ -76,7 +72,7 @@ IconLabelBubbleView::IconLabelBubbleView(const int background_images[],
 IconLabelBubbleView::~IconLabelBubbleView() {
 }
 
-void IconLabelBubbleView::SetLabel(const string16& label) {
+void IconLabelBubbleView::SetLabel(const base::string16& label) {
   label_->SetText(label);
 }
 
@@ -95,7 +91,7 @@ void IconLabelBubbleView::Layout() {
   const int pre_label_width = GetPreLabelWidth();
   label_->SetBounds(pre_label_width, 0,
                     width() - pre_label_width - GetBubbleOuterPadding(false),
-                    label_->GetPreferredSize().height());
+                    height());
 }
 
 gfx::Size IconLabelBubbleView::GetSizeForLabelWidth(int width) const {

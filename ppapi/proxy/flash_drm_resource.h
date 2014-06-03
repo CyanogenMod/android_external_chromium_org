@@ -11,7 +11,7 @@
 #include "ppapi/thunk/ppb_flash_drm_api.h"
 
 namespace ppapi {
-struct PPB_FileRef_CreateInfo;
+struct FileRefCreateInfo;
 }
 
 namespace ppapi {
@@ -35,6 +35,9 @@ class FlashDRMResource
   virtual int32_t GetVoucherFile(
       PP_Resource* file_ref,
       scoped_refptr<TrackedCallback> callback) OVERRIDE;
+  virtual int32_t MonitorIsExternal(
+      PP_Bool* is_external,
+      scoped_refptr<TrackedCallback> callback) OVERRIDE;
 
  private:
   void OnPluginMsgGetDeviceIDReply(PP_Var* dest,
@@ -44,7 +47,12 @@ class FlashDRMResource
   void OnPluginMsgGetVoucherFileReply(PP_Resource* dest,
                                       scoped_refptr<TrackedCallback> callback,
                                       const ResourceMessageReplyParams& params,
-                                      const PPB_FileRef_CreateInfo& file_info);
+                                      const FileRefCreateInfo& file_info);
+  void OnPluginMsgMonitorIsExternalReply(
+      PP_Bool* dest,
+      scoped_refptr<TrackedCallback> callback,
+      const ResourceMessageReplyParams& params,
+      PP_Bool is_external);
 
   DISALLOW_COPY_AND_ASSIGN(FlashDRMResource);
 };

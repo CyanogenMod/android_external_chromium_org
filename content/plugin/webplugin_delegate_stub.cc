@@ -11,6 +11,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "content/child/npapi/plugin_instance.h"
 #include "content/child/npapi/webplugin_delegate_impl.h"
+#include "content/child/npapi/webplugin_resource_client.h"
 #include "content/child/plugin_messages.h"
 #include "content/plugin/plugin_channel.h"
 #include "content/plugin/plugin_thread.h"
@@ -19,14 +20,14 @@
 #include "content/public/common/content_constants.h"
 #include "content/public/common/content_switches.h"
 #include "skia/ext/platform_device.h"
+#include "third_party/WebKit/public/platform/WebCursorInfo.h"
 #include "third_party/WebKit/public/web/WebBindings.h"
-#include "third_party/WebKit/public/web/WebCursorInfo.h"
 #include "third_party/npapi/bindings/npapi.h"
 #include "third_party/npapi/bindings/npruntime.h"
 #include "webkit/common/cursors/webcursor.h"
 
-using WebKit::WebBindings;
-using WebKit::WebCursorInfo;
+using blink::WebBindings;
+using blink::WebCursorInfo;
 
 namespace content {
 
@@ -86,7 +87,8 @@ WebPluginDelegateStub::~WebPluginDelegateStub() {
   }
 
   // Remove the NPObject owner mapping for this instance.
-  channel_->RemoveMappingForNPObjectOwner(instance_id_);
+  if (delegate_)
+    channel_->RemoveMappingForNPObjectOwner(instance_id_);
 }
 
 bool WebPluginDelegateStub::OnMessageReceived(const IPC::Message& msg) {
@@ -145,6 +147,7 @@ bool WebPluginDelegateStub::OnMessageReceived(const IPC::Message& msg) {
                         OnHandleURLRequestReply)
     IPC_MESSAGE_HANDLER(PluginMsg_HTTPRangeRequestReply,
                         OnHTTPRangeRequestReply)
+    IPC_MESSAGE_HANDLER(PluginMsg_FetchURL, OnFetchURL)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
 
@@ -180,7 +183,7 @@ void WebPluginDelegateStub::OnInit(const PluginMsg_Init_Params& params,
                                   instance_id_,
                                   page_url_,
                                   params.host_render_view_routing_id);
-  delegate_ = WebPluginDelegateImpl::Create(path, mime_type_);
+  delegate_ = WebPluginDelegateImpl::Create(webplugin_, path, mime_type_);
   if (delegate_) {
     if (delegate_->GetQuirks() &
         WebPluginDelegateImpl::PLUGIN_QUIRK_DIE_AFTER_UNLOAD) {
@@ -202,7 +205,6 @@ void WebPluginDelegateStub::OnInit(const PluginMsg_Init_Params& params,
     *result = delegate_->Initialize(params.url,
                                     arg_names,
                                     arg_values,
-                                    webplugin_,
                                     params.load_manually);
     *transparent = delegate_->instance()->transparent();
   }
@@ -271,7 +273,7 @@ void WebPluginDelegateStub::OnSetFocus(bool focused) {
 }
 
 void WebPluginDelegateStub::OnHandleInputEvent(
-    const WebKit::WebInputEvent *event,
+    const blink::WebInputEvent *event,
     bool* handled,
     WebCursor* cursor) {
   WebCursor::CursorInfo cursor_info;
@@ -315,7 +317,8 @@ void WebPluginDelegateStub::OnGetPluginScriptableObject(int* route_id) {
   WebBindings::releaseObject(object);
 }
 
-void WebPluginDelegateStub::OnGetFormValue(string16* value, bool* success) {
+void WebPluginDelegateStub::OnGetFormValue(base::string16* value,
+                                           bool* success) {
   *success = false;
   if (!delegate_)
     return;
@@ -336,7 +339,7 @@ void WebPluginDelegateStub::OnSetContentAreaFocus(bool has_focus) {
 
 #if defined(OS_WIN) && !defined(USE_AURA)
 void WebPluginDelegateStub::OnImeCompositionUpdated(
-    const string16& text,
+    const base::string16& text,
     const std::vector<int>& clauses,
     const std::vector<int>& target,
     int cursor_position) {
@@ -347,7 +350,8 @@ void WebPluginDelegateStub::OnImeCompositionUpdated(
 #endif
 }
 
-void WebPluginDelegateStub::OnImeCompositionCompleted(const string16& text) {
+void WebPluginDelegateStub::OnImeCompositionCompleted(
+    const base::string16& text) {
   if (delegate_)
     delegate_->ImeCompositionCompleted(text);
 }
@@ -380,7 +384,8 @@ void WebPluginDelegateStub::OnWindowFrameChanged(const gfx::Rect& window_frame,
     delegate_->WindowFrameChanged(window_frame, view_frame);
 }
 
-void WebPluginDelegateStub::OnImeCompositionCompleted(const string16& text) {
+void WebPluginDelegateStub::OnImeCompositionCompleted(
+    const base::string16& text) {
   if (delegate_)
     delegate_->ImeCompositionCompleted(text);
 }
@@ -420,6 +425,26 @@ void WebPluginDelegateStub::OnHTTPRangeRequestReply(
   WebPluginResourceClient* resource_client =
       delegate_->CreateSeekableResourceClient(resource_id, range_request_id);
   webplugin_->OnResourceCreated(resource_id, resource_client);
+}
+
+void WebPluginDelegateStub::OnFetchURL(
+    const PluginMsg_FetchURL_Params& params) {
+  const char* data = NULL;
+  if (params.post_data.size())
+    data = &params.post_data[0];
+
+  delegate_->FetchURL(params.resource_id,
+                      params.notify_id,
+                      params.url,
+                      params.first_party_for_cookies,
+                      params.method,
+                      data,
+                      static_cast<unsigned int>(params.post_data.size()),
+                      params.referrer,
+                      params.notify_redirect,
+                      params.is_plugin_src_load,
+                      channel_->renderer_id(),
+                      params.render_view_id);
 }
 
 }  // namespace content

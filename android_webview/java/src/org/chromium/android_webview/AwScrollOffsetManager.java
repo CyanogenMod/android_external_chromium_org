@@ -26,7 +26,11 @@ public class AwScrollOffsetManager {
     // Time for the longest scroll animation.
     private static final int MAX_SCROLL_ANIMATION_DURATION_MILLISEC = 750;
 
-    // The unit of all the values in this delegate are physical pixels.
+    /**
+     * The interface that all users of AwScrollOffsetManager should implement.
+     *
+     * The unit of all the values in this delegate are physical pixels.
+     */
     public interface Delegate {
         // Call View#overScrollBy on the containerView.
         void overScrollContainerViewBy(int deltaX, int deltaY, int scrollX, int scrollY,
@@ -61,7 +65,8 @@ public class AwScrollOffsetManager {
     // Whether we're in the middle of processing a touch event.
     private boolean mProcessingTouchEvent;
 
-    private boolean mFlinging;
+    // Don't skip computeScrollAndAbsorbGlow just because isFling is called in between.
+    private boolean mWasFlinging;
 
     // Whether (and to what value) to update the native side scroll offset after we've finished
     // processing a touch event.
@@ -111,13 +116,17 @@ public class AwScrollOffsetManager {
     }
 
     //---------------------------------------------------------------------------------------------
-    // Called when the scroll range changes. This needs to be the size of the on-screen content.
+    /**
+     * Called when the scroll range changes. This needs to be the size of the on-screen content.
+     */
     public void setMaxScrollOffset(int width, int height) {
         mMaxHorizontalScrollOffset = width;
         mMaxVerticalScrollOffset = height;
     }
 
-    // Called when the physical size of the view changes.
+    /**
+     * Called when the physical size of the view changes.
+     */
     public void setContainerViewSize(int width, int height) {
         mContainerViewWidth = width;
         mContainerViewHeight = height;
@@ -159,7 +168,9 @@ public class AwScrollOffsetManager {
     }
 
     public boolean isFlingActive() {
-        return mFlinging;
+        boolean flinging = mScroller.computeScrollOffset();
+        mWasFlinging |= flinging;
+        return flinging;
     }
 
     // Called by the native side to over-scroll the container view.
@@ -275,17 +286,15 @@ public class AwScrollOffsetManager {
 
         mScroller.fling(scrollX, scrollY, velocityX, velocityY,
                 0, scrollRangeX, 0, scrollRangeY);
-        mFlinging = true;
         mDelegate.invalidate();
     }
 
     // Called immediately before the draw to update the scroll offset.
     public void computeScrollAndAbsorbGlow(OverScrollGlow overScrollGlow) {
-        final boolean stillAnimating = mScroller.computeScrollOffset();
-        if (!stillAnimating) {
-            mFlinging = false;
+        if (!mScroller.computeScrollOffset() && !mWasFlinging) {
             return;
         }
+        mWasFlinging = false;
 
         final int oldX = mDelegate.getContainerViewScrollX();
         final int oldY = mDelegate.getContainerViewScrollY();
@@ -333,7 +342,7 @@ public class AwScrollOffsetManager {
     }
 
     /**
-     * See {@link WebView#pageUp(boolean)}
+     * See {@link android.webkit.WebView#pageUp(boolean)}
      */
     public boolean pageUp(boolean top) {
         final int scrollX = mDelegate.getContainerViewScrollX();
@@ -353,7 +362,7 @@ public class AwScrollOffsetManager {
     }
 
     /**
-     * See {@link WebView#pageDown(boolean)}
+     * See {@link android.webkit.WebView#pageDown(boolean)}
      */
     public boolean pageDown(boolean bottom) {
         final int scrollX = mDelegate.getContainerViewScrollX();
@@ -372,7 +381,7 @@ public class AwScrollOffsetManager {
     }
 
     /**
-     * See {@link WebView#requestChildRectangleOnScreen(View, Rect, boolean)}
+     * See {@link android.webkit.WebView#requestChildRectangleOnScreen(View, Rect, boolean)}
      */
     public boolean requestChildRectangleOnScreen(int childOffsetX, int childOffsetY, Rect rect,
             boolean immediate) {

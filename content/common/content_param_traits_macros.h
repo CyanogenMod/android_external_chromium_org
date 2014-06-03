@@ -11,14 +11,14 @@
 #include "content/common/content_export.h"
 #include "ipc/ipc_message_macros.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
-#include "ui/base/latency_info.h"
+#include "ui/events/latency_info.h"
 #include "webkit/common/resource_type.h"
 
 #undef IPC_MESSAGE_EXPORT
 #define IPC_MESSAGE_EXPORT CONTENT_EXPORT
 
 IPC_ENUM_TRAITS(ResourceType::Type)
-IPC_ENUM_TRAITS(WebKit::WebInputEvent::Type)
+IPC_ENUM_TRAITS(blink::WebInputEvent::Type)
 IPC_ENUM_TRAITS(ui::LatencyComponentType)
 
 IPC_STRUCT_TRAITS_BEGIN(ui::LatencyInfo::LatencyComponent)
@@ -29,7 +29,8 @@ IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(ui::LatencyInfo)
   IPC_STRUCT_TRAITS_MEMBER(latency_components)
-  IPC_STRUCT_TRAITS_MEMBER(swap_timestamp)
+  IPC_STRUCT_TRAITS_MEMBER(trace_id)
+  IPC_STRUCT_TRAITS_MEMBER(terminated)
 IPC_STRUCT_TRAITS_END()
 
 #endif  // CONTENT_COMMON_CONTENT_PARAM_TRAITS_MACROS_H_

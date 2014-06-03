@@ -17,8 +17,8 @@
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/test_extension_service.h"
 #include "chrome/browser/value_store/testing_value_store.h"
-#include "chrome/common/extensions/manifest.h"
 #include "content/public/test/test_browser_thread.h"
+#include "extensions/common/manifest.h"
 #include "sync/api/sync_change_processor.h"
 #include "sync/api/sync_error_factory.h"
 #include "sync/api/sync_error_factory_mock.h"
@@ -78,10 +78,10 @@ testing::AssertionResult SettingsEq(
     ValueStore::ReadResult actual) {
   if (actual->HasError()) {
     return testing::AssertionFailure() <<
-        "Expected: " << GetJson(expected) <<
-        ", actual has error: " << actual->error();
+        "Expected: " << expected <<
+        ", actual has error: " << actual->error().message;
   }
-  return ValuesEq(_1, _2, &expected, actual->settings().get());
+  return ValuesEq(_1, _2, &expected, &actual->settings());
 }
 
 // SyncChangeProcessor which just records the changes made, accessed after
@@ -108,6 +108,11 @@ class MockSyncChangeProcessor : public syncer::SyncChangeProcessor {
     return syncer::SyncError();
   }
 
+  virtual syncer::SyncDataList GetAllSyncData(syncer::ModelType type) const
+      OVERRIDE {
+    return syncer::SyncDataList();
+  }
+
   // Mock methods.
 
   const SettingSyncDataList& changes() { return changes_; }
@@ -116,7 +121,7 @@ class MockSyncChangeProcessor : public syncer::SyncChangeProcessor {
     changes_.clear();
   }
 
-  void SetFailAllRequests(bool fail_all_requests) {
+  void set_fail_all_requests(bool fail_all_requests) {
     fail_all_requests_ = fail_all_requests;
   }
 
@@ -164,6 +169,11 @@ class SyncChangeProcessorDelegate : public syncer::SyncChangeProcessor {
       const tracked_objects::Location& from_here,
       const syncer::SyncChangeList& change_list) OVERRIDE {
     return recipient_->ProcessSyncChanges(from_here, change_list);
+  }
+
+  virtual syncer::SyncDataList GetAllSyncData(syncer::ModelType type) const
+      OVERRIDE {
+    return recipient_->GetAllSyncData(type);
   }
 
  private:
@@ -307,7 +317,7 @@ TEST_F(ExtensionSettingsSyncTest, InSyncDataDoesNotInvokeSync) {
 
   StringValue value1("fooValue");
   ListValue value2;
-  value2.Append(StringValue::CreateStringValue("barValue"));
+  value2.Append(new base::StringValue("barValue"));
 
   ValueStore* storage1 = AddExtensionAndGetStorage("s1", type);
   ValueStore* storage2 = AddExtensionAndGetStorage("s2", type);
@@ -357,7 +367,7 @@ TEST_F(ExtensionSettingsSyncTest, LocalDataWithNoSyncDataIsPushedToSync) {
 
   StringValue value1("fooValue");
   ListValue value2;
-  value2.Append(StringValue::CreateStringValue("barValue"));
+  value2.Append(new base::StringValue("barValue"));
 
   ValueStore* storage1 = AddExtensionAndGetStorage("s1", type);
   ValueStore* storage2 = AddExtensionAndGetStorage("s2", type);
@@ -389,7 +399,7 @@ TEST_F(ExtensionSettingsSyncTest, AnySyncDataOverwritesLocalData) {
 
   StringValue value1("fooValue");
   ListValue value2;
-  value2.Append(StringValue::CreateStringValue("barValue"));
+  value2.Append(new base::StringValue("barValue"));
 
   // Maintain dictionaries mirrored to the expected values of the settings in
   // each storage area.
@@ -429,7 +439,7 @@ TEST_F(ExtensionSettingsSyncTest, ProcessSyncChanges) {
 
   StringValue value1("fooValue");
   ListValue value2;
-  value2.Append(StringValue::CreateStringValue("barValue"));
+  value2.Append(new base::StringValue("barValue"));
 
   // Maintain dictionaries mirrored to the expected values of the settings in
   // each storage area.
@@ -502,7 +512,7 @@ TEST_F(ExtensionSettingsSyncTest, PushToSync) {
 
   StringValue value1("fooValue");
   ListValue value2;
-  value2.Append(StringValue::CreateStringValue("barValue"));
+  value2.Append(new base::StringValue("barValue"));
 
   // Make storage1/2 initialised from local data, storage3/4 initialised from
   // sync.
@@ -641,7 +651,7 @@ TEST_F(ExtensionSettingsSyncTest, PushToSync) {
 TEST_F(ExtensionSettingsSyncTest, ExtensionAndAppSettingsSyncSeparately) {
   StringValue value1("fooValue");
   ListValue value2;
-  value2.Append(StringValue::CreateStringValue("barValue"));
+  value2.Append(new base::StringValue("barValue"));
 
   // storage1 is an extension, storage2 is an app.
   ValueStore* storage1 = AddExtensionAndGetStorage(
@@ -711,7 +721,7 @@ TEST_F(ExtensionSettingsSyncTest, FailingStartSyncingDisablesSync) {
   ValueStore* bad = AddExtensionAndGetStorage("bad", type);
 
   // Make bad fail for incoming sync changes.
-  testing_factory->GetExisting("bad")->SetFailAllRequests(true);
+  testing_factory->GetExisting("bad")->set_error_code(ValueStore::CORRUPTION);
   {
     syncer::SyncDataList sync_data;
     sync_data.push_back(settings_sync_util::CreateData(
@@ -725,7 +735,7 @@ TEST_F(ExtensionSettingsSyncTest, FailingStartSyncingDisablesSync) {
         scoped_ptr<syncer::SyncErrorFactory>(
             new syncer::SyncErrorFactoryMock()));
   }
-  testing_factory->GetExisting("bad")->SetFailAllRequests(false);
+  testing_factory->GetExisting("bad")->set_error_code(ValueStore::OK);
 
   {
     DictionaryValue dict;
@@ -808,7 +818,7 @@ TEST_F(ExtensionSettingsSyncTest, FailingStartSyncingDisablesSync) {
   }
 
   // Failing ProcessSyncChanges shouldn't go to the storage.
-  testing_factory->GetExisting("bad")->SetFailAllRequests(true);
+  testing_factory->GetExisting("bad")->set_error_code(ValueStore::CORRUPTION);
   {
     syncer::SyncChangeList change_list;
     change_list.push_back(settings_sync_util::CreateUpdate(
@@ -818,7 +828,7 @@ TEST_F(ExtensionSettingsSyncTest, FailingStartSyncingDisablesSync) {
           "bad", "foo", fooValue, model_type));
     GetSyncableService(model_type)->ProcessSyncChanges(FROM_HERE, change_list);
   }
-  testing_factory->GetExisting("bad")->SetFailAllRequests(false);
+  testing_factory->GetExisting("bad")->set_error_code(ValueStore::OK);
 
   {
     DictionaryValue dict;
@@ -936,7 +946,7 @@ TEST_F(ExtensionSettingsSyncTest, FailingProcessChangesDisablesSync) {
   }
 
   // Now fail ProcessSyncChanges for bad.
-  testing_factory->GetExisting("bad")->SetFailAllRequests(true);
+  testing_factory->GetExisting("bad")->set_error_code(ValueStore::CORRUPTION);
   {
     syncer::SyncChangeList change_list;
     change_list.push_back(settings_sync_util::CreateAdd(
@@ -945,7 +955,7 @@ TEST_F(ExtensionSettingsSyncTest, FailingProcessChangesDisablesSync) {
           "bad", "bar", barValue, model_type));
     GetSyncableService(model_type)->ProcessSyncChanges(FROM_HERE, change_list);
   }
-  testing_factory->GetExisting("bad")->SetFailAllRequests(false);
+  testing_factory->GetExisting("bad")->set_error_code(ValueStore::OK);
 
   {
     DictionaryValue dict;
@@ -1010,14 +1020,14 @@ TEST_F(ExtensionSettingsSyncTest, FailingGetAllSyncDataDoesntStopSync) {
 
   // Even though bad will fail to get all sync data, sync data should still
   // include that from good.
-  testing_factory->GetExisting("bad")->SetFailAllRequests(true);
+  testing_factory->GetExisting("bad")->set_error_code(ValueStore::CORRUPTION);
   {
     syncer::SyncDataList all_sync_data =
         GetSyncableService(model_type)->GetAllSyncData(model_type);
     EXPECT_EQ(1u, all_sync_data.size());
     EXPECT_EQ("good/foo", all_sync_data[0].GetTag());
   }
-  testing_factory->GetExisting("bad")->SetFailAllRequests(false);
+  testing_factory->GetExisting("bad")->set_error_code(ValueStore::OK);
 
   // Sync shouldn't be disabled for good (nor bad -- but this is unimportant).
   GetSyncableService(model_type)->MergeDataAndStartSyncing(
@@ -1065,13 +1075,13 @@ TEST_F(ExtensionSettingsSyncTest, FailureToReadChangesToPushDisablesSync) {
 
   // good will successfully push foo:fooValue to sync, but bad will fail to
   // get them so won't.
-  testing_factory->GetExisting("bad")->SetFailAllRequests(true);
+  testing_factory->GetExisting("bad")->set_error_code(ValueStore::CORRUPTION);
   GetSyncableService(model_type)->MergeDataAndStartSyncing(
       model_type,
       syncer::SyncDataList(),
       sync_processor_delegate_.PassAs<syncer::SyncChangeProcessor>(),
       scoped_ptr<syncer::SyncErrorFactory>(new syncer::SyncErrorFactoryMock()));
-  testing_factory->GetExisting("bad")->SetFailAllRequests(false);
+  testing_factory->GetExisting("bad")->set_error_code(ValueStore::OK);
 
   EXPECT_EQ(
       syncer::SyncChange::ACTION_ADD,
@@ -1167,13 +1177,13 @@ TEST_F(ExtensionSettingsSyncTest, FailureToPushLocalStateDisablesSync) {
   // Only set bad; setting good will cause it to fail below.
   bad->Set(DEFAULTS, "foo", fooValue);
 
-  sync_processor_->SetFailAllRequests(true);
+  sync_processor_->set_fail_all_requests(true);
   GetSyncableService(model_type)->MergeDataAndStartSyncing(
       model_type,
       syncer::SyncDataList(),
       sync_processor_delegate_.PassAs<syncer::SyncChangeProcessor>(),
       scoped_ptr<syncer::SyncErrorFactory>(new syncer::SyncErrorFactoryMock()));
-  sync_processor_->SetFailAllRequests(false);
+  sync_processor_->set_fail_all_requests(false);
 
   // Changes from good will be send to sync, changes from bad won't.
   sync_processor_->ClearChanges();
@@ -1263,9 +1273,9 @@ TEST_F(ExtensionSettingsSyncTest, FailureToPushLocalChangeDisablesSync) {
 
   // bad will fail to send changes.
   good->Set(DEFAULTS, "foo", fooValue);
-  sync_processor_->SetFailAllRequests(true);
+  sync_processor_->set_fail_all_requests(true);
   bad->Set(DEFAULTS, "foo", fooValue);
-  sync_processor_->SetFailAllRequests(false);
+  sync_processor_->set_fail_all_requests(false);
 
   EXPECT_EQ(
       syncer::SyncChange::ACTION_ADD,
@@ -1390,7 +1400,7 @@ TEST_F(ExtensionSettingsSyncTest, Dots) {
 
   {
     syncer::SyncDataList sync_data_list;
-    scoped_ptr<Value> string_value(Value::CreateStringValue("value"));
+    scoped_ptr<Value> string_value(new base::StringValue("value"));
     sync_data_list.push_back(settings_sync_util::CreateData(
         "ext", "key.with.dot", *string_value, model_type));
 
@@ -1410,13 +1420,13 @@ TEST_F(ExtensionSettingsSyncTest, Dots) {
     DictionaryValue expected_data;
     expected_data.SetWithoutPathExpansion(
         "key.with.dot",
-        Value::CreateStringValue("value"));
-    EXPECT_TRUE(Value::Equals(&expected_data, data->settings().get()));
+        new base::StringValue("value"));
+    EXPECT_TRUE(Value::Equals(&expected_data, &data->settings()));
   }
 
   // Test dots in keys going to sync.
   {
-    scoped_ptr<Value> string_value(Value::CreateStringValue("spot"));
+    scoped_ptr<Value> string_value(new base::StringValue("spot"));
     storage->Set(DEFAULTS, "key.with.spot", *string_value);
 
     ASSERT_EQ(1u, sync_processor_->changes().size());

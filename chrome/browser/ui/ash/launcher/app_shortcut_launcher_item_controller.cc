@@ -4,16 +4,20 @@
 
 #include "chrome/browser/ui/ash/launcher/app_shortcut_launcher_item_controller.h"
 
-#include "apps/native_app_window.h"
+#include "apps/ui/native_app_window.h"
+#include "ash/shelf/shelf_model.h"
+#include "ash/shell.h"
 #include "ash/wm/window_util.h"
-#include "chrome/browser/extensions/extension_process_manager.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/favicon/favicon_tab_helper.h"
 #include "chrome/browser/ui/ash/launcher/chrome_launcher_app_menu_item.h"
 #include "chrome/browser/ui/ash/launcher/chrome_launcher_app_menu_item_tab.h"
 #include "chrome/browser/ui/ash/launcher/chrome_launcher_controller.h"
-#include "chrome/browser/ui/ash/launcher/chrome_launcher_controller_per_app.h"
+#include "chrome/browser/ui/ash/launcher/launcher_application_menu_item_model.h"
+#include "chrome/browser/ui/ash/launcher/launcher_context_menu.h"
 #include "chrome/browser/ui/ash/launcher/launcher_item_controller.h"
+#include "chrome/browser/ui/ash/multi_user/multi_user_util.h"
+#include "chrome/browser/ui/ash/multi_user/multi_user_window_manager.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_list.h"
@@ -21,9 +25,11 @@
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
+#include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/browser/process_manager.h"
 #include "ui/aura/window.h"
-#include "ui/base/events/event.h"
+#include "ui/events/event.h"
 #include "ui/views/corewm/window_animations.h"
 
 using extensions::Extension;
@@ -33,6 +39,21 @@ namespace {
 // The time delta between clicks in which clicks to launch V2 apps are ignored.
 const int kClickSuppressionInMS = 1000;
 
+// Check if a browser can be used for activation. This addresses a special use
+// case in the M31 multi profile mode where a user activates a V1 app which only
+// exists yet on another users desktop, but he expects to get only his own app
+// items and not the ones from other users through activation.
+// TODO(skuhne): Remove this function and replace the call with
+// launcher_controller()->IsBrowserFromActiveUser(browser) once this experiment
+// goes away.
+bool CanBrowserBeUsedForDirectActivation(Browser* browser,
+                                         ChromeLauncherController* launcher) {
+  if (chrome::MultiUserWindowManager::GetMultiProfileMode() ==
+          chrome::MultiUserWindowManager::MULTI_PROFILE_MODE_OFF)
+    return true;
+  return multi_user_util::IsProfileFromActiveUser(browser->profile());
+}
+
 }  // namespace
 
 // Item controller for an app shortcut. Shortcuts track app and launcher ids,
@@ -40,9 +61,9 @@ const int kClickSuppressionInMS = 1000;
 // item with the appropriate LauncherItemController type).
 AppShortcutLauncherItemController::AppShortcutLauncherItemController(
     const std::string& app_id,
-    ChromeLauncherControllerPerApp* controller)
+    ChromeLauncherController* controller)
     : LauncherItemController(TYPE_SHORTCUT, app_id, controller),
-      app_controller_(controller) {
+      chrome_launcher_controller_(controller) {
   // To detect V1 applications we use their domain and match them against the
   // used URL. This will also work with applications like Google Drive.
   const Extension* extension =
@@ -57,29 +78,15 @@ AppShortcutLauncherItemController::AppShortcutLauncherItemController(
 AppShortcutLauncherItemController::~AppShortcutLauncherItemController() {
 }
 
-string16 AppShortcutLauncherItemController::GetTitle() {
-  return GetAppTitle();
-}
-
-bool AppShortcutLauncherItemController::HasWindow(aura::Window* window) const {
-  std::vector<content::WebContents*> content =
-      app_controller_->GetV1ApplicationsFromAppId(app_id());
-  for (size_t i = 0; i < content.size(); i++) {
-    Browser* browser = chrome::FindBrowserWithWebContents(content[i]);
-    if (browser && browser->window()->GetNativeWindow() == window)
-      return true;
-  }
-  return false;
-}
-
 bool AppShortcutLauncherItemController::IsOpen() const {
-  return !app_controller_->GetV1ApplicationsFromAppId(app_id()).empty();
+  return !chrome_launcher_controller_->
+      GetV1ApplicationsFromAppId(app_id()).empty();
 }
 
 bool AppShortcutLauncherItemController::IsVisible() const {
   // Return true if any browser window associated with the app is visible.
   std::vector<content::WebContents*> content =
-      app_controller_->GetV1ApplicationsFromAppId(app_id());
+      chrome_launcher_controller_->GetV1ApplicationsFromAppId(app_id());
   for (size_t i = 0; i < content.size(); i++) {
     Browser* browser = chrome::FindBrowserWithWebContents(content[i]);
     if (browser && browser->window()->GetNativeWindow()->IsVisible())
@@ -88,11 +95,12 @@ bool AppShortcutLauncherItemController::IsVisible() const {
   return false;
 }
 
-void AppShortcutLauncherItemController::Launch(int event_flags) {
-  app_controller_->LaunchApp(app_id(), event_flags);
+void AppShortcutLauncherItemController::Launch(ash::LaunchSource source,
+                                               int event_flags) {
+  launcher_controller()->LaunchApp(app_id(), source, event_flags);
 }
 
-void AppShortcutLauncherItemController::Activate() {
+bool AppShortcutLauncherItemController::Activate(ash::LaunchSource source) {
   content::WebContents* content = GetLRUApplication();
   if (!content) {
     if (IsV2App()) {
@@ -103,47 +111,28 @@ void AppShortcutLauncherItemController::Activate() {
       // detect if an app was started we suppress any further clicks within a
       // special time out.
       if (!AllowNextLaunchAttempt())
-        return;
+        return false;
     }
-    Launch(ui::EF_NONE);
-    return;
+    Launch(source, ui::EF_NONE);
+    return true;
   }
   ActivateContent(content);
+  return false;
 }
 
 void AppShortcutLauncherItemController::Close() {
   // Close all running 'programs' of this type.
   std::vector<content::WebContents*> content =
-      app_controller_->GetV1ApplicationsFromAppId(app_id());
+      launcher_controller()->GetV1ApplicationsFromAppId(app_id());
   for (size_t i = 0; i < content.size(); i++) {
     Browser* browser = chrome::FindBrowserWithWebContents(content[i]);
-    if (!browser)
+    if (!browser || !launcher_controller()->IsBrowserFromActiveUser(browser))
       continue;
     TabStripModel* tab_strip = browser->tab_strip_model();
     int index = tab_strip->GetIndexOfWebContents(content[i]);
     DCHECK(index != TabStripModel::kNoTab);
     tab_strip->CloseWebContentsAt(index, TabStripModel::CLOSE_NONE);
   }
-}
-
-void AppShortcutLauncherItemController::Clicked(const ui::Event& event) {
-  // In case of a keyboard event, we were called by a hotkey. In that case we
-  // activate the next item in line if an item of our list is already active.
-  if (event.type() == ui::ET_KEY_RELEASED) {
-    if (AdvanceToNextApp())
-      return;
-  }
-  Activate();
-}
-
-void AppShortcutLauncherItemController::OnRemoved() {
-  // AppShortcutLauncherItemController is unowned; delete on removal.
-  delete this;
-}
-
-void AppShortcutLauncherItemController::LauncherItemChanged(
-    int model_index,
-    const ash::LauncherItem& old_item) {
 }
 
 ChromeLauncherAppMenuItems
@@ -157,8 +146,8 @@ AppShortcutLauncherItemController::GetApplicationList(int event_flags) {
   for (size_t i = 0; i < content_list.size(); i++) {
     content::WebContents* web_contents = content_list[i];
     // Get the icon.
-    gfx::Image app_icon = app_controller_->GetAppListIcon(web_contents);
-    string16 title = app_controller_->GetAppListTitle(web_contents);
+    gfx::Image app_icon = launcher_controller()->GetAppListIcon(web_contents);
+    base::string16 title = launcher_controller()->GetAppListTitle(web_contents);
     items.push_back(new ChromeLauncherAppMenuItemTab(
         title, &app_icon, web_contents, i == 0));
   }
@@ -189,14 +178,51 @@ AppShortcutLauncherItemController::GetRunningApplications() {
   for (BrowserList::const_iterator it = ash_browser_list->begin();
        it != ash_browser_list->end(); ++it) {
     Browser* browser = *it;
+    if (!launcher_controller()->IsBrowserFromActiveUser(browser))
+      continue;
     TabStripModel* tab_strip = browser->tab_strip_model();
     for (int index = 0; index < tab_strip->count(); index++) {
       content::WebContents* web_contents = tab_strip->GetWebContentsAt(index);
-      if (WebContentMatchesApp(extension, refocus_pattern, web_contents))
+      if (WebContentMatchesApp(
+              extension, refocus_pattern, web_contents, browser->is_app()))
         items.push_back(web_contents);
     }
   }
   return items;
+}
+
+bool AppShortcutLauncherItemController::ItemSelected(const ui::Event& event) {
+  // In case of a keyboard event, we were called by a hotkey. In that case we
+  // activate the next item in line if an item of our list is already active.
+  if (event.type() == ui::ET_KEY_RELEASED) {
+    if (AdvanceToNextApp())
+      return false;
+  }
+  return Activate(ash::LAUNCH_FROM_UNKNOWN);
+}
+
+base::string16 AppShortcutLauncherItemController::GetTitle() {
+  return GetAppTitle();
+}
+
+ui::MenuModel* AppShortcutLauncherItemController::CreateContextMenu(
+    aura::Window* root_window) {
+  ash::LauncherItem item =
+      *(launcher_controller()->model()->ItemByID(launcher_id()));
+  return new LauncherContextMenu(launcher_controller(), &item, root_window);
+}
+
+ash::ShelfMenuModel* AppShortcutLauncherItemController::CreateApplicationMenu(
+    int event_flags) {
+  return new LauncherApplicationMenuItemModel(GetApplicationList(event_flags));
+}
+
+bool AppShortcutLauncherItemController::IsDraggable() {
+  return true;
+}
+
+bool AppShortcutLauncherItemController::ShouldShowTooltip() {
+  return true;
 }
 
 content::WebContents* AppShortcutLauncherItemController::GetLRUApplication() {
@@ -221,13 +247,16 @@ content::WebContents* AppShortcutLauncherItemController::GetLRUApplication() {
        it = ash_browser_list->begin_last_active();
        it != ash_browser_list->end_last_active(); ++it) {
     Browser* browser = *it;
+    if (!CanBrowserBeUsedForDirectActivation(browser, launcher_controller()))
+      continue;
     TabStripModel* tab_strip = browser->tab_strip_model();
     // We start to enumerate from the active index.
     int active_index = tab_strip->active_index();
     for (int index = 0; index < tab_strip->count(); index++) {
       content::WebContents* web_contents = tab_strip->GetWebContentsAt(
           (index + active_index) % tab_strip->count());
-      if (WebContentMatchesApp(extension, refocus_pattern, web_contents))
+      if (WebContentMatchesApp(
+              extension, refocus_pattern, web_contents, browser->is_app()))
         return web_contents;
     }
   }
@@ -237,10 +266,13 @@ content::WebContents* AppShortcutLauncherItemController::GetLRUApplication() {
   for (BrowserList::const_iterator it = ash_browser_list->begin();
        it != ash_browser_list->end(); ++it) {
     Browser* browser = *it;
+    if (!CanBrowserBeUsedForDirectActivation(browser, launcher_controller()))
+      continue;
     TabStripModel* tab_strip = browser->tab_strip_model();
     for (int index = 0; index < tab_strip->count(); index++) {
       content::WebContents* web_contents = tab_strip->GetWebContentsAt(index);
-      if (WebContentMatchesApp(extension, refocus_pattern, web_contents))
+      if (WebContentMatchesApp(
+              extension, refocus_pattern, web_contents, browser->is_app()))
         return web_contents;
     }
   }
@@ -250,8 +282,13 @@ content::WebContents* AppShortcutLauncherItemController::GetLRUApplication() {
 bool AppShortcutLauncherItemController::WebContentMatchesApp(
     const extensions::Extension* extension,
     const URLPattern& refocus_pattern,
-    content::WebContents* web_contents) {
-  const GURL tab_url = web_contents->GetURL();
+    content::WebContents* web_contents,
+    bool is_app) {
+  // Note: We can come here when the initial navigation isn't completed and
+  // no entry was yet created.
+  const GURL tab_url = is_app && web_contents->GetController().GetEntryCount() ?
+      web_contents->GetController().GetEntryAtIndex(0)->GetURL() :
+      web_contents->GetURL();
   // There are three ways to identify the association of a URL with this
   // extension:
   // - The refocus pattern is matched (needed for apps like drive).
@@ -261,8 +298,8 @@ bool AppShortcutLauncherItemController::WebContentMatchesApp(
            refocus_pattern.MatchesURL(tab_url)) ||
           (extension->OverlapsWithOrigin(tab_url) &&
            extension->web_extent().MatchesURL(tab_url)) ||
-          launcher_controller()->GetPerAppInterface()->
-             IsWebContentHandledByApplication(web_contents, app_id()));
+          launcher_controller()->IsWebContentHandledByApplication(web_contents,
+                                                                  app_id()));
 }
 
 void AppShortcutLauncherItemController::ActivateContent(
@@ -275,7 +312,8 @@ void AppShortcutLauncherItemController::ActivateContent(
   int old_index = tab_strip->active_index();
   if (index != old_index)
     tab_strip->ActivateTabAt(index, false);
-  app_controller_->ActivateWindowOrMinimizeIfActive(browser->window(),
+  launcher_controller()->ActivateWindowOrMinimizeIfActive(
+      browser->window(),
       index == old_index && GetRunningApplications().size() == 1);
 }
 
@@ -308,7 +346,8 @@ bool AppShortcutLauncherItemController::AdvanceToNextApp() {
 }
 
 bool AppShortcutLauncherItemController::IsV2App() {
-  const Extension* extension = app_controller_->GetExtensionForAppID(app_id());
+  const Extension* extension =
+      launcher_controller()->GetExtensionForAppID(app_id());
   return extension && extension->is_platform_app();
 }
 

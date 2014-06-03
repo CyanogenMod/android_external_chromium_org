@@ -13,8 +13,8 @@
 #include "base/strings/string16.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_contents_user_data.h"
-#include "ui/base/range/range.h"
 #include "ui/gfx/image/image.h"
+#include "ui/gfx/range/range.h"
 
 namespace content {
 class WebContents;
@@ -33,7 +33,7 @@ class GeneratedCreditCardBubbleView;
 // If |is_link| is false, the text denoted by |range| should be bolded.
 struct TextRange {
   // The range of text this TextRange applies to (start and end).
-  ui::Range range;
+  gfx::Range range;
   // Whether this text range should be styled like a link (e.g. clickable).
   bool is_link;
   // An equality operator for testing.
@@ -60,8 +60,8 @@ class GeneratedCreditCardBubbleController
   // Show a bubble to educate the user about generated (fronting) cards and how
   // they are used to bill their original (backing) card.
   static void Show(content::WebContents* contents,
-                   const base::string16& backing_card_name,
-                   const base::string16& fronting_card_name);
+                   const base::string16& fronting_card_name,
+                   const base::string16& backing_card_name);
 
   // content::WebContentsObserver:
   virtual void DidNavigateMainFrame(
@@ -116,11 +116,15 @@ class GeneratedCreditCardBubbleController
   // will show in the omnibox.
   bool ShouldDisplayBubbleInitially() const;
 
+  // Exposed for testing.
+  base::string16 fronting_card_name() const { return fronting_card_name_; }
+  base::string16 backing_card_name() const { return backing_card_name_; }
+
   // Generates the correct bubble text and text highlighting ranges and shows a
   // bubble to educate the user about generated (fronting) cards and how they
   // are used to bill their original (backing) card. Exposed for testing.
-  virtual void SetupAndShow(const base::string16& backing_card_name,
-                            const base::string16& fronting_card_name);
+  virtual void SetupAndShow(const base::string16& fronting_card_name,
+                            const base::string16& backing_card_name);
 
  private:
   friend class

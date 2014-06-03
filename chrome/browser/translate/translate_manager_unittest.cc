@@ -9,7 +9,7 @@
 #include "url/gurl.h"
 
 #ifdef FILE_MANAGER_EXTENSION
-#include "chrome/browser/chromeos/extensions/file_manager/file_manager_util.h"
+#include "chrome/browser/chromeos/file_manager/app_id.h"
 #include "extensions/common/constants.h"
 #endif
 
@@ -31,12 +31,12 @@ TEST_F(TranslateManagerTest, CheckTranslatableURL) {
   std::string filemanager =
       std::string(extensions::kExtensionScheme) +
       std::string("://") +
-      std::string(kFileBrowserDomain);
+      std::string(file_manager::kFileManagerAppId);
   GURL filemanager_url = GURL(filemanager);
   EXPECT_FALSE(TranslateManager::IsTranslatableURL(filemanager_url));
 #endif
 
-  std::string ftp = std::string(chrome::kFtpScheme) + "://google.com/pub";
+  std::string ftp = std::string(content::kFtpScheme) + "://google.com/pub";
   GURL ftp_url = GURL(ftp);
   EXPECT_FALSE(TranslateManager::IsTranslatableURL(ftp_url));
 

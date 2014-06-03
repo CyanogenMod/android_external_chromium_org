@@ -29,6 +29,7 @@ class ListValue;
 
 namespace extensions {
 class Dispatcher;
+struct Message;
 
 // RenderView-level plumbing for extension features.
 class ExtensionHelper
@@ -58,14 +59,19 @@ class ExtensionHelper
  private:
   // RenderViewObserver implementation.
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-  virtual void DidFinishDocumentLoad(WebKit::WebFrame* frame) OVERRIDE;
-  virtual void DidFinishLoad(WebKit::WebFrame* frame) OVERRIDE;
-  virtual void DidCreateDocumentElement(WebKit::WebFrame* frame) OVERRIDE;
-  virtual void DidStartProvisionalLoad(WebKit::WebFrame* frame) OVERRIDE;
-  virtual void FrameDetached(WebKit::WebFrame* frame) OVERRIDE;
-  virtual void DidCreateDataSource(WebKit::WebFrame* frame,
-                                   WebKit::WebDataSource* ds) OVERRIDE;
-  virtual void DraggableRegionsChanged(WebKit::WebFrame* frame) OVERRIDE;
+  virtual void DidFinishDocumentLoad(blink::WebFrame* frame) OVERRIDE;
+  virtual void DidFinishLoad(blink::WebFrame* frame) OVERRIDE;
+  virtual void DidCreateDocumentElement(blink::WebFrame* frame) OVERRIDE;
+  virtual void DidStartProvisionalLoad(blink::WebFrame* frame) OVERRIDE;
+  virtual void FrameDetached(blink::WebFrame* frame) OVERRIDE;
+  virtual void DidMatchCSS(
+      blink::WebFrame* frame,
+      const blink::WebVector<blink::WebString>& newly_matching_selectors,
+      const blink::WebVector<blink::WebString>& stopped_matching_selectors)
+      OVERRIDE;
+  virtual void DidCreateDataSource(blink::WebFrame* frame,
+                                   blink::WebDataSource* ds) OVERRIDE;
+  virtual void DraggableRegionsChanged(blink::WebFrame* frame) OVERRIDE;
 
   void OnExtensionResponse(int request_id, bool success,
                            const base::ListValue& response,
@@ -79,9 +85,10 @@ class ExtensionHelper
       int target_port_id,
       const std::string& channel_name,
       const base::DictionaryValue& source_tab,
-      const ExtensionMsg_ExternalConnectionInfo& info);
+      const ExtensionMsg_ExternalConnectionInfo& info,
+      const std::string& tls_channel_id);
   void OnExtensionDeliverMessage(int target_port_id,
-                                 const std::string& message);
+                                 const Message& message);
   void OnExtensionDispatchOnDisconnect(int port_id,
                                        const std::string& error_message);
   void OnExecuteCode(const ExtensionMsg_ExecuteCode_Params& params);

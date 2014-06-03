@@ -173,7 +173,7 @@ class CertificateManagerHandler
   // password, etc the user chose while we wait for them to enter a password,
   // wait for file to be read, etc.
   base::FilePath file_path_;
-  string16 password_;
+  base::string16 password_;
   bool use_hardware_backed_;
   std::string file_data_;
   net::CertificateList selected_cert_list_;
@@ -184,9 +184,9 @@ class CertificateManagerHandler
   CancelableTaskTracker tracker_;
   scoped_refptr<FileAccessProvider> file_access_provider_;
 
-  base::WeakPtrFactory<CertificateManagerHandler> weak_ptr_factory_;
-
   scoped_ptr<CertIdMap> cert_id_map_;
+
+  base::WeakPtrFactory<CertificateManagerHandler> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(CertificateManagerHandler);
 };

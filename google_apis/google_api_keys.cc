@@ -49,6 +49,14 @@
 #define GOOGLE_CLIENT_SECRET_REMOTING DUMMY_API_TOKEN
 #endif
 
+#if !defined(GOOGLE_CLIENT_ID_REMOTING_HOST)
+#define GOOGLE_CLIENT_ID_REMOTING_HOST DUMMY_API_TOKEN
+#endif
+
+#if !defined(GOOGLE_CLIENT_SECRET_REMOTING_HOST)
+#define GOOGLE_CLIENT_SECRET_REMOTING_HOST DUMMY_API_TOKEN
+#endif
+
 // These are used as shortcuts for developers and users providing
 // OAuth credentials via preprocessor defines or environment
 // variables.  If set, they will be used to replace any of the client
@@ -152,6 +160,21 @@ class APIKeyCache {
         default_client_secret,
         environment.get(),
         command_line);
+
+    client_ids_[CLIENT_REMOTING_HOST] = CalculateKeyValue(
+        GOOGLE_CLIENT_ID_REMOTING_HOST,
+        STRINGIZE_NO_EXPANSION(GOOGLE_CLIENT_ID_REMOTING_HOST),
+        NULL,
+        default_client_id,
+        environment.get(),
+        command_line);
+    client_secrets_[CLIENT_REMOTING_HOST] = CalculateKeyValue(
+        GOOGLE_CLIENT_SECRET_REMOTING_HOST,
+        STRINGIZE_NO_EXPANSION(GOOGLE_CLIENT_SECRET_REMOTING_HOST),
+        NULL,
+        default_client_secret,
+        environment.get(),
+        command_line);
   }
 
   std::string api_key() const { return api_key_; }
@@ -181,14 +204,14 @@ class APIKeyCache {
     std::string temp;
     if (environment->GetVar(environment_variable_name, &temp)) {
       key_value = temp;
-      LOG(INFO) << "Overriding API key " << environment_variable_name
-                << " with value " << key_value << " from environment variable.";
+      VLOG(1) << "Overriding API key " << environment_variable_name
+              << " with value " << key_value << " from environment variable.";
     }
 
     if (command_line_switch && command_line->HasSwitch(command_line_switch)) {
       key_value = command_line->GetSwitchValueASCII(command_line_switch);
-      LOG(INFO) << "Overriding API key " << environment_variable_name
-                << " with value " << key_value << " from command-line switch.";
+      VLOG(1) << "Overriding API key " << environment_variable_name
+              << " with value " << key_value << " from command-line switch.";
     }
 
     if (key_value == DUMMY_API_TOKEN) {
@@ -199,8 +222,8 @@ class APIKeyCache {
       CHECK(false);
 #endif
       if (default_if_unset.size() > 0) {
-        LOG(INFO) << "Using default value \"" << default_if_unset
-                  << "\" for API key " << environment_variable_name;
+        VLOG(1) << "Using default value \"" << default_if_unset
+                << "\" for API key " << environment_variable_name;
         key_value = default_if_unset;
       }
     }

@@ -18,17 +18,17 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/api/cookies/cookies_api_constants.h"
 #include "chrome/browser/extensions/api/cookies/cookies_helpers.h"
-#include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_iterator.h"
 #include "chrome/common/extensions/api/cookies.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/permissions/permissions_data.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
+#include "extensions/browser/event_router.h"
 #include "extensions/common/error_utils.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/permissions/permissions_data.h"
 #include "net/cookies/canonical_cookie.h"
 #include "net/cookies/cookie_constants.h"
 #include "net/cookies/cookie_monster.h"
@@ -46,6 +46,7 @@ namespace Remove = extensions::api::cookies::Remove;
 namespace Set = extensions::api::cookies::Set;
 
 namespace extensions {
+namespace cookies = api::cookies;
 namespace keys = cookies_api_constants;
 
 CookiesEventRouter::CookiesEventRouter(Profile* profile)
@@ -88,7 +89,7 @@ void CookiesEventRouter::CookieChanged(
 
   scoped_ptr<Cookie> cookie(
       cookies_helpers::CreateCookie(*details->cookie,
-          cookies_helpers::GetStoreIdFromProfile(profile_)));
+          cookies_helpers::GetStoreIdFromProfile(profile)));
   dict->Set(keys::kCookieKey, cookie->ToValue().release());
 
   // Map the internal cause to an external string.
@@ -123,7 +124,10 @@ void CookiesEventRouter::CookieChanged(
 
   GURL cookie_domain =
       cookies_helpers::GetURLFromCanonicalCookie(*details->cookie);
-  DispatchEvent(profile, keys::kOnChanged, args.Pass(), cookie_domain);
+  DispatchEvent(profile,
+                cookies::OnChanged::kEventName,
+                args.Pass(),
+                cookie_domain);
 }
 
 void CookiesEventRouter::DispatchEvent(
@@ -136,7 +140,7 @@ void CookiesEventRouter::DispatchEvent(
   if (!router)
     return;
   scoped_ptr<Event> event(new Event(event_name, event_args.Pass()));
-  event->restrict_to_profile = profile;
+  event->restrict_to_browser_context = profile;
   event->event_url = cookie_domain;
   router->BroadcastEvent(event.Pass());
 }
@@ -166,7 +170,7 @@ bool CookiesFunction::ParseStoreContext(
   Profile* store_profile = NULL;
   if (!store_id->empty()) {
     store_profile = cookies_helpers::ChooseProfileFromStoreId(
-        *store_id, profile(), include_incognito());
+        *store_id, GetProfile(), include_incognito());
     if (!store_profile) {
       error_ = ErrorUtils::FormatErrorMessage(
           keys::kInvalidStoreIdError, *store_id);
@@ -509,13 +513,13 @@ void CookiesRemoveFunction::RespondOnUIThread() {
 }
 
 bool CookiesGetAllCookieStoresFunction::RunImpl() {
-  Profile* original_profile = profile();
+  Profile* original_profile = GetProfile();
   DCHECK(original_profile);
   scoped_ptr<base::ListValue> original_tab_ids(new base::ListValue());
   Profile* incognito_profile = NULL;
   scoped_ptr<base::ListValue> incognito_tab_ids;
-  if (include_incognito() && profile()->HasOffTheRecordProfile()) {
-    incognito_profile = profile()->GetOffTheRecordProfile();
+  if (include_incognito() && GetProfile()->HasOffTheRecordProfile()) {
+    incognito_profile = GetProfile()->GetOffTheRecordProfile();
     if (incognito_profile)
       incognito_tab_ids.reset(new base::ListValue());
   }
@@ -557,7 +561,7 @@ void CookiesGetAllCookieStoresFunction::Run() {
 CookiesAPI::CookiesAPI(Profile* profile)
     : profile_(profile) {
   ExtensionSystem::Get(profile_)->event_router()->RegisterObserver(
-      this, keys::kOnChanged);
+      this, cookies::OnChanged::kEventName);
 }
 
 CookiesAPI::~CookiesAPI() {

@@ -1,11 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 package org.chromium.sync.signin;
 
-
-import com.google.common.annotations.VisibleForTesting;
 
 import android.accounts.Account;
 import android.accounts.AccountManager;
@@ -20,14 +18,17 @@ import android.os.AsyncTask;
 import android.os.Bundle;
 import android.util.Log;
 
+import com.google.common.annotations.VisibleForTesting;
+
 import org.chromium.base.ThreadUtils;
 import org.chromium.net.NetworkChangeNotifier;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.List;
+
 import javax.annotation.Nullable;
 
 /**
@@ -41,7 +42,7 @@ public class AccountManagerHelper {
 
     public static final String GOOGLE_ACCOUNT_TYPE = "com.google";
 
-    private static final Object lock = new Object();
+    private static final Object sLock = new Object();
 
     private static final int MAX_TRIES = 3;
 
@@ -81,7 +82,7 @@ public class AccountManagerHelper {
      * @return a singleton instance of the AccountManagerHelper
      */
     public static AccountManagerHelper get(Context context) {
-        synchronized (lock) {
+        synchronized (sLock) {
             if (sAccountManagerHelper == null) {
                 sAccountManagerHelper = new AccountManagerHelper(context,
                         new SystemAccountManagerDelegate(context));
@@ -93,7 +94,7 @@ public class AccountManagerHelper {
     @VisibleForTesting
     public static void overrideAccountManagerHelperForTests(Context context,
             AccountManagerDelegate accountManager) {
-        synchronized (lock) {
+        synchronized (sLock) {
             sAccountManagerHelper = new AccountManagerHelper(context, accountManager);
         }
     }
@@ -136,6 +137,13 @@ public class AccountManagerHelper {
     }
 
     /**
+     * Returns whether the accounts exists.
+     */
+    public boolean hasAccountForName(String accountName) {
+        return getAccountFromName(accountName) != null;
+    }
+
+    /**
      * @return Whether or not there is an account authenticator for Google accounts.
      */
     public boolean hasGoogleAccountAuthenticator() {
@@ -154,10 +162,10 @@ public class AccountManagerHelper {
      */
     @Deprecated
     public String getAuthTokenFromBackground(Account account, String authTokenType) {
-            AccountManagerFuture<Bundle> future = mAccountManager.getAuthToken(account,
-                    authTokenType, false, null, null);
-            AtomicBoolean errorEncountered = new AtomicBoolean(false);
-            return getAuthTokenInner(future, errorEncountered);
+        AccountManagerFuture<Bundle> future = mAccountManager.getAuthToken(account,
+                authTokenType, false, null, null);
+        AtomicBoolean errorEncountered = new AtomicBoolean(false);
+        return getAuthTokenInner(future, errorEncountered);
     }
 
     /**

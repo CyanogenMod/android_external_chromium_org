@@ -210,12 +210,12 @@ SyncEncryptionHandlerImpl::SyncEncryptionHandlerImpl(
     Encryptor* encryptor,
     const std::string& restored_key_for_bootstrapping,
     const std::string& restored_keystore_key_for_bootstrapping)
-    : weak_ptr_factory_(this),
-      user_share_(user_share),
+    : user_share_(user_share),
       vault_unsafe_(encryptor, SensitiveTypes()),
       encrypt_everything_(false),
       passphrase_type_(IMPLICIT_PASSPHRASE),
-      nigori_overwrite_count_(0) {
+      nigori_overwrite_count_(0),
+      weak_ptr_factory_(this) {
   // Restore the cryptographer's previous keys. Note that we don't add the
   // keystore keys into the cryptographer here, in case a migration was pending.
   vault_unsafe_.cryptographer.Bootstrap(restored_key_for_bootstrapping);
@@ -692,8 +692,7 @@ bool SyncEncryptionHandlerImpl::SetKeystoreKeys(
 
   // Note: in order to Pack the keys, they must all be base64 encoded (else
   // JSON serialization fails).
-  if (!base::Base64Encode(raw_keystore_key, &keystore_key_))
-    return false;
+  base::Base64Encode(raw_keystore_key, &keystore_key_);
 
   // Go through and save the old keystore keys. We always persist all keystore
   // keys the server sends us.
@@ -724,7 +723,7 @@ bool SyncEncryptionHandlerImpl::SetKeystoreKeys(
     return true;
 
   const sync_pb::NigoriSpecifics& nigori =
-      entry.Get(syncable::SPECIFICS).nigori();
+      entry.GetSpecifics().nigori();
   if (cryptographer->has_pending_keys() &&
       IsNigoriMigratedToKeystore(nigori) &&
       !nigori.keystore_decryptor_token().blob().empty()) {
@@ -815,7 +814,7 @@ void SyncEncryptionHandlerImpl::ReEncryptEverything(
       if (child.GetIsFolder()) {
         to_visit.push(child.GetFirstChildId());
       }
-      if (child.GetEntry()->Get(syncable::UNIQUE_SERVER_TAG).empty()) {
+      if (child.GetEntry()->GetUniqueServerTag().empty()) {
       // Rewrite the specifics of the node with encrypted data if necessary
       // (only rewrite the non-unique folders).
         child.ResetFromSpecifics();

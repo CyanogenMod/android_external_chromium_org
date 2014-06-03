@@ -31,13 +31,13 @@
 #include "content/public/common/content_constants.h"
 #include "skia/ext/platform_canvas.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
-#include "ui/base/win/dpi.h"
-#include "ui/base/win/hwnd_util.h"
+#include "ui/gfx/win/dpi.h"
+#include "ui/gfx/win/hwnd_util.h"
 #include "webkit/common/cursors/webcursor.h"
 
-using WebKit::WebKeyboardEvent;
-using WebKit::WebInputEvent;
-using WebKit::WebMouseEvent;
+using blink::WebKeyboardEvent;
+using blink::WebInputEvent;
+using blink::WebMouseEvent;
 
 namespace content {
 
@@ -87,6 +87,11 @@ base::LazyInstance<base::win::IATPatchFunction> g_iat_patch_reg_enum_key_ex_w =
 // Helper object for patching the GetProcAddress API.
 base::LazyInstance<base::win::IATPatchFunction> g_iat_patch_get_proc_address =
     LAZY_INSTANCE_INITIALIZER;
+
+#if defined(USE_AURA)
+base::LazyInstance<base::win::IATPatchFunction> g_iat_patch_window_from_point =
+    LAZY_INSTANCE_INITIALIZER;
+#endif
 
 // http://crbug.com/16114
 // Enforces providing a valid device context in NPWindow, so that NPP_SetWindow
@@ -220,10 +225,11 @@ LRESULT CALLBACK WebPluginDelegateImpl::MouseHookProc(
 }
 
 WebPluginDelegateImpl::WebPluginDelegateImpl(
+    WebPlugin* plugin,
     PluginInstance* instance)
     : instance_(instance),
       quirks_(0),
-      plugin_(NULL),
+      plugin_(plugin),
       windowless_(false),
       windowed_handle_(NULL),
       windowed_did_set_window_(false),
@@ -260,6 +266,9 @@ WebPluginDelegateImpl::WebPluginDelegateImpl(
     quirks_ |= PLUGIN_QUIRK_ALWAYS_NOTIFY_SUCCESS;
     quirks_ |= PLUGIN_QUIRK_HANDLE_MOUSE_CAPTURE;
     quirks_ |= PLUGIN_QUIRK_EMULATE_IME;
+#if defined(USE_AURA)
+    quirks_ |= PLUGIN_QUIRK_FAKE_WINDOW_FROM_POINT;
+#endif
   } else if (filename == kAcrobatReaderPlugin) {
     // Check for the version number above or equal 9.
     int major_version = GetPluginMajorVersion(plugin_info);
@@ -321,7 +330,7 @@ WebPluginDelegateImpl::~WebPluginDelegateImpl() {
     if (current_wnd_proc == DummyWindowProc) {
       SetWindowLongPtr(dummy_window_for_activation_,
                        GWLP_WNDPROC,
-                       reinterpret_cast<LONG>(old_dummy_window_proc_));
+                       reinterpret_cast<LONG_PTR>(old_dummy_window_proc_));
     }
     ::DestroyWindow(dummy_window_for_activation_);
   }
@@ -413,6 +422,14 @@ bool WebPluginDelegateImpl::PlatformInitialize() {
         GetProcAddressPatch);
   }
 
+#if defined(USE_AURA)
+  if (windowless_ && !g_iat_patch_window_from_point.Pointer()->is_patched() &&
+      (quirks_ & PLUGIN_QUIRK_FAKE_WINDOW_FROM_POINT)) {
+    g_iat_patch_window_from_point.Pointer()->Patch(
+        GetPluginPath().value().c_str(), "user32.dll", "WindowFromPoint",
+        WebPluginDelegateImpl::WindowFromPointPatch);
+  }
+#endif
   return true;
 }
 
@@ -433,14 +450,18 @@ void WebPluginDelegateImpl::PlatformDestroyInstance() {
   if (g_iat_patch_reg_enum_key_ex_w.Pointer()->is_patched())
     g_iat_patch_reg_enum_key_ex_w.Pointer()->Unpatch();
 
+#if defined(USE_AURA)
+  if (g_iat_patch_window_from_point.Pointer()->is_patched())
+    g_iat_patch_window_from_point.Pointer()->Unpatch();
+#endif
+
   if (mouse_hook_) {
     UnhookWindowsHookEx(mouse_hook_);
     mouse_hook_ = NULL;
   }
 }
 
-void WebPluginDelegateImpl::Paint(WebKit::WebCanvas* canvas,
-                                  const gfx::Rect& rect) {
+void WebPluginDelegateImpl::Paint(SkCanvas* canvas, const gfx::Rect& rect) {
   if (windowless_ && skia::SupportsPlatformPaint(canvas)) {
     skia::ScopedPlatformPaint scoped_platform_paint(canvas);
     HDC hdc = scoped_platform_paint.GetPlatformSurface();
@@ -516,8 +537,9 @@ bool WebPluginDelegateImpl::WindowedCreatePlugin() {
 
   // Calling SetWindowLongPtrA here makes the window proc ASCII, which is
   // required by at least the Shockwave Director plug-in.
-  SetWindowLongPtrA(
-      windowed_handle_, GWLP_WNDPROC, reinterpret_cast<LONG>(DefWindowProcA));
+  SetWindowLongPtrA(windowed_handle_,
+                    GWLP_WNDPROC,
+                    reinterpret_cast<LONG_PTR>(DefWindowProcA));
 
   return true;
 }
@@ -530,7 +552,7 @@ void WebPluginDelegateImpl::WindowedDestroyWindow() {
     if (current_wnd_proc == NativeWndProc) {
       SetWindowLongPtr(windowed_handle_,
                        GWLP_WNDPROC,
-                       reinterpret_cast<LONG>(plugin_wnd_proc_));
+                       reinterpret_cast<LONG_PTR>(plugin_wnd_proc_));
     }
 
     plugin_->WillDestroyWindow(windowed_handle_);
@@ -716,7 +738,7 @@ BOOL CALLBACK EnumFlashWindows(HWND window, LPARAM arg) {
   if (current_wnd_proc != wnd_proc) {
     WNDPROC old_flash_proc = reinterpret_cast<WNDPROC>(SetWindowLongPtr(
         window, GWLP_WNDPROC,
-        reinterpret_cast<LONG>(wnd_proc)));
+        reinterpret_cast<LONG_PTR>(wnd_proc)));
     DCHECK(old_flash_proc);
     g_window_handle_proc_map.Get()[window] = old_flash_proc;
   }
@@ -751,7 +773,7 @@ bool WebPluginDelegateImpl::CreateDummyWindowForActivation() {
   DCHECK(result == TRUE) << "SetProp failed, last error = " << GetLastError();
   old_dummy_window_proc_ = reinterpret_cast<WNDPROC>(SetWindowLongPtr(
       dummy_window_for_activation_, GWLP_WNDPROC,
-      reinterpret_cast<LONG>(DummyWindowProc)));
+      reinterpret_cast<LONG_PTR>(DummyWindowProc)));
 
   // Flash creates background windows which use excessive CPU in our
   // environment; we wrap these windows and throttle them so that they don't
@@ -775,8 +797,8 @@ bool WebPluginDelegateImpl::WindowedReposition(
     return false;
   }
 
-  gfx::Rect window_rect = ui::win::DIPToScreenRect(window_rect_in_dip);
-  gfx::Rect clip_rect = ui::win::DIPToScreenRect(clip_rect_in_dip);
+  gfx::Rect window_rect = gfx::win::DIPToScreenRect(window_rect_in_dip);
+  gfx::Rect clip_rect = gfx::win::DIPToScreenRect(clip_rect_in_dip);
   if (window_rect_ == window_rect && clip_rect_ == clip_rect)
     return false;
 
@@ -843,8 +865,10 @@ void WebPluginDelegateImpl::WindowedSetWindow() {
   WNDPROC current_wnd_proc = reinterpret_cast<WNDPROC>(
         GetWindowLongPtr(windowed_handle_, GWLP_WNDPROC));
   if (current_wnd_proc != NativeWndProc) {
-    plugin_wnd_proc_ = reinterpret_cast<WNDPROC>(SetWindowLongPtr(
-        windowed_handle_, GWLP_WNDPROC, reinterpret_cast<LONG>(NativeWndProc)));
+    plugin_wnd_proc_ = reinterpret_cast<WNDPROC>(
+        SetWindowLongPtr(windowed_handle_,
+                         GWLP_WNDPROC,
+                         reinterpret_cast<LONG_PTR>(NativeWndProc)));
   }
 }
 
@@ -998,7 +1022,13 @@ LRESULT CALLBACK WebPluginDelegateImpl::NativeWndProc(
     result = CallWindowProc(
         delegate->plugin_wnd_proc_, hwnd, message, wparam, lparam);
 
-    delegate->is_calling_wndproc = false;
+    // The plugin instance may have been destroyed in the CallWindowProc call
+    // above. This will also destroy the plugin window. Before attempting to
+    // access the WebPluginDelegateImpl instance we validate if the window is
+    // still valid.
+    if (::IsWindow(hwnd))
+      delegate->is_calling_wndproc = false;
+
     g_current_plugin_instance = last_plugin_instance;
 
     if (message == WM_NCDESTROY) {
@@ -1014,7 +1044,8 @@ LRESULT CALLBACK WebPluginDelegateImpl::NativeWndProc(
       ClearThrottleQueueForWindow(hwnd);
     }
   }
-  delegate->last_message_ = old_message;
+  if (::IsWindow(hwnd))
+    delegate->last_message_ = old_message;
   return result;
 }
 
@@ -1308,6 +1339,12 @@ bool WebPluginDelegateImpl::PlatformHandleInputEvent(
     ResetEvent(handle_event_pump_messages_event_);
   }
 
+  // If we didn't enter a modal loop, need to unhook the filter.
+  if (handle_event_message_filter_hook_) {
+    UnhookWindowsHookEx(handle_event_message_filter_hook_);
+    handle_event_message_filter_hook_ = NULL;
+  }
+
   if (::IsWindow(last_focus_window)) {
     // Restore the nestable tasks allowed state in the message loop and reset
     // the os modal loop state as the plugin returned from the TrackPopupMenu
@@ -1457,9 +1494,22 @@ FARPROC WINAPI WebPluginDelegateImpl::GetProcAddressPatch(HMODULE module,
   return ::GetProcAddress(module, name);
 }
 
+#if defined(USE_AURA)
+HWND WINAPI WebPluginDelegateImpl::WindowFromPointPatch(POINT point) {
+  HWND window = WindowFromPoint(point);
+  if (::ScreenToClient(window, &point)) {
+    HWND child = ChildWindowFromPoint(window, point);
+    if (::IsWindow(child) &&
+        ::GetProp(child, content::kPluginDummyParentProperty))
+      return child;
+  }
+  return window;
+}
+#endif
+
 void WebPluginDelegateImpl::HandleCaptureForMessage(HWND window,
                                                     UINT message) {
-  if (ui::GetClassName(window) != base::string16(kNativeWindowClassName))
+  if (gfx::GetClassName(window) != base::string16(kNativeWindowClassName))
     return;
 
   switch (message) {

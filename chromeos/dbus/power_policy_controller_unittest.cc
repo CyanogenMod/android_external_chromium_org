@@ -6,8 +6,8 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
+#include "chromeos/dbus/fake_dbus_thread_manager.h"
 #include "chromeos/dbus/fake_power_manager_client.h"
-#include "chromeos/dbus/mock_dbus_thread_manager_without_gmock.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -22,11 +22,14 @@ class PowerPolicyControllerTest : public testing::Test {
   virtual ~PowerPolicyControllerTest() {}
 
   virtual void SetUp() OVERRIDE {
-    dbus_manager_ = new MockDBusThreadManagerWithoutGMock;
+    dbus_manager_ = new FakeDBusThreadManager;
+    fake_power_client_ = new FakePowerManagerClient;
+    dbus_manager_->SetPowerManagerClient(
+        scoped_ptr<PowerManagerClient>(fake_power_client_));
     DBusThreadManager::InitializeForTesting(dbus_manager_);  // Takes ownership.
 
-    policy_controller_.reset(
-        new PowerPolicyController(dbus_manager_, &fake_power_client_));
+    policy_controller_.reset(new PowerPolicyController);
+    policy_controller_->Init(dbus_manager_);
   }
 
   virtual void TearDown() OVERRIDE {
@@ -35,8 +38,8 @@ class PowerPolicyControllerTest : public testing::Test {
   }
 
  protected:
-  MockDBusThreadManagerWithoutGMock* dbus_manager_;  // Not owned.
-  FakePowerManagerClient fake_power_client_;
+  FakeDBusThreadManager* dbus_manager_;  // Not owned.
+  FakePowerManagerClient* fake_power_client_;
   scoped_ptr<PowerPolicyController> policy_controller_;
 };
 
@@ -53,9 +56,12 @@ TEST_F(PowerPolicyControllerTest, Prefs) {
   prefs.lid_closed_action = PowerPolicyController::ACTION_SHUT_DOWN;
   prefs.use_audio_activity = true;
   prefs.use_video_activity = true;
+  prefs.ac_brightness_percent = 87.0;
+  prefs.battery_brightness_percent = 43.0;
   prefs.enable_screen_lock = false;
   prefs.presentation_screen_dim_delay_factor = 3.0;
   prefs.user_activity_screen_dim_delay_factor = 2.0;
+  prefs.wait_for_initial_user_activity = true;
   policy_controller_->ApplyPrefs(prefs);
 
   power_manager::PowerManagementPolicy expected_policy;
@@ -77,25 +83,30 @@ TEST_F(PowerPolicyControllerTest, Prefs) {
       power_manager::PowerManagementPolicy_Action_SHUT_DOWN);
   expected_policy.set_use_audio_activity(true);
   expected_policy.set_use_video_activity(true);
+  expected_policy.set_ac_brightness_percent(87.0);
+  expected_policy.set_battery_brightness_percent(43.0);
   expected_policy.set_presentation_screen_dim_delay_factor(3.0);
   expected_policy.set_user_activity_screen_dim_delay_factor(2.0);
+  expected_policy.set_wait_for_initial_user_activity(true);
   expected_policy.set_reason("Prefs");
   EXPECT_EQ(PowerPolicyController::GetPolicyDebugString(expected_policy),
             PowerPolicyController::GetPolicyDebugString(
-                fake_power_client_.get_policy()));
+                fake_power_client_->get_policy()));
 
   // Change some prefs and check that an updated policy is sent.
   prefs.ac_idle_warning_delay_ms = 700000;
   prefs.battery_idle_warning_delay_ms = 400000;
   prefs.lid_closed_action = PowerPolicyController::ACTION_SUSPEND;
+  prefs.ac_brightness_percent = -1.0;
   policy_controller_->ApplyPrefs(prefs);
   expected_policy.mutable_ac_delays()->set_idle_warning_ms(700000);
   expected_policy.mutable_battery_delays()->set_idle_warning_ms(400000);
   expected_policy.set_lid_closed_action(
       power_manager::PowerManagementPolicy_Action_SUSPEND);
+  expected_policy.clear_ac_brightness_percent();
   EXPECT_EQ(PowerPolicyController::GetPolicyDebugString(expected_policy),
             PowerPolicyController::GetPolicyDebugString(
-                fake_power_client_.get_policy()));
+                fake_power_client_->get_policy()));
 
   // The enable-screen-lock pref should force the screen-lock delays to
   // match the screen-off delays plus a constant value.
@@ -107,7 +118,7 @@ TEST_F(PowerPolicyControllerTest, Prefs) {
       360000 + PowerPolicyController::kScreenLockAfterOffDelayMs);
   EXPECT_EQ(PowerPolicyController::GetPolicyDebugString(expected_policy),
             PowerPolicyController::GetPolicyDebugString(
-                fake_power_client_.get_policy()));
+                fake_power_client_->get_policy()));
 
   // If the screen-lock-delay prefs are set to lower values than the
   // screen-off delays plus the constant, the lock prefs should take
@@ -119,7 +130,7 @@ TEST_F(PowerPolicyControllerTest, Prefs) {
   expected_policy.mutable_battery_delays()->set_screen_lock_ms(60000);
   EXPECT_EQ(PowerPolicyController::GetPolicyDebugString(expected_policy),
             PowerPolicyController::GetPolicyDebugString(
-                fake_power_client_.get_policy()));
+                fake_power_client_->get_policy()));
 
   // If the artificial screen-lock delays would exceed the idle delay, they
   // shouldn't be set -- the power manager would ignore them since the
@@ -137,7 +148,7 @@ TEST_F(PowerPolicyControllerTest, Prefs) {
   expected_policy.mutable_battery_delays()->set_screen_lock_ms(-1);
   EXPECT_EQ(PowerPolicyController::GetPolicyDebugString(expected_policy),
             PowerPolicyController::GetPolicyDebugString(
-                fake_power_client_.get_policy()));
+                fake_power_client_->get_policy()));
 
   // Set the "allow screen wake locks" pref to false.  The system should be
   // prevented from suspending due to user inactivity on AC power but the
@@ -150,7 +161,7 @@ TEST_F(PowerPolicyControllerTest, Prefs) {
   expected_policy.set_reason("Prefs, Screen");
   EXPECT_EQ(PowerPolicyController::GetPolicyDebugString(expected_policy),
             PowerPolicyController::GetPolicyDebugString(
-                fake_power_client_.get_policy()));
+                fake_power_client_->get_policy()));
 }
 
 TEST_F(PowerPolicyControllerTest, WakeLocks) {
@@ -165,7 +176,7 @@ TEST_F(PowerPolicyControllerTest, WakeLocks) {
   expected_policy.set_reason(kSystemWakeLockReason);
   EXPECT_EQ(PowerPolicyController::GetPolicyDebugString(expected_policy),
             PowerPolicyController::GetPolicyDebugString(
-                fake_power_client_.get_policy()));
+                fake_power_client_->get_policy()));
 
   const char kScreenWakeLockReason[] = "screen";
   const int screen_id = policy_controller_->AddScreenWakeLock(
@@ -180,19 +191,19 @@ TEST_F(PowerPolicyControllerTest, WakeLocks) {
       std::string(kScreenWakeLockReason) + ", " + kSystemWakeLockReason);
   EXPECT_EQ(PowerPolicyController::GetPolicyDebugString(expected_policy),
             PowerPolicyController::GetPolicyDebugString(
-                fake_power_client_.get_policy()));
+                fake_power_client_->get_policy()));
 
   policy_controller_->RemoveWakeLock(system_id);
   expected_policy.set_reason(kScreenWakeLockReason);
   EXPECT_EQ(PowerPolicyController::GetPolicyDebugString(expected_policy),
             PowerPolicyController::GetPolicyDebugString(
-                fake_power_client_.get_policy()));
+                fake_power_client_->get_policy()));
 
   policy_controller_->RemoveWakeLock(screen_id);
   expected_policy.Clear();
   EXPECT_EQ(PowerPolicyController::GetPolicyDebugString(expected_policy),
             PowerPolicyController::GetPolicyDebugString(
-                fake_power_client_.get_policy()));
+                fake_power_client_->get_policy()));
 }
 
 }  // namespace chromeos

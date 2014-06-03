@@ -10,10 +10,16 @@
 #include "base/memory/weak_ptr.h"
 #include "base/strings/string16.h"
 #include "chrome/browser/ui/autofill/autofill_popup_controller.h"
-#include "content/public/browser/keyboard_listener.h"
+#include "content/public/browser/render_widget_host.h"
 #include "ui/gfx/font.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/rect_f.h"
+
+namespace content {
+struct NativeWebKeyboardEvent;
+class RenderViewHost;
+class WebContents;
+}
 
 namespace gfx {
 class Display;
@@ -31,23 +37,24 @@ class AutofillPopupView;
 // This class is a controller for an AutofillPopupView. It implements
 // AutofillPopupController to allow calls from AutofillPopupView. The
 // other, public functions are available to its instantiator.
-class AutofillPopupControllerImpl : public AutofillPopupController,
-                                    public content::KeyboardListener {
+class AutofillPopupControllerImpl : public AutofillPopupController {
  public:
-  // Creates a new |AutofillPopupControllerImpl|, or reuses |previous| if
-  // the construction arguments are the same. |previous| may be invalidated by
-  // this call.
+  // Creates a new |AutofillPopupControllerImpl|, or reuses |previous| if the
+  // construction arguments are the same. |previous| may be invalidated by this
+  // call. The controller will listen for keyboard input routed to
+  // |web_contents| while the popup is showing, unless |web_contents| is NULL.
   static base::WeakPtr<AutofillPopupControllerImpl> GetOrCreate(
       base::WeakPtr<AutofillPopupControllerImpl> previous,
       base::WeakPtr<AutofillPopupDelegate> delegate,
+      content::WebContents* web_contents,
       gfx::NativeView container_view,
       const gfx::RectF& element_bounds,
       base::i18n::TextDirection text_direction);
 
   // Shows the popup, or updates the existing popup with the given values.
-  void Show(const std::vector<string16>& names,
-            const std::vector<string16>& subtexts,
-            const std::vector<string16>& icons,
+  void Show(const std::vector<base::string16>& names,
+            const std::vector<base::string16>& subtexts,
+            const std::vector<base::string16>& icons,
             const std::vector<int>& identifiers);
 
   // Updates the data list values currently shown with the popup.
@@ -61,9 +68,10 @@ class AutofillPopupControllerImpl : public AutofillPopupController,
   // Invoked when the view was destroyed by by someone other than this class.
   virtual void ViewDestroyed() OVERRIDE;
 
-  // KeyboardListener implementation.
-  virtual bool HandleKeyPressEvent(
-      const content::NativeWebKeyboardEvent& event) OVERRIDE;
+  bool HandleKeyPressEvent(const content::NativeWebKeyboardEvent& event);
+
+  // Tells the view to capture mouse events. Must be called before |Show()|.
+  void set_hide_on_outside_click(bool hide_on_outside_click);
 
  protected:
   FRIEND_TEST_ALL_PREFIXES(AutofillExternalDelegateBrowserTest,
@@ -72,6 +80,7 @@ class AutofillPopupControllerImpl : public AutofillPopupController,
                            ProperlyResetController);
 
   AutofillPopupControllerImpl(base::WeakPtr<AutofillPopupDelegate> delegate,
+                              content::WebContents* web_contents,
                               gfx::NativeView container_view,
                               const gfx::RectF& element_bounds,
                               base::i18n::TextDirection text_direction);
@@ -79,11 +88,13 @@ class AutofillPopupControllerImpl : public AutofillPopupController,
 
   // AutofillPopupController implementation.
   virtual void UpdateBoundsAndRedrawPopup() OVERRIDE;
-  virtual void MouseHovered(int x, int y) OVERRIDE;
-  virtual void MouseClicked(int x, int y) OVERRIDE;
-  virtual void MouseExitedPopup() OVERRIDE;
+  virtual void LineSelectedAtPoint(int x, int y) OVERRIDE;
+  virtual void LineAcceptedAtPoint(int x, int y) OVERRIDE;
+  virtual void SelectionCleared() OVERRIDE;
+  virtual bool ShouldRepostEvent(const ui::MouseEvent& event) OVERRIDE;
   virtual void AcceptSuggestion(size_t index) OVERRIDE;
-  virtual int GetIconResourceID(const string16& resource_name) OVERRIDE;
+  virtual int GetIconResourceID(
+      const base::string16& resource_name) const OVERRIDE;
   virtual bool CanDelete(size_t index) const OVERRIDE;
   virtual bool IsWarning(size_t index) const OVERRIDE;
   virtual gfx::Rect GetRowBounds(size_t index) OVERRIDE;
@@ -93,15 +104,16 @@ class AutofillPopupControllerImpl : public AutofillPopupController,
   virtual const gfx::RectF& element_bounds() const OVERRIDE;
   virtual bool IsRTL() const OVERRIDE;
 
-  virtual const std::vector<string16>& names() const OVERRIDE;
-  virtual const std::vector<string16>& subtexts() const OVERRIDE;
-  virtual const std::vector<string16>& icons() const OVERRIDE;
+  virtual const std::vector<base::string16>& names() const OVERRIDE;
+  virtual const std::vector<base::string16>& subtexts() const OVERRIDE;
+  virtual const std::vector<base::string16>& icons() const OVERRIDE;
   virtual const std::vector<int>& identifiers() const OVERRIDE;
 #if !defined(OS_ANDROID)
   virtual const gfx::Font& GetNameFontForRow(size_t index) const OVERRIDE;
   virtual const gfx::Font& subtext_font() const OVERRIDE;
 #endif
   virtual int selected_line() const OVERRIDE;
+  virtual bool hide_on_outside_click() const OVERRIDE;
 
   // Change which line is currently selected by the user.
   void SetSelectedLine(int selected_line);
@@ -132,9 +144,9 @@ class AutofillPopupControllerImpl : public AutofillPopupController,
 
   // Set the Autofill entry values. Exposed to allow tests to set these values
   // without showing the popup.
-  void SetValues(const std::vector<string16>& names,
-                 const std::vector<string16>& subtexts,
-                 const std::vector<string16>& icons,
+  void SetValues(const std::vector<base::string16>& names,
+                 const std::vector<base::string16>& subtexts,
+                 const std::vector<base::string16>& icons,
                  const std::vector<int>& identifier);
 
   AutofillPopupView* view() { return view_; }
@@ -191,6 +203,12 @@ class AutofillPopupControllerImpl : public AutofillPopupController,
 
   AutofillPopupView* view_;  // Weak reference.
   base::WeakPtr<AutofillPopupDelegate> delegate_;
+
+  // The WebContents in which this object should listen for keyboard events
+  // while showing the popup. Can be NULL, in which case this object will not
+  // listen for keyboard events.
+  content::WebContents* web_contents_;
+
   gfx::NativeView container_view_;  // Weak reference.
 
   // The bounds of the text element that is the focus of the Autofill.
@@ -203,15 +221,19 @@ class AutofillPopupControllerImpl : public AutofillPopupController,
   // The text direction of the popup.
   base::i18n::TextDirection text_direction_;
 
+  // The RenderViewHost that this object has registered its keyboard press
+  // callback with.
+  content::RenderViewHost* registered_key_press_event_callback_with_;
+
   // The current Autofill query values.
-  std::vector<string16> names_;
-  std::vector<string16> subtexts_;
-  std::vector<string16> icons_;
+  std::vector<base::string16> names_;
+  std::vector<base::string16> subtexts_;
+  std::vector<base::string16> icons_;
   std::vector<int> identifiers_;
 
   // Since names_ can be elided to ensure that it fits on the screen, we need to
   // keep an unelided copy of the names to be able to pass to the delegate.
-  std::vector<string16> full_names_;
+  std::vector<base::string16> full_names_;
 
 #if !defined(OS_ANDROID)
   // The fonts for the popup text.
@@ -223,6 +245,11 @@ class AutofillPopupControllerImpl : public AutofillPopupController,
   // The line that is currently selected by the user.
   // |kNoSelection| indicates that no line is currently selected.
   int selected_line_;
+
+  // Whether the popup view should hide on mouse presses outside of it.
+  bool hide_on_outside_click_;
+
+  content::RenderWidgetHost::KeyPressEventCallback key_press_event_callback_;
 
   base::WeakPtrFactory<AutofillPopupControllerImpl> weak_ptr_factory_;
 };

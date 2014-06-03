@@ -8,6 +8,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
+#include "chrome/browser/bookmarks/bookmark_test_helpers.h"
 #include "chrome/browser/bookmarks/bookmark_utils.h"
 #include "chrome/browser/download/download_shelf.h"
 #include "chrome/browser/profiles/profile.h"
@@ -18,7 +19,6 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/in_process_browser_test.h"
-#include "chrome/test/base/ui_test_utils.h"
 #include "extensions/common/switches.h"
 
 using content::OpenURLParams;
@@ -49,7 +49,7 @@ class ViewIDTest : public InProcessBrowserTest {
     // Make sure docked devtools is created to test VIEW_ID_DEV_TOOLS_DOCKED
     browser()->profile()->GetPrefs()->SetString(prefs::kDevToolsDockSide,
                                                 "dock_bottom");
-    chrome::ToggleDevToolsWindow(browser(), DEVTOOLS_TOGGLE_ACTION_INSPECT);
+    chrome::ToggleDevToolsWindow(browser(), DevToolsToggleAction::Inspect());
 
     // Make sure download shelf is created to test VIEW_ID_DOWNLOAD_SHELF
     browser()->window()->GetDownloadShelf()->Show();
@@ -59,7 +59,7 @@ class ViewIDTest : public InProcessBrowserTest {
         BookmarkModelFactory::GetForProfile(browser()->profile());
     if (bookmark_model) {
       if (!bookmark_model->loaded())
-        ui_test_utils::WaitForBookmarkModelToLoad(bookmark_model);
+        test::WaitForBookmarkModelToLoad(bookmark_model);
 
       bookmark_utils::AddIfNotBookmarked(
           bookmark_model, GURL(content::kAboutBlankURL), ASCIIToUTF16("about"));
@@ -71,7 +71,8 @@ class ViewIDTest : public InProcessBrowserTest {
           i == VIEW_ID_CONTENTS_SPLIT ||
           i == VIEW_ID_FEEDBACK_BUTTON ||
           i == VIEW_ID_SCRIPT_BUBBLE ||
-          i == VIEW_ID_MIC_SEARCH_BUTTON) {
+          i == VIEW_ID_MIC_SEARCH_BUTTON ||
+          i == VIEW_ID_TRANSLATE_BUTTON) {
         continue;
       }
 

@@ -19,6 +19,9 @@ class ListValue;
 }
 
 namespace chromeos {
+
+class User;
+
 namespace options {
 
 // ChromeOS user image options page UI handler.
@@ -105,6 +108,10 @@ class ChangePictureOptionsHandler : public ::options::OptionsPageUIHandler,
                               const SkBitmap& decoded_image) OVERRIDE;
   virtual void OnDecodeImageFailed(const ImageDecoder* decoder) OVERRIDE;
 
+  // Returns user related to current WebUI. If this user doesn't exist,
+  // returns active user.
+  User* GetUser() const;
+
   scoped_refptr<ui::SelectFileDialog> select_file_dialog_;
 
   // Previous user image from camera/file and its data URL.
@@ -127,6 +134,10 @@ class ChangePictureOptionsHandler : public ::options::OptionsPageUIHandler,
   // Last ImageDecoder instance used to decode an image blob received by
   // HandlePhotoTaken.
   scoped_refptr<ImageDecoder> image_decoder_;
+
+ private:
+  // Last known state of the camera.
+  bool was_camera_present_;
 
   DISALLOW_COPY_AND_ASSIGN(ChangePictureOptionsHandler);
 };

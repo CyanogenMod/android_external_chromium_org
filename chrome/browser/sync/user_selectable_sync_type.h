@@ -40,6 +40,7 @@ enum UserSelectableSyncType {
   // NIGORI,
   // DICTIONARY
   // SEARCH_ENGINES,
+  // APP_LIST,
   // APP_SETTINGS,
   // EXTENSION_SETTINGS,
   // APP_NOTIFICATIONS,
@@ -50,6 +51,7 @@ enum UserSelectableSyncType {
   // HISTORY_DELETE_DIRECTIVES,
   // FAVICON_IMAGES,
   // FAVICON_TRACKING,
+  // ARTICLE,
 
   // Number of sync datatypes exposed to the user via checboxes in the UI.
   SELECTABLE_DATATYPE_COUNT = 10,

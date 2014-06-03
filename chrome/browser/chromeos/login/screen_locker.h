@@ -7,6 +7,7 @@
 
 #include <string>
 
+#include "base/callback_forward.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
@@ -22,10 +23,15 @@ namespace content {
 class WebUI;
 }
 
+namespace gfx {
+class Image;
+}
+
 namespace chromeos {
 
 class Authenticator;
 class LoginFailure;
+class ScreenlockIconProvider;
 
 namespace test {
 class ScreenLockerTester;
@@ -52,9 +58,7 @@ class ScreenLocker : public LoginStatusConsumer {
 
   // LoginStatusConsumer implements:
   virtual void OnLoginFailure(const chromeos::LoginFailure& error) OVERRIDE;
-  virtual void OnLoginSuccess(const UserContext& user_context,
-                              bool pending_requests,
-                              bool using_oauth) OVERRIDE;
+  virtual void OnLoginSuccess(const UserContext& user_context) OVERRIDE;
 
   // Does actual unlocking once authentication is successful and all blocking
   // animations are done.
@@ -76,6 +80,14 @@ class ScreenLocker : public LoginStatusConsumer {
 
   // Exit the chrome, which will sign out the current session.
   void Signout();
+
+  // Displays |message| in a banner on the lock screen.
+  void ShowBannerMessage(const std::string& message);
+
+  // Shows a button inside the user pod on the lock screen with an icon.
+  void ShowUserPodButton(const std::string& username,
+                         const gfx::Image& icon,
+                         const base::Closure& click_callback);
 
   // Disables all UI needed and shows error bubble with |message|.
   // If |sign_out_only| is true then all other input except "Sign Out"
@@ -120,9 +132,7 @@ class ScreenLocker : public LoginStatusConsumer {
   friend class ScreenLockerDelegate;
 
   struct AuthenticationParametersCapture {
-    std::string username;
-    bool pending_requests;
-    bool using_oauth;
+    UserContext user_context;
   };
 
   virtual ~ScreenLocker();
@@ -142,8 +152,8 @@ class ScreenLocker : public LoginStatusConsumer {
   // ScreenLockerDelegate instance in use.
   scoped_ptr<ScreenLockerDelegate> delegate_;
 
-  // Logged in users. First user in list is active user.
-  const UserList& users_;
+  // Users that can unlock the device.
+  UserList users_;
 
   // Used to authenticate the user to unlock.
   scoped_refptr<Authenticator> authenticator_;
@@ -172,6 +182,9 @@ class ScreenLocker : public LoginStatusConsumer {
   // Copy of parameters passed to last call of OnLoginSuccess for usage in
   // UnlockOnLoginSuccess().
   scoped_ptr<AuthenticationParametersCapture> authentication_capture_;
+
+  // Provider for button icon set by the screenlockPrivate API.
+  scoped_ptr<ScreenlockIconProvider> screenlock_icon_provider_;
 
   base::WeakPtrFactory<ScreenLocker> weak_factory_;
 

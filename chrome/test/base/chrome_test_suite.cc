@@ -23,13 +23,9 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/extensions/chrome_extensions_client.h"
 #include "chrome/common/url_constants.h"
-#include "chrome/test/base/testing_browser_process.h"
 #include "chrome/utility/chrome_content_utility_client.h"
 #include "content/public/test/test_launcher.h"
 #include "extensions/common/extension_paths.h"
-#include "net/base/net_errors.h"
-#include "net/base/net_util.h"
-#include "net/dns/mock_host_resolver.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/resource/resource_handle.h"
@@ -38,7 +34,8 @@
 #include "base/android/jni_android.h"
 #include "chrome/browser/android/chrome_jni_registrar.h"
 #include "net/android/net_jni_registrar.h"
-#include "ui/android/ui_jni_registrar.h"
+#include "ui/base/android/ui_base_jni_registrar.h"
+#include "ui/gfx/android/gfx_jni_registrar.h"
 #include "ui/gl/android/gl_jni_registrar.h"
 #endif
 
@@ -85,61 +82,15 @@ bool IsCrosPythonProcess() {
 #endif  // defined(OS_CHROMEOS)
 }
 
-// In many cases it may be not obvious that a test makes a real DNS lookup.
-// We generally don't want to rely on external DNS servers for our tests,
-// so this host resolver procedure catches external queries and returns a failed
-// lookup result.
-class LocalHostResolverProc : public net::HostResolverProc {
- public:
-  LocalHostResolverProc() : HostResolverProc(NULL) {}
-
-  virtual int Resolve(const std::string& host,
-                      net::AddressFamily address_family,
-                      net::HostResolverFlags host_resolver_flags,
-                      net::AddressList* addrlist,
-                      int* os_error) OVERRIDE {
-    const char* kLocalHostNames[] = {"localhost", "127.0.0.1", "::1"};
-    bool local = false;
-
-    if (host == net::GetHostName()) {
-      local = true;
-    } else {
-      for (size_t i = 0; i < arraysize(kLocalHostNames); i++)
-        if (host == kLocalHostNames[i]) {
-          local = true;
-          break;
-        }
-    }
-
-    // To avoid depending on external resources and to reduce (if not preclude)
-    // network interactions from tests, we simulate failure for non-local DNS
-    // queries, rather than perform them.
-    // If you really need to make an external DNS query, use
-    // net::RuleBasedHostResolverProc and its AllowDirectLookup method.
-    if (!local) {
-      DVLOG(1) << "To avoid external dependencies, simulating failure for "
-          "external DNS lookup of " << host;
-      return net::ERR_NOT_IMPLEMENTED;
-    }
-
-    return ResolveUsingPrevious(host, address_family, host_resolver_flags,
-                                addrlist, os_error);
-  }
-
- private:
-  virtual ~LocalHostResolverProc() {}
-};
-
+// Initializes services needed by both unit tests and browser tests.
+// See also ChromeUnitTestSuite for additional services created for unit tests.
 class ChromeTestSuiteInitializer : public testing::EmptyTestEventListener {
  public:
   ChromeTestSuiteInitializer() {
   }
 
   virtual void OnTestStart(const testing::TestInfo& test_info) OVERRIDE {
-    DCHECK(!g_browser_process);
-    g_browser_process = new TestingBrowserProcess;
-
-    content_client_.reset(new chrome::ChromeContentClient);
+    content_client_.reset(new ChromeContentClient);
     content::SetContentClient(content_client_.get());
     // TODO(ios): Bring this back once ChromeContentBrowserClient is building.
 #if !defined(OS_IOS)
@@ -148,18 +99,9 @@ class ChromeTestSuiteInitializer : public testing::EmptyTestEventListener {
     utility_content_client_.reset(new chrome::ChromeContentUtilityClient());
     content::SetUtilityClientForTesting(utility_content_client_.get());
 #endif
-
-    SetUpHostResolver();
   }
 
   virtual void OnTestEnd(const testing::TestInfo& test_info) OVERRIDE {
-    if (g_browser_process) {
-      BrowserProcess* browser_process = g_browser_process;
-      // g_browser_process must be NULL during its own destruction.
-      g_browser_process = NULL;
-      delete browser_process;
-    }
-
     // TODO(ios): Bring this back once ChromeContentBrowserClient is building.
 #if !defined(OS_IOS)
     browser_content_client_.reset();
@@ -167,31 +109,16 @@ class ChromeTestSuiteInitializer : public testing::EmptyTestEventListener {
 #endif
     content_client_.reset();
     content::SetContentClient(NULL);
-
-    TearDownHostResolver();
-  }
+ }
 
  private:
-  void SetUpHostResolver() {
-    host_resolver_proc_ = new LocalHostResolverProc;
-    scoped_host_resolver_proc_.reset(
-        new net::ScopedDefaultHostResolverProc(host_resolver_proc_.get()));
-  }
-
-  void TearDownHostResolver() {
-    scoped_host_resolver_proc_.reset();
-    host_resolver_proc_ = NULL;
-  }
-
-  scoped_ptr<chrome::ChromeContentClient> content_client_;
+  // Client implementations for the content module.
+  scoped_ptr<ChromeContentClient> content_client_;
   // TODO(ios): Bring this back once ChromeContentBrowserClient is building.
 #if !defined(OS_IOS)
   scoped_ptr<chrome::ChromeContentBrowserClient> browser_content_client_;
   scoped_ptr<chrome::ChromeContentUtilityClient> utility_content_client_;
 #endif
-
-  scoped_refptr<LocalHostResolverProc> host_resolver_proc_;
-  scoped_ptr<net::ScopedDefaultHostResolverProc> scoped_host_resolver_proc_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromeTestSuiteInitializer);
 };
@@ -215,6 +142,7 @@ void ChromeTestSuite::Initialize() {
 
 #if defined(OS_ANDROID)
   // Register JNI bindings for android.
+  gfx::android::RegisterJni(base::android::AttachCurrentThread());
   net::android::RegisterJni(base::android::AttachCurrentThread());
   ui::android::RegisterJni(base::android::AttachCurrentThread());
   ui::gl::android::RegisterJni(base::android::AttachCurrentThread());
@@ -290,7 +218,7 @@ void ChromeTestSuite::Initialize() {
 }
 
 content::ContentClient* ChromeTestSuite::CreateClientForInitialization() {
-  return new chrome::ChromeContentClient();
+  return new ChromeContentClient();
 }
 
 void ChromeTestSuite::Shutdown() {

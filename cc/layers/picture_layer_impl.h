@@ -21,6 +21,7 @@ namespace cc {
 
 struct AppendQuadsData;
 class QuadSink;
+class MicroBenchmarkImpl;
 
 class CC_EXPORT PictureLayerImpl
     : public LayerImpl,
@@ -59,14 +60,10 @@ class CC_EXPORT PictureLayerImpl
       gfx::Size content_bounds) const OVERRIDE;
   virtual const Region* GetInvalidation() OVERRIDE;
   virtual const PictureLayerTiling* GetTwinTiling(
-      const PictureLayerTiling* tiling) OVERRIDE;
+      const PictureLayerTiling* tiling) const OVERRIDE;
 
   // PushPropertiesTo active tree => pending tree.
-  void SyncFromActiveLayer();
   void SyncTiling(const PictureLayerTiling* tiling);
-  void UpdateTwinLayer();
-
-  void CreateTilingSetIfNeeded();
 
   // Mask-related functions
   void SetIsMask(bool is_mask);
@@ -74,27 +71,43 @@ class CC_EXPORT PictureLayerImpl
 
   virtual size_t GPUMemoryUsageInBytes() const OVERRIDE;
 
+  virtual void RunMicroBenchmark(MicroBenchmarkImpl* benchmark) OVERRIDE;
+
  protected:
   PictureLayerImpl(LayerTreeImpl* tree_impl, int id);
   PictureLayerTiling* AddTiling(float contents_scale);
   void RemoveTiling(float contents_scale);
+  void RemoveAllTilings();
   void SyncFromActiveLayer(const PictureLayerImpl* other);
   void ManageTilings(bool animating_transform_to_screen);
   virtual bool ShouldAdjustRasterScale(
       bool animating_transform_to_screen) const;
-  virtual void CalculateRasterContentsScale(
-      bool animating_transform_to_screen,
-      float* raster_contents_scale,
-      float* low_res_raster_contents_scale) const;
+  virtual void RecalculateRasterScales(
+      bool animating_transform_to_screen);
   void CleanUpTilingsOnActiveLayer(
       std::vector<PictureLayerTiling*> used_tilings);
   float MinimumContentsScale() const;
+  float SnappedContentsScale(float new_contents_scale);
   void UpdateLCDTextStatus(bool new_status);
   void ResetRasterScale();
   void MarkVisibleResourcesAsRequired() const;
+  bool MarkVisibleTilesAsRequired(
+      PictureLayerTiling* tiling,
+      const PictureLayerTiling* optional_twin_tiling,
+      float contents_scale,
+      gfx::Rect rect,
+      const Region& missing_region) const;
+
+  void DoPostCommitInitializationIfNeeded() {
+    if (needs_post_commit_initialization_)
+      DoPostCommitInitialization();
+  }
+  void DoPostCommitInitialization();
 
   bool CanHaveTilings() const;
   bool CanHaveTilingWithScale(float contents_scale) const;
+  void SanityCheckTilingState() const;
+  bool ShouldUseGPURasterization() const;
 
   virtual void GetDebugBorderProperties(
       SkColor* color, float* width) const OVERRIDE;
@@ -124,6 +137,7 @@ class CC_EXPORT PictureLayerImpl
 
   bool raster_source_scale_was_animating_;
   bool is_using_lcd_text_;
+  bool needs_post_commit_initialization_;
   // A sanity state check to make sure UpdateTilePriorities only gets called
   // after a CalculateContentsScale/ManageTilings.
   bool should_update_tile_priorities_;

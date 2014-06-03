@@ -22,10 +22,10 @@ class MediaStreamInfoBarDelegate : public ConfirmInfoBarDelegate {
   virtual ~MediaStreamInfoBarDelegate();
 
   // Handles a permission request (in |request|) for |web_contents|.  If this
-  // involves prompting the user, creates a media stream infobar delegate, then
-  // checks for an existing infobar for |web_contents| and replaces it if found,
-  // or just adds the new infobar otherwise.  Returns whether an infobar was
-  // created.
+  // involves prompting the user, creates a media stream infobar and delegate,
+  // then checks for an existing infobar for |web_contents| and replaces it if
+  // found, or just adds the new infobar otherwise.  Returns whether an infobar
+  // was created.
   static bool Create(content::WebContents* web_contents,
                      const content::MediaStreamRequest& request,
                      const content::MediaResponseCallback& callback);
@@ -33,8 +33,7 @@ class MediaStreamInfoBarDelegate : public ConfirmInfoBarDelegate {
  private:
   friend class WebRtcTestBase;
 
-  MediaStreamInfoBarDelegate(
-      InfoBarService* infobar_service,
+  explicit MediaStreamInfoBarDelegate(
       scoped_ptr<MediaStreamDevicesController> controller);
 
   // ConfirmInfoBarDelegate:
@@ -42,11 +41,11 @@ class MediaStreamInfoBarDelegate : public ConfirmInfoBarDelegate {
   virtual int GetIconID() const OVERRIDE;
   virtual Type GetInfoBarType() const OVERRIDE;
   virtual MediaStreamInfoBarDelegate* AsMediaStreamInfoBarDelegate() OVERRIDE;
-  virtual string16 GetMessageText() const OVERRIDE;
-  virtual string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
+  virtual base::string16 GetMessageText() const OVERRIDE;
+  virtual base::string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
   virtual bool Accept() OVERRIDE;
   virtual bool Cancel() OVERRIDE;
-  virtual string16 GetLinkText() const OVERRIDE;
+  virtual base::string16 GetLinkText() const OVERRIDE;
   virtual bool LinkClicked(WindowOpenDisposition disposition) OVERRIDE;
 
   scoped_ptr<MediaStreamDevicesController> controller_;

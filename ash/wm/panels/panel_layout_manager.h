@@ -9,9 +9,10 @@
 
 #include "ash/ash_export.h"
 #include "ash/display/display_controller.h"
-#include "ash/launcher/launcher_icon_observer.h"
+#include "ash/shelf/shelf_icon_observer.h"
 #include "ash/shelf/shelf_layout_manager_observer.h"
 #include "ash/shell_observer.h"
+#include "ash/wm/window_state_observer.h"
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
@@ -24,6 +25,7 @@
 
 namespace aura {
 class Window;
+class WindowTracker;
 }
 
 namespace gfx {
@@ -52,13 +54,14 @@ class ShelfLayoutManager;
 
 class ASH_EXPORT PanelLayoutManager
     : public aura::LayoutManager,
-      public ash::LauncherIconObserver,
-      public ash::ShellObserver,
+      public ShelfIconObserver,
+      public ShellObserver,
       public aura::WindowObserver,
       public aura::client::ActivationChangeObserver,
       public keyboard::KeyboardControllerObserver,
       public DisplayController::Observer,
-      public ShelfLayoutManagerObserver {
+      public ShelfLayoutManagerObserver,
+      public wm::WindowStateObserver {
  public:
   explicit PanelLayoutManager(aura::Window* panel_container);
   virtual ~PanelLayoutManager();
@@ -70,6 +73,9 @@ class ASH_EXPORT PanelLayoutManager
   void FinishDragging();
 
   void ToggleMinimize(aura::Window* panel);
+
+  // Returns the callout widget (arrow) for |panel|.
+  views::Widget* GetCalloutWidgetForPanel(aura::Window* panel);
 
   ash::Launcher* launcher() { return launcher_; }
   void SetLauncher(ash::Launcher* launcher);
@@ -84,16 +90,17 @@ class ASH_EXPORT PanelLayoutManager
   virtual void SetChildBounds(aura::Window* child,
                               const gfx::Rect& requested_bounds) OVERRIDE;
 
-  // Overridden from ash::LauncherIconObserver
-  virtual void OnLauncherIconPositionsChanged() OVERRIDE;
+  // Overridden from ShelfIconObserver
+  virtual void OnShelfIconPositionsChanged() OVERRIDE;
 
-  // Overridden from ash::ShellObserver
-  virtual void OnShelfAlignmentChanged(aura::RootWindow* root_window) OVERRIDE;
+  // Overridden from ShellObserver
+  virtual void OnShelfAlignmentChanged(aura::Window* root_window) OVERRIDE;
+
+  // Overridden from ash::wm::WindowStateObserver
+  virtual void OnWindowShowTypeChanged(wm::WindowState* window_state,
+                                       wm::WindowShowType old_type) OVERRIDE;
 
   // Overridden from aura::WindowObserver
-  virtual void OnWindowPropertyChanged(aura::Window* window,
-                                       const void* key,
-                                       intptr_t old) OVERRIDE;
   virtual void OnWindowVisibilityChanged(aura::Window* window,
                                          bool visible) OVERRIDE;
 
@@ -169,9 +176,12 @@ class ASH_EXPORT PanelLayoutManager
   Launcher* launcher_;
   // The shelf layout manager being observed for visibility changes.
   ShelfLayoutManager* shelf_layout_manager_;
-  // Tracks the visibility of the shelf. Defaults to false when there is no
-  // shelf.
-  bool shelf_hidden_;
+
+  // When not NULL, the shelf is hidden (i.e. full screen) and this tracks the
+  // set of panel windows which have been temporarily hidden and need to be
+  // restored when the shelf becomes visible again.
+  scoped_ptr<aura::WindowTracker> restore_windows_on_shelf_visible_;
+
   // The last active panel. Used to maintain stacking order even if no panels
   // are currently focused.
   aura::Window* last_active_panel_;

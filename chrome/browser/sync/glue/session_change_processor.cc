@@ -23,7 +23,6 @@
 #include "content/public/browser/web_contents.h"
 #include "sync/api/sync_error.h"
 #include "sync/internal_api/public/base/model_type.h"
-#include "sync/internal_api/public/base/model_type_invalidation_map.h"
 #include "sync/internal_api/public/change_record.h"
 #include "sync/internal_api/public/read_node.h"
 #include "sync/protocol/session_specifics.pb.h"
@@ -59,10 +58,10 @@ SessionChangeProcessor::SessionChangeProcessor(
     DataTypeErrorHandler* error_handler,
     SessionModelAssociator* session_model_associator)
     : ChangeProcessor(error_handler),
-      weak_ptr_factory_(this),
       session_model_associator_(session_model_associator),
       profile_(NULL),
-      setup_for_test_(false) {
+      setup_for_test_(false),
+      weak_ptr_factory_(this) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(error_handler);
   DCHECK(session_model_associator_);
@@ -73,10 +72,10 @@ SessionChangeProcessor::SessionChangeProcessor(
     SessionModelAssociator* session_model_associator,
     bool setup_for_test)
     : ChangeProcessor(error_handler),
-      weak_ptr_factory_(this),
       session_model_associator_(session_model_associator),
       profile_(NULL),
-      setup_for_test_(setup_for_test) {
+      setup_for_test_(setup_for_test),
+      weak_ptr_factory_(this) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(error_handler);
   DCHECK(session_model_associator_);

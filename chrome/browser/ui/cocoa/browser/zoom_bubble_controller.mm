@@ -29,6 +29,9 @@
                            action:(SEL)action;
 - (NSTextField*)addZoomPercentTextField;
 - (void)updateAutoCloseTimer;
+
+// Get the WebContents instance and apply the indicated zoom.
+- (void)zoomHelper:(content::PageZoom)alterPageZoom;
 @end
 
 // Button that highlights the background on mouse over.
@@ -73,7 +76,7 @@ void SetZoomBubbleAutoCloseDelayForTesting(NSTimeInterval time_interval) {
 @implementation ZoomBubbleController
 
 - (id)initWithParentWindow:(NSWindow*)parentWindow
-             closeObserver:(void(^)(ZoomBubbleController*))closeObserver {
+                  delegate:(ZoomBubbleControllerDelegate*)delegate {
   base::scoped_nsobject<InfoBubbleWindow> window(
       [[InfoBubbleWindow alloc] initWithContentRect:NSMakeRect(0, 0, 200, 100)
                                           styleMask:NSBorderlessWindowMask
@@ -82,7 +85,8 @@ void SetZoomBubbleAutoCloseDelayForTesting(NSTimeInterval time_interval) {
   if ((self = [super initWithWindow:window
                        parentWindow:parentWindow
                          anchoredAt:NSZeroPoint])) {
-    closeObserver_.reset(Block_copy(closeObserver));
+    [window setCanBecomeKeyWindow:NO];
+    delegate_ = delegate;
 
     ui::NativeTheme* nativeTheme = ui::NativeTheme::instance();
     [[self bubble] setAlignment:info_bubble::kAlignRightEdgeToAnchorEdge];
@@ -96,7 +100,7 @@ void SetZoomBubbleAutoCloseDelayForTesting(NSTimeInterval time_interval) {
     trackingArea_.reset([[CrTrackingArea alloc]
         initWithRect:NSZeroRect
              options:NSTrackingMouseEnteredAndExited |
-                     NSTrackingActiveInKeyWindow |
+                     NSTrackingActiveAlways |
                      NSTrackingInVisibleRect
                owner:self
             userInfo:nil]);
@@ -106,10 +110,7 @@ void SetZoomBubbleAutoCloseDelayForTesting(NSTimeInterval time_interval) {
   return self;
 }
 
-- (void)showForWebContents:(content::WebContents*)contents
-                anchoredAt:(NSPoint)anchorPoint
-                 autoClose:(BOOL)autoClose {
-  contents_ = contents;
+- (void)showAnchoredAt:(NSPoint)anchorPoint autoClose:(BOOL)autoClose {
   [self onZoomChanged];
   InfoBubbleWindow* window =
       base::mac::ObjCCastStrict<InfoBubbleWindow>([self window]);
@@ -125,10 +126,15 @@ void SetZoomBubbleAutoCloseDelayForTesting(NSTimeInterval time_interval) {
 }
 
 - (void)onZoomChanged {
-  if (!contents_)
-    return;  // NULL in tests.
+  // TODO(shess): It may be appropriate to close the window if
+  // |contents| or |zoomController| are NULL.  But they can be NULL in
+  // tests.
 
-  ZoomController* zoomController = ZoomController::FromWebContents(contents_);
+  content::WebContents* contents = delegate_->GetWebContents();
+  if (!contents)
+    return;
+
+  ZoomController* zoomController = ZoomController::FromWebContents(contents);
   if (!zoomController)
     return;
 
@@ -143,15 +149,15 @@ void SetZoomBubbleAutoCloseDelayForTesting(NSTimeInterval time_interval) {
 }
 
 - (void)resetToDefault:(id)sender {
-  chrome_page_zoom::Zoom(contents_, content::PAGE_ZOOM_RESET);
+  [self zoomHelper:content::PAGE_ZOOM_RESET];
 }
 
 - (void)zoomIn:(id)sender {
-  chrome_page_zoom::Zoom(contents_, content::PAGE_ZOOM_IN);
+  [self zoomHelper:content::PAGE_ZOOM_IN];
 }
 
 - (void)zoomOut:(id)sender {
-  chrome_page_zoom::Zoom(contents_, content::PAGE_ZOOM_OUT);
+  [self zoomHelper:content::PAGE_ZOOM_OUT];
 }
 
 - (void)closeWithoutAnimation {
@@ -162,8 +168,8 @@ void SetZoomBubbleAutoCloseDelayForTesting(NSTimeInterval time_interval) {
 }
 
 - (void)windowWillClose:(NSNotification*)notification {
-  contents_ = NULL;
-  closeObserver_.get()(self);
+  delegate_->OnClose();
+  delegate_ = NULL;
   [NSObject cancelPreviousPerformRequestsWithTarget:self
                                            selector:@selector(autoCloseBubble)
                                              object:nil];
@@ -297,20 +303,42 @@ void SetZoomBubbleAutoCloseDelayForTesting(NSTimeInterval time_interval) {
   }
 }
 
+- (void)zoomHelper:(content::PageZoom)alterPageZoom {
+  content::WebContents* webContents = delegate_->GetWebContents();
+
+  // TODO(shess): Zoom() immediately dereferences |webContents|, and
+  // there haven't been associated crashes in the wild, so it seems
+  // fine in practice.  It might make sense to close the bubble in
+  // that case, though.
+  chrome_page_zoom::Zoom(webContents, alterPageZoom);
+}
+
 @end
 
 @implementation ZoomHoverButton
 
 - (void)drawRect:(NSRect)rect {
   NSRect bounds = [self bounds];
+  NSAttributedString* title = [self attributedTitle];
   if ([self hoverState] != kHoverStateNone) {
     ui::NativeTheme* nativeTheme = ui::NativeTheme::instance();
     [gfx::SkColorToCalibratedNSColor(nativeTheme->GetSystemColor(
         ui::NativeTheme::kColorId_FocusedMenuItemBackgroundColor)) set];
     NSRectFillUsingOperation(bounds, NSCompositeSourceOver);
+
+    // Change the title color.
+    base::scoped_nsobject<NSMutableAttributedString> selectedTitle(
+        [[NSMutableAttributedString alloc] initWithAttributedString:title]);
+    NSColor* selectedTitleColor =
+        gfx::SkColorToCalibratedNSColor(nativeTheme->GetSystemColor(
+            ui::NativeTheme::kColorId_SelectedMenuItemForegroundColor));
+    [selectedTitle addAttribute:NSForegroundColorAttributeName
+                          value:selectedTitleColor
+                          range:NSMakeRange(0, [title length])];
+    title = selectedTitle.autorelease();
   }
 
-  [[self cell] drawTitle:[self attributedTitle]
+  [[self cell] drawTitle:title
                withFrame:bounds
                   inView:self];
 }

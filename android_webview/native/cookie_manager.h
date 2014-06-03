@@ -7,18 +7,7 @@
 
 #include <jni.h>
 
-#include "base/memory/ref_counted.h"
-
-namespace net {
-class CookieStore;
-}  // namespace net
-
 namespace android_webview {
-class AwBrowserContext;
-class AwURLRequestJobFactory;
-
-scoped_refptr<net::CookieStore> CreateCookieStore(
-    AwBrowserContext* browser_context);
 
 bool RegisterCookieManager(JNIEnv* env);
 

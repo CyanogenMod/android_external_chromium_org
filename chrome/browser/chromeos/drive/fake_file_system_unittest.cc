@@ -8,8 +8,8 @@
 #include "base/run_loop.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/drive/fake_drive_service.h"
-#include "chrome/browser/google_apis/test_util.h"
 #include "content/public/test/test_browser_thread_bundle.h"
+#include "google_apis/drive/test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace drive {
@@ -20,14 +20,13 @@ class FakeFileSystemTest : public ::testing::Test {
   virtual void SetUp() OVERRIDE {
     // Initialize FakeDriveService.
     fake_drive_service_.reset(new FakeDriveService);
-    fake_drive_service_->LoadResourceListForWapi(
-        "gdata/root_feed.json");
-    fake_drive_service_->LoadAccountMetadataForWapi(
-        "gdata/account_metadata.json");
+    ASSERT_TRUE(fake_drive_service_->LoadResourceListForWapi(
+        "gdata/root_feed.json"));
+    ASSERT_TRUE(fake_drive_service_->LoadAccountMetadataForWapi(
+        "gdata/account_metadata.json"));
 
     // Create a testee instance.
     fake_file_system_.reset(new FakeFileSystem(fake_drive_service_.get()));
-    ASSERT_TRUE(fake_file_system_->InitializeForTesting());
   }
 
   content::TestBrowserThreadBundle thread_bundle_;
@@ -35,7 +34,7 @@ class FakeFileSystemTest : public ::testing::Test {
   scoped_ptr<FakeFileSystem> fake_file_system_;
 };
 
-TEST_F(FakeFileSystemTest, GetFileContentByPath) {
+TEST_F(FakeFileSystemTest, GetFileContent) {
   FileError initialize_error = FILE_ERROR_FAILED;
   scoped_ptr<ResourceEntry> entry;
   base::FilePath cache_file_path;
@@ -47,7 +46,7 @@ TEST_F(FakeFileSystemTest, GetFileContentByPath) {
       util::GetDriveMyDriveRootPath().AppendASCII("File 1.txt");
 
   // For the first time, the file should be downloaded from the service.
-  fake_file_system_->GetFileContentByPath(
+  fake_file_system_->GetFileContent(
       kDriveFile,
       google_apis::test_util::CreateCopyResultCallback(
           &initialize_error, &entry, &cache_file_path, &cancel_download),
@@ -73,7 +72,7 @@ TEST_F(FakeFileSystemTest, GetFileContentByPath) {
   completion_error = FILE_ERROR_FAILED;
 
   // For the second time, the cache file should be found.
-  fake_file_system_->GetFileContentByPath(
+  fake_file_system_->GetFileContent(
       kDriveFile,
       google_apis::test_util::CreateCopyResultCallback(
           &initialize_error, &entry, &cache_file_path, &cancel_download),
@@ -94,11 +93,11 @@ TEST_F(FakeFileSystemTest, GetFileContentByPath) {
   // Make sure the cached file's content.
   std::string cache_file_content;
   ASSERT_TRUE(
-      file_util::ReadFileToString(cache_file_path, &cache_file_content));
+      base::ReadFileToString(cache_file_path, &cache_file_content));
   EXPECT_EQ(content, cache_file_content);
 }
 
-TEST_F(FakeFileSystemTest, GetFileContentByPath_Directory) {
+TEST_F(FakeFileSystemTest, GetFileContent_Directory) {
   FileError initialize_error = FILE_ERROR_FAILED;
   scoped_ptr<ResourceEntry> entry;
   base::FilePath cache_file_path;
@@ -106,7 +105,7 @@ TEST_F(FakeFileSystemTest, GetFileContentByPath_Directory) {
   FileError completion_error = FILE_ERROR_FAILED;
   base::Closure cancel_download;
 
-  fake_file_system_->GetFileContentByPath(
+  fake_file_system_->GetFileContent(
       util::GetDriveMyDriveRootPath(),
       google_apis::test_util::CreateCopyResultCallback(
           &initialize_error, &entry, &cache_file_path, &cancel_download),
@@ -117,10 +116,10 @@ TEST_F(FakeFileSystemTest, GetFileContentByPath_Directory) {
   EXPECT_EQ(FILE_ERROR_NOT_A_FILE, completion_error);
 }
 
-TEST_F(FakeFileSystemTest, GetResourceEntryByPath) {
+TEST_F(FakeFileSystemTest, GetResourceEntry) {
   FileError error = FILE_ERROR_FAILED;
   scoped_ptr<ResourceEntry> entry;
-  fake_file_system_->GetResourceEntryByPath(
+  fake_file_system_->GetResourceEntry(
       util::GetDriveMyDriveRootPath().AppendASCII(
           "Directory 1/Sub Directory Folder"),
       google_apis::test_util::CreateCopyResultCallback(&error, &entry));
@@ -131,10 +130,10 @@ TEST_F(FakeFileSystemTest, GetResourceEntryByPath) {
   EXPECT_EQ("folder:sub_dir_folder_resource_id", entry->resource_id());
 }
 
-TEST_F(FakeFileSystemTest, GetResourceEntryByPath_Root) {
+TEST_F(FakeFileSystemTest, GetResourceEntry_Root) {
   FileError error = FILE_ERROR_FAILED;
   scoped_ptr<ResourceEntry> entry;
-  fake_file_system_->GetResourceEntryByPath(
+  fake_file_system_->GetResourceEntry(
       util::GetDriveMyDriveRootPath(),
       google_apis::test_util::CreateCopyResultCallback(&error, &entry));
   base::RunLoop().RunUntilIdle();
@@ -146,10 +145,10 @@ TEST_F(FakeFileSystemTest, GetResourceEntryByPath_Root) {
   EXPECT_EQ(util::kDriveMyDriveRootDirName, entry->title());
 }
 
-TEST_F(FakeFileSystemTest, GetResourceEntryByPath_Invalid) {
+TEST_F(FakeFileSystemTest, GetResourceEntry_Invalid) {
   FileError error = FILE_ERROR_FAILED;
   scoped_ptr<ResourceEntry> entry;
-  fake_file_system_->GetResourceEntryByPath(
+  fake_file_system_->GetResourceEntry(
       util::GetDriveMyDriveRootPath().AppendASCII("Invalid File Name"),
       google_apis::test_util::CreateCopyResultCallback(&error, &entry));
   base::RunLoop().RunUntilIdle();

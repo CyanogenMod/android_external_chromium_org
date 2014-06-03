@@ -7,10 +7,10 @@
 #include "base/bind.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "content/public/browser/browser_thread.h"
+#include "extensions/browser/event_router.h"
 #include "url/gurl.h"
 
 using content::BrowserThread;
@@ -121,7 +121,7 @@ void EventRouterForwarder::CallEventRouter(
     return;
 
   scoped_ptr<Event> event(new Event(event_name, event_args.Pass()));
-  event->restrict_to_profile = restrict_to_profile;
+  event->restrict_to_browser_context = restrict_to_profile;
   event->event_url = event_url;
   if (extension_id.empty()) {
     ExtensionSystem::Get(profile)->event_router()->BroadcastEvent(event.Pass());

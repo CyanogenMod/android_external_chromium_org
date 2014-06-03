@@ -29,6 +29,7 @@
 @synthesize anchorPoint = anchor_;
 @synthesize bubble = bubble_;
 @synthesize shouldOpenAsKeyWindow = shouldOpenAsKeyWindow_;
+@synthesize shouldCloseOnResignKey = shouldCloseOnResignKey_;
 
 - (id)initWithWindowNibPath:(NSString*)nibPath
                parentWindow:(NSWindow*)parentWindow
@@ -39,6 +40,7 @@
     parentWindow_ = parentWindow;
     anchor_ = anchoredAt;
     shouldOpenAsKeyWindow_ = YES;
+    shouldCloseOnResignKey_ = YES;
 
     // Watch to see if the parent window closes, and if so, close this one.
     NSNotificationCenter* center = [NSNotificationCenter defaultCenter];
@@ -72,6 +74,7 @@
     parentWindow_ = parentWindow;
     anchor_ = anchoredAt;
     shouldOpenAsKeyWindow_ = YES;
+    shouldCloseOnResignKey_ = YES;
 
     DCHECK(![[self window] delegate]);
     [theWindow setDelegate:self];
@@ -184,7 +187,7 @@
 - (void)windowDidResignKey:(NSNotification*)notification {
   NSWindow* window = [self window];
   DCHECK_EQ([notification object], window);
-  if ([window isVisible]) {
+  if ([window isVisible] && [self shouldCloseOnResignKey]) {
     // If the window isn't visible, it is already closed, and this notification
     // has been sent as part of the closing operation, so no need to close.
     [self close];
@@ -248,10 +251,19 @@
       NSSize offsets = NSMakeSize(info_bubble::kBubbleArrowXOffset +
                                   info_bubble::kBubbleArrowWidth / 2.0, 0);
       offsets = [[parentWindow_ contentView] convertSize:offsets toView:nil];
-      if ([bubble_ arrowLocation] == info_bubble::kTopRight) {
-        origin.x -= NSWidth([window frame]) - offsets.width;
-      } else {
-        origin.x -= offsets.width;
+      switch ([bubble_ arrowLocation]) {
+        case info_bubble::kTopRight:
+          origin.x -= NSWidth([window frame]) - offsets.width;
+          break;
+        case info_bubble::kTopLeft:
+          origin.x -= offsets.width;
+          break;
+        case info_bubble::kTopCenter:
+          origin.x -= NSWidth([window frame]) / 2.0;
+          break;
+        case info_bubble::kNoArrow:
+          NOTREACHED();
+          break;
       }
       break;
     }

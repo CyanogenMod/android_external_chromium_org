@@ -126,6 +126,9 @@ const CGFloat kTrayBottomMargin = 75;
     animation_.reset();
   }
   if (clearAllInProgress_) {
+    // To stop chain of clearOneNotification calls to start new animations.
+    [NSObject cancelPreviousPerformRequestsWithTarget:self];
+
     for (NSViewAnimation* animation in clearAllAnimations_.get()) {
       [animation stopAnimation];
       [animation setDelegate:nil];
@@ -185,7 +188,7 @@ const CGFloat kTrayBottomMargin = 75;
   // origin is in the lower-left. Remove from |notificationsMap_| all the
   // ones still in the updated model, so that those that should be removed
   // will remain in the map.
-  const auto& modelNotifications = messageCenter_->GetNotifications();
+  const auto& modelNotifications = messageCenter_->GetVisibleNotifications();
   for (auto it = modelNotifications.rbegin();
        it != modelNotifications.rend();
        ++it) {
@@ -277,7 +280,7 @@ const CGFloat kTrayBottomMargin = 75;
 
 - (void)showSettings:(id)sender {
   if (settingsController_)
-    return [self hideSettings:sender];
+    return [self showMessages:sender];
 
   message_center::NotifierSettingsProvider* provider =
       messageCenter_->GetNotifierSettingsProvider();
@@ -297,6 +300,7 @@ const CGFloat kTrayBottomMargin = 75;
   [scrollView_ setHidden:YES];
 
   [[[self view] window] recalculateKeyViewLoop];
+  messageCenter_->SetVisibility(message_center::VISIBILITY_SETTINGS);
 
   [self updateTrayViewAndWindow];
 }
@@ -312,7 +316,14 @@ const CGFloat kTrayBottomMargin = 75;
   [self updateTrayViewAndWindow];
 }
 
-- (void)hideSettings:(id)sender {
+- (void)showMessages:(id)sender {
+  messageCenter_->SetVisibility(message_center::VISIBILITY_MESSAGE_CENTER);
+  [self cleanupSettings];
+  [[[self view] window] recalculateKeyViewLoop];
+  [self updateTrayViewAndWindow];
+}
+
+- (void)cleanupSettings {
   [scrollView_ setHidden:NO];
 
   [[settingsController_ view] removeFromSuperview];
@@ -324,8 +335,6 @@ const CGFloat kTrayBottomMargin = 75;
   [backButton_ setHidden:YES];
   [clearAllButton_ setEnabled:YES];
 
-  [[[self view] window] recalculateKeyViewLoop];
-  [self updateTrayViewAndWindow];
 }
 
 - (void)scrollToTop {
@@ -424,7 +433,7 @@ const CGFloat kTrayBottomMargin = 75;
       rb.GetNativeImageNamed(IDR_NOTIFICATION_ARROW_HOVER).ToNSImage()];
   [backButton_ setPressedImage:
       rb.GetNativeImageNamed(IDR_NOTIFICATION_ARROW_PRESSED).ToNSImage()];
-  [backButton_ setAction:@selector(hideSettings:)];
+  [backButton_ setAction:@selector(showMessages:)];
   configureButton(backButton_);
   [backButton_ setHidden:YES];
   [backButton_ setKeyEquivalent:@"\e"];
@@ -740,7 +749,7 @@ const CGFloat kTrayBottomMargin = 75;
   [settingsButton_ setEnabled:YES];
   [clipView_ setFrozen:NO];
 
-  messageCenter_->RemoveAllNotifications(true);
+  messageCenter_->RemoveAllVisibleNotifications(true);
 }
 
 - (void)updateQuietModeButtonImage {

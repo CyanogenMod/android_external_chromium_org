@@ -10,11 +10,18 @@
     },
     "platforms": ["chromeos"],
     "description": "none",
+    "types": [
+      {
+        "id": "WallpaperLayout",
+        "type": "string",
+        "enum": [ "STRETCH", "CENTER", "CENTER_CROPPED" ]
+      }
+    ],
     "functions": [
       {
         "name": "getStrings",
         "type": "function",
-        "description": "Gets translated strings.",
+        "description": "Gets translated strings and initialization data.",
         "nodoc": "true",
         "parameters": [
           {
@@ -24,7 +31,7 @@
               {
                 "name": "result",
                 "type": "object",
-                "additionalProperties": {"type": "string"}
+                "additionalProperties": {"type": "any"}
               }
             ]
           }
@@ -41,14 +48,8 @@
             "name": "url"
           },
           {
-            "type": "string",
             "name": "layout",
-            "enum": [ "STRETCH", "CENTER", "CENTER_CROPPED"]
-          },
-          {
-            "type": "string",
-            "name": "source",
-            "enum": [ "ONLINE", "CUSTOM" ]
+            "$ref": "WallpaperLayout"
           },
           {
             "type": "function",
@@ -73,9 +74,8 @@
             "name": "wallpaper"
           },
           {
-            "type": "string",
             "name": "layout",
-            "enum": [ "STRETCH", "CENTER", "CENTER_CROPPED"]
+            "$ref": "WallpaperLayout"
           },
           {
             "type": "string",
@@ -106,9 +106,8 @@
             "name": "wallpaper"
           },
           {
-            "type": "string",
             "name": "layout",
-            "enum": [ "STRETCH", "CENTER", "CENTER_CROPPED" ]
+            "$ref": "WallpaperLayout"
           },
           {
             "type": "boolean",
@@ -139,9 +138,8 @@
         "nodoc": "true",
         "parameters": [
           {
-            "type": "string",
             "name": "layout",
-            "enum": [ "STRETCH", "CENTER", "CENTER_CROPPED" ]
+            "$ref": "WallpaperLayout"
           },
           {
             "type": "function",
@@ -176,9 +174,9 @@
             "description": "URL of ONLINE wallpaper or file name of CUSTOM wallpaper"
           },
           {
+            "name": "source",
             "type": "string",
-            "name": "type",
-            "enum": [ "ONLINE", "CUSTOM" ]
+            "enum": [ "ONLINE", "OEM" ]
           },
           {
             "type": "function",
@@ -226,11 +224,6 @@
         "description": "Get the list of file names of downloaded wallpapers.",
         "nodoc": "true",
         "parameters": [
-          {
-            "type": "string",
-            "name": "source",
-            "enum": [ "ONLINE", "CUSTOM" ]
-          },
           {
             "type": "function",
             "name": "callback",

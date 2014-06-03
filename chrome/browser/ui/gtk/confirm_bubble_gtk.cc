@@ -63,6 +63,10 @@ void ConfirmBubbleGtk::Show() {
   GtkWidget* toplevel = gtk_widget_get_toplevel(anchor_);
   BrowserWindowGtk* browser_window =
       BrowserWindowGtk::GetBrowserWindowForNativeWindow(GTK_WINDOW(toplevel));
+  // If the top level window is not a browser window but instead a pop-up
+  // dialog, |browser_window| will be null.
+  if (!browser_window)
+    return;
   GtkThemeService* theme_service = GtkThemeService::GetFrom(
       browser_window->browser()->profile());
 
@@ -95,7 +99,7 @@ void ConfirmBubbleGtk::Show() {
   gtk_box_pack_start(GTK_BOX(content), message_label, FALSE, FALSE, 0);
 
   // Add the the link label to the third row if it exists.
-  const string16 link_text = model_->GetLinkText();
+  const base::string16 link_text = model_->GetLinkText();
   if (!link_text.empty()) {
     GtkWidget* row = gtk_hbox_new(FALSE, kImageViewSpacing);
     GtkWidget* link_button = gtk_chrome_link_button_new(

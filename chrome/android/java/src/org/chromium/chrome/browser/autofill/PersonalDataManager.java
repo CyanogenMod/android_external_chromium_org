@@ -1,4 +1,4 @@
-// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -280,7 +280,7 @@ public class PersonalDataManager {
         return sManager;
     }
 
-    private final int mPersonalDataManagerAndroid;
+    private final long mPersonalDataManagerAndroid;
     private final List<PersonalDataManagerObserver> mDataObservers =
             new ArrayList<PersonalDataManagerObserver>();
 
@@ -370,21 +370,46 @@ public class PersonalDataManager {
         nativeRemoveByGUID(mPersonalDataManagerAndroid, guid);
     }
 
-    private native int nativeInit();
-    private native int nativeGetProfileCount(int nativePersonalDataManagerAndroid);
-    private native AutofillProfile nativeGetProfileByIndex(int nativePersonalDataManagerAndroid,
+    /**
+     * @return Whether the Autofill feature is enabled.
+     */
+    public static boolean isAutofillEnabled() {
+        return nativeIsAutofillEnabled();
+    }
+
+    /**
+     * Enables or disables the Autofill feature.
+     * @param enable True to disable Autofill, false otherwise.
+     */
+    public static void setAutofillEnabled(boolean enable) {
+        nativeSetAutofillEnabled(enable);
+    }
+
+    /**
+     * @return Whether the Autofill feature is managed.
+     */
+    public static boolean isAutofillManaged() {
+        return nativeIsAutofillManaged();
+    }
+
+    private native long nativeInit();
+    private native int nativeGetProfileCount(long nativePersonalDataManagerAndroid);
+    private native AutofillProfile nativeGetProfileByIndex(long nativePersonalDataManagerAndroid,
             int index);
-    private native AutofillProfile nativeGetProfileByGUID(int nativePersonalDataManagerAndroid,
+    private native AutofillProfile nativeGetProfileByGUID(long nativePersonalDataManagerAndroid,
             String guid);
-    private native String nativeSetProfile(int nativePersonalDataManagerAndroid,
+    private native String nativeSetProfile(long nativePersonalDataManagerAndroid,
             AutofillProfile profile);
-    private native int nativeGetCreditCardCount(int nativePersonalDataManagerAndroid);
-    private native CreditCard nativeGetCreditCardByIndex(int nativePersonalDataManagerAndroid,
+    private native int nativeGetCreditCardCount(long nativePersonalDataManagerAndroid);
+    private native CreditCard nativeGetCreditCardByIndex(long nativePersonalDataManagerAndroid,
             int index);
-    private native CreditCard nativeGetCreditCardByGUID(int nativePersonalDataManagerAndroid,
+    private native CreditCard nativeGetCreditCardByGUID(long nativePersonalDataManagerAndroid,
             String guid);
-    private native String nativeSetCreditCard(int nativePersonalDataManagerAndroid,
+    private native String nativeSetCreditCard(long nativePersonalDataManagerAndroid,
             CreditCard card);
-    private native void nativeRemoveByGUID(int nativePersonalDataManagerAndroid, String guid);
+    private native void nativeRemoveByGUID(long nativePersonalDataManagerAndroid, String guid);
+    private static native boolean nativeIsAutofillEnabled();
+    private static native void nativeSetAutofillEnabled(boolean enable);
+    private static native boolean nativeIsAutofillManaged();
     private static native String nativeToCountryCode(String countryName);
 }

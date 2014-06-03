@@ -67,8 +67,8 @@ namespace cloud_print {
 class PrinterJobHandler : public base::RefCountedThreadSafe<PrinterJobHandler>,
                           public CloudPrintURLFetcherDelegate,
                           public JobStatusUpdaterDelegate,
-                          public PrinterWatcherDelegate,
-                          public JobSpoolerDelegate {
+                          public PrintSystem::PrinterWatcher::Delegate,
+                          public PrintSystem::JobSpooler::Delegate {
  public:
   class Delegate {
    public:
@@ -85,6 +85,10 @@ class PrinterJobHandler : public base::RefCountedThreadSafe<PrinterJobHandler>,
     std::string printer_id;
     std::string caps_hash;
     std::string tags_hash;
+    int current_xmpp_timeout;
+    int pending_xmpp_timeout;
+
+    PrinterInfoFromCloud();
   };
 
   // Begin public interface
@@ -147,14 +151,17 @@ class PrinterJobHandler : public base::RefCountedThreadSafe<PrinterJobHandler>,
 
   // End Delegate implementations
 
+  static void ReportsStats();
+
  private:
   friend class base::RefCountedThreadSafe<PrinterJobHandler>;
 
   enum PrintJobError {
-    SUCCESS,
+    JOB_SUCCESS,
     JOB_DOWNLOAD_FAILED,
-    INVALID_JOB_DATA,
-    PRINT_FAILED,
+    JOB_VALIDATE_TICKET_FAILED,
+    JOB_FAILED,
+    JOB_MAX,
   };
 
   // Prototype for a JSON data handler.
@@ -223,9 +230,9 @@ class PrinterJobHandler : public base::RefCountedThreadSafe<PrinterJobHandler>,
   // Run a job check as the result of a scheduled check
   void RunScheduledJobCheck();
 
-  // Sets the next response handler to the specifed JSON data handler.
+  // Sets the next response handler to the specified JSON data handler.
   void SetNextJSONHandler(JSONDataHandler handler);
-  // Sets the next response handler to the specifed data handler.
+  // Sets the next response handler to the specified data handler.
   void SetNextDataHandler(DataHandler handler);
 
   void JobFailed(PrintJobError error);
@@ -233,7 +240,7 @@ class PrinterJobHandler : public base::RefCountedThreadSafe<PrinterJobHandler>,
   // Returns false if printer info is up to date and no updating is needed.
   bool UpdatePrinterInfo();
   bool HavePendingTasks();
-  void FailedFetchingJobData();
+  void ValidatePrintTicketFailed();
 
   // Callback that asynchronously receives printer caps and defaults.
   void OnReceivePrinterCaps(
@@ -283,6 +290,9 @@ class PrinterJobHandler : public base::RefCountedThreadSafe<PrinterJobHandler>,
   bool job_check_pending_;
   bool printer_update_pending_;
 
+  // Number of seconds between XMPP pings (for server registration)
+  int xmpp_ping_interval_;
+
   // Some task in the state machine is in progress.
   bool task_in_progress_;
   scoped_refptr<PrintSystem::PrinterWatcher> printer_watcher_;
@@ -294,6 +304,10 @@ class PrinterJobHandler : public base::RefCountedThreadSafe<PrinterJobHandler>,
 
   base::TimeTicks last_job_fetch_time_;
   base::WeakPtrFactory<PrinterJobHandler> weak_ptr_factory_;
+
+  base::Time job_start_time_;
+  base::Time spooling_start_time_;
+  base::Time last_caps_update_time_;
 
   DISALLOW_COPY_AND_ASSIGN(PrinterJobHandler);
 };

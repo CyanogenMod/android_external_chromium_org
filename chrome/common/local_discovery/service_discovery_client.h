@@ -51,7 +51,8 @@ class ServiceWatcher {
   enum UpdateType {
     UPDATE_ADDED,
     UPDATE_CHANGED,
-    UPDATE_REMOVED
+    UPDATE_REMOVED,
+    UPDATE_INVALIDATED
   };
 
   // Called when a service has been added or removed for a certain service name.
@@ -94,7 +95,9 @@ class ServiceResolver {
 
 class LocalDomainResolver {
  public:
-  typedef base::Callback<void(bool, const net::IPAddressNumber&)>
+  typedef base::Callback<void(bool /*success*/,
+                              const net::IPAddressNumber& /*address_ipv4*/,
+                              const net::IPAddressNumber& /*address_ipv6*/)>
       IPAddressCallback;
 
   virtual ~LocalDomainResolver() {}

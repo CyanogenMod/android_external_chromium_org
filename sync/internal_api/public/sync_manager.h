@@ -45,6 +45,7 @@ class JsEventHandler;
 class SyncEncryptionHandler;
 class SyncScheduler;
 struct UserShare;
+class CancelationSignal;
 
 namespace sessions {
 class SyncSessionSnapshot;
@@ -52,6 +53,7 @@ class SyncSessionSnapshot;
 
 // Used by SyncManager::OnConnectionStatusChange().
 enum ConnectionStatus {
+  CONNECTION_NOT_ATTEMPTED,
   CONNECTION_OK,
   CONNECTION_AUTH_ERROR,
   CONNECTION_SERVER_ERROR
@@ -175,9 +177,6 @@ class SYNC_EXPORT SyncManager : public syncer::InvalidationHandler {
     // changed.
     virtual void OnConnectionStatusChange(ConnectionStatus status) = 0;
 
-    // Called when a new auth token is provided by the sync server.
-    virtual void OnUpdatedToken(const std::string& token) = 0;
-
     // Called when initialization is complete to the point that SyncManager can
     // process changes. This does not necessarily mean authentication succeeded
     // or that the SyncManager is online.
@@ -299,6 +298,9 @@ class SYNC_EXPORT SyncManager : public syncer::InvalidationHandler {
   // |keystore_encryption_enabled| determines whether we enable the keystore
   // encryption functionality in the cryptographer/nigori.
   // |report_unrecoverable_error_function| may be NULL.
+  // |cancelation_signal| carries shutdown requests across threads.  This one
+  // will be used to cut short any network I/O and tell the syncer to exit
+  // early.
   //
   // TODO(akalin): Replace the |post_factory| parameter with a
   // URLFetcher parameter.
@@ -320,7 +322,7 @@ class SYNC_EXPORT SyncManager : public syncer::InvalidationHandler {
       Encryptor* encryptor,
       scoped_ptr<UnrecoverableErrorHandler> unrecoverable_error_handler,
       ReportUnrecoverableErrorFunction report_unrecoverable_error_function,
-      bool use_oauth2_token) = 0;
+      CancelationSignal* cancelation_signal) = 0;
 
   // Throw an unrecoverable error from a transaction (mostly used for
   // testing).
@@ -391,17 +393,6 @@ class SYNC_EXPORT SyncManager : public syncer::InvalidationHandler {
   // Call periodically from a database-safe thread to persist recent changes
   // to the syncapi model.
   virtual void SaveChanges() = 0;
-
-  // Initiates shutdown of various components in the sync engine.  Must be
-  // called from the main thread to allow preempting ongoing tasks on the sync
-  // loop (that may be blocked on I/O).  The semantics of |callback| are the
-  // same as with StartConfigurationMode. If provided and a scheduler / sync
-  // loop exists, it will be invoked from the sync loop by the scheduler to
-  // notify that all work has been flushed + cancelled, and it is idle.
-  // If no scheduler exists, the callback is run immediately (from the loop
-  // this was created on, which is the sync loop), as sync is effectively
-  // stopped.
-  virtual void StopSyncingForShutdown() = 0;
 
   // Issue a final SaveChanges, and close sqlite handles.
   virtual void ShutdownOnSyncThread() = 0;

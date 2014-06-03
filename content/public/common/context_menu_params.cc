@@ -15,26 +15,24 @@ CustomContextMenuContext::CustomContextMenuContext()
 }
 
 ContextMenuParams::ContextMenuParams()
-    : media_type(WebKit::WebContextMenuData::MediaTypeNone),
+    : media_type(blink::WebContextMenuData::MediaTypeNone),
       x(0),
       y(0),
-      is_image_blocked(false),
+      has_image_contents(true),
       frame_id(0),
       media_flags(0),
       misspelling_hash(0),
       speech_input_enabled(false),
       spellcheck_enabled(false),
       is_editable(false),
-#if defined(OS_MACOSX)
       writing_direction_default(
-          WebKit::WebContextMenuData::CheckableMenuItemDisabled),
+          blink::WebContextMenuData::CheckableMenuItemDisabled),
       writing_direction_left_to_right(
-          WebKit::WebContextMenuData::CheckableMenuItemEnabled),
+          blink::WebContextMenuData::CheckableMenuItemEnabled),
       writing_direction_right_to_left(
-          WebKit::WebContextMenuData::CheckableMenuItemEnabled),
-#endif  // OS_MACOSX
+          blink::WebContextMenuData::CheckableMenuItemEnabled),
       edit_flags(0),
-      referrer_policy(WebKit::WebReferrerPolicyDefault) {
+      referrer_policy(blink::WebReferrerPolicyDefault) {
 }
 
 ContextMenuParams::~ContextMenuParams() {

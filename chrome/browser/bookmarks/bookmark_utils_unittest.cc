@@ -4,9 +4,12 @@
 
 #include "chrome/browser/bookmarks/bookmark_utils.h"
 
+#include <vector>
+
 #include "base/message_loop/message_loop.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
+#include "chrome/browser/bookmarks/bookmark_node_data.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/clipboard/scoped_clipboard_writer.h"
@@ -29,104 +32,38 @@ class BookmarkUtilsTest : public ::testing::Test {
 
 TEST_F(BookmarkUtilsTest, GetBookmarksContainingText) {
   BookmarkModel model(NULL);
-  const BookmarkNode* n1 = model.AddURL(model.other_node(),
+  const BookmarkNode* node1 = model.AddURL(model.other_node(),
                                         0,
                                         ASCIIToUTF16("foo bar"),
                                         GURL("http://www.google.com"));
-  const BookmarkNode* n2 = model.AddURL(model.other_node(),
+  const BookmarkNode* node2 = model.AddURL(model.other_node(),
                                         0,
                                         ASCIIToUTF16("baz buz"),
                                         GURL("http://www.cnn.com"));
 
-  model.AddFolder(model.other_node(), 0, ASCIIToUTF16("foo"));
+  const BookmarkNode* folder1 = model.AddFolder(model.other_node(),
+                                           0,
+                                           ASCIIToUTF16("foo"));
 
   std::vector<const BookmarkNode*> nodes;
   GetBookmarksContainingText(
       &model, ASCIIToUTF16("foo"), 100, string(), &nodes);
-  ASSERT_EQ(1U, nodes.size());
-  EXPECT_TRUE(nodes[0] == n1);
-  EXPECT_TRUE(DoesBookmarkContainText(n1, ASCIIToUTF16("foo"), string()));
+  ASSERT_EQ(2U, nodes.size());
+  EXPECT_TRUE(nodes[0] == folder1);
+  EXPECT_TRUE(nodes[1] == node1);
   nodes.clear();
 
   GetBookmarksContainingText(
       &model, ASCIIToUTF16("cnn"), 100, string(), &nodes);
   ASSERT_EQ(1U, nodes.size());
-  EXPECT_TRUE(nodes[0] == n2);
-  EXPECT_TRUE(DoesBookmarkContainText(n2, ASCIIToUTF16("cnn"), string()));
+  EXPECT_TRUE(nodes[0] == node2);
   nodes.clear();
 
   GetBookmarksContainingText(
       &model, ASCIIToUTF16("foo bar"), 100, string(), &nodes);
   ASSERT_EQ(1U, nodes.size());
-  EXPECT_TRUE(nodes[0] == n1);
-  EXPECT_TRUE(DoesBookmarkContainText(n1, ASCIIToUTF16("foo bar"), string()));
+  EXPECT_TRUE(nodes[0] == node1);
   nodes.clear();
-}
-
-TEST_F(BookmarkUtilsTest, DoesBookmarkContainText) {
-  BookmarkModel model(NULL);
-  const BookmarkNode* node = model.AddURL(model.other_node(),
-                                          0,
-                                          ASCIIToUTF16("foo bar"),
-                                          GURL("http://www.google.com"));
-  // Matches to the title.
-  EXPECT_TRUE(DoesBookmarkContainText(node, ASCIIToUTF16("ar"), string()));
-  // Matches to the URL.
-  EXPECT_TRUE(DoesBookmarkContainText(node, ASCIIToUTF16("www"), string()));
-  // No match.
-  EXPECT_FALSE(DoesBookmarkContainText(node, ASCIIToUTF16("cnn"), string()));
-
-  // Tests for a Japanese IDN.
-  const string16 kDecodedIdn = WideToUTF16(L"\x30B0\x30FC\x30B0\x30EB");
-  node = model.AddURL(model.other_node(),
-                      0,
-                      ASCIIToUTF16("foo bar"),
-                      GURL("http://xn--qcka1pmc.jp"));
-  // Unicode query doesn't match if languages have no "ja".
-  EXPECT_FALSE(DoesBookmarkContainText(node, kDecodedIdn, "en"));
-  // Unicode query matches if languages have "ja".
-  EXPECT_TRUE(DoesBookmarkContainText(node, kDecodedIdn, "ja"));
-  // Punycode query also matches as ever.
-  EXPECT_TRUE(DoesBookmarkContainText(node, ASCIIToUTF16("qcka1pmc"), "ja"));
-
-  // Tests with various lower/upper case characters.
-  node = model.AddURL(model.other_node(),
-                      0,
-                      ASCIIToUTF16("FOO bar"),
-                      GURL("http://www.google.com/search?q=ABC"));
-  EXPECT_TRUE(DoesBookmarkContainText(node, ASCIIToUTF16("foo"), string()));
-  EXPECT_TRUE(DoesBookmarkContainText(node, ASCIIToUTF16("Foo"), string()));
-  EXPECT_TRUE(DoesBookmarkContainText(node, ASCIIToUTF16("FOO"), string()));
-  EXPECT_TRUE(DoesBookmarkContainText(node, ASCIIToUTF16("google abc"),
-                                      string()));
-  EXPECT_TRUE(DoesBookmarkContainText(node, ASCIIToUTF16("google ABC"),
-                                      string()));
-  EXPECT_TRUE(DoesBookmarkContainText(
-      node, ASCIIToUTF16("http://www.google.com/search?q=A"), string()));
-
-  // Test with accents.
-  node = model.AddURL(model.other_node(),
-                      0,
-                      WideToUTF16(L"fr\u00E4n\u00E7\u00F3s\u00EA"),
-                      GURL("http://www.google.com/search?q=FBA"));
-  EXPECT_TRUE(DoesBookmarkContainText(node, ASCIIToUTF16("francose"),
-                                      string()));
-  EXPECT_TRUE(DoesBookmarkContainText(node, ASCIIToUTF16("FrAnCoSe"),
-                                      string()));
-  EXPECT_TRUE(DoesBookmarkContainText(node, WideToUTF16(L"fr\u00E4ncose"),
-                                      string()));
-  EXPECT_TRUE(DoesBookmarkContainText(node, WideToUTF16(L"fran\u00E7ose"),
-                                      string()));
-  EXPECT_TRUE(DoesBookmarkContainText(node, WideToUTF16(L"franc\u00F3se"),
-                                      string()));
-  EXPECT_TRUE(DoesBookmarkContainText(node, WideToUTF16(L"francos\u00EA"),
-                                      string()));
-  EXPECT_TRUE(DoesBookmarkContainText(
-      node, WideToUTF16(L"Fr\u00C4n\u00C7\u00F3S\u00EA"), string()));
-  EXPECT_TRUE(DoesBookmarkContainText(
-      node, WideToUTF16(L"fr\u00C4n\u00C7\u00D3s\u00CA"), string()));
-  EXPECT_TRUE(DoesBookmarkContainText(node, ASCIIToUTF16("fba"), string()));
-  EXPECT_TRUE(DoesBookmarkContainText(node, ASCIIToUTF16("FBA"), string()));
 }
 
 TEST_F(BookmarkUtilsTest, CopyPaste) {
@@ -148,7 +85,7 @@ TEST_F(BookmarkUtilsTest, CopyPaste) {
   {
     ui::ScopedClipboardWriter clipboard_writer(
         ui::Clipboard::GetForCurrentThread(),
-        ui::Clipboard::BUFFER_STANDARD);
+        ui::CLIPBOARD_TYPE_COPY_PASTE);
     clipboard_writer.WriteText(ASCIIToUTF16("foo"));
   }
 
@@ -193,6 +130,38 @@ TEST_F(BookmarkUtilsTest, GetParentForNewNodes) {
   real_parent = GetParentForNewNodes(model.bookmark_bar_node(), nodes, &index);
   EXPECT_EQ(real_parent, model.bookmark_bar_node());
   EXPECT_EQ(2, index);
+}
+
+// Verifies that meta info is copied when nodes are cloned.
+TEST_F(BookmarkUtilsTest, CloneMetaInfo) {
+  BookmarkModel model(NULL);
+  // Add a node containing meta info.
+  const BookmarkNode* node = model.AddURL(model.other_node(),
+                                          0,
+                                          ASCIIToUTF16("foo bar"),
+                                          GURL("http://www.google.com"));
+  model.SetNodeMetaInfo(node, "somekey", "somevalue");
+  model.SetNodeMetaInfo(node, "someotherkey", "someothervalue");
+
+  // Clone node to a different folder.
+  const BookmarkNode* folder = model.AddFolder(model.bookmark_bar_node(), 0,
+                                               ASCIIToUTF16("Folder"));
+  std::vector<BookmarkNodeData::Element> elements;
+  BookmarkNodeData::Element node_data(node);
+  elements.push_back(node_data);
+  EXPECT_EQ(0, folder->child_count());
+  CloneBookmarkNode(&model, elements, folder, 0, false);
+  ASSERT_EQ(1, folder->child_count());
+
+  // Verify that the cloned node contains the same meta info.
+  const BookmarkNode* clone = folder->GetChild(0);
+  ASSERT_TRUE(clone->GetMetaInfoMap());
+  EXPECT_EQ(2u, clone->GetMetaInfoMap()->size());
+  std::string value;
+  EXPECT_TRUE(clone->GetMetaInfo("somekey", &value));
+  EXPECT_EQ("somevalue", value);
+  EXPECT_TRUE(clone->GetMetaInfo("someotherkey", &value));
+  EXPECT_EQ("someothervalue", value);
 }
 
 }  // namespace

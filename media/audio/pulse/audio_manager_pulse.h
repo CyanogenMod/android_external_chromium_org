@@ -16,17 +16,19 @@ namespace media {
 
 class MEDIA_EXPORT AudioManagerPulse : public AudioManagerBase {
  public:
-  AudioManagerPulse();
+  AudioManagerPulse(AudioLogFactory* audio_log_factory);
   virtual ~AudioManagerPulse();
 
-  static AudioManager* Create();
+  static AudioManager* Create(AudioLogFactory* audio_log_factory);
 
   // Implementation of AudioManager.
   virtual bool HasAudioOutputDevices() OVERRIDE;
   virtual bool HasAudioInputDevices() OVERRIDE;
   virtual void ShowAudioInputSettings() OVERRIDE;
-  virtual void GetAudioInputDeviceNames(media::AudioDeviceNames* device_names)
-      OVERRIDE;
+  virtual void GetAudioInputDeviceNames(
+      AudioDeviceNames* device_names) OVERRIDE;
+  virtual void GetAudioOutputDeviceNames(
+      AudioDeviceNames* device_names) OVERRIDE;
   virtual AudioParameters GetInputStreamParameters(
       const std::string& device_id) OVERRIDE;
 
@@ -35,6 +37,7 @@ class MEDIA_EXPORT AudioManagerPulse : public AudioManagerBase {
       const AudioParameters& params) OVERRIDE;
   virtual AudioOutputStream* MakeLowLatencyOutputStream(
       const AudioParameters& params,
+      const std::string& device_id,
       const std::string& input_device_id) OVERRIDE;
   virtual AudioInputStream* MakeLinearInputStream(
       const AudioParameters& params, const std::string& device_id) OVERRIDE;
@@ -43,11 +46,14 @@ class MEDIA_EXPORT AudioManagerPulse : public AudioManagerBase {
 
  protected:
   virtual AudioParameters GetPreferredOutputStreamParameters(
+      const std::string& output_device_id,
       const AudioParameters& input_params) OVERRIDE;
 
  private:
   bool Init();
   void DestroyPulse();
+
+  void GetAudioDeviceNames(bool input, media::AudioDeviceNames* device_names);
 
   // Callback to get the devices' info like names, used by GetInputDevices().
   static void InputDevicesInfoCallback(pa_context* context,

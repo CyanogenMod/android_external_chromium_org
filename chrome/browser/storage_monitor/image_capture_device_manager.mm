@@ -12,7 +12,7 @@
 
 namespace {
 
-chrome::ImageCaptureDeviceManager* g_image_capture_device_manager = NULL;
+ImageCaptureDeviceManager* g_image_capture_device_manager = NULL;
 
 }  // namespace
 
@@ -31,10 +31,10 @@ chrome::ImageCaptureDeviceManager* g_image_capture_device_manager = NULL;
   // Guaranteed to outlive this class.
   // TODO(gbillock): Update when ownership chains go up through
   // a StorageMonitor subclass.
-  chrome::StorageMonitor::Receiver* notifications_;
+  StorageMonitor::Receiver* notifications_;
 }
 
-- (void)setNotifications:(chrome::StorageMonitor::Receiver*)notifications;
+- (void)setNotifications:(StorageMonitor::Receiver*)notifications;
 - (void)close;
 
 // The UUIDs passed here are available in the device attach notifications.
@@ -59,7 +59,7 @@ chrome::ImageCaptureDeviceManager* g_image_capture_device_manager = NULL;
   return self;
 }
 
-- (void)setNotifications:(chrome::StorageMonitor::Receiver*)notifications {
+- (void)setNotifications:(StorageMonitor::Receiver*)notifications {
   notifications_ = notifications;
 }
 
@@ -98,15 +98,15 @@ chrome::ImageCaptureDeviceManager* g_image_capture_device_manager = NULL;
   [cameras_ addObject:addedDevice];
 
   // TODO(gbillock): use [cameraDevice mountPoint] here when possible.
-  chrome::StorageInfo info(
-      chrome::StorageInfo::MakeDeviceId(
-          chrome::StorageInfo::MAC_IMAGE_CAPTURE,
+  StorageInfo info(
+      StorageInfo::MakeDeviceId(
+          StorageInfo::MAC_IMAGE_CAPTURE,
           base::SysNSStringToUTF8([cameraDevice UUIDString])),
       base::SysNSStringToUTF16([cameraDevice name]),
       "",
-      string16(),
-      string16(),
-      string16(),
+      base::SysNSStringToUTF16([cameraDevice name]),
+      base::string16(),
+      base::string16(),
       0);
   notifications_->ProcessAttach(info);
 }
@@ -123,13 +123,10 @@ chrome::ImageCaptureDeviceManager* g_image_capture_device_manager = NULL;
   [cameras_ removeObject:device];
 
   notifications_->ProcessDetach(
-      chrome::StorageInfo::MakeDeviceId(
-          chrome::StorageInfo::MAC_IMAGE_CAPTURE, uuid));
+      StorageInfo::MakeDeviceId(StorageInfo::MAC_IMAGE_CAPTURE, uuid));
 }
 
 @end  // ImageCaptureDeviceManagerImpl
-
-namespace chrome {
 
 ImageCaptureDeviceManager::ImageCaptureDeviceManager() {
   device_browser_.reset([[ImageCaptureDeviceManagerImpl alloc] init]);
@@ -146,6 +143,16 @@ void ImageCaptureDeviceManager::SetNotifications(
   [device_browser_ setNotifications:notifications];
 }
 
+void ImageCaptureDeviceManager::EjectDevice(
+    const std::string& uuid,
+    base::Callback<void(StorageMonitor::EjectStatus)> callback) {
+  base::scoped_nsobject<ImageCaptureDevice> camera_device(
+      [[device_browser_ deviceForUUID:uuid] retain]);
+  [camera_device eject];
+  [camera_device close];
+  callback.Run(StorageMonitor::EJECT_OK);
+}
+
 // static
 ImageCaptureDevice* ImageCaptureDeviceManager::deviceForUUID(
     const std::string& uuid) {
@@ -157,5 +164,3 @@ ImageCaptureDevice* ImageCaptureDeviceManager::deviceForUUID(
 id<ICDeviceBrowserDelegate> ImageCaptureDeviceManager::device_browser() {
   return device_browser_.get();
 }
-
-}  // namespace chrome

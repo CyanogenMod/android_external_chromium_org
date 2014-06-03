@@ -10,6 +10,7 @@
 #include "components/web_contents_delegate_android/component_jni_registrar.h"
 #include "content/public/app/android_library_loader_hooks.h"
 #include "content/public/app/content_main.h"
+#include "url/url_util.h"
 
 static base::android::RegistrationMethod
     kWebViewDependencyRegisteredMethods[] = {
@@ -24,7 +25,12 @@ static base::android::RegistrationMethod
 JNI_EXPORT jint JNI_OnLoad(JavaVM* vm, void* reserved) {
   base::android::InitVM(vm);
   JNIEnv* env = base::android::AttachCurrentThread();
-  if (!content::RegisterLibraryLoaderEntryHook(env, false))
+  if (!content::RegisterLibraryLoaderEntryHook(env))
+    return -1;
+
+  // Register content JNI functions now, rather than waiting until
+  // LibraryLoadedOnMainThread, so that we can call into native code early.
+  if (!content::EnsureJniRegistered(env))
     return -1;
 
   // Register JNI for components we depend on.
@@ -38,6 +44,11 @@ JNI_EXPORT jint JNI_OnLoad(JavaVM* vm, void* reserved) {
     return -1;
 
   content::SetContentMainDelegate(new android_webview::AwMainDelegate());
+
+  // Initialize url_util here while we are still single-threaded, in case we use
+  // CookieManager before initializing Chromium (which would normally have done
+  // this). It's safe to call this multiple times.
+  url_util::Initialize();
 
   return JNI_VERSION_1_4;
 }

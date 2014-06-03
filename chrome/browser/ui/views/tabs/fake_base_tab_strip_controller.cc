@@ -108,6 +108,10 @@ bool FakeBaseTabStripController::IsCompatibleWith(TabStrip* other) const {
 void FakeBaseTabStripController::CreateNewTab() {
 }
 
+void FakeBaseTabStripController::CreateNewTabWithLocation(
+    const base::string16& location) {
+}
+
 bool FakeBaseTabStripController::IsIncognito() {
   return false;
 }
@@ -119,4 +123,8 @@ void FakeBaseTabStripController::OnStartedDraggingTabs() {
 }
 
 void FakeBaseTabStripController::OnStoppedDraggingTabs() {
+}
+
+void FakeBaseTabStripController::CheckFileSupported(const GURL& url) {
+  tab_strip_->FileSupported(url, true);
 }

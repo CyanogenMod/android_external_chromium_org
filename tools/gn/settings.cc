@@ -9,10 +9,8 @@
 #include "tools/gn/filesystem_utils.h"
 
 Settings::Settings(const BuildSettings* build_settings,
-                   const Toolchain* toolchain,
                    const std::string& output_subdir_name)
     : build_settings_(build_settings),
-      toolchain_(toolchain),
       import_manager_(),
       base_config_(this),
       greedy_target_generation_(false) {
@@ -24,6 +22,7 @@ Settings::Settings(const BuildSettings* build_settings,
     toolchain_output_subdir_.value().append(output_subdir_name);
     toolchain_output_subdir_.value().push_back('/');
 
+    DCHECK(!build_settings->build_dir().is_null());
     toolchain_output_dir_ = SourceDir(build_settings->build_dir().value() +
                                       toolchain_output_subdir_.value());
   }
@@ -31,7 +30,6 @@ Settings::Settings(const BuildSettings* build_settings,
   // one-off data without doing generation.
   if (!toolchain_output_dir_.is_null())
     toolchain_gen_dir_ = SourceDir(toolchain_output_dir_.value() + "gen/");
-
 
 #if defined(OS_WIN)
   target_os_ = WIN;
@@ -46,5 +44,3 @@ Settings::Settings(const BuildSettings* build_settings,
 
 Settings::~Settings() {
 }
-
-

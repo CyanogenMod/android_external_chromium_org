@@ -86,7 +86,7 @@ class Image {
   // Creates the image from the given filename on disk.
   explicit Image(const base::FilePath& filename) : ignore_alpha_(true) {
     std::string compressed;
-    file_util::ReadFileToString(filename, &compressed);
+    base::ReadFileToString(filename, &compressed);
     EXPECT_TRUE(compressed.size());
 
     SkBitmap bitmap;
@@ -135,11 +135,11 @@ class Image {
                                       std::vector<gfx::PNGCodec::Comment>(),
                                       &compressed));
     ASSERT_TRUE(compressed.size());
-    FILE* f = file_util::OpenFile(filename, "wb");
+    FILE* f = base::OpenFile(filename, "wb");
     ASSERT_TRUE(f);
     ASSERT_EQ(fwrite(&*compressed.begin(), 1, compressed.size(), f),
               compressed.size());
-    file_util::CloseFile(f);
+    base::CloseFile(f);
   }
 
   // Returns the percentage of the image that is different from the other,
@@ -245,7 +245,7 @@ class ImageTest : public testing::Test {
 
     if (action_ == GENERATE) {
       // Make sure the directory exist.
-      file_util::CreateDirectory(test_dir_);
+      base::CreateDirectory(test_dir_);
     }
   }
 
@@ -335,8 +335,7 @@ void LoadPngFileToSkBitmap(const base::FilePath& filename,
                            SkBitmap* bitmap,
                            bool is_opaque) {
   std::string compressed;
-  file_util::ReadFileToString(base::MakeAbsoluteFilePath(filename),
-                              &compressed);
+  base::ReadFileToString(base::MakeAbsoluteFilePath(filename), &compressed);
   ASSERT_TRUE(compressed.size());
 
   ASSERT_TRUE(gfx::PNGCodec::Decode(

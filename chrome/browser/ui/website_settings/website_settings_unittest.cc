@@ -12,7 +12,7 @@
 #include "chrome/browser/content_settings/content_settings_utils.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/content_settings/tab_specific_content_settings.h"
-#include "chrome/browser/infobars/infobar_delegate.h"
+#include "chrome/browser/infobars/infobar.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/ui/website_settings/website_settings_ui.h"
 #include "chrome/common/content_settings.h"
@@ -68,7 +68,7 @@ class MockWebsiteSettingsUI : public WebsiteSettingsUI {
   MOCK_METHOD1(SetPermissionInfo,
                void(const PermissionInfoList& permission_info_list));
   MOCK_METHOD1(SetIdentityInfo, void(const IdentityInfo& identity_info));
-  MOCK_METHOD1(SetFirstVisit, void(const string16& first_visit));
+  MOCK_METHOD1(SetFirstVisit, void(const base::string16& first_visit));
   MOCK_METHOD1(SetSelectedTab, void(TabId tab_id));
 };
 
@@ -118,7 +118,7 @@ class WebsiteSettingsTest : public ChromeRenderViewHostTestHarness {
     EXPECT_CALL(*mock_ui, SetPermissionInfo(_));
     EXPECT_CALL(*mock_ui, SetIdentityInfo(_));
     EXPECT_CALL(*mock_ui, SetCookieInfo(_));
-    EXPECT_CALL(*mock_ui, SetFirstVisit(string16()));
+    EXPECT_CALL(*mock_ui, SetFirstVisit(base::string16()));
   }
 
   const GURL& url() const { return url_; }
@@ -180,7 +180,7 @@ TEST_F(WebsiteSettingsTest, OnPermissionsChanged) {
 
   EXPECT_CALL(*mock_ui(), SetIdentityInfo(_));
   EXPECT_CALL(*mock_ui(), SetCookieInfo(_));
-  EXPECT_CALL(*mock_ui(), SetFirstVisit(string16()));
+  EXPECT_CALL(*mock_ui(), SetFirstVisit(base::string16()));
 
   // SetPermissionInfo() is called once initially, and then again every time
   // OnSitePermissionChanged() is called.
@@ -229,7 +229,7 @@ TEST_F(WebsiteSettingsTest, OnPermissionsChanged) {
 TEST_F(WebsiteSettingsTest, OnSiteDataAccessed) {
   EXPECT_CALL(*mock_ui(), SetPermissionInfo(_));
   EXPECT_CALL(*mock_ui(), SetIdentityInfo(_));
-  EXPECT_CALL(*mock_ui(), SetFirstVisit(string16()));
+  EXPECT_CALL(*mock_ui(), SetFirstVisit(base::string16()));
   EXPECT_CALL(*mock_ui(), SetCookieInfo(_)).Times(2);
   EXPECT_CALL(*mock_ui(), SetSelectedTab(
       WebsiteSettingsUI::TAB_ID_PERMISSIONS));
@@ -245,7 +245,7 @@ TEST_F(WebsiteSettingsTest, HTTPConnection) {
             website_settings()->site_connection_status());
   EXPECT_EQ(WebsiteSettings::SITE_IDENTITY_STATUS_NO_CERT,
             website_settings()->site_identity_status());
-  EXPECT_EQ(string16(), website_settings()->organization_name());
+  EXPECT_EQ(base::string16(), website_settings()->organization_name());
 }
 
 TEST_F(WebsiteSettingsTest, HTTPSConnection) {
@@ -266,7 +266,7 @@ TEST_F(WebsiteSettingsTest, HTTPSConnection) {
             website_settings()->site_connection_status());
   EXPECT_EQ(WebsiteSettings::SITE_IDENTITY_STATUS_CERT,
             website_settings()->site_identity_status());
-  EXPECT_EQ(string16(), website_settings()->organization_name());
+  EXPECT_EQ(base::string16(), website_settings()->organization_name());
 }
 
 TEST_F(WebsiteSettingsTest, HTTPSMixedContent) {
@@ -287,7 +287,7 @@ TEST_F(WebsiteSettingsTest, HTTPSMixedContent) {
             website_settings()->site_connection_status());
   EXPECT_EQ(WebsiteSettings::SITE_IDENTITY_STATUS_CERT,
             website_settings()->site_identity_status());
-  EXPECT_EQ(string16(), website_settings()->organization_name());
+  EXPECT_EQ(base::string16(), website_settings()->organization_name());
 }
 
 TEST_F(WebsiteSettingsTest, HTTPSEVCert) {
@@ -336,7 +336,7 @@ TEST_F(WebsiteSettingsTest, HTTPSRevocationError) {
             website_settings()->site_connection_status());
   EXPECT_EQ(WebsiteSettings::SITE_IDENTITY_STATUS_CERT_REVOCATION_UNKNOWN,
             website_settings()->site_identity_status());
-  EXPECT_EQ(string16(), website_settings()->organization_name());
+  EXPECT_EQ(base::string16(), website_settings()->organization_name());
 }
 
 TEST_F(WebsiteSettingsTest, HTTPSConnectionError) {
@@ -356,7 +356,7 @@ TEST_F(WebsiteSettingsTest, HTTPSConnectionError) {
             website_settings()->site_connection_status());
   EXPECT_EQ(WebsiteSettings::SITE_IDENTITY_STATUS_CERT,
             website_settings()->site_identity_status());
-  EXPECT_EQ(string16(), website_settings()->organization_name());
+  EXPECT_EQ(base::string16(), website_settings()->organization_name());
 }
 
 TEST_F(WebsiteSettingsTest, NoInfoBar) {
@@ -371,7 +371,7 @@ TEST_F(WebsiteSettingsTest, NoInfoBar) {
 TEST_F(WebsiteSettingsTest, ShowInfoBar) {
   EXPECT_CALL(*mock_ui(), SetIdentityInfo(_));
   EXPECT_CALL(*mock_ui(), SetCookieInfo(_));
-  EXPECT_CALL(*mock_ui(), SetFirstVisit(string16()));
+  EXPECT_CALL(*mock_ui(), SetFirstVisit(base::string16()));
 
   // SetPermissionInfo() is called once initially, and then again every time
   // OnSitePermissionChanged() is called.
@@ -391,9 +391,5 @@ TEST_F(WebsiteSettingsTest, ShowInfoBar) {
   website_settings()->OnUIClosing();
   ASSERT_EQ(1u, infobar_service()->infobar_count());
 
-  // Removing an |InfoBarDelegate| from the |InfoBarService| does not delete
-  // it. Hence the |delegate| must be cleaned up after it was removed from the
-  // |infobar_service|.
-  scoped_ptr<InfoBarDelegate> delegate(infobar_service()->infobar_at(0));
-  infobar_service()->RemoveInfoBar(delegate.get());
+  infobar_service()->RemoveInfoBar(infobar_service()->infobar_at(0));
 }

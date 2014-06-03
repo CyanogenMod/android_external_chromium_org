@@ -9,11 +9,14 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 SDK_SRC_DIR = os.path.dirname(SCRIPT_DIR)
 SDK_EXAMPLE_DIR = os.path.join(SDK_SRC_DIR, 'examples')
 SDK_LIBRARY_DIR = os.path.join(SDK_SRC_DIR, 'libraries')
+SDK_RESOURCE_DIR = os.path.join(SDK_SRC_DIR, 'resources')
 SDK_DIR = os.path.dirname(SDK_SRC_DIR)
 SRC_DIR = os.path.dirname(SDK_DIR)
 NACL_DIR = os.path.join(SRC_DIR, 'native_client')
 OUT_DIR = os.path.join(SRC_DIR, 'out')
 PPAPI_DIR = os.path.join(SRC_DIR, 'ppapi')
 NACLPORTS_DIR = os.path.join(OUT_DIR, 'naclports')
+GONACL_APPENGINE_DIR = os.path.join(SDK_SRC_DIR, 'gonacl_appengine')
+GONACL_APPENGINE_SRC_DIR = os.path.join(GONACL_APPENGINE_DIR, 'src')
 
-GSTORE = 'https://commondatastorage.googleapis.com/nativeclient-mirror/nacl/'
+GSTORE = 'https://storage.googleapis.com/nativeclient-mirror/nacl/'

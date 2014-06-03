@@ -10,7 +10,7 @@
 #include "grit/ui_resources.h"
 #import "third_party/GTM/AppKit/GTMNSBezierPath+RoundRect.h"
 #include "ui/app_list/app_list_menu.h"
-#import "ui/app_list/cocoa/current_user_menu_item_view.h"
+#include "ui/app_list/app_list_model.h"
 #include "ui/app_list/search_box_model.h"
 #include "ui/app_list/search_box_model_observer.h"
 #import "ui/base/cocoa/controls/hover_image_menu_button.h"
@@ -53,6 +53,7 @@ class SearchBoxModelObserverBridge : public SearchBoxModelObserver {
   void SetSearchText(const base::string16& text);
 
   virtual void IconChanged() OVERRIDE;
+  virtual void SpeechRecognitionButtonPropChanged() OVERRIDE;
   virtual void HintTextChanged() OVERRIDE;
   virtual void SelectionModelChanged() OVERRIDE;
   virtual void TextChanged() OVERRIDE;
@@ -96,6 +97,11 @@ void SearchBoxModelObserverBridge::IconChanged() {
       GetModel()->icon(), base::mac::GetSRGBColorSpace())];
 }
 
+void SearchBoxModelObserverBridge::SpeechRecognitionButtonPropChanged() {
+  // TODO(mukai): implement.
+  NOTIMPLEMENTED();
+}
+
 void SearchBoxModelObserverBridge::HintTextChanged() {
   [[[parent_ searchTextField] cell] setPlaceholderString:
       base::SysUTF16ToNSString(GetModel()->hint_text())];
@@ -110,6 +116,7 @@ void SearchBoxModelObserverBridge::TextChanged() {
   // it is changed in tests to establish a particular state.
   [[parent_ searchTextField]
       setStringValue:base::SysUTF16ToNSString(GetModel()->text())];
+  [[parent_ delegate] modelTextDidChange];
 }
 
 }  // namespace app_list
@@ -158,6 +165,9 @@ void SearchBoxModelObserverBridge::TextChanged() {
   if (![delegate_ appListDelegate])
     return;
 
+  menuController_.reset();
+  appListMenu_.reset(
+      new app_list::AppListMenu([delegate_ appListDelegate]));
   menuController_.reset([[AppListMenuController alloc]
       initWithSearchBoxController:self]);
   [menuButton_ setMenu:[menuController_ menu]];  // Menu will populate here.
@@ -173,10 +183,6 @@ void SearchBoxModelObserverBridge::TextChanged() {
     return;
 
   bridge_.reset(new app_list::SearchBoxModelObserverBridge(self));
-  if (![delegate_ appListDelegate])
-    return;
-
-  appListMenu_.reset(new app_list::AppListMenu([delegate_ appListDelegate]));
   [self rebuildMenu];
 }
 
@@ -369,20 +375,6 @@ void SearchBoxModelObserverBridge::TextChanged() {
     [super setModel:[parent appListMenu]->menu_model()];
   }
   return self;
-}
-
-- (void)addItemToMenu:(NSMenu*)menu
-              atIndex:(NSInteger)index
-            fromModel:(ui::MenuModel*)model {
-  [super addItemToMenu:menu
-               atIndex:index
-             fromModel:model];
-  if (model->GetCommandIdAt(index) != app_list::AppListMenu::CURRENT_USER)
-    return;
-
-  base::scoped_nsobject<NSView> customItemView([[CurrentUserMenuItemView alloc]
-      initWithDelegate:[[searchBoxController_ delegate] appListDelegate]]);
-  [[menu itemAtIndex:index] setView:customItemView];
 }
 
 - (NSRect)confinementRectForMenu:(NSMenu*)menu

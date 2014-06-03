@@ -10,9 +10,8 @@
 #include "base/basictypes.h"
 #include "base/event_types.h"
 #include "base/i18n/rtl.h"
+#include "ui/base/ime/text_input_mode.h"
 #include "ui/base/ime/text_input_type.h"
-#include "ui/base/keycodes/keyboard_codes.h"
-#include "ui/base/ui_export.h"
 
 namespace ui {
 
@@ -82,8 +81,13 @@ class InputMethod {
   // SetCompositionText(). |client| can be NULL. A gfx::NativeWindow which
   // implementes TextInputClient interface, e.g. NWA and RWHVA, should register
   // itself by calling the method when it is focused, and unregister itself by
-  // calling the metho with NULL when it is unfocused.
+  // calling the method with NULL when it is unfocused.
   virtual void SetFocusedTextInputClient(TextInputClient* client) = 0;
+
+  // Detaches and forgets the |client| regardless of whether it has the focus or
+  // not.  This method is meant to be called when the |client| is going to be
+  // destroyed.
+  virtual void DetachTextInputClient(TextInputClient* client) = 0;
 
   // Gets the current text input client. Returns NULL when no client is set.
   virtual TextInputClient* GetTextInputClient() const = 0;
@@ -93,12 +97,7 @@ class InputMethod {
   // ui::InputMethodDelegate::DispatchKeyEventPostIME(), once it's processed by
   // the input method. It should only be called by a message dispatcher.
   // Returns true if the event was processed.
-  virtual bool DispatchKeyEvent(const base::NativeEvent& native_key_event) = 0;
-
-  // TODO(yusukes): Add DispatchFabricatedKeyEvent to support virtual keyboards.
-  // TODO(yusukes): both win and ibus override to do nothing. Is this needed?
-  // Returns true if the event was processed.
-  virtual bool DispatchFabricatedKeyEvent(const ui::KeyEvent& event) = 0;
+  virtual bool DispatchKeyEvent(const ui::KeyEvent& event) = 0;
 
   // Called by the focused client whenever its text input type is changed.
   // Before calling this method, the focused client must confirm or clear
@@ -140,9 +139,17 @@ class InputMethod {
   // is not active.
   virtual bool IsActive() = 0;
 
+  // TODO(yoichio): Following 3 methods(GetTextInputType, GetTextInputMode and
+  // CanComposeInline) calls client's same method and returns its value. It is
+  // not InputMethod itself's infomation. So rename these to
+  // GetClientTextInputType and so on.
   // Gets the text input type of the focused text input client. Returns
   // ui::TEXT_INPUT_TYPE_NONE if there is no focused client.
   virtual TextInputType GetTextInputType() const = 0;
+
+  // Gets the text input mode of the focused text input client. Returns
+  // ui::TEXT_INPUT_TYPE_DEFAULT if there is no focused client.
+  virtual TextInputMode GetTextInputMode() const = 0;
 
   // Checks if the focused text input client supports inline composition.
   virtual bool CanComposeInline() const = 0;

@@ -40,8 +40,7 @@ BrowserProcessResource::BrowserProcessResource()
     HICON icon = GetAppIcon();
     if (icon) {
       scoped_ptr<SkBitmap> bitmap(IconUtil::CreateSkBitmapFromHICON(icon));
-      default_icon_ = new gfx::ImageSkia(
-          gfx::ImageSkiaRep(*bitmap, ui::SCALE_FACTOR_100P));
+      default_icon_ = new gfx::ImageSkia(gfx::ImageSkiaRep(*bitmap, 1.0f));
     }
   }
 #elif defined(OS_POSIX) && !defined(OS_MACOSX)
@@ -68,15 +67,15 @@ BrowserProcessResource::~BrowserProcessResource() {
 }
 
 // Resource methods:
-string16 BrowserProcessResource::GetTitle() const {
+base::string16 BrowserProcessResource::GetTitle() const {
   if (title_.empty()) {
     title_ = l10n_util::GetStringUTF16(IDS_TASK_MANAGER_WEB_BROWSER_CELL_TEXT);
   }
   return title_;
 }
 
-string16 BrowserProcessResource::GetProfileName() const {
-  return string16();
+base::string16 BrowserProcessResource::GetProfileName() const {
+  return base::string16();
 }
 
 gfx::ImageSkia BrowserProcessResource::GetIcon() const {

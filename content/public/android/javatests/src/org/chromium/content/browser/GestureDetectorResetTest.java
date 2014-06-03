@@ -1,15 +1,14 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 package org.chromium.content.browser;
 
-import android.test.suitebuilder.annotation.LargeTest;
-
 import junit.framework.Assert;
 
+import static org.chromium.base.test.util.ScalableTimeout.ScaleTimeout;
+
 import org.chromium.base.test.util.DisabledTest;
-import org.chromium.base.test.util.Feature;
 import org.chromium.base.test.util.UrlUtils;
 import org.chromium.content.browser.test.util.Criteria;
 import org.chromium.content.browser.test.util.CriteriaHelper;
@@ -21,7 +20,7 @@ import org.chromium.content_shell_apk.ContentShellTestBase;
 import java.util.concurrent.TimeUnit;
 
 public class GestureDetectorResetTest extends ContentShellTestBase {
-    private static final int WAIT_TIMEOUT_SECONDS = 2;
+    private static final long WAIT_TIMEOUT_SECONDS = ScaleTimeout(2);
     private static final String CLICK_TEST_URL = UrlUtils.encodeHtmlDataUri(
             "<html><body>" +
             "<button id=\"button\" " +

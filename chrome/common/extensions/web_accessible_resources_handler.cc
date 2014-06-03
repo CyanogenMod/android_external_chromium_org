@@ -8,14 +8,14 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
-#include "chrome/common/extensions/manifest.h"
 #include "extensions/common/error_utils.h"
+#include "extensions/common/manifest.h"
+#include "extensions/common/manifest_constants.h"
 
 namespace extensions {
 
-namespace keys = extension_manifest_keys;
-namespace errors = extension_manifest_errors;
+namespace keys = manifest_keys;
+namespace errors = manifest_errors;
 
 namespace {
 
@@ -62,7 +62,7 @@ WebAccessibleResourcesHandler::~WebAccessibleResourcesHandler() {
 }
 
 bool WebAccessibleResourcesHandler::Parse(Extension* extension,
-                                          string16* error) {
+                                          base::string16* error) {
   scoped_ptr<WebAccessibleResourcesInfo> info(new WebAccessibleResourcesInfo);
   const base::ListValue* list_value = NULL;
   if (!extension->manifest()->GetList(keys::kWebAccessibleResources,

@@ -18,7 +18,7 @@
 #include "ui/aura/test/test_windows.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_tracker.h"
-#include "ui/base/events/event_handler.h"
+#include "ui/events/event_handler.h"
 #include "ui/views/corewm/base_focus_rules.h"
 
 namespace views {
@@ -78,9 +78,70 @@ class FocusNotificationObserver : public aura::client::ActivationChangeObserver,
   DISALLOW_COPY_AND_ASSIGN(FocusNotificationObserver);
 };
 
+// ActivationChangeObserver that keeps a vector of all the windows that lost
+// active.
+class RecordingActivationChangeObserver
+    : public aura::client::ActivationChangeObserver {
+ public:
+  explicit RecordingActivationChangeObserver(aura::Window* root)
+      : root_(root) {
+    aura::client::GetActivationClient(root_)->AddObserver(this);
+  }
+  virtual ~RecordingActivationChangeObserver() {
+    aura::client::GetActivationClient(root_)->RemoveObserver(this);
+  }
+
+  // Each time we get OnWindowActivated() the |lost_active| parameter is
+  // added here.
+  const std::vector<aura::Window*>& lost() const { return lost_; }
+
+  // Overridden from aura::client::ActivationChangeObserver:
+  virtual void OnWindowActivated(aura::Window* gained_active,
+                                 aura::Window* lost_active) OVERRIDE {
+    lost_.push_back(lost_active);
+  }
+
+ private:
+  aura::Window* root_;
+  std::vector<aura::Window*> lost_;
+
+  DISALLOW_COPY_AND_ASSIGN(RecordingActivationChangeObserver);
+};
+
+// ActivationChangeObserver that deletes the window losing activation.
+class DeleteOnLoseActivationChangeObserver
+    : public aura::client::ActivationChangeObserver {
+ public:
+  explicit DeleteOnLoseActivationChangeObserver(aura::Window* window)
+      : root_(window->GetRootWindow()),
+        window_(window) {
+    aura::client::GetActivationClient(root_)->AddObserver(this);
+  }
+  virtual ~DeleteOnLoseActivationChangeObserver() {
+    aura::client::GetActivationClient(root_)->RemoveObserver(this);
+  }
+
+  bool did_delete() const { return window_ == NULL; }
+
+  // Overridden from aura::client::ActivationChangeObserver:
+  virtual void OnWindowActivated(aura::Window* gained_active,
+                                 aura::Window* lost_active) OVERRIDE {
+    if (window_ && lost_active == window_) {
+      window_ = NULL;
+      delete lost_active;
+    }
+  }
+
+ private:
+  aura::Window* root_;
+  aura::Window* window_;
+
+  DISALLOW_COPY_AND_ASSIGN(DeleteOnLoseActivationChangeObserver);
+};
+
 class ScopedFocusNotificationObserver : public FocusNotificationObserver {
  public:
-  ScopedFocusNotificationObserver(aura::RootWindow* root_window)
+  ScopedFocusNotificationObserver(aura::Window* root_window)
       : root_window_(root_window) {
     aura::client::GetActivationClient(root_window_)->AddObserver(this);
     aura::client::GetFocusClient(root_window_)->AddObserver(this);
@@ -91,14 +152,14 @@ class ScopedFocusNotificationObserver : public FocusNotificationObserver {
   }
 
  private:
-  aura::RootWindow* root_window_;
+  aura::Window* root_window_;
 
   DISALLOW_COPY_AND_ASSIGN(ScopedFocusNotificationObserver);
 };
 
 class ScopedTargetFocusNotificationObserver : public FocusNotificationObserver {
  public:
-  ScopedTargetFocusNotificationObserver(aura::RootWindow* root_window, int id)
+  ScopedTargetFocusNotificationObserver(aura::Window* root_window, int id)
       : target_(root_window->GetChildById(id)) {
     aura::client::SetActivationChangeObserver(target_, this);
     aura::client::SetFocusChangeObserver(target_, this);
@@ -268,7 +329,8 @@ class FocusControllerTestBase : public aura::test::AuraTestBase {
     return aura::client::GetFocusClient(root_window())->GetFocusedWindow();
   }
   int GetFocusedWindowId() {
-    return GetFocusedWindow()->id();
+    aura::Window* focused_window = GetFocusedWindow();
+    return focused_window ? focused_window->id() : -1;
   }
   void ActivateWindow(aura::Window* window) {
     aura::client::GetActivationClient(root_window())->ActivateWindow(window);
@@ -303,6 +365,8 @@ class FocusControllerTestBase : public aura::test::AuraTestBase {
   virtual void ShiftFocusOnActivationDueToHide() {}
   virtual void NoShiftActiveOnActivation() {}
   virtual void NoFocusChangeOnClickOnCaptureWindow() {}
+  virtual void ChangeFocusWhenNothingFocusedAndCaptured() {}
+  virtual void DontPassDeletedWindow() {}
 
  private:
   scoped_ptr<FocusController> focus_controller_;
@@ -596,6 +660,46 @@ class FocusControllerDirectTestBase : public FocusControllerTestBase {
     EXPECT_EQ(1, GetActiveWindowId());
     EXPECT_EQ(1, GetFocusedWindowId());
     aura::client::GetCaptureClient(root_window())->ReleaseCapture(w2);
+  }
+
+  // Verifies focus change is honored while capture held.
+  virtual void ChangeFocusWhenNothingFocusedAndCaptured() OVERRIDE {
+    scoped_ptr<aura::client::DefaultCaptureClient> capture_client(
+        new aura::client::DefaultCaptureClient(root_window()));
+    aura::Window* w1 = root_window()->GetChildById(1);
+    aura::client::GetCaptureClient(root_window())->SetCapture(w1);
+
+    EXPECT_EQ(-1, GetActiveWindowId());
+    EXPECT_EQ(-1, GetFocusedWindowId());
+
+    FocusWindowById(1);
+
+    EXPECT_EQ(1, GetActiveWindowId());
+    EXPECT_EQ(1, GetFocusedWindowId());
+
+    aura::client::GetCaptureClient(root_window())->ReleaseCapture(w1);
+  }
+
+  // Verfies if a window that loses activation is deleted during observer
+  // notification we don't pass the deleted window to other observers.
+  virtual void DontPassDeletedWindow() OVERRIDE {
+    FocusWindowById(1);
+
+    EXPECT_EQ(1, GetActiveWindowId());
+    EXPECT_EQ(1, GetFocusedWindowId());
+
+    DeleteOnLoseActivationChangeObserver observer1(
+        root_window()->GetChildById(1));
+    RecordingActivationChangeObserver observer2(root_window());
+
+    FocusWindowById(2);
+
+    EXPECT_EQ(2, GetActiveWindowId());
+    EXPECT_EQ(2, GetFocusedWindowId());
+
+    EXPECT_TRUE(observer1.did_delete());
+    ASSERT_EQ(1u, observer2.lost().size());
+    EXPECT_TRUE(observer2.lost()[0] == NULL);
   }
 
  private:
@@ -995,6 +1099,12 @@ DIRECT_FOCUS_CHANGE_TESTS(NoShiftActiveOnActivation);
 
 // Clicking on a window which has capture should not result in a focus change.
 DIRECT_FOCUS_CHANGE_TESTS(NoFocusChangeOnClickOnCaptureWindow);
+
+FOCUS_CONTROLLER_TEST(FocusControllerApiTest,
+                      ChangeFocusWhenNothingFocusedAndCaptured);
+
+// See description above DontPassDeletedWindow() for details.
+FOCUS_CONTROLLER_TEST(FocusControllerApiTest, DontPassDeletedWindow);
 
 }  // namespace corewm
 }  // namespace views

@@ -13,6 +13,7 @@
 #include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/ref_counted.h"
+#include "base/metrics/field_trial.h"
 #include "base/path_service.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/string_split.h"
@@ -23,6 +24,8 @@
 #include "chrome/browser/prerender/prerender_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/profiles/startup_task_runner_service.h"
+#include "chrome/browser/profiles/startup_task_runner_service_factory.h"
 #include "chrome/browser/safe_browsing/client_side_detection_service.h"
 #include "chrome/browser/safe_browsing/database_manager.h"
 #include "chrome/browser/safe_browsing/protocol_manager.h"
@@ -124,6 +127,9 @@ class TestSafeBrowsingDatabase :  public SafeBrowsingDatabase {
   virtual bool ContainsSideEffectFreeWhitelistUrl(const GURL& url) OVERRIDE {
     return true;
   }
+  virtual bool ContainsMalwareIP(const std::string& ip_address) OVERRIDE {
+    return true;
+  }
   virtual bool UpdateStarted(std::vector<SBListChunkRanges>* lists) OVERRIDE {
     ADD_FAILURE() << "Not implemented.";
     return false;
@@ -213,7 +219,8 @@ class TestSafeBrowsingDatabaseFactory : public SafeBrowsingDatabaseFactory {
       bool enable_client_side_whitelist,
       bool enable_download_whitelist,
       bool enable_extension_blacklist,
-      bool enable_side_effect_free_whitelist) OVERRIDE {
+      bool enable_side_effect_free_whitelist,
+      bool enable_ip_blacklist) OVERRIDE {
     db_ = new TestSafeBrowsingDatabase();
     return db_;
   }
@@ -313,6 +320,8 @@ class MockObserver : public SafeBrowsingUIManager::Observer {
   MockObserver() {}
   virtual ~MockObserver() {}
   MOCK_METHOD1(OnSafeBrowsingHit,
+               void(const SafeBrowsingUIManager::UnsafeResource&));
+  MOCK_METHOD1(OnSafeBrowsingMatch,
                void(const SafeBrowsingUIManager::UnsafeResource&));
 };
 
@@ -434,6 +443,18 @@ class SafeBrowsingServiceTest : public InProcessBrowserTest {
     sb_service->RefreshState();
   }
 
+  void ProceedAndWhitelist(
+      const SafeBrowsingUIManager::UnsafeResource& resource) {
+    std::vector<SafeBrowsingUIManager::UnsafeResource> resources;
+    resources.push_back(resource);
+    BrowserThread::PostTask(
+        BrowserThread::IO, FROM_HERE,
+        base::Bind(&SafeBrowsingUIManager::OnBlockingPageDone,
+                   g_browser_process->safe_browsing_service()->ui_manager(),
+                   resources, true));
+    WaitForIOThread();
+  }
+
  protected:
   StrictMock<MockObserver> observer_;
 
@@ -463,7 +484,6 @@ namespace {
 
 const char kEmptyPage[] = "files/empty.html";
 const char kMalwareFile[] = "files/downloads/dangerous/dangerous.exe";
-const char kMalwareIframe[] = "files/safe_browsing/malware_iframe.html";
 const char kMalwarePage[] = "files/safe_browsing/malware.html";
 
 // This test goes through DownloadResourceHandler.
@@ -478,10 +498,48 @@ IN_PROC_BROWSER_TEST_F(SafeBrowsingServiceTest, Malware) {
   int chunk_id = 0;
   GenUrlFullhashResult(url, safe_browsing_util::kMalwareList, chunk_id,
                        &malware_full_hash);
+  EXPECT_CALL(observer_,
+              OnSafeBrowsingMatch(IsUnsafeResourceFor(url))).Times(1);
   EXPECT_CALL(observer_, OnSafeBrowsingHit(IsUnsafeResourceFor(url))).Times(1);
   SetupResponseForUrl(url, malware_full_hash);
   ui_test_utils::NavigateToURL(browser(), url);
   EXPECT_TRUE(ShowingInterstitialPage());
+  g_browser_process->safe_browsing_service()->
+      ui_manager()->RemoveObserver(&observer_);
+}
+
+IN_PROC_BROWSER_TEST_F(SafeBrowsingServiceTest, DISABLED_MalwareWithWhitelist) {
+  GURL url = test_server()->GetURL(kEmptyPage);
+  g_browser_process->safe_browsing_service()->
+      ui_manager()->AddObserver(&observer_);
+
+  // After adding the url to safebrowsing database and getfullhash result,
+  // we should see the interstitial page.
+  SBFullHashResult malware_full_hash;
+  int chunk_id = 0;
+  GenUrlFullhashResult(url, safe_browsing_util::kMalwareList, chunk_id,
+                       &malware_full_hash);
+  EXPECT_CALL(observer_,
+              OnSafeBrowsingMatch(IsUnsafeResourceFor(url))).Times(1);
+  EXPECT_CALL(observer_, OnSafeBrowsingHit(IsUnsafeResourceFor(url))).Times(1)
+      .WillOnce(testing::Invoke(
+          this, &SafeBrowsingServiceTest::ProceedAndWhitelist));
+  SetupResponseForUrl(url, malware_full_hash);
+
+  ui_test_utils::NavigateToURL(browser(), url);
+  // Mock calls OnBlockingPageDone set to proceed, so the interstitial
+  // is removed.
+  EXPECT_FALSE(ShowingInterstitialPage());
+  Mock::VerifyAndClearExpectations(&observer_);
+
+  // Navigate back to kEmptyPage -- should hit the whitelist, and send a match
+  // call, but no hit call.
+  EXPECT_CALL(observer_,
+              OnSafeBrowsingMatch(IsUnsafeResourceFor(url))).Times(1);
+  EXPECT_CALL(observer_, OnSafeBrowsingHit(IsUnsafeResourceFor(url))).Times(0);
+  ui_test_utils::NavigateToURL(browser(), url);
+  EXPECT_FALSE(ShowingInterstitialPage());
+
   g_browser_process->safe_browsing_service()->
       ui_manager()->RemoveObserver(&observer_);
 }
@@ -499,19 +557,19 @@ IN_PROC_BROWSER_TEST_F(SafeBrowsingServiceTest, Prefetch) {
   class SetPrefetchForTest {
    public:
     explicit SetPrefetchForTest(bool prefetch)
-        : old_prefetch_state_(prerender::PrerenderManager::IsPrefetchEnabled()),
-          old_prerender_mode_(prerender::PrerenderManager::GetMode()) {
-      prerender::PrerenderManager::SetIsPrefetchEnabled(prefetch);
+        : old_prerender_mode_(prerender::PrerenderManager::GetMode()) {
+      std::string exp_group = prefetch ? "ExperimentYes" : "ExperimentNo";
+      base::FieldTrialList::CreateFieldTrial("Prefetch", exp_group);
+
       prerender::PrerenderManager::SetMode(
           prerender::PrerenderManager::PRERENDER_MODE_DISABLED);
     }
 
     ~SetPrefetchForTest() {
-      prerender::PrerenderManager::SetIsPrefetchEnabled(old_prefetch_state_);
       prerender::PrerenderManager::SetMode(old_prerender_mode_);
     }
+
    private:
-    bool old_prefetch_state_;
     prerender::PrerenderManager::PrerenderManagerMode old_prerender_mode_;
   } set_prefetch_for_test(true);
 
@@ -529,6 +587,8 @@ IN_PROC_BROWSER_TEST_F(SafeBrowsingServiceTest, Prefetch) {
 
   // However, when we navigate to the malware page, we should still get
   // the interstitial.
+  EXPECT_CALL(observer_, OnSafeBrowsingMatch(IsUnsafeResourceFor(malware_url)))
+      .Times(1);
   EXPECT_CALL(observer_, OnSafeBrowsingHit(IsUnsafeResourceFor(malware_url)))
       .Times(1);
   ui_test_utils::NavigateToURL(browser(), malware_url);
@@ -769,6 +829,8 @@ IN_PROC_BROWSER_TEST_F(SafeBrowsingServiceTest, StartAndStop) {
   scoped_ptr<Profile> profile2(Profile::CreateProfile(
       temp_profile_dir_.path(), NULL, Profile::CREATE_MODE_SYNCHRONOUS));
   ASSERT_TRUE(profile2.get() != NULL);
+  StartupTaskRunnerServiceFactory::GetForProfile(profile2.get())->
+              StartDeferredTaskRunners();
   PrefService* pref_service2 = profile2->GetPrefs();
   EXPECT_TRUE(pref_service2->GetBoolean(prefs::kSafeBrowsingEnabled));
   // We don't expect the state to have changed, but if it did, wait for it.
@@ -856,7 +918,7 @@ IN_PROC_BROWSER_TEST_F(SafeBrowsingServiceShutdownTest,
       temp_profile_dir_.path(),
       base::Bind(&SafeBrowsingServiceShutdownTest::OnUnblockOnProfileCreation,
                  this),
-      string16(), string16(), std::string());
+      base::string16(), base::string16(), std::string());
 
   // Spin to allow profile creation to take place, loop is terminated
   // by OnUnblockOnProfileCreation when the profile is created.

@@ -63,6 +63,11 @@ GL_FUNCTIONS = [
   'arguments':
       'GLenum srcRGB, GLenum dstRGB, GLenum srcAlpha, GLenum dstAlpha', },
 { 'return_type': 'void',
+  'names': ['glBlitFramebuffer'],
+  'arguments': 'GLint srcX0, GLint srcY0, GLint srcX1, GLint srcY1, '
+               'GLint dstX0, GLint dstY0, GLint dstX1, GLint dstY1, '
+               'GLbitfield mask, GLenum filter', },
+{ 'return_type': 'void',
   'names': ['glBlitFramebufferEXT', 'glBlitFramebuffer'],
   'arguments': 'GLint srcX0, GLint srcY0, GLint srcX1, GLint srcY1, '
                'GLint dstX0, GLint dstY0, GLint dstX1, GLint dstY1, '
@@ -432,6 +437,13 @@ GL_FUNCTIONS = [
 { 'return_type': 'void*',
   'names': ['glMapBuffer', 'glMapBufferOES'],
   'arguments': 'GLenum target, GLenum access', },
+{ 'return_type': 'void*',
+  'names': ['glMapBufferRange'],
+  'arguments':
+      'GLenum target, GLintptr offset, GLsizeiptr length, GLenum access', },
+{ 'return_type': 'void',
+  'names': ['glFlushMappedBufferRange'],
+  'arguments': 'GLenum target, GLintptr offset, GLsizeiptr length', },
 { 'return_type': 'void',
   'names': ['glPixelStorei'],
   'arguments': 'GLenum pname, GLint param', },
@@ -465,6 +477,10 @@ GL_FUNCTIONS = [
 { 'return_type': 'void',
   'names': ['glReleaseShaderCompiler'],
   'arguments': 'void', },
+{ 'return_type': 'void',
+  'names': ['glRenderbufferStorageMultisample'],
+  'arguments': 'GLenum target, GLsizei samples, GLenum internalformat, '
+               'GLsizei width, GLsizei height', },
 { 'return_type': 'void',
   'names': ['glRenderbufferStorageMultisampleEXT',
             'glRenderbufferStorageMultisample'],
@@ -695,6 +711,10 @@ GL_FUNCTIONS = [
   'names': ['glClientWaitSync'],
   'arguments':
     'GLsync sync, GLbitfield flags, GLuint64 timeout', },
+{ 'return_type': 'GLenum',
+  'names': ['glWaitSync'],
+  'arguments':
+    'GLsync sync, GLbitfield flags, GLuint64 timeout', },
 { 'return_type': 'void',
   'names': ['glDrawArraysInstancedANGLE', 'glDrawArraysInstancedARB'],
   'arguments': 'GLenum mode, GLint first, GLsizei count, GLsizei primcount', },
@@ -740,7 +760,7 @@ GL_FUNCTIONS = [
                        'APPLE_vertex_array_object',
                        'ARB_vertex_array_object'] },
 { 'return_type': 'void',
-  'names': ['glDiscardFramebufferEXT'],
+  'names': ['glDiscardFramebufferEXT', 'glInvalidateFramebuffer'],
   'arguments': 'GLenum target, GLsizei numAttachments, '
       'const GLenum* attachments' },
 ]
@@ -820,7 +840,7 @@ EGL_FUNCTIONS = [
   'arguments':
       'EGLDisplay dpy, EGLContext ctx, EGLenum target, EGLClientBuffer buffer, '
       'const EGLint* attrib_list',
-  'other_extensions': ['EGL_KHR_image_base'] },
+  'other_extensions': ['EGL_KHR_image_base', 'EGL_KHR_gl_texture_2D_image'] },
 { 'return_type': 'EGLBoolean',
   'names': ['eglDestroyImageKHR'],
   'arguments': 'EGLDisplay dpy, EGLImageKHR image',
@@ -945,6 +965,10 @@ EGL_FUNCTIONS = [
       'EGLDisplay dpy, EGLSurface surface, '
       'EGLuint64CHROMIUM* ust, EGLuint64CHROMIUM* msc, '
       'EGLuint64CHROMIUM* sbc', },
+{ 'return_type': 'EGLint',
+  'names': ['eglWaitSyncKHR'],
+  'arguments': 'EGLDisplay dpy, EGLSyncKHR sync, EGLint flags',
+  'other_extensions': ['EGL_KHR_wait_sync'] },
 ]
 
 WGL_FUNCTIONS = [

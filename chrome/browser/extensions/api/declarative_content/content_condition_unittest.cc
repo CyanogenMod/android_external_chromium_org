@@ -10,26 +10,29 @@
 #include "base/test/values_test_util.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/api/declarative_content/content_constants.h"
-#include "extensions/common/matcher/url_matcher.h"
+#include "components/url_matcher/url_matcher.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace extensions {
-namespace {
-
 using testing::ElementsAre;
 using testing::HasSubstr;
+using url_matcher::URLMatcher;
+using url_matcher::URLMatcherConditionSet;
+
+namespace extensions {
+namespace {
 
 TEST(DeclarativeContentConditionTest, UnknownConditionName) {
   URLMatcher matcher;
   std::string error;
   scoped_ptr<ContentCondition> result = ContentCondition::Create(
+      NULL,
       matcher.condition_factory(),
       *base::test::ParseJson(
-          "{\n"
-          "  \"invalid\": \"foobar\",\n"
-          "  \"instanceType\": \"declarativeContent.PageStateMatcher\",\n"
-          "}"),
+           "{\n"
+           "  \"invalid\": \"foobar\",\n"
+           "  \"instanceType\": \"declarativeContent.PageStateMatcher\",\n"
+           "}"),
       &error);
   EXPECT_THAT(error, HasSubstr("Unknown condition attribute"));
   EXPECT_FALSE(result);
@@ -41,6 +44,7 @@ TEST(DeclarativeContentConditionTest, WrongPageUrlDatatype) {
   URLMatcher matcher;
   std::string error;
   scoped_ptr<ContentCondition> result = ContentCondition::Create(
+      NULL,
       matcher.condition_factory(),
       *base::test::ParseJson(
           "{\n"
@@ -58,6 +62,7 @@ TEST(DeclarativeContentConditionTest, WrongCssDatatype) {
   URLMatcher matcher;
   std::string error;
   scoped_ptr<ContentCondition> result = ContentCondition::Create(
+      NULL,
       matcher.condition_factory(),
       *base::test::ParseJson(
           "{\n"
@@ -76,6 +81,7 @@ TEST(DeclarativeContentConditionTest, ConditionWithUrlAndCss) {
 
   std::string error;
   scoped_ptr<ContentCondition> result = ContentCondition::Create(
+      NULL,
       matcher.condition_factory(),
       *base::test::ParseJson(
           "{\n"

@@ -10,7 +10,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/chromeos/enrollment_dialog_view.h"
 #include "chrome/browser/chromeos/login/startup_utils.h"
-#include "chrome/browser/chromeos/options/network_connect.h"
+#include "chrome/browser/chromeos/net/onc_utils.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chromeos/login/login_state.h"
 #include "chromeos/network/network_configuration_handler.h"
@@ -19,15 +19,15 @@
 #include "chromeos/network/network_profile_handler.h"
 #include "chromeos/network/network_state.h"
 #include "chromeos/network/network_state_handler.h"
-#include "chromeos/network/onc/onc_constants.h"
+#include "components/onc/onc_constants.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
 #include "grit/theme_resources.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
-#include "ui/base/events/event.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/events/event.h"
 #include "ui/views/controls/button/checkbox.h"
 #include "ui/views/controls/button/image_button.h"
 #include "ui/views/controls/label.h"
@@ -66,9 +66,10 @@ WimaxConfigView::WimaxConfigView(NetworkConfigView* parent,
 }
 
 WimaxConfigView::~WimaxConfigView() {
+  RemoveAllChildViews(true);  // Destroy children before models
 }
 
-string16 WimaxConfigView::GetTitle() const {
+base::string16 WimaxConfigView::GetTitle() const {
   return l10n_util::GetStringUTF16(IDS_OPTIONS_SETTINGS_JOIN_WIMAX_NETWORKS);
 }
 
@@ -100,8 +101,9 @@ void WimaxConfigView::UpdateErrorLabel() {
   if (!service_path_.empty()) {
     const NetworkState* wimax = NetworkHandler::Get()->network_state_handler()->
         GetNetworkState(service_path_);
-    if (wimax && wimax->connection_state() == flimflam::kStateFailure)
-      error_msg = ash::network_connect::ErrorString(wimax->error());
+    if (wimax && wimax->connection_state() == shill::kStateFailure)
+      error_msg = ash::network_connect::ErrorString(
+          wimax->error(), wimax->path());
   }
   if (!error_msg.empty()) {
     error_label_->SetText(error_msg);
@@ -112,7 +114,7 @@ void WimaxConfigView::UpdateErrorLabel() {
 }
 
 void WimaxConfigView::ContentsChanged(views::Textfield* sender,
-                                      const string16& new_contents) {
+                                      const base::string16& new_contents) {
   UpdateDialogButtons();
 }
 
@@ -149,14 +151,22 @@ bool WimaxConfigView::Login() {
   }
   base::DictionaryValue properties;
   properties.SetStringWithoutPathExpansion(
-      flimflam::kEapIdentityProperty, GetEapIdentity());
+      shill::kEapIdentityProperty, GetEapIdentity());
   properties.SetStringWithoutPathExpansion(
-      flimflam::kEapPasswordProperty, GetEapPassphrase());
+      shill::kEapPasswordProperty, GetEapPassphrase());
   properties.SetBooleanWithoutPathExpansion(
-      flimflam::kSaveCredentialsProperty, GetSaveCredentials());
+      shill::kSaveCredentialsProperty, GetSaveCredentials());
 
   const bool share_default = true;
   bool share_network = GetShareNetwork(share_default);
+
+  bool only_policy_autoconnect =
+      onc::PolicyAllowsOnlyPolicyNetworksToAutoconnect(!share_network);
+  if (only_policy_autoconnect) {
+    properties.SetBooleanWithoutPathExpansion(shill::kAutoConnectProperty,
+                                              false);
+  }
+
   ash::network_connect::ConfigureNetworkAndConnect(
       service_path_, properties, share_network);
   return true;  // dialog will be closed
@@ -188,14 +198,14 @@ void WimaxConfigView::Cancel() {
 void WimaxConfigView::Init() {
   const NetworkState* wimax = NetworkHandler::Get()->network_state_handler()->
       GetNetworkState(service_path_);
-  DCHECK(wimax && wimax->type() == flimflam::kTypeWimax);
+  DCHECK(wimax && wimax->type() == shill::kTypeWimax);
 
   WifiConfigView::ParseWiFiEAPUIProperty(
-      &save_credentials_ui_data_, wimax, onc::eap::kSaveCredentials);
+      &save_credentials_ui_data_, wimax, ::onc::eap::kSaveCredentials);
   WifiConfigView::ParseWiFiEAPUIProperty(
-      &identity_ui_data_, wimax, onc::eap::kIdentity);
+      &identity_ui_data_, wimax, ::onc::eap::kIdentity);
   WifiConfigView::ParseWiFiUIProperty(
-      &passphrase_ui_data_, wimax, onc::wifi::kPassphrase);
+      &passphrase_ui_data_, wimax, ::onc::wifi::kPassphrase);
 
   views::GridLayout* layout = views::GridLayout::CreatePanel(this);
   SetLayoutManager(layout);
@@ -227,7 +237,7 @@ void WimaxConfigView::Init() {
 
   // Identity
   layout->StartRow(0, column_view_set_id);
-  string16 identity_label_text = l10n_util::GetStringUTF16(
+  base::string16 identity_label_text = l10n_util::GetStringUTF16(
       IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_CERT_IDENTITY);
   identity_label_ = new views::Label(identity_label_text);
   layout->AddView(identity_label_);
@@ -242,7 +252,7 @@ void WimaxConfigView::Init() {
 
   // Passphrase input
   layout->StartRow(0, column_view_set_id);
-  string16 passphrase_label_text = l10n_util::GetStringUTF16(
+  base::string16 passphrase_label_text = l10n_util::GetStringUTF16(
       IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_PASSPHRASE);
   passphrase_label_ = new views::Label(passphrase_label_text);
   layout->AddView(passphrase_label_);
@@ -259,7 +269,7 @@ void WimaxConfigView::Init() {
   } else {
     // Password visible button.
     passphrase_visible_button_ = new views::ToggleImageButton(this);
-    passphrase_visible_button_->set_focusable(true);
+    passphrase_visible_button_->SetFocusable(true);
     passphrase_visible_button_->SetTooltipText(
         l10n_util::GetStringUTF16(
             IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_PASSPHRASE_SHOW));
@@ -349,14 +359,14 @@ void WimaxConfigView::InitFromProperties(
   // EapIdentity
   std::string eap_identity;
   properties.GetStringWithoutPathExpansion(
-      flimflam::kEapIdentityProperty, &eap_identity);
+      shill::kEapIdentityProperty, &eap_identity);
   identity_textfield_->SetText(UTF8ToUTF16(eap_identity));
 
   // Save credentials
   if (save_credentials_checkbox_) {
     bool save_credentials = false;
     properties.GetBooleanWithoutPathExpansion(
-        flimflam::kSaveCredentialsProperty, &save_credentials);
+        shill::kSaveCredentialsProperty, &save_credentials);
     save_credentials_checkbox_->SetChecked(save_credentials);
   }
 }

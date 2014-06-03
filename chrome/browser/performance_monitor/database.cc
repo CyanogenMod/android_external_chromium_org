@@ -33,7 +33,9 @@ const char kMetricDb[] = "Metrics";
 const double kDefaultMaxValue = 0.0;
 
 // If the db is quiet for this number of minutes, then it is considered down.
-const base::TimeDelta kActiveIntervalTimeout = base::TimeDelta::FromMinutes(5);
+const base::TimeDelta kActiveIntervalTimeout() {
+  return base::TimeDelta::FromMinutes(5);
+}
 
 TimeRange ActiveIntervalToTimeRange(const std::string& start_time,
                                     const std::string& end_time) {
@@ -91,7 +93,7 @@ scoped_ptr<Database> Database::Create(base::FilePath path) {
     path = path.AppendASCII(kDbDir);
   }
   scoped_ptr<Database> database;
-  if (!base::DirectoryExists(path) && !file_util::CreateDirectory(path))
+  if (!base::DirectoryExists(path) && !base::CreateDirectory(path))
     return database.Pass();
   database.reset(new Database(path));
 
@@ -212,9 +214,9 @@ bool Database::AddMetric(const std::string& activity,
                          const Metric& metric) {
   CHECK(!content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
   if (!metric.IsValid()) {
-    LOG(ERROR) << "Metric to be added is invalid. Type: " << metric.type
-               << ", Time: " << metric.time.ToInternalValue()
-               << ", Value: " << metric.value << ". Ignoring.";
+    DLOG(ERROR) << "Metric to be added is invalid. Type: " << metric.type
+                << ", Time: " << metric.time.ToInternalValue()
+                << ", Value: " << metric.value << ". Ignoring.";
     return false;
   }
 
@@ -442,7 +444,7 @@ Database::~Database() {
 bool Database::InitDBs() {
   CHECK(!content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
   leveldb::Options open_options;
-  open_options.max_open_files = 64;  // Use minimum.
+  open_options.max_open_files = 0;  // Use minimum.
   open_options.create_if_missing = true;
 
   // TODO (rdevlin.cronin): This code is ugly. Fix it.
@@ -575,7 +577,7 @@ void Database::UpdateActiveInterval() {
   std::string end_time;
   // If the last update was too long ago.
   if (start_time_key_.empty() ||
-      current_time - last_update_time_ > kActiveIntervalTimeout) {
+      current_time - last_update_time_ > kActiveIntervalTimeout()) {
     start_time_key_ = key_builder_->CreateActiveIntervalKey(current_time);
     end_time = start_time_key_;
   } else {

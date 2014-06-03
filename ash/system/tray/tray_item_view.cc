@@ -7,8 +7,8 @@
 #include "ash/shelf/shelf_types.h"
 #include "ash/system/tray/system_tray.h"
 #include "ash/system/tray/system_tray_item.h"
-#include "ui/base/animation/slide_animation.h"
 #include "ui/compositor/layer.h"
+#include "ui/gfx/animation/slide_animation.h"
 #include "ui/views/controls/image_view.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/layout/box_layout.h"
@@ -60,9 +60,9 @@ void TrayItemView::SetVisible(bool set_visible) {
   }
 
   if (!animation_) {
-    animation_.reset(new ui::SlideAnimation(this));
+    animation_.reset(new gfx::SlideAnimation(this));
     animation_->SetSlideDuration(GetAnimationDurationMS());
-    animation_->SetTweenType(ui::Tween::LINEAR);
+    animation_->SetTweenType(gfx::Tween::LINEAR);
     animation_->Reset(visible() ? 1.0 : 0.0);
   }
 
@@ -93,8 +93,14 @@ gfx::Size TrayItemView::GetPreferredSize() {
     size.set_width(kTrayIconWidth);
   if (!animation_.get() || !animation_->is_animating())
     return size;
-  size.set_width(std::max(1,
-      static_cast<int>(size.width() * animation_->GetCurrentValue())));
+  if (owner()->system_tray()->shelf_alignment() == SHELF_ALIGNMENT_BOTTOM ||
+      owner()->system_tray()->shelf_alignment() == SHELF_ALIGNMENT_TOP) {
+    size.set_width(std::max(1,
+        static_cast<int>(size.width() * animation_->GetCurrentValue())));
+  } else {
+    size.set_height(std::max(1,
+        static_cast<int>(size.height() * animation_->GetCurrentValue())));
+  }
   return size;
 }
 
@@ -106,22 +112,28 @@ void TrayItemView::ChildPreferredSizeChanged(views::View* child) {
   PreferredSizeChanged();
 }
 
-void TrayItemView::AnimationProgressed(const ui::Animation* animation) {
+void TrayItemView::AnimationProgressed(const gfx::Animation* animation) {
   gfx::Transform transform;
-  transform.Translate(0, animation->CurrentValueBetween(
-      static_cast<double>(height()) / 2, 0.));
+  if (owner()->system_tray()->shelf_alignment() == SHELF_ALIGNMENT_BOTTOM ||
+      owner()->system_tray()->shelf_alignment() == SHELF_ALIGNMENT_TOP) {
+    transform.Translate(0, animation->CurrentValueBetween(
+        static_cast<double>(height()) / 2, 0.));
+  } else {
+    transform.Translate(animation->CurrentValueBetween(
+        static_cast<double>(width() / 2), 0.), 0);
+  }
   transform.Scale(animation->GetCurrentValue(),
                   animation->GetCurrentValue());
   layer()->SetTransform(transform);
   PreferredSizeChanged();
 }
 
-void TrayItemView::AnimationEnded(const ui::Animation* animation) {
+void TrayItemView::AnimationEnded(const gfx::Animation* animation) {
   if (animation->GetCurrentValue() < 0.1)
     views::View::SetVisible(false);
 }
 
-void TrayItemView::AnimationCanceled(const ui::Animation* animation) {
+void TrayItemView::AnimationCanceled(const gfx::Animation* animation) {
   AnimationEnded(animation);
 }
 

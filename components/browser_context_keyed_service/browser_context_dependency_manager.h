@@ -19,6 +19,10 @@ namespace content {
 class BrowserContext;
 }
 
+namespace user_prefs {
+class PrefRegistrySyncable;
+}
+
 // A singleton that listens for context destruction notifications and
 // rebroadcasts them to each BrowserContextKeyedBaseFactory in a safe order
 // based on the stated dependencies by each service.
@@ -33,13 +37,27 @@ class BROWSER_CONTEXT_KEYED_SERVICE_EXPORT BrowserContextDependencyManager {
   void AddEdge(BrowserContextKeyedBaseFactory* depended,
                BrowserContextKeyedBaseFactory* dependee);
 
+  // Registers profile-specific preferences for all services via |registry|.
+  // |context| should be the BrowserContext containing |registry| and is used as
+  // a key to prevent multiple registrations on the same BrowserContext in
+  // tests.
+  void RegisterProfilePrefsForServices(
+      const content::BrowserContext* context,
+      user_prefs::PrefRegistrySyncable* registry);
+
   // Called by each BrowserContext to alert us of its creation. Several services
-  // want to be started when a context is created. Testing configuration is also
-  // done at this time. (If you want your BrowserContextKeyedService to be
-  // started with the BrowserContext, override BrowserContextKeyedBaseFactory::
-  // ServiceIsCreatedWithBrowserContext() to return true.)
-  void CreateBrowserContextServices(content::BrowserContext* context,
-                                    bool is_testing_context);
+  // want to be started when a context is created. If you want your
+  // BrowserContextKeyedService to be started with the BrowserContext, override
+  // BrowserContextKeyedBaseFactory::ServiceIsCreatedWithBrowserContext() to
+  // return true. This method also registers any service-related preferences
+  // for non-incognito profiles.
+  void CreateBrowserContextServices(content::BrowserContext* context);
+
+  // Similar to CreateBrowserContextServices(), except this is used for creating
+  // test BrowserContexts - these contexts will not create services for any
+  // BrowserContextKeyedBaseFactories that return true from
+  // ServiceIsNULLWhileTesting().
+  void CreateBrowserContextServicesForTest(content::BrowserContext* context);
 
   // Called by each BrowserContext to alert us that we should destroy services
   // associated with it.
@@ -57,6 +75,10 @@ class BROWSER_CONTEXT_KEYED_SERVICE_EXPORT BrowserContextDependencyManager {
  private:
   friend class BrowserContextDependencyManagerUnittests;
   friend struct DefaultSingletonTraits<BrowserContextDependencyManager>;
+
+  // Helper function used by CreateBrowserContextServices[ForTest].
+  void DoCreateBrowserContextServices(content::BrowserContext* context,
+                                      bool is_testing_context);
 
   BrowserContextDependencyManager();
   virtual ~BrowserContextDependencyManager();

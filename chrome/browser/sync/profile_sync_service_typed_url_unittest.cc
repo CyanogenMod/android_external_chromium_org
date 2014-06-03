@@ -23,10 +23,11 @@
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history/history_types.h"
 #include "chrome/browser/invalidation/invalidation_service_factory.h"
+#include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
-#include "chrome/browser/signin/token_service_factory.h"
 #include "chrome/browser/sync/abstract_profile_sync_service_test.h"
+#include "chrome/browser/sync/fake_oauth2_token_service.h"
 #include "chrome/browser/sync/glue/data_type_error_handler_mock.h"
 #include "chrome/browser/sync/glue/sync_backend_host.h"
 #include "chrome/browser/sync/glue/typed_url_change_processor.h"
@@ -38,7 +39,6 @@
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/sync/profile_sync_test_util.h"
 #include "chrome/browser/sync/test_profile_sync_service.h"
-#include "chrome/test/base/profile_mock.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/browser_context_keyed_service/refcounted_browser_context_keyed_service.h"
 #include "content/public/browser/notification_service.h"
@@ -85,7 +85,8 @@ class HistoryBackendMock : public HistoryBackend {
                                history::VisitSource visit_source));
   MOCK_METHOD1(RemoveVisits, bool(const history::VisitVector& visits));
   MOCK_METHOD2(GetURL, bool(const GURL& url_id, history::URLRow* url_row));
-  MOCK_METHOD2(SetPageTitle, void(const GURL& url, const string16& title));
+  MOCK_METHOD2(SetPageTitle, void(const GURL& url,
+                                  const base::string16& title));
   MOCK_METHOD1(DeleteURL, void(const GURL& url));
 
  private:
@@ -184,7 +185,10 @@ class ProfileSyncServiceTypedUrlTest : public AbstractProfileSyncServiceTest {
 
   virtual void SetUp() {
     AbstractProfileSyncServiceTest::SetUp();
-    profile_.reset(new ProfileMock());
+    TestingProfile::Builder builder;
+    builder.AddTestingFactory(ProfileOAuth2TokenServiceFactory::GetInstance(),
+                              FakeOAuth2TokenService::BuildTokenService);
+    profile_ = builder.Build().Pass();
     invalidation::InvalidationServiceFactory::GetInstance()->
         SetBuildOnlyFakeInvalidatorsForTest(true);
     history_backend_ = new HistoryBackendMock();
@@ -211,11 +215,6 @@ class ProfileSyncServiceTypedUrlTest : public AbstractProfileSyncServiceTest {
       SigninManagerBase* signin =
           SigninManagerFactory::GetForProfile(profile_.get());
       signin->SetAuthenticatedUsername("test");
-      token_service_ = static_cast<TokenService*>(
-          TokenServiceFactory::GetInstance()->SetTestingFactoryAndUse(
-              profile_.get(), BuildTokenService));
-      ProfileOAuth2TokenServiceFactory::GetInstance()->SetTestingFactory(
-          profile_.get(), FakeOAuth2TokenService::BuildTokenService);
       sync_service_ = static_cast<TestProfileSyncService*>(
           ProfileSyncServiceFactory::GetInstance()->SetTestingFactoryAndUse(
               profile_.get(),
@@ -238,10 +237,9 @@ class ProfileSyncServiceTypedUrlTest : public AbstractProfileSyncServiceTest {
       EXPECT_CALL(*components, CreateDataTypeManager(_, _, _, _, _, _)).
           WillOnce(ReturnNewDataTypeManager());
 
-      token_service_->IssueAuthTokenForTest(
-          GaiaConstants::kGaiaOAuth2LoginRefreshToken, "oauth2_login_token");
-      token_service_->IssueAuthTokenForTest(
-          GaiaConstants::kSyncService, "token");
+      ProfileOAuth2TokenService* oauth2_token_service =
+          ProfileOAuth2TokenServiceFactory::GetForProfile(profile_.get());
+      oauth2_token_service->UpdateCredentials("test", "oauth2_login_token");
 
       sync_service_->RegisterDataTypeController(data_type_controller);
 
@@ -322,7 +320,7 @@ class ProfileSyncServiceTypedUrlTest : public AbstractProfileSyncServiceTest {
 
   scoped_ptr<Thread> history_thread_;
 
-  scoped_ptr<ProfileMock> profile_;
+  scoped_ptr<TestingProfile> profile_;
   scoped_refptr<HistoryBackendMock> history_backend_;
   HistoryServiceMock* history_service_;
   browser_sync::DataTypeErrorHandlerMock error_handler_;

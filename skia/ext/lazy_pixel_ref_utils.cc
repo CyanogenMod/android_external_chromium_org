@@ -4,10 +4,12 @@
 
 #include "skia/ext/lazy_pixel_ref_utils.h"
 
+#include <algorithm>
+
 #include "skia/ext/lazy_pixel_ref.h"
+#include "third_party/skia/include/core/SkBitmapDevice.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkData.h"
-#include "third_party/skia/include/core/SkDevice.h"
 #include "third_party/skia/include/core/SkDraw.h"
 #include "third_party/skia/include/core/SkPixelRef.h"
 #include "third_party/skia/include/core/SkRRect.h"
@@ -44,10 +46,10 @@ class LazyPixelRefSet {
   std::vector<LazyPixelRefUtils::PositionLazyPixelRef>* pixel_refs_;
 };
 
-class GatherPixelRefDevice : public SkDevice {
+class GatherPixelRefDevice : public SkBitmapDevice {
  public:
   GatherPixelRefDevice(const SkBitmap& bm, LazyPixelRefSet* lazy_pixel_ref_set)
-      : SkDevice(bm), lazy_pixel_ref_set_(lazy_pixel_ref_set) {}
+      : SkBitmapDevice(bm), lazy_pixel_ref_set_(lazy_pixel_ref_set) {}
 
   virtual void clear(SkColor color) SK_OVERRIDE {}
   virtual void writePixels(const SkBitmap& bitmap,
@@ -59,11 +61,7 @@ class GatherPixelRefDevice : public SkDevice {
     SkBitmap bitmap;
     if (GetBitmapFromPaint(paint, &bitmap)) {
       SkRect clip_rect = SkRect::Make(draw.fRC->getBounds());
-      SkRect canvas_rect = SkRect::MakeWH(width(), height());
-      SkRect paint_rect = SkRect::MakeEmpty();
-      paint_rect.intersect(canvas_rect, clip_rect);
-
-      AddBitmap(bitmap, paint_rect);
+      AddBitmap(bitmap, clip_rect);
     }
   }
 
@@ -153,7 +151,8 @@ class GatherPixelRefDevice : public SkDevice {
                               const SkBitmap& bitmap,
                               const SkRect* src_or_null,
                               const SkRect& dst,
-                              const SkPaint& paint) SK_OVERRIDE {
+                              const SkPaint& paint,
+                              SkCanvas::DrawBitmapRectFlags flags) SK_OVERRIDE {
     SkRect bitmap_rect = SkRect::MakeWH(bitmap.width(), bitmap.height());
     SkMatrix matrix;
     matrix.setRectToRect(bitmap_rect, dst, SkMatrix::kFill_ScaleToFit);
@@ -314,7 +313,7 @@ class GatherPixelRefDevice : public SkDevice {
         draw, SkCanvas::kPolygon_PointMode, vertex_count, verts, paint);
   }
   virtual void drawDevice(const SkDraw&,
-                          SkDevice*,
+                          SkBaseDevice*,
                           int x,
                           int y,
                           const SkPaint&) SK_OVERRIDE {}
@@ -331,7 +330,10 @@ class GatherPixelRefDevice : public SkDevice {
   LazyPixelRefSet* lazy_pixel_ref_set_;
 
   void AddBitmap(const SkBitmap& bm, const SkRect& rect) {
-    lazy_pixel_ref_set_->Add(bm.pixelRef(), rect);
+    SkRect canvas_rect = SkRect::MakeWH(width(), height());
+    SkRect paint_rect = SkRect::MakeEmpty();
+    paint_rect.intersect(rect, canvas_rect);
+    lazy_pixel_ref_set_->Add(bm.pixelRef(), paint_rect);
   }
 
   bool GetBitmapFromPaint(const SkPaint& paint, SkBitmap* bm) {
@@ -348,7 +350,7 @@ class GatherPixelRefDevice : public SkDevice {
 
 class NoSaveLayerCanvas : public SkCanvas {
  public:
-  NoSaveLayerCanvas(SkDevice* device) : INHERITED(device) {}
+  NoSaveLayerCanvas(SkBaseDevice* device) : INHERITED(device) {}
 
   // Turn saveLayer() into save() for speed, should not affect correctness.
   virtual int saveLayer(const SkRect* bounds,

@@ -15,7 +15,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
 #include "content/public/browser/web_ui_message_handler.h"
-#include "ui/base/keycodes/keyboard_codes.h"
+#include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/size.h"
 #include "ui/web_dialogs/web_dialog_delegate.h"
 #include "ui/web_dialogs/web_dialog_web_contents_delegate.h"
@@ -46,7 +46,7 @@ public:
 
   // WebDialogDelegate declarations.
   virtual ui::ModalType GetDialogModalType() const OVERRIDE;
-  virtual string16 GetDialogTitle() const OVERRIDE;
+  virtual base::string16 GetDialogTitle() const OVERRIDE;
   virtual GURL GetDialogContentURL() const OVERRIDE;
   virtual void GetWebUIMessageHandlers(
       std::vector<WebUIMessageHandler*>* handlers) const OVERRIDE;
@@ -150,8 +150,8 @@ ui::ModalType WebDialogWindowDelegateBridge::GetDialogModalType() const {
   return ui::MODAL_TYPE_NONE;
 }
 
-string16 WebDialogWindowDelegateBridge::GetDialogTitle() const {
-  return delegate_ ? delegate_->GetDialogTitle() : string16();
+base::string16 WebDialogWindowDelegateBridge::GetDialogTitle() const {
+  return delegate_ ? delegate_->GetDialogTitle() : base::string16();
 }
 
 GURL WebDialogWindowDelegateBridge::GetDialogContentURL() const {

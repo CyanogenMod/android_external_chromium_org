@@ -5,12 +5,14 @@
 #include <stdlib.h>
 
 #if defined(OS_WIN)
+#include <dwmapi.h>
 #include <windows.h>
 #endif
 
 #include "base/debug/trace_event.h"
 #include "base/lazy_instance.h"
 #include "base/message_loop/message_loop.h"
+#include "base/metrics/histogram.h"
 #include "base/rand_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
@@ -20,28 +22,25 @@
 #include "content/common/content_constants_internal.h"
 #include "content/common/gpu/gpu_config.h"
 #include "content/common/gpu/gpu_messages.h"
-#include "content/common/sandbox_linux.h"
+#include "content/common/sandbox_linux/sandbox_linux.h"
 #include "content/gpu/gpu_child_thread.h"
 #include "content/gpu/gpu_process.h"
 #include "content/gpu/gpu_watchdog_thread.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/main_function_params.h"
-#include "crypto/hmac.h"
+#include "gpu/command_buffer/service/gpu_switches.h"
 #include "gpu/config/gpu_info_collector.h"
+#include "gpu/config/gpu_util.h"
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_surface.h"
 #include "ui/gl/gl_switches.h"
 #include "ui/gl/gpu_switching_manager.h"
 
 #if defined(OS_WIN)
+#include "base/win/windows_version.h"
 #include "base/win/scoped_com_initializer.h"
-#include "content/common/gpu/media/dxva_video_decode_accelerator.h"
 #include "sandbox/win/src/sandbox.h"
-#elif defined(OS_CHROMEOS) && defined(ARCH_CPU_ARMEL) && defined(USE_X11)
-#include "content/common/gpu/media/exynos_video_decode_accelerator.h"
-#elif defined(OS_CHROMEOS) && defined(ARCH_CPU_X86_FAMILY) && defined(USE_X11)
-#include "content/common/gpu/media/vaapi_wrapper.h"
 #endif
 
 #if defined(USE_X11)
@@ -95,31 +94,27 @@ int GpuMain(const MainFunctionParams& parameters) {
 
   base::Time start_time = base::Time::Now();
 
-  bool in_browser_process = command_line.HasSwitch(switches::kSingleProcess) ||
-                            command_line.HasSwitch(switches::kInProcessGPU);
-
-  if (!in_browser_process) {
 #if defined(OS_WIN)
-    // Prevent Windows from displaying a modal dialog on failures like not being
-    // able to load a DLL.
-    SetErrorMode(
-        SEM_FAILCRITICALERRORS |
-        SEM_NOGPFAULTERRORBOX |
-        SEM_NOOPENFILEERRORBOX);
+  // Prevent Windows from displaying a modal dialog on failures like not being
+  // able to load a DLL.
+  SetErrorMode(
+      SEM_FAILCRITICALERRORS |
+      SEM_NOGPFAULTERRORBOX |
+      SEM_NOOPENFILEERRORBOX);
 #elif defined(USE_X11)
-    ui::SetDefaultX11ErrorHandlers();
+  ui::SetDefaultX11ErrorHandlers();
 #endif
 
-    logging::SetLogMessageHandler(GpuProcessLogMessageHandler);
-  }
+  logging::SetLogMessageHandler(GpuProcessLogMessageHandler);
 
-  if (command_line.HasSwitch(switches::kSupportsDualGpus) &&
-      command_line.HasSwitch(switches::kGpuSwitching)) {
-    std::string option = command_line.GetSwitchValueASCII(
-        switches::kGpuSwitching);
-    if (option == switches::kGpuSwitchingOptionNameForceDiscrete)
+  if (command_line.HasSwitch(switches::kSupportsDualGpus)) {
+    std::string types = command_line.GetSwitchValueASCII(
+        switches::kGpuDriverBugWorkarounds);
+    std::set<int> workarounds;
+    gpu::StringToFeatureSet(types, &workarounds);
+    if (workarounds.count(gpu::FORCE_DISCRETE_GPU) == 1)
       ui::GpuSwitchingManager::GetInstance()->ForceUseOfDiscreteGpu();
-    else if (option == switches::kGpuSwitchingOptionNameForceIntegrated)
+    else if (workarounds.count(gpu::FORCE_INTEGRATED_GPU) == 1)
       ui::GpuSwitchingManager::GetInstance()->ForceUseOfIntegratedGpu();
   }
 
@@ -144,6 +139,8 @@ int GpuMain(const MainFunctionParams& parameters) {
           gfx::kGLImplementationDesktopName) {
     message_loop_type = base::MessageLoop::TYPE_UI;
   }
+#elif defined(TOOLKIT_GTK)
+  message_loop_type = base::MessageLoop::TYPE_GPU;
 #elif defined(OS_LINUX)
   message_loop_type = base::MessageLoop::TYPE_DEFAULT;
 #endif
@@ -187,19 +184,22 @@ int GpuMain(const MainFunctionParams& parameters) {
   DCHECK(command_line.HasSwitch(switches::kGpuVendorID) &&
          command_line.HasSwitch(switches::kGpuDeviceID) &&
          command_line.HasSwitch(switches::kGpuDriverVersion));
-  bool success = base::HexStringToInt(
+  bool success = base::HexStringToUInt(
       command_line.GetSwitchValueASCII(switches::kGpuVendorID),
-      reinterpret_cast<int*>(&(gpu_info.gpu.vendor_id)));
+      &gpu_info.gpu.vendor_id);
   DCHECK(success);
-  success = base::HexStringToInt(
+  success = base::HexStringToUInt(
       command_line.GetSwitchValueASCII(switches::kGpuDeviceID),
-      reinterpret_cast<int*>(&(gpu_info.gpu.device_id)));
+      &gpu_info.gpu.device_id);
   DCHECK(success);
   gpu_info.driver_vendor =
       command_line.GetSwitchValueASCII(switches::kGpuDriverVendor);
   gpu_info.driver_version =
       command_line.GetSwitchValueASCII(switches::kGpuDriverVersion);
   GetContentClient()->SetGpuInfo(gpu_info);
+
+  base::TimeDelta collect_context_time;
+  base::TimeDelta initialize_one_off_time;
 
   // Warm up resources that don't need access to GPUInfo.
   if (WarmUpSandbox(command_line)) {
@@ -216,6 +216,8 @@ int GpuMain(const MainFunctionParams& parameters) {
 #endif
 #endif  // defined(OS_LINUX)
 
+    base::TimeTicks before_initialize_one_off = base::TimeTicks::Now();
+
     // Load and initialize the GL implementation and locate the GL entry points.
     if (gfx::GLSurface::InitializeOneOff()) {
       // We need to collect GL strings (VENDOR, RENDERER) for blacklisting
@@ -226,10 +228,21 @@ int GpuMain(const MainFunctionParams& parameters) {
       // By skipping the following code on Mac, we don't really lose anything,
       // because the basic GPU information is passed down from browser process
       // and we already registered them through SetGpuInfo() above.
+      base::TimeTicks before_collect_context_graphics_info =
+          base::TimeTicks::Now();
 #if !defined(OS_MACOSX)
       if (!gpu::CollectContextGraphicsInfo(&gpu_info))
         VLOG(1) << "gpu::CollectGraphicsInfo failed";
       GetContentClient()->SetGpuInfo(gpu_info);
+
+#if defined(OS_CHROMEOS) || defined(OS_ANDROID)
+      // Recompute gpu driver bug workarounds - this is specifically useful
+      // on systems where vendor_id/device_id aren't available.
+      if (!command_line.HasSwitch(switches::kDisableGpuDriverBugWorkarounds)) {
+        gpu::ApplyGpuDriverBugWorkarounds(
+            gpu_info, const_cast<CommandLine*>(&command_line));
+      }
+#endif
 
 #if defined(OS_LINUX)
       initialized_gl_context = true;
@@ -245,10 +258,15 @@ int GpuMain(const MainFunctionParams& parameters) {
 #endif  // !defined(OS_CHROMEOS)
 #endif  // defined(OS_LINUX)
 #endif  // !defined(OS_MACOSX)
+      collect_context_time =
+          base::TimeTicks::Now() - before_collect_context_graphics_info;
     } else {
       VLOG(1) << "gfx::GLSurface::InitializeOneOff failed";
       dead_on_arrival = true;
     }
+
+    initialize_one_off_time =
+        base::TimeTicks::Now() - before_initialize_one_off;
 
     if (enable_watchdog && delayed_watchdog_enable) {
       watchdog_thread = new GpuWatchdogThread(kGpuTimeout);
@@ -281,6 +299,11 @@ int GpuMain(const MainFunctionParams& parameters) {
   logging::SetLogMessageHandler(NULL);
 
   GpuProcess gpu_process;
+
+  // These UMA must be stored after GpuProcess is constructed as it
+  // initializes StatisticsRecorder which tracks the histograms.
+  UMA_HISTOGRAM_TIMES("GPU.CollectContextGraphicsInfo", collect_context_time);
+  UMA_HISTOGRAM_TIMES("GPU.InitializeOneOffTime", initialize_one_off_time);
 
   GpuChildThread* child_thread = new GpuChildThread(watchdog_thread.get(),
                                                     dead_on_arrival,
@@ -342,40 +365,6 @@ bool WarmUpSandbox(const CommandLine& command_line) {
     // platforms.
     (void) base::RandUint64();
   }
-  {
-    TRACE_EVENT0("gpu", "Warm up HMAC");
-    // Warm up the crypto subsystem, which needs to done pre-sandbox on all
-    // platforms.
-    crypto::HMAC hmac(crypto::HMAC::SHA256);
-    unsigned char key = '\0';
-    if (!hmac.Init(&key, sizeof(key))) {
-      LOG(ERROR) << "WarmUpSandbox() failed with crypto::HMAC::Init()";
-      return false;
-    }
-  }
-
-#if defined(OS_CHROMEOS) && defined(ARCH_CPU_ARMEL) && defined(USE_X11)
-  ExynosVideoDecodeAccelerator::PreSandboxInitialization();
-#elif defined(OS_CHROMEOS) && defined(ARCH_CPU_X86_FAMILY) && defined(USE_X11)
-  VaapiWrapper::PreSandboxInitialization();
-#endif
-
-#if defined(OS_WIN)
-  {
-    TRACE_EVENT0("gpu", "Preload setupapi.dll");
-    // Preload this DLL because the sandbox prevents it from loading.
-    if (LoadLibrary(L"setupapi.dll") == NULL) {
-      LOG(ERROR) << "WarmUpSandbox() failed with loading setupapi.dll";
-      return false;
-    }
-  }
-
-  if (!command_line.HasSwitch(switches::kDisableAcceleratedVideoDecode)) {
-    TRACE_EVENT0("gpu", "Initialize DXVA");
-    // Initialize H/W video decoding stuff which fails in the sandbox.
-    DXVAVideoDecodeAccelerator::PreSandboxInitialization();
-  }
-#endif
   return true;
 }
 
@@ -401,13 +390,17 @@ bool StartSandboxLinux(const gpu::GPUInfo& gpu_info,
 
   WarmUpSandboxNvidia(gpu_info, should_initialize_gl_context);
 
-  if (watchdog_thread)
-    watchdog_thread->Stop();
+  if (watchdog_thread) {
+    // LinuxSandbox needs to be able to ensure that the thread
+    // has really been stopped.
+    LinuxSandbox::StopThread(watchdog_thread);
+  }
   // LinuxSandbox::InitializeSandbox() must always be called
   // with only one thread.
   res = LinuxSandbox::InitializeSandbox();
-  if (watchdog_thread)
+  if (watchdog_thread) {
     watchdog_thread->Start();
+  }
 
   return res;
 }

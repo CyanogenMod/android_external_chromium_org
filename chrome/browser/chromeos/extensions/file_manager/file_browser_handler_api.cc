@@ -35,7 +35,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/platform_file.h"
-#include "chrome/browser/chromeos/extensions/file_manager/file_tasks.h"
+#include "chrome/browser/chromeos/file_manager/fileapi_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
@@ -50,6 +50,8 @@
 #include "ui/shell_dialogs/select_file_dialog.h"
 #include "webkit/browser/fileapi/file_system_backend.h"
 #include "webkit/browser/fileapi/file_system_context.h"
+#include "webkit/common/fileapi/file_system_info.h"
+#include "webkit/common/fileapi/file_system_util.h"
 
 using content::BrowserContext;
 using content::BrowserThread;
@@ -209,7 +211,7 @@ bool FileSelectorImpl::StartSelectFile(
   allowed_file_info.support_drive = true;
 
   dialog_->SelectFile(ui::SelectFileDialog::SELECT_SAVEAS_FILE,
-                      string16() /* dialog title*/,
+                      base::string16() /* dialog title*/,
                       suggested_name,
                       &allowed_file_info,
                       0 /* file type index */,
@@ -264,22 +266,6 @@ class FileSelectorFactoryImpl : public FileSelectorFactory {
   DISALLOW_COPY_AND_ASSIGN(FileSelectorFactoryImpl);
 };
 
-typedef base::Callback<void (bool success,
-                             const std::string& file_system_name,
-                             const GURL& file_system_root)>
-    FileSystemOpenCallback;
-
-// Relays callback from file system open operation by translating file error
-// returned by the operation to success boolean.
-void RunOpenFileSystemCallback(
-    const FileSystemOpenCallback& callback,
-    base::PlatformFileError error,
-    const std::string& file_system_name,
-    const GURL& file_system_root) {
-  bool success = (error == base::PLATFORM_FILE_OK);
-  callback.Run(success, file_system_name, file_system_root);
-}
-
 }  // namespace
 
 FileBrowserHandlerInternalSelectFileFunction::
@@ -324,31 +310,6 @@ bool FileBrowserHandlerInternalSelectFileFunction::RunImpl() {
 void FileBrowserHandlerInternalSelectFileFunction::OnFilePathSelected(
     bool success,
     const base::FilePath& full_path) {
-  if (!success) {
-    Respond(false);
-    return;
-  }
-
-  full_path_ = full_path;
-
-  // We have to open file system in order to create a FileEntry object for the
-  // selected file path.
-  content::SiteInstance* site_instance = render_view_host()->GetSiteInstance();
-  BrowserContext::GetStoragePartition(profile_, site_instance)->
-      GetFileSystemContext()->OpenFileSystem(
-          source_url_.GetOrigin(), fileapi::kFileSystemTypeExternal,
-          fileapi::OPEN_FILE_SYSTEM_FAIL_IF_NONEXISTENT,
-          base::Bind(
-              &RunOpenFileSystemCallback,
-              base::Bind(&FileBrowserHandlerInternalSelectFileFunction::
-                             OnFileSystemOpened,
-                         this)));
-};
-
-void FileBrowserHandlerInternalSelectFileFunction::OnFileSystemOpened(
-    bool success,
-    const std::string& file_system_name,
-    const GURL& file_system_root) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   if (!success) {
@@ -356,9 +317,12 @@ void FileBrowserHandlerInternalSelectFileFunction::OnFileSystemOpened(
     return;
   }
 
-  // Remember opened file system's parameters.
-  file_system_name_ = file_system_name;
-  file_system_root_ = file_system_root;
+  full_path_ = full_path;
+
+  fileapi::FileSystemInfo info =
+      fileapi::GetFileSystemInfoForChromeOS(source_url_.GetOrigin());
+  file_system_name_ = info.name;
+  file_system_root_ = info.root_url;
 
   GrantPermissions();
 
@@ -366,10 +330,9 @@ void FileBrowserHandlerInternalSelectFileFunction::OnFileSystemOpened(
 }
 
 void FileBrowserHandlerInternalSelectFileFunction::GrantPermissions() {
-  content::SiteInstance* site_instance = render_view_host()->GetSiteInstance();
   fileapi::ExternalFileSystemBackend* external_backend =
-      BrowserContext::GetStoragePartition(profile_, site_instance)->
-      GetFileSystemContext()->external_backend();
+      file_manager::util::GetFileSystemContextForRenderViewHost(
+          GetProfile(), render_view_host())->external_backend();
   DCHECK(external_backend);
 
   external_backend->GetVirtualPath(full_path_, &virtual_path_);

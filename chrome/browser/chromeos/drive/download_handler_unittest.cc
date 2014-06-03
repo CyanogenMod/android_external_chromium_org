@@ -7,7 +7,6 @@
 #include "base/files/scoped_temp_dir.h"
 #include "chrome/browser/chromeos/drive/dummy_file_system.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
-#include "chrome/browser/chromeos/drive/file_write_helper.h"
 #include "chrome/browser/chromeos/drive/test_util.h"
 #include "content/public/test/mock_download_item.h"
 #include "content/public/test/mock_download_manager.h"
@@ -18,49 +17,32 @@ namespace drive {
 
 namespace {
 
-// Flags to control the state of the test file system.
-enum DownloadPathState {
-  // Simulates the state that requested path just simply exists.
-  PATH_EXISTS,
-  // Simulates the state that requested path fails to be accessed.
-  PATH_INVALID,
-  // Simulates the state that the requested path does not exist.
-  PATH_NOT_EXIST,
-  // Simulates the state that the path does not exist nor be able to be created.
-  PATH_NOT_EXIST_AND_CREATE_FAIL,
-};
-
 // Test file system for verifying the behavior of DownloadHandler, by simulating
 // various responses from FileSystem.
 class DownloadHandlerTestFileSystem : public DummyFileSystem {
  public:
-  DownloadHandlerTestFileSystem() : state_(PATH_INVALID) {}
+  DownloadHandlerTestFileSystem() : error_(FILE_ERROR_FAILED) {}
 
-  void set_download_path_state(DownloadPathState state) { state_ = state; }
+  void set_error(FileError error) { error_ = error; }
 
   // FileSystemInterface overrides.
-  virtual void GetResourceEntryByPath(
+  virtual void GetResourceEntry(
       const base::FilePath& file_path,
       const GetResourceEntryCallback& callback) OVERRIDE {
-    if (state_ == PATH_EXISTS) {
-      callback.Run(FILE_ERROR_OK, make_scoped_ptr(new ResourceEntry));
-      return;
-    }
-    callback.Run(
-        state_ == PATH_INVALID ? FILE_ERROR_FAILED : FILE_ERROR_NOT_FOUND,
-        scoped_ptr<ResourceEntry>());
- }
+    callback.Run(error_, scoped_ptr<ResourceEntry>(
+        error_ == FILE_ERROR_OK ? new ResourceEntry : NULL));
+  }
 
- virtual void CreateDirectory(
-     const base::FilePath& directory_path,
-     bool is_exclusive,
-     bool is_recursive,
-     const FileOperationCallback& callback) OVERRIDE {
-   callback.Run(state_ == PATH_NOT_EXIST ? FILE_ERROR_OK : FILE_ERROR_FAILED);
- }
+  virtual void CreateDirectory(
+      const base::FilePath& directory_path,
+      bool is_exclusive,
+      bool is_recursive,
+      const FileOperationCallback& callback) OVERRIDE {
+    callback.Run(error_);
+  }
 
  private:
-  DownloadPathState state_;
+  FileError error_;
 };
 
 }  // namespace
@@ -77,9 +59,7 @@ class DownloadHandlerTest : public testing::Test {
     EXPECT_CALL(download_item_, GetState())
         .WillRepeatedly(testing::Return(content::DownloadItem::IN_PROGRESS));
 
-    file_write_helper_.reset(new FileWriteHelper(&test_file_system_));
-    download_handler_.reset(
-        new DownloadHandler(file_write_helper_.get(), &test_file_system_));
+    download_handler_.reset(new DownloadHandler(&test_file_system_));
     download_handler_->Initialize(download_manager_.get(), temp_dir_.path());
   }
 
@@ -88,7 +68,6 @@ class DownloadHandlerTest : public testing::Test {
   content::TestBrowserThreadBundle thread_bundle_;
   scoped_ptr<content::MockDownloadManager> download_manager_;
   DownloadHandlerTestFileSystem test_file_system_;
-  scoped_ptr<FileWriteHelper> file_write_helper_;
   scoped_ptr<DownloadHandler> download_handler_;
   content::MockDownloadItem download_item_;
 };
@@ -115,7 +94,7 @@ TEST_F(DownloadHandlerTest, SubstituteDriveDownloadPath) {
       util::GetDriveMountPointPath().AppendASCII("test.dat");
 
   // Test the case that the download target directory already exists.
-  test_file_system_.set_download_path_state(PATH_EXISTS);
+  test_file_system_.set_error(FILE_ERROR_OK);
 
   // Call SubstituteDriveDownloadPath()
   base::FilePath substituted_path;
@@ -137,50 +116,7 @@ TEST_F(DownloadHandlerTest, SubstituteDriveDownloadPathGetEntryFailure) {
 
   // Test the case that access to the download target directory failed for some
   // reason.
-  test_file_system_.set_download_path_state(PATH_INVALID);
-
-  // Call SubstituteDriveDownloadPath()
-  base::FilePath substituted_path;
-  download_handler_->SubstituteDriveDownloadPath(
-      drive_path,
-      &download_item_,
-      google_apis::test_util::CreateCopyResultCallback(&substituted_path));
-  test_util::RunBlockingPoolTask();
-
-  // Check the result.
-  EXPECT_TRUE(substituted_path.empty());
-}
-
-TEST_F(DownloadHandlerTest, SubstituteDriveDownloadPathCreateDirectory) {
-  const base::FilePath drive_path =
-      util::GetDriveMountPointPath().AppendASCII("test.dat");
-
-  // Test the case that access to the download target directory does not exist,
-  // and thus will be created in DownloadHandler.
-  test_file_system_.set_download_path_state(PATH_NOT_EXIST);
-
-  // Call SubstituteDriveDownloadPath()
-  base::FilePath substituted_path;
-  download_handler_->SubstituteDriveDownloadPath(
-      drive_path,
-      &download_item_,
-      google_apis::test_util::CreateCopyResultCallback(&substituted_path));
-  test_util::RunBlockingPoolTask();
-
-  // Check the result.
-  EXPECT_TRUE(temp_dir_.path().IsParent(substituted_path));
-  ASSERT_TRUE(download_handler_->IsDriveDownload(&download_item_));
-  EXPECT_EQ(drive_path, download_handler_->GetTargetPath(&download_item_));
-}
-
-TEST_F(DownloadHandlerTest,
-       SubstituteDriveDownloadPathCreateDirectoryFailure) {
-  const base::FilePath drive_path =
-      util::GetDriveMountPointPath().AppendASCII("test.dat");
-
-  // Test the case that access to the download target directory does not exist,
-  // and creation fails for some reason.
-  test_file_system_.set_download_path_state(PATH_NOT_EXIST_AND_CREATE_FAIL);
+  test_file_system_.set_error(FILE_ERROR_FAILED);
 
   // Call SubstituteDriveDownloadPath()
   base::FilePath substituted_path;
@@ -199,7 +135,7 @@ TEST_F(DownloadHandlerTest,
 TEST_F(DownloadHandlerTest, SubstituteDriveDownloadPathForSavePackage) {
   const base::FilePath drive_path =
       util::GetDriveMountPointPath().AppendASCII("test.dat");
-  test_file_system_.set_download_path_state(PATH_EXISTS);
+  test_file_system_.set_error(FILE_ERROR_OK);
 
   // Call SubstituteDriveDownloadPath()
   base::FilePath substituted_path;
@@ -233,7 +169,7 @@ TEST_F(DownloadHandlerTest, CheckForFileExistence) {
   EXPECT_EQ(drive_path, download_handler_->GetTargetPath(&download_item_));
 
   // Test for the case when the path exists.
-  test_file_system_.set_download_path_state(PATH_EXISTS);
+  test_file_system_.set_error(FILE_ERROR_OK);
 
   // Call CheckForFileExistence.
   bool file_exists = false;
@@ -246,7 +182,7 @@ TEST_F(DownloadHandlerTest, CheckForFileExistence) {
   EXPECT_TRUE(file_exists);
 
   // Test for the case when the path does not exist.
-  test_file_system_.set_download_path_state(PATH_NOT_EXIST);
+  test_file_system_.set_error(FILE_ERROR_NOT_FOUND);
 
   // Call CheckForFileExistence again.
   download_handler_->CheckForFileExistence(

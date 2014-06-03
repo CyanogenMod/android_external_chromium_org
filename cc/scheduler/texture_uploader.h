@@ -11,9 +11,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "cc/base/cc_export.h"
 #include "cc/base/scoped_ptr_deque.h"
-#include "third_party/khronos/GLES2/gl2.h"
-
-namespace WebKit { class WebGraphicsContext3D; }
+#include "cc/resources/resource_provider.h"
 
 namespace gfx {
 class Rect;
@@ -21,16 +19,18 @@ class Size;
 class Vector2d;
 }
 
+namespace gpu {
+namespace gles2 {
+class GLES2Interface;
+}
+}
+
 namespace cc {
 
 class CC_EXPORT TextureUploader {
  public:
-  static scoped_ptr<TextureUploader> Create(
-      WebKit::WebGraphicsContext3D* context,
-      bool use_map_tex_sub_image,
-      bool use_shallow_flush) {
-    return make_scoped_ptr(
-        new TextureUploader(context, use_map_tex_sub_image, use_shallow_flush));
+  static scoped_ptr<TextureUploader> Create(gpu::gles2::GLES2Interface* gl) {
+    return make_scoped_ptr(new TextureUploader(gl));
   }
   ~TextureUploader();
 
@@ -46,7 +46,7 @@ class CC_EXPORT TextureUploader {
               gfx::Rect content_rect,
               gfx::Rect source_rect,
               gfx::Vector2d dest_offset,
-              GLenum format,
+              ResourceFormat format,
               gfx::Size size);
 
   void Flush();
@@ -55,8 +55,8 @@ class CC_EXPORT TextureUploader {
  private:
   class Query {
    public:
-    static scoped_ptr<Query> Create(WebKit::WebGraphicsContext3D* context) {
-      return make_scoped_ptr(new Query(context));
+    static scoped_ptr<Query> Create(gpu::gles2::GLES2Interface* gl) {
+      return make_scoped_ptr(new Query(gl));
     }
 
     virtual ~Query();
@@ -74,9 +74,9 @@ class CC_EXPORT TextureUploader {
     }
 
    private:
-    explicit Query(WebKit::WebGraphicsContext3D* context);
+    explicit Query(gpu::gles2::GLES2Interface* gl);
 
-    WebKit::WebGraphicsContext3D* context_;
+    gpu::gles2::GLES2Interface* gl_;
     unsigned query_id_;
     unsigned value_;
     bool has_value_;
@@ -85,9 +85,7 @@ class CC_EXPORT TextureUploader {
     DISALLOW_COPY_AND_ASSIGN(Query);
   };
 
-  TextureUploader(WebKit::WebGraphicsContext3D* context,
-                  bool use_map_tex_sub_image,
-                  bool use_shallow_flush);
+  explicit TextureUploader(gpu::gles2::GLES2Interface* gl);
 
   void BeginQuery();
   void EndQuery();
@@ -97,24 +95,23 @@ class CC_EXPORT TextureUploader {
                              gfx::Rect image_rect,
                              gfx::Rect source_rect,
                              gfx::Vector2d dest_offset,
-                             GLenum format);
+                             ResourceFormat format);
   void UploadWithMapTexSubImage(const uint8* image,
                                 gfx::Rect image_rect,
                                 gfx::Rect source_rect,
                                 gfx::Vector2d dest_offset,
-                                GLenum format);
+                                ResourceFormat format);
+  void UploadWithTexImageETC1(const uint8* image, gfx::Size size);
 
-  WebKit::WebGraphicsContext3D* context_;
+  gpu::gles2::GLES2Interface* gl_;
   ScopedPtrDeque<Query> pending_queries_;
   ScopedPtrDeque<Query> available_queries_;
   std::multiset<double> textures_per_second_history_;
   size_t num_blocking_texture_uploads_;
 
-  bool use_map_tex_sub_image_;
   size_t sub_image_size_;
   scoped_ptr<uint8[]> sub_image_;
 
-  bool use_shallow_flush_;
   size_t num_texture_uploads_since_last_flush_;
 
   DISALLOW_COPY_AND_ASSIGN(TextureUploader);

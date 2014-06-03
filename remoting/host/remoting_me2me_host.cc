@@ -13,7 +13,6 @@
 #include "base/debug/alias.h"
 #include "base/file_util.h"
 #include "base/files/file_path.h"
-#include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/single_thread_task_runner.h"
@@ -29,18 +28,20 @@
 #include "ipc/ipc_listener.h"
 #include "media/base/media.h"
 #include "net/base/network_change_notifier.h"
+#include "net/socket/client_socket_factory.h"
 #include "net/socket/ssl_server_socket.h"
 #include "net/url_request/url_fetcher.h"
 #include "remoting/base/auto_thread_task_runner.h"
 #include "remoting/base/breakpad.h"
 #include "remoting/base/constants.h"
+#include "remoting/base/logging.h"
 #include "remoting/base/rsa_key_pair.h"
-#include "remoting/base/util.h"
 #include "remoting/host/branding.h"
 #include "remoting/host/chromoting_host.h"
 #include "remoting/host/chromoting_host_context.h"
 #include "remoting/host/chromoting_messages.h"
 #include "remoting/host/config_file_watcher.h"
+#include "remoting/host/config_watcher.h"
 #include "remoting/host/desktop_environment.h"
 #include "remoting/host/desktop_session_connector.h"
 #include "remoting/host/dns_blackhole_checker.h"
@@ -65,6 +66,7 @@
 #include "remoting/host/signaling_connector.h"
 #include "remoting/host/token_validator_factory_impl.h"
 #include "remoting/host/usage_stats_consent.h"
+#include "remoting/host/username.h"
 #include "remoting/jingle_glue/network_settings.h"
 #include "remoting/jingle_glue/xmpp_signal_strategy.h"
 #include "remoting/protocol/me2me_host_authenticator_factory.h"
@@ -97,14 +99,14 @@
 #include "ui/gfx/gtk_util.h"
 #endif  // defined(TOOLKIT_GTK)
 
-namespace {
-
 // This is used for tagging system event logs.
 const char kApplicationName[] = "chromoting";
 
+#if defined(OS_LINUX)
 // The command line switch used to pass name of the pipe to capture audio on
 // linux.
 const char kAudioPipeSwitchName[] = "audio-pipe-name";
+#endif  // defined(OS_LINUX)
 
 // The command line switch used by the parent to request the host to signal it
 // when it is successfully started.
@@ -114,16 +116,10 @@ const char kSignalParentSwitchName[] = "signal-parent";
 // from stdin.
 const char kStdinConfigPath[] = "-";
 
-void QuitMessageLoop(base::MessageLoop* message_loop) {
-  message_loop->PostTask(FROM_HERE, base::MessageLoop::QuitClosure());
-}
-
-}  // namespace
-
 namespace remoting {
 
 class HostProcess
-    : public ConfigFileWatcher::Delegate,
+    : public ConfigWatcher::Delegate,
       public HeartbeatSender::Listener,
       public HostChangeNotificationListener::Listener,
       public IPC::Listener,
@@ -132,7 +128,7 @@ class HostProcess
   HostProcess(scoped_ptr<ChromotingHostContext> context,
               int* exit_code_out);
 
-  // ConfigFileWatcher::Delegate interface.
+  // ConfigWatcher::Delegate interface.
   virtual void OnConfigUpdated(const std::string& serialized_config) OVERRIDE;
   virtual void OnConfigWatcherError() OVERRIDE;
 
@@ -259,16 +255,15 @@ class HostProcess
   // Accessed on the network thread.
   HostState state_;
 
-  scoped_ptr<ConfigFileWatcher> config_watcher_;
+  scoped_ptr<ConfigWatcher> config_watcher_;
 
   std::string host_id_;
   protocol::SharedSecretHash host_secret_hash_;
   scoped_refptr<RsaKeyPair> key_pair_;
   std::string oauth_refresh_token_;
   std::string serialized_config_;
-  std::string xmpp_login_;
-  std::string xmpp_auth_token_;
-  std::string xmpp_auth_service_;
+  std::string host_owner_;
+  bool use_service_account_;
   scoped_ptr<policy_hack::PolicyWatcher> policy_watcher_;
   bool allow_nat_traversal_;
   std::string talkgadget_prefix_;
@@ -303,6 +298,7 @@ HostProcess::HostProcess(scoped_ptr<ChromotingHostContext> context,
                          int* exit_code_out)
     : context_(context.Pass()),
       state_(HOST_INITIALIZING),
+      use_service_account_(false),
       allow_nat_traversal_(true),
       allow_pairing_(true),
       curtain_required_(false),
@@ -428,7 +424,7 @@ void HostProcess::OnConfigUpdated(
   if (serialized_config_ == serialized_config)
     return;
 
-  LOG(INFO) << "Processing new host configuration.";
+  HOST_LOG << "Processing new host configuration.";
 
   serialized_config_ = serialized_config;
   scoped_ptr<JsonHostConfig> config(new JsonHostConfig(base::FilePath()));
@@ -477,8 +473,8 @@ void HostProcess::StartOnNetworkThread() {
     // Start watching the host configuration file.
     config_watcher_.reset(new ConfigFileWatcher(context_->network_task_runner(),
                                                 context_->file_task_runner(),
-                                                this));
-    config_watcher_->Watch(host_config_path_);
+                                                host_config_path_));
+    config_watcher_->Watch(this);
   }
 #endif  // !defined(REMOTING_MULTI_PROCESS)
 
@@ -493,7 +489,7 @@ void HostProcess::StartOnNetworkThread() {
 void HostProcess::SigTermHandler(int signal_number) {
   DCHECK(signal_number == SIGTERM);
   DCHECK(context_->network_task_runner()->BelongsToCurrentThread());
-  LOG(INFO) << "Caught SIGTERM: Shutting down...";
+  HOST_LOG << "Caught SIGTERM: Shutting down...";
   ShutdownHost(kSuccessExitCode);
 }
 #endif  // OS_POSIX
@@ -520,7 +516,8 @@ void HostProcess::CreateAuthenticatorFactory() {
 
   if (token_url_.is_empty() && token_validation_url_.is_empty()) {
     factory = protocol::Me2MeHostAuthenticatorFactory::CreateWithSharedSecret(
-        local_certificate, key_pair_, host_secret_hash_, pairing_registry);
+        use_service_account_, host_owner_, local_certificate, key_pair_,
+        host_secret_hash_, pairing_registry);
 
   } else if (token_url_.is_valid() && token_validation_url_.is_valid()) {
     scoped_ptr<protocol::ThirdPartyHostAuthenticator::TokenValidatorFactory>
@@ -528,7 +525,8 @@ void HostProcess::CreateAuthenticatorFactory() {
             token_url_, token_validation_url_, key_pair_,
             context_->url_request_context_getter()));
     factory = protocol::Me2MeHostAuthenticatorFactory::CreateWithThirdPartyAuth(
-        local_certificate, key_pair_, token_validator_factory.Pass());
+        use_service_account_, host_owner_, local_certificate, key_pair_,
+        token_validator_factory.Pass());
 
   } else {
     // TODO(rmsousa): If the policy is bad the host should not go online. It
@@ -662,7 +660,7 @@ void HostProcess::OnUnknownHostIdError() {
 }
 
 void HostProcess::OnHeartbeatSuccessful() {
-  LOG(INFO) << "Host ready to receive connections.";
+  HOST_LOG << "Host ready to receive connections.";
 #if defined(OS_POSIX)
   if (signal_parent_) {
     kill(getppid(), SIGUSR1);
@@ -709,8 +707,9 @@ bool HostProcess::ApplyConfig(scoped_ptr<JsonHostConfig> config) {
   }
 
   // Use an XMPP connection to the Talk network for session signalling.
-  if (!config->GetString(kXmppLoginConfigPath, &xmpp_login_) ||
-      !(config->GetString(kXmppAuthTokenConfigPath, &xmpp_auth_token_) ||
+  if (!config->GetString(kXmppLoginConfigPath, &xmpp_server_config_.username) ||
+      !(config->GetString(kXmppAuthTokenConfigPath,
+                          &xmpp_server_config_.auth_token) ||
         config->GetString(kOAuthRefreshTokenConfigPath,
                           &oauth_refresh_token_))) {
     LOG(ERROR) << "XMPP credentials are not defined in the config.";
@@ -718,14 +717,24 @@ bool HostProcess::ApplyConfig(scoped_ptr<JsonHostConfig> config) {
   }
 
   if (!oauth_refresh_token_.empty()) {
-    xmpp_auth_token_ = "";  // This will be set to the access token later.
-    xmpp_auth_service_ = "oauth2";
+    // SignalingConnector is responsible for getting OAuth token.
+    xmpp_server_config_.auth_token = "";
+    xmpp_server_config_.auth_service = "oauth2";
   } else if (!config->GetString(kXmppAuthServiceConfigPath,
-                                &xmpp_auth_service_)) {
+                                &xmpp_server_config_.auth_service)) {
     // For the me2me host, we default to ClientLogin token for chromiumsync
     // because earlier versions of the host had no HTTP stack with which to
     // request an OAuth2 access token.
-    xmpp_auth_service_ = kChromotingTokenDefaultServiceName;
+    xmpp_server_config_.auth_service = kChromotingTokenDefaultServiceName;
+  }
+
+  if (config->GetString(kHostOwnerConfigPath, &host_owner_)) {
+    // Service account configs have a host_owner, different from the xmpp_login.
+    use_service_account_ = true;
+  } else {
+    // User credential configs only have an xmpp_login, which is also the owner.
+    host_owner_ = xmpp_server_config_.username;
+    use_service_account_ = false;
   }
   return true;
 }
@@ -796,10 +805,10 @@ bool HostProcess::OnHostDomainPolicyUpdate(const std::string& host_domain) {
   // Returns true if the host has to be restarted after this policy update.
   DCHECK(context_->network_task_runner()->BelongsToCurrentThread());
 
-  LOG(INFO) << "Policy sets host domain: " << host_domain;
+  HOST_LOG << "Policy sets host domain: " << host_domain;
 
   if (!host_domain.empty() &&
-      !EndsWith(xmpp_login_, std::string("@") + host_domain, false)) {
+      !EndsWith(host_owner_, std::string("@") + host_domain, false)) {
     ShutdownHost(kInvalidHostDomainExitCode);
   }
   return false;
@@ -811,10 +820,10 @@ bool HostProcess::OnUsernamePolicyUpdate(bool curtain_required,
   DCHECK(context_->network_task_runner()->BelongsToCurrentThread());
 
   if (host_username_match_required) {
-    LOG(INFO) << "Policy requires host username match.";
+    HOST_LOG << "Policy requires host username match.";
     std::string username = GetUsername();
     bool shutdown = username.empty() ||
-        !StartsWithASCII(xmpp_login_, username + std::string("@"),
+        !StartsWithASCII(host_owner_, username + std::string("@"),
                          false);
 
 #if defined(OS_MACOSX)
@@ -840,7 +849,7 @@ bool HostProcess::OnUsernamePolicyUpdate(bool curtain_required,
       ShutdownHost(kUsernameMismatchExitCode);
     }
   } else {
-    LOG(INFO) << "Policy does not require host username match.";
+    HOST_LOG << "Policy does not require host username match.";
   }
 
   return false;
@@ -852,9 +861,9 @@ bool HostProcess::OnNatPolicyUpdate(bool nat_traversal_enabled) {
 
   if (allow_nat_traversal_ != nat_traversal_enabled) {
     if (nat_traversal_enabled)
-      LOG(INFO) << "Policy enables NAT traversal.";
+      HOST_LOG << "Policy enables NAT traversal.";
     else
-      LOG(INFO) << "Policy disables NAT traversal.";
+      HOST_LOG << "Policy disables NAT traversal.";
     allow_nat_traversal_ = nat_traversal_enabled;
     return true;
   }
@@ -887,9 +896,9 @@ void HostProcess::OnCurtainPolicyUpdate(bool curtain_required) {
 
   if (curtain_required_ != curtain_required) {
     if (curtain_required)
-      LOG(INFO) << "Policy requires curtain-mode.";
+      HOST_LOG << "Policy requires curtain-mode.";
     else
-      LOG(INFO) << "Policy does not require curtain-mode.";
+      HOST_LOG << "Policy does not require curtain-mode.";
     curtain_required_ = curtain_required;
     if (host_)
       host_->SetEnableCurtaining(curtain_required_);
@@ -902,7 +911,7 @@ bool HostProcess::OnHostTalkGadgetPrefixPolicyUpdate(
   DCHECK(context_->network_task_runner()->BelongsToCurrentThread());
 
   if (talkgadget_prefix != talkgadget_prefix_) {
-    LOG(INFO) << "Policy sets talkgadget prefix: " << talkgadget_prefix;
+    HOST_LOG << "Policy sets talkgadget prefix: " << talkgadget_prefix;
     talkgadget_prefix_ = talkgadget_prefix;
     return true;
   }
@@ -917,7 +926,7 @@ bool HostProcess::OnHostTokenUrlPolicyUpdate(
 
   if (token_url_ != token_url ||
       token_validation_url_ != token_validation_url) {
-    LOG(INFO) << "Policy sets third-party token URLs: "
+    HOST_LOG << "Policy sets third-party token URLs: "
               << "TokenUrl: " << token_url << ", "
               << "TokenValidationUrl: " << token_validation_url;
 
@@ -936,9 +945,9 @@ bool HostProcess::OnPairingPolicyUpdate(bool allow_pairing) {
     return false;
 
   if (allow_pairing)
-    LOG(INFO) << "Policy enables client pairing.";
+    HOST_LOG << "Policy enables client pairing.";
   else
-    LOG(INFO) << "Policy disables client pairing.";
+    HOST_LOG << "Policy disables client pairing.";
   allow_pairing_ = allow_pairing;
   return true;
 }
@@ -952,9 +961,9 @@ void HostProcess::StartHost() {
   state_ = HOST_STARTED;
 
   signal_strategy_.reset(
-      new XmppSignalStrategy(context_->url_request_context_getter(),
-                             xmpp_login_, xmpp_auth_token_,
-                             xmpp_auth_service_, xmpp_server_config_));
+      new XmppSignalStrategy(net::ClientSocketFactory::GetDefaultFactory(),
+                             context_->url_request_context_getter(),
+                             xmpp_server_config_));
 
   scoped_ptr<DnsBlackholeChecker> dns_blackhole_checker(
       new DnsBlackholeChecker(context_->url_request_context_getter(),
@@ -972,7 +981,8 @@ void HostProcess::StartHost() {
   if (!oauth_refresh_token_.empty()) {
     scoped_ptr<SignalingConnector::OAuthCredentials> oauth_credentials(
         new SignalingConnector::OAuthCredentials(
-            xmpp_login_, oauth_refresh_token_));
+            xmpp_server_config_.username, oauth_refresh_token_,
+            use_service_account_));
     signaling_connector_->EnableOAuth(oauth_credentials.Pass());
   }
 
@@ -988,7 +998,7 @@ void HostProcess::StartHost() {
   host_.reset(new ChromotingHost(
       signal_strategy_.get(),
       desktop_environment_factory_.get(),
-      CreateHostSessionManager(network_settings,
+      CreateHostSessionManager(signal_strategy_.get(), network_settings,
                                context_->url_request_context_getter()),
       context_->audio_task_runner(),
       context_->input_task_runner(),
@@ -1026,7 +1036,7 @@ void HostProcess::StartHost() {
 #endif  // !defined(REMOTING_MULTI_PROCESS)
 
   host_->SetEnableCurtaining(curtain_required_);
-  host_->Start(xmpp_login_);
+  host_->Start(host_owner_);
 
   CreateAuthenticatorFactory();
 }

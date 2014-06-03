@@ -5,6 +5,8 @@
 #ifndef UI_APP_LIST_COCOA_TEST_APPS_GRID_CONTROLLER_TEST_HELPER_H_
 #define UI_APP_LIST_COCOA_TEST_APPS_GRID_CONTROLLER_TEST_HELPER_H_
 
+#include <string>
+
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #import "ui/base/test/ui_cocoa_test_helper.h"
@@ -13,11 +15,7 @@
 
 namespace app_list {
 
-class AppListModel;
-
 namespace test {
-
-class AppListTestModel;
 
 class AppsGridControllerTestHelper : public ui::CocoaTest {
  public:
@@ -38,9 +36,6 @@ class AppsGridControllerTestHelper : public ui::CocoaTest {
   void SimulateMouseEnterItemAt(size_t index);
   void SimulateMouseExitItemAt(size_t index);
 
-  // Do a bulk replacement of the items in the grid.
-  void ReplaceTestModel(int item_count);
-
   // Get a string representation of the items as they are currently ordered in
   // the view. Each page will start and end with a | character.
   std::string GetViewContent() const;
@@ -56,10 +51,6 @@ class AppsGridControllerTestHelper : public ui::CocoaTest {
   NSButton* GetItemViewAt(size_t index);
   NSCollectionView* GetPageAt(size_t index);
   NSView* GetSelectedView();
-
-  AppListTestModel* model();
-
-  virtual void ResetModel(scoped_ptr<AppListModel> model);
 
   AppsGridController* apps_grid_controller_;
 

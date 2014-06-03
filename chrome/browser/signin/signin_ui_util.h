@@ -26,12 +26,12 @@ std::vector<GlobalError*> GetSignedInServiceErrors(Profile* profile);
 
 // Return the label that should be displayed in the signin menu (i.e.
 // "Sign in to Chromium", "Signin Error...", etc).
-string16 GetSigninMenuLabel(Profile* profile);
+base::string16 GetSigninMenuLabel(Profile* profile);
 
 void GetStatusLabelsForAuthError(Profile* profile,
                                  const SigninManagerBase& signin_manager,
-                                 string16* status_label,
-                                 string16* link_label);
+                                 base::string16* status_label,
+                                 base::string16* link_label);
 
 }  // namespace signin_ui_util
 

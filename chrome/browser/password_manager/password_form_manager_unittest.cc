@@ -16,13 +16,15 @@
 #include "chrome/browser/password_manager/test_password_store.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/test/base/testing_profile.h"
-#include "content/public/common/password_form.h"
+#include "components/autofill/core/common/password_form.h"
 #include "content/public/test/test_utils.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
-using content::PasswordForm;
+using autofill::PasswordForm;
 
 using ::testing::Eq;
+
+namespace {
 
 class TestPasswordManagerDelegate : public PasswordManagerDelegate {
  public:
@@ -45,17 +47,29 @@ class TestPasswordManager : public PasswordManager {
       : PasswordManager(NULL, delegate) {}
 
   virtual void Autofill(
-      const content::PasswordForm& form_for_autofill,
-      const content::PasswordFormMap& best_matches,
-      const content::PasswordForm& preferred_match,
-      bool wait_for_username) const OVERRIDE {}
+      const autofill::PasswordForm& form_for_autofill,
+      const autofill::PasswordFormMap& best_matches,
+      const autofill::PasswordForm& preferred_match,
+      bool wait_for_username) const OVERRIDE {
+    best_matches_ = best_matches;
+  }
+
+  const autofill::PasswordFormMap& GetLatestBestMatches() {
+    return best_matches_;
+  }
+
+ private:
+  // Marked mutable to get around constness of Autofill().
+  mutable autofill::PasswordFormMap best_matches_;
 };
+
+}  // namespace
 
 class TestPasswordFormManager : public PasswordFormManager {
  public:
   TestPasswordFormManager(Profile* profile,
                           PasswordManager* manager,
-                          const content::PasswordForm& observed_form,
+                          const autofill::PasswordForm& observed_form,
                           bool ssl_valid)
     : PasswordFormManager(profile, manager, NULL, observed_form, ssl_valid),
       num_sent_messages_(0) {}
@@ -189,8 +203,8 @@ TEST_F(PasswordFormManagerTest, TestNewLogin) {
   // will yield the previously saved login.
   SimulateMatchingPhase(manager, true);
   // Set up the new login.
-  string16 new_user = ASCIIToUTF16("newuser");
-  string16 new_pass = ASCIIToUTF16("newpass");
+  base::string16 new_user = ASCIIToUTF16("newuser");
+  base::string16 new_pass = ASCIIToUTF16("newpass");
   credentials.username_value = new_user;
   credentials.password_value = new_pass;
   manager->ProvisionallySave(
@@ -225,7 +239,7 @@ TEST_F(PasswordFormManagerTest, TestUpdatePassword) {
   // origin URL (as it does in this case) than the saved_match, but we want to
   // make sure the updated password is reflected in saved_match, because that is
   // what we autofilled.
-  string16 new_pass = ASCIIToUTF16("newpassword");
+  base::string16 new_pass = ASCIIToUTF16("newpassword");
   PasswordForm credentials = *observed_form();
   credentials.username_value = saved_match()->username_value;
   credentials.password_value = new_pass;
@@ -347,7 +361,7 @@ TEST_F(PasswordFormManagerTest, TestAlternateUsername) {
       profile(), &password_manager, *observed_form(), false));
 
   password_store->AddLogin(*saved_match());
-  manager->FetchMatchingLoginsFromPasswordStore();
+  manager->FetchMatchingLoginsFromPasswordStore(PasswordStore::ALLOW_PROMPT);
   content::RunAllPendingInMessageLoop();
 
   // The saved match has the right username already.
@@ -380,10 +394,10 @@ TEST_F(PasswordFormManagerTest, TestAlternateUsername) {
       profile(), &password_manager, *observed_form(), false));
   password_store->Clear();
   password_store->AddLogin(*saved_match());
-  manager->FetchMatchingLoginsFromPasswordStore();
+  manager->FetchMatchingLoginsFromPasswordStore(PasswordStore::ALLOW_PROMPT);
   content::RunAllPendingInMessageLoop();
 
-  string16 new_username = saved_match()->other_possible_usernames[0];
+  base::string16 new_username = saved_match()->other_possible_usernames[0];
   login.username_value = new_username;
   manager->ProvisionallySave(
       login,
@@ -509,6 +523,41 @@ TEST_F(PasswordFormManagerTest, TestSendNotBlacklistedMessage) {
   EXPECT_EQ(0u, manager->num_sent_messages());
 }
 
+TEST_F(PasswordFormManagerTest, TestForceInclusionOfGeneratedPasswords) {
+  TestPasswordManagerDelegate delegate(profile());
+  TestPasswordManager password_manager(&delegate);
+  scoped_ptr<TestPasswordFormManager> manager(new TestPasswordFormManager(
+      profile(), &password_manager, *observed_form(), false));
+
+  // Simulate having two matches for this origin, one of which was from a form
+  // with different HTML tags for elements. Because of scoring differences,
+  // only the first form will be sent to Autofill().
+  std::vector<PasswordForm*> results;
+  results.push_back(CreateSavedMatch(false));
+  results.push_back(CreateSavedMatch(false));
+  results[1]->username_value = ASCIIToUTF16("other@gmail.com");
+  results[1]->password_element = ASCIIToUTF16("signup_password");
+  results[1]->username_element = ASCIIToUTF16("signup_username");
+  SimulateFetchMatchingLoginsFromPasswordStore(manager.get());
+  SimulateResponseFromPasswordStore(manager.get(), results);
+  EXPECT_EQ(1u, password_manager.GetLatestBestMatches().size());
+  results.clear();
+
+  // Same thing, except this time the credentials that don't match quite as
+  // well are generated. They should now be sent to Autofill().
+  manager.reset(new TestPasswordFormManager(
+      profile(), &password_manager, *observed_form(), false));
+  results.push_back(CreateSavedMatch(false));
+  results.push_back(CreateSavedMatch(false));
+  results[1]->username_value = ASCIIToUTF16("other@gmail.com");
+  results[1]->password_element = ASCIIToUTF16("signup_password");
+  results[1]->username_element = ASCIIToUTF16("signup_username");
+  results[1]->type = PasswordForm::TYPE_GENERATED;
+  SimulateFetchMatchingLoginsFromPasswordStore(manager.get());
+  SimulateResponseFromPasswordStore(manager.get(), results);
+  EXPECT_EQ(2u, password_manager.GetLatestBestMatches().size());
+}
+
 TEST_F(PasswordFormManagerTest, TestSanitizePossibleUsernames) {
   scoped_ptr<PasswordFormManager> manager(new PasswordFormManager(
       profile(), NULL, NULL, *observed_form(), false));
@@ -523,7 +572,7 @@ TEST_F(PasswordFormManagerTest, TestSanitizePossibleUsernames) {
   SanitizePossibleUsernames(manager.get(), &credentials);
 
   // Possible credit card number and SSN are stripped.
-  std::vector<string16> expected;
+  std::vector<base::string16> expected;
   expected.push_back(ASCIIToUTF16("other username"));
   EXPECT_THAT(credentials.other_possible_usernames, Eq(expected));
 

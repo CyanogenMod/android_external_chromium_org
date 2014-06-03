@@ -120,19 +120,13 @@ using content::UserMetricsAction;
     [controller_ clearDropInsertionPos];
 }
 
-// Shim function to assist in unit testing.
-- (BOOL)dragClipboardContainsBookmarks {
-  return bookmark_pasteboard_helper_mac::PasteboardContainsBookmarks(
-      bookmark_pasteboard_helper_mac::kDragPasteboard);
-}
-
 // NSDraggingDestination methods
 
 - (NSDragOperation)draggingEntered:(id<NSDraggingInfo>)info {
   if (![controller_ draggingAllowed:info])
     return NSDragOperationNone;
   if ([[info draggingPasteboard] dataForType:kBookmarkButtonDragType] ||
-      [self dragClipboardContainsBookmarks] ||
+      PasteboardContainsBookmarks(ui::CLIPBOARD_TYPE_DRAG) ||
       [[info draggingPasteboard] containsURLData]) {
     // We only show the drop indicator if we're not in a position to
     // perform a hover-open since it doesn't make sense to do both.
@@ -262,7 +256,7 @@ using content::UserMetricsAction;
 }
 
 - (NSMenu*)menu {
-  return [[controller_ menuController] menuForBookmarkNode:NULL];
+  return [[controller_ menuController] menuForBookmarkBar];
 }
 
 - (void)setController:(id)controller {

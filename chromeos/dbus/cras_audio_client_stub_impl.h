@@ -17,12 +17,14 @@ class CrasAudioClientStubImpl : public CrasAudioClient {
   CrasAudioClientStubImpl();
   virtual ~CrasAudioClientStubImpl();
 
-  // CrasAudioClient overrides:
+  // CrasAudioClient overrides
+  virtual void Init(dbus::Bus* bus) OVERRIDE;
   virtual void AddObserver(Observer* observer) OVERRIDE;
   virtual void RemoveObserver(Observer* observer) OVERRIDE;
   virtual bool HasObserver(Observer* observer) OVERRIDE;
   virtual void GetVolumeState(const GetVolumeStateCallback& callback) OVERRIDE;
-  virtual void GetNodes(const GetNodesCallback& callback) OVERRIDE;
+  virtual void GetNodes(const GetNodesCallback& callback,
+                        const ErrorCallback& error_callback) OVERRIDE;
   virtual void SetOutputNodeVolume(uint64 node_id, int32 volume) OVERRIDE;
   virtual void SetOutputUserMute(bool mute_on) OVERRIDE;
   virtual void SetInputNodeGain(uint64 node_id, int32 gain) OVERRIDE;

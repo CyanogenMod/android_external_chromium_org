@@ -13,7 +13,7 @@ namespace chromeos {
 class NetworkState;
 
 // This class handles all notifications about network changes from
-// NetworkLibrary and delegates portal detection for the active
+// NetworkStateHandler and delegates portal detection for the active
 // network to CaptivePortalService.
 class NetworkPortalDetector {
  public:
@@ -30,6 +30,10 @@ class NetworkPortalDetector {
     CaptivePortalState()
         : status(CAPTIVE_PORTAL_STATUS_UNKNOWN),
           response_code(net::URLFetcher::RESPONSE_CODE_INVALID) {
+    }
+
+    bool operator==(const CaptivePortalState& o) const {
+      return status == o.status && response_code == o.response_code;
     }
 
     CaptivePortalStatus status;
@@ -52,9 +56,6 @@ class NetworkPortalDetector {
    protected:
     virtual ~Observer() {}
   };
-
-  virtual void Init() = 0;
-  virtual void Shutdown() = 0;
 
   // Adds |observer| to the observers list.
   virtual void AddObserver(Observer* observer) = 0;
@@ -100,18 +101,24 @@ class NetworkPortalDetector {
   // Dizables lazy detection mode.
   virtual void DisableLazyDetection() = 0;
 
+  // Initializes network portal detector for testing. The
+  // |network_portal_detector| will be owned by the internal pointer
+  // and deleted by Shutdown().
+  static void InitializeForTesting(
+      NetworkPortalDetector* network_portal_detector);
+
   // Creates an instance of the NetworkPortalDetector.
-  static NetworkPortalDetector* CreateInstance();
+  static void Initialize();
+
+  // Deletes the instance of the NetworkPortalDetector.
+  static void Shutdown();
 
   // Gets the instance of the NetworkPortalDetector.
-  static NetworkPortalDetector* GetInstance();
-
-  // Returns true is NetworkPortalDetector service is enabled in command line.
-  static bool IsEnabledInCommandLine();
+  static NetworkPortalDetector* Get();
 
  protected:
-  NetworkPortalDetector();
-  virtual ~NetworkPortalDetector();
+  NetworkPortalDetector() {}
+  virtual ~NetworkPortalDetector() {}
 
  private:
   DISALLOW_COPY_AND_ASSIGN(NetworkPortalDetector);

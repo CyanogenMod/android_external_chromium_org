@@ -150,10 +150,6 @@ class Profile : public content::BrowserContext {
   // time.
   static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
 
-  // Gets task runner for I/O operations associated with |profile|.
-  static scoped_refptr<base::SequencedTaskRunner> GetTaskRunnerForProfile(
-      Profile* profile);
-
   // Create a new profile given a path. If |create_mode| is
   // CREATE_MODE_ASYNCHRONOUS then the profile is initialized asynchronously.
   static Profile* CreateProfile(const base::FilePath& path,
@@ -295,9 +291,6 @@ class Profile : public content::BrowserContext {
 
   // Called after login.
   virtual void OnLogin() = 0;
-
-  // Creates ChromeOS's EnterpriseExtensionListener.
-  virtual void SetupChromeOSEnterpriseExtensionObserver() = 0;
 
   // Initializes Chrome OS's preferences.
   virtual void InitChromeOSPreferences() = 0;

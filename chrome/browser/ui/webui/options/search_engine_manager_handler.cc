@@ -9,16 +9,17 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/ui/search_engines/keyword_editor_controller.h"
 #include "chrome/browser/ui/search_engines/template_url_table_model.h"
 #include "chrome/common/extensions/api/omnibox/omnibox_handler.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/manifest_handlers/icons_handler.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/web_ui.h"
+#include "extensions/common/extension.h"
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -191,7 +192,15 @@ base::DictionaryValue* SearchEngineManagerHandler::CreateDictionaryForEngine(
   dict->SetBoolean("default", is_default);
   dict->SetBoolean("canBeEdited", list_controller_->CanEdit(template_url));
   dict->SetBoolean("isExtension", is_extension);
-
+  if (template_url->GetType() == TemplateURL::NORMAL_CONTROLLED_BY_EXTENSION) {
+    std::string extension_id = template_url->GetExtensionId();
+    ExtensionService* extension_service = extensions::ExtensionSystem::Get(
+        Profile::FromWebUI(web_ui()))->extension_service();
+    scoped_ptr<DictionaryValue> dictionary =
+        extension_service->GetExtensionInfo(extension_id);
+    if (!dictionary->empty())
+      dict->Set("extension", dictionary.release());
+  }
   return dict;
 }
 
@@ -238,8 +247,8 @@ void SearchEngineManagerHandler::EditSearchEngine(const ListValue* args) {
 
 void SearchEngineManagerHandler::OnEditedKeyword(
     TemplateURL* template_url,
-    const string16& title,
-    const string16& keyword,
+    const base::string16& title,
+    const base::string16& keyword,
     const std::string& url) {
   DCHECK(!url.empty());
   if (template_url)
@@ -254,8 +263,8 @@ void SearchEngineManagerHandler::CheckSearchEngineInfoValidity(
 {
   if (!edit_controller_.get())
     return;
-  string16 name;
-  string16 keyword;
+  base::string16 name;
+  base::string16 keyword;
   std::string url;
   std::string modelIndex;
   if (!args->GetString(ENGINE_NAME, &name) ||
@@ -285,8 +294,8 @@ void SearchEngineManagerHandler::EditCancelled(const ListValue* args) {
 void SearchEngineManagerHandler::EditCompleted(const ListValue* args) {
   if (!edit_controller_.get())
     return;
-  string16 name;
-  string16 keyword;
+  base::string16 name;
+  base::string16 keyword;
   std::string url;
   if (!args->GetString(ENGINE_NAME, &name) ||
       !args->GetString(ENGINE_KEYWORD, &keyword) ||

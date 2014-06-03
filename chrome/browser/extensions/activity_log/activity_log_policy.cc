@@ -14,8 +14,8 @@
 #include "base/time/time.h"
 #include "chrome/browser/extensions/activity_log/activity_action_constants.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/extensions/extension.h"
 #include "content/public/browser/browser_thread.h"
+#include "extensions/common/extension.h"
 #include "url/gurl.h"
 
 using content::BrowserThread;
@@ -53,8 +53,17 @@ ActivityLogDatabasePolicy::ActivityLogDatabasePolicy(
   CHECK(profile);
   base::FilePath profile_base_path = profile->GetPath();
   db_ = new ActivityDatabase(this);
-  base::FilePath database_path = profile_base_path.Append(database_name);
-  ScheduleAndForget(db_, &ActivityDatabase::Init, database_path);
+  database_path_ = profile_base_path.Append(database_name);
+}
+
+void ActivityLogDatabasePolicy::Init() {
+  ScheduleAndForget(db_, &ActivityDatabase::Init, database_path_);
+}
+
+void ActivityLogDatabasePolicy::Flush() {
+  ScheduleAndForget(activity_database(),
+                    &ActivityDatabase::AdviseFlush,
+                    ActivityDatabase::kFlushImmediately);
 }
 
 sql::Connection* ActivityLogDatabasePolicy::GetDatabaseConnection() const {
@@ -80,9 +89,11 @@ void ActivityLogPolicy::Util::StripPrivacySensitiveFields(
   if (action->page_incognito()) {
     action->set_page_url(GURL());
     action->set_page_title("");
+    action->set_page_incognito(false);
   }
   if (action->arg_incognito()) {
     action->set_arg_url(GURL());
+    action->set_arg_incognito(false);
   }
 
   // Strip query parameters, username/password, etc., from URLs.
@@ -115,16 +126,13 @@ void ActivityLogPolicy::Util::StripPrivacySensitiveFields(
 }
 
 // static
-void ActivityLogPolicy::Util::StripArguments(
-    const std::set<std::string>& api_whitelist,
-    scoped_refptr<Action> action) {
-  if (action->action_type() != Action::ACTION_API_CALL &&
-      action->action_type() != Action::ACTION_API_EVENT &&
-      action->action_type() != Action::ACTION_API_BLOCKED)
-    return;
-
-  if (api_whitelist.find(action->api_name()) == api_whitelist.end())
+void ActivityLogPolicy::Util::StripArguments(const ApiSet& api_whitelist,
+                                             scoped_refptr<Action> action) {
+  if (api_whitelist.find(
+          std::make_pair(action->action_type(), action->api_name())) ==
+      api_whitelist.end()) {
     action->set_args(scoped_ptr<ListValue>());
+  }
 }
 
 // static

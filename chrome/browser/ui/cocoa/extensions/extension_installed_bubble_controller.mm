@@ -35,12 +35,12 @@
 #include "chrome/common/extensions/api/commands/commands_handler.h"
 #include "chrome/common/extensions/api/extension_action/action_info.h"
 #include "chrome/common/extensions/api/omnibox/omnibox_handler.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/sync_helper.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_source.h"
+#include "extensions/common/extension.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #import "skia/ext/skia_utils_mac.h"
@@ -466,7 +466,7 @@ class ExtensionLoadedNotificationObserver
   }
 
   // First part of extension installed message, the heading.
-  string16 extension_name = UTF8ToUTF16(extension_->name().c_str());
+  base::string16 extension_name = UTF8ToUTF16(extension_->name().c_str());
   base::i18n::AdjustStringForLocaleDirection(&extension_name);
   [heading_ setStringValue:l10n_util::GetNSStringF(
       IDS_EXTENSION_INSTALLED_HEADING, extension_name)];
@@ -548,7 +548,7 @@ class ExtensionLoadedNotificationObserver
 - (NSInteger)addExtensionList:(NSTextField*)headingMsg
                      itemsMsg:(NSTextField*)itemsMsg
                         state:(BundleInstaller::Item::State)state {
-  string16 heading = bundle_->GetHeadingTextFor(state);
+  base::string16 heading = bundle_->GetHeadingTextFor(state);
   bool hidden = heading.empty();
   [headingMsg setHidden:hidden];
   [itemsMsg setHidden:hidden];

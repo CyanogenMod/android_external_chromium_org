@@ -38,6 +38,7 @@ class NoSuchSession(ChromeDriverException):
 
 def _ExceptionForResponse(response):
   exception_class_map = {
+    6: NoSuchSession,
     7: NoSuchElement,
     8: NoSuchFrame,
     9: UnknownCommand,
@@ -49,8 +50,7 @@ def _ExceptionForResponse(response):
     24: InvalidCookieDomain,
     28: ScriptTimeout,
     32: InvalidSelector,
-    33: SessionNotCreatedException,
-    100: NoSuchSession
+    33: SessionNotCreatedException
   }
   status = response['status']
   msg = response['value']['message']
@@ -61,13 +61,21 @@ class ChromeDriver(object):
   """Starts and controls a single Chrome instance on this machine."""
 
   def __init__(self, server_url, chrome_binary=None, android_package=None,
-               chrome_switches=None, chrome_extensions=None,
-               chrome_log_path=None):
+               android_activity=None, android_process=None,
+               android_use_running_app=None, chrome_switches=None,
+               chrome_extensions=None, chrome_log_path=None,
+               debugger_address=None, browser_log_level=None):
     self._executor = command_executor.CommandExecutor(server_url)
 
     options = {}
     if android_package:
       options['androidPackage'] = android_package
+      if android_activity:
+        options['androidActivity'] = android_activity
+      if android_process:
+        options['androidProcess'] = android_process
+      if android_use_running_app:
+        options['androidUseRunningApp'] = android_use_running_app
     elif chrome_binary:
       options['binary'] = chrome_binary
 
@@ -83,14 +91,26 @@ class ChromeDriver(object):
       assert type(chrome_log_path) is str
       options['logPath'] = chrome_log_path
 
+    if debugger_address:
+      assert type(debugger_address) is str
+      options['debuggerAddress'] = debugger_address
+
+    logging_prefs = {}
+    log_levels = ['ALL', 'DEBUG', 'INFO', 'WARNING', 'SEVERE', 'OFF']
+    if browser_log_level:
+      assert browser_log_level in log_levels
+      logging_prefs['browser'] = browser_log_level
+
     params = {
       'desiredCapabilities': {
-        'chromeOptions': options
+        'chromeOptions': options,
+        'loggingPrefs': logging_prefs
       }
     }
 
-    self._session_id = self._executor.Execute(
-        Command.NEW_SESSION, params)['sessionId']
+    response = self._ExecuteCommand(Command.NEW_SESSION, params)
+    self._session_id = response['sessionId']
+    self.capabilities = self._UnwrapValue(response['value'])
 
   def _WrapValue(self, value):
     """Wrap value from client side for chromedriver side."""
@@ -122,12 +142,16 @@ class ChromeDriver(object):
     else:
       return value
 
-  def ExecuteCommand(self, command, params={}):
-    params['sessionId'] = self._session_id
+  def _ExecuteCommand(self, command, params={}):
     params = self._WrapValue(params)
     response = self._executor.Execute(command, params)
     if response['status'] != 0:
       raise _ExceptionForResponse(response)
+    return response
+
+  def ExecuteCommand(self, command, params={}):
+    params['sessionId'] = self._session_id
+    response = self._ExecuteCommand(command, params)
     return self._UnwrapValue(response['value'])
 
   def GetWindowHandles(self):
@@ -217,6 +241,15 @@ class ChromeDriver(object):
   def MouseDoubleClick(self, button=0):
     self.ExecuteCommand(Command.MOUSE_DOUBLE_CLICK, {'button': button})
 
+  def TouchDown(self, x, y):
+    self.ExecuteCommand(Command.TOUCH_DOWN, {'x': x, 'y': y})
+
+  def TouchUp(self, x, y):
+    self.ExecuteCommand(Command.TOUCH_UP, {'x': x, 'y': y})
+
+  def TouchMove(self, x, y):
+    self.ExecuteCommand(Command.TOUCH_MOVE, {'x': x, 'y': y})
+
   def GetCookies(self):
     return self.ExecuteCommand(Command.GET_COOKIES)
 
@@ -272,3 +305,9 @@ class ChromeDriver(object):
   def Quit(self):
     """Quits the browser and ends the session."""
     self.ExecuteCommand(Command.QUIT)
+
+  def GetLog(self, type):
+    return self.ExecuteCommand(Command.GET_LOG, {'type': type})
+
+  def GetAvailableLogTypes(self):
+    return self.ExecuteCommand(Command.GET_AVAILABLE_LOG_TYPES)

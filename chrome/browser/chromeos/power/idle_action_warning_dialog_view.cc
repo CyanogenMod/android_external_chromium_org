@@ -26,7 +26,7 @@ const int kIdleActionWarningContentWidth = 300;
 
 class FixedWidthLabel : public views::Label {
  public:
-  FixedWidthLabel(const string16& text, int width);
+  FixedWidthLabel(const base::string16& text, int width);
   virtual ~FixedWidthLabel();
 
   virtual gfx::Size GetPreferredSize() OVERRIDE;
@@ -37,7 +37,7 @@ class FixedWidthLabel : public views::Label {
   DISALLOW_COPY_AND_ASSIGN(FixedWidthLabel);
 };
 
-FixedWidthLabel::FixedWidthLabel(const string16& text, int width)
+FixedWidthLabel::FixedWidthLabel(const base::string16& text, int width)
     : Label(text),
       width_(width) {
   SetHorizontalAlignment(gfx::ALIGN_LEFT);
@@ -57,15 +57,9 @@ IdleActionWarningDialogView::IdleActionWarningDialogView() : closing_(false) {
   FixedWidthLabel* content = new FixedWidthLabel(
         l10n_util::GetStringUTF16(IDS_IDLE_WARNING_LOGOUT_WARNING),
         kIdleActionWarningContentWidth);
-  if (DialogDelegate::UseNewStyle()) {
-    content->set_border(views::Border::CreateEmptyBorder(
-        views::kPanelVertMargin, views::kButtonHEdgeMarginNew,
-        views::kPanelVertMargin, views::kButtonHEdgeMarginNew));
-  } else {
-    content->set_border(views::Border::CreateEmptyBorder(
-        views::kPanelVertMargin, views::kPanelHorizMargin,
-        views::kPanelVertMargin, views::kPanelHorizMargin));
-  }
+  content->set_border(views::Border::CreateEmptyBorder(
+      views::kPanelVertMargin, views::kButtonHEdgeMarginNew,
+      views::kPanelVertMargin, views::kButtonHEdgeMarginNew));
   AddChildView(content);
   SetLayoutManager(new views::FillLayout());
 
@@ -82,7 +76,7 @@ ui::ModalType IdleActionWarningDialogView::GetModalType() const {
   return ui::MODAL_TYPE_SYSTEM;
 }
 
-string16 IdleActionWarningDialogView::GetWindowTitle() const {
+base::string16 IdleActionWarningDialogView::GetWindowTitle() const {
   return l10n_util::GetStringUTF16(IDS_IDLE_WARNING_TITLE);
 }
 

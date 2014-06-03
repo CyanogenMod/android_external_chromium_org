@@ -19,7 +19,7 @@ class Image;
 }
 
 // This object describes a single global error.
-class GlobalError : public base::SupportsWeakPtr<GlobalError> {
+class GlobalError {
  public:
   enum Severity {
     SEVERITY_LOW,
@@ -40,7 +40,7 @@ class GlobalError : public base::SupportsWeakPtr<GlobalError> {
   // Returns the command ID for the menu item.
   virtual int MenuItemCommandID() = 0;
   // Returns the label for the menu item.
-  virtual string16 MenuItemLabel() = 0;
+  virtual base::string16 MenuItemLabel() = 0;
   // Returns the resource ID for the menu item icon.
   int MenuItemIconResourceID();
   // Called when the user clicks on the menu item.
@@ -49,24 +49,36 @@ class GlobalError : public base::SupportsWeakPtr<GlobalError> {
   // Returns true if a bubble view should be shown.
   virtual bool HasBubbleView() = 0;
   // Returns true if the bubble view has been shown.
-  virtual bool HasShownBubbleView();
+  virtual bool HasShownBubbleView() = 0;
   // Called to show the bubble view.
-  void ShowBubbleView(Browser* browser);
+  virtual void ShowBubbleView(Browser* browser) = 0;
   // Returns the bubble view.
-  virtual GlobalErrorBubbleViewBase* GetBubbleView();
+  virtual GlobalErrorBubbleViewBase* GetBubbleView() = 0;
+};
+
+// This object describes a single global error that already comes with support
+// for showing a standard Bubble UI. Derived classes just need to supply the
+// content to be displayed in the bubble.
+class GlobalErrorWithStandardBubble
+    : public GlobalError,
+      public base::SupportsWeakPtr<GlobalErrorWithStandardBubble> {
+ public:
+  GlobalErrorWithStandardBubble();
+  virtual ~GlobalErrorWithStandardBubble();
+
   // Returns an icon to use for the bubble view.
   virtual gfx::Image GetBubbleViewIcon();
   // Returns the title for the bubble view.
-  virtual string16 GetBubbleViewTitle() = 0;
+  virtual base::string16 GetBubbleViewTitle() = 0;
   // Returns the messages for the bubble view, one per line. Multiple messages
   // are only supported on Views.
   // TODO(yoz): Add multi-line support for GTK and Cocoa.
-  virtual std::vector<string16> GetBubbleViewMessages() = 0;
+  virtual std::vector<base::string16> GetBubbleViewMessages() = 0;
   // Returns the accept button label for the bubble view.
-  virtual string16 GetBubbleViewAcceptButtonLabel() = 0;
+  virtual base::string16 GetBubbleViewAcceptButtonLabel() = 0;
   // Returns the cancel button label for the bubble view. To hide the cancel
   // button return an empty string.
-  virtual string16 GetBubbleViewCancelButtonLabel() = 0;
+  virtual base::string16 GetBubbleViewCancelButtonLabel() = 0;
   // Called when the bubble view is closed. |browser| is the Browser that the
   // bubble view was shown on.
   void BubbleViewDidClose(Browser* browser);
@@ -80,12 +92,17 @@ class GlobalError : public base::SupportsWeakPtr<GlobalError> {
   // Browser that the bubble view was shown on.
   virtual void BubbleViewCancelButtonPressed(Browser* browser) = 0;
 
+  // GlobalError overrides:
+  virtual bool HasBubbleView() OVERRIDE;
+  virtual bool HasShownBubbleView() OVERRIDE;
+  virtual void ShowBubbleView(Browser* browser) OVERRIDE;
+  virtual GlobalErrorBubbleViewBase* GetBubbleView() OVERRIDE;
 
  private:
   bool has_shown_bubble_view_;
   GlobalErrorBubbleViewBase* bubble_view_;
 
-  DISALLOW_COPY_AND_ASSIGN(GlobalError);
+  DISALLOW_COPY_AND_ASSIGN(GlobalErrorWithStandardBubble);
 };
 
 #endif  // CHROME_BROWSER_UI_GLOBAL_ERROR_GLOBAL_ERROR_H_

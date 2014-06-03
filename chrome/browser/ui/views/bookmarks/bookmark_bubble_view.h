@@ -73,10 +73,11 @@ class BookmarkBubbleView : public views::BubbleDelegateView,
                      bool newly_bookmarked);
 
   // Returns the title to display.
-  string16 GetTitle();
+  base::string16 GetTitle();
 
   // Overridden from views::View:
   virtual gfx::Size GetMinimumSize() OVERRIDE;
+  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
 
   // Overridden from views::ButtonListener:
   // Closes the bubble or opens the edit dialog.

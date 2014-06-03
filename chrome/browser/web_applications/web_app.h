@@ -74,7 +74,7 @@ void DeleteAllShortcuts(const ShellIntegration::ShortcutInfo& shortcut_info);
 // refreshes existing shortcuts and their icons, but does not create new ones.
 // |old_app_title| contains the title of the app prior to this update.
 // |shortcut_info| contains information about the shortcuts to update.
-void UpdateAllShortcuts(const string16& old_app_title,
+void UpdateAllShortcuts(const base::string16& old_app_title,
                         const ShellIntegration::ShortcutInfo& shortcut_info);
 
 // Creates a shortcut. Must be called on the file thread. This is used to
@@ -97,19 +97,18 @@ void GetIconsInfo(const WebApplicationInfo& app_info,
                   IconInfoList* icons);
 #endif
 
-#if defined(TOOLKIT_GTK)
-// GTK+ windows that correspond to web apps need to have a deterministic (and
+#if defined(OS_LINUX)
+// Windows that correspond to web apps need to have a deterministic (and
 // different) WMClass than normal chrome windows so the window manager groups
 // them as a separate application.
 std::string GetWMClassFromAppName(std::string app_name);
 #endif
 
-// Gets the name of the Chrome Apps menu folder in which to place app shortcuts.
-string16 GetAppShortcutsSubdirName();
-
 namespace internals {
 
 #if defined(OS_WIN)
+// Returns the Windows user-level shortcut paths that are specified in
+// |creation_locations|.
 std::vector<base::FilePath> GetShortcutPaths(
     const ShellIntegration::ShortcutLocations& creation_locations);
 #endif
@@ -138,7 +137,7 @@ void DeletePlatformShortcuts(
 // is executed on the FILE thread.
 void UpdatePlatformShortcuts(
     const base::FilePath& shortcut_data_path,
-    const string16& old_app_title,
+    const base::string16& old_app_title,
     const ShellIntegration::ShortcutInfo& shortcut_info);
 
 // Delete all the shortcuts for an entire profile.
@@ -147,7 +146,7 @@ void DeleteAllShortcutsForProfile(const base::FilePath& profile_path);
 
 // Sanitizes |name| and returns a version of it that is safe to use as an
 // on-disk file name .
-base::FilePath GetSanitizedFileName(const string16& name);
+base::FilePath GetSanitizedFileName(const base::string16& name);
 
 }  // namespace internals
 

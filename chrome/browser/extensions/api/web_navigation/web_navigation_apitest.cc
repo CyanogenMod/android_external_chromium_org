@@ -135,6 +135,10 @@ class TestNavigationListener
     virtual void WillStartRequest(bool* defer) OVERRIDE {
       *defer = true;
     }
+
+    virtual const char* GetNameForLogging() const OVERRIDE {
+      return "TestNavigationListener::Throttle";
+    }
   };
   typedef base::WeakPtr<Throttle> WeakThrottle;
   typedef std::list<WeakThrottle> WeakThrottleList;
@@ -196,12 +200,13 @@ class DelayLoadStartAndExecuteJavascript
     if (validated_url != delay_url_ || !rvh_)
       return;
 
-    rvh_->ExecuteJavascriptInWebFrame(string16(), UTF8ToUTF16(script_));
+    rvh_->ExecuteJavascriptInWebFrame(base::string16(), UTF8ToUTF16(script_));
     script_was_executed_ = true;
   }
 
   virtual void DidCommitProvisionalLoadForFrame(
       int64 frame_id,
+      const base::string16& frame_unique_name,
       bool is_main_frame,
       const GURL& url,
       content::PageTransition transition_type,
@@ -246,7 +251,6 @@ class TestResourceDispatcherHostDelegate
       ResourceType::Type resource_type,
       int child_id,
       int route_id,
-      bool is_continuation_of_transferred_request,
       ScopedVector<content::ResourceThrottle>* throttles) OVERRIDE {
     ChromeResourceDispatcherHostDelegate::RequestBeginning(
         request,
@@ -255,7 +259,6 @@ class TestResourceDispatcherHostDelegate
         resource_type,
         child_id,
         route_id,
-        is_continuation_of_transferred_request,
         throttles);
     content::ResourceThrottle* throttle =
         test_navigation_listener_->CreateResourceThrottle(request->url(),
@@ -381,7 +384,7 @@ class WebNavigationApiTest : public ExtensionApiTest {
 };
 
 // Fails often on Windows dbg bots. http://crbug.com/177163
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(NDEBUG)
 #define MAYBE_Api DISABLED_Api
 #else
 #define MAYBE_Api Api
@@ -393,7 +396,7 @@ IN_PROC_BROWSER_TEST_F(WebNavigationApiTest, MAYBE_Api) {
 }
 
 // Fails often on Windows dbg bots. http://crbug.com/177163
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(NDEBUG)
 #define MAYBE_GetFrame DISABLED_GetFrame
 #else
 #define MAYBE_GetFrame GetFrame
@@ -497,7 +500,7 @@ IN_PROC_BROWSER_TEST_F(WebNavigationApiTest, SimpleLoad) {
 }
 
 // Fails often on Windows dbg bots. http://crbug.com/177163
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(NDEBUG)
 #define MAYBE_Failures DISABLED_Failures
 #else
 #define MAYBE_Failures Failures
@@ -515,7 +518,7 @@ IN_PROC_BROWSER_TEST_F(WebNavigationApiTest, FilteredTest) {
 }
 
 // Fails often on Windows dbg bots. http://crbug.com/177163
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(NDEBUG)
 #define MAYBE_UserAction DISABLED_UserAction
 #else
 #define MAYBE_UserAction UserAction
@@ -535,7 +538,7 @@ IN_PROC_BROWSER_TEST_F(WebNavigationApiTest, MAYBE_UserAction) {
   ExtensionService* service = extensions::ExtensionSystem::Get(
       browser()->profile())->extension_service();
   const extensions::Extension* extension =
-      service->GetExtensionById(last_loaded_extension_id_, false);
+      service->GetExtensionById(last_loaded_extension_id(), false);
   GURL url = extension->GetResourceURL("userAction/a.html");
 
   ui_test_utils::NavigateToURL(browser(), url);
@@ -543,7 +546,7 @@ IN_PROC_BROWSER_TEST_F(WebNavigationApiTest, MAYBE_UserAction) {
   // This corresponds to "Open link in new tab".
   content::ContextMenuParams params;
   params.is_editable = false;
-  params.media_type = WebKit::WebContextMenuData::MediaTypeNone;
+  params.media_type = blink::WebContextMenuData::MediaTypeNone;
   params.page_url = url;
   params.frame_id = WebNavigationTabObserver::Get(tab)->
       frame_navigation_state().GetMainFrameID().frame_num;
@@ -577,27 +580,27 @@ IN_PROC_BROWSER_TEST_F(WebNavigationApiTest, MAYBE_RequestOpenTab) {
   ExtensionService* service = extensions::ExtensionSystem::Get(
       browser()->profile())->extension_service();
   const extensions::Extension* extension =
-      service->GetExtensionById(last_loaded_extension_id_, false);
+      service->GetExtensionById(last_loaded_extension_id(), false);
   GURL url = extension->GetResourceURL("requestOpenTab/a.html");
 
   ui_test_utils::NavigateToURL(browser(), url);
 
   // There's a link on a.html. Middle-click on it to open it in a new tab.
-  WebKit::WebMouseEvent mouse_event;
-  mouse_event.type = WebKit::WebInputEvent::MouseDown;
-  mouse_event.button = WebKit::WebMouseEvent::ButtonMiddle;
+  blink::WebMouseEvent mouse_event;
+  mouse_event.type = blink::WebInputEvent::MouseDown;
+  mouse_event.button = blink::WebMouseEvent::ButtonMiddle;
   mouse_event.x = 7;
   mouse_event.y = 7;
   mouse_event.clickCount = 1;
   tab->GetRenderViewHost()->ForwardMouseEvent(mouse_event);
-  mouse_event.type = WebKit::WebInputEvent::MouseUp;
+  mouse_event.type = blink::WebInputEvent::MouseUp;
   tab->GetRenderViewHost()->ForwardMouseEvent(mouse_event);
 
   ASSERT_TRUE(catcher.GetNextResult()) << catcher.message();
 }
 
 // Fails often on Windows dbg bots. http://crbug.com/177163
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(NDEBUG)
 #define MAYBE_TargetBlank DISABLED_TargetBlank
 #else
 #define MAYBE_TargetBlank TargetBlank
@@ -622,14 +625,14 @@ IN_PROC_BROWSER_TEST_F(WebNavigationApiTest, MAYBE_TargetBlank) {
 
   // There's a link with target=_blank on a.html. Click on it to open it in a
   // new tab.
-  WebKit::WebMouseEvent mouse_event;
-  mouse_event.type = WebKit::WebInputEvent::MouseDown;
-  mouse_event.button = WebKit::WebMouseEvent::ButtonLeft;
+  blink::WebMouseEvent mouse_event;
+  mouse_event.type = blink::WebInputEvent::MouseDown;
+  mouse_event.button = blink::WebMouseEvent::ButtonLeft;
   mouse_event.x = 7;
   mouse_event.y = 7;
   mouse_event.clickCount = 1;
   tab->GetRenderViewHost()->ForwardMouseEvent(mouse_event);
-  mouse_event.type = WebKit::WebInputEvent::MouseUp;
+  mouse_event.type = blink::WebInputEvent::MouseUp;
   tab->GetRenderViewHost()->ForwardMouseEvent(mouse_event);
 
   ASSERT_TRUE(catcher.GetNextResult()) << catcher.message();
@@ -660,14 +663,14 @@ IN_PROC_BROWSER_TEST_F(WebNavigationApiTest, MAYBE_TargetBlankIncognito) {
 
   // There's a link with target=_blank on a.html. Click on it to open it in a
   // new tab.
-  WebKit::WebMouseEvent mouse_event;
-  mouse_event.type = WebKit::WebInputEvent::MouseDown;
-  mouse_event.button = WebKit::WebMouseEvent::ButtonLeft;
+  blink::WebMouseEvent mouse_event;
+  mouse_event.type = blink::WebInputEvent::MouseDown;
+  mouse_event.button = blink::WebMouseEvent::ButtonLeft;
   mouse_event.x = 7;
   mouse_event.y = 7;
   mouse_event.clickCount = 1;
   tab->GetRenderViewHost()->ForwardMouseEvent(mouse_event);
-  mouse_event.type = WebKit::WebInputEvent::MouseUp;
+  mouse_event.type = blink::WebInputEvent::MouseUp;
   tab->GetRenderViewHost()->ForwardMouseEvent(mouse_event);
 
   ASSERT_TRUE(catcher.GetNextResult()) << catcher.message();
@@ -689,7 +692,7 @@ IN_PROC_BROWSER_TEST_F(WebNavigationApiTest, CrossProcess) {
   ExtensionService* service = extensions::ExtensionSystem::Get(
       browser()->profile())->extension_service();
   const extensions::Extension* extension =
-      service->GetExtensionById(last_loaded_extension_id_, false);
+      service->GetExtensionById(last_loaded_extension_id(), false);
 
   // See crossProcess/d.html.
   DelayLoadStartAndExecuteJavascript call_script(
@@ -711,7 +714,7 @@ IN_PROC_BROWSER_TEST_F(WebNavigationApiTest, CrossProcessFragment) {
   ExtensionService* service = extensions::ExtensionSystem::Get(
       browser()->profile())->extension_service();
   const extensions::Extension* extension =
-      service->GetExtensionById(last_loaded_extension_id_, false);
+      service->GetExtensionById(last_loaded_extension_id(), false);
 
   // See crossProcess/f.html.
   DelayLoadStartAndExecuteJavascript call_script3(
@@ -744,7 +747,7 @@ IN_PROC_BROWSER_TEST_F(WebNavigationApiTest, CrossProcessHistory) {
   ExtensionService* service = extensions::ExtensionSystem::Get(
       browser()->profile())->extension_service();
   const extensions::Extension* extension =
-      service->GetExtensionById(last_loaded_extension_id_, false);
+      service->GetExtensionById(last_loaded_extension_id(), false);
 
   // See crossProcess/e.html.
   DelayLoadStartAndExecuteJavascript call_script2(

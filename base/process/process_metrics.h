@@ -12,8 +12,10 @@
 
 #include "base/base_export.h"
 #include "base/basictypes.h"
+#include "base/gtest_prod_util.h"
 #include "base/process/process_handle.h"
 #include "base/time/time.h"
+#include "base/values.h"
 
 #if defined(OS_MACOSX)
 #include <mach/mach.h>
@@ -158,13 +160,18 @@ class BASE_EXPORT ProcessMetrics {
   // load and fragmentation.
   bool CalculateFreeMemory(FreeMBytes* free) const;
 
-  // Returns the CPU usage in percent since the last time this method was
-  // called. The first time this method is called it returns 0 and will return
-  // the actual CPU info on subsequent calls.
-  // On Windows, the CPU usage value is for all CPUs. So if you have 2 CPUs and
-  // your process is using all the cycles of 1 CPU and not the other CPU, this
-  // method returns 50.
+  // Returns the CPU usage in percent since the last time this method or
+  // GetPlatformIndependentCPUUsage() was called. The first time this method
+  // is called it returns 0 and will return the actual CPU info on subsequent
+  // calls. On Windows, the CPU usage value is for all CPUs. So if you have
+  // 2 CPUs and your process is using all the cycles of 1 CPU and not the other
+  // CPU, this method returns 50.
   double GetCPUUsage();
+
+  // Same as GetCPUUsage(), but will return consistent values on all platforms
+  // (cancelling the Windows exception mentioned above) by returning a value in
+  // the range of 0 to (100 * numCPUCores) everywhere.
+  double GetPlatformIndependentCPUUsage();
 
   // Retrieves accounting information for all I/O operations performed by the
   // process.
@@ -216,16 +223,34 @@ class BASE_EXPORT ProcessMetrics {
 // Returns 0 if it can't compute the commit charge.
 BASE_EXPORT size_t GetSystemCommitCharge();
 
+#if defined(OS_POSIX)
+// Returns the maximum number of file descriptors that can be open by a process
+// at once. If the number is unavailable, a conservative best guess is returned.
+size_t GetMaxFds();
+#endif  // defined(OS_POSIX)
+
 #if defined(OS_LINUX) || defined(OS_ANDROID)
 // Parse the data found in /proc/<pid>/stat and return the sum of the
 // CPU-related ticks.  Returns -1 on parse error.
 // Exposed for testing.
 BASE_EXPORT int ParseProcStatCPU(const std::string& input);
 
+// Get the number of threads of |process| as available in /proc/<pid>/stat.
+// This should be used with care as no synchronization with running threads is
+// done. This is mostly useful to guarantee being single-threaded.
+// Returns 0 on failure.
+BASE_EXPORT int GetNumberOfThreads(ProcessHandle process);
+
+// /proc/self/exe refers to the current executable.
+BASE_EXPORT extern const char kProcSelfExe[];
+
 // Data from /proc/meminfo about system-wide memory consumption.
 // Values are in KB.
 struct BASE_EXPORT SystemMemoryInfoKB {
   SystemMemoryInfoKB();
+
+  // Serializes the platform specific fields to value.
+  scoped_ptr<Value> ToValue() const;
 
   int total;
   int free;
@@ -235,34 +260,120 @@ struct BASE_EXPORT SystemMemoryInfoKB {
   int inactive_anon;
   int active_file;
   int inactive_file;
-  int shmem;
+  int swap_total;
+  int swap_free;
+  int dirty;
 
+  // vmstats data.
+  int pswpin;
+  int pswpout;
+  int pgmajfault;
+
+#ifdef OS_CHROMEOS
+  int shmem;
+  int slab;
   // Gem data will be -1 if not supported.
   int gem_objects;
   long long gem_size;
+#endif
 };
-// Retrieves data from /proc/meminfo about system-wide memory consumption.
+
+// Parses a string containing the contents of /proc/meminfo
+// returns true on success or false for a parsing error
+BASE_EXPORT bool ParseProcMeminfo(const std::string& input,
+                                  SystemMemoryInfoKB* meminfo);
+
+// Parses a string containing the contents of /proc/vmstat
+// returns true on success or false for a parsing error
+BASE_EXPORT bool ParseProcVmstat(const std::string& input,
+                                 SystemMemoryInfoKB* meminfo);
+
+// Retrieves data from /proc/meminfo and /proc/vmstat
+// about system-wide memory consumption.
 // Fills in the provided |meminfo| structure. Returns true on success.
 // Exposed for memory debugging widget.
 BASE_EXPORT bool GetSystemMemoryInfo(SystemMemoryInfoKB* meminfo);
+
+// Data from /proc/diskstats about system-wide disk I/O.
+struct BASE_EXPORT SystemDiskInfo {
+  SystemDiskInfo();
+
+  // Serializes the platform specific fields to value.
+  scoped_ptr<Value> ToValue() const;
+
+  uint64 reads;
+  uint64 reads_merged;
+  uint64 sectors_read;
+  uint64 read_time;
+  uint64 writes;
+  uint64 writes_merged;
+  uint64 sectors_written;
+  uint64 write_time;
+  uint64 io;
+  uint64 io_time;
+  uint64 weighted_io_time;
+};
+
+// Checks whether the candidate string is a valid disk name, [sh]d[a-z]+
+// for a generic disk or mmcblk[0-9]+ for the MMC case.
+// Names of disk partitions (e.g. sda1) are not valid.
+BASE_EXPORT bool IsValidDiskName(const std::string& candidate);
+
+// Retrieves data from /proc/diskstats about system-wide disk I/O.
+// Fills in the provided |diskinfo| structure. Returns true on success.
+BASE_EXPORT bool GetSystemDiskInfo(SystemDiskInfo* diskinfo);
 #endif  // defined(OS_LINUX) || defined(OS_ANDROID)
 
+#if defined(OS_CHROMEOS)
+// Data from files in directory /sys/block/zram0 about ZRAM usage.
+struct BASE_EXPORT SwapInfo {
+  SwapInfo()
+      : num_reads(0),
+        num_writes(0),
+        compr_data_size(0),
+        orig_data_size(0),
+        mem_used_total(0) {
+  }
+
+  // Serializes the platform specific fields to value.
+  scoped_ptr<Value> ToValue() const;
+
+  uint64 num_reads;
+  uint64 num_writes;
+  uint64 compr_data_size;
+  uint64 orig_data_size;
+  uint64 mem_used_total;
+};
+
+// In ChromeOS, reads files from /sys/block/zram0 that contain ZRAM usage data.
+// Fills in the provided |swap_data| structure.
+BASE_EXPORT void GetSwapInfo(SwapInfo* swap_info);
+#endif  // defined(OS_CHROMEOS)
+
+// Collects and holds performance metrics for system memory and disk.
+// Provides functionality to retrieve the data on various platforms and
+// to serialize the stored data.
+class SystemMetrics {
+ public:
+  SystemMetrics();
+
+  static SystemMetrics Sample();
+
+  // Serializes the system metrics to value.
+  scoped_ptr<Value> ToValue() const;
+
+ private:
+  FRIEND_TEST_ALL_PREFIXES(SystemMetricsTest, SystemMetrics);
+
+  size_t committed_memory_;
 #if defined(OS_LINUX) || defined(OS_ANDROID)
-// Get the number of threads of |process| as available in /proc/<pid>/stat.
-// This should be used with care as no synchronization with running threads is
-// done. This is mostly useful to guarantee being single-threaded.
-// Returns 0 on failure.
-BASE_EXPORT int GetNumberOfThreads(ProcessHandle process);
-
-// /proc/self/exe refers to the current executable.
-BASE_EXPORT extern const char kProcSelfExe[];
-#endif  // defined(OS_LINUX) || defined(OS_ANDROID)
-
-#if defined(OS_POSIX)
-// Returns the maximum number of file descriptors that can be open by a process
-// at once. If the number is unavailable, a conservative best guess is returned.
-size_t GetMaxFds();
-#endif  // defined(OS_POSIX)
+  SystemMemoryInfoKB memory_info_;
+  SystemDiskInfo disk_info_;
+#endif
+#if defined(OS_CHROMEOS)
+  SwapInfo swap_info_;
+#endif
+};
 
 }  // namespace base
 

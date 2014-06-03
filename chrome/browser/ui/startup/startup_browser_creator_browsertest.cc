@@ -13,6 +13,7 @@
 #include "chrome/browser/extensions/extension_browsertest.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
+#include "chrome/browser/extensions/launch_util.h"
 #include "chrome/browser/first_run/first_run.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/managed_mode/managed_mode_navigation_observer.h"
@@ -35,6 +36,7 @@
 #include "chrome/browser/ui/startup/startup_browser_creator_impl.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/in_process_browser_test.h"
@@ -49,15 +51,14 @@
 #include "base/run_loop.h"
 #include "base/values.h"
 #include "chrome/browser/policy/browser_policy_connector.h"
-#include "chrome/browser/policy/external_data_fetcher.h"
-#include "chrome/browser/policy/mock_configuration_policy_provider.h"
-#include "chrome/browser/policy/policy_map.h"
-#include "chrome/browser/policy/policy_types.h"
+#include "components/policy/core/common/external_data_fetcher.h"
+#include "components/policy/core/common/mock_configuration_policy_provider.h"
+#include "components/policy/core/common/policy_map.h"
+#include "components/policy/core/common/policy_types.h"
 #include "policy/policy_constants.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
 using testing::_;
-using testing::AnyNumber;
 using testing::Return;
 #endif  // defined(ENABLE_CONFIGURATION_POLICY) && !defined(OS_CHROMEOS)
 
@@ -109,7 +110,7 @@ class StartupBrowserCreatorTest : public ExtensionBrowserTest {
     ExtensionService* service = extensions::ExtensionSystem::Get(
         browser()->profile())->extension_service();
     *out_app_extension = service->GetExtensionById(
-        last_loaded_extension_id_, false);
+        last_loaded_extension_id(), false);
     ASSERT_TRUE(*out_app_extension);
 
     // Code that opens a new browser assumes we start with exactly one.
@@ -118,10 +119,10 @@ class StartupBrowserCreatorTest : public ExtensionBrowserTest {
   }
 
   void SetAppLaunchPref(const std::string& app_id,
-                        extensions::ExtensionPrefs::LaunchType launch_type) {
+                        extensions::LaunchType launch_type) {
     ExtensionService* service = extensions::ExtensionSystem::Get(
         browser()->profile())->extension_service();
-    service->extension_prefs()->SetLaunchType(app_id, launch_type);
+    extensions::SetLaunchType(service->extension_prefs(), app_id, launch_type);
   }
 
   Browser* FindOneOtherBrowserForProfile(Profile* profile,
@@ -299,8 +300,7 @@ IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorTest, OpenAppShortcutWindowPref) {
   ASSERT_NO_FATAL_FAILURE(LoadApp("app_with_tab_container", &extension_app));
 
   // Set a pref indicating that the user wants to open this app in a window.
-  SetAppLaunchPref(extension_app->id(),
-                   extensions::ExtensionPrefs::LAUNCH_WINDOW);
+  SetAppLaunchPref(extension_app->id(), extensions::LAUNCH_TYPE_WINDOW);
 
   CommandLine command_line(CommandLine::NO_PROGRAM);
   command_line.AppendSwitchASCII(switches::kAppId, extension_app->id());
@@ -331,8 +331,7 @@ IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorTest, OpenAppShortcutTabPref) {
   ASSERT_NO_FATAL_FAILURE(LoadApp("app_with_tab_container", &extension_app));
 
   // Set a pref indicating that the user wants to open this app in a window.
-  SetAppLaunchPref(extension_app->id(),
-                   extensions::ExtensionPrefs::LAUNCH_REGULAR);
+  SetAppLaunchPref(extension_app->id(), extensions::LAUNCH_TYPE_REGULAR);
 
   CommandLine command_line(CommandLine::NO_PROGRAM);
   command_line.AppendSwitchASCII(switches::kAppId, extension_app->id());
@@ -388,7 +387,13 @@ IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorTest,
   EXPECT_FALSE(StartupBrowserCreator::WasRestarted());
 }
 
-IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorTest, AddFirstRunTab) {
+// Fails on official builds. See http://crbug.com/313856
+#if defined(GOOGLE_CHROME_BUILD)
+#define MAYBE_AddFirstRunTab DISABLED_AddFirstRunTab
+#else
+#define MAYBE_AddFirstRunTab AddFirstRunTab
+#endif
+IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorTest, MAYBE_AddFirstRunTab) {
   StartupBrowserCreator browser_creator;
   browser_creator.AddFirstRunTab(test_server()->GetURL("files/title1.html"));
   browser_creator.AddFirstRunTab(test_server()->GetURL("files/title2.html"));
@@ -415,7 +420,13 @@ IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorTest, AddFirstRunTab) {
 
 // Test hard-coded special first run tabs (defined in
 // StartupBrowserCreatorImpl::AddStartupURLs()).
-IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorTest, AddCustomFirstRunTab) {
+// Fails on official builds. See http://crbug.com/313856
+#if defined(GOOGLE_CHROME_BUILD)
+#define MAYBE_AddCustomFirstRunTab DISABLED_AddCustomFirstRunTab
+#else
+#define MAYBE_AddCustomFirstRunTab AddCustomFirstRunTab
+#endif
+IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorTest, MAYBE_AddCustomFirstRunTab) {
   StartupBrowserCreator browser_creator;
   browser_creator.AddFirstRunTab(test_server()->GetURL("files/title1.html"));
   browser_creator.AddFirstRunTab(GURL("http://new_tab_page"));
@@ -959,17 +970,12 @@ class ManagedModeBrowserCreatorTest : public InProcessBrowserTest {
  protected:
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     InProcessBrowserTest::SetUpCommandLine(command_line);
-    command_line->AppendSwitch(switches::kEnableManagedUsers);
+    command_line->AppendSwitchASCII(switches::kManagedUserId, "asdf");
   }
 };
 
 IN_PROC_BROWSER_TEST_F(ManagedModeBrowserCreatorTest,
                        StartupManagedModeProfile) {
-  // Make this a managed profile.
-  ManagedUserService* managed_user_service =
-      ManagedUserServiceFactory::GetForProfile(browser()->profile());
-  managed_user_service->InitForTesting();
-
   StartupBrowserCreator browser_creator;
 
   // Do a simple non-process-startup browser launch.
@@ -1030,12 +1036,18 @@ void StartupBrowserCreatorFirstRunTest::SetUpInProcessBrowserTestFixture() {
 
   EXPECT_CALL(provider_, IsInitializationComplete(_))
       .WillRepeatedly(Return(true));
-  EXPECT_CALL(provider_, RegisterPolicyDomain(_)).Times(AnyNumber());
   policy::BrowserPolicyConnector::SetPolicyProviderForTesting(&provider_);
 #endif  // defined(ENABLE_CONFIGURATION_POLICY)
 }
 
-IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorFirstRunTest, SyncPromoForbidden) {
+#if defined(GOOGLE_CHROME_BUILD) && defined(OS_MACOSX)
+// http://crbug.com/314819
+#define MAYBE_SyncPromoForbidden DISABLED_SyncPromoForbidden
+#else
+#define MAYBE_SyncPromoForbidden SyncPromoForbidden
+#endif
+IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorFirstRunTest,
+                       MAYBE_SyncPromoForbidden) {
   // Consistently enable the welcome page on all platforms.
   first_run::SetShouldShowWelcomePage();
 
@@ -1069,7 +1081,14 @@ IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorFirstRunTest, SyncPromoForbidden) {
             tab_strip->GetWebContentsAt(1)->GetURL());
 }
 
-IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorFirstRunTest, SyncPromoAllowed) {
+#if defined(GOOGLE_CHROME_BUILD) && defined(OS_MACOSX)
+// http://crbug.com/314819
+#define MAYBE_SyncPromoAllowed DISABLED_SyncPromoAllowed
+#else
+#define MAYBE_SyncPromoAllowed SyncPromoAllowed
+#endif
+IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorFirstRunTest,
+                       MAYBE_SyncPromoAllowed) {
   // Consistently enable the welcome page on all platforms.
   first_run::SetShouldShowWelcomePage();
 
@@ -1103,8 +1122,14 @@ IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorFirstRunTest, SyncPromoAllowed) {
             tab_strip->GetWebContentsAt(1)->GetURL());
 }
 
+#if defined(GOOGLE_CHROME_BUILD) && defined(OS_MACOSX)
+// http://crbug.com/314819
+#define MAYBE_FirstRunTabsPromoAllowed DISABLED_FirstRunTabsPromoAllowed
+#else
+#define MAYBE_FirstRunTabsPromoAllowed FirstRunTabsPromoAllowed
+#endif
 IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorFirstRunTest,
-                       FirstRunTabsPromoAllowed) {
+                       MAYBE_FirstRunTabsPromoAllowed) {
   // Simulate the following master_preferences:
   // {
   //  "first_run_tabs" : [
@@ -1139,8 +1164,15 @@ IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorFirstRunTest,
             tab_strip->GetWebContentsAt(1)->GetURL().ExtractFileName());
 }
 
+#if defined(GOOGLE_CHROME_BUILD) && defined(OS_MACOSX)
+// http://crbug.com/314819
+#define MAYBE_FirstRunTabsContainSyncPromo \
+    DISABLED_FirstRunTabsContainSyncPromo
+#else
+#define MAYBE_FirstRunTabsContainSyncPromo FirstRunTabsContainSyncPromo
+#endif
 IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorFirstRunTest,
-                       FirstRunTabsContainSyncPromo) {
+                       MAYBE_FirstRunTabsContainSyncPromo) {
   // Simulate the following master_preferences:
   // {
   //  "first_run_tabs" : [
@@ -1179,8 +1211,16 @@ IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorFirstRunTest,
             tab_strip->GetWebContentsAt(1)->GetURL());
 }
 
+#if defined(GOOGLE_CHROME_BUILD) && defined(OS_MACOSX)
+// http://crbug.com/314819
+#define MAYBE_FirstRunTabsContainNTPSyncPromoAllowed \
+    DISABLED_FirstRunTabsContainNTPSyncPromoAllowed
+#else
+#define MAYBE_FirstRunTabsContainNTPSyncPromoAllowed \
+    FirstRunTabsContainNTPSyncPromoAllowed
+#endif
 IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorFirstRunTest,
-                       FirstRunTabsContainNTPSyncPromoAllowed) {
+                       MAYBE_FirstRunTabsContainNTPSyncPromoAllowed) {
   // Simulate the following master_preferences:
   // {
   //  "first_run_tabs" : [
@@ -1218,8 +1258,16 @@ IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorFirstRunTest,
             tab_strip->GetWebContentsAt(1)->GetURL().ExtractFileName());
 }
 
+#if defined(GOOGLE_CHROME_BUILD) && defined(OS_MACOSX)
+// http://crbug.com/314819
+#define MAYBE_FirstRunTabsContainNTPSyncPromoForbidden \
+    DISABLED_FirstRunTabsContainNTPSyncPromoForbidden
+#else
+#define MAYBE_FirstRunTabsContainNTPSyncPromoForbidden \
+    FirstRunTabsContainNTPSyncPromoForbidden
+#endif
 IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorFirstRunTest,
-                       FirstRunTabsContainNTPSyncPromoForbidden) {
+                       MAYBE_FirstRunTabsContainNTPSyncPromoForbidden) {
   // Simulate the following master_preferences:
   // {
   //  "first_run_tabs" : [
@@ -1257,8 +1305,15 @@ IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorFirstRunTest,
             tab_strip->GetWebContentsAt(1)->GetURL().ExtractFileName());
 }
 
+#if defined(GOOGLE_CHROME_BUILD) && defined(OS_MACOSX)
+// http://crbug.com/314819
+#define MAYBE_FirstRunTabsSyncPromoForbidden \
+    DISABLED_FirstRunTabsSyncPromoForbidden
+#else
+#define MAYBE_FirstRunTabsSyncPromoForbidden FirstRunTabsSyncPromoForbidden
+#endif
 IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorFirstRunTest,
-                       FirstRunTabsSyncPromoForbidden) {
+                       MAYBE_FirstRunTabsSyncPromoForbidden) {
   // Simulate the following master_preferences:
   // {
   //  "first_run_tabs" : [
@@ -1292,8 +1347,16 @@ IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorFirstRunTest,
 }
 
 #if defined(ENABLE_CONFIGURATION_POLICY)
+#if defined(GOOGLE_CHROME_BUILD) && defined(OS_MACOSX)
+// http://crbug.com/314819
+#define MAYBE_RestoreOnStartupURLsPolicySpecified \
+    DISABLED_RestoreOnStartupURLsPolicySpecified
+#else
+#define MAYBE_RestoreOnStartupURLsPolicySpecified \
+    RestoreOnStartupURLsPolicySpecified
+#endif
 IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorFirstRunTest,
-                       RestoreOnStartupURLsPolicySpecified) {
+                       MAYBE_RestoreOnStartupURLsPolicySpecified) {
   // Simulate the following master_preferences:
   // {
   //  "sync_promo": {

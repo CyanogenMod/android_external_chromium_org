@@ -26,16 +26,41 @@ login.createScreen('AccountPickerScreen', 'account-picker', function() {
       'updateUserImage',
       'updateUserGaiaNeeded',
       'setCapsLockState',
-      'forceLockedUserPodFocus'
+      'forceLockedUserPodFocus',
+      'onWallpaperLoaded',
+      'removeUser',
+      'showBannerMessage',
+      'showUserPodButton',
     ],
+
+    preferredWidth_: 0,
+    preferredHeight_: 0,
+
+    // Whether this screen is shown for the first time.
+    firstShown_: true,
 
     /** @override */
     decorate: function() {
       login.PodRow.decorate($('pod-row'));
     },
 
-    // Whether this screen is shown for the first time.
-    firstShown_: true,
+    /** @override */
+    getPreferredSize: function() {
+      return {width: this.preferredWidth_, height: this.preferredHeight_};
+    },
+
+    /** @override */
+    onWindowResize: function() {
+      $('pod-row').onWindowResize();
+    },
+
+    /**
+     * Sets preferred size for account picker screen.
+     */
+    setPreferredSize: function(width, height) {
+      this.preferredWidth_ = width;
+      this.preferredHeight_ = height;
+    },
 
     /**
      * When the account picker is being used to lock the screen, pressing the
@@ -138,7 +163,7 @@ login.createScreen('AccountPickerScreen', 'account-picker', function() {
     },
 
     /**
-     * Loads givens users in pod row.
+     * Loads given users in pod row.
      * @param {array} users Array of user.
      * @param {boolean} animated Whether to use init animation.
      * @param {boolean} showGuest Whether to show guest session button.
@@ -146,6 +171,15 @@ login.createScreen('AccountPickerScreen', 'account-picker', function() {
     loadUsers: function(users, animated, showGuest) {
       $('pod-row').loadPods(users, animated);
       $('login-header-bar').showGuestButton = showGuest;
+
+      // The desktop User Manager can send the index of a pod that should be
+      // initially focused.
+      var hash = window.location.hash;
+      if (hash) {
+        var podIndex = hash.substr(1);
+        if (podIndex)
+          $('pod-row').focusPodByIndex(podIndex, false);
+      }
     },
 
     /**
@@ -179,6 +213,43 @@ login.createScreen('AccountPickerScreen', 'account-picker', function() {
       var row = $('pod-row');
       if (row.lockedPod)
         row.focusPod(row.lockedPod, true);
+    },
+
+    /**
+     * Mark wallpaper loaded
+     */
+    onWallpaperLoaded: function(username) {
+      $('pod-row').onWallpaperLoaded(username);
+    },
+
+    /**
+     * Remove given user from pod row if it is there.
+     * @param {string} user name.
+     */
+    removeUser: function(username) {
+      $('pod-row').removeUserPod(username);
+    },
+
+    /**
+     * Displays a banner containing |message|. If the banner is already present
+     * this function updates the message in the banner. This function is used
+     * by the chrome.screenlockPrivate.showMessage API.
+     * @param {string} message Text to be displayed
+     */
+    showBannerMessage: function(message) {
+      var banner = $('signin-banner');
+      banner.textContent = message;
+      banner.classList.toggle('message-set', true);
+    },
+
+    /**
+     * Shows a button with an icon on the user pod of |username|. This function
+     * is used by the chrome.screenlockPrivate API.
+     * @param {string} username Username of pod to add button
+     * @param {string} iconURL URL of the button icon
+     */
+    showUserPodButton: function(username, iconURL) {
+      $('pod-row').showUserPodButton(username, iconURL);
     }
   };
 });

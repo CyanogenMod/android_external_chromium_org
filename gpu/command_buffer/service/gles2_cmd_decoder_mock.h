@@ -34,17 +34,16 @@ class MockGLES2Decoder : public GLES2Decoder {
   MockGLES2Decoder();
   virtual ~MockGLES2Decoder();
 
-  MOCK_METHOD7(Initialize,
+  MOCK_METHOD6(Initialize,
                bool(const scoped_refptr<gfx::GLSurface>& surface,
                     const scoped_refptr<gfx::GLContext>& context,
                     bool offscreen,
                     const gfx::Size& size,
                     const DisallowedFeatures& disallowed_features,
-                    const char* allowed_extensions,
                     const std::vector<int32>& attribs));
   MOCK_METHOD1(Destroy, void(bool have_context));
   MOCK_METHOD1(SetSurface, void(const scoped_refptr<gfx::GLSurface>& surface));
-  MOCK_METHOD1(ProduceFrontBuffer, bool(const Mailbox& mailbox));
+  MOCK_METHOD1(ProduceFrontBuffer, void(const Mailbox& mailbox));
   MOCK_METHOD1(ResizeOffscreenFrameBuffer, bool(const gfx::Size& size));
   MOCK_METHOD0(MakeCurrent, bool());
   MOCK_METHOD0(ReleaseCurrent, void());
@@ -53,6 +52,7 @@ class MockGLES2Decoder : public GLES2Decoder {
   MOCK_METHOD0(GetGLSurface, gfx::GLSurface*());
   MOCK_METHOD0(GetGLContext, gfx::GLContext*());
   MOCK_METHOD0(GetContextGroup, ContextGroup*());
+  MOCK_METHOD0(GetCapabilities, Capabilities());
   MOCK_METHOD0(ProcessPendingQueries, bool());
   MOCK_METHOD0(HasMoreIdleWork, bool());
   MOCK_METHOD0(PerformIdleWork, void());

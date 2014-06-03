@@ -11,9 +11,9 @@
 #include "third_party/WebKit/public/web/WebBlob.h"
 #include "third_party/WebKit/public/web/WebSerializedScriptValue.h"
 
-using WebKit::WebBlob;
-using WebKit::WebSerializedScriptValue;
-using WebKit::WebString;
+using blink::WebBlob;
+using blink::WebSerializedScriptValue;
+using blink::WebString;
 
 namespace {
 
@@ -35,7 +35,8 @@ void SerializeToString(const v8::FunctionCallbackInfo<v8::Value> &args) {
   WebString data_webstring = data.toString();
 
   std::string v = std::string(data_webstring.utf8());
-  args.GetReturnValue().Set(v8::String::New(v.c_str()));
+  args.GetReturnValue()
+      .Set(v8::String::NewFromUtf8(args.GetIsolate(), v.c_str()));
 }
 
 void CreateBlob(const v8::FunctionCallbackInfo<v8::Value> &args) {
@@ -47,7 +48,7 @@ void CreateBlob(const v8::FunctionCallbackInfo<v8::Value> &args) {
   std::string blob_length_string(*v8::String::Utf8Value(args[1]));
   int64 blob_length = 0;
   DCHECK(base::StringToInt64(blob_length_string, &blob_length));
-  WebKit::WebBlob web_blob = WebBlob::createFromFile(
+  blink::WebBlob web_blob = WebBlob::createFromFile(
       WebString::fromUTF8(blob_file_path), blob_length);
   args.GetReturnValue().Set(web_blob.toV8Value());
 }

@@ -152,6 +152,17 @@ void SBEntry::SetFullHashAt(int index, const SBFullHash& full_hash) {
 
 // Utility functions -----------------------------------------------------------
 
+namespace {
+bool IsKnownList(const std::string& name) {
+  for (size_t i = 0; i < arraysize(safe_browsing_util::kAllLists); ++i) {
+    if (!strcmp(safe_browsing_util::kAllLists[i], name.c_str())) {
+      return true;
+    }
+  }
+  return false;
+}
+}  // namespace
+
 namespace safe_browsing_util {
 
 // Listnames that browser can process.
@@ -165,6 +176,20 @@ const char kCsdWhiteList[] = "goog-csdwhite-sha256";
 const char kDownloadWhiteList[] = "goog-downloadwhite-digest256";
 const char kExtensionBlacklist[] = "goog-badcrxids-digestvar";
 const char kSideEffectFreeWhitelist[] = "goog-sideeffectfree-shavar";
+const char kIPBlacklist[] = "goog-badip-digest256";
+
+const char* kAllLists[10] = {
+  kMalwareList,
+  kPhishingList,
+  kBinUrlList,
+  kBinHashList,
+  kCsdWhiteList,
+  kDownloadWhiteList,
+  kDownloadWhiteList,
+  kExtensionBlacklist,
+  kSideEffectFreeWhitelist,
+  kIPBlacklist,
+};
 
 ListType GetListId(const std::string& name) {
   ListType id;
@@ -184,6 +209,8 @@ ListType GetListId(const std::string& name) {
     id = EXTENSIONBLACKLIST;
   } else if (name == safe_browsing_util::kSideEffectFreeWhitelist) {
     id = SIDEEFFECTFREEWHITELIST;
+  } else if (name == safe_browsing_util::kIPBlacklist) {
+    id = IPBLACKLIST;
   } else {
     id = INVALID;
   }
@@ -216,9 +243,13 @@ bool GetListName(ListType list_id, std::string* list) {
     case SIDEEFFECTFREEWHITELIST:
       *list = safe_browsing_util::kSideEffectFreeWhitelist;
       break;
+    case IPBLACKLIST:
+      *list = safe_browsing_util::kIPBlacklist;
+      break;
     default:
       return false;
   }
+  DCHECK(IsKnownList(*list));
   return true;
 }
 
@@ -310,7 +341,7 @@ void CanonicalizeUrl(const GURL& url,
           : std::string();
   const char kCharsToTrim[] = ".";
   std::string host_without_end_dots;
-  TrimString(host, kCharsToTrim, &host_without_end_dots);
+  base::TrimString(host, kCharsToTrim, &host_without_end_dots);
 
   // 4. In hostname, replace consecutive dots with a single dot.
   std::string host_without_consecutive_dots(RemoveConsecutiveChars(

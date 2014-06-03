@@ -18,9 +18,6 @@ const char kAshWebUIInit[]                  = "ash-webui-init";
 // Enables overriding the path for the default authentication extension.
 const char kAuthExtensionPath[]             = "auth-ext-path";
 
-// Enables overriding the Chrome OS board type when running on Linux.
-const char kChromeOSReleaseBoard[] = "chromeos-release-board";
-
 // Forces the stub implementation of dbus clients.
 const char kDbusStub[] = "dbus-stub";
 
@@ -30,13 +27,19 @@ const char kDefaultStubNetworkStateIdle[] = "default-stub-network-state-idle";
 // Disables wallpaper boot animation (except of OOBE case).
 const char kDisableBootAnimation[]          = "disable-boot-animation";
 
-// Disables Chrome Captive Portal detector, which initiates Captive
-// Portal detection for new active networks.
-const char kDisableChromeCaptivePortalDetector[] =
-    "disable-chrome-captive-portal-detector";
-
 // Disables Google Drive integration.
 const char kDisableDrive[]                  = "disable-drive";
+
+// Disables reporting recently logged in users for enterprise-managed devices.
+const char kDisableEnterpriseUserReporting[] =
+    "disable-enterprise-user-reporting";
+
+// Disable Genius App and use the original Help App instead.
+const char kDisableGeniusApp[]              = "disable-genius-app";
+
+// Disable to show the indicator about the IME (input method editor) mode
+// on Chrome OS.
+const char kDisableIMEModeIndicator[] = "disable-ime-mode-indicator";
 
 // Disable policy-configured local accounts.
 const char kDisableLocalAccounts[]          = "disable-local-accounts";
@@ -77,16 +80,8 @@ const char kEnableBackgroundLoader[]        = "enable-background-loader";
 // Enables switching between different cellular carriers from the UI.
 const char kEnableCarrierSwitching[]        = "enable-carrier-switching";
 
-// Enable switching between audio devices in Chrome instead of cras.
-const char kEnableChromeAudioSwitching[] = "enable-chrome-audio-switching";
-
-// Enables Chrome Captive Portal detector, which initiates Captive
-// Portal detection for new active networks.
-const char kEnableChromeCaptivePortalDetector[] =
-    "enable-chrome-captive-portal-detector";
-
-// Enables screensaver extensions.
-const char kEnableScreensaverExtensions[] = "enable-screensaver-extensions";
+// Enables automatically initializing Google Drive offline mode on first run.
+const char kEnableDriveOfflineFirstRun[] = "enable-drive-offline-first-run";
 
 // Enable "interactive" mode for stub implemenations (e.g. NetworkStateHandler)
 const char kEnableStubInteractive[] = "enable-stub-interactive";
@@ -105,10 +100,6 @@ const char kEnableKioskMode[]               = "enable-kiosk-mode";
 // Enables request of tablet site (via user agent override).
 const char kEnableRequestTabletSite[]       = "enable-request-tablet-site";
 
-// Enables static ip configuration. This flag should be removed when it's on by
-// default.
-const char kEnableStaticIPConfig[]          = "enable-static-ip-config";
-
 // Power of the power-of-2 initial modulus that will be used by the
 // auto-enrollment client. E.g. "4" means the modulus will be 2^4 = 16.
 const char kEnterpriseEnrollmentInitialModulus[] =
@@ -118,6 +109,11 @@ const char kEnterpriseEnrollmentInitialModulus[] =
 // auto-enrollment client.
 const char kEnterpriseEnrollmentModulusLimit[] =
     "enterprise-enrollment-modulus-limit";
+
+// Don't create robot account on enrollment. Used when testing device
+// enrollment against YAPS or the Python test server.
+const char kEnterpriseEnrollmentSkipRobotAuth[] =
+    "enterprise-enrollment-skip-robot-auth";
 
 // Shows the selecting checkboxes in the Files.app.
 const char kFileManagerShowCheckboxes[]     = "file-manager-show-checkboxes";
@@ -133,6 +129,11 @@ const char kFirstExecAfterBoot[]            = "first-exec-after-boot";
 // Usually in browser tests the usual login manager bringup is skipped so that
 // tests can change how it's brought up. This flag disables that.
 const char kForceLoginManagerInTests[]      = "force-login-manager-in-tests";
+
+// Sets primary user's default multiprofile behavior to 'unrestricted' for
+// tests so that multiprofile is enabled for any user.
+// TODO(xiyuan): Remove when multiprofile is released to everyone.
+const char kForceMultiProfileInTests[]      = "force-multi-profiles-in-tests";
 
 // Indicates that the browser is in "browse without sign-in" (Guest session)
 // mode. Should completely disable extensions, sync and bookmarks.
@@ -166,34 +167,41 @@ const char kLoginUser[]                     = "login-user";
 // Enables natural scroll by default.
 const char kNaturalScrollDefault[]          = "enable-natural-scroll-default";
 
-// Disables tab discard in low memory conditions, a feature which silently
-// closes inactive tabs to free memory and to attempt to avoid the kernel's
-// out-of-memory process killer.
-const char kNoDiscardTabs[]                 = "no-discard-tabs";
-
-// Disables recording of swap and CPU utilization metrics logging after tab
-// switch and scroll events.
-const char kNoSwapMetrics[]                 = "no-swap-metrics";
-
 // Skips all other OOBE pages after user login.
 const char kOobeSkipPostLogin[]             = "oobe-skip-postlogin";
+
+// Integer flag that sets the DeviceRegistered local state pref.
+const char kDeviceRegistered[]              = "device-registered";
 
 // Skips the machine hwid check. Useful for running in VMs because they have no
 // hwid.
 const char kSkipHWIDCheck[]                 = "skip-hwid-check";
 
 // Sends test messages on first call to RequestUpdate (stub only).
-const char kSmsTestMessages[] = "sms-test-messages";
+const char kSmsTestMessages[]               = "sms-test-messages";
 
 // Indicates that a stub implementation of CrosSettings that stores settings in
 // memory without signing should be used, treating current user as the owner.
 // This option is for testing the chromeos build of chrome on the desktop only.
 const char kStubCrosSettings[]              = "stub-cros-settings";
 
-// Enables usage of the new ManagedNetworkConfigurationHandler and
-// NetworkConfigurationHandler singletons.
-const char kUseNewNetworkConfigurationHandlers[] =
-    "use-new-network-configuration-handlers";
+// Disables user image sync.
+const char kDisableUserImageSync[]          = "disable-user-image-sync";
+
+// Enables SAML sigin support.
+const char kEnableSamlSignin[]              = "enable-saml-signin";
+
+// Disables new first-run overlay UI.
+const char kDisableFirstRunUI[] = "disable-first-run-ui";
+
+// Enables animated transitions during first-run tutorial.
+const char kEnableFirstRunUITransitions[] = "enable-first-run-ui-transitions";
+
+// Forces first-run UI to be shown for every login.
+const char kForceFirstRunUI[] = "force-first-run-ui";
+
+// Enables testing for auto update UI.
+const char kTestAutoUpdateUI[] = "test-auto-update-ui";
 
 }  // namespace switches
 }  // namespace chromeos

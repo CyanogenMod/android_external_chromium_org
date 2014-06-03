@@ -10,12 +10,12 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/common/metrics/entropy_provider.h"
 #include "chrome/test/base/chrome_render_view_test.h"
 #include "components/autofill/content/renderer/form_autofill_util.h"
 #include "components/autofill/content/renderer/form_cache.h"
 #include "components/autofill/core/common/form_data.h"
 #include "components/autofill/core/common/web_element_descriptor.h"
+#include "components/variations/entropy_provider.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebVector.h"
@@ -26,21 +26,24 @@
 #include "third_party/WebKit/public/web/WebInputElement.h"
 #include "third_party/WebKit/public/web/WebNode.h"
 #include "third_party/WebKit/public/web/WebSelectElement.h"
+#include "third_party/WebKit/public/web/WebTextAreaElement.h"
 
-using WebKit::WebDocument;
-using WebKit::WebElement;
-using WebKit::WebFormControlElement;
-using WebKit::WebFormElement;
-using WebKit::WebFrame;
-using WebKit::WebInputElement;
-using WebKit::WebSelectElement;
-using WebKit::WebNode;
-using WebKit::WebString;
-using WebKit::WebVector;
+using blink::WebDocument;
+using blink::WebElement;
+using blink::WebFormControlElement;
+using blink::WebFormElement;
+using blink::WebFrame;
+using blink::WebInputElement;
+using blink::WebNode;
+using blink::WebSelectElement;
+using blink::WebString;
+using blink::WebTextAreaElement;
+using blink::WebVector;
 
 namespace {
 
 struct AutofillFieldCase {
+  const char* const form_control_type;
   const char* const name;
   const char* const initial_value;
   const char* const autocomplete_attribute;  // The autocomplete attribute of
@@ -63,6 +66,19 @@ static const char kFormHtml[] =
     "  <INPUT type=\"text\" style=\"visibility: hidden\""
     "         id=\"invisible\"/>"
     "  <INPUT type=\"text\" style=\"display: none\" id=\"displaynone\"/>"
+    "  <INPUT type=\"month\" id=\"month\"/>"
+    "  <INPUT type=\"month\" id=\"month-nonempty\" value=\"2011-12\"/>"
+    "  <SELECT id=\"select\">"
+    "    <OPTION></OPTION>"
+    "    <OPTION value=\"CA\">California</OPTION>"
+    "    <OPTION value=\"TX\">Texas</OPTION>"
+    "  </SELECT>"
+    "  <SELECT id=\"select-nonempty\">"
+    "    <OPTION value=\"CA\" selected>California</OPTION>"
+    "    <OPTION value=\"TX\">Texas</OPTION>"
+    "  </SELECT>"
+    "  <TEXTAREA id=\"textarea\"></TEXTAREA>"
+    "  <TEXTAREA id=\"textarea-nonempty\">Go&#10;away!</TEXTAREA>"
     "  <INPUT type=\"submit\" name=\"reply-send\" value=\"Send\"/>"
     "</FORM>";
 
@@ -76,17 +92,17 @@ class FormAutofillTest : public ChromeRenderViewTest {
   virtual ~FormAutofillTest() {}
 
   void ExpectLabels(const char* html,
-                    const std::vector<string16>& labels,
-                    const std::vector<string16>& names,
-                    const std::vector<string16>& values) {
+                    const std::vector<base::string16>& labels,
+                    const std::vector<base::string16>& names,
+                    const std::vector<base::string16>& values) {
     std::vector<std::string> control_types(labels.size(), "text");
     ExpectLabelsAndTypes(html, labels, names, values, control_types);
   }
 
   void ExpectLabelsAndTypes(const char* html,
-                            const std::vector<string16>& labels,
-                            const std::vector<string16>& names,
-                            const std::vector<string16>& values,
+                            const std::vector<base::string16>& labels,
+                            const std::vector<base::string16>& names,
+                            const std::vector<base::string16>& values,
                             const std::vector<std::string>& control_types) {
     ASSERT_EQ(labels.size(), names.size());
     ASSERT_EQ(labels.size(), values.size());
@@ -124,7 +140,7 @@ class FormAutofillTest : public ChromeRenderViewTest {
   }
 
   void ExpectJohnSmithLabels(const char* html) {
-    std::vector<string16> labels, names, values;
+    std::vector<base::string16> labels, names, values;
 
     labels.push_back(ASCIIToUTF16("First name:"));
     names.push_back(ASCIIToUTF16("firstname"));
@@ -182,13 +198,14 @@ class FormAutofillTest : public ChromeRenderViewTest {
     ASSERT_EQ(number_of_field_cases, fields.size());
 
     FormFieldData expected;
-    expected.form_control_type = "text";
-    expected.max_length = WebInputElement::defaultMaxLength();
-
     // Verify field's initial value.
     for (size_t i = 0; i < number_of_field_cases; ++i) {
       SCOPED_TRACE(base::StringPrintf("Verify initial value for field %s",
                                       field_cases[i].name));
+      expected.form_control_type = field_cases[i].form_control_type;
+      expected.max_length =
+          expected.form_control_type == "text" ?
+          WebInputElement::defaultMaxLength() : 0;
       expected.name = ASCIIToUTF16(field_cases[i].name);
       expected.value = ASCIIToUTF16(field_cases[i].initial_value);
       expected.autocomplete_attribute = field_cases[i].autocomplete_attribute;
@@ -211,19 +228,28 @@ class FormAutofillTest : public ChromeRenderViewTest {
                           GetValueFunction get_value_function) {
     SCOPED_TRACE(base::StringPrintf("Verify autofilled value for field %s",
                                     field_case.name));
-    WebInputElement input_element = GetMainFrame()->document().getElementById(
-        ASCIIToUTF16(field_case.name)).to<WebInputElement>();
-    EXPECT_EQ(field_case.should_be_autofilled, input_element.isAutofilled());
-    if (field_case.should_be_autofilled) {
-      EXPECT_EQ(ASCIIToUTF16(field_case.expected_value),
-                (input_element.*get_value_function)());
+    WebString value;
+    WebFormControlElement element = GetMainFrame()->document().getElementById(
+        ASCIIToUTF16(field_case.name)).to<WebFormControlElement>();
+    if (element.formControlType() == "select-one") {
+      value = element.to<WebSelectElement>().value();
+    } else if (element.formControlType() == "textarea") {
+      value = element.to<WebTextAreaElement>().value();
     } else {
-      WebString expected_value = ASCIIToUTF16(field_case.expected_value);
-      if (expected_value.isEmpty())
-        EXPECT_TRUE((input_element.*get_value_function)().isEmpty());
-      else
-        EXPECT_EQ(expected_value, (input_element.*get_value_function)());
+      ASSERT_TRUE(element.formControlType() == "text" ||
+                  element.formControlType() == "month");
+      WebInputElement input_element = GetMainFrame()->document().getElementById(
+          ASCIIToUTF16(field_case.name)).to<WebInputElement>();
+      value = (input_element.*get_value_function)();
     }
+
+    const WebString expected_value = ASCIIToUTF16(field_case.expected_value);
+    if (expected_value.isEmpty())
+      EXPECT_TRUE(value.isEmpty());
+    else
+      EXPECT_EQ(expected_value, value);
+
+    EXPECT_EQ(field_case.should_be_autofilled, element.isAutofilled());
   }
 
   static void FillFormForAllFieldsWrapper(const FormData& form,
@@ -258,7 +284,7 @@ TEST_F(FormAutofillTest, WebFormControlElementToFormField) {
   expected.max_length = WebInputElement::defaultMaxLength();
 
   expected.name = ASCIIToUTF16("element");
-  expected.value = string16();
+  expected.value = base::string16();
   EXPECT_FORM_FIELD_DATA_EQUALS(expected, result1);
 
   FormFieldData result2;
@@ -406,7 +432,7 @@ TEST_F(FormAutofillTest, WebFormControlElementToFormFieldSelect) {
   FormFieldData result3;
   WebFormControlElementToFormField(element, autofill::EXTRACT_OPTIONS,
                                    &result3);
-  expected.value = string16();
+  expected.value = base::string16();
   EXPECT_FORM_FIELD_DATA_EQUALS(expected, result3);
 
   ASSERT_EQ(2U, result3.option_values.size());
@@ -415,6 +441,62 @@ TEST_F(FormAutofillTest, WebFormControlElementToFormFieldSelect) {
   EXPECT_EQ(ASCIIToUTF16("California"), result3.option_contents[0]);
   EXPECT_EQ(ASCIIToUTF16("TX"), result3.option_values[1]);
   EXPECT_EQ(ASCIIToUTF16("Texas"), result3.option_contents[1]);
+}
+
+// We should be able to extract a <textarea> field.
+TEST_F(FormAutofillTest, WebFormControlElementToFormFieldTextArea) {
+  LoadHTML("<TEXTAREA id=\"element\">"
+             "This element's value&#10;"
+             "spans multiple lines."
+           "</TEXTAREA>");
+
+  WebFrame* frame = GetMainFrame();
+  ASSERT_NE(static_cast<WebFrame*>(NULL), frame);
+
+  WebElement web_element = frame->document().getElementById("element");
+  WebFormControlElement element = web_element.to<WebFormControlElement>();
+  FormFieldData result_sans_value;
+  WebFormControlElementToFormField(element, autofill::EXTRACT_NONE,
+                                   &result_sans_value);
+
+  FormFieldData expected;
+  expected.name = ASCIIToUTF16("element");
+  expected.max_length = 0;
+  expected.form_control_type = "textarea";
+  EXPECT_FORM_FIELD_DATA_EQUALS(expected, result_sans_value);
+
+  FormFieldData result_with_value;
+  WebFormControlElementToFormField(element, autofill::EXTRACT_VALUE,
+                                   &result_with_value);
+  expected.value = ASCIIToUTF16("This element's value\n"
+                                "spans multiple lines.");
+  EXPECT_FORM_FIELD_DATA_EQUALS(expected, result_with_value);
+}
+
+// We should be able to extract an <input type="month"> field.
+TEST_F(FormAutofillTest, WebFormControlElementToFormFieldMonthInput) {
+  LoadHTML("<INPUT type=\"month\" id=\"element\" value=\"2011-12\">");
+
+  WebFrame* frame = GetMainFrame();
+  ASSERT_NE(static_cast<WebFrame*>(NULL), frame);
+
+  WebElement web_element = frame->document().getElementById("element");
+  WebFormControlElement element = web_element.to<WebFormControlElement>();
+  FormFieldData result_sans_value;
+  WebFormControlElementToFormField(element, autofill::EXTRACT_NONE,
+                                   &result_sans_value);
+
+  FormFieldData expected;
+  expected.name = ASCIIToUTF16("element");
+  expected.max_length = 0;
+  expected.form_control_type = "month";
+  EXPECT_FORM_FIELD_DATA_EQUALS(expected, result_sans_value);
+
+  FormFieldData result_with_value;
+  WebFormControlElementToFormField(element, autofill::EXTRACT_VALUE,
+                                   &result_with_value);
+  expected.value = ASCIIToUTF16("2011-12");
+  EXPECT_FORM_FIELD_DATA_EQUALS(expected, result_with_value);
 }
 
 // We should not extract the value for non-text and non-select fields.
@@ -479,10 +561,15 @@ TEST_F(FormAutofillTest, WebFormControlElementToFormFieldAutocompletetype) {
       "<INPUT type=\"text\" id=\"multi-valued\" "
       "       autocomplete=\"billing email\"/>"
       "<INPUT type=\"text\" id=\"experimental\" x-autocompletetype=\"email\"/>"
+      "<INPUT type=\"month\" id=\"month\" autocomplete=\"cc-exp\"/>"
       "<SELECT id=\"select\" autocomplete=\"state\"/>"
       "  <OPTION value=\"CA\">California</OPTION>"
       "  <OPTION value=\"TX\">Texas</OPTION>"
-      "</SELECT>";
+      "</SELECT>"
+      "<TEXTAREA id=\"textarea\" autocomplete=\"street-address\">"
+      "  Some multi-"
+      "  lined value"
+      "</TEXTAREA>";
   html +=
       "<INPUT type=\"text\" id=\"malicious\" autocomplete=\"" +
       std::string(10000, 'x') + "\"/>";
@@ -508,6 +595,8 @@ TEST_F(FormAutofillTest, WebFormControlElementToFormFieldAutocompletetype) {
     { "regular", "text", "email" },
     // Verify that we correctly extract multiple tokens as well.
     { "multi-valued", "text", "billing email" },
+    // Verify that <input type="month"> fields are supported.
+    { "month", "month", "cc-exp" },
     // We previously extracted this data from the experimental
     // 'x-autocompletetype' attribute.  Now that the field type hints are part
     // of the spec under the autocomplete attribute, we no longer support the
@@ -515,6 +604,8 @@ TEST_F(FormAutofillTest, WebFormControlElementToFormFieldAutocompletetype) {
     { "experimental", "text", "" },
     // <select> elements should behave no differently from text fields here.
     { "select", "select-one", "state" },
+    // <textarea> elements should also behave no differently from text fields.
+    { "textarea", "textarea", "street-address" },
     // Very long attribute values should be replaced by a default string, to
     // prevent malicious websites from DOSing the browser process.
     { "malicious", "text", "x-max-data-length-exceeded" },
@@ -547,6 +638,11 @@ TEST_F(FormAutofillTest, WebFormElementToFormData) {
            "  <INPUT type=\"text\" id=\"firstname\" value=\"John\"/>"
            " <LABEL for=\"lastname\">Last name:</LABEL>"
            "  <INPUT type=\"text\" id=\"lastname\" value=\"Smith\"/>"
+           " <LABEL for=\"street-address\">Address:</LABEL>"
+           "  <TEXTAREA id=\"street-address\">"
+               "123 Fantasy Ln.&#10;"
+               "Apt. 42"
+             "</TEXTAREA>"
            " <LABEL for=\"state\">State:</LABEL>"
            "  <SELECT id=\"state\"/>"
            "    <OPTION value=\"CA\">California</OPTION>"
@@ -554,6 +650,8 @@ TEST_F(FormAutofillTest, WebFormElementToFormData) {
            "  </SELECT>"
            " <LABEL for=\"password\">Password:</LABEL>"
            "  <INPUT type=\"password\" id=\"password\" value=\"secret\"/>"
+           " <LABEL for=\"month\">Card expiration:</LABEL>"
+           "  <INPUT type=\"month\" id=\"month\" value=\"2011-12\"/>"
            "  <INPUT type=\"submit\" name=\"reply-send\" value=\"Send\"/>"
            // The below inputs should be ignored
            " <LABEL for=\"notvisible\">Hidden:</LABEL>"
@@ -583,7 +681,7 @@ TEST_F(FormAutofillTest, WebFormElementToFormData) {
   EXPECT_EQ(GURL("http://cnn.com"), form.action);
 
   const std::vector<FormFieldData>& fields = form.fields;
-  ASSERT_EQ(4U, fields.size());
+  ASSERT_EQ(6U, fields.size());
 
   FormFieldData expected;
   expected.name = ASCIIToUTF16("firstname");
@@ -600,19 +698,33 @@ TEST_F(FormAutofillTest, WebFormElementToFormData) {
   expected.max_length = WebInputElement::defaultMaxLength();
   EXPECT_FORM_FIELD_DATA_EQUALS(expected, fields[1]);
 
+  expected.name = ASCIIToUTF16("street-address");
+  expected.value = ASCIIToUTF16("123 Fantasy Ln.\nApt. 42");
+  expected.label = ASCIIToUTF16("Address:");
+  expected.form_control_type = "textarea";
+  expected.max_length = 0;
+  EXPECT_FORM_FIELD_DATA_EQUALS(expected, fields[2]);
+
   expected.name = ASCIIToUTF16("state");
   expected.value = ASCIIToUTF16("CA");
   expected.label = ASCIIToUTF16("State:");
   expected.form_control_type = "select-one";
   expected.max_length = 0;
-  EXPECT_FORM_FIELD_DATA_EQUALS(expected, fields[2]);
+  EXPECT_FORM_FIELD_DATA_EQUALS(expected, fields[3]);
 
   expected.name = ASCIIToUTF16("password");
   expected.value = ASCIIToUTF16("secret");
   expected.label = ASCIIToUTF16("Password:");
   expected.form_control_type = "password";
   expected.max_length = WebInputElement::defaultMaxLength();
-  EXPECT_FORM_FIELD_DATA_EQUALS(expected, fields[3]);
+  EXPECT_FORM_FIELD_DATA_EQUALS(expected, fields[4]);
+
+  expected.name = ASCIIToUTF16("month");
+  expected.value = ASCIIToUTF16("2011-12");
+  expected.label = ASCIIToUTF16("Card expiration:");
+  expected.form_control_type = "month";
+  expected.max_length = 0;
+  EXPECT_FORM_FIELD_DATA_EQUALS(expected, fields[5]);
 }
 
 // We should not be able to serialize a form with too many fillable fields.
@@ -966,24 +1078,40 @@ TEST_F(FormAutofillTest, FindForm) {
 // Test regular FillForm function.
 TEST_F(FormAutofillTest, FillForm) {
   static const AutofillFieldCase field_cases[] = {
-      // fields: name, initial_value, autocomplete_attribute,
+      // fields: form_control_type, name, initial_value, autocomplete_attribute,
       //         should_be_autofilled, autofill_value, expected_value
 
       // Regular empty fields (firstname & lastname) should be autofilled.
-      {"firstname", "", "", true, "filled firstname", "filled firstname"},
-      {"lastname", "", "", true, "filled lastname", "filled lastname"},
+      {"text", "firstname", "", "", true, "filled firstname",
+       "filled firstname"},
+      {"text", "lastname", "", "", true, "filled lastname", "filled lastname"},
       // hidden fields should not be extracted to form_data.
       // Non empty fields should not be autofilled.
-      {"notempty", "Hi", "", false, "filled notempty", "Hi"},
+      {"text", "notempty", "Hi", "", false, "filled notempty", "Hi"},
       // "noautocomplete" should not be extracted to form_data.
       // Disabled fields should not be autofilled.
-      {"notenabled", "", "", false, "filled notenabled", ""},
+      {"text", "notenabled", "", "", false, "filled notenabled", ""},
       // Readonly fields should not be autofilled.
-      {"readonly", "", "", false, "filled readonly", ""},
+      {"text", "readonly", "", "", false, "filled readonly", ""},
       // Fields with "visibility: hidden" should not be autofilled.
-      {"invisible", "", "", false, "filled invisible", ""},
+      {"text", "invisible", "", "", false, "filled invisible", ""},
       // Fields with "display:none" should not be autofilled.
-      {"displaynone", "", "", false, "filled displaynone", ""},
+      {"text", "displaynone", "", "", false, "filled displaynone", ""},
+      // Regular <input type="month"> should be autofilled.
+      {"month", "month", "", "", true, "2017-11", "2017-11"},
+      // Non-empty <input type="month"> should not be autofilled.
+      {"month", "month-nonempty", "2011-12", "", false, "2017-11", "2011-12"},
+      // Regular select fields should be autofilled.
+      {"select-one", "select", "", "", true, "TX", "TX"},
+      // Select fields should be autofilled even if they already have a
+      // non-empty value.
+      {"select-one", "select-nonempty", "CA", "", true, "TX", "TX"},
+      // Regular textarea elements should be autofilled.
+      {"textarea", "textarea", "", "", true, "some multi-\nline value",
+       "some multi-\nline value"},
+      // Non-empty textarea elements should not be autofilled.
+      {"textarea", "textarea-nonempty", "Go\naway!", "", false,
+       "some multi-\nline value", "Go\naway!"},
   };
   TestFormFillFunctions(kFormHtml, field_cases, arraysize(field_cases),
                         FillForm, &WebInputElement::value);
@@ -996,54 +1124,47 @@ TEST_F(FormAutofillTest, FillForm) {
 
 TEST_F(FormAutofillTest, FillFormIncludingNonFocusableElements) {
   static const AutofillFieldCase field_cases[] = {
-      // fields: name, initial_value, autocomplete_attribute,
+      // fields: form_control_type, name, initial_value, autocomplete_attribute,
       //         should_be_autofilled, autofill_value, expected_value
 
       // Regular empty fields (firstname & lastname) should be autofilled.
-      {"firstname", "", "", true, "filled firstname", "filled firstname"},
-      {"lastname", "", "", true, "filled lastname", "filled lastname"},
+      {"text", "firstname", "", "", true, "filled firstname",
+       "filled firstname"},
+      {"text", "lastname", "", "", true, "filled lastname", "filled lastname"},
       // hidden fields should not be extracted to form_data.
-      // Non empty fields should be overrided.
-      {"notempty", "Hi", "", true, "filled notempty", "filled notempty"},
+      // Non empty fields should be overriden.
+      {"text", "notempty", "Hi", "", true, "filled notempty",
+       "filled notempty"},
       // "noautocomplete" should not be extracted to form_data.
       // Disabled fields should not be autofilled.
-      {"notenabled", "", "", false, "filled notenabled", ""},
+      {"text", "notenabled", "", "", false, "filled notenabled", ""},
       // Readonly fields should not be autofilled.
-      {"readonly", "", "", false, "filled readonly", ""},
+      {"text", "readonly", "", "", false, "filled readonly", ""},
       // Fields with "visibility: hidden" should also be autofilled.
-      {"invisible", "", "", true, "filled invisible", "filled invisible"},
+      {"text", "invisible", "", "", true, "filled invisible",
+       "filled invisible"},
       // Fields with "display:none" should also be autofilled.
-      {"displaynone", "", "", true, "filled displaynone", "filled displaynone"},
+      {"text", "displaynone", "", "", true, "filled displaynone",
+       "filled displaynone"},
+      // Regular <input type="month"> should be autofilled.
+      {"month", "month", "", "", true, "2017-11", "2017-11"},
+      // Non-empty <input type="month"> should be overridden.
+      {"month", "month-nonempty", "2011-12", "", true, "2017-11", "2017-11"},
+      // Regular select fields should be autofilled.
+      {"select-one", "select", "", "", true, "TX", "TX"},
+      // Select fields should be autofilled even if they already have a
+      // non-empty value.
+      {"select-one", "select-nonempty", "CA", "", true, "TX", "TX"},
+      // Regular textarea elements should be autofilled.
+      {"textarea", "textarea", "", "", true, "some multi-\nline value",
+       "some multi-\nline value"},
+      // Nonempty textarea elements should be overridden.
+      {"textarea", "textarea-nonempty", "Go\naway!", "", true,
+       "some multi-\nline value", "some multi-\nline value"},
   };
   TestFormFillFunctions(kFormHtml, field_cases, arraysize(field_cases),
                         &FillFormIncludingNonFocusableElementsWrapper,
                         &WebInputElement::value);
-}
-
-TEST_F(FormAutofillTest, FillFormForAllElements) {
-  static const AutofillFieldCase field_cases[] = {
-      // fields: name, initial_value, autocomplete_attribute,
-      //         should_be_autofilled, autofill_value, expected_value
-
-      // All fields except hidden fields (type="hidden") should be Autofilled.
-      {"firstname", "", "", true, "filled firstname", "filled firstname"},
-      {"lastname", "", "", true, "filled lastname", "filled lastname"},
-      // hidden fields should not be extracted to form_data.
-      {"notempty", "Hi", "", true, "filled notempty", "filled notempty"},
-      {"noautocomplete", "", "off", true, "filled noautocomplete",
-          "filled noautocomplete"},
-      {"notenabled", "", "", true, "filled notenabled", "filled notenabled"},
-      {"readonly", "", "", true, "filled readonly", "filled readonly"},
-      {"invisible", "", "", true, "filled invisible", "filled invisible"},
-      {"displaynone", "", "", true, "filled displaynone", "filled displaynone"},
-  };
-  // Enable Autocheckout because |FillFormForAllElements| is only used by
-  // Autocheckout.
-  base::FieldTrialList field_trial_list(
-      new metrics::SHA1EntropyProvider("foo"));
-  base::FieldTrialList::CreateFieldTrial("Autocheckout", "Yes");
-  TestFormFillFunctions(kFormHtml, field_cases, arraysize(field_cases),
-                        &FillFormForAllFieldsWrapper, &WebInputElement::value);
 }
 
 TEST_F(FormAutofillTest, PreviewForm) {
@@ -1059,13 +1180,15 @@ TEST_F(FormAutofillTest, PreviewForm) {
 
   static const AutofillFieldCase field_cases[] = {
       // Normal empty fields should be previewed.
-      {"firstname", "", "", true, "suggested firstname", "suggested firstname"},
-      {"lastname", "", "", true, "suggested lastname", "suggested lastname"},
+      {"text", "firstname", "", "", true, "suggested firstname",
+       "suggested firstname"},
+      {"text", "lastname", "", "", true, "suggested lastname",
+       "suggested lastname"},
       // Non empty fields should not be previewed.
-      {"notempty", "Hi", "", false, "filled notempty", ""},
+      {"text", "notempty", "Hi", "", false, "filled notempty", ""},
       // "noautocomplete" should not be extracted to form_data.
       // Disabled fields should not be previewed.
-      {"notenabled", "", "", false, "filled notenabled", ""},
+      {"text", "notenabled", "", "", false, "filled notenabled", ""},
   };
   TestFormFillFunctions(html, field_cases, arraysize(field_cases), &PreviewForm,
                         &WebInputElement::suggestedValue);
@@ -1244,7 +1367,7 @@ TEST_F(FormAutofillTest, LabelsInferredFromTableCellTH) {
 }
 
 TEST_F(FormAutofillTest, LabelsInferredFromTableCellNested) {
-  std::vector<string16> labels, names, values;
+  std::vector<base::string16> labels, names, values;
 
   labels.push_back(ASCIIToUTF16("First name: Bogus"));
   names.push_back(ASCIIToUTF16("firstname"));
@@ -1312,7 +1435,7 @@ TEST_F(FormAutofillTest, LabelsInferredFromTableCellNested) {
 }
 
 TEST_F(FormAutofillTest, LabelsInferredFromTableEmptyTDs) {
-  std::vector<string16> labels, names, values;
+  std::vector<base::string16> labels, names, values;
 
   labels.push_back(ASCIIToUTF16("* First Name"));
   names.push_back(ASCIIToUTF16("firstname"));
@@ -1371,7 +1494,7 @@ TEST_F(FormAutofillTest, LabelsInferredFromTableEmptyTDs) {
 }
 
 TEST_F(FormAutofillTest, LabelsInferredFromPreviousTD) {
-  std::vector<string16> labels, names, values;
+  std::vector<base::string16> labels, names, values;
 
   labels.push_back(ASCIIToUTF16("* First Name"));
   names.push_back(ASCIIToUTF16("firstname"));
@@ -1423,7 +1546,7 @@ TEST_F(FormAutofillTest, LabelsInferredFromPreviousTD) {
 // inferred.
 // Also <!-- comment --> is excluded.
 TEST_F(FormAutofillTest, LabelsInferredFromTableWithSpecialElements) {
-  std::vector<string16> labels, names, values;
+  std::vector<base::string16> labels, names, values;
   std::vector<std::string> control_types;
 
   labels.push_back(ASCIIToUTF16("* First Name"));
@@ -1580,7 +1703,7 @@ TEST_F(FormAutofillTest, LabelsInferredFromTableTDInterveningElements) {
 // Verify that we correctly infer labels when the label text spans multiple
 // adjacent HTML elements, not separated by whitespace.
 TEST_F(FormAutofillTest, LabelsInferredFromTableAdjacentElements) {
-  std::vector<string16> labels, names, values;
+  std::vector<base::string16> labels, names, values;
 
   labels.push_back(ASCIIToUTF16("*First Name"));
   names.push_back(ASCIIToUTF16("firstname"));
@@ -1634,7 +1757,7 @@ TEST_F(FormAutofillTest, LabelsInferredFromTableAdjacentElements) {
 // Verify that we correctly infer labels when the label text resides in the
 // previous row.
 TEST_F(FormAutofillTest, LabelsInferredFromTableRow) {
-  std::vector<string16> labels, names, values;
+  std::vector<base::string16> labels, names, values;
 
   labels.push_back(ASCIIToUTF16("*First Name *Last Name *Email"));
   names.push_back(ASCIIToUTF16("firstname"));
@@ -1678,7 +1801,7 @@ TEST_F(FormAutofillTest, LabelsInferredFromTableRow) {
 
 // Verify that we correctly infer labels when enclosed within a list item.
 TEST_F(FormAutofillTest, LabelsInferredFromListItem) {
-  std::vector<string16> labels, names, values;
+  std::vector<base::string16> labels, names, values;
 
   labels.push_back(ASCIIToUTF16("* Home Phone"));
   names.push_back(ASCIIToUTF16("areacode"));
@@ -1713,7 +1836,7 @@ TEST_F(FormAutofillTest, LabelsInferredFromListItem) {
 }
 
 TEST_F(FormAutofillTest, LabelsInferredFromDefinitionList) {
-  std::vector<string16> labels, names, values;
+  std::vector<base::string16> labels, names, values;
 
   labels.push_back(ASCIIToUTF16("* First name: Bogus"));
   names.push_back(ASCIIToUTF16("firstname"));
@@ -1776,19 +1899,19 @@ TEST_F(FormAutofillTest, LabelsInferredFromDefinitionList) {
 }
 
 TEST_F(FormAutofillTest, LabelsInferredWithSameName) {
-  std::vector<string16> labels, names, values;
+  std::vector<base::string16> labels, names, values;
 
   labels.push_back(ASCIIToUTF16("Address Line 1:"));
   names.push_back(ASCIIToUTF16("Address"));
-  values.push_back(string16());
+  values.push_back(base::string16());
 
   labels.push_back(ASCIIToUTF16("Address Line 2:"));
   names.push_back(ASCIIToUTF16("Address"));
-  values.push_back(string16());
+  values.push_back(base::string16());
 
   labels.push_back(ASCIIToUTF16("Address Line 3:"));
   names.push_back(ASCIIToUTF16("Address"));
-  values.push_back(string16());
+  values.push_back(base::string16());
 
   ExpectLabels(
       "<FORM name=\"TestForm\" action=\"http://cnn.com\" method=\"post\">"
@@ -1804,27 +1927,27 @@ TEST_F(FormAutofillTest, LabelsInferredWithSameName) {
 }
 
 TEST_F(FormAutofillTest, LabelsInferredWithImageTags) {
-  std::vector<string16> labels, names, values;
+  std::vector<base::string16> labels, names, values;
 
   labels.push_back(ASCIIToUTF16("Phone:"));
   names.push_back(ASCIIToUTF16("dayphone1"));
-  values.push_back(string16());
+  values.push_back(base::string16());
 
   labels.push_back(ASCIIToUTF16("-"));
   names.push_back(ASCIIToUTF16("dayphone2"));
-  values.push_back(string16());
+  values.push_back(base::string16());
 
   labels.push_back(ASCIIToUTF16("-"));
   names.push_back(ASCIIToUTF16("dayphone3"));
-  values.push_back(string16());
+  values.push_back(base::string16());
 
   labels.push_back(ASCIIToUTF16("ext.:"));
   names.push_back(ASCIIToUTF16("dayphone4"));
-  values.push_back(string16());
+  values.push_back(base::string16());
 
-  labels.push_back(string16());
+  labels.push_back(base::string16());
   names.push_back(ASCIIToUTF16("dummy"));
-  values.push_back(string16());
+  values.push_back(base::string16());
 
   ExpectLabels(
       "<FORM name=\"TestForm\" action=\"http://cnn.com\" method=\"post\">"
@@ -2218,7 +2341,7 @@ TEST_F(FormAutofillTest, FillFormEmptyFormNames) {
   FormFieldData field;
   EXPECT_TRUE(FindFormAndFieldForInputElement(input_element, &form, &field,
                                               autofill::REQUIRE_NONE));
-  EXPECT_EQ(string16(), form.name);
+  EXPECT_EQ(base::string16(), form.name);
   EXPECT_EQ(GURL(web_frame->document().url()), form.origin);
   EXPECT_EQ(GURL("http://abc.com"), form.action);
 
@@ -2253,7 +2376,7 @@ TEST_F(FormAutofillTest, FillFormEmptyFormNames) {
   EXPECT_TRUE(FindFormAndFieldForInputElement(input_element, &form2, &field2,
                                               autofill::REQUIRE_NONE));
 
-  EXPECT_EQ(string16(), form2.name);
+  EXPECT_EQ(base::string16(), form2.name);
   EXPECT_EQ(GURL(web_frame->document().url()), form2.origin);
   EXPECT_EQ(GURL("http://abc.com"), form2.action);
 
@@ -2394,13 +2517,13 @@ TEST_F(FormAutofillTest, MaxLengthFields) {
   EXPECT_FORM_FIELD_DATA_EQUALS(expected, fields[3]);
 
   // When unspecified |size|, default is returned.
-  expected.label = string16();
+  expected.label = base::string16();
   expected.name = ASCIIToUTF16("default1");
   expected.max_length = WebInputElement::defaultMaxLength();
   EXPECT_FORM_FIELD_DATA_EQUALS(expected, fields[4]);
 
   // When invalid |size|, default is returned.
-  expected.label = string16();
+  expected.label = base::string16();
   expected.name = ASCIIToUTF16("invalid1");
   expected.max_length = WebInputElement::defaultMaxLength();
   EXPECT_FORM_FIELD_DATA_EQUALS(expected, fields[5]);
@@ -2454,12 +2577,12 @@ TEST_F(FormAutofillTest, FillFormNonEmptyField) {
   EXPECT_FORM_FIELD_DATA_EQUALS(expected, fields[0]);
 
   expected.name = ASCIIToUTF16("lastname");
-  expected.value = string16();
+  expected.value = base::string16();
   expected.is_autofilled = false;
   EXPECT_FORM_FIELD_DATA_EQUALS(expected, fields[1]);
 
   expected.name = ASCIIToUTF16("email");
-  expected.value = string16();
+  expected.value = base::string16();
   expected.is_autofilled = false;
   EXPECT_FORM_FIELD_DATA_EQUALS(expected, fields[2]);
 
@@ -2514,6 +2637,14 @@ TEST_F(FormAutofillTest, ClearFormWithNode) {
       "  <INPUT type=\"text\" id=\"lastname\" value=\"Earp\"/>"
       "  <INPUT type=\"text\" autocomplete=\"off\" id=\"noAC\" value=\"one\"/>"
       "  <INPUT type=\"text\" id=\"notenabled\" disabled=\"disabled\">"
+      "  <INPUT type=\"month\" id=\"month\" value=\"2012-11\">"
+      "  <INPUT type=\"month\" id=\"month-disabled\" value=\"2012-11\""
+      "         disabled=\"disabled\">"
+      "  <TEXTAREA id=\"textarea\">Apple.</TEXTAREA>"
+      "  <TEXTAREA id=\"textarea-disabled\" disabled=\"disabled\">"
+      "    Banana!"
+      "  </TEXTAREA>"
+      "  <TEXTAREA id=\"textarea-noAC\" autocomplete=\"off\">Carrot?</TEXTAREA>"
       "  <INPUT type=\"submit\" value=\"Send\"/>"
       "</FORM>");
 
@@ -2530,7 +2661,7 @@ TEST_F(FormAutofillTest, ClearFormWithNode) {
       web_frame->document().getElementById("firstname").to<WebInputElement>();
   firstname.setAutofilled(true);
 
-  // Set the value of the disabled attribute.
+  // Set the value of the disabled text input element.
   WebInputElement notenabled =
       web_frame->document().getElementById("notenabled").to<WebInputElement>();
   notenabled.setValue(WebString::fromUTF8("no clear"));
@@ -2551,22 +2682,22 @@ TEST_F(FormAutofillTest, ClearFormWithNode) {
   EXPECT_EQ(GURL("http://buh.com"), form2.action);
 
   const std::vector<FormFieldData>& fields2 = form2.fields;
-  ASSERT_EQ(4U, fields2.size());
+  ASSERT_EQ(9U, fields2.size());
 
   FormFieldData expected;
   expected.form_control_type = "text";
   expected.max_length = WebInputElement::defaultMaxLength();
 
   expected.name = ASCIIToUTF16("firstname");
-  expected.value = string16();
+  expected.value = base::string16();
   EXPECT_FORM_FIELD_DATA_EQUALS(expected, fields2[0]);
 
   expected.name = ASCIIToUTF16("lastname");
-  expected.value = string16();
+  expected.value = base::string16();
   EXPECT_FORM_FIELD_DATA_EQUALS(expected, fields2[1]);
 
   expected.name = ASCIIToUTF16("noAC");
-  expected.value = string16();
+  expected.value = base::string16();
   expected.autocomplete_attribute = "off";
   EXPECT_FORM_FIELD_DATA_EQUALS(expected, fields2[2]);
   expected.autocomplete_attribute = std::string();  // reset
@@ -2574,6 +2705,31 @@ TEST_F(FormAutofillTest, ClearFormWithNode) {
   expected.name = ASCIIToUTF16("notenabled");
   expected.value = ASCIIToUTF16("no clear");
   EXPECT_FORM_FIELD_DATA_EQUALS(expected, fields2[3]);
+
+  expected.form_control_type = "month";
+  expected.max_length = 0;
+  expected.name = ASCIIToUTF16("month");
+  expected.value = base::string16();
+  EXPECT_FORM_FIELD_DATA_EQUALS(expected, fields2[4]);
+
+  expected.name = ASCIIToUTF16("month-disabled");
+  expected.value = ASCIIToUTF16("2012-11");
+  EXPECT_FORM_FIELD_DATA_EQUALS(expected, fields2[5]);
+
+  expected.form_control_type = "textarea";
+  expected.name = ASCIIToUTF16("textarea");
+  expected.value = base::string16();
+  EXPECT_FORM_FIELD_DATA_EQUALS(expected, fields2[6]);
+
+  expected.name = ASCIIToUTF16("textarea-disabled");
+  expected.value = ASCIIToUTF16("    Banana!  ");
+  EXPECT_FORM_FIELD_DATA_EQUALS(expected, fields2[7]);
+
+  expected.name = ASCIIToUTF16("textarea-noAC");
+  expected.value = base::string16();
+  expected.autocomplete_attribute = "off";
+  EXPECT_FORM_FIELD_DATA_EQUALS(expected, fields2[8]);
+  expected.autocomplete_attribute = std::string();  // reset
 
   // Verify that the cursor position has been updated.
   EXPECT_EQ(0, firstname.selectionStart());
@@ -2633,13 +2789,13 @@ TEST_F(FormAutofillTest, ClearFormWithNodeContainingSelectOne) {
   FormFieldData expected;
 
   expected.name = ASCIIToUTF16("firstname");
-  expected.value = string16();
+  expected.value = base::string16();
   expected.form_control_type = "text";
   expected.max_length = WebInputElement::defaultMaxLength();
   EXPECT_FORM_FIELD_DATA_EQUALS(expected, fields2[0]);
 
   expected.name = ASCIIToUTF16("lastname");
-  expected.value = string16();
+  expected.value = base::string16();
   expected.form_control_type = "text";
   expected.max_length = WebInputElement::defaultMaxLength();
   EXPECT_FORM_FIELD_DATA_EQUALS(expected, fields2[1]);
@@ -2890,7 +3046,7 @@ TEST_F(FormAutofillTest, FormWithNodeIsAutofilled) {
 
 // If we have multiple labels per id, the labels concatenated into label string.
 TEST_F(FormAutofillTest, MultipleLabelsPerElement) {
-  std::vector<string16> labels, names, values;
+  std::vector<base::string16> labels, names, values;
 
   labels.push_back(ASCIIToUTF16("First Name:"));
   names.push_back(ASCIIToUTF16("firstname"));

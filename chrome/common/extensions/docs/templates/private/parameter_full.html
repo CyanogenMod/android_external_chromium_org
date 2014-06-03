@@ -1,33 +1,43 @@
+{{#parameter}}
 <div>
   {{?parentName}}<a name="{{id}}"></a>{{/}}
-  {{+partials.property}}
+  <dl>
+    {{+partials.property
+        property:parameter
+        parentName:name
+        hideParamTOC:hideParamTOC /}}
+  </dl>
   {{?properties}}
   <dd>
+    <h4 title="">Properties</h4>
     <dl>
-    {{#properties}}
-      {{+partials.parameter_full}}
-    {{/properties}}
+      {{#p:properties +partials.parameter_full
+          parameter:p
+          parentName:name
+          hideParamTOC:hideParamTOC /}}
     </dl>
   </dd>
   {{/properties}}
   {{?parameters}}
   <dd>
     <dl>
-    <h5>Parameters</h5>
-    {{#parameters}}
-      {{+partials.parameter_full}}
-    {{/}}
+      <h4 title="">Parameters</h4>
+      {{#p:parameters +partials.parameter_full
+          parameter:p
+          parentName:name
+          hideParamTOC:hideParamTOC /}}
     </dl>
-    {{?callback}}{{+partials.callback}}{{/}}
+    {{?callback +partials.callback callback:callback/}}
   </dd>
   {{/parameters}}
   {{?returns}}
   <dd>
     <dl>
       <dt>Returns<span class="property">
-        {{+partials.variable_type}}
+        {{+partials.variable_type type:returns/}}
       </span></dt>
     </dl>
   </dd>
   {{/returns}}
 </div>
+{{/parameter}}

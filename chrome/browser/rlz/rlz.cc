@@ -36,7 +36,7 @@
 #include "chrome/installer/util/google_update_settings.h"
 #else
 namespace GoogleUpdateSettings {
-static bool GetLanguage(string16* language) {
+static bool GetLanguage(base::string16* language) {
   // TODO(thakis): Implement.
   NOTIMPLEMENTED();
   return false;
@@ -44,7 +44,7 @@ static bool GetLanguage(string16* language) {
 
 // The referral program is defunct and not used. No need to implement these
 // functions on non-Win platforms.
-static bool GetReferral(string16* referral) {
+static bool GetReferral(base::string16* referral) {
   return true;
 }
 static bool ClearReferral() {
@@ -132,8 +132,8 @@ void RecordProductEvents(bool first_run,
 }
 
 bool SendFinancialPing(const std::string& brand,
-                       const string16& lang,
-                       const string16& referral) {
+                       const base::string16& lang,
+                       const base::string16& referral) {
   rlz_lib::AccessPoint points[] = {RLZTracker::CHROME_OMNIBOX,
                                    RLZTracker::CHROME_HOME_PAGE,
                                    rlz_lib::NO_ACCESS_POINT};
@@ -160,6 +160,13 @@ const rlz_lib::AccessPoint RLZTracker::CHROME_OMNIBOX =
 // static
 const rlz_lib::AccessPoint RLZTracker::CHROME_HOME_PAGE =
     rlz_lib::CHROME_HOME_PAGE;
+#elif defined(OS_IOS)
+// static
+const rlz_lib::AccessPoint RLZTracker::CHROME_OMNIBOX =
+    rlz_lib::CHROME_IOS_OMNIBOX;
+// static
+const rlz_lib::AccessPoint RLZTracker::CHROME_HOME_PAGE =
+    rlz_lib::CHROME_IOS_HOME_PAGE;
 #elif defined(OS_MACOSX)
 // static
 const rlz_lib::AccessPoint RLZTracker::CHROME_OMNIBOX =
@@ -231,6 +238,8 @@ bool RLZTracker::InitRlzFromProfileDelayed(Profile* profile,
       GURL(pref_service->GetString(prefs::kHomePage)));
 
   bool is_google_in_startpages = false;
+#if !defined(OS_IOS)
+  // iOS does not have a notion of startpages.
   SessionStartupPref session_startup_prefs =
       StartupBrowserCreator::GetSessionStartupPref(
           *CommandLine::ForCurrentProcess(), profile);
@@ -240,6 +249,7 @@ bool RLZTracker::InitRlzFromProfileDelayed(Profile* profile,
                       session_startup_prefs.urls.end(),
                       google_util::IsGoogleHomePageUrl) > 0;
   }
+#endif
 
   if (!InitRlzDelayed(first_run, send_ping_immediately, delay,
                       is_google_default_search, is_google_homepage,
@@ -346,11 +356,11 @@ void RLZTracker::ScheduleFinancialPing() {
 
 void RLZTracker::PingNowImpl() {
   TRACE_EVENT0("RLZ", "RLZTracker::PingNowImpl");
-  string16 lang;
+  base::string16 lang;
   GoogleUpdateSettings::GetLanguage(&lang);
   if (lang.empty())
     lang = ASCIIToUTF16("en");
-  string16 referral;
+  base::string16 referral;
   GoogleUpdateSettings::GetReferral(&referral);
 
   if (!IsBrandOrganic(brand_) && SendFinancialPing(brand_, lang, referral)) {
@@ -373,8 +383,8 @@ void RLZTracker::PingNowImpl() {
 }
 
 bool RLZTracker::SendFinancialPing(const std::string& brand,
-                                   const string16& lang,
-                                   const string16& referral) {
+                                   const base::string16& lang,
+                                   const base::string16& referral) {
   return ::SendFinancialPing(brand, lang, referral);
 }
 
@@ -480,7 +490,7 @@ bool RLZTracker::ScheduleRecordFirstSearch(rlz_lib::AccessPoint point) {
 std::string RLZTracker::GetAccessPointHttpHeader(rlz_lib::AccessPoint point) {
   TRACE_EVENT0("RLZ", "RLZTracker::GetAccessPointHttpHeader");
   std::string extra_headers;
-  string16 rlz_string;
+  base::string16 rlz_string;
   RLZTracker::GetAccessPointRlz(point, &rlz_string);
   if (!rlz_string.empty()) {
     net::HttpUtil::AppendHeaderIfMissing("X-Rlz-String",
@@ -494,7 +504,7 @@ std::string RLZTracker::GetAccessPointHttpHeader(rlz_lib::AccessPoint point) {
 // GetAccessPointRlz() caches RLZ strings for all access points. If we had
 // a successful ping, then we update the cached value.
 bool RLZTracker::GetAccessPointRlz(rlz_lib::AccessPoint point,
-                                   string16* rlz) {
+                                   base::string16* rlz) {
   TRACE_EVENT0("RLZ", "RLZTracker::GetAccessPointRlz");
   return GetInstance()->GetAccessPointRlzImpl(point, rlz);
 }
@@ -502,7 +512,7 @@ bool RLZTracker::GetAccessPointRlz(rlz_lib::AccessPoint point,
 // GetAccessPointRlz() caches RLZ strings for all access points. If we had
 // a successful ping, then we update the cached value.
 bool RLZTracker::GetAccessPointRlzImpl(rlz_lib::AccessPoint point,
-                                       string16* rlz) {
+                                       base::string16* rlz) {
   // If the RLZ string for the specified access point is already cached,
   // simply return its value.
   {
@@ -523,7 +533,7 @@ bool RLZTracker::GetAccessPointRlzImpl(rlz_lib::AccessPoint point,
   if (!rlz_lib::GetAccessPointRlz(point, str_rlz, rlz_lib::kMaxRlzLength))
     return false;
 
-  string16 rlz_local(ASCIIToUTF16(std::string(str_rlz)));
+  base::string16 rlz_local(ASCIIToUTF16(std::string(str_rlz)));
   if (rlz)
     *rlz = rlz_local;
 
@@ -536,7 +546,7 @@ bool RLZTracker::ScheduleGetAccessPointRlz(rlz_lib::AccessPoint point) {
   if (!BrowserThread::CurrentlyOn(BrowserThread::UI))
     return false;
 
-  string16* not_used = NULL;
+  base::string16* not_used = NULL;
   BrowserThread::GetBlockingPool()->PostSequencedWorkerTaskWithShutdownBehavior(
       worker_pool_token_,
       FROM_HERE,

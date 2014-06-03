@@ -49,7 +49,7 @@ class HungPagesTableModel : public ui::TableModel, public views::TableGrouper {
 
   // Overridden from ui::TableModel:
   virtual int RowCount() OVERRIDE;
-  virtual string16 GetText(int row, int column_id) OVERRIDE;
+  virtual base::string16 GetText(int row, int column_id) OVERRIDE;
   virtual gfx::ImageSkia GetIcon(int row) OVERRIDE;
   virtual void SetObserver(ui::TableModelObserver* observer) OVERRIDE;
 
@@ -120,12 +120,14 @@ class HungRendererDialogView : public views::DialogDelegateView,
   virtual void EndForWebContents(content::WebContents* contents);
 
   // views::DialogDelegateView overrides:
-  virtual string16 GetWindowTitle() const OVERRIDE;
+  virtual base::string16 GetWindowTitle() const OVERRIDE;
   virtual void WindowClosing() OVERRIDE;
   virtual int GetDialogButtons() const OVERRIDE;
-  virtual string16 GetDialogButtonLabel(ui::DialogButton button) const OVERRIDE;
+  virtual base::string16 GetDialogButtonLabel(
+      ui::DialogButton button) const OVERRIDE;
   virtual views::View* CreateExtraView() OVERRIDE;
   virtual bool Accept(bool window_closing)  OVERRIDE;
+  virtual bool UseNewStyleForThisDialog() const OVERRIDE;
 
   // views::ButtonListener overrides:
   virtual void ButtonPressed(views::Button* sender,
@@ -147,10 +149,6 @@ class HungRendererDialogView : public views::DialogDelegateView,
  private:
   // Initialize the controls in this dialog.
   void Init();
-
-  // Returns the bounds the dialog should be displayed at to be meaningfully
-  // associated with the specified WebContents.
-  gfx::Rect GetDisplayBounds(content::WebContents* contents);
 
   static void InitClass();
 

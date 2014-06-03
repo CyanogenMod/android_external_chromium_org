@@ -49,15 +49,15 @@ bool CloudPrintPrivateSetupConnectorFunction::RunImpl() {
         params->credentials,
         params->user_settings);
   } else {
-    if (!CloudPrintProxyServiceFactory::GetForProfile(profile_))
+    if (!CloudPrintProxyServiceFactory::GetForProfile(GetProfile()))
       return false;
     scoped_ptr<base::DictionaryValue> user_setings(
         params->user_settings.ToValue());
-    CloudPrintProxyServiceFactory::GetForProfile(profile_)->
-        EnableForUserWithRobot(params->credentials,
-                               params->robot_email,
-                               params->user_email,
-                               *user_setings);
+    CloudPrintProxyServiceFactory::GetForProfile(GetProfile())
+        ->EnableForUserWithRobot(params->credentials,
+                                 params->robot_email,
+                                 params->user_email,
+                                 *user_setings);
   }
   SendResponse(true);
 #endif
@@ -71,7 +71,7 @@ CloudPrintPrivateGetHostNameFunction::~CloudPrintPrivateGetHostNameFunction() {
 }
 
 bool CloudPrintPrivateGetHostNameFunction::RunImpl() {
-  SetResult(Value::CreateStringValue(
+  SetResult(new base::StringValue(
       CloudPrintTestsDelegate::instance() ?
       CloudPrintTestsDelegate::instance()->GetHostName() :
       net::GetHostName()));
@@ -115,7 +115,7 @@ CloudPrintPrivateGetClientIdFunction::~CloudPrintPrivateGetClientIdFunction() {
 }
 
 bool CloudPrintPrivateGetClientIdFunction::RunImpl() {
-  SetResult(Value::CreateStringValue(
+  SetResult(new base::StringValue(
       CloudPrintTestsDelegate::instance() ?
       CloudPrintTestsDelegate::instance()->GetClientId() :
       google_apis::GetOAuth2ClientID(google_apis::CLIENT_CLOUD_PRINT)));

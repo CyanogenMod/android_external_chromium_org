@@ -4,20 +4,26 @@
 
 #include "chrome/browser/ui/app_list/app_list_service_impl.h"
 
+#include <string>
+
 #include "apps/pref_names.h"
 #include "base/command_line.h"
 #include "base/metrics/histogram.h"
 #include "base/prefs/pref_service.h"
+#include "base/strings/string16.h"
 #include "base/time/time.h"
+#include "chrome/browser/apps/shortcut_manager.h"
+#include "chrome/browser/apps/shortcut_manager_factory.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/ui/app_list/keep_alive_service.h"
+#include "chrome/browser/ui/app_list/keep_alive_service_impl.h"
+#include "chrome/browser/ui/app_list/profile_loader.h"
+#include "chrome/browser/ui/app_list/profile_store.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_thread.h"
-#include "content/public/browser/notification_details.h"
-#include "content/public/browser/notification_source.h"
 
 namespace {
 
@@ -69,15 +75,68 @@ void RecordDailyEventFrequency(
   }
 }
 
-bool HasAppListEnabledPreference() {
-  PrefService* local_state = g_browser_process->local_state();
-  return local_state->GetBoolean(apps::prefs::kAppLauncherHasBeenEnabled);
-}
+class ProfileStoreImpl : public ProfileStore {
+ public:
+  explicit ProfileStoreImpl(ProfileManager* profile_manager)
+      : profile_manager_(profile_manager),
+        weak_factory_(this) {
+  }
 
-void SetAppListEnabledPreference(bool enabled) {
-  PrefService* local_state = g_browser_process->local_state();
-  local_state->SetBoolean(apps::prefs::kAppLauncherHasBeenEnabled, enabled);
-}
+  virtual void AddProfileObserver(ProfileInfoCacheObserver* observer) OVERRIDE {
+    profile_manager_->GetProfileInfoCache().AddObserver(observer);
+  }
+
+  virtual void LoadProfileAsync(
+      const base::FilePath& path,
+      base::Callback<void(Profile*)> callback) OVERRIDE {
+    profile_manager_->CreateProfileAsync(
+        path,
+        base::Bind(&ProfileStoreImpl::OnProfileCreated,
+                   weak_factory_.GetWeakPtr(),
+                   callback),
+        base::string16(),
+        base::string16(),
+        std::string());
+  }
+
+  void OnProfileCreated(base::Callback<void(Profile*)> callback,
+                        Profile* profile,
+                        Profile::CreateStatus status) {
+    switch (status) {
+      case Profile::CREATE_STATUS_CREATED:
+        break;
+      case Profile::CREATE_STATUS_INITIALIZED:
+        callback.Run(profile);
+        break;
+      case Profile::CREATE_STATUS_LOCAL_FAIL:
+      case Profile::CREATE_STATUS_REMOTE_FAIL:
+      case Profile::CREATE_STATUS_CANCELED:
+        break;
+      case Profile::MAX_CREATE_STATUS:
+        NOTREACHED();
+        break;
+    }
+  }
+
+  virtual Profile* GetProfileByPath(const base::FilePath& path) OVERRIDE {
+    return profile_manager_->GetProfileByPath(path);
+  }
+
+  virtual base::FilePath GetUserDataDir() OVERRIDE {
+    return profile_manager_->user_data_dir();
+  }
+
+  virtual bool IsProfileManaged(const base::FilePath& profile_path) OVERRIDE {
+    ProfileInfoCache& profile_info =
+        g_browser_process->profile_manager()->GetProfileInfoCache();
+    size_t profile_index = profile_info.GetIndexOfProfileWithPath(profile_path);
+    return profile_info.ProfileIsManagedAtIndex(profile_index);
+  }
+
+ private:
+  ProfileManager* profile_manager_;
+  base::WeakPtrFactory<ProfileStoreImpl> weak_factory_;
+};
 
 }  // namespace
 
@@ -109,16 +168,34 @@ void AppListServiceImpl::SendAppListStats() {
 }
 
 AppListServiceImpl::AppListServiceImpl()
-    : profile_(NULL),
-      profile_load_sequence_id_(0),
-      pending_profile_loads_(0),
+    : profile_store_(new ProfileStoreImpl(
+          g_browser_process->profile_manager())),
       weak_factory_(this),
-      profile_loader_(g_browser_process->profile_manager()) {
-  ProfileManager* profile_manager = g_browser_process->profile_manager();
-  profile_manager->GetProfileInfoCache().AddObserver(this);
+      command_line_(*CommandLine::ForCurrentProcess()),
+      local_state_(g_browser_process->local_state()),
+      profile_loader_(new ProfileLoader(
+          profile_store_.get(),
+          scoped_ptr<KeepAliveService>(new KeepAliveServiceImpl))) {
+  profile_store_->AddProfileObserver(this);
+}
+
+AppListServiceImpl::AppListServiceImpl(
+    const CommandLine& command_line,
+    PrefService* local_state,
+    scoped_ptr<ProfileStore> profile_store,
+    scoped_ptr<KeepAliveService> keep_alive_service)
+    : profile_store_(profile_store.Pass()),
+      weak_factory_(this),
+      command_line_(command_line),
+      local_state_(local_state),
+      profile_loader_(new ProfileLoader(
+          profile_store_.get(), keep_alive_service.Pass())) {
+  profile_store_->AddProfileObserver(this);
 }
 
 AppListServiceImpl::~AppListServiceImpl() {}
+
+void AppListServiceImpl::SetAppListNextPaintCallback(void (*callback)()) {}
 
 void AppListServiceImpl::HandleFirstRun() {}
 
@@ -126,18 +203,15 @@ void AppListServiceImpl::Init(Profile* initial_profile) {}
 
 base::FilePath AppListServiceImpl::GetProfilePath(
     const base::FilePath& user_data_dir) {
-  PrefService* local_state = g_browser_process->local_state();
-  DCHECK(local_state);
-
   std::string app_list_profile;
-  if (local_state->HasPrefPath(prefs::kAppListProfile))
-    app_list_profile = local_state->GetString(prefs::kAppListProfile);
+  if (local_state_->HasPrefPath(prefs::kAppListProfile))
+    app_list_profile = local_state_->GetString(prefs::kAppListProfile);
 
   // If the user has no profile preference for the app launcher, default to the
   // last browser profile used.
   if (app_list_profile.empty() &&
-      local_state->HasPrefPath(prefs::kProfileLastUsed)) {
-    app_list_profile = local_state->GetString(prefs::kProfileLastUsed);
+      local_state_->HasPrefPath(prefs::kProfileLastUsed)) {
+    app_list_profile = local_state_->GetString(prefs::kProfileLastUsed);
   }
 
   // If there is no last used profile recorded, use the initial profile.
@@ -148,81 +222,69 @@ base::FilePath AppListServiceImpl::GetProfilePath(
 }
 
 void AppListServiceImpl::SetProfilePath(const base::FilePath& profile_path) {
-  g_browser_process->local_state()->SetString(
+  // Ensure we don't set the pref to a managed user's profile path.
+  // TODO(calamity): Filter out managed profiles from the settings app so this
+  // can't get hit, so we can remove it.
+  if (profile_store_->IsProfileManaged(profile_path))
+    return;
+
+  local_state_->SetString(
       prefs::kAppListProfile,
       profile_path.BaseName().MaybeAsASCII());
 }
 
-AppListControllerDelegate* AppListServiceImpl::CreateControllerDelegate() {
-  return NULL;
-}
-
 void AppListServiceImpl::CreateShortcut() {}
-void AppListServiceImpl::OnSigninStatusChanged() {}
 
 // We need to watch for profile removal to keep kAppListProfile updated.
 void AppListServiceImpl::OnProfileWillBeRemoved(
     const base::FilePath& profile_path) {
   // If the profile the app list uses just got deleted, reset it to the last
   // used profile.
-  PrefService* local_state = g_browser_process->local_state();
-  std::string app_list_last_profile = local_state->GetString(
+  std::string app_list_last_profile = local_state_->GetString(
       prefs::kAppListProfile);
   if (profile_path.BaseName().MaybeAsASCII() == app_list_last_profile) {
-    local_state->SetString(prefs::kAppListProfile,
-        local_state->GetString(prefs::kProfileLastUsed));
+    local_state_->SetString(prefs::kAppListProfile,
+        local_state_->GetString(prefs::kProfileLastUsed));
   }
 }
 
-void AppListServiceImpl::Observe(
-    int type,
-    const content::NotificationSource& source,
-    const content::NotificationDetails& details) {
-  OnSigninStatusChanged();
-}
-
 void AppListServiceImpl::Show() {
-  profile_loader_.LoadProfileInvalidatingOtherLoads(
-      GetProfilePath(g_browser_process->profile_manager()->user_data_dir()),
+  profile_loader_->LoadProfileInvalidatingOtherLoads(
+      GetProfilePath(profile_store_->GetUserDataDir()),
       base::Bind(&AppListServiceImpl::ShowForProfile,
                  weak_factory_.GetWeakPtr()));
 }
 
 void AppListServiceImpl::EnableAppList(Profile* initial_profile) {
   SetProfilePath(initial_profile->GetPath());
-  if (HasAppListEnabledPreference())
+  if (local_state_->GetBoolean(prefs::kAppLauncherHasBeenEnabled))
     return;
 
-  SetAppListEnabledPreference(true);
+  local_state_->SetBoolean(prefs::kAppLauncherHasBeenEnabled, true);
   CreateShortcut();
-}
-
-Profile* AppListServiceImpl::GetCurrentAppListProfile() {
-  return profile();
-}
-
-void AppListServiceImpl::SetProfile(Profile* new_profile) {
-  registrar_.RemoveAll();
-  profile_ = new_profile;
-  if (!profile_)
-    return;
-
-  registrar_.Add(this, chrome::NOTIFICATION_GOOGLE_SIGNIN_SUCCESSFUL,
-                 content::Source<Profile>(profile_));
-  registrar_.Add(this, chrome::NOTIFICATION_GOOGLE_SIGNIN_FAILED,
-                 content::Source<Profile>(profile_));
-  registrar_.Add(this, chrome::NOTIFICATION_GOOGLE_SIGNED_OUT,
-                 content::Source<Profile>(profile_));
+  AppShortcutManager* shortcut_manager =
+      AppShortcutManagerFactory::GetForProfile(initial_profile);
+  if (shortcut_manager)
+    shortcut_manager->OnceOffCreateShortcuts();
 }
 
 void AppListServiceImpl::InvalidatePendingProfileLoads() {
-  profile_loader_.InvalidatePendingProfileLoads();
+  profile_loader_->InvalidatePendingProfileLoads();
 }
 
 void AppListServiceImpl::HandleCommandLineFlags(Profile* initial_profile) {
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kEnableAppList))
+  if (command_line_.HasSwitch(switches::kEnableAppList))
     EnableAppList(initial_profile);
 
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDisableAppList))
-    SetAppListEnabledPreference(false);
+  if (command_line_.HasSwitch(switches::kResetAppListInstallState))
+    local_state_->SetBoolean(prefs::kAppLauncherHasBeenEnabled, false);
+}
+
+void AppListServiceImpl::SendUsageStats() {
+  // Send app list usage stats after a delay.
+  const int kSendUsageStatsDelay = 5;
+  base::MessageLoop::current()->PostDelayedTask(
+      FROM_HERE,
+      base::Bind(&AppListServiceImpl::SendAppListStats),
+      base::TimeDelta::FromSeconds(kSendUsageStatsDelay));
 }

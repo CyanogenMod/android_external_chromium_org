@@ -7,6 +7,7 @@
 #include "base/file_util.h"
 #include "base/json/json_string_value_serializer.h"
 #include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
@@ -22,24 +23,41 @@
 
 using content::BrowserThread;
 
-#if defined(OS_CHROMEOS)
 namespace {
 
 const char kMultilineIndicatorString[] = "<multiline>\n";
 const char kMultilineStartString[] = "---------- START ----------\n";
 const char kMultilineEndString[] = "---------- END ----------\n\n";
 
-const char kTraceFilename[] = "tracing.log\n";
+const size_t kFeedbackMaxLength = 4 * 1024;
+const size_t kFeedbackMaxLineCount = 40;
 
-std::string LogsToString(chromeos::SystemLogsResponse* sys_info) {
+const char kTraceFilename[] = "tracing.zip\n";
+const char kPerformanceCategoryTag[] = "Performance";
+
+const char kZipExt[] = ".zip";
+
+const base::FilePath::CharType kLogsFilename[] =
+    FILE_PATH_LITERAL("system_logs.txt");
+const base::FilePath::CharType kHistogramsFilename[] =
+    FILE_PATH_LITERAL("histograms.txt");
+
+// Converts the system logs into a string that we can compress and send
+// with the report. This method only converts those logs that we want in
+// the compressed zip file sent with the report, hence it ignores any logs
+// below the size threshold of what we want compressed.
+std::string LogsToString(const FeedbackData::SystemLogsMap& sys_info) {
   std::string syslogs_string;
-  for (chromeos::SystemLogsResponse::const_iterator it = sys_info->begin();
-      it != sys_info->end(); ++it) {
+  for (FeedbackData::SystemLogsMap::const_iterator it = sys_info.begin();
+      it != sys_info.end(); ++it) {
     std::string key = it->first;
     std::string value = it->second;
 
-    TrimString(key, "\n ", &key);
-    TrimString(value, "\n ", &value);
+    if (FeedbackData::BelowCompressionThreshold(value))
+      continue;
+
+    base::TrimString(key, "\n ", &key);
+    base::TrimString(value, "\n ", &value);
 
     if (value.find("\n") != std::string::npos) {
       syslogs_string.append(
@@ -54,157 +72,207 @@ std::string LogsToString(chromeos::SystemLogsResponse* sys_info) {
   return syslogs_string;
 }
 
-void ZipLogs(chromeos::SystemLogsResponse* sys_info,
+void ZipFile(const base::FilePath& filename,
+             const std::string& data, std::string* compressed_data) {
+  if (!feedback_util::ZipString(filename, data, compressed_data))
+    compressed_data->clear();
+}
+
+void ZipLogs(const FeedbackData::SystemLogsMap& sys_info,
              std::string* compressed_logs) {
   DCHECK(compressed_logs);
   std::string logs_string = LogsToString(sys_info);
-  if (!FeedbackUtil::ZipString(logs_string, compressed_logs)) {
+  if (logs_string.empty() ||
+      !feedback_util::ZipString(
+          base::FilePath(kLogsFilename), logs_string, compressed_logs)) {
     compressed_logs->clear();
   }
 }
 
+void ZipHistograms(const std::string& histograms,
+                   std::string* compressed_histograms) {
+  DCHECK(compressed_histograms);
+  if (histograms.empty() ||
+      !feedback_util::ZipString(
+          base::FilePath(kHistogramsFilename),
+          histograms,
+          compressed_histograms)) {
+    compressed_histograms->clear();
+  }
+}
+
 }  // namespace
-#endif // OS_CHROMEOS
+
+// static
+bool FeedbackData::BelowCompressionThreshold(const std::string& content) {
+  if (content.length() > kFeedbackMaxLength)
+    return false;
+  const size_t line_count = std::count(content.begin(), content.end(), '\n');
+  if (line_count > kFeedbackMaxLineCount)
+    return false;
+  return true;
+}
 
 FeedbackData::FeedbackData() : profile_(NULL),
-                               feedback_page_data_complete_(false) {
-#if defined(OS_CHROMEOS)
-  sys_info_.reset(NULL);
-  trace_id_ = 0;
-  attached_filedata_.reset(NULL);
-  send_sys_info_ = true;
-  read_attached_file_complete_ = false;
-  syslogs_collection_complete_ = false;
-#endif
+                               trace_id_(0),
+                               feedback_page_data_complete_(false),
+                               syslogs_compression_complete_(false),
+                               histograms_compression_complete_(false),
+                               attached_file_compression_complete_(false),
+                               report_sent_(false) {
 }
 
 FeedbackData::~FeedbackData() {
 }
 
-bool FeedbackData::DataCollectionComplete() {
-#if defined(OS_CHROMEOS)
-  return (syslogs_collection_complete_ || !send_sys_info_) &&
-      read_attached_file_complete_ &&
-      feedback_page_data_complete_;
-#else
-  return feedback_page_data_complete_;
-#endif
-}
-void FeedbackData::SendReport() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  if (DataCollectionComplete())
-    FeedbackUtil::SendReport(this);
-}
-
-void FeedbackData::FeedbackPageDataComplete() {
-#if defined(OS_CHROMEOS)
-  if (trace_id_ != 0) {
-    TracingManager* manager = TracingManager::Get();
-    // When there is a trace id attached to this report, fetch it and attach it
-    // as a file.  In this case, return early and retry this function later.
-    if (manager &&
-        manager->GetTraceData(
-            trace_id_,
-            base::Bind(&FeedbackData::OnGetTraceData, this))) {
-      return;
-    } else {
-      trace_id_ = 0;
-    }
-  }
-  if (attached_filename_.size() &&
-      base::FilePath::IsSeparator(attached_filename_[0]) &&
-      !attached_filedata_.get()) {
-    // Read the attached file and then send this report. The allocated string
-    // will be freed in FeedbackUtil::SendReport.
-    attached_filedata_.reset(new std::string);
-
-    base::FilePath root =
-        ash::Shell::GetInstance()->delegate()->
-            GetCurrentBrowserContext()->GetPath();
-    base::FilePath filepath = root.Append(attached_filename_.substr(1));
-    attached_filename_ = filepath.BaseName().value();
-
-    // Read the file into file_data, then call send report again with the
-    // stripped filename and file data (which will skip this code path).
-    content::BrowserThread::PostTaskAndReply(
-        content::BrowserThread::FILE, FROM_HERE,
-        base::Bind(&FeedbackData::ReadAttachedFile, this, filepath),
-        base::Bind(&FeedbackData::ReadFileComplete, this));
-  } else {
-    read_attached_file_complete_ = true;
-  }
-#endif
+void FeedbackData::OnFeedbackPageDataComplete() {
   feedback_page_data_complete_ = true;
   SendReport();
 }
 
-#if defined(OS_CHROMEOS)
-void FeedbackData::set_sys_info(
-    scoped_ptr<chromeos::SystemLogsResponse> sys_info) {
-  if (sys_info.get())
-    CompressSyslogs(sys_info.Pass());
-}
-
-void FeedbackData::CompressSyslogs(
-    scoped_ptr<chromeos::SystemLogsResponse> sys_info) {
+void FeedbackData::SetAndCompressSystemInfo(
+    scoped_ptr<FeedbackData::SystemLogsMap> sys_info) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  // We get the pointer first since base::Passed will nullify the scoper, hence
-  // it's not safe to use <scoper>.get() as a parameter to PostTaskAndReply.
-  chromeos::SystemLogsResponse* sys_info_ptr = sys_info.get();
-  std::string* compressed_logs_ptr = new std::string;
-  scoped_ptr<std::string> compressed_logs(compressed_logs_ptr);
-  BrowserThread::PostBlockingPoolTaskAndReply(
-      FROM_HERE,
-      base::Bind(&ZipLogs,
-                 sys_info_ptr,
-                 compressed_logs_ptr),
-      base::Bind(&FeedbackData::SyslogsComplete,
-                 this,
-                 base::Passed(&sys_info),
-                 base::Passed(&compressed_logs)));
-}
+  if (trace_id_ != 0) {
+    TracingManager* manager = TracingManager::Get();
+    if (!manager ||
+        !manager->GetTraceData(
+            trace_id_,
+            base::Bind(&FeedbackData::OnGetTraceData, this, trace_id_))) {
+      trace_id_ = 0;
+    }
+  }
 
-void FeedbackData::SyslogsComplete(
-    scoped_ptr<chromeos::SystemLogsResponse> sys_info,
-    scoped_ptr<std::string> compressed_logs) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
-  if (send_sys_info_) {
-    sys_info_ = sys_info.Pass();
-    compressed_logs_ = compressed_logs.Pass();
-    syslogs_collection_complete_ = true;
-    SendReport();
+  sys_info_ = sys_info.Pass();
+  if (sys_info_.get()) {
+    std::string* compressed_logs_ptr = new std::string;
+    scoped_ptr<std::string> compressed_logs(compressed_logs_ptr);
+    BrowserThread::PostBlockingPoolTaskAndReply(
+        FROM_HERE,
+        base::Bind(&ZipLogs,
+                   *sys_info_,
+                   compressed_logs_ptr),
+        base::Bind(&FeedbackData::OnCompressLogsComplete,
+                   this,
+                   base::Passed(&compressed_logs)));
   }
 }
 
-void FeedbackData::ReadFileComplete() {
-  read_attached_file_complete_ = true;
-  SendReport();
+void FeedbackData::SetAndCompressHistograms(
+    scoped_ptr<std::string> histograms) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  histograms_ = histograms.Pass();
+  if (histograms_.get()) {
+    std::string* compressed_histograms_ptr = new std::string;
+    scoped_ptr<std::string> compressed_histograms(compressed_histograms_ptr);
+    BrowserThread::PostBlockingPoolTaskAndReply(
+        FROM_HERE,
+        base::Bind(&ZipHistograms,
+                   *histograms_,
+                   compressed_histograms_ptr),
+        base::Bind(&FeedbackData::OnCompressHistogramsComplete,
+                   this,
+                   base::Passed(&compressed_histograms)));
+  }
 }
 
-void FeedbackData::StartSyslogsCollection() {
-  chromeos::ScrubbedSystemLogsFetcher* fetcher =
-      new chromeos::ScrubbedSystemLogsFetcher();
-  fetcher->Fetch(base::Bind(&FeedbackData::CompressSyslogs, this));
-}
+void FeedbackData::AttachAndCompressFileData(
+    scoped_ptr<std::string> attached_filedata) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-// private
-void FeedbackData::ReadAttachedFile(const base::FilePath& from) {
-  if (!file_util::ReadFileToString(from, attached_filedata_.get())) {
-    if (attached_filedata_.get())
-      attached_filedata_->clear();
+  attached_filedata_ = attached_filedata.Pass();
+
+  if (!attached_filename_.empty() && attached_filedata_.get()) {
+    std::string* compressed_file_ptr = new std::string;
+    scoped_ptr<std::string> compressed_file(compressed_file_ptr);
+#if defined(OS_WIN)
+    base::FilePath attached_file(base::UTF8ToWide(attached_filename_));
+#else
+    base::FilePath attached_file(attached_filename_);
+#endif
+    BrowserThread::PostBlockingPoolTaskAndReply(
+        FROM_HERE,
+        base::Bind(&ZipFile,
+                   attached_file,
+                   *(attached_filedata_.get()),
+                   compressed_file_ptr),
+        base::Bind(&FeedbackData::OnCompressFileComplete,
+                   this,
+                   base::Passed(&compressed_file)));
   }
 }
 
 void FeedbackData::OnGetTraceData(
+    int trace_id,
     scoped_refptr<base::RefCountedString> trace_data) {
-  scoped_ptr<std::string> data(new std::string(trace_data->data()));
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  TracingManager* manager = TracingManager::Get();
+  if (manager)
+    manager->DiscardTraceData(trace_id);
 
-  set_attached_filename(kTraceFilename);
-  set_attached_filedata(data.Pass());
+  scoped_ptr<std::string> data(new std::string);
+  data->swap(trace_data->data());
+
+  attached_filename_ = kTraceFilename;
+  attached_filedata_ = data.Pass();
+  attached_file_compression_complete_ = true;
   trace_id_ = 0;
-  FeedbackPageDataComplete();
+
+  set_category_tag(kPerformanceCategoryTag);
+
+  SendReport();
 }
 
-#endif
+void FeedbackData::OnCompressLogsComplete(
+    scoped_ptr<std::string> compressed_logs) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  compressed_logs_ = compressed_logs.Pass();
+  syslogs_compression_complete_ = true;
+
+  SendReport();
+}
+
+void FeedbackData::OnCompressHistogramsComplete(
+    scoped_ptr<std::string> compressed_histograms) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  compressed_histograms_ = compressed_histograms.Pass();
+  histograms_compression_complete_ = true;
+
+  SendReport();
+}
+
+void FeedbackData::OnCompressFileComplete(
+    scoped_ptr<std::string> compressed_file) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  if (compressed_file.get()) {
+    attached_filedata_ = compressed_file.Pass();
+    attached_filename_.append(kZipExt);
+    attached_file_compression_complete_ = true;
+  } else {
+    attached_filename_.clear();
+    attached_filedata_.reset(NULL);
+  }
+
+  SendReport();
+}
+
+bool FeedbackData::IsDataComplete() {
+  return (!sys_info_.get() || syslogs_compression_complete_) &&
+      (!histograms_.get() || histograms_compression_complete_) &&
+      (!attached_filedata_.get() || attached_file_compression_complete_) &&
+      !trace_id_ &&
+      feedback_page_data_complete_;
+}
+
+void FeedbackData::SendReport() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  if (IsDataComplete() && !report_sent_) {
+    report_sent_ = true;
+    feedback_util::SendReport(this);
+  }
+}

@@ -12,24 +12,26 @@
 #include "content/public/renderer/render_thread.h"
 #include "content/public/renderer/v8_value_converter.h"
 #include "third_party/WebKit/public/platform/WebString.h"
+#include "third_party/WebKit/public/platform/WebURL.h"
 #include "third_party/WebKit/public/web/WebDOMActivityLogger.h"
 #include "v8/include/v8.h"
 
 using content::V8ValueConverter;
+using blink::WebString;
+using blink::WebURL;
 
 namespace extensions {
 
-DOMActivityLogger::DOMActivityLogger(const std::string& extension_id,
-                                     const GURL& url,
-                                     const string16& title)
-  : extension_id_(extension_id), url_(url), title_(title) {
-}  // namespace extensions
+DOMActivityLogger::DOMActivityLogger(const std::string& extension_id)
+    : extension_id_(extension_id) {}
 
 void DOMActivityLogger::log(
     const WebString& api_name,
     int argc,
     const v8::Handle<v8::Value> argv[],
-    const WebString& call_type) {
+    const WebString& call_type,
+    const WebURL& url,
+    const WebString& title) {
   scoped_ptr<V8ValueConverter> converter(V8ValueConverter::create());
   ActivityLogConverterStrategy strategy;
   converter->SetFunctionAllowed(true);
@@ -37,11 +39,13 @@ void DOMActivityLogger::log(
   scoped_ptr<ListValue> argv_list_value(new ListValue());
   for (int i =0; i < argc; i++) {
     argv_list_value->Set(
-        i, converter->FromV8Value(argv[i], v8::Context::GetCurrent()));
+        i,
+        converter->FromV8Value(argv[i],
+                               v8::Isolate::GetCurrent()->GetCurrentContext()));
   }
   ExtensionHostMsg_DOMAction_Params params;
-  params.url = url_;
-  params.url_title = title_;
+  params.url = url;
+  params.url_title = title;
   params.api_call = api_name.utf8();
   params.arguments.Swap(argv_list_value.get());
   const std::string type = call_type.utf8();
@@ -57,18 +61,15 @@ void DOMActivityLogger::log(
 }
 
 void DOMActivityLogger::AttachToWorld(int world_id,
-                                      const std::string& extension_id,
-                                      const GURL& url,
-                                      const string16& title) {
-  // Check if extension activity logging is enabled.
-  if (!ChromeRenderProcessObserver::extension_activity_log_enabled())
-    return;
+                                      const std::string& extension_id) {
+#if defined(ENABLE_EXTENSIONS)
   // If there is no logger registered for world_id, construct a new logger
   // and register it with world_id.
-  if (!WebKit::hasDOMActivityLogger(world_id)) {
-    DOMActivityLogger* logger = new DOMActivityLogger(extension_id, url, title);
-    WebKit::setDOMActivityLogger(world_id, logger);
+  if (!blink::hasDOMActivityLogger(world_id)) {
+    DOMActivityLogger* logger = new DOMActivityLogger(extension_id);
+    blink::setDOMActivityLogger(world_id, logger);
   }
+#endif
 }
 
 }  // namespace extensions

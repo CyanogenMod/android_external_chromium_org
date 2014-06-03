@@ -11,20 +11,23 @@
         "id": "Tab",
         "type": "object",
         "properties": {
-          "id": {"type": "integer", "minimum": 0, "description": "The ID of the tab. Tab IDs are unique within a browser session."},
+          "id": {"type": "integer", "minimum": 0, "optional": true, "description": "The ID of the tab. Tab IDs are unique within a browser session. Under some circumstances a Tab may not be assigned an ID, for example when querying foreign tabs using the $ref:sessions API, in which case a session ID may be present."},
           // TODO(kalman): Investigate how this is ending up as -1 (based on window type? a bug?) and whether it should be optional instead.
           "index": {"type": "integer", "minimum": -1, "description": "The zero-based index of the tab within its window."},
           "windowId": {"type": "integer", "minimum": 0, "description": "The ID of the window the tab is contained within."},
-          "openerTabId": {"type": "integer", "minimum": 0, "optional": true, "description": "The ID of the tab that opened this tab, if any. This will only be present if the opener tab still exists."},
-          "selected": {"type": "boolean", "description": "Whether the tab is selected.", "nodoc": true},
+          "openerTabId": {"type": "integer", "minimum": 0, "optional": true, "description": "The ID of the tab that opened this tab, if any. This property is only present if the opener tab still exists."},
+          "selected": {"type": "boolean", "description": "Whether the tab is selected.", "deprecated": "Please use $ref:Tab.highlighted."},
           "highlighted": {"type": "boolean", "description": "Whether the tab is highlighted."},
           "active": {"type": "boolean", "description": "Whether the tab is active in its window. (Does not necessarily mean the window is focused.)"},
           "pinned": {"type": "boolean", "description": "Whether the tab is pinned."},
-          "url": {"type": "string", "optional": true, "description": "The URL the tab is displaying. This will only be present if the extension has the 'tabs' or 'webNavigation' permission."},
-          "title": {"type": "string", "optional": true, "optional": true, "description": "The title of the tab. This will only be present if the extension has the 'tabs' or 'webNavigation' permission. It may also be an empty string if the tab is loading."},
-          "favIconUrl": {"type": "string", "optional": true, "optional": true, "description": "The URL of the tab's favicon. This will only be present if the extension has the 'tabs' or 'webNavigation' permission. It may also be an empty string if the tab is loading."},
+          "url": {"type": "string", "optional": true, "description": "The URL the tab is displaying. This property is only present if the extension's manifest includes the <code>\"tabs\"</code> permission."},
+          "title": {"type": "string", "optional": true, "optional": true, "description": "The title of the tab. This property is only present if the extension's manifest includes the <code>\"tabs\"</code> permission."},
+          "favIconUrl": {"type": "string", "optional": true, "optional": true, "description": "The URL of the tab's favicon. This property is only present if the extension's manifest includes the <code>\"tabs\"</code> permission. It may also be an empty string if the tab is loading."},
           "status": {"type": "string", "optional": true, "description": "Either <em>loading</em> or <em>complete</em>."},
-          "incognito": {"type": "boolean", "description": "Whether the tab is in an incognito window."}
+          "incognito": {"type": "boolean", "description": "Whether the tab is in an incognito window."},
+          "width": {"type": "integer", "optional": true, "description": "The width of the tab in pixels."},
+          "height": {"type": "integer", "optional": true, "description": "The height of the tab in pixels."},
+          "sessionId": {"type": "string", "optional": true, "description": "The session ID used to uniquely identify a Tab obtained from the $ref:sessions API."}
         }
       },
       {
@@ -34,7 +37,7 @@
         "properties": {
           "code": {"type": "string", "optional": true, "description": "JavaScript or CSS code to inject."},
           "file": {"type": "string", "optional": true, "description": "JavaScript or CSS file to inject."},
-          "allFrames": {"type": "boolean", "optional": true, "description": "If allFrames is <code>true</code>, implies that the JavaScript or CSS should be injected into all frames of current page. By default, it's <code>false</code> and will only be injected into the top frame."},
+          "allFrames": {"type": "boolean", "optional": true, "description": "If allFrames is <code>true</code>, implies that the JavaScript or CSS should be injected into all frames of current page. By default, it's <code>false</code> and is only injected into the top frame."},
           "runAt": {
             "type": "string",
             "optional": true,
@@ -109,10 +112,10 @@
       },
       {
         "name": "sendRequest",
-        "nodoc": true,
+        "deprecated": "Please use $ref:runtime.sendMessage.",
         "nocompile": true,
         "type": "function",
-        "description": "Deprecated: Please use sendMessage.",
+        "description": "Sends a single request to the content script(s) in the specified tab, with an optional callback to run when a response is sent back.  The $ref:extension.onRequest event is fired in each content script running in the specified tab for the current extension.",
         "parameters": [
           {
             "type": "integer",
@@ -168,9 +171,9 @@
       },
       {
         "name": "getSelected",
-        "nodoc": true,
+        "deprecated": "Please use $ref:query <code>{active: true}</code>.",
         "type": "function",
-        "description": "Deprecated. Please use query({'active': true}). Gets the tab that is selected in the specified window.",
+        "description": "Gets the tab that is selected in the specified window.",
         "parameters": [
           {
             "type": "integer",
@@ -191,8 +194,8 @@
       {
         "name": "getAllInWindow",
         "type": "function",
-        "nodoc": true,
-        "description": "Deprecated. Please use query({'windowId': windowId}). Gets details about all tabs in the specified window.",
+        "deprecated": "Please use $ref:query <code>{windowId: windowId}</code>.",
+        "description": "Gets details about all tabs in the specified window.",
         "parameters": [
           {
             "type": "integer",
@@ -213,7 +216,7 @@
       {
         "name": "create",
         "type": "function",
-        "description": "Creates a new tab. Note: This function can be used without requesting the 'tabs' permission in the manifest.",
+        "description": "Creates a new tab.",
         "parameters": [
           {
             "type": "object",
@@ -242,7 +245,7 @@
                 "description": "Whether the tab should become the active tab in the window. Does not affect whether the window is focused (see $ref:windows.update). Defaults to <var>true</var>."
               },
               "selected": {
-                "nodoc": true,
+                "deprecated": "Please use <em>active</em>.",
                 "type": "boolean",
                 "optional": true,
                 "description": "Whether the tab should become the selected tab in the window. Defaults to <var>true</var>"
@@ -277,7 +280,7 @@
       {
         "name": "duplicate",
         "type": "function",
-        "description": "Duplicates a tab. Note: This function can be used without requesting the 'tabs' permission in the manifest.",
+        "description": "Duplicates a tab.",
         "parameters": [
           {
             "type": "integer",
@@ -293,7 +296,7 @@
               {
                 "name": "tab",
                 "optional": true,
-                "description": "Details about the duplicated tab. The Tab object doesn't contain url, title and faviconUrl if the 'tabs' permission has not been requested.",
+                "description": "Details about the duplicated tab. The $ref:tabs.Tab object doesn't contain <code>url</code>, <code>title</code> and <code>favIconUrl</code> if the <code>\"tabs\"</code> permission has not been requested.",
                 "$ref": "Tab"
               }
             ]
@@ -425,7 +428,7 @@
       {
         "name": "update",
         "type": "function",
-        "description": "Modifies the properties of a tab. Properties that are not specified in <var>updateProperties</var> are not modified. Note: This function can be used without requesting the 'tabs' permission in the manifest.",
+        "description": "Modifies the properties of a tab. Properties that are not specified in <var>updateProperties</var> are not modified.",
         "parameters": [
           {
             "type": "integer",
@@ -454,7 +457,7 @@
                 "description": "Adds or removes the tab from the current selection."
               },
               "selected": {
-                "nodoc": true,
+                "deprecated": "Please use <em>highlighted</em>.",
                 "type": "boolean",
                 "optional": true,
                 "description": "Whether the tab should be selected."
@@ -481,7 +484,7 @@
                 "name": "tab",
                 "$ref": "Tab",
                 "optional": true,
-                "description": "Details about the updated tab, or <code>null</code> if the 'tabs' permission has not been requested."
+                "description": "Details about the updated tab. The $ref:tabs.Tab object doesn't contain <code>url</code>, <code>title</code> and <code>favIconUrl</code> if the <code>\"tabs\"</code> permission has not been requested."
               }
             ]
           }
@@ -558,7 +561,7 @@
       {
         "name": "remove",
         "type": "function",
-        "description": "Closes one or more tabs. Note: This function can be used without requesting the 'tabs' permission in the manifest.",
+        "description": "Closes one or more tabs.",
         "parameters": [
           {
             "name": "tabIds",
@@ -609,25 +612,9 @@
             "description": "The target window. Defaults to the <a href='windows.html#current-window'>current window</a>."
           },
           {
-            "type": "object",
+            "$ref": "types.ImageDetails",
             "name": "options",
-            "optional": true,
-            "description": "Set parameters of image capture, such as the format of the resulting image.",
-            "properties": {
-              "format": {
-                "type": "string",
-                "optional": true,
-                "enum": ["jpeg", "png"],
-                "description": "The format of the resulting image.  Default is jpeg."
-              },
-              "quality": {
-                "type": "integer",
-                "optional": true,
-                "minimum": 0,
-                "maximum": 100,
-                "description": "When format is 'jpeg', controls the quality of the resulting image.  This value is ignored for PNG images.  As quality is decreased, the resulting image will have more visual artifacts, and the number of bytes needed to store it will decrease."
-              }
-            }
+            "optional": true
           },
           {
             "type": "function", "name": "callback", "parameters": [
@@ -757,9 +744,9 @@
       },
       {
         "name": "onSelectionChanged",
-        "nodoc": true,
+        "deprecated": "Please use $ref:onActivated.",
         "type": "function",
-        "description": "Deprecated. Please use onActivated.",
+        "description": "Fires when the selected tab in a window changes.",
         "parameters": [
           {
             "type": "integer",
@@ -782,9 +769,9 @@
       },
       {
         "name": "onActiveChanged",
-        "nodoc": true,
+        "deprecated": "Please use $ref:onActivated.",
         "type": "function",
-        "description": "Deprecated. Please use onActivated.",
+        "description": "Fires when the selected tab in a window changes. Note that the tab's URL may not be set at the time this event fired, but you can listen to $ref:onUpdated events to be notified when a URL is set.",
         "parameters": [
           {
             "type": "integer",
@@ -830,9 +817,9 @@
       },
       {
         "name": "onHighlightChanged",
+        "deprecated": "Please use $ref:onHighlighted.",
         "type": "function",
-        "nodoc": true,
-        "description": "Deprecated. Please use onHighlighted.",
+        "description": "Fired when the highlighted or selected tabs in a window changes.",
         "parameters": [
           {
             "type": "object",
@@ -912,7 +899,7 @@
       {
         "name": "onRemoved",
         "type": "function",
-        "description": "Fired when a tab is closed. Note: A listener can be registered for this event without requesting the 'tabs' permission in the manifest.",
+        "description": "Fired when a tab is closed.",
         "parameters": [
           {"type": "integer", "name": "tabId", "minimum": 0},
           {

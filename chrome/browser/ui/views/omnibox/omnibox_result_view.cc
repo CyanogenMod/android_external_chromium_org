@@ -21,12 +21,12 @@
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/text/text_elider.h"
 #include "ui/base/theme_provider.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/color_utils.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/render_text.h"
+#include "ui/gfx/text_elider.h"
 #include "ui/native_theme/native_theme.h"
 
 #if defined(OS_WIN)
@@ -103,11 +103,10 @@ class OmniboxResultView::MirroringContext {
   DISALLOW_COPY_AND_ASSIGN(MirroringContext);
 };
 
-OmniboxResultView::OmniboxResultView(
-    OmniboxResultViewModel* model,
-    int model_index,
-    LocationBarView* location_bar_view,
-    const gfx::FontList& font_list)
+OmniboxResultView::OmniboxResultView(OmniboxResultViewModel* model,
+                                     int model_index,
+                                     LocationBarView* location_bar_view,
+                                     const gfx::FontList& font_list)
     : edge_item_padding_(LocationBarView::GetItemPadding()),
       item_padding_(LocationBarView::GetItemPadding()),
       minimum_text_vertical_padding_(kMinimumTextVerticalPadding),
@@ -115,13 +114,14 @@ OmniboxResultView::OmniboxResultView(
       model_index_(model_index),
       location_bar_view_(location_bar_view),
       font_list_(font_list),
-      font_height_(std::max(font_list.GetHeight(),
-                            font_list.DeriveFontList(gfx::BOLD).GetHeight())),
+      font_height_(
+          std::max(font_list.GetHeight(),
+                   font_list.DeriveFontList(gfx::Font::BOLD).GetHeight())),
       ellipsis_width_(font_list.GetPrimaryFont().GetStringWidth(
-          string16(kEllipsis))),
+          base::string16(kEllipsis))),
       mirroring_context_(new MirroringContext()),
       keyword_icon_(new views::ImageView()),
-      animation_(new ui::SlideAnimation(this)) {
+      animation_(new gfx::SlideAnimation(this)) {
   CHECK_GE(model_index, 0);
   if (default_icon_size_ == 0) {
     default_icon_size_ =
@@ -239,7 +239,7 @@ void OmniboxResultView::PaintMatch(gfx::Canvas* canvas,
   // would also let us use a more properly-localizable string than we get with
   // just the IDS_AUTOCOMPLETE_MATCH_DESCRIPTION_SEPARATOR.
   if (!match.description.empty()) {
-    string16 separator =
+    base::string16 separator =
         l10n_util::GetStringUTF16(IDS_AUTOCOMPLETE_MATCH_DESCRIPTION_SEPARATOR);
     ACMatchClassifications classifications;
     classifications.push_back(
@@ -338,7 +338,7 @@ const gfx::ImageSkia* OmniboxResultView::GetKeywordIcon() const {
 
 int OmniboxResultView::DrawString(
     gfx::Canvas* canvas,
-    const string16& text,
+    const base::string16& text,
     const ACMatchClassifications& classifications,
     bool force_dim,
     int x,
@@ -471,9 +471,8 @@ int OmniboxResultView::DrawString(
       const gfx::Size size = (*j)->GetStringSize();
       // Align the text runs to a common baseline.
       const gfx::Rect rect(
-          mirroring_context_->mirrored_left_coord(x, x + size.width()),
-          y + font_list_.GetBaseline() - (*j)->GetBaseline(),
-          size.width(), size.height());
+          mirroring_context_->mirrored_left_coord(x, x + size.width()), y,
+          size.width(), height());
       (*j)->SetDisplayRect(rect);
       (*j)->Draw(canvas);
       x += size.width();
@@ -495,33 +494,35 @@ void OmniboxResultView::Elide(Runs* runs, int remaining_width) const {
   // we know we definitely need to elide, and then in this function we move
   // backward again until we find a string that we can successfully do the
   // eliding on.
-  bool first_classification = true;
+  bool on_trailing_classification = true;
   for (Runs::reverse_iterator i(runs->rbegin()); i != runs->rend(); ++i) {
     for (Classifications::reverse_iterator j(i->classifications.rbegin());
          j != i->classifications.rend(); ++j) {
-      if (!first_classification) {
+      if (!on_trailing_classification) {
         // We also add this classification's width (sans ellipsis) back to the
         // available width since we want to consider the available space we'll
         // have when we draw this classification.
         remaining_width += (*j)->GetStringSize().width();
 
-        // For all but the first classification we consider, we need to append
-        // an ellipsis, since there isn't enough room to draw it after this
-        // classification.
+        // If we reached here, we couldn't fit an ellipsis in the space taken by
+        // the previous classifications we looped over (see comments at bottom
+        // of loop).  Append one here to represent those elided portions.
         (*j)->SetText((*j)->text() + kEllipsis);
       }
-      first_classification = false;
+      on_trailing_classification = false;
 
       // Can we fit at least an ellipsis?
       gfx::Font font((*j)->GetStyle(gfx::BOLD) ?
           (*j)->GetPrimaryFont().DeriveFont(0, gfx::Font::BOLD) :
           (*j)->GetPrimaryFont());
-      string16 elided_text(
-          ui::ElideText((*j)->text(), font, remaining_width, ui::ELIDE_AT_END));
+      base::string16 elided_text(
+          gfx::ElideText((*j)->text(), font, remaining_width,
+          gfx::ELIDE_AT_END));
       Classifications::reverse_iterator prior(j + 1);
-      const bool on_first_classification = (prior == i->classifications.rend());
+      const bool on_leading_classification =
+          (prior == i->classifications.rend());
       if (elided_text.empty() && (remaining_width >= ellipsis_width_) &&
-          on_first_classification) {
+          on_leading_classification) {
         // Edge case: This classification is bold, we can't fit a bold ellipsis
         // but we can fit a normal one, and this is the first classification in
         // the run.  We should display a lone normal ellipsis, because appending
@@ -540,7 +541,7 @@ void OmniboxResultView::Elide(Runs* runs, int remaining_width) const {
         // an immediate prior classification in this run that was also bold, or
         // it will look orphaned.
         if ((*j)->GetStyle(gfx::BOLD) && (elided_text.length() == 1) &&
-            (on_first_classification || !(*prior)->GetStyle(gfx::BOLD)))
+            (on_leading_classification || !(*prior)->GetStyle(gfx::BOLD)))
           (*j)->SetStyle(gfx::BOLD, false);
 
         // Erase any other classifications that come after the elided one.
@@ -574,8 +575,7 @@ void OmniboxResultView::Layout() {
       (height() - icon.height()) / 2, icon.width(), icon.height());
 
   int text_x = edge_item_padding_ + default_icon_size_ + item_padding_;
-  int text_height = GetTextHeight();
-  int text_width;
+  int text_width = width() - text_x - edge_item_padding_;
 
   if (match_.associated_keyword.get()) {
     const int kw_collapsed_size =
@@ -586,16 +586,14 @@ void OmniboxResultView::Layout() {
     const int kw_text_x = kw_x + keyword_icon_->width() + item_padding_;
 
     text_width = kw_x - text_x - item_padding_;
-    keyword_text_bounds_.SetRect(kw_text_x, 0,
-        std::max(width() - kw_text_x - edge_item_padding_, 0), text_height);
-    keyword_icon_->SetPosition(gfx::Point(kw_x,
-        (height() - keyword_icon_->height()) / 2));
-  } else {
-    text_width = width() - text_x - edge_item_padding_;
+    keyword_text_bounds_.SetRect(
+        kw_text_x, 0,
+        std::max(width() - kw_text_x - edge_item_padding_, 0), height());
+    keyword_icon_->SetPosition(
+        gfx::Point(kw_x, (height() - keyword_icon_->height()) / 2));
   }
 
-  text_bounds_.SetRect(text_x, std::max(0, (height() - text_height) / 2),
-      std::max(text_width, 0), text_height);
+  text_bounds_.SetRect(text_x, 0, std::max(text_width, 0), height());
 }
 
 void OmniboxResultView::OnBoundsChanged(const gfx::Rect& previous_bounds) {
@@ -627,7 +625,7 @@ void OmniboxResultView::OnPaint(gfx::Canvas* canvas) {
   }
 }
 
-void OmniboxResultView::AnimationProgressed(const ui::Animation* animation) {
+void OmniboxResultView::AnimationProgressed(const gfx::Animation* animation) {
   Layout();
   SchedulePaint();
 }

@@ -10,16 +10,17 @@
 #include "base/callback.h"
 #include "base/memory/linked_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "chrome/browser/extensions/api/feedback_private/blob_reader.h"
+#include "chrome/browser/extensions/blob_reader.h"
 #include "chrome/browser/feedback/feedback_data.h"
 #include "chrome/common/extensions/api/feedback_private.h"
 
 class Profile;
 
+using extensions::api::feedback_private::SystemInformation;
+
 namespace extensions {
 
-typedef std::vector<linked_ptr<api::feedback_private::SystemInformation> >
-    SystemInformationList;
+typedef std::vector<linked_ptr<SystemInformation> > SystemInformationList;
 
 class FeedbackService {
  public:
@@ -29,6 +30,11 @@ class FeedbackService {
 
   // Creates a platform-specific FeedbackService instance.
   static FeedbackService* CreateInstance();
+  // Convenience method for populating a SystemInformationList structure
+  // with a key/value pair.
+  static void PopulateSystemInfo(SystemInformationList* sys_info_list,
+                                 const std::string& key,
+                                 const std::string& value);
 
   virtual ~FeedbackService();
 
@@ -38,13 +44,16 @@ class FeedbackService {
                             const SendFeedbackCallback& callback);
 
   // Platform specific methods:
-  // Get's the email address of the logged in user.
+  // Gets the email address of the logged in user.
   virtual std::string GetUserEmail() = 0;
 
   // Start to gather system information.
   // The |callback| will be invoked once the query is completed.
   virtual void GetSystemInformation(
       const GetSystemInformationCallback& callback) = 0;
+
+  // Gets the histograms in JSON.
+  virtual void GetHistograms(std::string* histograms) = 0;
 
  protected:
   FeedbackService();
@@ -64,8 +73,6 @@ class FeedbackService {
   SendFeedbackCallback send_feedback_callback_;
 
   scoped_refptr<FeedbackData> feedback_data_;
-  BlobReader* attached_file_reader_;
-  BlobReader* screenshot_reader_;
 
   DISALLOW_COPY_AND_ASSIGN(FeedbackService);
 };

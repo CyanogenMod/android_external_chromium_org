@@ -4,16 +4,14 @@
 
 import json
 import logging
-import os
 from StringIO import StringIO
 
 import appengine_blobstore as blobstore
 from appengine_url_fetcher import AppEngineUrlFetcher
-from appengine_wrappers import GetAppVersion, urlfetch
+from appengine_wrappers import urlfetch
 from docs_server_utils import StringIdentity
 from file_system import FileSystem, StatInfo
 from future import Future
-from object_store_creator import ObjectStoreCreator
 import url_constants
 from zipfile import ZipFile, BadZipfile
 
@@ -69,9 +67,9 @@ class _AsyncFetchFutureZip(object):
 
 class GithubFileSystem(FileSystem):
   @staticmethod
-  def Create(object_store_creator):
+  def CreateChromeAppsSamples(object_store_creator):
     return GithubFileSystem(
-        url_constants.GITHUB_URL,
+        '%s/GoogleChrome/chrome-app-samples' % url_constants.GITHUB_REPOS,
         blobstore.AppEngineBlobstore(),
         object_store_creator)
 
@@ -100,8 +98,12 @@ class GithubFileSystem(FileSystem):
     self._GetZip(self.Stat(ZIP_KEY).version)
 
   def _GetZip(self, version):
-    blob = self._blobstore.Get(_MakeBlobstoreKey(version),
-                               blobstore.BLOBSTORE_GITHUB)
+    try:
+      blob = self._blobstore.Get(_MakeBlobstoreKey(version),
+                                 blobstore.BLOBSTORE_GITHUB)
+    except:
+      self._zip_file = Future(value=None)
+      return
     if blob is not None:
       try:
         self._zip_file = Future(value=ZipFile(StringIO(blob)))
@@ -150,7 +152,7 @@ class GithubFileSystem(FileSystem):
     # Remove all files not directly in this directory.
     return [f for f in filenames if f[:-1].count('/') == 0]
 
-  def Read(self, paths, binary=False):
+  def Read(self, paths):
     version = self.Stat(ZIP_KEY).version
     if version != self._version:
       self._GetZip(version)
@@ -195,7 +197,7 @@ class GithubFileSystem(FileSystem):
 
     # Parse response JSON - but sometimes github gives us invalid JSON.
     try:
-      version = json.loads(result.content)['commit']['tree']['sha']
+      version = json.loads(result.content)['sha']
       self._stat_object_store.Set(path, version)
       return StatInfo(version)
     except StandardError as e:

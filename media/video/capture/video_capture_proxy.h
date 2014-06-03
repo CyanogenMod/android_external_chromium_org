@@ -28,10 +28,8 @@ class MEDIA_EXPORT VideoCaptureHandlerProxy
     : public VideoCapture::EventHandler {
  public:
   struct VideoCaptureState {
-    VideoCaptureState() : started(false), width(0), height(0), frame_rate(0) {}
+    VideoCaptureState() : started(false), frame_rate(0) {}
     bool started;
-    int width;
-    int height;
     int frame_rate;
   };
 
@@ -50,12 +48,8 @@ class MEDIA_EXPORT VideoCaptureHandlerProxy
   virtual void OnPaused(VideoCapture* capture) OVERRIDE;
   virtual void OnError(VideoCapture* capture, int error_code) OVERRIDE;
   virtual void OnRemoved(VideoCapture* capture) OVERRIDE;
-  virtual void OnBufferReady(
-      VideoCapture* capture,
-      scoped_refptr<VideoCapture::VideoFrameBuffer> buffer) OVERRIDE;
-  virtual void OnDeviceInfoReceived(
-      VideoCapture* capture,
-      const VideoCaptureParams& device_info) OVERRIDE;
+  virtual void OnFrameReady(VideoCapture* capture,
+                            const scoped_refptr<VideoFrame>& frame) OVERRIDE;
 
  private:
   // Called on main thread.
@@ -75,14 +69,9 @@ class MEDIA_EXPORT VideoCaptureHandlerProxy
   void OnRemovedOnMainThread(
       VideoCapture* capture,
       const VideoCaptureState& state);
-  void OnBufferReadyOnMainThread(
-      VideoCapture* capture,
-      const VideoCaptureState& state,
-      scoped_refptr<VideoCapture::VideoFrameBuffer> buffer);
-  void OnDeviceInfoReceivedOnMainThread(
-      VideoCapture* capture,
-      const VideoCaptureState& state,
-      const VideoCaptureParams& device_info);
+  void OnFrameReadyOnMainThread(VideoCapture* capture,
+                                const VideoCaptureState& state,
+                                const scoped_refptr<VideoFrame>& frame);
 
   // Only accessed from main thread.
   VideoCapture::EventHandler* proxied_;

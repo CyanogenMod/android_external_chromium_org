@@ -16,10 +16,12 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/compiler_specific.h"
 #include "base/logging.h"
 #include "base/pickle.h"
 #include "base/posix/eintr_wrapper.h"
 #include "base/posix/unix_domain_socket_linux.h"
+#include "base/process/process_metrics.h"
 #include "build/build_config.h"
 #include "sandbox/linux/services/linux_syscalls.h"
 
@@ -43,9 +45,6 @@ static const size_t kMaxMessageLength = 4096;
 // over unix sockets just fine, so a receiver that would (incorrectly) look at
 // O_CLOEXEC instead of FD_CLOEXEC may be tricked in thinking that the file
 // descriptor will or won't be closed on execve().
-// Since we have to account for buggy userland (see crbug.com/237283), we will
-// open(2) the file with O_CLOEXEC in the broker process if necessary, in
-// addition to calling recvmsg(2) with MSG_CMSG_CLOEXEC.
 static const int kCurrentProcessOpenFlagsMask = O_CLOEXEC;
 
 // Check whether |requested_filename| is in |allowed_file_names|.
@@ -81,7 +80,7 @@ bool GetFileNameInWhitelist(const std::vector<std::string>& allowed_file_names,
 // we're ok to allow in the broker.
 // I.e. here is where we wouldn't add O_RESET_FILE_SYSTEM.
 bool IsAllowedOpenFlags(int flags) {
-  // First, check the access mode
+  // First, check the access mode.
   const int access_mode = flags & O_ACCMODE;
   if (access_mode != O_RDONLY && access_mode != O_WRONLY &&
       access_mode != O_RDWR) {
@@ -95,13 +94,8 @@ bool IsAllowedOpenFlags(int flags) {
 
   // Some flags affect the behavior of the current process. We don't support
   // them and don't allow them for now.
-  if (flags & kCurrentProcessOpenFlagsMask) {
-    // We make an exception for O_CLOEXEC. Buggy userland could check for
-    // O_CLOEXEC and the only way to set it is to originally open with this
-    // flag. See the comment around kCurrentProcessOpenFlagsMask.
-    if (!(flags & O_CLOEXEC))
-      return false;
-  }
+  if (flags & kCurrentProcessOpenFlagsMask)
+    return false;
 
   // Now check that all the flags are known to us.
   const int creation_and_status_flags = flags & ~O_ACCMODE;
@@ -120,11 +114,13 @@ bool IsAllowedOpenFlags(int flags) {
 
 namespace sandbox {
 
-BrokerProcess::BrokerProcess(const std::vector<std::string>& allowed_r_files,
+BrokerProcess::BrokerProcess(int denied_errno,
+                             const std::vector<std::string>& allowed_r_files,
                              const std::vector<std::string>& allowed_w_files,
                              bool fast_check_in_client,
                              bool quiet_failures_for_tests)
-    : initialized_(false),
+    : denied_errno_(denied_errno),
+      initialized_(false),
       is_child_(false),
       fast_check_in_client_(fast_check_in_client),
       quiet_failures_for_tests_(quiet_failures_for_tests),
@@ -136,7 +132,7 @@ BrokerProcess::BrokerProcess(const std::vector<std::string>& allowed_r_files,
 
 BrokerProcess::~BrokerProcess() {
   if (initialized_ && ipc_socketpair_ != -1) {
-    void (HANDLE_EINTR(close(ipc_socketpair_)));
+    close(ipc_socketpair_);
   }
 }
 
@@ -151,15 +147,16 @@ bool BrokerProcess::Init(bool (*sandbox_callback)(void)) {
     return false;
   }
 
+  DCHECK_EQ(1, base::GetNumberOfThreads(base::GetCurrentProcessHandle()));
   int child_pid = fork();
   if (child_pid == -1) {
-    (void) HANDLE_EINTR(close(socket_pair[0]));
-    (void) HANDLE_EINTR(close(socket_pair[1]));
+    close(socket_pair[0]);
+    close(socket_pair[1]);
     return false;
   }
   if (child_pid) {
     // We are the parent and we have just forked our broker process.
-    (void) HANDLE_EINTR(close(socket_pair[0]));
+    close(socket_pair[0]);
     // We should only be able to write to the IPC channel. We'll always send
     // a new file descriptor to receive the reply on.
     shutdown(socket_pair[1], SHUT_RD);
@@ -170,7 +167,7 @@ bool BrokerProcess::Init(bool (*sandbox_callback)(void)) {
     return true;
   } else {
     // We are the broker.
-    (void) HANDLE_EINTR(close(socket_pair[1]));
+    close(socket_pair[1]);
     // We should only be able to read from this IPC channel. We will send our
     // replies on a new file descriptor attached to the requests.
     shutdown(socket_pair[0], SHUT_WR);
@@ -217,6 +214,7 @@ int BrokerProcess::PathAndFlagsSyscall(enum IPCCommands syscall_type,
     // this code if other flags are added.
     RAW_CHECK(kCurrentProcessOpenFlagsMask == O_CLOEXEC);
     recvmsg_flags |= MSG_CMSG_CLOEXEC;
+    flags &= ~O_CLOEXEC;
   }
 
   // There is no point in forwarding a request that we know will be denied.
@@ -225,11 +223,11 @@ int BrokerProcess::PathAndFlagsSyscall(enum IPCCommands syscall_type,
   if (fast_check_in_client_) {
     if (syscall_type == kCommandOpen &&
         !GetFileNameIfAllowedToOpen(pathname, flags, NULL)) {
-      return -EPERM;
+      return -denied_errno_;
     }
     if (syscall_type == kCommandAccess &&
         !GetFileNameIfAllowedToAccess(pathname, flags, NULL)) {
-      return -EPERM;
+      return -denied_errno_;
     }
   }
 
@@ -285,7 +283,7 @@ int BrokerProcess::PathAndFlagsSyscall(enum IPCCommands syscall_type,
   } else {
     RAW_LOG(ERROR, "Could not read pickle");
     NOTREACHED();
-    return -EPERM;
+    return -ENOMEM;
   }
 }
 
@@ -333,7 +331,7 @@ bool BrokerProcess::HandleRequest() const {
         r = false;
         break;
     }
-    int ret = HANDLE_EINTR(close(temporary_ipc));
+    int ret = IGNORE_EINTR(close(temporary_ipc));
     DCHECK(!ret) << "Could not close temporary IPC channel";
     return r;
   }
@@ -378,7 +376,7 @@ bool BrokerProcess::HandleRemoteCommand(IPCCommands command_type, int reply_ipc,
   // Close anything we have opened in this process.
   for (std::vector<int>::iterator it = opened_files.begin();
        it < opened_files.end(); ++it) {
-    int ret = HANDLE_EINTR(close(*it));
+    int ret = IGNORE_EINTR(close(*it));
     DCHECK(!ret) << "Could not close file descriptor";
   }
 
@@ -407,7 +405,7 @@ void BrokerProcess::AccessFileForIPC(const std::string& requested_filename,
     else
       write_pickle->WriteInt(-access_errno);
   } else {
-    write_pickle->WriteInt(-EPERM);
+    write_pickle->WriteInt(-denied_errno_);
   }
 }
 
@@ -436,7 +434,7 @@ void BrokerProcess::OpenFileForIPC(const std::string& requested_filename,
       write_pickle->WriteInt(0);
     }
   } else {
-    write_pickle->WriteInt(-EPERM);
+    write_pickle->WriteInt(-denied_errno_);
   }
 }
 

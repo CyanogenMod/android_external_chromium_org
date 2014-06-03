@@ -18,10 +18,12 @@
 #include "chrome/browser/password_manager/mock_password_store.h"
 #include "chrome/browser/password_manager/password_store.h"
 #include "chrome/browser/password_manager/password_store_factory.h"
+#include "chrome/browser/signin/profile_oauth2_token_service.h"
+#include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
-#include "chrome/browser/signin/token_service_factory.h"
 #include "chrome/browser/sync/abstract_profile_sync_service_test.h"
+#include "chrome/browser/sync/fake_oauth2_token_service.h"
 #include "chrome/browser/sync/glue/password_change_processor.h"
 #include "chrome/browser/sync/glue/password_data_type_controller.h"
 #include "chrome/browser/sync/glue/password_model_associator.h"
@@ -32,9 +34,9 @@
 #include "chrome/browser/sync/profile_sync_test_util.h"
 #include "chrome/browser/sync/test_profile_sync_service.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/test/base/profile_mock.h"
+#include "chrome/test/base/testing_profile.h"
+#include "components/autofill/core/common/password_form.h"
 #include "content/public/browser/notification_source.h"
-#include "content/public/common/password_form.h"
 #include "content/public/test/mock_notification_observer.h"
 #include "content/public/test/test_browser_thread.h"
 #include "google_apis/gaia/gaia_constants.h"
@@ -46,12 +48,12 @@
 #include "sync/test/engine/test_id_factory.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
+using autofill::PasswordForm;
 using base::Time;
 using browser_sync::PasswordChangeProcessor;
 using browser_sync::PasswordDataTypeController;
 using browser_sync::PasswordModelAssociator;
 using content::BrowserThread;
-using content::PasswordForm;
 using syncer::syncable::WriteTransaction;
 using testing::_;
 using testing::AtLeast;
@@ -96,12 +98,13 @@ class PasswordTestProfileSyncService : public TestProfileSyncService {
   PasswordTestProfileSyncService(
       ProfileSyncComponentsFactory* factory,
       Profile* profile,
-      SigninManagerBase* signin)
+      SigninManagerBase* signin,
+      ProfileOAuth2TokenService* oauth2_token_service)
       : TestProfileSyncService(factory,
                                profile,
                                signin,
-                               ProfileSyncService::AUTO_START,
-                               false) {}
+                               oauth2_token_service,
+                               ProfileSyncService::AUTO_START) {}
 
   virtual ~PasswordTestProfileSyncService() {}
 
@@ -116,9 +119,12 @@ class PasswordTestProfileSyncService : public TestProfileSyncService {
     Profile* profile = static_cast<Profile*>(context);
     SigninManagerBase* signin =
         SigninManagerFactory::GetForProfile(profile);
+    ProfileOAuth2TokenService* oauth2_token_service =
+        ProfileOAuth2TokenServiceFactory::GetForProfile(profile);
     ProfileSyncComponentsFactoryMock* factory =
         new ProfileSyncComponentsFactoryMock();
-    return new PasswordTestProfileSyncService(factory, profile, signin);
+    return new PasswordTestProfileSyncService(
+        factory, profile, signin, oauth2_token_service);
   }
 
   void set_passphrase_accept_callback(const base::Closure& callback) {
@@ -154,7 +160,10 @@ class ProfileSyncServicePasswordTest : public AbstractProfileSyncServiceTest {
 
   virtual void SetUp() {
     AbstractProfileSyncServiceTest::SetUp();
-    profile_.reset(new ProfileMock());
+    TestingProfile::Builder builder;
+    builder.AddTestingFactory(ProfileOAuth2TokenServiceFactory::GetInstance(),
+                              FakeOAuth2TokenService::BuildTokenService);
+    profile_ = builder.Build().Pass();
     invalidation::InvalidationServiceFactory::GetInstance()->
         SetBuildOnlyFakeInvalidatorsForTest(true);
     password_store_ = static_cast<MockPasswordStore*>(
@@ -189,11 +198,6 @@ class ProfileSyncServicePasswordTest : public AbstractProfileSyncServiceTest {
       SigninManagerBase* signin =
           SigninManagerFactory::GetForProfile(profile_.get());
       signin->SetAuthenticatedUsername("test_user@gmail.com");
-      token_service_ = static_cast<TokenService*>(
-          TokenServiceFactory::GetInstance()->SetTestingFactoryAndUse(
-              profile_.get(), BuildTokenService));
-      ProfileOAuth2TokenServiceFactory::GetInstance()->SetTestingFactory(
-          profile_.get(), FakeOAuth2TokenService::BuildTokenService);
 
       PasswordTestProfileSyncService* sync =
           static_cast<PasswordTestProfileSyncService*>(
@@ -229,10 +233,8 @@ class ProfileSyncServicePasswordTest : public AbstractProfileSyncServiceTest {
           WillOnce(ReturnNewDataTypeManager());
 
       // We need tokens to get the tests going
-      token_service_->IssueAuthTokenForTest(
-          GaiaConstants::kGaiaOAuth2LoginRefreshToken, "oauth2_login_token");
-      token_service_->IssueAuthTokenForTest(
-          GaiaConstants::kSyncService, "token");
+      ProfileOAuth2TokenServiceFactory::GetForProfile(profile_.get())
+          ->UpdateCredentials("test_user@gmail.com", "oauth2_login_token");
 
       sync_service_->RegisterDataTypeController(data_type_controller);
       sync_service_->Initialize();
@@ -253,8 +255,6 @@ class ProfileSyncServicePasswordTest : public AbstractProfileSyncServiceTest {
     if (pf1.submit_element < pf2.submit_element)
       return true;
     if (pf1.username_element < pf2.username_element)
-      return true;
-    if (pf1.username_value < pf2.username_value)
       return true;
     if (pf1.username_value < pf2.username_value)
       return true;
@@ -314,7 +314,7 @@ class ProfileSyncServicePasswordTest : public AbstractProfileSyncServiceTest {
   }
 
   content::MockNotificationObserver observer_;
-  scoped_ptr<ProfileMock> profile_;
+  scoped_ptr<TestingProfile> profile_;
   scoped_refptr<MockPasswordStore> password_store_;
   content::NotificationRegistrar registrar_;
 };

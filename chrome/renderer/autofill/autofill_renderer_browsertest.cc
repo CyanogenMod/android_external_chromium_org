@@ -4,7 +4,8 @@
 
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/test/base/chrome_render_view_test.h"
-#include "components/autofill/core/common/autofill_messages.h"
+#include "components/autofill/content/common/autofill_messages.h"
+#include "components/autofill/content/renderer/autofill_agent.h"
 #include "components/autofill/core/common/form_data.h"
 #include "components/autofill/core/common/form_field_data.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -12,10 +13,10 @@
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebInputElement.h"
 
-using WebKit::WebDocument;
-using WebKit::WebFrame;
-using WebKit::WebInputElement;
-using WebKit::WebString;
+using blink::WebDocument;
+using blink::WebFrame;
+using blink::WebInputElement;
+using blink::WebString;
 
 namespace autofill {
 
@@ -56,19 +57,19 @@ TEST_F(ChromeRenderViewTest, SendForms) {
   FormFieldData expected;
 
   expected.name = ASCIIToUTF16("firstname");
-  expected.value = string16();
+  expected.value = base::string16();
   expected.form_control_type = "text";
   expected.max_length = WebInputElement::defaultMaxLength();
   EXPECT_FORM_FIELD_DATA_EQUALS(expected, forms[0].fields[0]);
 
   expected.name = ASCIIToUTF16("middlename");
-  expected.value = string16();
+  expected.value = base::string16();
   expected.form_control_type = "text";
   expected.max_length = WebInputElement::defaultMaxLength();
   EXPECT_FORM_FIELD_DATA_EQUALS(expected, forms[0].fields[1]);
 
   expected.name = ASCIIToUTF16("lastname");
-  expected.value = string16();
+  expected.value = base::string16();
   expected.form_control_type = "text";
   expected.autocomplete_attribute = "off";
   expected.max_length = WebInputElement::defaultMaxLength();
@@ -90,7 +91,7 @@ TEST_F(ChromeRenderViewTest, SendForms) {
 
   // Make sure to query for Autofill suggestions before selecting one.
   autofill_agent_->element_ = firstname;
-  autofill_agent_->QueryAutofillSuggestions(firstname, false);
+  autofill_agent_->QueryAutofillSuggestions(firstname, false, false);
 
   // Fill the form with a suggestion that contained a label.  Labeled items
   // indicate Autofill as opposed to Autocomplete.  We're testing this
@@ -112,13 +113,13 @@ TEST_F(ChromeRenderViewTest, SendForms) {
   ASSERT_EQ(3UL, form2.fields.size());
 
   expected.name = ASCIIToUTF16("firstname");
-  expected.value = string16();
+  expected.value = base::string16();
   expected.form_control_type = "text";
   expected.max_length = WebInputElement::defaultMaxLength();
   EXPECT_FORM_FIELD_DATA_EQUALS(expected, form2.fields[0]);
 
   expected.name = ASCIIToUTF16("middlename");
-  expected.value = string16();
+  expected.value = base::string16();
   expected.form_control_type = "text";
   expected.max_length = WebInputElement::defaultMaxLength();
   EXPECT_FORM_FIELD_DATA_EQUALS(expected, form2.fields[1]);
@@ -128,61 +129,6 @@ TEST_F(ChromeRenderViewTest, SendForms) {
   expected.form_control_type = "select-one";
   expected.max_length = 0;
   EXPECT_FORM_FIELD_DATA_EQUALS(expected, form2.fields[2]);
-}
-
-TEST_F(ChromeRenderViewTest, SendDynamicForms) {
-  // Don't want any delay for form state sync changes. This will still post a
-  // message so updates will get coalesced, but as soon as we spin the message
-  // loop, it will generate an update.
-  SendContentStateImmediately();
-
-  LoadHTML("<form method=\"POST\" id=\"testform\">"
-           "  <input type=\"text\" id=\"firstname\"/>"
-           "  <input type=\"text\" id=\"middlename\"/>"
-           "  <input type=\"text\" id=\"lastname\" autoComplete=\"off\"/>"
-           "  <input type=\"hidden\" id=\"email\"/>"
-           "  <select id=\"state\"/>"
-           "    <option>?</option>"
-           "    <option>California</option>"
-           "    <option>Texas</option>"
-           "  </select>"
-           "</form>");
-
-  // Verify that "FormsSeen" sends the expected number of fields.
-  const IPC::Message* message = render_thread_->sink().GetFirstMessageMatching(
-      AutofillHostMsg_FormsSeen::ID);
-  ASSERT_NE(static_cast<IPC::Message*>(NULL), message);
-  AutofillHostMsg_FormsSeen::Param params;
-  AutofillHostMsg_FormsSeen::Read(message, &params);
-  const std::vector<FormData>& forms = params.a;
-  ASSERT_EQ(1UL, forms.size());
-  ASSERT_EQ(4UL, forms[0].fields.size());
-
-  autofill_agent_->OnAutocheckoutSupported();
-  render_thread_->sink().ClearMessages();
-  ExecuteJavaScript("var newInput=document.createElement(\"input\");"
-                    "newInput.setAttribute(\"type\",\"text\");"
-                    "newInput.setAttribute(\"id\", \"telephone\");"
-                    "document.getElementById(\"testform\")"
-                    ".appendChild(newInput);");
-  msg_loop_.RunUntilIdle();
-
-  // Verify that FormsSeen is present with the new field.
-  const IPC::Message* message2 = render_thread_->sink().GetFirstMessageMatching(
-      AutofillHostMsg_FormsSeen::ID);
-  ASSERT_NE(static_cast<IPC::Message*>(NULL), message2);
-  AutofillHostMsg_FormsSeen::Read(message2, &params);
-  const std::vector<FormData>& new_forms = params.a;
-  ASSERT_EQ(1UL, new_forms.size());
-  ASSERT_EQ(5UL, new_forms[0].fields.size());
-
-  FormFieldData expected;
-
-  expected.name = ASCIIToUTF16("telephone");
-  expected.value = string16();
-  expected.form_control_type = "text";
-  expected.max_length = WebInputElement::defaultMaxLength();
-  EXPECT_FORM_FIELD_DATA_EQUALS(expected, forms[0].fields[4]);
 }
 
 TEST_F(ChromeRenderViewTest, EnsureNoFormSeenIfTooFewFields) {

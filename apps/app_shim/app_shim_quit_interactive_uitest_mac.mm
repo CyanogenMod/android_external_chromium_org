@@ -5,15 +5,16 @@
 // Tests behavior when quitting apps with app shims.
 
 #import <Cocoa/Cocoa.h>
+#include <vector>
 
 #include "apps/app_shim/app_shim_host_manager_mac.h"
 #include "apps/app_shim/extension_app_shim_handler_mac.h"
 #include "apps/switches.h"
+#include "chrome/browser/apps/app_browsertest_util.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browser_shutdown.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_test_message_listener.h"
-#include "chrome/browser/extensions/platform_app_browsertest_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/interactive_test_utils.h"
@@ -39,6 +40,8 @@ class FakeHost : public apps::AppShimHandler::Host {
   virtual void OnAppClosed() OVERRIDE {
     handler_->OnShimClose(this);
   }
+  virtual void OnAppHide() OVERRIDE {}
+  virtual void OnAppRequestUserAttention() OVERRIDE {}
   virtual base::FilePath GetProfilePath() const OVERRIDE {
     return profile_path_;
   }
@@ -73,7 +76,9 @@ class AppShimQuitTest : public PlatformAppBrowserTest {
     host_.reset(new FakeHost(profile()->GetPath().BaseName(),
                              extension_id_,
                              handler_));
-    handler_->OnShimLaunch(host_.get(), APP_SHIM_LAUNCH_REGISTER_ONLY);
+    handler_->OnShimLaunch(host_.get(),
+                           APP_SHIM_LAUNCH_REGISTER_ONLY,
+                           std::vector<base::FilePath>());
     EXPECT_EQ(host_.get(), handler_->FindHost(profile(), extension_id_));
 
     // Focus the app window.

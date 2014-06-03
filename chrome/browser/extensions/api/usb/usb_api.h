@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
 #include "chrome/browser/extensions/api/api_function.h"
 #include "chrome/browser/extensions/api/api_resource_manager.h"
 #include "chrome/browser/usb/usb_device.h"
@@ -16,6 +17,7 @@
 #include "chrome/common/extensions/api/usb.h"
 #include "net/base/io_buffer.h"
 
+class UsbDevice;
 class UsbDeviceHandle;
 class UsbService;
 
@@ -33,7 +35,12 @@ class UsbAsyncApiFunction : public AsyncApiFunction {
   virtual bool PrePrepare() OVERRIDE;
   virtual bool Respond() OVERRIDE;
 
-  UsbDeviceResource* GetUsbDeviceResource(int api_resource_id);
+  scoped_refptr<UsbDevice> GetDeviceOrOrCompleteWithError(
+      const extensions::api::usb::Device& input_device);
+
+  scoped_refptr<UsbDeviceHandle> GetDeviceHandleOrCompleteWithError(
+      const extensions::api::usb::ConnectionHandle& input_device_handle);
+
   void RemoveUsbDeviceResource(int api_resource_id);
 
   void CompleteWithError(const std::string& error);
@@ -64,8 +71,6 @@ class UsbFindDevicesFunction : public UsbAsyncApiFunction {
 
   UsbFindDevicesFunction();
 
-  static void SetDeviceForTest(UsbDevice* device);
-
  protected:
   virtual ~UsbFindDevicesFunction();
 
@@ -73,26 +78,66 @@ class UsbFindDevicesFunction : public UsbAsyncApiFunction {
   virtual void AsyncWorkStart() OVERRIDE;
 
  private:
-  typedef scoped_ptr<std::vector<scoped_refptr<UsbDevice> > >
-      ScopedDeviceVector;
+  void OpenDevices(scoped_ptr<std::vector<scoped_refptr<UsbDevice> > > devices);
 
-  // This should be run on the FILE thread.
-  // Wait for GetDeviceService to return and start enumeration on FILE thread.
-  void EnumerateDevices(uint16_t vendor_id,
-                        uint16_t product_id,
-                        int interface_id,
-                        UsbService* service);
-
-  // Relay the result on IO thread to OnCompleted.
-  void OnEnumerationCompleted(ScopedDeviceVector devices);
-
-  // This should be run on the IO thread.
-  // Create ApiResources and reply.
-  void OnCompleted();
-
-  scoped_ptr<base::ListValue> result_;
   std::vector<scoped_refptr<UsbDeviceHandle> > device_handles_;
   scoped_ptr<extensions::api::usb::FindDevices::Params> parameters_;
+};
+
+class UsbGetDevicesFunction : public UsbAsyncApiFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("usb.getDevices", USB_GETDEVICES)
+
+  UsbGetDevicesFunction();
+
+  static void SetDeviceForTest(UsbDevice* device);
+
+  virtual bool Prepare() OVERRIDE;
+  virtual void AsyncWorkStart() OVERRIDE;
+
+ protected:
+  virtual ~UsbGetDevicesFunction();
+
+ private:
+  void EnumerationCompletedFileThread(
+      scoped_ptr<std::vector<scoped_refptr<UsbDevice> > > devices);
+
+  scoped_ptr<extensions::api::usb::GetDevices::Params> parameters_;
+};
+
+class UsbRequestAccessFunction : public UsbAsyncApiFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("usb.requestAccess", USB_REQUESTACCESS)
+
+  UsbRequestAccessFunction();
+
+  virtual bool Prepare() OVERRIDE;
+  virtual void AsyncWorkStart() OVERRIDE;
+
+ protected:
+  virtual ~UsbRequestAccessFunction();
+
+  void OnCompleted(bool success);
+
+ private:
+  scoped_ptr<extensions::api::usb::RequestAccess::Params> parameters_;
+};
+
+class UsbOpenDeviceFunction : public UsbAsyncApiFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("usb.openDevice", USB_OPENDEVICE)
+
+  UsbOpenDeviceFunction();
+
+  virtual bool Prepare() OVERRIDE;
+  virtual void AsyncWorkStart() OVERRIDE;
+
+ protected:
+  virtual ~UsbOpenDeviceFunction();
+
+ private:
+  scoped_refptr<UsbDeviceHandle> handle_;
+  scoped_ptr<extensions::api::usb::OpenDevice::Params> parameters_;
 };
 
 class UsbListInterfacesFunction : public UsbAsyncApiFunction {
@@ -108,8 +153,6 @@ class UsbListInterfacesFunction : public UsbAsyncApiFunction {
   virtual void AsyncWorkStart() OVERRIDE;
 
  private:
-  void OnCompleted(bool success);
-
   bool ConvertDirectionSafely(const UsbEndpointDirection& input,
                               extensions::api::usb::Direction* output);
   bool ConvertSynchronizationTypeSafely(
@@ -121,7 +164,6 @@ class UsbListInterfacesFunction : public UsbAsyncApiFunction {
                               extensions::api::usb::UsageType* output);
 
   scoped_ptr<base::ListValue> result_;
-  scoped_refptr<UsbConfigDescriptor> config_;
   scoped_ptr<extensions::api::usb::ListInterfaces::Params> parameters_;
 };
 
@@ -136,8 +178,6 @@ class UsbCloseDeviceFunction : public UsbAsyncApiFunction {
 
   virtual bool Prepare() OVERRIDE;
   virtual void AsyncWorkStart() OVERRIDE;
-
-  void OnCompleted();
 
  private:
   scoped_ptr<extensions::api::usb::CloseDevice::Params> parameters_;
@@ -156,8 +196,6 @@ class UsbClaimInterfaceFunction : public UsbAsyncApiFunction {
   virtual void AsyncWorkStart() OVERRIDE;
 
  private:
-  void OnCompleted(bool success);
-
   scoped_ptr<extensions::api::usb::ClaimInterface::Params> parameters_;
 };
 
@@ -174,8 +212,6 @@ class UsbReleaseInterfaceFunction : public UsbAsyncApiFunction {
   virtual void AsyncWorkStart() OVERRIDE;
 
  private:
-  void OnCompleted(bool success);
-
   scoped_ptr<extensions::api::usb::ReleaseInterface::Params> parameters_;
 };
 
@@ -191,8 +227,6 @@ class UsbSetInterfaceAlternateSettingFunction : public UsbAsyncApiFunction {
 
   virtual bool Prepare() OVERRIDE;
   virtual void AsyncWorkStart() OVERRIDE;
-
-  void OnCompleted(bool success);
 
   scoped_ptr<extensions::api::usb::SetInterfaceAlternateSetting::Params>
       parameters_;
@@ -276,14 +310,6 @@ class UsbResetDeviceFunction : public UsbAsyncApiFunction {
   virtual void AsyncWorkStart() OVERRIDE;
 
  private:
-  // This should be run on the FILE thread.
-  void OnStartResest(UsbDeviceResource* resource);
-  void OnCompletedFileThread(bool success);
-
-  // This should be run on the IO thread.
-  void OnCompleted(bool success);
-  void OnError();
-
   scoped_ptr<extensions::api::usb::ResetDevice::Params> parameters_;
 };
 }  // namespace extensions

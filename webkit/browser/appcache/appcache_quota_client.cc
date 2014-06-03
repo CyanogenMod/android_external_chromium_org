@@ -139,6 +139,10 @@ void AppCacheQuotaClient::DeleteOriginData(const GURL& origin,
       origin, GetServiceDeleteCallback()->callback());
 }
 
+bool AppCacheQuotaClient::DoesSupport(quota::StorageType type) const {
+  return type == quota::kStorageTypeTemporary;
+}
+
 void AppCacheQuotaClient::DidDeleteAppCachesForOrigin(int rv) {
   DCHECK(service_);
   if (quota_manager_is_destroyed_)
@@ -221,8 +225,11 @@ AppCacheQuotaClient::GetServiceDeleteCallback() {
 }
 
 void AppCacheQuotaClient::NotifyAppCacheReady() {
-  appcache_is_ready_ = true;
-  ProcessPendingRequests();
+  // Can reoccur during reinitialization.
+  if (!appcache_is_ready_) {
+    appcache_is_ready_ = true;
+    ProcessPendingRequests();
+  }
 }
 
 void AppCacheQuotaClient::NotifyAppCacheDestroyed() {

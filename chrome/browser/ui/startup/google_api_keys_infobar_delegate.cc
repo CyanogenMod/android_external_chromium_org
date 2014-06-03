@@ -4,6 +4,7 @@
 
 #include "chrome/browser/ui/startup/google_api_keys_infobar_delegate.h"
 
+#include "chrome/browser/infobars/infobar.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "content/public/browser/web_contents.h"
 #include "google_apis/google_api_keys.h"
@@ -17,19 +18,18 @@ void GoogleApiKeysInfoBarDelegate::Create(InfoBarService* infobar_service) {
   if (google_apis::HasKeysConfigured())
     return;
 
-  infobar_service->AddInfoBar(scoped_ptr<InfoBarDelegate>(
-      new GoogleApiKeysInfoBarDelegate(infobar_service)));
+  infobar_service->AddInfoBar(ConfirmInfoBarDelegate::CreateInfoBar(
+      scoped_ptr<ConfirmInfoBarDelegate>(new GoogleApiKeysInfoBarDelegate())));
 }
 
-GoogleApiKeysInfoBarDelegate::GoogleApiKeysInfoBarDelegate(
-    InfoBarService* infobar_service)
-    : ConfirmInfoBarDelegate(infobar_service) {
+GoogleApiKeysInfoBarDelegate::GoogleApiKeysInfoBarDelegate()
+    : ConfirmInfoBarDelegate() {
 }
 
 GoogleApiKeysInfoBarDelegate::~GoogleApiKeysInfoBarDelegate() {
 }
 
-string16 GoogleApiKeysInfoBarDelegate::GetMessageText() const {
+base::string16 GoogleApiKeysInfoBarDelegate::GetMessageText() const {
   return l10n_util::GetStringUTF16(IDS_MISSING_GOOGLE_API_KEYS);
 }
 
@@ -37,7 +37,7 @@ int GoogleApiKeysInfoBarDelegate::GetButtons() const {
   return BUTTON_NONE;
 }
 
-string16 GoogleApiKeysInfoBarDelegate::GetLinkText() const {
+base::string16 GoogleApiKeysInfoBarDelegate::GetLinkText() const {
   return l10n_util::GetStringUTF16(IDS_LEARN_MORE);
 }
 

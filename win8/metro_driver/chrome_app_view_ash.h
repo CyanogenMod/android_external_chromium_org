@@ -10,16 +10,32 @@
 #include <windows.ui.input.h>
 #include <windows.ui.viewmanagement.h>
 
-#include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/strings/string16.h"
-#include "ui/base/events/event_constants.h"
+#include "ui/events/event_constants.h"
 #include "win8/metro_driver/direct3d_helper.h"
+#include "win8/metro_driver/ime/ime_popup_observer.h"
+#include "win8/metro_driver/ime/input_source_observer.h"
+#include "win8/metro_driver/ime/text_service_delegate.h"
+
+namespace base {
+class FilePath;
+}
 
 namespace IPC {
-  class Listener;
-  class ChannelProxy;
+class Listener;
+class ChannelProxy;
+}
+
+namespace metro_driver {
+class InputSource;
+class TextService;
+}
+
+namespace metro_viewer {
+struct CharacterBounds;
+struct UnderlineInfo;
 }
 
 class OpenFilePickerSession;
@@ -30,7 +46,10 @@ class FilePickerSessionBase;
 struct MetroViewerHostMsg_SaveAsDialogParams;
 
 class ChromeAppViewAsh
-    : public mswr::RuntimeClass<winapp::Core::IFrameworkView> {
+    : public mswr::RuntimeClass<winapp::Core::IFrameworkView>,
+      public metro_driver::ImePopupObserver,
+      public metro_driver::InputSourceObserver,
+      public metro_driver::TextServiceDelegate {
  public:
   ChromeAppViewAsh();
   ~ChromeAppViewAsh();
@@ -46,6 +65,8 @@ class ChromeAppViewAsh
   // Returns S_OK on success.
   static HRESULT Unsnap();
 
+  void OnActivateDesktop(const base::FilePath& file_path, bool ash_exit);
+  void OnOpenURLOnDesktop(const base::FilePath& shortcut, const string16& url);
   void OnSetCursor(HCURSOR cursor);
   void OnDisplayFileOpenDialog(const string16& title,
                                const string16& filter,
@@ -77,7 +98,29 @@ class ChromeAppViewAsh
   void OnFolderPickerCompleted(FolderPickerSession* folder_picker,
                                bool success);
 
+  void OnImeCancelComposition();
+  void OnImeUpdateTextInputClient(
+      const std::vector<int32>& input_scopes,
+      const std::vector<metro_viewer::CharacterBounds>& character_bounds);
+
+  HWND core_window_hwnd() const { return  core_window_hwnd_; }
+
+
  private:
+  // ImePopupObserver overrides.
+  virtual void OnImePopupChanged(ImePopupObserver::EventType event) OVERRIDE;
+
+  // InputSourceObserver overrides.
+  virtual void OnInputSourceChanged() OVERRIDE;
+
+  // TextServiceDelegate overrides.
+  virtual void OnCompositionChanged(
+      const string16& text,
+      int32 selection_start,
+      int32 selection_end,
+      const std::vector<metro_viewer::UnderlineInfo>& underlines) OVERRIDE;
+  virtual void OnTextCommitted(const string16& text) OVERRIDE;
+
   HRESULT OnActivate(winapp::Core::ICoreApplicationView* view,
                      winapp::Activation::IActivatedEventArgs* args);
 
@@ -106,9 +149,6 @@ class ChromeAppViewAsh
   HRESULT OnCharacterReceived(winui::Core::ICoreWindow* sender,
                               winui::Core::ICharacterReceivedEventArgs* args);
 
-  HRESULT OnVisibilityChanged(winui::Core::ICoreWindow* sender,
-                              winui::Core::IVisibilityChangedEventArgs* args);
-
   HRESULT OnWindowActivated(winui::Core::ICoreWindow* sender,
                             winui::Core::IWindowActivatedEventArgs* args);
 
@@ -116,6 +156,9 @@ class ChromeAppViewAsh
   HRESULT HandleSearchRequest(winapp::Activation::IActivatedEventArgs* args);
   // Helper to handle http/https url requests in ASH.
   HRESULT HandleProtocolRequest(winapp::Activation::IActivatedEventArgs* args);
+
+  HRESULT OnEdgeGestureCompleted(winui::Input::IEdgeGesture* gesture,
+                                 winui::Input::IEdgeGestureEventArgs* args);
 
   // Tasks posted to the UI thread to initiate the search/url navigation
   // requests.
@@ -135,11 +178,11 @@ class ChromeAppViewAsh
   EventRegistrationToken keydown_token_;
   EventRegistrationToken keyup_token_;
   EventRegistrationToken character_received_token_;
-  EventRegistrationToken visibility_changed_token_;
   EventRegistrationToken accel_keydown_token_;
   EventRegistrationToken accel_keyup_token_;
   EventRegistrationToken window_activated_token_;
   EventRegistrationToken sizechange_token_;
+  EventRegistrationToken edgeevent_token_;
 
   // Keep state about which button is currently down, if any, as PointerMoved
   // events do not contain that state, but Ash's MouseEvents need it.
@@ -156,6 +199,10 @@ class ChromeAppViewAsh
 
   // UI message loop to allow message passing into this thread.
   base::MessageLoop ui_loop_;
+
+  // For IME support.
+  scoped_ptr<metro_driver::InputSource> input_source_;
+  scoped_ptr<metro_driver::TextService> text_service_;
 };
 
 #endif  // WIN8_METRO_DRIVER_CHROME_APP_VIEW_ASH_H_

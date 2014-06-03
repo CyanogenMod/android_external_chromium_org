@@ -50,16 +50,13 @@
           'action_name': 'Instrument Chrome with SyzyAsan',
           'msvs_cygwin_shell': 0,
           'inputs': [
-            '<(PRODUCT_DIR)/<(dll_name).dll',
-            '<(PRODUCT_DIR)/<(dll_name).dll.pdb',
             '<(DEPTH)/chrome/tools/build/win/win-syzyasan-filter.txt',
+            '<(PRODUCT_DIR)/<(dll_name).dll',
           ],
           'outputs': [
             '<(dest_dir)/<(dll_name).dll',
             '<(dest_dir)/<(dll_name).dll.pdb',
-            '<(dest_dir)/asan_rtl.dll',
-            '<(dest_dir)/asan_rtl.dll.pdb',
-            '<(dest_dir)/win-syzyasan-filter.txt.json',
+            '<(dest_dir)/win-syzyasan-filter-<(dll_name).txt.json',
           ],
           'action': [
             'python',
@@ -69,9 +66,14 @@
             '--input_symbol', '<(PRODUCT_DIR)/<(dll_name).dll.pdb',
             '--filter',
             '<(DEPTH)/chrome/tools/build/win/win-syzyasan-filter.txt',
+            '--output-filter-file',
+            '<(dest_dir)/win-syzyasan-filter-<(dll_name).txt.json',
             '--destination_dir', '<(dest_dir)',
           ],
         },
+      ],
+      'dependencies': [
+        'copy_syzyasan_binaries',
       ],
     }],
   ],

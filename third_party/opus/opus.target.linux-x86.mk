@@ -24,6 +24,8 @@ GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 LOCAL_SRC_FILES := \
 	third_party/opus/src/celt/bands.c \
 	third_party/opus/src/celt/celt.c \
+	third_party/opus/src/celt/celt_decoder.c \
+	third_party/opus/src/celt/celt_encoder.c \
 	third_party/opus/src/celt/celt_lpc.c \
 	third_party/opus/src/celt/cwrs.c \
 	third_party/opus/src/celt/entcode.c \
@@ -139,10 +141,15 @@ LOCAL_SRC_FILES := \
 	third_party/opus/src/silk/tables_pulses_per_block.c \
 	third_party/opus/src/silk/VAD.c \
 	third_party/opus/src/silk/VQ_WMat_EC.c \
+	third_party/opus/src/src/analysis.c \
+	third_party/opus/src/src/mlp.c \
+	third_party/opus/src/src/mlp_data.c \
 	third_party/opus/src/src/opus.c \
 	third_party/opus/src/src/opus_decoder.c \
 	third_party/opus/src/src/opus_encoder.c \
 	third_party/opus/src/src/opus_multistream.c \
+	third_party/opus/src/src/opus_multistream_decoder.c \
+	third_party/opus/src/src/opus_multistream_encoder.c \
 	third_party/opus/src/src/repacketizer.c
 
 
@@ -173,11 +180,11 @@ MY_CFLAGS_Debug := \
 	-Wno-extra \
 	-Wno-ignored-qualifiers \
 	-Wno-type-limits \
+	-fno-stack-protector \
 	-Wno-address \
 	-Wno-format-security \
 	-Wno-return-type \
 	-Wno-sequence-point \
-	-fno-stack-protector \
 	-Os \
 	-g \
 	-fomit-frame-pointer \
@@ -185,22 +192,22 @@ MY_CFLAGS_Debug := \
 	-ffunction-sections
 
 MY_DEFS_Debug := \
-	'-DANGLE_DX11' \
+	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
-	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
-	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DLOGGING_IS_OFFICIAL_BUILD=1' \
-	'-DTRACING_IS_OFFICIAL_BUILD=1' \
-	'-DENABLE_GPU=1' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
+	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
+	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-DOPUS_BUILD' \
 	'-DOPUS_EXPORT=' \
 	'-DHAVE_LRINT' \
@@ -267,11 +274,11 @@ MY_CFLAGS_Release := \
 	-Wno-extra \
 	-Wno-ignored-qualifiers \
 	-Wno-type-limits \
+	-fno-stack-protector \
 	-Wno-address \
 	-Wno-format-security \
 	-Wno-return-type \
 	-Wno-sequence-point \
-	-fno-stack-protector \
 	-Os \
 	-fno-ident \
 	-fdata-sections \
@@ -281,22 +288,22 @@ MY_CFLAGS_Release := \
 	-fno-asynchronous-unwind-tables
 
 MY_DEFS_Release := \
-	'-DANGLE_DX11' \
+	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
-	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
-	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DLOGGING_IS_OFFICIAL_BUILD=1' \
-	'-DTRACING_IS_OFFICIAL_BUILD=1' \
-	'-DENABLE_GPU=1' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
+	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
+	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-DOPUS_BUILD' \
 	'-DOPUS_EXPORT=' \
 	'-DHAVE_LRINT' \

@@ -2,13 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <fcntl.h>
-#include <unistd.h>
-
 #include "chromeos/dbus/debug_daemon_client.h"
 
+#include <fcntl.h>
+#include <unistd.h>
+#include <string>
+#include <vector>
+
 #include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/callback.h"
+#include "base/location.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/message_loop/message_loop.h"
 #include "base/platform_file.h"
@@ -52,7 +56,7 @@ class PipeReader {
   virtual ~PipeReader() {
     // Don't close pipe_fd_[0] as it's closed by data_stream_.
     if (pipe_fd_[1] != -1)
-      if (HANDLE_EINTR(close(pipe_fd_[1])) < 0)
+      if (IGNORE_EINTR(close(pipe_fd_[1])) < 0)
         PLOG(ERROR) << "close[1]";
   }
 
@@ -62,7 +66,7 @@ class PipeReader {
   // Closes writeable descriptor; normally used in parent process after fork.
   void CloseWriteFD() {
     if (pipe_fd_[1] != -1) {
-      if (HANDLE_EINTR(close(pipe_fd_[1])) < 0)
+      if (IGNORE_EINTR(close(pipe_fd_[1])) < 0)
         PLOG(ERROR) << "close";
       pipe_fd_[1] = -1;
     }
@@ -139,13 +143,7 @@ namespace chromeos {
 // The DebugDaemonClient implementation used in production.
 class DebugDaemonClientImpl : public DebugDaemonClient {
  public:
-  explicit DebugDaemonClientImpl(dbus::Bus* bus)
-      : debugdaemon_proxy_(NULL),
-        weak_ptr_factory_(this) {
-    debugdaemon_proxy_ = bus->GetObjectProxy(
-        debugd::kDebugdServiceName,
-        dbus::ObjectPath(debugd::kDebugdServicePath));
-  }
+  DebugDaemonClientImpl() : debugdaemon_proxy_(NULL), weak_ptr_factory_(this) {}
 
   virtual ~DebugDaemonClientImpl() {}
 
@@ -257,7 +255,7 @@ class DebugDaemonClientImpl : public DebugDaemonClient {
   virtual void GetPerfData(uint32_t duration,
                            const GetPerfDataCallback& callback) OVERRIDE {
     dbus::MethodCall method_call(debugd::kDebugdInterface,
-                                 debugd::kGetPerfData);
+                                 debugd::kGetRichPerfData);
     dbus::MessageWriter writer(&method_call);
     writer.AppendUint32(duration);
 
@@ -400,6 +398,13 @@ class DebugDaemonClientImpl : public DebugDaemonClient {
         base::Bind(&DebugDaemonClientImpl::OnTestICMP,
                    weak_ptr_factory_.GetWeakPtr(),
                    callback));
+  }
+
+ protected:
+  virtual void Init(dbus::Bus* bus) OVERRIDE {
+    debugdaemon_proxy_ =
+        bus->GetObjectProxy(debugd::kDebugdServiceName,
+                            dbus::ObjectPath(debugd::kDebugdServicePath));
   }
 
  private:
@@ -615,93 +620,6 @@ class DebugDaemonClientImpl : public DebugDaemonClient {
   DISALLOW_COPY_AND_ASSIGN(DebugDaemonClientImpl);
 };
 
-// The DebugDaemonClient implementation used on Linux desktop,
-// which does nothing.
-class DebugDaemonClientStubImpl : public DebugDaemonClient {
-  // DebugDaemonClient overrides.
-  virtual void GetDebugLogs(base::PlatformFile file,
-                            const GetDebugLogsCallback& callback) OVERRIDE {
-    callback.Run(false);
-  }
-  virtual void SetDebugMode(const std::string& subsystem,
-                            const SetDebugModeCallback& callback) OVERRIDE {
-    callback.Run(false);
-  }
-  virtual void StartSystemTracing() OVERRIDE {}
-  virtual bool RequestStopSystemTracing(const StopSystemTracingCallback&
-      callback) OVERRIDE {
-    std::string no_data;
-    callback.Run(base::RefCountedString::TakeString(&no_data));
-    return true;
-  }
-  virtual void GetRoutes(bool numeric, bool ipv6,
-                         const GetRoutesCallback& callback) OVERRIDE {
-    std::vector<std::string> empty;
-    base::MessageLoop::current()->PostTask(FROM_HERE,
-                                           base::Bind(callback, false, empty));
-  }
-  virtual void GetNetworkStatus(const GetNetworkStatusCallback& callback)
-      OVERRIDE {
-    base::MessageLoop::current()->PostTask(FROM_HERE,
-                                           base::Bind(callback, false, ""));
-  }
-  virtual void GetModemStatus(const GetModemStatusCallback& callback)
-      OVERRIDE {
-    base::MessageLoop::current()->PostTask(FROM_HERE,
-                                           base::Bind(callback, false, ""));
-  }
-  virtual void GetWiMaxStatus(const GetWiMaxStatusCallback& callback)
-      OVERRIDE {
-    base::MessageLoop::current()->PostTask(FROM_HERE,
-                                           base::Bind(callback, false, ""));
-  }
-  virtual void GetNetworkInterfaces(
-      const GetNetworkInterfacesCallback& callback) OVERRIDE {
-    base::MessageLoop::current()->PostTask(FROM_HERE,
-                                           base::Bind(callback, false, ""));
-  }
-  virtual void GetPerfData(uint32_t duration,
-                           const GetPerfDataCallback& callback) OVERRIDE {
-    std::vector<uint8> data;
-    base::MessageLoop::current()->PostTask(FROM_HERE,
-    base::Bind(callback, data));
-  }
-  virtual void GetScrubbedLogs(const GetLogsCallback& callback) OVERRIDE {
-    std::map<std::string, std::string> sample;
-    sample["Sample Scrubbed Log"] = "Your email address is xxxxxxxx";
-    base::MessageLoop::current()->PostTask(
-        FROM_HERE, base::Bind(callback, false, sample));
-  }
-  virtual void GetAllLogs(const GetLogsCallback& callback) OVERRIDE {
-    std::map<std::string, std::string> sample;
-    sample["Sample Log"] = "Your email address is abc@abc.com";
-    base::MessageLoop::current()->PostTask(
-        FROM_HERE, base::Bind(callback, false, sample));
-  }
-  virtual void GetUserLogFiles(const GetLogsCallback& callback) OVERRIDE {
-    std::map<std::string, std::string> user_logs;
-    user_logs["preferences"] = "Preferences";
-    user_logs["invalid_file"] = "Invalid File";
-    base::MessageLoop::current()->PostTask(
-        FROM_HERE,
-        base::Bind(callback, true, user_logs));
-  }
-
-  virtual void TestICMP(const std::string& ip_address,
-                        const TestICMPCallback& callback) OVERRIDE {
-    base::MessageLoop::current()->PostTask(FROM_HERE,
-                                           base::Bind(callback, false, ""));
-  }
-
-  virtual void TestICMPWithOptions(
-      const std::string& ip_address,
-      const std::map<std::string, std::string>& options,
-      const TestICMPCallback& callback) OVERRIDE {
-    base::MessageLoop::current()->PostTask(FROM_HERE,
-                                           base::Bind(callback, false, ""));
-  }
-};
-
 DebugDaemonClient::DebugDaemonClient() {
 }
 
@@ -715,12 +633,8 @@ DebugDaemonClient::EmptyStopSystemTracingCallback() {
 }
 
 // static
-DebugDaemonClient* DebugDaemonClient::Create(DBusClientImplementationType type,
-                                   dbus::Bus* bus) {
-  if (type == REAL_DBUS_CLIENT_IMPLEMENTATION)
-    return new DebugDaemonClientImpl(bus);
-  DCHECK_EQ(STUB_DBUS_CLIENT_IMPLEMENTATION, type);
-  return new DebugDaemonClientStubImpl();
+DebugDaemonClient* DebugDaemonClient::Create() {
+  return new DebugDaemonClientImpl();
 }
 
 }  // namespace chromeos

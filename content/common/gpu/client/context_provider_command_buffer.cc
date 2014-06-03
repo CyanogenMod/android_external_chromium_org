@@ -4,13 +4,19 @@
 
 #include "content/common/gpu/client/context_provider_command_buffer.h"
 
+#include <set>
+#include <vector>
+
 #include "base/callback_helpers.h"
+#include "base/strings/stringprintf.h"
+#include "cc/output/managed_memory_policy.h"
+#include "gpu/command_buffer/client/gles2_implementation.h"
 #include "webkit/common/gpu/grcontext_for_webgraphicscontext3d.h"
 
 namespace content {
 
 class ContextProviderCommandBuffer::LostContextCallbackProxy
-    : public WebKit::WebGraphicsContext3D::WebGraphicsContextLostCallback {
+    : public blink::WebGraphicsContext3D::WebGraphicsContextLostCallback {
  public:
   explicit LostContextCallbackProxy(ContextProviderCommandBuffer* provider)
       : provider_(provider) {
@@ -29,41 +35,25 @@ class ContextProviderCommandBuffer::LostContextCallbackProxy
   ContextProviderCommandBuffer* provider_;
 };
 
-class ContextProviderCommandBuffer::MemoryAllocationCallbackProxy
-    : public WebKit::WebGraphicsContext3D::
-          WebGraphicsMemoryAllocationChangedCallbackCHROMIUM {
- public:
-  explicit MemoryAllocationCallbackProxy(ContextProviderCommandBuffer* provider)
-      : provider_(provider) {
-    provider_->context3d_->setMemoryAllocationChangedCallbackCHROMIUM(this);
-  }
-
-  virtual ~MemoryAllocationCallbackProxy() {
-    provider_->context3d_->setMemoryAllocationChangedCallbackCHROMIUM(NULL);
-  }
-
-  virtual void onMemoryAllocationChanged(
-      WebKit::WebGraphicsMemoryAllocation alloc) {
-    provider_->OnMemoryAllocationChanged(!!alloc.gpuResourceSizeInBytes);
-  }
-
- private:
-  ContextProviderCommandBuffer* provider_;
-};
-
 scoped_refptr<ContextProviderCommandBuffer>
-ContextProviderCommandBuffer::Create(const CreateCallback& create_callback) {
-  scoped_refptr<ContextProviderCommandBuffer> provider =
-      new ContextProviderCommandBuffer;
-  if (!provider->InitializeOnMainThread(create_callback))
+ContextProviderCommandBuffer::Create(
+    scoped_ptr<WebGraphicsContext3DCommandBufferImpl> context3d,
+    const std::string& debug_name) {
+  if (!context3d)
     return NULL;
-  return provider;
+
+  return new ContextProviderCommandBuffer(context3d.Pass(), debug_name);
 }
 
-ContextProviderCommandBuffer::ContextProviderCommandBuffer()
-    : leak_on_destroy_(false),
+ContextProviderCommandBuffer::ContextProviderCommandBuffer(
+    scoped_ptr<WebGraphicsContext3DCommandBufferImpl> context3d,
+    const std::string& debug_name)
+    : context3d_(context3d.Pass()),
+      debug_name_(debug_name),
+      leak_on_destroy_(false),
       destroyed_(false) {
   DCHECK(main_thread_checker_.CalledOnValidThread());
+  DCHECK(context3d_);
   context_thread_checker_.DetachFromThread();
 }
 
@@ -72,6 +62,14 @@ ContextProviderCommandBuffer::~ContextProviderCommandBuffer() {
          context_thread_checker_.CalledOnValidThread());
 
   base::AutoLock lock(main_thread_lock_);
+
+  // Destroy references to the context3d_ before leaking it.
+  if (context3d_->GetCommandBufferProxy()) {
+    context3d_->GetCommandBufferProxy()->SetMemoryAllocationChangedCallback(
+        CommandBufferProxyImpl::MemoryAllocationChangedCallback());
+  }
+  lost_context_callback_proxy_.reset();
+
   if (leak_on_destroy_) {
     WebGraphicsContext3DCommandBufferImpl* context3d ALLOW_UNUSED =
         context3d_.release();
@@ -80,19 +78,7 @@ ContextProviderCommandBuffer::~ContextProviderCommandBuffer() {
   }
 }
 
-bool ContextProviderCommandBuffer::InitializeOnMainThread(
-    const CreateCallback& create_callback) {
-  DCHECK(main_thread_checker_.CalledOnValidThread());
-
-  DCHECK(!context3d_);
-  DCHECK(!create_callback.is_null());
-  context3d_ = create_callback.Run();
-  return !!context3d_;
-}
-
 bool ContextProviderCommandBuffer::BindToCurrentThread() {
-  DCHECK(context3d_);
-
   // This is called on the thread the context will be used.
   DCHECK(context_thread_checker_.CalledOnValidThread());
 
@@ -102,21 +88,40 @@ bool ContextProviderCommandBuffer::BindToCurrentThread() {
   if (!context3d_->makeContextCurrent())
     return false;
 
+  InitializeCapabilities();
+
+  std::string unique_context_name =
+      base::StringPrintf("%s-%p", debug_name_.c_str(), context3d_.get());
+  context3d_->pushGroupMarkerEXT(unique_context_name.c_str());
+
   lost_context_callback_proxy_.reset(new LostContextCallbackProxy(this));
+  context3d_->GetCommandBufferProxy()->SetMemoryAllocationChangedCallback(
+      base::Bind(&ContextProviderCommandBuffer::OnMemoryAllocationChanged,
+                 base::Unretained(this)));
   return true;
 }
 
 WebGraphicsContext3DCommandBufferImpl*
 ContextProviderCommandBuffer::Context3d() {
-  DCHECK(context3d_);
   DCHECK(lost_context_callback_proxy_);  // Is bound to thread.
   DCHECK(context_thread_checker_.CalledOnValidThread());
 
   return context3d_.get();
 }
 
-class GrContext* ContextProviderCommandBuffer::GrContext() {
+gpu::gles2::GLES2Interface* ContextProviderCommandBuffer::ContextGL() {
   DCHECK(context3d_);
+  DCHECK(lost_context_callback_proxy_);  // Is bound to thread.
+  DCHECK(context_thread_checker_.CalledOnValidThread());
+
+  return context3d_->GetImplementation();
+}
+
+gpu::ContextSupport* ContextProviderCommandBuffer::ContextSupport() {
+  return context3d_->GetContextSupport();
+}
+
+class GrContext* ContextProviderCommandBuffer::GrContext() {
   DCHECK(lost_context_callback_proxy_);  // Is bound to thread.
   DCHECK(context_thread_checker_.CalledOnValidThread());
 
@@ -125,13 +130,33 @@ class GrContext* ContextProviderCommandBuffer::GrContext() {
 
   gr_context_.reset(
       new webkit::gpu::GrContextForWebGraphicsContext3D(context3d_.get()));
-  memory_allocation_callback_proxy_.reset(
-      new MemoryAllocationCallbackProxy(this));
   return gr_context_->get();
 }
 
+void ContextProviderCommandBuffer::MakeGrContextCurrent() {
+  DCHECK(lost_context_callback_proxy_);  // Is bound to thread.
+  DCHECK(context_thread_checker_.CalledOnValidThread());
+  DCHECK(gr_context_);
+
+  context3d_->makeContextCurrent();
+}
+
+cc::ContextProvider::Capabilities
+ContextProviderCommandBuffer::ContextCapabilities() {
+  DCHECK(lost_context_callback_proxy_);  // Is bound to thread.
+  DCHECK(context_thread_checker_.CalledOnValidThread());
+
+  return capabilities_;
+}
+
+bool ContextProviderCommandBuffer::IsContextLost() {
+  DCHECK(lost_context_callback_proxy_);  // Is bound to thread.
+  DCHECK(context_thread_checker_.CalledOnValidThread());
+
+  return context3d_->isContextLost();
+}
+
 void ContextProviderCommandBuffer::VerifyContexts() {
-  DCHECK(context3d_);
   DCHECK(lost_context_callback_proxy_);  // Is bound to thread.
   DCHECK(context_thread_checker_.CalledOnValidThread());
 
@@ -151,6 +176,33 @@ void ContextProviderCommandBuffer::OnLostContext() {
     base::ResetAndReturn(&lost_context_callback_).Run();
 }
 
+void ContextProviderCommandBuffer::OnMemoryAllocationChanged(
+    const gpu::MemoryAllocation& allocation) {
+  DCHECK(context_thread_checker_.CalledOnValidThread());
+
+  if (gr_context_) {
+    bool nonzero_allocation = !!allocation.bytes_limit_when_visible;
+    gr_context_->SetMemoryLimit(nonzero_allocation);
+  }
+
+  if (memory_policy_changed_callback_.is_null())
+    return;
+
+  memory_policy_changed_callback_.Run(cc::ManagedMemoryPolicy(allocation));
+}
+
+void ContextProviderCommandBuffer::InitializeCapabilities() {
+  Capabilities caps(context3d_->GetImplementation()->capabilities());
+
+  size_t mapped_memory_limit = context3d_->GetMappedMemoryLimit();
+  caps.max_transfer_buffer_usage_bytes =
+      mapped_memory_limit == WebGraphicsContext3DCommandBufferImpl::kNoLimit
+      ? std::numeric_limits<size_t>::max() : mapped_memory_limit;
+
+  capabilities_ = caps;
+}
+
+
 bool ContextProviderCommandBuffer::DestroyedOnMainThread() {
   DCHECK(main_thread_checker_.CalledOnValidThread());
 
@@ -161,15 +213,17 @@ bool ContextProviderCommandBuffer::DestroyedOnMainThread() {
 void ContextProviderCommandBuffer::SetLostContextCallback(
     const LostContextCallback& lost_context_callback) {
   DCHECK(context_thread_checker_.CalledOnValidThread());
-  DCHECK(lost_context_callback_.is_null());
+  DCHECK(lost_context_callback_.is_null() ||
+         lost_context_callback.is_null());
   lost_context_callback_ = lost_context_callback;
 }
 
-void ContextProviderCommandBuffer::OnMemoryAllocationChanged(
-    bool nonzero_allocation) {
+void ContextProviderCommandBuffer::SetMemoryPolicyChangedCallback(
+    const MemoryPolicyChangedCallback& memory_policy_changed_callback) {
   DCHECK(context_thread_checker_.CalledOnValidThread());
-  if (gr_context_)
-    gr_context_->SetMemoryLimit(nonzero_allocation);
+  DCHECK(memory_policy_changed_callback_.is_null() ||
+         memory_policy_changed_callback.is_null());
+  memory_policy_changed_callback_ = memory_policy_changed_callback;
 }
 
 }  // namespace content

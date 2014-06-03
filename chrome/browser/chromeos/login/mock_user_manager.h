@@ -18,13 +18,14 @@
 
 namespace chromeos {
 
+class FakeSupervisedUserManager;
+
 class MockUserManager : public UserManager {
  public:
   MockUserManager();
   virtual ~MockUserManager();
 
   MOCK_METHOD0(Shutdown, void(void));
-  MOCK_CONST_METHOD0(GetUsers, const UserList&(void));
   MOCK_CONST_METHOD0(GetUsersAdmittedForMultiProfile, UserList(void));
   MOCK_CONST_METHOD0(GetLoggedInUsers, const UserList&(void));
   MOCK_METHOD0(GetLRULoggedInUsers, const UserList&(void));
@@ -37,12 +38,15 @@ class MockUserManager : public UserManager {
   MOCK_METHOD1(RemoveUserFromList, void(const std::string&));
   MOCK_CONST_METHOD1(IsKnownUser, bool(const std::string&));
   MOCK_CONST_METHOD1(FindUser, const User*(const std::string&));
-  MOCK_CONST_METHOD1(FindLocallyManagedUser, const User*(const string16&));
+  MOCK_METHOD1(FindUserAndModify, User*(const std::string&));
   MOCK_METHOD2(SaveUserOAuthStatus, void(const std::string&,
                                          User::OAuthTokenStatus));
+  MOCK_CONST_METHOD1(GetProfileByUser, Profile*(const User*));
   MOCK_METHOD2(SaveUserDisplayName, void(const std::string&,
-                                         const string16&));
-  MOCK_CONST_METHOD1(GetUserDisplayName, string16(const std::string&));
+                                         const base::string16&));
+  MOCK_METHOD2(UpdateUserAccountData,
+               void(const std::string&, const UserAccountData&));
+  MOCK_CONST_METHOD1(GetUserDisplayName, base::string16(const std::string&));
   MOCK_METHOD2(SaveUserDisplayEmail, void(const std::string&,
                                           const std::string&));
   MOCK_CONST_METHOD1(GetUserDisplayEmail, std::string(const std::string&));
@@ -70,58 +74,59 @@ class MockUserManager : public UserManager {
   MOCK_METHOD1(RemoveSessionStateObserver,
                void(UserManager::UserSessionStateObserver*));
   MOCK_METHOD0(NotifyLocalStateChanged, void(void));
-  MOCK_CONST_METHOD0(GetMergeSessionState, MergeSessionState(void));
-  MOCK_METHOD1(SetMergeSessionState, void(MergeSessionState));
   MOCK_METHOD2(SetUserFlow, void(const std::string&, UserFlow*));
   MOCK_METHOD1(ResetUserFlow, void(const std::string&));
-  MOCK_METHOD4(CreateLocallyManagedUserRecord, const User*(
-      const std::string&,
-      const std::string&,
-      const std::string&,
-      const string16&));
-  MOCK_CONST_METHOD1(GetManagedUserSyncId, std::string(
-      const std::string& managed_user_id));
-  MOCK_CONST_METHOD1(GetManagerDisplayNameForManagedUser, string16(
-      const std::string&));
-  MOCK_CONST_METHOD1(GetManagerUserIdForManagedUser, std::string(
-      const std::string&));
-  MOCK_CONST_METHOD1(GetManagerDisplayEmailForManagedUser, std::string(
-      const std::string&));
-  MOCK_METHOD0(GenerateUniqueLocallyManagedUserId, std::string(void));
-  MOCK_METHOD1(StartLocallyManagedUserCreationTransaction,
-      void(const string16&));
-  MOCK_METHOD1(SetLocallyManagedUserCreationTransactionUserId,
-      void(const std::string&));
-  MOCK_METHOD0(CommitLocallyManagedUserCreationTransaction, void(void));
 
   MOCK_METHOD2(GetAppModeChromeClientOAuthInfo, bool(std::string*,
                                                      std::string*));
   MOCK_METHOD2(SetAppModeChromeClientOAuthInfo, void(const std::string&,
                                                      const std::string&));
   MOCK_CONST_METHOD0(AreLocallyManagedUsersAllowed, bool(void));
+  MOCK_CONST_METHOD1(GetUserProfileDir,
+                     base::FilePath(const std::string& email));
 
   // You can't mock these functions easily because nobody can create
   // User objects but the UserManagerImpl and us.
+  virtual const UserList& GetUsers() const OVERRIDE;
   virtual const User* GetLoggedInUser() const OVERRIDE;
+  virtual UserList GetUnlockUsers() const OVERRIDE;
+  virtual const std::string& GetOwnerEmail() OVERRIDE;
   virtual User* GetLoggedInUser() OVERRIDE;
   virtual const User* GetActiveUser() const OVERRIDE;
   virtual User* GetActiveUser() OVERRIDE;
+  virtual const User* GetPrimaryUser() const OVERRIDE;
+  virtual User* GetUserByProfile(Profile* profile) const OVERRIDE;
 
   virtual UserImageManager* GetUserImageManager() OVERRIDE;
+  virtual SupervisedUserManager* GetSupervisedUserManager() OVERRIDE;
 
   virtual UserFlow* GetCurrentUserFlow() const OVERRIDE;
   virtual UserFlow* GetUserFlow(const std::string&) const OVERRIDE;
+  virtual bool RespectLocalePreference(
+      Profile* profile,
+      const User* user,
+      scoped_ptr<locale_util::SwitchLanguageCallback> callback) const OVERRIDE;
 
-  // Sets a new User instance.
+  // Sets a new User instance. Users previously created by this MockUserManager
+  // become invalid.
   void SetActiveUser(const std::string& email);
 
   // Creates a new public session user. Users previously created by this
   // MockUserManager become invalid.
   User* CreatePublicAccountUser(const std::string& email);
 
-  User* user_;
-  scoped_ptr<MockUserImageManager> user_image_manager_;
+  // Adds a new User instance to the back of the user list. Users previously
+  // created by this MockUserManager remain valid.
+  void AddUser(const std::string& email);
+
+  // Clears the user list and the active user. Users previously created by this
+  // MockUserManager become invalid.
+  void ClearUserList();
+
   scoped_ptr<UserFlow> user_flow_;
+  scoped_ptr<MockUserImageManager> user_image_manager_;
+  scoped_ptr<FakeSupervisedUserManager> supervised_user_manager_;
+  UserList user_list_;
 };
 
 }  // namespace chromeos

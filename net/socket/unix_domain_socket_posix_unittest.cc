@@ -29,6 +29,7 @@
 #include "base/synchronization/lock.h"
 #include "base/threading/platform_thread.h"
 #include "base/threading/thread.h"
+#include "net/socket/socket_descriptor.h"
 #include "net/socket/unix_domain_socket_posix.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -39,7 +40,6 @@ namespace net {
 namespace {
 
 const char kSocketFilename[] = "unix_domain_socket_for_testing";
-const char kFallbackSocketName[] = "unix_domain_socket_for_testing_2";
 const char kInvalidSocketPath[] = "/invalid/path";
 const char kMsg[] = "hello";
 
@@ -54,7 +54,7 @@ enum EventType {
 
 string MakeSocketPath(const string& socket_file_name) {
   base::FilePath temp_dir;
-  file_util::GetTempDir(&temp_dir);
+  base::GetTempDir(&temp_dir);
   return temp_dir.Append(socket_file_name).value();
 }
 
@@ -102,9 +102,9 @@ class TestListenSocketDelegate : public StreamListenSocket::Delegate {
       : event_manager_(event_manager) {}
 
   virtual void DidAccept(StreamListenSocket* server,
-                         StreamListenSocket* connection) OVERRIDE {
+                         scoped_ptr<StreamListenSocket> connection) OVERRIDE {
     LOG(ERROR) << __PRETTY_FUNCTION__;
-    connection_ = connection;
+    connection_ = connection.Pass();
     Notify(EVENT_ACCEPT);
   }
 
@@ -138,7 +138,7 @@ class TestListenSocketDelegate : public StreamListenSocket::Delegate {
   }
 
   const scoped_refptr<EventManager> event_manager_;
-  scoped_refptr<StreamListenSocket> connection_;
+  scoped_ptr<StreamListenSocket> connection_;
   base::Lock mutex_;
   string data_;
 };
@@ -172,7 +172,7 @@ class UnixDomainSocketTestHelper : public testing::Test {
 
   virtual void TearDown() OVERRIDE {
     DeleteSocketFile();
-    socket_ = NULL;
+    socket_.reset();
     socket_delegate_.reset();
     event_manager_ = NULL;
   }
@@ -187,10 +187,10 @@ class UnixDomainSocketTestHelper : public testing::Test {
   }
 
   SocketDescriptor CreateClientSocket() {
-    const SocketDescriptor sock = socket(PF_UNIX, SOCK_STREAM, 0);
+    const SocketDescriptor sock = CreatePlatformSocket(PF_UNIX, SOCK_STREAM, 0);
     if (sock < 0) {
       LOG(ERROR) << "socket() error";
-      return StreamListenSocket::kInvalidSocket;
+      return kInvalidSocket;
     }
     sockaddr_un addr;
     memset(&addr, 0, sizeof(addr));
@@ -200,7 +200,7 @@ class UnixDomainSocketTestHelper : public testing::Test {
     addr_len = sizeof(sockaddr_un);
     if (connect(sock, reinterpret_cast<sockaddr*>(&addr), addr_len) != 0) {
       LOG(ERROR) << "connect() error";
-      return StreamListenSocket::kInvalidSocket;
+      return kInvalidSocket;
     }
     return sock;
   }
@@ -221,7 +221,7 @@ class UnixDomainSocketTestHelper : public testing::Test {
   const bool allow_user_;
   scoped_refptr<EventManager> event_manager_;
   scoped_ptr<TestListenSocketDelegate> socket_delegate_;
-  scoped_refptr<UnixDomainSocket> socket_;
+  scoped_ptr<UnixDomainSocket> socket_;
 };
 
 class UnixDomainSocketTest : public UnixDomainSocketTestHelper {
@@ -264,7 +264,7 @@ TEST_F(UnixDomainSocketTestWithInvalidPath,
 }
 
 TEST_F(UnixDomainSocketTest, TestFallbackName) {
-  scoped_refptr<UnixDomainSocket> existing_socket =
+  scoped_ptr<UnixDomainSocket> existing_socket =
       UnixDomainSocket::CreateAndListenWithAbstractNamespace(
           file_path_.value(), "", socket_delegate_.get(), MakeAuthCallback());
   EXPECT_FALSE(existing_socket.get() == NULL);
@@ -274,13 +274,13 @@ TEST_F(UnixDomainSocketTest, TestFallbackName) {
           file_path_.value(), "", socket_delegate_.get(), MakeAuthCallback());
   EXPECT_TRUE(socket_.get() == NULL);
   // Now with a fallback name.
+  const char kFallbackSocketName[] = "unix_domain_socket_for_testing_2";
   socket_ = UnixDomainSocket::CreateAndListenWithAbstractNamespace(
       file_path_.value(),
       MakeSocketPath(kFallbackSocketName),
       socket_delegate_.get(),
       MakeAuthCallback());
   EXPECT_FALSE(socket_.get() == NULL);
-  existing_socket = NULL;
 }
 #endif
 
@@ -291,7 +291,7 @@ TEST_F(UnixDomainSocketTest, TestWithClient) {
 
   // Create the client socket.
   const SocketDescriptor sock = CreateClientSocket();
-  ASSERT_NE(StreamListenSocket::kInvalidSocket, sock);
+  ASSERT_NE(kInvalidSocket, sock);
   event = event_manager_->WaitForEvent();
   ASSERT_EQ(EVENT_AUTH_GRANTED, event);
   event = event_manager_->WaitForEvent();
@@ -306,7 +306,7 @@ TEST_F(UnixDomainSocketTest, TestWithClient) {
   ASSERT_EQ(kMsg, socket_delegate_->ReceivedData());
 
   // Close the client socket.
-  ret = HANDLE_EINTR(close(sock));
+  ret = IGNORE_EINTR(close(sock));
   event = event_manager_->WaitForEvent();
   ASSERT_EQ(EVENT_CLOSE, event);
 }
@@ -316,7 +316,7 @@ TEST_F(UnixDomainSocketTestWithForbiddenUser, TestWithForbiddenUser) {
   EventType event = event_manager_->WaitForEvent();
   ASSERT_EQ(EVENT_LISTEN, event);
   const SocketDescriptor sock = CreateClientSocket();
-  ASSERT_NE(StreamListenSocket::kInvalidSocket, sock);
+  ASSERT_NE(kInvalidSocket, sock);
 
   event = event_manager_->WaitForEvent();
   ASSERT_EQ(EVENT_AUTH_DENIED, event);

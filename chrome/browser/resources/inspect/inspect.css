@@ -14,10 +14,10 @@ body {
 }
 
 img {
-  float: left;
   height: 16px;
   padding-left: 2px;
   padding-right: 5px;
+  vertical-align: top;
   width: 16px;
 }
 
@@ -71,7 +71,11 @@ img {
 .content-header {
   border-bottom: 1px solid #eee;
   font-size: 150%;
-  padding-bottom: 4px;
+  padding-bottom: 10px;
+}
+
+#devices-help {
+  margin-top: 10px;
 }
 
 .device-header {
@@ -127,13 +131,66 @@ img {
 }
 
 .browser-header {
+  -webkit-box-align: center;
+  -webkit-box-orient: horizontal;
+  display: -webkit-box;
+  padding-top: 10px;
+}
+
+.browser-header > .browser-name {
+  font-size: 110%;
   font-weight: bold;
-  margin: 5px 0 0;
-  padding: 2px 0;
 }
 
 .row {
-  padding: 5px 0;
+  padding: 6px 0;
+  position: relative;
+}
+
+.subrow-box {
+  display: inline-block;
+  vertical-align: top;
+}
+
+.subrow {
+  -webkit-box-orient: horizontal;
+  display: -webkit-box;
+}
+
+.subrow > div {
+  margin-right: 0.5em;
+}
+
+.webview-thumbnail {
+  display: inline-block;
+  margin-right: 5px;
+  overflow: hidden;
+  position: relative;
+  vertical-align: top;
+}
+
+.screen-rect {
+  background-color: #eee;
+  position: absolute;
+}
+
+.view-rect {
+  background-color: #ccc;
+  min-height: 1px;
+  min-width: 1px;
+  position: absolute;
+}
+
+.view-rect.hidden {
+  background-color: #ddd;
+}
+
+.guest {
+  padding-left: 20px;
+}
+
+.invisible-view {
+  color: rgb(151, 156, 160);
 }
 
 .url {
@@ -141,24 +198,26 @@ img {
 }
 
 .list {
-  margin-bottom: 20px;
   margin-top: 5px;
 }
 
-a {
+.action {
   color: rgb(17, 85, 204);
-  padding: 0 3px;
-  text-decoration: none;
+  cursor: pointer;
+  margin-right: 15px;
 }
 
-a.disabled {
+.action:hover {
+  text-decoration: underline;
+}
+
+.list:not(.pages) .subrow {
+  height: 19px;
+}
+
+.action.disabled {
   opacity: 0.5;
   pointer-events: none;
-}
-
-.open {
-  margin-bottom: -4px;
-  margin-top: 5px;
 }
 
 .open > input {
@@ -169,14 +228,27 @@ a.disabled {
   padding: 0 2px;
 }
 
+.open > input:focus {
+  -webkit-transition: border-color 200ms;
+  border-color: rgb(77, 144, 254);
+  outline: none;
+}
+
 .open > button {
   line-height: 13px;
 }
 
-#port-forwarding-settings {
-  position: absolute;
-  right: 20px;
-  top: 15px;
+#device-settings {
+  border-bottom: 1px solid #eee;
+  padding: 5px 0;
+}
+
+#device-settings input {
+  vertical-align: middle;
+}
+
+#device-settings button {
+  margin-left: 15px;
 }
 
 #port-forwarding-overlay {
@@ -200,7 +272,7 @@ a.disabled {
   background: white;
   box-shadow: 0 4px 23px 5px rgba(0, 0, 0, 0.2), 0 2px 6px rgba(0,0,0,0.15);
   color: #333;
-  padding: 17px;
+  padding: 17px 17px 12px;
   position: relative;
 }
 
@@ -287,6 +359,15 @@ a.disabled {
   opacity: 0.5;
 }
 
+#port-forwarding-enable {
+  vertical-align: middle;
+}
+
 #port-forwarding-config-buttons > button {
   float: right;
+}
+
+#port-forwarding-config-buttons > label {
+  position: relative;
+  top: 5px;
 }

@@ -14,6 +14,7 @@
 #include "base/tuple.h"
 #include "base/values.h"
 #include "chrome/common/extensions/update_manifest.h"
+#include "chrome/common/media_galleries/iphoto_library.h"
 #include "chrome/common/media_galleries/itunes_library.h"
 #include "chrome/common/media_galleries/picasa_types.h"
 #include "chrome/common/safe_browsing/zip_analyzer.h"
@@ -64,6 +65,20 @@ IPC_STRUCT_TRAITS_BEGIN(safe_browsing::zip_analyzer::Results)
   IPC_STRUCT_TRAITS_MEMBER(has_archive)
 IPC_STRUCT_TRAITS_END()
 
+#if defined(OS_MACOSX)
+IPC_STRUCT_TRAITS_BEGIN(iphoto::parser::Photo)
+  IPC_STRUCT_TRAITS_MEMBER(id)
+  IPC_STRUCT_TRAITS_MEMBER(location)
+  IPC_STRUCT_TRAITS_MEMBER(original_location)
+IPC_STRUCT_TRAITS_END()
+
+IPC_STRUCT_TRAITS_BEGIN(iphoto::parser::Library)
+  IPC_STRUCT_TRAITS_MEMBER(albums)
+  IPC_STRUCT_TRAITS_MEMBER(all_photos)
+IPC_STRUCT_TRAITS_END()
+#endif  // defined(OS_MACOSX)
+
+#if defined(OS_WIN) || defined(OS_MACOSX)
 IPC_STRUCT_TRAITS_BEGIN(itunes::parser::Track)
   IPC_STRUCT_TRAITS_MEMBER(id)
   IPC_STRUCT_TRAITS_MEMBER(location)
@@ -92,6 +107,7 @@ IPC_STRUCT_TRAITS_BEGIN(picasa::FolderINIContents)
   IPC_STRUCT_TRAITS_MEMBER(folder_path)
   IPC_STRUCT_TRAITS_MEMBER(ini_contents)
 IPC_STRUCT_TRAITS_END()
+#endif  // defined(OS_WIN) || defined(OS_MACOSX)
 
 //------------------------------------------------------------------------------
 // Utility process messages:
@@ -124,11 +140,18 @@ IPC_MESSAGE_CONTROL1(ChromeUtilityMsg_DecodeImageBase64,
                      std::string)  // base64 encoded image contents
 
 // Tell the utility process to render the given PDF into a metafile.
+// TODO(vitalybuka): switch to IPC::PlatformFileForTransit.
 IPC_MESSAGE_CONTROL4(ChromeUtilityMsg_RenderPDFPagesToMetafile,
                      base::PlatformFile,       // PDF file
                      base::FilePath,           // Location for output metafile
-                     printing::PdfRenderSettings,  // PDF render settitngs
+                     printing::PdfRenderSettings,  // PDF render settings
                      std::vector<printing::PageRange>)
+
+// Tell the utility process to render the given PDF into a PWGRaster.
+IPC_MESSAGE_CONTROL3(ChromeUtilityMsg_RenderPDFPagesToPWGRaster,
+                     IPC::PlatformFileForTransit,  /* Input PDF file */
+                     printing::PdfRenderSettings,  /* PDF render settings */
+                     IPC::PlatformFileForTransit   /* Output PWG file */)
 
 // Tell the utility process to decode the given JPEG image data with a robust
 // libjpeg codec.
@@ -170,6 +193,13 @@ IPC_MESSAGE_CONTROL1(ChromeUtilityMsg_AnalyzeZipFileForDownloadProtection,
 IPC_MESSAGE_CONTROL1(ChromeUtilityMsg_ParseITunesPrefXml,
                      std::string /* XML to parse */)
 #endif  // defined(OS_WIN)
+
+#if defined(OS_MACOSX)
+// Tell the utility process to parse the iPhoto library XML file and
+// return the parse result as well as the iPhoto library as an iphoto::Library.
+IPC_MESSAGE_CONTROL1(ChromeUtilityMsg_ParseIPhotoLibraryXmlFile,
+                     IPC::PlatformFileForTransit /* XML file to parse */)
+#endif  // defined(OS_MACOSX)
 
 #if defined(OS_WIN) || defined(OS_MACOSX)
 // Tell the utility process to parse the iTunes library XML file and
@@ -234,7 +264,7 @@ IPC_MESSAGE_CONTROL1(ChromeUtilityHostMsg_UnpackWebResource_Failed,
 IPC_MESSAGE_CONTROL1(ChromeUtilityHostMsg_ParseUpdateManifest_Succeeded,
                      UpdateManifest::Results /* updates */)
 
-// Reply when an error occured parsing the update manifest. |error_message|
+// Reply when an error occurred parsing the update manifest. |error_message|
 // is a description of what went wrong suitable for logging.
 IPC_MESSAGE_CONTROL1(ChromeUtilityHostMsg_ParseUpdateManifest_Failed,
                      std::string /* error_message, if any */)
@@ -243,7 +273,7 @@ IPC_MESSAGE_CONTROL1(ChromeUtilityHostMsg_ParseUpdateManifest_Failed,
 IPC_MESSAGE_CONTROL1(ChromeUtilityHostMsg_DecodeImage_Succeeded,
                      SkBitmap)  // decoded image
 
-// Reply when an error occured decoding the image.
+// Reply when an error occurred decoding the image.
 IPC_MESSAGE_CONTROL0(ChromeUtilityHostMsg_DecodeImage_Failed)
 
 // Reply when the utility process has succeeded in rendering the PDF.
@@ -251,8 +281,14 @@ IPC_MESSAGE_CONTROL2(ChromeUtilityHostMsg_RenderPDFPagesToMetafile_Succeeded,
                      int,          // Highest rendered page number
                      double)       // Scale factor
 
-// Reply when an error occured rendering the PDF.
+// Reply when an error occurred rendering the PDF.
 IPC_MESSAGE_CONTROL0(ChromeUtilityHostMsg_RenderPDFPagesToMetafile_Failed)
+
+// Reply when the utility process has succeeded in rendering the PDF to PWG.
+IPC_MESSAGE_CONTROL0(ChromeUtilityHostMsg_RenderPDFPagesToPWGRaster_Succeeded)
+
+// Reply when an error occurred rendering the PDF to PWG.
+IPC_MESSAGE_CONTROL0(ChromeUtilityHostMsg_RenderPDFPagesToPWGRaster_Failed)
 
 // Reply when the utility process successfully parsed a JSON string.
 //
@@ -302,6 +338,14 @@ IPC_MESSAGE_CONTROL1(
 IPC_MESSAGE_CONTROL1(ChromeUtilityHostMsg_GotITunesDirectory,
                      base::FilePath /* Path to iTunes library */)
 #endif  // defined(OS_WIN)
+
+#if defined(OS_MACOSX)
+// Reply after parsing the iPhoto library XML file with the parser result and
+// an iphoto::Library data structure.
+IPC_MESSAGE_CONTROL2(ChromeUtilityHostMsg_GotIPhotoLibrary,
+                     bool /* Parser result */,
+                     iphoto::parser::Library /* iPhoto library */)
+#endif  // defined(OS_MACOSX)
 
 #if defined(OS_WIN) || defined(OS_MACOSX)
 // Reply after parsing the iTunes library XML file with the parser result and

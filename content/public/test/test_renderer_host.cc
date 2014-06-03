@@ -5,15 +5,16 @@
 #include "content/public/test/test_renderer_host.h"
 
 #include "base/run_loop.h"
+#include "content/browser/frame_host/navigation_entry_impl.h"
 #include "content/browser/renderer_host/render_view_host_factory.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
-#include "content/browser/renderer_host/test_render_view_host.h"
 #include "content/browser/site_instance_impl.h"
-#include "content/browser/web_contents/navigation_entry_impl.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/mock_render_process_host.h"
 #include "content/public/test/test_browser_context.h"
+#include "content/test/test_render_frame_host_factory.h"
+#include "content/test/test_render_view_host.h"
 #include "content/test/test_render_view_host_factory.h"
 #include "content/test/test_web_contents.h"
 
@@ -64,8 +65,8 @@ bool RenderViewHostTester::HasTouchEventHandler(RenderViewHost* rvh) {
 
 RenderViewHostTestEnabler::RenderViewHostTestEnabler()
     : rph_factory_(new MockRenderProcessHostFactory()),
-      rvh_factory_(new TestRenderViewHostFactory(rph_factory_.get())) {
-}
+      rvh_factory_(new TestRenderViewHostFactory(rph_factory_.get())),
+      rfh_factory_(new TestRenderFrameHostFactory()) {}
 
 RenderViewHostTestEnabler::~RenderViewHostTestEnabler() {
 }
@@ -98,6 +99,12 @@ RenderViewHost* RenderViewHostTestHarness::pending_rvh() {
 
 RenderViewHost* RenderViewHostTestHarness::active_rvh() {
   return pending_rvh() ? pending_rvh() : rvh();
+}
+
+RenderFrameHost* RenderViewHostTestHarness::main_rfh() {
+  WebContentsImpl* web_contents = static_cast<WebContentsImpl*>(
+      this->web_contents());
+  return web_contents->GetFrameTree()->GetMainFrame();
 }
 
 BrowserContext* RenderViewHostTestHarness::browser_context() {

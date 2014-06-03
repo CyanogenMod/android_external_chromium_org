@@ -70,7 +70,8 @@ SyncedNotification::SyncedNotification(const syncer::SyncData& sync_data)
     : notification_manager_(NULL),
       notifier_service_(NULL),
       profile_(NULL),
-      active_fetcher_count_(0) {
+      active_fetcher_count_(0),
+      toast_state_(true) {
   Update(sync_data);
 }
 
@@ -87,6 +88,9 @@ sync_pb::EntitySpecifics SyncedNotification::GetEntitySpecifics() const {
   return entity_specifics;
 }
 
+// TODO(petewil): The fetch mechanism appears to be returning two bitmaps on the
+// mac - perhaps one is regular, one is high dpi?  If so, ensure we use the high
+// dpi bitmap when appropriate.
 void SyncedNotification::OnFetchComplete(const GURL url,
                                          const SkBitmap* bitmap) {
   // TODO(petewil): Add timeout mechanism in case bitmaps take too long.  Do we
@@ -114,9 +118,26 @@ void SyncedNotification::OnFetchComplete(const GURL url,
 
   // Count off the bitmaps as they arrive.
   --active_fetcher_count_;
-  DCHECK_GE(active_fetcher_count_, 0);
+
+  DVLOG(2) << __FUNCTION__ << " popping bitmap " << url;
+  DVLOG(2) << __FUNCTION__ << " size is " << bitmap->getSize();
+
+  // Check to see if all images we need are now present.
+  bool app_icon_ready = GetAppIconUrl().is_empty() ||
+      !app_icon_bitmap_.IsEmpty();
+  bool images_ready = GetImageUrl().is_empty() || !image_bitmap_.IsEmpty();
+  bool sender_picture_ready = GetProfilePictureUrl(0).is_empty() ||
+      !sender_bitmap_.IsEmpty();
+  bool button_bitmaps_ready = true;
+  for (unsigned int j = 0; j < GetButtonCount(); ++j) {
+    if (!GetButtonIconUrl(j).is_empty() && button_bitmaps_[j].IsEmpty()) {
+      button_bitmaps_ready = false;
+      break;
+    }
+  }
   // See if all bitmaps are accounted for, if so call Show.
-  if (active_fetcher_count_ == 0) {
+  if (app_icon_ready && images_ready && sender_picture_ready &&
+      button_bitmaps_ready) {
     Show(notification_manager_, notifier_service_, profile_);
   }
 }
@@ -181,6 +202,7 @@ void SyncedNotification::AddBitmapToFetchQueue(const GURL& url) {
   if (url.is_valid()) {
     ++active_fetcher_count_;
     fetchers_.push_back(new NotificationBitmapFetcher(url, this));
+    DVLOG(2) << __FUNCTION__ << "Pushing bitmap " << url;
   }
 }
 
@@ -198,16 +220,16 @@ void SyncedNotification::Show(NotificationUIManager* notification_manager,
 
   // Set up the fields we need to send and create a Notification object.
   GURL image_url = GetImageUrl();
-  string16 text = UTF8ToUTF16(GetText());
-  string16 heading = UTF8ToUTF16(GetHeading());
-  string16 description = UTF8ToUTF16(GetDescription());
-  string16 annotation = UTF8ToUTF16(GetAnnotation());
+  base::string16 text = UTF8ToUTF16(GetText());
+  base::string16 heading = UTF8ToUTF16(GetHeading());
+  base::string16 description = UTF8ToUTF16(GetDescription());
+  base::string16 annotation = UTF8ToUTF16(GetAnnotation());
   // TODO(petewil): Eventually put the display name of the sending service here.
-  string16 display_source = UTF8ToUTF16(GetAppId());
-  string16 replace_key = UTF8ToUTF16(GetKey());
-  string16 notification_heading = heading;
-  string16 notification_text = description;
-  string16 newline = UTF8ToUTF16("\n");
+  base::string16 display_source = UTF8ToUTF16(GetAppId());
+  base::string16 replace_key = UTF8ToUTF16(GetKey());
+  base::string16 notification_heading = heading;
+  base::string16 notification_text = description;
+  base::string16 newline = UTF8ToUTF16("\n");
 
   // The delegate will eventually catch calls that the notification
   // was read or deleted, and send the changes back to the server.
@@ -219,7 +241,6 @@ void SyncedNotification::Show(NotificationUIManager* notification_manager,
     base::Time creation_time =
         base::Time::FromDoubleT(static_cast<double>(GetCreationTime()));
     int priority = GetPriority();
-    int notification_count = GetNotificationCount();
     unsigned int button_count = GetButtonCount();
 
     // Deduce which notification template to use from the data.
@@ -227,8 +248,6 @@ void SyncedNotification::Show(NotificationUIManager* notification_manager,
         message_center::NOTIFICATION_TYPE_BASE_FORMAT;
     if (!image_url.is_empty()) {
       notification_type = message_center::NOTIFICATION_TYPE_IMAGE;
-    } else if (notification_count > 1) {
-      notification_type = message_center::NOTIFICATION_TYPE_MULTIPLE;
     } else if (button_count > 0) {
       notification_type = message_center::NOTIFICATION_TYPE_BASE_FORMAT;
     }
@@ -263,26 +282,14 @@ void SyncedNotification::Show(NotificationUIManager* notification_manager,
     if (!image_bitmap_.IsEmpty())
       rich_notification_data.image = image_bitmap_;
 
-    // Fill the individual notification fields for a multiple notification.
-    if (notification_count > 1) {
-      for (int ii = 0; ii < notification_count; ++ii) {
-        message_center::NotificationItem item(
-            UTF8ToUTF16(GetContainedNotificationTitle(ii)),
-            UTF8ToUTF16(GetContainedNotificationMessage(ii)));
-        rich_notification_data.items.push_back(item);
-      }
-    }
+    // Set the ContextMessage inside the rich notification data for the
+    // annotation.
+    rich_notification_data.context_message = annotation;
 
-    // The text encompasses both the description and the annotation.
-    if (!notification_text.empty())
-      notification_text = notification_text + newline;
-    notification_text = notification_text + annotation;
-
-    // If there is a single person sending, use their picture instead of the app
-    // icon.
+    // If there is at least one person sending, use the first picture.
     // TODO(petewil): Someday combine multiple profile photos here.
     gfx::Image icon_bitmap = app_icon_bitmap_;
-    if (GetProfilePictureCount() == 1)  {
+    if (GetProfilePictureCount() >= 1)  {
       icon_bitmap = sender_bitmap_;
     }
 
@@ -291,11 +298,17 @@ void SyncedNotification::Show(NotificationUIManager* notification_manager,
                                  notification_heading,
                                  notification_text,
                                  icon_bitmap,
-                                 WebKit::WebTextDirectionDefault,
+                                 blink::WebTextDirectionDefault,
+                                 message_center::NotifierId(GetOriginUrl()),
                                  display_source,
                                  replace_key,
                                  rich_notification_data,
                                  delegate.get());
+
+    // In case the notification is not supposed to be toasted, pretend that it
+    // has already been shown.
+    ui_notification.set_shown_as_popup(!toast_state_);
+
     notification_manager->Add(ui_notification, profile);
   } else {
     // In this case we have a Webkit Notification, not a Rich Notification.
@@ -303,7 +316,7 @@ void SyncedNotification::Show(NotificationUIManager* notification_manager,
                                  GetAppIconUrl(),
                                  notification_heading,
                                  notification_text,
-                                 WebKit::WebTextDirectionDefault,
+                                 blink::WebTextDirectionDefault,
                                  display_source,
                                  replace_key,
                                  delegate.get());
@@ -313,7 +326,7 @@ void SyncedNotification::Show(NotificationUIManager* notification_manager,
 
   DVLOG(1) << "Showing Synced Notification! " << heading << " " << text
            << " " << GetAppIconUrl() << " " << replace_key << " "
-           << GetReadState();
+           << GetProfilePictureUrl(0) << " " << GetReadState();
 
   return;
 }
@@ -548,9 +561,7 @@ int SyncedNotification::GetPriority() const {
     return message_center::DEFAULT_PRIORITY;
   } else if (protobuf_priority ==
              sync_pb::CoalescedSyncedNotification_Priority_HIGH) {
-    // High priority synced notifications are considered default priority in
-    // Chrome.
-    return message_center::DEFAULT_PRIORITY;
+    return message_center::HIGH_PRIORITY;
   } else {
     // Complain if this is a new priority we have not seen before.
     DCHECK(protobuf_priority <
@@ -686,6 +697,10 @@ std::string SyncedNotification::GetSendingServiceId() const {
   // hardcoded to the name of our first service using synced notifications.
   // Once the new protocol is built, remove this hardcoding.
   return kFirstSyncedNotificationServiceId;
+}
+
+void SyncedNotification::SetToastState(bool toast_state) {
+  toast_state_ = toast_state;
 }
 
 }  // namespace notifier

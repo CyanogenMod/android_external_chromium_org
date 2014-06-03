@@ -47,6 +47,7 @@
 #include "chrome/browser/prefs/pref_service_syncable.h"
 #include "chrome/browser/prerender/prerender_manager.h"
 #include "chrome/browser/profiles/chrome_browser_main_extra_parts_profiles.h"
+#include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/profiles/storage_partition_descriptor.h"
 #include "chrome/browser/search_engines/template_url_fetcher_factory.h"
 #include "chrome/browser/webdata/web_data_service.h"
@@ -55,11 +56,11 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
-#include "chrome/test/base/bookmark_load_observer.h"
 #include "chrome/test/base/history_index_restore_observer.h"
 #include "chrome/test/base/testing_pref_service_syncable.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
+#include "components/policy/core/common/policy_service.h"
 #include "components/user_prefs/user_prefs.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
@@ -75,11 +76,19 @@
 #include "testing/gmock/include/gmock/gmock.h"
 
 #if defined(ENABLE_CONFIGURATION_POLICY)
-#include "chrome/browser/policy/configuration_policy_provider.h"
-#include "chrome/browser/policy/policy_service_impl.h"
+#include "chrome/browser/policy/schema_registry_service.h"
+#include "chrome/browser/policy/schema_registry_service_factory.h"
+#include "components/policy/core/common/configuration_policy_provider.h"
+#include "components/policy/core/common/policy_service_impl.h"
+#include "components/policy/core/common/schema.h"
 #else
-#include "chrome/browser/policy/policy_service_stub.h"
+#include "components/policy/core/common/policy_service_stub.h"
 #endif  // defined(ENABLE_CONFIGURATION_POLICY)
+
+#if defined(ENABLE_MANAGED_USERS)
+#include "chrome/browser/managed_mode/managed_user_settings_service.h"
+#include "chrome/browser/managed_mode/managed_user_settings_service_factory.h"
+#endif
 
 using base::Time;
 using content::BrowserThread;
@@ -143,14 +152,12 @@ class TestExtensionURLRequestContextGetter
   scoped_ptr<net::URLRequestContext> context_;
 };
 
+#if defined(ENABLE_NOTIFICATIONS)
 BrowserContextKeyedService* CreateTestDesktopNotificationService(
     content::BrowserContext* profile) {
-#if defined(ENABLE_NOTIFICATIONS)
   return new DesktopNotificationService(static_cast<Profile*>(profile), NULL);
-#else
-  return NULL;
-#endif
 }
+#endif
 
 }  // namespace
 
@@ -167,7 +174,9 @@ TestingProfile::TestingProfile()
     : start_time_(Time::Now()),
       testing_prefs_(NULL),
       incognito_(false),
+      force_incognito_(false),
       original_profile_(NULL),
+      guest_session_(false),
       last_session_exited_cleanly_(true),
       browser_context_dependency_manager_(
           BrowserContextDependencyManager::GetInstance()),
@@ -184,7 +193,9 @@ TestingProfile::TestingProfile(const base::FilePath& path)
     : start_time_(Time::Now()),
       testing_prefs_(NULL),
       incognito_(false),
+      force_incognito_(false),
       original_profile_(NULL),
+      guest_session_(false),
       last_session_exited_cleanly_(true),
       profile_path_(path),
       browser_context_dependency_manager_(
@@ -200,7 +211,9 @@ TestingProfile::TestingProfile(const base::FilePath& path,
     : start_time_(Time::Now()),
       testing_prefs_(NULL),
       incognito_(false),
+      force_incognito_(false),
       original_profile_(NULL),
+      guest_session_(false),
       last_session_exited_cleanly_(true),
       profile_path_(path),
       browser_context_dependency_manager_(
@@ -221,24 +234,39 @@ TestingProfile::TestingProfile(
     const base::FilePath& path,
     Delegate* delegate,
     scoped_refptr<ExtensionSpecialStoragePolicy> extension_policy,
-    scoped_ptr<PrefServiceSyncable> prefs)
+    scoped_ptr<PrefServiceSyncable> prefs,
+    bool incognito,
+    bool guest_session,
+    const std::string& managed_user_id,
+    scoped_ptr<policy::PolicyService> policy_service,
+    const TestingFactories& factories)
     : start_time_(Time::Now()),
       prefs_(prefs.release()),
       testing_prefs_(NULL),
-      incognito_(false),
+      incognito_(incognito),
+      force_incognito_(false),
       original_profile_(NULL),
+      guest_session_(guest_session),
+      managed_user_id_(managed_user_id),
       last_session_exited_cleanly_(true),
       extension_special_storage_policy_(extension_policy),
       profile_path_(path),
       browser_context_dependency_manager_(
           BrowserContextDependencyManager::GetInstance()),
       resource_context_(NULL),
-      delegate_(delegate) {
+      delegate_(delegate),
+      policy_service_(policy_service.release()) {
 
   // If no profile path was supplied, create one.
   if (profile_path_.empty()) {
     CreateTempProfileDir();
     profile_path_ = temp_dir_.path();
+  }
+
+  // Set any testing factories prior to initializing the services.
+  for (TestingFactories::const_iterator it = factories.begin();
+       it != factories.end(); ++it) {
+    it->first->SetTestingFactory(this, it->second);
   }
 
   Init();
@@ -271,7 +299,7 @@ void TestingProfile::CreateTempProfileDir() {
     base::FilePath fallback_dir(
         system_tmp_dir.AppendASCII("TestingProfilePath"));
     base::DeleteFile(fallback_dir, true);
-    file_util::CreateDirectory(fallback_dir);
+    base::CreateDirectory(fallback_dir);
     if (!temp_dir_.Set(fallback_dir)) {
       // That shouldn't happen, but if it does, try to recover.
       LOG(ERROR) << "Failed to use a fallback temporary directory.";
@@ -299,23 +327,46 @@ void TestingProfile::Init() {
     CreateTestingPrefService();
 
   if (!base::PathExists(profile_path_))
-    file_util::CreateDirectory(profile_path_);
+    base::CreateDirectory(profile_path_);
 
   // TODO(joaodasilva): remove this once this PKS isn't created in ProfileImpl
   // anymore, after converting the PrefService to a PKS. Until then it must
   // be associated with a TestingProfile too.
-  CreateProfilePolicyConnector();
+  if (!IsOffTheRecord())
+    CreateProfilePolicyConnector();
 
   extensions::ExtensionSystemFactory::GetInstance()->SetTestingFactory(
       this, extensions::TestExtensionSystem::Build);
 
-  browser_context_dependency_manager_->CreateBrowserContextServices(this, true);
+  // If no original profile was specified for this profile: register preferences
+  // even if this is an incognito profile - this allows tests to create a
+  // standalone incognito profile while still having prefs registered.
+  if (!IsOffTheRecord() || !original_profile_) {
+    user_prefs::PrefRegistrySyncable* pref_registry =
+        static_cast<user_prefs::PrefRegistrySyncable*>(
+            prefs_->DeprecatedGetPrefRegistry());
+    browser_context_dependency_manager_->
+        RegisterProfilePrefsForServices(this, pref_registry);
+  }
+
+  browser_context_dependency_manager_->CreateBrowserContextServicesForTest(
+      this);
 
 #if defined(ENABLE_NOTIFICATIONS)
   // Install profile keyed service factory hooks for dummy/test services
   DesktopNotificationServiceFactory::GetInstance()->SetTestingFactory(
       this, CreateTestDesktopNotificationService);
 #endif
+
+#if defined(ENABLE_MANAGED_USERS)
+  ManagedUserSettingsService* settings_service =
+      ManagedUserSettingsServiceFactory::GetForProfile(this);
+  TestingPrefStore* store = new TestingPrefStore();
+  settings_service->Init(store);
+  store->SetInitializationCompleted();
+#endif
+
+  profile_name_ = "testing_profile";
 }
 
 void TestingProfile::FinishInit() {
@@ -325,11 +376,18 @@ void TestingProfile::FinishInit() {
       content::Source<Profile>(static_cast<Profile*>(this)),
       content::NotificationService::NoDetails());
 
+  ProfileManager* profile_manager = g_browser_process->profile_manager();
+  if (profile_manager)
+    profile_manager->InitProfileUserPrefs(this);
+
   if (delegate_)
     delegate_->OnProfileCreated(this, true, false);
 }
 
 TestingProfile::~TestingProfile() {
+  // Revert to non-incognito mode before shutdown.
+  force_incognito_ = false;
+
   // Any objects holding live URLFetchers should be deleted before teardown.
   TemplateURLFetcherFactory::ShutdownForProfile(this);
 
@@ -356,9 +414,7 @@ TestingProfile::~TestingProfile() {
 
 static BrowserContextKeyedService* BuildFaviconService(
     content::BrowserContext* profile) {
-  return new FaviconService(
-      HistoryServiceFactory::GetForProfileWithoutCreating(
-          static_cast<Profile*>(profile)));
+  return new FaviconService(static_cast<Profile*>(profile));
 }
 
 void TestingProfile::CreateFaviconService() {
@@ -444,7 +500,6 @@ static BrowserContextKeyedService* BuildBookmarkModel(
   return bookmark_model;
 }
 
-
 void TestingProfile::CreateBookmarkModel(bool delete_file) {
   if (delete_file) {
     base::FilePath path = GetPath().Append(chrome::kBookmarksFileName);
@@ -497,8 +552,6 @@ void TestingProfile::BlockUntilTopSitesLoaded() {
   content::WindowedNotificationObserver top_sites_loaded_observer(
       chrome::NOTIFICATION_TOP_SITES_LOADED,
       content::NotificationService::AllSources());
-  if (!HistoryServiceFactory::GetForProfile(this, Profile::EXPLICIT_ACCESS))
-    GetTopSites()->HistoryLoaded();
   top_sites_loaded_observer.Wait();
 }
 
@@ -522,22 +575,26 @@ TestingProfile* TestingProfile::AsTestingProfile() {
 }
 
 std::string TestingProfile::GetProfileName() {
-  return std::string("testing_profile");
+  return profile_name_;
 }
 
 bool TestingProfile::IsOffTheRecord() const {
-  return incognito_;
+  return force_incognito_ || incognito_;
 }
 
-void TestingProfile::SetOffTheRecordProfile(Profile* profile) {
-  incognito_profile_.reset(profile);
+void TestingProfile::SetOffTheRecordProfile(scoped_ptr<Profile> profile) {
+  DCHECK(!IsOffTheRecord());
+  incognito_profile_ = profile.Pass();
 }
 
 void TestingProfile::SetOriginalProfile(Profile* profile) {
+  DCHECK(IsOffTheRecord());
   original_profile_ = profile;
 }
 
 Profile* TestingProfile::GetOffTheRecordProfile() {
+  if (IsOffTheRecord())
+    return this;
   return incognito_profile_.get();
 }
 
@@ -552,8 +609,7 @@ Profile* TestingProfile::GetOriginalProfile() {
 }
 
 bool TestingProfile::IsManaged() {
-  return GetPrefs()->GetBoolean(prefs::kProfileIsManaged) ||
-      !GetPrefs()->GetString(prefs::kManagedUserId).empty();
+  return !managed_user_id_.empty();
 }
 
 ExtensionService* TestingProfile::GetExtensionService() {
@@ -588,16 +644,24 @@ void TestingProfile::CreateTestingPrefService() {
 }
 
 void TestingProfile::CreateProfilePolicyConnector() {
-  scoped_ptr<policy::PolicyService> service;
 #if defined(ENABLE_CONFIGURATION_POLICY)
-  std::vector<policy::ConfigurationPolicyProvider*> providers;
-  service.reset(new policy::PolicyServiceImpl(providers));
+  schema_registry_service_ =
+      policy::SchemaRegistryServiceFactory::CreateForContext(
+          this, policy::Schema(), NULL);
+  CHECK_EQ(schema_registry_service_.get(),
+           policy::SchemaRegistryServiceFactory::GetForContext(this));
+#endif  // defined(ENABLE_CONFIGURATION_POLICY)
+
+if (!policy_service_) {
+#if defined(ENABLE_CONFIGURATION_POLICY)
+    std::vector<policy::ConfigurationPolicyProvider*> providers;
+    policy_service_.reset(new policy::PolicyServiceImpl(providers));
 #else
-  service.reset(new policy::PolicyServiceStub());
+    policy_service_.reset(new policy::PolicyServiceStub());
 #endif
-  profile_policy_connector_.reset(
-      new policy::ProfilePolicyConnector(this));
-  profile_policy_connector_->InitForTesting(service.Pass());
+  }
+  profile_policy_connector_.reset(new policy::ProfilePolicyConnector());
+  profile_policy_connector_->InitForTesting(policy_service_.Pass());
   policy::ProfilePolicyConnectorFactory::GetInstance()->SetServiceForTesting(
       this, profile_policy_connector_.get());
   CHECK_EQ(profile_policy_connector_.get(),
@@ -660,10 +724,18 @@ TestingProfile::GetMediaRequestContextForStoragePartition(
 void TestingProfile::RequestMIDISysExPermission(
       int render_process_id,
       int render_view_id,
+      int bridge_id,
       const GURL& requesting_frame,
       const MIDISysExPermissionCallback& callback) {
   // Always reject requests for testing.
   callback.Run(false);
+}
+
+void TestingProfile::CancelMIDISysExPermissionRequest(
+    int render_process_id,
+    int render_view_id,
+    int bridge_id,
+    const GURL& requesting_frame) {
 }
 
 net::URLRequestContextGetter* TestingProfile::GetRequestContextForExtensions() {
@@ -789,15 +861,18 @@ bool TestingProfile::WasCreatedByVersionOrLater(const std::string& version) {
 }
 
 bool TestingProfile::IsGuestSession() const {
-  return false;
+  return guest_session_;
 }
+
 Profile::ExitType TestingProfile::GetLastSessionExitType() {
   return last_session_exited_cleanly_ ? EXIT_NORMAL : EXIT_CRASHED;
 }
 
 TestingProfile::Builder::Builder()
     : build_called_(false),
-      delegate_(NULL) {
+      delegate_(NULL),
+      incognito_(false),
+      guest_session_(false) {
 }
 
 TestingProfile::Builder::~Builder() {
@@ -821,12 +896,42 @@ void TestingProfile::Builder::SetPrefService(
   pref_service_ = prefs.Pass();
 }
 
+void TestingProfile::Builder::SetIncognito() {
+  incognito_ = true;
+}
+
+void TestingProfile::Builder::SetGuestSession() {
+  guest_session_ = true;
+}
+
+void TestingProfile::Builder::SetManagedUserId(
+    const std::string& managed_user_id) {
+  managed_user_id_ = managed_user_id;
+}
+
+void TestingProfile::Builder::SetPolicyService(
+    scoped_ptr<policy::PolicyService> policy_service) {
+  policy_service_ = policy_service.Pass();
+}
+
+void TestingProfile::Builder::AddTestingFactory(
+    BrowserContextKeyedServiceFactory* service_factory,
+    BrowserContextKeyedServiceFactory::TestingFactoryFunction callback) {
+  testing_factories_.push_back(std::make_pair(service_factory, callback));
+}
+
 scoped_ptr<TestingProfile> TestingProfile::Builder::Build() {
   DCHECK(!build_called_);
   build_called_ = true;
+
   return scoped_ptr<TestingProfile>(new TestingProfile(
       path_,
       delegate_,
       extension_policy_,
-      pref_service_.Pass()));
+      pref_service_.Pass(),
+      incognito_,
+      guest_session_,
+      managed_user_id_,
+      policy_service_.Pass(),
+      testing_factories_));
 }

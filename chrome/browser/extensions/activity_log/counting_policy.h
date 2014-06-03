@@ -14,7 +14,12 @@
 
 namespace extensions {
 
-// A policy for logging the stream of actions, but without arguments.
+// A policy for logging the stream of actions, but with most arguments stripped
+// out (to improve privacy and reduce database size) and with multiple
+// identical rows combined together using a count column to track the total
+// number of repetitions.  Identical rows within the same day are merged, but
+// actions on separate days are kept distinct.  Data is kept for up to a few
+// days then deleted.
 class CountingPolicy : public ActivityLogDatabasePolicy {
  public:
   explicit CountingPolicy(Profile* profile);
@@ -22,9 +27,13 @@ class CountingPolicy : public ActivityLogDatabasePolicy {
 
   virtual void ProcessAction(scoped_refptr<Action> action) OVERRIDE;
 
-  virtual void ReadData(
+  virtual void ReadFilteredData(
       const std::string& extension_id,
-      const int day,
+      const Action::ActionType type,
+      const std::string& api_name,
+      const std::string& page_url,
+      const std::string& arg_url,
+      const int days_ago,
       const base::Callback
           <void(scoped_ptr<Action::ActionVector>)>& callback) OVERRIDE;
 
@@ -35,6 +44,15 @@ class CountingPolicy : public ActivityLogDatabasePolicy {
   void set_retention_time(const base::TimeDelta& delta) {
     retention_time_ = delta;
   }
+
+  // Clean the URL data stored for this policy.
+  virtual void RemoveURLs(const std::vector<GURL>&) OVERRIDE;
+
+  // Clean the data related to this extension for this policy.
+  virtual void RemoveExtensionData(const std::string& extension_id) OVERRIDE;
+
+  // Delete everything in the database.
+  virtual void DeleteDatabase() OVERRIDE;
 
   // The main database table, and the name for a read-only view that
   // decompresses string values for easier parsing.
@@ -50,15 +68,36 @@ class CountingPolicy : public ActivityLogDatabasePolicy {
   virtual void OnDatabaseClose() OVERRIDE;
 
  private:
+  // A type used to track pending writes to the database.  The key is an action
+  // to write; the value is the amount by which the count field should be
+  // incremented in the database.
+  typedef std::map<scoped_refptr<Action>, int, ActionComparatorExcludingTime>
+      ActionQueue;
+
   // Adds an Action to those to be written out; this is an internal method used
   // by ProcessAction and is called on the database thread.
   void QueueAction(scoped_refptr<Action> action);
 
   // Internal method to read data from the database; called on the database
   // thread.
-  scoped_ptr<Action::ActionVector> DoReadData(
+  scoped_ptr<Action::ActionVector> DoReadFilteredData(
       const std::string& extension_id,
+      const Action::ActionType type,
+      const std::string& api_name,
+      const std::string& page_url,
+      const std::string& arg_url,
       const int days_ago);
+
+  // The implementation of RemoveURLs; this must only run on the database
+  // thread.
+  void DoRemoveURLs(const std::vector<GURL>& restrict_urls);
+
+  // The implementation of RemoveExtensionData; this must only run on the
+  // database thread.
+  void DoRemoveExtensionData(const std::string& extension_id);
+
+  // The implementation of DeleteDatabase; called on the database thread.
+  void DoDeleteDatabase();
 
   // Cleans old records from the activity log database.
   bool CleanOlderThan(sql::Connection* db, const base::Time& cutoff);
@@ -68,7 +107,7 @@ class CountingPolicy : public ActivityLogDatabasePolicy {
   bool CleanStringTables(sql::Connection* db);
 
   // API calls for which complete arguments should be logged.
-  std::set<std::string> api_arg_whitelist_;
+  Util::ApiSet api_arg_whitelist_;
 
   // Tables for mapping strings to integers for shrinking database storage
   // requirements.  URLs are kept in a separate table from other strings to
@@ -78,8 +117,13 @@ class CountingPolicy : public ActivityLogDatabasePolicy {
 
   // Tracks any pending updates to be written to the database, if write
   // batching is turned on.  Should only be accessed from the database thread.
-  // TODO(mvrable): Do in-memory aggregation as well.
-  Action::ActionVector queued_actions_;
+  ActionQueue queued_actions_;
+
+  // All queued actions must fall on the same day, so that we do not
+  // accidentally aggregate actions that should be kept separate.
+  // queued_actions_date_ is the date (timestamp at local midnight) of all the
+  // actions in queued_actions_.
+  base::Time queued_actions_date_;
 
   // The amount of time old activity log records should be kept in the
   // database.  This time is subtracted from the current time, rounded down to
@@ -92,7 +136,10 @@ class CountingPolicy : public ActivityLogDatabasePolicy {
   // on the first database flush, and then every 12 hours subsequently.
   base::Time last_database_cleaning_time_;
 
+  friend class CountingPolicyTest;
+  FRIEND_TEST_ALL_PREFIXES(CountingPolicyTest, EarlyFlush);
   FRIEND_TEST_ALL_PREFIXES(CountingPolicyTest, MergingAndExpiring);
+  FRIEND_TEST_ALL_PREFIXES(CountingPolicyTest, StringTableCleaning);
 };
 
 }  // namespace extensions

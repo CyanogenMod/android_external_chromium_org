@@ -17,17 +17,18 @@
 #include "chrome/browser/chromeos/login/existing_user_controller.h"
 #include "chrome/browser/chromeos/login/login_display_host_impl.h"
 #include "chrome/browser/chromeos/policy/app_pack_updater.h"
+#include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/sandboxed_unpacker.h"
 #include "chrome/browser/policy/browser_policy_connector.h"
 #include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_file_util.h"
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "chromeos/login/login_state.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
+#include "extensions/common/extension.h"
 
 using extensions::Extension;
 using extensions::SandboxedUnpacker;
@@ -37,7 +38,7 @@ namespace chromeos {
 namespace {
 
 ExtensionService* GetDefaultExtensionService() {
-  Profile* default_profile = ProfileManager::GetDefaultProfile();
+  Profile* default_profile = ProfileHelper::GetSigninProfile();
   if (!default_profile)
     return NULL;
   return extensions::ExtensionSystem::Get(
@@ -61,7 +62,7 @@ class ScreensaverUnpackerClient
                                const base::DictionaryValue* original_manifest,
                                const Extension* extension,
                                const SkBitmap& install_icon) OVERRIDE;
-  virtual void OnUnpackFailure(const string16& error) OVERRIDE;
+  virtual void OnUnpackFailure(const base::string16& error) OVERRIDE;
 
  protected:
   virtual ~ScreensaverUnpackerClient() {}
@@ -94,7 +95,7 @@ void ScreensaverUnpackerClient::OnUnpackSuccess(
                  extension_root));
 }
 
-void ScreensaverUnpackerClient::OnUnpackFailure(const string16& error) {
+void ScreensaverUnpackerClient::OnUnpackFailure(const base::string16& error) {
   LOG(ERROR) << "Couldn't unpack screensaver extension. Error: " << error;
   NotifyAppPackOfDamagedFile();
 }
@@ -205,11 +206,10 @@ void KioskModeScreensaver::ScreensaverPathCallback(
   if (screensaver_crx.empty())
     return;
 
-  Profile* default_profile = ProfileManager::GetDefaultProfile();
-  if (!default_profile)
+  ExtensionService* extension_service = GetDefaultExtensionService();
+  if (!extension_service)
     return;
-  base::FilePath extensions_dir =
-      GetDefaultExtensionService()->install_directory();
+  base::FilePath extensions_dir = extension_service->install_directory();
   scoped_refptr<SandboxedUnpacker> screensaver_unpacker(
       new SandboxedUnpacker(
           screensaver_crx,
@@ -244,15 +244,14 @@ void KioskModeScreensaver::SetupScreensaver(
 
   ash::Shell::GetInstance()->user_activity_detector()->AddObserver(this);
 
-  Profile* default_profile = ProfileManager::GetDefaultProfile();
+  ExtensionService* extension_service = GetDefaultExtensionService();
   // Add the extension to the extension service and display the screensaver.
-  if (default_profile) {
-    extensions::ExtensionSystem::Get(default_profile)->extension_service()
-        ->AddExtension(extension.get());
+  if (extension_service) {
+    extension_service->AddExtension(extension.get());
     ash::ShowScreensaver(
         extensions::AppLaunchInfo::GetFullLaunchURL(extension.get()));
   } else {
-    LOG(ERROR) << "Couldn't get default profile. Unable to load screensaver!";
+    LOG(ERROR) << "Couldn't get extension system. Unable to load screensaver!";
     ShutdownKioskModeScreensaver();
   }
 }

@@ -40,15 +40,6 @@ class MockInputMethodManager : public InputMethodManager {
       const std::vector<std::string>& new_active_input_method_ids) OVERRIDE;
   virtual bool EnableInputMethod(
       const std::string& new_active_input_method_id) OVERRIDE;
-  virtual bool MigrateOldInputMethods(
-      std::vector<std::string>* input_method_ids) OVERRIDE;
-  virtual bool MigrateKoreanKeyboard(
-      const std::string& keyboard_id,
-      std::vector<std::string>* input_method_ids) OVERRIDE;
-  virtual bool SetInputMethodConfig(
-      const std::string& section,
-      const std::string& config_name,
-      const InputMethodConfigValue& value) OVERRIDE;
   virtual void ChangeInputMethod(const std::string& input_method_id) OVERRIDE;
   virtual void ActivateInputMethodProperty(const std::string& key) OVERRIDE;
   virtual void AddInputMethodExtension(
@@ -57,7 +48,8 @@ class MockInputMethodManager : public InputMethodManager {
       const std::vector<std::string>& layouts,
       const std::vector<std::string>& languages,
       const GURL& options_url,
-      InputMethodEngine* instance) OVERRIDE;
+      const GURL& inputview_url,
+      InputMethodEngineInterface* instance) OVERRIDE;
   virtual void RemoveInputMethodExtension(const std::string& id) OVERRIDE;
   virtual void GetInputMethodExtensions(
       InputMethodDescriptors* result) OVERRIDE;
@@ -70,11 +62,13 @@ class MockInputMethodManager : public InputMethodManager {
   virtual InputMethodDescriptor GetCurrentInputMethod() const OVERRIDE;
   virtual InputMethodPropertyList
       GetCurrentInputMethodProperties() const OVERRIDE;
+  virtual void SetCurrentInputMethodProperties(
+      const InputMethodPropertyList& property_list) OVERRIDE;
   virtual XKeyboard* GetXKeyboard() OVERRIDE;
   virtual InputMethodUtil* GetInputMethodUtil() OVERRIDE;
   virtual ComponentExtensionIMEManager*
       GetComponentExtensionIMEManager() OVERRIDE;
-  virtual bool IsFullLatinKeyboard(const std::string& layout) const OVERRIDE;
+  virtual bool IsLoginKeyboard(const std::string& layout) const OVERRIDE;
 
   // Sets an input method ID which will be returned by GetCurrentInputMethod().
   void SetCurrentInputMethodId(const std::string& input_method_id) {

@@ -41,23 +41,25 @@ class MockRenderViewContextMenu : public RenderViewContextMenuProxy {
     bool enabled;
     bool checked;
     bool hidden;
-    string16 title;
+    base::string16 title;
   };
 
-  MockRenderViewContextMenu();
+  explicit MockRenderViewContextMenu(bool incognito);
   virtual ~MockRenderViewContextMenu();
 
   // RenderViewContextMenuProxy implementation.
-  virtual void AddMenuItem(int command_id, const string16& title) OVERRIDE;
-  virtual void AddCheckItem(int command_id, const string16& title) OVERRIDE;
+  virtual void AddMenuItem(int command_id,
+                           const base::string16& title) OVERRIDE;
+  virtual void AddCheckItem(int command_id,
+                            const base::string16& title) OVERRIDE;
   virtual void AddSeparator() OVERRIDE;
   virtual void AddSubMenu(int command_id,
-                          const string16& label,
+                          const base::string16& label,
                           ui::MenuModel* model) OVERRIDE;
   virtual void UpdateMenuItem(int command_id,
                               bool enabled,
                               bool hidden,
-                              const string16& title) OVERRIDE;
+                              const base::string16& title) OVERRIDE;
   virtual RenderViewHost* GetRenderViewHost() const OVERRIDE;
   virtual WebContents* GetWebContents() const OVERRIDE;
   virtual Profile* GetProfile() const OVERRIDE;
@@ -89,16 +91,19 @@ class MockRenderViewContextMenu : public RenderViewContextMenuProxy {
   DISALLOW_COPY_AND_ASSIGN(MockRenderViewContextMenu);
 };
 
-MockRenderViewContextMenu::MockRenderViewContextMenu()
-  : observer_(NULL),
-    profile_(new TestingProfile) {
+MockRenderViewContextMenu::MockRenderViewContextMenu(bool incognito)
+    : observer_(NULL) {
+  TestingProfile::Builder builder;
+  if (incognito)
+    builder.SetIncognito();
+  profile_ = builder.Build();
 }
 
 MockRenderViewContextMenu::~MockRenderViewContextMenu() {
 }
 
 void MockRenderViewContextMenu::AddMenuItem(int command_id,
-                                            const string16& title) {
+                                            const base::string16& title) {
   MockMenuItem item;
   item.command_id = command_id;
   item.enabled = observer_->IsCommandIdEnabled(command_id);
@@ -109,7 +114,7 @@ void MockRenderViewContextMenu::AddMenuItem(int command_id,
 }
 
 void MockRenderViewContextMenu::AddCheckItem(int command_id,
-                                             const string16& title) {
+                                             const base::string16& title) {
   MockMenuItem item;
   item.command_id = command_id;
   item.enabled = observer_->IsCommandIdEnabled(command_id);
@@ -129,7 +134,7 @@ void MockRenderViewContextMenu::AddSeparator() {
 }
 
 void MockRenderViewContextMenu::AddSubMenu(int command_id,
-                                           const string16& label,
+                                           const base::string16& label,
                                            ui::MenuModel* model) {
   MockMenuItem item;
   item.command_id = -1;
@@ -142,7 +147,7 @@ void MockRenderViewContextMenu::AddSubMenu(int command_id,
 void MockRenderViewContextMenu::UpdateMenuItem(int command_id,
                                                bool enabled,
                                                bool hidden,
-                                               const string16& title) {
+                                               const base::string16& title) {
   for (std::vector<MockMenuItem>::iterator it = items_.begin();
        it != items_.end(); ++it) {
     if (it->command_id == command_id) {
@@ -202,7 +207,7 @@ class SpellingMenuObserverTest : public InProcessBrowserTest {
   SpellingMenuObserverTest();
 
   virtual void SetUpOnMainThread() OVERRIDE {
-    Reset();
+    Reset(false);
   }
 
   virtual void CleanUpOnMainThread() OVERRIDE {
@@ -210,9 +215,9 @@ class SpellingMenuObserverTest : public InProcessBrowserTest {
     menu_.reset();
   }
 
-  void Reset() {
+  void Reset(bool incognito) {
     observer_.reset();
-    menu_.reset(new MockRenderViewContextMenu);
+    menu_.reset(new MockRenderViewContextMenu(incognito));
     observer_.reset(new SpellingMenuObserver(menu_.get()));
     menu_->SetObserver(observer_.get());
   }
@@ -395,7 +400,8 @@ IN_PROC_BROWSER_TEST_F(SpellingMenuObserverTest,
 // is functional.
 IN_PROC_BROWSER_TEST_F(SpellingMenuObserverTest,
                        NoSpellingServiceWhenOffTheRecord) {
-  menu()->GetProfile()->AsTestingProfile()->set_incognito(true);
+  // Create a menu in an incognito profile.
+  Reset(true);
 
   // This means spellchecking is allowed. Default is that the service is
   // contacted but this test makes sure that if profile is incognito, that
@@ -433,9 +439,6 @@ IN_PROC_BROWSER_TEST_F(SpellingMenuObserverTest,
   EXPECT_EQ(IDC_CONTENT_CONTEXT_SPELLING_TOGGLE, item.command_id);
   EXPECT_FALSE(item.enabled);
   EXPECT_FALSE(item.hidden);
-
-  // Set incognito back to false to allow appropriate test cleanup.
-  menu()->GetProfile()->AsTestingProfile()->set_incognito(false);
 }
 
 // Test that the menu is preceeded by a separator if there are any suggestions,
@@ -452,7 +455,7 @@ IN_PROC_BROWSER_TEST_F(SpellingMenuObserverTest, SuggestionsForceTopSeparator) {
   EXPECT_NE(-1, item.command_id);
 
   // Case #2. Misspelled word, suggestions, no spellcheck service.
-  Reset();
+  Reset(false);
   menu()->GetPrefs()->SetBoolean(prefs::kSpellCheckUseSpellingService, false);
   InitMenu("asdfkj", "asdf");
 
@@ -463,7 +466,7 @@ IN_PROC_BROWSER_TEST_F(SpellingMenuObserverTest, SuggestionsForceTopSeparator) {
   EXPECT_EQ(-1, item.command_id);
 
   // Case #3. Misspelled word, suggestion service is on.
-  Reset();
+  Reset(false);
   menu()->GetPrefs()->SetBoolean(prefs::kSpellCheckUseSpellingService, true);
   CommandLine* command_line = CommandLine::ForCurrentProcess();
   command_line->AppendSwitch(switches::kUseSpellingSuggestions);

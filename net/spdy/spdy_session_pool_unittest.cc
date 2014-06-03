@@ -50,7 +50,8 @@ class SpdySessionPoolTest : public ::testing::Test,
 INSTANTIATE_TEST_CASE_P(
     NextProto,
     SpdySessionPoolTest,
-    testing::Values(kProtoSPDY2, kProtoSPDY3, kProtoSPDY31, kProtoSPDY4a2,
+    testing::Values(kProtoDeprecatedSPDY2,
+                    kProtoSPDY3, kProtoSPDY31, kProtoSPDY4a2,
                     kProtoHTTP2Draft04));
 
 // A delegate that opens a new session when it is closed.
@@ -337,9 +338,12 @@ void SpdySessionPoolTest::RunIPPoolingTest(
     // This test requires that the HostResolver cache be populated.  Normal
     // code would have done this already, but we do it manually.
     HostResolver::RequestInfo info(HostPortPair(test_hosts[i].name, kTestPort));
-    session_deps_.host_resolver->Resolve(
-        info, &test_hosts[i].addresses, CompletionCallback(), NULL,
-        BoundNetLog());
+    session_deps_.host_resolver->Resolve(info,
+                                         DEFAULT_PRIORITY,
+                                         &test_hosts[i].addresses,
+                                         CompletionCallback(),
+                                         NULL,
+                                         BoundNetLog());
 
     // Setup a SpdySessionKey
     test_hosts[i].key = SpdySessionKey(

@@ -242,7 +242,7 @@ void TranslateLanguageList::GetSupportedLanguages(
 
   // Update language lists if they are not updated after Chrome was launched
   // for later requests.
-  if (language_list_fetcher_.get())
+  if (!update_is_disabled && language_list_fetcher_.get())
     RequestLanguageList();
 }
 
@@ -285,7 +285,7 @@ void TranslateLanguageList::OnResourceRequestsAllowed() {
                                     kAlphaLanguageQueryValue);
 
     std::string message = base::StringPrintf(
-        "Language list includeing alpha languages fetch starts (URL: %s)",
+        "Language list including alpha languages fetch starts (URL: %s)",
         url.spec().c_str());
     NotifyEvent(__LINE__, message);
 

@@ -18,6 +18,7 @@
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
+#include "net/base/request_priority.h"
 #include "net/cert/cert_verifier.h"
 #include "net/cookies/cookie_monster.h"
 #include "net/dns/host_resolver.h"
@@ -409,7 +410,8 @@ void ConnectionTester::TestRunner::ProxyConfigServiceCreated(
     return;
   }
   // Fetch a request using the experimental context.
-  request_.reset(request_context_->CreateRequest(experiment.url, this));
+  request_ = request_context_->CreateRequest(
+      experiment.url, net::DEFAULT_PRIORITY, this);
   request_->Start();
 }
 
@@ -457,7 +459,7 @@ void ConnectionTester::RunAllTests(const GURL& url) {
 }
 
 // static
-string16 ConnectionTester::ProxySettingsExperimentDescription(
+base::string16 ConnectionTester::ProxySettingsExperimentDescription(
     ProxySettingsExperiment experiment) {
   // TODO(eroman): Use proper string resources.
   switch (experiment) {
@@ -471,24 +473,24 @@ string16 ConnectionTester::ProxySettingsExperimentDescription(
       return ASCIIToUTF16("Auto-detect proxy settings");
     default:
       NOTREACHED();
-      return string16();
+      return base::string16();
   }
 }
 
 // static
-string16 ConnectionTester::HostResolverExperimentDescription(
+base::string16 ConnectionTester::HostResolverExperimentDescription(
     HostResolverExperiment experiment) {
   // TODO(eroman): Use proper string resources.
   switch (experiment) {
     case HOST_RESOLVER_EXPERIMENT_PLAIN:
-      return string16();
+      return base::string16();
     case HOST_RESOLVER_EXPERIMENT_DISABLE_IPV6:
       return ASCIIToUTF16("Disable IPv6 host resolving");
     case HOST_RESOLVER_EXPERIMENT_IPV6_PROBE:
       return ASCIIToUTF16("Probe for IPv6 host resolving");
     default:
       NOTREACHED();
-      return string16();
+      return base::string16();
   }
 }
 

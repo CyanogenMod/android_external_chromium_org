@@ -6,7 +6,6 @@
 
 #include <string.h>  // For memcpy
 
-#include "ppapi/c/pp_file_info.h"
 #include "ppapi/c/pp_resource.h"
 #include "ppapi/proxy/ppapi_messages.h"
 #include "ppapi/proxy/serialized_var.h"
@@ -98,48 +97,6 @@ bool ParamTraits<PP_Bool>::Read(const Message* m,
 void ParamTraits<PP_Bool>::Log(const param_type& p, std::string* l) {
 }
 
-// PP_FileInfo -------------------------------------------------------------
-
-// static
-void ParamTraits<PP_FileInfo>::Write(Message* m, const param_type& p) {
-  ParamTraits<int64_t>::Write(m, p.size);
-  ParamTraits<int>::Write(m, static_cast<int>(p.type));
-  ParamTraits<int>::Write(m, static_cast<int>(p.system_type));
-  ParamTraits<double>::Write(m, p.creation_time);
-  ParamTraits<double>::Write(m, p.last_access_time);
-  ParamTraits<double>::Write(m, p.last_modified_time);
-}
-
-// static
-bool ParamTraits<PP_FileInfo>::Read(const Message* m, PickleIterator* iter,
-                                        param_type* r) {
-  int type, system_type;
-  if (!ParamTraits<int64_t>::Read(m, iter, &r->size) ||
-      !ParamTraits<int>::Read(m, iter, &type) ||
-      !ParamTraits<int>::Read(m, iter, &system_type) ||
-      !ParamTraits<double>::Read(m, iter, &r->creation_time) ||
-      !ParamTraits<double>::Read(m, iter, &r->last_access_time) ||
-      !ParamTraits<double>::Read(m, iter, &r->last_modified_time))
-    return false;
-  if (type != PP_FILETYPE_REGULAR &&
-      type != PP_FILETYPE_DIRECTORY &&
-      type != PP_FILETYPE_OTHER)
-    return false;
-  r->type = static_cast<PP_FileType>(type);
-  if (system_type != PP_FILESYSTEMTYPE_INVALID &&
-      system_type != PP_FILESYSTEMTYPE_EXTERNAL &&
-      system_type != PP_FILESYSTEMTYPE_LOCALPERSISTENT &&
-      system_type != PP_FILESYSTEMTYPE_LOCALTEMPORARY &&
-      system_type != PP_FILESYSTEMTYPE_ISOLATED)
-    return false;
-  r->system_type = static_cast<PP_FileSystemType>(system_type);
-  return true;
-}
-
-// static
-void ParamTraits<PP_FileInfo>::Log(const param_type& p, std::string* l) {
-}
-
 // PP_NetAddress_Private -------------------------------------------------------
 
 // static
@@ -173,36 +130,6 @@ void ParamTraits<PP_NetAddress_Private>::Log(const param_type& p,
   l->append("<PP_NetAddress_Private (");
   LogParam(p.size, l);
   l->append(" bytes)>");
-}
-
-// TODO(teravest): Remove this when FileRef is moved to the "new" proxy.
-// PPB_FileRef_CreateInfo ------------------------------------------------------
-
-// static
-void ParamTraits<ppapi::PPB_FileRef_CreateInfo>::Write(Message* m,
-                                                       const param_type& p) {
-  ParamTraits<ppapi::HostResource>::Write(m, p.resource);
-  ParamTraits<int>::Write(m, p.file_system_type);
-  ParamTraits<std::string>::Write(m, p.path);
-  ParamTraits<std::string>::Write(m, p.name);
-  ParamTraits<PP_Resource>::Write(m, p.file_system_plugin_resource);
-}
-
-// static
-bool ParamTraits<ppapi::PPB_FileRef_CreateInfo>::Read(const Message* m,
-                                                      PickleIterator* iter,
-                                                      param_type* r) {
-  return
-      ParamTraits<ppapi::HostResource>::Read(m, iter, &r->resource) &&
-      ParamTraits<int>::Read(m, iter, &r->file_system_type) &&
-      ParamTraits<std::string>::Read(m, iter, &r->path) &&
-      ParamTraits<std::string>::Read(m, iter, &r->name) &&
-      ParamTraits<PP_Resource>::Read(m, iter, &r->file_system_plugin_resource);
-}
-
-// static
-void ParamTraits<ppapi::PPB_FileRef_CreateInfo>::Log(const param_type& p,
-                                                     std::string* l) {
 }
 
 // HostResource ----------------------------------------------------------------
@@ -270,28 +197,6 @@ bool ParamTraits< std::vector<ppapi::proxy::SerializedVar> >::Read(
 
 // static
 void ParamTraits< std::vector<ppapi::proxy::SerializedVar> >::Log(
-    const param_type& p,
-    std::string* l) {
-}
-
-// std::vector<PPB_FileRef_CreateInfo> -----------------------------------------
-
-void ParamTraits< std::vector<ppapi::PPB_FileRef_CreateInfo> >::Write(
-    Message* m,
-    const param_type& p) {
-  WriteVectorWithoutCopy(m, p);
-}
-
-// static
-bool ParamTraits< std::vector<ppapi::PPB_FileRef_CreateInfo> >::Read(
-    const Message* m,
-    PickleIterator* iter,
-    param_type* r) {
-  return ReadVectorWithoutCopy(m, iter, r);
-}
-
-// static
-void ParamTraits< std::vector<ppapi::PPB_FileRef_CreateInfo> >::Log(
     const param_type& p,
     std::string* l) {
 }

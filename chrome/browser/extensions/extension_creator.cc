@@ -14,18 +14,18 @@
 #include "base/memory/scoped_handle.h"
 #include "base/strings/string_util.h"
 #include "chrome/browser/extensions/extension_creator_filter.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_file_util.h"
 #include "crypto/rsa_private_key.h"
 #include "crypto/signature_creator.h"
 #include "extensions/common/crx_file.h"
+#include "extensions/common/extension.h"
 #include "extensions/common/id_util.h"
 #include "grit/generated_resources.h"
 #include "third_party/zlib/google/zip.h"
 #include "ui/base/l10n/l10n_util.h"
 
 namespace {
-  const int kRSAKeySize = 1024;
+  const int kRSAKeySize = 2048;
 };
 
 namespace extensions {
@@ -127,8 +127,7 @@ crypto::RSAPrivateKey* ExtensionCreator::ReadInputKey(const base::FilePath&
   }
 
   std::string private_key_contents;
-  if (!file_util::ReadFileToString(private_key_path,
-      &private_key_contents)) {
+  if (!base::ReadFileToString(private_key_path, &private_key_contents)) {
     error_message_ =
         l10n_util::GetStringUTF8(IDS_EXTENSION_PRIVATE_KEY_FAILED_TO_READ);
     return NULL;
@@ -214,7 +213,7 @@ bool ExtensionCreator::SignZip(const base::FilePath& zip_path,
                                std::vector<uint8>* signature) {
   scoped_ptr<crypto::SignatureCreator> signature_creator(
       crypto::SignatureCreator::Create(private_key));
-  ScopedStdioHandle zip_handle(file_util::OpenFile(zip_path, "rb"));
+  ScopedStdioHandle zip_handle(base::OpenFile(zip_path, "rb"));
   size_t buffer_size = 1 << 16;
   scoped_ptr<uint8[]> buffer(new uint8[buffer_size]);
   int bytes_read = -1;
@@ -242,7 +241,7 @@ bool ExtensionCreator::WriteCRX(const base::FilePath& zip_path,
                                 const base::FilePath& crx_path) {
   if (base::PathExists(crx_path))
     base::DeleteFile(crx_path, false);
-  ScopedStdioHandle crx_handle(file_util::OpenFile(crx_path, "wb"));
+  ScopedStdioHandle crx_handle(base::OpenFile(crx_path, "wb"));
   if (!crx_handle.get()) {
     error_message_ = l10n_util::GetStringUTF8(IDS_EXTENSION_SHARING_VIOLATION);
     return false;
@@ -274,7 +273,7 @@ bool ExtensionCreator::WriteCRX(const base::FilePath& zip_path,
   size_t buffer_size = 1 << 16;
   scoped_ptr<uint8[]> buffer(new uint8[buffer_size]);
   size_t bytes_read = 0;
-  ScopedStdioHandle zip_handle(file_util::OpenFile(zip_path, "rb"));
+  ScopedStdioHandle zip_handle(base::OpenFile(zip_path, "rb"));
   while ((bytes_read = fread(buffer.get(), 1, buffer_size,
                              zip_handle.get())) > 0) {
     if (fwrite(buffer.get(), sizeof(char), bytes_read, crx_handle.get()) !=

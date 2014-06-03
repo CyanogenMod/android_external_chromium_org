@@ -26,11 +26,17 @@ UbertokenFetcher::~UbertokenFetcher() {
 }
 
 void UbertokenFetcher::StartFetchingToken() {
+  ProfileOAuth2TokenService* token_service =
+      ProfileOAuth2TokenServiceFactory::GetForProfile(profile_);
+  StartFetchingToken(token_service->GetPrimaryAccountId());
+}
+
+void UbertokenFetcher::StartFetchingToken(const std::string& account_id) {
   OAuth2TokenService::ScopeSet scopes;
   scopes.insert(GaiaUrls::GetInstance()->oauth1_login_scope());
-  access_token_request_ =
-      ProfileOAuth2TokenServiceFactory::GetForProfile(profile_)->
-          StartRequest(scopes, this);
+  ProfileOAuth2TokenService* token_service =
+      ProfileOAuth2TokenServiceFactory::GetForProfile(profile_);
+  access_token_request_ = token_service->StartRequest(account_id, scopes, this);
 }
 
 void UbertokenFetcher::OnUberAuthTokenSuccess(const std::string& token) {

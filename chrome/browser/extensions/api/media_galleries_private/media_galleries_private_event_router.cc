@@ -11,51 +11,54 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/event_names.h"
-#include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/storage_monitor/storage_monitor.h"
 #include "chrome/common/extensions/api/media_galleries_private.h"
 #include "content/public/browser/browser_thread.h"
+#include "extensions/browser/event_router.h"
+
+namespace media_galleries_private = extensions::api::media_galleries_private;
 
 namespace extensions {
 
 namespace {
 
 std::string GetTransientIdForDeviceId(const std::string& device_id) {
-  chrome::StorageMonitor* monitor = chrome::StorageMonitor::GetInstance();
+  StorageMonitor* monitor = StorageMonitor::GetInstance();
   return monitor->GetTransientIdForDeviceId(device_id);
 }
 
 }  // namespace
 
-using extensions::api::media_galleries_private::DeviceAttachmentDetails;
-using extensions::api::media_galleries_private::DeviceDetachmentDetails;
-using extensions::api::media_galleries_private::GalleryChangeDetails;
+using media_galleries_private::DeviceAttachmentDetails;
+using media_galleries_private::DeviceDetachmentDetails;
+using media_galleries_private::GalleryChangeDetails;
 
 MediaGalleriesPrivateEventRouter::MediaGalleriesPrivateEventRouter(
     Profile* profile)
     : profile_(profile) {
   DCHECK(profile_);
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
-  chrome::StorageMonitor::GetInstance()->AddObserver(this);
+  StorageMonitor::GetInstance()->AddObserver(this);
 }
 
 MediaGalleriesPrivateEventRouter::~MediaGalleriesPrivateEventRouter() {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
   // TODO(gbillock): Remove this check once we have destruction order
   // fixed up for profile services and the storage monitor.
-  if (chrome::StorageMonitor::GetInstance())
-    chrome::StorageMonitor::GetInstance()->RemoveObserver(this);
+  if (StorageMonitor::GetInstance())
+    StorageMonitor::GetInstance()->RemoveObserver(this);
 }
 
 void MediaGalleriesPrivateEventRouter::OnGalleryChanged(
-    chrome::MediaGalleryPrefId gallery_id,
+    MediaGalleryPrefId gallery_id,
     const std::set<std::string>& extension_ids) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
   EventRouter* router =
       extensions::ExtensionSystem::Get(profile_)->event_router();
-  if (!router->HasEventListener(event_names::kOnGalleryChangedEventName))
+  if (!router->HasEventListener(
+          media_galleries_private::OnGalleryChanged::kEventName))
     return;
 
   for (std::set<std::string>::const_iterator it = extension_ids.begin();
@@ -65,7 +68,7 @@ void MediaGalleriesPrivateEventRouter::OnGalleryChanged(
     scoped_ptr<base::ListValue> args(new base::ListValue());
     args->Append(details.ToValue().release());
     scoped_ptr<extensions::Event> event(new extensions::Event(
-        event_names::kOnGalleryChangedEventName,
+        media_galleries_private::OnGalleryChanged::kEventName,
         args.Pass()));
     // Use DispatchEventToExtension() instead of BroadcastEvent().
     // BroadcastEvent() sends the gallery changed events to all the extensions
@@ -79,17 +82,18 @@ void MediaGalleriesPrivateEventRouter::OnGalleryChanged(
 }
 
 void MediaGalleriesPrivateEventRouter::OnRemovableStorageAttached(
-    const chrome::StorageInfo& info) {
+    const StorageInfo& info) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
   EventRouter* router =
       extensions::ExtensionSystem::Get(profile_)->event_router();
-  if (!router->HasEventListener(event_names::kOnAttachEventName))
+  if (!router->HasEventListener(
+          media_galleries_private::OnDeviceAttached::kEventName))
     return;
 
-  chrome::MediaGalleryPrefInfo pref_info;
+  MediaGalleryPrefInfo pref_info;
   pref_info.display_name = info.name();
   pref_info.device_id = info.device_id();
-  pref_info.type = chrome::MediaGalleryPrefInfo::kAutoDetected;
+  pref_info.type = MediaGalleryPrefInfo::kAutoDetected;
   pref_info.volume_label = info.storage_label();
   pref_info.vendor_name = info.vendor_name();
   pref_info.model_name = info.model_name();
@@ -102,15 +106,17 @@ void MediaGalleriesPrivateEventRouter::OnRemovableStorageAttached(
 
   scoped_ptr<base::ListValue> args(new base::ListValue());
   args->Append(details.ToValue().release());
-  DispatchEvent(event_names::kOnAttachEventName, args.Pass());
+  DispatchEvent(
+      media_galleries_private::OnDeviceAttached::kEventName, args.Pass());
 }
 
 void MediaGalleriesPrivateEventRouter::OnRemovableStorageDetached(
-    const chrome::StorageInfo& info) {
+    const StorageInfo& info) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
   EventRouter* router =
       extensions::ExtensionSystem::Get(profile_)->event_router();
-  if (!router->HasEventListener(event_names::kOnDetachEventName))
+  if (!router->HasEventListener(
+          media_galleries_private::OnDeviceDetached::kEventName))
     return;
 
   DeviceDetachmentDetails details;
@@ -118,7 +124,8 @@ void MediaGalleriesPrivateEventRouter::OnRemovableStorageDetached(
 
   scoped_ptr<base::ListValue> args(new base::ListValue());
   args->Append(details.ToValue().release());
-  DispatchEvent(event_names::kOnDetachEventName, args.Pass());
+  DispatchEvent(
+      media_galleries_private::OnDeviceDetached::kEventName, args.Pass());
 }
 
 void MediaGalleriesPrivateEventRouter::DispatchEvent(
@@ -131,7 +138,7 @@ void MediaGalleriesPrivateEventRouter::DispatchEvent(
     return;
   scoped_ptr<extensions::Event> event(new extensions::Event(
       event_name, event_args.Pass()));
-  event->restrict_to_profile = profile_;
+  event->restrict_to_browser_context = profile_;
   router->BroadcastEvent(event.Pass());
 }
 

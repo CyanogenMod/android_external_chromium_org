@@ -55,7 +55,7 @@ class Bridge : public GlobalErrorBubbleViewBase {
 @implementation GlobalErrorBubbleController
 
 + (GlobalErrorBubbleViewBase*)showForBrowser:(Browser*)browser
-    error:(const base::WeakPtr<GlobalError>&)error {
+    error:(const base::WeakPtr<GlobalErrorWithStandardBubble>&)error {
   NSWindow* parentWindow = browser->window()->GetNativeWindow();
   BrowserWindowController* bwc = [BrowserWindowController
       browserWindowControllerForWindow:parentWindow];
@@ -87,8 +87,8 @@ class Bridge : public GlobalErrorBubbleViewBase {
   [iconView_ setImage:image.ToNSImage()];
 
   [title_ setStringValue:SysUTF16ToNSString(error_->GetBubbleViewTitle())];
-  std::vector<string16> messages = error_->GetBubbleViewMessages();
-  string16 message = JoinString(messages, '\n');
+  std::vector<base::string16> messages = error_->GetBubbleViewMessages();
+  base::string16 message = JoinString(messages, '\n');
 
   base::scoped_nsobject<NSMutableAttributedString> messageValue(
       [[NSMutableAttributedString alloc]
@@ -104,7 +104,7 @@ class Bridge : public GlobalErrorBubbleViewBase {
 
   [acceptButton_ setTitle:
       SysUTF16ToNSString(error_->GetBubbleViewAcceptButtonLabel())];
-  string16 cancelLabel = error_->GetBubbleViewCancelButtonLabel();
+  base::string16 cancelLabel = error_->GetBubbleViewCancelButtonLabel();
   if (cancelLabel.empty())
     [cancelButton_ setHidden:YES];
   else
@@ -161,8 +161,8 @@ class Bridge : public GlobalErrorBubbleViewBase {
 
 @end
 
-GlobalErrorBubbleViewBase* GlobalErrorBubbleViewBase::ShowBubbleView(
+GlobalErrorBubbleViewBase* GlobalErrorBubbleViewBase::ShowStandardBubbleView(
     Browser* browser,
-    const base::WeakPtr<GlobalError>& error) {
+    const base::WeakPtr<GlobalErrorWithStandardBubble>& error) {
   return [GlobalErrorBubbleController showForBrowser:browser error:error];
 }

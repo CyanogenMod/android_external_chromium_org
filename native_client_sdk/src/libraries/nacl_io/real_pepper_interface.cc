@@ -3,10 +3,12 @@
 // found in the LICENSE file.
 
 #include "nacl_io/real_pepper_interface.h"
+
 #include <assert.h>
 #include <stdio.h>
-
 #include <ppapi/c/pp_errors.h>
+
+#include "nacl_io/dbgprint.h"
 
 namespace nacl_io {
 
@@ -19,6 +21,8 @@ namespace nacl_io {
      private: \
       const PPInterface* interface_; \
     };
+#define METHOD0(Class, ReturnType, MethodName) \
+    virtual ReturnType MethodName();
 #define METHOD1(Class, ReturnType, MethodName, Type0) \
     virtual ReturnType MethodName(Type0);
 #define METHOD2(Class, ReturnType, MethodName, Type0, Type1) \
@@ -40,6 +44,10 @@ namespace nacl_io {
 
 #define END_INTERFACE(BaseClass, PPInterface)
 
+#define METHOD0(BaseClass, ReturnType, MethodName) \
+    ReturnType Real##BaseClass::MethodName() { \
+      return interface_->MethodName(); \
+    }
 #define METHOD1(BaseClass, ReturnType, MethodName, Type0) \
     ReturnType Real##BaseClass::MethodName(Type0 arg0) { \
       return interface_->MethodName(arg0); \
@@ -69,43 +77,24 @@ namespace nacl_io {
 
 RealPepperInterface::RealPepperInterface(PP_Instance instance,
                                          PPB_GetInterface get_browser_interface)
-    : instance_(instance),
-      core_interface_(NULL),
-      message_loop_interface_(NULL) {
-
-  core_interface_ = static_cast<const PPB_Core*>(
-      get_browser_interface(PPB_CORE_INTERFACE));
-  message_loop_interface_ = static_cast<const PPB_MessageLoop*>(
-      get_browser_interface(PPB_MESSAGELOOP_INTERFACE));
-  assert(core_interface_);
-  assert(message_loop_interface_);
-
+    : instance_(instance) {
 #include "nacl_io/pepper/undef_macros.h"
 #include "nacl_io/pepper/define_empty_macros.h"
 #undef BEGIN_INTERFACE
-#define BEGIN_INTERFACE(BaseClass, PPInterface, InterfaceString) \
-    BaseClass##interface_ = new Real##BaseClass( \
-        static_cast<const PPInterface*>( \
-            get_browser_interface(InterfaceString)));
+#define BEGIN_INTERFACE(BaseClass, PPInterface, InterfaceString) { \
+    const PPInterface* iface = static_cast<const PPInterface*>( \
+        get_browser_interface(InterfaceString)); \
+    BaseClass##interface_ = NULL; \
+    if (iface) \
+      BaseClass##interface_ = new Real##BaseClass(iface); \
+    else \
+      dbgprintf("nacl_io: interface missing: %s\n", InterfaceString); \
+  }
 #include "nacl_io/pepper/all_interfaces.h"
 }
 
 PP_Instance RealPepperInterface::GetInstance() {
   return instance_;
-}
-
-void RealPepperInterface::AddRefResource(PP_Resource resource) {
-  if (resource)
-    core_interface_->AddRefResource(resource);
-}
-
-void RealPepperInterface::ReleaseResource(PP_Resource resource) {
-  if (resource)
-    core_interface_->ReleaseResource(resource);
-}
-
-bool RealPepperInterface::IsMainThread() {
-  return core_interface_->IsMainThread();
 }
 
 // Define getter function.
@@ -117,25 +106,6 @@ bool RealPepperInterface::IsMainThread() {
       return BaseClass##interface_; \
     }
 #include "nacl_io/pepper/all_interfaces.h"
-
-
-int32_t RealPepperInterface::InitializeMessageLoop() {
-  int32_t result;
-  PP_Resource message_loop = 0;
-  if (core_interface_->IsMainThread()) {
-    // TODO(binji): Spin up the main thread's ppapi work thread.
-    assert(0);
-  } else {
-    message_loop = message_loop_interface_->GetCurrent();
-    if (!message_loop) {
-      message_loop = message_loop_interface_->Create(instance_);
-      result = message_loop_interface_->AttachToCurrentThread(message_loop);
-      assert(result == PP_OK);
-    }
-  }
-
-  return PP_OK;
-}
 
 }  // namespace nacl_io
 

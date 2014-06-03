@@ -4,6 +4,9 @@
 
 #include "chrome/renderer/extensions/event_bindings.h"
 
+#include <map>
+#include <set>
+#include <string>
 #include <vector>
 
 #include "base/basictypes.h"
@@ -11,8 +14,6 @@
 #include "base/lazy_instance.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
-#include "chrome/common/extensions/background_info.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_messages.h"
 #include "chrome/common/extensions/extension_set.h"
 #include "chrome/common/extensions/value_counter.h"
@@ -21,13 +22,14 @@
 #include "chrome/renderer/extensions/chrome_v8_context_set.h"
 #include "chrome/renderer/extensions/chrome_v8_extension.h"
 #include "chrome/renderer/extensions/dispatcher.h"
-#include "chrome/renderer/extensions/event_bindings.h"
 #include "chrome/renderer/extensions/extension_helper.h"
 #include "chrome/renderer/extensions/user_script_slave.h"
 #include "content/public/renderer/render_thread.h"
 #include "content/public/renderer/render_view.h"
 #include "content/public/renderer/v8_value_converter.h"
 #include "extensions/common/event_filter.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/manifest_handlers/background_info.h"
 #include "extensions/common/view_type.h"
 #include "grit/renderer_resources.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
@@ -38,8 +40,8 @@
 #include "url/gurl.h"
 #include "v8/include/v8.h"
 
-using WebKit::WebFrame;
-using WebKit::WebURL;
+using blink::WebFrame;
+using blink::WebURL;
 using content::RenderThread;
 
 namespace extensions {
@@ -95,7 +97,7 @@ class ExtensionImpl : public ChromeV8Extension {
     CHECK_EQ(1, args.Length());
     CHECK(args[0]->IsString());
 
-    std::string event_name = *v8::String::AsciiValue(args[0]->ToString());
+    std::string event_name = *v8::String::Utf8Value(args[0]->ToString());
 
     if (!dispatcher_->CheckContextAccessToExtensionAPI(event_name, context()))
       return;
@@ -122,7 +124,7 @@ class ExtensionImpl : public ChromeV8Extension {
     CHECK(args[0]->IsString());
     CHECK(args[1]->IsBoolean());
 
-    std::string event_name = *v8::String::AsciiValue(args[0]);
+    std::string event_name = *v8::String::Utf8Value(args[0]);
     bool is_manual = args[1]->BooleanValue();
 
     std::string extension_id = context()->GetExtensionID();
@@ -155,7 +157,7 @@ class ExtensionImpl : public ChromeV8Extension {
     CHECK(args[0]->IsString());
     CHECK(args[1]->IsObject());
 
-    std::string event_name = *v8::String::AsciiValue(args[0]);
+    std::string event_name = *v8::String::Utf8Value(args[0]);
 
     // This method throws an exception if it returns false.
     if (!dispatcher_->CheckContextAccessToExtensionAPI(event_name, context()))
@@ -266,13 +268,15 @@ class ExtensionImpl : public ChromeV8Extension {
       const v8::FunctionCallbackInfo<v8::Value>& args) {
     typedef std::set<EventFilter::MatcherID> MatcherIDs;
     EventFilter& event_filter = g_event_filter.Get();
-    std::string event_name = *v8::String::AsciiValue(args[0]->ToString());
-    EventFilteringInfo info = ParseFromObject(args[1]->ToObject());
+    std::string event_name = *v8::String::Utf8Value(args[0]->ToString());
+    EventFilteringInfo info =
+        ParseFromObject(args[1]->ToObject(), args.GetIsolate());
     // Only match events routed to this context's RenderView or ones that don't
     // have a routingId in their filter.
     MatcherIDs matched_event_filters = event_filter.MatchEvent(
         event_name, info, context()->GetRenderView()->GetRoutingID());
-    v8::Handle<v8::Array> array(v8::Array::New(matched_event_filters.size()));
+    v8::Handle<v8::Array> array(
+        v8::Array::New(args.GetIsolate(), matched_event_filters.size()));
     int i = 0;
     for (MatcherIDs::iterator it = matched_event_filters.begin();
          it != matched_event_filters.end(); ++it) {
@@ -281,17 +285,25 @@ class ExtensionImpl : public ChromeV8Extension {
     args.GetReturnValue().Set(array);
   }
 
-  static EventFilteringInfo ParseFromObject(v8::Handle<v8::Object> object) {
+  static EventFilteringInfo ParseFromObject(v8::Handle<v8::Object> object,
+                                            v8::Isolate* isolate) {
     EventFilteringInfo info;
-    v8::Handle<v8::String> url(v8::String::New("url"));
+    v8::Handle<v8::String> url(v8::String::NewFromUtf8(isolate, "url"));
     if (object->Has(url)) {
       v8::Handle<v8::Value> url_value(object->Get(url));
-      info.SetURL(GURL(*v8::String::AsciiValue(url_value)));
+      info.SetURL(GURL(*v8::String::Utf8Value(url_value)));
     }
-    v8::Handle<v8::String> instance_id(v8::String::New("instanceId"));
+    v8::Handle<v8::String> instance_id(
+        v8::String::NewFromUtf8(isolate, "instanceId"));
     if (object->Has(instance_id)) {
       v8::Handle<v8::Value> instance_id_value(object->Get(instance_id));
       info.SetInstanceID(instance_id_value->IntegerValue());
+    }
+    v8::Handle<v8::String> service_type(
+        v8::String::NewFromUtf8(isolate, "serviceType"));
+    if (object->Has(service_type)) {
+      v8::Handle<v8::Value> service_type_value(object->Get(service_type));
+      info.SetServiceType(*v8::String::Utf8Value(service_type_value));
     }
     return info;
   }

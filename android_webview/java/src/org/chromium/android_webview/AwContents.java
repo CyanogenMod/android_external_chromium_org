@@ -7,14 +7,13 @@ package org.chromium.android_webview;
 import android.app.Activity;
 import android.content.ComponentCallbacks2;
 import android.content.Context;
-import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Paint;
 import android.graphics.Picture;
 import android.graphics.Rect;
-import android.graphics.drawable.Drawable;
 import android.net.http.SslCertificate;
 import android.os.AsyncTask;
 import android.os.Build;
@@ -26,7 +25,6 @@ import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.ViewTreeObserver;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.view.accessibility.AccessibilityNodeProvider;
@@ -41,8 +39,9 @@ import com.google.common.annotations.VisibleForTesting;
 import org.chromium.base.CalledByNative;
 import org.chromium.base.JNINamespace;
 import org.chromium.base.ThreadUtils;
+import org.chromium.components.navigation_interception.InterceptNavigationDelegate;
+import org.chromium.components.navigation_interception.NavigationParams;
 import org.chromium.content.browser.ContentSettings;
-import org.chromium.content.browser.ContentVideoView;
 import org.chromium.content.browser.ContentViewClient;
 import org.chromium.content.browser.ContentViewCore;
 import org.chromium.content.browser.ContentViewStatics;
@@ -50,20 +49,18 @@ import org.chromium.content.browser.LoadUrlParams;
 import org.chromium.content.browser.NavigationHistory;
 import org.chromium.content.browser.PageTransitionTypes;
 import org.chromium.content.common.CleanupReference;
-import org.chromium.components.navigation_interception.InterceptNavigationDelegate;
-import org.chromium.components.navigation_interception.NavigationParams;
-import org.chromium.net.GURLUtils;
-import org.chromium.ui.ActivityWindowAndroid;
-import org.chromium.ui.WindowAndroid;
+import org.chromium.ui.base.ActivityWindowAndroid;
+import org.chromium.ui.base.WindowAndroid;
 import org.chromium.ui.gfx.DeviceDisplayInfo;
 
 import java.io.File;
 import java.lang.annotation.Annotation;
 import java.net.MalformedURLException;
 import java.net.URL;
-import java.util.concurrent.Callable;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.concurrent.Callable;
 
 /**
  * Exposes the native AwContents class, and together these classes wrap the ContentViewCore
@@ -105,13 +102,6 @@ public class AwContents {
      * dispatching of view methods through the containing view.
      */
     public interface InternalAccessDelegate extends ContentViewCore.InternalAccessDelegate {
-        /**
-         * @see View#onScrollChanged(int, int, int, int)
-         *
-         * TODO(mkosiba): WebViewClassic calls this, AwContents doesn't. Check if there
-         * are any cases we're missing, if not - remove.
-         */
-        void onScrollChanged(int lPix, int tPix, int oldlPix, int oldtPix);
 
         /**
          * @see View#overScrollBy(int, int, int, int, int, int, int, int, boolean);
@@ -149,11 +139,12 @@ public class AwContents {
         boolean requestDrawGL(Canvas canvas);
     }
 
-    private int mNativeAwContents;
+    private long mNativeAwContents;
     private final AwBrowserContext mBrowserContext;
     private final ViewGroup mContainerView;
     private ContentViewCore mContentViewCore;
     private final AwContentsClient mContentsClient;
+    private final AwContentViewClient mContentViewClient;
     private final AwContentsClientBridge mContentsClientBridge;
     private final AwWebContentsDelegate mWebContentsDelegate;
     private final AwContentsIoThreadClient mIoThreadClient;
@@ -178,11 +169,12 @@ public class AwContents {
 
     // The base background color, i.e. not accounting for any CSS body from the current page.
     private int mBaseBackgroundColor = Color.WHITE;
+    private int mLayerType = View.LAYER_TYPE_NONE;
 
     // Must call nativeUpdateLastHitTestData first to update this before use.
     private final HitTestData mPossiblyStaleHitTestData = new HitTestData();
 
-    private DefaultVideoPosterRequestHandler mDefaultVideoPosterRequestHandler;
+    private final DefaultVideoPosterRequestHandler mDefaultVideoPosterRequestHandler;
 
     // Bound method for suppling Picture instances to the AwContentsClient. Will be null if the
     // picture listener API has not yet been enabled, or if it is using invalidation-only mode.
@@ -204,12 +196,15 @@ public class AwContents {
 
     private ComponentCallbacks2 mComponentCallbacks;
 
-    // This flag is to ShouldOverrideUrlNavigation through the resourcethrottle.
+    private AwPdfExporter mAwPdfExporter;
+
+    // This flag indicates that ShouldOverrideUrlNavigation should be posted
+    // through the resourcethrottle. This is only used for popup windows.
     private boolean mDeferredShouldOverrideUrlLoadingIsPendingForPopup;
 
     private static final class DestroyRunnable implements Runnable {
-        private int mNativeAwContents;
-        private DestroyRunnable(int nativeAwContents) {
+        private final long mNativeAwContents;
+        private DestroyRunnable(long nativeAwContents) {
             mNativeAwContents = nativeAwContents;
         }
         @Override
@@ -299,16 +294,11 @@ public class AwContents {
     // When the navigation is for a newly created WebView (i.e. a popup), intercept the navigation
     // here for implementing shouldOverrideUrlLoading. This is to send the shouldOverrideUrlLoading
     // callback to the correct WebViewClient that is associated with the WebView.
-    // Otherwise, use this delegate only to post onPageStarted messages. The navigations are
-    // intercepted via handleNavigation API of ContentRendererClient and communicated via a SYNC
-    // IPC. This is to prevent cancelling XHRs that may have already started.
+    // Otherwise, use this delegate only to post onPageStarted messages.
     //
-    // As for posting the onPageStarted, we could have used WebContentsObserver. However using
-    // it causes these problems at the time: stale URLs, out of order onPageStarted's and double
-    // onPageStarted's.
+    // We are not using WebContentsObserver.didStartLoading because of stale URLs, out of order
+    // onPageStarted's and double onPageStarted's.
     //
-    // TODO(sgurun) implementing onPageStarted via a resource throttle has a performance hit
-    // waiting for UI thread. Let's try to find a non-resource-throttle solution.
     private class InterceptNavigationDelegateImpl implements InterceptNavigationDelegate {
         @Override
         public boolean shouldIgnoreNavigation(NavigationParams navigationParams) {
@@ -322,6 +312,9 @@ public class AwContents {
                     ignoreNavigation = mContentsClient.shouldOverrideUrlLoading(url);
                 }
             }
+            // The shouldOverrideUrlLoading call might have resulted in posting messages to the
+            // UI thread. Using sendMessage here (instead of calling onPageStarted directly)
+            // will allow those to run in order.
             if (!ignoreNavigation) {
                 mContentsClient.getCallbackHelper().postOnPageStarted(url);
             }
@@ -329,7 +322,7 @@ public class AwContents {
         }
     }
 
-    //-------------------------------------------`-------------------------------------------------
+    //--------------------------------------------------------------------------------------------
     private class AwLayoutSizerDelegate implements AwLayoutSizer.Delegate {
         @Override
         public void requestLayout() {
@@ -431,19 +424,17 @@ public class AwContents {
 
     //--------------------------------------------------------------------------------------------
     private class AwComponentCallbacks implements ComponentCallbacks2 {
-          @Override
-          public void onTrimMemory(int level) {
-              if (mNativeAwContents == 0) return;
-              nativeTrimMemory(mNativeAwContents, level);
-          }
+        @Override
+        public void onTrimMemory(int level) {
+            if (mNativeAwContents == 0) return;
+            nativeTrimMemory(mNativeAwContents, level);
+        }
 
-          @Override
-          public void onLowMemory() {
-          }
+        @Override
+        public void onLowMemory() {}
 
-          @Override
-          public void onConfigurationChanged(Configuration configuration) {
-          }
+        @Override
+        public void onConfigurationChanged(Configuration configuration) {}
     };
 
     //--------------------------------------------------------------------------------------------
@@ -460,66 +451,32 @@ public class AwContents {
      * @param browserContext the browsing context to associate this view contents with.
      * @param containerView the view-hierarchy item this object will be bound to.
      * @param internalAccessAdapter to access private methods on containerView.
-     * @param contentsClient will receive API callbacks from this WebView Contents
-     * @param isAccessFromFileURLsGrantedByDefault passed to AwSettings.
+     * @param contentsClient will receive API callbacks from this WebView Contents.
+     * @param awSettings AwSettings instance used to configure the AwContents.
      *
      * This constructor uses the default view sizing policy.
      */
     public AwContents(AwBrowserContext browserContext, ViewGroup containerView,
             InternalAccessDelegate internalAccessAdapter, AwContentsClient contentsClient,
-            boolean isAccessFromFileURLsGrantedByDefault) {
-        this(browserContext, containerView, internalAccessAdapter, contentsClient,
-                isAccessFromFileURLsGrantedByDefault, new AwLayoutSizer());
-    }
-
-    public AwContents(AwBrowserContext browserContext, ViewGroup containerView,
-            InternalAccessDelegate internalAccessAdapter, AwContentsClient contentsClient,
-            boolean isAccessFromFileURLsGrantedByDefault, AwLayoutSizer layoutSizer) {
-        this(browserContext, containerView, internalAccessAdapter, contentsClient,
-                isAccessFromFileURLsGrantedByDefault, layoutSizer, false);
-    }
-
-    private static ContentViewCore createAndInitializeContentViewCore(ViewGroup containerView,
-            InternalAccessDelegate internalDispatcher, int nativeWebContents,
-            ContentViewCore.GestureStateListener pinchGestureStateListener,
-            ContentViewClient contentViewClient,
-            ContentViewCore.ZoomControlsDelegate zoomControlsDelegate) {
-      Context context = containerView.getContext();
-      ContentViewCore contentViewCore = new ContentViewCore(context);
-      // Note INPUT_EVENTS_DELIVERED_IMMEDIATELY is passed to avoid triggering vsync in the
-      // compositor, not because input events are delivered immediately.
-      contentViewCore.initialize(containerView, internalDispatcher, nativeWebContents,
-              context instanceof Activity ?
-                      new ActivityWindowAndroid((Activity) context) : new WindowAndroid(context),
-                ContentViewCore.INPUT_EVENTS_DELIVERED_IMMEDIATELY);
-      contentViewCore.setGestureStateListener(pinchGestureStateListener);
-      contentViewCore.setContentViewClient(contentViewClient);
-      contentViewCore.setZoomControlsDelegate(zoomControlsDelegate);
-      return contentViewCore;
+            AwSettings awSettings) {
+        this(browserContext, containerView, internalAccessAdapter, contentsClient, awSettings,
+                new AwLayoutSizer());
     }
 
     /**
      * @param layoutSizer the AwLayoutSizer instance implementing the sizing policy for the view.
      *
      * This version of the constructor is used in test code to inject test versions of the above
-     * documented classes
+     * documented classes.
      */
     public AwContents(AwBrowserContext browserContext, ViewGroup containerView,
             InternalAccessDelegate internalAccessAdapter, AwContentsClient contentsClient,
-            boolean isAccessFromFileURLsGrantedByDefault, AwLayoutSizer layoutSizer,
-            boolean supportsLegacyQuirks) {
-        this(browserContext, containerView, internalAccessAdapter, contentsClient,
-                layoutSizer, new AwSettings(containerView.getContext(),
-                        isAccessFromFileURLsGrantedByDefault, supportsLegacyQuirks));
-    }
-
-    public AwContents(AwBrowserContext browserContext, ViewGroup containerView,
-            InternalAccessDelegate internalAccessAdapter, AwContentsClient contentsClient,
-            AwLayoutSizer layoutSizer, AwSettings settings) {
+            AwSettings settings, AwLayoutSizer layoutSizer) {
         mBrowserContext = browserContext;
         mContainerView = containerView;
         mInternalAccessAdapter = internalAccessAdapter;
         mContentsClient = contentsClient;
+        mContentViewClient = new AwContentViewClient(contentsClient, settings);
         mLayoutSizer = layoutSizer;
         mSettings = settings;
         mDIPScale = DeviceDisplayInfo.create(mContainerView.getContext()).getDIPScale();
@@ -534,9 +491,10 @@ public class AwContents {
         AwSettings.ZoomSupportChangeListener zoomListener =
                 new AwSettings.ZoomSupportChangeListener() {
                     @Override
-                    public void onGestureZoomSupportChanged(boolean supportsGestureZoom) {
-                        mContentViewCore.updateMultiTouchZoomSupport(supportsGestureZoom);
-                        mContentViewCore.updateDoubleTapDragSupport(supportsGestureZoom);
+                    public void onGestureZoomSupportChanged(
+                            boolean supportsDoubleTapZoom, boolean supportsMultiTouchZoom) {
+                        mContentViewCore.updateDoubleTapSupport(supportsDoubleTapZoom);
+                        mContentViewCore.updateMultiTouchZoomSupport(supportsMultiTouchZoom);
                     }
 
                 };
@@ -559,6 +517,23 @@ public class AwContents {
         onWindowVisibilityChanged(mContainerView.getWindowVisibility());
     }
 
+    private static ContentViewCore createAndInitializeContentViewCore(ViewGroup containerView,
+            InternalAccessDelegate internalDispatcher, int nativeWebContents,
+            ContentViewCore.GestureStateListener pinchGestureStateListener,
+            ContentViewClient contentViewClient,
+            ContentViewCore.ZoomControlsDelegate zoomControlsDelegate) {
+        Context context = containerView.getContext();
+        ContentViewCore contentViewCore = new ContentViewCore(context);
+        contentViewCore.initialize(containerView, internalDispatcher, nativeWebContents,
+                context instanceof Activity ?
+                        new ActivityWindowAndroid((Activity) context) :
+                        new WindowAndroid(context.getApplicationContext()));
+        contentViewCore.setGestureStateListener(pinchGestureStateListener);
+        contentViewCore.setContentViewClient(contentViewClient);
+        contentViewCore.setZoomControlsDelegate(zoomControlsDelegate);
+        return contentViewCore;
+    }
+
     /**
      * Common initialization routine for adopting a native AwContents instance into this
      * java instance.
@@ -566,7 +541,7 @@ public class AwContents {
      * TAKE CARE! This method can get called multiple times per java instance. Code accordingly.
      * ^^^^^^^^^  See the native class declaration for more details on relative object lifetimes.
      */
-    private void setNewAwContents(int newAwContentsPtr) {
+    private void setNewAwContents(long newAwContentsPtr) {
         if (mNativeAwContents != 0) {
             destroy();
             mContentViewCore = null;
@@ -586,18 +561,17 @@ public class AwContents {
         int nativeWebContents = nativeGetWebContents(mNativeAwContents);
         mContentViewCore = createAndInitializeContentViewCore(
                 mContainerView, mInternalAccessAdapter, nativeWebContents,
-                new AwGestureStateListener(), mContentsClient.getContentViewClient(),
-                mZoomControls);
+                new AwGestureStateListener(), mContentViewClient, mZoomControls);
         nativeSetJavaPeers(mNativeAwContents, this, mWebContentsDelegate, mContentsClientBridge,
                 mIoThreadClient, mInterceptNavigationDelegate);
-        mContentsClient.installWebContentsObserver(mContentViewCore, mSettings);
+        mContentsClient.installWebContentsObserver(mContentViewCore);
         mSettings.setWebContents(nativeWebContents);
         nativeSetDipScale(mNativeAwContents, (float) mDIPScale);
         updateGlobalVisibleRect();
 
         // The only call to onShow. onHide should never be called.
         mContentViewCore.onShow();
-   }
+    }
 
     /**
      * Called on the "source" AwContents that is opening the popup window to
@@ -695,9 +669,6 @@ public class AwContents {
         return mSettings;
     }
 
-    // START: Printing fork b/10190508
-    private AwPdfExporter mAwPdfExporter;
-
     public AwPdfExporter getPdfExporter() {
         // mNativeAwContents can be null, due to destroy().
         if (mNativeAwContents == 0) {
@@ -709,10 +680,6 @@ public class AwContents {
         }
         return mAwPdfExporter;
     }
-    private native void nativeCreatePdfExporter(
-            int nativeAwContents, AwPdfExporter awPdfExporter);
-
-    // END: Printing fork b/10190508
 
     public static void setAwDrawSWFunctionTable(int functionTablePointer) {
         nativeSetAwDrawSWFunctionTable(functionTablePointer);
@@ -784,9 +751,9 @@ public class AwContents {
         if (mClearViewActive) {
             canvas.drawColor(getEffectiveBackgroundColor());
         } else if (!nativeOnDraw(mNativeAwContents, canvas, canvas.isHardwareAccelerated(),
-                    mContainerView.getScrollX(), mContainerView.getScrollY(),
-                    mClipBoundsTemporary.left, mClipBoundsTemporary.top,
-                    mClipBoundsTemporary.right, mClipBoundsTemporary.bottom)) {
+                mContainerView.getScrollX(), mContainerView.getScrollY(),
+                mClipBoundsTemporary.left, mClipBoundsTemporary.top,
+                mClipBoundsTemporary.right, mClipBoundsTemporary.bottom)) {
             Log.w(TAG, "nativeOnDraw failed; clearing to background color.");
             canvas.drawColor(getEffectiveBackgroundColor());
         }
@@ -897,11 +864,11 @@ public class AwContents {
      * ensuring the URL passed in is properly formatted (i.e. the scheme has been added if left
      * off during user input).
      *
-     * @param pararms Parameters for this load.
+     * @param params Parameters for this load.
      */
     public void loadUrl(LoadUrlParams params) {
         if (params.getLoadUrlType() == LoadUrlParams.LOAD_TYPE_DATA &&
-            !params.isBaseUrlDataScheme()) {
+                !params.isBaseUrlDataScheme()) {
             // This allows data URLs with a non-data base URL access to file:///android_asset/ and
             // file:///android_res/ URLs. If AwSettings.getAllowFileAccess permits, it will also
             // allow access to file:// URLs (subject to OS level permission checks).
@@ -910,9 +877,9 @@ public class AwContents {
 
         // If we are reloading the same url, then set transition type as reload.
         if (params.getUrl() != null &&
-            params.getUrl().equals(mContentViewCore.getUrl()) &&
-            params.getTransitionType() == PageTransitionTypes.PAGE_TRANSITION_LINK) {
-            params.setTransitionType(PageTransitionTypes.PAGE_TRANSITION_RELOAD);
+                params.getUrl().equals(mContentViewCore.getUrl()) &&
+                params.getTransitionType() == PageTransitionTypes.PAGE_TRANSITION_LINK) {
+                params.setTransitionType(PageTransitionTypes.PAGE_TRANSITION_RELOAD);
         }
         params.setTransitionType(
                 params.getTransitionType() | PageTransitionTypes.PAGE_TRANSITION_FROM_API);
@@ -929,14 +896,29 @@ public class AwContents {
         }
         mFavicon = null;
 
+        // We don't pass extra headers to the content layer, as WebViewClassic
+        // was adding them in a very narrow set of conditions. See http://crbug.com/306873
+        if (mNativeAwContents != 0) {
+            nativeSetExtraHeadersForUrl(
+                    mNativeAwContents, params.getUrl(), params.getExtraHttpRequestHeadersString());
+        }
+        params.setExtraHeaders(new HashMap<String, String>());
+
         mContentViewCore.loadUrl(params);
 
         // The behavior of WebViewClassic uses the populateVisitedLinks callback in WebKit.
         // Chromium does not use this use code path and the best emulation of this behavior to call
         // request visited links once on the first URL load of the WebView.
         if (!mHasRequestedVisitedHistoryFromClient) {
-          mHasRequestedVisitedHistoryFromClient = true;
-          requestVisitedHistoryFromClient();
+            mHasRequestedVisitedHistoryFromClient = true;
+            requestVisitedHistoryFromClient();
+        }
+
+        if (params.getLoadUrlType() == LoadUrlParams.LOAD_TYPE_DATA &&
+                params.getBaseUrl() != null) {
+            // Data loads with a base url will be resolved in Blink, and not cause an onPageStarted
+            // event to be sent. Sending the callback directly from here.
+            mContentsClient.getCallbackHelper().postOnPageStarted(params.getBaseUrl());
         }
     }
 
@@ -963,6 +945,21 @@ public class AwContents {
         if (mNativeAwContents != 0) nativeSetBackgroundColor(mNativeAwContents, color);
     }
 
+    /**
+     * @see android.view.View#setLayerType()
+     */
+    public void setLayerType(int layerType, Paint paint) {
+        mLayerType = layerType;
+        updateHardwareAcceleratedFeaturesToggle();
+    }
+
+    private void updateHardwareAcceleratedFeaturesToggle() {
+        mSettings.setEnableSupportedHardwareAcceleratedFeatures(
+                mIsAttachedToWindow && mContainerView.isHardwareAccelerated() &&
+                (mLayerType == View.LAYER_TYPE_NONE || mLayerType == View.LAYER_TYPE_HARDWARE));
+    }
+
+
     private int getEffectiveBackgroundColor() {
         // Do not ask the ContentViewCore for the background color, as it will always
         // report white prior to initial navigation or post destruction,  whereas we want
@@ -974,7 +971,7 @@ public class AwContents {
     }
 
     public boolean isMultiTouchZoomSupported() {
-        return mSettings.supportsGestureZoom();
+        return mSettings.supportsMultiTouchZoom();
     }
 
     public View getZoomControlsForTest() {
@@ -1079,7 +1076,7 @@ public class AwContents {
     }
 
     /**
-     * @see WebView#requestChildRectangleOnScreen(View, Rect, boolean)
+     * @see android.webkit.WebView#requestChildRectangleOnScreen(View, Rect, boolean)
      */
     public boolean requestChildRectangleOnScreen(View child, Rect rect, boolean immediate) {
         return mScrollOffsetManager.requestChildRectangleOnScreen(
@@ -1140,7 +1137,7 @@ public class AwContents {
      * @see android.webkit.WebView#reload()
      */
     public void reload() {
-        mContentViewCore.reload();
+        mContentViewCore.reload(true);
     }
 
     /**
@@ -1379,7 +1376,7 @@ public class AwContents {
         // In order to maintain compatibility with the old WebView's implementation,
         // the absolute (full) url is passed in the |url| field, not only the href attribute.
         // Note: HitTestData could be cleaned up at this point. See http://crbug.com/290992.
-        data.putString("url", mPossiblyStaleHitTestData.hitTestResultExtraData);
+        data.putString("url", mPossiblyStaleHitTestData.href);
         data.putString("title", mPossiblyStaleHitTestData.anchorText);
         data.putString("src", mPossiblyStaleHitTestData.imgSrc);
         msg.setData(data);
@@ -1397,6 +1394,11 @@ public class AwContents {
         data.putString("url", mPossiblyStaleHitTestData.imgSrc);
         msg.setData(data);
         msg.sendToTarget();
+    }
+
+    @VisibleForTesting
+    public float getPageScaleFactor() {
+        return mPageScaleFactor;
     }
 
     /**
@@ -1530,8 +1532,8 @@ public class AwContents {
 
             // Note this will trigger IPC back to browser even if nothing is hit.
             nativeRequestNewHitTestDataAt(mNativeAwContents,
-                                          (int)Math.round(event.getX(actionIndex) / mDIPScale),
-                                          (int)Math.round(event.getY(actionIndex) / mDIPScale));
+                                          (int) Math.round(event.getX(actionIndex) / mDIPScale),
+                                          (int) Math.round(event.getY(actionIndex) / mDIPScale));
         }
 
         if (mOverScrollGlow != null && event.getActionMasked() == MotionEvent.ACTION_UP) {
@@ -1574,6 +1576,7 @@ public class AwContents {
         mContentViewCore.onAttachedToWindow();
         nativeOnAttachedToWindow(mNativeAwContents, mContainerView.getWidth(),
                 mContainerView.getHeight());
+        updateHardwareAcceleratedFeaturesToggle();
 
         if (mComponentCallbacks != null) return;
         mComponentCallbacks = new AwComponentCallbacks();
@@ -1591,10 +1594,11 @@ public class AwContents {
         }
 
         mContentViewCore.onDetachedFromWindow();
+        updateHardwareAcceleratedFeaturesToggle();
 
         if (mComponentCallbacks != null) {
-          mContainerView.getContext().unregisterComponentCallbacks(mComponentCallbacks);
-          mComponentCallbacks = null;
+            mContainerView.getContext().unregisterComponentCallbacks(mComponentCallbacks);
+            mComponentCallbacks = null;
         }
 
         mScrollAccessibilityHelper.removePostedCallbacks();
@@ -1946,7 +1950,7 @@ public class AwContents {
         float oldPageScaleFactor = mPageScaleFactor;
         mPageScaleFactor = pageScaleFactor;
         mContentsClient.getCallbackHelper().postOnScaleChangedScaled(
-                (float)(oldPageScaleFactor * mDIPScale), (float)(mPageScaleFactor * mDIPScale));
+                (float) (oldPageScaleFactor * mDIPScale), (float) (mPageScaleFactor * mDIPScale));
     }
 
     @CalledByNative
@@ -2019,72 +2023,85 @@ public class AwContents {
         return null;
     }
 
+    public void extractSmartClipData(int x, int y, int width, int height) {
+        mContentViewCore.extractSmartClipData(x, y, width, height);
+    }
+
+    public void setSmartClipDataListener(ContentViewCore.SmartClipDataListener listener) {
+        mContentViewCore.setSmartClipDataListener(listener);
+    }
+
     //--------------------------------------------------------------------------------------------
     //  Native methods
     //--------------------------------------------------------------------------------------------
 
-    private static native int nativeInit(AwBrowserContext browserContext);
-    private static native void nativeDestroy(int nativeAwContents);
+    private static native long nativeInit(AwBrowserContext browserContext);
+    private static native void nativeDestroy(long nativeAwContents);
     private static native void nativeSetAwDrawSWFunctionTable(int functionTablePointer);
     private static native void nativeSetAwDrawGLFunctionTable(int functionTablePointer);
     private static native int nativeGetAwDrawGLFunction();
     private static native int nativeGetNativeInstanceCount();
     private static native void nativeSetShouldDownloadFavicons();
-    private native void nativeSetJavaPeers(int nativeAwContents, AwContents awContents,
+    private native void nativeSetJavaPeers(long nativeAwContents, AwContents awContents,
             AwWebContentsDelegate webViewWebContentsDelegate,
             AwContentsClientBridge contentsClientBridge,
             AwContentsIoThreadClient ioThreadClient,
             InterceptNavigationDelegate navigationInterceptionDelegate);
-    private native int nativeGetWebContents(int nativeAwContents);
+    private native int nativeGetWebContents(long nativeAwContents);
 
-    private native void nativeDocumentHasImages(int nativeAwContents, Message message);
+    private native void nativeDocumentHasImages(long nativeAwContents, Message message);
     private native void nativeGenerateMHTML(
-            int nativeAwContents, String path, ValueCallback<String> callback);
+            long nativeAwContents, String path, ValueCallback<String> callback);
 
-    private native void nativeAddVisitedLinks(int nativeAwContents, String[] visitedLinks);
-    private native boolean nativeOnDraw(int nativeAwContents, Canvas canvas,
-            boolean isHardwareAccelerated, int scrollX, int ScrollY,
+    private native void nativeAddVisitedLinks(long nativeAwContents, String[] visitedLinks);
+    private native boolean nativeOnDraw(long nativeAwContents, Canvas canvas,
+            boolean isHardwareAccelerated, int scrollX, int scrollY,
             int clipLeft, int clipTop, int clipRight, int clipBottom);
-    private native void nativeSetGlobalVisibleRect(int nativeAwContents, int visibleLeft,
+    private native void nativeSetGlobalVisibleRect(long nativeAwContents, int visibleLeft,
             int visibleTop, int visibleRight, int visibleBottom);
-    private native void nativeFindAllAsync(int nativeAwContents, String searchString);
-    private native void nativeFindNext(int nativeAwContents, boolean forward);
-    private native void nativeClearMatches(int nativeAwContents);
-    private native void nativeClearCache(int nativeAwContents, boolean includeDiskFiles);
-    private native byte[] nativeGetCertificate(int nativeAwContents);
+    private native void nativeFindAllAsync(long nativeAwContents, String searchString);
+    private native void nativeFindNext(long nativeAwContents, boolean forward);
+    private native void nativeClearMatches(long nativeAwContents);
+    private native void nativeClearCache(long nativeAwContents, boolean includeDiskFiles);
+    private native byte[] nativeGetCertificate(long nativeAwContents);
 
     // Coordinates in desity independent pixels.
-    private native void nativeRequestNewHitTestDataAt(int nativeAwContents, int x, int y);
-    private native void nativeUpdateLastHitTestData(int nativeAwContents);
+    private native void nativeRequestNewHitTestDataAt(long nativeAwContents, int x, int y);
+    private native void nativeUpdateLastHitTestData(long nativeAwContents);
 
-    private native void nativeOnSizeChanged(int nativeAwContents, int w, int h, int ow, int oh);
-    private native void nativeScrollTo(int nativeAwContents, int x, int y);
-    private native void nativeSetViewVisibility(int nativeAwContents, boolean visible);
-    private native void nativeSetWindowVisibility(int nativeAwContents, boolean visible);
-    private native void nativeSetIsPaused(int nativeAwContents, boolean paused);
-    private native void nativeOnAttachedToWindow(int nativeAwContents, int w, int h);
-    private static native void nativeOnDetachedFromWindow(int nativeAwContents);
-    private native void nativeSetDipScale(int nativeAwContents, float dipScale);
-    private native void nativeSetFixedLayoutSize(int nativeAwContents, int widthDip, int heightDip);
+    private native void nativeOnSizeChanged(long nativeAwContents, int w, int h, int ow, int oh);
+    private native void nativeScrollTo(long nativeAwContents, int x, int y);
+    private native void nativeSetViewVisibility(long nativeAwContents, boolean visible);
+    private native void nativeSetWindowVisibility(long nativeAwContents, boolean visible);
+    private native void nativeSetIsPaused(long nativeAwContents, boolean paused);
+    private native void nativeOnAttachedToWindow(long nativeAwContents, int w, int h);
+    private static native void nativeOnDetachedFromWindow(long nativeAwContents);
+    private native void nativeSetDipScale(long nativeAwContents, float dipScale);
+    private native void nativeSetFixedLayoutSize(long nativeAwContents,
+            int widthDip, int heightDip);
 
     // Returns null if save state fails.
-    private native byte[] nativeGetOpaqueState(int nativeAwContents);
+    private native byte[] nativeGetOpaqueState(long nativeAwContents);
 
     // Returns false if restore state fails.
-    private native boolean nativeRestoreFromOpaqueState(int nativeAwContents, byte[] state);
+    private native boolean nativeRestoreFromOpaqueState(long nativeAwContents, byte[] state);
 
-    private native int nativeReleasePopupAwContents(int nativeAwContents);
-    private native void nativeFocusFirstNode(int nativeAwContents);
-    private native void nativeSetBackgroundColor(int nativeAwContents, int color);
+    private native int nativeReleasePopupAwContents(long nativeAwContents);
+    private native void nativeFocusFirstNode(long nativeAwContents);
+    private native void nativeSetBackgroundColor(long nativeAwContents, int color);
 
-    private native int nativeGetAwDrawGLViewContext(int nativeAwContents);
-    private native int nativeCapturePicture(int nativeAwContents, int width, int height);
-    private native void nativeEnableOnNewPicture(int nativeAwContents, boolean enabled);
+    private native int nativeGetAwDrawGLViewContext(long nativeAwContents);
+    private native long nativeCapturePicture(long nativeAwContents, int width, int height);
+    private native void nativeEnableOnNewPicture(long nativeAwContents, boolean enabled);
+    private native void nativeSetExtraHeadersForUrl(long nativeAwContents,
+            String url, String extraHeaders);
 
     private native void nativeInvokeGeolocationCallback(
-            int nativeAwContents, boolean value, String requestingFrame);
+            long nativeAwContents, boolean value, String requestingFrame);
 
-    private native void nativeSetJsOnlineProperty(int nativeAwContents, boolean networkUp);
+    private native void nativeSetJsOnlineProperty(long nativeAwContents, boolean networkUp);
 
-    private native void nativeTrimMemory(int nativeAwContents, int level);
+    private native void nativeTrimMemory(long nativeAwContents, int level);
+
+    private native void nativeCreatePdfExporter(long nativeAwContents, AwPdfExporter awPdfExporter);
 }

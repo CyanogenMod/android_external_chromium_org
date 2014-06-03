@@ -15,7 +15,6 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/storage_monitor/mock_removable_storage_observer.h"
@@ -25,10 +24,8 @@
 #include "chrome/browser/storage_monitor/test_media_transfer_protocol_manager_linux.h"
 #include "chrome/browser/storage_monitor/test_storage_monitor.h"
 #include "chrome/test/base/testing_browser_process.h"
-#include "content/public/test/test_browser_thread.h"
+#include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gtest/include/gtest/gtest.h"
-
-namespace chrome {
 
 namespace {
 
@@ -91,7 +88,7 @@ scoped_ptr<StorageInfo> GetDeviceInfo(const base::FilePath& device_path,
   StorageInfo::Type type = kTestDeviceData[i].type;
   storage_info.reset(new StorageInfo(
       StorageInfo::MakeDeviceId(type, kTestDeviceData[i].unique_id),
-      string16(),
+      base::string16(),
       mount_point.value(),
       ASCIIToUTF16("volume label"),
       ASCIIToUTF16("vendor name"),
@@ -124,10 +121,8 @@ std::string GetDeviceId(const std::string& device) {
 
 class TestStorageMonitorLinux : public StorageMonitorLinux {
  public:
-  TestStorageMonitorLinux(const base::FilePath& path,
-                          base::MessageLoop* message_loop)
-      : StorageMonitorLinux(path),
-        message_loop_(message_loop) {
+  explicit TestStorageMonitorLinux(const base::FilePath& path)
+      : StorageMonitorLinux(path) {
     SetMediaTransferProtocolManagerForTest(
         new TestMediaTransferProtocolManagerLinux());
     SetGetDeviceInfoCallbackForTest(base::Bind(&GetDeviceInfo));
@@ -138,10 +133,9 @@ class TestStorageMonitorLinux : public StorageMonitorLinux {
   virtual void UpdateMtab(
       const MtabWatcherLinux::MountPointDeviceMap& new_mtab) OVERRIDE {
     StorageMonitorLinux::UpdateMtab(new_mtab);
-    message_loop_->PostTask(FROM_HERE, base::MessageLoop::QuitClosure());
+    base::MessageLoopProxy::current()->PostTask(
+        FROM_HERE, base::MessageLoop::QuitClosure());
   }
-
-  base::MessageLoop* message_loop_;
 
   DISALLOW_COPY_AND_ASSIGN(TestStorageMonitorLinux);
 };
@@ -163,10 +157,7 @@ class StorageMonitorLinuxTest : public testing::Test {
   };
 
   StorageMonitorLinuxTest()
-      : message_loop_(base::MessageLoop::TYPE_IO),
-        ui_thread_(content::BrowserThread::UI, &message_loop_),
-        file_thread_(content::BrowserThread::FILE, &message_loop_) {
-  }
+      : thread_bundle_(content::TestBrowserThreadBundle::IO_MAINLOOP) {}
   virtual ~StorageMonitorLinuxTest() {}
 
  protected:
@@ -174,7 +165,7 @@ class StorageMonitorLinuxTest : public testing::Test {
     // Create and set up a temp dir with files for the test.
     ASSERT_TRUE(scoped_temp_dir_.CreateUniqueTempDir());
     base::FilePath test_dir = scoped_temp_dir_.path().AppendASCII("test_etc");
-    ASSERT_TRUE(file_util::CreateDirectory(test_dir));
+    ASSERT_TRUE(base::CreateDirectory(test_dir));
     mtab_file_ = test_dir.AppendASCII("test_mtab");
     MtabTestData initial_test_data[] = {
       MtabTestData("dummydevice", "dummydir", kInvalidFS),
@@ -183,8 +174,8 @@ class StorageMonitorLinuxTest : public testing::Test {
                 arraysize(initial_test_data),
                 true  /* overwrite */);
 
-    test::TestStorageMonitor::RemoveSingleton();
-    monitor_ = new TestStorageMonitorLinux(mtab_file_, &message_loop_);
+    TestStorageMonitor::RemoveSingleton();
+    monitor_ = new TestStorageMonitorLinux(mtab_file_);
     scoped_ptr<StorageMonitor> pass_monitor(monitor_);
     TestingBrowserProcess* browser_process = TestingBrowserProcess::GetGlobal();
     DCHECK(browser_process);
@@ -203,22 +194,21 @@ class StorageMonitorLinuxTest : public testing::Test {
     base::RunLoop().RunUntilIdle();
 
     // Linux storage monitor must be destroyed on the UI thread, so do it here.
-    test::TestStorageMonitor::RemoveSingleton();
-    base::RunLoop().RunUntilIdle();
+    TestStorageMonitor::RemoveSingleton();
   }
 
   // Append mtab entries from the |data| array of size |data_size| to the mtab
   // file, and run the message loop.
   void AppendToMtabAndRunLoop(const MtabTestData* data, size_t data_size) {
     WriteToMtab(data, data_size, false  /* do not overwrite */);
-    message_loop_.Run();
+    base::RunLoop().Run();
   }
 
   // Overwrite the mtab file with mtab entries from the |data| array of size
   // |data_size|, and run the message loop.
   void OverwriteMtabAndRunLoop(const MtabTestData* data, size_t data_size) {
     WriteToMtab(data, data_size, true  /* overwrite */);
-    message_loop_.Run();
+    base::RunLoop().Run();
   }
 
   // Simplied version of OverwriteMtabAndRunLoop() that just deletes all the
@@ -276,7 +266,7 @@ class StorageMonitorLinuxTest : public testing::Test {
     base::FilePath path(return_path);
     if (with_dcim_dir)
       path = path.Append(kDCIMDirectoryName);
-    if (!file_util::CreateDirectory(path))
+    if (!base::CreateDirectory(path))
       return base::FilePath();
     return return_path;
   }
@@ -314,10 +304,7 @@ class StorageMonitorLinuxTest : public testing::Test {
     ASSERT_EQ(1, endmntent(file));
   }
 
-  // The message loop and file thread to run tests on.
-  base::MessageLoop message_loop_;
-  content::TestBrowserThread ui_thread_;
-  content::TestBrowserThread file_thread_;
+  content::TestBrowserThreadBundle thread_bundle_;
 
   scoped_ptr<MockRemovableStorageObserver> mock_storage_observer_;
 
@@ -346,7 +333,7 @@ TEST_F(StorageMonitorLinuxTest, BasicAttachDetach) {
   EXPECT_EQ(1, observer().attach_calls());
   EXPECT_EQ(0, observer().detach_calls());
   EXPECT_EQ(GetDeviceId(kDeviceDCIM2), observer().last_attached().device_id());
-  EXPECT_EQ(string16(), observer().last_attached().name());
+  EXPECT_EQ(base::string16(), observer().last_attached().name());
   EXPECT_EQ(test_path.value(), observer().last_attached().location());
 
   // |kDeviceDCIM2| should be detached here.
@@ -369,7 +356,7 @@ TEST_F(StorageMonitorLinuxTest, Removable) {
   EXPECT_EQ(1, observer().attach_calls());
   EXPECT_EQ(0, observer().detach_calls());
   EXPECT_EQ(GetDeviceId(kDeviceDCIM1), observer().last_attached().device_id());
-  EXPECT_EQ(string16(), observer().last_attached().name());
+  EXPECT_EQ(base::string16(), observer().last_attached().name());
   EXPECT_EQ(test_path_a.value(), observer().last_attached().location());
 
   // This should do nothing, since |kDeviceFixed| is not removable.
@@ -396,7 +383,7 @@ TEST_F(StorageMonitorLinuxTest, Removable) {
   EXPECT_EQ(2, observer().attach_calls());
   EXPECT_EQ(1, observer().detach_calls());
   EXPECT_EQ(GetDeviceId(kDeviceNoDCIM), observer().last_attached().device_id());
-  EXPECT_EQ(string16(), observer().last_attached().name());
+  EXPECT_EQ(base::string16(), observer().last_attached().name());
   EXPECT_EQ(test_path_b.value(), observer().last_attached().location());
 
   // |kDeviceNoDCIM| should be detached as expected.
@@ -623,7 +610,7 @@ TEST_F(StorageMonitorLinuxTest, DeviceLookUp) {
   EXPECT_TRUE(notifier()->GetStorageInfoForPath(test_path_a, &device_info));
   EXPECT_EQ(GetDeviceId(kDeviceDCIM1), device_info.device_id());
   EXPECT_EQ(test_path_a.value(), device_info.location());
-  EXPECT_EQ(string16(), device_info.name());
+  EXPECT_EQ(base::string16(), device_info.name());
   EXPECT_EQ(88788ULL, device_info.total_size_in_bytes());
   EXPECT_EQ(ASCIIToUTF16("volume label"), device_info.storage_label());
   EXPECT_EQ(ASCIIToUTF16("vendor name"), device_info.vendor_name());
@@ -632,12 +619,12 @@ TEST_F(StorageMonitorLinuxTest, DeviceLookUp) {
   EXPECT_TRUE(notifier()->GetStorageInfoForPath(test_path_b, &device_info));
   EXPECT_EQ(GetDeviceId(kDeviceNoDCIM), device_info.device_id());
   EXPECT_EQ(test_path_b.value(), device_info.location());
-  EXPECT_EQ(string16(), device_info.name());
+  EXPECT_EQ(base::string16(), device_info.name());
 
   EXPECT_TRUE(notifier()->GetStorageInfoForPath(test_path_c, &device_info));
   EXPECT_EQ(GetDeviceId(kDeviceFixed), device_info.device_id());
   EXPECT_EQ(test_path_c.value(), device_info.location());
-  EXPECT_EQ(string16(), device_info.name());
+  EXPECT_EQ(base::string16(), device_info.name());
 
   // An invalid path.
   EXPECT_FALSE(notifier()->GetStorageInfoForPath(base::FilePath(kInvalidPath),
@@ -649,7 +636,7 @@ TEST_F(StorageMonitorLinuxTest, DeviceLookUp) {
       &device_info));
   EXPECT_EQ(GetDeviceId(kDeviceDCIM1), device_info.device_id());
   EXPECT_EQ(test_path_a.value(), device_info.location());
-  EXPECT_EQ(string16(), device_info.name());
+  EXPECT_EQ(base::string16(), device_info.name());
 
   // One device attached at multiple points.
   // kDeviceDCIM1 -> kMountPointA *
@@ -699,5 +686,3 @@ TEST_F(StorageMonitorLinuxTest, DevicePartitionSize) {
 }
 
 }  // namespace
-
-}  // namespace chrome

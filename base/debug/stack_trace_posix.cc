@@ -43,6 +43,7 @@ namespace {
 
 volatile sig_atomic_t in_signal_handler = 0;
 
+#if !defined(USE_SYMBOLIZE) && defined(__GLIBCXX__)
 // The prefix used for mangled symbols, per the Itanium C++ ABI:
 // http://www.codesourcery.com/cxx-abi/abi.html#mangling
 const char kMangledSymbolPrefix[] = "_Z";
@@ -51,6 +52,7 @@ const char kMangledSymbolPrefix[] = "_Z";
 // (('a'..'z').to_a+('A'..'Z').to_a+('0'..'9').to_a + ['_']).join
 const char kSymbolCharacters[] =
     "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_";
+#endif  // !defined(USE_SYMBOLIZE) && defined(__GLIBCXX__)
 
 #if !defined(USE_SYMBOLIZE)
 // Demangles C++ symbols in the given text. Example:
@@ -177,6 +179,7 @@ void PrintToStderr(const char* output) {
   ignore_result(HANDLE_EINTR(write(STDERR_FILENO, output, strlen(output))));
 }
 
+#if !defined(OS_IOS)
 void StackDumpSignalHandler(int signal, siginfo_t* info, void* void_context) {
   // NOTE: This code MUST be async-signal safe.
   // NO malloc or stdio is allowed here.
@@ -253,7 +256,7 @@ void StackDumpSignalHandler(int signal, siginfo_t* info, void* void_context) {
   }
   PrintToStderr("\n");
 
-  debug::StackTrace().PrintBacktrace();
+  debug::StackTrace().Print();
 
 #if defined(OS_LINUX)
 #if ARCH_CPU_X86_FAMILY
@@ -369,6 +372,7 @@ void StackDumpSignalHandler(int signal, siginfo_t* info, void* void_context) {
 #endif  // defined(OS_MACOSX)
   _exit(1);
 }
+#endif  // !defined(OS_IOS)
 
 class PrintBacktraceOutputHandler : public BacktraceOutputHandler {
  public:
@@ -399,6 +403,7 @@ class StreamBacktraceOutputHandler : public BacktraceOutputHandler {
   DISALLOW_COPY_AND_ASSIGN(StreamBacktraceOutputHandler);
 };
 
+#if !defined(OS_IOS)
 void WarmUpBacktrace() {
   // Warm up stack trace infrastructure. It turns out that on the first
   // call glibc initializes some internal data structures using pthread_once,
@@ -431,6 +436,7 @@ void WarmUpBacktrace() {
   // #22 <signal handler called>
   StackTrace stack_trace;
 }
+#endif  // !defined(OS_IOS)
 
 }  // namespace
 
@@ -474,7 +480,7 @@ StackTrace::StackTrace() {
   count_ = std::max(backtrace(trace_, arraysize(trace_)), 0);
 }
 
-void StackTrace::PrintBacktrace() const {
+void StackTrace::Print() const {
   // NOTE: This code MUST be async-signal safe (it's used by in-process
   // stack dumping signal handler). NO malloc or stdio is allowed here.
 

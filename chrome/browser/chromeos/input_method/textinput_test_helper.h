@@ -8,7 +8,7 @@
 #include "chrome/test/base/in_process_browser_test.h"
 #include "ui/base/ime/mock_input_method.h"
 #include "ui/base/ime/text_input_client.h"
-#include "ui/base/range/range.h"
+#include "ui/gfx/range/range.h"
 #include "ui/gfx/rect.h"
 
 namespace content {
@@ -29,16 +29,16 @@ class TextInputTestBase : public InProcessBrowserTest {
 };
 
 // Provides text input test utilities.
-class TextInputTestHelper : public ui::MockInputMethod::Observer {
+class TextInputTestHelper : public ui::InputMethodObserver {
  public:
   TextInputTestHelper();
   virtual ~TextInputTestHelper();
 
   // Returns the latest status notified to ui::InputMethod
-  string16 GetSurroundingText() const;
+  base::string16 GetSurroundingText() const;
   gfx::Rect GetCaretRect() const;
   gfx::Rect GetCompositionHead() const;
-  ui::Range GetSelectionRange() const;
+  gfx::Range GetSelectionRange() const;
   bool GetFocusState() const;
   ui::TextInputType GetTextInputType() const;
 
@@ -51,8 +51,8 @@ class TextInputTestHelper : public ui::MockInputMethod::Observer {
   void WaitForBlur();
   void WaitForCaretBoundsChanged(const gfx::Rect& expected_caret_rect,
                                  const gfx::Rect& expected_composition_head);
-  void WaitForSurroundingTextChanged(const string16& expected_text,
-                                     const ui::Range& expected_selection);
+  void WaitForSurroundingTextChanged(const base::string16& expected_text,
+                                     const gfx::Range& expected_selection);
 
   // Converts from string to gfx::Rect. The string should be "x,y,width,height".
   // Returns false if the conversion failed.
@@ -70,15 +70,12 @@ class TextInputTestHelper : public ui::MockInputMethod::Observer {
     WAIT_ON_TEXT_INPUT_TYPE_CHANGED,
   };
 
-  // ui::MockInputMethod::MockObserver overrides.
+  // ui::InputMethodObserver overrides.
   virtual void OnTextInputTypeChanged(
       const ui::TextInputClient* client) OVERRIDE;
   virtual void OnFocus() OVERRIDE;
   virtual void OnBlur() OVERRIDE;
-  virtual void OnUntranslatedIMEMessage(
-      const base::NativeEvent& event) OVERRIDE;
   virtual void OnCaretBoundsChanged(const ui::TextInputClient* client) OVERRIDE;
-  virtual void OnInputLocaleChanged() OVERRIDE;
   virtual void OnTextInputStateChanged(
       const ui::TextInputClient* client) OVERRIDE;
   virtual void OnInputMethodDestroyed(
@@ -87,10 +84,10 @@ class TextInputTestHelper : public ui::MockInputMethod::Observer {
   // Represents waiting type of text input event.
   WaitImeEventType waiting_type_;
 
-  string16 surrounding_text_;
+  base::string16 surrounding_text_;
   gfx::Rect caret_rect_;
   gfx::Rect composition_head_;
-  ui::Range selection_range_;
+  gfx::Range selection_range_;
   bool focus_state_;
   ui::TextInputType latest_text_input_type_;
 

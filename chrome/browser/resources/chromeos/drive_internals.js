@@ -35,12 +35,13 @@ function updateDriveRelatedPreferences(preferences) {
 }
 
 /**
- * Updates the Authentication Status section.
- * @param {Object} authStatus Dictionary containing auth status.
+ * Updates the Connection Status section.
+ * @param {Object} connStatus Dictionary containing connection status.
  */
-function updateAuthStatus(authStatus) {
-  $('has-refresh-token').textContent = authStatus['has-refresh-token'];
-  $('has-access-token').textContent = authStatus['has-access-token'];
+function updateConnectionStatus(connStatus) {
+  $('connection-status').textContent = connStatus['status'];
+  $('has-refresh-token').textContent = connStatus['has-refresh-token'];
+  $('has-access-token').textContent = connStatus['has-access-token'];
 }
 
 /**
@@ -91,7 +92,7 @@ function updateFileSystemContents(directoryContentsAsText) {
  */
 function updateCacheContents(cacheEntry) {
   var tr = document.createElement('tr');
-  tr.appendChild(createElementFromText('td', cacheEntry.resource_id));
+  tr.appendChild(createElementFromText('td', cacheEntry.local_id));
   tr.appendChild(createElementFromText('td', cacheEntry.md5));
   tr.appendChild(createElementFromText('td', cacheEntry.is_present));
   tr.appendChild(createElementFromText('td', cacheEntry.is_pinned));
@@ -251,6 +252,14 @@ function updateKeyValueList(ul, list) {
   }
 }
 
+/**
+ * Updates the text next to the 'reload' button to update the status.
+ * @param {boolean} success whether or not reloading has succeeded.
+ */
+function updateReloadStatus(success) {
+  $('reload-status-text').textContent = (success ? 'success' : 'failed');
+}
+
 document.addEventListener('DOMContentLoaded', function() {
   chrome.send('pageLoaded');
 
@@ -272,6 +281,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
   $('button-clear-refresh-token').addEventListener('click', function() {
     chrome.send('clearRefreshToken');
+  });
+
+  $('button-reload-drive-filesystem').addEventListener('click', function() {
+    $('reload-status-text').textContent = 'reloading...';
+    chrome.send('reloadDriveFileSystem');
   });
 
   $('button-show-file-entries').addEventListener('click', function() {

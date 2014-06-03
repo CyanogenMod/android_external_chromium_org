@@ -1,22 +1,20 @@
-// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 package org.chromium.android_webview.shell;
 
 import android.app.Activity;
-import android.content.Intent;
 import android.content.Context;
+import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.text.TextUtils;
-import android.util.Log;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.View.OnClickListener;
 import android.view.View.OnFocusChangeListener;
 import android.view.ViewGroup.LayoutParams;
-import android.view.WindowManager;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
@@ -25,22 +23,25 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.TextView.OnEditorActionListener;
 
-import org.chromium.android_webview.AwBrowserProcess;
 import org.chromium.android_webview.AwBrowserContext;
+import org.chromium.android_webview.AwBrowserProcess;
 import org.chromium.android_webview.AwContents;
 import org.chromium.android_webview.AwContentsClient;
+import org.chromium.android_webview.AwDevToolsServer;
 import org.chromium.android_webview.AwLayoutSizer;
+import org.chromium.android_webview.AwSettings;
 import org.chromium.android_webview.test.AwTestContainerView;
 import org.chromium.android_webview.test.NullContentsClient;
 import org.chromium.content.browser.LoadUrlParams;
 
-/*
+/**
  * This is a lightweight activity for tests that only require WebView functionality.
  */
 public class AwShellActivity extends Activity {
-    private final static String PREFERENCES_NAME = "AwShellPrefs";
-    private final static String INITIAL_URL = "about:blank";
+    private static final String PREFERENCES_NAME = "AwShellPrefs";
+    private static final String INITIAL_URL = "about:blank";
     private AwBrowserContext mBrowserContext;
+    private AwDevToolsServer mDevToolsServer;
     private AwTestContainerView mAwTestContainerView;
     private EditText mUrlTextView;
     private ImageButton mPrevButton;
@@ -73,6 +74,7 @@ public class AwShellActivity extends Activity {
     }
 
     private AwTestContainerView createAwTestContainerView() {
+        AwBrowserProcess.start(this);
         AwTestContainerView testContainerView = new AwTestContainerView(this);
         AwContentsClient awContentsClient = new NullContentsClient() {
             @Override
@@ -88,10 +90,16 @@ public class AwShellActivity extends Activity {
         if (mBrowserContext == null) {
             mBrowserContext = new AwBrowserContext(sharedPreferences);
         }
+        final AwSettings awSettings = new AwSettings(this /*context*/,
+                false /*isAccessFromFileURLsGrantedByDefault*/, true /*supportsLegacyQuirks*/);
         testContainerView.initialize(new AwContents(mBrowserContext, testContainerView,
                 testContainerView.getInternalAccessDelegate(),
-                awContentsClient, false, new AwLayoutSizer(), true));
+                awContentsClient, awSettings, new AwLayoutSizer()));
         testContainerView.getAwContents().getSettings().setJavaScriptEnabled(true);
+        if (mDevToolsServer == null) {
+            mDevToolsServer = new AwDevToolsServer();
+            mDevToolsServer.setRemoteDebuggingEnabled(true);
+        }
         return testContainerView;
     }
 
@@ -157,7 +165,7 @@ public class AwShellActivity extends Activity {
             @Override
             public void onClick(View v) {
                 if (mAwTestContainerView.getContentViewCore().canGoForward()) {
-                        mAwTestContainerView.getContentViewCore().goForward();
+                    mAwTestContainerView.getContentViewCore().goForward();
                 }
             }
         });

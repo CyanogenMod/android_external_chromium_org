@@ -1,16 +1,15 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 package org.chromium.android_webview;
 
+import android.content.res.Resources;
+
 import org.chromium.base.CalledByNative;
 import org.chromium.base.JNINamespace;
 
-import android.content.res.Resources;
-
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.lang.ref.SoftReference;
 import java.util.HashMap;
@@ -104,13 +103,12 @@ public class AwResource {
             return "";
         } catch (NoSuchElementException e) {
             return "";
-        }
-        finally {
+        } finally {
             try {
                 if (isr != null) {
                     isr.close();
                 }
-            } catch(IOException e) {
+            } catch (IOException e) {
             }
         }
         return result;

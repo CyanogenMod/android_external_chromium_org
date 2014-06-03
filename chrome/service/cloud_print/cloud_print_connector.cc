@@ -15,7 +15,7 @@
 #include "base/values.h"
 #include "chrome/common/cloud_print/cloud_print_constants.h"
 #include "chrome/common/cloud_print/cloud_print_helpers.h"
-#include "chrome/service/cloud_print/cloud_print_helpers.h"
+#include "chrome/service/cloud_print/cloud_print_service_helpers.h"
 #include "grit/generated_resources.h"
 #include "net/base/mime_util.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -25,7 +25,8 @@ namespace cloud_print {
 CloudPrintConnector::CloudPrintConnector(Client* client,
                                          const ConnectorSettings& settings)
   : client_(client),
-    next_response_handler_(NULL) {
+    next_response_handler_(NULL),
+    stats_ptr_factory_(this) {
   settings_.CopyFrom(settings);
 }
 
@@ -48,6 +49,19 @@ bool CloudPrintConnector::InitPrintSystem() {
   return true;
 }
 
+void CloudPrintConnector::ScheduleStatsReport() {
+  base::MessageLoop::current()->PostDelayedTask(
+      FROM_HERE,
+      base::Bind(&CloudPrintConnector::ReportStats,
+                 stats_ptr_factory_.GetWeakPtr()),
+      base::TimeDelta::FromHours(1));
+}
+
+void CloudPrintConnector::ReportStats() {
+  PrinterJobHandler::ReportsStats();
+  ScheduleStatsReport();
+}
+
 bool CloudPrintConnector::Start() {
   VLOG(1) << "CP_CONNECTOR: Starting connector"
           << ", proxy id: " << settings_.proxy_id();
@@ -56,6 +70,8 @@ bool CloudPrintConnector::Start() {
 
   if (!InitPrintSystem())
     return false;
+
+  ScheduleStatsReport();
 
   // Start watching for updates from the print system.
   print_server_watcher_ = print_system_->CreatePrintServerWatcher();
@@ -71,6 +87,7 @@ void CloudPrintConnector::Stop() {
           << ", proxy id: " << settings_.proxy_id();
   DCHECK(IsRunning());
   // Do uninitialization here.
+  stats_ptr_factory_.InvalidateWeakPtrs();
   pending_tasks_.clear();
   print_server_watcher_ = NULL;
   request_ = NULL;
@@ -122,6 +139,17 @@ void CloudPrintConnector::CheckForJobs(const std::string& reason,
       index->second->CheckForJobs(reason);
     }
   }
+}
+
+void CloudPrintConnector::UpdatePrinterSettings(const std::string& printer_id) {
+  // Since connector is managing many printers we need to go through all of them
+  // to select the correct settings.
+  GURL printer_list_url = GetUrlForPrinterList(
+      settings_.server_url(), settings_.proxy_id());
+  StartGetRequest(
+      printer_list_url,
+      kCloudPrintRegisterMaxRetryCount,
+      &CloudPrintConnector::HandlePrinterListResponseSettingsUpdate);
 }
 
 void CloudPrintConnector::OnPrinterAdded() {
@@ -181,6 +209,8 @@ CloudPrintConnector::HandlePrinterListResponse(
   DCHECK(succeeded);
   if (!succeeded)
     return CloudPrintURLFetcher::RETRY_REQUEST;
+
+  UpdateSettingsFromPrintersList(json_data);
 
   // Now we need to get the list of printers from the print system
   // and split printers into 3 categories:
@@ -252,6 +282,20 @@ CloudPrintConnector::HandlePrinterListResponse(
 }
 
 CloudPrintURLFetcher::ResponseAction
+CloudPrintConnector::HandlePrinterListResponseSettingsUpdate(
+    const net::URLFetcher* source,
+    const GURL& url,
+    DictionaryValue* json_data,
+    bool succeeded) {
+  DCHECK(succeeded);
+  if (!succeeded)
+    return CloudPrintURLFetcher::RETRY_REQUEST;
+
+  UpdateSettingsFromPrintersList(json_data);
+  return CloudPrintURLFetcher::STOP_PROCESSING;
+}
+
+CloudPrintURLFetcher::ResponseAction
 CloudPrintConnector::HandlePrinterDeleteResponse(
     const net::URLFetcher* source,
     const GURL& url,
@@ -292,18 +336,21 @@ void CloudPrintConnector::StartGetRequest(const GURL& url,
                                           ResponseHandler handler) {
   next_response_handler_ = handler;
   request_ = CloudPrintURLFetcher::Create();
-  request_->StartGetRequest(url, this, max_retries, std::string());
+  request_->StartGetRequest(CloudPrintURLFetcher::REQUEST_UPDATE_JOB,
+                            url, this, max_retries, std::string());
 }
 
-void CloudPrintConnector::StartPostRequest(const GURL& url,
-                                           int max_retries,
-                                           const std::string& mime_type,
-                                           const std::string& post_data,
-                                           ResponseHandler handler) {
+void CloudPrintConnector::StartPostRequest(
+    CloudPrintURLFetcher::RequestType type,
+    const GURL& url,
+    int max_retries,
+    const std::string& mime_type,
+    const std::string& post_data,
+    ResponseHandler handler) {
   next_response_handler_ = handler;
   request_ = CloudPrintURLFetcher::Create();
   request_->StartPostRequest(
-      url, this, max_retries, mime_type, post_data, std::string());
+      type, url, this, max_retries, mime_type, post_data, std::string());
 }
 
 void CloudPrintConnector::ReportUserMessage(const std::string& message_id,
@@ -320,8 +367,9 @@ void CloudPrintConnector::ReportUserMessage(const std::string& message_id,
   std::string mime_type("multipart/form-data; boundary=");
   mime_type += mime_boundary;
   user_message_request_ = CloudPrintURLFetcher::Create();
-  user_message_request_->StartPostRequest(url, this, 1, mime_type, post_data,
-                                          std::string());
+  user_message_request_->StartPostRequest(
+      CloudPrintURLFetcher::REQUEST_USER_MESSAGE, url, this, 1, mime_type,
+      post_data, std::string());
 }
 
 bool CloudPrintConnector::RemovePrinterFromList(
@@ -376,6 +424,12 @@ void CloudPrintConnector::InitJobHandlerForPrinter(
       }
     }
   }
+
+  int xmpp_timeout = 0;
+  printer_data->GetInteger(kLocalSettingsPendingXmppValue, &xmpp_timeout);
+  printer_info_cloud.current_xmpp_timeout = settings_.xmpp_ping_timeout_sec();
+  printer_info_cloud.pending_xmpp_timeout = xmpp_timeout;
+
   scoped_refptr<PrinterJobHandler> job_handler;
   job_handler = new PrinterJobHandler(printer_info,
                                       printer_info_cloud,
@@ -385,6 +439,32 @@ void CloudPrintConnector::InitJobHandlerForPrinter(
   job_handler_map_[printer_info_cloud.printer_id] = job_handler;
   job_handler->Initialize();
 }
+
+void CloudPrintConnector::UpdateSettingsFromPrintersList(
+    DictionaryValue* json_data) {
+  ListValue* printer_list = NULL;
+  int min_xmpp_timeout = std::numeric_limits<int>::max();
+  // There may be no "printers" value in the JSON
+  if (json_data->GetList(kPrinterListValue, &printer_list) && printer_list) {
+    for (size_t index = 0; index < printer_list->GetSize(); index++) {
+      DictionaryValue* printer_data = NULL;
+      if (printer_list->GetDictionary(index, &printer_data)) {
+        int xmpp_timeout = 0;
+        if (printer_data->GetInteger(kLocalSettingsPendingXmppValue,
+                                     &xmpp_timeout)) {
+          min_xmpp_timeout = std::min(xmpp_timeout, min_xmpp_timeout);
+        }
+      }
+    }
+  }
+
+  if (min_xmpp_timeout != std::numeric_limits<int>::max()) {
+    DCHECK(min_xmpp_timeout >= kMinXmppPingTimeoutSecs);
+    settings_.SetXmppPingTimeoutSec(min_xmpp_timeout);
+    client_->OnXmppPingUpdated(min_xmpp_timeout);
+  }
+}
+
 
 void CloudPrintConnector::AddPendingAvailableTask() {
   PendingTask task;
@@ -536,6 +616,11 @@ void CloudPrintConnector::OnReceivePrinterCaps(
   net::AddMultipartValueForUpload(kPrinterStatusValue,
       base::StringPrintf("%d", info.printer_status),
       mime_boundary, std::string(), &post_data);
+  // Add local_settings with a current XMPP ping interval.
+  net::AddMultipartValueForUpload(kPrinterLocalSettingsValue,
+      base::StringPrintf(kCreateLocalSettingsXmppPingFormat,
+          settings_.xmpp_ping_timeout_sec()),
+      mime_boundary, std::string(), &post_data);
   post_data += GetPostDataForPrinterInfo(info, mime_boundary);
   net::AddMultipartValueForUpload(kPrinterCapsValue,
       caps_and_defaults.printer_capabilities, mime_boundary,
@@ -553,10 +638,8 @@ void CloudPrintConnector::OnReceivePrinterCaps(
   mime_type += mime_boundary;
 
   GURL post_url = GetUrlForPrinterRegistration(settings_.server_url());
-  StartPostRequest(post_url,
-                   kCloudPrintAPIMaxRetryCount,
-                   mime_type,
-                   post_data,
+  StartPostRequest(CloudPrintURLFetcher::REQUEST_REGISTER, post_url,
+                   kCloudPrintAPIMaxRetryCount, mime_type, post_data,
                    &CloudPrintConnector::HandleRegisterPrinterResponse);
 }
 

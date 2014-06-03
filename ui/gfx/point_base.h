@@ -9,13 +9,13 @@
 
 #include "base/compiler_specific.h"
 #include "build/build_config.h"
-#include "ui/base/ui_export.h"
+#include "ui/gfx/gfx_export.h"
 
 namespace gfx {
 
 // A point has an x and y coordinate.
 template<typename Class, typename Type, typename VectorClass>
-class UI_EXPORT PointBase {
+class GFX_EXPORT PointBase {
  public:
   Type x() const { return x_; }
   Type y() const { return y_; }

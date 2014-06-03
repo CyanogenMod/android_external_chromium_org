@@ -10,15 +10,15 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
+#include "chrome/browser/chromeos/policy/proto/chrome_device_policy.pb.h"
 #include "chrome/browser/chromeos/settings/device_settings_test_helper.h"
 #include "chrome/browser/chromeos/settings/mock_owner_key_util.h"
-#include "chrome/browser/policy/cloud/cloud_policy_constants.h"
-#include "chrome/browser/policy/cloud/cloud_policy_validator.h"
-#include "chrome/browser/policy/cloud/policy_builder.h"
-#include "chrome/browser/policy/proto/chromeos/chrome_device_policy.pb.h"
-#include "chrome/browser/policy/proto/cloud/device_management_backend.pb.h"
+#include "components/policy/core/common/cloud/cloud_policy_constants.h"
+#include "components/policy/core/common/cloud/cloud_policy_validator.h"
+#include "components/policy/core/common/cloud/policy_builder.h"
 #include "content/public/test/test_browser_thread.h"
 #include "crypto/rsa_private_key.h"
+#include "policy/proto/device_management_backend.pb.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -252,7 +252,8 @@ TEST_F(SessionManagerOperationTest, SignAndStoreSettings) {
       policy_response->ParseFromString(
           device_settings_test_helper_.policy_blob()));
   policy::DeviceCloudPolicyValidator* validator =
-      policy::DeviceCloudPolicyValidator::Create(policy_response.Pass());
+      policy::DeviceCloudPolicyValidator::Create(
+          policy_response.Pass(), message_loop_.message_loop_proxy());
   validator->ValidateUsername(policy_.policy_data().username());
   validator->ValidateTimestamp(
       before,

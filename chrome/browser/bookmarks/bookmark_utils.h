@@ -23,11 +23,14 @@ class PrefRegistrySyncable;
 namespace bookmark_utils {
 
 // Clones bookmark node, adding newly created nodes to |parent| starting at
-// |index_to_add_at|.
+// |index_to_add_at|. If |reset_node_times| is true cloned bookmarks and
+// folders will receive new creation times and folder modification times
+// instead of using the values stored in |elements|.
 void CloneBookmarkNode(BookmarkModel* model,
                        const std::vector<BookmarkNodeData::Element>& elements,
                        const BookmarkNode* parent,
-                       int index_to_add_at);
+                       int index_to_add_at,
+                       bool reset_node_times);
 
 // Copies nodes onto the clipboard. If |remove_nodes| is true the nodes are
 // removed after copied to the clipboard. The nodes are copied in such a way
@@ -64,16 +67,10 @@ bool MoreRecentlyAdded(const BookmarkNode* n1, const BookmarkNode* n2);
 // the text |text|.  |languages| is user's accept-language setting to decode
 // IDN.
 void GetBookmarksContainingText(BookmarkModel* model,
-                                const string16& text,
+                                const base::string16& text,
                                 size_t max_count,
                                 const std::string& languages,
                                 std::vector<const BookmarkNode*>* nodes);
-
-// Returns true if |node|'s url or title contains the string |text|.
-// |languages| is user's accept-language setting to decode IDN.
-bool DoesBookmarkContainText(const BookmarkNode* node,
-                             const string16& text,
-                             const std::string& languages);
 
 // Register user preferences for Bookmarks Bar.
 void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
@@ -93,51 +90,10 @@ void DeleteBookmarkFolders(BookmarkModel* model, const std::vector<int64>& ids);
 // If there are no bookmarks for url, a bookmark is created.
 void AddIfNotBookmarked(BookmarkModel* model,
                         const GURL& url,
-                        const string16& title);
+                        const base::string16& title);
 
 // Removes all bookmarks for the given |url|.
 void RemoveAllBookmarks(BookmarkModel* model, const GURL& url);
-
-// This enum is used for the Bookmarks.EntryPoint histogram.
-enum BookmarkEntryPoint {
-  ENTRY_POINT_ACCELERATOR,
-  ENTRY_POINT_STAR_GESTURE,
-  ENTRY_POINT_STAR_KEY,
-  ENTRY_POINT_STAR_MOUSE,
-
-  ENTRY_POINT_LIMIT // Keep this last.
-};
-
-// This enum is used for the Bookmarks.LaunchLocation histogram.
-enum BookmarkLaunchLocation {
-  LAUNCH_NONE,
-  LAUNCH_ATTACHED_BAR = 0,
-  LAUNCH_DETACHED_BAR,
-  // These two are kind of sub-categories of the bookmark bar. Generally
-  // a launch from a context menu or subfolder could be classified in one of
-  // the other two bar buckets, but doing so is difficult because the menus
-  // don't know of their greater place in Chrome.
-  LAUNCH_BAR_SUBFOLDER,
-  LAUNCH_CONTEXT_MENU,
-
-  // Bookmarks menu within wrench menu.
-  LAUNCH_WRENCH_MENU,
-  // Bookmark manager.
-  LAUNCH_MANAGER,
-  // Autocomplete suggestion.
-  LAUNCH_OMNIBOX,
-
-  LAUNCH_LIMIT  // Keep this last.
-};
-
-// Records the launch of a bookmark for UMA purposes.
-void RecordBookmarkLaunch(BookmarkLaunchLocation location);
-
-// Records the user opening a folder of bookmarks for UMA purposes.
-void RecordBookmarkFolderOpen(BookmarkLaunchLocation location);
-
-// Records the user opening the apps page for UMA purposes.
-void RecordAppsPageOpen(BookmarkLaunchLocation location);
 
 }  // namespace bookmark_utils
 

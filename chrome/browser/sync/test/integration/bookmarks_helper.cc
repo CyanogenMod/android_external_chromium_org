@@ -23,7 +23,7 @@
 #include "chrome/browser/history/history_types.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync/glue/bookmark_change_processor.h"
-#include "chrome/browser/sync/profile_sync_service_harness.h"
+#include "chrome/browser/sync/test/integration/profile_sync_service_harness.h"
 #include "chrome/browser/sync/test/integration/sync_datatype_helper.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
 #include "chrome/common/chrome_paths.h"
@@ -130,7 +130,7 @@ std::set<GURL>* urls_with_favicons_ = NULL;
 // titles match the string |title|.
 int CountNodesWithTitlesMatching(BookmarkModel* model,
                                  BookmarkNode::Type node_type,
-                                 const string16& title) {
+                                 const base::string16& title) {
   ui::TreeNodeIterator<const BookmarkNode> iterator(model->root_node());
   // Walk through the model tree looking for bookmark nodes of node type
   // |node_type| whose titles match |title|.
@@ -146,7 +146,7 @@ int CountNodesWithTitlesMatching(BookmarkModel* model,
 // Checks if the favicon data in |bitmap_a| and |bitmap_b| are equivalent.
 // Returns true if they match.
 bool FaviconBitmapsMatch(const SkBitmap& bitmap_a, const SkBitmap& bitmap_b) {
-  if (bitmap_a.getSize() == 0U && bitmap_a.getSize() == 0U)
+  if (bitmap_a.getSize() == 0U && bitmap_b.getSize() == 0U)
     return true;
   if ((bitmap_a.getSize() != bitmap_b.getSize()) ||
       (bitmap_a.width() != bitmap_b.width()) ||
@@ -292,9 +292,9 @@ bool FaviconsMatch(BookmarkModel* model_a,
 
   // Compare only the 1x bitmaps as only those are synced.
   SkBitmap bitmap_a = image_a.AsImageSkia().GetRepresentation(
-      ui::SCALE_FACTOR_100P).sk_bitmap();
+      1.0f).sk_bitmap();
   SkBitmap bitmap_b = image_b.AsImageSkia().GetRepresentation(
-      ui::SCALE_FACTOR_100P).sk_bitmap();
+      1.0f).sk_bitmap();
   return FaviconBitmapsMatch(bitmap_a, bitmap_b);
 }
 
@@ -714,14 +714,16 @@ gfx::Image CreateFavicon(SkColor color) {
       FaviconUtil::GetFaviconScaleFactors();
   gfx::ImageSkia favicon;
   for (size_t i = 0; i < favicon_scale_factors.size(); ++i) {
-    float scale = ui::GetScaleFactorScale(favicon_scale_factors[i]);
+    float scale = ui::GetImageScale(favicon_scale_factors[i]);
     int pixel_width = dip_width * scale;
     int pixel_height = dip_height * scale;
     SkBitmap bmp;
     bmp.setConfig(SkBitmap::kARGB_8888_Config, pixel_width, pixel_height);
     bmp.allocPixels();
     bmp.eraseColor(color);
-    favicon.AddRepresentation(gfx::ImageSkiaRep(bmp, favicon_scale_factors[i]));
+    favicon.AddRepresentation(
+        gfx::ImageSkiaRep(bmp,
+                          ui::GetImageScale(favicon_scale_factors[i])));
   }
   return gfx::Image(favicon);
 }
@@ -737,7 +739,7 @@ gfx::Image Create1xFaviconFromPNGFile(const std::string& path) {
 
   full_path = full_path.AppendASCII("sync").AppendASCII(path);
   std::string contents;
-  file_util::ReadFileToString(full_path, &contents);
+  base::ReadFileToString(full_path, &contents);
   return gfx::Image::CreateFrom1xPNGBytes(
       reinterpret_cast<const unsigned char*>(contents.data()), contents.size());
 }

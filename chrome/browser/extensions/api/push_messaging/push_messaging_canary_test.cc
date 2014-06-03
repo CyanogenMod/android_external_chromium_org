@@ -132,7 +132,7 @@ class PushMessagingCanaryTest : public ExtensionApiTest {
 // This test is disabled to keep it from running on trybots since
 // it requires network access, and it is not a good idea to run
 // this test as part of a checkin or nightly test.
-IN_PROC_BROWSER_TEST_F(PushMessagingCanaryTest, DISABLED_ReceivesPush) {
+IN_PROC_BROWSER_TEST_F(PushMessagingCanaryTest, MANUAL_ReceivesPush) {
   InitializeSync();
 
   const ExtensionSet* installed_extensions = extension_service()->extensions();
@@ -156,12 +156,12 @@ IN_PROC_BROWSER_TEST_F(PushMessagingCanaryTest, DISABLED_ReceivesPush) {
   const std::string& client_secret = sync_setup_helper()->client_secret();
   const std::string& refresh_token = sync_setup_helper()->refresh_token();
 
-  const string16& script_string = UTF8ToUTF16(base::StringPrintf(
+  const base::string16& script_string = UTF8ToUTF16(base::StringPrintf(
       "startTestWithCredentials('%s', '%s', '%s');",
       client_id.c_str(), client_secret.c_str(), refresh_token.c_str()));
 
   browser()->tab_strip_model()->GetActiveWebContents()->GetRenderViewHost()->
-      ExecuteJavascriptInWebFrame(string16(), script_string);
+      ExecuteJavascriptInWebFrame(base::string16(), script_string);
 
   EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
 }

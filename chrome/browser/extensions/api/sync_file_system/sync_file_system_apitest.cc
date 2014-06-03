@@ -8,7 +8,7 @@
 #include "base/run_loop.h"
 #include "chrome/browser/extensions/event_names.h"
 #include "chrome/browser/extensions/extension_apitest.h"
-#include "chrome/browser/sync_file_system/drive_backend/drive_file_sync_service.h"
+#include "chrome/browser/sync_file_system/drive_backend_v1/drive_file_sync_service.h"
 #include "chrome/browser/sync_file_system/file_status_observer.h"
 #include "chrome/browser/sync_file_system/local_change_processor.h"
 #include "chrome/browser/sync_file_system/mock_remote_file_sync_service.h"
@@ -33,8 +33,6 @@ using sync_file_system::MockRemoteFileSyncService;
 using sync_file_system::RemoteFileSyncService;
 using sync_file_system::SyncFileSystemServiceFactory;
 
-namespace chrome {
-
 namespace {
 
 class SyncFileSystemApiTest : public ExtensionApiTest {
@@ -50,7 +48,7 @@ class SyncFileSystemApiTest : public ExtensionApiTest {
     // TODO(calvinlo): Update test code after default quota is made const
     // (http://crbug.com/155488).
     real_default_quota_ = quota::QuotaManager::kSyncableStorageDefaultHostQuota;
-    quota::QuotaManager::kSyncableStorageDefaultHostQuota = 123456789;
+    quota::QuotaManager::kSyncableStorageDefaultHostQuota = 123456;
   }
 
   virtual void TearDownInProcessBrowserTestFixture() OVERRIDE {
@@ -146,7 +144,7 @@ IN_PROC_BROWSER_TEST_F(SyncFileSystemApiTest, GetUsageAndQuota) {
 IN_PROC_BROWSER_TEST_F(SyncFileSystemApiTest, OnFileStatusChanged) {
   // Mock a pending remote change to be synced.
   GURL origin;
-  EXPECT_CALL(*mock_remote_service(), RegisterOriginForTrackingChanges(_, _))
+  EXPECT_CALL(*mock_remote_service(), RegisterOrigin(_, _))
       .WillOnce(UpdateRemoteChangeQueue(&origin, mock_remote_service()));
   EXPECT_CALL(*mock_remote_service(), ProcessRemoteChange(_))
       .WillOnce(ReturnWithFakeFileAddedStatus(
@@ -162,7 +160,7 @@ IN_PROC_BROWSER_TEST_F(SyncFileSystemApiTest, OnFileStatusChanged) {
 IN_PROC_BROWSER_TEST_F(SyncFileSystemApiTest, OnFileStatusChangedDeleted) {
   // Mock a pending remote change to be synced.
   GURL origin;
-  EXPECT_CALL(*mock_remote_service(), RegisterOriginForTrackingChanges(_, _))
+  EXPECT_CALL(*mock_remote_service(), RegisterOrigin(_, _))
       .WillOnce(UpdateRemoteChangeQueue(&origin, mock_remote_service()));
   EXPECT_CALL(*mock_remote_service(), ProcessRemoteChange(_))
       .WillOnce(ReturnWithFakeFileAddedStatus(
@@ -177,15 +175,14 @@ IN_PROC_BROWSER_TEST_F(SyncFileSystemApiTest, OnFileStatusChangedDeleted) {
 }
 
 IN_PROC_BROWSER_TEST_F(SyncFileSystemApiTest, OnServiceStatusChanged) {
-  EXPECT_CALL(*mock_remote_service(), RegisterOriginForTrackingChanges(_, _))
+  EXPECT_CALL(*mock_remote_service(), RegisterOrigin(_, _))
       .WillOnce(NotifyOkStateAndCallback(mock_remote_service()));
   ASSERT_TRUE(RunPlatformAppTest("sync_file_system/on_service_status_changed"))
       << message_;
 }
 
 IN_PROC_BROWSER_TEST_F(SyncFileSystemApiTest, RequestFileSystem) {
-  EXPECT_CALL(*mock_remote_service(),
-              RegisterOriginForTrackingChanges(_, _)).Times(1);
+  EXPECT_CALL(*mock_remote_service(), RegisterOrigin(_, _)).Times(1);
   ASSERT_TRUE(RunPlatformAppTest("sync_file_system/request_file_system"))
       << message_;
 }
@@ -200,4 +197,9 @@ IN_PROC_BROWSER_TEST_F(SyncFileSystemApiTest, ConflictResolutionPolicy) {
       << message_;
 }
 
-}  // namespace chrome
+IN_PROC_BROWSER_TEST_F(SyncFileSystemApiTest, GetServiceStatus) {
+  mock_remote_service()->SetServiceState(
+      sync_file_system::REMOTE_SERVICE_AUTHENTICATION_REQUIRED);
+  ASSERT_TRUE(RunPlatformAppTest("sync_file_system/get_service_status"))
+      << message_;
+}

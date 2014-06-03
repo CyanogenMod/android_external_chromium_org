@@ -3,6 +3,12 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+"""Tool for automatically creating .nmf files from .nexe/.pexe executables.
+
+As well as creating the nmf file this tool can also find and stage
+any shared libraries dependancies that the executables might have.
+"""
+
 import errno
 import json
 import optparse
@@ -31,9 +37,13 @@ OBJDUMP_ARCH_MAP = {
     'elf32-i386': 'x86-32',
     'elf32-little': 'arm',
     'elf32-littlearm': 'arm',
-    # Names returned by x86_64-nacl-objdump:
+    # Names returned by old x86_64-nacl-objdump:
     'elf64-nacl': 'x86-64',
     'elf32-nacl': 'x86-32',
+    # Names returned by new x86_64-nacl-objdump:
+    'elf64-x86-64-nacl': 'x86-64',
+    'elf32-x86-64-nacl': 'x86-64',
+    'elf32-i386-nacl': 'x86-32',
 }
 
 ARCH_LOCATION = {
@@ -118,7 +128,7 @@ def ParseElfHeader(path):
 
   elf_magic = '\x7fELF'
   if e_ident[:4] != elf_magic:
-    raise Error('Not a valid NaCL executable: %s' % path)
+    raise Error('Not a valid NaCl executable: %s' % path)
 
   e_machine_mapping = {
     3 : 'x86-32',
@@ -634,7 +644,7 @@ def GetDefaultLibPath(config):
 
 def main(argv):
   parser = optparse.OptionParser(
-      usage='Usage: %prog [options] nexe [extra_libs...]')
+      usage='Usage: %prog [options] nexe [extra_libs...]', description=__doc__)
   parser.add_option('-o', '--output', dest='output',
                     help='Write manifest file to FILE (default is stdout)',
                     metavar='FILE')
@@ -672,6 +682,16 @@ def main(argv):
                     help='Verbose output', action='store_true')
   parser.add_option('-d', '--debug-mode',
                     help='Debug mode', action='store_true')
+
+  # To enable bash completion for this command first install optcomplete
+  # and then add this line to your .bashrc:
+  #  complete -F _optcomplete create_nmf.py
+  try:
+    import optcomplete
+    optcomplete.autocomplete(parser)
+  except ImportError:
+    pass
+
   options, args = parser.parse_args(argv)
   if options.verbose:
     Trace.verbose = True

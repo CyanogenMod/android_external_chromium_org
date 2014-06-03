@@ -15,7 +15,6 @@
 #include "build/build_config.h"
 #include "chrome/browser/component_updater/component_patcher.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/omaha_query_params/omaha_query_params.h"
 #include "net/url_request/url_request_context_getter.h"
 
 #if defined(OS_WIN)
@@ -31,12 +30,10 @@ const int kDelayOneHour = kDelayOneMinute * 60;
 // Debug values you can pass to --component-updater=value1,value2.
 // Speed up component checking.
 const char kSwitchFastUpdate[] = "fast-update";
-// Force out-of-process-xml parsing.
-const char kSwitchOutOfProcess[] = "out-of-process";
-// Add "testrequest=1" parameter to the update check query.
+
+// Add "testrequest=1" attribute to the update check request.
 const char kSwitchRequestParam[] = "test-request";
-// Disables differential updates.
-const char kSwitchDisableDeltaUpdates[] = "disable-delta-updates";
+
 // Disables pings. Pings are the requests sent to the update server that report
 // the success or the failure of component install or update attempts.
 extern const char kSwitchDisablePings[] = "disable-pings";
@@ -44,13 +41,22 @@ extern const char kSwitchDisablePings[] = "disable-pings";
 // Sets the URL for updates.
 const char kSwitchUrlSource[] = "url-source";
 
-// The default url from which an update manifest can be fetched. Can be
+#define COMPONENT_UPDATER_SERVICE_ENDPOINT \
+    "//clients2.google.com/service/update2"
+
+// The default url for the v3 protocol service endpoint. Can be
 // overridden with --component-updater=url-source=someurl.
-const char kDefaultUrlSource[] =
-    "http://clients2.google.com/service/update2/crx";
+const char kDefaultUrlSource[] = "https:" COMPONENT_UPDATER_SERVICE_ENDPOINT;
 
 // The url to send the pings to.
-const char kPingUrl[] = "http://tools.google.com/service/update2";
+const char kPingUrl[] = "http:" COMPONENT_UPDATER_SERVICE_ENDPOINT;
+
+#if defined(OS_WIN)
+// Disables differential updates.
+const char kSwitchDisableDeltaUpdates[] = "disable-delta-updates";
+// Disables background downloads.
+const char kSwitchDisableBackgroundDownloads[] = "disable-background-downloads";
+#endif  // defined(OS_WIN)
 
 // Returns true if and only if |test| is contained in |vec|.
 bool HasSwitchValue(const std::vector<std::string>& vec, const char* test) {
@@ -92,47 +98,49 @@ class ChromeConfigurator : public ComponentUpdateService::Configurator {
   virtual int InitialDelay() OVERRIDE;
   virtual int NextCheckDelay() OVERRIDE;
   virtual int StepDelay() OVERRIDE;
+  virtual int StepDelayMedium() OVERRIDE;
   virtual int MinimumReCheckWait() OVERRIDE;
   virtual int OnDemandDelay() OVERRIDE;
   virtual GURL UpdateUrl() OVERRIDE;
   virtual GURL PingUrl() OVERRIDE;
-  virtual const char* ExtraRequestParams() OVERRIDE;
+  virtual std::string ExtraRequestParams() OVERRIDE;
   virtual size_t UrlSizeLimit() OVERRIDE;
   virtual net::URLRequestContextGetter* RequestContext() OVERRIDE;
   virtual bool InProcess() OVERRIDE;
   virtual ComponentPatcher* CreateComponentPatcher() OVERRIDE;
   virtual bool DeltasEnabled() const OVERRIDE;
+  virtual bool UseBackgroundDownloader() const OVERRIDE;
 
  private:
   net::URLRequestContextGetter* url_request_getter_;
   std::string extra_info_;
   std::string url_source_;
   bool fast_update_;
-  bool out_of_process_;
   bool pings_enabled_;
   bool deltas_enabled_;
+  bool background_downloads_enabled_;
 };
 
 ChromeConfigurator::ChromeConfigurator(const CommandLine* cmdline,
     net::URLRequestContextGetter* url_request_getter)
       : url_request_getter_(url_request_getter),
-        extra_info_(chrome::OmahaQueryParams::Get(
-            chrome::OmahaQueryParams::CHROME)),
         fast_update_(false),
-        out_of_process_(false),
         pings_enabled_(false),
-        deltas_enabled_(false) {
+        deltas_enabled_(false),
+        background_downloads_enabled_(false) {
   // Parse comma-delimited debug flags.
   std::vector<std::string> switch_values;
   Tokenize(cmdline->GetSwitchValueASCII(switches::kComponentUpdater),
       ",", &switch_values);
   fast_update_ = HasSwitchValue(switch_values, kSwitchFastUpdate);
-  out_of_process_ = HasSwitchValue(switch_values, kSwitchOutOfProcess);
   pings_enabled_ = !HasSwitchValue(switch_values, kSwitchDisablePings);
 #if defined(OS_WIN)
   deltas_enabled_ = !HasSwitchValue(switch_values, kSwitchDisableDeltaUpdates);
+  background_downloads_enabled_ =
+      !HasSwitchValue(switch_values, kSwitchDisableBackgroundDownloads);
 #else
   deltas_enabled_ = false;
+  background_downloads_enabled_ = false;
 #endif
 
   url_source_ = GetSwitchArgument(switch_values, kSwitchUrlSource);
@@ -140,15 +148,8 @@ ChromeConfigurator::ChromeConfigurator(const CommandLine* cmdline,
     url_source_ = kDefaultUrlSource;
   }
 
-  // Make the extra request params, they are necessary so omaha does
-  // not deliver components that are going to be rejected at install time.
-#if defined(OS_WIN)
-  if (base::win::OSInfo::GetInstance()->wow64_status() ==
-      base::win::OSInfo::WOW64_ENABLED)
-    extra_info_ += "&wow64=1";
-#endif
   if (HasSwitchValue(switch_values, kSwitchRequestParam))
-    extra_info_ += "&testrequest=1";
+    extra_info_ += "testrequest=\"1\"";
 }
 
 int ChromeConfigurator::InitialDelay() {
@@ -156,11 +157,15 @@ int ChromeConfigurator::InitialDelay() {
 }
 
 int ChromeConfigurator::NextCheckDelay() {
-  return fast_update_ ? 3 : (2 * kDelayOneHour);
+  return fast_update_ ? 3 : (6 * kDelayOneHour);
+}
+
+int ChromeConfigurator::StepDelayMedium() {
+  return fast_update_ ? 3 : (15 * kDelayOneMinute);
 }
 
 int ChromeConfigurator::StepDelay() {
-  return fast_update_ ? 1 : 4;
+  return fast_update_ ? 1 : 1;
 }
 
 int ChromeConfigurator::MinimumReCheckWait() {
@@ -179,8 +184,8 @@ GURL ChromeConfigurator::PingUrl() {
   return pings_enabled_ ? GURL(kPingUrl) : GURL();
 }
 
-const char* ChromeConfigurator::ExtraRequestParams() {
-  return extra_info_.c_str();
+std::string ChromeConfigurator::ExtraRequestParams() {
+  return extra_info_;
 }
 
 size_t ChromeConfigurator::UrlSizeLimit() {
@@ -192,7 +197,7 @@ net::URLRequestContextGetter* ChromeConfigurator::RequestContext() {
 }
 
 bool ChromeConfigurator::InProcess() {
-  return !out_of_process_;
+  return false;
 }
 
 ComponentPatcher* ChromeConfigurator::CreateComponentPatcher() {
@@ -205,6 +210,10 @@ ComponentPatcher* ChromeConfigurator::CreateComponentPatcher() {
 
 bool ChromeConfigurator::DeltasEnabled() const {
   return deltas_enabled_;
+}
+
+bool ChromeConfigurator::UseBackgroundDownloader() const {
+  return background_downloads_enabled_;
 }
 
 ComponentUpdateService::Configurator* MakeChromeComponentUpdaterConfigurator(

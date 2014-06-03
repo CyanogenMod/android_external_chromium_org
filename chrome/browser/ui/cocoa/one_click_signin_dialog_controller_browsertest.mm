@@ -27,7 +27,7 @@ class OneClickSigninDialogControllerTest : public InProcessBrowserTest {
         &OneClickSigninDialogControllerTest::OnStartSyncCallback,
         base::Unretained(this));
     controller_ = new OneClickSigninDialogController(
-        web_contents, callback, string16());
+        web_contents, callback, base::string16());
     EXPECT_NSEQ(@"OneClickSigninDialog",
                 [controller_->view_controller() nibName]);
   }
@@ -74,7 +74,7 @@ IN_PROC_BROWSER_TEST_F(OneClickSigninDialogControllerTest, Advanced) {
 // Callback should be called to setup sync with default settings.
 IN_PROC_BROWSER_TEST_F(OneClickSigninDialogControllerTest, Close) {
   controller_->constrained_window()->CloseWebContentsModalDialog();
-  EXPECT_EQ(OneClickSigninSyncStarter::SYNC_WITH_DEFAULT_SETTINGS, sync_mode_);
+  EXPECT_EQ(OneClickSigninSyncStarter::UNDO_SYNC, sync_mode_);
   EXPECT_EQ(1, callback_count_);
 }
 

@@ -42,11 +42,15 @@ class ShellUtil {
   // Typical shortcut directories. Resolved in GetShortcutPath().
   // Also used in ShortcutLocationIsSupported().
   enum ShortcutLocation {
-    SHORTCUT_LOCATION_DESKTOP,
+    SHORTCUT_LOCATION_FIRST = 0,
+    SHORTCUT_LOCATION_DESKTOP = SHORTCUT_LOCATION_FIRST,
     SHORTCUT_LOCATION_QUICK_LAUNCH,
-    SHORTCUT_LOCATION_START_MENU,
+    SHORTCUT_LOCATION_START_MENU_ROOT,
+    SHORTCUT_LOCATION_START_MENU_CHROME_DIR,
+    SHORTCUT_LOCATION_START_MENU_CHROME_APPS_DIR,
     SHORTCUT_LOCATION_TASKBAR_PINS,  // base::win::VERSION_WIN7 +
     SHORTCUT_LOCATION_APP_SHORTCUTS,  // base::win::VERSION_WIN8 +
+    NUM_SHORTCUT_LOCATIONS
   };
 
   enum ShortcutOperation {
@@ -127,7 +131,7 @@ class ShellUtil {
     }
 
     // Forces the shortcut's name to |shortcut_name_in|.
-    // Default: the current distribution's GetAppShortcutName().
+    // Default: the current distribution's GetShortcutName(SHORTCUT_CHROME).
     // The ".lnk" extension will automatically be added to this name.
     void set_shortcut_name(const string16& shortcut_name_in) {
       shortcut_name = shortcut_name_in;
@@ -228,12 +232,6 @@ class ShellUtil {
   static const wchar_t* kAppPathsRegistryKey;
   static const wchar_t* kAppPathsRegistryPathName;
 
-  // Name that we give to Chrome file association handler ProgId.
-  static const wchar_t* kChromeHTMLProgId;
-
-  // Description of Chrome file association handler ProgId.
-  static const wchar_t* kChromeHTMLProgIdDesc;
-
   // Registry path that stores url associations on Vista.
   static const wchar_t* kRegVistaUrlPrefs;
 
@@ -321,7 +319,9 @@ class ShellUtil {
   // |properties| and |operation| affect this method as described on their
   // invidividual definitions above.
   // |location| may be one of SHORTCUT_LOCATION_DESKTOP,
-  // SHORTCUT_LOCATION_QUICK_LAUNCH, or SHORTCUT_LOCATION_START_MENU.
+  // SHORTCUT_LOCATION_QUICK_LAUNCH, SHORTCUT_LOCATION_START_MENU_ROOT,
+  // SHORTCUT_LOCATION_START_MENU_CHROME_DIR, or
+  // SHORTCUT_LOCATION_START_MENU_CHROME_APPS_DIR.
   static bool CreateOrUpdateShortcut(
       ShellUtil::ShortcutLocation location,
       BrowserDistribution* dist,
@@ -516,8 +516,7 @@ class ShellUtil {
   // remove all-users shortcuts.
   // |target_exe|: Shortcut target exe; shortcuts will only be deleted when
   // their target is |target_exe|.
-  // If |location| is SHORTCUT_LOCATION_START_MENU, the shortcut folder specific
-  // to |dist| is deleted.
+  // If |location| is a Chrome-specific folder, it will be deleted as well.
   // Returns true if all shortcuts pointing to |target_exe| are successfully
   // deleted, including the case where no such shortcuts are found.
   static bool RemoveShortcuts(ShellUtil::ShortcutLocation location,
@@ -525,11 +524,13 @@ class ShellUtil {
                               ShellChange level,
                               const base::FilePath& target_exe);
 
-  // Applies the updates in |shortcut_properties| to all shortcuts in |location|
-  // that target |target_exe|.
-  // Returns true if all shortcuts pointing to |target_exe| are successfully
-  // updated, including the case where no such shortcuts are found.
-  static bool UpdateShortcuts(
+  // Applies the updates in |properties| to all matching shortcuts in
+  // |location|, i.e.:
+  // - the shortcut's original target is |target_exe|,
+  // - the original arguments are non-empty.
+  // Returns true if all updates to matching shortcuts are successful, including
+  // the vacuous case where no matching shortcuts are found.
+  static bool UpdateShortcutsWithArgs(
       ShellUtil::ShortcutLocation location,
       BrowserDistribution* dist,
       ShellChange level,

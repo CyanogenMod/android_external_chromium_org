@@ -13,11 +13,11 @@
 #include "third_party/WebKit/public/web/WebHistoryItem.h"
 #include "third_party/WebKit/public/web/WebSerializedScriptValue.h"
 
-using WebKit::WebHTTPBody;
-using WebKit::WebHistoryItem;
-using WebKit::WebSerializedScriptValue;
-using WebKit::WebString;
-using WebKit::WebVector;
+using blink::WebHTTPBody;
+using blink::WebHistoryItem;
+using blink::WebSerializedScriptValue;
+using blink::WebString;
+using blink::WebVector;
 
 namespace content {
 namespace {
@@ -41,14 +41,14 @@ void ToExplodedHttpBodyElement(const WebHTTPBody::Element& input,
       output->file_length = input.fileLength;
       output->file_modification_time = input.modificationTime;
       break;
-    case WebHTTPBody::Element::TypeURL:
-      output->url = input.url;
+    case WebHTTPBody::Element::TypeFileSystemURL:
+      output->filesystem_url = input.fileSystemURL;
       output->file_start = input.fileStart;
       output->file_length = input.fileLength;
       output->file_modification_time = input.modificationTime;
       break;
     case WebHTTPBody::Element::TypeBlob:
-      output->url = input.url;
+      output->blob_uuid = input.blobUUID.utf8();
       break;
   }
 }
@@ -66,15 +66,15 @@ void AppendHTTPBodyElement(const ExplodedHttpBodyElement& element,
           element.file_length,
           element.file_modification_time);
       break;
-    case WebHTTPBody::Element::TypeURL:
-      http_body->appendURLRange(
-          element.url,
+    case WebHTTPBody::Element::TypeFileSystemURL:
+      http_body->appendFileSystemURLRange(
+          element.filesystem_url,
           element.file_start,
           element.file_length,
           element.file_modification_time);
       break;
     case WebHTTPBody::Element::TypeBlob:
-      http_body->appendBlob(element.url);
+      http_body->appendBlob(WebString::fromUTF8(element.blob_uuid));
       break;
   }
 }
@@ -85,19 +85,14 @@ bool RecursivelyGenerateFrameState(const WebHistoryItem& item,
   state->original_url_string = item.originalURLString();
   state->referrer = item.referrer();
   state->target = item.target();
-  state->parent = item.parent();
-  state->title = item.title();
-  state->alternate_title = item.alternateTitle();
   if (!item.stateObject().isNull())
     state->state_object = item.stateObject().toString();
   state->scroll_offset = item.scrollOffset();
   state->item_sequence_number = item.itemSequenceNumber();
   state->document_sequence_number =
       item.documentSequenceNumber();
-  state->visit_count = item.visitCount();
-  state->visited_time = item.lastVisitedTime();
+  state->target_frame_id = item.targetFrameID();
   state->page_scale_factor = item.pageScaleFactor();
-  state->is_target_item = item.isTargetItem();
   ToNullableString16Vector(item.documentState(), &state->document_state);
 
   state->http_body.http_content_type = item.httpContentType();
@@ -129,19 +124,13 @@ bool RecursivelyGenerateHistoryItem(const ExplodedFrameState& state,
   item->setOriginalURLString(state.original_url_string);
   item->setReferrer(state.referrer);
   item->setTarget(state.target);
-  item->setParent(state.parent);
-  item->setTitle(state.title);
-  item->setAlternateTitle(state.alternate_title);
   if (!state.state_object.is_null()) {
     item->setStateObject(
         WebSerializedScriptValue::fromString(state.state_object));
   }
   item->setDocumentState(state.document_state);
   item->setScrollOffset(state.scroll_offset);
-  item->setVisitCount(state.visit_count);
-  item->setLastVisitedTime(state.visited_time);
   item->setPageScaleFactor(state.page_scale_factor);
-  item->setIsTargetItem(state.is_target_item);
 
   // These values are generated at WebHistoryItem construction time, and we
   // only want to override those new values with old values if the old values
@@ -150,6 +139,8 @@ bool RecursivelyGenerateHistoryItem(const ExplodedFrameState& state,
     item->setItemSequenceNumber(state.item_sequence_number);
   if (state.document_sequence_number)
     item->setDocumentSequenceNumber(state.document_sequence_number);
+
+  item->setTargetFrameID(state.target_frame_id);
 
   item->setHTTPContentType(state.http_body.http_content_type);
   if (!state.http_body.is_null) {

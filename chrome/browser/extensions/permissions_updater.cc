@@ -9,30 +9,25 @@
 #include "base/values.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/api/permissions/permissions_api_helpers.h"
-#include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_prefs.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/api/permissions.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_messages.h"
-#include "chrome/common/extensions/permissions/permissions_data.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_process_host.h"
+#include "extensions/browser/event_router.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/permissions/permissions_data.h"
 
 using content::RenderProcessHost;
 using extensions::permissions_api_helpers::PackPermissionSet;
 
 namespace extensions {
 
-namespace {
-
-const char kOnAdded[] = "permissions.onAdded";
-const char kOnRemoved[] = "permissions.onRemoved";
-
-}  // namespace
+namespace permissions = api::permissions;
 
 PermissionsUpdater::PermissionsUpdater(Profile* profile)
     : profile_(profile) {}
@@ -106,7 +101,7 @@ void PermissionsUpdater::DispatchEvent(
       PackPermissionSet(changed_permissions);
   value->Append(permissions->ToValue().release());
   scoped_ptr<Event> event(new Event(event_name, value.Pass()));
-  event->restrict_to_profile = profile_;
+  event->restrict_to_browser_context = profile_;
   ExtensionSystem::Get(profile_)->event_router()->
       DispatchEventToExtension(extension_id, event.Pass());
 }
@@ -123,11 +118,11 @@ void PermissionsUpdater::NotifyPermissionsUpdated(
 
   if (event_type == REMOVED) {
     reason = UpdatedExtensionPermissionsInfo::REMOVED;
-    event_name = kOnRemoved;
+    event_name = permissions::OnRemoved::kEventName;
   } else {
     CHECK_EQ(ADDED, event_type);
     reason = UpdatedExtensionPermissionsInfo::ADDED;
-    event_name = kOnAdded;
+    event_name = permissions::OnAdded::kEventName;
   }
 
   // Notify other APIs or interested parties.
@@ -143,13 +138,16 @@ void PermissionsUpdater::NotifyPermissionsUpdated(
        !i.IsAtEnd(); i.Advance()) {
     RenderProcessHost* host = i.GetCurrentValue();
     Profile* profile = Profile::FromBrowserContext(host->GetBrowserContext());
-    if (profile_->IsSameProfile(profile))
-      host->Send(new ExtensionMsg_UpdatePermissions(
-          static_cast<int>(reason),
-          extension->id(),
-          changed->apis(),
-          changed->explicit_hosts(),
-          changed->scriptable_hosts()));
+    if (profile_->IsSameProfile(profile)) {
+      ExtensionMsg_UpdatePermissions_Params info;
+      info.reason_id = static_cast<int>(reason);
+      info.extension_id = extension->id();
+      info.apis = changed->apis();
+      info.manifest_permissions = changed->manifest_permissions();
+      info.explicit_hosts = changed->explicit_hosts();
+      info.scriptable_hosts = changed->scriptable_hosts();
+      host->Send(new ExtensionMsg_UpdatePermissions(info));
+    }
   }
 
   // Trigger the onAdded and onRemoved events in the extension.

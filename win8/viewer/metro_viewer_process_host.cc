@@ -65,8 +65,9 @@ bool MetroViewerProcessHost::LaunchViewerAndWaitForConnection(
   HRESULT hr = activator.CreateInstance(CLSID_ApplicationActivationManager);
   if (SUCCEEDED(hr)) {
     DWORD pid = 0;
+    // Use the "connect" verb to
     hr = activator->ActivateApplication(
-        app_user_model_id.c_str(), L"open", AO_NONE, &pid);
+        app_user_model_id.c_str(), kMetroViewerConnectVerb, AO_NONE, &pid);
   }
 
   LOG_IF(ERROR, FAILED(hr)) << "Tried and failed to launch Metro Chrome. "
@@ -96,6 +97,8 @@ bool MetroViewerProcessHost::OnMessageReceived(
     IPC_MESSAGE_HANDLER(MetroViewerHostMsg_SetTargetSurface, OnSetTargetSurface)
     IPC_MESSAGE_HANDLER(MetroViewerHostMsg_OpenURL, OnOpenURL)
     IPC_MESSAGE_HANDLER(MetroViewerHostMsg_SearchRequest, OnHandleSearchRequest)
+    IPC_MESSAGE_HANDLER(MetroViewerHostMsg_WindowSizeChanged,
+                        OnWindowSizeChanged)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled ? true :

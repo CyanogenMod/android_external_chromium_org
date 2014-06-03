@@ -81,6 +81,7 @@ LOCAL_SRC_FILES := \
 	net/base/platform_mime_util_linux.cc \
 	net/base/prioritized_dispatcher.cc \
 	net/base/registry_controlled_domains/registry_controlled_domain.cc \
+	net/base/request_priority.cc \
 	net/base/sdch_filter.cc \
 	net/base/sdch_manager.cc \
 	net/base/static_cookie_policy.cc \
@@ -102,10 +103,19 @@ LOCAL_SRC_FILES := \
 	net/cert/cert_verify_proc_android.cc \
 	net/cert/cert_verify_result.cc \
 	net/cert/crl_set.cc \
+	net/cert/ct_known_logs.cc \
+	net/cert/ct_log_verifier.cc \
+	net/cert/ct_log_verifier_openssl.cc \
+	net/cert/ct_objects_extractor_openssl.cc \
+	net/cert/ct_serialization.cc \
+	net/cert/ct_signed_certificate_timestamp_log_param.cc \
+	net/cert/ct_verify_result.cc \
 	net/cert/ev_root_ca_metadata.cc \
 	net/cert/jwk_serializer_openssl.cc \
+	net/cert/multi_log_ct_verifier.cc \
 	net/cert/multi_threaded_cert_verifier.cc \
 	net/cert/pem_tokenizer.cc \
+	net/cert/signed_certificate_timestamp.cc \
 	net/cert/single_request_cert_verifier.cc \
 	net/cert/test_root_certs.cc \
 	net/cert/test_root_certs_android.cc \
@@ -114,6 +124,7 @@ LOCAL_SRC_FILES := \
 	net/cert/x509_certificate_net_log_param.cc \
 	net/cert/x509_certificate_openssl.cc \
 	net/cert/x509_util.cc \
+	net/cert/x509_util_android.cc \
 	net/cert/x509_util_openssl.cc \
 	net/cookies/canonical_cookie.cc \
 	net/cookies/cookie_constants.cc \
@@ -136,6 +147,7 @@ LOCAL_SRC_FILES := \
 	net/disk_cache/file_posix.cc \
 	net/disk_cache/in_flight_backend_io.cc \
 	net/disk_cache/in_flight_io.cc \
+	net/disk_cache/mapped_file.cc \
 	net/disk_cache/mapped_file_avoid_mmap_posix.cc \
 	net/disk_cache/mem_backend_impl.cc \
 	net/disk_cache/mem_entry_impl.cc \
@@ -157,12 +169,14 @@ LOCAL_SRC_FILES := \
 	net/disk_cache/simple/simple_net_log_parameters.cc \
 	net/disk_cache/simple/simple_synchronous_entry.cc \
 	net/disk_cache/simple/simple_util.cc \
+	net/disk_cache/simple/simple_version_upgrade.cc \
 	net/disk_cache/flash/flash_entry_impl.cc \
 	net/disk_cache/flash/internal_entry.cc \
 	net/disk_cache/flash/log_store.cc \
 	net/disk_cache/flash/log_store_entry.cc \
 	net/disk_cache/flash/segment.cc \
 	net/disk_cache/flash/storage.cc \
+	net/disk_cache/v3/block_bitmaps.cc \
 	net/dns/address_sorter_posix.cc \
 	net/dns/dns_client.cc \
 	net/dns/dns_config_service.cc \
@@ -205,6 +219,7 @@ LOCAL_SRC_FILES := \
 	net/http/http_auth_handler_factory.cc \
 	net/http/http_auth_handler_ntlm.cc \
 	net/http/http_auth_handler_ntlm_portable.cc \
+	net/http/http_basic_state.cc \
 	net/http/http_basic_stream.cc \
 	net/http/http_byte_range.cc \
 	net/http/http_cache.cc \
@@ -244,6 +259,7 @@ LOCAL_SRC_FILES := \
 	net/http/partial_data.cc \
 	net/http/proxy_client_socket.cc \
 	net/http/proxy_connect_redirect_http_stream.cc \
+	net/http/transport_security_persister.cc \
 	net/http/transport_security_state.cc \
 	net/http/url_security_manager.cc \
 	net/http/url_security_manager_posix.cc \
@@ -279,7 +295,7 @@ LOCAL_SRC_FILES := \
 	net/quic/congestion_control/inter_arrival_state_machine.cc \
 	net/quic/congestion_control/leaky_bucket.cc \
 	net/quic/congestion_control/paced_sender.cc \
-	net/quic/congestion_control/quic_congestion_manager.cc \
+	net/quic/congestion_control/pacing_sender.cc \
 	net/quic/congestion_control/receive_algorithm_interface.cc \
 	net/quic/congestion_control/send_algorithm_interface.cc \
 	net/quic/congestion_control/tcp_cubic_sender.cc \
@@ -293,48 +309,58 @@ LOCAL_SRC_FILES := \
 	net/quic/crypto/crypto_framer.cc \
 	net/quic/crypto/crypto_handshake.cc \
 	net/quic/crypto/crypto_secret_boxer.cc \
-	net/quic/crypto/crypto_server_config.cc \
 	net/quic/crypto/crypto_server_config_protobuf.cc \
 	net/quic/crypto/crypto_utils.cc \
 	net/quic/crypto/curve25519_key_exchange.cc \
+	net/quic/crypto/local_strike_register_client.cc \
 	net/quic/crypto/null_decrypter.cc \
 	net/quic/crypto/null_encrypter.cc \
 	net/quic/crypto/p256_key_exchange_openssl.cc \
 	net/quic/crypto/proof_source_chromium.cc \
 	net/quic/crypto/proof_verifier.cc \
 	net/quic/crypto/proof_verifier_chromium.cc \
+	net/quic/crypto/quic_crypto_client_config.cc \
+	net/quic/crypto/quic_crypto_server_config.cc \
 	net/quic/crypto/quic_decrypter.cc \
 	net/quic/crypto/quic_encrypter.cc \
 	net/quic/crypto/quic_random.cc \
 	net/quic/crypto/scoped_evp_cipher_ctx.cc \
 	net/quic/crypto/strike_register.cc \
 	net/quic/crypto/source_address_token.cc \
+	net/quic/iovector.cc \
+	net/quic/port_suggester.cc \
+	net/quic/quic_ack_notifier.cc \
+	net/quic/quic_ack_notifier_manager.cc \
 	net/quic/quic_alarm.cc \
 	net/quic/quic_bandwidth.cc \
 	net/quic/quic_client_session.cc \
-	net/quic/quic_config.cc \
-	net/quic/quic_crypto_client_stream.cc \
-	net/quic/quic_crypto_server_stream.cc \
-	net/quic/quic_crypto_stream.cc \
 	net/quic/quic_clock.cc \
+	net/quic/quic_config.cc \
 	net/quic/quic_connection.cc \
 	net/quic/quic_connection_helper.cc \
 	net/quic/quic_connection_logger.cc \
+	net/quic/quic_connection_stats.cc \
+	net/quic/quic_crypto_client_stream.cc \
+	net/quic/quic_crypto_server_stream.cc \
+	net/quic/quic_crypto_stream.cc \
 	net/quic/quic_data_reader.cc \
+	net/quic/quic_data_stream.cc \
 	net/quic/quic_data_writer.cc \
+	net/quic/quic_default_packet_writer.cc \
 	net/quic/quic_fec_group.cc \
 	net/quic/quic_framer.cc \
 	net/quic/quic_http_stream.cc \
+	net/quic/quic_http_utils.cc \
 	net/quic/quic_packet_creator.cc \
 	net/quic/quic_packet_generator.cc \
 	net/quic/quic_protocol.cc \
 	net/quic/quic_received_packet_manager.cc \
 	net/quic/quic_reliable_client_stream.cc \
 	net/quic/quic_sent_entropy_manager.cc \
+	net/quic/quic_sent_packet_manager.cc \
 	net/quic/quic_session.cc \
 	net/quic/quic_spdy_compressor.cc \
 	net/quic/quic_spdy_decompressor.cc \
-	net/quic/quic_stats.cc \
 	net/quic/quic_stream_factory.cc \
 	net/quic/quic_stream_sequencer.cc \
 	net/quic/quic_time.cc \
@@ -349,6 +375,7 @@ LOCAL_SRC_FILES := \
 	net/socket/client_socket_pool_histograms.cc \
 	net/socket/client_socket_pool_manager.cc \
 	net/socket/client_socket_pool_manager_impl.cc \
+	net/socket/socket_descriptor.cc \
 	net/socket/socket_net_log_params.cc \
 	net/socket/socks5_client_socket.cc \
 	net/socket/socks_client_socket.cc \
@@ -358,12 +385,14 @@ LOCAL_SRC_FILES := \
 	net/socket/ssl_client_socket_pool.cc \
 	net/socket/ssl_error_params.cc \
 	net/socket/ssl_server_socket_openssl.cc \
+	net/socket/ssl_session_cache_openssl.cc \
 	net/socket/stream_listen_socket.cc \
 	net/socket/stream_socket.cc \
 	net/socket/tcp_client_socket.cc \
-	net/socket/tcp_client_socket_libevent.cc \
 	net/socket/tcp_listen_socket.cc \
-	net/socket/tcp_server_socket_libevent.cc \
+	net/socket/tcp_server_socket.cc \
+	net/socket/tcp_socket.cc \
+	net/socket/tcp_socket_libevent.cc \
 	net/socket/transport_client_socket_pool.cc \
 	net/socket/unix_domain_socket_posix.cc \
 	net/socket_stream/socket_stream.cc \
@@ -373,8 +402,6 @@ LOCAL_SRC_FILES := \
 	net/spdy/buffered_spdy_framer.cc \
 	net/spdy/spdy_buffer.cc \
 	net/spdy/spdy_buffer_producer.cc \
-	net/spdy/spdy_credential_builder.cc \
-	net/spdy/spdy_credential_state.cc \
 	net/spdy/spdy_frame_builder.cc \
 	net/spdy/spdy_frame_reader.cc \
 	net/spdy/spdy_framer.cc \
@@ -394,6 +421,7 @@ LOCAL_SRC_FILES := \
 	net/ssl/openssl_client_key_store.cc \
 	net/ssl/server_bound_cert_service.cc \
 	net/ssl/server_bound_cert_store.cc \
+	net/ssl/signed_certificate_timestamp_and_status.cc \
 	net/ssl/ssl_cert_request_info.cc \
 	net/ssl/ssl_cipher_suite_names.cc \
 	net/ssl/ssl_client_auth_cache.cc \
@@ -439,11 +467,22 @@ LOCAL_SRC_FILES := \
 	net/url_request/url_request_throttler_header_adapter.cc \
 	net/url_request/url_request_throttler_manager.cc \
 	net/url_request/view_cache_helper.cc \
+	net/url_request/websocket_handshake_userdata_key.cc \
+	net/websockets/websocket_basic_handshake_stream.cc \
+	net/websockets/websocket_basic_stream.cc \
 	net/websockets/websocket_channel.cc \
+	net/websockets/websocket_deflate_predictor_impl.cc \
+	net/websockets/websocket_deflate_stream.cc \
+	net/websockets/websocket_deflater.cc \
 	net/websockets/websocket_errors.cc \
+	net/websockets/websocket_extension.cc \
+	net/websockets/websocket_extension_parser.cc \
 	net/websockets/websocket_frame.cc \
 	net/websockets/websocket_frame_parser.cc \
+	net/websockets/websocket_handshake_constants.cc \
 	net/websockets/websocket_handshake_handler.cc \
+	net/websockets/websocket_handshake_stream_create_helper.cc \
+	net/websockets/websocket_inflater.cc \
 	net/websockets/websocket_job.cc \
 	net/websockets/websocket_net_log_params.cc \
 	net/websockets/websocket_stream.cc \
@@ -483,22 +522,22 @@ MY_CFLAGS_Debug := \
 	-ffunction-sections
 
 MY_DEFS_Debug := \
-	'-DANGLE_DX11' \
+	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
-	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
-	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DLOGGING_IS_OFFICIAL_BUILD=1' \
-	'-DTRACING_IS_OFFICIAL_BUILD=1' \
-	'-DENABLE_GPU=1' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
+	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
+	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-DNET_IMPLEMENTATION' \
 	'-DPOSIX_AVOID_MMAP' \
 	'-DENABLE_BUILT_IN_DNS' \
@@ -578,22 +617,22 @@ MY_CFLAGS_Release := \
 	-fomit-frame-pointer
 
 MY_DEFS_Release := \
-	'-DANGLE_DX11' \
+	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
-	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
-	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DLOGGING_IS_OFFICIAL_BUILD=1' \
-	'-DTRACING_IS_OFFICIAL_BUILD=1' \
-	'-DENABLE_GPU=1' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
+	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
+	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-DNET_IMPLEMENTATION' \
 	'-DPOSIX_AVOID_MMAP' \
 	'-DENABLE_BUILT_IN_DNS' \

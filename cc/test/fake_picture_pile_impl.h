@@ -21,18 +21,16 @@ class FakePicturePileImpl : public PicturePileImpl {
       gfx::Size tile_size,
       gfx::Size layer_bounds);
 
-  static scoped_refptr<FakePicturePileImpl> CreatePile();
+  static scoped_refptr<FakePicturePileImpl>
+      CreateEmptyPileThatThinksItHasRecordings(const gfx::Size& tile_size,
+                                               const gfx::Size& layer_bounds);
+  static scoped_refptr<FakePicturePileImpl> CreateInfiniteFilledPile();
 
   TilingData& tiling() { return tiling_; }
 
   void AddRecordingAt(int x, int y);
   void RemoveRecordingAt(int x, int y);
   void RerecordPile();
-
-  void AddPictureToRecording(
-      int x,
-      int y,
-      scoped_refptr<Picture> picture);
 
   void add_draw_rect(const gfx::RectF& rect) {
     client_.add_draw_rect(rect, default_paint_);
@@ -62,6 +60,10 @@ class FakePicturePileImpl : public PicturePileImpl {
 
   void set_contents_opaque(bool contents_opaque) {
     contents_opaque_ = contents_opaque;
+  }
+
+  void set_clear_canvas_with_debug_color(bool clear) {
+    clear_canvas_with_debug_color_ = clear;
   }
 
  protected:

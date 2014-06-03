@@ -40,8 +40,14 @@ const char kHttpNotFound[] = "HTTP/1.1 404 Not Found\n\n";
 
 #if defined(DEBUG_DEVTOOLS)
 // Local frontend url provided by InspectUI.
-const char kLocalFrontendURLPrefix[] = "https://localhost:9222/";
+const char kFallbackFrontendURL[] =
+    "chrome-devtools://devtools/bundled/devtools.html";
+#else
+// URL causing the DevTools window to display a plain text warning.
+const char kFallbackFrontendURL[] =
+    "data:text/plain,Cannot load DevTools frontend from an untrusted origin";
 #endif  // defined(DEBUG_DEVTOOLS)
+
 
 class FetchRequest : public net::URLFetcherDelegate {
  public:
@@ -177,6 +183,10 @@ class DevToolsDataSource : public content::URLDataSource {
     return false;
   }
 
+  virtual bool ShouldServeMimeTypeAsContentTypeHeader() const OVERRIDE {
+    return true;
+  }
+
  private:
   virtual ~DevToolsDataSource() {}
   scoped_refptr<net::URLRequestContextGetter> request_context_;
@@ -189,24 +199,9 @@ class DevToolsDataSource : public content::URLDataSource {
 // static
 GURL DevToolsUI::GetProxyURL(const std::string& frontend_url) {
   GURL url(frontend_url);
-#if defined(DEBUG_DEVTOOLS)
-  if (frontend_url.find(kLocalFrontendURLPrefix) == 0) {
-    std::string path = url.path();
-    std::string local_path_prefix = "/";
-    local_path_prefix += chrome::kChromeUIDevToolsHost;
-    local_path_prefix += "/";
-    if (StartsWithASCII(path, local_path_prefix, false)) {
-      std::string local_path = path.substr(local_path_prefix.length());
-      return GURL(base::StringPrintf("%s://%s/%s/%s",
-                                     chrome::kChromeDevToolsScheme,
-                                     chrome::kChromeUIDevToolsHost,
-                                     chrome::kChromeUIDevToolsBundledPath,
-                                     local_path.c_str()));
-    }
+  if (!url.is_valid() || url.host() != kRemoteFrontendDomain) {
+    return GURL(kFallbackFrontendURL);
   }
-#endif  // defined(DEBUG_DEVTOOLS)
-  CHECK(url.is_valid());
-  CHECK_EQ(url.host(), kRemoteFrontendDomain);
   return GURL(base::StringPrintf("%s://%s/%s/%s",
               chrome::kChromeDevToolsScheme,
               chrome::kChromeUIDevToolsHost,

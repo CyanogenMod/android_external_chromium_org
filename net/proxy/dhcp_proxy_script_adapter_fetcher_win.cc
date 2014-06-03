@@ -9,8 +9,9 @@
 #include "base/logging.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/metrics/histogram.h"
+#include "base/strings/string_util.h"
 #include "base/strings/sys_string_conversions.h"
-#include "base/threading/worker_pool.h"
+#include "base/task_runner.h"
 #include "base/time/time.h"
 #include "net/base/net_errors.h"
 #include "net/proxy/dhcpcsvc_init_win.h"
@@ -32,8 +33,10 @@ const int kTimeoutMs = 2000;
 namespace net {
 
 DhcpProxyScriptAdapterFetcher::DhcpProxyScriptAdapterFetcher(
-    URLRequestContext* url_request_context)
-    : state_(STATE_START),
+    URLRequestContext* url_request_context,
+    scoped_refptr<base::TaskRunner> task_runner)
+    : task_runner_(task_runner),
+      state_(STATE_START),
       result_(ERR_IO_PENDING),
       url_request_context_(url_request_context) {
   DCHECK(url_request_context_);
@@ -55,7 +58,7 @@ void DhcpProxyScriptAdapterFetcher::Fetch(
   wait_timer_.Start(FROM_HERE, ImplGetTimeout(),
                     this, &DhcpProxyScriptAdapterFetcher::OnTimeout);
   scoped_refptr<DhcpQuery> dhcp_query(ImplCreateDhcpQuery());
-  base::WorkerPool::PostTaskAndReply(
+  task_runner_->PostTaskAndReply(
       FROM_HERE,
       base::Bind(
           &DhcpProxyScriptAdapterFetcher::DhcpQuery::GetPacURLForAdapter,
@@ -64,8 +67,7 @@ void DhcpProxyScriptAdapterFetcher::Fetch(
       base::Bind(
           &DhcpProxyScriptAdapterFetcher::OnDhcpQueryDone,
           AsWeakPtr(),
-          dhcp_query),
-      true);
+          dhcp_query));
 }
 
 void DhcpProxyScriptAdapterFetcher::Cancel() {
@@ -262,27 +264,32 @@ std::string DhcpProxyScriptAdapterFetcher::GetPacURLFromDhcp(
     LOG(INFO) << "Error fetching PAC URL from DHCP: " << res;
     UMA_HISTOGRAM_COUNTS("Net.DhcpWpadUnhandledDhcpError", 1);
   } else if (wpad_params.nBytesData) {
-#ifndef NDEBUG
-    // The result should be ASCII, not wide character.  Some DHCP
-    // servers appear to count the trailing NULL in nBytesData, others
-    // do not.
-    size_t count_without_null =
-        strlen(reinterpret_cast<const char*>(wpad_params.Data));
-    DCHECK(count_without_null == wpad_params.nBytesData ||
-           count_without_null + 1 == wpad_params.nBytesData);
-#endif
-    // Belt and suspenders: First, ensure we NULL-terminate after
-    // nBytesData; this is the inner constructor with nBytesData as a
-    // parameter.  Then, return only up to the first null in case of
-    // embedded NULLs; this is the outer constructor that takes the
-    // result of c_str() on the inner.  If the server is giving us
-    // back a buffer with embedded NULLs, something is broken anyway.
-    return std::string(
-        std::string(reinterpret_cast<const char *>(wpad_params.Data),
-                    wpad_params.nBytesData).c_str());
+    return SanitizeDhcpApiString(
+        reinterpret_cast<const char*>(wpad_params.Data),
+        wpad_params.nBytesData);
   }
 
   return "";
+}
+
+// static
+std::string DhcpProxyScriptAdapterFetcher::SanitizeDhcpApiString(
+    const char* data, size_t count_bytes) {
+  // The result should be ASCII, not wide character.  Some DHCP
+  // servers appear to count the trailing NULL in nBytesData, others
+  // do not.  A few (we've had one report, http://crbug.com/297810)
+  // do not NULL-terminate but may \n-terminate.
+  //
+  // Belt and suspenders and elastic waistband: First, ensure we
+  // NULL-terminate after nBytesData; this is the inner constructor
+  // with nBytesData as a parameter.  Then, return only up to the
+  // first null in case of embedded NULLs; this is the outer
+  // constructor that takes the result of c_str() on the inner.  If
+  // the server is giving us back a buffer with embedded NULLs,
+  // something is broken anyway.  Finally, trim trailing whitespace.
+  std::string result(std::string(data, count_bytes).c_str());
+  TrimWhitespaceASCII(result, TRIM_TRAILING, &result);
+  return result;
 }
 
 }  // namespace net

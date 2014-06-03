@@ -12,12 +12,12 @@ namespace content {
 class MockBrowserPlugin : public BrowserPlugin {
  public:
   MockBrowserPlugin(RenderViewImpl* render_view,
-                    WebKit::WebFrame* frame,
-                    const WebKit::WebPluginParams& params);
+                    blink::WebFrame* frame);
 
   virtual ~MockBrowserPlugin();
 
   // Allow poking at a few private members.
+  using BrowserPlugin::OnAttachACK;
   using BrowserPlugin::guest_crashed_;
   using BrowserPlugin::pending_damage_buffer_;
   using BrowserPlugin::damage_buffer_sequence_id_;

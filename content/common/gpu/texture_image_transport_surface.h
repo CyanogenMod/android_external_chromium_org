@@ -11,7 +11,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "content/common/gpu/gpu_command_buffer_stub.h"
 #include "content/common/gpu/image_transport_surface.h"
-#include "gpu/command_buffer/service/mailbox_manager.h"
+#include "gpu/command_buffer/common/mailbox.h"
 #include "gpu/command_buffer/service/texture_manager.h"
 #include "ui/gl/gl_context.h"
 #include "ui/gl/gl_surface.h"
@@ -54,6 +54,7 @@ class TextureImageTransportSurface
   virtual void OnResize(gfx::Size size, float scale_factor) OVERRIDE;
   virtual void SetLatencyInfo(
       const ui::LatencyInfo& latency_info) OVERRIDE;
+  virtual void WakeUpGpu() OVERRIDE;
 
   // GpuCommandBufferStub::DestructionObserver implementation.
   virtual void OnWillDestroyStub() OVERRIDE;
@@ -85,8 +86,8 @@ class TextureImageTransportSurface
 
   // The mailbox name for the current backbuffer texture. Needs to be unique per
   // GL texture and is invalid while service_id is zero.
-  gpu::gles2::MailboxName back_mailbox_name_;
-  gpu::gles2::MailboxName front_mailbox_name_;
+  gpu::Mailbox back_mailbox_;
+  gpu::Mailbox front_mailbox_;
 
   // The current size of the GLSurface. Used to disambiguate from the current
   // texture size which might be outdated (since we use two buffers).

@@ -21,11 +21,11 @@
 #include "content/public/test/mock_render_process_host.h"
 #include "content/public/test/test_browser_context.h"
 #include "content/public/test/test_browser_thread.h"
+#include "content/public/test/test_file_system_context.h"
 #include "net/base/io_buffer.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/browser/blob/blob_storage_controller.h"
+#include "webkit/browser/blob/blob_storage_context.h"
 #include "webkit/browser/fileapi/file_system_context.h"
-#include "webkit/browser/fileapi/mock_file_system_context.h"
 #include "webkit/common/blob/blob_data.h"
 
 namespace content {
@@ -76,12 +76,10 @@ class FileAPIMessageFilterTest : public testing::Test {
   }
 
   // Tests via OnMessageReceived(const IPC::Message&). The channel proxy calls
-  // this method. Since OnMessageReceived is hidden on FileAPIMessageFilter,
-  // we need to cast it.
+  // this method.
   bool InvokeOnMessageReceived(const IPC::Message& message) {
-    IPC::ChannelProxy::MessageFilter* casted_filter =
-        static_cast<IPC::ChannelProxy::MessageFilter*>(filter_.get());
-    return casted_filter->OnMessageReceived(message);
+    bool message_was_ok;
+    return filter_->OnMessageReceived(message, &message_was_ok);
   }
 
   base::MessageLoop message_loop_;
@@ -94,34 +92,6 @@ class FileAPIMessageFilterTest : public testing::Test {
 
   scoped_refptr<FileAPIMessageFilter> filter_;
 };
-
-TEST_F(FileAPIMessageFilterTest, BuildEmptyBlob) {
-  webkit_blob::BlobStorageController* controller =
-      blob_storage_context_->controller();
-
-  const GURL kUrl("blob:foobar");
-  const GURL kDifferentUrl("blob:barfoo");
-
-  EXPECT_EQ(NULL, controller->GetBlobDataFromUrl(kUrl));
-
-  BlobHostMsg_StartBuilding start_message(kUrl);
-  EXPECT_TRUE(InvokeOnMessageReceived(start_message));
-
-  // Blob is still being built. Nothing should be returned.
-  EXPECT_EQ(NULL, controller->GetBlobDataFromUrl(kUrl));
-
-  BlobHostMsg_FinishBuilding finish_message(kUrl, kFakeContentType);
-  EXPECT_TRUE(InvokeOnMessageReceived(finish_message));
-
-  // Now, Blob is built.
-  webkit_blob::BlobData* blob_data = controller->GetBlobDataFromUrl(kUrl);
-  ASSERT_FALSE(blob_data == NULL);
-  EXPECT_EQ(0U, blob_data->items().size());
-  EXPECT_EQ(kFakeContentType, blob_data->content_type());
-
-  // Nothing should be returned for a URL we didn't use.
-  EXPECT_TRUE(controller->GetBlobDataFromUrl(kDifferentUrl) == NULL);
-}
 
 TEST_F(FileAPIMessageFilterTest, CloseChannelWithInflightRequest) {
   scoped_refptr<FileAPIMessageFilter> filter(
@@ -136,13 +106,11 @@ TEST_F(FileAPIMessageFilterTest, CloseChannelWithInflightRequest) {
   // Complete initialization.
   message_loop_.RunUntilIdle();
 
-  IPC::ChannelProxy::MessageFilter* casted_filter =
-      static_cast<IPC::ChannelProxy::MessageFilter*>(filter.get());
-
   int request_id = 0;
   const GURL kUrl("filesystem:http://example.com/temporary/foo");
   FileSystemHostMsg_ReadMetadata read_metadata(request_id++, kUrl);
-  EXPECT_TRUE(casted_filter->OnMessageReceived(read_metadata));
+  bool message_was_ok;
+  EXPECT_TRUE(filter->OnMessageReceived(read_metadata, &message_was_ok));
 
   // Close the filter while it has inflight request.
   filter->OnChannelClosing();
@@ -172,13 +140,11 @@ TEST_F(FileAPIMessageFilterTest, MultipleFilters) {
   // Complete initialization.
   message_loop_.RunUntilIdle();
 
-  IPC::ChannelProxy::MessageFilter* casted_filter =
-      static_cast<IPC::ChannelProxy::MessageFilter*>(filter1.get());
-
   int request_id = 0;
   const GURL kUrl("filesystem:http://example.com/temporary/foo");
   FileSystemHostMsg_ReadMetadata read_metadata(request_id++, kUrl);
-  EXPECT_TRUE(casted_filter->OnMessageReceived(read_metadata));
+  bool message_was_ok;
+  EXPECT_TRUE(filter1->OnMessageReceived(read_metadata, &message_was_ok));
 
   // Close the other filter before the request for filter1 is processed.
   filter2->OnChannelClosing();
@@ -190,14 +156,10 @@ TEST_F(FileAPIMessageFilterTest, MultipleFilters) {
 TEST_F(FileAPIMessageFilterTest, BuildEmptyStream) {
   StreamRegistry* stream_registry = stream_context_->registry();
 
-  webkit_blob::BlobStorageController* blob_controller =
-      blob_storage_context_->controller();
-
   const GURL kUrl(kFakeBlobInternalUrlSpec);
   const GURL kDifferentUrl("blob:barfoo");
 
   EXPECT_EQ(NULL, stream_registry->GetStream(kUrl).get());
-  EXPECT_EQ(NULL, blob_controller->GetBlobDataFromUrl(kUrl));
 
   StreamHostMsg_StartBuilding start_message(kUrl, kFakeContentType);
   EXPECT_TRUE(InvokeOnMessageReceived(start_message));
@@ -216,9 +178,6 @@ TEST_F(FileAPIMessageFilterTest, BuildEmptyStream) {
 
   StreamHostMsg_FinishBuilding finish_message(kUrl);
   EXPECT_TRUE(InvokeOnMessageReceived(finish_message));
-
-  // Blob controller shouldn't be affected.
-  EXPECT_EQ(NULL, blob_controller->GetBlobDataFromUrl(kUrl));
 
   stream = stream_registry->GetStream(kUrl);
   ASSERT_FALSE(stream.get() == NULL);
@@ -286,8 +245,7 @@ TEST_F(FileAPIMessageFilterTest, BuildStreamWithSharedMemory) {
   // OnAppendSharedMemoryToStream passes the peer process's handle to
   // SharedMemory's constructor. If it's incorrect, DuplicateHandle won't work
   // correctly.
-  static_cast<IPC::ChannelProxy::MessageFilter*>(
-      filter_.get())->OnChannelConnected(base::Process::Current().pid());
+  filter_->set_peer_pid_for_testing(base::Process::Current().pid());
 
   StreamHostMsg_StartBuilding start_message(kUrl, kFakeContentType);
   EXPECT_TRUE(InvokeOnMessageReceived(start_message));

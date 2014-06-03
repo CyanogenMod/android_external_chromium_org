@@ -28,14 +28,14 @@
 #include "grit/theme_resources.h"
 #include "grit/ui_resources.h"
 #include "skia/ext/image_operations.h"
-#include "ui/base/animation/slide_animation.h"
-#include "ui/base/animation/throb_animation.h"
-#include "ui/base/gtk/gtk_compat.h"
 #include "ui/base/gtk/gtk_screen_util.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/gfx/animation/slide_animation.h"
+#include "ui/gfx/animation/throb_animation.h"
 #include "ui/gfx/canvas_skia_paint.h"
 #include "ui/gfx/favicon_size.h"
+#include "ui/gfx/gtk_compat.h"
 #include "ui/gfx/gtk_util.h"
 #include "ui/gfx/image/cairo_cached_surface.h"
 #include "ui/gfx/image/image.h"
@@ -52,7 +52,6 @@ const int kLeftPadding = 16;
 const int kTopPadding = 6;
 const int kRightPadding = 15;
 const int kBottomPadding = 5;
-const int kDropShadowHeight = 2;
 const int kFaviconTitleSpacing = 4;
 const int kTitleCloseButtonSpacing = 5;
 const int kStandardTitleWidth = 175;
@@ -89,25 +88,8 @@ const double kMiniTitleChangeThrobOpacity = 0.75;
 // Duration for when the title of an inactive mini-tab changes.
 const int kMiniTitleChangeThrobDuration = 1000;
 
-const int kRecordingDurationMs = 1000;
-
 // The horizontal offset used to position the close button in the tab.
 const int kCloseButtonHorzFuzz = 4;
-
-// Scale to resize the current favicon by when projecting.
-const double kProjectingFaviconResizeScale = 0.75;
-
-// Scale to translate the current favicon by to center after scaling.
-const double kProjectingFaviconXShiftScale = 0.15;
-
-// Scale to translate the current favicon by to center after scaling.
-const double kProjectingFaviconYShiftScale = 0.1;
-
-// Scale to resize the projection sheet glow by.
-const double kProjectingGlowResizeScale = 2.0;
-
-// Scale to translate the current glow by in the negative X and Y directions.
-const double kProjectingGlowShiftScale = 0.5;
 
 // Gets the bounds of |widget| relative to |parent|.
 gfx::Rect GetWidgetBoundsRelativeToParent(GtkWidget* parent,
@@ -269,7 +251,8 @@ TabRendererGtk::TabData::TabData()
       blocked(false),
       animating_mini_change(false),
       app(false),
-      capture_state(NONE) {
+      media_state(TAB_MEDIA_STATE_NONE),
+      previous_media_state(TAB_MEDIA_STATE_NONE) {
 }
 
 TabRendererGtk::TabData::~TabData() {}
@@ -278,16 +261,16 @@ TabRendererGtk::TabData::~TabData() {}
 // FaviconCrashAnimation
 //
 //  A custom animation subclass to manage the favicon crash animation.
-class TabRendererGtk::FaviconCrashAnimation : public ui::LinearAnimation,
-                                              public ui::AnimationDelegate {
+class TabRendererGtk::FaviconCrashAnimation : public gfx::LinearAnimation,
+                                              public gfx::AnimationDelegate {
  public:
   explicit FaviconCrashAnimation(TabRendererGtk* target)
-      : ui::LinearAnimation(1000, 25, this),
+      : gfx::LinearAnimation(1000, 25, this),
         target_(target) {
   }
   virtual ~FaviconCrashAnimation() {}
 
-  // ui::Animation overrides:
+  // gfx::Animation overrides:
   virtual void AnimateToState(double state) OVERRIDE {
     const double kHidingOffset = 27;
 
@@ -302,8 +285,8 @@ class TabRendererGtk::FaviconCrashAnimation : public ui::LinearAnimation,
     }
   }
 
-  // ui::AnimationDelegate overrides:
-  virtual void AnimationCanceled(const ui::Animation* animation) OVERRIDE {
+  // gfx::AnimationDelegate overrides:
+  virtual void AnimationCanceled(const gfx::Animation* animation) OVERRIDE {
     target_->SetFaviconHidingOffset(0);
   }
 
@@ -318,9 +301,11 @@ class TabRendererGtk::FaviconCrashAnimation : public ui::LinearAnimation,
 
 TabRendererGtk::TabRendererGtk(GtkThemeService* theme_service)
     : showing_icon_(false),
+      showing_media_indicator_(false),
       showing_close_button_(false),
       favicon_hiding_offset_(0),
       should_display_crashed_favicon_(false),
+      animating_media_state_(TAB_MEDIA_STATE_NONE),
       loading_animation_(theme_service),
       background_offset_x_(0),
       background_offset_y_(kInactiveTabBackgroundOffsetY),
@@ -344,7 +329,7 @@ TabRendererGtk::TabRendererGtk(GtkThemeService* theme_service)
   close_button_.reset(MakeCloseButton());
   gtk_widget_show(tab_.get());
 
-  hover_animation_.reset(new ui::SlideAnimation(this));
+  hover_animation_.reset(new gfx::SlideAnimation(this));
   hover_animation_->SetSlideDuration(kHoverDurationMs);
 }
 
@@ -372,25 +357,21 @@ void TabRendererGtk::UpdateData(WebContents* contents,
   if (!loading_only) {
     data_.title = contents->GetTitle();
     data_.incognito = contents->GetBrowserContext()->IsOffTheRecord();
-    data_.crashed = contents->IsCrashed();
 
-    // Set whether we are recording or capturing tab media for this tab.
-    if (chrome::ShouldShowProjectingIndicator(contents)) {
-      data_.capture_state = PROJECTING;
-    } else if (chrome::ShouldShowRecordingIndicator(contents)) {
-      data_.capture_state = RECORDING;
+    TabMediaState next_media_state;
+    if (contents->IsCrashed()) {
+      data_.crashed = true;
+      next_media_state = TAB_MEDIA_STATE_NONE;
     } else {
-      data_.capture_state = NONE;
+      data_.crashed = false;
+      next_media_state = chrome::GetTabMediaStateForContents(contents);
+    }
+    if (data_.media_state != next_media_state) {
+      data_.previous_media_state = data_.media_state;
+      data_.media_state = next_media_state;
     }
 
-    SkBitmap* app_icon =
-        extensions::TabHelper::FromWebContents(contents)->GetExtensionAppIcon();
-    if (app_icon) {
-      data_.favicon = *app_icon;
-    } else {
-      data_.favicon = favicon_tab_helper->GetFavicon().AsBitmap();
-    }
-
+    data_.favicon = favicon_tab_helper->GetFavicon().AsBitmap();
     data_.app = app;
 
     // Make a cairo cached version of the favicon.
@@ -402,12 +383,8 @@ void TabRendererGtk::UpdateData(WebContents* contents,
       // For source images smaller than the favicon square, scale them as if
       // they were padded to fit the favicon square, so we don't blow up tiny
       // favicons into larger or nonproportional results.
-      int icon_size = gfx::kFaviconSize;
-      if (data_.capture_state == PROJECTING)
-        icon_size *= kProjectingFaviconResizeScale;
-
       GdkPixbuf* pixbuf = GetResizedGdkPixbufFromSkBitmap(data_.favicon,
-          icon_size, icon_size);
+          gfx::kFaviconSize, gfx::kFaviconSize);
       data_.cairo_favicon.UsePixbuf(pixbuf);
       g_object_unref(pixbuf);
     } else {
@@ -423,8 +400,6 @@ void TabRendererGtk::UpdateData(WebContents* contents,
         (data_.favicon.pixelRef() ==
         ui::ResourceBundle::GetSharedInstance().GetImageNamed(
             IDR_DEFAULT_FAVICON).AsBitmap().pixelRef());
-
-    UpdateFaviconOverlay(contents);
   }
 
   // Loading state also involves whether we show the favicon, since that's where
@@ -445,6 +420,13 @@ void TabRendererGtk::UpdateFromModel() {
     if (IsPerformingCrashAnimation())
       StopCrashAnimation();
     ResetCrashedFavicon();
+  }
+
+  if (data_.media_state != data_.previous_media_state) {
+    data_.previous_media_state = data_.media_state;
+    if (data_.media_state != TAB_MEDIA_STATE_NONE)
+      animating_media_state_ = data_.media_state;
+    StartMediaIndicatorAnimation();
   }
 }
 
@@ -546,17 +528,16 @@ void TabRendererGtk::PaintFaviconArea(GtkWidget* widget, cairo_t* cr) {
   PaintIcon(widget, cr);
 }
 
-bool TabRendererGtk::ShouldShowIcon() const {
-  if (mini() && height() >= GetMinimumUnselectedSize().height()) {
-    return true;
-  } else if (!data_.show_icon) {
-    return false;
-  } else if (IsActive()) {
-    // The active tab clips favicon before close button.
-    return IconCapacity() >= 2;
-  }
-  // Non-selected tabs clip close button before favicon.
-  return IconCapacity() >= 1;
+void TabRendererGtk::MaybeAdjustLeftForMiniTab(gfx::Rect* icon_bounds) const {
+  if (!(mini() || data_.animating_mini_change) ||
+      bounds_.width() >= kMiniTabRendererAsNormalTabWidth)
+    return;
+  const int mini_delta = kMiniTabRendererAsNormalTabWidth - GetMiniWidth();
+  const int ideal_delta = bounds_.width() - GetMiniWidth();
+  const int ideal_x = (GetMiniWidth() - icon_bounds->width()) / 2;
+  icon_bounds->set_x(icon_bounds->x() + static_cast<int>(
+      (1 - static_cast<float>(ideal_delta) / static_cast<float>(mini_delta)) *
+      (ideal_x - icon_bounds->x())));
 }
 
 // static
@@ -614,7 +595,7 @@ gfx::Rect TabRendererGtk::GetRequisition() const {
 
 void TabRendererGtk::StartMiniTabTitleAnimation() {
   if (!mini_title_animation_.get()) {
-    mini_title_animation_.reset(new ui::ThrobAnimation(this));
+    mini_title_animation_.reset(new gfx::ThrobAnimation(this));
     mini_title_animation_->SetThrobDuration(kMiniTitleChangeThrobDuration);
   }
 
@@ -641,22 +622,26 @@ void TabRendererGtk::Raise() const {
         GTK_BUTTON(close_button_->widget())));
 }
 
-string16 TabRendererGtk::GetTitle() const {
+base::string16 TabRendererGtk::GetTitle() const {
   return data_.title;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// TabRendererGtk, ui::AnimationDelegate implementation:
+// TabRendererGtk, gfx::AnimationDelegate implementation:
 
-void TabRendererGtk::AnimationProgressed(const ui::Animation* animation) {
+void TabRendererGtk::AnimationProgressed(const gfx::Animation* animation) {
   gtk_widget_queue_draw(tab_.get());
 }
 
-void TabRendererGtk::AnimationCanceled(const ui::Animation* animation) {
+void TabRendererGtk::AnimationCanceled(const gfx::Animation* animation) {
+  if (media_indicator_animation_ == animation)
+    animating_media_state_ = data_.media_state;
   AnimationEnded(animation);
 }
 
-void TabRendererGtk::AnimationEnded(const ui::Animation* animation) {
+void TabRendererGtk::AnimationEnded(const gfx::Animation* animation) {
+  if (media_indicator_animation_ == animation)
+    animating_media_state_ = data_.media_state;
   gtk_widget_queue_draw(tab_.get());
 }
 
@@ -680,6 +665,13 @@ bool TabRendererGtk::IsPerformingCrashAnimation() const {
   return crash_animation_.get() && crash_animation_->is_animating();
 }
 
+void TabRendererGtk::StartMediaIndicatorAnimation() {
+  media_indicator_animation_ =
+      chrome::CreateTabMediaIndicatorFadeAnimation(data_.media_state);
+  media_indicator_animation_->set_delegate(this);
+  media_indicator_animation_->Start();
+}
+
 void TabRendererGtk::SetFaviconHidingOffset(int offset) {
   favicon_hiding_offset_ = offset;
   SchedulePaint();
@@ -693,36 +685,6 @@ void TabRendererGtk::ResetCrashedFavicon() {
   should_display_crashed_favicon_ = false;
 }
 
-void TabRendererGtk::UpdateFaviconOverlay(WebContents* contents) {
-  if (data_.capture_state != NONE) {
-    gfx::Image recording = theme_service_->GetImageNamed(
-        data_.capture_state == PROJECTING ?
-            IDR_TAB_CAPTURE_GLOW : IDR_TAB_RECORDING);
-
-    int icon_size = data_.capture_state == PROJECTING ?
-        gfx::kFaviconSize * kProjectingGlowResizeScale :
-        recording.ToImageSkia()->width();
-
-    GdkPixbuf* pixbuf = data_.favicon.isNull() ?
-        gfx::GdkPixbufFromSkBitmap(*recording.ToSkBitmap()) :
-        GetResizedGdkPixbufFromSkBitmap(*recording.ToSkBitmap(),
-            icon_size, icon_size);
-    data_.cairo_overlay.UsePixbuf(pixbuf);
-    g_object_unref(pixbuf);
-
-    if (!favicon_overlay_animation_.get()) {
-      favicon_overlay_animation_.reset(new ui::ThrobAnimation(this));
-      favicon_overlay_animation_->SetThrobDuration(kRecordingDurationMs);
-    }
-    if (!favicon_overlay_animation_->is_animating())
-      favicon_overlay_animation_->StartThrobbing(-1);
-  } else {
-    data_.cairo_overlay.Reset();
-    if (favicon_overlay_animation_.get())
-      favicon_overlay_animation_->Stop();
-  }
-}
-
 void TabRendererGtk::Paint(GtkWidget* widget, cairo_t* cr) {
   // Don't paint if we're narrower than we can render correctly. (This should
   // only happen during animations).
@@ -731,8 +693,10 @@ void TabRendererGtk::Paint(GtkWidget* widget, cairo_t* cr) {
 
   // See if the model changes whether the icons should be painted.
   const bool show_icon = ShouldShowIcon();
+  const bool show_media_indicator = ShouldShowMediaIndicator();
   const bool show_close_button = ShouldShowCloseBox();
   if (show_icon != showing_icon_ ||
+      show_media_indicator != showing_media_indicator_ ||
       show_close_button != showing_close_button_)
     Layout();
 
@@ -743,6 +707,9 @@ void TabRendererGtk::Paint(GtkWidget* widget, cairo_t* cr) {
 
   if (show_icon)
     PaintIcon(widget, cr);
+
+  if (show_media_indicator)
+    PaintMediaIndicator(widget, cr);
 }
 
 cairo_surface_t* TabRendererGtk::PaintToSurface(GtkWidget* widget,
@@ -783,19 +750,7 @@ void TabRendererGtk::Layout() {
     int favicon_top = kTopPadding + (content_height - gfx::kFaviconSize) / 2;
     favicon_bounds_.SetRect(local_bounds.x(), favicon_top,
                             gfx::kFaviconSize, gfx::kFaviconSize);
-    if ((mini() || data_.animating_mini_change) &&
-        bounds_.width() < kMiniTabRendererAsNormalTabWidth) {
-      int mini_delta = kMiniTabRendererAsNormalTabWidth - GetMiniWidth();
-      int ideal_delta = bounds_.width() - GetMiniWidth();
-      if (ideal_delta < mini_delta) {
-        int ideal_x = (GetMiniWidth() - gfx::kFaviconSize) / 2;
-        int x = favicon_bounds_.x() + static_cast<int>(
-            (1 - static_cast<float>(ideal_delta) /
-             static_cast<float>(mini_delta)) *
-            (ideal_x - favicon_bounds_.x()));
-        favicon_bounds_.set_x(x);
-      }
-    }
+    MaybeAdjustLeftForMiniTab(&favicon_bounds_);
   } else {
     favicon_bounds_.SetRect(local_bounds.x(), local_bounds.y(), 0, 0);
   }
@@ -828,6 +783,23 @@ void TabRendererGtk::Layout() {
     close_button_bounds_.SetRect(0, 0, 0, 0);
   }
 
+  showing_media_indicator_ = ShouldShowMediaIndicator();
+  if (showing_media_indicator_) {
+    const gfx::Image& media_indicator_image =
+        chrome::GetTabMediaIndicatorImage(animating_media_state_);
+    media_indicator_bounds_.set_width(media_indicator_image.Width());
+    media_indicator_bounds_.set_height(media_indicator_image.Height());
+    media_indicator_bounds_.set_y(
+        kTopPadding + (content_height - media_indicator_bounds_.height()) / 2);
+    const int right = showing_close_button_ ?
+        close_button_bounds_.x() : local_bounds.right();
+    media_indicator_bounds_.set_x(std::max(
+        local_bounds.x(), right - media_indicator_bounds_.width()));
+    MaybeAdjustLeftForMiniTab(&media_indicator_bounds_);
+  } else {
+    media_indicator_bounds_.SetRect(local_bounds.x(), local_bounds.y(), 0, 0);
+  }
+
   if (!mini() || width() >= kMiniTabRendererAsNormalTabWidth) {
     // Size the Title text to fill the remaining space.
     int title_left = favicon_bounds_.right() + kFaviconTitleSpacing;
@@ -842,17 +814,23 @@ void TabRendererGtk::Layout() {
       title_top -= (text_height - minimum_size.height()) / 2;
 
     int title_width;
-    if (close_button_bounds_.width() && close_button_bounds_.height()) {
-      title_width = std::max(close_button_bounds_.x() -
-                             kTitleCloseButtonSpacing - title_left, 0);
+    if (showing_media_indicator_) {
+      title_width = media_indicator_bounds_.x() - kTitleCloseButtonSpacing -
+          title_left;
+    } else if (close_button_bounds_.width() && close_button_bounds_.height()) {
+      title_width = close_button_bounds_.x() - kTitleCloseButtonSpacing -
+          title_left;
     } else {
-      title_width = std::max(local_bounds.width() - title_left, 0);
+      title_width = local_bounds.width() - title_left;
     }
+    title_width = std::max(title_width, 0);
     title_bounds_.SetRect(title_left, title_top, title_width, content_height);
   }
 
   favicon_bounds_.set_x(
       gtk_util::MirroredLeftPointForRect(tab_.get(), favicon_bounds_));
+  media_indicator_bounds_.set_x(
+      gtk_util::MirroredLeftPointForRect(tab_.get(), media_indicator_bounds_));
   close_button_bounds_.set_x(
       gtk_util::MirroredLeftPointForRect(tab_.get(), close_button_bounds_));
   title_bounds_.set_x(
@@ -895,7 +873,7 @@ void TabRendererGtk::PaintTitle(GtkWidget* widget, cairo_t* cr) {
     return;
 
   // Paint the Title.
-  string16 title = data_.title;
+  base::string16 title = data_.title;
   if (title.empty()) {
     title = data_.loading ?
         l10n_util::GetStringUTF16(IDS_TAB_LOADING_TITLE) :
@@ -904,17 +882,24 @@ void TabRendererGtk::PaintTitle(GtkWidget* widget, cairo_t* cr) {
     Browser::FormatTitleForDisplay(&title);
   }
 
+  GtkAllocation allocation;
+  gtk_widget_get_allocation(widget, &allocation);
+  gfx::Rect bounds(allocation);
+
+  // Draw the text directly onto the Cairo context. This is necessary for
+  // getting the draw order correct, and automatically applying transformations
+  // such as scaling when a tab is detached.
+  gfx::CanvasSkiaPaintCairo canvas(cr, bounds.size(), true);
+
   SkColor title_color = IsSelected() ? selected_title_color_
                                      : unselected_title_color_;
 
-  DrawTextOntoCairoSurface(cr,
-                           title,
-                           *title_font_,
-                           title_bounds_,
-                           title_bounds_,
-                           title_color,
-                           base::i18n::IsRTL() ? gfx::Canvas::TEXT_ALIGN_RIGHT :
-                           gfx::Canvas::TEXT_ALIGN_LEFT);
+  // Disable subpixel rendering. This does not work because the canvas has a
+  // transparent background.
+  int flags = gfx::Canvas::NO_ELLIPSIS | gfx::Canvas::NO_SUBPIXEL_RENDERING;
+  canvas.DrawFadeTruncatingStringRectWithFlags(
+      title, gfx::Canvas::TruncateFadeTail, gfx::FontList(*title_font_),
+      title_color, title_bounds_, flags);
 }
 
 void TabRendererGtk::PaintIcon(GtkWidget* widget, cairo_t* cr) {
@@ -935,79 +920,25 @@ void TabRendererGtk::PaintIcon(GtkWidget* widget, cairo_t* cr) {
   }
 
   if (to_display) {
-    int favicon_x = favicon_bounds_.x();
-    int favicon_y = favicon_bounds_.y() + favicon_hiding_offset_;
-    if (data_.capture_state == PROJECTING) {
-      favicon_x += favicon_bounds_.width() * kProjectingFaviconXShiftScale;
-      favicon_y += favicon_bounds_.height() * kProjectingFaviconYShiftScale;
-    }
-
-    to_display->SetSource(cr, widget, favicon_x, favicon_y);
+    to_display->SetSource(cr, widget, favicon_bounds_.x(),
+                          favicon_bounds_.y() + favicon_hiding_offset_);
     cairo_paint(cr);
   }
+}
 
-  if (data_.cairo_overlay.valid() && favicon_overlay_animation_.get() &&
-      favicon_overlay_animation_->is_animating()) {
-    if (data_.capture_state == PROJECTING) {
-      theme_service_->GetImageNamed(IDR_TAB_CAPTURE).ToCairo()->
-          SetSource(cr,
-                    widget,
-                    favicon_bounds_.x(),
-                    favicon_bounds_.y() + favicon_hiding_offset_);
-      cairo_paint(cr);
-    } else if (data_.capture_state == RECORDING) {
-      // Add mask around the recording overlay image (red dot).
-      gfx::CairoCachedSurface* tab_bg;
-      if (IsActive()) {
-        tab_bg = theme_service_->GetImageNamed(IDR_THEME_TOOLBAR).ToCairo();
-      } else {
-        int theme_id = data_.incognito ?
-          IDR_THEME_TAB_BACKGROUND_INCOGNITO : IDR_THEME_TAB_BACKGROUND;
-        tab_bg = theme_service_->GetImageNamed(theme_id).ToCairo();
-      }
-      tab_bg->SetSource(cr, widget, -background_offset_x_, 0);
-      cairo_pattern_set_extend(cairo_get_source(cr), CAIRO_EXTEND_REPEAT);
+void TabRendererGtk::PaintMediaIndicator(GtkWidget* widget, cairo_t* cr) {
+  if (media_indicator_bounds_.IsEmpty() || !media_indicator_animation_)
+    return;
 
-      gfx::CairoCachedSurface* recording_mask =
-          theme_service_->GetImageNamed(IDR_TAB_RECORDING_MASK).ToCairo();
-      int offset_from_right = data_.cairo_overlay.Width() +
-          (recording_mask->Width() - data_.cairo_overlay.Width()) / 2;
-      int favicon_x = favicon_bounds_.x() + favicon_bounds_.width() -
-          offset_from_right;
-      int offset_from_bottom = data_.cairo_overlay.Height() +
-          (recording_mask->Height() - data_.cairo_overlay.Height()) / 2;
-      int favicon_y = favicon_bounds_.y() + favicon_hiding_offset_ +
-          favicon_bounds_.height() - offset_from_bottom;
-      recording_mask->MaskSource(cr, widget, favicon_x, favicon_y);
+  double opaqueness = media_indicator_animation_->GetCurrentValue();
+  if (data_.media_state == TAB_MEDIA_STATE_NONE)
+    opaqueness = 1.0 - opaqueness;  // Fading out, not in.
 
-      if (!IsActive()) {
-        double throb_value = GetThrobValue();
-        if (throb_value > 0) {
-          cairo_push_group(cr);
-          gfx::CairoCachedSurface* active_bg =
-              theme_service_->GetImageNamed(IDR_THEME_TOOLBAR).ToCairo();
-          active_bg->SetSource(cr, widget, -background_offset_x_, 0);
-          cairo_pattern_set_extend(cairo_get_source(cr), CAIRO_EXTEND_REPEAT);
-          recording_mask->MaskSource(cr, widget, favicon_x, favicon_y);
-          cairo_pop_group_to_source(cr);
-          cairo_paint_with_alpha(cr, throb_value);
-        }
-      }
-    }
-
-    int favicon_x = favicon_bounds_.x();
-    int favicon_y = favicon_bounds_.y() + favicon_hiding_offset_;
-    if (data_.capture_state == PROJECTING) {
-      favicon_x -= favicon_bounds_.width() * kProjectingGlowShiftScale;
-      favicon_y -= favicon_bounds_.height() * kProjectingGlowShiftScale;
-    } else if (data_.capture_state == RECORDING) {
-      favicon_x += favicon_bounds_.width() - data_.cairo_overlay.Width();
-      favicon_y += favicon_bounds_.height() - data_.cairo_overlay.Height();
-    }
-
-    data_.cairo_overlay.SetSource(cr, widget, favicon_x, favicon_y);
-    cairo_paint_with_alpha(cr, favicon_overlay_animation_->GetCurrentValue());
-  }
+  const gfx::Image& media_indicator_image =
+      chrome::GetTabMediaIndicatorImage(animating_media_state_);
+  media_indicator_image.ToCairo()->SetSource(
+      cr, widget, media_indicator_bounds_.x(), media_indicator_bounds_.y());
+  cairo_paint_with_alpha(cr, opaqueness);
 }
 
 void TabRendererGtk::PaintTabBackground(GtkWidget* widget, cairo_t* cr) {
@@ -1131,12 +1062,30 @@ void TabRendererGtk::PaintLoadingAnimation(GtkWidget* widget,
 int TabRendererGtk::IconCapacity() const {
   if (height() < GetMinimumUnselectedSize().height())
     return 0;
-  return (width() - kLeftPadding - kRightPadding) / gfx::kFaviconSize;
+  const int available_width =
+      std::max(0, width() - kLeftPadding - kRightPadding);
+  const int kPaddingBetweenIcons = 2;
+  if (available_width >= gfx::kFaviconSize &&
+      available_width < (gfx::kFaviconSize + kPaddingBetweenIcons)) {
+    return 1;
+  }
+  return available_width / (gfx::kFaviconSize + kPaddingBetweenIcons);
+}
+
+bool TabRendererGtk::ShouldShowIcon() const {
+  return chrome::ShouldTabShowFavicon(
+      IconCapacity(), mini(), IsActive(), data_.show_icon,
+      animating_media_state_);
+}
+
+bool TabRendererGtk::ShouldShowMediaIndicator() const {
+  return chrome::ShouldTabShowMediaIndicator(
+      IconCapacity(), mini(), IsActive(), data_.show_icon,
+      animating_media_state_);
 }
 
 bool TabRendererGtk::ShouldShowCloseBox() const {
-  // The selected tab never clips close button.
-  return !mini() && (IsActive() || IconCapacity() >= 3);
+  return chrome::ShouldTabShowCloseButton(IconCapacity(), mini(), IsActive());
 }
 
 CustomDrawButton* TabRendererGtk::MakeCloseButton() {
@@ -1217,14 +1166,14 @@ void TabRendererGtk::OnSizeAllocate(GtkWidget* widget,
 
 gboolean TabRendererGtk::OnEnterNotifyEvent(GtkWidget* widget,
                                             GdkEventCrossing* event) {
-  hover_animation_->SetTweenType(ui::Tween::EASE_OUT);
+  hover_animation_->SetTweenType(gfx::Tween::EASE_OUT);
   hover_animation_->Show();
   return FALSE;
 }
 
 gboolean TabRendererGtk::OnLeaveNotifyEvent(GtkWidget* widget,
                                             GdkEventCrossing* event) {
-  hover_animation_->SetTweenType(ui::Tween::EASE_IN);
+  hover_animation_->SetTweenType(gfx::Tween::EASE_IN);
   hover_animation_->Hide();
   return FALSE;
 }

@@ -86,10 +86,10 @@ TEST(TemplateURLPrepopulateDataTest, UniqueIDs) {
   TestingProfile profile;
   for (size_t i = 0; i < arraysize(kCountryIds); ++i) {
     profile.GetPrefs()->SetInteger(prefs::kCountryIDAtInstall, kCountryIds[i]);
-    ScopedVector<TemplateURL> urls;
     size_t default_index;
-    TemplateURLPrepopulateData::GetPrepopulatedEngines(&profile, &urls.get(),
-                                                       &default_index);
+    ScopedVector<TemplateURL> urls =
+        TemplateURLPrepopulateData::GetPrepopulatedEngines(&profile,
+                                                           &default_index);
     std::set<int> unique_ids;
     for (size_t turl_i = 0; turl_i < urls.size(); ++turl_i) {
       ASSERT_TRUE(unique_ids.find(urls[turl_i]->prepopulate_id()) ==
@@ -121,10 +121,10 @@ TEST(TemplateURLPrepopulateDataTest, ProvidersFromPrefs) {
   int version = TemplateURLPrepopulateData::GetDataVersion(prefs);
   EXPECT_EQ(1, version);
 
-  ScopedVector<TemplateURL> t_urls;
   size_t default_index;
-  TemplateURLPrepopulateData::GetPrepopulatedEngines(&profile, &t_urls.get(),
-                                                     &default_index);
+  ScopedVector<TemplateURL> t_urls =
+      TemplateURLPrepopulateData::GetPrepopulatedEngines(&profile,
+                                                         &default_index);
 
   ASSERT_EQ(1u, t_urls.size());
   EXPECT_EQ(ASCIIToUTF16("foo"), t_urls[0]->short_name());
@@ -149,9 +149,8 @@ TEST(TemplateURLPrepopulateDataTest, ProvidersFromPrefs) {
   overrides->Append(entry->DeepCopy());
   prefs->SetUserPref(prefs::kSearchProviderOverrides, overrides);
 
-  t_urls.clear();
-  TemplateURLPrepopulateData::GetPrepopulatedEngines(&profile, &t_urls.get(),
-                                                     &default_index);
+  t_urls = TemplateURLPrepopulateData::GetPrepopulatedEngines(&profile,
+                                                              &default_index);
   ASSERT_EQ(1u, t_urls.size());
   EXPECT_EQ(ASCIIToUTF16("foo"), t_urls[0]->short_name());
   EXPECT_EQ(ASCIIToUTF16("fook"), t_urls[0]->keyword());
@@ -184,9 +183,8 @@ TEST(TemplateURLPrepopulateDataTest, ProvidersFromPrefs) {
   overrides->Append(entry->DeepCopy());
   prefs->SetUserPref(prefs::kSearchProviderOverrides, overrides);
 
-  t_urls.clear();
-  TemplateURLPrepopulateData::GetPrepopulatedEngines(&profile, &t_urls.get(),
-                                                     &default_index);
+  t_urls = TemplateURLPrepopulateData::GetPrepopulatedEngines(&profile,
+                                                              &default_index);
   EXPECT_EQ(2u, t_urls.size());
 }
 
@@ -216,10 +214,10 @@ TEST(TemplateURLPrepopulateDataTest, ClearProvidersFromPrefs) {
   version = TemplateURLPrepopulateData::GetDataVersion(prefs);
   EXPECT_EQ(TemplateURLPrepopulateData::kCurrentDataVersion, version);
 
-  ScopedVector<TemplateURL> t_urls;
   size_t default_index;
-  TemplateURLPrepopulateData::GetPrepopulatedEngines(&profile, &t_urls.get(),
-                                                     &default_index);
+  ScopedVector<TemplateURL> t_urls =
+      TemplateURLPrepopulateData::GetPrepopulatedEngines(&profile,
+                                                         &default_index);
   ASSERT_FALSE(t_urls.empty());
   for (size_t i = 0; i < t_urls.size(); ++i) {
     EXPECT_NE(ASCIIToUTF16("foo"), t_urls[i]->short_name());
@@ -233,6 +231,7 @@ TEST(TemplateURLPrepopulateDataTest, ClearProvidersFromPrefs) {
   EXPECT_FALSE(t_urls[default_index]->suggestions_url().empty());
   EXPECT_FALSE(t_urls[default_index]->instant_url().empty());
   EXPECT_FALSE(t_urls[default_index]->image_url().empty());
+  EXPECT_FALSE(t_urls[default_index]->new_tab_url().empty());
   EXPECT_FALSE(t_urls[default_index]->image_url_post_params().empty());
   EXPECT_EQ(SEARCH_ENGINE_GOOGLE,
             TemplateURLPrepopulateData::GetEngineType(*t_urls[default_index]));
@@ -244,10 +243,10 @@ TEST(TemplateURLPrepopulateDataTest, ProvidersFromPrepopulated) {
   CommandLine::ForCurrentProcess()->AppendSwitchASCII(
       switches::kCountry, "US");
   TestingProfile profile;
-  ScopedVector<TemplateURL> t_urls;
   size_t default_index;
-  TemplateURLPrepopulateData::GetPrepopulatedEngines(&profile, &t_urls.get(),
-                                                     &default_index);
+  ScopedVector<TemplateURL> t_urls =
+      TemplateURLPrepopulateData::GetPrepopulatedEngines(&profile,
+                                                         &default_index);
 
   // Ensure all the URLs have the required fields populated.
   ASSERT_FALSE(t_urls.empty());
@@ -265,6 +264,7 @@ TEST(TemplateURLPrepopulateDataTest, ProvidersFromPrepopulated) {
   EXPECT_FALSE(t_urls[default_index]->suggestions_url().empty());
   EXPECT_FALSE(t_urls[default_index]->instant_url().empty());
   EXPECT_FALSE(t_urls[default_index]->image_url().empty());
+  EXPECT_FALSE(t_urls[default_index]->new_tab_url().empty());
   EXPECT_FALSE(t_urls[default_index]->image_url_post_params().empty());
   // Expect at least 2 alternate_urls.
   // This caught a bug with static initialization of arrays, so leave this in.

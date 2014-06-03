@@ -10,12 +10,12 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/common/extensions/extension_constants.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
-#include "chrome/common/extensions/manifest.h"
 #include "extensions/common/error_utils.h"
+#include "extensions/common/manifest.h"
+#include "extensions/common/manifest_constants.h"
 
-namespace keys = extension_manifest_keys;
-namespace errors = extension_manifest_errors;
+namespace keys = extensions::manifest_keys;
+namespace errors = extensions::manifest_errors;
 
 namespace {
 
@@ -36,7 +36,7 @@ MediaGalleriesHandlerInfo::~MediaGalleriesHandlerInfo() {
 MediaGalleriesHandler* LoadMediaGalleriesHandler(
     const std::string& extension_id,
     const DictionaryValue* media_galleries_handler,
-    string16* error) {
+    base::string16* error) {
   scoped_ptr<MediaGalleriesHandler> result(new MediaGalleriesHandler());
   result->set_extension_id(extension_id);
 
@@ -80,7 +80,7 @@ bool LoadMediaGalleriesHandlers(
     const std::string& extension_id,
     const base::ListValue* extension_actions,
     MediaGalleriesHandler::List* result,
-    string16* error) {
+    base::string16* error) {
   for (base::ListValue::const_iterator iter = extension_actions->begin();
        iter != extension_actions->end();
        ++iter) {
@@ -123,7 +123,7 @@ MediaGalleriesHandlerParser::~MediaGalleriesHandlerParser() {
 }
 
 bool MediaGalleriesHandlerParser::Parse(extensions::Extension* extension,
-                                        string16* error) {
+                                        base::string16* error) {
   const base::ListValue* media_galleries_handlers_value = NULL;
   if (!extension->manifest()->GetList(keys::kMediaGalleriesHandlers,
                                       &media_galleries_handlers_value)) {

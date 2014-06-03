@@ -21,10 +21,9 @@
 #include "base/time/time.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/bookmarks/bookmark_model_observer.h"
-#include "chrome/browser/bookmarks/bookmark_model_test_utils.h"
+#include "chrome/browser/bookmarks/bookmark_test_helpers.h"
 #include "chrome/browser/bookmarks/bookmark_utils.h"
 #include "chrome/test/base/testing_profile.h"
-#include "chrome/test/base/ui_test_utils.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/models/tree_node_iterator.h"
@@ -33,7 +32,6 @@
 
 using base::Time;
 using base::TimeDelta;
-using content::BrowserThread;
 
 namespace {
 
@@ -310,7 +308,7 @@ TEST_F(BookmarkModelTest, InitialState) {
 
 TEST_F(BookmarkModelTest, AddURL) {
   const BookmarkNode* root = model_.bookmark_bar_node();
-  const string16 title(ASCIIToUTF16("foo"));
+  const base::string16 title(ASCIIToUTF16("foo"));
   const GURL url("http://foo.com");
 
   const BookmarkNode* new_node = model_.AddURL(root, 0, title, url);
@@ -330,7 +328,7 @@ TEST_F(BookmarkModelTest, AddURL) {
 
 TEST_F(BookmarkModelTest, AddURLWithUnicodeTitle) {
   const BookmarkNode* root = model_.bookmark_bar_node();
-  const string16 title(WideToUTF16(
+  const base::string16 title(WideToUTF16(
       L"\u767e\u5ea6\u4e00\u4e0b\uff0c\u4f60\u5c31\u77e5\u9053"));
   const GURL url("https://www.baidu.com/");
 
@@ -352,7 +350,7 @@ TEST_F(BookmarkModelTest, AddURLWithUnicodeTitle) {
 TEST_F(BookmarkModelTest, AddURLWithWhitespaceTitle) {
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(url_whitespace_test_cases); ++i) {
     const BookmarkNode* root = model_.bookmark_bar_node();
-    const string16 title(
+    const base::string16 title(
         ASCIIToUTF16(url_whitespace_test_cases[i].input_title));
     const GURL url("http://foo.com");
 
@@ -368,7 +366,7 @@ TEST_F(BookmarkModelTest, AddURLWithWhitespaceTitle) {
 
 TEST_F(BookmarkModelTest, AddURLToMobileBookmarks) {
   const BookmarkNode* root = model_.mobile_node();
-  const string16 title(ASCIIToUTF16("foo"));
+  const base::string16 title(ASCIIToUTF16("foo"));
   const GURL url("http://foo.com");
 
   const BookmarkNode* new_node = model_.AddURL(root, 0, title, url);
@@ -388,7 +386,7 @@ TEST_F(BookmarkModelTest, AddURLToMobileBookmarks) {
 
 TEST_F(BookmarkModelTest, AddFolder) {
   const BookmarkNode* root = model_.bookmark_bar_node();
-  const string16 title(ASCIIToUTF16("foo"));
+  const base::string16 title(ASCIIToUTF16("foo"));
 
   const BookmarkNode* new_node = model_.AddFolder(root, 0, title);
   AssertObserverCount(1, 0, 0, 0, 0, 0, 0, 0, 0);
@@ -412,7 +410,7 @@ TEST_F(BookmarkModelTest, AddFolder) {
 TEST_F(BookmarkModelTest, AddFolderWithWhitespaceTitle) {
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(title_whitespace_test_cases); ++i) {
     const BookmarkNode* root = model_.bookmark_bar_node();
-    const string16 title(
+    const base::string16 title(
         ASCIIToUTF16(title_whitespace_test_cases[i].input_title));
 
     const BookmarkNode* new_node = model_.AddFolder(root, i, title);
@@ -427,7 +425,7 @@ TEST_F(BookmarkModelTest, AddFolderWithWhitespaceTitle) {
 
 TEST_F(BookmarkModelTest, RemoveURL) {
   const BookmarkNode* root = model_.bookmark_bar_node();
-  const string16 title(ASCIIToUTF16("foo"));
+  const base::string16 title(ASCIIToUTF16("foo"));
   const GURL url("http://foo.com");
   model_.AddURL(root, 0, title, url);
   ClearCounts();
@@ -448,7 +446,7 @@ TEST_F(BookmarkModelTest, RemoveFolder) {
   ClearCounts();
 
   // Add a URL as a child.
-  const string16 title(ASCIIToUTF16("foo"));
+  const base::string16 title(ASCIIToUTF16("foo"));
   const GURL url("http://foo.com");
   model_.AddURL(folder, 0, title, url);
 
@@ -470,7 +468,7 @@ TEST_F(BookmarkModelTest, RemoveAll) {
   ClearCounts();
 
   // Add a url to bookmark bar.
-  string16 title(ASCIIToUTF16("foo"));
+  base::string16 title(ASCIIToUTF16("foo"));
   GURL url("http://foo.com");
   model_.AddURL(bookmark_bar_node, 0, title, url);
 
@@ -493,7 +491,7 @@ TEST_F(BookmarkModelTest, RemoveAll) {
 
 TEST_F(BookmarkModelTest, SetTitle) {
   const BookmarkNode* root = model_.bookmark_bar_node();
-  string16 title(ASCIIToUTF16("foo"));
+  base::string16 title(ASCIIToUTF16("foo"));
   const GURL url("http://foo.com");
   const BookmarkNode* node = model_.AddURL(root, 0, title, url);
 
@@ -509,7 +507,7 @@ TEST_F(BookmarkModelTest, SetTitle) {
 TEST_F(BookmarkModelTest, SetTitleWithWhitespace) {
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(title_whitespace_test_cases); ++i) {
     const BookmarkNode* root = model_.bookmark_bar_node();
-    string16 title(ASCIIToUTF16("dummy"));
+    base::string16 title(ASCIIToUTF16("dummy"));
     const GURL url("http://foo.com");
     const BookmarkNode* node = model_.AddURL(root, 0, title, url);
 
@@ -522,7 +520,7 @@ TEST_F(BookmarkModelTest, SetTitleWithWhitespace) {
 
 TEST_F(BookmarkModelTest, SetURL) {
   const BookmarkNode* root = model_.bookmark_bar_node();
-  const string16 title(ASCIIToUTF16("foo"));
+  const base::string16 title(ASCIIToUTF16("foo"));
   GURL url("http://foo.com");
   const BookmarkNode* node = model_.AddURL(root, 0, title, url);
 
@@ -537,7 +535,7 @@ TEST_F(BookmarkModelTest, SetURL) {
 
 TEST_F(BookmarkModelTest, SetDateAdded) {
   const BookmarkNode* root = model_.bookmark_bar_node();
-  const string16 title(ASCIIToUTF16("foo"));
+  const base::string16 title(ASCIIToUTF16("foo"));
   GURL url("http://foo.com");
   const BookmarkNode* node = model_.AddURL(root, 0, title, url);
 
@@ -552,7 +550,7 @@ TEST_F(BookmarkModelTest, SetDateAdded) {
 
 TEST_F(BookmarkModelTest, Move) {
   const BookmarkNode* root = model_.bookmark_bar_node();
-  const string16 title(ASCIIToUTF16("foo"));
+  const base::string16 title(ASCIIToUTF16("foo"));
   const GURL url("http://foo.com");
   const BookmarkNode* node = model_.AddURL(root, 0, title, url);
   const BookmarkNode* folder1 = model_.AddFolder(root, 0, ASCIIToUTF16("foo"));
@@ -579,7 +577,7 @@ TEST_F(BookmarkModelTest, Move) {
 
 TEST_F(BookmarkModelTest, NonMovingMoveCall) {
   const BookmarkNode* root = model_.bookmark_bar_node();
-  const string16 title(ASCIIToUTF16("foo"));
+  const base::string16 title(ASCIIToUTF16("foo"));
   const GURL url("http://foo.com");
   const base::Time old_date(base::Time::Now() - base::TimeDelta::FromDays(1));
 
@@ -596,32 +594,31 @@ TEST_F(BookmarkModelTest, NonMovingMoveCall) {
 TEST_F(BookmarkModelTest, Copy) {
   const BookmarkNode* root = model_.bookmark_bar_node();
   static const std::string model_string("a 1:[ b c ] d 2:[ e f g ] h ");
-  BookmarkModelTestUtils::AddNodesFromModelString(&model_, root, model_string);
+  test::AddNodesFromModelString(&model_, root, model_string);
 
   // Validate initial model.
-  std::string actual_model_string =
-      BookmarkModelTestUtils::ModelStringFromNode(root);
+  std::string actual_model_string = test::ModelStringFromNode(root);
   EXPECT_EQ(model_string, actual_model_string);
 
   // Copy 'd' to be after '1:b': URL item from bar to folder.
   const BookmarkNode* node_to_copy = root->GetChild(2);
   const BookmarkNode* destination = root->GetChild(1);
   model_.Copy(node_to_copy, destination, 1);
-  actual_model_string = BookmarkModelTestUtils::ModelStringFromNode(root);
+  actual_model_string = test::ModelStringFromNode(root);
   EXPECT_EQ("a 1:[ b d c ] d 2:[ e f g ] h ", actual_model_string);
 
   // Copy '1:d' to be after 'a': URL item from folder to bar.
   const BookmarkNode* folder = root->GetChild(1);
   node_to_copy = folder->GetChild(1);
   model_.Copy(node_to_copy, root, 1);
-  actual_model_string = BookmarkModelTestUtils::ModelStringFromNode(root);
+  actual_model_string = test::ModelStringFromNode(root);
   EXPECT_EQ("a d 1:[ b d c ] d 2:[ e f g ] h ", actual_model_string);
 
   // Copy '1' to be after '2:e': Folder from bar to folder.
   node_to_copy = root->GetChild(2);
   destination = root->GetChild(4);
   model_.Copy(node_to_copy, destination, 1);
-  actual_model_string = BookmarkModelTestUtils::ModelStringFromNode(root);
+  actual_model_string = test::ModelStringFromNode(root);
   EXPECT_EQ("a d 1:[ b d c ] d 2:[ e 1:[ b d c ] f g ] h ",
             actual_model_string);
 
@@ -629,21 +626,21 @@ TEST_F(BookmarkModelTest, Copy) {
   folder = root->GetChild(4);
   node_to_copy = folder->GetChild(1);
   model_.Copy(node_to_copy, folder, 3);
-  actual_model_string = BookmarkModelTestUtils::ModelStringFromNode(root);
+  actual_model_string = test::ModelStringFromNode(root);
   EXPECT_EQ("a d 1:[ b d c ] d 2:[ e 1:[ b d c ] f 1:[ b d c ] g ] h ",
             actual_model_string);
 
   // Copy first 'd' to be after 'h': URL item within the bar.
   node_to_copy = root->GetChild(1);
   model_.Copy(node_to_copy, root, 6);
-  actual_model_string = BookmarkModelTestUtils::ModelStringFromNode(root);
+  actual_model_string = test::ModelStringFromNode(root);
   EXPECT_EQ("a d 1:[ b d c ] d 2:[ e 1:[ b d c ] f 1:[ b d c ] g ] h d ",
             actual_model_string);
 
   // Copy '2' to be after 'a': Folder within the bar.
   node_to_copy = root->GetChild(4);
   model_.Copy(node_to_copy, root, 1);
-  actual_model_string = BookmarkModelTestUtils::ModelStringFromNode(root);
+  actual_model_string = test::ModelStringFromNode(root);
   EXPECT_EQ("a 2:[ e 1:[ b d c ] f 1:[ b d c ] g ] d 1:[ b d c ] "
             "d 2:[ e 1:[ b d c ] f 1:[ b d c ] g ] h d ",
             actual_model_string);
@@ -653,7 +650,7 @@ TEST_F(BookmarkModelTest, Copy) {
 TEST_F(BookmarkModelTest, ParentForNewNodes) {
   ASSERT_EQ(model_.bookmark_bar_node(), model_.GetParentForNewNodes());
 
-  const string16 title(ASCIIToUTF16("foo"));
+  const base::string16 title(ASCIIToUTF16("foo"));
   const GURL url("http://foo.com");
 
   model_.AddURL(model_.other_node(), 0, title, url);
@@ -664,7 +661,7 @@ TEST_F(BookmarkModelTest, ParentForNewNodes) {
 TEST_F(BookmarkModelTest, ParentForNewMobileNodes) {
   ASSERT_EQ(model_.bookmark_bar_node(), model_.GetParentForNewNodes());
 
-  const string16 title(ASCIIToUTF16("foo"));
+  const base::string16 title(ASCIIToUTF16("foo"));
   const GURL url("http://foo.com");
 
   model_.AddURL(model_.mobile_node(), 0, title, url);
@@ -762,7 +759,7 @@ TEST_F(BookmarkModelTest, GetMostRecentlyAddedNodeForURL) {
 // Makes sure GetBookmarks removes duplicates.
 TEST_F(BookmarkModelTest, GetBookmarksWithDups) {
   const GURL url("http://foo.com/0");
-  const string16 title(ASCIIToUTF16("blah"));
+  const base::string16 title(ASCIIToUTF16("blah"));
   model_.AddURL(model_.bookmark_bar_node(), 0, title, url);
   model_.AddURL(model_.bookmark_bar_node(), 1, title, url);
 
@@ -907,7 +904,7 @@ class BookmarkModelTestWithProfile : public testing::Test {
 
   void BlockTillBookmarkModelLoaded() {
     bb_model_ = BookmarkModelFactory::GetForProfile(profile_.get());
-    ui_test_utils::WaitForBookmarkModelToLoad(bb_model_);
+    test::WaitForBookmarkModelToLoad(bb_model_);
   }
 
   // The profile.
@@ -1056,7 +1053,7 @@ TEST_F(BookmarkModelTest, NodeVisibility) {
 
 TEST_F(BookmarkModelTest, MobileNodeVisibileWithChildren) {
   const BookmarkNode* root = model_.mobile_node();
-  const string16 title(ASCIIToUTF16("foo"));
+  const base::string16 title(ASCIIToUTF16("foo"));
   const GURL url("http://foo.com");
 
   model_.AddURL(root, 0, title, url);
@@ -1094,7 +1091,7 @@ TEST_F(BookmarkModelTest, MultipleExtensiveChangesObserver) {
 TEST(BookmarkNodeTest, NodeMetaInfo) {
   GURL url;
   BookmarkNode node(url);
-  EXPECT_TRUE(node.meta_info_str().empty());
+  EXPECT_FALSE(node.GetMetaInfoMap());
 
   EXPECT_TRUE(node.SetMetaInfo("key1", "value1"));
   std::string out_value;
@@ -1120,7 +1117,7 @@ TEST(BookmarkNodeTest, NodeMetaInfo) {
   EXPECT_FALSE(node.GetMetaInfo("key2.subkey1", &out_value));
   EXPECT_FALSE(node.GetMetaInfo("key2.subkey2", &out_value));
   EXPECT_FALSE(node.GetMetaInfo("key2.subkey2.leaf", &out_value));
-  EXPECT_TRUE(node.meta_info_str().empty());
+  EXPECT_FALSE(node.GetMetaInfoMap());
 }
 
 }  // namespace

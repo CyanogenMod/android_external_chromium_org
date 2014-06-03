@@ -6,14 +6,14 @@
 
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
-#include "chrome/browser/extensions/extension_info_map.h"
 #include "chrome/browser/extensions/extension_renderer_state.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
-#include "chrome/common/extensions/permissions/permissions_data.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/resource_request_info.h"
+#include "extensions/browser/info_map.h"
 #include "extensions/common/constants.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/permissions/permissions_data.h"
 #include "net/url_request/url_request.h"
 #include "url/gurl.h"
 
@@ -69,9 +69,9 @@ bool HasWebRequestScheme(const GURL& url) {
   return (url.SchemeIs(chrome::kAboutScheme) ||
           url.SchemeIs(chrome::kFileScheme) ||
           url.SchemeIs(chrome::kFileSystemScheme) ||
-          url.SchemeIs(chrome::kFtpScheme) ||
-          url.SchemeIs(chrome::kHttpScheme) ||
-          url.SchemeIs(chrome::kHttpsScheme) ||
+          url.SchemeIs(content::kFtpScheme) ||
+          url.SchemeIs(content::kHttpScheme) ||
+          url.SchemeIs(content::kHttpsScheme) ||
           url.SchemeIs(extensions::kExtensionScheme));
 }
 
@@ -79,7 +79,7 @@ bool HasWebRequestScheme(const GURL& url) {
 
 // static
 bool WebRequestPermissions::HideRequest(
-    const ExtensionInfoMap* extension_info_map,
+    const extensions::InfoMap* extension_info_map,
     const net::URLRequest* request) {
   // Hide requests from the Chrome WebStore App or signin process.
   const ResourceRequestInfo* info = ResourceRequestInfo::ForRequest(request);
@@ -106,7 +106,7 @@ bool WebRequestPermissions::HideRequest(
 
 // static
 bool WebRequestPermissions::CanExtensionAccessURL(
-    const ExtensionInfoMap* extension_info_map,
+    const extensions::InfoMap* extension_info_map,
     const std::string& extension_id,
     const GURL& url,
     bool crosses_incognito,

@@ -7,6 +7,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/infobars/confirm_infobar_delegate.h"
+#include "chrome/browser/infobars/infobar.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
@@ -49,7 +50,7 @@ void SimulateGPUCrash(Browser* browser) {
 
 } // namespace
 
-class WebGLInfobarTest : public InProcessBrowserTest {
+class WebGLInfoBarTest : public InProcessBrowserTest {
  protected:
   virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
     base::FilePath test_dir;
@@ -59,7 +60,9 @@ class WebGLInfobarTest : public InProcessBrowserTest {
   base::FilePath gpu_test_dir_;
 };
 
-IN_PROC_BROWSER_TEST_F(WebGLInfobarTest, ContextLossRaisesInfobar) {
+// This test is flaky. http://crbug.com/324555
+IN_PROC_BROWSER_TEST_F(WebGLInfoBarTest, DISABLED_ContextLossRaisesInfoBar) {
+#undef MAYBE_ContextLossRaisesInfoBard
 #if defined(OS_WIN) && defined(USE_ASH)
   // Disable this test in Metro+Ash for now (http://crbug.com/262796).
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kAshBrowserTests))
@@ -90,7 +93,8 @@ IN_PROC_BROWSER_TEST_F(WebGLInfobarTest, ContextLossRaisesInfobar) {
                     infobar_count());
 }
 
-IN_PROC_BROWSER_TEST_F(WebGLInfobarTest, ContextLossInfobarReload) {
+// This test is flaky. http://crbug.com/324555
+IN_PROC_BROWSER_TEST_F(WebGLInfoBarTest, DISABLED_ContextLossInfoBarReload) {
 #if defined(OS_WIN) && defined(USE_ASH)
   // Disable this test in Metro+Ash for now (http://crbug.com/262796).
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kAshBrowserTests))
@@ -127,7 +131,7 @@ IN_PROC_BROWSER_TEST_F(WebGLInfobarTest, ContextLossInfobarReload) {
   InfoBarService* infobar_service = InfoBarService::FromWebContents(
       browser()->tab_strip_model()->GetActiveWebContents());
   ASSERT_EQ(1u, infobar_service->infobar_count());
-  InfoBarDelegate* delegate = infobar_service->infobar_at(0);
+  InfoBarDelegate* delegate = infobar_service->infobar_at(0)->delegate();
   ASSERT_TRUE(delegate->AsThreeDAPIInfoBarDelegate());
   delegate->AsConfirmInfoBarDelegate()->Cancel();
 

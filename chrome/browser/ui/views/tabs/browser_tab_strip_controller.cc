@@ -7,6 +7,11 @@
 #include "base/auto_reset.h"
 #include "base/command_line.h"
 #include "base/prefs/pref_service.h"
+#include "base/task_runner_util.h"
+#include "base/threading/sequenced_worker_pool.h"
+#include "chrome/browser/autocomplete/autocomplete_classifier.h"
+#include "chrome/browser/autocomplete/autocomplete_classifier_factory.h"
+#include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/tab_helper.h"
@@ -26,9 +31,14 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
+#include "content/public/browser/plugin_service.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/common/webplugininfo.h"
+#include "ipc/ipc_message.h"
+#include "net/base/net_util.h"
 #include "ui/base/layout.h"
 #include "ui/base/models/list_selection_model.h"
 #include "ui/gfx/image/image.h"
@@ -50,15 +60,20 @@ TabRendererData::NetworkState TabContentsNetworkState(
   return TabRendererData::NETWORK_STATE_LOADING;
 }
 
-TabStripLayoutType DetermineTabStripLayout(PrefService* prefs,
-                                           bool* adjust_layout) {
+TabStripLayoutType DetermineTabStripLayout(
+    PrefService* prefs,
+    chrome::HostDesktopType host_desktop_type,
+    bool* adjust_layout) {
   *adjust_layout = false;
   if (CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnableStackedTabStrip)) {
     return TAB_STRIP_LAYOUT_STACKED;
   }
   // For chromeos always allow entering stacked mode.
-#if !defined(OS_CHROMEOS)
+#if defined(USE_AURA)
+  if (host_desktop_type != chrome::HOST_DESKTOP_TYPE_ASH)
+    return TAB_STRIP_LAYOUT_SHRINK;
+#else
   if (ui::GetDisplayLayout() != ui::LAYOUT_TOUCH)
     return TAB_STRIP_LAYOUT_SHRINK;
 #endif
@@ -69,6 +84,20 @@ TabStripLayoutType DetermineTabStripLayout(PrefService* prefs,
     default:
       return TAB_STRIP_LAYOUT_SHRINK;
   }
+}
+
+// Get the MIME type of the file pointed to by the url, based on the file's
+// extension. Must be called on a thread that allows IO.
+std::string FindURLMimeType(const GURL& url) {
+  DCHECK(!content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  base::FilePath full_path;
+  net::FileURLToFilePath(url, &full_path);
+
+  // Get the MIME type based on the filename.
+  std::string mime_type;
+  net::GetMimeTypeFromFile(full_path, &mime_type);
+
+  return mime_type;
 }
 
 }  // namespace
@@ -169,7 +198,8 @@ BrowserTabStripController::BrowserTabStripController(Browser* browser,
     : model_(model),
       tabstrip_(NULL),
       browser_(browser),
-      hover_tab_selector_(model) {
+      hover_tab_selector_(model),
+      weak_ptr_factory_(this) {
   model_->AddObserver(this);
 
   local_pref_registrar_.Init(g_browser_process->local_state());
@@ -345,7 +375,18 @@ bool BrowserTabStripController::IsCompatibleWith(TabStrip* other) const {
 }
 
 void BrowserTabStripController::CreateNewTab() {
-  model_->delegate()->AddBlankTabAt(-1, true);
+  model_->delegate()->AddTabAt(GURL(), -1, true);
+}
+
+void BrowserTabStripController::CreateNewTabWithLocation(
+    const base::string16& location) {
+  // Use autocomplete to clean up the text, going so far as to turn it into
+  // a search query if necessary.
+  AutocompleteMatch match;
+  AutocompleteClassifierFactory::GetForProfile(profile())->Classify(
+      location, false, false, &match, NULL);
+  if (match.destination_url.is_valid())
+    model_->delegate()->AddTabAt(match.destination_url, -1, true);
 }
 
 bool BrowserTabStripController::IsIncognito() {
@@ -355,7 +396,8 @@ bool BrowserTabStripController::IsIncognito() {
 void BrowserTabStripController::LayoutTypeMaybeChanged() {
   bool adjust_layout = false;
   TabStripLayoutType layout_type =
-      DetermineTabStripLayout(g_browser_process->local_state(), &adjust_layout);
+      DetermineTabStripLayout(g_browser_process->local_state(),
+                              browser_->host_desktop_type(), &adjust_layout);
   if (!adjust_layout || layout_type == tabstrip_->layout_type())
     return;
 
@@ -379,6 +421,16 @@ void BrowserTabStripController::OnStartedDraggingTabs() {
 
 void BrowserTabStripController::OnStoppedDraggingTabs() {
   immersive_reveal_lock_.reset();
+}
+
+void BrowserTabStripController::CheckFileSupported(const GURL& url) {
+  base::PostTaskAndReplyWithResult(
+      content::BrowserThread::GetBlockingPool(),
+      FROM_HERE,
+      base::Bind(&FindURLMimeType, url),
+      base::Bind(&BrowserTabStripController::OnFindURLMimeTypeCompleted,
+                 weak_ptr_factory_.GetWeakPtr(),
+                 url));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -471,17 +523,7 @@ void BrowserTabStripController::SetTabRendererDataFromModel(
   data->mini = model_->IsMiniTab(model_index);
   data->blocked = model_->IsTabBlocked(model_index);
   data->app = extensions::TabHelper::FromWebContents(contents)->is_app();
-  if (chrome::ShouldShowProjectingIndicator(contents))
-    data->capture_state = TabRendererData::CAPTURE_STATE_PROJECTING;
-  else if (chrome::ShouldShowRecordingIndicator(contents))
-    data->capture_state = TabRendererData::CAPTURE_STATE_RECORDING;
-  else
-    data->capture_state = TabRendererData::CAPTURE_STATE_NONE;
-
-  if (chrome::IsPlayingAudio(contents))
-    data->audio_state = TabRendererData::AUDIO_STATE_PLAYING;
-  else
-    data->audio_state = TabRendererData::AUDIO_STATE_NONE;
+  data->media_state = chrome::GetTabMediaStateForContents(contents);
 }
 
 void BrowserTabStripController::SetTabDataAt(content::WebContents* web_contents,
@@ -532,6 +574,27 @@ void BrowserTabStripController::AddTab(WebContents* contents,
 void BrowserTabStripController::UpdateLayoutType() {
   bool adjust_layout = false;
   TabStripLayoutType layout_type =
-      DetermineTabStripLayout(g_browser_process->local_state(), &adjust_layout);
+      DetermineTabStripLayout(g_browser_process->local_state(),
+                              browser_->host_desktop_type(), &adjust_layout);
   tabstrip_->SetLayoutType(layout_type, adjust_layout);
+}
+
+void BrowserTabStripController::OnFindURLMimeTypeCompleted(
+    const GURL& url,
+    const std::string& mime_type) {
+  // Check whether the mime type, if given, is known to be supported or whether
+  // there is a plugin that supports the mime type (e.g. PDF).
+  // TODO(bauerb): This possibly uses stale information, but it's guaranteed not
+  // to do disk access.
+  content::WebPluginInfo plugin;
+  tabstrip_->FileSupported(
+      url,
+      mime_type.empty() ||
+      net::IsSupportedMimeType(mime_type) ||
+      content::PluginService::GetInstance()->GetPluginInfo(
+          -1,                // process ID
+          MSG_ROUTING_NONE,  // routing ID
+          model_->profile()->GetResourceContext(),
+          url, GURL(), mime_type, false,
+          NULL, &plugin, NULL));
 }

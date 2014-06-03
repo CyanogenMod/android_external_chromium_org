@@ -14,11 +14,11 @@
 #include "chrome/browser/extensions/extension_action_icon_factory.h"
 #include "chrome/browser/extensions/extension_action_manager.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/cocoa/extensions/extension_action_context_menu.h"
-#include "chrome/common/extensions/extension.h"
+#include "chrome/browser/ui/cocoa/extensions/extension_action_context_menu_controller.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_source.h"
+#include "extensions/common/extension.h"
 #include "grit/theme_resources.h"
 #include "skia/ext/skia_utils_mac.h"
 #import "third_party/GTM/AppKit/GTMNSAnimation+Duration.h"
@@ -149,10 +149,14 @@ class ExtensionActionIconFactoryBridge
     [self setButtonType:NSMomentaryChangeButton];
     [self setShowsBorderOnlyWhileMouseInside:YES];
 
-    [self setMenu:[[[ExtensionActionContextMenu alloc]
+    contextMenuController_.reset([[ExtensionActionContextMenuController alloc]
         initWithExtension:extension
                   browser:browser
-          extensionAction:browser_action] autorelease]];
+          extensionAction:browser_action]);
+    base::scoped_nsobject<NSMenu> contextMenu(
+        [[NSMenu alloc] initWithTitle:@""]);
+    [contextMenu setDelegate:self];
+    [self setMenu:contextMenu];
 
     tabId_ = tabId;
     extension_ = extension;
@@ -307,6 +311,11 @@ class ExtensionActionIconFactoryBridge
 
   [image unlockFocus];
   return image;
+}
+
+- (void)menuNeedsUpdate:(NSMenu*)menu {
+  [menu removeAllItems];
+  [contextMenuController_ populateMenu:menu];
 }
 
 @end

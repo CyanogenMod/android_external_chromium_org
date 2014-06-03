@@ -43,9 +43,9 @@ namespace {
 // renderer process on the IPC thread.
 class AwContentsMessageFilter : public content::BrowserMessageFilter {
 public:
-  AwContentsMessageFilter(int process_id);
+  explicit AwContentsMessageFilter(int process_id);
 
-  // BrowserMessageFilter methods
+  // BrowserMessageFilter methods.
   virtual void OverrideThreadForMessage(
       const IPC::Message& message,
       BrowserThread::ID* thread) OVERRIDE;
@@ -64,29 +64,6 @@ private:
 
   DISALLOW_COPY_AND_ASSIGN(AwContentsMessageFilter);
 };
-
-class AwAccessTokenStore : public content::AccessTokenStore {
- public:
-  AwAccessTokenStore() { }
-
-  // content::AccessTokenStore implementation
-  virtual void LoadAccessTokens(
-      const LoadAccessTokensCallbackType& request) OVERRIDE {
-    AccessTokenStore::AccessTokenSet access_token_set;
-    // AccessTokenSet and net::URLRequestContextGetter not used on Android,
-    // but Run needs to be called to finish the geolocation setup.
-    request.Run(access_token_set, NULL);
-  }
-  virtual void SaveAccessToken(const GURL& server_url,
-                               const string16& access_token) OVERRIDE { }
-
- private:
-  virtual ~AwAccessTokenStore() { }
-
-  DISALLOW_COPY_AND_ASSIGN(AwAccessTokenStore);
-};
-
-}
 
 AwContentsMessageFilter::AwContentsMessageFilter(int process_id)
     : process_id_(process_id) {
@@ -117,6 +94,7 @@ void AwContentsMessageFilter::OnShouldOverrideUrlLoading(
     int routing_id,
     const base::string16& url,
     bool* ignore_navigation) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   *ignore_navigation = false;
   AwContentsClientBridgeBase* client =
       AwContentsClientBridgeBase::FromID(process_id_, routing_id);
@@ -126,6 +104,29 @@ void AwContentsMessageFilter::OnShouldOverrideUrlLoading(
     LOG(WARNING) << "Failed to find the associated render view host for url: "
                  << url;
   }
+}
+
+class AwAccessTokenStore : public content::AccessTokenStore {
+ public:
+  AwAccessTokenStore() { }
+
+  // content::AccessTokenStore implementation
+  virtual void LoadAccessTokens(
+      const LoadAccessTokensCallbackType& request) OVERRIDE {
+    AccessTokenStore::AccessTokenSet access_token_set;
+    // AccessTokenSet and net::URLRequestContextGetter not used on Android,
+    // but Run needs to be called to finish the geolocation setup.
+    request.Run(access_token_set, NULL);
+  }
+  virtual void SaveAccessToken(const GURL& server_url,
+                               const string16& access_token) OVERRIDE { }
+
+ private:
+  virtual ~AwAccessTokenStore() { }
+
+  DISALLOW_COPY_AND_ASSIGN(AwAccessTokenStore);
+};
+
 }
 
 std::string AwContentBrowserClient::GetAcceptLangsImpl() {
@@ -195,7 +196,7 @@ void AwContentBrowserClient::RenderProcessHostCreated(
   content::ChildProcessSecurityPolicy::GetInstance()->GrantScheme(
       host->GetID(), chrome::kFileScheme);
 
-  host->GetChannel()->AddFilter(new AwContentsMessageFilter(host->GetID()));
+  host->AddFilter(new AwContentsMessageFilter(host->GetID()));
 }
 
 net::URLRequestContextGetter*
@@ -346,19 +347,19 @@ void AwContentBrowserClient::SelectClientCertificate(
       const net::HttpNetworkSession* network_session,
       net::SSLCertRequestInfo* cert_request_info,
       const base::Callback<void(net::X509Certificate*)>& callback) {
-  LOG(INFO) << "Client certificate request from "
+  LOG(WARNING) << "Client certificate request from "
         << cert_request_info->host_and_port
         << " rejected. (Client certificates not supported in WebView)";
   callback.Run(NULL);
 }
 
-WebKit::WebNotificationPresenter::Permission
+blink::WebNotificationPresenter::Permission
     AwContentBrowserClient::CheckDesktopNotificationPermission(
         const GURL& source_url,
         content::ResourceContext* context,
         int render_process_id) {
   // Android WebView does not support notifications, so return Denied here.
-  return WebKit::WebNotificationPresenter::PermissionDenied;
+  return blink::WebNotificationPresenter::PermissionDenied;
 }
 
 void AwContentBrowserClient::ShowDesktopNotification(
@@ -384,7 +385,7 @@ bool AwContentBrowserClient::CanCreateWindow(
     const GURL& target_url,
     const content::Referrer& referrer,
     WindowOpenDisposition disposition,
-    const WebKit::WebWindowFeatures& features,
+    const blink::WebWindowFeatures& features,
     bool user_gesture,
     bool opener_suppressed,
     content::ResourceContext* context,
@@ -472,7 +473,7 @@ bool AwContentBrowserClient::AllowPepperSocketAPI(
     content::BrowserContext* browser_context,
     const GURL& url,
     bool private_api,
-    const content::SocketPermissionRequest& params) {
+    const content::SocketPermissionRequest* params) {
   NOTREACHED() << "Android WebView does not support plugins";
   return false;
 }

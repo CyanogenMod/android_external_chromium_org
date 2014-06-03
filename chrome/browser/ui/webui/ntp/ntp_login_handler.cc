@@ -13,7 +13,6 @@
 #include "base/prefs/pref_service.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
-#include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/profiles/profile.h"
@@ -26,7 +25,6 @@
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/chrome_pages.h"
@@ -44,9 +42,9 @@
 #include "net/base/escape.h"
 #include "skia/ext/image_operations.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/base/webui/web_ui_util.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/image/image.h"
-#include "ui/webui/web_ui_util.h"
 
 using content::OpenURLParams;
 using content::Referrer;
@@ -60,8 +58,7 @@ SkBitmap GetGAIAPictureForNTP(const gfx::Image& image) {
   SkBitmap bmp = skia::ImageOperations::Resize(*image.ToSkBitmap(),
       skia::ImageOperations::RESIZE_BEST, kLength, kLength);
 
-  gfx::Canvas canvas(gfx::Size(kLength, kLength), ui::SCALE_FACTOR_100P,
-      false);
+  gfx::Canvas canvas(gfx::Size(kLength, kLength), 1.0f, false);
   canvas.DrawImageInt(gfx::ImageSkia::CreateFrom1xBitmap(bmp), 0, 0);
 
   // Draw a gray border on the inside of the icon.
@@ -72,8 +69,8 @@ SkBitmap GetGAIAPictureForNTP(const gfx::Image& image) {
 }
 
 // Puts the |content| into a span with the given CSS class.
-string16 CreateSpanWithClass(const string16& content,
-                             const std::string& css_class) {
+base::string16 CreateSpanWithClass(const base::string16& content,
+                                   const std::string& css_class) {
   return ASCIIToUTF16("<span class='" + css_class + "'>") +
       net::EscapeForHTML(content) + ASCIIToUTF16("</span>");
 }
@@ -149,8 +146,7 @@ void NTPLoginHandler::HandleShowSyncLoginUI(const ListValue* args) {
       RecordInHistogram(NTP_SIGN_IN_PROMO_CLICKED);
     }
 #endif
-  } else if (args->GetSize() == 4 &&
-             chrome::IsCommandEnabled(browser, IDC_SHOW_AVATAR_MENU)) {
+  } else if (args->GetSize() == 4) {
     // The user is signed in, show the profiles menu.
     double x = 0;
     double y = 0;
@@ -205,7 +201,7 @@ void NTPLoginHandler::UpdateLogin() {
   std::string username = profile->GetPrefs()->GetString(
       prefs::kGoogleServicesUsername);
 
-  string16 header, sub_header;
+  base::string16 header, sub_header;
   std::string icon_url;
   if (!username.empty()) {
     ProfileInfoCache& cache =
@@ -216,7 +212,7 @@ void NTPLoginHandler::UpdateLogin() {
       // case. In the multi-profile case the profile picture is visible in the
       // title bar and the full name can be ambiguous.
       if (cache.GetNumberOfProfiles() == 1) {
-        string16 name = cache.GetGAIANameOfProfileAtIndex(profile_index);
+        base::string16 name = cache.GetGAIANameOfProfileAtIndex(profile_index);
         if (!name.empty())
           header = CreateSpanWithClass(name, "profile-name");
         const gfx::Image* image =
@@ -228,10 +224,16 @@ void NTPLoginHandler::UpdateLogin() {
         header = CreateSpanWithClass(UTF8ToUTF16(username), "profile-name");
     }
   } else {
-#if !defined(OS_ANDROID)
-    // Android uses a custom sign in promo.
-    if (signin::ShouldShowPromo(profile)) {
-      string16 signed_in_link = l10n_util::GetStringUTF16(
+#if !defined(OS_ANDROID) && !defined(OS_CHROMEOS)
+    // Android uses a custom sign in promo. Don't call the function
+    // signin::ShouldShowPromo() since it does a bunch of checks that are not
+    // required here.  We only want to suppress this login status for users that
+    // are not allowed to sign in.  Chromeos does not show this status header
+    // at all.
+    SigninManager* signin = SigninManagerFactory::GetForProfile(
+        profile->GetOriginalProfile());
+    if (!profile->IsManaged() && signin->IsSigninAllowed()) {
+      base::string16 signed_in_link = l10n_util::GetStringUTF16(
           IDS_SYNC_PROMO_NOT_SIGNED_IN_STATUS_LINK);
       signed_in_link = CreateSpanWithClass(signed_in_link, "link-span");
       header = l10n_util::GetStringFUTF16(
@@ -271,7 +273,7 @@ void NTPLoginHandler::GetLocalizedValues(Profile* profile,
   PrefService* prefs = profile->GetPrefs();
   bool hide_sync = !prefs->GetBoolean(prefs::kSignInPromoShowNTPBubble);
 
-  string16 message = hide_sync ? string16() :
+  base::string16 message = hide_sync ? base::string16() :
       l10n_util::GetStringFUTF16(IDS_SYNC_PROMO_NTP_BUBBLE_MESSAGE,
           l10n_util::GetStringUTF16(IDS_SHORT_PRODUCT_NAME));
 
@@ -279,9 +281,9 @@ void NTPLoginHandler::GetLocalizedValues(Profile* profile,
   values->SetString("login_status_url",
       hide_sync ? std::string() : chrome::kSyncLearnMoreURL);
   values->SetString("login_status_advanced",
-      hide_sync ? string16() :
+      hide_sync ? base::string16() :
       l10n_util::GetStringUTF16(IDS_SYNC_PROMO_NTP_BUBBLE_ADVANCED));
   values->SetString("login_status_dismiss",
-      hide_sync ? string16() :
+      hide_sync ? base::string16() :
       l10n_util::GetStringUTF16(IDS_SYNC_PROMO_NTP_BUBBLE_OK));
 }

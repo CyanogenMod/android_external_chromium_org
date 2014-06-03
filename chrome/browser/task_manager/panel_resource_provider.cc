@@ -14,12 +14,12 @@
 #include "chrome/browser/task_manager/task_manager_util.h"
 #include "chrome/browser/ui/panels/panel.h"
 #include "chrome/browser/ui/panels/panel_manager.h"
-#include "chrome/common/extensions/extension.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/view_type_utils.h"
+#include "extensions/common/extension.h"
 #include "ui/base/l10n/l10n_util.h"
 
 using content::RenderProcessHost;
@@ -36,8 +36,8 @@ class PanelResource : public RendererResource {
 
   // Resource methods:
   virtual Type GetType() const OVERRIDE;
-  virtual string16 GetTitle() const OVERRIDE;
-  virtual string16 GetProfileName() const OVERRIDE;
+  virtual base::string16 GetTitle() const OVERRIDE;
+  virtual base::string16 GetProfileName() const OVERRIDE;
   virtual gfx::ImageSkia GetIcon() const OVERRIDE;
   virtual content::WebContents* GetWebContents() const OVERRIDE;
   virtual const extensions::Extension* GetExtension() const OVERRIDE;
@@ -72,8 +72,8 @@ Resource::Type PanelResource::GetType() const {
   return EXTENSION;
 }
 
-string16 PanelResource::GetTitle() const {
-  string16 title = panel_->GetWindowTitle();
+base::string16 PanelResource::GetTitle() const {
+  base::string16 title = panel_->GetWindowTitle();
   // Since the title will be concatenated with an IDS_TASK_MANAGER_* prefix
   // we need to explicitly set the title to be LTR format if there is no
   // strong RTL charater in it. Otherwise, if the task manager prefix is an
@@ -87,7 +87,7 @@ string16 PanelResource::GetTitle() const {
   return l10n_util::GetStringFUTF16(message_prefix_id_, title);
 }
 
-string16 PanelResource::GetProfileName() const {
+base::string16 PanelResource::GetProfileName() const {
   return util::GetProfileNameFromInfoCache(panel_->profile());
 }
 

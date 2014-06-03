@@ -19,7 +19,8 @@ cr.define('print_preview', function() {
    * @param {{tags: Array.<string>,
    *          isOwned: ?boolean,
    *          lastAccessTime: ?number,
-   *          isTosAccepted: ?boolean}=} opt_params Optional parameters for the
+   *          isTosAccepted: ?boolean,
+   *          cloudID: ?string}=} opt_params Optional parameters for the
    *     destination.
    * @constructor
    */
@@ -112,6 +113,13 @@ cr.define('print_preview', function() {
      * @private
      */
     this.isTosAccepted_ = (opt_params && opt_params.isTosAccepted) || false;
+
+    /**
+     * Cloud ID for privet printers
+     * @type {?string}
+     * @private
+     */
+    this.cloudID_ = (opt_params && opt_params.cloudID) || '';
   };
 
   /**
@@ -149,7 +157,8 @@ cr.define('print_preview', function() {
     LOCAL: 'local',
     COOKIES: 'cookies',
     PROFILE: 'profile',
-    DEVICE: 'device'
+    DEVICE: 'device',
+    PRIVET: 'privet'
   };
 
   /**
@@ -160,7 +169,8 @@ cr.define('print_preview', function() {
     DORMANT: 'DORMANT',
     OFFLINE: 'OFFLINE',
     ONLINE: 'ONLINE',
-    UNKNOWN: 'UNKNOWN'
+    UNKNOWN: 'UNKNOWN',
+    UNREGISTERED: 'UNREGISTERED'
   };
 
   /**
@@ -225,7 +235,13 @@ cr.define('print_preview', function() {
 
     /** @return {boolean} Whether the destination is local or cloud-based. */
     get isLocal() {
-      return this.origin_ == Destination.Origin.LOCAL;
+      return this.origin_ == Destination.Origin.LOCAL ||
+             this.origin_ == Destination.Origin.PRIVET;
+    },
+
+    /** @return {boolean} Whether the destination is a privet local printer */
+    get isPrivet() {
+      return this.origin_ == Destination.Origin.PRIVET;
     },
 
     /**
@@ -248,6 +264,11 @@ cr.define('print_preview', function() {
     /** @return {!Array.<string>} Tags associated with the destination. */
     get tags() {
       return this.tags_.slice(0);
+    },
+
+    /** @return {string} Cloud ID associated with the destination */
+    get cloudID() {
+      return this.cloudID_;
     },
 
     /** @return {print_preview.Cdd} Print capabilities of the destination. */

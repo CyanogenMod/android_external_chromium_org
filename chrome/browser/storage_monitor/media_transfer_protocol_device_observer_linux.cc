@@ -15,8 +15,6 @@
 #include "chrome/browser/storage_monitor/removable_device_constants.h"
 #include "device/media_transfer_protocol/mtp_storage_info.pb.h"
 
-namespace chrome {
-
 namespace {
 
 // Device root path constant.
@@ -65,7 +63,8 @@ std::string GetFormattedIdString(const std::string& data_store_id) {
 }
 
 // Helper function to get device label from storage information.
-string16 GetDeviceLabelFromStorageInfo(const MtpStorageInfo& storage_info) {
+base::string16 GetDeviceLabelFromStorageInfo(
+    const MtpStorageInfo& storage_info) {
   std::string device_label;
   const std::string& vendor_name = storage_info.vendor();
   device_label = vendor_name;
@@ -97,7 +96,7 @@ string16 GetDeviceLabelFromStorageInfo(const MtpStorageInfo& storage_info) {
 void GetStorageInfo(const std::string& storage_name,
                     device::MediaTransferProtocolManager* mtp_manager,
                     std::string* id,
-                    string16* label,
+                    base::string16* label,
                     std::string* location) {
   DCHECK(!storage_name.empty());
   const MtpStorageInfo* storage_info =
@@ -165,6 +164,21 @@ bool MediaTransferProtocolDeviceObserverLinux::GetStorageInfoForPath(
   return true;
 }
 
+void MediaTransferProtocolDeviceObserverLinux::EjectDevice(
+    const std::string& device_id,
+    base::Callback<void(StorageMonitor::EjectStatus)> callback) {
+  std::string location;
+  if (!GetLocationForDeviceId(device_id, &location)) {
+    callback.Run(StorageMonitor::EJECT_NO_SUCH_DEVICE);
+    return;
+  }
+
+  // TODO(thestig): Change this to tell the mtp manager to eject the device.
+
+  StorageChanged(false, location);
+  callback.Run(StorageMonitor::EJECT_OK);
+}
+
 // device::MediaTransferProtocolManager::Observer override.
 void MediaTransferProtocolDeviceObserverLinux::StorageChanged(
     bool is_attached,
@@ -174,7 +188,7 @@ void MediaTransferProtocolDeviceObserverLinux::StorageChanged(
   // New storage is attached.
   if (is_attached) {
     std::string device_id;
-    string16 device_name;
+    base::string16 device_name;
     std::string location;
     get_storage_info_func_(storage_name, mtp_manager_,
                            &device_id, &device_name, &location);
@@ -188,7 +202,7 @@ void MediaTransferProtocolDeviceObserverLinux::StorageChanged(
     DCHECK(!ContainsKey(storage_map_, location));
 
     StorageInfo storage_info(device_id, device_name, location, device_name,
-                             string16(), string16(), 0);
+                             base::string16(), base::string16(), 0);
     storage_map_[location] = storage_info;
     notifications_->ProcessAttach(storage_info);
   } else {
@@ -211,4 +225,15 @@ void MediaTransferProtocolDeviceObserverLinux::EnumerateStorages() {
   }
 }
 
-}  // namespace chrome
+bool MediaTransferProtocolDeviceObserverLinux::GetLocationForDeviceId(
+    const std::string& device_id, std::string* location) const {
+  for (StorageLocationToInfoMap::const_iterator it = storage_map_.begin();
+       it != storage_map_.end(); ++it) {
+    if (it->second.device_id() == device_id) {
+      *location = it->first;
+      return true;
+    }
+  }
+
+  return false;
+}

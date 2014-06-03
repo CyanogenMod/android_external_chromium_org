@@ -14,7 +14,7 @@ gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared)
 GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,content_content_resources_gyp)/content_resources.stamp \
 	$(call intermediates-dir-for,GYP,net_net_resources_gyp)/net_resources.stamp \
-	$(call intermediates-dir-for,GYP,ui_ui_resources_gyp)/ui_resources.stamp \
+	$(call intermediates-dir-for,GYP,ui_resources_ui_resources_gyp)/ui_resources.stamp \
 	$(call intermediates-dir-for,GYP,webkit_webkit_resources_gyp)/webkit_resources.stamp
 
 ### Rules for action "repack_android_webview_pack":

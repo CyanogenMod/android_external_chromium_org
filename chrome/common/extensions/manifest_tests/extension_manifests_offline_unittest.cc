@@ -2,15 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
-#include "chrome/common/extensions/manifest_handlers/offline_enabled_info.h"
 #include "chrome/common/extensions/manifest_tests/extension_manifest_test.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/manifest_constants.h"
+#include "extensions/common/manifest_handlers/offline_enabled_info.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace errors = extension_manifest_errors;
-
 namespace extensions {
+
+namespace errors = manifest_errors;
 
 class ExtensionManifestOfflineEnabledTest : public ExtensionManifestTest {
 };

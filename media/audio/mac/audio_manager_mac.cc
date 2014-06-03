@@ -13,7 +13,6 @@
 #include "base/mac/scoped_cftyperef.h"
 #include "base/strings/sys_string_conversions.h"
 #include "media/audio/audio_parameters.h"
-#include "media/audio/audio_util.h"
 #include "media/audio/mac/audio_auhal_mac.h"
 #include "media/audio/mac/audio_input_mac.h"
 #include "media/audio/mac/audio_low_latency_input_mac.h"
@@ -35,23 +34,6 @@ static const int kDefaultLowLatencyBufferSize = 128;
 
 // Default sample-rate on most Apple hardware.
 static const int kFallbackSampleRate = 44100;
-
-static int ChooseBufferSize(int output_sample_rate) {
-  int buffer_size = kDefaultLowLatencyBufferSize;
-  const int user_buffer_size = GetUserBufferSize();
-  if (user_buffer_size) {
-    buffer_size = user_buffer_size;
-  } else if (output_sample_rate > 48000) {
-    // The default buffer size is too small for higher sample rates and may lead
-    // to glitching.  Adjust upwards by multiples of the default size.
-    if (output_sample_rate <= 96000)
-      buffer_size = 2 * kDefaultLowLatencyBufferSize;
-    else if (output_sample_rate <= 192000)
-      buffer_size = 4 * kDefaultLowLatencyBufferSize;
-  }
-
-  return buffer_size;
-}
 
 static bool HasAudioHardware(AudioObjectPropertySelector selector) {
   AudioDeviceID output_device_id = kAudioObjectUnknown;
@@ -81,11 +63,10 @@ bool AudioManagerMac::HasUnifiedDefaultIO() {
   return input_id == output_id;
 }
 
+// Retrieves information on audio devices, and prepends the default
+// device to the list if the list is non-empty.
 static void GetAudioDeviceInfo(bool is_input,
                                media::AudioDeviceNames* device_names) {
-  DCHECK(device_names);
-  device_names->clear();
-
   // Query the number of total devices.
   AudioObjectPropertyAddress property_address = {
     kAudioHardwarePropertyDevices,
@@ -176,6 +157,16 @@ static void GetAudioDeviceInfo(bool is_input,
     if (name)
       CFRelease(name);
   }
+
+  if (!device_names->empty()) {
+    // Prepend the default device to the list since we always want it to be
+    // on the top of the list for all platforms. There is no duplicate
+    // counting here since the default device has been abstracted out before.
+    media::AudioDeviceName name;
+    name.device_name = AudioManagerBase::kDefaultDeviceName;
+    name.unique_id = AudioManagerBase::kDefaultDeviceId;
+    device_names->push_front(name);
+  }
 }
 
 static AudioDeviceID GetAudioDeviceIdByUId(bool is_input,
@@ -189,7 +180,7 @@ static AudioDeviceID GetAudioDeviceIdByUId(bool is_input,
   UInt32 device_size = sizeof(audio_device_id);
   OSStatus result = -1;
 
-  if (device_id == AudioManagerBase::kDefaultDeviceId) {
+  if (device_id == AudioManagerBase::kDefaultDeviceId || device_id.empty()) {
     // Default Device.
     property_address.mSelector = is_input ?
         kAudioHardwarePropertyDefaultInputDevice :
@@ -229,8 +220,9 @@ static AudioDeviceID GetAudioDeviceIdByUId(bool is_input,
   return audio_device_id;
 }
 
-AudioManagerMac::AudioManagerMac()
-    : current_sample_rate_(0) {
+AudioManagerMac::AudioManagerMac(AudioLogFactory* audio_log_factory)
+    : AudioManagerBase(audio_log_factory),
+      current_sample_rate_(0) {
   current_output_device_ = kAudioDeviceUnknown;
 
   SetMaxOutputStreamsAllowed(kMaxOutputStreams);
@@ -263,7 +255,7 @@ bool AudioManagerMac::HasAudioInputDevices() {
   return HasAudioHardware(kAudioHardwarePropertyDefaultInputDevice);
 }
 
-// TODO(crogers): There are several places on the OSX specific code which
+// TODO(xians): There are several places on the OSX specific code which
 // could benefit from these helper functions.
 bool AudioManagerMac::GetDefaultInputDevice(
     AudioDeviceID* device) {
@@ -397,16 +389,14 @@ int AudioManagerMac::HardwareSampleRate() {
 
 void AudioManagerMac::GetAudioInputDeviceNames(
     media::AudioDeviceNames* device_names) {
+  DCHECK(device_names->empty());
   GetAudioDeviceInfo(true, device_names);
-  if (!device_names->empty()) {
-    // Prepend the default device to the list since we always want it to be
-    // on the top of the list for all platforms. There is no duplicate
-    // counting here since the default device has been abstracted out before.
-    media::AudioDeviceName name;
-    name.device_name = AudioManagerBase::kDefaultDeviceName;
-    name.unique_id =  AudioManagerBase::kDefaultDeviceId;
-    device_names->push_front(name);
-  }
+}
+
+void AudioManagerMac::GetAudioOutputDeviceNames(
+    media::AudioDeviceNames* device_names) {
+  DCHECK(device_names->empty());
+  GetAudioDeviceInfo(false, device_names);
 }
 
 AudioParameters AudioManagerMac::GetInputStreamParameters(
@@ -443,21 +433,107 @@ AudioParameters AudioManagerMac::GetInputStreamParameters(
       sample_rate, 16, buffer_size);
 }
 
+std::string AudioManagerMac::GetAssociatedOutputDeviceID(
+    const std::string& input_device_id) {
+  AudioDeviceID device = GetAudioDeviceIdByUId(true, input_device_id);
+  if (device == kAudioObjectUnknown)
+    return std::string();
+
+  UInt32 size = 0;
+  AudioObjectPropertyAddress pa = {
+    kAudioDevicePropertyRelatedDevices,
+    kAudioDevicePropertyScopeOutput,
+    kAudioObjectPropertyElementMaster
+  };
+  OSStatus result = AudioObjectGetPropertyDataSize(device, &pa, 0, 0, &size);
+  if (result || !size)
+    return std::string();
+
+  int device_count = size / sizeof(AudioDeviceID);
+  scoped_ptr_malloc<AudioDeviceID>
+      devices(reinterpret_cast<AudioDeviceID*>(malloc(size)));
+  result = AudioObjectGetPropertyData(
+      device, &pa, 0, NULL, &size, devices.get());
+  if (result)
+    return std::string();
+
+  std::vector<std::string> associated_devices;
+  for (int i = 0; i < device_count; ++i) {
+    // Get the number of  output channels of the device.
+    pa.mSelector = kAudioDevicePropertyStreams;
+    size = 0;
+    result = AudioObjectGetPropertyDataSize(devices.get()[i],
+                                            &pa,
+                                            0,
+                                            NULL,
+                                            &size);
+    if (result || !size)
+      continue;  // Skip if there aren't any output channels.
+
+    // Get device UID.
+    CFStringRef uid = NULL;
+    size = sizeof(uid);
+    pa.mSelector = kAudioDevicePropertyDeviceUID;
+    result = AudioObjectGetPropertyData(devices.get()[i],
+                                        &pa,
+                                        0,
+                                        NULL,
+                                        &size,
+                                        &uid);
+    if (result || !uid)
+      continue;
+
+    std::string ret(base::SysCFStringRefToUTF8(uid));
+    CFRelease(uid);
+    associated_devices.push_back(ret);
+  }
+
+  // No matching device found.
+  if (associated_devices.empty())
+    return std::string();
+
+  // Return the device if there is only one associated device.
+  if (associated_devices.size() == 1)
+    return associated_devices[0];
+
+  // When there are multiple associated devices, we currently do not have a way
+  // to detect if a device (e.g. a digital output device) is actually connected
+  // to an endpoint, so we cannot randomly pick a device.
+  // We pick the device iff the associated device is the default output device.
+  const std::string default_device = GetDefaultOutputDeviceID();
+  for (std::vector<std::string>::const_iterator iter =
+           associated_devices.begin();
+       iter != associated_devices.end(); ++iter) {
+    if (default_device == *iter)
+      return *iter;
+  }
+
+  // Failed to figure out which is the matching device, return an emtpy string.
+  return std::string();
+}
+
 AudioOutputStream* AudioManagerMac::MakeLinearOutputStream(
     const AudioParameters& params) {
-  return MakeLowLatencyOutputStream(params, std::string());
+  return MakeLowLatencyOutputStream(params, std::string(), std::string());
 }
 
 AudioOutputStream* AudioManagerMac::MakeLowLatencyOutputStream(
-    const AudioParameters& params, const std::string& input_device_id) {
+    const AudioParameters& params,
+    const std::string& device_id,
+    const std::string& input_device_id) {
   // Handle basic output with no input channels.
   if (params.input_channels() == 0) {
-    AudioDeviceID device = kAudioObjectUnknown;
-    GetDefaultOutputDevice(&device);
+    AudioDeviceID device = GetAudioDeviceIdByUId(false, device_id);
+    if (device == kAudioObjectUnknown) {
+      DLOG(ERROR) << "Failed to open output device: " << device_id;
+      return NULL;
+    }
     return new AUHALStream(this, params, device);
   }
 
-  // TODO(crogers): support more than stereo input.
+  DLOG_IF(ERROR, !device_id.empty()) << "Not implemented!";
+
+  // TODO(xians): support more than stereo input.
   if (params.input_channels() != 2) {
     // WebAudio is currently hard-coded to 2 channels so we should not
     // see this case.
@@ -470,7 +546,7 @@ AudioOutputStream* AudioManagerMac::MakeLowLatencyOutputStream(
     // For I/O, the simplest case is when the default input and output
     // devices are the same.
     GetDefaultOutputDevice(&device);
-    LOG(INFO) << "UNIFIED: default input and output devices are identical";
+    VLOG(0) << "UNIFIED: default input and output devices are identical";
   } else {
     // Some audio hardware is presented as separate input and output devices
     // even though they are really the same physical hardware and
@@ -483,7 +559,7 @@ AudioOutputStream* AudioManagerMac::MakeLowLatencyOutputStream(
     // so we get the lowest latency and use fewer threads.
     device = aggregate_device_manager_.GetDefaultAggregateDevice();
     if (device != kAudioObjectUnknown)
-      LOG(INFO) << "Using AGGREGATE audio device";
+      VLOG(0) << "Using AGGREGATE audio device";
   }
 
   if (device != kAudioObjectUnknown &&
@@ -494,7 +570,7 @@ AudioOutputStream* AudioManagerMac::MakeLowLatencyOutputStream(
   // different and arbitrary combinations of input and output devices
   // even running at different sample-rates.
   // kAudioDeviceUnknown translates to "use default" here.
-  // TODO(crogers): consider tracking UMA stats on AUHALStream
+  // TODO(xians): consider tracking UMA stats on AUHALStream
   // versus AudioSynchronizedStream.
   AudioDeviceID audio_device_id = GetAudioDeviceIdByUId(true, input_device_id);
   if (audio_device_id == kAudioObjectUnknown)
@@ -506,6 +582,33 @@ AudioOutputStream* AudioManagerMac::MakeLowLatencyOutputStream(
                                      kAudioDeviceUnknown);
 }
 
+std::string AudioManagerMac::GetDefaultOutputDeviceID() {
+  AudioDeviceID device_id = kAudioObjectUnknown;
+  if (!GetDefaultOutputDevice(&device_id))
+    return std::string();
+
+  const AudioObjectPropertyAddress property_address = {
+    kAudioDevicePropertyDeviceUID,
+    kAudioObjectPropertyScopeGlobal,
+    kAudioObjectPropertyElementMaster
+  };
+  CFStringRef device_uid = NULL;
+  UInt32 size = sizeof(device_uid);
+  OSStatus status = AudioObjectGetPropertyData(device_id,
+                                               &property_address,
+                                               0,
+                                               NULL,
+                                               &size,
+                                               &device_uid);
+  if (status != kAudioHardwareNoError || !device_uid)
+    return std::string();
+
+  std::string ret(base::SysCFStringRefToUTF8(device_uid));
+  CFRelease(device_uid);
+
+  return ret;
+}
+
 AudioInputStream* AudioManagerMac::MakeLinearInputStream(
     const AudioParameters& params, const std::string& device_id) {
   DCHECK_EQ(AudioParameters::AUDIO_PCM_LINEAR, params.format());
@@ -515,27 +618,47 @@ AudioInputStream* AudioManagerMac::MakeLinearInputStream(
 AudioInputStream* AudioManagerMac::MakeLowLatencyInputStream(
     const AudioParameters& params, const std::string& device_id) {
   DCHECK_EQ(AudioParameters::AUDIO_PCM_LOW_LATENCY, params.format());
-  // Gets the AudioDeviceID that refers to the AudioOutputDevice with the device
+  // Gets the AudioDeviceID that refers to the AudioInputDevice with the device
   // unique id. This AudioDeviceID is used to set the device for Audio Unit.
   AudioDeviceID audio_device_id = GetAudioDeviceIdByUId(true, device_id);
   AudioInputStream* stream = NULL;
-  if (audio_device_id != kAudioObjectUnknown)
-    stream = new AUAudioInputStream(this, params, audio_device_id);
+  if (audio_device_id != kAudioObjectUnknown) {
+    // AUAudioInputStream needs to be fed the preferred audio output parameters
+    // of the matching device so that the buffer size of both input and output
+    // can be matched.  See constructor of AUAudioInputStream for more.
+    const std::string associated_output_device(
+        GetAssociatedOutputDeviceID(device_id));
+    const AudioParameters output_params =
+        GetPreferredOutputStreamParameters(
+            associated_output_device.empty() ?
+                AudioManagerBase::kDefaultDeviceId : associated_output_device,
+            params);
+    stream = new AUAudioInputStream(this, params, output_params,
+        audio_device_id);
+  }
 
   return stream;
 }
 
 AudioParameters AudioManagerMac::GetPreferredOutputStreamParameters(
+    const std::string& output_device_id,
     const AudioParameters& input_params) {
+  AudioDeviceID device = GetAudioDeviceIdByUId(false, output_device_id);
+  if (device == kAudioObjectUnknown) {
+    DLOG(ERROR) << "Invalid output device " << output_device_id;
+    return AudioParameters();
+  }
+
   int hardware_channels = 2;
-  if (!GetDefaultOutputChannels(&hardware_channels)) {
+  if (!GetDeviceChannels(device, kAudioDevicePropertyScopeOutput,
+                         &hardware_channels)) {
     // Fallback to stereo.
     hardware_channels = 2;
   }
 
   ChannelLayout channel_layout = GuessChannelLayout(hardware_channels);
 
-  const int hardware_sample_rate = AUAudioOutputStream::HardwareSampleRate();
+  const int hardware_sample_rate = HardwareSampleRateForDevice(device);
   const int buffer_size = ChooseBufferSize(hardware_sample_rate);
 
   int input_channels = 0;
@@ -543,7 +666,7 @@ AudioParameters AudioManagerMac::GetPreferredOutputStreamParameters(
     input_channels = input_params.input_channels();
 
     if (input_channels > 0) {
-      // TODO(crogers): given the limitations of the AudioOutputStream
+      // TODO(xians): given the limitations of the AudioOutputStream
       // back-ends used with synchronized I/O, we hard-code to stereo.
       // Specifically, this is a limitation of AudioSynchronizedStream which
       // can be removed as part of the work to consolidate these back-ends.
@@ -551,16 +674,20 @@ AudioParameters AudioManagerMac::GetPreferredOutputStreamParameters(
     }
   }
 
+  if (channel_layout == CHANNEL_LAYOUT_UNSUPPORTED)
+    channel_layout = CHANNEL_LAYOUT_DISCRETE;
+  else
+    hardware_channels = ChannelLayoutToChannelCount(channel_layout);
+
   AudioParameters params(
       AudioParameters::AUDIO_PCM_LOW_LATENCY,
       channel_layout,
+      hardware_channels,
       input_channels,
       hardware_sample_rate,
       16,
-      buffer_size);
-
-  if (channel_layout == CHANNEL_LAYOUT_UNSUPPORTED)
-    params.SetDiscreteChannels(hardware_channels);
+      buffer_size,
+      AudioParameters::NO_EFFECTS);
 
   return params;
 }
@@ -603,8 +730,25 @@ void AudioManagerMac::HandleDeviceChanges() {
   NotifyAllOutputDeviceChangeListeners();
 }
 
-AudioManager* CreateAudioManager() {
-  return new AudioManagerMac();
+int AudioManagerMac::ChooseBufferSize(int output_sample_rate) {
+  int buffer_size = kDefaultLowLatencyBufferSize;
+  const int user_buffer_size = GetUserBufferSize();
+  if (user_buffer_size) {
+    buffer_size = user_buffer_size;
+  } else if (output_sample_rate > 48000) {
+    // The default buffer size is too small for higher sample rates and may lead
+    // to glitching.  Adjust upwards by multiples of the default size.
+    if (output_sample_rate <= 96000)
+      buffer_size = 2 * kDefaultLowLatencyBufferSize;
+    else if (output_sample_rate <= 192000)
+      buffer_size = 4 * kDefaultLowLatencyBufferSize;
+  }
+
+  return buffer_size;
+}
+
+AudioManager* CreateAudioManager(AudioLogFactory* audio_log_factory) {
+  return new AudioManagerMac(audio_log_factory);
 }
 
 }  // namespace media

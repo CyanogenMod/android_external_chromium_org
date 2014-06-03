@@ -636,7 +636,7 @@ IPC_MESSAGE_ROUTED2(AutomationMsg_RequestEnd,
 IPC_MESSAGE_CONTROL1(AutomationMsg_PrintAsync,
                      int /* tab_handle */)
 
-IPC_MESSAGE_ROUTED2(AutomationMsg_SetCookieAsync,
+IPC_MESSAGE_ROUTED2(AutomationMsg_DEPRECATED_SetCookieAsync,
                     GURL /* url */,
                     std::string /* cookie */)
 
@@ -789,11 +789,11 @@ IPC_MESSAGE_CONTROL1(AutomationMsg_BrowserMove,
 #endif
 
 // Used to get cookies for the given URL.
-IPC_MESSAGE_ROUTED2(AutomationMsg_GetCookiesFromHost,
+IPC_MESSAGE_ROUTED2(AutomationMsg_DEPRECATED_GetCookiesFromHost,
                     GURL /* url */,
                     int /* opaque_cookie_id */)
 
-IPC_MESSAGE_CONTROL5(AutomationMsg_GetCookiesHostResponse,
+IPC_MESSAGE_CONTROL5(AutomationMsg_DEPRECATED_GetCookiesHostResponse,
                      int /* tab_handle */,
                      bool /* success */,
                      GURL /* url */,
@@ -863,7 +863,7 @@ IPC_SYNC_MESSAGE_CONTROL2_2(AutomationMsg_SendJSONRequestWithBrowserHandle,
                             bool /* success */)
 
 // Resets to the default theme.
-IPC_SYNC_MESSAGE_CONTROL0_0(AutomationMsg_DEPRECIATED_ResetToDefaultTheme)
+IPC_SYNC_MESSAGE_CONTROL0_0(AutomationMsg_DEPRECATED_ResetToDefaultTheme)
 
 // This message requests the external tab identified by the tab handle
 // passed in be closed.
@@ -934,15 +934,7 @@ IPC_SYNC_MESSAGE_CONTROL1_1(AutomationMsg_BeginTracing,
 // End tracing (called after BeginTracing). This blocks until tracing has
 // stopped on all processes and all the events are ready to be retrieved.
 IPC_SYNC_MESSAGE_CONTROL0_2(AutomationMsg_EndTracing,
-                            size_t /* num_trace_chunks */,
-                            bool /* success */)
-
-// Retrieve trace event data (called after EndTracing). Must call exactly
-// |num_trace_chunks| times.
-// TODO(jbates): See bug 100255, IPC send fails if message is too big. This
-// code can be removed if that limitation is fixed.
-IPC_SYNC_MESSAGE_CONTROL0_2(AutomationMsg_GetTracingOutput,
-                            std::string /* trace_chunk */,
+                            base::FilePath /* result_file_path */,
                             bool /* success */)
 
 // Used on Mac OS X to read the number of active Mach ports used in the browser

@@ -11,13 +11,25 @@ class Metric(object):
   about one thing.
   """
 
+  @classmethod
+  def CustomizeBrowserOptions(cls, options):
+    """Add browser options that are required by this metric.
+
+    Some metrics do not have any special browser options that need
+    to be added, and they do not need to override this method; by
+    default, no browser options are added.
+
+    To add options here, call options.AppendExtraBrowserArgs(arg).
+    """
+    pass
+
   def Start(self, page, tab):
     """Start collecting data for this metric."""
-    raise NotImplementedError()
+    pass
 
   def Stop(self, page, tab):
     """Stop collecting data for this metric (if applicable)."""
-    raise NotImplementedError()
+    pass
 
   def AddResults(self, tab, results):
     """Add the data collected into the results object for a measurement.
@@ -27,4 +39,3 @@ class Metric(object):
     results should be added with results.Add(trace_name, unit, value).
     """
     raise NotImplementedError()
-

@@ -9,14 +9,14 @@
 #include "base/command_line.h"
 #include "base/memory/singleton.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_function_dispatcher.h"
-#include "chrome/browser/extensions/extensions_quota_service.h"
+#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/api/test.h"
 #include "content/public/browser/notification_service.h"
+#include "extensions/browser/quota_service.h"
 
 namespace {
 
@@ -54,7 +54,7 @@ TestNotifyPassFunction::~TestNotifyPassFunction() {}
 bool TestNotifyPassFunction::RunImpl() {
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_EXTENSION_TEST_PASSED,
-      content::Source<Profile>(dispatcher()->profile()),
+      content::Source<content::BrowserContext>(dispatcher()->browser_context()),
       content::NotificationService::NoDetails());
   return true;
 }
@@ -66,7 +66,7 @@ bool TestNotifyFailFunction::RunImpl() {
   EXTENSION_FUNCTION_VALIDATE(params.get());
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_EXTENSION_TEST_FAILED,
-      content::Source<Profile>(dispatcher()->profile()),
+      content::Source<content::BrowserContext>(dispatcher()->browser_context()),
       content::Details<std::string>(&params->message));
   return true;
 }
@@ -83,8 +83,8 @@ bool TestLogFunction::RunImpl() {
 TestResetQuotaFunction::~TestResetQuotaFunction() {}
 
 bool TestResetQuotaFunction::RunImpl() {
-  ExtensionService* service = profile()->GetExtensionService();
-  ExtensionsQuotaService* quota = service->quota_service();
+  ExtensionService* service = GetProfile()->GetExtensionService();
+  QuotaService* quota = service->quota_service();
   quota->Purge();
   quota->violation_errors_.clear();
   return true;
@@ -97,8 +97,8 @@ bool TestCreateIncognitoTabFunction::RunImpl() {
   scoped_ptr<CreateIncognitoTab::Params> params(
       CreateIncognitoTab::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
-  chrome::OpenURLOffTheRecord(profile(), GURL(params->url),
-                              chrome::GetActiveDesktop());
+  chrome::OpenURLOffTheRecord(
+      GetProfile(), GURL(params->url), chrome::GetActiveDesktop());
   return true;
 }
 
@@ -106,7 +106,6 @@ bool TestSendMessageFunction::RunImpl() {
   scoped_ptr<PassMessage::Params> params(
       PassMessage::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
-  AddRef();  // balanced in Reply
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_EXTENSION_TEST_MESSAGE,
       content::Source<TestSendMessageFunction>(this),
@@ -117,9 +116,8 @@ bool TestSendMessageFunction::RunImpl() {
 TestSendMessageFunction::~TestSendMessageFunction() {}
 
 void TestSendMessageFunction::Reply(const std::string& message) {
-  SetResult(Value::CreateStringValue(message));
+  SetResult(new base::StringValue(message));
   SendResponse(true);
-  Release();  // balanced in RunImpl
 }
 
 // static

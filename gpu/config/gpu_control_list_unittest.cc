@@ -11,9 +11,7 @@
 
 const char kOsVersion[] = "10.6.4";
 const uint32 kIntelVendorId = 0x8086;
-const uint32 kIntelDeviceId = 0x0166;  // 3rd Gen Core Graphics
 const uint32 kNvidiaVendorId = 0x10de;
-const uint32 kNvidiaDeviceId = 0x0fd5;  // GeForce GT 650M
 
 #define LONG_STRING_CONST(...) #__VA_ARGS__
 
@@ -110,14 +108,14 @@ TEST_F(GpuControlListTest, DetailedEntryAndInvalidJson) {
               "type": "macosx",
               "version": {
                 "op": "=",
-                "number": "10.6.4"
+                "value": "10.6.4"
               }
             },
             "vendor_id": "0x10de",
             "device_id": ["0x0640"],
             "driver_version": {
               "op": "=",
-              "number": "1.6.18"
+              "value": "1.6.18"
             },
             "features": [
               "test_feature_0"
@@ -194,40 +192,6 @@ TEST_F(GpuControlListTest, VendorOnAllOsEntry) {
 #endif
 }
 
-TEST_F(GpuControlListTest, ChromeVersionEntry) {
-  const std::string browser_version_json = LONG_STRING_CONST(
-      {
-        "name": "gpu control list",
-        "version": "0.1",
-        "entries": [
-          {
-            "id": 1,
-            "browser_version": {
-              "op": ">=",
-              "number": "10"
-            },
-            "features": [
-              "test_feature_0"
-            ]
-          }
-        ]
-      }
-  );
-  scoped_ptr<GpuControlList> control_list9(Create());
-  EXPECT_TRUE(control_list9->LoadList(
-      "9.0", browser_version_json, GpuControlList::kAllOs));
-  std::set<int> features = control_list9->MakeDecision(
-      GpuControlList::kOsWin, kOsVersion, gpu_info());
-  EXPECT_EMPTY_SET(features);
-
-  scoped_ptr<GpuControlList> control_list10(Create());
-  EXPECT_TRUE(control_list10->LoadList(
-      "10.0", browser_version_json, GpuControlList::kAllOs));
-  features = control_list10->MakeDecision(
-      GpuControlList::kOsWin, kOsVersion, gpu_info());
-  EXPECT_SINGLE_FEATURE(features, TEST_FEATURE_0);
-}
-
 TEST_F(GpuControlListTest, UnknownField) {
   const std::string unknown_field_json = LONG_STRING_CONST(
       {
@@ -252,13 +216,8 @@ TEST_F(GpuControlListTest, UnknownField) {
   );
   scoped_ptr<GpuControlList> control_list(Create());
 
-  EXPECT_TRUE(control_list->LoadList(
+  EXPECT_FALSE(control_list->LoadList(
       unknown_field_json, GpuControlList::kAllOs));
-  EXPECT_EQ(1u, control_list->num_entries());
-  EXPECT_TRUE(control_list->contains_unknown_fields());
-  std::set<int> features = control_list->MakeDecision(
-      GpuControlList::kOsWin, kOsVersion, gpu_info());
-  EXPECT_SINGLE_FEATURE(features, TEST_FEATURE_0);
 }
 
 TEST_F(GpuControlListTest, UnknownExceptionField) {
@@ -296,13 +255,8 @@ TEST_F(GpuControlListTest, UnknownExceptionField) {
   );
   scoped_ptr<GpuControlList> control_list(Create());
 
-  EXPECT_TRUE(control_list->LoadList(
+  EXPECT_FALSE(control_list->LoadList(
       unknown_exception_field_json, GpuControlList::kAllOs));
-  EXPECT_EQ(1u, control_list->num_entries());
-  EXPECT_TRUE(control_list->contains_unknown_fields());
-  std::set<int> features = control_list->MakeDecision(
-      GpuControlList::kOsWin, kOsVersion, gpu_info());
-  EXPECT_SINGLE_FEATURE(features, TEST_FEATURE_0);
 }
 
 TEST_F(GpuControlListTest, DisabledEntry) {
@@ -420,7 +374,7 @@ TEST_F(GpuControlListTest, IgnorableEntries) {
             "vendor_id": "0x8086",
             "driver_version": {
               "op": "<",
-              "number": "10.7"
+              "value": "10.7"
             },
             "features": [
               "test_feature_0"
@@ -457,14 +411,14 @@ TEST_F(GpuControlListTest, ExceptionWithoutVendorId) {
                 "device_id": ["0x2a06"],
                 "driver_version": {
                   "op": ">=",
-                  "number": "8.1"
+                  "value": "8.1"
                 }
               },
               {
                 "device_id": ["0x2a02"],
                 "driver_version": {
                   "op": ">=",
-                  "number": "9.1"
+                  "value": "9.1"
                 }
               }
             ],

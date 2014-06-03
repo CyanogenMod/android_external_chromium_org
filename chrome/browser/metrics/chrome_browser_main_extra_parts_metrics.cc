@@ -10,6 +10,8 @@
 #include "base/command_line.h"
 #include "base/cpu.h"
 #include "base/metrics/histogram.h"
+#include "base/metrics/sparse_histogram.h"
+#include "base/sys_info.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "base/time/time.h"
 #include "chrome/browser/about_flags.h"
@@ -20,12 +22,17 @@
 #include "content/public/browser/browser_thread.h"
 #include "ui/base/touch/touch_device.h"
 #include "ui/base/ui_base_switches.h"
+#include "ui/events/event_switches.h"
 
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS)
 #include <gnu/libc-version.h>
 
 #include "base/version.h"
-#endif
+#endif  // defined(OS_LINUX) && !defined(OS_CHROMEOS)
+
+#if defined(OS_WIN)
+#include "chrome/installer/util/google_update_settings.h"
+#endif  // defined(OS_WIN)
 
 namespace {
 
@@ -49,13 +56,15 @@ enum UMATouchEventsState {
   UMA_TOUCH_EVENTS_STATE_COUNT
 };
 
-void RecordIntelMicroArchitecture() {
+void RecordMicroArchitectureStats() {
 #if defined(ARCH_CPU_X86_FAMILY)
   base::CPU cpu;
   base::CPU::IntelMicroArchitecture arch = cpu.GetIntelMicroArchitecture();
   UMA_HISTOGRAM_ENUMERATION("Platform.IntelMaxMicroArchitecture", arch,
                             base::CPU::MAX_INTEL_MICRO_ARCHITECTURE);
 #endif  // defined(ARCH_CPU_X86_FAMILY)
+  UMA_HISTOGRAM_SPARSE_SLOWLY("Platform.LogicalCpuCount",
+                              base::SysInfo::NumberOfProcessors());
 }
 
 void RecordDefaultBrowserUMAStat() {
@@ -64,6 +73,14 @@ void RecordDefaultBrowserUMAStat() {
       ShellIntegration::GetDefaultBrowser();
   UMA_HISTOGRAM_ENUMERATION("DefaultBrowser.State", default_state,
                             ShellIntegration::NUM_DEFAULT_STATES);
+}
+
+// Called on the blocking pool some time after startup to avoid slowing down
+// startup with metrics that aren't trivial to compute.
+void RecordStartupMetricsOnBlockingPool() {
+#if defined(OS_WIN)
+  GoogleUpdateSettings::RecordChromeUpdatePolicyHistograms();
+#endif  // defined(OS_WIN)
 }
 
 void RecordLinuxGlibcVersion() {
@@ -127,7 +144,7 @@ ChromeBrowserMainExtraPartsMetrics::~ChromeBrowserMainExtraPartsMetrics() {
 }
 
 void ChromeBrowserMainExtraPartsMetrics::PreProfileInit() {
-  RecordIntelMicroArchitecture();
+  RecordMicroArchitectureStats();
 }
 
 void ChromeBrowserMainExtraPartsMetrics::PreBrowserStart() {
@@ -145,6 +162,12 @@ void ChromeBrowserMainExtraPartsMetrics::PreBrowserStart() {
 void ChromeBrowserMainExtraPartsMetrics::PostBrowserStart() {
   RecordLinuxGlibcVersion();
   RecordTouchEventState();
+
+  const int kStartupMetricsGatheringDelaySeconds = 45;
+  content::BrowserThread::GetBlockingPool()->PostDelayedTask(
+      FROM_HERE,
+      base::Bind(&RecordStartupMetricsOnBlockingPool),
+      base::TimeDelta::FromSeconds(kStartupMetricsGatheringDelaySeconds));
 }
 
 namespace chrome {

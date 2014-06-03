@@ -9,8 +9,12 @@
 #include "base/message_loop/message_loop.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/strings/string_number_conversions.h"
-#include "chrome/browser/google_apis/drive_api_parser.h"
+#include "chrome/browser/sync_file_system/drive_backend/drive_backend_constants.h"
+#include "chrome/browser/sync_file_system/drive_backend/drive_backend_test_util.h"
+#include "chrome/browser/sync_file_system/drive_backend/drive_backend_util.h"
 #include "chrome/browser/sync_file_system/drive_backend/metadata_database.pb.h"
+#include "chrome/browser/sync_file_system/sync_file_system_test_util.h"
+#include "google_apis/drive/drive_api_parser.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/leveldatabase/src/include/leveldb/db.h"
 #include "third_party/leveldatabase/src/include/leveldb/write_batch.h"
@@ -22,46 +26,33 @@ namespace drive_backend {
 
 namespace {
 
+typedef MetadataDatabase::FileIDList FileIDList;
+
 const int64 kInitialChangeID = 1234;
 const int64 kSyncRootTrackerID = 100;
 const char kSyncRootFolderID[] = "sync_root_folder_id";
 
+// This struct is used to setup initial state of the database in the test and
+// also used to match to the modified content of the database as the
+// expectation.
+struct TrackedFile {
+  // Holds the latest remote metadata which may be not-yet-synced to |tracker|.
+  FileMetadata metadata;
+  FileTracker tracker;
+
+  // Implies the file should not in the database.
+  bool should_be_absent;
+
+  // Implies the file should have a tracker in the database but should have no
+  // metadata.
+  bool tracker_only;
+
+  TrackedFile() : should_be_absent(false), tracker_only(false) {}
+};
+
 void ExpectEquivalent(const ServiceMetadata* left,
                       const ServiceMetadata* right) {
-  if (!left) {
-    ASSERT_FALSE(right);
-    return;
-  }
-  ASSERT_TRUE(right);
-
-  EXPECT_EQ(left->largest_change_id(), right->largest_change_id());
-  EXPECT_EQ(left->sync_root_tracker_id(), right->sync_root_tracker_id());
-  EXPECT_EQ(left->next_tracker_id(), right->next_tracker_id());
-}
-
-void ExpectEquivalent(const FileDetails* left, const FileDetails* right) {
-  if (!left) {
-    ASSERT_FALSE(right);
-    return;
-  }
-  ASSERT_TRUE(right);
-
-  std::set<std::string> parents;
-  for (int i = 0; i < left->parent_folder_ids_size(); ++i)
-    EXPECT_TRUE(parents.insert(left->parent_folder_ids(i)).second);
-
-  for (int i = 0; i < right->parent_folder_ids_size(); ++i)
-    EXPECT_EQ(1u, parents.erase(left->parent_folder_ids(i)));
-  EXPECT_TRUE(parents.empty());
-
-  EXPECT_EQ(left->title(), right->title());
-  EXPECT_EQ(left->file_kind(), right->file_kind());
-  EXPECT_EQ(left->md5(), right->md5());
-  EXPECT_EQ(left->etag(), right->etag());
-  EXPECT_EQ(left->creation_time(), right->creation_time());
-  EXPECT_EQ(left->modification_time(), right->modification_time());
-  EXPECT_EQ(left->deleted(), right->deleted());
-  EXPECT_EQ(left->change_id(), right->change_id());
+  test_util::ExpectEquivalentServiceMetadata(*left, *right);
 }
 
 void ExpectEquivalent(const FileMetadata* left, const FileMetadata* right) {
@@ -70,9 +61,7 @@ void ExpectEquivalent(const FileMetadata* left, const FileMetadata* right) {
     return;
   }
   ASSERT_TRUE(right);
-
-  EXPECT_EQ(left->file_id(), right->file_id());
-  ExpectEquivalent(&left->details(), &right->details());
+  test_util::ExpectEquivalentMetadata(*left, *right);
 }
 
 void ExpectEquivalent(const FileTracker* left, const FileTracker* right) {
@@ -81,16 +70,7 @@ void ExpectEquivalent(const FileTracker* left, const FileTracker* right) {
     return;
   }
   ASSERT_TRUE(right);
-
-  EXPECT_EQ(left->tracker_id(), right->tracker_id());
-  EXPECT_EQ(left->parent_tracker_id(), right->parent_tracker_id());
-  EXPECT_EQ(left->file_id(), right->file_id());
-  EXPECT_EQ(left->app_id(), right->app_id());
-  EXPECT_EQ(left->is_app_root(), right->is_app_root());
-  ExpectEquivalent(&left->synced_details(), &right->synced_details());
-  EXPECT_EQ(left->dirty(), right->dirty());
-  EXPECT_EQ(left->active(), right->active());
-  EXPECT_EQ(left->needs_folder_listing(), right->needs_folder_listing());
+  test_util::ExpectEquivalentTrackers(*left, *right);
 }
 
 template <typename Container>
@@ -147,19 +127,8 @@ void ExpectEquivalentSets(const Container& left, const Container& right) {
   }
 }
 
-void SyncStatusResultCallback(SyncStatusCode* status_out,
-                              SyncStatusCode status) {
-  EXPECT_EQ(SYNC_STATUS_UNKNOWN, *status_out);
-  *status_out = status;
-}
-
-void DatabaseCreateResultCallback(SyncStatusCode* status_out,
-                                  scoped_ptr<MetadataDatabase>* database_out,
-                                  SyncStatusCode status,
-                                  scoped_ptr<MetadataDatabase> database) {
-  EXPECT_EQ(SYNC_STATUS_UNKNOWN, *status_out);
-  *status_out = status;
-  *database_out = database.Pass();
+base::FilePath CreateNormalizedPath(const base::FilePath::StringType& path) {
+  return base::FilePath(path).NormalizePathSeparators();
 }
 
 }  // namespace
@@ -167,7 +136,7 @@ void DatabaseCreateResultCallback(SyncStatusCode* status_out,
 class MetadataDatabaseTest : public testing::Test {
  public:
   MetadataDatabaseTest()
-      : next_change_id_(kInitialChangeID + 1),
+      : current_change_id_(kInitialChangeID),
         next_tracker_id_(kSyncRootTrackerID + 1),
         next_file_id_number_(1),
         next_md5_sequence_number_(1) {}
@@ -198,8 +167,8 @@ class MetadataDatabaseTest : public testing::Test {
     SyncStatusCode status = SYNC_STATUS_UNKNOWN;
     MetadataDatabase::Create(base::MessageLoopProxy::current(),
                              database_dir_.path(),
-                             base::Bind(&DatabaseCreateResultCallback,
-                                        &status, &metadata_database_));
+                             CreateResultReceiver(&status,
+                                                  &metadata_database_));
     message_loop_.RunUntilIdle();
     return status;
   }
@@ -209,24 +178,58 @@ class MetadataDatabaseTest : public testing::Test {
     message_loop_.RunUntilIdle();
   }
 
-  MetadataDatabase* metadata_database() { return metadata_database_.get(); }
+  void SetUpDatabaseByTrackedFiles(const TrackedFile** tracked_files,
+                                   int size) {
+    scoped_ptr<leveldb::DB> db = InitializeLevelDB();
+    ASSERT_TRUE(db);
 
-  leveldb::DB* db() {
-    if (!metadata_database_)
-      return NULL;
-    return metadata_database_->db_.get();
+    for (int i = 0; i < size; ++i) {
+      const TrackedFile* file = tracked_files[i];
+      if (file->should_be_absent)
+        continue;
+      if (!file->tracker_only)
+        EXPECT_TRUE(PutFileToDB(db.get(), file->metadata).ok());
+      EXPECT_TRUE(PutTrackerToDB(db.get(), file->tracker).ok());
+    }
   }
+
+  void VerifyTrackedFile(const TrackedFile& file) {
+    if (!file.should_be_absent) {
+      if (file.tracker_only) {
+        EXPECT_FALSE(metadata_database()->FindFileByFileID(
+            file.metadata.file_id(), NULL));
+      } else {
+        VerifyFile(file.metadata);
+      }
+      VerifyTracker(file.tracker);
+      return;
+    }
+
+    EXPECT_FALSE(metadata_database()->FindFileByFileID(
+        file.metadata.file_id(), NULL));
+    EXPECT_FALSE(metadata_database()->FindTrackerByTrackerID(
+        file.tracker.tracker_id(), NULL));
+  }
+
+  void VerifyTrackedFiles(const TrackedFile** tracked_files, int size) {
+    for (int i = 0; i < size; ++i)
+      VerifyTrackedFile(*tracked_files[i]);
+  }
+
+  MetadataDatabase* metadata_database() { return metadata_database_.get(); }
 
   scoped_ptr<leveldb::DB> InitializeLevelDB() {
     leveldb::DB* db = NULL;
     leveldb::Options options;
     options.create_if_missing = true;
-    options.max_open_files = 64;  // Use minimum.
+    options.max_open_files = 0;  // Use minimum.
     leveldb::Status status =
         leveldb::DB::Open(options, database_dir_.path().AsUTF8Unsafe(), &db);
     EXPECT_TRUE(status.ok());
 
-    db->Put(leveldb::WriteOptions(), "VERSION", base::Int64ToString(3));
+    db->Put(leveldb::WriteOptions(),
+            kDatabaseVersionKey,
+            base::Int64ToString(3));
     SetUpServiceMetadata(db);
 
     return make_scoped_ptr(db);
@@ -237,16 +240,16 @@ class MetadataDatabaseTest : public testing::Test {
     service_metadata.set_largest_change_id(kInitialChangeID);
     service_metadata.set_sync_root_tracker_id(kSyncRootTrackerID);
     service_metadata.set_next_tracker_id(next_tracker_id_);
-    std::string value;
-    ASSERT_TRUE(service_metadata.SerializeToString(&value));
-    db->Put(leveldb::WriteOptions(), "SERVICE", value);
+    leveldb::WriteBatch batch;
+    PutServiceMetadataToBatch(service_metadata, &batch);
+    EXPECT_TRUE(db->Write(leveldb::WriteOptions(), &batch).ok());
   }
 
   FileMetadata CreateSyncRootMetadata() {
     FileMetadata sync_root;
     sync_root.set_file_id(kSyncRootFolderID);
     FileDetails* details = sync_root.mutable_details();
-    details->set_title("Chrome Syncable FileSystem");
+    details->set_title(kSyncRootFolderTitle);
     details->set_file_kind(FILE_KIND_FOLDER);
     return sync_root;
   }
@@ -294,7 +297,7 @@ class MetadataDatabaseTest : public testing::Test {
     tracker.set_parent_tracker_id(parent_tracker.tracker_id());
     tracker.set_file_id(file.file_id());
     tracker.set_app_id(parent_tracker.app_id());
-    tracker.set_is_app_root(false);
+    tracker.set_tracker_kind(TRACKER_KIND_REGULAR);
     tracker.set_dirty(false);
     tracker.set_active(true);
     tracker.set_needs_folder_listing(false);
@@ -302,16 +305,39 @@ class MetadataDatabaseTest : public testing::Test {
     return tracker;
   }
 
-  scoped_ptr<google_apis::ChangeResource> CreateChangeResourceFromMetadata(
-      const FileMetadata& file) {
-    scoped_ptr<google_apis::ChangeResource> change(
-        new google_apis::ChangeResource);
-    change->set_change_id(file.details().change_id());
-    change->set_file_id(file.file_id());
-    change->set_deleted(file.details().deleted());
-    if (change->is_deleted())
-      return change.Pass();
+  TrackedFile CreateTrackedSyncRoot() {
+    TrackedFile sync_root;
+    sync_root.metadata = CreateSyncRootMetadata();
+    sync_root.tracker = CreateSyncRootTracker(sync_root.metadata);
+    return sync_root;
+  }
 
+  TrackedFile CreateTrackedAppRoot(const TrackedFile& sync_root,
+                                   const std::string& app_id) {
+    TrackedFile app_root(CreateTrackedFolder(sync_root, app_id));
+    app_root.tracker.set_app_id(app_id);
+    app_root.tracker.set_tracker_kind(TRACKER_KIND_APP_ROOT);
+    return app_root;
+  }
+
+  TrackedFile CreateTrackedFile(const TrackedFile& parent,
+                                const std::string& title) {
+    TrackedFile file;
+    file.metadata = CreateFileMetadata(parent.metadata, title);
+    file.tracker = CreateTracker(parent.tracker, file.metadata);
+    return file;
+  }
+
+  TrackedFile CreateTrackedFolder(const TrackedFile& parent,
+                                  const std::string& title) {
+    TrackedFile folder;
+    folder.metadata = CreateFolderMetadata(parent.metadata, title);
+    folder.tracker = CreateTracker(parent.tracker, folder.metadata);
+    return folder;
+  }
+
+  scoped_ptr<google_apis::FileResource> CreateFileResourceFromMetadata(
+      const FileMetadata& file) {
     scoped_ptr<google_apis::FileResource> file_resource(
         new google_apis::FileResource);
     ScopedVector<google_apis::ParentReference> parents;
@@ -323,7 +349,7 @@ class MetadataDatabaseTest : public testing::Test {
     }
 
     file_resource->set_file_id(file.file_id());
-    file_resource->set_parents(&parents);
+    file_resource->set_parents(parents.Pass());
     file_resource->set_title(file.details().title());
     if (file.details().file_kind() == FILE_KIND_FOLDER)
       file_resource->set_mime_type("application/vnd.google-apps.folder");
@@ -338,7 +364,20 @@ class MetadataDatabaseTest : public testing::Test {
     file_resource->set_modified_date(base::Time::FromInternalValue(
         file.details().modification_time()));
 
-    change->set_file(file_resource.Pass());
+    return file_resource.Pass();
+  }
+
+  scoped_ptr<google_apis::ChangeResource> CreateChangeResourceFromMetadata(
+      const FileMetadata& file) {
+    scoped_ptr<google_apis::ChangeResource> change(
+        new google_apis::ChangeResource);
+    change->set_change_id(file.details().change_id());
+    change->set_file_id(file.file_id());
+    change->set_deleted(file.details().missing());
+    if (change->is_deleted())
+      return change.Pass();
+
+    change->set_file(CreateFileResourceFromMetadata(file));
     return change.Pass();
   }
 
@@ -346,7 +385,7 @@ class MetadataDatabaseTest : public testing::Test {
                                    FileMetadata* file) {
     FileDetails* details = file->mutable_details();
     details->set_title(new_title);
-    details->set_change_id(next_change_id_++);
+    details->set_change_id(++current_change_id_);
   }
 
   void ApplyReorganizeChangeToMetadata(const std::string& new_parent,
@@ -354,14 +393,18 @@ class MetadataDatabaseTest : public testing::Test {
     FileDetails* details = file->mutable_details();
     details->clear_parent_folder_ids();
     details->add_parent_folder_ids(new_parent);
-    details->set_change_id(next_change_id_++);
+    details->set_change_id(++current_change_id_);
   }
 
   void ApplyContentChangeToMetadata(FileMetadata* file) {
     FileDetails* details = file->mutable_details();
     details->set_md5(
         "md5_value_" + base::Int64ToString(next_md5_sequence_number_++));
-    details->set_change_id(next_change_id_++);
+    details->set_change_id(++current_change_id_);
+  }
+
+  void ApplyNoopChangeToMetadata(FileMetadata* file) {
+    file->mutable_details()->set_change_id(++current_change_id_);
   }
 
   void PushToChangeList(scoped_ptr<google_apis::ChangeResource> change,
@@ -370,18 +413,16 @@ class MetadataDatabaseTest : public testing::Test {
   }
 
   leveldb::Status PutFileToDB(leveldb::DB* db, const FileMetadata& file) {
-    std::string key = "FILE: " + file.file_id();
-    std::string value;
-    file.SerializeToString(&value);
-    return db->Put(leveldb::WriteOptions(), key, value);
+    leveldb::WriteBatch batch;
+    PutFileToBatch(file, &batch);
+    return db->Write(leveldb::WriteOptions(), &batch);
   }
 
   leveldb::Status PutTrackerToDB(leveldb::DB* db,
                                  const FileTracker& tracker) {
-    std::string key = "TRACKER: " + base::Int64ToString(tracker.tracker_id());
-    std::string value;
-    tracker.SerializeToString(&value);
-    return db->Put(leveldb::WriteOptions(), key, value);
+    leveldb::WriteBatch batch;
+    PutTrackerToBatch(tracker, &batch);
+    return db->Write(leveldb::WriteOptions(), &batch);
   }
 
   void VerifyReloadConsistency() {
@@ -459,7 +500,7 @@ class MetadataDatabaseTest : public testing::Test {
     SyncStatusCode status = SYNC_STATUS_UNKNOWN;
     metadata_database_->RegisterApp(
         app_id, folder_id,
-        base::Bind(&SyncStatusResultCallback, &status));
+        CreateResultReceiver(&status));
     message_loop_.RunUntilIdle();
     return status;
   }
@@ -467,7 +508,7 @@ class MetadataDatabaseTest : public testing::Test {
   SyncStatusCode DisableApp(const std::string& app_id) {
     SyncStatusCode status = SYNC_STATUS_UNKNOWN;
     metadata_database_->DisableApp(
-        app_id, base::Bind(&SyncStatusResultCallback, &status));
+        app_id, CreateResultReceiver(&status));
     message_loop_.RunUntilIdle();
     return status;
   }
@@ -475,7 +516,7 @@ class MetadataDatabaseTest : public testing::Test {
   SyncStatusCode EnableApp(const std::string& app_id) {
     SyncStatusCode status = SYNC_STATUS_UNKNOWN;
     metadata_database_->EnableApp(
-        app_id, base::Bind(&SyncStatusResultCallback, &status));
+        app_id, CreateResultReceiver(&status));
     message_loop_.RunUntilIdle();
     return status;
   }
@@ -483,7 +524,7 @@ class MetadataDatabaseTest : public testing::Test {
   SyncStatusCode UnregisterApp(const std::string& app_id) {
     SyncStatusCode status = SYNC_STATUS_UNKNOWN;
     metadata_database_->UnregisterApp(
-        app_id, base::Bind(&SyncStatusResultCallback, &status));
+        app_id, CreateResultReceiver(&status));
     message_loop_.RunUntilIdle();
     return status;
   }
@@ -492,9 +533,47 @@ class MetadataDatabaseTest : public testing::Test {
       ScopedVector<google_apis::ChangeResource> changes) {
     SyncStatusCode status = SYNC_STATUS_UNKNOWN;
     metadata_database_->UpdateByChangeList(
-        changes.Pass(), base::Bind(&SyncStatusResultCallback, &status));
+        current_change_id_,
+        changes.Pass(), CreateResultReceiver(&status));
     message_loop_.RunUntilIdle();
     return status;
+  }
+
+  SyncStatusCode PopulateFolder(const std::string& folder_id,
+                                const FileIDList& listed_children) {
+    SyncStatusCode status = SYNC_STATUS_UNKNOWN;
+    metadata_database_->PopulateFolderByChildList(
+        folder_id, listed_children,
+        CreateResultReceiver(&status));
+    message_loop_.RunUntilIdle();
+    return status;
+  }
+
+  SyncStatusCode UpdateTracker(const FileTracker& tracker) {
+    SyncStatusCode status = SYNC_STATUS_UNKNOWN;
+    metadata_database_->UpdateTracker(
+        tracker.tracker_id(), tracker.synced_details(),
+        CreateResultReceiver(&status));
+    message_loop_.RunUntilIdle();
+    return status;
+  }
+
+  SyncStatusCode PopulateInitialData(
+      int64 largest_change_id,
+      const google_apis::FileResource& sync_root_folder,
+      const ScopedVector<google_apis::FileResource>& app_root_folders) {
+    SyncStatusCode status = SYNC_STATUS_UNKNOWN;
+    metadata_database_->PopulateInitialData(
+        largest_change_id,
+        sync_root_folder,
+        app_root_folders,
+        CreateResultReceiver(&status));
+    message_loop_.RunUntilIdle();
+    return status;
+  }
+
+  void ResetTrackerID(FileTracker* tracker) {
+    tracker->set_tracker_id(GetTrackerIDByFileID(tracker->file_id()));
   }
 
  private:
@@ -503,7 +582,7 @@ class MetadataDatabaseTest : public testing::Test {
 
   scoped_ptr<MetadataDatabase> metadata_database_;
 
-  int64 next_change_id_;
+  int64 current_change_id_;
   int64 next_tracker_id_;
   int64 next_file_id_number_;
   int64 next_md5_sequence_number_;
@@ -518,153 +597,81 @@ TEST_F(MetadataDatabaseTest, InitializationTest_Empty) {
 }
 
 TEST_F(MetadataDatabaseTest, InitializationTest_SimpleTree) {
-  FileMetadata sync_root(CreateSyncRootMetadata());
-  FileTracker sync_root_tracker(CreateSyncRootTracker(sync_root));
+  TrackedFile sync_root(CreateTrackedSyncRoot());
+  TrackedFile app_root(CreateTrackedFolder(sync_root, "app_id"));
+  app_root.tracker.set_app_id(app_root.metadata.details().title());
+  app_root.tracker.set_tracker_kind(TRACKER_KIND_APP_ROOT);
 
-  FileMetadata app_root(
-      CreateFolderMetadata(sync_root, "app_id" /* title */));
-  FileTracker app_root_tracker(
-      CreateTracker(sync_root_tracker, app_root));
-  app_root_tracker.set_app_id(app_root.details().title());
-  app_root_tracker.set_is_app_root(true);
+  TrackedFile file(CreateTrackedFile(app_root, "file"));
+  TrackedFile folder(CreateTrackedFolder(app_root, "folder"));
+  TrackedFile file_in_folder(CreateTrackedFile(folder, "file_in_folder"));
+  TrackedFile orphaned_file(CreateTrackedFile(sync_root, "orphaned_file"));
+  orphaned_file.metadata.mutable_details()->clear_parent_folder_ids();
+  orphaned_file.tracker.set_parent_tracker_id(0);
 
-  FileMetadata file(CreateFileMetadata(app_root, "file"));
-  FileTracker file_tracker(CreateTracker(app_root_tracker, file));
+  const TrackedFile* tracked_files[] = {
+    &sync_root, &app_root, &file, &folder, &file_in_folder, &orphaned_file
+  };
 
-  FileMetadata folder(CreateFolderMetadata(app_root, "folder"));
-  FileTracker folder_tracker(CreateTracker(app_root_tracker, folder));
-
-  FileMetadata file_in_folder(
-      CreateFileMetadata(folder, "file_in_folder"));
-  FileTracker file_in_folder_tracker(
-      CreateTracker(folder_tracker, file_in_folder));
-
-  FileMetadata orphaned_file(
-      CreateFileMetadata(sync_root, "orphaned_file"));
-  orphaned_file.mutable_details()->clear_parent_folder_ids();
-  FileTracker orphaned_file_tracker(
-      CreateTracker(sync_root_tracker, orphaned_file));
-  orphaned_file_tracker.set_parent_tracker_id(0);
-
-  {
-    scoped_ptr<leveldb::DB> db = InitializeLevelDB();
-    ASSERT_TRUE(db);
-
-    EXPECT_TRUE(PutFileToDB(db.get(), sync_root).ok());
-    EXPECT_TRUE(PutTrackerToDB(db.get(), sync_root_tracker).ok());
-    EXPECT_TRUE(PutFileToDB(db.get(), app_root).ok());
-    EXPECT_TRUE(PutTrackerToDB(db.get(), app_root_tracker).ok());
-    EXPECT_TRUE(PutFileToDB(db.get(), file).ok());
-    EXPECT_TRUE(PutTrackerToDB(db.get(), file_tracker).ok());
-    EXPECT_TRUE(PutFileToDB(db.get(), folder).ok());
-    EXPECT_TRUE(PutTrackerToDB(db.get(), folder_tracker).ok());
-    EXPECT_TRUE(PutFileToDB(db.get(), file_in_folder).ok());
-    EXPECT_TRUE(PutTrackerToDB(db.get(), file_in_folder_tracker).ok());
-    EXPECT_TRUE(PutFileToDB(db.get(), orphaned_file).ok());
-    EXPECT_TRUE(PutTrackerToDB(db.get(), orphaned_file_tracker).ok());
-  }
-
+  SetUpDatabaseByTrackedFiles(tracked_files, arraysize(tracked_files));
   EXPECT_EQ(SYNC_STATUS_OK, InitializeMetadataDatabase());
 
-  VerifyFile(sync_root);
-  VerifyTracker(sync_root_tracker);
-  VerifyFile(app_root);
-  VerifyTracker(app_root_tracker);
-  VerifyFile(file);
-  VerifyTracker(file_tracker);
-  VerifyFile(folder);
-  VerifyTracker(folder_tracker);
-  VerifyFile(file_in_folder);
-  VerifyTracker(file_in_folder_tracker);
-
-  EXPECT_FALSE(metadata_database()->FindFileByFileID(
-      orphaned_file.file_id(), NULL));
-  EXPECT_FALSE(metadata_database()->FindTrackerByTrackerID(
-      orphaned_file_tracker.tracker_id(), NULL));
+  orphaned_file.should_be_absent = true;
+  VerifyTrackedFiles(tracked_files, arraysize(tracked_files));
 }
 
 TEST_F(MetadataDatabaseTest, AppManagementTest) {
-  FileMetadata sync_root(CreateSyncRootMetadata());
-  FileTracker sync_root_tracker(CreateSyncRootTracker(sync_root));
+  TrackedFile sync_root(CreateTrackedSyncRoot());
+  TrackedFile app_root(CreateTrackedFolder(sync_root, "app_id"));
+  app_root.tracker.set_app_id(app_root.metadata.details().title());
+  app_root.tracker.set_tracker_kind(TRACKER_KIND_APP_ROOT);
 
-  FileMetadata app_root(CreateFolderMetadata(sync_root, "app_id"));
-  FileTracker app_root_tracker(
-      CreateTracker(sync_root_tracker, app_root));
-  app_root_tracker.set_app_id(app_root.details().title());
-  app_root_tracker.set_is_app_root(true);
+  TrackedFile file(CreateTrackedFile(app_root, "file"));
+  TrackedFile folder(CreateTrackedFolder(sync_root, "folder"));
+  folder.tracker.set_active(false);
 
-  FileMetadata file(CreateFileMetadata(app_root, "file"));
-  FileTracker file_tracker(CreateTracker(app_root_tracker, file));
-
-  FileMetadata folder(CreateFolderMetadata(sync_root, "folder"));
-  FileTracker folder_tracker(CreateTracker(sync_root_tracker, folder));
-  folder_tracker.set_active(false);
-
-  {
-    scoped_ptr<leveldb::DB> db = InitializeLevelDB();
-    ASSERT_TRUE(db);
-
-    EXPECT_TRUE(PutFileToDB(db.get(), sync_root).ok());
-    EXPECT_TRUE(PutTrackerToDB(db.get(), sync_root_tracker).ok());
-    EXPECT_TRUE(PutFileToDB(db.get(), app_root).ok());
-    EXPECT_TRUE(PutTrackerToDB(db.get(), app_root_tracker).ok());
-    EXPECT_TRUE(PutFileToDB(db.get(), file).ok());
-    EXPECT_TRUE(PutTrackerToDB(db.get(), file_tracker).ok());
-    EXPECT_TRUE(PutFileToDB(db.get(), folder).ok());
-    EXPECT_TRUE(PutTrackerToDB(db.get(), folder_tracker).ok());
-  }
-
+  const TrackedFile* tracked_files[] = {
+    &sync_root, &app_root, &file, &folder,
+  };
+  SetUpDatabaseByTrackedFiles(tracked_files, arraysize(tracked_files));
   EXPECT_EQ(SYNC_STATUS_OK, InitializeMetadataDatabase());
-  VerifyFile(sync_root);
-  VerifyTracker(sync_root_tracker);
-  VerifyFile(app_root);
-  VerifyTracker(app_root_tracker);
-  VerifyFile(file);
-  VerifyTracker(file_tracker);
-  VerifyFile(folder);
-  VerifyTracker(folder_tracker);
+  VerifyTrackedFiles(tracked_files, arraysize(tracked_files));
 
-  folder_tracker.set_app_id("foo");
-  folder_tracker.set_is_app_root(true);
-  folder_tracker.set_active(true);
-  folder_tracker.set_dirty(true);
-  folder_tracker.set_needs_folder_listing(true);
+  folder.tracker.set_app_id("foo");
   EXPECT_EQ(SYNC_STATUS_OK, RegisterApp(
-      folder_tracker.app_id(), folder.file_id()));
-  VerifyFile(folder);
-  VerifyTracker(folder_tracker);
+      folder.tracker.app_id(), folder.metadata.file_id()));
+  folder.tracker.set_tracker_kind(TRACKER_KIND_APP_ROOT);
+  folder.tracker.set_active(true);
+  folder.tracker.set_dirty(true);
+  folder.tracker.set_needs_folder_listing(true);
+  VerifyTrackedFile(folder);
   VerifyReloadConsistency();
 
-  EXPECT_EQ(SYNC_STATUS_OK, DisableApp(folder_tracker.app_id()));
-  folder_tracker.set_active(false);
-  VerifyFile(folder);
-  VerifyTracker(folder_tracker);
+  EXPECT_EQ(SYNC_STATUS_OK, DisableApp(folder.tracker.app_id()));
+  folder.tracker.set_tracker_kind(TRACKER_KIND_DISABLED_APP_ROOT);
+  VerifyTrackedFile(folder);
   VerifyReloadConsistency();
 
-  EXPECT_EQ(SYNC_STATUS_OK, EnableApp(folder_tracker.app_id()));
-  folder_tracker.set_active(true);
-  VerifyFile(folder);
-  VerifyTracker(folder_tracker);
+  EXPECT_EQ(SYNC_STATUS_OK, EnableApp(folder.tracker.app_id()));
+  folder.tracker.set_tracker_kind(TRACKER_KIND_APP_ROOT);
+  VerifyTrackedFile(folder);
   VerifyReloadConsistency();
 
-  EXPECT_EQ(SYNC_STATUS_OK, UnregisterApp(folder_tracker.app_id()));
-  folder_tracker.set_app_id(std::string());
-  folder_tracker.set_is_app_root(false);
-  folder_tracker.set_active(false);
-  VerifyFile(folder);
-  VerifyTracker(folder_tracker);
+  EXPECT_EQ(SYNC_STATUS_OK, UnregisterApp(folder.tracker.app_id()));
+  folder.tracker.set_app_id(std::string());
+  folder.tracker.set_tracker_kind(TRACKER_KIND_REGULAR);
+  folder.tracker.set_active(false);
+  VerifyTrackedFile(folder);
   VerifyReloadConsistency();
 
-  EXPECT_EQ(SYNC_STATUS_OK, UnregisterApp(app_root_tracker.app_id()));
-  app_root_tracker.set_app_id(std::string());
-  app_root_tracker.set_is_app_root(false);
-  app_root_tracker.set_active(false);
-  app_root_tracker.set_dirty(true);
-  VerifyFile(app_root);
-  VerifyTracker(app_root_tracker);
-  EXPECT_FALSE(metadata_database()->FindFileByFileID(file.file_id(), NULL));
-  EXPECT_FALSE(metadata_database()->FindTrackerByTrackerID(
-      file_tracker.tracker_id(), NULL));
+  EXPECT_EQ(SYNC_STATUS_OK, UnregisterApp(app_root.tracker.app_id()));
+  app_root.tracker.set_app_id(std::string());
+  app_root.tracker.set_tracker_kind(TRACKER_KIND_REGULAR);
+  app_root.tracker.set_active(false);
+  app_root.tracker.set_dirty(true);
+  file.should_be_absent = true;
+  VerifyTrackedFile(app_root);
+  VerifyTrackedFile(file);
   VerifyReloadConsistency();
 }
 
@@ -676,17 +683,17 @@ TEST_F(MetadataDatabaseTest, BuildPathTest) {
   FileTracker app_root_tracker(
       CreateTracker(sync_root_tracker, app_root));
   app_root_tracker.set_app_id(app_root.details().title());
-  app_root_tracker.set_is_app_root(true);
+  app_root_tracker.set_tracker_kind(TRACKER_KIND_APP_ROOT);
 
   FileMetadata folder(CreateFolderMetadata(app_root, "folder"));
   FileTracker folder_tracker(CreateTracker(app_root_tracker, folder));
 
-  FileMetadata file(CreateFolderMetadata(folder, "file"));
+  FileMetadata file(CreateFileMetadata(folder, "file"));
   FileTracker file_tracker(CreateTracker(folder_tracker, file));
 
   FileMetadata inactive_folder(CreateFolderMetadata(app_root, "folder"));
   FileTracker inactive_folder_tracker(CreateTracker(app_root_tracker,
-                                                          inactive_folder));
+                                                    inactive_folder));
   inactive_folder_tracker.set_active(false);
 
   {
@@ -717,43 +724,30 @@ TEST_F(MetadataDatabaseTest, BuildPathTest) {
             path);
 }
 
-TEST_F(MetadataDatabaseTest, UpdateByChangeListTest) {
+TEST_F(MetadataDatabaseTest, FindNearestActiveAncestorTest) {
+  const std::string kAppID = "app_id";
+
   FileMetadata sync_root(CreateSyncRootMetadata());
   FileTracker sync_root_tracker(CreateSyncRootTracker(sync_root));
 
-  FileMetadata app_root(CreateFolderMetadata(sync_root, "app_id"));
+  FileMetadata app_root(CreateFolderMetadata(sync_root, kAppID));
   FileTracker app_root_tracker(
       CreateTracker(sync_root_tracker, app_root));
+  app_root_tracker.set_app_id(app_root.details().title());
+  app_root_tracker.set_tracker_kind(TRACKER_KIND_APP_ROOT);
 
-  FileMetadata disabled_app_root(
-      CreateFolderMetadata(sync_root, "disabled_app"));
-  FileTracker disabled_app_root_tracker(
-      CreateTracker(sync_root_tracker, disabled_app_root));
+  // Create directory structure like this: "/folder1/folder2/file"
+  FileMetadata folder1(CreateFolderMetadata(app_root, "folder1"));
+  FileTracker folder_tracker1(CreateTracker(app_root_tracker, folder1));
+  FileMetadata folder2(CreateFolderMetadata(folder1, "folder2"));
+  FileTracker folder_tracker2(CreateTracker(folder_tracker1, folder2));
+  FileMetadata file(CreateFileMetadata(folder2, "file"));
+  FileTracker file_tracker(CreateTracker(folder_tracker2, file));
 
-  FileMetadata file(CreateFileMetadata(app_root, "file"));
-  FileTracker file_tracker(CreateTracker(app_root_tracker, file));
-
-  FileMetadata renamed_file(CreateFileMetadata(app_root, "to be renamed"));
-  FileTracker renamed_file_tracker(
-      CreateTracker(app_root_tracker, renamed_file));
-
-  FileMetadata folder(CreateFolderMetadata(app_root, "folder"));
-  FileTracker folder_tracker(CreateTracker(app_root_tracker, folder));
-
-  FileMetadata reorganized_file(
-      CreateFileMetadata(app_root, "to be reorganized"));
-  FileTracker reorganized_file_tracker(
-      CreateTracker(app_root_tracker, reorganized_file));
-
-  FileMetadata updated_file(CreateFileMetadata(app_root, "to be updated"));
-  FileTracker updated_file_tracker(
-      CreateTracker(app_root_tracker, updated_file));
-
-  FileMetadata noop_file(CreateFileMetadata(app_root, "have noop change"));
-  FileTracker noop_file_tracker(
-      CreateTracker(app_root_tracker, noop_file));
-
-  FileMetadata new_file(CreateFileMetadata(app_root, "to be added later"));
+  FileMetadata inactive_folder(CreateFolderMetadata(app_root, "folder1"));
+  FileTracker inactive_folder_tracker(CreateTracker(app_root_tracker,
+                                                    inactive_folder));
+  inactive_folder_tracker.set_active(false);
 
   {
     scoped_ptr<leveldb::DB> db = InitializeLevelDB();
@@ -763,72 +757,364 @@ TEST_F(MetadataDatabaseTest, UpdateByChangeListTest) {
     EXPECT_TRUE(PutTrackerToDB(db.get(), sync_root_tracker).ok());
     EXPECT_TRUE(PutFileToDB(db.get(), app_root).ok());
     EXPECT_TRUE(PutTrackerToDB(db.get(), app_root_tracker).ok());
-    EXPECT_TRUE(PutFileToDB(db.get(), disabled_app_root).ok());
-    EXPECT_TRUE(PutTrackerToDB(db.get(), disabled_app_root_tracker).ok());
+    EXPECT_TRUE(PutFileToDB(db.get(), folder1).ok());
+    EXPECT_TRUE(PutTrackerToDB(db.get(), folder_tracker1).ok());
+    EXPECT_TRUE(PutFileToDB(db.get(), folder2).ok());
+    EXPECT_TRUE(PutTrackerToDB(db.get(), folder_tracker2).ok());
     EXPECT_TRUE(PutFileToDB(db.get(), file).ok());
     EXPECT_TRUE(PutTrackerToDB(db.get(), file_tracker).ok());
-    EXPECT_TRUE(PutFileToDB(db.get(), renamed_file).ok());
-    EXPECT_TRUE(PutTrackerToDB(db.get(), renamed_file_tracker).ok());
-    EXPECT_TRUE(PutFileToDB(db.get(), folder).ok());
-    EXPECT_TRUE(PutTrackerToDB(db.get(), folder_tracker).ok());
-    EXPECT_TRUE(PutFileToDB(db.get(), reorganized_file).ok());
-    EXPECT_TRUE(PutTrackerToDB(db.get(), reorganized_file_tracker).ok());
-    EXPECT_TRUE(PutFileToDB(db.get(), updated_file).ok());
-    EXPECT_TRUE(PutTrackerToDB(db.get(), updated_file_tracker).ok());
-    EXPECT_TRUE(PutFileToDB(db.get(), noop_file).ok());
-    EXPECT_TRUE(PutTrackerToDB(db.get(), noop_file_tracker).ok());
+    EXPECT_TRUE(PutFileToDB(db.get(), inactive_folder).ok());
+    EXPECT_TRUE(PutTrackerToDB(db.get(), inactive_folder_tracker).ok());
   }
 
   EXPECT_EQ(SYNC_STATUS_OK, InitializeMetadataDatabase());
 
-  ApplyRenameChangeToMetadata("renamed", &renamed_file);
-  ApplyReorganizeChangeToMetadata(folder.file_id(), &reorganized_file);
-  ApplyContentChangeToMetadata(&updated_file);
+  {
+    base::FilePath path;
+    FileTracker tracker;
+    EXPECT_FALSE(metadata_database()->FindNearestActiveAncestor(
+        "non_registered_app_id",
+        CreateNormalizedPath(FPL("folder1/folder2/file")),
+        &tracker, &path));
+  }
+
+  {
+    base::FilePath path;
+    FileTracker tracker;
+    EXPECT_TRUE(metadata_database()->FindNearestActiveAncestor(
+        kAppID, CreateNormalizedPath(FPL("")), &tracker, &path));
+    EXPECT_EQ(app_root_tracker.tracker_id(), tracker.tracker_id());
+    EXPECT_EQ(CreateNormalizedPath(FPL("")), path);
+  }
+
+  {
+    base::FilePath path;
+    FileTracker tracker;
+    EXPECT_TRUE(metadata_database()->FindNearestActiveAncestor(
+        kAppID, CreateNormalizedPath(FPL("folder1/folder2")),
+        &tracker, &path));
+    EXPECT_EQ(folder_tracker2.tracker_id(), tracker.tracker_id());
+    EXPECT_EQ(CreateNormalizedPath(FPL("folder1/folder2")), path);
+  }
+
+  {
+    base::FilePath path;
+    FileTracker tracker;
+    EXPECT_TRUE(metadata_database()->FindNearestActiveAncestor(
+        kAppID, CreateNormalizedPath(FPL("folder1/folder2/file")),
+        &tracker, &path));
+    EXPECT_EQ(file_tracker.tracker_id(), tracker.tracker_id());
+    EXPECT_EQ(CreateNormalizedPath(FPL("folder1/folder2/file")), path);
+  }
+
+  {
+    base::FilePath path;
+    FileTracker tracker;
+    EXPECT_TRUE(metadata_database()->FindNearestActiveAncestor(
+        kAppID,
+        CreateNormalizedPath(FPL("folder1/folder2/folder3/folder4/file")),
+        &tracker, &path));
+    EXPECT_EQ(folder_tracker2.tracker_id(), tracker.tracker_id());
+    EXPECT_EQ(CreateNormalizedPath(FPL("folder1/folder2")), path);
+  }
+
+  {
+    base::FilePath path;
+    FileTracker tracker;
+    EXPECT_TRUE(metadata_database()->FindNearestActiveAncestor(
+        kAppID, CreateNormalizedPath(FPL("folder1/folder2/file/folder4/file")),
+        &tracker, &path));
+    EXPECT_EQ(folder_tracker2.tracker_id(), tracker.tracker_id());
+    EXPECT_EQ(CreateNormalizedPath(FPL("folder1/folder2")), path);
+  }
+}
+
+TEST_F(MetadataDatabaseTest, UpdateByChangeListTest) {
+  TrackedFile sync_root(CreateTrackedSyncRoot());
+  TrackedFile app_root(CreateTrackedFolder(sync_root, "app_id"));
+  TrackedFile disabled_app_root(CreateTrackedFolder(sync_root, "disabled_app"));
+  TrackedFile file(CreateTrackedFile(app_root, "file"));
+  TrackedFile renamed_file(CreateTrackedFile(app_root, "to be renamed"));
+  TrackedFile folder(CreateTrackedFolder(app_root, "folder"));
+  TrackedFile reorganized_file(
+      CreateTrackedFile(app_root, "to be reorganized"));
+  TrackedFile updated_file(
+      CreateTrackedFile(app_root, "to be updated"));
+  TrackedFile noop_file(CreateTrackedFile(app_root, "has noop change"));
+  TrackedFile new_file(CreateTrackedFile(app_root, "to be added later"));
+  new_file.should_be_absent = true;
+
+  const TrackedFile* tracked_files[] = {
+    &sync_root, &app_root, &disabled_app_root,
+    &file, &renamed_file, &folder, &reorganized_file, &updated_file, &noop_file,
+    &new_file,
+  };
+
+  SetUpDatabaseByTrackedFiles(tracked_files, arraysize(tracked_files));
+  EXPECT_EQ(SYNC_STATUS_OK, InitializeMetadataDatabase());
+
+  ApplyRenameChangeToMetadata("renamed", &renamed_file.metadata);
+  ApplyReorganizeChangeToMetadata(folder.metadata.file_id(),
+                                  &reorganized_file.metadata);
+  ApplyContentChangeToMetadata(&updated_file.metadata);
+
+  // Update change ID.
+  ApplyNoopChangeToMetadata(&noop_file.metadata);
 
   ScopedVector<google_apis::ChangeResource> changes;
-  PushToChangeList(CreateChangeResourceFromMetadata(renamed_file), &changes);
-  PushToChangeList(CreateChangeResourceFromMetadata(
-      reorganized_file), &changes);
-  PushToChangeList(CreateChangeResourceFromMetadata(updated_file), &changes);
-  PushToChangeList(CreateChangeResourceFromMetadata(noop_file), &changes);
-  PushToChangeList(CreateChangeResourceFromMetadata(new_file), &changes);
-
-  renamed_file_tracker.set_dirty(true);
-  reorganized_file_tracker.set_dirty(true);
-  updated_file_tracker.set_dirty(true);
-  noop_file_tracker.set_dirty(true);
-
+  PushToChangeList(
+      CreateChangeResourceFromMetadata(renamed_file.metadata), &changes);
+  PushToChangeList(
+      CreateChangeResourceFromMetadata(reorganized_file.metadata), &changes);
+  PushToChangeList(
+      CreateChangeResourceFromMetadata(updated_file.metadata), &changes);
+  PushToChangeList(
+      CreateChangeResourceFromMetadata(noop_file.metadata), &changes);
+  PushToChangeList(
+      CreateChangeResourceFromMetadata(new_file.metadata), &changes);
   EXPECT_EQ(SYNC_STATUS_OK, UpdateByChangeList(changes.Pass()));
 
-  FileTracker new_file_tracker(CreateTracker(app_root_tracker, new_file));
-  new_file_tracker.set_tracker_id(GetTrackerIDByFileID(new_file.file_id()));
-  new_file_tracker.clear_synced_details();
-  new_file_tracker.set_active(false);
-  new_file_tracker.set_dirty(true);
-  EXPECT_NE(0, new_file_tracker.tracker_id());
+  renamed_file.tracker.set_dirty(true);
+  reorganized_file.tracker.set_dirty(true);
+  updated_file.tracker.set_dirty(true);
+  noop_file.tracker.set_dirty(true);
+  new_file.tracker.mutable_synced_details()->set_missing(true);
+  new_file.tracker.mutable_synced_details()->clear_md5();
+  new_file.tracker.set_active(false);
+  new_file.tracker.set_dirty(true);
+  ResetTrackerID(&new_file.tracker);
+  EXPECT_NE(0, new_file.tracker.tracker_id());
 
-  VerifyFile(sync_root);
-  VerifyTracker(sync_root_tracker);
-  VerifyFile(app_root);
-  VerifyTracker(app_root_tracker);
-  VerifyFile(disabled_app_root);
-  VerifyTracker(disabled_app_root_tracker);
-  VerifyFile(file);
-  VerifyTracker(file_tracker);
-  VerifyFile(renamed_file);
-  VerifyTracker(renamed_file_tracker);
-  VerifyFile(folder);
-  VerifyTracker(folder_tracker);
-  VerifyFile(reorganized_file);
-  VerifyTracker(reorganized_file_tracker);
-  VerifyFile(updated_file);
-  VerifyTracker(updated_file_tracker);
-  VerifyFile(noop_file);
-  VerifyTracker(noop_file_tracker);
-  VerifyFile(new_file);
-  VerifyTracker(new_file_tracker);
+  new_file.should_be_absent = false;
 
+  VerifyTrackedFiles(tracked_files, arraysize(tracked_files));
   VerifyReloadConsistency();
+}
+
+TEST_F(MetadataDatabaseTest, PopulateFolderTest_RegularFolder) {
+  TrackedFile sync_root(CreateTrackedSyncRoot());
+  TrackedFile app_root(CreateTrackedAppRoot(sync_root, "app_id"));
+  app_root.tracker.set_app_id(app_root.metadata.details().title());
+
+  TrackedFile folder_to_populate(
+      CreateTrackedFolder(app_root, "folder_to_populate"));
+  folder_to_populate.tracker.set_needs_folder_listing(true);
+  folder_to_populate.tracker.set_dirty(true);
+
+  TrackedFile known_file(CreateTrackedFile(folder_to_populate, "known_file"));
+  TrackedFile new_file(CreateTrackedFile(folder_to_populate, "new_file"));
+  new_file.should_be_absent = true;
+
+  const TrackedFile* tracked_files[] = {
+    &sync_root, &app_root, &folder_to_populate, &known_file, &new_file
+  };
+
+  SetUpDatabaseByTrackedFiles(tracked_files, arraysize(tracked_files));
+  EXPECT_EQ(SYNC_STATUS_OK, InitializeMetadataDatabase());
+  VerifyTrackedFiles(tracked_files, arraysize(tracked_files));
+
+  FileIDList listed_children;
+  listed_children.push_back(known_file.metadata.file_id());
+  listed_children.push_back(new_file.metadata.file_id());
+
+  EXPECT_EQ(SYNC_STATUS_OK,
+            PopulateFolder(folder_to_populate.metadata.file_id(),
+                           listed_children));
+
+  folder_to_populate.tracker.set_dirty(false);
+  folder_to_populate.tracker.set_needs_folder_listing(false);
+  ResetTrackerID(&new_file.tracker);
+  new_file.tracker.set_dirty(true);
+  new_file.tracker.set_active(false);
+  new_file.tracker.clear_synced_details();
+  new_file.should_be_absent = false;
+  new_file.tracker_only = true;
+  VerifyTrackedFiles(tracked_files, arraysize(tracked_files));
+  VerifyReloadConsistency();
+}
+
+TEST_F(MetadataDatabaseTest, PopulateFolderTest_InactiveFolder) {
+  TrackedFile sync_root(CreateTrackedSyncRoot());
+  TrackedFile app_root(CreateTrackedAppRoot(sync_root, "app_id"));
+
+  TrackedFile inactive_folder(CreateTrackedFolder(app_root, "inactive_folder"));
+  inactive_folder.tracker.set_active(false);
+  inactive_folder.tracker.set_dirty(true);
+
+  TrackedFile new_file(
+      CreateTrackedFile(inactive_folder, "file_in_inactive_folder"));
+  new_file.should_be_absent = true;
+
+  const TrackedFile* tracked_files[] = {
+    &sync_root, &app_root, &inactive_folder, &new_file,
+  };
+
+  SetUpDatabaseByTrackedFiles(tracked_files, arraysize(tracked_files));
+  EXPECT_EQ(SYNC_STATUS_OK, InitializeMetadataDatabase());
+  VerifyTrackedFiles(tracked_files, arraysize(tracked_files));
+
+  FileIDList listed_children;
+  listed_children.push_back(new_file.metadata.file_id());
+
+  EXPECT_EQ(SYNC_STATUS_OK,
+            PopulateFolder(inactive_folder.metadata.file_id(),
+                           listed_children));
+  VerifyTrackedFiles(tracked_files, arraysize(tracked_files));
+  VerifyReloadConsistency();
+}
+
+TEST_F(MetadataDatabaseTest, PopulateFolderTest_DisabledAppRoot) {
+  TrackedFile sync_root(CreateTrackedSyncRoot());
+  TrackedFile disabled_app_root(
+      CreateTrackedAppRoot(sync_root, "disabled_app"));
+  disabled_app_root.tracker.set_dirty(true);
+  disabled_app_root.tracker.set_needs_folder_listing(true);
+
+  TrackedFile known_file(CreateTrackedFile(disabled_app_root, "known_file"));
+  TrackedFile file(CreateTrackedFile(disabled_app_root, "file"));
+  file.should_be_absent = true;
+
+  const TrackedFile* tracked_files[] = {
+    &sync_root, &disabled_app_root, &disabled_app_root, &known_file, &file,
+  };
+
+  SetUpDatabaseByTrackedFiles(tracked_files, arraysize(tracked_files));
+  EXPECT_EQ(SYNC_STATUS_OK, InitializeMetadataDatabase());
+  VerifyTrackedFiles(tracked_files, arraysize(tracked_files));
+
+  FileIDList disabled_app_children;
+  disabled_app_children.push_back(file.metadata.file_id());
+  EXPECT_EQ(SYNC_STATUS_OK, PopulateFolder(
+      disabled_app_root.metadata.file_id(), disabled_app_children));
+  ResetTrackerID(&file.tracker);
+  file.tracker.clear_synced_details();
+  file.tracker.set_dirty(true);
+  file.tracker.set_active(false);
+  file.should_be_absent = false;
+  file.tracker_only = true;
+
+  disabled_app_root.tracker.set_dirty(false);
+  disabled_app_root.tracker.set_needs_folder_listing(false);
+  VerifyTrackedFiles(tracked_files, arraysize(tracked_files));
+  VerifyReloadConsistency();
+}
+
+// TODO(tzik): Fix expectation and re-enable this test.
+TEST_F(MetadataDatabaseTest, DISABLED_UpdateTrackerTest) {
+  TrackedFile sync_root(CreateTrackedSyncRoot());
+  TrackedFile app_root(CreateTrackedAppRoot(sync_root, "app_root"));
+  TrackedFile file(CreateTrackedFile(app_root, "file"));
+  file.tracker.set_dirty(true);
+  file.metadata.mutable_details()->set_title("renamed file");
+
+  TrackedFile inactive_file(CreateTrackedFile(app_root, "inactive_file"));
+  inactive_file.tracker.set_active(false);
+  inactive_file.tracker.set_dirty(true);
+  inactive_file.metadata.mutable_details()->set_title("renamed inactive file");
+  inactive_file.metadata.mutable_details()->set_md5("modified_md5");
+
+  TrackedFile new_conflict(CreateTrackedFile(app_root, "new conflict file"));
+  new_conflict.tracker.set_dirty(true);
+  new_conflict.metadata.mutable_details()->set_title("renamed file");
+
+  const TrackedFile* tracked_files[] = {
+    &sync_root, &app_root, &file, &inactive_file, &new_conflict
+  };
+
+  SetUpDatabaseByTrackedFiles(tracked_files, arraysize(tracked_files));
+  EXPECT_EQ(SYNC_STATUS_OK, InitializeMetadataDatabase());
+  VerifyTrackedFiles(tracked_files, arraysize(tracked_files));
+  VerifyReloadConsistency();
+
+  *file.tracker.mutable_synced_details() = file.metadata.details();
+  file.tracker.set_dirty(false);
+  EXPECT_EQ(SYNC_STATUS_OK, UpdateTracker(file.tracker));
+  VerifyTrackedFiles(tracked_files, arraysize(tracked_files));
+  VerifyReloadConsistency();
+
+  *inactive_file.tracker.mutable_synced_details() =
+       inactive_file.metadata.details();
+  inactive_file.tracker.set_dirty(false);
+  inactive_file.tracker.set_active(true);
+  EXPECT_EQ(SYNC_STATUS_OK, UpdateTracker(inactive_file.tracker));
+  VerifyTrackedFiles(tracked_files, arraysize(tracked_files));
+  VerifyReloadConsistency();
+
+  *new_conflict.tracker.mutable_synced_details() =
+       new_conflict.metadata.details();
+  new_conflict.tracker.set_dirty(false);
+  new_conflict.tracker.set_active(true);
+  file.tracker.set_dirty(true);
+  file.tracker.set_active(false);
+  EXPECT_EQ(SYNC_STATUS_OK, UpdateTracker(new_conflict.tracker));
+  VerifyTrackedFiles(tracked_files, arraysize(tracked_files));
+  VerifyReloadConsistency();
+}
+
+TEST_F(MetadataDatabaseTest, PopulateInitialDataTest) {
+  TrackedFile sync_root(CreateTrackedSyncRoot());
+  TrackedFile app_root(CreateTrackedFolder(sync_root, "app_root"));
+  app_root.tracker.set_active(false);
+
+  const TrackedFile* tracked_files[] = {
+    &sync_root, &app_root
+  };
+
+  int64 largest_change_id = 42;
+  scoped_ptr<google_apis::FileResource> sync_root_folder(
+      CreateFileResourceFromMetadata(sync_root.metadata));
+  scoped_ptr<google_apis::FileResource> app_root_folder(
+      CreateFileResourceFromMetadata(app_root.metadata));
+
+  ScopedVector<google_apis::FileResource> app_root_folders;
+  app_root_folders.push_back(app_root_folder.release());
+
+  EXPECT_EQ(SYNC_STATUS_OK, InitializeMetadataDatabase());
+  EXPECT_EQ(SYNC_STATUS_OK, PopulateInitialData(
+      largest_change_id,
+      *sync_root_folder,
+      app_root_folders));
+
+  ResetTrackerID(&sync_root.tracker);
+  ResetTrackerID(&app_root.tracker);
+  app_root.tracker.set_parent_tracker_id(sync_root.tracker.tracker_id());
+
+  VerifyTrackedFiles(tracked_files, arraysize(tracked_files));
+  VerifyReloadConsistency();
+}
+
+TEST_F(MetadataDatabaseTest, DumpFiles) {
+  TrackedFile sync_root(CreateTrackedSyncRoot());
+  TrackedFile app_root(CreateTrackedAppRoot(sync_root, "app_id"));
+  app_root.tracker.set_app_id(app_root.metadata.details().title());
+
+  TrackedFile folder_0(CreateTrackedFolder(app_root, "folder_0"));
+  TrackedFile file_0(CreateTrackedFile(folder_0, "file_0"));
+
+  const TrackedFile* tracked_files[] = {
+    &sync_root, &app_root, &folder_0, &file_0
+  };
+
+  SetUpDatabaseByTrackedFiles(tracked_files, arraysize(tracked_files));
+  EXPECT_EQ(SYNC_STATUS_OK, InitializeMetadataDatabase());
+  VerifyTrackedFiles(tracked_files, arraysize(tracked_files));
+
+  scoped_ptr<base::ListValue> files =
+      metadata_database()->DumpFiles(app_root.tracker.app_id());
+  ASSERT_EQ(2u, files->GetSize());
+
+  base::DictionaryValue* file = NULL;
+  std::string str;
+
+  ASSERT_TRUE(files->GetDictionary(0, &file));
+  EXPECT_TRUE(file->GetString("title", &str) && str == "folder_0");
+  EXPECT_TRUE(file->GetString("type", &str) && str == "folder");
+  EXPECT_TRUE(file->HasKey("details"));
+
+  ASSERT_TRUE(files->GetDictionary(1, &file));
+  EXPECT_TRUE(file->GetString("title", &str) && str == "file_0");
+  EXPECT_TRUE(file->GetString("type", &str) && str == "file");
+  EXPECT_TRUE(file->HasKey("details"));
 }
 
 }  // namespace drive_backend

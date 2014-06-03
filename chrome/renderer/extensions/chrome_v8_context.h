@@ -9,14 +9,15 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "chrome/common/extensions/features/feature.h"
 #include "chrome/renderer/extensions/module_system.h"
+#include "chrome/renderer/extensions/pepper_request_proxy.h"
 #include "chrome/renderer/extensions/request_sender.h"
 #include "chrome/renderer/extensions/safe_builtins.h"
 #include "chrome/renderer/extensions/scoped_persistent.h"
+#include "extensions/common/features/feature.h"
 #include "v8/include/v8.h"
 
-namespace WebKit {
+namespace blink {
 class WebFrame;
 }
 
@@ -31,7 +32,7 @@ class Extension;
 class ChromeV8Context : public RequestSender::Source {
  public:
   ChromeV8Context(v8::Handle<v8::Context> context,
-                  WebKit::WebFrame* frame,
+                  blink::WebFrame* frame,
                   const Extension* extension,
                   Feature::Context context_type);
   virtual ~ChromeV8Context();
@@ -43,18 +44,18 @@ class ChromeV8Context : public RequestSender::Source {
   // Returns true if this context is still valid, false if it isn't.
   // A context becomes invalid via Invalidate().
   bool is_valid() const {
-    return !v8_context_.get().IsEmpty();
+    return !v8_context_.IsEmpty();
   }
 
   v8::Handle<v8::Context> v8_context() const {
-    return v8_context_.get();
+    return v8_context_.NewHandle(v8::Isolate::GetCurrent());
   }
 
   const Extension* extension() const {
     return extension_.get();
   }
 
-  WebKit::WebFrame* web_frame() const {
+  blink::WebFrame* web_frame() const {
     return web_frame_;
   }
 
@@ -73,6 +74,10 @@ class ChromeV8Context : public RequestSender::Source {
   }
   const SafeBuiltins* safe_builtins() const {
     return &safe_builtins_;
+  }
+
+  PepperRequestProxy* pepper_request_proxy() {
+    return &pepper_request_proxy_;
   }
 
   // Returns the ID of the extension associated with this context, or empty
@@ -116,13 +121,17 @@ class ChromeV8Context : public RequestSender::Source {
                                   const base::ListValue& response,
                                   const std::string& error) OVERRIDE;
 
+  v8::Isolate* isolate() const {
+    return isolate_;
+  }
+
  private:
   // The v8 context the bindings are accessible to.
   ScopedPersistent<v8::Context> v8_context_;
 
   // The WebFrame associated with this context. This can be NULL because this
   // object can outlive is destroyed asynchronously.
-  WebKit::WebFrame* web_frame_;
+  blink::WebFrame* web_frame_;
 
   // The extension associated with this context, or NULL if there is none. This
   // might be a hosted app in the case that this context is hosting a web URL.
@@ -136,6 +145,11 @@ class ChromeV8Context : public RequestSender::Source {
 
   // Contains safe copies of builtin objects like Function.prototype.
   SafeBuiltins safe_builtins_;
+
+  // The proxy for this context for making API calls from Pepper via Javascript.
+  PepperRequestProxy pepper_request_proxy_;
+
+  v8::Isolate* isolate_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromeV8Context);
 };

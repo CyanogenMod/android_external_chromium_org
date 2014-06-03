@@ -7,8 +7,6 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/time/time.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_contents_user_data.h"
 
@@ -19,7 +17,6 @@ struct HistoryAddPageArgs;
 }
 
 class HistoryTabHelper : public content::WebContentsObserver,
-                         public content::NotificationObserver,
                          public content::WebContentsUserData<HistoryTabHelper> {
  public:
   virtual ~HistoryTabHelper();
@@ -46,21 +43,15 @@ class HistoryTabHelper : public content::WebContentsObserver,
   friend class content::WebContentsUserData<HistoryTabHelper>;
 
   // content::WebContentsObserver implementation.
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
   virtual void DidNavigateMainFrame(
       const content::LoadCommittedDetails& details,
       const content::FrameNavigateParams& params) OVERRIDE;
   virtual void DidNavigateAnyFrame(
       const content::LoadCommittedDetails& details,
       const content::FrameNavigateParams& params) OVERRIDE;
+  virtual void TitleWasSet(content::NavigationEntry* entry,
+                           bool explicit_set) OVERRIDE;
   virtual void WebContentsDestroyed(content::WebContents* tab) OVERRIDE;
-
-  // content::NotificationObserver implementation.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
-
-  void OnPageContents(const GURL& url, const string16& contents);
 
   // Helper function to return the history service.  May return NULL.
   HistoryService* GetHistoryService();
@@ -70,8 +61,6 @@ class HistoryTabHelper : public content::WebContentsObserver,
   // prevents some weirdness because some AJAXy apps use titles for status
   // messages.
   bool received_page_title_;
-
-  content::NotificationRegistrar registrar_;
 
   DISALLOW_COPY_AND_ASSIGN(HistoryTabHelper);
 };

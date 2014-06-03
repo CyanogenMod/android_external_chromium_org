@@ -2,9 +2,12 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import posixpath
+import sys
+
 from file_system import FileSystem, StatInfo, FileNotFoundError
 from future import Future
-from object_store_creator import ObjectStoreCreator
+
 
 class _AsyncUncachedFuture(object):
   def __init__(self,
@@ -42,13 +45,14 @@ class CachingFileSystem(FileSystem):
           category='%s/%s' % (file_system.GetIdentity(), category),
           **optargs)
     self._stat_object_store = create_object_store('stat')
-    # The read caches can both (a) start populated and (b) be shared with all
-    # other app versions, because the data changing is detected by the stat.
-    # Without this optimisation, bumping app version is extremely slow.
-    self._read_object_store = create_object_store(
-        'read', start_empty=False, app_version=None)
-    self._read_binary_object_store = create_object_store(
-        'read-binary', start_empty=False, app_version=None)
+    # The read caches can start populated (start_empty=False) because file
+    # updates are picked up by the stat, so it doesn't need the force-refresh
+    # which starting empty is designed for. Without this optimisation, cron
+    # runs are extra slow.
+    self._read_object_store = create_object_store('read', start_empty=False)
+
+  def Refresh(self):
+    return self._file_system.Refresh()
 
   def Stat(self, path):
     '''Stats the directory given, or if a file is given, stats the file's parent
@@ -56,10 +60,8 @@ class CachingFileSystem(FileSystem):
     '''
     # Always stat the parent directory, since it will have the stat of the child
     # anyway, and this gives us an entire directory's stat info at once.
-    if path.endswith('/'):
-      dir_path = path
-    else:
-      dir_path, file_path = path.rsplit('/', 1)
+    dir_path, file_path = posixpath.split(path)
+    if dir_path and not dir_path.endswith('/'):
       dir_path += '/'
 
     # ... and we only ever need to cache the dir stat, too.
@@ -74,18 +76,17 @@ class CachingFileSystem(FileSystem):
     else:
       file_version = dir_stat.child_versions.get(file_path)
       if file_version is None:
-        raise FileNotFoundError('No stat found for %s in %s' % (path, dir_path))
+        raise FileNotFoundError('No stat found for %s in %s (found %s)' %
+                                (path, dir_path, dir_stat.child_versions))
       stat_info = StatInfo(file_version)
 
     return stat_info
 
-  def Read(self, paths, binary=False):
+  def Read(self, paths):
     '''Reads a list of files. If a file is in memcache and it is not out of
     date, it is returned. Otherwise, the file is retrieved from the file system.
     '''
-    read_object_store = (self._read_binary_object_store if binary else
-                         self._read_object_store)
-    read_values = read_object_store.GetMulti(paths).Get()
+    read_values = self._read_object_store.GetMulti(paths).Get()
     stat_values = self._stat_object_store.GetMulti(paths).Get()
     results = {}  # maps path to read value
     uncached = {}  # maps path to stat value
@@ -93,7 +94,10 @@ class CachingFileSystem(FileSystem):
       stat_value = stat_values.get(path)
       if stat_value is None:
         # TODO(cduvall): do a concurrent Stat with the missing stat values.
-        stat_value = self.Stat(path)
+        try:
+          stat_value = self.Stat(path)
+        except:
+          return Future(exc_info=sys.exc_info())
       read_value = read_values.get(path)
       if read_value is None:
         uncached[path] = stat_value
@@ -108,11 +112,14 @@ class CachingFileSystem(FileSystem):
       return Future(value=results)
 
     return Future(delegate=_AsyncUncachedFuture(
-        self._file_system.Read(uncached.keys(), binary=binary),
+        self._file_system.Read(uncached.keys()),
         uncached,
         results,
         self,
-        read_object_store))
+        self._read_object_store))
 
   def GetIdentity(self):
     return self._file_system.GetIdentity()
+
+  def __repr__(self):
+    return '%s of <%s>' % (type(self).__name__, repr(self._file_system))

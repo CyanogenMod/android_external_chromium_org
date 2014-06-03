@@ -24,6 +24,7 @@ class Extension;
 namespace extensions {
 class ChromeV8Extension;
 class Dispatcher;
+struct Message;
 
 // Manually implements JavaScript bindings for extension messaging.
 //
@@ -47,6 +48,7 @@ class MessagingBindings {
       const std::string& source_extension_id,
       const std::string& target_extension_id,
       const GURL& source_url,
+      const std::string& tls_channel_id,
       content::RenderView* restrict_to_render_view);
 
   // Delivers a message sent using content script messaging to some of the
@@ -55,7 +57,7 @@ class MessagingBindings {
   static void DeliverMessage(
       const ChromeV8ContextSet::ContextSet& context_set,
       int target_port_id,
-      const std::string& message,
+      const Message& message,
       content::RenderView* restrict_to_render_view);
 
   // Dispatches the onDisconnect event in response to the channel being closed.

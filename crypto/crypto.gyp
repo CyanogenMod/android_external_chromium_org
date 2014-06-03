@@ -75,6 +75,9 @@
               ['exclude', 'signature_verifier_nss\.cc$'],
               ['exclude', 'symmetric_key_nss\.cc$'],
             ],
+            'includes': [
+              '../build/android/cpufeatures.gypi',
+            ],
         }],
         [ 'os_bsd==1', {
           'link_settings': {
@@ -169,7 +172,6 @@
         'capi_util.cc',
         'capi_util.h',
         'crypto_export.h',
-        'crypto_module_blocking_password_delegate.h',
         'cssm_init.cc',
         'cssm_init.h',
         'curve25519.cc',
@@ -201,6 +203,7 @@
         'mock_apple_keychain_mac.cc',
         'p224_spake.cc',
         'p224_spake.h',
+        'nss_crypto_module_delegate.h',
         'nss_util.cc',
         'nss_util.h',
         'nss_util_internal.h',
@@ -243,10 +246,6 @@
       'target_name': 'crypto_unittests',
       'type': 'executable',
       'sources': [
-        # Infrastructure files.
-        'run_all_unittests.cc',
-
-        # Tests.
         'curve25519_unittest.cc',
         'ec_private_key_unittest.cc',
         'ec_signature_creator_unittest.cc',
@@ -270,6 +269,7 @@
       'dependencies': [
         'crypto',
         '../base/base.gyp:base',
+        '../base/base.gyp:run_all_unittests',
         '../base/base.gyp:test_support_base',
         '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',

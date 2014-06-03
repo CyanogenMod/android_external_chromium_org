@@ -2,18 +2,17 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-from appengine_wrappers import IsDevServer
 from branch_utility import BranchUtility
 from compiled_file_system import CompiledFileSystem
-from empty_dir_file_system import EmptyDirFileSystem
-from github_file_system import GithubFileSystem
-from host_file_system_creator import HostFileSystemCreator
+from environment import IsDevServer
+from github_file_system_provider import GithubFileSystemProvider
+from host_file_system_provider import HostFileSystemProvider
 from third_party.json_schema_compiler.memoize import memoize
 from render_servlet import RenderServlet
 from object_store_creator import ObjectStoreCreator
 from server_instance import ServerInstance
 
-class OfflineRenderServletDelegate(RenderServlet.Delegate):
+class InstanceServletRenderServletDelegate(RenderServlet.Delegate):
   '''AppEngine instances should never need to call out to SVN. That should only
   ever be done by the cronjobs, which then write the result into DataStore,
   which is as far as instances look. To enable this, crons can pass a custom
@@ -35,21 +34,18 @@ class OfflineRenderServletDelegate(RenderServlet.Delegate):
   def CreateServerInstance(self):
     object_store_creator = ObjectStoreCreator(start_empty=False)
     branch_utility = self._delegate.CreateBranchUtility(object_store_creator)
-    host_file_system_creator = self._delegate.CreateHostFileSystemCreator(
-        object_store_creator)
-    host_file_system = host_file_system_creator.Create()
-    app_samples_file_system = self._delegate.CreateAppSamplesFileSystem(
-        object_store_creator)
-    compiled_host_fs_factory = CompiledFileSystem.Factory(
-        host_file_system,
+    # In production have offline=True so that we can catch cron errors.  In
+    # development it's annoying to have to run the cron job, so offline=False.
+    host_file_system_provider = self._delegate.CreateHostFileSystemProvider(
+        object_store_creator,
+        offline=not IsDevServer())
+    github_file_system_provider = self._delegate.CreateGithubFileSystemProvider(
         object_store_creator)
     return ServerInstance(object_store_creator,
-                          host_file_system,
-                          app_samples_file_system,
-                          '',
-                          compiled_host_fs_factory,
+                          CompiledFileSystem.Factory(object_store_creator),
                           branch_utility,
-                          host_file_system_creator)
+                          host_file_system_provider,
+                          github_file_system_provider)
 
 class InstanceServlet(object):
   '''Servlet for running on normal AppEngine instances.
@@ -62,18 +58,15 @@ class InstanceServlet(object):
     def CreateBranchUtility(self, object_store_creator):
       return BranchUtility.Create(object_store_creator)
 
-    def CreateHostFileSystemCreator(self, object_store_creator):
-      return HostFileSystemCreator(object_store_creator, offline=True)
+    def CreateHostFileSystemProvider(self, object_store_creator, **optargs):
+      return HostFileSystemProvider(object_store_creator, **optargs)
 
-    def CreateAppSamplesFileSystem(self, object_store_creator):
-      # TODO(kalman): OfflineServerInstance wrapper for GithubFileSystem, but
-      # the cron job doesn't crawl the samples yet.
-      return (EmptyDirFileSystem() if IsDevServer() else
-              GithubFileSystem.Create(object_store_creator))
+    def CreateGithubFileSystemProvider(self, object_store_creator):
+      return GithubFileSystemProvider(object_store_creator)
 
   @staticmethod
   def GetConstructor(delegate_for_test=None):
-    render_servlet_delegate = OfflineRenderServletDelegate(
+    render_servlet_delegate = InstanceServletRenderServletDelegate(
         delegate_for_test or InstanceServlet.Delegate())
     return lambda request: RenderServlet(request, render_servlet_delegate)
 

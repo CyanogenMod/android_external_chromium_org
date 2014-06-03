@@ -10,30 +10,38 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/prefs/pref_change_registrar.h"
-#include "chrome/browser/devtools/devtools_adb_bridge.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_ui_controller.h"
 #include "content/public/browser/web_ui_data_source.h"
 
+namespace base {
+class Value;
+class ListValue;
+}
+
+class Browser;
+class DevToolsRemoteTargetsUIHandler;
+class DevToolsTargetsUIHandler;
+
 class InspectUI : public content::WebUIController,
-                  public content::NotificationObserver,
-                  public DevToolsAdbBridge::Listener {
+                  public content::NotificationObserver {
  public:
   explicit InspectUI(content::WebUI* web_ui);
   virtual ~InspectUI();
 
   void InitUI();
-  void InspectRemotePage(const std::string& page_id);
-  void CloseRemotePage(const std::string& page_id);
-  void ReloadRemotePage(const std::string& page_id);
-  void OpenRemotePage(const std::string& browser_id, const std::string& url);
+  void Inspect(const std::string& source_id, const std::string& target_id);
+  void Activate(const std::string& source_id, const std::string& target_id);
+  void Close(const std::string& source_id, const std::string& target_id);
+  void Reload(const std::string& source_id, const std::string& target_id);
+  void Open(const std::string& source_id,
+            const std::string& browser_id,
+            const std::string& url);
+
+  static void InspectDevices(Browser* browser);
 
  private:
-  class WorkerCreationDestructionListener;
-
-  void PopulateLists();
-
   // content::NotificationObserver overrides.
   virtual void Observe(int type,
                        const content::NotificationSource& source,
@@ -44,14 +52,25 @@ class InspectUI : public content::WebUIController,
 
   content::WebUIDataSource* CreateInspectUIHTMLSource();
 
-  // DevToolsAdbBridge::Listener overrides.
-  virtual void RemoteDevicesChanged(
-      DevToolsAdbBridge::RemoteDevices* devices) OVERRIDE;
-
+  void UpdateDiscoverUsbDevicesEnabled();
   void UpdatePortForwardingEnabled();
   void UpdatePortForwardingConfig();
 
-  scoped_refptr<WorkerCreationDestructionListener> observer_;
+  void SetPortForwardingDefaults();
+
+  const base::Value* GetPrefValue(const char* name);
+
+  void AddTargetUIHandler(
+      scoped_ptr<DevToolsTargetsUIHandler> handler);
+  void AddRemoteTargetUIHandler(
+      scoped_ptr<DevToolsRemoteTargetsUIHandler> handler);
+
+  DevToolsTargetsUIHandler* FindTargetHandler(const std::string& source_id);
+  DevToolsRemoteTargetsUIHandler* FindRemoteTargetHandler(
+      const std::string& source_id);
+
+  void PopulateTargets(const std::string& source_id,
+                       scoped_ptr<base::ListValue> targets);
 
   // A scoped container for notification registries.
   content::NotificationRegistrar notification_registrar_;
@@ -59,13 +78,12 @@ class InspectUI : public content::WebUIController,
   // A scoped container for preference change registries.
   PrefChangeRegistrar pref_change_registrar_;
 
-  typedef std::map<std::string, scoped_refptr<DevToolsAdbBridge::RemotePage> >
-      RemotePages;
-  RemotePages remote_pages_;
+  typedef std::map<std::string, DevToolsTargetsUIHandler*> TargetHandlerMap;
+  TargetHandlerMap target_handlers_;
 
-  typedef std::map<std::string,
-      scoped_refptr<DevToolsAdbBridge::RemoteBrowser> > RemoteBrowsers;
-  RemoteBrowsers remote_browsers_;
+  typedef std::map<std::string, DevToolsRemoteTargetsUIHandler*>
+      RemoteTargetHandlerMap;
+  RemoteTargetHandlerMap remote_target_handlers_;
 
   DISALLOW_COPY_AND_ASSIGN(InspectUI);
 };

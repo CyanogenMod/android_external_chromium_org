@@ -10,9 +10,8 @@
 #include "base/logging.h"
 #include "base/nix/xdg_util.h"
 #include "base/stl_util.h"
+#include "media/audio/alsa/audio_manager_alsa.h"
 #include "media/audio/audio_parameters.h"
-#include "media/audio/audio_util.h"
-#include "media/audio/linux/audio_manager_linux.h"
 #include "media/audio/pulse/pulse_input.h"
 #include "media/audio/pulse/pulse_output.h"
 #include "media/audio/pulse/pulse_unified.h"
@@ -39,8 +38,8 @@ static const base::FilePath::CharType kPulseLib[] =
     FILE_PATH_LITERAL("libpulse.so.0");
 
 // static
-AudioManager* AudioManagerPulse::Create() {
-  scoped_ptr<AudioManagerPulse> ret(new AudioManagerPulse());
+AudioManager* AudioManagerPulse::Create(AudioLogFactory* audio_log_factory) {
+  scoped_ptr<AudioManagerPulse> ret(new AudioManagerPulse(audio_log_factory));
   if (ret->Init())
     return ret.release();
 
@@ -48,8 +47,9 @@ AudioManager* AudioManagerPulse::Create() {
   return NULL;
 }
 
-AudioManagerPulse::AudioManagerPulse()
-    : input_mainloop_(NULL),
+AudioManagerPulse::AudioManagerPulse(AudioLogFactory* audio_log_factory)
+    : AudioManagerBase(audio_log_factory),
+      input_mainloop_(NULL),
       input_context_(NULL),
       devices_(NULL),
       native_input_sample_rate_(0) {
@@ -66,44 +66,54 @@ AudioManagerPulse::~AudioManagerPulse() {
 
 // Implementation of AudioManager.
 bool AudioManagerPulse::HasAudioOutputDevices() {
-  DCHECK(input_mainloop_);
-  DCHECK(input_context_);
-  media::AudioDeviceNames devices;
-  AutoPulseLock auto_lock(input_mainloop_);
-  devices_ = &devices;
-  pa_operation* operation = pa_context_get_sink_info_list(
-      input_context_, OutputDevicesInfoCallback, this);
-  WaitForOperationCompletion(input_mainloop_, operation);
+  AudioDeviceNames devices;
+  GetAudioOutputDeviceNames(&devices);
   return !devices.empty();
 }
 
 bool AudioManagerPulse::HasAudioInputDevices() {
-  media::AudioDeviceNames devices;
+  AudioDeviceNames devices;
   GetAudioInputDeviceNames(&devices);
   return !devices.empty();
 }
 
 void AudioManagerPulse::ShowAudioInputSettings() {
-  AudioManagerLinux::ShowLinuxAudioInputSettings();
+  AudioManagerAlsa::ShowLinuxAudioInputSettings();
 }
 
-void AudioManagerPulse::GetAudioInputDeviceNames(
-    media::AudioDeviceNames* device_names) {
+void AudioManagerPulse::GetAudioDeviceNames(
+    bool input, media::AudioDeviceNames* device_names) {
   DCHECK(device_names->empty());
   DCHECK(input_mainloop_);
   DCHECK(input_context_);
   AutoPulseLock auto_lock(input_mainloop_);
   devices_ = device_names;
-  pa_operation* operation = pa_context_get_source_info_list(
+  pa_operation* operation = NULL;
+  if (input) {
+    operation = pa_context_get_source_info_list(
       input_context_, InputDevicesInfoCallback, this);
+  } else {
+    operation = pa_context_get_sink_info_list(
+        input_context_, OutputDevicesInfoCallback, this);
+  }
   WaitForOperationCompletion(input_mainloop_, operation);
 
-  // Append the default device on the top of the list if the list is not empty.
+  // Prepend the default device if the list is not empty.
   if (!device_names->empty()) {
     device_names->push_front(
         AudioDeviceName(AudioManagerBase::kDefaultDeviceName,
                         AudioManagerBase::kDefaultDeviceId));
   }
+}
+
+void AudioManagerPulse::GetAudioInputDeviceNames(
+    AudioDeviceNames* device_names) {
+  GetAudioDeviceNames(true, device_names);
+}
+
+void AudioManagerPulse::GetAudioOutputDeviceNames(
+    AudioDeviceNames* device_names) {
+  GetAudioDeviceNames(false, device_names);
 }
 
 AudioParameters AudioManagerPulse::GetInputStreamParameters(
@@ -123,7 +133,10 @@ AudioOutputStream* AudioManagerPulse::MakeLinearOutputStream(
 }
 
 AudioOutputStream* AudioManagerPulse::MakeLowLatencyOutputStream(
-    const AudioParameters& params, const std::string& input_device_id) {
+    const AudioParameters& params,
+    const std::string& device_id,
+    const std::string& input_device_id) {
+  DLOG_IF(ERROR, !device_id.empty()) << "Not implemented!";
   DCHECK_EQ(AudioParameters::AUDIO_PCM_LOW_LATENCY, params.format());
   return MakeOutputStream(params, input_device_id);
 }
@@ -141,7 +154,10 @@ AudioInputStream* AudioManagerPulse::MakeLowLatencyInputStream(
 }
 
 AudioParameters AudioManagerPulse::GetPreferredOutputStreamParameters(
+    const std::string& output_device_id,
     const AudioParameters& input_params) {
+  // TODO(tommi): Support |output_device_id|.
+  DLOG_IF(ERROR, !output_device_id.empty()) << "Not implemented!";
   static const int kDefaultOutputBufferSize = 512;
 
   ChannelLayout channel_layout = CHANNEL_LAYOUT_STEREO;
@@ -165,7 +181,7 @@ AudioParameters AudioManagerPulse::GetPreferredOutputStreamParameters(
 
   return AudioParameters(
       AudioParameters::AUDIO_PCM_LOW_LATENCY, channel_layout, input_channels,
-      sample_rate, bits_per_sample, buffer_size);
+      sample_rate, bits_per_sample, buffer_size, AudioParameters::NO_EFFECTS);
 }
 
 AudioOutputStream* AudioManagerPulse::MakeOutputStream(
@@ -286,8 +302,8 @@ void AudioManagerPulse::InputDevicesInfoCallback(pa_context* context,
 
   // Exclude the output devices.
   if (info->monitor_of_sink == PA_INVALID_INDEX) {
-    manager->devices_->push_back(media::AudioDeviceName(info->description,
-                                                        info->name));
+    manager->devices_->push_back(AudioDeviceName(info->description,
+                                                 info->name));
   }
 }
 
@@ -302,8 +318,8 @@ void AudioManagerPulse::OutputDevicesInfoCallback(pa_context* context,
     return;
   }
 
-  manager->devices_->push_back(media::AudioDeviceName(info->description,
-                                                      info->name));
+  manager->devices_->push_back(AudioDeviceName(info->description,
+                                               info->name));
 }
 
 void AudioManagerPulse::SampleRateInfoCallback(pa_context* context,

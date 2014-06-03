@@ -18,10 +18,8 @@ class DriveIntegrationServiceTest : public testing::Test {
   virtual void SetUp() OVERRIDE {
     profile_.reset(new TestingProfile);
     integration_service_.reset(new DriveIntegrationService(
-        profile_.get(),
-        new DummyDriveService,
-        base::FilePath(),
-        new DummyFileSystem));
+        profile_.get(), NULL,
+        new DummyDriveService, base::FilePath(), new DummyFileSystem));
   }
 
  protected:
@@ -31,7 +29,7 @@ class DriveIntegrationServiceTest : public testing::Test {
 };
 
 TEST_F(DriveIntegrationServiceTest, InitializeAndShutdown) {
-  integration_service_->Initialize();
+  integration_service_->SetEnabled(true);
   test_util::RunBlockingPoolTask();
   integration_service_->Shutdown();
 }

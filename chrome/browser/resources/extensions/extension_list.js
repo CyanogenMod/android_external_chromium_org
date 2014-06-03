@@ -2,20 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+<include src="extension_error.js"></include>
+
 cr.define('options', function() {
   'use strict';
-
-  /**
-   * A lookup helper function to find the first node that has an id (starting
-   * at |node| and going up the parent chain).
-   * @param {Element} node The node to start looking at.
-   */
-  function findIdNode(node) {
-    while (node && !node.id) {
-      node = node.parentNode;
-    }
-    return node;
-  }
 
   /**
    * Creates a new list of extensions.
@@ -69,11 +59,9 @@ cr.define('options', function() {
         // the way at the top. That way it is clear that there are more elements
         // above the element being scrolled to.
         var scrollFudge = 1.2;
-        var offset = $(idToHighlight).offsetTop -
-                     (scrollFudge * $(idToHighlight).clientHeight);
-        var wrapper = this.parentNode;
-        var list = wrapper.parentNode;
-        list.scrollTop = offset;
+        var scrollTop = $(idToHighlight).offsetTop - scrollFudge *
+            $(idToHighlight).clientHeight;
+        setScrollTopForDocument(document, scrollTop);
       }
 
       if (this.data_.extensions.length == 0)
@@ -97,8 +85,12 @@ cr.define('options', function() {
       if (!extension.enabled || extension.terminated)
         node.classList.add('inactive-extension');
 
-      if (!extension.userModifiable)
-        node.classList.add('may-not-disable');
+      if (extension.managedInstall) {
+        node.classList.add('may-not-modify');
+        node.classList.add('may-not-remove');
+      } else if (extension.suspiciousInstall) {
+        node.classList.add('may-not-modify');
+      }
 
       var idToHighlight = this.getIdQueryParam_();
       if (node.id == idToHighlight)
@@ -207,13 +199,6 @@ cr.define('options', function() {
             chrome.send('extensionSettingsLaunch', [extension.id]);
           });
           launch.hidden = false;
-
-          // The 'Restart' link.
-          var restart = node.querySelector('.restart-link');
-          restart.addEventListener('click', function(e) {
-            chrome.send('extensionSettingsRestart', [extension.id]);
-          });
-          restart.hidden = false;
         }
       }
 
@@ -221,9 +206,10 @@ cr.define('options', function() {
         // The 'Enabled' checkbox.
         var enable = node.querySelector('.enable-checkbox');
         enable.hidden = false;
-        enable.querySelector('input').disabled = !extension.userModifiable;
+        enable.querySelector('input').disabled = extension.managedInstall ||
+                                                 extension.suspiciousInstall;
 
-        if (extension.userModifiable) {
+        if (!extension.managedInstall && !extension.suspiciousInstall) {
           enable.addEventListener('click', function(e) {
             // When e.target is the label instead of the checkbox, it doesn't
             // have the checked property and the state of the checkbox is
@@ -277,8 +263,12 @@ cr.define('options', function() {
       }
 
       // Then the 'managed, cannot uninstall/disable' message.
-      if (!extension.userModifiable)
+      if (extension.managedInstall) {
         node.querySelector('.managed-message').hidden = false;
+      } else if (extension.suspiciousInstall) {
+        // Then the 'This isn't from the webstore, looks suspicious' message.
+        node.querySelector('.suspicious-install-message').hidden = false;
+      }
 
       // Then active views.
       if (extension.views.length > 0) {
@@ -287,7 +277,9 @@ cr.define('options', function() {
         var link = activeViews.querySelector('a');
 
         extension.views.forEach(function(view, i) {
-          var label = view.path +
+          var displayName = view.generatedBackgroundPage ?
+              loadTimeData.getString('backgroundPage') : view.path;
+          var label = displayName +
               (view.incognito ?
                   ' ' + loadTimeData.getString('viewIncognito') : '') +
               (view.renderProcessId == -1 ?
@@ -320,14 +312,28 @@ cr.define('options', function() {
         });
       }
 
-      // The install warnings.
+      // If the ErrorConsole is enabled, we should have manifest and/or runtime
+      // errors. Otherwise, we may have install warnings. We should not have
+      // both ErrorConsole errors and install warnings.
+      if (extension.manifestErrors) {
+        var panel = node.querySelector('.manifest-errors');
+        panel.hidden = false;
+        panel.appendChild(new extensions.ExtensionErrorList(
+            extension.manifestErrors, 'extensionErrorsManifestErrors'));
+      }
+      if (extension.runtimeErrors) {
+        var panel = node.querySelector('.runtime-errors');
+        panel.hidden = false;
+        panel.appendChild(new extensions.ExtensionErrorList(
+            extension.runtimeErrors, 'extensionErrorsRuntimeErrors'));
+      }
       if (extension.installWarnings) {
         var panel = node.querySelector('.install-warnings');
         panel.hidden = false;
         var list = panel.querySelector('ul');
         extension.installWarnings.forEach(function(warning) {
           var li = document.createElement('li');
-          li[warning.isHTML ? 'innerHTML' : 'innerText'] = warning.message;
+          li.innerText = warning.message;
           list.appendChild(li);
         });
       }
@@ -340,9 +346,9 @@ cr.define('options', function() {
         var pad = parseInt(getComputedStyle(node, null).marginTop, 10);
         if (!isNaN(pad))
           topScroll -= pad / 2;
-        document.body.scrollTop = topScroll;
+        setScrollTopForDocument(document, topScroll);
       }
-    }
+    },
   };
 
   return {

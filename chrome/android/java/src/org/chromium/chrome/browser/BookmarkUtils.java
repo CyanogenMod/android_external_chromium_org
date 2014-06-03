@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -44,6 +44,27 @@ public class BookmarkUtils {
     /**
      * Creates an intent that will add a shortcut to the home screen.
      * @param context Context used to create the intent.
+     * @param shortcutIntent Intent to fire when the shortcut is activated.
+     * @param title Title of the bookmark.
+     * @param favicon Bookmark favicon.
+     * @param rValue Red component of the dominant favicon color.
+     * @param gValue Green component of the dominant favicon color.
+     * @param bValue Blue component of the dominant favicon color.
+     * @return Intent for the shortcut.
+     */
+    public static Intent createAddToHomeIntent(Context context, Intent shortcutIntent, String title,
+            Bitmap favicon, int rValue, int gValue, int bValue) {
+        Intent i = new Intent(INSTALL_SHORTCUT);
+        i.putExtra(Intent.EXTRA_SHORTCUT_INTENT, shortcutIntent);
+        i.putExtra(Intent.EXTRA_SHORTCUT_NAME, title);
+        i.putExtra(Intent.EXTRA_SHORTCUT_ICON, createIcon(context, favicon, rValue,
+                gValue, bValue));
+        return i;
+    }
+
+    /**
+     * Creates an intent that will add a shortcut to the home screen.
+     * @param context Context used to create the intent.
      * @param url Url of the bookmark.
      * @param title Title of the bookmark.
      * @param favicon Bookmark favicon.
@@ -54,13 +75,9 @@ public class BookmarkUtils {
      */
     public static Intent createAddToHomeIntent(Context context, String url, String title,
             Bitmap favicon, int rValue, int gValue, int bValue) {
-        Intent i = new Intent(INSTALL_SHORTCUT);
         Intent shortcutIntent = createShortcutIntent(context, url);
-        i.putExtra(Intent.EXTRA_SHORTCUT_INTENT, shortcutIntent);
-        i.putExtra(Intent.EXTRA_SHORTCUT_NAME, title);
-        i.putExtra(Intent.EXTRA_SHORTCUT_ICON, createIcon(context, favicon, rValue,
-                gValue, bValue));
-        return i;
+        return createAddToHomeIntent(
+                context, shortcutIntent, title, favicon, rValue, gValue, bValue);
     }
 
     /**
@@ -69,7 +86,7 @@ public class BookmarkUtils {
      * @param url Url of the bookmark.
      * @return Intent for onclick action of the shortcut.
      */
-    private static Intent createShortcutIntent(Context context, String url) {
+    public static Intent createShortcutIntent(Context context, String url) {
         Intent shortcutIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
         shortcutIntent.putExtra(REUSE_URL_MATCHING_TAB_ELSE_NEW_TAB, true);
         return shortcutIntent;
@@ -179,21 +196,21 @@ public class BookmarkUtils {
     private static void drawWidgetBackgroundToCanvas(
             Context context, Canvas canvas, int iconDensity, int color) {
         Rect iconBounds = new Rect(0, 0, canvas.getWidth(), canvas.getHeight());
-        Bitmap bookmark_widget_bg =
+        Bitmap bookmarkWidgetBg =
                 getBitmapFromResourceId(context, R.mipmap.bookmark_widget_bg, iconDensity);
-        Bitmap bookmark_widget_bg_highlights = getBitmapFromResourceId(context,
+        Bitmap bookmarkWidgetBgHighlights = getBitmapFromResourceId(context,
                 R.mipmap.bookmark_widget_bg_highlights, iconDensity);
-        if (bookmark_widget_bg == null || bookmark_widget_bg_highlights == null) {
+        if (bookmarkWidgetBg == null || bookmarkWidgetBgHighlights == null) {
             Log.w(TAG, "Can't load R.mipmap.bookmark_widget_bg or " +
                     "R.mipmap.bookmark_widget_bg_highlights.");
             return;
         }
         Paint paint = new Paint(Paint.FILTER_BITMAP_FLAG);
-        canvas.drawBitmap(bookmark_widget_bg, null, iconBounds, paint);
+        canvas.drawBitmap(bookmarkWidgetBg, null, iconBounds, paint);
 
         // The following color filter will convert bookmark_widget_bg_highlights' white color to
         // the 'color' variable when it is painted to 'canvas'.
         paint.setColorFilter(new PorterDuffColorFilter(color, PorterDuff.Mode.SRC_IN));
-        canvas.drawBitmap(bookmark_widget_bg_highlights, null, iconBounds, paint);
+        canvas.drawBitmap(bookmarkWidgetBgHighlights, null, iconBounds, paint);
     }
 }

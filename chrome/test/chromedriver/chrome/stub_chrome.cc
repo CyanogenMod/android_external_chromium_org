@@ -10,12 +10,20 @@ StubChrome::StubChrome() {}
 
 StubChrome::~StubChrome() {}
 
+ChromeDesktopImpl* StubChrome::GetAsDesktop() {
+  return NULL;
+}
+
 std::string StubChrome::GetVersion() {
   return std::string();
 }
 
 int StubChrome::GetBuildNo() {
   return 9999;
+}
+
+bool StubChrome::HasCrashedWebView() {
+  return false;
 }
 
 Status StubChrome::GetWebViewIds(std::list<std::string>* web_view_ids) {
@@ -30,7 +38,7 @@ Status StubChrome::CloseWebView(const std::string& id) {
   return Status(kOk);
 }
 
-Status StubChrome::GetAutomationExtension(AutomationExtension** extension) {
+Status StubChrome::ActivateWebView(const std::string& id) {
   return Status(kOk);
 }
 

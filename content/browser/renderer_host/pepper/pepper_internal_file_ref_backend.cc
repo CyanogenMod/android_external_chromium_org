@@ -63,27 +63,20 @@ fileapi::FileSystemURL PepperInternalFileRefBackend::GetFileSystemURL() const {
   if (!fs_url_.is_valid() && fs_host_.get() && fs_host_->IsOpened()) {
     GURL fs_path = fs_host_->GetRootUrl().Resolve(
         net::EscapePath(path_.substr(1)));
-    fs_url_ = GetFileSystemContext()->CrackURL(fs_path);
+    scoped_refptr<fileapi::FileSystemContext> fs_context =
+        GetFileSystemContext();
+    if (fs_context.get())
+      fs_url_ = fs_context->CrackURL(fs_path);
   }
   return fs_url_;
 }
 
-std::string PepperInternalFileRefBackend::GetFileSystemURLSpec() const {
-  if (fs_host_.get() && fs_host_->IsOpened() &&
-      fs_host_->GetRootUrl().is_valid()) {
-    return fs_host_->GetRootUrl().Resolve(
-        net::EscapePath(path_.substr(1))).spec();
-  }
-  return std::string();
-}
-
-base::FilePath PepperInternalFileRefBackend::GetExternalPath() const {
+base::FilePath PepperInternalFileRefBackend::GetExternalFilePath() const {
   return base::FilePath();
 }
 
 scoped_refptr<fileapi::FileSystemContext>
 PepperInternalFileRefBackend::GetFileSystemContext() const {
-  // TODO(teravest): Make this work for CRX file systems.
   if (!fs_host_.get())
     return NULL;
   return fs_host_->GetFileSystemContext();
@@ -162,6 +155,7 @@ int32_t PepperInternalFileRefBackend::Rename(
   GetFileSystemContext()->operation_runner()->Move(
       GetFileSystemURL(),
       new_url,
+      fileapi::FileSystemOperation::OPTION_NONE,
       base::Bind(&PepperInternalFileRefBackend::DidFinish,
                  weak_factory_.GetWeakPtr(),
                  reply_context,
@@ -221,7 +215,7 @@ void PepperInternalFileRefBackend::ReadDirectoryComplete(
 
   context.params.set_result(ppapi::PlatformFileErrorToPepperError(error));
 
-  std::vector<ppapi::FileRef_CreateInfo> infos;
+  std::vector<ppapi::FileRefCreateInfo> infos;
   std::vector<PP_FileType> file_types;
   if (error == base::PLATFORM_FILE_OK && fs_host_.get()) {
     std::string dir_path = path_;
@@ -235,7 +229,7 @@ void PepperInternalFileRefBackend::ReadDirectoryComplete(
       else
         file_types.push_back(PP_FILETYPE_REGULAR);
 
-      ppapi::FileRef_CreateInfo info;
+      ppapi::FileRefCreateInfo info;
       info.file_system_type = fs_type_;
       info.file_system_plugin_resource = fs_host_->pp_resource();
       std::string path =

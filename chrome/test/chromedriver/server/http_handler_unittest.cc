@@ -37,8 +37,7 @@ void OnResponse(net::HttpServerResponseInfo* response_to_set,
 }  // namespace
 
 TEST(HttpHandlerTest, HandleOutsideOfBaseUrl) {
-  Logger log;
-  HttpHandler handler(&log, "base/url/");
+  HttpHandler handler("base/url/");
   net::HttpServerRequestInfo request;
   request.method = "get";
   request.path = "base/path";
@@ -49,8 +48,7 @@ TEST(HttpHandlerTest, HandleOutsideOfBaseUrl) {
 }
 
 TEST(HttpHandlerTest, HandleUnknownCommand) {
-  Logger log;
-  HttpHandler handler(&log, "/");
+  HttpHandler handler("/");
   net::HttpServerRequestInfo request;
   request.method = "get";
   request.path = "/path";
@@ -60,8 +58,7 @@ TEST(HttpHandlerTest, HandleUnknownCommand) {
 }
 
 TEST(HttpHandlerTest, HandleNewSession) {
-  Logger log;
-  HttpHandler handler(&log, "/base/");
+  HttpHandler handler("/base/");
   handler.command_map_.reset(new HttpHandler::CommandMap());
   handler.command_map_->push_back(
       CommandMapping(kPost, internal::kNewSessionPathPattern,
@@ -71,15 +68,18 @@ TEST(HttpHandlerTest, HandleNewSession) {
   request.path = "/base/session";
   net::HttpServerResponseInfo response;
   handler.Handle(request, base::Bind(&OnResponse, &response));
-  ASSERT_EQ(net::HTTP_SEE_OTHER, response.status_code());
-  ASSERT_NE(std::string::npos,
-            response.Serialize().find("Location:/base/session/"))
-      << response.Serialize();
+  ASSERT_EQ(net::HTTP_OK, response.status_code());
+  base::DictionaryValue body;
+  body.SetInteger("status", kOk);
+  body.SetInteger("value", 1);
+  body.SetString("sessionId", "session_id");
+  std::string json;
+  base::JSONWriter::Write(&body, &json);
+  ASSERT_EQ(json, response.body());
 }
 
 TEST(HttpHandlerTest, HandleInvalidPost) {
-  Logger log;
-  HttpHandler handler(&log, "/");
+  HttpHandler handler("/");
   handler.command_map_->push_back(
       CommandMapping(kPost, "path", base::Bind(&DummyCommand, Status(kOk))));
   net::HttpServerRequestInfo request;
@@ -92,8 +92,7 @@ TEST(HttpHandlerTest, HandleInvalidPost) {
 }
 
 TEST(HttpHandlerTest, HandleUnimplementedCommand) {
-  Logger log;
-  HttpHandler handler(&log, "/");
+  HttpHandler handler("/");
   handler.command_map_->push_back(
       CommandMapping(kPost, "path",
                      base::Bind(&DummyCommand, Status(kUnknownCommand))));
@@ -106,8 +105,7 @@ TEST(HttpHandlerTest, HandleUnimplementedCommand) {
 }
 
 TEST(HttpHandlerTest, HandleCommand) {
-  Logger log;
-  HttpHandler handler(&log, "/");
+  HttpHandler handler("/");
   handler.command_map_->push_back(
       CommandMapping(kPost, "path", base::Bind(&DummyCommand, Status(kOk))));
   net::HttpServerRequestInfo request;
@@ -122,7 +120,7 @@ TEST(HttpHandlerTest, HandleCommand) {
   body.SetString("sessionId", "session_id");
   std::string json;
   base::JSONWriter::Write(&body, &json);
-  ASSERT_STREQ(json.c_str(), response.body().c_str());
+  ASSERT_EQ(json, response.body());
 }
 
 TEST(MatchesCommandTest, DiffMethod) {
@@ -131,7 +129,7 @@ TEST(MatchesCommandTest, DiffMethod) {
   base::DictionaryValue params;
   ASSERT_FALSE(internal::MatchesCommand(
       "get", "path", command, &session_id, &params));
-  ASSERT_STREQ("", session_id.c_str());
+  ASSERT_TRUE(session_id.empty());
   ASSERT_EQ(0u, params.size());
 }
 

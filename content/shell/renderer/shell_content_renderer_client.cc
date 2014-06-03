@@ -15,6 +15,7 @@
 #include "content/shell/renderer/shell_render_process_observer.h"
 #include "content/shell/renderer/shell_render_view_observer.h"
 #include "content/shell/renderer/webkit_test_runner.h"
+#include "content/test/mock_webclipboard_impl.h"
 #include "third_party/WebKit/public/platform/WebMediaStreamCenter.h"
 #include "third_party/WebKit/public/testing/WebTestInterfaces.h"
 #include "third_party/WebKit/public/testing/WebTestProxy.h"
@@ -22,20 +23,19 @@
 #include "third_party/WebKit/public/web/WebPluginParams.h"
 #include "third_party/WebKit/public/web/WebView.h"
 #include "v8/include/v8.h"
-#include "webkit/support/mock_webclipboard_impl.h"
 
-using WebKit::WebAudioDevice;
-using WebKit::WebClipboard;
-using WebKit::WebFrame;
-using WebKit::WebMIDIAccessor;
-using WebKit::WebMIDIAccessorClient;
-using WebKit::WebMediaStreamCenter;
-using WebKit::WebMediaStreamCenterClient;
-using WebKit::WebPlugin;
-using WebKit::WebPluginParams;
-using WebKit::WebRTCPeerConnectionHandler;
-using WebKit::WebRTCPeerConnectionHandlerClient;
-using WebKit::WebThemeEngine;
+using blink::WebAudioDevice;
+using blink::WebClipboard;
+using blink::WebFrame;
+using blink::WebMIDIAccessor;
+using blink::WebMIDIAccessorClient;
+using blink::WebMediaStreamCenter;
+using blink::WebMediaStreamCenterClient;
+using blink::WebPlugin;
+using blink::WebPluginParams;
+using blink::WebRTCPeerConnectionHandler;
+using blink::WebRTCPeerConnectionHandlerClient;
+using blink::WebThemeEngine;
 using WebTestRunner::WebTestDelegate;
 using WebTestRunner::WebTestInterfaces;
 using WebTestRunner::WebTestProxyBase;
@@ -94,7 +94,7 @@ void ShellContentRendererClient::RenderViewCreated(RenderView* render_view) {
 }
 
 bool ShellContentRendererClient::OverrideCreatePlugin(
-    RenderView* render_view,
+    RenderFrame* render_frame,
     WebFrame* frame,
     const WebPluginParams& params,
     WebPlugin** plugin) {
@@ -160,14 +160,6 @@ WebClipboard* ShellContentRendererClient::OverrideWebClipboard() {
   return clipboard_.get();
 }
 
-WebKit::WebCrypto* ShellContentRendererClient::OverrideWebCrypto() {
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree))
-    return NULL;
-  WebTestInterfaces* interfaces =
-      ShellRenderProcessObserver::GetInstance()->test_interfaces();
-  return interfaces->crypto();
-}
-
 WebThemeEngine* ShellContentRendererClient::OverrideThemeEngine() {
   if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree))
     return NULL;
@@ -188,7 +180,7 @@ void ShellContentRendererClient::WebTestProxyCreated(RenderView* render_view,
 }
 
 bool ShellContentRendererClient::AllowBrowserPlugin(
-    WebKit::WebPluginContainer* container) {
+    blink::WebPluginContainer* container) {
   if (CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnableBrowserPluginForAllViewTypes)) {
     // Allow BrowserPlugin if forced by command line flag. This is generally

@@ -50,25 +50,43 @@ class AutocompleteInput {
   // and update omnibox_event.proto::PageClassification and
   // omnibox_edit_model.cc::ClassifyPage() too.
   enum PageClassification {
-    INVALID_SPEC = 0,   // invalid URI; shouldn't happen
-    NEW_TAB_PAGE = 1,   // chrome://newtab/
-    // Note that chrome://newtab/ doesn't have to be the built-in
-    // version; it could be replaced by an extension.
-    BLANK = 2,          // about:blank
-    HOMEPAGE = 3,       // user switched settings to "open this page" mode.
-    // Note that if the homepage is set to the new tab page or about blank,
-    // then we'll classify the web page into those categories, not HOMEPAGE.
-    OTHER = 4,          // everything not included somewhere else on this list
+    // An invalid URL; shouldn't happen.
+    INVALID_SPEC = 0,
+
+    // chrome://newtab/.  This can be either the built-in version or a
+    // replacement new tab page from an extension.  Note that when Instant
+    // Extended is enabled, the new tab page will be reported as either
+    // INSTANT_NTP_WITH_OMNIBOX_AS_STARTING_FOCUS or
+    // INSTANT_NTP_WITH_FAKEBOX_AS_STARTING_FOCUS below,
+    // unless an extension is replacing the new tab page, in which case
+    // it will still be reported as NTP.
+    NTP = 1,
+
+    // about:blank.
+    BLANK = 2,
+
+    // The user's home page.  Note that if the home page is set to any
+    // of the new tab page versions or to about:blank, then we'll
+    // classify the page into those categories, not HOME_PAGE.
+    HOME_PAGE = 3,
+
+    // The catch-all entry of everything not included somewhere else
+    // on this list.
+    OTHER = 4,
+
     // The user is on a search result page that's doing search term
     // replacement, meaning the search terms should've appeared in the omnibox
     // before the user started editing it, not the URL of the page.
     SEARCH_RESULT_PAGE_DOING_SEARCH_TERM_REPLACEMENT = 6,
+
     // The new tab page in which this omnibox interaction first started
     // with the user having focus in the omnibox.
-    INSTANT_NEW_TAB_PAGE_WITH_OMNIBOX_AS_STARTING_FOCUS = 7,
+    INSTANT_NTP_WITH_OMNIBOX_AS_STARTING_FOCUS = 7,
+
     // The new tab page in which this omnibox interaction first started
     // with the user having focus in the fakebox.
-    INSTANT_NEW_TAB_PAGE_WITH_FAKEBOX_AS_STARTING_FOCUS = 8,
+    INSTANT_NTP_WITH_FAKEBOX_AS_STARTING_FOCUS = 8,
+
     // The user is on a search result page that's not doing search term
     // replacement, meaning the URL of the page should've appeared in the
     // omnibox before the user started editing it, not the search terms.
@@ -78,8 +96,8 @@ class AutocompleteInput {
   AutocompleteInput();
   // |text| and |cursor_position| represent the input query and location of
   // the cursor with the query respectively.  |cursor_position| may be set to
-  // string16::npos if the input |text| doesn't come directly from the user's
-  // typing.
+  // base::string16::npos if the input |text| doesn't come directly from the
+  // user's typing.
   //
   // |desired_tld| is the user's desired TLD, if one is not already present in
   // the text to autocomplete.  When this is non-empty, it also implies that
@@ -115,9 +133,9 @@ class AutocompleteInput {
   // If |matches_requested| is BEST_MATCH or SYNCHRONOUS_MATCHES the controller
   // asks the providers to only return matches which are synchronously
   // available, which should mean that all providers will be done immediately.
-  AutocompleteInput(const string16& text,
+  AutocompleteInput(const base::string16& text,
                     size_t cursor_position,
-                    const string16& desired_tld,
+                    const base::string16& desired_tld,
                     const GURL& current_url,
                     PageClassification current_page_classification,
                     bool prevent_inline_autocomplete,
@@ -128,7 +146,8 @@ class AutocompleteInput {
 
   // If type is |FORCED_QUERY| and |text| starts with '?', it is removed.
   // Returns number of leading characters removed.
-  static size_t RemoveForcedQueryStringIfNecessary(Type type, string16* text);
+  static size_t RemoveForcedQueryStringIfNecessary(Type type,
+                                                   base::string16* text);
 
   // Converts |type| to a string representation.  Used in logging.
   static std::string TypeToString(Type type);
@@ -138,17 +157,17 @@ class AutocompleteInput {
   // it is non-NULL. The scheme is stored in |scheme| if it is non-NULL. The
   // canonicalized URL is stored in |canonicalized_url|; however, this URL is
   // not guaranteed to be valid, especially if the parsed type is, e.g., QUERY.
-  static Type Parse(const string16& text,
-                    const string16& desired_tld,
+  static Type Parse(const base::string16& text,
+                    const base::string16& desired_tld,
                     url_parse::Parsed* parts,
-                    string16* scheme,
+                    base::string16* scheme,
                     GURL* canonicalized_url);
 
   // Parses |text| and fill |scheme| and |host| by the positions of them.
   // The results are almost as same as the result of Parse(), but if the scheme
   // is view-source, this function returns the positions of scheme and host
   // in the URL qualified by "view-source:" prefix.
-  static void ParseForEmphasizeComponents(const string16& text,
+  static void ParseForEmphasizeComponents(const base::string16& text,
                                           url_parse::Component* scheme,
                                           url_parse::Component* host);
 
@@ -158,24 +177,27 @@ class AutocompleteInput {
   // function with the URL and its formatted string, and it will return a
   // formatted string with the same meaning as the original URL (i.e. it will
   // re-append a slash if necessary).
-  static string16 FormattedStringWithEquivalentMeaning(
+  static base::string16 FormattedStringWithEquivalentMeaning(
       const GURL& url,
-      const string16& formatted_url);
+      const base::string16& formatted_url);
 
   // Returns the number of non-empty components in |parts| besides the host.
   static int NumNonHostComponents(const url_parse::Parsed& parts);
 
-  // User-provided text to be completed.
-  const string16& text() const { return text_; }
+  // Returns whether |text| begins "http:" or "view-source:http:".
+  static bool HasHTTPScheme(const base::string16& text);
 
-  // Returns 0-based cursor position within |text_| or string16::npos if not
-  // used.
+  // User-provided text to be completed.
+  const base::string16& text() const { return text_; }
+
+  // Returns 0-based cursor position within |text_| or base::string16::npos if
+  // not used.
   size_t cursor_position() const { return cursor_position_; }
 
   // Use of this setter is risky, since no other internal state is updated
   // besides |text_|, |cursor_position_| and |parts_|.  Only callers who know
   // that they're not changing the type/scheme/etc. should use this.
-  void UpdateText(const string16& text,
+  void UpdateText(const base::string16& text,
                   size_t cursor_position,
                   const url_parse::Parsed& parts);
 
@@ -196,7 +218,7 @@ class AutocompleteInput {
 
   // The scheme parsed from the provided text; only meaningful when type_ is
   // URL.
-  const string16& scheme() const { return scheme_; }
+  const base::string16& scheme() const { return scheme_; }
 
   // The input as an URL to navigate to, if possible.
   const GURL& canonicalized_url() const { return canonicalized_url_; }
@@ -226,13 +248,13 @@ class AutocompleteInput {
 
   // NOTE: Whenever adding a new field here, please make sure to update Clear()
   // method.
-  string16 text_;
+  base::string16 text_;
   size_t cursor_position_;
   GURL current_url_;
   AutocompleteInput::PageClassification current_page_classification_;
   Type type_;
   url_parse::Parsed parts_;
-  string16 scheme_;
+  base::string16 scheme_;
   GURL canonicalized_url_;
   bool prevent_inline_autocomplete_;
   bool prefer_keyword_;

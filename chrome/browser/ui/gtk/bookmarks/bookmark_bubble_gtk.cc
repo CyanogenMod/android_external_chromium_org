@@ -142,10 +142,10 @@ BookmarkBubbleGtk::BookmarkBubbleGtk(GtkWidget* anchor,
       name_entry_(NULL),
       folder_combo_(NULL),
       bubble_(NULL),
-      factory_(this),
       newly_bookmarked_(newly_bookmarked),
       apply_edits_(true),
-      remove_bookmark_(false) {
+      remove_bookmark_(false),
+      factory_(this) {
   GtkWidget* label = gtk_label_new(l10n_util::GetStringUTF8(
       newly_bookmarked_ ? IDS_BOOKMARK_BUBBLE_PAGE_BOOKMARKED :
                           IDS_BOOKMARK_BUBBLE_PAGE_BOOKMARK).c_str());
@@ -218,7 +218,7 @@ BookmarkBubbleGtk::BookmarkBubbleGtk(GtkWidget* anchor,
         l10n_util::GetStringUTF8(IDS_BOOKMARK_SYNC_PROMO_LINK);
     char* link_markup = g_markup_printf_escaped(kPromoLinkMarkup,
                                                 link_text.c_str());
-    string16 link_markup_utf16;
+    base::string16 link_markup_utf16;
     base::UTF8ToUTF16(link_markup, strlen(link_markup), &link_markup_utf16);
     g_free(link_markup);
 
@@ -414,7 +414,7 @@ void BookmarkBubbleGtk::ApplyEdits() {
 
   const BookmarkNode* node = model_->GetMostRecentlyAddedNodeForURL(url_);
   if (node) {
-    const string16 new_title(
+    const base::string16 new_title(
         UTF8ToUTF16(gtk_entry_get_text(GTK_ENTRY(name_entry_))));
 
     if (new_title != node->GetTitle()) {

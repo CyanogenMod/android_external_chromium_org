@@ -21,37 +21,44 @@ found in the LICENSE file.
     <div id="caption">DevTools</div>
   </div>
   <div id="content">
-    <div id="devices-tab">
+    <div id="devices">
       <div class="content-header">Devices</div>
-      <div id="port-forwarding-settings">
-        <label for="port-forwarding-enable">
-          <input id="port-forwarding-enable" type="checkbox" disabled/>
-          <span>Enable port forwarding</span>
+      <div id="device-settings">
+        <label for="discover-usb-devices-enable"
+            title="Enable Remote Debugging of Chrome for Android over raw USB
+                   interface (no need to install / run Android Debug Bridge).">
+          <input id="discover-usb-devices-enable" type="checkbox" disabled/>
+          <span>Discover USB devices</span>
         </label>
         <button id="port-forwarding-config-open" disabled>
-          Configure port forwarding</button>
+          Port forwarding...</button>
       </div>
-      <div id="devices"></div>
+      <div id="devices-help" hidden="true">No devices detected. Please read the
+        <a href="https://developers.google.com/chrome-developer-tools/docs/remote-debugging">
+        remote debugging documentation</a> to verify your device is enabled for
+        USB debugging.
+      </div>
+      <div id="devices-list"></div>
     </div>
-    <div id="pages-tab">
+    <div id="pages">
       <div class="content-header">Pages</div>
-      <div id="pages" class="list"></div>
+      <div id="pages-list" class="list pages"></div>
     </div>
-    <div id="extensions-tab">
+    <div id="extensions">
       <div class="content-header">Extensions</div>
-      <div id="extensions" class="list"></div>
+      <div id="extensions-list" class="list"></div>
     </div>
-    <div id="apps-tab">
+    <div id="apps">
       <div class="content-header">Apps</div>
-      <div id="apps" class="list"></div>
+      <div id="apps-list" class="list"></div>
     </div>
-    <div id="workers-tab">
+    <div id="workers">
       <div class="content-header">Shared workers</div>
-      <div id="workers" class="list"></div>
+      <div id="workers-list" class="list"></div>
     </div>
-    <div id="other-tab">
+    <div id="other">
       <div class="content-header">Other</div>
-      <div id="others" class="list"></div>
+      <div id="others-list" class="list"></div>
     </div>
   </div>
 </div>
@@ -62,6 +69,10 @@ found in the LICENSE file.
     <div id="port-forwarding-config-list">
     </div>
     <div id="port-forwarding-config-buttons">
+      <label for="port-forwarding-enable">
+        <input id="port-forwarding-enable" type="checkbox" disabled/>
+        <span>Enable port forwarding</span>
+      </label>
       <button id="port-forwarding-config-done">Done</button>
     </div>
   </div>

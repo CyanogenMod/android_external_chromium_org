@@ -12,8 +12,11 @@
 #include <string>
 #include <utility>
 
+#include "base/json/json_reader.h"
+#include "base/json/json_writer.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
+#include "base/stl_util.h"
 #include "base/timer/timer.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/history/history_database.h"
@@ -24,26 +27,34 @@
 #include "chrome/browser/prerender/prerender_handle.h"
 #include "chrome/browser/prerender/prerender_histograms.h"
 #include "chrome/browser/prerender/prerender_manager.h"
+#include "chrome/browser/prerender/prerender_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/safe_browsing/database_manager.h"
 #include "chrome/browser/safe_browsing/safe_browsing_service.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_iterator.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_controller.h"
-#include "content/public/browser/session_storage_namespace.h"
+#include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
 #include "content/public/common/page_transition_types.h"
 #include "crypto/secure_hash.h"
 #include "grit/browser_resources.h"
+#include "net/base/escape.h"
+#include "net/base/load_flags.h"
+#include "net/url_request/url_fetcher.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "url/url_canon.h"
 
+using base::DictionaryValue;
+using base::ListValue;
+using base::Value;
 using content::BrowserThread;
 using content::PageTransition;
 using content::SessionStorageNamespace;
 using content::WebContents;
 using history::URLID;
+using net::URLFetcher;
 using predictors::LoggedInPredictorTable;
 using std::string;
 using std::vector;
@@ -66,44 +77,85 @@ struct PrerenderLocalPredictor::LocalPredictorURLInfo {
   bool url_lookup_success;
   bool logged_in;
   bool logged_in_lookup_ok;
+  bool local_history_based;
+  bool service_whitelist;
+  bool service_whitelist_lookup_ok;
+  bool service_whitelist_reported;
   double priority;
 };
 
 // A struct consisting of everything needed for launching a potential prerender
 // on a navigation: The navigation URL (source) triggering potential prerenders,
 // and a set of candidate URLs.
-struct PrerenderLocalPredictor::LocalPredictorURLLookupInfo {
+struct PrerenderLocalPredictor::CandidatePrerenderInfo {
   LocalPredictorURLInfo source_url_;
   vector<LocalPredictorURLInfo> candidate_urls_;
-  explicit LocalPredictorURLLookupInfo(URLID source_id) {
+  scoped_refptr<SessionStorageNamespace> session_storage_namespace_;
+  scoped_ptr<gfx::Size> size_;
+  base::Time start_time_;  // used for various time measurements
+  explicit CandidatePrerenderInfo(URLID source_id) {
     source_url_.id = source_id;
   }
-  void MaybeAddCandidateURL(URLID id, double priority) {
-    // TODO(tburkard): clean up this code, potentially using a list or a heap
+  void MaybeAddCandidateURLFromLocalData(URLID id, double priority) {
     LocalPredictorURLInfo info;
     info.id = id;
+    info.local_history_based = true;
+    info.service_whitelist = false;
+    info.service_whitelist_lookup_ok = false;
+    info.service_whitelist_reported = false;
     info.priority = priority;
+    MaybeAddCandidateURLInternal(info);
+  }
+  void MaybeAddCandidateURLFromService(GURL url, double priority,
+                                       bool whitelist,
+                                       bool whitelist_lookup_ok) {
+    LocalPredictorURLInfo info;
+    info.id = kint64max;
+    info.url = url;
+    info.url_lookup_success = true;
+    info.local_history_based = false;
+    info.service_whitelist = whitelist;
+    info.service_whitelist_lookup_ok = whitelist_lookup_ok;
+    info.service_whitelist_reported = true;
+    info.priority = priority;
+    MaybeAddCandidateURLInternal(info);
+  }
+  void MaybeAddCandidateURLInternal(const LocalPredictorURLInfo& info) {
+    // TODO(tburkard): clean up this code, potentially using a list or a heap
+    int max_candidates = kNumPrerenderCandidates;
+    // We first insert local candidates, then service candidates.
+    // Since we want to keep kNumPrerenderCandidates for both local & service
+    // candidates, we need to double the maximum number of candidates once
+    // we start seeing service candidates.
+    if (!info.local_history_based)
+      max_candidates *= 2;
     int insert_pos = candidate_urls_.size();
-    if (insert_pos < kNumPrerenderCandidates)
+    if (insert_pos < max_candidates)
       candidate_urls_.push_back(info);
     while (insert_pos > 0 &&
            candidate_urls_[insert_pos - 1].priority < info.priority) {
-      if (insert_pos < kNumPrerenderCandidates)
+      if (insert_pos < max_candidates)
         candidate_urls_[insert_pos] = candidate_urls_[insert_pos - 1];
       insert_pos--;
     }
-    if (insert_pos < kNumPrerenderCandidates)
+    if (insert_pos < max_candidates)
       candidate_urls_[insert_pos] = info;
   }
 };
 
 namespace {
 
+#define TIMING_HISTOGRAM(name, value)                               \
+  UMA_HISTOGRAM_CUSTOM_TIMES(name, value,                           \
+                             base::TimeDelta::FromMilliseconds(10), \
+                             base::TimeDelta::FromSeconds(10),      \
+                             50);
+
 // Task to lookup the URL for a given URLID.
 class GetURLForURLIDTask : public history::HistoryDBTask {
  public:
   GetURLForURLIDTask(
-      PrerenderLocalPredictor::LocalPredictorURLLookupInfo* request,
+      PrerenderLocalPredictor::CandidatePrerenderInfo* request,
       const base::Closure& callback)
       : request_(request),
         callback_(callback),
@@ -120,11 +172,8 @@ class GetURLForURLIDTask : public history::HistoryDBTask {
 
   virtual void DoneRunOnMainThread() OVERRIDE {
     callback_.Run();
-    UMA_HISTOGRAM_CUSTOM_TIMES("Prerender.LocalPredictorURLLookupTime",
-                               base::Time::Now() - start_time_,
-                               base::TimeDelta::FromMilliseconds(10),
-                               base::TimeDelta::FromSeconds(10),
-                               50);
+    TIMING_HISTOGRAM("Prerender.LocalPredictorURLLookupTime",
+                     base::Time::Now() - start_time_);
   }
 
  private:
@@ -138,7 +187,7 @@ class GetURLForURLIDTask : public history::HistoryDBTask {
       request->url = url_row.url();
   }
 
-  PrerenderLocalPredictor::LocalPredictorURLLookupInfo* request_;
+  PrerenderLocalPredictor::CandidatePrerenderInfo* request_;
   base::Closure callback_;
   base::Time start_time_;
   DISALLOW_COPY_AND_ASSIGN(GetURLForURLIDTask);
@@ -199,7 +248,8 @@ bool IsIntermediateRedirect(PageTransition transition) {
 }
 
 bool IsFormSubmit(PageTransition transition) {
-  return (transition & content::PAGE_TRANSITION_FORM_SUBMIT) != 0;
+  return PageTransitionCoreTypeIs(transition,
+                                  content::PAGE_TRANSITION_FORM_SUBMIT);
 }
 
 bool ShouldExcludeTransitionForPrediction(PageTransition transition) {
@@ -271,11 +321,11 @@ bool URLsIdenticalIgnoringFragments(const GURL& url1, const GURL& url2) {
 
 void LookupLoggedInStatesOnDBThread(
     scoped_refptr<LoggedInPredictorTable> logged_in_predictor_table,
-    PrerenderLocalPredictor::LocalPredictorURLLookupInfo* request_) {
+    PrerenderLocalPredictor::CandidatePrerenderInfo* request) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::DB));
-  for (int i = 0; i < static_cast<int>(request_->candidate_urls_.size()); i++) {
+  for (int i = 0; i < static_cast<int>(request->candidate_urls_.size()); i++) {
     PrerenderLocalPredictor::LocalPredictorURLInfo* info =
-        &request_->candidate_urls_[i];
+        &request->candidate_urls_[i];
     if (info->url_lookup_success) {
       logged_in_predictor_table->HasUserLoggedIn(
           info->url, &info->logged_in, &info->logged_in_lookup_ok);
@@ -293,12 +343,13 @@ struct PrerenderLocalPredictor::PrerenderProperties {
       : url_id(url_id),
         url(url),
         priority(priority),
-        start_time(start_time) {
+        start_time(start_time),
+        would_have_matched(false) {
   }
 
   // Default constructor for dummy element
   PrerenderProperties()
-      : priority(0.0) {
+      : priority(0.0), would_have_matched(false) {
   }
 
   double GetCurrentDecayedPriority() {
@@ -385,6 +436,9 @@ PrerenderLocalPredictor::~PrerenderLocalPredictor() {
     if (p->prerender_handle)
       p->prerender_handle->OnCancel();
   }
+  STLDeleteContainerPairPointers(
+      outstanding_prerender_service_requests_.begin(),
+      outstanding_prerender_service_requests_.end());
 }
 
 void PrerenderLocalPredictor::Shutdown() {
@@ -431,8 +485,8 @@ void PrerenderLocalPredictor::OnAddVisit(const history::BriefVisitInfo& info) {
   std::map<URLID, int> next_urls_num_found;
   int num_occurrences_of_current_visit = 0;
   base::Time last_visited;
-  scoped_ptr<LocalPredictorURLLookupInfo> lookup_info(
-      new LocalPredictorURLLookupInfo(info.url_id));
+  scoped_ptr<CandidatePrerenderInfo> lookup_info(
+      new CandidatePrerenderInfo(info.url_id));
   const vector<history::BriefVisitInfo>& visits = *(visit_history_.get());
   for (int i = 0; i < static_cast<int>(visits.size()); i++) {
     if (!ShouldExcludeTransitionForPrediction(visits[i].transition)) {
@@ -462,6 +516,12 @@ void PrerenderLocalPredictor::OnAddVisit(const history::BriefVisitInfo& info) {
     }
   }
 
+  if (num_occurrences_of_current_visit > 1) {
+    RecordEvent(EVENT_ADD_VISIT_RELEVANT_TRANSITION_REPEAT_URL);
+  } else {
+    RecordEvent(EVENT_ADD_VISIT_RELEVANT_TRANSITION_NEW_URL);
+  }
+
   for (std::map<URLID, int>::const_iterator it = next_urls_num_found.begin();
        it != next_urls_num_found.end();
        ++it) {
@@ -473,20 +533,15 @@ void PrerenderLocalPredictor::OnAddVisit(const history::BriefVisitInfo& info) {
       RecordEvent(EVENT_ADD_VISIT_IDENTIFIED_PRERENDER_CANDIDATE);
       double priority = static_cast<double>(it->second) /
           static_cast<double>(num_occurrences_of_current_visit);
-      lookup_info->MaybeAddCandidateURL(it->first, priority);
+      lookup_info->MaybeAddCandidateURLFromLocalData(it->first, priority);
     }
-  }
-
-  if (lookup_info->candidate_urls_.size() == 0) {
-    RecordEvent(EVENT_NO_PRERENDER_CANDIDATES);
-    return;
   }
 
   RecordEvent(EVENT_START_URL_LOOKUP);
   HistoryService* history = GetHistoryIfExists();
   if (history) {
     RecordEvent(EVENT_GOT_HISTORY_ISSUING_LOOKUP);
-    LocalPredictorURLLookupInfo* lookup_info_ptr = lookup_info.get();
+    CandidatePrerenderInfo* lookup_info_ptr = lookup_info.get();
     history->ScheduleDBTask(
         new GetURLForURLIDTask(
             lookup_info_ptr,
@@ -498,17 +553,20 @@ void PrerenderLocalPredictor::OnAddVisit(const history::BriefVisitInfo& info) {
 }
 
 void PrerenderLocalPredictor::OnLookupURL(
-    scoped_ptr<LocalPredictorURLLookupInfo> info) {
-  RecordEvent(EVENT_PRERENDER_URL_LOOKUP_RESULT);
+    scoped_ptr<CandidatePrerenderInfo> info) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  DCHECK_GE(static_cast<int>(info->candidate_urls_.size()), 1);
+  RecordEvent(EVENT_PRERENDER_URL_LOOKUP_RESULT);
 
   if (!info->source_url_.url_lookup_success) {
     RecordEvent(EVENT_PRERENDER_URL_LOOKUP_FAILED);
     return;
   }
 
-  LogCandidateURLStats(info->candidate_urls_[0].url);
+  if (info->candidate_urls_.size() > 0 &&
+      info->candidate_urls_[0].url_lookup_success) {
+    LogCandidateURLStats(info->candidate_urls_[0].url);
+  }
 
   WebContents* source_web_contents = NULL;
   bool multiple_source_web_contents_candidates = false;
@@ -539,14 +597,318 @@ void PrerenderLocalPredictor::OnLookupURL(
   if (multiple_source_web_contents_candidates)
     RecordEvent(EVENT_PRERENDER_URL_LOOKUP_MULTIPLE_SOURCE_WEBCONTENTS_FOUND);
 
-
-  scoped_refptr<SessionStorageNamespace> session_storage_namespace =
+  info->session_storage_namespace_ =
       source_web_contents->GetController().GetDefaultSessionStorageNamespace();
 
   gfx::Rect container_bounds;
   source_web_contents->GetView()->GetContainerBounds(&container_bounds);
-  scoped_ptr<gfx::Size> size(new gfx::Size(container_bounds.size()));
+  info->size_.reset(new gfx::Size(container_bounds.size()));
 
+  RecordEvent(EVENT_PRERENDER_URL_LOOKUP_SUCCESS);
+
+  DoPrerenderServiceCheck(info.Pass());
+}
+
+void PrerenderLocalPredictor::DoPrerenderServiceCheck(
+    scoped_ptr<CandidatePrerenderInfo> info) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  if (!ShouldQueryPrerenderService(prerender_manager_->profile())) {
+    RecordEvent(EVENT_PRERENDER_SERVICE_DISABLED);
+    DoLoggedInLookup(info.Pass());
+    return;
+  }
+  /*
+    Create a JSON request.
+    Here is a sample request:
+    { "prerender_request": {
+        "version": 1,
+        "behavior_id": 6,
+        "hint_request": {
+          "browse_history": [
+            { "url": "http://www.cnn.com/"
+            }
+          ]
+        },
+        "candidate_check_request": {
+          "candidates": [
+            { "url": "http://www.cnn.com/sports/"
+            },
+            { "url": "http://www.cnn.com/politics/"
+            }
+          ]
+        }
+      }
+    }
+  */
+  DictionaryValue json_data;
+  DictionaryValue* req = new DictionaryValue();
+  req->SetInteger("version", 1);
+  req->SetInteger("behavior_id", GetPrerenderServiceBehaviorID());
+  if (ShouldQueryPrerenderServiceForCurrentURL() &&
+      info->source_url_.url_lookup_success) {
+    ListValue* browse_history = new ListValue();
+    DictionaryValue* browse_item = new DictionaryValue();
+    browse_item->SetString("url", info->source_url_.url.spec());
+    browse_history->Append(browse_item);
+    DictionaryValue* hint_request = new DictionaryValue();
+    hint_request->Set("browse_history", browse_history);
+    req->Set("hint_request", hint_request);
+  }
+  int num_candidate_urls = 0;
+  for (int i = 0; i < static_cast<int>(info->candidate_urls_.size()); i++) {
+    if (info->candidate_urls_[i].url_lookup_success)
+      num_candidate_urls++;
+  }
+  if (ShouldQueryPrerenderServiceForCandidateURLs() &&
+      num_candidate_urls > 0) {
+    ListValue* candidates = new ListValue();
+    DictionaryValue* candidate;
+    for (int i = 0; i < static_cast<int>(info->candidate_urls_.size()); i++) {
+      if (info->candidate_urls_[i].url_lookup_success) {
+        candidate = new DictionaryValue();
+        candidate->SetString("url", info->candidate_urls_[i].url.spec());
+        candidates->Append(candidate);
+      }
+    }
+    DictionaryValue* candidate_check_request = new DictionaryValue();
+    candidate_check_request->Set("candidates", candidates);
+    req->Set("candidate_check_request", candidate_check_request);
+  }
+  json_data.Set("prerender_request", req);
+  string request_string;
+  base::JSONWriter::Write(&json_data, &request_string);
+  GURL fetch_url(GetPrerenderServiceURLPrefix() +
+                 net::EscapeQueryParamValue(request_string, false));
+  net::URLFetcher* fetcher = net::URLFetcher::Create(
+      0,
+      fetch_url,
+      URLFetcher::GET, this);
+  fetcher->SetRequestContext(
+      prerender_manager_->profile()->GetRequestContext());
+  fetcher->SetLoadFlags(net::LOAD_DISABLE_CACHE |
+                        net::LOAD_DO_NOT_SAVE_COOKIES |
+                        net::LOAD_DO_NOT_SEND_COOKIES);
+  fetcher->AddExtraRequestHeader("Pragma: no-cache");
+  info->start_time_ = base::Time::Now();
+  outstanding_prerender_service_requests_.insert(
+      std::make_pair(fetcher, info.release()));
+  base::MessageLoop::current()->PostDelayedTask(
+      FROM_HERE,
+      base::Bind(&PrerenderLocalPredictor::MaybeCancelURLFetcher,
+                 weak_factory_.GetWeakPtr(), fetcher),
+      base::TimeDelta::FromMilliseconds(GetPrerenderServiceFetchTimeoutMs()));
+  RecordEvent(EVENT_PRERENDER_SERVICE_ISSUED_LOOKUP);
+  fetcher->Start();
+}
+
+void PrerenderLocalPredictor::MaybeCancelURLFetcher(net::URLFetcher* fetcher) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  OutstandingFetchers::iterator it =
+      outstanding_prerender_service_requests_.find(fetcher);
+  if (it == outstanding_prerender_service_requests_.end())
+    return;
+  delete it->first;
+  scoped_ptr<CandidatePrerenderInfo> info(it->second);
+  outstanding_prerender_service_requests_.erase(it);
+  RecordEvent(EVENT_PRERENDER_SERVICE_LOOKUP_TIMED_OUT);
+  DoLoggedInLookup(info.Pass());
+}
+
+bool PrerenderLocalPredictor::ApplyParsedPrerenderServiceResponse(
+    DictionaryValue* dict,
+    CandidatePrerenderInfo* info,
+    bool* hinting_timed_out,
+    bool* hinting_url_lookup_timed_out,
+    bool* candidate_url_lookup_timed_out) {
+  /*
+    Process the response to the request.
+    Here is a sample response to illustrate the format.
+    {
+      "prerender_response": {
+        "behavior_id": 6,
+        "hint_response": {
+          "hinting_timed_out": 0,
+          "candidates": [
+            { "url": "http://www.cnn.com/story-1",
+              "in_index": 1,
+              "likelihood": 0.60,
+              "in_index_timed_out": 0
+            },
+            { "url": "http://www.cnn.com/story-2",
+              "in_index": 1,
+              "likelihood": 0.30,
+              "in_index_timed_out": 0
+            }
+          ]
+        },
+        "candidate_check_response": {
+          "candidates": [
+            { "url": "http://www.cnn.com/sports/",
+              "in_index": 1,
+              "in_index_timed_out": 0
+            },
+            { "url": "http://www.cnn.com/politics/",
+              "in_index": 0,
+              "in_index_timed_out": "1"
+            }
+          ]
+        }
+      }
+    }
+  */
+  ListValue* list = NULL;
+  int int_value;
+  if (!dict->GetInteger("prerender_response.behavior_id", &int_value) ||
+      int_value != GetPrerenderServiceBehaviorID()) {
+    return false;
+  }
+  if (!dict->GetList("prerender_response.candidate_check_response.candidates",
+                     &list)) {
+    if (ShouldQueryPrerenderServiceForCandidateURLs()) {
+      for (int i = 0; i < static_cast<int>(info->candidate_urls_.size()); i++) {
+        if (info->candidate_urls_[i].url_lookup_success)
+          return false;
+      }
+    }
+  } else {
+    for (size_t i = 0; i < list->GetSize(); i++) {
+      DictionaryValue* d;
+      if (!list->GetDictionary(i, &d))
+        return false;
+      string url_string;
+      if (!d->GetString("url", &url_string) || !GURL(url_string).is_valid())
+        return false;
+      GURL url(url_string);
+      int in_index_timed_out = 0;
+      int in_index = 0;
+      if ((!d->GetInteger("in_index_timed_out", &in_index_timed_out) ||
+           in_index_timed_out != 1) &&
+          !d->GetInteger("in_index", &in_index)) {
+        return false;
+      }
+      if (in_index < 0 || in_index > 1 ||
+          in_index_timed_out < 0 || in_index_timed_out > 1) {
+        return false;
+      }
+      if (in_index_timed_out == 1)
+        *candidate_url_lookup_timed_out = true;
+      for (size_t j = 0; j < info->candidate_urls_.size(); j++) {
+        if (info->candidate_urls_[j].url == url) {
+          info->candidate_urls_[j].service_whitelist_reported = true;
+          info->candidate_urls_[j].service_whitelist = (in_index == 1);
+          info->candidate_urls_[j].service_whitelist_lookup_ok =
+              ((1 - in_index_timed_out) == 1);
+        }
+      }
+    }
+    for (size_t i = 0; i < info->candidate_urls_.size(); i++) {
+      if (info->candidate_urls_[i].url_lookup_success &&
+          !info->candidate_urls_[i].service_whitelist_reported) {
+        return false;
+      }
+    }
+  }
+
+  if (ShouldQueryPrerenderServiceForCurrentURL() &&
+      info->source_url_.url_lookup_success) {
+    list = NULL;
+    if (dict->GetInteger("prerender_response.hint_response.hinting_timed_out",
+                         &int_value) &&
+        int_value == 1) {
+      *hinting_timed_out = true;
+    } else if (!dict->GetList("prerender_response.hint_response.candidates",
+                              &list)) {
+      return false;
+    } else {
+      for (int i = 0; i < static_cast<int>(list->GetSize()); i++) {
+        DictionaryValue* d;
+        if (!list->GetDictionary(i, &d))
+          return false;
+        string url;
+        double priority;
+        if (!d->GetString("url", &url) || !d->GetDouble("likelihood", &priority)
+            || !GURL(url).is_valid()) {
+          return false;
+        }
+        int in_index_timed_out = 0;
+        int in_index = 0;
+        if ((!d->GetInteger("in_index_timed_out", &in_index_timed_out) ||
+             in_index_timed_out != 1) &&
+            !d->GetInteger("in_index", &in_index)) {
+          return false;
+        }
+        if (priority < 0.0 || priority > 1.0 || in_index < 0 || in_index > 1 ||
+            in_index_timed_out < 0 || in_index_timed_out > 1) {
+          return false;
+        }
+        if (in_index_timed_out == 1)
+          *hinting_url_lookup_timed_out = true;
+        info->MaybeAddCandidateURLFromService(GURL(url),
+                                              priority,
+                                              in_index == 1,
+                                              (1 - in_index_timed_out) == 1);
+      }
+      if (list->GetSize() > 0)
+        RecordEvent(EVENT_PRERENDER_SERIVCE_RETURNED_HINTING_CANDIDATES);
+    }
+  }
+
+  return true;
+}
+
+void PrerenderLocalPredictor::OnURLFetchComplete(
+    const net::URLFetcher* source) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  RecordEvent(EVENT_PRERENDER_SERVICE_RECEIVED_RESULT);
+  net::URLFetcher* fetcher = const_cast<net::URLFetcher*>(source);
+  OutstandingFetchers::iterator it =
+      outstanding_prerender_service_requests_.find(fetcher);
+  if (it == outstanding_prerender_service_requests_.end()) {
+    RecordEvent(EVENT_PRERENDER_SERVICE_NO_RECORD_FOR_RESULT);
+    return;
+  }
+  scoped_ptr<CandidatePrerenderInfo> info(it->second);
+  outstanding_prerender_service_requests_.erase(it);
+  TIMING_HISTOGRAM("Prerender.LocalPredictorServiceLookupTime",
+                   base::Time::Now() - info->start_time_);
+  string result;
+  fetcher->GetResponseAsString(&result);
+  scoped_ptr<Value> root;
+  root.reset(base::JSONReader::Read(result));
+  bool hinting_timed_out = false;
+  bool hinting_url_lookup_timed_out = false;
+  bool candidate_url_lookup_timed_out = false;
+  if (!root.get() || !root->IsType(Value::TYPE_DICTIONARY)) {
+    RecordEvent(EVENT_PRERENDER_SERVICE_PARSE_ERROR_INCORRECT_JSON);
+  } else {
+    if (ApplyParsedPrerenderServiceResponse(
+            static_cast<DictionaryValue*>(root.get()),
+            info.get(),
+            &hinting_timed_out,
+            &hinting_url_lookup_timed_out,
+            &candidate_url_lookup_timed_out)) {
+      // We finished parsing the result, and found no errors.
+      RecordEvent(EVENT_PRERENDER_SERVICE_PARSED_CORRECTLY);
+      if (hinting_timed_out)
+        RecordEvent(EVENT_PRERENDER_SERVICE_HINTING_TIMED_OUT);
+      if (hinting_url_lookup_timed_out)
+        RecordEvent(EVENT_PRERENDER_SERVICE_HINTING_URL_LOOKUP_TIMED_OUT);
+      if (candidate_url_lookup_timed_out)
+        RecordEvent(EVENT_PRERENDER_SERVICE_CANDIDATE_URL_LOOKUP_TIMED_OUT);
+      DoLoggedInLookup(info.Pass());
+      return;
+    }
+  }
+
+  // If we did not return earlier, an error happened during parsing.
+  // Record this, and proceed.
+  RecordEvent(EVENT_PRERENDER_SERVICE_PARSE_ERROR);
+  DoLoggedInLookup(info.Pass());
+}
+
+void PrerenderLocalPredictor:: DoLoggedInLookup(
+    scoped_ptr<CandidatePrerenderInfo> info) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   scoped_refptr<LoggedInPredictorTable> logged_in_table =
       prerender_manager_->logged_in_predictor_table();
 
@@ -557,7 +919,9 @@ void PrerenderLocalPredictor::OnLookupURL(
 
   RecordEvent(EVENT_PRERENDER_URL_LOOKUP_ISSUING_LOGGED_IN_LOOKUP);
 
-  LocalPredictorURLLookupInfo* info_ptr = info.get();
+  info->start_time_ = base::Time::Now();
+
+  CandidatePrerenderInfo* info_ptr = info.get();
   BrowserThread::PostTaskAndReply(
       BrowserThread::DB, FROM_HERE,
       base::Bind(&LookupLoggedInStatesOnDBThread,
@@ -565,8 +929,6 @@ void PrerenderLocalPredictor::OnLookupURL(
                  info_ptr),
       base::Bind(&PrerenderLocalPredictor::ContinuePrerenderCheck,
                  weak_factory_.GetWeakPtr(),
-                 session_storage_namespace,
-                 base::Passed(&size),
                  base::Passed(&info)));
 }
 
@@ -612,6 +974,11 @@ HistoryService* PrerenderLocalPredictor::GetHistoryIfExists() const {
 void PrerenderLocalPredictor::Init() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   RecordEvent(EVENT_INIT_STARTED);
+  Profile* profile = prerender_manager_->profile();
+  if (!profile || DisableLocalPredictorBasedOnSyncAndConfiguration(profile)) {
+    RecordEvent(EVENT_INIT_FAILED_UNENCRYPTED_SYNC_NOT_ENABLED);
+    return;
+  }
   HistoryService* history = GetHistoryIfExists();
   if (history) {
     CHECK(!is_visit_database_observer_);
@@ -710,18 +1077,41 @@ PrerenderLocalPredictor::GetIssuedPrerenderSlotForPriority(double priority) {
 }
 
 void PrerenderLocalPredictor::ContinuePrerenderCheck(
-    scoped_refptr<SessionStorageNamespace> session_storage_namespace,
-    scoped_ptr<gfx::Size> size,
-    scoped_ptr<LocalPredictorURLLookupInfo> info) {
+    scoped_ptr<CandidatePrerenderInfo> info) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  TIMING_HISTOGRAM("Prerender.LocalPredictorLoggedInLookupTime",
+                   base::Time::Now() - info->start_time_);
   RecordEvent(EVENT_CONTINUE_PRERENDER_CHECK_STARTED);
+  if (info->candidate_urls_.size() == 0) {
+    RecordEvent(EVENT_NO_PRERENDER_CANDIDATES);
+    return;
+  }
   scoped_ptr<LocalPredictorURLInfo> url_info;
+#if defined(FULL_SAFE_BROWSING)
   scoped_refptr<SafeBrowsingDatabaseManager> sb_db_manager =
       g_browser_process->safe_browsing_service()->database_manager();
+#endif
   PrerenderProperties* prerender_properties = NULL;
 
   for (int i = 0; i < static_cast<int>(info->candidate_urls_.size()); i++) {
     RecordEvent(EVENT_CONTINUE_PRERENDER_CHECK_EXAMINE_NEXT_URL);
     url_info.reset(new LocalPredictorURLInfo(info->candidate_urls_[i]));
+    if (url_info->local_history_based) {
+      if (SkipLocalPredictorLocalCandidates()) {
+        url_info.reset(NULL);
+        continue;
+      }
+      RecordEvent(EVENT_CONTINUE_PRERENDER_CHECK_EXAMINE_NEXT_URL_LOCAL);
+    }
+    if (!url_info->local_history_based) {
+      if (SkipLocalPredictorServiceCandidates()) {
+        url_info.reset(NULL);
+        continue;
+      }
+      RecordEvent(EVENT_CONTINUE_PRERENDER_CHECK_EXAMINE_NEXT_URL_SERVICE);
+    }
+
+    RecordEvent(EVENT_CONTINUE_PRERENDER_CHECK_EXAMINE_NEXT_URL_NOT_SKIPPED);
 
     // We need to check whether we can issue a prerender for this URL.
     // We test a set of conditions. Each condition can either rule out
@@ -771,11 +1161,18 @@ void PrerenderLocalPredictor::ContinuePrerenderCheck(
       url_info.reset(NULL);
       continue;
     }
+#if defined(FULL_SAFE_BROWSING)
     if (!SkipLocalPredictorWhitelist() &&
         sb_db_manager->CheckSideEffectFreeWhitelistUrl(url_info->url)) {
       // If a page is on the side-effect free whitelist, we will just prerender
       // it without any additional checks.
       RecordEvent(EVENT_CONTINUE_PRERENDER_CHECK_ON_SIDE_EFFECT_FREE_WHITELIST);
+      break;
+    }
+#endif
+    if (!SkipLocalPredictorServiceWhitelist() &&
+        url_info->service_whitelist && url_info->service_whitelist_lookup_ok) {
+      RecordEvent(EVENT_CONTINUE_PRERENDER_CHECK_ON_SERVICE_WHITELIST);
       break;
     }
     if (!SkipLocalPredictorLoggedIn() &&
@@ -795,26 +1192,25 @@ void PrerenderLocalPredictor::ContinuePrerenderCheck(
   RecordEvent(EVENT_CONTINUE_PRERENDER_CHECK_ISSUING_PRERENDER);
   DCHECK(prerender_properties != NULL);
   if (IsLocalPredictorPrerenderLaunchEnabled()) {
-    IssuePrerender(session_storage_namespace, size.Pass(),
-                   url_info.Pass(), prerender_properties);
+    IssuePrerender(info.Pass(), url_info.Pass(), prerender_properties);
   }
 }
 
 void PrerenderLocalPredictor::IssuePrerender(
-    scoped_refptr<SessionStorageNamespace> session_storage_namespace,
-    scoped_ptr<gfx::Size> size,
-    scoped_ptr<LocalPredictorURLInfo> info,
+    scoped_ptr<CandidatePrerenderInfo> info,
+    scoped_ptr<LocalPredictorURLInfo> url_info,
     PrerenderProperties* prerender_properties) {
-  URLID url_id = info->id;
-  const GURL& url = info->url;
-  double priority = info->priority;
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  URLID url_id = url_info->id;
+  const GURL& url = url_info->url;
+  double priority = url_info->priority;
   base::Time current_time = GetCurrentTime();
   RecordEvent(EVENT_ISSUING_PRERENDER);
 
   // Issue the prerender and obtain a new handle.
   scoped_ptr<prerender::PrerenderHandle> new_prerender_handle(
       prerender_manager_->AddPrerenderFromLocalPredictor(
-          url, session_storage_namespace.get(), *size));
+          url, info->session_storage_namespace_.get(), *(info->size_)));
 
   // Check if this is a duplicate of an existing prerender. If yes, clean up
   // the new handle.
@@ -877,6 +1273,15 @@ void PrerenderLocalPredictor::OnTabHelperURLSeen(
     const GURL& url, WebContents* web_contents) {
   RecordEvent(EVENT_TAB_HELPER_URL_SEEN);
 
+  bool browser_navigate_initiated = false;
+  const content::NavigationEntry* entry =
+      web_contents->GetController().GetPendingEntry();
+  if (entry) {
+    base::string16 result;
+    browser_navigate_initiated =
+        entry->GetExtraData(kChromeNavigateExtraDataKey, &result);
+  }
+
   // If the namespace matches and the URL matches, we might be able to swap
   // in. However, the actual code initating the swapin is in the renderer
   // and is checking for other criteria (such as POSTs). There may
@@ -886,6 +1291,8 @@ void PrerenderLocalPredictor::OnTabHelperURLSeen(
 
   PrerenderProperties* best_matched_prerender = NULL;
   bool session_storage_namespace_matches = false;
+  SessionStorageNamespace* tab_session_storage_namespace =
+      web_contents->GetController().GetDefaultSessionStorageNamespace();
   for (int i = 0; i < static_cast<int>(issued_prerenders_.size()); i++) {
     PrerenderProperties* p = issued_prerenders_[i];
     DCHECK(p != NULL);
@@ -897,17 +1304,68 @@ void PrerenderLocalPredictor::OnTabHelperURLSeen(
     if (!best_matched_prerender || !session_storage_namespace_matches) {
       best_matched_prerender = p;
       session_storage_namespace_matches =
-          p->prerender_handle->Matches(
-              url,
-              web_contents->GetController().
-              GetDefaultSessionStorageNamespace());
+          p->prerender_handle->Matches(url, tab_session_storage_namespace);
     }
   }
   if (best_matched_prerender) {
     RecordEvent(EVENT_TAB_HELPER_URL_SEEN_MATCH);
+    if (entry)
+      RecordEvent(EVENT_TAB_HELPER_URL_SEEN_MATCH_ENTRY);
+    if (browser_navigate_initiated)
+      RecordEvent(EVENT_TAB_HELPER_URL_SEEN_MATCH_BROWSER_NAVIGATE);
     best_matched_prerender->would_have_matched = true;
-    if (session_storage_namespace_matches)
+    if (session_storage_namespace_matches) {
       RecordEvent(EVENT_TAB_HELPER_URL_SEEN_NAMESPACE_MATCH);
+      if (entry)
+        RecordEvent(EVENT_TAB_HELPER_URL_SEEN_NAMESPACE_MATCH_ENTRY);
+      if (browser_navigate_initiated)
+        RecordEvent(EVENT_TAB_HELPER_URL_SEEN_NAMESPACE_MATCH_BROWSER_NAVIGATE);
+    } else {
+      SessionStorageNamespace* prerender_session_storage_namespace =
+          best_matched_prerender->prerender_handle->
+          GetSessionStorageNamespace();
+      if (!prerender_session_storage_namespace) {
+        RecordEvent(EVENT_TAB_HELPER_URL_SEEN_NAMESPACE_MISMATCH_NO_NAMESPACE);
+      } else {
+        RecordEvent(EVENT_TAB_HELPER_URL_SEEN_NAMESPACE_MISMATCH_MERGE_ISSUED);
+        prerender_session_storage_namespace->Merge(
+            false,
+            best_matched_prerender->prerender_handle->GetChildId(),
+            tab_session_storage_namespace,
+            base::Bind(&PrerenderLocalPredictor::ProcessNamespaceMergeResult,
+                       weak_factory_.GetWeakPtr()));
+      }
+    }
+  }
+}
+
+void PrerenderLocalPredictor::ProcessNamespaceMergeResult(
+    content::SessionStorageNamespace::MergeResult result) {
+  RecordEvent(EVENT_NAMESPACE_MISMATCH_MERGE_RESULT_RECEIVED);
+  switch (result) {
+    case content::SessionStorageNamespace::MERGE_RESULT_NAMESPACE_NOT_FOUND:
+      RecordEvent(EVENT_NAMESPACE_MISMATCH_MERGE_RESULT_NAMESPACE_NOT_FOUND);
+      break;
+    case content::SessionStorageNamespace::MERGE_RESULT_NAMESPACE_NOT_ALIAS:
+      RecordEvent(EVENT_NAMESPACE_MISMATCH_MERGE_RESULT_NAMESPACE_NOT_ALIAS);
+      break;
+    case content::SessionStorageNamespace::MERGE_RESULT_NOT_LOGGING:
+      RecordEvent(EVENT_NAMESPACE_MISMATCH_MERGE_RESULT_NOT_LOGGING);
+      break;
+    case content::SessionStorageNamespace::MERGE_RESULT_NO_TRANSACTIONS:
+      RecordEvent(EVENT_NAMESPACE_MISMATCH_MERGE_RESULT_NO_TRANSACTIONS);
+      break;
+    case content::SessionStorageNamespace::MERGE_RESULT_TOO_MANY_TRANSACTIONS:
+      RecordEvent(EVENT_NAMESPACE_MISMATCH_MERGE_RESULT_TOO_MANY_TRANSACTIONS);
+      break;
+    case content::SessionStorageNamespace::MERGE_RESULT_NOT_MERGEABLE:
+      RecordEvent(EVENT_NAMESPACE_MISMATCH_MERGE_RESULT_NOT_MERGEABLE);
+      break;
+    case content::SessionStorageNamespace::MERGE_RESULT_MERGEABLE:
+      RecordEvent(EVENT_NAMESPACE_MISMATCH_MERGE_RESULT_MERGEABLE);
+      break;
+    default:
+      NOTREACHED();
   }
 }
 

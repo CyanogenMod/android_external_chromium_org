@@ -13,17 +13,18 @@
 
 // AlternateNavInfoBarDelegate -------------------------------------------------
 
-InfoBar* AlternateNavInfoBarDelegate::CreateInfoBar(InfoBarService* owner) {
-  return new AlternateNavInfoBarView(owner, this);
+// static
+scoped_ptr<InfoBar> AlternateNavInfoBarDelegate::CreateInfoBar(
+    scoped_ptr<AlternateNavInfoBarDelegate> delegate) {
+  return scoped_ptr<InfoBar>(new AlternateNavInfoBarView(delegate.Pass()));
 }
 
 
 // AlternateNavInfoBarView -----------------------------------------------------
 
 AlternateNavInfoBarView::AlternateNavInfoBarView(
-    InfoBarService* owner,
-    AlternateNavInfoBarDelegate* delegate)
-    : InfoBarView(owner, delegate),
+    scoped_ptr<AlternateNavInfoBarDelegate> delegate)
+    : InfoBarView(delegate.PassAs<InfoBarDelegate>()),
       label_1_(NULL),
       link_(NULL),
       label_2_(NULL) {
@@ -58,8 +59,8 @@ void AlternateNavInfoBarView::ViewHierarchyChanged(
   if (details.is_add && (details.child == this) && (label_1_ == NULL)) {
     AlternateNavInfoBarDelegate* delegate = GetDelegate();
     size_t offset;
-    string16 message_text = delegate->GetMessageTextWithOffset(&offset);
-    DCHECK_NE(string16::npos, offset);
+    base::string16 message_text = delegate->GetMessageTextWithOffset(&offset);
+    DCHECK_NE(base::string16::npos, offset);
     label_1_ = CreateLabel(message_text.substr(0, offset));
     AddChildView(label_1_);
 

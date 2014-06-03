@@ -47,7 +47,7 @@ void OAuth2TokenFetcher::StartExchangeFromCookies() {
   const NetworkState* default_network =
       NetworkHandler::Get()->network_state_handler()->DefaultNetwork();
   if (!default_network ||
-      default_network->connection_state() == flimflam::kStatePortal) {
+      default_network->connection_state() == shill::kStatePortal) {
     // If network is offline, defer the token fetching until online.
     VLOG(1) << "Network is offline.  Deferring OAuth2 token fetch.";
     BrowserThread::PostDelayedTask(
@@ -57,7 +57,7 @@ void OAuth2TokenFetcher::StartExchangeFromCookies() {
         base::TimeDelta::FromMilliseconds(kRequestRestartDelay));
     return;
   }
-  auth_fetcher_.StartCookieForOAuthLoginTokenExchange(EmptyString());
+  auth_fetcher_.StartCookieForOAuthLoginTokenExchange(std::string());
 }
 
 void OAuth2TokenFetcher::StartExchangeFromAuthCode(
@@ -69,7 +69,7 @@ void OAuth2TokenFetcher::StartExchangeFromAuthCode(
   const NetworkState* default_network =
       NetworkHandler::Get()->network_state_handler()->DefaultNetwork();
   if (!default_network ||
-      default_network->connection_state() == flimflam::kStatePortal) {
+      default_network->connection_state() == shill::kStatePortal) {
     // If network is offline, defer the token fetching until online.
     VLOG(1) << "Network is offline.  Deferring OAuth2 token fetch.";
     BrowserThread::PostDelayedTask(
@@ -86,7 +86,7 @@ void OAuth2TokenFetcher::StartExchangeFromAuthCode(
 void OAuth2TokenFetcher::OnClientOAuthSuccess(
     const GaiaAuthConsumer::ClientOAuthResult& oauth_tokens) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  LOG(INFO) << "Got OAuth2 tokens!";
+  VLOG(1) << "Got OAuth2 tokens!";
   retry_count_ = 0;
   oauth_tokens_ = oauth_tokens;
   delegate_->OnOAuth2TokensAvailable(oauth_tokens_);

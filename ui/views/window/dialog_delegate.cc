@@ -7,11 +7,9 @@
 #include "base/logging.h"
 #include "grit/ui_strings.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/ui_base_switches_util.h"
 #include "ui/views/bubble/bubble_border.h"
 #include "ui/views/bubble/bubble_frame_view.h"
 #include "ui/views/controls/button/label_button.h"
-#include "ui/views/controls/textfield/textfield.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_observer.h"
 #include "ui/views/window/dialog_client_view.h"
@@ -29,22 +27,13 @@ DialogDelegate::~DialogDelegate() {
 }
 
 // static
-bool DialogDelegate::UseNewStyle() {
-  return switches::IsNewDialogStyleEnabled() &&
-         Textfield::IsViewsTextfieldEnabled();
-}
-
-// static
 Widget* DialogDelegate::CreateDialogWidget(DialogDelegate* dialog,
                                            gfx::NativeWindow context,
                                            gfx::NativeWindow parent) {
   views::Widget* widget = new views::Widget;
   views::Widget::InitParams params;
   params.delegate = dialog;
-  const bool use_new_style = dialog ?
-      dialog->UseNewStyleForThisDialog() : DialogDelegate::UseNewStyle();
-  if (use_new_style) {
-    // Note: Transparent widgets cannot host native Windows textfield controls.
+  if (!dialog || dialog->UseNewStyleForThisDialog()) {
     params.opacity = Widget::InitParams::TRANSLUCENT_WINDOW;
     params.remove_standard_frame = true;
   }
@@ -52,12 +41,6 @@ Widget* DialogDelegate::CreateDialogWidget(DialogDelegate* dialog,
   params.parent = parent;
   params.top_level = true;
   widget->Init(params);
-  if (use_new_style) {
-#if defined(USE_AURA)
-    // TODO(msw): Add a matching shadow type and remove the bubble frame border?
-    corewm::SetShadowType(widget->GetNativeWindow(), corewm::SHADOW_TYPE_NONE);
-#endif
-  }
   return widget;
 }
 
@@ -165,17 +148,17 @@ ClientView* DialogDelegate::CreateClientView(Widget* widget) {
 
 NonClientFrameView* DialogDelegate::CreateNonClientFrameView(Widget* widget) {
   if (UseNewStyleForThisDialog())
-    return CreateNewStyleFrameView(widget);
+    return CreateDialogFrameView(widget);
   return WidgetDelegate::CreateNonClientFrameView(widget);
 }
 
 // static
-NonClientFrameView* DialogDelegate::CreateNewStyleFrameView(Widget* widget) {
-  return CreateNewStyleFrameView(widget, false);
+NonClientFrameView* DialogDelegate::CreateDialogFrameView(Widget* widget) {
+  return CreateDialogFrameView(widget, false);
 }
 
 // static
-NonClientFrameView* DialogDelegate::CreateNewStyleFrameView(
+NonClientFrameView* DialogDelegate::CreateDialogFrameView(
     Widget* widget,
     bool force_opaque_border) {
   BubbleFrameView* frame = new BubbleFrameView(gfx::Insets());
@@ -199,11 +182,15 @@ NonClientFrameView* DialogDelegate::CreateNewStyleFrameView(
   }
   if (force_opaque_border)
     widget->set_frame_type(views::Widget::FRAME_TYPE_FORCE_CUSTOM);
+#if defined(USE_AURA)
+  // TODO(msw): Add a matching shadow type and remove the bubble frame border?
+  corewm::SetShadowType(widget->GetNativeWindow(), corewm::SHADOW_TYPE_NONE);
+#endif
   return frame;
 }
 
 bool DialogDelegate::UseNewStyleForThisDialog() const {
-  return UseNewStyle();
+  return true;
 }
 
 const DialogClientView* DialogDelegate::GetDialogClientView() const {

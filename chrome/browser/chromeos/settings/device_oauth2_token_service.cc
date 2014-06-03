@@ -12,36 +12,37 @@
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/policy/device_cloud_policy_manager_chromeos.h"
+#include "chrome/browser/chromeos/settings/token_encryptor.h"
 #include "chrome/browser/policy/browser_policy_connector.h"
-#include "chrome/browser/policy/proto/cloud/device_management_backend.pb.h"
 #include "chrome/common/pref_names.h"
-#include "chromeos/cryptohome/cryptohome_library.h"
 #include "content/public/browser/browser_thread.h"
 #include "google_apis/gaia/gaia_urls.h"
 #include "google_apis/gaia/google_service_auth_error.h"
+#include "policy/proto/device_management_backend.pb.h"
 
 namespace {
 const char kServiceScopeGetUserInfo[] =
     "https://www.googleapis.com/auth/userinfo.email";
-}  // namespace
+}
 
 namespace chromeos {
 
 // A wrapper for the consumer passed to StartRequest, which doesn't call
 // through to the target Consumer unless the refresh token validation is
-// complete.  Additionally implements the Request interface, so that it
+// complete. Additionally derives from the RequestImpl, so that it
 // can be passed back to the caller and directly deleted when cancelling
 // the request.
 class DeviceOAuth2TokenService::ValidatingConsumer
     : public OAuth2TokenService::Consumer,
-      public OAuth2TokenService::Request,
+      public OAuth2TokenService::RequestImpl,
       public gaia::GaiaOAuthClient::Delegate {
  public:
   explicit ValidatingConsumer(DeviceOAuth2TokenService* token_service,
+                              const std::string& account_id,
                               Consumer* consumer);
   virtual ~ValidatingConsumer();
 
-  void StartValidation(scoped_ptr<Request> request);
+  void StartValidation();
 
   // OAuth2TokenService::Consumer
   virtual void OnGetTokenSuccess(
@@ -76,11 +77,6 @@ class DeviceOAuth2TokenService::ValidatingConsumer
   bool token_validation_done_;
   bool token_is_valid_;
 
-  // The request instance returned by OAuth2TokenService, which we're
-  // wrapping.  If the this object is deleted, |request_| will also be
-  // deleted and the OAuth2TokenService won't call back on this object.
-  scoped_ptr<OAuth2TokenService::Request> request_;
-
   // OAuth2TokenService::Consumer results
   bool token_fetch_done_;
   std::string access_token_;
@@ -90,8 +86,10 @@ class DeviceOAuth2TokenService::ValidatingConsumer
 
 DeviceOAuth2TokenService::ValidatingConsumer::ValidatingConsumer(
     DeviceOAuth2TokenService* token_service,
+    const std::string& account_id,
     Consumer* consumer)
-        : token_service_(token_service),
+        : OAuth2TokenService::RequestImpl(account_id, this),
+          token_service_(token_service),
           consumer_(consumer),
           token_validation_done_(false),
           token_is_valid_(false),
@@ -101,10 +99,8 @@ DeviceOAuth2TokenService::ValidatingConsumer::ValidatingConsumer(
 DeviceOAuth2TokenService::ValidatingConsumer::~ValidatingConsumer() {
 }
 
-void DeviceOAuth2TokenService::ValidatingConsumer::StartValidation(
-    scoped_ptr<Request> request) {
+void DeviceOAuth2TokenService::ValidatingConsumer::StartValidation() {
   DCHECK(!gaia_oauth_client_);
-  request_ = request.Pass();
   gaia_oauth_client_.reset(new gaia::GaiaOAuthClient(
       g_browser_process->system_request_context()));
 
@@ -115,7 +111,7 @@ void DeviceOAuth2TokenService::ValidatingConsumer::StartValidation(
 
   gaia_oauth_client_->RefreshToken(
       client_info,
-      token_service_->GetRefreshToken(),
+      token_service_->GetRefreshToken(token_service_->GetRobotAccountId()),
       std::vector<std::string>(1, kServiceScopeGetUserInfo),
       token_service_->max_refresh_token_validation_retries_,
       this);
@@ -143,8 +139,8 @@ void DeviceOAuth2TokenService::ValidatingConsumer::OnGetTokenInfoResponse(
     if (gaia_robot_id.empty()) {
       LOG(WARNING) << "Device service account owner in policy is empty.";
     } else {
-      LOG(INFO) << "Device service account owner in policy does not match "
-                << "refresh token owner \"" << gaia_robot_id << "\".";
+      LOG(WARNING) << "Device service account owner in policy does not match "
+                   << "refresh token owner \"" << gaia_robot_id << "\".";
     }
     RefreshTokenIsValid(false);
   }
@@ -163,6 +159,7 @@ void DeviceOAuth2TokenService::ValidatingConsumer::OnGetTokenSuccess(
       const Request* request,
       const std::string& access_token,
       const base::Time& expiration_time) {
+  DCHECK_EQ(request, this);
   token_fetch_done_ = true;
   access_token_ = access_token;
   expiration_time_ = expiration_time;
@@ -173,6 +170,7 @@ void DeviceOAuth2TokenService::ValidatingConsumer::OnGetTokenSuccess(
 void DeviceOAuth2TokenService::ValidatingConsumer::OnGetTokenFailure(
       const Request* request,
       const GoogleServiceAuthError& error) {
+  DCHECK_EQ(request, this);
   token_fetch_done_ = true;
   error_.reset(new GoogleServiceAuthError(error.state()));
   if (token_validation_done_)
@@ -183,6 +181,7 @@ void DeviceOAuth2TokenService::ValidatingConsumer::RefreshTokenIsValid(
     bool is_valid) {
   token_validation_done_ = true;
   token_is_valid_ = is_valid;
+  token_service_->OnValidationComplete(is_valid);
   if (token_fetch_done_)
     InformConsumer();
 }
@@ -190,7 +189,7 @@ void DeviceOAuth2TokenService::ValidatingConsumer::RefreshTokenIsValid(
 void DeviceOAuth2TokenService::ValidatingConsumer::InformConsumer() {
   DCHECK(token_fetch_done_);
   DCHECK(token_validation_done_);
-  token_service_->OnValidationComplete(token_is_valid_);
+
   // Note: this object (which is also the Request instance) may be deleted in
   // these consumer callbacks, so the callbacks must be the last line executed.
   // Also, make copies of the parameters passed to the consumer to avoid invalid
@@ -210,36 +209,17 @@ void DeviceOAuth2TokenService::ValidatingConsumer::InformConsumer() {
 
 DeviceOAuth2TokenService::DeviceOAuth2TokenService(
     net::URLRequestContextGetter* getter,
-    PrefService* local_state)
+    PrefService* local_state,
+    TokenEncryptor* token_encryptor)
     : refresh_token_is_valid_(false),
       max_refresh_token_validation_retries_(3),
       url_request_context_getter_(getter),
-      local_state_(local_state) {
+      local_state_(local_state),
+      token_encryptor_(token_encryptor),
+      weak_ptr_factory_(this) {
 }
 
 DeviceOAuth2TokenService::~DeviceOAuth2TokenService() {
-}
-
-net::URLRequestContextGetter* DeviceOAuth2TokenService::GetRequestContext() {
-  return url_request_context_getter_.get();
-}
-
-scoped_ptr<OAuth2TokenService::Request> DeviceOAuth2TokenService::StartRequest(
-    const OAuth2TokenService::ScopeSet& scopes,
-    OAuth2TokenService::Consumer* consumer) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
-
-  if (refresh_token_is_valid_) {
-    return OAuth2TokenService::StartRequest(scopes, consumer).Pass();
-  } else {
-    scoped_ptr<ValidatingConsumer> validating_consumer(
-        new ValidatingConsumer(this, consumer));
-
-    scoped_ptr<Request> request = OAuth2TokenService::StartRequest(
-        scopes, validating_consumer.get());
-    validating_consumer->StartValidation(request.Pass());
-    return validating_consumer.PassAs<Request>();
-  }
 }
 
 void DeviceOAuth2TokenService::OnValidationComplete(
@@ -254,23 +234,32 @@ void DeviceOAuth2TokenService::RegisterPrefs(PrefRegistrySimple* registry) {
                                std::string());
 }
 
-void DeviceOAuth2TokenService::SetAndSaveRefreshToken(
+bool DeviceOAuth2TokenService::SetAndSaveRefreshToken(
     const std::string& refresh_token) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+
   std::string encrypted_refresh_token =
-      CryptohomeLibrary::Get()->EncryptWithSystemSalt(refresh_token);
+      token_encryptor_->EncryptWithSystemSalt(refresh_token);
+  if (encrypted_refresh_token.empty()) {
+    LOG(ERROR) << "Failed to encrypt refresh token; save aborted.";
+    return false;
+  }
 
   local_state_->SetString(prefs::kDeviceRobotAnyApiRefreshToken,
                           encrypted_refresh_token);
+  return true;
 }
 
-std::string DeviceOAuth2TokenService::GetRefreshToken() {
+std::string DeviceOAuth2TokenService::GetRefreshToken(
+    const std::string& account_id) {
   if (refresh_token_.empty()) {
     std::string encrypted_refresh_token =
         local_state_->GetString(prefs::kDeviceRobotAnyApiRefreshToken);
 
-    refresh_token_ = CryptohomeLibrary::Get()->DecryptWithSystemSalt(
+    refresh_token_ = token_encryptor_->DecryptWithSystemSalt(
         encrypted_refresh_token);
+    if (!encrypted_refresh_token.empty() && refresh_token_.empty())
+      LOG(ERROR) << "Failed to decrypt refresh token.";
   }
   return refresh_token_;
 }
@@ -281,6 +270,24 @@ std::string DeviceOAuth2TokenService::GetRobotAccountId() {
   if (connector)
     return connector->GetDeviceCloudPolicyManager()->GetRobotAccountId();
   return std::string();
+}
+
+net::URLRequestContextGetter* DeviceOAuth2TokenService::GetRequestContext() {
+  return url_request_context_getter_.get();
+}
+
+scoped_ptr<OAuth2TokenService::RequestImpl>
+DeviceOAuth2TokenService::CreateRequest(
+    const std::string& account_id,
+    OAuth2TokenService::Consumer* consumer) {
+  if (refresh_token_is_valid_)
+    return OAuth2TokenService::CreateRequest(account_id, consumer);
+
+  // Substitute our own consumer to wait for refresh token validation.
+  scoped_ptr<ValidatingConsumer> validating_consumer(
+      new ValidatingConsumer(this, account_id, consumer));
+  validating_consumer->StartValidation();
+  return validating_consumer.PassAs<RequestImpl>();
 }
 
 }  // namespace chromeos

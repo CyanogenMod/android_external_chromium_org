@@ -5,8 +5,8 @@
 #ifndef CHROME_BROWSER_UI_ASH_LAUNCHER_LAUNCHER_CONTEXT_MENU_H_
 #define CHROME_BROWSER_UI_ASH_LAUNCHER_LAUNCHER_CONTEXT_MENU_H_
 
-#include "ash/launcher/launcher_alignment_menu.h"
 #include "ash/launcher/launcher_types.h"
+#include "ash/shelf/shelf_alignment_menu.h"
 #include "base/basictypes.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
@@ -15,7 +15,7 @@
 class ChromeLauncherController;
 
 namespace aura {
-class RootWindow;
+class Window;
 }
 
 namespace extensions {
@@ -30,10 +30,10 @@ class LauncherContextMenu : public ui::SimpleMenuModel,
   // |clicked on an area with no icons).
   LauncherContextMenu(ChromeLauncherController* controller,
                       const ash::LauncherItem* item,
-                      aura::RootWindow* root_window);
+                      aura::Window* root_window);
   // Creates a menu used as a desktop context menu on |root_window|.
   LauncherContextMenu(ChromeLauncherController* controller,
-                      aura::RootWindow* root_window);
+                      aura::Window* root_window);
   virtual ~LauncherContextMenu();
 
   void Init();
@@ -43,7 +43,7 @@ class LauncherContextMenu : public ui::SimpleMenuModel,
 
   // ui::SimpleMenuModel::Delegate overrides:
   virtual bool IsItemForCommandIdDynamic(int command_id) const OVERRIDE;
-  virtual string16 GetLabelForCommandId(int command_id) const OVERRIDE;
+  virtual base::string16 GetLabelForCommandId(int command_id) const OVERRIDE;
   virtual bool IsCommandIdChecked(int command_id) const OVERRIDE;
   virtual bool IsCommandIdEnabled(int command_id) const OVERRIDE;
   virtual bool GetAcceleratorForCommandId(
@@ -84,11 +84,11 @@ class LauncherContextMenu : public ui::SimpleMenuModel,
 
   ash::LauncherItem item_;
 
-  ash::LauncherAlignmentMenu launcher_alignment_menu_;
+  ash::ShelfAlignmentMenu shelf_alignment_menu_;
 
   scoped_ptr<extensions::ContextMenuMatcher> extension_items_;
 
-  aura::RootWindow* root_window_;
+  aura::Window* root_window_;
 
   DISALLOW_COPY_AND_ASSIGN(LauncherContextMenu);
 };

@@ -18,8 +18,6 @@
 
 using content::BrowserThread;
 
-namespace chrome {
-
 namespace {
 
 // MediaDeviceNotification.DeviceInfo histogram values.
@@ -38,14 +36,6 @@ enum DeviceInfoHistogramBuckets {
 #if !defined(OS_WIN)
 const char kRootPath[] = "/";
 #endif
-
-void ValidatePathOnFileThread(
-    const base::FilePath& path,
-    const base::Callback<void(bool)>& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
-  BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-                          base::Bind(callback, base::PathExists(path)));
-}
 
 typedef std::vector<StorageInfo> StorageInfoList;
 
@@ -78,6 +68,7 @@ void FilterAttachedDevicesOnFileThread(MediaStorageUtil::DeviceIdSet* devices) {
 
     if (type == StorageInfo::FIXED_MASS_STORAGE ||
         type == StorageInfo::ITUNES ||
+        type == StorageInfo::IPHOTO ||
         type == StorageInfo::PICASA) {
       if (!base::PathExists(base::FilePath::FromUTF8Unsafe(unique_id)))
         missing_devices.insert(*it);
@@ -199,6 +190,7 @@ base::FilePath MediaStorageUtil::FindDevicePathById(
 
   if (type == StorageInfo::FIXED_MASS_STORAGE ||
       type == StorageInfo::ITUNES ||
+      type == StorageInfo::IPHOTO ||
       type == StorageInfo::PICASA) {
     // For this type, the unique_id is the path.
     return base::FilePath::FromUTF8Unsafe(unique_id);
@@ -219,9 +211,10 @@ base::FilePath MediaStorageUtil::FindDevicePathById(
 }
 
 // static
-void MediaStorageUtil::RecordDeviceInfoHistogram(bool mass_storage,
-                                                 const std::string& device_uuid,
-                                                 const string16& device_label) {
+void MediaStorageUtil::RecordDeviceInfoHistogram(
+    bool mass_storage,
+    const std::string& device_uuid,
+    const base::string16& device_label) {
   unsigned int event_number = 0;
   if (!mass_storage)
     event_number = 4;
@@ -251,5 +244,3 @@ bool MediaStorageUtil::IsRemovableStorageAttached(const std::string& id) {
   }
   return false;
 }
-
-}  // namespace chrome

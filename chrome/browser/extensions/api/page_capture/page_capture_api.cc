@@ -90,7 +90,7 @@ bool PageCaptureSaveAsMHTMLFunction::OnMessageReceivedFromRenderView(
 
 void PageCaptureSaveAsMHTMLFunction::CreateTemporaryFile() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
-  bool success = file_util::CreateTemporaryFile(&mhtml_path_);
+  bool success = base::CreateTemporaryFile(&mhtml_path_);
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
       base::Bind(&PageCaptureSaveAsMHTMLFunction::TemporaryFileCreated, this,
@@ -136,9 +136,7 @@ void PageCaptureSaveAsMHTMLFunction::TemporaryFileCreated(bool success) {
 }
 
 void PageCaptureSaveAsMHTMLFunction::MHTMLGenerated(
-    const base::FilePath& file_path,
     int64 mhtml_file_size) {
-  DCHECK(mhtml_path_ == file_path);
   if (mhtml_file_size <= 0) {
     ReturnFailure(kMHTMLGenerationFailedError);
     return;
@@ -191,9 +189,13 @@ WebContents* PageCaptureSaveAsMHTMLFunction::GetWebContents() {
   Browser* browser = NULL;
   content::WebContents* web_contents = NULL;
 
-  if (!ExtensionTabUtil::GetTabById(params_->details.tab_id, profile(),
-                                    include_incognito(), &browser, NULL,
-                                    &web_contents, NULL)) {
+  if (!ExtensionTabUtil::GetTabById(params_->details.tab_id,
+                                    GetProfile(),
+                                    include_incognito(),
+                                    &browser,
+                                    NULL,
+                                    &web_contents,
+                                    NULL)) {
     return NULL;
   }
   return web_contents;

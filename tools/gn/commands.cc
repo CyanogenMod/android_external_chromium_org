@@ -3,9 +3,7 @@
 // found in the LICENSE file.
 
 #include "tools/gn/commands.h"
-
 #include "tools/gn/item.h"
-#include "tools/gn/item_node.h"
 #include "tools/gn/label.h"
 #include "tools/gn/setup.h"
 #include "tools/gn/standard_out.h"
@@ -35,9 +33,12 @@ const CommandInfoMap& GetCommands() {
                                        k##cmd##_Help, \
                                        &Run##cmd);
 
+    INSERT_COMMAND(Args)
     INSERT_COMMAND(Desc)
     INSERT_COMMAND(Gen)
+    INSERT_COMMAND(Gyp)
     INSERT_COMMAND(Help)
+    INSERT_COMMAND(Refs)
 
     #undef INSERT_COMMAND
   }
@@ -50,7 +51,7 @@ const Target* GetTargetForDesc(const std::vector<std::string>& args) {
   if (!setup->DoSetup())
     return NULL;
 
-  // FIXME(brettw): set the output dir to be a sandbox one to avoid polluting
+  // TODO(brettw): set the output dir to be a sandbox one to avoid polluting
   // the real output dir with files written by the build scripts.
 
   // Do the actual load. This will also write out the target ninja files.
@@ -60,29 +61,24 @@ const Target* GetTargetForDesc(const std::vector<std::string>& args) {
   // Need to resolve the label after we know the default toolchain.
   // TODO(brettw) find the current directory and resolve the input label
   // relative to that.
-  Label default_toolchain = setup->build_settings().toolchain_manager()
-      .GetDefaultToolchainUnlocked();
+  Label default_toolchain = setup->loader()->default_toolchain_label();
   Value arg_value(NULL, args[0]);
   Err err;
-  Label label = Label::Resolve(SourceDir(), default_toolchain, arg_value, &err);
+  Label label =
+      Label::Resolve(SourceDir("//"), default_toolchain, arg_value, &err);
   if (err.has_error()) {
     err.PrintToStdout();
     return NULL;
   }
 
-  ItemNode* node;
-  {
-    base::AutoLock lock(setup->build_settings().item_tree().lock());
-    node = setup->build_settings().item_tree().GetExistingNodeLocked(label);
-  }
-  if (!node) {
-    Err(Location(), "",
-        "I don't know about this \"" + label.GetUserVisibleName(false) +
-        "\"").PrintToStdout();
+  const Item* item = setup->builder()->GetItem(label);
+  if (!item) {
+    Err(Location(), "Label not found.",
+        label.GetUserVisibleName(false) + " not found.").PrintToStdout();
     return NULL;
   }
 
-  const Target* target = node->item()->AsTarget();
+  const Target* target = item->AsTarget();
   if (!target) {
     Err(Location(), "Not a target.",
         "The \"" + label.GetUserVisibleName(false) + "\" thing\n"

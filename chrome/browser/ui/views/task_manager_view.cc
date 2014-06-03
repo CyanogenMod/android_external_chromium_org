@@ -8,11 +8,11 @@
 #include "base/compiler_specific.h"
 #include "base/metrics/stats_table.h"
 #include "base/prefs/pref_service.h"
+#include "base/prefs/scoped_user_pref_update.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/memory_purger.h"
-#include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window.h"
@@ -75,7 +75,7 @@ class TaskManagerTableModel
 
   // TableModel overrides:
   virtual int RowCount() OVERRIDE;
-  virtual string16 GetText(int row, int column) OVERRIDE;
+  virtual base::string16 GetText(int row, int column) OVERRIDE;
   virtual gfx::ImageSkia GetIcon(int row) OVERRIDE;
   virtual void SetObserver(ui::TableModelObserver* observer) OVERRIDE;
   virtual int CompareValues(int row1, int row2, int column_id) OVERRIDE;
@@ -101,7 +101,7 @@ int TaskManagerTableModel::RowCount() {
   return model_->ResourceCount();
 }
 
-string16 TaskManagerTableModel::GetText(int row, int col_id) {
+base::string16 TaskManagerTableModel::GetText(int row, int col_id) {
   return model_->GetResourceById(row, col_id);
 }
 
@@ -138,30 +138,11 @@ void TaskManagerTableModel::OnItemsChanged(int start, int length) {
 void TaskManagerTableModel::OnItemsAdded(int start, int length) {
   if (observer_)
     observer_->OnItemsAdded(start, length);
-  // There's a bug in the Windows ListView where inserting items with groups
-  // enabled puts them in the wrong position, so we will need to rebuild the
-  // list view in this case.
-  // (see: http://connect.microsoft.com/VisualStudio/feedback/details/115345/).
-  //
-  // Turns out, forcing a list view rebuild causes http://crbug.com/69391
-  // because items are added to the ListView one-at-a-time when initially
-  // displaying the TaskManager, resulting in many ListView rebuilds. So we are
-  // no longer forcing a rebuild for now because the current UI doesn't use
-  // groups - if we are going to add groups in the upcoming TaskManager UI
-  // revamp, we'll need to re-enable this call to OnModelChanged() and also add
-  // code to avoid doing multiple rebuilds on startup (maybe just generate a
-  // single OnModelChanged() call after the initial population).
-
-  // OnModelChanged();
 }
 
 void TaskManagerTableModel::OnItemsRemoved(int start, int length) {
   if (observer_)
     observer_->OnItemsRemoved(start, length);
-
-  // We may need to change the indentation of some items if the topmost item
-  // in the group was removed, so update the view.
-  OnModelChanged();
 }
 
 // The Task manager UI container.
@@ -192,7 +173,7 @@ class TaskManagerView : public views::ButtonListener,
   virtual bool CanResize() const OVERRIDE;
   virtual bool CanMaximize() const OVERRIDE;
   virtual bool ExecuteWindowsCommand(int command_id) OVERRIDE;
-  virtual string16 GetWindowTitle() const OVERRIDE;
+  virtual base::string16 GetWindowTitle() const OVERRIDE;
   virtual std::string GetWindowName() const OVERRIDE;
   virtual int GetDialogButtons() const OVERRIDE;
   virtual void WindowClosing() OVERRIDE;
@@ -261,7 +242,7 @@ class TaskManagerView : public views::ButtonListener,
   const chrome::HostDesktopType desktop_type_;
 
   // We need to own the text of the menu, the Windows API does not copy it.
-  string16 always_on_top_menu_text_;
+  base::string16 always_on_top_menu_text_;
 
   // An open Task manager window. There can only be one open at a time. This
   // is reset to NULL when the window is closed.
@@ -591,7 +572,7 @@ bool TaskManagerView::ExecuteWindowsCommand(int command_id) {
   return false;
 }
 
-string16 TaskManagerView::GetWindowTitle() const {
+base::string16 TaskManagerView::GetWindowTitle() const {
   return l10n_util::GetStringUTF16(IDS_TASK_MANAGER_TITLE);
 }
 

@@ -13,6 +13,15 @@
 namespace gpu {
 namespace gles2 {
 
+DecoderFramebufferState::DecoderFramebufferState()
+    : clear_state_dirty(false),
+      bound_read_framebuffer(NULL),
+      bound_draw_framebuffer(NULL) {
+}
+
+DecoderFramebufferState::~DecoderFramebufferState() {
+}
+
 Framebuffer::FramebufferComboCompleteMap*
     Framebuffer::framebuffer_combo_complete_map_;
 
@@ -49,6 +58,10 @@ class RenderbufferAttachment
 
   virtual GLenum internal_format() const OVERRIDE {
     return renderbuffer_->internal_format();
+  }
+
+  virtual GLenum texture_type() const OVERRIDE {
+    return 0;
   }
 
   virtual GLsizei samples() const OVERRIDE {
@@ -106,6 +119,9 @@ class RenderbufferAttachment
     renderbuffer_->AddToSignature(signature);
   }
 
+  virtual void OnWillRenderTo() const OVERRIDE {}
+  virtual void OnDidRenderTo() const OVERRIDE {}
+
  protected:
   virtual ~RenderbufferAttachment() { }
 
@@ -148,6 +164,14 @@ class TextureAttachment
     texture_ref_->texture()->GetLevelType(
         target_, level_, &temp_type, &temp_internal_format);
     return temp_internal_format;
+  }
+
+  virtual GLenum texture_type() const OVERRIDE {
+    GLenum temp_type = 0;
+    GLenum temp_internal_format = 0;
+    texture_ref_->texture()->GetLevelType(
+        target_, level_, &temp_type, &temp_internal_format);
+    return temp_type;
   }
 
   virtual GLsizei samples() const OVERRIDE {
@@ -205,6 +229,13 @@ class TextureAttachment
     uint32 need = GLES2Util::GetChannelsNeededForAttachmentType(
         attachment_type, max_color_attachments);
     uint32 have = GLES2Util::GetChannelsForFormat(internal_format);
+
+    // Workaround for NVIDIA drivers that incorrectly expose these formats as
+    // renderable:
+    if (internal_format == GL_LUMINANCE || internal_format == GL_ALPHA ||
+        internal_format == GL_LUMINANCE_ALPHA) {
+      return false;
+    }
     return (need & have) != 0;
   }
 
@@ -213,6 +244,14 @@ class TextureAttachment
     DCHECK(signature);
     texture_manager->AddToSignature(
         texture_ref_.get(), target_, level_, signature);
+  }
+
+  virtual void OnWillRenderTo() const OVERRIDE {
+    texture_ref_->texture()->OnWillModifyPixels();
+  }
+
+  virtual void OnDidRenderTo() const OVERRIDE {
+    texture_ref_->texture()->OnDidModifyPixels();
   }
 
  protected:
@@ -367,6 +406,15 @@ GLenum Framebuffer::GetColorAttachmentFormat() const {
   }
   const Attachment* attachment = it->second.get();
   return attachment->internal_format();
+}
+
+GLenum Framebuffer::GetColorAttachmentTextureType() const {
+  AttachmentMap::const_iterator it = attachments_.find(GL_COLOR_ATTACHMENT0);
+  if (it == attachments_.end()) {
+    return 0;
+  }
+  const Attachment* attachment = it->second.get();
+  return attachment->texture_type();
 }
 
 GLenum Framebuffer::IsPossiblyComplete() const {
@@ -578,6 +626,20 @@ void Framebuffer::OnTextureRefDetached(TextureRef* texture) {
   manager_->OnTextureRefDetached(texture);
 }
 
+void Framebuffer::OnWillRenderTo() const {
+  for (AttachmentMap::const_iterator it = attachments_.begin();
+       it != attachments_.end(); ++it) {
+    it->second->OnWillRenderTo();
+  }
+}
+
+void Framebuffer::OnDidRenderTo() const {
+  for (AttachmentMap::const_iterator it = attachments_.begin();
+       it != attachments_.end(); ++it) {
+    it->second->OnDidRenderTo();
+  }
+}
+
 bool FramebufferManager::GetClientId(
     GLuint service_id, GLuint* client_id) const {
   // This doesn't need to be fast. It's only used during slow queries.
@@ -616,9 +678,13 @@ bool FramebufferManager::IsComplete(
 }
 
 void FramebufferManager::OnTextureRefDetached(TextureRef* texture) {
-  FOR_EACH_OBSERVER(TextureDetachObserver,
-                    texture_detach_observers_,
-                    OnTextureRefDetachedFromFramebuffer(texture));
+  for (TextureDetachObserverVector::iterator it =
+           texture_detach_observers_.begin();
+       it != texture_detach_observers_.end();
+       ++it) {
+    TextureDetachObserver* observer = *it;
+    observer->OnTextureRefDetachedFromFramebuffer(texture);
+  }
 }
 
 }  // namespace gles2

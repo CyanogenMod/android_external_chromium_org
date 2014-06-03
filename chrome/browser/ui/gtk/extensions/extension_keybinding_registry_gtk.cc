@@ -9,7 +9,7 @@
 #include "chrome/browser/extensions/api/commands/command_service.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/extensions/extension.h"
+#include "extensions/common/extension.h"
 #include "ui/base/accelerators/platform_accelerator_gtk.h"
 
 // static
@@ -64,6 +64,7 @@ void ExtensionKeybindingRegistryGtk::AddExtensionKeybinding(
   command_service->GetNamedCommands(
           extension->id(),
           extensions::CommandService::ACTIVE_ONLY,
+          extensions::CommandService::REGULAR,
           &commands);
 
   for (extensions::CommandMap::const_iterator iter = commands.begin();
@@ -72,8 +73,13 @@ void ExtensionKeybindingRegistryGtk::AddExtensionKeybinding(
       continue;
 
     ui::Accelerator accelerator(iter->second.accelerator());
-    event_targets_[accelerator] =
-        std::make_pair(extension->id(), iter->second.command_name());
+    event_targets_[accelerator].push_back(
+        std::make_pair(extension->id(), iter->second.command_name()));
+
+    // Shortcuts except media keys have only one target in the list. See comment
+    // about |event_targets_|.
+    if (!extensions::CommandService::IsMediaKey(iter->second.accelerator()))
+      DCHECK_EQ(1u, event_targets_[accelerator].size());
 
     if (!accel_group_) {
       accel_group_ = gtk_accel_group_new();
@@ -98,8 +104,10 @@ void ExtensionKeybindingRegistryGtk::AddExtensionKeybinding(
           &browser_action,
           NULL)) {
     ui::Accelerator accelerator(browser_action.accelerator());
-    event_targets_[accelerator] =
-      std::make_pair(extension->id(), browser_action.command_name());
+    event_targets_[accelerator].push_back(
+        std::make_pair(extension->id(), browser_action.command_name()));
+    // We should have only one target. See comment about |event_targets_|.
+    DCHECK_EQ(1u, event_targets_[accelerator].size());
   }
 
   // Add the Page Action (if any).
@@ -110,8 +118,10 @@ void ExtensionKeybindingRegistryGtk::AddExtensionKeybinding(
           &page_action,
           NULL)) {
     ui::Accelerator accelerator(page_action.accelerator());
-    event_targets_[accelerator] =
-        std::make_pair(extension->id(), page_action.command_name());
+    event_targets_[accelerator].push_back(
+        std::make_pair(extension->id(), page_action.command_name()));
+    // We should have only one target. See comment about |event_targets_|.
+    DCHECK_EQ(1u, event_targets_[accelerator].size());
   }
 
   // Add the Script Badge (if any).
@@ -122,33 +132,23 @@ void ExtensionKeybindingRegistryGtk::AddExtensionKeybinding(
           &script_badge,
           NULL)) {
     ui::Accelerator accelerator(script_badge.accelerator());
-    event_targets_[accelerator] =
-        std::make_pair(extension->id(), script_badge.command_name());
+    event_targets_[accelerator].push_back(
+        std::make_pair(extension->id(), script_badge.command_name()));
+    // We should have only one target. See comment about |event_targets_|.
+    DCHECK_EQ(1u, event_targets_[accelerator].size());
   }
 }
 
-void ExtensionKeybindingRegistryGtk::RemoveExtensionKeybinding(
-    const extensions::Extension* extension,
+void ExtensionKeybindingRegistryGtk::RemoveExtensionKeybindingImpl(
+    const ui::Accelerator& accelerator,
     const std::string& command_name) {
-  EventTargets::iterator iter = event_targets_.begin();
-  while (iter != event_targets_.end()) {
-    if (iter->second.first != extension->id() ||
-        (!command_name.empty() && iter->second.second != command_name)) {
-      ++iter;
-      continue;  // Not the extension or command we asked for.
-    }
-
-    // On GTK, unlike Windows, the Event Targets contain all events but we must
-    // only unregister the ones we registered targets for.
-    if (!ShouldIgnoreCommand(iter->second.second)) {
-      gtk_accel_group_disconnect_key(
-          accel_group_,
-          ui::GetGdkKeyCodeForAccelerator(iter->first),
-          ui::GetGdkModifierForAccelerator(iter->first));
-    }
-
-    EventTargets::iterator old = iter++;
-    event_targets_.erase(old);
+  // On GTK, unlike Windows, the Event Targets contain all events but we must
+  // only unregister the ones we registered targets for.
+  if (!ShouldIgnoreCommand(command_name)) {
+    gtk_accel_group_disconnect_key(
+        accel_group_,
+        ui::GetGdkKeyCodeForAccelerator(accelerator),
+        ui::GetGdkModifierForAccelerator(accelerator));
   }
 }
 
@@ -160,12 +160,5 @@ gboolean ExtensionKeybindingRegistryGtk::OnGtkAccelerator(
   ui::Accelerator accelerator = ui::AcceleratorForGdkKeyCodeAndModifier(
       keyval, modifier);
 
-  EventTargets::iterator it = event_targets_.find(accelerator);
-  if (it == event_targets_.end()) {
-    NOTREACHED();  // Shouldn't get this event for something not registered.
-    return FALSE;
-  }
-
-  CommandExecuted(it->second.first, it->second.second);
-  return TRUE;
+  return ExtensionKeybindingRegistry::NotifyEventTargets(accelerator);
 }

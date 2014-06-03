@@ -12,8 +12,6 @@
 #include "ppapi/host/ppapi_host.h"
 #include "ppapi/proxy/ppapi_messages.h"
 
-namespace chrome {
-
 PepperFlashFullscreenHost::PepperFlashFullscreenHost(
     content::RendererPpapiHost* host,
     PP_Instance instance,
@@ -41,12 +39,7 @@ int32_t PepperFlashFullscreenHost::OnSetFullscreen(
     bool fullscreen) {
   content::PepperPluginInstance* plugin_instance =
       renderer_ppapi_host_->GetPluginInstance(pp_instance());
-  if (plugin_instance) {
-    plugin_instance->FlashSetFullscreen(fullscreen, true);
+  if (plugin_instance && plugin_instance->FlashSetFullscreen(fullscreen, true))
     return PP_OK;
-  }
   return PP_ERROR_FAILED;
 }
-
-}  // namespace chrome
-

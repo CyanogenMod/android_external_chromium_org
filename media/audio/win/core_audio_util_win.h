@@ -26,6 +26,12 @@ using base::win::ScopedComPtr;
 
 namespace media {
 
+
+// Represents audio channel configuration constants as understood by Windows.
+// E.g. KSAUDIO_SPEAKER_MONO.  For a list of possible values see:
+// http://msdn.microsoft.com/en-us/library/windows/hardware/ff537083(v=vs.85).aspx
+typedef uint32 ChannelConfig;
+
 class MEDIA_EXPORT CoreAudioUtil {
  public:
   // Returns true if Windows Core Audio is supported.
@@ -59,6 +65,10 @@ class MEDIA_EXPORT CoreAudioUtil {
   static ScopedComPtr<IMMDevice> CreateDefaultDevice(
       EDataFlow data_flow, ERole role);
 
+  // Returns the device id of the default output device or an empty string
+  // if no such device exists or if the default device has been disabled.
+  static std::string GetDefaultOutputDeviceID();
+
   // Creates an endpoint device that is specified by a unique endpoint device-
   // identification string.
   static ScopedComPtr<IMMDevice> CreateDevice(const std::string& device_id);
@@ -67,6 +77,24 @@ class MEDIA_EXPORT CoreAudioUtil {
   // Example: "{0.0.1.00000000}.{8db6020f-18e3-4f25-b6f5-7726c9122574}", and
   //          "Microphone (Realtek High Definition Audio)".
   static HRESULT GetDeviceName(IMMDevice* device, AudioDeviceName* name);
+
+  // Returns the device ID/path of the controller (a.k.a. physical device that
+  // |device| is connected to.  This ID will be the same for all devices from
+  // the same controller so it is useful for doing things like determining
+  // whether a set of output and input devices belong to the same controller.
+  // The device enumerator is required as well as the device itself since
+  // looking at the device topology is required and we need to open up
+  // associated devices to determine the controller id.
+  // If the ID could not be determined for some reason, an empty string is
+  // returned.
+  static std::string GetAudioControllerID(IMMDevice* device,
+      IMMDeviceEnumerator* enumerator);
+
+  // Accepts an id of an input device and finds a matching output device id.
+  // If the associated hardware does not have an audio output device (e.g.
+  // a webcam with a mic), an empty string is returned.
+  static std::string GetMatchingOutputDeviceID(
+      const std::string& input_device_id);
 
   // Gets the user-friendly name of the endpoint device which is represented
   // by a unique id in |device_id|.
@@ -84,7 +112,7 @@ class MEDIA_EXPORT CoreAudioUtil {
   // manage the flow of audio data between the application and an audio endpoint
   // device.
 
-  // Create an IAudioClient interface for the default IMMDevice where
+  // Create an IAudioClient instance for the default IMMDevice where
   // flow direction and role is define by |data_flow| and |role|.
   // The IAudioClient interface enables a client to create and initialize an
   // audio stream between an audio application and the audio engine (for a
@@ -92,6 +120,12 @@ class MEDIA_EXPORT CoreAudioUtil {
   // (for an exclusive-mode stream).
   static ScopedComPtr<IAudioClient> CreateDefaultClient(EDataFlow data_flow,
                                                         ERole role);
+
+  // Create an IAudioClient instance for a specific device _or_ the default
+  // device if |device_id| is empty.
+  static ScopedComPtr<IAudioClient> CreateClient(const std::string& device_id,
+                                                 EDataFlow data_flow,
+                                                 ERole role);
 
   // Create an IAudioClient interface for an existing IMMDevice given by
   // |audio_device|. Flow direction and role is define by the |audio_device|.
@@ -104,13 +138,6 @@ class MEDIA_EXPORT CoreAudioUtil {
   static HRESULT GetSharedModeMixFormat(IAudioClient* client,
                                         WAVEFORMATPCMEX* format);
 
-  // Get the mix format that the audio engine uses internally for processing
-  // of shared-mode streams using the default IMMDevice where flow direction
-  // and role is define by |data_flow| and |role|.
-  static HRESULT GetDefaultSharedModeMixFormat(EDataFlow data_flow,
-                                               ERole role,
-                                               WAVEFORMATPCMEX* format);
-
   // Returns true if the specified |client| supports the format in |format|
   // for the given |share_mode| (shared or exclusive).
   static bool IsFormatSupported(IAudioClient* client,
@@ -122,7 +149,9 @@ class MEDIA_EXPORT CoreAudioUtil {
   // and |role|. If this method returns true for a certain channel layout, it
   // means that SharedModeInitialize() will succeed using a format based on
   // the preferred format where the channel layout has been modified.
-  static bool IsChannelLayoutSupported(EDataFlow data_flow, ERole role,
+  static bool IsChannelLayoutSupported(const std::string& device_id,
+                                       EDataFlow data_flow,
+                                       ERole role,
                                        ChannelLayout channel_layout);
 
   // For a shared-mode stream, the audio engine periodically processes the
@@ -147,6 +176,19 @@ class MEDIA_EXPORT CoreAudioUtil {
                                              AudioParameters* params);
   static HRESULT GetPreferredAudioParameters(const std::string& device_id,
                                              AudioParameters* params);
+
+  // Retrieves an integer mask which corresponds to the channel layout the
+  // audio engine uses for its internal processing/mixing of shared-mode
+  // streams. This mask indicates which channels are present in the multi-
+  // channel stream. The least significant bit corresponds with the Front Left
+  // speaker, the next least significant bit corresponds to the Front Right
+  // speaker, and so on, continuing in the order defined in KsMedia.h.
+  // See http://msdn.microsoft.com/en-us/library/windows/hardware/ff537083(v=vs.85).aspx
+  // for more details.
+  // To get the channel config of the default device, pass an empty string
+  // for |device_id|.
+  static ChannelConfig GetChannelConfig(const std::string& device_id,
+                                        EDataFlow data_flow);
 
   // After activating an IAudioClient interface on an audio endpoint device,
   // the client must initialize it once, and only once, to initialize the audio

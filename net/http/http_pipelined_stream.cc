@@ -99,6 +99,10 @@ bool HttpPipelinedStream::IsConnectionReusable() const {
   return pipeline_->usable();
 }
 
+int64 HttpPipelinedStream::GetTotalReceivedBytes() const {
+  return pipeline_->GetTotalReceivedBytes(pipeline_id_);
+}
+
 bool HttpPipelinedStream::GetLoadTimingInfo(
     LoadTimingInfo* load_timing_info) const {
   return pipeline_->GetLoadTimingInfo(pipeline_id_, load_timing_info);
@@ -119,6 +123,11 @@ bool HttpPipelinedStream::IsSpdyHttpStream() const {
 
 void HttpPipelinedStream::Drain(HttpNetworkSession* session) {
   pipeline_->Drain(this, session);
+}
+
+void HttpPipelinedStream::SetPriority(RequestPriority priority) {
+  // TODO(akalin): Plumb this through to |pipeline_| and its
+  // underlying ClientSocketHandle.
 }
 
 const SSLConfig& HttpPipelinedStream::used_ssl_config() const {

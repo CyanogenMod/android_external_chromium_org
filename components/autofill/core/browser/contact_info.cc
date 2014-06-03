@@ -16,15 +16,6 @@
 
 namespace autofill {
 
-static const ServerFieldType kAutofillNameInfoTypes[] = {
-  NAME_FIRST,
-  NAME_MIDDLE,
-  NAME_LAST
-};
-
-static const size_t kAutofillNameInfoLength =
-    arraysize(kAutofillNameInfoTypes);
-
 NameInfo::NameInfo() {}
 
 NameInfo::NameInfo(const NameInfo& info) : FormGroup() {
@@ -52,8 +43,8 @@ void NameInfo::GetSupportedTypes(ServerFieldTypeSet* supported_types) const {
 }
 
 base::string16 NameInfo::GetRawInfo(ServerFieldType type) const {
-  // TODO(isherman): Is GetStorableType even necessary?
-  switch (AutofillType(type).GetStorableType()) {
+  DCHECK_EQ(NAME, AutofillType(type).group());
+  switch (type) {
     case NAME_FIRST:
       return first();
 
@@ -75,10 +66,8 @@ base::string16 NameInfo::GetRawInfo(ServerFieldType type) const {
 }
 
 void NameInfo::SetRawInfo(ServerFieldType type, const base::string16& value) {
-  // TODO(isherman): Is GetStorableType even necessary?
-  ServerFieldType storable_type = AutofillType(type).GetStorableType();
-  DCHECK_EQ(NAME, AutofillType(storable_type).group());
-  switch (storable_type) {
+  DCHECK_EQ(NAME, AutofillType(type).group());
+  switch (type) {
     case NAME_FIRST:
       first_ = value;
       break;

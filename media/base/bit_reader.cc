@@ -4,6 +4,8 @@
 
 #include "media/base/bit_reader.h"
 
+#include <algorithm>
+
 namespace media {
 
 BitReader::BitReader(const uint8* data, off_t size)
@@ -17,7 +19,7 @@ BitReader::~BitReader() {}
 
 bool BitReader::SkipBits(int num_bits) {
   DCHECK_GE(num_bits, 0);
-  DLOG_IF(INFO, num_bits > 100)
+  DVLOG_IF(0, num_bits > 100)
       << "BitReader::SkipBits inefficient for large skips";
 
   // Skip any bits in the current byte waiting to be processed, then

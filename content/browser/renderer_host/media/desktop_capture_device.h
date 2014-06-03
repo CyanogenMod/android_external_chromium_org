@@ -38,17 +38,13 @@ class CONTENT_EXPORT DesktopCaptureDevice : public media::VideoCaptureDevice {
   virtual ~DesktopCaptureDevice();
 
   // VideoCaptureDevice interface.
-  virtual void Allocate(const media::VideoCaptureCapability& capture_format,
-                        EventHandler* observer) OVERRIDE;
-  virtual void Start() OVERRIDE;
-  virtual void Stop() OVERRIDE;
-  virtual void DeAllocate() OVERRIDE;
-  virtual const Name& device_name() OVERRIDE;
+  virtual void AllocateAndStart(const media::VideoCaptureParams& params,
+                                scoped_ptr<Client> client) OVERRIDE;
+  virtual void StopAndDeAllocate() OVERRIDE;
 
  private:
   class Core;
   scoped_refptr<Core> core_;
-  Name name_;
 
   DISALLOW_COPY_AND_ASSIGN(DesktopCaptureDevice);
 };

@@ -4,8 +4,6 @@
 
 #include "chrome/browser/extensions/api/extension_action/extension_action_api.h"
 
-#include <string>
-
 #include "base/base64.h"
 #include "base/lazy_instance.h"
 #include "base/strings/string_number_conversions.h"
@@ -16,9 +14,11 @@
 #include "chrome/browser/extensions/extension_action.h"
 #include "chrome/browser/extensions/extension_action_manager.h"
 #include "chrome/browser/extensions/extension_function_registry.h"
+#include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
+#include "chrome/browser/extensions/extension_toolbar_model.h"
 #include "chrome/browser/extensions/location_bar_controller.h"
 #include "chrome/browser/extensions/state_store.h"
 #include "chrome/browser/extensions/tab_helper.h"
@@ -27,9 +27,15 @@
 #include "chrome/common/render_messages.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_service.h"
+#include "extensions/browser/event_router.h"
 #include "extensions/common/error_utils.h"
+#include "ui/gfx/codec/png_codec.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/image/image_skia.h"
+
+using content::WebContents;
+
+namespace page_actions_keys = extension_page_actions_api_constants;
 
 namespace extensions {
 
@@ -54,6 +60,10 @@ const char kNoTabError[] = "No tab with id: *.";
 const char kNoPageActionError[] =
     "This extension has no page action specified.";
 const char kUrlNotActiveError[] = "This url is no longer active: *.";
+const char kOpenPopupError[] =
+    "Failed to show popup either because there is an existing popup or another "
+    "error occurred.";
+const char kInternalError[] = "Internal error.";
 
 struct IconRepresentationInfo {
   // Size as a string that will be used to retrieve representation value from
@@ -89,24 +99,26 @@ bool StringToSkBitmap(const std::string& str, SkBitmap* bitmap) {
   std::string raw_str;
   if (!base::Base64Decode(str, &raw_str))
     return false;
-  IPC::Message bitmap_pickle(raw_str.data(), raw_str.size());
-  PickleIterator iter(bitmap_pickle);
-  return IPC::ReadParam(&bitmap_pickle, &iter, bitmap);
+
+  bool success = gfx::PNGCodec::Decode(
+      reinterpret_cast<unsigned const char*>(raw_str.data()), raw_str.size(),
+      bitmap);
+  return success;
 }
 
 // Conversion function for reading/writing to storage.
-std::string RepresentationToString(const gfx::ImageSkia& image,
-                                   ui::ScaleFactor scale) {
+std::string RepresentationToString(const gfx::ImageSkia& image, float scale) {
   SkBitmap bitmap = image.GetRepresentation(scale).sk_bitmap();
-  IPC::Message bitmap_pickle;
-  // Clear the header values so they don't vary in serialization.
-  bitmap_pickle.SetHeaderValues(0, 0, 0);
-  IPC::WriteParam(&bitmap_pickle, bitmap);
-  std::string raw_str(static_cast<const char*>(bitmap_pickle.data()),
-                      bitmap_pickle.size());
-  std::string base64_str;
-  if (!base::Base64Encode(raw_str, &base64_str))
+  SkAutoLockPixels lock_image(bitmap);
+  std::vector<unsigned char> data;
+  bool success = gfx::PNGCodec::EncodeBGRASkBitmap(bitmap, false, &data);
+  if (!success)
     return std::string();
+
+  base::StringPiece raw_str(
+      reinterpret_cast<const char*>(&data[0]), data.size());
+  std::string base64_str;
+  base::Base64Encode(raw_str, &base64_str);
   return base64_str;
 }
 
@@ -139,7 +151,8 @@ void SetDefaultsFromValue(const base::DictionaryValue* dict,
       if (icon_value->GetString(kIconSizes[i].size_string, &str_value) &&
           StringToSkBitmap(str_value, &bitmap)) {
         CHECK(!bitmap.isNull());
-        icon.AddRepresentation(gfx::ImageSkiaRep(bitmap, kIconSizes[i].scale));
+        float scale = ui::GetImageScale(kIconSizes[i].scale);
+        icon.AddRepresentation(gfx::ImageSkiaRep(bitmap, scale));
       }
     }
     action->SetIcon(kTabId, gfx::Image(icon));
@@ -167,10 +180,11 @@ scoped_ptr<base::DictionaryValue> DefaultsToValue(ExtensionAction* action) {
   if (!icon.isNull()) {
     base::DictionaryValue* icon_value = new base::DictionaryValue();
     for (size_t i = 0; i < arraysize(kIconSizes); i++) {
-      if (icon.HasRepresentation(kIconSizes[i].scale)) {
+      float scale = ui::GetImageScale(kIconSizes[i].scale);
+      if (icon.HasRepresentation(scale)) {
         icon_value->SetString(
             kIconSizes[i].size_string,
-            RepresentationToString(icon, kIconSizes[i].scale));
+            RepresentationToString(icon, scale));
       }
     }
     dict->Set(kIconStorageKey, icon_value);
@@ -203,6 +217,7 @@ ExtensionActionAPI::ExtensionActionAPI(Profile* profile) {
   registry->RegisterFunction<BrowserActionGetPopupFunction>();
   registry->RegisterFunction<BrowserActionEnableFunction>();
   registry->RegisterFunction<BrowserActionDisableFunction>();
+  registry->RegisterFunction<BrowserActionOpenPopupFunction>();
 
   // Page Actions
   registry->RegisterFunction<EnablePageActionsFunction>();
@@ -231,6 +246,11 @@ ExtensionActionAPI::GetFactoryInstance() {
 }
 
 // static
+ExtensionActionAPI* ExtensionActionAPI::Get(Profile* profile) {
+  return ProfileKeyedAPIFactory<ExtensionActionAPI>::GetForProfile(profile);
+}
+
+// static
 bool ExtensionActionAPI::GetBrowserActionVisibility(
     const ExtensionPrefs* prefs,
     const std::string& extension_id) {
@@ -253,11 +273,121 @@ void ExtensionActionAPI::SetBrowserActionVisibility(
 
   prefs->UpdateExtensionPref(extension_id,
                              kBrowserActionVisible,
-                             Value::CreateBooleanValue(visible));
+                             new base::FundamentalValue(visible));
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_EXTENSION_BROWSER_ACTION_VISIBILITY_CHANGED,
       content::Source<ExtensionPrefs>(prefs),
       content::Details<const std::string>(&extension_id));
+}
+
+// static
+void ExtensionActionAPI::BrowserActionExecuted(
+    Profile* profile,
+    const ExtensionAction& browser_action,
+    WebContents* web_contents) {
+  ExtensionActionExecuted(profile, browser_action, web_contents);
+}
+
+// static
+void ExtensionActionAPI::PageActionExecuted(Profile* profile,
+                                            const ExtensionAction& page_action,
+                                            int tab_id,
+                                            const std::string& url,
+                                            int button) {
+  DispatchOldPageActionEvent(profile, page_action.extension_id(),
+                             page_action.id(), tab_id, url, button);
+  WebContents* web_contents = NULL;
+  if (!extensions::ExtensionTabUtil::GetTabById(
+          tab_id, profile, profile->IsOffTheRecord(),
+          NULL, NULL, &web_contents, NULL)) {
+    return;
+  }
+  ExtensionActionExecuted(profile, page_action, web_contents);
+}
+
+// static
+void ExtensionActionAPI::ScriptBadgeExecuted(
+    Profile* profile,
+    const ExtensionAction& script_badge,
+    int tab_id) {
+  WebContents* web_contents = NULL;
+  if (!extensions::ExtensionTabUtil::GetTabById(
+          tab_id, profile, profile->IsOffTheRecord(),
+          NULL, NULL, &web_contents, NULL)) {
+    return;
+  }
+  ExtensionActionExecuted(profile, script_badge, web_contents);
+}
+
+// static
+void ExtensionActionAPI::DispatchEventToExtension(
+    Profile* profile,
+    const std::string& extension_id,
+    const std::string& event_name,
+    scoped_ptr<base::ListValue> event_args) {
+  if (!extensions::ExtensionSystem::Get(profile)->event_router())
+    return;
+
+  scoped_ptr<Event> event(new Event(event_name, event_args.Pass()));
+  event->restrict_to_browser_context = profile;
+  event->user_gesture = EventRouter::USER_GESTURE_ENABLED;
+  ExtensionSystem::Get(profile)->event_router()->
+      DispatchEventToExtension(extension_id, event.Pass());
+}
+
+// static
+void ExtensionActionAPI::DispatchOldPageActionEvent(
+    Profile* profile,
+    const std::string& extension_id,
+    const std::string& page_action_id,
+    int tab_id,
+    const std::string& url,
+    int button) {
+  scoped_ptr<base::ListValue> args(new base::ListValue());
+  args->Append(new base::StringValue(page_action_id));
+
+  DictionaryValue* data = new DictionaryValue();
+  data->Set(page_actions_keys::kTabIdKey, new base::FundamentalValue(tab_id));
+  data->Set(page_actions_keys::kTabUrlKey, new base::StringValue(url));
+  data->Set(page_actions_keys::kButtonKey,
+            new base::FundamentalValue(button));
+  args->Append(data);
+
+  DispatchEventToExtension(profile, extension_id, "pageActions", args.Pass());
+}
+
+// static
+void ExtensionActionAPI::ExtensionActionExecuted(
+    Profile* profile,
+    const ExtensionAction& extension_action,
+    WebContents* web_contents) {
+  const char* event_name = NULL;
+  switch (extension_action.action_type()) {
+    case ActionInfo::TYPE_BROWSER:
+      event_name = "browserAction.onClicked";
+      break;
+    case ActionInfo::TYPE_PAGE:
+      event_name = "pageAction.onClicked";
+      break;
+    case ActionInfo::TYPE_SCRIPT_BADGE:
+      event_name = "scriptBadge.onClicked";
+      break;
+    case ActionInfo::TYPE_SYSTEM_INDICATOR:
+      // The System Indicator handles its own clicks.
+      break;
+  }
+
+  if (event_name) {
+    scoped_ptr<base::ListValue> args(new base::ListValue());
+    DictionaryValue* tab_value = extensions::ExtensionTabUtil::CreateTabValue(
+        web_contents);
+    args->Append(tab_value);
+
+    DispatchEventToExtension(profile,
+                             extension_action.extension_id(),
+                             event_name,
+                             args.Pass());
+  }
 }
 
 //
@@ -371,7 +501,7 @@ ExtensionActionFunction::~ExtensionActionFunction() {
 }
 
 bool ExtensionActionFunction::RunImpl() {
-  ExtensionActionManager* manager = ExtensionActionManager::Get(profile_);
+  ExtensionActionManager* manager = ExtensionActionManager::Get(GetProfile());
   const Extension* extension = GetExtension();
   if (StartsWithASCII(name(), "scriptBadge.", false)) {
     extension_action_ = manager->GetScriptBadge(*extension);
@@ -396,8 +526,13 @@ bool ExtensionActionFunction::RunImpl() {
 
   // Find the WebContents that contains this tab id if one is required.
   if (tab_id_ != ExtensionAction::kDefaultTabId) {
-    ExtensionTabUtil::GetTabById(
-        tab_id_, profile(), include_incognito(), NULL, NULL, &contents_, NULL);
+    ExtensionTabUtil::GetTabById(tab_id_,
+                                 GetProfile(),
+                                 include_incognito(),
+                                 NULL,
+                                 NULL,
+                                 &contents_,
+                                 NULL);
     if (!contents_) {
       error_ = ErrorUtils::FormatErrorMessage(
           kNoTabError, base::IntToString(tab_id_));
@@ -464,10 +599,10 @@ void ExtensionActionFunction::NotifyChange() {
   switch (extension_action_->action_type()) {
     case ActionInfo::TYPE_BROWSER:
     case ActionInfo::TYPE_PAGE:
-      if (ExtensionActionManager::Get(profile_)
+      if (ExtensionActionManager::Get(GetProfile())
               ->GetBrowserAction(*extension_.get())) {
         NotifyBrowserActionChange();
-      } else if (ExtensionActionManager::Get(profile_)
+      } else if (ExtensionActionManager::Get(GetProfile())
                      ->GetPageAction(*extension_.get())) {
         NotifyLocationBarChange();
       }
@@ -486,7 +621,7 @@ void ExtensionActionFunction::NotifyBrowserActionChange() {
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_EXTENSION_BROWSER_ACTION_UPDATED,
       content::Source<ExtensionAction>(extension_action_),
-      content::Details<Profile>(profile()));
+      content::Details<Profile>(GetProfile()));
 }
 
 void ExtensionActionFunction::NotifyLocationBarChange() {
@@ -497,7 +632,7 @@ void ExtensionActionFunction::NotifyLocationBarChange() {
 void ExtensionActionFunction::NotifySystemIndicatorChange() {
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_EXTENSION_SYSTEM_INDICATOR_UPDATED,
-      content::Source<Profile>(profile()),
+      content::Source<Profile>(GetProfile()),
       content::Details<ExtensionAction>(extension_action_));
 }
 
@@ -578,7 +713,8 @@ bool ExtensionActionSetIconFunction::RunExtensionAction() {
         SkBitmap bitmap;
         EXTENSION_FUNCTION_VALIDATE(IPC::ReadParam(&pickle, &iter, &bitmap));
         CHECK(!bitmap.isNull());
-        icon.AddRepresentation(gfx::ImageSkiaRep(bitmap, kIconSizes[i].scale));
+        float scale = ui::GetImageScale(kIconSizes[i].scale);
+        icon.AddRepresentation(gfx::ImageSkiaRep(bitmap, scale));
       }
     }
 
@@ -655,30 +791,93 @@ bool ExtensionActionSetBadgeBackgroundColorFunction::RunExtensionAction() {
 }
 
 bool ExtensionActionGetTitleFunction::RunExtensionAction() {
-  SetResult(Value::CreateStringValue(extension_action_->GetTitle(tab_id_)));
+  SetResult(new base::StringValue(extension_action_->GetTitle(tab_id_)));
   return true;
 }
 
 bool ExtensionActionGetPopupFunction::RunExtensionAction() {
   SetResult(
-      Value::CreateStringValue(extension_action_->GetPopupUrl(tab_id_).spec()));
+      new base::StringValue(extension_action_->GetPopupUrl(tab_id_).spec()));
   return true;
 }
 
 bool ExtensionActionGetBadgeTextFunction::RunExtensionAction() {
-  SetResult(Value::CreateStringValue(extension_action_->GetBadgeText(tab_id_)));
+  SetResult(new base::StringValue(extension_action_->GetBadgeText(tab_id_)));
   return true;
 }
 
 bool ExtensionActionGetBadgeBackgroundColorFunction::RunExtensionAction() {
   base::ListValue* list = new base::ListValue();
   SkColor color = extension_action_->GetBadgeBackgroundColor(tab_id_);
-  list->Append(Value::CreateIntegerValue(SkColorGetR(color)));
-  list->Append(Value::CreateIntegerValue(SkColorGetG(color)));
-  list->Append(Value::CreateIntegerValue(SkColorGetB(color)));
-  list->Append(Value::CreateIntegerValue(SkColorGetA(color)));
+  list->Append(
+      new base::FundamentalValue(static_cast<int>(SkColorGetR(color))));
+  list->Append(
+      new base::FundamentalValue(static_cast<int>(SkColorGetG(color))));
+  list->Append(
+      new base::FundamentalValue(static_cast<int>(SkColorGetB(color))));
+  list->Append(
+      new base::FundamentalValue(static_cast<int>(SkColorGetA(color))));
   SetResult(list);
   return true;
+}
+
+BrowserActionOpenPopupFunction::BrowserActionOpenPopupFunction()
+    : response_sent_(false) {
+}
+
+bool BrowserActionOpenPopupFunction::RunImpl() {
+  ExtensionToolbarModel* model = ExtensionToolbarModel::Get(GetProfile());
+  if (!model) {
+    error_ = kInternalError;
+    return false;
+  }
+
+  if (!model->ShowBrowserActionPopup(extension_)) {
+    error_ = kOpenPopupError;
+    return false;
+  }
+
+  registrar_.Add(this,
+                 chrome::NOTIFICATION_EXTENSION_HOST_DID_STOP_LOADING,
+                 content::Source<Profile>(GetProfile()));
+
+  // Set a timeout for waiting for the notification that the popup is loaded.
+  // Waiting is required so that the popup view can be retrieved by the custom
+  // bindings for the response callback. It's also needed to keep this function
+  // instance around until a notification is observed.
+  base::MessageLoopForUI::current()->PostDelayedTask(
+      FROM_HERE,
+      base::Bind(&BrowserActionOpenPopupFunction::OpenPopupTimedOut, this),
+      base::TimeDelta::FromSeconds(10));
+  return true;
+}
+
+void BrowserActionOpenPopupFunction::OpenPopupTimedOut() {
+  if (response_sent_)
+    return;
+
+  DVLOG(1) << "chrome.browserAction.openPopup did not show a popup.";
+  error_ = kOpenPopupError;
+  SendResponse(false);
+  response_sent_ = true;
+}
+
+void BrowserActionOpenPopupFunction::Observe(
+    int type,
+    const content::NotificationSource& source,
+    const content::NotificationDetails& details) {
+  DCHECK_EQ(chrome::NOTIFICATION_EXTENSION_HOST_DID_STOP_LOADING, type);
+  if (response_sent_)
+    return;
+
+  ExtensionHost* host = content::Details<ExtensionHost>(details).ptr();
+  if (host->extension_host_type() != VIEW_TYPE_EXTENSION_POPUP ||
+      host->extension()->id() != extension_->id())
+    return;
+
+  SendResponse(true);
+  response_sent_ = true;
+  registrar_.RemoveAll();
 }
 
 //
@@ -698,8 +897,6 @@ bool ScriptBadgeGetAttentionFunction::RunExtensionAction() {
 // PageActionsFunction (deprecated)
 //
 
-namespace keys = extension_page_actions_api_constants;
-
 PageActionsFunction::PageActionsFunction() {
 }
 
@@ -713,28 +910,30 @@ bool PageActionsFunction::SetPageActionEnabled(bool enable) {
   EXTENSION_FUNCTION_VALIDATE(args_->GetDictionary(1, &action));
 
   int tab_id;
-  EXTENSION_FUNCTION_VALIDATE(action->GetInteger(keys::kTabIdKey, &tab_id));
+  EXTENSION_FUNCTION_VALIDATE(action->GetInteger(
+      page_actions_keys::kTabIdKey, &tab_id));
   std::string url;
-  EXTENSION_FUNCTION_VALIDATE(action->GetString(keys::kUrlKey, &url));
+  EXTENSION_FUNCTION_VALIDATE(action->GetString(
+      page_actions_keys::kUrlKey, &url));
 
   std::string title;
   if (enable) {
-    if (action->HasKey(keys::kTitleKey))
-      EXTENSION_FUNCTION_VALIDATE(action->GetString(keys::kTitleKey, &title));
+    if (action->HasKey(page_actions_keys::kTitleKey))
+      EXTENSION_FUNCTION_VALIDATE(action->GetString(
+          page_actions_keys::kTitleKey, &title));
   }
 
-  ExtensionAction* page_action =
-      extensions::ExtensionActionManager::Get(profile())->
-      GetPageAction(*GetExtension());
+  ExtensionAction* page_action = extensions::ExtensionActionManager::Get(
+      GetProfile())->GetPageAction(*GetExtension());
   if (!page_action) {
     error_ = extensions::kNoPageActionError;
     return false;
   }
 
   // Find the WebContents that contains this tab id.
-  content::WebContents* contents = NULL;
-  bool result = ExtensionTabUtil::GetTabById(
-      tab_id, profile(), include_incognito(), NULL, NULL, &contents, NULL);
+  WebContents* contents = NULL;
+  bool result = extensions::ExtensionTabUtil::GetTabById(
+      tab_id, GetProfile(), include_incognito(), NULL, NULL, &contents, NULL);
   if (!result || !contents) {
     error_ = extensions::ErrorUtils::FormatErrorMessage(
         extensions::kNoTabError, base::IntToString(tab_id));
@@ -742,7 +941,7 @@ bool PageActionsFunction::SetPageActionEnabled(bool enable) {
   }
 
   // Make sure the URL hasn't changed.
-  content::NavigationEntry* entry = contents->GetController().GetActiveEntry();
+  content::NavigationEntry* entry = contents->GetController().GetVisibleEntry();
   if (!entry || url != entry->GetURL().spec()) {
     error_ = extensions::ErrorUtils::FormatErrorMessage(
         extensions::kUrlNotActiveError, url);

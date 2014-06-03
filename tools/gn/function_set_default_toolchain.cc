@@ -4,10 +4,10 @@
 
 #include "tools/gn/build_settings.h"
 #include "tools/gn/functions.h"
+#include "tools/gn/loader.h"
 #include "tools/gn/parse_tree.h"
 #include "tools/gn/scope.h"
 #include "tools/gn/settings.h"
-#include "tools/gn/toolchain_manager.h"
 
 namespace functions {
 
@@ -52,11 +52,14 @@ Value RunSetDefaultToolchain(Scope* scope,
     return Value();
   }
 
-  // Ignore non-default-build-config invocations.
-  if (!scope->IsProcessingDefaultBuildConfig())
+  // When the loader is expecting the default toolchain to be set, it will set
+  // this key on the scope to point to the destination.
+  Label* default_toolchain_dest = static_cast<Label*>(
+      scope->GetProperty(Loader::kDefaultToolchainKey, NULL));
+  if (!default_toolchain_dest)
     return Value();
 
-  const SourceDir& current_dir = SourceDirForFunctionCall(function);
+  const SourceDir& current_dir = scope->GetSourceDir();
   const Label& default_toolchain = ToolchainLabelForScope(scope);
 
   if (!EnsureSingleStringArg(function, args, err))
@@ -66,9 +69,7 @@ Value RunSetDefaultToolchain(Scope* scope,
   if (toolchain_label.is_null())
     return Value();
 
-  ToolchainManager& mgr =
-      scope->settings()->build_settings()->toolchain_manager();
-  mgr.SetDefaultToolchainUnlocked(toolchain_label, function->GetRange(), err);
+  *default_toolchain_dest = toolchain_label;
   return Value();
 }
 

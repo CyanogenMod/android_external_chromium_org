@@ -21,12 +21,12 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+using autofill::PasswordForm;
 using base::WaitableEvent;
 using content::BrowserThread;
 using testing::_;
 using testing::DoAll;
 using testing::WithArg;
-using content::PasswordForm;
 
 namespace {
 
@@ -259,9 +259,9 @@ TEST_F(PasswordStoreTest, IgnoreOldWwwGoogleLogins) {
           ContainsAllPasswordForms(www_google_expected)))
       .WillOnce(WithArg<0>(STLDeleteElements0())).RetiresOnSaturation();
 
-  store->GetLogins(www_google, &consumer);
-  store->GetLogins(accounts_google, &consumer);
-  store->GetLogins(bar_example, &consumer);
+  store->GetLogins(www_google, PasswordStore::ALLOW_PROMPT, &consumer);
+  store->GetLogins(accounts_google, PasswordStore::ALLOW_PROMPT, &consumer);
+  store->GetLogins(bar_example, PasswordStore::ALLOW_PROMPT, &consumer);
 
   base::MessageLoop::current()->Run();
 

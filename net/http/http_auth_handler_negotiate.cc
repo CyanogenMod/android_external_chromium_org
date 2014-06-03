@@ -7,9 +7,7 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/logging.h"
-#include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
-#include "base/strings/utf_string_conversions.h"
 #include "net/base/address_family.h"
 #include "net/base/net_errors.h"
 #include "net/dns/host_resolver.h"
@@ -114,7 +112,7 @@ HttpAuthHandlerNegotiate::HttpAuthHandlerNegotiate(
 HttpAuthHandlerNegotiate::~HttpAuthHandlerNegotiate() {
 }
 
-std::wstring HttpAuthHandlerNegotiate::CreateSPN(
+std::string HttpAuthHandlerNegotiate::CreateSPN(
     const AddressList& address_list, const GURL& origin) {
   // Kerberos Web Server SPNs are in the form HTTP/<host>:<port> through SSPI,
   // and in the form HTTP@<host>:<port> through GSSAPI
@@ -155,11 +153,10 @@ std::wstring HttpAuthHandlerNegotiate::CreateSPN(
   static const char kSpnSeparator = '@';
 #endif
   if (port != 80 && port != 443 && use_port_) {
-    return ASCIIToWide(base::StringPrintf("HTTP%c%s:%d", kSpnSeparator,
-                                          server.c_str(), port));
+    return base::StringPrintf("HTTP%c%s:%d", kSpnSeparator, server.c_str(),
+                              port);
   } else {
-    return ASCIIToWide(base::StringPrintf("HTTP%c%s", kSpnSeparator,
-                                          server.c_str()));
+    return base::StringPrintf("HTTP%c%s", kSpnSeparator, server.c_str());
   }
 }
 
@@ -291,7 +288,9 @@ int HttpAuthHandlerNegotiate::DoResolveCanonicalName() {
   info.set_host_resolver_flags(HOST_RESOLVER_CANONNAME);
   single_resolve_.reset(new SingleRequestHostResolver(resolver_));
   return single_resolve_->Resolve(
-      info, &address_list_,
+      info,
+      DEFAULT_PRIORITY,
+      &address_list_,
       base::Bind(&HttpAuthHandlerNegotiate::OnIOComplete,
                  base::Unretained(this)),
       net_log_);

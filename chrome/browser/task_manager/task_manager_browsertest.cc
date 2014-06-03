@@ -9,10 +9,12 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
+#include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/extensions/extension_browsertest.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/infobars/confirm_infobar_delegate.h"
+#include "chrome/browser/infobars/infobar.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/notifications/desktop_notification_service.h"
 #include "chrome/browser/notifications/notification.h"
@@ -30,13 +32,13 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/web_applications/web_app.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/page_transition_types.h"
 #include "content/public/test/browser_test_utils.h"
+#include "extensions/common/extension.h"
 #include "grit/generated_resources.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
@@ -63,18 +65,16 @@ const base::FilePath::CharType* kTitle1File = FILE_PATH_LITERAL("title1.html");
 
 }  // namespace
 
-class TaskManagerBrowserTest : public ExtensionBrowserTest {
+class TaskManagerNoShowBrowserTest : public ExtensionBrowserTest {
  public:
-  TaskManagerBrowserTest() {}
-  virtual ~TaskManagerBrowserTest() {}
+  TaskManagerNoShowBrowserTest() {}
+  virtual ~TaskManagerNoShowBrowserTest() {}
 
   TaskManagerModel* model() const {
     return TaskManager::GetInstance()->model();
   }
 
-  virtual void SetUpOnMainThread() OVERRIDE {
-    ExtensionBrowserTest::SetUpOnMainThread();
-
+  void ShowTaskManager() {
     EXPECT_EQ(0, model()->ResourceCount());
 
     // Show the task manager. This populates the model, and helps with debugging
@@ -103,6 +103,23 @@ class TaskManagerBrowserTest : public ExtensionBrowserTest {
     // well defined.
     command_line->AppendSwitch(switches::kDisableGpuProcessPrelaunch);
     command_line->AppendSwitch(switches::kDisableAcceleratedCompositing);
+
+    // Do not launch device discovery process.
+    command_line->AppendSwitch(switches::kDisableDeviceDiscoveryNotifications);
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(TaskManagerNoShowBrowserTest);
+};
+
+class TaskManagerBrowserTest : public TaskManagerNoShowBrowserTest {
+ public:
+  TaskManagerBrowserTest() {}
+  virtual ~TaskManagerBrowserTest() {}
+
+  virtual void SetUpOnMainThread() OVERRIDE {
+    TaskManagerNoShowBrowserTest::SetUpOnMainThread();
+    TaskManagerNoShowBrowserTest::ShowTaskManager();
   }
 
  private:
@@ -131,8 +148,8 @@ IN_PROC_BROWSER_TEST_F(TaskManagerBrowserTest, NoticeTabContentsChanges) {
   // Check that the last entry is a tab contents resource whose title starts
   // starts with "Tab:".
   ASSERT_TRUE(model()->GetResourceWebContents(resource_count) != NULL);
-  string16 prefix = l10n_util::GetStringFUTF16(
-      IDS_TASK_MANAGER_TAB_PREFIX, string16());
+  base::string16 prefix = l10n_util::GetStringFUTF16(
+      IDS_TASK_MANAGER_TAB_PREFIX, base::string16());
   ASSERT_TRUE(StartsWith(model()->GetResourceTitle(resource_count), prefix,
                          true));
 
@@ -163,7 +180,7 @@ IN_PROC_BROWSER_TEST_F(TaskManagerBrowserTest, MAYBE_NoticePanelChanges) {
     "chrome-extension://behllobkkfkfnphdnhnkndlbkcpglgmj/french_sentence.html");
   Panel* panel = PanelManager::GetInstance()->CreatePanel(
       web_app::GenerateApplicationNameFromExtensionId(
-          last_loaded_extension_id_),
+          last_loaded_extension_id()),
       browser()->profile(),
       url,
       gfx::Rect(300, 400),
@@ -173,8 +190,8 @@ IN_PROC_BROWSER_TEST_F(TaskManagerBrowserTest, MAYBE_NoticePanelChanges) {
   // Check that the fourth entry is a resource with the panel's web contents
   // and whose title starts with "Extension:".
   ASSERT_EQ(panel->GetWebContents(), model()->GetResourceWebContents(3));
-  string16 prefix = l10n_util::GetStringFUTF16(
-      IDS_TASK_MANAGER_EXTENSION_PREFIX, string16());
+  base::string16 prefix = l10n_util::GetStringFUTF16(
+      IDS_TASK_MANAGER_EXTENSION_PREFIX, base::string16());
   ASSERT_TRUE(StartsWith(model()->GetResourceTitle(3), prefix, true));
 
   // Close the panel and verify that we notice.
@@ -182,7 +199,7 @@ IN_PROC_BROWSER_TEST_F(TaskManagerBrowserTest, MAYBE_NoticePanelChanges) {
   TaskManagerBrowserTestUtil::WaitForWebResourceChange(2);
 
   // Unload extension to avoid crash on Windows.
-  UnloadExtension(last_loaded_extension_id_);
+  UnloadExtension(last_loaded_extension_id());
   TaskManagerBrowserTestUtil::WaitForWebResourceChange(1);
 }
 
@@ -210,7 +227,7 @@ IN_PROC_BROWSER_TEST_F(TaskManagerBrowserTest, MAYBE_KillPanelExtension) {
     "chrome-extension://behllobkkfkfnphdnhnkndlbkcpglgmj/french_sentence.html");
   PanelManager::GetInstance()->CreatePanel(
       web_app::GenerateApplicationNameFromExtensionId(
-          last_loaded_extension_id_),
+          last_loaded_extension_id()),
       browser()->profile(),
       url,
       gfx::Rect(300, 400),
@@ -245,8 +262,8 @@ IN_PROC_BROWSER_TEST_F(TaskManagerBrowserTest, NoticeExtensionTabs) {
       resource_count));
   ASSERT_TRUE(model()->GetResourceWebContents(resource_count) == NULL);
   ASSERT_TRUE(model()->GetResourceExtension(resource_count) != NULL);
-  string16 prefix = l10n_util::GetStringFUTF16(
-      IDS_TASK_MANAGER_EXTENSION_PREFIX, string16());
+  base::string16 prefix = l10n_util::GetStringFUTF16(
+      IDS_TASK_MANAGER_EXTENSION_PREFIX, base::string16());
   ASSERT_TRUE(StartsWith(model()->GetResourceTitle(resource_count),
                          prefix, true));
 
@@ -260,7 +277,7 @@ IN_PROC_BROWSER_TEST_F(TaskManagerBrowserTest, NoticeExtensionTabs) {
                          prefix, true));
 
   // Unload extension to avoid crash on Windows.
-  UnloadExtension(last_loaded_extension_id_);
+  UnloadExtension(last_loaded_extension_id());
   TaskManagerBrowserTestUtil::WaitForWebResourceChange(1);
 }
 
@@ -271,7 +288,7 @@ IN_PROC_BROWSER_TEST_F(TaskManagerBrowserTest, NoticeAppTabs) {
   ExtensionService* service = extensions::ExtensionSystem::Get(
       browser()->profile())->extension_service();
   const extensions::Extension* extension =
-      service->GetExtensionById(last_loaded_extension_id_, false);
+      service->GetExtensionById(last_loaded_extension_id(), false);
 
   // New Tab Page.
   TaskManagerBrowserTestUtil::WaitForWebResourceChange(1);
@@ -287,13 +304,13 @@ IN_PROC_BROWSER_TEST_F(TaskManagerBrowserTest, NoticeAppTabs) {
       resource_count));
   ASSERT_TRUE(model()->GetResourceWebContents(resource_count) != NULL);
   ASSERT_TRUE(model()->GetResourceExtension(resource_count) == extension);
-  string16 prefix = l10n_util::GetStringFUTF16(
-      IDS_TASK_MANAGER_APP_PREFIX, string16());
+  base::string16 prefix = l10n_util::GetStringFUTF16(
+      IDS_TASK_MANAGER_APP_PREFIX, base::string16());
   ASSERT_TRUE(StartsWith(model()->GetResourceTitle(resource_count),
                          prefix, true));
 
   // Unload extension to avoid crash on Windows.
-  UnloadExtension(last_loaded_extension_id_);
+  UnloadExtension(last_loaded_extension_id());
   TaskManagerBrowserTestUtil::WaitForWebResourceChange(1);
 }
 
@@ -323,8 +340,8 @@ IN_PROC_BROWSER_TEST_F(TaskManagerBrowserTest, NoticeHostedAppTabs) {
   Refresh();
 
   // Check that the third entry's title starts with "Tab:".
-  string16 tab_prefix = l10n_util::GetStringFUTF16(
-      IDS_TASK_MANAGER_TAB_PREFIX, string16());
+  base::string16 tab_prefix = l10n_util::GetStringFUTF16(
+      IDS_TASK_MANAGER_TAB_PREFIX, base::string16());
   ASSERT_TRUE(StartsWith(model()->GetResourceTitle(resource_count),
                          tab_prefix, true));
 
@@ -341,13 +358,13 @@ IN_PROC_BROWSER_TEST_F(TaskManagerBrowserTest, NoticeHostedAppTabs) {
   ui_test_utils::NavigateToURL(browser(), url);
   // Force the TaskManager to query the title.
   Refresh();
-  string16 app_prefix = l10n_util::GetStringFUTF16(
-      IDS_TASK_MANAGER_APP_PREFIX, string16());
+  base::string16 app_prefix = l10n_util::GetStringFUTF16(
+      IDS_TASK_MANAGER_APP_PREFIX, base::string16());
   ASSERT_TRUE(StartsWith(model()->GetResourceTitle(resource_count),
                          app_prefix, true));
 
   // Disable extension and reload page.
-  DisableExtension(last_loaded_extension_id_);
+  DisableExtension(last_loaded_extension_id());
   ui_test_utils::NavigateToURL(browser(), url);
 
   // Force the TaskManager to query the title.
@@ -383,7 +400,7 @@ IN_PROC_BROWSER_TEST_F(TaskManagerBrowserTest,
       browser()->tab_strip_model()->GetActiveWebContents());
   ASSERT_EQ(1U, infobar_service->infobar_count());
   ConfirmInfoBarDelegate* delegate =
-      infobar_service->infobar_at(0)->AsConfirmInfoBarDelegate();
+      infobar_service->infobar_at(0)->delegate()->AsConfirmInfoBarDelegate();
   ASSERT_TRUE(delegate);
   delegate->Accept();
   TaskManagerBrowserTestUtil::WaitForWebResourceChange(3);
@@ -494,6 +511,40 @@ IN_PROC_BROWSER_TEST_F(TaskManagerBrowserTest, DISABLED_WebWorkerJSHeapMemory) {
   ASSERT_TRUE(model()->GetV8MemoryUsed(resource_index, &result));
   LOG(INFO) << "Got V8 Used Heap Size " << result << " bytes";
   EXPECT_GE(result, minimal_heap_size);
+}
+
+IN_PROC_BROWSER_TEST_F(TaskManagerBrowserTest, NoticeInTabDevToolsWindow) {
+  DevToolsWindow* dev_tools = DevToolsWindow::ToggleDevToolsWindow(
+      model()->GetResourceWebContents(1)->GetRenderViewHost(),
+      true,
+      DevToolsToggleAction::Inspect());
+  // Dock side bottom should be the default.
+  ASSERT_EQ(DEVTOOLS_DOCK_SIDE_BOTTOM, dev_tools->dock_side());
+  TaskManagerBrowserTestUtil::WaitForWebResourceChange(2);
+}
+
+// This test differs from TaskManagerBrowserTest.NoticeInTabDevToolsWindow in
+// the order in which the devtools window and task manager are created.
+IN_PROC_BROWSER_TEST_F(TaskManagerNoShowBrowserTest,
+                       NoticeInTabDevToolsWindow) {
+  // First create the devtools window.
+  DevToolsWindow* dev_tools = DevToolsWindow::ToggleDevToolsWindow(
+      browser()->tab_strip_model()->GetActiveWebContents()->GetRenderViewHost(),
+      true,
+      DevToolsToggleAction::Inspect());
+  // Dock side bottom should be the default.
+  ASSERT_EQ(DEVTOOLS_DOCK_SIDE_BOTTOM, dev_tools->dock_side());
+  // Make sure that the devtools window is loaded before starting the task
+  // manager.
+  content::RunAllPendingInMessageLoop();
+
+  // Now add showing the task manager to the queue, and watch for the right
+  // number of reources to show up.
+  base::MessageLoop::current()->PostTask(
+      FROM_HERE,
+      base::Bind(&TaskManagerNoShowBrowserTest::ShowTaskManager,
+                 base::Unretained(this)));
+  TaskManagerBrowserTestUtil::WaitForWebResourceChange(2);
 }
 
 #endif

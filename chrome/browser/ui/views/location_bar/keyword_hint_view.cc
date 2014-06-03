@@ -23,26 +23,25 @@
 
 
 KeywordHintView::KeywordHintView(Profile* profile,
-                                 const gfx::Font& font,
-                                 int font_y_offset,
+                                 const gfx::FontList& font_list,
                                  SkColor text_color,
                                  SkColor background_color)
     : profile_(profile),
       tab_image_(new views::ImageView()) {
   leading_label_ =
-      CreateLabel(font, font_y_offset, text_color, background_color);
+      CreateLabel(font_list, text_color, background_color);
   tab_image_->SetImage(
       ui::ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
           IDR_OMNIBOX_KEYWORD_HINT_TAB));
   AddChildView(tab_image_);
   trailing_label_ =
-      CreateLabel(font, font_y_offset, text_color, background_color);
+      CreateLabel(font_list, text_color, background_color);
 }
 
 KeywordHintView::~KeywordHintView() {
 }
 
-void KeywordHintView::SetKeyword(const string16& keyword) {
+void KeywordHintView::SetKeyword(const base::string16& keyword) {
   keyword_ = keyword;
   if (keyword_.empty())
     return;
@@ -54,12 +53,12 @@ void KeywordHintView::SetKeyword(const string16& keyword) {
 
   std::vector<size_t> content_param_offsets;
   bool is_extension_keyword;
-  string16 short_name(
+  base::string16 short_name(
       url_service->GetKeywordShortName(keyword, &is_extension_keyword));
   int message_id = is_extension_keyword ?
       IDS_OMNIBOX_EXTENSION_KEYWORD_HINT : IDS_OMNIBOX_KEYWORD_HINT;
-  const string16 keyword_hint = l10n_util::GetStringFUTF16(
-      message_id, string16(), short_name, &content_param_offsets);
+  const base::string16 keyword_hint = l10n_util::GetStringFUTF16(
+      message_id, base::string16(), short_name, &content_param_offsets);
   DCHECK_EQ(2U, content_param_offsets.size());
   leading_label_->SetText(
       keyword_hint.substr(0, content_param_offsets.front()));
@@ -84,22 +83,19 @@ void KeywordHintView::Layout() {
   bool show_labels = (width() != tab_width);
   gfx::Size leading_size(leading_label_->GetPreferredSize());
   leading_label_->SetBounds(0, 0, show_labels ? leading_size.width() : 0,
-                            leading_size.height());
+                            height());
   tab_image_->SetBounds(leading_label_->bounds().right(), 0, tab_width,
                         height());
   gfx::Size trailing_size(trailing_label_->GetPreferredSize());
   trailing_label_->SetBounds(tab_image_->bounds().right(), 0,
                              show_labels ? trailing_size.width() : 0,
-                             trailing_size.height());
+                             height());
 }
 
-views::Label* KeywordHintView::CreateLabel(const gfx::Font& font,
-                                           int font_y_offset,
+views::Label* KeywordHintView::CreateLabel(const gfx::FontList& font_list,
                                            SkColor text_color,
                                            SkColor background_color) {
-  views::Label* label = new views::Label();
-  label->set_border(views::Border::CreateEmptyBorder(font_y_offset, 0, 0, 0));
-  label->SetFont(font);
+  views::Label* label = new views::Label(base::string16(), font_list);
   label->SetEnabledColor(text_color);
   label->SetBackgroundColor(background_color);
   AddChildView(label);

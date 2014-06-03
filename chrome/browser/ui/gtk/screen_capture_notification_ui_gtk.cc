@@ -17,7 +17,7 @@
 
 class ScreenCaptureNotificationUIGtk : public ScreenCaptureNotificationUI {
  public:
-  explicit ScreenCaptureNotificationUIGtk(const string16& text);
+  explicit ScreenCaptureNotificationUIGtk(const base::string16& text);
   virtual ~ScreenCaptureNotificationUIGtk();
 
   // ScreenCaptureNotificationUI interface
@@ -39,8 +39,6 @@ class ScreenCaptureNotificationUIGtk : public ScreenCaptureNotificationUI {
 
   base::Closure stop_callback_;
   GtkWidget* window_;
-  GtkWidget* message_;
-  GtkWidget* button_;
 
   // Used to distinguish resize events from other types of "configure-event"
   // notifications.
@@ -51,7 +49,7 @@ class ScreenCaptureNotificationUIGtk : public ScreenCaptureNotificationUI {
 };
 
 ScreenCaptureNotificationUIGtk::ScreenCaptureNotificationUIGtk(
-    const string16& text)
+    const base::string16& text)
     : text_(UTF16ToUTF8(text)),
       window_(NULL),
       current_width_(0),
@@ -115,23 +113,23 @@ void ScreenCaptureNotificationUIGtk::CreateWindow() {
 
   std::string button_label =
       l10n_util::GetStringUTF8(IDS_MEDIA_SCREEN_CAPTURE_NOTIFICATION_STOP);
-  button_ = gtk_button_new_with_label(button_label.c_str());
-  gtk_box_pack_end(GTK_BOX(button_row), button_, FALSE, FALSE, 0);
+  GtkWidget* button = gtk_button_new_with_label(button_label.c_str());
+  gtk_box_pack_end(GTK_BOX(button_row), button, FALSE, FALSE, 0);
 
-  g_signal_connect(button_, "clicked", G_CALLBACK(OnClickedThunk), this);
+  g_signal_connect(button, "clicked", G_CALLBACK(OnClickedThunk), this);
 
-  message_ = gtk_label_new(NULL);
-  gtk_box_pack_end(GTK_BOX(button_row), message_, FALSE, FALSE, 0);
+  GtkWidget* message = gtk_label_new(NULL);
+  gtk_box_pack_end(GTK_BOX(button_row), message, FALSE, FALSE, 0);
 
   // Override any theme setting for the text color, so that the text is
   // readable against the window's background pixmap.
   PangoAttrList* attributes = pango_attr_list_new();
   PangoAttribute* text_color = pango_attr_foreground_new(0, 0, 0);
   pango_attr_list_insert(attributes, text_color);
-  gtk_label_set_attributes(GTK_LABEL(message_), attributes);
+  gtk_label_set_attributes(GTK_LABEL(message), attributes);
   pango_attr_list_unref(attributes);
 
-  gtk_label_set_text(GTK_LABEL(message_), text_.c_str());
+  gtk_label_set_text(GTK_LABEL(message), text_.c_str());
 
   gtk_widget_show_all(window_);
   gtk_window_present(GTK_WINDOW(window_));
@@ -282,7 +280,7 @@ gboolean ScreenCaptureNotificationUIGtk::OnButtonPress(GtkWidget* widget,
 }
 
 scoped_ptr<ScreenCaptureNotificationUI> ScreenCaptureNotificationUI::Create(
-    const string16& text) {
+    const base::string16& text) {
   return scoped_ptr<ScreenCaptureNotificationUI>(
       new ScreenCaptureNotificationUIGtk(text));
 }

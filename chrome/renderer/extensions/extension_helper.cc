@@ -12,6 +12,8 @@
 #include "base/message_loop/message_loop.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/extensions/api/messaging/message.h"
+#include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_messages.h"
 #include "chrome/common/render_messages.h"
 #include "chrome/common/url_constants.h"
@@ -33,12 +35,12 @@
 #include "third_party/WebKit/public/web/WebView.h"
 
 using content::ConsoleMessageLevel;
-using WebKit::WebConsoleMessage;
-using WebKit::WebDataSource;
-using WebKit::WebFrame;
-using WebKit::WebURLRequest;
-using WebKit::WebScopedUserGesture;
-using WebKit::WebView;
+using blink::WebConsoleMessage;
+using blink::WebDataSource;
+using blink::WebFrame;
+using blink::WebURLRequest;
+using blink::WebScopedUserGesture;
+using blink::WebView;
 
 namespace extensions {
 
@@ -184,7 +186,7 @@ void ExtensionHelper::DidFinishDocumentLoad(WebFrame* frame) {
     i->second->DidFinishDocumentLoad();
 }
 
-void ExtensionHelper::DidFinishLoad(WebKit::WebFrame* frame) {
+void ExtensionHelper::DidFinishLoad(blink::WebFrame* frame) {
   SchedulerMap::iterator i = g_schedulers.Get().find(frame);
   if (i != g_schedulers.Get().end())
     i->second->DidFinishLoad();
@@ -200,14 +202,14 @@ void ExtensionHelper::DidCreateDocumentElement(WebFrame* frame) {
   dispatcher_->DidCreateDocumentElement(frame);
 }
 
-void ExtensionHelper::DidStartProvisionalLoad(WebKit::WebFrame* frame) {
+void ExtensionHelper::DidStartProvisionalLoad(blink::WebFrame* frame) {
   SchedulerMap::iterator i = g_schedulers.Get().find(frame);
   if (i != g_schedulers.Get().end())
     i->second->DidStartProvisionalLoad();
 }
 
-void ExtensionHelper::DraggableRegionsChanged(WebKit::WebFrame* frame) {
-  WebKit::WebVector<WebKit::WebDraggableRegion> webregions =
+void ExtensionHelper::DraggableRegionsChanged(blink::WebFrame* frame) {
+  blink::WebVector<blink::WebDraggableRegion> webregions =
       frame->document().draggableRegions();
   std::vector<DraggableRegion> regions;
   for (size_t i = 0; i < webregions.size(); ++i) {
@@ -228,6 +230,14 @@ void ExtensionHelper::FrameDetached(WebFrame* frame) {
 
   delete i->second;
   g_schedulers.Get().erase(i);
+}
+
+void ExtensionHelper::DidMatchCSS(
+    blink::WebFrame* frame,
+    const blink::WebVector<blink::WebString>& newly_matching_selectors,
+    const blink::WebVector<blink::WebString>& stopped_matching_selectors) {
+  dispatcher_->DidMatchCSS(
+      frame, newly_matching_selectors, stopped_matching_selectors);
 }
 
 void ExtensionHelper::DidCreateDataSource(WebFrame* frame, WebDataSource* ds) {
@@ -263,16 +273,17 @@ void ExtensionHelper::OnExtensionDispatchOnConnect(
     int target_port_id,
     const std::string& channel_name,
     const base::DictionaryValue& source_tab,
-    const ExtensionMsg_ExternalConnectionInfo& info) {
+    const ExtensionMsg_ExternalConnectionInfo& info,
+    const std::string& tls_channel_id) {
   MessagingBindings::DispatchOnConnect(
       dispatcher_->v8_context_set().GetAll(),
       target_port_id, channel_name, source_tab,
       info.source_id, info.target_id, info.source_url,
-      render_view());
+      tls_channel_id, render_view());
 }
 
 void ExtensionHelper::OnExtensionDeliverMessage(int target_id,
-                                                const std::string& message) {
+                                                const Message& message) {
   MessagingBindings::DeliverMessage(dispatcher_->v8_context_set().GetAll(),
                                         target_id,
                                         message,
@@ -313,7 +324,7 @@ void ExtensionHelper::OnExecuteCode(
 void ExtensionHelper::OnGetApplicationInfo(int page_id) {
   WebApplicationInfo app_info;
   if (page_id == render_view()->GetPageId()) {
-    string16 error;
+    base::string16 error;
     web_apps::ParseWebAppFromWebDocument(
         render_view()->GetWebView()->mainFrame(), &app_info, &error);
   }
@@ -353,7 +364,7 @@ void ExtensionHelper::OnAddMessageToConsole(ConsoleMessageLevel level,
 }
 
 void ExtensionHelper::OnAppWindowClosed() {
-  v8::HandleScope scope;
+  v8::HandleScope scope(v8::Isolate::GetCurrent());
   v8::Handle<v8::Context> script_context =
       render_view()->GetWebView()->mainFrame()->mainWorldScriptContext();
   ChromeV8Context* chrome_v8_context =

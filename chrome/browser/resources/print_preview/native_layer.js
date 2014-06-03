@@ -21,6 +21,8 @@ cr.define('print_preview', function() {
         this.onUpdateWithPrinterCapabilities_.bind(this);
     global['failedToGetPrinterCapabilities'] =
         this.onFailedToGetPrinterCapabilities_.bind(this);
+    global['failedToGetPrivetPrinterCapabilities'] =
+      this.onFailedToGetPrivetPrinterCapabilities_.bind(this);
     global['reloadPrintersList'] = this.onReloadPrintersList_.bind(this);
     global['printToCloud'] = this.onPrintToCloud_.bind(this);
     global['fileSelectionCancelled'] =
@@ -34,12 +36,18 @@ cr.define('print_preview', function() {
         this.onDidGetDefaultPageLayout_.bind(this);
     global['onDidGetPreviewPageCount'] =
         this.onDidGetPreviewPageCount_.bind(this);
-    global['reloadPreviewPages'] = this.onReloadPreviewPages_.bind(this);
     global['onDidPreviewPage'] = this.onDidPreviewPage_.bind(this);
     global['updatePrintPreview'] = this.onUpdatePrintPreview_.bind(this);
     global['printScalingDisabledForSourcePDF'] =
         this.onPrintScalingDisabledForSourcePDF_.bind(this);
     global['onDidGetAccessToken'] = this.onDidGetAccessToken_.bind(this);
+    global['autoCancelForTesting'] = this.autoCancelForTesting_.bind(this);
+    global['onPrivetPrinterChanged'] = this.onPrivetPrinterChanged_.bind(this);
+    global['onPrivetPrinterSearchDone'] =
+      this.onPrivetPrinterSearchDone_.bind(this);
+    global['onPrivetCapabilitiesSet'] =
+      this.onPrivetCapabilitiesSet_.bind(this);
+    global['onPrivetPrintFailed'] = this.onPrivetPrintFailed_.bind(this);
   };
 
   /**
@@ -66,9 +74,14 @@ cr.define('print_preview', function() {
         'print_preview.NativeLayer.PREVIEW_GENERATION_DONE',
     PREVIEW_GENERATION_FAIL:
         'print_preview.NativeLayer.PREVIEW_GENERATION_FAIL',
-    PREVIEW_RELOAD: 'print_preview.NativeLayer.PREVIEW_RELOAD',
     PRINT_TO_CLOUD: 'print_preview.NativeLayer.PRINT_TO_CLOUD',
-    SETTINGS_INVALID: 'print_preview.NativeLayer.SETTINGS_INVALID'
+    SETTINGS_INVALID: 'print_preview.NativeLayer.SETTINGS_INVALID',
+    PRIVET_PRINTER_CHANGED: 'print_preview.NativeLayer.PRIVET_PRINTER_CHANGED',
+    PRIVET_PRINTER_SEARCH_DONE:
+        'print_preview.NativeLayer.PRIVET_PRINTER_SEARCH_DONE',
+    PRIVET_CAPABILITIES_SET:
+        'print_preview.NativeLayer.PRIVET_CAPABILITIES_SET',
+    PRIVET_PRINT_FAILED: 'print_preview.NativeLayer.PRIVET_PRINT_FAILED'
   };
 
   /**
@@ -124,6 +137,24 @@ cr.define('print_preview', function() {
     },
 
     /**
+     * Requests the network's privet print destinations. A number of
+     * PRIVET_PRINTER_CHANGED events will be fired in response, followed by a
+     * PRIVET_SEARCH_ENDED.
+     */
+    startGetPrivetDestinations: function() {
+      chrome.send('getPrivetPrinters');
+    },
+
+    /**
+     * Requests the privet destination's printing capabilities. A
+     * PRIVET_CAPABILITIES_SET event will be dispatched in response.
+     * @param {string} destinationId ID of the destination.
+     */
+    startGetPrivetDestinationCapabilities: function(destinationId) {
+      chrome.send('getPrivetPrinterCapabilities', [destinationId]);
+    },
+
+    /**
      * Requests the destination's printing capabilities. A CAPABILITIES_SET
      * event will be dispatched in response.
      * @param {string} destinationId ID of the destination.
@@ -140,7 +171,6 @@ cr.define('print_preview', function() {
      *   - PAGE_PREVIEW_READY
      *   - PREVIEW_GENERATION_DONE
      *   - PREVIEW_GENERATION_FAIL
-     *   - PREVIEW_RELOAD
      * @param {print_preview.Destination} destination Destination to print to.
      * @param {!print_preview.PrintTicketStore} printTicketStore Used to get the
      *     state of the print ticket.
@@ -167,6 +197,7 @@ cr.define('print_preview', function() {
             destination.id ==
                 print_preview.Destination.GooglePromotedId.SAVE_AS_PDF,
         'printWithCloudPrint': destination != null && !destination.isLocal,
+        'printWithPrivet': destination != null && destination.isPrivet,
         'deviceName': destination == null ? 'foo' : destination.id,
         'generateDraftData': documentInfo.isModifiable,
         'fitToPageEnabled': printTicketStore.fitToPage.getValue(),
@@ -242,10 +273,13 @@ cr.define('print_preview', function() {
         'printToPDF': destination.id ==
             print_preview.Destination.GooglePromotedId.SAVE_AS_PDF,
         'printWithCloudPrint': !destination.isLocal,
+        'printWithPrivet': destination.isPrivet,
         'deviceName': destination.id,
         'isFirstRequest': false,
         'requestID': -1,
-        'fitToPageEnabled': printTicketStore.fitToPage.getValue()
+        'fitToPageEnabled': printTicketStore.fitToPage.getValue(),
+        'pageWidth': documentInfo.pageSize.width,
+        'pageHeight': documentInfo.pageSize.height,
       };
 
       if (!destination.isLocal) {
@@ -267,6 +301,10 @@ cr.define('print_preview', function() {
           'marginBottom': customMargins.get(orientationEnum.BOTTOM),
           'marginLeft': customMargins.get(orientationEnum.LEFT)
         };
+      }
+
+      if (destination.isPrivet) {
+        ticket['ticket'] = printTicketStore.createPrintTicket(destination);
       }
 
       if (opt_isOpenPdfInPreview) {
@@ -341,6 +379,7 @@ cr.define('print_preview', function() {
 
       var nativeInitialSettings = new print_preview.NativeInitialSettings(
           initialSettings['printAutomaticallyInKioskMode'] || false,
+          initialSettings['hidePrintWithSystemDialogLink'] || false,
           numberFormatSymbols[0] || ',',
           numberFormatSymbols[1] || '.',
           unitType,
@@ -351,7 +390,7 @@ cr.define('print_preview', function() {
           initialSettings['printerName'] || null,
           initialSettings['appState'] || null);
 
-      var initialSettingsSetEvent = new cr.Event(
+      var initialSettingsSetEvent = new Event(
           NativeLayer.EventType.INITIAL_SETTINGS_SET);
       initialSettingsSetEvent.initialSettings = nativeInitialSettings;
       this.dispatchEvent(initialSettingsSetEvent);
@@ -363,7 +402,7 @@ cr.define('print_preview', function() {
      * @private
      */
     onSetUseCloudPrint_: function(cloudPrintURL) {
-      var cloudPrintEnableEvent = new cr.Event(
+      var cloudPrintEnableEvent = new Event(
           NativeLayer.EventType.CLOUD_PRINT_ENABLE);
       cloudPrintEnableEvent.baseCloudPrintUrl = cloudPrintURL;
       this.dispatchEvent(cloudPrintEnableEvent);
@@ -376,7 +415,7 @@ cr.define('print_preview', function() {
      * @private
      */
     onSetPrinters_: function(printers) {
-      var localDestsSetEvent = new cr.Event(
+      var localDestsSetEvent = new Event(
           NativeLayer.EventType.LOCAL_DESTINATIONS_SET);
       localDestsSetEvent.destinationInfos = printers;
       this.dispatchEvent(localDestsSetEvent);
@@ -389,7 +428,7 @@ cr.define('print_preview', function() {
      * @private
      */
     onUpdateWithPrinterCapabilities_: function(settingsInfo) {
-      var capsSetEvent = new cr.Event(NativeLayer.EventType.CAPABILITIES_SET);
+      var capsSetEvent = new Event(NativeLayer.EventType.CAPABILITIES_SET);
       capsSetEvent.settingsInfo = settingsInfo;
       this.dispatchEvent(capsSetEvent);
     },
@@ -401,11 +440,26 @@ cr.define('print_preview', function() {
      * @private
      */
     onFailedToGetPrinterCapabilities_: function(destinationId) {
-      var getCapsFailEvent = new cr.Event(
+      var getCapsFailEvent = new Event(
           NativeLayer.EventType.GET_CAPABILITIES_FAIL);
       getCapsFailEvent.destinationId = destinationId;
       getCapsFailEvent.destinationOrigin =
           print_preview.Destination.Origin.LOCAL;
+      this.dispatchEvent(getCapsFailEvent);
+    },
+
+    /**
+     * Called when native layer gets settings information for a requested privet
+     * destination.
+     * @param {string} printerId printer affected by error.
+     * @private
+     */
+    onFailedToGetPrivetPrinterCapabilities_: function(destinationId) {
+      var getCapsFailEvent = new Event(
+          NativeLayer.EventType.GET_CAPABILITIES_FAIL);
+      getCapsFailEvent.destinationId = destinationId;
+      getCapsFailEvent.destinationOrigin =
+          print_preview.Destination.Origin.PRIVET;
       this.dispatchEvent(getCapsFailEvent);
     },
 
@@ -422,7 +476,7 @@ cr.define('print_preview', function() {
      * @private
      */
     onPrintToCloud_: function(data) {
-      var printToCloudEvent = new cr.Event(
+      var printToCloudEvent = new Event(
           NativeLayer.EventType.PRINT_TO_CLOUD);
       printToCloudEvent.data = data;
       this.dispatchEvent(printToCloudEvent);
@@ -479,7 +533,7 @@ cr.define('print_preview', function() {
      * @private
      */
     onDidGetDefaultPageLayout_: function(pageLayout, hasCustomPageSizeStyle) {
-      var pageLayoutChangeEvent = new cr.Event(
+      var pageLayoutChangeEvent = new Event(
           NativeLayer.EventType.PAGE_LAYOUT_READY);
       pageLayoutChangeEvent.pageLayout = pageLayout;
       pageLayoutChangeEvent.hasCustomPageSizeStyle = hasCustomPageSizeStyle;
@@ -495,26 +549,11 @@ cr.define('print_preview', function() {
      * @private
      */
     onDidGetPreviewPageCount_: function(pageCount, previewResponseId) {
-      var pageCountChangeEvent = new cr.Event(
+      var pageCountChangeEvent = new Event(
           NativeLayer.EventType.PAGE_COUNT_READY);
       pageCountChangeEvent.pageCount = pageCount;
       pageCountChangeEvent.previewResponseId = previewResponseId;
       this.dispatchEvent(pageCountChangeEvent);
-    },
-
-    /**
-     * Called when no pipelining previewed pages.
-     * @param {number} previewUid Preview unique identifier.
-     * @param {number} previewResponseId The preview request id that resulted in
-     *     this response.
-     * @private
-     */
-    onReloadPreviewPages_: function(previewUid, previewResponseId) {
-      var previewReloadEvent = new cr.Event(
-          NativeLayer.EventType.PREVIEW_RELOAD);
-      previewReloadEvent.previewUid = previewUid;
-      previewReloadEvent.previewResponseId = previewResponseId;
-      this.dispatchEvent(previewReloadEvent);
     },
 
     /**
@@ -528,7 +567,7 @@ cr.define('print_preview', function() {
      * @private
      */
     onDidPreviewPage_: function(pageNumber, previewUid, previewResponseId) {
-      var pagePreviewGenEvent = new cr.Event(
+      var pagePreviewGenEvent = new Event(
           NativeLayer.EventType.PAGE_PREVIEW_READY);
       pagePreviewGenEvent.pageIndex = pageNumber;
       pagePreviewGenEvent.previewUid = previewUid;
@@ -543,7 +582,7 @@ cr.define('print_preview', function() {
      * @private
      */
     onDidGetAccessToken_: function(authType, accessToken) {
-      var getAccessTokenEvent = new cr.Event(
+      var getAccessTokenEvent = new Event(
           NativeLayer.EventType.ACCESS_TOKEN_READY);
       getAccessTokenEvent.authType = authType;
       getAccessTokenEvent.accessToken = accessToken;
@@ -560,7 +599,7 @@ cr.define('print_preview', function() {
      * @private
      */
     onUpdatePrintPreview_: function(previewUid, previewResponseId) {
-      var previewGenDoneEvent = new cr.Event(
+      var previewGenDoneEvent = new Event(
           NativeLayer.EventType.PREVIEW_GENERATION_DONE);
       previewGenDoneEvent.previewUid = previewUid;
       previewGenDoneEvent.previewResponseId = previewResponseId;
@@ -577,6 +616,64 @@ cr.define('print_preview', function() {
      */
     onPrintScalingDisabledForSourcePDF_: function() {
       cr.dispatchSimpleEvent(this, NativeLayer.EventType.DISABLE_SCALING);
+    },
+
+    /**
+     * Simulates a user click on the print preview dialog cancel button. Used
+     * only for testing.
+     * @private
+     */
+    autoCancelForTesting_: function() {
+      var properties = {view: window, bubbles: true, cancelable: true};
+      var click = new MouseEvent('click', properties);
+      document.querySelector('#print-header .cancel').dispatchEvent(click);
+    },
+
+    /**
+     * @param {{serviceName: string, name: string}} printer Specifies
+     *     information about the printer that was added.
+     * @private
+     */
+    onPrivetPrinterChanged_: function(printer) {
+      var privetPrinterChangedEvent =
+            new Event(NativeLayer.EventType.PRIVET_PRINTER_CHANGED);
+      privetPrinterChangedEvent.printer = printer;
+      this.dispatchEvent(privetPrinterChangedEvent);
+    },
+
+    /**
+     * Called when the privet printer search is over.
+     * @private
+     */
+    onPrivetPrinterSearchDone_: function() {
+      var privetPrinterSearchDoneEvent =
+            new Event(NativeLayer.EventType.PRIVET_PRINTER_SEARCH_DONE);
+      this.dispatchEvent(privetPrinterSearchDoneEvent);
+    },
+
+    /**
+     * @param {Object} printer Specifies information about the printer that was
+     *    added.
+     * @private
+     */
+    onPrivetCapabilitiesSet_: function(printer, capabilities) {
+      var privetCapabilitiesSetEvent =
+            new Event(NativeLayer.EventType.PRIVET_CAPABILITIES_SET);
+      privetCapabilitiesSetEvent.printer = printer;
+      privetCapabilitiesSetEvent.capabilities = capabilities;
+      this.dispatchEvent(privetCapabilitiesSetEvent);
+    },
+
+    /**
+     * @param {string} http_error The HTTP response code or -1 if not an HTTP
+     *    error.
+     * @private
+     */
+    onPrivetPrintFailed_: function(http_error) {
+      var privetPrintFailedEvent =
+            new Event(NativeLayer.EventType.PRIVET_PRINT_FAILED);
+      privetPrintFailedEvent.httpError = http_error;
+      this.dispatchEvent(privetPrintFailedEvent);
     }
   };
 
@@ -602,6 +699,7 @@ cr.define('print_preview', function() {
    */
   function NativeInitialSettings(
       isInKioskAutoPrintMode,
+      hidePrintWithSystemDialogLink,
       thousandsDelimeter,
       decimalDelimeter,
       unitType,
@@ -618,6 +716,13 @@ cr.define('print_preview', function() {
      * @private
      */
     this.isInKioskAutoPrintMode_ = isInKioskAutoPrintMode;
+
+    /**
+     * Whether we should hide the link which shows the system print dialog.
+     * @type {boolean}
+     * @private
+     */
+    this.hidePrintWithSystemDialogLink_ = hidePrintWithSystemDialogLink;
 
     /**
      * Character delimeter of thousands digits.
@@ -689,6 +794,14 @@ cr.define('print_preview', function() {
      */
     get isInKioskAutoPrintMode() {
       return this.isInKioskAutoPrintMode_;
+    },
+
+    /**
+     * @return {boolean} Whether we should hide the link which shows the
+           system print dialog.
+     */
+    get hidePrintWithSystemDialogLink() {
+      return this.hidePrintWithSystemDialogLink_;
     },
 
     /** @return {string} Character delimeter of thousands digits. */

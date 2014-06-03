@@ -13,7 +13,6 @@ gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared)
 GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,skia_skia_gyp)/skia.stamp \
 	$(call intermediates-dir-for,GYP,third_party_mesa_mesa_headers_gyp)/mesa_headers.stamp \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_ui_gyp)/ui_ui_gyp.a \
 	$(call intermediates-dir-for,GYP,ui_gl_gl_jni_headers_gyp)/gl_jni_headers.stamp
 
 ### Rules for action "generate_gl_bindings":
@@ -21,9 +20,9 @@ $(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_egl.cc: gyp_local_path 
 $(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_egl.cc: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_egl.cc: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_egl.cc: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
-$(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_egl.cc: $(LOCAL_PATH)/ui/gl/generate_bindings.py $(LOCAL_PATH)/third_party/mesa/src/include/GL/glext.h $(LOCAL_PATH)/third_party/mesa/src/include/GLES2/gl2ext.h $(LOCAL_PATH)/ui/gl/GL/glextchromium.h $(LOCAL_PATH)/gpu/GLES2/gl2chromium.h $(LOCAL_PATH)/gpu/GLES2/gl2extchromium.h $(LOCAL_PATH)/third_party/mesa/src/include/EGL/eglext.h $(LOCAL_PATH)/ui/gl/EGL/eglextchromium.h $(LOCAL_PATH)/third_party/mesa/src/include/GL/wglext.h $(LOCAL_PATH)/third_party/mesa/src/include/GL/glx.h $(LOCAL_PATH)/third_party/mesa/src/include/GL/glxext.h $(GYP_TARGET_DEPENDENCIES)
+$(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_egl.cc: $(LOCAL_PATH)/ui/gl/generate_bindings.py $(LOCAL_PATH)/third_party/mesa/src/include/GL/glext.h $(LOCAL_PATH)/third_party/khronos/GLES2/gl2ext.h $(LOCAL_PATH)/ui/gl/GL/glextchromium.h $(LOCAL_PATH)/gpu/GLES2/gl2chromium.h $(LOCAL_PATH)/gpu/GLES2/gl2extchromium.h $(LOCAL_PATH)/third_party/khronos/EGL/eglext.h $(LOCAL_PATH)/ui/gl/EGL/eglextchromium.h $(LOCAL_PATH)/third_party/mesa/src/include/GL/wglext.h $(LOCAL_PATH)/third_party/mesa/src/include/GL/glx.h $(LOCAL_PATH)/third_party/mesa/src/include/GL/glxext.h $(GYP_TARGET_DEPENDENCIES)
 	@echo "Gyp action: ui_gl_gl_gyp_gl_target_generate_gl_bindings ($@)"
-	$(hide)cd $(gyp_local_path)/ui/gl; mkdir -p $(gyp_shared_intermediate_dir)/ui/gl; python generate_bindings.py "--header-paths=../../third_party/mesa/src/include:../../third_party/khronos" "$(gyp_shared_intermediate_dir)/ui/gl"
+	$(hide)cd $(gyp_local_path)/ui/gl; mkdir -p $(gyp_shared_intermediate_dir)/ui/gl; python generate_bindings.py "--header-paths=../../third_party/khronos:../../third_party/mesa/src/include" "$(gyp_shared_intermediate_dir)/ui/gl"
 
 $(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_egl.h: $(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_egl.cc ;
 $(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_api_autogen_egl.h: $(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_egl.cc ;
@@ -104,7 +103,7 @@ GYP_COPIED_SOURCE_ORIGIN_DIRS := \
 LOCAL_SRC_FILES := \
 	ui/gl/android/gl_jni_registrar.cc \
 	ui/gl/android/scoped_java_surface.cc \
-	ui/gl/android/surface_texture_bridge.cc \
+	ui/gl/android/surface_texture.cc \
 	ui/gl/android/surface_texture_listener.cc \
 	ui/gl/gl_bindings_skia_in_process.cc \
 	ui/gl/gl_context.cc \
@@ -129,7 +128,7 @@ LOCAL_SRC_FILES := \
 	ui/gl/gpu_switching_manager.cc \
 	ui/gl/scoped_binders.cc \
 	ui/gl/scoped_make_current.cc \
-	ui/gl/vsync_provider.cc \
+	ui/gl/sync_control_vsync_provider.cc \
 	ui/gl/egl_util.cc \
 	ui/gl/gl_context_egl.cc \
 	ui/gl/gl_surface_egl.cc \
@@ -171,27 +170,27 @@ MY_CFLAGS_Debug := \
 	-ffunction-sections
 
 MY_DEFS_Debug := \
-	'-DANGLE_DX11' \
+	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
-	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
-	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DLOGGING_IS_OFFICIAL_BUILD=1' \
-	'-DTRACING_IS_OFFICIAL_BUILD=1' \
-	'-DENABLE_GPU=1' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
+	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
+	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-DGL_IMPLEMENTATION' \
 	'-DGL_GLEXT_PROTOTYPES' \
 	'-DEGL_EGLEXT_PROTOTYPES' \
+	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DMESA_EGL_NO_X11_HEADERS' \
-	'-DPOSIX_AVOID_MMAP' \
 	'-DU_USING_ICU_NAMESPACE=0' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
@@ -217,6 +216,9 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
 	$(LOCAL_PATH) \
+	$(LOCAL_PATH)/skia/config \
+	$(PWD)/external/skia/include \
+	$(PWD)/external/skia/include/core \
 	$(LOCAL_PATH)/third_party/skia/src/core \
 	$(LOCAL_PATH)/skia/ext \
 	$(PWD)/external/icu4c/common \
@@ -272,27 +274,27 @@ MY_CFLAGS_Release := \
 	-fomit-frame-pointer
 
 MY_DEFS_Release := \
-	'-DANGLE_DX11' \
+	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
-	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
-	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DLOGGING_IS_OFFICIAL_BUILD=1' \
-	'-DTRACING_IS_OFFICIAL_BUILD=1' \
-	'-DENABLE_GPU=1' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
+	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
+	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-DGL_IMPLEMENTATION' \
 	'-DGL_GLEXT_PROTOTYPES' \
 	'-DEGL_EGLEXT_PROTOTYPES' \
+	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DMESA_EGL_NO_X11_HEADERS' \
-	'-DPOSIX_AVOID_MMAP' \
 	'-DU_USING_ICU_NAMESPACE=0' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
@@ -319,6 +321,9 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
 	$(LOCAL_PATH) \
+	$(LOCAL_PATH)/skia/config \
+	$(PWD)/external/skia/include \
+	$(PWD)/external/skia/include/core \
 	$(LOCAL_PATH)/third_party/skia/src/core \
 	$(LOCAL_PATH)/skia/ext \
 	$(PWD)/external/icu4c/common \
@@ -381,8 +386,7 @@ LOCAL_LDFLAGS_Release := \
 
 LOCAL_LDFLAGS := $(LOCAL_LDFLAGS_$(GYP_CONFIGURATION))
 
-LOCAL_STATIC_LIBRARIES := \
-	ui_ui_gyp
+LOCAL_STATIC_LIBRARIES :=
 
 # Enable grouping to fix circular references
 LOCAL_GROUP_STATIC_LIBRARIES := true

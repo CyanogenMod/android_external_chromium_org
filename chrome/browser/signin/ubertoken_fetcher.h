@@ -6,8 +6,8 @@
 #define CHROME_BROWSER_SIGNIN_UBERTOKEN_FETCHER_H_
 
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/signin/oauth2_token_service.h"
 #include "google_apis/gaia/gaia_auth_consumer.h"
+#include "google_apis/gaia/oauth2_token_service.h"
 
 // Allow to retrieves an uber-auth token for the user. This class uses the
 // |OAuth2TokenService| and considers that the user is already logged in. It
@@ -40,6 +40,7 @@ class UbertokenFetcher : public GaiaAuthConsumer,
 
   // Start fetching the token.
   void StartFetchingToken();
+  virtual void StartFetchingToken(const std::string& account_id);
 
   // Overriden from GaiaAuthConsumer
   virtual void OnUberAuthTokenSuccess(const std::string& token) OVERRIDE;

@@ -14,12 +14,13 @@
 #include "base/json/json_writer.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/singleton.h"
+#include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/chrome_notification_types.h"
+#include "chrome/browser/devtools/devtools_target_impl.h"
 #include "chrome/browser/extensions/api/debugger/debugger_api_constants.h"
-#include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
@@ -30,23 +31,21 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/chrome_web_ui_controller_factory.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/extension.h"
 #include "content/public/browser/devtools_agent_host.h"
 #include "content/public/browser/devtools_client_host.h"
 #include "content/public/browser/devtools_http_handler.h"
 #include "content/public/browser/devtools_manager.h"
-#include "content/public/browser/favicon_status.h"
-#include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/worker_service.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/url_utils.h"
+#include "extensions/browser/event_router.h"
 #include "extensions/common/error_utils.h"
+#include "extensions/common/extension.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -58,7 +57,6 @@ using content::RenderProcessHost;
 using content::RenderViewHost;
 using content::RenderWidgetHost;
 using content::WebContents;
-using content::WorkerService;
 using extensions::ErrorUtils;
 
 namespace keys = debugger_api_constants;
@@ -67,10 +65,6 @@ namespace Detach = extensions::api::debugger::Detach;
 namespace OnDetach = extensions::api::debugger::OnDetach;
 namespace OnEvent = extensions::api::debugger::OnEvent;
 namespace SendCommand = extensions::api::debugger::SendCommand;
-
-namespace {
-class ExtensionDevToolsInfoBarDelegate;
-}  // namespace
 
 
 // ExtensionDevToolsClientHost ------------------------------------------------
@@ -84,7 +78,7 @@ class ExtensionDevToolsClientHost : public DevToolsClientHost,
       const std::string& extension_id,
       const std::string& extension_name,
       const Debuggee& debuggee,
-      ExtensionDevToolsInfoBarDelegate* infobar);
+      InfoBar* infobar);
 
   virtual ~ExtensionDevToolsClientHost();
 
@@ -119,7 +113,7 @@ class ExtensionDevToolsClientHost : public DevToolsClientHost,
   typedef std::map<int, scoped_refptr<DebuggerSendCommandFunction> >
       PendingRequests;
   PendingRequests pending_requests_;
-  ExtensionDevToolsInfoBarDelegate* infobar_;
+  InfoBar* infobar_;
   OnDetach::Reason detach_reason_;
 
   DISALLOW_COPY_AND_ASSIGN(ExtensionDevToolsClientHost);
@@ -147,20 +141,17 @@ void CopyDebuggee(Debuggee* dst, const Debuggee& src) {
 
 class ExtensionDevToolsInfoBarDelegate : public ConfirmInfoBarDelegate {
  public:
-  // Creates an extension dev tools infobar delegate and adds it to the
-  // InfoBarService associated with |rvh|.  Returns the delegate if it was
+  // Creates an extension dev tools infobar and delegate and adds the infobar to
+  // the InfoBarService associated with |rvh|.  Returns the infobar if it was
   // successfully added.
-  static ExtensionDevToolsInfoBarDelegate* Create(
-      RenderViewHost* rvh,
-      const std::string& client_name);
+  static InfoBar* Create(RenderViewHost* rvh, const std::string& client_name);
 
   void set_client_host(ExtensionDevToolsClientHost* client_host) {
     client_host_ = client_host;
   }
 
  private:
-  ExtensionDevToolsInfoBarDelegate(InfoBarService* infobar_service,
-                                   const std::string& client_name);
+  explicit ExtensionDevToolsInfoBarDelegate(const std::string& client_name);
   virtual ~ExtensionDevToolsInfoBarDelegate();
 
   // ConfirmInfoBarDelegate:
@@ -168,7 +159,7 @@ class ExtensionDevToolsInfoBarDelegate : public ConfirmInfoBarDelegate {
   virtual Type GetInfoBarType() const OVERRIDE;
   virtual bool ShouldExpireInternal(
       const content::LoadCommittedDetails& details) const OVERRIDE;
-  virtual string16 GetMessageText() const OVERRIDE;
+  virtual base::string16 GetMessageText() const OVERRIDE;
   virtual int GetButtons() const OVERRIDE;
   virtual bool Cancel() OVERRIDE;
 
@@ -179,7 +170,7 @@ class ExtensionDevToolsInfoBarDelegate : public ConfirmInfoBarDelegate {
 };
 
 // static
-ExtensionDevToolsInfoBarDelegate* ExtensionDevToolsInfoBarDelegate::Create(
+InfoBar* ExtensionDevToolsInfoBarDelegate::Create(
     RenderViewHost* rvh,
     const std::string& client_name) {
   if (!rvh)
@@ -194,15 +185,14 @@ ExtensionDevToolsInfoBarDelegate* ExtensionDevToolsInfoBarDelegate::Create(
   if (!infobar_service)
     return NULL;
 
-  return static_cast<ExtensionDevToolsInfoBarDelegate*>(
-      infobar_service->AddInfoBar(scoped_ptr<InfoBarDelegate>(
-          new ExtensionDevToolsInfoBarDelegate(infobar_service, client_name))));
+  return infobar_service->AddInfoBar(ConfirmInfoBarDelegate::CreateInfoBar(
+      scoped_ptr<ConfirmInfoBarDelegate>(
+          new ExtensionDevToolsInfoBarDelegate(client_name))));
 }
 
 ExtensionDevToolsInfoBarDelegate::ExtensionDevToolsInfoBarDelegate(
-    InfoBarService* infobar_service,
     const std::string& client_name)
-    : ConfirmInfoBarDelegate(infobar_service),
+    : ConfirmInfoBarDelegate(),
       client_name_(client_name),
       client_host_(NULL) {
 }
@@ -224,7 +214,7 @@ bool ExtensionDevToolsInfoBarDelegate::ShouldExpireInternal(
   return false;
 }
 
-string16 ExtensionDevToolsInfoBarDelegate::GetMessageText() const {
+base::string16 ExtensionDevToolsInfoBarDelegate::GetMessageText() const {
   return l10n_util::GetStringFUTF16(IDS_DEV_TOOLS_INFOBAR_LABEL,
                                     UTF8ToUTF16(client_name_));
 }
@@ -305,7 +295,7 @@ ExtensionDevToolsClientHost::ExtensionDevToolsClientHost(
     const std::string& extension_id,
     const std::string& extension_name,
     const Debuggee& debuggee,
-    ExtensionDevToolsInfoBarDelegate* infobar)
+    InfoBar* infobar)
     : profile_(profile),
       agent_host_(agent_host),
       extension_id_(extension_id),
@@ -331,7 +321,8 @@ ExtensionDevToolsClientHost::ExtensionDevToolsClientHost(
       agent_host_.get(), this);
 
   if (infobar_) {
-    infobar_->set_client_host(this);
+    static_cast<ExtensionDevToolsInfoBarDelegate*>(
+        infobar_->delegate())->set_client_host(this);
     registrar_.Add(
         this, chrome::NOTIFICATION_TAB_CONTENTS_INFOBAR_REMOVED,
         content::Source<InfoBarService>(InfoBarService::FromWebContents(
@@ -346,7 +337,8 @@ ExtensionDevToolsClientHost::~ExtensionDevToolsClientHost() {
   registrar_.RemoveAll();
 
   if (infobar_) {
-    infobar_->set_client_host(NULL);
+    static_cast<ExtensionDevToolsInfoBarDelegate*>(
+        infobar_->delegate())->set_client_host(NULL);
     InfoBarService::FromWebContents(WebContents::FromRenderViewHost(
         agent_host_->GetRenderViewHost()))->RemoveInfoBar(infobar_);
   }
@@ -398,8 +390,8 @@ void ExtensionDevToolsClientHost::SendDetachedEvent() {
   scoped_ptr<base::ListValue> args(OnDetach::Create(debuggee_,
                                                     detach_reason_));
   scoped_ptr<extensions::Event> event(new extensions::Event(
-      keys::kOnDetach, args.Pass()));
-  event->restrict_to_profile = profile_;
+      OnDetach::kEventName, args.Pass()));
+  event->restrict_to_browser_context = profile_;
   extensions::ExtensionSystem::Get(profile_)->event_router()->
       DispatchEventToExtension(extension_id_, event.Pass());
 }
@@ -416,7 +408,7 @@ void ExtensionDevToolsClientHost::Observe(
     Close();
   } else {
     DCHECK_EQ(chrome::NOTIFICATION_TAB_CONTENTS_INFOBAR_REMOVED, type);
-    if (content::Details<InfoBarRemovedDetails>(details)->first == infobar_) {
+    if (content::Details<InfoBar::RemovedDetails>(details)->first == infobar_) {
       infobar_ = NULL;
       SendDetachedEvent();
       Close();
@@ -448,8 +440,8 @@ void ExtensionDevToolsClientHost::DispatchOnInspectorFrontend(
 
     scoped_ptr<ListValue> args(OnEvent::Create(debuggee_, method_name, params));
     scoped_ptr<extensions::Event> event(new extensions::Event(
-        keys::kOnEvent, args.Pass()));
-    event->restrict_to_profile = profile_;
+        OnEvent::kEventName, args.Pass()));
+    event->restrict_to_browser_context = profile_;
     extensions::ExtensionSystem::Get(profile_)->event_router()->
         DispatchEventToExtension(extension_id_, event.Pass());
   } else {
@@ -487,9 +479,13 @@ void DebuggerFunction::FormatErrorMessage(const std::string& format) {
 bool DebuggerFunction::InitAgentHost() {
   if (debuggee_.tab_id) {
     WebContents* web_contents = NULL;
-    bool result = ExtensionTabUtil::GetTabById(
-        *debuggee_.tab_id, profile(), include_incognito(), NULL, NULL,
-        &web_contents, NULL);
+    bool result = extensions::ExtensionTabUtil::GetTabById(*debuggee_.tab_id,
+                                                           GetProfile(),
+                                                           include_incognito(),
+                                                           NULL,
+                                                           NULL,
+                                                           &web_contents,
+                                                           NULL);
     if (result && web_contents) {
       if (content::HasWebUIScheme(web_contents->GetURL())) {
         error_ = ErrorUtils::FormatErrorMessage(
@@ -502,8 +498,9 @@ bool DebuggerFunction::InitAgentHost() {
     }
   } else if (debuggee_.extension_id) {
     extensions::ExtensionHost* extension_host =
-        extensions::ExtensionSystem::Get(profile())->process_manager()->
-            GetBackgroundHostForExtension(*debuggee_.extension_id);
+        extensions::ExtensionSystem::Get(GetProfile())
+            ->process_manager()
+            ->GetBackgroundHostForExtension(*debuggee_.extension_id);
     if (extension_host) {
       agent_host_ = DevToolsAgentHost::GetOrCreateFor(
           extension_host->render_view_host());
@@ -566,13 +563,13 @@ bool DebuggerAttachFunction::RunImpl() {
     return false;
   }
 
-  ExtensionDevToolsInfoBarDelegate* infobar = NULL;
+  InfoBar* infobar = NULL;
   if (!CommandLine::ForCurrentProcess()->
        HasSwitch(switches::kSilentDebuggerExtensionAPI)) {
     // Do not attach to the target if for any reason the infobar cannot be shown
     // for this WebContents instance.
     infobar = ExtensionDevToolsInfoBarDelegate::Create(
-          agent_host_->GetRenderViewHost(), GetExtension()->name());
+        agent_host_->GetRenderViewHost(), GetExtension()->name());
     if (!infobar) {
       error_ = ErrorUtils::FormatErrorMessage(
           keys::kSilentDebuggingRequired,
@@ -581,9 +578,12 @@ bool DebuggerAttachFunction::RunImpl() {
     }
   }
 
-  new ExtensionDevToolsClientHost(profile(), agent_host_.get(),
-                                  GetExtension()->id(), GetExtension()->name(),
-                                  debuggee_, infobar);
+  new ExtensionDevToolsClientHost(GetProfile(),
+                                  agent_host_.get(),
+                                  GetExtension()->id(),
+                                  GetExtension()->name(),
+                                  debuggee_,
+                                  infobar);
   SendResponse(true);
   return true;
 }
@@ -668,75 +668,28 @@ const char kTargetTypeOther[] = "other";
 const char kTargetTabIdField[] = "tabId";
 const char kTargetExtensionIdField[] = "extensionId";
 
-extensions::ExtensionHost*
-    GetExtensionBackgroundHost(WebContents* web_contents) {
-  Profile* profile =
-      Profile::FromBrowserContext(web_contents->GetBrowserContext());
-  if (!profile)
-    return NULL;
-
-  extensions::ExtensionHost* extension_host =
-      extensions::ExtensionSystem::Get(profile)->process_manager()->
-          GetBackgroundHostForExtension(web_contents->GetURL().host());
-
-  return (extension_host && extension_host->host_contents() == web_contents) ?
-      extension_host : NULL;
-}
-
-base::Value* SerializePageInfo(RenderViewHost* rvh) {
-  WebContents* web_contents = WebContents::FromRenderViewHost(rvh);
-  if (!web_contents)
-    return NULL;
-
-  DevToolsAgentHost* agent_host = DevToolsAgentHost::GetOrCreateFor(rvh);
-
+base::Value* SerializeTarget(const DevToolsTargetImpl& target) {
   base::DictionaryValue* dictionary = new base::DictionaryValue();
 
-  dictionary->SetString(kTargetIdField, agent_host->GetId());
-  dictionary->SetBoolean(kTargetAttachedField, agent_host->IsAttached());
-  dictionary->SetString(kTargetUrlField, web_contents->GetURL().spec());
+  dictionary->SetString(kTargetIdField, target.GetId());
+  dictionary->SetString(kTargetTitleField, target.GetTitle());
+  dictionary->SetBoolean(kTargetAttachedField, target.IsAttached());
+  dictionary->SetString(kTargetUrlField, target.GetUrl().spec());
 
-  extensions::ExtensionHost* extension_host =
-      GetExtensionBackgroundHost(web_contents);
-  if (extension_host) {
-    // This RenderViewHost belongs to a background page.
-    dictionary->SetString(kTargetTypeField, kTargetTypeBackgroundPage);
-    dictionary->SetString(kTargetExtensionIdField,
-                          extension_host->extension()->id());
-    dictionary->SetString(kTargetTitleField,
-                          extension_host->extension()->name());
-  } else {
-    int tab_id = ExtensionTabUtil::GetTabId(web_contents);
-    if (tab_id != -1) {
-      // This RenderViewHost belongs to a regular page.
-      dictionary->SetString(kTargetTypeField, kTargetTypePage);
-      dictionary->SetInteger(kTargetTabIdField, tab_id);
-    } else {
-      dictionary->SetString(kTargetTypeField, kTargetTypeOther);
-    }
-    dictionary->SetString(kTargetTitleField, web_contents->GetTitle());
-
-    content::NavigationController& controller = web_contents->GetController();
-    content::NavigationEntry* entry = controller.GetActiveEntry();
-    if (entry != NULL && entry->GetURL().is_valid()) {
-      dictionary->SetString(kTargetFaviconUrlField,
-                            entry->GetFavicon().url.spec());
-    }
+  std::string type = target.GetType();
+  if (type == kTargetTypePage) {
+    dictionary->SetInteger(kTargetTabIdField, target.GetTabId());
+  } else if (type == kTargetTypeBackgroundPage) {
+    dictionary->SetString(kTargetExtensionIdField, target.GetExtensionId());
+  } else if (type != kTargetTypeWorker) {
+    // DevToolsTargetImpl may support more types than the debugger API.
+    type = kTargetTypeOther;
   }
+  dictionary->SetString(kTargetTypeField, type);
 
-  return dictionary;
-}
-
-base::Value* SerializeWorkerInfo(const WorkerService::WorkerInfo& worker) {
-  base::DictionaryValue* dictionary = new base::DictionaryValue;
-
-  scoped_refptr<DevToolsAgentHost> agent(DevToolsAgentHost::GetForWorker(
-      worker.process_id, worker.route_id));
-  dictionary->SetString(kTargetIdField, agent->GetId());
-  dictionary->SetString(kTargetTypeField, kTargetTypeWorker);
-  dictionary->SetString(kTargetTitleField, worker.name);
-  dictionary->SetString(kTargetUrlField, worker.url.spec());
-  dictionary->SetBoolean(kTargetAttachedField, agent->IsAttached());
+  GURL favicon_url = target.GetFaviconUrl();
+  if (favicon_url.is_valid())
+    dictionary->SetString(kTargetFaviconUrlField, favicon_url.spec());
 
   return dictionary;
 }
@@ -750,35 +703,17 @@ DebuggerGetTargetsFunction::~DebuggerGetTargetsFunction() {
 }
 
 bool DebuggerGetTargetsFunction::RunImpl() {
-  base::ListValue* results_list = new base::ListValue();
-
-  std::vector<RenderViewHost*> rvh_list =
-      DevToolsAgentHost::GetValidRenderViewHosts();
-  for (std::vector<RenderViewHost*>::iterator it = rvh_list.begin();
-       it != rvh_list.end(); ++it) {
-    base::Value* value = SerializePageInfo(*it);
-    if (value)
-      results_list->Append(value);
-  }
-
-  content::BrowserThread::PostTaskAndReply(
-      content::BrowserThread::IO,
-      FROM_HERE,
-      base::Bind(&DebuggerGetTargetsFunction::CollectWorkerInfo, this,
-                 results_list),
-      base::Bind(&DebuggerGetTargetsFunction::SendTargetList, this,
-                 results_list));
+  DevToolsTargetImpl::EnumerateAllTargets(
+      base::Bind(&DebuggerGetTargetsFunction::SendTargetList, this));
   return true;
 }
 
-void DebuggerGetTargetsFunction::CollectWorkerInfo(base::ListValue* list) {
-  std::vector<WorkerService::WorkerInfo> worker_info =
-      WorkerService::GetInstance()->GetWorkers();
-  for (size_t i = 0; i < worker_info.size(); ++i)
-    list->Append(SerializeWorkerInfo(worker_info[i]));
-}
-
-void DebuggerGetTargetsFunction::SendTargetList(base::ListValue* list) {
-  SetResult(list);
+void DebuggerGetTargetsFunction::SendTargetList(
+    const std::vector<DevToolsTargetImpl*>& target_list) {
+  scoped_ptr<base::ListValue> result(new base::ListValue());
+  for (size_t i = 0; i < target_list.size(); ++i)
+    result->Append(SerializeTarget(*target_list[i]));
+  STLDeleteContainerPointers(target_list.begin(), target_list.end());
+  SetResult(result.release());
   SendResponse(true);
 }

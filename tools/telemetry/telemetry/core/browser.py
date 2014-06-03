@@ -5,6 +5,7 @@
 import os
 
 from telemetry.core import browser_credentials
+from telemetry.core import exceptions
 from telemetry.core import extension_dict
 from telemetry.core import platform
 from telemetry.core import tab_list
@@ -39,6 +40,7 @@ class Browser(object):
     self.credentials = browser_credentials.BrowserCredentials()
     self._platform.SetFullPerformanceModeEnabled(True)
     self._active_profilers = []
+    self._profilers_states = {}
 
   def __enter__(self):
     return self
@@ -92,42 +94,40 @@ class Browser(object):
     result = {
         'Browser': dict(pid_stats_function(browser_pid), **{'ProcessCount': 1}),
         'Renderer': {'ProcessCount': 0},
-        'Gpu': {'ProcessCount': 0}
+        'Gpu': {'ProcessCount': 0},
+        'Other': {'ProcessCount': 0}
     }
-    child_process_count = 0
+    process_count = 1
     for child_pid in self._platform_backend.GetChildPids(browser_pid):
-      child_process_count += 1
-      # Process type detection is causing exceptions.
-      # http://crbug.com/240951
       try:
         child_cmd_line = self._platform_backend.GetCommandLine(child_pid)
-        child_process_name = self._browser_backend.GetProcessName(
-            child_cmd_line)
-      except Exception:
-        # The cmd line was unavailable, assume it'll be impossible to track
-        # any further stats about this process.
+        child_stats = pid_stats_function(child_pid)
+      except exceptions.ProcessGoneException:
+        # It is perfectly fine for a process to have gone away between calling
+        # GetChildPids() and then further examining it.
         continue
+      child_process_name = self._browser_backend.GetProcessName(child_cmd_line)
       process_name_type_key_map = {'gpu-process': 'Gpu', 'renderer': 'Renderer'}
       if child_process_name in process_name_type_key_map:
         child_process_type_key = process_name_type_key_map[child_process_name]
       else:
         # TODO: identify other process types (zygote, plugin, etc), instead of
-        # lumping them in with renderer processes.
-        child_process_type_key = 'Renderer'
-      child_stats = pid_stats_function(child_pid)
+        # lumping them in a single category.
+        child_process_type_key = 'Other'
       result[child_process_type_key]['ProcessCount'] += 1
       for k, v in child_stats.iteritems():
         if k in result[child_process_type_key]:
           result[child_process_type_key][k] += v
         else:
           result[child_process_type_key][k] = v
+      process_count += 1
     for v in result.itervalues():
       if v['ProcessCount'] > 1:
         for k in v.keys():
           if k.endswith('Peak'):
             del v[k]
       del v['ProcessCount']
-    result['ProcessCount'] = child_process_count
+    result['ProcessCount'] = process_count
     return result
 
   @property
@@ -168,6 +168,35 @@ class Browser(object):
     return result
 
   @property
+  def cpu_stats(self):
+    """Returns a dict of cpu statistics for the system.
+    { 'Browser': {
+        'CpuProcessTime': S,
+        'TotalTime': T
+      },
+      'Gpu': {
+        'CpuProcessTime': S,
+        'TotalTime': T
+      },
+      'Renderer': {
+        'CpuProcessTime': S,
+        'TotalTime': T
+      }
+    }
+    Any of the above keys may be missing on a per-platform basis.
+    """
+    result = self._GetStatsCommon(self._platform_backend.GetCpuStats)
+    del result['ProcessCount']
+
+    # We want a single time value, not the sum for all processes.
+    for process_type in result:
+      # Skip any process_types that are empty
+      if not len(result[process_type]):
+        continue
+      result[process_type].update(self._platform_backend.GetCpuTimestamp())
+    return result
+
+  @property
   def io_stats(self):
     """Returns a dict of IO statistics for the browser:
     { 'Browser': {
@@ -201,13 +230,16 @@ class Browser(object):
 
     profiler_class = profiler_finder.FindProfiler(profiler_name)
 
-    if not profiler_class.is_supported(self._browser_backend.options):
+    if not profiler_class.is_supported(self._browser_backend.browser_type):
       raise Exception('The %s profiler is not '
                       'supported on this platform.' % profiler_name)
 
+    if not profiler_class in self._profilers_states:
+      self._profilers_states[profiler_class] = {}
+
     self._active_profilers.append(
         profiler_class(self._browser_backend, self._platform_backend,
-            base_output_file))
+            base_output_file, self._profilers_states[profiler_class]))
 
   def StopProfiling(self):
     """Stops all active profilers and saves their results.
@@ -227,13 +259,9 @@ class Browser(object):
   def StopTracing(self):
     return self._browser_backend.StopTracing()
 
-  def GetTraceResultAndReset(self):
-    """Returns the result of the trace, as TraceResult object."""
-    return self._browser_backend.GetTraceResultAndReset()
-
   def Start(self):
-    options = self._browser_backend.options
-    if options.clear_sytem_cache_for_browser_and_profile_on_start:
+    browser_options = self._browser_backend.browser_options
+    if browser_options.clear_sytem_cache_for_browser_and_profile_on_start:
       if self._platform.CanFlushIndividualFilesFromSystemCache():
         self._platform.FlushSystemCacheForDirectory(
             self._browser_backend.profile_directory)
@@ -247,7 +275,12 @@ class Browser(object):
 
   def Close(self):
     """Closes this browser."""
+    for profiler_class in self._profilers_states:
+      profiler_class.WillCloseBrowser(self._browser_backend,
+                                      self._platform_backend)
+
     self._platform.SetFullPerformanceModeEnabled(False)
+
     if self._wpr_server:
       self._wpr_server.Close()
       self._wpr_server = None
@@ -265,14 +298,24 @@ class Browser(object):
 
   def SetHTTPServerDirectories(self, paths):
     """Returns True if the HTTP server was started, False otherwise."""
-    if not isinstance(paths, list):
-      paths = [paths]
-    paths = [os.path.abspath(p) for p in paths]
+    if isinstance(paths, basestring):
+      paths = set([paths])
+    paths = set(os.path.realpath(p) for p in paths)
 
-    if paths and self._http_server and self._http_server.paths == paths:
-      return False
+    # If any path is in a subdirectory of another, remove the subdirectory.
+    duplicates = set()
+    for parent_path in paths:
+      for sub_path in paths:
+        if parent_path == sub_path:
+          continue
+        if os.path.commonprefix((parent_path, sub_path)) == parent_path:
+          duplicates.add(sub_path)
+    paths -= duplicates
 
     if self._http_server:
+      if paths and self._http_server.paths == paths:
+        return False
+
       self._http_server.Close()
       self._http_server = None
 
@@ -305,15 +348,20 @@ class Browser(object):
         archive_path,
         use_record_mode,
         append_to_existing_wpr,
-        make_javascript_deterministic,
-        self._browser_backend.WEBPAGEREPLAY_HOST,
-        self._browser_backend.webpagereplay_local_http_port,
-        self._browser_backend.webpagereplay_local_https_port,
-        self._browser_backend.webpagereplay_remote_http_port,
-        self._browser_backend.webpagereplay_remote_https_port)
+        make_javascript_deterministic)
 
   def GetStandardOutput(self):
     return self._browser_backend.GetStandardOutput()
 
   def GetStackTrace(self):
     return self._browser_backend.GetStackTrace()
+
+  @property
+  def supports_system_info(self):
+    return self._browser_backend.supports_system_info
+
+  def GetSystemInfo(self):
+    """Returns low-level information about the system, if available.
+
+       See the documentation of the SystemInfo class for more details."""
+    return self._browser_backend.GetSystemInfo()

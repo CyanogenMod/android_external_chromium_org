@@ -10,6 +10,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/panels/panel.h"
 #include "chrome/browser/ui/panels/panel_bounds_animation.h"
 #include "chrome/browser/ui/panels/panel_manager.h"
@@ -37,10 +38,12 @@
 
 namespace {
 
+#if defined(OS_WIN)
 // If the height of a stacked panel shrinks below this threshold during the
 // user resizing, it will be treated as minimized.
 const int kStackedPanelHeightShrinkThresholdToBecomeMinimized =
     panel::kTitlebarHeight + 20;
+#endif
 
 // Supported accelerators.
 // Note: We can't use the acclerator table defined in chrome/browser/ui/views
@@ -102,6 +105,7 @@ class NativePanelTestingWin : public NativePanelTesting {
   virtual bool VerifyActiveState(bool is_active) OVERRIDE;
   virtual bool VerifyAppIcon() const OVERRIDE;
   virtual bool VerifySystemMinimizeState() const OVERRIDE;
+  virtual bool IsWindowVisible() const OVERRIDE;
   virtual bool IsWindowSizeKnown() const OVERRIDE;
   virtual bool IsAnimatingBounds() const OVERRIDE;
   virtual bool IsButtonVisible(
@@ -191,6 +195,15 @@ bool NativePanelTestingWin::VerifySystemMinimizeState() const {
          placement.showCmd == SW_SHOWMINIMIZED;
 #else
   return true;
+#endif
+}
+
+bool NativePanelTestingWin::IsWindowVisible() const {
+#if defined(OS_WIN)
+  HWND native_window = views::HWNDForWidget(panel_view_->window());
+  return ::IsWindowVisible(native_window) == TRUE;
+#else
+  return panel_view_->visible();
 #endif
 }
 
@@ -290,9 +303,8 @@ PanelView::PanelView(Panel* panel, const gfx::Rect& bounds, bool always_on_top)
       ShellIntegration::GetAppModelIdForProfile(UTF8ToWide(panel->app_name()),
                                                 panel->profile()->GetPath()),
       views::HWNDForWidget(window_));
+  ui::win::PreventWindowFromPinning(views::HWNDForWidget(window_));
 #endif
-
-  views::WidgetFocusManager::GetInstance()->AddFocusChangeListener(this);
 }
 
 PanelView::~PanelView() {
@@ -361,11 +373,11 @@ bool PanelView::FilterMessage(HWND hwnd,
 }
 #endif
 
-void PanelView::AnimationEnded(const ui::Animation* animation) {
+void PanelView::AnimationEnded(const gfx::Animation* animation) {
   panel_->manager()->OnPanelAnimationEnded(panel_.get());
 }
 
-void PanelView::AnimationProgressed(const ui::Animation* animation) {
+void PanelView::AnimationProgressed(const gfx::Animation* animation) {
   gfx::Rect new_bounds = bounds_animator_->CurrentValueBetween(
       animation_start_bounds_, bounds_);
   SetWidgetBounds(new_bounds);
@@ -435,8 +447,6 @@ void PanelView::ClosePanel() {
     panel_->OnWindowClosing();
     return;
   }
-
-  views::WidgetFocusManager::GetInstance()->RemoveFocusChangeListener(this);
 
   panel_->OnNativePanelClosed();
   if (window_)
@@ -563,27 +573,29 @@ void PanelView::HandlePanelKeyboardEvent(
   ui::Accelerator accelerator(
       static_cast<ui::KeyboardCode>(event.windowsKeyCode),
       content::GetModifiersFromNativeWebKeyboardEvent(event));
-  if (event.type == WebKit::WebInputEvent::KeyUp)
+  if (event.type == blink::WebInputEvent::KeyUp)
     accelerator.set_type(ui::ET_KEY_RELEASED);
   focus_manager->ProcessAccelerator(accelerator);
 }
 
 void PanelView::FullScreenModeChanged(bool is_full_screen) {
   if (is_full_screen) {
-    if (window_->IsVisible())
+    if (window_->IsVisible() && always_on_top_)
       window_->Hide();
   } else {
-    ShowPanelInactive();
+    if (!window_->IsVisible()) {
+      ShowPanelInactive();
 
 #if defined(OS_WIN)
-    // When hiding and showing again a top-most window that belongs to a
-    // background application (i.e. the application is not a foreground one),
-    // the window may loose top-most placement even though its WS_EX_TOPMOST
-    // bit is still set. Re-issuing SetWindowsPos() returns the window to its
-    // top-most placement.
-    if (always_on_top_)
-      window_->SetAlwaysOnTop(true);
+      // When hiding and showing again a top-most window that belongs to a
+      // background application (i.e. the application is not a foreground one),
+      // the window may loose top-most placement even though its WS_EX_TOPMOST
+      // bit is still set. Re-issuing SetWindowsPos() returns the window to its
+      // top-most placement.
+      if (always_on_top_)
+        window_->SetAlwaysOnTop(true);
 #endif
+    }
   }
 }
 
@@ -599,10 +611,6 @@ void PanelView::SetPanelAlwaysOnTop(bool on_top) {
   window_->SetAlwaysOnTop(on_top);
   window_->non_client_view()->Layout();
   window_->client_view()->Layout();
-}
-
-void PanelView::EnableResizeByMouse(bool enable) {
-  // Nothing to do since we use system resizing.
 }
 
 void PanelView::UpdatePanelMinimizeRestoreButtonVisibility() {
@@ -749,7 +757,7 @@ bool PanelView::CanMaximize() const {
   return false;
 }
 
-string16 PanelView::GetWindowTitle() const {
+base::string16 PanelView::GetWindowTitle() const {
   return panel_->GetWindowTitle();
 }
 
@@ -947,10 +955,13 @@ void PanelView::OnWidgetActivationChanged(views::Widget* widget, bool active) {
   if (window_closed_)
     return;
 
-  // The panel window is in focus (actually accepting keystrokes) if it is
-  // active and belongs to a foreground application.
-  bool focused = active &&
-      views::HWNDForWidget(widget) == ::GetForegroundWindow();
+  bool focused = active;
+  if (chrome::GetActiveDesktop() == chrome::HOST_DESKTOP_TYPE_NATIVE) {
+    // The panel window is in focus (actually accepting keystrokes) if it is
+    // active and belongs to a foreground application.
+    focused = active &&
+        views::HWNDForWidget(widget) == ::GetForegroundWindow();
+  }
 #else
   NOTIMPLEMENTED();
   bool focused = active;
@@ -972,29 +983,25 @@ void PanelView::OnWidgetActivationChanged(views::Widget* widget, bool active) {
   if (focused_ && panel_->IsMinimized() &&
       panel_->collection()->type() == PanelCollection::DOCKED &&
       gfx::Screen::GetScreenFor(widget->GetNativeWindow())->
-          GetWindowAtCursorScreenPoint() != widget->GetNativeWindow()) {
+          GetWindowUnderCursor() != widget->GetNativeWindow()) {
     panel_->Restore();
   }
 #endif
 
   panel()->OnActiveStateChanged(focused);
+
+   // Give web contents view a chance to set focus to the appropriate element.
+  if (focused_) {
+    content::WebContents* web_contents = panel_->GetWebContents();
+    if (web_contents)
+      web_contents->GetView()->RestoreFocus();
+  }
 }
 
 void PanelView::OnWidgetBoundsChanged(views::Widget* widget,
                                       const gfx::Rect& new_bounds) {
   if (user_resizing_)
     panel()->collection()->OnPanelResizedByMouse(panel(), new_bounds);
-}
-
-void PanelView::OnNativeFocusChange(gfx::NativeView focused_before,
-                                    gfx::NativeView focused_now) {
-  if (focused_now != window_->GetNativeView())
-    return;
-
-  // Give web contents view a chance to set focus to the appropriate element.
-  content::WebContents* web_contents = panel_->GetWebContents();
-  if (web_contents)
-    web_contents->GetView()->RestoreFocus();
 }
 
 bool PanelView::OnTitlebarMousePressed(const gfx::Point& mouse_location) {

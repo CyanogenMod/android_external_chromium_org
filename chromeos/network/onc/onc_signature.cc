@@ -4,7 +4,7 @@
 
 #include "chromeos/network/onc/onc_signature.h"
 
-#include "chromeos/network/onc/onc_constants.h"
+#include "components/onc/onc_constants.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
 
 using base::Value;
@@ -31,265 +31,281 @@ const OncValueSignature kIntegerListSignature = {
 const OncValueSignature kIPConfigListSignature = {
   Value::TYPE_LIST, NULL, &kIPConfigSignature
 };
+const OncValueSignature kCellularApnListSignature = {
+  Value::TYPE_LIST, NULL, &kCellularApnSignature
+};
 
 const OncFieldSignature issuer_subject_pattern_fields[] = {
-  { certificate::kCommonName, &kStringSignature },
-  { certificate::kLocality, &kStringSignature },
-  { certificate::kOrganization, &kStringSignature },
-  { certificate::kOrganizationalUnit, &kStringSignature },
-  { NULL }
-};
+    { ::onc::certificate::kCommonName, &kStringSignature},
+    { ::onc::certificate::kLocality, &kStringSignature},
+    { ::onc::certificate::kOrganization, &kStringSignature},
+    { ::onc::certificate::kOrganizationalUnit, &kStringSignature},
+    {NULL}};
 
 const OncFieldSignature certificate_pattern_fields[] = {
-  { kRecommended, &kRecommendedSignature },
-  { certificate::kEnrollmentURI, &kStringListSignature },
-  { certificate::kIssuer, &kIssuerSubjectPatternSignature },
-  { certificate::kIssuerCARef, &kStringListSignature },
-  { certificate::kIssuerCAPEMs, &kStringListSignature },
-  { certificate::kSubject, &kIssuerSubjectPatternSignature },
-  { NULL }
-};
+    { ::onc::kRecommended, &kRecommendedSignature},
+    { ::onc::certificate::kEnrollmentURI, &kStringListSignature},
+    { ::onc::certificate::kIssuer, &kIssuerSubjectPatternSignature},
+    { ::onc::certificate::kIssuerCARef, &kStringListSignature},
+    // Used internally. Not officially supported.
+    { ::onc::certificate::kIssuerCAPEMs, &kStringListSignature},
+    { ::onc::certificate::kSubject, &kIssuerSubjectPatternSignature},
+    {NULL}};
 
 const OncFieldSignature eap_fields[] = {
-  { kRecommended, &kRecommendedSignature },
-  { eap::kAnonymousIdentity, &kStringSignature },
-  { eap::kClientCertPattern, &kCertificatePatternSignature },
-  { eap::kClientCertRef, &kStringSignature },
-  { eap::kClientCertType, &kStringSignature },
-  { eap::kIdentity, &kStringSignature },
-  { eap::kInner, &kStringSignature },
-  { eap::kOuter, &kStringSignature },
-  { eap::kPassword, &kStringSignature },
-  { eap::kSaveCredentials, &kBoolSignature },
-  { eap::kServerCAPEMs, &kStringListSignature },
-  { eap::kServerCARef, &kStringSignature },
-  { eap::kUseSystemCAs, &kBoolSignature },
-  { NULL }
-};
+    { ::onc::kRecommended, &kRecommendedSignature},
+    { ::onc::eap::kAnonymousIdentity, &kStringSignature},
+    { ::onc::eap::kClientCertPattern, &kCertificatePatternSignature},
+    { ::onc::eap::kClientCertRef, &kStringSignature},
+    { ::onc::eap::kClientCertType, &kStringSignature},
+    { ::onc::eap::kIdentity, &kStringSignature},
+    { ::onc::eap::kInner, &kStringSignature},
+    { ::onc::eap::kOuter, &kStringSignature},
+    { ::onc::eap::kPassword, &kStringSignature},
+    { ::onc::eap::kSaveCredentials, &kBoolSignature},
+    // Used internally. Not officially supported.
+    { ::onc::eap::kServerCAPEMs, &kStringListSignature},
+    { ::onc::eap::kServerCARef, &kStringSignature},
+    { ::onc::eap::kServerCARefs, &kStringListSignature},
+    { ::onc::eap::kUseSystemCAs, &kBoolSignature},
+    {NULL}};
 
 const OncFieldSignature ipsec_fields[] = {
-  { kRecommended, &kRecommendedSignature },
-  { ipsec::kAuthenticationType, &kStringSignature },
-  { vpn::kClientCertPattern, &kCertificatePatternSignature },
-  { vpn::kClientCertRef, &kStringSignature },
-  { vpn::kClientCertType, &kStringSignature },
-  { ipsec::kGroup, &kStringSignature },
-  { ipsec::kIKEVersion, &kIntegerSignature },
-  { ipsec::kPSK, &kStringSignature },
-  { vpn::kSaveCredentials, &kBoolSignature },
-  { ipsec::kServerCAPEMs, &kStringSignature },
-  { ipsec::kServerCARef, &kStringSignature },
-  // Not yet supported.
-  //  { ipsec::kEAP, &kEAPSignature },
-  //  { ipsec::kXAUTH, &kXAUTHSignature },
-  { NULL }
-};
+    { ::onc::kRecommended, &kRecommendedSignature},
+    { ::onc::ipsec::kAuthenticationType, &kStringSignature},
+    { ::onc::vpn::kClientCertPattern, &kCertificatePatternSignature},
+    { ::onc::vpn::kClientCertRef, &kStringSignature},
+    { ::onc::vpn::kClientCertType, &kStringSignature},
+    { ::onc::ipsec::kGroup, &kStringSignature},
+    { ::onc::ipsec::kIKEVersion, &kIntegerSignature},
+    { ::onc::ipsec::kPSK, &kStringSignature},
+    { ::onc::vpn::kSaveCredentials, &kBoolSignature},
+    // Used internally. Not officially supported.
+    { ::onc::ipsec::kServerCAPEMs, &kStringListSignature},
+    { ::onc::ipsec::kServerCARef, &kStringSignature},
+    { ::onc::ipsec::kServerCARefs, &kStringListSignature},
+    // Not yet supported.
+    //  { ipsec::kEAP, &kEAPSignature },
+    //  { ipsec::kXAUTH, &kXAUTHSignature },
+    {NULL}};
 
 const OncFieldSignature l2tp_fields[] = {
-  { kRecommended, &kRecommendedSignature },
-  { vpn::kPassword, &kStringSignature },
-  { vpn::kSaveCredentials, &kBoolSignature },
-  { vpn::kUsername, &kStringSignature },
-  { NULL }
-};
+    { ::onc::kRecommended, &kRecommendedSignature},
+    { ::onc::vpn::kPassword, &kStringSignature},
+    { ::onc::vpn::kSaveCredentials, &kBoolSignature},
+    { ::onc::vpn::kUsername, &kStringSignature},
+    {NULL}};
 
 const OncFieldSignature openvpn_fields[] = {
-  { kRecommended, &kRecommendedSignature },
-  { openvpn::kAuth, &kStringSignature },
-  { openvpn::kAuthNoCache, &kBoolSignature },
-  { openvpn::kAuthRetry, &kStringSignature },
-  { openvpn::kCipher, &kStringSignature },
-  { vpn::kClientCertPattern, &kCertificatePatternSignature },
-  { vpn::kClientCertRef, &kStringSignature },
-  { vpn::kClientCertType, &kStringSignature },
-  { openvpn::kCompLZO, &kStringSignature },
-  { openvpn::kCompNoAdapt, &kBoolSignature },
-  { openvpn::kKeyDirection, &kStringSignature },
-  { openvpn::kNsCertType, &kStringSignature },
-  { vpn::kPassword, &kStringSignature },
-  { openvpn::kPort, &kIntegerSignature },
-  { openvpn::kProto, &kStringSignature },
-  { openvpn::kPushPeerInfo, &kBoolSignature },
-  { openvpn::kRemoteCertEKU, &kStringSignature },
-  { openvpn::kRemoteCertKU, &kStringListSignature },
-  { openvpn::kRemoteCertTLS, &kStringSignature },
-  { openvpn::kRenegSec, &kIntegerSignature },
-  { vpn::kSaveCredentials, &kBoolSignature },
-  { openvpn::kServerCAPEMs, &kStringListSignature },
-  { openvpn::kServerCARef, &kStringSignature },
-  // Not supported, yet.
-  { openvpn::kServerCertPEM, &kStringSignature },
-  { openvpn::kServerCertRef, &kStringSignature },
-  { openvpn::kServerPollTimeout, &kIntegerSignature },
-  { openvpn::kShaper, &kIntegerSignature },
-  { openvpn::kStaticChallenge, &kStringSignature },
-  { openvpn::kTLSAuthContents, &kStringSignature },
-  { openvpn::kTLSRemote, &kStringSignature },
-  { vpn::kUsername, &kStringSignature },
-  // Not supported, yet.
-  { openvpn::kVerb, &kStringSignature },
-  { NULL }
-};
+    { ::onc::kRecommended, &kRecommendedSignature},
+    { ::onc::openvpn::kAuth, &kStringSignature},
+    { ::onc::openvpn::kAuthNoCache, &kBoolSignature},
+    { ::onc::openvpn::kAuthRetry, &kStringSignature},
+    { ::onc::openvpn::kCipher, &kStringSignature},
+    { ::onc::vpn::kClientCertPattern, &kCertificatePatternSignature},
+    { ::onc::vpn::kClientCertRef, &kStringSignature},
+    { ::onc::vpn::kClientCertType, &kStringSignature},
+    { ::onc::openvpn::kCompLZO, &kStringSignature},
+    { ::onc::openvpn::kCompNoAdapt, &kBoolSignature},
+    { ::onc::openvpn::kKeyDirection, &kStringSignature},
+    { ::onc::openvpn::kNsCertType, &kStringSignature},
+    { ::onc::vpn::kPassword, &kStringSignature},
+    { ::onc::openvpn::kPort, &kIntegerSignature},
+    { ::onc::openvpn::kProto, &kStringSignature},
+    { ::onc::openvpn::kPushPeerInfo, &kBoolSignature},
+    { ::onc::openvpn::kRemoteCertEKU, &kStringSignature},
+    { ::onc::openvpn::kRemoteCertKU, &kStringListSignature},
+    { ::onc::openvpn::kRemoteCertTLS, &kStringSignature},
+    { ::onc::openvpn::kRenegSec, &kIntegerSignature},
+    { ::onc::vpn::kSaveCredentials, &kBoolSignature},
+    // Used internally. Not officially supported.
+    { ::onc::openvpn::kServerCAPEMs, &kStringListSignature},
+    { ::onc::openvpn::kServerCARef, &kStringSignature},
+    { ::onc::openvpn::kServerCARefs, &kStringListSignature},
+    // Not supported, yet.
+    { ::onc::openvpn::kServerCertPEM, &kStringSignature},
+    { ::onc::openvpn::kServerCertRef, &kStringSignature},
+    { ::onc::openvpn::kServerPollTimeout, &kIntegerSignature},
+    { ::onc::openvpn::kShaper, &kIntegerSignature},
+    { ::onc::openvpn::kStaticChallenge, &kStringSignature},
+    { ::onc::openvpn::kTLSAuthContents, &kStringSignature},
+    { ::onc::openvpn::kTLSRemote, &kStringSignature},
+    { ::onc::vpn::kUsername, &kStringSignature},
+    // Not supported, yet.
+    { ::onc::openvpn::kVerb, &kStringSignature},
+    { ::onc::openvpn::kVerifyHash, &kStringSignature},
+    { ::onc::openvpn::kVerifyX509, &kVerifyX509Signature},
+    {NULL}};
+
+const OncFieldSignature verify_x509_fields[] = {
+    { ::onc::verify_x509::kName, &kStringSignature},
+    { ::onc::verify_x509::kType, &kStringSignature},
+    {NULL}};
 
 const OncFieldSignature vpn_fields[] = {
-  { kRecommended, &kRecommendedSignature },
-  { vpn::kAutoConnect, &kBoolSignature },
-  { vpn::kHost, &kStringSignature },
-  { vpn::kIPsec, &kIPsecSignature },
-  { vpn::kL2TP, &kL2TPSignature },
-  { vpn::kOpenVPN, &kOpenVPNSignature },
-  { vpn::kType, &kStringSignature },
-  { NULL }
-};
+    { ::onc::kRecommended, &kRecommendedSignature},
+    { ::onc::vpn::kAutoConnect, &kBoolSignature},
+    { ::onc::vpn::kHost, &kStringSignature},
+    { ::onc::vpn::kIPsec, &kIPsecSignature},
+    { ::onc::vpn::kL2TP, &kL2TPSignature},
+    { ::onc::vpn::kOpenVPN, &kOpenVPNSignature},
+    { ::onc::vpn::kType, &kStringSignature},
+    {NULL}};
 
 const OncFieldSignature ethernet_fields[] = {
-  { kRecommended, &kRecommendedSignature },
-  // Not supported, yet.
-  { ethernet::kAuthentication, &kStringSignature },
-  { ethernet::kEAP, &kEAPSignature },
-  { NULL }
-};
+    { ::onc::kRecommended, &kRecommendedSignature},
+    { ::onc::ethernet::kAuthentication, &kStringSignature},
+    { ::onc::ethernet::kEAP, &kEAPSignature},
+    {NULL}};
 
 // Not supported, yet.
 const OncFieldSignature ipconfig_fields[] = {
-  { ipconfig::kGateway, &kStringSignature },
-  { ipconfig::kIPAddress, &kStringSignature },
-  { network_config::kNameServers, &kStringSignature },
-  { ipconfig::kRoutingPrefix, &kIntegerSignature },
-  { network_config::kSearchDomains, &kStringListSignature },
-  { ipconfig::kType, &kStringSignature },
-  { NULL }
-};
+    { ::onc::ipconfig::kGateway, &kStringSignature},
+    { ::onc::ipconfig::kIPAddress, &kStringSignature},
+    { ::onc::network_config::kNameServers, &kStringSignature},
+    { ::onc::ipconfig::kRoutingPrefix, &kIntegerSignature},
+    { ::onc::network_config::kSearchDomains, &kStringListSignature},
+    { ::onc::ipconfig::kType, &kStringSignature},
+    {NULL}};
 
 const OncFieldSignature proxy_location_fields[] = {
-  { proxy::kHost, &kStringSignature },
-  { proxy::kPort, &kIntegerSignature },
-  { NULL }
-};
+    { ::onc::proxy::kHost, &kStringSignature},
+    { ::onc::proxy::kPort, &kIntegerSignature}, {NULL}};
 
 const OncFieldSignature proxy_manual_fields[] = {
-  { proxy::kFtp, &kProxyLocationSignature },
-  { proxy::kHttp, &kProxyLocationSignature },
-  { proxy::kHttps, &kProxyLocationSignature },
-  { proxy::kSocks, &kProxyLocationSignature },
-  { NULL }
-};
+    { ::onc::proxy::kFtp, &kProxyLocationSignature},
+    { ::onc::proxy::kHttp, &kProxyLocationSignature},
+    { ::onc::proxy::kHttps, &kProxyLocationSignature},
+    { ::onc::proxy::kSocks, &kProxyLocationSignature},
+    {NULL}};
 
 const OncFieldSignature proxy_settings_fields[] = {
-  { kRecommended, &kRecommendedSignature },
-  { proxy::kExcludeDomains, &kStringListSignature },
-  { proxy::kManual, &kProxyManualSignature },
-  { proxy::kPAC, &kStringSignature },
-  { proxy::kType, &kStringSignature },
-  { NULL }
-};
+    { ::onc::kRecommended, &kRecommendedSignature},
+    { ::onc::proxy::kExcludeDomains, &kStringListSignature},
+    { ::onc::proxy::kManual, &kProxyManualSignature},
+    { ::onc::proxy::kPAC, &kStringSignature},
+    { ::onc::proxy::kType, &kStringSignature},
+    {NULL}};
 
 const OncFieldSignature wifi_fields[] = {
-  { kRecommended, &kRecommendedSignature },
-  { wifi::kAutoConnect, &kBoolSignature },
-  { wifi::kEAP, &kEAPSignature },
-  { wifi::kHiddenSSID, &kBoolSignature },
-  { wifi::kPassphrase, &kStringSignature },
-  { wifi::kSSID, &kStringSignature },
-  { wifi::kSecurity, &kStringSignature },
-  { NULL }
-};
+    { ::onc::kRecommended, &kRecommendedSignature},
+    { ::onc::wifi::kAutoConnect, &kBoolSignature},
+    { ::onc::wifi::kEAP, &kEAPSignature},
+    { ::onc::wifi::kHiddenSSID, &kBoolSignature},
+    { ::onc::wifi::kPassphrase, &kStringSignature},
+    { ::onc::wifi::kSSID, &kStringSignature},
+    { ::onc::wifi::kSecurity, &kStringSignature},
+    {NULL}};
 
 const OncFieldSignature wifi_with_state_fields[] = {
-  { wifi::kBSSID, &kStringSignature },
-  { wifi::kFrequency, &kIntegerSignature },
-  { wifi::kFrequencyList, &kIntegerListSignature },
-  { wifi::kSignalStrength, &kIntegerSignature },
-  { NULL }
-};
+    { ::onc::wifi::kBSSID, &kStringSignature},
+    { ::onc::wifi::kFrequency, &kIntegerSignature},
+    { ::onc::wifi::kFrequencyList, &kIntegerListSignature},
+    { ::onc::wifi::kSignalStrength, &kIntegerSignature},
+    {NULL}};
+
+const OncFieldSignature cellular_provider_fields[] = {
+    { ::onc::cellular_provider::kCode, &kStringSignature},
+    { ::onc::cellular_provider::kCountry, &kStringSignature},
+    { ::onc::cellular_provider::kName, &kStringSignature},
+    {NULL}};
+
+const OncFieldSignature cellular_apn_fields[] = {
+    { ::onc::cellular_apn::kName, &kStringSignature},
+    { ::onc::cellular_apn::kUsername, &kStringSignature},
+    { ::onc::cellular_apn::kPassword, &kStringSignature},
+    {NULL}};
+
+const OncFieldSignature cellular_fields[] = {
+    { ::onc::kRecommended, &kRecommendedSignature},
+    { ::onc::cellular::kAPN, &kCellularApnSignature },
+    { ::onc::cellular::kAPNList, &kCellularApnListSignature}, {NULL}};
 
 const OncFieldSignature cellular_with_state_fields[] = {
-  { kRecommended, &kRecommendedSignature },
-  { cellular::kActivateOverNonCellularNetwork, &kBoolSignature },
-  { cellular::kActivationState, &kStringSignature },
-  { cellular::kAllowRoaming, &kStringSignature },
-  { cellular::kAPN, &kStringSignature },
-  { cellular::kCarrier, &kStringSignature },
-  { cellular::kESN, &kStringSignature },
-  { cellular::kFamily, &kStringSignature },
-  { cellular::kFirmwareRevision, &kStringSignature },
-  { cellular::kFoundNetworks, &kStringSignature },
-  { cellular::kHardwareRevision, &kStringSignature },
-  { cellular::kHomeProvider, &kStringSignature },
-  { cellular::kICCID, &kStringSignature },
-  { cellular::kIMEI, &kStringSignature },
-  { cellular::kIMSI, &kStringSignature },
-  { cellular::kManufacturer, &kStringSignature },
-  { cellular::kMDN, &kStringSignature },
-  { cellular::kMEID, &kStringSignature },
-  { cellular::kMIN, &kStringSignature },
-  { cellular::kModelID, &kStringSignature },
-  { cellular::kNetworkTechnology, &kStringSignature },
-  { cellular::kOperatorCode, &kStringSignature },
-  { cellular::kOperatorName, &kStringSignature },
-  { cellular::kPRLVersion, &kStringSignature },
-  { cellular::kProviderRequiresRoaming, &kStringSignature },
-  { cellular::kRoamingState, &kStringSignature },
-  { cellular::kSelectedNetwork, &kStringSignature },
-  { cellular::kServingOperator, &kStringSignature },
-  { cellular::kSIMLockStatus, &kStringSignature },
-  { cellular::kSIMPresent, &kStringSignature },
-  { cellular::kSupportedCarriers, &kStringSignature },
-  { cellular::kSupportNetworkScan, &kStringSignature },
-  { NULL }
-};
+    { ::onc::cellular::kActivateOverNonCellularNetwork, &kBoolSignature},
+    { ::onc::cellular::kActivationState, &kStringSignature},
+    { ::onc::cellular::kAllowRoaming, &kStringSignature},
+    { ::onc::cellular::kCarrier, &kStringSignature},
+    { ::onc::cellular::kESN, &kStringSignature},
+    { ::onc::cellular::kFamily, &kStringSignature},
+    { ::onc::cellular::kFirmwareRevision, &kStringSignature},
+    { ::onc::cellular::kFoundNetworks, &kStringSignature},
+    { ::onc::cellular::kHardwareRevision, &kStringSignature},
+    { ::onc::cellular::kHomeProvider, &kCellularProviderSignature},
+    { ::onc::cellular::kICCID, &kStringSignature},
+    { ::onc::cellular::kIMEI, &kStringSignature},
+    { ::onc::cellular::kIMSI, &kStringSignature},
+    { ::onc::cellular::kManufacturer, &kStringSignature},
+    { ::onc::cellular::kMDN, &kStringSignature},
+    { ::onc::cellular::kMEID, &kStringSignature},
+    { ::onc::cellular::kMIN, &kStringSignature},
+    { ::onc::cellular::kModelID, &kStringSignature},
+    { ::onc::cellular::kNetworkTechnology, &kStringSignature},
+    { ::onc::cellular::kPRLVersion, &kStringSignature},
+    { ::onc::cellular::kProviderRequiresRoaming, &kStringSignature},
+    { ::onc::cellular::kRoamingState, &kStringSignature},
+    { ::onc::cellular::kSelectedNetwork, &kStringSignature},
+    { ::onc::cellular::kServingOperator, &kCellularProviderSignature},
+    { ::onc::cellular::kSIMLockStatus, &kStringSignature},
+    { ::onc::cellular::kSIMPresent, &kStringSignature},
+    { ::onc::cellular::kSupportedCarriers, &kStringSignature},
+    { ::onc::cellular::kSupportNetworkScan, &kStringSignature},
+    {NULL}};
 
 const OncFieldSignature network_configuration_fields[] = {
-  { kRecommended, &kRecommendedSignature },
-  { network_config::kEthernet, &kEthernetSignature },
-  { network_config::kGUID, &kStringSignature },
-  // Not supported, yet.
-  { network_config::kIPConfigs, &kIPConfigListSignature },
-  { network_config::kName, &kStringSignature },
-  // Not supported, yet.
-  { network_config::kNameServers, &kStringListSignature },
-  { network_config::kProxySettings, &kProxySettingsSignature },
-  { kRemove, &kBoolSignature },
-  // Not supported, yet.
-  { network_config::kSearchDomains, &kStringListSignature },
-  { network_config::kType, &kStringSignature },
-  { network_config::kVPN, &kVPNSignature },
-  { network_config::kWiFi, &kWiFiSignature },
-  { NULL }
-};
+    { ::onc::kRecommended, &kRecommendedSignature},
+    { ::onc::network_config::kEthernet, &kEthernetSignature},
+    { ::onc::network_config::kGUID, &kStringSignature},
+    // Not supported, yet.
+    { ::onc::network_config::kIPConfigs, &kIPConfigListSignature},
+    { ::onc::network_config::kName, &kStringSignature},
+    // Not supported, yet.
+    { ::onc::network_config::kNameServers, &kStringListSignature},
+    { ::onc::network_config::kProxySettings, &kProxySettingsSignature},
+    { ::onc::kRemove, &kBoolSignature},
+    // Not supported, yet.
+    { ::onc::network_config::kSearchDomains, &kStringListSignature},
+    { ::onc::network_config::kType, &kStringSignature},
+    { ::onc::network_config::kVPN, &kVPNSignature},
+    { ::onc::network_config::kWiFi, &kWiFiSignature},
+    { ::onc::network_config::kCellular, &kCellularSignature},
+    {NULL}};
 
 const OncFieldSignature network_with_state_fields[] = {
-  { network_config::kCellular, &kCellularWithStateSignature },
-  { network_config::kConnectionState, &kStringSignature },
-  { network_config::kWiFi, &kWiFiWithStateSignature },
-  { NULL }
-};
+    { ::onc::network_config::kCellular, &kCellularWithStateSignature},
+    { ::onc::network_config::kConnectionState, &kStringSignature},
+    { ::onc::network_config::kWiFi, &kWiFiWithStateSignature},
+    {NULL}};
+
+const OncFieldSignature global_network_configuration_fields[] = {
+    { ::onc::global_network_config::kAllowOnlyPolicyNetworksToAutoconnect,
+      &kBoolSignature},
+    {NULL}};
 
 const OncFieldSignature certificate_fields[] = {
-  { certificate::kGUID, &kStringSignature },
-  { certificate::kPKCS12, &kStringSignature },
-  { kRemove, &kBoolSignature },
-  { certificate::kTrustBits, &kStringListSignature },
-  { certificate::kType, &kStringSignature },
-  { certificate::kX509, &kStringSignature },
-  { NULL }
-};
+    { ::onc::certificate::kGUID, &kStringSignature},
+    { ::onc::certificate::kPKCS12, &kStringSignature},
+    { ::onc::kRemove, &kBoolSignature},
+    { ::onc::certificate::kTrustBits, &kStringListSignature},
+    { ::onc::certificate::kType, &kStringSignature},
+    { ::onc::certificate::kX509, &kStringSignature},
+    {NULL}};
 
 const OncFieldSignature toplevel_configuration_fields[] = {
-  { toplevel_config::kCertificates, &kCertificateListSignature },
-  { toplevel_config::kNetworkConfigurations,
-    &kNetworkConfigurationListSignature },
-  { toplevel_config::kType, &kStringSignature },
-  { encrypted::kCipher, &kStringSignature },
-  { encrypted::kCiphertext, &kStringSignature },
-  { encrypted::kHMAC, &kStringSignature },
-  { encrypted::kHMACMethod, &kStringSignature },
-  { encrypted::kIV, &kStringSignature },
-  { encrypted::kIterations, &kIntegerSignature },
-  { encrypted::kSalt, &kStringSignature },
-  { encrypted::kStretch, &kStringSignature },
-  { NULL }
-};
+    { ::onc::toplevel_config::kCertificates, &kCertificateListSignature},
+    { ::onc::toplevel_config::kNetworkConfigurations,
+      &kNetworkConfigurationListSignature},
+    { ::onc::toplevel_config::kGlobalNetworkConfiguration,
+      &kGlobalNetworkConfigurationSignature},
+    { ::onc::toplevel_config::kType, &kStringSignature},
+    { ::onc::encrypted::kCipher, &kStringSignature},
+    { ::onc::encrypted::kCiphertext, &kStringSignature},
+    { ::onc::encrypted::kHMAC, &kStringSignature},
+    { ::onc::encrypted::kHMACMethod, &kStringSignature},
+    { ::onc::encrypted::kIV, &kStringSignature},
+    { ::onc::encrypted::kIterations, &kIntegerSignature},
+    { ::onc::encrypted::kSalt, &kStringSignature},
+    { ::onc::encrypted::kStretch, &kStringSignature}, {NULL}};
 
 }  // namespace
 
@@ -313,6 +329,9 @@ const OncValueSignature kL2TPSignature = {
 };
 const OncValueSignature kOpenVPNSignature = {
   Value::TYPE_DICTIONARY, openvpn_fields, NULL
+};
+const OncValueSignature kVerifyX509Signature = {
+  Value::TYPE_DICTIONARY, verify_x509_fields, NULL
 };
 const OncValueSignature kVPNSignature = {
   Value::TYPE_DICTIONARY, vpn_fields, NULL
@@ -341,6 +360,9 @@ const OncValueSignature kCertificateSignature = {
 const OncValueSignature kNetworkConfigurationSignature = {
   Value::TYPE_DICTIONARY, network_configuration_fields, NULL
 };
+const OncValueSignature kGlobalNetworkConfigurationSignature = {
+  Value::TYPE_DICTIONARY, global_network_configuration_fields, NULL
+};
 const OncValueSignature kCertificateListSignature = {
   Value::TYPE_LIST, NULL, &kCertificateSignature
 };
@@ -359,8 +381,17 @@ const OncValueSignature kNetworkWithStateSignature = {
 const OncValueSignature kWiFiWithStateSignature = {
   Value::TYPE_DICTIONARY, wifi_with_state_fields, NULL, &kWiFiSignature
 };
+const OncValueSignature kCellularSignature = {
+  Value::TYPE_DICTIONARY, cellular_fields, NULL
+};
 const OncValueSignature kCellularWithStateSignature = {
-  Value::TYPE_DICTIONARY, cellular_with_state_fields, NULL
+  Value::TYPE_DICTIONARY, cellular_with_state_fields, NULL, &kCellularSignature
+};
+const OncValueSignature kCellularProviderSignature = {
+  Value::TYPE_DICTIONARY, cellular_provider_fields, NULL
+};
+const OncValueSignature kCellularApnSignature = {
+  Value::TYPE_DICTIONARY, cellular_apn_fields, NULL
 };
 
 const OncFieldSignature* GetFieldSignature(const OncValueSignature& signature,
@@ -385,14 +416,14 @@ struct CredentialEntry {
 };
 
 const CredentialEntry credentials[] = {
-  { &kEAPSignature, onc::eap::kPassword },
-  { &kIPsecSignature, onc::ipsec::kPSK },
-  { &kL2TPSignature, onc::vpn::kPassword },
-  { &kOpenVPNSignature, onc::vpn::kPassword },
-  { &kOpenVPNSignature, onc::openvpn::kTLSAuthContents },
-  { &kWiFiSignature, onc::wifi::kPassphrase },
-  { NULL }
-};
+    {&kEAPSignature, ::onc::eap::kPassword},
+    {&kIPsecSignature, ::onc::ipsec::kPSK},
+    {&kL2TPSignature, ::onc::vpn::kPassword},
+    {&kOpenVPNSignature, ::onc::vpn::kPassword},
+    {&kOpenVPNSignature, ::onc::openvpn::kTLSAuthContents},
+    {&kWiFiSignature, ::onc::wifi::kPassphrase},
+    {&kCellularApnSignature, ::onc::cellular_apn::kPassword},
+    {NULL}};
 
 }  // namespace
 

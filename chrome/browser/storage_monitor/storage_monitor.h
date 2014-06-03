@@ -17,23 +17,17 @@
 #include "base/threading/thread_checker.h"
 #include "chrome/browser/storage_monitor/storage_info.h"
 
-class ChromeBrowserMainPartsLinux;
-class ChromeBrowserMainPartsMac;
+class MediaFileSystemRegistryTest;
 class MediaGalleriesPlatformAppBrowserTest;
 class MediaGalleriesPrivateApiTest;
-class MediaGalleriesPrivateEjectApiTest;
+class RemovableStorageObserver;
 class SystemStorageApiTest;
 class SystemStorageEjectApiTest;
+class TransientDeviceIds;
 
 namespace device {
 class MediaTransferProtocolManager;
 }
-
-namespace chrome {
-
-class MediaFileSystemRegistryTest;
-class RemovableStorageObserver;
-class TransientDeviceIds;
 
 // Base class for platform-specific instances watching for removable storage
 // attachments/detachments.
@@ -42,7 +36,7 @@ class TransientDeviceIds;
 // created during profile construction. The platform-specific initialization,
 // which can lead to calling registered listeners with notifications of
 // attached volumes, are done lazily at first use through the async
-// |Initialize()| method. That must be done before any of the registered
+// |EnsureInitialized()| method. That must be done before any of the registered
 // listeners will receive updates or calls to other API methods return
 // meaningful results.
 // A post-initialization |GetAttachedStorage()| call coupled with a
@@ -82,7 +76,7 @@ class StorageMonitor {
 
   virtual ~StorageMonitor();
 
-  // Ensures that the storage monitor is initialized. The provided callback, If
+  // Ensures that the storage monitor is initialized. The provided callback, if
   // non-null, will be called when initialization is complete. If initialization
   // has already completed, this callback will be invoked within the calling
   // stack. Before the callback is run, calls to |GetAllAvailableStorages| and
@@ -92,7 +86,7 @@ class StorageMonitor {
   void EnsureInitialized(base::Closure callback);
 
   // Return true if the storage monitor has already been initialized.
-  bool IsInitialized();
+  bool IsInitialized() const;
 
   // Finds the device that contains |path| and populates |device_info|.
   // Should be able to handle any path on the local system, not just removable
@@ -111,8 +105,8 @@ class StorageMonitor {
   // persistent across sessions.
   virtual bool GetMTPStorageInfoFromDeviceId(
       const std::string& storage_device_id,
-      string16* device_location,
-      string16* storage_object_id) const = 0;
+      base::string16* device_location,
+      base::string16* storage_object_id) const = 0;
 #endif
 
 #if defined(OS_LINUX)
@@ -135,10 +129,9 @@ class StorageMonitor {
       base::Callback<void(EjectStatus)> callback);
 
  protected:
+  friend class ::MediaFileSystemRegistryTest;
   friend class ::MediaGalleriesPlatformAppBrowserTest;
   friend class ::MediaGalleriesPrivateApiTest;
-  friend class ::MediaGalleriesPrivateEjectApiTest;
-  friend class MediaFileSystemRegistryTest;
   friend class ::SystemStorageApiTest;
   friend class ::SystemStorageEjectApiTest;
 
@@ -183,7 +176,5 @@ class StorageMonitor {
 
   scoped_ptr<TransientDeviceIds> transient_device_ids_;
 };
-
-}  // namespace chrome
 
 #endif  // CHROME_BROWSER_STORAGE_MONITOR_STORAGE_MONITOR_H_

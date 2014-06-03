@@ -1,9 +1,9 @@
 <?xml version="1.0" ?>
 <!DOCTYPE translationbundle>
 <translationbundle lang="es-419">
+<translation id="3234920859344197194">Este sitio utiliza el complemento Chrome Frame, que dejará de recibir actualizaciones de seguridad y estabilidad dentro de poco. Desinstala este complemento y utiliza un navegador más moderno.</translation>
 <translation id="8914504000324227558">Volver a iniciar Chrome</translation>
 <translation id="8000275528373650868">Para usar Google Chrome, se necesita Windows Vista o Windows XP con SP2 o superior.</translation>
-<translation id="8124352762008487242">Copyright 2013 Google Inc. Todos los derechos reservados.</translation>
 <translation id="8485767968786176057">En este caso, la dirección que aparece en el certificado no coincide con la dirección del sitio web al que intentó ir tu navegador. Una posible razón de esto es que tus comunicaciones están siendo interceptadas por un atacante que presenta un certificado para un sitio web diferente, lo que causaría la falta de coincidencia. Otra posible razón es que el servidor está configurado para devolver el mismo certificado para varios sitios web, incluido el que estás intentando visitar, a pesar de que ese certificado no es válido para todos esos sitios web. Google Chrome puede afirmar que accediste a &lt;strong&gt; <ph name="DOMAIN2"/> &lt;/ strong&gt;, pero no puede comprobar que sea el mismo sitio que &lt;strong&gt; <ph name="DOMAIN"/> &lt;/ strong&gt;, al que intentabas acceder. Si continúas, Chrome no verificará si hay otros nombres que no coinciden.</translation>
 <translation id="5430073640787465221">Tu archivo de preferencias está dañado o no es válido. Google Chrome no puede recuperar tu configuración.</translation>
 <translation id="6676384891291319759">Acceder a Internet</translation>
@@ -24,10 +24,7 @@
 <translation id="4891791193823137474">Permitir que Google Chrome se ejecute en segundo plano</translation>
 <translation id="2896252579017640304">Iniciar aplicaciones de Chrome</translation>
 <translation id="2370289711218562573">Google Chrome está importando favoritos y marcadores:</translation>
-<translation id="8762286861469007470">Detector de portales cautivos de Chrome</translation>
-<translation id="3993188379797269327"><ph name="FILE_NAME"/> puede cambiar tu configuración de Chrome.</translation>
-<translation id="1761870329818521071">No se puede instalar la misma versión de Google Chrome Frame que se está ejecutando actualmente. Cierra Google Chrome Frame e intenta nuevamente.</translation>
-<translation id="2040709530900803995">Procesador de Google Chrome</translation>
+<translation id="2721687379934343312">En dispositivos Mac, las contraseñas se guardan en la aplicación Keychain. Los usuarios de Chrome con los que compartes esta cuenta del sistema operativo X pueden acceder a las contraseñas o sincronizarlas.</translation>
 <translation id="6014844626092547096">Accediste a Chrome. El administrador inhabilitó la sincronización.</translation>
 <translation id="3140883423282498090">Los cambios se aplicarán la próxima vez que reinicies Google Chrome.</translation>
 <translation id="1773601347087397504">Obtener ayuda para utilizar Chrome OS</translation>
@@ -47,7 +44,6 @@
 <translation id="3080151273017101988">Seguir ejecutando aplicaciones en segundo plano al cerrar Google Chrome</translation>
 <translation id="4149882025268051530">El instalador no pudo descomprimir el archivo. Descargue Google Chrome nuevamente.</translation>
 <translation id="6989339256997917931">Google Chrome fue actualizado, pero no lo has utilizado en los últimos 30 días.</translation>
-<translation id="5744005218040929396">Utilidad de Google Chrome</translation>
 <translation id="7060865993964054389">Selector de aplicaciones de Google Chrome</translation>
 <translation id="1682634494516646069">Google Chrome no puede leer ni agregar datos al directorio de datos: <ph name="USER_DATA_DIRECTORY"/></translation>
 <translation id="4343226815564935778">El directorio de instalación de Google Chrome parece estar en uso. Reinicia tu computadora e inténtalo nuevamente.</translation>
@@ -63,6 +59,7 @@
 <translation id="4053720452172726777">Personaliza y controla Google Chrome</translation>
 <translation id="6423071462708908582">Intentaste acceder a &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, pero el servidor presentó un certificado caducado. No sabemos si se produjo un error en el certificado desde que caducó. Esto significa que Google Chrome no puede garantizar que estés estableciendo una comunicación con &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt; y no con un intruso. Ahora el reloj de tu equipo marca las <ph name="CURRENT_TIME"/>. ¿Esta información es correcta? Si no lo es, debes corregir el error y actualizar la página.</translation>
 <translation id="3197823471738295152">El dispositivo está actualizado.</translation>
+<translation id="8286862437124483331">Google Chrome está intentando mostrar contraseñas. Para permitirlo, ingresa tu contraseña de Windows.</translation>
 <translation id="3889417619312448367">Desinstalar Google Chrome</translation>
 <translation id="1434626383986940139">Aplicaciones de Chrome Canary</translation>
 <translation id="8551886023433311834">El dispositivo está casi actualizado. Reinícialo para completar la actualización.</translation>
@@ -77,14 +74,16 @@
 <translation id="7451721381978275812">Argumentos no válidos. Google Chrome Frame no se puede instalar en modo Listo si no se instala Google Chrome.</translation>
 <translation id="8684521613357479262">Has intentado acceder a &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, pero el servidor presentó un certificado que aún no es válido. No disponemos de información que indique si el certificado es confiable. Google Chrome no puede garantizar de manera fiable que estés estableciendo comunicación con &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt; y no con un atacante. Actualmente, la hora del reloj de tu computadora es <ph name="CURRENT_TIME"/>. ¿Es correcto? De no ser así, debes corregir el reloj de tu sistema y actualizar la página.</translation>
 <translation id="4298853828775962437">http://support.google.com/chrome/?p=ib_chromeframe</translation>
-<translation id="4585888816441913908">Este equipo ya tiene una versión más reciente de Google Chrome y Google Chrome Frame. Si el software no funciona, desinstala Google Chrome y Google Chrome Frame, y vuelve a intentarlo.</translation>
 <translation id="3149510190863420837">Aplicaciones de Chrome</translation>
+<translation id="7084448929020576097">Chrome bloqueó <ph name="FILE_NAME"/> porque es un archivo malicioso.</translation>
 <translation id="6368958679917195344">Chrome OS es posible gracias al <ph name="BEGIN_LINK_CROS_OSS"/>software de código abierto<ph name="END_LINK_CROS_OSS"/> adicional.</translation>
 <translation id="7459554271817304652">Configura la sincronización para guardar las funciones personalizadas de tu navegador en la Web y acceder a ellas desde Google Chrome en cualquier equipo.</translation>
 <translation id="4331809312908958774">SO Chrome</translation>
 <translation id="473775607612524610">Actualizar</translation>
 <translation id="1195935957447623558">Google Chrome no se cerró correctamente. Para volver a abrir las páginas que había abierto, haga clic en Restaurar.</translation>
 <translation id="2576431527583832481">¡Chrome mejoró! Hay una nueva versión disponible.</translation>
+<translation id="4633000520311261472">Para que Chrome sea más seguro, inhabilitamos algunas extensiones que no figuran en <ph name="IDS_EXTENSION_WEB_STORE_TITLE"/> y que posiblemente se hayan agregado sin tu conocimiento.</translation>
+<translation id="556024056938947818">Google Chrome está intentando mostrar contraseñas.</translation>
 <translation id="2580411288591421699">No se puede instalar la misma versión de Google Chrome que se está ejecutando actualmente. Cierra Google Chrome e intenta nuevamente.</translation>
 <translation id="8460191995881063249">Centro de notificaciones de Chrome</translation>
 <translation id="1457721931618994305">Actualizando Google Chrome...</translation>
@@ -117,7 +116,6 @@ Si accedes de todos modos, se fusionará la información de Google Chrome, como 
 <translation id="911206726377975832">¿También eliminar datos de navegación?</translation>
 <translation id="5855036575689098185">El software que se ejecuta en tu computadora no es compatible con Google Chrome.</translation>
 <translation id="2044287590254833138">Barra de herramientas de Google Chrome</translation>
-<translation id="5074344184765391290">Host complemento de Chrome</translation>
 <translation id="8862326446509486874">No tienes los derechos que se requieren para realizar la instalación al nivel del sistema. Intenta ejecutar el instalador nuevamente como Administrador.</translation>
 <translation id="2874156562296220396">Google Chrome es una realidad gracias al proyecto de código fuente abierto <ph name="BEGIN_LINK_CHROMIUM"/>Chromium<ph name="END_LINK_CHROMIUM"/> y a otros <ph name="BEGIN_LINK_OSS"/>programas de código abierto<ph name="END_LINK_OSS"/>.</translation>
 <translation id="3847841918622877581">Google Chrome puede utilizar servicios web con el objetivo de mejorar la navegación.</translation>
@@ -131,7 +129,9 @@ Si accedes de todos modos, se fusionará la información de Google Chrome, como 
 <translation id="4273752058983339720">Google Chrome está configurado para iniciarse automáticamente al iniciar la computadora.</translation>
 <translation id="1104959162601287462">Acerca del &amp;sistema operativo de Chrome</translation>
 <translation id="5328989068199000832">Google Chrome Binaries</translation>
+<translation id="1140117203923356735">Chrome bloqueó <ph name="FILE_NAME"/> porque realiza cambios de configuración parecidos a los de algunos programas de software malicioso.</translation>
 <translation id="5941830788786076944">Haga de Google Chrome su navegador predeterminado</translation>
+<translation id="7787950393032327779">Parece que otro proceso de Google Chrome (<ph name="PROCESS_ID"/>) está utilizando el perfil en otra computadora (<ph name="HOST_NAME"/>). Chrome bloqueó el perfil para que no se dañe. Si puedes confirmar que ningún otro proceso está utilizando este perfil, puedes desbloquearlo y volver a iniciar Chrome.</translation>
 <translation id="1469002951682717133">Selector de aplicaciones de Google Chrome</translation>
 <translation id="4990567037958725628">Google Chrome Canario</translation>
 <translation id="4561051373932531560">Google Chrome te permite hacer clic en un número de teléfono en la web y ¡llamarlo por Skype!</translation>
@@ -147,13 +147,11 @@ Si accedes de todos modos, se fusionará la información de Google Chrome, como 
         nuevamente para mejorar el rendimiento.</translation>
 <translation id="61852838583753520">Actualizar el &amp;sistema operativo de Chrome</translation>
 <translation id="8547799825197623713">Selector de aplicaciones de Google Chrome Canary</translation>
-<translation id="5577648424992741236">Este equipo ya tiene una versión más reciente de Google Chrome Frame. Si el software no funciona, desinstala Google Chrome Frame y vuelve a intentarlo.</translation>
 <translation id="6326175484149238433">Eliminar de Chrome</translation>
 <translation id="2871893339301912279">Accediste a Google Chrome.</translation>
 <translation id="7161904924553537242">Bienvenido a Google Chrome</translation>
-<translation id="1686446242839005801">Estás accediendo a Chrome con tu cuenta <ph name="USER_EMAIL_ADDRESS"/>. Podrás acceder a tus marcadores, el historial y otros parámetros de configuración en todos los dispositivos en los que hayas accedido.</translation>
 <translation id="4147555960264124640">Estás por acceder con una cuenta administrada, lo que significa que proporcionarás al administrador el control sobre tu perfil de Google Chrome. Tus datos de Google Chrome, como las aplicaciones, los marcadores, el historial, las contraseñas y otros parámetros de configuración quedarán vinculados a <ph name="USER_NAME"/> de forma permanente. Podrás eliminar estos datos a través del Panel de control de Cuentas de Google, pero no podrás asociarlos a otra cuenta. <ph name="LEARN_MORE"/></translation>
-<translation id="7931439880631187247">Este sitio está utilizando el complemento Chrome Frame, que pronto dejará de admitirse. Desinstálalo y actualiza a un navegador actual.</translation>
+<translation id="1348153800635493797">Debes actualizar Chrome para utilizar Google Wallet [<ph name="ERROR_CODE"/>].</translation>
 <translation id="8187289872471304532">Accede a
           Aplicaciones &gt; Preferencias del Sistema &gt; Red &gt; Avanzado &gt; Proxies
           y desmarca las casillas de verificación de los proxies que se hayan seleccionado.</translation>
@@ -166,23 +164,23 @@ Si accedes de todos modos, se fusionará la información de Google Chrome, como 
 <translation id="576822117893741893">Mostrar el menú de Chrome</translation>
 <translation id="3444832043240812445">Esta página sólo muestra información sobre fallas recientes si se <ph name="BEGIN_LINK"/>activan los informes sobre fallas<ph name="END_LINK"/>.</translation>
 <translation id="8614913330719544658">Google Chrome no responde. ¿Quieres reiniciarlo ahora?</translation>
-<translation id="5318056482164160049">Host complemento de Google Chrome</translation>
+<translation id="1175529839152551794">Al acceder, ya puedes ver las pestañas, los marcadores y otros elementos de Chrome en tu computadora portátil, teléfono o tablet. También recibirás más sugerencias y funciones pertinentes en relación con los servicios de Google.</translation>
 <translation id="6126631249883707068">¿Deseas que Google Chrome guarde tu contraseña?</translation>
 <translation id="7773845170078702898">¿Quieres que Google Chrome guarde tu contraseña para este sitio?</translation>
 <translation id="5046764976540625289">Salir de Chrome</translation>
 <translation id="4251615635259297716">¿Quieres vincular tus datos de Google Chrome con esta cuenta?</translation>
-<translation id="9039578207253536065">Trabajador de Google Chrome</translation>
 <translation id="9171640504251796339">http://www.google.com/support/chrome/bin/answer.py?hl=<ph name="GRITLANGCODE_1"/>&amp;answer=161796</translation>
 <translation id="8865765905101981392">Navegador de Internet</translation>
 <translation id="8142608456917638009">Google Chrome no pudo crear un acceso directo de la aplicación.</translation>
 <translation id="8255190535488645436">Google Chrome está usando tu cámara y tu micrófono.</translation>
 <translation id="2189123953385179981">Google ChromeOS no admite lanzar una aplicación externa para manejar vínculos <ph name="SCHEME"/>. El vínculo solicitado es <ph name="PROTOLINK"/>.</translation>
 <translation id="7396375882099008034">Permite que Chrome acceda a la red en tu configuración de antivirus o de firewall.</translation>
+<translation id="9102715433345326100">Chrome bloqueó este archivo porque es malicioso.</translation>
 <translation id="8205111949707227942">Opcional: Ayúdanos a mejorar Chrome SO enviando automáticamente estadísticas de uso e informes sobre fallos a Google.</translation>
 <translation id="7253415505590551024">Actualmente hay descargas en curso. ¿Quieres salir de Google Chrome y cancelarlas?</translation>
 <translation id="7196020411877309443">¿Por qué estoy viendo esto?</translation>
 <translation id="2769762047821873045">Google Chrome no es tu navegador predeterminado.</translation>
-<translation id="1020869477857717497"><ph name="FILE_NAME"/> puede cambiar el funcionamiento de tus búsquedas en Chrome.</translation>
+<translation id="4567424176335768812">Accediste como <ph name="USER_EMAIL_ADDRESS"/>. Ahora puedes ir a los marcadores, al historial y a otras opciones en todos los dispositivos en los que hayas accedido.</translation>
 <translation id="6855094794438142393">Accede
           al menú de Chrome &gt;
           <ph name="SETTINGS_TITLE"/>
@@ -194,13 +192,14 @@ Si accedes de todos modos, se fusionará la información de Google Chrome, como 
           Configuración LAN
           y desmarca la casilla de verificación &quot;Usar un servidor proxy para tu LAN&quot;.</translation>
 <translation id="7825851276765848807">La instalación falló debido a un error no especificado. Descarga Google Chrome otra vez.</translation>
-<translation id="5553980212343253394">Este sitio está utilizando el complemento Chrome Frame, que pronto dejará de admitirse. Desinstálalo y descarga un navegador compatible.</translation>
+<translation id="4919523385405675060">Este sitio utiliza el complemento Chrome Frame, que dejará de recibir actualizaciones de seguridad y estabilidad dentro de poco. Desinstala este complemento y descarga un navegador compatible.</translation>
 <translation id="1061257178446858647">Has iniciado sesión en Chrome. Tus marcadores, tu historial y otras opciones de configuración se sincronizarán con tu cuenta de Google.</translation>
 <translation id="3335672657969596251">Google Chrome no es compatible con <ph name="OS_NAME"/>.</translation>
 <translation id="4458285410772214805">Cierra la sesión y vuelve a iniciarla para que se aplique el cambio.</translation>
 <translation id="5334545119300433702">Se sabe que este módulo es conflictivo con Google Chrome.</translation>
 <translation id="4407807842708586359">SO de Google Chrome</translation>
 <translation id="6634887557811630702">Google Chrome está actualizado.</translation>
+<translation id="4120075327926916474">¿Deseas que Chrome guarde esta información de tarjeta de crédito para completar formularios web?</translation>
 <translation id="2084710999043359739">Agregar a Chrome</translation>
 <translation id="4084877369264707540">Google Chrome Frame ya está instalado y disponible para todos los usuarios de esta computadora. Si deseas instalar Google Chrome Frame para el usuario, primero debes desinstalar la versión del sistema que instaló un administrador.</translation>
 <translation id="3360895254066713204">Ayuda de Chrome</translation>
@@ -211,6 +210,7 @@ Si accedes de todos modos, se fusionará la información de Google Chrome, como 
 <translation id="6626317981028933585">Lamentablemente, las opciones de su Mozilla Firefox no están disponibles si el navegador se encuentra activado. Para importar esas opciones a Google Chrome, guarde su trabajo y cierre todas las ventanas de Firefox. Luego, haga clic en Continuar.</translation>
 <translation id="7242029209006116544">Estás por acceder con una cuenta administrada, lo que significa que proporcionarás al administrador el control sobre tu perfil de Google Chrome. Tus datos de Google Chrome, como las aplicaciones, los marcadores, el historial, las contraseñas y otros parámetros de configuración quedarán vinculados a <ph name="USER_NAME"/> de forma permanente. Podrás eliminar estos datos a través del Panel de control de Cuentas de Google, pero no podrás asociarlos a otra cuenta. También puedes crear un perfil para mantener separados tus datos de Chrome. <ph name="LEARN_MORE"/></translation>
 <translation id="8540666473246803645">Google Chrome</translation>
+<translation id="2334084861041072223">Copyright <ph name="YEAR"/> Google Inc. Todos los derechos reservados.</translation>
 <translation id="1698376642261615901">Google Chrome es un navegador web que ejecuta aplicaciones y páginas web a gran velocidad. Es rápido, estable y fácil de utilizar. Navega por la Web de forma más segura con protección contra suplantación de identidad y software malicioso integrada a Google Chrome.</translation>
 <translation id="3419750618886995598">Actualización de Chrome Frame.</translation>
 <translation id="3336524238463733095">Google Chrome o Google Chrome Frame no pueden actualizarse debido a inconsistencias en la configuración de la política de grupo de Google Update. Usa el editor de políticas de grupo para configurar la anulación de la política de actualización de la aplicación de Google Chrome Binaries y vuelve a intentarlo; visita http://goo.gl/uJ9gV para obtener más detalles.</translation>

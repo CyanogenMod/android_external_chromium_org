@@ -5,12 +5,21 @@
 import collections
 
 class Profiler(object):
-  """A sampling profiler provided by the platform."""
+  """A sampling profiler provided by the platform.
 
-  def __init__(self, browser_backend, platform_backend, output_path):
+  A profiler is started on its constructor, and should
+  gather data until CollectProfile().
+  The life cycle is normally tied to a single page,
+  i.e., multiple profilers will be created for a page set.
+  WillCloseBrowser() is called right before the browser
+  is closed to allow any further cleanup.
+  """
+
+  def __init__(self, browser_backend, platform_backend, output_path, state):
     self._browser_backend = browser_backend
     self._platform_backend = platform_backend
     self._output_path = output_path
+    self._state = state
 
   @classmethod
   def name(cls):
@@ -18,13 +27,18 @@ class Profiler(object):
     raise NotImplementedError()
 
   @classmethod
-  def is_supported(cls, options):
+  def is_supported(cls, browser_type):
     """True iff this profiler is currently supported by the platform."""
     raise NotImplementedError()
 
   @classmethod
-  def CustomizeBrowserOptions(cls, options):
+  def CustomizeBrowserOptions(cls, browser_type, options):
     """Override to customize the Browser's options before it is created."""
+    pass
+
+  @classmethod
+  def WillCloseBrowser(cls, browser_backend, platform_backend):
+    """Called before the browser is stopped."""
     pass
 
   def _GetProcessOutputFileMap(self):

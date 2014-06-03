@@ -25,6 +25,13 @@ enum TerminationStatus {
   TERMINATION_STATUS_PROCESS_WAS_KILLED,   // e.g. SIGKILL or task manager kill
   TERMINATION_STATUS_PROCESS_CRASHED,      // e.g. Segmentation fault
   TERMINATION_STATUS_STILL_RUNNING,        // child hasn't exited yet
+#if defined(OS_ANDROID)
+  // On Android processes are spawned from the system Zygote and we do not get
+  // the termination status.  We can't know if the termination was a crash or an
+  // oom kill for sure, but we can use status of the strong process bindings as
+  // a hint.
+  TERMINATION_STATUS_OOM_PROTECTED,        // child was protected from oom kill
+#endif
   TERMINATION_STATUS_MAX_ENUM
 };
 
@@ -67,12 +74,23 @@ BASE_EXPORT TerminationStatus GetTerminationStatus(ProcessHandle handle,
                                                    int* exit_code);
 
 #if defined(OS_POSIX)
-// Wait for the process to exit and get the termination status. See
-// GetTerminationStatus for more information. On POSIX systems, we can't call
-// WaitForExitCode and then GetTerminationStatus as the child will be reaped
-// when WaitForExitCode return and this information will be lost.
-BASE_EXPORT TerminationStatus WaitForTerminationStatus(ProcessHandle handle,
-                                                       int* exit_code);
+// Send a kill signal to the process and then wait for the process to exit
+// and get the termination status.
+//
+// This is used in situations where it is believed that the process is dead
+// or dying (because communication with the child process has been cut).
+// In order to avoid erroneously returning that the process is still running
+// because the kernel is still cleaning it up, this will wait for the process
+// to terminate. In order to avoid the risk of hanging while waiting for the
+// process to terminate, send a SIGKILL to the process before waiting for the
+// termination status.
+//
+// Note that it is not an option to call WaitForExitCode and then
+// GetTerminationStatus as the child will be reaped when WaitForExitCode
+// returns, and this information will be lost.
+//
+BASE_EXPORT TerminationStatus GetKnownDeadTerminationStatus(
+    ProcessHandle handle, int* exit_code);
 #endif  // defined(OS_POSIX)
 
 // Waits for process to exit. On POSIX systems, if the process hasn't been

@@ -47,7 +47,9 @@ Example:
     "secret123456"
   ],
   "current_key_index": 0,
-  "robot_api_auth_code": "fake_auth_code"
+  "robot_api_auth_code": "fake_auth_code",
+  "invalidation_source": 1025,
+  "invalidation_name": "UENUPOL"
 }
 
 """
@@ -66,6 +68,7 @@ import tlslite
 import tlslite.api
 import tlslite.utils
 import tlslite.utils.cryptomath
+import urlparse
 
 # The name and availability of the json module varies in python versions.
 try:
@@ -230,10 +233,8 @@ class PolicyRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     settings = ep.ExternalPolicyData()
     data = self.server.ReadPolicyDataFromDataDir(policy_key)
     if data:
-      settings.download_url = ('http://%s:%s/externalpolicydata?key=%s' %
-                                  (self.server.server_name,
-                                   self.server.server_port,
-                                   policy_key) )
+      settings.download_url = urlparse.urljoin(
+          self.server.GetBaseURL(), 'externalpolicydata?key=%s' % policy_key)
       settings.secure_hash = hashlib.sha1(data).digest()
     return settings.SerializeToString()
 
@@ -595,6 +596,14 @@ class PolicyRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     policy_data.service_account_identity = policy.get(
         'service_account_identity',
         'policy_testserver.py-service_account_identity')
+    invalidation_source = policy.get('invalidation_source')
+    if invalidation_source is not None:
+      policy_data.invalidation_source = invalidation_source
+    # Since invalidation_name is type bytes in the proto, the Unicode name
+    # provided needs to be encoded as ASCII to set the correct byte pattern.
+    invalidation_name = policy.get('invalidation_name')
+    if invalidation_name is not None:
+      policy_data.invalidation_name = invalidation_name.encode('ascii')
 
     if signing_key:
       policy_data.public_key_version = current_key_index + 1
@@ -662,13 +671,12 @@ class PolicyRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     logging.debug('%s\n%s' % (label, str(msg)))
 
 
-class PolicyTestServer(testserver_base.ClientRestrictingServerMixIn,
-                       testserver_base.BrokenPipeHandlerMixIn,
+class PolicyTestServer(testserver_base.BrokenPipeHandlerMixIn,
                        testserver_base.StoppableHTTPServer):
   """Handles requests and keeps global service state."""
 
   def __init__(self, server_address, data_dir, policy_path, client_state_file,
-               private_key_paths):
+               private_key_paths, server_base_url):
     """Initializes the server.
 
     Args:
@@ -682,6 +690,7 @@ class PolicyTestServer(testserver_base.ClientRestrictingServerMixIn,
     self.data_dir = data_dir
     self.policy_path = policy_path
     self.client_state_file = client_state_file
+    self.server_base_url = server_base_url
 
     self.keys = []
     if private_key_paths:
@@ -724,7 +733,7 @@ class PolicyTestServer(testserver_base.ClientRestrictingServerMixIn,
     if self.client_state_file is not None:
       try:
         file_contents = open(self.client_state_file).read()
-        self._registered_tokens = json.loads(file_contents)
+        self._registered_tokens = json.loads(file_contents, strict=False)
       except IOError:
         pass
 
@@ -737,7 +746,7 @@ class PolicyTestServer(testserver_base.ClientRestrictingServerMixIn,
       print 'No JSON module, cannot parse policy information'
     else :
       try:
-        policy = json.loads(open(self.policy_path).read())
+        policy = json.loads(open(self.policy_path).read(), strict=False)
       except IOError:
         print 'Failed to load policy from %s' % self.policy_path
     return policy
@@ -756,7 +765,10 @@ class PolicyTestServer(testserver_base.ClientRestrictingServerMixIn,
       dmtoken_chars.append(random.choice('0123456789abcdef'))
     dmtoken = ''.join(dmtoken_chars)
     allowed_policy_types = {
-      dm.DeviceRegisterRequest.BROWSER: ['google/chrome/user'],
+      dm.DeviceRegisterRequest.BROWSER: [
+          'google/chrome/user',
+          'google/chrome/extension'
+      ],
       dm.DeviceRegisterRequest.USER: [
           'google/chromeos/user',
           'google/chrome/extension'
@@ -889,6 +901,21 @@ class PolicyTestServer(testserver_base.ClientRestrictingServerMixIn,
     except IOError:
       return None
 
+  def GetBaseURL(self):
+    """Returns the server base URL.
+
+    Respects the |server_base_url| configuration parameter, if present. Falls
+    back to construct the URL from the server hostname and port otherwise.
+
+    Returns:
+      The URL to use for constructing URLs that get returned to clients.
+    """
+    base_url = self.server_base_url
+    if base_url is None:
+      base_url = 'http://%s:%s' % self.server_address[:2]
+
+    return base_url
+
 
 class PolicyServerRunner(testserver_base.TestServerRunner):
 
@@ -902,7 +929,8 @@ class PolicyServerRunner(testserver_base.TestServerRunner):
     server = PolicyTestServer((self.options.host, self.options.port),
                               data_dir, config_file,
                               self.options.client_state_file,
-                              self.options.policy_keys)
+                              self.options.policy_keys,
+                              self.options.server_base_url)
     server_data['port'] = server.server_port
     return server
 
@@ -932,6 +960,9 @@ class PolicyServerRunner(testserver_base.TestServerRunner):
                                   help='Specify a configuration file to use '
                                   'instead of the default '
                                   '<data_dir>/device_management')
+    self.option_parser.add_option('--server-base-url', dest='server_base_url',
+                                  help='The server base URL to use when '
+                                  'constructing URLs to return to the client.')
 
   def run_server(self):
     logger = logging.getLogger()

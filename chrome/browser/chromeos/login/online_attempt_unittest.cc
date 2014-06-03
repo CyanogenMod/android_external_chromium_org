@@ -7,7 +7,6 @@
 #include "base/bind.h"
 #include "base/memory/ref_counted.h"
 #include "base/run_loop.h"
-#include "chrome/browser/chromeos/cros/network_library.h"
 #include "chrome/browser/chromeos/login/auth_attempt_state.h"
 #include "chrome/browser/chromeos/login/mock_auth_attempt_state_resolver.h"
 #include "chrome/browser/chromeos/login/mock_url_fetchers.h"
@@ -34,7 +33,7 @@ namespace chromeos {
 class OnlineAttemptTest : public testing::Test {
  public:
   OnlineAttemptTest()
-      : state_(UserContext(), "", "", "", User::USER_TYPE_REGULAR, false),
+      : state_(UserContext(), "", "", User::USER_TYPE_REGULAR, false),
         attempt_(new OnlineAttempt(&state_, &resolver_)) {
   }
 
@@ -64,9 +63,6 @@ class OnlineAttemptTest : public testing::Test {
   TestAttemptState state_;
   MockAuthAttemptStateResolver resolver_;
   scoped_ptr<OnlineAttempt> attempt_;
-
-  // Initializes / shuts down a stub NetworkLibrary.
-  ScopedStubNetworkLibraryEnabler stub_network_library_enabler_;
 };
 
 TEST_F(OnlineAttemptTest, LoginSuccess) {
@@ -145,7 +141,7 @@ TEST_F(OnlineAttemptTest, HostedLoginRejected) {
   // This is how we inject fake URLFetcher objects, with a factory.
   MockURLFetcherFactory<HostedFetcher> factory;
 
-  TestAttemptState local_state(UserContext(), "", "", "",
+  TestAttemptState local_state(UserContext(), "", "",
                                User::USER_TYPE_REGULAR, true);
   attempt_.reset(new OnlineAttempt(&local_state, &resolver_));
   attempt_->Initiate(&profile);
@@ -168,7 +164,7 @@ TEST_F(OnlineAttemptTest, FullLogin) {
   // This is how we inject fake URLFetcher objects, with a factory.
   MockURLFetcherFactory<SuccessFetcher> factory;
 
-  TestAttemptState local_state(UserContext(), "", "", "",
+  TestAttemptState local_state(UserContext(), "", "",
                                User::USER_TYPE_REGULAR, true);
   attempt_.reset(new OnlineAttempt(&local_state, &resolver_));
   attempt_->Initiate(&profile);

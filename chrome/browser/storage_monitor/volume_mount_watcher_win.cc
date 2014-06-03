@@ -27,8 +27,6 @@
 
 using content::BrowserThread;
 
-namespace chrome {
-
 namespace {
 
 const DWORD kMaxPathBufLen = MAX_PATH + 1;
@@ -488,10 +486,10 @@ void VolumeMountWatcherWin::HandleDeviceAttachEventOnUIThread(
 
   device_metadata_[device_path] = info;
 
-  DeviceCheckComplete(device_path);
-
   if (notifications_)
     notifications_->ProcessAttach(info);
+
+  DeviceCheckComplete(device_path);
 }
 
 void VolumeMountWatcherWin::HandleDeviceDetachEventOnUIThread(
@@ -527,5 +525,3 @@ void VolumeMountWatcherWin::EjectDevice(
       FROM_HERE,
       base::Bind(&EjectDeviceInThreadPool, device, callback, task_runner_, 0));
 }
-
-}  // namespace chrome

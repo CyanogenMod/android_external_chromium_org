@@ -12,29 +12,24 @@
 #include "base/threading/thread_checker.h"
 #include "base/time/time.h"
 #include "chrome/browser/media_galleries/win/mtp_device_object_entry.h"
-#include "webkit/browser/fileapi/file_system_file_util.h"
-
-namespace chrome {
 
 // MTPDeviceObjectEnumerator is used to enumerate the media transfer protocol
 // (MTP) device objects from a given object entry list.
 // MTPDeviceObjectEnumerator supports MTP device file operations.
 // MTPDeviceObjectEnumerator may only be used on a single thread.
-class MTPDeviceObjectEnumerator
-    : public fileapi::FileSystemFileUtil::AbstractFileEnumerator {
+class MTPDeviceObjectEnumerator {
  public:
   explicit MTPDeviceObjectEnumerator(const MTPDeviceObjectEntries& entries);
-  virtual ~MTPDeviceObjectEnumerator();
+  ~MTPDeviceObjectEnumerator();
 
-  // AbstractFileEnumerator:
-  virtual base::FilePath Next() OVERRIDE;
-  virtual int64 Size() OVERRIDE;
-  virtual bool IsDirectory() OVERRIDE;
-  virtual base::Time LastModifiedTime() OVERRIDE;
+  base::FilePath Next();
+  int64 Size();
+  bool IsDirectory();
+  base::Time LastModifiedTime();
 
   // If the current file object entry is valid, returns an non-empty object id.
   // Returns an empty string otherwise.
-  string16 GetObjectId() const;
+  base::string16 GetObjectId() const;
 
  private:
   // Returns true if the enumerator has more entries to traverse, false
@@ -59,7 +54,5 @@ class MTPDeviceObjectEnumerator
 
   DISALLOW_COPY_AND_ASSIGN(MTPDeviceObjectEnumerator);
 };
-
-}  // namespace chrome
 
 #endif  // CHROME_BROWSER_MEDIA_GALLERIES_WIN_MTP_DEVICE_OBJECT_ENUMERATOR_H_

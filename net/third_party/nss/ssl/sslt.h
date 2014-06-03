@@ -91,9 +91,11 @@ typedef enum {
     ssl_calg_3des     = 4,
     ssl_calg_idea     = 5,
     ssl_calg_fortezza = 6,      /* deprecated, now unused */
-    ssl_calg_aes      = 7,      /* coming soon */
+    ssl_calg_aes      = 7,
     ssl_calg_camellia = 8,
-    ssl_calg_seed     = 9
+    ssl_calg_seed     = 9,
+    ssl_calg_aes_gcm  = 10,
+    ssl_calg_chacha20 = 11
 } SSLCipherAlgorithm;
 
 typedef enum { 
@@ -102,7 +104,8 @@ typedef enum {
     ssl_mac_sha       = 2, 
     ssl_hmac_md5      = 3, 	/* TLS HMAC version of mac_md5 */
     ssl_hmac_sha      = 4, 	/* TLS HMAC version of mac_sha */
-    ssl_hmac_sha256   = 5
+    ssl_hmac_sha256   = 5,
+    ssl_mac_aead      = 6
 } SSLMACAlgorithm;
 
 typedef enum {
@@ -158,6 +161,9 @@ typedef struct SSLCipherSuiteInfoStr {
     PRUint16             effectiveKeyBits;
 
     /* MAC info */
+    /* AEAD ciphers don't have a MAC. For an AEAD cipher, macAlgorithmName
+     * is "AEAD", macAlgorithm is ssl_mac_aead, and macBits is the length in
+     * bits of the authentication tag. */
     const char *         macAlgorithmName;
     SSLMACAlgorithm      macAlgorithm;
     PRUint16             macBits;
@@ -196,12 +202,14 @@ typedef enum {
     ssl_signature_algorithms_xtn     = 13,
     ssl_use_srtp_xtn                 = 14,
     ssl_app_layer_protocol_xtn       = 16,
+    ssl_signed_certificate_timestamp_xtn = 18,   /* RFC 6962 */
     ssl_session_ticket_xtn           = 35,
     ssl_next_proto_nego_xtn          = 13172,
-    ssl_channel_id_xtn               = 30031,
+    ssl_channel_id_xtn               = 30032,
+    ssl_padding_xtn                  = 35655,
     ssl_renegotiation_info_xtn       = 0xff01	/* experimental number */
 } SSLExtensionType;
 
-#define SSL_MAX_EXTENSIONS             11
+#define SSL_MAX_EXTENSIONS             12 /* doesn't include ssl_padding_xtn. */
 
 #endif /* __sslt_h_ */

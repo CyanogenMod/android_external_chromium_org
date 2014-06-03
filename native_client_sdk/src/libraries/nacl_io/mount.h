@@ -17,6 +17,8 @@
 #include "sdk_util/ref_object.h"
 #include "sdk_util/scoped_ref.h"
 
+struct fuse_operations;
+
 namespace nacl_io {
 
 class Mount;
@@ -25,6 +27,20 @@ class PepperInterface;
 
 typedef sdk_util::ScopedRef<Mount> ScopedMount;
 typedef std::map<std::string, std::string> StringMap_t;
+
+// This structure is passed to all mounts via the Mount::Init virtual function.
+// With it, we can add or remove initialization values without changing the
+// function signature.
+struct MountInitArgs {
+  MountInitArgs() : dev(0), ppapi(NULL), fuse_ops(NULL) {}
+  explicit MountInitArgs(int dev) : dev(dev), ppapi(NULL), fuse_ops(NULL) {}
+
+  // Device number of the new filesystem.
+  int dev;
+  StringMap_t string_map;
+  PepperInterface* ppapi;
+  fuse_operations* fuse_ops;
+};
 
 // NOTE: The KernelProxy is the only class that should be setting errno. All
 // other classes should return Error (as defined by nacl_io/error.h).
@@ -36,9 +52,8 @@ class Mount : public sdk_util::RefObject {
   virtual ~Mount();
 
   // Init must be called by the factory before the mount is used.
-  // This function must assign a root node, or replace FindNode.
   // |ppapi| can be NULL. If so, this mount cannot make any pepper calls.
-  virtual Error Init(int dev, StringMap_t& args, PepperInterface* ppapi);
+  virtual Error Init(const MountInitArgs& args);
   virtual void Destroy();
 
  public:
@@ -54,7 +69,7 @@ class Mount : public sdk_util::RefObject {
   // MountNode is created with a ref count of 1.
   // Assumes that |out_node| is non-NULL.
   virtual Error Open(const Path& path,
-                     int o_flags,
+                     int open_flags,
                      ScopedMountNode* out_node) = 0;
 
   // OpenResource is only used to read files from the NaCl NMF file. No mount
@@ -68,9 +83,7 @@ class Mount : public sdk_util::RefObject {
   virtual Error Mkdir(const Path& path, int permissions) = 0;
   virtual Error Rmdir(const Path& path) = 0;
   virtual Error Remove(const Path& path) = 0;
-
-  // Convert from R,W,R/W open flags to STAT permission flags
-  static int OpenModeToPermission(int mode);
+  virtual Error Rename(const Path& path, const Path& newpath) = 0;
 
   // Assumes that |node| is non-NULL.
   void OnNodeCreated(MountNode* node);

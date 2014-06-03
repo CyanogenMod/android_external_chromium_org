@@ -28,11 +28,11 @@
 #include "chrome/browser/ui/gtk/gtk_chrome_link_button.h"
 #include "chrome/browser/ui/gtk/gtk_util.h"
 #include "chrome/browser/ui/gtk/hover_controller_gtk.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
+#include "extensions/common/extension.h"
 #include "grit/theme_resources.h"
 #include "grit/ui_resources.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -1040,7 +1040,7 @@ SkBitmap GtkThemeService::GenerateFrameImage(
   SkColor base = it->second;
 
   gfx::Canvas canvas(gfx::Size(kToolbarImageWidth, kToolbarImageHeight),
-      ui::SCALE_FACTOR_100P, true);
+      1.0f, true);
 
   int gradient_size;
   GdkColor* gradient_top_color = NULL;

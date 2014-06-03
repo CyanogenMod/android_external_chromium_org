@@ -43,12 +43,10 @@
 using base::TimeDelta;
 using content::BrowserThread;
 
-namespace {
-
+#if defined(OS_WIN)
 // Limits memory usage by raster to 64 MiB.
 const int kMaxRasterSizeInPixels = 16*1024*1024;
-
-}  // namespace
+#endif
 
 namespace printing {
 
@@ -58,12 +56,11 @@ PrintViewManagerBase::PrintViewManagerBase(content::WebContents* web_contents)
       printing_succeeded_(false),
       inside_inner_message_loop_(false),
       cookie_(0),
-      tab_content_blocked_(false) {
+      queue_(g_browser_process->print_job_manager()->queue()) {
+  DCHECK(queue_);
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
   expecting_first_page_ = true;
 #endif
-  registrar_.Add(this, chrome::NOTIFICATION_CONTENT_BLOCKED_STATE_CHANGED,
-                 content::Source<content::WebContents>(web_contents));
   Profile* profile =
       Profile::FromBrowserContext(web_contents->GetBrowserContext());
   printing_enabled_.Init(
@@ -85,10 +82,10 @@ bool PrintViewManagerBase::PrintNow() {
 void PrintViewManagerBase::UpdateScriptedPrintingBlocked() {
   Send(new PrintMsg_SetScriptedPrintingBlocked(
        routing_id(),
-       !printing_enabled_.GetValue() || tab_content_blocked_));
+       !printing_enabled_.GetValue()));
 }
 
-void PrintViewManagerBase::StopNavigation() {
+void PrintViewManagerBase::NavigationStopped() {
   // Cancel the current job, wait for the worker to finish.
   TerminatePrintJob(true);
 }
@@ -108,8 +105,8 @@ void PrintViewManagerBase::RenderProcessGone(base::TerminationStatus status) {
   }
 }
 
-string16 PrintViewManagerBase::RenderSourceName() {
-  string16 name(web_contents()->GetTitle());
+base::string16 PrintViewManagerBase::RenderSourceName() {
+  base::string16 name(web_contents()->GetTitle());
   if (name.empty())
     name = l10n_util::GetStringUTF16(IDS_DEFAULT_PRINT_DOCUMENT_TITLE);
   return name;
@@ -239,11 +236,6 @@ void PrintViewManagerBase::Observe(
   switch (type) {
     case chrome::NOTIFICATION_PRINT_JOB_EVENT: {
       OnNotifyPrintJobEvent(*content::Details<JobEventDetails>(details).ptr());
-      break;
-    }
-    case chrome::NOTIFICATION_CONTENT_BLOCKED_STATE_CHANGED: {
-      tab_content_blocked_ = *content::Details<const bool>(details).ptr();
-      UpdateScriptedPrintingBlocked();
       break;
     }
     default: {
@@ -487,14 +479,13 @@ bool PrintViewManagerBase::OpportunisticallyCreatePrintJob(int cookie) {
 
   // The job was initiated by a script. Time to get the corresponding worker
   // thread.
-  scoped_refptr<PrinterQuery> queued_query;
-  g_browser_process->print_job_manager()->PopPrinterQuery(cookie,
-                                                          &queued_query);
-  DCHECK(queued_query.get());
-  if (!queued_query.get())
+  scoped_refptr<PrinterQuery> queued_query = queue_->PopPrinterQuery(cookie);
+  if (!queued_query) {
+    NOTREACHED();
     return false;
+  }
 
-  if (!CreateNewPrintJob(queued_query.get())) {
+  if (!CreateNewPrintJob(queued_query)) {
     // Don't kill anything.
     return false;
   }
@@ -520,7 +511,7 @@ void PrintViewManagerBase::ReleasePrinterQuery() {
 
   int cookie = cookie_;
   cookie_ = 0;
-  g_browser_process->print_job_manager()->SetPrintDestination(NULL);
+  queue_->SetDestination(NULL);
 
 
   printing::PrintJobManager* print_job_manager =
@@ -530,8 +521,8 @@ void PrintViewManagerBase::ReleasePrinterQuery() {
     return;
 
   scoped_refptr<printing::PrinterQuery> printer_query;
-  print_job_manager->PopPrinterQuery(cookie, &printer_query);
-  if (!printer_query.get())
+  printer_query = queue_->PopPrinterQuery(cookie);
+  if (!printer_query)
     return;
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,

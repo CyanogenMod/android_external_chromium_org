@@ -18,6 +18,7 @@
 #include "base/path_service.h"
 #include "base/prefs/pref_member.h"
 #include "base/prefs/pref_service.h"
+#include "base/prefs/scoped_user_pref_update.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/chrome_notification_types.h"
@@ -25,7 +26,6 @@
 #include "chrome/browser/plugins/plugin_finder.h"
 #include "chrome/browser/plugins/plugin_metadata.h"
 #include "chrome/browser/plugins/plugin_prefs.h"
-#include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
@@ -106,7 +106,7 @@ content::WebUIDataSource* CreatePluginsUIHTMLSource() {
   return source;
 }
 
-string16 PluginTypeToString(int type) {
+base::string16 PluginTypeToString(int type) {
   // The type is stored as an |int|, but doing the switch on the right
   // enumeration type gives us better build-time error checking (if someone adds
   // a new type).
@@ -121,7 +121,7 @@ string16 PluginTypeToString(int type) {
       return l10n_util::GetStringUTF16(IDS_PLUGINS_PPAPI_UNSANDBOXED);
   }
   NOTREACHED();
-  return string16();
+  return base::string16();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -171,8 +171,6 @@ class PluginsDOMHandler : public WebUIMessageHandler,
 
   content::NotificationRegistrar registrar_;
 
-  base::WeakPtrFactory<PluginsDOMHandler> weak_ptr_factory_;
-
   // Holds grouped plug-ins. The key is the group identifier and
   // the value is the list of plug-ins belonging to the group.
   typedef base::hash_map<std::string, std::vector<const WebPluginInfo*> >
@@ -181,6 +179,8 @@ class PluginsDOMHandler : public WebUIMessageHandler,
   // This pref guards the value whether about:plugins is in the details mode or
   // not.
   BooleanPrefMember show_details_;
+
+  base::WeakPtrFactory<PluginsDOMHandler> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(PluginsDOMHandler);
 };
@@ -240,7 +240,7 @@ void PluginsDOMHandler::HandleEnablePluginMessage(const ListValue* args) {
 
   PluginPrefs* plugin_prefs = PluginPrefs::GetForProfile(profile).get();
   if (is_group_str == "true") {
-    string16 group_name;
+    base::string16 group_name;
     if (!args->GetString(0, &group_name)) {
       NOTREACHED();
       return;
@@ -249,10 +249,10 @@ void PluginsDOMHandler::HandleEnablePluginMessage(const ListValue* args) {
     plugin_prefs->EnablePluginGroup(enable, group_name);
     if (enable) {
       // See http://crbug.com/50105 for background.
-      string16 adobereader = ASCIIToUTF16(
+      base::string16 adobereader = ASCIIToUTF16(
           PluginMetadata::kAdobeReaderGroupName);
-      string16 internalpdf =
-          ASCIIToUTF16(chrome::ChromeContentClient::kPDFPluginName);
+      base::string16 internalpdf =
+          ASCIIToUTF16(ChromeContentClient::kPDFPluginName);
       if (group_name == adobereader)
         plugin_prefs->EnablePluginGroup(false, internalpdf);
       else if (group_name == internalpdf)
@@ -353,7 +353,7 @@ void PluginsDOMHandler::PluginsLoaded(
     ListValue* plugin_files = new ListValue();
     scoped_ptr<PluginMetadata> plugin_metadata(
         plugin_finder->GetPluginMetadata(*group_plugins[0]));
-    string16 group_name = plugin_metadata->name();
+    base::string16 group_name = plugin_metadata->name();
     std::string group_identifier = plugin_metadata->identifier();
     bool group_enabled = false;
     bool all_plugins_enabled_by_policy = true;

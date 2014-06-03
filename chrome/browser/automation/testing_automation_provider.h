@@ -934,30 +934,11 @@ class TestingAutomationProvider : public AutomationProvider,
   //   output: { "ids": [213, 1] }
   void GetTabIds(base::DictionaryValue* args, IPC::Message* reply_message);
 
-  // Gets info about all open views. Each view ID is unique per session.
-  // Example:
-  //   input: none
-  //   output: { "views": [
-  //               {
-  //                 "auto_id": { "type": 0, "id": "awoein" },
-  //                 "extension_id": "askjeoias3"  // optional
-  //               }
-  //             ]
-  //           }
-  void GetViews(base::DictionaryValue* args, IPC::Message* reply_message);
-
   // Checks if the given tab ID refers to an open tab.
   // Example:
   //   input: { "id": 41 }
   //   output: { "is_valid": false }
   void IsTabIdValid(base::DictionaryValue* args, IPC::Message* reply_message);
-
-  // Checks if the given automation ID refers to an actual object.
-  // Example:
-  //   input: { "auto_id": { "type": 0, "id": "awoein" } }
-  //   output: { "does_exist": false }
-  void DoesAutomationObjectExist(
-      base::DictionaryValue* args, IPC::Message* reply_message);
 
   // Closes the specified tab.
   // The pair |windex| and |tab_index| or the single |auto_id| must be given
@@ -1182,13 +1163,6 @@ class TestingAutomationProvider : public AutomationProvider,
   void BringBrowserToFrontJSON(base::DictionaryValue* args,
                                IPC::Message* message);
 
-  // Gets the version of ChromeDriver automation supported by this server.
-  // Example:
-  //   input: none
-  //   output: { "version": 1 }
-  void GetChromeDriverAutomationVersion(base::DictionaryValue* args,
-                                        IPC::Message* message);
-
   // Determines whether the extension page action is visible in the given tab.
   // Example:
   //   input: { "auto_id": { "type": 0, "id": "awoein" },
@@ -1311,49 +1285,6 @@ class TestingAutomationProvider : public AutomationProvider,
   // Battery.
   void GetBatteryInfo(base::DictionaryValue* args, IPC::Message* reply_message);
 
-  // Network.
-  void GetNetworkInfo(base::DictionaryValue* args, IPC::Message* reply_message);
-
-  void NetworkScan(base::DictionaryValue* args, IPC::Message* reply_message);
-
-  void ToggleNetworkDevice(base::DictionaryValue* args,
-                           IPC::Message* reply_message);
-
-  void SetProxySettings(base::DictionaryValue* args,
-                        IPC::Message* reply_message);
-
-  void SetSharedProxies(base::DictionaryValue* args,
-                        IPC::Message* reply_message);
-
-  void ConnectToCellularNetwork(base::DictionaryValue* args,
-                            IPC::Message* reply_message);
-
-  void DisconnectFromCellularNetwork(base::DictionaryValue* args,
-                                 IPC::Message* reply_message);
-
-  void ConnectToWifiNetwork(base::DictionaryValue* args,
-                            IPC::Message* reply_message);
-
-  void ConnectToHiddenWifiNetwork(base::DictionaryValue* args,
-                                  IPC::Message* reply_message);
-
-  void DisconnectFromWifiNetwork(base::DictionaryValue* args,
-                                 IPC::Message* reply_message);
-
-  void ForgetWifiNetwork(DictionaryValue* args, IPC::Message* reply_message);
-
-  // VPN.
-  void AddPrivateNetwork(DictionaryValue* args, IPC::Message* reply_message);
-
-  void GetPrivateNetworkInfo(base::DictionaryValue* args,
-                             IPC::Message* reply_message);
-
-  void ConnectToPrivateNetwork(base::DictionaryValue* args,
-                               IPC::Message* reply_message);
-
-  void DisconnectFromPrivateNetwork(base::DictionaryValue* args,
-                                    IPC::Message* reply_message);
-
   // Accessibility.
   void EnableSpokenFeedback(DictionaryValue* args, IPC::Message* reply_message);
 
@@ -1403,7 +1334,7 @@ class TestingAutomationProvider : public AutomationProvider,
 
   // Execute Javascript in the context of a specific render view.
   void ExecuteJavascriptInRenderViewFrame(
-      const string16& frame_xpath, const string16& script,
+      const base::string16& frame_xpath, const base::string16& script,
       IPC::Message* reply_message, content::RenderViewHost* render_view_host);
 
   // Selects the given |tab| if not selected already.

@@ -11,6 +11,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "webkit/browser/blob/blob_data_handle.h"
 #include "webkit/browser/webkit_storage_browser_export.h"
 #include "webkit/common/blob/blob_data.h"
 
@@ -42,9 +43,14 @@ class WEBKIT_STORAGE_BROWSER_EXPORT BlobStorageContext
   // blob cannot be added due to memory consumption, returns NULL.
   scoped_ptr<BlobDataHandle> AddFinishedBlob(const BlobData* blob_data);
 
+  // Useful for coining blob urls from within the browser process.
+  bool RegisterPublicBlobURL(const GURL& url, const std::string& uuid);
+  void RevokePublicBlobURL(const GURL& url);
+
  private:
   friend class BlobDataHandle;
   friend class BlobStorageHost;
+  friend class ViewBlobInternalsJob;
 
   enum EntryFlags {
     BEING_BUILT = 1 << 0,
@@ -72,8 +78,6 @@ class WEBKIT_STORAGE_BROWSER_EXPORT BlobStorageContext
   void CancelBuildingBlob(const std::string& uuid);
   void IncrementBlobRefCount(const std::string& uuid);
   void DecrementBlobRefCount(const std::string& uuid);
-  void RegisterPublicBlobURL(const GURL& url, const std::string& uuid);
-  void RevokePublicBlobURL(const GURL& url);
 
   bool ExpandStorageItems(BlobData* target_blob_data,
                           BlobData* src_blob_data,

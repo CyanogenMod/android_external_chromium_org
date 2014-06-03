@@ -11,48 +11,59 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/test_extension_system.h"
 #include "chrome/browser/sessions/session_tab_helper.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_builder.h"
-#include "chrome/common/extensions/value_builder.h"
 #include "chrome/test/base/testing_profile.h"
+#include "content/public/test/test_utils.h"
 #include "content/public/test/web_contents_tester.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/extension_builder.h"
+#include "extensions/common/value_builder.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+#if defined(USE_AURA)
+#include "ui/aura/env.h"
+#endif
 
 namespace extensions {
 
 using content::BrowserThread;
 
 TestExtensionEnvironment::TestExtensionEnvironment()
-    : ui_thread_(BrowserThread::UI, &loop_),
-      file_thread_(BrowserThread::FILE),
-      file_blocking_thread_(BrowserThread::FILE_USER_BLOCKING),
-      io_thread_(BrowserThread::IO),
-      profile_(new TestingProfile),
-      extension_service_(NULL) {
-  file_thread_.Start();
-  file_blocking_thread_.Start();
-  io_thread_.StartIOThread();
+    : profile_(new TestingProfile),
+      extension_service_(NULL),
+      extension_prefs_(NULL) {
+#if defined(USE_AURA)
+  aura::Env::CreateInstance();
+#endif
 }
 
 TestExtensionEnvironment::~TestExtensionEnvironment() {
-  profile_.reset();
-  // Delete the profile, and then cycle the message loop to clear
-  // out delayed deletions.
-  base::RunLoop().RunUntilIdle();
+#if defined(USE_AURA)
+  aura::Env::DeleteInstance();
+#endif
 }
 
 TestingProfile* TestExtensionEnvironment::profile() const {
   return profile_.get();
 }
 
+TestExtensionSystem* TestExtensionEnvironment::GetExtensionSystem() {
+  return static_cast<TestExtensionSystem*>(ExtensionSystem::Get(profile()));;
+}
+
 ExtensionService* TestExtensionEnvironment::GetExtensionService() {
   if (extension_service_ == NULL) {
-    TestExtensionSystem* extension_system =
-        static_cast<TestExtensionSystem*>(ExtensionSystem::Get(profile()));
-    extension_service_ = extension_system->CreateExtensionService(
+    extension_service_ = GetExtensionSystem()->CreateExtensionService(
         CommandLine::ForCurrentProcess(), base::FilePath(), false);
   }
   return extension_service_;
+}
+
+ExtensionPrefs* TestExtensionEnvironment::GetExtensionPrefs() {
+  if (extension_prefs_ == NULL) {
+    extension_prefs_ = GetExtensionSystem()->CreateExtensionPrefs(
+        CommandLine::ForCurrentProcess(), base::FilePath());
+  }
+  return extension_prefs_;
 }
 
 const Extension* TestExtensionEnvironment::MakeExtension(

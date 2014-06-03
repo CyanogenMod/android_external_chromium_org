@@ -20,10 +20,10 @@
 #include "ui/base/gtk/gtk_hig_constants.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/base/text/text_elider.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/gtk_util.h"
 #include "ui/gfx/image/image.h"
+#include "ui/gfx/text_elider.h"
 
 namespace {
 
@@ -44,7 +44,7 @@ const GdkColor kBackgroundColor = GDK_COLOR_RGB(0xff, 0xff, 0xff);
 }  // namespace
 
 AvatarMenuItemGtk::AvatarMenuItemGtk(Delegate* delegate,
-                                     const AvatarMenuModel::Item& item,
+                                     const AvatarMenu::Item& item,
                                      size_t item_index,
                                      GtkThemeService* theme_service)
     : delegate_(delegate),
@@ -201,8 +201,7 @@ void AvatarMenuItemGtk::Init(GtkThemeService* theme_service) {
   // of the profile icon.
   if (item_.active) {
     const SkBitmap* avatar_image = item_.icon.ToSkBitmap();
-    gfx::ImageSkiaRep avatar_image_rep =
-        gfx::ImageSkiaRep(*avatar_image, ui::SCALE_FACTOR_100P);
+    gfx::ImageSkiaRep avatar_image_rep = gfx::ImageSkiaRep(*avatar_image, 1.0f);
     gfx::Canvas canvas(avatar_image_rep, /* is_opaque */ true);
 
     ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
@@ -227,10 +226,10 @@ void AvatarMenuItemGtk::Init(GtkThemeService* theme_service) {
   // The user name label.
   GtkWidget* item_vbox = gtk_vbox_new(FALSE, 0);
   GtkWidget* name_label = NULL;
-  string16 elided_name = ui::ElideText(item_.name,
+  base::string16 elided_name = gfx::ElideText(item_.name,
                                        gfx::Font(),
                                        kUserNameMaxWidth,
-                                       ui::ELIDE_AT_END);
+                                       gfx::ELIDE_AT_END);
 
   name_label = theme_service->BuildLabel(UTF16ToUTF8(elided_name),
                                          ui::kGdkBlack);

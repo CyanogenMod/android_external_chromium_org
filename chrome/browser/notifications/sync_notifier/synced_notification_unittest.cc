@@ -43,8 +43,8 @@ class StubNotificationUIManager : public NotificationUIManager {
   StubNotificationUIManager()
       : notification_(GURL(),
                       GURL(),
-                      string16(),
-                      string16(),
+                      base::string16(),
+                      base::string16(),
                       new MockNotificationDelegate("stub")) {}
   virtual ~StubNotificationUIManager() {}
 
@@ -143,6 +143,13 @@ class SyncedNotificationTest : public testing::Test {
   }
 
   virtual void TearDown() OVERRIDE {
+  }
+
+  virtual void AddButtonBitmaps(SyncedNotification* notification,
+                                unsigned int how_many) {
+    for (unsigned int i = 0; i < how_many; ++i) {
+      notification->button_bitmaps_.push_back(gfx::Image());
+    }
   }
 
   scoped_ptr<SyncedNotification> notification1_;
@@ -327,20 +334,12 @@ TEST_F(SyncedNotificationTest, ShowTest) {
   // Check the base fields of the notification.
   EXPECT_EQ(message_center::NOTIFICATION_TYPE_IMAGE, notification.type());
   EXPECT_EQ(std::string(kTitle1), UTF16ToUTF8(notification.title()));
-  EXPECT_EQ(std::string(kText1And1), UTF16ToUTF8(notification.message()));
+  EXPECT_EQ(std::string(kText1), UTF16ToUTF8(notification.message()));
   EXPECT_EQ(std::string(kExpectedOriginUrl), notification.origin_url().spec());
   EXPECT_EQ(std::string(kKey1), UTF16ToUTF8(notification.replace_id()));
 
   EXPECT_EQ(kFakeCreationTime, notification.timestamp().ToDoubleT());
   EXPECT_EQ(kNotificationPriority, notification.priority());
-
-  EXPECT_EQ(UTF8ToUTF16(kContainedTitle1), notification.items()[0].title);
-  EXPECT_EQ(UTF8ToUTF16(kContainedTitle2), notification.items()[1].title);
-  EXPECT_EQ(UTF8ToUTF16(kContainedTitle3), notification.items()[2].title);
-
-  EXPECT_EQ(UTF8ToUTF16(kContainedMessage1), notification.items()[0].message);
-  EXPECT_EQ(UTF8ToUTF16(kContainedMessage2), notification.items()[1].message);
-  EXPECT_EQ(UTF8ToUTF16(kContainedMessage3), notification.items()[2].message);
 }
 
 TEST_F(SyncedNotificationTest, DismissTest) {
@@ -381,10 +380,13 @@ TEST_F(SyncedNotificationTest, OnFetchCompleteTest) {
   // Set up the internal state that FetchBitmaps() would have set.
   notification1_->notification_manager_ = &notification_manager;
 
-  // Add two bitmaps to the queue for us to match up.
+  // Add the bitmaps to the queue for us to match up.
   notification1_->AddBitmapToFetchQueue(GURL(kIconUrl1));
-  notification1_->AddBitmapToFetchQueue(GURL(kIconUrl2));
-  EXPECT_EQ(2, notification1_->active_fetcher_count_);
+  notification1_->AddBitmapToFetchQueue(GURL(kImageUrl1));
+  notification1_->AddBitmapToFetchQueue(GURL(kButtonOneIconUrl));
+  notification1_->AddBitmapToFetchQueue(GURL(kButtonTwoIconUrl));
+
+  EXPECT_EQ(4, notification1_->active_fetcher_count_);
 
   // Put some realistic looking bitmap data into the url_fetcher.
   SkBitmap bitmap;
@@ -394,11 +396,20 @@ TEST_F(SyncedNotificationTest, OnFetchCompleteTest) {
   bitmap.allocPixels();
   bitmap.eraseColor(SK_ColorGREEN);
 
+  // Allocate the button_bitmaps_ array as the calling function normally would.
+  AddButtonBitmaps(notification1_.get(), 2);
+
   notification1_->OnFetchComplete(GURL(kIconUrl1), &bitmap);
+  EXPECT_EQ(3, notification1_->active_fetcher_count_);
+
+  // When we call OnFetchComplete on the last bitmap, show should be called.
+  notification1_->OnFetchComplete(GURL(kImageUrl1), &bitmap);
+  EXPECT_EQ(2, notification1_->active_fetcher_count_);
+
+  notification1_->OnFetchComplete(GURL(kButtonOneIconUrl), &bitmap);
   EXPECT_EQ(1, notification1_->active_fetcher_count_);
 
-  // When we call OnFetchComplete on the second bitmap, show should be called.
-  notification1_->OnFetchComplete(GURL(kIconUrl2), &bitmap);
+  notification1_->OnFetchComplete(GURL(kButtonTwoIconUrl), &bitmap);
   EXPECT_EQ(0, notification1_->active_fetcher_count_);
 
   // Since we check Show() thoroughly in its own test, we only check cursorily.
@@ -406,7 +417,7 @@ TEST_F(SyncedNotificationTest, OnFetchCompleteTest) {
             notification_manager.notification().type());
   EXPECT_EQ(std::string(kTitle1),
             UTF16ToUTF8(notification_manager.notification().title()));
-  EXPECT_EQ(std::string(kText1And1),
+  EXPECT_EQ(std::string(kText1),
             UTF16ToUTF8(notification_manager.notification().message()));
 
   // TODO(petewil): Check that the bitmap in the notification is what we expect.

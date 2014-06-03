@@ -52,29 +52,36 @@ class MockAsyncMethodCaller : public AsyncMethodCaller {
                void(const DataCallback& callback));
   MOCK_METHOD2(AsyncTpmAttestationEnroll,
                void(const std::string& pca_response, const Callback& callback));
-  MOCK_METHOD2(AsyncTpmAttestationCreateCertRequest,
-               void(int options,
-                    const DataCallback& callback));
-  MOCK_METHOD4(AsyncTpmAttestationFinishCertRequest,
+  MOCK_METHOD4(
+      AsyncTpmAttestationCreateCertRequest,
+      void(chromeos::attestation::AttestationCertificateProfile profile,
+           const std::string& user_id,
+           const std::string& request_origin,
+           const DataCallback& callback));
+  MOCK_METHOD5(AsyncTpmAttestationFinishCertRequest,
                void(const std::string& pca_response,
                     chromeos::attestation::AttestationKeyType key_type,
+                    const std::string& user_id,
                     const std::string& key_name,
                     const DataCallback& callback));
-  MOCK_METHOD3(TpmAttestationRegisterKey,
+  MOCK_METHOD4(TpmAttestationRegisterKey,
                void(chromeos::attestation::AttestationKeyType key_type,
+                    const std::string& user_id,
                     const std::string& key_name,
                     const Callback& callback));
-  MOCK_METHOD7(
+  MOCK_METHOD8(
       TpmAttestationSignEnterpriseChallenge,
       void(chromeos::attestation::AttestationKeyType key_type,
+           const std::string& user_id,
            const std::string& key_name,
            const std::string& domain,
            const std::string& device_id,
            chromeos::attestation::AttestationChallengeOptions options,
            const std::string& challenge,
            const DataCallback& callback));
-  MOCK_METHOD4(TpmAttestationSignSimpleChallenge,
+  MOCK_METHOD5(TpmAttestationSignSimpleChallenge,
                void(chromeos::attestation::AttestationKeyType key_type,
+                    const std::string& user_id,
                     const std::string& key_name,
                     const std::string& challenge,
                     const DataCallback& callback));

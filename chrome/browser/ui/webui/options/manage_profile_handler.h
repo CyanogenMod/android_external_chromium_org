@@ -30,6 +30,7 @@ class ManageProfileHandler : public OptionsPageUIHandler,
       base::DictionaryValue* localized_strings) OVERRIDE;
   virtual void InitializeHandler() OVERRIDE;
   virtual void InitializePage() OVERRIDE;
+  virtual void Uninitialize() OVERRIDE;
 
   // WebUIMessageHandler:
   virtual void RegisterMessages() OVERRIDE;
@@ -52,18 +53,6 @@ class ManageProfileHandler : public OptionsPageUIHandler,
   // Sends an object to WebUI of the form:
   //   { "name": profileName, "iconURL": iconURL }
   void RequestNewProfileDefaults(const base::ListValue* args);
-
-  // Callback for the "requestExistingManagedUsers" message.
-  // Sends an object to WebUI of the form:
-  //   managedProfiles = {
-  //     "Profile ID 1": "Profile Name 1",
-  //     "Profile ID 2": "Profile Name 2",
-  //     ...
-  //   }
-  // The object holds all existing managed users attached to the
-  // custodian's profile who initiated the request except for
-  // those managed users that are already existing of this machine.
-  void RequestExistingManagedUsers(const base::ListValue* args);
 
   // Send all profile icons to the overlay.
   // |iconGrid| is the name of the grid to populate with icons (i.e.
@@ -132,12 +121,12 @@ class ManageProfileHandler : public OptionsPageUIHandler,
   // URL for the current profile's GAIA picture.
   std::string gaia_picture_url_;
 
-  // For generating weak pointers to itself for callbacks.
-  base::WeakPtrFactory<ManageProfileHandler> weak_factory_;
-
   // Used to observe the preference that allows creating managed users, which
   // can be changed by policy.
   PrefChangeRegistrar pref_change_registrar_;
+
+  // For generating weak pointers to itself for callbacks.
+  base::WeakPtrFactory<ManageProfileHandler> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ManageProfileHandler);
 };

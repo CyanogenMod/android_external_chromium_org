@@ -8,7 +8,6 @@
 #include "chrome/browser/chrome_browser_main_extra_parts.h"
 #include "chrome/browser/chrome_content_browser_client.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/chromeos/cros/cros_in_process_browser_test.h"
 #include "chrome/browser/chromeos/login/login_display_host_impl.h"
 #include "chrome/browser/chromeos/login/login_wizard.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
@@ -20,7 +19,6 @@
 #include "chrome/test/base/interactive_test_utils.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "chromeos/chromeos_switches.h"
-#include "chromeos/cryptohome/mock_cryptohome_library.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_service.h"
@@ -34,33 +32,8 @@ using ::testing::Return;
 
 namespace {
 
-class LoginTestBase : public chromeos::CrosInProcessBrowserTest {
- public:
-  LoginTestBase() {}
-
+class LoginUserTest : public InProcessBrowserTest {
  protected:
-  virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
-    CrosInProcessBrowserTest::SetUpInProcessBrowserTestFixture();
-
-    mock_cryptohome_library_.reset(new chromeos::MockCryptohomeLibrary());
-    EXPECT_CALL(*(mock_cryptohome_library_.get()), GetSystemSalt())
-        .WillRepeatedly(Return(std::string("stub_system_salt")));
-    EXPECT_CALL(*(mock_cryptohome_library_.get()), InstallAttributesIsReady())
-        .WillRepeatedly(Return(false));
-  }
-
-  scoped_ptr<chromeos::MockCryptohomeLibrary> mock_cryptohome_library_;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(LoginTestBase);
-};
-
-class LoginUserTest : public LoginTestBase {
- protected:
-  virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
-    LoginTestBase::SetUpInProcessBrowserTestFixture();
-  }
-
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     command_line->AppendSwitchASCII(
         chromeos::switches::kLoginUser, "TestUser@gmail.com");
@@ -68,7 +41,7 @@ class LoginUserTest : public LoginTestBase {
   }
 };
 
-class LoginGuestTest : public LoginTestBase {
+class LoginGuestTest : public InProcessBrowserTest {
  protected:
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     command_line->AppendSwitch(chromeos::switches::kGuestSession);
@@ -77,7 +50,7 @@ class LoginGuestTest : public LoginTestBase {
   }
 };
 
-class LoginCursorTest : public LoginTestBase {
+class LoginCursorTest : public InProcessBrowserTest {
  protected:
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     command_line->AppendSwitch(chromeos::switches::kLoginManager);
@@ -136,7 +109,7 @@ class TestContentBrowserClient : public chrome::ChromeContentBrowserClient {
 };
 
 
-class LoginSigninTest : public chromeos::CrosInProcessBrowserTest {
+class LoginSigninTest : public InProcessBrowserTest {
  protected:
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     command_line->AppendSwitch(chromeos::switches::kLoginManager);

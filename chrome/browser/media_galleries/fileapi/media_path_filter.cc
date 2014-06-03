@@ -10,8 +10,6 @@
 #include "base/strings/string_util.h"
 #include "net/base/mime_util.h"
 
-namespace chrome {
-
 namespace {
 
 const base::FilePath::CharType* const kExtraSupportedExtensions[] = {
@@ -53,6 +51,7 @@ const base::FilePath::CharType* const kExtraSupportedExtensions[] = {
   FILE_PATH_LITERAL("3gpp"),
   FILE_PATH_LITERAL("avi"),
   FILE_PATH_LITERAL("flv"),
+  FILE_PATH_LITERAL("mkv"),
   FILE_PATH_LITERAL("mov"),
   FILE_PATH_LITERAL("mpeg"),
   FILE_PATH_LITERAL("mpeg4"),
@@ -80,6 +79,7 @@ bool IsUnsupportedExtension(const base::FilePath::StringType& extension) {
 
 MediaPathFilter::MediaPathFilter()
     : initialized_(false) {
+  sequence_checker_.DetachFromSequence();
 }
 
 MediaPathFilter::~MediaPathFilter() {
@@ -93,13 +93,12 @@ bool MediaPathFilter::Match(const base::FilePath& path) {
 }
 
 void MediaPathFilter::EnsureInitialized() {
+  DCHECK(sequence_checker_.CalledOnValidSequencedThread());
   if (initialized_)
     return;
 
-  base::AutoLock lock(initialization_lock_);
-  if (initialized_)
-    return;
-
+  // This may require I/O, so doing this in the ctor and removing
+  // |initialized_| would result in a ThreadRestrictions failure.
   net::GetExtensionsForMimeType("image/*", &media_file_extensions_);
   net::GetExtensionsForMimeType("audio/*", &media_file_extensions_);
   net::GetExtensionsForMimeType("video/*", &media_file_extensions_);
@@ -121,5 +120,3 @@ void MediaPathFilter::EnsureInitialized() {
 
   initialized_ = true;
 }
-
-}  // namespace chrome

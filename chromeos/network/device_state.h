@@ -23,9 +23,14 @@ class CHROMEOS_EXPORT DeviceState : public ManagedState {
   // ManagedState overrides
   virtual bool PropertyChanged(const std::string& key,
                                const base::Value& value) OVERRIDE;
+  virtual bool InitialPropertiesReceived(
+      const base::DictionaryValue& properties) OVERRIDE;
 
   // Accessors
   const std::string& mac_address() const { return mac_address_; }
+
+  // Returns |mac_address_| in aa:bb format.
+  std::string GetFormattedMacAddress() const;
 
   // Cellular specific accessors
   const std::string& home_provider_id() const { return home_provider_id_; }
@@ -44,13 +49,19 @@ class CHROMEOS_EXPORT DeviceState : public ManagedState {
   const CellularScanResults& scan_results() const { return scan_results_; }
   const DictionaryValue& properties() const { return properties_; }
 
+  // Ethernet specific accessors
+  bool eap_authentication_completed() const {
+    return eap_authentication_completed_;
+  }
+
   // Returns true if the technology family is GSM and sim_present_ is false.
   bool IsSimAbsent() const;
 
  private:
   // Common Device Properties
   std::string mac_address_;
-  // Cellular specific propeties
+
+  // Cellular specific properties
   std::string home_provider_id_;
   bool provider_requires_roaming_;
   bool support_network_scan_;
@@ -66,6 +77,10 @@ class CHROMEOS_EXPORT DeviceState : public ManagedState {
   std::string iccid_;
   std::string mdn_;
   CellularScanResults scan_results_;
+
+  // Ethernet specific properties
+  bool eap_authentication_completed_;
+
   // Keep all Device properties in a dictionary. Devices are limited and should
   // change rarely if ever, so the overhead for this is small.
   DictionaryValue properties_;

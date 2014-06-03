@@ -13,6 +13,7 @@
 #include "chrome/test/chromedriver/chrome/devtools_event_listener.h"
 #include "chrome/test/chromedriver/chrome/log.h"
 #include "chrome/test/chromedriver/chrome/status.h"
+#include "chrome/test/chromedriver/chrome/util.h"
 #include "chrome/test/chromedriver/net/sync_websocket.h"
 #include "chrome/test/chromedriver/net/url_request_context_getter.h"
 
@@ -47,6 +48,11 @@ class ScopedIncrementer {
   int* count_;
 };
 
+Status ConditionIsMet(bool* is_condition_met) {
+  *is_condition_met = true;
+  return Status(kOk);
+}
+
 }  // namespace
 
 namespace internal {
@@ -65,13 +71,12 @@ DevToolsClientImpl::DevToolsClientImpl(
     const SyncWebSocketFactory& factory,
     const std::string& url,
     const std::string& id,
-    const FrontendCloserFunc& frontend_closer_func,
-    Log* log)
+    const FrontendCloserFunc& frontend_closer_func)
     : socket_(factory.Run().Pass()),
       url_(url),
+      crashed_(false),
       id_(id),
       frontend_closer_func_(frontend_closer_func),
-      log_(log),
       parser_func_(base::Bind(&internal::ParseInspectorMessage)),
       unnotified_event_(NULL),
       next_id_(1),
@@ -82,13 +87,12 @@ DevToolsClientImpl::DevToolsClientImpl(
     const std::string& url,
     const std::string& id,
     const FrontendCloserFunc& frontend_closer_func,
-    Log* log,
     const ParserFunc& parser_func)
     : socket_(factory.Run().Pass()),
       url_(url),
+      crashed_(false),
       id_(id),
       frontend_closer_func_(frontend_closer_func),
-      log_(log),
       parser_func_(parser_func),
       unnotified_event_(NULL),
       next_id_(1),
@@ -103,6 +107,10 @@ void DevToolsClientImpl::SetParserFuncForTesting(
 
 const std::string& DevToolsClientImpl::GetId() {
   return id_;
+}
+
+bool DevToolsClientImpl::WasCrashed() {
+  return crashed_;
 }
 
 Status DevToolsClientImpl::ConnectIfNecessary() {
@@ -158,17 +166,7 @@ void DevToolsClientImpl::AddListener(DevToolsEventListener* listener) {
 }
 
 Status DevToolsClientImpl::HandleReceivedEvents() {
-  if (!socket_->IsConnected())
-    return Status(kDisconnected, "not connected to DevTools");
-
-  while (true) {
-    if (!socket_->HasNextMessage())
-      return Status(kOk);
-
-    Status status = ProcessNextMessage(-1);
-    if (status.IsError())
-      return status;
-  }
+  return HandleEventsUntil(base::Bind(&ConditionIsMet), base::TimeDelta());
 }
 
 Status DevToolsClientImpl::HandleEventsUntil(
@@ -177,14 +175,10 @@ Status DevToolsClientImpl::HandleEventsUntil(
     return Status(kDisconnected, "not connected to DevTools");
 
   base::TimeTicks deadline = base::TimeTicks::Now() + timeout;
-
+  base::TimeDelta next_message_timeout = timeout;
   while (true) {
-    if (base::TimeTicks::Now() >= deadline)
-      return Status(kTimeout, base::StringPrintf(
-          "exceeded %dms", static_cast<int>(timeout.InMilliseconds())));
-
     if (!socket_->HasNextMessage()) {
-      bool is_condition_met;
+      bool is_condition_met = false;
       Status status = conditional_func.Run(&is_condition_met);
       if (status.IsError())
         return status;
@@ -192,12 +186,10 @@ Status DevToolsClientImpl::HandleEventsUntil(
         return Status(kOk);
     }
 
-    // To keep this simple, we don't pass the delta time to
-    // ProcessNextMessage. As a result, we may not immediately
-    // return after |timeout|ms.
-    Status status = ProcessNextMessage(-1);
-    if (status.IsError() && status.code() != kTimeout)
+    Status status = ProcessNextMessage(-1, next_message_timeout);
+    if (status.IsError())
       return status;
+    next_message_timeout = deadline - base::TimeTicks::Now();
   }
 }
 
@@ -218,9 +210,11 @@ Status DevToolsClientImpl::SendCommandInternal(
   command.SetInteger("id", command_id);
   command.SetString("method", method);
   command.Set("params", params.DeepCopy());
-  std::string message;
-  base::JSONWriter::Write(&command, &message);
-  log_->AddEntry(Log::kDebug, "sending Inspector command " + message);
+  std::string message = SerializeValue(&command);
+  if (IsVLogOn(1)) {
+    VLOG(1) << "DEVTOOLS COMMAND " << method << " (id=" << command_id << ") "
+            << FormatValueForDisplay(params);
+  }
   if (!socket_->Send(message))
     return Status(kDisconnected, "unable to send message to renderer");
 
@@ -228,7 +222,8 @@ Status DevToolsClientImpl::SendCommandInternal(
       make_linked_ptr(new ResponseInfo(method));
   response_info_map_[command_id] = response_info;
   while (response_info->state == kWaiting) {
-    Status status = ProcessNextMessage(command_id);
+    Status status = ProcessNextMessage(
+        command_id, base::TimeDelta::FromMinutes(10));
     if (status.IsError()) {
       if (response_info->state == kReceived)
         response_info_map_.erase(command_id);
@@ -247,7 +242,9 @@ Status DevToolsClientImpl::SendCommandInternal(
   return Status(kOk);
 }
 
-Status DevToolsClientImpl::ProcessNextMessage(int expected_id) {
+Status DevToolsClientImpl::ProcessNextMessage(
+    int expected_id,
+    const base::TimeDelta& timeout) {
   ScopedIncrementer increment_stack_count(&stack_count_);
 
   Status status = EnsureListenersNotifiedOfConnect();
@@ -265,20 +262,25 @@ Status DevToolsClientImpl::ProcessNextMessage(int expected_id) {
   if (expected_id != -1 && response_info_map_[expected_id]->state != kWaiting)
     return Status(kOk);
 
+  if (crashed_)
+    return Status(kTabCrashed);
+
   std::string message;
-  switch (socket_->ReceiveNextMessage(&message,
-                                      base::TimeDelta::FromMinutes(1))) {
+  switch (socket_->ReceiveNextMessage(&message, timeout)) {
     case SyncWebSocket::kOk:
-      log_->AddEntry(Log::kDebug, "received Inspector response " + message);
       break;
-    case SyncWebSocket::kDisconnected:
-      message = "unable to receive message from renderer";
-      log_->AddEntry(Log::kDebug, message);
-      return Status(kDisconnected, message);
-    case SyncWebSocket::kTimeout:
-      message = "timed out receiving message from renderer";
-      log_->AddEntry(Log::kDebug, message);
-      return Status(kTimeout, message);
+    case SyncWebSocket::kDisconnected: {
+      std::string err = "Unable to receive message from renderer";
+      LOG(ERROR) << err;
+      return Status(kDisconnected, err);
+    }
+    case SyncWebSocket::kTimeout: {
+      std::string err =
+          "Timed out receiving message from renderer: " +
+          base::StringPrintf("%.3lf", timeout.InSecondsF());
+      LOG(ERROR) << err;
+      return Status(kTimeout, err);
+    }
     default:
       NOTREACHED();
       break;
@@ -287,8 +289,10 @@ Status DevToolsClientImpl::ProcessNextMessage(int expected_id) {
   internal::InspectorMessageType type;
   internal::InspectorEvent event;
   internal::InspectorCommandResponse response;
-  if (!parser_func_.Run(message, expected_id, &type, &event, &response))
+  if (!parser_func_.Run(message, expected_id, &type, &event, &response)) {
+    LOG(ERROR) << "Bad inspector message: " << message;
     return Status(kUnknownError, "bad inspector message: " + message);
+  }
 
   if (type == internal::kEventMessageType)
     return ProcessEvent(event);
@@ -297,6 +301,10 @@ Status DevToolsClientImpl::ProcessNextMessage(int expected_id) {
 }
 
 Status DevToolsClientImpl::ProcessEvent(const internal::InspectorEvent& event) {
+  if (IsVLogOn(1)) {
+    VLOG(1) << "DEVTOOLS EVENT " << event.method << " "
+            << FormatValueForDisplay(*event.params);
+  }
   unnotified_event_listeners_ = listeners_;
   unnotified_event_ = &event;
   Status status = EnsureListenersNotifiedOfEvent();
@@ -305,8 +313,10 @@ Status DevToolsClientImpl::ProcessEvent(const internal::InspectorEvent& event) {
     return status;
   if (event.method == "Inspector.detached")
     return Status(kDisconnected, "received Inspector.detached event");
-  if (event.method == "Inspector.targetCrashed")
-    return Status(kDisconnected, "page crashed");
+  if (event.method == "Inspector.targetCrashed") {
+    crashed_ = true;
+    return Status(kTabCrashed);
+  }
   if (event.method == "Page.javascriptDialogOpening") {
     // A command may have opened the dialog, which will block the response.
     // To find out which one (if any), do a round trip with a simple command
@@ -336,7 +346,20 @@ Status DevToolsClientImpl::ProcessEvent(const internal::InspectorEvent& event) {
 
 Status DevToolsClientImpl::ProcessCommandResponse(
     const internal::InspectorCommandResponse& response) {
-  if (response_info_map_.count(response.id) == 0)
+  ResponseInfoMap::iterator iter = response_info_map_.find(response.id);
+  if (IsVLogOn(1)) {
+    std::string method, result;
+    if (iter != response_info_map_.end())
+      method = iter->second->method;
+    if (response.result)
+      result = FormatValueForDisplay(*response.result);
+    else
+      result = response.error;
+    VLOG(1) << "DEVTOOLS RESPONSE " << method << " (id=" << response.id
+            << ") " << result;
+  }
+
+  if (iter == response_info_map_.end())
     return Status(kUnknownError, "unexpected command response");
 
   linked_ptr<ResponseInfo> response_info = response_info_map_[response.id];

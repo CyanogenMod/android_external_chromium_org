@@ -74,24 +74,6 @@ bool MockInputMethodManager::EnableInputMethod(
   return true;
 }
 
-bool MockInputMethodManager::MigrateOldInputMethods(
-    std::vector<std::string>* input_method_ids) {
-  return false;
-}
-
-bool MockInputMethodManager::MigrateKoreanKeyboard(
-    const std::string& keyboard_id,
-    std::vector<std::string>* input_method_ids) {
-  return false;
-}
-
-bool MockInputMethodManager::SetInputMethodConfig(
-    const std::string& section,
-    const std::string& config_name,
-    const InputMethodConfigValue& value) {
-  return true;
-}
-
 void MockInputMethodManager::ChangeInputMethod(
     const std::string& input_method_id) {
 }
@@ -106,7 +88,8 @@ void MockInputMethodManager::AddInputMethodExtension(
     const std::vector<std::string>& layouts,
     const std::vector<std::string>& languages,
     const GURL& options_url,
-    InputMethodEngine* instance) {
+    const GURL& inputview_url,
+    InputMethodEngineInterface* instance) {
 }
 
 void MockInputMethodManager::RemoveInputMethodExtension(const std::string& id) {
@@ -145,7 +128,9 @@ InputMethodDescriptor MockInputMethodManager::GetCurrentInputMethod() const {
                                  descriptor.name(),
                                  descriptor.keyboard_layouts(),
                                  descriptor.language_codes(),
-                                 GURL());  // options page url.
+                                 true,
+                                 GURL(),  // options page url.
+                                 GURL());  // input view page url.
   }
   return descriptor;
 }
@@ -153,6 +138,10 @@ InputMethodDescriptor MockInputMethodManager::GetCurrentInputMethod() const {
 InputMethodPropertyList
 MockInputMethodManager::GetCurrentInputMethodProperties() const {
   return InputMethodPropertyList();
+}
+
+void MockInputMethodManager::SetCurrentInputMethodProperties(
+    const InputMethodPropertyList& property_list) {
 }
 
 XKeyboard* MockInputMethodManager::GetXKeyboard() {
@@ -177,7 +166,7 @@ void MockInputMethodManager::set_hardware_keyboard_layout(
   delegate_.set_hardware_keyboard_layout(value);
 }
 
-bool MockInputMethodManager::IsFullLatinKeyboard(
+bool MockInputMethodManager::IsLoginKeyboard(
     const std::string& layout) const {
   return true;
 }

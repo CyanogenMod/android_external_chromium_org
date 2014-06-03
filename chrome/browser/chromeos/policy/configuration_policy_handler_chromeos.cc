@@ -5,32 +5,115 @@
 #include "chrome/browser/chromeos/policy/configuration_policy_handler_chromeos.h"
 
 #include <string>
+#include <vector>
 
 #include "ash/magnifier/magnifier_constants.h"
 #include "base/callback.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
+#include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/prefs/pref_value_map.h"
+#include "base/sha1.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/values.h"
 #include "chrome/browser/chromeos/policy/login_screen_power_management_policy.h"
-#include "chrome/browser/policy/external_data_fetcher.h"
-#include "chrome/browser/policy/policy_error_map.h"
-#include "chrome/browser/policy/policy_map.h"
 #include "chrome/browser/ui/ash/chrome_launcher_prefs.h"
 #include "chrome/common/pref_names.h"
 #include "chromeos/dbus/power_policy_controller.h"
-#include "chromeos/network/onc/onc_constants.h"
 #include "chromeos/network/onc/onc_signature.h"
 #include "chromeos/network/onc/onc_utils.h"
 #include "chromeos/network/onc/onc_validator.h"
-#include "grit/generated_resources.h"
+#include "components/onc/onc_constants.h"
+#include "components/policy/core/browser/policy_error_map.h"
+#include "components/policy/core/common/external_data_fetcher.h"
+#include "components/policy/core/common/policy_map.h"
+#include "grit/component_strings.h"
 #include "policy/policy_constants.h"
-
-namespace onc = chromeos::onc;
+#include "url/gurl.h"
 
 namespace policy {
+
+namespace {
+
+const char kSubkeyURL[] = "url";
+const char kSubkeyHash[] = "hash";
+
+bool GetSubkeyString(const base::DictionaryValue& dict,
+                     policy::PolicyErrorMap* errors,
+                     const std::string& policy,
+                     const std::string& subkey,
+                     std::string* value) {
+  const base::Value* raw_value = NULL;
+  if (!dict.GetWithoutPathExpansion(subkey, &raw_value)) {
+    errors->AddError(policy, subkey, IDS_POLICY_NOT_SPECIFIED_ERROR);
+    return false;
+  }
+  std::string string_value;
+  if (!raw_value->GetAsString(&string_value)) {
+    errors->AddError(policy, subkey, IDS_POLICY_TYPE_ERROR, "string");
+    return false;
+  }
+  if (string_value.empty()) {
+    errors->AddError(policy, subkey, IDS_POLICY_NOT_SPECIFIED_ERROR);
+    return false;
+  }
+  *value = string_value;
+  return true;
+}
+
+}  // namespace
+
+ExternalDataPolicyHandler::ExternalDataPolicyHandler(const char* policy_name)
+    : TypeCheckingPolicyHandler(policy_name, Value::TYPE_DICTIONARY) {
+}
+
+ExternalDataPolicyHandler::~ExternalDataPolicyHandler() {
+}
+
+bool ExternalDataPolicyHandler::CheckPolicySettings(const PolicyMap& policies,
+                                                    PolicyErrorMap* errors) {
+  if (!TypeCheckingPolicyHandler::CheckPolicySettings(policies, errors))
+    return false;
+
+  const std::string policy = policy_name();
+  const base::Value* value = policies.GetValue(policy);
+  if (!value)
+    return true;
+
+  const DictionaryValue* dict = NULL;
+  value->GetAsDictionary(&dict);
+  if (!dict) {
+    NOTREACHED();
+    return false;
+  }
+  std::string url_string;
+  std::string hash_string;
+  if (!GetSubkeyString(*dict, errors, policy, kSubkeyURL, &url_string) ||
+      !GetSubkeyString(*dict, errors, policy, kSubkeyHash, &hash_string)) {
+    return false;
+  }
+
+  const GURL url(url_string);
+  if (!url.is_valid()) {
+    errors->AddError(policy, kSubkeyURL, IDS_POLICY_VALUE_FORMAT_ERROR);
+    return false;
+  }
+
+  std::vector<uint8> hash;
+  if (!base::HexStringToBytes(hash_string, &hash) ||
+      hash.size() != base::kSHA1Length) {
+    errors->AddError(policy, kSubkeyHash, IDS_POLICY_VALUE_FORMAT_ERROR);
+    return false;
+  }
+
+  return true;
+}
+
+void ExternalDataPolicyHandler::ApplyPolicySettings(const PolicyMap& policies,
+                                                    PrefValueMap* prefs) {
+}
 
 // static
 NetworkConfigurationPolicyHandler*
@@ -63,7 +146,7 @@ bool NetworkConfigurationPolicyHandler::CheckPolicySettings(
     std::string onc_blob;
     value->GetAsString(&onc_blob);
     scoped_ptr<base::DictionaryValue> root_dict =
-        onc::ReadDictionaryFromJson(onc_blob);
+        chromeos::onc::ReadDictionaryFromJson(onc_blob);
     if (root_dict.get() == NULL) {
       errors->AddError(policy_name(), IDS_POLICY_NETWORK_CONFIG_PARSE_FAILED);
       return false;
@@ -71,19 +154,21 @@ bool NetworkConfigurationPolicyHandler::CheckPolicySettings(
 
     // Validate the ONC dictionary. We are liberal and ignore unknown field
     // names and ignore invalid field names in kRecommended arrays.
-    onc::Validator validator(false,  // Ignore unknown fields.
-                             false,  // Ignore invalid recommended field names.
-                             true,  // Fail on missing fields.
-                             true);  // Validate for managed ONC
+    chromeos::onc::Validator validator(
+        false,  // Ignore unknown fields.
+        false,  // Ignore invalid recommended field names.
+        true,   // Fail on missing fields.
+        true);  // Validate for managed ONC
     validator.SetOncSource(onc_source_);
 
     // ONC policies are always unencrypted.
-    onc::Validator::Result validation_result;
+    chromeos::onc::Validator::Result validation_result;
     root_dict = validator.ValidateAndRepairObject(
-        &onc::kToplevelConfigurationSignature, *root_dict, &validation_result);
-    if (validation_result == onc::Validator::VALID_WITH_WARNINGS)
+        &chromeos::onc::kToplevelConfigurationSignature, *root_dict,
+        &validation_result);
+    if (validation_result == chromeos::onc::Validator::VALID_WITH_WARNINGS)
       errors->AddError(policy_name(), IDS_POLICY_NETWORK_CONFIG_IMPORT_PARTIAL);
-    else if (validation_result == onc::Validator::INVALID)
+    else if (validation_result == chromeos::onc::Validator::INVALID)
       errors->AddError(policy_name(), IDS_POLICY_NETWORK_CONFIG_IMPORT_FAILED);
 
     // In any case, don't reject the policy as some networks or certificates
@@ -105,9 +190,16 @@ void NetworkConfigurationPolicyHandler::ApplyPolicySettings(
 
   scoped_ptr<base::ListValue> network_configs(new base::ListValue);
   base::ListValue certificates;
-  chromeos::onc::ParseAndValidateOncForImport(
-      onc_blob, onc_source_, "", network_configs.get(), &certificates);
+  base::DictionaryValue global_network_config;
+  chromeos::onc::ParseAndValidateOncForImport(onc_blob,
+                                              onc_source_,
+                                              "",
+                                              network_configs.get(),
+                                              &global_network_config,
+                                              &certificates);
 
+  // Currently, only the per-network configuration is stored in a pref. Ignore
+  // |global_network_config| and |certificates|.
   prefs->SetValue(pref_path_, network_configs.release());
 }
 
@@ -126,7 +218,7 @@ void NetworkConfigurationPolicyHandler::PrepareForDisplaying(
 
 NetworkConfigurationPolicyHandler::NetworkConfigurationPolicyHandler(
     const char* policy_name,
-    chromeos::onc::ONCSource onc_source,
+    onc::ONCSource onc_source,
     const char* pref_path)
     : TypeCheckingPolicyHandler(policy_name, base::Value::TYPE_STRING),
       onc_source_(onc_source),
@@ -141,21 +233,20 @@ base::Value* NetworkConfigurationPolicyHandler::SanitizeNetworkConfig(
     return NULL;
 
   scoped_ptr<base::DictionaryValue> toplevel_dict =
-      onc::ReadDictionaryFromJson(json_string);
+      chromeos::onc::ReadDictionaryFromJson(json_string);
   if (!toplevel_dict)
     return NULL;
 
   // Placeholder to insert in place of the filtered setting.
   const char kPlaceholder[] = "********";
 
-  toplevel_dict = onc::MaskCredentialsInOncObject(
-      onc::kToplevelConfigurationSignature,
+  toplevel_dict = chromeos::onc::MaskCredentialsInOncObject(
+      chromeos::onc::kToplevelConfigurationSignature,
       *toplevel_dict,
       kPlaceholder);
 
   base::JSONWriter::WriteWithOptions(toplevel_dict.get(),
-                                     base::JSONWriter::OPTIONS_DO_NOT_ESCAPE |
-                                         base::JSONWriter::OPTIONS_PRETTY_PRINT,
+                                     base::JSONWriter::OPTIONS_PRETTY_PRINT,
                                      &json_string);
   return base::Value::CreateStringValue(json_string);
 }

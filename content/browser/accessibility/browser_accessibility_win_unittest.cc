@@ -3,11 +3,13 @@
 // found in the LICENSE file.
 
 #include "base/memory/scoped_ptr.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/win/scoped_bstr.h"
 #include "base/win/scoped_comptr.h"
 #include "base/win/scoped_variant.h"
 #include "content/browser/accessibility/browser_accessibility_manager.h"
 #include "content/browser/accessibility/browser_accessibility_manager_win.h"
+#include "content/browser/accessibility/browser_accessibility_state_impl.h"
 #include "content/browser/accessibility/browser_accessibility_win.h"
 #include "content/common/accessibility_messages.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -113,20 +115,20 @@ TEST_F(BrowserAccessibilityTest, TestNoLeaks) {
   // BrowserAccessibilityManager.
   AccessibilityNodeData button;
   button.id = 2;
-  button.name = L"Button";
-  button.role = AccessibilityNodeData::ROLE_BUTTON;
+  button.SetName("Button");
+  button.role = blink::WebAXRoleButton;
   button.state = 0;
 
   AccessibilityNodeData checkbox;
   checkbox.id = 3;
-  checkbox.name = L"Checkbox";
-  checkbox.role = AccessibilityNodeData::ROLE_CHECKBOX;
+  checkbox.SetName("Checkbox");
+  checkbox.role = blink::WebAXRoleCheckBox;
   checkbox.state = 0;
 
   AccessibilityNodeData root;
   root.id = 1;
-  root.name = L"Document";
-  root.role = AccessibilityNodeData::ROLE_ROOT_WEB_AREA;
+  root.SetName("Document");
+  root.role = blink::WebAXRoleRootWebArea;
   root.state = 0;
   root.child_ids.push_back(2);
   root.child_ids.push_back(3);
@@ -182,14 +184,14 @@ TEST_F(BrowserAccessibilityTest, TestChildrenChange) {
   // BrowserAccessibilityManager.
   AccessibilityNodeData text;
   text.id = 2;
-  text.role = AccessibilityNodeData::ROLE_STATIC_TEXT;
-  text.name = L"old text";
+  text.role = blink::WebAXRoleStaticText;
+  text.SetName("old text");
   text.state = 0;
 
   AccessibilityNodeData root;
   root.id = 1;
-  root.name = L"Document";
-  root.role = AccessibilityNodeData::ROLE_ROOT_WEB_AREA;
+  root.SetName("Document");
+  root.role = blink::WebAXRoleRootWebArea;
   root.state = 0;
   root.child_ids.push_back(2);
 
@@ -218,21 +220,25 @@ TEST_F(BrowserAccessibilityTest, TestChildrenChange) {
   base::win::ScopedBstr name;
   hr = text_accessible->get_accName(childid_self, name.Receive());
   ASSERT_EQ(S_OK, hr);
-  EXPECT_EQ(L"old text", string16(name));
+  EXPECT_EQ(L"old text", base::string16(name));
   name.Reset();
 
   text_dispatch.Release();
   text_accessible.Release();
 
   // Notify the BrowserAccessibilityManager that the text child has changed.
-  text.name = L"new text";
-  AccessibilityHostMsg_NotificationParams param;
-  param.notification_type = AccessibilityNotificationChildrenChanged;
-  param.nodes.push_back(text);
-  param.id = text.id;
-  std::vector<AccessibilityHostMsg_NotificationParams> notifications;
-  notifications.push_back(param);
-  manager->OnAccessibilityNotifications(notifications);
+  AccessibilityNodeData text2;
+  text2.id = 2;
+  text2.role = blink::WebAXRoleStaticText;
+  text2.SetName("new text");
+  text2.SetName("old text");
+  AccessibilityHostMsg_EventParams param;
+  param.event_type = blink::WebAXEventChildrenChanged;
+  param.nodes.push_back(text2);
+  param.id = text2.id;
+  std::vector<AccessibilityHostMsg_EventParams> events;
+  events.push_back(param);
+  manager->OnAccessibilityEvents(events);
 
   // Query for the text IAccessible and verify that it now returns "new text"
   // as its value.
@@ -245,7 +251,7 @@ TEST_F(BrowserAccessibilityTest, TestChildrenChange) {
 
   hr = text_accessible->get_accName(childid_self, name.Receive());
   ASSERT_EQ(S_OK, hr);
-  EXPECT_EQ(L"new text", string16(name));
+  EXPECT_EQ(L"new text", base::string16(name));
 
   text_dispatch.Release();
   text_accessible.Release();
@@ -262,17 +268,17 @@ TEST_F(BrowserAccessibilityTest, TestChildrenChangeNoLeaks) {
   // BrowserAccessibilityManager.
   AccessibilityNodeData div;
   div.id = 2;
-  div.role = AccessibilityNodeData::ROLE_GROUP;
+  div.role = blink::WebAXRoleGroup;
   div.state = 0;
 
   AccessibilityNodeData text3;
   text3.id = 3;
-  text3.role = AccessibilityNodeData::ROLE_STATIC_TEXT;
+  text3.role = blink::WebAXRoleStaticText;
   text3.state = 0;
 
   AccessibilityNodeData text4;
   text4.id = 4;
-  text4.role = AccessibilityNodeData::ROLE_STATIC_TEXT;
+  text4.role = blink::WebAXRoleStaticText;
   text4.state = 0;
 
   div.child_ids.push_back(3);
@@ -280,7 +286,7 @@ TEST_F(BrowserAccessibilityTest, TestChildrenChangeNoLeaks) {
 
   AccessibilityNodeData root;
   root.id = 1;
-  root.role = AccessibilityNodeData::ROLE_ROOT_WEB_AREA;
+  root.role = blink::WebAXRoleRootWebArea;
   root.state = 0;
   root.child_ids.push_back(2);
 
@@ -298,13 +304,13 @@ TEST_F(BrowserAccessibilityTest, TestChildrenChangeNoLeaks) {
   // Notify the BrowserAccessibilityManager that the div node and its children
   // were removed and ensure that only one BrowserAccessibility instance exists.
   root.child_ids.clear();
-  AccessibilityHostMsg_NotificationParams param;
-  param.notification_type = AccessibilityNotificationChildrenChanged;
+  AccessibilityHostMsg_EventParams param;
+  param.event_type = blink::WebAXEventChildrenChanged;
   param.nodes.push_back(root);
   param.id = root.id;
-  std::vector<AccessibilityHostMsg_NotificationParams> notifications;
-  notifications.push_back(param);
-  manager->OnAccessibilityNotifications(notifications);
+  std::vector<AccessibilityHostMsg_EventParams> events;
+  events.push_back(param);
+  manager->OnAccessibilityEvents(events);
   ASSERT_EQ(1, CountedBrowserAccessibility::num_instances());
 
   // Delete the manager and test that all BrowserAccessibility instances are
@@ -314,16 +320,21 @@ TEST_F(BrowserAccessibilityTest, TestChildrenChangeNoLeaks) {
 }
 
 TEST_F(BrowserAccessibilityTest, TestTextBoundaries) {
+  std::string text1_value = "One two three.\nFour five six.";
+
   AccessibilityNodeData text1;
   text1.id = 11;
-  text1.role = AccessibilityNodeData::ROLE_TEXT_FIELD;
+  text1.role = blink::WebAXRoleTextField;
   text1.state = 0;
-  text1.value = L"One two three.\nFour five six.";
-  text1.line_breaks.push_back(15);
+  text1.AddStringAttribute(AccessibilityNodeData::ATTR_VALUE, text1_value);
+  std::vector<int32> line_breaks;
+  line_breaks.push_back(15);
+  text1.AddIntListAttribute(
+      AccessibilityNodeData::ATTR_LINE_BREAKS, line_breaks);
 
   AccessibilityNodeData root;
   root.id = 1;
-  root.role = AccessibilityNodeData::ROLE_ROOT_WEB_AREA;
+  root.role = blink::WebAXRoleRootWebArea;
   root.state = 0;
   root.child_ids.push_back(11);
 
@@ -337,14 +348,14 @@ TEST_F(BrowserAccessibilityTest, TestTextBoundaries) {
   BrowserAccessibilityWin* root_obj =
       manager->GetRoot()->ToBrowserAccessibilityWin();
   BrowserAccessibilityWin* text1_obj =
-      root_obj->GetChild(0)->ToBrowserAccessibilityWin();
+      root_obj->PlatformGetChild(0)->ToBrowserAccessibilityWin();
 
   long text1_len;
   ASSERT_EQ(S_OK, text1_obj->get_nCharacters(&text1_len));
 
   base::win::ScopedBstr text;
   ASSERT_EQ(S_OK, text1_obj->get_text(0, text1_len, text.Receive()));
-  ASSERT_EQ(text1.value, string16(text));
+  ASSERT_EQ(text1_value, base::UTF16ToUTF8(base::string16(text)));
   text.Reset();
 
   ASSERT_EQ(S_OK, text1_obj->get_text(0, 4, text.Receive()));
@@ -405,22 +416,25 @@ TEST_F(BrowserAccessibilityTest, TestTextBoundaries) {
 }
 
 TEST_F(BrowserAccessibilityTest, TestSimpleHypertext) {
+  const std::string text1_name = "One two three.";
+  const std::string text2_name = " Four five six.";
+
   AccessibilityNodeData text1;
   text1.id = 11;
-  text1.role = AccessibilityNodeData::ROLE_STATIC_TEXT;
-  text1.state = 1 << AccessibilityNodeData::STATE_READONLY;
-  text1.name = L"One two three.";
+  text1.role = blink::WebAXRoleStaticText;
+  text1.state = 1 << blink::WebAXStateReadonly;
+  text1.SetName(text1_name);
 
   AccessibilityNodeData text2;
   text2.id = 12;
-  text2.role = AccessibilityNodeData::ROLE_STATIC_TEXT;
-  text2.state = 1 << AccessibilityNodeData::STATE_READONLY;
-  text2.name = L" Four five six.";
+  text2.role = blink::WebAXRoleStaticText;
+  text2.state = 1 << blink::WebAXStateReadonly;
+  text2.SetName(text2_name);
 
   AccessibilityNodeData root;
   root.id = 1;
-  root.role = AccessibilityNodeData::ROLE_ROOT_WEB_AREA;
-  root.state = 1 << AccessibilityNodeData::STATE_READONLY;
+  root.role = blink::WebAXRoleRootWebArea;
+  root.state = 1 << blink::WebAXStateReadonly;
   root.child_ids.push_back(11);
   root.child_ids.push_back(12);
 
@@ -439,7 +453,7 @@ TEST_F(BrowserAccessibilityTest, TestSimpleHypertext) {
 
   base::win::ScopedBstr text;
   ASSERT_EQ(S_OK, root_obj->get_text(0, text_len, text.Receive()));
-  EXPECT_EQ(text1.name + text2.name, string16(text));
+  EXPECT_EQ(text1_name + text2_name, base::UTF16ToUTF8(base::string16(text)));
 
   long hyperlink_count;
   ASSERT_EQ(S_OK, root_obj->get_nHyperlinks(&hyperlink_count));
@@ -468,42 +482,47 @@ TEST_F(BrowserAccessibilityTest, TestSimpleHypertext) {
 }
 
 TEST_F(BrowserAccessibilityTest, TestComplexHypertext) {
+  const std::string text1_name = "One two three.";
+  const std::string text2_name = " Four five six.";
+  const std::string button1_text_name = "red";
+  const std::string link1_text_name = "blue";
+
   AccessibilityNodeData text1;
   text1.id = 11;
-  text1.role = AccessibilityNodeData::ROLE_STATIC_TEXT;
-  text1.state = 1 << AccessibilityNodeData::STATE_READONLY;
-  text1.name = L"One two three.";
+  text1.role = blink::WebAXRoleStaticText;
+  text1.state = 1 << blink::WebAXStateReadonly;
+  text1.SetName(text1_name);
 
   AccessibilityNodeData text2;
   text2.id = 12;
-  text2.role = AccessibilityNodeData::ROLE_STATIC_TEXT;
-  text2.state = 1 << AccessibilityNodeData::STATE_READONLY;
-  text2.name = L" Four five six.";
+  text2.role = blink::WebAXRoleStaticText;
+  text2.state = 1 << blink::WebAXStateReadonly;
+  text2.SetName(text2_name);
 
   AccessibilityNodeData button1, button1_text;
   button1.id = 13;
   button1_text.id = 15;
-  button1_text.name = L"red";
-  button1.role = AccessibilityNodeData::ROLE_BUTTON;
-  button1_text.role = AccessibilityNodeData::ROLE_STATIC_TEXT;
-  button1.state = 1 << AccessibilityNodeData::STATE_READONLY;
-  button1_text.state = 1 << AccessibilityNodeData::STATE_READONLY;
+  button1_text.SetName(button1_text_name);
+  button1.role = blink::WebAXRoleButton;
+  button1_text.role = blink::WebAXRoleStaticText;
+  button1.state = 1 << blink::WebAXStateReadonly;
+  button1_text.state = 1 << blink::WebAXStateReadonly;
   button1.child_ids.push_back(15);
 
   AccessibilityNodeData link1, link1_text;
   link1.id = 14;
   link1_text.id = 16;
-  link1_text.name = L"blue";
-  link1.role = AccessibilityNodeData::ROLE_LINK;
-  link1_text.role = AccessibilityNodeData::ROLE_STATIC_TEXT;
-  link1.state = 1 << AccessibilityNodeData::STATE_READONLY;
-  link1_text.state = 1 << AccessibilityNodeData::STATE_READONLY;
+  link1_text.SetName(link1_text_name);
+  link1.role = blink::WebAXRoleLink;
+  link1_text.role = blink::WebAXRoleStaticText;
+  link1.state = 1 << blink::WebAXStateReadonly;
+  link1_text.state = 1 << blink::WebAXStateReadonly;
   link1.child_ids.push_back(16);
 
   AccessibilityNodeData root;
   root.id = 1;
-  root.role = AccessibilityNodeData::ROLE_ROOT_WEB_AREA;
-  root.state = 1 << AccessibilityNodeData::STATE_READONLY;
+  root.role = blink::WebAXRoleRootWebArea;
+  root.state = 1 << blink::WebAXStateReadonly;
   root.child_ids.push_back(11);
   root.child_ids.push_back(13);
   root.child_ids.push_back(12);
@@ -527,8 +546,10 @@ TEST_F(BrowserAccessibilityTest, TestComplexHypertext) {
 
   base::win::ScopedBstr text;
   ASSERT_EQ(S_OK, root_obj->get_text(0, text_len, text.Receive()));
-  const string16 embed = BrowserAccessibilityWin::kEmbeddedCharacter;
-  EXPECT_EQ(text1.name + embed + text2.name + embed, string16(text));
+  const std::string embed = base::UTF16ToUTF8(
+      BrowserAccessibilityWin::kEmbeddedCharacter);
+  EXPECT_EQ(text1_name + embed + text2_name + embed,
+            UTF16ToUTF8(base::string16(text)));
   text.Reset();
 
   long hyperlink_count;
@@ -545,7 +566,8 @@ TEST_F(BrowserAccessibilityTest, TestComplexHypertext) {
   EXPECT_EQ(S_OK,
             hyperlink.QueryInterface<IAccessibleText>(hypertext.Receive()));
   EXPECT_EQ(S_OK, hypertext->get_text(0, 3, text.Receive()));
-  EXPECT_STREQ(L"red", text);
+  EXPECT_STREQ(button1_text_name.c_str(),
+               base::UTF16ToUTF8(base::string16(text)).c_str());
   text.Reset();
   hyperlink.Release();
   hypertext.Release();
@@ -554,7 +576,8 @@ TEST_F(BrowserAccessibilityTest, TestComplexHypertext) {
   EXPECT_EQ(S_OK,
             hyperlink.QueryInterface<IAccessibleText>(hypertext.Receive()));
   EXPECT_EQ(S_OK, hypertext->get_text(0, 4, text.Receive()));
-  EXPECT_STREQ(L"blue", text);
+  EXPECT_STREQ(link1_text_name.c_str(),
+               base::UTF16ToUTF8(base::string16(text)).c_str());
   text.Reset();
   hyperlink.Release();
   hypertext.Release();
@@ -579,8 +602,9 @@ TEST_F(BrowserAccessibilityTest, TestCreateEmptyDocument) {
   // Try creating an empty document with busy state. Readonly is
   // set automatically.
   CountedBrowserAccessibility::reset();
-  const int32 busy_state = 1 << AccessibilityNodeData::STATE_BUSY;
-  const int32 readonly_state = 1 << AccessibilityNodeData::STATE_READONLY;
+  const int32 busy_state = 1 << blink::WebAXStateBusy;
+  const int32 readonly_state = 1 << blink::WebAXStateReadonly;
+  const int32 enabled_state = 1 << blink::WebAXStateEnabled;
   scoped_ptr<BrowserAccessibilityManager> manager(
       new BrowserAccessibilityManagerWin(
           GetDesktopWindow(),
@@ -592,28 +616,28 @@ TEST_F(BrowserAccessibilityTest, TestCreateEmptyDocument) {
   // Verify the root is as we expect by default.
   BrowserAccessibility* root = manager->GetRoot();
   EXPECT_EQ(0, root->renderer_id());
-  EXPECT_EQ(AccessibilityNodeData::ROLE_ROOT_WEB_AREA, root->role());
-  EXPECT_EQ(busy_state | readonly_state, root->state());
+  EXPECT_EQ(blink::WebAXRoleRootWebArea, root->role());
+  EXPECT_EQ(busy_state | readonly_state | enabled_state, root->state());
 
   // Tree with a child textfield.
   AccessibilityNodeData tree1_1;
   tree1_1.id = 1;
-  tree1_1.role = AccessibilityNodeData::ROLE_ROOT_WEB_AREA;
+  tree1_1.role = blink::WebAXRoleRootWebArea;
   tree1_1.child_ids.push_back(2);
 
   AccessibilityNodeData tree1_2;
   tree1_2.id = 2;
-  tree1_2.role = AccessibilityNodeData::ROLE_TEXT_FIELD;
+  tree1_2.role = blink::WebAXRoleTextField;
 
   // Process a load complete.
-  std::vector<AccessibilityHostMsg_NotificationParams> params;
-  params.push_back(AccessibilityHostMsg_NotificationParams());
-  AccessibilityHostMsg_NotificationParams* msg = &params[0];
-  msg->notification_type = AccessibilityNotificationLoadComplete;
+  std::vector<AccessibilityHostMsg_EventParams> params;
+  params.push_back(AccessibilityHostMsg_EventParams());
+  AccessibilityHostMsg_EventParams* msg = &params[0];
+  msg->event_type = blink::WebAXEventLoadComplete;
   msg->nodes.push_back(tree1_1);
   msg->nodes.push_back(tree1_2);
   msg->id = tree1_1.id;
-  manager->OnAccessibilityNotifications(params);
+  manager->OnAccessibilityEvents(params);
 
   // Save for later comparison.
   BrowserAccessibility* acc1_2 = manager->GetFromRendererID(2);
@@ -622,18 +646,18 @@ TEST_F(BrowserAccessibilityTest, TestCreateEmptyDocument) {
   EXPECT_NE(root, manager->GetRoot());
 
   // And the proper child remains.
-  EXPECT_EQ(AccessibilityNodeData::ROLE_TEXT_FIELD, acc1_2->role());
+  EXPECT_EQ(blink::WebAXRoleTextField, acc1_2->role());
   EXPECT_EQ(2, acc1_2->renderer_id());
 
   // Tree with a child button.
   AccessibilityNodeData tree2_1;
   tree2_1.id = 1;
-  tree2_1.role = AccessibilityNodeData::ROLE_ROOT_WEB_AREA;
+  tree2_1.role = blink::WebAXRoleRootWebArea;
   tree2_1.child_ids.push_back(3);
 
   AccessibilityNodeData tree2_2;
   tree2_2.id = 3;
-  tree2_2.role = AccessibilityNodeData::ROLE_BUTTON;
+  tree2_2.role = blink::WebAXRoleButton;
 
   msg->nodes.clear();
   msg->nodes.push_back(tree2_1);
@@ -641,7 +665,7 @@ TEST_F(BrowserAccessibilityTest, TestCreateEmptyDocument) {
   msg->id = tree2_1.id;
 
   // Fire another load complete.
-  manager->OnAccessibilityNotifications(params);
+  manager->OnAccessibilityEvents(params);
 
   BrowserAccessibility* acc2_2 = manager->GetFromRendererID(3);
 
@@ -649,12 +673,62 @@ TEST_F(BrowserAccessibilityTest, TestCreateEmptyDocument) {
   EXPECT_NE(root, manager->GetRoot());
 
   // And the new child exists.
-  EXPECT_EQ(AccessibilityNodeData::ROLE_BUTTON, acc2_2->role());
+  EXPECT_EQ(blink::WebAXRoleButton, acc2_2->role());
   EXPECT_EQ(3, acc2_2->renderer_id());
 
   // Ensure we properly cleaned up.
   manager.reset();
   ASSERT_EQ(0, CountedBrowserAccessibility::num_instances());
 }
+
+#if defined(USE_AURA)
+TEST(BrowserAccessibilityManagerWinTest, TestAccessibleHWND) {
+  HWND desktop_hwnd = GetDesktopWindow();
+  base::win::ScopedComPtr<IAccessible> desktop_hwnd_iaccessible;
+  ASSERT_EQ(S_OK, AccessibleObjectFromWindow(
+      desktop_hwnd, OBJID_CLIENT,
+      IID_IAccessible,
+      reinterpret_cast<void**>(desktop_hwnd_iaccessible.Receive())));
+
+  scoped_ptr<BrowserAccessibilityManagerWin> manager(
+      new BrowserAccessibilityManagerWin(
+          desktop_hwnd,
+          desktop_hwnd_iaccessible,
+          BrowserAccessibilityManagerWin::GetEmptyDocument(),
+          NULL));
+  ASSERT_EQ(desktop_hwnd, manager->parent_hwnd());
+
+  // Enabling screen reader support and calling MaybeCallNotifyWinEvent
+  // should trigger creating the AccessibleHWND, and we should now get a
+  // new parent_hwnd with the right window class to fool older screen
+  // readers.
+  BrowserAccessibilityStateImpl::GetInstance()->OnScreenReaderDetected();
+  manager->MaybeCallNotifyWinEvent(0, 0);
+  HWND new_parent_hwnd = manager->parent_hwnd();
+  ASSERT_NE(desktop_hwnd, new_parent_hwnd);
+  WCHAR hwnd_class_name[256];
+  ASSERT_NE(0, GetClassName(new_parent_hwnd, hwnd_class_name, 256));
+  ASSERT_STREQ(L"Chrome_RenderWidgetHostHWND", hwnd_class_name);
+
+  // Destroy the hwnd explicitly; that should trigger clearing parent_hwnd().
+  DestroyWindow(new_parent_hwnd);
+  ASSERT_EQ(NULL, manager->parent_hwnd());
+
+  // Now create it again.
+  manager.reset(
+      new BrowserAccessibilityManagerWin(
+          desktop_hwnd,
+          desktop_hwnd_iaccessible,
+          BrowserAccessibilityManagerWin::GetEmptyDocument(),
+          NULL));
+  manager->MaybeCallNotifyWinEvent(0, 0);
+  new_parent_hwnd = manager->parent_hwnd();
+  ASSERT_FALSE(NULL == new_parent_hwnd);
+
+  // This time, destroy the manager first, make sure the AccessibleHWND doesn't
+  // crash on destruction (to be caught by SyzyASAN or other tools).
+  manager.reset(NULL);
+}
+#endif
 
 }  // namespace content

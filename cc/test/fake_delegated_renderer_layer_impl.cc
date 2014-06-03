@@ -7,6 +7,8 @@
 #include "base/bind.h"
 #include "cc/output/delegated_frame_data.h"
 #include "cc/quads/draw_quad.h"
+#include "cc/resources/returned_resource.h"
+#include "cc/trees/layer_tree_impl.h"
 
 namespace cc {
 
@@ -23,31 +25,45 @@ scoped_ptr<LayerImpl> FakeDelegatedRendererLayerImpl::CreateLayerImpl(
 }
 
 static ResourceProvider::ResourceId AddResourceToFrame(
+    ResourceProvider* resource_provider,
     DelegatedFrameData* frame,
     ResourceProvider::ResourceId resource_id) {
   TransferableResource resource;
   resource.id = resource_id;
+  resource.target = resource_provider->TargetForTesting(resource_id);
   frame->resource_list.push_back(resource);
   return resource_id;
 }
+
+ResourceProvider::ResourceIdSet FakeDelegatedRendererLayerImpl::Resources()
+    const {
+  ResourceProvider::ResourceIdSet set;
+  ResourceProvider::ResourceIdArray array;
+  array = ResourcesForTesting();
+  for (size_t i = 0; i < array.size(); ++i)
+    set.insert(array[i]);
+  return set;
+}
+
+void NoopReturnCallback(const ReturnedResourceArray& returned) {}
 
 void FakeDelegatedRendererLayerImpl::SetFrameDataForRenderPasses(
     ScopedPtrVector<RenderPass>* pass_list) {
   scoped_ptr<DelegatedFrameData> delegated_frame(new DelegatedFrameData);
   delegated_frame->render_pass_list.swap(*pass_list);
 
+  ResourceProvider* resource_provider = layer_tree_impl()->resource_provider();
+
   DrawQuad::ResourceIteratorCallback add_resource_to_frame_callback =
-      base::Bind(&AddResourceToFrame,
-                 delegated_frame.get());
+      base::Bind(&AddResourceToFrame, resource_provider, delegated_frame.get());
   for (size_t i = 0; i < delegated_frame->render_pass_list.size(); ++i) {
     RenderPass* pass = delegated_frame->render_pass_list[i];
     for (size_t j = 0; j < pass->quad_list.size(); ++j)
       pass->quad_list[j]->IterateResources(add_resource_to_frame_callback);
   }
 
-  TransferableResourceArray resources_for_ack;
-  SetFrameData(delegated_frame.Pass(), gfx::RectF());
-  CollectUnusedResources(&resources_for_ack);
+  CreateChildIdIfNeeded(base::Bind(&NoopReturnCallback));
+  SetFrameData(delegated_frame.get(), gfx::RectF());
 }
 
 }  // namespace cc

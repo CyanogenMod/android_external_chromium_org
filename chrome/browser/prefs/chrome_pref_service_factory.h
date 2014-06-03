@@ -6,6 +6,7 @@
 #define CHROME_BROWSER_PREFS_CHROME_PREF_SERVICE_FACTORY_H_
 
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
 
 namespace base {
 class FilePath;
@@ -16,14 +17,15 @@ namespace policy {
 class PolicyService;
 }
 
+namespace user_prefs {
+class PrefRegistrySyncable;
+}
+
+class ManagedUserSettingsService;
 class PrefRegistry;
 class PrefService;
 class PrefServiceSyncable;
 class PrefStore;
-
-namespace user_prefs {
-class PrefRegistrySyncable;
-}
 
 namespace chrome_prefs {
 
@@ -42,18 +44,18 @@ namespace chrome_prefs {
 // guaranteed that in asynchronous version initialization happens after this
 // function returned.
 
-PrefService* CreateLocalState(
+scoped_ptr<PrefService> CreateLocalState(
     const base::FilePath& pref_filename,
     base::SequencedTaskRunner* pref_io_task_runner,
     policy::PolicyService* policy_service,
-    const scoped_refptr<PrefStore>& extension_prefs,
     const scoped_refptr<PrefRegistry>& pref_registry,
     bool async);
 
-PrefServiceSyncable* CreateProfilePrefs(
+scoped_ptr<PrefServiceSyncable> CreateProfilePrefs(
     const base::FilePath& pref_filename,
     base::SequencedTaskRunner* pref_io_task_runner,
     policy::PolicyService* policy_service,
+    ManagedUserSettingsService* managed_user_settings,
     const scoped_refptr<PrefStore>& extension_prefs,
     const scoped_refptr<user_prefs::PrefRegistrySyncable>& pref_registry,
     bool async);

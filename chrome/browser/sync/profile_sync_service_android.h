@@ -33,10 +33,12 @@ class ProfileSyncServiceAndroid : public ProfileSyncServiceObserver {
   // This method should be called once right after contructing the object.
   void Init();
 
-  // Called from Java when we need to nudge native syncer. The |objectId|,
-  // |version| and |payload| values should come from an invalidation.
+  // Called from Java when we need to nudge native syncer. The |objectSource|,
+  // |objectId|, |version| and |payload| values should come from an
+  // invalidation.
   void NudgeSyncer(JNIEnv* env,
                    jobject obj,
+                   jint objectSource,
                    jstring objectId,
                    jlong version,
                    jstring payload);
@@ -44,8 +46,6 @@ class ProfileSyncServiceAndroid : public ProfileSyncServiceObserver {
   // Called from Java when we need to nudge native syncer but have lost state on
   // which types have changed.
   void NudgeSyncerForAllTypes(JNIEnv* env, jobject obj);
-
-  void TokenAvailable(JNIEnv*, jobject, jstring username, jstring auth_token);
 
   // Called from Java when the user manually enables sync
   void EnableSync(JNIEnv* env, jobject obj);
@@ -193,6 +193,10 @@ class ProfileSyncServiceAndroid : public ProfileSyncServiceObserver {
   // ProfileSyncServiceObserver:
   virtual void OnStateChanged() OVERRIDE;
 
+  // Returns a timestamp for when a sync was last executed. The return value is
+  // the internal value of base::Time.
+  jlong GetLastSyncedTimeForTest(JNIEnv* env, jobject obj);
+
   static ProfileSyncServiceAndroid* GetProfileSyncServiceAndroid();
 
   // Registers the ProfileSyncServiceAndroid's native methods through JNI.
@@ -206,9 +210,11 @@ class ProfileSyncServiceAndroid : public ProfileSyncServiceObserver {
   virtual ~ProfileSyncServiceAndroid();
   // Remove observers to profile sync service.
   void RemoveObserver();
-  // Called from Java when we need to nudge native syncer. The |objectId|,
-  // |version| and |payload| values should come from an invalidation.
-  void SendNudgeNotification(const std::string& str_object_id,
+  // Called from Java when we need to nudge native syncer. The |object_source|,
+  // |objectId|, |version| and |payload| values should come from an
+  // invalidation.
+  void SendNudgeNotification(int object_source,
+                             const std::string& str_object_id,
                              int64 version,
                              const std::string& payload);
 

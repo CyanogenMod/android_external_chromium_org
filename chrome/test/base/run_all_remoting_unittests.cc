@@ -7,6 +7,7 @@
 // (required for JS unittests) without updating the DEPS file for each
 // subproject.
 
+#include "base/test/launcher/unit_test_launcher.h"
 #include "base/test/test_suite.h"
 #include "chrome/common/chrome_paths.h"
 #include "media/base/media.h"
@@ -27,5 +28,7 @@ int main(int argc, char** argv) {
   // Ensures runtime specific CPU features are initialized.
   media::InitializeCPUSpecificMediaFeatures();
 
-  return test_suite.Run();
+  return base::LaunchUnitTests(
+      argc, argv, base::Bind(&base::TestSuite::Run,
+                             base::Unretained(&test_suite)));
 }

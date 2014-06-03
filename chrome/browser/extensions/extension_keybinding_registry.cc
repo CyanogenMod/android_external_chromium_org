@@ -7,12 +7,13 @@
 #include "base/values.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/active_tab_permission_granter.h"
-#include "chrome/browser/extensions/event_router.h"
+#include "chrome/browser/extensions/api/commands/command_service.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/common/extensions/extension_set.h"
+#include "extensions/browser/event_router.h"
+#include "extensions/common/manifest_constants.h"
 
 namespace extensions {
 
@@ -34,6 +35,35 @@ ExtensionKeybindingRegistry::ExtensionKeybindingRegistry(
 ExtensionKeybindingRegistry::~ExtensionKeybindingRegistry() {
 }
 
+void ExtensionKeybindingRegistry::RemoveExtensionKeybinding(
+    const Extension* extension,
+    const std::string& command_name) {
+  EventTargets::iterator it = event_targets_.begin();
+  while (it != event_targets_.end()) {
+    TargetList& target_list = it->second;
+    TargetList::iterator target = target_list.begin();
+    while (target != target_list.end()) {
+      if (target->first == extension->id() &&
+          (command_name.empty() || command_name == target->second))
+        target = target_list.erase(target);
+      else
+        target++;
+    }
+
+    EventTargets::iterator old = it++;
+    if (target_list.empty()) {
+      // Let each platform-specific implementation get a chance to clean up.
+      RemoveExtensionKeybindingImpl(old->first, command_name);
+      event_targets_.erase(old);
+
+      // If a specific command_name was requested, it has now been deleted so no
+      // further work is required.
+      if (!command_name.empty())
+        break;
+    }
+  }
+}
+
 void ExtensionKeybindingRegistry::Init() {
   ExtensionService* service =
       extensions::ExtensionSystem::Get(profile_)->extension_service();
@@ -49,9 +79,22 @@ void ExtensionKeybindingRegistry::Init() {
 
 bool ExtensionKeybindingRegistry::ShouldIgnoreCommand(
     const std::string& command) const {
-  return command == extension_manifest_values::kPageActionCommandEvent ||
-         command == extension_manifest_values::kBrowserActionCommandEvent ||
-         command == extension_manifest_values::kScriptBadgeCommandEvent;
+  return command == manifest_values::kPageActionCommandEvent ||
+         command == manifest_values::kBrowserActionCommandEvent ||
+         command == manifest_values::kScriptBadgeCommandEvent;
+}
+
+bool ExtensionKeybindingRegistry::NotifyEventTargets(
+    const ui::Accelerator& accelerator) {
+  EventTargets::iterator targets = event_targets_.find(accelerator);
+  if (targets == event_targets_.end() || targets->second.empty())
+    return false;
+
+  for (TargetList::const_iterator it = targets->second.begin();
+       it != targets->second.end(); it++)
+    CommandExecuted(it->first, it->second);
+
+  return true;
 }
 
 void ExtensionKeybindingRegistry::CommandExecuted(
@@ -64,17 +107,19 @@ void ExtensionKeybindingRegistry::CommandExecuted(
     return;
 
   // Grant before sending the event so that the permission is granted before
-  // the extension acts on the command.
+  // the extension acts on the command. NOTE: The Global Commands handler does
+  // not set the delegate as it deals only with named commands (not page/browser
+  // actions that are associated with the current page directly).
   ActiveTabPermissionGranter* granter =
-      delegate_->GetActiveTabPermissionGranter();
+      delegate_ ? delegate_->GetActiveTabPermissionGranter() : NULL;
   if (granter)
     granter->GrantIfRequested(extension);
 
   scoped_ptr<base::ListValue> args(new base::ListValue());
-  args->Append(Value::CreateStringValue(command));
+  args->Append(new base::StringValue(command));
 
   scoped_ptr<Event> event(new Event("commands.onCommand", args.Pass()));
-  event->restrict_to_profile = profile_;
+  event->restrict_to_browser_context = profile_;
   event->user_gesture = EventRouter::USER_GESTURE_ENABLED;
   ExtensionSystem::Get(profile_)->event_router()->
       DispatchEventToExtension(extension_id, event.Pass());

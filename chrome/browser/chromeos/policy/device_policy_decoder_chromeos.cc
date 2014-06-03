@@ -11,12 +11,12 @@
 #include "base/values.h"
 #include "chrome/browser/chromeos/policy/device_local_account.h"
 #include "chrome/browser/chromeos/policy/enterprise_install_attributes.h"
-#include "chrome/browser/chromeos/settings/cros_settings_names.h"
-#include "chrome/browser/policy/external_data_fetcher.h"
-#include "chrome/browser/policy/policy_map.h"
-#include "chrome/browser/policy/proto/chromeos/chrome_device_policy.pb.h"
+#include "chrome/browser/chromeos/policy/proto/chrome_device_policy.pb.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/update_engine_client.h"
+#include "chromeos/settings/cros_settings_names.h"
+#include "components/policy/core/common/external_data_fetcher.h"
+#include "components/policy/core/common/policy_map.h"
 #include "policy/policy_constants.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
 
@@ -44,11 +44,11 @@ Value* DecodeIntegerValue(google::protobuf::int64 value) {
 
 Value* DecodeConnectionType(int value) {
   static const char* const kConnectionTypes[] = {
-    flimflam::kTypeEthernet,
-    flimflam::kTypeWifi,
-    flimflam::kTypeWimax,
-    flimflam::kTypeBluetooth,
-    flimflam::kTypeCellular,
+    shill::kTypeEthernet,
+    shill::kTypeWifi,
+    shill::kTypeWimax,
+    shill::kTypeBluetooth,
+    shill::kTypeCellular,
   };
 
   if (value < 0 || value >= static_cast<int>(arraysize(kConnectionTypes)))
@@ -144,11 +144,6 @@ void DecodeLoginPolicies(const em::ChromeDeviceSettingsProto& policy,
               chromeos::kAccountsPrefDeviceLocalAccountsKeyKioskAppId,
               entry->kiosk_app().app_id());
         }
-        if (entry->kiosk_app().has_update_url()) {
-          entry_dict->SetStringWithoutPathExpansion(
-              chromeos::kAccountsPrefDeviceLocalAccountsKeyKioskAppUpdateURL,
-              entry->kiosk_app().update_url());
-        }
       } else if (entry->has_deprecated_public_session_id()) {
         // Deprecated public session specification.
         entry_dict->SetStringWithoutPathExpansion(
@@ -185,6 +180,14 @@ void DecodeLoginPolicies(const em::ChromeDeviceSettingsProto& policy,
                     POLICY_SCOPE_MACHINE,
                     Value::CreateBooleanValue(
                         container.enable_auto_login_bailout()),
+                    NULL);
+    }
+    if (container.has_prompt_for_network_when_offline()) {
+      policies->Set(key::kDeviceLocalAccountPromptForNetworkWhenOffline,
+                    POLICY_LEVEL_MANDATORY,
+                    POLICY_SCOPE_MACHINE,
+                    Value::CreateBooleanValue(
+                        container.prompt_for_network_when_offline()),
                     NULL);
     }
   }
@@ -381,6 +384,13 @@ void DecodeReportingPolicies(const em::ChromeDeviceSettingsProto& policy,
                         container.report_network_interfaces()),
                     NULL);
     }
+    if (container.has_report_users()) {
+      policies->Set(key::kReportDeviceUsers,
+                    POLICY_LEVEL_MANDATORY,
+                    POLICY_SCOPE_MACHINE,
+                    Value::CreateBooleanValue(container.report_users()),
+                    NULL);
+    }
   }
 }
 
@@ -459,11 +469,28 @@ void DecodeAutoUpdatePolicies(const em::ChromeDeviceSettingsProto& policy,
                     NULL);
     }
 
+    if (container.has_http_downloads_enabled()) {
+      policies->Set(
+          key::kDeviceUpdateHttpDownloadsEnabled,
+          POLICY_LEVEL_MANDATORY,
+          POLICY_SCOPE_MACHINE,
+          Value::CreateBooleanValue(container.http_downloads_enabled()),
+          NULL);
+    }
+
     if (container.has_reboot_after_update()) {
       policies->Set(key::kRebootAfterUpdate,
                     POLICY_LEVEL_MANDATORY,
                     POLICY_SCOPE_MACHINE,
                     Value::CreateBooleanValue(container.reboot_after_update()),
+                    NULL);
+    }
+
+    if (container.has_p2p_enabled()) {
+      policies->Set(key::kDeviceAutoUpdateP2PEnabled,
+                    POLICY_LEVEL_MANDATORY,
+                    POLICY_SCOPE_MACHINE,
+                    Value::CreateBooleanValue(container.p2p_enabled()),
                     NULL);
     }
   }
@@ -640,6 +667,15 @@ void DecodeGenericPolicies(const em::ChromeDeviceSettingsProto& policy,
                         policy.attestation_settings().attestation_enabled()),
                     NULL);
     }
+    if (policy.attestation_settings().has_content_protection_enabled()) {
+      policies->Set(
+          key::kAttestationForContentProtectionEnabled,
+          POLICY_LEVEL_MANDATORY,
+          POLICY_SCOPE_MACHINE,
+          Value::CreateBooleanValue(
+              policy.attestation_settings().content_protection_enabled()),
+          NULL);
+    }
   }
 
   if (policy.has_login_screen_power_management()) {
@@ -654,6 +690,18 @@ void DecodeGenericPolicies(const em::ChromeDeviceSettingsProto& policy,
                     NULL);
     }
   }
+  if (policy.has_auto_clean_up_settings()) {
+    const em::AutoCleanupSettigsProto& container(
+        policy.auto_clean_up_settings());
+    if (container.has_clean_up_strategy()) {
+      policies->Set(key::kAutoCleanUpStrategy,
+                    POLICY_LEVEL_MANDATORY,
+                    POLICY_SCOPE_MACHINE,
+                    Value::CreateStringValue(
+                        container.clean_up_strategy()),
+                    NULL);
+    }
+  }
 }
 
 }  // namespace
@@ -661,6 +709,9 @@ void DecodeGenericPolicies(const em::ChromeDeviceSettingsProto& policy,
 void DecodeDevicePolicy(const em::ChromeDeviceSettingsProto& policy,
                         PolicyMap* policies,
                         EnterpriseInstallAttributes* install_attributes) {
+  // TODO(achuith): Remove this once crbug.com/263527 is resolved.
+  VLOG(2) << "DecodeDevicePolicy " << policy.SerializeAsString();
+
   // Decode the various groups of policies.
   DecodeLoginPolicies(policy, policies);
   DecodeKioskPolicies(policy, policies, install_attributes);

@@ -23,7 +23,7 @@
 // agree exactly in type, bucket size and range.
 
 // For Histogram and LinearHistogram, the maximum for a declared range should
-// always be larger (not equal) than minmal range. Zero and
+// always be larger (not equal) than minimal range. Zero and
 // HistogramBase::kSampleType_MAX are implicitly added as first and last ranges,
 // so the smallest legal bucket_count is 3. However CustomHistogram can have
 // bucket count as 2 (when you give a custom ranges vector containing only 1
@@ -96,7 +96,7 @@ class Lock;
 // process.
 
 // The following code is generally what a thread-safe static pointer
-// initializaion looks like for a histogram (after a macro is expanded).  This
+// initialization looks like for a histogram (after a macro is expanded).  This
 // sample is an expansion (with comments) of the code for
 // HISTOGRAM_CUSTOM_COUNTS().
 
@@ -107,7 +107,7 @@ class Lock;
     static base::subtle::AtomicWord atomic_histogram_pointer = 0;
 
     // Acquire_Load() ensures that we acquire visibility to the pointed-to data
-    // in the histogrom.
+    // in the histogram.
     base::Histogram* histogram_pointer(reinterpret_cast<base::Histogram*>(
         base::subtle::Acquire_Load(&atomic_histogram_pointer)));
 
@@ -307,6 +307,12 @@ class Lock;
     name, sample, base::TimeDelta::FromMilliseconds(1), \
     base::TimeDelta::FromHours(1), 50)
 
+// Use this macro when times can routinely be much longer than 10 seconds and
+// you want 100 buckets.
+#define UMA_HISTOGRAM_LONG_TIMES_100(name, sample) UMA_HISTOGRAM_CUSTOM_TIMES( \
+    name, sample, base::TimeDelta::FromMilliseconds(1), \
+    base::TimeDelta::FromHours(1), 100)
+
 #define UMA_HISTOGRAM_CUSTOM_TIMES(name, sample, min, max, bucket_count) \
     STATIC_HISTOGRAM_POINTER_BLOCK(name, AddTime(sample), \
         base::Histogram::FactoryTimeGet(name, min, max, bucket_count, \
@@ -415,7 +421,7 @@ class BASE_EXPORT Histogram : public HistogramBase {
   virtual int FindCorruption(const HistogramSamples& samples) const OVERRIDE;
 
   //----------------------------------------------------------------------------
-  // Accessors for factory constuction, serialization and testing.
+  // Accessors for factory construction, serialization and testing.
   //----------------------------------------------------------------------------
   Sample declared_min() const { return declared_min_; }
   Sample declared_max() const { return declared_max_; }
@@ -598,7 +604,7 @@ class BASE_EXPORT LinearHistogram : public Histogram {
   static HistogramBase* DeserializeInfoImpl(PickleIterator* iter);
 
   // For some ranges, we store a printable description of a bucket range.
-  // If there is no desciption, then GetAsciiBucketRange() uses parent class
+  // If there is no description, then GetAsciiBucketRange() uses parent class
   // to provide a description.
   typedef std::map<Sample, std::string> BucketDescriptionMap;
   BucketDescriptionMap bucket_description_;

@@ -9,14 +9,14 @@
 
 #include "base/file_util.h"
 #include "base/files/file_path.h"
-#include "base/files/scoped_temp_dir.h"
 #include "base/path_service.h"
 #include "base/stl_util.h"
 #include "chrome/browser/chromeos/policy/device_policy_builder.h"
 #include "chrome/browser/chromeos/policy/enterprise_install_attributes.h"
-#include "chrome/browser/policy/proto/chromeos/install_attributes.pb.h"
+#include "chrome/browser/chromeos/policy/proto/install_attributes.pb.h"
 #include "chromeos/chromeos_paths.h"
-#include "chromeos/dbus/mock_dbus_thread_manager_without_gmock.h"
+#include "chromeos/dbus/fake_dbus_thread_manager.h"
+#include "chromeos/dbus/fake_session_manager_client.h"
 #include "crypto/rsa_private_key.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -27,7 +27,13 @@ using ::testing::Return;
 
 namespace policy {
 
-void DevicePolicyCrosBrowserTest::MarkAsEnterpriseOwned() {
+DevicePolicyCrosTestHelper::DevicePolicyCrosTestHelper() {
+  CHECK(temp_dir_.CreateUniqueTempDir());
+}
+
+DevicePolicyCrosTestHelper::~DevicePolicyCrosTestHelper() {}
+
+void DevicePolicyCrosTestHelper::MarkAsEnterpriseOwned() {
   cryptohome::SerializedInstallAttributes install_attrs_proto;
   cryptohome::SerializedInstallAttributes::Attribute* attribute = NULL;
 
@@ -37,7 +43,7 @@ void DevicePolicyCrosBrowserTest::MarkAsEnterpriseOwned() {
 
   attribute = install_attrs_proto.add_attributes();
   attribute->set_name(EnterpriseInstallAttributes::kAttrEnterpriseUser);
-  attribute->set_value(DevicePolicyBuilder::kFakeUsername);
+  attribute->set_value(device_policy_.policy_data().username());
 
   base::FilePath install_attrs_file =
       temp_dir_.path().AppendASCII("install_attributes.pb");
@@ -51,21 +57,7 @@ void DevicePolicyCrosBrowserTest::MarkAsEnterpriseOwned() {
                                     install_attrs_file));
 }
 
-DevicePolicyCrosBrowserTest::DevicePolicyCrosBrowserTest()
-    : mock_dbus_thread_manager_(
-        new chromeos::MockDBusThreadManagerWithoutGMock) {
-}
-
-DevicePolicyCrosBrowserTest::~DevicePolicyCrosBrowserTest() {
-}
-
-void DevicePolicyCrosBrowserTest::SetUpInProcessBrowserTestFixture() {
-  chromeos::DBusThreadManager::InitializeForTesting(mock_dbus_thread_manager_);
-  CrosInProcessBrowserTest::SetUpInProcessBrowserTestFixture();
-}
-
-void DevicePolicyCrosBrowserTest::InstallOwnerKey() {
-  ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
+void DevicePolicyCrosTestHelper::InstallOwnerKey() {
   base::FilePath owner_key_file = temp_dir_.path().AppendASCII("owner.key");
   std::vector<uint8> owner_key_bits;
   ASSERT_TRUE(
@@ -79,17 +71,40 @@ void DevicePolicyCrosBrowserTest::InstallOwnerKey() {
   ASSERT_TRUE(PathService::Override(chromeos::FILE_OWNER_KEY, owner_key_file));
 }
 
-void DevicePolicyCrosBrowserTest::RefreshDevicePolicy() {
-  // Reset the key to its original state.
-  device_policy_.SetDefaultSigningKey();
-  device_policy_.Build();
-  session_manager_client()->set_device_policy(device_policy_.GetBlob());
-  session_manager_client()->OnPropertyChangeComplete(true);
+DevicePolicyCrosBrowserTest::DevicePolicyCrosBrowserTest()
+    : fake_dbus_thread_manager_(new chromeos::FakeDBusThreadManager),
+      fake_session_manager_client_(new chromeos::FakeSessionManagerClient) {
+  fake_dbus_thread_manager_->SetFakeClients();
+  fake_dbus_thread_manager_->SetSessionManagerClient(
+      scoped_ptr<chromeos::SessionManagerClient>(fake_session_manager_client_));
+}
+
+DevicePolicyCrosBrowserTest::~DevicePolicyCrosBrowserTest() {
+}
+
+void DevicePolicyCrosBrowserTest::SetUpInProcessBrowserTestFixture() {
+  chromeos::DBusThreadManager::SetInstanceForTesting(fake_dbus_thread_manager_);
+  InProcessBrowserTest::SetUpInProcessBrowserTestFixture();
 }
 
 void DevicePolicyCrosBrowserTest::TearDownInProcessBrowserTestFixture() {
-  CrosInProcessBrowserTest::TearDownInProcessBrowserTestFixture();
-  chromeos::DBusThreadManager::Shutdown();
+  InProcessBrowserTest::TearDownInProcessBrowserTestFixture();
+}
+
+void DevicePolicyCrosBrowserTest::MarkAsEnterpriseOwned() {
+  test_helper_.MarkAsEnterpriseOwned();
+}
+
+void DevicePolicyCrosBrowserTest::InstallOwnerKey() {
+  test_helper_.InstallOwnerKey();
+}
+
+void DevicePolicyCrosBrowserTest::RefreshDevicePolicy() {
+  // Reset the key to its original state.
+  device_policy()->SetDefaultSigningKey();
+  device_policy()->Build();
+  session_manager_client()->set_device_policy(device_policy()->GetBlob());
+  session_manager_client()->OnPropertyChangeComplete(true);
 }
 
 }  // namespace policy

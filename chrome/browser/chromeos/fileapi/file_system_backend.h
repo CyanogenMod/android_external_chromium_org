@@ -19,7 +19,6 @@
 #include "webkit/common/fileapi/file_system_types.h"
 
 namespace fileapi {
-class AsyncFileUtilAdapter;
 class CopyOrMoveFileValidatorFactory;
 class ExternalMountPoints;
 class FileSystemFileUtil;
@@ -96,8 +95,6 @@ class FileSystemBackend : public fileapi::ExternalFileSystemBackend {
       fileapi::FileSystemType type,
       fileapi::OpenFileSystemMode mode,
       const OpenFileSystemCallback& callback) OVERRIDE;
-  virtual fileapi::FileSystemFileUtil* GetFileUtil(
-      fileapi::FileSystemType type) OVERRIDE;
   virtual fileapi::AsyncFileUtil* GetAsyncFileUtil(
       fileapi::FileSystemType type) OVERRIDE;
   virtual fileapi::CopyOrMoveFileValidatorFactory*
@@ -134,11 +131,9 @@ class FileSystemBackend : public fileapi::ExternalFileSystemBackend {
                               base::FilePath* virtual_path) OVERRIDE;
 
  private:
-  base::FilePath GetFileSystemRootPath(const fileapi::FileSystemURL& url) const;
-
   scoped_refptr<quota::SpecialStoragePolicy> special_storage_policy_;
   scoped_ptr<FileAccessPermissions> file_access_permissions_;
-  scoped_ptr<fileapi::AsyncFileUtilAdapter> local_file_util_;
+  scoped_ptr<fileapi::AsyncFileUtil> local_file_util_;
 
   // The Delegate instance for the drive file system related operation.
   scoped_ptr<FileSystemBackendDelegate> drive_delegate_;

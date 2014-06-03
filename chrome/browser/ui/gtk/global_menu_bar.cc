@@ -133,12 +133,15 @@ GlobalMenuBarCommand tools_menu[] = {
   { IDS_VIEW_SOURCE, IDC_VIEW_SOURCE },
   { IDS_DEV_TOOLS, IDC_DEV_TOOLS },
   { IDS_DEV_TOOLS_CONSOLE, IDC_DEV_TOOLS_CONSOLE },
+  { IDS_DEV_TOOLS_DEVICES, IDC_DEV_TOOLS_DEVICES },
 
   { MENU_END, MENU_END }
 };
 
 GlobalMenuBarCommand help_menu[] = {
+#if defined(GOOGLE_CHROME_BUILD)
   { IDS_FEEDBACK, IDC_FEEDBACK },
+#endif
   { IDS_HELP_PAGE , IDC_HELP_PAGE_VIA_MENU },
   { MENU_END, MENU_END }
 };

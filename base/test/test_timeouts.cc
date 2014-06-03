@@ -4,6 +4,8 @@
 
 #include "base/test/test_timeouts.h"
 
+#include <algorithm>
+
 #include "base/command_line.h"
 #include "base/debug/debugger.h"
 #include "base/logging.h"
@@ -66,6 +68,8 @@ int TestTimeouts::action_max_timeout_ms_ = 30000;
 #endif  // NDEBUG
 int TestTimeouts::large_test_timeout_ms_ = 10 * 60 * 1000;
 
+int TestTimeouts::test_launcher_timeout_ms_ = 45000;
+
 // static
 void TestTimeouts::Initialize() {
   if (initialized_) {
@@ -91,8 +95,14 @@ void TestTimeouts::Initialize() {
   InitializeTimeout(switches::kTestLargeTimeout, action_max_timeout_ms_,
                     &large_test_timeout_ms_);
 
+  // Test launcher timeout is independent from anything above action timeout.
+  InitializeTimeout(switches::kTestLauncherTimeout, action_timeout_ms_,
+                    &test_launcher_timeout_ms_);
+
   // The timeout values should be increasing in the right order.
   CHECK(tiny_timeout_ms_ <= action_timeout_ms_);
   CHECK(action_timeout_ms_ <= action_max_timeout_ms_);
   CHECK(action_max_timeout_ms_ <= large_test_timeout_ms_);
+
+  CHECK(action_timeout_ms_ <= test_launcher_timeout_ms_);
 }

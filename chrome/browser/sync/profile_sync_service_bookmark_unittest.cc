@@ -25,13 +25,13 @@
 #include "chrome/browser/bookmarks/base_bookmark_model_observer.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
+#include "chrome/browser/bookmarks/bookmark_test_helpers.h"
 #include "chrome/browser/sync/glue/bookmark_change_processor.h"
 #include "chrome/browser/sync/glue/bookmark_model_associator.h"
 #include "chrome/browser/sync/glue/data_type_error_handler.h"
 #include "chrome/browser/sync/glue/data_type_error_handler_mock.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/testing_profile.h"
-#include "chrome/test/base/ui_test_utils.h"
 #include "content/public/test/test_browser_thread.h"
 #include "sync/api/sync_error.h"
 #include "sync/internal_api/public/change_record.h"
@@ -73,11 +73,12 @@ class FakeServerChange {
   }
 
   // Pretend that the server told the syncer to add a bookmark object.
-  int64 Add(const std::wstring& title,
-            const std::string& url,
-            bool is_folder,
-            int64 parent_id,
-            int64 predecessor_id) {
+  int64 AddWithMetaInfo(const std::wstring& title,
+                        const std::string& url,
+                        const BookmarkNode::MetaInfoMap* meta_info_map,
+                        bool is_folder,
+                        int64 parent_id,
+                        int64 predecessor_id) {
     syncer::ReadNode parent(trans_);
     EXPECT_EQ(BaseNode::INIT_OK, parent.InitByIdLookup(parent_id));
     syncer::WriteNode node(trans_);
@@ -93,16 +94,28 @@ class FakeServerChange {
     EXPECT_EQ(node.GetParentId(), parent_id);
     node.SetIsFolder(is_folder);
     node.SetTitle(title);
-    if (!is_folder) {
-      sync_pb::BookmarkSpecifics specifics(node.GetBookmarkSpecifics());
+
+    sync_pb::BookmarkSpecifics specifics(node.GetBookmarkSpecifics());
+    if (!is_folder)
       specifics.set_url(url);
-      node.SetBookmarkSpecifics(specifics);
-    }
+    if (meta_info_map)
+      SetNodeMetaInfo(*meta_info_map, &specifics);
+    node.SetBookmarkSpecifics(specifics);
+
     syncer::ChangeRecord record;
     record.action = syncer::ChangeRecord::ACTION_ADD;
     record.id = node.GetId();
     changes_.push_back(record);
     return node.GetId();
+  }
+
+  int64 Add(const std::wstring& title,
+            const std::string& url,
+            bool is_folder,
+            int64 parent_id,
+            int64 predecessor_id) {
+    return AddWithMetaInfo(title, url, NULL, is_folder, parent_id,
+                           predecessor_id);
   }
 
   // Add a bookmark folder.
@@ -111,6 +124,13 @@ class FakeServerChange {
                   int64 predecessor_id) {
     return Add(title, std::string(), true, parent_id, predecessor_id);
   }
+  int64 AddFolderWithMetaInfo(const std::wstring& title,
+                              const BookmarkNode::MetaInfoMap* meta_info_map,
+                              int64 parent_id,
+                              int64 predecessor_id) {
+    return AddWithMetaInfo(title, std::string(), meta_info_map, true, parent_id,
+                           predecessor_id);
+  }
 
   // Add a bookmark.
   int64 AddURL(const std::wstring& title,
@@ -118,6 +138,14 @@ class FakeServerChange {
                int64 parent_id,
                int64 predecessor_id) {
     return Add(title, url, false, parent_id, predecessor_id);
+  }
+  int64 AddURLWithMetaInfo(const std::wstring& title,
+                           const std::string& url,
+                           const BookmarkNode::MetaInfoMap* meta_info_map,
+                           int64 parent_id,
+                           int64 predecessor_id) {
+    return AddWithMetaInfo(title, url, meta_info_map, false, parent_id,
+                           predecessor_id);
   }
 
   // Pretend that the server told the syncer to delete an object.
@@ -128,8 +156,7 @@ class FakeServerChange {
       EXPECT_EQ(BaseNode::INIT_OK, node.InitByIdLookup(id));
       if (node.GetIsFolder())
         EXPECT_FALSE(node.GetFirstChildId());
-      node.GetMutableEntryForTest()->Put(syncer::syncable::SERVER_IS_DEL,
-                                         true);
+      node.GetMutableEntryForTest()->PutServerIsDel(true);
       node.Tombstone();
     }
     {
@@ -189,6 +216,16 @@ class FakeServerChange {
     SetModified(id);
   }
 
+  void ModifyMetaInfo(int64 id,
+                      const BookmarkNode::MetaInfoMap& meta_info_map) {
+    syncer::WriteNode node(trans_);
+    ASSERT_EQ(BaseNode::INIT_OK, node.InitByIdLookup(id));
+    sync_pb::BookmarkSpecifics specifics = node.GetBookmarkSpecifics();
+    SetNodeMetaInfo(meta_info_map, &specifics);
+    node.SetBookmarkSpecifics(specifics);
+    SetModified(id);
+  }
+
   // Pass the fake change list to |service|.
   void ApplyPendingChanges(ChangeProcessor* processor) {
     processor->ApplyChangesFromSyncModel(
@@ -213,6 +250,18 @@ class FakeServerChange {
     record.id = id;
     changes_.push_back(record);
   }
+
+  void SetNodeMetaInfo(const BookmarkNode::MetaInfoMap& meta_info_map,
+                       sync_pb::BookmarkSpecifics* specifics) {
+    specifics->clear_meta_info();
+    for (BookmarkNode::MetaInfoMap::const_iterator it =
+        meta_info_map.begin(); it != meta_info_map.end(); ++it) {
+      sync_pb::MetaInfo* meta_info = specifics->add_meta_info();
+      meta_info->set_key(it->first);
+      meta_info->set_value(it->second);
+    }
+  }
+
 
   // The transaction on which everything happens.
   syncer::WriteTransaction *trans_;
@@ -346,7 +395,7 @@ class ProfileSyncServiceBookmarkTest : public testing::Test {
     bool delete_bookmarks = load == DELETE_EXISTING_STORAGE;
     profile_.CreateBookmarkModel(delete_bookmarks);
     model_ = BookmarkModelFactory::GetForProfile(&profile_);
-    ui_test_utils::WaitForBookmarkModelToLoad(model_);
+    test::WaitForBookmarkModelToLoad(model_);
     // This noticeably speeds up the unit tests that request it.
     if (save == DONT_SAVE_TO_STORAGE)
       model_->ClearStore();
@@ -418,8 +467,7 @@ class ProfileSyncServiceBookmarkTest : public testing::Test {
       if (!node.InitBookmarkByCreation(root, predecessor))
         return false;
       node.SetIsFolder(true);
-      node.GetMutableEntryForTest()->Put(
-          syncer::syncable::UNIQUE_SERVER_TAG, permanent_tags[i]);
+      node.GetMutableEntryForTest()->PutUniqueServerTag(permanent_tags[i]);
       node.SetTitle(UTF8ToWide(permanent_tags[i]));
       node.SetExternalId(0);
       last_child_id = node.GetId();
@@ -525,6 +573,22 @@ class ProfileSyncServiceBookmarkTest : public testing::Test {
     EXPECT_EQ(bnode->is_folder(), gnode.GetIsFolder());
     if (bnode->is_url())
       EXPECT_EQ(bnode->url(), GURL(gnode.GetBookmarkSpecifics().url()));
+
+    // Check that meta info matches.
+    const BookmarkNode::MetaInfoMap* meta_info_map = bnode->GetMetaInfoMap();
+    sync_pb::BookmarkSpecifics specifics = gnode.GetBookmarkSpecifics();
+    if (!meta_info_map) {
+      EXPECT_EQ(0, specifics.meta_info_size());
+    } else {
+      EXPECT_EQ(meta_info_map->size(),
+                static_cast<size_t>(specifics.meta_info_size()));
+      for (int i = 0; i < specifics.meta_info_size(); i++) {
+        BookmarkNode::MetaInfoMap::const_iterator it =
+            meta_info_map->find(specifics.meta_info(i).key());
+        EXPECT_TRUE(it != meta_info_map->end());
+        EXPECT_EQ(it->second, specifics.meta_info(i).value());
+      }
+    }
 
     // Check for position matches.
     int browser_index = bnode->parent()->GetIndexOf(bnode);
@@ -1039,7 +1103,8 @@ TEST_F(ProfileSyncServiceBookmarkTest, RepeatedMiddleInsertion) {
   // Test insertion in first half of range by repeatedly inserting in second
   // position.
   for (int i = 0; i < kTimesToInsert; ++i) {
-    string16 title = ASCIIToUTF16("Pre-insertion ") + base::IntToString16(i);
+    base::string16 title =
+        ASCIIToUTF16("Pre-insertion ") + base::IntToString16(i);
     model_->AddFolder(model_->other_node(), 1, title);
     count++;
   }
@@ -1047,7 +1112,8 @@ TEST_F(ProfileSyncServiceBookmarkTest, RepeatedMiddleInsertion) {
   // Test insertion in second half of range by repeatedly inserting in
   // second-to-last position.
   for (int i = 0; i < kTimesToInsert; ++i) {
-    string16 title = ASCIIToUTF16("Post-insertion ") + base::IntToString16(i);
+    base::string16 title =
+        ASCIIToUTF16("Post-insertion ") + base::IntToString16(i);
     model_->AddFolder(model_->other_node(), count - 1, title);
     count++;
   }
@@ -1731,7 +1797,7 @@ TEST_F(ProfileSyncServiceBookmarkTestWithData, SortChildren) {
 
   ExpectModelMatch();
 
-  // Sort the other-bookmarks children and expect that hte models match.
+  // Sort the other-bookmarks children and expect that the models match.
   model_->SortChildren(folder_added);
   ExpectModelMatch();
 }
@@ -1833,6 +1899,83 @@ TEST_F(ProfileSyncServiceBookmarkTestWithData, UpdateDateAdded) {
   EXPECT_EQ(node->date_added(), base::Time::FromInternalValue(30));
 }
 
+// Tests that changes to the sync nodes meta info gets reflected in the local
+// bookmark model.
+TEST_F(ProfileSyncServiceBookmarkTestWithData, UpdateMetaInfoFromSync) {
+  LoadBookmarkModel(DELETE_EXISTING_STORAGE, DONT_SAVE_TO_STORAGE);
+  WriteTestDataToBookmarkModel();
+  StartSync();
+
+  // Create bookmark nodes containing meta info.
+  syncer::WriteTransaction trans(FROM_HERE, test_user_share_.user_share());
+  FakeServerChange adds(&trans);
+  BookmarkNode::MetaInfoMap folder_meta_info;
+  folder_meta_info["folder"] = "foldervalue";
+  int64 folder_id = adds.AddFolderWithMetaInfo(
+      L"folder title", &folder_meta_info, bookmark_bar_id(), 0);
+  BookmarkNode::MetaInfoMap node_meta_info;
+  node_meta_info["node"] = "nodevalue";
+  node_meta_info["other"] = "othervalue";
+  int64 id = adds.AddURLWithMetaInfo(L"node title", "http://www.foo.com",
+                                     &node_meta_info, folder_id, 0);
+  adds.ApplyPendingChanges(change_processor_.get());
+
+  // Verify that the nodes are created with the correct meta info.
+  ASSERT_LT(0, model_->bookmark_bar_node()->child_count());
+  const BookmarkNode* folder_node = model_->bookmark_bar_node()->GetChild(0);
+  ASSERT_TRUE(folder_node->GetMetaInfoMap());
+  EXPECT_EQ(folder_meta_info, *folder_node->GetMetaInfoMap());
+  ASSERT_LT(0, folder_node->child_count());
+  const BookmarkNode* node = folder_node->GetChild(0);
+  ASSERT_TRUE(node->GetMetaInfoMap());
+  EXPECT_EQ(node_meta_info, *node->GetMetaInfoMap());
+
+  // Update meta info on nodes on server
+  FakeServerChange updates(&trans);
+  folder_meta_info.erase("folder");
+  updates.ModifyMetaInfo(folder_id, folder_meta_info);
+  node_meta_info["node"] = "changednodevalue";
+  node_meta_info.erase("other");
+  node_meta_info["newkey"] = "newkeyvalue";
+  updates.ModifyMetaInfo(id, node_meta_info);
+  updates.ApplyPendingChanges(change_processor_.get());
+
+  // Confirm that the updated values are reflected in the bookmark nodes.
+  EXPECT_FALSE(folder_node->GetMetaInfoMap());
+  ASSERT_TRUE(node->GetMetaInfoMap());
+  EXPECT_EQ(node_meta_info, *node->GetMetaInfoMap());
+}
+
+// Tests that changes to the local bookmark nodes meta info gets reflected in
+// the sync nodes.
+TEST_F(ProfileSyncServiceBookmarkTestWithData, UpdateMetaInfoFromModel) {
+  LoadBookmarkModel(DELETE_EXISTING_STORAGE, DONT_SAVE_TO_STORAGE);
+  WriteTestDataToBookmarkModel();
+  StartSync();
+  ExpectBookmarkModelMatchesTestData();
+
+  const BookmarkNode* folder_node =
+      model_->AddFolder(model_->bookmark_bar_node(), 0,
+                        ASCIIToUTF16("folder title"));
+  const BookmarkNode* node = model_->AddURL(folder_node, 0,
+                                            ASCIIToUTF16("node title"),
+                                            GURL("http://www.foo.com"));
+  ExpectModelMatch();
+
+  // Add some meta info and verify sync model matches the changes.
+  model_->SetNodeMetaInfo(folder_node, "folder", "foldervalue");
+  model_->SetNodeMetaInfo(node, "node", "nodevalue");
+  model_->SetNodeMetaInfo(node, "other", "othervalue");
+  ExpectModelMatch();
+
+  // Change/delete existing meta info and verify.
+  model_->DeleteNodeMetaInfo(folder_node, "folder");
+  model_->SetNodeMetaInfo(node, "node", "changednodevalue");
+  model_->DeleteNodeMetaInfo(node, "other");
+  model_->SetNodeMetaInfo(node, "newkey", "newkeyvalue");
+  ExpectModelMatch();
+}
+
 // Output transaction versions of |node| and nodes under it to |node_versions|.
 void GetTransactionVersions(
     const BookmarkNode* root,
@@ -1844,10 +1987,8 @@ void GetTransactionVersions(
     const BookmarkNode* n = nodes.front();
     nodes.pop();
 
-    std::string version_str;
-    int64 version;
-    EXPECT_TRUE(n->GetMetaInfo(kBookmarkTransactionVersionKey, &version_str));
-    EXPECT_TRUE(base::StringToInt64(version_str, &version));
+    int64 version = n->sync_transaction_version();
+    EXPECT_NE(BookmarkNode::kInvalidSyncTransactionVersion, version);
 
     (*node_versions)[n->id()] = version;
     for (int i = 0; i < n->child_count(); ++i)
@@ -1867,8 +2008,7 @@ void ProfileSyncServiceBookmarkTestWithData::ExpectTransactionVersionMatch(
     syncer::ReadNode sync_node(&trans);
     ASSERT_TRUE(model_associator_->InitSyncNodeFromChromeId(it->first,
                                                             &sync_node));
-    EXPECT_EQ(sync_node.GetEntry()->Get(syncer::syncable::TRANSACTION_VERSION),
-              it->second);
+    EXPECT_EQ(sync_node.GetEntry()->GetTransactionVersion(), it->second);
     BookmarkNodeVersionMap::const_iterator expected_ver_it =
         version_expected.find(it->first);
     if (expected_ver_it != version_expected.end())
@@ -1963,8 +2103,7 @@ TEST_F(ProfileSyncServiceBookmarkTestWithData, PersistenceError) {
   // Now shut down sync and artificially increment the native model's version.
   StopSync();
   int64 root_version = initial_versions[model_->root_node()->id()];
-  model_->SetNodeMetaInfo(model_->root_node(), kBookmarkTransactionVersionKey,
-                          base::Int64ToString(root_version+1));
+  model_->SetNodeSyncTransactionVersion(model_->root_node(), root_version + 1);
 
   // Upon association, bookmarks should fail to associate.
   EXPECT_FALSE(AssociateModels());

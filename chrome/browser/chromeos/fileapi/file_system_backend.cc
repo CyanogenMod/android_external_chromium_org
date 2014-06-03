@@ -7,7 +7,6 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
-#include "base/path_service.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/lock.h"
@@ -15,16 +14,14 @@
 #include "chrome/browser/chromeos/fileapi/file_system_backend_delegate.h"
 #include "chromeos/dbus/cros_disks_client.h"
 #include "webkit/browser/blob/file_stream_reader.h"
-#include "webkit/browser/fileapi/async_file_util_adapter.h"
+#include "webkit/browser/fileapi/async_file_util.h"
 #include "webkit/browser/fileapi/external_mount_points.h"
+#include "webkit/browser/fileapi/file_stream_writer.h"
 #include "webkit/browser/fileapi/file_system_context.h"
-#include "webkit/browser/fileapi/file_system_file_stream_reader.h"
+#include "webkit/browser/fileapi/file_system_operation.h"
 #include "webkit/browser/fileapi/file_system_operation_context.h"
-#include "webkit/browser/fileapi/file_system_operation_impl.h"
 #include "webkit/browser/fileapi/file_system_url.h"
 #include "webkit/browser/fileapi/isolated_context.h"
-#include "webkit/browser/fileapi/isolated_file_util.h"
-#include "webkit/browser/fileapi/local_file_stream_writer.h"
 
 namespace {
 
@@ -50,8 +47,7 @@ FileSystemBackend::FileSystemBackend(
     fileapi::ExternalMountPoints* system_mount_points)
     : special_storage_policy_(special_storage_policy),
       file_access_permissions_(new FileAccessPermissions()),
-      local_file_util_(new fileapi::AsyncFileUtilAdapter(
-          new fileapi::IsolatedFileUtil())),
+      local_file_util_(fileapi::AsyncFileUtil::CreateForLocalFileSystem()),
       drive_delegate_(drive_delegate),
       mount_points_(mount_points),
       system_mount_points_(system_mount_points) {
@@ -64,30 +60,20 @@ void FileSystemBackend::AddSystemMountPoints() {
   // RegisterFileSystem() is no-op if the mount point with the same name
   // already exists, hence it's safe to call without checking if a mount
   // point already exists or not.
-
-  // TODO(satorux): "Downloads" directory should probably be per-profile. For
-  // this to be per-profile, a unique directory path should be chosen per
-  // profile, and the mount point should be added to
-  // mount_points_. crbug.com/247236
-  base::FilePath home_path;
-  if (PathService::Get(base::DIR_HOME, &home_path)) {
-    system_mount_points_->RegisterFileSystem(
-        "Downloads",
-        fileapi::kFileSystemTypeNativeLocal,
-        home_path.AppendASCII("Downloads"));
-  }
-
   system_mount_points_->RegisterFileSystem(
       "archive",
       fileapi::kFileSystemTypeNativeLocal,
+      fileapi::FileSystemMountOption(),
       chromeos::CrosDisksClient::GetArchiveMountPoint());
   system_mount_points_->RegisterFileSystem(
       "removable",
       fileapi::kFileSystemTypeNativeLocal,
+      fileapi::FileSystemMountOption(fileapi::COPY_SYNC_OPTION_SYNC),
       chromeos::CrosDisksClient::GetRemovableDiskMountPoint());
   system_mount_points_->RegisterFileSystem(
       "oem",
       fileapi::kFileSystemTypeRestrictedNativeLocal,
+      fileapi::FileSystemMountOption(),
       base::FilePath(FILE_PATH_LITERAL("/usr/share/oem")));
 }
 
@@ -112,11 +98,10 @@ void FileSystemBackend::OpenFileSystem(
     fileapi::FileSystemType type,
     fileapi::OpenFileSystemMode mode,
     const OpenFileSystemCallback& callback) {
-  DCHECK(fileapi::IsolatedContext::IsIsolatedType(type));
-  // Nothing to validate for external filesystem.
-  callback.Run(GetFileSystemRootURI(origin_url, type),
-               GetFileSystemName(origin_url, type),
-               base::PLATFORM_FILE_OK);
+  // TODO(nhiroki): Deprecate OpenFileSystem for non-sandboxed filesystem.
+  // (http://crbug.com/297412)
+  NOTREACHED();
+  callback.Run(GURL(), std::string(), base::PLATFORM_FILE_ERROR_SECURITY);
 }
 
 fileapi::FileSystemQuotaUtil* FileSystemBackend::GetQuotaUtil() {
@@ -184,9 +169,11 @@ void FileSystemBackend::GrantFileAccessToExtension(
   std::string id;
   fileapi::FileSystemType type;
   base::FilePath path;
-  if (!mount_points_->CrackVirtualPath(virtual_path, &id, &type, &path) &&
+  fileapi::FileSystemMountOption option;
+  if (!mount_points_->CrackVirtualPath(virtual_path,
+                                       &id, &type, &path, &option) &&
       !system_mount_points_->CrackVirtualPath(virtual_path,
-                                              &id, &type, &path)) {
+                                              &id, &type, &path, &option)) {
     return;
   }
 
@@ -212,13 +199,6 @@ std::vector<base::FilePath> FileSystemBackend::GetRootDirectories() const {
   for (size_t i = 0; i < mount_points.size(); ++i)
     root_dirs.push_back(mount_points[i].path);
   return root_dirs;
-}
-
-fileapi::FileSystemFileUtil* FileSystemBackend::GetFileUtil(
-    fileapi::FileSystemType type) {
-  DCHECK(type == fileapi::kFileSystemTypeNativeLocal ||
-         type == fileapi::kFileSystemTypeRestrictedNativeLocal);
-  return local_file_util_->sync_file_util();
 }
 
 fileapi::AsyncFileUtil* FileSystemBackend::GetAsyncFileUtil(
@@ -253,11 +233,9 @@ fileapi::FileSystemOperation* FileSystemBackend::CreateFileSystemOperation(
   DCHECK(url.type() == fileapi::kFileSystemTypeNativeLocal ||
          url.type() == fileapi::kFileSystemTypeRestrictedNativeLocal ||
          url.type() == fileapi::kFileSystemTypeDrive);
-  scoped_ptr<fileapi::FileSystemOperationContext> operation_context(
-      new fileapi::FileSystemOperationContext(context));
-  operation_context->set_root_path(GetFileSystemRootPath(url));
-  return new fileapi::FileSystemOperationImpl(url, context,
-                                              operation_context.Pass());
+  return fileapi::FileSystemOperation::Create(
+      url, context,
+      make_scoped_ptr(new fileapi::FileSystemOperationContext(context)));
 }
 
 scoped_ptr<webkit_blob::FileStreamReader>
@@ -277,7 +255,7 @@ FileSystemBackend::CreateFileStreamReader(
   }
 
   return scoped_ptr<webkit_blob::FileStreamReader>(
-      new fileapi::FileSystemFileStreamReader(
+      webkit_blob::FileStreamReader::CreateForFileSystemFile(
           context, url, offset, expected_modification_time));
 }
 
@@ -299,7 +277,7 @@ FileSystemBackend::CreateFileStreamWriter(
 
   DCHECK(url.type() == fileapi::kFileSystemTypeNativeLocal);
   return scoped_ptr<fileapi::FileStreamWriter>(
-      new fileapi::LocalFileStreamWriter(
+      fileapi::FileStreamWriter::CreateForLocalFile(
           context->default_file_task_runner(), url.path(), offset));
 }
 
@@ -308,22 +286,6 @@ bool FileSystemBackend::GetVirtualPath(
     base::FilePath* virtual_path) {
   return mount_points_->GetVirtualPath(filesystem_path, virtual_path) ||
          system_mount_points_->GetVirtualPath(filesystem_path, virtual_path);
-}
-
-base::FilePath FileSystemBackend::GetFileSystemRootPath(
-    const fileapi::FileSystemURL& url) const {
-  DCHECK(fileapi::IsolatedContext::IsIsolatedType(url.mount_type()));
-  if (!url.is_valid())
-    return base::FilePath();
-
-  base::FilePath root_path;
-  std::string mount_name = url.filesystem_id();
-  if (!mount_points_->GetRegisteredPath(mount_name, &root_path) &&
-      !system_mount_points_->GetRegisteredPath(mount_name, &root_path)) {
-    return base::FilePath();
-  }
-
-  return root_path.DirName();
 }
 
 }  // namespace chromeos

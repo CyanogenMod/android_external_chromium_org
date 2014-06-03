@@ -5,6 +5,7 @@
 // Custom binding for the app_window API.
 
 var appWindowNatives = requireNative('app_window_natives');
+var runtimeNatives = requireNative('runtime');
 var Binding = require('binding').Binding;
 var Event = require('event_bindings').Event;
 var forEach = require('utils').forEach;
@@ -82,6 +83,20 @@ appWindow.registerCustomHook(function(bindingsAPI) {
     return currentAppWindow;
   });
 
+  apiFunctions.setHandleRequest('getAll', function() {
+    var views = runtimeNatives.GetExtensionViews(-1, 'SHELL');
+    return $Array.map(views, function(win) {
+      return win.chrome.app.window.current();
+    });
+  });
+
+  apiFunctions.setHandleRequest('get', function(id) {
+    var windows = $Array.filter(chrome.app.window.getAll(), function(win) {
+      return win.id == id;
+    });
+    return windows.length > 0 ? windows[0] : null;
+  });
+
   // This is an internal function, but needs to be bound with setHandleRequest
   // because it is called from a different JS context.
   apiFunctions.setHandleRequest('initializeAppWindow', function(params) {
@@ -103,6 +118,18 @@ appWindow.registerCustomHook(function(bindingsAPI) {
       return { left: bounds.left, top: bounds.top,
                width: bounds.width, height: bounds.height };
     };
+    AppWindow.prototype.getMinWidth = function() {
+      return appWindowData.minWidth;
+    };
+    AppWindow.prototype.getMinHeight = function() {
+      return appWindowData.minHeight;
+    };
+    AppWindow.prototype.getMaxWidth = function() {
+      return appWindowData.maxWidth;
+    };
+    AppWindow.prototype.getMaxHeight = function() {
+      return appWindowData.maxHeight;
+    };
     AppWindow.prototype.isFullscreen = function() {
       return appWindowData.fullscreen;
     };
@@ -111,6 +138,9 @@ appWindow.registerCustomHook(function(bindingsAPI) {
     };
     AppWindow.prototype.isMaximized = function() {
       return appWindowData.maximized;
+    };
+    AppWindow.prototype.isAlwaysOnTop = function() {
+      return appWindowData.alwaysOnTop;
     };
 
     Object.defineProperty(AppWindow.prototype, 'id', {get: function() {
@@ -121,9 +151,14 @@ appWindow.registerCustomHook(function(bindingsAPI) {
       id: params.id || '',
       bounds: { left: params.bounds.left, top: params.bounds.top,
                 width: params.bounds.width, height: params.bounds.height },
+      minWidth: params.minWidth,
+      minHeight: params.minHeight,
+      maxWidth: params.maxWidth,
+      maxHeight: params.maxHeight,
       fullscreen: params.fullscreen,
       minimized: params.minimized,
-      maximized: params.maximized
+      maximized: params.maximized,
+      alwaysOnTop: params.alwaysOnTop
     };
     currentAppWindow = new AppWindow;
   });

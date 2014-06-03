@@ -10,7 +10,7 @@
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/ui/panels/native_panel_stack_window.h"
-#include "ui/base/animation/animation_delegate.h"
+#include "ui/gfx/animation/animation_delegate.h"
 #include "ui/views/focus/widget_focus_manager.h"
 #include "ui/views/widget/widget_delegate.h"
 #include "ui/views/widget/widget_observer.h"
@@ -20,7 +20,7 @@
 #include "ui/base/win/hwnd_subclass.h"
 #endif
 
-namespace ui {
+namespace gfx {
 class LinearAnimation;
 }
 namespace views {
@@ -30,14 +30,12 @@ class Widget;
 // A native window that acts as the owner of all panels in the stack, in order
 // to make all panels appear as a single window on the taskbar or launcher.
 class PanelStackView : public NativePanelStackWindow,
-                       public views::WidgetObserver,
-                       public views::WidgetDelegateView,
                        public views::WidgetFocusChangeListener,
 #if defined(OS_WIN)
                        public ui::HWNDMessageFilter,
                        public TaskbarWindowThumbnailerDelegateWin,
 #endif
-                       public ui::AnimationDelegate {
+                       public gfx::AnimationDelegate {
  public:
   explicit PanelStackView(NativePanelStackWindowDelegate* delegate);
   virtual ~PanelStackView();
@@ -67,24 +65,14 @@ class PanelStackView : public NativePanelStackWindow,
   // The map value is old bounds of the panel.
   typedef std::map<Panel*, gfx::Rect> BoundsUpdates;
 
-  // Overridden from views::WidgetDelegate:
-  virtual string16 GetWindowTitle() const OVERRIDE;
-  virtual gfx::ImageSkia GetWindowAppIcon() OVERRIDE;
-  virtual gfx::ImageSkia GetWindowIcon() OVERRIDE;
-  virtual views::Widget* GetWidget() OVERRIDE;
-  virtual const views::Widget* GetWidget() const OVERRIDE;
-  virtual void DeleteDelegate() OVERRIDE;
-
-  // Overridden from views::WidgetObserver:
-  virtual void OnWidgetDestroying(views::Widget* widget) OVERRIDE;
-
   // Overridden from views::WidgetFocusChangeListener:
   virtual void OnNativeFocusChange(gfx::NativeView focused_before,
                                    gfx::NativeView focused_now) OVERRIDE;
 
   // Overridden from AnimationDelegate:
-  virtual void AnimationEnded(const ui::Animation* animation) OVERRIDE;
-  virtual void AnimationProgressed(const ui::Animation* animation) OVERRIDE;
+  virtual void AnimationEnded(const gfx::Animation* animation) OVERRIDE;
+  virtual void AnimationProgressed(const gfx::Animation* animation) OVERRIDE;
+  virtual void AnimationCanceled(const gfx::Animation* animation) OVERRIDE;
 
   // Updates the bounds of panels as specified in batch update data.
   void UpdatePanelsBounds();
@@ -130,8 +118,6 @@ class PanelStackView : public NativePanelStackWindow,
 
   views::Widget* window_;  // Weak pointer, own us.
 
-  bool is_closing_;
-
   // Tracks all panels that are enclosed by this window.
   Panels panels_;
 
@@ -152,7 +138,7 @@ class PanelStackView : public NativePanelStackWindow,
   BoundsUpdates bounds_updates_;
 
   // Used to animate the bounds changes at a synchronized pace.
-  scoped_ptr<ui::LinearAnimation> bounds_animator_;
+  scoped_ptr<gfx::LinearAnimation> bounds_animator_;
 
   DISALLOW_COPY_AND_ASSIGN(PanelStackView);
 };

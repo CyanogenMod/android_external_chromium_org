@@ -15,8 +15,6 @@
 #include <sys/socket.h>
 #endif
 
-#include <list>
-#include <set>
 #include <string>
 #include <vector>
 
@@ -112,11 +110,14 @@ NET_EXPORT std::string GetHostAndPort(const GURL& url);
 NET_EXPORT_PRIVATE std::string GetHostAndOptionalPort(const GURL& url);
 
 // Returns true if |hostname| contains a non-registerable or non-assignable
-// domain name (eg: a gTLD that has not been assigned by IANA)
-//
-// TODO(rsleevi): http://crbug.com/119212 - Also match internal IP
-// address ranges.
+// domain name (eg: a gTLD that has not been assigned by IANA) or an IP address
+// that falls in an IANA-reserved range.
 NET_EXPORT bool IsHostnameNonUnique(const std::string& hostname);
+
+// Returns true if an IP address hostname is in a range reserved by the IANA.
+// Works with both IPv4 and IPv6 addresses, and only compares against a given
+// protocols's reserved ranges.
+NET_EXPORT bool IsIPAddressReserved(const IPAddressNumber& address);
 
 // Convenience struct for when you need a |struct sockaddr|.
 struct SockaddrStorage {
@@ -163,14 +164,17 @@ NET_EXPORT std::string IPAddressToString(const IPAddressNumber& addr);
 NET_EXPORT std::string IPAddressToStringWithPort(
     const IPAddressNumber& addr, uint16 port);
 
+// Returns the address as a sequence of bytes in network-byte-order.
+NET_EXPORT std::string IPAddressToPackedString(const IPAddressNumber& addr);
+
 // Returns the hostname of the current system. Returns empty string on failure.
 NET_EXPORT std::string GetHostName();
 
 // Extracts the unescaped username/password from |url|, saving the results
 // into |*username| and |*password|.
 NET_EXPORT_PRIVATE void GetIdentityFromURL(const GURL& url,
-                        base::string16* username,
-                        base::string16* password);
+                                           base::string16* username,
+                                           base::string16* password);
 
 // Returns either the host from |url|, or, if the host is empty, the full spec.
 NET_EXPORT std::string GetHostOrSpecFromURL(const GURL& url);
@@ -197,7 +201,7 @@ NET_EXPORT std::string GetSpecificHeader(const std::string& headers,
 // script-language pairs (currently Han, Kana and Hangul for zh,ja and ko).
 // When |languages| is empty, even that mixing is not allowed.
 NET_EXPORT base::string16 IDNToUnicode(const std::string& host,
-                                 const std::string& languages);
+                                       const std::string& languages);
 
 // Canonicalizes |host| and returns it.  Also fills |host_info| with
 // IP address information.  |host_info| must not be NULL.
@@ -295,20 +299,17 @@ NET_EXPORT base::FilePath GenerateFileName(
     const std::string& mime_type,
     const std::string& default_name);
 
-// Valid basenames:
+// Valid components:
 // * are not empty
 // * are not Windows reserved names (CON, NUL.zip, etc.)
-// * are just basenames
 // * do not have trailing separators
 // * do not equal kCurrentDirectory
 // * do not reference the parent directory
-// * are valid path components, which:
-// - * are not the empty string
-// - * do not contain illegal characters
-// - * do not end with Windows shell-integrated extensions (even on posix)
-// - * do not begin with '.' (which would hide them in most file managers)
-// - * do not end with ' ' or '.'
-NET_EXPORT bool IsSafePortableBasename(const base::FilePath& path);
+// * do not contain illegal characters
+// * do not end with Windows shell-integrated extensions (even on posix)
+// * do not begin with '.' (which would hide them in most file managers)
+// * do not end with ' ' or '.'
+NET_EXPORT bool IsSafePortablePathComponent(const base::FilePath& component);
 
 // Basenames of valid relative paths are IsSafePortableBasename(), and internal
 // path components of valid relative paths are valid path components as
@@ -367,18 +368,28 @@ NET_EXPORT void AppendFormattedHost(const GURL& url,
 // UTF-8, decodes %-encoding and UTF-8.
 //
 // The last three parameters may be NULL.
+//
 // |new_parsed| will be set to the parsing parameters of the resultant URL.
+//
 // |prefix_end| will be the length before the hostname of the resultant URL.
 //
-// (|offset[s]_for_adjustment|) specifies one or more offsets into the original
-// |url|'s spec(); each offset will be modified to reflect changes this function
-// makes to the output string. For example, if |url| is "http://a:b@c.com/",
-// |omit_username_password| is true, and an offset is 12 (the offset of '.'),
-// then on return the output string will be "http://c.com/" and the offset will
-// be 8.  If an offset cannot be successfully adjusted (e.g. because it points
-// into the middle of a component that was entirely removed, past the end of the
-// string, or into the middle of an encoding sequence), it will be set to
-// base::string16::npos.
+// |offset[s]_for_adjustment| specifies one or more offsets into the original
+// URL, representing insertion or selection points between characters: if the
+// input is "http://foo.com/", offset 0 is before the entire URL, offset 7 is
+// between the scheme and the host, and offset 15 is after the end of the URL.
+// Valid input offsets range from 0 to the length of the input URL string.  On
+// exit, each offset will have been modified to reflect any changes made to the
+// output string.  For example, if |url| is "http://a:b@c.com/",
+// |omit_username_password| is true, and an offset is 12 (pointing between 'c'
+// and '.'), then on return the output string will be "http://c.com/" and the
+// offset will be 8.  If an offset cannot be successfully adjusted (e.g. because
+// it points into the middle of a component that was entirely removed or into
+// the middle of an encoding sequence), it will be set to base::string16::npos.
+// For consistency, if an input offset points between the scheme and the
+// username/password, and both are removed, on output this offset will be 0
+// rather than npos; this means that offsets at the starts and ends of removed
+// components are always transformed the same way regardless of what other
+// components are adjacent.
 NET_EXPORT base::string16 FormatUrl(const GURL& url,
                                     const std::string& languages,
                                     FormatUrlTypes format_types,
@@ -417,7 +428,7 @@ NET_EXPORT void SetExplicitlyAllowedPorts(const std::string& allowed_ports);
 
 class NET_EXPORT ScopedPortException {
  public:
-  ScopedPortException(int port);
+  explicit ScopedPortException(int port);
   ~ScopedPortException();
 
  private:
@@ -434,6 +445,9 @@ bool HaveOnlyLoopbackAddresses();
 // Returns AddressFamily of the address.
 NET_EXPORT_PRIVATE AddressFamily GetAddressFamily(
     const IPAddressNumber& address);
+
+// Maps the given AddressFamily to either AF_INET, AF_INET6 or AF_UNSPEC.
+NET_EXPORT_PRIVATE int ConvertAddressFamily(AddressFamily address_family);
 
 // Parses an IP address literal (either IPv4 or IPv6) to its numeric value.
 // Returns true on success and fills |ip_number| with the numeric value.
@@ -500,11 +514,16 @@ NET_EXPORT_PRIVATE bool IsLocalhost(const std::string& host);
 // interface.
 struct NET_EXPORT NetworkInterface {
   NetworkInterface();
-  NetworkInterface(const std::string& name, const IPAddressNumber& address);
+  NetworkInterface(const std::string& name,
+                   uint32 interface_index,
+                   const IPAddressNumber& address,
+                   size_t network_prefix);
   ~NetworkInterface();
 
   std::string name;
+  uint32 interface_index;  // Always 0 on Android.
   IPAddressNumber address;
+  size_t network_prefix;
 };
 
 typedef std::vector<NetworkInterface> NetworkInterfaceList;
@@ -536,6 +555,41 @@ enum WifiPHYLayerProtocol {
 // Characterize the PHY mode of the currently associated access point.
 // Currently only available on OS_WIN.
 NET_EXPORT WifiPHYLayerProtocol GetWifiPHYLayerProtocol();
+
+// Returns number of matching initial bits between the addresses |a1| and |a2|.
+unsigned CommonPrefixLength(const IPAddressNumber& a1,
+                            const IPAddressNumber& a2);
+
+// Computes the number of leading 1-bits in |mask|.
+unsigned MaskPrefixLength(const IPAddressNumber& mask);
+
+// Differentiated Services Code Point.
+// See http://tools.ietf.org/html/rfc2474 for details.
+enum DiffServCodePoint {
+  DSCP_NO_CHANGE = -1,
+  DSCP_DEFAULT = 0,  // Same as DSCP_CS0
+  DSCP_CS0  = 0,   // The default
+  DSCP_CS1  = 8,   // Bulk/background traffic
+  DSCP_AF11 = 10,
+  DSCP_AF12 = 12,
+  DSCP_AF13 = 14,
+  DSCP_CS2  = 16,
+  DSCP_AF21 = 18,
+  DSCP_AF22 = 20,
+  DSCP_AF23 = 22,
+  DSCP_CS3  = 24,
+  DSCP_AF31 = 26,
+  DSCP_AF32 = 28,
+  DSCP_AF33 = 30,
+  DSCP_CS4  = 32,
+  DSCP_AF41 = 34,  // Video
+  DSCP_AF42 = 36,  // Video
+  DSCP_AF43 = 38,  // Video
+  DSCP_CS5  = 40,  // Video
+  DSCP_EF   = 46,  // Voice
+  DSCP_CS6  = 48,  // Voice
+  DSCP_CS7  = 56,  // Control messages
+};
 
 }  // namespace net
 

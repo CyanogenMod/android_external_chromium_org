@@ -13,6 +13,7 @@
 
 namespace gfx {
 class Rect;
+class Point;
 }
 
 namespace views {
@@ -31,23 +32,30 @@ class RoundedImageView;
 class ASH_EXPORT TrayUser : public SystemTrayItem,
                             public UserObserver {
  public:
-  // The given |multiprofile_index| is the number of the user in a multi profile
-  // scenario. Index #0 is the running user, the other indices are other
-  // logged in users (if there are any). Only index #0 will add an icon to
-  // the system tray.
+  // The given |multiprofile_index| is the user number in a multi profile
+  // scenario. Index #0 is the running user, the other indices are other logged
+  // in users (if there are any). Depending on the multi user mode, there will
+  // be either one (index #0) or all users be visible in the system tray.
   TrayUser(SystemTray* system_tray, MultiProfileIndex index);
   virtual ~TrayUser();
 
   // Allows unit tests to see if the item was created.
   enum TestState {
     HIDDEN,               // The item is hidden.
-    SEPARATOR,            // the item gets shown as a separator.
     SHOWN,                // The item gets presented to the user.
     HOVERED,              // The item is hovered and presented to the user.
     ACTIVE,               // The item was clicked and can add a user.
     ACTIVE_BUT_DISABLED   // The item was clicked anc cannot add a user.
   };
   TestState GetStateForTest() const;
+
+  // Checks if a drag and drop operation would be able to land a window on this
+  // |point_in_screen|.
+  bool CanDropWindowHereToTransferToUser(const gfx::Point& point_in_screen);
+
+  // Try to re-parent the |window| to a new owner. Returns true if the window
+  // got transfered.
+  bool TransferWindowToUser(aura::Window* window);
 
   // Returns the bounds of the user panel in screen coordinates.
   // Note: This only works when the panel shown.
@@ -67,8 +75,18 @@ class ASH_EXPORT TrayUser : public SystemTrayItem,
 
   // Overridden from UserObserver.
   virtual void OnUserUpdate() OVERRIDE;
+  virtual void OnUserAddedToSession() OVERRIDE;
 
   void UpdateAvatarImage(user::LoginStatus status);
+
+  // Get the user index which should be used for the tray icon of this item.
+  MultiProfileIndex GetTrayIndex();
+
+  // Return the radius for the tray item to use.
+  int GetTrayItemRadius();
+
+  // Updates the layout of this item.
+  void UpdateLayoutOfItem();
 
   // The user index to use.
   MultiProfileIndex multiprofile_index_;
@@ -79,9 +97,6 @@ class ASH_EXPORT TrayUser : public SystemTrayItem,
   views::View* layout_view_;
   tray::RoundedImageView* avatar_;
   views::Label* label_;
-
-  // True if this element is the separator and it is shown.
-  bool separator_shown_;
 
   DISALLOW_COPY_AND_ASSIGN(TrayUser);
 };

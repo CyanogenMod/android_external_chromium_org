@@ -28,13 +28,13 @@ namespace net {
 class AuthChallengeInfo;
 class CertVerifier;
 class ClientSocketFactory;
+class ClientSocketHandle;
 class CookieOptions;
 class HostResolver;
 class HttpAuthController;
 class SSLInfo;
 class ServerBoundCertService;
 class SingleRequestHostResolver;
-class StreamSocket;
 class SocketStreamMetrics;
 class TransportSecurityState;
 class URLRequestContext;
@@ -189,6 +189,8 @@ class NET_EXPORT SocketStream
  private:
   FRIEND_TEST_ALL_PREFIXES(SocketStreamTest, IOPending);
   FRIEND_TEST_ALL_PREFIXES(SocketStreamTest, SwitchAfterPending);
+  FRIEND_TEST_ALL_PREFIXES(SocketStreamTest,
+                           NullContextSocketStreamShouldNotCrash);
 
   friend class WebSocketThrottleTest;
 
@@ -364,7 +366,7 @@ class NET_EXPORT SocketStream
 
   scoped_ptr<SingleRequestHostResolver> resolver_;
   AddressList addresses_;
-  scoped_ptr<StreamSocket> socket_;
+  scoped_ptr<ClientSocketHandle> connection_;
 
   SSLConfig server_ssl_config_;
   SSLConfig proxy_ssl_config_;

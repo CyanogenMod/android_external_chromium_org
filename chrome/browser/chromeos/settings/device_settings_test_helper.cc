@@ -7,9 +7,9 @@
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/threading/sequenced_worker_pool.h"
+#include "chrome/browser/chromeos/policy/proto/chrome_device_policy.pb.h"
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
 #include "chrome/browser/chromeos/settings/mock_owner_key_util.h"
-#include "chrome/browser/policy/proto/chromeos/chrome_device_policy.pb.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/network/network_handler.h"
 #include "content/public/browser/browser_thread.h"
@@ -63,6 +63,7 @@ void DeviceSettingsTestHelper::FlushRetrieve() {
   for (device_local_account_state = device_local_account_policy_.begin();
        device_local_account_state != device_local_account_policy_.end();
        ++device_local_account_state) {
+    std::vector<RetrievePolicyCallback> callbacks;
     callbacks.swap(device_local_account_state->second.retrieve_callbacks_);
     for (std::vector<RetrievePolicyCallback>::iterator cb(callbacks.begin());
          cb != callbacks.end(); ++cb) {
@@ -96,6 +97,8 @@ bool DeviceSettingsTestHelper::HasPendingOperations() const {
   return false;
 }
 
+void DeviceSettingsTestHelper::Init(dbus::Bus* bus) {}
+
 void DeviceSettingsTestHelper::AddObserver(Observer* observer) {}
 
 void DeviceSettingsTestHelper::RemoveObserver(Observer* observer) {}
@@ -111,8 +114,6 @@ void DeviceSettingsTestHelper::EmitLoginPromptVisible() {}
 void DeviceSettingsTestHelper::RestartJob(int pid,
                                           const std::string& command_line) {}
 
-void DeviceSettingsTestHelper::RestartEntd() {}
-
 void DeviceSettingsTestHelper::StartSession(const std::string& user_email) {}
 
 void DeviceSettingsTestHelper::StopSession() {}
@@ -122,8 +123,6 @@ void DeviceSettingsTestHelper::StartDeviceWipe() {}
 void DeviceSettingsTestHelper::RequestLockScreen() {}
 
 void DeviceSettingsTestHelper::NotifyLockScreenShown() {}
-
-void DeviceSettingsTestHelper::RequestUnlockScreen() {}
 
 void DeviceSettingsTestHelper::NotifyLockScreenDismissed() {}
 

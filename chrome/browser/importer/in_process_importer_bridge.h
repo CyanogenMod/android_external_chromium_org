@@ -36,7 +36,7 @@ class InProcessImporterBridge : public ImporterBridge {
   // Begin ImporterBridge implementation:
   virtual void AddBookmarks(
       const std::vector<ImportedBookmarkEntry>& bookmarks,
-      const string16& first_folder_name) OVERRIDE;
+      const base::string16& first_folder_name) OVERRIDE;
 
   virtual void AddHomePage(const GURL& home_page) OVERRIDE;
 
@@ -59,14 +59,14 @@ class InProcessImporterBridge : public ImporterBridge {
       const std::vector<std::string>& search_engine_data) OVERRIDE;
 
   virtual void SetPasswordForm(
-      const content::PasswordForm& form) OVERRIDE;
+      const autofill::PasswordForm& form) OVERRIDE;
 
   virtual void NotifyStarted() OVERRIDE;
   virtual void NotifyItemStarted(importer::ImportItem item) OVERRIDE;
   virtual void NotifyItemEnded(importer::ImportItem item) OVERRIDE;
   virtual void NotifyEnded() OVERRIDE;
 
-  virtual string16 GetLocalizedString(int message_id) OVERRIDE;
+  virtual base::string16 GetLocalizedString(int message_id) OVERRIDE;
   // End ImporterBridge implementation.
 
  private:

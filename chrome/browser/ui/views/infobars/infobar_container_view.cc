@@ -4,7 +4,6 @@
 
 #include "chrome/browser/ui/views/infobars/infobar_container_view.h"
 
-#include "base/message_loop/message_loop.h"
 #include "chrome/browser/ui/view_ids.h"
 #include "chrome/browser/ui/views/infobars/infobar_view.h"
 #include "grit/generated_resources.h"
@@ -24,11 +23,12 @@ InfoBarContainerView::~InfoBarContainerView() {
 }
 
 gfx::Size InfoBarContainerView::GetPreferredSize() {
-  // We do not have a preferred width (we will expand to fit the available width
-  // of the delegate).
   int total_height;
   GetVerticalOverlap(&total_height);
-  return gfx::Size(0, total_height);
+  gfx::Size size(0, total_height);
+  for (int i = 0; i < child_count(); ++i)
+    size.SetToMax(gfx::Size(child_at(i)->GetPreferredSize().width(), 0));
+  return size;
 }
 
 const char* InfoBarContainerView::GetClassName() const {
@@ -60,5 +60,4 @@ void InfoBarContainerView::PlatformSpecificAddInfoBar(InfoBar* infobar,
 
 void InfoBarContainerView::PlatformSpecificRemoveInfoBar(InfoBar* infobar) {
   RemoveChildView(static_cast<InfoBarView*>(infobar));
-  base::MessageLoop::current()->DeleteSoon(FROM_HERE, infobar);
 }

@@ -21,4 +21,10 @@ class DownloadsUIBrowserTest : public WebUIBrowserTest {
   DISALLOW_COPY_AND_ASSIGN(DownloadsUIBrowserTest);
 };
 
+class DownloadsWebUIForSupervisedUsersTest : public DownloadsUIBrowserTest {
+ public:
+  // InProcessBrowserTest overrides:
+  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE;
+};
+
 #endif  // CHROME_BROWSER_UI_WEBUI_DOWNLOADS_UI_BROWSERTEST_H_

@@ -6,7 +6,7 @@
 
 #include "build/build_config.h"
 
-using WebKit::WebKeyboardEvent;
+using blink::WebKeyboardEvent;
 
 namespace content {
 
@@ -14,6 +14,10 @@ namespace content {
 
 uint32_t UsbKeyCodeForKeyboardEvent(const WebKeyboardEvent& key_event) {
   return 0;
+}
+
+const char* CodeForKeyboardEvent(const WebKeyboardEvent& key_event) {
+  return NULL;
 }
 
 #endif

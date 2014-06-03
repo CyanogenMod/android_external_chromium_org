@@ -8,17 +8,16 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/chromeos/chromeos_version.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/sys_info.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/policy/device_cloud_policy_manager_chromeos.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
-#include "chrome/browser/chromeos/settings/cros_settings_names.h"
 #include "chrome/browser/policy/browser_policy_connector.h"
 #include "chrome/common/chrome_version_info.h"
+#include "chromeos/settings/cros_settings_names.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
@@ -53,13 +52,10 @@ VersionInfoUpdater::~VersionInfoUpdater() {
           GetDeviceCloudPolicyManager();
   if (policy_manager)
     policy_manager->core()->store()->RemoveObserver(this);
-
-  for (unsigned int i = 0; i < arraysize(kReportingFlags); ++i)
-    cros_settings_->RemoveSettingsObserver(kReportingFlags[i], this);
 }
 
 void VersionInfoUpdater::StartUpdate(bool is_official_build) {
-  if (base::chromeos::IsRunningOnChromeOS()) {
+  if (base::SysInfo::IsRunningOnChromeOS()) {
     version_loader_.GetVersion(
         is_official_build ? VersionLoader::VERSION_SHORT_WITH_DATE
                           : VersionLoader::VERSION_FULL,
@@ -82,8 +78,14 @@ void VersionInfoUpdater::StartUpdate(bool is_official_build) {
   }
 
   // Watch for changes to the reporting flags.
-  for (unsigned int i = 0; i < arraysize(kReportingFlags); ++i)
-    cros_settings_->AddSettingsObserver(kReportingFlags[i], this);
+  base::Closure callback =
+      base::Bind(&VersionInfoUpdater::UpdateEnterpriseInfo,
+                 base::Unretained(this));
+  for (unsigned int i = 0; i < arraysize(kReportingFlags); ++i) {
+    subscriptions_.push_back(
+        cros_settings_->AddSettingsObserver(kReportingFlags[i],
+                                            callback).release());
+  }
 }
 
 void VersionInfoUpdater::UpdateVersionLabel() {
@@ -132,16 +134,6 @@ void VersionInfoUpdater::OnStoreLoaded(policy::CloudPolicyStore* store) {
 
 void VersionInfoUpdater::OnStoreError(policy::CloudPolicyStore* store) {
   UpdateEnterpriseInfo();
-}
-
-void VersionInfoUpdater::Observe(
-    int type,
-    const content::NotificationSource& source,
-    const content::NotificationDetails& details) {
-  if (type == chrome::NOTIFICATION_SYSTEM_SETTING_CHANGED)
-    UpdateEnterpriseInfo();
-  else
-    NOTREACHED();
 }
 
 }  // namespace chromeos

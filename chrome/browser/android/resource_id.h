@@ -14,6 +14,8 @@
 DEFINE_RESOURCE_ID(0, 0)
 
 // InfoBar resources.
+DEFINE_RESOURCE_ID(IDR_PROTECTED_MEDIA_IDENTIFIER_INFOBAR_ICON,
+                   R.drawable.infobar_protected_media_identifier)
 DEFINE_RESOURCE_ID(IDR_GEOLOCATION_INFOBAR_ICON, R.drawable.infobar_geolocation)
 DEFINE_RESOURCE_ID(IDR_INFOBAR_ALT_NAV_URL, R.drawable.infobar_didyoumean)
 DEFINE_RESOURCE_ID(IDR_INFOBAR_AUTOFILL, R.drawable.infobar_autofill)
@@ -34,10 +36,11 @@ DEFINE_RESOURCE_ID(IDR_INFOBAR_SAVE_PASSWORD, R.drawable.infobar_savepassword)
 DEFINE_RESOURCE_ID(IDR_INFOBAR_WARNING, R.drawable.infobar_warning)
 DEFINE_RESOURCE_ID(IDR_INFOBAR_THEME, R.drawable.infobar_theme)
 DEFINE_RESOURCE_ID(IDR_INFOBAR_TRANSLATE, R.drawable.infobar_translate)
+DEFINE_RESOURCE_ID(IDR_BLOCKED_POPUPS, R.drawable.infobar_blocked_popups)
 
 // WebsiteSettingsUI images.
-DEFINE_RESOURCE_ID(IDR_CONTROLLED_SETTING_MANDATORY_LARGE,\
-                   R.drawable.controlled_setting_mandatory_large)
+DEFINE_RESOURCE_ID(IDR_PAGEINFO_ENTERPRISE_MANAGED,\
+                   R.drawable.pageinfo_enterprise_managed)
 DEFINE_RESOURCE_ID(IDR_PAGEINFO_BAD, R.drawable.pageinfo_bad)
 DEFINE_RESOURCE_ID(IDR_PAGEINFO_GOOD, R.drawable.pageinfo_good)
 DEFINE_RESOURCE_ID(IDR_PAGEINFO_INFO, R.drawable.pageinfo_info)

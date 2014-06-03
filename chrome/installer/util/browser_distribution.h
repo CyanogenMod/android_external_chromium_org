@@ -29,6 +29,23 @@ class BrowserDistribution {
     NUM_TYPES
   };
 
+  enum ShortcutType {
+    SHORTCUT_CHROME,
+    SHORTCUT_CHROME_ALTERNATE,
+    SHORTCUT_APP_LAUNCHER
+  };
+
+  enum Subfolder {
+    SUBFOLDER_CHROME,
+    SUBFOLDER_APPS,
+  };
+
+  enum DefaultBrowserControlPolicy {
+    DEFAULT_BROWSER_UNSUPPORTED,
+    DEFAULT_BROWSER_OS_CONTROL_ONLY,
+    DEFAULT_BROWSER_FULL_CONTROL
+  };
+
   virtual ~BrowserDistribution() {}
 
   static BrowserDistribution* GetDistribution();
@@ -53,16 +70,42 @@ class BrowserDistribution {
   // at run-time.
   virtual string16 GetBaseAppName();
 
-  // Returns the localized name of the program.
-  virtual string16 GetAppShortCutName();
+  // Returns the localized display name of this distribution.
+  virtual string16 GetDisplayName();
 
-  virtual string16 GetAlternateApplicationName();
+  // Returns the localized name of the shortcut identified by |shortcut_type|
+  // for this distribution.
+  virtual string16 GetShortcutName(ShortcutType shortcut_type);
+
+  // Returns the index of the icon for the product identified by
+  // |shortcut_type|, inside the file specified by GetIconFilename().
+  virtual int GetIconIndex(ShortcutType shortcut_type);
+
+  // Returns the executable filename (not path) that contains the product icon.
+  virtual string16 GetIconFilename();
+
+  // Returns the localized name of the subfolder in the Start Menu identified by
+  // |subfolder_type| that this distribution should create shortcuts in. For
+  // SUBFOLDER_CHROME this returns GetShortcutName(SHORTCUT_CHROME).
+  virtual string16 GetStartMenuShortcutSubfolder(Subfolder subfolder_type);
 
   // Returns the unsuffixed appid of this program.
   // The AppUserModelId is a property of Windows programs.
   // IMPORTANT: This should only be called by ShellUtil::GetAppId as the appid
   // should be suffixed in all scenarios.
   virtual string16 GetBaseAppId();
+
+  // Returns the Browser ProgId prefix (e.g. ChromeHTML, ChromiumHTM, etc...).
+  // The full id is of the form |prefix|.|suffix| and is limited to a maximum
+  // length of 39 characters including null-terminator.  See
+  // http://msdn.microsoft.com/library/aa911706.aspx for details.  We define
+  // |suffix| as a fixed-length 26-character alphanumeric identifier, therefore
+  // the return value of this function must have a maximum length of
+  // 39 - 1(null-term) - 26(|suffix|) - 1(dot separator) = 11 characters.
+  virtual string16 GetBrowserProgIdPrefix();
+
+  // Returns the Browser ProgId description.
+  virtual string16 GetBrowserProgIdDesc();
 
   virtual string16 GetInstallSubDir();
 
@@ -92,16 +135,11 @@ class BrowserDistribution {
 
   virtual string16 GetVersionKey();
 
-  virtual bool CanSetAsDefault();
+  // Returns an enum specifying the different ways in which this distribution
+  // is allowed to be set as default.
+  virtual DefaultBrowserControlPolicy GetDefaultBrowserControlPolicy();
 
   virtual bool CanCreateDesktopShortcuts();
-
-  // Returns the executable filename (not path) that contains the product icon.
-  virtual string16 GetIconFilename();
-
-  // Returns the index of the icon for the product, inside the file specified by
-  // GetIconFilename().
-  virtual int GetIconIndex();
 
   virtual bool GetChromeChannel(string16* channel);
 

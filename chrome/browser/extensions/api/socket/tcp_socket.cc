@@ -17,6 +17,28 @@ const char kTCPSocketTypeInvalidError[] =
     "Cannot call both connect and listen on the same socket.";
 const char kSocketListenError[] = "Could not listen on the specified port.";
 
+static base::LazyInstance<ProfileKeyedAPIFactory<
+      ApiResourceManager<ResumableTCPSocket> > >
+          g_factory = LAZY_INSTANCE_INITIALIZER;
+
+// static
+template <>
+ProfileKeyedAPIFactory<ApiResourceManager<ResumableTCPSocket> >*
+ApiResourceManager<ResumableTCPSocket>::GetFactoryInstance() {
+  return &g_factory.Get();
+}
+
+static base::LazyInstance<ProfileKeyedAPIFactory<
+      ApiResourceManager<ResumableTCPServerSocket> > >
+          g_server_factory = LAZY_INSTANCE_INITIALIZER;
+
+// static
+template <>
+ProfileKeyedAPIFactory<ApiResourceManager<ResumableTCPServerSocket> >*
+ApiResourceManager<ResumableTCPServerSocket>::GetFactoryInstance() {
+  return &g_server_factory.Get();
+}
+
 TCPSocket::TCPSocket(const std::string& owner_extension_id)
     : Socket(owner_extension_id),
       socket_mode_(UNKNOWN) {
@@ -98,6 +120,10 @@ void TCPSocket::Disconnect() {
   if (socket_.get())
     socket_->Disconnect();
   server_socket_.reset(NULL);
+  connect_callback_.Reset();
+  read_callback_.Reset();
+  accept_callback_.Reset();
+  accept_socket_.reset(NULL);
 }
 
 int TCPSocket::Bind(const std::string& address, int port) {
@@ -116,28 +142,23 @@ void TCPSocket::Read(int count,
   if (!read_callback_.is_null()) {
     callback.Run(net::ERR_IO_PENDING, NULL);
     return;
-  } else {
-    read_callback_ = callback;
   }
 
-  int result = net::ERR_FAILED;
-  scoped_refptr<net::IOBuffer> io_buffer;
-  do {
-    if (count < 0) {
-      result = net::ERR_INVALID_ARGUMENT;
-      break;
-    }
+  if (count < 0) {
+    callback.Run(net::ERR_INVALID_ARGUMENT, NULL);
+    return;
+  }
 
-    if (!socket_.get() || !IsConnected()) {
-        result = net::ERR_SOCKET_NOT_CONNECTED;
-        break;
-    }
+  if (!socket_.get() || !IsConnected()) {
+    callback.Run(net::ERR_SOCKET_NOT_CONNECTED, NULL);
+    return;
+  }
 
-    io_buffer = new net::IOBuffer(count);
-    result = socket_->Read(io_buffer.get(), count,
-        base::Bind(&TCPSocket::OnReadComplete, base::Unretained(this),
-            io_buffer));
-  } while (false);
+  read_callback_ = callback;
+  scoped_refptr<net::IOBuffer> io_buffer = new net::IOBuffer(count);
+  int result = socket_->Read(io_buffer.get(), count,
+      base::Bind(&TCPSocket::OnReadComplete, base::Unretained(this),
+          io_buffer));
 
   if (result != net::ERR_IO_PENDING)
     OnReadComplete(io_buffer, result);
@@ -255,8 +276,7 @@ void TCPSocket::RefreshConnectionStatus() {
   if (!is_connected_) return;
   if (server_socket_) return;
   if (!socket_->IsConnected()) {
-    is_connected_ = false;
-    socket_->Disconnect();
+    Disconnect();
   }
 }
 
@@ -284,6 +304,37 @@ void TCPSocket::OnAccept(int result) {
     accept_callback_.Run(result, NULL);
   }
   accept_callback_.Reset();
+}
+
+ResumableTCPSocket::ResumableTCPSocket(const std::string& owner_extension_id)
+    : TCPSocket(owner_extension_id),
+      persistent_(false),
+      buffer_size_(0),
+      paused_(false) {
+}
+
+ResumableTCPSocket::ResumableTCPSocket(net::TCPClientSocket* tcp_client_socket,
+                                       const std::string& owner_extension_id,
+                                       bool is_connected)
+    : TCPSocket(tcp_client_socket, owner_extension_id, is_connected),
+      persistent_(false),
+      buffer_size_(0),
+      paused_(false) {
+}
+
+bool ResumableTCPSocket::IsPersistent() const {
+  return persistent();
+}
+
+ResumableTCPServerSocket::ResumableTCPServerSocket(
+    const std::string& owner_extension_id)
+    : TCPSocket(owner_extension_id),
+      persistent_(false),
+      paused_(false) {
+}
+
+bool ResumableTCPServerSocket::IsPersistent() const {
+  return persistent();
 }
 
 }  // namespace extensions

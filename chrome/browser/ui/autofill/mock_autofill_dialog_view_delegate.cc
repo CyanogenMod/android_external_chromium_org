@@ -5,6 +5,7 @@
 #include "chrome/browser/ui/autofill/mock_autofill_dialog_view_delegate.h"
 #include "content/public/browser/native_web_keyboard_event.h"  // For gmock.
 #include "grit/generated_resources.h"
+#include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/rect.h"  // Only needed because gmock needs complete types.
 
 namespace autofill {
@@ -20,23 +21,30 @@ MockAutofillDialogViewDelegate::MockAutofillDialogViewDelegate() {
   // sets different defaults. If tests utilizing the MockController start
   // breaking because of this, use ON_CALL instead.
   DefaultValue<const DetailInputs&>::Set(default_inputs_);
-  DefaultValue<string16>::Set(string16());
-  DefaultValue<ValidityData>::Set(ValidityData());
-  DefaultValue<DialogSignedInState>::Set(REQUIRES_RESPONSE);
+  DefaultValue<base::string16>::Set(base::string16());
+  DefaultValue<GURL>::Set(GURL());
+  DefaultValue<ValidityMessages>::Set(ValidityMessages());
   DefaultValue<gfx::Image>::Set(gfx::Image());
   DefaultValue<SuggestionState>::Set(SuggestionState(false,
-                                                     string16(),
-                                                     string16(),
+                                                     base::string16(),
+                                                     base::string16(),
                                                      gfx::Image(),
-                                                     string16(),
+                                                     base::string16(),
                                                      gfx::Image()));
+  DefaultValue<FieldIconMap>::Set(FieldIconMap());
+  DefaultValue<std::vector<DialogNotification> >::Set(
+      std::vector<DialogNotification>());
 
   // SECTION_CC *must* have a CREDIT_CARD_VERIFICATION_CODE field.
   const DetailInput kCreditCardInputs[] = {
-    { 2, CREDIT_CARD_VERIFICATION_CODE, IDS_AUTOFILL_DIALOG_PLACEHOLDER_CVC }
+    { DetailInput::SHORT,
+      CREDIT_CARD_VERIFICATION_CODE,
+      IDS_AUTOFILL_DIALOG_PLACEHOLDER_CVC }
   };
   cc_default_inputs_.push_back(kCreditCardInputs[0]);
   ON_CALL(*this, RequestedFieldsForSection(SECTION_CC))
+      .WillByDefault(ReturnRef(cc_default_inputs_));
+  ON_CALL(*this, RequestedFieldsForSection(SECTION_CC_BILLING))
       .WillByDefault(ReturnRef(cc_default_inputs_));
 
   ON_CALL(*this, GetDialogButtons())
@@ -50,15 +58,28 @@ MockAutofillDialogViewDelegate::MockAutofillDialogViewDelegate() {
       .WillByDefault(Return(false));
 }
 
+void MockAutofillDialogViewDelegate::SetWebContents(
+    content::WebContents* contents) {
+  testing::DefaultValue<content::WebContents*>::Set(contents);
+}
+
+void MockAutofillDialogViewDelegate::SetProfile(Profile* profile) {
+  testing::DefaultValue<Profile*>::Set(profile);
+}
+
 MockAutofillDialogViewDelegate::~MockAutofillDialogViewDelegate() {
   using testing::DefaultValue;
 
   DefaultValue<SuggestionState>::Clear();
   DefaultValue<gfx::Image>::Clear();
-  DefaultValue<DialogSignedInState>::Clear();
-  DefaultValue<ValidityData>::Clear();
-  DefaultValue<string16>::Clear();
+  DefaultValue<ValidityMessages>::Clear();
+  DefaultValue<base::string16>::Clear();
+  DefaultValue<GURL>::Clear();
   DefaultValue<const DetailInputs&>::Clear();
+  DefaultValue<FieldIconMap>::Clear();
+  DefaultValue<std::vector<DialogNotification> >::Clear();
+  DefaultValue<content::WebContents*>::Clear();
+  DefaultValue<Profile*>::Clear();
 }
 
 }  // namespace autofill

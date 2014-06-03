@@ -19,15 +19,16 @@ namespace cc {
 
 class CC_EXPORT ScopedResource : public Resource {
  public:
-  static scoped_ptr<ScopedResource> create(
+  static scoped_ptr<ScopedResource> Create(
       ResourceProvider* resource_provider) {
     return make_scoped_ptr(new ScopedResource(resource_provider));
   }
   virtual ~ScopedResource();
 
-  bool Allocate(gfx::Size size,
-                GLenum format,
-                ResourceProvider::TextureUsageHint hint);
+  void Allocate(gfx::Size size,
+                ResourceProvider::TextureUsageHint hint,
+                ResourceFormat format);
+  void AllocateManaged(gfx::Size size, GLenum target, ResourceFormat format);
   void Free();
   void Leak();
 

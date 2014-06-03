@@ -16,11 +16,7 @@
 #include "chrome/browser/extensions/test_extension_system.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_builder.h"
-#include "chrome/common/extensions/feature_switch.h"
 #include "chrome/common/extensions/features/feature_channel.h"
-#include "chrome/common/extensions/value_builder.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/browser/browser_thread.h"
@@ -29,6 +25,10 @@
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/test_browser_thread.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/extension_builder.h"
+#include "extensions/common/feature_switch.h"
+#include "extensions/common/value_builder.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
 #if defined(OS_CHROMEOS)
@@ -154,7 +154,7 @@ TEST_F(ScriptBadgeControllerTest, ExecutionMakesBadgeVisible) {
   script_badge_controller_->OnScriptsExecuted(
       web_contents(),
       id_map,
-      web_contents()->GetController().GetActiveEntry()->GetPageID(),
+      web_contents()->GetController().GetVisibleEntry()->GetPageID(),
       GURL(std::string()));
   EXPECT_THAT(script_badge_controller_->GetCurrentActions(),
               testing::ElementsAre(GetScriptBadge(*extension.get())));
@@ -183,7 +183,7 @@ TEST_F(ScriptBadgeControllerTest, FragmentNavigation) {
     script_badge_controller_->OnScriptsExecuted(
         web_contents(),
         id_map,
-        web_contents()->GetController().GetActiveEntry()->GetPageID(),
+        web_contents()->GetController().GetVisibleEntry()->GetPageID(),
         GURL(std::string()));
 
     EXPECT_THAT(script_badge_controller_->GetCurrentActions(),

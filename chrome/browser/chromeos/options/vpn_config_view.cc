@@ -9,24 +9,25 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/chromeos/enrollment_dialog_view.h"
-#include "chrome/browser/chromeos/options/network_connect.h"
+#include "chrome/browser/chromeos/net/onc_utils.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/net/x509_certificate_model.h"
+#include "chromeos/login/login_state.h"
 #include "chromeos/network/network_configuration_handler.h"
 #include "chromeos/network/network_event_log.h"
 #include "chromeos/network/network_state.h"
 #include "chromeos/network/network_state_handler.h"
 #include "chromeos/network/network_ui_data.h"
-#include "chromeos/network/onc/onc_constants.h"
+#include "components/onc/onc_constants.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
 #include "grit/theme_resources.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
-#include "ui/base/events/event.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/models/combobox_model.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/events/event.h"
 #include "ui/views/controls/button/checkbox.h"
 #include "ui/views/controls/combobox/combobox.h"
 #include "ui/views/controls/label.h"
@@ -38,9 +39,6 @@
 
 namespace {
 
-// Root CA certificates that are built into Chrome use this token name.
-const char* const kRootCertificateTokenName = "Builtin Object Token";
-
 enum ProviderTypeIndex {
   PROVIDER_TYPE_INDEX_L2TP_IPSEC_PSK = 0,
   PROVIDER_TYPE_INDEX_L2TP_IPSEC_USER_CERT = 1,
@@ -48,7 +46,7 @@ enum ProviderTypeIndex {
   PROVIDER_TYPE_INDEX_MAX = 3,
 };
 
-string16 ProviderTypeIndexToString(int index) {
+base::string16 ProviderTypeIndexToString(int index) {
   switch (index) {
     case PROVIDER_TYPE_INDEX_L2TP_IPSEC_PSK:
       return l10n_util::GetStringUTF16(
@@ -61,18 +59,18 @@ string16 ProviderTypeIndexToString(int index) {
           IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_OPEN_VPN);
   }
   NOTREACHED();
-  return string16();
+  return base::string16();
 }
 
 int ProviderTypeToIndex(const std::string& provider_type,
                         const std::string& client_cert_id) {
-  if (provider_type == flimflam::kProviderL2tpIpsec) {
+  if (provider_type == shill::kProviderL2tpIpsec) {
     if (!client_cert_id.empty())
       return PROVIDER_TYPE_INDEX_L2TP_IPSEC_USER_CERT;
     else
       return PROVIDER_TYPE_INDEX_L2TP_IPSEC_PSK;
   } else {
-    DCHECK(provider_type == flimflam::kProviderOpenVpn);
+    DCHECK(provider_type == shill::kProviderOpenVpn);
     return PROVIDER_TYPE_INDEX_OPEN_VPN;
   }
 }
@@ -83,9 +81,9 @@ std::string ProviderTypeIndexToONCDictKey(int provider_type_index) {
   switch (provider_type_index) {
     case PROVIDER_TYPE_INDEX_L2TP_IPSEC_PSK:
     case PROVIDER_TYPE_INDEX_L2TP_IPSEC_USER_CERT:
-      return chromeos::onc::vpn::kIPsec;
+      return onc::vpn::kIPsec;
     case PROVIDER_TYPE_INDEX_OPEN_VPN:
-      return chromeos::onc::vpn::kOpenVPN;
+      return onc::vpn::kOpenVPN;
   }
   NOTREACHED() << "Unhandled provider type index " << provider_type_index;
   return std::string();
@@ -102,12 +100,6 @@ std::string GetPemFromDictionary(
   return pem;
 }
 
-void ShillError(const std::string& function,
-                const std::string& error_name,
-                scoped_ptr<base::DictionaryValue> error_data) {
-  NET_LOG_ERROR("Shill Error from VpnConfigView: " + error_name, function);
-}
-
 }  // namespace
 
 namespace chromeos {
@@ -121,7 +113,7 @@ class ProviderTypeComboboxModel : public ui::ComboboxModel {
 
   // Overridden from ui::ComboboxModel:
   virtual int GetItemCount() const OVERRIDE;
-  virtual string16 GetItemAt(int index) OVERRIDE;
+  virtual base::string16 GetItemAt(int index) OVERRIDE;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ProviderTypeComboboxModel);
@@ -134,7 +126,7 @@ class VpnServerCACertComboboxModel : public ui::ComboboxModel {
 
   // Overridden from ui::ComboboxModel:
   virtual int GetItemCount() const OVERRIDE;
-  virtual string16 GetItemAt(int index) OVERRIDE;
+  virtual base::string16 GetItemAt(int index) OVERRIDE;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(VpnServerCACertComboboxModel);
@@ -147,7 +139,7 @@ class VpnUserCertComboboxModel : public ui::ComboboxModel {
 
   // Overridden from ui::ComboboxModel:
   virtual int GetItemCount() const OVERRIDE;
-  virtual string16 GetItemAt(int index) OVERRIDE;
+  virtual base::string16 GetItemAt(int index) OVERRIDE;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(VpnUserCertComboboxModel);
@@ -165,7 +157,7 @@ int ProviderTypeComboboxModel::GetItemCount() const {
   return PROVIDER_TYPE_INDEX_MAX;
 }
 
-string16 ProviderTypeComboboxModel::GetItemAt(int index) {
+base::string16 ProviderTypeComboboxModel::GetItemAt(int index) {
   return ProviderTypeIndexToString(index);
 }
 
@@ -185,7 +177,7 @@ int VpnServerCACertComboboxModel::GetItemCount() const {
       CertLibrary::CERT_TYPE_SERVER_CA) + 1;
 }
 
-string16 VpnServerCACertComboboxModel::GetItemAt(int index) {
+base::string16 VpnServerCACertComboboxModel::GetItemAt(int index) {
   if (CertLibrary::Get()->CertificatesLoading())
     return l10n_util::GetStringUTF16(
         IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_CERT_LOADING);
@@ -215,7 +207,7 @@ int VpnUserCertComboboxModel::GetItemCount() const {
   return num_certs;
 }
 
-string16 VpnUserCertComboboxModel::GetItemAt(int index) {
+base::string16 VpnUserCertComboboxModel::GetItemAt(int index) {
   if (CertLibrary::Get()->CertificatesLoading()) {
     return l10n_util::GetStringUTF16(
         IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_CERT_LOADING);
@@ -266,30 +258,36 @@ VPNConfigView::VPNConfigView(NetworkConfigView* parent,
 }
 
 VPNConfigView::~VPNConfigView() {
+  RemoveAllChildViews(true);  // Destroy children before models
   CertLibrary::Get()->RemoveObserver(this);
 }
 
-string16 VPNConfigView::GetTitle() const {
+base::string16 VPNConfigView::GetTitle() const {
   DCHECK_NE(title_, 0);
   return l10n_util::GetStringUTF16(title_);
 }
 
 views::View* VPNConfigView::GetInitiallyFocusedView() {
-  // Put focus in the first editable field.
-  if (server_textfield_)
-    return server_textfield_;
-  else if (service_textfield_)
-    return service_textfield_;
-  else if (provider_type_combobox_)
-    return provider_type_combobox_;
-  else if (psk_passphrase_textfield_ && psk_passphrase_textfield_->enabled())
-    return psk_passphrase_textfield_;
-  else if (user_cert_combobox_ && user_cert_combobox_->enabled())
-    return user_cert_combobox_;
-  else if (server_ca_cert_combobox_ && server_ca_cert_combobox_->enabled())
-    return server_ca_cert_combobox_;
-  else
-    return NULL;
+  if (service_path_.empty()) {
+    // Put focus in the first editable field.
+    if (server_textfield_)
+      return server_textfield_;
+    else if (service_textfield_)
+      return service_textfield_;
+    else if (provider_type_combobox_)
+      return provider_type_combobox_;
+    else if (psk_passphrase_textfield_ && psk_passphrase_textfield_->enabled())
+      return psk_passphrase_textfield_;
+    else if (user_cert_combobox_ && user_cert_combobox_->enabled())
+      return user_cert_combobox_;
+    else if (server_ca_cert_combobox_ && server_ca_cert_combobox_->enabled())
+      return server_ca_cert_combobox_;
+  }
+  if (user_passphrase_textfield_)
+    return user_passphrase_textfield_;
+  else if (otp_textfield_)
+    return otp_textfield_;
+  return NULL;
 }
 
 bool VPNConfigView::CanLogin() {
@@ -312,12 +310,12 @@ bool VPNConfigView::CanLogin() {
 }
 
 void VPNConfigView::ContentsChanged(views::Textfield* sender,
-                                    const string16& new_contents) {
+                                    const base::string16& new_contents) {
   if (sender == server_textfield_ && !service_text_modified_) {
     // Set the service name to the server name up to '.', unless it has
     // been explicitly set by the user.
-    string16 server = server_textfield_->text();
-    string16::size_type n = server.find_first_of(L'.');
+    base::string16 server = server_textfield_->text();
+    base::string16::size_type n = server.find_first_of(L'.');
     service_name_from_server_ = server.substr(0, n);
     service_textfield_->SetText(service_name_from_server_);
   }
@@ -359,17 +357,25 @@ bool VPNConfigView::Login() {
     base::DictionaryValue properties;
     // Identifying properties
     properties.SetStringWithoutPathExpansion(
-        flimflam::kTypeProperty, flimflam::kTypeVPN);
+        shill::kTypeProperty, shill::kTypeVPN);
     properties.SetStringWithoutPathExpansion(
-        flimflam::kNameProperty, GetService());
+        shill::kNameProperty, GetService());
     properties.SetStringWithoutPathExpansion(
-        flimflam::kProviderHostProperty, GetServer());
+        shill::kProviderHostProperty, GetServer());
     properties.SetStringWithoutPathExpansion(
-        flimflam::kProviderTypeProperty, GetProviderTypeString());
+        shill::kProviderTypeProperty, GetProviderTypeString());
 
     SetConfigProperties(&properties);
-    ash::network_connect::CreateConfigurationAndConnect(
-        &properties, false /* not shared */);
+    bool shared = !LoginState::Get()->IsUserAuthenticated();
+
+    bool only_policy_autoconnect =
+        onc::PolicyAllowsOnlyPolicyNetworksToAutoconnect(!shared);
+    if (only_policy_autoconnect) {
+      properties.SetBooleanWithoutPathExpansion(shill::kAutoConnectProperty,
+                                                false);
+    }
+
+    ash::network_connect::CreateConfigurationAndConnect(&properties, shared);
   } else {
     const NetworkState* vpn = NetworkHandler::Get()->network_state_handler()->
         GetNetworkState(service_path_);
@@ -471,9 +477,9 @@ std::string VPNConfigView::GetProviderTypeString() const {
   switch (index) {
     case PROVIDER_TYPE_INDEX_L2TP_IPSEC_PSK:
     case PROVIDER_TYPE_INDEX_L2TP_IPSEC_USER_CERT:
-      return flimflam::kProviderL2tpIpsec;
+      return shill::kProviderL2tpIpsec;
     case PROVIDER_TYPE_INDEX_OPEN_VPN:
-      return flimflam::kProviderOpenVpn;
+      return shill::kProviderOpenVpn;
   }
   NOTREACHED();
   return std::string();
@@ -484,7 +490,7 @@ void VPNConfigView::Init() {
   if (!service_path_.empty()) {
     vpn = NetworkHandler::Get()->network_state_handler()->
         GetNetworkState(service_path_);
-    DCHECK(vpn && vpn->type() == flimflam::kTypeVPN);
+    DCHECK(vpn && vpn->type() == shill::kTypeVPN);
   }
   layout_ = views::GridLayout::CreatePanel(this);
   SetLayoutManager(layout_);
@@ -518,17 +524,18 @@ void VPNConfigView::Init() {
   enable_group_name_ = true;
 
   // Server label and input.
-  // Only provide Server name when configuring a new VPN.
-  if (service_path_.empty()) {
-    layout_->StartRow(0, 0);
-    layout_->AddView(new views::Label(l10n_util::GetStringUTF16(
-      IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_VPN_SERVER_HOSTNAME)));
-    server_textfield_ = new views::Textfield(views::Textfield::STYLE_DEFAULT);
-    server_textfield_->SetController(this);
-    layout_->AddView(server_textfield_);
-    layout_->AddPaddingRow(0, views::kRelatedControlVerticalSpacing);
-  } else {
-    server_textfield_ = NULL;
+  layout_->StartRow(0, 0);
+  views::View* server_label =
+      new views::Label(l10n_util::GetStringUTF16(
+          IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_VPN_SERVER_HOSTNAME));
+  layout_->AddView(server_label);
+  server_textfield_ = new views::Textfield(views::Textfield::STYLE_DEFAULT);
+  server_textfield_->SetController(this);
+  layout_->AddView(server_textfield_);
+  layout_->AddPaddingRow(0, views::kRelatedControlVerticalSpacing);
+  if (!service_path_.empty()) {
+    server_label->SetEnabled(false);
+    server_textfield_->SetEnabled(false);
   }
 
   // Service label and name or input.
@@ -703,34 +710,34 @@ void VPNConfigView::InitFromProperties(
   bool psk_passphrase_required = false;
   const base::DictionaryValue* provider_properties;
   if (service_properties.GetDictionaryWithoutPathExpansion(
-          flimflam::kProviderProperty, &provider_properties)) {
+          shill::kProviderProperty, &provider_properties)) {
     provider_properties->GetStringWithoutPathExpansion(
-        flimflam::kTypeProperty, &provider_type);
+        shill::kTypeProperty, &provider_type);
     provider_properties->GetStringWithoutPathExpansion(
-        flimflam::kHostProperty, &server_hostname);
+        shill::kHostProperty, &server_hostname);
   }
-  if (provider_type == flimflam::kProviderL2tpIpsec) {
+  if (provider_type == shill::kProviderL2tpIpsec) {
     provider_properties->GetStringWithoutPathExpansion(
-        flimflam::kL2tpIpsecClientCertIdProperty, &client_cert_id_);
+        shill::kL2tpIpsecClientCertIdProperty, &client_cert_id_);
     ca_cert_pem_ = GetPemFromDictionary(
         provider_properties, shill::kL2tpIpsecCaCertPemProperty);
     provider_properties->GetBooleanWithoutPathExpansion(
-        flimflam::kL2tpIpsecPskRequiredProperty, &psk_passphrase_required);
+        shill::kL2tpIpsecPskRequiredProperty, &psk_passphrase_required);
     provider_properties->GetStringWithoutPathExpansion(
-        flimflam::kL2tpIpsecUserProperty, &username);
+        shill::kL2tpIpsecUserProperty, &username);
     provider_properties->GetStringWithoutPathExpansion(
         shill::kL2tpIpsecTunnelGroupProperty, &group_name);
-  } else if (provider_type == flimflam::kProviderOpenVpn) {
+  } else if (provider_type == shill::kProviderOpenVpn) {
     provider_properties->GetStringWithoutPathExpansion(
-        flimflam::kOpenVPNClientCertIdProperty, &client_cert_id_);
+        shill::kOpenVPNClientCertIdProperty, &client_cert_id_);
     ca_cert_pem_ = GetPemFromDictionary(
         provider_properties, shill::kOpenVPNCaCertPemProperty);
     provider_properties->GetStringWithoutPathExpansion(
-        flimflam::kOpenVPNUserProperty, &username);
+        shill::kOpenVPNUserProperty, &username);
   }
   bool save_credentials = false;
   service_properties.GetBooleanWithoutPathExpansion(
-      flimflam::kSaveCredentialsProperty, &save_credentials);
+      shill::kSaveCredentialsProperty, &save_credentials);
 
   provider_type_index_ = ProviderTypeToIndex(provider_type, client_cert_id_);
 
@@ -758,27 +765,27 @@ void VPNConfigView::ParseUIProperties(const NetworkState* vpn) {
   std::string type_dict_name =
       ProviderTypeIndexToONCDictKey(provider_type_index_);
   if (provider_type_index_ == PROVIDER_TYPE_INDEX_L2TP_IPSEC_PSK) {
-    ParseVPNUIProperty(vpn, type_dict_name, onc::ipsec::kServerCARef,
+    ParseVPNUIProperty(vpn, type_dict_name, ::onc::ipsec::kServerCARef,
                        &ca_cert_ui_data_);
-    ParseVPNUIProperty(vpn, type_dict_name, onc::ipsec::kPSK,
+    ParseVPNUIProperty(vpn, type_dict_name, ::onc::ipsec::kPSK,
                        &psk_passphrase_ui_data_);
-    ParseVPNUIProperty(vpn, type_dict_name, onc::ipsec::kGroup,
+    ParseVPNUIProperty(vpn, type_dict_name, ::onc::ipsec::kGroup,
                        &group_name_ui_data_);
   } else if (provider_type_index_ == PROVIDER_TYPE_INDEX_OPEN_VPN) {
-    ParseVPNUIProperty(vpn, type_dict_name, onc::openvpn::kServerCARef,
+    ParseVPNUIProperty(vpn, type_dict_name, ::onc::openvpn::kServerCARef,
                        &ca_cert_ui_data_);
   }
-  ParseVPNUIProperty(vpn, type_dict_name, onc::vpn::kClientCertRef,
+  ParseVPNUIProperty(vpn, type_dict_name, ::onc::vpn::kClientCertRef,
                      &user_cert_ui_data_);
 
   const std::string credentials_dict_name(
       provider_type_index_ == PROVIDER_TYPE_INDEX_L2TP_IPSEC_PSK ?
-      onc::vpn::kL2TP : type_dict_name);
-  ParseVPNUIProperty(vpn, credentials_dict_name, onc::vpn::kUsername,
+      ::onc::vpn::kL2TP : type_dict_name);
+  ParseVPNUIProperty(vpn, credentials_dict_name, ::onc::vpn::kUsername,
                      &username_ui_data_);
-  ParseVPNUIProperty(vpn, credentials_dict_name, onc::vpn::kPassword,
+  ParseVPNUIProperty(vpn, credentials_dict_name, ::onc::vpn::kPassword,
                      &user_passphrase_ui_data_);
-  ParseVPNUIProperty(vpn, credentials_dict_name, onc::vpn::kSaveCredentials,
+  ParseVPNUIProperty(vpn, credentials_dict_name, ::onc::vpn::kSaveCredentials,
                      &save_credentials_ui_data_);
 }
 
@@ -799,7 +806,7 @@ void VPNConfigView::SetConfigProperties(
       std::string psk_passphrase = GetPSKPassphrase();
       if (!psk_passphrase.empty()) {
         properties->SetStringWithoutPathExpansion(
-            flimflam::kL2tpIpsecPskProperty, GetPSKPassphrase());
+            shill::kL2tpIpsecPskProperty, GetPSKPassphrase());
       }
       if (!group_name.empty()) {
         properties->SetStringWithoutPathExpansion(
@@ -807,33 +814,35 @@ void VPNConfigView::SetConfigProperties(
       }
       if (!user_name.empty()) {
         properties->SetStringWithoutPathExpansion(
-            flimflam::kL2tpIpsecUserProperty, user_name);
+            shill::kL2tpIpsecUserProperty, user_name);
       }
       if (!user_passphrase.empty()) {
         properties->SetStringWithoutPathExpansion(
-            flimflam::kL2tpIpsecPasswordProperty, user_passphrase);
+            shill::kL2tpIpsecPasswordProperty, user_passphrase);
       }
       break;
     }
     case PROVIDER_TYPE_INDEX_L2TP_IPSEC_USER_CERT: {
       std::string ca_cert_pem = GetServerCACertPEM();
       if (!ca_cert_pem.empty()) {
-        properties->SetStringWithoutPathExpansion(
-            shill::kL2tpIpsecCaCertPemProperty, ca_cert_pem);
+        base::ListValue* pem_list = new base::ListValue;
+        pem_list->AppendString(ca_cert_pem);
+        properties->SetWithoutPathExpansion(
+            shill::kL2tpIpsecCaCertPemProperty, pem_list);
       }
       properties->SetStringWithoutPathExpansion(
-          flimflam::kL2tpIpsecClientCertIdProperty, GetUserCertID());
+          shill::kL2tpIpsecClientCertIdProperty, GetUserCertID());
       if (!group_name.empty()) {
         properties->SetStringWithoutPathExpansion(
             shill::kL2tpIpsecTunnelGroupProperty, GetGroupName());
       }
       if (!user_name.empty()) {
         properties->SetStringWithoutPathExpansion(
-            flimflam::kL2tpIpsecUserProperty, user_name);
+            shill::kL2tpIpsecUserProperty, user_name);
       }
       if (!user_passphrase.empty()) {
         properties->SetStringWithoutPathExpansion(
-            flimflam::kL2tpIpsecPasswordProperty, user_passphrase);
+            shill::kL2tpIpsecPasswordProperty, user_passphrase);
       }
       break;
     }
@@ -841,22 +850,22 @@ void VPNConfigView::SetConfigProperties(
       std::string ca_cert_pem = GetServerCACertPEM();
       if (!ca_cert_pem.empty()) {
         base::ListValue* pem_list = new base::ListValue;
-        pem_list->AppendString(GetServerCACertPEM());
+        pem_list->AppendString(ca_cert_pem);
         properties->SetWithoutPathExpansion(
             shill::kOpenVPNCaCertPemProperty, pem_list);
       }
       properties->SetStringWithoutPathExpansion(
-          flimflam::kOpenVPNClientCertIdProperty, GetUserCertID());
+          shill::kOpenVPNClientCertIdProperty, GetUserCertID());
       properties->SetStringWithoutPathExpansion(
-          flimflam::kOpenVPNUserProperty, GetUsername());
+          shill::kOpenVPNUserProperty, GetUsername());
       if (!user_passphrase.empty()) {
         properties->SetStringWithoutPathExpansion(
-            flimflam::kOpenVPNPasswordProperty, user_passphrase);
+            shill::kOpenVPNPasswordProperty, user_passphrase);
       }
       std::string otp = GetOTP();
       if (!otp.empty()) {
         properties->SetStringWithoutPathExpansion(
-            flimflam::kOpenVPNOTPProperty, otp);
+            shill::kOpenVPNOTPProperty, otp);
       }
       break;
     }
@@ -865,7 +874,7 @@ void VPNConfigView::SetConfigProperties(
       break;
   }
   properties->SetBooleanWithoutPathExpansion(
-      flimflam::kSaveCredentialsProperty, GetSaveCredentials());
+      shill::kSaveCredentialsProperty, GetSaveCredentials());
 }
 
 void VPNConfigView::Refresh() {
@@ -962,7 +971,7 @@ void VPNConfigView::UpdateControls() {
 
 void VPNConfigView::UpdateErrorLabel() {
   // Error message.
-  string16 error_msg;
+  base::string16 error_msg;
   bool cert_required =
       GetProviderTypeIndex() == PROVIDER_TYPE_INDEX_L2TP_IPSEC_USER_CERT;
   if (cert_required && CertLibrary::Get()->CertificatesLoaded()) {
@@ -978,8 +987,8 @@ void VPNConfigView::UpdateErrorLabel() {
     // TODO(kuan): differentiate between bad psk and user passphrases.
     const NetworkState* vpn = NetworkHandler::Get()->network_state_handler()->
         GetNetworkState(service_path_);
-    if (vpn && vpn->connection_state() == flimflam::kStateFailure)
-      error_msg = ash::network_connect::ErrorString(vpn->error());
+    if (vpn && vpn->connection_state() == shill::kStateFailure)
+      error_msg = ash::network_connect::ErrorString(vpn->error(), vpn->path());
   }
   if (!error_msg.empty()) {
     error_label_->SetText(error_msg);
@@ -1035,16 +1044,16 @@ void VPNConfigView::ParseVPNUIProperty(
     const std::string& dict_key,
     const std::string& key,
     NetworkPropertyUIData* property_ui_data) {
-  onc::ONCSource onc_source = onc::ONC_SOURCE_NONE;
+  ::onc::ONCSource onc_source = ::onc::ONC_SOURCE_NONE;
   const base::DictionaryValue* onc =
-      network_connect::FindPolicyForActiveUser(network, &onc_source);
+      onc::FindPolicyForActiveUser(network->guid(), &onc_source);
 
   VLOG_IF(1, !onc) << "No ONC found for VPN network " << network->guid();
   property_ui_data->ParseOncProperty(
       onc_source,
       onc,
       base::StringPrintf("%s.%s.%s",
-                         onc::network_config::kVPN,
+                         ::onc::network_config::kVPN,
                          dict_key.c_str(),
                          key.c_str()));
 }

@@ -9,7 +9,6 @@
 #include "base/stl_util.h"
 #include "base/values.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
-#include "chromeos/dbus/shill_profile_client_stub.h"
 #include "chromeos/dbus/shill_property_changed_observer.h"
 #include "dbus/bus.h"
 #include "dbus/message.h"
@@ -23,9 +22,8 @@ namespace {
 
 class ShillProfileClientImpl : public ShillProfileClient {
  public:
-  explicit ShillProfileClientImpl(dbus::Bus* bus);
+  ShillProfileClientImpl();
 
-  // ShillProfileClient overrides.
   virtual void AddPropertyChangedObserver(
       const dbus::ObjectPath& profile_path,
       ShillPropertyChangedObserver* observer) OVERRIDE {
@@ -37,6 +35,7 @@ class ShillProfileClientImpl : public ShillProfileClient {
       ShillPropertyChangedObserver* observer) OVERRIDE {
     GetHelper(profile_path)->RemovePropertyChangedObserver(observer);
   }
+
   virtual void GetProperties(
       const dbus::ObjectPath& profile_path,
       const DictionaryValueCallbackWithoutStatus& callback,
@@ -54,6 +53,11 @@ class ShillProfileClientImpl : public ShillProfileClient {
     return NULL;
   }
 
+ protected:
+  virtual void Init(dbus::Bus* bus) OVERRIDE {
+    bus_ = bus;
+  }
+
  private:
   typedef std::map<std::string, ShillClientHelper*> HelperMap;
 
@@ -67,8 +71,8 @@ class ShillProfileClientImpl : public ShillProfileClient {
   DISALLOW_COPY_AND_ASSIGN(ShillProfileClientImpl);
 };
 
-ShillProfileClientImpl::ShillProfileClientImpl(dbus::Bus* bus)
-    : bus_(bus),
+ShillProfileClientImpl::ShillProfileClientImpl()
+    : bus_(NULL),
       helpers_deleter_(&helpers_) {
 }
 
@@ -80,9 +84,9 @@ ShillClientHelper* ShillProfileClientImpl::GetHelper(
 
   // There is no helper for the profile, create it.
   dbus::ObjectProxy* object_proxy =
-      bus_->GetObjectProxy(flimflam::kFlimflamServiceName, profile_path);
-  ShillClientHelper* helper = new ShillClientHelper(bus_, object_proxy);
-  helper->MonitorPropertyChanged(flimflam::kFlimflamProfileInterface);
+      bus_->GetObjectProxy(shill::kFlimflamServiceName, profile_path);
+  ShillClientHelper* helper = new ShillClientHelper(object_proxy);
+  helper->MonitorPropertyChanged(shill::kFlimflamProfileInterface);
   helpers_.insert(HelperMap::value_type(profile_path.value(), helper));
   return helper;
 }
@@ -91,8 +95,8 @@ void ShillProfileClientImpl::GetProperties(
     const dbus::ObjectPath& profile_path,
     const DictionaryValueCallbackWithoutStatus& callback,
     const ErrorCallback& error_callback) {
-  dbus::MethodCall method_call(flimflam::kFlimflamProfileInterface,
-                               flimflam::kGetPropertiesFunction);
+  dbus::MethodCall method_call(shill::kFlimflamProfileInterface,
+                               shill::kGetPropertiesFunction);
   GetHelper(profile_path)->CallDictionaryValueMethodWithErrorCallback(
       &method_call, callback, error_callback);
 }
@@ -102,8 +106,8 @@ void ShillProfileClientImpl::GetEntry(
     const std::string& entry_path,
     const DictionaryValueCallbackWithoutStatus& callback,
     const ErrorCallback& error_callback) {
-  dbus::MethodCall method_call(flimflam::kFlimflamProfileInterface,
-                               flimflam::kGetEntryFunction);
+  dbus::MethodCall method_call(shill::kFlimflamProfileInterface,
+                               shill::kGetEntryFunction);
   dbus::MessageWriter writer(&method_call);
   writer.AppendString(entry_path);
   GetHelper(profile_path)->CallDictionaryValueMethodWithErrorCallback(
@@ -115,8 +119,8 @@ void ShillProfileClientImpl::DeleteEntry(
     const std::string& entry_path,
     const base::Closure& callback,
     const ErrorCallback& error_callback) {
-  dbus::MethodCall method_call(flimflam::kFlimflamProfileInterface,
-                               flimflam::kDeleteEntryFunction);
+  dbus::MethodCall method_call(shill::kFlimflamProfileInterface,
+                               shill::kDeleteEntryFunction);
   dbus::MessageWriter writer(&method_call);
   writer.AppendString(entry_path);
   GetHelper(profile_path)->CallVoidMethodWithErrorCallback(
@@ -130,13 +134,8 @@ ShillProfileClient::ShillProfileClient() {}
 ShillProfileClient::~ShillProfileClient() {}
 
 // static
-ShillProfileClient* ShillProfileClient::Create(
-    DBusClientImplementationType type,
-    dbus::Bus* bus) {
-  if (type == REAL_DBUS_CLIENT_IMPLEMENTATION)
-    return new ShillProfileClientImpl(bus);
-  DCHECK_EQ(STUB_DBUS_CLIENT_IMPLEMENTATION, type);
-  return new ShillProfileClientStub();
+ShillProfileClient* ShillProfileClient::Create() {
+  return new ShillProfileClientImpl();
 }
 
 }  // namespace chromeos

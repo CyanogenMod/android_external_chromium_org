@@ -91,7 +91,7 @@ void FakeSyncManager::Init(
     Encryptor* encryptor,
     scoped_ptr<UnrecoverableErrorHandler> unrecoverable_error_handler,
     ReportUnrecoverableErrorFunction report_unrecoverable_error_function,
-    bool use_oauth2_token) {
+    CancelationSignal* cancelation_signal) {
   sync_task_runner_ = base::ThreadTaskRunnerHandle::Get();
   PurgePartiallySyncedTypes();
 
@@ -207,9 +207,6 @@ SyncStatus FakeSyncManager::GetDetailedStatus() const {
 
 void FakeSyncManager::SaveChanges() {
   // Do nothing.
-}
-
-void FakeSyncManager::StopSyncingForShutdown() {
 }
 
 void FakeSyncManager::ShutdownOnSyncThread() {

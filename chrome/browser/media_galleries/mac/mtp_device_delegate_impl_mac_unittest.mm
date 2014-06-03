@@ -22,7 +22,6 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/browser/fileapi/file_system_file_util.h"
 
 #if !defined(MAC_OS_X_VERSION_10_7) || \
     MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_7
@@ -161,16 +160,6 @@ const char kTestFileContents[] = "test";
 
 @end
 
-// Advances the enumerator. When the method returns, signals the waiting
-// event.
-void EnumerateAndSignal(
-    fileapi::FileSystemFileUtil::AbstractFileEnumerator* enumerator,
-    base::WaitableEvent* event,
-    base::FilePath* path) {
-  *path = enumerator->Next();
-  event->Signal();
-}
-
 class MTPDeviceDelegateImplMacTest : public testing::Test {
  public:
   MTPDeviceDelegateImplMacTest() : camera_(NULL), delegate_(NULL) {}
@@ -184,15 +173,25 @@ class MTPDeviceDelegateImplMacTest : public testing::Test {
         content::BrowserThread::IO));
     ASSERT_TRUE(io_thread_->Start());
 
-    chrome::test::TestStorageMonitor* monitor =
-        chrome::test::TestStorageMonitor::CreateAndInstall();
+    TestStorageMonitor* monitor = TestStorageMonitor::CreateAndInstall();
     manager_.SetNotifications(monitor->receiver());
 
     camera_ = [MockMTPICCameraDevice alloc];
     id<ICDeviceBrowserDelegate> delegate = manager_.device_browser();
     [delegate deviceBrowser:nil didAddDevice:camera_ moreComing:NO];
 
-    delegate_ = new chrome::MTPDeviceDelegateImplMac(kDeviceId, kDevicePath);
+    delegate_ = new MTPDeviceDelegateImplMac(kDeviceId, kDevicePath);
+  }
+
+  virtual void TearDown() OVERRIDE {
+    id<ICDeviceBrowserDelegate> delegate = manager_.device_browser();
+    [delegate deviceBrowser:nil didRemoveDevice:camera_ moreGoing:NO];
+
+    delegate_->CancelPendingTasksAndDeleteDelegate();
+
+    TestStorageMonitor::RemoveSingleton();
+
+    io_thread_->Stop();
   }
 
   void OnError(base::WaitableEvent* event, base::PlatformFileError error) {
@@ -290,15 +289,6 @@ class MTPDeviceDelegateImplMacTest : public testing::Test {
     return error_;
   }
 
-  virtual void TearDown() OVERRIDE {
-    id<ICDeviceBrowserDelegate> delegate = manager_.device_browser();
-    [delegate deviceBrowser:nil didRemoveDevice:camera_ moreGoing:NO];
-
-    delegate_->CancelPendingTasksAndDeleteDelegate();
-
-    io_thread_->Stop();
-  }
-
  protected:
   base::MessageLoopForUI message_loop_;
   // Note: threads must be made in this order: UI > FILE > IO
@@ -306,11 +296,11 @@ class MTPDeviceDelegateImplMacTest : public testing::Test {
   scoped_ptr<content::TestBrowserThread> file_thread_;
   scoped_ptr<content::TestBrowserThread> io_thread_;
   base::ScopedTempDir temp_dir_;
-  chrome::ImageCaptureDeviceManager manager_;
+  ImageCaptureDeviceManager manager_;
   MockMTPICCameraDevice* camera_;
 
   // This object needs special deletion inside the above |task_runner_|.
-  chrome::MTPDeviceDelegateImplMac* delegate_;
+  MTPDeviceDelegateImplMac* delegate_;
 
   base::PlatformFileError error_;
   base::PlatformFileInfo info_;
@@ -566,7 +556,7 @@ TEST_F(MTPDeviceDelegateImplMacTest, TestDownload) {
              DownloadFile(base::FilePath("/ic:id/filename"),
                           temp_dir_.path().Append("target")));
   std::string contents;
-  EXPECT_TRUE(file_util::ReadFileToString(temp_dir_.path().Append("target"),
-                                          &contents));
+  EXPECT_TRUE(base::ReadFileToString(temp_dir_.path().Append("target"),
+                                     &contents));
   EXPECT_EQ(kTestFileContents, contents);
 }

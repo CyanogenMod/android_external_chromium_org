@@ -13,6 +13,9 @@
 #include <ppapi/c/ppb_file_io.h>
 #include <string.h>
 #include <vector>
+
+#include "nacl_io/getdents_helper.h"
+#include "nacl_io/kernel_handle.h"
 #include "nacl_io/mount.h"
 #include "nacl_io/osdirent.h"
 #include "nacl_io/pepper_interface.h"
@@ -40,37 +43,37 @@ void* GetOutputBuffer(void* user_data, uint32_t count, uint32_t size) {
   return output->data;
 }
 
-int32_t ModeToOpenFlags(int mode) {
-  int32_t open_flags = 0;
+int32_t OpenFlagsToPPAPIOpenFlags(int open_flags) {
+  int32_t ppapi_flags = 0;
 
-  switch (mode & 3) {
+  switch (open_flags & 3) {
     default:
     case O_RDONLY:
-      open_flags = PP_FILEOPENFLAG_READ;
+      ppapi_flags = PP_FILEOPENFLAG_READ;
       break;
     case O_WRONLY:
-      open_flags = PP_FILEOPENFLAG_WRITE;
+      ppapi_flags = PP_FILEOPENFLAG_WRITE;
       break;
     case O_RDWR:
-      open_flags = PP_FILEOPENFLAG_READ | PP_FILEOPENFLAG_WRITE;
+      ppapi_flags = PP_FILEOPENFLAG_READ | PP_FILEOPENFLAG_WRITE;
       break;
   }
 
-  if (mode & O_CREAT)
-    open_flags |= PP_FILEOPENFLAG_CREATE;
-  if (mode & O_TRUNC)
-    open_flags |= PP_FILEOPENFLAG_TRUNCATE;
-  if (mode & O_EXCL)
-    open_flags |= PP_FILEOPENFLAG_EXCLUSIVE;
+  if (open_flags & O_CREAT)
+    ppapi_flags |= PP_FILEOPENFLAG_CREATE;
+  if (open_flags & O_TRUNC)
+    ppapi_flags |= PP_FILEOPENFLAG_TRUNCATE;
+  if (open_flags & O_EXCL)
+    ppapi_flags |= PP_FILEOPENFLAG_EXCLUSIVE;
 
-  return open_flags;
+  return ppapi_flags;
 }
 
 }  // namespace
 
 Error MountNodeHtml5Fs::FSync() {
   // Cannot call Flush on a directory; simply do nothing.
-  if (IsDirectory())
+  if (IsaDir())
     return 0;
 
   int32_t result = mount_->ppapi()->GetFileIoInterface()
@@ -86,17 +89,14 @@ Error MountNodeHtml5Fs::GetDents(size_t offs,
                                  int* out_bytes) {
   *out_bytes = 0;
 
-  // If the buffer pointer is invalid, fail
-  if (NULL == pdir)
-    return EINVAL;
-
-  // If the buffer is too small, fail
-  if (size < sizeof(struct dirent))
-    return EINVAL;
-
   // If this is not a directory, fail
-  if (!IsDirectory())
+  if (!IsaDir())
     return ENOTDIR;
+
+  // TODO(binji): Better handling of ino numbers.
+  const ino_t kCurDirIno = -1;
+  const ino_t kParentDirIno = -2;
+  GetDentsHelper helper(kCurDirIno, kParentDirIno);
 
   OutputBuffer output_buf = {NULL, 0};
   PP_ArrayOutput output = {&GetOutputBuffer, &output_buf};
@@ -105,7 +105,6 @@ Error MountNodeHtml5Fs::GetDents(size_t offs,
   if (result != PP_OK)
     return PPErrorToErrno(result);
 
-  std::vector<struct dirent> dirents;
   PP_DirectoryEntry* entries = static_cast<PP_DirectoryEntry*>(output_buf.data);
 
   for (int i = 0; i < output_buf.element_count; ++i) {
@@ -121,38 +120,23 @@ Error MountNodeHtml5Fs::GetDents(size_t offs,
     uint32_t file_name_length;
     const char* file_name = mount_->ppapi()->GetVarInterface()
         ->VarToUtf8(file_name_var, &file_name_length);
-    if (!file_name)
-      continue;
 
-    file_name_length = std::min(
-        static_cast<size_t>(file_name_length),
-        sizeof(static_cast<struct dirent*>(0)->d_name) - 1);  // -1 for NULL.
+    if (file_name) {
+      file_name_length = std::min(
+          static_cast<size_t>(file_name_length),
+          MEMBER_SIZE(dirent, d_name) - 1);  // -1 for NULL.
 
-    dirents.push_back(dirent());
-    struct dirent& direntry = dirents.back();
-    direntry.d_ino = 1;  // Must be > 0.
-    direntry.d_off = sizeof(struct dirent);
-    direntry.d_reclen = sizeof(struct dirent);
-    strncpy(direntry.d_name, file_name, file_name_length);
-    direntry.d_name[file_name_length] = 0;
+      // TODO(binji): Better handling of ino numbers.
+      helper.AddDirent(1, file_name, file_name_length);
+    }
+
+    mount_->ppapi()->GetVarInterface()->Release(file_name_var);
   }
 
   // Release the output buffer.
   free(output_buf.data);
 
-  // Force size to a multiple of dirent
-  size -= size % sizeof(struct dirent);
-  size_t max = dirents.size() * sizeof(struct dirent);
-
-  if (offs >= max)
-    return 0;
-
-  if (offs + size >= max)
-    size = max - offs;
-
-  memcpy(pdir, reinterpret_cast<char*>(dirents.data()) + offs, size);
-  *out_bytes = size;
-  return 0;
+  return helper.GetDents(offs, pdir, size, out_bytes);
 }
 
 Error MountNodeHtml5Fs::GetStat(struct stat* stat) {
@@ -187,18 +171,18 @@ Error MountNodeHtml5Fs::GetStat(struct stat* stat) {
   return 0;
 }
 
-Error MountNodeHtml5Fs::Read(size_t offs,
+Error MountNodeHtml5Fs::Read(const HandleAttr& attr,
                              void* buf,
                              size_t count,
                              int* out_bytes) {
   *out_bytes = 0;
 
-  if (IsDirectory())
+  if (IsaDir())
     return EISDIR;
 
   int32_t result =
       mount_->ppapi()->GetFileIoInterface()->Read(fileio_resource_,
-                                                  offs,
+                                                  attr.offs,
                                                   static_cast<char*>(buf),
                                                   static_cast<int32_t>(count),
                                                   PP_BlockUntilComplete());
@@ -210,7 +194,7 @@ Error MountNodeHtml5Fs::Read(size_t offs,
 }
 
 Error MountNodeHtml5Fs::FTruncate(off_t size) {
-  if (IsDirectory())
+  if (IsaDir())
     return EISDIR;
 
   int32_t result = mount_->ppapi()->GetFileIoInterface()
@@ -220,18 +204,18 @@ Error MountNodeHtml5Fs::FTruncate(off_t size) {
   return 0;
 }
 
-Error MountNodeHtml5Fs::Write(size_t offs,
+Error MountNodeHtml5Fs::Write(const HandleAttr& attr,
                               const void* buf,
                               size_t count,
                               int* out_bytes) {
   *out_bytes = 0;
 
-  if (IsDirectory())
+  if (IsaDir())
     return EISDIR;
 
   int32_t result = mount_->ppapi()->GetFileIoInterface()
       ->Write(fileio_resource_,
-              offs,
+              attr.offs,
               static_cast<const char*>(buf),
               static_cast<int32_t>(count),
               PP_BlockUntilComplete());
@@ -242,8 +226,15 @@ Error MountNodeHtml5Fs::Write(size_t offs,
   return 0;
 }
 
+int MountNodeHtml5Fs::GetType() {
+  return fileio_resource_ ? S_IFREG : S_IFDIR;
+}
+
 Error MountNodeHtml5Fs::GetSize(size_t* out_size) {
   *out_size = 0;
+
+  if (IsaDir())
+    return 0;
 
   AUTO_LOCK(node_lock_);
 
@@ -257,13 +248,21 @@ Error MountNodeHtml5Fs::GetSize(size_t* out_size) {
   return 0;
 }
 
+bool MountNodeHtml5Fs::IsaDir() {
+  return !fileio_resource_;
+}
+
+bool MountNodeHtml5Fs::IsaFile() {
+  return fileio_resource_;
+}
+
 MountNodeHtml5Fs::MountNodeHtml5Fs(Mount* mount, PP_Resource fileref_resource)
     : MountNode(mount),
       fileref_resource_(fileref_resource),
       fileio_resource_(0) {}
 
-Error MountNodeHtml5Fs::Init(int perm) {
-  Error error = MountNode::Init(Mount::OpenModeToPermission(perm));
+Error MountNodeHtml5Fs::Init(int open_flags) {
+  Error error = MountNode::Init(open_flags);
   if (error)
     return error;
 
@@ -277,16 +276,15 @@ Error MountNodeHtml5Fs::Init(int perm) {
   if (query_result == PP_OK && file_info.type == PP_FILETYPE_DIRECTORY)
     return 0;
 
-  fileio_resource_ = mount_->ppapi()->GetFileIoInterface()
-      ->Create(mount_->ppapi()->GetInstance());
+  FileIoInterface* file_io = mount_->ppapi()->GetFileIoInterface();
+  fileio_resource_ = file_io->Create(mount_->ppapi()->GetInstance());
   if (!fileio_resource_)
     return ENOSYS;
 
-  int32_t open_result =
-      mount_->ppapi()->GetFileIoInterface()->Open(fileio_resource_,
-                                                  fileref_resource_,
-                                                  ModeToOpenFlags(perm),
-                                                  PP_BlockUntilComplete());
+  int32_t open_result = file_io->Open(fileio_resource_,
+                                      fileref_resource_,
+                                      OpenFlagsToPPAPIOpenFlags(open_flags),
+                                      PP_BlockUntilComplete());
   if (open_result != PP_OK)
     return PPErrorToErrno(open_result);
   return 0;

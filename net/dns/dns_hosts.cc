@@ -147,7 +147,7 @@ bool ParseHostsFile(const base::FilePath& path, DnsHosts* dns_hosts) {
     return true;
 
   int64 size;
-  if (!file_util::GetFileSize(path, &size))
+  if (!base::GetFileSize(path, &size))
     return false;
 
   UMA_HISTOGRAM_COUNTS("AsyncDNS.HostsSize", size);
@@ -158,7 +158,7 @@ bool ParseHostsFile(const base::FilePath& path, DnsHosts* dns_hosts) {
     return false;
 
   std::string contents;
-  if (!file_util::ReadFileToString(path, &contents))
+  if (!base::ReadFileToString(path, &contents))
     return false;
 
   ParseHosts(contents, dns_hosts);

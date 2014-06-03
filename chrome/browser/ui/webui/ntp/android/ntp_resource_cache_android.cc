@@ -13,15 +13,19 @@
 #include "chrome/browser/google/google_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/chrome_version_info.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
+#include "content/public/browser/render_process_host.h"
 #include "grit/browser_resources.h"
 #include "grit/generated_resources.h"
+#include "ui/base/device_form_factor.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/webui/jstemplate_builder.h"
-#include "ui/webui/web_ui_util.h"
+#include "ui/base/webui/jstemplate_builder.h"
+#include "ui/base/webui/web_ui_util.h"
 
+using chrome::VersionInfo;
 using content::BrowserThread;
 
 namespace {
@@ -35,7 +39,20 @@ NTPResourceCache::NTPResourceCache(Profile* profile) : profile_(profile) {}
 
 NTPResourceCache::~NTPResourceCache() {}
 
-base::RefCountedMemory* NTPResourceCache::GetNewTabHTML(bool is_incognito) {
+NTPResourceCache::WindowType NTPResourceCache::GetWindowType(
+    Profile* profile, content::RenderProcessHost* render_host) {
+  if (render_host) {
+    // Sometimes the |profile| is the parent (non-incognito) version of the user
+    // so we check the |render_host| if it is provided.
+    if (render_host->GetBrowserContext()->IsOffTheRecord())
+      return NTPResourceCache::INCOGNITO;
+  } else if (profile->IsOffTheRecord()) {
+    return NTPResourceCache::INCOGNITO;
+  }
+  return NTPResourceCache::NORMAL;
+}
+
+base::RefCountedMemory* NTPResourceCache::GetNewTabHTML(WindowType win_type) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   // Android uses same html/css for incognito NTP and normal NTP
   if (!new_tab_html_.get())
@@ -43,7 +60,7 @@ base::RefCountedMemory* NTPResourceCache::GetNewTabHTML(bool is_incognito) {
   return new_tab_html_.get();
 }
 
-base::RefCountedMemory* NTPResourceCache::GetNewTabCSS(bool is_incognito) {
+base::RefCountedMemory* NTPResourceCache::GetNewTabCSS(WindowType win_type) {
   // This is used for themes, which are not currently supported on Android.
   NOTIMPLEMENTED();
   return NULL;
@@ -116,10 +133,23 @@ void NTPResourceCache::CreateNewTabHTML() {
                                  GetRawDataResource(IDR_NEW_TAB_ANDROID_HTML));
   localized_strings.SetString(
       "device",
-      CommandLine::ForCurrentProcess()->HasSwitch(switches::kTabletUI) ?
+      ui::GetDeviceFormFactor() == ui::DEVICE_FORM_FACTOR_TABLET ?
           "tablet" : "phone");
+
+  bool bookmark_shortcuts_allowed = false;
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kDisableAddToHomescreen)) {
+    bookmark_shortcuts_allowed = true;
+  } else if (CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kEnableAddToHomescreen)) {
+    bookmark_shortcuts_allowed = false;
+  }
+  localized_strings.SetString(
+      "shortcut_item_enabled",
+      bookmark_shortcuts_allowed ? "true" : "false");
+
   const char* new_tab_link = kLearnMoreIncognitoUrl;
-  string16 learnMoreLink = ASCIIToUTF16(
+  base::string16 learnMoreLink = ASCIIToUTF16(
       google_util::AppendGoogleLocaleParam(GURL(new_tab_link)).spec());
   localized_strings.SetString("content",
       l10n_util::GetStringFUTF16(

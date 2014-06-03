@@ -57,9 +57,9 @@ class _SingleProcessSampleProfiler(object):
 
 class SampleProfiler(profiler.Profiler):
 
-  def __init__(self, browser_backend, platform_backend, output_path):
+  def __init__(self, browser_backend, platform_backend, output_path, state):
     super(SampleProfiler, self).__init__(
-        browser_backend, platform_backend, output_path)
+        browser_backend, platform_backend, output_path, state)
     process_output_file_map = self._GetProcessOutputFileMap()
     self._process_profilers = []
     for pid, output_file in process_output_file_map.iteritems():
@@ -75,13 +75,13 @@ class SampleProfiler(profiler.Profiler):
     return 'sample'
 
   @classmethod
-  def is_supported(cls, options):
+  def is_supported(cls, browser_type):
     if sys.platform != 'darwin':
       return False
-    if not options:
+    if browser_type == 'any':
       return True
-    return (not options.browser_type.startswith('android') and
-            not options.browser_type.startswith('cros'))
+    return (not browser_type.startswith('android') and
+            not browser_type.startswith('cros'))
 
   def CollectProfile(self):
     output_paths = []

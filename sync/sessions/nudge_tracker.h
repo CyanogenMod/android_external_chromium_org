@@ -13,11 +13,13 @@
 #include "base/compiler_specific.h"
 #include "sync/base/sync_export.h"
 #include "sync/internal_api/public/base/model_type.h"
-#include "sync/internal_api/public/base/model_type_invalidation_map.h"
 #include "sync/protocol/sync.pb.h"
 #include "sync/sessions/data_type_tracker.h"
 
 namespace syncer {
+
+class ObjectIdInvalidationMap;
+
 namespace sessions {
 
 class SYNC_EXPORT_PRIVATE NudgeTracker {
@@ -48,7 +50,7 @@ class SYNC_EXPORT_PRIVATE NudgeTracker {
 
   // Takes note of the receipt of an invalidation notice from the server.
   void RecordRemoteInvalidation(
-      const ModelTypeInvalidationMap& invalidation_map);
+      const ObjectIdInvalidationMap& invalidation_map);
 
   // These functions should be called to keep this class informed of the status
   // of the connection to the invalidations server.

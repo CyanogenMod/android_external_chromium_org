@@ -4,9 +4,9 @@
 
 #include "remoting/host/input_injector.h"
 
-#include <algorithm>
 #include <ApplicationServices/ApplicationServices.h>
 #include <Carbon/Carbon.h>
+#include <algorithm>
 
 #include "base/basictypes.h"
 #include "base/bind.h"
@@ -18,10 +18,9 @@
 #include "remoting/host/clipboard.h"
 #include "remoting/proto/internal.pb.h"
 #include "remoting/protocol/message_decoder.h"
-#include "skia/ext/skia_utils_mac.h"
-#include "third_party/skia/include/core/SkPoint.h"
-#include "third_party/skia/include/core/SkRect.h"
+#include "third_party/webrtc/modules/desktop_capture/desktop_geometry.h"
 #include "third_party/webrtc/modules/desktop_capture/mac/desktop_configuration.h"
+#include "ui/events/keycodes/dom4/keycode_converter.h"
 
 namespace remoting {
 
@@ -30,18 +29,6 @@ namespace {
 using protocol::ClipboardEvent;
 using protocol::KeyEvent;
 using protocol::MouseEvent;
-
-// USB to Mac keycode mapping table.
-#define USB_KEYMAP(usb, xkb, win, mac) {usb, mac}
-#include "ui/base/keycodes/usb_keycode_map.h"
-#undef USB_KEYMAP
-
-// skia/ext/skia_utils_mac.h only defines CGRectToSkRect().
-SkIRect CGRectToSkIRect(const CGRect& rect) {
-  SkIRect result;
-  gfx::CGRectToSkRect(rect).round(&result);
-  return result;
-}
 
 // A class to generate events on Mac.
 class InputInjectorMac : public InputInjector {
@@ -84,7 +71,7 @@ class InputInjectorMac : public InputInjector {
     virtual ~Core();
 
     scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
-    SkIPoint mouse_pos_;
+    webrtc::DesktopVector mouse_pos_;
     uint32 mouse_button_state_;
     scoped_ptr<Clipboard> clipboard_;
 
@@ -157,13 +144,14 @@ void InputInjectorMac::Core::InjectKeyEvent(const KeyEvent& event) {
   if (!event.has_pressed() || !event.has_usb_keycode())
     return;
 
-  int keycode = UsbKeycodeToNativeKeycode(event.usb_keycode());
+  ui::KeycodeConverter* key_converter = ui::KeycodeConverter::GetInstance();
+  int keycode = key_converter->UsbKeycodeToNativeKeycode(event.usb_keycode());
 
   VLOG(3) << "Converting USB keycode: " << std::hex << event.usb_keycode()
           << " to keycode: " << keycode << std::dec;
 
   // If we couldn't determine the Mac virtual key code then ignore the event.
-  if (keycode == InvalidNativeKeycode())
+  if (keycode == key_converter->InvalidNativeKeycode())
     return;
 
   base::ScopedCFTypeRef<CGEventRef> eventRef(
@@ -188,7 +176,7 @@ void InputInjectorMac::Core::InjectMouseEvent(const MouseEvent& event) {
     // accordingly.
 
     // Set the mouse position assuming single-monitor.
-    mouse_pos_ = SkIPoint::Make(event.x(), event.y());
+    mouse_pos_.set(event.x(), event.y());
 
     // Fetch the desktop configuration.
     // TODO(wez): Optimize this out, or at least only enumerate displays in
@@ -200,20 +188,19 @@ void InputInjectorMac::Core::InjectMouseEvent(const MouseEvent& event) {
             webrtc::MacDesktopConfiguration::TopLeftOrigin);
 
     // Translate the mouse position into desktop coordinates.
-    mouse_pos_ += SkIPoint::Make(desktop_config.pixel_bounds.left(),
-                                 desktop_config.pixel_bounds.top());
+    mouse_pos_.add(webrtc::DesktopVector(desktop_config.pixel_bounds.left(),
+                                         desktop_config.pixel_bounds.top()));
 
     // Constrain the mouse position to the desktop coordinates.
-    mouse_pos_ = SkIPoint::Make(
+    mouse_pos_.set(
        std::max(desktop_config.pixel_bounds.left(),
            std::min(desktop_config.pixel_bounds.right(), mouse_pos_.x())),
        std::max(desktop_config.pixel_bounds.top(),
            std::min(desktop_config.pixel_bounds.bottom(), mouse_pos_.y())));
 
     // Convert from pixel to Density Independent Pixel coordinates.
-    mouse_pos_ = SkIPoint::Make(
-        SkScalarRound(mouse_pos_.x() / desktop_config.dip_to_pixel_scale),
-        SkScalarRound(mouse_pos_.y() / desktop_config.dip_to_pixel_scale));
+    mouse_pos_.set(mouse_pos_.x() / desktop_config.dip_to_pixel_scale,
+                   mouse_pos_.y() / desktop_config.dip_to_pixel_scale);
 
     VLOG(3) << "Moving mouse to " << mouse_pos_.x() << "," << mouse_pos_.y();
   }

@@ -23,11 +23,6 @@ class AutocompleteClassifier : public BrowserContextKeyedService {
   // AutocompleteController().
   static const int kDefaultOmniboxProviders;
 
-  // Bitmap of AutocompleteProvider::Type values describing the set of providers
-  // that have been whitelisted as working properly with the Instant Extended
-  // API.  Intended to be passed to AutocompleteController().
-  static const int kInstantExtendedOmniboxProviders;
-
   explicit AutocompleteClassifier(Profile* profile);
   virtual ~AutocompleteClassifier();
 
@@ -44,7 +39,7 @@ class AutocompleteClassifier : public BrowserContextKeyedService {
   // non-NULL, will be set to the navigational URL (if any) in case of an
   // accidental search; see comments on
   // AutocompleteResult::alternate_nav_url_ in autocomplete.h.
-  void Classify(const string16& text,
+  void Classify(const base::string16& text,
                 bool prefer_keyword,
                 bool allow_exact_keyword_match,
                 AutocompleteMatch* match,

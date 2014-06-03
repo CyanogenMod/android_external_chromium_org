@@ -24,10 +24,10 @@ struct StringEnumEntry {
   Enum enum_value;
 };
 
-const StringEnumEntry<onc::ONCSource> kONCSourceTable[] = {
-  { "user_import", onc::ONC_SOURCE_USER_IMPORT },
-  { "device_policy", onc::ONC_SOURCE_DEVICE_POLICY },
-  { "user_policy", onc::ONC_SOURCE_USER_POLICY }
+const StringEnumEntry< ::onc::ONCSource> kONCSourceTable[] = {
+  { "user_import", ::onc::ONC_SOURCE_USER_IMPORT },
+  { "device_policy", ::onc::ONC_SOURCE_DEVICE_POLICY },
+  { "user_policy", ::onc::ONC_SOURCE_USER_POLICY }
 };
 
 const StringEnumEntry<ClientCertType> kClientCertTable[] = {
@@ -65,7 +65,7 @@ Enum StringToEnum(const StringEnumEntry<Enum>(& table)[N],
 }  // namespace
 
 NetworkUIData::NetworkUIData()
-    : onc_source_(onc::ONC_SOURCE_NONE),
+    : onc_source_(::onc::ONC_SOURCE_NONE),
       certificate_type_(CLIENT_CERT_TYPE_NONE) {
 }
 
@@ -86,7 +86,7 @@ NetworkUIData& NetworkUIData::operator=(const NetworkUIData& other) {
 NetworkUIData::NetworkUIData(const base::DictionaryValue& dict) {
   std::string source;
   dict.GetString(kKeyONCSource, &source);
-  onc_source_ = StringToEnum(kONCSourceTable, source, onc::ONC_SOURCE_NONE);
+  onc_source_ = StringToEnum(kONCSourceTable, source, ::onc::ONC_SOURCE_NONE);
 
   std::string type_string;
   dict.GetString(kKeyCertificateType, &type_string);
@@ -99,7 +99,8 @@ NetworkUIData::NetworkUIData(const base::DictionaryValue& dict) {
     if (cert_dict)
       certificate_pattern_.CopyFromDictionary(*cert_dict);
     if (certificate_pattern_.Empty()) {
-      LOG(ERROR) << "Couldn't parse a valid certificate pattern.";
+      // This case may occur if UIData from an older CrOS version is read.
+      LOG(WARNING) << "Couldn't parse a valid certificate pattern.";
       certificate_type_ = CLIENT_CERT_TYPE_NONE;
     }
   }
@@ -110,6 +111,10 @@ NetworkUIData::NetworkUIData(const base::DictionaryValue& dict) {
 }
 
 NetworkUIData::~NetworkUIData() {
+}
+
+void NetworkUIData::set_user_settings(scoped_ptr<base::DictionaryValue> dict) {
+  user_settings_ = dict.Pass();
 }
 
 void NetworkUIData::FillDictionary(base::DictionaryValue* dict) const {
@@ -138,7 +143,7 @@ namespace {
 
 void TranslateClientCertType(const std::string& client_cert_type,
                              NetworkUIData* ui_data) {
-  using namespace onc::certificate;
+  using namespace ::onc::certificate;
   ClientCertType type;
   if (client_cert_type == kNone) {
     type = CLIENT_CERT_TYPE_NONE;
@@ -165,7 +170,7 @@ void TranslateCertificatePattern(const base::DictionaryValue& onc_object,
 void TranslateEAP(const base::DictionaryValue& eap,
                   NetworkUIData* ui_data) {
   std::string client_cert_type;
-  if (eap.GetStringWithoutPathExpansion(onc::eap::kClientCertType,
+  if (eap.GetStringWithoutPathExpansion(::onc::eap::kClientCertType,
                                         &client_cert_type)) {
     TranslateClientCertType(client_cert_type, ui_data);
   }
@@ -174,7 +179,7 @@ void TranslateEAP(const base::DictionaryValue& eap,
 void TranslateIPsec(const base::DictionaryValue& ipsec,
                     NetworkUIData* ui_data) {
   std::string client_cert_type;
-  if (ipsec.GetStringWithoutPathExpansion(onc::vpn::kClientCertType,
+  if (ipsec.GetStringWithoutPathExpansion(::onc::vpn::kClientCertType,
                                           &client_cert_type)) {
     TranslateClientCertType(client_cert_type, ui_data);
   }
@@ -183,7 +188,7 @@ void TranslateIPsec(const base::DictionaryValue& ipsec,
 void TranslateOpenVPN(const base::DictionaryValue& openvpn,
                       NetworkUIData* ui_data) {
   std::string client_cert_type;
-  if (openvpn.GetStringWithoutPathExpansion(onc::vpn::kClientCertType,
+  if (openvpn.GetStringWithoutPathExpansion(::onc::vpn::kClientCertType,
                                             &client_cert_type)) {
     TranslateClientCertType(client_cert_type, ui_data);
   }
@@ -220,7 +225,7 @@ void TranslateONCHierarchy(const onc::OncValueSignature& signature,
 
 // static
 scoped_ptr<NetworkUIData> NetworkUIData::CreateFromONC(
-    onc::ONCSource onc_source,
+    ::onc::ONCSource onc_source,
     const base::DictionaryValue& onc_network) {
   scoped_ptr<NetworkUIData> ui_data(new NetworkUIData());
   TranslateONCHierarchy(onc::kNetworkConfigurationSignature, onc_network,

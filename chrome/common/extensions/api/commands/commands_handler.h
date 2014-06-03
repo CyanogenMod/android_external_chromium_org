@@ -9,9 +9,9 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "chrome/common/extensions/command.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/manifest.h"
-#include "chrome/common/extensions/manifest_handler.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/manifest.h"
+#include "extensions/common/manifest_handler.h"
 
 namespace extensions {
 
@@ -40,7 +40,7 @@ class CommandsHandler : public ManifestHandler {
   CommandsHandler();
   virtual ~CommandsHandler();
 
-  virtual bool Parse(Extension* extension, string16* error) OVERRIDE;
+  virtual bool Parse(Extension* extension, base::string16* error) OVERRIDE;
   virtual bool AlwaysParseForType(Manifest::Type type) const OVERRIDE;
 
  private:

@@ -12,7 +12,7 @@
 namespace app_list {
 
 AppListModel::AppListModel()
-    : apps_(new Apps),
+    : item_list_(new AppListItemList),
       search_box_(new SearchBoxModel),
       results_(new SearchResults),
       status_(STATUS_NORMAL) {

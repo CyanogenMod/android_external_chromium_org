@@ -21,6 +21,7 @@
 #include "ui/base/window_open_disposition.h"
 #include "ui/gfx/font.h"
 
+class AutocompleteResult;
 class GtkThemeService;
 class OmniboxEditModel;
 class OmniboxPopupModel;
@@ -31,10 +32,6 @@ namespace gfx {
 class Image;
 }
 
-namespace ui {
-class GtkSignalRegistrar;
-}
-
 class OmniboxPopupViewGtk : public OmniboxPopupView,
                             public content::NotificationObserver {
  public:
@@ -43,6 +40,9 @@ class OmniboxPopupViewGtk : public OmniboxPopupView,
                       OmniboxEditModel* edit_model,
                       GtkWidget* location_bar);
   virtual ~OmniboxPopupViewGtk();
+
+  // Initializes the view.
+  virtual void Init();
 
   // Overridden from OmniboxPopupView:
   virtual bool IsOpen() const OVERRIDE;
@@ -57,31 +57,46 @@ class OmniboxPopupViewGtk : public OmniboxPopupView,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
+ protected:
+  // Convert a y-coordinate to the closest line / result.
+  size_t LineFromY(int y) const;
+
+  // Return a Rect for the space for a result line.  This excludes the border,
+  // but includes the padding.  This is the area that is colored for a
+  // selection.
+  gfx::Rect GetRectForLine(size_t line, int width) const;
+
+  // Returns the number of hidden matches at the top of the popup. This is
+  // non-zero when a verbatim match like search-what-you-typed is present but
+  // should not be shown.
+  size_t GetHiddenMatchCount() const;
+
+  // Returns the current autocomplete result.
+  virtual const AutocompleteResult& GetResult() const;
+
  private:
   // Be friendly for unit tests.
   friend class OmniboxPopupViewGtkTest;
 
   static void SetupLayoutForMatch(
       PangoLayout* layout,
-      const string16& text,
+      const base::string16& text,
       const AutocompleteMatch::ACMatchClassifications& classifications,
       const GdkColor* base_color,
       const GdkColor* dim_color,
       const GdkColor* url_color,
       const std::string& prefix_text);
 
-  void Show(size_t num_results);
-  void Hide();
+  virtual void Show(size_t num_results);
+  virtual void Hide();
 
   // Restack the popup window directly above the browser's toplevel window.
   void StackWindow();
 
-  // Convert a y-coordinate to the closest line / result.
-  size_t LineFromY(int y);
-
   // Accept a line of the results, for example, when the user clicks a line.
   void AcceptLine(size_t line, WindowOpenDisposition disposition);
 
+  // Returns the appropriate icon to display beside |match|.
   gfx::Image IconForMatch(const AutocompleteMatch& match,
                           bool selected,
                           bool is_selected_keyword);
@@ -104,7 +119,6 @@ class OmniboxPopupViewGtk : public OmniboxPopupView,
   CHROMEGTK_CALLBACK_1(OmniboxPopupViewGtk, gboolean, HandleExpose,
                        GdkEventExpose*);
 
-  scoped_ptr<ui::GtkSignalRegistrar> signal_registrar_;
   scoped_ptr<OmniboxPopupModel> model_;
   OmniboxView* omnibox_view_;
   GtkWidget* location_bar_;

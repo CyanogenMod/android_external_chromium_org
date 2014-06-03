@@ -377,8 +377,7 @@ SavePageBrowserTest::~SavePageBrowserTest() {
 }
 
 // Disabled on Windows due to flakiness. http://crbug.com/162323
-// TODO(linux_aura) http://crbug.com/163931
-#if defined(OS_WIN) || (defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(USE_AURA))
+#if defined(OS_WIN)
 #define MAYBE_SaveHTMLOnly DISABLED_SaveHTMLOnly
 #else
 #define MAYBE_SaveHTMLOnly SaveHTMLOnly
@@ -409,7 +408,6 @@ IN_PROC_BROWSER_TEST_F(SavePageBrowserTest, MAYBE_SaveHTMLOnly) {
 }
 
 // http://crbug.com/162323
-// http://crbug.com/163931
 IN_PROC_BROWSER_TEST_F(SavePageBrowserTest, DISABLED_SaveHTMLOnlyCancel) {
   GURL url = NavigateToMockURL("a");
   DownloadManager* manager(GetDownloadManager());
@@ -450,14 +448,13 @@ class DelayingDownloadManagerDelegate : public ChromeDownloadManagerDelegate {
   explicit DelayingDownloadManagerDelegate(Profile* profile)
     : ChromeDownloadManagerDelegate(profile) {
   }
+  virtual ~DelayingDownloadManagerDelegate() {}
+
   virtual bool ShouldCompleteDownload(
       content::DownloadItem* item,
       const base::Closure& user_complete_callback) OVERRIDE {
     return false;
   }
-
- protected:
-  virtual ~DelayingDownloadManagerDelegate() {}
 
  private:
   DISALLOW_COPY_AND_ASSIGN(DelayingDownloadManagerDelegate);
@@ -465,11 +462,14 @@ class DelayingDownloadManagerDelegate : public ChromeDownloadManagerDelegate {
 
 IN_PROC_BROWSER_TEST_F(SavePageBrowserTest, SaveHTMLOnlyTabDestroy) {
   GURL url = NavigateToMockURL("a");
-  DownloadManager* manager(GetDownloadManager());
-  scoped_refptr<DelayingDownloadManagerDelegate> delaying_delegate(
+  scoped_ptr<DelayingDownloadManagerDelegate> delaying_delegate(
       new DelayingDownloadManagerDelegate(browser()->profile()));
-  delaying_delegate->SetNextId(content::DownloadItem::kInvalidId + 1);
-  manager->SetDelegate(delaying_delegate.get());
+  delaying_delegate->GetDownloadIdReceiverCallback().Run(
+      content::DownloadItem::kInvalidId + 1);
+  DownloadServiceFactory::GetForBrowserContext(browser()->profile())->
+      SetDownloadManagerDelegateForTesting(
+          delaying_delegate.PassAs<ChromeDownloadManagerDelegate>());
+  DownloadManager* manager(GetDownloadManager());
   std::vector<DownloadItem*> downloads;
   manager->GetAllDownloads(&downloads);
   ASSERT_EQ(0u, downloads.size());
@@ -489,13 +489,10 @@ IN_PROC_BROWSER_TEST_F(SavePageBrowserTest, SaveHTMLOnlyTabDestroy) {
 
   EXPECT_FALSE(base::PathExists(full_file_name));
   EXPECT_FALSE(base::PathExists(dir));
-
-  manager->SetDelegate(NULL);
 }
 
 // Disabled on Windows due to flakiness. http://crbug.com/162323
-// TODO(linux_aura) http://crbug.com/163931
-#if defined(OS_WIN) || (defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(USE_AURA))
+#if defined(OS_WIN)
 #define MAYBE_SaveViewSourceHTMLOnly DISABLED_SaveViewSourceHTMLOnly
 #else
 #define MAYBE_SaveViewSourceHTMLOnly SaveViewSourceHTMLOnly
@@ -534,8 +531,7 @@ IN_PROC_BROWSER_TEST_F(SavePageBrowserTest, MAYBE_SaveViewSourceHTMLOnly) {
 }
 
 // Disabled on Windows due to flakiness. http://crbug.com/162323
-// TODO(linux_aura) http://crbug.com/163931
-#if defined(OS_WIN) || (defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(USE_AURA))
+#if defined(OS_WIN)
 #define MAYBE_SaveCompleteHTML DISABLED_SaveCompleteHTML
 #else
 #define MAYBE_SaveCompleteHTML SaveCompleteHTML
@@ -577,8 +573,7 @@ IN_PROC_BROWSER_TEST_F(SavePageBrowserTest, MAYBE_SaveCompleteHTML) {
 // Invoke a save page during the initial navigation.
 // (Regression test for http://crbug.com/156538).
 // Disabled on Windows due to flakiness. http://crbug.com/162323
-// TODO(linux_aura) http://crbug.com/163931
-#if defined(OS_WIN) || (defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(USE_AURA))
+#if defined(OS_WIN)
 #define MAYBE_SaveDuringInitialNavigationIncognito DISABLED_SaveDuringInitialNavigationIncognito
 #else
 #define MAYBE_SaveDuringInitialNavigationIncognito SaveDuringInitialNavigationIncognito
@@ -629,8 +624,7 @@ IN_PROC_BROWSER_TEST_F(SavePageBrowserTest, NoSave) {
 }
 
 // Disabled on Windows due to flakiness. http://crbug.com/162323
-// TODO(linux_aura) http://crbug.com/163931
-#if defined(OS_WIN) || (defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(USE_AURA))
+#if defined(OS_WIN)
 #define MAYBE_FileNameFromPageTitle DISABLED_FileNameFromPageTitle
 #else
 #define MAYBE_FileNameFromPageTitle FileNameFromPageTitle
@@ -673,8 +667,7 @@ IN_PROC_BROWSER_TEST_F(SavePageBrowserTest, MAYBE_FileNameFromPageTitle) {
 }
 
 // Disabled on Windows due to flakiness. http://crbug.com/162323
-// TODO(linux_aura) http://crbug.com/163931
-#if defined(OS_WIN) || (defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(USE_AURA))
+#if defined(OS_WIN)
 #define MAYBE_RemoveFromList DISABLED_RemoveFromList
 #else
 #define MAYBE_RemoveFromList RemoveFromList
@@ -789,7 +782,7 @@ IN_PROC_BROWSER_TEST_F(SavePageAsMHTMLBrowserTest, SavePageAsMHTML) {
 
   ASSERT_TRUE(base::PathExists(full_file_name));
   int64 actual_file_size = -1;
-  EXPECT_TRUE(file_util::GetFileSize(full_file_name, &actual_file_size));
+  EXPECT_TRUE(base::GetFileSize(full_file_name, &actual_file_size));
   EXPECT_LE(kFileSizeMin, actual_file_size);
 }
 
@@ -809,7 +802,7 @@ IN_PROC_BROWSER_TEST_F(SavePageBrowserTest, SavePageBrowserTest_NonMHTML) {
   base::FilePath filename = download_dir.AppendASCII("dataurl.txt");
   ASSERT_TRUE(base::PathExists(filename));
   std::string contents;
-  EXPECT_TRUE(file_util::ReadFileToString(filename, &contents));
+  EXPECT_TRUE(base::ReadFileToString(filename, &contents));
   EXPECT_EQ("foo", contents);
 }
 

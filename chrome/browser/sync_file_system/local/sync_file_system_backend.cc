@@ -5,30 +5,90 @@
 #include "chrome/browser/sync_file_system/local/sync_file_system_backend.h"
 
 #include "base/logging.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/sync_file_system/local/local_file_change_tracker.h"
 #include "chrome/browser/sync_file_system/local/local_file_sync_context.h"
 #include "chrome/browser/sync_file_system/local/syncable_file_system_operation.h"
+#include "chrome/browser/sync_file_system/sync_file_system_service.h"
+#include "chrome/browser/sync_file_system/sync_file_system_service_factory.h"
 #include "chrome/browser/sync_file_system/syncable_file_system_util.h"
-#include "webkit/browser/fileapi/async_file_util_adapter.h"
+#include "content/public/browser/browser_thread.h"
+#include "content/public/browser/notification_service.h"
+#include "webkit/browser/blob/file_stream_reader.h"
+#include "webkit/browser/fileapi/file_stream_writer.h"
 #include "webkit/browser/fileapi/file_system_context.h"
-#include "webkit/browser/fileapi/file_system_file_stream_reader.h"
-#include "webkit/browser/fileapi/file_system_operation_impl.h"
-#include "webkit/browser/fileapi/obfuscated_file_util.h"
-#include "webkit/browser/fileapi/sandbox_file_stream_writer.h"
-#include "webkit/browser/fileapi/sandbox_quota_observer.h"
+#include "webkit/browser/fileapi/file_system_operation.h"
 #include "webkit/common/fileapi/file_system_util.h"
+
+using content::BrowserThread;
 
 namespace sync_file_system {
 
-SyncFileSystemBackend::SyncFileSystemBackend()
-    : sandbox_context_(NULL) {
+namespace {
+
+bool CalledOnUIThread() {
+  // Ensure that these methods are called on the UI thread, except for unittests
+  // where a UI thread might not have been created.
+  return BrowserThread::CurrentlyOn(BrowserThread::UI) ||
+         !BrowserThread::IsMessageLoopValid(BrowserThread::UI);
+}
+
+}  // namespace
+
+SyncFileSystemBackend::ProfileHolder::ProfileHolder(Profile* profile)
+    : profile_(profile) {
+  DCHECK(CalledOnUIThread());
+  registrar_.Add(this,
+                 chrome::NOTIFICATION_PROFILE_DESTROYED,
+                 content::Source<Profile>(profile_));
+}
+
+void SyncFileSystemBackend::ProfileHolder::Observe(
+    int type,
+    const content::NotificationSource& source,
+    const content::NotificationDetails& details) {
+  DCHECK(CalledOnUIThread());
+  DCHECK_EQ(chrome::NOTIFICATION_PROFILE_DESTROYED, type);
+  DCHECK_EQ(profile_, content::Source<Profile>(source).ptr());
+  profile_ = NULL;
+  registrar_.RemoveAll();
+}
+
+Profile* SyncFileSystemBackend::ProfileHolder::GetProfile() {
+  DCHECK(CalledOnUIThread());
+  return profile_;
+}
+
+SyncFileSystemBackend::SyncFileSystemBackend(Profile* profile)
+    : context_(NULL),
+      skip_initialize_syncfs_service_for_testing_(false) {
+  DCHECK(CalledOnUIThread());
+  if (profile)
+    profile_holder_.reset(new ProfileHolder(profile));
+
+  // Register the service name here to enable to crack an URL on SyncFileSystem
+  // even if SyncFileSystemService has not started yet.
+  RegisterSyncableFileSystem();
 }
 
 SyncFileSystemBackend::~SyncFileSystemBackend() {
   if (change_tracker_) {
-    sandbox_context_->file_task_runner()->DeleteSoon(
+    GetDelegate()->file_task_runner()->DeleteSoon(
         FROM_HERE, change_tracker_.release());
   }
+
+  if (profile_holder_ && !CalledOnUIThread()) {
+    BrowserThread::DeleteSoon(
+        BrowserThread::UI, FROM_HERE, profile_holder_.release());
+  }
+}
+
+// static
+SyncFileSystemBackend* SyncFileSystemBackend::CreateForTesting() {
+  DCHECK(CalledOnUIThread());
+  SyncFileSystemBackend* backend = new SyncFileSystemBackend(NULL);
+  backend->skip_initialize_syncfs_service_for_testing_ = true;
+  return backend;
 }
 
 bool SyncFileSystemBackend::CanHandleType(
@@ -39,14 +99,13 @@ bool SyncFileSystemBackend::CanHandleType(
 
 void SyncFileSystemBackend::Initialize(fileapi::FileSystemContext* context) {
   DCHECK(context);
-  DCHECK(!sandbox_context_);
-  sandbox_context_ = context->sandbox_context();
-  update_observers_ = update_observers_.AddObserver(
-      sandbox_context_->quota_observer(),
-      sandbox_context_->file_task_runner());
-  syncable_update_observers_ = syncable_update_observers_.AddObserver(
-      sandbox_context_->quota_observer(),
-      sandbox_context_->file_task_runner());
+  DCHECK(!context_);
+  context_ = context;
+
+  fileapi::SandboxFileSystemBackendDelegate* delegate = GetDelegate();
+  delegate->RegisterQuotaUpdateObserver(fileapi::kFileSystemTypeSyncable);
+  delegate->RegisterQuotaUpdateObserver(
+      fileapi::kFileSystemTypeSyncableForInternalSync);
 }
 
 void SyncFileSystemBackend::OpenFileSystem(
@@ -55,22 +114,24 @@ void SyncFileSystemBackend::OpenFileSystem(
     fileapi::OpenFileSystemMode mode,
     const OpenFileSystemCallback& callback) {
   DCHECK(CanHandleType(type));
-  DCHECK(sandbox_context_);
-  sandbox_context_->OpenFileSystem(
-      origin_url, type, mode, callback,
-      GetSyncableFileSystemRootURI(origin_url));
-}
 
-fileapi::FileSystemFileUtil* SyncFileSystemBackend::GetFileUtil(
-    fileapi::FileSystemType type) {
-  DCHECK(sandbox_context_);
-  return sandbox_context_->sync_file_util();
+  if (skip_initialize_syncfs_service_for_testing_) {
+    GetDelegate()->OpenFileSystem(origin_url, type, mode, callback,
+                                  GetSyncableFileSystemRootURI(origin_url));
+    return;
+  }
+
+  // It is safe to pass Unretained(this) since |context_| owns it.
+  SyncStatusCallback initialize_callback =
+      base::Bind(&SyncFileSystemBackend::DidInitializeSyncFileSystemService,
+                 base::Unretained(this), make_scoped_refptr(context_),
+                 origin_url, type, mode, callback);
+  InitializeSyncFileSystemService(origin_url, initialize_callback);
 }
 
 fileapi::AsyncFileUtil* SyncFileSystemBackend::GetAsyncFileUtil(
     fileapi::FileSystemType type) {
-  DCHECK(sandbox_context_);
-  return sandbox_context_->file_util();
+  return GetDelegate()->file_util();
 }
 
 fileapi::CopyOrMoveFileValidatorFactory*
@@ -90,23 +151,17 @@ SyncFileSystemBackend::CreateFileSystemOperation(
   DCHECK(CanHandleType(url.type()));
   DCHECK(context);
   DCHECK(error_code);
-  if (!sandbox_context_->IsAccessValid(url)) {
-    *error_code = base::PLATFORM_FILE_ERROR_SECURITY;
-    return NULL;
-  }
 
-  scoped_ptr<fileapi::FileSystemOperationContext> operation_context(
-      new fileapi::FileSystemOperationContext(context));
+  scoped_ptr<fileapi::FileSystemOperationContext> operation_context =
+      GetDelegate()->CreateFileSystemOperationContext(url, context, error_code);
+  if (!operation_context)
+    return NULL;
 
   if (url.type() == fileapi::kFileSystemTypeSyncableForInternalSync) {
-    operation_context->set_update_observers(update_observers_);
-    operation_context->set_change_observers(change_observers_);
-    return new fileapi::FileSystemOperationImpl(
+    return fileapi::FileSystemOperation::Create(
         url, context, operation_context.Pass());
   }
 
-  operation_context->set_update_observers(syncable_update_observers_);
-  operation_context->set_change_observers(syncable_change_observers_);
   return new SyncableFileSystemOperation(
       url, context, operation_context.Pass());
 }
@@ -118,11 +173,8 @@ SyncFileSystemBackend::CreateFileStreamReader(
     const base::Time& expected_modification_time,
     fileapi::FileSystemContext* context) const {
   DCHECK(CanHandleType(url.type()));
-  if (!sandbox_context_->IsAccessValid(url))
-    return scoped_ptr<webkit_blob::FileStreamReader>();
-  return scoped_ptr<webkit_blob::FileStreamReader>(
-      new fileapi::FileSystemFileStreamReader(
-          context, url, offset, expected_modification_time));
+  return GetDelegate()->CreateFileStreamReader(
+      url, offset, expected_modification_time, context);
 }
 
 scoped_ptr<fileapi::FileStreamWriter>
@@ -131,116 +183,12 @@ SyncFileSystemBackend::CreateFileStreamWriter(
     int64 offset,
     fileapi::FileSystemContext* context) const {
   DCHECK(CanHandleType(url.type()));
-  if (!sandbox_context_->IsAccessValid(url))
-    return scoped_ptr<fileapi::FileStreamWriter>();
-  return scoped_ptr<fileapi::FileStreamWriter>(
-      new fileapi::SandboxFileStreamWriter(
-          context, url, offset, update_observers_));
+  return GetDelegate()->CreateFileStreamWriter(
+      url, offset, context, fileapi::kFileSystemTypeSyncableForInternalSync);
 }
 
 fileapi::FileSystemQuotaUtil* SyncFileSystemBackend::GetQuotaUtil() {
-  return this;
-}
-
-base::PlatformFileError SyncFileSystemBackend::DeleteOriginDataOnFileThread(
-    fileapi::FileSystemContext* context,
-    quota::QuotaManagerProxy* proxy,
-    const GURL& origin_url,
-    fileapi::FileSystemType type) {
-  DCHECK(CanHandleType(type));
-  DCHECK(sandbox_context_);
-  return sandbox_context_->DeleteOriginDataOnFileThread(
-      context, proxy, origin_url, type);
-}
-
-void SyncFileSystemBackend::GetOriginsForTypeOnFileThread(
-    fileapi::FileSystemType type,
-    std::set<GURL>* origins) {
-  DCHECK(CanHandleType(type));
-  DCHECK(sandbox_context_);
-  sandbox_context_->GetOriginsForTypeOnFileThread(type, origins);
-}
-
-void SyncFileSystemBackend::GetOriginsForHostOnFileThread(
-    fileapi::FileSystemType type,
-    const std::string& host,
-    std::set<GURL>* origins) {
-  DCHECK(CanHandleType(type));
-  DCHECK(sandbox_context_);
-  sandbox_context_->GetOriginsForHostOnFileThread(type, host, origins);
-}
-
-int64 SyncFileSystemBackend::GetOriginUsageOnFileThread(
-    fileapi::FileSystemContext* context,
-    const GURL& origin_url,
-    fileapi::FileSystemType type) {
-  DCHECK(CanHandleType(type));
-  DCHECK(sandbox_context_);
-  return sandbox_context_->GetOriginUsageOnFileThread(
-      context, origin_url, type);
-}
-
-void SyncFileSystemBackend::InvalidateUsageCache(
-    const GURL& origin_url,
-    fileapi::FileSystemType type) {
-  DCHECK(CanHandleType(type));
-  DCHECK(sandbox_context_);
-  sandbox_context_->InvalidateUsageCache(origin_url, type);
-}
-
-void SyncFileSystemBackend::StickyInvalidateUsageCache(
-    const GURL& origin_url,
-    fileapi::FileSystemType type) {
-  DCHECK(CanHandleType(type));
-  DCHECK(sandbox_context_);
-  sandbox_context_->StickyInvalidateUsageCache(origin_url, type);
-}
-
-void SyncFileSystemBackend::AddFileUpdateObserver(
-    fileapi::FileSystemType type,
-    fileapi::FileUpdateObserver* observer,
-    base::SequencedTaskRunner* task_runner) {
-  DCHECK_EQ(fileapi::kFileSystemTypeSyncable, type);
-  fileapi::UpdateObserverList* list = &syncable_update_observers_;
-  *list = list->AddObserver(observer, task_runner);
-}
-
-void SyncFileSystemBackend::AddFileChangeObserver(
-    fileapi::FileSystemType type,
-    fileapi::FileChangeObserver* observer,
-    base::SequencedTaskRunner* task_runner) {
-  DCHECK_EQ(fileapi::kFileSystemTypeSyncable, type);
-  fileapi::ChangeObserverList* list = &syncable_change_observers_;
-  *list = list->AddObserver(observer, task_runner);
-}
-
-void SyncFileSystemBackend::AddFileAccessObserver(
-    fileapi::FileSystemType type,
-    fileapi::FileAccessObserver* observer,
-    base::SequencedTaskRunner* task_runner) {
-  NOTREACHED() << "SyncFileSystemBackend does not support access observers.";
-}
-
-const fileapi::UpdateObserverList* SyncFileSystemBackend::GetUpdateObservers(
-    fileapi::FileSystemType type) const {
-  DCHECK(CanHandleType(type));
-  if (type != fileapi::kFileSystemTypeSyncable)
-    return NULL;
-  return &syncable_update_observers_;
-}
-
-const fileapi::ChangeObserverList* SyncFileSystemBackend::GetChangeObservers(
-    fileapi::FileSystemType type) const {
-  DCHECK(CanHandleType(type));
-  DCHECK_EQ(fileapi::kFileSystemTypeSyncable, type);
-  if (type != fileapi::kFileSystemTypeSyncable)
-    return NULL;
-  return &syncable_change_observers_;
-}
-
-const fileapi::AccessObserverList* SyncFileSystemBackend::GetAccessObservers(
-    fileapi::FileSystemType type) const {
-  return NULL;
+  return GetDelegate();
 }
 
 // static
@@ -258,21 +206,84 @@ void SyncFileSystemBackend::SetLocalFileChangeTracker(
   DCHECK(tracker);
   change_tracker_ = tracker.Pass();
 
-  DCHECK(sandbox_context_);
-  AddFileUpdateObserver(
+  fileapi::SandboxFileSystemBackendDelegate* delegate = GetDelegate();
+  delegate->AddFileUpdateObserver(
       fileapi::kFileSystemTypeSyncable,
       change_tracker_.get(),
-      sandbox_context_->file_task_runner());
-  AddFileChangeObserver(
+      delegate->file_task_runner());
+  delegate->AddFileChangeObserver(
       fileapi::kFileSystemTypeSyncable,
       change_tracker_.get(),
-      sandbox_context_->file_task_runner());
+      delegate->file_task_runner());
 }
 
 void SyncFileSystemBackend::set_sync_context(
     LocalFileSyncContext* sync_context) {
   DCHECK(!sync_context_);
   sync_context_ = sync_context;
+}
+
+fileapi::SandboxFileSystemBackendDelegate*
+SyncFileSystemBackend::GetDelegate() const {
+  DCHECK(context_);
+  DCHECK(context_->sandbox_delegate());
+  return context_->sandbox_delegate();
+}
+
+void SyncFileSystemBackend::InitializeSyncFileSystemService(
+    const GURL& origin_url,
+    const SyncStatusCallback& callback) {
+  // Repost to switch from IO thread to UI thread.
+  if (!BrowserThread::CurrentlyOn(BrowserThread::UI)) {
+    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+    // It is safe to pass Unretained(this) (see comments in OpenFileSystem()).
+    BrowserThread::PostTask(
+        BrowserThread::UI, FROM_HERE,
+        base::Bind(&SyncFileSystemBackend::InitializeSyncFileSystemService,
+                   base::Unretained(this), origin_url, callback));
+    return;
+  }
+
+  if (!profile_holder_->GetProfile()) {
+    // Profile was destroyed.
+    callback.Run(SYNC_FILE_ERROR_FAILED);
+    return;
+  }
+
+  SyncFileSystemService* service = SyncFileSystemServiceFactory::GetForProfile(
+          profile_holder_->GetProfile());
+  DCHECK(service);
+  service->InitializeForApp(context_, origin_url, callback);
+}
+
+void SyncFileSystemBackend::DidInitializeSyncFileSystemService(
+    fileapi::FileSystemContext* context,
+    const GURL& origin_url,
+    fileapi::FileSystemType type,
+    fileapi::OpenFileSystemMode mode,
+    const OpenFileSystemCallback& callback,
+    SyncStatusCode status) {
+  // Repost to switch from UI thread to IO thread.
+  if (!BrowserThread::CurrentlyOn(BrowserThread::IO)) {
+    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+    // It is safe to pass Unretained(this) since |context| owns it.
+    BrowserThread::PostTask(
+        BrowserThread::IO, FROM_HERE,
+        base::Bind(&SyncFileSystemBackend::DidInitializeSyncFileSystemService,
+                   base::Unretained(this), make_scoped_refptr(context),
+                   origin_url, type, mode, callback, status));
+    return;
+  }
+
+  if (status != sync_file_system::SYNC_STATUS_OK) {
+    callback.Run(GURL(), std::string(),
+                 SyncStatusCodeToPlatformFileError(status));
+    return;
+  }
+
+  callback.Run(GetSyncableFileSystemRootURI(origin_url),
+               GetFileSystemName(origin_url, type),
+               base::PLATFORM_FILE_OK);
 }
 
 }  // namespace sync_file_system

@@ -7,6 +7,7 @@
 #include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "cc/resources/single_release_callback.h"
 #include "cc/test/layer_tree_test.h"
 
 #ifndef CC_TEST_LAYER_TREE_PIXEL_TEST_H_
@@ -29,10 +30,8 @@ class LayerTreePixelTest : public LayerTreeTest {
   virtual ~LayerTreePixelTest();
 
   virtual scoped_ptr<OutputSurface> CreateOutputSurface(bool fallback) OVERRIDE;
-  virtual scoped_refptr<cc::ContextProvider>
-      OffscreenContextProviderForMainThread() OVERRIDE;
-  virtual scoped_refptr<cc::ContextProvider>
-      OffscreenContextProviderForCompositorThread() OVERRIDE;
+  virtual scoped_refptr<ContextProvider> OffscreenContextProvider() OVERRIDE;
+  virtual void CommitCompleteOnThread(LayerTreeHostImpl* impl) OVERRIDE;
 
   virtual scoped_ptr<CopyOutputRequest> CreateCopyOutputRequest();
 
@@ -75,10 +74,13 @@ class LayerTreePixelTest : public LayerTreeTest {
       gfx::Size size,
       const TextureMailbox& texture_mailbox);
 
-  TextureMailbox CopyBitmapToTextureMailboxAsTexture(const SkBitmap& bitmap);
+  void CopyBitmapToTextureMailboxAsTexture(
+      const SkBitmap& bitmap,
+      TextureMailbox* texture_mailbox,
+      scoped_ptr<SingleReleaseCallback>* release_callback);
 
   void ReleaseTextureMailbox(
-      scoped_ptr<WebKit::WebGraphicsContext3D> context3d,
+      scoped_ptr<blink::WebGraphicsContext3D> context3d,
       uint32 texture,
       uint32 sync_point,
       bool lost_resource);
@@ -98,6 +100,7 @@ class LayerTreePixelTest : public LayerTreeTest {
   scoped_ptr<SkBitmap> result_bitmap_;
   std::vector<scoped_refptr<TextureLayer> > texture_layers_;
   int pending_texture_mailbox_callbacks_;
+  bool impl_side_painting_;
 };
 
 }  // namespace cc

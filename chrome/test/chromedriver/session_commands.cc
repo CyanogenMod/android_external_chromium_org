@@ -16,14 +16,22 @@
 #include "base/synchronization/waitable_event.h"
 #include "base/values.h"
 #include "chrome/test/chromedriver/basic_types.h"
+#include "chrome/test/chromedriver/capabilities.h"
 #include "chrome/test/chromedriver/chrome/automation_extension.h"
 #include "chrome/test/chromedriver/chrome/chrome.h"
+#include "chrome/test/chromedriver/chrome/chrome_android_impl.h"
+#include "chrome/test/chromedriver/chrome/chrome_desktop_impl.h"
+#include "chrome/test/chromedriver/chrome/device_manager.h"
+#include "chrome/test/chromedriver/chrome/devtools_event_listener.h"
 #include "chrome/test/chromedriver/chrome/geoposition.h"
 #include "chrome/test/chromedriver/chrome/status.h"
 #include "chrome/test/chromedriver/chrome/web_view.h"
+#include "chrome/test/chromedriver/chrome_launcher.h"
 #include "chrome/test/chromedriver/logging.h"
+#include "chrome/test/chromedriver/net/url_request_context_getter.h"
 #include "chrome/test/chromedriver/session.h"
 #include "chrome/test/chromedriver/util.h"
+#include "chrome/test/chromedriver/version.h"
 
 namespace {
 
@@ -44,17 +52,132 @@ bool WindowHandleToWebViewId(const std::string& window_handle,
 
 }  // namespace
 
+InitSessionParams::InitSessionParams(
+    scoped_refptr<URLRequestContextGetter> context_getter,
+    const SyncWebSocketFactory& socket_factory,
+    DeviceManager* device_manager,
+    PortServer* port_server,
+    PortManager* port_manager)
+    : context_getter(context_getter),
+      socket_factory(socket_factory),
+      device_manager(device_manager),
+      port_server(port_server),
+      port_manager(port_manager) {}
+
+InitSessionParams::~InitSessionParams() {}
+
+namespace {
+
+scoped_ptr<base::DictionaryValue> CreateCapabilities(Chrome* chrome) {
+  scoped_ptr<base::DictionaryValue> caps(new base::DictionaryValue());
+  caps->SetString("browserName", "chrome");
+  caps->SetString("version", chrome->GetVersion());
+  caps->SetString("chrome.chromedriverVersion", kChromeDriverVersion);
+  caps->SetString("platform", chrome->GetOperatingSystemName());
+  caps->SetBoolean("javascriptEnabled", true);
+  caps->SetBoolean("takesScreenshot", true);
+  caps->SetBoolean("takesHeapSnapshot", true);
+  caps->SetBoolean("handlesAlerts", true);
+  caps->SetBoolean("databaseEnabled", false);
+  caps->SetBoolean("locationContextEnabled", true);
+  caps->SetBoolean("applicationCacheEnabled", false);
+  caps->SetBoolean("browserConnectionEnabled", false);
+  caps->SetBoolean("cssSelectorsEnabled", true);
+  caps->SetBoolean("webStorageEnabled", true);
+  caps->SetBoolean("rotatable", false);
+  caps->SetBoolean("acceptSslCerts", true);
+  caps->SetBoolean("nativeEvents", true);
+  scoped_ptr<base::DictionaryValue> chrome_caps(new base::DictionaryValue());
+  if (chrome->GetAsDesktop()) {
+    chrome_caps->SetString(
+        "userDataDir",
+        chrome->GetAsDesktop()->command().GetSwitchValueNative(
+            "user-data-dir"));
+  }
+  caps->Set("chrome", chrome_caps.release());
+  return caps.Pass();
+}
+
+
+Status InitSessionHelper(
+    const InitSessionParams& bound_params,
+    Session* session,
+    const base::DictionaryValue& params,
+    scoped_ptr<base::Value>* value) {
+  session->driver_log.reset(
+      new WebDriverLog(WebDriverLog::kDriverType, Log::kAll));
+  const base::DictionaryValue* desired_caps;
+  if (!params.GetDictionary("desiredCapabilities", &desired_caps))
+    return Status(kUnknownError, "cannot find dict 'desiredCapabilities'");
+
+  Capabilities capabilities;
+  Status status = capabilities.Parse(*desired_caps);
+  if (status.IsError())
+    return status;
+
+  Log::Level driver_level = Log::kWarning;
+  if (capabilities.logging_prefs.count(WebDriverLog::kDriverType))
+    driver_level = capabilities.logging_prefs[WebDriverLog::kDriverType];
+  session->driver_log->set_min_level(driver_level);
+
+  // Create Log's and DevToolsEventListener's for ones that are DevTools-based.
+  // Session will own the Log's, Chrome will own the listeners.
+  ScopedVector<DevToolsEventListener> devtools_event_listeners;
+  status = CreateLogs(capabilities,
+                      &session->devtools_logs,
+                      &devtools_event_listeners);
+  if (status.IsError())
+    return status;
+
+  status = LaunchChrome(bound_params.context_getter.get(),
+                        bound_params.socket_factory,
+                        bound_params.device_manager,
+                        bound_params.port_server,
+                        bound_params.port_manager,
+                        capabilities,
+                        devtools_event_listeners,
+                        &session->chrome);
+  if (status.IsError())
+    return status;
+
+  std::list<std::string> web_view_ids;
+  status = session->chrome->GetWebViewIds(&web_view_ids);
+  if (status.IsError() || web_view_ids.empty()) {
+    return status.IsError() ? status :
+        Status(kUnknownError, "unable to discover open window in chrome");
+  }
+
+  session->window = web_view_ids.front();
+  session->detach = capabilities.detach;
+  session->force_devtools_screenshot = capabilities.force_devtools_screenshot;
+  session->capabilities = CreateCapabilities(session->chrome.get());
+  value->reset(session->capabilities->DeepCopy());
+  return Status(kOk);
+}
+
+}  // namespace
+
+Status ExecuteInitSession(
+    const InitSessionParams& bound_params,
+    Session* session,
+    const base::DictionaryValue& params,
+    scoped_ptr<base::Value>* value) {
+  Status status = InitSessionHelper(bound_params, session, params, value);
+  if (status.IsError())
+    session->quit = true;
+  return status;
+}
+
 Status ExecuteQuit(
     bool allow_detach,
     Session* session,
     const base::DictionaryValue& params,
     scoped_ptr<base::Value>* value) {
-  if (allow_detach && session->detach) {
+  session->quit = true;
+  if (allow_detach && session->detach)
     return Status(kOk);
-  } else {
-    session->quit = true;
+  else
     return session->chrome->Quit();
-  }
 }
 
 Status ExecuteGetSessionCapabilities(
@@ -212,18 +335,21 @@ Status ExecuteSetTimeout(
   if (!params.GetString("type", &type))
     return Status(kUnknownError, "'type' must be a string");
 
-  int ms = static_cast<int>(ms_double);
+  base::TimeDelta timeout =
+      base::TimeDelta::FromMilliseconds(static_cast<int>(ms_double));
   // TODO(frankf): implicit and script timeout should be cleared
   // if negative timeout is specified.
-  if (type == "implicit")
-    session->implicit_wait = ms;
-  else if (type == "script")
-    session->script_timeout = ms;
-  else if (type == "page load")
+  if (type == "implicit") {
+    session->implicit_wait = timeout;
+  } else if (type == "script") {
+    session->script_timeout = timeout;
+  } else if (type == "page load") {
     session->page_load_timeout =
-        ((ms < 0) ? Session::kDefaultPageLoadTimeoutMs : ms);
-  else
+        ((timeout < base::TimeDelta()) ? Session::kDefaultPageLoadTimeout
+                                       : timeout);
+  } else {
     return Status(kUnknownError, "unknown type of timeout:" + type);
+  }
   return Status(kOk);
 }
 
@@ -234,7 +360,8 @@ Status ExecuteSetScriptTimeout(
   double ms;
   if (!params.GetDouble("ms", &ms) || ms < 0)
     return Status(kUnknownError, "'ms' must be a non-negative number");
-  session->script_timeout = static_cast<int>(ms);
+  session->script_timeout =
+      base::TimeDelta::FromMilliseconds(static_cast<int>(ms));
   return Status(kOk);
 }
 
@@ -245,7 +372,8 @@ Status ExecuteImplicitlyWait(
   double ms;
   if (!params.GetDouble("ms", &ms) || ms < 0)
     return Status(kUnknownError, "'ms' must be a non-negative number");
-  session->implicit_wait = static_cast<int>(ms);
+  session->implicit_wait =
+      base::TimeDelta::FromMilliseconds(static_cast<int>(ms));
   return Status(kOk);
 }
 
@@ -294,8 +422,15 @@ Status ExecuteGetWindowPosition(
     Session* session,
     const base::DictionaryValue& params,
     scoped_ptr<base::Value>* value) {
+  ChromeDesktopImpl* desktop = session->chrome->GetAsDesktop();
+  if (!desktop) {
+    return Status(
+        kUnknownError,
+        "command only supported for desktop Chrome without debuggerAddress");
+  }
+
   AutomationExtension* extension = NULL;
-  Status status = session->chrome->GetAutomationExtension(&extension);
+  Status status = desktop->GetAutomationExtension(&extension);
   if (status.IsError())
     return status;
 
@@ -318,8 +453,16 @@ Status ExecuteSetWindowPosition(
   double x, y;
   if (!params.GetDouble("x", &x) || !params.GetDouble("y", &y))
     return Status(kUnknownError, "missing or invalid 'x' or 'y'");
+
+  ChromeDesktopImpl* desktop = session->chrome->GetAsDesktop();
+  if (!desktop) {
+    return Status(
+        kUnknownError,
+        "command only supported for desktop Chrome without debuggerAddress");
+  }
+
   AutomationExtension* extension = NULL;
-  Status status = session->chrome->GetAutomationExtension(&extension);
+  Status status = desktop->GetAutomationExtension(&extension);
   if (status.IsError())
     return status;
 
@@ -330,8 +473,15 @@ Status ExecuteGetWindowSize(
     Session* session,
     const base::DictionaryValue& params,
     scoped_ptr<base::Value>* value) {
+  ChromeDesktopImpl* desktop = session->chrome->GetAsDesktop();
+  if (!desktop) {
+    return Status(
+        kUnknownError,
+        "command only supported for desktop Chrome without debuggerAddress");
+  }
+
   AutomationExtension* extension = NULL;
-  Status status = session->chrome->GetAutomationExtension(&extension);
+  Status status = desktop->GetAutomationExtension(&extension);
   if (status.IsError())
     return status;
 
@@ -355,8 +505,16 @@ Status ExecuteSetWindowSize(
   if (!params.GetDouble("width", &width) ||
       !params.GetDouble("height", &height))
     return Status(kUnknownError, "missing or invalid 'width' or 'height'");
+
+  ChromeDesktopImpl* desktop = session->chrome->GetAsDesktop();
+  if (!desktop) {
+    return Status(
+        kUnknownError,
+        "command only supported for desktop Chrome without debuggerAddress");
+  }
+
   AutomationExtension* extension = NULL;
-  Status status = session->chrome->GetAutomationExtension(&extension);
+  Status status = desktop->GetAutomationExtension(&extension);
   if (status.IsError())
     return status;
 
@@ -368,8 +526,15 @@ Status ExecuteMaximizeWindow(
     Session* session,
     const base::DictionaryValue& params,
     scoped_ptr<base::Value>* value) {
+  ChromeDesktopImpl* desktop = session->chrome->GetAsDesktop();
+  if (!desktop) {
+    return Status(
+        kUnknownError,
+        "command only supported for desktop Chrome without debuggerAddress");
+  }
+
   AutomationExtension* extension = NULL;
-  Status status = session->chrome->GetAutomationExtension(&extension);
+  Status status = desktop->GetAutomationExtension(&extension);
   if (status.IsError())
     return status;
 
@@ -381,12 +546,13 @@ Status ExecuteGetAvailableLogTypes(
     const base::DictionaryValue& params,
     scoped_ptr<base::Value>* value) {
   scoped_ptr<base::ListValue> types(new base::ListValue());
-  for (ScopedVector<WebDriverLog>::const_iterator log
-       = session->devtools_logs.begin();
-       log != session->devtools_logs.end(); ++log) {
-    types->AppendString((*log)->GetType());
+  std::vector<WebDriverLog*> logs = session->GetAllLogs();
+  for (std::vector<WebDriverLog*>::const_iterator log = logs.begin();
+       log != logs.end();
+       ++log) {
+    types->AppendString((*log)->type());
   }
-  value->reset(types.release());
+  *value = types.Pass();
   return Status(kOk);
 }
 
@@ -398,12 +564,12 @@ Status ExecuteGetLog(
   if (!params.GetString("type", &log_type)) {
     return Status(kUnknownError, "missing or invalid 'type'");
   }
-  for (ScopedVector<WebDriverLog>::const_iterator log
-       = session->devtools_logs.begin();
-       log != session->devtools_logs.end(); ++log) {
-    if (log_type == (*log)->GetType()) {
-      scoped_ptr<base::ListValue> log_entries = (*log)->GetAndClearEntries();
-      value->reset(log_entries.release());
+  std::vector<WebDriverLog*> logs = session->GetAllLogs();
+  for (std::vector<WebDriverLog*>::const_iterator log = logs.begin();
+       log != logs.end();
+       ++log) {
+    if (log_type == (*log)->type()) {
+      *value = (*log)->GetAndClearEntries();
       return Status(kOk);
     }
   }
@@ -426,8 +592,9 @@ Status ExecuteUploadFile(
       return Status(kUnknownError, "unable to create temp dir");
   }
   base::FilePath upload_dir;
-  if (!file_util::CreateTemporaryDirInDir(
-          session->temp_dir.path(), FILE_PATH_LITERAL("upload"), &upload_dir)) {
+  if (!base::CreateTemporaryDirInDir(session->temp_dir.path(),
+                                     FILE_PATH_LITERAL("upload"),
+                                     &upload_dir)) {
     return Status(kUnknownError, "unable to create temp dir");
   }
   std::string error_msg;

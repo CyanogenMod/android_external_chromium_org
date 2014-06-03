@@ -8,6 +8,7 @@
 #include <jni.h>
 #include <string>
 
+#include "base/android/scoped_java_ref.h"
 #include "base/at_exit.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "remoting/base/auto_thread.h"
@@ -17,6 +18,8 @@
 template<typename T> struct DefaultSingletonTraits;
 
 namespace remoting {
+
+bool RegisterJni(JNIEnv* env);
 
 // Houses the global resources on which the Chromoting components run
 // (e.g. message loops and task runners). Proxies outgoing JNI calls from its
@@ -72,15 +75,23 @@ class ChromotingJniRuntime {
                               protocol::ErrorCode error);
 
   // Pops up a dialog box asking the user to enter a PIN. Call on UI thread.
-  void DisplayAuthenticationPrompt();
+  void DisplayAuthenticationPrompt(bool pairing_supported);
 
   // Saves new pairing credentials to permanent storage. Call on UI thread.
   void CommitPairingCredentials(const std::string& host,
                                 const std::string& id,
                                 const std::string& secret);
 
-  // Updates image dimensions and canvas memory space. Call on display thread.
-  void UpdateImageBuffer(int width, int height, jobject buffer);
+  // Creates a new Bitmap object to store a video frame.
+  base::android::ScopedJavaLocalRef<jobject> NewBitmap(
+      webrtc::DesktopSize size);
+
+  // Updates video frame bitmap. |bitmap| must be an instance of
+  // android.graphics.Bitmap. Call on the display thread.
+  void UpdateFrameBitmap(jobject bitmap);
+
+  // Updates cursor shape. Call on display thread.
+  void UpdateCursorShape(const protocol::CursorShapeInfo& cursor_shape);
 
   // Draws the latest image buffer onto the canvas. Call on the display thread.
   void RedrawCanvas();
@@ -97,9 +108,6 @@ class ChromotingJniRuntime {
 
   // Detaches JVM from the current thread, then signals. Doesn't own |waiter|.
   void DetachFromVmAndSignal(base::WaitableEvent* waiter);
-
-  // Reference to the Java class into which we make JNI calls.
-  jclass class_;
 
   // Used by the Chromium libraries to clean up the base and net libraries' JNI
   // bindings. It must persist for the lifetime of the singleton.

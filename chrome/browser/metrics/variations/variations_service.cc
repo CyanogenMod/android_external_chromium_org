@@ -18,14 +18,13 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/version.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/metrics/proto/trials_seed.pb.h"
-#include "chrome/browser/metrics/variations/variations_seed_processor.h"
-#include "chrome/browser/net/network_time_tracker.h"
+#include "chrome/browser/network_time/network_time_tracker.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/metrics/variations/variations_util.h"
 #include "chrome/common/pref_names.h"
+#include "components/variations/proto/variations_seed.pb.h"
+#include "components/variations/variations_seed_processor.h"
 #include "content/public/browser/browser_thread.h"
-#include "content/public/common/url_fetcher.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_errors.h"
 #include "net/base/network_change_notifier.h"
@@ -35,6 +34,7 @@
 #include "net/http/http_util.h"
 #include "net/url_request/url_fetcher.h"
 #include "net/url_request/url_request_status.h"
+#include "ui/base/device_form_factor.h"
 #include "url/gurl.h"
 
 #if defined(OS_CHROMEOS)
@@ -109,11 +109,6 @@ std::string GetPlatformString() {
 #endif
 }
 
-// Converts |date_time| in Study date format to base::Time.
-base::Time ConvertStudyDateToBaseTime(int64 date_time) {
-  return base::Time::UnixEpoch() + base::TimeDelta::FromSeconds(date_time);
-}
-
 // Gets the restrict parameter from |local_state| or from Chrome OS settings in
 // the case of that platform.
 std::string GetRestrictParameterPref(PrefService* local_state) {
@@ -138,6 +133,9 @@ enum ResourceRequestsAllowedState {
   RESOURCE_REQUESTS_ALLOWED,
   RESOURCE_REQUESTS_NOT_ALLOWED,
   RESOURCE_REQUESTS_ALLOWED_NOTIFIED,
+  RESOURCE_REQUESTS_NOT_ALLOWED_EULA_NOT_ACCEPTED,
+  RESOURCE_REQUESTS_NOT_ALLOWED_NETWORK_DOWN,
+  RESOURCE_REQUESTS_NOT_ALLOWED_COMMAND_LINE_DISABLED,
   RESOURCE_REQUESTS_ALLOWED_ENUM_SIZE,
 };
 
@@ -145,6 +143,24 @@ enum ResourceRequestsAllowedState {
 void RecordRequestsAllowedHistogram(ResourceRequestsAllowedState state) {
   UMA_HISTOGRAM_ENUMERATION("Variations.ResourceRequestsAllowed", state,
                             RESOURCE_REQUESTS_ALLOWED_ENUM_SIZE);
+}
+
+// Converts ResourceRequestAllowedNotifier::State to the corresponding
+// ResourceRequestsAllowedState value.
+ResourceRequestsAllowedState ResourceRequestStateToHistogramValue(
+    ResourceRequestAllowedNotifier::State state) {
+  switch (state) {
+    case ResourceRequestAllowedNotifier::DISALLOWED_EULA_NOT_ACCEPTED:
+      return RESOURCE_REQUESTS_NOT_ALLOWED_EULA_NOT_ACCEPTED;
+    case ResourceRequestAllowedNotifier::DISALLOWED_NETWORK_DOWN:
+      return RESOURCE_REQUESTS_NOT_ALLOWED_NETWORK_DOWN;
+    case ResourceRequestAllowedNotifier::DISALLOWED_COMMAND_LINE_DISABLED:
+      return RESOURCE_REQUESTS_NOT_ALLOWED_COMMAND_LINE_DISABLED;
+    case ResourceRequestAllowedNotifier::ALLOWED:
+     return RESOURCE_REQUESTS_ALLOWED;
+  }
+  NOTREACHED();
+  return RESOURCE_REQUESTS_NOT_ALLOWED;
 }
 
 enum VariationSeedEmptyState {
@@ -157,6 +173,21 @@ enum VariationSeedEmptyState {
 void RecordVariationSeedEmptyHistogram(VariationSeedEmptyState state) {
   UMA_HISTOGRAM_ENUMERATION("Variations.SeedEmpty", state,
                             VARIATIONS_SEED_EMPTY_ENUM_SIZE);
+}
+
+// Get current form factor and convert it from enum DeviceFormFactor to enum
+// Study_FormFactor.
+Study_FormFactor GetCurrentFormFactor() {
+  switch (ui::GetDeviceFormFactor()) {
+    case ui::DEVICE_FORM_FACTOR_PHONE:
+      return Study_FormFactor_PHONE;
+    case ui::DEVICE_FORM_FACTOR_TABLET:
+      return Study_FormFactor_TABLET;
+    case ui::DEVICE_FORM_FACTOR_DESKTOP:
+      return Study_FormFactor_DESKTOP;
+  }
+  NOTREACHED();
+  return Study_FormFactor_DESKTOP;
 }
 
 }  // namespace
@@ -187,8 +218,8 @@ VariationsService::~VariationsService() {
 bool VariationsService::CreateTrialsFromSeed() {
   create_trials_from_seed_called_ = true;
 
-  TrialsSeed seed;
-  if (!LoadTrialsSeedFromPref(&seed))
+  VariationsSeed seed;
+  if (!LoadVariationsSeedFromPref(&seed))
     return false;
 
   const int64 date_value = local_state_->GetInt64(prefs::kVariationsSeedDate);
@@ -210,7 +241,7 @@ bool VariationsService::CreateTrialsFromSeed() {
 
   VariationsSeedProcessor().CreateTrialsFromSeed(
       seed, g_browser_process->GetApplicationLocale(), reference_date,
-      current_version, GetChannelForVariations());
+      current_version, GetChannelForVariations(), GetCurrentFormFactor());
 
   // Log the "freshness" of the seed that was just used. The freshness is the
   // time between the last successful seed download and now.
@@ -337,8 +368,10 @@ void VariationsService::DoActualFetch() {
 void VariationsService::FetchVariationsSeed() {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
 
-  if (!resource_request_allowed_notifier_->ResourceRequestsAllowed()) {
-    RecordRequestsAllowedHistogram(RESOURCE_REQUESTS_NOT_ALLOWED);
+  const ResourceRequestAllowedNotifier::State state =
+      resource_request_allowed_notifier_->GetResourceRequestsAllowedState();
+  if (state != ResourceRequestAllowedNotifier::ALLOWED) {
+    RecordRequestsAllowedHistogram(ResourceRequestStateToHistogramValue(state));
     DVLOG(1) << "Resource requests were not allowed. Waiting for notification.";
     return;
   }
@@ -398,6 +431,10 @@ void VariationsService::OnURLFetchComplete(const net::URLFetcher* source) {
     if (response_code == net::HTTP_NOT_MODIFIED) {
       UMA_HISTOGRAM_MEDIUM_TIMES("Variations.FetchNotModifiedLatency", latency);
       RecordLastFetchTime();
+      // Update the seed date value in local state (used for expiry check on
+      // next start up), since 304 is a successful response.
+      local_state_->SetInt64(prefs::kVariationsSeedDate,
+                             response_date.ToInternalValue());
     } else {
       UMA_HISTOGRAM_MEDIUM_TIMES("Variations.FetchOtherLatency", latency);
     }
@@ -436,7 +473,7 @@ bool VariationsService::StoreSeedData(const std::string& seed_data,
   }
 
   // Only store the seed data if it parses correctly.
-  TrialsSeed seed;
+  VariationsSeed seed;
   if (!seed.ParseFromString(seed_data)) {
     VLOG(1) << "Variations Seed data from server is not in valid proto format, "
             << "rejecting the seed.";
@@ -444,11 +481,7 @@ bool VariationsService::StoreSeedData(const std::string& seed_data,
   }
 
   std::string base64_seed_data;
-  if (!base::Base64Encode(seed_data, &base64_seed_data)) {
-    VLOG(1) << "Variations Seed data from server fails Base64Encode, rejecting "
-            << "the seed.";
-    return false;
-  }
+  base::Base64Encode(seed_data, &base64_seed_data);
 
   local_state_->SetString(prefs::kVariationsSeed, base64_seed_data);
   local_state_->SetString(prefs::kVariationsSeedHash, HashSeed(seed_data));
@@ -461,7 +494,7 @@ bool VariationsService::StoreSeedData(const std::string& seed_data,
   return true;
 }
 
-bool VariationsService::LoadTrialsSeedFromPref(TrialsSeed* seed) {
+bool VariationsService::LoadVariationsSeedFromPref(VariationsSeed* seed) {
   const std::string base64_seed_data =
       local_state_->GetString(prefs::kVariationsSeed);
   if (base64_seed_data.empty()) {

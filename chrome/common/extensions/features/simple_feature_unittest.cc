@@ -5,7 +5,7 @@
 #include "chrome/common/extensions/features/simple_feature.h"
 
 #include "chrome/common/extensions/features/feature_channel.h"
-#include "chrome/common/extensions/value_builder.h"
+#include "extensions/common/value_builder.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using chrome::VersionInfo;
@@ -172,9 +172,10 @@ TEST_F(ExtensionSimpleFeatureTest, PackageType) {
 
 TEST_F(ExtensionSimpleFeatureTest, Context) {
   SimpleFeature feature;
+  feature.set_name("somefeature");
   feature.GetContexts()->insert(Feature::BLESSED_EXTENSION_CONTEXT);
   feature.extension_types()->insert(Manifest::TYPE_LEGACY_PACKAGED_APP);
-  feature.set_platform(Feature::CHROMEOS_PLATFORM);
+  feature.platforms()->insert(Feature::CHROMEOS_PLATFORM);
   feature.set_min_manifest_version(21);
   feature.set_max_manifest_version(25);
 
@@ -199,20 +200,44 @@ TEST_F(ExtensionSimpleFeatureTest, Context) {
 
   feature.extension_types()->clear();
   feature.extension_types()->insert(Manifest::TYPE_THEME);
-  EXPECT_EQ(Feature::INVALID_TYPE, feature.IsAvailableToContext(
-      extension.get(), Feature::BLESSED_EXTENSION_CONTEXT,
-      Feature::CHROMEOS_PLATFORM).result());
+  {
+    Feature::Availability availability = feature.IsAvailableToContext(
+        extension.get(), Feature::BLESSED_EXTENSION_CONTEXT,
+        Feature::CHROMEOS_PLATFORM);
+    EXPECT_EQ(Feature::INVALID_TYPE, availability.result());
+    EXPECT_EQ("'somefeature' is only allowed for themes, "
+              "but this is a legacy packaged app.",
+              availability.message());
+  }
+
   feature.extension_types()->clear();
   feature.extension_types()->insert(Manifest::TYPE_LEGACY_PACKAGED_APP);
-
   feature.GetContexts()->clear();
   feature.GetContexts()->insert(Feature::UNBLESSED_EXTENSION_CONTEXT);
-  EXPECT_EQ(Feature::INVALID_CONTEXT, feature.IsAvailableToContext(
-      extension.get(), Feature::BLESSED_EXTENSION_CONTEXT,
-      Feature::CHROMEOS_PLATFORM).result());
+  feature.GetContexts()->insert(Feature::CONTENT_SCRIPT_CONTEXT);
+  {
+    Feature::Availability availability = feature.IsAvailableToContext(
+        extension.get(), Feature::BLESSED_EXTENSION_CONTEXT,
+        Feature::CHROMEOS_PLATFORM);
+    EXPECT_EQ(Feature::INVALID_CONTEXT, availability.result());
+    EXPECT_EQ("'somefeature' is only allowed to run in extension iframes and "
+              "content scripts, but this is a privileged page",
+              availability.message());
+  }
+
+  feature.GetContexts()->insert(Feature::WEB_PAGE_CONTEXT);
+  {
+    Feature::Availability availability = feature.IsAvailableToContext(
+        extension.get(), Feature::BLESSED_EXTENSION_CONTEXT,
+        Feature::CHROMEOS_PLATFORM);
+    EXPECT_EQ(Feature::INVALID_CONTEXT, availability.result());
+    EXPECT_EQ("'somefeature' is only allowed to run in extension iframes, "
+              "content scripts, and web pages, but this is a privileged page",
+              availability.message());
+  }
+
   feature.GetContexts()->clear();
   feature.GetContexts()->insert(Feature::BLESSED_EXTENSION_CONTEXT);
-
   feature.set_location(Feature::COMPONENT_LOCATION);
   EXPECT_EQ(Feature::INVALID_LOCATION, feature.IsAvailableToContext(
       extension.get(), Feature::BLESSED_EXTENSION_CONTEXT,
@@ -270,7 +295,7 @@ TEST_F(ExtensionSimpleFeatureTest, Location) {
 
 TEST_F(ExtensionSimpleFeatureTest, Platform) {
   SimpleFeature feature;
-  feature.set_platform(Feature::CHROMEOS_PLATFORM);
+  feature.platforms()->insert(Feature::CHROMEOS_PLATFORM);
   EXPECT_EQ(Feature::IS_AVAILABLE,
             feature.IsAvailableToManifest(std::string(),
                                           Manifest::TYPE_UNKNOWN,
@@ -353,7 +378,7 @@ TEST_F(ExtensionSimpleFeatureTest, ParseNull) {
   EXPECT_TRUE(feature->extension_types()->empty());
   EXPECT_TRUE(feature->GetContexts()->empty());
   EXPECT_EQ(Feature::UNSPECIFIED_LOCATION, feature->location());
-  EXPECT_EQ(Feature::UNSPECIFIED_PLATFORM, feature->platform());
+  EXPECT_TRUE(feature->platforms()->empty());
   EXPECT_EQ(0, feature->min_manifest_version());
   EXPECT_EQ(0, feature->max_manifest_version());
 }
@@ -376,7 +401,7 @@ TEST_F(ExtensionSimpleFeatureTest, ParsePackageTypes) {
   base::ListValue* extension_types = new base::ListValue();
   extension_types->Append(new base::StringValue("extension"));
   extension_types->Append(new base::StringValue("theme"));
-  extension_types->Append(new base::StringValue("packaged_app"));
+  extension_types->Append(new base::StringValue("legacy_packaged_app"));
   extension_types->Append(new base::StringValue("hosted_app"));
   extension_types->Append(new base::StringValue("platform_app"));
   extension_types->Append(new base::StringValue("shared_module"));
@@ -405,10 +430,11 @@ TEST_F(ExtensionSimpleFeatureTest, ParseContexts) {
   contexts->Append(new base::StringValue("unblessed_extension"));
   contexts->Append(new base::StringValue("content_script"));
   contexts->Append(new base::StringValue("web_page"));
+  contexts->Append(new base::StringValue("blessed_web_page"));
   value->Set("contexts", contexts);
   scoped_ptr<SimpleFeature> feature(new SimpleFeature());
   feature->Parse(value.get());
-  EXPECT_EQ(4u, feature->GetContexts()->size());
+  EXPECT_EQ(5u, feature->GetContexts()->size());
   EXPECT_TRUE(
       feature->GetContexts()->count(Feature::BLESSED_EXTENSION_CONTEXT));
   EXPECT_TRUE(
@@ -417,6 +443,8 @@ TEST_F(ExtensionSimpleFeatureTest, ParseContexts) {
       feature->GetContexts()->count(Feature::CONTENT_SCRIPT_CONTEXT));
   EXPECT_TRUE(
       feature->GetContexts()->count(Feature::WEB_PAGE_CONTEXT));
+  EXPECT_TRUE(
+      feature->GetContexts()->count(Feature::BLESSED_WEB_PAGE_CONTEXT));
 
   value->SetString("contexts", "all");
   scoped_ptr<SimpleFeature> feature2(new SimpleFeature());
@@ -432,12 +460,35 @@ TEST_F(ExtensionSimpleFeatureTest, ParseLocation) {
   EXPECT_EQ(Feature::COMPONENT_LOCATION, feature->location());
 }
 
-TEST_F(ExtensionSimpleFeatureTest, ParsePlatform) {
+TEST_F(ExtensionSimpleFeatureTest, ParsePlatforms) {
   scoped_ptr<base::DictionaryValue> value(new base::DictionaryValue());
-  value->SetString("platform", "chromeos");
   scoped_ptr<SimpleFeature> feature(new SimpleFeature());
+  base::ListValue* platforms = new base::ListValue();
+  value->Set("platforms", platforms);
   feature->Parse(value.get());
-  EXPECT_EQ(Feature::CHROMEOS_PLATFORM, feature->platform());
+  EXPECT_TRUE(feature->platforms()->empty());
+
+  platforms->AppendString("chromeos");
+  feature->Parse(value.get());
+  EXPECT_FALSE(feature->platforms()->empty());
+  EXPECT_EQ(Feature::CHROMEOS_PLATFORM, *feature->platforms()->begin());
+
+  platforms->Clear();
+  platforms->AppendString("win");
+  feature->Parse(value.get());
+  EXPECT_FALSE(feature->platforms()->empty());
+  EXPECT_EQ(Feature::WIN_PLATFORM, *feature->platforms()->begin());
+
+  platforms->Clear();
+  platforms->AppendString("win");
+  platforms->AppendString("chromeos");
+  feature->Parse(value.get());
+  std::set<Feature::Platform> expected_platforms;
+  expected_platforms.insert(Feature::CHROMEOS_PLATFORM);
+  expected_platforms.insert(Feature::WIN_PLATFORM);
+
+  EXPECT_FALSE(feature->platforms()->empty());
+  EXPECT_EQ(expected_platforms, *feature->platforms());
 }
 
 TEST_F(ExtensionSimpleFeatureTest, ManifestVersion) {
@@ -456,7 +507,7 @@ TEST_F(ExtensionSimpleFeatureTest, Inheritance) {
   feature.extension_types()->insert(Manifest::TYPE_THEME);
   feature.GetContexts()->insert(Feature::BLESSED_EXTENSION_CONTEXT);
   feature.set_location(Feature::COMPONENT_LOCATION);
-  feature.set_platform(Feature::CHROMEOS_PLATFORM);
+  feature.platforms()->insert(Feature::CHROMEOS_PLATFORM);
   feature.set_min_manifest_version(1);
   feature.set_max_manifest_version(2);
 
@@ -499,7 +550,7 @@ TEST_F(ExtensionSimpleFeatureTest, Equals) {
   feature.extension_types()->insert(Manifest::TYPE_THEME);
   feature.GetContexts()->insert(Feature::UNBLESSED_EXTENSION_CONTEXT);
   feature.set_location(Feature::COMPONENT_LOCATION);
-  feature.set_platform(Feature::CHROMEOS_PLATFORM);
+  feature.platforms()->insert(Feature::CHROMEOS_PLATFORM);
   feature.set_min_manifest_version(18);
   feature.set_max_manifest_version(25);
 
@@ -522,7 +573,7 @@ TEST_F(ExtensionSimpleFeatureTest, Equals) {
   EXPECT_FALSE(feature2.Equals(feature));
 
   feature2 = feature;
-  feature2.set_platform(Feature::UNSPECIFIED_PLATFORM);
+  feature.platforms()->insert(Feature::UNSPECIFIED_PLATFORM);
   EXPECT_FALSE(feature2.Equals(feature));
 
   feature2 = feature;

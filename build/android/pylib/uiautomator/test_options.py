@@ -7,7 +7,6 @@
 import collections
 
 UIAutomatorOptions = collections.namedtuple('UIAutomatorOptions', [
-    'build_type',
     'tool',
     'cleanup_test_files',
     'push_deps',
@@ -19,4 +18,4 @@ UIAutomatorOptions = collections.namedtuple('UIAutomatorOptions', [
     'screenshot_failures',
     'uiautomator_jar',
     'uiautomator_info_jar',
-    'package_name'])
+    'package'])

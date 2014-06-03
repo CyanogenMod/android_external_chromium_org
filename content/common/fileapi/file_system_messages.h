@@ -9,6 +9,7 @@
 #include "ipc/ipc_platform_file.h"
 #include "url/gurl.h"
 #include "webkit/common/fileapi/directory_entry.h"
+#include "webkit/common/fileapi/file_system_info.h"
 #include "webkit/common/fileapi/file_system_types.h"
 #include "webkit/common/quota/quota_types.h"
 
@@ -19,6 +20,12 @@
 IPC_STRUCT_TRAITS_BEGIN(fileapi::DirectoryEntry)
   IPC_STRUCT_TRAITS_MEMBER(name)
   IPC_STRUCT_TRAITS_MEMBER(is_directory)
+IPC_STRUCT_TRAITS_END()
+
+IPC_STRUCT_TRAITS_BEGIN(fileapi::FileSystemInfo)
+  IPC_STRUCT_TRAITS_MEMBER(name)
+  IPC_STRUCT_TRAITS_MEMBER(root_url)
+  IPC_STRUCT_TRAITS_MEMBER(mount_type)
 IPC_STRUCT_TRAITS_END()
 
 IPC_ENUM_TRAITS(fileapi::FileSystemType)
@@ -33,6 +40,11 @@ IPC_MESSAGE_CONTROL3(FileSystemMsg_DidOpenFileSystem,
                      GURL /* root_url */)
 
 // WebFileSystem response messages.
+IPC_MESSAGE_CONTROL4(FileSystemMsg_DidResolveURL,
+                     int /* request_id */,
+                     fileapi::FileSystemInfo /* filesystem_info */,
+                     base::FilePath /* file_path */,
+                     bool /* is_directory */)
 IPC_MESSAGE_CONTROL1(FileSystemMsg_DidSucceed,
                      int /* request_id */)
 IPC_MESSAGE_CONTROL2(FileSystemMsg_DidReadMetadata,
@@ -62,12 +74,15 @@ IPC_MESSAGE_CONTROL2(FileSystemMsg_DidFail,
 // File system messages sent from the child process to the browser.
 
 // WebFrameClient::openFileSystem() message.
-IPC_MESSAGE_CONTROL5(FileSystemHostMsg_Open,
+IPC_MESSAGE_CONTROL3(FileSystemHostMsg_OpenFileSystem,
                      int /* request_id */,
                      GURL /* origin_url */,
-                     fileapi::FileSystemType /* type */,
-                     int64 /* requested_size */,
-                     bool /* create */)
+                     fileapi::FileSystemType /* type */)
+
+// WevFrameClient::resolveURL() message.
+IPC_MESSAGE_CONTROL2(FileSystemHostMsg_ResolveURL,
+                     int /* request_id */,
+                     GURL /* filesystem_url */)
 
 // WebFrameClient::deleteFileSystem() message.
 IPC_MESSAGE_CONTROL3(FileSystemHostMsg_DeleteFileSystem,
@@ -88,7 +103,7 @@ IPC_MESSAGE_CONTROL3(FileSystemHostMsg_Copy,
                      GURL /* dest path */)
 
 // WebFileSystem::remove() message.
-IPC_MESSAGE_CONTROL3(FileSystemMsg_Remove,
+IPC_MESSAGE_CONTROL3(FileSystemHostMsg_Remove,
                      int /* request_id */,
                      GURL /* path */,
                      bool /* recursive */)
@@ -118,10 +133,17 @@ IPC_MESSAGE_CONTROL2(FileSystemHostMsg_ReadDirectory,
                      GURL /* path */)
 
 // WebFileWriter::write() message.
-IPC_MESSAGE_CONTROL4(FileSystemHostMsg_Write,
+IPC_MESSAGE_CONTROL4(FileSystemHostMsg_WriteDeprecated,
                      int /* request id */,
                      GURL /* file path */,
                      GURL /* blob URL */,
+                     int64 /* position */)
+
+// WebFileWriter::write() message.
+IPC_MESSAGE_CONTROL4(FileSystemHostMsg_Write,
+                     int /* request id */,
+                     GURL /* file path */,
+                     std::string /* blob uuid */,
                      int64 /* position */)
 
 // WebFileWriter::truncate() message.
@@ -142,16 +164,6 @@ IPC_MESSAGE_CONTROL2(FileSystemHostMsg_CancelWrite,
                      int /* request id */,
                      int /* id of request to cancel */)
 
-// Pepper's OpenFile message.
-IPC_MESSAGE_CONTROL3(FileSystemHostMsg_OpenFile,
-                     int /* request id */,
-                     GURL /* file path */,
-                     int /* file flags */)
-
-// Pepper's NotifyCloseFile message.
-IPC_MESSAGE_CONTROL1(FileSystemHostMsg_NotifyCloseFile,
-                     int /* file_open_id */)
-
 // WebFileSystem::createSnapshotFileAndReadMetadata() message.
 IPC_MESSAGE_CONTROL2(FileSystemHostMsg_CreateSnapshotFile,
                      int /* request_id */,
@@ -167,11 +179,3 @@ IPC_MESSAGE_CONTROL1(FileSystemHostMsg_DidReceiveSnapshotFile,
 IPC_SYNC_MESSAGE_CONTROL1_1(FileSystemHostMsg_SyncGetPlatformPath,
                             GURL /* file path */,
                             base::FilePath /* platform_path */)
-
-// Pre- and post-update notifications for ppapi implementation.
-IPC_MESSAGE_CONTROL1(FileSystemHostMsg_WillUpdate,
-                     GURL /* file_path */)
-
-IPC_MESSAGE_CONTROL2(FileSystemHostMsg_DidUpdate,
-                     GURL /* file_path */,
-                     int64 /* delta */)

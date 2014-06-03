@@ -5,12 +5,16 @@
 #ifndef CHROME_BROWSER_UI_VIEWS_FRAME_BROWSER_DESKTOP_ROOT_WINDOW_HOST_WIN_H_
 #define CHROME_BROWSER_UI_VIEWS_FRAME_BROWSER_DESKTOP_ROOT_WINDOW_HOST_WIN_H_
 
+#include <windows.h>
+#include <uxtheme.h>
+
 #include "ui/views/widget/desktop_aura/desktop_root_window_host_win.h"
 #include "chrome/browser/ui/views/frame/browser_desktop_root_window_host.h"
 #include "chrome/browser/ui/views/frame/minimize_button_metrics_win.h"
 
 class BrowserFrame;
 class BrowserView;
+class BrowserWindowPropertyManager;
 
 namespace views {
 class DesktopNativeWidgetAura;
@@ -23,7 +27,6 @@ class BrowserDesktopRootWindowHostWin : public BrowserDesktopRootWindowHost,
   BrowserDesktopRootWindowHostWin(
       views::internal::NativeWidgetDelegate* native_widget_delegate,
       views::DesktopNativeWidgetAura* desktop_native_widget_aura,
-      const gfx::Rect& initial_bounds,
       BrowserView* browser_view,
       BrowserFrame* browser_frame);
   virtual ~BrowserDesktopRootWindowHostWin();
@@ -39,6 +42,7 @@ class BrowserDesktopRootWindowHostWin : public BrowserDesktopRootWindowHost,
   // Overridden from DesktopRootWindowHostWin:
   virtual int GetInitialShowState() const OVERRIDE;
   virtual bool GetClientAreaInsets(gfx::Insets* insets) const OVERRIDE;
+  virtual void HandleCreate() OVERRIDE;
   virtual void HandleFrameChanged() OVERRIDE;
   virtual bool PreHandleMSG(UINT message,
                             WPARAM w_param,
@@ -49,16 +53,24 @@ class BrowserDesktopRootWindowHostWin : public BrowserDesktopRootWindowHost,
                              LPARAM l_param) OVERRIDE;
   virtual bool IsUsingCustomFrame() const OVERRIDE;
   virtual bool ShouldUseNativeFrame() OVERRIDE;
+  virtual void FrameTypeChanged() OVERRIDE;
 
   void UpdateDWMFrame();
+
+  MARGINS GetDWMFrameMargins() const;
 
   BrowserView* browser_view_;
   BrowserFrame* browser_frame_;
 
   MinimizeButtonMetrics minimize_button_metrics_;
 
+  scoped_ptr<BrowserWindowPropertyManager> browser_window_property_manager_;
+
   // The wrapped system menu itself.
   scoped_ptr<views::NativeMenuWin> system_menu_;
+
+  // Necessary to avoid corruption on NC paint in Aero mode.
+  bool did_gdi_clear_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserDesktopRootWindowHostWin);
 };

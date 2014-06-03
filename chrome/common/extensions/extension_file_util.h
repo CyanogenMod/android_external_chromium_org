@@ -5,15 +5,14 @@
 #ifndef CHROME_COMMON_EXTENSIONS_EXTENSION_FILE_UTIL_H_
 #define CHROME_COMMON_EXTENSIONS_EXTENSION_FILE_UTIL_H_
 
-#include <string>
 #include <map>
+#include <string>
 
 #include "base/memory/ref_counted.h"
-#include "chrome/common/extensions/manifest.h"
 #include "chrome/common/extensions/message_bundle.h"
+#include "extensions/common/manifest.h"
 
 class ExtensionIconSet;
-class GURL;
 
 namespace base {
 class DictionaryValue;
@@ -88,7 +87,6 @@ bool ValidateExtension(const extensions::Extension* extension,
 std::set<base::FilePath> GetBrowserImagePaths(
     const extensions::Extension* extension);
 
-
 // Returns a list of files that contain private keys inside |extension_dir|.
 std::vector<base::FilePath> FindPrivateKeyFiles(
     const base::FilePath& extension_dir);
@@ -126,14 +124,6 @@ extensions::MessageBundle::SubstitutionMap* LoadMessageBundleSubstitutionMap(
 // reserved list we return false, and set error message.
 bool CheckForIllegalFilenames(const base::FilePath& extension_path,
                               std::string* error);
-
-// Get a relative file path from a chrome-extension:// URL.
-base::FilePath ExtensionURLToRelativeFilePath(const GURL& url);
-
-// Get a full file path from a chrome-extension-resource:// URL, If the URL
-// points a file outside of root, this function will return empty FilePath.
-base::FilePath ExtensionResourceURLToFilePath(const GURL& url,
-                                              const base::FilePath& root);
 
 // Returns a path to a temporary directory for unpacking an extension that will
 // be installed into |extensions_dir|. Creates the directory if necessary.

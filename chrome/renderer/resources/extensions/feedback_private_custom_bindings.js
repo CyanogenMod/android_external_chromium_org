@@ -6,24 +6,24 @@
 
 var binding = require('binding').Binding.create('feedbackPrivate');
 
-var feedbackPrivateNatives = requireNative('feedback_private');
+var blobNatives = requireNative('blob_natives');
 
 binding.registerCustomHook(function(bindingsAPI) {
   var apiFunctions = bindingsAPI.apiFunctions;
   apiFunctions.setUpdateArgumentsPostValidate(
       "sendFeedback", function(feedbackInfo, callback) {
-    var attachedFileBlobUrl = '';
-    var screenshotBlobUrl = '';
+    var attachedFileBlobUuid = '';
+    var screenshotBlobUuid = '';
 
     if (feedbackInfo.attachedFile)
-      attachedFileBlobUrl =
-          feedbackPrivateNatives.GetBlobUrl(feedbackInfo.attachedFile.data);
+      attachedFileBlobUuid =
+          blobNatives.GetBlobUuid(feedbackInfo.attachedFile.data);
     if (feedbackInfo.screenshot)
-      screenshotBlobUrl =
-          feedbackPrivateNatives.GetBlobUrl(feedbackInfo.screenshot);
+      screenshotBlobUuid =
+          blobNatives.GetBlobUuid(feedbackInfo.screenshot);
 
-    feedbackInfo.attachedFileBlobUrl = attachedFileBlobUrl;
-    feedbackInfo.screenshotBlobUrl = screenshotBlobUrl;
+    feedbackInfo.attachedFileBlobUuid = attachedFileBlobUuid;
+    feedbackInfo.screenshotBlobUuid = screenshotBlobUuid;
 
     return [feedbackInfo, callback];
   });

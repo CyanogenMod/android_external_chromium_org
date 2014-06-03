@@ -6,9 +6,9 @@
 #define CONTENT_BROWSER_RENDERER_HOST_INPUT_WEB_INPUT_EVENT_UTIL_H_
 
 #include "content/common/content_export.h"
-#include "ui/base/keycodes/keyboard_codes.h"
+#include "ui/events/keycodes/keyboard_codes.h"
 
-namespace WebKit {
+namespace blink {
 class WebKeyboardEvent;
 }
 
@@ -17,7 +17,7 @@ namespace content {
 // Update |event|'s windowsKeyCode and keyIdentifer properties using the
 // provided |windows_key_code|.
 CONTENT_EXPORT void UpdateWindowsKeyCodeAndKeyIdentifier(
-    WebKit::WebKeyboardEvent* event,
+    blink::WebKeyboardEvent* event,
     ui::KeyboardCode windows_key_code);
 
 }

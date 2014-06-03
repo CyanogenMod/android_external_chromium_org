@@ -23,7 +23,7 @@ const char kPref4[] = "path4";
 }  // namespace
 
 static Value* CreateVal(const char* str) {
-  return Value::CreateStringValue(str);
+  return new base::StringValue(str);
 }
 
 static base::Time CreateTime(int64 t) {
@@ -206,7 +206,6 @@ TEST_F(ExtensionPrefValueMapTest, UninstallExtensionFromMiddle) {
 
 // Tests triggering of notifications to registered observers.
 TEST_F(ExtensionPrefValueMapTest, NotifyWhenNeeded) {
-  using testing::_;
   using testing::Mock;
   using testing::StrEq;
 

@@ -16,6 +16,13 @@ namespace mediaGalleries {
     if_needed
   };
 
+  enum GetMetadataType {
+    // Retrieve all available metadata.
+    all,
+    // Retrieve only the mime type.
+    mimeTypeOnly
+  };
+
   [inline_doc] dictionary MediaFileSystemsDetails {
     // Whether to prompt the user for permission to additional media galleries
     // before returning the permitted set. Default is silent.  If the value
@@ -23,6 +30,12 @@ namespace mediaGalleries {
     // any media galleries and the value 'if_needed' is passed, then the
     // media gallery configuration dialog will be displayed.
     GetMediaFileSystemsInteractivity? interactive;
+  };
+
+  dictionary MediaMetadataOptions {
+    // Specifies which subset of the metadata to retrieve. Defaults to 'all'
+    // if the option is omitted.
+    GetMetadataType? metadataType;
   };
 
   callback MediaFileSystemsCallback =
@@ -36,7 +49,7 @@ namespace mediaGalleries {
     DOMString galleryId;
 
     // If the media gallery is on a removable device, a unique id for the
-    // device.
+    // device while the device is online.
     DOMString? deviceId;
 
     // True if the media gallery is on a removable device.
@@ -45,7 +58,20 @@ namespace mediaGalleries {
     // True if the device the media gallery is on was detected as a media
     // device.  i.e. a PTP or MTP device, or a DCIM directory is present.
     boolean isMediaDevice;
+
+    // True if the device is currently available.
+    boolean isAvailable;
   };
+
+  callback MediaFileSystemsMetadataCallback =
+      void (MediaFileSystemMetadata[] metadata);
+
+  dictionary MediaMetadata {
+    // The browser sniffed mime type.
+    DOMString mimeType;
+  };
+
+  callback MediaMetadataCallback = void (MediaMetadata metadata);
 
   interface Functions {
     // Get the media galleries configured in this user agent. If none are
@@ -56,6 +82,16 @@ namespace mediaGalleries {
     // Get metadata about a specific media file system.
     [nocompile] static MediaFileSystemMetadata getMediaFileSystemMetadata(
         [instanceOf=DOMFileSystem] object mediaFileSystem);
+
+    // Get metadata for all available media galleries.
+    static void getAllMediaFileSystemMetadata(
+        MediaFileSystemsMetadataCallback callback);
+                
+    // Gets the media-specific metadata for a media file. This should work
+    // for files in media galleries as well as other DOM filesystems.
+    static void getMetadata([instanceOf=Blob] object mediaFile,
+                            optional MediaMetadataOptions options,
+                            MediaMetadataCallback callback);
   };
 
 };

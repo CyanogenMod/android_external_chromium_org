@@ -9,10 +9,12 @@
 #include "base/message_loop/message_loop.h"
 #include "base/strings/string_number_conversions.h"
 #include "chrome/test/base/interactive_test_utils.h"
+#include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/browser_thread.h"
 #include "ui/base/ime/input_method_initializer.h"
 #include "ui/base/test/ui_controls.h"
+#include "ui/compositor/test/context_factories_for_test.h"
 #include "ui/message_center/message_center.h"
 #include "ui/views/view.h"
 #include "ui/views/widget/desktop_aura/desktop_screen.h"
@@ -22,9 +24,6 @@
 #include "ash/shell.h"
 #include "ash/test/test_session_state_delegate.h"
 #include "ash/test/test_shell_delegate.h"
-#if defined(OS_WIN)
-#include "ui/compositor/compositor.h"
-#endif
 #endif
 
 #if defined(USE_AURA)
@@ -36,6 +35,7 @@
 
 #if defined(OS_CHROMEOS)
 #include "chromeos/audio/cras_audio_handler.h"
+#include "chromeos/network/network_handler.h"
 #endif
 
 namespace {
@@ -75,6 +75,9 @@ const int kMouseMoveDelayMS = 200;
 ViewEventTestBase::ViewEventTestBase()
   : window_(NULL),
     content_view_(NULL) {
+  // The TestingBrowserProcess must be created in the constructor because there
+  // are tests that require it before SetUp() is called.
+  TestingBrowserProcess::CreateInstance();
 }
 
 void ViewEventTestBase::Done() {
@@ -96,26 +99,27 @@ void ViewEventTestBase::Done() {
 }
 
 void ViewEventTestBase::SetUp() {
+  views::ViewsDelegate::views_delegate = &views_delegate_;
   ui::InitializeInputMethodForTesting();
   gfx::NativeView context = NULL;
+
 #if defined(USE_ASH)
+  // The ContextFactory must exist before any Compositors are created.
+  bool allow_test_contexts = true;
+  ui::InitializeContextFactoryForTests(allow_test_contexts);
 #if defined(OS_WIN)
   // http://crbug.com/154081 use ash::Shell code path below on win_ash bots when
   // interactive_ui_tests is brought up on that platform.
   gfx::Screen::SetScreenInstance(
       gfx::SCREEN_TYPE_NATIVE, views::CreateDesktopScreen());
 
-  // The ContextFactory must exist before any Compositors are created. The
-  // ash::Shell code path below handles this, but since we skip it we must
-  // do this here.
-  bool allow_test_contexts = true;
-  ui::Compositor::InitializeContextFactoryForTests(allow_test_contexts);
 #else  // !OS_WIN
   // Ash Shell can't just live on its own without a browser process, we need to
   // also create the message center.
   message_center::MessageCenter::Initialize();
 #if defined(OS_CHROMEOS)
   chromeos::CrasAudioHandler::InitializeForTesting();
+  chromeos::NetworkHandler::Initialize();
 #endif  // OS_CHROMEOS
   ash::test::TestShellDelegate* shell_delegate =
       new ash::test::TestShellDelegate();
@@ -124,6 +128,7 @@ void ViewEventTestBase::SetUp() {
       ->SetActiveUserSessionStarted(true);
   context = ash::Shell::GetPrimaryRootWindow();
 #endif  // !OS_WIN
+  aura::Env::CreateInstance();
 #elif defined(USE_AURA)
   // Instead of using the ash shell, use an AuraTestHelper to create and manage
   // the test screen.
@@ -131,7 +136,8 @@ void ViewEventTestBase::SetUp() {
       new aura::test::AuraTestHelper(base::MessageLoopForUI::current()));
   aura_test_helper_->SetUp();
   context = aura_test_helper_->root_window();
-#endif  // USE_AURA
+#endif  // !USE_ASH && USE_AURA
+
   window_ = views::Widget::CreateWindowWithContext(this, context);
 }
 
@@ -145,22 +151,26 @@ void ViewEventTestBase::TearDown() {
 #endif
     window_ = NULL;
   }
+
 #if defined(USE_ASH)
-#if defined(OS_WIN)
-#else
+#if !defined(OS_WIN)
   ash::Shell::DeleteInstance();
 #if defined(OS_CHROMEOS)
+  chromeos::NetworkHandler::Shutdown();
   chromeos::CrasAudioHandler::Shutdown();
 #endif
   // Ash Shell can't just live on its own without a browser process, we need to
   // also shut down the message center.
   message_center::MessageCenter::Shutdown();
+#endif  // !OS_WIN
   aura::Env::DeleteInstance();
-#endif
+  ui::TerminateContextFactoryForTests();
 #elif defined(USE_AURA)
   aura_test_helper_->TearDown();
-#endif
+#endif  // !USE_ASH && USE_AURA
+
   ui::ShutdownInputMethodForTesting();
+  views::ViewsDelegate::views_delegate = NULL;
 }
 
 bool ViewEventTestBase::CanResize() const {
@@ -188,6 +198,7 @@ views::Widget* ViewEventTestBase::GetWidget() {
 }
 
 ViewEventTestBase::~ViewEventTestBase() {
+  TestingBrowserProcess::DeleteInstance();
 }
 
 void ViewEventTestBase::StartMessageLoopAndRunTest() {

@@ -27,14 +27,14 @@
 #include "third_party/WebKit/public/web/WebSecurityOrigin.h"
 #include "third_party/WebKit/public/web/WebURLLoaderOptions.h"
 
-using WebKit::WebFrame;
-using WebKit::WebString;
-using WebKit::WebURL;
-using WebKit::WebURLError;
-using WebKit::WebURLLoader;
-using WebKit::WebURLLoaderOptions;
-using WebKit::WebURLRequest;
-using WebKit::WebURLResponse;
+using blink::WebFrame;
+using blink::WebString;
+using blink::WebURL;
+using blink::WebURLError;
+using blink::WebURLLoader;
+using blink::WebURLLoaderOptions;
+using blink::WebURLRequest;
+using blink::WebURLResponse;
 
 #ifdef _MSC_VER
 // Do not warn about use of std::copy with raw pointers.
@@ -98,7 +98,7 @@ PepperURLLoaderHost::~PepperURLLoaderHost() {
   // re-entering the scoped_ptr destructor with the same scoped_ptr object
   // via loader_.reset(). Be sure that loader_ is first NULL then destroy
   // the scoped_ptr. See http://crbug.com/159429.
-  scoped_ptr<WebKit::WebURLLoader> for_destruction_only(loader_.release());
+  scoped_ptr<blink::WebURLLoader> for_destruction_only(loader_.release());
 }
 
 int32_t PepperURLLoaderHost::OnResourceMessageReceived(
@@ -152,7 +152,8 @@ void PepperURLLoaderHost::didReceiveResponse(WebURLLoader* loader,
 }
 
 void PepperURLLoaderHost::didDownloadData(WebURLLoader* loader,
-                                          int data_length) {
+                                          int data_length,
+                                          int encoded_data_length) {
   bytes_received_ += data_length;
   UpdateProgress();
 }
@@ -251,8 +252,12 @@ int32_t PepperURLLoaderHost::InternalOnHostMsgOpen(
     return PP_ERROR_FAILED;
 
   WebURLRequest web_request;
-  if (!CreateWebURLRequest(&filled_in_request_data, frame, &web_request))
+  if (!CreateWebURLRequest(pp_instance(),
+                           &filled_in_request_data,
+                           frame,
+                           &web_request)) {
     return PP_ERROR_FAILED;
+  }
 
   web_request.setTargetType(WebURLRequest::TargetIsObject);
   web_request.setRequestorProcessID(renderer_ppapi_host_->GetPluginPID());
@@ -362,7 +367,7 @@ void PepperURLLoaderHost::Close() {
     GetFrame()->stopLoading();
 }
 
-WebKit::WebFrame* PepperURLLoaderHost::GetFrame() {
+blink::WebFrame* PepperURLLoaderHost::GetFrame() {
   PepperPluginInstance* instance_object =
       renderer_ppapi_host_->GetPluginInstance(pp_instance());
   if (!instance_object)
@@ -392,6 +397,7 @@ void PepperURLLoaderHost::SaveResponse(const WebURLResponse& response) {
     pending_response_ = true;
 
     DataFromWebURLResponse(
+        renderer_ppapi_host_,
         pp_instance(),
         response,
         base::Bind(&PepperURLLoaderHost::DidDataFromWebURLResponse,

@@ -9,6 +9,7 @@
     "compiler_options": {
       "implemented_in": "chrome/browser/extensions/api/networking_private/networking_private_api.h"
     },
+    "platforms": ["chromeos", "win"],
     "types" : [
       {
         "id": "NetworkProperties",
@@ -53,6 +54,11 @@
             "description": "A string containing the BSSID of the device.  Only set if the device has already been setup."
           }
         }
+      },
+      {
+        "id": "NetworkType",
+        "type": "string",
+        "enum": ["Ethernet", "WiFi", "Cellular"]
       }
     ],
     "functions": [
@@ -144,6 +150,32 @@
         ]
       },
       {
+        "name": "createNetwork",
+        "description": "Creates a new network configuration from propeties. If a matching configured network already exists, this will fail. Otherwise returns the guid of the new network.",
+        "parameters": [
+          {
+            "name": "shared",
+            "type": "boolean",
+            "description": "If true, share this network configuration with other users."
+          },
+          {
+            "name": "properties",
+            "$ref": "NetworkProperties",
+            "description": "The properties to configure the new network with."
+          },
+          {
+            "name": "callback",
+            "type": "function",
+            "parameters": [
+              {
+                "name": "guid",
+                "type": "string"
+              }
+            ]
+          }
+        ]
+      },
+      {
         "name": "getVisibleNetworks",
         "description": "Gets the list of visible networks, and returns a list of cached, read-only network properties for each.",
         "parameters": [
@@ -164,6 +196,44 @@
                 "items": { "$ref": "NetworkProperties" }
               }
             ]
+          }
+        ]
+      },
+      {
+        "name": "getEnabledNetworkTypes",
+        "description": "Returns a list of the enabled network type.",
+        "parameters": [
+          {
+            "name": "callback",
+            "type": "function",
+            "optional": true,
+            "parameters": [
+              {
+                "name": "networkList",
+                "type": "array",
+                "items": { "$ref": "NetworkType" }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "enableNetworkType",
+        "description": "Enable the specified network type.",
+        "parameters": [
+          {
+            "name": "networkType",
+            "$ref": "NetworkType"
+          }
+        ]
+      },
+      {
+        "name": "disableNetworkType",
+        "description": "Disable the specified network type.",
+        "parameters": [
+          {
+            "name": "networkType",
+            "$ref": "NetworkType"
           }
         ]
       },

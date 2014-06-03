@@ -87,10 +87,23 @@ class BASE_EXPORT TraceMemoryController
 // recording by tcmalloc heap profiling.
 class BASE_EXPORT ScopedTraceMemory {
  public:
-  // Memory for |name| must be static, for example, a literal string in
-  // a TRACE_EVENT macro.
-  explicit ScopedTraceMemory(const char* name);
-  ~ScopedTraceMemory();
+  struct ScopeData {
+    const char* category;
+    const char* name;
+  };
+
+  // Memory for |category| and |name| must be static, for example, literal
+  // strings in a TRACE_EVENT macro.
+  ScopedTraceMemory(const char* category, const char* name) {
+    if (!enabled_)
+      return;
+    Initialize(category, name);
+  }
+  ~ScopedTraceMemory() {
+    if (!enabled_)
+      return;
+    Destroy();
+  }
 
   // Enables the storing of trace names on a per-thread stack.
   static void set_enabled(bool enabled) { enabled_ = enabled; }
@@ -98,10 +111,13 @@ class BASE_EXPORT ScopedTraceMemory {
   // Testing interface:
   static void InitForTest();
   static void CleanupForTest();
-  static int GetStackIndexForTest();
-  static const char* GetItemForTest(int index);
+  static int GetStackDepthForTest();
+  static ScopeData GetScopeDataForTest(int stack_index);
 
  private:
+  void Initialize(const char* category, const char* name);
+  void Destroy();
+
   static bool enabled_;
   DISALLOW_COPY_AND_ASSIGN(ScopedTraceMemory);
 };
@@ -125,6 +141,11 @@ BASE_EXPORT void AppendHeapProfileTotalsAsTraceFormat(const std::string& line,
 BASE_EXPORT bool AppendHeapProfileLineAsTraceFormat(const std::string& line,
                                                     std::string* output);
 
+// Returns a pointer to a string given its hexadecimal address in |hex_address|.
+// Handles both 32-bit and 64-bit addresses. Returns "null" for null pointers
+// and "error" if |address| could not be parsed. Visible for testing.
+BASE_EXPORT const char* StringFromHexAddress(const std::string& hex_address);
+
 }  // namespace debug
 }  // namespace base
 
@@ -136,10 +157,9 @@ BASE_EXPORT bool AppendHeapProfileLineAsTraceFormat(const std::string& line,
 
 // This is the core macro that adds a scope to each TRACE_EVENT location.
 // It generates a unique local variable name using the macros above.
-// TODO(jamescook): Make it record both category and name.
 #if defined(TCMALLOC_TRACE_MEMORY_SUPPORTED)
 #define INTERNAL_TRACE_MEMORY(category, name) \
-  base::debug::ScopedTraceMemory INTERNAL_TRACE_MEMORY_ID(name);
+  base::debug::ScopedTraceMemory INTERNAL_TRACE_MEMORY_ID(category, name);
 #else
 #define INTERNAL_TRACE_MEMORY(category, name)
 #endif  // defined(TRACE_MEMORY_SUPPORTED)

@@ -21,7 +21,7 @@
 
 namespace printing {
 
-using WebKit::WebFrame;
+using blink::WebFrame;
 
 void PrintWebViewHelper::PrintPageInternal(
     const PrintMsg_PrintPage_Params& params,
@@ -118,14 +118,14 @@ void PrintWebViewHelper::RenderPage(
       params.display_header_footer ? gfx::Rect(*page_size) : content_area;
 
   {
-    SkDevice* device = metafile->StartPageForVectorCanvas(
+    SkBaseDevice* device = metafile->StartPageForVectorCanvas(
         *page_size, canvas_area, scale_factor);
     if (!device)
       return;
 
     skia::RefPtr<skia::VectorCanvas> canvas =
         skia::AdoptRef(new skia::VectorCanvas(device));
-    WebKit::WebCanvas* canvas_ptr = canvas.get();
+    blink::WebCanvas* canvas_ptr = canvas.get();
     MetafileSkiaWrapper::SetMetafileOnCanvas(*canvas, metafile);
     skia::SetIsDraftMode(*canvas, is_print_ready_metafile_sent_);
     skia::SetIsPreviewMetafile(*canvas, is_preview);

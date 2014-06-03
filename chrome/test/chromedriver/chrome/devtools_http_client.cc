@@ -65,28 +65,28 @@ const WebViewInfo* WebViewsInfo::GetForId(const std::string& id) const {
 }
 
 DevToolsHttpClient::DevToolsHttpClient(
-    int port,
+    const NetAddress& address,
     scoped_refptr<URLRequestContextGetter> context_getter,
-    const SyncWebSocketFactory& socket_factory,
-    Log* log)
+    const SyncWebSocketFactory& socket_factory)
     : context_getter_(context_getter),
       socket_factory_(socket_factory),
-      log_(log),
-      server_url_(base::StringPrintf("http://127.0.0.1:%d", port)),
-      web_socket_url_prefix_(
-          base::StringPrintf("ws://127.0.0.1:%d/devtools/page/", port)) {}
+      server_url_("http://" + address.ToString()),
+      web_socket_url_prefix_(base::StringPrintf(
+          "ws://%s/devtools/page/", address.ToString().c_str())) {}
 
 DevToolsHttpClient::~DevToolsHttpClient() {}
 
 Status DevToolsHttpClient::Init(const base::TimeDelta& timeout) {
-  base::Time deadline = base::Time::Now() + timeout;
+  base::TimeTicks deadline = base::TimeTicks::Now() + timeout;
   std::string devtools_version;
   while (true) {
     Status status = GetVersion(&devtools_version);
     if (status.IsOk())
       break;
-    if (status.code() != kChromeNotReachable || base::Time::Now() > deadline)
+    if (status.code() != kChromeNotReachable ||
+        base::TimeTicks::Now() > deadline) {
       return status;
+    }
     base::PlatformThread::Sleep(base::TimeDelta::FromMilliseconds(50));
   }
 
@@ -139,8 +139,7 @@ scoped_ptr<DevToolsClient> DevToolsHttpClient::CreateClient(
       web_socket_url_prefix_ + id,
       id,
       base::Bind(
-          &DevToolsHttpClient::CloseFrontends, base::Unretained(this), id),
-      log_));
+          &DevToolsHttpClient::CloseFrontends, base::Unretained(this), id)));
 }
 
 Status DevToolsHttpClient::CloseWebView(const std::string& id) {
@@ -151,8 +150,9 @@ Status DevToolsHttpClient::CloseWebView(const std::string& id) {
   }
 
   // Wait for the target window to be completely closed.
-  base::Time deadline = base::Time::Now() + base::TimeDelta::FromSeconds(20);
-  while (base::Time::Now() < deadline) {
+  base::TimeTicks deadline =
+      base::TimeTicks::Now() + base::TimeDelta::FromSeconds(20);
+  while (base::TimeTicks::Now() < deadline) {
     WebViewsInfo views_info;
     Status status = GetWebViewsInfo(&views_info);
     if (status.code() == kChromeNotReachable)
@@ -164,6 +164,14 @@ Status DevToolsHttpClient::CloseWebView(const std::string& id) {
     base::PlatformThread::Sleep(base::TimeDelta::FromMilliseconds(50));
   }
   return Status(kUnknownError, "failed to close window in 20 seconds");
+}
+
+Status DevToolsHttpClient::ActivateWebView(const std::string& id) {
+  std::string data;
+  if (!FetchUrlAndLog(
+          server_url_ + "/json/activate/" + id, context_getter_.get(), &data))
+    return Status(kUnknownError, "cannot activate web view");
+  return Status(kOk);
 }
 
 const std::string& DevToolsHttpClient::version() const {
@@ -223,10 +231,9 @@ Status DevToolsHttpClient::CloseFrontends(const std::string& for_client_id) {
         socket_factory_,
         web_socket_url_prefix_ + *it,
         *it,
-        base::Bind(&FakeCloseFrontends),
-        log_));
+        base::Bind(&FakeCloseFrontends)));
     scoped_ptr<WebViewImpl> web_view(
-        new WebViewImpl(*it, build_no_, client.Pass(), log_));
+        new WebViewImpl(*it, build_no_, client.Pass()));
 
     status = web_view->ConnectIfNecessary();
     // Ignore disconnected error, because the debugger might have closed when
@@ -245,17 +252,16 @@ Status DevToolsHttpClient::CloseFrontends(const std::string& for_client_id) {
   }
 
   // Wait until DevTools UI disconnects from the given web view.
-  base::Time deadline = base::Time::Now() + base::TimeDelta::FromSeconds(20);
-  while (base::Time::Now() < deadline) {
+  base::TimeTicks deadline =
+      base::TimeTicks::Now() + base::TimeDelta::FromSeconds(20);
+  while (base::TimeTicks::Now() < deadline) {
     status = GetWebViewsInfo(&views_info);
     if (status.IsError())
       return status;
 
     const WebViewInfo* view_info = views_info.GetForId(for_client_id);
-    if (!view_info) {
-      return Status(kDisconnected,
-                    "DevTools client closed during closing UI debuggers");
-    }
+    if (!view_info)
+      return Status(kNoSuchWindow, "window was already closed");
     if (view_info->debugger_url.size())
       return Status(kOk);
 
@@ -267,12 +273,13 @@ Status DevToolsHttpClient::CloseFrontends(const std::string& for_client_id) {
 bool DevToolsHttpClient::FetchUrlAndLog(const std::string& url,
                                         URLRequestContextGetter* getter,
                                         std::string* response) {
-  log_->AddEntry(Log::kDebug, "devtools request: " + url);
+  VLOG(1) << "DevTools request: " << url;
   bool ok = FetchUrl(url, getter, response);
-  if (ok)
-    log_->AddEntry(Log::kDebug, "devtools response: " + *response);
-  else
-    log_->AddEntry(Log::kDebug, "devtools request failed");
+  if (ok) {
+    VLOG(1) << "DevTools response: " << *response;
+  } else {
+    VLOG(1) << "DevTools request failed";
+  }
   return ok;
 }
 
@@ -295,22 +302,29 @@ Status ParseWebViewsInfo(const std::string& data,
     std::string id;
     if (!info->GetString("id", &id))
       return Status(kUnknownError, "DevTools did not include id");
-    std::string type;
-    if (!info->GetString("type", &type))
+    std::string type_as_string;
+    if (!info->GetString("type", &type_as_string))
       return Status(kUnknownError, "DevTools did not include type");
     std::string url;
     if (!info->GetString("url", &url))
       return Status(kUnknownError, "DevTools did not include url");
     std::string debugger_url;
     info->GetString("webSocketDebuggerUrl", &debugger_url);
-    if (type == "page")
-      temp_views_info.push_back(
-          WebViewInfo(id, debugger_url, url, WebViewInfo::kPage));
-    else if (type == "other")
-      temp_views_info.push_back(
-          WebViewInfo(id, debugger_url, url, WebViewInfo::kOther));
+    WebViewInfo::Type type;
+    if (type_as_string == "app")
+      type = WebViewInfo::kApp;
+    else if (type_as_string == "background_page")
+      type = WebViewInfo::kBackgroundPage;
+    else if (type_as_string == "page")
+      type = WebViewInfo::kPage;
+    else if (type_as_string == "worker")
+      type = WebViewInfo::kWorker;
+    else if (type_as_string == "other")
+      type = WebViewInfo::kOther;
     else
-      return Status(kUnknownError, "DevTools returned unknown type:" + type);
+      return Status(kUnknownError,
+                    "DevTools returned unknown type:" + type_as_string);
+    temp_views_info.push_back(WebViewInfo(id, debugger_url, url, type));
   }
   *views_info = WebViewsInfo(temp_views_info);
   return Status(kOk);

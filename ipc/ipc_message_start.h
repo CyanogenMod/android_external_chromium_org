@@ -10,6 +10,7 @@
 // code to figure out the message class from its ID.
 enum IPCMessageStart {
   AutomationMsgStart = 0,
+  FrameMsgStart,
   ViewMsgStart,
   InputMsgStart,
   PluginMsgStart,
@@ -88,7 +89,10 @@ enum IPCMessageStart {
   WebRTCIdentityMsgStart,
   LocalDiscoveryMsgStart,
   PowerMonitorMsgStart,
-  LastIPCMsgStart      // Must come last.
+  EncryptedMediaMsgStart,
+  ServiceWorkerMsgStart,
+  MessagePortMsgStart,
+  LastIPCMsgStart  // Must come last.
 };
 
 #endif  // IPC_IPC_MESSAGE_START_H_

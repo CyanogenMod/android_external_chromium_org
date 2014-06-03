@@ -4,11 +4,13 @@
 
 #include "chrome/browser/chromeos/drive/file_system/copy_operation.h"
 
-#include "base/file_util.h"
+#include "base/task_runner_util.h"
+#include "chrome/browser/chromeos/drive/file_cache.h"
 #include "chrome/browser/chromeos/drive/file_system/operation_test_base.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
+#include "chrome/browser/drive/drive_api_util.h"
 #include "chrome/browser/drive/fake_drive_service.h"
-#include "chrome/browser/google_apis/test_util.h"
+#include "google_apis/drive/test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace drive {
@@ -18,13 +20,13 @@ class CopyOperationTest : public OperationTestBase {
  protected:
   virtual void SetUp() OVERRIDE {
    OperationTestBase::SetUp();
-   operation_.reset(new CopyOperation(blocking_task_runner(),
-                                      observer(),
-                                      scheduler(),
-                                      metadata(),
-                                      cache(),
-                                      fake_service(),
-                                      temp_dir()));
+   operation_.reset(new CopyOperation(
+       blocking_task_runner(),
+       observer(),
+       scheduler(),
+       metadata(),
+       cache(),
+       util::GetIdentityResourceIdCanonicalizer()));
   }
 
   scoped_ptr<CopyOperation> operation_;
@@ -55,13 +57,18 @@ TEST_F(CopyOperationTest, TransferFileFromLocalToRemote_RegularFile) {
   // TransferFileFromLocalToRemote stores a copy of the local file in the cache,
   // marks it dirty and requests the observer to upload the file.
   EXPECT_EQ(FILE_ERROR_OK, GetLocalResourceEntry(remote_dest_path, &entry));
-  EXPECT_EQ(1U, observer()->upload_needed_resource_ids().count(
-      entry.resource_id()));
+  EXPECT_EQ(1U, observer()->upload_needed_local_ids().count(
+      GetLocalId(remote_dest_path)));
   FileCacheEntry cache_entry;
   bool found = false;
-  cache()->GetCacheEntryOnUIThread(
-      entry.resource_id(),
-      google_apis::test_util::CreateCopyResultCallback(&found, &cache_entry));
+  base::PostTaskAndReplyWithResult(
+      blocking_task_runner(),
+      FROM_HERE,
+      base::Bind(&internal::FileCache::GetCacheEntry,
+                 base::Unretained(cache()),
+                 GetLocalId(remote_dest_path),
+                 &cache_entry),
+      google_apis::test_util::CreateCopyResultCallback(&found));
   test_util::RunBlockingPoolTask();
   EXPECT_TRUE(found);
   EXPECT_TRUE(cache_entry.is_present());
@@ -136,74 +143,11 @@ TEST_F(CopyOperationTest, TransferFileFromLocalToRemote_HostedDocument) {
 
   EXPECT_EQ(FILE_ERROR_OK, GetLocalResourceEntry(remote_dest_path, &entry));
 
-  // We added a file to the Drive root and then moved to "Directory 1".
-  EXPECT_EQ(2U, observer()->get_changed_paths().size());
-  EXPECT_TRUE(observer()->get_changed_paths().count(
-      base::FilePath(FILE_PATH_LITERAL("drive/root"))));
-  EXPECT_TRUE(observer()->get_changed_paths().count(
-      remote_dest_path.DirName()));
-}
-
-TEST_F(CopyOperationTest, TransferFileFromRemoteToLocal_RegularFile) {
-  base::FilePath remote_src_path(FILE_PATH_LITERAL("drive/root/File 1.txt"));
-  base::FilePath local_dest_path = temp_dir().AppendASCII("local_copy.txt");
-
-  ResourceEntry entry;
-  ASSERT_EQ(FILE_ERROR_OK, GetLocalResourceEntry(remote_src_path, &entry));
-
-  FileError error = FILE_ERROR_FAILED;
-  operation_->TransferFileFromRemoteToLocal(
-      remote_src_path,
-      local_dest_path,
-      google_apis::test_util::CreateCopyResultCallback(&error));
-  test_util::RunBlockingPoolTask();
-  EXPECT_EQ(FILE_ERROR_OK, error);
-
-  // The content is "x"s of the file size.
-  base::FilePath cache_path;
-  cache()->GetFileOnUIThread(entry.resource_id(),
-                             google_apis::test_util::CreateCopyResultCallback(
-                                 &error, &cache_path));
-  test_util::RunBlockingPoolTask();
-  EXPECT_EQ(FILE_ERROR_OK, error);
-
-  const std::string kExpectedContent = "This is some test content.";
-  std::string cache_file_data;
-  EXPECT_TRUE(file_util::ReadFileToString(cache_path, &cache_file_data));
-  EXPECT_EQ(kExpectedContent, cache_file_data);
-
-  std::string local_dest_file_data;
-  EXPECT_TRUE(file_util::ReadFileToString(local_dest_path,
-                                          &local_dest_file_data));
-  EXPECT_EQ(kExpectedContent, local_dest_file_data);
-
-  // The transfered file is cached and the change of "offline available"
-  // attribute is notified.
   EXPECT_EQ(1U, observer()->get_changed_paths().size());
-  EXPECT_TRUE(observer()->get_changed_paths().count(remote_src_path.DirName()));
+  EXPECT_TRUE(
+      observer()->get_changed_paths().count(remote_dest_path.DirName()));
 }
 
-TEST_F(CopyOperationTest, TransferFileFromRemoteToLocal_HostedDocument) {
-  base::FilePath local_dest_path = temp_dir().AppendASCII("local_copy.txt");
-  base::FilePath remote_src_path(
-      FILE_PATH_LITERAL("drive/root/Document 1 excludeDir-test.gdoc"));
-
-  FileError error = FILE_ERROR_FAILED;
-  operation_->TransferFileFromRemoteToLocal(
-      remote_src_path,
-      local_dest_path,
-      google_apis::test_util::CreateCopyResultCallback(&error));
-  test_util::RunBlockingPoolTask();
-  EXPECT_EQ(FILE_ERROR_OK, error);
-
-  ResourceEntry entry;
-  EXPECT_EQ(FILE_ERROR_OK, GetLocalResourceEntry(remote_src_path, &entry));
-  EXPECT_EQ(GURL(entry.file_specific_info().alternate_url()),
-            util::ReadUrlFromGDocFile(local_dest_path));
-  EXPECT_EQ(entry.resource_id(),
-            util::ReadResourceIdFromGDocFile(local_dest_path));
-  EXPECT_TRUE(observer()->get_changed_paths().empty());
-}
 
 TEST_F(CopyOperationTest, CopyNotExistingFile) {
   base::FilePath src_path(FILE_PATH_LITERAL("drive/root/Dummy file.txt"));
@@ -215,6 +159,7 @@ TEST_F(CopyOperationTest, CopyNotExistingFile) {
   FileError error = FILE_ERROR_OK;
   operation_->Copy(src_path,
                    dest_path,
+                   false,
                    google_apis::test_util::CreateCopyResultCallback(&error));
   test_util::RunBlockingPoolTask();
   EXPECT_EQ(FILE_ERROR_NOT_FOUND, error);
@@ -236,6 +181,7 @@ TEST_F(CopyOperationTest, CopyFileToNonExistingDirectory) {
   FileError error = FILE_ERROR_OK;
   operation_->Copy(src_path,
                    dest_path,
+                   false,
                    google_apis::test_util::CreateCopyResultCallback(&error));
   test_util::RunBlockingPoolTask();
   EXPECT_EQ(FILE_ERROR_NOT_FOUND, error);
@@ -261,6 +207,7 @@ TEST_F(CopyOperationTest, CopyFileToInvalidPath) {
   FileError error = FILE_ERROR_OK;
   operation_->Copy(src_path,
                    dest_path,
+                   false,
                    google_apis::test_util::CreateCopyResultCallback(&error));
   test_util::RunBlockingPoolTask();
   EXPECT_EQ(FILE_ERROR_NOT_A_DIRECTORY, error);
@@ -268,6 +215,49 @@ TEST_F(CopyOperationTest, CopyFileToInvalidPath) {
   EXPECT_EQ(FILE_ERROR_OK, GetLocalResourceEntry(src_path, &entry));
   EXPECT_EQ(FILE_ERROR_NOT_FOUND, GetLocalResourceEntry(dest_path, &entry));
   EXPECT_TRUE(observer()->get_changed_paths().empty());
+}
+
+TEST_F(CopyOperationTest, CopyDirectory) {
+  base::FilePath src_path(FILE_PATH_LITERAL("drive/root/Directory 1"));
+  base::FilePath dest_path(FILE_PATH_LITERAL("drive/root/New Directory"));
+
+  ResourceEntry entry;
+  ASSERT_EQ(FILE_ERROR_OK, GetLocalResourceEntry(src_path, &entry));
+  ASSERT_TRUE(entry.file_info().is_directory());
+  ASSERT_EQ(FILE_ERROR_OK, GetLocalResourceEntry(dest_path.DirName(), &entry));
+  ASSERT_TRUE(entry.file_info().is_directory());
+
+  FileError error = FILE_ERROR_OK;
+  operation_->Copy(src_path,
+                   dest_path,
+                   false,
+                   google_apis::test_util::CreateCopyResultCallback(&error));
+  test_util::RunBlockingPoolTask();
+  EXPECT_EQ(FILE_ERROR_NOT_A_FILE, error);
+}
+
+TEST_F(CopyOperationTest, PreserveLastModified) {
+  base::FilePath src_path(FILE_PATH_LITERAL("drive/root/File 1.txt"));
+  base::FilePath dest_path(FILE_PATH_LITERAL("drive/root/File 2.txt"));
+
+  ResourceEntry entry;
+  ASSERT_EQ(FILE_ERROR_OK, GetLocalResourceEntry(src_path, &entry));
+  ASSERT_EQ(FILE_ERROR_OK,
+            GetLocalResourceEntry(dest_path.DirName(), &entry));
+
+  FileError error = FILE_ERROR_OK;
+  operation_->Copy(src_path,
+                   dest_path,
+                   true,  // Preserve last modified.
+                   google_apis::test_util::CreateCopyResultCallback(&error));
+  test_util::RunBlockingPoolTask();
+  EXPECT_EQ(FILE_ERROR_OK, error);
+
+  ResourceEntry entry2;
+  EXPECT_EQ(FILE_ERROR_OK, GetLocalResourceEntry(src_path, &entry));
+  EXPECT_EQ(FILE_ERROR_OK, GetLocalResourceEntry(dest_path, &entry2));
+  EXPECT_EQ(entry.file_info().last_modified(),
+            entry2.file_info().last_modified());
 }
 
 }  // namespace file_system

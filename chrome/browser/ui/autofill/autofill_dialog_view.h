@@ -12,6 +12,7 @@ class NavigationController;
 }
 
 namespace gfx {
+class Point;
 class Size;
 }
 
@@ -32,6 +33,15 @@ class AutofillDialogView {
   // Closes the dialog window. May self-delete.
   virtual void Hide() = 0;
 
+  // A hint that the view is going to receive a series of Update* calls soon,
+  // and may want to delay visible changes until after the updates are over.
+  // As multiple calls to UpdatesStarted may be stacked, and the view should
+  // expect an equal number of calls to UpdateFinished().
+  virtual void UpdatesStarted() = 0;
+
+  // The matching call to UpdatesStarted.
+  virtual void UpdatesFinished() = 0;
+
   // Called when a different notification is available.
   virtual void UpdateNotificationArea() = 0;
 
@@ -39,15 +49,14 @@ class AutofillDialogView {
   // a new account, etc.).
   virtual void UpdateAccountChooser() = 0;
 
-  // Updates the container displaying detailed steps for Autocheckout. Called
-  // as progress is made through the buyflow.
-  virtual void UpdateAutocheckoutStepsArea() = 0;
-
   // Updates the button strip based on the current controller state.
   virtual void UpdateButtonStrip() = 0;
 
-  // Updates the container for the detail inputs. Used to hide this container
-  // while Autocheckout is running.
+  // Updates the dialog overlay in response to a change of state or animation
+  // progression.
+  virtual void UpdateOverlay() = 0;
+
+  // Updates the container for the detail inputs.
   virtual void UpdateDetailArea() = 0;
 
   // Updates the validity status of the detail inputs.
@@ -56,18 +65,25 @@ class AutofillDialogView {
   // Called when the contents of a section have changed.
   virtual void UpdateSection(DialogSection section) = 0;
 
+  // Updates the error bubble for this view.
+  virtual void UpdateErrorBubble() = 0;
+
   // Fills the given section with Autofill data that was triggered by a user
   // interaction with |originating_input|.
   virtual void FillSection(DialogSection section,
                            const DetailInput& originating_input) = 0;
 
   // Fills |output| with data the user manually input.
-  virtual void GetUserInput(DialogSection section, DetailOutputMap* output) = 0;
+  virtual void GetUserInput(DialogSection section, FieldValueMap* output) = 0;
 
   // Gets the CVC value the user typed to go along with the stored credit card
   // data. If the user is inputing credit card data from scratch, this is not
   // relevant.
-  virtual string16 GetCvc() = 0;
+  virtual base::string16 GetCvc() = 0;
+
+  // Whether or not |point| is within |input|'s bounds.
+  virtual bool HitTestInput(const DetailInput& input,
+                            const gfx::Point& screen_point) = 0;
 
   // Returns true if new or edited autofill details should be saved.
   virtual bool SaveDetailsLocally() = 0;
@@ -78,10 +94,6 @@ class AutofillDialogView {
 
   // Closes out any sign-in UI and returns to normal operation.
   virtual void HideSignIn() = 0;
-
-  // Updates the progress bar based on the Autocheckout progress. |value| should
-  // be in [0.0, 1.0].
-  virtual void UpdateProgressBar(double value) = 0;
 
   // Called when the active suggestions data model changed.
   virtual void ModelChanged() = 0;

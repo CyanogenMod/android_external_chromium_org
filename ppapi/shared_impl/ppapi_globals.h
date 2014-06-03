@@ -17,7 +17,6 @@
 #include "ppapi/shared_impl/ppapi_shared_export.h"
 
 namespace base {
-class Lock;
 class MessageLoopProxy;
 class TaskRunner;
 }
@@ -69,8 +68,6 @@ class PPAPI_SHARED_EXPORT PpapiGlobals {
   virtual CallbackTracker* GetCallbackTrackerForInstance(
       PP_Instance instance) = 0;
 
-  virtual base::Lock* GetProxyLock() = 0;
-
   // Logs the given string to the JS console. If "source" is empty, the name of
   // the current module will be used, if it can be determined.
   virtual void LogWithSource(PP_Instance instance,
@@ -118,7 +115,7 @@ class PPAPI_SHARED_EXPORT PpapiGlobals {
   // Returns a task runner for file operations that may block.
   // TODO(bbudge) Move this to PluginGlobals when we no longer support
   // in-process plugins.
-  virtual base::TaskRunner* GetFileTaskRunner(PP_Instance instance) = 0;
+  virtual base::TaskRunner* GetFileTaskRunner() = 0;
 
   // Returns the command line for the process.
   virtual std::string GetCmdLine() = 0;

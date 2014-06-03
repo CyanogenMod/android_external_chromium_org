@@ -57,7 +57,6 @@ class OmniboxViewGtk : public OmniboxView,
   // In other use case, you should pass browser->profile() object as
   // profile parameter.
   OmniboxViewGtk(OmniboxEditController* controller,
-                 ToolbarModel* toolbar_model,
                  Browser* browser,
                  Profile* profile,
                  CommandUpdater* command_updater,
@@ -70,36 +69,40 @@ class OmniboxViewGtk : public OmniboxView,
 
   // OmniboxView:
   virtual void SaveStateToTab(content::WebContents* tab) OVERRIDE;
-  virtual void Update(
-      const content::WebContents* tab_for_state_restoring) OVERRIDE;
-  virtual string16 GetText() const OVERRIDE;
-  virtual void SetWindowTextAndCaretPos(const string16& text,
+  virtual void OnTabChanged(const content::WebContents* web_contents) OVERRIDE;
+  virtual void Update() OVERRIDE;
+  virtual base::string16 GetText() const OVERRIDE;
+  virtual void SetWindowTextAndCaretPos(const base::string16& text,
                                         size_t caret_pos,
                                         bool update_popup,
                                         bool notify_text_changed) OVERRIDE;
   virtual void SetForcedQuery() OVERRIDE;
   virtual bool IsSelectAll() const OVERRIDE;
   virtual bool DeleteAtEndPressed() OVERRIDE;
-  virtual void GetSelectionBounds(string16::size_type* start,
-                                  string16::size_type* end) const OVERRIDE;
+  virtual void GetSelectionBounds(
+      base::string16::size_type* start,
+      base::string16::size_type* end) const OVERRIDE;
   virtual void SelectAll(bool reversed) OVERRIDE;
   virtual void UpdatePopup() OVERRIDE;
   virtual void SetFocus() OVERRIDE;
   virtual void ApplyCaretVisibility() OVERRIDE;
   virtual void OnTemporaryTextMaybeChanged(
-      const string16& display_text,
+      const base::string16& display_text,
       bool save_original_selection,
       bool notify_text_changed) OVERRIDE;
   virtual bool OnInlineAutocompleteTextMaybeChanged(
-      const string16& display_text, size_t user_text_length) OVERRIDE;
+      const base::string16& display_text, size_t user_text_length) OVERRIDE;
+  virtual void OnInlineAutocompleteTextCleared() OVERRIDE;
   virtual void OnRevertTemporaryText() OVERRIDE;
   virtual void OnBeforePossibleChange() OVERRIDE;
   virtual bool OnAfterPossibleChange() OVERRIDE;
   virtual gfx::NativeView GetNativeView() const OVERRIDE;
   virtual gfx::NativeView GetRelativeWindowForPopup() const OVERRIDE;
-  virtual void SetGrayTextAutocompletion(const string16& suggestion) OVERRIDE;
-  virtual string16 GetGrayTextAutocompletion() const OVERRIDE;
-  virtual int TextWidth() const OVERRIDE;
+  virtual void SetGrayTextAutocompletion(
+      const base::string16& suggestion) OVERRIDE;
+  virtual base::string16 GetGrayTextAutocompletion() const OVERRIDE;
+  virtual int GetTextWidth() const OVERRIDE;
+  virtual int GetWidth() const OVERRIDE;
   virtual bool IsImeComposing() const OVERRIDE;
 
   // Overridden from content::NotificationObserver:
@@ -158,8 +161,9 @@ class OmniboxViewGtk : public OmniboxView,
   CHROMEGTK_CALLBACK_1(OmniboxViewGtk, void, HandleViewSizeRequest,
                        GtkRequisition*);
   CHROMEGTK_CALLBACK_1(OmniboxViewGtk, void, HandlePopulatePopup, GtkMenu*);
-  CHROMEGTK_CALLBACK_0(OmniboxViewGtk, void, HandleEditSearchEngines);
   CHROMEGTK_CALLBACK_0(OmniboxViewGtk, void, HandlePasteAndGo);
+  CHROMEGTK_CALLBACK_0(OmniboxViewGtk, void, HandleShowURL);
+  CHROMEGTK_CALLBACK_0(OmniboxViewGtk, void, HandleEditSearchEngines);
   CHROMEGTK_CALLBACK_6(OmniboxViewGtk, void, HandleDragDataReceived,
                        GdkDragContext*, gint, gint, GtkSelectionData*,
                        guint, guint);
@@ -171,7 +175,6 @@ class OmniboxViewGtk : public OmniboxView,
                        GdkDragContext*);
   CHROMEGTK_CALLBACK_0(OmniboxViewGtk, void, HandleBackSpace);
   CHROMEGTK_CALLBACK_0(OmniboxViewGtk, void, HandleCopyClipboard);
-  CHROMEGTK_CALLBACK_0(OmniboxViewGtk, void, HandleCopyURLClipboard);
   CHROMEGTK_CALLBACK_0(OmniboxViewGtk, void, HandleCutClipboard);
   CHROMEGTK_CALLBACK_0(OmniboxViewGtk, void, HandlePasteClipboard);
   CHROMEGTK_CALLBACK_1(OmniboxViewGtk, gboolean, HandleExposeEvent,
@@ -215,7 +218,7 @@ class OmniboxViewGtk : public OmniboxView,
   virtual void EmphasizeURLComponents() OVERRIDE;
 
   // Common implementation for performing a drop on the edit view.
-  bool OnPerformDropImpl(const string16& text);
+  bool OnPerformDropImpl(const base::string16& text);
 
   // Returns the font used in |text_view_|.
   gfx::Font GetFont();
@@ -261,7 +264,7 @@ class OmniboxViewGtk : public OmniboxView,
   void SavePrimarySelection(const std::string& selected_text);
 
   // Update the field with |text| and set the selection.
-  void SetTextAndSelectedRange(const string16& text,
+  void SetTextAndSelectedRange(const base::string16& text,
                                const CharRange& range);
 
   // Set the selection to |range|.
@@ -339,7 +342,7 @@ class OmniboxViewGtk : public OmniboxView,
   CharRange saved_temporary_selection_;
 
   // Tracking state before and after a possible change.
-  string16 text_before_change_;
+  base::string16 text_before_change_;
   CharRange sel_before_change_;
 
   // The most-recently-selected text from the entry that was copied to the
@@ -394,7 +397,7 @@ class OmniboxViewGtk : public OmniboxView,
 
   // Text to "Paste and go"; set by HandlePopulatePopup() and consumed by
   // HandlePasteAndGo().
-  string16 sanitized_text_for_paste_and_go_;
+  base::string16 sanitized_text_for_paste_and_go_;
 
   // Indicates if an Enter key press is inserted as text.
   // It's used in the key press handler to determine if an Enter key event is
@@ -441,7 +444,7 @@ class OmniboxViewGtk : public OmniboxView,
   const bool supports_pre_edit_;
 
   // Stores the text being composed by the input method.
-  string16 pre_edit_;
+  base::string16 pre_edit_;
 
   // Tracking pre-edit state before and after a possible change. We don't need
   // to track pre-edit_'s content, as it'll be treated as part of text content.

@@ -8,6 +8,8 @@
 #include "cc/resources/prioritized_resource.h"
 #include "cc/resources/resource_update.h"
 #include "cc/resources/resource_update_queue.h"
+#include "cc/resources/scoped_ui_resource.h"
+#include "cc/resources/ui_resource_bitmap.h"
 #include "cc/trees/layer_tree_host.h"
 
 namespace cc {
@@ -16,8 +18,7 @@ scoped_refptr<NinePatchLayer> NinePatchLayer::Create() {
   return make_scoped_refptr(new NinePatchLayer());
 }
 
-NinePatchLayer::NinePatchLayer()
-    : bitmap_dirty_(false) {}
+NinePatchLayer::NinePatchLayer() : fill_center_(false) {}
 
 NinePatchLayer::~NinePatchLayer() {}
 
@@ -26,90 +27,39 @@ scoped_ptr<LayerImpl> NinePatchLayer::CreateLayerImpl(
   return NinePatchLayerImpl::Create(tree_impl, id()).PassAs<LayerImpl>();
 }
 
-void NinePatchLayer::SetTexturePriorities(
-    const PriorityCalculator& priority_calc) {
-  if (resource_ && !resource_->texture()->resource_manager()) {
-    // Release the resource here, as it is no longer tied to a resource manager.
-    resource_.reset();
-    if (!bitmap_.isNull())
-      CreateResource();
-  } else if (bitmap_dirty_ && DrawsContent()) {
-    CreateResource();
-  }
-
-  if (resource_) {
-    resource_->texture()->set_request_priority(
-        PriorityCalculator::UIPriority(true));
-    GLenum texture_format =
-        layer_tree_host()->GetRendererCapabilities().best_texture_format;
-    resource_->texture()->SetDimensions(
-        gfx::Size(bitmap_.width(), bitmap_.height()), texture_format);
-  }
+void NinePatchLayer::SetBorder(gfx::Rect border) {
+  if (border == border_)
+    return;
+  border_ = border;
+  SetNeedsCommit();
 }
 
-void NinePatchLayer::SetBitmap(const SkBitmap& bitmap, gfx::Rect aperture) {
-  bitmap_ = bitmap;
-  image_aperture_ = aperture;
-  bitmap_dirty_ = true;
-  SetNeedsDisplay();
-}
-
-bool NinePatchLayer::Update(ResourceUpdateQueue* queue,
-                            const OcclusionTracker* occlusion) {
-  bool updated = Layer::Update(queue, occlusion);
-
-  CreateUpdaterIfNeeded();
-
-  if (resource_ &&
-      (bitmap_dirty_ || resource_->texture()->resource_id() == 0)) {
-    gfx::Rect content_rect(0, 0, bitmap_.width(), bitmap_.height());
-    ResourceUpdate upload = ResourceUpdate::Create(resource_->texture(),
-                                                   &bitmap_,
-                                                   content_rect,
-                                                   content_rect,
-                                                   gfx::Vector2d());
-    queue->AppendFullUpload(upload);
-    bitmap_dirty_ = false;
-    updated = true;
-  }
-  return updated;
-}
-
-void NinePatchLayer::CreateUpdaterIfNeeded() {
-  if (updater_.get())
+void NinePatchLayer::SetAperture(gfx::Rect aperture) {
+  if (image_aperture_ == aperture)
     return;
 
-  updater_ = ImageLayerUpdater::Create();
+  image_aperture_ = aperture;
+  SetNeedsCommit();
 }
 
-void NinePatchLayer::CreateResource() {
-  DCHECK(!bitmap_.isNull());
-  CreateUpdaterIfNeeded();
-  updater_->SetBitmap(bitmap_);
+void NinePatchLayer::SetFillCenter(bool fill_center) {
+  if (fill_center_ == fill_center)
+    return;
 
-  if (!resource_) {
-    resource_ = updater_->CreateResource(
-        layer_tree_host()->contents_texture_manager());
-  }
-}
-
-bool NinePatchLayer::DrawsContent() const {
-  bool draws = !bitmap_.isNull() &&
-               Layer::DrawsContent() &&
-               bitmap_.width() &&
-               bitmap_.height();
-  return draws;
+  fill_center_ = fill_center;
+  SetNeedsCommit();
 }
 
 void NinePatchLayer::PushPropertiesTo(LayerImpl* layer) {
-  Layer::PushPropertiesTo(layer);
+  UIResourceLayer::PushPropertiesTo(layer);
   NinePatchLayerImpl* layer_impl = static_cast<NinePatchLayerImpl*>(layer);
 
-  if (resource_) {
-    DCHECK(!bitmap_.isNull());
-    layer_impl->SetResourceId(resource_->texture()->resource_id());
-    layer_impl->SetLayout(
-        gfx::Size(bitmap_.width(), bitmap_.height()), image_aperture_);
+  if (!ui_resource_holder_) {
+    layer_impl->SetUIResourceId(0);
+  } else {
+    DCHECK(layer_tree_host());
+
+    layer_impl->SetLayout(image_aperture_, border_, fill_center_);
   }
 }
 

@@ -14,26 +14,31 @@
 #include "base/values.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/event_names.h"
-#include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
+#include "chrome/browser/extensions/menu_manager_factory.h"
 #include "chrome/browser/extensions/state_store.h"
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/extensions/background_info.h"
-#include "chrome/common/extensions/extension.h"
+#include "chrome/common/extensions/api/context_menus.h"
 #include "content/public/browser/notification_details.h"
+#include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/context_menu_params.h"
-#include "ui/base/text/text_elider.h"
+#include "extensions/browser/event_router.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/manifest_handlers/background_info.h"
 #include "ui/gfx/favicon_size.h"
+#include "ui/gfx/text_elider.h"
 
 using content::WebContents;
 using extensions::ExtensionSystem;
 
 namespace extensions {
+
+namespace context_menus = api::context_menus;
 
 namespace {
 
@@ -162,15 +167,15 @@ std::set<MenuItem::Id> MenuItem::RemoveAllDescendants() {
   return result;
 }
 
-string16 MenuItem::TitleWithReplacement(
-    const string16& selection, size_t max_length) const {
-  string16 result = UTF8ToUTF16(title_);
+base::string16 MenuItem::TitleWithReplacement(const base::string16& selection,
+                                              size_t max_length) const {
+  base::string16 result = UTF8ToUTF16(title_);
   // TODO(asargent) - Change this to properly handle %% escaping so you can
   // put "%s" in titles that won't get substituted.
   ReplaceSubstringsAfterOffset(&result, 0, ASCIIToUTF16("%s"), selection);
 
   if (result.length() > max_length)
-    result = ui::TruncateString(result, max_length);
+    result = gfx::TruncateString(result, max_length);
   return result;
 }
 
@@ -289,16 +294,16 @@ bool MenuItem::PopulateURLPatterns(
   return true;
 }
 
-MenuManager::MenuManager(Profile* profile)
-    : profile_(profile) {
+MenuManager::MenuManager(Profile* profile, StateStore* store)
+    : profile_(profile), store_(store) {
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_LOADED,
                  content::Source<Profile>(profile));
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED,
                  content::Source<Profile>(profile));
-
-  StateStore* store = ExtensionSystem::Get(profile_)->state_store();
-  if (store)
-    store->RegisterKey(kContextMenusKey);
+  registrar_.Add(this, chrome::NOTIFICATION_PROFILE_DESTROYED,
+                 content::NotificationService::AllSources());
+  if (store_)
+    store_->RegisterKey(kContextMenusKey);
 }
 
 MenuManager::~MenuManager() {
@@ -306,6 +311,11 @@ MenuManager::~MenuManager() {
   for (i = context_items_.begin(); i != context_items_.end(); ++i) {
     STLDeleteElements(&(i->second));
   }
+}
+
+// static
+MenuManager* MenuManager::Get(Profile* profile) {
+  return MenuManagerFactory::GetForProfile(profile);
 }
 
 std::set<std::string> MenuManager::ExtensionIds() {
@@ -614,13 +624,13 @@ void MenuManager::ExecuteCommand(Profile* profile,
     SetIdKeyValue(properties, "parentMenuItemId", *item->parent_id());
 
   switch (params.media_type) {
-    case WebKit::WebContextMenuData::MediaTypeImage:
+    case blink::WebContextMenuData::MediaTypeImage:
       properties->SetString("mediaType", "image");
       break;
-    case WebKit::WebContextMenuData::MediaTypeVideo:
+    case blink::WebContextMenuData::MediaTypeVideo:
       properties->SetString("mediaType", "video");
       break;
-    case WebKit::WebContextMenuData::MediaTypeAudio:
+    case blink::WebContextMenuData::MediaTypeAudio:
       properties->SetString("mediaType", "audio");
       break;
     default:  {}  // Do nothing.
@@ -676,14 +686,14 @@ void MenuManager::ExecuteCommand(Profile* profile,
     scoped_ptr<Event> event(new Event(
         event_names::kOnContextMenus,
         scoped_ptr<base::ListValue>(args->DeepCopy())));
-    event->restrict_to_profile = profile;
+    event->restrict_to_browser_context = profile;
     event->user_gesture = EventRouter::USER_GESTURE_ENABLED;
     event_router->DispatchEventToExtension(item->extension_id(), event.Pass());
   }
   {
-    scoped_ptr<Event> event(new Event(event_names::kOnContextMenuClicked,
+    scoped_ptr<Event> event(new Event(context_menus::OnClicked::kEventName,
                                       args.Pass()));
-    event->restrict_to_profile = profile;
+    event->restrict_to_browser_context = profile;
     event->user_gesture = EventRouter::USER_GESTURE_ENABLED;
     event_router->DispatchEventToExtension(item->extension_id(), event.Pass());
   }
@@ -757,10 +767,9 @@ void MenuManager::WriteToStorage(const Extension* extension) {
     }
   }
 
-  StateStore* store = ExtensionSystem::Get(profile_)->state_store();
-  if (store)
-    store->SetExtensionValue(extension->id(), kContextMenusKey,
-                             MenuItemsToValue(all_items));
+  if (store_)
+    store_->SetExtensionValue(extension->id(), kContextMenusKey,
+                              MenuItemsToValue(all_items));
 }
 
 void MenuManager::ReadFromStorage(const std::string& extension_id,
@@ -790,22 +799,40 @@ void MenuManager::ReadFromStorage(const std::string& extension_id,
 void MenuManager::Observe(int type,
                           const content::NotificationSource& source,
                           const content::NotificationDetails& details) {
-  if (type == chrome::NOTIFICATION_EXTENSION_UNLOADED) {
-    // Remove menu items for disabled/uninstalled extensions.
-    const Extension* extension =
-        content::Details<UnloadedExtensionInfo>(details)->extension;
-    if (ContainsKey(context_items_, extension->id())) {
-      RemoveAllContextItems(extension->id());
+  switch (type) {
+    case chrome::NOTIFICATION_EXTENSION_UNLOADED: {
+      // Remove menu items for disabled/uninstalled extensions.
+      const Extension* extension =
+          content::Details<UnloadedExtensionInfo>(details)->extension;
+      if (ContainsKey(context_items_, extension->id())) {
+        RemoveAllContextItems(extension->id());
+      }
+      break;
     }
-  } else if (type == chrome::NOTIFICATION_EXTENSION_LOADED) {
-    const Extension* extension =
-        content::Details<const Extension>(details).ptr();
-    StateStore* store = ExtensionSystem::Get(profile_)->state_store();
-    if (store && BackgroundInfo::HasLazyBackgroundPage(extension)) {
-      store->GetExtensionValue(extension->id(), kContextMenusKey,
-          base::Bind(&MenuManager::ReadFromStorage,
-                     AsWeakPtr(), extension->id()));
+    case chrome::NOTIFICATION_EXTENSION_LOADED: {
+      const Extension* extension =
+          content::Details<const Extension>(details).ptr();
+      if (store_ && BackgroundInfo::HasLazyBackgroundPage(extension)) {
+        store_->GetExtensionValue(extension->id(), kContextMenusKey,
+            base::Bind(&MenuManager::ReadFromStorage,
+                       AsWeakPtr(), extension->id()));
+      }
+      break;
     }
+    case chrome::NOTIFICATION_PROFILE_DESTROYED: {
+      Profile* profile = content::Source<Profile>(source).ptr();
+      // We cannot use profile_->HasOffTheRecordProfile as it may already be
+      // false at this point, if for example the incognito profile was destroyed
+      // using DestroyOffTheRecordProfile.
+      if (profile->GetOriginalProfile() == profile_ &&
+          profile->GetOriginalProfile() != profile) {
+        RemoveAllIncognitoContextItems();
+      }
+      break;
+    }
+    default:
+      NOTREACHED();
+      break;
   }
 }
 

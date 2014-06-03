@@ -5,7 +5,13 @@
 #ifndef CHROME_COMMON_CRASH_KEYS_H_
 #define CHROME_COMMON_CRASH_KEYS_H_
 
+#include <set>
+#include <string>
+#include <vector>
+
 #include "base/debug/crash_logging.h"
+
+class CommandLine;
 
 namespace crash_keys {
 
@@ -13,7 +19,90 @@ namespace crash_keys {
 // reporting server. Returns the size of the union of all keys.
 size_t RegisterChromeCrashKeys();
 
+// Sets the GUID by which this crash reporting client can be identified.
+void SetClientID(const std::string& client_id);
+
+// Sets the kSwitch and kNumSwitches keys based on the given |command_line|.
+void SetSwitchesFromCommandLine(const CommandLine* command_line);
+
+// Sets the list of active experiment/variations info.
+void SetVariationsList(const std::vector<std::string>& variations);
+
+// Sets the list of "active" extensions in this process. We overload "active" to
+// mean different things depending on the process type:
+// - browser: all enabled extensions
+// - renderer: the unique set of extension ids from all content scripts
+// - extension: the id of each extension running in this process (there can be
+//   multiple because of process collapsing).
+void SetActiveExtensions(const std::set<std::string>& extensions);
+
+// Sets the printer info. Data should be separated by ';' up to
+// kPrinterInfoCount substrings. Each substring will be truncated if necessary.
+class ScopedPrinterInfo {
+ public:
+  explicit ScopedPrinterInfo(const base::StringPiece& data);
+  ~ScopedPrinterInfo();
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(ScopedPrinterInfo);
+};
+
 // Crash Key Name Constants ////////////////////////////////////////////////////
+
+// The GUID used to identify this client to the crash system.
+extern const char kClientID[];
+
+// The product release/distribution channel.
+extern const char kChannel[];
+
+// The URL of the active tab.
+extern const char kActiveURL[];
+
+// Process command line switches. |kSwitch| should be formatted with an integer,
+// in the range [1, kSwitchesMaxCount].
+const size_t kSwitchesMaxCount = 15;
+extern const char kSwitch[];
+// The total number of switches, used to report the total in case more than
+// |kSwitchesMaxCount| are present.
+extern const char kNumSwitches[];
+
+// The total number of experiments the instance has.
+extern const char kNumVariations[];
+// The experiments chunk. Hashed experiment names separated by |,|. This is
+// typically set by SetExperimentList.
+extern const char kVariations[];
+
+// Installed extensions. |kExtensionID| should be formatted with an integer,
+// in the range [0, kExtensionIDMaxCount).
+const size_t kExtensionIDMaxCount = 10;
+extern const char kExtensionID[];
+// The total number of installed extensions, recorded in case it exceeds
+// kExtensionIDMaxCount. Also used in chrome/app, but defined here to avoid
+// a common->app dependency.
+extern const char kNumExtensionsCount[];
+
+// The number of render views/tabs open in a renderer process.
+extern const char kNumberOfViews[];
+
+// GPU information.
+#if !defined(OS_ANDROID)
+extern const char kGPUVendorID[];
+extern const char kGPUDeviceID[];
+#endif
+extern const char kGPUDriverVersion[];
+extern const char kGPUPixelShaderVersion[];
+extern const char kGPUVertexShaderVersion[];
+#if defined(OS_MACOSX)
+extern const char kGPUGLVersion[];
+#elif defined(OS_POSIX)
+extern const char kGPUVendor[];
+extern const char kGPURenderer[];
+#endif
+
+// The user's printers, up to kPrinterInfoCount. Should be set with
+// ScopedPrinterInfo.
+const size_t kPrinterInfoCount = 4;
+extern const char kPrinterInfo[];
 
 #if defined(OS_MACOSX)
 namespace mac {

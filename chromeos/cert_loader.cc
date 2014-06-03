@@ -6,11 +6,11 @@
 
 #include <algorithm>
 
-#include "base/chromeos/chromeos_version.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/observer_list.h"
 #include "base/sequenced_task_runner.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/sys_info.h"
 #include "base/task_runner_util.h"
 #include "base/threading/worker_pool.h"
 #include "chromeos/dbus/cryptohome_client.h"
@@ -52,7 +52,8 @@ void CallOpenPersistentNSSDB() {
   VLOG(1) << "CallOpenPersistentNSSDB";
 
   // Ensure we've opened the user's key/certificate database.
-  crypto::OpenPersistentNSSDB();
+  if (base::SysInfo::IsRunningOnChromeOS())
+    crypto::OpenPersistentNSSDB();
   crypto::EnableTPMTokenForNSS();
 }
 
@@ -64,7 +65,6 @@ static CertLoader* g_cert_loader = NULL;
 void CertLoader::Initialize() {
   CHECK(!g_cert_loader);
   g_cert_loader = new CertLoader();
-  g_cert_loader->Init();
 }
 
 // static
@@ -86,21 +86,23 @@ bool CertLoader::IsInitialized() {
 }
 
 CertLoader::CertLoader()
-    : certificates_requested_(false),
+    : initialize_tpm_for_test_(false),
+      certificates_requested_(false),
       certificates_loaded_(false),
       certificates_update_required_(false),
       certificates_update_running_(false),
       tpm_token_state_(TPM_STATE_UNKNOWN),
       tpm_request_delay_(
           base::TimeDelta::FromMilliseconds(kInitialRequestDelayMs)),
+      tpm_token_slot_id_(-1),
       initialize_token_factory_(this),
       update_certificates_factory_(this) {
-}
-
-void CertLoader::Init() {
-  net::CertDatabase::GetInstance()->AddObserver(this);
   if (LoginState::IsInitialized())
     LoginState::Get()->AddObserver(this);
+}
+
+void CertLoader::InitializeTPMForTest() {
+  initialize_tpm_for_test_ = true;
 }
 
 void CertLoader::SetCryptoTaskRunner(
@@ -144,17 +146,25 @@ void CertLoader::MaybeRequestCertificates() {
   if (certificates_requested_ || !crypto_task_runner_.get())
     return;
 
-  const bool logged_in = LoginState::IsInitialized() ?
-      LoginState::Get()->IsUserLoggedIn() : false;
-  VLOG(1) << "RequestCertificates: " << logged_in;
-  if (!logged_in)
+  if (!LoginState::IsInitialized())
+    return;
+
+  bool request_certificates = LoginState::Get()->IsUserLoggedIn() ||
+      LoginState::Get()->IsInSafeMode();
+
+  VLOG(1) << "RequestCertificates: " << request_certificates;
+  if (!request_certificates)
     return;
 
   certificates_requested_ = true;
 
   // Ensure we only initialize the TPM token once.
   DCHECK_EQ(tpm_token_state_, TPM_STATE_UNKNOWN);
-  if (!base::chromeos::IsRunningOnChromeOS())
+  if (!initialize_tpm_for_test_ && !base::SysInfo::IsRunningOnChromeOS())
+    tpm_token_state_ = TPM_DISABLED;
+
+  // Treat TPM as disabled for guest users since they do not store certs.
+  if (LoginState::Get()->IsGuestUser())
     tpm_token_state_ = TPM_DISABLED;
 
   InitializeTokenAndLoadCertificates();
@@ -163,10 +173,6 @@ void CertLoader::MaybeRequestCertificates() {
 void CertLoader::InitializeTokenAndLoadCertificates() {
   CHECK(thread_checker_.CalledOnValidThread());
   VLOG(1) << "InitializeTokenAndLoadCertificates: " << tpm_token_state_;
-
-  // Treat TPM as disabled for guest users since they do not store certs.
-  if (LoginState::IsInitialized() && LoginState::Get()->IsGuestUser())
-    tpm_token_state_ = TPM_DISABLED;
 
   switch (tpm_token_state_) {
     case TPM_STATE_UNKNOWN: {
@@ -206,13 +212,10 @@ void CertLoader::InitializeTokenAndLoadCertificates() {
       base::PostTaskAndReplyWithResult(
           crypto_task_runner_.get(),
           FROM_HERE,
-          base::Bind(
-              &crypto::InitializeTPMToken, tpm_token_name_, tpm_user_pin_),
+          base::Bind(&crypto::InitializeTPMToken, tpm_token_slot_id_),
           base::Bind(&CertLoader::OnTPMTokenInitialized,
                      initialize_token_factory_.GetWeakPtr()));
       return;
-      tpm_token_state_ = TPM_TOKEN_INITIALIZED;
-      // FALL_THROUGH_INTENDED
     }
     case TPM_TOKEN_INITIALIZED: {
       StartLoadCertificates();
@@ -223,7 +226,7 @@ void CertLoader::InitializeTokenAndLoadCertificates() {
 
 void CertLoader::RetryTokenInitializationLater() {
   CHECK(thread_checker_.CalledOnValidThread());
-  LOG(WARNING) << "Re-Requesting Certificates later.";
+  LOG(WARNING) << "Retry token initialization later.";
   base::MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
       base::Bind(&CertLoader::InitializeTokenAndLoadCertificates,
@@ -294,7 +297,8 @@ void CertLoader::OnPkcs11IsTpmTokenReady(DBusMethodCallStatus call_status,
 
 void CertLoader::OnPkcs11GetTpmTokenInfo(DBusMethodCallStatus call_status,
                                          const std::string& token_name,
-                                         const std::string& user_pin) {
+                                         const std::string& user_pin,
+                                         int token_slot_id) {
   VLOG(1) << "OnPkcs11GetTpmTokenInfo: " << token_name;
 
   if (call_status == DBUS_METHOD_CALL_FAILURE) {
@@ -303,10 +307,7 @@ void CertLoader::OnPkcs11GetTpmTokenInfo(DBusMethodCallStatus call_status,
   }
 
   tpm_token_name_ = token_name;
-  // TODO(stevenjb): The network code expects a slot ID, not a label. See
-  // crbug.com/201101. For now, use a hard coded, well known slot instead.
-  const char kHardcodedTpmSlot[] = "0";
-  tpm_token_slot_ = kHardcodedTpmSlot;
+  tpm_token_slot_id_ = token_slot_id;
   tpm_user_pin_ = user_pin;
   tpm_token_state_ = TPM_TOKEN_INFO_RECEIVED;
 
@@ -324,8 +325,14 @@ void CertLoader::OnTPMTokenInitialized(bool success) {
 }
 
 void CertLoader::StartLoadCertificates() {
+  DCHECK(!certificates_loaded_ && !certificates_update_running_);
+  net::CertDatabase::GetInstance()->AddObserver(this);
+  LoadCertificates();
+}
+
+void CertLoader::LoadCertificates() {
   CHECK(thread_checker_.CalledOnValidThread());
-  VLOG(1) << "StartLoadCertificates: " << certificates_update_running_;
+  VLOG(1) << "LoadCertificates: " << certificates_update_running_;
 
   if (certificates_update_running_) {
     certificates_update_required_ = true;
@@ -361,7 +368,7 @@ void CertLoader::UpdateCertificates(net::CertificateList* cert_list) {
 
   certificates_update_running_ = false;
   if (certificates_update_required_)
-    StartLoadCertificates();
+    LoadCertificates();
 }
 
 void CertLoader::NotifyCertificatesLoaded(bool initial_load) {
@@ -369,21 +376,25 @@ void CertLoader::NotifyCertificatesLoaded(bool initial_load) {
                     OnCertificatesLoaded(cert_list_, initial_load));
 }
 
-void CertLoader::OnCertTrustChanged(const net::X509Certificate* cert) {
+void CertLoader::OnCACertChanged(const net::X509Certificate* cert) {
+  // This is triggered when a CA certificate is modified.
+  VLOG(1) << "OnCACertChanged";
+  LoadCertificates();
 }
 
 void CertLoader::OnCertAdded(const net::X509Certificate* cert) {
+  // This is triggered when a client certificate is added.
   VLOG(1) << "OnCertAdded";
-  StartLoadCertificates();
+  LoadCertificates();
 }
 
 void CertLoader::OnCertRemoved(const net::X509Certificate* cert) {
   VLOG(1) << "OnCertRemoved";
-  StartLoadCertificates();
+  LoadCertificates();
 }
 
-void CertLoader::LoggedInStateChanged(LoginState::LoggedInState state) {
-  VLOG(1) << "LoggedInStateChanged: " << state;
+void CertLoader::LoggedInStateChanged() {
+  VLOG(1) << "LoggedInStateChanged";
   MaybeRequestCertificates();
 }
 

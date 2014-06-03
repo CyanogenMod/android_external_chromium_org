@@ -8,6 +8,15 @@
 #include "tools/gn/commands.h"
 #include "tools/gn/err.h"
 #include "tools/gn/location.h"
+#include "tools/gn/standard_out.h"
+
+// Only the GN-generated build makes this header for now.
+// TODO(brettw) consider adding this if we need it in GYP.
+#if defined(GN_BUILD)
+#include "build/util/last_change.h"
+#else
+#define LAST_CHANGE "UNKNOWN"
+#endif
 
 namespace {
 
@@ -27,6 +36,9 @@ std::vector<std::string> GetArgs(const CommandLine& cmdline) {
 
 int main(int argc, char** argv) {
   base::AtExitManager at_exit;
+#if defined(OS_WIN)
+  CommandLine::set_slash_is_not_a_switch();
+#endif
   CommandLine::Init(argc, argv);
 
   const CommandLine& cmdline = *CommandLine::ForCurrentProcess();
@@ -36,6 +48,10 @@ int main(int argc, char** argv) {
   if (cmdline.HasSwitch("help")) {
     // Make "--help" default to help command.
     command = commands::kHelp;
+  } else if (cmdline.HasSwitch("version")) {
+    // Make "--version" print the version and exit.
+    OutputString(std::string(LAST_CHANGE) + "\n");
+    exit(0);
   } else if (args.empty()) {
     command = commands::kGen;
   } else {

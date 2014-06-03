@@ -16,7 +16,7 @@
 #include "ui/gfx/size_f.h"
 
 #if defined(OS_WIN)
-#include "ui/aura/root_window_host.h"
+#include "ui/aura/window_tree_host.h"
 #endif
 
 namespace ash {
@@ -45,10 +45,10 @@ DisplayInfo DisplayInfo::CreateFromSpecWithID(const std::string& spec,
   static int64 synthesized_display_id = 2200000000LL;
 
 #if defined(OS_WIN)
-  gfx::Rect bounds_in_pixel(aura::RootWindowHost::GetNativeScreenSize());
+  gfx::Rect bounds_in_native(aura::RootWindowHost::GetNativeScreenSize());
 #else
-  gfx::Rect bounds_in_pixel(kDefaultHostWindowX, kDefaultHostWindowY,
-                            kDefaultHostWindowWidth, kDefaultHostWindowHeight);
+  gfx::Rect bounds_in_native(kDefaultHostWindowX, kDefaultHostWindowY,
+                             kDefaultHostWindowWidth, kDefaultHostWindowHeight);
 #endif
   std::string main_spec = spec;
 
@@ -94,21 +94,36 @@ DisplayInfo DisplayInfo::CreateFromSpecWithID(const std::string& spec,
              &width, &height, &device_scale_factor) >= 2 ||
       sscanf(main_spec.c_str(), "%d+%d-%dx%d*%f", &x, &y, &width, &height,
              &device_scale_factor) >= 4) {
-    bounds_in_pixel.SetRect(x, y, width, height);
+    bounds_in_native.SetRect(x, y, width, height);
   }
+
+  std::vector<Resolution> resolutions;
+  if (Tokenize(main_spec, "#", &parts) == 2) {
+    main_spec = parts[0];
+    std::string resolution_list = parts[1];
+    count = Tokenize(resolution_list, "|", &parts);
+    for (size_t i = 0; i < count; ++i) {
+      std::string resolution = parts[i];
+      int width, height;
+      if (sscanf(resolution.c_str(), "%dx%d", &width, &height) == 2)
+        resolutions.push_back(Resolution(gfx::Size(width, height), false));
+    }
+  }
+
   if (id == gfx::Display::kInvalidDisplayID)
     id = synthesized_display_id++;
   DisplayInfo display_info(
       id, base::StringPrintf("Display-%d", static_cast<int>(id)), has_overscan);
   display_info.set_device_scale_factor(device_scale_factor);
   display_info.set_rotation(rotation);
-  display_info.set_ui_scale(ui_scale);
-  display_info.SetBounds(bounds_in_pixel);
+  display_info.set_configured_ui_scale(ui_scale);
+  display_info.SetBounds(bounds_in_native);
+  display_info.set_resolutions(resolutions);
 
   // To test the overscan, it creates the default 5% overscan.
   if (has_overscan) {
-    int width = bounds_in_pixel.width() / device_scale_factor / 40;
-    int height = bounds_in_pixel.height() / device_scale_factor / 40;
+    int width = bounds_in_native.width() / device_scale_factor / 40;
+    int height = bounds_in_native.height() / device_scale_factor / 40;
     display_info.SetOverscanInsets(gfx::Insets(height, width, height, width));
     display_info.UpdateDisplaySize();
   }
@@ -122,9 +137,10 @@ DisplayInfo::DisplayInfo()
     : id_(gfx::Display::kInvalidDisplayID),
       has_overscan_(false),
       rotation_(gfx::Display::ROTATE_0),
+      touch_support_(gfx::Display::TOUCH_SUPPORT_UNKNOWN),
       device_scale_factor_(1.0f),
       overscan_insets_in_dip_(0, 0, 0, 0),
-      ui_scale_(1.0f),
+      configured_ui_scale_(1.0f),
       native_(false) {
 }
 
@@ -135,9 +151,10 @@ DisplayInfo::DisplayInfo(int64 id,
       name_(name),
       has_overscan_(has_overscan),
       rotation_(gfx::Display::ROTATE_0),
+      touch_support_(gfx::Display::TOUCH_SUPPORT_UNKNOWN),
       device_scale_factor_(1.0f),
       overscan_insets_in_dip_(0, 0, 0, 0),
-      ui_scale_(1.0f),
+      configured_ui_scale_(1.0f),
       native_(false) {
 }
 
@@ -149,11 +166,12 @@ void DisplayInfo::Copy(const DisplayInfo& native_info) {
   name_ = native_info.name_;
   has_overscan_ = native_info.has_overscan_;
 
-  DCHECK(!native_info.bounds_in_pixel_.IsEmpty());
-  bounds_in_pixel_ = native_info.bounds_in_pixel_;
+  DCHECK(!native_info.bounds_in_native_.IsEmpty());
+  bounds_in_native_ = native_info.bounds_in_native_;
   size_in_pixel_ = native_info.size_in_pixel_;
   device_scale_factor_ = native_info.device_scale_factor_;
   resolutions_ = native_info.resolutions_;
+  touch_support_ = native_info.touch_support_;
 
   // Copy overscan_insets_in_dip_ if it's not empty. This is for test
   // cases which use "/o" annotation which sets the overscan inset
@@ -164,24 +182,30 @@ void DisplayInfo::Copy(const DisplayInfo& native_info) {
 
   // Rotation_ and ui_scale_ are given by preference, or unit
   // tests. Don't copy if this native_info came from
-  // DisplayChangeObserverX11.
+  // DisplayChangeObserver.
   if (!native_info.native()) {
     rotation_ = native_info.rotation_;
-    ui_scale_ = native_info.ui_scale_;
+    configured_ui_scale_ = native_info.configured_ui_scale_;
   }
   // Don't copy insets as it may be given by preference.  |rotation_|
   // is treated as a native so that it can be specified in
   // |CreateFromSpec|.
 }
 
-void DisplayInfo::SetBounds(const gfx::Rect& new_bounds_in_pixel) {
-  bounds_in_pixel_ = new_bounds_in_pixel;
-  size_in_pixel_ = new_bounds_in_pixel.size();
+void DisplayInfo::SetBounds(const gfx::Rect& new_bounds_in_native) {
+  bounds_in_native_ = new_bounds_in_native;
+  size_in_pixel_ = new_bounds_in_native.size();
   UpdateDisplaySize();
 }
 
+float DisplayInfo::GetEffectiveUIScale() const {
+  if (device_scale_factor_ == 2.0f && configured_ui_scale_ == 2.0f)
+    return 1.0f;
+  return configured_ui_scale_;
+}
+
 void DisplayInfo::UpdateDisplaySize() {
-  size_in_pixel_ = bounds_in_pixel_.size();
+  size_in_pixel_ = bounds_in_native_.size();
   if (!overscan_insets_in_dip_.empty()) {
     gfx::Insets insets_in_pixel =
         overscan_insets_in_dip_.Scale(device_scale_factor_);
@@ -194,7 +218,7 @@ void DisplayInfo::UpdateDisplaySize() {
       rotation_ == gfx::Display::ROTATE_270)
     size_in_pixel_.SetSize(size_in_pixel_.height(), size_in_pixel_.width());
   gfx::SizeF size_f(size_in_pixel_);
-  size_f.Scale(ui_scale_);
+  size_f.Scale(GetEffectiveUIScale());
   size_in_pixel_ = gfx::ToFlooredSize(size_f);
 }
 
@@ -210,14 +234,17 @@ std::string DisplayInfo::ToString() const {
   int rotation_degree = static_cast<int>(rotation_) * 90;
   return base::StringPrintf(
       "DisplayInfo[%lld] native bounds=%s, size=%s, scale=%f, "
-      "overscan=%s, rotation=%d, ui-scale=%f",
+      "overscan=%s, rotation=%d, ui-scale=%f, touchscreen=%s",
       static_cast<long long int>(id_),
-      bounds_in_pixel_.ToString().c_str(),
+      bounds_in_native_.ToString().c_str(),
       size_in_pixel_.ToString().c_str(),
       device_scale_factor_,
       overscan_insets_in_dip_.ToString().c_str(),
       rotation_degree,
-      ui_scale_);
+      configured_ui_scale_,
+      touch_support_ == gfx::Display::TOUCH_SUPPORT_AVAILABLE ? "yes" :
+      touch_support_ == gfx::Display::TOUCH_SUPPORT_UNAVAILABLE ? "no" :
+      "unknown");
 }
 
 std::string DisplayInfo::ToFullString() const {

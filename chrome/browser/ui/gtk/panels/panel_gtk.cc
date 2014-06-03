@@ -33,12 +33,12 @@
 #include "content/public/browser/web_contents_view.h"
 #include "grit/ui_resources.h"
 #include "ui/base/accelerators/platform_accelerator_gtk.h"
-#include "ui/base/gtk/gtk_compat.h"
 #include "ui/base/gtk/gtk_expanded_container.h"
 #include "ui/base/gtk/gtk_hig_constants.h"
 #include "ui/base/x/active_window_watcher_x.h"
 #include "ui/base/x/x11_util.h"
 #include "ui/gfx/canvas.h"
+#include "ui/gfx/gtk_compat.h"
 #include "ui/gfx/image/cairo_cached_surface.h"
 #include "ui/gfx/image/image.h"
 
@@ -144,7 +144,7 @@ const AcceleratorMap& GetAcceleratorTable() {
 }
 
 gfx::Image CreateImageForColor(SkColor color) {
-  gfx::Canvas canvas(gfx::Size(1, 1), ui::SCALE_FACTOR_100P, true);
+  gfx::Canvas canvas(gfx::Size(1, 1), 1.0f, true);
   canvas.DrawColor(color);
   return gfx::Image(gfx::ImageSkia(canvas.ExtractImageRep()));
 }
@@ -918,7 +918,7 @@ gfx::NativeWindow PanelGtk::GetNativePanelWindow() {
 
 void PanelGtk::UpdatePanelTitleBar() {
   TRACE_EVENT0("ui::gtk", "PanelGtk::UpdatePanelTitleBar");
-  string16 title = panel_->GetWindowTitle();
+  base::string16 title = panel_->GetWindowTitle();
   gtk_window_set_title(window_, UTF16ToUTF8(title).c_str());
   titlebar_->UpdateTitleAndIcon();
 
@@ -989,13 +989,22 @@ bool PanelGtk::IsDrawingAttention() const {
 void PanelGtk::HandlePanelKeyboardEvent(
     const NativeWebKeyboardEvent& event) {
   GdkEventKey* os_event = &event.os_event->key;
-  if (os_event && event.type == WebKit::WebInputEvent::RawKeyDown)
+  if (os_event && event.type == blink::WebInputEvent::RawKeyDown)
     gtk_window_activate_key(window_, os_event);
 }
 
 void PanelGtk::FullScreenModeChanged(bool is_full_screen) {
-  // Nothing to do here as z-order rules for panels ensures that they're below
-  // any app running in full screen mode.
+  // No need to hide panels when entering the full-screen mode because the
+  // full-screen window will automatically be placed above all other windows.
+  if (is_full_screen)
+    return;
+
+  // Show the panel if not yet when leaving the full-screen mode. This is
+  // because the panel is not shown when it is being created under full-screen
+  // mode.
+  GdkWindow* gdk_window = gtk_widget_get_window(GTK_WIDGET(window_));
+  if (!GDK_IS_WINDOW(gdk_window) || !gdk_window_is_visible(gdk_window))
+    ShowPanelInactive();
 }
 
 void PanelGtk::PanelExpansionStateChanging(
@@ -1068,9 +1077,6 @@ void PanelGtk::SetPanelAlwaysOnTop(bool on_top) {
     gtk_window_unstick(window_);
 }
 
-void PanelGtk::EnableResizeByMouse(bool enable) {
-}
-
 void PanelGtk::UpdatePanelMinimizeRestoreButtonVisibility() {
   titlebar_->UpdateMinimizeRestoreButtonVisibility();
 }
@@ -1108,6 +1114,7 @@ class GtkNativePanelTesting : public NativePanelTesting {
   virtual bool VerifyActiveState(bool is_active) OVERRIDE;
   virtual bool VerifyAppIcon() const OVERRIDE;
   virtual bool VerifySystemMinimizeState() const OVERRIDE;
+  virtual bool IsWindowVisible() const OVERRIDE;
   virtual bool IsWindowSizeKnown() const OVERRIDE;
   virtual bool IsAnimatingBounds() const OVERRIDE;
   virtual bool IsButtonVisible(
@@ -1201,6 +1208,12 @@ bool GtkNativePanelTesting::VerifyAppIcon() const {
 bool GtkNativePanelTesting::VerifySystemMinimizeState() const {
   // TODO(jianli): to be implemented.
   return true;
+}
+
+bool GtkNativePanelTesting::IsWindowVisible() const {
+  GdkWindow* gdk_window =
+      gtk_widget_get_window(GTK_WIDGET(panel_gtk_->GetNativePanelWindow()));
+  return GDK_IS_WINDOW(gdk_window) && gdk_window_is_visible(gdk_window);
 }
 
 bool GtkNativePanelTesting::IsWindowSizeKnown() const {

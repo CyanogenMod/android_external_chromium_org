@@ -15,12 +15,13 @@ AutofillDialogController::Create(
     content::WebContents* contents,
     const FormData& form_structure,
     const GURL& source_url,
-    const DialogType dialog_type,
-    const base::Callback<void(const FormStructure*,
-                              const std::string&)>& callback) {
+    const base::Callback<void(const FormStructure*)>& callback) {
   NOTIMPLEMENTED();
   return base::WeakPtr<AutofillDialogController>();
 }
+
+// static
+void AutofillDialogController::RegisterPrefs(PrefRegistrySimple* registry) {}
 
 // static
 void AutofillDialogController::RegisterProfilePrefs(

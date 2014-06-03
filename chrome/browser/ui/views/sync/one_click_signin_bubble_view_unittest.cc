@@ -52,8 +52,8 @@ class OneClickSigninBubbleViewTest : public views::ViewsTestBase {
 
     OneClickSigninBubbleView::ShowBubble(
         bubble_type,
-        string16(),
-        string16(),
+        base::string16(),
+        base::string16(),
         delegate.Pass(),
         anchor_widget_->GetContentsView(),
         base::Bind(&OneClickSigninBubbleViewTest::OnStartSync,
@@ -139,7 +139,7 @@ TEST_F(OneClickSigninBubbleViewTest, HideDialog) {
   content::RunAllPendingInMessageLoop();
   EXPECT_FALSE(OneClickSigninBubbleView::IsShowing());
   EXPECT_TRUE(on_start_sync_called_);
-  EXPECT_EQ(OneClickSigninSyncStarter::SYNC_WITH_DEFAULT_SETTINGS, mode_);
+  EXPECT_EQ(OneClickSigninSyncStarter::UNDO_SYNC, mode_);
 }
 
 TEST_F(OneClickSigninBubbleViewTest, BubbleOkButton) {
@@ -323,5 +323,6 @@ TEST_F(OneClickSigninBubbleViewTest, DialogPressEscapeKey) {
   // fade animation of the bubble is done.
   content::RunAllPendingInMessageLoop();
   EXPECT_FALSE(OneClickSigninBubbleView::IsShowing());
-  EXPECT_FALSE(on_start_sync_called_);
+  EXPECT_TRUE(on_start_sync_called_);
+  EXPECT_EQ(OneClickSigninSyncStarter::UNDO_SYNC, mode_);
 }

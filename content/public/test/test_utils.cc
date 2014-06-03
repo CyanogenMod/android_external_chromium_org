@@ -67,6 +67,17 @@ void ScriptCallback::ResultCallback(const base::Value* result) {
   base::MessageLoop::current()->Quit();
 }
 
+// Adapter that makes a WindowedNotificationObserver::ConditionTestCallback from
+// a WindowedNotificationObserver::ConditionTestCallbackWithoutSourceAndDetails
+// by ignoring the notification source and details.
+bool IgnoreSourceAndDetails(
+    const WindowedNotificationObserver::
+        ConditionTestCallbackWithoutSourceAndDetails& callback,
+    const NotificationSource& source,
+    const NotificationDetails& details) {
+  return callback.Run();
+}
+
 }  // namespace
 
 void RunMessageLoop() {
@@ -126,7 +137,7 @@ scoped_ptr<base::Value> ExecuteScriptAndGetValue(
   ScriptCallback observer;
 
   render_view_host->ExecuteJavascriptInWebFrameCallbackResult(
-      string16(),  // frame_xpath,
+      base::string16(),  // frame_xpath,
       UTF8ToUTF16(script),
       base::Bind(&ScriptCallback::ResultCallback, base::Unretained(&observer)));
   base::MessageLoop* loop = base::MessageLoop::current();
@@ -173,7 +184,7 @@ WindowedNotificationObserver::WindowedNotificationObserver(
     : seen_(false),
       running_(false),
       source_(NotificationService::AllSources()) {
-  registrar_.Add(this, notification_type, source);
+  AddNotificationType(notification_type, source);
 }
 
 WindowedNotificationObserver::WindowedNotificationObserver(
@@ -183,10 +194,26 @@ WindowedNotificationObserver::WindowedNotificationObserver(
       running_(false),
       callback_(callback),
       source_(NotificationService::AllSources()) {
+  AddNotificationType(notification_type, source_);
+}
+
+WindowedNotificationObserver::WindowedNotificationObserver(
+    int notification_type,
+    const ConditionTestCallbackWithoutSourceAndDetails& callback)
+    : seen_(false),
+      running_(false),
+      callback_(base::Bind(&IgnoreSourceAndDetails, callback)),
+      source_(NotificationService::AllSources()) {
   registrar_.Add(this, notification_type, source_);
 }
 
 WindowedNotificationObserver::~WindowedNotificationObserver() {}
+
+void WindowedNotificationObserver::AddNotificationType(
+    int notification_type,
+    const NotificationSource& source) {
+  registrar_.Add(this, notification_type, source);
+}
 
 void WindowedNotificationObserver::Wait() {
   if (seen_)
@@ -204,7 +231,7 @@ void WindowedNotificationObserver::Observe(
     const NotificationDetails& details) {
   source_ = source;
   details_ = details;
-  if (!callback_.is_null() && !callback_.Run())
+  if (!callback_.is_null() && !callback_.Run(source, details))
     return;
 
   seen_ = true;

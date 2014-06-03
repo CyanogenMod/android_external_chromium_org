@@ -9,8 +9,12 @@
 #include <vector>
 
 #include "ash/ash_switches.h"
+#include "ash/metrics/user_metrics_recorder.h"
+#include "ash/multi_profile_uma.h"
 #include "ash/popup_message.h"
+#include "ash/root_window_controller.h"
 #include "ash/session_state_delegate.h"
+#include "ash/shelf/shelf_layout_manager.h"
 #include "ash/shell.h"
 #include "ash/shell_delegate.h"
 #include "ash/system/tray/system_tray.h"
@@ -35,18 +39,19 @@
 #include "third_party/skia/include/core/SkPath.h"
 #include "ui/aura/window.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/range/range.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/base/text/text_elider.h"
 #include "ui/gfx/canvas.h"
-#include "ui/gfx/font.h"
+#include "ui/gfx/font_list.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/image/image_skia_operations.h"
 #include "ui/gfx/insets.h"
+#include "ui/gfx/range/range.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/render_text.h"
 #include "ui/gfx/size.h"
 #include "ui/gfx/skia_util.h"
+#include "ui/gfx/text_elider.h"
+#include "ui/gfx/text_utils.h"
 #include "ui/views/border.h"
 #include "ui/views/bubble/tray_bubble_view.h"
 #include "ui/views/controls/button/button.h"
@@ -67,12 +72,13 @@ namespace {
 
 const int kUserDetailsVerticalPadding = 5;
 const int kUserCardVerticalPadding = 10;
-const int kInactiveUserCardVerticalPadding = 4;
 const int kProfileRoundedCornerRadius = 2;
 const int kUserIconSize = 27;
 const int kUserIconLargeSize = 32;
 const int kUserIconLargeCornerRadius = 2;
 const int kUserLabelToIconPadding = 5;
+// When using multi login, this spacing is added between user icons.
+const int kTrayLabelSpacing = 1;
 
 // When a hover border is used, it is starting this many pixels before the icon
 // position.
@@ -112,6 +118,21 @@ const int kPublicAccountLogoutButtonBorderImagesHovered[] = {
 // Offsetting the popup message relative to the tray menu.
 const int kPopupMessageOffset = 25;
 
+// Switch to a user with the given |user_index|.
+void SwitchUser(ash::MultiProfileIndex user_index) {
+  // Do not switch users when the log screen is presented.
+  if (ash::Shell::GetInstance()->session_state_delegate()->
+          IsUserSessionBlocked())
+    return;
+
+  DCHECK(user_index > 0);
+  ash::SessionStateDelegate* delegate =
+      ash::Shell::GetInstance()->session_state_delegate();
+  ash::MultiProfileUMA::RecordSwitchActiveUser(
+      ash::MultiProfileUMA::SWITCH_ACTIVE_USER_BY_TRAY);
+  delegate->SwitchActiveUser(delegate->GetUserID(user_index));
+}
+
 }  // namespace
 
 namespace ash {
@@ -132,7 +153,7 @@ class RoundedImageView : public views::View {
   // receiver's image.
   void SetImage(const gfx::ImageSkia& img, const gfx::Size& size);
 
-  // Set the radii of the corners independantly.
+  // Set the radii of the corners independently.
   void SetCornerRadii(int top_left,
                       int top_right,
                       int bottom_right,
@@ -153,6 +174,24 @@ class RoundedImageView : public views::View {
   bool active_user_;
 
   DISALLOW_COPY_AND_ASSIGN(RoundedImageView);
+};
+
+// An inactive user view which can be clicked to make active. Note that this
+// "button" does not show as a button any click or hover changes.
+class UserSwitcherView : public RoundedImageView {
+ public:
+  UserSwitcherView(int corner_radius, MultiProfileIndex user_index);
+  virtual ~UserSwitcherView() {}
+
+  virtual void OnMouseEvent(ui::MouseEvent* event) OVERRIDE;
+  virtual void OnTouchEvent(ui::TouchEvent* event) OVERRIDE;
+
+ private:
+  // The user index to activate when the item was clicked. Note that this
+  // index refers to the LRU list of logged in users.
+  MultiProfileIndex user_index_;
+
+  DISALLOW_COPY_AND_ASSIGN(UserSwitcherView);
 };
 
 // The user details shown in public account mode. This is essentially a label
@@ -262,11 +301,11 @@ class UserView : public views::View,
   virtual void ButtonPressed(views::Button* sender,
                              const ui::Event& event) OVERRIDE;
 
-  void AddLogoutButton(ash::user::LoginStatus login);
-  void AddUserCard(SystemTrayItem* owner, ash::user::LoginStatus login);
+  void AddLogoutButton(user::LoginStatus login);
+  void AddUserCard(SystemTrayItem* owner, user::LoginStatus login);
 
   // Create a user icon representation for the user card.
-  views::View* CreateIconForUserCard(ash::user::LoginStatus login);
+  views::View* CreateIconForUserCard(user::LoginStatus login);
 
   // Create the additional user card content for the retail logged in mode.
   void AddLoggedInRetailModeUserCardContent();
@@ -277,6 +316,9 @@ class UserView : public views::View,
   // Create the menu option to add another user. If |disabled| is set the user
   // cannot actively click on the item.
   void ToggleAddUserMenuOption();
+
+  // Returns true when multi profile is supported.
+  bool SupportsMultiProfile();
 
   MultiProfileIndex multiprofile_index_;
   // The view of the user card.
@@ -289,7 +331,7 @@ class UserView : public views::View,
   // |views::View|.
   bool is_user_card_;
   views::View* logout_button_;
-  scoped_ptr<ash::PopupMessage> popup_message_;
+  scoped_ptr<PopupMessage> popup_message_;
   scoped_ptr<views::Widget> add_menu_option_;
 
   // True when the add user panel is visible but not activatable.
@@ -404,6 +446,27 @@ void RoundedImageView::OnPaint(gfx::Canvas* canvas) {
                           path, paint);
 }
 
+UserSwitcherView::UserSwitcherView(int corner_radius,
+                                   MultiProfileIndex user_index)
+    : RoundedImageView(corner_radius, false),
+      user_index_(user_index) {
+  SetEnabled(true);
+}
+
+void UserSwitcherView::OnMouseEvent(ui::MouseEvent* event) {
+  if (event->type() == ui::ET_MOUSE_PRESSED) {
+    SwitchUser(user_index_);
+    event->SetHandled();
+  }
+}
+
+void UserSwitcherView::OnTouchEvent(ui::TouchEvent* event) {
+  if (event->type() == ui::ET_TOUCH_PRESSED) {
+    SwitchUser(user_index_);
+    event->SetHandled();
+  }
+}
+
 PublicAccountUserDetails::PublicAccountUserDetails(SystemTrayItem* owner,
                                                    int used_width)
     : learn_more_(NULL) {
@@ -418,14 +481,13 @@ PublicAccountUserDetails::PublicAccountUserDetails(SystemTrayItem* owner,
   // Note that since this is a public account it always has to be the primary
   // user.
   base::string16 display_name =
-      ash::Shell::GetInstance()->session_state_delegate()->
-          GetUserDisplayName(0);
-  RemoveChars(display_name, kDisplayNameMark, &display_name);
+      Shell::GetInstance()->session_state_delegate()->GetUserDisplayName(0);
+  base::RemoveChars(display_name, kDisplayNameMark, &display_name);
   display_name = kDisplayNameMark[0] + display_name + kDisplayNameMark[0];
   // Retrieve the domain managing the device and wrap it with markers.
   base::string16 domain = UTF8ToUTF16(
-      ash::Shell::GetInstance()->system_tray_delegate()->GetEnterpriseDomain());
-  RemoveChars(domain, kDisplayNameMark, &domain);
+      Shell::GetInstance()->system_tray_delegate()->GetEnterpriseDomain());
+  base::RemoveChars(domain, kDisplayNameMark, &domain);
   base::i18n::WrapStringWithLTRFormatting(&domain);
   // Retrieve the label text, inserting the display name and domain.
   text_ = l10n_util::GetStringFUTF16(IDS_ASH_STATUS_TRAY_PUBLIC_LABEL,
@@ -448,13 +510,14 @@ void PublicAccountUserDetails::Layout() {
     return;
 
   // Word-wrap the label text.
-  const gfx::Font font;
+  const gfx::FontList font_list;
   std::vector<base::string16> lines;
-  ui::ElideRectangleText(text_, font, contents_area.width(),
-                         contents_area.height(), ui::ELIDE_LONG_WORDS, &lines);
+  gfx::ElideRectangleText(text_, font_list, contents_area.width(),
+                          contents_area.height(), gfx::ELIDE_LONG_WORDS,
+                          &lines);
   // Loop through the lines, creating a renderer for each.
   gfx::Point position = contents_area.origin();
-  ui::Range display_name(ui::Range::InvalidRange());
+  gfx::Range display_name(gfx::Range::InvalidRange());
   for (std::vector<base::string16>::const_iterator it = lines.begin();
        it != lines.end(); ++it) {
     gfx::RenderText* line = gfx::RenderText::CreateInstance();
@@ -474,14 +537,14 @@ void PublicAccountUserDetails::Layout() {
     if (!display_name.is_empty()) {
       display_name.set_end(
           it->find(kDisplayNameMark, display_name.start() + 1));
-      ui::Range line_range(0, it->size());
+      gfx::Range line_range(0, it->size());
       line->ApplyColor(kPublicAccountUserCardNameColor,
                        display_name.Intersect(line_range));
       // Update the range for the next line.
       if (display_name.end() >= line_range.end())
         display_name.set_start(0);
       else
-        display_name = ui::Range::InvalidRange();
+        display_name = gfx::Range::InvalidRange();
     }
 
     lines_.push_back(line);
@@ -490,7 +553,7 @@ void PublicAccountUserDetails::Layout() {
   // Position the link after the label text, separated by a space. If it does
   // not fit onto the last line of the text, wrap the link onto its own line.
   const gfx::Size last_line_size = lines_.back()->GetStringSize();
-  const int space_width = font.GetStringWidth(ASCIIToUTF16(" "));
+  const int space_width = gfx::GetStringWidth(ASCIIToUTF16(" "), font_list);
   const gfx::Size link_size = learn_more_->GetPreferredSize();
   if (contents_area.width() - last_line_size.width() >=
       space_width + link_size.width()) {
@@ -522,14 +585,14 @@ void PublicAccountUserDetails::OnPaint(gfx::Canvas* canvas) {
 void PublicAccountUserDetails::LinkClicked(views::Link* source,
                                            int event_flags) {
   DCHECK_EQ(source, learn_more_);
-  ash::Shell::GetInstance()->system_tray_delegate()->ShowPublicAccountInfo();
+  Shell::GetInstance()->system_tray_delegate()->ShowPublicAccountInfo();
 }
 
 void PublicAccountUserDetails::CalculatePreferredSize(SystemTrayItem* owner,
                                                       int used_width) {
-  const gfx::Font font;
+  const gfx::FontList font_list;
   const gfx::Size link_size = learn_more_->GetPreferredSize();
-  const int space_width = font.GetStringWidth(ASCIIToUTF16(" "));
+  const int space_width = gfx::GetStringWidth(ASCIIToUTF16(" "), font_list);
   const gfx::Insets insets = GetInsets();
   views::TrayBubbleView* bubble_view =
       owner->system_tray()->GetSystemBubble()->bubble_view();
@@ -537,7 +600,7 @@ void PublicAccountUserDetails::CalculatePreferredSize(SystemTrayItem* owner,
       link_size.width(),
       bubble_view->GetPreferredSize().width() - (used_width + insets.width()));
   int max_width = std::min(
-      font.GetStringWidth(text_) + space_width + link_size.width(),
+      gfx::GetStringWidth(text_, font_list) + space_width + link_size.width(),
       bubble_view->GetMaximumSize().width() - (used_width + insets.width()));
   // Do a binary search for the minimum width that ensures no more than three
   // lines are needed. The lower bound is the minimum of the current bubble
@@ -548,14 +611,14 @@ void PublicAccountUserDetails::CalculatePreferredSize(SystemTrayItem* owner,
   while (min_width < max_width) {
     lines.clear();
     const int width = (min_width + max_width) / 2;
-    const bool too_narrow = ui::ElideRectangleText(
-        text_, font, width, INT_MAX, ui::TRUNCATE_LONG_WORDS, &lines) != 0;
+    const bool too_narrow =
+        gfx::ElideRectangleText(text_, font_list, width, INT_MAX,
+                                gfx::TRUNCATE_LONG_WORDS, &lines) != 0;
     int line_count = lines.size();
     if (!too_narrow && line_count == 3 &&
-            width - font.GetStringWidth(lines.back()) <=
-            space_width + link_size.width()) {
+        width - gfx::GetStringWidth(lines.back(), font_list) <=
+            space_width + link_size.width())
       ++line_count;
-    }
     if (too_narrow || line_count > 3)
       min_width = width + 1;
     else
@@ -564,14 +627,14 @@ void PublicAccountUserDetails::CalculatePreferredSize(SystemTrayItem* owner,
 
   // Calculate the corresponding height and set the preferred size.
   lines.clear();
-  ui::ElideRectangleText(
-      text_, font, min_width, INT_MAX, ui::TRUNCATE_LONG_WORDS, &lines);
+  gfx::ElideRectangleText(
+      text_, font_list, min_width, INT_MAX, gfx::TRUNCATE_LONG_WORDS, &lines);
   int line_count = lines.size();
-  if (min_width - font.GetStringWidth(lines.back()) <=
-      space_width + link_size.width()) {
+  if (min_width - gfx::GetStringWidth(lines.back(), font_list) <=
+          space_width + link_size.width()) {
     ++line_count;
   }
-  const int line_height = font.GetHeight();
+  const int line_height = font_list.GetHeight();
   const int link_extra_height = std::max(
       link_size.height() - learn_more_->GetInsets().top() - line_height, 0);
   preferred_size_ = gfx::Size(
@@ -624,7 +687,7 @@ void UserCard::ShowActive() {
 }
 
 UserView::UserView(SystemTrayItem* owner,
-                   ash::user::LoginStatus login,
+                   user::LoginStatus login,
                    MultiProfileIndex index)
     : multiprofile_index_(index),
       user_card_view_(NULL),
@@ -632,20 +695,21 @@ UserView::UserView(SystemTrayItem* owner,
       is_user_card_(false),
       logout_button_(NULL),
       add_user_visible_but_disabled_(false) {
-  CHECK_NE(ash::user::LOGGED_IN_NONE, login);
+  CHECK_NE(user::LOGGED_IN_NONE, login);
   if (!index) {
     // Only the logged in user will have a background. All other users will have
     // to allow the TrayPopupContainer highlighting the menu line.
     set_background(views::Background::CreateSolidBackground(
-        login == ash::user::LOGGED_IN_PUBLIC ? kPublicAccountBackgroundColor :
-                                               kBackgroundColor));
+        login == user::LOGGED_IN_PUBLIC ? kPublicAccountBackgroundColor :
+                                          kBackgroundColor));
   }
   SetLayoutManager(new views::BoxLayout(views::BoxLayout::kHorizontal, 0, 0,
                                         kTrayPopupPaddingBetweenItems));
   // The logout button must be added before the user card so that the user card
   // can correctly calculate the remaining available width.
   // Note that only the current multiprofile user gets a button.
-  AddLogoutButton(!multiprofile_index_ ? login : ash::user::LOGGED_IN_LOCKED);
+  if (!multiprofile_index_)
+    AddLogoutButton(login);
   AddUserCard(owner, login);
 }
 
@@ -700,7 +764,7 @@ void UserView::Layout() {
     // Give the remaining space to the user card.
     gfx::Rect user_card_area = contents_area;
     int remaining_width = contents_area.width() - logout_area.width();
-    if (ash::Shell::GetInstance()->delegate()->IsMultiProfilesEnabled()) {
+    if (SupportsMultiProfile()) {
       // In multiprofile case |user_card_view_| and |logout_button_| have to
       // have the same height.
       int y = std::min(user_card_area.y(), logout_area.y());
@@ -736,15 +800,14 @@ void UserView::Layout() {
 
 void UserView::ButtonPressed(views::Button* sender, const ui::Event& event) {
   if (sender == logout_button_) {
-    ash::Shell::GetInstance()->system_tray_delegate()->SignOut();
-  } else if (sender == user_card_view_ &&
-             ash::Shell::GetInstance()->delegate()->IsMultiProfilesEnabled()) {
+    Shell::GetInstance()->metrics()->RecordUserMetricsAction(
+        ash::UMA_STATUS_AREA_SIGN_OUT);
+    Shell::GetInstance()->system_tray_delegate()->SignOut();
+  } else if (sender == user_card_view_ && SupportsMultiProfile()) {
     if (!multiprofile_index_) {
       ToggleAddUserMenuOption();
     } else {
-      ash::SessionStateDelegate* delegate =
-          ash::Shell::GetInstance()->session_state_delegate();
-      delegate->SwitchActiveUser(delegate->GetUserEmail(multiprofile_index_));
+      SwitchUser(multiprofile_index_);
       // Since the user list is about to change the system menu should get
       // closed.
       owner_->system_tray()->CloseSystemBubble();
@@ -752,25 +815,21 @@ void UserView::ButtonPressed(views::Button* sender, const ui::Event& event) {
   } else if (add_menu_option_.get() &&
              sender == add_menu_option_->GetContentsView()) {
     // Let the user add another account to the session.
-    ash::Shell::GetInstance()->system_tray_delegate()->ShowUserLogin();
+    MultiProfileUMA::RecordSigninUser(MultiProfileUMA::SIGNIN_USER_BY_TRAY);
+    Shell::GetInstance()->system_tray_delegate()->ShowUserLogin();
   } else {
     NOTREACHED();
   }
 }
 
-void UserView::AddLogoutButton(ash::user::LoginStatus login) {
-  // A user should not be able to modify logged-in state when screen is
-  // locked.
-  if (login == ash::user::LOGGED_IN_LOCKED)
-    return;
-
-  const base::string16 title = ash::user::GetLocalizedSignOutStringForStatus(
-      login, true);
+void UserView::AddLogoutButton(user::LoginStatus login) {
+  const base::string16 title = user::GetLocalizedSignOutStringForStatus(login,
+                                                                        true);
   TrayPopupLabelButton* logout_button = new TrayPopupLabelButton(this, title);
   logout_button->SetAccessibleName(title);
   logout_button_ = logout_button;
   // In public account mode, the logout button border has a custom color.
-  if (login == ash::user::LOGGED_IN_PUBLIC) {
+  if (login == user::LOGGED_IN_PUBLIC) {
     TrayPopupLabelButtonBorder* border =
         static_cast<TrayPopupLabelButtonBorder*>(logout_button_->border());
     border->SetPainter(false, views::Button::STATE_NORMAL,
@@ -786,15 +845,13 @@ void UserView::AddLogoutButton(ash::user::LoginStatus login) {
   AddChildView(logout_button_);
 }
 
-void UserView::AddUserCard(SystemTrayItem* owner,
-                           ash::user::LoginStatus login) {
+void UserView::AddUserCard(SystemTrayItem* owner, user::LoginStatus login) {
   // Add padding around the panel.
   set_border(views::Border::CreateEmptyBorder(
       kUserCardVerticalPadding, kTrayPopupPaddingHorizontal,
       kUserCardVerticalPadding, kTrayPopupPaddingHorizontal));
 
-  if (ash::Shell::GetInstance()->delegate()->IsMultiProfilesEnabled() &&
-      login != ash::user::LOGGED_IN_RETAIL_MODE) {
+  if (SupportsMultiProfile() && login != user::LOGGED_IN_RETAIL_MODE) {
     user_card_view_ = new UserCard(this, multiprofile_index_ == 0);
     is_user_card_ = true;
   } else {
@@ -806,7 +863,7 @@ void UserView::AddUserCard(SystemTrayItem* owner,
       views::BoxLayout::kHorizontal, 0, 0 , kTrayPopupPaddingBetweenItems));
   AddChildViewAt(user_card_view_, 0);
 
-  if (login == ash::user::LOGGED_IN_RETAIL_MODE) {
+  if (login == user::LOGGED_IN_RETAIL_MODE) {
     AddLoggedInRetailModeUserCardContent();
     return;
   }
@@ -815,7 +872,7 @@ void UserView::AddUserCard(SystemTrayItem* owner,
   user_card_view_->SetEnabled(true);
   user_card_view_->set_notify_enter_exit_on_child(true);
 
-  if (login == ash::user::LOGGED_IN_PUBLIC) {
+  if (login == user::LOGGED_IN_PUBLIC) {
     AddLoggedInPublicModeUserCardContent(owner);
     return;
   }
@@ -825,8 +882,7 @@ void UserView::AddUserCard(SystemTrayItem* owner,
 
   // To allow the border to start before the icon, reduce the size before and
   // add an inset to the icon to get the spacing.
-  if (multiprofile_index_ == 0 &&
-      ash::Shell::GetInstance()->delegate()->IsMultiProfilesEnabled()) {
+  if (multiprofile_index_ == 0 && SupportsMultiProfile()) {
     icon->set_border(views::Border::CreateEmptyBorder(
         0, kTrayUserTileHoverBorderInset, 0, 0));
     set_border(views::Border::CreateEmptyBorder(
@@ -835,13 +891,13 @@ void UserView::AddUserCard(SystemTrayItem* owner,
         kUserCardVerticalPadding,
         kTrayPopupPaddingHorizontal));
   }
-  ash::SessionStateDelegate* delegate =
-      ash::Shell::GetInstance()->session_state_delegate();
+  SessionStateDelegate* delegate =
+      Shell::GetInstance()->session_state_delegate();
   views::Label* username = NULL;
   ui::ResourceBundle& bundle = ui::ResourceBundle::GetSharedInstance();
   if (!multiprofile_index_) {
     base::string16 user_name_string =
-        login == ash::user::LOGGED_IN_GUEST ?
+        login == user::LOGGED_IN_GUEST ?
             bundle.GetLocalizedString(IDS_ASH_STATUS_TRAY_GUEST_LABEL) :
             delegate->GetUserDisplayName(multiprofile_index_);
     if (!user_name_string.empty()) {
@@ -851,15 +907,16 @@ void UserView::AddUserCard(SystemTrayItem* owner,
   }
 
   views::Label* additional = NULL;
-  if (login != ash::user::LOGGED_IN_GUEST) {
+  if (login != user::LOGGED_IN_GUEST) {
     base::string16 user_email_string =
-        login == ash::user::LOGGED_IN_LOCALLY_MANAGED ?
+        login == user::LOGGED_IN_LOCALLY_MANAGED ?
             bundle.GetLocalizedString(
                 IDS_ASH_STATUS_TRAY_LOCALLY_MANAGED_LABEL) :
             UTF8ToUTF16(delegate->GetUserEmail(multiprofile_index_));
     if (!user_email_string.empty()) {
       additional = new views::Label(user_email_string);
-      additional->SetFont(bundle.GetFont(ui::ResourceBundle::SmallFont));
+      additional->SetFontList(
+          bundle.GetFontList(ui::ResourceBundle::SmallFont));
       additional->SetHorizontalAlignment(gfx::ALIGN_LEFT);
     }
   }
@@ -890,17 +947,17 @@ void UserView::AddUserCard(SystemTrayItem* owner,
   }
 }
 
-views::View* UserView::CreateIconForUserCard(ash::user::LoginStatus login) {
+views::View* UserView::CreateIconForUserCard(user::LoginStatus login) {
   RoundedImageView* icon = new RoundedImageView(kProfileRoundedCornerRadius,
                                                 multiprofile_index_ == 0);
   icon->SetEnabled(false);
-  if (login == ash::user::LOGGED_IN_GUEST) {
+  if (login == user::LOGGED_IN_GUEST) {
     icon->SetImage(*ui::ResourceBundle::GetSharedInstance().
         GetImageNamed(IDR_AURA_UBER_TRAY_GUEST_ICON).ToImageSkia(),
         gfx::Size(kUserIconSize, kUserIconSize));
   } else {
     icon->SetImage(
-        ash::Shell::GetInstance()->session_state_delegate()->
+        Shell::GetInstance()->session_state_delegate()->
             GetUserImage(multiprofile_index_),
         gfx::Size(kUserIconSize, kUserIconSize));
   }
@@ -918,8 +975,7 @@ void UserView::AddLoggedInRetailModeUserCardContent() {
 }
 
 void UserView::AddLoggedInPublicModeUserCardContent(SystemTrayItem* owner) {
-  user_card_view_->AddChildView(
-      CreateIconForUserCard(ash::user::LOGGED_IN_PUBLIC));
+  user_card_view_->AddChildView(CreateIconForUserCard(user::LOGGED_IN_PUBLIC));
   user_card_view_->AddChildView(new PublicAccountUserDetails(
       owner, GetPreferredSize().width() + kTrayPopupPaddingBetweenItems));
 }
@@ -936,7 +992,7 @@ void UserView::ToggleAddUserMenuOption() {
   // item since it will destroyed automatically before the menu / user menu item
   // gets destroyed..
   const SessionStateDelegate* session_state_delegate =
-      ash::Shell::GetInstance()->session_state_delegate();
+      Shell::GetInstance()->session_state_delegate();
   add_user_visible_but_disabled_ =
       session_state_delegate->NumberOfLoggedInUsers() >=
           session_state_delegate->GetMaximumNumberOfLoggedInUsers();
@@ -986,6 +1042,13 @@ void UserView::ToggleAddUserMenuOption() {
   mouse_watcher_->Start();
 }
 
+bool UserView::SupportsMultiProfile() {
+  // We do not want to see any multi profile additions to a user view when the
+  // log in screen is shown.
+  return Shell::GetInstance()->delegate()->IsMultiProfilesEnabled() &&
+      !Shell::GetInstance()->session_state_delegate()->IsUserSessionBlocked();
+}
+
 AddUserView::AddUserView(UserCard* owner, views::ButtonListener* listener)
     : CustomButton(listener_),
       add_user_(NULL),
@@ -1024,7 +1087,7 @@ void AddUserView::AddContent() {
   set_notify_enter_exit_on_child(true);
 
   const SessionStateDelegate* delegate =
-      ash::Shell::GetInstance()->session_state_delegate();
+      Shell::GetInstance()->session_state_delegate();
   bool enable = delegate->NumberOfLoggedInUsers() <
                     delegate->GetMaximumNumberOfLoggedInUsers();
 
@@ -1070,8 +1133,7 @@ TrayUser::TrayUser(SystemTray* system_tray, MultiProfileIndex index)
       user_(NULL),
       layout_view_(NULL),
       avatar_(NULL),
-      label_(NULL),
-      separator_shown_(false) {
+      label_(NULL) {
   Shell::GetInstance()->system_tray_notifier()->AddUserObserver(this);
 }
 
@@ -1080,11 +1142,26 @@ TrayUser::~TrayUser() {
 }
 
 TrayUser::TestState TrayUser::GetStateForTest() const {
-  if (separator_shown_)
-    return SEPARATOR;
   if (!user_)
     return HIDDEN;
   return user_->GetStateForTest();
+}
+
+bool TrayUser::CanDropWindowHereToTransferToUser(
+    const gfx::Point& point_in_screen) {
+  // Check that this item is shown in the system tray (which means it must have
+  // a view there) and that the user it represents is not the current user (in
+  // which case |GetTrayIndex()| would return NULL).
+  if (!layout_view_ || !GetTrayIndex())
+    return false;
+  return layout_view_->GetBoundsInScreen().Contains(point_in_screen);
+}
+
+bool TrayUser::TransferWindowToUser(aura::Window* window) {
+  SessionStateDelegate* session_state_delegate =
+      ash::Shell::GetInstance()->session_state_delegate();
+  return session_state_delegate->TransferWindowToDesktopOfUser(window,
+                                                               GetTrayIndex());
 }
 
 gfx::Rect TrayUser::GetUserPanelBoundsInScreenForTest() const {
@@ -1094,9 +1171,9 @@ gfx::Rect TrayUser::GetUserPanelBoundsInScreenForTest() const {
 
 views::View* TrayUser::CreateTrayView(user::LoginStatus status) {
   CHECK(layout_view_ == NULL);
-  // Only the current user gets an icon. All other users will only be
-  // represented in the tray menu.
-  if (multiprofile_index_)
+  // When the full multi profile mode is used, only the active user will be
+  // shown in the system tray, otherwise all users which are logged in.
+  if (GetTrayIndex() && switches::UseFullMultiProfileMode())
     return NULL;
 
   layout_view_ = new views::View();
@@ -1110,21 +1187,16 @@ views::View* TrayUser::CreateTrayView(user::LoginStatus status) {
 views::View* TrayUser::CreateDefaultView(user::LoginStatus status) {
   if (status == user::LOGGED_IN_NONE)
     return NULL;
+  const SessionStateDelegate* session_state_delegate =
+      Shell::GetInstance()->session_state_delegate();
+
+  // If the screen is locked show only the currently active user.
+  if (multiprofile_index_ && session_state_delegate->IsUserSessionBlocked())
+    return NULL;
 
   CHECK(user_ == NULL);
 
-  const SessionStateDelegate* session_state_delegate =
-      ash::Shell::GetInstance()->session_state_delegate();
   int logged_in_users = session_state_delegate->NumberOfLoggedInUsers();
-
-  // If there are multiple users logged in, the users will be separated from the
-  // rest of the menu by a separator.
-  if (multiprofile_index_ ==
-          session_state_delegate->GetMaximumNumberOfLoggedInUsers() &&
-      logged_in_users > 1) {
-    separator_shown_ = true;
-    return new views::View();
-  }
 
   // Do not show more UserView's then there are logged in users.
   if (multiprofile_index_ >= logged_in_users)
@@ -1142,7 +1214,6 @@ void TrayUser::DestroyTrayView() {
   layout_view_ = NULL;
   avatar_ = NULL;
   label_ = NULL;
-  separator_shown_ = false;
 }
 
 void TrayUser::DestroyDefaultView() {
@@ -1155,6 +1226,8 @@ void TrayUser::DestroyDetailedView() {
 void TrayUser::UpdateAfterLoginStatusChange(user::LoginStatus status) {
   // Only the active user is represented in the tray.
   if (!layout_view_)
+    return;
+  if (GetTrayIndex() > 0 && !ash::switches::UseMultiUserTray())
     return;
   bool need_label = false;
   bool need_avatar = false;
@@ -1170,7 +1243,7 @@ void TrayUser::UpdateAfterLoginStatusChange(user::LoginStatus status) {
       need_label = true;
       break;
     case user::LOGGED_IN_GUEST:
-      need_avatar = true;
+      need_label = true;
       break;
     case user::LOGGED_IN_RETAIL_MODE:
     case user::LOGGED_IN_KIOSK_APP:
@@ -1189,7 +1262,15 @@ void TrayUser::UpdateAfterLoginStatusChange(user::LoginStatus status) {
       label_ = NULL;
     }
     if (need_avatar) {
-      avatar_ = new tray::RoundedImageView(kProfileRoundedCornerRadius, true);
+      MultiProfileIndex tray_index = GetTrayIndex();
+      if (!tray_index) {
+        // The active user (index #0) will always be the first.
+        avatar_ = new tray::RoundedImageView(kProfileRoundedCornerRadius, true);
+      } else {
+        // All other users will be inactive users.
+        avatar_ = new tray::UserSwitcherView(kProfileRoundedCornerRadius,
+                                             tray_index);
+      }
       layout_view_->AddChildView(avatar_);
     } else {
       avatar_ = NULL;
@@ -1200,31 +1281,37 @@ void TrayUser::UpdateAfterLoginStatusChange(user::LoginStatus status) {
   if (status == user::LOGGED_IN_LOCALLY_MANAGED) {
     label_->SetText(
         bundle.GetLocalizedString(IDS_ASH_STATUS_TRAY_LOCALLY_MANAGED_LABEL));
+  } else if (status == user::LOGGED_IN_GUEST) {
+    label_->SetText(bundle.GetLocalizedString(IDS_ASH_STATUS_TRAY_GUEST_LABEL));
   }
 
-  if (avatar_ && ash::switches::UseAlternateShelfLayout()) {
-    avatar_->SetCornerRadii(0,
-                            kUserIconLargeCornerRadius,
-                            kUserIconLargeCornerRadius,
-                            0);
+  if (avatar_ && switches::UseAlternateShelfLayout()) {
+    int corner_radius = GetTrayItemRadius();
+    avatar_->SetCornerRadii(0, corner_radius, corner_radius, 0);
     avatar_->set_border(NULL);
   }
   UpdateAvatarImage(status);
+
+  // Update layout after setting label_ and avatar_ with new login status.
+  UpdateLayoutOfItem();
 }
 
 void TrayUser::UpdateAfterShelfAlignmentChange(ShelfAlignment alignment) {
   // Inactive users won't have a layout.
   if (!layout_view_)
     return;
+  int corner_radius = GetTrayItemRadius();
   if (alignment == SHELF_ALIGNMENT_BOTTOM ||
       alignment == SHELF_ALIGNMENT_TOP) {
     if (avatar_) {
-      if (ash::switches::UseAlternateShelfLayout()) {
-        avatar_->set_border(NULL);
-        avatar_->SetCornerRadii(0,
-                                kUserIconLargeCornerRadius,
-                                kUserIconLargeCornerRadius,
-                                0);
+      if (switches::UseAlternateShelfLayout()) {
+        if (multiprofile_index_) {
+          avatar_->set_border(
+              views::Border::CreateEmptyBorder(0, kTrayLabelSpacing, 0, 0));
+        } else {
+          avatar_->set_border(NULL);
+        }
+        avatar_->SetCornerRadii(0, corner_radius, corner_radius, 0);
       } else {
         avatar_->set_border(views::Border::CreateEmptyBorder(
             0, kTrayImageItemHorizontalPaddingBottomAlignment + 2,
@@ -1241,21 +1328,23 @@ void TrayUser::UpdateAfterShelfAlignmentChange(ShelfAlignment alignment) {
                              0, 0, kUserLabelToIconPadding));
   } else {
     if (avatar_) {
-      if (ash::switches::UseAlternateShelfLayout()) {
-        avatar_->set_border(NULL);
-        avatar_->SetCornerRadii(0,
-                                0,
-                                kUserIconLargeCornerRadius,
-                                kUserIconLargeCornerRadius);
+      if (switches::UseAlternateShelfLayout()) {
+        if (multiprofile_index_) {
+          avatar_->set_border(
+              views::Border::CreateEmptyBorder(kTrayLabelSpacing, 0, 0, 0));
+        } else {
+          avatar_->set_border(NULL);
+        }
+        avatar_->SetCornerRadii(0, 0, corner_radius, corner_radius);
       } else {
         SetTrayImageItemBorder(avatar_, alignment);
       }
     }
     if (label_) {
       label_->set_border(views::Border::CreateEmptyBorder(
-          kTrayLabelItemVerticalPaddingVeriticalAlignment,
+          kTrayLabelItemVerticalPaddingVerticalAlignment,
           kTrayLabelItemHorizontalPaddingBottomAlignment,
-          kTrayLabelItemVerticalPaddingVeriticalAlignment,
+          kTrayLabelItemVerticalPaddingVerticalAlignment,
           kTrayLabelItemHorizontalPaddingBottomAlignment));
     }
     layout_view_->SetLayoutManager(
@@ -1269,25 +1358,66 @@ void TrayUser::OnUserUpdate() {
       GetUserLoginStatus());
 }
 
-void TrayUser::UpdateAvatarImage(user::LoginStatus status) {
-  if (!avatar_)
+void TrayUser::OnUserAddedToSession() {
+  SessionStateDelegate* session_state_delegate =
+      Shell::GetInstance()->session_state_delegate();
+  // Only create views for user items which are logged in.
+  if (GetTrayIndex() >= session_state_delegate->NumberOfLoggedInUsers())
     return;
 
-  int icon_size = ash::switches::UseAlternateShelfLayout() ?
+  // Enforce a layout change that newly added items become visible.
+  UpdateLayoutOfItem();
+
+  // Update the user item.
+  UpdateAvatarImage(
+      Shell::GetInstance()->system_tray_delegate()->GetUserLoginStatus());
+}
+
+void TrayUser::UpdateAvatarImage(user::LoginStatus status) {
+  SessionStateDelegate* session_state_delegate =
+      Shell::GetInstance()->session_state_delegate();
+  if (!avatar_ ||
+      GetTrayIndex() >= session_state_delegate->NumberOfLoggedInUsers())
+    return;
+
+  int icon_size = switches::UseAlternateShelfLayout() ?
       kUserIconLargeSize : kUserIconSize;
 
-  if (status == user::LOGGED_IN_GUEST) {
-    int image_name = ash::switches::UseAlternateShelfLayout() ?
-        IDR_AURA_UBER_TRAY_GUEST_ICON_LARGE :
-        IDR_AURA_UBER_TRAY_GUEST_ICON;
-    avatar_->SetImage(*ui::ResourceBundle::GetSharedInstance().
-        GetImageNamed(image_name).ToImageSkia(),
-        gfx::Size(icon_size, icon_size));
-  } else {
-    avatar_->SetImage(
-        ash::Shell::GetInstance()->session_state_delegate()->GetUserImage(
-            multiprofile_index_),
-        gfx::Size(icon_size, icon_size));
+  avatar_->SetImage(
+      Shell::GetInstance()->session_state_delegate()->GetUserImage(
+          GetTrayIndex()),
+      gfx::Size(icon_size, icon_size));
+
+  // Unit tests might come here with no images for some users.
+  if (avatar_->size().IsEmpty())
+    avatar_->SetSize(gfx::Size(icon_size, icon_size));
+}
+
+MultiProfileIndex TrayUser::GetTrayIndex() {
+  Shell* shell = Shell::GetInstance();
+  // If multi profile is not enabled we can use the normal index.
+  if (!shell->delegate()->IsMultiProfilesEnabled())
+    return multiprofile_index_;
+  // In case of multi profile we need to mirror the indices since the system
+  // tray items are in the reverse order then the menu items.
+  return shell->session_state_delegate()->GetMaximumNumberOfLoggedInUsers() -
+             1 - multiprofile_index_;
+}
+
+int TrayUser::GetTrayItemRadius() {
+  SessionStateDelegate* delegate =
+      Shell::GetInstance()->session_state_delegate();
+  bool is_last_item = GetTrayIndex() == (delegate->NumberOfLoggedInUsers() - 1);
+  return is_last_item ? kUserIconLargeCornerRadius : 0;
+}
+
+void TrayUser::UpdateLayoutOfItem() {
+  internal::RootWindowController* controller =
+      internal::GetRootWindowController(
+          system_tray()->GetWidget()->GetNativeWindow()->GetRootWindow());
+  if (controller && controller->shelf()) {
+    UpdateAfterShelfAlignmentChange(
+        controller->GetShelfLayoutManager()->GetAlignment());
   }
 }
 

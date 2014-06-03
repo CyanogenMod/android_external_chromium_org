@@ -6,6 +6,12 @@
 
 namespace switches {
 
+// Disables crash throttling for Portable Native Client.
+const char kDisablePnaclCrashThrottling[]   = "disable-pnacl-crash-throttling";
+
+// Disables the installation of Portable Native Client.
+const char kDisablePnaclInstall[]           = "disable-pnacl-install";
+
 // Enables debugging via RSP over a socket.
 const char kEnableNaClDebug[]               = "enable-nacl-debug";
 
@@ -35,8 +41,5 @@ const char kNaClLoaderCmdPrefix[]           = "nacl-loader-cmd-prefix";
 
 // Causes the process to run as a NativeClient loader.
 const char kNaClLoaderProcess[]             = "nacl-loader";
-
-// Runs the security test for the NaCl loader sandbox.
-const char kTestNaClSandbox[]               = "test-nacl-sandbox";
 
 }  // namespace switches

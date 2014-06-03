@@ -2,20 +2,22 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-from instance_servlet import InstanceServlet, OfflineRenderServletDelegate
+from extensions_paths import PUBLIC_TEMPLATES
+from instance_servlet import (
+    InstanceServlet, InstanceServletRenderServletDelegate)
 from link_error_detector import LinkErrorDetector, StringifyBrokenLinks
 from servlet import Request, Response, Servlet
-import svn_constants
+
 
 class BrokenLinkTester(object):
   '''Run link error detector tests.
   '''
   def __init__(self, server_instance, renderer):
     self.link_error_detector = LinkErrorDetector(
-      server_instance.host_file_system,
-      renderer,
-      svn_constants.PUBLIC_TEMPLATE_PATH,
-      root_pages=('extensions/index.html', 'apps/about_apps.html'))
+        server_instance.host_file_system_provider.GetTrunk(),
+        renderer,
+        PUBLIC_TEMPLATES,
+        root_pages=('extensions/index.html', 'apps/about_apps.html'))
 
   def TestBrokenLinks(self):
     broken_links = self.link_error_detector.GetBrokenLinks()
@@ -30,6 +32,7 @@ class BrokenLinkTester(object):
         len(orphaned_pages),
         'Warning: Found %d orphaned pages:\n%s' % (
             len(orphaned_pages), '\n'.join(orphaned_pages)))
+
 
 class TestServlet(Servlet):
   '''Runs tests against the live server. Supports running all broken link
@@ -51,7 +54,8 @@ class TestServlet(Servlet):
       return constructor(Request(path, '', self._request.headers)).Get()
 
     link_tester = BrokenLinkTester(
-        OfflineRenderServletDelegate(self._delegate).CreateServerInstance(),
+        InstanceServletRenderServletDelegate(
+            self._delegate).CreateServerInstance(),
         renderer)
     if self._request.path == 'broken_links':
       errors, content = link_tester.TestBrokenLinks()

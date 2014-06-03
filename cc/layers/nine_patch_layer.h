@@ -8,24 +8,27 @@
 #include "base/memory/scoped_ptr.h"
 #include "cc/base/cc_export.h"
 #include "cc/layers/layer.h"
-#include "cc/resources/image_layer_updater.h"
-#include "third_party/skia/include/core/SkBitmap.h"
+#include "cc/layers/ui_resource_layer.h"
+#include "cc/resources/ui_resource_client.h"
 #include "ui/gfx/rect.h"
 
 namespace cc {
 
-class ResourceUpdateQueue;
+class LayerTreeHost;
+class ScopedUIResource;
 
-class CC_EXPORT NinePatchLayer : public Layer {
+class CC_EXPORT NinePatchLayer : public UIResourceLayer {
  public:
   static scoped_refptr<NinePatchLayer> Create();
 
-  virtual bool DrawsContent() const OVERRIDE;
-  virtual void SetTexturePriorities(const PriorityCalculator& priority_calc)
-      OVERRIDE;
-  virtual bool Update(ResourceUpdateQueue* queue,
-                      const OcclusionTracker* occlusion) OVERRIDE;
   virtual void PushPropertiesTo(LayerImpl* layer) OVERRIDE;
+
+  // |border| is the space around the center rectangular region in layer space
+  // (known as aperture in image space).  |border.x()| and |border.y()| are the
+  // size of the left and top boundary, respectively.
+  // |border.width()-border.x()| and |border.height()-border.y()| are the size
+  // of the right and bottom boundary, respectively.
+  void SetBorder(gfx::Rect border);
 
   // aperture is in the pixel space of the bitmap resource and refers to
   // the center patch of the ninepatch (which is unused in this
@@ -33,7 +36,8 @@ class CC_EXPORT NinePatchLayer : public Layer {
   // on the edges of the layer. The corners are unscaled, the top and bottom
   // rects are x-stretched to fit, and the left and right rects are
   // y-stretched to fit.
-  void SetBitmap(const SkBitmap& bitmap, gfx::Rect aperture);
+  void SetAperture(gfx::Rect aperture);
+  void SetFillCenter(bool fill_center);
 
  private:
   NinePatchLayer();
@@ -41,14 +45,8 @@ class CC_EXPORT NinePatchLayer : public Layer {
   virtual scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl)
       OVERRIDE;
 
-  void CreateUpdaterIfNeeded();
-  void CreateResource();
-
-  scoped_refptr<ImageLayerUpdater> updater_;
-  scoped_ptr<LayerUpdater::Resource> resource_;
-
-  SkBitmap bitmap_;
-  bool bitmap_dirty_;
+  gfx::Rect border_;
+  bool fill_center_;
 
   // The transparent center region that shows the parent layer's contents in
   // image space.

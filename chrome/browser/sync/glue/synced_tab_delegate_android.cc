@@ -11,10 +11,10 @@
 #include "chrome/browser/sessions/session_tab_helper.h"
 #include "chrome/browser/sync/glue/synced_window_delegate.h"
 #include "chrome/browser/ui/sync/tab_contents_synced_tab_delegate.h"
-#include "chrome/common/extensions/extension.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/common/extension.h"
 
 using content::NavigationEntry;
 
@@ -30,7 +30,7 @@ SessionID::id_type SyncedTabDelegateAndroid::GetWindowId() const {
 }
 
 SessionID::id_type SyncedTabDelegateAndroid::GetSessionId() const {
-  return tab_android_->id().id();
+  return tab_android_->session_id().id();
 }
 
 bool SyncedTabDelegateAndroid::IsBeingDestroyed() const {
@@ -85,6 +85,10 @@ bool SyncedTabDelegateAndroid::IsPinned() const {
 
 bool SyncedTabDelegateAndroid::HasWebContents() const {
   return web_contents_ != NULL;
+}
+
+content::WebContents* SyncedTabDelegateAndroid::GetWebContents() const {
+  return web_contents_;
 }
 
 void SyncedTabDelegateAndroid::SetWebContents(

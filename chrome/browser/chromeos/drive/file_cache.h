@@ -7,9 +7,7 @@
 
 #include <set>
 #include <string>
-#include <vector>
 
-#include "base/callback_forward.h"
 #include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
@@ -24,29 +22,7 @@ namespace drive {
 
 class FileCacheEntry;
 
-// Callback for GetCacheEntry.
-// |success| indicates if the operation was successful.
-// |cache_entry| is the obtained cache entry. On failure, |cache_state| is
-// set to TEST_CACHE_STATE_NONE.
-typedef base::Callback<void(bool success, const FileCacheEntry& cache_entry)>
-    GetCacheEntryCallback;
-
-// Callback for Iterate().
-typedef base::Callback<void(const std::string& resource_id,
-                            const FileCacheEntry& cache_entry)>
-    CacheIterateCallback;
-
 namespace internal {
-
-// Callback for GetFileFromCache.
-typedef base::Callback<void(FileError error,
-                            const base::FilePath& cache_file_path)>
-    GetFileFromCacheCallback;
-
-// Callback for ClearAllOnUIThread.
-// |success| indicates if the operation was successful.
-// TODO(satorux): Change this to FileError when it becomes necessary.
-typedef base::Callback<void(bool success)> ClearAllCallback;
 
 // Interface class used for getting the free disk space. Tests can inject an
 // implementation that reports fake free disk space.
@@ -70,14 +46,11 @@ class FileCache {
 
   typedef ResourceMetadataStorage::CacheEntryIterator Iterator;
 
-  // Name of the cache metadata DB previously used.
-  // TODO(hashimoto): Remove this at some point.
-  static const base::FilePath::CharType kOldCacheMetadataDBName[];
-
   // |cache_file_directory| stores cached files.
   //
-  // |blocking_task_runner| is used to post a task to the blocking worker
-  // pool for file operations. Must not be null.
+  // |blocking_task_runner| indicates the blocking worker pool for cache
+  // operations. All operations on this FileCache must be run on this runner.
+  // Must not be null.
   //
   // |free_disk_space_getter| is used to inject a custom free disk space
   // getter for testing. NULL must be passed for production code.
@@ -94,127 +67,55 @@ class FileCache {
   // Can be called on any thread.
   bool IsUnderFileCacheDirectory(const base::FilePath& path) const;
 
-  // Gets the cache entry for file corresponding to |resource_id| and runs
-  // |callback| with true and the entry found if entry exists in cache map.
-  // Otherwise, runs |callback| with false.
-  // |callback| must not be null.
-  // Must be called on the UI thread.
-  void GetCacheEntryOnUIThread(const std::string& resource_id,
-                               const GetCacheEntryCallback& callback);
-
-  // Gets the cache entry by the given resource ID.
-  // See also GetCacheEntryOnUIThread().
-  bool GetCacheEntry(const std::string& resource_id,
-                     FileCacheEntry* entry);
-
-  // Runs Iterate() with |iteration_callback| on |blocking_task_runner_| and
-  // runs |completion_callback| upon completion.
-  // Must be called on UI thread.
-  void IterateOnUIThread(const CacheIterateCallback& iteration_callback,
-                         const base::Closure& completion_callback);
+  // Gets the cache entry for file corresponding to |id| and returns true if
+  // entry exists in cache map.
+  bool GetCacheEntry(const std::string& id, FileCacheEntry* entry);
 
   // Returns an object to iterate over entries.
   scoped_ptr<Iterator> GetIterator();
 
   // Frees up disk space to store a file with |num_bytes| size content, while
-  // keeping kMinFreeSpace bytes on the disk, if needed.
+  // keeping cryptohome::kMinFreeSpaceInBytes bytes on the disk, if needed.
   // Returns true if we successfully manage to have enough space, otherwise
   // false.
   bool FreeDiskSpaceIfNeededFor(int64 num_bytes);
 
-  // Runs GetFile() on |blocking_task_runner_|, and calls |callback| with
-  // the result asynchronously.
-  // |callback| must not be null.
-  // Must be called on the UI thread.
-  void GetFileOnUIThread(const std::string& resource_id,
-                         const GetFileFromCacheCallback& callback);
-
-  // Checks if file corresponding to |resource_id| exists in cache, and returns
+  // Checks if file corresponding to |id| exists in cache, and returns
   // FILE_ERROR_OK with |cache_file_path| storing the path to the file.
   // |cache_file_path| must not be null.
-  FileError GetFile(const std::string& resource_id,
-                    base::FilePath* cache_file_path);
-
-  // Runs Store() on |blocking_task_runner_|, and calls |callback| with
-  // the result asynchronously.
-  // |callback| must not be null.
-  // Must be called on the UI thread.
-  void StoreOnUIThread(const std::string& resource_id,
-                       const std::string& md5,
-                       const base::FilePath& source_path,
-                       FileOperationType file_operation_type,
-                       const FileOperationCallback& callback);
+  FileError GetFile(const std::string& id, base::FilePath* cache_file_path);
 
   // Stores |source_path| as a cache of the remote content of the file
-  // with |resource_id| and |md5|.
-  FileError Store(const std::string& resource_Id,
+  // with |id| and |md5|.
+  FileError Store(const std::string& id,
                   const std::string& md5,
                   const base::FilePath& source_path,
                   FileOperationType file_operation_type);
 
-  // Runs Pin() on |blocking_task_runner_|, and calls |callback| with the result
-  // asynchronously.
-  // |callback| must not be null.
-  // Must be called on the UI thread.
-  void PinOnUIThread(const std::string& resource_id,
-                     const FileOperationCallback& callback);
-
   // Pins the specified entry.
-  FileError Pin(const std::string& resource_id);
-
-  // Runs Unpin() on |blocking_task_runner_|, and calls |callback| with the
-  // result asynchronously.
-  // |callback| must not be null.
-  // Must be called on the UI thread.
-  void UnpinOnUIThread(const std::string& resource_id,
-                       const FileOperationCallback& callback);
+  FileError Pin(const std::string& id);
 
   // Unpins the specified entry.
-  FileError Unpin(const std::string& resource_id);
+  FileError Unpin(const std::string& id);
 
-  // Sets the state of the cache entry corresponding to |resource_id| as
-  // mounted.
-  // |callback| must not be null.
-  // Must be called on the UI thread.
-  void MarkAsMountedOnUIThread(const std::string& resource_id,
-                               const GetFileFromCacheCallback& callback);
+  // Sets the state of the cache entry corresponding to |id| as mounted.
+  FileError MarkAsMounted(const std::string& id,
+                          base::FilePath* cache_file_path);
 
-  // Set the state of the cache entry corresponding to file_path as unmounted.
-  // |callback| must not be null.
-  // Must be called on the UI thread.
-  void MarkAsUnmountedOnUIThread(const base::FilePath& file_path,
-                                 const FileOperationCallback& callback);
-
-  // Runs MarkDirty() on |blocking_task_runner_|, and calls |callback| with the
-  // result asynchronously.
-  // |callback| must not be null.
-  // Must be called on the UI thread.
-  void MarkDirtyOnUIThread(const std::string& resource_id,
-                           const FileOperationCallback& callback);
+  // Sets the state of the cache entry corresponding to file_path as unmounted.
+  FileError MarkAsUnmounted(const base::FilePath& file_path);
 
   // Marks the specified entry dirty.
-  FileError MarkDirty(const std::string& resource_id);
+  FileError MarkDirty(const std::string& id);
 
   // Clears dirty state of the specified entry and updates its MD5.
-  FileError ClearDirty(const std::string& resource_id,
-                       const std::string& md5);
-
-  // Runs Remove() on |blocking_task_runner_| and runs |callback| with the
-  // result.
-  // Must be called on the UI thread.
-  void RemoveOnUIThread(const std::string& resource_id,
-                        const FileOperationCallback& callback);
+  FileError ClearDirty(const std::string& id, const std::string& md5);
 
   // Removes the specified cache entry and delete cache files if available.
-  // Synchronous version of RemoveOnUIThread().
-  FileError Remove(const std::string& resource_id);
+  FileError Remove(const std::string& id);
 
-  // Does the following:
-  // - remove all the files in the cache directory.
-  // - re-create the |metadata_| instance.
-  // |callback| must not be null.
-  // Must be called on the UI thread.
-  void ClearAllOnUIThread(const ClearAllCallback& callback);
+  // Removes all the files in the cache directory and cache entries in DB.
+  bool ClearAll();
 
   // Initializes the cache. Returns true on success.
   bool Initialize();
@@ -223,6 +124,15 @@ class FileCache {
   // runner to safely delete the object.
   // Must be called on the UI thread.
   void Destroy();
+
+  // Moves files in the cache directory which are not managed by FileCache to
+  // |dest_directory|.
+  // |recovered_cache_info| should contain cache info recovered from the trashed
+  // metadata DB. It is used to ignore non-dirty files.
+  bool RecoverFilesFromCacheDirectory(
+      const base::FilePath& dest_directory,
+      const ResourceMetadataStorage::RecoveredCacheInfoMap&
+          recovered_cache_info);
 
  private:
   friend class FileCacheTest;
@@ -233,7 +143,7 @@ class FileCache {
   // Returns absolute path of the file if it were cached or to be cached.
   //
   // Can be called on any thread.
-  base::FilePath GetCacheFilePath(const std::string& resource_id) const;
+  base::FilePath GetCacheFilePath(const std::string& id) const;
 
   // Checks whether the current thread is on the right sequenced worker pool
   // with the right sequence ID. If not, DCHECK will fail.
@@ -242,35 +152,13 @@ class FileCache {
   // Destroys the cache on the blocking pool.
   void DestroyOnBlockingPool();
 
-  // Used to implement Store and StoreLocallyModifiedOnUIThread.
-  // TODO(hidehiko): Merge this method with Store(), after
-  // StoreLocallyModifiedOnUIThread is removed.
-  FileError StoreInternal(const std::string& resource_id,
-                          const std::string& md5,
-                          const base::FilePath& source_path,
-                          FileOperationType file_operation_type);
-
-  // Used to implement MarkAsMountedOnUIThread.
-  FileError MarkAsMounted(const std::string& resource_id,
-                          base::FilePath* cache_file_path);
-
-  // Used to implement MarkAsUnmountedOnUIThread.
-  FileError MarkAsUnmounted(const base::FilePath& file_path);
-
-  // Used to implement ClearAllOnUIThread.
-  bool ClearAll();
-
   // Returns true if we have sufficient space to store the given number of
-  // bytes, while keeping kMinFreeSpace bytes on the disk.
+  // bytes, while keeping cryptohome::kMinFreeSpaceInBytes bytes on the disk.
   bool HasEnoughSpaceFor(int64 num_bytes, const base::FilePath& path);
 
-  // Imports old format DB from |old_db_path| and deletes it.
-  // TODO(hashimoto): Remove this method and FileCacheMetadata at some point.
-  bool ImportOldDB(const base::FilePath& old_db_path);
-
-  // Renames cache files from old "resource_id.md5" format to the new format.
+  // Renames cache files from old "prefix:id.md5" format to the new format.
   // TODO(hashimoto): Remove this method at some point.
-  void RenameCacheFilesToNewFormat();
+  bool RenameCacheFilesToNewFormat();
 
   const base::FilePath cache_file_directory_;
 
@@ -280,7 +168,7 @@ class FileCache {
 
   FreeDiskSpaceGetterInterface* free_disk_space_getter_;  // Not owned.
 
-  // Resource IDs of files marked mounted.
+  // IDs of files marked mounted.
   std::set<std::string> mounted_files_;
 
   // Note: This should remain the last member so it'll be destroyed and
@@ -288,14 +176,6 @@ class FileCache {
   base::WeakPtrFactory<FileCache> weak_ptr_factory_;
   DISALLOW_COPY_AND_ASSIGN(FileCache);
 };
-
-// The minimum free space to keep. Operations that add cache files return
-// FILE_ERROR_NO_LOCAL_SPACE if the available space is smaller than
-// this value.
-//
-// Copied from cryptohome/homedirs.h.
-// TODO(satorux): Share the constant.
-const int64 kMinFreeSpace = 512 * 1LL << 20;
 
 }  // namespace internal
 }  // namespace drive

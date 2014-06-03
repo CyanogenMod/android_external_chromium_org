@@ -21,13 +21,12 @@
 #include "content/public/browser/notification_source.h"
 #include "content/public/test/test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "ui/base/keycodes/keyboard_codes.h"
 #include "ui/base/window_open_disposition.h"
+#include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/native_widget_types.h"
 #include "url/gurl.h"
 
 class AppModalDialog;
-class BookmarkModel;
 class Browser;
 class LocationBar;
 class Profile;
@@ -89,6 +88,10 @@ Browser* OpenURLOffTheRecord(Profile* profile, const GURL& url);
 void NavigateToURL(chrome::NavigateParams* params);
 
 // Navigates the selected tab of |browser| to |url|, blocking until the
+// navigation finishes. Simulates a POST and uses chrome::Navigate.
+void NavigateToURLWithPost(Browser* browser, const GURL& url);
+
+// Navigates the selected tab of |browser| to |url|, blocking until the
 // navigation finishes. Uses Browser::OpenURL --> chrome::Navigate.
 void NavigateToURL(Browser* browser, const GURL& url);
 
@@ -136,16 +139,6 @@ int FindInPage(content::WebContents* tab,
                bool case_sensitive,
                int* ordinal,
                gfx::Rect* selection_rect);
-
-// Register |observer| for the given |type| and |source| and run
-// the message loop until the observer posts a quit task.
-void RegisterAndWait(content::NotificationObserver* observer,
-                     int type,
-                     const content::NotificationSource& source);
-
-// Blocks until |model| finishes loading.
-void WaitForBookmarkModelToLoad(BookmarkModel* model);
-void WaitForBookmarkModelToLoad(Profile* profile);
 
 // Blocks until |service| finishes loading.
 void WaitForTemplateURLServiceToLoad(TemplateURLService* service);

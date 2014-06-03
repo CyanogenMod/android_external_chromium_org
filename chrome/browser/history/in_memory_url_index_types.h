@@ -38,19 +38,20 @@ struct TermMatch {
 };
 typedef std::vector<TermMatch> TermMatches;
 
-// Unescapes the URL and lower-cases it, returning the result.  This
-// unescaping makes it possible to match substrings that were
-// originally escaped for navigation; for example, if the user
-// searched for "a&p", the query would be escaped as "a%26p", so
-// without unescaping, an input string of "a&p" would no longer match
-// this URL.  Note that the resulting unescaped URL may not be
-// directly navigable (which is why we escaped it to begin with).
-// |languages| is passed to net::FormatUrl().
-string16 CleanUpUrlForMatching(const GURL& gurl,
-                               const std::string& languages);
+// Truncates an overly-long URL, unescapes it, and lower-cases it,
+// returning the result.  This unescaping makes it possible to match
+// substrings that were originally escaped for navigation; for
+// example, if the user searched for "a&p", the query would be escaped
+// as "a%26p", so without unescaping, an input string of "a&p" would
+// no longer match this URL.  Note that the resulting unescaped URL
+// may not be directly navigable (which is why we escaped it to begin
+// with).  |languages| is passed to net::FormatUrl().
+base::string16 CleanUpUrlForMatching(const GURL& gurl,
+                                     const std::string& languages);
 
-// Returns the lower-cased title.
-string16 CleanUpTitleForMatching(const string16& title);
+// Returns the lower-cased title, possibly truncated if the original title
+// is overly-long.
+base::string16 CleanUpTitleForMatching(const base::string16& title);
 
 // Returns a TermMatches which has an entry for each occurrence of the
 // string |term| found in the string |cleaned_string|. Use
@@ -60,8 +61,8 @@ string16 CleanUpTitleForMatching(const string16& title);
 // with other TermMatches for other terms. Note that only the first
 // 2,048 characters of |string| are considered during the match
 // operation.
-TermMatches MatchTermInString(const string16& term,
-                              const string16& cleaned_string,
+TermMatches MatchTermInString(const base::string16& term,
+                              const base::string16& cleaned_string,
                               int term_num);
 
 // Sorts and removes overlapping substring matches from |matches| and
@@ -78,8 +79,8 @@ TermMatches ReplaceOffsetsInTermMatches(const TermMatches& matches,
 
 // Convenience Types -----------------------------------------------------------
 
-typedef std::vector<string16> String16Vector;
-typedef std::set<string16> String16Set;
+typedef std::vector<base::string16> String16Vector;
+typedef std::set<base::string16> String16Set;
 typedef std::set<char16> Char16Set;
 typedef std::vector<char16> Char16Vector;
 
@@ -95,7 +96,7 @@ typedef std::vector<size_t> WordStarts;
 // |cleaned_uni_string| at which each word starts onto
 // |word_starts|. These offsets are collected only up to the first
 // kMaxSignificantChars of |cleaned_uni_string|.
-String16Set String16SetFromString16(const string16& cleaned_uni_string,
+String16Set String16SetFromString16(const base::string16& cleaned_uni_string,
                                     WordStarts* word_starts);
 
 // Breaks the |cleaned_uni_string| string down into individual words
@@ -117,9 +118,10 @@ String16Set String16SetFromString16(const string16& cleaned_uni_string,
 //    "http", "www", "google", "com", "harry", "the", "rabbit"
 //   With |break_on_space| true the returned list will contain:
 //    "http://", "www.google.com/", "harry", "the", "rabbit."
-String16Vector String16VectorFromString16(const string16& cleaned_uni_string,
-                                          bool break_on_space,
-                                          WordStarts* word_starts);
+String16Vector String16VectorFromString16(
+    const base::string16& cleaned_uni_string,
+    bool break_on_space,
+    WordStarts* word_starts);
 
 // Breaks the |uni_word| string down into its individual characters.
 // Note that this is temporarily intended to work on a single word, but
@@ -129,7 +131,7 @@ String16Vector String16VectorFromString16(const string16& cleaned_uni_string,
 // and properly handle substring matches, scoring and sorting the results
 // by score. Also, provide the metrics for where the matches occur so that
 // the UI can highlight the matched sections.
-Char16Set Char16SetFromString16(const string16& uni_word);
+Char16Set Char16SetFromString16(const base::string16& uni_word);
 
 // Support for InMemoryURLIndex Private Data -----------------------------------
 
@@ -137,7 +139,7 @@ Char16Set Char16SetFromString16(const string16& uni_word);
 typedef size_t WordID;
 
 // A map allowing a WordID to be determined given a word.
-typedef std::map<string16, WordID> WordMap;
+typedef std::map<base::string16, WordID> WordMap;
 
 // A map from character to the word_ids of words containing that character.
 typedef std::set<WordID> WordIDSet;  // An index into the WordList.

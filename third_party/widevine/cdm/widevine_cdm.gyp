@@ -40,6 +40,10 @@
           }],
         ],
       }],
+      [ 'OS == "android" and google_tv != 1', {
+        'widevine_cdm_version_h_file%':
+            'android/widevine_cdm_version.h',
+      }],
     ],
   },
   # Always provide a target, so we can put the logic about whether there's
@@ -57,14 +61,21 @@
           ],
           'sources': [
             '<(DEPTH)/media/cdm/ppapi/api/content_decryption_module.h',
-            '<(DEPTH)/media/cdm/ppapi/cdm_wrapper.cc',
+            '<(DEPTH)/media/cdm/ppapi/cdm_adapter.cc',
+            '<(DEPTH)/media/cdm/ppapi/cdm_adapter.h',
+            '<(DEPTH)/media/cdm/ppapi/cdm_helpers.cc',
+            '<(DEPTH)/media/cdm/ppapi/cdm_helpers.h',
+            '<(DEPTH)/media/cdm/ppapi/cdm_logging.cc',
+            '<(DEPTH)/media/cdm/ppapi/cdm_logging.h',
+            '<(DEPTH)/media/cdm/ppapi/cdm_wrapper.h',
             '<(DEPTH)/media/cdm/ppapi/linked_ptr.h',
+            '<(DEPTH)/media/cdm/ppapi/supported_cdm_versions.h',
           ],
           'conditions': [
             [ 'os_posix == 1 and OS != "mac"', {
               'cflags': ['-fvisibility=hidden'],
               'type': 'loadable_module',
-              # Allow the plugin wrapper to find the CDM in the same directory.
+              # Allow the plugin adapter to find the CDM in the same directory.
               'ldflags': ['-Wl,-rpath=\$$ORIGIN'],
               'libraries': [
                 # Copied by widevine_cdm_binaries.

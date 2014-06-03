@@ -16,15 +16,13 @@ namespace base {
 class FilePath;
 }
 
-namespace chrome {
-
 // Gets the mtp device information given a |storage_name|. On success,
 // fills in |id|, |name| and |location|.
 typedef void (*GetStorageInfoFunc)(
     const std::string& storage_name,
     device::MediaTransferProtocolManager* mtp_manager,
     std::string* id,
-    string16* name,
+    base::string16* name,
     std::string* location);
 
 // Helper class to send MTP storage attachment and detachment events to
@@ -41,6 +39,9 @@ class MediaTransferProtocolDeviceObserverLinux
   // Returns false if unable to find the storage.
   bool GetStorageInfoForPath(const base::FilePath& path,
                              StorageInfo* storage_info) const;
+
+  void EjectDevice(const std::string& device_id,
+                   base::Callback<void(StorageMonitor::EjectStatus)> callback);
 
  protected:
   // Only used in unit tests.
@@ -61,6 +62,11 @@ class MediaTransferProtocolDeviceObserverLinux
   // Enumerate existing mtp storage devices.
   void EnumerateStorages();
 
+  // Find the |storage_map_| key for the record with this |device_id|. Returns
+  // true on success, false on failure.
+  bool GetLocationForDeviceId(const std::string& device_id,
+                              std::string* location) const;
+
   // Pointer to the MTP manager. Not owned. Client must ensure the MTP
   // manager outlives this object.
   device::MediaTransferProtocolManager* mtp_manager_;
@@ -78,7 +84,5 @@ class MediaTransferProtocolDeviceObserverLinux
 
   DISALLOW_COPY_AND_ASSIGN(MediaTransferProtocolDeviceObserverLinux);
 };
-
-}  // namespace chrome
 
 #endif  // CHROME_BROWSER_STORAGE_MONITOR_MEDIA_TRANSFER_PROTOCOL_DEVICE_OBSERVER_LINUX_H_

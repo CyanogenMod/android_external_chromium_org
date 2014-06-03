@@ -1,10 +1,5 @@
 H C EC: Using pointer equality to compare a JavaBridgeCoercionTest$CustomType with a JavaBridgeCoercionTest$CustomType2 in org.chromium.content.browser.JavaBridgeCoercionTest.testPassJavaObject()  At JavaBridgeCoercionTest.java
-M B DE: org.chromium.net.X509Util.clearTestRootCertificates() might ignore java.io.IOException  At X509Util.java
 M B Nm: The method name org.chromium.base.test.util.ScalableTimeout.ScaleTimeout(long) doesn't start with a lower case letter  At ScalableTimeout.java
-M B RV: exceptional return value of java.io.File.delete() ignored in org.chromium.android_webview.test.ArchiveTest.doArchiveTest(AwContents, String, boolean, String)  At ArchiveTest.java
-M B RV: exceptional return value of java.io.File.delete() ignored in org.chromium.android_webview.test.ArchiveTest.testAutoBadPath()  At ArchiveTest.java
-M B RV: exceptional return value of java.io.File.delete() ignored in org.chromium.android_webview.test.ArchiveTest.testExplicitBadPath()  At ArchiveTest.java
-M B RV: exceptional return value of java.io.File.delete() ignored in org.chromium.android_webview.test.ArchiveTest.testExplicitGoodPath()  At ArchiveTest.java
 M B RV: exceptional return value of java.io.File.delete() ignored in org.chromium.base.test.util.TestFileUtil.deleteFile(String)  At TestFileUtil.java
 M C CSM: Shouldn't use synchronized method, please narrow down the synchronization scope.  At HttpAuthDatabase.java
 M C CSM: Shouldn't use synchronized method, please narrow down the synchronization scope.  At JavaBridgeArrayCoercionTest.java
@@ -21,7 +16,7 @@ M C CSM: Shouldn't use synchronized method, please narrow down the synchronizati
 M C CSM: Shouldn't use synchronized method, please narrow down the synchronization scope.  At TraceEvent.java
 M C CST: Shouldn't use synchronized(this), please narrow down the synchronization scope.  At HttpAuthDatabase.java
 M C CST: Shouldn't use synchronized(this), please narrow down the synchronization scope.  At SimpleSynchronizedThis.java
-M C RCN: Nullcheck of GestureDetector.mVelocityTracker at line 630 of value previously dereferenced in org.chromium.content.browser.third_party.GestureDetector.onTouchEvent(MotionEvent)  At GestureDetector.java
+M C RCN: Nullcheck of GestureDetector.mVelocityTracker at line 639 of value previously dereferenced in org.chromium.content.browser.third_party.GestureDetector.onTouchEvent(MotionEvent)  At GestureDetector.java
 M C USELESS_STRING: Invocation of toString on certChain in org.chromium.net.X509Util.verifyServerCertificates(byte[][], String)  At X509Util.java
 M D DMI: Hard coded reference to an absolute pathname in org.chromium.android_webview.test.ArchiveTest.testAutoBadPath()  At ArchiveTest.java
 M D DMI: Hard coded reference to an absolute pathname in org.chromium.android_webview.test.ArchiveTest.testExplicitBadPath()  At ArchiveTest.java
@@ -30,6 +25,8 @@ M D SF: Switch statement found in org.chromium.chrome.browser.database.SQLiteCur
 M D SF: Switch statement found in org.chromium.content.browser.third_party.GestureDetector.onTouchEvent(MotionEvent) where default case is missing  At GestureDetector.java
 M M UG: org.chromium.content.browser.JavaBridgeReturnValuesTest$TestObject.getBooleanValue() is unsynchronized, org.chromium.content.browser.JavaBridgeReturnValuesTest$TestObject.setBooleanValue(boolean) is synchronized  At JavaBridgeReturnValuesTest.java
 M M UG: org.chromium.content.browser.JavaBridgeReturnValuesTest$TestObject.getStringValue() is unsynchronized, org.chromium.content.browser.JavaBridgeReturnValuesTest$TestObject.setStringValue(String) is synchronized  At JavaBridgeReturnValuesTest.java
+M M UW: Unconditional wait in org.chromium.media.AudioManagerAndroid.init()  At AudioManagerAndroid.java
+M M Wa: Wait not in loop in org.chromium.media.AudioManagerAndroid.init()  At AudioManagerAndroid.java
 M V EI2: new org.chromium.chrome.browser.FindMatchRectsDetails(int, RectF[], RectF) may expose internal representation by storing an externally mutable object into FindMatchRectsDetails.rects  At FindMatchRectsDetails.java
 M V EI2: org.chromium.chrome.browser.ChromeBrowserProvider$BookmarkNode.setFavicon(byte[]) may expose internal representation by storing an externally mutable object into ChromeBrowserProvider$BookmarkNode.mFavicon  At ChromeBrowserProvider.java
 M V EI2: org.chromium.chrome.browser.ChromeBrowserProvider$BookmarkNode.setThumbnail(byte[]) may expose internal representation by storing an externally mutable object into ChromeBrowserProvider$BookmarkNode.mThumbnail  At ChromeBrowserProvider.java

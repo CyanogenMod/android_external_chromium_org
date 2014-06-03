@@ -49,7 +49,7 @@ SuggestionsHandler::~SuggestionsHandler() {
     const GURL ntp_url = GURL(chrome::kChromeUINewTabURL);
     int action_id = NTP_FOLLOW_ACTION_OTHER;
     content::NavigationEntry* entry =
-        web_ui()->GetWebContents()->GetController().GetActiveEntry();
+        web_ui()->GetWebContents()->GetController().GetLastCommittedEntry();
     if (entry && (entry->GetURL() != ntp_url)) {
       action_id =
           content::PageTransitionStripQualifier(entry->GetTransitionType());
@@ -63,7 +63,7 @@ SuggestionsHandler::~SuggestionsHandler() {
 void SuggestionsHandler::RegisterMessages() {
   Profile* profile = Profile::FromWebUI(web_ui());
   // Set up our sources for thumbnail and favicon data.
-  content::URLDataSource::Add(profile, new ThumbnailSource(profile));
+  content::URLDataSource::Add(profile, new ThumbnailSource(profile, false));
   content::URLDataSource::Add(
       profile, new FaviconSource(profile, FaviconSource::FAVICON));
 

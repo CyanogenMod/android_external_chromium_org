@@ -15,8 +15,8 @@
 #include "chrome/common/thumbnail_score.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/gfx/image/image.h"
-#include "url/gurl.h"
 
+class GURL;
 class Profile;
 
 namespace base {
@@ -61,22 +61,27 @@ class TopSites
 
   typedef base::Callback<void(const MostVisitedURLList&)>
       GetMostVisitedURLsCallback;
-  typedef std::vector<GetMostVisitedURLsCallback> PendingCallbacks;
 
-  // Returns a list of most visited URLs via a callback. This may be invoked on
-  // any thread.
-  // NOTE: the callback is called immediately if we have the data cached. If
-  // data is not available yet, callback will later be posted to the thread
-  // called this function.
+  // Returns a list of most visited URLs via a callback, if
+  // |include_forced_urls| is false includes only non-forced URLs. This may be
+  // invoked on any thread. NOTE: the callback is called immediately if we have
+  // the data cached. If data is not available yet, callback will later be
+  // posted to the thread called this function.
   virtual void GetMostVisitedURLs(
-      const GetMostVisitedURLsCallback& callback) = 0;
+      const GetMostVisitedURLsCallback& callback,
+      bool include_forced_urls) = 0;
 
-  // Get a thumbnail for a given page. Returns true iff we have the thumbnail.
+  // Gets a thumbnail for a given page. Returns true iff we have the thumbnail.
   // This may be invoked on any thread.
+  // If an exact thumbnail URL match fails, |prefix_match| specifies whether or
+  // not to try harder by matching the query thumbnail URL as URL prefix (as
+  // defined by UrlIsPrefix()).
   // As this method may be invoked on any thread the ref count needs to be
   // incremented before this method returns, so this takes a scoped_refptr*.
   virtual bool GetPageThumbnail(
-      const GURL& url, scoped_refptr<base::RefCountedMemory>* bytes) = 0;
+      const GURL& url,
+      bool prefix_match,
+      scoped_refptr<base::RefCountedMemory>* bytes) = 0;
 
   // Get a thumbnail score for a given page. Returns true iff we have the
   // thumbnail score.  This may be invoked on any thread. The score will
@@ -89,19 +94,6 @@ class TopSites
   // thumbnail for a given page. The score will be copied to |score|.
   virtual bool GetTemporaryPageThumbnailScore(const GURL& url,
                                               ThumbnailScore* score) = 0;
-
-  // Invoked from History if migration is needed. If this is invoked it will
-  // be before HistoryLoaded is invoked. Should be called from the UI thread.
-  virtual void MigrateFromHistory() = 0;
-
-  // Invoked with data from migrating thumbnails out of history. Should be
-  // called from the UI thread.
-  virtual void FinishHistoryMigration(const ThumbnailMigration& data) = 0;
-
-  // Invoked from history when it finishes loading. If MigrateFromHistory was
-  // not invoked at this point then we load from the top sites service. Should
-  // be called from the UI thread.
-  virtual void HistoryLoaded() = 0;
 
   // Asks TopSites to refresh what it thinks the top sites are. This may do
   // nothing. Should be called from the UI thread.
@@ -142,15 +134,27 @@ class TopSites
   // return it without modification.
   virtual const std::string& GetCanonicalURLString(const GURL& url) const = 0;
 
-  // Returns true if the top sites list is full (i.e. we already have the
-  // maximum number of top sites).  This function also returns false if
-  // TopSites isn't loaded yet.
-  virtual bool IsFull() = 0;
+  // Returns true if the top sites list of non-forced URLs is full (i.e. we
+  // already have the maximum number of non-forced top sites).  This function
+  // also returns false if TopSites isn't loaded yet.
+  virtual bool IsNonForcedFull() = 0;
+
+  // Returns true if the top sites list of forced URLs is full (i.e. we already
+  // have the maximum number of forced top sites).  This function also returns
+  // false if TopSites isn't loaded yet.
+  virtual bool IsForcedFull() = 0;
 
   virtual bool loaded() const = 0;
 
   // Returns the set of prepopulate pages.
   virtual MostVisitedURLList GetPrepopulatePages() = 0;
+
+  // Adds or updates a |url| for which we should force the capture of a
+  // thumbnail next time it's visited. If there is already a non-forced URL
+  // matching this |url| this call has no effect. Indicate this URL was laste
+  // forced at |time| so we can evict the older URLs when needed. Should be
+  // called from the UI thread.
+  virtual bool AddForcedURL(const GURL& url, const base::Time& time) = 0;
 
   struct PrepopulatedPage {
     // The string resource for the url.

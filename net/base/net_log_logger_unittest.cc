@@ -28,14 +28,14 @@ class NetLogLoggerTest : public testing::Test {
 TEST_F(NetLogLoggerTest, GeneratesValidJSONForNoEvents) {
   {
     // Create and destroy a logger.
-    FILE* file = file_util::OpenFile(log_path_, "w");
+    FILE* file = base::OpenFile(log_path_, "w");
     ASSERT_TRUE(file);
     scoped_ptr<base::Value> constants(NetLogLogger::GetConstants());
     NetLogLogger logger(file, *constants);
   }
 
   std::string input;
-  ASSERT_TRUE(file_util::ReadFileToString(log_path_, &input));
+  ASSERT_TRUE(base::ReadFileToString(log_path_, &input));
 
   base::JSONReader reader;
   scoped_ptr<base::Value> root(reader.ReadToValue(input));
@@ -50,7 +50,7 @@ TEST_F(NetLogLoggerTest, GeneratesValidJSONForNoEvents) {
 
 TEST_F(NetLogLoggerTest, GeneratesValidJSONWithOneEvent) {
   {
-    FILE* file = file_util::OpenFile(log_path_, "w");
+    FILE* file = base::OpenFile(log_path_, "w");
     ASSERT_TRUE(file);
     scoped_ptr<base::Value> constants(NetLogLogger::GetConstants());
     NetLogLogger logger(file, *constants);
@@ -67,7 +67,7 @@ TEST_F(NetLogLoggerTest, GeneratesValidJSONWithOneEvent) {
   }
 
   std::string input;
-  ASSERT_TRUE(file_util::ReadFileToString(log_path_, &input));
+  ASSERT_TRUE(base::ReadFileToString(log_path_, &input));
 
   base::JSONReader reader;
   scoped_ptr<base::Value> root(reader.ReadToValue(input));
@@ -82,7 +82,7 @@ TEST_F(NetLogLoggerTest, GeneratesValidJSONWithOneEvent) {
 
 TEST_F(NetLogLoggerTest, GeneratesValidJSONWithMultipleEvents) {
   {
-    FILE* file = file_util::OpenFile(log_path_, "w");
+    FILE* file = base::OpenFile(log_path_, "w");
     ASSERT_TRUE(file);
     scoped_ptr<base::Value> constants(NetLogLogger::GetConstants());
     NetLogLogger logger(file, *constants);
@@ -102,7 +102,7 @@ TEST_F(NetLogLoggerTest, GeneratesValidJSONWithMultipleEvents) {
   }
 
   std::string input;
-  ASSERT_TRUE(file_util::ReadFileToString(log_path_, &input));
+  ASSERT_TRUE(base::ReadFileToString(log_path_, &input));
 
   base::JSONReader reader;
   scoped_ptr<base::Value> root(reader.ReadToValue(input));

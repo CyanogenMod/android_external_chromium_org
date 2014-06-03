@@ -24,8 +24,8 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/lock.h"
+#include "base/sys_info.h"
 #include "base/time/time.h"
-#include "content/public/common/webplugininfo.h"
 #include "grit/blink_resources.h"
 #include "grit/webkit_resources.h"
 #include "grit/webkit_strings.h"
@@ -37,31 +37,37 @@
 #include "third_party/WebKit/public/platform/WebDiscardableMemory.h"
 #include "third_party/WebKit/public/platform/WebGestureCurve.h"
 #include "third_party/WebKit/public/platform/WebPluginListBuilder.h"
+#include "third_party/WebKit/public/platform/WebScreenInfo.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
 #include "third_party/WebKit/public/platform/WebVector.h"
 #include "third_party/WebKit/public/web/WebFrameClient.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
-#include "third_party/WebKit/public/web/WebScreenInfo.h"
-#include "third_party/tcmalloc/chromium/src/gperftools/heap-profiler.h"
 #include "ui/base/layout.h"
 #include "webkit/child/webkit_child_helpers.h"
 #include "webkit/child/websocketstreamhandle_impl.h"
 #include "webkit/child/weburlloader_impl.h"
 #include "webkit/common/user_agent/user_agent.h"
-#include "webkit/glue/webkit_glue.h"
 
-using WebKit::WebAudioBus;
-using WebKit::WebCookie;
-using WebKit::WebData;
-using WebKit::WebLocalizedString;
-using WebKit::WebPluginListBuilder;
-using WebKit::WebString;
-using WebKit::WebSocketStreamHandle;
-using WebKit::WebURL;
-using WebKit::WebURLError;
-using WebKit::WebURLLoader;
-using WebKit::WebVector;
+#if defined(OS_ANDROID)
+#include "base/android/sys_utils.h"
+#endif
+
+#if !defined(NO_TCMALLOC) && defined(USE_TCMALLOC) && !defined(OS_WIN)
+#include "third_party/tcmalloc/chromium/src/gperftools/heap-profiler.h"
+#endif
+
+using blink::WebAudioBus;
+using blink::WebCookie;
+using blink::WebData;
+using blink::WebLocalizedString;
+using blink::WebPluginListBuilder;
+using blink::WebString;
+using blink::WebSocketStreamHandle;
+using blink::WebURL;
+using blink::WebURLError;
+using blink::WebURLLoader;
+using blink::WebVector;
 
 namespace {
 
@@ -307,16 +313,36 @@ static int ToMessageID(WebLocalizedString::Name name) {
       return IDS_FORM_VALIDATION_PATTERN_MISMATCH;
     case WebLocalizedString::ValidationRangeOverflow:
       return IDS_FORM_VALIDATION_RANGE_OVERFLOW;
+    case WebLocalizedString::ValidationRangeOverflowDateTime:
+      return IDS_FORM_VALIDATION_RANGE_OVERFLOW_DATETIME;
     case WebLocalizedString::ValidationRangeUnderflow:
       return IDS_FORM_VALIDATION_RANGE_UNDERFLOW;
+    case WebLocalizedString::ValidationRangeUnderflowDateTime:
+      return IDS_FORM_VALIDATION_RANGE_UNDERFLOW_DATETIME;
     case WebLocalizedString::ValidationStepMismatch:
       return IDS_FORM_VALIDATION_STEP_MISMATCH;
+    case WebLocalizedString::ValidationStepMismatchCloseToLimit:
+      return IDS_FORM_VALIDATION_STEP_MISMATCH_CLOSE_TO_LIMIT;
     case WebLocalizedString::ValidationTooLong:
       return IDS_FORM_VALIDATION_TOO_LONG;
     case WebLocalizedString::ValidationTypeMismatch:
       return IDS_FORM_VALIDATION_TYPE_MISMATCH;
     case WebLocalizedString::ValidationTypeMismatchForEmail:
       return IDS_FORM_VALIDATION_TYPE_MISMATCH_EMAIL;
+    case WebLocalizedString::ValidationTypeMismatchForEmailEmpty:
+      return IDS_FORM_VALIDATION_TYPE_MISMATCH_EMAIL_EMPTY;
+    case WebLocalizedString::ValidationTypeMismatchForEmailEmptyDomain:
+      return IDS_FORM_VALIDATION_TYPE_MISMATCH_EMAIL_EMPTY_DOMAIN;
+    case WebLocalizedString::ValidationTypeMismatchForEmailEmptyLocal:
+      return IDS_FORM_VALIDATION_TYPE_MISMATCH_EMAIL_EMPTY_LOCAL;
+    case WebLocalizedString::ValidationTypeMismatchForEmailInvalidDomain:
+      return IDS_FORM_VALIDATION_TYPE_MISMATCH_EMAIL_INVALID_DOMAIN;
+    case WebLocalizedString::ValidationTypeMismatchForEmailInvalidDots:
+      return IDS_FORM_VALIDATION_TYPE_MISMATCH_EMAIL_INVALID_DOTS;
+    case WebLocalizedString::ValidationTypeMismatchForEmailInvalidLocal:
+      return IDS_FORM_VALIDATION_TYPE_MISMATCH_EMAIL_INVALID_LOCAL;
+    case WebLocalizedString::ValidationTypeMismatchForEmailNoAtSign:
+      return IDS_FORM_VALIDATION_TYPE_MISMATCH_EMAIL_NO_AT_SIGN;
     case WebLocalizedString::ValidationTypeMismatchForMultipleEmail:
       return IDS_FORM_VALIDATION_TYPE_MISMATCH_MULTIPLE_EMAIL;
     case WebLocalizedString::ValidationTypeMismatchForURL:
@@ -444,7 +470,12 @@ long* WebKitPlatformSupportImpl::getTraceSamplingState(
   return NULL;
 }
 
-void WebKitPlatformSupportImpl::addTraceEvent(
+COMPILE_ASSERT(
+    sizeof(blink::Platform::TraceEventHandle) ==
+        sizeof(base::debug::TraceEventHandle),
+    TraceEventHandle_types_must_be_same_size);
+
+blink::Platform::TraceEventHandle WebKitPlatformSupportImpl::addTraceEvent(
     char phase,
     const unsigned char* category_group_enabled,
     const char* name,
@@ -454,11 +485,23 @@ void WebKitPlatformSupportImpl::addTraceEvent(
     const unsigned char* arg_types,
     const unsigned long long* arg_values,
     unsigned char flags) {
-  TRACE_EVENT_API_ADD_TRACE_EVENT(phase, category_group_enabled, name, id,
-                                  num_args, arg_names, arg_types,
-                                  arg_values, NULL, flags);
+  base::debug::TraceEventHandle handle = TRACE_EVENT_API_ADD_TRACE_EVENT(
+      phase, category_group_enabled, name, id,
+      num_args, arg_names, arg_types, arg_values, NULL, flags);
+  blink::Platform::TraceEventHandle result;
+  memcpy(&result, &handle, sizeof(result));
+  return result;
 }
 
+void WebKitPlatformSupportImpl::updateTraceEventDuration(
+    const unsigned char* category_group_enabled,
+    const char* name,
+    TraceEventHandle handle) {
+  base::debug::TraceEventHandle traceEventHandle;
+  memcpy(&traceEventHandle, &handle, sizeof(handle));
+  TRACE_EVENT_API_UPDATE_TRACE_EVENT_DURATION(
+      category_group_enabled, name, traceEventHandle);
+}
 
 namespace {
 
@@ -605,6 +648,7 @@ const DataResource kDataResources[] = {
 #endif
 #if defined(OS_MACOSX)
   { "overhangPattern", IDR_OVERHANG_PATTERN, ui::SCALE_FACTOR_100P },
+  { "overhangShadow", IDR_OVERHANG_SHADOW, ui::SCALE_FACTOR_100P },
 #endif
   { "panIcon", IDR_PAN_SCROLL_ICON, ui::SCALE_FACTOR_100P },
   { "searchCancel", IDR_SEARCH_CANCEL, ui::SCALE_FACTOR_100P },
@@ -755,35 +799,35 @@ void WebKitPlatformSupportImpl::callOnMainThread(
 }
 
 base::PlatformFile WebKitPlatformSupportImpl::databaseOpenFile(
-    const WebKit::WebString& vfs_file_name, int desired_flags) {
+    const blink::WebString& vfs_file_name, int desired_flags) {
   return base::kInvalidPlatformFileValue;
 }
 
 int WebKitPlatformSupportImpl::databaseDeleteFile(
-    const WebKit::WebString& vfs_file_name, bool sync_dir) {
+    const blink::WebString& vfs_file_name, bool sync_dir) {
   return -1;
 }
 
 long WebKitPlatformSupportImpl::databaseGetFileAttributes(
-    const WebKit::WebString& vfs_file_name) {
+    const blink::WebString& vfs_file_name) {
   return 0;
 }
 
 long long WebKitPlatformSupportImpl::databaseGetFileSize(
-    const WebKit::WebString& vfs_file_name) {
+    const blink::WebString& vfs_file_name) {
   return 0;
 }
 
 long long WebKitPlatformSupportImpl::databaseGetSpaceAvailableForOrigin(
-    const WebKit::WebString& origin_identifier) {
+    const blink::WebString& origin_identifier) {
   return 0;
 }
 
-WebKit::WebString WebKitPlatformSupportImpl::signedPublicKeyAndChallengeString(
+blink::WebString WebKitPlatformSupportImpl::signedPublicKeyAndChallengeString(
     unsigned key_size_index,
-    const WebKit::WebString& challenge,
-    const WebKit::WebURL& url) {
-  return WebKit::WebString("");
+    const blink::WebString& challenge,
+    const blink::WebURL& url) {
+  return blink::WebString("");
 }
 
 static scoped_ptr<base::ProcessMetrics> CurrentProcessMetrics() {
@@ -820,8 +864,16 @@ size_t WebKitPlatformSupportImpl::actualMemoryUsageMB() {
   return getMemoryUsageMB(true);
 }
 
+size_t WebKitPlatformSupportImpl::physicalMemoryMB() {
+  return static_cast<size_t>(base::SysInfo::AmountOfPhysicalMemoryMB());
+}
+
+size_t WebKitPlatformSupportImpl::numberOfProcessors() {
+  return static_cast<size_t>(base::SysInfo::NumberOfProcessors());
+}
+
 void WebKitPlatformSupportImpl::startHeapProfiling(
-  const WebKit::WebString& prefix) {
+  const blink::WebString& prefix) {
   // FIXME(morrita): Make this built on windows.
 #if !defined(NO_TCMALLOC) && defined(USE_TCMALLOC) && !defined(OS_WIN)
   HeapProfilerStart(prefix.utf8().data());
@@ -835,7 +887,7 @@ void WebKitPlatformSupportImpl::stopHeapProfiling() {
 }
 
 void WebKitPlatformSupportImpl::dumpHeapProfiling(
-  const WebKit::WebString& reason) {
+  const blink::WebString& reason) {
 #if !defined(NO_TCMALLOC) && defined(USE_TCMALLOC) && !defined(OS_WIN)
   HeapProfilerDump(reason.utf8().data());
 #endif
@@ -860,6 +912,21 @@ bool WebKitPlatformSupportImpl::processMemorySizesInBytes(
 
 bool WebKitPlatformSupportImpl::memoryAllocatorWasteInBytes(size_t* size) {
   return base::allocator::GetAllocatorWasteSize(size);
+}
+
+size_t WebKitPlatformSupportImpl::maxDecodedImageBytes() {
+#if defined(OS_ANDROID)
+  if (base::android::SysUtils::IsLowEndDevice()) {
+    // Limit image decoded size to 3M pixels on low end devices.
+    // 4 is maximum number of bytes per pixel.
+    return 3 * 1024 * 1024 * 4;
+  }
+  // For other devices, limit decoded image size based on the amount of physical
+  // memory. For a device with 2GB physical memory the limit is 16M pixels.
+  return base::SysInfo::AmountOfPhysicalMemory() / 32;
+#else
+  return noDecodedImageByteLimit;
+#endif
 }
 
 void WebKitPlatformSupportImpl::SuspendSharedTimer() {

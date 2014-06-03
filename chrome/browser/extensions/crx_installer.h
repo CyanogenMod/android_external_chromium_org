@@ -17,8 +17,8 @@
 #include "chrome/browser/extensions/extension_installer.h"
 #include "chrome/browser/extensions/sandboxed_unpacker.h"
 #include "chrome/browser/extensions/webstore_installer.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/manifest.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/manifest.h"
 #include "sync/api/string_ordinal.h"
 
 class ExtensionService;
@@ -127,6 +127,7 @@ class CrxInstaller
 
   void set_expected_version(const Version& val) {
     expected_version_.reset(new Version(val));
+    expected_version_strict_checking_ = true;
   }
 
   bool delete_source() const { return delete_source_; }
@@ -218,7 +219,7 @@ class CrxInstaller
   CrxInstallerError AllowInstall(const Extension* extension);
 
   // SandboxedUnpackerClient
-  virtual void OnUnpackFailure(const string16& error_message) OVERRIDE;
+  virtual void OnUnpackFailure(const base::string16& error_message) OVERRIDE;
   virtual void OnUnpackSuccess(const base::FilePath& temp_dir,
                                const base::FilePath& extension_dir,
                                const base::DictionaryValue* original_manifest,
@@ -288,11 +289,20 @@ class CrxInstaller
   // extension's manifest must match this for the install to proceed.
   scoped_ptr<Manifest> expected_manifest_;
 
+  // The level of checking when comparing the actual manifest against
+  // the |expected_manifest_|.
+  WebstoreInstaller::ManifestCheckLevel expected_manifest_check_level_;
+
   // If non-NULL, contains the expected version of the extension we're
   // installing.  Important for external sources, where claiming the wrong
   // version could cause unnecessary unpacking of an extension at every
   // restart.
   scoped_ptr<Version> expected_version_;
+
+  // If true, the actual version should be same with the |expected_version_|,
+  // Otherwise the actual version should be equal to or newer than
+  // the |expected_version_|.
+  bool expected_version_strict_checking_;
 
   // Whether manual extension installation is enabled. We can't just check this
   // before trying to install because themes are special-cased to always be

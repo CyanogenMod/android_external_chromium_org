@@ -16,6 +16,10 @@ std::string StubWebView::GetId() {
   return id_;
 }
 
+bool StubWebView::WasCrashed() {
+  return false;
+}
+
 Status StubWebView::ConnectIfNecessary() {
   return Status(kOk);
 }
@@ -91,7 +95,8 @@ Status StubWebView::DeleteCookie(const std::string& name,
 }
 
 Status StubWebView::WaitForPendingNavigations(const std::string& frame_id,
-                                              int timeout) {
+                                              const base::TimeDelta& timeout,
+                                              bool stop_load_on_timeout) {
   return Status(kOk);
 }
 
@@ -116,5 +121,9 @@ Status StubWebView::SetFileInputFiles(
     const std::string& frame,
     const base::DictionaryValue& element,
     const std::vector<base::FilePath>& files) {
+  return Status(kOk);
+}
+
+Status StubWebView::TakeHeapSnapshot(scoped_ptr<base::Value>* snapshot) {
   return Status(kOk);
 }

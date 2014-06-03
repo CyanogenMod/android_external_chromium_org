@@ -12,8 +12,8 @@ bool FakeOutputSurfaceClient::DeferredInitialize(
   return deferred_initialize_result_;
 }
 
-void FakeOutputSurfaceClient::BeginFrame(const BeginFrameArgs& args) {
-  begin_frame_count_++;
+void FakeOutputSurfaceClient::BeginImplFrame(const BeginFrameArgs& args) {
+  begin_impl_frame_count_++;
 }
 
 void FakeOutputSurfaceClient::DidLoseOutputSurface() {
@@ -24,10 +24,5 @@ void FakeOutputSurfaceClient::SetMemoryPolicy(
     const ManagedMemoryPolicy& policy) {
   memory_policy_ = policy;
 }
-
-void FakeOutputSurfaceClient::SetDiscardBackBufferWhenNotVisible(bool discard) {
-  discard_backbuffer_when_not_visible_ = discard;
-}
-
 
 }  // namespace cc

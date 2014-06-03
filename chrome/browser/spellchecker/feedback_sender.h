@@ -74,7 +74,7 @@ class FeedbackSender : public base::SupportsWeakPtr<FeedbackSender>,
   // Records that user did not choose any suggestion but manually corrected the
   // misspelling identified by |hash| to string |correction|, which is not in
   // the list of suggestions.
-  void ManuallyCorrected(uint32 hash, const string16& correction);
+  void ManuallyCorrected(uint32 hash, const base::string16& correction);
 
   // Records that user has the misspelling in the custom dictionary. The user
   // will never see the spellcheck suggestions for the misspelling.
@@ -94,7 +94,7 @@ class FeedbackSender : public base::SupportsWeakPtr<FeedbackSender>,
   // service client receives results from the spelling service. Does not take
   // ownership of |results|.
   void OnSpellcheckResults(int renderer_process_id,
-                           const string16& text,
+                           const base::string16& text,
                            const std::vector<SpellCheckMarker>& markers,
                            std::vector<SpellCheckResult>* results);
 
@@ -102,6 +102,13 @@ class FeedbackSender : public base::SupportsWeakPtr<FeedbackSender>,
   // sends out all of the feedback data.
   void OnLanguageCountryChange(const std::string& language,
                                const std::string& country);
+
+  // Starts collecting feedback, if it's not already being collected.
+  void StartFeedbackCollection();
+
+  // Sends out all previously collected data and stops collecting feedback, if
+  // it was being collected.
+  void StopFeedbackCollection();
 
  private:
   friend class FeedbackSenderTest;
@@ -124,6 +131,9 @@ class FeedbackSender : public base::SupportsWeakPtr<FeedbackSender>,
 
   // URL request context for the feedback senders.
   scoped_refptr<net::URLRequestContextGetter> request_context_;
+
+  // The feedback API version.
+  const std::string api_version_;
 
   // The language of text. The string is a BCP 47 language tag.
   std::string language_;
@@ -149,8 +159,9 @@ class FeedbackSender : public base::SupportsWeakPtr<FeedbackSender>,
   GURL feedback_service_url_;
 
   // A timer to periodically request a list of document spelling markers from
-  // all of the renderers. The timer runs while an instance of this class is
-  // alive.
+  // all of the renderers. The timer starts in StartFeedbackCollection() and
+  // stops in StopFeedbackCollection(). The timer stops and abandons its tasks
+  // on destruction.
   base::RepeatingTimer<FeedbackSender> timer_;
 
   // Feedback senders that need to stay alive for the duration of sending data.

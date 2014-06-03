@@ -18,6 +18,7 @@ namespace chromeos {
 namespace {
 
 const char kDefaultCellularDevicePath[] = "stub_cellular_device";
+const char kUnknownCellularDevicePath[] = "unknown_cellular_device";
 const char kDefaultWifiDevicePath[] = "stub_wifi_device";
 const char kResultSuccess[] = "success";
 
@@ -30,7 +31,24 @@ class NetworkDeviceHandlerTest : public testing::Test {
 
   virtual void SetUp() OVERRIDE {
     DBusThreadManager::InitializeWithStub();
-    message_loop_.RunUntilIdle();
+
+    ShillDeviceClient::TestInterface* device_test =
+        DBusThreadManager::Get()->GetShillDeviceClient()->GetTestInterface();
+    device_test->ClearDevices();
+    device_test->AddDevice(
+        kDefaultCellularDevicePath, shill::kTypeCellular, "cellular1");
+    device_test->AddDevice(kDefaultWifiDevicePath, shill::kTypeWifi, "wifi1");
+
+    base::FundamentalValue allow_roaming(false);
+    device_test->SetDeviceProperty(kDefaultCellularDevicePath,
+                                   shill::kCellularAllowRoamingProperty,
+                                   allow_roaming);
+
+    base::ListValue test_ip_configs;
+    test_ip_configs.AppendString("ip_config1");
+    device_test->SetDeviceProperty(
+        kDefaultWifiDevicePath, shill::kIPConfigsProperty, test_ip_configs);
+
     success_callback_ = base::Bind(&NetworkDeviceHandlerTest::SuccessCallback,
                                    base::Unretained(this));
     properties_success_callback_ =
@@ -38,42 +56,12 @@ class NetworkDeviceHandlerTest : public testing::Test {
                    base::Unretained(this));
     error_callback_ = base::Bind(&NetworkDeviceHandlerTest::ErrorCallback,
                                  base::Unretained(this));
-    network_device_handler_.reset(new NetworkDeviceHandler());
-
-    ShillDeviceClient::TestInterface* device_test =
-        DBusThreadManager::Get()->GetShillDeviceClient()->GetTestInterface();
-    device_test->ClearDevices();
-    device_test->AddDevice(
-        kDefaultCellularDevicePath, flimflam::kTypeCellular, "cellular1");
-    device_test->AddDevice(
-        kDefaultWifiDevicePath, flimflam::kTypeWifi, "wifi1");
-
-    base::FundamentalValue allow_roaming(false);
-    device_test->SetDeviceProperty(
-        kDefaultCellularDevicePath,
-        flimflam::kCellularAllowRoamingProperty,
-        allow_roaming);
-
-    base::ListValue test_ip_configs;
-    test_ip_configs.AppendString("ip_config1");
-    device_test->SetDeviceProperty(
-        kDefaultWifiDevicePath, flimflam::kIPConfigsProperty, test_ip_configs);
+    network_device_handler_.reset(new NetworkDeviceHandler);
   }
 
   virtual void TearDown() OVERRIDE {
     network_device_handler_.reset();
     DBusThreadManager::Shutdown();
-  }
-
-  base::Closure GetErrorInvokingCallback(
-      const std::string& device_path,
-      const std::string& error_name) {
-    return base::Bind(&NetworkDeviceHandlerTest::InvokeDBusErrorCallback,
-                      base::Unretained(this),
-                      device_path,
-                      base::Bind(&NetworkDeviceHandlerTest::ErrorCallback,
-                                 base::Unretained(this)),
-                      error_name);
   }
 
   void ErrorCallback(const std::string& error_name,
@@ -91,14 +79,6 @@ class NetworkDeviceHandlerTest : public testing::Test {
     properties_.reset(properties.DeepCopy());
   }
 
-  void InvokeDBusErrorCallback(
-      const std::string& device_path,
-      const network_handler::ErrorCallback& callback,
-      const std::string& error_name) {
-    network_device_handler_->HandleShillCallFailureForTest(
-        device_path, callback, error_name, "Error message.");
-  }
-
  protected:
   std::string result_;
 
@@ -113,86 +93,34 @@ class NetworkDeviceHandlerTest : public testing::Test {
   DISALLOW_COPY_AND_ASSIGN(NetworkDeviceHandlerTest);
 };
 
-TEST_F(NetworkDeviceHandlerTest, ErrorTranslation) {
-  EXPECT_TRUE(result_.empty());
-  network_handler::ErrorCallback callback =
-      base::Bind(&NetworkDeviceHandlerTest::ErrorCallback,
-                 base::Unretained(this));
-
-  network_device_handler_->HandleShillCallFailureForTest(
-      kDefaultCellularDevicePath,
-      callback,
-      "org.chromium.flimflam.Error.Failure",
-      "Error happened.");
-  EXPECT_EQ(NetworkDeviceHandler::kErrorFailure, result_);
-
-  network_device_handler_->HandleShillCallFailureForTest(
-      kDefaultCellularDevicePath,
-      callback,
-      "org.chromium.flimflam.Error.IncorrectPin",
-      "Incorrect pin.");
-  EXPECT_EQ(NetworkDeviceHandler::kErrorIncorrectPin, result_);
-
-  network_device_handler_->HandleShillCallFailureForTest(
-      kDefaultCellularDevicePath,
-      callback,
-      "org.chromium.flimflam.Error.NotSupported",
-      "Operation not supported.");
-  EXPECT_EQ(NetworkDeviceHandler::kErrorNotSupported, result_);
-
-  network_device_handler_->HandleShillCallFailureForTest(
-      kDefaultCellularDevicePath,
-      callback,
-      "org.chromium.flimflam.Error.PinBlocked",
-      "PIN is blocked.");
-  EXPECT_EQ(NetworkDeviceHandler::kErrorPinBlocked, result_);
-
-  network_device_handler_->HandleShillCallFailureForTest(
-      kDefaultCellularDevicePath,
-      callback,
-      "org.chromium.flimflam.Error.PinRequired",
-      "A PIN error has occurred.");
-  EXPECT_EQ(NetworkDeviceHandler::kErrorPinRequired, result_);
-
-  network_device_handler_->HandleShillCallFailureForTest(
-      kDefaultCellularDevicePath,
-      callback,
-      "org.chromium.flimflam.Error.WorldExploded",
-      "The earth is no more.");
-  EXPECT_EQ(NetworkDeviceHandler::kErrorUnknown, result_);
-}
-
 TEST_F(NetworkDeviceHandlerTest, GetDeviceProperties) {
   network_device_handler_->GetDeviceProperties(
-      kDefaultWifiDevicePath,
-      properties_success_callback_,
-      error_callback_);
+      kDefaultWifiDevicePath, properties_success_callback_, error_callback_);
   message_loop_.RunUntilIdle();
   EXPECT_EQ(kResultSuccess, result_);
   std::string type;
-  properties_->GetString(flimflam::kTypeProperty, &type);
-  EXPECT_EQ(flimflam::kTypeWifi, type);
+  properties_->GetString(shill::kTypeProperty, &type);
+  EXPECT_EQ(shill::kTypeWifi, type);
 }
 
 TEST_F(NetworkDeviceHandlerTest, SetDeviceProperty) {
   // Check that GetDeviceProperties returns the expected initial values.
-  network_device_handler_->GetDeviceProperties(
-      kDefaultCellularDevicePath,
-      properties_success_callback_,
-      error_callback_);
+  network_device_handler_->GetDeviceProperties(kDefaultCellularDevicePath,
+                                               properties_success_callback_,
+                                               error_callback_);
   message_loop_.RunUntilIdle();
   EXPECT_EQ(kResultSuccess, result_);
   bool allow_roaming;
   EXPECT_TRUE(properties_->GetBooleanWithoutPathExpansion(
-      flimflam::kCellularAllowRoamingProperty, &allow_roaming));
+      shill::kCellularAllowRoamingProperty, &allow_roaming));
   EXPECT_FALSE(allow_roaming);
 
-  // Set the flimflam::kCellularAllowRoamingProperty to true. The call
+  // Set the shill::kCellularAllowRoamingProperty to true. The call
   // should succeed and the value should be set.
   base::FundamentalValue allow_roaming_value(true);
   network_device_handler_->SetDeviceProperty(
       kDefaultCellularDevicePath,
-      flimflam::kCellularAllowRoamingProperty,
+      shill::kCellularAllowRoamingProperty,
       allow_roaming_value,
       success_callback_,
       error_callback_);
@@ -200,20 +128,19 @@ TEST_F(NetworkDeviceHandlerTest, SetDeviceProperty) {
   EXPECT_EQ(kResultSuccess, result_);
 
   // GetDeviceProperties should return the value set by SetDeviceProperty.
-  network_device_handler_->GetDeviceProperties(
-      kDefaultCellularDevicePath,
-      properties_success_callback_,
-      error_callback_);
+  network_device_handler_->GetDeviceProperties(kDefaultCellularDevicePath,
+                                               properties_success_callback_,
+                                               error_callback_);
   message_loop_.RunUntilIdle();
   EXPECT_EQ(kResultSuccess, result_);
   EXPECT_TRUE(properties_->GetBooleanWithoutPathExpansion(
-      flimflam::kCellularAllowRoamingProperty, &allow_roaming));
+      shill::kCellularAllowRoamingProperty, &allow_roaming));
   EXPECT_TRUE(allow_roaming);
 
   // Set property on an invalid path.
   network_device_handler_->SetDeviceProperty(
-      "/device/invalid_path",
-      flimflam::kCellularAllowRoamingProperty,
+      kUnknownCellularDevicePath,
+      shill::kCellularAllowRoamingProperty,
       allow_roaming_value,
       success_callback_,
       error_callback_);
@@ -223,9 +150,7 @@ TEST_F(NetworkDeviceHandlerTest, SetDeviceProperty) {
 
 TEST_F(NetworkDeviceHandlerTest, RequestRefreshIPConfigs) {
   network_device_handler_->RequestRefreshIPConfigs(
-      kDefaultWifiDevicePath,
-      success_callback_,
-      error_callback_);
+      kDefaultWifiDevicePath, success_callback_, error_callback_);
   message_loop_.RunUntilIdle();
   EXPECT_EQ(kResultSuccess, result_);
   // TODO(stevenjb): Add test interface to ShillIPConfigClient and test
@@ -237,49 +162,37 @@ TEST_F(NetworkDeviceHandlerTest, SetCarrier) {
 
   // Test that the success callback gets called.
   network_device_handler_->SetCarrier(
-      kDefaultCellularDevicePath,
-      kCarrier,
-      success_callback_,
-      error_callback_);
+      kDefaultCellularDevicePath, kCarrier, success_callback_, error_callback_);
   message_loop_.RunUntilIdle();
   EXPECT_EQ(kResultSuccess, result_);
 
-  // Test that the shill error gets properly translated and propagates to the
-  // error callback.
+  // Test that the shill error propagates to the error callback.
   network_device_handler_->SetCarrier(
-      kDefaultCellularDevicePath,
-      kCarrier,
-      GetErrorInvokingCallback(kDefaultCellularDevicePath,
-                               "org.chromium.flimflam.Error.NotSupported"),
-      error_callback_);
+      kUnknownCellularDevicePath, kCarrier, success_callback_, error_callback_);
   message_loop_.RunUntilIdle();
-  EXPECT_EQ(NetworkDeviceHandler::kErrorNotSupported, result_);
+  EXPECT_EQ(NetworkDeviceHandler::kErrorFailure, result_);
 }
 
 TEST_F(NetworkDeviceHandlerTest, RequirePin) {
   const char kPin[] = "1234";
 
   // Test that the success callback gets called.
-  network_device_handler_->RequirePin(
-      kDefaultCellularDevicePath,
-      true,
-      kPin,
-      success_callback_,
-      error_callback_);
+  network_device_handler_->RequirePin(kDefaultCellularDevicePath,
+                                      true,
+                                      kPin,
+                                      success_callback_,
+                                      error_callback_);
   message_loop_.RunUntilIdle();
   EXPECT_EQ(kResultSuccess, result_);
 
-  // Test that the shill error gets properly translated and propagates to the
-  // error callback.
-  network_device_handler_->RequirePin(
-      kDefaultCellularDevicePath,
-      true,
-      kPin,
-      GetErrorInvokingCallback(kDefaultCellularDevicePath,
-                               "org.chromium.flimflam.Error.IncorrectPin"),
-      error_callback_);
+  // Test that the shill error propagates to the error callback.
+  network_device_handler_->RequirePin(kUnknownCellularDevicePath,
+                                      true,
+                                      kPin,
+                                      success_callback_,
+                                      error_callback_);
   message_loop_.RunUntilIdle();
-  EXPECT_EQ(NetworkDeviceHandler::kErrorIncorrectPin, result_);
+  EXPECT_EQ(NetworkDeviceHandler::kErrorFailure, result_);
 }
 
 TEST_F(NetworkDeviceHandlerTest, EnterPin) {
@@ -287,23 +200,15 @@ TEST_F(NetworkDeviceHandlerTest, EnterPin) {
 
   // Test that the success callback gets called.
   network_device_handler_->EnterPin(
-      kDefaultCellularDevicePath,
-      kPin,
-      success_callback_,
-      error_callback_);
+      kDefaultCellularDevicePath, kPin, success_callback_, error_callback_);
   message_loop_.RunUntilIdle();
   EXPECT_EQ(kResultSuccess, result_);
 
-  // Test that the shill error gets properly translated and propagates to the
-  // error callback.
+  // Test that the shill error propagates to the error callback.
   network_device_handler_->EnterPin(
-      kDefaultCellularDevicePath,
-      kPin,
-      GetErrorInvokingCallback(kDefaultCellularDevicePath,
-                               "org.chromium.flimflam.Error.IncorrectPin"),
-      error_callback_);
+      kUnknownCellularDevicePath, kPin, success_callback_, error_callback_);
   message_loop_.RunUntilIdle();
-  EXPECT_EQ(NetworkDeviceHandler::kErrorIncorrectPin, result_);
+  EXPECT_EQ(NetworkDeviceHandler::kErrorFailure, result_);
 }
 
 TEST_F(NetworkDeviceHandlerTest, UnblockPin) {
@@ -311,26 +216,22 @@ TEST_F(NetworkDeviceHandlerTest, UnblockPin) {
   const char kPin[] = "1234";
 
   // Test that the success callback gets called.
-  network_device_handler_->UnblockPin(
-      kDefaultCellularDevicePath,
-      kPin,
-      kPuk,
-      success_callback_,
-      error_callback_);
+  network_device_handler_->UnblockPin(kDefaultCellularDevicePath,
+                                      kPin,
+                                      kPuk,
+                                      success_callback_,
+                                      error_callback_);
   message_loop_.RunUntilIdle();
   EXPECT_EQ(kResultSuccess, result_);
 
-  // Test that the shill error gets properly translated and propagates to the
-  // error callback.
-  network_device_handler_->UnblockPin(
-      kDefaultCellularDevicePath,
-      kPin,
-      kPuk,
-      GetErrorInvokingCallback(kDefaultCellularDevicePath,
-                               "org.chromium.flimflam.Error.PinRequired"),
-      error_callback_);
+  // Test that the shill error propagates to the error callback.
+  network_device_handler_->UnblockPin(kUnknownCellularDevicePath,
+                                      kPin,
+                                      kPuk,
+                                      success_callback_,
+                                      error_callback_);
   message_loop_.RunUntilIdle();
-  EXPECT_EQ(NetworkDeviceHandler::kErrorPinRequired, result_);
+  EXPECT_EQ(NetworkDeviceHandler::kErrorFailure, result_);
 }
 
 TEST_F(NetworkDeviceHandlerTest, ChangePin) {
@@ -338,26 +239,22 @@ TEST_F(NetworkDeviceHandlerTest, ChangePin) {
   const char kNewPin[] = "1234";
 
   // Test that the success callback gets called.
-  network_device_handler_->ChangePin(
-      kDefaultCellularDevicePath,
-      kOldPin,
-      kNewPin,
-      success_callback_,
-      error_callback_);
+  network_device_handler_->ChangePin(kDefaultCellularDevicePath,
+                                     kOldPin,
+                                     kNewPin,
+                                     success_callback_,
+                                     error_callback_);
   message_loop_.RunUntilIdle();
   EXPECT_EQ(kResultSuccess, result_);
 
-  // Test that the shill error gets properly translated and propagates to the
-  // error callback.
-  network_device_handler_->ChangePin(
-      kDefaultCellularDevicePath,
-      kOldPin,
-      kNewPin,
-      GetErrorInvokingCallback(kDefaultCellularDevicePath,
-                               "org.chromium.flimflam.Error.PinBlocked"),
-      error_callback_);
+  // Test that the shill error propagates to the error callback.
+  network_device_handler_->ChangePin(kUnknownCellularDevicePath,
+                                     kOldPin,
+                                     kNewPin,
+                                     success_callback_,
+                                     error_callback_);
   message_loop_.RunUntilIdle();
-  EXPECT_EQ(NetworkDeviceHandler::kErrorPinBlocked, result_);
+  EXPECT_EQ(NetworkDeviceHandler::kErrorFailure, result_);
 }
 
 }  // namespace chromeos

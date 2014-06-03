@@ -10,11 +10,9 @@
 #include "android_webview/native/aw_contents_client_bridge.h"
 #include "android_webview/native/aw_contents_io_thread_client_impl.h"
 #include "android_webview/native/aw_dev_tools_server.h"
-// START: Printing fork b/10190508
-#include "android_webview/native/aw_pdf_exporter.h"
-// END: Printing fork b/10190508
 #include "android_webview/native/aw_form_database.h"
 #include "android_webview/native/aw_http_auth_handler.h"
+#include "android_webview/native/aw_pdf_exporter.h"
 #include "android_webview/native/aw_picture.h"
 #include "android_webview/native/aw_quota_manager_bridge_impl.h"
 #include "android_webview/native/aw_resource.h"
@@ -42,6 +40,7 @@ static base::android::RegistrationMethod kWebViewRegisteredMethods[] = {
   { "AwPicture", RegisterAwPicture },
   { "AwSettings", RegisterAwSettings },
   { "AwHttpAuthHandler", RegisterAwHttpAuthHandler },
+  { "AwPdfExporter", RegisterAwPdfExporter },
   { "AwQuotaManagerBridge", RegisterAwQuotaManagerBridge },
   { "AwResource", AwResource::RegisterAwResource },
   { "AwWebContentsDelegate", RegisterAwWebContentsDelegate },
@@ -49,9 +48,6 @@ static base::android::RegistrationMethod kWebViewRegisteredMethods[] = {
   { "InterceptedRequestDataImpl", RegisterInterceptedRequestData },
   { "InputStream", RegisterInputStream },
   { "JavaBrowserViewRendererHelper", RegisterJavaBrowserViewRendererHelper },
-  // START: Printing fork b/10190508
-  { "AwPdfExporter", RegisterAwPdfExporter },
-  // END: Printing fork b/10190508
 };
 
 bool RegisterJni(JNIEnv* env) {

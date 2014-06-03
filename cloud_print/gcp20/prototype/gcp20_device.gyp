@@ -21,6 +21,7 @@
       'dependencies': [
         '<(DEPTH)/base/base.gyp:base',
         '<(DEPTH)/base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
+        '<(DEPTH)/cloud_print/cloud_print_resources.gyp:cloud_print_version_header', 
         '<(DEPTH)/google_apis/google_apis.gyp:google_apis',
         '<(DEPTH)/jingle/jingle.gyp:notifier',
         '<(DEPTH)/net/net.gyp:http_server',
@@ -48,8 +49,13 @@
         'dns_response_builder.h',
         'dns_sd_server.cc',
         'dns_sd_server.h',
+        'local_settings.h',
+        'local_print_job.cc',
+        'local_print_job.h',
         'print_job_handler.cc',
         'print_job_handler.h',
+        'printer_state.cc',
+        'printer_state.h',
         'printer.cc',
         'printer.h',
         'privet_http_server.cc',
@@ -86,6 +92,7 @@
       'target_name': 'gcp20_device_unittests',
       'type': 'executable',
       'sources': [
+        'printer_unittest.cc',
         'x_privet_token_unittest.cc',
       ],
       'dependencies': [

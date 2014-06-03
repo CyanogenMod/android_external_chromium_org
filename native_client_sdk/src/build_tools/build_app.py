@@ -19,7 +19,7 @@ import build_version
 import easy_template
 import parse_dsc
 
-from build_paths import SDK_SRC_DIR, OUT_DIR, SDK_EXAMPLE_DIR
+from build_paths import SDK_SRC_DIR, OUT_DIR, SDK_RESOURCE_DIR
 
 sys.path.append(os.path.join(SDK_SRC_DIR, 'tools'))
 import getos
@@ -31,8 +31,13 @@ def RemoveBuildCruft(outdir):
     for f in files:
       path = os.path.join(root, f)
       ext = os.path.splitext(path)[1]
+      # Remove unwanted files from the package. Also remove manifest.json files
+      # (which we usually want). These ones are the manifests of the invidual
+      # examples, though, which CWS complains about. The master manifest.json
+      # is generated after we call RemoveBuildCruft.
       if (ext in ('.d', '.o') or
           f == 'dir.stamp' or
+          f == 'manifest.json' or
           re.search(r'_unstripped_.*?\.nexe', f)):
         buildbot_common.RemoveFile(path)
 
@@ -73,7 +78,23 @@ def GetStrip(pepperdir, platform, arch, toolchain):
 
 def main(args):
   parser = optparse.OptionParser()
-  _, args = parser.parse_args(args[1:])
+  parser.add_option('-c', '--channel',
+      help='Channel to display in the name of the package.')
+
+  # To setup bash completion for this command first install optcomplete
+  # and then add this line to your .bashrc:
+  #  complete -F _optcomplete build_app.py
+  try:
+    import optcomplete
+    optcomplete.autocomplete(parser)
+  except ImportError:
+    pass
+
+  options, args = parser.parse_args(args[1:])
+
+  if options.channel:
+    if options.channel not in ('Dev', 'Beta'):
+      parser.error('Unknown channel: %s' % options.channel)
 
   toolchains = ['newlib', 'glibc']
 
@@ -81,7 +102,7 @@ def main(args):
   pepperdir = os.path.join(OUT_DIR, 'pepper_' + pepper_ver)
   app_dir = os.path.join(OUT_DIR, 'naclsdk_app')
   app_examples_dir = os.path.join(app_dir, 'examples')
-  sdk_resources_dir = os.path.join(SDK_EXAMPLE_DIR, 'resources')
+  sdk_resources_dir = SDK_RESOURCE_DIR
   platform = getos.GetPlatform()
 
   buildbot_common.RemoveDir(app_dir)
@@ -120,8 +141,26 @@ def main(args):
     all_permissions.append({'socket': all_socket_permissions})
   pretty_permissions = json.dumps(all_permissions, sort_keys=True, indent=4)
 
+  for filename in ['background.js', 'icon128.png']:
+    buildbot_common.CopyFile(os.path.join(sdk_resources_dir, filename),
+                             os.path.join(app_examples_dir, filename))
+
+  os.environ['NACL_SDK_ROOT'] = pepperdir
+
+  build_projects.BuildProjects(app_dir, tree, deps=False, clean=False,
+                               config=config)
+
+  RemoveBuildCruft(app_dir)
+  StripNexes(app_dir, platform, pepperdir)
+
+  # Add manifest.json after RemoveBuildCruft... that function removes the
+  # manifest.json files for the individual examples.
+  name = 'Native Client SDK'
+  if options.channel:
+    name += ' (%s)' % options.channel
   template_dict = {
-    'name': 'Native Client SDK',
+    'name': name,
+    'channel': options.channel,
     'description':
         'Native Client SDK examples, showing API use and key concepts.',
     'key': False,  # manifests with "key" are rejected when uploading to CWS.
@@ -132,17 +171,6 @@ def main(args):
       os.path.join(sdk_resources_dir, 'manifest.json.template'),
       os.path.join(app_examples_dir, 'manifest.json'),
       template_dict)
-  for filename in ['background.js', 'icon128.png']:
-    buildbot_common.CopyFile(os.path.join(sdk_resources_dir, filename),
-                             os.path.join(app_examples_dir, filename))
-
-  os.environ['NACL_SDK_ROOT'] = pepperdir
-
-  build_projects.BuildProjects(app_dir, tree, deps=True, clean=False,
-                               config=config)
-
-  RemoveBuildCruft(app_dir)
-  StripNexes(app_dir, platform, pepperdir)
 
   app_zip = os.path.join(app_dir, 'examples.zip')
   os.chdir(app_examples_dir)

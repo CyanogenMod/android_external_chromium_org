@@ -2,13 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "ui/base/ozone/surface_factory_ozone.h"
+#include "base/bind.h"
+#include "ui/gfx/ozone/surface_factory_ozone.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_egl_api_implementation.h"
 #include "ui/gl/gl_gl_api_implementation.h"
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_implementation_linux.h"
 #include "ui/gl/gl_osmesa_api_implementation.h"
+#include "ui/ozone/ozone_platform.h"
 
 namespace gfx {
 
@@ -41,7 +43,10 @@ bool InitializeGLBindings(GLImplementation implementation) {
     case kGLImplementationOSMesaGL:
       return InitializeGLBindingsOSMesaGL();
     case kGLImplementationEGLGLES2:
-      if (!ui::SurfaceFactoryOzone::GetInstance()->LoadEGLGLES2Bindings())
+      ui::OzonePlatform::Initialize();
+      if (!gfx::SurfaceFactoryOzone::GetInstance()->LoadEGLGLES2Bindings(
+              base::Bind(&AddGLNativeLibrary),
+              base::Bind(&SetGLGetProcAddressProc)))
         return false;
       SetGLImplementation(kGLImplementationEGLGLES2);
       InitializeGLBindingsGL();

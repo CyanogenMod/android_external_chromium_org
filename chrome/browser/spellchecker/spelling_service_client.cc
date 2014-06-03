@@ -14,14 +14,16 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
-#include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/spellcheck_common.h"
 #include "chrome/common/spellcheck_result.h"
+#include "components/user_prefs/user_prefs.h"
+#include "content/public/browser/browser_context.h"
 #include "google_apis/google_api_keys.h"
 #include "net/base/load_flags.h"
 #include "net/url_request/url_fetcher.h"
+#include "url/gurl.h"
 
 namespace {
 
@@ -46,39 +48,41 @@ SpellingServiceClient::~SpellingServiceClient() {
 }
 
 bool SpellingServiceClient::RequestTextCheck(
-    Profile* profile,
+    content::BrowserContext* context,
     ServiceType type,
-    const string16& text,
+    const base::string16& text,
     const TextCheckCompleteCallback& callback) {
   DCHECK(type == SUGGEST || type == SPELLCHECK);
-  if (!profile || !IsAvailable(profile, type)) {
+  if (!context || !IsAvailable(context, type)) {
     callback.Run(false, text, std::vector<SpellCheckResult>());
     return false;
   }
 
+  const PrefService* pref = user_prefs::UserPrefs::Get(context);
+  DCHECK(pref);
+
   std::string language_code;
   std::string country_code;
   chrome::spellcheck_common::GetISOLanguageCountryCodeFromLocale(
-      profile->GetPrefs()->GetString(prefs::kSpellCheckDictionary),
+      pref->GetString(prefs::kSpellCheckDictionary),
       &language_code,
       &country_code);
 
   // Format the JSON request to be sent to the Spelling service.
-  std::string encoded_text;
-  base::JsonDoubleQuote(text, false, &encoded_text);
+  std::string encoded_text = base::GetQuotedJSONString(text);
 
   static const char kSpellingRequest[] =
       "{"
       "\"method\":\"spelling.check\","
       "\"apiVersion\":\"v%d\","
       "\"params\":{"
-      "\"text\":\"%s\","
+      "\"text\":%s,"
       "\"language\":\"%s\","
       "\"originCountry\":\"%s\","
       "\"key\":%s"
       "}"
       "}";
-  std::string api_key = base::GetDoubleQuotedJson(google_apis::GetAPIKey());
+  std::string api_key = base::GetQuotedJSONString(google_apis::GetAPIKey());
   std::string request = base::StringPrintf(
       kSpellingRequest,
       type,
@@ -89,7 +93,7 @@ bool SpellingServiceClient::RequestTextCheck(
 
   GURL url = GURL(kSpellingServiceURL);
   net::URLFetcher* fetcher = CreateURLFetcher(url);
-  fetcher->SetRequestContext(profile->GetRequestContext());
+  fetcher->SetRequestContext(context->GetRequestContext());
   fetcher->SetUploadData("application/json", request);
   fetcher->SetLoadFlags(
       net::LOAD_DO_NOT_SEND_COOKIES | net::LOAD_DO_NOT_SAVE_COOKIES);
@@ -98,13 +102,16 @@ bool SpellingServiceClient::RequestTextCheck(
   return true;
 }
 
-bool SpellingServiceClient::IsAvailable(Profile* profile, ServiceType type) {
-  const PrefService* pref = profile->GetPrefs();
-  // If prefs don't allow spellchecking or if the profile is off the record,
+bool SpellingServiceClient::IsAvailable(
+    content::BrowserContext* context,
+    ServiceType type) {
+  const PrefService* pref = user_prefs::UserPrefs::Get(context);
+  DCHECK(pref);
+  // If prefs don't allow spellchecking or if the context is off the record,
   // the spelling service should be unavailable.
   if (!pref->GetBoolean(prefs::kEnableContinuousSpellcheck) ||
       !pref->GetBoolean(prefs::kSpellCheckUseSpellingService) ||
-      profile->IsOffTheRecord())
+      context->IsOffTheRecord())
     return false;
 
   // If the locale for spelling has not been set, the user has not decided to
@@ -212,7 +219,7 @@ bool SpellingServiceClient::ParseResponse(
     }
 
     DictionaryValue* suggestion = NULL;
-    string16 replacement;
+    base::string16 replacement;
     if (!suggestions->GetDictionary(0, &suggestion) ||
         !suggestion->GetString("suggestion", &replacement)) {
       return false;
@@ -226,7 +233,7 @@ bool SpellingServiceClient::ParseResponse(
 
 SpellingServiceClient::TextCheckCallbackData::TextCheckCallbackData(
     TextCheckCompleteCallback callback,
-    string16 text)
+    base::string16 text)
       : callback(callback),
         text(text) {
 }

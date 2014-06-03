@@ -15,8 +15,8 @@
 #include "chrome/browser/chromeos/drive/remove_stale_cache_files.h"
 #include "chrome/browser/chromeos/drive/resource_metadata.h"
 #include "chrome/browser/chromeos/drive/test_util.h"
-#include "chrome/browser/google_apis/test_util.h"
 #include "content/public/test/test_browser_thread_bundle.h"
+#include "google_apis/drive/test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace drive {
@@ -58,58 +58,58 @@ class RemoveStaleCacheFilesTest : public testing::Test {
 
 TEST_F(RemoveStaleCacheFilesTest, RemoveStaleCacheFiles) {
   base::FilePath dummy_file;
-  ASSERT_TRUE(file_util::CreateTemporaryFileInDir(temp_dir_.path(),
-                                                  &dummy_file));
-  std::string resource_id("pdf:1a2b3c");
+  ASSERT_TRUE(base::CreateTemporaryFileInDir(temp_dir_.path(), &dummy_file));
+  std::string local_id("pdf:1a2b3c");
   std::string md5("abcdef0123456789");
 
   // Create a stale cache file.
   EXPECT_EQ(FILE_ERROR_OK,
-            cache_->Store(resource_id, md5, dummy_file,
+            cache_->Store(local_id, md5, dummy_file,
                           FileCache::FILE_OPERATION_COPY));
 
   // Verify that the cache entry exists.
   FileCacheEntry cache_entry;
-  EXPECT_TRUE(cache_->GetCacheEntry(resource_id, &cache_entry));
+  EXPECT_TRUE(cache_->GetCacheEntry(local_id, &cache_entry));
 
   ResourceEntry entry;
   EXPECT_EQ(FILE_ERROR_NOT_FOUND,
-            resource_metadata_->GetResourceEntryById(resource_id, &entry));
+            resource_metadata_->GetResourceEntryById(local_id, &entry));
 
   // Remove stale cache files.
   RemoveStaleCacheFiles(cache_.get(), resource_metadata_.get());
 
   // Verify that the cache entry is deleted.
-  EXPECT_FALSE(cache_->GetCacheEntry(resource_id, &cache_entry));
+  EXPECT_FALSE(cache_->GetCacheEntry(local_id, &cache_entry));
 }
 
 TEST_F(RemoveStaleCacheFilesTest, DirtyCacheFiles) {
   base::FilePath dummy_file;
-  ASSERT_TRUE(file_util::CreateTemporaryFileInDir(temp_dir_.path(),
-                                                  &dummy_file));
+  ASSERT_TRUE(base::CreateTemporaryFileInDir(temp_dir_.path(), &dummy_file));
 
   // Dirty and deleted (= absent in resource_metada) cache entry.
-  std::string resource_id_1("file:1");
+  std::string local_id_1("file:1");
   std::string md5_1("abcdef0123456789");
   EXPECT_EQ(FILE_ERROR_OK,
-            cache_->Store(resource_id_1, md5_1, dummy_file,
+            cache_->Store(local_id_1, md5_1, dummy_file,
                           FileCache::FILE_OPERATION_COPY));
-  EXPECT_EQ(FILE_ERROR_OK, cache_->MarkDirty(resource_id_1));
+  EXPECT_EQ(FILE_ERROR_OK, cache_->MarkDirty(local_id_1));
 
   // Dirty and mismatching-MD5 entry.
-  std::string resource_id_2("file:2");
   std::string md5_2_cache("0123456789abcdef");
   std::string md5_2_metadata("abcdef0123456789");
-  EXPECT_EQ(FILE_ERROR_OK,
-            cache_->Store(resource_id_2, md5_2_cache, dummy_file,
-                          FileCache::FILE_OPERATION_COPY));
-  EXPECT_EQ(FILE_ERROR_OK, cache_->MarkDirty(resource_id_2));
 
   ResourceEntry entry;
-  entry.set_resource_id(resource_id_2);
+  std::string local_id_2;
+  entry.set_resource_id("resource_id");
   entry.mutable_file_specific_info()->set_md5(md5_2_metadata);
-  entry.set_parent_resource_id(util::kDriveGrandRootSpecialResourceId);
-  resource_metadata_->AddEntry(entry);
+  entry.set_parent_local_id(util::kDriveGrandRootLocalId);
+  entry.set_title("file.txt");
+  resource_metadata_->AddEntry(entry, &local_id_2);
+
+  EXPECT_EQ(FILE_ERROR_OK,
+            cache_->Store(local_id_2, md5_2_cache, dummy_file,
+                          FileCache::FILE_OPERATION_COPY));
+  EXPECT_EQ(FILE_ERROR_OK, cache_->MarkDirty(local_id_2));
 
   // Remove stale cache files.
   RemoveStaleCacheFiles(cache_.get(), resource_metadata_.get());
@@ -117,8 +117,8 @@ TEST_F(RemoveStaleCacheFilesTest, DirtyCacheFiles) {
   // Dirty cache should be removed if and only if the entry does not exist in
   // resource_metadata.
   FileCacheEntry cache_entry;
-  EXPECT_FALSE(cache_->GetCacheEntry(resource_id_1, &cache_entry));
-  EXPECT_TRUE(cache_->GetCacheEntry(resource_id_2, &cache_entry));
+  EXPECT_FALSE(cache_->GetCacheEntry(local_id_1, &cache_entry));
+  EXPECT_TRUE(cache_->GetCacheEntry(local_id_2, &cache_entry));
 }
 
 }  // namespace internal

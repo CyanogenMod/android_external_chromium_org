@@ -12,6 +12,7 @@
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history/history_types.h"
 #include "chrome/browser/infobars/confirm_infobar_delegate.h"
+#include "chrome/browser/infobars/infobar.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/managed_mode/managed_mode_interstitial.h"
 #include "chrome/browser/managed_mode/managed_mode_resource_throttle.h"
@@ -20,12 +21,6 @@
 #include "chrome/browser/managed_mode/managed_user_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/tab_contents/tab_util.h"
-#include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_commands.h"
-#include "chrome/browser/ui/browser_finder.h"
-#include "chrome/browser/ui/browser_list.h"
-#include "chrome/browser/ui/host_desktop.h"
-#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/render_process_host.h"
@@ -35,6 +30,15 @@
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
+#if !defined(OS_ANDROID)
+#include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_commands.h"
+#include "chrome/browser/ui/browser_finder.h"
+#include "chrome/browser/ui/browser_list.h"
+#include "chrome/browser/ui/host_desktop.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
+#endif
+
 using base::Time;
 using content::NavigationEntry;
 
@@ -43,6 +47,9 @@ namespace {
 
 // Helpers --------------------------------------------------------------------
 
+#if !defined(OS_ANDROID)
+// TODO(bauerb): Get rid of the platform-specific #ifdef here.
+// http://crbug.com/313377
 void GoBackToSafety(content::WebContents* web_contents) {
   // For now, just go back one page (the user didn't retreat from that page,
   // so it should be okay).
@@ -68,42 +75,42 @@ void GoBackToSafety(content::WebContents* web_contents) {
 
   web_contents->GetDelegate()->CloseContents(web_contents);
 }
-
+#endif
 
 // ManagedModeWarningInfoBarDelegate ------------------------------------------
 
 class ManagedModeWarningInfoBarDelegate : public ConfirmInfoBarDelegate {
  public:
-  // Creates a managed mode warning infobar delegate and adds it to
-  // |infobar_service|.  Returns the delegate if it was successfully added.
-  static InfoBarDelegate* Create(InfoBarService* infobar_service);
+  // Creates a managed mode warning infobar and delegate and adds the infobar to
+  // |infobar_service|.  Returns the infobar if it was successfully added.
+  static InfoBar* Create(InfoBarService* infobar_service);
 
  private:
-  explicit ManagedModeWarningInfoBarDelegate(InfoBarService* infobar_service);
+  ManagedModeWarningInfoBarDelegate();
   virtual ~ManagedModeWarningInfoBarDelegate();
 
   // ConfirmInfoBarDelegate:
   virtual bool ShouldExpire(
       const content::LoadCommittedDetails& details) const OVERRIDE;
   virtual void InfoBarDismissed() OVERRIDE;
-  virtual string16 GetMessageText() const OVERRIDE;
+  virtual base::string16 GetMessageText() const OVERRIDE;
   virtual int GetButtons() const OVERRIDE;
-  virtual string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
+  virtual base::string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
   virtual bool Accept() OVERRIDE;
 
   DISALLOW_COPY_AND_ASSIGN(ManagedModeWarningInfoBarDelegate);
 };
 
 // static
-InfoBarDelegate* ManagedModeWarningInfoBarDelegate::Create(
+InfoBar* ManagedModeWarningInfoBarDelegate::Create(
     InfoBarService* infobar_service) {
-  return infobar_service->AddInfoBar(scoped_ptr<InfoBarDelegate>(
-      new ManagedModeWarningInfoBarDelegate(infobar_service)));
+  return infobar_service->AddInfoBar(ConfirmInfoBarDelegate::CreateInfoBar(
+      scoped_ptr<ConfirmInfoBarDelegate>(
+          new ManagedModeWarningInfoBarDelegate())));
 }
 
-ManagedModeWarningInfoBarDelegate::ManagedModeWarningInfoBarDelegate(
-    InfoBarService* infobar_service)
-    : ConfirmInfoBarDelegate(infobar_service) {
+ManagedModeWarningInfoBarDelegate::ManagedModeWarningInfoBarDelegate()
+    : ConfirmInfoBarDelegate() {
 }
 
 ManagedModeWarningInfoBarDelegate::~ManagedModeWarningInfoBarDelegate() {
@@ -120,7 +127,7 @@ void ManagedModeWarningInfoBarDelegate::InfoBarDismissed() {
       web_contents())->WarnInfoBarDismissed();
 }
 
-string16 ManagedModeWarningInfoBarDelegate::GetMessageText() const {
+base::string16 ManagedModeWarningInfoBarDelegate::GetMessageText() const {
   return l10n_util::GetStringUTF16(IDS_MANAGED_USER_WARN_INFOBAR_MESSAGE);
 }
 
@@ -128,14 +135,20 @@ int ManagedModeWarningInfoBarDelegate::GetButtons() const {
   return BUTTON_OK;
 }
 
-string16 ManagedModeWarningInfoBarDelegate::GetButtonLabel(
+base::string16 ManagedModeWarningInfoBarDelegate::GetButtonLabel(
     InfoBarButton button) const {
   DCHECK_EQ(BUTTON_OK, button);
   return l10n_util::GetStringUTF16(IDS_MANAGED_USER_WARN_INFOBAR_GO_BACK);
 }
 
 bool ManagedModeWarningInfoBarDelegate::Accept() {
+#if defined(OS_ANDROID)
+  // TODO(bauerb): Get rid of the platform-specific #ifdef here.
+  // http://crbug.com/313377
+  NOTIMPLEMENTED();
+#else
   GoBackToSafety(web_contents());
+#endif
 
   return false;
 }
@@ -181,6 +194,7 @@ void ManagedModeNavigationObserver::ProvisionalChangeToMainFrameUrl(
 
 void ManagedModeNavigationObserver::DidCommitProvisionalLoadForFrame(
     int64 frame_id,
+    const base::string16& frame_unique_name,
     bool is_main_frame,
     const GURL& url,
     content::PageTransition transition_type,

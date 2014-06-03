@@ -13,36 +13,31 @@
 #include "base/observer_list.h"
 #include "base/threading/thread_checker.h"
 #include "chrome/browser/chromeos/input_method/candidate_window_controller.h"
-#include "chrome/browser/chromeos/input_method/ibus_controller.h"
-#include "chrome/browser/chromeos/input_method/input_method_manager_impl_ll.h"
 #include "chrome/browser/chromeos/input_method/input_method_util.h"
-#include "chromeos/ime/ibus_daemon_controller.h"
 #include "chromeos/ime/input_method_manager.h"
 #include "chromeos/ime/input_method_whitelist.h"
 
 namespace chromeos {
 class ComponentExtensionIMEManager;
 class ComponentExtensionIMEManagerDelegate;
-class InputMethodEngineIBus;
+class InputMethodEngine;
 namespace input_method {
 class InputMethodDelegate;
 class XKeyboard;
 
 // The implementation of InputMethodManager.
 class InputMethodManagerImpl : public InputMethodManager,
-                               public CandidateWindowController::Observer,
-                               public IBusController::Observer,
-                               public IBusDaemonController::Observer {
+                               public CandidateWindowController::Observer {
  public:
   // Constructs an InputMethodManager instance. The client is responsible for
   // calling |SetState| in response to relevant changes in browser state.
   explicit InputMethodManagerImpl(scoped_ptr<InputMethodDelegate> delegate);
   virtual ~InputMethodManagerImpl();
 
-  // Attach IBusController, CandidateWindowController, and XKeyboard objects
-  // to the InputMethodManagerImpl object. You don't have to call this function
-  // if you attach them yourself (e.g. in unit tests) using the protected
-  // setters.
+  // Attach CandidateWindowController, and XKeyboard objects to the
+  // InputMethodManagerImpl object. You don't have to call this
+  // function if you attach them yourself (e.g. in unit tests) using
+  // the protected setters.
   void Init(base::SequencedTaskRunner* ui_task_runner);
 
   // Receives notification of an InputMethodManager::State transition.
@@ -68,15 +63,6 @@ class InputMethodManagerImpl : public InputMethodManager,
       const std::vector<std::string>& new_active_input_method_ids) OVERRIDE;
   virtual bool EnableInputMethod(const std::string& new_active_input_method_id)
       OVERRIDE;
-  virtual bool MigrateOldInputMethods(
-      std::vector<std::string>* input_method_ids) OVERRIDE;
-  virtual bool MigrateKoreanKeyboard(
-      const std::string& keyboard_id,
-      std::vector<std::string>* input_method_ids) OVERRIDE;
-  virtual bool SetInputMethodConfig(
-      const std::string& section,
-      const std::string& config_name,
-      const InputMethodConfigValue& value) OVERRIDE;
   virtual void ChangeInputMethod(const std::string& input_method_id) OVERRIDE;
   virtual void ActivateInputMethodProperty(const std::string& key) OVERRIDE;
   virtual void AddInputMethodExtension(
@@ -85,7 +71,8 @@ class InputMethodManagerImpl : public InputMethodManager,
       const std::vector<std::string>& layouts,
       const std::vector<std::string>& languages,
       const GURL& options_page,
-      InputMethodEngine* instance) OVERRIDE;
+      const GURL& input_view,
+      InputMethodEngineInterface* instance) OVERRIDE;
   virtual void RemoveInputMethodExtension(const std::string& id) OVERRIDE;
   virtual void GetInputMethodExtensions(
       InputMethodDescriptors* result) OVERRIDE;
@@ -98,14 +85,15 @@ class InputMethodManagerImpl : public InputMethodManager,
   virtual InputMethodDescriptor GetCurrentInputMethod() const OVERRIDE;
   virtual InputMethodPropertyList
       GetCurrentInputMethodProperties() const OVERRIDE;
+  virtual void SetCurrentInputMethodProperties(
+      const InputMethodPropertyList& property_list) OVERRIDE;
+
   virtual XKeyboard* GetXKeyboard() OVERRIDE;
   virtual InputMethodUtil* GetInputMethodUtil() OVERRIDE;
   virtual ComponentExtensionIMEManager*
       GetComponentExtensionIMEManager() OVERRIDE;
-  virtual bool IsFullLatinKeyboard(const std::string& layout) const OVERRIDE;
+  virtual bool IsLoginKeyboard(const std::string& layout) const OVERRIDE;
 
-  // Sets |ibus_controller_|.
-  void SetIBusControllerForTesting(IBusController* ibus_controller);
   // Sets |candidate_window_controller_|.
   void SetCandidateWindowControllerForTesting(
       CandidateWindowController* candidate_window_controller);
@@ -116,15 +104,11 @@ class InputMethodManagerImpl : public InputMethodManager,
       scoped_ptr<ComponentExtensionIMEManagerDelegate> delegate);
 
  private:
-  // IBusController overrides:
-  virtual void PropertyChanged() OVERRIDE;
-
-  // IBusDaemonController overrides:
-  virtual void OnConnected() OVERRIDE;
-  virtual void OnDisconnected() OVERRIDE;
-
+  // Notifies observers that the property list is updated.
+  void PropertyChanged();
 
   // CandidateWindowController::Observer overrides:
+  virtual void CandidateClicked(int index) OVERRIDE;
   virtual void CandidateWindowOpened() OVERRIDE;
   virtual void CandidateWindowClosed() OVERRIDE;
 
@@ -144,9 +128,6 @@ class InputMethodManagerImpl : public InputMethodManager,
   // Returns true if the given input method config value is a string list
   // that only contains an input method ID of a keyboard layout.
   bool ContainsOnlyKeyboardLayout(const std::vector<std::string>& value);
-
-  // Returns true if the connection to ibus-daemon is established.
-  bool IsIBusConnectionAlive();
 
   // Creates and initializes |candidate_window_controller_| if it hasn't been
   // done.
@@ -176,7 +157,7 @@ class InputMethodManagerImpl : public InputMethodManager,
   // Adds new input method to given list if possible
   bool EnableInputMethodImpl(
       const std::string& input_method_id,
-      std::vector<std::string>& new_active_input_method_ids) const;
+      std::vector<std::string>* new_active_input_method_ids) const;
 
   // Starts or stops the system input method framework as needed.
   // (after list of enabled input methods has been updated)
@@ -210,11 +191,9 @@ class InputMethodManagerImpl : public InputMethodManager,
   // Extra input methods that have been explicitly added to the menu, such as
   // those created by extension.
   std::map<std::string, InputMethodDescriptor> extra_input_methods_;
-  std::map<std::string, InputMethodEngineIBus*> extra_input_method_instances_;
 
-  // The IBus controller is used to control the input method status and
-  // allow callbacks when the input method status changes.
-  scoped_ptr<IBusController> ibus_controller_;
+  // Property list of the input method.  This is set by extension IMEs.
+  InputMethodPropertyList property_list_;
 
   // The candidate window.  This will be deleted when the APP_TERMINATING
   // message is sent.
@@ -239,10 +218,6 @@ class InputMethodManagerImpl : public InputMethodManager,
   base::ThreadChecker thread_checker_;
 
   base::WeakPtrFactory<InputMethodManagerImpl> weak_ptr_factory_;
-
-  // Check if input method id allows full latin input (for entering passwords on
-  // login screen)
-  FullLatinKeyboardLayoutChecker full_latin_keyboard_checker;
 
   DISALLOW_COPY_AND_ASSIGN(InputMethodManagerImpl);
 };

@@ -13,8 +13,8 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/test_extension_environment.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/test/base/testing_profile.h"
+#include "extensions/common/extension.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 #if !defined(OS_ANDROID)
@@ -71,7 +71,7 @@ class SavedFilesServiceUnitTest : public testing::Test {
     ASSERT_TRUE(entry);
     EXPECT_EQ(id_string, entry->id);
     EXPECT_EQ(path_, entry->path);
-    EXPECT_TRUE(entry->writable);
+    EXPECT_TRUE(entry->is_directory);
     EXPECT_EQ(sequence_number, entry->sequence_number);
   }
 

@@ -31,6 +31,7 @@ class GoogleUpdateSettings {
     AUTOMATIC_UPDATES   = 1,
     MANUAL_UPDATES_ONLY = 2,
     AUTO_UPDATES_ONLY   = 3,
+    UPDATE_POLICIES_COUNT
   };
 
   // Defines product data that is tracked/used by Google Update.
@@ -78,10 +79,10 @@ class GoogleUpdateSettings {
 
   // Returns the metrics id set in the registry (that can be used in crash
   // reports). If none found, returns empty string.
-  static bool GetMetricsId(std::wstring* metrics_id);
+  static bool GetMetricsId(std::string* metrics_id);
 
   // Sets the metrics id to be used in crash reports.
-  static bool SetMetricsId(const std::wstring& metrics_id);
+  static bool SetMetricsId(const std::string& metrics_id);
 
   // Sets the machine-wide EULA consented flag required on OEM installs.
   // Returns false if the setting could not be recorded.
@@ -200,6 +201,10 @@ class GoogleUpdateSettings {
                                       int install_return_code,
                                       installer::ChannelInfo* value);
 
+  // This method updates the values that report how many profiles are in use
+  // and how many of those are signed-in.
+  static void UpdateProfileCounts(int profiles_active, int profiles_signedin);
+
   // For system-level installs, we need to be able to communicate the results
   // of the Toast Experiments back to Google Update. The problem is just that
   // the experiment is run in the context of the user, which doesn't have
@@ -222,6 +227,9 @@ class GoogleUpdateSettings {
   // true if an app-specific policy override is in force, or false otherwise.
   static UpdatePolicy GetAppUpdatePolicy(const std::wstring& app_guid,
                                          bool* is_overridden);
+
+  // Records UMA stats about Chrome's update policy.
+  static void RecordChromeUpdatePolicyHistograms();
 
   // Returns Google Update's uninstall command line, or an empty string if none
   // is found.

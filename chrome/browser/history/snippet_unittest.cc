@@ -87,7 +87,7 @@ bool ComparePair1st(const Snippet::MatchPosition& a,
 // For testing, we'll compute the match positions manually instead of using
 // sqlite's FTS matching.  BuildSnippet returns the snippet for matching
 // |query| against |document|.  Matches are surrounded by "**".
-string16 BuildSnippet(const std::string& document,
+base::string16 BuildSnippet(const std::string& document,
                       const std::string& query) {
   // This function assumes that |document| does not contain
   // any character for which lowercasing changes its length. Further,
@@ -120,7 +120,7 @@ string16 BuildSnippet(const std::string& document,
   snippet.ComputeSnippet(match_positions, document);
 
   // Now "highlight" all matches in the snippet with **.
-  string16 star_snippet;
+  base::string16 star_snippet;
   Snippet::MatchPositions::const_iterator match;
   size_t pos = 0;
   for (match = snippet.matches().begin();

@@ -5,6 +5,7 @@
 #ifndef LIBRARIES_NACL_IO_MOUNT_NODE_H_
 #define LIBRARIES_NACL_IO_MOUNT_NODE_H_
 
+#include <stdarg.h>
 #include <string>
 
 #include "nacl_io/error.h"
@@ -17,28 +18,37 @@
 #include "sdk_util/scoped_ref.h"
 #include "sdk_util/simple_lock.h"
 
+#define S_IRALL (S_IRUSR | S_IRGRP | S_IROTH)
+#define S_IWALL (S_IWUSR | S_IWGRP | S_IWOTH)
+#define S_IXALL (S_IXUSR | S_IXGRP | S_IXOTH)
+
 namespace nacl_io {
 
 class Mount;
 class MountNode;
+struct HandleAttr;
 
 typedef sdk_util::ScopedRef<MountNode> ScopedMountNode;
 
 // NOTE: The KernelProxy is the only class that should be setting errno. All
 // other classes should return Error (as defined by nacl_io/error.h).
-class MountNode : public EventListener {
+class MountNode : public sdk_util::RefObject {
  protected:
   explicit MountNode(Mount* mount);
   virtual ~MountNode();
 
  protected:
-  // Initialize with node specific flags, in this case stat permissions.
-  virtual Error Init(int flags);
+  virtual Error Init(int open_flags);
   virtual void Destroy();
 
  public:
-   // Declared in EventEmitter. defaults to signalled.
-   virtual uint32_t GetEventStatus();
+  // Return true if the node permissions match the given open mode.
+  virtual bool CanOpen(int open_flags);
+
+  // Returns the emitter for this Node if it has one, if not, assume this
+  // object can not block.
+  virtual EventEmitter* GetEventEmitter();
+  virtual uint32_t GetEventStatus();
 
   // Normal OS operations on a node (file), can be called by the kernel
   // directly so it must lock and unlock appropriately.  These functions
@@ -55,11 +65,15 @@ class MountNode : public EventListener {
   // Assume that |stat| is non-NULL.
   virtual Error GetStat(struct stat* stat);
   // Assume that |arg| is non-NULL.
-  virtual Error Ioctl(int request, char* arg);
+  Error Ioctl(int request, ...);
+  virtual Error VIoctl(int request, va_list args);
   // Assume that |buf| and |out_bytes| are non-NULL.
-  virtual Error Read(size_t offs, void* buf, size_t count, int* out_bytes);
+  virtual Error Read(const HandleAttr& attr,
+                     void* buf,
+                     size_t count,
+                     int* out_bytes);
   // Assume that |buf| and |out_bytes| are non-NULL.
-  virtual Error Write(size_t offs,
+  virtual Error Write(const HandleAttr& attr,
                       const void* buf,
                       size_t count,
                       int* out_bytes);
@@ -78,12 +92,13 @@ class MountNode : public EventListener {
   virtual int GetLinks();
   virtual int GetMode();
   virtual int GetType();
+  virtual void SetType(int type);
   // Assume that |out_size| is non-NULL.
   virtual Error GetSize(size_t* out_size);
   virtual bool IsaDir();
   virtual bool IsaFile();
+  virtual bool IsaSock();
   virtual bool IsaTTY();
-
 
   // Number of children for this node (directory)
   virtual int ChildCount();
@@ -117,6 +132,7 @@ class MountNode : public EventListener {
 
   friend class Mount;
   friend class MountDev;
+  friend class MountFuse;
   friend class MountHtml5Fs;
   friend class MountHttp;
   friend class MountMem;

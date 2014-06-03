@@ -61,7 +61,6 @@
     'app/theme/menu_overflow_down.pdf',
     'app/theme/menu_overflow_up.pdf',
     'browser/mac/install.sh',
-    '<(SHARED_INTERMEDIATE_DIR)/repack/chrome.pak',
     '<(SHARED_INTERMEDIATE_DIR)/repack/chrome_100_percent.pak',
     '<(SHARED_INTERMEDIATE_DIR)/repack/resources.pak',
     '<!@pymod_do_main(repack_locales -o -p <(OS) -g <(grit_out_dir) -s <(SHARED_INTERMEDIATE_DIR) -x <(SHARED_INTERMEDIATE_DIR) <(locales))',
@@ -242,7 +241,7 @@
     ['mac_breakpad_compiled_in==1', {
       'dependencies': [
         '../breakpad/breakpad.gyp:breakpad',
-        'app/policy/cloud_policy_codegen.gyp:policy',
+        '../components/components.gyp:policy',
       ],
       'copies': [
         {
@@ -289,8 +288,8 @@
       'postbuilds': [{
         'postbuild_name': 'Copy inspector files',
         'action': [
-          'cp',
-          '-r',
+          'ln',
+          '-fs',
           '${BUILT_PRODUCTS_DIR}/resources/inspector',
           '${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Resources',
         ],

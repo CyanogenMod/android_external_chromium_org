@@ -19,23 +19,34 @@
 #include "base/threading/non_thread_safe.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
+#include "chrome/browser/history/history_service.h"
 #include "chrome/browser/media/media_capture_devices_dispatcher.h"
 #include "chrome/browser/predictors/logged_in_predictor_table.h"
 #include "chrome/browser/prerender/prerender_config.h"
 #include "chrome/browser/prerender/prerender_contents.h"
+#include "chrome/browser/prerender/prerender_events.h"
 #include "chrome/browser/prerender/prerender_final_status.h"
 #include "chrome/browser/prerender/prerender_origin.h"
+#include "chrome/browser/prerender/prerender_tracker.h"
 #include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
+#include "content/public/browser/session_storage_namespace.h"
+#include "content/public/browser/web_contents_observer.h"
+#include "net/cookies/canonical_cookie.h"
 #include "net/cookies/cookie_monster.h"
 #include "url/gurl.h"
 
 class Profile;
+class InstantSearchPrerendererTest;
 struct ChromeCookieDetails;
 
 namespace base {
 class DictionaryValue;
+}
+
+namespace chrome {
+struct NavigateParams;
 }
 
 namespace content {
@@ -71,7 +82,6 @@ class PrerenderHandle;
 class PrerenderHistograms;
 class PrerenderHistory;
 class PrerenderLocalPredictor;
-class PrerenderTracker;
 
 // PrerenderManager is responsible for initiating and keeping prerendered
 // views of web pages. All methods must be called on the UI thread unless
@@ -147,6 +157,21 @@ class PrerenderManager : public base::SupportsWeakPtr<PrerenderManager>,
       content::SessionStorageNamespace* session_storage_namespace,
       const gfx::Size& size);
 
+  PrerenderHandle* AddPrerenderFromExternalRequest(
+      const GURL& url,
+      const content::Referrer& referrer,
+      content::SessionStorageNamespace* session_storage_namespace,
+      const gfx::Size& size);
+
+  // Adds a prerender for Instant Search |url| if valid. The
+  // |session_storage_namespace| matches the namespace of the active tab at the
+  // time the prerender is generated. Returns a caller-owned PrerenderHandle* or
+  // NULL.
+  PrerenderHandle* AddPrerenderForInstant(
+      const GURL& url,
+      content::SessionStorageNamespace* session_storage_namespace,
+      const gfx::Size& size);
+
   // If |process_id| and |view_id| refer to a running prerender, destroy
   // it with |final_status|.
   virtual void DestroyPrerenderForRenderView(int process_id,
@@ -156,11 +181,12 @@ class PrerenderManager : public base::SupportsWeakPtr<PrerenderManager>,
   // Cancels all active prerenders.
   void CancelAllPrerenders();
 
-  // If |url| matches a valid prerendered page, try to swap it into
-  // |web_contents| and merge browsing histories. Returns |true| if a
-  // prerendered page is swapped in, |false| otherwise.
-  bool MaybeUsePrerenderedPage(content::WebContents* web_contents,
-                               const GURL& url);
+  // If |url| matches a valid prerendered page and |params| are compatible, try
+  // to swap it and merge browsing histories. Returns |true| and updates
+  // |params->target_contents| if a prerendered page is swapped in, |false|
+  // otherwise.
+  bool MaybeUsePrerenderedPage(const GURL& url,
+                               chrome::NavigateParams* params);
 
   // Moves a PrerenderContents to the pending delete list from the list of
   // active prerenders when prerendering should be cancelled.
@@ -190,11 +216,6 @@ class PrerenderManager : public base::SupportsWeakPtr<PrerenderManager>,
   // they time out, but new ones will not be generated.
   void set_enabled(bool enabled);
 
-  // Controls if we launch or squash prefetch requests as they arrive from
-  // renderers.
-  static bool IsPrefetchEnabled();
-  static void SetIsPrefetchEnabled(bool enabled);
-
   static PrerenderManagerMode GetMode();
   static void SetMode(PrerenderManagerMode mode);
   static const char* GetModeString();
@@ -209,6 +230,10 @@ class PrerenderManager : public base::SupportsWeakPtr<PrerenderManager>,
   // prerender |web_contents|.
   bool IsWebContentsPrerendering(const content::WebContents* web_contents,
                                  Origin* origin) const;
+
+  // Whether the PrerenderManager has an active prerender with the given url and
+  // SessionStorageNamespace associated with the given WebContens.
+  bool HasPrerenderedUrl(GURL url, content::WebContents* web_contents) const;
 
   // Returns the PrerenderContents object for the given web_contents if it's
   // used for an active prerender page, otherwise returns NULL.
@@ -275,6 +300,11 @@ class PrerenderManager : public base::SupportsWeakPtr<PrerenderManager>,
       PrerenderContents::MatchCompleteStatus mc_status,
       FinalStatus final_status) const;
 
+  // Record a cookie status histogram (see prerender_histograms.h).
+  void RecordCookieStatus(Origin origin,
+                          uint8 experiment_id,
+                          int cookie_status) const;
+
   // content::NotificationObserver
   virtual void Observe(int type,
                        const content::NotificationSource& source,
@@ -307,6 +337,13 @@ class PrerenderManager : public base::SupportsWeakPtr<PrerenderManager>,
                                   bool* database_was_present,
                                   const base::Closure& result_cb);
 
+  void OnHistoryServiceDidQueryURL(Origin origin,
+                                   uint8 experiment_id,
+                                   CancelableRequestProvider::Handle handle,
+                                   bool success,
+                                   const history::URLRow* url_row,
+                                   history::VisitVector* visits);
+
   Profile* profile() const { return profile_; }
 
   // Classes which will be tested in prerender unit browser tests should use
@@ -324,7 +361,18 @@ class PrerenderManager : public base::SupportsWeakPtr<PrerenderManager>,
     return local_predictor_.get();
   }
 
+  // Notification that a cookie event happened on a render frame. Will record a
+  // cookie event for a given render frame, if it is being prerendered.
+  // If cookies were sent, all cookies must be supplied in |cookie_list|.
+  static void RecordCookieEvent(int process_id,
+                                int render_view_id,
+                                const GURL& url,
+                                const GURL& frame_url,
+                                PrerenderContents::CookieEvent event,
+                                const net::CookieList* cookie_list);
+
  protected:
+  class PendingSwap;
   class PrerenderData : public base::SupportsWeakPtr<PrerenderData> {
    public:
     struct OrderByExpiryTime;
@@ -364,6 +412,13 @@ class PrerenderManager : public base::SupportsWeakPtr<PrerenderManager>,
       expiry_time_ = expiry_time;
     }
 
+    void ClearPendingSwap();
+
+    PendingSwap* pending_swap() { return pending_swap_.get(); }
+    void set_pending_swap(PendingSwap* pending_swap) {
+      pending_swap_.reset(pending_swap);
+    }
+
    private:
     PrerenderManager* manager_;
     scoped_ptr<PrerenderContents> contents_;
@@ -379,7 +434,76 @@ class PrerenderManager : public base::SupportsWeakPtr<PrerenderManager>,
     // removed.
     base::TimeTicks expiry_time_;
 
+    // If a session storage namespace merge is in progress for this object,
+    // we need to keep track of various state associated with it.
+    scoped_ptr<PendingSwap> pending_swap_;
+
     DISALLOW_COPY_AND_ASSIGN(PrerenderData);
+  };
+
+  // When a swap can't happen immediately, due to a sesison storage namespace
+  // merge, there will be a pending swap object while the merge is in
+  // progress. It retains all the data needed to do the merge, maintains
+  // throttles for the navigation in the target WebContents that needs to be
+  // delayed, and handles all conditions which would cancel a pending swap.
+  class PendingSwap : public content::WebContentsObserver {
+   public:
+    PendingSwap(PrerenderManager* manager,
+                content::WebContents* target_contents,
+                PrerenderData* prerender_data,
+                const GURL& url,
+                bool should_replace_current_entry);
+    virtual ~PendingSwap();
+
+    void set_swap_successful(bool swap_successful) {
+      swap_successful_ = swap_successful;
+    }
+
+    void BeginSwap();
+
+    // content::WebContentsObserver implementation.
+    virtual void ProvisionalChangeToMainFrameUrl(
+        const GURL& url,
+        content::RenderViewHost* render_view_host) OVERRIDE;
+    virtual void DidCommitProvisionalLoadForFrame(
+        int64 frame_id,
+        const base::string16& frame_unique_name,
+        bool is_main_frame,
+        const GURL& validated_url,
+        content::PageTransition transition_type,
+        content::RenderViewHost* render_view_host) OVERRIDE;
+    virtual void RenderViewCreated(
+        content::RenderViewHost* render_view_host) OVERRIDE;
+    virtual void DidFailProvisionalLoad(
+        int64 frame_id,
+        const base::string16& frame_unique_name,
+        bool is_main_frame,
+        const GURL& validated_url,
+        int error_code,
+        const base::string16& error_description,
+        content::RenderViewHost* render_view_host) OVERRIDE;
+    virtual void WebContentsDestroyed(content::WebContents* web_contents)
+        OVERRIDE;
+
+   private:
+    void RecordEvent(PrerenderEvent event) const;
+
+    void OnMergeCompleted(content::SessionStorageNamespace::MergeResult result);
+    void OnMergeTimeout();
+
+    // Prerender parameters.
+    PrerenderManager* manager_;
+    content::WebContents* target_contents_;
+    PrerenderData* prerender_data_;
+    GURL url_;
+    bool should_replace_current_entry_;
+
+    base::TimeTicks start_time_;
+    std::vector<PrerenderTracker::ChildRouteIdPair> rvh_ids_;
+    base::OneShotTimer<PendingSwap> merge_timeout_;
+    bool swap_successful_;
+
+    base::WeakPtrFactory<PendingSwap> weak_factory_;
   };
 
   void SetPrerenderContentsFactory(
@@ -400,6 +524,7 @@ class PrerenderManager : public base::SupportsWeakPtr<PrerenderManager>,
   void SourceNavigatedAway(PrerenderData* prerender_data);
 
  private:
+  friend class ::InstantSearchPrerendererTest;
   friend class PrerenderBrowserTest;
   friend class PrerenderContents;
   friend class PrerenderHandle;
@@ -556,6 +681,17 @@ class PrerenderManager : public base::SupportsWeakPtr<PrerenderManager>,
                                                bool cookies_exist);
   void LoggedInPredictorDataReceived(scoped_ptr<LoggedInStateMap> new_map);
 
+  void RecordEvent(PrerenderContents* contents, PrerenderEvent event) const;
+
+  // Swaps a prerender |prerender_data| for |url| into the tab, replacing
+  // |web_contents|.  Returns the new WebContents that was swapped in, or NULL
+  // if a swap-in was not possible.  If |should_replace_current_entry| is true,
+  // the current history entry in |web_contents| is replaced.
+  content::WebContents* SwapInternal(const GURL& url,
+                                     content::WebContents* web_contents,
+                                     PrerenderData* prerender_data,
+                                     bool should_replace_current_entry);
+
   // The configuration.
   Config config_;
 
@@ -563,8 +699,6 @@ class PrerenderManager : public base::SupportsWeakPtr<PrerenderManager>,
   // manager. The value can change dynamically during the lifetime
   // of the PrerenderManager.
   bool enabled_;
-
-  static bool is_prefetch_enabled_;
 
   // The profile that owns this PrerenderManager.
   Profile* profile_;
@@ -638,6 +772,8 @@ class PrerenderManager : public base::SupportsWeakPtr<PrerenderManager>,
   scoped_ptr<LoggedInStateMap> logged_in_state_;
 
   content::NotificationRegistrar notification_registrar_;
+
+  CancelableRequestConsumer query_url_consumer_;
 
   DISALLOW_COPY_AND_ASSIGN(PrerenderManager);
 };

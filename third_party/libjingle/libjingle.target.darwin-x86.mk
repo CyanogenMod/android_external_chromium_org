@@ -111,6 +111,7 @@ LOCAL_SRC_FILES := \
 	third_party/libjingle/source/talk/p2p/base/transport.cc \
 	third_party/libjingle/source/talk/p2p/base/transportchannel.cc \
 	third_party/libjingle/source/talk/p2p/base/transportchannelproxy.cc \
+	third_party/libjingle/source/talk/p2p/base/transportdescription.cc \
 	third_party/libjingle/source/talk/p2p/base/transportdescriptionfactory.cc \
 	third_party/libjingle/source/talk/p2p/base/turnport.cc \
 	third_party/libjingle/source/talk/p2p/client/basicportallocator.cc \
@@ -168,11 +169,11 @@ MY_CFLAGS_Debug := \
 	-Wno-extra \
 	-Wno-ignored-qualifiers \
 	-Wno-type-limits \
+	-fno-stack-protector \
 	-Wno-address \
 	-Wno-format-security \
 	-Wno-return-type \
 	-Wno-sequence-point \
-	-fno-stack-protector \
 	-Os \
 	-g \
 	-fomit-frame-pointer \
@@ -192,11 +193,9 @@ MY_DEFS_Debug := \
 	'-DNO_SOUND_SYSTEM' \
 	'-DSRTP_RELATIVE_PATH' \
 	'-DUSE_WEBRTC_DEV_BRANCH' \
-	'-DANGLE_DX11' \
+	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
-	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
-	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DLIBPEERCONNECTION_LIB=1' \
 	'-DSSL_USE_OPENSSL' \
@@ -206,12 +205,14 @@ MY_DEFS_Debug := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DLOGGING_IS_OFFICIAL_BUILD=1' \
-	'-DTRACING_IS_OFFICIAL_BUILD=1' \
-	'-DENABLE_GPU=1' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
+	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
+	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-DFEATURE_ENABLE_VOICEMAIL' \
 	'-DANDROID' \
 	'-D__GNU_SOURCE=1' \
@@ -282,11 +283,11 @@ MY_CFLAGS_Release := \
 	-Wno-extra \
 	-Wno-ignored-qualifiers \
 	-Wno-type-limits \
+	-fno-stack-protector \
 	-Wno-address \
 	-Wno-format-security \
 	-Wno-return-type \
 	-Wno-sequence-point \
-	-fno-stack-protector \
 	-Os \
 	-fno-ident \
 	-fdata-sections \
@@ -308,11 +309,9 @@ MY_DEFS_Release := \
 	'-DNO_SOUND_SYSTEM' \
 	'-DSRTP_RELATIVE_PATH' \
 	'-DUSE_WEBRTC_DEV_BRANCH' \
-	'-DANGLE_DX11' \
+	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
-	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
-	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DLIBPEERCONNECTION_LIB=1' \
 	'-DSSL_USE_OPENSSL' \
@@ -322,12 +321,14 @@ MY_DEFS_Release := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DLOGGING_IS_OFFICIAL_BUILD=1' \
-	'-DTRACING_IS_OFFICIAL_BUILD=1' \
-	'-DENABLE_GPU=1' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
+	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
+	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-DFEATURE_ENABLE_VOICEMAIL' \
 	'-DANDROID' \
 	'-D__GNU_SOURCE=1' \

@@ -5,6 +5,7 @@
 #include "content/common/swapped_out_messages.h"
 
 #include "content/common/accessibility_messages.h"
+#include "content/common/frame_messages.h"
 #include "content/common/input_messages.h"
 #include "content/common/view_messages.h"
 #include "content/public/common/content_client.h"
@@ -35,6 +36,8 @@ bool SwappedOutMessages::CanSendWhileSwappedOut(const IPC::Message* msg) {
     // Allow cross-process JavaScript calls.
     case ViewHostMsg_RouteCloseEvent::ID:
     case ViewHostMsg_RouteMessageEvent::ID:
+    // Frame detach must occur after the RenderView has swapped out.
+    case FrameHostMsg_Detach::ID:
       return true;
     default:
       break;
@@ -75,7 +78,7 @@ bool SwappedOutMessages::CanHandleWhileSwappedOut(
     // Sends an ACK.
     case ViewHostMsg_RequestMove::ID:
     // Sends an ACK.
-    case AccessibilityHostMsg_Notifications::ID:
+    case AccessibilityHostMsg_Events::ID:
 #if defined(USE_X11)
     // Synchronous message when leaving a page with plugin.  In this case,
     // we want to destroy the plugin rather than return an error message.

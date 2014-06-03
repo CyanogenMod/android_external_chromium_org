@@ -9,14 +9,13 @@
 #include "chrome/browser/spellchecker/spellcheck_factory.h"
 #include "chrome/browser/spellchecker/spellcheck_service.h"
 #include "chrome/common/extensions/api/spellcheck/spellcheck_handler.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
+#include "extensions/common/manifest_constants.h"
 
 namespace extensions {
 
-namespace keys = extension_manifest_keys;
-namespace errors = extension_manifest_errors;
+namespace errors = manifest_errors;
 
 namespace {
 
@@ -24,7 +23,7 @@ SpellcheckDictionaryInfo* GetSpellcheckDictionaryInfo(
     const Extension* extension) {
   SpellcheckDictionaryInfo *spellcheck_info =
       static_cast<SpellcheckDictionaryInfo*>(
-          extension->GetManifestData(keys::kSpellcheck));
+          extension->GetManifestData(manifest_keys::kSpellcheck));
   return spellcheck_info;
 }
 
@@ -71,7 +70,7 @@ void SpellcheckAPI::Observe(int type,
           GetSpellcheckDictionaryInfo(extension);
       if (spellcheck_info) {
         // TODO(rlp): Handle load failure. =
-        spellcheck = SpellcheckServiceFactory::GetForProfile(profile);
+        spellcheck = SpellcheckServiceFactory::GetForContext(profile);
         spellcheck->LoadExternalDictionary(
             spellcheck_info->language,
             spellcheck_info->locale,
@@ -87,7 +86,7 @@ void SpellcheckAPI::Observe(int type,
           GetSpellcheckDictionaryInfo(extension);
       if (spellcheck_info) {
         // TODO(rlp): Handle unload failure.
-        spellcheck = SpellcheckServiceFactory::GetForProfile(profile);
+        spellcheck = SpellcheckServiceFactory::GetForContext(profile);
         spellcheck->UnloadExternalDictionary(spellcheck_info->path);
       }
       break;

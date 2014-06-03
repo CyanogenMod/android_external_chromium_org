@@ -59,8 +59,8 @@
 #include "net/url_request/url_request_status.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/webui/jstemplate_builder.h"
-#include "ui/webui/web_ui_util.h"
+#include "ui/base/webui/jstemplate_builder.h"
+#include "ui/base/webui/web_ui_util.h"
 #include "url/gurl.h"
 
 #if defined(ENABLE_THEMES)
@@ -80,13 +80,7 @@
 #include "chrome/browser/browser_process_platform_part_chromeos.h"
 #include "chrome/browser/chromeos/customization_document.h"
 #include "chrome/browser/chromeos/memory/oom_priority_manager.h"
-#include "chrome/browser/ui/webui/chromeos/about_network.h"
 #include "chromeos/chromeos_switches.h"
-#endif
-
-#if defined(USE_ASH)
-#include "ash/wm/frame_painter.h"
-#include "base/strings/string_split.h"
 #endif
 
 using base::Time;
@@ -101,8 +95,11 @@ const char kMemoryJsPath[] = "memory.js";
 const char kMemoryCssPath[] = "about_memory.css";
 const char kStatsJsPath[] = "stats.js";
 const char kStringsJsPath[] = "strings.js";
+
+#if defined(OS_CHROMEOS)
 // chrome://terms falls back to offline page after kOnlineTermsTimeoutSec.
 const int kOnlineTermsTimeoutSec = 7;
+#endif  // defined(OS_CHROMEOS)
 
 // When you type about:memory, it actually loads this intermediate URL that
 // redirects you to the final page. This avoids the problem where typing
@@ -286,7 +283,7 @@ class ChromeOSTermsHandler
       base::FilePath oem_eula_file_path;
       if (net::FileURLToFilePath(GURL(customization->GetEULAPage(locale_)),
                                  &oem_eula_file_path)) {
-        if (!file_util::ReadFileToString(oem_eula_file_path, &contents_)) {
+        if (!base::ReadFileToString(oem_eula_file_path, &contents_)) {
           contents_.clear();
         }
       }
@@ -299,11 +296,10 @@ class ChromeOSTermsHandler
   void LoadEulaFileOnFileThread() {
     std::string file_path =
         base::StringPrintf(chrome::kEULAPathFormat, locale_.c_str());
-    if (!file_util::ReadFileToString(base::FilePath(file_path), &contents_)) {
+    if (!base::ReadFileToString(base::FilePath(file_path), &contents_)) {
       // No EULA for given language - try en-US as default.
       file_path = base::StringPrintf(chrome::kEULAPathFormat, "en-US");
-      if (!file_util::ReadFileToString(base::FilePath(file_path),
-                                       &contents_)) {
+      if (!base::ReadFileToString(base::FilePath(file_path), &contents_)) {
         // File with EULA not found, ResponseOnUIThread will load EULA from
         // resources if contents_ is empty.
         contents_.clear();
@@ -463,10 +459,10 @@ std::string AboutDiscards(const std::string& path) {
 
   chromeos::OomPriorityManager* oom =
       g_browser_process->platform_part()->oom_priority_manager();
-  std::vector<string16> titles = oom->GetTabTitles();
+  std::vector<base::string16> titles = oom->GetTabTitles();
   if (!titles.empty()) {
     output.append("<ul>");
-    std::vector<string16>::iterator it = titles.begin();
+    std::vector<base::string16>::iterator it = titles.begin();
     for ( ; it != titles.end(); ++it) {
       std::string title = UTF16ToUTF8(*it);
       title = net::EscapeForHTML(title);
@@ -520,102 +516,6 @@ std::string AboutDiscards(const std::string& path) {
 }
 
 #endif  // OS_CHROMEOS
-
-#if defined(USE_ASH)
-
-// Adds an entry to the chrome://transparency page, with the format:
-// |label|:
-// -- - |value|% + ++
-// where --, -, +, and ++ are links to change the appropriate |key|.
-// TODO(jamescook): Remove this temporary tool when we decide what the window
-// header opacity should be for Ash.
-std::string TransparencyLink(const std::string& label,
-                             int value,
-                             const std::string& key) {
-  return base::StringPrintf("<p>%s</p>"
-      "<p>"
-      "<a href='%s%s=%d'>--</a> "
-      "<a href='%s%s=%d'>-</a> "
-      "%d%% "
-      "<a href='%s%s=%d'>+</a> "
-      "<a href='%s%s=%d'>++</a>"
-      "</p>",
-      label.c_str(),
-      chrome::kChromeUITransparencyURL, key.c_str(), value - 5,
-      chrome::kChromeUITransparencyURL, key.c_str(), value - 1,
-      value,
-      chrome::kChromeUITransparencyURL, key.c_str(), value + 1,
-      chrome::kChromeUITransparencyURL, key.c_str(), value + 5);
-}
-
-// Returns a transparency percent from an opacity value.
-int TransparencyFromOpacity(int opacity) {
-  return (255 - opacity) * 100 / 255;
-}
-
-// Displays a tweaking page for window header transparency, as we're iterating
-// rapidly on how transparent we want the headers to be.
-// TODO(jamescook): Remove this temporary tool when we decide what the window
-// header opacity should be for Ash.
-std::string AboutTransparency(const std::string& path) {
-  const char kActive[] = "active";
-  const char kInactive[] = "inactive";
-  const char kSolo[] = "solo";
-  // Apply transparency based on a path like "active=10&inactive=25".
-  std::vector<std::pair<std::string, std::string> > kv_pairs;
-  if (!path.empty() &&
-      base::SplitStringIntoKeyValuePairs(path, '=', '&', &kv_pairs)) {
-    for (std::vector<std::pair<std::string, std::string> >::const_iterator it =
-            kv_pairs.begin();
-         it != kv_pairs.end();
-         ++it) {
-      int* opacity = NULL;
-      if (it->first == kActive)
-        opacity = &ash::FramePainter::kActiveWindowOpacity;
-      else if (it->first == kInactive)
-        opacity = &ash::FramePainter::kInactiveWindowOpacity;
-      else if (it->first == kSolo)
-        opacity = &ash::FramePainter::kSoloWindowOpacity;
-      if (opacity) {
-        int transparent = 0;
-        base::StringToInt(it->second, &transparent);
-        transparent = std::max(0, std::min(100, transparent));
-        *opacity = (100 - transparent) * 255 / 100;
-      }
-    }
-  }
-
-  // Display current settings.  Do everything in transparency-percent instead of
-  // opacity-value.
-  std::string output;
-  AppendHeader(&output, 0, "About transparency");
-  AppendFooter(&output);
-  AppendBody(&output);
-  output.append("<h3>Window header transparency</h3>");
-  output.append(TransparencyLink("Active window:",
-      TransparencyFromOpacity(ash::FramePainter::kActiveWindowOpacity),
-      kActive));
-  output.append(TransparencyLink("Inactive window:",
-      TransparencyFromOpacity(ash::FramePainter::kInactiveWindowOpacity),
-      kInactive));
-  output.append(TransparencyLink("Solo window:",
-      TransparencyFromOpacity(ash::FramePainter::kSoloWindowOpacity),
-      kSolo));
-  output.append(base::StringPrintf(
-      "<p>Share: %s%s=%d&%s=%d&%s=%d</p>",
-      chrome::kChromeUITransparencyURL,
-      kActive,
-      TransparencyFromOpacity(ash::FramePainter::kActiveWindowOpacity),
-      kInactive,
-      TransparencyFromOpacity(ash::FramePainter::kInactiveWindowOpacity),
-      kSolo,
-      TransparencyFromOpacity(ash::FramePainter::kSoloWindowOpacity)));
-  output.append("<p>Reshape window to force a redraw.</p>");
-  AppendFooter(&output);
-  return output;
-}
-
-#endif  // USE_ASH
 
 // AboutDnsHandler bounces the request back to the IO thread to collect
 // the DNS information.
@@ -808,8 +708,7 @@ std::string AboutStats(const std::string& query) {
   if (query == "json" || query == kStringsJsPath) {
     base::JSONWriter::WriteWithOptions(
           &root,
-          base::JSONWriter::OPTIONS_DO_NOT_ESCAPE |
-              base::JSONWriter::OPTIONS_PRETTY_PRINT,
+          base::JSONWriter::OPTIONS_PRETTY_PRINT,
           &data);
     if (query == kStringsJsPath)
       data = "var templateData = " + data + ";";
@@ -924,7 +823,7 @@ std::string AboutSandbox() {
   AboutSandboxRow(&data,
                   std::string(),
                   IDS_ABOUT_SANDBOX_SECCOMP_BPF_SANDBOX,
-                  status & content::kSandboxLinuxSeccompBpf);
+                  status & content::kSandboxLinuxSeccompBPF);
 
   data.append("</table>");
 
@@ -933,7 +832,7 @@ std::string AboutSandbox() {
                      status & content::kSandboxLinuxPIDNS &&
                      status & content::kSandboxLinuxNetNS;
   // A second-layer sandbox is also required to be adequately sandboxed.
-  bool good_layer2 = status & content::kSandboxLinuxSeccompBpf;
+  bool good_layer2 = status & content::kSandboxLinuxSeccompBPF;
   bool good = good_layer1 && good_layer2;
 
   if (good) {
@@ -1004,7 +903,7 @@ void AboutMemoryHandler::OnDetailsAvailable() {
   const std::vector<ProcessData>& browser_processes = processes();
 
   // Aggregate per-process data into browser summary data.
-  string16 log_string;
+  base::string16 log_string;
   for (size_t index = 0; index < browser_processes.size(); index++) {
     if (browser_processes[index].processes.empty())
       continue;
@@ -1111,10 +1010,6 @@ void AboutUIHTMLSource::StartDataRequest(
   } else if (source_name_ == chrome::kChromeUIDiscardsHost) {
     response = AboutDiscards(path);
 #endif
-#if defined(USE_ASH)
-  } else if (source_name_ == chrome::kChromeUITransparencyHost) {
-    response = AboutTransparency(path);
-#endif
   } else if (source_name_ == chrome::kChromeUIDNSHost) {
     AboutDnsHandler::Start(profile(), callback);
     return;
@@ -1128,8 +1023,6 @@ void AboutUIHTMLSource::StartDataRequest(
     FinishMemoryDataRequest(path, callback);
     return;
 #if defined(OS_CHROMEOS)
-  } else if (source_name_ == chrome::kChromeUINetworkHost) {
-    response = chromeos::about_ui::AboutNetwork(path);
   } else if (source_name_ == chrome::kChromeUIOSCreditsHost) {
     response = ResourceBundle::GetSharedInstance().GetRawDataResource(
         IDR_OS_CREDITS_HTML).as_string();

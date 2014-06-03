@@ -9,8 +9,8 @@
 #include <string>
 #include <vector>
 
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/manifest_handler.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/manifest_handler.h"
 #include "url/gurl.h"
 
 namespace extensions {
@@ -39,6 +39,7 @@ struct InputComponentInfo {
   bool shortcut_ctrl;
   bool shortcut_shift;
   GURL options_page_url;
+  GURL input_view_url;
 };
 
 struct InputComponents : public Extension::ManifestData {
@@ -59,7 +60,10 @@ class InputComponentsHandler : public ManifestHandler {
   InputComponentsHandler();
   virtual ~InputComponentsHandler();
 
-  virtual bool Parse(Extension* extension, string16* error) OVERRIDE;
+  virtual bool Parse(Extension* extension, base::string16* error) OVERRIDE;
+
+  // Requires kOptionsPage is already parsed.
+  virtual const std::vector<std::string> PrerequisiteKeys() const OVERRIDE;
 
  private:
   virtual const std::vector<std::string> Keys() const OVERRIDE;

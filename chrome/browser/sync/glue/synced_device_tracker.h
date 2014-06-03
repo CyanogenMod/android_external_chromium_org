@@ -11,6 +11,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
+#include "base/observer_list_threadsafe.h"
 #include "chrome/browser/sync/glue/change_processor.h"
 
 namespace syncer {
@@ -26,6 +27,12 @@ class SyncedDeviceTracker : public ChangeProcessor {
   SyncedDeviceTracker(syncer::UserShare* user_share,
                       const std::string& cache_guid);
   virtual ~SyncedDeviceTracker();
+
+  // Observer class for listening to device info changes.
+  class Observer {
+   public:
+    virtual void OnDeviceInfoChange() = 0;
+  };
 
   // ChangeProcessor methods
   virtual void StartImpl(Profile* profile) OVERRIDE;
@@ -46,6 +53,14 @@ class SyncedDeviceTracker : public ChangeProcessor {
   virtual void GetAllSyncedDeviceInfo(
       ScopedVector<DeviceInfo>* device_info) const;
 
+  virtual std::string cache_guid() const;
+
+  // Can be called on any thread. Will be notified back on the same thread
+  // they were called on. Observer will be called on every device info
+  // change.
+  void AddObserver(Observer* observer);
+  void RemoveObserver(Observer* observer);
+
  private:
   friend class SyncedDeviceTrackerTest;
 
@@ -60,11 +75,16 @@ class SyncedDeviceTracker : public ChangeProcessor {
   void WriteDeviceInfo(const sync_pb::DeviceInfoSpecifics& specifics,
                        const std::string& tag);
 
-  base::WeakPtrFactory<SyncedDeviceTracker> weak_factory_;
-
   syncer::UserShare* user_share_;
   const std::string cache_guid_;
   const std::string local_device_info_tag_;
+
+  // The |ObserverList| has to be thread safe as the changes happen
+  // on sync thread and the observers could be on any thread.
+  typedef ObserverListThreadSafe<Observer> ObserverList;
+  scoped_refptr<ObserverList> observers_;
+
+  base::WeakPtrFactory<SyncedDeviceTracker> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(SyncedDeviceTracker);
 };

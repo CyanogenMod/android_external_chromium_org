@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,30 +7,26 @@ package org.chromium.chrome.testshell;
 import android.content.Context;
 import android.text.TextUtils;
 
-import org.chromium.base.ObserverList;
-import org.chromium.chrome.browser.ChromeWebContentsDelegateAndroid;
-import org.chromium.chrome.browser.ContentViewUtil;
 import org.chromium.chrome.browser.TabBase;
+import org.chromium.chrome.browser.contextmenu.ChromeContextMenuPopulator;
+import org.chromium.chrome.browser.contextmenu.ContextMenuPopulator;
+import org.chromium.chrome.browser.infobar.AutoLoginProcessor;
 import org.chromium.content.browser.ContentView;
 import org.chromium.content.browser.LoadUrlParams;
 import org.chromium.content.common.CleanupReference;
-import org.chromium.ui.WindowAndroid;
+import org.chromium.ui.base.WindowAndroid;
 
 /**
  * TestShell's implementation of a tab. This mirrors how Chrome for Android subclasses
  * and extends {@link TabBase}.
  */
 public class TestShellTab extends TabBase {
-    private ChromeWebContentsDelegateAndroid mWebContentsDelegate;
-    private ContentView mContentView;
-    private int mNativeTestShellTab;
-    private final ObserverList<TestShellTabObserver> mObservers =
-        new ObserverList<TestShellTabObserver>();
+    private long mNativeTestShellTab;
 
     private CleanupReference mCleanupReference;
 
     // Tab state
-    private boolean mIsLoading = false;
+    private boolean mIsLoading;
 
     /**
      * @param context  The Context the view is running in.
@@ -38,58 +34,28 @@ public class TestShellTab extends TabBase {
      * @param window   The WindowAndroid should represent this tab.
      */
     public TestShellTab(Context context, String url, WindowAndroid window) {
-        super(window);
-        init(context);
+        super(false, context, window);
+        initialize();
+        initContentView();
         loadUrlWithSanitization(url);
     }
 
-    /**
-     * @param context              The Context the view is running in.
-     */
-    private void init(Context context) {
-        // Build the WebContents and the ContentView/ContentViewCore
-        int nativeWebContentsPtr = ContentViewUtil.createNativeWebContents(false);
-        mContentView = ContentView.newInstance(context, nativeWebContentsPtr, getWindowAndroid());
-        mNativeTestShellTab = nativeInit(nativeWebContentsPtr,
-                getWindowAndroid().getNativePointer());
+    @Override
+    public void initialize() {
+        super.initialize();
 
-        // Build the WebContentsDelegate
-        mWebContentsDelegate = new TabBaseChromeWebContentsDelegateAndroid();
-        nativeInitWebContentsDelegate(mNativeTestShellTab, mWebContentsDelegate);
-
-        // To be called after everything is initialized.
-        mCleanupReference = new CleanupReference(this,
-                new DestroyRunnable(mNativeTestShellTab));
+        mNativeTestShellTab = nativeInit();
+        mCleanupReference = new CleanupReference(this, new DestroyRunnable(mNativeTestShellTab));
     }
 
-    /**
-     * Should be called when the tab is no longer needed.  Once this is called this tab should not
-     * be used.
-     */
+    @Override
     public void destroy() {
-        for (TestShellTabObserver observer : mObservers) {
-            observer.onCloseTab(TestShellTab.this);
-        }
-        destroyContentView();
+        super.destroy();
+
         if (mNativeTestShellTab != 0) {
             mCleanupReference.cleanupNow();
             mNativeTestShellTab = 0;
         }
-    }
-
-    /**
-     * @param observer The {@link TestShellTabObserver} that should be notified of changes.
-     */
-    public void addObserver(TestShellTabObserver observer) {
-        mObservers.addObserver(observer);
-    }
-
-    /**
-     * @param observer The {@link TestShellTabObserver} that should no longer be notified of
-     * changes.
-     */
-    public void removeObserver(TestShellTabObserver observer) {
-        mObservers.removeObserver(observer);
     }
 
     /**
@@ -100,25 +66,11 @@ public class TestShellTab extends TabBase {
     }
 
     /**
-     * @return The {@link ContentView} represented by this tab.
-     */
-    public ContentView getContentView() {
-        return mContentView;
-    }
-
-
-    private void destroyContentView() {
-        if (mContentView == null) return;
-
-        mContentView.destroy();
-        mContentView = null;
-    }
-
-    /**
      * Navigates this Tab's {@link ContentView} to a sanitized version of {@code url}.
      * @param url The potentially unsanitized URL to navigate to.
+     * @param postData Optional data to be sent via POST.
      */
-    public void loadUrlWithSanitization(String url) {
+    public void loadUrlWithSanitization(String url, byte[] postData) {
         if (url == null) return;
 
         // Sanitize the URL.
@@ -127,16 +79,34 @@ public class TestShellTab extends TabBase {
         // Invalid URLs will just return empty.
         if (TextUtils.isEmpty(url)) return;
 
-        if (TextUtils.equals(url, mContentView.getUrl())) {
-            mContentView.reload();
+        ContentView contentView = getContentView();
+        if (TextUtils.equals(url, contentView.getUrl())) {
+            contentView.getContentViewCore().reload(true);
         } else {
-            mContentView.loadUrl(new LoadUrlParams(url));
+            if (postData == null) {
+                contentView.loadUrl(new LoadUrlParams(url));
+            } else {
+                contentView.loadUrl(LoadUrlParams.createLoadHttpPostParams(url, postData));
+            }
         }
     }
 
+    /**
+     * Navigates this Tab's {@link ContentView} to a sanitized version of {@code url}.
+     * @param url The potentially unsanitized URL to navigate to.
+     */
+    public void loadUrlWithSanitization(String url) {
+        loadUrlWithSanitization(url, null);
+    }
+
+    @Override
+    protected TabBaseChromeWebContentsDelegateAndroid createWebContentsDelegate() {
+        return new TestShellTabBaseChromeWebContentsDelegateAndroid();
+    }
+
     private static final class DestroyRunnable implements Runnable {
-        private final int mNativeTestShellTab;
-        private DestroyRunnable(int nativeTestShellTab) {
+        private final long mNativeTestShellTab;
+        private DestroyRunnable(long nativeTestShellTab) {
             mNativeTestShellTab = nativeTestShellTab;
         }
         @Override
@@ -145,22 +115,30 @@ public class TestShellTab extends TabBase {
         }
     }
 
-    private class TabBaseChromeWebContentsDelegateAndroid
-            extends ChromeWebContentsDelegateAndroid {
-        @Override
-        public void onLoadProgressChanged(int progress) {
-            for (TestShellTabObserver observer : mObservers) {
-                observer.onLoadProgressChanged(TestShellTab.this, progress);
+    @Override
+    protected AutoLoginProcessor createAutoLoginProcessor() {
+        return new AutoLoginProcessor() {
+            @Override
+            public void processAutoLoginResult(String accountName,
+                    String authToken, boolean success, String result) {
+                getInfoBarContainer().processAutoLogin(accountName, authToken,
+                        success, result);
             }
-        }
+        };
+    }
 
-        @Override
-        public void onUpdateUrl(String url) {
-            for (TestShellTabObserver observer : mObservers) {
-                observer.onUpdateUrl(TestShellTab.this, url);
+    @Override
+    protected ContextMenuPopulator createContextMenuPopulator() {
+        return new ChromeContextMenuPopulator(new TabBaseChromeContextMenuItemDelegate() {
+            @Override
+            public void onOpenImageUrl(String url) {
+                loadUrlWithSanitization(url);
             }
-        }
+        });
+    }
 
+    private class TestShellTabBaseChromeWebContentsDelegateAndroid
+            extends TabBaseChromeWebContentsDelegateAndroid {
         @Override
         public void onLoadStarted() {
             mIsLoading = true;
@@ -172,9 +150,7 @@ public class TestShellTab extends TabBase {
         }
     }
 
-    private native int nativeInit(int webContentsPtr, int windowAndroidPtr);
-    private static native void nativeDestroy(int nativeTestShellTab);
-    private native void nativeInitWebContentsDelegate(int nativeTestShellTab,
-            ChromeWebContentsDelegateAndroid chromeWebContentsDelegateAndroid);
-    private native String nativeFixupUrl(int nativeTestShellTab, String url);
+    private native long nativeInit();
+    private static native void nativeDestroy(long nativeTestShellTab);
+    private native String nativeFixupUrl(long nativeTestShellTab, String url);
 }

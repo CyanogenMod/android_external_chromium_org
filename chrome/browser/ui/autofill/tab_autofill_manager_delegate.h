@@ -9,9 +9,6 @@
 #include "base/compiler_specific.h"
 #include "base/i18n/rtl.h"
 #include "base/memory/weak_ptr.h"
-#include "chrome/browser/ui/autofill/autofill_dialog_types.h"
-#include "components/autofill/content/browser/autocheckout_steps.h"
-#include "components/autofill/core/browser/autocheckout_bubble_state.h"
 #include "components/autofill/core/browser/autofill_manager_delegate.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_contents_user_data.h"
@@ -24,7 +21,6 @@ class WebContents;
 
 namespace autofill {
 
-class AutocheckoutBubble;
 class AutofillDialogController;
 class AutofillPopupControllerImpl;
 struct FormData;
@@ -38,38 +34,28 @@ class TabAutofillManagerDelegate
   virtual ~TabAutofillManagerDelegate();
 
   // Called when the tab corresponding to |this| instance is activated.
-  void TabActivated(int reason);
+  void TabActivated();
 
   // AutofillManagerDelegate implementation.
   virtual PersonalDataManager* GetPersonalDataManager() OVERRIDE;
+  virtual scoped_refptr<AutofillWebDataService>
+      GetDatabase() OVERRIDE;
   virtual PrefService* GetPrefs() OVERRIDE;
-  virtual autocheckout::WhitelistManager*
-      GetAutocheckoutWhitelistManager() const OVERRIDE;
   virtual void HideRequestAutocompleteDialog() OVERRIDE;
-  virtual void OnAutocheckoutError() OVERRIDE;
-  virtual void OnAutocheckoutSuccess() OVERRIDE;
   virtual void ShowAutofillSettings() OVERRIDE;
   virtual void ConfirmSaveCreditCard(
       const AutofillMetrics& metric_logger,
-      const CreditCard& credit_card,
       const base::Closure& save_card_callback) OVERRIDE;
-  virtual bool ShowAutocheckoutBubble(
-      const gfx::RectF& bounds,
-      bool is_google_user,
-      const base::Callback<void(AutocheckoutBubbleState)>& callback) OVERRIDE;
-  virtual void HideAutocheckoutBubble() OVERRIDE;
   virtual void ShowRequestAutocompleteDialog(
       const FormData& form,
       const GURL& source_url,
-      DialogType dialog_type,
-      const base::Callback<void(const FormStructure*,
-                                const std::string&)>& callback) OVERRIDE;
+      const base::Callback<void(const FormStructure*)>& callback) OVERRIDE;
   virtual void ShowAutofillPopup(
       const gfx::RectF& element_bounds,
       base::i18n::TextDirection text_direction,
-      const std::vector<string16>& values,
-      const std::vector<string16>& labels,
-      const std::vector<string16>& icons,
+      const std::vector<base::string16>& values,
+      const std::vector<base::string16>& labels,
+      const std::vector<base::string16>& icons,
       const std::vector<int>& identifiers,
       base::WeakPtr<AutofillPopupDelegate> delegate) OVERRIDE;
   virtual void UpdateAutofillPopupDataListValues(
@@ -78,10 +64,8 @@ class TabAutofillManagerDelegate
   virtual void HideAutofillPopup() OVERRIDE;
   virtual bool IsAutocompleteEnabled() OVERRIDE;
 
-  virtual void AddAutocheckoutStep(AutocheckoutStepType step_type) OVERRIDE;
-  virtual void UpdateAutocheckoutStep(
-      AutocheckoutStepType step_type,
-      AutocheckoutStepStatus step_status) OVERRIDE;
+  virtual void DetectAccountCreationForms(
+      const std::vector<autofill::FormStructure*>& forms) OVERRIDE;
 
   // content::WebContentsObserver implementation.
   virtual void DidNavigateMainFrame(
@@ -95,6 +79,10 @@ class TabAutofillManagerDelegate
   AutofillDialogController* GetDialogControllerForTesting() {
     return dialog_controller_.get();
   }
+  void SetDialogControllerForTesting(
+      const base::WeakPtr<AutofillDialogController>& dialog_controller) {
+    dialog_controller_ = dialog_controller;
+  }
 
  private:
   explicit TabAutofillManagerDelegate(content::WebContents* web_contents);
@@ -102,7 +90,6 @@ class TabAutofillManagerDelegate
 
   content::WebContents* const web_contents_;
   base::WeakPtr<AutofillDialogController> dialog_controller_;
-  base::WeakPtr<AutocheckoutBubble> autocheckout_bubble_;
   base::WeakPtr<AutofillPopupControllerImpl> popup_controller_;
 
   DISALLOW_COPY_AND_ASSIGN(TabAutofillManagerDelegate);

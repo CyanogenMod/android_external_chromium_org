@@ -50,7 +50,10 @@ class NewMockPersistentCookieStore
   MOCK_METHOD1(AddCookie, void(const CanonicalCookie& cc));
   MOCK_METHOD1(UpdateCookieAccessTime, void(const CanonicalCookie& cc));
   MOCK_METHOD1(DeleteCookie, void(const CanonicalCookie& cc));
-  MOCK_METHOD1(Flush, void(const base::Closure& callback));
+  virtual void Flush(const base::Closure& callback) {
+    if (!callback.is_null())
+      base::MessageLoop::current()->PostTask(FROM_HERE, callback);
+  }
   MOCK_METHOD0(SetForceKeepSessionState, void());
 
  private:
@@ -89,7 +92,6 @@ struct CookieMonsterTestTraits {
 
   static const bool is_cookie_monster              = true;
   static const bool supports_http_only             = true;
-  static const bool supports_cookies_with_info     = true;
   static const bool supports_non_dotted_domains    = true;
   static const bool supports_trailing_dots         = true;
   static const bool filters_schemes                = true;
@@ -570,7 +572,6 @@ class CookieMonsterTest : public CookieStoreTest<CookieMonsterTestTraits> {
     DCHECK_EQ(70U, CookieMonster::kDomainCookiesQuotaHigh);
 
     scoped_refptr<CookieMonster> cm(new CookieMonster(NULL, NULL));
-    cm->SetPriorityAwareGarbageCollection(true);
 
     // Each test case adds 181 cookies, so 31 cookies are evicted.
     // Cookie same priority, repeated for each priority.
@@ -1097,16 +1098,13 @@ TEST_F(DeferredCookieTaskTest, DeferredTaskOrder) {
 
   MockGetCookiesCallback get_cookies_callback;
   MockSetCookiesCallback set_cookies_callback;
-  MockClosure delete_cookie_callback;
   MockGetCookiesCallback get_cookies_callback_deferred;
 
   EXPECT_CALL(*this, Begin()).WillOnce(testing::DoAll(
       GetCookiesAction(
           &cookie_monster(), url_google_, &get_cookies_callback),
       SetCookieAction(
-          &cookie_monster(), url_google_, "A=B", &set_cookies_callback),
-      DeleteCookieAction(
-          &cookie_monster(), url_google_, "A", &delete_cookie_callback)));
+          &cookie_monster(), url_google_, "A=B", &set_cookies_callback)));
   ExpectLoadCall();
   ExpectLoadForKeyCall("google.izzle", false);
   Begin();
@@ -1115,10 +1113,9 @@ TEST_F(DeferredCookieTaskTest, DeferredTaskOrder) {
   EXPECT_CALL(get_cookies_callback, Invoke("X=1")).WillOnce(
       GetCookiesAction(
           &cookie_monster(), url_google_, &get_cookies_callback_deferred));
-  EXPECT_CALL(get_cookies_callback_deferred, Invoke("X=1")).WillOnce(
-      QuitCurrentMessageLoop());
   EXPECT_CALL(set_cookies_callback, Invoke(true));
-  EXPECT_CALL(delete_cookie_callback, Invoke());
+  EXPECT_CALL(get_cookies_callback_deferred, Invoke("A=B; X=1")).WillOnce(
+      QuitCurrentMessageLoop());
 
   CompleteLoadingAndWait();
 }
@@ -2683,6 +2680,47 @@ TEST_F(CookieMonsterTest, PersisentCookieStorageTest) {
   EXPECT_TRUE(SetCookie(cm.get(), url_google_, "B=Bar"));
   this->MatchCookieLines("A=Foo; B=Bar", GetCookies(cm.get(), url_google_));
   EXPECT_EQ(5u, store->commands().size());
+}
+
+// Test to assure that cookies with control characters are purged appropriately.
+// See http://crbug.com/238041 for background.
+TEST_F(CookieMonsterTest, ControlCharacterPurge) {
+  const Time now1(Time::Now());
+  const Time now2(Time::Now() + TimeDelta::FromSeconds(1));
+  const Time now3(Time::Now() + TimeDelta::FromSeconds(2));
+  const Time later(now1 + TimeDelta::FromDays(1));
+  const GURL url("http://host/path");
+  const std::string domain("host");
+  const std::string path("/path");
+
+  scoped_refptr<MockPersistentCookieStore> store(
+      new MockPersistentCookieStore);
+
+  std::vector<CanonicalCookie*> initial_cookies;
+
+  AddCookieToList(domain,
+                  "foo=bar; path=" + path,
+                  now1,
+                  &initial_cookies);
+
+  // We have to manually build this cookie because it contains a control
+  // character, and our cookie line parser rejects control characters.
+  CanonicalCookie *cc = new CanonicalCookie(url, "baz", "\x05" "boo", domain,
+                                            path, now2, later, now2, false,
+                                            false, COOKIE_PRIORITY_DEFAULT);
+  initial_cookies.push_back(cc);
+
+  AddCookieToList(domain,
+                  "hello=world; path=" + path,
+                  now3,
+                  &initial_cookies);
+
+  // Inject our initial cookies into the mock PersistentCookieStore.
+  store->SetLoadExpectation(true, initial_cookies);
+
+  scoped_refptr<CookieMonster> cm(new CookieMonster(store.get(), NULL));
+
+  EXPECT_EQ("foo=bar; hello=world", GetCookies(cm.get(), url));
 }
 
 }  // namespace net

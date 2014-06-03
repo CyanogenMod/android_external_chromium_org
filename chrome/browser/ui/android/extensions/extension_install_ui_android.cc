@@ -5,21 +5,15 @@
 #include "chrome/browser/ui/android/extensions/extension_install_ui_android.h"
 
 #include "base/logging.h"
-#include "chrome/browser/extensions/extension_install_prompt.h"
-#include "chrome/browser/profiles/profile.h"
-#include "content/public/browser/web_contents.h"
 
 void ExtensionInstallUIAndroid::OnInstallSuccess(
-    const extensions::Extension* extension, SkBitmap* icon) {
+    const extensions::Extension* extension,
+    SkBitmap* icon) {
   NOTIMPLEMENTED();
 }
 
 void ExtensionInstallUIAndroid::OnInstallFailure(
     const extensions::CrxInstallerError& error) {
-  NOTIMPLEMENTED();
-}
-
-void ExtensionInstallUIAndroid::SetSkipPostInstallUI(bool skip_ui) {
   NOTIMPLEMENTED();
 }
 
@@ -30,13 +24,8 @@ ExtensionInstallUI* ExtensionInstallUI::Create(Profile* profile) {
 }
 
 // static
-void ExtensionInstallUI::OpenAppInstalledUI(
-    Profile* profile, const std::string& app_id) {
-  NOTIMPLEMENTED();
-}
-
-// static
-void ExtensionInstallUI::DisableFailureUIForTests() {
+void ExtensionInstallUI::OpenAppInstalledUI(Profile* profile,
+                                            const std::string& app_id) {
   NOTIMPLEMENTED();
 }
 

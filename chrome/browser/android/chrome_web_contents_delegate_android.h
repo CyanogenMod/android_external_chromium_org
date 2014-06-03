@@ -37,6 +37,7 @@ class ChromeWebContentsDelegateAndroid
   ChromeWebContentsDelegateAndroid(JNIEnv* env, jobject obj);
   virtual ~ChromeWebContentsDelegateAndroid();
 
+  virtual void LoadingStateChanged(content::WebContents* source) OVERRIDE;
   virtual void RunFileChooser(content::WebContents* web_contents,
                               const content::FileChooserParams& params)
                               OVERRIDE;
@@ -61,6 +62,19 @@ class ChromeWebContentsDelegateAndroid
       content::WebContents* web_contents,
       const GURL& url,
       const base::FilePath& plugin_path,
+      const base::Callback<void(bool)>& callback) OVERRIDE;
+  virtual content::WebContents* OpenURLFromTab(
+      content::WebContents* source,
+      const content::OpenURLParams& params) OVERRIDE;
+  virtual void AddNewContents(content::WebContents* source,
+                              content::WebContents* new_contents,
+                              WindowOpenDisposition disposition,
+                              const gfx::Rect& initial_pos,
+                              bool user_gesture,
+                              bool* was_blocked) OVERRIDE;
+  virtual void RequestProtectedMediaIdentifierPermission(
+      const content::WebContents* web_contents,
+      const GURL& frame_url,
       const base::Callback<void(bool)>& callback) OVERRIDE;
 
  private:

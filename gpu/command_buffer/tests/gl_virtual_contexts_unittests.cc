@@ -48,6 +48,7 @@ class GLVirtualContextsTest : public testing::Test {
 
 namespace {
 
+#if !defined(OS_ANDROID)
 void SetupSimpleShader(const uint8* color) {
   static const char* v_shader_str = SHADER(
       attribute vec4 a_Position;
@@ -90,8 +91,12 @@ void TestDraw(int size) {
   glDrawArrays(GL_TRIANGLES, 0, 6);
 }
 
+#endif  // !defined(OS_ANDROID)
+
 }  // anonymous namespace
 
+// http://crbug.com/281565
+#if !defined(OS_ANDROID)
 TEST_F(GLVirtualContextsTest, Basic) {
   struct TestInfo {
     int size;
@@ -134,6 +139,7 @@ TEST_F(GLVirtualContextsTest, Basic) {
     GLTestHelper::CheckGLError("no errors", __LINE__);
   }
 }
+#endif
 
 }  // namespace gpu
 

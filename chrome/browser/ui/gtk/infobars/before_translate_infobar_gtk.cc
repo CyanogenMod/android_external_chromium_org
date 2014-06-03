@@ -13,23 +13,22 @@
 #include "ui/base/l10n/l10n_util.h"
 
 BeforeTranslateInfoBar::BeforeTranslateInfoBar(
-    InfoBarService* owner,
-    TranslateInfoBarDelegate* delegate)
-    : TranslateInfoBarBase(owner, delegate) {
+    scoped_ptr<TranslateInfoBarDelegate> delegate)
+    : TranslateInfoBarBase(delegate.Pass()) {
 }
 
 BeforeTranslateInfoBar::~BeforeTranslateInfoBar() {
 }
 
-void BeforeTranslateInfoBar::InitWidgets() {
-  TranslateInfoBarBase::InitWidgets();
+void BeforeTranslateInfoBar::PlatformSpecificSetOwner() {
+  TranslateInfoBarBase::PlatformSpecificSetOwner();
 
   GtkWidget* new_hbox = gtk_hbox_new(FALSE, ui::kControlSpacing);
   gtk_util::CenterWidgetInHBox(hbox(), new_hbox, false, 0);
   size_t offset = 0;
-  string16 text =
+  base::string16 text =
       l10n_util::GetStringFUTF16(IDS_TRANSLATE_INFOBAR_BEFORE_MESSAGE,
-                                 string16(), &offset);
+                                 base::string16(), &offset);
 
   gtk_box_pack_start(GTK_BOX(new_hbox),
                      CreateLabel(UTF16ToUTF8(text.substr(0, offset))),
@@ -87,7 +86,7 @@ bool BeforeTranslateInfoBar::ShowOptionsMenuButton() const {
 }
 
 void BeforeTranslateInfoBar::OnLanguageModified(GtkWidget* sender) {
-  GetDelegate()->set_original_language_index(
+  GetDelegate()->UpdateOriginalLanguageIndex(
       GetLanguageComboboxActiveId(GTK_COMBO_BOX(sender)));
 }
 

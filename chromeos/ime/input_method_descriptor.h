@@ -23,7 +23,9 @@ class CHROMEOS_EXPORT InputMethodDescriptor {
                         const std::string& name,
                         const std::vector<std::string>& keyboard_layouts,
                         const std::vector<std::string>& language_codes,
-                        const GURL& options_page_url);
+                        bool is_login_keyboard,
+                        const GURL& options_page_url,
+                        const GURL& input_view_url);
   ~InputMethodDescriptor();
 
   // Accessors
@@ -33,9 +35,12 @@ class CHROMEOS_EXPORT InputMethodDescriptor {
     return language_codes_;
   }
   const GURL& options_page_url() const { return options_page_url_; }
+  const GURL& input_view_url() const { return input_view_url_; }
   const std::vector<std::string>& keyboard_layouts() const {
     return keyboard_layouts_;
   }
+
+  bool is_login_keyboard() const { return is_login_keyboard_; }
 
   // Returns preferred keyboard layout.
   std::string GetPreferredKeyboardLayout() const;
@@ -56,11 +61,18 @@ class CHROMEOS_EXPORT InputMethodDescriptor {
   // Language code like "ko", "ja", "en-US", and "zh-CN".
   std::vector<std::string> language_codes_;
 
+  // True if this input method can be used on login screen.
+  bool is_login_keyboard_;
+
   // Options page URL e.g.
   // "chrome-extension://ceaajjmckiakobniehbjpdcidfpohlin/options.html".
-  // We can't use GURL here due to dependency policy. This field is valid only
-  // for input method extension.
+  // This field is valid only for input method extension.
   GURL options_page_url_;
+
+  // Input View URL e.g.
+  // "chrome-extension://ceaajjmckiakobniehbjpdcidfpohlin/my_input_view.html".
+  // This field is valid only for input method extension.
+  GURL input_view_url_;
 };
 
 typedef std::vector<InputMethodDescriptor> InputMethodDescriptors;

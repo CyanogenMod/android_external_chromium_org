@@ -29,7 +29,6 @@ class TestLoginUtils : public LoginUtils {
                                LoginDisplayHost* login_host) OVERRIDE {}
   virtual void PrepareProfile(const UserContext& credentials,
                               const std::string& display_email,
-                              bool using_oauth,
                               bool has_cookies,
                               bool has_active_session,
                               Delegate* delegate) OVERRIDE;
@@ -46,8 +45,6 @@ class TestLoginUtils : public LoginUtils {
   virtual void RestoreAuthenticationSession(Profile* profile) OVERRIDE {}
 
   virtual void InitRlzDelayed(Profile* user_profile) OVERRIDE;
-
-  virtual void StopBackgroundFetchers() OVERRIDE;
 
  private:
   std::string expected_username_;

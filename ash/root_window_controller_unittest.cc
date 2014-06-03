@@ -12,16 +12,22 @@
 #include "ash/test/ash_test_base.h"
 #include "ash/wm/system_modal_container_layout_manager.h"
 #include "ash/wm/window_properties.h"
+#include "ash/wm/window_state.h"
 #include "ash/wm/window_util.h"
+#include "base/command_line.h"
 #include "ui/aura/client/focus_change_observer.h"
 #include "ui/aura/client/focus_client.h"
+#include "ui/aura/client/window_tree_client.h"
 #include "ui/aura/env.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/test/event_generator.h"
+#include "ui/aura/test/test_event_handler.h"
 #include "ui/aura/test/test_window_delegate.h"
 #include "ui/aura/test/test_windows.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_tracker.h"
+#include "ui/keyboard/keyboard_controller_proxy.h"
+#include "ui/keyboard/keyboard_switches.h"
 #include "ui/views/controls/menu/menu_controller.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_delegate.h"
@@ -48,6 +54,7 @@ class TestDelegate : public views::WidgetDelegateView {
 
  private:
   bool system_modal_;
+
   DISALLOW_COPY_AND_ASSIGN(TestDelegate);
 };
 
@@ -110,7 +117,7 @@ class RootWindowControllerTest : public test::AshTestBase {
     return widget;
   }
 
-  aura::Window* GetModalContainer(aura::RootWindow* root_window) {
+  aura::Window* GetModalContainer(aura::Window* root_window) {
     return Shell::GetContainer(
         root_window,
         ash::internal::kShellWindowId_SystemModalContainer);
@@ -122,7 +129,7 @@ TEST_F(RootWindowControllerTest, MoveWindows_Basic) {
     return;
 
   UpdateDisplay("600x600,500x500");
-  Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
+  aura::Window::Windows root_windows = Shell::GetAllRootWindows();
   internal::RootWindowController* controller =
       Shell::GetPrimaryRootWindowController();
   internal::ShelfLayoutManager* shelf_layout_manager =
@@ -139,8 +146,8 @@ TEST_F(RootWindowControllerTest, MoveWindows_Basic) {
   views::Widget* maximized = CreateTestWidget(gfx::Rect(700, 10, 100, 100));
   maximized->Maximize();
   EXPECT_EQ(root_windows[1], maximized->GetNativeView()->GetRootWindow());
-  EXPECT_EQ("600,0 500x452", maximized->GetWindowBoundsInScreen().ToString());
-  EXPECT_EQ("0,0 500x452",
+  EXPECT_EQ("600,0 500x453", maximized->GetWindowBoundsInScreen().ToString());
+  EXPECT_EQ("0,0 500x453",
             maximized->GetNativeView()->GetBoundsInRootWindow().ToString());
 
   views::Widget* minimized = CreateTestWidget(gfx::Rect(800, 10, 100, 100));
@@ -227,7 +234,7 @@ TEST_F(RootWindowControllerTest, MoveWindows_Basic) {
             fullscreen->GetNativeView()->GetBoundsInRootWindow().ToString());
 
   // Test if the restore bounds are correctly updated.
-  wm::RestoreWindow(maximized->GetNativeView());
+  wm::GetWindowState(maximized->GetNativeView())->Restore();
   EXPECT_EQ("100,10 100x100", maximized->GetWindowBoundsInScreen().ToString());
   EXPECT_EQ("100,10 100x100",
             maximized->GetNativeView()->GetBoundsInRootWindow().ToString());
@@ -255,7 +262,7 @@ TEST_F(RootWindowControllerTest, MoveWindows_Modal) {
 
   UpdateDisplay("500x500,500x500");
 
-  Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
+  aura::Window::Windows root_windows = Shell::GetAllRootWindows();
   // Emulate virtual screen coordinate system.
   root_windows[0]->SetBounds(gfx::Rect(0, 0, 500, 500));
   root_windows[1]->SetBounds(gfx::Rect(500, 0, 500, 500));
@@ -419,9 +426,7 @@ TEST_F(RootWindowControllerTest, ModalContainerBlockedSession) {
   }
 }
 
-// Test that GetFullscreenWindow() returns a fullscreen window only if the
-// fullscreen window is in the active workspace.
-TEST_F(RootWindowControllerTest, GetFullscreenWindow) {
+TEST_F(RootWindowControllerTest, GetWindowForFullscreenMode) {
   UpdateDisplay("600x600");
   internal::RootWindowController* controller =
       Shell::GetInstance()->GetPrimaryRootWindowController();
@@ -434,15 +439,23 @@ TEST_F(RootWindowControllerTest, GetFullscreenWindow) {
   Widget* w3 = Widget::CreateWindowWithParentAndBounds(NULL,
       w2->GetNativeWindow(), gfx::Rect(0, 0, 100, 100));
 
-  // Test that GetFullscreenWindow() finds the fullscreen window when one of
-  // its transient children is active.
+  // Test that GetWindowForFullscreenMode() finds the fullscreen window when one
+  // of its transient children is active.
   w3->Activate();
-  EXPECT_EQ(w2->GetNativeWindow(), controller->GetFullscreenWindow());
+  EXPECT_EQ(w2->GetNativeWindow(), controller->GetWindowForFullscreenMode());
 
-  // Since there's only one desktop workspace, it always returns the same
-  // fullscreen window.
+  // If the topmost window is not fullscreen, it returns NULL.
   w1->Activate();
-  EXPECT_EQ(w2->GetNativeWindow(), controller->GetFullscreenWindow());
+  EXPECT_EQ(NULL, controller->GetWindowForFullscreenMode());
+  w1->Close();
+  w3->Close();
+
+  // Only w2 remains, if minimized GetWindowForFullscreenMode should return
+  // NULL.
+  w2->Activate();
+  EXPECT_EQ(w2->GetNativeWindow(), controller->GetWindowForFullscreenMode());
+  w2->Minimize();
+  EXPECT_EQ(NULL, controller->GetWindowForFullscreenMode());
 }
 
 // Test that user session window can't be focused if user session blocked by
@@ -473,11 +486,74 @@ TEST_F(RootWindowControllerTest, FocusBlockedWindow) {
   }
 }
 
+// Tracks whether OnWindowDestroying() has been invoked.
+class DestroyedWindowObserver : public aura::WindowObserver {
+ public:
+  DestroyedWindowObserver() : destroyed_(false), window_(NULL) {}
+  virtual ~DestroyedWindowObserver() {
+    Shutdown();
+  }
+
+  void SetWindow(Window* window) {
+    window_ = window;
+    window->AddObserver(this);
+  }
+
+  bool destroyed() const { return destroyed_; }
+
+  // WindowObserver overrides:
+  virtual void OnWindowDestroying(Window* window) OVERRIDE {
+    destroyed_ = true;
+    Shutdown();
+  }
+
+ private:
+  void Shutdown() {
+    if (!window_)
+      return;
+    window_->RemoveObserver(this);
+    window_ = NULL;
+  }
+
+  bool destroyed_;
+  Window* window_;
+
+  DISALLOW_COPY_AND_ASSIGN(DestroyedWindowObserver);
+};
+
+// Verifies shutdown doesn't delete windows that are not owned by the parent.
+TEST_F(RootWindowControllerTest, DontDeleteWindowsNotOwnedByParent) {
+  DestroyedWindowObserver observer1;
+  aura::test::TestWindowDelegate delegate1;
+  aura::Window* window1 = new aura::Window(&delegate1);
+  window1->SetType(aura::client::WINDOW_TYPE_CONTROL);
+  window1->set_owned_by_parent(false);
+  observer1.SetWindow(window1);
+  window1->Init(ui::LAYER_NOT_DRAWN);
+  aura::client::ParentWindowWithContext(
+      window1, Shell::GetInstance()->GetPrimaryRootWindow(), gfx::Rect());
+
+  DestroyedWindowObserver observer2;
+  aura::Window* window2 = new aura::Window(NULL);
+  window2->set_owned_by_parent(false);
+  observer2.SetWindow(window2);
+  window2->Init(ui::LAYER_NOT_DRAWN);
+  Shell::GetInstance()->GetPrimaryRootWindow()->AddChild(window2);
+
+  Shell::GetInstance()->GetPrimaryRootWindowController()->CloseChildWindows();
+
+  ASSERT_FALSE(observer1.destroyed());
+  delete window1;
+
+  ASSERT_FALSE(observer2.destroyed());
+  delete window2;
+}
+
 typedef test::NoSessionAshTestBase NoSessionRootWindowControllerTest;
 
 // Make sure that an event handler exists for entire display area.
 TEST_F(NoSessionRootWindowControllerTest, Event) {
-  aura::RootWindow* root = Shell::GetPrimaryRootWindow();
+  aura::Window* root = Shell::GetPrimaryRootWindow();
   const gfx::Size size = root->bounds().size();
   aura::Window* event_target = root->GetEventHandlerForPoint(gfx::Point(0, 0));
   EXPECT_TRUE(event_target);
@@ -490,6 +566,99 @@ TEST_F(NoSessionRootWindowControllerTest, Event) {
   EXPECT_EQ(event_target,
             root->GetEventHandlerForPoint(
                 gfx::Point(size.width() - 1, size.height() - 1)));
+}
+
+class VirtualKeyboardRootWindowControllerTest : public test::AshTestBase {
+ public:
+  VirtualKeyboardRootWindowControllerTest() {};
+  virtual ~VirtualKeyboardRootWindowControllerTest() {};
+
+  virtual void SetUp() OVERRIDE {
+    CommandLine::ForCurrentProcess()->AppendSwitch(
+        keyboard::switches::kEnableVirtualKeyboard);
+    test::AshTestBase::SetUp();
+    Shell::GetPrimaryRootWindowController()->ActivateKeyboard(
+        Shell::GetInstance()->keyboard_controller());
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(VirtualKeyboardRootWindowControllerTest);
+};
+
+// Test for http://crbug.com/297858. Virtual keyboard container should only show
+// on primary root window.
+TEST_F(VirtualKeyboardRootWindowControllerTest,
+       VirtualKeyboardOnPrimaryRootWindowOnly) {
+  if (!SupportsMultipleDisplays())
+    return;
+
+  UpdateDisplay("500x500,500x500");
+
+  aura::Window::Windows root_windows = Shell::GetAllRootWindows();
+  aura::Window* primary_root_window = Shell::GetPrimaryRootWindow();
+  aura::Window* secondary_root_window =
+      root_windows[0] == primary_root_window ?
+          root_windows[1] : root_windows[0];
+
+  ASSERT_TRUE(Shell::GetContainer(
+      primary_root_window,
+      internal::kShellWindowId_VirtualKeyboardContainer));
+  ASSERT_FALSE(Shell::GetContainer(
+      secondary_root_window,
+      internal::kShellWindowId_VirtualKeyboardContainer));
+}
+
+// Test for http://crbug.com/263599. Virtual keyboard should be able to receive
+// events at blocked user session.
+TEST_F(VirtualKeyboardRootWindowControllerTest,
+       ClickVirtualKeyboardInBlockedWindow) {
+  aura::Window* root_window = Shell::GetPrimaryRootWindow();
+  aura::Window* keyboard_container = Shell::GetContainer(root_window,
+      internal::kShellWindowId_VirtualKeyboardContainer);
+  ASSERT_TRUE(keyboard_container);
+  keyboard_container->Show();
+
+  aura::Window* keyboard_window = Shell::GetInstance()->keyboard_controller()->
+      proxy()->GetKeyboardWindow();
+  keyboard_container->AddChild(keyboard_window);
+  keyboard_window->SetBounds(gfx::Rect());
+  keyboard_window->Show();
+
+  aura::test::TestEventHandler* handler = new aura::test::TestEventHandler;
+  root_window->SetEventFilter(handler);
+
+  aura::test::EventGenerator event_generator(root_window, keyboard_window);
+  event_generator.ClickLeftButton();
+  int expected_mouse_presses = 1;
+  EXPECT_EQ(expected_mouse_presses, handler->num_mouse_events() / 2);
+
+  for (int block_reason = FIRST_BLOCK_REASON;
+       block_reason < NUMBER_OF_BLOCK_REASONS;
+       ++block_reason) {
+    BlockUserSession(static_cast<UserSessionBlockReason>(block_reason));
+    event_generator.ClickLeftButton();
+    expected_mouse_presses++;
+    EXPECT_EQ(expected_mouse_presses, handler->num_mouse_events() / 2);
+    UnblockUserSession();
+  }
+}
+
+// Test for http://crbug.com/299787. RootWindowController should delete
+// the old container since the keyboard controller creates a new window in
+// GetWindowContainer().
+TEST_F(VirtualKeyboardRootWindowControllerTest,
+       DeleteOldContainerOnVirtualKeyboardInit) {
+  aura::Window* root_window = ash::Shell::GetPrimaryRootWindow();
+  aura::Window* keyboard_container = Shell::GetContainer(root_window,
+      internal::kShellWindowId_VirtualKeyboardContainer);
+  ASSERT_TRUE(keyboard_container);
+  // Track the keyboard container window.
+  aura::WindowTracker tracker;
+  tracker.Add(keyboard_container);
+  // Mock a login user profile change to reinitialize the keyboard.
+  ash::Shell::GetInstance()->OnLoginUserProfilePrepared();
+  // keyboard_container should no longer be present.
+  EXPECT_FALSE(tracker.Contains(keyboard_container));
 }
 
 }  // namespace test

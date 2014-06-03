@@ -11,14 +11,14 @@
 #include "base/time/time.h"
 #include "chrome/browser/chromeos/contacts/contact.pb.h"
 #include "chrome/browser/chromeos/contacts/contact_test_util.h"
-#include "chrome/browser/google_apis/dummy_auth_service.h"
-#include "chrome/browser/google_apis/test_util.h"
-#include "chrome/browser/google_apis/time_util.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/test/test_browser_thread.h"
 #include "content/public/test/test_utils.h"
+#include "google_apis/drive/dummy_auth_service.h"
+#include "google_apis/drive/test_util.h"
+#include "google_apis/drive/time_util.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/test/embedded_test_server/http_request.h"
 #include "net/test/embedded_test_server/http_response.h"
@@ -30,8 +30,6 @@ using content::BrowserThread;
 
 namespace contacts {
 namespace {
-
-const char kTestGDataAuthToken[] = "testtoken";
 
 // Filename of JSON feed containing contact groups.
 const char kGroupsFeedFilename[] = "/groups.json";
@@ -80,10 +78,7 @@ class GDataContactsServiceTest : public testing::Test {
         content::BrowserThread::GetMessageLoopProxyForThread(
             content::BrowserThread::IO));
 
-    test_server_.reset(
-        new net::test_server::EmbeddedTestServer(
-            content::BrowserThread::GetMessageLoopProxyForThread(
-                content::BrowserThread::IO)));
+    test_server_.reset(new net::test_server::EmbeddedTestServer);
     ASSERT_TRUE(test_server_->InitializeAndWaitUntilReady());
     test_server_->RegisterRequestHandler(
         base::Bind(&GDataContactsServiceTest::HandleDownloadRequest,
@@ -158,7 +153,6 @@ class GDataContactsServiceTest : public testing::Test {
   // returns the content.
   scoped_ptr<net::test_server::HttpResponse> HandleDownloadRequest(
       const net::test_server::HttpRequest& request) {
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
     // Requested url must not contain a query string.
     scoped_ptr<net::test_server::BasicHttpResponse> result =
         google_apis::test_util::CreateHttpResponseFromFile(

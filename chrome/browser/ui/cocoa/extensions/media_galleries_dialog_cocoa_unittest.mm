@@ -7,8 +7,8 @@
 #include "chrome/browser/media_galleries/media_galleries_dialog_controller_mock.h"
 #include "chrome/browser/storage_monitor/storage_info.h"
 #include "chrome/browser/ui/cocoa/extensions/media_galleries_dialog_cocoa.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_test_util.h"
+#include "extensions/common/extension.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using ::testing::_;
@@ -16,8 +16,6 @@ using ::testing::NiceMock;
 using ::testing::Return;
 using ::testing::ReturnPointee;
 using ::testing::ReturnRef;
-
-namespace chrome {
 
 MediaGalleryPrefInfo MakePrefInfoForTesting(MediaGalleryPrefId pref_id) {
   MediaGalleryPrefInfo gallery;
@@ -119,7 +117,7 @@ TEST_F(MediaGalleriesDialogTest, ToggleCheckboxes) {
   EXPECT_EQ([checkbox state], NSOnState);
 }
 
-// Tests that UpdateGallery will add a new checkbox, but only if it refers to
+// Tests that UpdateGalleries will add a new checkbox, but only if it refers to
 // a gallery that the dialog hasn't seen before.
 TEST_F(MediaGalleriesDialogTest, UpdateAdds) {
   NiceMock<MediaGalleriesDialogControllerMock> controller(dummy_extension());
@@ -143,7 +141,7 @@ TEST_F(MediaGalleriesDialogTest, UpdateAdds) {
   attached_permissions.push_back(
       MediaGalleriesDialogController::GalleryPermission(
           MakePrefInfoForTesting(1), true));
-  dialog->UpdateGallery(MakePrefInfoForTesting(1), true);
+  dialog->UpdateGalleries();
   EXPECT_EQ(1U, [dialog->checkboxes_ count]);
 
   // The checkbox container should be taller.
@@ -154,7 +152,7 @@ TEST_F(MediaGalleriesDialogTest, UpdateAdds) {
   attached_permissions.push_back(
       MediaGalleriesDialogController::GalleryPermission(
           MakePrefInfoForTesting(2), true));
-  dialog->UpdateGallery(MakePrefInfoForTesting(2), true);
+  dialog->UpdateGalleries();
   EXPECT_EQ(2U, [dialog->checkboxes_ count]);
 
   // The checkbox container should be taller.
@@ -163,7 +161,7 @@ TEST_F(MediaGalleriesDialogTest, UpdateAdds) {
   old_container_height = new_container_height;
 
   attached_permissions[1].allowed = false;
-  dialog->UpdateGallery(MakePrefInfoForTesting(2), false);
+  dialog->UpdateGalleries();
   EXPECT_EQ(2U, [dialog->checkboxes_ count]);
 
   // The checkbox container height should not have changed.
@@ -191,22 +189,20 @@ TEST_F(MediaGalleriesDialogTest, ForgetDeletes) {
   attached_permissions.push_back(
       MediaGalleriesDialogController::GalleryPermission(
           MakePrefInfoForTesting(1), true));
-  dialog->UpdateGallery(MakePrefInfoForTesting(1), true);
+  dialog->UpdateGalleries();
   attached_permissions.push_back(
       MediaGalleriesDialogController::GalleryPermission(
           MakePrefInfoForTesting(2), true));
-  dialog->UpdateGallery(MakePrefInfoForTesting(2), true);
+  dialog->UpdateGalleries();
   EXPECT_EQ(2U, [dialog->checkboxes_ count]);
   CGFloat old_container_height = NSHeight([dialog->checkbox_container_ frame]);
 
   // Remove a gallery.
   attached_permissions.erase(attached_permissions.begin());
-  dialog->ForgetGallery(1);
+  dialog->UpdateGalleries();
   EXPECT_EQ(1U, [dialog->checkboxes_ count]);
 
   // The checkbox container should be shorter.
   CGFloat new_container_height = NSHeight([dialog->checkbox_container_ frame]);
   EXPECT_LT(new_container_height, old_container_height);
 }
-
-}  // namespace chrome

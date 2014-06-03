@@ -13,7 +13,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "chrome/browser/chromeos/drive/file_errors.h"
-#include "chrome/browser/google_apis/gdata_errorcode.h"
+#include "google_apis/drive/gdata_errorcode.h"
 #include "net/base/completion_callback.h"
 
 namespace base {
@@ -172,9 +172,9 @@ class DriveFileStreamReader {
            const net::CompletionCallback& callback);
 
  private:
-  // Part of Initialize. Called after GetFileContentByPath's initialization
+  // Part of Initialize. Called after GetFileContent's initialization
   // is done.
-  void InitializeAfterGetFileContentByPathInitialized(
+  void InitializeAfterGetFileContentInitialized(
       const net::HttpByteRange& in_byte_range,
       const InitializeCompletionCallback& callback,
       FileError error,
@@ -194,8 +194,8 @@ class DriveFileStreamReader {
   void OnGetContent(google_apis::GDataErrorCode error_code,
                     scoped_ptr<std::string> data);
 
-  // Called when GetFileContentByPath is completed.
-  void OnGetFileContentByPathCompletion(
+  // Called when GetFileContent is completed.
+  void OnGetFileContentCompletion(
       const InitializeCompletionCallback& callback,
       FileError error);
 

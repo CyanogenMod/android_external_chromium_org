@@ -17,9 +17,9 @@
 #include "base/win/scoped_hdc.h"
 #include "base/win/scoped_select_object.h"
 #include "base/win/win_util.h"
-#include "ui/base/win/scoped_set_map_mode.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/font.h"
+#include "ui/gfx/win/scoped_set_map_mode.h"
 
 namespace {
 
@@ -141,6 +141,10 @@ int PlatformFontWin::GetBaseline() const {
   return font_ref_->baseline();
 }
 
+int PlatformFontWin::GetCapHeight() const {
+  return font_ref_->cap_height();
+}
+
 int PlatformFontWin::GetAverageCharacterWidth() const {
   return font_ref_->ave_char_width();
 }
@@ -160,6 +164,13 @@ int PlatformFontWin::GetStyle() const {
 }
 
 std::string PlatformFontWin::GetFontName() const {
+  return font_ref_->font_name();
+}
+
+std::string PlatformFontWin::GetActualFontNameForTesting() const {
+  // With the current implementation on Windows, HFontRef::font_name() returns
+  // the font name taken from the HFONT handle, but it's not the name that comes
+  // from the font's metadata.  See http://crbug.com/327287
   return font_ref_->font_name();
 }
 
@@ -229,12 +240,14 @@ PlatformFontWin::HFontRef* PlatformFontWin::CreateHFontRef(HFONT font) {
   {
     base::win::ScopedGetDC screen_dc(NULL);
     base::win::ScopedSelectObject scoped_font(screen_dc, font);
-    ui::ScopedSetMapMode mode(screen_dc, MM_TEXT);
+    gfx::ScopedSetMapMode mode(screen_dc, MM_TEXT);
     GetTextMetrics(screen_dc, &font_metrics);
   }
 
   const int height = std::max<int>(1, font_metrics.tmHeight);
   const int baseline = std::max<int>(1, font_metrics.tmAscent);
+  const int cap_height =
+      std::max<int>(1, font_metrics.tmAscent - font_metrics.tmInternalLeading);
   const int ave_char_width = std::max<int>(1, font_metrics.tmAveCharWidth);
   const int font_size =
       std::max<int>(1, font_metrics.tmHeight - font_metrics.tmInternalLeading);
@@ -246,7 +259,8 @@ PlatformFontWin::HFontRef* PlatformFontWin::CreateHFontRef(HFONT font) {
   if (font_metrics.tmWeight >= kTextMetricWeightBold)
     style |= Font::BOLD;
 
-  return new HFontRef(font, font_size, height, baseline, ave_char_width, style);
+  return new HFontRef(font, font_size, height, baseline, cap_height,
+                      ave_char_width, style);
 }
 
 PlatformFontWin::PlatformFontWin(HFontRef* hfont_ref) : font_ref_(hfont_ref) {
@@ -256,15 +270,17 @@ PlatformFontWin::PlatformFontWin(HFontRef* hfont_ref) : font_ref_(hfont_ref) {
 // PlatformFontWin::HFontRef:
 
 PlatformFontWin::HFontRef::HFontRef(HFONT hfont,
-         int font_size,
-         int height,
-         int baseline,
-         int ave_char_width,
-         int style)
+                                    int font_size,
+                                    int height,
+                                    int baseline,
+                                    int cap_height,
+                                    int ave_char_width,
+                                    int style)
     : hfont_(hfont),
       font_size_(font_size),
       height_(height),
       baseline_(baseline),
+      cap_height_(cap_height),
       ave_char_width_(ave_char_width),
       style_(style),
       dlu_base_x_(-1),
@@ -284,7 +300,7 @@ int PlatformFontWin::HFontRef::GetDluBaseX() {
 
   base::win::ScopedGetDC screen_dc(NULL);
   base::win::ScopedSelectObject font(screen_dc, hfont_);
-  ui::ScopedSetMapMode mode(screen_dc, MM_TEXT);
+  gfx::ScopedSetMapMode mode(screen_dc, MM_TEXT);
 
   // Yes, this is how Microsoft recommends calculating the dialog unit
   // conversions. See: http://support.microsoft.com/kb/125681

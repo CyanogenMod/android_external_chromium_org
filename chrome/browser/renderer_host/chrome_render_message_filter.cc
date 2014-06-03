@@ -8,9 +8,12 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
+#include "base/command_line.h"
+#include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/automation/automation_resource_message_filter.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/content_settings/cookie_settings.h"
 #include "chrome/browser/content_settings/tab_specific_content_settings.h"
@@ -19,12 +22,13 @@
 #include "chrome/browser/extensions/activity_log/activity_log.h"
 #include "chrome/browser/extensions/api/activity_log_private/activity_log_private_api.h"
 #include "chrome/browser/extensions/api/messaging/message_service.h"
-#include "chrome/browser/extensions/event_router.h"
-#include "chrome/browser/extensions/extension_process_manager.h"
 #include "chrome/browser/extensions/extension_system.h"
+#include "chrome/browser/google/google_util.h"
 #include "chrome/browser/net/chrome_url_request_context.h"
 #include "chrome/browser/net/predictor.h"
+#include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/task_manager/task_manager.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/api/i18n/default_locale_handler.h"
 #include "chrome/common/extensions/extension_file_util.h"
 #include "chrome/common/extensions/extension_messages.h"
@@ -33,6 +37,8 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/resource_dispatcher_host.h"
+#include "extensions/browser/event_router.h"
+#include "extensions/browser/process_manager.h"
 #include "extensions/common/constants.h"
 
 #if defined(USE_TCMALLOC)
@@ -41,8 +47,7 @@
 
 using content::BrowserThread;
 using extensions::APIPermission;
-using extensions::api::activity_log_private::BlockedChromeActivityDetail;
-using WebKit::WebCache;
+using blink::WebCache;
 
 namespace {
 
@@ -51,6 +56,7 @@ namespace {
 void AddActionToExtensionActivityLog(
     Profile* profile,
     scoped_refptr<extensions::Action> action) {
+#if defined(ENABLE_EXTENSIONS)
   // The ActivityLog can only be accessed from the main (UI) thread.  If we're
   // running on the wrong thread, re-dispatch from the main thread.
   if (!BrowserThread::CurrentlyOn(BrowserThread::UI)) {
@@ -58,6 +64,8 @@ void AddActionToExtensionActivityLog(
         BrowserThread::UI, FROM_HERE,
         base::Bind(&AddActionToExtensionActivityLog, profile, action));
   } else {
+    if (!g_browser_process->profile_manager()->IsValidProfile(profile))
+      return;
     // If the action included a URL, check whether it is for an incognito
     // profile.  The check is performed here so that it can safely be done from
     // the UI thread.
@@ -67,6 +75,7 @@ void AddActionToExtensionActivityLog(
         extensions::ActivityLog::GetInstance(profile);
     activity_log->LogAction(action);
   }
+#endif
 }
 
 } // namespace
@@ -78,6 +87,7 @@ ChromeRenderMessageFilter::ChromeRenderMessageFilter(
     : render_process_id_(render_process_id),
       profile_(profile),
       off_the_record_(profile_->IsOffTheRecord()),
+      predictor_(profile_->GetNetworkPredictor()),
       request_context_(request_context),
       extension_info_map_(
           extensions::ExtensionSystem::Get(profile)->info_map()),
@@ -132,8 +142,6 @@ bool ChromeRenderMessageFilter::OnMessageReceived(const IPC::Message& message,
                         OnAddAPIActionToExtensionActivityLog);
     IPC_MESSAGE_HANDLER(ExtensionHostMsg_AddDOMActionToActivityLog,
                         OnAddDOMActionToExtensionActivityLog);
-    IPC_MESSAGE_HANDLER(ExtensionHostMsg_AddBlockedCallToActivityLog,
-                        OnAddBlockedCallToExtensionActivityLog);
     IPC_MESSAGE_HANDLER(ExtensionHostMsg_AddEventToActivityLog,
                         OnAddEventToExtensionActivityLog);
     IPC_MESSAGE_HANDLER(ChromeViewHostMsg_AllowDatabase, OnAllowDatabase)
@@ -144,24 +152,10 @@ bool ChromeRenderMessageFilter::OnMessageReceived(const IPC::Message& message,
                         OnCanTriggerClipboardRead)
     IPC_MESSAGE_HANDLER(ChromeViewHostMsg_CanTriggerClipboardWrite,
                         OnCanTriggerClipboardWrite)
+    IPC_MESSAGE_HANDLER(ChromeViewHostMsg_IsWebGLDebugRendererInfoAllowed,
+                        OnIsWebGLDebugRendererInfoAllowed)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
-
-#if defined(ENABLE_AUTOMATION)
-  if ((message.type() == ChromeViewHostMsg_GetCookies::ID ||
-       message.type() == ChromeViewHostMsg_SetCookie::ID) &&
-    AutomationResourceMessageFilter::ShouldFilterCookieMessages(
-        render_process_id_, message.routing_id())) {
-    // ChromeFrame then we need to get/set cookies from the external host.
-    IPC_BEGIN_MESSAGE_MAP_EX(ChromeRenderMessageFilter, message,
-                             *message_was_ok)
-      IPC_MESSAGE_HANDLER_DELAY_REPLY(ChromeViewHostMsg_GetCookies,
-                                      OnGetCookies)
-      IPC_MESSAGE_HANDLER(ChromeViewHostMsg_SetCookie, OnSetCookie)
-    IPC_END_MESSAGE_MAP()
-    handled = true;
-  }
-#endif
 
   return handled;
 }
@@ -193,13 +187,13 @@ net::HostResolver* ChromeRenderMessageFilter::GetHostResolver() {
 
 void ChromeRenderMessageFilter::OnDnsPrefetch(
     const std::vector<std::string>& hostnames) {
-  if (profile_->GetNetworkPredictor())
-    profile_->GetNetworkPredictor()->DnsPrefetchList(hostnames);
+  if (predictor_)
+    predictor_->DnsPrefetchList(hostnames);
 }
 
 void ChromeRenderMessageFilter::OnPreconnect(const GURL& url) {
-  if (profile_->GetNetworkPredictor())
-    profile_->GetNetworkPredictor()->PreconnectUrl(
+  if (predictor_)
+    predictor_->PreconnectUrl(
         url, GURL(), chrome_browser_net::UrlInfo::MOUSE_OVER_MOTIVATED, 1);
 }
 
@@ -281,7 +275,9 @@ void ChromeRenderMessageFilter::OnV8HeapStats(int v8_memory_allocated,
 void ChromeRenderMessageFilter::OnOpenChannelToExtension(
     int routing_id,
     const ExtensionMsg_ExternalConnectionInfo& info,
-    const std::string& channel_name, int* port_id) {
+    const std::string& channel_name,
+    bool include_tls_channel_id,
+    int* port_id) {
   int port2_id;
   extensions::MessageService::AllocatePortIdPair(port_id, &port2_id);
 
@@ -289,18 +285,20 @@ void ChromeRenderMessageFilter::OnOpenChannelToExtension(
       BrowserThread::UI, FROM_HERE,
       base::Bind(&ChromeRenderMessageFilter::OpenChannelToExtensionOnUIThread,
                  this, render_process_id_, routing_id, port2_id, info,
-                 channel_name));
+                 channel_name, include_tls_channel_id));
 }
 
 void ChromeRenderMessageFilter::OpenChannelToExtensionOnUIThread(
     int source_process_id, int source_routing_id,
     int receiver_port_id,
     const ExtensionMsg_ExternalConnectionInfo& info,
-    const std::string& channel_name) {
+    const std::string& channel_name,
+    bool include_tls_channel_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   extensions::MessageService::Get(profile_)->OpenChannelToExtension(
       source_process_id, source_routing_id, receiver_port_id,
-      info.source_id, info.target_id, info.source_url, channel_name);
+      info.source_id, info.target_id, info.source_url, channel_name,
+      include_tls_channel_id);
 }
 
 void ChromeRenderMessageFilter::OnOpenChannelToNativeApp(
@@ -547,25 +545,13 @@ void ChromeRenderMessageFilter::OnAddEventToExtensionActivityLog(
   AddActionToExtensionActivityLog(profile_, action);
 }
 
-void ChromeRenderMessageFilter::OnAddBlockedCallToExtensionActivityLog(
-    const std::string& extension_id,
-    const std::string& function_name) {
-  scoped_refptr<extensions::Action> action = new extensions::Action(
-      extension_id, base::Time::Now(), extensions::Action::ACTION_API_BLOCKED,
-      function_name);
-  action->mutable_other()->SetString(
-      activity_log_constants::kActionBlockedReason,
-      BlockedChromeActivityDetail::ToString(
-          BlockedChromeActivityDetail::REASON_ACCESS_DENIED));
-  AddActionToExtensionActivityLog(profile_, action);
-}
-
-void ChromeRenderMessageFilter::OnAllowDatabase(int render_view_id,
-                                                const GURL& origin_url,
-                                                const GURL& top_origin_url,
-                                                const string16& name,
-                                                const string16& display_name,
-                                                bool* allowed) {
+void ChromeRenderMessageFilter::OnAllowDatabase(
+    int render_view_id,
+    const GURL& origin_url,
+    const GURL& top_origin_url,
+    const base::string16& name,
+    const base::string16& display_name,
+    bool* allowed) {
   *allowed =
       cookie_settings_->IsSettingCookieAllowed(origin_url, top_origin_url);
   BrowserThread::PostTask(
@@ -606,7 +592,7 @@ void ChromeRenderMessageFilter::OnAllowFileSystem(int render_view_id,
 void ChromeRenderMessageFilter::OnAllowIndexedDB(int render_view_id,
                                                  const GURL& origin_url,
                                                  const GURL& top_origin_url,
-                                                 const string16& name,
+                                                 const base::string16& name,
                                                  bool* allowed) {
   *allowed =
       cookie_settings_->IsSettingCookieAllowed(origin_url, top_origin_url);
@@ -632,23 +618,24 @@ void ChromeRenderMessageFilter::OnCanTriggerClipboardWrite(
           origin, render_process_id_, APIPermission::kClipboardWrite));
 }
 
-void ChromeRenderMessageFilter::OnGetCookies(
-    const GURL& url,
-    const GURL& first_party_for_cookies,
-    IPC::Message* reply_msg) {
-#if defined(ENABLE_AUTOMATION)
-  AutomationResourceMessageFilter::GetCookiesForUrl(
-      this, request_context_->GetURLRequestContext(), render_process_id_,
-      reply_msg, url);
-#endif
-}
+void ChromeRenderMessageFilter::OnIsWebGLDebugRendererInfoAllowed(
+    const GURL& origin, bool* allowed) {
+  *allowed = false;
+  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  if (command_line.HasSwitch(switches::kDisableWebGLDebugRendererInfo))
+    return;
 
-void ChromeRenderMessageFilter::OnSetCookie(const IPC::Message& message,
-                                            const GURL& url,
-                                            const GURL& first_party_for_cookies,
-                                            const std::string& cookie) {
-#if defined(ENABLE_AUTOMATION)
-  AutomationResourceMessageFilter::SetCookiesForUrl(
-      render_process_id_, message.routing_id(), url, cookie);
-#endif
+  // TODO(zmo): in this experimental stage, we only expose WebGL extension
+  // WEBGL_debug_renderer_info for Google domains. Once we finish the experiment
+  // and make a decision, this extension should be avaiable to all or none.
+  if (!google_util::IsGoogleDomainUrl(origin, google_util::ALLOW_SUBDOMAIN,
+                                      google_util::ALLOW_NON_STANDARD_PORTS)) {
+    return;
+  }
+
+  const char kWebGLDebugRendererInfoFieldTrialName[] = "WebGLDebugRendererInfo";
+  const char kWebGLDebugRendererInfoFieldTrialEnabledName[] = "enabled";
+  *allowed = (base::FieldTrialList::FindFullName(
+      kWebGLDebugRendererInfoFieldTrialName) ==
+      kWebGLDebugRendererInfoFieldTrialEnabledName);
 }

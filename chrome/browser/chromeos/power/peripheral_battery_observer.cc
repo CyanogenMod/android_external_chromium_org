@@ -221,8 +221,8 @@ bool PeripheralBatteryObserver::PostNotification(const std::string& address,
           IDR_NOTIFICATION_PERIPHERAL_BATTERY_LOW),
       UTF8ToUTF16(battery.name),
       string_text,
-      WebKit::WebTextDirectionDefault,
-      string16(),
+      blink::WebTextDirectionDefault,
+      base::string16(),
       UTF8ToUTF16(address),
       new PeripheralBatteryNotificationDelegate(address));
 

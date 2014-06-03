@@ -12,24 +12,23 @@ namespace cc {
 class PixelTestOutputSurface : public OutputSurface {
  public:
   explicit PixelTestOutputSurface(
-      scoped_ptr<WebKit::WebGraphicsContext3D> context3d)
-      : OutputSurface(context3d.Pass()) {}
+      scoped_refptr<ContextProvider> context_provider);
   explicit PixelTestOutputSurface(
-      scoped_ptr<cc::SoftwareOutputDevice> software_device)
-      : OutputSurface(software_device.Pass()) {}
+      scoped_ptr<SoftwareOutputDevice> software_device);
 
   virtual void Reshape(gfx::Size size, float scale_factor) OVERRIDE;
+  virtual bool HasExternalStencilTest() const OVERRIDE;
 
   void set_surface_expansion_size(gfx::Size surface_expansion_size) {
     surface_expansion_size_ = surface_expansion_size;
   }
-  void set_viewport_offset(gfx::Vector2d viewport_offset) {
-    viewport_offset_ = viewport_offset;
+  void set_has_external_stencil_test(bool has_test) {
+    external_stencil_test_ = has_test;
   }
 
  private:
   gfx::Size surface_expansion_size_;
-  gfx::Vector2d viewport_offset_;
+  bool external_stencil_test_;
 };
 
 }  // namespace cc

@@ -112,7 +112,7 @@ bool GetBrand(std::string* brand) {
     return true;
   }
 
-  string16 brand16;
+  base::string16 brand16;
   bool ret = GoogleUpdateSettings::GetBrand(&brand16);
   if (ret)
     brand->assign(WideToASCII(brand16));
@@ -120,7 +120,7 @@ bool GetBrand(std::string* brand) {
 }
 
 bool GetReactivationBrand(std::string* brand) {
-  string16 brand16;
+  base::string16 brand16;
   bool ret = GoogleUpdateSettings::GetReactivationBrand(&brand16);
   if (ret)
     brand->assign(WideToASCII(brand16));
@@ -186,7 +186,7 @@ bool IsGoogleHostname(const std::string& host,
 bool IsGoogleDomainUrl(const GURL& url,
                        SubdomainPermission subdomain_permission,
                        PortPermission port_permission) {
-  return url.is_valid() && (url.SchemeIs("http") || url.SchemeIs("https")) &&
+  return url.is_valid() && url.SchemeIsHTTPOrHTTPS() &&
       (url.port().empty() || (port_permission == ALLOW_NON_STANDARD_PORTS)) &&
       google_util::IsGoogleHostname(url.host(), subdomain_permission);
 }

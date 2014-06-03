@@ -1,4 +1,4 @@
-// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,7 +15,7 @@
 
 namespace gfx {
 class Size;
-class SurfaceTextureBridge;
+class SurfaceTexture;
 }
 
 namespace gpu {
@@ -25,7 +25,6 @@ class StreamTextureManagerInProcess
       public base::RefCountedThreadSafe<StreamTextureManagerInProcess> {
  public:
   StreamTextureManagerInProcess();
-  virtual ~StreamTextureManagerInProcess();
 
   // implement gpu::StreamTextureManager:
   virtual uint32 CreateStreamTexture(uint32 service_id,
@@ -33,7 +32,7 @@ class StreamTextureManagerInProcess
   virtual void DestroyStreamTexture(uint32 service_id) OVERRIDE;
   virtual gpu::StreamTexture* LookupStreamTexture(uint32 service_id) OVERRIDE;
 
-  scoped_refptr<gfx::SurfaceTextureBridge> GetSurfaceTexture(uint32 stream_id);
+  scoped_refptr<gfx::SurfaceTexture> GetSurfaceTexture(uint32 stream_id);
 
  private:
   class StreamTextureImpl : public gpu::StreamTexture {
@@ -47,16 +46,19 @@ class StreamTextureManagerInProcess
 
     void SetSize(gfx::Size size);
 
-    scoped_refptr<gfx::SurfaceTextureBridge> GetSurfaceTexture();
+    scoped_refptr<gfx::SurfaceTexture> GetSurfaceTexture();
     uint32 stream_id() { return stream_id_; }
 
    private:
-    scoped_refptr<gfx::SurfaceTextureBridge> surface_texture_bridge_;
+    scoped_refptr<gfx::SurfaceTexture> surface_texture_;
     uint32 stream_id_;
     gfx::Size size_;
 
     DISALLOW_COPY_AND_ASSIGN(StreamTextureImpl);
   };
+
+  friend class base::RefCountedThreadSafe<StreamTextureManagerInProcess>;
+  virtual ~StreamTextureManagerInProcess();
 
   typedef std::map<uint32, linked_ptr<StreamTextureImpl> > TextureMap;
   TextureMap textures_;

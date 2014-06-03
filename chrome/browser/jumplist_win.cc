@@ -233,7 +233,7 @@ bool CreateIconFile(const SkBitmap& bitmap,
   // We don't have to care about the extension of this temporary file because
   // JumpList does not care about it.
   base::FilePath path;
-  if (!file_util::CreateTemporaryFileInDir(icon_dir, &path))
+  if (!base::CreateTemporaryFileInDir(icon_dir, &path))
     return false;
 
   // Create an icon file from the favicon attached to the given |page|, and
@@ -526,7 +526,7 @@ void JumpList::Observe(int type,
       if (top_sites) {
         top_sites->GetMostVisitedURLs(
             base::Bind(&JumpList::OnMostVisitedURLsAvailable,
-                       weak_ptr_factory_.GetWeakPtr()));
+                       weak_ptr_factory_.GetWeakPtr()), false);
       }
       break;
     }
@@ -684,8 +684,7 @@ void JumpList::StartLoadingFavicon() {
   FaviconService* favicon_service =
       FaviconServiceFactory::GetForProfile(profile_, Profile::EXPLICIT_ACCESS);
   task_id_ = favicon_service->GetFaviconImageForURL(
-      FaviconService::FaviconForURLParams(profile_,
-                                          url,
+      FaviconService::FaviconForURLParams(url,
                                           chrome::FAVICON,
                                           gfx::kFaviconSize),
       base::Bind(&JumpList::OnFaviconDataAvailable,
@@ -738,7 +737,7 @@ void JumpList::RunUpdate() {
   if (base::PathExists(icon_dir_old))
     base::DeleteFile(icon_dir_old, true);
   base::Move(icon_dir_, icon_dir_old);
-  file_util::CreateDirectory(icon_dir_);
+  base::CreateDirectory(icon_dir_);
 
   // Create temporary icon files for shortcuts in the "Most Visited" category.
   CreateIconFiles(local_most_visited_pages);

@@ -7,7 +7,9 @@
 #include <algorithm>
 #include <set>
 
+#include "base/sha1.h"
 #include "base/stl_util.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/background/background_contents_service.h"
@@ -20,15 +22,15 @@
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/image_loader.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/extensions/background_info.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_icon_set.h"
 #include "chrome/common/extensions/manifest_handlers/icons_handler.h"
-#include "chrome/common/extensions/permissions/permission_set.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
+#include "extensions/common/extension.h"
 #include "extensions/common/extension_resource.h"
+#include "extensions/common/manifest_handlers/background_info.h"
+#include "extensions/common/permissions/permission_set.h"
 #include "ui/base/l10n/l10n_util_collator.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/image/image_skia.h"
@@ -57,7 +59,7 @@ ExtensionNameComparator::ExtensionNameComparator(icu::Collator* collator)
 bool ExtensionNameComparator::operator()(
     const scoped_refptr<const Extension>& x,
     const scoped_refptr<const Extension>& y) {
-  return l10n_util::StringComparator<string16>(collator_)(
+  return l10n_util::StringComparator<base::string16>(collator_)(
       UTF8ToUTF16(x->name()), UTF8ToUTF16(y->name()));
 }
 
@@ -267,6 +269,28 @@ int BackgroundApplicationListModel::GetPosition(
 }
 
 // static
+bool BackgroundApplicationListModel::RequiresBackgroundModeForPushMessaging(
+    const Extension& extension) {
+  // No PushMessaging permission - does not require the background mode.
+  if (!extension.HasAPIPermission(APIPermission::kPushMessaging))
+    return false;
+
+  // If in the whitelist, then does not require background mode even if
+  // uses push messaging.
+  // TODO(dimich): remove this whitelist once we have a better way to keep
+  // listening for GCM. http://crbug.com/311268
+  std::string id_hash = base::SHA1HashString(extension.id());
+  std::string hexencoded_id_hash = base::HexEncode(id_hash.c_str(),
+                                                   id_hash.length());
+  // The id starting from "9A04..." is a one from unit test.
+  if (hexencoded_id_hash == "C41AD9DCD670210295614257EF8C9945AD68D86E" ||
+      hexencoded_id_hash == "9A0417016F345C934A1A88F55CA17C05014EEEBA")
+     return false;
+
+   return true;
+ }
+
+// static
 bool BackgroundApplicationListModel::IsBackgroundApp(
     const Extension& extension, Profile* profile) {
   // An extension is a "background app" if it has the "background API"
@@ -278,7 +302,7 @@ bool BackgroundApplicationListModel::IsBackgroundApp(
   // Not a background app if we don't have the background permission or
   // the push messaging permission
   if (!extension.HasAPIPermission(APIPermission::kBackground) &&
-      !extension.HasAPIPermission(APIPermission::kPushMessaging) )
+      !RequiresBackgroundModeForPushMessaging(extension))
     return false;
 
   // Extensions and packaged apps with background permission are always treated
@@ -292,7 +316,7 @@ bool BackgroundApplicationListModel::IsBackgroundApp(
 
   BackgroundContentsService* service =
       BackgroundContentsServiceFactory::GetForProfile(profile);
-  string16 app_id = ASCIIToUTF16(extension.id());
+  base::string16 app_id = ASCIIToUTF16(extension.id());
   // If we have an active or registered background contents for this app, then
   // it's a background app. This covers the cases where the app has created its
   // background contents, but it hasn't navigated yet, or the background

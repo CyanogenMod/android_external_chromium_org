@@ -79,7 +79,7 @@ std::string ReadValue(std::string* data) {
   //
   // If we use TrimWhitespace, we will incorrectly trim the new line
   // and assume that KEY1's value is "KEY2=VALUE" rather than empty.
-  TrimString(*data, " \t", data);
+  base::TrimString(*data, " \t", data);
 
   // If multiline value
   if (StartsWithASCII(*data, std::string(kMultilineQuote), false)) {
@@ -122,7 +122,7 @@ LogDictionaryType* GetSystemLogs(base::FilePath* zip_file_name,
   // Create the temp file, logs will go here
   base::FilePath temp_filename;
 
-  if (!file_util::CreateTemporaryFile(&temp_filename))
+  if (!base::CreateTemporaryFile(&temp_filename))
     return NULL;
 
   std::string cmd = std::string(kSysLogsScript) + " " + context + " >> " +
@@ -142,8 +142,7 @@ LogDictionaryType* GetSystemLogs(base::FilePath* zip_file_name,
   }
   // Read logs from the temp file
   std::string data;
-  bool read_success = file_util::ReadFileToString(temp_filename,
-                                                  &data);
+  bool read_success = base::ReadFileToString(temp_filename, &data);
   // if we were using an internal temp file, the user does not need the
   // logs to stay past the ReadFile call - delete the file
   base::DeleteFile(temp_filename, false);
@@ -306,7 +305,7 @@ void SyslogsProviderImpl::ReadSyslogs(
 
   // Create temp file.
   base::FilePath zip_file;
-  if (compress_logs && !file_util::CreateTemporaryFile(&zip_file)) {
+  if (compress_logs && !base::CreateTemporaryFile(&zip_file)) {
     LOG(ERROR) << "Cannot create temp file";
     compress_logs = false;
   }
@@ -348,7 +347,7 @@ void SyslogsProviderImpl::ReadSyslogs(
 void SyslogsProviderImpl::LoadCompressedLogs(const base::FilePath& zip_file,
                                             std::string* zip_content) {
   DCHECK(zip_content);
-  if (!file_util::ReadFileToString(zip_file, zip_content)) {
+  if (!base::ReadFileToString(zip_file, zip_content)) {
     LOG(ERROR) << "Cannot read compressed logs file from " <<
         zip_file.value().c_str();
   }

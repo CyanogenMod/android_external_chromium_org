@@ -17,11 +17,8 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/browser/signin/oauth2_token_service.h"
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
-#include "chrome/browser/signin/token_service.h"
-#include "chrome/browser/signin/token_service_factory.h"
 #include "chrome/browser/sync/about_sync_util.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
@@ -35,8 +32,8 @@
 #include "google_apis/gaia/google_service_auth_error.h"
 #include "grit/generated_resources.h"
 #include "jni/ProfileSyncService_jni.h"
-#include "sync/internal_api/public/base/model_type_invalidation_map.h"
 #include "sync/internal_api/public/read_transaction.h"
+#include "sync/notifier/object_id_invalidation_map.h"
 #include "ui/base/l10n/l10n_util.h"
 
 using base::android::AttachCurrentThread;
@@ -47,7 +44,6 @@ using base::android::ScopedJavaLocalRef;
 using content::BrowserThread;
 
 namespace {
-const char kSyncDisabledStatus[] = "OFFLINE_DISABLED";
 
 enum {
 #define DEFINE_MODEL_TYPE_SELECTION(name,value)  name = value,
@@ -67,7 +63,7 @@ ProfileSyncServiceAndroid::ProfileSyncServiceAndroid(JNIEnv* env, jobject obj)
     return;
   }
 
-  profile_ = g_browser_process->profile_manager()->GetDefaultProfile();
+  profile_ = ProfileManager::GetActiveUserProfile();
   if (profile_ == NULL) {
     NOTREACHED() << "Sync Init: Profile not found.";
     return;
@@ -95,6 +91,7 @@ ProfileSyncServiceAndroid::~ProfileSyncServiceAndroid() {
 }
 
 void ProfileSyncServiceAndroid::SendNudgeNotification(
+    int object_source,
     const std::string& str_object_id,
     int64 version,
     const std::string& state) {
@@ -103,9 +100,13 @@ void ProfileSyncServiceAndroid::SendNudgeNotification(
   // TODO(nileshagrawal): Merge this with ChromeInvalidationClient::Invalidate.
   // Construct the ModelTypeStateMap and send it over with the notification.
   invalidation::ObjectId object_id(
-      ipc::invalidation::ObjectSource::CHROME_SYNC,
+      object_source,
       str_object_id);
-  if (version != ipc::invalidation::Constants::UNKNOWN) {
+  syncer::ObjectIdInvalidationMap object_ids_with_states;
+  if (version == ipc::invalidation::Constants::UNKNOWN) {
+    object_ids_with_states.Insert(
+        syncer::Invalidation::InitUnknownVersion(object_id));
+  } else {
     ObjectIdVersionMap::iterator it =
         max_invalidation_versions_.find(object_id);
     if ((it != max_invalidation_versions_.end()) &&
@@ -114,12 +115,9 @@ void ProfileSyncServiceAndroid::SendNudgeNotification(
       return;
     }
     max_invalidation_versions_[object_id] = version;
+    object_ids_with_states.Insert(
+        syncer::Invalidation::Init(object_id, version, state));
   }
-
-  syncer::ObjectIdSet object_ids;
-  object_ids.insert(object_id);
-  syncer::ObjectIdInvalidationMap object_ids_with_states =
-      syncer::ObjectIdSetToInvalidationMap(object_ids, version, state);
 
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_SYNC_REFRESH_REMOTE,
@@ -133,13 +131,6 @@ void ProfileSyncServiceAndroid::OnStateChanged() {
   JNIEnv* env = AttachCurrentThread();
   Java_ProfileSyncService_syncStateChanged(
       env, weak_java_profile_sync_service_.get(env).obj());
-}
-
-void ProfileSyncServiceAndroid::TokenAvailable(
-    JNIEnv* env, jobject, jstring username, jstring auth_token) {
-  std::string token = ConvertJavaStringToUTF8(env, auth_token);
-  TokenServiceFactory::GetForProfile(profile_)->OnIssueAuthTokenSuccess(
-      GaiaConstants::kSyncService, token);
 }
 
 void ProfileSyncServiceAndroid::EnableSync(JNIEnv* env, jobject) {
@@ -192,7 +183,7 @@ ScopedJavaLocalRef<jstring> ProfileSyncServiceAndroid::QuerySyncStatusSummary(
     JNIEnv* env, jobject) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(profile_);
-  std::string status(sync_service_->QuerySyncStatusSummary());
+  std::string status(sync_service_->QuerySyncStatusSummaryString());
   return ConvertUTF8ToJavaString(env, status);
 }
 
@@ -304,7 +295,8 @@ ScopedJavaLocalRef<jstring>
         JNIEnv* env, jobject) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   base::Time passphrase_time = sync_service_->GetExplicitPassphraseTime();
-  string16 passphrase_time_str = base::TimeFormatShortDate(passphrase_time);
+  base::string16 passphrase_time_str =
+      base::TimeFormatShortDate(passphrase_time);
   return base::android::ConvertUTF16ToJavaString(env,
       l10n_util::GetStringFUTF16(
         IDS_SYNC_ENTER_GOOGLE_PASSPHRASE_BODY_WITH_DATE,
@@ -316,7 +308,8 @@ ScopedJavaLocalRef<jstring>
         JNIEnv* env, jobject) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   base::Time passphrase_time = sync_service_->GetExplicitPassphraseTime();
-  string16 passphrase_time_str = base::TimeFormatShortDate(passphrase_time);
+  base::string16 passphrase_time_str =
+      base::TimeFormatShortDate(passphrase_time);
   return base::android::ConvertUTF16ToJavaString(env,
       l10n_util::GetStringFUTF16(IDS_SYNC_ENTER_PASSPHRASE_BODY_WITH_DATE,
         passphrase_time_str));
@@ -472,14 +465,24 @@ ScopedJavaLocalRef<jstring> ProfileSyncServiceAndroid::GetAboutInfoForTest(
   return ConvertUTF8ToJavaString(env, about_info_json);
 }
 
+jlong ProfileSyncServiceAndroid::GetLastSyncedTimeForTest(
+    JNIEnv* env, jobject obj) {
+  // Use profile preferences here instead of SyncPrefs to avoid an extra
+  // conversion, since SyncPrefs::GetLastSyncedTime() converts the stored value
+  // to to base::Time.
+  return static_cast<jlong>(
+      profile_->GetPrefs()->GetInt64(prefs::kSyncLastSyncedTime));
+}
+
 void ProfileSyncServiceAndroid::NudgeSyncer(JNIEnv* env,
                                             jobject obj,
+                                            jint objectSource,
                                             jstring objectId,
                                             jlong version,
                                             jstring state) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  SendNudgeNotification(ConvertJavaStringToUTF8(env, objectId), version,
-                        ConvertJavaStringToUTF8(env, state));
+  SendNudgeNotification(objectSource, ConvertJavaStringToUTF8(env, objectId),
+                        version, ConvertJavaStringToUTF8(env, state));
 }
 
 void ProfileSyncServiceAndroid::NudgeSyncerForAllTypes(JNIEnv* env,
@@ -501,11 +504,11 @@ ProfileSyncServiceAndroid*
       AttachCurrentThread(), base::android::GetApplicationContext()));
 }
 
-static int Init(JNIEnv* env, jobject obj) {
+static jlong Init(JNIEnv* env, jobject obj) {
   ProfileSyncServiceAndroid* profile_sync_service_android =
       new ProfileSyncServiceAndroid(env, obj);
   profile_sync_service_android->Init();
-  return reinterpret_cast<jint>(profile_sync_service_android);
+  return reinterpret_cast<intptr_t>(profile_sync_service_android);
 }
 
 // static

@@ -11,18 +11,21 @@ FakeLayerTreeHostImpl::FakeLayerTreeHostImpl(Proxy* proxy)
     : LayerTreeHostImpl(LayerTreeSettings(),
                         &client_,
                         proxy,
-                        &stats_instrumentation_) {
+                        &stats_instrumentation_,
+                        NULL,
+                        0) {
   // Explicitly clear all debug settings.
   SetDebugState(LayerTreeDebugState());
 }
 
-FakeLayerTreeHostImpl::FakeLayerTreeHostImpl(
-    const LayerTreeSettings& settings,
-    Proxy* proxy)
+FakeLayerTreeHostImpl::FakeLayerTreeHostImpl(const LayerTreeSettings& settings,
+                                             Proxy* proxy)
     : LayerTreeHostImpl(settings,
                         &client_,
                         proxy,
-                        &stats_instrumentation_) {
+                        &stats_instrumentation_,
+                        NULL,
+                        0) {
   // Explicitly clear all debug settings.
   SetDebugState(LayerTreeDebugState());
 }
@@ -34,6 +37,17 @@ void FakeLayerTreeHostImpl::CreatePendingTree() {
   float arbitrary_large_page_scale = 100000.f;
   pending_tree()->SetPageScaleFactorAndLimits(
       1.f, 1.f / arbitrary_large_page_scale, arbitrary_large_page_scale);
+}
+
+base::TimeTicks FakeLayerTreeHostImpl::CurrentFrameTimeTicks() {
+  if (current_frame_time_ticks_.is_null())
+    return LayerTreeHostImpl::CurrentFrameTimeTicks();
+  return current_frame_time_ticks_;
+}
+
+void FakeLayerTreeHostImpl::SetCurrentFrameTimeTicks(
+    base::TimeTicks current_frame_time_ticks) {
+  current_frame_time_ticks_ = current_frame_time_ticks;
 }
 
 }  // namespace cc

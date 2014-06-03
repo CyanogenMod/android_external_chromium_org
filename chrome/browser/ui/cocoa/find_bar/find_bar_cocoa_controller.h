@@ -82,14 +82,16 @@ class FindNotificationDetails;
 - (void)stopAnimation;
 - (void)setFocusAndSelection;
 - (void)restoreSavedFocus;
+- (void)setFindText:(NSString*)findText
+      selectedRange:(const NSRange&)selectedRange;
 - (NSString*)findText;
-- (void)setFindText:(NSString*)findText;
+- (NSRange)selectedRange;
 - (NSString*)matchCountText;
 - (void)updateFindBarForChangedWebContents;
 
 - (void)clearResults:(const FindNotificationDetails&)results;
 - (void)updateUIForFindResult:(const FindNotificationDetails&)results
-                     withText:(const string16&)findText;
+                     withText:(const base::string16&)findText;
 - (BOOL)isFindBarVisible;
 - (BOOL)isFindBarAnimating;
 

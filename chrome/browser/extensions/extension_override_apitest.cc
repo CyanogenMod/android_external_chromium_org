@@ -3,10 +3,10 @@
 // found in the LICENSE file.
 
 #include "base/prefs/pref_service.h"
+#include "base/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_web_ui.h"
-#include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
@@ -55,8 +55,8 @@ IN_PROC_BROWSER_TEST_F(ExtensionOverrideTest, OverrideNewtab) {
     // will call chrome.test.notifyPass() .
     ui_test_utils::NavigateToURL(browser(), GURL("chrome://newtab/"));
     WebContents* tab = browser()->tab_strip_model()->GetActiveWebContents();
-    ASSERT_TRUE(tab->GetController().GetActiveEntry());
-    EXPECT_TRUE(tab->GetController().GetActiveEntry()->GetURL().
+    ASSERT_TRUE(tab->GetController().GetVisibleEntry());
+    EXPECT_TRUE(tab->GetController().GetVisibleEntry()->GetURL().
                 SchemeIs(extensions::kExtensionScheme));
 
     ASSERT_TRUE(catcher.GetNextResult());
@@ -80,8 +80,8 @@ IN_PROC_BROWSER_TEST_F(ExtensionOverrideTest, MAYBE_OverrideNewtabIncognito) {
   Browser* otr_browser = ui_test_utils::OpenURLOffTheRecord(
       browser()->profile(), GURL("chrome://newtab/"));
   WebContents* tab = otr_browser->tab_strip_model()->GetActiveWebContents();
-  ASSERT_TRUE(tab->GetController().GetActiveEntry());
-  EXPECT_FALSE(tab->GetController().GetActiveEntry()->GetURL().
+  ASSERT_TRUE(tab->GetController().GetVisibleEntry());
+  EXPECT_FALSE(tab->GetController().GetVisibleEntry()->GetURL().
                SchemeIs(extensions::kExtensionScheme));
 }
 
@@ -127,7 +127,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionOverrideTest, ShouldCleanUpDuplicateEntries) {
   // the file already contains dupes when an extension is loaded.
   base::ListValue* list = new base::ListValue();
   for (size_t i = 0; i < 3; ++i)
-    list->Append(Value::CreateStringValue("http://www.google.com/"));
+    list->Append(new base::StringValue("http://www.google.com/"));
 
   {
     DictionaryPrefUpdate update(browser()->profile()->GetPrefs(),

@@ -34,7 +34,6 @@ views::View* GetAnchor(
 GeneratedCreditCardBubbleViews::~GeneratedCreditCardBubbleViews() {}
 
 void GeneratedCreditCardBubbleViews::Show() {
-  // TODO(dbeam): investigate why this steals focus from the web contents.
   views::BubbleDelegateView::CreateBubble(this)->Show();
 
   // This bubble doesn't render correctly on Windows without calling
@@ -82,7 +81,7 @@ void GeneratedCreditCardBubbleViews::Init() {
   AddChildView(contents);
 }
 
-void GeneratedCreditCardBubbleViews::StyledLabelLinkClicked(const ui::Range& r,
+void GeneratedCreditCardBubbleViews::StyledLabelLinkClicked(const gfx::Range& r,
                                                             int event_flags) {
   if (controller_)
     controller_->OnLinkClicked();

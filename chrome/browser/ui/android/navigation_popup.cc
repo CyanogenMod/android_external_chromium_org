@@ -49,8 +49,7 @@ void NavigationPopup::FetchFaviconForUrl(JNIEnv* env,
   // TODO(tedchoc): Request higher favicons based on screen density instead of
   //                hardcoding kFaviconSize.
   favicon_service->GetFaviconImageForURL(
-      FaviconService::FaviconForURLParams(profile,
-                                          url,
+      FaviconService::FaviconForURLParams(url,
                                           chrome::FAVICON,
                                           gfx::kFaviconSize),
       base::Bind(&NavigationPopup::OnFaviconDataAvailable,
@@ -87,9 +86,9 @@ static jstring GetHistoryUrl(JNIEnv* env, jclass clazz) {
   return ConvertUTF8ToJavaString(env, chrome::kChromeUIHistoryURL).Release();
 }
 
-static jint Init(JNIEnv* env, jobject obj) {
+static jlong Init(JNIEnv* env, jobject obj) {
   NavigationPopup* popup = new NavigationPopup(env, obj);
-  return reinterpret_cast<jint>(popup);
+  return reinterpret_cast<intptr_t>(popup);
 }
 
 // static

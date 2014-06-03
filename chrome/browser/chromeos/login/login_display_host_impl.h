@@ -6,16 +6,20 @@
 #define CHROME_BROWSER_CHROMEOS_LOGIN_LOGIN_DISPLAY_HOST_IMPL_H_
 
 #include <string>
+#include <vector>
 
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "chrome/browser/chromeos/login/app_launch_controller.h"
 #include "chrome/browser/chromeos/login/auth_prewarmer.h"
 #include "chrome/browser/chromeos/login/existing_user_controller.h"
 #include "chrome/browser/chromeos/login/login_display.h"
 #include "chrome/browser/chromeos/login/login_display_host.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
+#include "chromeos/audio/cras_audio_handler.h"
+#include "chromeos/dbus/session_manager_client.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_contents_observer.h"
@@ -30,6 +34,7 @@ class AutoEnrollmentClient;
 namespace chromeos {
 
 class FocusRingController;
+class KeyboardDrivenOobeKeyHandler;
 class OobeUI;
 class WebUILoginDisplay;
 class WebUILoginView;
@@ -38,7 +43,9 @@ class WebUILoginView;
 // It encapsulates controllers, background integration and flow.
 class LoginDisplayHostImpl : public LoginDisplayHost,
                              public content::NotificationObserver,
-                             public content::WebContentsObserver {
+                             public content::WebContentsObserver,
+                             public chromeos::SessionManagerClient::Observer,
+                             public chromeos::CrasAudioHandler::AudioObserver {
  public:
   explicit LoginDisplayHostImpl(const gfx::Rect& background_bounds);
   virtual ~LoginDisplayHostImpl();
@@ -53,25 +60,26 @@ class LoginDisplayHostImpl : public LoginDisplayHost,
       LoginDisplay::Delegate* delegate) OVERRIDE;
   virtual gfx::NativeWindow GetNativeWindow() const OVERRIDE;
   virtual WebUILoginView* GetWebUILoginView() const OVERRIDE;
-  virtual views::Widget* GetWidget() const OVERRIDE;
   virtual void BeforeSessionStart() OVERRIDE;
   virtual void Finalize() OVERRIDE;
   virtual void OnCompleteLogin() OVERRIDE;
   virtual void OpenProxySettings() OVERRIDE;
-  virtual void SetOobeProgressBarVisible(bool visible) OVERRIDE;
-  virtual void SetShutdownButtonEnabled(bool enable) OVERRIDE;
   virtual void SetStatusAreaVisible(bool visible) OVERRIDE;
   virtual void CheckForAutoEnrollment() OVERRIDE;
+  virtual void GetAutoEnrollmentCheckResult(
+      const GetAutoEnrollmentCheckResultCallback& callback) OVERRIDE;
   virtual void StartWizard(
       const std::string& first_screen_name,
       scoped_ptr<DictionaryValue> screen_parameters) OVERRIDE;
   virtual WizardController* GetWizardController() OVERRIDE;
+  virtual AppLaunchController* GetAppLaunchController() OVERRIDE;
   virtual void StartUserAdding(
       const base::Closure& completion_callback) OVERRIDE;
-  virtual void StartSignInScreen() OVERRIDE;
+  virtual void StartSignInScreen(const LoginScreenContext& context) OVERRIDE;
   virtual void ResumeSignInScreen() OVERRIDE;
   virtual void OnPreferencesChanged() OVERRIDE;
   virtual void PrewarmAuthentication() OVERRIDE;
+  virtual void StartAppLaunch(const std::string& app_id) OVERRIDE;
 
   // Creates WizardController instance.
   WizardController* CreateWizardController();
@@ -88,6 +96,8 @@ class LoginDisplayHostImpl : public LoginDisplayHost,
   // WebUI at a time).
   static const int kShowLoginWebUIid;
 
+  views::Widget* login_window_for_test() { return login_window_; }
+
  protected:
   // content::NotificationObserver implementation:
   virtual void Observe(int type,
@@ -97,17 +107,42 @@ class LoginDisplayHostImpl : public LoginDisplayHost,
   // Overridden from content::WebContentsObserver:
   virtual void RenderProcessGone(base::TerminationStatus status) OVERRIDE;
 
+  // Overridden from chromeos::SessionManagerClient::Observer:
+  virtual void EmitLoginPromptVisibleCalled() OVERRIDE;
+
+  // Overridden from chromeos::CrasAudioHandler::AudioObserver:
+  virtual void OnActiveOutputNodeChanged() OVERRIDE;
+
  private:
+  // Way to restore if renderer have crashed.
+  enum RestorePath {
+    RESTORE_UNKNOWN,
+    RESTORE_WIZARD,
+    RESTORE_SIGN_IN,
+    RESTORE_ADD_USER_INTO_SESSION,
+  };
+
+  // Type of animations to run after the login screen.
+  enum FinalizeAnimationType {
+    ANIMATION_NONE,       // No animation.
+    ANIMATION_WORKSPACE,  // Use initial workspace animation (drop and
+                          // and fade in workspace). Used for user login.
+    ANIMATION_FADE_OUT,   // Fade out login screen. Used for app launch.
+  };
+
   // Marks display host for deletion.
   // If |post_quit_task| is true also posts Quit task to the MessageLoop.
   void ShutdownDisplayHost(bool post_quit_task);
 
-  // Start sign in transition animation.
-  void StartAnimation();
+  // Schedules workspace transition animation.
+  void ScheduleWorkspaceAnimation();
+
+  // Schedules fade out animation.
+  void ScheduleFadeOutAnimation();
 
   // Callback for the ownership status check.
-  void OnOwnershipStatusCheckDone(DeviceSettingsService::OwnershipStatus status,
-                                  bool current_user_is_owner);
+  void OnOwnershipStatusCheckDone(
+      DeviceSettingsService::OwnershipStatus status);
 
   // Callback for completion of the |auto_enrollment_client_|.
   void OnAutoEnrollmentClientDone();
@@ -131,11 +166,22 @@ class LoginDisplayHostImpl : public LoginDisplayHost,
   // Closes |login_window_| and resets |login_window_| and |login_view_| fields.
   void ResetLoginWindowAndView();
 
-  // Returns true if hosr running UI for adding users into session.
-  bool IsRunningUserAdding();
-
   // Deletes |auth_prewarmer_|.
   void OnAuthPrewarmDone();
+
+  // Toggles OOBE progress bar visibility, the bar is hidden by default.
+  void SetOobeProgressBarVisible(bool visible);
+
+  // Notifies the interested parties of the auto enrollment check result.
+  void NotifyAutoEnrollmentCheckResult(bool should_auto_enroll);
+
+  // Tries to play startup sound. If sound can't be played right now,
+  // for instance, because cras server is not initialized, playback
+  // will be delayed.
+  void TryToPlayStartupSound();
+
+  // Called when login-prompt-visible signal is caught.
+  void OnLoginPromptVisible();
 
   // Used to calculate position of the screens and background.
   gfx::Rect background_bounds_;
@@ -152,6 +198,9 @@ class LoginDisplayHostImpl : public LoginDisplayHost,
 
   // OOBE and some screens (camera, recovery) controller.
   scoped_ptr<WizardController> wizard_controller_;
+
+  // App launch controller.
+  scoped_ptr<AppLaunchController> app_launch_controller_;
 
   // Client for enterprise auto-enrollment check.
   scoped_ptr<policy::AutoEnrollmentClient> auto_enrollment_client_;
@@ -205,12 +254,7 @@ class LoginDisplayHostImpl : public LoginDisplayHost,
   int crash_count_;
 
   // Way to restore if renderer have crashed.
-  enum {
-    RESTORE_UNKNOWN,
-    RESTORE_WIZARD,
-    RESTORE_SIGN_IN,
-    RESTORE_ADD_USER_INTO_SESSION,
-  } restore_path_;
+  RestorePath restore_path_;
 
   // Stored parameters for StartWizard, required to restore in case of crash.
   std::string wizard_first_screen_name_;
@@ -229,6 +273,33 @@ class LoginDisplayHostImpl : public LoginDisplayHost,
   // A focus ring controller to draw focus ring around view for keyboard
   // driven oobe.
   scoped_ptr<FocusRingController> focus_ring_controller_;
+
+  // Handles special keys for keyboard driven oobe.
+  scoped_ptr<KeyboardDrivenOobeKeyHandler> keyboard_driven_oobe_key_handler_;
+
+  // Whether auto enrollment client has done the check.
+  bool auto_enrollment_check_done_;
+
+  // Callbacks to notify when auto enrollment client has done the check.
+  std::vector<GetAutoEnrollmentCheckResultCallback>
+      get_auto_enrollment_result_callbacks_;
+
+  FinalizeAnimationType finalize_animation_type_;
+
+  base::WeakPtrFactory<LoginDisplayHostImpl> animation_weak_ptr_factory_;
+
+  // Time when login prompt visible signal is received. Used for
+  // calculations of delay before startup sound.
+  base::TimeTicks login_prompt_visible_time_;
+
+  // True when request to play startup sound was sent to
+  // SoundsManager.
+  bool startup_sound_played_;
+
+  // When true, startup sound should be played only when spoken
+  // feedback is enabled.  Otherwise, startup sound should be played
+  // in any case.
+  bool startup_sound_honors_spoken_feedback_;
 
   DISALLOW_COPY_AND_ASSIGN(LoginDisplayHostImpl);
 };

@@ -85,7 +85,7 @@ WebsiteSettingsPopupAndroid::WebsiteSettingsPopupAndroid(
 
   popup_jobject_.Reset(
       Java_WebsiteSettingsPopup_create(env, context, java_content_view,
-                                       reinterpret_cast<jint>(this)));
+                                       reinterpret_cast<intptr_t>(this)));
 
   presenter_.reset(new WebsiteSettings(
       this,
@@ -126,7 +126,7 @@ void WebsiteSettingsPopupAndroid::SetIdentityInfo(
     Java_WebsiteSettingsPopup_addSection(env, popup_jobject_.obj(), icon_id,
         ConvertUTF8ToJavaString(env, headline).obj(), description.obj());
 
-    string16 certificate_label =
+    base::string16 certificate_label =
         l10n_util::GetStringUTF16(IDS_PAGEINFO_CERT_INFO_BUTTON);
     if (!certificate_label.empty()) {
       Java_WebsiteSettingsPopup_setCertificateViewer(env, popup_jobject_.obj(),
@@ -172,7 +172,7 @@ void WebsiteSettingsPopupAndroid::SetSelectedTab(
 }
 
 void WebsiteSettingsPopupAndroid::SetFirstVisit(
-    const string16& first_visit) {
+    const base::string16& first_visit) {
   NOTIMPLEMENTED();
 }
 

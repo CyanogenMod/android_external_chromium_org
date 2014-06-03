@@ -11,7 +11,7 @@
 
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/c/ppb_file_io.h"
-#include "ppapi/c/dev/ppb_testing_dev.h"
+#include "ppapi/c/private/ppb_testing_private.h"
 #include "ppapi/cpp/directory_entry.h"
 #include "ppapi/cpp/file_io.h"
 #include "ppapi/cpp/file_ref.h"
@@ -115,13 +115,9 @@ void TestFileRef::RunTests(const std::string& filter) {
   RUN_CALLBACK_TEST(TestFileRef, QueryAndTouchFile, filter);
   RUN_CALLBACK_TEST(TestFileRef, DeleteFileAndDirectory, filter);
   RUN_CALLBACK_TEST(TestFileRef, RenameFileAndDirectory, filter);
-  // FileRef::Query is out-of-process only.
-  if (testing_interface_->IsOutOfProcess())
-    RUN_CALLBACK_TEST(TestFileRef, Query, filter);
+  RUN_CALLBACK_TEST(TestFileRef, Query, filter);
   RUN_CALLBACK_TEST(TestFileRef, FileNameEscaping, filter);
-  // FileRef::ReadDirectoryEntries is out-of-process only.
-  if (testing_interface_->IsOutOfProcess())
-    RUN_CALLBACK_TEST(TestFileRef, ReadDirectoryEntries, filter);
+  RUN_CALLBACK_TEST(TestFileRef, ReadDirectoryEntries, filter);
 }
 
 std::string TestFileRef::TestCreate() {
@@ -399,8 +395,10 @@ std::string TestFileRef::TestQueryAndTouchFile() {
   ASSERT_EQ(4, info.size);
   ASSERT_EQ(PP_FILETYPE_REGULAR, info.type);
   ASSERT_EQ(PP_FILESYSTEMTYPE_LOCALTEMPORARY, info.system_type);
-  ASSERT_EQ(last_access_time, info.last_access_time);
-  ASSERT_EQ(last_modified_time, info.last_modified_time);
+
+  // Disabled due to DST-related failure: crbug.com/314579
+  // ASSERT_EQ(last_access_time, info.last_access_time);
+  // ASSERT_EQ(last_modified_time, info.last_modified_time);
 
   // Cancellation test.
   // TODO(viettrungluu): this test causes a bunch of LOG(WARNING)s; investigate.

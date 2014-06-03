@@ -6,6 +6,7 @@
 
 #include "ash/shell.h"
 #include "chrome/browser/ui/ash/launcher/chrome_launcher_controller.h"
+#include "extensions/common/extension.h"
 
 AppListControllerDelegateAsh::AppListControllerDelegateAsh() {}
 
@@ -22,6 +23,10 @@ gfx::NativeWindow AppListControllerDelegateAsh::GetAppListWindow() {
   return ash::Shell::GetInstance()->GetAppListWindow();
 }
 
+gfx::ImageSkia AppListControllerDelegateAsh::GetWindowIcon() {
+  return gfx::ImageSkia();
+}
+
 bool AppListControllerDelegateAsh::IsAppPinned(
     const std::string& extension_id) {
   return ChromeLauncherController::instance()->IsAppPinned(extension_id);
@@ -32,16 +37,23 @@ void AppListControllerDelegateAsh::PinApp(const std::string& extension_id) {
 }
 
 void AppListControllerDelegateAsh::UnpinApp(const std::string& extension_id) {
-  ChromeLauncherController::instance()->UnpinAppsWithID(extension_id);
+  ChromeLauncherController::instance()->UnpinAppWithID(extension_id);
 }
 
-bool AppListControllerDelegateAsh::CanPin() {
-  return ChromeLauncherController::instance()->CanPin();
+AppListControllerDelegate::Pinnable
+    AppListControllerDelegateAsh::GetPinnable() {
+  return ChromeLauncherController::instance()->CanPin() ? PIN_EDITABLE :
+      PIN_FIXED;
 }
 
-bool AppListControllerDelegateAsh::CanDoCreateShortcutsFlow(
-    bool is_platform_app) {
+bool AppListControllerDelegateAsh::CanDoCreateShortcutsFlow() {
   return false;
+}
+
+void AppListControllerDelegateAsh::DoCreateShortcutsFlow(
+    Profile* profile,
+    const std::string& extension_id) {
+  NOTREACHED();
 }
 
 void AppListControllerDelegateAsh::CreateNewWindow(Profile* profile,
@@ -53,19 +65,48 @@ void AppListControllerDelegateAsh::CreateNewWindow(Profile* profile,
 }
 
 void AppListControllerDelegateAsh::ActivateApp(
-    Profile* profile, const extensions::Extension* extension, int event_flags) {
-  ChromeLauncherController::instance()->ActivateApp(extension->id(),
-                                                    event_flags);
+    Profile* profile,
+    const extensions::Extension* extension,
+    AppListSource source,
+    int event_flags) {
+  ChromeLauncherController::instance()->ActivateApp(
+      extension->id(),
+      AppListSourceToLaunchSource(source),
+      event_flags);
+
   DismissView();
 }
 
 void AppListControllerDelegateAsh::LaunchApp(
-    Profile* profile, const extensions::Extension* extension, int event_flags) {
-  ChromeLauncherController::instance()->LaunchApp(extension->id(),
-                                                  event_flags);
+    Profile* profile,
+    const extensions::Extension* extension,
+    AppListSource source,
+    int event_flags) {
+  ChromeLauncherController::instance()->LaunchApp(
+      extension->id(),
+      AppListSourceToLaunchSource(source),
+      event_flags);
   DismissView();
+}
+
+void AppListControllerDelegateAsh::ShowForProfileByPath(
+    const base::FilePath& profile_path) {
+  // Ash doesn't have profile switching.
+  NOTREACHED();
 }
 
 bool AppListControllerDelegateAsh::ShouldShowUserIcon() {
   return false;
+}
+
+ash::LaunchSource AppListControllerDelegateAsh::AppListSourceToLaunchSource(
+    AppListSource source) {
+  switch (source) {
+    case LAUNCH_FROM_APP_LIST:
+      return ash::LAUNCH_FROM_APP_LIST;
+    case LAUNCH_FROM_APP_LIST_SEARCH:
+      return ash::LAUNCH_FROM_APP_LIST_SEARCH;
+    default:
+      return ash::LAUNCH_FROM_UNKNOWN;
+  }
 }

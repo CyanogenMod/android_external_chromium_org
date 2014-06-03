@@ -16,6 +16,7 @@
 #include "base/threading/non_thread_safe.h"
 #include "base/threading/thread_checker.h"
 #include "sync/base/sync_export.h"
+#include "sync/internal_api/public/base/cancelation_observer.h"
 #include "sync/syncable/syncable_id.h"
 
 namespace sync_pb {
@@ -23,6 +24,8 @@ class ClientToServerMessage;
 }
 
 namespace syncer {
+
+class CancelationSignal;
 
 namespace syncable {
 class Directory;
@@ -78,9 +81,6 @@ struct SYNC_EXPORT_PRIVATE HttpResponse {
   // The size of a download request's payload.
   int64 payload_length;
 
-  // Value of the Update-Client-Auth header.
-  std::string update_client_auth_header;
-
   // Identifies the type of failure, if any.
   ServerConnectionCode server_status;
 
@@ -125,7 +125,7 @@ class SYNC_EXPORT_PRIVATE ScopedServerStatusWatcher
 // Use this class to interact with the sync server.
 // The ServerConnectionManager currently supports POSTing protocol buffers.
 //
-class SYNC_EXPORT_PRIVATE ServerConnectionManager {
+class SYNC_EXPORT_PRIVATE ServerConnectionManager : public CancelationObserver {
  public:
   // buffer_in - will be POSTed
   // buffer_out - string will be overwritten with response
@@ -164,12 +164,10 @@ class SYNC_EXPORT_PRIVATE ServerConnectionManager {
 
     void GetServerParams(std::string* server,
                          int* server_port,
-                         bool* use_ssl,
-                         bool* use_oauth2_token) const {
+                         bool* use_ssl) const {
       server->assign(scm_->sync_server_);
       *server_port = scm_->sync_server_port_;
       *use_ssl = scm_->use_ssl_;
-      *use_oauth2_token = scm_->use_oauth2_token_;
     }
 
     std::string buffer_;
@@ -183,7 +181,7 @@ class SYNC_EXPORT_PRIVATE ServerConnectionManager {
   ServerConnectionManager(const std::string& server,
                           int port,
                           bool use_ssl,
-                          bool use_oauth2_token);
+                          CancelationSignal* cancelation_signal);
 
   virtual ~ServerConnectionManager();
 
@@ -215,11 +213,11 @@ class SYNC_EXPORT_PRIVATE ServerConnectionManager {
   // communication with the server.
   virtual Connection* MakeConnection();
 
-  // Aborts any active HTTP POST request.
+  // Closes any active network connections to the sync server.
   // We expect this to get called on a different thread than the valid
   // ThreadChecker thread, as we want to kill any pending http traffic without
   // having to wait for the request to complete.
-  void TerminateAllIO();
+  virtual void OnSignalReceived() OVERRIDE FINAL;
 
   void set_client_id(const std::string& client_id) {
     DCHECK(thread_checker_.CalledOnValidThread());
@@ -288,11 +286,6 @@ class SYNC_EXPORT_PRIVATE ServerConnectionManager {
   // Indicates whether or not requests should be made using HTTPS.
   bool use_ssl_;
 
-  // Indicates if token should be handled as OAuth2 token. Connection should set
-  // auth header appropriately.
-  // TODO(pavely): Remove once sync on android switches to oauth2 tokens.
-  bool use_oauth2_token_;
-
   // The paths we post to.
   std::string proto_sync_path_;
 
@@ -341,6 +334,9 @@ class SYNC_EXPORT_PRIVATE ServerConnectionManager {
   };
 
   void NotifyStatusChanged();
+
+  CancelationSignal* const cancelation_signal_;
+  bool signal_handler_registered_;
 
   DISALLOW_COPY_AND_ASSIGN(ServerConnectionManager);
 };

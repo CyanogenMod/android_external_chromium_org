@@ -8,6 +8,7 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/strings/string16.h"
 #include "chrome/browser/ui/views/website_settings/permission_selector_view_observer.h"
 #include "chrome/browser/ui/website_settings/website_settings_ui.h"
@@ -84,7 +85,7 @@ class WebsiteSettingsPopupView
   virtual void SetPermissionInfo(
       const PermissionInfoList& permission_info_list) OVERRIDE;
   virtual void SetIdentityInfo(const IdentityInfo& identity_info) OVERRIDE;
-  virtual void SetFirstVisit(const string16& first_visit) OVERRIDE;
+  virtual void SetFirstVisit(const base::string16& first_visit) OVERRIDE;
   virtual void SetSelectedTab(TabId tab_id) OVERRIDE;
 
   // Creates the contents of the "Permissions" tab. The ownership of the
@@ -99,7 +100,7 @@ class WebsiteSettingsPopupView
   // section |contents| and an optional |link|. This method creates a section
   // for the given |headline|, |contents| and |link|. |link| can be NULL if the
   // section should not contain a link.
-  views::View* CreateSection(const string16& headline,
+  views::View* CreateSection(const base::string16& headline,
                              views::View* contents,
                              views::Link* link) WARN_UNUSED_RESULT;
 
@@ -111,9 +112,11 @@ class WebsiteSettingsPopupView
   // the views hierarchy. If the |link| is NULL then no link is be displayed.
   void ResetConnectionSection(views::View* section_container,
                               const gfx::Image& icon,
-                              const string16& headline,
-                              const string16& text,
+                              const base::string16& headline,
+                              const base::string16& text,
                               views::Link* link);
+  // Handles LinkClicked asynchronously.
+  void HandleLinkClickedAsync(views::Link* source);
 
   // The web contents of the current tab. The popup can't live longer than a
   // tab.
@@ -158,6 +161,8 @@ class WebsiteSettingsPopupView
 
   views::View* connection_info_content_;
   views::View* page_info_content_;
+
+  base::WeakPtrFactory<WebsiteSettingsPopupView> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(WebsiteSettingsPopupView);
 };

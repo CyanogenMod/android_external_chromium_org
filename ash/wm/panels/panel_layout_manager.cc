@@ -14,10 +14,8 @@
 #include "ash/shelf/shelf_widget.h"
 #include "ash/shell.h"
 #include "ash/shell_window_ids.h"
-#include "ash/wm/frame_painter.h"
-#include "ash/wm/property_util.h"
 #include "ash/wm/window_animations.h"
-#include "ash/wm/window_properties.h"
+#include "ash/wm/window_state.h"
 #include "ash/wm/window_util.h"
 #include "base/auto_reset.h"
 #include "base/bind.h"
@@ -26,10 +24,11 @@
 #include "third_party/skia/include/core/SkPaint.h"
 #include "third_party/skia/include/core/SkPath.h"
 #include "ui/aura/client/activation_client.h"
-#include "ui/aura/client/aura_constants.h"
-#include "ui/aura/focus_manager.h"
+#include "ui/aura/client/focus_client.h"
+#include "ui/aura/client/window_tree_client.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_tracker.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/rect.h"
@@ -41,8 +40,6 @@ namespace ash {
 namespace internal {
 
 namespace {
-const int kPanelMarginEdge = 4;
-const int kPanelMarginMiddle = 8;
 const int kPanelIdealSpacing = 4;
 
 const float kMaxHeightFactor = .80f;
@@ -264,7 +261,6 @@ PanelLayoutManager::PanelLayoutManager(aura::Window* panel_container)
       dragged_panel_(NULL),
       launcher_(NULL),
       shelf_layout_manager_(NULL),
-      shelf_hidden_(false),
       last_active_panel_(NULL),
       weak_factory_(this) {
   DCHECK(panel_container);
@@ -322,12 +318,20 @@ void PanelLayoutManager::SetLauncher(ash::Launcher* launcher) {
 
 void PanelLayoutManager::ToggleMinimize(aura::Window* panel) {
   DCHECK(panel->parent() == panel_container_);
-  if (panel->GetProperty(aura::client::kShowStateKey) ==
-      ui::SHOW_STATE_MINIMIZED) {
-    panel->SetProperty(aura::client::kShowStateKey, ui::SHOW_STATE_NORMAL);
-  } else {
-    panel->SetProperty(aura::client::kShowStateKey, ui::SHOW_STATE_MINIMIZED);
-  }
+  wm::WindowState* window_state = wm::GetWindowState(panel);
+  if (window_state->IsMinimized())
+    window_state->Restore();
+  else
+    window_state->Minimize();
+}
+
+views::Widget* PanelLayoutManager::GetCalloutWidgetForPanel(
+    aura::Window* panel) {
+  DCHECK(panel->parent() == panel_container_);
+  PanelList::iterator found =
+      std::find(panel_windows_.begin(), panel_windows_.end(), panel);
+  DCHECK(found != panel_windows_.end());
+  return found->callout_widget;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -342,16 +346,17 @@ void PanelLayoutManager::OnWindowAddedToLayout(aura::Window* child) {
   if (in_add_window_)
     return;
   base::AutoReset<bool> auto_reset_in_add_window(&in_add_window_, true);
-  if (!child->GetProperty(kPanelAttachedKey)) {
+  if (!wm::GetWindowState(child)->panel_attached()) {
     // This should only happen when a window is added to panel container as a
     // result of bounds change from within the application during a drag.
     // If so we have already stopped the drag and should reparent the panel
     // back to appropriate container and ignore it.
     // TODO(varkha): Updating bounds during a drag can cause problems and a more
     // general solution is needed. See http://crbug.com/251813 .
-    child->SetDefaultParentByRootWindow(
-        child->GetRootWindow(),
-        child->GetRootWindow()->GetBoundsInScreen());
+    aura::Window* old_parent = child->parent();
+    aura::client::ParentWindowWithContext(
+        child, child, child->GetRootWindow()->GetBoundsInScreen());
+    wm::ReparentTransientChildrenOfChild(child, old_parent, child->parent());
     DCHECK(child->parent()->id() != kShellWindowId_PanelContainer);
     return;
   }
@@ -366,6 +371,7 @@ void PanelLayoutManager::OnWindowAddedToLayout(aura::Window* child) {
   }
   panel_windows_.push_back(panel_info);
   child->AddObserver(this);
+  wm::GetWindowState(child)->AddObserver(this);
   Relayout();
 }
 
@@ -382,6 +388,7 @@ void PanelLayoutManager::OnWindowRemovedFromLayout(aura::Window* child) {
     panel_windows_.erase(found);
   }
   child->RemoveObserver(this);
+  wm::GetWindowState(child)->RemoveObserver(this);
 
   if (dragged_panel_ == child)
     dragged_panel_ = NULL;
@@ -432,9 +439,9 @@ void PanelLayoutManager::SetChildBounds(aura::Window* child,
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// PanelLayoutManager, ash::LauncherIconObserver implementation:
+// PanelLayoutManager, ShelfIconObserver implementation:
 
-void PanelLayoutManager::OnLauncherIconPositionsChanged() {
+void PanelLayoutManager::OnShelfIconPositionsChanged() {
   // TODO: As this is called for every animation step now. Relayout needs to be
   // updated to use current icon position instead of use the ideal bounds so
   // that the panels slide with their icons instead of jumping.
@@ -444,8 +451,7 @@ void PanelLayoutManager::OnLauncherIconPositionsChanged() {
 ////////////////////////////////////////////////////////////////////////////////
 // PanelLayoutManager, ash::ShellObserver implementation:
 
-void PanelLayoutManager::OnShelfAlignmentChanged(
-    aura::RootWindow* root_window) {
+void PanelLayoutManager::OnShelfAlignmentChanged(aura::Window* root_window) {
   if (panel_container_->GetRootWindow() == root_window)
     Relayout();
 }
@@ -453,27 +459,31 @@ void PanelLayoutManager::OnShelfAlignmentChanged(
 /////////////////////////////////////////////////////////////////////////////
 // PanelLayoutManager, WindowObserver implementation:
 
-void PanelLayoutManager::OnWindowPropertyChanged(aura::Window* window,
-                                                 const void* key,
-                                                 intptr_t old) {
-  if (key != aura::client::kShowStateKey)
+void PanelLayoutManager::OnWindowShowTypeChanged(
+    wm::WindowState* window_state,
+    wm::WindowShowType old_type) {
+  // If the shelf is currently hidden then windows will not actually be shown
+  // but the set to restore when the shelf becomes visible is updated.
+  if (restore_windows_on_shelf_visible_) {
+    if (window_state->IsMinimized()) {
+      MinimizePanel(window_state->window());
+      restore_windows_on_shelf_visible_->Remove(window_state->window());
+    } else {
+      restore_windows_on_shelf_visible_->Add(window_state->window());
+    }
     return;
-  // The window property will still be set, but no actual change will occur
-  // until WillChangeVisibilityState is called when the shelf is visible again.
-  if (shelf_hidden_)
-    return;
-  ui::WindowShowState new_state =
-      window->GetProperty(aura::client::kShowStateKey);
-  if (new_state == ui::SHOW_STATE_MINIMIZED)
-    MinimizePanel(window);
+  }
+
+  if (window_state->IsMinimized())
+    MinimizePanel(window_state->window());
   else
-    RestorePanel(window);
+    RestorePanel(window_state->window());
 }
 
 void PanelLayoutManager::OnWindowVisibilityChanged(
     aura::Window* window, bool visible) {
   if (visible)
-    window->SetProperty(aura::client::kShowStateKey, ui::SHOW_STATE_NORMAL);
+    wm::GetWindowState(window)->Restore();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -505,19 +515,31 @@ void PanelLayoutManager::WillChangeVisibilityState(
   // On entering / leaving full screen mode the shelf visibility state is
   // changed to / from SHELF_HIDDEN. In this state, panel windows should hide
   // to allow the full-screen application to use the full screen.
-  shelf_hidden_ = new_state == ash::SHELF_HIDDEN;
-  for (PanelList::iterator iter = panel_windows_.begin();
-       iter != panel_windows_.end(); ++iter) {
-    if (shelf_hidden_) {
-      if (iter->window->IsVisible())
-        MinimizePanel(iter->window);
-    } else {
-      if (iter->window->GetProperty(aura::client::kShowStateKey) !=
-              ui::SHOW_STATE_MINIMIZED) {
-        RestorePanel(iter->window);
+  bool shelf_hidden = new_state == ash::SHELF_HIDDEN;
+  if (!shelf_hidden) {
+    if (restore_windows_on_shelf_visible_) {
+      scoped_ptr<aura::WindowTracker> restore_windows(
+          restore_windows_on_shelf_visible_.Pass());
+      for (aura::WindowTracker::Windows::const_iterator iter =
+           restore_windows->windows().begin(); iter !=
+           restore_windows->windows().end(); ++iter) {
+        RestorePanel(*iter);
       }
     }
+    return;
   }
+
+  if (restore_windows_on_shelf_visible_)
+    return;
+  scoped_ptr<aura::WindowTracker> minimized_windows(new aura::WindowTracker);
+  for (PanelList::iterator iter = panel_windows_.begin();
+       iter != panel_windows_.end(); ++iter) {
+    if (iter->window->IsVisible()) {
+      minimized_windows->Add(iter->window);
+      wm::GetWindowState(iter->window)->Minimize();
+    }
+  }
+  restore_windows_on_shelf_visible_ = minimized_windows.Pass();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -586,12 +608,11 @@ void PanelLayoutManager::Relayout() {
       continue;
     }
 
-    // If the shelf is currently hidden (full-screen mode), hide panel until
+    // If the shelf is currently hidden (full-screen mode), minimize panel until
     // full-screen mode is exited.
-    if (shelf_hidden_) {
-      // The call to Hide does not set the minimize property, so the window will
-      // be restored when the shelf becomes visible again.
-      panel->Hide();
+    if (restore_windows_on_shelf_visible_) {
+      wm::GetWindowState(panel)->Minimize();
+      restore_windows_on_shelf_visible_->Add(panel);
       continue;
     }
 
@@ -832,7 +853,8 @@ void PanelLayoutManager::UpdateCallouts() {
     ui::Layer* layer = callout_widget->GetNativeWindow()->layer();
     // If the panel is not over the callout position or has just become visible
     // then fade in the callout.
-    if (distance_until_over_panel > 0 || layer->GetTargetOpacity() < 1) {
+    if ((distance_until_over_panel > 0 || layer->GetTargetOpacity() < 1) &&
+        panel->layer()->GetTargetTransform().IsIdentity()) {
       if (distance_until_over_panel > 0 &&
           slide_distance >= distance_until_over_panel) {
         layer->SetOpacity(0);

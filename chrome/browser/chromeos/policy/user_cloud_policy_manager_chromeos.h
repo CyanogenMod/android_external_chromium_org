@@ -9,18 +9,23 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/time/time.h"
 #include "base/timer/timer.h"
-#include "chrome/browser/policy/cloud/cloud_policy_client.h"
-#include "chrome/browser/policy/cloud/cloud_policy_constants.h"
-#include "chrome/browser/policy/cloud/cloud_policy_manager.h"
-#include "chrome/browser/policy/cloud/cloud_policy_service.h"
-#include "chrome/browser/policy/cloud/component_cloud_policy_service.h"
 #include "components/browser_context_keyed_service/browser_context_keyed_service.h"
+#include "components/policy/core/common/cloud/cloud_policy_client.h"
+#include "components/policy/core/common/cloud/cloud_policy_constants.h"
+#include "components/policy/core/common/cloud/cloud_policy_manager.h"
+#include "components/policy/core/common/cloud/cloud_policy_service.h"
 
 class GoogleServiceAuthError;
 class PrefService;
+
+namespace base {
+class SequencedTaskRunner;
+}
 
 namespace net {
 class URLRequestContextGetter;
@@ -28,9 +33,10 @@ class URLRequestContextGetter;
 
 namespace policy {
 
+class CloudExternalDataManager;
 class DeviceManagementService;
 class PolicyOAuth2TokenFetcher;
-class ResourceCache;
+class WildcardLoginChecker;
 
 // UserCloudPolicyManagerChromeOS implements logic for initializing user policy
 // on Chrome OS.
@@ -38,24 +44,33 @@ class UserCloudPolicyManagerChromeOS
     : public CloudPolicyManager,
       public CloudPolicyClient::Observer,
       public CloudPolicyService::Observer,
-      public ComponentCloudPolicyService::Delegate,
       public BrowserContextKeyedService {
  public:
   // If |wait_for_policy_fetch| is true, IsInitializationComplete() will return
   // false as long as there hasn't been a successful policy fetch.
+  // |task_runner| is the runner for policy refresh tasks.
+  // |file_task_runner| is used for file operations. Currently this must be the
+  // FILE BrowserThread.
+  // |io_task_runner| is used for network IO. Currently this must be the IO
+  // BrowserThread.
   UserCloudPolicyManagerChromeOS(
       scoped_ptr<CloudPolicyStore> store,
-      scoped_ptr<ResourceCache> resource_cache,
+      scoped_ptr<CloudExternalDataManager> external_data_manager,
+      const base::FilePath& component_policy_cache_path,
       bool wait_for_policy_fetch,
-      base::TimeDelta initial_policy_fetch_timeout);
+      base::TimeDelta initial_policy_fetch_timeout,
+      const scoped_refptr<base::SequencedTaskRunner>& task_runner,
+      const scoped_refptr<base::SequencedTaskRunner>& file_task_runner,
+      const scoped_refptr<base::SequencedTaskRunner>& io_task_runner);
   virtual ~UserCloudPolicyManagerChromeOS();
 
   // Initializes the cloud connection. |local_state| and
   // |device_management_service| must stay valid until this object is deleted.
-  void Connect(PrefService* local_state,
-               DeviceManagementService* device_management_service,
-               scoped_refptr<net::URLRequestContextGetter> request_context,
-               UserAffiliation user_affiliation);
+  void Connect(
+      PrefService* local_state,
+      DeviceManagementService* device_management_service,
+      scoped_refptr<net::URLRequestContextGetter> system_request_context,
+      UserAffiliation user_affiliation);
 
   // This class is one of the policy providers, and must be ready for the
   // creation of the Profile's PrefService; all the other
@@ -71,14 +86,13 @@ class UserCloudPolicyManagerChromeOS
   // Returns true if the underlying CloudPolicyClient is already registered.
   bool IsClientRegistered() const;
 
+  // Indicates a wildcard login check should be performed once an access token
+  // is available.
+  void EnableWildcardLoginCheck(const std::string& username);
+
   // ConfigurationPolicyProvider:
   virtual void Shutdown() OVERRIDE;
   virtual bool IsInitializationComplete(PolicyDomain domain) const OVERRIDE;
-  virtual void RegisterPolicyDomain(
-      scoped_refptr<const PolicyDomainDescriptor> descriptor) OVERRIDE;
-
-  // CloudPolicyManager:
-  virtual scoped_ptr<PolicyBundle> CreatePolicyBundle() OVERRIDE;
 
   // CloudPolicyService::Observer:
   virtual void OnInitializationCompleted(CloudPolicyService* service) OVERRIDE;
@@ -89,7 +103,6 @@ class UserCloudPolicyManagerChromeOS
   virtual void OnClientError(CloudPolicyClient* client) OVERRIDE;
 
   // ComponentCloudPolicyService::Delegate:
-  virtual void OnComponentCloudPolicyRefreshNeeded() OVERRIDE;
   virtual void OnComponentCloudPolicyUpdated() OVERRIDE;
 
  private:
@@ -117,9 +130,14 @@ class UserCloudPolicyManagerChromeOS
   // Owns the store, note that CloudPolicyManager just keeps a plain pointer.
   scoped_ptr<CloudPolicyStore> store_;
 
-  // Handles fetching and storing cloud policy for components. It uses the
-  // |store_|, so destroy it first.
-  scoped_ptr<ComponentCloudPolicyService> component_policy_service_;
+  // Manages external data referenced by policies.
+  scoped_ptr<CloudExternalDataManager> external_data_manager_;
+
+  // Username for the wildcard login check if applicable, empty otherwise.
+  std::string wildcard_username_;
+
+  // Path where policy for components will be cached.
+  base::FilePath component_policy_cache_path_;
 
   // Whether to wait for a policy fetch to complete before reporting
   // IsInitializationComplete().
@@ -136,9 +154,18 @@ class UserCloudPolicyManagerChromeOS
   // a callback with an unretained reference to the manager, when it exists.
   scoped_ptr<PolicyOAuth2TokenFetcher> token_fetcher_;
 
+  // Keeps alive the wildcard checker while its running.
+  scoped_ptr<WildcardLoginChecker> wildcard_login_checker_;
+
   // The access token passed to OnAccessTokenAvailable. It is stored here so
   // that it can be used if OnInitializationCompleted is called later.
   std::string access_token_;
+
+  // Timestamps for collecting timing UMA stats.
+  base::Time time_init_started_;
+  base::Time time_init_completed_;
+  base::Time time_token_available_;
+  base::Time time_client_registered_;
 
   DISALLOW_COPY_AND_ASSIGN(UserCloudPolicyManagerChromeOS);
 };

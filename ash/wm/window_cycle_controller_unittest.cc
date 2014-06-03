@@ -12,11 +12,13 @@
 #include "ash/test/ash_test_base.h"
 #include "ash/test/test_shell_delegate.h"
 #include "ash/wm/window_cycle_list.h"
+#include "ash/wm/window_state.h"
 #include "ash/wm/window_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/screen_position_client.h"
 #include "ui/aura/env.h"
+#include "ui/aura/root_window.h"
 #include "ui/aura/test/test_windows.h"
 #include "ui/aura/window.h"
 #include "ui/gfx/rect.h"
@@ -185,20 +187,20 @@ TEST_F(WindowCycleControllerTest, MaximizedWindow) {
   // Create a couple of test windows.
   scoped_ptr<Window> window0(CreateTestWindowInShellWithId(0));
   scoped_ptr<Window> window1(CreateTestWindowInShellWithId(1));
-
-  wm::MaximizeWindow(window1.get());
-  wm::ActivateWindow(window1.get());
-  EXPECT_TRUE(wm::IsActiveWindow(window1.get()));
+  wm::WindowState* window1_state = wm::GetWindowState(window1.get());
+  window1_state->Maximize();
+  window1_state->Activate();
+  EXPECT_TRUE(window1_state->IsActive());
 
   // Rotate focus, this should move focus to window0.
   WindowCycleController* controller =
       Shell::GetInstance()->window_cycle_controller();
   controller->HandleCycleWindow(WindowCycleController::FORWARD, false);
-  EXPECT_TRUE(wm::IsActiveWindow(window0.get()));
+  EXPECT_TRUE(wm::GetWindowState(window0.get())->IsActive());
 
   // One more time.
   controller->HandleCycleWindow(WindowCycleController::FORWARD, false);
-  EXPECT_TRUE(wm::IsActiveWindow(window1.get()));
+  EXPECT_TRUE(window1_state->IsActive());
 }
 
 // Cycles to a minimized window.
@@ -206,21 +208,23 @@ TEST_F(WindowCycleControllerTest, Minimized) {
   // Create a couple of test windows.
   scoped_ptr<Window> window0(CreateTestWindowInShellWithId(0));
   scoped_ptr<Window> window1(CreateTestWindowInShellWithId(1));
+  wm::WindowState* window0_state = wm::GetWindowState(window0.get());
+  wm::WindowState* window1_state = wm::GetWindowState(window1.get());
 
-  wm::MinimizeWindow(window1.get());
-  wm::ActivateWindow(window0.get());
-  EXPECT_TRUE(wm::IsActiveWindow(window0.get()));
+  window1_state->Minimize();
+  window0_state->Activate();
+  EXPECT_TRUE(window0_state->IsActive());
 
   // Rotate focus, this should move focus to window1 and unminimize it.
   WindowCycleController* controller =
       Shell::GetInstance()->window_cycle_controller();
   controller->HandleCycleWindow(WindowCycleController::FORWARD, false);
-  EXPECT_FALSE(wm::IsWindowMinimized(window1.get()));
-  EXPECT_TRUE(wm::IsActiveWindow(window1.get()));
+  EXPECT_FALSE(window1_state->IsMinimized());
+  EXPECT_TRUE(window1_state->IsActive());
 
   // One more time back to w0.
   controller->HandleCycleWindow(WindowCycleController::FORWARD, false);
-  EXPECT_TRUE(wm::IsActiveWindow(window0.get()));
+  EXPECT_TRUE(window0_state->IsActive());
 }
 
 TEST_F(WindowCycleControllerTest, AlwaysOnTopWindow) {
@@ -322,13 +326,13 @@ TEST_F(WindowCycleControllerTest, AlwaysOnTopMultipleRootWindows) {
 
   // Set up a second root window
   UpdateDisplay("1000x600,600x400");
-  Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
+  aura::Window::Windows root_windows = Shell::GetAllRootWindows();
   ASSERT_EQ(2U, root_windows.size());
 
   WindowCycleController* controller =
       Shell::GetInstance()->window_cycle_controller();
 
-  Shell::GetInstance()->set_active_root_window(root_windows[0]);
+  Shell::GetInstance()->set_target_root_window(root_windows[0]);
 
   // Create two windows in the primary root.
   scoped_ptr<Window> window0(CreateTestWindowInShellWithId(0));
@@ -341,7 +345,7 @@ TEST_F(WindowCycleControllerTest, AlwaysOnTopMultipleRootWindows) {
   EXPECT_EQ(root_windows[0], window1->GetRootWindow());
 
   // And two on the secondary root.
-  Shell::GetInstance()->set_active_root_window(root_windows[1]);
+  Shell::GetInstance()->set_target_root_window(root_windows[1]);
   scoped_ptr<Window> window2(CreateTestWindowInShellWithId(2));
   EXPECT_EQ(root_windows[1], window2->GetRootWindow());
 
@@ -353,7 +357,7 @@ TEST_F(WindowCycleControllerTest, AlwaysOnTopMultipleRootWindows) {
   EXPECT_EQ(root_windows[1], window3->GetRootWindow());
 
   // Move the active root window to the secondary.
-  Shell::GetInstance()->set_active_root_window(root_windows[1]);
+  Shell::GetInstance()->set_target_root_window(root_windows[1]);
 
   wm::ActivateWindow(window2.get());
 

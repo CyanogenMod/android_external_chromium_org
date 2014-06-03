@@ -14,9 +14,9 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string16.h"
 #include "chrome/browser/extensions/crx_installer_error.h"
-#include "chrome/browser/signin/oauth2_token_service.h"
 #include "extensions/common/url_pattern.h"
 #include "google_apis/gaia/oauth2_mint_token_flow.h"
+#include "google_apis/gaia/oauth2_token_service.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/image/image_skia.h"
@@ -60,7 +60,14 @@ class ExtensionInstallPrompt
     PERMISSIONS_PROMPT,
     EXTERNAL_INSTALL_PROMPT,
     POST_INSTALL_PERMISSIONS_PROMPT,
+    LAUNCH_PROMPT,
     NUM_PROMPT_TYPES
+  };
+
+  enum DetailsType {
+    PERMISSIONS_DETAILS = 0,
+    OAUTH_DETAILS,
+    RETAINED_FILES_DETAILS,
   };
 
   // Extra information needed to display an installation or uninstallation
@@ -73,9 +80,12 @@ class ExtensionInstallPrompt
     ~Prompt();
 
     // Sets the permission list for this prompt.
-    void SetPermissions(const std::vector<string16>& permissions);
+    void SetPermissions(const std::vector<base::string16>& permissions);
     // Sets the permission list details for this prompt.
-    void SetPermissionsDetails(const std::vector<string16>& details);
+    void SetPermissionsDetails(const std::vector<base::string16>& details);
+    void SetIsShowingDetails(DetailsType type,
+                             size_t index,
+                             bool is_showing_details);
     void SetInlineInstallWebstoreData(const std::string& localized_user_count,
                                       bool show_user_count,
                                       double average_rating,
@@ -87,17 +97,16 @@ class ExtensionInstallPrompt
     void set_type(PromptType type) { type_ = type; }
 
     // Getters for UI element labels.
-    string16 GetDialogTitle() const;
-    string16 GetHeading() const;
+    base::string16 GetDialogTitle() const;
+    base::string16 GetHeading() const;
     int GetDialogButtons() const;
     bool HasAcceptButtonLabel() const;
-    string16 GetAcceptButtonLabel() const;
+    base::string16 GetAcceptButtonLabel() const;
     bool HasAbortButtonLabel() const;
-    string16 GetAbortButtonLabel() const;
-    string16 GetPermissionsHeading() const;
-    string16 GetOAuthHeading() const;
-    string16 GetRetainedFilesHeading() const;
-    string16 GetRetainedFilesHeadingWithCount() const;
+    base::string16 GetAbortButtonLabel() const;
+    base::string16 GetPermissionsHeading() const;
+    base::string16 GetOAuthHeading() const;
+    base::string16 GetRetainedFilesHeading() const;
 
     bool ShouldShowPermissions() const;
 
@@ -110,16 +119,17 @@ class ExtensionInstallPrompt
     // that they append to the star display area.
     typedef void(*StarAppender)(const gfx::ImageSkia*, void*);
     void AppendRatingStars(StarAppender appender, void* data) const;
-    string16 GetRatingCount() const;
-    string16 GetUserCount() const;
+    base::string16 GetRatingCount() const;
+    base::string16 GetUserCount() const;
     size_t GetPermissionCount() const;
     size_t GetPermissionsDetailsCount() const;
-    string16 GetPermission(size_t index) const;
-    string16 GetPermissionsDetails(size_t index) const;
+    base::string16 GetPermission(size_t index) const;
+    base::string16 GetPermissionsDetails(size_t index) const;
+    bool GetIsShowingDetails(DetailsType type, size_t index) const;
     size_t GetOAuthIssueCount() const;
     const IssueAdviceInfoEntry& GetOAuthIssue(size_t index) const;
     size_t GetRetainedFileCount() const;
-    string16 GetRetainedFile(size_t index) const;
+    base::string16 GetRetainedFile(size_t index) const;
 
     // Populated for BUNDLE_INSTALL_PROMPT.
     const extensions::BundleInstaller* bundle() const { return bundle_; }
@@ -148,15 +158,18 @@ class ExtensionInstallPrompt
 
     // Permissions that are being requested (may not be all of an extension's
     // permissions if only additional ones are being requested)
-    std::vector<string16> permissions_;
-    std::vector<string16> details_;
+    std::vector<base::string16> permissions_;
+    std::vector<base::string16> details_;
+    std::vector<bool> is_showing_details_for_permissions_;
+    std::vector<bool> is_showing_details_for_oauth_;
+    bool is_showing_details_for_retained_files_;
 
     // Descriptions and details for OAuth2 permissions to display to the user.
     // These correspond to permission scopes.
     IssueAdviceInfo oauth_issue_advice_;
 
     // User name to be used in Oauth heading label.
-    string16 oauth_user_name_;
+    base::string16 oauth_user_name_;
 
     // The extension or bundle being installed.
     const extensions::Extension* extension_;
@@ -356,9 +369,6 @@ class ExtensionInstallPrompt
   // 1) Set off a 'load icon' task.
   // 2) Handle the load icon response and show the UI (OnImageLoaded).
   void LoadImageIfNeeded();
-
-  // Starts fetching warnings for OAuth2 scopes, if there are any.
-  void FetchOAuthIssueAdviceIfNeeded();
 
   // OAuth2TokenService::Consumer implementation:
   virtual void OnGetTokenSuccess(const OAuth2TokenService::Request* request,

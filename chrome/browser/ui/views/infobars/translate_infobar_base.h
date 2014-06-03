@@ -21,11 +21,10 @@ class TranslateInfoBarBase : public InfoBarView {
  public:
   // Sets the text of the provided language menu button.
   void UpdateLanguageButtonText(views::MenuButton* button,
-                                const string16& text);
+                                const base::string16& text);
 
  protected:
-  TranslateInfoBarBase(InfoBarService* owner,
-                       TranslateInfoBarDelegate* delegate);
+  explicit TranslateInfoBarBase(scoped_ptr<TranslateInfoBarDelegate> delegate);
   virtual ~TranslateInfoBarBase();
 
   // InfoBarView:
@@ -40,7 +39,7 @@ class TranslateInfoBarBase : public InfoBarView {
  private:
   // InfoBarView:
   virtual void OnPaintBackground(gfx::Canvas* canvas) OVERRIDE;
-  virtual void AnimationProgressed(const ui::Animation* animation) OVERRIDE;
+  virtual void AnimationProgressed(const gfx::Animation* animation) OVERRIDE;
 
   // Returns the background that should be displayed when not animating.
   const views::Background& GetBackground();
@@ -52,7 +51,7 @@ class TranslateInfoBarBase : public InfoBarView {
                       const views::Background& background);
 
   InfoBarBackground error_background_;
-  scoped_ptr<ui::SlideAnimation> background_color_animation_;
+  scoped_ptr<gfx::SlideAnimation> background_color_animation_;
 
   DISALLOW_COPY_AND_ASSIGN(TranslateInfoBarBase);
 };

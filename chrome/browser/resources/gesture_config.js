@@ -179,6 +179,11 @@ function GestureConfig() {
       step: 0.1
     },
     {
+      key: 'show_press_delay_in_ms',
+      label: 'Delay before show press event is fired',
+      units: 'milliseconds',
+    },
+    {
       key: 'max_seconds_between_double_click',
       label: 'Maximum Double Click Interval',
       units: 'seconds',
@@ -233,6 +238,11 @@ function GestureConfig() {
     {
       key: 'min_scroll_delta_squared',
       label: 'Minimum Scroll Delta Squared',
+      units: ''
+    },
+    {
+      key: 'min_scroll_successive_velocity_events',
+      label: 'Minimum Scroll Successive Velocity Events',
       units: ''
     },
     {
@@ -330,8 +340,13 @@ function OverscrollConfig() {
       units: '%'
     },
     {
+      key: 'minimum_threshold_start_touchpad',
+      label: 'Start overscroll gesture (horizontal; touchpad)',
+      units: 'pixels'
+    },
+    {
       key: 'minimum_threshold_start',
-      label: 'Start overscroll gesture (horizontal)',
+      label: 'Start overscroll gesture (horizontal; touchscreen)',
       units: 'pixels'
     },
     {
@@ -354,34 +369,6 @@ function OverscrollConfig() {
   return new GeneralConfig(OVERSCROLL_TITLE,
                            OVERSCROLL_PREFIX,
                            OVERSCROLL_FIELDS);
-}
-
-/**
- * Returns a GeneralConfig for configuring immersive.* preferences for
- * immersive fullscreen in Ash.
- * @return {object} A GeneralConfig object.
- */
-function ImmersiveConfig() {
-  /** @const */ var IMMERSIVE_TITLE = 'Immersive Fullscreen Configuration';
-
-  /** @const */ var IMMERSIVE_PREFIX = 'immersive_mode.';
-
-  var IMMERSIVE_FIELDS = [
-    {
-      key: 'reveal_delay_ms',
-      label: 'Top-of-screen reveal delay',
-      units: 'milliseconds'
-    },
-    {
-      key: 'reveal_x_threshold_pixels',
-      label: 'Top-of-screen mouse x threshold',
-      units: 'pixels'
-    },
-  ];
-
-  return new GeneralConfig(IMMERSIVE_TITLE,
-                           IMMERSIVE_PREFIX,
-                           IMMERSIVE_FIELDS);
 }
 
 /**
@@ -452,14 +439,10 @@ window.gesture_config = {
     var f = FlingConfig();
     f.buildAll();
 
-    var i = ImmersiveConfig();
-    i.buildAll();
-
     $('reset-all-button').onclick = function() {
       g.onReset();
       o.onReset();
       f.onReset();
-      i.onReset();
     };
   },
 

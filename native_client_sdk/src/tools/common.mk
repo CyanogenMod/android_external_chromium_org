@@ -10,11 +10,11 @@
 #
 # Toolchain
 #
-# By default the VALID_TOOLCHAINS list contains newlib and glibc.  If your
-# project only builds in one or the other then this should be overridden
+# By default the VALID_TOOLCHAINS list contains pnacl, newlib and glibc.  If
+# your project only builds in one or the other then this should be overridden
 # accordingly.
 #
-VALID_TOOLCHAINS ?= newlib glibc
+VALID_TOOLCHAINS ?= pnacl newlib glibc
 TOOLCHAIN ?= $(word 1,$(VALID_TOOLCHAINS))
 
 
@@ -58,7 +58,7 @@ endef
 #
 # The target for all versions
 #
-USABLE_TOOLCHAINS=$(filter $(OSNAME) newlib glibc pnacl,$(VALID_TOOLCHAINS))
+USABLE_TOOLCHAINS=$(filter $(OSNAME) pnacl newlib glibc,$(VALID_TOOLCHAINS))
 
 ifeq ($(NO_HOST_BUILDS),1)
 USABLE_TOOLCHAINS:=$(filter-out $(OSNAME),$(USABLE_TOOLCHAINS))
@@ -101,9 +101,24 @@ else  # TOOLCHAIN is valid...
 #
 # The SDK provides two sets of libraries, Debug and Release.  Debug libraries
 # are compiled without optimizations to make debugging easier.  By default
-# this will build a Debug configuration.
+# this will build a Release configuration. When debugging via "make debug",
+# build the debug configuration by default instead.
 #
+ifneq (,$(findstring debug,$(MAKECMDGOALS)))
 CONFIG ?= Debug
+else
+CONFIG ?= Release
+endif
+
+
+#
+# Verify we selected a valid configuration for this example.
+#
+VALID_CONFIGS ?= Debug Release
+ifeq (,$(findstring $(CONFIG),$(VALID_CONFIGS)))
+  $(warning Availbile choices are: $(VALID_CONFIGS))
+  $(error Can not use CONFIG=$(CONFIG) on this example.)
+endif
 
 
 #
@@ -210,10 +225,13 @@ all:
 install:
 .PHONY: install
 
+ifdef SEL_LDR
+STANDALONE = 1
+endif
 
 OUTBASE ?= .
-ifdef SEL_LDR
-OUTDIR := $(OUTBASE)/$(TOOLCHAIN)/sel_ldr_$(CONFIG)
+ifdef STANDALONE
+OUTDIR := $(OUTBASE)/$(TOOLCHAIN)/standalone_$(CONFIG)
 else
 OUTDIR := $(OUTBASE)/$(TOOLCHAIN)/$(CONFIG)
 endif
@@ -273,30 +291,42 @@ $(STAMPDIR)/$(1).stamp:
 endif
 endef
 
-
 ifeq ($(TOOLCHAIN),win)
+ifdef STANDALONE
+HOST_EXT = .exe
+else
 HOST_EXT = .dll
+endif
+else
+ifdef STANDALONE
+HOST_EXT =
 else
 HOST_EXT = .so
+endif
 endif
 
 
 #
 # Common Compile Options
 #
+# For example, -DNDEBUG is added to release builds by default
+# so that calls to assert(3) are not included in the build.
+#
 ifeq ($(CONFIG),Release)
-POSIX_FLAGS ?= -g -O2 -pthread -MMD
+POSIX_FLAGS ?= -g -O2 -pthread -MMD -DNDEBUG
+NACL_LDFLAGS ?= -O2
+PNACL_LDFLAGS ?= -O2
 else
 POSIX_FLAGS ?= -g -O0 -pthread -MMD -DNACL_SDK_DEBUG
 endif
 
-ifdef SEL_LDR
+ifdef STANDALONE
 POSIX_FLAGS += -DSEL_LDR=1
 endif
 
 NACL_CFLAGS ?= -Wno-long-long -Werror
 NACL_CXXFLAGS ?= -Wno-long-long -Werror
-NACL_LDFLAGS ?= -Wl,-as-needed
+NACL_LDFLAGS += -Wl,-as-needed -pthread
 
 #
 # Default Paths
@@ -401,28 +431,12 @@ else
 DEV_NULL = /dev/null
 endif
 
-#
-# Assign a sensible default to CHROME_PATH.
-#
-CHROME_PATH ?= $(shell $(GETOS) --chrome 2> $(DEV_NULL))
-
-#
-# Verify we can find the Chrome executable if we need to launch it.
-#
-.PHONY: check_for_chrome
-check_for_chrome:
-ifeq (,$(wildcard $(CHROME_PATH)))
-	$(warning No valid Chrome found at CHROME_PATH=$(CHROME_PATH))
-	$(error Set CHROME_PATH via an environment variable, or command-line.)
-else
-	$(warning Using chrome at: $(CHROME_PATH))
-endif
-
 
 #
 # Variables for running examples with Chrome.
 #
 RUN_PY := python $(NACL_SDK_ROOT)/tools/run.py
+HTTPD_PY := python $(NACL_SDK_ROOT)/tools/httpd.py
 
 # Add this to launch Chrome with additional environment variables defined.
 # Each element should be specified as KEY=VALUE, with whitespace separating
@@ -450,33 +464,44 @@ ifeq ($(CONFIG),Debug)
 SEL_LDR_ARGS += --debug-libs
 endif
 
-ifdef SEL_LDR
-run: all
-ifndef NACL_ARCH
-	$(error Cannot run in sel_ldr unless $$NACL_ARCH is set)
-endif
-	$(SEL_LDR_PATH) $(SEL_LDR_ARGS) $(OUTDIR)/$(TARGET)_$(NACL_ARCH).nexe
+ifndef STANDALONE
+#
+# Assign a sensible default to CHROME_PATH.
+#
+CHROME_PATH ?= $(shell $(GETOS) --chrome 2> $(DEV_NULL))
 
-debug: all
-ifndef NACL_ARCH
-	$(error Cannot run in sel_ldr unless $$NACL_ARCH is set)
-endif
-	$(SEL_LDR_PATH) -d $(SEL_LDR_ARGS) $(OUTDIR)/$(TARGET)_$(NACL_ARCH).nexe
+#
+# Verify we can find the Chrome executable if we need to launch it.
+#
+
+NULL :=
+SPACE := $(NULL) # one space after NULL is required
+CHROME_PATH_ESCAPE := $(subst $(SPACE),\ ,$(CHROME_PATH))
+
+.PHONY: check_for_chrome
+check_for_chrome:
+ifeq (,$(wildcard $(CHROME_PATH_ESCAPE)))
+	$(warning No valid Chrome found at CHROME_PATH=$(CHROME_PATH))
+	$(error Set CHROME_PATH via an environment variable, or command-line.)
 else
+	$(warning Using chrome at: $(CHROME_PATH))
+endif
 PAGE ?= index.html
 PAGE_TC_CONFIG ?= "$(PAGE)?tc=$(TOOLCHAIN)&config=$(CONFIG)"
 
 .PHONY: run
 run: check_for_chrome all $(PAGE)
 	$(RUN_PY) -C $(CURDIR) -P $(PAGE_TC_CONFIG) \
-	    $(addprefix -E ,$(CHROME_ENV)) -- $(CHROME_PATH) $(CHROME_ARGS) \
+	    $(addprefix -E ,$(CHROME_ENV)) -- $(CHROME_PATH_ESCAPE) \
+	    $(CHROME_ARGS) --no-sandbox \
 	    --register-pepper-plugins="$(PPAPI_DEBUG),$(PPAPI_RELEASE)"
 
 .PHONY: run_package
 run_package: check_for_chrome all
-	$(CHROME_PATH) --load-and-launch-app=$(CURDIR) $(CHROME_ARGS)
+	@echo "$(TOOLCHAIN) $(CONFIG)" > $(CURDIR)/run_package_config
+	$(CHROME_PATH_ESCAPE) --load-and-launch-app=$(CURDIR) $(CHROME_ARGS)
 
-GDB_ARGS += -D $(TC_PATH)/$(OSNAME)_x86_newlib/bin/$(SYSARCH)-nacl-gdb
+GDB_ARGS += -D $(TC_PATH)/$(OSNAME)_x86_newlib/bin/x86_64-nacl-gdb
 GDB_ARGS += -D --eval-command="nacl-manifest $(abspath $(OUTDIR))/$(TARGET).nmf"
 GDB_ARGS += -D $(GDB_DEBUG_TARGET)
 
@@ -484,11 +509,14 @@ GDB_ARGS += -D $(GDB_DEBUG_TARGET)
 debug: check_for_chrome all $(PAGE)
 	$(RUN_PY) $(GDB_ARGS) \
 	    -C $(CURDIR) -P $(PAGE_TC_CONFIG) \
-	    $(addprefix -E ,$(CHROME_ENV)) -- $(CHROME_PATH) $(CHROME_ARGS) \
-	    --enable-nacl-debug \
+	    $(addprefix -E ,$(CHROME_ENV)) -- $(CHROME_PATH_ESCAPE) \
+	    $(CHROME_ARGS) --enable-nacl-debug \
 	    --register-pepper-plugins="$(PPAPI_DEBUG),$(PPAPI_RELEASE)"
-endif
 
+.PHONY: serve
+serve: all
+	$(HTTPD_PY) -C $(CURDIR)
+endif
 
 # uppercase aliases (for backward compatibility)
 .PHONY: CHECK_FOR_CHROME DEBUG LAUNCH RUN

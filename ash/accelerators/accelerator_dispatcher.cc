@@ -19,9 +19,9 @@
 #include "ui/aura/env.h"
 #include "ui/aura/root_window.h"
 #include "ui/base/accelerators/accelerator.h"
-#include "ui/base/events/event.h"
-#include "ui/base/events/event_constants.h"
-#include "ui/base/events/event_utils.h"
+#include "ui/events/event.h"
+#include "ui/events/event_constants.h"
+#include "ui/events/event_utils.h"
 #include "ui/views/controls/menu/menu_controller.h"
 
 namespace ash {
@@ -39,6 +39,11 @@ bool IsKeyEvent(const MSG& msg) {
 #elif defined(USE_X11)
 bool IsKeyEvent(const XEvent* xev) {
   return xev->type == KeyPress || xev->type == KeyRelease;
+}
+#elif defined(USE_OZONE)
+bool IsKeyEvent(const base::NativeEvent& native_event) {
+  const ui::KeyEvent* event = static_cast<const ui::KeyEvent*>(native_event);
+  return event->IsKeyEvent();
 }
 #endif
 

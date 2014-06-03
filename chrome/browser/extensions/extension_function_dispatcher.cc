@@ -18,29 +18,32 @@
 #include "chrome/browser/extensions/extension_function_registry.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
+#include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/extensions/extension_web_ui.h"
-#include "chrome/browser/extensions/extensions_quota_service.h"
-#include "chrome/browser/extensions/process_map.h"
 #include "chrome/browser/external_protocol/external_protocol_handler.h"
-#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/renderer_host/chrome_render_message_filter.h"
-#include "chrome/common/extensions/api/extension_api.h"
 #include "chrome/common/extensions/extension_messages.h"
 #include "chrome/common/extensions/extension_set.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
-#include "content/public/browser/render_view_host_observer.h"
 #include "content/public/browser/user_metrics.h"
+#include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/result_codes.h"
+#include "extensions/browser/extensions_browser_client.h"
+#include "extensions/browser/process_map.h"
+#include "extensions/browser/quota_service.h"
+#include "extensions/common/extension_api.h"
 #include "ipc/ipc_message.h"
 #include "ipc/ipc_message_macros.h"
 #include "webkit/common/resource_type.h"
 
-using extensions::api::activity_log_private::BlockedChromeActivityDetail;
 using extensions::Extension;
 using extensions::ExtensionAPI;
+using extensions::ExtensionsBrowserClient;
+using extensions::ExtensionSystem;
 using extensions::Feature;
 using content::RenderViewHost;
 
@@ -49,7 +52,7 @@ namespace {
 void LogSuccess(const std::string& extension_id,
                 const std::string& api_name,
                 scoped_ptr<base::ListValue> args,
-                Profile* profile) {
+                content::BrowserContext* browser_context) {
   // The ActivityLog can only be accessed from the main (UI) thread.  If we're
   // running on the wrong thread, re-dispatch from the main thread.
   if (!BrowserThread::CurrentlyOn(BrowserThread::UI)) {
@@ -59,10 +62,14 @@ void LogSuccess(const std::string& extension_id,
                                        extension_id,
                                        api_name,
                                        base::Passed(&args),
-                                       profile));
+                                       browser_context));
   } else {
+    // The BrowserContext may become invalid after the task above is posted.
+    if (!ExtensionsBrowserClient::Get()->IsValidContext(browser_context))
+      return;
+
     extensions::ActivityLog* activity_log =
-        extensions::ActivityLog::GetInstance(profile);
+        extensions::ActivityLog::GetInstance(browser_context);
     scoped_refptr<extensions::Action> action =
         new extensions::Action(extension_id,
                                base::Time::Now(),
@@ -72,39 +79,6 @@ void LogSuccess(const std::string& extension_id,
     activity_log->LogAction(action);
   }
 }
-
-void LogFailure(const std::string& extension_id,
-                const std::string& api_name,
-                scoped_ptr<base::ListValue> args,
-                BlockedChromeActivityDetail::Reason reason,
-                Profile* profile) {
-  // The ActivityLog can only be accessed from the main (UI) thread.  If we're
-  // running on the wrong thread, re-dispatch from the main thread.
-  if (!BrowserThread::CurrentlyOn(BrowserThread::UI)) {
-    BrowserThread::PostTask(BrowserThread::UI,
-                            FROM_HERE,
-                            base::Bind(&LogFailure,
-                                       extension_id,
-                                       api_name,
-                                       base::Passed(&args),
-                                       reason,
-                                       profile));
-  } else {
-    extensions::ActivityLog* activity_log =
-        extensions::ActivityLog::GetInstance(profile);
-    scoped_refptr<extensions::Action> action =
-        new extensions::Action(extension_id,
-                               base::Time::Now(),
-                               extensions::Action::ACTION_API_BLOCKED,
-                               api_name);
-    action->set_args(args.Pass());
-    action->mutable_other()
-        ->SetString(activity_log_constants::kActionBlockedReason,
-                    BlockedChromeActivityDetail::ToString(reason));
-    activity_log->LogAction(action);
-  }
-}
-
 
 // Separate copy of ExtensionAPI used for IO thread extension functions. We need
 // this because ExtensionAPI has mutable data. It should be possible to remove
@@ -178,30 +152,34 @@ void IOThreadResponseCallback(
 }  // namespace
 
 class ExtensionFunctionDispatcher::UIThreadResponseCallbackWrapper
-    : public content::RenderViewHostObserver {
+    : public content::WebContentsObserver {
  public:
   UIThreadResponseCallbackWrapper(
       const base::WeakPtr<ExtensionFunctionDispatcher>& dispatcher,
       RenderViewHost* render_view_host)
-      : content::RenderViewHostObserver(render_view_host),
+      : content::WebContentsObserver(
+            content::WebContents::FromRenderViewHost(render_view_host)),
         dispatcher_(dispatcher),
+        render_view_host_(render_view_host),
         weak_ptr_factory_(this) {
   }
 
   virtual ~UIThreadResponseCallbackWrapper() {
   }
 
-  // content::RenderViewHostObserver overrides.
-  virtual void RenderViewHostDestroyed(
+  // content::WebContentsObserver overrides.
+  virtual void RenderViewDeleted(
       RenderViewHost* render_view_host) OVERRIDE {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+    if (render_view_host != render_view_host_)
+      return;
+
     if (dispatcher_.get()) {
       dispatcher_->ui_thread_response_callback_wrappers_
           .erase(render_view_host);
     }
 
-    // This call will delete |this|.
-    content::RenderViewHostObserver::RenderViewHostDestroyed(render_view_host);
+    delete this;
   }
 
   ExtensionFunction::ResponseCallback CreateCallback(int request_id) {
@@ -217,12 +195,13 @@ class ExtensionFunctionDispatcher::UIThreadResponseCallbackWrapper
                                     const base::ListValue& results,
                                     const std::string& error) {
     CommonResponseCallback(
-        render_view_host(), render_view_host()->GetRoutingID(),
-        render_view_host()->GetProcess()->GetHandle(), request_id, type,
+        render_view_host_, render_view_host_->GetRoutingID(),
+        render_view_host_->GetProcess()->GetHandle(), request_id, type,
         results, error);
   }
 
   base::WeakPtr<ExtensionFunctionDispatcher> dispatcher_;
+  content::RenderViewHost* render_view_host_;
   base::WeakPtrFactory<UIThreadResponseCallbackWrapper> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(UIThreadResponseCallbackWrapper);
@@ -261,15 +240,14 @@ void ExtensionFunctionDispatcher::ResetFunctions() {
 
 // static
 void ExtensionFunctionDispatcher::DispatchOnIOThread(
-    ExtensionInfoMap* extension_info_map,
-    void* profile,
+    extensions::InfoMap* extension_info_map,
+    void* browser_context,
     int render_process_id,
     base::WeakPtr<ChromeRenderMessageFilter> ipc_sender,
     int routing_id,
     const ExtensionHostMsg_Request_Params& params) {
   const Extension* extension =
       extension_info_map->extensions().GetByID(params.extension_id);
-  Profile* profile_cast = static_cast<Profile*>(profile);
 
   ExtensionFunction::ResponseCallback callback(
       base::Bind(&IOThreadResponseCallback, ipc_sender, routing_id,
@@ -279,17 +257,11 @@ void ExtensionFunctionDispatcher::DispatchOnIOThread(
       CreateExtensionFunction(params, extension, render_process_id,
                               extension_info_map->process_map(),
                               g_global_io_data.Get().api.get(),
-                              profile, callback));
+                              browser_context, callback));
   scoped_ptr<ListValue> args(params.arguments.DeepCopy());
 
-  if (!function.get()) {
-    LogFailure(extension->id(),
-               params.name,
-               args.Pass(),
-               BlockedChromeActivityDetail::REASON_ACCESS_DENIED,
-               profile_cast);
+  if (!function.get())
     return;
-  }
 
   IOThreadExtensionFunction* function_io =
       function->AsIOThreadExtensionFunction();
@@ -302,16 +274,10 @@ void ExtensionFunctionDispatcher::DispatchOnIOThread(
   function->set_include_incognito(
       extension_info_map->IsIncognitoEnabled(extension->id()));
 
-  if (!CheckPermissions(function.get(), extension, params, callback)) {
-    LogFailure(extension->id(),
-               params.name,
-               args.Pass(),
-               BlockedChromeActivityDetail::REASON_ACCESS_DENIED,
-               profile_cast);
+  if (!CheckPermissions(function.get(), extension, params, callback))
     return;
-  }
 
-  ExtensionsQuotaService* quota = extension_info_map->GetQuotaService();
+  extensions::QuotaService* quota = extension_info_map->GetQuotaService();
   std::string violation_error = quota->Assess(extension->id(),
                                               function.get(),
                                               &params.arguments,
@@ -320,22 +286,18 @@ void ExtensionFunctionDispatcher::DispatchOnIOThread(
     LogSuccess(extension->id(),
                params.name,
                args.Pass(),
-               profile_cast);
+               static_cast<content::BrowserContext*>(browser_context));
     function->Run();
   } else {
-    LogFailure(extension->id(),
-               params.name,
-               args.Pass(),
-               BlockedChromeActivityDetail::REASON_QUOTA_EXCEEDED,
-               profile_cast);
     function->OnQuotaExceeded(violation_error);
   }
 }
 
-ExtensionFunctionDispatcher::ExtensionFunctionDispatcher(Profile* profile,
-                                                         Delegate* delegate)
-  : profile_(profile),
-    delegate_(delegate) {
+ExtensionFunctionDispatcher::ExtensionFunctionDispatcher(
+    content::BrowserContext* browser_context,
+    Delegate* delegate)
+    : browser_context_(browser_context),
+      delegate_(delegate) {
 }
 
 ExtensionFunctionDispatcher::~ExtensionFunctionDispatcher() {
@@ -365,11 +327,11 @@ void ExtensionFunctionDispatcher::DispatchWithCallback(
     const ExtensionFunction::ResponseCallback& callback) {
   // TODO(yzshen): There is some shared logic between this method and
   // DispatchOnIOThread(). It is nice to deduplicate.
-  ExtensionService* service = profile()->GetExtensionService();
-  ExtensionProcessManager* process_manager =
-      extensions::ExtensionSystem::Get(profile())->process_manager();
+  ExtensionSystem* extension_system =
+      ExtensionSystem::GetForBrowserContext(browser_context_);
+  ExtensionService* service = extension_system->extension_service();
   extensions::ProcessMap* process_map = service->process_map();
-  if (!service || !process_map)
+  if (!process_map)
     return;
 
   const Extension* extension = service->extensions()->GetByID(
@@ -378,21 +340,17 @@ void ExtensionFunctionDispatcher::DispatchWithCallback(
     extension = service->extensions()->GetHostedAppByURL(params.source_url);
 
   scoped_refptr<ExtensionFunction> function(
-      CreateExtensionFunction(params, extension,
+      CreateExtensionFunction(params,
+                              extension,
                               render_view_host->GetProcess()->GetID(),
-                              *(service->process_map()),
+                              *process_map,
                               extensions::ExtensionAPI::GetSharedInstance(),
-                              profile(), callback));
+                              browser_context_,
+                              callback));
   scoped_ptr<ListValue> args(params.arguments.DeepCopy());
 
-  if (!function.get()) {
-    LogFailure(extension->id(),
-               params.name,
-               args.Pass(),
-               BlockedChromeActivityDetail::REASON_ACCESS_DENIED,
-               profile());
+  if (!function.get())
     return;
-  }
 
   UIThreadExtensionFunction* function_ui =
       function->AsUIThreadExtensionFunction();
@@ -402,19 +360,14 @@ void ExtensionFunctionDispatcher::DispatchWithCallback(
   }
   function_ui->SetRenderViewHost(render_view_host);
   function_ui->set_dispatcher(AsWeakPtr());
-  function_ui->set_profile(profile_);
-  function->set_include_incognito(service->CanCrossIncognito(extension));
+  function_ui->set_context(browser_context_);
+  function->set_include_incognito(extension_util::CanCrossIncognito(extension,
+                                                                    service));
 
-  if (!CheckPermissions(function.get(), extension, params, callback)) {
-    LogFailure(extension->id(),
-               params.name,
-               args.Pass(),
-               BlockedChromeActivityDetail::REASON_ACCESS_DENIED,
-               profile());
+  if (!CheckPermissions(function.get(), extension, params, callback))
     return;
-  }
 
-  ExtensionsQuotaService* quota = service->quota_service();
+  extensions::QuotaService* quota = service->quota_service();
   std::string violation_error = quota->Assess(extension->id(),
                                               function.get(),
                                               &params.arguments,
@@ -422,14 +375,9 @@ void ExtensionFunctionDispatcher::DispatchWithCallback(
   if (violation_error.empty()) {
     // See crbug.com/39178.
     ExternalProtocolHandler::PermitLaunchUrl();
-    LogSuccess(extension->id(), params.name, args.Pass(), profile());
+    LogSuccess(extension->id(), params.name, args.Pass(), browser_context_);
     function->Run();
   } else {
-    LogFailure(extension->id(),
-               params.name,
-               args.Pass(),
-               BlockedChromeActivityDetail::REASON_QUOTA_EXCEEDED,
-               profile());
     function->OnQuotaExceeded(violation_error);
   }
 
@@ -444,12 +392,12 @@ void ExtensionFunctionDispatcher::DispatchWithCallback(
   // now, largely for simplicity's sake. This is OK because currently, only
   // the webRequest API uses IOThreadExtensionFunction, and that API is not
   // compatible with lazy background pages.
-  process_manager->IncrementLazyKeepaliveCount(extension);
+  extension_system->process_manager()->IncrementLazyKeepaliveCount(extension);
 }
 
 void ExtensionFunctionDispatcher::OnExtensionFunctionCompleted(
     const Extension* extension) {
-  extensions::ExtensionSystem::Get(profile())->process_manager()->
+  ExtensionSystem::GetForBrowserContext(browser_context_)->process_manager()->
       DecrementLazyKeepaliveCount(extension);
 }
 
@@ -485,6 +433,9 @@ bool AllowHostedAppAPICall(const Extension& extension,
   if (!extension.web_extent().MatchesURL(source_url))
     return false;
 
+  // Note: Not BLESSED_WEB_PAGE_CONTEXT here because these component hosted app
+  // entities have traditionally been treated as blessed extensions, for better
+  // or worse.
   Feature::Availability availability =
       ExtensionAPI::GetSharedInstance()->IsAvailable(
           function_name, &extension, Feature::BLESSED_EXTENSION_CONTEXT,

@@ -25,10 +25,10 @@
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/content_settings_types.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "extensions/common/constants.h"
+#include "extensions/common/extension.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -144,19 +144,19 @@ NotificationOptionsMenuModel::NotificationOptionsMenuModel(Balloon* balloon)
     // We get back no extension here when we show the notification after
     // the extension has crashed.
     if (extension) {
-      const string16 disable_label = l10n_util::GetStringUTF16(
+      const base::string16 disable_label = l10n_util::GetStringUTF16(
           IDS_EXTENSIONS_DISABLE);
       AddItem(kToggleExtensionCommand, disable_label);
     }
   } else if (!notification.display_source().empty()) {
-    const string16 disable_label = l10n_util::GetStringFUTF16(
+    const base::string16 disable_label = l10n_util::GetStringFUTF16(
         IDS_NOTIFICATION_BALLOON_REVOKE_MESSAGE,
         notification.display_source());
     AddItem(kTogglePermissionCommand, disable_label);
   }
 
   if (!notification.display_source().empty()) {
-    const string16 settings_label = l10n_util::GetStringUTF16(
+    const base::string16 settings_label = l10n_util::GetStringUTF16(
         IDS_NOTIFICATIONS_SETTINGS_BUTTON);
     AddItem(kOpenContentSettingsCommand, settings_label);
   }
@@ -176,8 +176,8 @@ bool NotificationOptionsMenuModel::IsItemForCommandIdDynamic(int command_id)
          command_id == kToggleExtensionCommand;
 }
 
-string16 NotificationOptionsMenuModel::GetLabelForCommandId(int command_id)
-    const {
+base::string16 NotificationOptionsMenuModel::GetLabelForCommandId(
+    int command_id) const {
   // TODO(tfarina,johnnyg): Remove this code if we decide to close notifications
   // after permissions are revoked.
   if (command_id == kTogglePermissionCommand ||
@@ -212,7 +212,7 @@ string16 NotificationOptionsMenuModel::GetLabelForCommandId(int command_id)
   } else if (command_id == kOpenContentSettingsCommand) {
     return l10n_util::GetStringUTF16(IDS_NOTIFICATIONS_SETTINGS_BUTTON);
   }
-  return string16();
+  return base::string16();
 }
 
 bool NotificationOptionsMenuModel::IsCommandIdChecked(int /* command_id */)

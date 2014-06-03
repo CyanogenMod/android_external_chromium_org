@@ -11,7 +11,6 @@
 #include "base/stl_util.h"
 #include "media/audio/audio_output_dispatcher.h"
 #include "media/audio/audio_parameters.h"
-#include "media/audio/audio_util.h"
 #include "media/audio/pulse/pulse_output.h"
 #include "media/audio/pulse/pulse_stubs.h"
 #include "media/base/channel_layout.h"
@@ -65,8 +64,9 @@ AudioParameters AudioManagerOpenBSD::GetInputStreamParameters(
       kDefaultSampleRate, 16, kDefaultInputBufferSize);
 }
 
-AudioManagerOpenBSD::AudioManagerOpenBSD()
-    : pulse_library_is_initialized_(false) {
+AudioManagerOpenBSD::AudioManagerOpenBSD(AudioLogFactory* audio_log_factory)
+    : AudioManagerBase(audio_log_factory),
+      pulse_library_is_initialized_(false) {
   SetMaxOutputStreamsAllowed(kMaxOutputStreams);
   StubPathMap paths;
 
@@ -92,7 +92,9 @@ AudioOutputStream* AudioManagerOpenBSD::MakeLinearOutputStream(
 
 AudioOutputStream* AudioManagerOpenBSD::MakeLowLatencyOutputStream(
     const AudioParameters& params,
+    const std::string& device_id,
     const std::string& input_device_id) {
+  DLOG_IF(ERROR, !device_id.empty()) << "Not implemented!";
   DCHECK_EQ(AudioParameters::AUDIO_PCM_LOW_LATENCY, params.format);
   return MakeOutputStream(params);
 }
@@ -112,7 +114,10 @@ AudioInputStream* AudioManagerOpenBSD::MakeLowLatencyInputStream(
 }
 
 AudioParameters AudioManagerOpenBSD::GetPreferredOutputStreamParameters(
+    const std::string& output_device_id,
     const AudioParameters& input_params) {
+  // TODO(tommi): Support |output_device_id|.
+  DLOG_IF(ERROR, !output_device_id.empty()) << "Not implemented!";
   static const int kDefaultOutputBufferSize = 512;
 
   ChannelLayout channel_layout = CHANNEL_LAYOUT_STEREO;
@@ -134,7 +139,7 @@ AudioParameters AudioManagerOpenBSD::GetPreferredOutputStreamParameters(
 
   return AudioParameters(
       AudioParameters::AUDIO_PCM_LOW_LATENCY, channel_layout, input_channels,
-      sample_rate, bits_per_sample, buffer_size);
+      sample_rate, bits_per_sample, buffer_size, AudioParameters::NO_EFFECTS);
 }
 
 AudioOutputStream* AudioManagerOpenBSD::MakeOutputStream(
@@ -147,8 +152,8 @@ AudioOutputStream* AudioManagerOpenBSD::MakeOutputStream(
 
 // TODO(xians): Merge AudioManagerOpenBSD with AudioManagerPulse;
 // static
-AudioManager* CreateAudioManager() {
-  return new AudioManagerOpenBSD();
+AudioManager* CreateAudioManager(AudioLogFactory* audio_log_factory) {
+  return new AudioManagerOpenBSD(audio_log_factory);
 }
 
 }  // namespace media

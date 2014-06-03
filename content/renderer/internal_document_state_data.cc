@@ -4,7 +4,6 @@
 
 #include "content/renderer/internal_document_state_data.h"
 
-#include "content/public/common/password_form.h"
 #include "content/public/renderer/document_state.h"
 #include "content/renderer/fetchers/alt_error_page_resource_fetcher.h"
 #include "third_party/WebKit/public/web/WebDataSource.h"
@@ -26,14 +25,14 @@ InternalDocumentStateData::InternalDocumentStateData()
       is_overriding_user_agent_(false),
       must_reset_scroll_and_scale_state_(false),
       cache_policy_override_set_(false),
-      cache_policy_override_(WebKit::WebURLRequest::UseProtocolCachePolicy),
+      cache_policy_override_(blink::WebURLRequest::UseProtocolCachePolicy),
       referrer_policy_set_(false),
-      referrer_policy_(WebKit::WebReferrerPolicyDefault) {
+      referrer_policy_(blink::WebReferrerPolicyDefault) {
 }
 
 // static
 InternalDocumentStateData* InternalDocumentStateData::FromDataSource(
-    WebKit::WebDataSource* ds) {
+    blink::WebDataSource* ds) {
   return FromDocumentState(static_cast<DocumentState*>(ds->extraData()));
 }
 

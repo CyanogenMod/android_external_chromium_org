@@ -22,12 +22,14 @@
 #include "content/public/browser/power_save_blocker.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/webplugininfo.h"
+#include "content/public/test/browser_test_utils.h"
 #include "content/public/test/download_test_observer.h"
 #include "content/public/test/test_file_error_injector.h"
 #include "content/public/test/test_utils.h"
-#include "content/shell/shell.h"
-#include "content/shell/shell_browser_context.h"
-#include "content/shell/shell_download_manager_delegate.h"
+#include "content/shell/browser/shell.h"
+#include "content/shell/browser/shell_browser_context.h"
+#include "content/shell/browser/shell_download_manager_delegate.h"
+#include "content/shell/browser/shell_network_delegate.h"
 #include "content/test/content_browser_test.h"
 #include "content/test/content_browser_test_utils.h"
 #include "content/test/net/url_request_mock_http_job.h"
@@ -598,7 +600,7 @@ class DownloadContentTest : public ContentBrowserTest {
                   const int64 file_size) {
     std::string file_contents;
 
-    bool read = file_util::ReadFileToString(path, &file_contents);
+    bool read = base::ReadFileToString(path, &file_contents);
     EXPECT_TRUE(read) << "Failed reading file: " << path.value() << std::endl;
     if (!read)
       return false;  // Couldn't read the file.
@@ -672,7 +674,7 @@ class DownloadContentTest : public ContentBrowserTest {
 
     if (file_exists) {
       std::string file_contents;
-      EXPECT_TRUE(file_util::ReadFileToString(
+      EXPECT_TRUE(base::ReadFileToString(
           download->GetFullPath(), &file_contents));
 
       ASSERT_EQ(static_cast<size_t>(received_bytes), file_contents.size());
@@ -1123,12 +1125,12 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest,
       switches::kEnableDownloadResumption);
   ASSERT_TRUE(test_server()->Start());
 
-  GURL url = test_server()->GetURL(
-      base::StringPrintf(
-          // First download hits an RST, rest don't, precondition fail.
-          "rangereset?size=%d&rst_boundary=%d&"
-          "token=NoRange&rst_limit=1&fail_precondition=2",
-          GetSafeBufferChunk() * 3, GetSafeBufferChunk()));
+  GURL url = test_server()->GetURL(base::StringPrintf(
+      // First download hits an RST, rest don't, precondition fail.
+      "rangereset?size=%d&rst_boundary=%d&"
+      "token=BadPrecondition&rst_limit=1&fail_precondition=2",
+      GetSafeBufferChunk() * 3,
+      GetSafeBufferChunk()));
 
   // Start the download and wait for first data chunk.
   DownloadItem* download(StartDownloadAndReturnItem(url));
@@ -1140,6 +1142,7 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest,
   ConfirmFileStatusForResume(
       download, true, GetSafeBufferChunk(), GetSafeBufferChunk() * 3,
       base::FilePath(FILE_PATH_LITERAL("rangereset.crdownload")));
+  EXPECT_EQ("BadPrecondition2", download->GetETag());
 
   DownloadUpdatedObserver completion_observer(
       download, base::Bind(DownloadCompleteFilter));
@@ -1149,6 +1152,7 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest,
   ConfirmFileStatusForResume(
       download, true, GetSafeBufferChunk() * 3, GetSafeBufferChunk() * 3,
       base::FilePath(FILE_PATH_LITERAL("rangereset")));
+  EXPECT_EQ("BadPrecondition0", download->GetETag());
 
   static const RecordingDownloadObserver::RecordStruct expected_record[] = {
     // Result of RST
@@ -1596,6 +1600,44 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, CancelResumingDownload) {
   DownloadAndWait(shell(), url2, DownloadItem::COMPLETE);
 
   EXPECT_TRUE(EnsureNoPendingDownloads());
+}
+
+// Check that the cookie policy is correctly updated when downloading a file
+// that redirects cross origin.
+IN_PROC_BROWSER_TEST_F(DownloadContentTest, CookiePolicy) {
+  ASSERT_TRUE(test_server()->Start());
+  net::HostPortPair host_port = test_server()->host_port_pair();
+  DCHECK_EQ(host_port.host(), std::string("127.0.0.1"));
+
+  // Block third-party cookies.
+  ShellNetworkDelegate::SetAcceptAllCookies(false);
+
+  // |url| redirects to a different origin |download| which tries to set a
+  // cookie.
+  std::string download(base::StringPrintf(
+      "http://localhost:%d/set-cookie?A=B", host_port.port()));
+  GURL url(test_server()->GetURL("server-redirect?" + download));
+
+  // Download the file.
+  SetupEnsureNoPendingDownloads();
+  scoped_ptr<DownloadUrlParameters> dl_params(
+      DownloadUrlParameters::FromWebContents(shell()->web_contents(), url));
+  scoped_ptr<DownloadTestObserver> observer(CreateWaiter(shell(), 1));
+  DownloadManagerForShell(shell())->DownloadUrl(dl_params.Pass());
+  observer->WaitForFinished();
+
+  // Get the important info from other threads and check it.
+  EXPECT_TRUE(EnsureNoPendingDownloads());
+
+  std::vector<DownloadItem*> downloads;
+  DownloadManagerForShell(shell())->GetAllDownloads(&downloads);
+  ASSERT_EQ(1u, downloads.size());
+  ASSERT_EQ(DownloadItem::COMPLETE, downloads[0]->GetState());
+
+  // Check that the cookies were correctly set.
+  EXPECT_EQ("A=B",
+            content::GetCookies(shell()->web_contents()->GetBrowserContext(),
+                                GURL(download)));
 }
 
 }  // namespace content

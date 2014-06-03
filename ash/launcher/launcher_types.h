@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "ash/ash_export.h"
+#include "base/strings/string16.h"
 #include "ui/gfx/image/image_skia.h"
 
 namespace ash {
@@ -21,11 +22,16 @@ ASH_EXPORT extern const int kLauncherPreferredSize;
 // Max alpha of the launcher background.
 ASH_EXPORT extern const int kLauncherBackgroundAlpha;
 
+// Invalid image resource id used for LauncherItemDetails.
+extern const int kInvalidImageResourceID;
+
+extern const int kInvalidLauncherID;
+
+// Animation duration for switching black shelf and dock background on and off.
+ASH_EXPORT extern const int kTimeToSwitchBackgroundMs;
+
 // Type the LauncherItem represents.
 enum LauncherItemType {
-  // Represents a tabbed browser.
-  TYPE_TABBED,
-
   // Represents a running app panel.
   TYPE_APP_PANEL,
 
@@ -43,6 +49,9 @@ enum LauncherItemType {
 
   // Represents a windowed V1 browser app.
   TYPE_WINDOWED_APP,
+
+  // Default value.
+  TYPE_UNDEFINED,
 };
 
 // Represents the status of pinned or running app launcher items.
@@ -63,12 +72,7 @@ struct ASH_EXPORT LauncherItem {
 
   LauncherItemType type;
 
-  // Whether it is drawn as an incognito icon or not. Only used if this is
-  // TYPE_TABBED. Note: This cannot be used for identifying incognito windows.
-  bool is_incognito;
-
-  // Image to display in the launcher. If this item is TYPE_TABBED the image is
-  // a favicon image.
+  // Image to display in the launcher.
   gfx::ImageSkia image;
 
   // Assigned by the model when the item is added.
@@ -84,6 +88,22 @@ typedef std::vector<LauncherItem> LauncherItems;
 enum CycleDirection {
   CYCLE_FORWARD,
   CYCLE_BACKWARD
+};
+
+// LauncherItemDetails may be set on Window (by way of
+// SetLauncherItemDetailsForWindow) to make the window appear in the shelf. See
+// ShelfWindowWatcher for details.
+struct ASH_EXPORT LauncherItemDetails {
+  LauncherItemDetails();
+  ~LauncherItemDetails();
+
+  LauncherItemType type;
+
+  // Resource id of the image to display on the shelf.
+  int image_resource_id;
+
+  // Title of the item.
+  base::string16 title;
 };
 
 }  // namespace ash

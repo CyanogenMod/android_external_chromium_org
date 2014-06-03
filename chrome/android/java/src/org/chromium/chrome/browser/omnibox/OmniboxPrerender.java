@@ -4,6 +4,7 @@
 
 package org.chromium.chrome.browser.omnibox;
 
+import org.chromium.chrome.browser.TabBase;
 import org.chromium.chrome.browser.profiles.Profile;
 
 /**
@@ -16,7 +17,7 @@ import org.chromium.chrome.browser.profiles.Profile;
  *
  */
 public class OmniboxPrerender {
-    private int mNativeOmniboxPrerender = 0;
+    private long mNativeOmniboxPrerender = 0;
 
     /**
      * Constructor for creating a OmniboxPrerender instanace.
@@ -55,20 +56,20 @@ public class OmniboxPrerender {
      * @param currentUrl url the current tab is displaying.
      * @param nativeAutocompleteResult native pointer to an autocomplete result.
      * @param profile profile instance corresponding to the active profile.
-     * @param nativeWebContents native pointer to a web contents instance.
+     * @param tab The tab whose webcontent's to use.
      */
-    public void prerenderMaybe(String url, String currentUrl, int nativeAutocompleteResult,
-            Profile profile, int nativeWebContents) {
+    public void prerenderMaybe(String url, String currentUrl, long nativeAutocompleteResult,
+            Profile profile, TabBase tab) {
         nativePrerenderMaybe(mNativeOmniboxPrerender, url, currentUrl, nativeAutocompleteResult,
-                profile, nativeWebContents);
+                profile, tab);
     }
 
-    private native int nativeInit();
-    private native void nativeClear(int nativeOmniboxPrerender, Profile profile);
+    private native long nativeInit();
+    private native void nativeClear(long nativeOmniboxPrerender, Profile profile);
     private native void nativeInitializeForProfile(
-            int nativeOmniboxPrerender,
+            long nativeOmniboxPrerender,
             Profile profile);
-    private native void nativePrerenderMaybe(int nativeOmniboxPrerender, String url,
-            String currentUrl, int nativeAutocompleteResult, Profile profile,
-            int nativeWebContents);
+    private native void nativePrerenderMaybe(long nativeOmniboxPrerender, String url,
+            String currentUrl, long nativeAutocompleteResult, Profile profile,
+            TabBase tab);
 }

@@ -24,24 +24,21 @@ namespace extensions {
 class Extension;
 }
 
-namespace chrome {
+namespace ui {
+class MenuModel;
+}
 
+class GalleryContextMenuModel;
 class MediaGalleriesDialogController;
+class Profile;
 
 // The view.
 class MediaGalleriesDialog {
  public:
   virtual ~MediaGalleriesDialog();
 
-  // Updates the entry for |gallery| with the checkbox set to the value in
-  // |permitted|. |gallery| is owned by the controller and is guaranteed to
-  // live longer than the dialog. If the entry does not already exist, it
-  // should be created.
-  virtual void UpdateGallery(const MediaGalleryPrefInfo& gallery,
-                             bool permitted) = 0;
-
-  // If there exists an entry for |gallery|, it should be removed.
-  virtual void ForgetGallery(MediaGalleryPrefId gallery) = 0;
+  // Tell the dialog to update its display list of galleries.
+  virtual void UpdateGalleries() = 0;
 
   // Constructs a platform-specific dialog owned and controlled by |controller|.
   static MediaGalleriesDialog* Create(
@@ -73,13 +70,13 @@ class MediaGalleriesDialogController
                                  const base::Closure& on_finish);
 
   // The title of the dialog view.
-  string16 GetHeader() const;
+  base::string16 GetHeader() const;
 
   // Explanatory text directly below the title.
-  string16 GetSubtext() const;
+  base::string16 GetSubtext() const;
 
   // Header for unattached devices part of the dialog.
-  string16 GetUnattachedLocationsHeader() const;
+  base::string16 GetUnattachedLocationsHeader() const;
 
   // Initial state of whether the dialog's confirmation button will be enabled.
   bool HasPermittedGalleries() const;
@@ -97,11 +94,18 @@ class MediaGalleriesDialogController
   // of gallery permissions checkbox settings is sent on every checkbox toggle.
   virtual void DidToggleGalleryId(MediaGalleryPrefId pref_id,
                                   bool enabled);
+  virtual void DidToggleNewGallery(const MediaGalleryPrefInfo& gallery,
+                                   bool enabled);
+
+  // The forget command in the context menu was selected.
+  virtual void DidForgetGallery(MediaGalleryPrefId pref_id);
 
   // The dialog is being deleted.
   virtual void DialogFinished(bool accepted);
 
   virtual content::WebContents* web_contents();
+
+  ui::MenuModel* GetContextMenuModel(MediaGalleryPrefId id);
 
  protected:
   // For use with tests.
@@ -115,9 +119,8 @@ class MediaGalleriesDialogController
   typedef std::map<MediaGalleryPrefId, GalleryPermission>
       KnownGalleryPermissions;
 
-  // Bottom half of constructor -- called when the storage monitor
-  // is initialized.
-  void OnStorageMonitorInitialized();
+  // Bottom half of constructor -- called when |preferences_| is initialized.
+  void OnPreferencesInitialized();
 
   // SelectFileDialog::Listener implementation:
   virtual void FileSelected(const base::FilePath& path,
@@ -129,12 +132,20 @@ class MediaGalleriesDialogController
   virtual void OnRemovableStorageAttached(const StorageInfo& info) OVERRIDE;
   virtual void OnRemovableStorageDetached(const StorageInfo& info) OVERRIDE;
 
-  // MediaGalleriesPreferences::GalleryChangeObserver implementation.
+  // MediaGalleriesPreferences::GalleryChangeObserver implementations.
   // Used to keep the dialog in sync when the preferences change.
-  virtual void OnGalleryChanged(MediaGalleriesPreferences* pref,
-                                const std::string& extension_id,
-                                MediaGalleryPrefId pref_id,
-                                bool has_permission) OVERRIDE;
+  virtual void OnPermissionAdded(MediaGalleriesPreferences* pref,
+                                 const std::string& extension_id,
+                                 MediaGalleryPrefId pref_id) OVERRIDE;
+  virtual void OnPermissionRemoved(MediaGalleriesPreferences* pref,
+                                   const std::string& extension_id,
+                                   MediaGalleryPrefId pref_id) OVERRIDE;
+  virtual void OnGalleryAdded(MediaGalleriesPreferences* pref,
+                              MediaGalleryPrefId pref_id) OVERRIDE;
+  virtual void OnGalleryRemoved(MediaGalleriesPreferences* pref,
+                                MediaGalleryPrefId pref_id) OVERRIDE;
+  virtual void OnGalleryInfoUpdated(MediaGalleriesPreferences* pref,
+                                    MediaGalleryPrefId pref_id) OVERRIDE;
 
   // Populates |known_galleries_| from |preferences_|. Subsequent calls merge
   // into |known_galleries_| and do not change permissions for user toggled
@@ -156,6 +167,8 @@ class MediaGalleriesDialogController
   // gallery permissions.
   void FillPermissions(bool attached,
                        GalleryPermissionsVector* permissions) const;
+
+  Profile* GetProfile();
 
   // The web contents from which the request originated.
   content::WebContents* web_contents_;
@@ -187,9 +200,10 @@ class MediaGalleriesDialogController
 
   scoped_refptr<ui::SelectFileDialog> select_folder_dialog_;
 
+  scoped_ptr<ui::MenuModel> context_menu_model_;
+  scoped_ptr<GalleryContextMenuModel> gallery_menu_model_;
+
   DISALLOW_COPY_AND_ASSIGN(MediaGalleriesDialogController);
 };
-
-}  // namespace chrome
 
 #endif  // CHROME_BROWSER_MEDIA_GALLERIES_MEDIA_GALLERIES_DIALOG_CONTROLLER_H_

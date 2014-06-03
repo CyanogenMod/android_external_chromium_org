@@ -13,7 +13,7 @@
 
 #include "base/basictypes.h"
 #include "base/logging.h"
-#include "ui/base/ui_export.h"
+#include "ui/gfx/gfx_export.h"
 
 // This file provides cross platform typedefs for native widget types.
 //   NativeWindow: this is a handle to a native, top-level window
@@ -43,13 +43,12 @@
 // 'views'.
 
 #if defined(USE_AURA)
-#include "ui/base/cursor/cursor.h"
-
 class SkRegion;
 namespace aura {
 class Window;
 }
 namespace ui {
+class Cursor;
 class Event;
 }
 #endif  // defined(USE_AURA)
@@ -172,12 +171,12 @@ typedef PangoFontDescription* NativeFont;
 typedef GtkWidget* NativeEditView;
 typedef cairo_t* NativeDrawingContext;
 typedef void* NativeViewAccessible;
-#elif defined(USE_AURA)
+#elif defined(USE_CAIRO)
 typedef PangoFontDescription* NativeFont;
 typedef void* NativeEditView;
 typedef cairo_t* NativeDrawingContext;
 typedef void* NativeViewAccessible;
-#elif defined(OS_ANDROID)
+#else
 typedef void* NativeFont;
 typedef void* NativeEditView;
 typedef void* NativeDrawingContext;

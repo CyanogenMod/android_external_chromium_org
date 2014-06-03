@@ -69,7 +69,7 @@ class TemplateURLFetcherTest : public testing::Test {
 
  protected:
   // Schedules the download of the url.
-  void StartDownload(const string16& keyword,
+  void StartDownload(const base::string16& keyword,
                      const std::string& osdd_file_name,
                      TemplateURLFetcher::ProviderType provider_type,
                      bool check_that_file_exists);
@@ -108,10 +108,7 @@ void TemplateURLFetcherTestCallbacks::ConfirmAddSearchProvider(
 }
 
 TemplateURLFetcherTest::TemplateURLFetcherTest()
-    : test_server_(
-        content::BrowserThread::GetMessageLoopProxyForThread(
-            content::BrowserThread::IO)),
-      callbacks_destroyed_(0),
+    : callbacks_destroyed_(0),
       add_provider_called_(0),
       waiting_for_download_(false) {
   base::FilePath src_dir;
@@ -135,7 +132,7 @@ void TemplateURLFetcherTest::ConfirmAddSearchProvider(
 }
 
 void TemplateURLFetcherTest::StartDownload(
-    const string16& keyword,
+    const base::string16& keyword,
     const std::string& osdd_file_name,
     TemplateURLFetcher::ProviderType provider_type,
     bool check_that_file_exists) {
@@ -165,7 +162,7 @@ void TemplateURLFetcherTest::WaitForDownloadToFinish() {
 }
 
 TEST_F(TemplateURLFetcherTest, BasicAutodetectedTest) {
-  string16 keyword(ASCIIToUTF16("test"));
+  base::string16 keyword(ASCIIToUTF16("test"));
 
   test_util_.ChangeModelToLoadState();
   ASSERT_FALSE(test_util_.model()->GetTemplateURLForKeyword(keyword));
@@ -189,7 +186,7 @@ TEST_F(TemplateURLFetcherTest, BasicAutodetectedTest) {
 }
 
 TEST_F(TemplateURLFetcherTest, DuplicatesThrownAway) {
-  string16 keyword(ASCIIToUTF16("test"));
+  base::string16 keyword(ASCIIToUTF16("test"));
 
   test_util_.ChangeModelToLoadState();
   ASSERT_FALSE(test_util_.model()->GetTemplateURLForKeyword(keyword));
@@ -203,7 +200,7 @@ TEST_F(TemplateURLFetcherTest, DuplicatesThrownAway) {
   struct {
     std::string description;
     std::string osdd_file_name;
-    string16 keyword;
+    base::string16 keyword;
     TemplateURLFetcher::ProviderType provider_type;
   } test_cases[] = {
       { "Duplicate osdd url with autodetected provider.", osdd_file_name,
@@ -212,7 +209,7 @@ TEST_F(TemplateURLFetcherTest, DuplicatesThrownAway) {
       { "Duplicate keyword with autodetected provider.", osdd_file_name + "1",
         keyword, TemplateURLFetcher::AUTODETECTED_PROVIDER },
       { "Duplicate osdd url with explicit provider.", osdd_file_name,
-        string16(), TemplateURLFetcher::EXPLICIT_PROVIDER },
+        base::string16(), TemplateURLFetcher::EXPLICIT_PROVIDER },
   };
 
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(test_cases); ++i) {
@@ -233,7 +230,7 @@ TEST_F(TemplateURLFetcherTest, DuplicatesThrownAway) {
 }
 
 TEST_F(TemplateURLFetcherTest, BasicExplicitTest) {
-  string16 keyword(ASCIIToUTF16("test"));
+  base::string16 keyword(ASCIIToUTF16("test"));
 
   test_util_.ChangeModelToLoadState();
   ASSERT_FALSE(test_util_.model()->GetTemplateURLForKeyword(keyword));
@@ -257,7 +254,7 @@ TEST_F(TemplateURLFetcherTest, BasicExplicitTest) {
 }
 
 TEST_F(TemplateURLFetcherTest, AutodetectedBeforeLoadTest) {
-  string16 keyword(ASCIIToUTF16("test"));
+  base::string16 keyword(ASCIIToUTF16("test"));
   ASSERT_FALSE(test_util_.model()->GetTemplateURLForKeyword(keyword));
 
   std::string osdd_file_name("simple_open_search.xml");
@@ -268,7 +265,7 @@ TEST_F(TemplateURLFetcherTest, AutodetectedBeforeLoadTest) {
 }
 
 TEST_F(TemplateURLFetcherTest, ExplicitBeforeLoadTest) {
-  string16 keyword(ASCIIToUTF16("test"));
+  base::string16 keyword(ASCIIToUTF16("test"));
   ASSERT_FALSE(test_util_.model()->GetTemplateURLForKeyword(keyword));
 
   std::string osdd_file_name("simple_open_search.xml");
@@ -290,7 +287,7 @@ TEST_F(TemplateURLFetcherTest, ExplicitBeforeLoadTest) {
 }
 
 TEST_F(TemplateURLFetcherTest, DuplicateKeywordsTest) {
-  string16 keyword(ASCIIToUTF16("test"));
+  base::string16 keyword(ASCIIToUTF16("test"));
   TemplateURLData data;
   data.short_name = keyword;
   data.SetKeyword(keyword);
@@ -310,7 +307,7 @@ TEST_F(TemplateURLFetcherTest, DuplicateKeywordsTest) {
 }
 
 TEST_F(TemplateURLFetcherTest, DuplicateDownloadTest) {
-  string16 keyword(ASCIIToUTF16("test"));
+  base::string16 keyword(ASCIIToUTF16("test"));
   std::string osdd_file_name("simple_open_search.xml");
   StartDownload(keyword, osdd_file_name,
                 TemplateURLFetcher::EXPLICIT_PROVIDER, true);

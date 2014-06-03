@@ -13,13 +13,9 @@
 #include "base/compiler_specific.h"
 #include "base/files/file_path.h"
 #include "base/memory/weak_ptr.h"
-#include "chrome/browser/policy/cloud/cloud_policy_constants.h"
 #include "chromeos/dbus/cryptohome_client.h"
 #include "chromeos/dbus/dbus_method_call_status.h"
-
-namespace chromeos {
-class CryptohomeLibrary;
-}
+#include "components/policy/core/common/cloud/cloud_policy_constants.h"
 
 namespace policy {
 
@@ -54,8 +50,7 @@ class EnterpriseInstallAttributes {
   static const char kAttrEnterpriseUser[];
   static const char kAttrConsumerKioskEnabled[];
 
-  EnterpriseInstallAttributes(
-      chromeos::CryptohomeLibrary* cryptohome,
+  explicit EnterpriseInstallAttributes(
       chromeos::CryptohomeClient* cryptohome_client);
   ~EnterpriseInstallAttributes();
 
@@ -134,7 +129,6 @@ class EnterpriseInstallAttributes {
   void OnReadImmutableAttributes(const std::string& user,
                                  const LockResultCallback& callback);
 
-  chromeos::CryptohomeLibrary* cryptohome_;
   chromeos::CryptohomeClient* cryptohome_client_;
 
   base::WeakPtrFactory<EnterpriseInstallAttributes> weak_ptr_factory_;

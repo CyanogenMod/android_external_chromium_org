@@ -16,9 +16,9 @@
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "grit/ui_resources.h"
-#include "ui/base/keycodes/keyboard_codes.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/views/controls/button/image_button.h"
 #include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/image_view.h"
@@ -50,8 +50,8 @@ OneClickSigninBubbleView* OneClickSigninBubbleView::bubble_view_ = NULL;
 // static
 void OneClickSigninBubbleView::ShowBubble(
     BrowserWindow::OneClickSigninBubbleType type,
-    const string16& email,
-    const string16& error_message,
+    const base::string16& email,
+    const base::string16& error_message,
     scoped_ptr<OneClickSigninBubbleDelegate> delegate,
     views::View* anchor_view,
     const BrowserWindow::StartSyncCallback& start_sync) {
@@ -61,17 +61,17 @@ void OneClickSigninBubbleView::ShowBubble(
   switch (type) {
     case BrowserWindow::ONE_CLICK_SIGNIN_BUBBLE_TYPE_BUBBLE:
       bubble_view_ = new OneClickSigninBubbleView(
-          error_message, string16(), delegate.Pass(),
+          error_message, base::string16(), delegate.Pass(),
           anchor_view, start_sync, false);
       break;
     case BrowserWindow::ONE_CLICK_SIGNIN_BUBBLE_TYPE_MODAL_DIALOG:
       bubble_view_ = new OneClickSigninBubbleView(
-          string16(), string16(), delegate.Pass(),
+          base::string16(), base::string16(), delegate.Pass(),
           anchor_view, start_sync, true);
       break;
     case BrowserWindow::ONE_CLICK_SIGNIN_BUBBLE_TYPE_SAML_MODAL_DIALOG:
       bubble_view_ = new OneClickSigninBubbleView(
-          string16(), email, delegate.Pass(),
+          base::string16(), email, delegate.Pass(),
           anchor_view, start_sync, true);
       break;
   }
@@ -91,8 +91,8 @@ void OneClickSigninBubbleView::Hide() {
 }
 
 OneClickSigninBubbleView::OneClickSigninBubbleView(
-    const string16& error_message,
-    const string16& email,
+    const base::string16& error_message,
+    const base::string16& email,
     scoped_ptr<OneClickSigninBubbleDelegate> delegate,
     views::View* anchor_view,
     const BrowserWindow::StartSyncCallback& start_sync_callback,
@@ -127,7 +127,7 @@ ui::ModalType OneClickSigninBubbleView::GetModalType() const {
   return is_sync_dialog_? ui::MODAL_TYPE_CHILD : ui::MODAL_TYPE_NONE;
 }
 
-void OneClickSigninBubbleView::AnimationEnded(const ui::Animation* animation) {
+void OneClickSigninBubbleView::AnimationEnded(const gfx::Animation* animation) {
   views::BubbleDelegateView::AnimationEnded(animation);
   if (message_loop_for_testing_)
     message_loop_for_testing_->Quit();
@@ -208,7 +208,7 @@ void OneClickSigninBubbleView::InitDialogContent(views::GridLayout* layout) {
     layout->StartRow(0, COLUMN_SET_TITLE_BAR);
 
     views::Label* label = new views::Label(
-        l10n_util::GetStringUTF16(IDS_ONE_CLICK_SIGNIN_DIALOG_TITLE));
+        l10n_util::GetStringUTF16(IDS_ONE_CLICK_SIGNIN_DIALOG_TITLE_NEW));
     label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
     label->SetFont(label->font().DeriveFont(3, gfx::Font::BOLD));
     layout->AddView(label);
@@ -257,22 +257,22 @@ void OneClickSigninBubbleView::InitButtons(views::GridLayout* layout) {
 
 void OneClickSigninBubbleView::GetButtons(views::LabelButton** ok_button,
                                           views::LabelButton** undo_button) {
-  *ok_button = new views::LabelButton(this, string16());
+  *ok_button = new views::LabelButton(this, base::string16());
   (*ok_button)->SetStyle(views::Button::STYLE_NATIVE_TEXTBUTTON);
 
   // The default size of the buttons is too large.  To allow them to be smaller
   // ignore the minimum default size.,
   (*ok_button)->set_min_size(gfx::Size());
 
-  string16 ok_label;
+  base::string16 ok_label;
 
   if (is_sync_dialog_) {
-    *undo_button = new views::LabelButton(this, string16());
+    *undo_button = new views::LabelButton(this, base::string16());
     (*undo_button)->SetStyle(views::Button::STYLE_NATIVE_TEXTBUTTON);
     (*undo_button)->set_min_size(gfx::Size());
 
     ok_label = l10n_util::GetStringUTF16(IDS_ONE_CLICK_SIGNIN_DIALOG_OK_BUTTON);
-    string16 undo_label =
+    base::string16 undo_label =
         l10n_util::GetStringUTF16(IDS_ONE_CLICK_SIGNIN_DIALOG_UNDO_BUTTON);
 
     // To make sure they are the same size, SetText() is called
@@ -316,14 +316,15 @@ bool OneClickSigninBubbleView::AcceleratorPressed(
             one_click_signin::HISTOGRAM_CONFIRM_RETURN);
 
         base::ResetAndReturn(&start_sync_callback_).Run(
-          OneClickSigninSyncStarter::SYNC_WITH_DEFAULT_SETTINGS);
+            OneClickSigninSyncStarter::SYNC_WITH_DEFAULT_SETTINGS);
       } else if (accelerator.key_code() == ui::VKEY_ESCAPE) {
         OneClickSigninHelper::LogConfirmHistogramValue(
         clicked_learn_more_ ?
             one_click_signin::HISTOGRAM_CONFIRM_LEARN_MORE_ESCAPE :
             one_click_signin::HISTOGRAM_CONFIRM_ESCAPE);
 
-        start_sync_callback_.Reset();
+        base::ResetAndReturn(&start_sync_callback_).Run(
+            OneClickSigninSyncStarter::UNDO_SYNC);
       }
     }
 
@@ -354,7 +355,7 @@ void OneClickSigninBubbleView::LinkClicked(views::Link* source,
             one_click_signin::HISTOGRAM_CONFIRM_ADVANCED);
 
       base::ResetAndReturn(&start_sync_callback_).Run(
-      OneClickSigninSyncStarter::CONFIGURE_SYNC_FIRST);
+          OneClickSigninSyncStarter::CONFIGURE_SYNC_FIRST);
     } else {
       delegate_->OnAdvancedLinkClicked();
     }
@@ -401,6 +402,6 @@ void OneClickSigninBubbleView::WindowClosing() {
 
   if (is_sync_dialog_ && !start_sync_callback_.is_null()) {
     base::ResetAndReturn(&start_sync_callback_).Run(
-        OneClickSigninSyncStarter::SYNC_WITH_DEFAULT_SETTINGS);
+        OneClickSigninSyncStarter::UNDO_SYNC);
   }
 }

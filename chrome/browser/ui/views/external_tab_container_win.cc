@@ -37,7 +37,6 @@
 #include "chrome/browser/repost_form_warning_controller.h"
 #include "chrome/browser/themes/theme_properties.h"
 #include "chrome/browser/ui/app_modal_dialogs/javascript_dialog_manager.h"
-#include "chrome/browser/ui/blocked_content/blocked_content_tab_helper.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_dialogs.h"
 #include "chrome/browser/ui/browser_tab_contents.h"
@@ -67,10 +66,10 @@
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
 #include "third_party/WebKit/public/platform/WebReferrerPolicy.h"
-#include "ui/base/events/event_utils.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/models/menu_model.h"
 #include "ui/base/view_prop.h"
+#include "ui/events/event_utils.h"
 #include "ui/views/controls/webview/webview.h"
 #include "ui/views/layout/grid_layout.h"
 #include "ui/views/widget/widget.h"
@@ -78,6 +77,7 @@
 
 #if defined(USE_AURA)
 #include "ui/aura/root_window.h"
+#include "ui/aura/window.h"
 #include "ui/views/widget/desktop_aura/desktop_native_widget_aura.h"
 #include "ui/views/widget/desktop_aura/desktop_root_window_host_win.h"
 #endif
@@ -91,7 +91,6 @@ using content::OpenURLParams;
 using content::RenderViewHost;
 using content::SSLStatus;
 using content::WebContents;
-using WebKit::WebReferrerPolicy;
 
 namespace {
 
@@ -105,21 +104,18 @@ void ShowNativeView(gfx::NativeView view) {
 #endif
 }
 
-scoped_ptr<content::NativeWebKeyboardEvent> CreateKeyboardEvent(
-    const MSG& msg) {
+scoped_ptr<NativeWebKeyboardEvent> CreateKeyboardEvent(const MSG& msg) {
 #if defined(USE_AURA)
   // TODO(grt): confirm that this is a translated character event.
   ui::KeyEvent key_event(msg, true);
-  return scoped_ptr<content::NativeWebKeyboardEvent>(
-      new content::NativeWebKeyboardEvent(&key_event));
+  return scoped_ptr<NativeWebKeyboardEvent>(
+      new NativeWebKeyboardEvent(&key_event));
 #else
-  return scoped_ptr<content::NativeWebKeyboardEvent>(
-      new content::NativeWebKeyboardEvent(msg));
+  return scoped_ptr<NativeWebKeyboardEvent>(new NativeWebKeyboardEvent(msg));
 #endif
 }
 
-const MSG& MessageFromKeyboardEvent(
-    const content::NativeWebKeyboardEvent& event) {
+const MSG& MessageFromKeyboardEvent(const NativeWebKeyboardEvent& event) {
 #if defined(USE_AURA)
   DCHECK(event.os_event);
   return event.os_event->native_event();
@@ -168,18 +164,18 @@ bool ShouldHideReferrer(const GURL& url, const GURL& referrer) {
   return !url.SchemeIsSecure();
 }
 
-GURL GenerateReferrer(WebKit::WebReferrerPolicy policy,
+GURL GenerateReferrer(blink::WebReferrerPolicy policy,
                       const GURL& url,
                       const GURL& referrer) {
   if (referrer.is_empty())
     return GURL();
 
   switch (policy) {
-    case WebKit::WebReferrerPolicyNever:
+    case blink::WebReferrerPolicyNever:
       return GURL();
-    case WebKit::WebReferrerPolicyAlways:
+    case blink::WebReferrerPolicyAlways:
       return referrer;
-    case WebKit::WebReferrerPolicyOrigin:
+    case blink::WebReferrerPolicyOrigin:
       return referrer.GetOrigin();
     default:
       break;
@@ -215,7 +211,7 @@ class ContainerWindow : public ATL::CWindowImpl<ContainerWindow,
     MSG_WM_SIZE(OnSize)
   END_MSG_MAP()
 
-  ContainerWindow(HWND parent, const gfx::Rect& bounds) : child_(NULL) {
+  ContainerWindow(HWND parent, const gfx::Rect& bounds) : widget_(NULL) {
     RECT rect = bounds.ToRECT();
     Create(parent, rect);
   }
@@ -225,11 +221,12 @@ class ContainerWindow : public ATL::CWindowImpl<ContainerWindow,
     return m_hWnd;
   }
 
-  // Sets the child window (the DRWHW). The child is made activateable as part
-  // of the operation.
-  void SetChild(HWND window) {
-    child_ = window;
+  // Sets the Widget. The widget's HWND is made activateable as part of the
+  // operation.
+  void SetWidget(views::Widget* widget) {
+    widget_ = widget;
 
+    HWND window = child();
     ::SetWindowLong(
         window, GWL_STYLE,
         (::GetWindowLong(window, GWL_STYLE) & ~WS_POPUP) | WS_CHILD);
@@ -245,21 +242,35 @@ class ContainerWindow : public ATL::CWindowImpl<ContainerWindow,
   }
 
  private:
+  HWND child() {
+    return views::HWNDForWidget(widget_);
+  }
+
   void OnMove(const CPoint& position) {
-    ::SetWindowPos(child_, NULL, position.x, position.y, 0, 0,
+    if (!widget_)
+      return;
+    ::SetWindowPos(child(), NULL, position.x, position.y, 0, 0,
                    SWP_NOACTIVATE | SWP_NOSIZE | SWP_NOZORDER);
   }
 
   void OnShowWindow(BOOL show, UINT status) {
-    ::ShowWindow(child_, SW_SHOWNA);
+    if (!widget_)
+      return;
+    // We need to show |widget_| without changing focus. Contrary to the name,
+    // Widget::ShowInactive() still changes activation.  So, we inline the
+    // implementation minus the focus change.
+    ::ShowWindow(child(), SW_SHOWNA);
+    widget_->GetNativeView()->Show();
   }
 
   void OnSize(UINT type, const CSize& size) {
-    ::SetWindowPos(child_, NULL, 0, 0, size.cx, size.cy,
+    if (!widget_)
+      return;
+    ::SetWindowPos(child(), NULL, 0, 0, size.cx, size.cy,
                    SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOZORDER);
   }
 
-  HWND child_;
+  views::Widget* widget_;
 
   DISALLOW_COPY_AND_ASSIGN(ContainerWindow);
 };
@@ -272,11 +283,9 @@ class ExternalTabRootWindowHost : public views::DesktopRootWindowHostWin {
  public:
   ExternalTabRootWindowHost(
       views::internal::NativeWidgetDelegate* native_widget_delegate,
-      views::DesktopNativeWidgetAura* desktop_native_widget_aura,
-      const gfx::Rect& initial_bounds)
+      views::DesktopNativeWidgetAura* desktop_native_widget_aura)
       : views::DesktopRootWindowHostWin(native_widget_delegate,
-                                        desktop_native_widget_aura,
-                                        initial_bounds) {}
+                                        desktop_native_widget_aura) {}
 
  protected:
   // HWNDMessageHandlerDelegate methods:
@@ -303,9 +312,6 @@ ExternalTabContainerWin::ExternalTabContainerWin(
     AutomationResourceMessageFilter* filter)
     : widget_(NULL),
       automation_(automation),
-      rvh_callback_(base::Bind(
-          &ExternalTabContainerWin::RegisterRenderViewHostForAutomation,
-          base::Unretained(this), false)),
       tab_contents_container_(NULL),
       tab_handle_(0),
       ignore_next_load_notification_(false),
@@ -371,14 +377,14 @@ bool ExternalTabContainerWin::Init(Profile* profile,
       new views::DesktopNativeWidgetAura(widget_);
   params.native_widget = native_widget;
   params.desktop_root_window_host =
-      new ExternalTabRootWindowHost(widget_, native_widget, params.bounds);
+      new ExternalTabRootWindowHost(widget_, native_widget);
   params.type = views::Widget::InitParams::TYPE_WINDOW_FRAMELESS;
   params.opacity = views::Widget::InitParams::OPAQUE_WINDOW;
 #endif
   widget_->Init(params);
 
 #if defined(USE_AURA)
-  tab_container_window_->SetChild(views::HWNDForWidget(widget_));
+  tab_container_window_->SetWidget(widget_);
 #endif
 
   // TODO(jcampan): limit focus traversal to contents.
@@ -406,8 +412,6 @@ bool ExternalTabContainerWin::Init(Profile* profile,
   registrar_.Add(this,
                  content::NOTIFICATION_WEB_CONTENTS_RENDER_VIEW_HOST_CREATED,
                  content::Source<WebContents>(existing_contents));
-
-  content::RenderViewHost::AddCreatedCallback(rvh_callback_);
   content::WebContentsObserver::Observe(existing_contents);
 
   BrowserTabContents::AttachTabHelpers(existing_contents);
@@ -447,14 +451,11 @@ bool ExternalTabContainerWin::Init(Profile* profile,
 
   LoadAccelerators();
   SetupExternalTabView();
-  BlockedContentTabHelper::FromWebContents(existing_contents)->
-      set_delegate(this);
   return true;
 }
 
 void ExternalTabContainerWin::Uninitialize() {
   registrar_.RemoveAll();
-  content::RenderViewHost::RemoveCreatedCallback(rvh_callback_);
   if (web_contents_.get()) {
     tab_contents_container_->SetWebContents(NULL);
     UnregisterRenderViewHost(web_contents_->GetRenderViewHost());
@@ -568,28 +569,6 @@ bool ExternalTabContainerWin::ExecuteContextMenuCommand(int command) {
 }
 
 void ExternalTabContainerWin::RunUnloadHandlers(IPC::Message* reply_message) {
-  if (!automation_) {
-    delete reply_message;
-    return;
-  }
-
-  // If we have a pending unload message, then just respond back to this
-  // request and continue processing the previous unload message.
-  if (unload_reply_message_) {
-     AutomationMsg_RunUnloadHandlers::WriteReplyParams(reply_message, true);
-     automation_->Send(reply_message);
-     return;
-  }
-
-  unload_reply_message_ = reply_message;
-  bool wait_for_unload_handlers =
-      web_contents_.get() &&
-      Browser::RunUnloadEventsHelper(web_contents_.get());
-  if (!wait_for_unload_handlers) {
-    AutomationMsg_RunUnloadHandlers::WriteReplyParams(reply_message, true);
-    automation_->Send(reply_message);
-    unload_reply_message_ = NULL;
-  }
 }
 
 void ExternalTabContainerWin::ProcessUnhandledAccelerator(const MSG& msg) {
@@ -743,7 +722,7 @@ void ExternalTabContainerWin::AddNewContents(WebContents* source,
     attach_params_.dimensions = initial_pos;
     attach_params_.user_gesture = user_gesture;
     attach_params_.disposition = disposition;
-    attach_params_.profile_name = WideToUTF8(
+    attach_params_.profile_name = base::WideToUTF8(
         profile->GetPath().DirName().BaseName().value());
     automation_->Send(new AutomationMsg_AttachExternalTab(
         tab_handle_, attach_params_));
@@ -752,11 +731,12 @@ void ExternalTabContainerWin::AddNewContents(WebContents* source,
   }
 }
 
-void ExternalTabContainerWin::WebContentsCreated(WebContents* source_contents,
-                                                 int64 source_frame_id,
-                                                 const string16& frame_name,
-                                                 const GURL& target_url,
-                                                 WebContents* new_contents) {
+void ExternalTabContainerWin::WebContentsCreated(
+    WebContents* source_contents,
+    int64 source_frame_id,
+    const base::string16& frame_name,
+    const GURL& target_url,
+    WebContents* new_contents) {
   if (!load_requests_via_automation_)
     return;
 
@@ -789,11 +769,6 @@ void ExternalTabContainerWin::MoveContents(WebContents* source,
     automation_->Send(new AutomationMsg_MoveWindow(tab_handle_, pos));
 }
 
-content::WebContents* ExternalTabContainerWin::GetConstrainingWebContents(
-    content::WebContents* source) {
-  return source;
-}
-
 ExternalTabContainerWin::~ExternalTabContainerWin() {
   Uninitialize();
 }
@@ -806,7 +781,7 @@ void ExternalTabContainerWin::UpdateTargetURL(WebContents* source,
                                               int32 page_id,
                                               const GURL& url) {
   if (automation_) {
-    string16 url_string = base::UTF8ToUTF16(url.spec());
+    base::string16 url_string = base::UTF8ToUTF16(url.spec());
     automation_->Send(
         new AutomationMsg_UpdateTargetUrl(tab_handle_, url_string));
   }
@@ -999,7 +974,9 @@ void ExternalTabContainerWin::ShowRepostFormWarningDialog(WebContents* source) {
 }
 
 content::ColorChooser* ExternalTabContainerWin::OpenColorChooser(
-    WebContents* web_contents, SkColor initial_color) {
+      WebContents* web_contents,
+      SkColor initial_color,
+      const std::vector<content::ColorSuggestion>& suggestions) {
   return chrome::ShowColorChooser(web_contents, initial_color);
 }
 
@@ -1013,30 +990,6 @@ void ExternalTabContainerWin::EnumerateDirectory(WebContents* tab,
                                                  int request_id,
                                                  const base::FilePath& path) {
   FileSelectHelper::EnumerateDirectory(tab, request_id, path);
-}
-
-void ExternalTabContainerWin::JSOutOfMemory(WebContents* tab) {
-  Browser::JSOutOfMemoryHelper(tab);
-}
-
-void ExternalTabContainerWin::RegisterProtocolHandler(
-    WebContents* tab,
-    const std::string& protocol,
-    const GURL& url,
-    const string16& title,
-    bool user_gesture) {
-  Browser::RegisterProtocolHandlerHelper(tab, protocol, url, title,
-                                         user_gesture, NULL);
-}
-
-void ExternalTabContainerWin::FindReply(WebContents* tab,
-                                        int request_id,
-                                        int number_of_matches,
-                                        const gfx::Rect& selection_rect,
-                                        int active_match_ordinal,
-                                        bool final_update) {
-  Browser::FindReplyHelper(tab, request_id, number_of_matches, selection_rect,
-                           active_match_ordinal, final_update);
 }
 
 void ExternalTabContainerWin::RequestMediaAccessPermission(
@@ -1073,10 +1026,11 @@ bool ExternalTabContainerWin::OnMessageReceived(const IPC::Message& message) {
 
 void ExternalTabContainerWin::DidFailProvisionalLoad(
     int64 frame_id,
+    const base::string16& frame_unique_name,
     bool is_main_frame,
     const GURL& validated_url,
     int error_code,
-    const string16& error_description,
+    const base::string16& error_description,
     content::RenderViewHost* render_view_host) {
   if (automation_) {
     automation_->Send(new AutomationMsg_NavigationFailed(
@@ -1225,9 +1179,9 @@ bool ExternalTabContainerWin::InitNavigationInfo(
       web_contents_->GetController().GetCurrentEntryIndex();
   nav_info->url = entry->GetURL();
   nav_info->referrer = entry->GetReferrer().url;
-  nav_info->title = UTF16ToWideHack(entry->GetTitle());
+  nav_info->title = entry->GetTitle();
   if (nav_info->title.empty())
-    nav_info->title = UTF8ToWide(nav_info->url.spec());
+    nav_info->title = base::UTF8ToWide(nav_info->url.spec());
 
   nav_info->security_style = entry->GetSSL().security_style;
   int content_status = entry->GetSSL().content_status;
@@ -1278,22 +1232,22 @@ bool ExternalTabContainerWin::AcceleratorPressed(
     case IDC_DEV_TOOLS:
       DevToolsWindow::ToggleDevToolsWindow(web_contents_->GetRenderViewHost(),
                                            false,
-                                           DEVTOOLS_TOGGLE_ACTION_SHOW);
+                                           DevToolsToggleAction::Show());
       break;
     case IDC_DEV_TOOLS_CONSOLE:
       DevToolsWindow::ToggleDevToolsWindow(web_contents_->GetRenderViewHost(),
                                            false,
-                                           DEVTOOLS_TOGGLE_ACTION_SHOW_CONSOLE);
+                                           DevToolsToggleAction::ShowConsole());
       break;
     case IDC_DEV_TOOLS_INSPECT:
       DevToolsWindow::ToggleDevToolsWindow(web_contents_->GetRenderViewHost(),
                                            false,
-                                           DEVTOOLS_TOGGLE_ACTION_INSPECT);
+                                           DevToolsToggleAction::Inspect());
       break;
     case IDC_DEV_TOOLS_TOGGLE:
       DevToolsWindow::ToggleDevToolsWindow(web_contents_->GetRenderViewHost(),
                                            false,
-                                           DEVTOOLS_TOGGLE_ACTION_TOGGLE);
+                                           DevToolsToggleAction::Toggle());
       break;
     default:
       NOTREACHED() << "Unsupported accelerator: " << command_id;
@@ -1315,7 +1269,7 @@ void ExternalTabContainerWin::Navigate(const GURL& url, const GURL& referrer) {
   TRACE_EVENT_BEGIN_ETW("ExternalTabContainerWin::Navigate", 0, url.spec());
 
   web_contents_->GetController().LoadURL(
-      url, content::Referrer(referrer, WebKit::WebReferrerPolicyDefault),
+      url, content::Referrer(referrer, blink::WebReferrerPolicyDefault),
       content::PAGE_TRANSITION_AUTO_TOPLEVEL, std::string());
 }
 

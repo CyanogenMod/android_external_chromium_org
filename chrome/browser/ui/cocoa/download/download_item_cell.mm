@@ -7,7 +7,6 @@
 #include "base/strings/sys_string_conversions.h"
 #include "chrome/browser/download/download_item_model.h"
 #include "chrome/browser/download/download_shelf.h"
-#include "chrome/browser/download/download_util.h"
 #import "chrome/browser/themes/theme_properties.h"
 #import "chrome/browser/ui/cocoa/download/background_theme.h"
 #import "chrome/browser/ui/cocoa/themed_window.h"
@@ -17,8 +16,9 @@
 #import "third_party/GTM/AppKit/GTMNSAnimation+Duration.h"
 #import "third_party/GTM/AppKit/GTMNSColor+Luminance.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/text/text_elider.h"
+#include "ui/gfx/text_elider.h"
 #include "ui/gfx/canvas_skia_paint.h"
+#include "ui/gfx/font_list.h"
 #include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
 
 // Distance from top border to icon.
@@ -50,9 +50,6 @@ const CGFloat kPrimaryTextOnlyPosTop = 10;
 
 // y coordinate of status message, in view coords.
 const CGFloat kSecondaryTextPosTop = 18;
-
-// Grey value of status text.
-const CGFloat kSecondaryTextColor = 0.5;
 
 // Width of dropdown area on the right (includes 1px for the border on each
 // side).
@@ -188,7 +185,7 @@ using content::DownloadItem;
   // Set the name of the download.
   downloadPath_ = downloadModel->download()->GetFileNameToReportUser();
 
-  string16 statusText = downloadModel->GetStatusText();
+  base::string16 statusText = downloadModel->GetStatusText();
   if (statusText.empty()) {
     // Remove the status text label.
     [self hideSecondaryTitle];
@@ -377,8 +374,8 @@ using content::DownloadItem;
   gfx::Font font_chr(base::SysNSStringToUTF8([font fontName]),
                      [font pointSize]);
 
-  return base::SysUTF16ToNSString(
-      ui::ElideFilename(downloadPath_, font_chr, availableWidth));
+  return base::SysUTF16ToNSString(gfx::ElideFilename(
+      downloadPath_, gfx::FontList(font_chr), availableWidth));
 }
 
 - (NSString*)elideStatus:(int)availableWidth {
@@ -386,11 +383,11 @@ using content::DownloadItem;
   gfx::Font font_chr(base::SysNSStringToUTF8([font fontName]),
                      [font pointSize]);
 
-  return base::SysUTF16ToNSString(ui::ElideText(
+  return base::SysUTF16ToNSString(gfx::ElideText(
       base::SysNSStringToUTF16([self secondaryTitle]),
       font_chr,
       availableWidth,
-      ui::ELIDE_AT_END));
+      gfx::ELIDE_AT_END));
 }
 
 - (ui::ThemeProvider*)backgroundThemeWrappingProvider:

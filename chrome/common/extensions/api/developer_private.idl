@@ -24,10 +24,10 @@ namespace developerPrivate {
 
     long render_view_id;
     boolean incognito;
+    boolean generatedBackgroundPage;
   };
 
   dictionary InstallWarning {
-    boolean is_html;
     DOMString message;
   };
 
@@ -162,9 +162,6 @@ namespace developerPrivate {
     // Reloads a given item with |itemId|.
     static void reload(DOMString itemId, optional VoidCallback callback);
 
-    // Restarts a given item with |itemId|.
-    static void restart(DOMString itemId, optional VoidCallback callback);
-
     // Enable / Disable a given item with id |itemId|.
     static void enable(DOMString itemId,
                        boolean enable,
@@ -207,6 +204,9 @@ namespace developerPrivate {
     // strings as a dictionary mapping from string identifier to the
     // translated string to use in the apps_debugger app UI.
     static void getStrings(GetStringsCallback callback);
+
+    // Returns true if the profile is managed.
+    static void isProfileManaged(BooleanCallback callback);
   };
 
   interface Events {

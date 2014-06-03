@@ -9,8 +9,8 @@
 #include "base/win/wrapped_window_proc.h"
 #include "chrome/browser/ui/views/status_icons/status_icon_win.h"
 #include "chrome/common/chrome_constants.h"
-#include "ui/base/win/hwnd_util.h"
 #include "ui/gfx/screen.h"
+#include "ui/gfx/win/hwnd_util.h"
 #include "win8/util/win8_util.h"
 
 static const UINT kStatusIconMessage = WM_APP + 1;
@@ -50,8 +50,8 @@ StatusTrayWin::StatusTrayWin()
   // "TaskbarCreated".
   window_ = CreateWindow(MAKEINTATOM(atom_),
                          0, WS_POPUP, 0, 0, 0, 0, 0, 0, instance_, 0);
-  ui::CheckWindowCreated(window_);
-  ui::SetWindowUserData(window_, this);
+  gfx::CheckWindowCreated(window_);
+  gfx::SetWindowUserData(window_, this);
 }
 
 LRESULT CALLBACK StatusTrayWin::WndProcStatic(HWND hwnd,
@@ -128,7 +128,7 @@ StatusTrayWin::~StatusTrayWin() {
 StatusIcon* StatusTrayWin::CreatePlatformStatusIcon(
     StatusTray::StatusIconType type,
     const gfx::ImageSkia& image,
-    const string16& tool_tip) {
+    const base::string16& tool_tip) {
   UINT next_icon_id;
   if (type == StatusTray::OTHER_ICON)
     next_icon_id = NextIconId();

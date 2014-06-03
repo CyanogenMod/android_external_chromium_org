@@ -1,9 +1,11 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 // IPC messages for printing.
 // Multiply-included message file, hence no include guard.
+
+// TODO(sgurun) copied from chrome/common. Remove after crbug.com/322276
 
 #include <string>
 #include <vector>
@@ -42,10 +44,9 @@ struct PrintMsg_Print_Params {
   int32 preview_ui_id;
   int preview_request_id;
   bool is_first_request;
-  WebKit::WebPrintScalingOption print_scaling_option;
+  blink::WebPrintScalingOption print_scaling_option;
   bool print_to_pdf;
   bool display_header_footer;
-  string16 date;
   string16 title;
   string16 url;
   bool should_print_backgrounds;
@@ -76,7 +77,7 @@ struct PrintHostMsg_RequestPrintPreview_Params {
 #define IPC_MESSAGE_START PrintMsgStart
 
 IPC_ENUM_TRAITS(printing::MarginType)
-IPC_ENUM_TRAITS(WebKit::WebPrintScalingOption)
+IPC_ENUM_TRAITS(blink::WebPrintScalingOption)
 
 // Parameters for a render request.
 IPC_STRUCT_TRAITS_BEGIN(PrintMsg_Print_Params)
@@ -136,9 +137,6 @@ IPC_STRUCT_TRAITS_BEGIN(PrintMsg_Print_Params)
 
   // Specifies if the header and footer should be rendered.
   IPC_STRUCT_TRAITS_MEMBER(display_header_footer)
-
-  // Date string to be printed as header if requested by the user.
-  IPC_STRUCT_TRAITS_MEMBER(date)
 
   // Title string to be printed as header if requested by the user.
   IPC_STRUCT_TRAITS_MEMBER(title)
@@ -433,8 +431,12 @@ IPC_MESSAGE_ROUTED1(PrintHostMsg_PrintPreviewInvalidPrinterSettings,
 
 // Run a nested message loop in the renderer until print preview for
 // window.print() finishes.
-IPC_SYNC_MESSAGE_ROUTED1_0(PrintHostMsg_ScriptedPrintPreview,
-                           bool /* is_modifiable */)
+IPC_SYNC_MESSAGE_ROUTED0_0(PrintHostMsg_SetupScriptedPrintPreview)
+
+// Tell the browser to show the print preview, when the document is sufficiently
+// loaded such that the renderer can determine whether it is modifiable or not.
+IPC_MESSAGE_ROUTED1(PrintHostMsg_ShowScriptedPrintPreview,
+                    bool /* is_modifiable */)
 
 // Notify the browser that the PDF in the initiator renderer has disabled print
 // scaling option.

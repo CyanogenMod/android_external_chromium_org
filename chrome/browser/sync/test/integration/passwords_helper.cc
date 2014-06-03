@@ -15,11 +15,11 @@
 #include "chrome/browser/password_manager/password_store_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
-#include "chrome/browser/sync/profile_sync_service_harness.h"
+#include "chrome/browser/sync/test/integration/profile_sync_service_harness.h"
 #include "chrome/browser/sync/test/integration/sync_datatype_helper.h"
 #include "chrome/test/base/ui_test_utils.h"
 
-using content::PasswordForm;
+using autofill::PasswordForm;
 using sync_datatype_helper::test;
 
 const std::string kFakeSignonRealm = "http://fake-signon-realm.google.com/";
@@ -93,7 +93,7 @@ void GetLogins(PasswordStore* store, std::vector<PasswordForm>& matches) {
   PasswordForm matcher_form;
   matcher_form.signon_realm = kFakeSignonRealm;
   PasswordStoreConsumerHelper consumer(&matches);
-  store->GetLogins(matcher_form, &consumer);
+  store->GetLogins(matcher_form, PasswordStore::DISALLOW_PROMPT, &consumer);
   content::RunMessageLoop();
 }
 

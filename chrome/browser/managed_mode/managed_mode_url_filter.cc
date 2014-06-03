@@ -13,13 +13,18 @@
 #include "base/strings/string_util.h"
 #include "base/task_runner_util.h"
 #include "base/threading/sequenced_worker_pool.h"
+#include "chrome/browser/policy/url_blacklist_manager.h"
+#include "components/url_matcher/url_matcher.h"
 #include "content/public/browser/browser_thread.h"
-#include "extensions/common/matcher/url_matcher.h"
+#include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "url/gurl.h"
 
 using content::BrowserThread;
-using extensions::URLMatcher;
-using extensions::URLMatcherConditionSet;
+using net::registry_controlled_domains::EXCLUDE_UNKNOWN_REGISTRIES;
+using net::registry_controlled_domains::EXCLUDE_PRIVATE_REGISTRIES;
+using net::registry_controlled_domains::GetRegistryLength;
+using url_matcher::URLMatcher;
+using url_matcher::URLMatcherConditionSet;
 
 struct ManagedModeURLFilter::Contents {
   URLMatcher url_matcher;
@@ -30,10 +35,11 @@ struct ManagedModeURLFilter::Contents {
 
 namespace {
 
-const char* kStandardSchemes[] = {
+// URL schemes not in this list (e.g., file:// and chrome://) will always be
+// allowed.
+const char* kFilteredSchemes[] = {
   "http",
   "https",
-  "file",
   "ftp",
   "gopher",
   "ws",
@@ -77,7 +83,6 @@ FilterBuilder::~FilterBuilder() {
 
 bool FilterBuilder::AddPattern(const std::string& pattern, int site_id) {
   DCHECK(BrowserThread::GetBlockingPool()->RunsTasksOnCurrentThread());
-#if defined(ENABLE_CONFIGURATION_POLICY)
   std::string scheme;
   std::string host;
   uint16 port;
@@ -89,17 +94,13 @@ bool FilterBuilder::AddPattern(const std::string& pattern, int site_id) {
     return false;
   }
 
-  scoped_refptr<extensions::URLMatcherConditionSet> condition_set =
+  scoped_refptr<URLMatcherConditionSet> condition_set =
       policy::URLBlacklist::CreateConditionSet(
           &contents_->url_matcher, ++matcher_id_,
           scheme, host, match_subdomains, port, path);
   all_conditions_.push_back(condition_set);
   contents_->matcher_site_map[matcher_id_] = site_id;
   return true;
-#else
-  NOTREACHED();
-  return false;
-#endif
 }
 
 void FilterBuilder::AddHostnameHash(const std::string& hash, int site_id) {
@@ -200,12 +201,55 @@ GURL ManagedModeURLFilter::Normalize(const GURL& url) {
 }
 
 // static
-bool ManagedModeURLFilter::HasStandardScheme(const GURL& url) {
-  for (size_t i = 0; i < arraysize(kStandardSchemes); ++i) {
-      if (url.scheme() == kStandardSchemes[i])
+bool ManagedModeURLFilter::HasFilteredScheme(const GURL& url) {
+  for (size_t i = 0; i < arraysize(kFilteredSchemes); ++i) {
+      if (url.scheme() == kFilteredSchemes[i])
         return true;
     }
   return false;
+}
+
+std::string GetHostnameHash(const GURL& url) {
+  std::string hash = base::SHA1HashString(url.host());
+  return base::HexEncode(hash.data(), hash.length());
+}
+
+// static
+bool ManagedModeURLFilter::HostMatchesPattern(const std::string& host,
+                                              const std::string& pattern) {
+  std::string trimmed_pattern = pattern;
+  std::string trimmed_host = host;
+  if (EndsWith(pattern, ".*", true)) {
+    size_t registry_length = GetRegistryLength(
+        trimmed_host, EXCLUDE_UNKNOWN_REGISTRIES, EXCLUDE_PRIVATE_REGISTRIES);
+    // A host without a known registry part does not match.
+    if (registry_length == 0)
+      return false;
+
+    trimmed_pattern.erase(trimmed_pattern.length() - 2);
+    trimmed_host.erase(trimmed_host.length() - (registry_length + 1));
+  }
+
+  if (StartsWithASCII(trimmed_pattern, "*.", true)) {
+    trimmed_pattern.erase(0, 2);
+
+    // The remaining pattern should be non-empty, and it should not contain
+    // further stars. Also the trimmed host needs to end with the trimmed
+    // pattern.
+    if (trimmed_pattern.empty() ||
+        trimmed_pattern.find('*') != std::string::npos ||
+        !EndsWith(trimmed_host, trimmed_pattern, true)) {
+      return false;
+    }
+
+    // The trimmed host needs to have a dot separating the subdomain from the
+    // matched pattern piece, unless there is no subdomain.
+    int pos = trimmed_host.length() - trimmed_pattern.length();
+    DCHECK_GE(pos, 0);
+    return (pos == 0) || (trimmed_host[pos - 1] == '.');
+  }
+
+  return trimmed_host == trimmed_pattern;
 }
 
 ManagedModeURLFilter::FilteringBehavior
@@ -213,7 +257,7 @@ ManagedModeURLFilter::GetFilteringBehaviorForURL(const GURL& url) const {
   DCHECK(CalledOnValidThread());
 
   // URLs with a non-standard scheme (e.g. chrome://) are always allowed.
-  if (!HasStandardScheme(url))
+  if (!HasFilteredScheme(url))
     return ALLOW;
 
   // Check manual overrides for the exact URL.
@@ -222,10 +266,20 @@ ManagedModeURLFilter::GetFilteringBehaviorForURL(const GURL& url) const {
     return url_it->second ? ALLOW : BLOCK;
 
   // Check manual overrides for the hostname.
-  std::map<std::string, bool>::const_iterator host_it =
-      host_map_.find(url.host());
+  std::string host = url.host();
+  std::map<std::string, bool>::const_iterator host_it = host_map_.find(host);
   if (host_it != host_map_.end())
     return host_it->second ? ALLOW : BLOCK;
+
+  // Look for patterns matching the hostname, with a value that is different
+  // from the default (a value of true in the map meaning allowed).
+  for (std::map<std::string, bool>::const_iterator host_it =
+      host_map_.begin(); host_it != host_map_.end(); ++host_it) {
+    if ((host_it->second == (default_behavior_ == BLOCK)) &&
+        HostMatchesPattern(host, host_it->first)) {
+      return host_it->second ? ALLOW : BLOCK;
+    }
+  }
 
   // If the default behavior is to allow, we don't need to check anything else.
   if (default_behavior_ == ALLOW)
@@ -238,9 +292,7 @@ ManagedModeURLFilter::GetFilteringBehaviorForURL(const GURL& url) const {
     return ALLOW;
 
   // Check the list of hostname hashes.
-  std::string hash = base::SHA1HashString(url.host());
-  std::string hash_hex = base::HexEncode(hash.data(), hash.length());
-  if (contents_->hash_site_map.count(hash_hex))
+  if (contents_->hash_site_map.count(GetHostnameHash(url)))
     return ALLOW;
 
   // Fall back to the default behavior.
@@ -263,10 +315,10 @@ void ManagedModeURLFilter::GetSites(
     sites->push_back(&contents_->sites[entry->second]);
   }
 
-  typedef base::hash_map<std::string, int>::const_iterator
+  typedef base::hash_multimap<std::string, int>::const_iterator
       hash_site_map_iterator;
   std::pair<hash_site_map_iterator, hash_site_map_iterator> bounds =
-      contents_->hash_site_map.equal_range(url.host());
+      contents_->hash_site_map.equal_range(GetHostnameHash(url));
   for (hash_site_map_iterator hash_it = bounds.first;
        hash_it != bounds.second; hash_it++) {
     sites->push_back(&contents_->sites[hash_it->second]);

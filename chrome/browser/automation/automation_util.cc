@@ -6,8 +6,6 @@
 
 #include <string>
 
-#include "ash/shell.h"
-#include "ash/shell_delegate.h"
 #include "base/bind.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string_number_conversions.h"
@@ -17,7 +15,6 @@
 #include "base/values.h"
 #include "chrome/browser/automation/automation_provider.h"
 #include "chrome/browser/automation/automation_provider_json.h"
-#include "chrome/browser/extensions/extension_process_manager.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
@@ -29,13 +26,13 @@
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/common/automation_id.h"
-#include "chrome/common/extensions/extension.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/browser/process_manager.h"
 #include "extensions/browser/view_type_utils.h"
+#include "extensions/common/extension.h"
 #include "net/cookies/canonical_cookie.h"
 #include "net/cookies/cookie_constants.h"
 #include "net/cookies/cookie_monster.h"
@@ -48,11 +45,8 @@
 #include "chrome/browser/chromeos/login/login_display.h"
 #include "chrome/browser/chromeos/login/login_display_host_impl.h"
 #include "chrome/browser/chromeos/login/webui_login_display.h"
+#include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
-#endif
-
-#if defined(ENABLE_FULL_PRINTING)
-#include "chrome/browser/printing/print_preview_dialog_controller.h"
 #endif
 
 using content::BrowserThread;
@@ -199,13 +193,7 @@ Profile* GetCurrentProfileOnChromeOS(std::string* error_message) {
     }
     return Profile::FromWebUI(web_ui);
   } else {
-    ash::Shell* shell = ash::Shell::GetInstance();
-    if (!shell || !shell->delegate()) {
-      *error_message = "Unable to get shell delegate.";
-      return NULL;
-    }
-    return Profile::FromBrowserContext(
-        shell->delegate()->GetCurrentBrowserContext());
+    return ProfileManager::GetActiveUserProfileOrOffTheRecord();
   }
   return NULL;
 }
@@ -469,182 +457,9 @@ void SetCookieJSON(AutomationProvider* provider,
 bool SendErrorIfModalDialogActive(AutomationProvider* provider,
                                   IPC::Message* message) {
   bool active = AppModalDialogQueue::GetInstance()->HasActiveDialog();
-  if (active) {
-    AutomationJSONReply(provider, message).SendErrorCode(
-        automation::kBlockedByModalDialog);
-  }
+  if (active)
+    AutomationJSONReply(provider, message).SendError("Blocked by modal dialog");
   return active;
-}
-
-AutomationId GetIdForTab(const WebContents* tab) {
-  const SessionTabHelper* session_tab_helper =
-      SessionTabHelper::FromWebContents(tab);
-  return AutomationId(AutomationId::kTypeTab,
-                      base::IntToString(session_tab_helper->session_id().id()));
-}
-
-AutomationId GetIdForExtensionView(
-    const content::RenderViewHost* render_view_host) {
-  AutomationId::Type type;
-  WebContents* web_contents = WebContents::FromRenderViewHost(render_view_host);
-  switch (extensions::GetViewType(web_contents)) {
-    case extensions::VIEW_TYPE_EXTENSION_POPUP:
-      type = AutomationId::kTypeExtensionPopup;
-      break;
-    case extensions::VIEW_TYPE_EXTENSION_BACKGROUND_PAGE:
-      type = AutomationId::kTypeExtensionBgPage;
-      break;
-    case extensions::VIEW_TYPE_EXTENSION_INFOBAR:
-      type = AutomationId::kTypeExtensionInfobar;
-      break;
-    case extensions::VIEW_TYPE_APP_SHELL:
-      type = AutomationId::kTypeAppShell;
-      break;
-    default:
-      type = AutomationId::kTypeInvalid;
-      break;
-  }
-  // Since these extension views do not permit navigation, using the
-  // renderer process and view ID should suffice.
-  std::string id = base::StringPrintf("%d|%d",
-      render_view_host->GetRoutingID(),
-      render_view_host->GetProcess()->GetID());
-  return AutomationId(type, id);
-}
-
-AutomationId GetIdForExtension(const extensions::Extension* extension) {
-  return AutomationId(AutomationId::kTypeExtension, extension->id());
-}
-
-bool GetTabForId(const AutomationId& id, WebContents** tab) {
-  if (id.type() != AutomationId::kTypeTab)
-    return false;
-
-#if defined(ENABLE_FULL_PRINTING)
-  printing::PrintPreviewDialogController* preview_controller =
-      printing::PrintPreviewDialogController::GetInstance();
-#endif
-  for (chrome::BrowserIterator it; !it.done(); it.Next()) {
-    Browser* browser = *it;
-    for (int tab_index = 0;
-         tab_index < browser->tab_strip_model()->count();
-         ++tab_index) {
-      WebContents* web_contents =
-          browser->tab_strip_model()->GetWebContentsAt(tab_index);
-      SessionTabHelper* session_tab_helper =
-          SessionTabHelper::FromWebContents(web_contents);
-      if (base::IntToString(
-              session_tab_helper->session_id().id()) == id.id()) {
-        *tab = web_contents;
-        return true;
-      }
-
-#if defined(ENABLE_FULL_PRINTING)
-      if (preview_controller) {
-        WebContents* print_preview_contents =
-            preview_controller->GetPrintPreviewForContents(web_contents);
-        if (print_preview_contents) {
-          SessionTabHelper* preview_session_tab_helper =
-              SessionTabHelper::FromWebContents(print_preview_contents);
-          std::string preview_id = base::IntToString(
-              preview_session_tab_helper->session_id().id());
-          if (preview_id == id.id()) {
-            *tab = print_preview_contents;
-            return true;
-          }
-        }
-      }
-#endif
-    }
-  }
-  return false;
-}
-
-namespace {
-
-bool GetExtensionRenderViewForId(
-    const AutomationId& id,
-    Profile* profile,
-    RenderViewHost** rvh) {
-  ExtensionProcessManager* extension_mgr =
-      extensions::ExtensionSystem::Get(profile)->process_manager();
-  const ExtensionProcessManager::ViewSet view_set =
-      extension_mgr->GetAllViews();
-  for (ExtensionProcessManager::ViewSet::const_iterator iter = view_set.begin();
-       iter != view_set.end(); ++iter) {
-    content::RenderViewHost* host = *iter;
-    AutomationId this_id = GetIdForExtensionView(host);
-    if (id == this_id) {
-      *rvh = host;
-      return true;
-    }
-  }
-  return false;
-}
-
-}  // namespace
-
-bool GetRenderViewForId(
-    const AutomationId& id,
-    Profile* profile,
-    RenderViewHost** rvh) {
-  switch (id.type()) {
-    case AutomationId::kTypeTab: {
-      WebContents* tab;
-      if (!GetTabForId(id, &tab))
-        return false;
-      *rvh = tab->GetRenderViewHost();
-      break;
-    }
-    case AutomationId::kTypeExtensionPopup:
-    case AutomationId::kTypeExtensionBgPage:
-    case AutomationId::kTypeExtensionInfobar:
-    case AutomationId::kTypeAppShell:
-      if (!GetExtensionRenderViewForId(id, profile, rvh))
-        return false;
-      break;
-    default:
-      return false;
-  }
-  return true;
-}
-
-bool GetExtensionForId(
-    const AutomationId& id,
-    Profile* profile,
-    const extensions::Extension** extension) {
-  if (id.type() != AutomationId::kTypeExtension)
-    return false;
-  ExtensionService* service = extensions::ExtensionSystem::Get(profile)->
-      extension_service();
-  const extensions::Extension* installed_extension =
-      service->GetInstalledExtension(id.id());
-  if (installed_extension)
-    *extension = installed_extension;
-  return !!installed_extension;
-}
-
-bool DoesObjectWithIdExist(const AutomationId& id, Profile* profile) {
-  switch (id.type()) {
-    case AutomationId::kTypeTab: {
-      WebContents* tab;
-      return GetTabForId(id, &tab);
-    }
-    case AutomationId::kTypeExtensionPopup:
-    case AutomationId::kTypeExtensionBgPage:
-    case AutomationId::kTypeExtensionInfobar:
-    case AutomationId::kTypeAppShell: {
-      RenderViewHost* rvh;
-      return GetExtensionRenderViewForId(id, profile, &rvh);
-    }
-    case AutomationId::kTypeExtension: {
-      const extensions::Extension* extension;
-      return GetExtensionForId(id, profile, &extension);
-    }
-    default:
-      break;
-  }
-  return false;
 }
 
 }  // namespace automation_util

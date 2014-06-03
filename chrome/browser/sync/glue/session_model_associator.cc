@@ -17,6 +17,9 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/favicon/favicon_service_factory.h"
 #include "chrome/browser/history/history_service.h"
+#if !defined(OS_ANDROID)
+#include "chrome/browser/network_time/navigation_time_helper.h"
+#endif
 #include "chrome/browser/prefs/pref_service_syncable.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sessions/session_id.h"
@@ -35,10 +38,10 @@
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
+#include "content/public/common/url_constants.h"
 #include "sync/api/sync_error.h"
 #include "sync/api/time.h"
 #include "sync/internal_api/public/base/model_type.h"
-#include "sync/internal_api/public/base/model_type_invalidation_map.h"
 #include "sync/internal_api/public/read_node.h"
 #include "sync/internal_api/public/read_transaction.h"
 #include "sync/internal_api/public/write_node.h"
@@ -120,11 +123,11 @@ SessionModelAssociator::SessionModelAssociator(
       stale_session_threshold_days_(kDefaultStaleSessionThresholdDays),
       setup_for_test_(false),
       waiting_for_change_(false),
-      test_weak_factory_(this),
       profile_(sync_service->profile()),
       error_handler_(error_handler),
       favicon_cache_(profile_,
-                     sync_service->current_experiments().favicon_sync_limit) {
+                     sync_service->current_experiments().favicon_sync_limit),
+      test_weak_factory_(this) {
   DCHECK(CalledOnValidThread());
   DCHECK(sync_service_);
   DCHECK(profile_);
@@ -138,10 +141,10 @@ SessionModelAssociator::SessionModelAssociator(ProfileSyncService* sync_service,
       stale_session_threshold_days_(kDefaultStaleSessionThresholdDays),
       setup_for_test_(setup_for_test),
       waiting_for_change_(false),
-      test_weak_factory_(this),
       profile_(sync_service->profile()),
       error_handler_(NULL),
-      favicon_cache_(profile_, kMaxSyncFavicons) {
+      favicon_cache_(profile_, kMaxSyncFavicons),
+      test_weak_factory_(this) {
   DCHECK(CalledOnValidThread());
   DCHECK(sync_service_);
   DCHECK(profile_);
@@ -503,6 +506,15 @@ void SessionModelAssociator::SetSessionTabFromDelegate(
                                  tab_delegate.GetEntryCount());
   bool is_managed = tab_delegate.ProfileIsManaged();
   session_tab->navigations.clear();
+
+#if !defined(OS_ANDROID)
+  // For getting navigation time in network time.
+  NavigationTimeHelper* nav_time_helper =
+      tab_delegate.HasWebContents() ?
+          NavigationTimeHelper::FromWebContents(tab_delegate.GetWebContents()) :
+          NULL;
+#endif
+
   for (int i = min_index; i < max_index; ++i) {
     const NavigationEntry* entry = (i == pending_index) ?
         tab_delegate.GetPendingEntry() : tab_delegate.GetEntryAtIndex(i);
@@ -510,8 +522,17 @@ void SessionModelAssociator::SetSessionTabFromDelegate(
     if (!entry->GetVirtualURL().is_valid())
       continue;
 
+    scoped_ptr<content::NavigationEntry> network_time_entry(
+        content::NavigationEntry::Create(*entry));
+#if !defined(OS_ANDROID)
+    if (nav_time_helper) {
+      network_time_entry->SetTimestamp(
+          nav_time_helper->GetNavigationTime(entry));
+    }
+#endif
+
     session_tab->navigations.push_back(
-        SerializedNavigationEntry::FromNavigationEntry(i, *entry));
+        SerializedNavigationEntry::FromNavigationEntry(i, *network_time_entry));
     if (is_managed) {
       session_tab->navigations.back().set_blocked_state(
           SerializedNavigationEntry::STATE_ALLOWED);
@@ -526,6 +547,7 @@ void SessionModelAssociator::SetSessionTabFromDelegate(
       session_tab->navigations.push_back(
           SerializedNavigationEntry::FromNavigationEntry(
               i + offset, *blocked_navigations[i]));
+      // Blocked navigations already use network navigation time.
       session_tab->navigations.back().set_blocked_state(
           SerializedNavigationEntry::STATE_BLOCKED);
       // TODO(bauerb): Add categories
@@ -1078,6 +1100,11 @@ void SessionModelAssociator::DeleteForeignSession(const std::string& tag) {
     if (specifics.session_tag() == tag)
       sync_node.Tombstone();
   }
+
+  content::NotificationService::current()->Notify(
+      chrome::NOTIFICATION_FOREIGN_SESSION_UPDATED,
+      content::Source<Profile>(sync_service_->profile()),
+      content::NotificationService::NoDetails());
 }
 
 bool SessionModelAssociator::IsValidTab(const SyncedTabDelegate& tab) const {
@@ -1109,9 +1136,11 @@ bool SessionModelAssociator::TabHasValidEntry(
        tab.GetPendingEntry() : tab.GetEntryAtIndex(i);
     if (!entry)
       return false;
-    if (entry->GetVirtualURL().is_valid() &&
-        !entry->GetVirtualURL().SchemeIs("chrome") &&
-        !entry->GetVirtualURL().SchemeIsFile()) {
+    const GURL& virtual_url = entry->GetVirtualURL();
+    if (virtual_url.is_valid() &&
+        !virtual_url.SchemeIs(chrome::kChromeUIScheme) &&
+        !virtual_url.SchemeIs(chrome::kChromeNativeScheme) &&
+        !virtual_url.SchemeIsFile()) {
       found_valid_url = true;
     }
   }

@@ -11,18 +11,20 @@
 #include "base/message_loop/message_loop.h"
 #include "base/process/process_handle.h"
 #include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/child/npapi/plugin_instance.h"
 #include "content/child/npapi/plugin_lib.h"
 #include "content/child/npapi/plugin_stream_url.h"
+#include "content/child/npapi/plugin_url_fetcher.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
-#include "webkit/glue/webkit_glue.h"
 
-using WebKit::WebCursorInfo;
-using WebKit::WebInputEvent;
+using blink::WebCursorInfo;
+using blink::WebInputEvent;
 
 namespace content {
 
 WebPluginDelegateImpl* WebPluginDelegateImpl::Create(
+    WebPlugin* plugin,
     const base::FilePath& filename,
     const std::string& mime_type) {
   scoped_refptr<PluginLib> plugin_lib(PluginLib::CreatePluginLib(filename));
@@ -34,7 +36,7 @@ WebPluginDelegateImpl* WebPluginDelegateImpl::Create(
     return NULL;
 
   scoped_refptr<PluginInstance> instance(plugin_lib->CreateInstance(mime_type));
-  return new WebPluginDelegateImpl(instance.get());
+  return new WebPluginDelegateImpl(plugin, instance.get());
 }
 
 void WebPluginDelegateImpl::PluginDestroyed() {
@@ -49,9 +51,11 @@ bool WebPluginDelegateImpl::Initialize(
     const GURL& url,
     const std::vector<std::string>& arg_names,
     const std::vector<std::string>& arg_values,
-    WebPlugin* plugin,
     bool load_manually) {
-  plugin_ = plugin;
+  if (instance_->plugin_lib()->plugin_info().name.find(
+          base::ASCIIToUTF16("QuickTime Plug-in")) != std::wstring::npos) {
+    quirks_ |= PLUGIN_QUIRK_COPY_STREAM_DATA;
+  }
 
   instance_->set_web_plugin(plugin_);
   if (quirks_ & PLUGIN_QUIRK_DONT_ALLOW_MULTIPLE_INSTANCES) {
@@ -299,6 +303,30 @@ WebPluginResourceClient* WebPluginDelegateImpl::CreateSeekableResourceClient(
   if (resource_client)
     resource_client->AddRangeRequestResourceId(resource_id);
   return resource_client;
+}
+
+void WebPluginDelegateImpl::FetchURL(unsigned long resource_id,
+                                     int notify_id,
+                                     const GURL& url,
+                                     const GURL& first_party_for_cookies,
+                                     const std::string& method,
+                                     const char* buf,
+                                     unsigned int len,
+                                     const GURL& referrer,
+                                     bool notify_redirects,
+                                     bool is_plugin_src_load,
+                                     int origin_pid,
+                                     int render_view_id) {
+  // TODO(jam): once we switch over to resource loading always happening in this
+  // code path, remove WebPluginResourceClient abstraction.
+  PluginStreamUrl* plugin_stream = instance()->CreateStream(
+      resource_id, url, std::string(), notify_id);
+
+  bool copy_stream_data = !!(quirks_ & PLUGIN_QUIRK_COPY_STREAM_DATA);
+  plugin_stream->SetPluginURLFetcher(new PluginURLFetcher(
+      plugin_stream, url, first_party_for_cookies, method, buf, len,
+      referrer, notify_redirects, is_plugin_src_load, origin_pid,
+      render_view_id, resource_id, copy_stream_data));
 }
 
 }  // namespace content

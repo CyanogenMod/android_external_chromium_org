@@ -15,7 +15,6 @@
 #include "chrome/browser/chromeos/login/auth_attempt_state.h"
 #include "chrome/browser/chromeos/login/auth_attempt_state_resolver.h"
 #include "chrome/browser/chromeos/login/authenticator.h"
-#include "chrome/browser/chromeos/login/online_attempt.h"
 #include "chrome/browser/chromeos/login/test_attempt_state.h"
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
 #include "google_apis/gaia/gaia_auth_consumer.h"
@@ -83,7 +82,11 @@ class ParallelAuthenticator : public Authenticator,
     PUBLIC_ACCOUNT_LOGIN = 18,        // Logged into a public account.
     LOCALLY_MANAGED_USER_LOGIN = 19,  // Logged in as a locally managed user.
     LOGIN_FAILED = 20,       // Login denied.
-    OWNER_REQUIRED = 21      // Login is restricted to the owner only.
+    OWNER_REQUIRED = 21,     // Login is restricted to the owner only.
+    FAILED_USERNAME_HASH = 22,        // Failed GetSanitizedUsername request.
+    KIOSK_ACCOUNT_LOGIN = 23,         // Logged into a kiosk account.
+    REMOVED_DATA_AFTER_FAILURE = 24,  // Successfully removed the user's
+                                      // cryptohome after a login failure.
   };
 
   explicit ParallelAuthenticator(LoginStatusConsumer* consumer);
@@ -107,8 +110,7 @@ class ParallelAuthenticator : public Authenticator,
   // user_context. This will never contact the server even if it's online.
   // The auth result is sent to LoginStatusConsumer in a same way as
   // AuthenticateToLogin does.
-  virtual void AuthenticateToUnlock(
-      const UserContext& user_context) OVERRIDE;
+  virtual void AuthenticateToUnlock(const UserContext& user_context) OVERRIDE;
 
   // Initiates locally managed user login.
   // Creates cryptohome if missing or mounts existing one and
@@ -129,10 +131,15 @@ class ParallelAuthenticator : public Authenticator,
   // success/failure.
   virtual void LoginAsPublicAccount(const std::string& username) OVERRIDE;
 
+  // Initiates login into the kiosk mode account identified by |app_user_id|.
+  // Mounts an public but non-ephemeral cryptohome and notifies consumer on the
+  // success/failure.
+  virtual void LoginAsKioskAccount(const std::string& app_user_id) OVERRIDE;
+
   // These methods must be called on the UI thread, as they make DBus calls
   // and also call back to the login UI.
   virtual void OnRetailModeLoginSuccess() OVERRIDE;
-  virtual void OnLoginSuccess(bool request_pending) OVERRIDE;
+  virtual void OnLoginSuccess() OVERRIDE;
   virtual void OnLoginFailure(const LoginFailure& error) OVERRIDE;
   virtual void RecoverEncryptedData(
       const std::string& old_password) OVERRIDE;
@@ -147,6 +154,10 @@ class ParallelAuthenticator : public Authenticator,
   // Must be called on the UI thread.
   virtual void Resolve() OVERRIDE;
 
+  // Returns hash of |password|, salted with the system salt.
+  static std::string HashPassword(const std::string& password,
+                                  const std::string& ascii_salt);
+
   void OnOffTheRecordLoginSuccess();
   void OnPasswordChangeDetected();
 
@@ -160,6 +171,9 @@ class ParallelAuthenticator : public Authenticator,
   FRIEND_TEST_ALL_PREFIXES(ParallelAuthenticatorTest, ResolveOwnerNeededMount);
   FRIEND_TEST_ALL_PREFIXES(ParallelAuthenticatorTest,
                            ResolveOwnerNeededFailedMount);
+
+  // Removes the cryptohome of the user.
+  void RemoveEncryptedData();
 
   // Returns the AuthState we're in, given the status info we have at
   // the time of call.
@@ -184,19 +198,9 @@ class ParallelAuthenticator : public Authenticator,
   // Must be called on the IO thread.
   AuthState ResolveOnlineSuccessState(AuthState offline_state);
 
-  // Used to disable oauth, used for testing.
-  void set_using_oauth(bool value) {
-    using_oauth_ = value;
-  }
-
   // Used for testing.
   void set_attempt_state(TestAttemptState* new_state) {  // takes ownership.
     current_state_.reset(new_state);
-  }
-
-  // Sets an online attempt for testing.
-  void set_online_attempt(OnlineAttempt* attempt) {
-    current_online_.reset(attempt);
   }
 
   // Used for testing to set the expected state of an owner check.
@@ -208,17 +212,16 @@ class ParallelAuthenticator : public Authenticator,
   bool VerifyOwner();
 
   // Handles completion of the ownership check and continues login.
-  void OnOwnershipChecked(DeviceSettingsService::OwnershipStatus status,
-                          bool is_owner);
+  void OnOwnershipChecked(bool is_owner);
 
   // Signal login completion status for cases when a new user is added via
   // an external authentication provider (i.e. GAIA extension).
   void ResolveLoginCompletionStatus();
 
   scoped_ptr<AuthAttemptState> current_state_;
-  scoped_ptr<OnlineAttempt> current_online_;
   bool migrate_attempted_;
   bool remove_attempted_;
+  bool resync_attempted_;
   bool ephemeral_mount_attempted_;
   bool check_key_attempted_;
 
@@ -234,8 +237,12 @@ class ParallelAuthenticator : public Authenticator,
   bool owner_is_verified_;
   bool user_can_login_;
 
-  // True if we use OAuth-based authentication flow.
-  bool using_oauth_;
+  // Flag indicating to delete the user's cryptohome the login fails.
+  bool remove_user_data_on_failure_;
+
+  // When |remove_user_data_on_failure_| is set, we delay calling
+  // consumer_->OnLoginFailure() until we removed the user cryptohome.
+  const LoginFailure* delayed_login_failure_;
 
   DISALLOW_COPY_AND_ASSIGN(ParallelAuthenticator);
 };

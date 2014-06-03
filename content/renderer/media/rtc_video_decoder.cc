@@ -8,12 +8,15 @@
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/message_loop/message_loop_proxy.h"
+#include "base/metrics/histogram.h"
 #include "base/safe_numerics.h"
 #include "base/stl_util.h"
 #include "base/task_runner_util.h"
 #include "content/child/child_thread.h"
+#include "content/renderer/media/native_handle_impl.h"
 #include "media/base/bind_to_loop.h"
-#include "media/filters/gpu_video_decoder_factories.h"
+#include "media/filters/gpu_video_accelerator_factories.h"
+#include "third_party/webrtc/common_video/interface/texture_video_frame.h"
 #include "third_party/webrtc/system_wrappers/interface/ref_count.h"
 
 namespace content {
@@ -69,10 +72,8 @@ RTCVideoDecoder::BufferData::BufferData() {}
 RTCVideoDecoder::BufferData::~BufferData() {}
 
 RTCVideoDecoder::RTCVideoDecoder(
-    const scoped_refptr<media::GpuVideoDecoderFactories>& factories)
-    : weak_factory_(this),
-      weak_this_(weak_factory_.GetWeakPtr()),
-      factories_(factories),
+    const scoped_refptr<media::GpuVideoAcceleratorFactories>& factories)
+    : factories_(factories),
       vda_loop_proxy_(factories->GetMessageLoop()),
       decoder_texture_target_(0),
       next_picture_buffer_id_(0),
@@ -80,8 +81,12 @@ RTCVideoDecoder::RTCVideoDecoder(
       decode_complete_callback_(NULL),
       num_shm_buffers_(0),
       next_bitstream_buffer_id_(0),
-      reset_bitstream_buffer_id_(ID_INVALID) {
+      reset_bitstream_buffer_id_(ID_INVALID),
+      weak_factory_(this) {
   DCHECK(!vda_loop_proxy_->BelongsToCurrentThread());
+
+  weak_this_ = weak_factory_.GetWeakPtr();
+
   base::WaitableEvent message_loop_async_waiter(false, false);
   // Waiting here is safe. The media thread is stopped in the child thread and
   // the child thread is blocked when VideoDecoderFactory::CreateVideoDecoder
@@ -122,7 +127,7 @@ RTCVideoDecoder::~RTCVideoDecoder() {
 
 scoped_ptr<RTCVideoDecoder> RTCVideoDecoder::Create(
     webrtc::VideoCodecType type,
-    const scoped_refptr<media::GpuVideoDecoderFactories>& factories) {
+    const scoped_refptr<media::GpuVideoAcceleratorFactories>& factories) {
   scoped_ptr<RTCVideoDecoder> decoder;
   // Convert WebRTC codec type to media codec profile.
   media::VideoCodecProfile profile;
@@ -136,8 +141,8 @@ scoped_ptr<RTCVideoDecoder> RTCVideoDecoder::Create(
   }
 
   decoder.reset(new RTCVideoDecoder(factories));
-  decoder->vda_
-      .reset(factories->CreateVideoDecodeAccelerator(profile, decoder.get()));
+  decoder->vda_ =
+      factories->CreateVideoDecodeAccelerator(profile, decoder.get()).Pass();
   // vda can be NULL if VP8 is not supported.
   if (decoder->vda_ != NULL) {
     decoder->state_ = INITIALIZED;
@@ -153,13 +158,13 @@ int32_t RTCVideoDecoder::InitDecode(const webrtc::VideoCodec* codecSettings,
   DCHECK_EQ(codecSettings->codecType, webrtc::kVideoCodecVP8);
   if (codecSettings->codecSpecific.VP8.feedbackModeOn) {
     LOG(ERROR) << "Feedback mode not supported";
-    return WEBRTC_VIDEO_CODEC_ERROR;
+    return RecordInitDecodeUMA(WEBRTC_VIDEO_CODEC_ERROR);
   }
 
   base::AutoLock auto_lock(lock_);
   if (state_ == UNINITIALIZED || state_ == DECODE_ERROR) {
     LOG(ERROR) << "VDA is not initialized. state=" << state_;
-    return WEBRTC_VIDEO_CODEC_UNINITIALIZED;
+    return RecordInitDecodeUMA(WEBRTC_VIDEO_CODEC_UNINITIALIZED);
   }
   // Create some shared memory if the queue is empty.
   if (available_shm_segments_.size() == 0) {
@@ -169,7 +174,7 @@ int32_t RTCVideoDecoder::InitDecode(const webrtc::VideoCodec* codecSettings,
                                          kMaxInFlightDecodes,
                                          kSharedMemorySegmentBytes));
   }
-  return WEBRTC_VIDEO_CODEC_OK;
+  return RecordInitDecodeUMA(WEBRTC_VIDEO_CODEC_OK);
 }
 
 int32_t RTCVideoDecoder::Decode(
@@ -181,22 +186,51 @@ int32_t RTCVideoDecoder::Decode(
   DVLOG(3) << "Decode";
 
   base::AutoLock auto_lock(lock_);
+
   if (state_ == UNINITIALIZED || decode_complete_callback_ == NULL) {
     LOG(ERROR) << "The decoder has not initialized.";
     return WEBRTC_VIDEO_CODEC_UNINITIALIZED;
   }
+
   if (state_ == DECODE_ERROR) {
     LOG(ERROR) << "Decoding error occurred.";
     return WEBRTC_VIDEO_CODEC_ERROR;
   }
+
   if (missingFrames || !inputImage._completeFrame) {
     DLOG(ERROR) << "Missing or incomplete frames.";
     // Unlike the SW decoder in libvpx, hw decoder cannot handle broken frames.
     // Return an error to request a key frame.
     return WEBRTC_VIDEO_CODEC_ERROR;
   }
-  if (inputImage._frameType == webrtc::kKeyFrame)
+
+  // Most platforms' VDA implementations support mid-stream resolution change
+  // internally.  Platforms whose VDAs fail to support mid-stream resolution
+  // change gracefully need to have their clients cover for them, and we do that
+  // here.
+#ifdef ANDROID
+  const bool kVDACanHandleMidstreamResize = false;
+#else
+  const bool kVDACanHandleMidstreamResize = true;
+#endif
+
+  bool need_to_reset_for_midstream_resize = false;
+  if (inputImage._frameType == webrtc::kKeyFrame) {
+    DVLOG(2) << "Got key frame. size=" << inputImage._encodedWidth << "x"
+             << inputImage._encodedHeight;
+    gfx::Size prev_frame_size = frame_size_;
     frame_size_.SetSize(inputImage._encodedWidth, inputImage._encodedHeight);
+    if (!kVDACanHandleMidstreamResize && !prev_frame_size.IsEmpty() &&
+        prev_frame_size != frame_size_) {
+      need_to_reset_for_midstream_resize = true;
+    }
+  } else if (IsFirstBufferAfterReset(next_bitstream_buffer_id_,
+                                     reset_bitstream_buffer_id_)) {
+    // TODO(wuchengli): VDA should handle it. Remove this when
+    // http://crosbug.com/p/21913 is fixed.
+    DVLOG(1) << "The first frame should be a key frame. Drop this.";
+    return WEBRTC_VIDEO_CODEC_ERROR;
+  }
 
   // Create buffer metadata.
   BufferData buffer_data(next_bitstream_buffer_id_,
@@ -207,15 +241,20 @@ int32_t RTCVideoDecoder::Decode(
   // Mask against 30 bits, to avoid (undefined) wraparound on signed integer.
   next_bitstream_buffer_id_ = (next_bitstream_buffer_id_ + 1) & ID_LAST;
 
-  // If the shared memory is available and there are no pending buffers, send
-  // the buffer for decode. If not, save the buffer in the queue for decode
-  // later.
+  // If a shared memory segment is available, there are no pending buffers, and
+  // this isn't a mid-stream resolution change, then send the buffer for decode
+  // immediately. Otherwise, save the buffer in the queue for later decode.
   scoped_ptr<SHMBuffer> shm_buffer;
-  if (pending_buffers_.size() == 0)
+  if (!need_to_reset_for_midstream_resize && pending_buffers_.size() == 0)
     shm_buffer = GetSHM_Locked(inputImage._length);
   if (!shm_buffer) {
-    int32_t result = SaveToPendingBuffers_Locked(inputImage, buffer_data);
-    return result ? WEBRTC_VIDEO_CODEC_OK : WEBRTC_VIDEO_CODEC_ERROR;
+    if (!SaveToPendingBuffers_Locked(inputImage, buffer_data))
+      return WEBRTC_VIDEO_CODEC_ERROR;
+    if (need_to_reset_for_midstream_resize) {
+      base::AutoUnlock auto_unlock(lock_);
+      Reset();
+    }
+    return WEBRTC_VIDEO_CODEC_OK;
   }
 
   SaveToDecodeBuffers_Locked(inputImage, shm_buffer.Pass(), buffer_data);
@@ -353,12 +392,9 @@ void RTCVideoDecoder::PictureReady(const media::Picture& picture) {
   DCHECK(inserted);
 
   // Create a WebRTC video frame.
-  // TODO(wuchengli): make media::VideoFrame an opaque native handle and put it
-  // into WebRTC frame.
-  webrtc::I420VideoFrame decoded_image;
-  decoded_image.CreateEmptyFrame(
-      width, height, width, (width + 1) / 2, (width + 1) / 2);
-  decoded_image.set_timestamp(timestamp);
+  webrtc::RefCountImpl<NativeHandleImpl>* handle =
+      new webrtc::RefCountImpl<NativeHandleImpl>(frame);
+  webrtc::TextureVideoFrame decoded_image(handle, width, height, timestamp, 0);
 
   // Invoke decode callback. WebRTC expects no callback after Reset or Release.
   {
@@ -385,22 +421,21 @@ scoped_refptr<media::VideoFrame> RTCVideoDecoder::CreateVideoFrame(
   base::TimeDelta timestamp_ms = base::TimeDelta::FromInternalValue(
       base::checked_numeric_cast<uint64_t>(timestamp) * 1000 / 90);
   return media::VideoFrame::WrapNativeTexture(
-      new media::VideoFrame::MailboxHolder(
+      make_scoped_ptr(new media::VideoFrame::MailboxHolder(
           pb.texture_mailbox(),
           0,  // sync_point
           media::BindToCurrentLoop(
               base::Bind(&RTCVideoDecoder::ReusePictureBuffer,
                          weak_this_,
-                         picture.picture_buffer_id()))),
+                         picture.picture_buffer_id())))),
       decoder_texture_target_,
       pb.size(),
       visible_rect,
       natural_size,
       timestamp_ms,
-      base::Bind(&media::GpuVideoDecoderFactories::ReadPixels,
+      base::Bind(&media::GpuVideoAcceleratorFactories::ReadPixels,
                  factories_,
                  pb.texture_id(),
-                 decoder_texture_target_,
                  natural_size),
       base::Closure());
 }
@@ -453,6 +488,9 @@ void RTCVideoDecoder::NotifyError(media::VideoDecodeAccelerator::Error error) {
     return;
 
   LOG(ERROR) << "VDA Error:" << error;
+  UMA_HISTOGRAM_ENUMERATION("Media.RTCVideoDecoderError",
+                            error,
+                            media::VideoDecodeAccelerator::LARGEST_ERROR_ENUM);
   DestroyVDA();
 
   base::AutoLock auto_lock(lock_);
@@ -524,6 +562,12 @@ bool RTCVideoDecoder::IsBufferAfterReset(int32 id_buffer, int32 id_reset) {
   if (diff <= 0)
     diff += ID_LAST + 1;
   return diff < ID_HALF;
+}
+
+bool RTCVideoDecoder::IsFirstBufferAfterReset(int32 id_buffer, int32 id_reset) {
+  if (id_reset == ID_INVALID)
+    return id_buffer == 0;
+  return id_buffer == ((id_reset + 1) & ID_LAST);
 }
 
 void RTCVideoDecoder::SaveToDecodeBuffers_Locked(
@@ -731,6 +775,14 @@ void RTCVideoDecoder::GetBufferData(int32 bitstream_buffer_id,
     return;
   }
   NOTREACHED() << "Missing bitstream buffer id: " << bitstream_buffer_id;
+}
+
+int32_t RTCVideoDecoder::RecordInitDecodeUMA(int32_t status) {
+  // Logging boolean is enough to know if HW decoding has been used. Also,
+  // InitDecode is less likely to return an error so enum is not used here.
+  bool sample = (status == WEBRTC_VIDEO_CODEC_OK) ? true : false;
+  UMA_HISTOGRAM_BOOLEAN("Media.RTCVideoDecoderInitDecodeSuccess", sample);
+  return status;
 }
 
 }  // namespace content

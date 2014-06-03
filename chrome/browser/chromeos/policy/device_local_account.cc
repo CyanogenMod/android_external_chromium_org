@@ -6,13 +6,15 @@
 
 #include <set>
 
+#include "base/basictypes.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/values.h"
+#include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
-#include "chrome/browser/chromeos/settings/cros_settings_names.h"
+#include "chromeos/settings/cros_settings_names.h"
 #include "google_apis/gaia/gaia_auth_util.h"
 
 namespace policy {
@@ -27,13 +29,11 @@ const char kDeviceLocalAccountDomainSuffix[] = ".device-local.localhost";
 
 DeviceLocalAccount::DeviceLocalAccount(Type type,
                                        const std::string& account_id,
-                                       const std::string& kiosk_app_id,
-                                       const std::string& kiosk_app_update_url)
+                                       const std::string& kiosk_app_id)
     : type(type),
       account_id(account_id),
       user_id(GenerateDeviceLocalAccountUserId(account_id, type)),
-      kiosk_app_id(kiosk_app_id),
-      kiosk_app_update_url(kiosk_app_update_url) {
+      kiosk_app_id(kiosk_app_id) {
 }
 
 DeviceLocalAccount::~DeviceLocalAccount() {
@@ -58,16 +58,35 @@ std::string GenerateDeviceLocalAccountUserId(const std::string& account_id,
       domain_prefix + kDeviceLocalAccountDomainSuffix);
 }
 
-bool IsDeviceLocalAccountUser(const std::string& user_id) {
-  return EndsWith(gaia::ExtractDomainName(user_id),
-                  kDeviceLocalAccountDomainSuffix,
-                  true);
-}
+bool IsDeviceLocalAccountUser(const std::string& user_id,
+                              DeviceLocalAccount::Type* type) {
+  // For historical reasons, the guest user ID does not contain an @ symbol and
+  // therefore, cannot be parsed by gaia::ExtractDomainName().
+  if (user_id == chromeos::UserManager::kGuestUserName)
+    return false;
+  const std::string domain = gaia::ExtractDomainName(user_id);
+  if (!EndsWith(domain, kDeviceLocalAccountDomainSuffix, true))
+    return false;
 
-bool IsKioskAppUser(const std::string& user_id) {
-  return gaia::ExtractDomainName(user_id) ==
-      std::string(kKioskAppAccountDomainPrefix) +
-          kDeviceLocalAccountDomainSuffix;
+  const std::string domain_prefix = domain.substr(
+      0, domain.size() - arraysize(kDeviceLocalAccountDomainSuffix) + 1);
+
+  if (domain_prefix == kPublicAccountDomainPrefix) {
+    if (type)
+      *type = DeviceLocalAccount::TYPE_PUBLIC_SESSION;
+    return true;
+  }
+  if (domain_prefix == kKioskAppAccountDomainPrefix) {
+    if (type)
+      *type = DeviceLocalAccount::TYPE_KIOSK_APP;
+    return true;
+  }
+
+  // |user_id| is a device-local account but its type is not recognized.
+  NOTREACHED();
+  if (type)
+    *type = DeviceLocalAccount::TYPE_COUNT;
+  return true;
 }
 
 void SetDeviceLocalAccounts(
@@ -87,11 +106,6 @@ void SetDeviceLocalAccounts(
       entry->SetStringWithoutPathExpansion(
           chromeos::kAccountsPrefDeviceLocalAccountsKeyKioskAppId,
           it->kiosk_app_id);
-      if (!it->kiosk_app_update_url.empty()) {
-        entry->SetStringWithoutPathExpansion(
-            chromeos::kAccountsPrefDeviceLocalAccountsKeyKioskAppUpdateURL,
-            it->kiosk_app_update_url);
-      }
     }
     list.Append(entry.release());
   }
@@ -136,7 +150,6 @@ std::vector<DeviceLocalAccount> GetDeviceLocalAccounts(
     }
 
     std::string kiosk_app_id;
-    std::string kiosk_app_update_url;
     if (type == DeviceLocalAccount::TYPE_KIOSK_APP) {
       if (!entry->GetStringWithoutPathExpansion(
               chromeos::kAccountsPrefDeviceLocalAccountsKeyKioskAppId,
@@ -145,9 +158,6 @@ std::vector<DeviceLocalAccount> GetDeviceLocalAccounts(
                    << i << ".";
         continue;
       }
-      entry->GetStringWithoutPathExpansion(
-          chromeos::kAccountsPrefDeviceLocalAccountsKeyKioskAppUpdateURL,
-          &kiosk_app_update_url);
     }
 
     if (!account_ids.insert(account_id).second) {
@@ -157,8 +167,7 @@ std::vector<DeviceLocalAccount> GetDeviceLocalAccounts(
     }
 
     accounts.push_back(DeviceLocalAccount(
-        static_cast<DeviceLocalAccount::Type>(type),
-        account_id, kiosk_app_id, kiosk_app_update_url));
+        static_cast<DeviceLocalAccount::Type>(type), account_id, kiosk_app_id));
   }
   return accounts;
 }

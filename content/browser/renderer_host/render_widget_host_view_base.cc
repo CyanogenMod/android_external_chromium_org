@@ -7,12 +7,11 @@
 #include "base/logging.h"
 #include "content/browser/accessibility/browser_accessibility_manager.h"
 #include "content/browser/gpu/gpu_data_manager_impl.h"
-#include "content/browser/renderer_host/basic_mouse_wheel_smooth_scroll_gesture.h"
+#include "content/browser/renderer_host/input/synthetic_gesture_target_base.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/port/browser/render_widget_host_view_frame_subscriber.h"
-#include "content/port/browser/smooth_scroll_gesture.h"
-#include "third_party/WebKit/public/web/WebScreenInfo.h"
+#include "third_party/WebKit/public/platform/WebScreenInfo.h"
 #include "ui/gfx/display.h"
 #include "ui/gfx/screen.h"
 #include "ui/gfx/size_conversions.h"
@@ -29,9 +28,9 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/child_process_data.h"
 #include "content/public/common/content_switches.h"
-#include "ui/base/win/dpi.h"
-#include "ui/base/win/hwnd_util.h"
 #include "ui/gfx/gdi_util.h"
+#include "ui/gfx/win/dpi.h"
+#include "ui/gfx/win/hwnd_util.h"
 #endif
 
 #if defined(TOOLKIT_GTK)
@@ -118,8 +117,8 @@ LRESULT CALLBACK PluginWrapperWindowProc(HWND window, unsigned int message,
 }
 
 bool IsPluginWrapperWindow(HWND window) {
-  return ui::GetClassNameW(window) ==
-      string16(kWrapperNativeWindowClassName);
+  return gfx::GetClassNameW(window) ==
+      base::string16(kWrapperNativeWindowClassName);
 }
 
 // Create an intermediate window between the given HWND and its parent.
@@ -151,7 +150,7 @@ HWND ReparentWindow(HWND window, HWND parent) {
       MAKEINTATOM(atom), 0,
       WS_CHILD | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,
       0, 0, 0, 0, parent, 0, instance, 0);
-  ui::CheckWindowCreated(new_parent);
+  gfx::CheckWindowCreated(new_parent);
   ::SetParent(window, new_parent);
   // How many times we try to find a PluginProcessHost whose process matches
   // the HWND.
@@ -169,7 +168,7 @@ BOOL CALLBACK PaintEnumChildProc(HWND hwnd, LPARAM lparam) {
     return TRUE;
 
   gfx::Rect* rect = reinterpret_cast<gfx::Rect*>(lparam);
-  gfx::Rect rect_in_pixels = ui::win::DIPToScreenRect(*rect);
+  gfx::Rect rect_in_pixels = gfx::win::DIPToScreenRect(*rect);
   static UINT msg = RegisterWindowMessage(kPaintMessageName);
   WPARAM wparam = MAKEWPARAM(rect_in_pixels.x(), rect_in_pixels.y());
   lparam = MAKELPARAM(rect_in_pixels.width(), rect_in_pixels.height());
@@ -284,7 +283,7 @@ void RenderWidgetHostViewBase::MovePluginWindowsHelper(
 #endif
 
     if (move.rects_valid) {
-      gfx::Rect clip_rect_in_pixel = ui::win::DIPToScreenRect(move.clip_rect);
+      gfx::Rect clip_rect_in_pixel = gfx::win::DIPToScreenRect(move.clip_rect);
       HRGN hrgn = ::CreateRectRgn(clip_rect_in_pixel.x(),
                                   clip_rect_in_pixel.y(),
                                   clip_rect_in_pixel.right(),
@@ -313,7 +312,7 @@ void RenderWidgetHostViewBase::MovePluginWindowsHelper(
     }
 
     gfx::Rect window_rect_in_pixel =
-        ui::win::DIPToScreenRect(move.window_rect);
+        gfx::win::DIPToScreenRect(move.window_rect);
     defer_window_pos_info = ::DeferWindowPos(defer_window_pos_info,
                                              window, NULL,
                                              window_rect_in_pixel.x(),
@@ -377,12 +376,19 @@ void RenderWidgetHostViewBase::DetachPluginsHelper(HWND parent) {
 
 #endif  // OS_WIN
 
+namespace {
+
+// How many microseconds apart input events should be flushed.
+const int kFlushInputRateInUs = 16666;
+
+}
+
 RenderWidgetHostViewBase::RenderWidgetHostViewBase()
-    : popup_type_(WebKit::WebPopupTypeNone),
+    : popup_type_(blink::WebPopupTypeNone),
       mouse_locked_(false),
       showing_context_menu_(false),
       selection_text_offset_(0),
-      selection_range_(ui::Range::InvalidRange()),
+      selection_range_(gfx::Range::InvalidRange()),
       current_device_scale_factor_(0),
       renderer_frame_number_(0) {
 }
@@ -415,9 +421,9 @@ float RenderWidgetHostViewBase::GetOverdrawBottomHeight() const {
   return 0.f;
 }
 
-void RenderWidgetHostViewBase::SelectionChanged(const string16& text,
+void RenderWidgetHostViewBase::SelectionChanged(const base::string16& text,
                                                 size_t offset,
-                                                const ui::Range& range) {
+                                                const gfx::Range& range) {
   selection_text_ = text;
   selection_text_offset_ = offset;
   selection_range_.set_start(range.start());
@@ -433,9 +439,9 @@ void RenderWidgetHostViewBase::SetShowingContextMenu(bool showing) {
   showing_context_menu_ = showing;
 }
 
-string16 RenderWidgetHostViewBase::GetSelectedText() const {
+base::string16 RenderWidgetHostViewBase::GetSelectedText() const {
   if (!selection_range_.IsValid())
-    return string16();
+    return base::string16();
   return selection_text_.substr(
       selection_range_.GetMin() - selection_text_offset_,
       selection_range_.length());
@@ -446,24 +452,39 @@ bool RenderWidgetHostViewBase::IsMouseLocked() {
 }
 
 void RenderWidgetHostViewBase::UnhandledWheelEvent(
-    const WebKit::WebMouseWheelEvent& event) {
+    const blink::WebMouseWheelEvent& event) {
   // Most implementations don't need to do anything here.
 }
 
 InputEventAckState RenderWidgetHostViewBase::FilterInputEvent(
-    const WebKit::WebInputEvent& input_event) {
+    const blink::WebInputEvent& input_event) {
   // By default, input events are simply forwarded to the renderer.
   return INPUT_EVENT_ACK_STATE_NOT_CONSUMED;
+}
+
+void RenderWidgetHostViewBase::OnDidFlushInput() {
+  // The notification can safely be ignored by most implementations.
+}
+
+void RenderWidgetHostViewBase::OnSetNeedsFlushInput() {
+  if (flush_input_timer_.IsRunning())
+    return;
+
+  flush_input_timer_.Start(
+      FROM_HERE,
+      base::TimeDelta::FromMicroseconds(kFlushInputRateInUs),
+      this,
+      &RenderWidgetHostViewBase::FlushInput);
 }
 
 void RenderWidgetHostViewBase::GestureEventAck(int gesture_event_type,
                                                InputEventAckState ack_result) {}
 
-void RenderWidgetHostViewBase::SetPopupType(WebKit::WebPopupType popup_type) {
+void RenderWidgetHostViewBase::SetPopupType(blink::WebPopupType popup_type) {
   popup_type_ = popup_type;
 }
 
-WebKit::WebPopupType RenderWidgetHostViewBase::GetPopupType() {
+blink::WebPopupType RenderWidgetHostViewBase::GetPopupType() {
   return popup_type_;
 }
 
@@ -501,15 +522,16 @@ bool RenderWidgetHostViewBase::HasDisplayPropertyChanged(gfx::NativeView view) {
   return true;
 }
 
-SmoothScrollGesture* RenderWidgetHostViewBase::CreateSmoothScrollGesture(
-    bool scroll_down, int pixels_to_scroll, int mouse_event_x,
-    int mouse_event_y) {
-  return new BasicMouseWheelSmoothScrollGesture(scroll_down, pixels_to_scroll,
-                                                mouse_event_x, mouse_event_y);
-}
-
 void RenderWidgetHostViewBase::ProcessAckedTouchEvent(
     const TouchEventWithLatencyInfo& touch, InputEventAckState ack_result) {
+}
+
+scoped_ptr<SyntheticGestureTarget>
+RenderWidgetHostViewBase::CreateSyntheticGestureTarget() {
+  RenderWidgetHostImpl* host =
+      RenderWidgetHostImpl::From(GetRenderWidgetHost());
+  return scoped_ptr<SyntheticGestureTarget>(
+      new SyntheticGestureTargetBase(host));
 }
 
 // Platform implementation should override this method to allow frame
@@ -559,6 +581,15 @@ uint32 RenderWidgetHostViewBase::RendererFrameNumber() {
 
 void RenderWidgetHostViewBase::DidReceiveRendererFrame() {
   ++renderer_frame_number_;
+}
+
+void RenderWidgetHostViewBase::FlushInput() {
+  RenderWidgetHostImpl* impl = NULL;
+  if (GetRenderWidgetHost())
+    impl = RenderWidgetHostImpl::From(GetRenderWidgetHost());
+  if (!impl)
+    return;
+  impl->FlushInput();
 }
 
 }  // namespace content

@@ -9,7 +9,9 @@
 
 #include "base/bind.h"
 #include "base/i18n/string_search.h"
+#include "base/metrics/histogram.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/time/time.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "content/public/browser/browser_thread.h"
 #include "net/base/escape.h"
@@ -20,6 +22,20 @@ namespace drive {
 namespace internal {
 
 namespace {
+
+struct ResultCandidate {
+  ResultCandidate(const std::string& local_id,
+                  const ResourceEntry& entry,
+                  const std::string& highlighted_base_name)
+      : local_id(local_id),
+        entry(entry),
+        highlighted_base_name(highlighted_base_name) {
+  }
+
+  std::string local_id;
+  ResourceEntry entry;
+  std::string highlighted_base_name;
+};
 
 // Used to sort the result candidates per the last accessed/modified time. The
 // recently accessed/modified files come first.
@@ -36,9 +52,8 @@ bool CompareByTimestamp(const ResourceEntry& a, const ResourceEntry& b) {
   return a_file_info.last_modified() > b_file_info.last_modified();
 }
 
-struct MetadataSearchResultComparator {
-  bool operator()(const MetadataSearchResult* a,
-                  const MetadataSearchResult* b) const {
+struct ResultCandidateComparator {
+  bool operator()(const ResultCandidate* a, const ResultCandidate* b) const {
     return CompareByTimestamp(a->entry, b->entry);
   }
 };
@@ -63,14 +78,64 @@ class ScopedPriorityQueue {
   void push(T* x) { queue_.push(x); }
 
   void pop() {
-    delete queue_.top();
+    // Keep top alive for the pop() call so that debug checks can access
+    // underlying data (e.g. validating heap property of the priority queue
+    // will call the comparator).
+    T* saved_top = queue_.top();
     queue_.pop();
+    delete saved_top;
   }
 
  private:
   std::priority_queue<T*, std::vector<T*>, Compare> queue_;
 
   DISALLOW_COPY_AND_ASSIGN(ScopedPriorityQueue);
+};
+
+// Classifies the given entry as trashed if it's placed under the trash.
+class TrashedEntryClassifier {
+ public:
+  explicit TrashedEntryClassifier(ResourceMetadata* metadata)
+      : metadata_(metadata) {
+    trashed_[""] = false;
+    trashed_[util::kDriveTrashDirLocalId] = true;
+  }
+
+  // |result| is set to true if |entry| is under the trash.
+  FileError IsTrashed(const ResourceEntry& entry, bool* result) {
+    // parent_local_id cannot be used to classify the trash itself.
+    if (entry.local_id() == util::kDriveTrashDirLocalId) {
+      *result = true;
+      return FILE_ERROR_OK;
+    }
+
+    // Look up for parents recursively.
+    std::vector<std::string> undetermined_ids;
+    undetermined_ids.push_back(entry.parent_local_id());
+
+    std::map<std::string, bool>::iterator it =
+        trashed_.find(undetermined_ids.back());
+    for (; it == trashed_.end(); it = trashed_.find(undetermined_ids.back())) {
+      ResourceEntry parent;
+      FileError error =
+          metadata_->GetResourceEntryById(undetermined_ids.back(), &parent);
+      if (error != FILE_ERROR_OK)
+        return error;
+      undetermined_ids.push_back(parent.parent_local_id());
+    }
+
+    // Cache the result to |trashed_|.
+    undetermined_ids.pop_back();  // The last one is already in |trashed_|.
+    for (size_t i = 0; i < undetermined_ids.size(); ++i)
+      trashed_[undetermined_ids[i]] = it->second;
+
+    *result = it->second;
+    return FILE_ERROR_OK;
+  }
+
+ private:
+  ResourceMetadata* metadata_;
+  std::map<std::string, bool> trashed_;  // local ID to is_trashed map.
 };
 
 // Returns true if |entry| is eligible for the search |options| and should be
@@ -104,8 +169,8 @@ bool IsEligibleEntry(const ResourceEntry& entry,
   }
 
   // Exclude "drive", "drive/root", and "drive/other".
-  if (entry.resource_id() == util::kDriveGrandRootSpecialResourceId ||
-      entry.parent_resource_id() == util::kDriveGrandRootSpecialResourceId) {
+  if (it->GetID() == util::kDriveGrandRootLocalId ||
+      entry.parent_local_id() == util::kDriveGrandRootLocalId) {
     return false;
   }
 
@@ -116,24 +181,25 @@ bool IsEligibleEntry(const ResourceEntry& entry,
 // Adds entry to the result when appropriate.
 // In particular, if |query| is non-null, only adds files with the name matching
 // the query.
-void MaybeAddEntryToResult(
+FileError MaybeAddEntryToResult(
     ResourceMetadata* resource_metadata,
     ResourceMetadata::Iterator* it,
     base::i18n::FixedPatternStringSearchIgnoringCaseAndAccents* query,
     int options,
     size_t at_most_num_matches,
-    ScopedPriorityQueue<MetadataSearchResult,
-                        MetadataSearchResultComparator>* result_candidates) {
+    TrashedEntryClassifier* trashed_entry_classifier,
+    ScopedPriorityQueue<ResultCandidate,
+                        ResultCandidateComparator>* result_candidates) {
   DCHECK_GE(at_most_num_matches, result_candidates->size());
 
-  const ResourceEntry& entry = it->Get();
+  const ResourceEntry& entry = it->GetValue();
 
   // If the candidate set is already full, and this |entry| is old, do nothing.
   // We perform this check first in order to avoid the costly find-and-highlight
   // or FilePath lookup as much as possible.
   if (result_candidates->size() == at_most_num_matches &&
       !CompareByTimestamp(entry, result_candidates->top()->entry))
-    return;
+    return FILE_ERROR_OK;
 
   // Add |entry| to the result if the entry is eligible for the given
   // |options| and matches the query. The base name of the entry must
@@ -141,12 +207,19 @@ void MaybeAddEntryToResult(
   std::string highlighted;
   if (!IsEligibleEntry(entry, it, options) ||
       (query && !FindAndHighlight(entry.base_name(), query, &highlighted)))
-    return;
+    return FILE_ERROR_OK;
+
+  // Trashed entry should not be returned.
+  bool trashed = false;
+  FileError error = trashed_entry_classifier->IsTrashed(entry, &trashed);
+  if (error != FILE_ERROR_OK || trashed)
+    return error;
 
   // Make space for |entry| when appropriate.
   if (result_candidates->size() == at_most_num_matches)
     result_candidates->pop();
-  result_candidates->push(new MetadataSearchResult(entry, highlighted));
+  result_candidates->push(new ResultCandidate(it->GetID(), entry, highlighted));
+  return FILE_ERROR_OK;
 }
 
 // Implements SearchMetadata().
@@ -155,33 +228,38 @@ FileError SearchMetadataOnBlockingPool(ResourceMetadata* resource_metadata,
                                        int options,
                                        int at_most_num_matches,
                                        MetadataSearchResultVector* results) {
-  ScopedPriorityQueue<MetadataSearchResult,
-                      MetadataSearchResultComparator> result_candidates;
+  ScopedPriorityQueue<ResultCandidate,
+                      ResultCandidateComparator> result_candidates;
 
   // Prepare data structure for searching.
   base::i18n::FixedPatternStringSearchIgnoringCaseAndAccents query(
       base::UTF8ToUTF16(query_text));
 
   // Iterate over entries.
+  TrashedEntryClassifier trashed_entry_classifier(resource_metadata);
   scoped_ptr<ResourceMetadata::Iterator> it = resource_metadata->GetIterator();
   for (; !it->IsAtEnd(); it->Advance()) {
-    MaybeAddEntryToResult(resource_metadata, it.get(),
-                          query_text.empty() ? NULL : &query,
-                          options,
-                          at_most_num_matches, &result_candidates);
+    FileError error = MaybeAddEntryToResult(resource_metadata, it.get(),
+                                            query_text.empty() ? NULL : &query,
+                                            options,
+                                            at_most_num_matches,
+                                            &trashed_entry_classifier,
+                                            &result_candidates);
+    if (error != FILE_ERROR_OK)
+      return error;
   }
 
   // Prepare the result.
   for (; !result_candidates.empty(); result_candidates.pop()) {
+    const ResultCandidate& candidate = *result_candidates.top();
     // The path field of entries in result_candidates are empty at this point,
     // because we don't want to run the expensive metadata DB look up except for
     // the final results. Hence, here we fill the part.
-    base::FilePath path = resource_metadata->GetFilePath(
-        result_candidates.top()->entry.resource_id());
+    base::FilePath path = resource_metadata->GetFilePath(candidate.local_id);
     if (path.empty())
       return FILE_ERROR_FAILED;
-    results->push_back(*result_candidates.top());
-    results->back().path = path;
+    results->push_back(MetadataSearchResult(
+        path, candidate.entry, candidate.highlighted_base_name));
   }
 
   // Reverse the order here because |result_candidates| puts the most
@@ -191,12 +269,17 @@ FileError SearchMetadataOnBlockingPool(ResourceMetadata* resource_metadata,
   return FILE_ERROR_OK;
 }
 
+// Runs the SearchMetadataCallback and updates the histogram.
 void RunSearchMetadataCallback(const SearchMetadataCallback& callback,
+                               const base::TimeTicks& start_time,
                                scoped_ptr<MetadataSearchResultVector> results,
                                FileError error) {
   if (error != FILE_ERROR_OK)
     results.reset();
   callback.Run(error, results.Pass());
+
+  UMA_HISTOGRAM_TIMES("Drive.SearchMetadataTime",
+                      base::TimeTicks::Now() - start_time);
 }
 
 }  // namespace
@@ -212,6 +295,8 @@ void SearchMetadata(
   DCHECK_LE(0, at_most_num_matches);
   DCHECK(!callback.is_null());
 
+  const base::TimeTicks start_time = base::TimeTicks::Now();
+
   scoped_ptr<MetadataSearchResultVector> results(
       new MetadataSearchResultVector);
   MetadataSearchResultVector* results_ptr = results.get();
@@ -225,6 +310,7 @@ void SearchMetadata(
                                               results_ptr),
                                    base::Bind(&RunSearchMetadataCallback,
                                               callback,
+                                              start_time,
                                               base::Passed(&results)));
 }
 
@@ -236,15 +322,15 @@ bool FindAndHighlight(
   DCHECK(highlighted_text);
   highlighted_text->clear();
 
-  string16 text16 = base::UTF8ToUTF16(text);
+  base::string16 text16 = base::UTF8ToUTF16(text);
   size_t match_start = 0;
   size_t match_length = 0;
   if (!query->Search(text16, &match_start, &match_length))
     return false;
 
-  string16 pre = text16.substr(0, match_start);
-  string16 match = text16.substr(match_start, match_length);
-  string16 post = text16.substr(match_start + match_length);
+  base::string16 pre = text16.substr(0, match_start);
+  base::string16 match = text16.substr(match_start, match_length);
+  base::string16 post = text16.substr(match_start + match_length);
   highlighted_text->append(net::EscapeForHTML(base::UTF16ToUTF8(pre)));
   highlighted_text->append("<b>");
   highlighted_text->append(net::EscapeForHTML(base::UTF16ToUTF8(match)));

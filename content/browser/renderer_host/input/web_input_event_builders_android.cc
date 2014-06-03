@@ -7,16 +7,16 @@
 #include "base/logging.h"
 #include "content/browser/renderer_host/input/web_input_event_util.h"
 #include "content/browser/renderer_host/input/web_input_event_util_posix.h"
-#include "ui/base/keycodes/keyboard_code_conversion_android.h"
-#include "ui/base/keycodes/keyboard_codes_posix.h"
+#include "ui/events/keycodes/keyboard_code_conversion_android.h"
+#include "ui/events/keycodes/keyboard_codes_posix.h"
 
 namespace content {
 
-using WebKit::WebInputEvent;
-using WebKit::WebKeyboardEvent;
-using WebKit::WebGestureEvent;
-using WebKit::WebMouseEvent;
-using WebKit::WebMouseWheelEvent;
+using blink::WebInputEvent;
+using blink::WebKeyboardEvent;
+using blink::WebGestureEvent;
+using blink::WebMouseEvent;
+using blink::WebMouseWheelEvent;
 
 WebKeyboardEvent WebKeyboardEventBuilder::Build(WebInputEvent::Type type,
                                                 int modifiers,
@@ -48,7 +48,7 @@ WebKeyboardEvent WebKeyboardEventBuilder::Build(WebInputEvent::Type type,
   return result;
 }
 
-WebMouseEvent WebMouseEventBuilder::Build(WebKit::WebInputEvent::Type type,
+WebMouseEvent WebMouseEventBuilder::Build(blink::WebInputEvent::Type type,
                                           WebMouseEvent::Button button,
                                           double time_sec,
                                           int window_x,

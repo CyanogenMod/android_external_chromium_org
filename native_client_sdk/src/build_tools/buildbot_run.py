@@ -35,7 +35,7 @@ def StepRunUnittests():
   Run([sys.executable, 'test_all.py'], env=env, cwd=SDK_SRC_DIR)
 
 
-def StepBuildSDK(args):
+def StepBuildSDK():
   is_win = getos.GetPlatform() == 'win'
 
   # Windows has a path length limit of 255 characters, after joining cwd with a
@@ -51,7 +51,7 @@ def StepBuildSDK(args):
     new_script_dir = SCRIPT_DIR
 
   try:
-    Run([sys.executable, 'build_sdk.py'] + args, cwd=new_script_dir)
+    Run([sys.executable, 'build_sdk.py'], cwd=new_script_dir)
   finally:
     if is_win:
       subprocess.check_call(['subst', '/D', subst_drive])
@@ -62,21 +62,29 @@ def StepTestSDK():
   if getos.GetPlatform() == 'linux':
     # Run all of test_sdk.py under xvfb-run; it's startup time leaves something
     # to be desired, so only start it up once.
-    cmd.extend(['xvfb-run', '--auto-servernum'])
+    # We also need to make sure that there are at least 24 bits per pixel.
+    # https://code.google.com/p/chromium/issues/detail?id=316687
+    cmd.extend([
+        'xvfb-run',
+        '--auto-servernum',
+        '--server-args', '-screen 0 1024x768x24'
+    ])
 
   cmd.extend([sys.executable, 'test_sdk.py'])
   Run(cmd, cwd=SCRIPT_DIR)
 
 
-def main(args):
+def main():
   StepRunUnittests()
-  StepBuildSDK(args)
-  StepTestSDK()
+  StepBuildSDK()
+  # Skip the testing phase if we are running on a build-only bots.
+  if not buildbot_common.IsBuildOnlyBot():
+    StepTestSDK()
   return 0
 
 
 if __name__ == '__main__':
   try:
-    sys.exit(main(sys.argv[1:]))
+    sys.exit(main())
   except KeyboardInterrupt:
     buildbot_common.ErrorExit('buildbot_run: interrupted')

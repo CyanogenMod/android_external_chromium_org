@@ -12,8 +12,9 @@
 #include <map>
 #include <stack>
 
+#include "base/basictypes.h"
 #include "base/bind.h"
-#include "base/bind_helpers.h"
+#include "base/callback_helpers.h"
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
 #include "base/i18n/rtl.h"
@@ -56,34 +57,35 @@
 #include "third_party/WebKit/public/web/WebCompositionUnderline.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "third_party/skia/include/core/SkRegion.h"
-#include "ui/base/events/event.h"
-#include "ui/base/events/event_utils.h"
 #include "ui/base/ime/composition_text.h"
 #include "ui/base/ime/win/imm32_manager.h"
 #include "ui/base/ime/win/tsf_input_scope.h"
 #include "ui/base/l10n/l10n_util_win.h"
-#include "ui/base/text/text_elider.h"
 #include "ui/base/touch/touch_device.h"
 #include "ui/base/touch/touch_enabled.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/base/view_prop.h"
-#include "ui/base/win/dpi.h"
-#include "ui/base/win/hwnd_util.h"
 #include "ui/base/win/mouse_wheel_util.h"
 #include "ui/base/win/touch_input.h"
+#include "ui/events/event.h"
+#include "ui/events/event_utils.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/rect_conversions.h"
 #include "ui/gfx/screen.h"
+#include "ui/gfx/sequential_id_generator.h"
+#include "ui/gfx/text_elider.h"
+#include "ui/gfx/win/dpi.h"
+#include "ui/gfx/win/hwnd_util.h"
 #include "webkit/common/cursors/webcursor.h"
 #include "win8/util/win8_util.h"
 
 using base::TimeDelta;
 using base::TimeTicks;
 using ui::ViewProp;
-using WebKit::WebInputEvent;
-using WebKit::WebMouseEvent;
-using WebKit::WebTextDirection;
+using blink::WebInputEvent;
+using blink::WebMouseEvent;
+using blink::WebTextDirection;
 
 namespace content {
 namespace {
@@ -200,10 +202,10 @@ bool DecodeScrollGesture(const GESTUREINFO& gi,
   return true;
 }
 
-WebKit::WebMouseWheelEvent MakeFakeScrollWheelEvent(HWND hwnd,
+blink::WebMouseWheelEvent MakeFakeScrollWheelEvent(HWND hwnd,
                                                     POINT start,
                                                     POINT delta) {
-  WebKit::WebMouseWheelEvent result;
+  blink::WebMouseWheelEvent result;
   result.type = WebInputEvent::MouseWheel;
   result.timeStampSeconds = ::GetMessageTime() / 1000.0;
   result.button = WebMouseEvent::ButtonNone;
@@ -234,17 +236,17 @@ inline void SetTouchType(TOUCHINPUT* point, int type) {
   point->dwFlags = (point->dwFlags & kTouchMask) | type;
 }
 
-ui::EventType ConvertToUIEvent(WebKit::WebTouchPoint::State t) {
+ui::EventType ConvertToUIEvent(blink::WebTouchPoint::State t) {
   switch (t) {
-    case WebKit::WebTouchPoint::StatePressed:
+    case blink::WebTouchPoint::StatePressed:
       return ui::ET_TOUCH_PRESSED;
-    case WebKit::WebTouchPoint::StateMoved:
+    case blink::WebTouchPoint::StateMoved:
       return ui::ET_TOUCH_MOVED;
-    case WebKit::WebTouchPoint::StateStationary:
+    case blink::WebTouchPoint::StateStationary:
       return ui::ET_TOUCH_STATIONARY;
-    case WebKit::WebTouchPoint::StateReleased:
+    case blink::WebTouchPoint::StateReleased:
       return ui::ET_TOUCH_RELEASED;
-    case WebKit::WebTouchPoint::StateCancelled:
+    case blink::WebTouchPoint::StateCancelled:
       return ui::ET_TOUCH_CANCELLED;
     default:
       DCHECK(false) << "Unexpected ui type. " << t;
@@ -253,9 +255,9 @@ ui::EventType ConvertToUIEvent(WebKit::WebTouchPoint::State t) {
 }
 
 // Creates a WebGestureEvent corresponding to the given |gesture|
-WebKit::WebGestureEvent CreateWebGestureEvent(HWND hwnd,
+blink::WebGestureEvent CreateWebGestureEvent(HWND hwnd,
                                               const ui::GestureEvent& gesture) {
-  WebKit::WebGestureEvent gesture_event =
+  blink::WebGestureEvent gesture_event =
       MakeWebGestureEventFromUIEvent(gesture);
 
   POINT client_point = gesture.location().ToPOINT();
@@ -270,17 +272,17 @@ WebKit::WebGestureEvent CreateWebGestureEvent(HWND hwnd,
   return gesture_event;
 }
 
-WebKit::WebGestureEvent CreateFlingCancelEvent(double time_stamp) {
-  WebKit::WebGestureEvent gesture_event;
+blink::WebGestureEvent CreateFlingCancelEvent(double time_stamp) {
+  blink::WebGestureEvent gesture_event;
   gesture_event.timeStampSeconds = time_stamp;
-  gesture_event.type = WebKit::WebGestureEvent::GestureFlingCancel;
-  gesture_event.sourceDevice = WebKit::WebGestureEvent::Touchscreen;
+  gesture_event.type = blink::WebGestureEvent::GestureFlingCancel;
+  gesture_event.sourceDevice = blink::WebGestureEvent::Touchscreen;
   return gesture_event;
 }
 
 class TouchEventFromWebTouchPoint : public ui::TouchEvent {
  public:
-  TouchEventFromWebTouchPoint(const WebKit::WebTouchPoint& touch_point,
+  TouchEventFromWebTouchPoint(const blink::WebTouchPoint& touch_point,
                               base::TimeDelta& timestamp)
       : ui::TouchEvent(ConvertToUIEvent(touch_point.state),
                        touch_point.position,
@@ -305,14 +307,14 @@ bool ShouldSendPinchGesture() {
 }
 
 void GetScreenInfoForWindow(gfx::NativeViewId id,
-                            WebKit::WebScreenInfo* results) {
+                            blink::WebScreenInfo* results) {
   HWND window = gfx::NativeViewFromId(id);
 
   HMONITOR monitor = MonitorFromWindow(window, MONITOR_DEFAULTTOPRIMARY);
 
   MONITORINFOEX monitor_info;
   monitor_info.cbSize = sizeof(MONITORINFOEX);
-  if (!GetMonitorInfo(monitor, &monitor_info))
+  if (!base::win::GetMonitorInfoWrapper(monitor, &monitor_info))
     return;
 
   DEVMODE dev_mode;
@@ -320,10 +322,10 @@ void GetScreenInfoForWindow(gfx::NativeViewId id,
   dev_mode.dmDriverExtra = 0;
   EnumDisplaySettings(monitor_info.szDevice, ENUM_CURRENT_SETTINGS, &dev_mode);
 
-  WebKit::WebScreenInfo screen_info;
+  blink::WebScreenInfo screen_info;
   screen_info.depth = dev_mode.dmBitsPerPel;
-  screen_info.depthPerComponent = dev_mode.dmBitsPerPel / 3;  // Assumes RGB
-  screen_info.deviceScaleFactor = ui::win::GetDeviceScaleFactor();
+  screen_info.depthPerComponent = 8;
+  screen_info.deviceScaleFactor = gfx::win::GetDeviceScaleFactor();
   screen_info.isMonochrome = dev_mode.dmColor == DMCOLOR_MONOCHROME;
   screen_info.rect = gfx::Rect(monitor_info.rcMonitor);
   screen_info.availableRect = gfx::Rect(monitor_info.rcWork);
@@ -349,20 +351,18 @@ class WebTouchState {
   bool ReleaseTouchPoints();
 
   // The contained WebTouchEvent.
-  const WebKit::WebTouchEvent& touch_event() { return touch_event_; }
+  const blink::WebTouchEvent& touch_event() { return touch_event_; }
 
   // Returns if any touches are modified in the event.
   bool is_changed() { return touch_event_.changedTouchesLength != 0; }
 
  private:
-  typedef std::map<unsigned int, int> MapType;
-
   // Adds a touch point or returns NULL if there's not enough space.
-  WebKit::WebTouchPoint* AddTouchPoint(TOUCHINPUT* touch_input);
+  blink::WebTouchPoint* AddTouchPoint(TOUCHINPUT* touch_input);
 
   // Copy details from a TOUCHINPUT to an existing WebTouchPoint, returning
   // true if the resulting point is a stationary move.
-  bool UpdateTouchPoint(WebKit::WebTouchPoint* touch_point,
+  bool UpdateTouchPoint(blink::WebTouchPoint* touch_point,
                         TOUCHINPUT* touch_input);
 
   // Find (or create) a mapping for _os_touch_id_.
@@ -371,12 +371,10 @@ class WebTouchState {
   // Remove any mappings that are no longer in use.
   void RemoveExpiredMappings();
 
-  WebKit::WebTouchEvent touch_event_;
+  blink::WebTouchEvent touch_event_;
   const RenderWidgetHostViewWin* const window_;
 
-  // Maps OS touch Id's into an internal (WebKit-friendly) touch-id.
-  // WebKit expects small consecutive integers, starting at 0.
-  MapType touch_map_;
+  ui::SequentialIDGenerator id_generator_;
 
   DISALLOW_COPY_AND_ASSIGN(WebTouchState);
 };
@@ -395,7 +393,6 @@ RenderWidgetHostViewWin::RenderWidgetHostViewWin(RenderWidgetHost* widget)
       imm32_manager_(new ui::IMM32Manager),
       ime_notification_(false),
       capture_enter_key_(false),
-      is_hidden_(false),
       about_to_validate_and_paint_(false),
       close_on_deactivate_(false),
       being_destroyed_(false),
@@ -408,19 +405,21 @@ RenderWidgetHostViewWin::RenderWidgetHostViewWin(RenderWidgetHost* widget)
       can_compose_inline_(true),
       is_fullscreen_(false),
       ignore_mouse_movement_(true),
-      composition_range_(ui::Range::InvalidRange()),
+      composition_range_(gfx::Range::InvalidRange()),
       touch_state_(new WebTouchState(this)),
       pointer_down_context_(false),
       last_touch_location_(-1, -1),
       touch_events_enabled_(ui::AreTouchEventsEnabled()),
-      gesture_recognizer_(ui::GestureRecognizer::Create(this)) {
+      gesture_recognizer_(ui::GestureRecognizer::Create()) {
   render_widget_host_->SetView(this);
   registrar_.Add(this,
                  NOTIFICATION_RENDERER_PROCESS_TERMINATED,
                  NotificationService::AllBrowserContextsAndSources());
+  gesture_recognizer_->AddGestureEventHelper(this);
 }
 
 RenderWidgetHostViewWin::~RenderWidgetHostViewWin() {
+  gesture_recognizer_->RemoveGestureEventHelper(this);
   UnlockMouse();
   ResetTooltip();
 }
@@ -450,7 +449,7 @@ void RenderWidgetHostViewWin::InitAsFullscreen(
   gfx::Rect pos = gfx::Screen::GetNativeScreen()->GetDisplayNearestWindow(
       reference_host_view->GetNativeView()).bounds();
   is_fullscreen_ = true;
-  DoPopupOrFullscreenInit(ui::GetWindowToParentTo(true), pos, 0);
+  DoPopupOrFullscreenInit(gfx::GetWindowToParentTo(true), pos, 0);
 }
 
 RenderWidgetHost* RenderWidgetHostViewWin::GetRenderWidgetHost() const {
@@ -458,34 +457,34 @@ RenderWidgetHost* RenderWidgetHostViewWin::GetRenderWidgetHost() const {
 }
 
 void RenderWidgetHostViewWin::WasShown() {
-  if (!is_hidden_)
+  // |render_widget_host_| may be NULL if the WebContentsImpl is in the process
+  // of closing.
+  if (!render_widget_host_)
+    return;
+
+  if (!render_widget_host_->is_hidden())
     return;
 
   if (web_contents_switch_paint_time_.is_null())
     web_contents_switch_paint_time_ = TimeTicks::Now();
-  is_hidden_ = false;
 
-  // |render_widget_host_| may be NULL if the WebContentsImpl is in the process
-  // of closing.
-  if (render_widget_host_)
-    render_widget_host_->WasShown();
+  render_widget_host_->WasShown();
 }
 
 void RenderWidgetHostViewWin::WasHidden() {
-  if (is_hidden_)
+  // |render_widget_host_| may be NULL if the WebContentsImpl is in the process
+  // of closing.
+  if (!render_widget_host_)
     return;
 
-  // If we receive any more paint messages while we are hidden, we want to
-  // ignore them so we don't re-allocate the backing store.  We will paint
-  // everything again when we become selected again.
-  is_hidden_ = true;
+  if (render_widget_host_->is_hidden())
+    return;
 
   ResetTooltip();
 
-  // If we have a renderer, then inform it that we are being hidden so it can
-  // reduce its resource utilization.
-  if (render_widget_host_)
-    render_widget_host_->WasHidden();
+  // Inform the renderer that we are being hidden so it can reduce its resource
+  // utilization.
+  render_widget_host_->WasHidden();
 
   if (accelerated_surface_)
     accelerated_surface_->WasHidden();
@@ -501,7 +500,7 @@ void RenderWidgetHostViewWin::SetSize(const gfx::Size& size) {
 }
 
 void RenderWidgetHostViewWin::SetBounds(const gfx::Rect& rect) {
-  if (is_hidden_)
+  if (being_destroyed_)
     return;
 
   // No SWP_NOREDRAW as autofill popups can move and the underneath window
@@ -574,7 +573,7 @@ void RenderWidgetHostViewWin::CleanupCompositorWindow() {
   if (!compositor_host_window_)
     return;
 
-  ui::SetWindowUserData(compositor_host_window_, NULL);
+  gfx::SetWindowUserData(compositor_host_window_, NULL);
 
   // Hide the compositor and parent it to the desktop rather than destroying
   // it immediately. The GPU process has a grace period to stop accessing the
@@ -596,7 +595,7 @@ void RenderWidgetHostViewWin::CleanupCompositorWindow() {
 
 bool RenderWidgetHostViewWin::IsActivatable() const {
   // Popups should not be activated.
-  return popup_type_ == WebKit::WebPopupTypeNone;
+  return popup_type_ == blink::WebPopupTypeNone;
 }
 
 void RenderWidgetHostViewWin::Focus() {
@@ -625,7 +624,7 @@ void RenderWidgetHostViewWin::Show() {
 }
 
 void RenderWidgetHostViewWin::Hide() {
-  if (!is_fullscreen_ && GetParent() == ui::GetWindowToParentTo(true)) {
+  if (!is_fullscreen_ && GetParent() == gfx::GetWindowToParentTo(true)) {
     LOG(WARNING) << "Hide() called twice in a row: " << this << ":"
         << GetParent();
     return;
@@ -643,7 +642,7 @@ bool RenderWidgetHostViewWin::IsShowing() {
 }
 
 gfx::Rect RenderWidgetHostViewWin::GetViewBounds() const {
-  return ui::win::ScreenToDIPRect(GetPixelBounds());
+  return gfx::win::ScreenToDIPRect(GetPixelBounds());
 }
 
 gfx::Rect RenderWidgetHostViewWin::GetPixelBounds() const {
@@ -690,8 +689,8 @@ void RenderWidgetHostViewWin::SetIsLoading(bool is_loading) {
 
 void RenderWidgetHostViewWin::TextInputTypeChanged(
     ui::TextInputType type,
-    bool can_compose_inline,
-    ui::TextInputMode input_mode) {
+    ui::TextInputMode input_mode,
+    bool can_compose_inline) {
   if (text_input_type_ != type ||
       text_input_mode_ != input_mode ||
       can_compose_inline_ != can_compose_inline) {
@@ -725,7 +724,7 @@ void RenderWidgetHostViewWin::ImeCancelComposition() {
 }
 
 void RenderWidgetHostViewWin::ImeCompositionRangeChanged(
-    const ui::Range& range,
+    const gfx::Range& range,
     const std::vector<gfx::Rect>& character_bounds) {
   composition_range_ = range;
   composition_character_bounds_ = character_bounds;
@@ -762,8 +761,9 @@ void RenderWidgetHostViewWin::DidUpdateBackingStore(
     const gfx::Vector2d& scroll_delta,
     const std::vector<gfx::Rect>& copy_rects,
     const ui::LatencyInfo& latency_info) {
+  TRACE_EVENT0("content", "RenderWidgetHostViewWin::DidUpdateBackingStore");
   software_latency_info_.MergeWith(latency_info);
-  if (is_hidden_)
+  if (render_widget_host_->is_hidden())
     return;
 
   // Schedule invalidations first so that the ScrollWindowEx call is closer to
@@ -772,7 +772,7 @@ void RenderWidgetHostViewWin::DidUpdateBackingStore(
   // surprisingly, this ordering matters.
 
   for (size_t i = 0; i < copy_rects.size(); ++i) {
-    gfx::Rect pixel_rect = ui::win::DIPToScreenRect(copy_rects[i]);
+    gfx::Rect pixel_rect = gfx::win::DIPToScreenRect(copy_rects[i]);
     // Damage might not be DIP aligned.
     pixel_rect.Inset(-1, -1);
     RECT bounds = pixel_rect.ToRECT();
@@ -780,11 +780,12 @@ void RenderWidgetHostViewWin::DidUpdateBackingStore(
   }
 
   if (!scroll_rect.IsEmpty()) {
-    gfx::Rect pixel_rect = ui::win::DIPToScreenRect(scroll_rect);
+    TRACE_EVENT0("content", "ScrollWindowEx");
+    gfx::Rect pixel_rect = gfx::win::DIPToScreenRect(scroll_rect);
     // Damage might not be DIP aligned.
     pixel_rect.Inset(-1, -1);
     RECT clip_rect = pixel_rect.ToRECT();
-    float scale = ui::win::GetDeviceScaleFactor();
+    float scale = gfx::win::GetDeviceScaleFactor();
     int dx = static_cast<int>(scale * scroll_delta.x());
     int dy = static_cast<int>(scale * scroll_delta.y());
     ScrollWindowEx(dx, dy, NULL, &clip_rect, NULL, NULL, SW_INVALIDATE);
@@ -806,7 +807,7 @@ bool RenderWidgetHostViewWin::CanSubscribeFrame() const {
 
 void RenderWidgetHostViewWin::WillWmDestroy() {
   CleanupCompositorWindow();
-  if (base::win::IsTSFAwareRequired() && GetFocus() == m_hWnd)
+  if (base::win::IsTSFAwareRequired())
     ui::TSFBridge::GetInstance()->RemoveFocusedClient(this);
 }
 
@@ -835,15 +836,16 @@ void RenderWidgetHostViewWin::Destroy() {
   DestroyWindow();
 }
 
-void RenderWidgetHostViewWin::SetTooltipText(const string16& tooltip_text) {
-  if (!is_hidden_)
+void RenderWidgetHostViewWin::SetTooltipText(
+    const base::string16& tooltip_text) {
+  if (!render_widget_host_->is_hidden())
     EnsureTooltip();
 
   // Clamp the tooltip length to kMaxTooltipLength so that we don't
   // accidentally DOS the user with a mega tooltip (since Windows doesn't seem
   // to do this itself).
-  const string16 new_tooltip_text =
-      ui::TruncateString(tooltip_text, kMaxTooltipLength);
+  const base::string16 new_tooltip_text =
+      gfx::TruncateString(tooltip_text, kMaxTooltipLength);
 
   if (new_tooltip_text != tooltip_text_) {
     tooltip_text_ = new_tooltip_text;
@@ -883,7 +885,7 @@ void RenderWidgetHostViewWin::CopyFromCompositingSurface(
   if (dst_size.IsEmpty() || src_subrect.IsEmpty())
     return;
 
-  scoped_callback_runner.Release();
+  ignore_result(scoped_callback_runner.Release());
   accelerated_surface_->AsyncCopyTo(src_subrect, dst_size, callback);
 }
 
@@ -902,7 +904,7 @@ void RenderWidgetHostViewWin::CopyFromCompositingSurfaceToVideoFrame(
   if (src_subrect.IsEmpty())
     return;
 
-  scoped_callback_runner.Release();
+  ignore_result(scoped_callback_runner.Release());
   accelerated_surface_->AsyncCopyToVideoFrame(src_subrect, target, callback);
 }
 
@@ -944,24 +946,29 @@ void RenderWidgetHostViewWin::UpdateDesiredTouchMode() {
   }
 }
 
-bool RenderWidgetHostViewWin::DispatchLongPressGestureEvent(
-    ui::GestureEvent* event) {
-  return ForwardGestureEventToRenderer(event);
+bool RenderWidgetHostViewWin::CanDispatchToConsumer(
+    ui::GestureConsumer* consumer) {
+  CHECK_EQ(static_cast<RenderWidgetHostViewWin*>(consumer), this);
+  return true;
 }
 
-bool RenderWidgetHostViewWin::DispatchCancelTouchEvent(
+void RenderWidgetHostViewWin::DispatchPostponedGestureEvent(
+    ui::GestureEvent* event) {
+  ForwardGestureEventToRenderer(event);
+}
+
+void RenderWidgetHostViewWin::DispatchCancelTouchEvent(
     ui::TouchEvent* event) {
   if (!render_widget_host_ || !touch_events_enabled_ ||
       !render_widget_host_->ShouldForwardTouchEvent()) {
-    return false;
+    return;
   }
-  DCHECK(event->type() == WebKit::WebInputEvent::TouchCancel);
-  WebKit::WebTouchEvent cancel_event;
-  cancel_event.type = WebKit::WebInputEvent::TouchCancel;
+  DCHECK(event->type() == blink::WebInputEvent::TouchCancel);
+  blink::WebTouchEvent cancel_event;
+  cancel_event.type = blink::WebInputEvent::TouchCancel;
   cancel_event.timeStampSeconds = event->time_stamp().InSecondsF();
   render_widget_host_->ForwardTouchEventWithLatencyInfo(
       cancel_event, *event->latency());
-  return true;
 }
 
 void RenderWidgetHostViewWin::SetHasHorizontalScrollbar(
@@ -981,12 +988,12 @@ void RenderWidgetHostViewWin::SetCompositionText(
   if (!render_widget_host_)
      return;
   // ui::CompositionUnderline should be identical to
-  // WebKit::WebCompositionUnderline, so that we can do reinterpret_cast safely.
+  // blink::WebCompositionUnderline, so that we can do reinterpret_cast safely.
   COMPILE_ASSERT(sizeof(ui::CompositionUnderline) ==
-                 sizeof(WebKit::WebCompositionUnderline),
+                 sizeof(blink::WebCompositionUnderline),
                  ui_CompositionUnderline__WebKit_WebCompositionUnderline_diff);
-  const std::vector<WebKit::WebCompositionUnderline>& underlines =
-      reinterpret_cast<const std::vector<WebKit::WebCompositionUnderline>&>(
+  const std::vector<blink::WebCompositionUnderline>& underlines =
+      reinterpret_cast<const std::vector<blink::WebCompositionUnderline>&>(
           composition.underlines);
   render_widget_host_->ImeSetComposition(composition.text, underlines,
                                          composition.selection.end(),
@@ -1011,14 +1018,14 @@ void RenderWidgetHostViewWin::ClearCompositionText() {
   NOTIMPLEMENTED();
 }
 
-void RenderWidgetHostViewWin::InsertText(const string16& text) {
+void RenderWidgetHostViewWin::InsertText(const base::string16& text) {
   if (!base::win::IsTSFAwareRequired()) {
     NOTREACHED();
     return;
   }
   if (render_widget_host_)
     render_widget_host_->ImeConfirmComposition(text,
-                                               ui::Range::InvalidRange(),
+                                               gfx::Range::InvalidRange(),
                                                false);
 }
 
@@ -1048,7 +1055,7 @@ ui::TextInputMode RenderWidgetHostViewWin::GetTextInputMode() const {
     NOTREACHED();
     return ui::TEXT_INPUT_MODE_DEFAULT;
   }
-  return ui::TEXT_INPUT_MODE_DEFAULT;
+  return text_input_mode_;
 }
 
 bool RenderWidgetHostViewWin::CanComposeInline() const {
@@ -1061,7 +1068,7 @@ bool RenderWidgetHostViewWin::CanComposeInline() const {
   return false;
 }
 
-gfx::Rect RenderWidgetHostViewWin::GetCaretBounds() {
+gfx::Rect RenderWidgetHostViewWin::GetCaretBounds() const {
   if (!base::win::IsTSFAwareRequired()) {
     NOTREACHED();
     return gfx::Rect(0, 0, 0, 0);
@@ -1072,7 +1079,7 @@ gfx::Rect RenderWidgetHostViewWin::GetCaretBounds() {
 }
 
 bool RenderWidgetHostViewWin::GetCompositionCharacterBounds(
-    uint32 index, gfx::Rect* rect) {
+    uint32 index, gfx::Rect* rect) const {
   if (!base::win::IsTSFAwareRequired()) {
     NOTREACHED();
     return false;
@@ -1086,7 +1093,7 @@ bool RenderWidgetHostViewWin::GetCompositionCharacterBounds(
   return true;
 }
 
-bool RenderWidgetHostViewWin::HasCompositionText() {
+bool RenderWidgetHostViewWin::HasCompositionText() const {
   if (!base::win::IsTSFAwareRequired()) {
     NOTREACHED();
     return false;
@@ -1096,7 +1103,7 @@ bool RenderWidgetHostViewWin::HasCompositionText() {
   return false;
 }
 
-bool RenderWidgetHostViewWin::GetTextRange(ui::Range* range) {
+bool RenderWidgetHostViewWin::GetTextRange(gfx::Range* range) const {
   if (!base::win::IsTSFAwareRequired()) {
     NOTREACHED();
     return false;
@@ -1106,7 +1113,7 @@ bool RenderWidgetHostViewWin::GetTextRange(ui::Range* range) {
   return false;
 }
 
-bool RenderWidgetHostViewWin::GetCompositionTextRange(ui::Range* range) {
+bool RenderWidgetHostViewWin::GetCompositionTextRange(gfx::Range* range) const {
   if (!base::win::IsTSFAwareRequired()) {
     NOTREACHED();
     return false;
@@ -1116,7 +1123,7 @@ bool RenderWidgetHostViewWin::GetCompositionTextRange(ui::Range* range) {
   return false;
 }
 
-bool RenderWidgetHostViewWin::GetSelectionRange(ui::Range* range) {
+bool RenderWidgetHostViewWin::GetSelectionRange(gfx::Range* range) const {
   if (!base::win::IsTSFAwareRequired()) {
     NOTREACHED();
     return false;
@@ -1126,7 +1133,7 @@ bool RenderWidgetHostViewWin::GetSelectionRange(ui::Range* range) {
   return false;
 }
 
-bool RenderWidgetHostViewWin::SetSelectionRange(const ui::Range& range) {
+bool RenderWidgetHostViewWin::SetSelectionRange(const gfx::Range& range) {
   if (!base::win::IsTSFAwareRequired()) {
     NOTREACHED();
     return false;
@@ -1136,7 +1143,7 @@ bool RenderWidgetHostViewWin::SetSelectionRange(const ui::Range& range) {
   return false;
 }
 
-bool RenderWidgetHostViewWin::DeleteRange(const ui::Range& range) {
+bool RenderWidgetHostViewWin::DeleteRange(const gfx::Range& range) {
   if (!base::win::IsTSFAwareRequired()) {
     NOTREACHED();
     return false;
@@ -1146,13 +1153,13 @@ bool RenderWidgetHostViewWin::DeleteRange(const ui::Range& range) {
   return false;
 }
 
-bool RenderWidgetHostViewWin::GetTextFromRange(const ui::Range& range,
-                                               string16* text) {
+bool RenderWidgetHostViewWin::GetTextFromRange(const gfx::Range& range,
+                                               base::string16* text) const {
   if (!base::win::IsTSFAwareRequired()) {
     NOTREACHED();
     return false;
   }
-  ui::Range selection_text_range(selection_text_offset_,
+  gfx::Range selection_text_range(selection_text_offset_,
       selection_text_offset_ + selection_text_.length());
   if (!selection_text_range.Contains(range)) {
     text->clear();
@@ -1203,6 +1210,15 @@ void RenderWidgetHostViewWin::ExtendSelectionAndDelete(
 void RenderWidgetHostViewWin::EnsureCaretInRect(const gfx::Rect& rect) {
   // TODO(nona): Implement this function.
   NOTIMPLEMENTED();
+}
+
+void RenderWidgetHostViewWin::OnCandidateWindowShown() {
+}
+
+void RenderWidgetHostViewWin::OnCandidateWindowUpdated() {
+}
+
+void RenderWidgetHostViewWin::OnCandidateWindowHidden() {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1313,7 +1329,7 @@ void RenderWidgetHostViewWin::OnPaint(HDC unused_dc) {
 
   if (backing_store) {
     gfx::Rect bitmap_rect(gfx::Point(),
-                          ui::win::DIPToScreenSize(backing_store->size()));
+                          gfx::win::DIPToScreenSize(backing_store->size()));
 
     bool manage_colors = BackingStoreWin::ColorManagementEnabled();
     if (manage_colors)
@@ -1396,7 +1412,8 @@ void RenderWidgetHostViewWin::OnPaint(HDC unused_dc) {
       web_contents_switch_paint_time_ = TimeTicks();
     }
 
-    software_latency_info_.swap_timestamp = TimeTicks::HighResNow();
+    software_latency_info_.AddLatencyNumber(
+        ui::INPUT_EVENT_LATENCY_TERMINATED_FRAME_SWAP_COMPONENT, 0, 0);
     render_widget_host_->FrameSwapped(software_latency_info_);
     software_latency_info_.Clear();
   } else {
@@ -1410,7 +1427,7 @@ void RenderWidgetHostViewWin::DrawBackground(const RECT& dirty_rect,
                                              CPaintDC* dc) {
   if (!background_.empty()) {
     gfx::Rect dirty_area(dirty_rect);
-    gfx::Canvas canvas(dirty_area.size(), ui::SCALE_FACTOR_100P, true);
+    gfx::Canvas canvas(dirty_area.size(), 1.0f, true);
     canvas.Translate(-dirty_area.OffsetFromOrigin());
 
     gfx::Rect dc_rect(dc->m_ps.rcPaint);
@@ -1657,9 +1674,9 @@ LRESULT RenderWidgetHostViewWin::OnImeComposition(
   imm32_manager_->UpdateImeWindow(m_hWnd);
 
   // ui::CompositionUnderline should be identical to
-  // WebKit::WebCompositionUnderline, so that we can do reinterpret_cast safely.
+  // blink::WebCompositionUnderline, so that we can do reinterpret_cast safely.
   COMPILE_ASSERT(sizeof(ui::CompositionUnderline) ==
-                 sizeof(WebKit::WebCompositionUnderline),
+                 sizeof(blink::WebCompositionUnderline),
                  ui_CompositionUnderline__WebKit_WebCompositionUnderline_diff);
 
   // Retrieve the result string and its attributes of the ongoing composition
@@ -1667,7 +1684,7 @@ LRESULT RenderWidgetHostViewWin::OnImeComposition(
   ui::CompositionText composition;
   if (imm32_manager_->GetResult(m_hWnd, lparam, &composition.text)) {
     render_widget_host_->ImeConfirmComposition(
-        composition.text, ui::Range::InvalidRange(), false);
+        composition.text, gfx::Range::InvalidRange(), false);
     imm32_manager_->ResetComposition(m_hWnd);
     // Fall though and try reading the composition string.
     // Japanese IMEs send a message containing both GCS_RESULTSTR and
@@ -1679,12 +1696,12 @@ LRESULT RenderWidgetHostViewWin::OnImeComposition(
   if (imm32_manager_->GetComposition(m_hWnd, lparam, &composition)) {
     // TODO(suzhe): due to a bug of webkit, we can't use selection range with
     // composition string. See: https://bugs.webkit.org/show_bug.cgi?id=37788
-    composition.selection = ui::Range(composition.selection.end());
+    composition.selection = gfx::Range(composition.selection.end());
 
     // TODO(suzhe): convert both renderer_host and renderer to use
     // ui::CompositionText.
-    const std::vector<WebKit::WebCompositionUnderline>& underlines =
-        reinterpret_cast<const std::vector<WebKit::WebCompositionUnderline>&>(
+    const std::vector<blink::WebCompositionUnderline>& underlines =
+        reinterpret_cast<const std::vector<blink::WebCompositionUnderline>&>(
             composition.underlines);
     render_widget_host_->ImeSetComposition(
         composition.text, underlines,
@@ -1921,8 +1938,8 @@ LRESULT RenderWidgetHostViewWin::OnKeyEvent(UINT message, WPARAM wparam,
         if (ui::IMM32Manager::IsCtrlShiftPressed(&dir)) {
           render_widget_host_->UpdateTextDirection(
               dir == base::i18n::RIGHT_TO_LEFT ?
-              WebKit::WebTextDirectionRightToLeft :
-              WebKit::WebTextDirectionLeftToRight);
+              blink::WebTextDirectionRightToLeft :
+              blink::WebTextDirectionLeftToRight);
         }
       } else if (wparam != VK_CONTROL) {
         // Bug 9762: http://crbug.com/9762 A user pressed a key except shift
@@ -1999,9 +2016,9 @@ LRESULT RenderWidgetHostViewWin::OnWheelEvent(UINT message, WPARAM wparam,
   }
 
   if (render_widget_host_) {
-    WebKit::WebMouseWheelEvent wheel_event =
+    blink::WebMouseWheelEvent wheel_event =
         WebMouseWheelEventBuilder::Build(m_hWnd, message, wparam, lparam);
-    float scale = ui::win::GetDeviceScaleFactor();
+    float scale = gfx::win::GetDeviceScaleFactor();
     wheel_event.x /= scale;
     wheel_event.y /= scale;
     wheel_event.deltaX /= scale;
@@ -2014,7 +2031,9 @@ LRESULT RenderWidgetHostViewWin::OnWheelEvent(UINT message, WPARAM wparam,
 }
 
 WebTouchState::WebTouchState(const RenderWidgetHostViewWin* window)
-    : window_(window) { }
+    : window_(window),
+      id_generator_(0) {
+}
 
 size_t WebTouchState::UpdateTouchPoints(
     TOUCHINPUT* points, size_t count) {
@@ -2023,14 +2042,14 @@ size_t WebTouchState::UpdateTouchPoints(
   // and alter/add any touchpoints (from the touch input buffer) that we can
   // coalesce into a single message. The return value is the number of consumed
   // input message.
-  WebKit::WebTouchPoint* point = touch_event_.touches;
-  WebKit::WebTouchPoint* end = point + touch_event_.touchesLength;
+  blink::WebTouchPoint* point = touch_event_.touches;
+  blink::WebTouchPoint* end = point + touch_event_.touchesLength;
   while (point < end) {
-    if (point->state == WebKit::WebTouchPoint::StateReleased) {
+    if (point->state == blink::WebTouchPoint::StateReleased) {
       *point = *(--end);
       --touch_event_.touchesLength;
     } else {
-      point->state = WebKit::WebTouchPoint::StateStationary;
+      point->state = blink::WebTouchPoint::StateStationary;
       point++;
     }
   }
@@ -2043,7 +2062,7 @@ size_t WebTouchState::UpdateTouchPoints(
   for (size_t i = 0; i < count; ++i) {
     unsigned int mapped_id = GetMappedTouch(points[i].dwID);
 
-    WebKit::WebTouchPoint* point = NULL;
+    blink::WebTouchPoint* point = NULL;
     for (unsigned j = 0; j < touch_event_.touchesLength; ++j) {
       if (static_cast<DWORD>(touch_event_.touches[j].id) == mapped_id) {
         point =  &touch_event_.touches[j];
@@ -2067,26 +2086,26 @@ size_t WebTouchState::UpdateTouchPoints(
       case TOUCHEVENTF_DOWN: {
         if (!(point = AddTouchPoint(&points[i])))
           continue;
-        touch_event_.type = WebKit::WebInputEvent::TouchStart;
+        touch_event_.type = blink::WebInputEvent::TouchStart;
         break;
       }
 
       case TOUCHEVENTF_UP: {
         if (!point)  // Just throw away a stray up.
           continue;
-        point->state = WebKit::WebTouchPoint::StateReleased;
+        point->state = blink::WebTouchPoint::StateReleased;
         UpdateTouchPoint(point, &points[i]);
-        touch_event_.type = WebKit::WebInputEvent::TouchEnd;
+        touch_event_.type = blink::WebInputEvent::TouchEnd;
         break;
       }
 
       case TOUCHEVENTF_MOVE: {
         if (point) {
-          point->state = WebKit::WebTouchPoint::StateMoved;
+          point->state = blink::WebTouchPoint::StateMoved;
           // Don't update the message if the point didn't really move.
           if (UpdateTouchPoint(point, &points[i]))
             continue;
-          touch_event_.type = WebKit::WebInputEvent::TouchMove;
+          touch_event_.type = blink::WebInputEvent::TouchMove;
         } else if (touch_event_.changedTouchesLength) {
           RemoveExpiredMappings();
           // Can't add a point if we're already handling move events.
@@ -2097,7 +2116,7 @@ size_t WebTouchState::UpdateTouchPoints(
             continue;
           last_type = TOUCHEVENTF_DOWN;
           SetTouchType(&points[i], TOUCHEVENTF_DOWN);
-          touch_event_.type = WebKit::WebInputEvent::TouchStart;
+          touch_event_.type = blink::WebInputEvent::TouchStart;
         }
         break;
       }
@@ -2114,22 +2133,12 @@ size_t WebTouchState::UpdateTouchPoints(
 }
 
 void WebTouchState::RemoveExpiredMappings() {
-  WebTouchState::MapType new_map;
-  for (MapType::iterator it = touch_map_.begin();
-      it != touch_map_.end();
-      ++it) {
-    WebKit::WebTouchPoint* point = touch_event_.touches;
-    WebKit::WebTouchPoint* end = point + touch_event_.touchesLength;
-    while (point < end) {
-      if ((point->id == it->second) &&
-          (point->state != WebKit::WebTouchPoint::StateReleased)) {
-        new_map.insert(*it);
-        break;
-      }
-      point++;
-    }
+  blink::WebTouchPoint* point = touch_event_.touches;
+  blink::WebTouchPoint* end = point + touch_event_.touchesLength;
+  for (; point < end; ++point) {
+    if (point->state == blink::WebTouchPoint::StateReleased)
+      id_generator_.ReleaseGeneratedID(point->id);
   }
-  touch_map_.swap(new_map);
 }
 
 
@@ -2137,48 +2146,50 @@ bool WebTouchState::ReleaseTouchPoints() {
   if (touch_event_.touchesLength == 0)
     return false;
   // Mark every active touchpoint as released.
-  touch_event_.type = WebKit::WebInputEvent::TouchEnd;
+  touch_event_.type = blink::WebInputEvent::TouchEnd;
   touch_event_.changedTouchesLength = touch_event_.touchesLength;
   for (unsigned int i = 0; i < touch_event_.touchesLength; ++i) {
-    touch_event_.touches[i].state = WebKit::WebTouchPoint::StateReleased;
+    touch_event_.touches[i].state = blink::WebTouchPoint::StateReleased;
     touch_event_.changedTouches[i].state =
-        WebKit::WebTouchPoint::StateReleased;
+        blink::WebTouchPoint::StateReleased;
   }
 
   return true;
 }
 
-WebKit::WebTouchPoint* WebTouchState::AddTouchPoint(
+blink::WebTouchPoint* WebTouchState::AddTouchPoint(
     TOUCHINPUT* touch_input) {
   DCHECK(touch_event_.touchesLength <
-      WebKit::WebTouchEvent::touchesLengthCap);
+      blink::WebTouchEvent::touchesLengthCap);
   if (touch_event_.touchesLength >=
-      WebKit::WebTouchEvent::touchesLengthCap)
+      blink::WebTouchEvent::touchesLengthCap)
     return NULL;
-  WebKit::WebTouchPoint* point =
+  blink::WebTouchPoint* point =
       &touch_event_.touches[touch_event_.touchesLength++];
-  point->state = WebKit::WebTouchPoint::StatePressed;
+  point->state = blink::WebTouchPoint::StatePressed;
   point->id = GetMappedTouch(touch_input->dwID);
   UpdateTouchPoint(point, touch_input);
   return point;
 }
 
 bool WebTouchState::UpdateTouchPoint(
-    WebKit::WebTouchPoint* touch_point,
+    blink::WebTouchPoint* touch_point,
     TOUCHINPUT* touch_input) {
   CPoint coordinates(
-    TOUCH_COORD_TO_PIXEL(touch_input->x) / ui::win::GetUndocumentedDPIScale(),
-    TOUCH_COORD_TO_PIXEL(touch_input->y) / ui::win::GetUndocumentedDPIScale());
+      TOUCH_COORD_TO_PIXEL(touch_input->x) /
+      gfx::win::GetUndocumentedDPITouchScale(),
+      TOUCH_COORD_TO_PIXEL(touch_input->y) /
+      gfx::win::GetUndocumentedDPITouchScale());
   int radius_x = 1;
   int radius_y = 1;
   if (touch_input->dwMask & TOUCHINPUTMASKF_CONTACTAREA) {
     // Some touch drivers send a contact area of "-1", yet flag it as valid.
     radius_x = std::max(1,
         static_cast<int>(TOUCH_COORD_TO_PIXEL(touch_input->cxContact) /
-                         ui::win::GetUndocumentedDPIScale()));
+                         gfx::win::GetUndocumentedDPITouchScale()));
     radius_y = std::max(1,
         static_cast<int>(TOUCH_COORD_TO_PIXEL(touch_input->cyContact) /
-                         ui::win::GetUndocumentedDPIScale()));
+                         gfx::win::GetUndocumentedDPITouchScale()));
   }
 
   // Detect and exclude stationary moves.
@@ -2187,14 +2198,14 @@ bool WebTouchState::UpdateTouchPoint(
       touch_point->screenPosition.y == coordinates.y &&
       touch_point->radiusX == radius_x &&
       touch_point->radiusY == radius_y) {
-    touch_point->state = WebKit::WebTouchPoint::StateStationary;
+    touch_point->state = blink::WebTouchPoint::StateStationary;
     return true;
   }
 
   touch_point->screenPosition.x = coordinates.x;
   touch_point->screenPosition.y = coordinates.y;
   window_->ScreenToClient(&coordinates);
-  static float scale = ui::win::GetDeviceScaleFactor();
+  static float scale = gfx::win::GetDeviceScaleFactor();
   touch_point->position.x = coordinates.x / scale;
   touch_point->position.y = coordinates.y / scale;
   touch_point->radiusX = radius_x;
@@ -2206,14 +2217,7 @@ bool WebTouchState::UpdateTouchPoint(
 
 // Find (or create) a mapping for _os_touch_id_.
 unsigned int WebTouchState::GetMappedTouch(unsigned int os_touch_id) {
-  MapType::iterator it = touch_map_.find(os_touch_id);
-  if (it != touch_map_.end())
-    return it->second;
-  int next_value = 0;
-  for (it = touch_map_.begin(); it != touch_map_.end(); ++it)
-    next_value = std::max(next_value, it->second + 1);
-  touch_map_[os_touch_id] = next_value;
-  return next_value;
+  return id_generator_.GetGeneratedID(os_touch_id);
 }
 
 LRESULT RenderWidgetHostViewWin::OnTouchEvent(UINT message, WPARAM wparam,
@@ -2229,8 +2233,8 @@ LRESULT RenderWidgetHostViewWin::OnTouchEvent(UINT message, WPARAM wparam,
 
   // TODO(jschuh): Add support for an arbitrary number of touchpoints.
   size_t total = std::min(static_cast<int>(LOWORD(wparam)),
-      static_cast<int>(WebKit::WebTouchEvent::touchesLengthCap));
-  TOUCHINPUT points[WebKit::WebTouchEvent::touchesLengthCap];
+      static_cast<int>(blink::WebTouchEvent::touchesLengthCap));
+  TOUCHINPUT points[blink::WebTouchEvent::touchesLengthCap];
 
   if (!total || !ui::GetTouchInputInfoWrapper((HTOUCHINPUT)lparam, total,
                                               points, sizeof(TOUCHINPUT))) {
@@ -2241,8 +2245,10 @@ LRESULT RenderWidgetHostViewWin::OnTouchEvent(UINT message, WPARAM wparam,
   if (total == 1 && (points[0].dwFlags & TOUCHEVENTF_DOWN)) {
     pointer_down_context_ = true;
     last_touch_location_ = gfx::Point(
-        TOUCH_COORD_TO_PIXEL(points[0].x) / ui::win::GetUndocumentedDPIScale(),
-        TOUCH_COORD_TO_PIXEL(points[0].y) / ui::win::GetUndocumentedDPIScale());
+        TOUCH_COORD_TO_PIXEL(points[0].x) /
+        gfx::win::GetUndocumentedDPITouchScale(),
+        TOUCH_COORD_TO_PIXEL(points[0].y) /
+        gfx::win::GetUndocumentedDPITouchScale());
   }
 
   bool should_forward = render_widget_host_->ShouldForwardTouchEvent() &&
@@ -2256,7 +2262,7 @@ LRESULT RenderWidgetHostViewWin::OnTouchEvent(UINT message, WPARAM wparam,
         render_widget_host_->ForwardTouchEventWithLatencyInfo(
             touch_state_->touch_event(), ui::LatencyInfo());
     } else {
-      const WebKit::WebTouchEvent& touch_event = touch_state_->touch_event();
+      const blink::WebTouchEvent& touch_event = touch_state_->touch_event();
       base::TimeDelta timestamp = base::TimeDelta::FromMilliseconds(
           touch_event.timeStampSeconds * 1000);
       for (size_t i = 0; i < touch_event.touchesLength; ++i) {
@@ -2311,7 +2317,7 @@ LRESULT RenderWidgetHostViewWin::OnMouseActivate(UINT message,
     ::ScreenToClient(m_hWnd, &cursor_pos);
     HWND child_window = ::RealChildWindowFromPoint(m_hWnd, cursor_pos);
     if (::IsWindow(child_window) && child_window != m_hWnd) {
-      if (ui::GetClassName(child_window) == kWrapperNativeWindowClassName)
+      if (gfx::GetClassName(child_window) == kWrapperNativeWindowClassName)
         child_window = ::GetWindow(child_window, GW_CHILD);
 
       ::SetFocus(child_window);
@@ -2372,10 +2378,10 @@ LRESULT RenderWidgetHostViewWin::OnMoveOrSize(
   return 0;
 }
 
-void RenderWidgetHostViewWin::OnAccessibilityNotifications(
-    const std::vector<AccessibilityHostMsg_NotificationParams>& params) {
+void RenderWidgetHostViewWin::OnAccessibilityEvents(
+    const std::vector<AccessibilityHostMsg_EventParams>& params) {
   CreateBrowserAccessibilityManagerIfNeeded();
-  GetBrowserAccessibilityManager()->OnAccessibilityNotifications(params);
+  GetBrowserAccessibilityManager()->OnAccessibilityEvents(params);
 }
 
 bool RenderWidgetHostViewWin::LockMouse() {
@@ -2457,7 +2463,7 @@ static void PaintCompositorHostWindow(HWND hWnd) {
   BeginPaint(hWnd, &paint);
 
   RenderWidgetHostViewWin* win = static_cast<RenderWidgetHostViewWin*>(
-      ui::GetWindowUserData(hWnd));
+      gfx::GetWindowUserData(hWnd));
   // Trigger composite to rerender window.
   if (win)
     win->AcceleratedPaint(paint.hdc);
@@ -2487,7 +2493,7 @@ void RenderWidgetHostViewWin::AcceleratedPaint(HDC dc) {
     accelerated_surface_->Present(dc);
 }
 
-void RenderWidgetHostViewWin::GetScreenInfo(WebKit::WebScreenInfo* results) {
+void RenderWidgetHostViewWin::GetScreenInfo(blink::WebScreenInfo* results) {
   GetScreenInfoForWindow(GetNativeViewId(), results);
 }
 
@@ -2506,7 +2512,7 @@ gfx::Rect RenderWidgetHostViewWin::GetBoundsInRootWindow() {
                GetSystemMetrics(SM_CYSIZEFRAME));
   }
 
-  return ui::win::ScreenToDIPRect(rect);
+  return gfx::win::ScreenToDIPRect(rect);
 }
 
 // Creates a HWND within the RenderWidgetHostView that will serve as a host
@@ -2556,13 +2562,25 @@ gfx::GLSurfaceHandle RenderWidgetHostViewWin::GetCompositingSurface() {
       MAKEINTATOM(atom), 0,
       WS_CHILD | WS_CLIPCHILDREN | WS_CLIPSIBLINGS | WS_DISABLED,
       0, 0, width, height, m_hWnd, 0, instance, 0);
-  ui::CheckWindowCreated(compositor_host_window_);
+  gfx::CheckWindowCreated(compositor_host_window_);
 
-  ui::SetWindowUserData(compositor_host_window_, this);
+  gfx::SetWindowUserData(compositor_host_window_, this);
 
   gfx::GLSurfaceHandle surface_handle(compositor_host_window_,
                                       gfx::NATIVE_TRANSPORT);
   return surface_handle;
+}
+
+void RenderWidgetHostViewWin::ResizeCompositingSurface(const gfx::Size& size) {
+  // Ensure window does not have zero area because D3D cannot create a zero
+  // area swap chain.
+  ::SetWindowPos(compositor_host_window_,
+      NULL,
+      0, 0,
+      std::max(1, size.width()),
+      std::max(1, size.height()),
+      SWP_NOSENDCHANGING | SWP_NOCOPYBITS | SWP_NOZORDER |
+          SWP_NOACTIVATE | SWP_DEFERERASE | SWP_NOMOVE);
 }
 
 void RenderWidgetHostViewWin::OnAcceleratedCompositingStateChange() {
@@ -2611,6 +2629,10 @@ void RenderWidgetHostViewWin::OnAcceleratedCompositingStateChange() {
       accelerated_surface_->Suspend();
     hide_compositor_window_at_next_paint_ = true;
   }
+}
+
+void RenderWidgetHostViewWin::AcceleratedSurfaceInitialized(int host_id,
+                                                            int route_id) {
 }
 
 void RenderWidgetHostViewWin::AcceleratedSurfaceBuffersSwapped(
@@ -2754,6 +2776,8 @@ void RenderWidgetHostViewWin::OnFinalMessage(HWND window) {
   }
   if (render_widget_host_)
     render_widget_host_->ViewDestroyed();
+  if (base::win::IsTSFAwareRequired())
+    ui::TSFBridge::GetInstance()->RemoveFocusedClient(this);
   delete this;
 }
 
@@ -2773,7 +2797,7 @@ LRESULT RenderWidgetHostViewWin::OnSessionChange(UINT message,
       break;
     case WTS_SESSION_UNLOCK:
       // Force a repaint to update the window contents.
-      if (!is_hidden_)
+      if (!render_widget_host_->is_hidden())
         InvalidateRect(NULL, FALSE);
       accelerated_surface_->SetIsSessionLocked(false);
       break;
@@ -2865,10 +2889,10 @@ bool RenderWidgetHostViewWin::ForwardGestureEventToRenderer(
     return true;
   }
 
-  WebKit::WebGestureEvent web_gesture = CreateWebGestureEvent(m_hWnd, *gesture);
-  if (web_gesture.type == WebKit::WebGestureEvent::Undefined)
+  blink::WebGestureEvent web_gesture = CreateWebGestureEvent(m_hWnd, *gesture);
+  if (web_gesture.type == blink::WebGestureEvent::Undefined)
     return false;
-  if (web_gesture.type == WebKit::WebGestureEvent::GestureTapDown) {
+  if (web_gesture.type == blink::WebGestureEvent::GestureTapDown) {
     render_widget_host_->ForwardGestureEvent(
         CreateFlingCancelEvent(gesture->time_stamp().InSecondsF()));
   }
@@ -2887,7 +2911,7 @@ void RenderWidgetHostViewWin::ForwardMouseEventToRenderer(UINT message,
     return;
   }
 
-  gfx::Point point = ui::win::ScreenToDIPPoint(
+  gfx::Point point = gfx::win::ScreenToDIPPoint(
       gfx::Point(static_cast<short>(LOWORD(lparam)),
                  static_cast<short>(HIWORD(lparam))));
   lparam = MAKELPARAM(point.x(), point.y());
@@ -2966,7 +2990,7 @@ void RenderWidgetHostViewWin::DoPopupOrFullscreenInit(HWND parent_hwnd,
                                                       const gfx::Rect& pos,
                                                       DWORD ex_style) {
   Create(parent_hwnd, NULL, NULL, WS_POPUP, ex_style);
-  gfx::Rect screen_rect = ui::win::DIPToScreenRect(pos);
+  gfx::Rect screen_rect = gfx::win::DIPToScreenRect(pos);
   MoveWindow(screen_rect.x(), screen_rect.y(), screen_rect.width(),
       screen_rect.height(), TRUE);
   ShowWindow(IsActivatable() ? SW_SHOW : SW_SHOWNA);
@@ -3180,7 +3204,7 @@ void RenderWidgetHostViewWin::UpdateInputScopeIfNecessary(
     return;
 
   ui::tsf_inputscope::SetInputScopeForTsfUnawareWindow(
-      m_hWnd, text_input_type, ui::TEXT_INPUT_MODE_DEFAULT);
+      m_hWnd, text_input_type, text_input_mode_);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -3194,7 +3218,7 @@ RenderWidgetHostView* RenderWidgetHostView::CreateViewForWidget(
 
 // static
 void RenderWidgetHostViewPort::GetDefaultScreenInfo(
-      WebKit::WebScreenInfo* results) {
+      blink::WebScreenInfo* results) {
   GetScreenInfoForWindow(0, results);
 }
 

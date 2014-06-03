@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,7 +16,11 @@ import android.view.ScaleGestureDetector;
 class ZoomManager {
     private static final String TAG = "ContentViewZoom";
 
-    private ContentViewCore mContentViewCore;
+    private final ContentViewCore mContentViewCore;
+
+    // ScaleGestureDetector previous to 4.2.2 failed to record touch event times (b/7626515),
+    // so we record them manually for use when synthesizing pinch gestures.
+    private long mCurrentEventTime;
 
     private class ScaleGestureListener implements ScaleGestureDetector.OnScaleGestureListener {
         // Completely silence scaling events. Used in WebView when zoom support
@@ -28,6 +32,13 @@ class ZoomManager {
 
         // Whether any pinch zoom event has been sent to native.
         private boolean mPinchEventSent;
+
+        long getEventTime(ScaleGestureDetector detector) {
+            // Workaround for b/7626515, fixed in 4.2.2.
+            assert mCurrentEventTime != 0;
+            assert detector.getEventTime() == 0 || detector.getEventTime() == mCurrentEventTime;
+            return mCurrentEventTime;
+        }
 
         boolean getPermanentlyIgnoreDetectorEvents() {
             return mPermanentlyIgnoreDetectorEvents;
@@ -56,7 +67,7 @@ class ZoomManager {
         @Override
         public void onScaleEnd(ScaleGestureDetector detector) {
             if (!mPinchEventSent || !mContentViewCore.isAlive()) return;
-            mContentViewCore.getContentViewGestureHandler().pinchEnd(detector.getEventTime());
+            mContentViewCore.getContentViewGestureHandler().pinchEnd(getEventTime(detector));
             mPinchEventSent = false;
         }
 
@@ -70,12 +81,12 @@ class ZoomManager {
             // that pinchBy() is called without any pinchBegin().
             // To solve this problem, we call pinchBegin() here if it is never called.
             if (!mPinchEventSent) {
-                mContentViewCore.getContentViewGestureHandler().pinchBegin(detector.getEventTime(),
+                mContentViewCore.getContentViewGestureHandler().pinchBegin(getEventTime(detector),
                         (int) detector.getFocusX(), (int) detector.getFocusY());
                 mPinchEventSent = true;
             }
             mContentViewCore.getContentViewGestureHandler().pinchBy(
-                    detector.getEventTime(), (int) detector.getFocusX(), (int) detector.getFocusY(),
+                    getEventTime(detector), (int) detector.getFocusX(), (int) detector.getFocusY(),
                     detector.getScaleFactor());
             return true;
         }
@@ -87,8 +98,8 @@ class ZoomManager {
         }
     }
 
-    private ScaleGestureDetector mMultiTouchDetector;
-    private ScaleGestureListener mMultiTouchListener;
+    private final ScaleGestureDetector mMultiTouchDetector;
+    private final ScaleGestureListener mMultiTouchListener;
 
     ZoomManager(final Context context, ContentViewCore contentViewCore) {
         mContentViewCore = contentViewCore;
@@ -106,11 +117,12 @@ class ZoomManager {
     // of processing, if any.
     void passTouchEventThrough(MotionEvent event) {
         mMultiTouchListener.setTemporarilyIgnoreDetectorEvents(true);
+        mCurrentEventTime = event.getEventTime();
         try {
             mMultiTouchDetector.onTouchEvent(event);
         } catch (Exception e) {
             Log.e(TAG, "ScaleGestureDetector got into a bad state!", e);
-            assert(false);
+            assert false;
         }
     }
 
@@ -120,6 +132,7 @@ class ZoomManager {
     boolean processTouchEvent(MotionEvent event) {
         // TODO: Need to deal with multi-touch transition
         mMultiTouchListener.setTemporarilyIgnoreDetectorEvents(false);
+        mCurrentEventTime = event.getEventTime();
         try {
             boolean inGesture = isScaleGestureDetectionInProgress();
             boolean retVal = mMultiTouchDetector.onTouchEvent(event);
@@ -130,7 +143,7 @@ class ZoomManager {
             return retVal;
         } catch (Exception e) {
             Log.e(TAG, "ScaleGestureDetector got into a bad state!", e);
-            assert(false);
+            assert false;
         }
         return false;
     }

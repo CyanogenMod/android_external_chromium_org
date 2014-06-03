@@ -64,7 +64,7 @@ namespace syncFileSystem {
     // On file deletion,
     // <code>fileEntry</code> information will still be available
     // but file will no longer exist.
-    [instanceOf=FileEntry] object fileEntry;
+    [instanceOf=Entry] object fileEntry;
 
     // Resulting file status after $ref:onFileStatusChanged event.
     // The status value can be <code>'synced'</code>,
@@ -85,8 +85,8 @@ namespace syncFileSystem {
   };
 
   dictionary FileStatusInfo {
-    // One of the FileEntry's originally given to getFileStatuses.
-    [instanceOf=FileEntry] object fileEntry;
+    // One of the Entry's originally given to getFileStatuses.
+    [instanceOf=Entry] object fileEntry;
 
     // The status value can be <code>'synced'</code>,
     // <code>'pending'</code> or <code>'conflicting'</code>.
@@ -123,6 +123,9 @@ namespace syncFileSystem {
   // A callback type for getFileStatuses.
   callback GetFileStatusesCallback = void (FileStatusInfo[] status);
 
+  // A callback type for getServiceStatus.
+  callback GetServiceStatusCallback = void (ServiceStatus status);
+
   // A callback type for getConflictResolutionPolicy.
   callback GetConflictResolutionPolicyCallback =
       void (ConflictResolutionPolicy policy);
@@ -134,7 +137,13 @@ namespace syncFileSystem {
     // Returns a syncable filesystem backed by Google Drive.
     // The returned <code>DOMFileSystem</code> instance can be operated on
     // in the same way as the Temporary and Persistant file systems (see
-    // <a href="http://www.w3.org/TR/file-system-api/">http://www.w3.org/TR/file-system-api/</a>).
+    // <a href="http://www.w3.org/TR/file-system-api/">http://www.w3.org/TR/file-system-api/</a>),
+    // except that the filesystem object returned for Sync FileSystem does
+    // <b>NOT</b> support directory operations (yet). You can get a list
+    // of file entries by reading the root directory (by
+    // <a href="http://www.w3.org/TR/file-system-api/#widl-DirectoryEntry-createReader-DirectoryReader">creating a new DirectoryReader</a>),
+    // but cannot create a new directory in it.
+    //
     // Calling this multiple times from
     // the same app will return the same handle to the same file system.
     static void requestFileSystem(GetFileSystemCallback callback);
@@ -165,13 +174,16 @@ namespace syncFileSystem {
     // <code>'pending'</code> or <code>'conflicting'</code>.
     // Note that <code>'conflicting'</code> state only happens when
     // the service's conflict resolution policy is set to <code>'manual'</code>.
-    static void getFileStatus([instanceOf=FileEntry] object fileEntry,
+    static void getFileStatus([instanceOf=Entry] object fileEntry,
                               GetFileStatusCallback callback);
 
     // Returns each $ref:FileStatus for the given <code>fileEntry</code> array.
     // Typically called with the result from dirReader.readEntries().
     static void getFileStatuses(object[] fileEntries,
                                 GetFileStatusesCallback callback);
+
+    // Returns the current sync backend status.
+    static void getServiceStatus(GetServiceStatusCallback callback);
   };
 
   interface Events {

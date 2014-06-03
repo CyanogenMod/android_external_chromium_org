@@ -6,12 +6,13 @@
 
 #include "base/logging.h"
 #include "base/mac/scoped_nsobject.h"
-#include "base/strings/sys_string_conversions.h"
 #include "chrome/browser/ui/autofill/autofill_dialog_types.h"
-#include "chrome/browser/ui/autofill/autofill_dialog_view_delegate.h"
 #include "chrome/browser/ui/cocoa/autofill/autofill_dialog_constants.h"
 #import "chrome/browser/ui/cocoa/autofill/autofill_notification_controller.h"
-#include "skia/ext/skia_utils_mac.h"
+
+// Padding above the notifications section.
+const CGFloat kTopPadding =
+    autofill::kDetailVerticalPadding - autofill::kArrowHeight;
 
 @implementation AutofillNotificationContainer
 
@@ -35,13 +36,19 @@
   if ([notificationControllers_ count] == 0)
     return preferredSize;
 
+  // A bit of padding above the arrow.
+  preferredSize.height += kTopPadding;
+
   // If the first notification doesn't have an arrow, reserve empty space.
   if (![[notificationControllers_ objectAtIndex:0] hasArrow])
-    preferredSize.height += kArrowHeight;
+    preferredSize.height += autofill::kArrowHeight;
 
-  for (AutofillNotificationController* delegate in
-       notificationControllers_.get())
-    preferredSize.height += [delegate preferredSizeForWidth:width].height;
+  for (AutofillNotificationController* controller in
+       notificationControllers_.get()) {
+    preferredSize.height += [controller preferredSizeForWidth:width].height;
+  }
+
+  preferredSize.height += autofill::kDetailVerticalPadding;
 
   return preferredSize;
 }
@@ -51,51 +58,34 @@
     return;
 
   NSRect remaining = [[self view] bounds];
+  remaining.origin.y += autofill::kDetailVerticalPadding;
+  remaining.size.height -= kTopPadding + autofill::kDetailVerticalPadding;
 
   if (![[notificationControllers_ objectAtIndex:0] hasArrow])
-    remaining.size.height -= kArrowHeight;
+    remaining.size.height -= autofill::kArrowHeight;
 
-  for (AutofillNotificationController* delegate in
+  for (AutofillNotificationController* controller in
        notificationControllers_.get()) {
     NSRect viewRect;
-    NSSize size = [delegate preferredSizeForWidth:NSWidth(remaining)];
+    NSSize size = [controller preferredSizeForWidth:NSWidth(remaining)];
     NSDivideRect(remaining, &viewRect, &remaining, size.height, NSMaxYEdge);
-    [[delegate view ] setFrame:viewRect];
-    [delegate performLayout];
+    [[controller view ] setFrame:viewRect];
+    [controller performLayout];
   }
   DCHECK_EQ(0, NSHeight(remaining));
 }
 
 - (void)setNotifications:(const autofill::DialogNotifications&)notifications {
   notificationControllers_.reset([[NSMutableArray alloc] init]);
-  checkboxNotification_.reset();
   [[self view] setSubviews:@[]];
 
   for (size_t i = 0; i < notifications.size(); ++i) {
     // Create basic notification view.
     const autofill::DialogNotification& notification = notifications[i];
     base::scoped_nsobject<AutofillNotificationController>
-        notificationController([[AutofillNotificationController alloc] init]);
-    [notificationController setText:
-        base::SysUTF16ToNSString(notification.display_text())];
-    [notificationController setTextColor:
-        gfx::SkColorToCalibratedNSColor(notification.GetTextColor())];
-    [notificationController setBackgroundColor:
-        gfx::SkColorToCalibratedNSColor(notification.GetBackgroundColor())];
-
-    // Add optional checkbox.
-    if (notification.HasCheckbox()) {
-      DCHECK(checkboxNotification_);
-      checkboxNotification_.reset(
-          new autofill::DialogNotification(notification));
-      [notificationController setHasCheckbox:YES];
-      if (!notification.interactive())
-          [[notificationController checkbox] setEnabled:FALSE];
-      [[notificationController checkbox] setState:
-          (notification.checked() ? NSOnState : NSOffState)];
-      [[notificationController checkbox] setTarget:self];
-      [[notificationController checkbox] setAction:@selector(checkboxClicked:)];
-    }
+        notificationController([[AutofillNotificationController alloc]
+                                    initWithNotification:&notification
+                                                delegate:delegate_]);
 
     if (i == 0) {
       [notificationController setHasArrow:notification.HasArrow()
@@ -109,13 +99,6 @@
 
 - (void)setAnchorView:(NSView*)anchorView {
   anchorView_ = anchorView;
-}
-
-- (IBAction)checkboxClicked:(id)sender {
-  DCHECK(checkboxNotification_);
-  BOOL isChecked = ([sender state] == NSOnState);
-  delegate_->NotificationCheckboxStateChanged(checkboxNotification_->type(),
-                                                isChecked);
 }
 
 @end

@@ -9,7 +9,6 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop/message_loop.h"
 #include "base/threading/thread.h"
 #include "base/time/time.h"
 #include "chrome/browser/chromeos/drive/fake_file_system.h"
@@ -17,8 +16,8 @@
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/drive/test_util.h"
 #include "chrome/browser/drive/fake_drive_service.h"
-#include "chrome/browser/google_apis/time_util.h"
 #include "content/public/test/test_browser_thread_bundle.h"
+#include "google_apis/drive/time_util.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/base/test_completion_callback.h"
@@ -41,15 +40,14 @@ class WebkitFileStreamReaderImplTest : public ::testing::Test {
 
     // Initialize FakeDriveService.
     fake_drive_service_.reset(new FakeDriveService);
-    fake_drive_service_->LoadResourceListForWapi(
-        "gdata/root_feed.json");
-    fake_drive_service_->LoadAccountMetadataForWapi(
-        "gdata/account_metadata.json");
+    ASSERT_TRUE(fake_drive_service_->LoadResourceListForWapi(
+        "gdata/root_feed.json"));
+    ASSERT_TRUE(fake_drive_service_->LoadAccountMetadataForWapi(
+        "gdata/account_metadata.json"));
 
     // Create a testee instance.
     fake_file_system_.reset(
         new test_util::FakeFileSystem(fake_drive_service_.get()));
-    fake_file_system_->Initialize();
   }
 
   FileSystemInterface* GetFileSystem() {

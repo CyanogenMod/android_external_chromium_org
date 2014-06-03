@@ -13,9 +13,9 @@
 #include "base/strings/stringprintf.h"
 #include "chrome/browser/autocomplete/autocomplete_input.h"
 #include "chrome/browser/search/search.h"
-#include "chrome/common/metrics/metrics_util.h"
 #include "chrome/common/metrics/variations/variation_ids.h"
 #include "chrome/common/metrics/variations/variations_util.h"
+#include "components/variations/metrics_util.h"
 
 namespace {
 
@@ -24,6 +24,11 @@ const char kHUPCullRedirectsFieldTrialName[] = "OmniboxHUPCullRedirects";
 const char kHUPCreateShorterMatchFieldTrialName[] =
     "OmniboxHUPCreateShorterMatch";
 const char kStopTimerFieldTrialName[] = "OmniboxStopTimer";
+const char kEnableZeroSuggestGroupPrefix[] = "EnableZeroSuggest";
+const char kEnableZeroSuggestMostVisitedGroupPrefix[] =
+    "EnableZeroSuggestMostVisited";
+const char kEnableZeroSuggestAfterTypingGroupPrefix[] =
+    "EnableZeroSuggestAfterTyping";
 
 // The autocomplete dynamic field trial name prefix.  Each field trial is
 // configured dynamically and is retrieved automatically by Chrome during
@@ -181,20 +186,34 @@ bool OmniboxFieldTrial::InStopTimerFieldTrialExperimentGroup() {
           kStopTimerExperimentGroupName);
 }
 
-bool OmniboxFieldTrial::InZeroSuggestFieldTrial() {
+bool OmniboxFieldTrial::HasDynamicFieldTrialGroupPrefix(
+    const char* group_prefix) {
   // Make sure that Autocomplete dynamic field trials are activated.  It's OK to
   // call this method multiple times.
   ActivateDynamicTrials();
 
-  // Look for group names starting with "EnableZeroSuggest"
+  // Look for group names starting with |group_prefix|.
   for (int i = 0; i < kMaxAutocompleteDynamicFieldTrials; ++i) {
     const std::string& group_name = base::FieldTrialList::FindFullName(
         DynamicFieldTrialName(i));
-    const char kEnableZeroSuggest[] = "EnableZeroSuggest";
-    if (StartsWithASCII(group_name, kEnableZeroSuggest, true))
+    if (StartsWithASCII(group_name, group_prefix, true))
       return true;
   }
   return false;
+}
+
+bool OmniboxFieldTrial::InZeroSuggestFieldTrial() {
+  return HasDynamicFieldTrialGroupPrefix(kEnableZeroSuggestGroupPrefix);
+}
+
+bool OmniboxFieldTrial::InZeroSuggestMostVisitedFieldTrial() {
+  return HasDynamicFieldTrialGroupPrefix(
+      kEnableZeroSuggestMostVisitedGroupPrefix);
+}
+
+bool OmniboxFieldTrial::InZeroSuggestAfterTypingFieldTrial() {
+  return HasDynamicFieldTrialGroupPrefix(
+      kEnableZeroSuggestAfterTypingGroupPrefix);
 }
 
 bool OmniboxFieldTrial::ShortcutsScoringMaxRelevance(
@@ -242,7 +261,7 @@ void OmniboxFieldTrial::GetDemotionsByType(
     for (base::StringPairs::const_iterator it = kv_pairs.begin();
          it != kv_pairs.end(); ++it) {
       // This is a best-effort conversion; we trust the hand-crafted parameters
-      // downloaded from the server to be perfect.  There's no need for handle
+      // downloaded from the server to be perfect.  There's no need to handle
       // errors smartly.
       int k, v;
       base::StringToInt(it->first, &k);
@@ -253,11 +272,72 @@ void OmniboxFieldTrial::GetDemotionsByType(
   }
 }
 
+OmniboxFieldTrial::UndemotableTopMatchTypes
+OmniboxFieldTrial::GetUndemotableTopTypes(
+    AutocompleteInput::PageClassification current_page_classification) {
+  UndemotableTopMatchTypes undemotable_types;
+  const std::string types_rule =
+      OmniboxFieldTrial::GetValueForRuleInContext(
+          kUndemotableTopTypeRule,
+          current_page_classification);
+  // The value of the UndemotableTopTypes rule is a comma-separated list of
+  // AutocompleteMatchType::Type enums represented as an integer. The
+  // DemoteByType rule does not apply to the top match if the type of the top
+  // match is in this list.
+  std::vector<std::string> types;
+  base::SplitString(types_rule, ',', &types);
+  for (std::vector<std::string>::const_iterator it = types.begin();
+       it != types.end(); ++it) {
+    // This is a best-effort conversion; we trust the hand-crafted parameters
+    // downloaded from the server to be perfect.  There's no need to handle
+    // errors smartly.
+    int t;
+    base::StringToInt(*it, &t);
+    undemotable_types.insert(static_cast<AutocompleteMatchType::Type>(t));
+  }
+  return undemotable_types;
+}
+
 bool OmniboxFieldTrial::ReorderForLegalDefaultMatch(
     AutocompleteInput::PageClassification current_page_classification) {
   return OmniboxFieldTrial::GetValueForRuleInContext(
-      kReorderForLegalDefaultMatchRule, current_page_classification) ==
-      kReorderForLegalDefaultMatchRuleEnabled;
+      kReorderForLegalDefaultMatchRule, current_page_classification) !=
+      kReorderForLegalDefaultMatchRuleDisabled;
+}
+
+int OmniboxFieldTrial::HQPBookmarkValue() {
+  std::string bookmark_value_str = chrome_variations::
+      GetVariationParamValue(kBundledExperimentFieldTrialName,
+                             kHQPBookmarkValueRule);
+  if (bookmark_value_str.empty())
+    return 1;
+  // This is a best-effort conversion; we trust the hand-crafted parameters
+  // downloaded from the server to be perfect.  There's no need for handle
+  // errors smartly.
+  int bookmark_value;
+  base::StringToInt(bookmark_value_str, &bookmark_value);
+  return bookmark_value;
+}
+
+bool OmniboxFieldTrial::HQPDiscountFrecencyWhenFewVisits() {
+  std::string discount_frecency_str = chrome_variations::
+      GetVariationParamValue(kBundledExperimentFieldTrialName,
+                             kHQPDiscountFrecencyWhenFewVisitsRule);
+  return discount_frecency_str == "true";
+}
+
+bool OmniboxFieldTrial::HQPAllowMatchInTLDValue() {
+  std::string allow_match_in_tld_str = chrome_variations::
+      GetVariationParamValue(kBundledExperimentFieldTrialName,
+                             kHQPAllowMatchInTLDRule);
+  return allow_match_in_tld_str == "true";
+}
+
+bool OmniboxFieldTrial::HQPAllowMatchInSchemeValue() {
+  std::string allow_match_in_scheme_str = chrome_variations::
+      GetVariationParamValue(kBundledExperimentFieldTrialName,
+                             kHQPAllowMatchInSchemeRule);
+  return allow_match_in_scheme_str == "true";
 }
 
 const char OmniboxFieldTrial::kBundledExperimentFieldTrialName[] =
@@ -266,10 +346,18 @@ const char OmniboxFieldTrial::kShortcutsScoringMaxRelevanceRule[] =
     "ShortcutsScoringMaxRelevance";
 const char OmniboxFieldTrial::kSearchHistoryRule[] = "SearchHistory";
 const char OmniboxFieldTrial::kDemoteByTypeRule[] = "DemoteByType";
+const char OmniboxFieldTrial::kUndemotableTopTypeRule[] = "UndemotableTopTypes";
 const char OmniboxFieldTrial::kReorderForLegalDefaultMatchRule[] =
     "ReorderForLegalDefaultMatch";
-const char OmniboxFieldTrial::kReorderForLegalDefaultMatchRuleEnabled[] =
-    "ReorderForLegalDefaultMatch";
+const char OmniboxFieldTrial::kHQPBookmarkValueRule[] =
+    "HQPBookmarkValue";
+const char OmniboxFieldTrial::kHQPDiscountFrecencyWhenFewVisitsRule[] =
+    "HQPDiscountFrecencyWhenFewVisits";
+const char OmniboxFieldTrial::kHQPAllowMatchInTLDRule[] = "HQPAllowMatchInTLD";
+const char OmniboxFieldTrial::kHQPAllowMatchInSchemeRule[] =
+    "HQPAllowMatchInScheme";
+const char OmniboxFieldTrial::kReorderForLegalDefaultMatchRuleDisabled[] =
+    "DontReorderForLegalDefaultMatch";
 
 // Background and implementation details:
 //

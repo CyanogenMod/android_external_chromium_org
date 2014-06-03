@@ -7,6 +7,7 @@
 #include "content/browser/browser_thread_impl.h"
 #include "content/public/browser/devtools_http_handler.h"
 #include "content/public/browser/devtools_http_handler_delegate.h"
+#include "content/public/browser/devtools_target.h"
 #include "net/socket/stream_listen_socket.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -23,7 +24,7 @@ class DummyListenSocket : public StreamListenSocket,
 
   // StreamListenSocket::Delegate "implementation"
   virtual void DidAccept(StreamListenSocket* server,
-                         StreamListenSocket* connection) OVERRIDE {}
+                         scoped_ptr<StreamListenSocket> connection) OVERRIDE {}
   virtual void DidRead(StreamListenSocket* connection,
                        const char* data,
                        int len) OVERRIDE {}
@@ -43,11 +44,11 @@ class DummyListenSocketFactory : public net::StreamListenSocketFactory {
         BrowserThread::UI, FROM_HERE, quit_closure_2_);
   }
 
-  virtual scoped_refptr<StreamListenSocket> CreateAndListen(
+  virtual scoped_ptr<StreamListenSocket> CreateAndListen(
       StreamListenSocket::Delegate* delegate) const OVERRIDE {
     BrowserThread::PostTask(
         BrowserThread::UI, FROM_HERE, quit_closure_1_);
-    return new DummyListenSocket();
+    return scoped_ptr<net::StreamListenSocket>(new DummyListenSocket());
   }
  private:
   base::Closure quit_closure_1_;
@@ -64,17 +65,16 @@ class DummyDelegate : public DevToolsHttpHandlerDelegate {
   virtual std::string GetPageThumbnailData(const GURL& url) OVERRIDE {
     return std::string();
   }
-  virtual RenderViewHost* CreateNewTarget() OVERRIDE { return NULL; }
-  virtual TargetType GetTargetType(RenderViewHost*) OVERRIDE {
-    return kTargetTypeTab;
+  virtual scoped_ptr<DevToolsTarget> CreateNewTarget(const GURL& url) OVERRIDE {
+    return scoped_ptr<DevToolsTarget>();
   }
-  virtual std::string GetViewDescription(content::RenderViewHost*) OVERRIDE {
-    return std::string();
+  virtual void EnumerateTargets(TargetCallback callback) OVERRIDE {
+    callback.Run(TargetList());
   }
-  virtual scoped_refptr<net::StreamListenSocket> CreateSocketForTethering(
+  virtual scoped_ptr<net::StreamListenSocket> CreateSocketForTethering(
     net::StreamListenSocket::Delegate* delegate,
     std::string* name) OVERRIDE {
-    return NULL;
+    return scoped_ptr<net::StreamListenSocket>();
   }
 };
 

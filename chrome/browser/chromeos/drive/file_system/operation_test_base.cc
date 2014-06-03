@@ -6,7 +6,7 @@
 
 #include "base/prefs/testing_pref_service.h"
 #include "base/threading/sequenced_worker_pool.h"
-#include "chrome/browser/chromeos/drive/change_list_loader.h"
+#include "chrome/browser/chromeos/drive/change_list_processor.h"
 #include "chrome/browser/chromeos/drive/fake_free_disk_space_getter.h"
 #include "chrome/browser/chromeos/drive/file_cache.h"
 #include "chrome/browser/chromeos/drive/file_system/operation_observer.h"
@@ -14,8 +14,8 @@
 #include "chrome/browser/chromeos/drive/resource_metadata.h"
 #include "chrome/browser/chromeos/drive/test_util.h"
 #include "chrome/browser/drive/fake_drive_service.h"
-#include "chrome/browser/google_apis/test_util.h"
 #include "content/public/browser/browser_thread.h"
+#include "google_apis/drive/test_util.h"
 
 namespace drive {
 namespace file_system {
@@ -32,8 +32,13 @@ void OperationTestBase::LoggingObserver::OnDirectoryChangedByOperation(
 }
 
 void OperationTestBase::LoggingObserver::OnCacheFileUploadNeededByOperation(
-    const std::string& resource_id) {
-  upload_needed_resource_ids_.insert(resource_id);
+    const std::string& local_id) {
+  upload_needed_local_ids_.insert(local_id);
+}
+
+void OperationTestBase::LoggingObserver::OnEntryUpdatedByOperation(
+    const std::string& local_id) {
+  updated_local_ids_.insert(local_id);
 }
 
 OperationTestBase::OperationTestBase() {
@@ -109,11 +114,13 @@ void OperationTestBase::SetUp() {
   ASSERT_TRUE(success);
 
   // Makes sure the FakeDriveService's content is loaded to the metadata_.
-  internal::ChangeListLoader change_list_loader(
-      blocking_task_runner_.get(), metadata_.get(), scheduler_.get());
-
-  change_list_loader.LoadIfNeeded(
-      DirectoryFetchInfo(),
+  change_list_loader_.reset(new internal::ChangeListLoader(
+      blocking_task_runner_.get(),
+      metadata_.get(),
+      scheduler_.get(),
+      fake_drive_service_.get()));
+  change_list_loader_->LoadIfNeeded(
+      internal::DirectoryFetchInfo(),
       google_apis::test_util::CreateCopyResultCallback(&error));
   test_util::RunBlockingPoolTask();
   ASSERT_EQ(FILE_ERROR_OK, error);
@@ -128,6 +135,42 @@ FileError OperationTestBase::GetLocalResourceEntry(const base::FilePath& path,
       base::Bind(&internal::ResourceMetadata::GetResourceEntryByPath,
                  base::Unretained(metadata()), path, entry),
       base::Bind(google_apis::test_util::CreateCopyResultCallback(&error)));
+  test_util::RunBlockingPoolTask();
+  return error;
+}
+
+FileError OperationTestBase::GetLocalResourceEntryById(
+    const std::string& local_id,
+    ResourceEntry* entry) {
+  FileError error = FILE_ERROR_FAILED;
+  base::PostTaskAndReplyWithResult(
+      blocking_task_runner(),
+      FROM_HERE,
+      base::Bind(&internal::ResourceMetadata::GetResourceEntryById,
+                 base::Unretained(metadata()), local_id, entry),
+      base::Bind(google_apis::test_util::CreateCopyResultCallback(&error)));
+  test_util::RunBlockingPoolTask();
+  return error;
+}
+
+std::string OperationTestBase::GetLocalId(const base::FilePath& path) {
+  std::string local_id;
+  FileError error = FILE_ERROR_FAILED;
+  base::PostTaskAndReplyWithResult(
+      blocking_task_runner(),
+      FROM_HERE,
+      base::Bind(&internal::ResourceMetadata::GetIdByPath,
+                 base::Unretained(metadata()), path, &local_id),
+      base::Bind(google_apis::test_util::CreateCopyResultCallback(&error)));
+  test_util::RunBlockingPoolTask();
+  EXPECT_EQ(FILE_ERROR_OK, error) << path.value();
+  return local_id;
+}
+
+FileError OperationTestBase::CheckForUpdates() {
+  FileError error = FILE_ERROR_FAILED;
+  change_list_loader_->CheckForUpdates(
+      google_apis::test_util::CreateCopyResultCallback(&error));
   test_util::RunBlockingPoolTask();
   return error;
 }

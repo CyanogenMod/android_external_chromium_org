@@ -33,6 +33,7 @@ class BrowserWindowCocoa;
 @class DownloadShelfController;
 class ExtensionKeybindingRegistryCocoa;
 @class FindBarCocoaController;
+@class FullscreenModeController;
 @class FullscreenWindow;
 @class InfoBarContainerController;
 class LocationBarViewMac;
@@ -71,6 +72,7 @@ class WebContents;
   base::scoped_nsobject<OverlayableContentsController>
       overlayableContentsController_;
   base::scoped_nsobject<PresentationModeController> presentationModeController_;
+  base::scoped_nsobject<FullscreenModeController> fullscreenModeController_;
   base::scoped_nsobject<FullscreenExitBubbleController>
       fullscreenExitBubbleController_;
 
@@ -222,12 +224,10 @@ class WebContents;
 // Access the avatar button controller.
 - (AvatarButtonController*)avatarButtonController;
 
-// Updates the toolbar (and transitively the location bar) with the states of
-// the specified |tab|.  If |shouldRestore| is true, we're switching
-// (back?) to this tab and should restore any previous location bar state
-// (such as user editing) as well.
-- (void)updateToolbarWithContents:(content::WebContents*)tab
-               shouldRestoreState:(BOOL)shouldRestore;
+// Forces the toolbar (and transitively the location bar) to update its current
+// state.  If |tab| is non-NULL, we're switching (back?) to this tab and should
+// restore any previous location bar state (such as user editing) as well.
+- (void)updateToolbarWithContents:(content::WebContents*)tab;
 
 // Sets whether or not the current page in the frontmost tab is bookmarked.
 - (void)setStarredState:(BOOL)isStarred;
@@ -311,9 +311,13 @@ class WebContents;
 // Gets the window style.
 - (ThemedWindowStyle)themedWindowStyle;
 
-// Returns the pattern phase for |alignment|. If the window does not have a tab
-// strip, the phase for THEME_PATTERN_ALIGN_WITH_FRAME is always returned.
-- (NSPoint)themePatternPhaseForAlignment:(ThemePatternAlignment)alignment;
+// Returns the position in the coordinates of the root view
+// ([[self contentView] superview]) that the top left of a theme image with
+// |alignment| should be painted at. If the window does not have a tab strip,
+// the offset for THEME_IMAGE_ALIGN_WITH_FRAME is always returned. The result of
+// this method can be used in conjunction with
+// [NSGraphicsContext cr_setPatternPhase:] to set the offset of pattern colors.
+- (NSPoint)themeImagePositionForAlignment:(ThemeImageAlignment)alignment;
 
 // Return the point to which a bubble window's arrow should point, in window
 // coordinates.
@@ -491,6 +495,9 @@ class WebContents;
 // Gets the rect, in window base coordinates, that the omnibox popup should be
 // positioned relative to.
 - (NSRect)omniboxPopupAnchorRect;
+
+// Force a layout of info bars.
+- (void)layoutInfoBars;
 
 @end  // @interface BrowserWindowController (TestingAPI)
 

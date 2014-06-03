@@ -8,12 +8,13 @@
 #include <algorithm>
 
 #include "base/bind.h"
-#include "base/bind_helpers.h"
 #include "base/callback.h"
+#include "base/callback_helpers.h"
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
 #include "base/files/file_path.h"
 #include "base/lazy_instance.h"
+#include "base/metrics/histogram.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/scoped_native_library.h"
@@ -25,11 +26,12 @@
 #include "media/base/video_frame.h"
 #include "media/base/video_util.h"
 #include "third_party/skia/include/core/SkBitmap.h"
-#include "ui/base/latency_info.h"
-#include "ui/base/win/dpi.h"
-#include "ui/base/win/hwnd_util.h"
 #include "ui/base/win/shell.h"
+#include "ui/events/latency_info.h"
+#include "ui/gfx/frame_time.h"
 #include "ui/gfx/rect.h"
+#include "ui/gfx/win/dpi.h"
+#include "ui/gfx/win/hwnd_util.h"
 #include "ui/gl/gl_switches.h"
 #include "ui/surface/accelerated_surface_transformer_win.h"
 #include "ui/surface/d3d9_utils_win.h"
@@ -332,12 +334,6 @@ void AcceleratedPresenterMap::RemovePresenter(
 scoped_refptr<AcceleratedPresenter> AcceleratedPresenterMap::GetPresenter(
     gfx::PluginWindowHandle window) {
   base::AutoLock locked(lock_);
-
-#if defined(USE_AURA)
-  if (!window)
-    return presenters_.begin()->second;
-#endif
-
   PresenterMap::iterator it = presenters_.find(window);
   if (it == presenters_.end())
     return scoped_refptr<AcceleratedPresenter>();
@@ -527,11 +523,10 @@ bool AcceleratedPresenter::DoCopyToARGB(const gfx::Rect& requested_src_subrect,
     }
   }
 
-  bitmap->setConfig(SkBitmap::kARGB_8888_Config,
-                    dst_size.width(), dst_size.height());
+  bitmap->setConfig(SkBitmap::kARGB_8888_Config, dst_size.width(),
+                    dst_size.height(), 0, kOpaque_SkAlphaType);
   if (!bitmap->allocPixels())
     return false;
-  bitmap->setIsOpaque(true);
 
   // Copy |final_surface| to |bitmap|. This is always a synchronous operation.
   return gpu_ops->ReadFast(final_surface,
@@ -672,13 +667,6 @@ void AcceleratedPresenter::ResetPresentThread(
   quantized_size_ = gfx::Size();
 }
 
-#if defined(USE_AURA)
-void AcceleratedPresenter::SetNewTargetWindow(gfx::PluginWindowHandle window) {
-  window_ = window;
-  swap_chain_ = NULL;
-}
-#endif
-
 AcceleratedPresenter::~AcceleratedPresenter() {
 }
 
@@ -728,15 +716,16 @@ void AcceleratedPresenter::DoPresentAndAcknowledge(
     return;
   }
 
+#if !defined(USE_AURA)
   // If the window is a different size than the swap chain that is being
   // presented then drop the frame.
   gfx::Size window_size = GetWindowSize();
   bool size_mismatch = size != window_size;
-  if (ui::IsInHighDPIMode()) {
+  if (gfx::IsInHighDPIMode()) {
     // Check if the size mismatch is within allowable round off or truncation
     // error.
-    gfx::Size dip_size = ui::win::ScreenToDIPSize(window_size);
-    gfx::Size pixel_size = ui::win::DIPToScreenSize(dip_size);
+    gfx::Size dip_size = gfx::win::ScreenToDIPSize(window_size);
+    gfx::Size pixel_size = gfx::win::DIPToScreenSize(dip_size);
     size_mismatch = abs(window_size.width() - size.width()) >
         abs(window_size.width() - pixel_size.width()) ||
         abs(window_size.height() - size.height()) >
@@ -750,7 +739,7 @@ void AcceleratedPresenter::DoPresentAndAcknowledge(
                  "windowheight", window_size.height());
     return;
   }
-
+#endif
   // Round up size so the swap chain is not continuously resized with the
   // surface, which could lead to memory fragmentation.
   const int kRound = 64;
@@ -858,7 +847,8 @@ void AcceleratedPresenter::DoPresentAndAcknowledge(
     ReleaseDC(window_, dc);
   }
 
-  latency_info_.swap_timestamp = base::TimeTicks::HighResNow();
+  latency_info_.AddLatencyNumber(
+      ui::INPUT_EVENT_LATENCY_TERMINATED_FRAME_SWAP_COMPONENT, 0, 0);
 
   hidden_ = false;
 
@@ -876,6 +866,9 @@ void AcceleratedPresenter::DoPresentAndAcknowledge(
     return;
   }
 
+  UMA_HISTOGRAM_CUSTOM_COUNTS("GPU.AcceleratedSurfaceRefreshRate",
+                              display_mode.RefreshRate, 0, 121, 122);
+
   // I can't figure out how to determine how many scanlines are in the
   // vertical blank so clamp it such that scanline / height <= 1.
   int clamped_scanline = std::min(raster_status.ScanLine, display_mode.Height);
@@ -885,18 +878,22 @@ void AcceleratedPresenter::DoPresentAndAcknowledge(
   if (raster_status.InVBlank)
     clamped_scanline = display_mode.Height;
 
-  base::TimeTicks current_time = base::TimeTicks::HighResNow();
-
   // Figure out approximately how far back in time the last vsync was based on
   // the ratio of the raster scanline to the display height.
   base::TimeTicks last_vsync_time;
   base::TimeDelta refresh_period;
+
   if (display_mode.Height) {
+    refresh_period = base::TimeDelta::FromMicroseconds(
+        1000000 / display_mode.RefreshRate);
+    // If FrameTime is not high resolution, we use a timebase of zero to avoid
+    // introducing jitter into our frame start times.
+    if (gfx::FrameTime::TimestampsAreHighRes()) {
+      base::TimeTicks current_time = gfx::FrameTime::Now();
       last_vsync_time = current_time -
         base::TimeDelta::FromMilliseconds((clamped_scanline * 1000) /
             (display_mode.RefreshRate * display_mode.Height));
-      refresh_period = base::TimeDelta::FromMicroseconds(
-          1000000 / display_mode.RefreshRate);
+    }
   }
 
   // Wait for the StretchRect to complete before notifying the GPU process

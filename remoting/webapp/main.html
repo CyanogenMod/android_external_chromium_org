@@ -153,8 +153,8 @@ found in the LICENSE file.
       </section> <!-- Remote Assistance -->
 
       <section id="host-list-div" class="host-list-container">
-        <h2 i18n-content="MODE_ME2ME"></h2>
         <div id="me2me-first-run">
+          <h2 i18n-content="MODE_ME2ME"></h2>
           <div>
             <p class="infographic-description"
                i18n-content="ME2ME_FIRST_RUN"></p>
@@ -167,6 +167,17 @@ found in the LICENSE file.
           </div>
         </div>
         <div id="me2me-content">
+          <h2>
+            <span i18n-content="MODE_ME2ME"></span>
+            <span class="h2-secondary" id="host-list-loading-indicator">
+              <a href="#" id="host-list-reload"
+                 class="icon-black"
+                 i18n-title="TOOLTIP_REFRESH">
+                <img src="reload.webp">
+              </a>
+              <img src="spinner.gif" id="host-list-loading">
+            </span>
+          </h2>
           <div id="host-list" hidden></div>
           <div id="host-list-error" class="box" hidden>
             <div id="host-list-error-message" class="error-state"></div>
@@ -197,7 +208,8 @@ found in the LICENSE file.
               <div id="this-host-name" class="box-spacer"></div>
               <span id="this-host-rename"
                     class="host-list-edit"
-                    tabIndex="0">
+                    tabIndex="0"
+                    i18n-title="TOOLTIP_RENAME">
                 <img id="this-host-rename"
                      class="host-list-rename-icon"
                      src="icon_pencil.webp">
@@ -273,14 +285,12 @@ found in the LICENSE file.
         <div class="message">
           <span id="token-refresh-error-message" class="error-state"></span>
         </div>
-        <div id="token-refresh-auth-failed" class="box">
-          <div class="box-spacer"></div>
+        <div id="token-refresh-auth-failed" class="button-row">
           <button id="token-refresh-error-sign-in"
                   type="button"
                   i18n-content="SIGN_IN_BUTTON"></button>
         </div>
-        <div id="token-refresh-other-error" class="box">
-          <div class="box-spacer"></div>
+        <div id="token-refresh-other-error" class="button-row">
           <button id="token-refresh-error-ok"
                   type="button"
                   i18n-content="OK"></button>
@@ -352,8 +362,7 @@ found in the LICENSE file.
         <div data-ui-mode="home.host-setup.done" hidden>
           <div id="host-setup-done-message" class="message"></div>
           <div id="host-setup-done-message-2" class="message"></div>
-          <div class="box">
-            <div class="box-spacer"></div>
+          <div class="button-row">
             <button id="host-config-done-dismiss"
                     autofocus="autofocus"
                     i18n-content="OK"></button>
@@ -361,8 +370,7 @@ found in the LICENSE file.
         </div>
         <div data-ui-mode="home.host-setup.error" hidden>
           <div id="host-setup-error-message" class="error-state"></div>
-          <div class="box">
-            <div class="box-spacer"></div>
+          <div class="button-row">
             <button id="host-config-error-dismiss"
                     autofocus="autofocus"
                     i18n-content="OK"></button>
@@ -370,8 +378,7 @@ found in the LICENSE file.
         </div>
         <div data-ui-mode="home.host-setup.install" hidden>
           <div class="message" i18n-content="HOST_SETUP_INSTALL"></div>
-          <div class="box">
-            <div class="box-spacer"></div>
+          <div class="button-row">
             <button id="host-config-install-continue"
                     autofocus="autofocus"
                     i18n-content="OK"></button>
@@ -382,12 +389,11 @@ found in the LICENSE file.
         <div data-ui-mode="home.host-setup.install-pending" hidden>
           <div class="message"
                     i18n-content="HOST_SETUP_INSTALL_PENDING"></div>
-          <div class="box">
-            <div class="box-spacer"></div>
+          <div class="button-row">
             <button id="host-config-install-retry"
                     autofocus="autofocus"
                     i18n-content="OK"></button>
-            </div>
+          </div>
         </div>
       </div> <!-- host-setup-dialog -->
 
@@ -446,9 +452,8 @@ found in the LICENSE file.
         </div> <!-- nat-box -->
 
         <div data-ui-mode="home.host.waiting-for-connection home.host.waiting-for-code"
-             class="box space-before">
+             class="button-row">
           <span class="waiting" i18n-content="FOOTER_WAITING"></span>
-          <div class="box-spacer"></div>
           <button id="cancel-share-button" i18n-content="CANCEL"></button>
         </div>
 
@@ -736,7 +741,11 @@ found in the LICENSE file.
         <div class="toolbar-border">
           <div id="session-status-message"
                 i18n-content="LABEL_CONNECTED"></div>
-          <div id="connected-to" class="box-spacer"></div>
+          <div id="connected-to"></div>
+          <div id="new-connection" class="icon-black apps-v2-only">
+            <img src="plus.webp" i18n-title="NEW_CONNECTION">
+          </div>
+          <div class="box-spacer"></div>
           <button id="toolbar-disconnect"
                   type="button"
                   i18n-content="DISCONNECT_MYSELF_BUTTON">

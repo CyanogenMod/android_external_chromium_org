@@ -59,7 +59,7 @@ class LanguageOptionsHandlerCommon
 
  private:
   // Returns the name of the product (ex. "Chrome" or "Chrome OS").
-  virtual string16 GetProductName() = 0;
+  virtual base::string16 GetProductName() = 0;
 
   // Sets the application locale.
   virtual void SetApplicationLocale(const std::string& language_code) = 0;
@@ -78,6 +78,9 @@ class LanguageOptionsHandlerCommon
   // Called when the user clicks "Retry" button for a spellcheck dictionary that
   // has failed to download.
   void RetrySpellcheckDictionaryDownload(const base::ListValue* args);
+
+  // Called when the user saves the language list preferences.
+  void UpdateLanguageListCallback(const base::ListValue* args);
 
   // Updates the hunspell dictionary that is used for spellchecking.
   void RefreshHunspellDictionary();

@@ -2,20 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-function inspect(data) {
-  chrome.send('inspect', [data]);
+var MIN_VERSION_TAB_CLOSE = 25;
+var MIN_VERSION_TARGET_ID = 26;
+var MIN_VERSION_NEW_TAB = 29;
+var MIN_VERSION_TAB_ACTIVATE = 30;
+
+function sendCommand(command, args) {
+  chrome.send(command, Array.prototype.slice.call(arguments, 1));
 }
 
-function terminate(data) {
-  chrome.send('terminate', [data]);
-}
-
-function reload(data) {
-  chrome.send('reload', [data]);
-}
-
-function open(browserId, url) {
-  chrome.send('open', [browserId, url]);
+function sendTargetCommand(command, target) {
+  sendCommand(command, target.source, target.id);
 }
 
 function removeChildren(element_id) {
@@ -38,9 +35,9 @@ function onload() {
     $('navigation').appendChild(tabHeader);
   }
   var selectedTabName = window.location.hash.slice(1) || 'devices';
-  selectTab(selectedTabName + '-tab');
-  initPortForwarding();
-  chrome.send('init-ui');
+  selectTab(selectedTabName);
+  initSettings();
+  sendCommand('init-ui');
 }
 
 function selectTab(id) {
@@ -57,18 +54,30 @@ function selectTab(id) {
       tabHeader.classList.remove('selected');
     }
   }
+  window.location.hash = id;
 }
 
-function populateLists(data) {
-  removeChildren('pages');
-  removeChildren('extensions');
-  removeChildren('apps');
-  removeChildren('others');
+function populateTargets(source, data) {
+  if (source == 'renderers')
+    populateWebContentsTargets(data);
+  else if (source == 'workers')
+    populateWorkerTargets(data);
+  else if (source == 'adb')
+    populateRemoteTargets(data);
+  else
+    console.error('Unknown source type: ' + source);
+}
+
+function populateWebContentsTargets(data) {
+  removeChildren('pages-list');
+  removeChildren('extensions-list');
+  removeChildren('apps-list');
+  removeChildren('others-list');
 
   for (var i = 0; i < data.length; i++) {
     if (data[i].type === 'page')
       addToPagesList(data[i]);
-    else if (data[i].type === 'extension')
+    else if (data[i].type === 'background_page')
       addToExtensionsList(data[i]);
     else if (data[i].type === 'app')
       addToAppsList(data[i]);
@@ -77,16 +86,21 @@ function populateLists(data) {
   }
 }
 
-function populateWorkersList(data) {
-  removeChildren('workers');
+function populateWorkerTargets(data) {
+  removeChildren('workers-list');
 
   for (var i = 0; i < data.length; i++)
     addToWorkersList(data[i]);
 }
 
-function populateDeviceLists(devices) {
+function populateRemoteTargets(devices) {
   if (!devices)
     return;
+
+  if (window.modal) {
+    window.holdDevices = devices;
+    return;
+  }
 
   function alreadyDisplayed(element, data) {
     var json = JSON.stringify(data);
@@ -108,7 +122,7 @@ function populateDeviceLists(devices) {
     parent.appendChild(child);
   }
 
-  var deviceList = $('devices');
+  var deviceList = $('devices-list');
   if (alreadyDisplayed(deviceList, devices))
     return;
 
@@ -117,24 +131,21 @@ function populateDeviceLists(devices) {
       section.remove();
   }
 
-  var newDeviceIds = devices.map(function(d) { return d.adbGlobalId });
+  var newDeviceIds = devices.map(function(d) { return d.id });
   Array.prototype.forEach.call(
       deviceList.querySelectorAll('.device'),
       removeObsolete.bind(null, newDeviceIds));
 
+  $('devices-help').hidden = !!devices.length;
+
   for (var d = 0; d < devices.length; d++) {
     var device = devices[d];
 
-    var devicePorts;
-    var browserList;
-    var deviceSection = $(device.adbGlobalId);
-    if (deviceSection) {
-      devicePorts = deviceSection.querySelector('.device-ports');
-      browserList = deviceSection.querySelector('.browsers');
-    } else {
+    var deviceSection = $(device.id);
+    if (!deviceSection) {
       deviceSection = document.createElement('div');
-      deviceSection.id = device.adbGlobalId;
-      deviceSection.className = 'device list';
+      deviceSection.id = device.id;
+      deviceSection.className = 'device';
       deviceList.appendChild(deviceSection);
 
       var deviceHeader = document.createElement('div');
@@ -143,7 +154,6 @@ function populateDeviceLists(devices) {
 
       var deviceName = document.createElement('div');
       deviceName.className = 'device-name';
-      deviceName.textContent = device.adbModel;
       deviceHeader.appendChild(deviceName);
 
       if (device.adbSerial) {
@@ -153,18 +163,28 @@ function populateDeviceLists(devices) {
         deviceHeader.appendChild(deviceSerial);
       }
 
-      devicePorts = document.createElement('div');
+      var devicePorts = document.createElement('div');
       devicePorts.className = 'device-ports';
       deviceHeader.appendChild(devicePorts);
 
-      browserList = document.createElement('div');
+      var browserList = document.createElement('div');
       browserList.className = 'browsers';
       deviceSection.appendChild(browserList);
+
+      var authenticating = document.createElement('div');
+      authenticating.className = 'device-auth';
+      deviceSection.appendChild(authenticating);
     }
 
     if (alreadyDisplayed(deviceSection, device))
       continue;
 
+    deviceSection.querySelector('.device-name').textContent = device.adbModel;
+    deviceSection.querySelector('.device-auth').textContent =
+        device.adbConnected ? '' : 'Pending authentication: please accept ' +
+          'debugging session on the device.';
+
+    var devicePorts = deviceSection.querySelector('.device-ports');
     devicePorts.textContent = '';
     if (device.adbPortStatus) {
       for (var port in device.adbPortStatus) {
@@ -188,8 +208,9 @@ function populateDeviceLists(devices) {
       }
     }
 
+    var browserList = deviceSection.querySelector('.browsers');
     var newBrowserIds =
-        device.browsers.map(function(b) { return b.adbGlobalId });
+        device.browsers.map(function(b) { return b.id });
     Array.prototype.forEach.call(
         browserList.querySelectorAll('.browser'),
         removeObsolete.bind(null, newBrowserIds));
@@ -197,34 +218,30 @@ function populateDeviceLists(devices) {
     for (var b = 0; b < device.browsers.length; b++) {
       var browser = device.browsers[b];
 
-      var isChrome = browser.adbBrowserProduct &&
-          browser.adbBrowserProduct.match(/^Chrome/);
+      var majorChromeVersion = browser.adbBrowserChromeVersion;
 
       var pageList;
-      var browserSection = $(browser.adbGlobalId);
+      var browserSection = $(browser.id);
       if (browserSection) {
         pageList = browserSection.querySelector('.pages');
       } else {
         browserSection = document.createElement('div');
-        browserSection.id = browser.adbGlobalId;
+        browserSection.id = browser.id;
         browserSection.className = 'browser';
         insertChildSortedById(browserList, browserSection);
 
         var browserHeader = document.createElement('div');
         browserHeader.className = 'browser-header';
-        browserHeader.textContent = browser.adbBrowserProduct;
-        var majorChromeVersion = 0;
-        if (browser.adbBrowserVersion) {
-          browserHeader.textContent += ' (' + browser.adbBrowserVersion + ')';
-          if (isChrome) {
-            var match = browser.adbBrowserVersion.match(/^(\d+)/);
-            if (match)
-              majorChromeVersion = parseInt(match[1]);
-          }
-        }
+
+        var browserName = document.createElement('div');
+        browserName.className = 'browser-name';
+        browserHeader.appendChild(browserName);
+        browserName.textContent = browser.adbBrowserName;
+        if (browser.adbBrowserVersion)
+          browserName.textContent += ' (' + browser.adbBrowserVersion + ')';
         browserSection.appendChild(browserHeader);
 
-        if (majorChromeVersion >= 29) {
+        if (majorChromeVersion >= MIN_VERSION_NEW_TAB) {
           var newPage = document.createElement('div');
           newPage.className = 'open';
 
@@ -233,10 +250,11 @@ function populateDeviceLists(devices) {
           newPageUrl.placeholder = 'Open tab with url';
           newPage.appendChild(newPageUrl);
 
-          var openHandler = function(browserId, input) {
-            open(browserId, input.value || 'about:blank');
+          var openHandler = function(sourceId, browserId, input) {
+            sendCommand(
+                'open', sourceId, browserId, input.value || 'about:blank');
             input.value = '';
-          }.bind(null, browser.adbGlobalId, newPageUrl);
+          }.bind(null, browser.source, browser.id, newPageUrl);
           newPageUrl.addEventListener('keyup', function(handler, event) {
             if (event.keyIdentifier == 'Enter' && event.target.value)
               handler();
@@ -247,7 +265,7 @@ function populateDeviceLists(devices) {
           newPage.appendChild(newPageButton);
           newPageButton.addEventListener('click', openHandler, true);
 
-          browserSection.appendChild(newPage);
+          browserHeader.appendChild(newPage);
         }
 
         pageList = document.createElement('div');
@@ -261,13 +279,26 @@ function populateDeviceLists(devices) {
       pageList.textContent = '';
       for (var p = 0; p < browser.pages.length; p++) {
         var page = browser.pages[p];
-        var row = addTargetToList(
-            page, pageList, ['faviconUrl', 'name', 'url']);
-        if (isChrome) {
-          row.appendChild(createActionLink(
-              'reload', reload.bind(null, page), page.attached));
-          row.appendChild(createActionLink(
-              'close', terminate.bind(null, page), page.attached));
+        // Attached targets have no unique id until Chrome 26. For such targets
+        // it is impossible to activate existing DevTools window.
+        page.hasNoUniqueId = page.attached &&
+            (majorChromeVersion && majorChromeVersion < MIN_VERSION_TARGET_ID);
+        var row = addTargetToList(page, pageList, ['name', 'url']);
+        if (page['description'])
+          addWebViewDetails(row, page);
+        else
+          addFavicon(row, page);
+        if (majorChromeVersion >= MIN_VERSION_TAB_ACTIVATE) {
+          addActionLink(row, 'focus tab',
+              sendTargetCommand.bind(null, 'activate', page), false);
+        }
+        if (majorChromeVersion) {
+          addActionLink(row, 'reload',
+              sendTargetCommand.bind(null, 'reload', page), page.attached);
+        }
+        if (majorChromeVersion >= MIN_VERSION_TAB_CLOSE) {
+          addActionLink(row, 'close',
+              sendTargetCommand.bind(null, 'close', page), page.attached);
         }
       }
     }
@@ -275,25 +306,36 @@ function populateDeviceLists(devices) {
 }
 
 function addToPagesList(data) {
-  addTargetToList(data, $('pages'), ['faviconUrl', 'name', 'url']);
+  var row = addTargetToList(data, $('pages-list'), ['name', 'url']);
+  addFavicon(row, data);
 }
 
 function addToExtensionsList(data) {
-  addTargetToList(data, $('extensions'), ['name', 'url']);
+  var row = addTargetToList(data, $('extensions-list'), ['name', 'url']);
+  addFavicon(row, data);
 }
 
 function addToAppsList(data) {
-  addTargetToList(data, $('apps'), ['name', 'url']);
+  var row = addTargetToList(data, $('apps-list'), ['name', 'url']);
+  addFavicon(row, data);
+  if (data.guests) {
+    Array.prototype.forEach.call(data.guests, function(guest) {
+      var guestRow = addTargetToList(guest, row, ['name', 'url']);
+      guestRow.classList.add('guest');
+      addFavicon(guestRow, guest);
+    });
+  }
 }
 
 function addToWorkersList(data) {
-  var row = addTargetToList(data, $('workers'), ['name', 'url', 'pid']);
-  row.appendChild(createActionLink(
-      'terminate', terminate.bind(null, data), data.attached));
+  var row =
+      addTargetToList(data, $('workers-list'), ['name', 'description', 'url']);
+  addActionLink(row, 'terminate',
+      sendTargetCommand.bind(null, 'close', data), data.attached);
 }
 
 function addToOthersList(data) {
-  addTargetToList(data, $('others'), ['url']);
+  addTargetToList(data, $('others-list'), ['url']);
 }
 
 function formatValue(data, property) {
@@ -303,68 +345,177 @@ function formatValue(data, property) {
     value = 'untitled';
   }
 
-  if (property == 'faviconUrl') {
-    var faviconElement = document.createElement('img');
-    if (value)
-      faviconElement.src = value;
-    return faviconElement;
-  }
-
   var text = value ? String(value) : '';
   if (text.length > 100)
     text = text.substring(0, 100) + '\u2026';
 
-  if (property == 'pid')
-    text = 'Pid:' + text;
-
-  var span = document.createElement('span');
-  span.textContent = ' ' + text + ' ';
+  var span = document.createElement('div');
+  span.textContent = text;
   span.className = property;
   return span;
+}
+
+function addFavicon(row, data) {
+  var favicon = document.createElement('img');
+  if (data['faviconUrl'])
+    favicon.src = data['faviconUrl'];
+  row.insertBefore(favicon, row.firstChild);
+}
+
+function addWebViewDetails(row, data) {
+  var webview;
+  try {
+    webview = JSON.parse(data['description']);
+  } catch (e) {
+    return;
+  }
+  addWebViewDescription(row, webview);
+  if (data.adbScreenWidth && data.adbScreenHeight)
+    addWebViewThumbnail(
+        row, webview, data.adbScreenWidth, data.adbScreenHeight);
+}
+
+function addWebViewDescription(row, webview) {
+  var viewStatus = { visibility: '', position: '', size: '' };
+  if (!webview.empty) {
+    if (webview.attached && !webview.visible)
+      viewStatus.visibility = 'hidden';
+    else if (!webview.attached)
+      viewStatus.visibility = 'detached';
+    viewStatus.size = 'size ' + webview.width + ' \u00d7 ' + webview.height;
+  } else {
+    viewStatus.visibility = 'empty';
+  }
+  if (webview.attached) {
+      viewStatus.position =
+        'at (' + webview.screenX + ', ' + webview.screenY + ')';
+  }
+
+  var subRow = document.createElement('div');
+  subRow.className = 'subrow webview';
+  if (webview.empty || !webview.attached || !webview.visible)
+    subRow.className += ' invisible-view';
+  if (viewStatus.visibility)
+    subRow.appendChild(formatValue(viewStatus, 'visibility'));
+  subRow.appendChild(formatValue(viewStatus, 'position'));
+  subRow.appendChild(formatValue(viewStatus, 'size'));
+  var mainSubrow = row.querySelector('.subrow.main');
+  if (mainSubrow.nextSibling)
+    mainSubrow.parentNode.insertBefore(subRow, mainSubrow.nextSibling);
+  else
+    mainSubrow.parentNode.appendChild(subRow);
+}
+
+function addWebViewThumbnail(row, webview, screenWidth, screenHeight) {
+  var maxScreenRectSize = 50;
+  var screenRectWidth;
+  var screenRectHeight;
+
+  var aspectRatio = screenWidth / screenHeight;
+  if (aspectRatio < 1) {
+    screenRectWidth = Math.round(maxScreenRectSize * aspectRatio);
+    screenRectHeight = maxScreenRectSize;
+  } else {
+    screenRectWidth = maxScreenRectSize;
+    screenRectHeight = Math.round(maxScreenRectSize / aspectRatio);
+  }
+
+  var thumbnail = document.createElement('div');
+  thumbnail.className = 'webview-thumbnail';
+  var thumbnailWidth = 3 * screenRectWidth;
+  var thumbnailHeight = 60;
+  thumbnail.style.width = thumbnailWidth + 'px';
+  thumbnail.style.height = thumbnailHeight + 'px';
+
+  var screenRect = document.createElement('div');
+  screenRect.className = 'screen-rect';
+  screenRect.style.left = screenRectWidth + 'px';
+  screenRect.style.top = (thumbnailHeight - screenRectHeight) / 2 + 'px';
+  screenRect.style.width = screenRectWidth + 'px';
+  screenRect.style.height = screenRectHeight + 'px';
+  thumbnail.appendChild(screenRect);
+
+  if (!webview.empty && webview.attached) {
+    var viewRect = document.createElement('div');
+    viewRect.className = 'view-rect';
+    if (!webview.visible)
+      viewRect.classList.add('hidden');
+    function percent(ratio) {
+      return ratio * 100 + '%';
+    }
+    viewRect.style.left = percent(webview.screenX / screenWidth);
+    viewRect.style.top = percent(webview.screenY / screenHeight);
+    viewRect.style.width = percent(webview.width / screenWidth);
+    viewRect.style.height = percent(webview.height / screenHeight);
+    screenRect.appendChild(viewRect);
+  }
+
+  row.insertBefore(thumbnail, row.firstChild);
 }
 
 function addTargetToList(data, list, properties) {
   var row = document.createElement('div');
   row.className = 'row';
+
+  var subrowBox = document.createElement('div');
+  subrowBox.className = 'subrow-box';
+  row.appendChild(subrowBox);
+
+  var subrow = document.createElement('div');
+  subrow.className = 'subrow main';
+  subrowBox.appendChild(subrow);
+
+  var description = null;
   for (var j = 0; j < properties.length; j++)
-    row.appendChild(formatValue(data, properties[j]));
+    subrow.appendChild(formatValue(data, properties[j]));
 
-  row.appendChild(createActionLink('inspect', inspect.bind(null, data)));
+  if (description)
+    addWebViewDescription(description, subrowBox);
 
-  row.processId = data.processId;
-  row.routeId = data.routeId;
+  var actionBox = document.createElement('div');
+  actionBox.className = 'actions';
+  subrowBox.appendChild(actionBox);
+
+  addActionLink(row, 'inspect', sendTargetCommand.bind(null, 'inspect', data),
+      data.hasNoUniqueId || data.adbAttachedForeign);
 
   list.appendChild(row);
   return row;
 }
 
-function createActionLink(text, handler, opt_disabled) {
-  var link = document.createElement('a');
+function addActionLink(row, text, handler, opt_disabled) {
+  var link = document.createElement('span');
+  link.classList.add('action');
   if (opt_disabled)
     link.classList.add('disabled');
   else
     link.classList.remove('disabled');
 
-  link.setAttribute('href', '#');
   link.textContent = text;
   link.addEventListener('click', handler, true);
-  return link;
+  row.querySelector('.actions').appendChild(link);
 }
 
 
-function initPortForwarding() {
-  $('port-forwarding-enable').addEventListener('change', enablePortForwarding);
+function initSettings() {
+  $('discover-usb-devices-enable').addEventListener('change',
+                                                    enableDiscoverUsbDevices);
 
+  $('port-forwarding-enable').addEventListener('change', enablePortForwarding);
   $('port-forwarding-config-open').addEventListener(
       'click', openPortForwardingConfig);
   $('port-forwarding-config-close').addEventListener(
       'click', closePortForwardingConfig);
   $('port-forwarding-config-done').addEventListener(
-      'click', commitPortForwardingConfig);
+      'click', commitPortForwardingConfig.bind(true));
+}
+
+function enableDiscoverUsbDevices(event) {
+  sendCommand('set-discover-usb-devices-enabled', event.target.checked);
 }
 
 function enablePortForwarding(event) {
-  chrome.send('set-port-forwarding-enabled', [event.target.checked]);
+  sendCommand('set-port-forwarding-enabled', event.target.checked);
 }
 
 function handleKey(event) {
@@ -373,19 +524,54 @@ function handleKey(event) {
       if (event.target.nodeName == 'INPUT') {
         var line = event.target.parentNode;
         if (!line.classList.contains('fresh') ||
-            line.classList.contains('empty'))
-          commitPortForwardingConfig();
-        else
+            line.classList.contains('empty')) {
+          commitPortForwardingConfig(true);
+        } else {
           commitFreshLineIfValid(true /* select new line */);
+          commitPortForwardingConfig(false);
+        }
       } else {
-        commitPortForwardingConfig();
+        commitPortForwardingConfig(true);
       }
       break;
 
     case 27:
-      closePortForwardingConfig();
+      commitPortForwardingConfig(true);
       break;
   }
+}
+
+function setModal(dialog) {
+  dialog.deactivatedNodes = Array.prototype.filter.call(
+      document.querySelectorAll('*'),
+      function(n) {
+        return n != dialog && !dialog.contains(n) && n.tabIndex >= 0;
+      });
+
+  dialog.tabIndexes = dialog.deactivatedNodes.map(
+    function(n) { return n.getAttribute('tabindex'); });
+
+  dialog.deactivatedNodes.forEach(function(n) { n.tabIndex = -1; });
+  window.modal = dialog;
+}
+
+function unsetModal(dialog) {
+  for (var i = 0; i < dialog.deactivatedNodes.length; i++) {
+    var node = dialog.deactivatedNodes[i];
+    if (dialog.tabIndexes[i] === null)
+      node.removeAttribute('tabindex');
+    else
+      node.setAttribute('tabindex', tabIndexes[i]);
+  }
+
+  if (window.holdDevices) {
+    populateRemoteTargets(window.holdDevices);
+    delete window.holdDevices;
+  }
+
+  delete dialog.deactivatedNodes;
+  delete dialog.tabIndexes;
+  delete window.modal;
 }
 
 function openPortForwardingConfig() {
@@ -399,11 +585,14 @@ function openPortForwardingConfig() {
     freshPort.focus();
   else
     $('port-forwarding-config-done').focus();
+
+  setModal($('port-forwarding-overlay'));
 }
 
 function closePortForwardingConfig() {
   $('port-forwarding-overlay').classList.remove('open');
   document.removeEventListener('keyup', handleKey);
+  unsetModal($('port-forwarding-overlay'));
 }
 
 function loadPortForwardingConfig(config) {
@@ -414,27 +603,36 @@ function loadPortForwardingConfig(config) {
   list.appendChild(createEmptyConfigLine());
 }
 
-function commitPortForwardingConfig() {
-  if (document.querySelector(
-      '.port-forwarding-pair:not(.fresh) input.invalid'))
-    return;
+function commitPortForwardingConfig(closeConfig) {
+  if (closeConfig)
+    closePortForwardingConfig();
 
-  if (document.querySelector(
-      '.port-forwarding-pair.fresh:not(.empty) input.invalid'))
-    return;
-
-  closePortForwardingConfig();
   commitFreshLineIfValid();
   var lines = document.querySelectorAll('.port-forwarding-pair');
   var config = {};
   for (var i = 0; i != lines.length; i++) {
     var line = lines[i];
-    var portInput = line.querySelector('.port:not(.invalid)');
-    var locationInput = line.querySelector('.location:not(.invalid)');
-    if (portInput && locationInput)
-      config[portInput.value] = locationInput.value;
+    var portInput = line.querySelector('.port');
+    var locationInput = line.querySelector('.location');
+
+    var port = portInput.classList.contains('invalid') ?
+               portInput.lastValidValue :
+               portInput.value;
+
+    var location = locationInput.classList.contains('invalid') ?
+                   locationInput.lastValidValue :
+                   locationInput.value;
+
+    if (port && location)
+      config[port] = location;
   }
-  chrome.send('set-port-forwarding-config', [config]);
+  sendCommand('set-port-forwarding-config', config);
+}
+
+function updateDiscoverUsbDevicesEnabled(enabled) {
+  var checkbox = $('discover-usb-devices-enable');
+  checkbox.checked = !!enabled;
+  checkbox.disabled = false;
 }
 
 function updatePortForwardingEnabled(enabled) {
@@ -491,7 +689,7 @@ function validatePort(input) {
   if (!match)
     return false;
   var port = parseInt(match[1]);
-  if (port < 5000 || 10000 < port)
+  if (port < 1024 || 10000 < port)
     return false;
 
   var inputs = document.querySelectorAll('input.port:not(.invalid)');
@@ -524,6 +722,7 @@ function createConfigField(value, className, hint, validate) {
   input.type = 'text';
   input.placeholder = hint;
   input.value = value;
+  input.lastValidValue = value;
 
   function checkInput() {
     if (validate(input))
@@ -538,6 +737,11 @@ function createConfigField(value, className, hint, validate) {
   input.addEventListener('keyup', checkInput);
   input.addEventListener('focus', function() {
     selectLine(input.parentNode);
+  });
+
+  input.addEventListener('blur', function() {
+    if (validate(input))
+      input.lastValidValue = input.value;
   });
 
   return input;

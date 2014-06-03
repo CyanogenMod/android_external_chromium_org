@@ -16,7 +16,6 @@
 #include "base/synchronization/waitable_event.h"
 #include "content/browser/browser_child_process_host_impl.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
-#include "content/child/child_process.h"
 #include "content/common/child_process_host_impl.h"
 #include "content/common/utility_messages.h"
 #include "content/public/browser/browser_thread.h"
@@ -24,7 +23,6 @@
 #include "content/public/browser/utility_process_host_client.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/process_type.h"
-#include "content/utility/utility_thread_impl.h"
 #include "ipc/ipc_switches.h"
 #include "ui/base/ui_base_switches.h"
 
@@ -53,58 +51,18 @@ private:
 };
 #endif
 
-// We want to ensure there's only one utility thread running at a time, as there
-// are many globals used in the utility process.
-static base::LazyInstance<base::Lock> g_one_utility_thread_lock;
 
-// Single process not supported in multiple dll mode currently.
-#if !defined(CHROME_MULTIPLE_DLL)
-class UtilityMainThread : public base::Thread {
- public:
-  UtilityMainThread(const std::string& channel_id)
-      : Thread("Chrome_InProcUtilityThread"),
-        channel_id_(channel_id) {
-  }
-
-  virtual ~UtilityMainThread() {
-    Stop();
-  }
-
- private:
-  // base::Thread implementation:
-  virtual void Init() OVERRIDE {
-    // We need to return right away or else the main thread that started us will
-    // hang.
-    base::MessageLoop::current()->PostTask(
-        FROM_HERE,
-        base::Bind(&UtilityMainThread::InitInternal, base::Unretained(this)));
-  }
-
-  virtual void CleanUp() OVERRIDE {
-    child_process_.reset();
-
-    // See comment in RendererMainThread.
-    SetThreadWasQuitProperly(true);
-    g_one_utility_thread_lock.Get().Release();
-  }
-
-  void InitInternal() {
-    g_one_utility_thread_lock.Get().Acquire();
-    child_process_.reset(new ChildProcess());
-    child_process_->set_main_thread(new UtilityThreadImpl(channel_id_));
-  }
-
-  std::string channel_id_;
-  scoped_ptr<ChildProcess> child_process_;
-
-  DISALLOW_COPY_AND_ASSIGN(UtilityMainThread);
-};
-#endif  // !CHROME_MULTIPLE_DLL
+UtilityMainThreadFactoryFunction g_utility_main_thread_factory = NULL;
 
 UtilityProcessHost* UtilityProcessHost::Create(
     UtilityProcessHostClient* client,
     base::SequencedTaskRunner* client_task_runner) {
   return new UtilityProcessHostImpl(client, client_task_runner);
+}
+
+void UtilityProcessHost::RegisterUtilityMainThreadFactory(
+    UtilityMainThreadFactoryFunction create) {
+  g_utility_main_thread_factory = create;
 }
 
 UtilityProcessHostImpl::UtilityProcessHostImpl(
@@ -120,7 +78,6 @@ UtilityProcessHostImpl::UtilityProcessHostImpl(
 #else
       child_flags_(ChildProcessHost::CHILD_NORMAL),
 #endif
-      use_linux_zygote_(false),
       started_(false) {
 }
 
@@ -162,17 +119,13 @@ void UtilityProcessHostImpl::DisableSandbox() {
   no_sandbox_ = true;
 }
 
-void UtilityProcessHostImpl::EnableZygote() {
-  use_linux_zygote_ = true;
-}
-
 const ChildProcessData& UtilityProcessHostImpl::GetData() {
   return process_->GetData();
 }
 
 #if defined(OS_POSIX)
 
-void UtilityProcessHostImpl::SetEnv(const base::EnvironmentVector& env) {
+void UtilityProcessHostImpl::SetEnv(const base::EnvironmentMap& env) {
   env_ = env;
 }
 
@@ -195,16 +148,13 @@ bool UtilityProcessHostImpl::StartProcess() {
   if (channel_id.empty())
     return false;
 
-  // Single process not supported in multiple dll mode currently.
-#if !defined(CHROME_MULTIPLE_DLL)
   if (RenderProcessHost::run_renderer_in_process()) {
+    DCHECK(g_utility_main_thread_factory);
     // See comment in RenderProcessHostImpl::Init() for the background on why we
     // support single process mode this way.
-    in_process_thread_.reset(new UtilityMainThread(channel_id));
+    in_process_thread_.reset(g_utility_main_thread_factory(channel_id));
     in_process_thread_->Start();
-  } else
-#endif  // !CHROME_MULTIPLE_DLL
-  {
+  } else {
     const CommandLine& browser_command_line = *CommandLine::ForCurrentProcess();
     int child_flags = child_flags_;
 
@@ -244,16 +194,17 @@ bool UtilityProcessHostImpl::StartProcess() {
       cmd_line->AppendSwitch(switches::kDebugPluginLoading);
 
 #if defined(OS_POSIX)
-    // TODO(port): Sandbox this on Linux.  Also, zygote this to work with
-    // Linux updating.
     if (has_cmd_prefix) {
-      // launch the utility child process with some prefix (usually "xterm -e gdb
-      // --args").
+      // Launch the utility child process with some prefix
+      // (usually "xterm -e gdb --args").
       cmd_line->PrependWrapper(browser_command_line.GetSwitchValueNative(
           switches::kUtilityCmdPrefix));
     }
 
-    cmd_line->AppendSwitchPath(switches::kUtilityProcessAllowedDir, exposed_dir_);
+    if (!exposed_dir_.empty()) {
+      cmd_line->AppendSwitchPath(switches::kUtilityProcessAllowedDir,
+                                 exposed_dir_);
+    }
 #endif
 
     if (is_mdns_enabled_)
@@ -262,7 +213,9 @@ bool UtilityProcessHostImpl::StartProcess() {
     bool use_zygote = false;
 
 #if defined(OS_LINUX)
-    use_zygote = !no_sandbox_ && use_linux_zygote_;
+    // The Linux sandbox does not support granting access to a single directory,
+    // so we need to bypass the zygote in that case.
+    use_zygote = !no_sandbox_ && exposed_dir_.empty();
 #endif
 
     process_->Launch(

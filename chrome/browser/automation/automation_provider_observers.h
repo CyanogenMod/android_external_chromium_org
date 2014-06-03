@@ -23,7 +23,6 @@
 #include "components/autofill/core/browser/personal_data_manager.h"
 #include "components/autofill/core/browser/personal_data_manager_observer.h"
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/cros/network_library.h"
 #include "chrome/browser/chromeos/login/enrollment/enrollment_screen.h"
 #include "chrome/browser/chromeos/login/login_status_consumer.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
@@ -48,14 +47,12 @@
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_types.h"
-#include "content/public/browser/render_view_host_observer.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/size.h"
 
 class AutomationProvider;
 class BalloonCollection;
 class Browser;
-class ExtensionProcessManager;
 class ExtensionService;
 class Notification;
 class Profile;
@@ -80,6 +77,7 @@ class WebContents;
 
 namespace extensions {
 class Extension;
+class ProcessManager;
 }
 
 namespace history {
@@ -133,22 +131,6 @@ class InitialLoadObserver : public content::NotificationObserver {
 };
 
 #if defined(OS_CHROMEOS)
-// Watches for NetworkManager events. Because NetworkLibrary loads
-// asynchronously, this is used to make sure it is done before tests are run.
-class NetworkManagerInitObserver
-    : public chromeos::NetworkLibrary::NetworkManagerObserver {
- public:
-  explicit NetworkManagerInitObserver(AutomationProvider* automation);
-  virtual ~NetworkManagerInitObserver();
-  virtual bool Init();
-  virtual void OnNetworkManagerChanged(chromeos::NetworkLibrary* obj);
-
- private:
-  base::WeakPtr<AutomationProvider> automation_;
-
-  DISALLOW_COPY_AND_ASSIGN(NetworkManagerInitObserver);
-};
-
 // Observes when the ChromeOS login WebUI becomes ready (by showing the login
 // form, account picker, a network error or the OOBE wizard, depending on Chrome
 // flags and state).
@@ -365,7 +347,7 @@ class ExtensionReadyNotificationObserver
     : public content::NotificationObserver {
  public:
   // Creates an observer that replies using the JSON automation interface.
-  ExtensionReadyNotificationObserver(ExtensionProcessManager* manager,
+  ExtensionReadyNotificationObserver(extensions::ProcessManager* manager,
                                      ExtensionService* service,
                                      AutomationProvider* automation,
                                      IPC::Message* reply_message);
@@ -380,7 +362,7 @@ class ExtensionReadyNotificationObserver
   void Init();
 
   content::NotificationRegistrar registrar_;
-  ExtensionProcessManager* manager_;
+  extensions::ProcessManager* manager_;
   ExtensionService* service_;
   base::WeakPtr<AutomationProvider> automation_;
   scoped_ptr<IPC::Message> reply_message_;
@@ -417,7 +399,7 @@ class ExtensionUnloadNotificationObserver
 // observer waits until all updated extensions have actually been loaded.
 class ExtensionsUpdatedObserver : public content::NotificationObserver {
  public:
-  ExtensionsUpdatedObserver(ExtensionProcessManager* manager,
+  ExtensionsUpdatedObserver(extensions::ProcessManager* manager,
                             AutomationProvider* automation,
                             IPC::Message* reply_message);
   virtual ~ExtensionsUpdatedObserver();
@@ -434,7 +416,7 @@ class ExtensionsUpdatedObserver : public content::NotificationObserver {
   void MaybeReply();
 
   content::NotificationRegistrar registrar_;
-  ExtensionProcessManager* manager_;
+  extensions::ProcessManager* manager_;
   base::WeakPtr<AutomationProvider> automation_;
   scoped_ptr<IPC::Message> reply_message_;
   bool updater_finished_;
@@ -597,7 +579,6 @@ class DomOperationObserver : public content::NotificationObserver {
                        const content::NotificationDetails& details) OVERRIDE;
 
   virtual void OnDomOperationCompleted(const std::string& json) = 0;
-  virtual void OnModalDialogShown() = 0;
   virtual void OnJavascriptBlocked() = 0;
 
  private:
@@ -617,7 +598,6 @@ class DomOperationMessageSender : public DomOperationObserver {
   virtual ~DomOperationMessageSender();
 
   virtual void OnDomOperationCompleted(const std::string& json) OVERRIDE;
-  virtual void OnModalDialogShown() OVERRIDE;
   virtual void OnJavascriptBlocked() OVERRIDE;
 
  private:
@@ -690,10 +670,7 @@ class LoginObserver : public chromeos::LoginStatusConsumer {
 
   virtual void OnLoginFailure(const chromeos::LoginFailure& error);
 
-  virtual void OnLoginSuccess(
-      const chromeos::UserContext& user_context,
-      bool pending_requests,
-      bool using_oauth);
+  virtual void OnLoginSuccess(const chromeos::UserContext& user_context);
 
  private:
   chromeos::ExistingUserController* controller_;
@@ -779,161 +756,10 @@ class ScreenUnlockObserver : public ScreenLockUnlockObserver,
 
   virtual void OnLoginFailure(const chromeos::LoginFailure& error);
 
-  virtual void OnLoginSuccess(
-      const chromeos::UserContext& user_context,
-      bool pending_requests,
-      bool using_oauth) {}
+  virtual void OnLoginSuccess(const chromeos::UserContext& user_context) {}
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ScreenUnlockObserver);
-};
-
-class NetworkScanObserver
-    : public chromeos::NetworkLibrary::NetworkManagerObserver {
- public:
-  NetworkScanObserver(AutomationProvider* automation,
-                      IPC::Message* reply_message);
-
-  virtual ~NetworkScanObserver();
-
-  // NetworkLibrary::NetworkManagerObserver implementation.
-  virtual void OnNetworkManagerChanged(chromeos::NetworkLibrary* obj);
-
- private:
-  base::WeakPtr<AutomationProvider> automation_;
-  scoped_ptr<IPC::Message> reply_message_;
-
-  DISALLOW_COPY_AND_ASSIGN(NetworkScanObserver);
-};
-
-class ToggleNetworkDeviceObserver
-    : public chromeos::NetworkLibrary::NetworkManagerObserver {
- public:
-  ToggleNetworkDeviceObserver(AutomationProvider* automation,
-                              IPC::Message* reply_message,
-                              const std::string& device,
-                              bool enable);
-
-  virtual ~ToggleNetworkDeviceObserver();
-
-  // NetworkLibrary::NetworkManagerObserver implementation.
-  virtual void OnNetworkManagerChanged(chromeos::NetworkLibrary* obj);
-
- private:
-  base::WeakPtr<AutomationProvider> automation_;
-  scoped_ptr<IPC::Message> reply_message_;
-  std::string device_;
-  bool enable_;
-
-  DISALLOW_COPY_AND_ASSIGN(ToggleNetworkDeviceObserver);
-};
-
-class NetworkStatusObserver
-    : public chromeos::NetworkLibrary::NetworkManagerObserver {
- public:
-  NetworkStatusObserver(AutomationProvider* automation,
-                        IPC::Message* reply_message);
-  virtual ~NetworkStatusObserver();
-
-  virtual const chromeos::Network* GetNetwork(
-      chromeos::NetworkLibrary* network_library) = 0;
-  // NetworkLibrary::NetworkManagerObserver implementation.
-  virtual void OnNetworkManagerChanged(chromeos::NetworkLibrary* obj);
-  virtual void NetworkStatusCheck(const chromeos::Network* network) = 0;
-
- protected:
-  base::WeakPtr<AutomationProvider> automation_;
-  scoped_ptr<IPC::Message> reply_message_;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(NetworkStatusObserver);
-};
-
-// Waits for a connection success or failure for the specified
-// network and returns the status to the automation provider.
-class NetworkConnectObserver : public NetworkStatusObserver {
- public:
-  NetworkConnectObserver(AutomationProvider* automation,
-                         IPC::Message* reply_message);
-
-  virtual void NetworkStatusCheck(const chromeos::Network* network);
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(NetworkConnectObserver);
-};
-
-// Waits until a network has disconnected.  Then returns success
-// or failure.
-class NetworkDisconnectObserver : public NetworkStatusObserver {
- public:
-  NetworkDisconnectObserver(AutomationProvider* automation,
-                            IPC::Message* reply_message,
-                            const std::string& service_path);
-
-  virtual void NetworkStatusCheck(const chromeos::Network* network);
-  const chromeos::Network* GetNetwork(
-      chromeos::NetworkLibrary* network_library);
-
- private:
-  std::string service_path_;
-  DISALLOW_COPY_AND_ASSIGN(NetworkDisconnectObserver);
-};
-
-// Waits for a connection success or failure for the specified
-// network and returns the status to the automation provider.
-class ServicePathConnectObserver : public NetworkConnectObserver {
- public:
-  ServicePathConnectObserver(AutomationProvider* automation,
-                             IPC::Message* reply_message,
-                             const std::string& service_path);
-
-  const chromeos::Network* GetNetwork(
-      chromeos::NetworkLibrary* network_library);
-
- private:
-  std::string service_path_;
-  DISALLOW_COPY_AND_ASSIGN(ServicePathConnectObserver);
-};
-
-// Waits for a connection success or failure for the specified
-// network and returns the status to the automation provider.
-class SSIDConnectObserver : public NetworkConnectObserver {
- public:
-  SSIDConnectObserver(AutomationProvider* automation,
-                      IPC::Message* reply_message,
-                      const std::string& ssid);
-
-  const chromeos::Network* GetNetwork(
-      chromeos::NetworkLibrary* network_library);
-
- private:
-  std::string ssid_;
-  DISALLOW_COPY_AND_ASSIGN(SSIDConnectObserver);
-};
-
-// Waits for a connection success or failure for the specified
-// virtual network and returns the status to the automation provider.
-class VirtualConnectObserver
-    : public chromeos::NetworkLibrary::NetworkManagerObserver {
- public:
-  VirtualConnectObserver(AutomationProvider* automation,
-                         IPC::Message* reply_message,
-                         const std::string& service_name);
-
-  virtual ~VirtualConnectObserver();
-
-  // NetworkLibrary::NetworkManagerObserver implementation.
-  virtual void OnNetworkManagerChanged(chromeos::NetworkLibrary* cros);
-
- private:
-  virtual chromeos::VirtualNetwork* GetVirtualNetwork(
-      const chromeos::NetworkLibrary* cros);
-
-  base::WeakPtr<AutomationProvider> automation_;
-  scoped_ptr<IPC::Message> reply_message_;
-  std::string service_name_;
-
-  DISALLOW_COPY_AND_ASSIGN(VirtualConnectObserver);
 };
 
 #endif  // defined(OS_CHROMEOS)
@@ -1137,9 +963,9 @@ class AutomationProviderGetPasswordsObserver : public PasswordStoreConsumer {
   // PasswordStoreConsumer implementation.
   virtual void OnPasswordStoreRequestDone(
       CancelableRequestProvider::Handle handle,
-      const std::vector<content::PasswordForm*>& result) OVERRIDE;
+      const std::vector<autofill::PasswordForm*>& result) OVERRIDE;
   virtual void OnGetPasswordStoreResults(
-      const std::vector<content::PasswordForm*>& results) OVERRIDE;
+      const std::vector<autofill::PasswordForm*>& results) OVERRIDE;
 
  private:
   base::WeakPtr<AutomationProvider> provider_;
@@ -1273,7 +1099,7 @@ class AppLaunchObserver : public content::NotificationObserver {
   AppLaunchObserver(content::NavigationController* controller,
                     AutomationProvider* automation,
                     IPC::Message* reply_message,
-                    extension_misc::LaunchContainer launch_container);
+                    extensions::LaunchContainer launch_container);
   virtual ~AppLaunchObserver();
 
   // Overridden from content::NotificationObserver:
@@ -1286,7 +1112,7 @@ class AppLaunchObserver : public content::NotificationObserver {
   base::WeakPtr<AutomationProvider> automation_;
   scoped_ptr<IPC::Message> reply_message_;
   content::NotificationRegistrar registrar_;
-  extension_misc::LaunchContainer launch_container_;
+  extensions::LaunchContainer launch_container_;
   int new_window_id_;
 
   DISALLOW_COPY_AND_ASSIGN(AppLaunchObserver);

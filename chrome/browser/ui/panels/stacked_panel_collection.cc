@@ -14,7 +14,7 @@
 #include "chrome/browser/ui/panels/panel.h"
 #include "chrome/browser/ui/panels/panel_constants.h"
 #include "chrome/browser/ui/panels/panel_manager.h"
-#include "chrome/common/extensions/extension.h"
+#include "extensions/common/extension.h"
 
 StackedPanelCollection::StackedPanelCollection(PanelManager* panel_manager)
     : PanelCollection(PanelCollection::STACKED),
@@ -139,14 +139,20 @@ void StackedPanelCollection::RefreshLayoutWithTopPanelStartingAt(
     secondary_stack_window_->EndBatchUpdatePanelBounds();
 }
 
-string16 StackedPanelCollection::GetTitle() const {
+base::string16 StackedPanelCollection::GetTitle() const {
   if (panels_.empty())
-    return string16();
+    return base::string16();
 
   Panel* panel = panels_.front();
   const extensions::Extension* extension = panel->GetExtension();
   return UTF8ToUTF16(extension && !extension->name().empty() ?
       extension->name() : panel->app_name());
+}
+
+gfx::Image StackedPanelCollection::GetIcon() const {
+  if (panels_.empty())
+    return gfx::Image();
+  return panels_.front()->app_icon();
 }
 
 void StackedPanelCollection::PanelBoundsBatchUpdateCompleted() {
@@ -626,7 +632,6 @@ void StackedPanelCollection::UpdatePanelOnCollectionChange(Panel* panel) {
       static_cast<Panel::AttentionMode>(Panel::USE_PANEL_ATTENTION |
                                         Panel::USE_SYSTEM_ATTENTION));
   panel->ShowShadow(false);
-  panel->EnableResizeByMouse(true);
   panel->UpdateMinimizeRestoreButtonVisibility();
   UpdatePanelCornerStyle(panel);
 }

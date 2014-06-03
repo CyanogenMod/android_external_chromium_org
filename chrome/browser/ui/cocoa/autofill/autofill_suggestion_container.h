@@ -19,14 +19,11 @@ namespace autofill {
 // Container for the data suggested for a particular input section.
 @interface AutofillSuggestionContainer : NSViewController<AutofillLayout> {
  @private
+  // The spacer at the top of the suggestion.
+  base::scoped_nsobject<NSBox> spacer_;
+
   // The label that holds the suggestion description text.
-  base::scoped_nsobject<NSTextField> label_;
-
-  // The second (and longer) line of text that describes the suggestion.
-  base::scoped_nsobject<NSTextField> label2_;
-
-  // The icon that comes just before |label_|.
-  base::scoped_nsobject<NSImageView> iconImageView_;
+  base::scoped_nsobject<NSTextView> label_;
 
   // The input set by ShowTextfield.
   base::scoped_nsobject<AutofillTextField> inputField_;
@@ -34,15 +31,11 @@ namespace autofill {
   autofill::AutofillDialogViewDelegate* delegate_;  // Not owned.
 }
 
-// Auxiliary textfield. See showTextfield: for details.
+// Auxiliary textfield. See showInputField: for details.
 @property (readonly, nonatomic) AutofillTextField* inputField;
 
-// Set the icon for the suggestion.
-- (void)setIcon:(NSImage*)iconImage;
-
-// Set the main suggestion text and the font used to render that text.
-- (void)setSuggestionText:(NSString*)line1
-                    line2:(NSString*)line2;
+// Set the main suggestion text and the corresponding |icon|.
+- (void)setSuggestionText:(NSString*)line icon:(NSImage*)icon;
 
 // Shows an auxiliary textfield to the right of the suggestion icon and
 // text. This is currently only used to show a CVC field for the CC section.

@@ -34,8 +34,9 @@ using content::BrowserThread;
 namespace {
 
 // Callback to show error dialog on profile load error.
-void ProfileErrorCallback(sql::InitStatus status) {
+void ProfileErrorCallback(ProfileErrorType type, sql::InitStatus status) {
   ShowProfileErrorDialog(
+      type,
       (status == sql::INIT_FAILURE) ?
       IDS_COULDNT_OPEN_PROFILE_ERROR : IDS_PROFILE_TOO_NEW_ERROR);
 }
@@ -69,9 +70,11 @@ WebDataServiceWrapper::WebDataServiceWrapper(Profile* profile) {
   base::FilePath profile_path = profile->GetPath();
   base::FilePath path = profile_path.Append(kWebDataFilename);
 
-  web_database_ = new WebDatabaseService(path,
-      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI),
-      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::DB));
+  scoped_refptr<base::MessageLoopProxy> ui_thread =
+      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI);
+  scoped_refptr<base::MessageLoopProxy> db_thread =
+      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::DB);
+  web_database_ = new WebDatabaseService(path, ui_thread, db_thread);
 
   // All tables objects that participate in managing the database must
   // be added here.
@@ -97,15 +100,18 @@ WebDataServiceWrapper::WebDataServiceWrapper(Profile* profile) {
   web_database_->LoadDatabase();
 
   autofill_web_data_ = new AutofillWebDataService(
-      web_database_, base::Bind(&ProfileErrorCallback));
+      web_database_, ui_thread, db_thread, base::Bind(
+          &ProfileErrorCallback, PROFILE_ERROR_DB_AUTOFILL_WEB_DATA));
   autofill_web_data_->Init();
 
   token_web_data_ = new TokenWebData(
-      web_database_, base::Bind(&ProfileErrorCallback));
+      web_database_, base::Bind(&ProfileErrorCallback,
+                                PROFILE_ERROR_DB_TOKEN_WEB_DATA));
   token_web_data_->Init();
 
   web_data_ = new WebDataService(
-      web_database_, base::Bind(&ProfileErrorCallback));
+      web_database_, base::Bind(&ProfileErrorCallback,
+                                PROFILE_ERROR_DB_WEB_DATA));
   web_data_->Init();
 
   autofill_web_data_->GetAutofillBackend(
@@ -136,21 +142,6 @@ scoped_refptr<WebDataService> WebDataServiceWrapper::GetWebData() {
 
 scoped_refptr<TokenWebData> WebDataServiceWrapper::GetTokenWebData() {
   return token_web_data_.get();
-}
-
-// static
-scoped_refptr<AutofillWebDataService>
-AutofillWebDataService::FromBrowserContext(content::BrowserContext* context) {
-  // For this service, the implicit/explicit distinction doesn't
-  // really matter; it's just used for a DCHECK.  So we currently
-  // cheat and always say EXPLICIT_ACCESS.
-  WebDataServiceWrapper* wrapper =
-      WebDataServiceFactory::GetForProfile(
-          static_cast<Profile*>(context), Profile::EXPLICIT_ACCESS);
-  if (wrapper)
-    return wrapper->GetAutofillWebData();
-  // |wrapper| can be NULL in Incognito mode.
-  return scoped_refptr<AutofillWebDataService>(NULL);
 }
 
 // static
@@ -194,10 +185,11 @@ WebDataServiceFactory::~WebDataServiceFactory() {}
 
 // static
 WebDataServiceWrapper* WebDataServiceFactory::GetForProfile(
-    Profile* profile, Profile::ServiceAccessType access_type) {
+    Profile* profile,
+    Profile::ServiceAccessType access_type) {
   // If |access_type| starts being used for anything other than this
   // DCHECK, we need to start taking it as a parameter to
-  // AutofillWebDataService::FromBrowserContext (see above).
+  // the *WebDataService::FromBrowserContext() functions (see above).
   DCHECK(access_type != Profile::IMPLICIT_ACCESS || !profile->IsOffTheRecord());
   return static_cast<WebDataServiceWrapper*>(
           GetInstance()->GetServiceForBrowserContext(profile, true));
@@ -205,13 +197,27 @@ WebDataServiceWrapper* WebDataServiceFactory::GetForProfile(
 
 // static
 WebDataServiceWrapper* WebDataServiceFactory::GetForProfileIfExists(
-    Profile* profile, Profile::ServiceAccessType access_type) {
+    Profile* profile,
+    Profile::ServiceAccessType access_type) {
   // If |access_type| starts being used for anything other than this
   // DCHECK, we need to start taking it as a parameter to
-  // AutofillWebDataService::FromBrowserContext (see above).
+  // the *WebDataService::FromBrowserContext() functions (see above).
   DCHECK(access_type != Profile::IMPLICIT_ACCESS || !profile->IsOffTheRecord());
   return static_cast<WebDataServiceWrapper*>(
           GetInstance()->GetServiceForBrowserContext(profile, false));
+}
+
+// static
+scoped_refptr<AutofillWebDataService>
+WebDataServiceFactory::GetAutofillWebDataForProfile(
+    Profile* profile,
+    Profile::ServiceAccessType access_type) {
+  WebDataServiceWrapper* wrapper =
+      WebDataServiceFactory::GetForProfile(profile, access_type);
+  // |wrapper| can be NULL in Incognito mode.
+  return wrapper ?
+      wrapper->GetAutofillWebData() :
+      scoped_refptr<AutofillWebDataService>(NULL);
 }
 
 // static

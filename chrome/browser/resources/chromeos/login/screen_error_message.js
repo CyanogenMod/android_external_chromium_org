@@ -24,7 +24,9 @@ login.createScreen('ErrorMessageScreen', 'error-message', function() {
     ERROR_SCREEN_UI_STATE.UNKNOWN,
     ERROR_SCREEN_UI_STATE.UPDATE,
     ERROR_SCREEN_UI_STATE.SIGNIN,
-    ERROR_SCREEN_UI_STATE.MANAGED_USER_CREATION_FLOW
+    ERROR_SCREEN_UI_STATE.MANAGED_USER_CREATION_FLOW,
+    ERROR_SCREEN_UI_STATE.KIOSK_MODE,
+    ERROR_SCREEN_UI_STATE.LOCAL_STATE_ERROR
   ];
 
   // Possible error states of the screen.
@@ -137,6 +139,16 @@ login.createScreen('ErrorMessageScreen', 'error-message', function() {
     onBeforeShow: function(data) {
       cr.ui.Oobe.clearErrors();
       cr.ui.DropDown.show('offline-networks-list', false);
+      if (data === undefined)
+        return;
+      if ('uiState' in data)
+        this.setUIState(data['uiState']);
+      if ('errorState' in data && 'network' in data)
+        this.setErrorState(data['errorState'], data['network']);
+      if ('guestSigninAllowed' in data)
+        this.allowGuestSignin(data['guestSigninAllowed']);
+      if ('offlineLoginAllowed' in data)
+        this.allowOfflineLogin(data['offlineLoginAllowed']);
     },
 
     /**
@@ -144,6 +156,41 @@ login.createScreen('ErrorMessageScreen', 'error-message', function() {
      */
     onBeforeHide: function() {
       cr.ui.DropDown.hide('offline-networks-list');
+    },
+
+    /**
+     * Buttons in oobe wizard's button strip.
+     * @type {array} Array of Buttons.
+     */
+    get buttons() {
+      var buttons = [];
+
+      var rebootButton = this.ownerDocument.createElement('button');
+      rebootButton.textContent = loadTimeData.getString('rebootButton');
+      rebootButton.classList.add('show-with-ui-state-kiosk-mode');
+      rebootButton.addEventListener('click', function(e) {
+        chrome.send('rebootButtonClicked');
+        e.stopPropagation();
+      });
+      buttons.push(rebootButton);
+
+      var spacer = this.ownerDocument.createElement('div');
+      spacer.classList.add('button-spacer');
+      spacer.classList.add('show-with-ui-state-kiosk-mode');
+      buttons.push(spacer);
+
+      var powerwashButton = this.ownerDocument.createElement('button');
+      powerwashButton.id = 'error-message-restart-and-powerwash-button';
+      powerwashButton.textContent =
+        loadTimeData.getString('localStateErrorPowerwashButton');
+      powerwashButton.classList.add('show-with-ui-state-local-state-error');
+      powerwashButton.addEventListener('click', function(e) {
+        chrome.send('localStateErrorPowerwashButtonClicked');
+        e.stopPropagation();
+      });
+      buttons.push(powerwashButton);
+
+      return buttons;
     },
 
     /**
@@ -155,6 +202,13 @@ login.createScreen('ErrorMessageScreen', 'error-message', function() {
       this.classList.remove(this.ui_state);
       this.ui_state = ui_state;
       this.classList.add(this.ui_state);
+
+      if (ui_state == ERROR_SCREEN_UI_STATE.LOCAL_STATE_ERROR) {
+        // Hide header bar and progress dots, because there are no way
+        // from the error screen about broken local state.
+        Oobe.getInstance().headerHidden = true;
+        $('progress-dots').hidden = true;
+      }
       this.onContentChange_();
     },
 
@@ -218,4 +272,3 @@ login.createScreen('ErrorMessageScreen', 'error-message', function() {
     }
   };
 });
-

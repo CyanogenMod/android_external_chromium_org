@@ -5,29 +5,45 @@
 #ifndef CHROME_BROWSER_CHROMEOS_POLICY_POLICY_CERT_VERIFIER_H_
 #define CHROME_BROWSER_CHROMEOS_POLICY_POLICY_CERT_VERIFIER_H_
 
+#include <vector>
+
+#include "base/basictypes.h"
+#include "base/callback.h"
+#include "base/compiler_specific.h"
+#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "net/base/completion_callback.h"
+#include "net/cert/cert_trust_anchor_provider.h"
 #include "net/cert/cert_verifier.h"
 
 namespace net {
-class CertTrustAnchorProvider;
+class CertVerifyResult;
+class X509Certificate;
+typedef std::vector<scoped_refptr<X509Certificate> > CertificateList;
 }
 
 namespace policy {
 
 // Wraps a MultiThreadedCertVerifier to make it use the additional trust anchors
 // configured by the ONC user policy.
-class PolicyCertVerifier : public net::CertVerifier {
+class PolicyCertVerifier : public net::CertVerifier,
+                           public net::CertTrustAnchorProvider {
  public:
-  // |profile| is a handle to the Profile whose request context makes use of
-  // this verified. This object can be created on the IO thread; the handle is
-  // only used on the UI thread, if it's still valid.
-  // |trust_anchor_provider| is used to retrieve the current list of trust
-  // anchors.
-  PolicyCertVerifier(void* profile,
-                     net::CertTrustAnchorProvider* trust_anchor_provider);
+  // Except for tests, PolicyCertVerifier should only be created by
+  // PolicyCertService, which is the counterpart of this class on the UI thread.
+  // Except of the constructor, all methods and the destructor must be called on
+  // the IO thread. Calls |anchor_used_callback| on the IO thread everytime a
+  // certificate from the additional trust anchors (set with SetTrustAnchors) is
+  // used.
+  explicit PolicyCertVerifier(const base::Closure& anchor_used_callback);
   virtual ~PolicyCertVerifier();
 
-  // CertVerifier implementation:
+  void InitializeOnIOThread();
+
+  // Sets the additional trust anchors.
+  void SetTrustAnchors(const net::CertificateList& trust_anchors);
+
+  // CertVerifier:
   // Note: |callback| can be null.
   virtual int Verify(net::X509Certificate* cert,
                      const std::string& hostname,
@@ -40,9 +56,15 @@ class PolicyCertVerifier : public net::CertVerifier {
 
   virtual void CancelRequest(RequestHandle req) OVERRIDE;
 
+  // CertTrustAnchorProvider:
+  virtual const net::CertificateList& GetAdditionalTrustAnchors() OVERRIDE;
+
  private:
-  void* profile_;
+  net::CertificateList trust_anchors_;
+  base::Closure anchor_used_callback_;
   scoped_ptr<CertVerifier> delegate_;
+
+  DISALLOW_COPY_AND_ASSIGN(PolicyCertVerifier);
 };
 
 }  // namespace policy

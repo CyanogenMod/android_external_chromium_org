@@ -5,6 +5,7 @@
 """Generates test runner factory and tests for instrumentation tests."""
 
 import logging
+import os
 
 import test_package
 import test_runner
@@ -19,6 +20,10 @@ def Setup(test_options):
   Returns:
     A tuple of (TestRunnerFactory, tests).
   """
+  if (test_options.coverage_dir and not
+      os.path.exists(test_options.coverage_dir)):
+    os.makedirs(test_options.coverage_dir)
+
   test_pkg = test_package.TestPackage(test_options.test_apk_path,
                                       test_options.test_apk_jar_path)
   tests = test_pkg._GetAllMatchingTests(
@@ -30,6 +35,6 @@ def Setup(test_options):
 
   def TestRunnerFactory(device, shard_index):
     return test_runner.TestRunner(test_options, device, shard_index,
-                                  test_pkg, [])
+                                  test_pkg)
 
   return (TestRunnerFactory, tests)

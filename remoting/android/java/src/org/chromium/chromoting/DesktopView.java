@@ -6,22 +6,24 @@ package org.chromium.chromoting;
 
 import android.app.ActionBar;
 import android.app.Activity;
+import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
-import android.graphics.Matrix;
 import android.graphics.Paint;
-import android.os.Bundle;
+import android.graphics.Point;
+import android.graphics.RadialGradient;
+import android.graphics.Shader;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.text.InputType;
 import android.util.Log;
-import android.view.GestureDetector;
 import android.view.MotionEvent;
-import android.view.ScaleGestureDetector;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputConnection;
+import android.view.inputmethod.InputMethodManager;
 
 import org.chromium.chromoting.jni.JniInterface;
 
@@ -31,56 +33,91 @@ import org.chromium.chromoting.jni.JniInterface;
  * multitouch pan and zoom gestures, and collects and forwards input events.
  */
 /** GUI element that holds the drawing canvas. */
-public class DesktopView extends SurfaceView implements Runnable, SurfaceHolder.Callback {
-    /**
-     * *Square* of the minimum displacement (in pixels) to be recognized as a scroll gesture.
-     * Setting this to a lower value forces more frequent canvas redraws during scrolling.
-     */
-    private static final int MIN_SCROLL_DISTANCE = 8 * 8;
-
-    /**
-     * Minimum change to the scaling factor to be recognized as a zoom gesture. Setting lower
-     * values here will result in more frequent canvas redraws during zooming.
-     */
-    private static final double MIN_ZOOM_FACTOR = 0.05;
-
-    /*
-     * These constants must match those in the generated struct protoc::MouseEvent_MouseButton.
-     */
-    private static final int BUTTON_UNDEFINED = 0;
-    private static final int BUTTON_LEFT = 1;
-    private static final int BUTTON_RIGHT = 3;
-
-    /** Specifies one dimension of an image. */
-    private static enum Constraint {
-        UNDEFINED, WIDTH, HEIGHT
-    }
-
+public class DesktopView extends SurfaceView implements DesktopViewInterface,
+        SurfaceHolder.Callback {
+    private RenderData mRenderData;
+    private TouchInputHandler mInputHandler;
     private ActionBar mActionBar;
 
-    private GestureDetector mScroller;
-    private ScaleGestureDetector mZoomer;
+    // Flag to prevent multiple repaint requests from being backed up. Requests for repainting will
+    // be dropped if this is already set to true. This is used by the main thread and the painting
+    // thread, so the access should be synchronized on |mRenderData|.
+    private boolean mRepaintPending;
 
-    /** Stores pan and zoom configuration and converts image coordinates to screen coordinates. */
-    private Matrix mTransform;
+    // Flag used to ensure that the SurfaceView is only painted between calls to surfaceCreated()
+    // and surfaceDestroyed(). Accessed on main thread and display thread, so this should be
+    // synchronized on |mRenderData|.
+    private boolean mSurfaceCreated = false;
 
-    private int mScreenWidth;
-    private int mScreenHeight;
+    /** Helper class for displaying the long-press feedback animation. This class is thread-safe. */
+    private static class FeedbackAnimator {
+        /** Total duration of the animation, in milliseconds. */
+        private static final float TOTAL_DURATION_MS = 220;
 
-    /** Specifies the dimension by which the zoom level is being lower-bounded. */
-    private Constraint mConstraint;
+        /** Start time of the animation, from {@link SystemClock#uptimeMillis()}. */
+        private long mStartTime = 0;
 
-    /** Whether the dimension of constraint should be reckecked on the next aspect ratio change. */
-    private boolean mRecheckConstraint;
+        private boolean mRunning = false;
 
-    /** Whether the right edge of the image was visible on-screen during the last render. */
-    private boolean mRightUsedToBeOut;
+        /** Lock to allow multithreaded access to {@link #mStartTime} and {@link #mRunning}. */
+        private Object mLock = new Object();
 
-    /** Whether the bottom edge of the image was visible on-screen during the last render. */
-    private boolean mBottomUsedToBeOut;
+        private Paint mPaint = new Paint();
 
-    private int mMouseButton;
-    private boolean mMousePressed;
+        public boolean isAnimationRunning() {
+            synchronized (mLock) {
+                return mRunning;
+            }
+        }
+
+        /**
+         * Begins a new animation sequence. After calling this method, the caller should
+         * call {@link #render(Canvas, float, float, float)} periodically whilst
+         * {@link #isAnimationRunning()} returns true.
+         */
+        public void startAnimation() {
+            synchronized (mLock) {
+                mRunning = true;
+                mStartTime = SystemClock.uptimeMillis();
+            }
+        }
+
+        public void render(Canvas canvas, float x, float y, float size) {
+            // |progress| is 0 at the beginning, 1 at the end.
+            float progress;
+            synchronized (mLock) {
+                progress = (SystemClock.uptimeMillis() - mStartTime) / TOTAL_DURATION_MS;
+                if (progress >= 1) {
+                    mRunning = false;
+                    return;
+                }
+            }
+
+            // Animation grows from 0 to |size|, and goes from fully opaque to transparent for a
+            // seamless fading-out effect. The animation needs to have more than one color so it's
+            // visible over any background color.
+            float radius = size * progress;
+            int alpha = (int)((1 - progress) * 0xff);
+
+            int transparentBlack = Color.argb(0, 0, 0, 0);
+            int white = Color.argb(alpha, 0xff, 0xff, 0xff);
+            int black = Color.argb(alpha, 0, 0, 0);
+            mPaint.setShader(new RadialGradient(x, y, radius,
+                    new int[] {transparentBlack, white, black, transparentBlack},
+                    new float[] {0.0f, 0.8f, 0.9f, 1.0f}, Shader.TileMode.CLAMP));
+            canvas.drawCircle(x, y, radius, mPaint);
+        }
+    }
+
+    private FeedbackAnimator mFeedbackAnimator = new FeedbackAnimator();
+
+    // Variables to control animation by the TouchInputHandler.
+
+    /** Protects mInputAnimationRunning. */
+    private Object mAnimationLock = new Object();
+
+    /** Whether the TouchInputHandler has requested animation to be performed. */
+    private boolean mInputAnimationRunning = false;
 
     public DesktopView(Activity context) {
         super(context);
@@ -88,25 +125,28 @@ public class DesktopView extends SurfaceView implements Runnable, SurfaceHolder.
         // Give this view keyboard focus, allowing us to customize the soft keyboard's settings.
         setFocusableInTouchMode(true);
 
+        mRenderData = new RenderData();
+        mInputHandler = new TrackingInputHandler(this, context, mRenderData);
         mActionBar = context.getActionBar();
+        mRepaintPending = false;
 
         getHolder().addCallback(this);
-        DesktopListener listener = new DesktopListener();
-        mScroller = new GestureDetector(context, listener, null, false);
-        mZoomer = new ScaleGestureDetector(context, listener);
+    }
 
-        mTransform = new Matrix();
-        mScreenWidth = 0;
-        mScreenHeight = 0;
+    /** Request repainting of the desktop view. */
+    void requestRepaint() {
+        synchronized (mRenderData) {
+            if (mRepaintPending) {
+                return;
+            }
+            mRepaintPending = true;
+        }
+        JniInterface.redrawGraphics();
+    }
 
-        mConstraint = Constraint.UNDEFINED;
-        mRecheckConstraint = false;
-
-        mRightUsedToBeOut = false;
-        mBottomUsedToBeOut = false;
-
-        mMouseButton = BUTTON_UNDEFINED;
-        mMousePressed = false;
+    /** Called whenever the screen configuration is changed. */
+    public void onScreenConfigurationChanged() {
+        mInputHandler.onScreenConfigurationChanged();
     }
 
     /**
@@ -114,150 +154,132 @@ public class DesktopView extends SurfaceView implements Runnable, SurfaceHolder.
      * cause the UI to lag. Specifically, it is currently invoked on the native
      * graphics thread using a JNI.
      */
-    @Override
-    public void run() {
+    public void paint() {
+        long startTimeMs = SystemClock.uptimeMillis();
+
         if (Looper.myLooper() == Looper.getMainLooper()) {
             Log.w("deskview", "Canvas being redrawn on UI thread");
         }
 
-        Bitmap image = JniInterface.retrieveVideoFrame();
-        Canvas canvas = getHolder().lockCanvas();
-        synchronized (mTransform) {
-            canvas.setMatrix(mTransform);
+        Bitmap image = JniInterface.getVideoFrame();
+        if (image == null) {
+            // This can happen if the client is connected, but a complete video frame has not yet
+            // been decoded.
+            return;
+        }
 
-            // Internal parameters of the transformation matrix.
-            float[] values = new float[9];
-            mTransform.getValues(values);
-
-            // Screen coordinates of two defining points of the image.
-            float[] topleft = {0, 0};
-            mTransform.mapPoints(topleft);
-            float[] bottomright = {image.getWidth(), image.getHeight()};
-            mTransform.mapPoints(bottomright);
-
-            // Whether to rescale and recenter the view.
-            boolean recenter = false;
-
-            if (mConstraint == Constraint.UNDEFINED) {
-                mConstraint = (double)image.getWidth()/image.getHeight() >
-                        (double)mScreenWidth/mScreenHeight ? Constraint.WIDTH : Constraint.HEIGHT;
-                recenter = true;  // We always rescale and recenter after a rotation.
+        int width = image.getWidth();
+        int height = image.getHeight();
+        boolean sizeChanged = false;
+        synchronized (mRenderData) {
+            if (mRenderData.imageWidth != width || mRenderData.imageHeight != height) {
+                // TODO(lambroslambrou): Move this code into a sizeChanged() callback, to be
+                // triggered from JniInterface (on the display thread) when the remote screen size
+                // changes.
+                mRenderData.imageWidth = width;
+                mRenderData.imageHeight = height;
+                sizeChanged = true;
             }
+        }
+        if (sizeChanged) {
+            mInputHandler.onHostSizeChanged(width, height);
+        }
 
-            if (mConstraint == Constraint.WIDTH &&
-                    ((int)(bottomright[0] - topleft[0] + 0.5) < mScreenWidth || recenter)) {
-                // The vertical edges of the image are flush against the device's screen edges
-                // when the entire host screen is visible, and the user has zoomed out too far.
-                float imageMiddle = (float)image.getHeight() / 2;
-                float screenMiddle = (float)mScreenHeight / 2;
-                mTransform.setPolyToPoly(
-                        new float[] {0, imageMiddle, image.getWidth(), imageMiddle}, 0,
-                        new float[] {0, screenMiddle, mScreenWidth, screenMiddle}, 0, 2);
-            } else if (mConstraint == Constraint.HEIGHT &&
-                    ((int)(bottomright[1] - topleft[1] + 0.5) < mScreenHeight || recenter)) {
-                // The horizontal image edges are flush against the device's screen edges when
-                // the entire host screen is visible, and the user has zoomed out too far.
-                float imageCenter = (float)image.getWidth() / 2;
-                float screenCenter = (float)mScreenWidth / 2;
-                mTransform.setPolyToPoly(
-                        new float[] {imageCenter, 0, imageCenter, image.getHeight()}, 0,
-                        new float[] {screenCenter, 0, screenCenter, mScreenHeight}, 0, 2);
-            } else {
-                // It's fine for both members of a pair of image edges to be within the screen
-                // edges (or "out of bounds"); that simply means that the image is zoomed out as
-                // far as permissible. And both members of a pair can obviously be outside the
-                // screen's edges, which indicates that the image is zoomed in to far to see the
-                // whole host screen. However, if only one of a pair of edges has entered the
-                // screen, the user is attempting to scroll into a blank area of the canvas.
-
-                // A value of true means the corresponding edge has entered the screen's borders.
-                boolean leftEdgeOutOfBounds = values[Matrix.MTRANS_X] > 0;
-                boolean topEdgeOutOfBounds = values[Matrix.MTRANS_Y] > 0;
-                boolean rightEdgeOutOfBounds = bottomright[0] < mScreenWidth;
-                boolean bottomEdgeOutOfBounds = bottomright[1] < mScreenHeight;
-
-                // Prevent the user from scrolling past the left or right edge of the image.
-                if (leftEdgeOutOfBounds != rightEdgeOutOfBounds) {
-                    if (leftEdgeOutOfBounds != mRightUsedToBeOut) {
-                        // Make the left edge of the image flush with the left screen edge.
-                        values[Matrix.MTRANS_X] = 0;
-                    }
-                    else {
-                        // Make the right edge of the image flush with the right screen edge.
-                        values[Matrix.MTRANS_X] += mScreenWidth - bottomright[0];
-                    }
-                } else {
-                    // The else prevents this from being updated during the repositioning process,
-                    // in which case the view would begin to oscillate.
-                    mRightUsedToBeOut = rightEdgeOutOfBounds;
-                }
-
-                // Prevent the user from scrolling past the top or bottom edge of the image.
-                if (topEdgeOutOfBounds != bottomEdgeOutOfBounds) {
-                    if (topEdgeOutOfBounds != mBottomUsedToBeOut) {
-                        // Make the top edge of the image flush with the top screen edge.
-                        values[Matrix.MTRANS_Y] = 0;
-                    } else {
-                        // Make the bottom edge of the image flush with the bottom screen edge.
-                        values[Matrix.MTRANS_Y] += mScreenHeight - bottomright[1];
-                    }
-                }
-                else {
-                    // The else prevents this from being updated during the repositioning process,
-                    // in which case the view would begin to oscillate.
-                    mBottomUsedToBeOut = bottomEdgeOutOfBounds;
-                }
-
-                mTransform.setValues(values);
+        Canvas canvas;
+        int x, y;
+        synchronized (mRenderData) {
+            mRepaintPending = false;
+            // Don't try to lock the canvas before it is ready, as the implementation of
+            // lockCanvas() may throttle these calls to a slow rate in order to avoid consuming CPU.
+            // Note that a successful call to lockCanvas() will prevent the framework from
+            // destroying the Surface until it is unlocked.
+            if (!mSurfaceCreated) {
+                return;
             }
-
-            canvas.setMatrix(mTransform);
+            canvas = getHolder().lockCanvas();
+            if (canvas == null) {
+                return;
+            }
+            canvas.setMatrix(mRenderData.transform);
+            x = mRenderData.cursorPosition.x;
+            y = mRenderData.cursorPosition.y;
         }
 
         canvas.drawColor(Color.BLACK);
         canvas.drawBitmap(image, 0, 0, new Paint());
+
+        boolean feedbackAnimationRunning = mFeedbackAnimator.isAnimationRunning();
+        if (feedbackAnimationRunning) {
+            float scaleFactor;
+            synchronized (mRenderData) {
+                scaleFactor = mRenderData.transform.mapRadius(1);
+            }
+            mFeedbackAnimator.render(canvas, x, y, 40 / scaleFactor);
+        }
+
+        Bitmap cursorBitmap = JniInterface.getCursorBitmap();
+        if (cursorBitmap != null) {
+            Point hotspot = JniInterface.getCursorHotspot();
+            canvas.drawBitmap(cursorBitmap, x - hotspot.x, y - hotspot.y, new Paint());
+        }
+
         getHolder().unlockCanvasAndPost(canvas);
+
+        synchronized (mAnimationLock) {
+            if (mInputAnimationRunning || feedbackAnimationRunning) {
+                getHandler().postAtTime(new Runnable() {
+                    @Override
+                    public void run() {
+                        processAnimation();
+                    }
+                }, startTimeMs + 30);
+            }
+        };
+    }
+
+    private void processAnimation() {
+        boolean running;
+        synchronized (mAnimationLock) {
+            running = mInputAnimationRunning;
+        }
+        if (running) {
+            mInputHandler.processAnimation();
+        }
+        running |= mFeedbackAnimator.isAnimationRunning();
+        if (running) {
+            requestRepaint();
+        }
     }
 
     /**
-     * Causes the next canvas redraw to perform a check for which screen dimension more tightly
-     * constrains the view of the image. This should be called between the time that a screen size
-     * change is requested and the time it actually occurs. If it is not called in such a case, the
-     * screen will not be rearranged as aggressively (which is desirable when the software keyboard
-     * appears in order to allow it to cover the image without forcing a resize).
-     */
-    public void requestRecheckConstrainingDimension() {
-        mRecheckConstraint = true;
-    }
-
-    /**
-     * Called after the canvas is initially created, then after every
-     * subsequent resize, as when the display is rotated.
+     * Called after the canvas is initially created, then after every subsequent resize, as when
+     * the display is rotated.
      */
     @Override
-    public void surfaceChanged(
-            SurfaceHolder holder, int format, int width, int height) {
+    public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
         mActionBar.hide();
 
-        synchronized (mTransform) {
-            mScreenWidth = width;
-            mScreenHeight = height;
+        synchronized (mRenderData) {
+            mRenderData.screenWidth = width;
+            mRenderData.screenHeight = height;
+        }
 
-            if (mRecheckConstraint) {
-                mConstraint = Constraint.UNDEFINED;
-                mRecheckConstraint = false;
+        JniInterface.provideRedrawCallback(new Runnable() {
+            @Override
+            public void run() {
+                paint();
             }
-        }
-
-        if (!JniInterface.redrawGraphics()) {
-            JniInterface.provideRedrawCallback(this);
-        }
+        });
+        mInputHandler.onClientSizeChanged(width, height);
+        requestRepaint();
     }
 
     /** Called when the canvas is first created. */
     @Override
     public void surfaceCreated(SurfaceHolder holder) {
-        Log.i("deskview", "DesktopView.surfaceCreated(...)");
+        synchronized (mRenderData) {
+            mSurfaceCreated = true;
+        }
     }
 
     /**
@@ -266,10 +288,12 @@ public class DesktopView extends SurfaceView implements Runnable, SurfaceHolder.
      */
     @Override
     public void surfaceDestroyed(SurfaceHolder holder) {
-        Log.i("deskview", "DesktopView.surfaceDestroyed(...)");
-
         // Stop this canvas from being redrawn.
         JniInterface.provideRedrawCallback(null);
+
+        synchronized (mRenderData) {
+            mSurfaceCreated = false;
+        }
     }
 
     /** Called when a software keyboard is requested, and specifies its options. */
@@ -290,160 +314,76 @@ public class DesktopView extends SurfaceView implements Runnable, SurfaceHolder.
         return null;
     }
 
-    /** Called when a mouse action is made. */
-    private void handleMouseMovement(float x, float y, int button, boolean pressed) {
-        float[] coordinates = {x, y};
-
-        // Coordinates are relative to the canvas, but we need image coordinates.
-        Matrix canvasToImage = new Matrix();
-        mTransform.invert(canvasToImage);
-        canvasToImage.mapPoints(coordinates);
-
-        // Coordinates are now relative to the image, so transmit them to the host.
-        JniInterface.mouseAction((int)coordinates[0], (int)coordinates[1], button, pressed);
-    }
-
-    /**
-     * Called whenever the user attempts to touch the canvas. Forwards such
-     * events to the appropriate gesture detector until one accepts them.
-     */
+    /** Called whenever the user attempts to touch the canvas. */
     @Override
     public boolean onTouchEvent(MotionEvent event) {
-        if (event.getPointerCount() == 3) {
-            mActionBar.show();
-        }
-
-        boolean handled = mScroller.onTouchEvent(event) || mZoomer.onTouchEvent(event);
-
-        if (event.getPointerCount() == 1) {
-            float x = event.getRawX();
-            float y = event.getY();
-
-            switch (event.getActionMasked()) {
-                case MotionEvent.ACTION_DOWN:
-                    Log.i("mouse", "Found a finger");
-                    mMouseButton = BUTTON_UNDEFINED;
-                    mMousePressed = false;
-                    break;
-
-                case MotionEvent.ACTION_MOVE:
-                    Log.i("mouse", "Finger is dragging");
-                    if (mMouseButton == BUTTON_UNDEFINED) {
-                        Log.i("mouse", "\tStarting left click");
-                        mMouseButton = BUTTON_LEFT;
-                        mMousePressed = true;
-                    }
-                    break;
-
-                case MotionEvent.ACTION_UP:
-                    Log.i("mouse", "Lost the finger");
-                    if (mMouseButton == BUTTON_UNDEFINED) {
-                        // The user pressed and released without moving: do left click and release.
-                        Log.i("mouse", "\tStarting and finishing left click");
-                        handleMouseMovement(x, y, BUTTON_LEFT, true);
-                        mMouseButton = BUTTON_LEFT;
-                        mMousePressed = false;
-                    }
-                    else if (mMousePressed) {
-                        Log.i("mouse", "\tReleasing the currently-pressed button");
-                        mMousePressed = false;
-                    }
-                    else {
-                        Log.w("mouse", "Button already in released state before gesture ended");
-                    }
-                    break;
-
-                default:
-                    return handled;
-            }
-            handleMouseMovement(x, y, mMouseButton, mMousePressed);
-
-            return true;
-        }
-
-        return handled;
+        return mInputHandler.onTouchEvent(event);
     }
 
-    /** Responds to touch events filtered by the gesture detectors. */
-    private class DesktopListener extends GestureDetector.SimpleOnGestureListener
-            implements ScaleGestureDetector.OnScaleGestureListener {
-        /**
-         * Called when the user is scrolling. We refuse to accept or process the event unless it
-         * is being performed with 2 or more touch points, in order to reserve single-point touch
-         * events for emulating mouse input.
-         */
-        @Override
-        public boolean onScroll(
-                MotionEvent e1, MotionEvent e2, float distanceX, float distanceY) {
-            if (e2.getPointerCount() < 2 ||
-                    Math.pow(distanceX, 2) + Math.pow(distanceY, 2) < MIN_SCROLL_DISTANCE) {
-                return false;
+    @Override
+    public void injectMouseEvent(int x, int y, int button, boolean pressed) {
+        boolean cursorMoved = false;
+        synchronized (mRenderData) {
+            // Test if the cursor actually moved, which requires repainting the cursor. This
+            // requires that the TouchInputHandler doesn't mutate |mRenderData.cursorPosition|
+            // directly.
+            if (x != mRenderData.cursorPosition.x) {
+                mRenderData.cursorPosition.x = x;
+                cursorMoved = true;
             }
-
-            synchronized (mTransform) {
-                mTransform.postTranslate(-distanceX, -distanceY);
+            if (y != mRenderData.cursorPosition.y) {
+                mRenderData.cursorPosition.y = y;
+                cursorMoved = true;
             }
-            JniInterface.redrawGraphics();
-            return true;
         }
 
-        /** Called when the user is in the process of pinch-zooming. */
-        @Override
-        public boolean onScale(ScaleGestureDetector detector) {
-            if (Math.abs(detector.getScaleFactor() - 1) < MIN_ZOOM_FACTOR) {
-                return false;
-            }
-
-            synchronized (mTransform) {
-                float scaleFactor = detector.getScaleFactor();
-                mTransform.postScale(
-                        scaleFactor, scaleFactor, detector.getFocusX(), detector.getFocusY());
-            }
-            JniInterface.redrawGraphics();
-            return true;
+        if (button == TouchInputHandler.BUTTON_UNDEFINED && !cursorMoved) {
+            // No need to inject anything or repaint.
+            return;
         }
 
-        /** Called whenever a gesture starts. Always accepts the gesture so it isn't ignored. */
-        @Override
-        public boolean onDown(MotionEvent e) {
-            return true;
+        JniInterface.mouseAction(x, y, button, pressed);
+        if (cursorMoved) {
+            // TODO(lambroslambrou): Optimize this by only repainting the affected areas.
+            requestRepaint();
         }
+    }
 
-        /**
-         * Called when the user starts to zoom. Always accepts the zoom so that
-         * onScale() can decide whether to respond to it.
-         */
-        @Override
-        public boolean onScaleBegin(ScaleGestureDetector detector) {
-            return true;
-        }
+    @Override
+    public void injectMouseWheelDeltaEvent(int deltaX, int deltaY) {
+        JniInterface.mouseWheelDeltaAction(deltaX, deltaY);
+    }
 
-        /** Called when the user is done zooming. Defers to onScale()'s judgement. */
-        @Override
-        public void onScaleEnd(ScaleGestureDetector detector) {
-            onScale(detector);
-        }
+    @Override
+    public void showLongPressFeedback() {
+        mFeedbackAnimator.startAnimation();
+        requestRepaint();
+    }
 
-        /** Called when the user holds down on the screen. Starts a right-click. */
-        @Override
-        public void onLongPress(MotionEvent e) {
-            if (e.getPointerCount() > 1) {
-                return;
+    @Override
+    public void showActionBar() {
+        mActionBar.show();
+    }
+
+    @Override
+    public void showKeyboard() {
+        InputMethodManager inputManager =
+                (InputMethodManager)getContext().getSystemService(Context.INPUT_METHOD_SERVICE);
+        inputManager.showSoftInput(this, 0);
+    }
+
+    @Override
+    public void transformationChanged() {
+        requestRepaint();
+    }
+
+    @Override
+    public void setAnimationEnabled(boolean enabled) {
+        synchronized (mAnimationLock) {
+            if (enabled && !mInputAnimationRunning) {
+                requestRepaint();
             }
-
-            float x = e.getRawX();
-            float y = e.getY();
-
-            Log.i("mouse", "Finger held down");
-            if (mMousePressed) {
-                Log.i("mouse", "\tReleasing the currently-pressed button");
-                handleMouseMovement(x, y, mMouseButton, false);
-            }
-
-            Log.i("mouse", "\tStarting right click");
-            mMouseButton = BUTTON_RIGHT;
-            mMousePressed = true;
-            handleMouseMovement(x, y, mMouseButton, mMousePressed);
+            mInputAnimationRunning = enabled;
         }
     }
 }

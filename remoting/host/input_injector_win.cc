@@ -14,9 +14,7 @@
 #include "remoting/base/util.h"
 #include "remoting/host/clipboard.h"
 #include "remoting/proto/event.pb.h"
-// SkSize.h assumes that stdint.h-style types are already defined.
-#include "third_party/skia/include/core/SkTypes.h"
-#include "third_party/skia/include/core/SkSize.h"
+#include "ui/events/keycodes/dom4/keycode_converter.h"
 
 namespace remoting {
 
@@ -25,11 +23,6 @@ namespace {
 using protocol::ClipboardEvent;
 using protocol::KeyEvent;
 using protocol::MouseEvent;
-
-// USB to XKB keycode map table.
-#define USB_KEYMAP(usb, xkb, win, mac) {usb, win}
-#include "ui/base/keycodes/usb_keycode_map.h"
-#undef USB_KEYMAP
 
 // A class to generate events on Windows.
 class InputInjectorWin : public InputInjector {
@@ -185,13 +178,13 @@ void InputInjectorWin::Core::HandleKey(const KeyEvent& event) {
   // Reset the system idle suspend timeout.
   SetThreadExecutionState(ES_SYSTEM_REQUIRED);
 
-  int scancode = UsbKeycodeToNativeKeycode(event.usb_keycode());
-
+  ui::KeycodeConverter* key_converter = ui::KeycodeConverter::GetInstance();
+  int scancode = key_converter->UsbKeycodeToNativeKeycode(event.usb_keycode());
   VLOG(3) << "Converting USB keycode: " << std::hex << event.usb_keycode()
           << " to scancode: " << scancode << std::dec;
 
   // Ignore events which can't be mapped.
-  if (scancode == InvalidNativeKeycode())
+  if (scancode == key_converter->InvalidNativeKeycode())
     return;
 
   // Populate the a Windows INPUT structure for the event.
@@ -219,26 +212,24 @@ void InputInjectorWin::Core::HandleMouse(const MouseEvent& event) {
   // Reset the system idle suspend timeout.
   SetThreadExecutionState(ES_SYSTEM_REQUIRED);
 
-  // TODO(garykac) Collapse mouse (x,y) and button events into a single
-  // input event when possible.
-  if (event.has_x() && event.has_y()) {
-    int x = event.x();
-    int y = event.y();
+  INPUT input;
+  memset(&input, 0, sizeof(input));
+  input.type = INPUT_MOUSE;
 
-    INPUT input;
-    input.type = INPUT_MOUSE;
-    input.mi.time = 0;
-    SkISize screen_size(SkISize::Make(GetSystemMetrics(SM_CXVIRTUALSCREEN),
-                                      GetSystemMetrics(SM_CYVIRTUALSCREEN)));
-    if ((screen_size.width() > 1) && (screen_size.height() > 1)) {
-      x = std::max(0, std::min(screen_size.width(), x));
-      y = std::max(0, std::min(screen_size.height(), y));
-      input.mi.dx = static_cast<int>((x * 65535) / (screen_size.width() - 1));
-      input.mi.dy = static_cast<int>((y * 65535) / (screen_size.height() - 1));
-      input.mi.dwFlags =
+  if (event.has_delta_x() && event.has_delta_y()) {
+    input.mi.dx = event.delta_x();
+    input.mi.dy = event.delta_y();
+    input.mi.dwFlags |= MOUSEEVENTF_MOVE | MOUSEEVENTF_VIRTUALDESK;
+  } else if (event.has_x() && event.has_y()) {
+    int width = GetSystemMetrics(SM_CXVIRTUALSCREEN);
+    int height = GetSystemMetrics(SM_CYVIRTUALSCREEN);
+    if (width > 1 && height > 1) {
+      int x = std::max(0, std::min(width, event.x()));
+      int y = std::max(0, std::min(height, event.y()));
+      input.mi.dx = static_cast<int>((x * 65535) / (width - 1));
+      input.mi.dy = static_cast<int>((y * 65535) / (height - 1));
+      input.mi.dwFlags |=
           MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK;
-      if (SendInput(1, &input, sizeof(INPUT)) == 0)
-        LOG_GETLASTERROR(ERROR) << "Failed to inject a mouse move event";
     }
   }
 
@@ -250,31 +241,17 @@ void InputInjectorWin::Core::HandleMouse(const MouseEvent& event) {
   }
 
   if (wheel_delta_x != 0 || wheel_delta_y != 0) {
-    INPUT wheel;
-    wheel.type = INPUT_MOUSE;
-    wheel.mi.time = 0;
-
     if (wheel_delta_x != 0) {
-      wheel.mi.mouseData = wheel_delta_x;
-      wheel.mi.dwFlags = MOUSEEVENTF_HWHEEL;
-      if (SendInput(1, &wheel, sizeof(INPUT)) == 0)
-        LOG_GETLASTERROR(ERROR) << "Failed to inject a mouse wheel(x) event";
+      input.mi.mouseData = wheel_delta_x;
+      input.mi.dwFlags |= MOUSEEVENTF_HWHEEL;
     }
     if (wheel_delta_y != 0) {
-      wheel.mi.mouseData = wheel_delta_y;
-      wheel.mi.dwFlags = MOUSEEVENTF_WHEEL;
-      if (SendInput(1, &wheel, sizeof(INPUT)) == 0)
-        LOG_GETLASTERROR(ERROR) << "Failed to inject a mouse wheel(y) event";
+      input.mi.mouseData = wheel_delta_y;
+      input.mi.dwFlags |= MOUSEEVENTF_WHEEL;
     }
   }
 
   if (event.has_button() && event.has_button_down()) {
-    INPUT button_event;
-    button_event.type = INPUT_MOUSE;
-    button_event.mi.time = 0;
-    button_event.mi.dx = 0;
-    button_event.mi.dy = 0;
-
     MouseEvent::MouseButton button = event.button();
     bool down = event.button_down();
 
@@ -289,21 +266,19 @@ void InputInjectorWin::Core::HandleMouse(const MouseEvent& event) {
     }
 
     if (button == MouseEvent::BUTTON_LEFT) {
-      button_event.mi.dwFlags =
-          down ? MOUSEEVENTF_LEFTDOWN : MOUSEEVENTF_LEFTUP;
+      input.mi.dwFlags |= down ? MOUSEEVENTF_LEFTDOWN : MOUSEEVENTF_LEFTUP;
     } else if (button == MouseEvent::BUTTON_MIDDLE) {
-      button_event.mi.dwFlags =
-          down ? MOUSEEVENTF_MIDDLEDOWN : MOUSEEVENTF_MIDDLEUP;
+      input.mi.dwFlags |= down ? MOUSEEVENTF_MIDDLEDOWN : MOUSEEVENTF_MIDDLEUP;
     } else if (button == MouseEvent::BUTTON_RIGHT) {
-      button_event.mi.dwFlags =
-          down ? MOUSEEVENTF_RIGHTDOWN : MOUSEEVENTF_RIGHTUP;
+      input.mi.dwFlags |= down ? MOUSEEVENTF_RIGHTDOWN : MOUSEEVENTF_RIGHTUP;
     } else {
-      button_event.mi.dwFlags =
-          down ? MOUSEEVENTF_LEFTDOWN : MOUSEEVENTF_LEFTUP;
+      input.mi.dwFlags |= down ? MOUSEEVENTF_LEFTDOWN : MOUSEEVENTF_LEFTUP;
     }
+  }
 
-    if (SendInput(1, &button_event, sizeof(INPUT)) == 0)
-      LOG_GETLASTERROR(ERROR) << "Failed to inject a mouse button event";
+  if (input.mi.dwFlags) {
+    if (SendInput(1, &input, sizeof(INPUT)) == 0)
+      LOG_GETLASTERROR(ERROR) << "Failed to inject a mouse event";
   }
 }
 

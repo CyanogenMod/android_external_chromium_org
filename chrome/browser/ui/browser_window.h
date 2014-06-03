@@ -6,12 +6,15 @@
 #define CHROME_BROWSER_UI_BROWSER_WINDOW_H_
 
 #include "base/callback_forward.h"
-#include "chrome/browser/lifetime/application_lifetime.h"
+#include "chrome/browser/lifetime/browser_close_manager.h"
 #include "chrome/browser/ui/bookmarks/bookmark_bar.h"
+#include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/fullscreen/fullscreen_exit_bubble_type.h"
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/sync/one_click_signin_sync_starter.h"
+#include "chrome/browser/ui/translate/translate_bubble_model.h"
 #include "chrome/common/content_settings_types.h"
+#include "chrome/common/translate/translate_errors.h"
 #include "ui/base/base_window.h"
 #include "ui/base/window_open_disposition.h"
 #include "ui/gfx/native_widget_types.h"
@@ -31,11 +34,11 @@ class ToolbarView;
 
 namespace autofill {
 class PasswordGenerator;
+struct PasswordForm;
 }
 namespace content {
 class WebContents;
 struct NativeWebKeyboardEvent;
-struct PasswordForm;
 struct SSLStatus;
 }
 
@@ -110,6 +113,17 @@ class BrowserWindow : public ui::BaseWindow {
   // Sets the starred state for the current tab.
   virtual void SetStarredState(bool is_starred) = 0;
 
+  // Sets whether the translate icon is lit for the current tab.
+  virtual void SetTranslateIconToggled(bool is_lit) = 0;
+
+  // Called when the active tab changes.  Subclasses which implement
+  // TabStripModelObserver should implement this instead of ActiveTabChanged();
+  // the Browser will call this method while processing that one.
+  virtual void OnActiveTabChanged(content::WebContents* old_contents,
+                                  content::WebContents* new_contents,
+                                  int index,
+                                  int reason) = 0;
+
   // Called to force the zoom state to for the active tab to be recalculated.
   // |can_show_bubble| is true when a user presses the zoom up or down keyboard
   // shortcuts and will be false in other cases (e.g. switching tabs, "clicking"
@@ -151,8 +165,7 @@ class BrowserWindow : public ui::BaseWindow {
   virtual void UpdateReloadStopState(bool is_loading, bool force) = 0;
 
   // Updates the toolbar with the state for the specified |contents|.
-  virtual void UpdateToolbar(content::WebContents* contents,
-                             bool should_restore_state) = 0;
+  virtual void UpdateToolbar(content::WebContents* contents) = 0;
 
   // Focuses the toolbar (for accessibility).
   virtual void FocusToolbar() = 0;
@@ -200,9 +213,6 @@ class BrowserWindow : public ui::BaseWindow {
   virtual void ConfirmAddSearchProvider(TemplateURL* template_url,
                                         Profile* profile) = 0;
 
-  // Shows or hides the bookmark bar depending on its current visibility.
-  virtual void ToggleBookmarkBar() = 0;
-
   // Shows the Update Recommended dialog box.
   virtual void ShowUpdateChromeDialog() = 0;
 
@@ -213,6 +223,12 @@ class BrowserWindow : public ui::BaseWindow {
   // Shows the bookmark prompt.
   // TODO(yosin): Make ShowBookmarkPrompt pure virtual.
   virtual void ShowBookmarkPrompt() {}
+
+  // Shows the translate bubble.
+  virtual void ShowTranslateBubble(
+      content::WebContents* contents,
+      TranslateBubbleModel::ViewState view_state,
+      TranslateErrors::Type error_type) = 0;
 
 #if defined(ENABLE_ONE_CLICK_SIGNIN)
   enum OneClickSigninBubbleType {
@@ -231,10 +247,10 @@ class BrowserWindow : public ui::BaseWindow {
   // of the account that has signed in.
   virtual void ShowOneClickSigninBubble(
       OneClickSigninBubbleType type,
-      const string16& email,
-      const string16& error_message,
+      const base::string16& email,
+      const base::string16& error_message,
       const StartSyncCallback& start_sync_callback) = 0;
-  #endif
+#endif
 
   // Whether or not the shelf view is visible.
   virtual bool IsDownloadShelfVisible() const = 0;
@@ -244,9 +260,12 @@ class BrowserWindow : public ui::BaseWindow {
 
   // Shows the confirmation dialog box warning that the browser is closing with
   // in-progress downloads.
-  // This method should call Browser::InProgressDownloadResponse once the user
-  // has confirmed.
-  virtual void ConfirmBrowserCloseWithPendingDownloads() = 0;
+  // This method should call |callback| with the user's response.
+  virtual void ConfirmBrowserCloseWithPendingDownloads(
+      int download_count,
+      Browser::DownloadClosePreventionType dialog_type,
+      bool app_modal,
+      const base::Callback<void(bool)>& callback) = 0;
 
   // ThemeService calls this when a user has changed his or her theme,
   // indicating that it's time to redraw everything.
@@ -288,10 +307,6 @@ class BrowserWindow : public ui::BaseWindow {
   virtual void HandleKeyboardEvent(
       const content::NativeWebKeyboardEvent& event) = 0;
 
-  // Shows the create chrome app shortcut dialog box.
-  virtual void ShowCreateChromeAppShortcutsDialog(Profile* profile,
-      const extensions::Extension* app) = 0;
-
   // Clipboard commands applied to the whole browser window.
   virtual void Cut() = 0;
   virtual void Copy() = 0;
@@ -319,7 +334,8 @@ class BrowserWindow : public ui::BaseWindow {
   virtual FindBar* CreateFindBar() = 0;
 
   // Return the WebContentsModalDialogHost for use in positioning web contents
-  // modal dialogs within the browser window.
+  // modal dialogs within the browser window. This can sometimes be NULL (for
+  // instance during tab drag on Views/Win32).
   virtual web_modal::WebContentsModalDialogHost*
       GetWebContentsModalDialogHost() = 0;
 
@@ -337,6 +353,12 @@ class BrowserWindow : public ui::BaseWindow {
   // Construct a BrowserWindow implementation for the specified |browser|.
   static BrowserWindow* CreateBrowserWindow(Browser* browser);
 
+  // Returns a HostDesktopType that is compatible with the current Chrome window
+  // configuration. On Windows with Ash, this is always HOST_DESKTOP_TYPE_ASH
+  // while Chrome is running in Metro mode. Otherwise returns |desktop_type|.
+  static chrome::HostDesktopType AdjustHostDesktopType(
+      chrome::HostDesktopType desktop_type);
+
   // Shows the avatar bubble inside |web_contents|. The bubble is positioned
   // relative to |rect|. |rect| should be in the |web_contents| coordinate
   // system.
@@ -352,15 +374,20 @@ class BrowserWindow : public ui::BaseWindow {
   // contains the password field that the bubble will be associated with.
   virtual void ShowPasswordGenerationBubble(
       const gfx::Rect& rect,
-      const content::PasswordForm& form,
+      const autofill::PasswordForm& form,
       autofill::PasswordGenerator* password_generator) = 0;
 
   // Invoked when the amount of vertical overscroll changes. |delta_y| is the
   // amount of overscroll that has occured in the y-direction.
   virtual void OverscrollUpdate(int delta_y) {}
 
+  // Returns the height inset for RenderView when detached bookmark bar is
+  // shown.  Invoked when a new RenderHostView is created for a non-NTP
+  // navigation entry and the bookmark bar is detached.
+  virtual int GetRenderViewHeightInsetWithDetachedBookmarkBar() = 0;
+
  protected:
-  friend void chrome::CloseAllBrowsers();
+  friend class BrowserCloseManager;
   friend class BrowserView;
   virtual void DestroyBrowser() = 0;
 };

@@ -26,7 +26,8 @@ class SharedMemory;
 namespace media {
 
 class DecoderBuffer;
-class GpuVideoDecoderFactories;
+class GpuVideoAcceleratorFactories;
+class MediaLog;
 
 // GPU-accelerated video decoder implementation.  Relies on
 // AcceleratedVideoDecoderMsg_Decode and friends.
@@ -36,7 +37,8 @@ class MEDIA_EXPORT GpuVideoDecoder
  public:
   // The message loop of |factories| will be saved to |gvd_loop_proxy_|.
   explicit GpuVideoDecoder(
-      const scoped_refptr<GpuVideoDecoderFactories>& factories);
+      const scoped_refptr<GpuVideoAcceleratorFactories>& factories,
+      const scoped_refptr<MediaLog>& media_log);
 
   // VideoDecoder implementation.
   virtual void Initialize(const VideoDecoderConfig& config,
@@ -72,6 +74,24 @@ class MEDIA_EXPORT GpuVideoDecoder
     kError
   };
 
+  // A shared memory segment and its allocated size.
+  struct SHMBuffer {
+    SHMBuffer(base::SharedMemory* m, size_t s);
+    ~SHMBuffer();
+    base::SharedMemory* shm;
+    size_t size;
+  };
+
+  // A SHMBuffer and the DecoderBuffer its data came from.
+  struct BufferPair {
+    BufferPair(SHMBuffer* s, const scoped_refptr<DecoderBuffer>& b);
+    ~BufferPair();
+    SHMBuffer* shm_buffer;
+    scoped_refptr<DecoderBuffer> buffer;
+  };
+
+  typedef std::map<int32, PictureBuffer> PictureBufferMap;
+
   // Return true if more decode work can be piled on to the VDA.
   bool CanMoreDecodeWorkBeDone();
 
@@ -93,14 +113,6 @@ class MEDIA_EXPORT GpuVideoDecoder
 
   void DestroyVDA();
 
-  // A shared memory segment and its allocated size.
-  struct SHMBuffer {
-    SHMBuffer(base::SharedMemory* m, size_t s);
-    ~SHMBuffer();
-    base::SharedMemory* shm;
-    size_t size;
-  };
-
   // Request a shared-memory segment of at least |min_size| bytes.  Will
   // allocate as necessary.  Caller does not own returned pointer.
   SHMBuffer* GetSHM(size_t min_size);
@@ -108,7 +120,8 @@ class MEDIA_EXPORT GpuVideoDecoder
   // Return a shared-memory segment to the available pool.
   void PutSHM(SHMBuffer* shm_buffer);
 
-  void DestroyTextures();
+  // Destroy all PictureBuffers in |buffers|, and delete their textures.
+  void DestroyPictureBuffers(PictureBufferMap* buffers);
 
   bool needs_bitstream_conversion_;
 
@@ -117,7 +130,7 @@ class MEDIA_EXPORT GpuVideoDecoder
   base::WeakPtrFactory<GpuVideoDecoder> weak_factory_;
   base::WeakPtr<GpuVideoDecoder> weak_this_;
 
-  scoped_refptr<GpuVideoDecoderFactories> factories_;
+  scoped_refptr<GpuVideoAcceleratorFactories> factories_;
 
   // Populated during Initialize() (on success) and unchanged until an error
   // occurs.
@@ -137,16 +150,11 @@ class MEDIA_EXPORT GpuVideoDecoder
   // steady-state of the decoder.
   std::vector<SHMBuffer*> available_shm_segments_;
 
-  // Book-keeping variables.
-  struct BufferPair {
-    BufferPair(SHMBuffer* s, const scoped_refptr<DecoderBuffer>& b);
-    ~BufferPair();
-    SHMBuffer* shm_buffer;
-    scoped_refptr<DecoderBuffer> buffer;
-  };
+  scoped_refptr<MediaLog> media_log_;
+
   std::map<int32, BufferPair> bitstream_buffers_in_decoder_;
-  std::map<int32, PictureBuffer> assigned_picture_buffers_;
-  std::map<int32, PictureBuffer> dismissed_picture_buffers_;
+  PictureBufferMap assigned_picture_buffers_;
+  PictureBufferMap dismissed_picture_buffers_;
   // PictureBuffers given to us by VDA via PictureReady, which we sent forward
   // as VideoFrames to be rendered via decode_cb_, and which will be returned
   // to us via ReusePictureBuffer.

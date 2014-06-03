@@ -1,6 +1,7 @@
 # Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
+
 """Provides stubs for os, sys and subprocess for testing
 
 This test allows one to test code that itself uses os, sys, and subprocess.
@@ -9,14 +10,19 @@ This test allows one to test code that itself uses os, sys, and subprocess.
 import os
 import re
 import shlex
-import sys as real_sys
+import sys
+
 
 class Override(object):
   def __init__(self, base_module, module_list):
     stubs = {'adb_commands': AdbCommandsModuleStub,
+             'cloud_storage': CloudStorageModuleStub,
+             'open': OpenFunctionStub,
              'os': OsModuleStub,
+             'perf_control': PerfControlModuleStub,
              'subprocess': SubprocessModuleStub,
              'sys': SysModuleStub,
+             'thermal_throttle': ThermalThrottleModuleStub,
     }
     self.adb_commands = None
     self.os = None
@@ -27,7 +33,7 @@ class Override(object):
     self._overrides = {}
 
     for module_name in module_list:
-      self._overrides[module_name] = getattr(base_module, module_name)
+      self._overrides[module_name] = getattr(base_module, module_name, None)
       setattr(self, module_name, stubs[module_name]())
       setattr(base_module, module_name, getattr(self, module_name))
 
@@ -41,6 +47,7 @@ class Override(object):
     for module_name, original_module in self._overrides.iteritems():
       setattr(self._base_module, module_name, original_module)
     self._overrides = {}
+
 
 class AdbCommandsModuleStub(object):
 # adb not even found
@@ -60,6 +67,12 @@ class AdbCommandsModuleStub(object):
     def IsRootEnabled(self):
       return self.is_root_enabled
 
+    def RestartAdbdOnDevice(self):
+      pass
+
+    def IsUserBuild(self):
+      return False
+
   def __init__(self):
     self.attached_devices = []
     self.shell_command_handlers = {}
@@ -75,9 +88,57 @@ class AdbCommandsModuleStub(object):
   def GetAttachedDevices(self):
     return self.attached_devices
 
-  @staticmethod
-  def HasForwarder(_=None):
+  def SetupPrebuiltTools(self, _):
     return True
+
+  def CleanupLeftoverProcesses(self):
+    pass
+
+
+class CloudStorageModuleStub(object):
+  INTERNAL_BUCKET = None
+  PUBLIC_BUCKET = None
+
+  class CloudStorageError(Exception):
+    pass
+
+  def __init__(self):
+    self.remote_paths = []
+    self.local_file_hashes = {}
+
+  def List(self, _):
+    return self.remote_paths
+
+  def Insert(self, bucket, remote_path, local_path):
+    pass
+
+  def GetHash(self, file_path):
+    return self.local_file_hashes[file_path]
+
+
+class OpenFunctionStub(object):
+  class FileStub(object):
+    def __init__(self, data):
+      self._data = data
+
+    def __enter__(self):
+      return self
+
+    def __exit__(self, *args):
+      pass
+
+    def read(self, size=None):
+      if size:
+        return self._data[:size]
+      else:
+        return self._data
+
+  def __init__(self):
+    self.files = {}
+
+  def __call__(self, name, *args, **kwargs):
+    return OpenFunctionStub.FileStub(self.files[name])
+
 
 class OsModuleStub(object):
   class OsPathModuleStub(object):
@@ -86,6 +147,9 @@ class OsModuleStub(object):
       self.files = []
 
     def exists(self, path):
+      return path in self.files
+
+    def isfile(self, path):
       return path in self.files
 
     def join(self, *paths):
@@ -109,19 +173,30 @@ class OsModuleStub(object):
         tmp = os.path.join(*paths)
         return tmp.replace('\\', '/')
 
-    def expanduser(self, filename):
-      return os.path.expanduser(filename)
+    @staticmethod
+    def expanduser(path):
+      return os.path.expanduser(path)
 
-    def dirname(self, filename): # pylint: disable=R0201
-      return os.path.dirname(filename)
+    @staticmethod
+    def dirname(path):
+      return os.path.dirname(path)
 
-  def __init__(self, sys_module=real_sys):
+    @staticmethod
+    def splitext(path):
+      return os.path.splitext(path)
+
+  X_OK = os.X_OK
+
+  def __init__(self, sys_module=sys):
     self.path = OsModuleStub.OsPathModuleStub(sys_module)
     self.display = ':0'
     self.local_app_data = None
     self.program_files = None
     self.program_files_x86 = None
     self.devnull = os.devnull
+
+  def access(self, path, _):
+    return path in self.path.files
 
   def getenv(self, name):
     if name == 'DISPLAY':
@@ -133,6 +208,16 @@ class OsModuleStub(object):
     elif name == 'PROGRAMFILES(X86)':
       return self.program_files_x86
     raise Exception('Unsupported getenv')
+
+
+class PerfControlModuleStub(object):
+  class PerfControlStub(object):
+    def __init__(self, adb):
+      pass
+
+  def __init__(self):
+    self.PerfControl = PerfControlModuleStub.PerfControlStub
+
 
 class SubprocessModuleStub(object):
   class PopenStub(object):
@@ -150,8 +235,18 @@ class SubprocessModuleStub(object):
     self.PIPE = None
 
   def call(self, *args, **kwargs):
-    raise NotImplementedError()
+    pass
+
 
 class SysModuleStub(object):
   def __init__(self):
     self.platform = ''
+
+
+class ThermalThrottleModuleStub(object):
+  class ThermalThrottleStub(object):
+    def __init__(self, adb):
+      pass
+
+  def __init__(self):
+    self.ThermalThrottle = ThermalThrottleModuleStub.ThermalThrottleStub

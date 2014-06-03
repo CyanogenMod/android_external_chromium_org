@@ -4,8 +4,10 @@
 
 #include "chrome/browser/ui/android/tab_model/tab_model_list.h"
 
+#include "chrome/browser/android/tab_android.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/android/tab_model/tab_model.h"
+#include "chrome/browser/ui/browser_navigator.h"
 
 namespace {
 
@@ -32,6 +34,15 @@ void TabModelList::RemoveTabModel(TabModel* tab_model) {
     tab_models().erase(remove_tab_model);
 }
 
+void TabModelList::HandlePopupNavigation(chrome::NavigateParams* params) {
+  TabAndroid* tab = TabAndroid::FromWebContents(params->source_contents);
+
+  // NOTE: If this fails contact dtrainor@.
+  DCHECK(tab);
+  tab->HandlePopupNavigation(params);
+}
+
+
 TabModel* TabModelList::GetTabModelWithProfile(
     Profile* profile) {
   if (!profile)
@@ -39,8 +50,11 @@ TabModel* TabModelList::GetTabModelWithProfile(
 
   for (TabModelList::const_iterator i = TabModelList::begin();
       i != TabModelList::end(); ++i) {
-    if (profile->IsSameProfile((*i)->GetProfile()))
+    Profile* model_profile = (*i)->GetProfile();
+    if (profile->IsSameProfile(model_profile) &&
+        profile->IsOffTheRecord() == model_profile->IsOffTheRecord()) {
       return *i;
+    }
   }
 
   return NULL;

@@ -10,10 +10,15 @@
 #include "base/test/test_suite.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "content/browser/browser_thread_impl.h"
+#include "content/browser/gpu/gpu_process_host.h"
 #include "content/common/url_schemes.h"
+#include "content/gpu/in_process_gpu_thread.h"
+#include "content/public/browser/render_process_host.h"
+#include "content/public/browser/utility_process_host.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_paths.h"
-#include "media/base/media.h"
+#include "content/renderer/in_process_renderer_thread.h"
+#include "content/utility/in_process_utility_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/ui_base_paths.h"
 
@@ -23,9 +28,14 @@
 #include "content/common/android/common_jni_registrar.h"
 #include "media/base/android/media_jni_registrar.h"
 #include "net/android/net_jni_registrar.h"
-#include "ui/android/ui_jni_registrar.h"
+#include "ui/base/android/ui_base_jni_registrar.h"
+#include "ui/gfx/android/gfx_jni_registrar.h"
 #include "ui/gl/android/gl_jni_registrar.h"
 #include "ui/shell_dialogs/android/shell_dialogs_jni_registrar.h"
+#endif
+
+#if !defined(OS_IOS)
+#include "media/base/media.h"
 #endif
 
 namespace content {
@@ -54,14 +64,22 @@ void ContentTestSuiteBase::Initialize() {
   JNIEnv* env = base::android::AttachCurrentThread();
   content::android::RegisterCommonJni(env);
   content::android::RegisterBrowserJni(env);
+  gfx::android::RegisterJni(env);
   media::RegisterJni(env);
   net::android::RegisterJni(env);
   ui::android::RegisterJni(env);
   ui::shell_dialogs::RegisterJni(env);
 #endif
 
+#if !defined(OS_IOS)
+  UtilityProcessHost::RegisterUtilityMainThreadFactory(
+      CreateInProcessUtilityThread);
+  RenderProcessHost::RegisterRendererMainThreadFactory(
+      CreateInProcessRendererThread);
+  GpuProcessHost::RegisterGpuMainThreadFactory(CreateInProcessGpuThread);
   if (external_libraries_enabled_)
     media::InitializeMediaLibraryForTesting();
+#endif
 
   scoped_ptr<ContentClient> client_for_init(CreateClientForInitialization());
   SetContentClient(client_for_init.get());

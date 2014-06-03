@@ -318,7 +318,7 @@ TEST_F(TextureManagerTest, ValidForTargetNPOT) {
   TestHelper::SetupFeatureInfoInitExpectations(
       gl_.get(), "GL_OES_texture_npot");
   scoped_refptr<FeatureInfo> feature_info(new FeatureInfo());
-  feature_info->Initialize(NULL);
+  feature_info->Initialize();
   TextureManager manager(
      NULL, feature_info.get(), kMaxTextureSize, kMaxCubeMapTextureSize);
   // Check NPOT width on level 0
@@ -356,7 +356,7 @@ class TextureTestBase : public testing::Test {
     if (!extensions.empty()) {
       TestHelper::SetupFeatureInfoInitExpectations(gl_.get(),
                                                    extensions.c_str());
-      feature_info_->Initialize(NULL);
+      feature_info_->Initialize();
     }
 
     manager_.reset(new TextureManager(
@@ -466,11 +466,9 @@ TEST_F(TextureTest, SetTargetTextureExternalOES) {
   EXPECT_FALSE(TextureTestHelper::IsCubeComplete(texture));
   EXPECT_FALSE(manager_->CanGenerateMipmaps(texture_ref_.get()));
   EXPECT_TRUE(TextureTestHelper::IsNPOT(texture));
-  EXPECT_FALSE(manager_->CanRender(texture_ref_.get()));
+  EXPECT_TRUE(manager_->CanRender(texture_ref_.get()));
   EXPECT_TRUE(texture->SafeToRenderFrom());
   EXPECT_TRUE(texture->IsImmutable());
-  manager_->SetStreamTexture(texture_ref_.get(), true);
-  EXPECT_TRUE(manager_->CanRender(texture_ref_.get()));
 }
 
 TEST_F(TextureTest, ZeroSizeCanNotRender) {
@@ -796,7 +794,7 @@ TEST_F(TextureTest, NPOT2DNPOTOK) {
   TestHelper::SetupFeatureInfoInitExpectations(
       gl_.get(), "GL_OES_texture_npot");
   scoped_refptr<FeatureInfo> feature_info(new FeatureInfo());
-  feature_info->Initialize(NULL);
+  feature_info->Initialize();
   TextureManager manager(
       NULL, feature_info.get(), kMaxTextureSize, kMaxCubeMapTextureSize);
   manager.CreateTexture(kClient1Id, kService1Id);
@@ -1087,7 +1085,7 @@ TEST_F(TextureTest, FloatNotLinear) {
   TestHelper::SetupFeatureInfoInitExpectations(
       gl_.get(), "GL_OES_texture_float");
   scoped_refptr<FeatureInfo> feature_info(new FeatureInfo());
-  feature_info->Initialize(NULL);
+  feature_info->Initialize();
   TextureManager manager(
       NULL, feature_info.get(), kMaxTextureSize, kMaxCubeMapTextureSize);
   manager.CreateTexture(kClient1Id, kService1Id);
@@ -1114,7 +1112,7 @@ TEST_F(TextureTest, FloatLinear) {
   TestHelper::SetupFeatureInfoInitExpectations(
       gl_.get(), "GL_OES_texture_float GL_OES_texture_float_linear");
   scoped_refptr<FeatureInfo> feature_info(new FeatureInfo());
-  feature_info->Initialize(NULL);
+  feature_info->Initialize();
   TextureManager manager(
       NULL, feature_info.get(), kMaxTextureSize, kMaxCubeMapTextureSize);
   manager.CreateTexture(kClient1Id, kService1Id);
@@ -1133,7 +1131,7 @@ TEST_F(TextureTest, HalfFloatNotLinear) {
   TestHelper::SetupFeatureInfoInitExpectations(
       gl_.get(), "GL_OES_texture_half_float");
   scoped_refptr<FeatureInfo> feature_info(new FeatureInfo());
-  feature_info->Initialize(NULL);
+  feature_info->Initialize();
   TextureManager manager(
       NULL, feature_info.get(), kMaxTextureSize, kMaxCubeMapTextureSize);
   manager.CreateTexture(kClient1Id, kService1Id);
@@ -1160,7 +1158,7 @@ TEST_F(TextureTest, HalfFloatLinear) {
   TestHelper::SetupFeatureInfoInitExpectations(
       gl_.get(), "GL_OES_texture_half_float GL_OES_texture_half_float_linear");
   scoped_refptr<FeatureInfo> feature_info(new FeatureInfo());
-  feature_info->Initialize(NULL);
+  feature_info->Initialize();
   TextureManager manager(
       NULL, feature_info.get(), kMaxTextureSize, kMaxCubeMapTextureSize);
   manager.CreateTexture(kClient1Id, kService1Id);
@@ -1179,7 +1177,7 @@ TEST_F(TextureTest, EGLImageExternal) {
   TestHelper::SetupFeatureInfoInitExpectations(
       gl_.get(), "GL_OES_EGL_image_external");
   scoped_refptr<FeatureInfo> feature_info(new FeatureInfo());
-  feature_info->Initialize(NULL);
+  feature_info->Initialize();
   TextureManager manager(
       NULL, feature_info.get(), kMaxTextureSize, kMaxCubeMapTextureSize);
   manager.CreateTexture(kClient1Id, kService1Id);
@@ -1196,7 +1194,7 @@ TEST_F(TextureTest, DepthTexture) {
   TestHelper::SetupFeatureInfoInitExpectations(
       gl_.get(), "GL_ANGLE_depth_texture");
   scoped_refptr<FeatureInfo> feature_info(new FeatureInfo());
-  feature_info->Initialize(NULL);
+  feature_info->Initialize();
   TextureManager manager(
       NULL, feature_info.get(), kMaxTextureSize, kMaxCubeMapTextureSize);
   manager.CreateTexture(kClient1Id, kService1Id);
@@ -2000,6 +1998,26 @@ TEST_F(ProduceConsumeTextureTest, ProduceConsumeClearRectangle) {
       .WillRepeatedly(Return(true));
   EXPECT_TRUE(manager_->ClearTextureLevel(
       decoder_.get(), restored_texture.get(), GL_TEXTURE_RECTANGLE_ARB, 0));
+}
+
+TEST_F(ProduceConsumeTextureTest, ProduceConsumeExternal) {
+  manager_->SetTarget(texture_ref_.get(), GL_TEXTURE_EXTERNAL_OES);
+  Texture* texture = texture_ref_->texture();
+  EXPECT_EQ(static_cast<GLenum>(GL_TEXTURE_EXTERNAL_OES), texture->target());
+  LevelInfo level0(
+      GL_TEXTURE_EXTERNAL_OES, GL_RGBA, 1, 1, 1, 0, GL_UNSIGNED_BYTE, false);
+  SetLevelInfo(texture_ref_.get(), 0, level0);
+  EXPECT_TRUE(TextureTestHelper::IsTextureComplete(texture));
+  Texture* produced_texture = Produce(texture_ref_.get());
+  EXPECT_EQ(produced_texture, texture);
+
+  GLuint client_id = texture2_->client_id();
+  manager_->RemoveTexture(client_id);
+  Consume(client_id, produced_texture);
+  scoped_refptr<TextureRef> restored_texture = manager_->GetTexture(client_id);
+  EXPECT_EQ(produced_texture, restored_texture->texture());
+  EXPECT_EQ(level0,
+            GetLevelInfo(restored_texture.get(), GL_TEXTURE_EXTERNAL_OES, 0));
 }
 
 TEST_F(ProduceConsumeTextureTest, ProduceConsumeStreamTexture) {

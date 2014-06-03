@@ -20,11 +20,11 @@
 #include "chrome/browser/ui/web_applications/web_app_ui.h"
 #include "chrome/browser/ui/webui/extensions/extension_icon_source.h"
 #include "chrome/browser/web_applications/web_app.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/manifest_handlers/icons_handler.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
+#include "extensions/common/extension.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
@@ -47,9 +47,6 @@ const int kIconPreviewSizePixels = 32;
 // Minimum width (in pixels) of the shortcut description label.
 const int kDescriptionLabelMinimumWidthPixels = 200;
 
-// Height (in lines) of the shortcut description label.
-const int kDescriptionLabelHeightLines = 3;
-
 }  // namespace
 
 namespace chrome {
@@ -59,14 +56,16 @@ void ShowCreateWebAppShortcutsDialog(gfx::NativeWindow parent_window,
   new CreateWebApplicationShortcutsDialogGtk(parent_window, web_contents);
 }
 
-}  // namespace chrome
-
-void CreateChromeApplicationShortcutsDialogGtk::Show(GtkWindow* parent,
-                                                     Profile* profile,
-                                                     const Extension* app) {
-  new CreateChromeApplicationShortcutsDialogGtk(parent, profile, app);
+void ShowCreateChromeAppShortcutsDialog(
+    gfx::NativeWindow parent_window,
+    Profile* profile,
+    const extensions::Extension* app,
+    const base::Closure& close_callback) {
+  new CreateChromeApplicationShortcutsDialogGtk(parent_window, profile, app,
+                                                close_callback);
 }
 
+}  // namespace chrome
 
 CreateApplicationShortcutsDialogGtk::CreateApplicationShortcutsDialogGtk(
     GtkWindow* parent)
@@ -213,9 +212,12 @@ void CreateApplicationShortcutsDialogGtk::OnCreateDialogResponse(
     ShellIntegration::ShortcutLocations creation_locations;
     creation_locations.on_desktop =
         gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(desktop_checkbox_));
-    creation_locations.in_applications_menu =
-        gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(menu_checkbox_));
-    creation_locations.applications_menu_subdir = shortcut_menu_subdir_;
+    if (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(menu_checkbox_))) {
+      creation_locations.applications_menu_location =
+          create_in_chrome_apps_subdir_ ?
+              ShellIntegration::APP_MENU_LOCATION_SUBDIR_CHROMEAPPS :
+              ShellIntegration::APP_MENU_LOCATION_ROOT;
+    }
     BrowserThread::PostTask(BrowserThread::FILE, FROM_HERE,
         base::Bind(&CreateApplicationShortcutsDialogGtk::CreateDesktopShortcut,
                    this, shortcut_info_, creation_locations));
@@ -301,8 +303,8 @@ CreateWebApplicationShortcutsDialogGtk::CreateWebApplicationShortcutsDialogGtk(
   web_app::GetShortcutInfoForTab(web_contents, &shortcut_info_);
   CreateIconPixBuf(shortcut_info_.favicon);
 
-  // NOTE: Leave shortcut_menu_subdir_ blank to create URL app shortcuts in the
-  // top-level menu.
+  // Create URL app shortcuts in the top-level menu.
+  create_in_chrome_apps_subdir_ = false;
 
   CreateDialogBox(parent);
 }
@@ -317,13 +319,15 @@ CreateChromeApplicationShortcutsDialogGtk::
     CreateChromeApplicationShortcutsDialogGtk(
         GtkWindow* parent,
         Profile* profile,
-        const Extension* app)
-      : CreateApplicationShortcutsDialogGtk(parent),
-        app_(app),
-        profile_path_(profile->GetPath())  {
+        const Extension* app,
+        const base::Closure& close_callback)
+    : CreateApplicationShortcutsDialogGtk(parent),
+      app_(app),
+      profile_path_(profile->GetPath()),
+      close_callback_(close_callback) {
 
   // Place Chrome app shortcuts in the "Chrome Apps" submenu.
-  shortcut_menu_subdir_ = web_app::GetAppShortcutsSubdirName();
+  create_in_chrome_apps_subdir_ = true;
 
   // Get shortcut information and icon now; they are needed for our UI.
   web_app::UpdateShortcutInfoAndIconForApp(
@@ -331,6 +335,12 @@ CreateChromeApplicationShortcutsDialogGtk::
       base::Bind(
           &CreateChromeApplicationShortcutsDialogGtk::OnShortcutInfoLoaded,
           this));
+}
+
+CreateChromeApplicationShortcutsDialogGtk::
+    ~CreateChromeApplicationShortcutsDialogGtk() {
+  if (!close_callback_.is_null())
+    close_callback_.Run();
 }
 
 // Called when the app's ShortcutInfo (with icon) is loaded.

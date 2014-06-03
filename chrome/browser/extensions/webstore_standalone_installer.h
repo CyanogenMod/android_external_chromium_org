@@ -61,7 +61,7 @@ class WebstoreStandaloneInstaller
   virtual ~WebstoreStandaloneInstaller();
 
   void AbortInstall();
-  void CompleteInstall(const std::string& error);
+  virtual void CompleteInstall(const std::string& error);
 
   // Template Method's hooks to be implemented by subclasses.
 
@@ -107,9 +107,18 @@ class WebstoreStandaloneInstaller
       const base::DictionaryValue& webstore_data,
       std::string* error) const = 0;
 
+  // Perform all necessary checks after the manifest has been parsed to make
+  // sure that the install should still proceed.
+  virtual bool CheckInstallValid(
+      const base::DictionaryValue& manifest,
+      std::string* error);
+
   // Returns an install UI to be shown. By default, this returns an install UI
   // that is a transient child of the host window for GetWebContents().
   virtual scoped_ptr<ExtensionInstallPrompt> CreateInstallUI();
+
+  // Create an approval to pass installation parameters to the CrxInstaller.
+  virtual scoped_ptr<WebstoreInstaller::Approval> CreateApproval() const;
 
   // Accessors to be used by subclasses.
   bool show_user_count() const { return show_user_count_; }
@@ -118,6 +127,15 @@ class WebstoreStandaloneInstaller
   }
   double average_rating() const { return average_rating_; }
   int rating_count() const { return rating_count_; }
+  void set_install_source(WebstoreInstaller::InstallSource source) {
+    install_source_ = source;
+  }
+  WebstoreInstaller::InstallSource install_source() const {
+    return install_source_;
+  }
+  Profile* profile() const { return profile_; }
+  const std::string& id() const { return id_; }
+  const DictionaryValue* manifest() const { return manifest_.get(); }
 
  private:
   friend class base::RefCountedThreadSafe<WebstoreStandaloneInstaller>;
@@ -140,7 +158,7 @@ class WebstoreStandaloneInstaller
   virtual void OnWebstoreRequestFailure() OVERRIDE;
 
   virtual void OnWebstoreResponseParseSuccess(
-      base::DictionaryValue* webstore_data) OVERRIDE;
+      scoped_ptr<base::DictionaryValue> webstore_data) OVERRIDE;
 
   virtual void OnWebstoreResponseParseFailure(
       const std::string& error) OVERRIDE;
@@ -172,6 +190,7 @@ class WebstoreStandaloneInstaller
   std::string id_;
   Callback callback_;
   Profile* profile_;
+  WebstoreInstaller::InstallSource install_source_;
 
   // Installation dialog and its underlying prompt.
   scoped_ptr<ExtensionInstallPrompt> install_ui_;

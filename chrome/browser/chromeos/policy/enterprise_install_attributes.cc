@@ -11,12 +11,14 @@
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
-#include "chrome/browser/policy/proto/chromeos/install_attributes.pb.h"
-#include "chromeos/cryptohome/cryptohome_library.h"
+#include "chrome/browser/chromeos/policy/proto/install_attributes.pb.h"
+#include "chromeos/cryptohome/cryptohome_util.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "google_apis/gaia/gaia_auth_util.h"
 
 namespace policy {
+
+namespace cryptohome_util = chromeos::cryptohome_util;
 
 namespace {
 
@@ -88,13 +90,12 @@ const char EnterpriseInstallAttributes::kAttrConsumerKioskEnabled[] =
     "consumer.app_kiosk_enabled";
 
 EnterpriseInstallAttributes::EnterpriseInstallAttributes(
-    chromeos::CryptohomeLibrary* cryptohome,
     chromeos::CryptohomeClient* cryptohome_client)
     : device_locked_(false),
       registration_mode_(DEVICE_MODE_PENDING),
-      cryptohome_(cryptohome),
       cryptohome_client_(cryptohome_client),
-      weak_ptr_factory_(this) {}
+      weak_ptr_factory_(this) {
+}
 
 EnterpriseInstallAttributes::~EnterpriseInstallAttributes() {}
 
@@ -106,7 +107,7 @@ void EnterpriseInstallAttributes::ReadCacheFile(
   device_locked_ = true;
 
   char buf[16384];
-  int len = file_util::ReadFile(cache_file, buf, sizeof(buf));
+  int len = base::ReadFile(cache_file, buf, sizeof(buf));
   if (len == -1 || len >= static_cast<int>(sizeof(buf))) {
     PLOG(ERROR) << "Failed to read " << cache_file.value();
     return;
@@ -152,8 +153,8 @@ void EnterpriseInstallAttributes::ReadAttributesIfReady(
     bool result) {
   if (call_status == chromeos::DBUS_METHOD_CALL_SUCCESS && result) {
     registration_mode_ = DEVICE_MODE_NOT_SET;
-    if (!cryptohome_->InstallAttributesIsInvalid() &&
-        !cryptohome_->InstallAttributesIsFirstInstall()) {
+    if (!cryptohome_util::InstallAttributesIsInvalid() &&
+        !cryptohome_util::InstallAttributesIsFirstInstall()) {
       device_locked_ = true;
 
       static const char* kEnterpriseAttributes[] = {
@@ -167,7 +168,8 @@ void EnterpriseInstallAttributes::ReadAttributesIfReady(
       std::map<std::string, std::string> attr_map;
       for (size_t i = 0; i < arraysize(kEnterpriseAttributes); ++i) {
         std::string value;
-        if (cryptohome_->InstallAttributesGet(kEnterpriseAttributes[i], &value))
+        if (cryptohome_util::InstallAttributesGet(kEnterpriseAttributes[i],
+                                                  &value))
           attr_map[kEnterpriseAttributes[i]] = value;
       }
 
@@ -222,50 +224,56 @@ void EnterpriseInstallAttributes::LockDeviceIfAttributesIsReady(
   }
 
   // Clearing the TPM password seems to be always a good deal.
-  if (cryptohome_->TpmIsEnabled() &&
-      !cryptohome_->TpmIsBeingOwned() &&
-      cryptohome_->TpmIsOwned()) {
-    cryptohome_->TpmClearStoredPassword();
+  if (cryptohome_util::TpmIsEnabled() &&
+      !cryptohome_util::TpmIsBeingOwned() &&
+      cryptohome_util::TpmIsOwned()) {
+    cryptohome_client_->CallTpmClearStoredPasswordAndBlock();
   }
 
   // Make sure we really have a working InstallAttrs.
-  if (cryptohome_->InstallAttributesIsInvalid()) {
+  if (cryptohome_util::InstallAttributesIsInvalid()) {
     LOG(ERROR) << "Install attributes invalid.";
     callback.Run(LOCK_BACKEND_ERROR);
     return;
   }
 
-  if (!cryptohome_->InstallAttributesIsFirstInstall()) {
+  if (!cryptohome_util::InstallAttributesIsFirstInstall()) {
     callback.Run(LOCK_WRONG_USER);
     return;
   }
 
   std::string mode = GetDeviceModeString(device_mode);
+  std::string registration_user;
+  if (!user.empty())
+    registration_user = gaia::CanonicalizeEmail(user);
 
   if (device_mode == DEVICE_MODE_CONSUMER_KIOSK) {
     // Set values in the InstallAttrs and lock it.
-    if (!cryptohome_->InstallAttributesSet(kAttrConsumerKioskEnabled, "true")) {
+    if (!cryptohome_util::InstallAttributesSet(kAttrConsumerKioskEnabled,
+                                               "true")) {
       LOG(ERROR) << "Failed writing attributes";
       callback.Run(LOCK_BACKEND_ERROR);
       return;
     }
   } else {
-    std::string domain = gaia::ExtractDomainName(user);
+    std::string domain = gaia::ExtractDomainName(registration_user);
     // Set values in the InstallAttrs and lock it.
-    if (!cryptohome_->InstallAttributesSet(kAttrEnterpriseOwned, "true") ||
-        !cryptohome_->InstallAttributesSet(kAttrEnterpriseUser, user) ||
-        !cryptohome_->InstallAttributesSet(kAttrEnterpriseDomain, domain) ||
-        !cryptohome_->InstallAttributesSet(kAttrEnterpriseMode, mode) ||
-        !cryptohome_->InstallAttributesSet(kAttrEnterpriseDeviceId,
-                                           device_id)) {
+    if (!cryptohome_util::InstallAttributesSet(kAttrEnterpriseOwned, "true") ||
+        !cryptohome_util::InstallAttributesSet(kAttrEnterpriseUser,
+                                               registration_user) ||
+        !cryptohome_util::InstallAttributesSet(kAttrEnterpriseDomain,
+                                               domain) ||
+        !cryptohome_util::InstallAttributesSet(kAttrEnterpriseMode, mode) ||
+        !cryptohome_util::InstallAttributesSet(kAttrEnterpriseDeviceId,
+                                               device_id)) {
       LOG(ERROR) << "Failed writing attributes";
       callback.Run(LOCK_BACKEND_ERROR);
       return;
     }
   }
 
-  if (!cryptohome_->InstallAttributesFinalize() ||
-      cryptohome_->InstallAttributesIsFirstInstall()) {
+  if (!cryptohome_util::InstallAttributesFinalize() ||
+      cryptohome_util::InstallAttributesIsFirstInstall()) {
     LOG(ERROR) << "Failed locking.";
     callback.Run(LOCK_BACKEND_ERROR);
     return;
@@ -274,15 +282,15 @@ void EnterpriseInstallAttributes::LockDeviceIfAttributesIsReady(
   ReadImmutableAttributes(
       base::Bind(&EnterpriseInstallAttributes::OnReadImmutableAttributes,
                  weak_ptr_factory_.GetWeakPtr(),
-                 user,
+                 registration_user,
                  callback));
 }
 
 void EnterpriseInstallAttributes::OnReadImmutableAttributes(
-    const std::string& user,
+    const std::string& registration_user,
     const LockResultCallback& callback) {
 
-  if (GetRegistrationUser() != user) {
+  if (GetRegistrationUser() != registration_user) {
     LOG(ERROR) << "Locked data doesn't match";
     callback.Run(LOCK_BACKEND_ERROR);
     return;

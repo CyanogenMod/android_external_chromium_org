@@ -10,12 +10,14 @@
 #include "base/basictypes.h"
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/threading/thread_checker.h"
-#include "chrome/browser/policy/cloud/cloud_policy_store.h"
+#include "components/policy/core/common/cloud/cloud_policy_core.h"
+#include "components/policy/core/common/cloud/cloud_policy_store.h"
+#include "google/cacheinvalidation/include/types.h"
+#include "sync/internal_api/public/base/invalidation.h"
 #include "sync/notifier/invalidation_handler.h"
-
-class Profile;
 
 namespace base {
 class SequencedTaskRunner;
@@ -27,10 +29,9 @@ class InvalidationService;
 
 namespace policy {
 
-class CloudPolicyInvalidationHandler;
-
 // Listens for and provides policy invalidations.
 class CloudPolicyInvalidator : public syncer::InvalidationHandler,
+                               public CloudPolicyCore::Observer,
                                public CloudPolicyStore::Observer {
  public:
   // The number of minutes to delay a policy refresh after receiving an
@@ -42,29 +43,20 @@ class CloudPolicyInvalidator : public syncer::InvalidationHandler,
   static const int kMaxFetchDelayMin;
   static const int kMaxFetchDelayMax;
 
-  // |invalidation_handler| handles invalidations provided by this object and
-  // must remain valid until Shutdown is called.
-  // |store| is cloud policy store. It must remain valid until Shutdown is
-  // called.
+  // |core| is the cloud policy core which connects the various policy objects.
+  // It must remain valid until Shutdown is called.
   // |task_runner| is used for scheduling delayed tasks. It must post tasks to
   // the main policy thread.
   CloudPolicyInvalidator(
-      CloudPolicyInvalidationHandler* invalidation_handler,
-      CloudPolicyStore* store,
+      CloudPolicyCore* core,
       const scoped_refptr<base::SequencedTaskRunner>& task_runner);
   virtual ~CloudPolicyInvalidator();
 
-  // Initializes the invalidator with the given profile. The invalidator uses
-  // the profile to get a reference to the profile's invalidation service if
-  // needed. Both the profile and the invalidation service must remain valid
-  // until Shutdown is called. An Initialize method must only be called once.
-  void InitializeWithProfile(Profile* profile);
-
-  // Initializes the invalidator with the invalidation service. It must remain
-  // valid until Shutdown is called. An Initialize method must only be called
-  // once.
-  void InitializeWithService(
-      invalidation::InvalidationService* invalidation_service);
+  // Initializes the invalidator. No invalidations will be generated before this
+  // method is called. This method must only be called once.
+  // |invalidation_service| is the invalidation service to use and must remain
+  // valid until Shutdown is called.
+  void Initialize(invalidation::InvalidationService* invalidation_service);
 
   // Shuts down and disables invalidations. It must be called before the object
   // is destroyed.
@@ -81,23 +73,16 @@ class CloudPolicyInvalidator : public syncer::InvalidationHandler,
   virtual void OnIncomingInvalidation(
       const syncer::ObjectIdInvalidationMap& invalidation_map) OVERRIDE;
 
+  // CloudPolicyCore::Observer:
+  virtual void OnCoreConnected(CloudPolicyCore* core) OVERRIDE;
+  virtual void OnRefreshSchedulerStarted(CloudPolicyCore* core) OVERRIDE;
+  virtual void OnCoreDisconnecting(CloudPolicyCore* core) OVERRIDE;
+
   // CloudPolicyStore::Observer:
   virtual void OnStoreLoaded(CloudPolicyStore* store) OVERRIDE;
   virtual void OnStoreError(CloudPolicyStore* store) OVERRIDE;
 
- protected:
-  // Allows subclasses to create a weak pointer to the object. The pointer
-  // should only be used to call one of the Initialize methods, as after the
-  // object is initialized weak pointers may be invalidated at any time.
-  base::WeakPtr<CloudPolicyInvalidator> GetWeakPtr();
-
  private:
-  // Initialize the invalidator.
-  void Initialize();
-
-  // Returns whether an Initialize method has been called.
-  bool IsInitialized();
-
   // Handle an invalidation to the policy.
   void HandleInvalidation(const syncer::Invalidation& invalidation);
 
@@ -119,30 +104,36 @@ class CloudPolicyInvalidator : public syncer::InvalidationHandler,
   // value changed.
   void UpdateInvalidationsEnabled();
 
-  // Run the invalidate callback on the invalidation handler. is_missing_payload
-  // is set to true if the callback is being invoked in response to an
-  // invalidation with a missing payload.
-  void RunInvalidateCallback(bool is_missing_payload);
+  // Refresh the policy.
+  // |is_missing_payload| is set to true if the callback is being invoked in
+  // response to an invalidation with a missing payload.
+  void RefreshPolicy(bool is_missing_payload);
 
   // Acknowledge the latest invalidation.
   void AcknowledgeInvalidation();
 
+  // Determines if the given policy is different from the policy passed in the
+  // previous call.
+  bool IsPolicyChanged(const enterprise_management::PolicyData* policy);
+
   // Get the kMetricPolicyRefresh histogram metric which should be incremented
   // when a policy is stored.
-  int GetPolicyRefreshMetric();
+  int GetPolicyRefreshMetric(bool policy_changed);
 
-  // The handler for invalidations provded by this object.
-  CloudPolicyInvalidationHandler* invalidation_handler_;
+  // The state of the object.
+  enum State {
+    UNINITIALIZED,
+    STOPPED,
+    STARTED,
+    SHUT_DOWN
+  };
+  State state_;
 
-  // The cloud policy store.
-  CloudPolicyStore* store_;
+  // The cloud policy core.
+  CloudPolicyCore* core_;
 
   // Schedules delayed tasks.
   const scoped_refptr<base::SequencedTaskRunner> task_runner_;
-
-  // The profile which will be used to get a reference to an invalidation
-  // service.
-  Profile* profile_;
 
   // The invalidation service.
   invalidation::InvalidationService* invalidation_service_;
@@ -177,8 +168,8 @@ class CloudPolicyInvalidator : public syncer::InvalidationHandler,
   // invalidation_version_ when such invalidations occur.
   int unknown_version_invalidation_count_;
 
-  // The acknowledgment handle for the current invalidation.
-  syncer::AckHandle ack_handle_;
+  // The most up to date invalidation.
+  scoped_ptr<syncer::Invalidation> invalidation_;
 
   // WeakPtrFactory used to create callbacks to this object.
   base::WeakPtrFactory<CloudPolicyInvalidator> weak_factory_;
@@ -187,33 +178,15 @@ class CloudPolicyInvalidator : public syncer::InvalidationHandler,
   // fetching the new policy.
   int max_fetch_delay_;
 
+  // The hash value of the current policy. This is used to determine if a new
+  // policy is different from the current one.
+  uint32 policy_hash_value_;
+
   // A thread checker to make sure that callbacks are invoked on the correct
   // thread.
   base::ThreadChecker thread_checker_;
 
   DISALLOW_COPY_AND_ASSIGN(CloudPolicyInvalidator);
-};
-
-// Handles invalidations to cloud policy objects.
-class CloudPolicyInvalidationHandler {
- public:
-  virtual ~CloudPolicyInvalidationHandler() {}
-
-  // This method is called when the current invalidation info should be set
-  // on the cloud policy client.
-  virtual void SetInvalidationInfo(
-      int64 version,
-      const std::string& payload) = 0;
-
-  // This method is called when the policy should be refreshed due to an
-  // invalidation. A policy fetch should be scheduled in the near future.
-  virtual void InvalidatePolicy() = 0;
-
-  // This method is called when the invalidator determines that the ability to
-  // receive policy invalidations becomes enabled or disabled. The invalidator
-  // starts in a disabled state, so the first call to this method is always when
-  // the invalidator becomes enabled.
-  virtual void OnInvalidatorStateChanged(bool invalidations_enabled) = 0;
 };
 
 }  // namespace policy

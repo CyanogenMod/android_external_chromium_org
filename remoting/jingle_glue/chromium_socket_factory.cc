@@ -13,6 +13,7 @@
 #include "net/base/net_errors.h"
 #include "net/udp/udp_server_socket.h"
 #include "third_party/libjingle/source/talk/base/asyncpacketsocket.h"
+#include "third_party/libjingle/source/talk/base/nethelpers.h"
 
 namespace remoting {
 
@@ -45,9 +46,11 @@ class UdpPacketSocket : public talk_base::AsyncPacketSocket {
   // talk_base::AsyncPacketSocket interface.
   virtual talk_base::SocketAddress GetLocalAddress() const OVERRIDE;
   virtual talk_base::SocketAddress GetRemoteAddress() const OVERRIDE;
-  virtual int Send(const void* data, size_t data_size) OVERRIDE;
+  virtual int Send(const void* data, size_t data_size,
+                   talk_base::DiffServCodePoint dscp) OVERRIDE;
   virtual int SendTo(const void* data, size_t data_size,
-                     const talk_base::SocketAddress& address) OVERRIDE;
+                     const talk_base::SocketAddress& address,
+                     talk_base::DiffServCodePoint dscp) OVERRIDE;
   virtual int Close() OVERRIDE;
   virtual State GetState() const OVERRIDE;
   virtual int GetOption(talk_base::Socket::Option option, int* value) OVERRIDE;
@@ -159,14 +162,16 @@ talk_base::SocketAddress UdpPacketSocket::GetRemoteAddress() const {
   return talk_base::SocketAddress();
 }
 
-int UdpPacketSocket::Send(const void* data, size_t data_size) {
+int UdpPacketSocket::Send(const void* data, size_t data_size,
+                          talk_base::DiffServCodePoint dscp) {
   // UDP sockets are not connected - this method should never be called.
   NOTREACHED();
   return EWOULDBLOCK;
 }
 
 int UdpPacketSocket::SendTo(const void* data, size_t data_size,
-                            const talk_base::SocketAddress& address) {
+                            const talk_base::SocketAddress& address,
+                            talk_base::DiffServCodePoint dscp) {
   if (state_ != STATE_BOUND) {
     NOTREACHED();
     return EINVAL;
@@ -235,6 +240,10 @@ int UdpPacketSocket::SetOption(talk_base::Socket::Option option, int value) {
       return -1;
 
     case talk_base::Socket::OPT_IPV6_V6ONLY:
+      NOTIMPLEMENTED();
+      return -1;
+
+    case talk_base::Socket::OPT_DSCP:
       NOTIMPLEMENTED();
       return -1;
   }
@@ -318,7 +327,8 @@ void UdpPacketSocket::HandleReadResult(int result) {
       LOG(ERROR) << "Failed to convert address received from RecvFrom().";
       return;
     }
-    SignalReadPacket(this, receive_buffer_->data(), result, address);
+    SignalReadPacket(this, receive_buffer_->data(), result, address,
+                     talk_base::CreatePacketTime(0));
   } else {
     LOG(ERROR) << "Received error when reading from UDP socket: " << result;
   }
@@ -361,6 +371,11 @@ ChromiumPacketSocketFactory::CreateClientTcpSocket(
   // We don't use TCP sockets for remoting connections.
   NOTREACHED();
   return NULL;
+}
+
+talk_base::AsyncResolverInterface*
+ChromiumPacketSocketFactory::CreateAsyncResolver() {
+  return new talk_base::AsyncResolver();
 }
 
 }  // namespace remoting

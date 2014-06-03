@@ -13,8 +13,6 @@ import android.os.Looper;
 import android.util.Log;
 import android.widget.TextView;
 
-import org.chromium.base.ThreadUtils;
-
 /**
  * A dummy implementation of the Android {@link GrantCredentialsPermissionActivity} that is used
  * when displaying the Allow/Deny dialog when an application asks for an auth token
@@ -48,7 +46,7 @@ public class MockGrantCredentialsPermissionActivity extends Activity {
     protected void onResume() {
         super.onResume();
         // Send out the broadcast after the Activity has completely started up.
-        Handler handler = new Handler(ThreadUtils.getUiThreadLooper());
+        Handler handler = new Handler(Looper.getMainLooper());
         handler.post(new Runnable() {
             @Override
             public void run() {

@@ -7,12 +7,17 @@
 #include <vector>
 
 #include "ash/root_window_controller.h"
+#include "ash/shelf/shelf_layout_manager.h"
 #include "ash/shelf/shelf_widget.h"
 #include "ash/shell.h"
 #include "ash/system/status_area_widget.h"
 #include "ash/system/tray/system_tray_item.h"
 #include "ash/test/ash_test_base.h"
+#include "ash/wm/window_util.h"
+#include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
+#include "ui/aura/test/event_generator.h"
+#include "ui/aura/window.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/layout/fill_layout.h"
 #include "ui/views/view.h"
@@ -26,8 +31,6 @@ namespace ash {
 namespace test {
 
 namespace {
-
-const int kStatusTrayOffsetFromScreenEdgeForTest = 4;
 
 SystemTray* GetSystemTray() {
   return Shell::GetPrimaryRootWindowController()->shelf()->
@@ -144,6 +147,47 @@ TEST_F(SystemTrayTest, SystemTrayDefaultView) {
   // Ensure that closing the bubble destroys it.
   ASSERT_TRUE(tray->CloseSystemBubble());
   RunAllPendingInMessageLoop();
+  ASSERT_FALSE(tray->CloseSystemBubble());
+}
+
+// Opening and closing the bubble should change the coloring of the tray.
+TEST_F(SystemTrayTest, SystemTrayColoring) {
+  SystemTray* tray = GetSystemTray();
+  ASSERT_TRUE(tray->GetWidget());
+  // At the beginning the tray coloring is not active.
+  ASSERT_FALSE(tray->draw_background_as_active());
+
+  // Showing the system bubble should show the background as active.
+  tray->ShowDefaultView(BUBBLE_CREATE_NEW);
+  ASSERT_TRUE(tray->draw_background_as_active());
+
+  // Closing the system menu should change the coloring back to normal.
+  ASSERT_TRUE(tray->CloseSystemBubble());
+  RunAllPendingInMessageLoop();
+  ASSERT_FALSE(tray->draw_background_as_active());
+}
+
+// Closing the system bubble through an alignment change should change the
+// system tray coloring back to normal.
+TEST_F(SystemTrayTest, SystemTrayColoringAfterAlignmentChange) {
+  SystemTray* tray = GetSystemTray();
+  ASSERT_TRUE(tray->GetWidget());
+  internal::ShelfLayoutManager* manager =
+      Shell::GetPrimaryRootWindowController()->shelf()->shelf_layout_manager();
+  manager->SetAlignment(SHELF_ALIGNMENT_BOTTOM);
+  // At the beginning the tray coloring is not active.
+  ASSERT_FALSE(tray->draw_background_as_active());
+
+  // Showing the system bubble should show the background as active.
+  tray->ShowDefaultView(BUBBLE_CREATE_NEW);
+  ASSERT_TRUE(tray->draw_background_as_active());
+
+  // Changing the alignment should close the system bubble and change the
+  // background color.
+  manager->SetAlignment(SHELF_ALIGNMENT_LEFT);
+  ASSERT_FALSE(tray->draw_background_as_active());
+  RunAllPendingInMessageLoop();
+  // The bubble should already be closed by now.
   ASSERT_FALSE(tray->CloseSystemBubble());
 }
 
@@ -295,44 +339,82 @@ TEST_F(SystemTrayTest, BubbleCreationTypesTest) {
   EXPECT_EQ(widget, test_item->default_view()->GetWidget());
 }
 
-// Tests that the tray is laid out properly in the widget to make sure that the
-// tray extends to the correct edge of the screen.
+// Tests that the tray is laid out properly and is fully contained within
+// the shelf.
 TEST_F(SystemTrayTest, TrayBoundsInWidget) {
+  internal::ShelfLayoutManager* manager =
+      Shell::GetPrimaryRootWindowController()->shelf()->shelf_layout_manager();
   internal::StatusAreaWidget* widget =
       Shell::GetPrimaryRootWindowController()->shelf()->status_area_widget();
   SystemTray* tray = widget->system_tray();
 
-  // Test in bottom alignment. Bottom and right edges of the view should be
-  // aligned with the widget.
-  widget->SetShelfAlignment(SHELF_ALIGNMENT_BOTTOM);
+  // Test in bottom alignment.
+  manager->SetAlignment(SHELF_ALIGNMENT_BOTTOM);
   gfx::Rect window_bounds = widget->GetWindowBoundsInScreen();
   gfx::Rect tray_bounds = tray->GetBoundsInScreen();
-  EXPECT_EQ(window_bounds.bottom(),
-            tray_bounds.bottom() + kStatusTrayOffsetFromScreenEdgeForTest);
-  EXPECT_EQ(window_bounds.right(), tray_bounds.right());
+  EXPECT_TRUE(window_bounds.bottom() >= tray_bounds.bottom());
+  EXPECT_TRUE(window_bounds.right() >= tray_bounds.right());
+  EXPECT_TRUE(window_bounds.x() >= tray_bounds.x());
+  EXPECT_TRUE(window_bounds.y() >= tray_bounds.y());
 
-  // Test in the top alignment. Top and right edges should match.
-  widget->SetShelfAlignment(SHELF_ALIGNMENT_TOP);
+  // Test in the left alignment.
+  manager->SetAlignment(SHELF_ALIGNMENT_LEFT);
   window_bounds = widget->GetWindowBoundsInScreen();
   tray_bounds = tray->GetBoundsInScreen();
-  EXPECT_EQ(window_bounds.y(),
-            tray_bounds.y() - kStatusTrayOffsetFromScreenEdgeForTest);
-  EXPECT_EQ(window_bounds.right(), tray_bounds.right());
+  EXPECT_TRUE(window_bounds.bottom() >= tray_bounds.bottom());
+  EXPECT_TRUE(window_bounds.right() >= tray_bounds.right());
+  EXPECT_TRUE(window_bounds.x() >= tray_bounds.x());
+  EXPECT_TRUE(window_bounds.y() >= tray_bounds.y());
 
-  // Test in the left alignment. Left and bottom edges should match.
-  widget->SetShelfAlignment(SHELF_ALIGNMENT_LEFT);
+  // Test in the right alignment.
+  manager->SetAlignment(SHELF_ALIGNMENT_LEFT);
   window_bounds = widget->GetWindowBoundsInScreen();
   tray_bounds = tray->GetBoundsInScreen();
-  EXPECT_EQ(window_bounds.bottom(), tray_bounds.bottom());
-  EXPECT_EQ(window_bounds.x(),
-            tray_bounds.x() - kStatusTrayOffsetFromScreenEdgeForTest);
+  EXPECT_TRUE(window_bounds.bottom() >= tray_bounds.bottom());
+  EXPECT_TRUE(window_bounds.right() >= tray_bounds.right());
+  EXPECT_TRUE(window_bounds.x() >= tray_bounds.x());
+  EXPECT_TRUE(window_bounds.y() >= tray_bounds.y());
+}
 
-  // Test in the right alignment. Right and bottom edges should match.
-  widget->SetShelfAlignment(SHELF_ALIGNMENT_LEFT);
-  window_bounds = widget->GetWindowBoundsInScreen();
-  tray_bounds = tray->GetBoundsInScreen();
-  EXPECT_EQ(window_bounds.bottom(), tray_bounds.bottom());
-  EXPECT_EQ(window_bounds.right(), tray_bounds.right());
+TEST_F(SystemTrayTest, PersistentBubble) {
+  SystemTray* tray = GetSystemTray();
+  ASSERT_TRUE(tray->GetWidget());
+
+  TestItem* test_item = new TestItem;
+  tray->AddTrayItem(test_item);
+
+  scoped_ptr<aura::Window> window(CreateTestWindowInShellWithId(0));
+
+  // Tests for usual default view.
+  // Activating window.
+  tray->ShowDefaultView(BUBBLE_CREATE_NEW);
+  ASSERT_TRUE(tray->HasSystemBubble());
+  wm::ActivateWindow(window.get());
+  base::RunLoop().RunUntilIdle();
+  ASSERT_FALSE(tray->HasSystemBubble());
+
+  tray->ShowDefaultView(BUBBLE_CREATE_NEW);
+  ASSERT_TRUE(tray->HasSystemBubble());
+  {
+    aura::test::EventGenerator generator(Shell::GetPrimaryRootWindow(),
+                                         gfx::Point(5, 5));
+    generator.ClickLeftButton();
+    ASSERT_FALSE(tray->HasSystemBubble());
+  }
+
+  // Same tests for persistent default view.
+  tray->ShowPersistentDefaultView();
+  ASSERT_TRUE(tray->HasSystemBubble());
+  wm::ActivateWindow(window.get());
+  base::RunLoop().RunUntilIdle();
+  ASSERT_TRUE(tray->HasSystemBubble());
+
+  {
+    aura::test::EventGenerator generator(Shell::GetPrimaryRootWindow(),
+                                         gfx::Point(5, 5));
+    generator.ClickLeftButton();
+    ASSERT_TRUE(tray->HasSystemBubble());
+  }
 }
 
 }  // namespace test

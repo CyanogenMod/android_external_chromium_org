@@ -10,6 +10,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/sys_info.h"
 #include "gpu/config/gpu_info.h"
 #include "gpu/config/gpu_util.h"
@@ -486,8 +487,8 @@ GpuControlList::GpuControlListEntry::GetEntryFromValue(
     const base::DictionaryValue* os_version_value = NULL;
     if (os_value->GetDictionary("version", &os_version_value)) {
       os_version_value->GetString(kOp, &os_version_op);
-      os_version_value->GetString("number", &os_version_string);
-      os_version_value->GetString("number2", &os_version_string2);
+      os_version_value->GetString("value", &os_version_string);
+      os_version_value->GetString("value2", &os_version_string2);
     }
     if (!entry->SetOsInfo(os_type, os_version_op, os_version_string,
                           os_version_string2)) {
@@ -558,8 +559,8 @@ GpuControlList::GpuControlListEntry::GetEntryFromValue(
     std::string driver_version_string2;
     driver_version_value->GetString(kOp, &driver_version_op);
     driver_version_value->GetString("style", &driver_version_style);
-    driver_version_value->GetString("number", &driver_version_string);
-    driver_version_value->GetString("number2", &driver_version_string2);
+    driver_version_value->GetString("value", &driver_version_string);
+    driver_version_value->GetString("value2", &driver_version_string2);
     if (!entry->SetDriverVersionInfo(driver_version_op,
                                      driver_version_style,
                                      driver_version_string,
@@ -576,8 +577,8 @@ GpuControlList::GpuControlListEntry::GetEntryFromValue(
     std::string driver_date_string;
     std::string driver_date_string2;
     driver_date_value->GetString(kOp, &driver_date_op);
-    driver_date_value->GetString("number", &driver_date_string);
-    driver_date_value->GetString("number2", &driver_date_string2);
+    driver_date_value->GetString("value", &driver_date_string);
+    driver_date_value->GetString("value2", &driver_date_string2);
     if (!entry->SetDriverDateInfo(driver_date_op, driver_date_string,
                                   driver_date_string2)) {
       LOG(WARNING) << "Malformed driver_date entry " << entry->id();
@@ -717,8 +718,8 @@ GpuControlList::GpuControlListEntry::GetEntryFromValue(
     const base::DictionaryValue* version_value = NULL;
     if (machine_model_value->GetDictionary("version", &version_value)) {
       version_value->GetString(kOp, &version_op);
-      version_value->GetString("number", &version_string);
-      version_value->GetString("number2", &version_string2);
+      version_value->GetString("value", &version_string);
+      version_value->GetString("value2", &version_string2);
     }
     if (!entry->SetMachineModelInfo(
             name_op, name_value, version_op, version_string, version_string2)) {
@@ -784,25 +785,15 @@ GpuControlList::GpuControlListEntry::GetEntryFromValue(
         // device_ids are specified in Exception, the info will be incomplete.
         if (exception->vendor_id_ == 0 && entry->vendor_id_ != 0)
           exception->vendor_id_ = entry->vendor_id_;
-        if (exception->contains_unknown_fields_) {
-          LOG(WARNING) << "Exception with unknown fields " << entry->id();
-          entry->contains_unknown_fields_ = true;
-        } else {
-          entry->AddException(exception);
-        }
+        entry->AddException(exception);
       }
       dictionary_entry_count++;
     }
-
-    const base::DictionaryValue* browser_version_value = NULL;
-    // browser_version is processed in LoadGpuControlList().
-    if (value->GetDictionary("browser_version", &browser_version_value))
-      dictionary_entry_count++;
   }
 
   if (value->size() != dictionary_entry_count) {
     LOG(WARNING) << "Entry with unknown fields " << entry->id();
-    entry->contains_unknown_fields_ = true;
+    return NULL;
   }
   return entry;
 }
@@ -812,9 +803,7 @@ GpuControlList::GpuControlListEntry::GpuControlListEntry()
       disabled_(false),
       vendor_id_(0),
       multi_gpu_style_(kMultiGpuStyleNone),
-      multi_gpu_category_(kMultiGpuCategoryPrimary),
-      contains_unknown_fields_(false),
-      contains_unknown_features_(false) {
+      multi_gpu_category_(kMultiGpuCategoryPrimary) {
 }
 
 GpuControlList::GpuControlListEntry::~GpuControlListEntry() { }
@@ -843,15 +832,13 @@ bool GpuControlList::GpuControlListEntry::SetOsInfo(
 bool GpuControlList::GpuControlListEntry::SetVendorId(
     const std::string& vendor_id_string) {
   vendor_id_ = 0;
-  return base::HexStringToInt(vendor_id_string,
-                              reinterpret_cast<int*>(&vendor_id_));
+  return base::HexStringToUInt(vendor_id_string, &vendor_id_);
 }
 
 bool GpuControlList::GpuControlListEntry::AddDeviceId(
     const std::string& device_id_string) {
   uint32 device_id = 0;
-  if (base::HexStringToInt(device_id_string,
-                           reinterpret_cast<int*>(&device_id))) {
+  if (base::HexStringToUInt(device_id_string, &device_id)) {
     device_id_list_.push_back(device_id);
     return true;
   }
@@ -999,10 +986,11 @@ bool GpuControlList::GpuControlListEntry::SetFeatures(
         features_.insert(iter->second);
       continue;
     }
-    if (StringToFeature(feature_strings[i], &feature, feature_map))
-      features_.insert(feature);
-    else
-      contains_unknown_features_ = true;
+    if (!StringToFeature(feature_strings[i], &feature, feature_map)) {
+      features_.clear();
+      return false;
+    }
+    features_.insert(feature);
   }
   return true;
 }
@@ -1034,6 +1022,14 @@ GpuControlList::GpuControlListEntry::StringToMultiGpuCategory(
   if (category == kMultiGpuCategoryStringAny)
     return kMultiGpuCategoryAny;
   return kMultiGpuCategoryNone;
+}
+
+void GpuControlList::GpuControlListEntry::LogControlListMatch(
+    const std::string& control_list_logging_name) const {
+  static const char kControlListMatchMessage[] =
+      "Control list match for rule #%u in %s.";
+  VLOG(1) << base::StringPrintf(kControlListMatchMessage, id_,
+                                control_list_logging_name.c_str());
 }
 
 bool GpuControlList::GpuControlListEntry::Contains(
@@ -1190,9 +1186,9 @@ bool GpuControlList::GpuControlListEntry::StringToFeature(
 
 GpuControlList::GpuControlList()
     : max_entry_id_(0),
-      contains_unknown_fields_(false),
       needs_more_info_(false),
-      supports_feature_type_all_(false) {
+      supports_feature_type_all_(false),
+      control_list_logging_enabled_(false) {
 }
 
 GpuControlList::~GpuControlList() {
@@ -1200,20 +1196,8 @@ GpuControlList::~GpuControlList() {
 }
 
 bool GpuControlList::LoadList(
-    const std::string& json_context, GpuControlList::OsFilter os_filter) {
-  const std::string browser_version_string = "0";
-  return LoadList(browser_version_string, json_context, os_filter);
-}
-
-bool GpuControlList::LoadList(
-    const std::string& browser_version_string,
     const std::string& json_context,
     GpuControlList::OsFilter os_filter) {
-  std::vector<std::string> pieces;
-  if (!ProcessVersionString(browser_version_string, '.', &pieces))
-    return false;
-  browser_version_ = browser_version_string;
-
   scoped_ptr<base::Value> root;
   root.reset(base::JSONReader::Read(json_context));
   if (root.get() == NULL || !root->IsType(base::Value::TYPE_DICTIONARY))
@@ -1239,35 +1223,17 @@ bool GpuControlList::LoadList(const base::DictionaryValue& parsed_json,
     return false;
 
   uint32 max_entry_id = 0;
-  bool contains_unknown_fields = false;
   for (size_t i = 0; i < list->GetSize(); ++i) {
     const base::DictionaryValue* list_item = NULL;
     bool valid = list->GetDictionary(i, &list_item);
     if (!valid || list_item == NULL)
       return false;
-    // Check browser version compatibility: if the entry is not for the
-    // current browser version, don't process it.
-    BrowserVersionSupport browser_version_support =
-        IsEntrySupportedByCurrentBrowserVersion(list_item);
-    if (browser_version_support == kMalformed)
-      return false;
-    if (browser_version_support == kUnsupported)
-      continue;
-    DCHECK(browser_version_support == kSupported);
     ScopedGpuControlListEntry entry(GpuControlListEntry::GetEntryFromValue(
         list_item, true, feature_map_, supports_feature_type_all_));
     if (entry.get() == NULL)
       return false;
     if (entry->id() > max_entry_id)
       max_entry_id = entry->id();
-    // If an unknown field is encountered, skip the entry; if an unknown
-    // feature is encountered, ignore the feature, but keep the entry.
-    if (entry->contains_unknown_fields()) {
-      contains_unknown_fields = true;
-      continue;
-    }
-    if (entry->contains_unknown_features())
-      contains_unknown_fields = true;
     entries.push_back(entry);
   }
 
@@ -1280,7 +1246,6 @@ bool GpuControlList::LoadList(const base::DictionaryValue& parsed_json,
       entries_.push_back(entries[i]);
   }
   max_entry_id_ = max_entry_id;
-  contains_unknown_fields_ = contains_unknown_fields;
   return true;
 }
 
@@ -1309,6 +1274,8 @@ std::set<int> GpuControlList::MakeDecision(
   for (size_t i = 0; i < entries_.size(); ++i) {
     if (entries_[i]->Contains(os, os_version, gpu_info)) {
       if (!entries_[i]->disabled()) {
+        if (control_list_logging_enabled_)
+          entries_[i]->LogControlListMatch(control_list_logging_name_);
         MergeFeatureSets(&possible_features, entries_[i]->features());
         if (!entries_[i]->NeedsMoreInfo(gpu_info))
           MergeFeatureSets(&features, entries_[i]->features());
@@ -1390,31 +1357,6 @@ void GpuControlList::Clear() {
   entries_.clear();
   active_entries_.clear();
   max_entry_id_ = 0;
-  contains_unknown_fields_ = false;
-}
-
-GpuControlList::BrowserVersionSupport
-GpuControlList::IsEntrySupportedByCurrentBrowserVersion(
-    const base::DictionaryValue* value) {
-  DCHECK(value);
-  const base::DictionaryValue* browser_version_value = NULL;
-  if (value->GetDictionary("browser_version", &browser_version_value)) {
-    std::string version_op = "any";
-    std::string version_string;
-    std::string version_string2;
-    browser_version_value->GetString(kOp, &version_op);
-    browser_version_value->GetString("number", &version_string);
-    browser_version_value->GetString("number2", &version_string2);
-    scoped_ptr<VersionInfo> browser_version_info;
-    browser_version_info.reset(new VersionInfo(
-        version_op, std::string(), version_string, version_string2));
-    if (!browser_version_info->IsValid())
-      return kMalformed;
-    if (browser_version_info->Contains(browser_version_))
-      return kSupported;
-    return kUnsupported;
-  }
-  return kSupported;
 }
 
 // static

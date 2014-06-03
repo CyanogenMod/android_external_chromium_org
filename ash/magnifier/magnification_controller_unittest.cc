@@ -32,7 +32,7 @@ class MagnificationControllerTest: public test::AshTestBase {
     AshTestBase::SetUp();
     UpdateDisplay(base::StringPrintf("%dx%d", kRootWidth, kRootHeight));
 
-    aura::RootWindow* root = GetRootWindow();
+    aura::Window* root = GetRootWindow();
     gfx::Rect root_bounds(root->bounds());
 
 #if defined(OS_WIN)
@@ -48,13 +48,13 @@ class MagnificationControllerTest: public test::AshTestBase {
   }
 
  protected:
-  aura::RootWindow* GetRootWindow() const {
+  aura::Window* GetRootWindow() const {
     return Shell::GetPrimaryRootWindow();
   }
 
   std::string GetHostMouseLocation() {
     gfx::Point point;
-    GetRootWindow()->QueryMouseLocationForTest(&point);
+    GetRootWindow()->GetDispatcher()->host()->QueryMouseLocation(&point);
     return point.ToString();
   }
 
@@ -420,21 +420,21 @@ TEST_F(MagnificationControllerTest, PanWindowToLeft) {
   GetMagnificationController()->SetScale(scale, false);
   EXPECT_FLOAT_EQ(2.8284268, GetMagnificationController()->GetScale());
   generator.MoveMouseToInHost(gfx::Point(0, 300));
-  EXPECT_EQ("195,299", env->last_mouse_location().ToString());
+  EXPECT_EQ("194,299", env->last_mouse_location().ToString());
   EXPECT_EQ("99,300", GetHostMouseLocation());
 
   scale *= kMagnificationScaleFactor;
   GetMagnificationController()->SetScale(scale, false);
   EXPECT_FLOAT_EQ(3.3635852, GetMagnificationController()->GetScale());
   generator.MoveMouseToInHost(gfx::Point(0, 300));
-  EXPECT_EQ("165,298", env->last_mouse_location().ToString());
+  EXPECT_EQ("164,298", env->last_mouse_location().ToString());
   EXPECT_EQ("98,300", GetHostMouseLocation());
 
   scale *= kMagnificationScaleFactor;
   GetMagnificationController()->SetScale(scale, false);
   EXPECT_FLOAT_EQ(4.f, GetMagnificationController()->GetScale());
   generator.MoveMouseToInHost(gfx::Point(0, 300));
-  EXPECT_EQ("140,298", env->last_mouse_location().ToString());
+  EXPECT_EQ("139,298", env->last_mouse_location().ToString());
   EXPECT_EQ("100,300", GetHostMouseLocation());
 }
 

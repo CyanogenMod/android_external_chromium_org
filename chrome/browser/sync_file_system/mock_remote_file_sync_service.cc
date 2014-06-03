@@ -19,18 +19,16 @@ using ::testing::Return;
 namespace sync_file_system {
 
 MockRemoteFileSyncService::MockRemoteFileSyncService()
-    : conflict_resolution_policy_(CONFLICT_RESOLUTION_POLICY_MANUAL) {
+    : conflict_resolution_policy_(CONFLICT_RESOLUTION_POLICY_MANUAL),
+      state_(REMOTE_SERVICE_OK) {
   typedef MockRemoteFileSyncService self;
   ON_CALL(*this, AddServiceObserver(_))
       .WillByDefault(Invoke(this, &self::AddServiceObserverStub));
   ON_CALL(*this, AddFileStatusObserver(_))
       .WillByDefault(Invoke(this, &self::AddFileStatusObserverStub));
-  ON_CALL(*this, RegisterOriginForTrackingChanges(_, _))
-      .WillByDefault(Invoke(this, &self::RegisterOriginForTrackingChangesStub));
-  ON_CALL(*this, UnregisterOriginForTrackingChanges(_, _))
-      .WillByDefault(
-          Invoke(this, &self::UnregisterOriginForTrackingChangesStub));
-  ON_CALL(*this, UninstallOrigin(_, _))
+  ON_CALL(*this, RegisterOrigin(_, _))
+      .WillByDefault(Invoke(this, &self::RegisterOriginStub));
+  ON_CALL(*this, UninstallOrigin(_, _, _))
       .WillByDefault(
           Invoke(this, &self::DeleteOriginDirectoryStub));
   ON_CALL(*this, ProcessRemoteChange(_))
@@ -40,7 +38,7 @@ MockRemoteFileSyncService::MockRemoteFileSyncService()
   ON_CALL(*this, IsConflicting(_))
       .WillByDefault(Return(false));
   ON_CALL(*this, GetCurrentState())
-      .WillByDefault(Return(REMOTE_SERVICE_OK));
+      .WillByDefault(Invoke(this, &self::GetCurrentStateStub));
   ON_CALL(*this, SetConflictResolutionPolicy(_))
       .WillByDefault(Invoke(this, &self::SetConflictResolutionPolicyStub));
   ON_CALL(*this, GetConflictResolutionPolicy())
@@ -53,6 +51,14 @@ MockRemoteFileSyncService::~MockRemoteFileSyncService() {
 scoped_ptr<base::ListValue> MockRemoteFileSyncService::DumpFiles(
     const GURL& origin) {
   return scoped_ptr<base::ListValue>();
+}
+
+scoped_ptr<base::ListValue> MockRemoteFileSyncService::DumpDatabase() {
+  return scoped_ptr<base::ListValue>();
+}
+
+void MockRemoteFileSyncService::SetServiceState(RemoteServiceState state) {
+  state_ = state;
 }
 
 void MockRemoteFileSyncService::NotifyRemoteChangeQueueUpdated(
@@ -87,15 +93,7 @@ void MockRemoteFileSyncService::AddFileStatusObserverStub(
   file_status_observers_.AddObserver(observer);
 }
 
-void MockRemoteFileSyncService::RegisterOriginForTrackingChangesStub(
-    const GURL& origin,
-    const SyncStatusCallback& callback) {
-  base::MessageLoopProxy::current()->PostTask(
-      FROM_HERE,
-      base::Bind(callback, SYNC_STATUS_OK));
-}
-
-void MockRemoteFileSyncService::UnregisterOriginForTrackingChangesStub(
+void MockRemoteFileSyncService::RegisterOriginStub(
     const GURL& origin,
     const SyncStatusCallback& callback) {
   base::MessageLoopProxy::current()->PostTask(
@@ -105,6 +103,7 @@ void MockRemoteFileSyncService::UnregisterOriginForTrackingChangesStub(
 
 void MockRemoteFileSyncService::DeleteOriginDirectoryStub(
     const GURL& origin,
+    UninstallFlag flag,
     const SyncStatusCallback& callback) {
   base::MessageLoopProxy::current()->PostTask(
       FROM_HERE,
@@ -128,6 +127,10 @@ SyncStatusCode MockRemoteFileSyncService::SetConflictResolutionPolicyStub(
 ConflictResolutionPolicy
 MockRemoteFileSyncService::GetConflictResolutionPolicyStub() const {
   return conflict_resolution_policy_;
+}
+
+RemoteServiceState MockRemoteFileSyncService::GetCurrentStateStub() const {
+  return state_;
 }
 
 }  // namespace sync_file_system

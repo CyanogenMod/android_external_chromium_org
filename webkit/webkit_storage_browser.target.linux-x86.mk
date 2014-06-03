@@ -45,7 +45,6 @@ LOCAL_SRC_FILES := \
 	webkit/browser/appcache/view_appcache_internals_job.cc \
 	webkit/browser/blob/blob_data_handle.cc \
 	webkit/browser/blob/blob_storage_context.cc \
-	webkit/browser/blob/blob_storage_controller.cc \
 	webkit/browser/blob/blob_storage_host.cc \
 	webkit/browser/blob/blob_url_request_job.cc \
 	webkit/browser/blob/blob_url_request_job_factory.cc \
@@ -58,8 +57,8 @@ LOCAL_SRC_FILES := \
 	webkit/browser/database/vfs_backend.cc \
 	webkit/browser/fileapi/async_file_util_adapter.cc \
 	webkit/browser/fileapi/copy_or_move_operation_delegate.cc \
+	webkit/browser/fileapi/dragged_file_util.cc \
 	webkit/browser/fileapi/external_mount_points.cc \
-	webkit/browser/fileapi/file_permission_policy.cc \
 	webkit/browser/fileapi/file_system_context.cc \
 	webkit/browser/fileapi/file_system_dir_url_request_job.cc \
 	webkit/browser/fileapi/file_system_file_stream_reader.cc \
@@ -76,23 +75,29 @@ LOCAL_SRC_FILES := \
 	webkit/browser/fileapi/file_writer_delegate.cc \
 	webkit/browser/fileapi/isolated_context.cc \
 	webkit/browser/fileapi/isolated_file_system_backend.cc \
-	webkit/browser/fileapi/isolated_file_util.cc \
 	webkit/browser/fileapi/local_file_stream_writer.cc \
 	webkit/browser/fileapi/local_file_util.cc \
 	webkit/browser/fileapi/mount_points.cc \
 	webkit/browser/fileapi/native_file_util.cc \
 	webkit/browser/fileapi/obfuscated_file_util.cc \
+	webkit/browser/fileapi/plugin_private_file_system_backend.cc \
+	webkit/browser/fileapi/quota/open_file_handle.cc \
+	webkit/browser/fileapi/quota/open_file_handle_context.cc \
+	webkit/browser/fileapi/quota/quota_backend_impl.cc \
+	webkit/browser/fileapi/quota/quota_reservation.cc \
+	webkit/browser/fileapi/quota/quota_reservation_buffer.cc \
+	webkit/browser/fileapi/quota/quota_reservation_manager.cc \
 	webkit/browser/fileapi/recursive_operation_delegate.cc \
 	webkit/browser/fileapi/remove_operation_delegate.cc \
-	webkit/browser/fileapi/sandbox_context.cc \
 	webkit/browser/fileapi/sandbox_directory_database.cc \
 	webkit/browser/fileapi/sandbox_file_stream_writer.cc \
 	webkit/browser/fileapi/sandbox_file_system_backend.cc \
+	webkit/browser/fileapi/sandbox_file_system_backend_delegate.cc \
 	webkit/browser/fileapi/sandbox_isolated_origin_database.cc \
 	webkit/browser/fileapi/sandbox_origin_database.cc \
 	webkit/browser/fileapi/sandbox_origin_database_interface.cc \
+	webkit/browser/fileapi/sandbox_prioritized_origin_database.cc \
 	webkit/browser/fileapi/sandbox_quota_observer.cc \
-	webkit/browser/fileapi/test_file_system_backend.cc \
 	webkit/browser/fileapi/timed_task_helper.cc \
 	webkit/browser/fileapi/transient_file_util.cc \
 	webkit/browser/fileapi/upload_file_system_file_element_reader.cc \
@@ -107,14 +112,15 @@ LOCAL_SRC_FILES := \
 # Flags passed to both C and C++ files.
 MY_CFLAGS_Debug := \
 	--param=ssp-buffer-size=4 \
+	-Werror \
 	-fno-exceptions \
 	-fno-strict-aliasing \
+	-Wall \
 	-Wno-unused-parameter \
 	-Wno-missing-field-initializers \
 	-fvisibility=hidden \
 	-pipe \
 	-fPIC \
-	-Wno-format \
 	-m32 \
 	-mmmx \
 	-march=pentium4 \
@@ -131,10 +137,6 @@ MY_CFLAGS_Debug := \
 	-Wno-extra \
 	-Wno-ignored-qualifiers \
 	-Wno-type-limits \
-	-Wno-address \
-	-Wno-format-security \
-	-Wno-return-type \
-	-Wno-sequence-point \
 	-fno-stack-protector \
 	-Os \
 	-g \
@@ -143,24 +145,32 @@ MY_CFLAGS_Debug := \
 	-ffunction-sections
 
 MY_DEFS_Debug := \
-	'-DANGLE_DX11' \
+	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
-	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
-	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DLOGGING_IS_OFFICIAL_BUILD=1' \
-	'-DTRACING_IS_OFFICIAL_BUILD=1' \
-	'-DENABLE_GPU=1' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
+	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
+	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-DWEBKIT_STORAGE_BROWSER_IMPLEMENTATION' \
+	'-DAPPCACHE_USE_SIMPLE_CACHE' \
+	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DU_USING_ICU_NAMESPACE=0' \
+	'-DCHROME_PNG_WRITE_SUPPORT' \
+	'-DPNG_USER_CONFIG' \
+	'-DCHROME_PNG_READ_PACK_SUPPORT' \
+	'-DUSE_SYSTEM_LIBJPEG' \
+	'-D__STDC_CONSTANT_MACROS' \
+	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \
 	'-D__GNU_SOURCE=1' \
 	'-DUSE_STLPORT=1' \
@@ -177,14 +187,18 @@ LOCAL_C_INCLUDES_Debug := \
 	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
+	$(LOCAL_PATH) \
+	$(LOCAL_PATH)/skia/config \
+	$(LOCAL_PATH)/third_party/WebKit/Source \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
-	$(LOCAL_PATH) \
 	$(LOCAL_PATH)/third_party/leveldatabase/src/include \
 	$(LOCAL_PATH)/third_party/leveldatabase/src \
 	$(LOCAL_PATH)/third_party/leveldatabase \
 	$(LOCAL_PATH)/third_party/sqlite \
 	$(LOCAL_PATH)/third_party/WebKit \
+	$(PWD)/external/skia/include \
+	$(PWD)/external/skia/include/core \
 	$(LOCAL_PATH)/third_party/skia/src/core \
 	$(LOCAL_PATH)/skia/ext \
 	$(PWD)/external/icu4c/common \
@@ -192,6 +206,13 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH)/third_party/npapi \
 	$(LOCAL_PATH)/third_party/npapi/bindings \
 	$(LOCAL_PATH)/v8/include \
+	$(LOCAL_PATH)/third_party/libpng \
+	$(LOCAL_PATH)/third_party/zlib \
+	$(LOCAL_PATH)/third_party/libwebp \
+	$(LOCAL_PATH)/third_party/ots/include \
+	$(LOCAL_PATH)/third_party/qcms/src \
+	$(LOCAL_PATH)/third_party/iccjpeg \
+	$(PWD)/external/jpeg \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport
@@ -202,24 +223,24 @@ LOCAL_CPPFLAGS_Debug := \
 	-fno-rtti \
 	-fno-threadsafe-statics \
 	-fvisibility-inlines-hidden \
-	-Wno-deprecated \
+	-Wsign-compare \
 	-Wno-error=c++0x-compat \
 	-Wno-non-virtual-dtor \
-	-Wno-sign-promo \
-	-Wno-non-virtual-dtor
+	-Wno-sign-promo
 
 
 # Flags passed to both C and C++ files.
 MY_CFLAGS_Release := \
 	--param=ssp-buffer-size=4 \
+	-Werror \
 	-fno-exceptions \
 	-fno-strict-aliasing \
+	-Wall \
 	-Wno-unused-parameter \
 	-Wno-missing-field-initializers \
 	-fvisibility=hidden \
 	-pipe \
 	-fPIC \
-	-Wno-format \
 	-m32 \
 	-mmmx \
 	-march=pentium4 \
@@ -236,10 +257,6 @@ MY_CFLAGS_Release := \
 	-Wno-extra \
 	-Wno-ignored-qualifiers \
 	-Wno-type-limits \
-	-Wno-address \
-	-Wno-format-security \
-	-Wno-return-type \
-	-Wno-sequence-point \
 	-fno-stack-protector \
 	-Os \
 	-fno-ident \
@@ -250,24 +267,32 @@ MY_CFLAGS_Release := \
 	-fno-asynchronous-unwind-tables
 
 MY_DEFS_Release := \
-	'-DANGLE_DX11' \
+	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
-	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
-	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DLOGGING_IS_OFFICIAL_BUILD=1' \
-	'-DTRACING_IS_OFFICIAL_BUILD=1' \
-	'-DENABLE_GPU=1' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
+	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
+	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-DWEBKIT_STORAGE_BROWSER_IMPLEMENTATION' \
+	'-DAPPCACHE_USE_SIMPLE_CACHE' \
+	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DU_USING_ICU_NAMESPACE=0' \
+	'-DCHROME_PNG_WRITE_SUPPORT' \
+	'-DPNG_USER_CONFIG' \
+	'-DCHROME_PNG_READ_PACK_SUPPORT' \
+	'-DUSE_SYSTEM_LIBJPEG' \
+	'-D__STDC_CONSTANT_MACROS' \
+	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \
 	'-D__GNU_SOURCE=1' \
 	'-DUSE_STLPORT=1' \
@@ -275,7 +300,8 @@ MY_DEFS_Release := \
 	'-DCHROME_BUILD_ID=""' \
 	'-DNDEBUG' \
 	'-DNVALGRIND' \
-	'-DDYNAMIC_ANNOTATIONS_ENABLED=0'
+	'-DDYNAMIC_ANNOTATIONS_ENABLED=0' \
+	'-D_FORTIFY_SOURCE=2'
 
 
 # Include paths placed before CFLAGS/CPPFLAGS
@@ -284,14 +310,18 @@ LOCAL_C_INCLUDES_Release := \
 	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
+	$(LOCAL_PATH) \
+	$(LOCAL_PATH)/skia/config \
+	$(LOCAL_PATH)/third_party/WebKit/Source \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
-	$(LOCAL_PATH) \
 	$(LOCAL_PATH)/third_party/leveldatabase/src/include \
 	$(LOCAL_PATH)/third_party/leveldatabase/src \
 	$(LOCAL_PATH)/third_party/leveldatabase \
 	$(LOCAL_PATH)/third_party/sqlite \
 	$(LOCAL_PATH)/third_party/WebKit \
+	$(PWD)/external/skia/include \
+	$(PWD)/external/skia/include/core \
 	$(LOCAL_PATH)/third_party/skia/src/core \
 	$(LOCAL_PATH)/skia/ext \
 	$(PWD)/external/icu4c/common \
@@ -299,6 +329,13 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH)/third_party/npapi \
 	$(LOCAL_PATH)/third_party/npapi/bindings \
 	$(LOCAL_PATH)/v8/include \
+	$(LOCAL_PATH)/third_party/libpng \
+	$(LOCAL_PATH)/third_party/zlib \
+	$(LOCAL_PATH)/third_party/libwebp \
+	$(LOCAL_PATH)/third_party/ots/include \
+	$(LOCAL_PATH)/third_party/qcms/src \
+	$(LOCAL_PATH)/third_party/iccjpeg \
+	$(PWD)/external/jpeg \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport
@@ -309,11 +346,10 @@ LOCAL_CPPFLAGS_Release := \
 	-fno-rtti \
 	-fno-threadsafe-statics \
 	-fvisibility-inlines-hidden \
-	-Wno-deprecated \
+	-Wsign-compare \
 	-Wno-error=c++0x-compat \
 	-Wno-non-virtual-dtor \
-	-Wno-sign-promo \
-	-Wno-non-virtual-dtor
+	-Wno-sign-promo
 
 
 LOCAL_CFLAGS := $(MY_CFLAGS_$(GYP_CONFIGURATION)) $(MY_DEFS_$(GYP_CONFIGURATION))

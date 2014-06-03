@@ -10,15 +10,16 @@
 #include "base/run_loop.h"
 #include "chrome/browser/extensions/api/bluetooth/bluetooth_event_router.h"
 #include "chrome/browser/extensions/event_names.h"
-#include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_system_factory.h"
 #include "chrome/browser/extensions/test_extension_system.h"
+#include "chrome/common/extensions/api/bluetooth.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/test/test_browser_thread.h"
 #include "device/bluetooth/test/mock_bluetooth_adapter.h"
 #include "device/bluetooth/test/mock_bluetooth_device.h"
 #include "device/bluetooth/test/mock_bluetooth_profile.h"
 #include "device/bluetooth/test/mock_bluetooth_socket.h"
+#include "extensions/browser/event_router.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -78,6 +79,8 @@ BrowserContextKeyedService* BuildFakeExtensionSystem(
 }  // namespace
 
 namespace extensions {
+
+namespace bluetooth = api::bluetooth;
 
 class ExtensionBluetoothEventRouterTest : public testing::Test {
  public:
@@ -166,7 +169,7 @@ TEST_F(ExtensionBluetoothEventRouterTest, DispatchConnectionEvent) {
       static_cast<FakeEventRouter*>(fake_extension_system->event_router());
 
   EXPECT_STREQ(test_extension_id, fake_event_router->extension_id().c_str());
-  EXPECT_STREQ(event_names::kBluetoothOnConnection,
+  EXPECT_STREQ(bluetooth::OnConnection::kEventName,
                fake_event_router->event()->event_name.c_str());
 
   base::ListValue* event_args = fake_event_router->event()->event_args.get();

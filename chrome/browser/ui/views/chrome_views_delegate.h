@@ -22,19 +22,23 @@ class ChromeViewsDelegate : public views::ViewsDelegate {
                                    const gfx::Rect& bounds,
                                    ui::WindowShowState show_state) OVERRIDE;
   virtual bool GetSavedWindowPlacement(
+      const views::Widget* widget,
       const std::string& window_name,
       gfx::Rect* bounds,
       ui::WindowShowState* show_state) const OVERRIDE;
   virtual void NotifyAccessibilityEvent(
       views::View* view, ui::AccessibilityTypes::Event event_type) OVERRIDE;
-  virtual void NotifyMenuItemFocused(const string16& menu_name,
-                                     const string16& menu_item_name,
+  virtual void NotifyMenuItemFocused(const base::string16& menu_name,
+                                     const base::string16& menu_item_name,
                                      int item_index,
                                      int item_count,
                                      bool has_submenu) OVERRIDE;
 
 #if defined(OS_WIN)
   virtual HICON GetDefaultWindowIcon() const OVERRIDE;
+  virtual bool IsWindowInMetro(gfx::NativeWindow window) const OVERRIDE;
+#elif defined(OS_LINUX) && !defined(OS_CHROMEOS)
+  virtual gfx::ImageSkia* GetDefaultWindowIcon() const OVERRIDE;
 #endif
   virtual views::NonClientFrameView* CreateDefaultNonClientFrameView(
       views::Widget* widget) OVERRIDE;

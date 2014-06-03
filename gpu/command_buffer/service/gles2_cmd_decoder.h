@@ -13,6 +13,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
+#include "gpu/command_buffer/common/capabilities.h"
 #include "gpu/command_buffer/service/common_decoder.h"
 #include "gpu/command_buffer/service/logger.h"
 #include "ui/gfx/size.h"
@@ -42,12 +43,10 @@ class VertexArrayManager;
 struct DisallowedFeatures {
   DisallowedFeatures()
       : multisampling(false),
-        swap_buffer_complete_callback(false),
         gpu_memory_manager(false) {
   }
 
   bool multisampling;
-  bool swap_buffer_complete_callback;
   bool gpu_memory_manager;
 };
 
@@ -103,9 +102,6 @@ class GPU_EXPORT GLES2Decoder : public base::SupportsWeakPtr<GLES2Decoder>,
   //      bound, offscreen contexts render to an internal buffer, onscreen ones
   //      to the surface.
   //  size: the size if the GL context is offscreen.
-  //  allowed_extensions: A string in the same format as
-  //      glGetString(GL_EXTENSIONS) that lists the extensions this context
-  //      should allow. Passing NULL or "*" means allow all extensions.
   // Returns:
   //   true if successful.
   virtual bool Initialize(const scoped_refptr<gfx::GLSurface>& surface,
@@ -113,7 +109,6 @@ class GPU_EXPORT GLES2Decoder : public base::SupportsWeakPtr<GLES2Decoder>,
                           bool offscreen,
                           const gfx::Size& size,
                           const DisallowedFeatures& disallowed_features,
-                          const char* allowed_extensions,
                           const std::vector<int32>& attribs) = 0;
 
   // Destroys the graphics context.
@@ -122,7 +117,7 @@ class GPU_EXPORT GLES2Decoder : public base::SupportsWeakPtr<GLES2Decoder>,
   // Set the surface associated with the default FBO.
   virtual void SetSurface(const scoped_refptr<gfx::GLSurface>& surface) = 0;
 
-  virtual bool ProduceFrontBuffer(const Mailbox& mailbox) = 0;
+  virtual void ProduceFrontBuffer(const Mailbox& mailbox) = 0;
 
   // Resize an offscreen frame buffer.
   virtual bool ResizeOffscreenFrameBuffer(const gfx::Size& size) = 0;
@@ -141,6 +136,8 @@ class GPU_EXPORT GLES2Decoder : public base::SupportsWeakPtr<GLES2Decoder>,
 
   // Gets the associated ContextGroup
   virtual ContextGroup* GetContextGroup() = 0;
+
+  virtual Capabilities GetCapabilities() = 0;
 
   // Restores all of the decoder GL state.
   virtual void RestoreState() const = 0;
@@ -229,11 +226,6 @@ class GPU_EXPORT GLES2Decoder : public base::SupportsWeakPtr<GLES2Decoder>,
   // Lose this context.
   virtual void LoseContext(uint32 reset_status) = 0;
 
-  static bool IsAngle();
-
-  // Used for testing only
-  static void set_testing_force_is_angle(bool force);
-
   virtual Logger* GetLogger() = 0;
 
  protected:
@@ -243,7 +235,6 @@ class GPU_EXPORT GLES2Decoder : public base::SupportsWeakPtr<GLES2Decoder>,
   bool initialized_;
   bool debug_;
   bool log_commands_;
-  static bool testing_force_is_angle_;
 
   DISALLOW_COPY_AND_ASSIGN(GLES2Decoder);
 };

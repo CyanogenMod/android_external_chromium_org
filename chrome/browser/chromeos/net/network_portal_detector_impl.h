@@ -34,7 +34,7 @@ namespace chromeos {
 class NetworkState;
 
 // This class handles all notifications about network changes from
-// NetworkLibrary and delegates portal detection for the default
+// NetworkStateHandler and delegates portal detection for the default
 // network to CaptivePortalService.
 class NetworkPortalDetectorImpl
     : public NetworkPortalDetector,
@@ -47,8 +47,6 @@ class NetworkPortalDetectorImpl
   virtual ~NetworkPortalDetectorImpl();
 
   // NetworkPortalDetector implementation:
-  virtual void Init() OVERRIDE;
-  virtual void Shutdown() OVERRIDE;
   virtual void AddObserver(Observer* observer) OVERRIDE;
   virtual void AddAndFireObserver(Observer* observer) OVERRIDE;
   virtual void RemoveObserver(Observer* observer) OVERRIDE;
@@ -61,7 +59,6 @@ class NetworkPortalDetectorImpl
   virtual void DisableLazyDetection() OVERRIDE;
 
   // NetworkStateHandlerObserver implementation:
-  virtual void NetworkManagerChanged() OVERRIDE;
   virtual void DefaultNetworkChanged(const NetworkState* network) OVERRIDE;
 
  private:
@@ -189,6 +186,9 @@ class NetworkPortalDetectorImpl
   // * if lazy detection mode is enabled, kLazyRequestTimeoutSec is used
   // * otherwise, timeout equals to |attempt_count_| * kBaseRequestTimeoutSec
   int GetRequestTimeoutSec() const;
+
+  // Name of the default network.
+  std::string default_network_name_;
 
   // Unique identifier of the default network.
   std::string default_network_id_;

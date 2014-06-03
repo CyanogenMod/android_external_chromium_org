@@ -17,6 +17,7 @@ namespace {
 const char kSamplePrivetURL[] =
     "http://10.0.0.8:7676/privet/register?action=start";
 const char kSamplePrivetToken[] = "MyToken";
+const char kEmptyPrivetToken[] = "\"\"";
 
 const char kSampleParsableJSON[] = "{ \"hello\" : 2 }";
 const char kSampleUnparsableJSON[] = "{ \"hello\" : }";
@@ -40,6 +41,11 @@ class MockPrivetURLFetcherDelegate : public PrivetURLFetcher::Delegate {
 
   MOCK_METHOD1(OnParsedJsonInternal, void(bool has_error));
 
+  virtual void OnNeedPrivetToken(
+      PrivetURLFetcher* fetcher,
+      const PrivetURLFetcher::TokenCallback& callback) {
+  }
+
   const DictionaryValue* saved_value() { return saved_value_.get(); }
 
  private:
@@ -59,6 +65,20 @@ class PrivetURLFetcherTest : public ::testing::Test {
         &delegate_));
   }
   virtual ~PrivetURLFetcherTest() {
+  }
+
+  void RunFor(base::TimeDelta time_period) {
+    base::CancelableCallback<void()> callback(base::Bind(
+        &PrivetURLFetcherTest::Stop, base::Unretained(this)));
+    base::MessageLoop::current()->PostDelayedTask(
+        FROM_HERE, callback.callback(), time_period);
+
+    base::MessageLoop::current()->Run();
+    callback.Cancel();
+  }
+
+  void Stop() {
+    base::MessageLoop::current()->Quit();
   }
 
  protected:
@@ -88,7 +108,7 @@ TEST_F(PrivetURLFetcherTest, FetchSuccess) {
   EXPECT_EQ(2, hello_value);
 }
 
-TEST_F(PrivetURLFetcherTest, URLFetcherError) {
+TEST_F(PrivetURLFetcherTest, URLFetcherErrorRetry) {
   privet_urlfetcher_->Start();
   net::TestURLFetcher* fetcher = fetcher_factory_.GetFetcherByID(0);
   ASSERT_TRUE(fetcher != NULL);
@@ -97,7 +117,42 @@ TEST_F(PrivetURLFetcherTest, URLFetcherError) {
                                             net::ERR_TIMED_OUT));
   fetcher->set_response_code(-1);
 
-  EXPECT_CALL(delegate_, OnErrorInternal(PrivetURLFetcher::URL_FETCH_ERROR));
+  fetcher->delegate()->OnURLFetchComplete(fetcher);
+
+  RunFor(base::TimeDelta::FromSeconds(7));
+  fetcher = fetcher_factory_.GetFetcherByID(0);
+
+  ASSERT_TRUE(fetcher != NULL);
+  fetcher->SetResponseString(kSampleParsableJSON);
+  fetcher->set_status(net::URLRequestStatus(net::URLRequestStatus::SUCCESS,
+                                            net::OK));
+  fetcher->set_response_code(200);
+
+  EXPECT_CALL(delegate_, OnParsedJsonInternal(false));
+  fetcher->delegate()->OnURLFetchComplete(fetcher);
+}
+
+TEST_F(PrivetURLFetcherTest, HTTP503Retry) {
+  privet_urlfetcher_->Start();
+  net::TestURLFetcher* fetcher = fetcher_factory_.GetFetcherByID(0);
+  ASSERT_TRUE(fetcher != NULL);
+  fetcher->SetResponseString(kSampleParsableJSON);
+  fetcher->set_status(net::URLRequestStatus(net::URLRequestStatus::SUCCESS,
+                                            net::OK));
+  fetcher->set_response_code(503);
+
+  fetcher->delegate()->OnURLFetchComplete(fetcher);
+
+  RunFor(base::TimeDelta::FromSeconds(7));
+  fetcher = fetcher_factory_.GetFetcherByID(0);
+
+  ASSERT_TRUE(fetcher != NULL);
+  fetcher->SetResponseString(kSampleParsableJSON);
+  fetcher->set_status(net::URLRequestStatus(net::URLRequestStatus::SUCCESS,
+                                            net::OK));
+  fetcher->set_response_code(200);
+
+  EXPECT_CALL(delegate_, OnParsedJsonInternal(false));
   fetcher->delegate()->OnURLFetchComplete(fetcher);
 }
 
@@ -139,6 +194,27 @@ TEST_F(PrivetURLFetcherTest, Header) {
   std::string header_token;
   ASSERT_TRUE(headers.GetHeader("X-Privet-Token", &header_token));
   EXPECT_EQ(kSamplePrivetToken, header_token);
+}
+
+TEST_F(PrivetURLFetcherTest, Header2) {
+  privet_urlfetcher_.reset(new PrivetURLFetcher(
+      "",
+      GURL(kSamplePrivetURL),
+      net::URLFetcher::POST,
+      request_context_.get(),
+      &delegate_));
+
+  privet_urlfetcher_->AllowEmptyPrivetToken();
+  privet_urlfetcher_->Start();
+
+  net::TestURLFetcher* fetcher = fetcher_factory_.GetFetcherByID(0);
+  ASSERT_TRUE(fetcher != NULL);
+  net::HttpRequestHeaders headers;
+  fetcher->GetExtraRequestHeaders(&headers);
+
+  std::string header_token;
+  ASSERT_TRUE(headers.GetHeader("X-Privet-Token", &header_token));
+  EXPECT_EQ(kEmptyPrivetToken, header_token);
 }
 
 TEST_F(PrivetURLFetcherTest, FetchHasError) {

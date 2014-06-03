@@ -16,6 +16,7 @@
 #include "chrome/test/chromedriver/chrome/devtools_http_client.h"
 #include "chrome/test/chromedriver/chrome/status.h"
 #include "chrome/test/chromedriver/chrome/web_view_impl.h"
+#include "chrome/test/chromedriver/net/port_server.h"
 
 #if defined(OS_POSIX)
 #include <errno.h>
@@ -29,8 +30,9 @@ namespace {
 bool KillProcess(base::ProcessHandle process_id) {
 #if defined(OS_POSIX)
   kill(process_id, SIGKILL);
-  base::Time deadline = base::Time::Now() + base::TimeDelta::FromSeconds(5);
-  while (base::Time::Now() < deadline) {
+  base::TimeTicks deadline =
+      base::TimeTicks::Now() + base::TimeDelta::FromSeconds(5);
+  while (base::TimeTicks::Now() < deadline) {
     pid_t pid = HANDLE_EINTR(waitpid(process_id, NULL, WNOHANG));
     if (pid == process_id)
       return true;
@@ -62,15 +64,16 @@ bool KillProcess(base::ProcessHandle process_id) {
 ChromeDesktopImpl::ChromeDesktopImpl(
     scoped_ptr<DevToolsHttpClient> client,
     ScopedVector<DevToolsEventListener>& devtools_event_listeners,
-    Log* log,
+    scoped_ptr<PortReservation> port_reservation,
     base::ProcessHandle process,
+    const CommandLine& command,
     base::ScopedTempDir* user_data_dir,
     base::ScopedTempDir* extension_dir)
     : ChromeImpl(client.Pass(),
                  devtools_event_listeners,
-                 log),
+                 port_reservation.Pass()),
       process_(process),
-      quit_(false) {
+      command_(command) {
   if (user_data_dir->IsValid())
     CHECK(user_data_dir_.Set(user_data_dir->Take()));
   if (extension_dir->IsValid())
@@ -87,42 +90,54 @@ ChromeDesktopImpl::~ChromeDesktopImpl() {
   base::CloseProcessHandle(process_);
 }
 
+Status ChromeDesktopImpl::WaitForPageToLoad(const std::string& url,
+                                            const base::TimeDelta& timeout,
+                                            scoped_ptr<WebView>* web_view) {
+  base::TimeTicks deadline = base::TimeTicks::Now() + timeout;
+  std::string id;
+  while (base::TimeTicks::Now() < deadline) {
+    WebViewsInfo views_info;
+    Status status = devtools_http_client_->GetWebViewsInfo(&views_info);
+    if (status.IsError())
+      return status;
+
+    for (size_t i = 0; i < views_info.GetSize(); ++i) {
+      if (views_info.Get(i).url.find(url) == 0) {
+        id = views_info.Get(i).id;
+        break;
+      }
+    }
+    if (!id.empty())
+      break;
+    base::PlatformThread::Sleep(base::TimeDelta::FromMilliseconds(100));
+  }
+  if (id.empty())
+    return Status(kUnknownError, "page could not be found: " + url);
+
+  scoped_ptr<WebView> web_view_tmp(new WebViewImpl(
+      id, GetBuildNo(), devtools_http_client_->CreateClient(id)));
+  Status status = web_view_tmp->ConnectIfNecessary();
+  if (status.IsError())
+    return status;
+
+  status = web_view_tmp->WaitForPendingNavigations(
+      std::string(), deadline - base::TimeTicks::Now(), false);
+  if (status.IsOk())
+    *web_view = web_view_tmp.Pass();
+  return status;
+}
+
 Status ChromeDesktopImpl::GetAutomationExtension(
     AutomationExtension** extension) {
   if (!automation_extension_) {
-    base::Time deadline = base::Time::Now() + base::TimeDelta::FromSeconds(10);
-    std::string id;
-    while (base::Time::Now() < deadline) {
-      WebViewsInfo views_info;
-      Status status = devtools_http_client_->GetWebViewsInfo(&views_info);
-      if (status.IsError())
-        return status;
-
-      for (size_t i = 0; i < views_info.GetSize(); ++i) {
-        if (views_info.Get(i).url.find(
-                "chrome-extension://aapnijgdinlhnhlmodcfapnahmbfebeb") == 0) {
-          id = views_info.Get(i).id;
-          break;
-        }
-      }
-      if (!id.empty())
-        break;
-      base::PlatformThread::Sleep(base::TimeDelta::FromMilliseconds(100));
-    }
-    if (id.empty())
-      return Status(kUnknownError, "automation extension cannot be found");
-
-    scoped_ptr<WebView> web_view(new WebViewImpl(
-        id, GetBuildNo(), devtools_http_client_->CreateClient(id), log_));
-    Status status = web_view->ConnectIfNecessary();
+    scoped_ptr<WebView> web_view;
+    Status status = WaitForPageToLoad(
+        "chrome-extension://aapnijgdinlhnhlmodcfapnahmbfebeb/"
+        "_generated_background_page.html",
+        base::TimeDelta::FromSeconds(10),
+        &web_view);
     if (status.IsError())
-      return status;
-
-    // Wait for the extension background page to load.
-    status = web_view->WaitForPendingNavigations(
-        std::string(), 5 * 60 * 1000);
-    if (status.IsError())
-      return status;
+      return Status(kUnknownError, "cannot get automation extension", status);
 
     automation_extension_.reset(new AutomationExtension(web_view.Pass()));
   }
@@ -130,13 +145,20 @@ Status ChromeDesktopImpl::GetAutomationExtension(
   return Status(kOk);
 }
 
+ChromeDesktopImpl* ChromeDesktopImpl::GetAsDesktop() {
+  return this;
+}
+
 std::string ChromeDesktopImpl::GetOperatingSystemName() {
   return base::SysInfo::OperatingSystemName();
 }
 
-Status ChromeDesktopImpl::Quit() {
-  quit_ = true;
+Status ChromeDesktopImpl::QuitImpl() {
   if (!KillProcess(process_))
     return Status(kUnknownError, "cannot kill Chrome");
   return Status(kOk);
+}
+
+const CommandLine& ChromeDesktopImpl::command() const {
+  return command_;
 }

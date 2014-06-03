@@ -8,7 +8,9 @@
 #include <string>
 #include <vector>
 
-#include "base/containers/hash_tables.h"
+#include "base/containers/small_map.h"
+#include "base/posix/global_descriptors.h"
+#include "base/process/kill.h"
 #include "base/process/process.h"
 
 class Pickle;
@@ -29,10 +31,23 @@ class Zygote {
 
   bool ProcessRequests();
 
-  static const int kBrowserDescriptor = 3;
-  static const int kMagicSandboxIPCDescriptor = 5;
-
  private:
+  struct ZygoteProcessInfo {
+    // Pid from inside the Zygote's PID namespace.
+    base::ProcessHandle internal_pid;
+    // Keeps track of whether or not a process was started from a fork
+    // delegate helper.
+    bool started_from_helper;
+  };
+  typedef base::SmallMap< std::map<base::ProcessHandle, ZygoteProcessInfo> >
+      ZygoteProcessMap;
+
+  // Retrieve a ZygoteProcessInfo from the process_info_map_.
+  // Returns true and write to process_info if |pid| can be found, return
+  // false otherwise.
+  bool GetProcessInfo(base::ProcessHandle pid,
+                      ZygoteProcessInfo* process_info);
+
   // Returns true if the SUID sandbox is active.
   bool UsingSUIDSandbox() const;
 
@@ -45,6 +60,14 @@ class Zygote {
 
   void HandleReapRequest(int fd, const Pickle& pickle, PickleIterator iter);
 
+  // Get the termination status of |real_pid|. |real_pid| is the PID as it
+  // appears outside of the sandbox.
+  // Return true if it managed to get the termination status and return the
+  // status in |status| and the exit code in |exit_code|.
+  bool GetTerminationStatus(base::ProcessHandle real_pid, bool known_dead,
+                            base::TerminationStatus* status,
+                            int* exit_code);
+
   void HandleGetTerminationStatus(int fd,
                                   const Pickle& pickle,
                                   PickleIterator iter);
@@ -55,7 +78,7 @@ class Zygote {
   // fills in uma_name et al with a report the helper wants to make via
   // UMA_HISTOGRAM_ENUMERATION.
   int ForkWithRealPid(const std::string& process_type,
-                      std::vector<int>& fds,
+                      const base::GlobalDescriptors::Mapping& fd_mapping,
                       const std::string& channel_switch,
                       std::string* uma_name,
                       int* uma_sample,
@@ -84,11 +107,11 @@ class Zygote {
                               const Pickle& pickle,
                               PickleIterator iter);
 
-  // In the SUID sandbox, we try to use a new PID namespace. Thus the PIDs
-  // fork() returns are not the real PIDs, so we need to map the Real PIDS
-  // into the sandbox PID namespace.
-  typedef base::hash_map<base::ProcessHandle, base::ProcessHandle> ProcessMap;
-  ProcessMap real_pids_to_sandbox_pids;
+  // The Zygote needs to keep some information about each process. Most
+  // notably what the PID of the process is inside the PID namespace of
+  // the Zygote and whether or not a process was started by the
+  // ZygoteForkDelegate helper.
+  ZygoteProcessMap process_info_map_;
 
   const int sandbox_flags_;
   ZygoteForkDelegate* helper_;

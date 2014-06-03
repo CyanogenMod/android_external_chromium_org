@@ -136,9 +136,17 @@ void GenericChangeProcessor::CommitChangesFromSyncModel() {
   }
 }
 
-syncer::SyncError GenericChangeProcessor::GetSyncDataForType(
+syncer::SyncDataList GenericChangeProcessor::GetAllSyncData(
+    syncer::ModelType type) const {
+  // This is slow / memory intensive.  Should be used sparingly by datatypes.
+  syncer::SyncDataList data;
+  GetAllSyncDataReturnError(type, &data);
+  return data;
+}
+
+syncer::SyncError GenericChangeProcessor::GetAllSyncDataReturnError(
     syncer::ModelType type,
-    syncer::SyncDataList* current_sync_data) {
+    syncer::SyncDataList* current_sync_data) const {
   DCHECK(CalledOnValidThread());
   std::string type_name = syncer::ModelTypeToString(type);
   syncer::ReadTransaction trans(FROM_HERE, share_handle());
@@ -448,7 +456,7 @@ syncer::SyncError GenericChangeProcessor::ProcessSyncChanges(
           syncer::Cryptographer* crypto = trans.GetCryptographer();
           syncer::ModelTypeSet encrypted_types(trans.GetEncryptedTypes());
           const sync_pb::EntitySpecifics& specifics =
-              sync_node.GetEntry()->Get(syncer::syncable::SPECIFICS);
+              sync_node.GetEntry()->GetSpecifics();
           CHECK(specifics.has_encrypted());
           const bool can_decrypt = crypto->CanDecrypt(specifics.encrypted());
           const bool agreement = encrypted_types.Has(type);

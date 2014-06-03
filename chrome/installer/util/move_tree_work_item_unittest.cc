@@ -60,12 +60,12 @@ TEST_F(MoveTreeWorkItemTest, MoveDirectory) {
   // Create two level deep source dir
   base::FilePath from_dir1(temp_from_dir_.path());
   from_dir1 = from_dir1.AppendASCII("From_Dir1");
-  file_util::CreateDirectory(from_dir1);
+  base::CreateDirectory(from_dir1);
   ASSERT_TRUE(base::PathExists(from_dir1));
 
   base::FilePath from_dir2(from_dir1);
   from_dir2 = from_dir2.AppendASCII("From_Dir2");
-  file_util::CreateDirectory(from_dir2);
+  base::CreateDirectory(from_dir2);
   ASSERT_TRUE(base::PathExists(from_dir2));
 
   base::FilePath from_file(from_dir2);
@@ -109,12 +109,12 @@ TEST_F(MoveTreeWorkItemTest, MoveDirectoryDestExists) {
   // Create two level deep source dir
   base::FilePath from_dir1(temp_from_dir_.path());
   from_dir1 = from_dir1.AppendASCII("From_Dir1");
-  file_util::CreateDirectory(from_dir1);
+  base::CreateDirectory(from_dir1);
   ASSERT_TRUE(base::PathExists(from_dir1));
 
   base::FilePath from_dir2(from_dir1);
   from_dir2 = from_dir2.AppendASCII("From_Dir2");
-  file_util::CreateDirectory(from_dir2);
+  base::CreateDirectory(from_dir2);
   ASSERT_TRUE(base::PathExists(from_dir2));
 
   base::FilePath from_file(from_dir2);
@@ -125,7 +125,7 @@ TEST_F(MoveTreeWorkItemTest, MoveDirectoryDestExists) {
   // Create destination path
   base::FilePath to_dir(temp_from_dir_.path());
   to_dir = to_dir.AppendASCII("To_Dir");
-  file_util::CreateDirectory(to_dir);
+  base::CreateDirectory(to_dir);
   ASSERT_TRUE(base::PathExists(to_dir));
 
   base::FilePath orig_to_file(to_dir);
@@ -168,7 +168,7 @@ TEST_F(MoveTreeWorkItemTest, MoveAFile) {
   // Create a file inside source dir
   base::FilePath from_dir(temp_from_dir_.path());
   from_dir = from_dir.AppendASCII("From_Dir");
-  file_util::CreateDirectory(from_dir);
+  base::CreateDirectory(from_dir);
   ASSERT_TRUE(base::PathExists(from_dir));
 
   base::FilePath from_file(from_dir);
@@ -209,7 +209,7 @@ TEST_F(MoveTreeWorkItemTest, MoveFileDestExists) {
   // Create a file inside source dir
   base::FilePath from_dir(temp_from_dir_.path());
   from_dir = from_dir.AppendASCII("From_Dir");
-  file_util::CreateDirectory(from_dir);
+  base::CreateDirectory(from_dir);
   ASSERT_TRUE(base::PathExists(from_dir));
 
   base::FilePath from_file(from_dir);
@@ -220,7 +220,7 @@ TEST_F(MoveTreeWorkItemTest, MoveFileDestExists) {
   // Create destination path
   base::FilePath to_dir(temp_from_dir_.path());
   to_dir = to_dir.AppendASCII("To_Dir");
-  file_util::CreateDirectory(to_dir);
+  base::CreateDirectory(to_dir);
   ASSERT_TRUE(base::PathExists(to_dir));
 
   base::FilePath to_file(to_dir);
@@ -257,7 +257,7 @@ TEST_F(MoveTreeWorkItemTest, MoveFileDestInUse) {
   // Create a file inside source dir
   base::FilePath from_dir(temp_from_dir_.path());
   from_dir = from_dir.AppendASCII("From_Dir");
-  file_util::CreateDirectory(from_dir);
+  base::CreateDirectory(from_dir);
   ASSERT_TRUE(base::PathExists(from_dir));
 
   base::FilePath from_file(from_dir);
@@ -268,7 +268,7 @@ TEST_F(MoveTreeWorkItemTest, MoveFileDestInUse) {
   // Create an executable in destination path by copying ourself to it.
   base::FilePath to_dir(temp_from_dir_.path());
   to_dir = to_dir.AppendASCII("To_Dir");
-  file_util::CreateDirectory(to_dir);
+  base::CreateDirectory(to_dir);
   ASSERT_TRUE(base::PathExists(to_dir));
 
   wchar_t exe_full_path_str[MAX_PATH];
@@ -320,7 +320,7 @@ TEST_F(MoveTreeWorkItemTest, MoveFileInUse) {
   // Create an executable for source by copying ourself to a new source dir.
   base::FilePath from_dir(temp_from_dir_.path());
   from_dir = from_dir.AppendASCII("From_Dir");
-  file_util::CreateDirectory(from_dir);
+  base::CreateDirectory(from_dir);
   ASSERT_TRUE(base::PathExists(from_dir));
 
   wchar_t exe_full_path_str[MAX_PATH];
@@ -334,7 +334,7 @@ TEST_F(MoveTreeWorkItemTest, MoveFileInUse) {
   // Create a destination source dir and generate destination file name.
   base::FilePath to_dir(temp_from_dir_.path());
   to_dir = to_dir.AppendASCII("To_Dir");
-  file_util::CreateDirectory(to_dir);
+  base::CreateDirectory(to_dir);
   ASSERT_TRUE(base::PathExists(to_dir));
 
   base::FilePath to_file(to_dir);
@@ -391,12 +391,12 @@ TEST_F(MoveTreeWorkItemTest, MoveDirectoryDestExistsCheckForDuplicatesFull) {
   // Create two level deep source dir
   base::FilePath from_dir1(temp_from_dir_.path());
   from_dir1 = from_dir1.AppendASCII("From_Dir1");
-  file_util::CreateDirectory(from_dir1);
+  base::CreateDirectory(from_dir1);
   ASSERT_TRUE(base::PathExists(from_dir1));
 
   base::FilePath from_dir2(from_dir1);
   from_dir2 = from_dir2.AppendASCII("From_Dir2");
-  file_util::CreateDirectory(from_dir2);
+  base::CreateDirectory(from_dir2);
   ASSERT_TRUE(base::PathExists(from_dir2));
 
   base::FilePath from_file(from_dir2);
@@ -439,7 +439,7 @@ TEST_F(MoveTreeWorkItemTest, MoveDirectoryDestExistsCheckForDuplicatesFull) {
   EXPECT_TRUE(base::PathExists(to_dir));
   EXPECT_TRUE(base::PathExists(orig_to_file));
   // Make sure that the backup path is not empty.
-  EXPECT_FALSE(file_util::IsDirectoryEmpty(temp_to_dir_.path()));
+  EXPECT_FALSE(base::IsDirectoryEmpty(temp_to_dir_.path()));
 
   // Check that the work item believes the source to have been moved.
   EXPECT_TRUE(work_item->source_moved_to_backup_);
@@ -464,12 +464,12 @@ TEST_F(MoveTreeWorkItemTest, MoveDirectoryDestExistsCheckForDuplicatesPartial) {
   // Create two level deep source dir
   base::FilePath from_dir1(temp_from_dir_.path());
   from_dir1 = from_dir1.AppendASCII("From_Dir1");
-  file_util::CreateDirectory(from_dir1);
+  base::CreateDirectory(from_dir1);
   ASSERT_TRUE(base::PathExists(from_dir1));
 
   base::FilePath from_dir2(from_dir1);
   from_dir2 = from_dir2.AppendASCII("From_Dir2");
-  file_util::CreateDirectory(from_dir2);
+  base::CreateDirectory(from_dir2);
   ASSERT_TRUE(base::PathExists(from_dir2));
 
   base::FilePath from_file(from_dir2);
@@ -485,13 +485,13 @@ TEST_F(MoveTreeWorkItemTest, MoveDirectoryDestExistsCheckForDuplicatesPartial) {
   // Create destination path
   base::FilePath to_dir(temp_from_dir_.path());
   to_dir = to_dir.AppendASCII("To_Dir");
-  file_util::CreateDirectory(to_dir);
+  base::CreateDirectory(to_dir);
   ASSERT_TRUE(base::PathExists(to_dir));
 
   // Create a sub-directory of the same name as in the source directory.
   base::FilePath to_dir2(to_dir);
   to_dir2 = to_dir2.AppendASCII("From_Dir2");
-  file_util::CreateDirectory(to_dir2);
+  base::CreateDirectory(to_dir2);
   ASSERT_TRUE(base::PathExists(to_dir2));
 
   // Create one of the files in the to sub-directory, but not the other.
@@ -515,7 +515,7 @@ TEST_F(MoveTreeWorkItemTest, MoveDirectoryDestExistsCheckForDuplicatesPartial) {
   EXPECT_TRUE(base::PathExists(to_dir));
   EXPECT_TRUE(base::PathExists(orig_to_file));
   // Make sure that the backup path is not empty.
-  EXPECT_FALSE(file_util::IsDirectoryEmpty(temp_to_dir_.path()));
+  EXPECT_FALSE(base::IsDirectoryEmpty(temp_to_dir_.path()));
   // Make sure that the "new" file is also present.
   base::FilePath new_to_file2(to_dir2);
   new_to_file2 = new_to_file2.AppendASCII("From_File2");

@@ -12,14 +12,15 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/common/chrome_constants.h"
-#include "chrome/common/extensions/extension_file_util.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
-#include "chrome/common/extensions/manifest.h"
-#include "chrome/common/extensions/permissions/api_permission.h"
-#include "chrome/common/extensions/permissions/api_permission_set.h"
-#include "chrome/common/extensions/permissions/permissions_data.h"
+#include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/url_constants.h"
 #include "extensions/common/error_utils.h"
+#include "extensions/common/file_util.h"
+#include "extensions/common/manifest.h"
+#include "extensions/common/manifest_constants.h"
+#include "extensions/common/permissions/api_permission.h"
+#include "extensions/common/permissions/api_permission_set.h"
+#include "extensions/common/permissions/permissions_data.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -27,10 +28,10 @@
 #include "ui/keyboard/keyboard_constants.h"
 #endif
 
-namespace keys = extension_manifest_keys;
-namespace errors = extension_manifest_errors;
-
 namespace extensions {
+
+namespace keys = manifest_keys;
+namespace errors = manifest_errors;
 
 namespace {
 
@@ -71,6 +72,14 @@ bool ManifestURL::UpdatesFromGallery(const Extension* extension) {
 }
 
 // static
+bool  ManifestURL::UpdatesFromGallery(const base::DictionaryValue* manifest) {
+  std::string url;
+  if (!manifest->GetString(keys::kUpdateURL, &url))
+    return false;
+  return extension_urls::IsWebstoreUpdateUrl(GURL(url));
+}
+
+// static
 const GURL& ManifestURL::GetOptionsPage(const Extension* extension) {
   return GetManifestURL(extension, keys::kOptionsPage);
 }
@@ -107,7 +116,7 @@ DevToolsPageHandler::DevToolsPageHandler() {
 DevToolsPageHandler::~DevToolsPageHandler() {
 }
 
-bool DevToolsPageHandler::Parse(Extension* extension, string16* error) {
+bool DevToolsPageHandler::Parse(Extension* extension, base::string16* error) {
   scoped_ptr<ManifestURL> manifest_url(new ManifestURL);
   std::string devtools_str;
   if (!extension->manifest()->GetString(keys::kDevToolsPage, &devtools_str)) {
@@ -131,7 +140,7 @@ HomepageURLHandler::HomepageURLHandler() {
 HomepageURLHandler::~HomepageURLHandler() {
 }
 
-bool HomepageURLHandler::Parse(Extension* extension, string16* error) {
+bool HomepageURLHandler::Parse(Extension* extension, base::string16* error) {
   scoped_ptr<ManifestURL> manifest_url(new ManifestURL);
   std::string homepage_url_str;
   if (!extension->manifest()->GetString(keys::kHomepageURL,
@@ -142,8 +151,7 @@ bool HomepageURLHandler::Parse(Extension* extension, string16* error) {
   }
   manifest_url->url_ = GURL(homepage_url_str);
   if (!manifest_url->url_.is_valid() ||
-      (!manifest_url->url_.SchemeIs("http") &&
-       !manifest_url->url_.SchemeIs("https"))) {
+      !manifest_url->url_.SchemeIsHTTPOrHTTPS()) {
     *error = ErrorUtils::FormatErrorMessageUTF16(
         errors::kInvalidHomepageURL, homepage_url_str);
     return false;
@@ -162,7 +170,7 @@ UpdateURLHandler::UpdateURLHandler() {
 UpdateURLHandler::~UpdateURLHandler() {
 }
 
-bool UpdateURLHandler::Parse(Extension* extension, string16* error) {
+bool UpdateURLHandler::Parse(Extension* extension, base::string16* error) {
   scoped_ptr<ManifestURL> manifest_url(new ManifestURL);
   std::string tmp_update_url;
 
@@ -194,7 +202,7 @@ OptionsPageHandler::OptionsPageHandler() {
 OptionsPageHandler::~OptionsPageHandler() {
 }
 
-bool OptionsPageHandler::Parse(Extension* extension, string16* error) {
+bool OptionsPageHandler::Parse(Extension* extension, base::string16* error) {
   scoped_ptr<ManifestURL> manifest_url(new ManifestURL);
   std::string options_str;
   if (!extension->manifest()->GetString(keys::kOptionsPage, &options_str)) {
@@ -206,7 +214,7 @@ bool OptionsPageHandler::Parse(Extension* extension, string16* error) {
     // hosted apps require an absolute URL.
     GURL options_url(options_str);
     if (!options_url.is_valid() ||
-        !(options_url.SchemeIs("http") || options_url.SchemeIs("https"))) {
+        !options_url.SchemeIsHTTPOrHTTPS()) {
       *error = ASCIIToUTF16(errors::kInvalidOptionsPageInHostedApp);
       return false;
     }
@@ -236,7 +244,7 @@ bool OptionsPageHandler::Validate(const Extension* extension,
   if (!extensions::ManifestURL::GetOptionsPage(extension).is_empty() &&
       !extension->is_hosted_app()) {
     const base::FilePath options_path =
-        extension_file_util::ExtensionURLToRelativeFilePath(
+        extensions::file_util::ExtensionURLToRelativeFilePath(
             extensions::ManifestURL::GetOptionsPage(extension));
     const base::FilePath path =
         extension->GetResource(options_path).GetFilePath();
@@ -261,7 +269,7 @@ URLOverridesHandler::URLOverridesHandler() {
 URLOverridesHandler::~URLOverridesHandler() {
 }
 
-bool URLOverridesHandler::Parse(Extension* extension, string16* error) {
+bool URLOverridesHandler::Parse(Extension* extension, base::string16* error) {
   const base::DictionaryValue* overrides = NULL;
   if (!extension->manifest()->GetDictionary(keys::kChromeURLOverrides,
                                             &overrides)) {
@@ -282,13 +290,13 @@ bool URLOverridesHandler::Parse(Extension* extension, string16* error) {
     is_override = (is_override &&
                    page != chrome::kChromeUIActivationMessageHost);
 #endif
-#if defined(FILE_MANAGER_EXTENSION)
+#if defined(OS_CHROMEOS)
+    is_override = (is_override && page != keyboard::kKeyboardWebUIHost);
+#endif
+#if defined(ENABLE_ENHANCED_BOOKMARKS)
     is_override = (is_override &&
                    !(extension->location() == Manifest::COMPONENT &&
-                     page == chrome::kChromeUIFileManagerHost));
-#endif
-#if defined(USE_AURA)
-    is_override = (is_override && page != keyboard::kKeyboardWebUIHost);
+                     page ==  chrome::kChromeUIEnhancedBookmarksHost));
 #endif
 
     if (is_override || !iter.value().GetAsString(&val)) {

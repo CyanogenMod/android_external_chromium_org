@@ -13,12 +13,12 @@
 #include "base/lazy_instance.h"
 #include "base/md5.h"
 #include "base/prefs/pref_service.h"
+#include "base/prefs/scoped_user_pref_update.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/value_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/download/download_prefs.h"
 #include "chrome/browser/platform_util.h"
-#include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/chrome_select_file_policy.h"
 #include "chrome/common/pref_names.h"
@@ -35,6 +35,7 @@
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/shell_dialogs/select_file_dialog.h"
+#include "webkit/browser/fileapi/file_system_url.h"
 #include "webkit/browser/fileapi/isolated_context.h"
 #include "webkit/common/fileapi/file_system_util.h"
 
@@ -69,7 +70,7 @@ class SelectFileDialog : public ui::SelectFileDialog::Listener,
         canceled_callback_(canceled_callback),
         web_contents_(web_contents) {
     select_file_dialog_ = ui::SelectFileDialog::Create(
-        this, new ChromeSelectFilePolicy(NULL));
+        this, new ChromeSelectFilePolicy(web_contents));
   }
 
   void Show(ui::SelectFileDialog::Type type,
@@ -77,7 +78,7 @@ class SelectFileDialog : public ui::SelectFileDialog::Listener,
     AddRef();  // Balanced in the three listener outcomes.
     select_file_dialog_->SelectFile(
       type,
-      string16(),
+      base::string16(),
       default_path,
       NULL,
       0,
@@ -113,6 +114,8 @@ class SelectFileDialog : public ui::SelectFileDialog::Listener,
   SelectedCallback selected_callback_;
   CanceledCallback canceled_callback_;
   WebContents* web_contents_;
+
+  DISALLOW_COPY_AND_ASSIGN(SelectFileDialog);
 };
 
 void WriteToFile(const base::FilePath& path, const std::string& content) {
@@ -152,6 +155,7 @@ std::string RegisterFileSystem(WebContents* web_contents,
   policy->GrantReadFileSystem(renderer_id, file_system_id);
   policy->GrantWriteFileSystem(renderer_id, file_system_id);
   policy->GrantCreateFileForFileSystem(renderer_id, file_system_id);
+  policy->GrantDeleteFromFileSystem(renderer_id, file_system_id);
 
   // We only need file level access for reading FileEntries. Saving FileEntries
   // just needs the file system to have read/write access, which is granted
@@ -217,10 +221,11 @@ DevToolsFileHelper::~DevToolsFileHelper() {
 void DevToolsFileHelper::Save(const std::string& url,
                               const std::string& content,
                               bool save_as,
-                              const SaveCallback& callback) {
+                              const SaveCallback& saveCallback,
+                              const SaveCallback& cancelCallback) {
   PathsMap::iterator it = saved_files_.find(url);
   if (it != saved_files_.end() && !save_as) {
-    SaveAsFileSelected(url, content, callback, it->second);
+    SaveAsFileSelected(url, content, saveCallback, it->second);
     return;
   }
 
@@ -255,9 +260,10 @@ void DevToolsFileHelper::Save(const std::string& url,
            weak_factory_.GetWeakPtr(),
            url,
            content,
-           callback),
+           saveCallback),
       Bind(&DevToolsFileHelper::SaveAsFileSelectionCanceled,
-           weak_factory_.GetWeakPtr()),
+           weak_factory_.GetWeakPtr(),
+           cancelCallback),
       web_contents_);
   select_file_dialog->Show(ui::SelectFileDialog::SELECT_SAVEAS_FILE,
                            initial_path);
@@ -291,7 +297,9 @@ void DevToolsFileHelper::SaveAsFileSelected(const std::string& url,
                           Bind(&WriteToFile, path, content));
 }
 
-void DevToolsFileHelper::SaveAsFileSelectionCanceled() {
+void DevToolsFileHelper::SaveAsFileSelectionCanceled(
+    const SaveCallback& callback) {
+  callback.Run();
 }
 
 void DevToolsFileHelper::AddFileSystem(
@@ -308,6 +316,27 @@ void DevToolsFileHelper::AddFileSystem(
                            base::FilePath());
 }
 
+void DevToolsFileHelper::UpgradeDraggedFileSystemPermissions(
+    const std::string& file_system_url,
+    const AddFileSystemCallback& callback,
+    const ShowInfoBarCallback& show_info_bar_callback) {
+  fileapi::FileSystemURL root_url =
+      isolated_context()->CrackURL(GURL(file_system_url));
+  if (!root_url.is_valid() || !root_url.path().empty()) {
+    callback.Run(FileSystem());
+    return;
+  }
+
+  std::vector<fileapi::MountPoints::MountPointInfo> mount_points;
+  isolated_context()->GetDraggedFileInfo(root_url.filesystem_id(),
+                                         &mount_points);
+
+  std::vector<fileapi::MountPoints::MountPointInfo>::const_iterator it =
+      mount_points.begin();
+  for (; it != mount_points.end(); ++it)
+    InnerAddFileSystem(callback, show_info_bar_callback, it->path);
+}
+
 void DevToolsFileHelper::InnerAddFileSystem(
     const AddFileSystemCallback& callback,
     const ShowInfoBarCallback& show_info_bar_callback,
@@ -322,7 +351,7 @@ void DevToolsFileHelper::InnerAddFileSystem(
   }
 
   std::string path_display_name = path.AsEndingWithSeparator().AsUTF8Unsafe();
-  string16 message = l10n_util::GetStringFUTF16(
+  base::string16 message = l10n_util::GetStringFUTF16(
       IDS_DEV_TOOLS_CONFIRM_ADD_FILE_SYSTEM_MESSAGE,
       UTF8ToUTF16(path_display_name));
   show_info_bar_callback.Run(

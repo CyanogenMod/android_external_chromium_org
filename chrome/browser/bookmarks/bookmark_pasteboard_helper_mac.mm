@@ -18,8 +18,7 @@ namespace {
 
 // An unofficial standard pasteboard title type to be provided alongside the
 // |NSURLPboardType|.
-NSString* const kNSURLTitlePboardType =
-    @"public.url-name";
+NSString* const kNSURLTitlePboardType = @"public.url-name";
 
 // Pasteboard type used to store profile path to determine which profile
 // a set of bookmarks came from.
@@ -28,23 +27,18 @@ NSString* const kChromiumProfilePathPboardType =
 
 // Internal bookmark ID for a bookmark node.  Used only when moving inside
 // of one profile.
-NSString* const kChromiumBookmarkId =
-    @"ChromiumBookmarkId";
+NSString* const kChromiumBookmarkId = @"ChromiumBookmarkId";
 
 // Mac WebKit uses this type, declared in
 // WebKit/mac/History/WebURLsWithTitles.h.
-NSString* const kCrWebURLsWithTitlesPboardType =
-    @"WebURLsWithTitlesPboardType";
+NSString* const kCrWebURLsWithTitlesPboardType = @"WebURLsWithTitlesPboardType";
 
 // Keys for the type of node in BookmarkDictionaryListPboardType.
-NSString* const kWebBookmarkType =
-    @"WebBookmarkType";
+NSString* const kWebBookmarkType = @"WebBookmarkType";
 
-NSString* const kWebBookmarkTypeList =
-    @"WebBookmarkTypeList";
+NSString* const kWebBookmarkTypeList = @"WebBookmarkTypeList";
 
-NSString* const kWebBookmarkTypeLeaf =
-    @"WebBookmarkTypeLeaf";
+NSString* const kWebBookmarkTypeLeaf = @"WebBookmarkTypeLeaf";
 
 void ConvertPlistToElements(NSArray* input,
                             std::vector<BookmarkNodeData::Element>& elements) {
@@ -106,7 +100,7 @@ bool ReadWebURLsWithTitlesPboardType(
 
   NSUInteger len = [titlesArr count];
   for (NSUInteger i = 0; i < len; ++i) {
-    string16 title = base::SysNSStringToUTF16([titlesArr objectAtIndex:i]);
+    base::string16 title = base::SysNSStringToUTF16([titlesArr objectAtIndex:i]);
     std::string url = base::SysNSStringToUTF8([urlsArr objectAtIndex:i]);
     if (!url.empty()) {
       BookmarkNodeData::Element element;
@@ -183,7 +177,8 @@ void WriteBookmarkDictionaryListPboardType(
 
 void FillFlattenedArraysForBookmarks(
     const std::vector<BookmarkNodeData::Element>& elements,
-    NSMutableArray* titles, NSMutableArray* urls) {
+    NSMutableArray* titles,
+    NSMutableArray* urls) {
   for (size_t i = 0; i < elements.size(); ++i) {
     BookmarkNodeData::Element element = elements[i];
     if (element.is_url) {
@@ -197,7 +192,8 @@ void FillFlattenedArraysForBookmarks(
   }
 }
 
-void WriteSimplifiedBookmarkTypes(NSPasteboard* pb,
+void WriteSimplifiedBookmarkTypes(
+    NSPasteboard* pb,
     const std::vector<BookmarkNodeData::Element>& elements) {
   NSMutableArray* titles = [NSMutableArray array];
   NSMutableArray* urls = [NSMutableArray array];
@@ -222,15 +218,17 @@ void WriteSimplifiedBookmarkTypes(NSPasteboard* pb,
   [pb setString:titleString forType:kNSURLTitlePboardType];
 }
 
-NSPasteboard* PasteboardFromType(
-    bookmark_pasteboard_helper_mac::PasteboardType type) {
+NSPasteboard* PasteboardFromType(ui::ClipboardType type) {
   NSString* type_string = nil;
   switch (type) {
-    case bookmark_pasteboard_helper_mac::kCopyPastePasteboard:
+    case ui::CLIPBOARD_TYPE_COPY_PASTE:
       type_string = NSGeneralPboard;
       break;
-    case bookmark_pasteboard_helper_mac::kDragPasteboard:
+    case ui::CLIPBOARD_TYPE_DRAG:
       type_string = NSDragPboard;
+      break;
+    case ui::CLIPBOARD_TYPE_SELECTION:
+      NOTREACHED();
       break;
   }
 
@@ -239,11 +237,10 @@ NSPasteboard* PasteboardFromType(
 
 }  // namespace
 
-namespace bookmark_pasteboard_helper_mac {
-
-void WriteToPasteboard(PasteboardType type,
-                       const std::vector<BookmarkNodeData::Element>& elements,
-                       const base::FilePath& profile_path) {
+void WriteBookmarksToPasteboard(
+    ui::ClipboardType type,
+    const std::vector<BookmarkNodeData::Element>& elements,
+    const base::FilePath& profile_path) {
   if (elements.empty())
     return;
 
@@ -263,9 +260,10 @@ void WriteToPasteboard(PasteboardType type,
   WriteSimplifiedBookmarkTypes(pb, elements);
 }
 
-bool ReadFromPasteboard(PasteboardType type,
-                        std::vector<BookmarkNodeData::Element>& elements,
-                        base::FilePath* profile_path) {
+bool ReadBookmarksFromPasteboard(
+    ui::ClipboardType type,
+    std::vector<BookmarkNodeData::Element>& elements,
+    base::FilePath* profile_path) {
   NSPasteboard* pb = PasteboardFromType(type);
 
   elements.clear();
@@ -276,7 +274,7 @@ bool ReadFromPasteboard(PasteboardType type,
          ReadNSURLPboardType(pb, elements);
 }
 
-bool PasteboardContainsBookmarks(PasteboardType type) {
+bool PasteboardContainsBookmarks(ui::ClipboardType type) {
   NSPasteboard* pb = PasteboardFromType(type);
 
   NSArray* availableTypes =
@@ -286,5 +284,3 @@ bool PasteboardContainsBookmarks(PasteboardType type) {
                                 nil];
   return [pb availableTypeFromArray:availableTypes] != nil;
 }
-
-}  // namespace bookmark_pasteboard_helper_mac

@@ -37,16 +37,14 @@ void TopSitesBackend::GetMostVisitedThumbnails(
       const GetMostVisitedThumbnailsCallback& callback,
       CancelableTaskTracker* tracker) {
   scoped_refptr<MostVisitedThumbnails> thumbnails = new MostVisitedThumbnails();
-  bool* need_history_migration = new bool(false);
 
   tracker->PostTaskAndReply(
       BrowserThread::GetMessageLoopProxyForThread(BrowserThread::DB).get(),
       FROM_HERE,
       base::Bind(&TopSitesBackend::GetMostVisitedThumbnailsOnDBThread,
                  this,
-                 thumbnails,
-                 need_history_migration),
-      base::Bind(callback, thumbnails, base::Owned(need_history_migration)));
+                 thumbnails),
+      base::Bind(callback, thumbnails));
 }
 
 void TopSitesBackend::UpdateTopSites(const TopSitesDelta& delta) {
@@ -87,7 +85,7 @@ TopSitesBackend::~TopSitesBackend() {
 void TopSitesBackend::InitDBOnDBThread(const base::FilePath& path) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::DB));
   if (!db_->Init(path)) {
-    NOTREACHED() << "Failed to initialize database.";
+    LOG(ERROR) << "Failed to initialize database.";
     db_.reset();
   }
 }
@@ -98,15 +96,12 @@ void TopSitesBackend::ShutdownDBOnDBThread() {
 }
 
 void TopSitesBackend::GetMostVisitedThumbnailsOnDBThread(
-    scoped_refptr<MostVisitedThumbnails> thumbnails,
-    bool* need_history_migration) {
+    scoped_refptr<MostVisitedThumbnails> thumbnails) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::DB));
 
-  *need_history_migration = false;
   if (db_) {
     db_->GetPageThumbnails(&(thumbnails->most_visited),
                            &(thumbnails->url_to_images_map));
-    *need_history_migration = db_->may_need_history_migration();
   }
 }
 

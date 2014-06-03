@@ -11,11 +11,11 @@
 
 #include "base/basictypes.h"
 #include "base/bind.h"
-#include "base/command_line.h"
 #include "base/compiler_specific.h"
 #include "base/containers/mru_cache.h"
 #include "base/metrics/histogram.h"
 #include "base/prefs/pref_service.h"
+#include "base/prefs/scoped_user_pref_update.h"
 #include "base/stl_util.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
@@ -26,7 +26,8 @@
 #include "base/values.h"
 #include "chrome/browser/io_thread.h"
 #include "chrome/browser/net/preconnect.h"
-#include "chrome/browser/prefs/scoped_user_pref_update.h"
+#include "chrome/browser/net/spdyproxy/data_reduction_proxy_settings.h"
+#include "chrome/browser/net/spdyproxy/proxy_advisor.h"
 #include "chrome/browser/prefs/session_startup_pref.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
@@ -108,7 +109,9 @@ class Predictor::LookupRequest {
     // lets the HostResolver know it can de-prioritize it.
     resolve_info.set_is_speculative(true);
     return resolver_.Resolve(
-        resolve_info, &addresses_,
+        resolve_info,
+        net::DEFAULT_PRIORITY,
+        &addresses_,
         base::Bind(&LookupRequest::OnLookupFinished, base::Unretained(this)),
         net::BoundNetLog());
   }
@@ -322,6 +325,17 @@ void Predictor::InitNetworkPredictor(PrefService* user_prefs,
   user_prefs->ClearPref(prefs::kDnsPrefetchingStartupList);
   user_prefs->ClearPref(prefs::kDnsPrefetchingHostReferralList);
 
+#if defined(OS_ANDROID) || defined(OS_IOS)
+  // TODO(marq): Once https://codereview.chromium.org/30883003/ lands, also
+  // condition this on DataReductionProxySettings::IsDataReductionProxyAllowed()
+  // Until then, we may create a proxy advisor when the proxy feature itself
+  // isn't available, and the advisor instance will never send advisory
+  // requests, which is slightly wasteful but not harmful.
+  if (DataReductionProxySettings::IsPreconnectHintingAllowed()) {
+    proxy_advisor_.reset(new ProxyAdvisor(user_prefs, getter));
+  }
+#endif
+
   BrowserThread::PostTask(
       BrowserThread::IO,
       FROM_HERE,
@@ -397,7 +411,6 @@ void Predictor::AnticipateOmniboxUrl(const GURL& url, bool preconnectable) {
   }
   last_omnibox_preresolve_ = now;
 
-  // Perform at least DNS pre-resolution.
   BrowserThread::PostTask(
       BrowserThread::IO,
       FROM_HERE,
@@ -465,7 +478,7 @@ UrlList Predictor::GetPredictedUrlListAtStartup(
       GURL gurl = tab_start_pref.urls[i];
       if (!gurl.is_valid() || gurl.SchemeIsFile() || gurl.host().empty())
         continue;
-      if (gurl.SchemeIs("http") || gurl.SchemeIs("https"))
+      if (gurl.SchemeIsHTTPOrHTTPS())
         urls.push_back(gurl.GetWithEmptyPath());
     }
   }
@@ -486,11 +499,8 @@ void Predictor::set_max_parallel_resolves(size_t max_parallel_resolves) {
   g_max_parallel_resolves = max_parallel_resolves;
 }
 
-void Predictor::ShutdownOnUIThread(PrefService* user_prefs) {
+void Predictor::ShutdownOnUIThread() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
-  SaveStateForNextStartupAndTrim(user_prefs);
-
   BrowserThread::PostTask(
       BrowserThread::IO,
       FROM_HERE,
@@ -981,6 +991,8 @@ void Predictor::PreconnectUrlOnIOThread(
   if (motivation == UrlInfo::MOUSE_OVER_MOTIVATED)
     RecordPreconnectTrigger(url);
 
+  AdviseProxy(url, motivation, true /* is_preconnect */);
+
   PreconnectOnIOThread(url,
                        first_party_for_cookies,
                        motivation,
@@ -1026,6 +1038,26 @@ void Predictor::PredictFrameSubresources(const GURL& url,
         FROM_HERE,
         base::Bind(&Predictor::PrepareFrameSubresources,
                    base::Unretained(this), url, first_party_for_cookies));
+  }
+}
+
+void Predictor::AdviseProxy(const GURL& url,
+                            UrlInfo::ResolutionMotivation motivation,
+                            bool is_preconnect) {
+  if (!proxy_advisor_)
+    return;
+
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI) ||
+         BrowserThread::CurrentlyOn(BrowserThread::IO));
+
+  if (BrowserThread::CurrentlyOn(BrowserThread::IO)) {
+    AdviseProxyOnIOThread(url, motivation, is_preconnect);
+  } else {
+    BrowserThread::PostTask(
+        BrowserThread::IO,
+        FROM_HERE,
+        base::Bind(&Predictor::AdviseProxyOnIOThread,
+                   base::Unretained(this), url, motivation, is_preconnect));
   }
 }
 
@@ -1136,6 +1168,12 @@ UrlInfo* Predictor::AppendToResolutionQueue(
     return NULL;
   }
 
+  AdviseProxy(url, motivation, false /* is_preconnect */);
+  if (proxy_advisor_ && proxy_advisor_->WouldProxyURL(url)) {
+    info->DLogResultsStats("DNS PrefetchForProxiedRequest");
+    return NULL;
+  }
+
   info->SetQueuedState(motivation);
   work_queue_.Push(url, motivation);
   StartSomeQueuedResolutions();
@@ -1242,6 +1280,15 @@ void Predictor::IncrementalTrimReferrers(bool trim_all_now) {
   PostIncrementalTrimTask();
 }
 
+void Predictor::AdviseProxyOnIOThread(const GURL& url,
+                                      UrlInfo::ResolutionMotivation motivation,
+                                      bool is_preconnect) {
+  if (!proxy_advisor_)
+    return;
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  proxy_advisor_->Advise(url, motivation, is_preconnect);
+}
+
 // ---------------------- End IO methods. -------------------------------------
 
 //-----------------------------------------------------------------------------
@@ -1299,7 +1346,7 @@ void Predictor::InitialObserver::Append(const GURL& url,
   if (kStartupResolutionCount <= first_navigations_.size())
     return;
 
-  DCHECK(url.SchemeIs("http") || url.SchemeIs("https"));
+  DCHECK(url.SchemeIsHTTPOrHTTPS());
   DCHECK_EQ(url, Predictor::CanonicalizeUrl(url));
   if (first_navigations_.find(url) == first_navigations_.end())
     first_navigations_[url] = base::TimeTicks::Now();
@@ -1376,7 +1423,7 @@ void SimplePredictor::InitNetworkPredictor(
   // Empty function for unittests.
 }
 
-void SimplePredictor::ShutdownOnUIThread(PrefService* user_prefs) {
+void SimplePredictor::ShutdownOnUIThread() {
   SetShutdown(true);
 }
 

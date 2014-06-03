@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "base/cancelable_callback.h"
+#include "base/memory/scoped_vector.h"
 #include "base/observer_list.h"
 #include "net/base/io_buffer.h"
 #include "net/base/ip_endpoint.h"
@@ -22,19 +23,22 @@
 
 namespace net {
 
+class MDnsSocketFactoryImpl : public MDnsSocketFactory {
+ public:
+  MDnsSocketFactoryImpl() {};
+  virtual ~MDnsSocketFactoryImpl() {};
+
+  virtual void CreateSockets(
+      ScopedVector<DatagramServerSocket>* sockets) OVERRIDE;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(MDnsSocketFactoryImpl);
+};
+
 // A connection to the network for multicast DNS clients. It reads data into
 // DnsResponse objects and alerts the delegate that a packet has been received.
 class NET_EXPORT_PRIVATE MDnsConnection {
  public:
-  class SocketFactory {
-   public:
-    virtual ~SocketFactory() {}
-
-    virtual scoped_ptr<DatagramServerSocket> CreateSocket() = 0;
-
-    static scoped_ptr<SocketFactory> CreateDefault();
-  };
-
   class Delegate {
    public:
     // Handle an mDNS packet buffered in |response| with a size of |bytes_read|.
@@ -43,39 +47,37 @@ class NET_EXPORT_PRIVATE MDnsConnection {
     virtual ~Delegate() {}
   };
 
-  explicit MDnsConnection(SocketFactory* socket_factory,
-                          MDnsConnection::Delegate* delegate);
-
+  explicit MDnsConnection(MDnsConnection::Delegate* delegate);
   virtual ~MDnsConnection();
 
-  int Init();
-  int Send(IOBuffer* buffer, unsigned size);
+  // Both methods return true if at least one of the socket handlers succeeded.
+  bool Init(MDnsSocketFactory* socket_factory);
+  bool Send(IOBuffer* buffer, unsigned size);
 
  private:
   class SocketHandler {
    public:
-    SocketHandler(MDnsConnection* connection,
-                  const IPEndPoint& multicast_addr,
-                  SocketFactory* socket_factory);
+    SocketHandler(scoped_ptr<DatagramServerSocket> socket,
+                  MDnsConnection* connection);
     ~SocketHandler();
-    int DoLoop(int rv);
-    int Start();
 
+    int Start();
     int Send(IOBuffer* buffer, unsigned size);
 
    private:
-    int BindSocket();
+    int DoLoop(int rv);
     void OnDatagramReceived(int rv);
 
     // Callback for when sending a query has finished.
     void SendDone(int rv);
 
     scoped_ptr<DatagramServerSocket> socket_;
-
     MDnsConnection* connection_;
     IPEndPoint recv_addr_;
-    scoped_ptr<DnsResponse> response_;
+    DnsResponse response_;
     IPEndPoint multicast_addr_;
+
+    DISALLOW_COPY_AND_ASSIGN(SocketHandler);
   };
 
   // Callback for handling a datagram being received on either ipv4 or ipv6.
@@ -85,10 +87,8 @@ class NET_EXPORT_PRIVATE MDnsConnection {
 
   void OnError(SocketHandler* loop, int error);
 
-  IPEndPoint GetMDnsIPEndPoint(const char* address);
-
-  SocketHandler socket_handler_ipv4_;
-  SocketHandler socket_handler_ipv6_;
+  // Only socket handlers which successfully bound and started are kept.
+  ScopedVector<SocketHandler> socket_handlers_;
 
   Delegate* delegate_;
 
@@ -105,12 +105,11 @@ class NET_EXPORT_PRIVATE MDnsClientImpl : public MDnsClient {
   // invalidate the core.
   class Core : public base::SupportsWeakPtr<Core>, MDnsConnection::Delegate {
    public:
-    Core(MDnsClientImpl* client,
-         MDnsConnection::SocketFactory* socket_factory);
+    explicit Core(MDnsClientImpl* client);
     virtual ~Core();
 
     // Initialize the core. Returns true on success.
-    bool Init();
+    bool Init(MDnsSocketFactory* socket_factory);
 
     // Send a query with a specific rrtype and name. Returns true on success.
     bool SendQuery(uint16 rrtype, std::string name);
@@ -165,8 +164,7 @@ class NET_EXPORT_PRIVATE MDnsClientImpl : public MDnsClient {
     DISALLOW_COPY_AND_ASSIGN(Core);
   };
 
-  explicit MDnsClientImpl(
-      scoped_ptr<MDnsConnection::SocketFactory> socket_factory_);
+  MDnsClientImpl();
   virtual ~MDnsClientImpl();
 
   // MDnsClient implementation:
@@ -181,7 +179,7 @@ class NET_EXPORT_PRIVATE MDnsClientImpl : public MDnsClient {
       int flags,
       const MDnsTransaction::ResultCallback& callback) OVERRIDE;
 
-  virtual bool StartListening() OVERRIDE;
+  virtual bool StartListening(MDnsSocketFactory* socket_factory) OVERRIDE;
   virtual void StopListening() OVERRIDE;
   virtual bool IsListening() const OVERRIDE;
 
@@ -189,8 +187,6 @@ class NET_EXPORT_PRIVATE MDnsClientImpl : public MDnsClient {
 
  private:
   scoped_ptr<Core> core_;
-
-  scoped_ptr<MDnsConnection::SocketFactory> socket_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(MDnsClientImpl);
 };

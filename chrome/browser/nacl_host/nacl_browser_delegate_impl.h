@@ -6,12 +6,13 @@
 #define CHROME_BROWSER_NACL_HOST_NACL_BROWSER_DELEGATE_IMPL_H_
 
 #include "base/compiler_specific.h"
-#include "components/nacl/common/nacl_browser_delegate.h"
+#include "components/nacl/browser/nacl_browser_delegate.h"
+#include "extensions/browser/info_map.h"
 
 class NaClBrowserDelegateImpl : public NaClBrowserDelegate {
  public:
-  NaClBrowserDelegateImpl() {}
-  virtual ~NaClBrowserDelegateImpl() {}
+  explicit NaClBrowserDelegateImpl(extensions::InfoMap* extension_info_map);
+  virtual ~NaClBrowserDelegateImpl();
 
   virtual void ShowNaClInfobar(int render_process_id, int render_view_id,
                                int error_id) OVERRIDE;
@@ -23,8 +24,17 @@ class NaClBrowserDelegateImpl : public NaClBrowserDelegate {
   virtual std::string GetVersionString() const OVERRIDE;
   virtual ppapi::host::HostFactory* CreatePpapiHostFactory(
       content::BrowserPpapiHost* ppapi_host) OVERRIDE;
-  virtual void TryInstallPnacl(
-      const base::Callback<void(bool)>& installed) OVERRIDE;
+  virtual bool MapUrlToLocalFilePath(const GURL& url,
+                                     bool is_blocking,
+                                     base::FilePath* file_path) OVERRIDE;
+  virtual void SetDebugPatterns(std::string debug_patterns) OVERRIDE;
+  virtual bool URLMatchesDebugPatterns(const GURL& manifest_url) OVERRIDE;
+
+ private:
+  scoped_refptr<extensions::InfoMap> extension_info_map_;
+  std::vector<URLPattern> debug_patterns_;
+  bool inverse_debug_patterns_;
+  DISALLOW_COPY_AND_ASSIGN(NaClBrowserDelegateImpl);
 };
 
 

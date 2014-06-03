@@ -12,9 +12,12 @@
 #import "chrome/browser/ui/cocoa/location_bar/button_decoration.h"
 #import "chrome/browser/ui/cocoa/location_bar/location_bar_decoration.h"
 #import "chrome/browser/ui/cocoa/nsview_additions.h"
-#import "chrome/common/extensions/feature_switch.h"
+#import "extensions/common/feature_switch.h"
+#include "grit/theme_resources.h"
 #import "third_party/mozilla/NSPasteboard+Utils.h"
+#import "ui/base/cocoa/appkit_utils.h"
 #import "ui/base/cocoa/tracking_area.h"
+#include "ui/base/resource/resource_bundle.h"
 
 using extensions::FeatureSwitch;
 
@@ -27,6 +30,30 @@ const CGFloat kCornerRadius = 3.0;
 const CGFloat kLeftDecorationXOffset = 5.0;
 
 NSString* const kButtonDecorationKey = @"ButtonDecoration";
+
+const ui::NinePartImageIds kPopupBorderImageIds = {
+  IDR_OMNIBOX_POPUP_BORDER_TOP_LEFT,
+  IDR_OMNIBOX_POPUP_BORDER_TOP,
+  IDR_OMNIBOX_POPUP_BORDER_TOP_RIGHT,
+  IDR_OMNIBOX_POPUP_BORDER_LEFT,
+  IDR_OMNIBOX_POPUP_BORDER_CENTER,
+  IDR_OMNIBOX_POPUP_BORDER_RIGHT,
+  IDR_OMNIBOX_POPUP_BORDER_BOTTOM_LEFT,
+  IDR_OMNIBOX_POPUP_BORDER_BOTTOM,
+  IDR_OMNIBOX_POPUP_BORDER_BOTTOM_RIGHT
+};
+
+const ui::NinePartImageIds kNormalBorderImageIds = {
+  IDR_OMNIBOX_BORDER_TOP_LEFT,
+  IDR_OMNIBOX_BORDER_TOP,
+  IDR_OMNIBOX_BORDER_TOP_RIGHT,
+  IDR_OMNIBOX_BORDER_LEFT,
+  IDR_OMNIBOX_BORDER_CENTER,
+  IDR_OMNIBOX_BORDER_RIGHT,
+  IDR_OMNIBOX_BORDER_BOTTOM_LEFT,
+  IDR_OMNIBOX_BORDER_BOTTOM,
+  IDR_OMNIBOX_BORDER_BOTTOM_RIGHT
+};
 
 // How far to inset the right-hand decorations from the field's bounds.
 // TODO(shess): Why is this different from |kLeftDecorationXOffset|?
@@ -184,6 +211,8 @@ size_t CalculatePositionsInFrame(
 
 @implementation AutocompleteTextFieldCell
 
+@synthesize isPopupMode = isPopupMode_;
+
 - (CGFloat)topTextFrameOffset {
   return 3.0;
 }
@@ -324,6 +353,45 @@ size_t CalculatePositionsInFrame(
   return NSMakeRect(minX, NSMinY(textFrame), maxX - minX, NSHeight(textFrame));
 }
 
+- (void)drawWithFrame:(NSRect)frame inView:(NSView*)controlView {
+  // Background color.
+  const CGFloat lineWidth = [controlView cr_lineWidth];
+  if (isPopupMode_) {
+    [[self backgroundColor] set];
+    NSRectFillUsingOperation(NSInsetRect(frame, 1, 1), NSCompositeSourceOver);
+  } else {
+    CGFloat insetSize = lineWidth == 0.5 ? 1.5 : 2.0;
+    NSRect fillRect = NSInsetRect(frame, insetSize, insetSize);
+    [[self backgroundColor] set];
+    [[NSBezierPath bezierPathWithRoundedRect:fillRect
+                                     xRadius:kCornerRadius
+                                     yRadius:kCornerRadius] fill];
+  }
+
+  // Border.
+  ui::DrawNinePartImage(frame,
+                        isPopupMode_ ? kPopupBorderImageIds
+                                     : kNormalBorderImageIds,
+                        NSCompositeSourceOver,
+                        1.0,
+                        true);
+
+  // Interior contents.
+  [self drawInteriorWithFrame:frame inView:controlView];
+
+  // Focus ring.
+  if ([self showsFirstResponder]) {
+    NSRect focusRingRect = NSInsetRect(frame, lineWidth, lineWidth);
+    [[[NSColor keyboardFocusIndicatorColor]
+        colorWithAlphaComponent:0.5 / lineWidth] set];
+    NSBezierPath* path = [NSBezierPath bezierPathWithRoundedRect:focusRingRect
+                                                         xRadius:kCornerRadius
+                                                         yRadius:kCornerRadius];
+    [path setLineWidth:lineWidth * 2.0];
+    [path stroke];
+  }
+}
+
 - (void)drawInteriorWithFrame:(NSRect)cellFrame inView:(NSView*)controlView {
   std::vector<LocationBarDecoration*> decorations;
   std::vector<NSRect> decorationFrames;
@@ -445,13 +513,33 @@ size_t CalculatePositionsInFrame(
 
   bool handled;
   if (decoration->AsButtonDecoration()) {
-    handled = decoration->AsButtonDecoration()->OnMousePressedWithView(
-        decorationRect, controlView);
+    ButtonDecoration* button = decoration->AsButtonDecoration();
 
-    // Update tracking areas and make sure the button's state is consistent with
-    // the mouse's location (e.g. "normal" if the mouse is no longer over the
-    // decoration, "hover" otherwise).
-    [self setUpTrackingAreasInRect:cellFrame ofView:controlView];
+    button->SetButtonState(ButtonDecoration::kButtonStatePressed);
+    [controlView setNeedsDisplay:YES];
+
+    // Track the mouse until the user releases the button.
+    [self trackMouse:theEvent
+              inRect:cellFrame
+              ofView:controlView
+        untilMouseUp:YES];
+
+    // Set the proper state (hover or normal) once the mouse has been released,
+    // and call |OnMousePressed| if the button was released while the mouse was
+    // within the bounds of the button.
+    const NSPoint mouseLocation =
+        [[controlView window] mouseLocationOutsideOfEventStream];
+    const NSPoint point = [controlView convertPoint:mouseLocation fromView:nil];
+    if (NSMouseInRect(point, cellFrame, [controlView isFlipped])) {
+      button->SetButtonState(ButtonDecoration::kButtonStateHover);
+      [controlView setNeedsDisplay:YES];
+      handled = decoration->AsButtonDecoration()->OnMousePressed(
+          [self frameForDecoration:decoration inFrame:cellFrame]);
+    } else {
+      button->SetButtonState(ButtonDecoration::kButtonStateNormal);
+      [controlView setNeedsDisplay:YES];
+      handled = true;
+    }
   } else {
     handled = decoration->OnMousePressed(decorationRect);
   }

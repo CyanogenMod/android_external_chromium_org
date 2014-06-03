@@ -44,6 +44,7 @@
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
+#include "net/base/url_util.h"
 #include "ui/base/l10n/l10n_util.h"
 
 #if defined(OS_CHROMEOS)
@@ -94,7 +95,7 @@ const char* kDataTypeNames[] = {
   "tabs"
 };
 
-COMPILE_ASSERT(28 == syncer::MODEL_TYPE_COUNT,
+COMPILE_ASSERT(30 == syncer::MODEL_TYPE_COUNT,
                update_kDataTypeNames_to_match_UserSelectableTypes);
 
 typedef std::map<syncer::ModelType, const char*> ModelTypeNameMap;
@@ -198,7 +199,7 @@ void SyncSetupHandler::GetStaticLocalizedValues(
     content::WebUI* web_ui) {
   DCHECK(localized_strings);
 
-  string16 product_name(GetStringUTF16(IDS_PRODUCT_NAME));
+  base::string16 product_name(GetStringUTF16(IDS_PRODUCT_NAME));
   localized_strings->SetString(
       "chooseDataTypesInstructions",
       GetStringFUTF16(IDS_SYNC_CHOOSE_DATATYPES_INSTRUCTIONS, product_name));
@@ -366,7 +367,8 @@ void SyncSetupHandler::DisplayConfigureSync(bool show_advanced,
   base::Time passphrase_time = service->GetExplicitPassphraseTime();
   syncer::PassphraseType passphrase_type = service->GetPassphraseType();
   if (!passphrase_time.is_null()) {
-    string16 passphrase_time_str = base::TimeFormatShortDate(passphrase_time);
+    base::string16 passphrase_time_str =
+        base::TimeFormatShortDate(passphrase_time);
     args.SetString(
         "enterPassphraseBody",
         GetStringFUTF16(IDS_SYNC_ENTER_PASSPHRASE_BODY_WITH_DATE,
@@ -504,11 +506,7 @@ void SyncSetupHandler::DisplayGaiaLoginInNewTabOrWindow() {
     UMA_HISTOGRAM_ENUMERATION("Signin.Reauth",
                               signin::HISTOGRAM_SHOWN,
                               signin::HISTOGRAM_MAX);
-    std::string fragment("Email=");
-    fragment += email;
-    GURL::Replacements replacements;
-    replacements.SetRefStr(fragment);
-    url = url.ReplaceComponents(replacements);
+    url = net::AppendQueryParameter(url, "Email", email);
   }
 
   browser->OpenURL(
@@ -576,8 +574,8 @@ void SyncSetupHandler::SyncStartupFailed() {
   backend_start_timer_.reset();
 
   // Just close the sync overlay (the idea is that the base settings page will
-  // display the current err
-  CloseSyncSetup();
+  // display the current error.)
+  CloseUI();
 }
 
 void SyncSetupHandler::SyncStartupCompleted() {
@@ -627,7 +625,7 @@ void SyncSetupHandler::HandleConfigure(const ListValue* args) {
   // If the sync engine has shutdown for some reason, just close the sync
   // dialog.
   if (!service || !service->sync_initialized()) {
-    CloseSyncSetup();
+    CloseUI();
     return;
   }
 
@@ -638,7 +636,7 @@ void SyncSetupHandler::HandleConfigure(const ListValue* args) {
   if (configuration.sync_nothing) {
     ProfileSyncService::SyncEvent(
         ProfileSyncService::STOP_FROM_ADVANCED_DIALOG);
-    CloseSyncSetup();
+    CloseUI();
     service->OnStopSyncingPermanently();
     service->SetSetupInProgress(false);
     return;
@@ -731,10 +729,7 @@ void SyncSetupHandler::HandleShowSetupUI(const ListValue* args) {
     // signin) or by directly navigating to settings/syncSetup
     // (http://crbug.com/229836). So just exit and go back to the settings page.
     DLOG(WARNING) << "Cannot display sync setup UI when not signed in";
-    CloseSyncSetup();
-    StringValue page("done");
-    web_ui()->CallJavascriptFunction(
-        "SyncSetupOverlay.showSyncSetupPage", page);
+    CloseUI();
     return;
   }
 
@@ -744,10 +739,7 @@ void SyncSetupHandler::HandleShowSetupUI(const ListValue* args) {
   // one tab. See crbug.com/261566.
   // Note: The following block will transfer focus to the existing wizard.
   if (IsExistingWizardPresent() && !IsActiveLogin()) {
-    CloseSyncSetup();
-    StringValue page("done");
-    web_ui()->CallJavascriptFunction(
-        "SyncSetupOverlay.showSyncSetupPage", page);
+    CloseUI();
   }
 
   // If a setup wizard is present on this page or another, bring it to focus.
@@ -760,7 +752,7 @@ void SyncSetupHandler::HandleShowSetupUI(const ListValue* args) {
 // On ChromeOS, we need to sign out the user session to fix an auth error, so
 // the user goes through the real signin flow to generate a new auth token.
 void SyncSetupHandler::HandleDoSignOutOnAuthError(const ListValue* args) {
-  DLOG(INFO) << "Signing out the user to fix a sync error.";
+  DVLOG(1) << "Signing out the user to fix a sync error.";
   chrome::AttemptUserExit();
 }
 #endif
@@ -860,7 +852,7 @@ void SyncSetupHandler::OpenSyncSetup() {
     // because previously working credentials have expired (case 3). Close sync
     // setup including any visible overlays, and display the gaia auth page.
     // Control will be returned to the sync settings page once auth is complete.
-    CloseSyncSetup();
+    CloseUI();
     DisplayGaiaLogin();
     return;
   }
@@ -868,7 +860,7 @@ void SyncSetupHandler::OpenSyncSetup() {
   if (!GetSyncService()) {
     // This can happen if the user directly navigates to /settings/syncSetup.
     DLOG(WARNING) << "Cannot display sync UI when sync is disabled";
-    CloseSyncSetup();
+    CloseUI();
     return;
   }
 
@@ -892,8 +884,10 @@ void SyncSetupHandler::FocusUI() {
 }
 
 void SyncSetupHandler::CloseUI() {
-  DCHECK(IsActiveLogin());
   CloseSyncSetup();
+  StringValue page("done");
+  web_ui()->CallJavascriptFunction(
+      "SyncSetupOverlay.showSyncSetupPage", page);
 }
 
 bool SyncSetupHandler::IsExistingWizardPresent() {

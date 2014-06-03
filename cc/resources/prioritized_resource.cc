@@ -15,7 +15,7 @@ namespace cc {
 
 PrioritizedResource::PrioritizedResource(PrioritizedResourceManager* manager,
                                          gfx::Size size,
-                                         GLenum format)
+                                         ResourceFormat format)
     : size_(size),
       format_(format),
       bytes_(0),
@@ -25,10 +25,7 @@ PrioritizedResource::PrioritizedResource(PrioritizedResourceManager* manager,
       is_self_managed_(false),
       backing_(NULL),
       manager_(NULL) {
-  // manager_ is set in RegisterTexture() so validity can be checked.
-  DCHECK(format || size.IsEmpty());
-  if (format)
-    bytes_ = Resource::MemorySizeBytes(size, format);
+  bytes_ = Resource::MemorySizeBytes(size, format);
   if (manager)
     manager->RegisterTexture(this);
 }
@@ -48,7 +45,7 @@ void PrioritizedResource::SetTextureManager(
     manager->RegisterTexture(this);
 }
 
-void PrioritizedResource::SetDimensions(gfx::Size size, GLenum format) {
+void PrioritizedResource::SetDimensions(gfx::Size size, ResourceFormat format) {
   if (format_ != format || size_ != size) {
     is_above_priority_cutoff_ = false;
     format_ = format;
@@ -113,7 +110,7 @@ void PrioritizedResource::Unlink() {
 }
 
 void PrioritizedResource::SetToSelfManagedMemoryPlaceholder(size_t bytes) {
-  SetDimensions(gfx::Size(), GL_RGBA);
+  SetDimensions(gfx::Size(), RGBA_8888);
   set_is_self_managed(true);
   bytes_ = bytes;
 }
@@ -121,12 +118,13 @@ void PrioritizedResource::SetToSelfManagedMemoryPlaceholder(size_t bytes) {
 PrioritizedResource::Backing::Backing(unsigned id,
                                       ResourceProvider* resource_provider,
                                       gfx::Size size,
-                                      GLenum format)
+                                      ResourceFormat format)
     : Resource(id, size, format),
       owner_(NULL),
       priority_at_last_priority_update_(PriorityCalculator::LowestPriority()),
       was_above_priority_cutoff_at_last_priority_update_(false),
       in_drawing_impl_tree_(false),
+      in_parent_compositor_(false),
 #ifdef NDEBUG
       resource_has_been_deleted_(false) {}
 #else
@@ -157,7 +155,7 @@ bool PrioritizedResource::Backing::ResourceHasBeenDeleted() const {
   return resource_has_been_deleted_;
 }
 
-bool PrioritizedResource::Backing::CanBeRecycled() const {
+bool PrioritizedResource::Backing::CanBeRecycledIfNotInExternalUse() const {
   DCHECK(!proxy() || proxy()->IsImplThread());
   return !was_above_priority_cutoff_at_last_priority_update_ &&
          !in_drawing_impl_tree_;
@@ -176,10 +174,12 @@ void PrioritizedResource::Backing::UpdatePriority() {
   }
 }
 
-void PrioritizedResource::Backing::UpdateInDrawingImplTree() {
+void PrioritizedResource::Backing::UpdateState(
+    ResourceProvider* resource_provider) {
   DCHECK(!proxy() ||
          (proxy()->IsImplThread() && proxy()->IsMainThreadBlocked()));
   in_drawing_impl_tree_ = !!owner();
+  in_parent_compositor_ = resource_provider->InUseByConsumer(id());
   if (!in_drawing_impl_tree_) {
     DCHECK_EQ(priority_at_last_priority_update_,
               PriorityCalculator::LowestPriority());

@@ -15,7 +15,7 @@
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
-#include "chrome/browser/sync/profile_sync_service_harness.h"
+#include "chrome/browser/sync/test/integration/profile_sync_service_harness.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/test/base/ui_test_utils.h"
@@ -50,7 +50,7 @@ bool SyncSetupHelper::InitializeSync(Profile* profile) {
 bool SyncSetupHelper::ReadPasswordFile(const base::FilePath& password_file) {
   // TODO(dcheng): Convert format of config file to JSON.
   std::string file_contents;
-  bool success = file_util::ReadFileToString(password_file, &file_contents);
+  bool success = base::ReadFileToString(password_file, &file_contents);
   EXPECT_TRUE(success)
       << "Password file \""
       << password_file.value() << "\" does not exist.";

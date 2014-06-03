@@ -148,6 +148,7 @@ class TraceEventTimelineImporter(importer.TimelineImporter):
       thread.BeginSlice(event['cat'],
                         event['name'],
                         event['ts'] / 1000.0,
+                        event['tts'] / 1000.0 if 'tts' in event else None,
                         event['args'])
     elif event['ph'] == 'E':
       thread = (self._GetOrCreateProcess(event['pid'])
@@ -161,7 +162,9 @@ class TraceEventTimelineImporter(importer.TimelineImporter):
             'E phase event without a matching B phase event.')
         return
 
-      new_slice = thread.EndSlice(event['ts'] / 1000.0)
+      new_slice = thread.EndSlice(
+          event['ts'] / 1000.0,
+          event['tts'] / 1000.0 if 'tts' in event else None)
       for arg_name, arg_value in event.get('args', {}).iteritems():
         if arg_name in new_slice.args:
           self._model.import_errors.append(
@@ -169,6 +172,18 @@ class TraceEventTimelineImporter(importer.TimelineImporter):
               ' provided values for argument ' + arg_name + '. ' +
               'The value of the E phase event will be used.')
         new_slice.args[arg_name] = arg_value
+
+  def _ProcessCompleteEvent(self, event):
+    thread = (self._GetOrCreateProcess(event['pid'])
+        .GetOrCreateThread(event['tid']))
+    thread.PushCompleteSlice(
+        event['cat'],
+        event['name'],
+        event['ts'] / 1000.0,
+        event['dur'] / 1000.0 if 'dur' in event else None,
+        event['tts'] / 1000.0 if 'tts' in event else None,
+        event['tdur'] / 1000.0 if 'tdur' in event else None,
+        event['args'])
 
   def _ProcessMetadataEvent(self, event):
     if event['name'] == 'thread_name':
@@ -190,7 +205,7 @@ class TraceEventTimelineImporter(importer.TimelineImporter):
     thread.BeginSlice(event['cat'],
                       event['name'],
                       event['ts'] / 1000.0,
-                      event.get('args'))
+                      args=event.get('args'))
     thread.EndSlice(event['ts'] / 1000.0)
 
   def _ProcessSampleEvent(self, event):
@@ -199,7 +214,7 @@ class TraceEventTimelineImporter(importer.TimelineImporter):
     thread.AddSample(event['cat'],
                      event['name'],
                      event['ts'] / 1000.0,
-                     args=event.get('args'))
+                     event.get('args'))
 
   def ImportEvents(self):
     ''' Walks through the events_ list and outputs the structures discovered to
@@ -209,6 +224,8 @@ class TraceEventTimelineImporter(importer.TimelineImporter):
       phase = event.get('ph', None)
       if phase == 'B' or phase == 'E':
         self._ProcessDurationEvent(event)
+      elif phase == 'X':
+        self._ProcessCompleteEvent(event)
       elif phase == 'S' or phase == 'F' or phase == 'T':
         self._ProcessAsyncEvent(event)
       # Note, I is historic. The instant event marker got changed, but we
@@ -248,7 +265,7 @@ class TraceEventTimelineImporter(importer.TimelineImporter):
       return
 
     self._all_async_events.sort(
-        cmp=lambda x, y: x['event']['ts'] - y['event']['ts'])
+        cmp=lambda x, y: int(x['event']['ts'] - y['event']['ts']))
 
     async_event_states_by_name_then_id = {}
 
@@ -274,8 +291,8 @@ class TraceEventTimelineImporter(importer.TimelineImporter):
           async_event_states_by_name_then_id[name] = {}
         if event_id in async_event_states_by_name_then_id[name]:
           self._model.import_errors.append(
-              'At ' + event['ts'] + ', a slice of the same id ' + event_id +
-              ' was alrady open.')
+              'At %d, a slice of the same id %s was alrady open.' % (
+                  event['ts'], event_id))
           continue
 
         async_event_states_by_name_then_id[name][event_id] = []
@@ -284,13 +301,12 @@ class TraceEventTimelineImporter(importer.TimelineImporter):
       else:
         if name not in async_event_states_by_name_then_id:
           self._model.import_errors.append(
-              'At ' + str(event['ts']) + ', no slice named ' + name +
-              ' was open.')
+              'At %d, no slice named %s was open.' % (event['ts'], name,))
           continue
         if event_id not in async_event_states_by_name_then_id[name]:
           self._model.import_errors.append(
-              'At ' + str(event['ts']) + ', no slice named ' + name +
-              ' with id=' + event_id + ' was open.')
+              'At %d, no slice named %s with id=%s was open.' % (
+                  event['ts'], name, event_id))
           continue
         events = async_event_states_by_name_then_id[name][event_id]
         events.append(async_event_state)

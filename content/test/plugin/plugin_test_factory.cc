@@ -38,7 +38,8 @@ PluginTest* CreatePluginTest(const std::string& test_name,
   } else if (test_name == "geturl" || test_name == "geturl_404_response" ||
              test_name == "geturl_fail_write" ||
              test_name == "plugin_referrer_test" ||
-             test_name == "geturlredirectnotify") {
+             test_name == "geturlredirectnotify" ||
+             test_name == "cookies") {
     new_test = new PluginGetURLTest(instance, host_functions);
   } else if (test_name == "npobject_identity") {
     new_test = new NPObjectIdentityTest(instance, host_functions);
@@ -97,7 +98,9 @@ PluginTest* CreatePluginTest(const std::string& test_name,
   } else if (test_name == "hidden_plugin" ||
              test_name == "create_instance_in_paint" ||
              test_name == "alert_in_window_message" ||
-             test_name == "ensure_scripting_works_in_destroy") {
+             test_name == "ensure_scripting_works_in_destroy" ||
+             test_name == "set_title_in_paint" ||
+             test_name == "set_title_in_set_window_and_paint") {
     new_test = new WindowedPluginTest(instance, host_functions);
 #endif
   } else if (test_name == "setup") {

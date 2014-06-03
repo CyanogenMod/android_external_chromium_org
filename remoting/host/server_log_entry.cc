@@ -43,12 +43,10 @@ const char kStatusName[] = "status";
 const char kExitCodeName[] = "exit-code";
 
 const char kKeyOsName[] = "os-name";
-const char kValueOsNameWindows[] = "Windows";
-const char kValueOsNameLinux[] = "Linux";
-const char kValueOsNameMac[] = "Mac";
-const char kValueOsNameChromeOS[] = "ChromeOS";
 
+#if defined(OS_WIN) || defined(OS_MACOSX) || defined(OS_CHROMEOS)
 const char kKeyOsVersion[] = "os-version";
+#endif
 
 const char kKeyHostVersion[] = "host-version";
 
@@ -102,13 +100,13 @@ scoped_ptr<ServerLogEntry> ServerLogEntry::MakeForHostStatus(
 
 void ServerLogEntry::AddHostFields() {
 #if defined(OS_WIN)
-  Set(kKeyOsName, kValueOsNameWindows);
+  Set(kKeyOsName, "Windows");
 #elif defined(OS_MACOSX)
-  Set(kKeyOsName, kValueOsNameMac);
+  Set(kKeyOsName, "Mac");
 #elif defined(OS_CHROMEOS)
-  Set(kKeyOsName, kValueOsNameChromeOS);
+  Set(kKeyOsName, "ChromeOS");
 #elif defined(OS_LINUX)
-  Set(kKeyOsName, kValueOsNameLinux);
+  Set(kKeyOsName, "Linux");
 #endif
 
   // SysInfo::OperatingSystemVersionNumbers is only defined for the following

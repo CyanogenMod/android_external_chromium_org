@@ -24,8 +24,8 @@ import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ArrayAdapter;
-import android.widget.TextView;
 import android.widget.ListView;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import org.chromium.chromoting.jni.JniInterface;
@@ -230,9 +230,9 @@ public class Chromoting extends Activity {
 
                 // Send our HTTP request to the directory server.
                 URLConnection link =
-                        new URL(HOST_LIST_PATH + JniInterface.getApiKey()).openConnection();
-                link.addRequestProperty("client_id", JniInterface.getClientId());
-                link.addRequestProperty("client_secret", JniInterface.getClientSecret());
+                        new URL(HOST_LIST_PATH + JniInterface.nativeGetApiKey()).openConnection();
+                link.addRequestProperty("client_id", JniInterface.nativeGetClientId());
+                link.addRequestProperty("client_secret", JniInterface.nativeGetClientSecret());
                 link.setRequestProperty("Authorization", "OAuth " + authToken);
 
                 // Listen for the server to respond.

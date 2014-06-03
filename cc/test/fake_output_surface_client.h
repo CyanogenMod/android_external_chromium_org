@@ -13,29 +13,31 @@ namespace cc {
 class FakeOutputSurfaceClient : public OutputSurfaceClient {
  public:
   FakeOutputSurfaceClient()
-      : begin_frame_count_(0),
+      : begin_impl_frame_count_(0),
         deferred_initialize_result_(true),
         deferred_initialize_called_(false),
         did_lose_output_surface_called_(false),
-        memory_policy_(0),
-        discard_backbuffer_when_not_visible_(false) {}
+        memory_policy_(0) {}
 
   virtual bool DeferredInitialize(
       scoped_refptr<ContextProvider> offscreen_context_provider) OVERRIDE;
   virtual void ReleaseGL() OVERRIDE {}
   virtual void SetNeedsRedrawRect(gfx::Rect damage_rect) OVERRIDE {}
-  virtual void BeginFrame(const BeginFrameArgs& args) OVERRIDE;
-  virtual void OnSwapBuffersComplete(const CompositorFrameAck* ack) OVERRIDE {}
+  virtual void BeginImplFrame(const BeginFrameArgs& args) OVERRIDE;
+  virtual void DidSwapBuffers() OVERRIDE {}
+  virtual void OnSwapBuffersComplete() OVERRIDE {}
+  virtual void ReclaimResources(const CompositorFrameAck* ack) OVERRIDE {}
   virtual void DidLoseOutputSurface() OVERRIDE;
-  virtual void SetExternalDrawConstraints(const gfx::Transform& transform,
-                                          gfx::Rect viewport) OVERRIDE {}
-  virtual void SetExternalStencilTest(bool enable) OVERRIDE {}
+  virtual void SetExternalDrawConstraints(
+      const gfx::Transform& transform,
+      gfx::Rect viewport,
+      gfx::Rect clip,
+      bool valid_for_tile_management) OVERRIDE {}
   virtual void SetMemoryPolicy(const ManagedMemoryPolicy& policy) OVERRIDE;
-  virtual void SetDiscardBackBufferWhenNotVisible(bool discard) OVERRIDE;
   virtual void SetTreeActivationCallback(const base::Closure&) OVERRIDE {}
 
-  int begin_frame_count() {
-    return begin_frame_count_;
+  int begin_impl_frame_count() {
+    return begin_impl_frame_count_;
   }
 
   void set_deferred_initialize_result(bool result) {
@@ -52,17 +54,12 @@ class FakeOutputSurfaceClient : public OutputSurfaceClient {
 
   const ManagedMemoryPolicy& memory_policy() const { return memory_policy_; }
 
-  bool discard_backbuffer_when_not_visible() const {
-    return discard_backbuffer_when_not_visible_;
-  }
-
  private:
-  int begin_frame_count_;
+  int begin_impl_frame_count_;
   bool deferred_initialize_result_;
   bool deferred_initialize_called_;
   bool did_lose_output_surface_called_;
   ManagedMemoryPolicy memory_policy_;
-  bool discard_backbuffer_when_not_visible_;
 };
 
 }  // namespace cc

@@ -27,6 +27,7 @@
 #include "net/dns/host_resolver.h"
 #include "net/http/transport_security_state.h"
 #include "net/url_request/url_request_test_util.h"
+#include "sync/internal_api/public/base/cancelation_signal.h"
 #include "sync/internal_api/public/base/model_type.h"
 #include "sync/internal_api/public/base_node.h"
 #include "sync/internal_api/public/engine/passive_model_worker.h"
@@ -63,7 +64,6 @@ const char kXmppHostPortSwitch[] = "xmpp-host-port";
 const char kXmppTrySslTcpFirstSwitch[] = "xmpp-try-ssltcp-first";
 const char kXmppAllowInsecureConnectionSwitch[] =
     "xmpp-allow-insecure-connection";
-const char kNotificationMethodSwitch[] = "notification-method";
 
 // Needed to use a real host resolver.
 class MyTestURLRequestContext : public net::TestURLRequestContext {
@@ -186,8 +186,7 @@ class LoggingJsEventHandler
 };
 
 void LogUnrecoverableErrorContext() {
-  base::debug::StackTrace stack_trace;
-  stack_trace.PrintBacktrace();
+  base::debug::StackTrace().Print();
 }
 
 notifier::NotifierOptions ParseNotifierOptions(
@@ -196,6 +195,7 @@ notifier::NotifierOptions ParseNotifierOptions(
         request_context_getter) {
   notifier::NotifierOptions notifier_options;
   notifier_options.request_context_getter = request_context_getter;
+  notifier_options.auth_mechanism = "X-OAUTH2";
 
   if (command_line.HasSwitch(kXmppHostPortSwitch)) {
     notifier_options.xmpp_host_port =
@@ -275,7 +275,7 @@ int SyncClientMain(int argc, char* argv[]) {
   scoped_ptr<Invalidator> invalidator(new NonBlockingInvalidator(
       notifier_options,
       invalidator_id,
-      null_invalidation_state_tracker.GetAllInvalidationStates(),
+      null_invalidation_state_tracker.GetSavedInvalidations(),
       null_invalidation_state_tracker.GetBootstrapData(),
       WeakHandle<InvalidationStateTracker>(
           null_invalidation_state_tracker.AsWeakPtr()),
@@ -335,10 +335,12 @@ int SyncClientMain(int argc, char* argv[]) {
   const char kUserAgent[] = "sync_client";
   // TODO(akalin): Replace this with just the context getter once
   // HttpPostProviderFactory is removed.
+  CancelationSignal factory_cancelation_signal;
   scoped_ptr<HttpPostProviderFactory> post_factory(
       new HttpBridgeFactory(context_getter.get(),
-                            kUserAgent,
-                            base::Bind(&StubNetworkTimeUpdateCallback)));
+                            base::Bind(&StubNetworkTimeUpdateCallback),
+                            &factory_cancelation_signal));
+  post_factory->Init(kUserAgent);
   // Used only when committing bookmarks, so it's okay to leave this
   // as NULL.
   ExtensionsActivity* extensions_activity = NULL;
@@ -350,6 +352,7 @@ int SyncClientMain(int argc, char* argv[]) {
       InternalComponentsFactory::ENCRYPTION_KEYSTORE,
       InternalComponentsFactory::BACKOFF_NORMAL
   };
+  CancelationSignal scm_cancelation_signal;
 
   sync_manager->Init(database_dir.path(),
                     WeakHandle<JsEventHandler>(
@@ -369,7 +372,8 @@ int SyncClientMain(int argc, char* argv[]) {
                     &null_encryptor,
                     scoped_ptr<UnrecoverableErrorHandler>(
                         new LoggingUnrecoverableErrorHandler).Pass(),
-                    &LogUnrecoverableErrorContext, false);
+                    &LogUnrecoverableErrorContext,
+                    &scm_cancelation_signal);
   // TODO(akalin): Avoid passing in model parameters multiple times by
   // organizing handling of model types.
   invalidator->UpdateCredentials(credentials.email, credentials.sync_token);

@@ -68,6 +68,9 @@ cr.define('cr.ui.Oobe', function() {
       login.PasswordChangedScreen.register();
       login.LocallyManagedUserCreationScreen.register();
       login.TermsOfServiceScreen.register();
+      login.AppLaunchSplashScreen.register();
+      login.ConfirmPasswordScreen.register();
+      login.MessageBoxScreen.register();
 
       cr.ui.Bubble.decorate($('bubble'));
       login.HeaderBar.decorate($('login-header-bar'));
@@ -220,6 +223,7 @@ cr.define('cr.ui.Oobe', function() {
       // Update language and input method menu lists.
       Oobe.setupSelect($('language-select'), data.languageList, '');
       Oobe.setupSelect($('keyboard-select'), data.inputMethodsList, '');
+      Oobe.setupSelect($('timezone-select'), data.timezoneList, '');
 
       // Update localized content of the screens.
       Oobe.updateLocalizedContent();

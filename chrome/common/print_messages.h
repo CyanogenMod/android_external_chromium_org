@@ -42,12 +42,11 @@ struct PrintMsg_Print_Params {
   int32 preview_ui_id;
   int preview_request_id;
   bool is_first_request;
-  WebKit::WebPrintScalingOption print_scaling_option;
+  blink::WebPrintScalingOption print_scaling_option;
   bool print_to_pdf;
   bool display_header_footer;
-  string16 date;
-  string16 title;
-  string16 url;
+  base::string16 title;
+  base::string16 url;
   bool should_print_backgrounds;
 };
 
@@ -76,7 +75,7 @@ struct PrintHostMsg_RequestPrintPreview_Params {
 #define IPC_MESSAGE_START PrintMsgStart
 
 IPC_ENUM_TRAITS(printing::MarginType)
-IPC_ENUM_TRAITS(WebKit::WebPrintScalingOption)
+IPC_ENUM_TRAITS(blink::WebPrintScalingOption)
 
 // Parameters for a render request.
 IPC_STRUCT_TRAITS_BEGIN(PrintMsg_Print_Params)
@@ -137,9 +136,6 @@ IPC_STRUCT_TRAITS_BEGIN(PrintMsg_Print_Params)
   // Specifies if the header and footer should be rendered.
   IPC_STRUCT_TRAITS_MEMBER(display_header_footer)
 
-  // Date string to be printed as header if requested by the user.
-  IPC_STRUCT_TRAITS_MEMBER(date)
-
   // Title string to be printed as header if requested by the user.
   IPC_STRUCT_TRAITS_MEMBER(title)
 
@@ -187,10 +183,6 @@ IPC_STRUCT_TRAITS_END()
 
 // Parameters to describe a rendered document.
 IPC_STRUCT_BEGIN(PrintHostMsg_DidPreviewDocument_Params)
-  // True when we can reuse existing preview data. |metafile_data_handle| and
-  // |data_size| should not be used when this is true.
-  IPC_STRUCT_MEMBER(bool, reuse_existing_data)
-
   // A shared memory handle to metafile data.
   IPC_STRUCT_MEMBER(base::SharedMemoryHandle, metafile_data_handle)
 

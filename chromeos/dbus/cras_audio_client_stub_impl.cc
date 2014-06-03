@@ -6,7 +6,12 @@
 
 namespace chromeos {
 
-CrasAudioClientStubImpl::CrasAudioClientStubImpl() {
+CrasAudioClientStubImpl::CrasAudioClientStubImpl()
+    : active_input_node_id_(0),
+      active_output_node_id_(0) {
+}
+
+void CrasAudioClientStubImpl::Init(dbus::Bus* bus) {
   VLOG(1) << "CrasAudioClientStubImpl is created";
 
   // Fake audio output nodes.
@@ -16,7 +21,6 @@ CrasAudioClientStubImpl::CrasAudioClientStubImpl() {
   node_1.device_name = "Fake Speaker";
   node_1.type = "INTERNAL_SPEAKER";
   node_1.name = "Speaker";
-  node_1.active = false;
   node_list_.push_back(node_1);
 
   AudioNode node_2;
@@ -25,17 +29,14 @@ CrasAudioClientStubImpl::CrasAudioClientStubImpl() {
   node_2.device_name = "Fake Headphone";
   node_2.type = "HEADPHONE";
   node_2.name = "Headphone";
-  node_2.active = false;
   node_list_.push_back(node_2);
-  active_output_node_id_ = node_2.id;
 
   AudioNode node_3;
   node_3.is_input = false;
   node_3.id = 10003;
   node_3.device_name = "Fake Bluetooth Headphone";
   node_3.type = "BLUETOOTH";
-  node_3.name = "Bluetooth Headphone";
-  node_3.active = false;
+  node_3.name = "Headphone";
   node_list_.push_back(node_3);
 
   // Fake audio input ndoes
@@ -45,7 +46,6 @@ CrasAudioClientStubImpl::CrasAudioClientStubImpl() {
   node_4.device_name = "Fake Internal Mic";
   node_4.type = "INTERNAL_MIC";
   node_4.name = "Internal Mic";
-  node_4.active = false;
   node_list_.push_back(node_4);
 
   AudioNode node_5;
@@ -53,11 +53,8 @@ CrasAudioClientStubImpl::CrasAudioClientStubImpl() {
   node_5.id = 10005;
   node_5.device_name = "Fake USB Mic";
   node_5.type = "USB";
-  node_5.name = "USB Mic";
-  node_5.active = true;
+  node_5.name = "Mic";
   node_list_.push_back(node_5);
-
-  active_input_node_id_ = node_5.id;
 }
 
 CrasAudioClientStubImpl::~CrasAudioClientStubImpl() {
@@ -80,7 +77,8 @@ void CrasAudioClientStubImpl::GetVolumeState(
   callback.Run(volume_state_, true);
 }
 
-void CrasAudioClientStubImpl::GetNodes(const GetNodesCallback& callback) {
+void CrasAudioClientStubImpl::GetNodes(const GetNodesCallback& callback,
+                                       const ErrorCallback& error_callback) {
   callback.Run(node_list_, true);
 }
 

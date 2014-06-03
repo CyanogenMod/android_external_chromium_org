@@ -15,7 +15,7 @@ GYP_TARGET_DEPENDENCIES := \
 
 
 ### Generated for rule "media_media_gyp_media_asm_target_assemble":
-# "{'inputs': ['$(gyp_shared_intermediate_dir)/yasm', '../third_party/x86inc/x86inc.asm', 'base/simd/convert_rgb_to_yuv_ssse3.inc', 'base/simd/convert_yuv_to_rgb_mmx.inc', 'base/simd/convert_yuva_to_argb_mmx.inc', 'base/simd/linear_scale_yuv_to_rgb_mmx.inc', 'base/simd/media_export.asm', 'base/simd/scale_yuv_to_rgb_mmx.inc'], 'extension': 'asm', 'process_outputs_as_sources': '1', 'outputs': ['$(gyp_shared_intermediate_dir)/media/%(INPUT_ROOT)s.o'], 'rule_name': 'assemble', 'rule_sources': ['base/simd/convert_rgb_to_yuv_ssse3.asm', 'base/simd/convert_yuv_to_rgb_mmx.asm', 'base/simd/convert_yuv_to_rgb_sse.asm', 'base/simd/convert_yuva_to_argb_mmx.asm', 'base/simd/empty_register_state_mmx.asm', 'base/simd/linear_scale_yuv_to_rgb_mmx.asm', 'base/simd/linear_scale_yuv_to_rgb_sse.asm', 'base/simd/scale_yuv_to_rgb_mmx.asm', 'base/simd/scale_yuv_to_rgb_sse.asm'], 'action': ['$(gyp_shared_intermediate_dir)/yasm', '-DCHROMIUM', '-I..', '-felf32', '-m', 'x86', '-DX86_32', '-DELF', '-o', '$(gyp_shared_intermediate_dir)/media/%(INPUT_ROOT)s.o', '$(RULE_SOURCES)'], 'message': 'Compile assembly $(RULE_SOURCES).'}":
+# "{'inputs': ['$(gyp_shared_intermediate_dir)/yasm', '../third_party/x86inc/x86inc.asm', 'base/simd/convert_rgb_to_yuv_ssse3.inc', 'base/simd/convert_yuv_to_rgb_mmx.inc', 'base/simd/convert_yuva_to_argb_mmx.inc', 'base/simd/linear_scale_yuv_to_rgb_mmx.inc', 'base/simd/media_export.asm', 'base/simd/scale_yuv_to_rgb_mmx.inc'], 'extension': 'asm', 'process_outputs_as_sources': '1', 'outputs': ['$(gyp_shared_intermediate_dir)/media/%(INPUT_ROOT)s.o'], 'rule_name': 'assemble', 'rule_sources': ['base/simd/convert_rgb_to_yuv_ssse3.asm', 'base/simd/convert_yuv_to_rgb_mmx.asm', 'base/simd/convert_yuv_to_rgb_sse.asm', 'base/simd/convert_yuva_to_argb_mmx.asm', 'base/simd/empty_register_state_mmx.asm', 'base/simd/linear_scale_yuv_to_rgb_mmx.asm', 'base/simd/linear_scale_yuv_to_rgb_sse.asm', 'base/simd/scale_yuv_to_rgb_mmx.asm', 'base/simd/scale_yuv_to_rgb_sse.asm'], 'action': ['$(gyp_shared_intermediate_dir)/yasm', '-DCHROMIUM', '-I..', '-felf32', '-m', 'x86', '-DX86_32', '-DELF', '-o', '$(gyp_shared_intermediate_dir)/media/%(INPUT_ROOT)s.o', '$(RULE_SOURCES)'], 'message': 'Compile assembly $(RULE_SOURCES)'}":
 $(gyp_shared_intermediate_dir)/media/convert_rgb_to_yuv_ssse3.o: gyp_local_path := $(LOCAL_PATH)
 $(gyp_shared_intermediate_dir)/media/convert_rgb_to_yuv_ssse3.o: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/media/convert_rgb_to_yuv_ssse3.o: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
@@ -175,22 +175,22 @@ MY_CFLAGS_Debug := \
 	-ffunction-sections
 
 MY_DEFS_Debug := \
-	'-DANGLE_DX11' \
+	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
-	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
-	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DLOGGING_IS_OFFICIAL_BUILD=1' \
-	'-DTRACING_IS_OFFICIAL_BUILD=1' \
-	'-DENABLE_GPU=1' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
+	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
+	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \
@@ -259,22 +259,22 @@ MY_CFLAGS_Release := \
 	-fno-asynchronous-unwind-tables
 
 MY_DEFS_Release := \
-	'-DANGLE_DX11' \
+	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
-	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
-	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DLOGGING_IS_OFFICIAL_BUILD=1' \
-	'-DTRACING_IS_OFFICIAL_BUILD=1' \
-	'-DENABLE_GPU=1' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
+	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
+	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \

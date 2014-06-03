@@ -5,6 +5,7 @@
 #include "chrome/browser/ui/content_settings/media_setting_changed_infobar_delegate.h"
 
 #include "base/logging.h"
+#include "chrome/browser/infobars/infobar.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "content/public/browser/web_contents.h"
 #include "grit/generated_resources.h"
@@ -14,13 +15,13 @@
 // static
 void MediaSettingChangedInfoBarDelegate::Create(
     InfoBarService* infobar_service) {
-  infobar_service->AddInfoBar(scoped_ptr<InfoBarDelegate>(
-      new MediaSettingChangedInfoBarDelegate(infobar_service)));
+  infobar_service->AddInfoBar(ConfirmInfoBarDelegate::CreateInfoBar(
+      scoped_ptr<ConfirmInfoBarDelegate>(
+          new MediaSettingChangedInfoBarDelegate())));
 }
 
-MediaSettingChangedInfoBarDelegate::MediaSettingChangedInfoBarDelegate(
-    InfoBarService* infobar_service)
-    : ConfirmInfoBarDelegate(infobar_service) {
+MediaSettingChangedInfoBarDelegate::MediaSettingChangedInfoBarDelegate()
+    : ConfirmInfoBarDelegate() {
 }
 
 MediaSettingChangedInfoBarDelegate::~MediaSettingChangedInfoBarDelegate() {
@@ -35,7 +36,7 @@ InfoBarDelegate::Type
   return PAGE_ACTION_TYPE;
 }
 
-string16 MediaSettingChangedInfoBarDelegate::GetMessageText() const {
+base::string16 MediaSettingChangedInfoBarDelegate::GetMessageText() const {
   return l10n_util::GetStringUTF16(
       IDS_MEDIASTREAM_SETTING_CHANGED_INFOBAR_MESSAGE);
 }
@@ -44,7 +45,7 @@ int MediaSettingChangedInfoBarDelegate::GetButtons() const {
   return BUTTON_OK;
 }
 
-string16 MediaSettingChangedInfoBarDelegate::GetButtonLabel(
+base::string16 MediaSettingChangedInfoBarDelegate::GetButtonLabel(
     InfoBarButton button) const {
   DCHECK_EQ(BUTTON_OK, button);
   return l10n_util::GetStringUTF16(IDS_CONTENT_SETTING_CHANGED_INFOBAR_BUTTON);

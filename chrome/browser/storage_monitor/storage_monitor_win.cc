@@ -14,8 +14,6 @@
 #include "chrome/browser/storage_monitor/storage_info.h"
 #include "chrome/browser/storage_monitor/volume_mount_watcher_win.h"
 
-namespace chrome {
-
 // StorageMonitorWin -------------------------------------------------------
 
 StorageMonitorWin::StorageMonitorWin(
@@ -98,7 +96,6 @@ void StorageMonitorWin::EjectDevice(
     const std::string& device_id,
     base::Callback<void(EjectStatus)> callback) {
   StorageInfo::Type type;
-
   if (!StorageInfo::CrackDeviceId(device_id, &type, NULL)) {
     callback.Run(EJECT_FAILURE);
     return;
@@ -165,5 +162,3 @@ StorageMonitor* StorageMonitor::Create() {
   return new StorageMonitorWin(new VolumeMountWatcherWin(),
                                new PortableDeviceWatcherWin());
 }
-
-}  // namespace chrome

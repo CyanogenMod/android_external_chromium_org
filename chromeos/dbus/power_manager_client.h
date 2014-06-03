@@ -11,12 +11,9 @@
 #include "base/callback.h"
 #include "base/time/time.h"
 #include "chromeos/chromeos_export.h"
+#include "chromeos/dbus/dbus_client.h"
 #include "chromeos/dbus/dbus_client_implementation_type.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
-
-namespace dbus {
-class Bus;
-}
 
 namespace power_manager {
 class PowerManagementPolicy;
@@ -25,14 +22,12 @@ class PowerSupplyProperties;
 
 namespace chromeos {
 
-typedef base::Callback<void(void)> IdleNotificationCallback;
-
 // Callback used for getting the current screen brightness.  The param is in the
 // range [0.0, 100.0].
 typedef base::Callback<void(double)> GetScreenBrightnessPercentCallback;
 
 // PowerManagerClient is used to communicate with the power manager.
-class CHROMEOS_EXPORT PowerManagerClient {
+class CHROMEOS_EXPORT PowerManagerClient : public DBusClient {
  public:
   // Interface for observing changes from the power manager.
   class Observer {
@@ -61,9 +56,6 @@ class CHROMEOS_EXPORT PowerManagerClient {
     // RequestStatusUpdate() can be used to trigger an immediate update.
     virtual void PowerChanged(
         const power_manager::PowerSupplyProperties& proto) {}
-
-    // Called when we go idle for threshold time.
-    virtual void IdleNotify(int64 threshold_secs) {}
 
     // Called when the system is about to suspend. Suspend is deferred until
     // all observers' implementations of this method have finished running.
@@ -130,15 +122,6 @@ class CHROMEOS_EXPORT PowerManagerClient {
   // Requests shutdown of the system.
   virtual void RequestShutdown() = 0;
 
-  // Idle management functions:
-
-  // Requests notification for Idle at a certain threshold.
-  // NOTE: This notification is one shot, once the machine has been idle for
-  // threshold time, a notification will be sent and then that request will be
-  // removed from the notification queue. If you wish notifications the next
-  // time the machine goes idle for that much time, request again.
-  virtual void RequestIdleNotification(int64 threshold_secs) = 0;
-
   // Notifies the power manager that the user is active (i.e. generating input
   // events).
   virtual void NotifyUserActivity(power_manager::UserActivityType type) = 0;
@@ -160,9 +143,12 @@ class CHROMEOS_EXPORT PowerManagerClient {
   // readiness for suspend.  See Observer::SuspendImminent().
   virtual base::Closure GetSuspendReadinessCallback() = 0;
 
+  // Returns the number of callbacks returned by GetSuspendReadinessCallback()
+  // for the current suspend attempt but not yet called. Used by tests.
+  virtual int GetNumPendingSuspendReadinessCallbacks() = 0;
+
   // Creates the instance.
-  static PowerManagerClient* Create(DBusClientImplementationType type,
-                                    dbus::Bus* bus);
+  static PowerManagerClient* Create(DBusClientImplementationType type);
 
   virtual ~PowerManagerClient();
 

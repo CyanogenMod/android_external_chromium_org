@@ -36,12 +36,11 @@ class CC_EXPORT LayerTreeHostCommon {
                         const gfx::Transform& device_transform,
                         float device_scale_factor,
                         float page_scale_factor,
-                        LayerType* page_scale_application_layer,
+                        const LayerType* page_scale_application_layer,
                         int max_texture_size,
                         bool can_use_lcd_text,
                         bool can_render_to_separate_surface,
                         bool can_adjust_raster_scales,
-                        bool can_update_tile_priorities,
                         RenderSurfaceLayerListType* render_surface_layer_list)
         : root_layer(root_layer),
           device_viewport_size(device_viewport_size),
@@ -53,7 +52,6 @@ class CC_EXPORT LayerTreeHostCommon {
           can_use_lcd_text(can_use_lcd_text),
           can_render_to_separate_surface(can_render_to_separate_surface),
           can_adjust_raster_scales(can_adjust_raster_scales),
-          can_update_tile_priorities(can_update_tile_priorities),
           render_surface_layer_list(render_surface_layer_list) {}
 
     LayerType* root_layer;
@@ -61,12 +59,11 @@ class CC_EXPORT LayerTreeHostCommon {
     const gfx::Transform& device_transform;
     float device_scale_factor;
     float page_scale_factor;
-    LayerType* page_scale_application_layer;
+    const LayerType* page_scale_application_layer;
     int max_texture_size;
     bool can_use_lcd_text;
     bool can_render_to_separate_surface;
     bool can_adjust_raster_scales;
-    bool can_update_tile_priorities;
     RenderSurfaceLayerListType* render_surface_layer_list;
   };
 

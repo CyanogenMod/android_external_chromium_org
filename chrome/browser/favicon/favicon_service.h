@@ -34,22 +34,19 @@ struct FaviconImageResult;
 class FaviconService : public CancelableRequestProvider,
                        public BrowserContextKeyedService {
  public:
-  explicit FaviconService(HistoryService* history_service);
+  explicit FaviconService(Profile* profile);
 
   virtual ~FaviconService();
 
   // Auxiliary argument structure for requesting favicons for URLs.
   struct FaviconForURLParams {
-    FaviconForURLParams(Profile* profile,
-                        const GURL& page_url,
+    FaviconForURLParams(const GURL& page_url,
                         int icon_types,
                         int desired_size_in_dip)
-        : profile(profile),
-          page_url(page_url),
+        : page_url(page_url),
           icon_types(icon_types),
           desired_size_in_dip(desired_size_in_dip) {}
 
-    Profile* profile;
     GURL page_url;
     int icon_types;
     int desired_size_in_dip;
@@ -67,11 +64,9 @@ class FaviconService : public CancelableRequestProvider,
   typedef base::Callback<void(const chrome::FaviconImageResult&)>
       FaviconImageCallback;
 
-  // Callback for GetRawFavicon() and GetRawFaviconForURL().
-  // FaviconBitmapResult::bitmap_data is the bitmap in the thumbnail database
-  // for the passed in URL and icon types whose pixel size best matches the
-  // passed in |desired_size_in_dip| and |desired_scale_factor|. Returns an
-  // invalid chrome::FaviconBitmapResult if there are no matches.
+  // Callback for GetRawFavicon(), GetRawFaviconForURL() and
+  // GetLargestRawFavicon().
+  // See function for details on value.
   typedef base::Callback<void(const chrome::FaviconBitmapResult&)>
       FaviconRawCallback;
 
@@ -172,6 +167,15 @@ class FaviconService : public CancelableRequestProvider,
       const FaviconRawCallback& callback,
       CancelableTaskTracker* tracker);
 
+  // See HistoryService::GetLargestFaviconForURL().
+  CancelableTaskTracker::TaskId GetLargestRawFaviconForURL(
+      Profile* profile,
+      const GURL& page_url,
+      const std::vector<int>& icon_types,
+      int minimum_size_in_pixels,
+      const FaviconRawCallback& callback,
+      CancelableTaskTracker* tracker);
+
   CancelableTaskTracker::TaskId GetFaviconForURL(
       const FaviconForURLParams& params,
       const FaviconResultsCallback& callback,
@@ -237,6 +241,7 @@ class FaviconService : public CancelableRequestProvider,
   typedef uint32 MissingFaviconURLHash;
   base::hash_set<MissingFaviconURLHash> missing_favicon_urls_;
   HistoryService* history_service_;
+  Profile* profile_;
 
   // Helper function for GetFaviconImageForURL(), GetRawFaviconForURL() and
   // GetFaviconForURL().

@@ -21,12 +21,12 @@
 #include "ui/gfx/size.h"
 #include "ui/gl/gl_bindings.h"
 
-using WebKit::WebGLId;
-using WebKit::WebGraphicsContext3D;
+using blink::WebGLId;
+using blink::WebGraphicsContext3D;
 
 namespace content {
 
-GLHelperScaling::GLHelperScaling(WebKit::WebGraphicsContext3D* context,
+GLHelperScaling::GLHelperScaling(blink::WebGraphicsContext3D* context,
                 GLHelper* helper)
   : context_(context),
     helper_(helper),
@@ -51,8 +51,8 @@ class ShaderProgram : public base::RefCounted<ShaderProgram> {
   }
 
   // Compile shader program, return true if successful.
-  bool Setup(const WebKit::WGC3Dchar* vertex_shader_text,
-             const WebKit::WGC3Dchar* fragment_shader_text);
+  bool Setup(const blink::WGC3Dchar* vertex_shader_text,
+             const blink::WGC3Dchar* fragment_shader_text);
 
   // UseProgram must be called with GL_TEXTURE_2D bound to the
   // source texture and GL_ARRAY_BUFFER bound to a vertex
@@ -75,22 +75,22 @@ class ShaderProgram : public base::RefCounted<ShaderProgram> {
   ScopedProgram program_;
 
   // The location of the position in the program.
-  WebKit::WGC3Dint position_location_;
+  blink::WGC3Dint position_location_;
   // The location of the texture coordinate in the program.
-  WebKit::WGC3Dint texcoord_location_;
+  blink::WGC3Dint texcoord_location_;
   // The location of the source texture in the program.
-  WebKit::WGC3Dint texture_location_;
+  blink::WGC3Dint texture_location_;
   // The location of the texture coordinate of
   // the sub-rectangle in the program.
-  WebKit::WGC3Dint src_subrect_location_;
+  blink::WGC3Dint src_subrect_location_;
   // Location of size of source image in pixels.
-  WebKit::WGC3Dint src_pixelsize_location_;
+  blink::WGC3Dint src_pixelsize_location_;
   // Location of size of destination image in pixels.
-  WebKit::WGC3Dint dst_pixelsize_location_;
+  blink::WGC3Dint dst_pixelsize_location_;
   // Location of vector for scaling direction.
-  WebKit::WGC3Dint scaling_vector_location_;
+  blink::WGC3Dint scaling_vector_location_;
   // Location of color weights.
-  WebKit::WGC3Dint color_weights_location_;
+  blink::WGC3Dint color_weights_location_;
 
   DISALLOW_COPY_AND_ASSIGN(ShaderProgram);
 };
@@ -164,8 +164,8 @@ class ScalerImpl :
 
   // GLHelperShader::ShaderInterface implementation.
   virtual void Execute(
-      WebKit::WebGLId source_texture,
-      const std::vector<WebKit::WebGLId>& dest_textures) OVERRIDE {
+      blink::WebGLId source_texture,
+      const std::vector<blink::WebGLId>& dest_textures) OVERRIDE {
     if (subscaler_) {
       subscaler_->Scale(source_texture, intermediate_texture_);
       source_texture = intermediate_texture_;
@@ -175,8 +175,8 @@ class ScalerImpl :
         context_,
         dst_framebuffer_);
     DCHECK_GT(dest_textures.size(), 0U);
-    scoped_ptr<WebKit::WGC3Denum[]> buffers(
-        new WebKit::WGC3Denum[dest_textures.size()]);
+    scoped_ptr<blink::WGC3Denum[]> buffers(
+        new blink::WGC3Denum[dest_textures.size()]);
     for (size_t t = 0; t < dest_textures.size(); t++) {
       ScopedTextureBinder<GL_TEXTURE_2D> texture_binder(context_,
                                                         dest_textures[t]);
@@ -224,9 +224,9 @@ class ScalerImpl :
   }
 
   // GLHelper::ScalerInterface implementation.
-  virtual void Scale(WebKit::WebGLId source_texture,
-                     WebKit::WebGLId dest_texture) OVERRIDE {
-    std::vector<WebKit::WebGLId> tmp(1);
+  virtual void Scale(blink::WebGLId source_texture,
+                     blink::WebGLId dest_texture) OVERRIDE {
+    std::vector<blink::WebGLId> tmp(1);
     tmp[0] = dest_texture;
     Execute(source_texture, tmp);
   }
@@ -252,7 +252,7 @@ class ScalerImpl :
   GLHelperScaling* scaler_helper_;
   GLHelperScaling::ScalerStage spec_;
   GLfloat color_weights_[4];
-  WebKit::WebGLId intermediate_texture_;
+  blink::WebGLId intermediate_texture_;
   scoped_refptr<ShaderProgram> shader_program_;
   ScopedFramebuffer dst_framebuffer_;
   scoped_ptr<ScalerImpl> subscaler_;
@@ -510,7 +510,7 @@ GLHelperScaling::CreateYuvMrtShader(
   return new ScalerImpl(context_, this, stage, NULL, NULL);
 }
 
-const WebKit::WGC3Dfloat GLHelperScaling::kVertexAttributes[] = {
+const blink::WGC3Dfloat GLHelperScaling::kVertexAttributes[] = {
   -1.0f, -1.0f, 0.0f, 0.0f,
   1.0f, -1.0f, 1.0f, 0.0f,
   -1.0f, 1.0f, 0.0f, 1.0f,
@@ -533,27 +533,22 @@ GLHelperScaling::GetShaderProgram(ShaderType type,
   scoped_refptr<ShaderProgram>& cache_entry(shader_programs_[key]);
   if (!cache_entry.get()) {
     cache_entry = new ShaderProgram(context_, helper_);
-    std::basic_string<WebKit::WGC3Dchar> vertex_program;
-    std::basic_string<WebKit::WGC3Dchar> fragment_program;
-    std::basic_string<WebKit::WGC3Dchar> vertex_header;
-    std::basic_string<WebKit::WGC3Dchar> fragment_directives;
-    std::basic_string<WebKit::WGC3Dchar> fragment_header;
-    std::basic_string<WebKit::WGC3Dchar> shared_variables;
+    std::basic_string<blink::WGC3Dchar> vertex_program;
+    std::basic_string<blink::WGC3Dchar> fragment_program;
+    std::basic_string<blink::WGC3Dchar> vertex_header;
+    std::basic_string<blink::WGC3Dchar> fragment_directives;
+    std::basic_string<blink::WGC3Dchar> fragment_header;
+    std::basic_string<blink::WGC3Dchar> shared_variables;
 
     vertex_header.append(
         "precision highp float;\n"
         "attribute vec2 a_position;\n"
-        "attribute vec2 a_texcoord;\n");
+        "attribute vec2 a_texcoord;\n"
+        "uniform vec4 src_subrect;\n");
 
     fragment_header.append(
         "precision mediump float;\n"
         "uniform sampler2D s_texture;\n");
-
-    shared_variables.append(
-        "uniform vec4 src_subrect;\n"
-        "uniform vec2 src_pixelsize;\n"
-        "uniform vec2 dst_pixelsize;\n"
-        "uniform vec2 scaling_vector;\n");
 
     vertex_program.append(
         "  gl_Position = vec4(a_position, 0.0, 1.0);\n"
@@ -573,6 +568,9 @@ GLHelperScaling::GetShaderProgram(ShaderType type,
         // or exactly 4x.
         shared_variables.append(
             "varying vec4 v_texcoords;\n");  // 2 texcoords packed in one quad
+        vertex_header.append(
+            "uniform vec2 scaling_vector;\n"
+            "uniform vec2 dst_pixelsize;\n");
         vertex_program.append(
             "  vec2 step = scaling_vector * src_subrect.zw / dst_pixelsize;\n"
             "  step /= 4.0;\n"
@@ -582,7 +580,7 @@ GLHelperScaling::GetShaderProgram(ShaderType type,
         fragment_program.append(
             "  gl_FragColor = (texture2D(s_texture, v_texcoords.xy) +\n"
             "                  texture2D(s_texture, v_texcoords.zw)) / 2.0;\n");
-         break;
+        break;
 
       case SHADER_BILINEAR3:
         // This is kind of like doing 1.5 passes of the BILINEAR shader.
@@ -590,6 +588,9 @@ GLHelperScaling::GetShaderProgram(ShaderType type,
         shared_variables.append(
             "varying vec4 v_texcoords1;\n"  // 2 texcoords packed in one quad
             "varying vec2 v_texcoords2;\n");
+        vertex_header.append(
+            "uniform vec2 scaling_vector;\n"
+            "uniform vec2 dst_pixelsize;\n");
         vertex_program.append(
             "  vec2 step = scaling_vector * src_subrect.zw / dst_pixelsize;\n"
             "  step /= 3.0;\n"
@@ -600,13 +601,16 @@ GLHelperScaling::GetShaderProgram(ShaderType type,
             "  gl_FragColor = (texture2D(s_texture, v_texcoords1.xy) +\n"
             "                  texture2D(s_texture, v_texcoords1.zw) +\n"
             "                  texture2D(s_texture, v_texcoords2)) / 3.0;\n");
-         break;
+        break;
 
       case SHADER_BILINEAR4:
         // This is equivialent to three passes of the BILINEAR shader above,
         // It can be used to scale an image down 2.0x-4.0x or exactly 8x.
         shared_variables.append(
             "varying vec4 v_texcoords[2];\n");
+        vertex_header.append(
+            "uniform vec2 scaling_vector;\n"
+            "uniform vec2 dst_pixelsize;\n");
         vertex_program.append(
             "  vec2 step = scaling_vector * src_subrect.zw / dst_pixelsize;\n"
             "  step /= 8.0;\n"
@@ -620,7 +624,7 @@ GLHelperScaling::GetShaderProgram(ShaderType type,
             "      texture2D(s_texture, v_texcoords[0].zw) +\n"
             "      texture2D(s_texture, v_texcoords[1].xy) +\n"
             "      texture2D(s_texture, v_texcoords[1].zw)) / 4.0;\n");
-         break;
+        break;
 
       case SHADER_BILINEAR2X2:
         // This is equivialent to four passes of the BILINEAR shader above.
@@ -629,6 +633,8 @@ GLHelperScaling::GetShaderProgram(ShaderType type,
         // scale an image down by exactly 4x in both dimensions.
         shared_variables.append(
             "varying vec4 v_texcoords[2];\n");
+        vertex_header.append(
+            "uniform vec2 dst_pixelsize;\n");
         vertex_program.append(
             "  vec2 step = src_subrect.zw / 4.0 / dst_pixelsize;\n"
             "  v_texcoords[0].xy = texcoord + vec2(step.x, step.y);\n"
@@ -641,7 +647,7 @@ GLHelperScaling::GetShaderProgram(ShaderType type,
             "      texture2D(s_texture, v_texcoords[0].zw) +\n"
             "      texture2D(s_texture, v_texcoords[1].xy) +\n"
             "      texture2D(s_texture, v_texcoords[1].zw)) / 4.0;\n");
-         break;
+        break;
 
       case SHADER_BICUBIC_HALF_1D:
         // This scales down texture by exactly half in one dimension.
@@ -653,6 +659,9 @@ GLHelperScaling::GetShaderProgram(ShaderType type,
             "const float CenterWeight = 35.0 / 64.0;\n"
             "const float LobeWeight = -3.0 / 64.0;\n"
             "varying vec4 v_texcoords[2];\n");
+        vertex_header.append(
+            "uniform vec2 scaling_vector;\n"
+            "uniform vec2 src_pixelsize;\n");
         vertex_program.append(
             "  vec2 step = src_subrect.zw * scaling_vector / src_pixelsize;\n"
             "  v_texcoords[0].xy = texcoord - LobeDist * step;\n"
@@ -683,6 +692,8 @@ GLHelperScaling::GetShaderProgram(ShaderType type,
         vertex_program.append(
             "  v_texcoord = texcoord;\n");
         fragment_header.append(
+            "uniform vec2 src_pixelsize;\n"
+            "uniform vec2 scaling_vector;\n"
             "const float a = -0.5;\n"
             // This function is equivialent to calling the bicubic
             // function with x-1, x, 1-x and 2-x
@@ -718,8 +729,10 @@ GLHelperScaling::GetShaderProgram(ShaderType type,
         // because single-component textures are not renderable on all
         // architectures.
         shared_variables.append(
-            "varying vec4 v_texcoords[2];\n"
-            "uniform vec4 color_weights;\n");
+            "varying vec4 v_texcoords[2];\n");
+        vertex_header.append(
+            "uniform vec2 scaling_vector;\n"
+            "uniform vec2 dst_pixelsize;\n");
         vertex_program.append(
             "  vec2 step = scaling_vector * src_subrect.zw / dst_pixelsize;\n"
             "  step /= 4.0;\n"
@@ -727,6 +740,8 @@ GLHelperScaling::GetShaderProgram(ShaderType type,
             "  v_texcoords[0].zw = texcoord - step * 0.5;\n"
             "  v_texcoords[1].xy = texcoord + step * 0.5;\n"
             "  v_texcoords[1].zw = texcoord + step * 1.5;\n");
+        fragment_header.append(
+            "uniform vec4 color_weights;\n");
         fragment_program.append(
             "  gl_FragColor = color_weights * mat4(\n"
             "    vec4(texture2D(s_texture, v_texcoords[0].xy).rgb, 1.0),\n"
@@ -765,6 +780,9 @@ GLHelperScaling::GetShaderProgram(ShaderType type,
         //
         shared_variables.append(
             "varying vec4 v_texcoords[2];\n");
+        vertex_header.append(
+            "uniform vec2 scaling_vector;\n"
+            "uniform vec2 dst_pixelsize;\n");
         vertex_program.append(
             "  vec2 step = scaling_vector * src_subrect.zw / dst_pixelsize;\n"
             "  step /= 4.0;\n"
@@ -806,6 +824,9 @@ GLHelperScaling::GetShaderProgram(ShaderType type,
         // interpolation in the sampler takes care of that.
         shared_variables.append(
             "varying vec4 v_texcoords;\n");
+        vertex_header.append(
+            "uniform vec2 scaling_vector;\n"
+            "uniform vec2 dst_pixelsize;\n");
         vertex_program.append(
             "  vec2 step = scaling_vector * src_subrect.zw / dst_pixelsize;\n"
             "  step /= 2.0;\n"
@@ -850,8 +871,8 @@ GLHelperScaling::GetShaderProgram(ShaderType type,
   return cache_entry;
 }
 
-bool ShaderProgram::Setup(const WebKit::WGC3Dchar* vertex_shader_text,
-                          const WebKit::WGC3Dchar* fragment_shader_text) {
+bool ShaderProgram::Setup(const blink::WGC3Dchar* vertex_shader_text,
+                          const blink::WGC3Dchar* fragment_shader_text) {
   // Shaders to map the source texture to |dst_texture_|.
   ScopedShader vertex_shader(context_, helper_->CompileShaderFromSource(
       vertex_shader_text, GL_VERTEX_SHADER));
@@ -867,7 +888,7 @@ bool ShaderProgram::Setup(const WebKit::WGC3Dchar* vertex_shader_text,
   context_->attachShader(program_, fragment_shader);
   context_->linkProgram(program_);
 
-  WebKit::WGC3Dint link_status = 0;
+  blink::WGC3Dint link_status = 0;
   context_->getProgramiv(program_, GL_LINK_STATUS, &link_status);
   if (!link_status) {
     LOG(ERROR) << std::string(context_->getProgramInfoLog(program_).utf8());
@@ -897,21 +918,21 @@ void ShaderProgram::UseProgram(
     GLfloat color_weights[4]) {
   context_->useProgram(program_);
 
-  WebKit::WGC3Dintptr offset = 0;
+  blink::WGC3Dintptr offset = 0;
   context_->vertexAttribPointer(position_location_,
                                 2,
                                 GL_FLOAT,
                                 GL_FALSE,
-                                4 * sizeof(WebKit::WGC3Dfloat),
+                                4 * sizeof(blink::WGC3Dfloat),
                                 offset);
   context_->enableVertexAttribArray(position_location_);
 
-  offset += 2 * sizeof(WebKit::WGC3Dfloat);
+  offset += 2 * sizeof(blink::WGC3Dfloat);
   context_->vertexAttribPointer(texcoord_location_,
                                 2,
                                 GL_FLOAT,
                                 GL_FALSE,
-                                4 * sizeof(WebKit::WGC3Dfloat),
+                                4 * sizeof(blink::WGC3Dfloat),
                                 offset);
   context_->enableVertexAttribArray(texcoord_location_);
 

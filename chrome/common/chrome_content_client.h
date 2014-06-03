@@ -9,15 +9,15 @@
 #include <vector>
 
 #include "base/compiler_specific.h"
+#include "base/files/file_path.h"
 #include "content/public/common/content_client.h"
-
-namespace chrome {
 
 class ChromeContentClient : public content::ContentClient {
  public:
   static const char* const kPDFPluginName;
   static const char* const kNaClPluginName;
   static const char* const kNaClOldPluginName;
+  static const char* const kRemotingViewerPluginPath;
 
   virtual void SetActiveURL(const GURL& url) OVERRIDE;
   virtual void SetGpuInfo(const gpu::GPUInfo& gpu_info) OVERRIDE;
@@ -29,7 +29,7 @@ class ChromeContentClient : public content::ContentClient {
   virtual bool CanHandleWhileSwappedOut(const IPC::Message& msg) OVERRIDE;
   virtual std::string GetProduct() const OVERRIDE;
   virtual std::string GetUserAgent() const OVERRIDE;
-  virtual string16 GetLocalizedString(int message_id) const OVERRIDE;
+  virtual base::string16 GetLocalizedString(int message_id) const OVERRIDE;
   virtual base::StringPiece GetDataResource(
       int resource_id,
       ui::ScaleFactor scale_factor) const OVERRIDE;
@@ -45,7 +45,5 @@ class ChromeContentClient : public content::ContentClient {
   virtual std::string GetCarbonInterposePath() const OVERRIDE;
 #endif
 };
-
-}  // namespace chrome
 
 #endif  // CHROME_COMMON_CHROME_CONTENT_CLIENT_H_

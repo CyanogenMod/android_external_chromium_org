@@ -9,24 +9,24 @@
 #include "base/run_loop.h"
 #include "base/values.h"
 #include "chrome/browser/policy/browser_policy_connector.h"
-#include "chrome/browser/policy/external_data_fetcher.h"
-#include "chrome/browser/policy/mock_configuration_policy_provider.h"
-#include "chrome/browser/policy/policy_map.h"
-#include "chrome/browser/policy/policy_types.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "components/policy/core/common/external_data_fetcher.h"
+#include "components/policy/core/common/mock_configuration_policy_provider.h"
+#include "components/policy/core/common/policy_map.h"
+#include "components/policy/core/common/policy_types.h"
+#include "components/policy/core/common/schema.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test_utils.h"
-#include "grit/generated_resources.h"
+#include "grit/component_strings.h"
 #include "policy/policy_constants.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "url/gurl.h"
 
-using testing::AnyNumber;
 using testing::Return;
 using testing::_;
 
@@ -90,7 +90,7 @@ class PolicyUITest : public InProcessBrowserTest {
 
   void UpdateProviderPolicy(const policy::PolicyMap& policy);
 
-  void VerifyPolicies(const std::vector<std::vector<std::string> > expected);
+  void VerifyPolicies(const std::vector<std::vector<std::string> >& expected);
 
  private:
   policy::MockConfigurationPolicyProvider provider_;
@@ -107,7 +107,6 @@ PolicyUITest::~PolicyUITest() {
 void PolicyUITest::SetUpInProcessBrowserTestFixture() {
   EXPECT_CALL(provider_, IsInitializationComplete(_))
       .WillRepeatedly(Return(true));
-  EXPECT_CALL(provider_, RegisterPolicyDomain(_)).Times(AnyNumber());
   policy::BrowserPolicyConnector::SetPolicyProviderForTesting(&provider_);
 }
 
@@ -118,7 +117,7 @@ void PolicyUITest::UpdateProviderPolicy(const policy::PolicyMap& policy) {
 }
 
 void PolicyUITest::VerifyPolicies(
-    const std::vector<std::vector<std::string> > expected_policies) {
+    const std::vector<std::vector<std::string> >& expected_policies) {
   ui_test_utils::NavigateToURL(browser(), GURL("chrome://policy"));
 
   // Retrieve the text contents of the policy table cells for all policies.
@@ -175,12 +174,13 @@ IN_PROC_BROWSER_TEST_F(PolicyUITest, SendPolicyNames) {
   // Expect that the policy table contains all known policies in alphabetical
   // order and none of the policies have a set value.
   std::vector<std::vector<std::string> > expected_policies;
-  const policy::PolicyDefinitionList* policies =
-      policy::GetChromePolicyDefinitionList();
-  for (const policy::PolicyDefinitionList::Entry* policy = policies->begin;
-      policy != policies->end; ++policy) {
+  policy::Schema chrome_schema =
+      policy::Schema::Wrap(policy::GetChromeSchemaData());
+  ASSERT_TRUE(chrome_schema.valid());
+  for (policy::Schema::Iterator it = chrome_schema.GetPropertiesIterator();
+       !it.IsAtEnd(); it.Advance()) {
     expected_policies.push_back(
-        PopulateExpectedPolicy(policy->name, std::string(), NULL, false));
+        PopulateExpectedPolicy(it.key(), std::string(), NULL, false));
   }
 
   // Retrieve the contents of the policy table from the UI and verify that it
@@ -241,19 +241,20 @@ IN_PROC_BROWSER_TEST_F(PolicyUITest, SendPolicyValues) {
   // * All known policies whose value has not been set, in alphabetical order.
   std::vector<std::vector<std::string> > expected_policies;
   size_t first_unset_position = 0;
-  const policy::PolicyDefinitionList* policies =
-      policy::GetChromePolicyDefinitionList();
-  for (const policy::PolicyDefinitionList::Entry* policy = policies->begin;
-       policy != policies->end; ++policy) {
+  policy::Schema chrome_schema =
+      policy::Schema::Wrap(policy::GetChromeSchemaData());
+  ASSERT_TRUE(chrome_schema.valid());
+  for (policy::Schema::Iterator props = chrome_schema.GetPropertiesIterator();
+       !props.IsAtEnd(); props.Advance()) {
     std::map<std::string, std::string>::const_iterator it =
-        expected_values.find(policy->name);
+        expected_values.find(props.key());
     const std::string value =
         it == expected_values.end() ? std::string() : it->second;
-    const policy::PolicyMap::Entry* metadata = values.Get(policy->name);
+    const policy::PolicyMap::Entry* metadata = values.Get(props.key());
     expected_policies.insert(
         metadata ? expected_policies.begin() + first_unset_position++ :
                    expected_policies.end(),
-        PopulateExpectedPolicy(policy->name, value, metadata, false));
+        PopulateExpectedPolicy(props.key(), value, metadata, false));
   }
   expected_policies.insert(
       expected_policies.begin() + first_unset_position++,

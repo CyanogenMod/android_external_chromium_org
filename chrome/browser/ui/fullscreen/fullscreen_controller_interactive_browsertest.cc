@@ -625,10 +625,48 @@ IN_PROC_BROWSER_TEST_F(FullscreenControllerInteractiveTest,
   ASSERT_FALSE(IsFullscreenPermissionRequested());
 }
 
+// Tests mouse lock and fullscreen for the privileged fullscreen case (e.g.,
+// embedded flash fullscreen, since the Flash plugin handles user permissions
+// requests itself).
+// Test is flaky: http://crbug.com/146006
+IN_PROC_BROWSER_TEST_F(FullscreenControllerInteractiveTest,
+                       DISABLED_PrivilegedMouseLockAndFullscreen) {
+  ASSERT_TRUE(test_server()->Start());
+  ui_test_utils::NavigateToURL(browser(),
+                               test_server()->GetURL(kFullscreenMouseLockHTML));
+
+  ASSERT_FALSE(IsFullscreenBubbleDisplayed());
+
+  SetPrivilegedFullscreen(true);
+
+  // Request to lock the mouse and enter fullscreen.
+  FullscreenNotificationObserver fullscreen_observer;
+  ASSERT_TRUE(ui_test_utils::SendKeyPressAndWait(
+      browser(), ui::VKEY_B, false, true, false, false,
+      chrome::NOTIFICATION_MOUSE_LOCK_CHANGED,
+      content::NotificationService::AllSources()));
+  fullscreen_observer.Wait();
+
+  // Confirm they are enabled and there is no prompt.
+  ASSERT_TRUE(IsFullscreenBubbleDisplayed());
+  ASSERT_FALSE(IsFullscreenPermissionRequested());
+  ASSERT_FALSE(IsMouseLockPermissionRequested());
+  ASSERT_TRUE(IsMouseLocked());
+  ASSERT_TRUE(IsFullscreenForTabOrPending());
+}
+
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(USE_AURA)
+// TODO(erg): linux_aura bringup: http://crbug.com/163931
+#define MAYBE_MouseLockSilentAfterTargetUnlock \
+  DISABLED_MouseLockSilentAfterTargetUnlock
+#else
+#define MAYBE_MouseLockSilentAfterTargetUnlock MouseLockSilentAfterTargetUnlock
+#endif
+
 // Tests mouse lock can be exited and re-entered by an application silently
 // with no UI distraction for users.
 IN_PROC_BROWSER_TEST_F(FullscreenControllerInteractiveTest,
-                       MouseLockSilentAfterTargetUnlock) {
+                       MAYBE_MouseLockSilentAfterTargetUnlock) {
   ASSERT_TRUE(test_server()->Start());
   ui_test_utils::NavigateToURL(browser(),
                                test_server()->GetURL(kFullscreenMouseLockHTML));
@@ -696,9 +734,12 @@ IN_PROC_BROWSER_TEST_F(FullscreenControllerInteractiveTest,
   ASSERT_TRUE(IsMouseLocked());
 }
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) || \
+  (defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(USE_AURA))
 // These tests are very flaky on Vista.
 // http://crbug.com/158762
+// These are flaky on linux_aura.
+// http://crbug.com/163931
 #define MAYBE_TestTabExitsMouseLockOnNavigation \
     DISABLED_TestTabExitsMouseLockOnNavigation
 #define MAYBE_TestTabExitsMouseLockOnGoBack \
@@ -763,9 +804,16 @@ IN_PROC_BROWSER_TEST_F(FullscreenControllerInteractiveTest,
   ASSERT_FALSE(IsMouseLocked());
 }
 
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(USE_AURA)
+// TODO(erg): linux_aura bringup: http://crbug.com/163931
+#define MAYBE_TestTabDoesntExitMouseLockOnSubFrameNavigation DISABLED_TestTabDoesntExitMouseLockOnSubFrameNavigation
+#else
+#define MAYBE_TestTabDoesntExitMouseLockOnSubFrameNavigation TestTabDoesntExitMouseLockOnSubFrameNavigation
+#endif
+
 // Tests mouse lock is not exited on sub frame navigation.
 IN_PROC_BROWSER_TEST_F(FullscreenControllerInteractiveTest,
-                       TestTabDoesntExitMouseLockOnSubFrameNavigation) {
+                       MAYBE_TestTabDoesntExitMouseLockOnSubFrameNavigation) {
   ASSERT_TRUE(test_server()->Start());
 
   // Create URLs for test page and test page with #fragment.

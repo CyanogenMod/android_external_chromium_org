@@ -10,9 +10,9 @@
 #include "base/bind.h"
 #include "base/logging.h"
 #include "base/time/time.h"
+#include "media/audio/alsa/alsa_util.h"
 #include "media/audio/audio_manager.h"
 #include "media/audio/cras/audio_manager_cras.h"
-#include "media/audio/linux/alsa_util.h"
 
 namespace media {
 
@@ -26,9 +26,8 @@ CrasInputStream::CrasInputStream(const AudioParameters& params,
       params_(params),
       started_(false),
       stream_id_(0),
-      stream_direction_(device_id == AudioManagerCras::kLoopbackDeviceId
-                            ? CRAS_STREAM_POST_MIX_PRE_DSP
-                            : CRAS_STREAM_INPUT) {
+      stream_direction_(device_id == AudioManagerBase::kLoopbackInputDeviceId ?
+                            CRAS_STREAM_POST_MIX_PRE_DSP : CRAS_STREAM_INPUT) {
   DCHECK(audio_manager_);
 }
 
@@ -114,7 +113,6 @@ void CrasInputStream::Start(AudioInputCallback* callback) {
   StartAgc();
 
   callback_ = callback;
-  LOG(ERROR) << "Input Start";
 
   // Prepare |audio_format| and |stream_params| for the stream we
   // will create.

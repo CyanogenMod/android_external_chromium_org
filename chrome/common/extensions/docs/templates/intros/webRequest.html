@@ -6,7 +6,8 @@ for any hosts whose network requests you want to access. If you want to
 use the web request API in a blocking fashion, you need to request
 the "webRequestBlocking" permission in addition.
 For example:</p>
-<pre>{
+<pre data-filename="manifest.json">
+{
   "name": "My extension",
   ...
   <b>"permissions": [
@@ -14,7 +15,8 @@ For example:</p>
     "*://*.google.com/"
   ]</b>,
   ...
-}</pre>
+}
+</pre>
 
 <h2 id="life_cycle">Life cycle of requests</h2>
 
@@ -130,6 +132,11 @@ the request,
 and others (this list is not complete). Also synchronous XMLHttpRequests from
 your extension are hidden from blocking event handlers in order to prevent
 deadlocks.
+Note that for some of the supported schemes the set of available events might be
+limited due to the nature of the corresponding protocol.
+For example, for the <q>file:</q> scheme, only <code>onBeforeRequest</code>,
+<code>onResponseStarted</code>, <code>onCompleted</code>, and
+<code>onErrorOccurred</code> may be dispatched.
 </p>
 
 <h2 id="concepts">Concepts</h2>

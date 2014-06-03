@@ -33,22 +33,24 @@ namespace ash {
 
 namespace internal {
 class FocusCycler;
-class LauncherView;
 class ShelfLayoutManager;
+class ShelfView;
 }
 
-class LauncherIconObserver;
-class LauncherDelegate;
-class LauncherModel;
+namespace test {
+class LauncherTestAPI;
+}
+
+class ShelfDelegate;
+class ShelfIconObserver;
+class ShelfModel;
 class ShelfWidget;
 
 class ASH_EXPORT Launcher {
  public:
   static const char kNativeViewName[];
 
-  Launcher(LauncherModel* launcher_model,
-           LauncherDelegate* launcher_delegate,
-           ShelfWidget* shelf_widget);
+  Launcher(ShelfModel* model, ShelfDelegate* delegate, ShelfWidget* widget);
   virtual ~Launcher();
 
   // Return the launcher for the primary display. NULL if no user is
@@ -78,8 +80,8 @@ class ASH_EXPORT Launcher {
   // Cycles the window focus linearly over the current launcher items.
   void CycleWindowLinear(CycleDirection direction);
 
-  void AddIconObserver(LauncherIconObserver* observer);
-  void RemoveIconObserver(LauncherIconObserver* observer);
+  void AddIconObserver(ShelfIconObserver* observer);
+  void RemoveIconObserver(ShelfIconObserver* observer);
 
   // Returns true if the Launcher is showing a context menu.
   bool IsShowingMenu() const;
@@ -97,28 +99,28 @@ class ASH_EXPORT Launcher {
   // A negative index launches the last launcher item in the launcher.
   void LaunchAppIndexAt(int item_index);
 
-  // Only to be called for testing. Retrieves the LauncherView.
-  // TODO(sky): remove this!
-  internal::LauncherView* GetLauncherViewForTest();
-
-  LauncherDelegate* delegate() { return delegate_; }
-
   ShelfWidget* shelf_widget() { return shelf_widget_; }
 
-  // Set the bounds of the launcher view.
-  void SetLauncherViewBounds(gfx::Rect bounds);
-  gfx::Rect GetLauncherViewBounds() const;
+  // Set the bounds of the shelf view.
+  void SetShelfViewBounds(gfx::Rect bounds);
+  gfx::Rect GetShelfViewBounds() const;
+
+  // Returns rectangle bounding all visible launcher items. Used screen
+  // coordinate system.
+  gfx::Rect GetVisibleItemsBoundsInScreen() const;
 
   // Returns ApplicationDragAndDropHost for this Launcher.
   app_list::ApplicationDragAndDropHost* GetDragAndDropHostForAppList();
 
  private:
-  // LauncherView used to display icons.
-  internal::LauncherView* launcher_view_;
+  friend class ash::test::LauncherTestAPI;
+
+  // ShelfView used to display icons.
+  internal::ShelfView* shelf_view_;
 
   ShelfAlignment alignment_;
 
-  LauncherDelegate* delegate_;
+  ShelfDelegate* delegate_;
 
   ShelfWidget* shelf_widget_;
 

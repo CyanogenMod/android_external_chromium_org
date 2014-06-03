@@ -1,6 +1,8 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+
+// TODO(sgurun) copied from chrome/common. Remove after crbug.com/322276
 
 #include "android_webview/common/print_messages.h"
 
@@ -24,10 +26,9 @@ PrintMsg_Print_Params::PrintMsg_Print_Params()
     preview_ui_id(-1),
     preview_request_id(0),
     is_first_request(false),
-    print_scaling_option(WebKit::WebPrintScalingOptionSourceSize),
+    print_scaling_option(blink::WebPrintScalingOptionSourceSize),
     print_to_pdf(false),
     display_header_footer(false),
-    date(),
     title(),
     url(),
     should_print_backgrounds(false) {
@@ -51,10 +52,9 @@ void PrintMsg_Print_Params::Reset() {
   preview_ui_id = -1;
   preview_request_id = 0;
   is_first_request = false;
-  print_scaling_option = WebKit::WebPrintScalingOptionSourceSize;
+  print_scaling_option = blink::WebPrintScalingOptionSourceSize;
   print_to_pdf = false;
   display_header_footer = false;
-  date = string16();
   title = string16();
   url = string16();
   should_print_backgrounds = false;

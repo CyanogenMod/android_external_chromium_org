@@ -11,6 +11,10 @@
 #include "net/base/file_stream_net_log_parameters.h"
 #include "net/base/net_errors.h"
 
+#if defined(OS_ANDROID)
+#include "base/android/content_uri_utils.h"
+#endif
+
 namespace {
 
 void CallInt64ToInt(const net::CompletionCallback& callback, int64 result) {
@@ -105,6 +109,21 @@ void FileStream::Context::CloseSync() {
   }
 }
 
+void FileStream::Context::CloseAsync(const CompletionCallback& callback) {
+  DCHECK(!async_in_progress_);
+  const bool posted = base::PostTaskAndReplyWithResult(
+      task_runner_.get(),
+      FROM_HERE,
+      base::Bind(&Context::CloseFileImpl, base::Unretained(this)),
+      base::Bind(&Context::ProcessAsyncResult,
+                 base::Unretained(this),
+                 IntToInt64(callback),
+                 FILE_ERROR_SOURCE_CLOSE));
+  DCHECK(posted);
+
+  async_in_progress_ = true;
+}
+
 void FileStream::Context::SeekAsync(Whence whence,
                                     int64 offset,
                                     const Int64CompletionCallback& callback) {
@@ -159,11 +178,6 @@ void FileStream::Context::RecordError(const IOResult& result,
     return;
   }
 
-  // The following check is against incorrect use or bug. File descriptor
-  // shouldn't ever be closed outside of FileStream while it still tries to do
-  // something with it.
-  DCHECK_NE(result.result, ERR_INVALID_HANDLE);
-
   if (!orphaned_) {
     bound_net_log_.AddEvent(
         NetLog::TYPE_FILE_STREAM_ERROR,
@@ -183,13 +197,24 @@ void FileStream::Context::BeginOpenEvent(const base::FilePath& path) {
 
 FileStream::Context::OpenResult FileStream::Context::OpenFileImpl(
     const base::FilePath& path, int open_flags) {
-  // FileStream::Context actually closes the file asynchronously, independently
-  // from FileStream's destructor. It can cause problems for users wanting to
-  // delete the file right after FileStream deletion. Thus we are always
-  // adding SHARE_DELETE flag to accommodate such use case.
-  open_flags |= base::PLATFORM_FILE_SHARE_DELETE;
-  base::PlatformFile file =
-      base::CreatePlatformFile(path, open_flags, NULL, NULL);
+  base::PlatformFile file;
+#if defined(OS_ANDROID)
+  if (path.IsContentUri()) {
+    // Check that only Read flags are set.
+    DCHECK_EQ(open_flags & ~base::PLATFORM_FILE_ASYNC,
+              base::PLATFORM_FILE_OPEN | base::PLATFORM_FILE_READ);
+    file = base::OpenContentUriForRead(path);
+  } else {
+#endif  // defined(OS_ANDROID)
+    // FileStream::Context actually closes the file asynchronously,
+    // independently from FileStream's destructor. It can cause problems for
+    // users wanting to delete the file right after FileStream deletion. Thus
+    // we are always adding SHARE_DELETE flag to accommodate such use case.
+    open_flags |= base::PLATFORM_FILE_SHARE_DELETE;
+    file = base::CreatePlatformFile(path, open_flags, NULL, NULL);
+#if defined(OS_ANDROID)
+  }
+#endif  // defined(OS_ANDROID)
   if (file == base::kInvalidPlatformFileValue)
     return OpenResult(file, IOResult::FromOSError(GetLastErrno()));
 

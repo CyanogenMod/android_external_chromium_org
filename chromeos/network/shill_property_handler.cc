@@ -173,7 +173,7 @@ void ShillPropertyHandler::SetCheckPortalList(
     const std::string& check_portal_list) {
   base::StringValue value(check_portal_list);
   shill_manager_->SetProperty(
-      flimflam::kCheckPortalListProperty,
+      shill::kCheckPortalListProperty,
       value,
       base::Bind(&base::DoNothing),
       base::Bind(&network_handler::ShillErrorCallbackFunction,
@@ -224,12 +224,7 @@ void ShillPropertyHandler::RequestProperties(ManagedState::ManagedType type,
 
 void ShillPropertyHandler::OnPropertyChanged(const std::string& key,
                                              const base::Value& value) {
-  if (ManagerPropertyChanged(key, value)) {
-    std::string detail = key;
-    detail += " = " + network_event_log::ValueAsString(value);
-    NET_LOG_DEBUG("ManagerPropertyChanged", detail);
-    listener_->NotifyManagerPropertyChanged();
-  }
+  ManagerPropertyChanged(key, value);
   CheckPendingStateListUpdates(key);
 }
 
@@ -245,40 +240,35 @@ void ShillPropertyHandler::ManagerPropertiesCallback(
     return;
   }
   NET_LOG_EVENT("ManagerPropertiesCallback", "Success");
-  bool notify = false;
   const base::Value* update_service_value = NULL;
   const base::Value* update_service_complete_value = NULL;
   for (base::DictionaryValue::Iterator iter(properties);
        !iter.IsAtEnd(); iter.Advance()) {
     // Defer updating Services until all other properties have been updated.
-    if (iter.key() == flimflam::kServicesProperty)
+    if (iter.key() == shill::kServicesProperty)
       update_service_value = &iter.value();
     else if (iter.key() == shill::kServiceCompleteListProperty)
       update_service_complete_value = &iter.value();
     else
-      notify |= ManagerPropertyChanged(iter.key(), iter.value());
+      ManagerPropertyChanged(iter.key(), iter.value());
   }
   // Update Services which can safely assume other properties have been set.
-  if (update_service_value) {
-    notify |= ManagerPropertyChanged(flimflam::kServicesProperty,
-                                     *update_service_value);
-  }
+  if (update_service_value)
+    ManagerPropertyChanged(shill::kServicesProperty, *update_service_value);
   // Update ServiceCompleteList which skips entries that have already been
   // requested for Services.
   if (update_service_complete_value) {
-    notify |= ManagerPropertyChanged(shill::kServiceCompleteListProperty,
-                                     *update_service_complete_value);
+    ManagerPropertyChanged(shill::kServiceCompleteListProperty,
+                           *update_service_complete_value);
   }
 
-  if (notify)
-    listener_->NotifyManagerPropertyChanged();
   CheckPendingStateListUpdates("");
 }
 
 void ShillPropertyHandler::CheckPendingStateListUpdates(
     const std::string& key) {
   // Once there are no pending updates, signal the state list changed callbacks.
-  if ((key.empty() || key == flimflam::kServicesProperty) &&
+  if ((key.empty() || key == shill::kServicesProperty) &&
       pending_updates_[ManagedState::MANAGED_TYPE_NETWORK].size() == 0) {
     listener_->ManagedStateListChanged(ManagedState::MANAGED_TYPE_NETWORK);
   }
@@ -289,16 +279,15 @@ void ShillPropertyHandler::CheckPendingStateListUpdates(
       pending_updates_[ManagedState::MANAGED_TYPE_FAVORITE].size() == 0) {
     listener_->ManagedStateListChanged(ManagedState::MANAGED_TYPE_FAVORITE);
   }
-  if ((key.empty() || key == flimflam::kDevicesProperty) &&
+  if ((key.empty() || key == shill::kDevicesProperty) &&
       pending_updates_[ManagedState::MANAGED_TYPE_DEVICE].size() == 0) {
     listener_->ManagedStateListChanged(ManagedState::MANAGED_TYPE_DEVICE);
   }
 }
 
-bool ShillPropertyHandler::ManagerPropertyChanged(const std::string& key,
+void ShillPropertyHandler::ManagerPropertyChanged(const std::string& key,
                                                   const base::Value& value) {
-  bool notify_manager_changed = false;
-  if (key == flimflam::kServicesProperty) {
+  if (key == shill::kServicesProperty) {
     const base::ListValue* vlist = GetListValue(key, value);
     if (vlist) {
       listener_->UpdateManagedList(ManagedState::MANAGED_TYPE_NETWORK, *vlist);
@@ -315,43 +304,34 @@ bool ShillPropertyHandler::ManagerPropertyChanged(const std::string& key,
       listener_->UpdateManagedList(ManagedState::MANAGED_TYPE_FAVORITE, *vlist);
       UpdateProperties(ManagedState::MANAGED_TYPE_FAVORITE, *vlist);
     }
-  } else if (key == flimflam::kDevicesProperty) {
+  } else if (key == shill::kDevicesProperty) {
     const base::ListValue* vlist = GetListValue(key, value);
     if (vlist) {
       listener_->UpdateManagedList(ManagedState::MANAGED_TYPE_DEVICE, *vlist);
       UpdateProperties(ManagedState::MANAGED_TYPE_DEVICE, *vlist);
       UpdateObserved(ManagedState::MANAGED_TYPE_DEVICE, *vlist);
     }
-  } else if (key == flimflam::kAvailableTechnologiesProperty) {
+  } else if (key == shill::kAvailableTechnologiesProperty) {
     const base::ListValue* vlist = GetListValue(key, value);
-    if (vlist) {
+    if (vlist)
       UpdateAvailableTechnologies(*vlist);
-      notify_manager_changed = true;
-    }
-  } else if (key == flimflam::kEnabledTechnologiesProperty) {
+  } else if (key == shill::kEnabledTechnologiesProperty) {
     const base::ListValue* vlist = GetListValue(key, value);
-    if (vlist) {
+    if (vlist)
       UpdateEnabledTechnologies(*vlist);
-      notify_manager_changed = true;
-    }
   } else if (key == shill::kUninitializedTechnologiesProperty) {
     const base::ListValue* vlist = GetListValue(key, value);
-    if (vlist) {
+    if (vlist)
       UpdateUninitializedTechnologies(*vlist);
-      notify_manager_changed = true;
-    }
-  } else if (key == flimflam::kProfilesProperty) {
+  } else if (key == shill::kProfilesProperty) {
     listener_->ProfileListChanged();
-  } else if (key == flimflam::kCheckPortalListProperty) {
+  } else if (key == shill::kCheckPortalListProperty) {
     std::string check_portal_list;
-    if (value.GetAsString(&check_portal_list)) {
+    if (value.GetAsString(&check_portal_list))
       listener_->CheckPortalListChanged(check_portal_list);
-      notify_manager_changed = true;
-    }
   } else {
     VLOG(2) << "Ignored Manager Property: " << key;
   }
-  return notify_manager_changed;
 }
 
 void ShillPropertyHandler::UpdateProperties(ManagedState::ManagedType type,
@@ -370,7 +350,12 @@ void ShillPropertyHandler::UpdateProperties(ManagedState::ManagedType type,
     if (type == ManagedState::MANAGED_TYPE_FAVORITE &&
         requested_service_updates.count(path) > 0)
       continue;  // Update already requested
-    if (requested_updates.find(path) == requested_updates.end())
+
+    // We add a special case for devices here to work around an issue in shill
+    // that prevents it from sending property changed signals for cellular
+    // devices (see crbug.com/321854).
+    if (type == ManagedState::MANAGED_TYPE_DEVICE ||
+        requested_updates.find(path) == requested_updates.end())
       RequestProperties(type, path);
     new_requested_updates.insert(path);
   }
@@ -425,6 +410,7 @@ void ShillPropertyHandler::UpdateAvailableTechnologies(
     DCHECK(!technology.empty());
     available_technologies_.insert(technology);
   }
+  listener_->TechnologyListChanged();
 }
 
 void ShillPropertyHandler::UpdateEnabledTechnologies(
@@ -440,6 +426,7 @@ void ShillPropertyHandler::UpdateEnabledTechnologies(
     enabled_technologies_.insert(technology);
     enabling_technologies_.erase(technology);
   }
+  listener_->TechnologyListChanged();
 }
 
 void ShillPropertyHandler::UpdateUninitializedTechnologies(
@@ -454,6 +441,7 @@ void ShillPropertyHandler::UpdateUninitializedTechnologies(
     DCHECK(!technology.empty());
     uninitialized_technologies_.insert(technology);
   }
+  listener_->TechnologyListChanged();
 }
 
 void ShillPropertyHandler::EnableTechnologyFailed(
@@ -476,22 +464,24 @@ void ShillPropertyHandler::GetPropertiesCallback(
   VLOG(2) << "GetPropertiesCallback: " << type << " : " << path;
   pending_updates_[type].erase(path);
   if (call_status != DBUS_METHOD_CALL_SUCCESS) {
-    NET_LOG_ERROR("Failed to get properties",
+    // The shill service no longer exists.  This can happen when a network
+    // has been removed.
+    NET_LOG_DEBUG("Failed to get properties",
                   base::StringPrintf("%s: %d", path.c_str(), call_status));
     return;
   }
-  listener_->UpdateManagedStateProperties(type, path, properties);
   // Update Favorite properties for networks in the Services list.
   if (type == ManagedState::MANAGED_TYPE_NETWORK) {
     // Only networks with a ProfilePath set are Favorites.
     std::string profile_path;
     properties.GetStringWithoutPathExpansion(
-        flimflam::kProfileProperty, &profile_path);
+        shill::kProfileProperty, &profile_path);
     if (!profile_path.empty()) {
       listener_->UpdateManagedStateProperties(
           ManagedState::MANAGED_TYPE_FAVORITE, path, properties);
     }
   }
+  listener_->UpdateManagedStateProperties(type, path, properties);
   // Request IPConfig parameters for networks.
   if (type == ManagedState::MANAGED_TYPE_NETWORK &&
       properties.HasKey(shill::kIPConfigProperty)) {
@@ -558,14 +548,10 @@ void ShillPropertyHandler::GetIPConfigCallback(
                                      service_path.c_str(), call_status));
     return;
   }
-  UpdateIPConfigProperty(service_path, properties,
-                         flimflam::kAddressProperty);
-  UpdateIPConfigProperty(service_path, properties,
-                         flimflam::kNameServersProperty);
-  UpdateIPConfigProperty(service_path, properties,
-                         flimflam::kPrefixlenProperty);
-  UpdateIPConfigProperty(service_path, properties,
-                         flimflam::kGatewayProperty);
+  UpdateIPConfigProperty(service_path, properties, shill::kAddressProperty);
+  UpdateIPConfigProperty(service_path, properties, shill::kNameServersProperty);
+  UpdateIPConfigProperty(service_path, properties, shill::kPrefixlenProperty);
+  UpdateIPConfigProperty(service_path, properties, shill::kGatewayProperty);
   UpdateIPConfigProperty(service_path, properties,
                          shill::kWebProxyAutoDiscoveryUrlProperty);
 }

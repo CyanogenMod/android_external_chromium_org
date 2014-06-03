@@ -45,7 +45,7 @@ class SSLBlockingPage : public content::InterstitialPageDelegate {
   // ssl_error.html files.
   // Note: there can be up to 5 strings in |extra_info|.
   static void SetExtraInfo(base::DictionaryValue* strings,
-                           const std::vector<string16>& extra_info);
+                           const std::vector<base::string16>& extra_info);
 
  protected:
   // InterstitialPageDelegate implementation.
@@ -71,7 +71,6 @@ class SSLBlockingPage : public content::InterstitialPageDelegate {
 
   content::WebContents* web_contents_;
   int cert_error_;
-  base::TimeTicks display_start_time_;
   net::SSLInfo ssl_info_;
   GURL request_url_;
   // Could the user successfully override the error?

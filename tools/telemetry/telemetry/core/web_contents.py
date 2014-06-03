@@ -2,7 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-DEFAULT_WEB_CONTENTS_TIMEOUT = 60
+from telemetry.core import util
+
+DEFAULT_WEB_CONTENTS_TIMEOUT = 90
 
 # TODO(achuith, dtu, nduca): Add unit tests specifically for WebContents,
 # independent of Tab.
@@ -26,12 +28,29 @@ class WebContents(object):
 
   def WaitForDocumentReadyStateToBeComplete(self,
       timeout=DEFAULT_WEB_CONTENTS_TIMEOUT):
-    self._inspector_backend.WaitForDocumentReadyStateToBeComplete(timeout)
+    self.WaitForJavaScriptExpression(
+        'document.readyState == "complete"', timeout)
 
   def WaitForDocumentReadyStateToBeInteractiveOrBetter(self,
       timeout=DEFAULT_WEB_CONTENTS_TIMEOUT):
-    self._inspector_backend.WaitForDocumentReadyStateToBeInteractiveOrBetter(
-        timeout)
+    self.WaitForJavaScriptExpression(
+        'document.readyState == "interactive" || '
+        'document.readyState == "complete"', timeout)
+
+  def WaitForJavaScriptExpression(self, expr, timeout):
+    """Waits for the given JavaScript expression to be True.
+
+    This method is robust against any given Evaluation timing out.
+    """
+    def IsTrue():
+      try:
+        return bool(self.EvaluateJavaScript(expr))
+      except util.TimeoutException:
+        # If the main thread is busy for longer than Evaluate's timeout, we
+        # may time out here early. Instead, we want to wait for the full
+        # timeout of this method.
+        return False
+    util.WaitFor(IsTrue, timeout)
 
   def ExecuteJavaScript(self, expr, timeout=DEFAULT_WEB_CONTENTS_TIMEOUT):
     """Executes expr in JavaScript. Does not return the result.
@@ -71,3 +90,6 @@ class WebContents(object):
 
   def StopTimelineRecording(self):
     self._inspector_backend.StopTimelineRecording()
+
+  def TakeJSHeapSnapshot(self, timeout=120):
+    return self._inspector_backend.TakeJSHeapSnapshot(timeout)

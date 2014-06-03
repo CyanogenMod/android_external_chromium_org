@@ -151,6 +151,10 @@ enum SBThreatType {
 
   // The Chrome extension or app (given by its ID) is malware.
   SB_THREAT_TYPE_EXTENSION,
+
+  // Url detected by the client-side malware IP list. This IP list is part
+  // of the client side detection model.
+  SB_THREAT_TYPE_CLIENT_SIDE_MALWARE_URL,
 };
 
 // SBEntry ---------------------------------------------------------------------
@@ -295,6 +299,11 @@ extern const char kDownloadWhiteList[];
 extern const char kExtensionBlacklist[];
 // SafeBrowsing side-effect free whitelist name.
 extern const char kSideEffectFreeWhitelist[];
+// SafeBrowsing csd malware IP blacklist name.
+extern const char kIPBlacklist[];
+
+// This array must contain all Safe Browsing lists.
+extern const char* kAllLists[10];
 
 enum ListType {
   INVALID = -1,
@@ -312,6 +321,8 @@ enum ListType {
   // See above comment. Leave 9 available.
   SIDEEFFECTFREEWHITELIST = 10,
   // See above comment. Leave 11 available.
+  IPBLACKLIST = 12,
+  // See above comment.  Leave 13 available.
 };
 
 // Maps a list name to ListType.

@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -35,16 +35,21 @@ class TouchPoint {
     private final int mId;
     private final float mX;
     private final float mY;
-    private final float mSize;
     private final float mPressure;
+    private final float mTouchMajor;
+    private final float mTouchMinor;
+    private final float mOrientation;
 
-    TouchPoint(int state, int id, float x, float y, float size, float pressure) {
+    TouchPoint(int state, int id, float x, float y, float pressure,
+            float touchMajor, float touchMinor, float orientation) {
         mState = state;
         mId = id;
         mX = x;
         mY = y;
-        mSize = size;
         mPressure = pressure;
+        mTouchMajor = touchMajor;
+        mTouchMinor = touchMinor;
+        mOrientation = orientation;
     }
 
     // The following methods are called by native to parse the java TouchPoint
@@ -67,11 +72,19 @@ class TouchPoint {
 
     @SuppressWarnings("unused")
     @CalledByNative
-    public double getSize() { return mSize; }
+    public float getPressure() { return mPressure; }
 
     @SuppressWarnings("unused")
     @CalledByNative
-    public double getPressure() { return mPressure; }
+    public float getTouchMajor() { return mTouchMajor; }
+
+    @SuppressWarnings("unused")
+    @CalledByNative
+    public float getTouchMinor() { return mTouchMinor; }
+
+    @SuppressWarnings("unused")
+    @CalledByNative
+    public float getOrientation() { return mOrientation; }
 
     // Converts a MotionEvent into an array of touch points.
     // Returns the WebTouchEvent::Type for the MotionEvent and -1 for failure.
@@ -96,9 +109,12 @@ class TouchPoint {
                 type = TOUCH_EVENT_TYPE_CANCEL;
                 defaultState = TOUCH_POINT_STATE_CANCELLED;
                 break;
-            case MotionEvent.ACTION_POINTER_DOWN:  // fall through.
+            case MotionEvent.ACTION_POINTER_DOWN:
+                type = TOUCH_EVENT_TYPE_START;
+                defaultState = TOUCH_POINT_STATE_STATIONARY;
+                break;
             case MotionEvent.ACTION_POINTER_UP:
-                type = TOUCH_EVENT_TYPE_MOVE;
+                type = TOUCH_EVENT_TYPE_END;
                 defaultState = TOUCH_POINT_STATE_STATIONARY;
                 break;
             default:
@@ -116,7 +132,9 @@ class TouchPoint {
             }
             pts[i] = new TouchPoint(state, event.getPointerId(i),
                                     event.getX(i), event.getY(i),
-                                    event.getSize(i), event.getPressure(i));
+                                    event.getPressure(i),
+                                    event.getTouchMajor(i), event.getTouchMinor(i),
+                                    event.getOrientation(i));
         }
 
         return type;

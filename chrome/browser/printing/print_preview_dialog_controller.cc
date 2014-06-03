@@ -9,7 +9,6 @@
 #include <vector>
 
 #include "base/auto_reset.h"
-#include "base/command_line.h"
 #include "base/path_service.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/chrome_notification_types.h"
@@ -27,14 +26,15 @@
 #include "chrome/browser/ui/webui/print_preview/print_preview_ui.h"
 #include "chrome/common/chrome_content_client.h"
 #include "chrome/common/chrome_paths.h"
-#include "chrome/common/chrome_switches.h"
 #include "chrome/common/url_constants.h"
+#include "components/web_modal/web_contents_modal_dialog_host.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_details.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/plugin_service.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
@@ -64,9 +64,9 @@ void EnableInternalPDFPluginForContents(WebContents* preview_dialog) {
       pdf_plugin_path, &pdf_plugin))
     return;
 
-  ChromePluginServiceFilter::GetInstance()->OverridePluginForTab(
+  ChromePluginServiceFilter::GetInstance()->OverridePluginForFrame(
       preview_dialog->GetRenderProcessHost()->GetID(),
-      preview_dialog->GetRenderViewHost()->GetRoutingID(),
+      preview_dialog->GetMainFrame()->GetRoutingID(),
       GURL(), pdf_plugin);
 }
 
@@ -78,7 +78,7 @@ class PrintPreviewDialogDelegate : public WebDialogDelegate {
   virtual ~PrintPreviewDialogDelegate();
 
   virtual ui::ModalType GetDialogModalType() const OVERRIDE;
-  virtual string16 GetDialogTitle() const OVERRIDE;
+  virtual base::string16 GetDialogTitle() const OVERRIDE;
   virtual GURL GetDialogContentURL() const OVERRIDE;
   virtual void GetWebUIMessageHandlers(
       std::vector<WebUIMessageHandler*>* handlers) const OVERRIDE;
@@ -108,9 +108,9 @@ ui::ModalType PrintPreviewDialogDelegate::GetDialogModalType() const {
   return ui::MODAL_TYPE_WINDOW;
 }
 
-string16 PrintPreviewDialogDelegate::GetDialogTitle() const {
+base::string16 PrintPreviewDialogDelegate::GetDialogTitle() const {
   // Only used on Windows? UI folks prefer no title.
-  return string16();
+  return base::string16();
 }
 
 GURL PrintPreviewDialogDelegate::GetDialogContentURL() const {
@@ -126,19 +126,26 @@ void PrintPreviewDialogDelegate::GetDialogSize(gfx::Size* size) const {
   DCHECK(size);
   const gfx::Size kMinDialogSize(800, 480);
   const int kBorder = 25;
-  const int kConstrainedWindowOverlap = 3;
-  gfx::Rect rect;
-  initiator_->GetView()->GetContainerBounds(&rect);
-  size->set_width(std::max(rect.width(), kMinDialogSize.width()) - 2 * kBorder);
-  size->set_height(std::max(rect.height(), kMinDialogSize.height()) - kBorder +
-                   kConstrainedWindowOverlap);
+  *size = kMinDialogSize;
+
+  web_modal::WebContentsModalDialogHost* host = NULL;
+  Browser* browser = chrome::FindBrowserWithWebContents(initiator_);
+  if (browser)
+    host = browser->window()->GetWebContentsModalDialogHost();
+
+  if (host) {
+    size->SetToMax(host->GetMaximumDialogSize());
+    size->Enlarge(-2 * kBorder, -kBorder);
+  } else {
+    size->SetToMax(initiator_->GetView()->GetContainerSize());
+    size->Enlarge(-2 * kBorder, -2 * kBorder);
+  }
 
 #if defined(OS_MACOSX)
   // Limit the maximum size on MacOS X.
   // http://crbug.com/105815
   const gfx::Size kMaxDialogSize(1000, 660);
-  size->set_width(std::min(size->width(), kMaxDialogSize.width()));
-  size->set_height(std::min(size->height(), kMaxDialogSize.height()));
+  size->SetToMin(kMaxDialogSize);
 #endif
 }
 
@@ -396,17 +403,6 @@ WebContents* PrintPreviewDialogController::CreatePrintPreviewDialog(
   base::AutoReset<bool> auto_reset(&is_creating_print_preview_dialog_, true);
   Profile* profile =
       Profile::FromBrowserContext(initiator->GetBrowserContext());
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kChromeFrame)) {
-    // Chrome Frame only ever runs on the native desktop, so it is safe to
-    // create the popup on the native desktop.
-    Browser* current_browser = new Browser(
-        Browser::CreateParams(Browser::TYPE_POPUP, profile,
-                              chrome::GetActiveDesktop()));
-    if (!current_browser) {
-      NOTREACHED() << "Failed to create popup browser window";
-      return NULL;
-    }
-  }
 
   // |web_dialog_ui_delegate| deletes itself in
   // PrintPreviewDialogDelegate::OnDialogClosed().

@@ -47,7 +47,9 @@ class Preferences : public PrefServiceSyncableObserver,
   static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
 
   // This method will initialize Chrome OS settings to values in user prefs.
-  void Init(PrefServiceSyncable* prefs);
+  // |is_primary_user| is true if preferences are initialized for primary user
+  // in multi-profile session.
+  void Init(PrefServiceSyncable* prefs, bool is_primary_user);
 
   void InitUserPrefsForTesting(PrefServiceSyncable* prefs);
   void SetInputMethodListForTesting();
@@ -63,31 +65,6 @@ class Preferences : public PrefServiceSyncableObserver,
   // If this method is called with NULL, it will set all OS settings to what's
   // stored in the preferences.
   void NotifyPrefChanged(const std::string* pref_name);
-
-  // Writes boolean |value| to the input method (IBus) configuration daemon.
-  // |section| (e.g. "general") and |name| (e.g. "use_global_engine") should
-  // not be NULL.
-  void SetLanguageConfigBoolean(const char* section,
-                                const char* name,
-                                bool value);
-
-  // Writes integer |value| to the input method (IBus) configuration daemon.
-  // |section| and |name| should not be NULL.
-  void SetLanguageConfigInteger(const char* section,
-                                const char* name,
-                                int value);
-
-  // Writes string |value| to the input method (IBus) configuration daemon.
-  // |section| and |name| should not be NULL.
-  void SetLanguageConfigString(const char* section,
-                               const char* name,
-                               const std::string& value);
-
-  // Writes a string list to the input method (IBus) configuration daemon.
-  // |section| and |name| should not be NULL.
-  void SetLanguageConfigStringList(const char* section,
-                                   const char* name,
-                                   const std::vector<std::string>& values);
 
   // A variant of SetLanguageConfigStringList. You can pass comma-separated
   // values. Examples of |value|: "", "Control+space,Hiragana"
@@ -149,32 +126,12 @@ class Preferences : public PrefServiceSyncableObserver,
   StringPrefMember previous_input_method_;
   StringPrefMember enabled_extension_imes_;
 
-  BooleanPrefMember chewing_boolean_prefs_[
-      language_prefs::kNumChewingBooleanPrefs];
-  StringPrefMember chewing_multiple_choice_prefs_[
-      language_prefs::kNumChewingMultipleChoicePrefs];
-  IntegerPrefMember chewing_hsu_sel_key_type_;
-  IntegerPrefMember chewing_integer_prefs_[
-      language_prefs::kNumChewingIntegerPrefs];
-  StringPrefMember hangul_keyboard_;
-  StringPrefMember hangul_hanja_binding_keys_;
-  StringPrefMember hangul_hanja_keys_;
-  BooleanPrefMember pinyin_boolean_prefs_[
-      language_prefs::kNumPinyinBooleanPrefs];
-  IntegerPrefMember pinyin_int_prefs_[
-      language_prefs::kNumPinyinIntegerPrefs];
-  IntegerPrefMember pinyin_double_pinyin_schema_;
-  BooleanPrefMember mozc_boolean_prefs_[
-      language_prefs::kNumMozcBooleanPrefs];
-  StringPrefMember mozc_multiple_choice_prefs_[
-      language_prefs::kNumMozcMultipleChoicePrefs];
-  IntegerPrefMember mozc_integer_prefs_[
-      language_prefs::kNumMozcIntegerPrefs];
   BooleanPrefMember xkb_auto_repeat_enabled_;
   IntegerPrefMember xkb_auto_repeat_delay_pref_;
   IntegerPrefMember xkb_auto_repeat_interval_pref_;
 
-  BooleanPrefMember enable_drm_;
+  // True if this preferences instance is for primary user.
+  bool is_primary_user_prefs_;
 
   DISALLOW_COPY_AND_ASSIGN(Preferences);
 };

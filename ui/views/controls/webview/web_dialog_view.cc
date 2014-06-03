@@ -14,7 +14,7 @@
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
-#include "ui/base/keycodes/keyboard_codes.h"
+#include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/views/controls/webview/webview.h"
 #include "ui/views/layout/fill_layout.h"
 #include "ui/views/widget/root_view.h"
@@ -23,7 +23,7 @@
 #include "ui/web_dialogs/web_dialog_ui.h"
 
 #if defined(USE_AURA)
-#include "ui/base/events/event.h"
+#include "ui/events/event.h"
 #include "ui/views/widget/desktop_aura/desktop_native_widget_aura.h"
 #include "ui/views/widget/native_widget_aura.h"
 #endif
@@ -74,6 +74,13 @@ content::WebContents* WebDialogView::web_contents() {
 gfx::Size WebDialogView::GetPreferredSize() {
   gfx::Size out;
   if (delegate_)
+    delegate_->GetDialogSize(&out);
+  return out;
+}
+
+gfx::Size WebDialogView::GetMinimumSize() {
+  gfx::Size out;
+  if (delegate_)
     delegate_->GetMinimumDialogSize(&out);
   return out;
 }
@@ -93,6 +100,11 @@ void WebDialogView::ViewHierarchyChanged(
 }
 
 bool WebDialogView::CanClose() {
+  // Don't close UI if |delegate_| does not allow users to close it by
+  // clicking on "x" button or pressing Esc shortcut key on hosting dialog.
+  if (!delegate_->CanCloseDialog() && !close_contents_called_)
+    return false;
+
   // If CloseContents() is called before CanClose(), which is called by
   // RenderViewHostImpl::ClosePageIgnoringUnloadEvents, it indicates
   // beforeunload event should not be fired during closing.

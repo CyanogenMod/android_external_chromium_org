@@ -21,6 +21,7 @@
 #include "chromeos/network/network_event_log.h"
 #include "chromeos/network/network_state_handler.h"
 #include "chromeos/network/network_state_handler_observer.h"
+#include "chromeos/network/shill_property_util.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_data_source.h"
@@ -45,6 +46,7 @@ const char kJsApiPageReady[] = "pageReady";
 
 // Page JS API function names.
 const char kJsApiShowNetworks[] = "mobile.ChooseNetwork.showNetworks";
+const char kJsApiShowScanning[] = "mobile.ChooseNetwork.showScanning";
 
 // Network properties.
 const char kNetworkIdProperty[] = "networkId";
@@ -122,8 +124,8 @@ ChooseMobileNetworkHandler::ChooseMobileNetworkHandler()
     : is_page_ready_(false),
       has_pending_results_(false) {
   NetworkStateHandler* handler = GetNetworkStateHandler();
-  const DeviceState* cellular = handler->GetDeviceStateByType(
-      flimflam::kTypeCellular);
+  const DeviceState* cellular =
+      handler->GetDeviceStateByType(NetworkTypePattern::Cellular());
   if (!cellular) {
     NET_LOG_ERROR(
         "A cellular device is not available.",
@@ -164,6 +166,11 @@ void ChooseMobileNetworkHandler::DeviceListChanged() {
   if (!cellular) {
     LOG(WARNING) << "Cellular device with path '" << device_path_
                  << "' disappeared.";
+    return;
+  }
+  if (cellular->scanning()) {
+    NET_LOG_EVENT("ChooseMobileNetwork", "Device is scanning for networks.");
+    web_ui()->CallJavascriptFunction(kJsApiShowScanning);
     return;
   }
   const DeviceState::CellularScanResults& scan_results =

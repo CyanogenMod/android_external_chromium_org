@@ -6,10 +6,12 @@
 #define NET_QUIC_QUIC_CONNECTION_LOGGER_H_
 
 #include "net/quic/quic_connection.h"
+#include "net/quic/quic_protocol.h"
 
 namespace net {
 
 class BoundNetLog;
+class CryptoHandshakeMessage;
 
 // This class is a debug visitor of a QuicConnection which logs
 // events to |net_log|.
@@ -27,8 +29,10 @@ class NET_EXPORT_PRIVATE QuicConnectionLogger
   virtual void OnPacketSent(QuicPacketSequenceNumber sequence_number,
                             EncryptionLevel level,
                             const QuicEncryptedPacket& packet,
-                            int rv) OVERRIDE;
-
+                            WriteResult result) OVERRIDE;
+  virtual void OnPacketRetransmitted(
+      QuicPacketSequenceNumber old_sequence_number,
+      QuicPacketSequenceNumber new_sequence_number) OVERRIDE;
   virtual void OnPacketReceived(const IPEndPoint& self_address,
                                 const IPEndPoint& peer_address,
                                 const QuicEncryptedPacket& packet) OVERRIDE;
@@ -47,6 +51,13 @@ class NET_EXPORT_PRIVATE QuicConnectionLogger
       const QuicVersionNegotiationPacket& packet) OVERRIDE;
   virtual void OnRevivedPacket(const QuicPacketHeader& revived_header,
                                base::StringPiece payload) OVERRIDE;
+
+  void OnCryptoHandshakeMessageReceived(
+      const CryptoHandshakeMessage& message);
+  void OnCryptoHandshakeMessageSent(
+      const CryptoHandshakeMessage& message);
+  void OnConnectionClosed(QuicErrorCode error, bool from_peer);
+  void OnSuccessfulVersionNegotiation(const QuicVersion& version);
 
  private:
   BoundNetLog net_log_;

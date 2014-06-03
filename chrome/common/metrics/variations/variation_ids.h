@@ -31,17 +31,15 @@ namespace chrome_variations {
 //
 // Ex:
 // // Name: UMA-Uniformity-Trial-5-Percent
-// // Range: 330000 - 3300099
+// // Range: 330000 - 3300019
 // // The 5% Uniformity Trial. This is a reserved range.
-// UNIFORMITY_TRIAL_5_PERCENT_ID_START = 330000,
-// UNIFORMITY_TRIAL_5_PERCENT_ID_END   = 330099,
+// UNIFORMITY_TRIAL_5_PERCENT_ID_BASE = 330000,
+// UNIFORMITY_TRIAL_5_PERCENT_ID_LIMIT =
+//     UNIFORMITY_TRIAL_5_PERCENT_ID_BASE + 20,
 //
 // Anything within the range of a uint32 should be castable to an ID, but
 // please ensure that they are within the range of the min and max values.
-enum VariationID {
-  // Used to represent no associated Chrome variation ID.
-  EMPTY_ID = 0,
-
+enum ReservedVariationID {
   // The smallest possible Chrome Variation ID in the reserved range. The
   // first 10,000 values are reserved for internal variations infrastructure
   // use. Please do not use values in this range.
@@ -66,7 +64,7 @@ enum VariationID {
   // Name: UMA-Uniformity-Trial-50-Percent
   // Range: 3300135 - 3300136
   UNIFORMITY_50_PERCENT_BASE  = UNIFORMITY_20_PERCENT_LIMIT,
-  UNIFORMITY_50_PERCENT_LIMIT = UNIFORMITY_50_PERCENT_BASE+ 2,
+  UNIFORMITY_50_PERCENT_LIMIT = UNIFORMITY_50_PERCENT_BASE + 2,
 
   // Name: UMA-Dynamic-Binary-Uniformity-Trial
   // The dynamic uniformity trial is only specified on the server, this is just
@@ -88,10 +86,9 @@ enum VariationID {
   UNIFORMITY_DYNAMIC_TRIAL_LIMIT = UNIFORMITY_DYNAMIC_TRIAL_BASE + 6,
 
   // Some values reserved for unit and integration tests.
-  TEST_VALUE_A = 3300200,
-  TEST_VALUE_B = 3300201,
-  TEST_VALUE_C = 3300202,
-  TEST_VALUE_D = 3300203,
+  // Range: 3300159 - 3300299
+  TEST_VALUE_BASE = 3300200,
+  TEST_VALUE_LIMIT = TEST_VALUE_BASE + 100,
 
   // USABLE IDs BEGIN HERE.
   //
@@ -176,6 +173,8 @@ enum VariationID {
   EXTENDED_INSTANT_RANGE_ID_MAX           = 3310365,
   EXTENDED_INSTANT_RANGE2_ID_MIN          = 3310368,
   EXTENDED_INSTANT_RANGE2_ID_MAX          = 3310868,
+  EXTENDED_INSTANT_RANGE3_ID_MIN          = 3310871,
+  EXTENDED_INSTANT_RANGE3_ID_MAX          = 3311870,
 
   // Reserve 100 IDs to be used by autocomplete dynamic field trials.
   // The dynamic field trials are activated by a call to
@@ -231,10 +230,57 @@ enum VariationID {
   COOKIE_RETENTION_PRIORITY_STUDY_EXPERIMENT_OFF = 3310869,
   COOKIE_RETENTION_PRIORITY_STUDY_EXPERIMENT_ON = 3310870,
 
+  // QUIC field trial.
+  QUIC_FIELD_TRIAL_ID_MIN = 3311871,
+  QUIC_FIELD_TRIAL_ID_MAX = 3311920,
+
+  // Android Native NTP trial.
+  // Range: 3311921 - 3311940
+  ANDROID_DEV_BETA_NATIVE_NTP_CONTROL_0 = 3311921,
+  ANDROID_DEV_BETA_NATIVE_NTP_CONTROL_1 = 3311922,
+  ANDROID_DEV_BETA_NATIVE_NTP_TWO_URL_BARS = 3311923,
+  ANDROID_DEV_BETA_NATIVE_NTP_ONE_URL_BAR = 3311924,
+  ANDROID_DEV_BETA_TABLET_NATIVE_NTP_CONTROL = 3311925,
+  ANDROID_DEV_BETA_TABLET_NATIVE_NTP_ONE_URL_BAR = 3311926,
+  ANDROID_STABLE_NATIVE_NTP_CONTROL_0 = 3311927,
+  ANDROID_STABLE_NATIVE_NTP_CONTROL_1 = 3311928,
+  ANDROID_STABLE_NATIVE_NTP_TWO_URL_BARS = 3311929,
+  ANDROID_STABLE_NATIVE_NTP_ONE_URL_BAR = 3311930,
+  ANDROID_STABLE_TABLET_NATIVE_NTP_CONTROL = 3311931,
+  ANDROID_STABLE_TABLET_NATIVE_NTP_ONE_URL_BAR = 3311932,
+
+  // WebGLDebugRendererInfo trial.
+  WEBGL_DEBUG_RENDERER_INFO_ENABLED = 3311941,
+  WEBGL_DEBUG_RENDERER_INFO_CONTROL = 3311942,
+  WEBGL_DEBUG_RENDERER_INFO_DISABLED = 3311943,
+
+  NEW_USER_MANAGEMENT_ENABLED = 3311944,
+  NEW_USER_MANAGEMENT_CONTROL = 3311945,
+  NEW_USER_MANAGEMENT_DISABLED = 3311946,
+
+  // Reserve 100 more IDs to be used by autocomplete dynamic field trials.
+  // The dynamic field trials are activated by a call to
+  // OmniboxFieldTrial::ActivateDynamicFieldTrials.
+  // For more details, see
+  // chrome/browser/omnibox/omnibox_field_trial.{h,cc}.
+  AUTOCOMPLETE_DYNAMIC_FIELD_TRIAL_RANGE2_ID_MIN = 3311947,
+  AUTOCOMPLETE_DYANMIC_FIELD_TRIAL_RANGE2_ID_MAX = 3312046,
+
+  // iOS Phone New NTP trial.
+  // Range: 3312047 - 3312050
+  IOS_PHONE_NEW_NTP_OMNIBOX_HINT = 3312047,
+  IOS_PHONE_NEW_NTP_CONTROL_1 = 3312048,
+  IOS_PHONE_NEW_NTP_FAKEBOX_HINT = 3312049,
+  IOS_PHONE_NEW_NTP_CONTROL_2 = 3312050,
+
+  // ExtensionInstallPrompt field trial.
+  EXTENSION_INSTALL_PROMPT_EXPERIMENT_ID_MIN = 3312051,
+  EXTENSION_INSTALL_PROMPT_EXPERIMENT_ID_MAX = 3312099,
+
   // NEXT ID: When adding new IDs, please add them above this section, starting
   // with the value of NEXT_ID, and updating NEXT_ID to (end of your reserved
   // range) + 1.
-  NEXT_ID = 3310871,
+  NEXT_ID = 3312100,
 
   // USABLE IDs END HERE.
   //

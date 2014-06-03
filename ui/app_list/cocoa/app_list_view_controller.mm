@@ -6,12 +6,13 @@
 
 #include "base/mac/foundation_util.h"
 #include "base/strings/string_util.h"
+#include "base/strings/sys_string_conversions.h"
 #include "skia/ext/skia_utils_mac.h"
 #include "ui/app_list/app_list_constants.h"
 #include "ui/app_list/app_list_model.h"
 #include "ui/app_list/app_list_view_delegate.h"
+#include "ui/app_list/app_list_view_delegate_observer.h"
 #include "ui/app_list/signin_delegate.h"
-#include "ui/app_list/signin_delegate_observer.h"
 #import "ui/app_list/cocoa/app_list_pager_view.h"
 #import "ui/app_list/cocoa/apps_grid_controller.h"
 #import "ui/app_list/cocoa/signin_view_controller.h"
@@ -75,33 +76,38 @@ const NSTimeInterval kResultsAnimationDuration = 0.2;
 
 - (void)loadAndSetView;
 - (void)revealSearchResults:(BOOL)show;
-- (app_list::SigninDelegate*)signinDelegate;
 
 @end
 
 namespace app_list {
 
-class SigninDelegateObserverBridge : public SigninDelegateObserver {
+class AppListModelObserverBridge : public AppListViewDelegateObserver {
  public:
-  SigninDelegateObserverBridge(AppListViewController* parent)
-      : parent_(parent) {
-    [parent_ signinDelegate]->AddObserver(this);
-  }
-
-  virtual ~SigninDelegateObserverBridge() {
-    [parent_ signinDelegate]->RemoveObserver(this);
-  }
+  AppListModelObserverBridge(AppListViewController* parent);
+  virtual ~AppListModelObserverBridge();
 
  private:
-  // SigninDelegateObserver override:
-  virtual void OnSigninSuccess() OVERRIDE {
-    [parent_ onSigninStatusChanged];
-  }
+  // Overridden from app_list::AppListViewDelegateObserver:
+  virtual void OnProfilesChanged() OVERRIDE;
 
   AppListViewController* parent_;  // Weak. Owns us.
 
-  DISALLOW_COPY_AND_ASSIGN(SigninDelegateObserverBridge);
+  DISALLOW_COPY_AND_ASSIGN(AppListModelObserverBridge);
 };
+
+AppListModelObserverBridge::AppListModelObserverBridge(
+    AppListViewController* parent)
+    : parent_(parent) {
+  [parent_ delegate]->AddObserver(this);
+}
+
+AppListModelObserverBridge::~AppListModelObserverBridge() {
+  [parent_ delegate]->RemoveObserver(this);
+}
+
+void AppListModelObserverBridge::OnProfilesChanged() {
+  [parent_ onProfilesChanged];
+}
 
 }  // namespace app_list
 
@@ -128,6 +134,14 @@ class SigninDelegateObserverBridge : public SigninDelegateObserver {
   [super dealloc];
 }
 
+- (AppsSearchBoxController*)searchBoxController {
+  return appsSearchBoxController_;
+}
+
+- (BOOL)showingSearchResults {
+  return showingSearchResults_;
+}
+
 - (AppsGridController*)appsGridController {
   return appsGridController_;
 }
@@ -144,26 +158,23 @@ class SigninDelegateObserverBridge : public SigninDelegateObserver {
   return delegate_.get();
 }
 
-- (void)setDelegate:(scoped_ptr<app_list::AppListViewDelegate>)newDelegate
-      withTestModel:(scoped_ptr<app_list::AppListModel>)newModel {
+- (void)setDelegate:(scoped_ptr<app_list::AppListViewDelegate>)newDelegate {
   if (delegate_) {
     // First clean up, in reverse order.
-    signin_observer_bridge_.reset();
+    app_list_model_observer_bridge_.reset();
     [appsSearchResultsController_ setDelegate:nil];
     [appsSearchBoxController_ setDelegate:nil];
+    [appsGridController_ setDelegate:nil];
   }
   delegate_.reset(newDelegate.release());
+  if (!delegate_)
+    return;
   [appsGridController_ setDelegate:delegate_.get()];
-  if (newModel.get())
-    [appsGridController_ setModel:newModel.Pass()];
   [appsSearchBoxController_ setDelegate:self];
   [appsSearchResultsController_ setDelegate:self];
-  [self onSigninStatusChanged];
-}
-
-- (void)setDelegate:(scoped_ptr<app_list::AppListViewDelegate>)newDelegate {
-  [self setDelegate:newDelegate.Pass()
-      withTestModel:scoped_ptr<app_list::AppListModel>()];
+  app_list_model_observer_bridge_.reset(
+      new app_list::AppListModelObserverBridge(self));
+  [self onProfilesChanged];
 }
 
 -(void)loadAndSetView {
@@ -312,18 +323,22 @@ class SigninDelegateObserverBridge : public SigninDelegateObserver {
 - (void)openResult:(app_list::SearchResult*)result {
   if (delegate_)
     delegate_->OpenSearchResult(result, 0 /* event flags */);
-
-  [appsSearchBoxController_ clearSearch];
 }
 
-- (void)onSigninStatusChanged {
+- (void)redoSearch {
+  [self modelTextDidChange];
+}
+
+- (void)onProfilesChanged {
   [appsSearchBoxController_ rebuildMenu];
-  app_list::SigninDelegate* signinDelegate = [self signinDelegate];
-  BOOL needsSignin = signinDelegate && signinDelegate->NeedSignin();
-  if (!needsSignin) {
-    [[signinViewController_ view] removeFromSuperview];
-    signin_observer_bridge_.reset();
-    signinViewController_.reset();
+  app_list::SigninDelegate* signinDelegate =
+      delegate_ ? delegate_->GetSigninDelegate() : NULL;
+  BOOL showSigninView = signinDelegate && signinDelegate->NeedSignin();
+
+  [[signinViewController_ view] removeFromSuperview];
+  signinViewController_.reset();
+
+  if (!showSigninView) {
     [backgroundView_ setHidden:NO];
     return;
   }
@@ -333,13 +348,7 @@ class SigninDelegateObserverBridge : public SigninDelegateObserver {
       [[SigninViewController alloc] initWithFrame:[backgroundView_ frame]
                                      cornerRadius:kBubbleCornerRadius
                                          delegate:signinDelegate]);
-  signin_observer_bridge_.reset(
-      new app_list::SigninDelegateObserverBridge(self));
   [[self view] addSubview:[signinViewController_ view]];
-}
-
-- (app_list::SigninDelegate*)signinDelegate {
-  return delegate_ ? delegate_->GetSigninDelegate() : NULL;
 }
 
 @end

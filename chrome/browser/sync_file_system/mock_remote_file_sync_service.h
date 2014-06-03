@@ -5,7 +5,7 @@
 #ifndef CHROME_BROWSER_SYNC_FILE_SYSTEM_MOCK_REMOTE_FILE_SYNC_SERVICE_H_
 #define CHROME_BROWSER_SYNC_FILE_SYSTEM_MOCK_REMOTE_FILE_SYNC_SERVICE_H_
 
-#include <map>
+#include <string>
 
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
@@ -32,16 +32,16 @@ class MockRemoteFileSyncService : public RemoteFileSyncService {
                void(RemoteFileSyncService::Observer* observer));
   MOCK_METHOD1(AddFileStatusObserver,
                void(FileStatusObserver* observer));
-  MOCK_METHOD2(RegisterOriginForTrackingChanges,
+  MOCK_METHOD2(RegisterOrigin,
                void(const GURL& origin, const SyncStatusCallback& callback));
-  MOCK_METHOD2(UnregisterOriginForTrackingChanges,
+  MOCK_METHOD2(EnableOrigin,
                void(const GURL& origin, const SyncStatusCallback& callback));
-  MOCK_METHOD2(EnableOriginForTrackingChanges,
+  MOCK_METHOD2(DisableOrigin,
                void(const GURL& origin, const SyncStatusCallback& callback));
-  MOCK_METHOD2(DisableOriginForTrackingChanges,
-               void(const GURL& origin, const SyncStatusCallback& callback));
-  MOCK_METHOD2(UninstallOrigin,
-               void(const GURL& origin, const SyncStatusCallback& callback));
+  MOCK_METHOD3(UninstallOrigin,
+               void(const GURL& origin,
+                    UninstallFlag flag,
+                    const SyncStatusCallback& callback));
   MOCK_METHOD1(ProcessRemoteChange,
                void(const SyncFileCallback& callback));
   MOCK_METHOD1(SetRemoteChangeProcessor,
@@ -52,13 +52,23 @@ class MockRemoteFileSyncService : public RemoteFileSyncService {
                      RemoteServiceState());
   MOCK_METHOD1(GetOriginStatusMap,
                void(RemoteFileSyncService::OriginStatusMap* status_map));
-  MOCK_METHOD1(SetSyncEnabled, void(bool));
+  MOCK_METHOD1(SetSyncEnabled, void(bool enabled));
   MOCK_METHOD1(SetConflictResolutionPolicy,
                SyncStatusCode(ConflictResolutionPolicy));
   MOCK_CONST_METHOD0(GetConflictResolutionPolicy,
                      ConflictResolutionPolicy());
+  MOCK_METHOD2(GetRemoteVersions,
+               void(const fileapi::FileSystemURL&,
+                    const RemoteVersionsCallback&));
+  MOCK_METHOD3(DownloadRemoteVersion,
+               void(const fileapi::FileSystemURL&,
+                    const std::string&,
+                    const DownloadVersionCallback&));
 
   virtual scoped_ptr<base::ListValue> DumpFiles(const GURL& origin) OVERRIDE;
+  virtual scoped_ptr<base::ListValue> DumpDatabase() OVERRIDE;
+
+  void SetServiceState(RemoteServiceState state);
 
   // Send notifications to the observers.
   // Can be used in the mock implementation.
@@ -75,16 +85,16 @@ class MockRemoteFileSyncService : public RemoteFileSyncService {
  private:
   void AddServiceObserverStub(Observer* observer);
   void AddFileStatusObserverStub(FileStatusObserver* observer);
-  void RegisterOriginForTrackingChangesStub(
-      const GURL& origin, const SyncStatusCallback& callback);
-  void UnregisterOriginForTrackingChangesStub(
+  void RegisterOriginStub(
       const GURL& origin, const SyncStatusCallback& callback);
   void DeleteOriginDirectoryStub(
-      const GURL& origin, const SyncStatusCallback& callback);
+      const GURL& origin, UninstallFlag flag,
+      const SyncStatusCallback& callback);
   void ProcessRemoteChangeStub(const SyncFileCallback& callback);
   SyncStatusCode SetConflictResolutionPolicyStub(
       ConflictResolutionPolicy policy);
   ConflictResolutionPolicy GetConflictResolutionPolicyStub() const;
+  RemoteServiceState GetCurrentStateStub() const;
 
   // For default implementation.
   ::testing::NiceMock<MockLocalChangeProcessor> mock_local_change_processor_;
@@ -93,6 +103,8 @@ class MockRemoteFileSyncService : public RemoteFileSyncService {
   ObserverList<FileStatusObserver> file_status_observers_;
 
   ConflictResolutionPolicy conflict_resolution_policy_;
+
+  RemoteServiceState state_;
 
   DISALLOW_COPY_AND_ASSIGN(MockRemoteFileSyncService);
 };

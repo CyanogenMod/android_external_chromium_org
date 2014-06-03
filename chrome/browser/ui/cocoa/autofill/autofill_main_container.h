@@ -15,6 +15,7 @@
 @class AutofillDialogWindowController;
 @class AutofillNotificationContainer;
 @class AutofillSectionContainer;
+@class AutofillTooltipController;
 @class GTMWidthBasedTweaker;
 @class HyperlinkTextView;
 
@@ -29,7 +30,9 @@ namespace autofill {
                                                     NSTextViewDelegate> {
  @private
   base::scoped_nsobject<GTMWidthBasedTweaker> buttonContainer_;
+  base::scoped_nsobject<NSImageView> buttonStripImage_;
   base::scoped_nsobject<NSButton> saveInChromeCheckbox_;
+  base::scoped_nsobject<AutofillTooltipController> saveInChromeTooltip_;
   base::scoped_nsobject<AutofillDetailsContainer> detailsContainer_;
   base::scoped_nsobject<HyperlinkTextView> legalDocumentsView_;
   base::scoped_nsobject<AutofillNotificationContainer> notificationContainer_;
@@ -50,6 +53,10 @@ namespace autofill {
 // Designated initializer.
 - (id)initWithDelegate:(autofill::AutofillDialogViewDelegate*)delegate;
 
+// Returns the preferred size for the footer and notifications at the specfied
+// |width|.
+- (NSSize)decorationSizeForWidth:(CGFloat)width;
+
 // Sets the anchor point for the notificationView_.
 - (void)setAnchorView:(NSView*)anchorView;
 
@@ -68,8 +75,23 @@ namespace autofill {
 // Called when there are changes to the notification area.
 - (void)updateNotificationArea;
 
+// Called when the error bubble needs to be updated.
+- (void)updateErrorBubble;
+
 // Validates form input data.
 - (BOOL)validate;
+
+// Updates status of "save in Chrome" checkbox.
+- (void)updateSaveInChrome;
+
+// Makes the first invalid input first responder.
+- (void)makeFirstInvalidInputFirstResponder;
+
+// Called when the main container becomes visible. Ensures the right input field
+// becomes first responder, and positions the scrollview correctly. This MUST be
+// called after layout on the main container is complete, since it depends on
+// the size of the contained views to be correct.
+- (void)scrollInitialEditorIntoViewAndMakeFirstResponder;
 
 @end
 
@@ -78,6 +100,8 @@ namespace autofill {
 @interface AutofillMainContainer (Testing)
 
 @property(readonly, nonatomic) NSButton* saveInChromeCheckboxForTesting;
+@property(readonly, nonatomic) NSImageView* buttonStripImageForTesting;
+@property(readonly, nonatomic) NSImageView* saveInChromeTooltipForTesting;
 
 @end
 

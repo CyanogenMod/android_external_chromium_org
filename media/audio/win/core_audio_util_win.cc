@@ -4,8 +4,9 @@
 
 #include "media/audio/win/core_audio_util_win.h"
 
-#include <Audioclient.h>
-#include <Functiondiscoverykeys_devpkey.h>
+#include <audioclient.h>
+#include <devicetopology.h>
+#include <functiondiscoverykeys_devpkey.h>
 
 #include "base/command_line.h"
 #include "base/logging.h"
@@ -23,8 +24,6 @@ using base::win::ScopedHandle;
 namespace media {
 
 enum { KSAUDIO_SPEAKER_UNSUPPORTED = 0 };
-
-typedef uint32 ChannelConfig;
 
 // Converts Microsoft's channel configuration to ChannelLayout.
 // This mapping is not perfect but the best we can do given the current
@@ -122,7 +121,7 @@ static std::ostream& operator<<(std::ostream& os,
   return os;
 }
 
-bool LoadAudiosesDll() {
+static bool LoadAudiosesDll() {
   static const wchar_t* const kAudiosesDLL =
       L"%WINDIR%\\system32\\audioses.dll";
 
@@ -131,7 +130,7 @@ bool LoadAudiosesDll() {
   return (LoadLibraryExW(path, NULL, LOAD_WITH_ALTERED_SEARCH_PATH) != NULL);
 }
 
-bool CanCreateDeviceEnumerator() {
+static bool CanCreateDeviceEnumerator() {
   ScopedComPtr<IMMDeviceEnumerator> device_enumerator;
   HRESULT hr = device_enumerator.CreateInstance(__uuidof(MMDeviceEnumerator),
                                                 NULL, CLSCTX_INPROC_SERVER);
@@ -141,6 +140,14 @@ bool CanCreateDeviceEnumerator() {
   CHECK_NE(hr, CO_E_NOTINITIALIZED);
 
   return SUCCEEDED(hr);
+}
+
+static std::string GetDeviceID(IMMDevice* device) {
+  ScopedCoMem<WCHAR> device_id_com;
+  std::string device_id;
+  if (SUCCEEDED(device->GetId(&device_id_com)))
+    WideToUTF8(device_id_com, wcslen(device_id_com), &device_id);
+  return device_id;
 }
 
 bool CoreAudioUtil::IsSupported() {
@@ -262,6 +269,12 @@ ScopedComPtr<IMMDevice> CoreAudioUtil::CreateDefaultDevice(EDataFlow data_flow,
   return endpoint_device;
 }
 
+std::string CoreAudioUtil::GetDefaultOutputDeviceID() {
+  DCHECK(IsSupported());
+  ScopedComPtr<IMMDevice> device(CreateDefaultDevice(eRender, eConsole));
+  return device ? GetDeviceID(device) : std::string();
+}
+
 ScopedComPtr<IMMDevice> CoreAudioUtil::CreateDevice(
     const std::string& device_id) {
   DCHECK(IsSupported());
@@ -288,17 +301,14 @@ HRESULT CoreAudioUtil::GetDeviceName(IMMDevice* device, AudioDeviceName* name) {
   // Retrieve unique name of endpoint device.
   // Example: "{0.0.1.00000000}.{8db6020f-18e3-4f25-b6f5-7726c9122574}".
   AudioDeviceName device_name;
-  ScopedCoMem<WCHAR> endpoint_device_id;
-  HRESULT hr = device->GetId(&endpoint_device_id);
-  if (FAILED(hr))
-    return hr;
-  WideToUTF8(endpoint_device_id, wcslen(endpoint_device_id),
-             &device_name.unique_id);
+  device_name.unique_id = GetDeviceID(device);
+  if (device_name.unique_id.empty())
+    return E_FAIL;
 
   // Retrieve user-friendly name of endpoint device.
   // Example: "Microphone (Realtek High Definition Audio)".
   ScopedComPtr<IPropertyStore> properties;
-  hr = device->OpenPropertyStore(STGM_READ, properties.Receive());
+  HRESULT hr = device->OpenPropertyStore(STGM_READ, properties.Receive());
   if (FAILED(hr))
     return hr;
   base::win::ScopedPropVariant friendly_name;
@@ -315,6 +325,88 @@ HRESULT CoreAudioUtil::GetDeviceName(IMMDevice* device, AudioDeviceName* name) {
   DVLOG(2) << "friendly name: " << device_name.device_name;
   DVLOG(2) << "unique id    : " << device_name.unique_id;
   return hr;
+}
+
+std::string CoreAudioUtil::GetAudioControllerID(IMMDevice* device,
+    IMMDeviceEnumerator* enumerator) {
+  DCHECK(IsSupported());
+
+  // Fetching the controller device id could be as simple as fetching the value
+  // of the "{B3F8FA53-0004-438E-9003-51A46E139BFC},2" property in the property
+  // store of the |device|, but that key isn't defined in any header and
+  // according to MS should not be relied upon.
+  // So, instead, we go deeper, look at the device topology and fetch the
+  // PKEY_Device_InstanceId of the associated physical audio device.
+  ScopedComPtr<IDeviceTopology> topology;
+  ScopedComPtr<IConnector> connector;
+  ScopedCoMem<WCHAR> filter_id;
+  if (FAILED(device->Activate(__uuidof(IDeviceTopology), CLSCTX_ALL, NULL,
+             topology.ReceiveVoid()) ||
+      // For our purposes checking the first connected device should be enough
+      // and if there are cases where there are more than one device connected
+      // we're not sure how to handle that anyway. So we pass 0.
+      FAILED(topology->GetConnector(0, connector.Receive())) ||
+      FAILED(connector->GetDeviceIdConnectedTo(&filter_id)))) {
+    DLOG(ERROR) << "Failed to get the device identifier of the audio device";
+    return std::string();
+  }
+
+  // Now look at the properties of the connected device node and fetch the
+  // instance id (PKEY_Device_InstanceId) of the device node that uniquely
+  // identifies the controller.
+  ScopedComPtr<IMMDevice> device_node;
+  ScopedComPtr<IPropertyStore> properties;
+  base::win::ScopedPropVariant instance_id;
+  if (FAILED(enumerator->GetDevice(filter_id, device_node.Receive())) ||
+      FAILED(device_node->OpenPropertyStore(STGM_READ, properties.Receive())) ||
+      FAILED(properties->GetValue(PKEY_Device_InstanceId,
+                                  instance_id.Receive())) ||
+      instance_id.get().vt != VT_LPWSTR) {
+    DLOG(ERROR) << "Failed to get instance id of the audio device node";
+    return std::string();
+  }
+
+  std::string controller_id;
+  WideToUTF8(instance_id.get().pwszVal,
+             wcslen(instance_id.get().pwszVal),
+             &controller_id);
+
+  return controller_id;
+}
+
+std::string CoreAudioUtil::GetMatchingOutputDeviceID(
+    const std::string& input_device_id) {
+  ScopedComPtr<IMMDevice> input_device(CreateDevice(input_device_id));
+  if (!input_device)
+    return std::string();
+
+  // See if we can get id of the associated controller.
+  ScopedComPtr<IMMDeviceEnumerator> enumerator(CreateDeviceEnumerator());
+  std::string controller_id(GetAudioControllerID(input_device, enumerator));
+  if (controller_id.empty())
+    return std::string();
+
+  // Now enumerate the available (and active) output devices and see if any of
+  // them is associated with the same controller.
+  ScopedComPtr<IMMDeviceCollection> collection;
+  enumerator->EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE,
+      collection.Receive());
+  if (!collection)
+    return std::string();
+
+  UINT count = 0;
+  collection->GetCount(&count);
+  ScopedComPtr<IMMDevice> output_device;
+  for (UINT i = 0; i < count; ++i) {
+    collection->Item(i, output_device.Receive());
+    std::string output_controller_id(GetAudioControllerID(
+        output_device, enumerator));
+    if (output_controller_id == controller_id)
+      break;
+    output_device = NULL;
+  }
+
+  return output_device ? GetDeviceID(output_device) : std::string();
 }
 
 std::string CoreAudioUtil::GetFriendlyName(const std::string& device_id) {
@@ -339,16 +431,8 @@ bool CoreAudioUtil::DeviceIsDefault(EDataFlow flow,
   if (!device)
     return false;
 
-  ScopedCoMem<WCHAR> default_device_id;
-  HRESULT hr = device->GetId(&default_device_id);
-  if (FAILED(hr))
-    return false;
-
-  std::string str_default;
-  WideToUTF8(default_device_id, wcslen(default_device_id), &str_default);
-  if (device_id.compare(str_default) != 0)
-    return false;
-  return true;
+  std::string str_default(GetDeviceID(device));
+  return device_id.compare(str_default) == 0;
 }
 
 EDataFlow CoreAudioUtil::GetDataFlow(IMMDevice* device) {
@@ -392,6 +476,18 @@ ScopedComPtr<IAudioClient> CoreAudioUtil::CreateDefaultClient(
       ScopedComPtr<IAudioClient>());
 }
 
+ScopedComPtr<IAudioClient> CoreAudioUtil::CreateClient(
+    const std::string& device_id, EDataFlow data_flow, ERole role) {
+  if (device_id.empty())
+    return CreateDefaultClient(data_flow, role);
+
+  ScopedComPtr<IMMDevice> device(CreateDevice(device_id));
+  if (!device)
+    return ScopedComPtr<IAudioClient>();
+
+ return CreateClient(device);
+}
+
 HRESULT CoreAudioUtil::GetSharedModeMixFormat(
     IAudioClient* client, WAVEFORMATPCMEX* format) {
   DCHECK(IsSupported());
@@ -408,18 +504,6 @@ HRESULT CoreAudioUtil::GetSharedModeMixFormat(
   DVLOG(2) << *format;
 
   return hr;
-}
-
-HRESULT CoreAudioUtil::GetDefaultSharedModeMixFormat(
-    EDataFlow data_flow, ERole role, WAVEFORMATPCMEX* format) {
-  DCHECK(IsSupported());
-  ScopedComPtr<IAudioClient> client(CreateDefaultClient(data_flow, role));
-  if (!client) {
-    // Map NULL-pointer to new error code which can be different from the
-    // actual error code. The exact value is not important here.
-    return AUDCLNT_E_ENDPOINT_CREATE_FAILED;
-  }
-  return CoreAudioUtil::GetSharedModeMixFormat(client, format);
 }
 
 bool CoreAudioUtil::IsFormatSupported(IAudioClient* client,
@@ -443,18 +527,20 @@ bool CoreAudioUtil::IsFormatSupported(IAudioClient* client,
   return (hr == S_OK);
 }
 
-bool CoreAudioUtil::IsChannelLayoutSupported(EDataFlow data_flow, ERole role,
+bool CoreAudioUtil::IsChannelLayoutSupported(const std::string& device_id,
+                                             EDataFlow data_flow,
+                                             ERole role,
                                              ChannelLayout channel_layout) {
   DCHECK(IsSupported());
 
   // First, get the preferred mixing format for shared mode streams.
 
-  ScopedComPtr<IAudioClient> client(CreateDefaultClient(data_flow, role));
+  ScopedComPtr<IAudioClient> client(CreateClient(device_id, data_flow, role));
   if (!client)
     return false;
 
   WAVEFORMATPCMEX format;
-  HRESULT hr = CoreAudioUtil::GetSharedModeMixFormat(client, &format);
+  HRESULT hr = GetSharedModeMixFormat(client, &format);
   if (FAILED(hr))
     return false;
 
@@ -537,6 +623,16 @@ HRESULT CoreAudioUtil::GetPreferredAudioParameters(
   // Convert Microsoft's channel configuration to genric ChannelLayout.
   ChannelLayout channel_layout = ChannelConfigToChannelLayout(channel_config);
 
+  // Some devices don't appear to set a valid channel layout, so guess based on
+  // the number of channels.  See http://crbug.com/311906.
+  if (channel_layout == CHANNEL_LAYOUT_UNSUPPORTED) {
+    VLOG(1) << "Unsupported channel config: "
+            << std::hex << channel_config
+            << ".  Guessing layout by channel count: "
+            << std::dec << mix_format.Format.nChannels;
+    channel_layout = GuessChannelLayout(mix_format.Format.nChannels);
+  }
+
   // Preferred sample rate.
   int sample_rate = mix_format.Format.nSamplesPerSec;
 
@@ -596,6 +692,18 @@ HRESULT CoreAudioUtil::GetPreferredAudioParameters(
     return AUDCLNT_E_ENDPOINT_CREATE_FAILED;
   }
   return GetPreferredAudioParameters(client, params);
+}
+
+ChannelConfig CoreAudioUtil::GetChannelConfig(const std::string& device_id,
+                                              EDataFlow data_flow) {
+  ScopedComPtr<IAudioClient> client(
+      CreateClient(device_id, data_flow, eConsole));
+
+  WAVEFORMATPCMEX format = {0};
+  if (!client || FAILED(GetSharedModeMixFormat(client, &format)))
+    return 0;
+
+  return static_cast<ChannelConfig>(format.dwChannelMask);
 }
 
 HRESULT CoreAudioUtil::SharedModeInitialize(IAudioClient* client,

@@ -23,10 +23,7 @@ message PlatformFileInfoProto {
 
 // File specific info, which is a part of ResourceEntry.
 message FileSpecificInfo {
-  // This URL points to a thumbnail image. The thumbnail URL is not permanent
-  // as it's not protected by authentication. See crbug.com/127697 for how
-  // stale thumbnail URLs are handled.
-  optional string thumbnail_url = 1;
+  // The argument with ID 1 (thumbnail_url) had been used, but got deleted.
 
   // This URL is used for opening hosted documents with Google Drive's web
   // interface.
@@ -46,7 +43,16 @@ message FileSpecificInfo {
   // drive.google.com such as documents, spreadsheets, and presentations).
   optional bool is_hosted_document = 6;
 
-  // The argument with ID 7 had been used, but got deleted. Next ID to use: 8.
+  // The argument with ID 7 had been used, but got deleted.
+
+  // Width of the media if the file is an image.
+  optional int64 image_width = 8;
+
+  // Height of the media if the file is an image.
+  optional int64 image_height = 9;
+
+  // Rotation of the image in clockwise degrees (if an image).
+  optional int64 image_rotation = 10;
 }
 
 // Directory specific info, which is a part of ResourceEntry.
@@ -75,31 +81,39 @@ message ResourceEntry {
   // Resource ID of the entry. Guaranteed to be unique.
   optional string resource_id = 4;
 
-  // Resource ID of the parent entry. Every entry is guaranteed to have the
-  // single parent resource ID in ResourceMetadata. This requirement is
-  // needed to represent contents in Drive as a file system tree, and
-  // achieved as follows:
-  //
-  // 1) Entries without parents are allowed on drive.google.com. These
-  // entries are collected to "drive/other", and have the resource ID of
-  // "drive/other" as the parent resource ID.
-  //
-  // 2) Entries with multiple parents are allowed on drive.google.com. For
-  // these entries, the first parent resource ID is chosen.
-  optional string parent_resource_id = 7;
+  // Local ID of the entry.
+  optional string local_id = 15;
+
+  // Local ID of the parent entry.
+  optional string parent_local_id = 7;
 
   // This field is used for processing the change list from the
   // server. Deleted entries won't be stored in ResourceMetadata.
   optional bool deleted = 11;
 
-  // True if the entry is labeled with "shared-with-me".
+  // True if the entry is labeled with "shared-with-me", i.e., owned by someone
+  // else initially and later shared to the current user.
   optional bool shared_with_me = 14;
+
+  // True if the entry is labeled "shared". Either the entry itself or its
+  // ancestor is shared (to the user from / by the user to) other accounts.
+  optional bool shared = 17;
 
   // File specific information, such as MD5.
   optional FileSpecificInfo file_specific_info = 9;
 
   // Directory specific information, such as changestamp.
   optional DirectorySpecificInfo directory_specific_info = 13;
+
+  // Used to remember whether this entry is edited locally or not.
+  enum EditState {
+    CLEAN = 0;  // No local edit.
+    DIRTY = 1;  // Edited locally.
+    SYNCING = 2;  // Local change is being synced to the server.
+  }
+
+  // Indicates whether this entry's metadata is edited locally or not.
+  optional EditState metadata_edit_state = 16;
 }
 
 // Container for the header part of ResourceMetadata.
@@ -113,7 +127,7 @@ message ResourceMetadataHeader {
 
 // Message to store information of an existing cache file.
 message FileCacheEntry {
-  // MD5 of the cache file. "local" if the file is locally modified.
+  // MD5 of the cache file.
   optional string md5 = 1;
 
   // True if the file is present locally.
@@ -125,10 +139,6 @@ message FileCacheEntry {
   // True if the file is dirty (i.e. modified locally).
   optional bool is_dirty = 4;
 
-  // TODO(hashimoto): Remove this block after DB merge. crbug.com/234487
-  // True if the file is in the persistent directory.
-  // optional bool is_persistent = 6;
-
   // When adding a new state, be sure to update TestFileCacheState and test
-  // functions defined in drive_test_util.cc.
+  // functions defined in test_util.cc.
 }

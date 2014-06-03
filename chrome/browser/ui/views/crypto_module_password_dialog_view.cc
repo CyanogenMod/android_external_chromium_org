@@ -6,8 +6,8 @@
 
 #include "base/strings/utf_string_conversions.h"
 #include "grit/generated_resources.h"
-#include "ui/base/events/event.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/events/event.h"
 #include "ui/views/controls/button/text_button.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/controls/textfield/textfield.h"
@@ -43,33 +43,33 @@ ui::ModalType CryptoModulePasswordDialogView::GetModalType() const {
   return ui::MODAL_TYPE_WINDOW;
 }
 
-string16 CryptoModulePasswordDialogView::GetWindowTitle() const {
+base::string16 CryptoModulePasswordDialogView::GetWindowTitle() const {
   return l10n_util::GetStringUTF16(IDS_CRYPTO_MODULE_AUTH_DIALOG_TITLE);
 }
 
-string16 CryptoModulePasswordDialogView::GetDialogButtonLabel(
+base::string16 CryptoModulePasswordDialogView::GetDialogButtonLabel(
     ui::DialogButton button) const {
   return l10n_util::GetStringUTF16(button == ui::DIALOG_BUTTON_OK ?
       IDS_CRYPTO_MODULE_AUTH_DIALOG_OK_BUTTON_LABEL : IDS_CANCEL);
 }
 
 bool CryptoModulePasswordDialogView::Cancel() {
-  callback_.Run(static_cast<const char*>(NULL));
-  const string16 empty;
+  callback_.Run(std::string());
+  const base::string16 empty;
   password_entry_->SetText(empty);
   return true;
 }
 
 bool CryptoModulePasswordDialogView::Accept() {
-  callback_.Run(UTF16ToUTF8(password_entry_->text()).c_str());
-  const string16 empty;
+  callback_.Run(UTF16ToUTF8(password_entry_->text()));
+  const base::string16 empty;
   password_entry_->SetText(empty);
   return true;
 }
 
 void CryptoModulePasswordDialogView::ContentsChanged(
     views::Textfield* sender,
-    const string16& new_contents) {
+    const base::string16& new_contents) {
 }
 
 bool CryptoModulePasswordDialogView::HandleKeyEvent(
@@ -83,8 +83,8 @@ void CryptoModulePasswordDialogView::Init(const std::string& server,
                                           CryptoModulePasswordReason reason) {
   // Select an appropriate text for the reason.
   std::string text;
-  const string16& server16 = UTF8ToUTF16(server);
-  const string16& slot16 = UTF8ToUTF16(slot_name);
+  const base::string16& server16 = UTF8ToUTF16(server);
+  const base::string16& slot16 = UTF8ToUTF16(slot_name);
   switch (reason) {
     case chrome::kCryptoModulePasswordKeygen:
       text = l10n_util::GetStringFUTF8(
@@ -153,10 +153,11 @@ void ShowCryptoModulePasswordDialog(
     bool retry,
     CryptoModulePasswordReason reason,
     const std::string& server,
+    gfx::NativeWindow parent,
     const CryptoModulePasswordCallback& callback) {
   CryptoModulePasswordDialogView* dialog =
       new CryptoModulePasswordDialogView(slot_name, reason, server, callback);
-  views::DialogDelegate::CreateDialogWidget(dialog, NULL, NULL)->Show();
+  views::DialogDelegate::CreateDialogWidget(dialog, NULL, parent)->Show();
 }
 
 }  // namespace chrome

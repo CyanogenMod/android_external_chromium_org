@@ -6,15 +6,21 @@
 
 #include "ash/desktop_background/desktop_background_controller.h"
 #include "ash/shell.h"
+#include "base/command_line.h"
+#include "base/rand_util.h"
 #include "base/values.h"
 #include "chrome/browser/chromeos/camera_detector.h"
 #include "chrome/browser/chromeos/login/existing_user_controller.h"
 #include "chrome/browser/chromeos/login/managed/locally_managed_user_creation_controller.h"
 #include "chrome/browser/chromeos/login/screens/error_screen.h"
 #include "chrome/browser/chromeos/login/screens/screen_observer.h"
+#include "chrome/browser/chromeos/login/supervised_user_manager.h"
 #include "chrome/browser/chromeos/login/user_image.h"
 #include "chrome/browser/chromeos/login/user_image_manager.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
+#include "chrome/browser/managed_mode/managed_user_sync_service.h"
+#include "chrome/browser/managed_mode/managed_user_sync_service_factory.h"
+#include "chrome/common/chrome_switches.h"
 #include "chromeos/network/network_state.h"
 #include "content/public/browser/browser_thread.h"
 #include "grit/generated_resources.h"
@@ -25,6 +31,22 @@
 namespace chromeos {
 
 namespace {
+
+// Key for (boolean) value that indicates that user already exists on device.
+const char kUserExists[] = "exists";
+// Key for  value that indicates why user can not be imported.
+const char kUserConflict[] = "conflict";
+// User is already imported.
+const char kUserConflictImported[] = "imported";
+// There is another supervised user with same name.
+const char kUserConflictName[] = "name";
+
+const char kUserNeedPassword[] = "needPassword";
+
+const char kAvatarURLKey[] = "avatarurl";
+const char kRandomAvatarKey[] = "randomAvatar";
+const char kNameOfIntroScreen[] = "intro";
+const char kNameOfNewUserParametersScreen[] = "username";
 
 void ConfigureErrorScreen(ErrorScreen* screen,
     const NetworkState* network,
@@ -62,10 +84,11 @@ LocallyManagedUserCreationScreen::LocallyManagedUserCreationScreen(
       weak_factory_(this),
       actor_(actor),
       on_error_screen_(false),
-      on_image_screen_(false),
+      last_page_(kNameOfIntroScreen),
       image_decoder_(NULL),
       apply_photo_after_decoding_(false),
-      selected_image_(0) {
+      selected_image_(0),
+      was_camera_present_(false) {
   DCHECK(actor_);
   if (actor_)
     actor_->SetDelegate(this);
@@ -76,6 +99,7 @@ LocallyManagedUserCreationScreen::~LocallyManagedUserCreationScreen() {
     actor_->SetDelegate(NULL);
   if (image_decoder_.get())
     image_decoder_->set_delegate(NULL);
+  NetworkPortalDetector::Get()->RemoveObserver(this);
 }
 
 void LocallyManagedUserCreationScreen::PrepareToShow() {
@@ -88,16 +112,19 @@ void LocallyManagedUserCreationScreen::Show() {
     actor_->Show();
     // TODO(antrim) : temorary hack (until upcoming hackaton). Should be
     // removed once we have screens reworked.
-    if (on_image_screen_)
-      actor_->ShowTutorialPage();
+    if (on_error_screen_)
+      actor_->ShowPage(last_page_);
     else
       actor_->ShowIntroPage();
   }
 
-  NetworkPortalDetector* detector = NetworkPortalDetector::GetInstance();
-  if (detector && !on_error_screen_)
-    detector->AddAndFireObserver(this);
+  if (!on_error_screen_)
+    NetworkPortalDetector::Get()->AddAndFireObserver(this);
   on_error_screen_ = false;
+}
+
+void LocallyManagedUserCreationScreen::OnPageSelected(const std::string& page) {
+  last_page_ = page;
 }
 
 void LocallyManagedUserCreationScreen::OnPortalDetectionCompleted(
@@ -135,9 +162,8 @@ void LocallyManagedUserCreationScreen::ShowInitialScreen() {
 void LocallyManagedUserCreationScreen::Hide() {
   if (actor_)
     actor_->Hide();
-  NetworkPortalDetector* detector = NetworkPortalDetector::GetInstance();
-  if (detector && !on_error_screen_)
-    detector->RemoveObserver(this);
+  if (!on_error_screen_)
+    NetworkPortalDetector::Get()->RemoveObserver(this);
 }
 
 std::string LocallyManagedUserCreationScreen::GetName() const {
@@ -166,11 +192,102 @@ void LocallyManagedUserCreationScreen::AuthenticateManager(
 }
 
 void LocallyManagedUserCreationScreen::CreateManagedUser(
-    const string16& display_name,
+    const base::string16& display_name,
     const std::string& managed_user_password) {
   DCHECK(controller_.get());
-  controller_->SetUpCreation(display_name, managed_user_password);
+  int image;
+  if (selected_image_ == User::kExternalImageIndex)
+    // TODO(dzhioev): crbug/249660
+    image = LocallyManagedUserCreationController::kDummyAvatarIndex;
+  else
+    image = selected_image_;
+  controller_->SetUpCreation(display_name, managed_user_password, image);
   controller_->StartCreation();
+}
+
+void LocallyManagedUserCreationScreen::ImportManagedUser(
+    const std::string& user_id) {
+  DCHECK(controller_.get());
+  DCHECK(existing_users_.get());
+  VLOG(1) << "Importing user " << user_id;
+  DictionaryValue* user_info;
+  if (!existing_users_->GetDictionary(user_id, &user_info)) {
+    LOG(ERROR) << "Can not import non-existing user " << user_id;
+    return;
+  }
+  base::string16 display_name;
+  std::string master_key;
+  std::string avatar;
+  bool exists;
+  int avatar_index = LocallyManagedUserCreationController::kDummyAvatarIndex;
+  user_info->GetString(ManagedUserSyncService::kName, &display_name);
+  user_info->GetString(ManagedUserSyncService::kMasterKey, &master_key);
+  user_info->GetString(ManagedUserSyncService::kChromeOsAvatar, &avatar);
+  user_info->GetBoolean(kUserExists, &exists);
+
+  // We should not get here with existing user selected, so just display error.
+  if (exists) {
+    actor_->ShowErrorPage(
+        l10n_util::GetStringUTF16(
+            IDS_CREATE_LOCALLY_MANAGED_USER_GENERIC_ERROR_TITLE),
+        l10n_util::GetStringUTF16(
+            IDS_CREATE_LOCALLY_MANAGED_USER_GENERIC_ERROR),
+        l10n_util::GetStringUTF16(
+            IDS_CREATE_LOCALLY_MANAGED_USER_GENERIC_ERROR_BUTTON));
+    return;
+  }
+
+  ManagedUserSyncService::GetAvatarIndex(avatar, &avatar_index);
+
+  controller_->StartImport(display_name,
+                           std::string(),
+                           avatar_index,
+                           user_id,
+                           master_key);
+}
+
+// TODO(antrim): Code duplication with previous method will be removed once
+// password sync is implemented.
+void LocallyManagedUserCreationScreen::ImportManagedUserWithPassword(
+    const std::string& user_id,
+    const std::string& password) {
+  DCHECK(controller_.get());
+  DCHECK(existing_users_.get());
+  VLOG(1) << "Importing user " << user_id;
+  DictionaryValue* user_info;
+  if (!existing_users_->GetDictionary(user_id, &user_info)) {
+    LOG(ERROR) << "Can not import non-existing user " << user_id;
+    return;
+  }
+  base::string16 display_name;
+  std::string master_key;
+  std::string avatar;
+  bool exists;
+  int avatar_index = LocallyManagedUserCreationController::kDummyAvatarIndex;
+  user_info->GetString(ManagedUserSyncService::kName, &display_name);
+  user_info->GetString(ManagedUserSyncService::kMasterKey, &master_key);
+  user_info->GetString(ManagedUserSyncService::kChromeOsAvatar, &avatar);
+  user_info->GetBoolean(kUserExists, &exists);
+
+  // We should not get here with existing user selected, so just display error.
+  if (exists) {
+    actor_->ShowErrorPage(
+        l10n_util::GetStringUTF16(
+            IDS_CREATE_LOCALLY_MANAGED_USER_GENERIC_ERROR_TITLE),
+        l10n_util::GetStringUTF16(
+            IDS_CREATE_LOCALLY_MANAGED_USER_GENERIC_ERROR),
+        l10n_util::GetStringUTF16(
+            IDS_CREATE_LOCALLY_MANAGED_USER_GENERIC_ERROR_BUTTON));
+    return;
+  }
+
+  ManagedUserSyncService::GetAvatarIndex(avatar, &avatar_index);
+
+  controller_->StartImport(display_name,
+                           password,
+                           avatar_index,
+                           user_id,
+                           master_key);
 }
 
 void LocallyManagedUserCreationScreen::OnManagerLoginFailure() {
@@ -189,6 +306,17 @@ void LocallyManagedUserCreationScreen::OnManagerFullyAuthenticated(
   controller_->SetManagerProfile(manager_profile);
   if (actor_)
     actor_->ShowUsernamePage();
+
+  last_page_ = kNameOfNewUserParametersScreen;
+
+  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  if (!command_line->HasSwitch(::switches::kAllowCreateExistingManagedUsers))
+    return;
+
+  ManagedUserSyncServiceFactory::GetForProfile(manager_profile)->
+      GetManagedUsersAsync(base::Bind(
+          &LocallyManagedUserCreationScreen::OnGetManagedUsers,
+          weak_factory_.GetWeakPtr()));
 }
 
 void LocallyManagedUserCreationScreen::OnManagerCryptohomeAuthenticated() {
@@ -198,8 +326,6 @@ void LocallyManagedUserCreationScreen::OnManagerCryptohomeAuthenticated() {
   }
 }
 
-void LocallyManagedUserCreationScreen::OnExit() {}
-
 void LocallyManagedUserCreationScreen::OnActorDestroyed(
     LocallyManagedUserCreationScreenHandler* actor) {
   if (actor_ == actor)
@@ -208,9 +334,9 @@ void LocallyManagedUserCreationScreen::OnActorDestroyed(
 
 void LocallyManagedUserCreationScreen::OnCreationError(
     LocallyManagedUserCreationController::ErrorCode code) {
-  string16 title;
-  string16 message;
-  string16 button;
+  base::string16 title;
+  base::string16 message;
+  base::string16 button;
   // TODO(antrim) : find out which errors do we really have.
   // We might reuse some error messages from ordinary user flow.
   switch (code) {
@@ -245,6 +371,35 @@ void LocallyManagedUserCreationScreen::OnCreationTimeout() {
     actor_->ShowStatusMessage(false /* error */, l10n_util::GetStringUTF16(
         IDS_CREATE_LOCALLY_MANAGED_USER_CREATION_CREATION_TIMEOUT_MESSAGE));
   }
+}
+
+void LocallyManagedUserCreationScreen::OnLongCreationWarning() {
+  if (actor_) {
+    actor_->ShowStatusMessage(true /* progress */, l10n_util::GetStringUTF16(
+        IDS_PROFILES_CREATE_MANAGED_JUST_SIGNED_IN));
+  }
+}
+
+bool LocallyManagedUserCreationScreen::FindUserByDisplayName(
+    const base::string16& display_name,
+    std::string *out_id) const {
+  if (!existing_users_.get())
+    return false;
+  for (base::DictionaryValue::Iterator it(*existing_users_.get());
+       !it.IsAtEnd(); it.Advance()) {
+    const base::DictionaryValue* user_info =
+        static_cast<const base::DictionaryValue*>(&it.value());
+    base::string16 user_display_name;
+    if (user_info->GetString(ManagedUserSyncService::kName,
+                             &user_display_name)) {
+      if (display_name == user_display_name) {
+        if (out_id)
+          *out_id = it.key();
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 // TODO(antrim) : this is an explicit code duplications with UserImageScreen.
@@ -287,10 +442,78 @@ void LocallyManagedUserCreationScreen::CheckCameraPresence() {
 }
 
 void LocallyManagedUserCreationScreen::OnCameraPresenceCheckDone() {
+  bool is_camera_present = CameraDetector::camera_presence() ==
+                           CameraDetector::kCameraPresent;
   if (actor_) {
-    actor_->SetCameraPresent(
-        CameraDetector::camera_presence() == CameraDetector::kCameraPresent);
+    if (is_camera_present != was_camera_present_) {
+      actor_->SetCameraPresent(is_camera_present);
+      was_camera_present_ = is_camera_present;
+    }
   }
+}
+
+void LocallyManagedUserCreationScreen::OnGetManagedUsers(
+    const base::DictionaryValue* users) {
+  // Copy for passing to WebUI, contains only id, name and avatar URL.
+  scoped_ptr<base::ListValue> ui_users(new base::ListValue());
+  SupervisedUserManager* supervised_user_manager =
+      UserManager::Get()->GetSupervisedUserManager();
+
+  // Stored copy, contains all necessary information.
+  existing_users_.reset(new base::DictionaryValue());
+  for (base::DictionaryValue::Iterator it(*users); !it.IsAtEnd();
+       it.Advance()) {
+    // Copy that would be stored in this class.
+    base::DictionaryValue* local_copy =
+        static_cast<base::DictionaryValue*>(it.value().DeepCopy());
+    // Copy that would be passed to WebUI. It has some extra values for
+    // displaying, but does not contain sensitive data, such as master password.
+    base::DictionaryValue* ui_copy =
+        static_cast<base::DictionaryValue*>(new base::DictionaryValue());
+
+    int avatar_index = LocallyManagedUserCreationController::kDummyAvatarIndex;
+    std::string chromeos_avatar;
+    if (local_copy->GetString(ManagedUserSyncService::kChromeOsAvatar,
+                              &chromeos_avatar) &&
+        !chromeos_avatar.empty() &&
+        ManagedUserSyncService::GetAvatarIndex(
+            chromeos_avatar, &avatar_index)) {
+      ui_copy->SetString(kAvatarURLKey, GetDefaultImageUrl(avatar_index));
+    } else {
+      int i = base::RandInt(kFirstDefaultImageIndex, kDefaultImagesCount - 1);
+      local_copy->SetString(
+          ManagedUserSyncService::kChromeOsAvatar,
+          ManagedUserSyncService::BuildAvatarString(i));
+      local_copy->SetBoolean(kRandomAvatarKey, true);
+      ui_copy->SetString(kAvatarURLKey, GetDefaultImageUrl(i));
+    }
+
+    local_copy->SetBoolean(kUserExists, false);
+    ui_copy->SetBoolean(kUserExists, false);
+
+    base::string16 display_name;
+    local_copy->GetString(ManagedUserSyncService::kName, &display_name);
+
+    if (supervised_user_manager->FindBySyncId(it.key())) {
+      local_copy->SetBoolean(kUserExists, true);
+      ui_copy->SetBoolean(kUserExists, true);
+      local_copy->SetString(kUserConflict, kUserConflictImported);
+      ui_copy->SetString(kUserConflict, kUserConflictImported);
+    } else if (supervised_user_manager->FindByDisplayName(display_name)) {
+      local_copy->SetBoolean(kUserExists, true);
+      ui_copy->SetBoolean(kUserExists, true);
+      local_copy->SetString(kUserConflict, kUserConflictName);
+      ui_copy->SetString(kUserConflict, kUserConflictName);
+    }
+    ui_copy->SetString(ManagedUserSyncService::kName, display_name);
+    // TODO(antrim): For now mark all users as having no password.
+    ui_copy->SetBoolean(kUserNeedPassword, true);
+    ui_copy->SetString("id", it.key());
+
+    existing_users_->Set(it.key(), local_copy);
+    ui_users->Append(ui_copy);
+  }
+  actor_->ShowExistingManagedUsers(ui_users.get());
 }
 
 void LocallyManagedUserCreationScreen::OnPhotoTaken(

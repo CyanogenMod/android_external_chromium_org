@@ -33,7 +33,7 @@
 
 #if defined(OS_WIN)
 #include "content/common/plugin_constants_win.h"
-#include "ui/base/win/hwnd_util.h"
+#include "ui/gfx/win/hwnd_util.h"
 #endif
 
 #if defined(OS_POSIX)
@@ -171,25 +171,8 @@ void PluginServiceImpl::Init() {
 
   RegisterPepperPlugins();
 
-  // The --site-per-process flag enables an out-of-process iframes
-  // prototype, which uses WebView for rendering. We need to register the MIME
-  // type we use with the plugin, so the renderer can instantiate it.
-  const CommandLine* command_line = CommandLine::ForCurrentProcess();
-  if (command_line->HasSwitch(switches::kSitePerProcess)) {
-    WebPluginInfo webview_plugin(
-        ASCIIToUTF16("WebView Tag"),
-        base::FilePath(),
-        ASCIIToUTF16("1.2.3.4"),
-        ASCIIToUTF16("Browser Plugin."));
-    webview_plugin.type = WebPluginInfo::PLUGIN_TYPE_NPAPI;
-    WebPluginMimeType webview_plugin_mime_type;
-    webview_plugin_mime_type.mime_type = "application/browser-plugin";
-    webview_plugin_mime_type.file_extensions.push_back("*");
-    webview_plugin.mime_types.push_back(webview_plugin_mime_type);
-    RegisterInternalPlugin(webview_plugin, true);
-  }
-
   // Load any specified on the command line as well.
+  const CommandLine* command_line = CommandLine::ForCurrentProcess();
   base::FilePath path =
       command_line->GetSwitchValuePath(switches::kLoadPlugin);
   if (!path.empty())
@@ -315,7 +298,12 @@ PluginProcessHost* PluginServiceImpl::FindOrStartNpapiPluginProcess(
                               START_NPAPI_FLASH_AT_LEAST_ONCE,
                               FLASH_USAGE_ENUM_COUNT);
   }
-
+#if defined(OS_CHROMEOS)
+  // TODO(ihf): Move to an earlier place once crbug.com/314301 is fixed. For now
+  // we still want Plugin.FlashUsage recorded if we end up here.
+  LOG(WARNING) << "Refusing to start npapi plugin on ChromeOS.";
+  return NULL;
+#endif
   // This plugin isn't loaded by any plugin process, so create a new process.
   scoped_ptr<PluginProcessHost> new_host(new PluginProcessHost());
   if (!new_host->Init(info)) {
@@ -328,12 +316,13 @@ PluginProcessHost* PluginServiceImpl::FindOrStartNpapiPluginProcess(
 PpapiPluginProcessHost* PluginServiceImpl::FindOrStartPpapiPluginProcess(
     int render_process_id,
     const base::FilePath& plugin_path,
-    const base::FilePath& profile_data_directory,
-    PpapiPluginProcessHost::PluginClient* client) {
+    const base::FilePath& profile_data_directory) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
 
-  if (filter_ && !filter_->CanLoadPlugin(render_process_id, plugin_path))
+  if (filter_ && !filter_->CanLoadPlugin(render_process_id, plugin_path)) {
+    VLOG(1) << "Unable to load ppapi plugin: " << plugin_path.MaybeAsASCII();
     return NULL;
+  }
 
   PpapiPluginProcessHost* plugin_host =
       FindPpapiPluginProcess(plugin_path, profile_data_directory);
@@ -342,8 +331,11 @@ PpapiPluginProcessHost* PluginServiceImpl::FindOrStartPpapiPluginProcess(
 
   // Validate that the plugin is actually registered.
   PepperPluginInfo* info = GetRegisteredPpapiPluginInfo(plugin_path);
-  if (!info)
+  if (!info) {
+    VLOG(1) << "Unable to find ppapi plugin registration for: "
+            << plugin_path.MaybeAsASCII();
     return NULL;
+  }
 
   // Record when PPAPI Flash process is started for the first time.
   static bool counted = false;
@@ -355,9 +347,14 @@ PpapiPluginProcessHost* PluginServiceImpl::FindOrStartPpapiPluginProcess(
   }
 
   // This plugin isn't loaded by any plugin process, so create a new process.
-  return PpapiPluginProcessHost::CreatePluginHost(
-      *info, profile_data_directory,
-      client->GetResourceContext()->GetHostResolver());
+  plugin_host = PpapiPluginProcessHost::CreatePluginHost(
+      *info, profile_data_directory);
+  if (!plugin_host) {
+    VLOG(1) << "Unable to create ppapi plugin process for: "
+            << plugin_path.MaybeAsASCII();
+  }
+
+  return plugin_host;
 }
 
 PpapiPluginProcessHost* PluginServiceImpl::FindOrStartPpapiBrokerProcess(
@@ -386,7 +383,7 @@ PpapiPluginProcessHost* PluginServiceImpl::FindOrStartPpapiBrokerProcess(
 
 void PluginServiceImpl::OpenChannelToNpapiPlugin(
     int render_process_id,
-    int render_view_id,
+    int render_frame_id,
     const GURL& url,
     const GURL& page_url,
     const std::string& mime_type,
@@ -398,7 +395,7 @@ void PluginServiceImpl::OpenChannelToNpapiPlugin(
   // Make sure plugins are loaded if necessary.
   PluginServiceFilterParams params = {
     render_process_id,
-    render_view_id,
+    render_frame_id,
     page_url,
     client->GetResourceContext()
   };
@@ -413,7 +410,7 @@ void PluginServiceImpl::OpenChannelToPpapiPlugin(
     const base::FilePath& profile_data_directory,
     PpapiPluginProcessHost::PluginClient* client) {
   PpapiPluginProcessHost* plugin_host = FindOrStartPpapiPluginProcess(
-      render_process_id, plugin_path, profile_data_directory, client);
+      render_process_id, plugin_path, profile_data_directory);
   if (plugin_host) {
     plugin_host->OpenChannelToPlugin(client);
   } else {
@@ -449,14 +446,14 @@ void PluginServiceImpl::ForwardGetAllowedPluginForOpenChannelToPlugin(
     const std::string& mime_type,
     PluginProcessHost::Client* client,
     const std::vector<WebPluginInfo>&) {
-  GetAllowedPluginForOpenChannelToPlugin(params.render_process_id,
-      params.render_view_id, url, params.page_url, mime_type, client,
-      params.resource_context);
+  GetAllowedPluginForOpenChannelToPlugin(
+      params.render_process_id, params.render_frame_id, url, params.page_url,
+      mime_type, client, params.resource_context);
 }
 
 void PluginServiceImpl::GetAllowedPluginForOpenChannelToPlugin(
     int render_process_id,
-    int render_view_id,
+    int render_frame_id,
     const GURL& url,
     const GURL& page_url,
     const std::string& mime_type,
@@ -465,7 +462,7 @@ void PluginServiceImpl::GetAllowedPluginForOpenChannelToPlugin(
   WebPluginInfo info;
   bool allow_wildcard = true;
   bool found = GetPluginInfo(
-      render_process_id, render_view_id, resource_context,
+      render_process_id, render_frame_id, resource_context,
       url, page_url, mime_type, allow_wildcard,
       NULL, &info, NULL);
   base::FilePath plugin_path;
@@ -517,7 +514,7 @@ bool PluginServiceImpl::GetPluginInfoArray(
 }
 
 bool PluginServiceImpl::GetPluginInfo(int render_process_id,
-                                      int render_view_id,
+                                      int render_frame_id,
                                       ResourceContext* context,
                                       const GURL& url,
                                       const GURL& page_url,
@@ -535,7 +532,7 @@ bool PluginServiceImpl::GetPluginInfo(int render_process_id,
 
   for (size_t i = 0; i < plugins.size(); ++i) {
     if (!filter_ || filter_->IsPluginAvailable(render_process_id,
-                                               render_view_id,
+                                               render_frame_id,
                                                context,
                                                url,
                                                page_url,
@@ -566,9 +563,9 @@ bool PluginServiceImpl::GetPluginInfoByPath(const base::FilePath& plugin_path,
   return false;
 }
 
-string16 PluginServiceImpl::GetPluginDisplayNameByPath(
+base::string16 PluginServiceImpl::GetPluginDisplayNameByPath(
     const base::FilePath& path) {
-  string16 plugin_name = path.LossyDisplayName();
+  base::string16 plugin_name = path.LossyDisplayName();
   WebPluginInfo info;
   if (PluginService::GetInstance()->GetPluginInfoByPath(path, &info) &&
       !info.name.empty()) {
@@ -660,7 +657,7 @@ void PluginServiceImpl::RegisterPepperPlugins() {
 PepperPluginInfo* PluginServiceImpl::GetRegisteredPpapiPluginInfo(
     const base::FilePath& plugin_path) {
   PepperPluginInfo* info = NULL;
-  for (size_t i = 0; i < ppapi_plugins_.size(); i++) {
+  for (size_t i = 0; i < ppapi_plugins_.size(); ++i) {
     if (ppapi_plugins_[i].path == plugin_path) {
       info = &ppapi_plugins_[i];
       break;
@@ -755,7 +752,7 @@ void PluginServiceImpl::AddExtraPluginPath(const base::FilePath& path) {
  if (!NPAPIPluginsSupported()) {
     // TODO(jam): remove and just have CHECK once we're sure this doesn't get
     // triggered.
-    DLOG(INFO) << "NPAPI plugins not supported";
+    DVLOG(0) << "NPAPI plugins not supported";
     return;
   }
   PluginList::Singleton()->AddExtraPluginPath(path);
@@ -774,7 +771,7 @@ void PluginServiceImpl::RegisterInternalPlugin(
     bool add_at_beginning) {
   if (!NPAPIPluginsSupported() &&
       info.type == WebPluginInfo::PLUGIN_TYPE_NPAPI) {
-    DLOG(INFO) << "Don't register NPAPI plugins when they're not supported";
+    DVLOG(0) << "Don't register NPAPI plugins when they're not supported";
     return;
   }
   PluginList::Singleton()->RegisterInternalPlugin(info, add_at_beginning);
@@ -790,7 +787,8 @@ void PluginServiceImpl::GetInternalPlugins(
 }
 
 bool PluginServiceImpl::NPAPIPluginsSupported() {
-#if defined(OS_WIN) || defined(OS_MACOSX) || (defined(OS_LINUX) && !defined(USE_AURA))
+#if defined(OS_WIN) || defined(OS_MACOSX) || defined(OS_BSD) || \
+    (defined(OS_LINUX) && !defined(USE_AURA))
   return true;
 #else
   return false;
@@ -839,8 +837,13 @@ bool PluginServiceImpl::GetPluginInfoFromWindow(
 }
 
 bool PluginServiceImpl::IsPluginWindow(HWND window) {
-  return ui::GetClassName(window) == base::string16(kNativeWindowClassName);
+  return gfx::GetClassName(window) == base::string16(kNativeWindowClassName);
 }
 #endif
+
+bool PluginServiceImpl::PpapiDevChannelSupported() {
+  return content::GetContentClient()->browser()->
+      IsPluginAllowedToUseDevChannelAPIs();
+}
 
 }  // namespace content

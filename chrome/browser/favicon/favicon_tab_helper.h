@@ -68,9 +68,7 @@ class FaviconTabHelper : public content::WebContentsObserver,
 
   // FaviconHandlerDelegate methods.
   virtual content::NavigationEntry* GetActiveEntry() OVERRIDE;
-  virtual int StartDownload(const GURL& url,
-                            int preferred_image_size,
-                            int max_image_size) OVERRIDE;
+  virtual int StartDownload(const GURL& url, int max_bitmap_size) OVERRIDE;
   virtual void NotifyFaviconUpdated(bool icon_url_changed) OVERRIDE;
 
   // Favicon download callback.
@@ -78,15 +76,15 @@ class FaviconTabHelper : public content::WebContentsObserver,
       int id,
       int http_status_code,
       const GURL& image_url,
-      int requested_size,
-      const std::vector<SkBitmap>& bitmaps);
+      const std::vector<SkBitmap>& bitmaps,
+      const std::vector<gfx::Size>& original_bitmap_sizes);
 
  private:
   explicit FaviconTabHelper(content::WebContents* web_contents);
   friend class content::WebContentsUserData<FaviconTabHelper>;
 
   // content::WebContentsObserver overrides.
-  virtual void NavigateToPendingEntry(
+  virtual void DidStartNavigationToPendingEntry(
       const GURL& url,
       content::NavigationController::ReloadType reload_type) OVERRIDE;
   virtual void DidNavigateMainFrame(

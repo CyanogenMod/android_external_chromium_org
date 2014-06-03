@@ -20,13 +20,13 @@ namespace IPC {
 }
 
 // A fake completion object for verification.
-class FakeTextCheckingCompletion : public WebKit::WebTextCheckingCompletion {
+class FakeTextCheckingCompletion : public blink::WebTextCheckingCompletion {
  public:
   FakeTextCheckingCompletion();
   ~FakeTextCheckingCompletion();
 
   virtual void didFinishCheckingText(
-      const WebKit::WebVector<WebKit::WebTextCheckingResult>& results) OVERRIDE;
+      const blink::WebVector<blink::WebTextCheckingResult>& results) OVERRIDE;
   virtual void didCancelCheckingText() OVERRIDE;
 
 
@@ -43,11 +43,11 @@ class TestingSpellCheckProvider : public SpellCheckProvider {
   virtual bool Send(IPC::Message* message) OVERRIDE;
   void OnCallSpellingService(int route_id,
                              int identifier,
-                             const string16& text,
+                             const base::string16& text,
                              const std::vector<SpellCheckMarker>& markers);
   void ResetResult();
 
-  string16 text_;
+  base::string16 text_;
   ScopedVector<IPC::Message> messages_;
   size_t spelling_service_call_count_;
 };

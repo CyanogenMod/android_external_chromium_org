@@ -142,23 +142,19 @@ class PPB_Instance_API {
                                 PP_URLComponents_Dev* components) = 0;
 #if !defined(OS_NACL)
   // Content Decryptor.
-  virtual void NeedKey(PP_Instance instance,
-                       PP_Var key_system,
-                       PP_Var session_id,
-                       PP_Var init_data) = 0;
-  virtual void KeyAdded(PP_Instance instance,
-                        PP_Var key_system,
-                        PP_Var session_id) = 0;
-  virtual void KeyMessage(PP_Instance instance,
-                          PP_Var key_system,
-                          PP_Var session_id,
-                          PP_Var message,
-                          PP_Var default_url) = 0;
-  virtual void KeyError(PP_Instance instance,
-                        PP_Var key_system,
-                        PP_Var session_id,
-                        int32_t media_error,
-                        int32_t system_error) = 0;
+  virtual void SessionCreated(PP_Instance instance,
+                              uint32 session_id,
+                              PP_Var web_session_id) = 0;
+  virtual void SessionMessage(PP_Instance instance,
+                              uint32 session_id,
+                              PP_Var message,
+                              PP_Var destination_url) = 0;
+  virtual void SessionReady(PP_Instance instance, uint32 session_id) = 0;
+  virtual void SessionClosed(PP_Instance instance, uint32 session_id) = 0;
+  virtual void SessionError(PP_Instance instance,
+                            uint32 session_id,
+                            int32_t media_error,
+                            int32_t system_error) = 0;
   virtual void DeliverBlock(PP_Instance instance,
                             PP_Resource decrypted_block,
                             const PP_DecryptedBlockInfo* block_info) = 0;
@@ -177,7 +173,7 @@ class PPB_Instance_API {
                             const PP_DecryptedFrameInfo* frame_info) = 0;
   virtual void DeliverSamples(PP_Instance instance,
                               PP_Resource audio_frames,
-                              const PP_DecryptedBlockInfo* block_info) = 0;
+                              const PP_DecryptedSampleInfo* sample_info) = 0;
 
   // URLUtil.
   virtual PP_Var ResolveRelativeToDocument(
@@ -188,6 +184,8 @@ class PPB_Instance_API {
   virtual PP_Bool DocumentCanAccessDocument(PP_Instance instance,
                                             PP_Instance target) = 0;
   virtual PP_Var GetPluginInstanceURL(PP_Instance instance,
+                                      PP_URLComponents_Dev* components) = 0;
+  virtual PP_Var GetPluginReferrerURL(PP_Instance instance,
                                       PP_URLComponents_Dev* components) = 0;
 #endif  // !defined(OS_NACL)
 

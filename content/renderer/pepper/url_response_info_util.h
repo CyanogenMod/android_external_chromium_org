@@ -9,11 +9,12 @@
 #include "ppapi/c/pp_instance.h"
 #include "ppapi/shared_impl/url_response_info_data.h"
 
-namespace WebKit {
+namespace blink {
 class WebURLResponse;
 }
 
 namespace content {
+class RendererPpapiHostImpl;
 
 typedef base::Callback<void(const ppapi::URLResponseInfoData&)>
     DataFromWebURLResponseCallback;
@@ -21,8 +22,9 @@ typedef base::Callback<void(const ppapi::URLResponseInfoData&)>
 // The returned object will have one plugin reference to the "body_as_file_ref"
 // if it's non-null. It's expected that the result of this function will be
 // passed to the plugin.
-void DataFromWebURLResponse(PP_Instance pp_instance,
-                            const WebKit::WebURLResponse& response,
+void DataFromWebURLResponse(RendererPpapiHostImpl* host_impl,
+                            PP_Instance pp_instance,
+                            const blink::WebURLResponse& response,
                             const DataFromWebURLResponseCallback& callback);
 
 }  // namespace content

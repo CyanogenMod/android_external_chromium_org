@@ -12,10 +12,12 @@
 #include "gpu/command_buffer/client/gles2_lib.h"
 #include "gpu/command_buffer/client/transfer_buffer.h"
 #include "gpu/command_buffer/common/constants.h"
+#include "gpu/command_buffer/common/gles2_cmd_utils.h"
 #include "gpu/command_buffer/service/command_buffer_service.h"
 #include "gpu/command_buffer/service/context_group.h"
 #include "gpu/command_buffer/service/gl_context_virtual.h"
 #include "gpu/command_buffer/service/gles2_cmd_decoder.h"
+#include "gpu/command_buffer/service/gpu_control_service.h"
 #include "gpu/command_buffer/service/gpu_scheduler.h"
 #include "gpu/command_buffer/service/image_manager.h"
 #include "gpu/command_buffer/service/mailbox_manager.h"
@@ -38,8 +40,7 @@ GLManager::Options::Options()
       virtual_manager(NULL),
       bind_generates_resource(false),
       context_lost_allowed(false),
-      image_manager(NULL),
-      image_factory(NULL) {
+      image_manager(NULL) {
 }
 
 GLManager::GLManager()
@@ -100,37 +101,25 @@ void GLManager::Initialize(const GLManager::Options& options) {
     real_gl_context = options.virtual_manager->context();
   }
 
-  // From <EGL/egl.h>.
-  const int32 EGL_ALPHA_SIZE = 0x3021;
-  const int32 EGL_BLUE_SIZE = 0x3022;
-  const int32 EGL_GREEN_SIZE = 0x3023;
-  const int32 EGL_RED_SIZE = 0x3024;
-  const int32 EGL_DEPTH_SIZE = 0x3025;
-  const int32 EGL_NONE = 0x3038;
-
   mailbox_manager_ =
       mailbox_manager ? mailbox_manager : new gles2::MailboxManager;
   share_group_ =
       share_group ? share_group : new gfx::GLShareGroup;
 
   gfx::GpuPreference gpu_preference(gfx::PreferDiscreteGpu);
-  const char* allowed_extensions = "*";
   std::vector<int32> attribs;
-  attribs.push_back(EGL_RED_SIZE);
-  attribs.push_back(8);
-  attribs.push_back(EGL_GREEN_SIZE);
-  attribs.push_back(8);
-  attribs.push_back(EGL_BLUE_SIZE);
-  attribs.push_back(8);
-  attribs.push_back(EGL_ALPHA_SIZE);
-  attribs.push_back(8);
-  attribs.push_back(EGL_DEPTH_SIZE);
-  attribs.push_back(16);
-  attribs.push_back(EGL_NONE);
+  gles2::ContextCreationAttribHelper attrib_helper;
+  attrib_helper.red_size_ = 8;
+  attrib_helper.green_size_ = 8;
+  attrib_helper.blue_size_ = 8;
+  attrib_helper.alpha_size_ = 8;
+  attrib_helper.depth_size_ = 16;
+  attrib_helper.Serialize(&attribs);
 
   if (!context_group) {
     context_group = new gles2::ContextGroup(mailbox_manager_.get(),
                                             options.image_manager,
+                                            NULL,
                                             NULL,
                                             NULL,
                                             options.bind_generates_resource);
@@ -179,8 +168,14 @@ void GLManager::Initialize(const GLManager::Options& options) {
       true,
       options.size,
       ::gpu::gles2::DisallowedFeatures(),
-      allowed_extensions,
       attribs)) << "could not initialize decoder";
+
+  gpu_control_.reset(
+      new GpuControlService(decoder_->GetContextGroup()->image_manager(),
+                            options.gpu_memory_buffer_factory,
+                            decoder_->GetContextGroup()->mailbox_manager(),
+                            decoder_->GetQueryManager(),
+                            decoder_->GetCapabilities()));
 
   command_buffer_->SetPutOffsetChangeCallback(
       base::Bind(&GLManager::PumpCommands, base::Unretained(this)));
@@ -194,18 +189,23 @@ void GLManager::Initialize(const GLManager::Options& options) {
   // Create a transfer buffer.
   transfer_buffer_.reset(new TransferBuffer(gles2_helper_.get()));
 
+  bool free_everything_when_invisible = false;
+
   // Create the object exposing the OpenGL API.
   gles2_implementation_.reset(new gles2::GLES2Implementation(
       gles2_helper_.get(),
       client_share_group,
       transfer_buffer_.get(),
       options.bind_generates_resource,
-      options.image_factory));
+      free_everything_when_invisible ,
+      gpu_control_.get()));
 
   ASSERT_TRUE(gles2_implementation_->Initialize(
       kStartTransferBufferSize,
       kMinTransferBufferSize,
-      kMaxTransferBufferSize)) << "Could not init GLES2Implementation";
+      kMaxTransferBufferSize,
+      gpu::gles2::GLES2Implementation::kNoLimit))
+          << "Could not init GLES2Implementation";
 
   MakeCurrent();
 }

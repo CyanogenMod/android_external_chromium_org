@@ -7,11 +7,11 @@
 #include "base/bind.h"
 #include "base/prefs/pref_registry_simple.h"
 #include "base/prefs/pref_service.h"
+#include "base/prefs/scoped_user_pref_update.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_thread.h"
 #include "url/gurl.h"
@@ -113,7 +113,7 @@ void ChromeAccessTokenStore::LoadAccessTokens(
 ChromeAccessTokenStore::~ChromeAccessTokenStore() {}
 
 static void SetAccessTokenOnUIThread(const GURL& server_url,
-                                     const string16& token) {
+                                     const base::string16& token) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DictionaryPrefUpdate update(g_browser_process->local_state(),
                               prefs::kGeolocationAccessToken);
@@ -122,8 +122,9 @@ static void SetAccessTokenOnUIThread(const GURL& server_url,
       server_url.spec(), Value::CreateStringValue(token));
 }
 
-void ChromeAccessTokenStore::SaveAccessToken(const GURL& server_url,
-                                             const string16& access_token) {
+void ChromeAccessTokenStore::SaveAccessToken(
+    const GURL& server_url,
+    const base::string16& access_token) {
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
       base::Bind(&SetAccessTokenOnUIThread, server_url, access_token));

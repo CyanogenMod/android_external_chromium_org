@@ -10,15 +10,11 @@
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
 #include "base/values.h"
-#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/settings/device_settings_provider.h"
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
 #include "chrome/browser/chromeos/settings/stub_cros_settings_provider.h"
 #include "chrome/browser/chromeos/settings/system_settings_provider.h"
 #include "chromeos/chromeos_switches.h"
-#include "content/public/browser/notification_details.h"
-#include "content/public/browser/notification_source.h"
-#include "content/public/browser/notification_types.h"
 #include "google_apis/gaia/gaia_auth_util.h"
 
 namespace chromeos {
@@ -204,7 +200,8 @@ bool CrosSettings::GetDictionary(
 }
 
 bool CrosSettings::FindEmailInList(const std::string& path,
-                                   const std::string& email) const {
+                                   const std::string& email,
+                                   bool* wildcard_match) const {
   DCHECK(CalledOnValidThread());
   std::string canonicalized_email(
       gaia::CanonicalizeEmail(gaia::SanitizeEmail(email)));
@@ -215,9 +212,14 @@ bool CrosSettings::FindEmailInList(const std::string& path,
         std::string("*").append(canonicalized_email.substr(at_pos));
   }
 
+  if (wildcard_match)
+    *wildcard_match = false;
+
   const base::ListValue* list;
   if (!GetList(path, &list))
     return false;
+
+  bool found_wildcard_match = false;
   for (base::ListValue::const_iterator entry(list->begin());
        entry != list->end();
        ++entry) {
@@ -229,12 +231,21 @@ bool CrosSettings::FindEmailInList(const std::string& path,
     std::string canonicalized_entry(
         gaia::CanonicalizeEmail(gaia::SanitizeEmail(entry_string)));
 
-    if (canonicalized_entry == canonicalized_email ||
-        canonicalized_entry == wildcard_email) {
+    if (canonicalized_entry != wildcard_email &&
+        canonicalized_entry == canonicalized_email) {
       return true;
     }
+
+    // If there is a wildcard match, don't exit early. There might be an exact
+    // match further down the list that should take precedence if present.
+    if (canonicalized_entry == wildcard_email)
+      found_wildcard_match = true;
   }
-  return false;
+
+  if (wildcard_match)
+    *wildcard_match = found_wildcard_match;
+
+  return found_wildcard_match;
 }
 
 bool CrosSettings::AddSettingsProvider(CrosSettingsProvider* provider) {
@@ -262,52 +273,31 @@ bool CrosSettings::RemoveSettingsProvider(CrosSettingsProvider* provider) {
   return false;
 }
 
-void CrosSettings::AddSettingsObserver(const char* path,
-                                       content::NotificationObserver* obs) {
-  DCHECK(path);
-  DCHECK(obs);
+scoped_ptr<CrosSettings::ObserverSubscription>
+CrosSettings::AddSettingsObserver(const std::string& path,
+                                  const base::Closure& callback) {
+  DCHECK(!path.empty());
+  DCHECK(!callback.is_null());
   DCHECK(CalledOnValidThread());
 
-  if (!GetProvider(std::string(path))) {
+  if (!GetProvider(path)) {
     NOTREACHED() << "Trying to add an observer for an unregistered setting: "
                  << path;
-    return;
+    return scoped_ptr<CrosSettings::ObserverSubscription>();
   }
 
-  // Get the settings observer list associated with the path.
-  NotificationObserverList* observer_list = NULL;
+  // Get the callback registry associated with the path.
+  base::CallbackList<void(void)>* registry = NULL;
   SettingsObserverMap::iterator observer_iterator =
       settings_observers_.find(path);
   if (observer_iterator == settings_observers_.end()) {
-    observer_list = new NotificationObserverList;
-    settings_observers_[path] = observer_list;
+    registry = new base::CallbackList<void(void)>;
+    settings_observers_[path] = registry;
   } else {
-    observer_list = observer_iterator->second;
+    registry = observer_iterator->second;
   }
 
-  // Verify that this observer doesn't already exist.
-  NotificationObserverList::Iterator it(*observer_list);
-  content::NotificationObserver* existing_obs;
-  while ((existing_obs = it.GetNext()) != NULL) {
-    if (existing_obs == obs)
-      return;
-  }
-
-  // Ok, safe to add the pref observer.
-  observer_list->AddObserver(obs);
-}
-
-void CrosSettings::RemoveSettingsObserver(const char* path,
-                                          content::NotificationObserver* obs) {
-  DCHECK(CalledOnValidThread());
-
-  SettingsObserverMap::iterator observer_iterator =
-      settings_observers_.find(path);
-  if (observer_iterator == settings_observers_.end())
-    return;
-
-  NotificationObserverList* observer_list = observer_iterator->second;
-  observer_list->RemoveObserver(obs);
+  return registry->Add(callback);
 }
 
 CrosSettingsProvider* CrosSettings::GetProvider(
@@ -326,13 +316,7 @@ void CrosSettings::FireObservers(const std::string& path) {
   if (observer_iterator == settings_observers_.end())
     return;
 
-  NotificationObserverList::Iterator it(*(observer_iterator->second));
-  content::NotificationObserver* observer;
-  while ((observer = it.GetNext()) != NULL) {
-    observer->Observe(chrome::NOTIFICATION_SYSTEM_SETTING_CHANGED,
-                      content::Source<CrosSettings>(this),
-                      content::Details<const std::string>(&path));
-  }
+  observer_iterator->second->Notify();
 }
 
 ScopedTestCrosSettings::ScopedTestCrosSettings() {

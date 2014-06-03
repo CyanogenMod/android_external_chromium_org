@@ -11,10 +11,10 @@
 #include "chrome/browser/extensions/extension_context_menu_model.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_list.h"
-#include "chrome/browser/ui/views/browser_action_view.h"
-#include "chrome/browser/ui/views/browser_actions_container.h"
 #include "chrome/browser/ui/views/extensions/browser_action_drag_data.h"
-#include "chrome/common/extensions/extension.h"
+#include "chrome/browser/ui/views/toolbar/browser_action_view.h"
+#include "chrome/browser/ui/views/toolbar/browser_actions_container.h"
+#include "extensions/common/extension.h"
 #include "ui/gfx/canvas.h"
 #include "ui/views/controls/menu/menu_item_view.h"
 #include "ui/views/controls/menu/menu_runner.h"
@@ -48,7 +48,7 @@ BrowserActionOverflowMenuController::BrowserActionOverflowMenuController(
         view->GetIconWithBadge());
 
     // Set the tooltip for this item.
-    string16 tooltip = UTF8ToUTF16(
+    base::string16 tooltip = UTF8ToUTF16(
         extensions::ExtensionActionManager::Get(owner_->profile())->
         GetBrowserAction(*view->button()->extension())->
         GetTitle(owner_->GetCurrentTabId()));

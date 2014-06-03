@@ -91,8 +91,8 @@ bool NameValuePairsParser::ParseNameValuePairsWithComments(
 
       std::string key;
       std::string value;
-      TrimString(pair.substr(0, eq_pos), kTrimChars, &key);
-      TrimString(pair.substr(eq_pos + 1, value_size), kTrimChars, &value);
+      base::TrimString(pair.substr(0, eq_pos), kTrimChars, &key);
+      base::TrimString(pair.substr(eq_pos + 1, value_size), kTrimChars, &value);
 
       if (!key.empty()) {
         AddNameValuePair(key, value);
@@ -123,7 +123,7 @@ bool NameValuePairsParser::GetNameValuePairsFromFile(
     const std::string& eq,
     const std::string& delim) {
   std::string contents;
-  if (file_util::ReadFileToString(file_path, &contents)) {
+  if (base::ReadFileToString(file_path, &contents)) {
     return ParseNameValuePairs(contents, eq, delim);
   } else {
     LOG(WARNING) << "Unable to read statistics file: " << file_path.value();

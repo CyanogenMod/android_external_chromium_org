@@ -10,7 +10,6 @@
 #include "base/observer_list.h"
 #include "chromeos/chromeos_export.h"
 #include "chromeos/dbus/bluetooth_agent_manager_client.h"
-#include "chromeos/dbus/dbus_client_implementation_type.h"
 #include "dbus/object_path.h"
 #include "dbus/property.h"
 
@@ -27,7 +26,8 @@ class CHROMEOS_EXPORT FakeBluetoothAgentManagerClient
   FakeBluetoothAgentManagerClient();
   virtual ~FakeBluetoothAgentManagerClient();
 
-  // BluetoothAgentManagerClient override
+  // BluetoothAgentManagerClient overrides
+  virtual void Init(dbus::Bus* bus) OVERRIDE;
   virtual void RegisterAgent(const dbus::ObjectPath& agent_path,
                              const std::string& capability,
                              const base::Closure& callback,

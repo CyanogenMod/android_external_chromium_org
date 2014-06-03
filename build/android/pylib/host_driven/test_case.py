@@ -15,8 +15,9 @@ which the test method will run against. The test runner runs the test method
 itself, collecting the result, and calls TearDown.
 
 Tests can perform arbitrary Python commands and asserts in test methods. Tests
-that run instrumentation tests can make use of the _RunJavaTests helper function
-to trigger Java tests and convert results into a single host-driven test result.
+that run instrumentation tests can make use of the _RunJavaTestFilters helper
+function to trigger Java tests and convert results into a single host-driven
+test result.
 """
 
 import logging
@@ -24,6 +25,9 @@ import os
 import time
 
 from pylib import android_commands
+from pylib import constants
+from pylib import forwarder
+from pylib import valgrind_tools
 from pylib.base import base_test_result
 from pylib.instrumentation import test_package
 from pylib.instrumentation import test_result
@@ -54,55 +58,72 @@ class HostDrivenTestCase(object):
 
     self.instrumentation_options = instrumentation_options
     self.ports_to_forward = []
+    self.has_forwarded_ports = False
 
-  def SetUp(self, device, shard_index, build_type, push_deps,
-            cleanup_test_files):
+  # TODO(bulach): make ports_to_forward not optional and move the Forwarder
+  # mapping here.
+  def SetUp(self, device, shard_index, push_deps,
+            cleanup_test_files, ports_to_forward=[]):
     self.device_id = device
     self.shard_index = shard_index
-    self.build_type = build_type
     self.adb = android_commands.AndroidCommands(self.device_id)
     self.push_deps = push_deps
     self.cleanup_test_files = cleanup_test_files
+    if ports_to_forward:
+      self.ports_to_forward = ports_to_forward
 
   def TearDown(self):
     pass
 
+  # TODO(craigdh): Remove GetOutDir once references have been removed
+  # downstream.
   def GetOutDir(self):
-    return os.path.join(os.environ['CHROME_SRC'], 'out',
-                        self.build_type)
+    return constants.GetOutDirectory()
 
   def Run(self):
     logging.info('Running host-driven test: %s', self.tagged_name)
     # Get the test method on the derived class and execute it
     return getattr(self, self.test_name)()
 
-  def __RunJavaTest(self, package_name, test_case, test_method):
-    """Runs a single Java test method with a Java TestRunner.
+  def __GetHostForwarderLog(self):
+    return ('-- Begin Full HostForwarder log\n'
+            '%s\n'
+            '--End Full HostForwarder log\n' % forwarder.Forwarder.GetHostLog())
+
+  def __StartForwarder(self):
+    logging.warning('Forwarding %s %s', self.ports_to_forward,
+                    self.has_forwarded_ports)
+    if self.ports_to_forward and not self.has_forwarded_ports:
+      self.has_forwarded_ports = True
+      tool = valgrind_tools.CreateTool(None, self.adb)
+      forwarder.Forwarder.Map([(port, port) for port in self.ports_to_forward],
+                              self.adb, tool)
+
+  def __RunJavaTest(self, test, test_pkg, additional_flags=None):
+    """Runs a single Java test in a Java TestRunner.
 
     Args:
-      package_name: Package name in which the java tests live
-          (e.g. foo.bar.baz.tests)
-      test_case: Name of the Java test case (e.g. FooTest)
-      test_method: Name of the test method to run (e.g. testFooBar)
+      test: Fully qualified test name (ex. foo.bar.TestClass#testMethod)
+      test_pkg: TestPackage object.
+      additional_flags: A list of additional flags to add to the command line.
 
     Returns:
       TestRunResults object with a single test result.
     """
-    test = '%s.%s#%s' % (package_name, test_case, test_method)
-    test_pkg = test_package.TestPackage(
-        self.instrumentation_options.test_apk_path,
-        self.instrumentation_options.test_apk_jar_path)
+    # TODO(bulach): move this to SetUp() stage.
+    self.__StartForwarder()
+
     java_test_runner = test_runner.TestRunner(self.instrumentation_options,
                                               self.device_id,
                                               self.shard_index, test_pkg,
-                                              self.ports_to_forward)
+                                              additional_flags=additional_flags)
     try:
       java_test_runner.SetUp()
       return java_test_runner.RunTest(test)[0]
     finally:
       java_test_runner.TearDown()
 
-  def _RunJavaTests(self, package_name, tests):
+  def _RunJavaTestFilters(self, test_filters, additional_flags=None):
     """Calls a list of tests and stops at the first test failure.
 
     This method iterates until either it encounters a non-passing test or it
@@ -113,9 +134,8 @@ class HostDrivenTestCase(object):
     being defined.
 
     Args:
-      package_name: Package name in which the java tests live
-          (e.g. foo.bar.baz.tests)
-      tests: A list of Java test names which will be run
+      test_filters: A list of Java test filters.
+      additional_flags: A list of addition flags to add to the command line.
 
     Returns:
       A TestRunResults object containing an overall result for this set of Java
@@ -124,17 +144,31 @@ class HostDrivenTestCase(object):
     test_type = base_test_result.ResultType.PASS
     log = ''
 
+    test_pkg = test_package.TestPackage(
+        self.instrumentation_options.test_apk_path,
+        self.instrumentation_options.test_apk_jar_path)
+
     start_ms = int(time.time()) * 1000
-    for test in tests:
-      # We're only running one test at a time, so this TestRunResults object
-      # will hold only one result.
-      suite, test_name = test.split('.')
-      java_result = self.__RunJavaTest(package_name, suite, test_name)
-      assert len(java_result.GetAll()) == 1
-      if not java_result.DidRunPass():
-        result = java_result.GetNotPass().pop()
-        log = result.GetLog()
-        test_type = result.GetType()
+    done = False
+    for test_filter in test_filters:
+      tests = test_pkg._GetAllMatchingTests(None, None, test_filter)
+      # Filters should always result in >= 1 test.
+      if len(tests) == 0:
+        raise Exception('Java test filter "%s" returned no tests.'
+                        % test_filter)
+      for test in tests:
+        # We're only running one test at a time, so this TestRunResults object
+        # will hold only one result.
+        java_result = self.__RunJavaTest(test, test_pkg, additional_flags)
+        assert len(java_result.GetAll()) == 1
+        if not java_result.DidRunPass():
+          result = java_result.GetNotPass().pop()
+          log = result.GetLog()
+          log += self.__GetHostForwarderLog()
+          test_type = result.GetType()
+          done = True
+          break
+      if done:
         break
     duration_ms = int(time.time()) * 1000 - start_ms
 

@@ -4,6 +4,7 @@
 
 cr.define('options', function() {
   var OptionsPage = options.OptionsPage;
+  var ResetProfileSettingsBanner = options.ResetProfileSettingsBanner;
 
   /**
    * ResetProfileSettingsOverlay class
@@ -37,10 +38,15 @@ cr.define('options', function() {
         chrome.send('performResetProfileSettings',
                     [$('send-settings').checked]);
       };
+      $('expand-feedback').onclick = function(event) {
+        var feedbackTemplate = $('feedback-template');
+        feedbackTemplate.hidden = !feedbackTemplate.hidden;
+      };
     },
 
     /** @override */
     didShowPage: function() {
+      ResetProfileSettingsBanner.dismiss();
       chrome.send('onShowResetProfileDialog');
     },
   };
@@ -75,6 +81,12 @@ cr.define('options', function() {
   ResetProfileSettingsOverlay.dismiss = function() {
     OptionsPage.closeOverlay();
     ResetProfileSettingsOverlay.setResettingState(false);
+  };
+
+  ResetProfileSettingsOverlay.setFeedbackInfo = function(feedbackListData) {
+    var input = new JsEvalContext(feedbackListData);
+    var output = $('feedback-template');
+    jstProcess(input, output);
   };
 
   // Export

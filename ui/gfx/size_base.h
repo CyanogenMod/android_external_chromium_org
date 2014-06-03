@@ -5,13 +5,13 @@
 #ifndef UI_GFX_SIZE_BASE_H_
 #define UI_GFX_SIZE_BASE_H_
 
-#include "ui/base/ui_export.h"
+#include "ui/gfx/gfx_export.h"
 
 namespace gfx {
 
 // A size has width and height values.
 template<typename Class, typename Type>
-class UI_EXPORT SizeBase {
+class GFX_EXPORT SizeBase {
  public:
   Type width() const { return width_; }
   Type height() const { return height_; }

@@ -15,7 +15,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/certificate_viewer.h"
 #include "chrome/browser/ssl/ssl_client_auth_observer.h"
-#include "chrome/browser/ui/crypto_module_password_dialog.h"
+#include "chrome/browser/ui/crypto_module_password_dialog_nss.h"
 #include "chrome/browser/ui/gtk/constrained_window_gtk.h"
 #include "chrome/browser/ui/gtk/gtk_util.h"
 #include "chrome/common/net/x509_certificate_model.h"
@@ -24,12 +24,12 @@
 #include "grit/generated_resources.h"
 #include "net/cert/x509_certificate.h"
 #include "net/ssl/ssl_cert_request_info.h"
-#include "ui/base/gtk/gtk_compat.h"
 #include "ui/base/gtk/gtk_hig_constants.h"
 #include "ui/base/gtk/gtk_signal.h"
-#include "ui/base/gtk/scoped_gobject.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/gfx/gtk_compat.h"
 #include "ui/gfx/native_widget_types.h"
+#include "ui/gfx/scoped_gobject.h"
 
 using content::BrowserThread;
 using content::WebContents;
@@ -272,8 +272,8 @@ std::string SSLClientCertificateSelector::FormatDetailsText(
 
   base::Time issued, expires;
   if (x509_certificate_model::GetTimes(cert, &issued, &expires)) {
-    string16 issued_str = base::TimeFormatShortDateAndTime(issued);
-    string16 expires_str = base::TimeFormatShortDateAndTime(expires);
+    base::string16 issued_str = base::TimeFormatShortDateAndTime(issued);
+    base::string16 expires_str = base::TimeFormatShortDateAndTime(expires);
     rv += "\n  ";
     rv += l10n_util::GetStringFUTF8(IDS_CERT_VALIDITY_RANGE_FORMAT,
                                     issued_str, expires_str);
@@ -308,7 +308,7 @@ std::string SSLClientCertificateSelector::FormatDetailsText(
       IDS_CERT_ISSUERNAME_FORMAT,
       UTF8ToUTF16(x509_certificate_model::GetIssuerName(cert)));
 
-  string16 token(UTF8ToUTF16(x509_certificate_model::GetTokenName(cert)));
+  base::string16 token(UTF8ToUTF16(x509_certificate_model::GetTokenName(cert)));
   if (!token.empty()) {
     rv += '\n';
     rv += l10n_util::GetStringFUTF8(IDS_CERT_TOKEN_FORMAT, token);
@@ -350,19 +350,25 @@ void SSLClientCertificateSelector::OnCancelClicked(GtkWidget* button) {
 }
 
 void SSLClientCertificateSelector::OnOkClicked(GtkWidget* button) {
-  net::X509Certificate* cert = GetSelectedCert();
-
   // Remove the observer before we try unlocking, otherwise we might act on a
   // notification while waiting for the unlock dialog, causing us to delete
   // ourself before the Unlocked callback gets called.
   StopObserving();
 
+#if defined(USE_NSS)
+  GtkWidget* toplevel = gtk_widget_get_toplevel(root_widget_.get());
+  net::X509Certificate* cert = GetSelectedCert();
+
   chrome::UnlockCertSlotIfNecessary(
       cert,
       chrome::kCryptoModulePasswordClientAuth,
       cert_request_info()->host_and_port,
+      GTK_WINDOW(toplevel),
       base::Bind(&SSLClientCertificateSelector::Unlocked,
                  base::Unretained(this)));
+#else
+  Unlocked();
+#endif
 }
 
 void SSLClientCertificateSelector::OnPromptShown(GtkWidget* widget,

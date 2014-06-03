@@ -36,22 +36,22 @@ void FileBrowserHandlerCustomBindings::GetExternalFileEntry(
     v8::Local<v8::Object> file_def = args[0]->ToObject();
     std::string file_system_name(
         *v8::String::Utf8Value(file_def->Get(
-            v8::String::New("fileSystemName"))));
+            v8::String::NewFromUtf8(args.GetIsolate(), "fileSystemName"))));
     std::string file_system_path(
         *v8::String::Utf8Value(file_def->Get(
-            v8::String::New("fileSystemRoot"))));
+            v8::String::NewFromUtf8(args.GetIsolate(), "fileSystemRoot"))));
     std::string file_full_path(
         *v8::String::Utf8Value(file_def->Get(
-            v8::String::New("fileFullPath"))));
-    bool is_directory =
-        file_def->Get(v8::String::New("fileIsDirectory"))->ToBoolean()->Value();
-    WebKit::WebFrame* webframe =
-        WebKit::WebFrame::frameForContext(context()->v8_context());
+            v8::String::NewFromUtf8(args.GetIsolate(), "fileFullPath"))));
+    bool is_directory = file_def->Get(v8::String::NewFromUtf8(
+        args.GetIsolate(), "fileIsDirectory"))->ToBoolean()->Value();
+    blink::WebFrame* webframe =
+        blink::WebFrame::frameForContext(context()->v8_context());
     args.GetReturnValue().Set(webframe->createFileEntry(
-        WebKit::WebFileSystemTypeExternal,
-        WebKit::WebString::fromUTF8(file_system_name.c_str()),
-        WebKit::WebString::fromUTF8(file_system_path.c_str()),
-        WebKit::WebString::fromUTF8(file_full_path.c_str()),
+        blink::WebFileSystemTypeExternal,
+        blink::WebString::fromUTF8(file_system_name.c_str()),
+        blink::WebString::fromUTF8(file_system_path.c_str()),
+        blink::WebString::fromUTF8(file_full_path.c_str()),
         is_directory));
 #endif
 }

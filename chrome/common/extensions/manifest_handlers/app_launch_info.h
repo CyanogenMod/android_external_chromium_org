@@ -8,10 +8,10 @@
 #include <string>
 #include <vector>
 
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
-#include "chrome/common/extensions/manifest.h"
-#include "chrome/common/extensions/manifest_handler.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/manifest.h"
+#include "extensions/common/manifest_handler.h"
 #include "url/gurl.h"
 
 namespace extensions {
@@ -33,7 +33,7 @@ class AppLaunchInfo : public Extension::ManifestData {
   // users can override the way each app launches.  See
   // ExtensionPrefs::GetLaunchContainer(), which looks at a per-app pref
   // to decide what container an app will launch in.
-  static extension_misc::LaunchContainer GetLaunchContainer(
+  static LaunchContainer GetLaunchContainer(
       const Extension* extension);
 
   // The default size of the container when launching. Only respected for
@@ -44,18 +44,18 @@ class AppLaunchInfo : public Extension::ManifestData {
   // Get the fully resolved absolute launch URL.
   static GURL GetFullLaunchURL(const Extension* extension);
 
-  bool Parse(Extension* extension, string16* error);
+  bool Parse(Extension* extension, base::string16* error);
 
  private:
-  bool LoadLaunchURL(Extension* extension, string16* error);
-  bool LoadLaunchContainer(Extension* extension, string16* error);
+  bool LoadLaunchURL(Extension* extension, base::string16* error);
+  bool LoadLaunchContainer(Extension* extension, base::string16* error);
   void OverrideLaunchURL(Extension* extension, GURL override_url);
 
   std::string launch_local_path_;
 
   GURL launch_web_url_;
 
-  extension_misc::LaunchContainer launch_container_;
+  LaunchContainer launch_container_;
 
   int launch_width_;
   int launch_height_;
@@ -69,7 +69,7 @@ class AppLaunchManifestHandler : public ManifestHandler {
   AppLaunchManifestHandler();
   virtual ~AppLaunchManifestHandler();
 
-  virtual bool Parse(Extension* extension, string16* error) OVERRIDE;
+  virtual bool Parse(Extension* extension, base::string16* error) OVERRIDE;
   virtual bool AlwaysParseForType(Manifest::Type type) const OVERRIDE;
 
  private:

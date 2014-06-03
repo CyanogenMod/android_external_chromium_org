@@ -26,6 +26,7 @@ SerializedNavigationEntry::SerializedNavigationEntry()
       has_post_data_(false),
       post_id_(-1),
       is_overriding_user_agent_(false),
+      http_status_code_(0),
       blocked_state_(STATE_INVALID) {}
 
 SerializedNavigationEntry::~SerializedNavigationEntry() {}
@@ -53,6 +54,7 @@ SerializedNavigationEntry SerializedNavigationEntry::FromNavigationEntry(
   entry.GetExtraData(kSearchTermsKey, &navigation.search_terms_);
   if (entry.GetFavicon().valid)
     navigation.favicon_url_ = entry.GetFavicon().url;
+  navigation.http_status_code_ = entry.GetHttpStatusCode();
 
   return navigation;
 }
@@ -65,7 +67,7 @@ SerializedNavigationEntry SerializedNavigationEntry::FromSyncData(
   navigation.unique_id_ = sync_data.unique_id();
   navigation.referrer_ =
       content::Referrer(GURL(sync_data.referrer()),
-                        WebKit::WebReferrerPolicyDefault);
+                        blink::WebReferrerPolicyDefault);
   navigation.virtual_url_ = GURL(sync_data.virtual_url());
   navigation.title_ = UTF8ToUTF16(sync_data.title());
   navigation.page_state_ =
@@ -143,6 +145,8 @@ SerializedNavigationEntry SerializedNavigationEntry::FromSyncData(
   if (sync_data.has_favicon_url())
     navigation.favicon_url_ = GURL(sync_data.favicon_url());
 
+  navigation.http_status_code_ = sync_data.http_status_code();
+
   // We shouldn't sync session data for managed users down at the moment.
   DCHECK(!sync_data.has_blocked_state());
   DCHECK_EQ(0, sync_data.content_pack_categories_size());
@@ -172,19 +176,19 @@ void WriteStringToPickle(Pickle* pickle,
   }
 }
 
-// string16 version of WriteStringToPickle.
+// base::string16 version of WriteStringToPickle.
 //
 // TODO(akalin): Unify this, too.
 void WriteString16ToPickle(Pickle* pickle,
                            int* bytes_written,
                            int max_bytes,
-                           const string16& str) {
+                           const base::string16& str) {
   int num_bytes = str.size() * sizeof(char16);
   if (*bytes_written + num_bytes < max_bytes) {
     *bytes_written += num_bytes;
     pickle->WriteString16(str);
   } else {
-    pickle->WriteString16(string16());
+    pickle->WriteString16(base::string16());
   }
 }
 
@@ -216,6 +220,7 @@ enum TypeMask {
 // is_overriding_user_agent_
 // timestamp_
 // search_terms_
+// http_status_code_
 
 void SerializedNavigationEntry::WriteToPickle(int max_size,
                                               Pickle* pickle) const {
@@ -255,6 +260,8 @@ void SerializedNavigationEntry::WriteToPickle(int max_size,
   pickle->WriteInt64(timestamp_.ToInternalValue());
 
   WriteString16ToPickle(pickle, &bytes_written, max_size, search_terms_);
+
+  pickle->WriteInt(http_status_code_);
 }
 
 bool SerializedNavigationEntry::ReadFromPickle(PickleIterator* iterator) {
@@ -286,11 +293,11 @@ bool SerializedNavigationEntry::ReadFromPickle(PickleIterator* iterator) {
     // The "referrer policy" property was added even later, so we fall back to
     // the default policy if the property is not present.
     int policy_int;
-    WebKit::WebReferrerPolicy policy;
+    blink::WebReferrerPolicy policy;
     if (iterator->ReadInt(&policy_int))
-      policy = static_cast<WebKit::WebReferrerPolicy>(policy_int);
+      policy = static_cast<blink::WebReferrerPolicy>(policy_int);
     else
-      policy = WebKit::WebReferrerPolicyDefault;
+      policy = blink::WebReferrerPolicyDefault;
     referrer_ = content::Referrer(GURL(referrer_spec), policy);
 
     // If the original URL can't be found, leave it empty.
@@ -313,6 +320,9 @@ bool SerializedNavigationEntry::ReadFromPickle(PickleIterator* iterator) {
     // If the search terms field can't be found, leave it empty.
     if (!iterator->ReadString16(&search_terms_))
       search_terms_.clear();
+
+    if (!iterator->ReadInt(&http_status_code_))
+      http_status_code_ = 0;
   }
 
   return true;
@@ -342,6 +352,7 @@ scoped_ptr<NavigationEntry> SerializedNavigationEntry::ToNavigationEntry(
   entry->SetIsOverridingUserAgent(is_overriding_user_agent_);
   entry->SetTimestamp(timestamp_);
   entry->SetExtraData(kSearchTermsKey, search_terms_);
+  entry->SetHttpStatusCode(http_status_code_);
 
   // These fields should have default values.
   DCHECK_EQ(STATE_INVALID, blocked_state_);
@@ -439,6 +450,8 @@ sync_pb::TabNavigation SerializedNavigationEntry::ToSyncData() const {
   sync_data.set_global_id(timestamp_.ToInternalValue());
 
   sync_data.set_search_terms(UTF16ToUTF8(search_terms_));
+
+  sync_data.set_http_status_code(http_status_code_);
 
   if (favicon_url_.is_valid())
     sync_data.set_favicon_url(favicon_url_.spec());

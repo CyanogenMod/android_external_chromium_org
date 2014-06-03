@@ -49,6 +49,7 @@ class PbufferImageTransportSurface
   virtual void OnResizeViewACK() OVERRIDE;
   virtual void OnResize(gfx::Size size, float scale_factor) OVERRIDE;
   virtual void SetLatencyInfo(const ui::LatencyInfo&) OVERRIDE;
+  virtual void WakeUpGpu() OVERRIDE;
   virtual gfx::Size GetSize() OVERRIDE;
 
  private:
@@ -182,8 +183,7 @@ void PbufferImageTransportSurface::SetFrontbufferAllocation(bool allocation) {
 }
 
 void PbufferImageTransportSurface::DestroySurface() {
-  GpuHostMsg_AcceleratedSurfaceRelease_Params params;
-  helper_->SendAcceleratedSurfaceRelease(params);
+  helper_->SendAcceleratedSurfaceRelease();
 }
 
 std::string PbufferImageTransportSurface::GetExtensions() {
@@ -207,7 +207,12 @@ void PbufferImageTransportSurface::SendBuffersSwapped() {
 }
 
 void PbufferImageTransportSurface::OnBufferPresented(
-    const AcceleratedSurfaceMsg_BufferPresented_Params& /* params */) {
+    const AcceleratedSurfaceMsg_BufferPresented_Params& params) {
+  if (!params.vsync_timebase.is_null() &&
+      params.vsync_interval != base::TimeDelta()) {
+    helper_->SendUpdateVSyncParameters(params.vsync_timebase,
+                                       params.vsync_interval);
+  }
   is_swap_buffers_pending_ = false;
   if (did_unschedule_) {
     did_unschedule_ = false;
@@ -233,6 +238,10 @@ void PbufferImageTransportSurface::OnResize(gfx::Size size,
 void PbufferImageTransportSurface::SetLatencyInfo(
     const ui::LatencyInfo& latency_info) {
   latency_info_ = latency_info;
+}
+
+void PbufferImageTransportSurface::WakeUpGpu() {
+  NOTIMPLEMENTED();
 }
 
 gfx::Size PbufferImageTransportSurface::GetSize() {

@@ -1,4 +1,4 @@
-// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,13 +7,13 @@ package org.chromium.chrome.browser;
 import android.content.Context;
 import android.speech.tts.TextToSpeech;
 import android.speech.tts.UtteranceProgressListener;
-import java.lang.Double;
-import java.lang.Integer;
+
+import org.chromium.base.CalledByNative;
+import org.chromium.base.ThreadUtils;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Locale;
-import org.chromium.base.CalledByNative;
-import org.chromium.base.ThreadUtils;
 
 /**
  * This class is the Java counterpart to the C++ TtsPlatformImplAndroid class.
@@ -32,18 +32,19 @@ class TtsPlatformImpl {
         }
         private final String mName;
         private final String mLanguage;
-    };
+    }
 
-    private int mNativeTtsPlatformImplAndroid;
+    private long mNativeTtsPlatformImplAndroid;
     private final TextToSpeech mTextToSpeech;
     private boolean mInitialized;
     private ArrayList<TtsVoice> mVoices;
     private String mCurrentLanguage;
 
-    private TtsPlatformImpl(int nativeTtsPlatformImplAndroid, Context context) {
+    private TtsPlatformImpl(long nativeTtsPlatformImplAndroid, Context context) {
         mInitialized = false;
         mNativeTtsPlatformImplAndroid = nativeTtsPlatformImplAndroid;
         mTextToSpeech = new TextToSpeech(context, new TextToSpeech.OnInitListener() {
+                @Override
                 public void onInit(int status) {
                     if (status == TextToSpeech.SUCCESS) {
                         ThreadUtils.runOnUiThread(new Runnable() {
@@ -56,6 +57,7 @@ class TtsPlatformImpl {
                 }
             });
         mTextToSpeech.setOnUtteranceProgressListener(new UtteranceProgressListener() {
+                @Override
                 public void onDone(final String utteranceId) {
                     ThreadUtils.runOnUiThread(new Runnable() {
                         @Override
@@ -68,6 +70,7 @@ class TtsPlatformImpl {
                     });
                 }
 
+                @Override
                 public void onError(final String utteranceId) {
                     ThreadUtils.runOnUiThread(new Runnable() {
                         @Override
@@ -80,6 +83,7 @@ class TtsPlatformImpl {
                     });
                 }
 
+                @Override
                 public void onStart(final String utteranceId) {
                     ThreadUtils.runOnUiThread(new Runnable() {
                         @Override
@@ -92,7 +96,7 @@ class TtsPlatformImpl {
                     });
                 }
             });
-    };
+    }
 
     /**
      * Create a TtsPlatformImpl object, which is owned by TtsPlatformImplAndroid
@@ -228,8 +232,8 @@ class TtsPlatformImpl {
         nativeVoicesChanged(mNativeTtsPlatformImplAndroid);
     }
 
-    private native void nativeVoicesChanged(int nativeTtsPlatformImplAndroid);
-    private native void nativeOnEndEvent(int nativeTtsPlatformImplAndroid, int utteranceId);
-    private native void nativeOnStartEvent(int nativeTtsPlatformImplAndroid, int utteranceId);
-    private native void nativeOnErrorEvent(int nativeTtsPlatformImplAndroid, int utteranceId);
+    private native void nativeVoicesChanged(long nativeTtsPlatformImplAndroid);
+    private native void nativeOnEndEvent(long nativeTtsPlatformImplAndroid, int utteranceId);
+    private native void nativeOnStartEvent(long nativeTtsPlatformImplAndroid, int utteranceId);
+    private native void nativeOnErrorEvent(long nativeTtsPlatformImplAndroid, int utteranceId);
 }

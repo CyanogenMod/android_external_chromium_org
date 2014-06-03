@@ -100,16 +100,13 @@ bool DoIsRelativeURL(const char* base,
   // BUT: Just because we have a scheme, doesn't make it absolute.
   // "http:foo.html" is a relative URL with path "foo.html". If the scheme is
   // empty, we treat it as relative (":foo") like IE does.
-  url_parse::Parsed url_parsed;
-  url_parse::ParsePathURL(url, url_len, &url_parsed);
-  const url_parse::Component& scheme = url_parsed.scheme;
-  const bool scheme_is_empty = !scheme.is_nonempty();
+  url_parse::Component scheme;
+  const bool scheme_is_empty =
+      !url_parse::ExtractScheme(url, url_len, &scheme) || scheme.len == 0;
   if (scheme_is_empty) {
-    // No scheme. See if is a bare fragment.
-    if (url_parsed.ref.is_valid() &&
-        url_parsed.CountCharactersBefore(url_parse::Parsed::REF, true) ==
-        url_parsed.CountCharactersBefore(url_parse::Parsed::SCHEME, false)) {
-      // |url| is a bare fragement. This can be resolved against any base.
+    if (url[begin] == '#') {
+      // |url| is a bare fragement (e.g. "#foo"). This can be resolved against
+      // any base. Fall-through.
     } else if (!is_base_hierarchical) {
       // Don't allow relative URLs if the base scheme doesn't support it.
       return false;
@@ -484,11 +481,14 @@ bool DoResolveRelativeURL(const char* base_url,
 #else
   // Other platforms need explicit handling for file: URLs with multiple
   // slashes because the generic scheme parsing always extracts a host, but a
-  // file: URL only has a host if it has exactly 2 slashes. This also
-  // handles the special case where the URL is only slashes, since that
-  // doesn't have a host part either.
+  // file: URL only has a host if it has exactly 2 slashes. Even if it does
+  // have a host, we want to use the special host detection logic for file
+  // URLs provided by DoResolveAbsoluteFile(), as opposed to the generic host
+  // detection logic, for consistency with parsing file URLs from scratch.
+  // This also handles the special case where the URL is only slashes,
+  // since that doesn't have a host part either.
   if (base_is_file &&
-      (num_slashes > 2 || num_slashes == relative_component.len)) {
+      (num_slashes >= 2 || num_slashes == relative_component.len)) {
     return DoResolveAbsoluteFile(relative_url, relative_component,
                                  query_converter, output, out_parsed);
   }

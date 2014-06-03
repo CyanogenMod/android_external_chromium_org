@@ -8,6 +8,7 @@
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "base/mac/mac_util.h"
+#import "base/mac/sdk_forward_declarations.h"
 #include "base/message_loop/message_loop.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/sys_string_conversions.h"
@@ -19,7 +20,6 @@
 #include "chrome/browser/password_manager/password_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/shell_integration.h"
-#include "chrome/browser/ui/bookmarks/bookmark_utils.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_command_controller.h"
 #include "chrome/browser/ui/browser_commands.h"
@@ -45,16 +45,15 @@
 #import "chrome/browser/ui/cocoa/website_settings_bubble_controller.h"
 #include "chrome/browser/ui/search/search_model.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/browser/ui/web_applications/web_app_ui.h"
 #include "chrome/browser/web_applications/web_app.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
+#include "components/autofill/core/common/password_form.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
-#include "content/public/common/password_form.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util_mac.h"
@@ -68,26 +67,6 @@
 using content::NativeWebKeyboardEvent;
 using content::SSLStatus;
 using content::WebContents;
-
-// Replicate specific 10.7 SDK declarations for building with prior SDKs.
-#if !defined(MAC_OS_X_VERSION_10_7) || \
-    MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_7
-
-enum {
-  NSWindowAnimationBehaviorDefault = 0,
-  NSWindowAnimationBehaviorNone = 2,
-  NSWindowAnimationBehaviorDocumentWindow = 3,
-  NSWindowAnimationBehaviorUtilityWindow = 4,
-  NSWindowAnimationBehaviorAlertPanel = 5
-};
-typedef NSInteger NSWindowAnimationBehavior;
-
-@interface NSWindow (LionSDKDeclarations)
-- (NSWindowAnimationBehavior)animationBehavior;
-- (void)setAnimationBehavior:(NSWindowAnimationBehavior)newAnimationBehavior;
-@end
-
-#endif  // MAC_OS_X_VERSION_10_7
 
 namespace {
 
@@ -105,20 +84,12 @@ NSPoint GetPointForBubble(content::WebContents* web_contents,
   return point;
 }
 
-void CreateShortcuts(const ShellIntegration::ShortcutInfo& shortcut_info) {
-  // creation_locations will be ignored by CreatePlatformShortcuts on Mac.
-  ShellIntegration::ShortcutLocations creation_locations;
-  web_app::CreateShortcuts(shortcut_info, creation_locations,
-                           web_app::SHORTCUT_CREATION_BY_USER);
-}
-
 }  // namespace
 
 BrowserWindowCocoa::BrowserWindowCocoa(Browser* browser,
                                        BrowserWindowController* controller)
   : browser_(browser),
     controller_(controller),
-    confirm_close_factory_(browser),
     initial_show_state_(ui::SHOW_STATE_DEFAULT),
     attention_request_id_(0) {
 
@@ -260,6 +231,11 @@ bool BrowserWindowCocoa::IsAlwaysOnTop() const {
   return false;
 }
 
+void BrowserWindowCocoa::SetAlwaysOnTop(bool always_on_top) {
+  // Not implemented for browser windows.
+  NOTIMPLEMENTED();
+}
+
 bool BrowserWindowCocoa::IsActive() const {
   return [window() isKeyWindow];
 }
@@ -304,6 +280,21 @@ void BrowserWindowCocoa::UpdateLoadingAnimations(bool should_animate) {
 
 void BrowserWindowCocoa::SetStarredState(bool is_starred) {
   [controller_ setStarredState:is_starred ? YES : NO];
+}
+
+void BrowserWindowCocoa::SetTranslateIconToggled(bool is_lit) {
+  NOTIMPLEMENTED();
+}
+
+void BrowserWindowCocoa::OnActiveTabChanged(content::WebContents* old_contents,
+                                            content::WebContents* new_contents,
+                                            int index,
+                                            int reason) {
+  // TODO(pkasting): Perhaps the code in
+  // TabStripController::activateTabWithContents should move here?  Or this
+  // should call that (instead of TabStripModelObserverBridge doing so)?  It's
+  // not obvious to me why Mac doesn't handle tab changes in BrowserWindow the
+  // way views and GTK do.
 }
 
 void BrowserWindowCocoa::ZoomChangedForActiveTab(bool can_show_bubble) {
@@ -424,10 +415,8 @@ void BrowserWindowCocoa::UpdateReloadStopState(bool is_loading, bool force) {
   [controller_ setIsLoading:is_loading force:force];
 }
 
-void BrowserWindowCocoa::UpdateToolbar(content::WebContents* contents,
-                                       bool should_restore_state) {
-  [controller_ updateToolbarWithContents:contents
-                      shouldRestoreState:should_restore_state ? YES : NO];
+void BrowserWindowCocoa::UpdateToolbar(content::WebContents* contents) {
+  [controller_ updateToolbarWithContents:contents];
 }
 
 void BrowserWindowCocoa::FocusToolbar() {
@@ -474,14 +463,6 @@ gfx::Rect BrowserWindowCocoa::GetRootWindowResizerRect() const {
   return gfx::Rect(NSRectToCGRect(tabRect));
 }
 
-// This is called from Browser, which in turn is called directly from
-// a menu option.  All we do here is set a preference.  The act of
-// setting the preference sends notifications to all windows who then
-// know what to do.
-void BrowserWindowCocoa::ToggleBookmarkBar() {
-  chrome::ToggleBookmarkBarWhenVisible(browser_->profile());
-}
-
 void BrowserWindowCocoa::AddFindBar(
     FindBarCocoaController* find_bar_cocoa_controller) {
   [controller_ addFindBar:find_bar_cocoa_controller];
@@ -497,11 +478,18 @@ void BrowserWindowCocoa::ShowBookmarkBubble(const GURL& url,
                       alreadyBookmarked:(already_bookmarked ? YES : NO)];
 }
 
+void BrowserWindowCocoa::ShowTranslateBubble(
+      content::WebContents* contents,
+      TranslateBubbleModel::ViewState view_state,
+      TranslateErrors::Type error_type) {
+  NOTIMPLEMENTED();
+}
+
 #if defined(ENABLE_ONE_CLICK_SIGNIN)
 void BrowserWindowCocoa::ShowOneClickSigninBubble(
     OneClickSigninBubbleType type,
-    const string16& email,
-    const string16& error_message,
+    const base::string16& email,
+    const base::string16& error_message,
     const StartSyncCallback& start_sync_callback) {
   WebContents* web_contents =
         browser_->tab_strip_model()->GetActiveWebContents();
@@ -532,12 +520,12 @@ DownloadShelf* BrowserWindowCocoa::GetDownloadShelf() {
 
 // We allow closing the window here since the real quit decision on Mac is made
 // in [AppController quit:].
-void BrowserWindowCocoa::ConfirmBrowserCloseWithPendingDownloads() {
-  // Call InProgressDownloadResponse asynchronously to avoid a crash when the
-  // browser window is closed here (http://crbug.com/44454).
-  base::MessageLoop::current()->PostTask(FROM_HERE,
-      base::Bind(&Browser::InProgressDownloadResponse,
-                 confirm_close_factory_.GetWeakPtr(), true));
+void BrowserWindowCocoa::ConfirmBrowserCloseWithPendingDownloads(
+      int download_count,
+      Browser::DownloadClosePreventionType dialog_type,
+      bool app_modal,
+      const base::Callback<void(bool)>& callback) {
+  callback.Run(true);
 }
 
 void BrowserWindowCocoa::UserChangedTheme() {
@@ -570,7 +558,7 @@ bool BrowserWindowCocoa::PreHandleKeyboardEvent(
   if (![BrowserWindowUtils shouldHandleKeyboardEvent:event])
     return false;
 
-  if (event.type == WebKit::WebInputEvent::RawKeyDown &&
+  if (event.type == blink::WebInputEvent::RawKeyDown &&
       [controller_ handledByExtensionCommand:event.os_event])
     return true;
 
@@ -592,14 +580,6 @@ void BrowserWindowCocoa::HandleKeyboardEvent(
     const NativeWebKeyboardEvent& event) {
   if ([BrowserWindowUtils shouldHandleKeyboardEvent:event])
     [BrowserWindowUtils handleKeyboardEvent:event.os_event inWindow:window()];
-}
-
-void BrowserWindowCocoa::ShowCreateChromeAppShortcutsDialog(
-    Profile* profile, const extensions::Extension* app) {
-  // Normally we would show a dialog, but since we always create the app
-  // shortcut in /Applications there are no options for the user to choose.
-  web_app::UpdateShortcutInfoAndIconForApp(*app, profile,
-                                           base::Bind(&CreateShortcuts));
 }
 
 void BrowserWindowCocoa::Cut() {
@@ -716,7 +696,7 @@ void BrowserWindowCocoa::ShowAvatarBubbleFromAvatarButton() {
 
 void BrowserWindowCocoa::ShowPasswordGenerationBubble(
     const gfx::Rect& rect,
-    const content::PasswordForm& form,
+    const autofill::PasswordForm& form,
     autofill::PasswordGenerator* password_generator) {
   WebContents* web_contents =
       browser_->tab_strip_model()->GetActiveWebContents();
@@ -734,4 +714,41 @@ void BrowserWindowCocoa::ShowPasswordGenerationBubble(
         usingGenerator:password_generator
                forForm:form];
   [controller showWindow:nil];
+}
+
+int
+BrowserWindowCocoa::GetRenderViewHeightInsetWithDetachedBookmarkBar() {
+  if (browser_->bookmark_bar_state() != BookmarkBar::DETACHED)
+    return 0;
+  // TODO(sail): please make this work with cocoa, then enable
+  // BrowserTest.GetSizeForNewRenderView and
+  // WebContentsImplBrowserTest.GetSizeForNewRenderView.
+  // This function should return the extra height of the render view when
+  // detached bookmark bar is hidden.
+  // However, I (kuan) return 0 for now to retain the original behavior,
+  // because I encountered the following problem on cocoa:
+  // 1) When a navigation is requested,
+  //    WebContentsImpl::CreateRenderViewForRenderManager creates the new
+  //    RenderWidgetHostView at the size specified by
+  //    WebContentsDelegate::GetSizeForNewRenderView implemented by Browser.
+  // 2) When the pending navigation entry is committed,
+  //    WebContentsImpl::UpdateRenderViewSizeForRenderManager udpates the size
+  //    of WebContentsView to the size in (1).
+  // 3) WebContentsImpl::DidNavigateMainFramePostCommit() is called, where
+  //    the detached bookmark bar is hidden, resulting in relayout of tab
+  //    contents area.
+  // On cocoa, (2) causes RenderWidgetHostView to resize (enlarge) further.
+  // e.g. if size in (1) is size A, and this function returns height H, height
+  // of RenderWidgetHostView after (2) becomes A.height() + H; it's supposed to
+  // stay at A.height().
+  // Then, in (3), WebContentsView and RenderWidgetHostView enlarge even
+  // further, both by another H, i.e. WebContentsView's height becomes
+  // A.height() + H and RenderWidgetHostView's height becomes A.height() + 2H.
+  // Strangely, the RenderWidgetHostView for the previous navigation entry also
+  // gets enlarged by H.
+  // I believe these "automatic" resizing are caused by setAutoresizingMask of
+  // of the cocoa view in WebContentsViewMac, which defeats the purpose of
+  // WebContentsDelegate::GetSizeForNewRenderView i.e. to prevent resizing of
+  // RenderWidgetHostView in (2) and (3).
+  return 0;
 }

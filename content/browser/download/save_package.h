@@ -129,7 +129,7 @@ class CONTENT_EXPORT SavePackage
       DownloadItemImpl* item);
 
   // Callback for WebContents::GenerateMHTML().
-  void OnMHTMLGenerated(const base::FilePath& path, int64 size);
+  void OnMHTMLGenerated(int64 size);
 
   // For testing only.
   SavePackage(WebContents* web_contents,
@@ -279,7 +279,7 @@ class CONTENT_EXPORT SavePackage
   base::FilePath saved_main_directory_path_;
 
   // The title of the page the user wants to save.
-  string16 title_;
+  base::string16 title_;
 
   // Used to calculate package download speed (in files per second).
   base::TimeTicks start_tick_;

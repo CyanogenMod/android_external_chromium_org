@@ -166,9 +166,16 @@ void MetricsLogBase::RecordHistogramDelta(const std::string& histogram_name,
     bucket->set_min(min);
     bucket->set_max(max);
     bucket->set_count(count);
+  }
 
-    size_t index;
-    if (it->GetBucketIndex(&index))
-      bucket->set_bucket_index(index);
+  // Omit fields to save space (see rules in histogram_event.proto comments).
+  for (int i = 0; i < histogram_proto->bucket_size(); ++i) {
+    HistogramEventProto::Bucket* bucket = histogram_proto->mutable_bucket(i);
+    if (i + 1 < histogram_proto->bucket_size() &&
+        bucket->max() == histogram_proto->bucket(i + 1).min()) {
+      bucket->clear_max();
+    } else if (bucket->max() == bucket->min() + 1) {
+      bucket->clear_min();
+    }
   }
 }

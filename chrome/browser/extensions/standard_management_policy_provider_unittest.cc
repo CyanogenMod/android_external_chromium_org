@@ -9,8 +9,8 @@
 #include "chrome/browser/extensions/extension_prefs.h"
 #include "chrome/browser/extensions/standard_management_policy_provider.h"
 #include "chrome/browser/extensions/test_extension_prefs.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
 #include "content/public/test/test_browser_thread.h"
+#include "extensions/common/manifest_constants.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace extensions {
@@ -31,8 +31,8 @@ class StandardManagementPolicyProviderTest : public testing::Test {
   scoped_refptr<const Extension> CreateExtension(Manifest::Location location,
                                                  bool required) {
     base::DictionaryValue values;
-    values.SetString(extension_manifest_keys::kName, "test");
-    values.SetString(extension_manifest_keys::kVersion, "0.1");
+    values.SetString(manifest_keys::kName, "test");
+    values.SetString(manifest_keys::kVersion, "0.1");
     std::string error;
     scoped_refptr<const Extension> extension = Extension::Create(
         base::FilePath(), location, values, Extension::NO_FLAGS, &error);
@@ -55,16 +55,16 @@ TEST_F(StandardManagementPolicyProviderTest, RequiredExtension) {
   scoped_refptr<const Extension> extension =
       CreateExtension(Manifest::EXTERNAL_POLICY_DOWNLOAD, true);
 
-  string16 error16;
+  base::string16 error16;
   EXPECT_TRUE(provider_.UserMayLoad(extension.get(), &error16));
-  EXPECT_EQ(string16(), error16);
+  EXPECT_EQ(base::string16(), error16);
 
   // We won't check the exact wording of the error, but it should say
   // something.
   EXPECT_FALSE(provider_.UserMayModifySettings(extension.get(), &error16));
-  EXPECT_NE(string16(), error16);
+  EXPECT_NE(base::string16(), error16);
   EXPECT_TRUE(provider_.MustRemainEnabled(extension.get(), &error16));
-  EXPECT_NE(string16(), error16);
+  EXPECT_NE(base::string16(), error16);
 }
 
 // Tests the behavior of the ManagementPolicy provider methods for an
@@ -73,13 +73,13 @@ TEST_F(StandardManagementPolicyProviderTest, NotRequiredExtension) {
   scoped_refptr<const Extension> extension =
       CreateExtension(Manifest::INTERNAL, false);
 
-  string16 error16;
+  base::string16 error16;
   EXPECT_TRUE(provider_.UserMayLoad(extension.get(), &error16));
-  EXPECT_EQ(string16(), error16);
+  EXPECT_EQ(base::string16(), error16);
   EXPECT_TRUE(provider_.UserMayModifySettings(extension.get(), &error16));
-  EXPECT_EQ(string16(), error16);
+  EXPECT_EQ(base::string16(), error16);
   EXPECT_FALSE(provider_.MustRemainEnabled(extension.get(), &error16));
-  EXPECT_EQ(string16(), error16);
+  EXPECT_EQ(base::string16(), error16);
 }
 
 }  // namespace extensions

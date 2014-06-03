@@ -30,6 +30,8 @@ public:
 
   virtual SkCanvas* BeginPaint(gfx::Rect damage_rect) OVERRIDE;
   virtual void EndPaint(cc::SoftwareFrameData* frame_data) OVERRIDE;
+  virtual void EnsureBackbuffer() OVERRIDE;
+  virtual void DiscardBackbuffer() OVERRIDE;
 
   virtual void ReclaimSoftwareFrame(unsigned id) OVERRIDE;
 
@@ -47,6 +49,7 @@ private:
 
     void* memory() const { return mem_->memory(); }
     base::SharedMemoryHandle handle() const { return mem_->handle(); }
+    base::SharedMemory* shared_memory() const { return mem_.get(); }
 
     bool free() const { return free_; }
     void SetFree(bool free) { free_ = free; }

@@ -6,10 +6,9 @@
 
 var binding = require('binding').Binding.create('extension');
 
-var extensionNatives = requireNative('extension');
-var GetExtensionViews = extensionNatives.GetExtensionViews;
 var messaging = require('messaging');
 var runtimeNatives = requireNative('runtime');
+var GetExtensionViews = runtimeNatives.GetExtensionViews;
 var OpenChannelToExtension = runtimeNatives.OpenChannelToExtension;
 var OpenChannelToNativeApp = runtimeNatives.OpenChannelToNativeApp;
 var chrome = requireNative('chrome').GetChrome();
@@ -88,7 +87,7 @@ binding.registerCustomHook(function(bindingsAPI, extensionId) {
 
   apiFunctions.setUpdateArgumentsPreValidate('sendRequest',
       $Function.bind(messaging.sendMessageUpdateArguments,
-                     null, 'sendRequest'));
+                     null, 'sendRequest', false /* hasOptionsArgument */));
 
   apiFunctions.setHandleRequest('sendRequest',
                                 function(targetId, request, responseCallback) {

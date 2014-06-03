@@ -6,13 +6,13 @@
 
 #include <string>
 
+#include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
-#include "chrome/browser/chromeos/cros/network_library.h"
 #include "chrome/browser/chromeos/login/mock_login_status_consumer.h"
 #include "chrome/browser/chromeos/login/mock_url_fetchers.h"
 #include "chrome/browser/chromeos/login/mock_user_manager.h"
@@ -23,10 +23,11 @@
 #include "chrome/browser/chromeos/settings/device_settings_test_helper.h"
 #include "chrome/browser/chromeos/settings/stub_cros_settings_provider.h"
 #include "chrome/test/base/testing_profile.h"
+#include "chromeos/chromeos_switches.h"
 #include "chromeos/cryptohome/mock_async_method_caller.h"
-#include "chromeos/cryptohome/mock_cryptohome_library.h"
+#include "chromeos/cryptohome/system_salt_getter.h"
 #include "chromeos/dbus/fake_cryptohome_client.h"
-#include "chromeos/dbus/mock_dbus_thread_manager_without_gmock.h"
+#include "chromeos/dbus/fake_dbus_thread_manager.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "google_apis/gaia/mock_url_fetcher_factory.h"
 #include "net/base/net_errors.h"
@@ -42,21 +43,17 @@ using ::testing::_;
 
 namespace chromeos {
 
-class TestOnlineAttempt : public OnlineAttempt {
- public:
-  TestOnlineAttempt(AuthAttemptState* state,
-                    AuthAttemptStateResolver* resolver)
-      : OnlineAttempt(state, resolver) {
-  }
-};
-
 class ParallelAuthenticatorTest : public testing::Test {
  public:
   ParallelAuthenticatorTest()
       : username_("me@nowhere.org"),
         password_("fakepass"),
-        hash_ascii_("0a010000000000a0" + std::string(16, '0')),
-        user_manager_enabler_(new MockUserManager) {
+        hash_ascii_(ParallelAuthenticator::HashPassword(
+            password_,
+            SystemSaltGetter::ConvertRawSaltToHexString(
+                FakeCryptohomeClient::GetStubSystemSalt()))),
+        user_manager_enabler_(new MockUserManager),
+        mock_caller_(NULL) {
   }
 
   virtual ~ParallelAuthenticatorTest() {
@@ -64,17 +61,23 @@ class ParallelAuthenticatorTest : public testing::Test {
   }
 
   virtual void SetUp() {
+    CommandLine::ForCurrentProcess()->AppendSwitch(switches::kLoginManager);
+
     mock_caller_ = new cryptohome::MockAsyncMethodCaller;
     cryptohome::AsyncMethodCaller::InitializeForTesting(mock_caller_);
 
-    mock_cryptohome_library_ .reset(new MockCryptohomeLibrary());
-    CryptohomeLibrary::SetForTest(mock_cryptohome_library_.get());
+    FakeDBusThreadManager* fake_dbus_thread_manager = new FakeDBusThreadManager;
+    fake_cryptohome_client_ = new FakeCryptohomeClient;
+    fake_dbus_thread_manager->SetCryptohomeClient(
+        scoped_ptr<CryptohomeClient>(fake_cryptohome_client_));
+    DBusThreadManager::InitializeForTesting(fake_dbus_thread_manager);
+
+    SystemSaltGetter::Initialize();
 
     auth_ = new ParallelAuthenticator(&consumer_);
     state_.reset(new TestAttemptState(UserContext(username_,
                                                   password_,
                                                   std::string()),
-                                      hash_ascii_,
                                       "",
                                       "",
                                       User::USER_TYPE_REGULAR,
@@ -83,7 +86,8 @@ class ParallelAuthenticatorTest : public testing::Test {
 
   // Tears down the test fixture.
   virtual void TearDown() {
-    CryptohomeLibrary::SetForTest(NULL);
+    SystemSaltGetter::Shutdown();
+    DBusThreadManager::Shutdown();
 
     cryptohome::AsyncMethodCaller::Shutdown();
     mock_caller_ = NULL;
@@ -91,10 +95,10 @@ class ParallelAuthenticatorTest : public testing::Test {
 
   base::FilePath PopulateTempFile(const char* data, int data_len) {
     base::FilePath out;
-    FILE* tmp_file = file_util::CreateAndOpenTemporaryFile(&out);
+    FILE* tmp_file = base::CreateAndOpenTemporaryFile(&out);
     EXPECT_NE(tmp_file, static_cast<FILE*>(NULL));
     EXPECT_EQ(file_util::WriteFile(out, data, data_len), data_len);
-    EXPECT_TRUE(file_util::CloseFile(tmp_file));
+    EXPECT_TRUE(base::CloseFile(tmp_file));
     return out;
   }
 
@@ -115,7 +119,7 @@ class ParallelAuthenticatorTest : public testing::Test {
   // Allow test to fail and exit gracefully, even if OnLoginSuccess()
   // wasn't supposed to happen.
   void FailOnLoginSuccess() {
-    ON_CALL(consumer_, OnLoginSuccess(_, _, _))
+    ON_CALL(consumer_, OnLoginSuccess(_))
         .WillByDefault(Invoke(MockConsumer::OnSuccessQuitAndFail));
   }
 
@@ -145,9 +149,8 @@ class ParallelAuthenticatorTest : public testing::Test {
     EXPECT_CALL(consumer_, OnLoginSuccess(UserContext(username,
                                                       password,
                                                       std::string(),
-                                                      username_hash_),
-                                          pending,
-                                          true /* using_oauth */))
+                                                      username_hash_,
+                                                      true /* using_oauth */)))
         .WillOnce(Invoke(MockConsumer::OnSuccessQuit))
         .RetiresOnSaturation();
   }
@@ -183,10 +186,6 @@ class ParallelAuthenticatorTest : public testing::Test {
     auth_->SetOwnerState(owner_check_finished, check_result);
   }
 
-  void FakeOnlineAttempt() {
-    auth_->set_online_attempt(new TestOnlineAttempt(state_.get(), auth_.get()));
-  }
-
   content::TestBrowserThreadBundle thread_bundle_;
 
   std::string username_;
@@ -194,32 +193,30 @@ class ParallelAuthenticatorTest : public testing::Test {
   std::string username_hash_;
   std::string hash_ascii_;
 
-  ScopedStubNetworkLibraryEnabler stub_network_library_enabler_;
   ScopedDeviceSettingsTestHelper device_settings_test_helper_;
   ScopedTestCrosSettings test_cros_settings_;
 
   ScopedUserManagerEnabler user_manager_enabler_;
-
-  scoped_ptr<MockCryptohomeLibrary> mock_cryptohome_library_;
 
   cryptohome::MockAsyncMethodCaller* mock_caller_;
 
   MockConsumer consumer_;
   scoped_refptr<ParallelAuthenticator> auth_;
   scoped_ptr<TestAttemptState> state_;
+  FakeCryptohomeClient* fake_cryptohome_client_;
 };
 
 TEST_F(ParallelAuthenticatorTest, OnLoginSuccess) {
   EXPECT_CALL(consumer_, OnLoginSuccess(UserContext(username_,
                                                     password_,
                                                     std::string(),
-                                                    username_hash_),
-                                        false, true /* using oauth */))
+                                                    username_hash_,
+                                                    true /* using oauth */)))
       .Times(1)
       .RetiresOnSaturation();
 
   SetAttemptState(auth_.get(), state_.release());
-  auth_->OnLoginSuccess(false);
+  auth_->OnLoginSuccess();
 }
 
 TEST_F(ParallelAuthenticatorTest, OnPasswordChangeDetected) {
@@ -235,17 +232,6 @@ TEST_F(ParallelAuthenticatorTest, ResolveNothingDone) {
             SetAndResolveState(auth_.get(), state_.release()));
 }
 
-TEST_F(ParallelAuthenticatorTest, ResolvePossiblePwChange) {
-  // Set a fake online attempt so that we return intermediate cryptohome state.
-  FakeOnlineAttempt();
-
-  // Set up state as though a cryptohome mount attempt has occurred
-  // and been rejected.
-  state_->PresetCryptohomeStatus(false, cryptohome::MOUNT_ERROR_KEY_FAILURE);
-
-  EXPECT_EQ(ParallelAuthenticator::POSSIBLE_PW_CHANGE,
-            SetAndResolveState(auth_.get(), state_.release()));
-}
 
 TEST_F(ParallelAuthenticatorTest, ResolvePossiblePwChangeToFailedMount) {
   // Set up state as though a cryptohome mount attempt has occurred
@@ -292,7 +278,6 @@ TEST_F(ParallelAuthenticatorTest, ResolveOwnerNeededMount) {
   state_.reset(new TestAttemptState(UserContext(username_,
                                                 password_,
                                                 std::string()),
-                                    hash_ascii_,
                                     "",
                                     "",
                                     User::USER_TYPE_REGULAR,
@@ -307,12 +292,7 @@ TEST_F(ParallelAuthenticatorTest, ResolveOwnerNeededFailedMount) {
   LoginFailure failure = LoginFailure(LoginFailure::OWNER_REQUIRED);
   ExpectLoginFailure(failure);
 
-  MockDBusThreadManagerWithoutGMock* mock_dbus_thread_manager =
-      new MockDBusThreadManagerWithoutGMock;
-  DBusThreadManager::InitializeForTesting(mock_dbus_thread_manager);
-  FakeCryptohomeClient* fake_cryptohome_client  =
-      mock_dbus_thread_manager->fake_cryptohome_client();
-  fake_cryptohome_client->set_unmount_result(true);
+  fake_cryptohome_client_->set_unmount_result(true);
 
   CrosSettingsProvider* device_settings_provider;
   StubCrosSettingsProvider stub_settings_provider;
@@ -329,15 +309,26 @@ TEST_F(ParallelAuthenticatorTest, ResolveOwnerNeededFailedMount) {
   CrosSettings::Get()->AddSettingsProvider(&stub_settings_provider);
   CrosSettings::Get()->SetBoolean(kPolicyMissingMitigationMode, true);
 
+  // Initialize login state for this test to verify the login state is changed
+  // to SAFE_MODE.
+  LoginState::Initialize();
+
   EXPECT_EQ(ParallelAuthenticator::CONTINUE,
             SetAndResolveState(auth_.get(), state_.release()));
-  // Let the owner verification run.
+  EXPECT_TRUE(LoginState::Get()->IsInSafeMode());
+
+  // Simulate certificates load event. The exact certificates loaded are not
+  // actually used by the DeviceSettingsService, so it is OK to pass an empty
+  // list.
+  DeviceSettingsService::Get()->OnCertificatesLoaded(net::CertificateList(),
+                                                     true);
+  // Flush all the pending operations. The operations should induce an owner
+  // verification.
   device_settings_test_helper_.Flush();
   // and test that the mount has succeeded.
   state_.reset(new TestAttemptState(UserContext(username_,
                                                 password_,
                                                 std::string()),
-                                    hash_ascii_,
                                     "",
                                     "",
                                     User::USER_TYPE_REGULAR,
@@ -346,10 +337,11 @@ TEST_F(ParallelAuthenticatorTest, ResolveOwnerNeededFailedMount) {
   EXPECT_EQ(ParallelAuthenticator::OWNER_REQUIRED,
             SetAndResolveState(auth_.get(), state_.release()));
 
+  // Unset global objects used by this test.
+  LoginState::Shutdown();
   EXPECT_TRUE(
       CrosSettings::Get()->RemoveSettingsProvider(&stub_settings_provider));
   CrosSettings::Get()->AddSettingsProvider(device_settings_provider);
-  DBusThreadManager::Get()->Shutdown();
 }
 
 TEST_F(ParallelAuthenticatorTest, DriveFailedMount) {
@@ -368,7 +360,7 @@ TEST_F(ParallelAuthenticatorTest, DriveGuestLogin) {
   ExpectGuestLoginSuccess();
   FailOnLoginFailure();
 
-  // Set up mock cryptohome library to respond as though a tmpfs mount
+  // Set up mock async method caller to respond as though a tmpfs mount
   // attempt has occurred and succeeded.
   mock_caller_->SetUp(true, cryptohome::MOUNT_ERROR_NONE);
   EXPECT_CALL(*mock_caller_, AsyncMountGuest(_))
@@ -383,7 +375,7 @@ TEST_F(ParallelAuthenticatorTest, DriveGuestLoginButFail) {
   FailOnGuestLoginSuccess();
   ExpectLoginFailure(LoginFailure(LoginFailure::COULD_NOT_MOUNT_TMPFS));
 
-  // Set up mock cryptohome library to respond as though a tmpfs mount
+  // Set up mock async method caller to respond as though a tmpfs mount
   // attempt has occurred and failed.
   mock_caller_->SetUp(false, cryptohome::MOUNT_ERROR_NONE);
   EXPECT_CALL(*mock_caller_, AsyncMountGuest(_))
@@ -398,7 +390,7 @@ TEST_F(ParallelAuthenticatorTest, DriveRetailModeUserLogin) {
   ExpectRetailModeLoginSuccess();
   FailOnLoginFailure();
 
-  // Set up mock cryptohome library to respond as though a tmpfs mount
+  // Set up mock async method caller to respond as though a tmpfs mount
   // attempt has occurred and succeeded.
   mock_caller_->SetUp(true, cryptohome::MOUNT_ERROR_NONE);
   EXPECT_CALL(*mock_caller_, AsyncMountGuest(_))
@@ -413,7 +405,7 @@ TEST_F(ParallelAuthenticatorTest, DriveRetailModeLoginButFail) {
   FailOnRetailModeLoginSuccess();
   ExpectLoginFailure(LoginFailure(LoginFailure::COULD_NOT_MOUNT_TMPFS));
 
-  // Set up mock cryptohome library to respond as though a tmpfs mount
+  // Set up mock async method caller to respond as though a tmpfs mount
   // attempt has occurred and failed.
   mock_caller_->SetUp(false, cryptohome::MOUNT_ERROR_NONE);
   EXPECT_CALL(*mock_caller_, AsyncMountGuest(_))
@@ -431,7 +423,7 @@ TEST_F(ParallelAuthenticatorTest, DriveDataResync) {
                      false);
   FailOnLoginFailure();
 
-  // Set up mock cryptohome library to respond successfully to a cryptohome
+  // Set up mock async method caller to respond successfully to a cryptohome
   // remove attempt and a cryptohome create attempt (indicated by the
   // |CREATE_IF_MISSING| flag to AsyncMount).
   mock_caller_->SetUp(true, cryptohome::MOUNT_ERROR_NONE);
@@ -457,7 +449,7 @@ TEST_F(ParallelAuthenticatorTest, DriveResyncFail) {
   FailOnLoginSuccess();
   ExpectLoginFailure(LoginFailure(LoginFailure::DATA_REMOVAL_FAILED));
 
-  // Set up mock cryptohome library to fail a cryptohome remove attempt.
+  // Set up mock async method caller to fail a cryptohome remove attempt.
   mock_caller_->SetUp(false, cryptohome::MOUNT_ERROR_NONE);
   EXPECT_CALL(*mock_caller_, AsyncRemove(username_, _))
       .Times(1)
@@ -487,7 +479,7 @@ TEST_F(ParallelAuthenticatorTest, DriveDataRecover) {
                      false);
   FailOnLoginFailure();
 
-  // Set up mock cryptohome library to respond successfully to a key migration.
+  // Set up mock async method caller to respond successfully to a key migration.
   mock_caller_->SetUp(true, cryptohome::MOUNT_ERROR_NONE);
   EXPECT_CALL(*mock_caller_, AsyncMigrateKey(username_, _, hash_ascii_, _))
       .Times(1)
@@ -499,9 +491,6 @@ TEST_F(ParallelAuthenticatorTest, DriveDataRecover) {
   EXPECT_CALL(*mock_caller_, AsyncGetSanitizedUsername(username_, _))
         .Times(1)
         .RetiresOnSaturation();
-  EXPECT_CALL(*mock_cryptohome_library_, GetSystemSalt())
-      .WillOnce(Return(std::string()))
-      .RetiresOnSaturation();
 
   state_->PresetOnlineLoginStatus(LoginFailure::LoginFailureNone());
   SetAttemptState(auth_.get(), state_.release());
@@ -514,33 +503,17 @@ TEST_F(ParallelAuthenticatorTest, DriveDataRecoverButFail) {
   FailOnLoginSuccess();
   ExpectPasswordChange();
 
-  // Set up mock cryptohome library to fail a key migration attempt,
+  // Set up mock async method caller to fail a key migration attempt,
   // asserting that the wrong password was used.
   mock_caller_->SetUp(false, cryptohome::MOUNT_ERROR_KEY_FAILURE);
   EXPECT_CALL(*mock_caller_, AsyncMigrateKey(username_, _, hash_ascii_, _))
       .Times(1)
-      .RetiresOnSaturation();
-  EXPECT_CALL(*mock_cryptohome_library_, GetSystemSalt())
-      .WillOnce(Return(std::string()))
       .RetiresOnSaturation();
 
   SetAttemptState(auth_.get(), state_.release());
 
   auth_->RecoverEncryptedData(std::string());
   base::MessageLoop::current()->Run();
-}
-
-TEST_F(ParallelAuthenticatorTest, ResolveNoMount) {
-  // Set a fake online attempt so that we return intermediate cryptohome state.
-  FakeOnlineAttempt();
-
-  // Set up state as though a cryptohome mount attempt has occurred
-  // and been rejected because the user doesn't exist.
-  state_->PresetCryptohomeStatus(false,
-                                 cryptohome::MOUNT_ERROR_USER_DOES_NOT_EXIST);
-
-  EXPECT_EQ(ParallelAuthenticator::NO_MOUNT,
-            SetAndResolveState(auth_.get(), state_.release()));
 }
 
 TEST_F(ParallelAuthenticatorTest, ResolveNoMountToFailedMount) {
@@ -574,7 +547,7 @@ TEST_F(ParallelAuthenticatorTest, DriveCreateForNewUser) {
                      false);
   FailOnLoginFailure();
 
-  // Set up mock cryptohome library to respond successfully to a cryptohome
+  // Set up mock async method caller to respond successfully to a cryptohome
   // create attempt (indicated by the |CREATE_IF_MISSING| flag to AsyncMount).
   mock_caller_->SetUp(true, cryptohome::MOUNT_ERROR_NONE);
   EXPECT_CALL(*mock_caller_, AsyncMount(username_, hash_ascii_,
@@ -625,14 +598,11 @@ TEST_F(ParallelAuthenticatorTest, DriveUnlock) {
   ExpectLoginSuccess(username_, std::string(), std::string(), false);
   FailOnLoginFailure();
 
-  // Set up mock cryptohome library to respond successfully to a cryptohome
+  // Set up mock async method caller to respond successfully to a cryptohome
   // key-check attempt.
   mock_caller_->SetUp(true, cryptohome::MOUNT_ERROR_NONE);
   EXPECT_CALL(*mock_caller_, AsyncCheckKey(username_, _, _))
       .Times(1)
-      .RetiresOnSaturation();
-  EXPECT_CALL(*mock_cryptohome_library_, GetSystemSalt())
-      .WillOnce(Return(std::string()))
       .RetiresOnSaturation();
 
   auth_->AuthenticateToUnlock(UserContext(username_,

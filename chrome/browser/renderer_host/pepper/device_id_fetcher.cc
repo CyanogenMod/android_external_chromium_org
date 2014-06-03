@@ -10,7 +10,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/pref_names.h"
 #if defined(OS_CHROMEOS)
-#include "chromeos/cryptohome/cryptohome_library.h"
+#include "chromeos/cryptohome/system_salt_getter.h"
 #endif
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/browser_context.h"
@@ -20,6 +20,7 @@
 #include "crypto/encryptor.h"
 #include "crypto/random.h"
 #include "crypto/sha2.h"
+#include "ppapi/c/pp_errors.h"
 #if defined(ENABLE_RLZ)
 #include "rlz/lib/machine_id.h"
 #endif
@@ -35,6 +36,21 @@ namespace {
 const char kDRMIdentifierFile[] = "Pepper DRM ID.0";
 
 const uint32_t kSaltLength = 32;
+
+void GetMachineIDAsync(
+    const base::Callback<void(const std::string&)>& callback) {
+#if defined(OS_WIN) && defined(ENABLE_RLZ)
+  std::string result;
+  rlz_lib::GetMachineId(&result);
+  callback.Run(result);
+#elif defined(OS_CHROMEOS)
+  chromeos::SystemSaltGetter::Get()->GetSystemSalt(callback);
+#else
+  // Not implemented for other platforms.
+  NOTREACHED();
+  callback.Run(std::string());
+#endif
+}
 
 }  // namespace
 
@@ -65,8 +81,6 @@ bool DeviceIDFetcher::Start(const IDCallback& callback) {
 // static
 void DeviceIDFetcher::RegisterProfilePrefs(
     user_prefs::PrefRegistrySyncable* prefs) {
-  // TODO(wad): Once UI is connected, a final default can be set. At that point
-  // change this pref from UNSYNCABLE to SYNCABLE.
   prefs->RegisterBooleanPref(prefs::kEnableDRM,
                              true,
                              user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
@@ -82,8 +96,6 @@ base::FilePath DeviceIDFetcher::GetLegacyDeviceIDPath(
   return profile_path.AppendASCII(kDRMIdentifierFile);
 }
 
-// TODO(raymes): Change this to just return the device id salt and call it with
-// PostTaskAndReply once the legacy ChromeOS codepath is removed.
 void DeviceIDFetcher::CheckPrefsOnUIThread() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
@@ -98,7 +110,7 @@ void DeviceIDFetcher::CheckPrefsOnUIThread() {
   if (!profile ||
       profile->IsOffTheRecord() ||
       !profile->GetPrefs()->GetBoolean(prefs::kEnableDRM)) {
-    RunCallbackOnIOThread(std::string());
+    RunCallbackOnIOThread(std::string(), PP_ERROR_NOACCESS);
     return;
   }
 
@@ -115,28 +127,36 @@ void DeviceIDFetcher::CheckPrefsOnUIThread() {
 #if defined(OS_CHROMEOS)
   // Try the legacy path first for ChromeOS. We pass the new salt in as well
   // in case the legacy id doesn't exist.
-  BrowserThread::PostBlockingPoolTask(FROM_HERE,
-      base::Bind(&DeviceIDFetcher::ComputeOnBlockingPool, this,
+  BrowserThread::PostBlockingPoolTask(
+      FROM_HERE,
+      base::Bind(&DeviceIDFetcher::LegacyComputeOnBlockingPool,
+                 this,
                  profile->GetPath(), salt));
 #else
-  BrowserThread::PostTask(
-      BrowserThread::IO, FROM_HERE,
-      base::Bind(&DeviceIDFetcher::ComputeOnIOThread, this, salt));
+  // Get the machine ID and call ComputeOnUIThread with salt + machine_id.
+  GetMachineIDAsync(base::Bind(&DeviceIDFetcher::ComputeOnUIThread,
+                               this, salt));
 #endif
 }
 
+void DeviceIDFetcher::ComputeOnUIThread(const std::string& salt,
+                                        const std::string& machine_id) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-void DeviceIDFetcher::ComputeOnIOThread(const std::string& salt) {
-  std::vector<uint8> salt_bytes;
-  if (!base::HexStringToBytes(salt, &salt_bytes))
-    salt_bytes.clear();
+  if (machine_id.empty()) {
+    LOG(ERROR) << "Empty machine id";
+    RunCallbackOnIOThread(std::string(), PP_ERROR_FAILED);
+    return;
+  }
 
   // Build the identifier as follows:
   // SHA256(machine-id||service||SHA256(machine-id||service||salt))
-  std::string machine_id = GetMachineID();
-  if (machine_id.empty() || salt_bytes.size() != kSaltLength) {
-    NOTREACHED();
-    RunCallbackOnIOThread(std::string());
+  std::vector<uint8> salt_bytes;
+  if (!base::HexStringToBytes(salt, &salt_bytes))
+    salt_bytes.clear();
+  if (salt_bytes.size() != kSaltLength) {
+    LOG(ERROR) << "Unexpected salt bytes length: " << salt_bytes.size();
+    RunCallbackOnIOThread(std::string(), PP_ERROR_FAILED);
     return;
   }
 
@@ -155,55 +175,44 @@ void DeviceIDFetcher::ComputeOnIOThread(const std::string& salt) {
         reinterpret_cast<const void*>(id_buf),
         sizeof(id_buf)));
 
-  RunCallbackOnIOThread(id);
+  RunCallbackOnIOThread(id, PP_OK);
 }
 
 // TODO(raymes): This is temporary code to migrate ChromeOS devices to the new
 // scheme for generating device IDs. Delete this once we are sure most ChromeOS
 // devices have been migrated.
-void DeviceIDFetcher::ComputeOnBlockingPool(const base::FilePath& profile_path,
-                                            const std::string& salt) {
+void DeviceIDFetcher::LegacyComputeOnBlockingPool(
+    const base::FilePath& profile_path,
+    const std::string& salt) {
   std::string id;
   // First check if the legacy device ID file exists on ChromeOS. If it does, we
   // should just return that.
   base::FilePath id_path = GetLegacyDeviceIDPath(profile_path);
   if (base::PathExists(id_path)) {
-    if (file_util::ReadFileToString(id_path, &id) && !id.empty()) {
-      RunCallbackOnIOThread(id);
+    if (base::ReadFileToString(id_path, &id) && !id.empty()) {
+      RunCallbackOnIOThread(id, PP_OK);
       return;
     }
   }
-  // If we didn't find an ID, go back to the new code path to generate an ID.
+  // If we didn't find an ID, get the machine ID and call the new code path to
+  // generate an ID.
   BrowserThread::PostTask(
-      BrowserThread::IO, FROM_HERE,
-      base::Bind(&DeviceIDFetcher::ComputeOnIOThread, this, salt));
+      BrowserThread::UI, FROM_HERE,
+      base::Bind(&GetMachineIDAsync,
+                 base::Bind(&DeviceIDFetcher::ComputeOnUIThread,
+                            this, salt)));
 }
 
-
-void DeviceIDFetcher::RunCallbackOnIOThread(const std::string& id) {
+void DeviceIDFetcher::RunCallbackOnIOThread(const std::string& id,
+                                            int32_t result) {
   if (!BrowserThread::CurrentlyOn(BrowserThread::IO)) {
     BrowserThread::PostTask(
         BrowserThread::IO, FROM_HERE,
-        base::Bind(&DeviceIDFetcher::RunCallbackOnIOThread, this, id));
+        base::Bind(&DeviceIDFetcher::RunCallbackOnIOThread, this, id, result));
     return;
   }
   in_progress_ = false;
-  callback_.Run(id);
-}
-
-std::string DeviceIDFetcher::GetMachineID() {
-#if defined(OS_WIN) && defined(ENABLE_RLZ)
-  std::string result;
-  rlz_lib::GetMachineId(&result);
-  return result;
-#elif defined(OS_CHROMEOS)
-  chromeos::CryptohomeLibrary* c_home = chromeos::CryptohomeLibrary::Get();
-  return c_home->GetSystemSalt();
-#else
-  // Not implemented for other platforms.
-  NOTREACHED();
-  return "";
-#endif
+  callback_.Run(id, result);
 }
 
 }  // namespace chrome

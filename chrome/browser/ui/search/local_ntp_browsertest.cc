@@ -22,11 +22,10 @@ class LocalNTPTest : public InProcessBrowserTest,
 
  protected:
   virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
-    chrome::EnableInstantExtendedAPIForTesting();
     ASSERT_TRUE(https_test_server().Start());
     GURL instant_url = https_test_server().GetURL(
         "files/local_ntp_browsertest.html?strk=1&");
-    InstantTestBase::Init(instant_url);
+    InstantTestBase::Init(instant_url, false);
   }
 };
 
@@ -49,13 +48,9 @@ IN_PROC_BROWSER_TEST_F(LocalNTPTest, DISABLED_LocalNTPJavascriptTest) {
   EXPECT_TRUE(success);
 }
 
-// Flaky on Linux Tests bot.
-#if defined(OS_LINUX)
-#define MAYBE_NTPRespectsBrowserLanguageSetting DISABLED_NTPRespectsBrowserLanguageSetting
-#else
-#define MAYBE_NTPRespectsBrowserLanguageSetting NTPRespectsBrowserLanguageSetting
-#endif
-IN_PROC_BROWSER_TEST_F(LocalNTPTest, MAYBE_NTPRespectsBrowserLanguageSetting) {
+// Flaky.
+IN_PROC_BROWSER_TEST_F(LocalNTPTest,
+                       DISABLED_NTPRespectsBrowserLanguageSetting) {
   // Make sure the default language is not French.
   std::string default_locale = g_browser_process->GetApplicationLocale();
   EXPECT_NE("fr", default_locale);

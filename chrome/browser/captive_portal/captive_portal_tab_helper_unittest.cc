@@ -91,7 +91,8 @@ class CaptivePortalTabHelperTest : public ChromeRenderViewHostTestHarness {
 
     EXPECT_CALL(mock_reloader(), OnLoadCommitted(net::OK)).Times(1);
     tab_helper().DidCommitProvisionalLoadForFrame(
-        1, true, url, content::PAGE_TRANSITION_LINK, render_view_host);
+        1, base::string16(), true, url, content::PAGE_TRANSITION_LINK,
+        render_view_host);
   }
 
   // Simulates a connection timeout while requesting |url|.
@@ -102,7 +103,8 @@ class CaptivePortalTabHelperTest : public ChromeRenderViewHostTestHarness {
         1, -1, true, url, false, false, render_view_host);
 
     tab_helper().DidFailProvisionalLoad(
-        1, true, url, net::ERR_TIMED_OUT, string16(), render_view_host);
+        1, base::string16(), true, url, net::ERR_TIMED_OUT, base::string16(),
+        render_view_host);
 
     // Provisional load starts for the error page.
     tab_helper().DidStartProvisionalLoadForFrame(
@@ -110,8 +112,8 @@ class CaptivePortalTabHelperTest : public ChromeRenderViewHostTestHarness {
 
     EXPECT_CALL(mock_reloader(), OnLoadCommitted(net::ERR_TIMED_OUT)).Times(1);
     tab_helper().DidCommitProvisionalLoadForFrame(
-        1, true, GURL(kErrorPageUrl), content::PAGE_TRANSITION_LINK,
-        render_view_host);
+        1, base::string16(), true, GURL(kErrorPageUrl),
+        content::PAGE_TRANSITION_LINK, render_view_host);
   }
 
   // Simulates an abort while requesting |url|.
@@ -125,7 +127,8 @@ class CaptivePortalTabHelperTest : public ChromeRenderViewHostTestHarness {
     EXPECT_CALL(mock_reloader(), OnAbort()).Times(1);
     if (navigation_type == kSameProcess) {
       tab_helper().DidFailProvisionalLoad(
-          1, true, url, net::ERR_ABORTED, string16(), render_view_host);
+          1, base::string16(), true, url, net::ERR_ABORTED, base::string16(),
+          render_view_host);
     } else {
       // For interrupted provisional cross-process navigations, the
       // RenderViewHost is destroyed without sending a DidFailProvisionalLoad
@@ -147,7 +150,8 @@ class CaptivePortalTabHelperTest : public ChromeRenderViewHostTestHarness {
         1, -1, true, url, false, false, render_view_host);
 
     tab_helper().DidFailProvisionalLoad(
-        1, true, url, net::ERR_TIMED_OUT, string16(), render_view_host);
+        1, base::string16(), true, url, net::ERR_TIMED_OUT, base::string16(),
+        render_view_host);
 
     // Start event for the error page.
     tab_helper().DidStartProvisionalLoadForFrame(
@@ -156,7 +160,8 @@ class CaptivePortalTabHelperTest : public ChromeRenderViewHostTestHarness {
     EXPECT_CALL(mock_reloader(), OnAbort()).Times(1);
     if (navigation_type == kSameProcess) {
       tab_helper().DidFailProvisionalLoad(
-          1, true, url, net::ERR_ABORTED, string16(), render_view_host);
+          1, base::string16(), true, url, net::ERR_ABORTED, base::string16(),
+          render_view_host);
     } else {
       // For interrupted provisional cross-process navigations, the
       // RenderViewHost is destroyed without sending a DidFailProvisionalLoad
@@ -244,8 +249,8 @@ TEST_F(CaptivePortalTabHelperTest, HttpTimeoutLinkDoctor) {
 
   EXPECT_CALL(mock_reloader(), OnLoadCommitted(net::OK)).Times(1);
   tab_helper().DidCommitProvisionalLoadForFrame(
-      1, true, GURL(kErrorPageUrl), content::PAGE_TRANSITION_LINK,
-      render_view_host1());
+      1, base::string16(), true, GURL(kErrorPageUrl),
+      content::PAGE_TRANSITION_LINK, render_view_host1());
   tab_helper().DidStopLoading(render_view_host1());
 }
 
@@ -327,13 +332,13 @@ TEST_F(CaptivePortalTabHelperTest, UnexpectedProvisionalLoad) {
 
   // The cross-process navigation fails.
   tab_helper().DidFailProvisionalLoad(
-      1, true, cross_process_url, net::ERR_FAILED, string16(),
-      render_view_host2());
+      1, base::string16(), true, cross_process_url, net::ERR_FAILED,
+      base::string16(), render_view_host2());
 
   // The same-site navigation finally is aborted.
   tab_helper().DidFailProvisionalLoad(
-      1, true, same_site_url, net::ERR_ABORTED, string16(),
-      render_view_host1());
+      1, base::string16(), true, same_site_url, net::ERR_ABORTED,
+      base::string16(), render_view_host1());
 
   // The provisional load starts for the error page for the cross-process
   // navigation.
@@ -342,8 +347,8 @@ TEST_F(CaptivePortalTabHelperTest, UnexpectedProvisionalLoad) {
 
   EXPECT_CALL(mock_reloader(), OnLoadCommitted(net::ERR_FAILED)).Times(1);
   tab_helper().DidCommitProvisionalLoadForFrame(
-      1, true, GURL(kErrorPageUrl), content::PAGE_TRANSITION_TYPED,
-      render_view_host2());
+      1, base::string16(), true, GURL(kErrorPageUrl),
+      content::PAGE_TRANSITION_TYPED, render_view_host2());
 }
 
 // Similar to the above test, except the original RenderViewHost manages to
@@ -369,7 +374,8 @@ TEST_F(CaptivePortalTabHelperTest, UnexpectedCommit) {
 
   // The cross-process navigation fails.
   tab_helper().DidFailProvisionalLoad(
-      1, true, cross_process_url, net::ERR_FAILED, string16(),
+      1, base::string16(), true, cross_process_url, net::ERR_FAILED,
+      base::string16(),
       render_view_host2());
 
   // The same-site navigation succeeds.
@@ -378,7 +384,7 @@ TEST_F(CaptivePortalTabHelperTest, UnexpectedCommit) {
               OnLoadStart(same_site_url.SchemeIsSecure())).Times(1);
   EXPECT_CALL(mock_reloader(), OnLoadCommitted(net::OK)).Times(1);
   tab_helper().DidCommitProvisionalLoadForFrame(
-      1, true, same_site_url, content::PAGE_TRANSITION_LINK,
+      1, base::string16(), true, same_site_url, content::PAGE_TRANSITION_LINK,
       render_view_host1());
 }
 
@@ -390,23 +396,27 @@ TEST_F(CaptivePortalTabHelperTest, HttpsSubframe) {
   tab_helper().DidStartProvisionalLoadForFrame(
       1, -1, false, url, false, false, render_view_host1());
   tab_helper().DidCommitProvisionalLoadForFrame(
-      1, false, url, content::PAGE_TRANSITION_LINK, render_view_host1());
+      1, base::string16(), false, url, content::PAGE_TRANSITION_LINK,
+      render_view_host1());
 
   // Timeout.
   tab_helper().DidStartProvisionalLoadForFrame(
       2, -1, false, url, false, false, render_view_host1());
   tab_helper().DidFailProvisionalLoad(
-      2, false, url, net::ERR_TIMED_OUT, string16(), render_view_host1());
+      2, base::string16(), false, url, net::ERR_TIMED_OUT, base::string16(),
+      render_view_host1());
   tab_helper().DidStartProvisionalLoadForFrame(
       2, -1, false, url, true, false, render_view_host1());
   tab_helper().DidFailProvisionalLoad(
-      2, false, url, net::ERR_ABORTED, string16(), render_view_host1());
+      2, base::string16(), false, url, net::ERR_ABORTED, base::string16(),
+      render_view_host1());
 
   // Abort.
   tab_helper().DidStartProvisionalLoadForFrame(
       3, -1, false, url, false, false, render_view_host1());
   tab_helper().DidFailProvisionalLoad(
-      3, false, url, net::ERR_ABORTED, string16(), render_view_host1());
+      3, base::string16(), false, url, net::ERR_ABORTED, base::string16(),
+      render_view_host1());
 }
 
 // Simulates a subframe erroring out at the same time as a provisional load,
@@ -428,11 +438,11 @@ TEST_F(CaptivePortalTabHelperTest, HttpsSubframeParallelError) {
 
   // Loads return errors.
   tab_helper().DidFailProvisionalLoad(
-      frame_id, true, url, net::ERR_UNEXPECTED, string16(),
-      render_view_host1());
+      frame_id, base::string16(), true, url, net::ERR_UNEXPECTED,
+      base::string16(), render_view_host1());
   tab_helper().DidFailProvisionalLoad(
-      subframe_id, false, url, net::ERR_TIMED_OUT, string16(),
-      render_view_host1());
+      subframe_id, base::string16(), false, url, net::ERR_TIMED_OUT,
+      base::string16(), render_view_host1());
 
   // Provisional load starts for the error pages.
   tab_helper().DidStartProvisionalLoadForFrame(
@@ -442,11 +452,11 @@ TEST_F(CaptivePortalTabHelperTest, HttpsSubframeParallelError) {
 
   // Error page load finishes.
   tab_helper().DidCommitProvisionalLoadForFrame(
-      subframe_id, false, url, content::PAGE_TRANSITION_AUTO_SUBFRAME,
-      render_view_host1());
+      subframe_id, base::string16(), false, url,
+      content::PAGE_TRANSITION_AUTO_SUBFRAME, render_view_host1());
   EXPECT_CALL(mock_reloader(), OnLoadCommitted(net::ERR_UNEXPECTED)).Times(1);
   tab_helper().DidCommitProvisionalLoadForFrame(
-      frame_id, true, url, content::PAGE_TRANSITION_LINK,
+      frame_id, base::string16(), true, url, content::PAGE_TRANSITION_LINK,
       render_view_host1());
 }
 
@@ -463,8 +473,8 @@ TEST_F(CaptivePortalTabHelperTest, HttpToHttpsRedirectTimeout) {
              render_view_host1()->GetProcess()->GetID());
 
   tab_helper().DidFailProvisionalLoad(
-      1, true, https_url, net::ERR_TIMED_OUT, string16(),
-      render_view_host1());
+      1, base::string16(), true, https_url, net::ERR_TIMED_OUT,
+      base::string16(), render_view_host1());
 
   // Provisional load starts for the error page.
   tab_helper().DidStartProvisionalLoadForFrame(
@@ -472,8 +482,8 @@ TEST_F(CaptivePortalTabHelperTest, HttpToHttpsRedirectTimeout) {
 
   EXPECT_CALL(mock_reloader(), OnLoadCommitted(net::ERR_TIMED_OUT)).Times(1);
   tab_helper().DidCommitProvisionalLoadForFrame(
-      1, true, GURL(kErrorPageUrl), content::PAGE_TRANSITION_LINK,
-      render_view_host1());
+      1, base::string16(), true, GURL(kErrorPageUrl),
+      content::PAGE_TRANSITION_LINK, render_view_host1());
 }
 
 // Simulates an HTTPS to HTTP redirect.
@@ -491,7 +501,7 @@ TEST_F(CaptivePortalTabHelperTest, HttpsToHttpRedirect) {
 
   EXPECT_CALL(mock_reloader(), OnLoadCommitted(net::OK)).Times(1);
   tab_helper().DidCommitProvisionalLoadForFrame(
-      1, true, http_url, content::PAGE_TRANSITION_LINK,
+      1, base::string16(), true, http_url, content::PAGE_TRANSITION_LINK,
       render_view_host1());
 }
 
@@ -509,7 +519,7 @@ TEST_F(CaptivePortalTabHelperTest, HttpToHttpRedirect) {
 
   EXPECT_CALL(mock_reloader(), OnLoadCommitted(net::OK)).Times(1);
   tab_helper().DidCommitProvisionalLoadForFrame(
-      1, true, http_url, content::PAGE_TRANSITION_LINK,
+      1, base::string16(), true, http_url, content::PAGE_TRANSITION_LINK,
       render_view_host1());
 }
 
@@ -526,8 +536,8 @@ TEST_F(CaptivePortalTabHelperTest, SubframeRedirect) {
 
   EXPECT_CALL(mock_reloader(), OnLoadCommitted(net::OK)).Times(1);
   tab_helper().DidCommitProvisionalLoadForFrame(
-      1, true, GURL(kErrorPageUrl), content::PAGE_TRANSITION_LINK,
-      render_view_host1());
+      1, base::string16(), true, GURL(kErrorPageUrl),
+      content::PAGE_TRANSITION_LINK, render_view_host1());
 }
 
 // Simulates a redirect, for another RenderViewHost.
@@ -544,8 +554,8 @@ TEST_F(CaptivePortalTabHelperTest, OtherRenderViewHostRedirect) {
              render_view_host2()->GetProcess()->GetID());
 
   tab_helper().DidFailProvisionalLoad(
-      1, true, https_url, net::ERR_TIMED_OUT, string16(),
-      render_view_host1());
+      1, base::string16(), true, https_url, net::ERR_TIMED_OUT,
+      base::string16(), render_view_host1());
 
   // Provisional load starts for the error page.
   tab_helper().DidStartProvisionalLoadForFrame(
@@ -553,8 +563,8 @@ TEST_F(CaptivePortalTabHelperTest, OtherRenderViewHostRedirect) {
 
   EXPECT_CALL(mock_reloader(), OnLoadCommitted(net::ERR_TIMED_OUT)).Times(1);
   tab_helper().DidCommitProvisionalLoadForFrame(
-      1, true, GURL(kErrorPageUrl), content::PAGE_TRANSITION_LINK,
-      render_view_host1());
+      1, base::string16(), true, GURL(kErrorPageUrl),
+      content::PAGE_TRANSITION_LINK, render_view_host1());
 }
 
 TEST_F(CaptivePortalTabHelperTest, LoginTabLogin) {

@@ -30,7 +30,7 @@
 #include "content/public/test/test_navigation_observer.h"
 #include "net/base/net_util.h"
 #include "net/test/spawned_test_server/spawned_test_server.h"
-#include "ui/base/events/event_constants.h"
+#include "ui/events/event_constants.h"
 
 class RedirectTest : public InProcessBrowserTest {
  public:
@@ -134,8 +134,8 @@ IN_PROC_BROWSER_TEST_F(RedirectTest, ClientEmptyReferer) {
   base::ScopedTempDir temp_directory;
   ASSERT_TRUE(temp_directory.CreateUniqueTempDir());
   base::FilePath temp_file;
-  ASSERT_TRUE(file_util::CreateTemporaryFileInDir(temp_directory.path(),
-                                                  &temp_file));
+  ASSERT_TRUE(base::CreateTemporaryFileInDir(temp_directory.path(),
+                                             &temp_file));
   ASSERT_EQ(static_cast<int>(file_redirect_contents.size()),
             file_util::WriteFile(temp_file,
                                  file_redirect_contents.data(),
@@ -169,7 +169,7 @@ IN_PROC_BROWSER_TEST_F(RedirectTest, ClientCancelled) {
   // as client redirect and the redirect will be recoreded, which can cause
   // this test failed.
   content::SimulateMouseClick(web_contents, 0,
-      WebKit::WebMouseEvent::ButtonLeft);
+      blink::WebMouseEvent::ButtonLeft);
   navigation_observer.Wait();
 
   std::vector<GURL> redirects = GetRedirects(first_url);

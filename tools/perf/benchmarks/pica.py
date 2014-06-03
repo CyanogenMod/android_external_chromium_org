@@ -5,10 +5,11 @@
 from telemetry import test
 from telemetry.page import page_measurement
 
-class PicaMeasurement(page_measurement.PageMeasurement):
+class _PicaMeasurement(page_measurement.PageMeasurement):
   def CustomizeBrowserOptions(self, options):
     # Needed for native custom elements (document.register)
-    options.AppendExtraBrowserArg('--enable-experimental-web-platform-features')
+    options.AppendExtraBrowserArgs(
+        '--enable-experimental-web-platform-features')
 
   def MeasurePage(self, _, tab, results):
     result = int(tab.EvaluateJavaScript('__pica_load_time'))
@@ -16,5 +17,5 @@ class PicaMeasurement(page_measurement.PageMeasurement):
 
 
 class Pica(test.Test):
-  test = PicaMeasurement
+  test = _PicaMeasurement
   page_set = 'page_sets/pica.json'

@@ -12,26 +12,23 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/prefs/pref_change_registrar.h"
 #include "base/strings/string16.h"
-#include "chrome/browser/extensions/management_policy.h"
 #include "chrome/browser/managed_mode/managed_mode_url_filter.h"
 #include "chrome/browser/managed_mode/managed_users.h"
-#include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/sync/profile_sync_service_observer.h"
+#include "chrome/browser/ui/browser_list_observer.h"
 #include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/browser/management_policy.h"
 
 class Browser;
 class GoogleServiceAuthError;
 class ManagedModeURLFilter;
 class ManagedModeSiteList;
 class ManagedUserRegistrationUtility;
+class ManagedUserSettingsService;
 class Profile;
-
-namespace policy {
-class ManagedModePolicyProvider;
-}
 
 namespace user_prefs {
 class PrefRegistrySyncable;
@@ -46,8 +43,9 @@ class ManagedUserService : public BrowserContextKeyedService,
                            public content::NotificationObserver,
                            public chrome::BrowserListObserver {
  public:
-  typedef std::vector<string16> CategoryList;
+  typedef std::vector<base::string16> CategoryList;
   typedef base::Callback<void(content::WebContents*)> NavigationBlockedCallback;
+  typedef base::Callback<void(const GoogleServiceAuthError&)> AuthErrorCallback;
 
   enum ManualBehavior {
     MANUAL_NONE = 0,
@@ -62,10 +60,7 @@ class ManagedUserService : public BrowserContextKeyedService,
 
   static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
 
-  // Returns true if managed users are enabled by either Finch or the command
-  // line flag.
-  // TODO(pamg, sergiu): Remove this once the feature is fully launched.
-  static bool AreManagedUsersEnabled();
+  static void MigrateUserPrefs(PrefService* prefs);
 
   // Returns the URL filter for the IO thread, for filtering network requests
   // (in ManagedModeResourceThrottle).
@@ -116,9 +111,6 @@ class ManagedUserService : public BrowserContextKeyedService,
   // managed.
   void Init();
 
-  // Marks the profile as managed and initializes it.
-  void InitForTesting();
-
   // Initializes this profile for syncing, using the provided |refresh_token| to
   // mint access tokens for Sync.
   void InitSync(const std::string& refresh_token);
@@ -131,11 +123,7 @@ class ManagedUserService : public BrowserContextKeyedService,
   void RegisterAndInitSync(ManagedUserRegistrationUtility* registration_utility,
                            Profile* custodian_profile,
                            const std::string& managed_user_id,
-                           const ProfileManager::CreateCallback& callback);
-
-  // Returns a pseudo-email address for systems that expect well-formed email
-  // addresses (like Sync), even though we're not signed in.
-  static const char* GetManagedUserPseudoEmail();
+                           const AuthErrorCallback& callback);
 
   void set_elevated_for_testing(bool skip) {
     elevated_for_testing_ = skip;
@@ -144,14 +132,12 @@ class ManagedUserService : public BrowserContextKeyedService,
   void AddNavigationBlockedCallback(const NavigationBlockedCallback& callback);
   void DidBlockNavigation(content::WebContents* web_contents);
 
-  void AddInitCallback(const base::Closure& callback);
-
   // extensions::ManagementPolicy::Provider implementation:
   virtual std::string GetDebugPolicyProviderName() const OVERRIDE;
   virtual bool UserMayLoad(const extensions::Extension* extension,
-                           string16* error) const OVERRIDE;
+                           base::string16* error) const OVERRIDE;
   virtual bool UserMayModifySettings(const extensions::Extension* extension,
-                                     string16* error) const OVERRIDE;
+                                     base::string16* error) const OVERRIDE;
 
   // ProfileSyncServiceObserver implementation:
   virtual void OnStateChanged() OVERRIDE;
@@ -165,7 +151,7 @@ class ManagedUserService : public BrowserContextKeyedService,
   virtual void OnBrowserSetLastActive(Browser* browser) OVERRIDE;
 
  private:
-  friend class ManagedUserServiceExtensionTest;
+  friend class ManagedUserServiceExtensionTestBase;
   friend class ManagedUserServiceFactory;
   FRIEND_TEST_ALL_PREFIXES(ManagedUserServiceTest,
                            ExtensionManagementPolicyProviderUnmanaged);
@@ -206,9 +192,9 @@ class ManagedUserService : public BrowserContextKeyedService,
   // an instance of this service.
   explicit ManagedUserService(Profile* profile);
 
-  void OnCustodianProfileDownloaded(const string16& full_name);
+  void OnCustodianProfileDownloaded(const base::string16& full_name);
 
-  void OnManagedUserRegistered(const ProfileManager::CreateCallback& callback,
+  void OnManagedUserRegistered(const AuthErrorCallback& callback,
                                Profile* custodian_profile,
                                const GoogleServiceAuthError& auth_error,
                                const std::string& token);
@@ -221,13 +207,13 @@ class ManagedUserService : public BrowserContextKeyedService,
   // If |error| is not NULL, it will be filled with an error message if the
   // requested extension action (install, modify status, etc.) is not permitted.
   bool ExtensionManagementPolicyImpl(const extensions::Extension* extension,
-                                     string16* error) const;
+                                     base::string16* error) const;
 
   // Returns a list of all installed and enabled site lists in the current
   // managed profile.
   ScopedVector<ManagedModeSiteList> GetActiveSiteLists();
 
-  policy::ManagedModePolicyProvider* GetPolicyProvider();
+  ManagedUserSettingsService* GetSettingsService();
 
   void OnDefaultFilteringBehaviorChanged();
 
@@ -247,8 +233,6 @@ class ManagedUserService : public BrowserContextKeyedService,
   // Each entry is a dictionary which has the timestamp of the event.
   void RecordProfileAndBrowserEventsHelper(const char* key_prefix);
 
-  base::WeakPtrFactory<ManagedUserService> weak_ptr_factory_;
-
   // Owns us via the BrowserContextKeyedService mechanism.
   Profile* profile_;
 
@@ -259,8 +243,6 @@ class ManagedUserService : public BrowserContextKeyedService,
   bool waiting_for_sync_initialization_;
   bool is_profile_active_;
 
-  std::vector<base::Closure> init_callbacks_;
-
   std::vector<NavigationBlockedCallback> navigation_blocked_callbacks_;
 
   // Sets a profile in elevated state for testing if set to true.
@@ -270,6 +252,8 @@ class ManagedUserService : public BrowserContextKeyedService,
   bool did_shutdown_;
 
   URLFilterContext url_filter_context_;
+
+  base::WeakPtrFactory<ManagedUserService> weak_ptr_factory_;
 };
 
 #endif  // CHROME_BROWSER_MANAGED_MODE_MANAGED_USER_SERVICE_H_

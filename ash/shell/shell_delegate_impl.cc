@@ -4,63 +4,73 @@
 
 #include "ash/shell/shell_delegate_impl.h"
 
-#include <limits>
-
+#include "ash/accessibility_delegate.h"
 #include "ash/caps_lock_delegate_stub.h"
+#include "ash/default_accessibility_delegate.h"
+#include "ash/default_user_wallpaper_delegate.h"
 #include "ash/host/root_window_host_factory.h"
+#include "ash/media_delegate.h"
+#include "ash/new_window_delegate.h"
 #include "ash/session_state_delegate.h"
 #include "ash/session_state_delegate_stub.h"
 #include "ash/shell/context_menu.h"
 #include "ash/shell/example_factory.h"
-#include "ash/shell/launcher_delegate_impl.h"
+#include "ash/shell/keyboard_controller_proxy_stub.h"
+#include "ash/shell/shelf_delegate_impl.h"
 #include "ash/shell/toplevel_window.h"
 #include "ash/shell_window_ids.h"
-#include "ash/wm/window_util.h"
+#include "ash/system/tray/default_system_tray_delegate.h"
+#include "ash/wm/window_state.h"
 #include "base/message_loop/message_loop.h"
 #include "ui/aura/window.h"
-#include "ui/keyboard/keyboard_controller_proxy.h"
 #include "ui/views/corewm/input_method_event_filter.h"
 
 namespace ash {
-
+namespace shell {
 namespace {
 
-class DummyKeyboardControllerProxy : public keyboard::KeyboardControllerProxy {
+class NewWindowDelegateImpl : public NewWindowDelegate {
  public:
-  DummyKeyboardControllerProxy() {}
-  virtual ~DummyKeyboardControllerProxy() {}
+  NewWindowDelegateImpl() {}
+  virtual ~NewWindowDelegateImpl() {}
+
+  virtual void NewTab() OVERRIDE {}
+  virtual void NewWindow(bool incognito) OVERRIDE {
+    ash::shell::ToplevelWindow::CreateParams create_params;
+    create_params.can_resize = true;
+    create_params.can_maximize = true;
+    ash::shell::ToplevelWindow::CreateToplevelWindow(create_params);
+  }
+  virtual void OpenFileManager() OVERRIDE {}
+  virtual void OpenCrosh() OVERRIDE {}
+  virtual void RestoreTab() OVERRIDE {}
+  virtual void ShowKeyboardOverlay() OVERRIDE {}
+  virtual void ShowTaskManager() OVERRIDE {}
+  virtual void OpenFeedbackPage() OVERRIDE {}
 
  private:
-  // Overridden from keyboard::KeyboardControllerProxy:
-  virtual content::BrowserContext* GetBrowserContext() OVERRIDE {
-    return Shell::GetInstance()->browser_context();
-  }
+  DISALLOW_COPY_AND_ASSIGN(NewWindowDelegateImpl);
+};
 
-  virtual ui::InputMethod* GetInputMethod() OVERRIDE {
-    return Shell::GetInstance()->input_method_filter()->input_method();
-  }
+class MediaDelegateImpl : public MediaDelegate {
+ public:
+  MediaDelegateImpl() {}
+  virtual ~MediaDelegateImpl() {}
 
-  virtual void RequestAudioInput(content::WebContents* web_contents,
-      const content::MediaStreamRequest& request,
-      const content::MediaResponseCallback& callback) OVERRIDE {
-    return;
-  }
+  virtual void HandleMediaNextTrack() OVERRIDE {}
+  virtual void HandleMediaPlayPause() OVERRIDE {}
+  virtual void HandleMediaPrevTrack() OVERRIDE {}
 
-  DISALLOW_COPY_AND_ASSIGN(DummyKeyboardControllerProxy);
+ private:
+  DISALLOW_COPY_AND_ASSIGN(MediaDelegateImpl);
 };
 
 }  // namespace
 
-namespace shell {
-
 ShellDelegateImpl::ShellDelegateImpl()
     : watcher_(NULL),
-      launcher_delegate_(NULL),
-      spoken_feedback_enabled_(false),
-      high_contrast_enabled_(false),
-      screen_magnifier_enabled_(false),
-      screen_magnifier_type_(kDefaultMagnifierType),
-      large_cursor_enabled_(false) {
+      shelf_delegate_(NULL),
+      browser_context_(NULL) {
 }
 
 ShellDelegateImpl::~ShellDelegateImpl() {
@@ -68,12 +78,16 @@ ShellDelegateImpl::~ShellDelegateImpl() {
 
 void ShellDelegateImpl::SetWatcher(WindowWatcher* watcher) {
   watcher_ = watcher;
-  if (launcher_delegate_)
-    launcher_delegate_->set_watcher(watcher);
+  if (shelf_delegate_)
+    shelf_delegate_->set_watcher(watcher);
 }
 
 bool ShellDelegateImpl::IsFirstRunAfterBoot() const {
   return false;
+}
+
+bool ShellDelegateImpl::IsIncognitoAllowed() const {
+  return true;
 }
 
 bool ShellDelegateImpl::IsMultiProfilesEnabled() const {
@@ -94,114 +108,30 @@ void ShellDelegateImpl::Exit() {
   base::MessageLoopForUI::current()->Quit();
 }
 
-void ShellDelegateImpl::NewTab() {
-}
-
-void ShellDelegateImpl::NewWindow(bool incognito) {
-  ash::shell::ToplevelWindow::CreateParams create_params;
-  create_params.can_resize = true;
-  create_params.can_maximize = true;
-  ash::shell::ToplevelWindow::CreateToplevelWindow(create_params);
-}
-
-void ShellDelegateImpl::ToggleFullscreen() {
-  ToggleMaximized();
-}
-
-void ShellDelegateImpl::ToggleMaximized() {
-  aura::Window* window = ash::wm::GetActiveWindow();
-  if (window)
-    ash::wm::ToggleMaximizedWindow(window);
-}
-
-void ShellDelegateImpl::OpenFileManager(bool as_dialog) {
-}
-
-void ShellDelegateImpl::OpenCrosh() {
-}
-
-void ShellDelegateImpl::RestoreTab() {
-}
-
-void ShellDelegateImpl::ShowKeyboardOverlay() {
-}
-
 keyboard::KeyboardControllerProxy*
     ShellDelegateImpl::CreateKeyboardControllerProxy() {
-  return new DummyKeyboardControllerProxy();
+  return new KeyboardControllerProxyStub();
 }
 
-void ShellDelegateImpl::ShowTaskManager() {
-}
-
-content::BrowserContext* ShellDelegateImpl::GetCurrentBrowserContext() {
-  return Shell::GetInstance()->browser_context();
-}
-
-void ShellDelegateImpl::ToggleSpokenFeedback(
-    AccessibilityNotificationVisibility notify) {
-  spoken_feedback_enabled_ = !spoken_feedback_enabled_;
-}
-
-bool ShellDelegateImpl::IsSpokenFeedbackEnabled() const {
-  return spoken_feedback_enabled_;
-}
-
-void ShellDelegateImpl::ToggleHighContrast() {
-  high_contrast_enabled_ = !high_contrast_enabled_;
-}
-
-bool ShellDelegateImpl::IsHighContrastEnabled() const {
-  return high_contrast_enabled_;
-}
-
-void ShellDelegateImpl::SetMagnifierEnabled(bool enabled) {
-  screen_magnifier_enabled_ = enabled;
-}
-
-void ShellDelegateImpl::SetMagnifierType(MagnifierType type) {
-  screen_magnifier_type_ = type;
-}
-
-bool ShellDelegateImpl::IsMagnifierEnabled() const {
-  return screen_magnifier_enabled_;
-}
-
-MagnifierType ShellDelegateImpl::GetMagnifierType() const {
-  return screen_magnifier_type_;
-}
-
-void ShellDelegateImpl::SetLargeCursorEnabled(bool enabled) {
-  large_cursor_enabled_ = enabled;
-}
-
-bool ShellDelegateImpl::IsLargeCursorEnabled() const {
-  return large_cursor_enabled_;
-}
-
-bool ShellDelegateImpl::ShouldAlwaysShowAccessibilityMenu() const {
-  return false;
-}
-
-void ShellDelegateImpl::SilenceSpokenFeedback() const {
+content::BrowserContext* ShellDelegateImpl::GetActiveBrowserContext() {
+  return browser_context_;
 }
 
 app_list::AppListViewDelegate* ShellDelegateImpl::CreateAppListViewDelegate() {
   return ash::shell::CreateAppListViewDelegate();
 }
 
-ash::LauncherDelegate* ShellDelegateImpl::CreateLauncherDelegate(
-    ash::LauncherModel* model) {
-  launcher_delegate_ = new LauncherDelegateImpl(watcher_);
-  return launcher_delegate_;
+ShelfDelegate* ShellDelegateImpl::CreateShelfDelegate(ShelfModel* model) {
+  shelf_delegate_ = new ShelfDelegateImpl(watcher_);
+  return shelf_delegate_;
 }
 
 ash::SystemTrayDelegate* ShellDelegateImpl::CreateSystemTrayDelegate() {
-  return NULL;
+  return new DefaultSystemTrayDelegate;
 }
 
 ash::UserWallpaperDelegate* ShellDelegateImpl::CreateUserWallpaperDelegate() {
-  return NULL;
+  return new DefaultUserWallpaperDelegate();
 }
 
 ash::CapsLockDelegate* ShellDelegateImpl::CreateCapsLockDelegate() {
@@ -212,33 +142,23 @@ ash::SessionStateDelegate* ShellDelegateImpl::CreateSessionStateDelegate() {
   return new SessionStateDelegateStub;
 }
 
+ash::AccessibilityDelegate* ShellDelegateImpl::CreateAccessibilityDelegate() {
+  return new internal::DefaultAccessibilityDelegate;
+}
+
+ash::NewWindowDelegate* ShellDelegateImpl::CreateNewWindowDelegate() {
+  return new NewWindowDelegateImpl;
+}
+
+ash::MediaDelegate* ShellDelegateImpl::CreateMediaDelegate() {
+  return new MediaDelegateImpl;
+}
+
 aura::client::UserActionClient* ShellDelegateImpl::CreateUserActionClient() {
   return NULL;
 }
 
-void ShellDelegateImpl::OpenFeedbackPage() {
-}
-
-void ShellDelegateImpl::RecordUserMetricsAction(UserMetricsAction action) {
-}
-
-void ShellDelegateImpl::HandleMediaNextTrack() {
-}
-
-void ShellDelegateImpl::HandleMediaPlayPause() {
-}
-
-void ShellDelegateImpl::HandleMediaPrevTrack() {
-}
-
-void ShellDelegateImpl::SaveScreenMagnifierScale(double scale) {
-}
-
-double ShellDelegateImpl::GetSavedScreenMagnifierScale() {
-  return std::numeric_limits<double>::min();
-}
-
-ui::MenuModel* ShellDelegateImpl::CreateContextMenu(aura::RootWindow* root) {
+ui::MenuModel* ShellDelegateImpl::CreateContextMenu(aura::Window* root) {
   return new ContextMenu(root);
 }
 

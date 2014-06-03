@@ -7,13 +7,15 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "cc/input/input_handler.h"
-#include "cc/test/fake_context_provider.h"
-#include "cc/test/fake_output_surface.h"
-#include "cc/trees/layer_tree_host.h"
+#include "cc/test/test_context_provider.h"
+#include "cc/trees/layer_tree_host_client.h"
+#include "cc/trees/layer_tree_host_single_thread_client.h"
 
 namespace cc {
+class OutputSurface;
 
-class FakeLayerTreeHostClient : public LayerTreeHostClient {
+class FakeLayerTreeHostClient : public LayerTreeHostClient,
+                                public LayerTreeHostSingleThreadClient {
  public:
   enum RendererOptions {
     DIRECT_3D,
@@ -24,8 +26,9 @@ class FakeLayerTreeHostClient : public LayerTreeHostClient {
   explicit FakeLayerTreeHostClient(RendererOptions options);
   virtual ~FakeLayerTreeHostClient();
 
-  virtual void WillBeginFrame() OVERRIDE {}
-  virtual void DidBeginFrame() OVERRIDE {}
+  // LayerTreeHostClient implementation.
+  virtual void WillBeginMainFrame(int frame_id) OVERRIDE {}
+  virtual void DidBeginMainFrame() OVERRIDE {}
   virtual void Animate(double frame_begin_time) OVERRIDE {}
   virtual void Layout() OVERRIDE {}
   virtual void ApplyScrollAndScale(gfx::Vector2d scroll_delta,
@@ -37,21 +40,19 @@ class FakeLayerTreeHostClient : public LayerTreeHostClient {
   virtual void DidCommit() OVERRIDE {}
   virtual void DidCommitAndDrawFrame() OVERRIDE {}
   virtual void DidCompleteSwapBuffers() OVERRIDE {}
+  virtual scoped_refptr<ContextProvider> OffscreenContextProvider() OVERRIDE;
 
-  // Used only in the single-threaded path.
+  // LayerTreeHostSingleThreadClient implementation.
   virtual void ScheduleComposite() OVERRIDE {}
-
-  virtual scoped_refptr<cc::ContextProvider>
-      OffscreenContextProviderForMainThread() OVERRIDE;
-  virtual scoped_refptr<cc::ContextProvider>
-      OffscreenContextProviderForCompositorThread() OVERRIDE;
+  virtual void ScheduleAnimation() OVERRIDE {}
+  virtual void DidPostSwapBuffers() OVERRIDE {}
+  virtual void DidAbortSwapBuffers() OVERRIDE {}
 
  private:
   bool use_software_rendering_;
   bool use_delegating_renderer_;
 
-  scoped_refptr<FakeContextProvider> main_thread_contexts_;
-  scoped_refptr<FakeContextProvider> compositor_thread_contexts_;
+  scoped_refptr<TestContextProvider> offscreen_contexts_;
 };
 
 }  // namespace cc

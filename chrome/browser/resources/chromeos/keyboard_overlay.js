@@ -38,6 +38,7 @@ var LABEL_TO_IDENTIFIER = {
   'ctrl': '1D',
   'alt': '38',
   'caps lock': '3A',
+  'esc': '01',
   'disabled': 'DISABLED'
 };
 
@@ -128,10 +129,6 @@ function getShortcutData() {
 
   shortcutDataCache = keyboardOverlayData['shortcut'];
 
-  if (!isDisplayRotationEnabled()) {
-    // Rotate screen
-    delete shortcutDataCache['reload<>CTRL<>SHIFT'];
-  }
   if (!isDisplayUIScalingEnabled()) {
     // Zoom screen in
     delete shortcutDataCache['+<>CTRL<>SHIFT'];
@@ -442,8 +439,8 @@ function update(modifiers) {
       shortcutText.style.visibility = 'hidden';
     }
 
-    if (keyData.format) {
-      var format = keyData.format;
+    var format = keyboardGlyphData.keys[layout[i][0]].format;
+    if (format) {
       if (format == 'left' || format == 'right') {
         shortcutText.style.textAlign = format;
         keyText.style.textAlign = format;
@@ -572,14 +569,6 @@ function initLayout() {
  */
 function hasDiamondKey() {
   return loadTimeData.getBoolean('keyboardOverlayHasChromeOSDiamondKey');
-}
-
-/**
- * Returns true if display rotation feature is enabled.
- * @return {boolean} True if display rotation feature is enabled.
- */
-function isDisplayRotationEnabled() {
-  return loadTimeData.getBoolean('keyboardOverlayIsDisplayRotationEnabled');
 }
 
 /**

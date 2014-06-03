@@ -84,12 +84,17 @@ enum InstallStatus {
                                // they were invalid for any reason.
   DIFF_PATCH_SOURCE_MISSING,   // 50. No previous version archive found for
                                // differential update.
+  UNUSED_BINARIES,             // 51. No multi-install products to update. The
+                               // binaries will be uninstalled if they are not
+                               // in use.
+  UNUSED_BINARIES_UNINSTALLED,  // 52. The binaries were uninstalled.
+  UNSUPPORTED_OPTION,          // 53. An unsupported legacy option was given.
   // Friendly reminder: note the COMPILE_ASSERT below.
 };
 
 
 // Existing InstallStatus values must not change.  Always add to the end.
-COMPILE_ASSERT(installer::DIFF_PATCH_SOURCE_MISSING == 50,
+COMPILE_ASSERT(installer::UNSUPPORTED_OPTION == 53,
                dont_change_enum);
 
 // The type of an update archive.
@@ -123,12 +128,14 @@ enum InstallerStage {
   CONFIGURE_AUTO_LAUNCH,       // 16: Configuring Chrome to auto-launch.
   CREATING_VISUAL_MANIFEST,    // 17: Creating VisualElementsManifest.xml
   DEFERRING_TO_HIGHER_VERSION,  // 18: Deferring to an installed higher version.
-  NUM_STAGES                   // 19: The number of stages.
+  UNINSTALLING_BINARIES,       // 19: Uninstalling unused binaries.
+  UNINSTALLING_CHROME_FRAME,   // 20: Uninstalling multi-install Chrome Frame.
+  NUM_STAGES                   // 21: The number of stages.
 };
 
 // When we start reporting the numerical values from the enum, the order
 // above MUST be preserved.
-COMPILE_ASSERT(DEFERRING_TO_HIGHER_VERSION == 18,
+COMPILE_ASSERT(UNINSTALLING_CHROME_FRAME == 20,
                never_ever_ever_change_InstallerStage_values_bang);
 
 namespace switches {
@@ -138,11 +145,6 @@ extern const char kChrome[];
 extern const char kChromeAppHostDeprecated[];  // TODO(huangs): Remove by M27.
 extern const char kChromeAppLauncher[];
 extern const char kChromeFrame[];
-extern const char kChromeFrameQuickEnable[];
-extern const char kChromeFrameReadyMode[];
-extern const char kChromeFrameReadyModeOptIn[];
-extern const char kChromeFrameReadyModeTempOptOut[];
-extern const char kChromeFrameReadyModeEndTempOptOut[];
 extern const char kChromeSxS[];
 extern const char kConfigureUserSettings[];
 extern const char kCriticalUpdateVersion[];
@@ -159,7 +161,6 @@ extern const char kInstallArchive[];
 extern const char kInstallerData[];
 extern const char kLogFile[];
 extern const char kMakeChromeDefault[];
-extern const char kMigrateChromeFrame[];
 extern const char kMsi[];
 extern const char kMultiInstall[];
 extern const char kNewSetupExe[];
@@ -197,9 +198,9 @@ extern const wchar_t kChromeDll[];
 extern const wchar_t kChromeChildDll[];
 extern const wchar_t kChromeExe[];
 extern const wchar_t kChromeFrameDll[];
+extern const wchar_t kChromeFrameHelperDll[];
 extern const wchar_t kChromeFrameHelperExe[];
 extern const wchar_t kChromeFrameHelperWndClass[];
-extern const wchar_t kChromeFrameReadyModeField[];
 extern const wchar_t kChromeLauncherExe[];
 extern const wchar_t kChromeOldExe[];
 extern const wchar_t kChromeNewExe[];
@@ -236,7 +237,6 @@ extern const wchar_t kInstallerSuccessLaunchCmdLine[];
 
 // Product options.
 extern const wchar_t kOptionMultiInstall[];
-extern const wchar_t kOptionReadyMode[];
 
 // Chrome channel display names.
 // NOTE: Canary is not strictly a 'channel', but rather a separate product

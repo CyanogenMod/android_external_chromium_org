@@ -19,6 +19,7 @@
 #include "chrome/browser/autocomplete/autocomplete_provider_listener.h"
 #include "chrome/browser/autocomplete/autocomplete_result.h"
 #include "chrome/browser/autocomplete/history_url_provider.h"
+#include "chrome/browser/bookmarks/bookmark_test_helpers.h"
 #include "chrome/browser/history/history_backend.h"
 #include "chrome/browser/history/history_database.h"
 #include "chrome/browser/history/history_service.h"
@@ -32,7 +33,6 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
-#include "chrome/test/base/ui_test_utils.h"
 #include "content/public/test/test_browser_thread.h"
 #include "sql/transaction.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -132,10 +132,10 @@ class HistoryQuickProviderTest : public testing::Test,
   // Runs an autocomplete query on |text| and checks to see that the returned
   // results' destination URLs match those provided. |expected_urls| does not
   // need to be in sorted order.
-  void RunTest(const string16 text,
+  void RunTest(const base::string16 text,
                std::vector<std::string> expected_urls,
                bool can_inline_top_result,
-               string16 expected_fill_into_edit);
+               base::string16 expected_fill_into_edit);
 
   base::MessageLoopForUI message_loop_;
   content::TestBrowserThread ui_thread_;
@@ -153,7 +153,7 @@ void HistoryQuickProviderTest::SetUp() {
   profile_.reset(new TestingProfile());
   ASSERT_TRUE(profile_->CreateHistoryService(true, false));
   profile_->CreateBookmarkModel(true);
-  ui_test_utils::WaitForBookmarkModelToLoad(profile_.get());
+  test::WaitForBookmarkModelToLoad(profile_.get());
   profile_->BlockUntilHistoryIndexIsRefreshed();
   history_service_ =
       HistoryServiceFactory::GetForProfile(profile_.get(),
@@ -199,7 +199,6 @@ void HistoryQuickProviderTest::FillData() {
         PRId64 ", 0, 0)",
         i + 1, cur.url.c_str(), cur.title.c_str(), cur.visit_count,
         cur.typed_count, visit_time.ToInternalValue());
-    std::string sql_cmd(sql_cmd_line);
     sql::Statement sql_stmt(db.GetUniqueStatement(sql_cmd_line.c_str()));
     EXPECT_TRUE(sql_stmt.Run());
     transaction.Commit();
@@ -217,7 +216,6 @@ void HistoryQuickProviderTest::FillData() {
           (j < cur.typed_count) ? content::PAGE_TRANSITION_TYPED :
                                   content::PAGE_TRANSITION_LINK);
 
-      std::string sql_cmd(sql_cmd_line);
       sql::Statement sql_stmt(db.GetUniqueStatement(sql_cmd_line.c_str()));
       EXPECT_TRUE(sql_stmt.Run());
       transaction.Commit();
@@ -239,15 +237,15 @@ void HistoryQuickProviderTest::SetShouldContain::operator()(
 }
 
 
-void HistoryQuickProviderTest::RunTest(const string16 text,
+void HistoryQuickProviderTest::RunTest(const base::string16 text,
                                        std::vector<std::string> expected_urls,
                                        bool can_inline_top_result,
-                                       string16 expected_fill_into_edit) {
+                                       base::string16 expected_fill_into_edit) {
   SCOPED_TRACE(text);  // Minimal hint to query being run.
   base::MessageLoop::current()->RunUntilIdle();
-  AutocompleteInput input(text, string16::npos, string16(), GURL(),
-                          AutocompleteInput::INVALID_SPEC, false, false, true,
-                          AutocompleteInput::ALL_MATCHES);
+  AutocompleteInput input(text, base::string16::npos, base::string16(),
+                          GURL(), AutocompleteInput::INVALID_SPEC, false,
+                          false, true, AutocompleteInput::ALL_MATCHES);
   provider_->Start(input, false);
   EXPECT_TRUE(provider_->done());
 
@@ -296,18 +294,12 @@ void HistoryQuickProviderTest::RunTest(const string16 text,
         << "fill_into_edit was: '" << ac_matches_[0].fill_into_edit
         << "' but we expected '" << expected_fill_into_edit << "'.";
     size_t text_pos = expected_fill_into_edit.find(text);
-    ASSERT_NE(string16::npos, text_pos);
+    ASSERT_NE(base::string16::npos, text_pos);
     EXPECT_EQ(ac_matches_[0].fill_into_edit.substr(text_pos + text.size()),
               ac_matches_[0].inline_autocompletion);
   } else {
     // When the top scorer is not inline-able autocomplete offset must be npos.
     EXPECT_TRUE(ac_matches_[0].inline_autocompletion.empty());
-    // Also, the score must be too low to be inlineable.
-    // TODO(mpearson): when the controller reorders for inlining, there's no
-    // longer any connection between scores and what's inlineable / allowed
-    // to be the default match.  Remove this test.
-    EXPECT_LT(ac_matches_[0].relevance,
-              AutocompleteResult::kLowestDefaultScore);
   }
 }
 
@@ -557,7 +549,7 @@ TEST_F(HistoryQuickProviderTest, CullSearchResults) {
   // A search results page should not be returned when typing a query.
   std::vector<std::string> expected_urls;
   expected_urls.push_back("http://anotherengine.com/?q=thequery");
-  RunTest(ASCIIToUTF16("thequery"), expected_urls, false, string16());
+  RunTest(ASCIIToUTF16("thequery"), expected_urls, false, base::string16());
 
   // A search results page should not be returned when typing the engine URL.
   expected_urls.clear();

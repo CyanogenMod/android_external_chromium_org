@@ -9,6 +9,7 @@
 #include <set>
 #include <vector>
 
+#include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/net_log.h"
@@ -29,7 +30,8 @@ class NET_EXPORT_PRIVATE HttpStreamFactoryImpl :
     public HttpPipelinedHostPool::Delegate {
  public:
   // RequestStream may only be called if |for_websockets| is false.
-  // RequestWebSocketStream may only be called if |for_websockets| is true.
+  // RequestWebSocketHandshakeStream may only be called if |for_websockets|
+  // is true.
   HttpStreamFactoryImpl(HttpNetworkSession* session, bool for_websockets);
   virtual ~HttpStreamFactoryImpl();
 
@@ -42,13 +44,13 @@ class NET_EXPORT_PRIVATE HttpStreamFactoryImpl :
       HttpStreamRequest::Delegate* delegate,
       const BoundNetLog& net_log) OVERRIDE;
 
-  virtual HttpStreamRequest* RequestWebSocketStream(
+  virtual HttpStreamRequest* RequestWebSocketHandshakeStream(
       const HttpRequestInfo& info,
       RequestPriority priority,
       const SSLConfig& server_ssl_config,
       const SSLConfig& proxy_ssl_config,
       HttpStreamRequest::Delegate* delegate,
-      WebSocketStreamBase::Factory* factory,
+      WebSocketHandshakeStreamBase::CreateHelper* create_helper,
       const BoundNetLog& net_log) OVERRIDE;
 
   virtual void PreconnectStreams(int num_streams,
@@ -66,8 +68,10 @@ class NET_EXPORT_PRIVATE HttpStreamFactoryImpl :
   size_t num_orphaned_jobs() const { return orphaned_job_set_.size(); }
 
  private:
-  class Request;
-  class Job;
+  FRIEND_TEST_ALL_PREFIXES(HttpStreamFactoryImplRequestTest, SetPriority);
+
+  class NET_EXPORT_PRIVATE Request;
+  class NET_EXPORT_PRIVATE Job;
 
   typedef std::set<Request*> RequestSet;
   typedef std::vector<Request*> RequestVector;
@@ -81,7 +85,7 @@ class NET_EXPORT_PRIVATE HttpStreamFactoryImpl :
       const SSLConfig& server_ssl_config,
       const SSLConfig& proxy_ssl_config,
       HttpStreamRequest::Delegate* delegate,
-      WebSocketStreamBase::Factory* factory,
+      WebSocketHandshakeStreamBase::CreateHelper* create_helper,
       const BoundNetLog& net_log);
 
   PortAlternateProtocolPair GetAlternateProtocolRequestFor(

@@ -6,20 +6,32 @@
 #define CHROME_BROWSER_CHROMEOS_LOGIN_SCREENS_USER_IMAGE_SCREEN_H_
 
 #include "base/compiler_specific.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/chromeos/login/screens/user_image_screen_actor.h"
 #include "chrome/browser/chromeos/login/screens/wizard_screen.h"
 #include "chrome/browser/chromeos/login/user.h"
+#include "chrome/browser/chromeos/login/user_image_sync_observer.h"
 #include "chrome/browser/image_decoder.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
+
+namespace base {
+class Timer;
+class Value;
+};
+
+namespace policy {
+class PolicyChangeRegistrar;
+}
 
 namespace chromeos {
 
 class UserImageScreen: public WizardScreen,
                        public UserImageScreenActor::Delegate,
                        public ImageDecoder::Delegate,
-                       public content::NotificationObserver {
+                       public content::NotificationObserver,
+                       public UserImageSyncObserver::Observer {
  public:
   UserImageScreen(ScreenObserver* screen_observer,
                   UserImageScreenActor* actor);
@@ -37,10 +49,12 @@ class UserImageScreen: public WizardScreen,
   virtual std::string GetName() const OVERRIDE;
 
   // UserImageScreenActor::Delegate implementation:
-  virtual void CheckCameraPresence() OVERRIDE;
+  virtual void OnScreenReady() OVERRIDE;
   virtual void OnPhotoTaken(const std::string& raw_data) OVERRIDE;
+  virtual void CheckCameraPresence() OVERRIDE;
   virtual void OnImageSelected(const std::string& image_url,
-                               const std::string& image_type) OVERRIDE;
+                               const std::string& image_type,
+                               bool is_user_selection) OVERRIDE;
   virtual void OnImageAccepted() OVERRIDE;
   virtual void OnActorDestroyed(UserImageScreenActor* actor) OVERRIDE;
 
@@ -53,18 +67,42 @@ class UserImageScreen: public WizardScreen,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
-  // Overriden from ImageDecoder::Delegate:
+  // ImageDecoder::Delegate implementation:
   virtual void OnImageDecoded(const ImageDecoder* decoder,
                               const SkBitmap& decoded_image) OVERRIDE;
   virtual void OnDecodeImageFailed(const ImageDecoder* decoder) OVERRIDE;
 
+  // UserImageSyncObserver::Observer implementation:
+  virtual void OnInitialSync(bool local_image_updated) OVERRIDE;
+
+  bool user_selected_image() const { return user_has_selected_image_; }
+
  private:
+  // Called when whaiting for sync timed out.
+  void OnSyncTimeout();
+
+  bool IsWaitingForSync() const;
+
+  // Called when the policy::key::kUserAvatarImage policy changes while the
+  // screen is being shown. If the policy is set, closes the screen because the
+  // user is not allowed to override a policy-set image.
+  void OnUserImagePolicyChanged(const base::Value* previous,
+                                const base::Value* current);
+
   const User* GetUser();
 
   // Called when the camera presence check has been completed.
   void OnCameraPresenceCheckDone();
 
-  content::NotificationRegistrar registrar_;
+  // Called when it's decided not to skip the screen.
+  void HideCurtain();
+
+  // Closes the screen.
+  void ExitScreen();
+
+  content::NotificationRegistrar notification_registrar_;
+
+  scoped_ptr<policy::PolicyChangeRegistrar> policy_registrar_;
 
   UserImageScreenActor* actor_;
 
@@ -94,6 +132,18 @@ class UserImageScreen: public WizardScreen,
   bool profile_picture_absent_;
 
   std::string user_id_;
+
+  // Timer used for waiting for user image sync.
+  scoped_ptr<base::Timer> sync_timer_;
+
+  // If screen ready to be shown.
+  bool is_screen_ready_;
+
+  // True if user has explicitly selected some image.
+  bool user_has_selected_image_;
+
+  // True if camera was available last time.
+  bool was_camera_present_;
 
   DISALLOW_COPY_AND_ASSIGN(UserImageScreen);
 };

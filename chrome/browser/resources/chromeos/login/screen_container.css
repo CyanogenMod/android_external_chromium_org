@@ -7,7 +7,7 @@
   -webkit-box-align: center;
   -webkit-box-pack: center;
   -webkit-perspective: 600px;
-  bottom: 48px;  /* Leave space for the header bar */
+  bottom: 51px;  /* Leave space for the header bar */
   display: -webkit-box;
   left: 0;
   position: absolute;
@@ -40,7 +40,9 @@
 #oobe.managed-user-creation #inner-container,
 #oobe.password-changed #inner-container,
 #oobe.terms-of-service #inner-container,
-#oobe.wrong-hwid #inner-container {
+#oobe.wrong-hwid #inner-container,
+#oobe.confirm-password #inner-container,
+#oobe.message-box #inner-container {
   background: -webkit-linear-gradient(rgba(255,255,255,0.99),
                                       rgba(255,255,255,0.95));
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.3),
@@ -54,6 +56,11 @@
               0 4px 23px 5px rgba(0, 0, 0, 0.2),
               0 2px 6px rgba(0, 0, 0, 0.15);
 
+}
+
+#oobe.account-picker.flying-pods #inner-container {
+  -webkit-transition: width 180ms ease,
+                      height 180ms ease;
 }
 
 /* Only play this animation when 'down' class is removed. */
@@ -96,6 +103,7 @@
 }
 
 #account-picker-dot,
+#app-launch-splash-dot,
 #autolaunch-dot,
 #enrollment-dot,
 #kiosk-enable-dot,
@@ -107,7 +115,9 @@
 #managed-user-creation-dot,
 #managed-user-creation-dialog-dot,
 #terms-of-service-dot,
-#wrong-hwid-dot {
+#wrong-hwid-dot,
+#confirm-password-dot,
+#message-box-dot {
   display: none;
 }
 
@@ -124,22 +134,31 @@
   opacity: 1;
 }
 
-body.login-display #inner-container {
+body:not(.oobe-display) #inner-container {
   height: 262px;
   padding: 0;
   width: 1100px;
 }
 
-body.login-display #progress-dots {
+body:not(.oobe-display) #progress-dots {
   display: none;
+}
+
+#outer-container.fullscreen,
+#outer-container.fullscreen #oobe,
+#outer-container.fullscreen #oobe #inner-container {
+  height: 100%;
+  width: 100%;
 }
 
 html[build=chrome] #header-sections {
   -webkit-margin-start: -48px;
+  margin-top: -1px;
 }
 
 html[build=chromium] #header-sections {
   -webkit-margin-start: 5px;
+  margin-top: -1px;
 }
 
 .header-section {
@@ -148,7 +167,7 @@ html[build=chromium] #header-sections {
   font-size: 23px;
   line-height: 31px;
   text-transform: lowercase;
-  width: 20em;
+  width: 23em;
 }
 
 .header-section::before {

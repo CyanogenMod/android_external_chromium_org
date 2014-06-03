@@ -86,6 +86,7 @@ cr.define('options', function() {
           $('import-history').checked || $('import-favorites').checked ||
           $('import-passwords').checked || $('import-search').checked;
       $('import-data-commit').disabled = !somethingToImport;
+      $('import-choose-file').disabled = !$('import-favorites').checked;
     },
 
     /**
@@ -98,25 +99,23 @@ cr.define('options', function() {
       for (var i = 0; i < checkboxes.length; i++)
         this.setUpCheckboxState_(checkboxes[i], enabled);
       $('import-data-commit').disabled = !enabled;
+      $('import-choose-file').hidden = !enabled;
       $('mac-password-keychain').hidden = !enabled;
     },
 
     /**
-     * Sets the enabled and checked states of a checkbox element.
+     * Sets the enabled state of a checkbox element.
      * @param {Object} checkbox A checkbox element.
      * @param {boolean} enabled The enabled state of the checkbox. If false,
-     * the checkbox is disabled and unchecked. If true, the checkbox is enabled
-     * and checked.
-     * @param {boolean} visible The visible state of the checkbox.
+     *     the checkbox is disabled. If true, the checkbox is enabled.
      * @private
      */
     setUpCheckboxState_: function(checkbox, enabled) {
       checkbox.setDisabled('noProfileData', !enabled);
-      checkbox.checked = enabled;
     },
 
     /**
-     * Update the enabled and checked states of all checkboxes.
+     * Update the enabled and visible states of all the checkboxes.
      * @private
      */
     updateCheckboxes_: function() {
@@ -132,7 +131,6 @@ cr.define('options', function() {
       for (var i = 0; i < importOptions.length; i++) {
         var checkbox = $('import-' + importOptions[i]);
         var enable = browserProfile && browserProfile[importOptions[i]];
-        checkbox.checked = enable;
         this.setUpCheckboxState_(checkbox, enable);
         var checkboxWithLabel = $('import-' + importOptions[i] + '-with-label');
         checkboxWithLabel.style.display = enable ? '' : 'none';
@@ -228,17 +226,17 @@ cr.define('options', function() {
 
   /**
    * Update the UI to reflect whether an import operation is in progress.
-   * @param {boolean} state True if an import operation is in progress.
+   * @param {boolean} importing True if an import operation is in progress.
    */
-  ImportDataOverlay.setImportingState = function(state) {
+  ImportDataOverlay.setImportingState = function(importing) {
     var checkboxes =
         document.querySelectorAll('#import-checkboxes input[type=checkbox]');
     for (var i = 0; i < checkboxes.length; i++)
-        checkboxes[i].setDisabled('Importing', state);
-    if (!state)
+        checkboxes[i].setDisabled('Importing', importing);
+    if (!importing)
       ImportDataOverlay.getInstance().updateCheckboxes_();
-    $('import-browsers').disabled = state;
-    $('import-throbber').style.visibility = state ? 'visible' : 'hidden';
+    $('import-browsers').disabled = importing;
+    $('import-throbber').style.visibility = importing ? 'visible' : 'hidden';
     ImportDataOverlay.getInstance().validateCommitButton_();
   };
 

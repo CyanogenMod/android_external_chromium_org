@@ -57,15 +57,9 @@ void P2PInvalidationService::UnregisterInvalidationHandler(
   invalidator_->UnregisterHandler(handler);
 }
 
-void P2PInvalidationService::AcknowledgeInvalidation(
-    const invalidation::ObjectId& id,
-    const syncer::AckHandle& ack_handle) {
-  invalidator_->Acknowledge(id, ack_handle);
-}
-
 void P2PInvalidationService::SendInvalidation(
-    const syncer::ObjectIdInvalidationMap& invalidation_map) {
-  invalidator_->SendInvalidation(invalidation_map);
+    const syncer::ObjectIdSet& ids) {
+  invalidator_->SendInvalidation(ids);
 }
 
 syncer::InvalidatorState P2PInvalidationService::GetInvalidatorState() const {

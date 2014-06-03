@@ -5,19 +5,19 @@
 #include "chrome/browser/extensions/api/terminal/terminal_private_api.h"
 
 #include "base/bind.h"
-#include "base/chromeos/chromeos_version.h"
 #include "base/json/json_writer.h"
+#include "base/sys_info.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/api/terminal/terminal_extension_helper.h"
-#include "chrome/browser/extensions/event_names.h"
-#include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/api/terminal_private.h"
 #include "chromeos/process_proxy/process_proxy_registry.h"
 #include "content/public/browser/browser_thread.h"
+#include "extensions/browser/event_router.h"
 
+namespace terminal_private = extensions::api::terminal_private;
 namespace OnTerminalResize =
     extensions::api::terminal_private::OnTerminalResize;
 namespace OpenTerminalProcess =
@@ -32,7 +32,7 @@ const char kCroshCommand[] = "/usr/bin/crosh";
 const char kStubbedCroshCommand[] = "cat";
 
 const char* GetCroshPath() {
-  if (base::chromeos::IsRunningOnChromeOS())
+  if (base::SysInfo::IsRunningOnChromeOS())
     return kCroshCommand;
   else
     return kStubbedCroshCommand;
@@ -65,13 +65,15 @@ void NotifyProcessOutput(Profile* profile,
   if (profile &&
       extensions::ExtensionSystem::Get(profile)->event_router()) {
     scoped_ptr<extensions::Event> event(new extensions::Event(
-        extensions::event_names::kOnTerminalProcessOutput, args.Pass()));
+        terminal_private::OnProcessOutput::kEventName, args.Pass()));
     extensions::ExtensionSystem::Get(profile)->event_router()->
         DispatchEventToExtension(extension_id, event.Pass());
   }
 }
 
 }  // namespace
+
+namespace extensions {
 
 TerminalPrivateFunction::TerminalPrivateFunction() {}
 
@@ -112,8 +114,9 @@ void TerminalPrivateOpenTerminalProcessFunction::OpenOnFileThread() {
       chromeos::ProcessProxyRegistry::Get();
   pid_t pid;
   if (!registry->OpenProcess(
-          command_, &pid,
-          base::Bind(&NotifyProcessOutput, profile_, extension_id()))) {
+           command_,
+           &pid,
+           base::Bind(&NotifyProcessOutput, GetProfile(), extension_id()))) {
     // If new process could not be opened, we return -1.
     pid = -1;
   }
@@ -217,3 +220,5 @@ void TerminalPrivateOnTerminalResizeFunction::RespondOnUIThread(bool success) {
   SetResult(new base::FundamentalValue(success));
   SendResponse(true);
 }
+
+}  // namespace extensions

@@ -9,6 +9,7 @@
 #include "chrome/browser/ui/cocoa/bookmarks/bookmark_button.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_folder_target.h"
 #include "chrome/browser/ui/cocoa/cocoa_profile_test.h"
+#include "chrome/test/base/testing_profile.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
 #import "third_party/ocmock/OCMock/OCMock.h"
@@ -58,7 +59,8 @@ TEST_F(BookmarkFolderTargetTest, StartWithNothing) {
   [[controller expect] addNewFolderControllerWithParentButton:sender];
 
   base::scoped_nsobject<BookmarkFolderTarget> target(
-      [[BookmarkFolderTarget alloc] initWithController:controller]);
+      [[BookmarkFolderTarget alloc] initWithController:controller
+                                               profile:profile()]);
 
   [target openBookmarkFolderFromButton:sender];
   EXPECT_OCMOCK_VERIFY(controller);
@@ -83,7 +85,8 @@ TEST_F(BookmarkFolderTargetTest, ReopenSameFolder) {
   [[controller expect] closeBookmarkFolder:controller];
 
   base::scoped_nsobject<BookmarkFolderTarget> target(
-      [[BookmarkFolderTarget alloc] initWithController:controller]);
+      [[BookmarkFolderTarget alloc] initWithController:controller
+                                               profile:profile()]);
 
   [target openBookmarkFolderFromButton:sender];
   EXPECT_OCMOCK_VERIFY(controller);
@@ -112,7 +115,8 @@ TEST_F(BookmarkFolderTargetTest, ReopenNotSame) {
   [[controller expect] addNewFolderControllerWithParentButton:sender];
 
   base::scoped_nsobject<BookmarkFolderTarget> target(
-      [[BookmarkFolderTarget alloc] initWithController:controller]);
+      [[BookmarkFolderTarget alloc] initWithController:controller
+                                               profile:profile()]);
 
   [target openBookmarkFolderFromButton:sender];
   EXPECT_OCMOCK_VERIFY(controller);

@@ -15,12 +15,16 @@
 #include "ash/shell_window_ids.h"
 #include "ash/test/ash_test_base.h"
 #include "ash/test/display_manager_test_api.h"
+#include "ash/test/test_user_wallpaper_delegate.h"
 #include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/message_loop/message_loop.h"
+#include "base/threading/sequenced_worker_pool.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/test/test_browser_thread.h"
+#include "content/public/test/test_utils.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/aura/root_window.h"
@@ -34,8 +38,6 @@ using aura::RootWindow;
 using aura::Window;
 
 namespace ash {
-namespace internal {
-
 namespace {
 
 // Containers IDs used for tests.
@@ -46,7 +48,7 @@ const int kLockScreenBackgroundId =
 
 // Returns number of child windows in a shell window container.
 int ChildCountForContainer(int container_id) {
-  RootWindow* root = ash::Shell::GetPrimaryRootWindow();
+  Window* root = ash::Shell::GetPrimaryRootWindow();
   Window* container = root->GetChildById(container_id);
   return static_cast<int>(container->children().size());
 }
@@ -85,7 +87,7 @@ void RunAnimationForWidget(views::Widget* widget) {
 
   ui::Layer* layer = widget->GetNativeView()->layer();
   ui::LayerAnimatorTestController controller(layer->GetAnimator());
-  ui::AnimationContainerElement* element = layer->GetAnimator();
+  gfx::AnimationContainerElement* element = layer->GetAnimator();
   // Multiple steps are required to complete complex animations.
   // TODO(vollick): This should not be necessary. crbug.com/154017
   while (controller.animator()->is_animating()) {
@@ -109,11 +111,14 @@ class DesktopBackgroundControllerTest : public test::AshTestBase {
     test::AshTestBase::SetUp();
     // Ash shell initialization creates wallpaper. Reset it so we can manually
     // control wallpaper creation and animation in our tests.
-    RootWindowController* root_window_controller =
+    internal::RootWindowController* root_window_controller =
         Shell::GetPrimaryRootWindowController();
     root_window_controller->SetWallpaperController(NULL);
     root_window_controller->SetAnimatingWallpaperController(NULL);
     controller_ = Shell::GetInstance()->desktop_background_controller();
+    wallpaper_delegate_ = static_cast<test::TestUserWallpaperDelegate*>(
+        Shell::GetInstance()->user_wallpaper_delegate());
+    controller_->set_wallpaper_reload_delay_for_test(0);
   }
 
  protected:
@@ -129,10 +134,19 @@ class DesktopBackgroundControllerTest : public test::AshTestBase {
   // and writing images.
   static const int kWallpaperSize = 2;
 
+  // Creates an image of size |size|.
+  gfx::ImageSkia CreateImage(int width, int height) {
+    SkBitmap bitmap;
+    bitmap.setConfig(SkBitmap::kARGB_8888_Config, width, height);
+    bitmap.allocPixels();
+    gfx::ImageSkia image = gfx::ImageSkia::CreateFrom1xBitmap(bitmap);
+    return image;
+  }
+
   // Runs kAnimatingDesktopController's animation to completion.
   // TODO(bshe): Don't require tests to run animations; it's slow.
   void RunDesktopControllerAnimation() {
-    DesktopBackgroundWidgetController* controller =
+    internal::DesktopBackgroundWidgetController* controller =
         Shell::GetPrimaryRootWindowController()->
         animating_wallpaper_controller()->GetController(false);
     ASSERT_NO_FATAL_FAILURE(RunAnimationForWidget(controller->widget()));
@@ -234,14 +248,14 @@ class DesktopBackgroundControllerTest : public test::AshTestBase {
     ASSERT_TRUE(WriteJPEGFile(kLargeGuestPath, kWallpaperSize, kWallpaperSize,
                               kLargeGuestWallpaperColor));
     command_line_.AppendSwitchPath(
-        switches::kAshDefaultGuestWallpaperLarge, kLargeGuestPath);
+        switches::kAshGuestWallpaperLarge, kLargeGuestPath);
 
     const base::FilePath kSmallGuestPath =
         wallpaper_dir_->path().Append(FILE_PATH_LITERAL("guest_small.jpg"));
     ASSERT_TRUE(WriteJPEGFile(kSmallGuestPath, kWallpaperSize, kWallpaperSize,
                               kSmallGuestWallpaperColor));
     command_line_.AppendSwitchPath(
-        switches::kAshDefaultGuestWallpaperSmall, kSmallGuestPath);
+        switches::kAshGuestWallpaperSmall, kSmallGuestPath);
 
     controller_->set_command_line_for_testing(&command_line_);
   }
@@ -255,6 +269,8 @@ class DesktopBackgroundControllerTest : public test::AshTestBase {
   scoped_ptr<base::ScopedTempDir> wallpaper_dir_;
 
   DesktopBackgroundController* controller_;  // Not owned.
+
+  test::TestUserWallpaperDelegate* wallpaper_delegate_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(DesktopBackgroundControllerTest);
@@ -300,7 +316,7 @@ TEST_F(DesktopBackgroundControllerTest, ControllerOwnership) {
 
   // The new wallpaper is ready to start animating. kAnimatingDesktopController
   // holds the widget controller instance. kDesktopController will get it later.
-  RootWindowController* root_window_controller =
+  internal::RootWindowController* root_window_controller =
       Shell::GetPrimaryRootWindowController();
   EXPECT_TRUE(root_window_controller->animating_wallpaper_controller()->
               GetController(false));
@@ -342,7 +358,7 @@ TEST_F(DesktopBackgroundControllerTest, BackgroundMovementDuringUnlock) {
 
   // In this state we have two desktop background views stored in different
   // properties. Both are in the lock screen background container.
-  RootWindowController* root_window_controller =
+  internal::RootWindowController* root_window_controller =
       Shell::GetPrimaryRootWindowController();
   EXPECT_TRUE(root_window_controller->animating_wallpaper_controller()->
               GetController(false));
@@ -384,9 +400,9 @@ TEST_F(DesktopBackgroundControllerTest, ChangeWallpaperQuick) {
   // Change to a new wallpaper.
   controller->CreateEmptyWallpaper();
 
-  RootWindowController* root_window_controller =
+  internal::RootWindowController* root_window_controller =
       Shell::GetPrimaryRootWindowController();
-  DesktopBackgroundWidgetController* animating_controller =
+  internal::DesktopBackgroundWidgetController* animating_controller =
       root_window_controller->animating_wallpaper_controller()->
       GetController(false);
   EXPECT_TRUE(animating_controller);
@@ -417,41 +433,81 @@ TEST_F(DesktopBackgroundControllerTest, ChangeWallpaperQuick) {
             root_window_controller->wallpaper_controller());
 }
 
-TEST_F(DesktopBackgroundControllerTest, GetAppropriateResolution) {
-  // TODO(derat|oshima|bshe): Configuring desktops seems busted on Win8,
-  // even when just a single display is being used -- the small wallpaper
-  // is used instead of the large one. Track down the cause of the problem
-  // and only use a SupportsMultipleDisplays() clause for the dual-display
-  // code below.
-  if (!SupportsMultipleDisplays())
+TEST_F(DesktopBackgroundControllerTest, DisplayChange) {
+  // TODO(derat|oshima|bshe): Host windows can't be resized on Win8.
+  if (!SupportsHostWindowResize())
     return;
 
-  test::DisplayManagerTestApi display_manager_test_api(
-      Shell::GetInstance()->display_manager());
+  // Set the wallpaper to ensure that UpdateWallpaper() will be called when the
+  // display configuration changes.
+  gfx::ImageSkia image = CreateImage(640, 480);
+  wallpaper_delegate_->set_custom_wallpaper(image);
+  controller_->SetCustomWallpaper(image, WALLPAPER_LAYOUT_STRETCH);
 
   // Small wallpaper images should be used for configurations less than or
   // equal to kSmallWallpaperMaxWidth by kSmallWallpaperMaxHeight, even if
   // multiple displays are connected.
+  test::DisplayManagerTestApi display_manager_test_api(
+      Shell::GetInstance()->display_manager());
   display_manager_test_api.UpdateDisplay("800x600");
+  RunAllPendingInMessageLoop();
   EXPECT_EQ(WALLPAPER_RESOLUTION_SMALL,
             controller_->GetAppropriateResolution());
+  EXPECT_EQ(0, wallpaper_delegate_->GetUpdateWallpaperCountAndReset());
+
   display_manager_test_api.UpdateDisplay("800x600,800x600");
+  RunAllPendingInMessageLoop();
   EXPECT_EQ(WALLPAPER_RESOLUTION_SMALL,
             controller_->GetAppropriateResolution());
+  EXPECT_EQ(0, wallpaper_delegate_->GetUpdateWallpaperCountAndReset());
+
   display_manager_test_api.UpdateDisplay("1366x800");
+  RunAllPendingInMessageLoop();
   EXPECT_EQ(WALLPAPER_RESOLUTION_SMALL,
             controller_->GetAppropriateResolution());
+  EXPECT_EQ(1, wallpaper_delegate_->GetUpdateWallpaperCountAndReset());
 
   // At larger sizes, large wallpapers should be used.
   display_manager_test_api.UpdateDisplay("1367x800");
+  RunAllPendingInMessageLoop();
   EXPECT_EQ(WALLPAPER_RESOLUTION_LARGE,
             controller_->GetAppropriateResolution());
+  EXPECT_EQ(1, wallpaper_delegate_->GetUpdateWallpaperCountAndReset());
+
   display_manager_test_api.UpdateDisplay("1367x801");
+  RunAllPendingInMessageLoop();
   EXPECT_EQ(WALLPAPER_RESOLUTION_LARGE,
             controller_->GetAppropriateResolution());
+  EXPECT_EQ(1, wallpaper_delegate_->GetUpdateWallpaperCountAndReset());
+
   display_manager_test_api.UpdateDisplay("2560x1700");
+  RunAllPendingInMessageLoop();
   EXPECT_EQ(WALLPAPER_RESOLUTION_LARGE,
             controller_->GetAppropriateResolution());
+  EXPECT_EQ(1, wallpaper_delegate_->GetUpdateWallpaperCountAndReset());
+
+  // Rotated smaller screen may use larger image.
+  display_manager_test_api.UpdateDisplay("800x600/r");
+  RunAllPendingInMessageLoop();
+  EXPECT_EQ(WALLPAPER_RESOLUTION_SMALL,
+            controller_->GetAppropriateResolution());
+  EXPECT_EQ(1, wallpaper_delegate_->GetUpdateWallpaperCountAndReset());
+
+  display_manager_test_api.UpdateDisplay("800x600/r,800x600");
+  RunAllPendingInMessageLoop();
+  EXPECT_EQ(WALLPAPER_RESOLUTION_SMALL,
+            controller_->GetAppropriateResolution());
+  EXPECT_EQ(1, wallpaper_delegate_->GetUpdateWallpaperCountAndReset());
+  display_manager_test_api.UpdateDisplay("1366x800/r");
+  RunAllPendingInMessageLoop();
+  EXPECT_EQ(WALLPAPER_RESOLUTION_LARGE,
+            controller_->GetAppropriateResolution());
+  EXPECT_EQ(1, wallpaper_delegate_->GetUpdateWallpaperCountAndReset());
+
+  // Max display size didn't chagne.
+  display_manager_test_api.UpdateDisplay("900x800/r,400x1366");
+  RunAllPendingInMessageLoop();
+  EXPECT_EQ(0, wallpaper_delegate_->GetUpdateWallpaperCountAndReset());
 }
 
 // Test that DesktopBackgroundController loads the appropriate wallpaper
@@ -494,6 +550,21 @@ TEST_F(DesktopBackgroundControllerTest, LargeDefaultWallpaper) {
                                kLargeWallpaperColor));
 }
 
+TEST_F(DesktopBackgroundControllerTest, LargeDefaultWallpaperWhenRotated) {
+  if (!SupportsMultipleDisplays())
+    return;
+  WriteWallpapersAndSetFlags();
+  TestObserver observer(controller_);
+  test::DisplayManagerTestApi display_manager_test_api(
+      Shell::GetInstance()->display_manager());
+
+  display_manager_test_api.UpdateDisplay("1200x800/r");
+  ASSERT_TRUE(controller_->SetDefaultWallpaper(false));
+  observer.WaitForWallpaperDataChanged();
+  EXPECT_TRUE(ImageIsNearColor(controller_->GetWallpaper(),
+                               kLargeWallpaperColor));
+}
+
 TEST_F(DesktopBackgroundControllerTest, SmallGuestWallpaper) {
   if (!SupportsMultipleDisplays())
     return;
@@ -524,5 +595,74 @@ TEST_F(DesktopBackgroundControllerTest, LargeGuestWallpaper) {
                                kLargeGuestWallpaperColor));
 }
 
-}  // namespace internal
+TEST_F(DesktopBackgroundControllerTest, ResizeCustomWallpaper) {
+  if (!SupportsMultipleDisplays())
+    return;
+
+  test::DisplayManagerTestApi display_manager_test_api(
+      Shell::GetInstance()->display_manager());
+  display_manager_test_api.UpdateDisplay("320x200");
+
+  gfx::ImageSkia image = CreateImage(640, 480);
+
+  // Set the image as custom wallpaper, wait for the resize to finish, and check
+  // that the resized image is the expected size.
+  controller_->SetCustomWallpaper(image, WALLPAPER_LAYOUT_STRETCH);
+  EXPECT_TRUE(image.BackedBySameObjectAs(controller_->GetWallpaper()));
+  content::BrowserThread::GetBlockingPool()->FlushForTesting();
+  content::RunAllPendingInMessageLoop();
+  gfx::ImageSkia resized_image = controller_->GetWallpaper();
+  EXPECT_FALSE(image.BackedBySameObjectAs(resized_image));
+  EXPECT_EQ(gfx::Size(320, 200).ToString(), resized_image.size().ToString());
+
+  // Load the original wallpaper again and check that we're still using the
+  // previously-resized image instead of doing another resize
+  // (http://crbug.com/321402).
+  controller_->SetCustomWallpaper(image, WALLPAPER_LAYOUT_STRETCH);
+  content::BrowserThread::GetBlockingPool()->FlushForTesting();
+  content::RunAllPendingInMessageLoop();
+  EXPECT_TRUE(resized_image.BackedBySameObjectAs(controller_->GetWallpaper()));
+}
+
+TEST_F(DesktopBackgroundControllerTest, GetMaxDisplaySize) {
+  // Device scale factor shouldn't affect the native size.
+  UpdateDisplay("1000x300*2");
+  EXPECT_EQ(
+      "1000x300",
+      DesktopBackgroundController::GetMaxDisplaySizeInNative().ToString());
+
+  // Rotated display should return the rotated size.
+  UpdateDisplay("1000x300*2/r");
+  EXPECT_EQ(
+      "300x1000",
+      DesktopBackgroundController::GetMaxDisplaySizeInNative().ToString());
+
+  // UI Scaling shouldn't affect the native size.
+  UpdateDisplay("1000x300*2@1.5");
+  EXPECT_EQ(
+      "1000x300",
+      DesktopBackgroundController::GetMaxDisplaySizeInNative().ToString());
+
+  if (!SupportsMultipleDisplays())
+    return;
+
+  // First display has maximum size.
+  UpdateDisplay("400x300,100x100");
+  EXPECT_EQ(
+      "400x300",
+      DesktopBackgroundController::GetMaxDisplaySizeInNative().ToString());
+
+  // Second display has maximum size.
+  UpdateDisplay("400x300,500x600");
+  EXPECT_EQ(
+      "500x600",
+      DesktopBackgroundController::GetMaxDisplaySizeInNative().ToString());
+
+  // Maximum width and height belongs to different displays.
+  UpdateDisplay("400x300,100x500");
+  EXPECT_EQ(
+      "400x500",
+      DesktopBackgroundController::GetMaxDisplaySizeInNative().ToString());
+}
+
 }  // namespace ash

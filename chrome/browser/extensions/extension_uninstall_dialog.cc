@@ -9,26 +9,27 @@
 #include "base/message_loop/message_loop.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/image_loader.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_icon_set.h"
 #include "chrome/common/extensions/manifest_handlers/icons_handler.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
+#include "extensions/common/extension.h"
 #include "extensions/common/extension_resource.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/image/image.h"
+#include "ui/gfx/image/image_skia.h"
 
 namespace {
 
 // Returns pixel size under maximal scale factor for the icon whose device
 // independent size is |size_in_dip|
 int GetSizeForMaxScaleFactor(int size_in_dip) {
-  ui::ScaleFactor max_scale_factor = ui::GetMaxScaleFactor();
-  float max_scale_factor_scale = ui::GetScaleFactorScale(max_scale_factor);
+  float max_scale_factor_scale = gfx::ImageSkia::GetMaxSupportedScale();
 
   return static_cast<int>(size_in_dip * max_scale_factor_scale);
 }
@@ -39,7 +40,8 @@ SkBitmap GetDefaultIconBitmapForMaxScaleFactor(bool is_app) {
   const gfx::ImageSkia& image = is_app ?
       extensions::IconsInfo::GetDefaultAppIcon() :
       extensions::IconsInfo::GetDefaultExtensionIcon();
-  return image.GetRepresentation(ui::GetMaxScaleFactor()).sk_bitmap();
+  return image.GetRepresentation(
+      gfx::ImageSkia::GetMaxSupportedScale()).sk_bitmap();
 }
 
 }  // namespace

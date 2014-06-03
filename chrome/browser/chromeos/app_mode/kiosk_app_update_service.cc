@@ -8,6 +8,7 @@
 #include "chrome/browser/app_mode/app_mode_utils.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browser_process_platform_part_chromeos.h"
+#include "chrome/browser/chromeos/app_mode/kiosk_app_manager.h"
 #include "chrome/browser/chromeos/system/automatic_reboot_manager.h"
 #include "chrome/browser/extensions/api/runtime/runtime_api.h"
 #include "chrome/browser/extensions/extension_service.h"
@@ -16,6 +17,7 @@
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/profiles/profile.h"
 #include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
+#include "extensions/common/extension.h"
 
 namespace chromeos {
 
@@ -56,7 +58,7 @@ void KioskAppUpdateService::StartAppUpdateRestartTimer() {
 void KioskAppUpdateService::ForceAppUpdateRestart() {
   // Force a chrome restart (not a logout or reboot) by closing all browsers.
   LOG(WARNING) << "Force closing all browsers to update kiosk app.";
-  chrome::CloseAllBrowsers();
+  chrome::CloseAllBrowsersAndQuit();
 }
 
 void KioskAppUpdateService::Shutdown() {
@@ -65,10 +67,16 @@ void KioskAppUpdateService::Shutdown() {
     service->RemoveUpdateObserver(this);
 }
 
-void KioskAppUpdateService::OnAppUpdateAvailable(const std::string& app_id) {
-  DCHECK(!app_id_.empty());
-  if (app_id != app_id_)
+void KioskAppUpdateService::OnAppUpdateAvailable(
+    const extensions::Extension* extension) {
+  if (extension->id() != app_id_)
     return;
+
+  // Clears cached app data so that it will be reloaded if update from app
+  // does not finish in this run.
+  KioskAppManager::Get()->ClearAppData(app_id_);
+  KioskAppManager::Get()->UpdateAppDataFromProfile(
+      app_id_, profile_, extension);
 
   extensions::RuntimeEventRouter::DispatchOnRestartRequiredEvent(
       profile_,

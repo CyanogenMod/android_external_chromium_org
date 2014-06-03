@@ -5,22 +5,26 @@
 #include "chrome/browser/chromeos/login/managed/locally_managed_user_creation_controller.h"
 
 #include "base/bind.h"
-#include "base/chromeos/chromeos_version.h"
 #include "base/file_util.h"
 #include "base/files/file_path.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
+#include "base/sys_info.h"
 #include "base/task_runner_util.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "base/values.h"
 #include "chrome/browser/chromeos/login/managed/locally_managed_user_constants.h"
 #include "chrome/browser/chromeos/login/mount_manager.h"
+#include "chrome/browser/chromeos/login/supervised_user_manager.h"
 #include "chrome/browser/chromeos/login/user.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
+#include "chrome/browser/sync/profile_sync_service.h"
+#include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/session_manager_client.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/user_metrics.h"
 #include "crypto/random.h"
 #include "google_apis/gaia/google_service_auth_error.h"
 
@@ -29,13 +33,13 @@ namespace chromeos {
 namespace {
 
 const int kMasterKeySize = 32;
-const int kUserCreationTimeoutSeconds = 60; // 60 seconds.
+const int kUserCreationTimeoutSeconds = 30; // 30 seconds.
 
 bool StoreManagedUserFiles(const std::string& token,
                            const base::FilePath& base_path) {
-  if (!base::chromeos::IsRunningOnChromeOS()) {
+  if (!base::SysInfo::IsRunningOnChromeOS()) {
     // If running on desktop, cryptohome stub does not create home directory.
-    file_util::CreateDirectory(base_path);
+    base::CreateDirectory(base_path);
   }
   base::FilePath token_file = base_path.Append(kManagedUserTokenFilename);
   int bytes = file_util::WriteFile(token_file, token.c_str(), token.length());
@@ -44,11 +48,16 @@ bool StoreManagedUserFiles(const std::string& token,
 
 } // namespace
 
+// static
+const int LocallyManagedUserCreationController::kDummyAvatarIndex = -111;
+
 LocallyManagedUserCreationController::StatusConsumer::~StatusConsumer() {}
 
 LocallyManagedUserCreationController::UserCreationContext::UserCreationContext()
-    : token_acquired(false),
+    : avatar_index(kDummyAvatarIndex),
+      token_acquired(false),
       token_succesfully_written(false),
+      creation_type(NEW_USER),
       manager_profile(NULL) {}
 
 LocallyManagedUserCreationController::UserCreationContext::
@@ -74,11 +83,30 @@ LocallyManagedUserCreationController::~LocallyManagedUserCreationController() {
   current_controller_ = NULL;
 }
 
-void LocallyManagedUserCreationController::SetUpCreation(string16 display_name,
-                                                         std::string password) {
+void LocallyManagedUserCreationController::SetUpCreation(
+    const base::string16& display_name,
+    const std::string& password,
+    int avatar_index) {
   DCHECK(creation_context_);
   creation_context_->display_name = display_name;
   creation_context_->password = password;
+  creation_context_->avatar_index = avatar_index;
+}
+
+void LocallyManagedUserCreationController::StartImport(
+    const base::string16& display_name,
+    const std::string& password,
+    int avatar_index,
+    const std::string& sync_id,
+    const std::string& master_key) {
+  DCHECK(creation_context_);
+  creation_context_->creation_type = USER_IMPORT;
+  creation_context_->display_name = display_name;
+  creation_context_->password = password;
+  creation_context_->avatar_index = avatar_index;
+  creation_context_->sync_user_id = sync_id;
+  creation_context_->master_key = master_key;
+  StartCreation();
 }
 
 void LocallyManagedUserCreationController::SetManagerProfile(
@@ -89,27 +117,38 @@ void LocallyManagedUserCreationController::SetManagerProfile(
 void LocallyManagedUserCreationController::StartCreation() {
   DCHECK(creation_context_);
   VLOG(1) << "Starting supervised user creation";
+
+  ProfileSyncService* sync_service =
+      ProfileSyncServiceFactory::GetInstance()->GetForProfile(
+          creation_context_->manager_profile);
+  ProfileSyncService::SyncStatusSummary status =
+      sync_service->QuerySyncStatusSummary();
+
+  if (status == ProfileSyncService::DATATYPES_NOT_INITIALIZED)
+    consumer_->OnLongCreationWarning();
+
   timeout_timer_.Start(
       FROM_HERE, base::TimeDelta::FromSeconds(kUserCreationTimeoutSeconds),
       this,
       &LocallyManagedUserCreationController::CreationTimedOut);
+  SupervisedUserManager* manager =
+      UserManager::Get()->GetSupervisedUserManager();
+  manager->StartCreationTransaction(creation_context_->display_name);
 
-  UserManager::Get()->StartLocallyManagedUserCreationTransaction(
-      creation_context_->display_name);
+  creation_context_->local_user_id = manager->GenerateUserId();
 
-  creation_context_->local_user_id =
-        UserManager::Get()->GenerateUniqueLocallyManagedUserId();
-  creation_context_->sync_user_id =
-      ManagedUserRegistrationUtility::GenerateNewManagedUserId();
+  if (creation_context_->creation_type == NEW_USER) {
+    creation_context_->sync_user_id =
+        ManagedUserRegistrationUtility::GenerateNewManagedUserId();
+  }
 
-  UserManager::Get()->CreateLocallyManagedUserRecord(
+  manager->CreateUserRecord(
       creation_context_->manager_id,
       creation_context_->local_user_id,
       creation_context_->sync_user_id,
       creation_context_->display_name);
 
-  UserManager::Get()->SetLocallyManagedUserCreationTransactionUserId(
-      creation_context_->local_user_id);
+  manager->SetCreationTransactionUserId(creation_context_->local_user_id);
   VLOG(1) << "Creating cryptohome";
   authenticator_ = new ManagedUserAuthenticator(this);
   authenticator_->AuthenticateToCreate(creation_context_->local_user_id,
@@ -141,12 +180,15 @@ void LocallyManagedUserCreationController::OnMountSuccess(
     const std::string& mount_hash) {
   creation_context_->mount_hash = mount_hash;
 
-  // Generate master password.
-  char master_key_bytes[kMasterKeySize];
-  crypto::RandBytes(&master_key_bytes, sizeof(master_key_bytes));
-  creation_context_->master_key = StringToLowerASCII(base::HexEncode(
-      reinterpret_cast<const void*>(master_key_bytes),
-      sizeof(master_key_bytes)));
+  if (creation_context_->creation_type == NEW_USER) {
+    // Generate master password.
+    char master_key_bytes[kMasterKeySize];
+    crypto::RandBytes(&master_key_bytes, sizeof(master_key_bytes));
+    creation_context_->master_key = StringToLowerASCII(base::HexEncode(
+        reinterpret_cast<const void*>(master_key_bytes),
+        sizeof(master_key_bytes)));
+  }
+
   VLOG(1) << "Adding master key";
   authenticator_->AddMasterKey(creation_context_->local_user_id,
                                creation_context_->password,
@@ -159,8 +201,10 @@ void LocallyManagedUserCreationController::OnAddKeySuccess() {
           creation_context_->manager_profile);
 
   VLOG(1) << "Creating user on server";
-  ManagedUserRegistrationInfo info(creation_context_->display_name);
+  ManagedUserRegistrationInfo info(creation_context_->display_name,
+                                   creation_context_->avatar_index);
   info.master_key = creation_context_->master_key;
+  timeout_timer_.Stop();
   creation_context_->registration_utility->Register(
       creation_context_->sync_user_id,
       info,
@@ -172,9 +216,12 @@ void LocallyManagedUserCreationController::RegistrationCallback(
     const GoogleServiceAuthError& error,
     const std::string& token) {
   if (error.state() == GoogleServiceAuthError::NONE) {
+    timeout_timer_.Start(
+        FROM_HERE, base::TimeDelta::FromSeconds(kUserCreationTimeoutSeconds),
+        this,
+        &LocallyManagedUserCreationController::CreationTimedOut);
     TokenFetched(token);
   } else {
-    timeout_timer_.Stop();
     LOG(ERROR) << "Managed user creation failed. Error code " << error.state();
     if (consumer_)
       consumer_->OnCreationError(CLOUD_SERVER_ERROR);
@@ -220,6 +267,10 @@ void LocallyManagedUserCreationController::TokenFetched(
 void LocallyManagedUserCreationController::OnManagedUserFilesStored(
     bool success) {
   timeout_timer_.Stop();
+
+  content::RecordAction(
+      content::UserMetricsAction("ManagedMode_LocallyManagedUserCreated"));
+
   if (!success) {
     if (consumer_)
       consumer_->OnCreationError(TOKEN_WRITE_FAILED);
@@ -229,7 +280,8 @@ void LocallyManagedUserCreationController::OnManagedUserFilesStored(
   // sync service fails to use it.
   UserManager::Get()->SaveUserOAuthStatus(creation_context_->local_user_id,
                                           User::OAUTH2_TOKEN_STATUS_VALID);
-  UserManager::Get()->CommitLocallyManagedUserCreationTransaction();
+  UserManager::Get()->GetSupervisedUserManager()->
+      CommitCreationTransaction();
   if (consumer_)
     consumer_->OnCreationSuccess();
 }

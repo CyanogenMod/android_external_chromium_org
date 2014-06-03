@@ -9,38 +9,39 @@
 
 #include "base/bind.h"
 #include "base/message_loop/message_loop.h"
+#include "base/sequenced_task_runner.h"
 #include "base/values.h"
 #include "chrome/browser/drive/drive_api_util.h"
-#include "chrome/browser/google_apis/auth_service.h"
-#include "chrome/browser/google_apis/drive_api_parser.h"
-#include "chrome/browser/google_apis/gdata_errorcode.h"
-#include "chrome/browser/google_apis/gdata_wapi_parser.h"
-#include "chrome/browser/google_apis/gdata_wapi_requests.h"
-#include "chrome/browser/google_apis/gdata_wapi_url_generator.h"
-#include "chrome/browser/google_apis/request_sender.h"
 #include "content/public/browser/browser_thread.h"
+#include "google_apis/drive/auth_service.h"
+#include "google_apis/drive/drive_api_parser.h"
+#include "google_apis/drive/gdata_errorcode.h"
+#include "google_apis/drive/gdata_wapi_parser.h"
+#include "google_apis/drive/gdata_wapi_requests.h"
+#include "google_apis/drive/gdata_wapi_url_generator.h"
+#include "google_apis/drive/request_sender.h"
+#include "net/url_request/url_request_context_getter.h"
 
 using content::BrowserThread;
 using google_apis::AboutResource;
+using google_apis::AboutResourceCallback;
 using google_apis::AccountMetadata;
 using google_apis::AddResourceToDirectoryRequest;
 using google_apis::AppList;
+using google_apis::AppListCallback;
+using google_apis::AuthService;
 using google_apis::AuthStatusCallback;
 using google_apis::AuthorizeAppCallback;
 using google_apis::AuthorizeAppRequest;
-using google_apis::AuthService;
 using google_apis::CancelCallback;
-using google_apis::CopyHostedDocumentRequest;
 using google_apis::CreateDirectoryRequest;
 using google_apis::DeleteResourceRequest;
 using google_apis::DownloadActionCallback;
 using google_apis::DownloadFileRequest;
 using google_apis::EntryActionCallback;
-using google_apis::GDataErrorCode;
 using google_apis::GDATA_PARSE_ERROR;
-using google_apis::GetAboutResourceCallback;
+using google_apis::GDataErrorCode;
 using google_apis::GetAccountMetadataRequest;
-using google_apis::GetAppListCallback;
 using google_apis::GetContentCallback;
 using google_apis::GetResourceEntryCallback;
 using google_apis::GetResourceEntryRequest;
@@ -70,10 +71,6 @@ namespace {
 const char kSpreadsheetsScope[] = "https://spreadsheets.google.com/feeds/";
 const char kUserContentScope[] = "https://docs.googleusercontent.com/";
 
-// The resource ID for the root directory for WAPI is defined in the spec:
-// https://developers.google.com/google-apps/documents-list/
-const char kWapiRootDirectoryResourceId[] = "folder:root";
-
 // Parses the JSON value to ResourceEntry runs |callback|.
 void ParseResourceEntryAndRun(const GetResourceEntryCallback& callback,
                               GDataErrorCode error,
@@ -96,8 +93,8 @@ void ParseResourceEntryAndRun(const GetResourceEntryCallback& callback,
   callback.Run(error, entry.Pass());
 }
 
-void ParseAboutResourceAndRun(
-    const GetAboutResourceCallback& callback,
+void ConvertAboutResourceAndRun(
+    const AboutResourceCallback& callback,
     GDataErrorCode error,
     scoped_ptr<AccountMetadata> account_metadata) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -105,24 +102,23 @@ void ParseAboutResourceAndRun(
 
   scoped_ptr<AboutResource> about_resource;
   if (account_metadata) {
-    about_resource = AboutResource::CreateFromAccountMetadata(
-        *account_metadata, kWapiRootDirectoryResourceId);
+    about_resource = util::ConvertAccountMetadataToAboutResource(
+        *account_metadata, util::kWapiRootDirectoryResourceId);
   }
 
   callback.Run(error, about_resource.Pass());
 }
 
-void ParseAppListAndRun(
-    const GetAppListCallback& callback,
+void ConvertAppListAndRun(
+    const AppListCallback& callback,
     GDataErrorCode error,
     scoped_ptr<AccountMetadata> account_metadata) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
   scoped_ptr<AppList> app_list;
-  if (account_metadata) {
-    app_list = AppList::CreateFromAccountMetadata(*account_metadata);
-  }
+  if (account_metadata)
+    app_list = util::ConvertAccountMetadataToAppList(*account_metadata);
 
   callback.Run(error, app_list.Pass());
 }
@@ -132,7 +128,7 @@ void ParseAppListAndRun(
 GDataWapiService::GDataWapiService(
     OAuth2TokenService* oauth2_token_service,
     net::URLRequestContextGetter* url_request_context_getter,
-    base::TaskRunner* blocking_task_runner,
+    base::SequencedTaskRunner* blocking_task_runner,
     const GURL& base_url,
     const GURL& base_download_url,
     const std::string& custom_user_agent)
@@ -150,7 +146,7 @@ GDataWapiService::~GDataWapiService() {
     sender_->auth_service()->RemoveObserver(this);
 }
 
-void GDataWapiService::Initialize() {
+void GDataWapiService::Initialize(const std::string& account_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   std::vector<std::string> scopes;
@@ -160,9 +156,11 @@ void GDataWapiService::Initialize() {
   // Drive App scope is required for even WAPI v3 apps access.
   scopes.push_back(util::kDriveAppsScope);
   sender_.reset(new RequestSender(
-      new AuthService(
-          oauth2_token_service_, url_request_context_getter_, scopes),
-      url_request_context_getter_,
+      new AuthService(oauth2_token_service_,
+                      account_id,
+                      url_request_context_getter_.get(),
+                      scopes),
+      url_request_context_getter_.get(),
       blocking_task_runner_.get(),
       custom_user_agent_));
 
@@ -183,13 +181,12 @@ bool GDataWapiService::CanSendRequest() const {
   return HasRefreshToken();
 }
 
-std::string GDataWapiService::CanonicalizeResourceId(
-    const std::string& resource_id) const {
-  return resource_id;
+ResourceIdCanonicalizer GDataWapiService::GetResourceIdCanonicalizer() const {
+  return util::GetIdentityResourceIdCanonicalizer();
 }
 
 std::string GDataWapiService::GetRootResourceId() const {
-  return kWapiRootDirectoryResourceId;
+  return util::kWapiRootDirectoryResourceId;
 }
 
 // Because GData WAPI support is expected to be gone somehow soon by migration
@@ -277,21 +274,24 @@ CancelCallback GDataWapiService::GetChangeList(
                                  callback));
 }
 
-CancelCallback GDataWapiService::ContinueGetResourceList(
-    const GURL& override_url,
+CancelCallback GDataWapiService::GetRemainingChangeList(
+    const GURL& next_link,
     const GetResourceListCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!override_url.is_empty());
+  DCHECK(!next_link.is_empty());
   DCHECK(!callback.is_null());
 
-  return sender_->StartRequestWithRetry(
-      new GetResourceListRequest(sender_.get(),
-                                 url_generator_,
-                                 override_url,
-                                 0,              // start changestamp
-                                 std::string(),  // empty search query
-                                 std::string(),  // no directory resource id
-                                 callback));
+  return GetRemainingResourceList(next_link, callback);
+}
+
+CancelCallback GDataWapiService::GetRemainingFileList(
+    const GURL& next_link,
+    const GetResourceListCallback& callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!next_link.is_empty());
+  DCHECK(!callback.is_null());
+
+  return GetRemainingResourceList(next_link, callback);
 }
 
 CancelCallback GDataWapiService::GetResourceEntry(
@@ -326,7 +326,7 @@ CancelCallback GDataWapiService::GetShareUrl(
 }
 
 CancelCallback GDataWapiService::GetAboutResource(
-    const GetAboutResourceCallback& callback) {
+    const AboutResourceCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
@@ -334,19 +334,18 @@ CancelCallback GDataWapiService::GetAboutResource(
       new GetAccountMetadataRequest(
           sender_.get(),
           url_generator_,
-          base::Bind(&ParseAboutResourceAndRun, callback),
+          base::Bind(&ConvertAboutResourceAndRun, callback),
           false));  // Exclude installed apps.
 }
 
-CancelCallback GDataWapiService::GetAppList(
-    const GetAppListCallback& callback) {
+CancelCallback GDataWapiService::GetAppList(const AppListCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
   return sender_->StartRequestWithRetry(
       new GetAccountMetadataRequest(sender_.get(),
                                     url_generator_,
-                                    base::Bind(&ParseAppListAndRun, callback),
+                                    base::Bind(&ConvertAppListAndRun, callback),
                                     true));  // Include installed apps.
 }
 
@@ -377,12 +376,24 @@ CancelCallback GDataWapiService::DeleteResource(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
+  NOTIMPLEMENTED();
+  callback.Run(google_apis::GDATA_OTHER_ERROR);
+  return CancelCallback();
+}
+
+CancelCallback GDataWapiService::TrashResource(
+    const std::string& resource_id,
+    const EntryActionCallback& callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!callback.is_null());
+
+  const std::string empty_etag;
   return sender_->StartRequestWithRetry(
       new DeleteResourceRequest(sender_.get(),
                                 url_generator_,
                                 callback,
                                 resource_id,
-                                etag));
+                                empty_etag));
 }
 
 CancelCallback GDataWapiService::AddNewDirectory(
@@ -405,6 +416,7 @@ CancelCallback GDataWapiService::CopyResource(
     const std::string& resource_id,
     const std::string& parent_resource_id,
     const std::string& new_title,
+    const base::Time& last_modified,
     const GetResourceEntryCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
@@ -416,20 +428,22 @@ CancelCallback GDataWapiService::CopyResource(
   return CancelCallback();
 }
 
-CancelCallback GDataWapiService::CopyHostedDocument(
+CancelCallback GDataWapiService::UpdateResource(
     const std::string& resource_id,
+    const std::string& parent_resource_id,
     const std::string& new_title,
-    const GetResourceEntryCallback& callback) {
+    const base::Time& last_modified,
+    const base::Time& last_viewed_by_me,
+    const google_apis::GetResourceEntryCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
-  return sender_->StartRequestWithRetry(
-      new CopyHostedDocumentRequest(sender_.get(),
-                                    url_generator_,
-                                    base::Bind(&ParseResourceEntryAndRun,
-                                               callback),
-                                    resource_id,
-                                    new_title));
+  // GData WAPI doesn't support to "move" resources.
+  // This method should never be called if GData WAPI is enabled.
+  // Instead, client code should rename the file, add new parent, and then
+  // remove the old parent.
+  NOTREACHED();
+  return CancelCallback();
 }
 
 CancelCallback GDataWapiService::RenameResource(
@@ -445,25 +459,6 @@ CancelCallback GDataWapiService::RenameResource(
                                 callback,
                                 resource_id,
                                 new_title));
-}
-
-CancelCallback GDataWapiService::TouchResource(
-    const std::string& resource_id,
-    const base::Time& modified_date,
-    const base::Time& last_viewed_by_me_date,
-    const GetResourceEntryCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!modified_date.is_null());
-  DCHECK(!last_viewed_by_me_date.is_null());
-  DCHECK(!callback.is_null());
-
-  // Unfortunately, there is no way to support this method on GData WAPI.
-  // So, this should always return an error.
-  base::MessageLoop::current()->PostTask(
-      FROM_HERE,
-      base::Bind(callback, HTTP_NOT_IMPLEMENTED,
-                 base::Passed(scoped_ptr<ResourceEntry>())));
-  return base::Bind(&base::DoNothing);
 }
 
 CancelCallback GDataWapiService::AddResourceToDirectory(
@@ -587,6 +582,29 @@ CancelCallback GDataWapiService::AuthorizeApp(
                               callback,
                               resource_id,
                               app_id));
+}
+
+CancelCallback GDataWapiService::GetResourceListInDirectoryByWapi(
+    const std::string& directory_resource_id,
+    const google_apis::GetResourceListCallback& callback) {
+  return GetResourceListInDirectory(directory_resource_id, callback);
+}
+
+CancelCallback GDataWapiService::GetRemainingResourceList(
+    const GURL& next_link,
+    const google_apis::GetResourceListCallback& callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!next_link.is_empty());
+  DCHECK(!callback.is_null());
+
+  return sender_->StartRequestWithRetry(
+      new GetResourceListRequest(sender_.get(),
+                                 url_generator_,
+                                 next_link,
+                                 0,              // start changestamp
+                                 std::string(),  // empty search query
+                                 std::string(),  // no directory resource id
+                                 callback));
 }
 
 bool GDataWapiService::HasAccessToken() const {

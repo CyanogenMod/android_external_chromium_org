@@ -79,6 +79,16 @@ class WrenchMenuModel : public ui::SimpleMenuModel,
                         public TabStripModelObserver,
                         public content::NotificationObserver {
  public:
+  // Range of command ID's to use for the items representing bookmarks in the
+  // bookmark menu, must not overlap with that for recent tabs submenu.
+  static const int kMinBookmarkCommandId = 1;
+  static const int kMaxBookmarkCommandId = 1000;
+
+  // Range of command ID's to use for the items in the recent tabs submenu, must
+  // not overlap with that for bookmarks.
+  static const int kMinRecentTabsCommandId = 1001;
+  static const int kMaxRecentTabsCommandId = 1200;
+
   // TODO: remove |is_new_menu|.
   WrenchMenuModel(ui::AcceleratorProvider* provider,
                   Browser* browser,
@@ -90,7 +100,7 @@ class WrenchMenuModel : public ui::SimpleMenuModel,
 
   // Overridden for both ButtonMenuItemModel::Delegate and SimpleMenuModel:
   virtual bool IsItemForCommandIdDynamic(int command_id) const OVERRIDE;
-  virtual string16 GetLabelForCommandId(int command_id) const OVERRIDE;
+  virtual base::string16 GetLabelForCommandId(int command_id) const OVERRIDE;
   virtual bool GetIconForCommandId(int command_id,
                                    gfx::Image* icon) const OVERRIDE;
   virtual void ExecuteCommand(int command_id, int event_flags) OVERRIDE;
@@ -157,7 +167,7 @@ class WrenchMenuModel : public ui::SimpleMenuModel,
   scoped_ptr<ui::ButtonMenuItemModel> zoom_menu_item_model_;
 
   // Label of the zoom label in the zoom menu item.
-  string16 zoom_label_;
+  base::string16 zoom_label_;
 
   // Tools menu.
   scoped_ptr<ToolsMenuModel> tools_menu_model_;
@@ -173,7 +183,7 @@ class WrenchMenuModel : public ui::SimpleMenuModel,
   Browser* browser_;  // weak
   TabStripModel* tab_strip_model_; // weak
 
-  content::HostZoomMap::ZoomLevelChangedCallback zoom_callback_;
+  scoped_ptr<content::HostZoomMap::Subscription> zoom_subscription_;
   content::NotificationRegistrar registrar_;
 
   DISALLOW_COPY_AND_ASSIGN(WrenchMenuModel);

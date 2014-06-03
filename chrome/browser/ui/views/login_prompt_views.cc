@@ -11,22 +11,23 @@
 #include "chrome/browser/ui/views/constrained_window_views.h"
 #include "chrome/browser/ui/views/login_view.h"
 #include "chrome/common/chrome_switches.h"
+#include "components/web_modal/web_contents_modal_dialog_host.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "components/web_modal/web_contents_modal_dialog_manager_delegate.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "grit/generated_resources.h"
 #include "net/url_request/url_request.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/window/dialog_delegate.h"
 
+using autofill::PasswordForm;
 using content::BrowserThread;
-using content::PasswordForm;
 using content::WebContents;
 using web_modal::WebContentsModalDialogManager;
+using web_modal::WebContentsModalDialogManagerDelegate;
 
 // ----------------------------------------------------------------------------
 // LoginHandlerViews
@@ -45,21 +46,22 @@ class LoginHandlerViews : public LoginHandler,
   }
 
   // LoginModelObserver implementation.
-  virtual void OnAutofillDataAvailable(const string16& username,
-                                       const string16& password) OVERRIDE {
+  virtual void OnAutofillDataAvailable(
+      const base::string16& username,
+      const base::string16& password) OVERRIDE {
     // Nothing to do here since LoginView takes care of autofill for win.
   }
   virtual void OnLoginModelDestroying() OVERRIDE {}
 
   // views::DialogDelegate methods:
-  virtual string16 GetDialogButtonLabel(
+  virtual base::string16 GetDialogButtonLabel(
       ui::DialogButton button) const OVERRIDE {
     if (button == ui::DIALOG_BUTTON_OK)
       return l10n_util::GetStringUTF16(IDS_LOGIN_DIALOG_OK_BUTTON_LABEL);
     return DialogDelegate::GetDialogButtonLabel(button);
   }
 
-  virtual string16 GetWindowTitle() const OVERRIDE {
+  virtual base::string16 GetWindowTitle() const OVERRIDE {
     return l10n_util::GetStringUTF16(IDS_LOGIN_DIALOG_TITLE);
   }
 
@@ -135,7 +137,7 @@ class LoginHandlerViews : public LoginHandler,
 
   virtual void BuildViewForPasswordManager(
       PasswordManager* manager,
-      const string16& explanation) OVERRIDE {
+      const base::string16& explanation) OVERRIDE {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
     // Create a new LoginView and set the model for it.  The model (password
@@ -153,11 +155,11 @@ class LoginHandlerViews : public LoginHandler,
     WebContents* requesting_contents = GetWebContentsForLogin();
     WebContentsModalDialogManager* web_contents_modal_dialog_manager =
         WebContentsModalDialogManager::FromWebContents(requesting_contents);
-    dialog_ = CreateWebContentsModalDialogViews(
-        this,
-        requesting_contents->GetView()->GetNativeView(),
-        web_contents_modal_dialog_manager->delegate()->
-            GetWebContentsModalDialogHost());
+    WebContentsModalDialogManagerDelegate* modal_delegate =
+        web_contents_modal_dialog_manager->delegate();
+    CHECK(modal_delegate);
+    dialog_ = views::Widget::CreateWindowAsFramelessChild(
+        this, modal_delegate->GetWebContentsModalDialogHost()->GetHostView());
     web_contents_modal_dialog_manager->ShowDialog(dialog_->GetNativeView());
     NotifyAuthNeeded();
   }

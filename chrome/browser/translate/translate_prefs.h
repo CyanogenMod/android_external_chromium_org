@@ -23,6 +23,9 @@ namespace user_prefs {
 class PrefRegistrySyncable;
 }
 
+// The wrapper of PrefService object for Translate.
+//
+// It is assumed that |prefs_| is alive while this instance is alive.
 class TranslatePrefs {
  public:
   static const char kPrefTranslateLanguageBlacklist[];
@@ -33,6 +36,10 @@ class TranslatePrefs {
   static const char kPrefTranslateBlockedLanguages[];
 
   explicit TranslatePrefs(PrefService* user_prefs);
+
+  // Resets the blocked languages list, the sites blacklist, the languages
+  // whitelist, and the accepted/denied counts.
+  void ResetToDefaults();
 
   bool IsBlockedLanguage(const std::string& original_language) const;
   void BlockLanguage(const std::string& original_language);
@@ -48,7 +55,6 @@ class TranslatePrefs {
   void RemoveSiteFromBlacklist(const std::string& site);
 
   bool HasWhitelistedLanguagePairs() const;
-  void ClearWhitelistedLanguagePairs();
 
   bool IsLanguagePairWhitelisted(const std::string& original_language,
       const std::string& target_language);
@@ -58,12 +64,10 @@ class TranslatePrefs {
       const std::string& target_language);
 
   // Will return true if at least one language has been blacklisted.
-  bool HasBlacklistedLanguages() const;
-  void ClearBlacklistedLanguages();
+  bool HasBlockedLanguages() const;
 
   // Will return true if at least one site has been blacklisted.
   bool HasBlacklistedSites() const;
-  void ClearBlacklistedSites();
 
   // These methods are used to track how many times the user has denied the
   // translation for a specific language. (So we can present a UI to black-list
@@ -79,6 +83,12 @@ class TranslatePrefs {
   void IncrementTranslationAcceptedCount(const std::string& language);
   void ResetTranslationAcceptedCount(const std::string& language);
 
+  // Sets the language list of chrome://settings/languages.
+  void GetLanguageList(std::vector<std::string>* languages);
+
+  // Updates the language list of chrome://settings/languages.
+  void UpdateLanguageList(const std::vector<std::string>& languages);
+
   static bool CanTranslateLanguage(
       Profile* profile, const std::string& language);
   static bool ShouldAutoTranslate(PrefService* user_prefs,
@@ -86,9 +96,17 @@ class TranslatePrefs {
   static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
   static void MigrateUserPrefs(PrefService* user_prefs);
 
+  // Converts the language code for Translate. This removes the sub code (like
+  // -US) except for Chinese, and converts the synonyms.
+  // The same logic exists at language_options.js, and please keep consistency
+  // with the JavaScript file.
+  static std::string ConvertLangCodeForTranslation(const std::string &lang);
+
  private:
   friend class TranslatePrefsTest;
   FRIEND_TEST_ALL_PREFIXES(TranslatePrefsTest, CreateBlockedLanguages);
+  FRIEND_TEST_ALL_PREFIXES(TranslatePrefsTest,
+                           CreateBlockedLanguagesNonEnglishUI);
 
   // Merges two language sets to migrate to the language setting UI.
   static void CreateBlockedLanguages(
@@ -96,6 +114,9 @@ class TranslatePrefs {
       const std::vector<std::string>& blacklisted_languages,
       const std::vector<std::string>& accept_languages);
 
+  void ClearBlockedLanguages();
+  void ClearBlacklistedSites();
+  void ClearWhitelistedLanguagePairs();
   bool IsValueBlacklisted(const char* pref_id, const std::string& value) const;
   void BlacklistValue(const char* pref_id, const std::string& value);
   void RemoveValueFromBlacklist(const char* pref_id, const std::string& value);
@@ -115,6 +136,8 @@ class TranslatePrefs {
   base::DictionaryValue* GetTranslationAcceptedCountDictionary() const;
 
   PrefService* prefs_;  // Weak.
+
+  DISALLOW_COPY_AND_ASSIGN(TranslatePrefs);
 };
 
 #endif  // CHROME_BROWSER_TRANSLATE_TRANSLATE_PREFS_H_

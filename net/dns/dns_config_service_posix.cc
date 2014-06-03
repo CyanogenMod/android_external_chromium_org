@@ -10,6 +10,7 @@
 #include "base/bind.h"
 #include "base/files/file_path.h"
 #include "base/files/file_path_watcher.h"
+#include "base/lazy_instance.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/metrics/histogram.h"
 #include "base/time/time.h"
@@ -19,6 +20,10 @@
 #include "net/dns/dns_protocol.h"
 #include "net/dns/notify_watcher_mac.h"
 #include "net/dns/serial_worker.h"
+
+#if defined(OS_MACOSX) && !defined(OS_IOS)
+#include "net/dns/dns_config_watcher_mac.h"
+#endif
 
 namespace net {
 
@@ -30,21 +35,20 @@ namespace {
 const base::FilePath::CharType* kFilePathHosts =
     FILE_PATH_LITERAL("/etc/hosts");
 
-#if defined(OS_MACOSX)
-// From 10.7.3 configd-395.10/dnsinfo/dnsinfo.h
-static const char* kDnsNotifyKey =
-    "com.apple.system.SystemConfiguration.dns_configuration";
+#if defined(OS_IOS)
 
-class ConfigWatcher {
+// There is no plublic API to watch the DNS configuration on iOS.
+class DnsConfigWatcher {
  public:
-  bool Watch(const base::Callback<void(bool succeeded)>& callback) {
-    return watcher_.Watch(kDnsNotifyKey, callback);
-  }
+  typedef base::Callback<void(bool succeeded)> CallbackType;
 
- private:
-  NotifyWatcherMac watcher_;
+  bool Watch(const CallbackType& callback) {
+    return false;
+  }
 };
-#else
+
+#elif !defined(OS_MACOSX)
+// DnsConfigWatcher for OS_MACOSX is in dns_config_watcher_mac.{hh,cc}.
 
 #ifndef _PATH_RESCONF  // Normally defined in <resolv.h>
 #define _PATH_RESCONF "/etc/resolv.conf"
@@ -53,14 +57,14 @@ class ConfigWatcher {
 static const base::FilePath::CharType* kFilePathConfig =
     FILE_PATH_LITERAL(_PATH_RESCONF);
 
-class ConfigWatcher {
+class DnsConfigWatcher {
  public:
   typedef base::Callback<void(bool succeeded)> CallbackType;
 
   bool Watch(const CallbackType& callback) {
     callback_ = callback;
     return watcher_.Watch(base::FilePath(kFilePathConfig), false,
-                          base::Bind(&ConfigWatcher::OnCallback,
+                          base::Bind(&DnsConfigWatcher::OnCallback,
                                      base::Unretained(this)));
   }
 
@@ -76,6 +80,7 @@ class ConfigWatcher {
 
 ConfigParsePosixResult ReadDnsConfig(DnsConfig* config) {
   ConfigParsePosixResult result;
+  config->unhandled_options = false;
 #if defined(OS_OPENBSD)
   // Note: res_ninit in glibc always returns 0 and sets RES_INIT.
   // res_init behaves the same way.
@@ -100,6 +105,19 @@ ConfigParsePosixResult ReadDnsConfig(DnsConfig* config) {
   res_nclose(&res);
 #endif
 #endif
+
+#if defined(OS_MACOSX) && !defined(OS_IOS)
+  ConfigParsePosixResult error = DnsConfigWatcher::CheckDnsConfig();
+  switch (error) {
+    case CONFIG_PARSE_POSIX_OK:
+      break;
+    case CONFIG_PARSE_POSIX_UNHANDLED_OPTIONS:
+      LOG(WARNING) << "dns_config has unhandled options!";
+      config->unhandled_options = true;
+    default:
+      return error;
+  }
+#endif  // defined(OS_MACOSX) && !defined(OS_IOS)
   // Override timeout value to match default setting on Windows.
   config->timeout = base::TimeDelta::FromSeconds(kDnsTimeoutSeconds);
   return result;
@@ -156,7 +174,7 @@ class DnsConfigServicePosix::Watcher {
 
   base::WeakPtrFactory<Watcher> weak_factory_;
   DnsConfigServicePosix* service_;
-  ConfigWatcher config_watcher_;
+  DnsConfigWatcher config_watcher_;
   base::FilePathWatcher hosts_watcher_;
 
   DISALLOW_COPY_AND_ASSIGN(Watcher);
@@ -172,7 +190,18 @@ class DnsConfigServicePosix::ConfigReader : public SerialWorker {
   virtual void DoWork() OVERRIDE {
     base::TimeTicks start_time = base::TimeTicks::Now();
     ConfigParsePosixResult result = ReadDnsConfig(&dns_config_);
-    success_ = (result == CONFIG_PARSE_POSIX_OK);
+    switch (result) {
+      case CONFIG_PARSE_POSIX_MISSING_OPTIONS:
+      case CONFIG_PARSE_POSIX_UNHANDLED_OPTIONS:
+        DCHECK(dns_config_.unhandled_options);
+        // Fall through.
+      case CONFIG_PARSE_POSIX_OK:
+        success_ = true;
+        break;
+      default:
+        success_ = false;
+        break;
+    }
     UMA_HISTOGRAM_ENUMERATION("AsyncDNS.ConfigParsePosix",
                               result, CONFIG_PARSE_POSIX_MAX);
     UMA_HISTOGRAM_BOOLEAN("AsyncDNS.ConfigParseResult", success_);
@@ -358,12 +387,16 @@ ConfigParsePosixResult ConvertResStateToDnsConfig(const struct __res_state& res,
   // The current implementation assumes these options are set. They normally
   // cannot be overwritten by /etc/resolv.conf
   unsigned kRequiredOptions = RES_RECURSE | RES_DEFNAMES | RES_DNSRCH;
-  if ((res.options & kRequiredOptions) != kRequiredOptions)
+  if ((res.options & kRequiredOptions) != kRequiredOptions) {
+    dns_config->unhandled_options = true;
     return CONFIG_PARSE_POSIX_MISSING_OPTIONS;
+  }
 
   unsigned kUnhandledOptions = RES_USEVC | RES_IGNTC | RES_USE_DNSSEC;
-  if (res.options & kUnhandledOptions)
+  if (res.options & kUnhandledOptions) {
+    dns_config->unhandled_options = true;
     return CONFIG_PARSE_POSIX_UNHANDLED_OPTIONS;
+  }
 
   if (dns_config->nameservers.empty())
     return CONFIG_PARSE_POSIX_NO_NAMESERVERS;

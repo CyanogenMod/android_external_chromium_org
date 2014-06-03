@@ -25,6 +25,7 @@ namespace printing {
 class JobEventDetails;
 class PrintJob;
 class PrintJobWorkerOwner;
+class PrintQueriesQueue;
 
 // Base class for managing the print commands for a WebContents.
 class PrintViewManagerBase : public content::NotificationObserver,
@@ -42,7 +43,7 @@ class PrintViewManagerBase : public content::NotificationObserver,
   void UpdateScriptedPrintingBlocked();
 
   // PrintedPagesSource implementation.
-  virtual string16 RenderSourceName() OVERRIDE;
+  virtual base::string16 RenderSourceName() OVERRIDE;
 
  protected:
   explicit PrintViewManagerBase(content::WebContents* web_contents);
@@ -70,7 +71,7 @@ class PrintViewManagerBase : public content::NotificationObserver,
       content::RenderViewHost* render_view_host) OVERRIDE;
 
   // Cancels the print job.
-  virtual void StopNavigation() OVERRIDE;
+  virtual void NavigationStopped() OVERRIDE;
 
   // IPC Message handlers.
   void OnDidGetPrintedPagesCount(int cookie, int number_pages);
@@ -155,8 +156,7 @@ class PrintViewManagerBase : public content::NotificationObserver,
   // Whether printing is enabled.
   BooleanPrefMember printing_enabled_;
 
-  // Whether our content is in blocked state.
-  bool tab_content_blocked_;
+  scoped_refptr<printing::PrintQueriesQueue> queue_;
 
   DISALLOW_COPY_AND_ASSIGN(PrintViewManagerBase);
 };

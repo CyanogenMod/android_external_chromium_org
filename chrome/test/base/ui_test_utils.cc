@@ -15,8 +15,8 @@
 #include "base/file_util.h"
 #include "base/files/file_path.h"
 #include "base/json/json_reader.h"
+#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop/message_loop.h"
 #include "base/path_service.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/stringprintf.h"
@@ -36,6 +36,7 @@
 #include "chrome/browser/search_engines/template_url_service_test_util.h"
 #include "chrome/browser/thumbnails/render_widget_snapshot_taker.h"
 #include "chrome/browser/ui/app_modal_dialogs/app_modal_dialog.h"
+#include "chrome/browser/ui/app_modal_dialogs/app_modal_dialog_queue.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_finder.h"
@@ -51,7 +52,6 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/test/base/bookmark_load_observer.h"
 #include "chrome/test/base/find_in_page_observer.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/dom_operation_notification_details.h"
@@ -98,6 +98,7 @@ namespace ui_test_utils {
 
 namespace {
 
+#if defined(OS_WIN)
 const char kSnapshotBaseName[] = "ChromiumSnapshot";
 const char kSnapshotExtension[] = ".png";
 
@@ -122,6 +123,18 @@ base::FilePath GetSnapshotFileName(const base::FilePath& snapshot_directory) {
   }
   return snapshot_file;
 }
+#endif  // defined(OS_WIN)
+
+Browser* WaitForBrowserNotInSet(std::set<Browser*> excluded_browsers) {
+  Browser* new_browser = GetBrowserNotInSet(excluded_browsers);
+  if (new_browser == NULL) {
+    BrowserAddedObserver observer;
+    new_browser = observer.WaitForSingleNewBrowser();
+    // The new browser should never be in |excluded_browsers|.
+    DCHECK(!ContainsKey(excluded_browsers, new_browser));
+  }
+  return new_browser;
+}
 
 }  // namespace
 
@@ -137,41 +150,28 @@ bool GetCurrentTabTitle(const Browser* browser, string16* title) {
   return true;
 }
 
-void WaitForNavigations(NavigationController* controller,
-                        int number_of_navigations) {
-  content::TestNavigationObserver observer(controller->GetWebContents(),
-                                           number_of_navigations);
-  base::RunLoop run_loop;
-  observer.WaitForObservation(
-      base::Bind(&content::RunThisRunLoop, base::Unretained(&run_loop)),
-      content::GetQuitTaskForRunLoop(&run_loop));
-}
-
-Browser* WaitForBrowserNotInSet(std::set<Browser*> excluded_browsers) {
-  Browser* new_browser = GetBrowserNotInSet(excluded_browsers);
-  if (new_browser == NULL) {
-    BrowserAddedObserver observer;
-    new_browser = observer.WaitForSingleNewBrowser();
-    // The new browser should never be in |excluded_browsers|.
-    DCHECK(!ContainsKey(excluded_browsers, new_browser));
-  }
-  return new_browser;
-}
-
 Browser* OpenURLOffTheRecord(Profile* profile, const GURL& url) {
   chrome::HostDesktopType active_desktop = chrome::GetActiveDesktop();
   chrome::OpenURLOffTheRecord(profile, url, active_desktop);
   Browser* browser = chrome::FindTabbedBrowser(
       profile->GetOffTheRecordProfile(), false, active_desktop);
-  WaitForNavigations(
-      &browser->tab_strip_model()->GetActiveWebContents()->GetController(),
-      1);
+  content::TestNavigationObserver observer(
+      browser->tab_strip_model()->GetActiveWebContents());
+  observer.Wait();
   return browser;
 }
 
 void NavigateToURL(chrome::NavigateParams* params) {
   chrome::Navigate(params);
   content::WaitForLoadStop(params->target_contents);
+}
+
+
+void NavigateToURLWithPost(Browser* browser, const GURL& url) {
+  chrome::NavigateParams params(browser, url,
+                                content::PAGE_TRANSITION_FORM_SUBMIT);
+  params.uses_post = true;
+  NavigateToURL(&params);
 }
 
 void NavigateToURL(Browser* browser, const GURL& url) {
@@ -231,14 +231,12 @@ static void NavigateToURLWithDispositionBlockUntilNavigationsComplete(
     web_contents = browser->tab_strip_model()->GetActiveWebContents();
   }
   if (disposition == CURRENT_TAB) {
-    base::RunLoop run_loop;
-    same_tab_observer.WaitForObservation(
-        base::Bind(&content::RunThisRunLoop, base::Unretained(&run_loop)),
-        content::GetQuitTaskForRunLoop(&run_loop));
+    same_tab_observer.Wait();
     return;
   } else if (web_contents) {
-    NavigationController* controller = &web_contents->GetController();
-    WaitForNavigations(controller, number_of_navigations);
+    content::TestNavigationObserver observer(web_contents,
+                                             number_of_navigations);
+    observer.Wait();
     return;
   }
   EXPECT_TRUE(NULL != web_contents) << " Unable to wait for navigation to \""
@@ -324,6 +322,10 @@ bool GetRelativeBuildDirectory(base::FilePath* build_dir) {
 }
 
 AppModalDialog* WaitForAppModalDialog() {
+  AppModalDialogQueue* dialog_queue = AppModalDialogQueue::GetInstance();
+  if (dialog_queue->HasActiveDialog())
+    return dialog_queue->active_dialog();
+
   content::WindowedNotificationObserver observer(
       chrome::NOTIFICATION_APP_MODAL_DIALOG_SHOWN,
       content::NotificationService::AllSources());
@@ -345,38 +347,16 @@ int FindInPage(WebContents* tab, const string16& search_string,
   return observer.number_of_matches();
 }
 
-void RegisterAndWait(content::NotificationObserver* observer,
-                     int type,
-                     const content::NotificationSource& source) {
-  content::NotificationRegistrar registrar;
-  registrar.Add(observer, type, source);
-  content::RunMessageLoop();
-}
-
-void WaitForBookmarkModelToLoad(BookmarkModel* model) {
-  if (model->loaded())
-    return;
-  base::RunLoop run_loop;
-  BookmarkLoadObserver observer(content::GetQuitTaskForRunLoop(&run_loop));
-  model->AddObserver(&observer);
-  content::RunThisRunLoop(&run_loop);
-  model->RemoveObserver(&observer);
-  ASSERT_TRUE(model->loaded());
-}
-
-void WaitForBookmarkModelToLoad(Profile* profile) {
-  WaitForBookmarkModelToLoad(BookmarkModelFactory::GetForProfile(profile));
-}
-
 void WaitForTemplateURLServiceToLoad(TemplateURLService* service) {
   if (service->loaded())
     return;
-
-  content::WindowedNotificationObserver observer(
-      chrome::NOTIFICATION_TEMPLATE_URL_SERVICE_LOADED,
-      content::Source<TemplateURLService>(service));
+  scoped_refptr<content::MessageLoopRunner> message_loop_runner =
+      new content::MessageLoopRunner;
+  scoped_ptr<TemplateURLService::Subscription> subscription =
+      service->RegisterOnLoadedCallback(
+          message_loop_runner->QuitClosure());
   service->Load();
-  observer.Wait();
+  message_loop_runner->Run();
 
   ASSERT_TRUE(service->loaded());
 }
@@ -408,7 +388,7 @@ void DownloadURL(Browser* browser, const GURL& download_url) {
 
 void SendToOmniboxAndSubmit(LocationBar* location_bar,
                             const std::string& input) {
-  OmniboxView* omnibox = location_bar->GetLocationEntry();
+  OmniboxView* omnibox = location_bar->GetOmniboxView();
   omnibox->model()->OnSetFocus(false);
   omnibox->SetUserText(ASCIIToUTF16(input));
   location_bar->AcceptInput();

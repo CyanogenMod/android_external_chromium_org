@@ -6,12 +6,12 @@
 
 #include <string>
 
-#include "chrome/browser/policy/cloud/cloud_policy_constants.h"
+#include "components/policy/core/common/cloud/cloud_policy_constants.h"
 
 namespace policy {
 
 StubEnterpriseInstallAttributes::StubEnterpriseInstallAttributes()
-    : EnterpriseInstallAttributes(NULL, NULL) {
+    : EnterpriseInstallAttributes(NULL) {
   device_locked_ = true;
 }
 

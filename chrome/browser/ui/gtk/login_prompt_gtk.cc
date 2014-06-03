@@ -19,14 +19,14 @@
 #include "content/public/browser/web_contents_delegate.h"
 #include "grit/generated_resources.h"
 #include "net/url_request/url_request.h"
-#include "ui/base/gtk/gtk_compat.h"
 #include "ui/base/gtk/gtk_hig_constants.h"
 #include "ui/base/gtk/gtk_signal.h"
-#include "ui/base/gtk/scoped_gobject.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/gfx/gtk_compat.h"
+#include "ui/gfx/scoped_gobject.h"
 
+using autofill::PasswordForm;
 using content::BrowserThread;
-using content::PasswordForm;
 using content::WebContents;
 using web_modal::WebContentsModalDialogManager;
 
@@ -48,8 +48,9 @@ class LoginHandlerGtk : public LoginHandler {
   }
 
   // LoginModelObserver implementation.
-  virtual void OnAutofillDataAvailable(const string16& username,
-                                       const string16& password) OVERRIDE {
+  virtual void OnAutofillDataAvailable(
+      const base::string16& username,
+      const base::string16& password) OVERRIDE {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
     // NOTE: Would be nice to use gtk_entry_get_text_length, but it is fairly
@@ -67,7 +68,7 @@ class LoginHandlerGtk : public LoginHandler {
   // LoginHandler:
   virtual void BuildViewForPasswordManager(
       PasswordManager* manager,
-      const string16& explanation) OVERRIDE {
+      const base::string16& explanation) OVERRIDE {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
     root_.reset(gtk_vbox_new(FALSE, ui::kContentAreaBorder));

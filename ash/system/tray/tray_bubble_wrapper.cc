@@ -8,6 +8,7 @@
 #include "ash/system/tray/tray_event_filter.h"
 #include "ash/wm/window_properties.h"
 #include "ui/aura/client/capture_client.h"
+#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
 #include "ui/views/bubble/tray_bubble_view.h"
 #include "ui/views/widget/widget.h"
@@ -51,6 +52,12 @@ void TrayBubbleWrapper::OnWidgetDestroying(views::Widget* widget) {
   if (capture_client)
     capture_client->ReleaseCapture(tray_->GetWidget()->GetNativeView());
   tray_->HideBubbleWithView(bubble_view_);  // May destroy |bubble_view_|
+}
+
+void TrayBubbleWrapper::OnWidgetBoundsChanged(views::Widget* widget,
+                                              const gfx::Rect& new_bounds) {
+  DCHECK_EQ(bubble_widget_, widget);
+  tray_->BubbleResized(bubble_view_);
 }
 
 }  // namespace internal

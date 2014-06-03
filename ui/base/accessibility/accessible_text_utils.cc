@@ -9,7 +9,7 @@
 
 namespace ui {
 
-size_t FindAccessibleTextBoundary(const string16& text,
+size_t FindAccessibleTextBoundary(const base::string16& text,
                                   const std::vector<int>& line_breaks,
                                   TextBoundaryType boundary,
                                   size_t start_offset,
@@ -69,11 +69,13 @@ size_t FindAccessibleTextBoundary(const string16& text,
       case PARAGRAPH_BOUNDARY:
         if (text[pos] == '\n')
           return result;
+        break;
       case SENTENCE_BOUNDARY:
         if ((text[pos] == '.' || text[pos] == '!' || text[pos] == '?') &&
             (pos == text_size - 1 || IsWhitespace(text[pos + 1]))) {
           return result;
         }
+        break;
       case ALL_BOUNDARY:
       default:
         break;

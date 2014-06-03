@@ -11,7 +11,7 @@
 #include "third_party/WebKit/public/web/WebSecurityOrigin.h"
 #include "url/gurl.h"
 
-using WebKit::WebSecurityOrigin;
+using blink::WebSecurityOrigin;
 
 typedef testing::Test ContentSettingsObserverTest;
 
@@ -34,12 +34,6 @@ TEST_F(ContentSettingsObserverTest, WhitelistedSchemes) {
       GURL(std::string(extensions::kExtensionScheme).append(end_url));
   EXPECT_TRUE(ContentSettingsObserver::IsWhitelistedForContentSettings(
       WebSecurityOrigin::create(extension_url),
-      GURL()));
-
-  GURL chrome_internal_url =
-      GURL(std::string(chrome::kChromeInternalScheme).append(end_url));
-  EXPECT_TRUE(ContentSettingsObserver::IsWhitelistedForContentSettings(
-      WebSecurityOrigin::create(chrome_internal_url),
       GURL()));
 
   GURL file_url("file:///dir/");

@@ -20,10 +20,10 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/extensions/api/cookies.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/permissions/permissions_data.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/permissions/permissions_data.h"
 #include "net/cookies/canonical_cookie.h"
 #include "net/cookies/cookie_util.h"
 #include "url/gurl.h"
@@ -119,7 +119,7 @@ void GetCookieListFromStore(
 GURL GetURLFromCanonicalCookie(const net::CanonicalCookie& cookie) {
   const std::string& domain_key = cookie.Domain();
   const std::string scheme =
-      cookie.IsSecure() ? chrome::kHttpsScheme : chrome::kHttpScheme;
+      cookie.IsSecure() ? content::kHttpsScheme : content::kHttpScheme;
   const std::string host =
       domain_key.find('.') != 0 ? domain_key : domain_key.substr(1);
   return GURL(scheme + content::kStandardSchemeSeparator + host + "/");
@@ -151,7 +151,7 @@ void AppendToTabIdList(Browser* browser, base::ListValue* tab_ids) {
   DCHECK(tab_ids);
   TabStripModel* tab_strip = browser->tab_strip_model();
   for (int i = 0; i < tab_strip->count(); ++i) {
-    tab_ids->Append(Value::CreateIntegerValue(
+    tab_ids->Append(new base::FundamentalValue(
         ExtensionTabUtil::GetTabId(tab_strip->GetWebContentsAt(i))));
   }
 }
@@ -206,4 +206,4 @@ bool MatchFilter::MatchesDomain(const std::string& domain) {
 }
 
 }  // namespace cookies_helpers
-}  // namespace extension
+}  // namespace extensions

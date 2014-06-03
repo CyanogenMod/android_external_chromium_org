@@ -1,4 +1,4 @@
-// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,7 +10,6 @@ import android.test.suitebuilder.annotation.SmallTest;
 import org.chromium.base.ImportantFileWriterAndroid;
 import org.chromium.base.test.util.Feature;
 import org.chromium.content.app.LibraryLoader;
-import org.chromium.content.common.CommandLine;
 import org.chromium.content.common.ProcessInitException;
 import org.chromium.content_shell_apk.ContentShellApplication;
 
@@ -18,7 +17,6 @@ import java.io.DataInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
-import java.lang.Throwable;
 
 
 /**
@@ -53,7 +51,7 @@ public class ImportantFileWriterAndroidTest extends InstrumentationTestCase {
             dis.readFully(fileData);
             dis.close();
             assertEquals("Data length wrong", data.length, fileData.length);
-            for(int i = 0; i < data.length; i++) {
+            for (int i = 0; i < data.length; i++) {
                 assertEquals("Data byte wrong", data[i], fileData[i]);
             }
         } catch (IOException e) {
@@ -74,7 +72,7 @@ public class ImportantFileWriterAndroidTest extends InstrumentationTestCase {
         File testFile = new File(dir, "ImportantFileTest");
 
         // Make sure the file doesn't already exist
-        if(testFile.exists()) {
+        if (testFile.exists()) {
             assertTrue(testFile.delete());
         }
 

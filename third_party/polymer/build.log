@@ -1,41 +1,37 @@
 BUILD LOG
 ---------
-Build Time: 2013-07-11T14:50:28
+Build Time: 2013-11-26T17:31:39
 
 NODEJS INFORMATION
 ==================
-nodejs: v0.10.4
-chai: 1.7.1
+nodejs: v0.10.22
+chai: 1.8.1
 grunt: 0.4.1
-grunt-audit: 0.0.1
-grunt-contrib-uglify: 0.2.2
-grunt-contrib-yuidoc: 0.4.0
-grunt-karma: 0.5.0
-karma: 0.9.3
+grunt-audit: 0.0.2
+grunt-concat-sourcemap: 0.3.2
+grunt-contrib-concat: 0.3.0
+grunt-contrib-uglify: 0.2.7
+grunt-contrib-yuidoc: 0.5.0
+grunt-karma: 0.6.2
+karma: 0.10.4
 karma-chrome-launcher: 0.0.2
-karma-coffee-preprocessor: 0.0.1
-karma-crbot-reporter: 0.0.3
-karma-firefox-launcher: 0.0.2
-karma-jasmine: 0.0.1
-karma-mocha: 0.0.1
-karma-phantomjs-launcher: 0.0.2
-karma-requirejs: 0.0.1
-karma-script-launcher: 0.0.1
-mocha: 1.11.0
+karma-coffee-preprocessor: 0.1.0
+karma-crbot-reporter: 0.0.4
+karma-firefox-launcher: 0.1.0
+karma-html2js-preprocessor: 0.1.0
+karma-ie-launcher: 0.1.1
+karma-jasmine: 0.1.3
+karma-mocha: 0.1.0
+karma-phantomjs-launcher: 0.1.0
+karma-requirejs: 0.1.0
+karma-safari-launcher: 0.1.1
+karma-script-launcher: 0.1.0
+mocha: 1.14.0
 
 REPO REVISIONS
 ==============
-polymer: b3727b3cc08225e27a2f72105d6ea495ff975661
-platform: cd92266d192dbc2b82cf37a477b3a5213989114c
-ShadowDOM: 99775988a711e4093153e0f4d68a4d73814f2a1f
-HTMLImports: 69e86c01bde0e88e2a9d85fd5dec01f454edaf55
-CustomElements: ac5a5aba2296d758580063bce5fe8feb59bcc54a
-PointerEvents: ea792e163c90a7199a036b9026b835de2d7d93fb
-PointerGestures: 39a1434940e01109157161110158f8727a981f42
-mdv: 6691933756030c7653234054db34f23f20fe576a
+polymer-dev: dcc9200ea4a23c34f12ac3900d479e35722206fe
 
 BUILD HASHES
 ============
-polymer.min.js: 983a363af92ef42f02d54999ef284b706655d15d
-polymer.native.min.js: 5b47f9ddbe75673975b5b2b25807e9ca88b6d44f
-polymer.sandbox.min.js: dbdfbb0e57423136557f9fe8959709e294d9560c
+build/polymer.min.js: c5b3ef18879843d41302a9722884dfc60963b492

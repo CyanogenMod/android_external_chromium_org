@@ -19,11 +19,29 @@ CertificateList CreateCertificateListFromFile(
     int format) {
   base::FilePath cert_path = certs_dir.AppendASCII(cert_file);
   std::string cert_data;
-  if (!file_util::ReadFileToString(cert_path, &cert_data))
+  if (!base::ReadFileToString(cert_path, &cert_data))
     return CertificateList();
   return X509Certificate::CreateCertificateListFromBytes(cert_data.data(),
                                                          cert_data.size(),
                                                          format);
+}
+
+scoped_refptr<X509Certificate> CreateCertificateChainFromFile(
+    const base::FilePath& certs_dir,
+    const std::string& cert_file,
+    int format) {
+  CertificateList certs = CreateCertificateListFromFile(
+      certs_dir, cert_file, format);
+  if (certs.empty())
+    return NULL;
+
+  X509Certificate::OSCertHandles intermediates;
+  for (size_t i = 1; i < certs.size(); ++i)
+    intermediates.push_back(certs[i]->os_cert_handle());
+
+  scoped_refptr<X509Certificate> result(X509Certificate::CreateFromHandle(
+        certs[0]->os_cert_handle(), intermediates));
+  return result;
 }
 
 scoped_refptr<X509Certificate> ImportCertFromFile(
@@ -31,7 +49,7 @@ scoped_refptr<X509Certificate> ImportCertFromFile(
     const std::string& cert_file) {
   base::FilePath cert_path = certs_dir.AppendASCII(cert_file);
   std::string cert_data;
-  if (!file_util::ReadFileToString(cert_path, &cert_data))
+  if (!base::ReadFileToString(cert_path, &cert_data))
     return NULL;
 
   CertificateList certs_in_file =

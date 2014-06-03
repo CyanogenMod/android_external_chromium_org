@@ -28,7 +28,6 @@
 #include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
 #include "base/pickle.h"
-#include "base/posix/eintr_wrapper.h"
 #include "base/safe_strerror_posix.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
@@ -42,6 +41,7 @@
 #include "tools/android/forwarder2/host_controller.h"
 #include "tools/android/forwarder2/pipe_notifier.h"
 #include "tools/android/forwarder2/socket.h"
+#include "tools/android/forwarder2/util.h"
 
 namespace forwarder2 {
 namespace {
@@ -149,9 +149,10 @@ class HostControllersManager {
     }
     DCHECK(manager->thread_->message_loop_proxy()->RunsTasksOnCurrentThread());
     // Note that this will delete |controller| which is owned by the map.
-    manager->controllers_->erase(
-        MakeHostControllerMapKey(controller->adb_port(),
-                                 controller->device_port()));
+    DeleteRefCountedValueInMap(
+        MakeHostControllerMapKey(
+            controller->adb_port(), controller->device_port()),
+        manager->controllers_.get());
   }
 
   void HandleRequestOnInternalThread(const std::string& device_serial,
@@ -170,11 +171,13 @@ class HostControllersManager {
       // Remove the previously created host controller.
       const std::string controller_key = MakeHostControllerMapKey(
           adb_port, -device_port);
-      const HostControllerMap::size_type removed_elements = controllers_->erase(
-          controller_key);
+      const bool controller_did_exist = DeleteRefCountedValueInMap(
+          controller_key, controllers_.get());
       SendMessage(
-          !removed_elements ? "ERROR: could not unmap port" : "OK",
+          !controller_did_exist ? "ERROR: could not unmap port" : "OK",
           client_socket.get());
+
+      RemoveAdbPortForDeviceIfNeeded(device_serial);
       return;
     }
     if (host_port < 0) {
@@ -217,6 +220,49 @@ class HostControllersManager {
                        linked_ptr<HostController>(host_controller.release())));
   }
 
+  void RemoveAdbPortForDeviceIfNeeded(const std::string& device_serial) {
+    base::hash_map<std::string, int>::const_iterator it =
+        device_serial_to_adb_port_map_.find(device_serial);
+    if (it == device_serial_to_adb_port_map_.end())
+      return;
+
+    int port = it->second;
+    const std::string prefix = base::StringPrintf("%d:", port);
+    for (HostControllerMap::const_iterator others = controllers_->begin();
+         others != controllers_->end(); ++others) {
+      if (others->first.find(prefix) == 0U)
+        return;
+    }
+    // No other port is being forwarded to this device:
+    // - Remove it from our internal serial -> adb port map.
+    // - Remove from "adb forward" command.
+    LOG(INFO) << "Device " << device_serial << " has no more ports.";
+    device_serial_to_adb_port_map_.erase(device_serial);
+    const std::string serial_part = device_serial.empty() ?
+        std::string() : std::string("-s ") + device_serial;
+    const std::string command = base::StringPrintf(
+        "adb %s forward --remove tcp:%d",
+        serial_part.c_str(),
+        port);
+    const int ret = system(command.c_str());
+    LOG(INFO) << command << " ret: " << ret;
+    // Wait for the socket to be fully unmapped.
+    const std::string port_mapped_cmd = base::StringPrintf(
+        "lsof -nPi:%d",
+        port);
+    const int poll_interval_us = 500 * 1000;
+    int retries = 3;
+    while (retries) {
+      const int port_unmapped = system(port_mapped_cmd.c_str());
+      LOG(INFO) << "Device " << device_serial << " port " << port << " unmap "
+                << port_unmapped;
+      if (port_unmapped)
+        break;
+      --retries;
+      usleep(poll_interval_us);
+    }
+  }
+
   int GetAdbPortForDevice(const std::string& device_serial) {
     base::hash_map<std::string, int>::const_iterator it =
         device_serial_to_adb_port_map_.find(device_serial);
@@ -230,7 +276,7 @@ class HostControllersManager {
         std::string() : std::string("-s ") + device_serial;
     const std::string command = base::StringPrintf(
         "adb %s forward tcp:%d localabstract:chrome_device_forwarder",
-        device_serial.empty() ? "" : serial_part.c_str(),
+        serial_part.c_str(),
         port);
     LOG(INFO) << command;
     const int ret = system(command.c_str());

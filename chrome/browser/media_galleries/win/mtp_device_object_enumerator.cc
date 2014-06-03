@@ -9,8 +9,6 @@
 #include "base/threading/thread_restrictions.h"
 #include "content/public/browser/browser_thread.h"
 
-namespace chrome {
-
 MTPDeviceObjectEnumerator::MTPDeviceObjectEnumerator(
     const MTPDeviceObjectEntries& entries)
     : object_entries_(entries),
@@ -56,10 +54,10 @@ base::Time MTPDeviceObjectEnumerator::LastModifiedTime() {
   return object_entries_[index_].last_modified_time;
 }
 
-string16 MTPDeviceObjectEnumerator::GetObjectId() const {
+base::string16 MTPDeviceObjectEnumerator::GetObjectId() const {
   DCHECK(thread_checker_.CalledOnValidThread());
   if (!IsIndexReadyAndInRange())
-    return string16();
+    return base::string16();
   return object_entries_[index_].object_id;
 }
 
@@ -70,5 +68,3 @@ bool MTPDeviceObjectEnumerator::HasMoreEntries() const {
 bool MTPDeviceObjectEnumerator::IsIndexReadyAndInRange() const {
   return is_index_ready_ && HasMoreEntries();
 }
-
-}  // namespace chrome

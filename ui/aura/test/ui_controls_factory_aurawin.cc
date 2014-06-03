@@ -7,6 +7,7 @@
 #include "base/message_loop/message_loop.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/test/ui_controls_factory_aura.h"
+#include "ui/aura/window.h"
 #include "ui/base/test/ui_controls_aura.h"
 #include "ui/base/test/ui_controls_internal_win.h"
 
@@ -36,7 +37,8 @@ class UIControlsWin : public UIControlsAura {
                             bool alt,
                             bool command) {
     DCHECK(!command);  // No command key on Aura
-    HWND window = native_window->GetRootWindow()->GetAcceleratedWidget();
+    HWND window =
+        native_window->GetDispatcher()->host()->GetAcceleratedWidget();
     return SendKeyPressImpl(
         window, key, control, shift, alt, base::Closure());
   }
@@ -48,7 +50,8 @@ class UIControlsWin : public UIControlsAura {
                                           bool command,
                                           const base::Closure& task) {
     DCHECK(!command);  // No command key on Aura
-    HWND window = native_window->GetRootWindow()->GetAcceleratedWidget();
+    HWND window =
+        native_window->GetDispatcher()->host()->GetAcceleratedWidget();
     return SendKeyPressImpl(window, key, control, shift, alt, task);
   }
   virtual bool SendMouseMove(long x, long y) {

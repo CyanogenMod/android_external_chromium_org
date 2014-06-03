@@ -4,36 +4,42 @@
 
 #include "chrome/browser/chromeos/extensions/file_manager/private_api_file_system.h"
 
-#include <sys/stat.h>
 #include <sys/statvfs.h>
 #include <sys/types.h>
 #include <utime.h>
 
+#include "base/path_service.h"
 #include "base/posix/eintr_wrapper.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/task_runner_util.h"
 #include "base/threading/sequenced_worker_pool.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/drive/drive.pb.h"
-#include "chrome/browser/chromeos/drive/drive_integration_service.h"
 #include "chrome/browser/chromeos/drive/file_system_interface.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/extensions/file_manager/event_router.h"
 #include "chrome/browser/chromeos/extensions/file_manager/file_browser_private_api.h"
-#include "chrome/browser/chromeos/extensions/file_manager/file_manager_util.h"
-#include "chrome/browser/chromeos/extensions/file_manager/fileapi_util.h"
 #include "chrome/browser/chromeos/extensions/file_manager/private_api_util.h"
+#include "chrome/browser/chromeos/file_manager/fileapi_util.h"
+#include "chrome/browser/chromeos/file_manager/volume_manager.h"
 #include "chrome/browser/chromeos/fileapi/file_system_backend.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/common/extensions/api/file_browser_private.h"
 #include "chromeos/disks/disk_mount_manager.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/child_process_security_policy.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/storage_partition.h"
+#include "net/base/escape.h"
 #include "webkit/browser/fileapi/file_system_context.h"
 #include "webkit/browser/fileapi/file_system_file_util.h"
 #include "webkit/browser/fileapi/file_system_operation_context.h"
+#include "webkit/browser/fileapi/file_system_operation_runner.h"
 #include "webkit/browser/fileapi/file_system_url.h"
+#include "webkit/common/fileapi/file_system_info.h"
 #include "webkit/common/fileapi/file_system_types.h"
 #include "webkit/common/fileapi/file_system_util.h"
 
@@ -44,59 +50,8 @@ using content::ChildProcessSecurityPolicy;
 using content::WebContents;
 using fileapi::FileSystemURL;
 
-namespace file_manager {
+namespace extensions {
 namespace {
-
-// Error messages.
-const char kFileError[] = "File error %d";
-
-const DiskMountManager::Disk* GetVolumeAsDisk(const std::string& mount_path) {
-  DiskMountManager* disk_mount_manager = DiskMountManager::GetInstance();
-
-  DiskMountManager::MountPointMap::const_iterator mount_point_it =
-      disk_mount_manager->mount_points().find(mount_path);
-  if (mount_point_it == disk_mount_manager->mount_points().end())
-    return NULL;
-
-  const DiskMountManager::Disk* disk = disk_mount_manager->FindDiskBySourcePath(
-      mount_point_it->second.source_path);
-
-  return (disk && disk->is_hidden()) ? NULL : disk;
-}
-
-base::DictionaryValue* CreateValueFromDisk(
-    Profile* profile,
-    const std::string& extension_id,
-    const DiskMountManager::Disk* volume) {
-  base::DictionaryValue* volume_info = new base::DictionaryValue();
-
-  std::string mount_path;
-  if (!volume->mount_path().empty()) {
-    base::FilePath relative_mount_path;
-    util::ConvertFileToRelativeFileSystemPath(
-        profile, extension_id, base::FilePath(volume->mount_path()),
-        &relative_mount_path);
-    mount_path = relative_mount_path.value();
-  }
-
-  volume_info->SetString("devicePath", volume->device_path());
-  volume_info->SetString("mountPath", mount_path);
-  volume_info->SetString("systemPath", volume->system_path());
-  volume_info->SetString("filePath", volume->file_path());
-  volume_info->SetString("deviceLabel", volume->device_label());
-  volume_info->SetString("driveLabel", volume->drive_label());
-  volume_info->SetString(
-      "deviceType",
-      DiskMountManager::DeviceTypeToString(volume->device_type()));
-  volume_info->SetDouble("totalSize",
-                         static_cast<double>(volume->total_size_in_bytes()));
-  volume_info->SetBoolean("isParent", volume->is_parent());
-  volume_info->SetBoolean("isReadOnly", volume->is_read_only());
-  volume_info->SetBoolean("hasMedia", volume->has_media());
-  volume_info->SetBoolean("isOnBootDevice", volume->on_boot_device());
-
-  return volume_info;
-}
 
 // Sets permissions for the Drive mount point so Files.app can access files
 // in the mount point directory. It's safe to call this function even if
@@ -110,10 +65,9 @@ void SetDriveMountPointPermissions(
     return;
   }
 
-  content::SiteInstance* site_instance = render_view_host->GetSiteInstance();
   fileapi::ExternalFileSystemBackend* backend =
-      BrowserContext::GetStoragePartition(profile, site_instance)->
-      GetFileSystemContext()->external_backend();
+      file_manager::util::GetFileSystemContextForRenderViewHost(
+          profile, render_view_host)->external_backend();
   if (!backend)
     return;
 
@@ -145,7 +99,7 @@ void GetSizeStatsOnBlockingPool(const std::string& mount_path,
 // Returns 0 if it could not be queried.
 size_t GetFileNameMaxLengthOnBlockingPool(const std::string& path) {
   struct statvfs stat = {};
-  if (statvfs(path.c_str(), &stat) != 0) {
+  if (HANDLE_EINTR(statvfs(path.c_str(), &stat)) != 0) {
     // The filesystem seems not supporting statvfs(). Assume it to be a commonly
     // used bound 255, and log the failure.
     LOG(ERROR) << "Cannot statvfs() the name length limit for: " << path;
@@ -154,86 +108,147 @@ size_t GetFileNameMaxLengthOnBlockingPool(const std::string& path) {
   return stat.f_namemax;
 }
 
-// Sets last modified date.
-bool SetLastModifiedOnBlockingPool(const base::FilePath& local_path,
-                                   time_t timestamp) {
-  if (local_path.empty())
-    return false;
+// Returns EventRouter for the |profile_id| if available.
+file_manager::EventRouter* GetEventRouterByProfileId(void* profile_id) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  struct stat stat_buffer;
-  if (stat(local_path.value().c_str(), &stat_buffer) != 0)
-    return false;
+  // |profile_id| needs to be checked with ProfileManager::IsValidProfile
+  // before using it.
+  Profile* profile = reinterpret_cast<Profile*>(profile_id);
+  if (!g_browser_process->profile_manager()->IsValidProfile(profile))
+    return NULL;
 
-  struct utimbuf times;
-  times.actime = stat_buffer.st_atime;
-  times.modtime = timestamp;
-  return utime(local_path.value().c_str(), &times) == 0;
+  return file_manager::FileBrowserPrivateAPI::Get(profile)->event_router();
+}
+
+// Notifies the copy progress to extensions via event router.
+void NotifyCopyProgress(
+    void* profile_id,
+    fileapi::FileSystemOperationRunner::OperationID operation_id,
+    fileapi::FileSystemOperation::CopyProgressType type,
+    const FileSystemURL& source_url,
+    const FileSystemURL& destination_url,
+    int64 size) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  file_manager::EventRouter* event_router =
+      GetEventRouterByProfileId(profile_id);
+  if (event_router) {
+    event_router->OnCopyProgress(
+        operation_id, type,
+        source_url.ToGURL(), destination_url.ToGURL(), size);
+  }
+}
+
+// Callback invoked periodically on progress update of Copy().
+void OnCopyProgress(
+    void* profile_id,
+    fileapi::FileSystemOperationRunner::OperationID* operation_id,
+    fileapi::FileSystemOperation::CopyProgressType type,
+    const FileSystemURL& source_url,
+    const FileSystemURL& destination_url,
+    int64 size) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+
+  BrowserThread::PostTask(
+      BrowserThread::UI, FROM_HERE,
+      base::Bind(&NotifyCopyProgress,
+                 profile_id, *operation_id, type,
+                 source_url, destination_url, size));
+}
+
+// Notifies the copy completion to extensions via event router.
+void NotifyCopyCompletion(
+    void* profile_id,
+    fileapi::FileSystemOperationRunner::OperationID operation_id,
+    const FileSystemURL& source_url,
+    const FileSystemURL& destination_url,
+    base::PlatformFileError error) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  file_manager::EventRouter* event_router =
+      GetEventRouterByProfileId(profile_id);
+  if (event_router)
+    event_router->OnCopyCompleted(
+        operation_id,
+        source_url.ToGURL(), destination_url.ToGURL(), error);
+}
+
+// Callback invoked upon completion of Copy() (regardless of succeeded or
+// failed).
+void OnCopyCompleted(
+    void* profile_id,
+    fileapi::FileSystemOperationRunner::OperationID* operation_id,
+    const FileSystemURL& source_url,
+    const FileSystemURL& destination_url,
+    base::PlatformFileError error) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+
+  BrowserThread::PostTask(
+      BrowserThread::UI, FROM_HERE,
+      base::Bind(&NotifyCopyCompletion,
+                 profile_id, *operation_id,
+                 source_url, destination_url, error));
+}
+
+// Starts the copy operation via FileSystemOperationRunner.
+fileapi::FileSystemOperationRunner::OperationID StartCopyOnIOThread(
+    void* profile_id,
+    scoped_refptr<fileapi::FileSystemContext> file_system_context,
+    const FileSystemURL& source_url,
+    const FileSystemURL& destination_url) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+
+  // Note: |operation_id| is owned by the callback for
+  // FileSystemOperationRunner::Copy(). It is always called in the next message
+  // loop or later, so at least during this invocation it should alive.
+  fileapi::FileSystemOperationRunner::OperationID* operation_id =
+      new fileapi::FileSystemOperationRunner::OperationID;
+  *operation_id = file_system_context->operation_runner()->Copy(
+      source_url, destination_url,
+      fileapi::FileSystemOperation::OPTION_PRESERVE_LAST_MODIFIED,
+      base::Bind(&OnCopyProgress,
+                 profile_id, base::Unretained(operation_id)),
+      base::Bind(&OnCopyCompleted,
+                 profile_id, base::Owned(operation_id),
+                 source_url, destination_url));
+  return *operation_id;
+}
+
+void OnCopyCancelled(base::PlatformFileError error) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+
+  // We just ignore the status if the copy is actually cancelled or not,
+  // because failing cancellation means the operation is not running now.
+  DLOG_IF(WARNING, error != base::PLATFORM_FILE_OK)
+      << "Failed to cancel copy: " << error;
+}
+
+// Cancels the running copy operation identified by |operation_id|.
+void CancelCopyOnIOThread(
+    scoped_refptr<fileapi::FileSystemContext> file_system_context,
+    fileapi::FileSystemOperationRunner::OperationID operation_id) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+
+  file_system_context->operation_runner()->Cancel(
+      operation_id, base::Bind(&OnCopyCancelled));
 }
 
 }  // namespace
 
-RequestFileSystemFunction::RequestFileSystemFunction() {
-}
-
-RequestFileSystemFunction::~RequestFileSystemFunction() {
-}
-
-void RequestFileSystemFunction::DidOpenFileSystem(
-    scoped_refptr<fileapi::FileSystemContext> file_system_context,
-    base::PlatformFileError result,
-    const std::string& name,
-    const GURL& root_path) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
-  if (result != base::PLATFORM_FILE_OK) {
-    DidFail(result);
-    return;
-  }
-
-  // RenderViewHost may have gone while the task is posted asynchronously.
-  if (!render_view_host()) {
-    DidFail(base::PLATFORM_FILE_ERROR_FAILED);
-    return;
-  }
-
-  // Set up file permission access.
-  const int child_id = render_view_host()->GetProcess()->GetID();
-  if (!SetupFileSystemAccessPermissions(file_system_context,
-                                        child_id,
-                                        GetExtension())) {
-    DidFail(base::PLATFORM_FILE_ERROR_SECURITY);
-    return;
-  }
-
-  // Set permissions for the Drive mount point immediately when we kick of
-  // first instance of file manager. The actual mount event will be sent to
-  // UI only when we perform proper authentication.
-  //
-  // Note that we call this function even when Drive is disabled by the
-  // setting. Otherwise, we need to call this when the setting is changed at
-  // a later time, which complicates the code.
-  SetDriveMountPointPermissions(profile_, extension_id(), render_view_host());
-
-  DictionaryValue* dict = new DictionaryValue();
-  SetResult(dict);
-  dict->SetString("name", name);
-  dict->SetString("path", root_path.spec());
-  dict->SetInteger("error", drive::FILE_ERROR_OK);
-  SendResponse(true);
-}
-
-void RequestFileSystemFunction::DidFail(
+void FileBrowserPrivateRequestFileSystemFunction::DidFail(
     base::PlatformFileError error_code) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  error_ = base::StringPrintf(kFileError, static_cast<int>(error_code));
+  error_ = base::StringPrintf("File error %d", static_cast<int>(error_code));
   SendResponse(false);
 }
 
-bool RequestFileSystemFunction::SetupFileSystemAccessPermissions(
-    scoped_refptr<fileapi::FileSystemContext> file_system_context,
-    int child_id,
-    scoped_refptr<const extensions::Extension> extension) {
+bool FileBrowserPrivateRequestFileSystemFunction::
+    SetupFileSystemAccessPermissions(
+        scoped_refptr<fileapi::FileSystemContext> file_system_context,
+        int child_id,
+        scoped_refptr<const extensions::Extension> extension) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   if (!extension.get())
@@ -265,8 +280,14 @@ bool RequestFileSystemFunction::SetupFileSystemAccessPermissions(
   return true;
 }
 
-bool RequestFileSystemFunction::RunImpl() {
+bool FileBrowserPrivateRequestFileSystemFunction::RunImpl() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  using extensions::api::file_browser_private::RequestFileSystem::Params;
+  const scoped_ptr<Params> params(Params::Create(*args_));
+  EXTENSION_FUNCTION_VALIDATE(params);
+
+  // TODO(satorux): Handle the file system ID. crbug.com/322305.
+  DCHECK_EQ("compatible", params->volume_id);
 
   if (!dispatcher() || !render_view_host() || !render_view_host()->GetProcess())
     return false;
@@ -274,24 +295,38 @@ bool RequestFileSystemFunction::RunImpl() {
   set_log_on_completion(true);
 
   scoped_refptr<fileapi::FileSystemContext> file_system_context =
-      fileapi_util::GetFileSystemContextForRenderViewHost(
-          profile(), render_view_host());
+      file_manager::util::GetFileSystemContextForRenderViewHost(
+          GetProfile(), render_view_host());
 
-  const GURL origin_url = source_url_.GetOrigin();
-  file_system_context->OpenFileSystem(
-      origin_url,
-      fileapi::kFileSystemTypeExternal,
-      fileapi::OPEN_FILE_SYSTEM_FAIL_IF_NONEXISTENT,
-      base::Bind(&RequestFileSystemFunction::DidOpenFileSystem,
-                 this,
-                 file_system_context));
+  // Set up file permission access.
+  const int child_id = render_view_host()->GetProcess()->GetID();
+  if (!SetupFileSystemAccessPermissions(file_system_context,
+                                        child_id,
+                                        GetExtension())) {
+    DidFail(base::PLATFORM_FILE_ERROR_SECURITY);
+    return false;
+  }
+
+  // Set permissions for the Drive mount point immediately when we kick of
+  // first instance of file manager. The actual mount event will be sent to
+  // UI only when we perform proper authentication.
+  //
+  // Note that we call this function even when Drive is disabled by the
+  // setting. Otherwise, we need to call this when the setting is changed at
+  // a later time, which complicates the code.
+  SetDriveMountPointPermissions(
+      GetProfile(), extension_id(), render_view_host());
+
+  fileapi::FileSystemInfo info =
+      fileapi::GetFileSystemInfoForChromeOS(source_url_.GetOrigin());
+
+  DictionaryValue* dict = new DictionaryValue();
+  SetResult(dict);
+  dict->SetString("name", info.name);
+  dict->SetString("root_url", info.root_url.spec());
+  dict->SetInteger("error", drive::FILE_ERROR_OK);
+  SendResponse(true);
   return true;
-}
-
-FileWatchFunctionBase::FileWatchFunctionBase() {
-}
-
-FileWatchFunctionBase::~FileWatchFunctionBase() {
 }
 
 void FileWatchFunctionBase::Respond(bool success) {
@@ -313,8 +348,8 @@ bool FileWatchFunctionBase::RunImpl() {
     return false;
 
   scoped_refptr<fileapi::FileSystemContext> file_system_context =
-      fileapi_util::GetFileSystemContextForRenderViewHost(
-          profile(), render_view_host());
+      file_manager::util::GetFileSystemContextForRenderViewHost(
+          GetProfile(), render_view_host());
 
   FileSystemURL file_watch_url = file_system_context->CrackURL(GURL(url));
   base::FilePath local_path = file_watch_url.path();
@@ -328,118 +363,58 @@ bool FileWatchFunctionBase::RunImpl() {
   return true;
 }
 
-AddFileWatchFunction::AddFileWatchFunction() {
-}
-
-AddFileWatchFunction::~AddFileWatchFunction() {
-}
-
-void AddFileWatchFunction::PerformFileWatchOperation(
+void FileBrowserPrivateAddFileWatchFunction::PerformFileWatchOperation(
     const base::FilePath& local_path,
     const base::FilePath& virtual_path,
     const std::string& extension_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  EventRouter* event_router =
-      FileBrowserPrivateAPI::Get(profile_)->event_router();
+  file_manager::EventRouter* event_router =
+      file_manager::FileBrowserPrivateAPI::Get(GetProfile())->event_router();
   event_router->AddFileWatch(
       local_path,
       virtual_path,
       extension_id,
-      base::Bind(&AddFileWatchFunction::Respond, this));
+      base::Bind(&FileBrowserPrivateAddFileWatchFunction::Respond, this));
 }
 
-RemoveFileWatchFunction::RemoveFileWatchFunction() {
-}
-
-RemoveFileWatchFunction::~RemoveFileWatchFunction() {
-}
-
-void RemoveFileWatchFunction::PerformFileWatchOperation(
+void FileBrowserPrivateRemoveFileWatchFunction::PerformFileWatchOperation(
     const base::FilePath& local_path,
     const base::FilePath& unused,
     const std::string& extension_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  EventRouter* event_router =
-      FileBrowserPrivateAPI::Get(profile_)->event_router();
+  file_manager::EventRouter* event_router =
+      file_manager::FileBrowserPrivateAPI::Get(GetProfile())->event_router();
   event_router->RemoveFileWatch(local_path, extension_id);
   Respond(true);
 }
 
-SetLastModifiedFunction::SetLastModifiedFunction() {
-}
+bool FileBrowserPrivateGetSizeStatsFunction::RunImpl() {
+  using extensions::api::file_browser_private::GetSizeStats::Params;
+  const scoped_ptr<Params> params(Params::Create(*args_));
+  EXTENSION_FUNCTION_VALIDATE(params);
 
-SetLastModifiedFunction::~SetLastModifiedFunction() {
-}
-
-bool SetLastModifiedFunction::RunImpl() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
-  if (args_->GetSize() != 2) {
-    return false;
-  }
-
-  std::string file_url;
-  if (!args_->GetString(0, &file_url))
-    return false;
-
-  std::string timestamp;
-  if (!args_->GetString(1, &timestamp))
-    return false;
-
-  base::FilePath local_path = util::GetLocalPathFromURL(
-      render_view_host(), profile(), GURL(file_url));
-
-  base::PostTaskAndReplyWithResult(
-      BrowserThread::GetBlockingPool(),
-      FROM_HERE,
-      base::Bind(&SetLastModifiedOnBlockingPool,
-                 local_path,
-                 strtoul(timestamp.c_str(), NULL, 0)),
-      base::Bind(&SetLastModifiedFunction::SendResponse,
-                 this));
-  return true;
-}
-
-GetSizeStatsFunction::GetSizeStatsFunction() {
-}
-
-GetSizeStatsFunction::~GetSizeStatsFunction() {
-}
-
-bool GetSizeStatsFunction::RunImpl() {
-  if (args_->GetSize() != 1) {
-    return false;
-  }
-
-  std::string mount_url;
-  if (!args_->GetString(0, &mount_url))
-    return false;
-
-  base::FilePath file_path = util::GetLocalPathFromURL(
-      render_view_host(), profile(), GURL(mount_url));
+  base::FilePath file_path = file_manager::util::GetLocalPathFromURL(
+      render_view_host(), GetProfile(), GURL(params->mount_path));
   if (file_path.empty())
     return false;
 
   if (file_path == drive::util::GetDriveMountPointPath()) {
-    drive::DriveIntegrationService* integration_service =
-        drive::DriveIntegrationServiceFactory::GetForProfile(profile_);
-    // |integration_service| is NULL if Drive is disabled.
-    if (!integration_service) {
+    drive::FileSystemInterface* file_system =
+        drive::util::GetFileSystemByProfile(GetProfile());
+    if (!file_system) {
+      // |file_system| is NULL if Drive is disabled.
       // If stats couldn't be gotten for drive, result should be left
       // undefined. See comments in GetDriveAvailableSpaceCallback().
       SendResponse(true);
       return true;
     }
 
-    drive::FileSystemInterface* file_system =
-        integration_service->file_system();
-
     file_system->GetAvailableSpace(
-        base::Bind(&GetSizeStatsFunction::GetDriveAvailableSpaceCallback,
+        base::Bind(&FileBrowserPrivateGetSizeStatsFunction::
+                       GetDriveAvailableSpaceCallback,
                    this));
-
   } else {
     uint64* total_size = new uint64(0);
     uint64* remaining_size = new uint64(0);
@@ -449,7 +424,8 @@ bool GetSizeStatsFunction::RunImpl() {
                    file_path.value(),
                    total_size,
                    remaining_size),
-        base::Bind(&GetSizeStatsFunction::GetSizeStatsCallback,
+        base::Bind(&FileBrowserPrivateGetSizeStatsFunction::
+                       GetSizeStatsCallback,
                    this,
                    base::Owned(total_size),
                    base::Owned(remaining_size)));
@@ -457,7 +433,7 @@ bool GetSizeStatsFunction::RunImpl() {
   return true;
 }
 
-void GetSizeStatsFunction::GetDriveAvailableSpaceCallback(
+void FileBrowserPrivateGetSizeStatsFunction::GetDriveAvailableSpaceCallback(
     drive::FileError error,
     int64 bytes_total,
     int64 bytes_used) {
@@ -472,7 +448,7 @@ void GetSizeStatsFunction::GetDriveAvailableSpaceCallback(
   }
 }
 
-void GetSizeStatsFunction::GetSizeStatsCallback(
+void FileBrowserPrivateGetSizeStatsFunction::GetSizeStatsCallback(
     const uint64* total_size,
     const uint64* remaining_size) {
   base::DictionaryValue* sizes = new base::DictionaryValue();
@@ -484,65 +460,17 @@ void GetSizeStatsFunction::GetSizeStatsCallback(
   SendResponse(true);
 }
 
-GetVolumeMetadataFunction::GetVolumeMetadataFunction() {
-}
-
-GetVolumeMetadataFunction::~GetVolumeMetadataFunction() {
-}
-
-bool GetVolumeMetadataFunction::RunImpl() {
-  if (args_->GetSize() != 1) {
-    error_ = "Invalid argument count";
-    return false;
-  }
-
-  std::string volume_mount_url;
-  if (!args_->GetString(0, &volume_mount_url)) {
-    NOTREACHED();
-    return false;
-  }
-
-  base::FilePath file_path = util::GetLocalPathFromURL(
-      render_view_host(), profile(), GURL(volume_mount_url));
-  if (file_path.empty()) {
-    error_ = "Invalid mount path.";
-    return false;
-  }
-
-  results_.reset();
-
-  const DiskMountManager::Disk* volume = GetVolumeAsDisk(file_path.value());
-  if (volume) {
-    DictionaryValue* volume_info =
-        CreateValueFromDisk(profile_, extension_->id(), volume);
-    SetResult(volume_info);
-  }
-
-  SendResponse(true);
-  return true;
-}
-
-ValidatePathNameLengthFunction::ValidatePathNameLengthFunction() {
-}
-
-ValidatePathNameLengthFunction::~ValidatePathNameLengthFunction() {
-}
-
-bool ValidatePathNameLengthFunction::RunImpl() {
-  std::string parent_url;
-  if (!args_->GetString(0, &parent_url))
-    return false;
-
-  std::string name;
-  if (!args_->GetString(1, &name))
-    return false;
+bool FileBrowserPrivateValidatePathNameLengthFunction::RunImpl() {
+  using extensions::api::file_browser_private::ValidatePathNameLength::Params;
+  const scoped_ptr<Params> params(Params::Create(*args_));
+  EXTENSION_FUNCTION_VALIDATE(params);
 
   scoped_refptr<fileapi::FileSystemContext> file_system_context =
-      fileapi_util::GetFileSystemContextForRenderViewHost(
-          profile(), render_view_host());
+      file_manager::util::GetFileSystemContextForRenderViewHost(
+          GetProfile(), render_view_host());
 
   fileapi::FileSystemURL filesystem_url(
-      file_system_context->CrackURL(GURL(parent_url)));
+      file_system_context->CrackURL(GURL(params->parent_directory_url)));
   if (!chromeos::FileSystemBackend::CanHandleURL(filesystem_url))
     return false;
 
@@ -558,43 +486,107 @@ bool ValidatePathNameLengthFunction::RunImpl() {
       FROM_HERE,
       base::Bind(&GetFileNameMaxLengthOnBlockingPool,
                  filesystem_url.path().AsUTF8Unsafe()),
-      base::Bind(&ValidatePathNameLengthFunction::OnFilePathLimitRetrieved,
-                 this, name.size()));
+      base::Bind(&FileBrowserPrivateValidatePathNameLengthFunction::
+                     OnFilePathLimitRetrieved,
+                 this, params->name.size()));
   return true;
 }
 
-void ValidatePathNameLengthFunction::OnFilePathLimitRetrieved(
+void FileBrowserPrivateValidatePathNameLengthFunction::OnFilePathLimitRetrieved(
     size_t current_length,
     size_t max_length) {
   SetResult(new base::FundamentalValue(current_length <= max_length));
   SendResponse(true);
 }
 
-FormatDeviceFunction::FormatDeviceFunction() {
-}
+bool FileBrowserPrivateFormatVolumeFunction::RunImpl() {
+  using extensions::api::file_browser_private::FormatVolume::Params;
+  const scoped_ptr<Params> params(Params::Create(*args_));
+  EXTENSION_FUNCTION_VALIDATE(params);
 
-FormatDeviceFunction::~FormatDeviceFunction() {
-}
-
-bool FormatDeviceFunction::RunImpl() {
-  if (args_->GetSize() != 1) {
-    return false;
-  }
-
-  std::string volume_file_url;
-  if (!args_->GetString(0, &volume_file_url)) {
-    NOTREACHED();
-    return false;
-  }
-
-  base::FilePath file_path = util::GetLocalPathFromURL(
-      render_view_host(), profile(), GURL(volume_file_url));
-  if (file_path.empty())
+  using file_manager::VolumeManager;
+  using file_manager::VolumeInfo;
+  VolumeManager* volume_manager = VolumeManager::Get(GetProfile());
+  if (!volume_manager)
     return false;
 
-  DiskMountManager::GetInstance()->FormatMountedDevice(file_path.value());
+  VolumeInfo volume_info;
+  if (!volume_manager->FindVolumeInfoById(params->volume_id, &volume_info))
+    return false;
+
+  DiskMountManager::GetInstance()->FormatMountedDevice(
+      volume_info.mount_path.AsUTF8Unsafe());
   SendResponse(true);
   return true;
 }
 
-}  // namespace file_manager
+bool FileBrowserPrivateStartCopyFunction::RunImpl() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  using  extensions::api::file_browser_private::StartCopy::Params;
+  const scoped_ptr<Params> params(Params::Create(*args_));
+  EXTENSION_FUNCTION_VALIDATE(params);
+
+  if (params->source_url.empty() || params->parent.empty() ||
+      params->new_name.empty()) {
+    error_ = base::IntToString(fileapi::PlatformFileErrorToWebFileError(
+        base::PLATFORM_FILE_ERROR_INVALID_URL));
+    return false;
+  }
+
+  scoped_refptr<fileapi::FileSystemContext> file_system_context =
+      file_manager::util::GetFileSystemContextForRenderViewHost(
+          GetProfile(), render_view_host());
+
+  fileapi::FileSystemURL source_url(
+      file_system_context->CrackURL(GURL(params->source_url)));
+  fileapi::FileSystemURL destination_url(file_system_context->CrackURL(
+      GURL(params->parent + "/" + net::EscapePath(params->new_name))));
+
+  if (!source_url.is_valid() || !destination_url.is_valid()) {
+    error_ = base::IntToString(fileapi::PlatformFileErrorToWebFileError(
+        base::PLATFORM_FILE_ERROR_INVALID_URL));
+    return false;
+  }
+
+  return BrowserThread::PostTaskAndReplyWithResult(
+      BrowserThread::IO,
+      FROM_HERE,
+      base::Bind(&StartCopyOnIOThread,
+                 GetProfile(),
+                 file_system_context,
+                 source_url,
+                 destination_url),
+      base::Bind(&FileBrowserPrivateStartCopyFunction::RunAfterStartCopy,
+                 this));
+}
+
+void FileBrowserPrivateStartCopyFunction::RunAfterStartCopy(
+    int operation_id) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  SetResult(Value::CreateIntegerValue(operation_id));
+  SendResponse(true);
+}
+
+bool FileBrowserPrivateCancelCopyFunction::RunImpl() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  using  extensions::api::file_browser_private::CancelCopy::Params;
+  const scoped_ptr<Params> params(Params::Create(*args_));
+  EXTENSION_FUNCTION_VALIDATE(params);
+
+  scoped_refptr<fileapi::FileSystemContext> file_system_context =
+      file_manager::util::GetFileSystemContextForRenderViewHost(
+          GetProfile(), render_view_host());
+
+  // We don't much take care about the result of cancellation.
+  BrowserThread::PostTask(
+      BrowserThread::IO,
+      FROM_HERE,
+      base::Bind(&CancelCopyOnIOThread, file_system_context, params->copy_id));
+  SendResponse(true);
+  return true;
+}
+
+}  // namespace extensions

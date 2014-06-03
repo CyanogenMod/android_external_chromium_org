@@ -7,8 +7,6 @@
 #include "base/memory/linked_ptr.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/extensions/event_names.h"
-#include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_action.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
@@ -17,12 +15,15 @@
 #include "chrome/browser/status_icons/status_icon_observer.h"
 #include "chrome/browser/status_icons/status_tray.h"
 #include "chrome/common/extensions/api/system_indicator.h"
-#include "chrome/common/extensions/extension.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
+#include "extensions/browser/event_router.h"
+#include "extensions/common/extension.h"
 #include "ui/gfx/image/image.h"
 
 namespace extensions {
+
+namespace system_indicator = api::system_indicator;
 
 // Observes clicks on a given status icon and forwards the event to the
 // appropriate extension.  Handles icon updates, and responsible for creating
@@ -86,7 +87,7 @@ void ExtensionIndicatorIcon::OnStatusIconClicked() {
   EventRouter* event_router =
       ExtensionSystem::Get(profile_)->event_router();
   scoped_ptr<Event> event(new Event(
-      event_names::kOnSystemIndicatorClicked,
+      system_indicator::OnClicked::kEventName,
       params.Pass(),
       profile_));
   event_router->DispatchEventToExtension(
@@ -111,7 +112,7 @@ ExtensionIndicatorIcon::ExtensionIndicatorIcon(const Extension* extension,
   // used as the tool tip.
   gfx::ImageSkia icon_image =
       icon_factory_.GetIcon(ExtensionAction::kDefaultTabId).AsImageSkia();
-  string16 tool_tip = UTF8ToUTF16(extension_->name());
+  base::string16 tool_tip = UTF8ToUTF16(extension_->name());
 
   icon_ = status_tray_->CreateStatusIcon(
       StatusTray::OTHER_ICON, icon_image, tool_tip);

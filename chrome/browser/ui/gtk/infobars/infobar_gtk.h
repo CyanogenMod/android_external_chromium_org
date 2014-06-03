@@ -33,20 +33,8 @@ class InfoBarGtk : public InfoBar,
   typedef void (InfoBarGtk::*ColorGetter)(InfoBarDelegate::Type,
                                           double* r, double* g, double* b);
 
-  InfoBarGtk(InfoBarService* owner, InfoBarDelegate* delegate);
+  explicit InfoBarGtk(scoped_ptr<InfoBarDelegate> delegate);
   virtual ~InfoBarGtk();
-
-  // Must be called before we try to show the infobar.  Inits any widgets and
-  // related objects necessary.  This must be called only once during the
-  // infobar's life.
-  //
-  // NOTE: Subclasses who need to init widgets should override this function and
-  // explicitly call their parent's implementation first, then continue with
-  // further work they need to do.  Failing to call the parent implementation
-  // first (or at all), or setting up widgets in the constructor instead of
-  // here, will lead to bad side effects like crashing or having this function
-  // get called repeatedly.
-  virtual void InitWidgets();
 
   // Get the top level native GTK widget for this infobar.
   GtkWidget* widget() { return widget_.get(); }
@@ -72,6 +60,16 @@ class InfoBarGtk : public InfoBar,
   static const int kEndOfLabelSpacing;
 
   // InfoBar:
+
+  // Inits any widgets and related objects necessary.
+  //
+  // NOTE: Subclasses who need to init widgets should override this function and
+  // explicitly call their parent's implementation first, then continue with
+  // further work they need to do.  Failing to call the parent implementation
+  // first (or at all), or setting up widgets in the constructor instead of
+  // here, will lead to bad side effects like crashing.
+  virtual void PlatformSpecificSetOwner() OVERRIDE;
+
   virtual void PlatformSpecificShow(bool animate) OVERRIDE;
   virtual void PlatformSpecificOnCloseSoon() OVERRIDE;
   virtual void PlatformSpecificOnHeightsRecalculated() OVERRIDE;
@@ -106,8 +104,8 @@ class InfoBarGtk : public InfoBar,
   // rendered as a hyperlink and inserted into |display_text| at |link_offset|,
   // or right aligned in the infobar if |link_offset| is |npos|. If a link is
   // supplied, |link_callback| must not be null. It will be invoked on click.
-  void AddLabelWithInlineLink(const string16& display_text,
-                              const string16& link_text,
+  void AddLabelWithInlineLink(const base::string16& display_text,
+                              const base::string16& link_text,
                               size_t link_offset,
                               GCallback callback);
 

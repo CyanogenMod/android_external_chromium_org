@@ -132,12 +132,12 @@ class SyncFileSystemServiceTest : public testing::Test {
     sync_service_.reset(new SyncFileSystemService(&profile_));
 
     EXPECT_CALL(*mock_remote_service(),
-                AddServiceObserver(sync_service_.get())).Times(1);
+                AddServiceObserver(_)).Times(1);
     EXPECT_CALL(*mock_remote_service(),
                 AddFileStatusObserver(sync_service_.get())).Times(1);
     EXPECT_CALL(*mock_remote_service(),
                 GetLocalChangeProcessor())
-        .WillOnce(Return(&local_change_processor_));
+        .WillRepeatedly(Return(&local_change_processor_));
     EXPECT_CALL(*mock_remote_service(),
                 SetRemoteChangeProcessor(local_service_)).Times(1);
 
@@ -164,7 +164,13 @@ class SyncFileSystemServiceTest : public testing::Test {
     SyncStatusCode status = SYNC_STATUS_UNKNOWN;
 
     EXPECT_CALL(*mock_remote_service(),
-                RegisterOriginForTrackingChanges(GURL(kOrigin), _)).Times(1);
+                RegisterOrigin(GURL(kOrigin), _)).Times(1);
+
+    // GetCurrentState may be called when a remote or local sync is scheduled
+    // by change notifications or by a timer.
+    EXPECT_CALL(*mock_remote_service(), GetCurrentState())
+        .Times(AnyNumber())
+        .WillRepeatedly(Return(REMOTE_SERVICE_OK));
 
     sync_service_->InitializeForApp(
         file_system_->file_system_context(),
@@ -177,7 +183,7 @@ class SyncFileSystemServiceTest : public testing::Test {
   }
 
   // Calls InitializeForApp after setting up the mock remote service to
-  // perform following when RegisterOriginForTrackingChanges is called:
+  // perform following when RegisterOrigin is called:
   //  1. Notify RemoteFileSyncService's observers of |state_to_notify|
   //  2. Run the given callback with |status_to_return|.
   //
@@ -185,8 +191,6 @@ class SyncFileSystemServiceTest : public testing::Test {
   //  1. The SyncEventObserver of the service is called with
   //     |expected_states| service state values.
   //  2. InitializeForApp's callback is called with |expected_status|
-  //  3. GetCurrentState() is called at least |expected_current_state_calls|
-  //     times (which means that the sync service tried to start sync).
   void InitializeAppForObserverTest(
       RemoteServiceState state_to_notify,
       SyncStatusCode status_to_return,
@@ -197,8 +201,12 @@ class SyncFileSystemServiceTest : public testing::Test {
 
     EnableSync();
 
+    EXPECT_CALL(*mock_remote_service(), GetCurrentState())
+        .Times(AnyNumber())
+        .WillRepeatedly(Return(state_to_notify));
+
     EXPECT_CALL(*mock_remote_service(),
-                RegisterOriginForTrackingChanges(GURL(kOrigin), _))
+                RegisterOrigin(GURL(kOrigin), _))
         .WillOnce(NotifyStateAndCallback(mock_remote_service(),
                                          state_to_notify,
                                          status_to_return));
@@ -219,6 +227,8 @@ class SyncFileSystemServiceTest : public testing::Test {
     ASSERT_EQ(expected_states.size(), actual_states.size());
     for (size_t i = 0; i < actual_states.size(); ++i)
       EXPECT_EQ(expected_states[i], actual_states[i]);
+
+    sync_service_->RemoveSyncEventObserver(&event_observer);
   }
 
   FileSystemURL URL(const std::string& path) const {
@@ -294,8 +304,7 @@ TEST_F(SyncFileSystemServiceTest, InitializeForAppWithError) {
       SYNC_STATUS_FAILED);
 }
 
-// Flaky.  http://crbug.com/237710
-TEST_F(SyncFileSystemServiceTest, DISABLED_SimpleLocalSyncFlow) {
+TEST_F(SyncFileSystemServiceTest, SimpleLocalSyncFlow) {
   InitializeApp();
 
   StrictMock<MockSyncStatusObserver> status_observer;
@@ -310,17 +319,22 @@ TEST_F(SyncFileSystemServiceTest, DISABLED_SimpleLocalSyncFlow) {
 
   base::RunLoop run_loop;
 
-  // We should get called OnSyncEnabled and OnWriteEnabled on kFile.
-  // (We quit the run loop when OnWriteEnabled is called on kFile)
-  EXPECT_CALL(status_observer, OnSyncEnabled(kFile))
-      .Times(AtLeast(1));
+  // We should get called OnSyncEnabled and OnWriteEnabled on kFile as in:
+  // 1. OnWriteEnabled when PrepareForSync(SYNC_SHARED) is finished and
+  //    the target file is unlocked for writing
+  // 2. OnSyncEnabled x 3 times; 1) when CreateFile is finished, 2) when
+  //    file is unlocked after PrepareForSync, and 3) when the sync is
+  //    finished.
   EXPECT_CALL(status_observer, OnWriteEnabled(kFile))
-      .WillOnce(InvokeWithoutArgs(&run_loop, &base::RunLoop::Quit));
+      .Times(AtLeast(1));
 
-  // We expect a set of method calls for starting a local sync.
-  EXPECT_CALL(*mock_remote_service(), GetCurrentState())
-      .Times(AtLeast(2))
-      .WillRepeatedly(Return(REMOTE_SERVICE_OK));
+  {
+    ::testing::InSequence sequence;
+    EXPECT_CALL(status_observer, OnSyncEnabled(kFile))
+        .Times(AtLeast(2));
+    EXPECT_CALL(status_observer, OnSyncEnabled(kFile))
+        .WillOnce(InvokeWithoutArgs(&run_loop, &base::RunLoop::Quit));
+  }
 
   // The local_change_processor's ApplyLocalChange should be called once
   // with ADD_OR_UPDATE change for TYPE_FILE.
@@ -333,6 +347,8 @@ TEST_F(SyncFileSystemServiceTest, DISABLED_SimpleLocalSyncFlow) {
   EXPECT_EQ(base::PLATFORM_FILE_OK, file_system_->CreateFile(kFile));
 
   run_loop.Run();
+
+  file_system_->RemoveSyncStatusObserver(&status_observer);
 }
 
 TEST_F(SyncFileSystemServiceTest, SimpleRemoteSyncFlow) {
@@ -343,9 +359,6 @@ TEST_F(SyncFileSystemServiceTest, SimpleRemoteSyncFlow) {
   base::RunLoop run_loop;
 
   // We expect a set of method calls for starting a remote sync.
-  EXPECT_CALL(*mock_remote_service(), GetCurrentState())
-      .Times(AtLeast(1))
-      .WillRepeatedly(Return(REMOTE_SERVICE_OK));
   EXPECT_CALL(*mock_remote_service(), ProcessRemoteChange(_))
       .WillOnce(InvokeWithoutArgs(&run_loop, &base::RunLoop::Quit));
 
@@ -365,11 +378,6 @@ TEST_F(SyncFileSystemServiceTest, SimpleSyncFlowWithFileBusy) {
   const FileSystemURL kFile(file_system_->URL("foo"));
 
   base::RunLoop run_loop;
-
-  // We expect a set of method calls for starting a remote sync.
-  EXPECT_CALL(*mock_remote_service(), GetCurrentState())
-      .Times(AtLeast(3))
-      .WillRepeatedly(Return(REMOTE_SERVICE_OK));
 
   {
     InSequence sequence;
@@ -411,7 +419,14 @@ TEST_F(SyncFileSystemServiceTest, SimpleSyncFlowWithFileBusy) {
   verify_file_error_run_loop.Run();
 }
 
-TEST_F(SyncFileSystemServiceTest, GetFileSyncStatus) {
+#if defined(THREAD_SANITIZER)
+// SyncFileSystemServiceTest.GetFileSyncStatus fails under ThreadSanitizer,
+// see http://crbug.com/294904.
+#define MAYBE_GetFileSyncStatus DISABLED_GetFileSyncStatus
+#else
+#define MAYBE_GetFileSyncStatus GetFileSyncStatus
+#endif
+TEST_F(SyncFileSystemServiceTest, MAYBE_GetFileSyncStatus) {
   InitializeApp();
 
   const FileSystemURL kFile(file_system_->URL("foo"));

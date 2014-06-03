@@ -16,13 +16,13 @@
 #include "base/time/time.h"
 #include "base/version.h"
 #include "chrome/common/chrome_paths.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_icon_set.h"
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "chrome/common/extensions/manifest_handlers/icons_handler.h"
-#include "chrome/common/extensions/permissions/permission_set.h"
 #include "chrome/common/web_application_info.h"
+#include "extensions/common/extension.h"
 #include "extensions/common/extension_resource.h"
+#include "extensions/common/permissions/permission_set.h"
 #include "extensions/common/url_pattern.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gfx/codec/png_codec.h"
@@ -51,7 +51,7 @@ WebApplicationInfo::IconInfo GetIconInfo(const GURL& url, int size) {
   result.height = size;
 
   std::string icon_data;
-  if (!file_util::ReadFileToString(icon_file, &icon_data)) {
+  if (!base::ReadFileToString(icon_file, &icon_data)) {
     ADD_FAILURE() << "Could not read test icon.";
     return result;
   }

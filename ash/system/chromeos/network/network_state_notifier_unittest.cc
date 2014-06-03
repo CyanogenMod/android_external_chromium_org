@@ -14,8 +14,10 @@
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/shill_device_client.h"
 #include "chromeos/dbus/shill_service_client.h"
-#include "chromeos/network/network_connection_handler.h"
+#include "chromeos/login/login_state.h"
+#include "chromeos/network/network_handler.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
+#include "ui/message_center/message_center.h"
 
 namespace {
 
@@ -27,8 +29,6 @@ ash::SystemTray* GetSystemTray() {
 }  // namespace
 
 using chromeos::DBusThreadManager;
-using chromeos::NetworkHandler;
-using chromeos::NetworkConnectionHandler;
 using chromeos::ShillDeviceClient;
 using chromeos::ShillServiceClient;
 
@@ -42,15 +42,17 @@ class NetworkStateNotifierTest : public AshTestBase {
 
   virtual void SetUp() OVERRIDE {
     DBusThreadManager::InitializeWithStub();
+    chromeos::LoginState::Initialize();
     SetupDefaultShillState();
-    NetworkHandler::Initialize();
+    chromeos::NetworkHandler::Initialize();
     RunAllPendingInMessageLoop();
     AshTestBase::SetUp();
   }
 
   virtual void TearDown() OVERRIDE {
     AshTestBase::TearDown();
-    NetworkHandler::Shutdown();
+    chromeos::LoginState::Shutdown();
+    chromeos::NetworkHandler::Shutdown();
     DBusThreadManager::Shutdown();
   }
 
@@ -61,9 +63,9 @@ class NetworkStateNotifierTest : public AshTestBase {
         DBusThreadManager::Get()->GetShillDeviceClient()->GetTestInterface();
     device_test->ClearDevices();
     device_test->AddDevice("/device/stub_wifi_device1",
-                           flimflam::kTypeWifi, "stub_wifi_device1");
+                           shill::kTypeWifi, "stub_wifi_device1");
     device_test->AddDevice("/device/stub_cellular_device1",
-                           flimflam::kTypeCellular, "stub_cellular_device1");
+                           shill::kTypeCellular, "stub_cellular_device1");
 
     ShillServiceClient::TestInterface* service_test =
         DBusThreadManager::Get()->GetShillServiceClient()->GetTestInterface();
@@ -72,16 +74,16 @@ class NetworkStateNotifierTest : public AshTestBase {
     const bool add_to_visible = true;
     // Create wifi and cellular networks and set to online.
     service_test->AddService("wifi1", "wifi1",
-                             flimflam::kTypeWifi, flimflam::kStateIdle,
+                             shill::kTypeWifi, shill::kStateIdle,
                              add_to_visible, add_to_watchlist);
     service_test->SetServiceProperty("wifi1",
-                                     flimflam::kSecurityProperty,
-                                     base::StringValue(flimflam::kSecurityWep));
+                                     shill::kSecurityProperty,
+                                     base::StringValue(shill::kSecurityWep));
     service_test->SetServiceProperty("wifi1",
-                                     flimflam::kConnectableProperty,
+                                     shill::kConnectableProperty,
                                      base::FundamentalValue(true));
     service_test->SetServiceProperty("wifi1",
-                                     flimflam::kPassphraseProperty,
+                                     shill::kPassphraseProperty,
                                      base::StringValue("failure"));
     RunAllPendingInMessageLoop();
   }
@@ -95,7 +97,10 @@ TEST_F(NetworkStateNotifierTest, ConnectionFailure) {
   ash::network_connect::ConnectToNetwork("wifi1", NULL /* owning_window */);
   RunAllPendingInMessageLoop();
   // Failure should spawn a notification.
-  EXPECT_TRUE(GetSystemTray()->CloseNotificationBubbleForTest());
+  message_center::MessageCenter* message_center =
+      message_center::MessageCenter::Get();
+  EXPECT_TRUE(message_center->HasNotification(
+      network_connect::kNetworkConnectNotificationId));
 }
 
 }  // namespace test

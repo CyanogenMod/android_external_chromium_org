@@ -4,11 +4,11 @@
 
 #include <algorithm>
 
-#include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/common/extensions/features/feature_channel.h"
 #include "chrome/common/extensions/manifest_handlers/externally_connectable.h"
 #include "chrome/common/extensions/manifest_tests/extension_manifest_test.h"
 #include "extensions/common/error_utils.h"
+#include "extensions/common/manifest_constants.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -26,7 +26,7 @@ class ExternallyConnectableTest : public ExtensionManifestTest {
   ExternallyConnectableInfo* GetExternallyConnectableInfo(
       scoped_refptr<Extension> extension) {
     return static_cast<ExternallyConnectableInfo*>(extension->GetManifestData(
-        extension_manifest_keys::kExternallyConnectable));
+        manifest_keys::kExternallyConnectable));
   }
 
  private:
@@ -127,6 +127,8 @@ TEST_F(ExternallyConnectableTest, Matches) {
 
   EXPECT_FALSE(info->all_ids);
 
+  EXPECT_FALSE(info->accepts_tls_channel_id);
+
   EXPECT_TRUE(info->matches.MatchesURL(GURL("http://example.com")));
   EXPECT_TRUE(info->matches.MatchesURL(GURL("http://example.com/")));
   EXPECT_FALSE(info->matches.MatchesURL(GURL("http://example.com/index.html")));
@@ -150,6 +152,31 @@ TEST_F(ExternallyConnectableTest, Matches) {
 
   EXPECT_FALSE(info->matches.MatchesURL(GURL("http://yahoo.com")));
   EXPECT_FALSE(info->matches.MatchesURL(GURL("http://yahoo.com/")));
+}
+
+TEST_F(ExternallyConnectableTest, MatchesWithTlsChannelId) {
+  scoped_refptr<Extension> extension =
+      LoadAndExpectSuccess(
+          "externally_connectable_matches_tls_channel_id.json");
+  ASSERT_TRUE(extension.get());
+
+  EXPECT_TRUE(extension->HasAPIPermission(APIPermission::kWebConnectable));
+
+  ExternallyConnectableInfo* info =
+      ExternallyConnectableInfo::Get(extension.get());
+  ASSERT_TRUE(info);
+
+  EXPECT_THAT(info->ids, ElementsAre());
+
+  EXPECT_FALSE(info->all_ids);
+
+  EXPECT_TRUE(info->accepts_tls_channel_id);
+
+  // The matches portion of the manifest is identical to those in
+  // externally_connectable_matches, so only a subset of the Matches tests is
+  // repeated here.
+  EXPECT_TRUE(info->matches.MatchesURL(GURL("http://example.com")));
+  EXPECT_FALSE(info->matches.MatchesURL(GURL("http://example.com/index.html")));
 }
 
 TEST_F(ExternallyConnectableTest, AllIDs) {
@@ -181,7 +208,7 @@ TEST_F(ExternallyConnectableTest, IdCanConnect) {
 
   // all_ids = false.
   {
-    ExternallyConnectableInfo info(URLPatternSet(), matches_ids, false);
+    ExternallyConnectableInfo info(URLPatternSet(), matches_ids, false, false);
     for (size_t i = 0; i < matches_ids.size(); ++i)
       EXPECT_TRUE(info.IdCanConnect(matches_ids[i]));
     for (size_t i = 0; i < arraysize(nomatches_ids_array); ++i)
@@ -190,7 +217,7 @@ TEST_F(ExternallyConnectableTest, IdCanConnect) {
 
   // all_ids = true.
   {
-    ExternallyConnectableInfo info(URLPatternSet(), matches_ids, true);
+    ExternallyConnectableInfo info(URLPatternSet(), matches_ids, true, false);
     for (size_t i = 0; i < matches_ids.size(); ++i)
       EXPECT_TRUE(info.IdCanConnect(matches_ids[i]));
     for (size_t i = 0; i < arraysize(nomatches_ids_array); ++i)
@@ -200,7 +227,7 @@ TEST_F(ExternallyConnectableTest, IdCanConnect) {
 
 TEST_F(ExternallyConnectableTest, ErrorWrongFormat) {
   LoadAndExpectError("externally_connectable_error_wrong_format.json",
-                     errors::kErrorInvalid);
+                     "expected dictionary, got string");
 }
 
 TEST_F(ExternallyConnectableTest, ErrorBadID) {

@@ -9,6 +9,7 @@
 
 #include "base/files/file_path.h"
 #include "base/path_service.h"
+#include "base/win/metro.h"
 #include "base/win/scoped_com_initializer.h"
 #include "base/win/scoped_comptr.h"
 #include "chrome/installer/util/browser_distribution.h"
@@ -24,7 +25,7 @@ bool ActivateMetroChrome() {
     return false;
   }
 
-  string16 app_id = ShellUtil::GetBrowserModelId(
+  base::string16 app_id = ShellUtil::GetBrowserModelId(
       BrowserDistribution::GetDistribution(),
       InstallUtil::IsPerUserInstall(chrome_exe.value().c_str()));
   if (app_id.empty()) {
@@ -36,7 +37,8 @@ bool ActivateMetroChrome() {
   HRESULT hr = activation_manager.CreateInstance(
       CLSID_ApplicationActivationManager);
   if (!activation_manager) {
-    NOTREACHED() << "Failed to cocreate activation manager. Error: " << hr;
+    NOTREACHED() << "Failed to cocreate activation manager. Error: "
+                 << std::showbase << std::hex << hr;
     return false;
   }
 
@@ -46,11 +48,27 @@ bool ActivateMetroChrome() {
                                                AO_NONE,
                                                &pid);
   if (FAILED(hr)) {
-    NOTREACHED() << "Failed to activate metro chrome. Error: " << hr;
+    NOTREACHED() << "Failed to activate metro chrome. Error: "
+                 << std::showbase << std::hex << hr;
     return false;
   }
 
   return true;
 }
+
+Win8Environment GetWin8Environment(HostDesktopType desktop) {
+#if defined(USE_AURA) && defined(USE_ASH)
+  if (desktop == chrome::HOST_DESKTOP_TYPE_ASH)
+    return WIN_8_ENVIRONMENT_METRO_AURA;
+  else
+    return WIN_8_ENVIRONMENT_DESKTOP_AURA;
+#else
+  if (base::win::IsProcessImmersive(::GetCurrentProcess()))
+    return WIN_8_ENVIRONMENT_METRO;
+  else
+    return WIN_8_ENVIRONMENT_DESKTOP;
+#endif
+}
+
 
 }  // namespace chrome

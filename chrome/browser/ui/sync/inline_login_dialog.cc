@@ -23,12 +23,12 @@ ui::ModalType InlineLoginDialog::GetDialogModalType() const {
   return ui::MODAL_TYPE_SYSTEM;
 }
 
-string16 InlineLoginDialog::GetDialogTitle() const {
-  return string16();
+base::string16 InlineLoginDialog::GetDialogTitle() const {
+  return base::string16();
 }
 
 GURL InlineLoginDialog::GetDialogContentURL() const {
-  return GURL(chrome::kChromeUIInlineLoginURL);
+  return GURL(chrome::kChromeUIChromeSigninURL);
 }
 
 void InlineLoginDialog::GetWebUIMessageHandlers(

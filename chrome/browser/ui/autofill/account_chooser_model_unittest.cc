@@ -18,13 +18,14 @@ namespace {
 class TestAccountChooserModel : public AccountChooserModel {
  public:
   TestAccountChooserModel(AccountChooserModelDelegate* delegate,
-                          PrefService* prefs,
+                          Profile* profile,
+                          bool disable_wallet,
                           const AutofillMetrics& metric_logger)
-      : AccountChooserModel(delegate, prefs, metric_logger,
-                            DIALOG_TYPE_REQUEST_AUTOCOMPLETE) {}
+      : AccountChooserModel(delegate, profile, disable_wallet, metric_logger) {}
   virtual ~TestAccountChooserModel() {}
 
-  using AccountChooserModel::kActiveWalletItemId;
+  using AccountChooserModel::kWalletAccountsStartId;
+  using AccountChooserModel::kWalletAddAccountId;
   using AccountChooserModel::kAutofillItemId;
 
  private:
@@ -36,24 +37,26 @@ class MockAccountChooserModelDelegate : public AccountChooserModelDelegate {
   MockAccountChooserModelDelegate() {}
   virtual ~MockAccountChooserModelDelegate() {}
 
+  MOCK_METHOD0(AccountChooserWillShow, void());
   MOCK_METHOD0(AccountChoiceChanged, void());
+  MOCK_METHOD0(AddAccount, void());
   MOCK_METHOD0(UpdateAccountChooserView, void());
 };
 
 class AccountChooserModelTest : public testing::Test {
  public:
   AccountChooserModelTest()
-      : model_(&delegate_, profile_.GetPrefs(), metric_logger_) {}
+      : model_(&delegate_, &profile_, false, metric_logger_) {}
   virtual ~AccountChooserModelTest() {}
 
-  Profile* profile() { return &profile_; }
+  TestingProfile* profile() { return &profile_; }
   MockAccountChooserModelDelegate* delegate() { return &delegate_; }
   TestAccountChooserModel* model() { return &model_; }
   const AutofillMetrics& metric_logger() { return metric_logger_; }
 
  private:
   TestingProfile profile_;
-  MockAccountChooserModelDelegate delegate_;
+  testing::NiceMock<MockAccountChooserModelDelegate> delegate_;
   TestAccountChooserModel model_;
   AutofillMetrics metric_logger_;
 };
@@ -65,7 +68,9 @@ TEST_F(AccountChooserModelTest, ObeysPref) {
   {
     profile()->GetPrefs()->SetBoolean(
         ::prefs::kAutofillDialogPayWithoutWallet, false);
-    TestAccountChooserModel model(delegate(), profile()->GetPrefs(),
+    TestAccountChooserModel model(delegate(),
+                                  profile(),
+                                  false,
                                   metric_logger());
     EXPECT_TRUE(model.WalletIsSelected());
   }
@@ -73,7 +78,34 @@ TEST_F(AccountChooserModelTest, ObeysPref) {
   {
     profile()->GetPrefs()->SetBoolean(
         ::prefs::kAutofillDialogPayWithoutWallet, true);
-    TestAccountChooserModel model(delegate(), profile()->GetPrefs(),
+    TestAccountChooserModel model(delegate(),
+                                  profile(),
+                                  false,
+                                  metric_logger());
+    EXPECT_FALSE(model.WalletIsSelected());
+  }
+  // When the |disable_wallet| argument is true, use Autofill regardless
+  // of the pref.
+  {
+    profile()->GetPrefs()->SetBoolean(
+        ::prefs::kAutofillDialogPayWithoutWallet, false);
+    TestAccountChooserModel model(delegate(), profile(), true, metric_logger());
+    EXPECT_FALSE(model.WalletIsSelected());
+  }
+  // In incognito, use local data regardless of the pref.
+  {
+    TestingProfile::Builder builder;
+    builder.SetIncognito();
+    scoped_ptr<TestingProfile> incognito = builder.Build();
+    incognito->SetOriginalProfile(profile());
+    profile()->GetPrefs()->SetBoolean(
+        ::prefs::kAutofillDialogPayWithoutWallet, false);
+    incognito->GetPrefs()->SetBoolean(
+        ::prefs::kAutofillDialogPayWithoutWallet, false);
+
+    TestAccountChooserModel model(delegate(),
+                                  incognito.get(),
+                                  false,
                                   metric_logger());
     EXPECT_FALSE(model.WalletIsSelected());
   }
@@ -98,12 +130,12 @@ TEST_F(AccountChooserModelTest, HandlesError) {
 
   ASSERT_TRUE(model()->WalletIsSelected());
   ASSERT_TRUE(model()->IsCommandIdEnabled(
-      TestAccountChooserModel::kActiveWalletItemId));
+      TestAccountChooserModel::kWalletAccountsStartId));
 
-  model()->SetHadWalletError(ASCIIToUTF16("Error"));
+  model()->SetHadWalletError();
   EXPECT_FALSE(model()->WalletIsSelected());
   EXPECT_FALSE(model()->IsCommandIdEnabled(
-      TestAccountChooserModel::kActiveWalletItemId));
+      TestAccountChooserModel::kWalletAccountsStartId));
 }
 
 TEST_F(AccountChooserModelTest, HandlesSigninError) {
@@ -113,23 +145,24 @@ TEST_F(AccountChooserModelTest, HandlesSigninError) {
   // 0. "Unknown" wallet account, we don't know if the user is signed-in yet.
   ASSERT_TRUE(model()->WalletIsSelected());
   ASSERT_TRUE(model()->IsCommandIdEnabled(
-      TestAccountChooserModel::kActiveWalletItemId));
-  ASSERT_TRUE(model()->IsActiveWalletAccountSelected());
+      TestAccountChooserModel::kWalletAccountsStartId));
+  ASSERT_TRUE(model()->WalletIsSelected());
   ASSERT_FALSE(model()->HasAccountsToChoose());
-  ASSERT_EQ(2, model()->GetItemCount());
-  EXPECT_EQ(string16(), model()->active_wallet_account_name());
+  ASSERT_EQ(3, model()->GetItemCount());
+  EXPECT_EQ(base::string16(), model()->GetActiveWalletAccountName());
 
   // 1. "Known" wallet account (e.g. after active/passive/automatic sign-in).
   // Calls UpdateAccountChooserView.
-  const string16 kAccount1 = ASCIIToUTF16("john.doe@gmail.com");
-  model()->SetActiveWalletAccountName(kAccount1);
+  std::vector<std::string> accounts;
+  accounts.push_back("john.doe@gmail.com");
+  model()->SetWalletAccounts(accounts, 0U);
   ASSERT_TRUE(model()->WalletIsSelected());
   ASSERT_TRUE(model()->IsCommandIdEnabled(
-      TestAccountChooserModel::kActiveWalletItemId));
-  ASSERT_TRUE(model()->IsActiveWalletAccountSelected());
+      TestAccountChooserModel::kWalletAccountsStartId));
+  ASSERT_TRUE(model()->WalletIsSelected());
   ASSERT_TRUE(model()->HasAccountsToChoose());
-  EXPECT_EQ(2, model()->GetItemCount());
-  EXPECT_EQ(kAccount1, model()->active_wallet_account_name());
+  EXPECT_EQ(3, model()->GetItemCount());
+  EXPECT_EQ(ASCIIToUTF16(accounts[0]), model()->GetActiveWalletAccountName());
 
   // 2. Sign-in failure.
   // Autofill data should be selected and be the only valid choice.
@@ -138,11 +171,11 @@ TEST_F(AccountChooserModelTest, HandlesSigninError) {
   model()->SetHadWalletSigninError();
   EXPECT_FALSE(model()->WalletIsSelected());
   EXPECT_TRUE(model()->IsCommandIdEnabled(
-      TestAccountChooserModel::kActiveWalletItemId));
-  EXPECT_FALSE(model()->IsActiveWalletAccountSelected());
+      TestAccountChooserModel::kWalletAccountsStartId));
+  EXPECT_FALSE(model()->WalletIsSelected());
   EXPECT_FALSE(model()->HasAccountsToChoose());
-  EXPECT_EQ(1, model()->GetItemCount());
-  EXPECT_EQ(string16(), model()->active_wallet_account_name());
+  EXPECT_EQ(2, model()->GetItemCount());
+  EXPECT_EQ(base::string16(), model()->GetActiveWalletAccountName());
 }
 
 TEST_F(AccountChooserModelTest, RespectsUserChoice) {
@@ -151,7 +184,42 @@ TEST_F(AccountChooserModelTest, RespectsUserChoice) {
   model()->ExecuteCommand(TestAccountChooserModel::kAutofillItemId, 0);
   EXPECT_FALSE(model()->WalletIsSelected());
 
-  model()->ExecuteCommand(TestAccountChooserModel::kActiveWalletItemId, 0);
+  EXPECT_CALL(*delegate(), AddAccount());
+  model()->ExecuteCommand(TestAccountChooserModel::kWalletAddAccountId, 0);
+  EXPECT_FALSE(model()->WalletIsSelected());
+
+  model()->ExecuteCommand(TestAccountChooserModel::kWalletAccountsStartId, 0);
+  EXPECT_TRUE(model()->WalletIsSelected());
+}
+
+TEST_F(AccountChooserModelTest, HandlesMultipleAccounts) {
+  EXPECT_FALSE(model()->HasAccountsToChoose());
+
+  std::vector<std::string> accounts;
+  accounts.push_back("john.doe@gmail.com");
+  accounts.push_back("jane.smith@gmail.com");
+  model()->SetWalletAccounts(accounts, 0U);
+  EXPECT_TRUE(model()->HasAccountsToChoose());
+  EXPECT_TRUE(model()->WalletIsSelected());
+  ASSERT_EQ(4, model()->GetItemCount());
+  EXPECT_TRUE(model()->IsCommandIdEnabled(
+      TestAccountChooserModel::kWalletAccountsStartId));
+  EXPECT_TRUE(model()->IsCommandIdEnabled(
+      TestAccountChooserModel::kWalletAccountsStartId + 1));
+  EXPECT_EQ(ASCIIToUTF16(accounts[0]), model()->GetActiveWalletAccountName());
+  model()->SetWalletAccounts(accounts, 1U);
+  EXPECT_EQ(ASCIIToUTF16(accounts[1]), model()->GetActiveWalletAccountName());
+
+  model()->ExecuteCommand(TestAccountChooserModel::kWalletAccountsStartId, 0);
+  EXPECT_EQ(ASCIIToUTF16(accounts[0]), model()->GetActiveWalletAccountName());
+  model()->ExecuteCommand(TestAccountChooserModel::kWalletAccountsStartId + 1,
+                          0);
+  EXPECT_EQ(ASCIIToUTF16(accounts[1]), model()->GetActiveWalletAccountName());
+
+  // Setting the wallet accounts forces the switch to wallet.
+  model()->ExecuteCommand(TestAccountChooserModel::kAutofillItemId, 0);
+  EXPECT_FALSE(model()->WalletIsSelected());
+  model()->SetWalletAccounts(accounts, 1U);
   EXPECT_TRUE(model()->WalletIsSelected());
 }
 

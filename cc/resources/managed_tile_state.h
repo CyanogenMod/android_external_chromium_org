@@ -10,6 +10,7 @@
 #include "cc/resources/raster_worker_pool.h"
 #include "cc/resources/resource_pool.h"
 #include "cc/resources/resource_provider.h"
+#include "cc/resources/scoped_resource.h"
 
 namespace cc {
 
@@ -22,22 +23,15 @@ enum ManagedTileBin {
   SOON_BIN = 2,                   // Impl-side version of prepainting.
   EVENTUALLY_AND_ACTIVE_BIN = 3,  // Nice to have, and has a task or resource.
   EVENTUALLY_BIN = 4,             // Nice to have, if we've got memory and time.
-  NEVER_AND_ACTIVE_BIN = 5,       // Dont bother, but has a task or resource.
-  NEVER_BIN = 6,                  // Dont bother.
-  NUM_BINS = 7
+  AT_LAST_AND_ACTIVE_BIN = 5,     // Only do this after all other bins.
+  AT_LAST_BIN = 6,                // Only do this after all other bins.
+  NEVER_BIN = 7,                  // Dont bother.
+  NUM_BINS = 8
   // NOTE: Be sure to update ManagedTileBinAsValue and kBinPolicyMap when adding
   // or reordering fields.
 };
 scoped_ptr<base::Value> ManagedTileBinAsValue(
     ManagedTileBin bin);
-
-enum ManagedTileBinPriority {
-  HIGH_PRIORITY_BIN = 0,
-  LOW_PRIORITY_BIN = 1,
-  NUM_BIN_PRIORITIES = 2
-};
-scoped_ptr<base::Value> ManagedTileBinPriorityAsValue(
-    ManagedTileBinPriority bin);
 
 // This is state that is specific to a tile that is
 // managed by the TileManager.
@@ -48,8 +42,7 @@ class CC_EXPORT ManagedTileState {
       enum Mode {
         RESOURCE_MODE,
         SOLID_COLOR_MODE,
-        PICTURE_PILE_MODE,
-        NUM_MODES
+        PICTURE_PILE_MODE
       };
 
       TileVersion();
@@ -86,12 +79,6 @@ class CC_EXPORT ManagedTileState {
 
       size_t GPUMemoryUsageInBytes() const;
 
-      void SetResourceForTesting(scoped_ptr<ResourcePool::Resource> resource) {
-        resource_ = resource.Pass();
-      }
-      const ResourcePool::Resource* GetResourceForTesting() const {
-        return resource_.get();
-      }
       void SetSolidColorForTesting(SkColor color) {
         set_solid_color(color);
       }
@@ -125,7 +112,7 @@ class CC_EXPORT ManagedTileState {
       Mode mode_;
       SkColor solid_color_;
       bool has_text_;
-      scoped_ptr<ResourcePool::Resource> resource_;
+      scoped_ptr<ScopedResource> resource_;
       RasterWorkerPool::RasterTask raster_task_;
   };
 
@@ -138,21 +125,8 @@ class CC_EXPORT ManagedTileState {
   TileVersion tile_versions[NUM_RASTER_MODES];
   RasterMode raster_mode;
 
-  // Ephemeral state, valid only during TileManager::ManageTiles.
-  bool is_in_never_bin_on_both_trees() const {
-    return (bin[HIGH_PRIORITY_BIN] == NEVER_BIN ||
-            bin[HIGH_PRIORITY_BIN] == NEVER_AND_ACTIVE_BIN) &&
-           (bin[LOW_PRIORITY_BIN] == NEVER_BIN ||
-            bin[LOW_PRIORITY_BIN] == NEVER_AND_ACTIVE_BIN);
-  }
+  ManagedTileBin bin;
 
-  ManagedTileBin bin[NUM_BIN_PRIORITIES];
-  ManagedTileBin tree_bin[NUM_TREES];
-
-  // The bin that the tile would have if the GPU memory manager had
-  // a maximally permissive policy, send to the GPU memory manager
-  // to determine policy.
-  ManagedTileBin gpu_memmgr_stats_bin;
   TileResolution resolution;
   bool required_for_activation;
   float time_to_needed_in_seconds;

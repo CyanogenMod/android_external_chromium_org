@@ -32,17 +32,7 @@ namespace {
 
 const CGFloat kWindowMinWidth = 500;
 const CGFloat kButtonGap = 6;
-const SkColor kDialogAlertBarBackgroundColor = 0xFFF6F6F6;
-const SkColor kDialogAlertBarBorderColor = 0xFFE1E1E1;
 const CGFloat kDialogAlertBarBorderWidth = 1;
-
-// Shift the origin of |view|'s frame by the given amount in the
-// positive y direction (up).
-void ShiftOriginY(NSView* view, CGFloat amount) {
-  NSPoint origin = [view frame].origin;
-  origin.y += amount;
-  [view setFrameOrigin:origin];
-}
 
 // Determine the frame required to fit the content of a string.  Uses the
 // provided height and width as preferred dimensions, where a value of
@@ -92,8 +82,8 @@ void RemoveUnderlining(NSTextView* textView, int offset, int length) {
 NSTextView* AddTextView(
     NSView* parent,
     id<NSTextViewDelegate> delegate,
-    const string16& message,
-    const string16& link,
+    const base::string16& message,
+    const base::string16& link,
     int offset,
     const ui::ResourceBundle::FontStyle& font_style) {
   base::scoped_nsobject<HyperlinkTextView> textView(
@@ -117,7 +107,7 @@ NSTextView* AddTextView(
 // Create a new NSTextField and add it to the specified parent.
 NSTextField* AddTextField(
     NSView* parent,
-    const string16& message,
+    const base::string16& message,
     const ui::ResourceBundle::FontStyle& font_style) {
   NSTextField* textField = constrained_window::CreateLabel();
   [textField setAttributedStringValue:
@@ -129,24 +119,6 @@ NSTextField* AddTextField(
   [parent addSubview:textField];
   return textField;
 }
-
-// Create a new link button and add it to the specified parent.
- NSButton* AddLinkButton(
-     NSView* parent,
-     const string16& message,
-     id target,
-     SEL selector) {
-   NSButton* button =
-       [HyperlinkButtonCell buttonWithString:SysUTF16ToNSString(message)];
-   [button setTarget:target];
-   [button setAction:selector];
-   HyperlinkButtonCell* cell = [button cell];
-   cell.textColor =
-       gfx::SkColorToCalibratedNSColor(chrome_style::GetLinkColor());
-   cell.shouldUnderline = NO;
-   [parent addSubview:button];
-   return button;
- }
 
 }  // namespace
 
@@ -279,9 +251,10 @@ NSTextField* AddTextField(
 
   // Prompt text.
   size_t offset;
-  const string16 domain = ASCIIToUTF16(gaia::ExtractDomainName(username_));
-  const string16 username = ASCIIToUTF16(username_);
-  const string16 prompt_text =
+  const base::string16 domain =
+      ASCIIToUTF16(gaia::ExtractDomainName(username_));
+  const base::string16 username = ASCIIToUTF16(username_);
+  const base::string16 prompt_text =
       l10n_util::GetStringFUTF16(
           IDS_ENTERPRISE_SIGNIN_ALERT_NEW_STYLE,
           domain, &offset);
@@ -303,10 +276,10 @@ NSTextField* AddTextField(
 
   // Explanation text.
   std::vector<size_t> offsets;
-  const string16 learn_more_text =
+  const base::string16 learn_more_text =
       l10n_util::GetStringUTF16(
           IDS_ENTERPRISE_SIGNIN_PROFILE_LINK_LEARN_MORE);
-  const string16 explanation_text =
+  const base::string16 explanation_text =
       l10n_util::GetStringFUTF16(
           offerProfileCreation_ ?
           IDS_ENTERPRISE_SIGNIN_EXPLANATION_WITH_PROFILE_CREATION_NEW_STYLE :
@@ -316,7 +289,7 @@ NSTextField* AddTextField(
   // into the middle of the message text.  To do this we slice out
   // the "learn more" string from the message so that it can be
   // inserted again.
-  const string16 explanation_message_text =
+  const base::string16 explanation_message_text =
     explanation_text.substr(0, offsets[1]) +
     explanation_text.substr(offsets[1] + learn_more_text.size());
   explanationField_.reset(

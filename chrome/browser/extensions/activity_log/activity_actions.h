@@ -29,19 +29,20 @@ class Action : public base::RefCountedThreadSafe<Action> {
   enum ActionType {
     ACTION_API_CALL = 0,
     ACTION_API_EVENT = 1,
-    ACTION_API_BLOCKED = 2,
+    UNUSED_ACTION_API_BLOCKED = 2,  // Not in use, but reserved for future.
     ACTION_CONTENT_SCRIPT = 3,
     ACTION_DOM_ACCESS = 4,
     ACTION_DOM_EVENT = 5,
     ACTION_WEB_REQUEST = 6,
+    ACTION_ANY = 1001,              // Used for lookups of unspecified type.
   };
 
   // A useful shorthand for methods that take or return collections of Action
   // objects.
   typedef std::vector<scoped_refptr<Action> > ActionVector;
 
-  // Creates a new activity log Action object.  The extension_id, time, and
-  // type are immutable.  All other fields can be filled in with the
+  // Creates a new activity log Action object.  The extension_id and type
+  // fields are immutable.  All other fields can be filled in with the
   // accessors/mutators below.
   Action(const std::string& extension_id,
          const base::Time& time,
@@ -56,6 +57,7 @@ class Action : public base::RefCountedThreadSafe<Action> {
 
   // The time the record was generated (or some approximation).
   const base::Time& time() const { return time_; }
+  void set_time(const base::Time& time) { time_ = time; }
 
   // The ActionType distinguishes different classes of actions that can be
   // logged, and determines which other fields are expected to be filled in.
@@ -106,6 +108,10 @@ class Action : public base::RefCountedThreadSafe<Action> {
   std::string SerializeArgUrl() const;
   void ParseArgUrl(const std::string& url);
 
+  // Number of merged records for this action.
+  int count() const { return count_; }
+  void set_count(int count) { count_ = count; }
+
   // Flatten the activity's type-specific fields into an ExtensionActivity.
   scoped_ptr<api::activity_log_private::ExtensionActivity>
       ConvertToExtensionActivity();
@@ -121,7 +127,6 @@ class Action : public base::RefCountedThreadSafe<Action> {
 
   std::string extension_id_;
   base::Time time_;
-  api::activity_log_private::ExtensionActivity::ActivityType activity_type_;
   ActionType action_type_;
   std::string api_name_;
   scoped_ptr<ListValue> args_;
@@ -131,8 +136,25 @@ class Action : public base::RefCountedThreadSafe<Action> {
   GURL arg_url_;
   bool arg_incognito_;
   scoped_ptr<DictionaryValue> other_;
+  int count_;
 
   DISALLOW_COPY_AND_ASSIGN(Action);
+};
+
+// A comparator for Action class objects; this performs a lexicographic
+// comparison of the fields of the Action object (in an unspecfied order).
+// This can be used to use Action objects as keys in STL containers.
+struct ActionComparator {
+  // Evaluates the comparison lhs < rhs.
+  bool operator()(const scoped_refptr<Action>& lhs,
+                  const scoped_refptr<Action>& rhs) const;
+};
+
+// Like ActionComparator, but ignores the time field in comparisons.
+struct ActionComparatorExcludingTime {
+  // Evaluates the comparison lhs < rhs.
+  bool operator()(const scoped_refptr<Action>& lhs,
+                  const scoped_refptr<Action>& rhs) const;
 };
 
 }  // namespace extensions

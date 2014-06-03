@@ -32,12 +32,18 @@ struct UserContext {
               const std::string& password,
               const std::string& auth_code,
               const std::string& username_hash);
+  UserContext(const std::string& username,
+              const std::string& password,
+              const std::string& auth_code,
+              const std::string& username_hash,
+              bool using_oauth);
   virtual ~UserContext();
   bool operator==(const UserContext& context) const;
   std::string username;
   std::string password;
   std::string auth_code;
   std::string username_hash;
+  bool using_oauth;
 };
 
 // A class representing information about a previously logged in user.
@@ -100,7 +106,10 @@ class User {
   const std::string& email() const { return email_; }
 
   // Returns the human name to display for this user.
-  string16 GetDisplayName() const;
+  base::string16 GetDisplayName() const;
+
+  // Returns given name of user, or empty string if given name is unknown.
+  const base::string16& given_name() const { return given_name_; }
 
   // Returns the account name part of the email. Use the display form of the
   // email if available and use_display_name == true. Otherwise use canonical.
@@ -111,6 +120,9 @@ class User {
 
   // Whether the user has a default image.
   bool HasDefaultImage() const;
+
+  // True if user image can be synced.
+  virtual bool CanSyncImage() const;
 
   int image_index() const { return image_index_; }
   bool has_raw_image() const { return user_image_.has_raw_image(); }
@@ -142,7 +154,7 @@ class User {
   OAuthTokenStatus oauth_token_status() const { return oauth_token_status_; }
 
   // The displayed user name.
-  string16 display_name() const { return display_name_; }
+  base::string16 display_name() const { return display_name_; }
 
   // The displayed (non-canonical) user email.
   virtual std::string display_email() const;
@@ -160,10 +172,12 @@ class User {
   virtual bool is_active() const;
 
  protected:
+  friend class SupervisedUserManagerImpl;
   friend class UserManagerImpl;
   friend class UserImageManagerImpl;
   // For testing:
   friend class MockUserManager;
+  friend class FakeUserManager;
 
   // Do not allow anyone else to create new User instances.
   static User* CreateRegularUser(const std::string& email);
@@ -176,7 +190,17 @@ class User {
   explicit User(const std::string& email);
   virtual ~User();
 
+  bool is_profile_created() const {
+    return profile_is_created_;
+  }
+
+  const std::string* GetAccountLocale() const {
+    return account_locale_.get();
+  }
+
   // Setters are private so only UserManager can call them.
+  void SetAccountLocale(const std::string& resolved_account_locale);
+
   void SetImage(const UserImage& user_image, int image_index);
 
   void SetImageURL(const GURL& image_url);
@@ -190,9 +214,11 @@ class User {
     oauth_token_status_ = status;
   }
 
-  void set_display_name(const string16& display_name) {
+  void set_display_name(const base::string16& display_name) {
     display_name_ = display_name;
   }
+
+  void set_given_name(const base::string16& given_name) { given_name_ = given_name; }
 
   void set_display_email(const std::string& display_email) {
     display_email_ = display_email;
@@ -212,13 +238,27 @@ class User {
     is_active_ = is_active;
   }
 
+  void set_profile_is_created() {
+    profile_is_created_ = true;
+  }
+
+  // True if user has google account (not a guest or managed user).
+  bool has_gaia_account() const;
+
  private:
   std::string email_;
-  string16 display_name_;
+  base::string16 display_name_;
+  base::string16 given_name_;
   // The displayed user email, defaults to |email_|.
   std::string display_email_;
   UserImage user_image_;
   OAuthTokenStatus oauth_token_status_;
+
+  // This is set to chromeos locale if account data has been downloaded.
+  // (Or failed to download, but at least one download attempt finished).
+  // An empty string indicates error in data load, or in
+  // translation of Account locale to chromeos locale.
+  scoped_ptr<std::string> account_locale_;
 
   // Used to identify homedir mount point.
   std::string username_hash_;
@@ -238,6 +278,9 @@ class User {
 
   // True if user is currently logged in and active in current session.
   bool is_active_;
+
+  // True if user Profile is created
+  bool profile_is_created_;
 
   DISALLOW_COPY_AND_ASSIGN(User);
 };

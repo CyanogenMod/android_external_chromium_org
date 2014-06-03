@@ -13,14 +13,11 @@
 #include "base/memory/weak_ptr.h"
 #include "base/platform_file.h"
 #include "chrome/browser/media_galleries/fileapi/mtp_device_async_delegate.h"
-#include "chrome/browser/media_galleries/mtp_device_delegate_impl.h"
 #include "webkit/browser/fileapi/async_file_util.h"
 
 namespace base {
 class FilePath;
 }
-
-namespace chrome {
 
 struct SnapshotRequestInfo;
 
@@ -194,7 +191,5 @@ class MTPDeviceDelegateImplLinux : public MTPDeviceAsyncDelegate {
 
   DISALLOW_COPY_AND_ASSIGN(MTPDeviceDelegateImplLinux);
 };
-
-}  // namespace chrome
 
 #endif  // CHROME_BROWSER_MEDIA_GALLERIES_LINUX_MTP_DEVICE_DELEGATE_IMPL_LINUX_H_

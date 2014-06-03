@@ -17,6 +17,7 @@
         '../../cc/cc.gyp:cc',
         '../../net/net.gyp:net',
         '../../skia/skia.gyp:skia',
+        '../../ui/gfx/gfx.gyp:gfx',
         '../../ui/ui.gyp:ui',
         '../../webkit/common/user_agent/webkit_user_agent.gyp:user_agent',
         '../../webkit/common/webkit_common.gyp:webkit_common',
@@ -52,6 +53,8 @@
         'aw_geolocation_permission_context.h',
         'aw_http_auth_handler.cc',
         'aw_http_auth_handler.h',
+        'aw_pdf_exporter.cc',
+        'aw_pdf_exporter.h',
         'aw_picture.cc',
         'aw_picture.h',
         'aw_quota_manager_bridge_impl.cc',
@@ -75,16 +78,12 @@
         'java_browser_view_renderer_helper.cc',
         'java_browser_view_renderer_helper.h',
         'net_init_native_callback.cc',
-# START: Printing fork b/10190508
-        'aw_pdf_exporter.cc',
-        'aw_pdf_exporter.h',
-# END: Printing fork b/10190508
         'state_serializer.cc',
         'state_serializer.h',
       ],
     },
     {
-      'target_name': 'android_jar_jni_headers',
+      'target_name': 'input_stream_android_jar_jni_headers',
       'type': 'none',
       'variables': {
         'jni_gen_package': 'android_webview',
@@ -92,7 +91,6 @@
       },
       'includes': [ '../../build/jar_file_jni_generator.gypi' ],
     },
-# START: Printing fork b/10190508
     {
       'target_name': 'cancellation_signal_android_jar_jni_headers',
       'type': 'none',
@@ -102,7 +100,6 @@
       },
       'includes': [ '../../build/jar_file_jni_generator.gypi' ],
     },
-# END: Printing fork b/10190508
     {
       'target_name': 'android_webview_native_jni',
       'type': 'none',
@@ -116,6 +113,7 @@
           '../java/src/org/chromium/android_webview/AwDevToolsServer.java',
           '../java/src/org/chromium/android_webview/AwFormDatabase.java',
           '../java/src/org/chromium/android_webview/AwHttpAuthHandler.java',
+          '../java/src/org/chromium/android_webview/AwPdfExporter.java',
           '../java/src/org/chromium/android_webview/AwPicture.java',
           '../java/src/org/chromium/android_webview/AwQuotaManagerBridge.java',
           '../java/src/org/chromium/android_webview/AwResource.java',
@@ -123,20 +121,15 @@
           '../java/src/org/chromium/android_webview/AwWebContentsDelegate.java',
           '../java/src/org/chromium/android_webview/InterceptedRequestData.java',
           '../java/src/org/chromium/android_webview/JavaBrowserViewRendererHelper.java',
-# START: Printing fork b/10190508
-          '../java/src/org/chromium/android_webview/AwPdfExporter.java',
-# END: Printing fork b/10190508
       ],
       'variables': {
         'jni_gen_package': 'android_webview',
+        'jni_generator_ptr_type': 'long',
       },
       'includes': [ '../../build/jni_generator.gypi' ],
       'dependencies': [
-        'android_jar_jni_headers',
-# START: Printing fork b/10190508
-# TODO(sgurun) rename the android_jar_jni_headers (above) to input_stream_android_jar_jni_headers
+        'input_stream_android_jar_jni_headers',
         'cancellation_signal_android_jar_jni_headers',
-# END: Printing fork b/10190508
       ],
     },
   ],

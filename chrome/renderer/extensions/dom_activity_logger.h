@@ -9,45 +9,39 @@
 
 #include "base/strings/string_piece.h"
 #include "third_party/WebKit/public/platform/WebString.h"
+#include "third_party/WebKit/public/platform/WebURL.h"
 #include "third_party/WebKit/public/web/WebDOMActivityLogger.h"
 #include "url/gurl.h"
 #include "v8/include/v8.h"
-
-using WebKit::WebString;
 
 // Used to log DOM API calls from within WebKit. The events are sent via IPC to
 // extensions::ActivityLog for recording and display.
 namespace extensions {
 
-class DOMActivityLogger: public WebKit::WebDOMActivityLogger {
+class DOMActivityLogger: public blink::WebDOMActivityLogger {
  public:
   static const int kMainWorldId = 0;
-  DOMActivityLogger(const std::string& extension_id,
-                    const GURL& url,
-                    const string16& title);
+  explicit DOMActivityLogger(const std::string& extension_id);
 
   // Marshalls the arguments into an ExtensionHostMsg_DOMAction_Params
   // and sends it over to the browser (via IPC) for appending it to the
   // extension activity log.
-  // (Overrides the log method in WebKit::WebDOMActivityLogger)
-  virtual void log(const WebString& api_name,
+  // (Overrides the log method in blink::WebDOMActivityLogger)
+  virtual void log(const blink::WebString& api_name,
                    int argc,
                    const v8::Handle<v8::Value> argv[],
-                   const WebString& call_type);
+                   const blink::WebString& call_type,
+                   const blink::WebURL& url,
+                   const blink::WebString& title);
 
-  // If extension activity logging is enabled then check (using the
-  // WebKit API) if there is no logger attached to the world corresponding
-  // to world_id, and if so, construct a new logger and attach it.
-  // worl_id = 0 indicates the main world.
+  // Check (using the WebKit API) if there is no logger attached to the world
+  // corresponding to world_id, and if so, construct a new logger and attach it.
+  // world_id = 0 indicates the main world.
   static void AttachToWorld(int world_id,
-                            const std::string& extension_id,
-                            const GURL& url,
-                            const string16& title);
+                            const std::string& extension_id);
 
  private:
   std::string extension_id_;
-  GURL url_;
-  string16 title_;
 
   DISALLOW_COPY_AND_ASSIGN(DOMActivityLogger);
 };

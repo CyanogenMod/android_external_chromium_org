@@ -26,24 +26,30 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "content/browser/browser_main.h"
+#include "content/browser/gpu/gpu_process_host.h"
 #include "content/common/set_process_title.h"
 #include "content/common/url_schemes.h"
+#include "content/gpu/in_process_gpu_thread.h"
 #include "content/public/app/content_main_delegate.h"
 #include "content/public/app/startup_helper_win.h"
 #include "content/public/browser/content_browser_client.h"
+#include "content/public/browser/render_process_host.h"
+#include "content/public/browser/utility_process_host.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_constants.h"
 #include "content/public/common/content_paths.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/main_function_params.h"
 #include "content/public/common/sandbox_init.h"
+#include "content/renderer/in_process_renderer_thread.h"
+#include "content/utility/in_process_utility_thread.h"
 #include "crypto/nss_util.h"
 #include "ipc/ipc_switches.h"
 #include "media/base/media.h"
 #include "sandbox/win/src/sandbox_types.h"
 #include "ui/base/ui_base_paths.h"
 #include "ui/base/ui_base_switches.h"
-#include "ui/base/win/dpi.h"
+#include "ui/gfx/win/dpi.h"
 #include "webkit/common/user_agent/user_agent.h"
 
 #if defined(USE_TCMALLOC)
@@ -127,13 +133,15 @@ void EnableThemeSupportOnAllWindowStations() {
 
   HWINSTA winsta0 = ::OpenWindowStationA("WinSta0", FALSE, GENERIC_READ);
   if (!winsta0) {
-    DLOG(INFO) << "Unable to open to WinSta0, we: "<< ::GetLastError();
+    DVLOG(0) << "Unable to open to WinSta0, we: "<< ::GetLastError();
     return;
   }
   if (!::SetProcessWindowStation(winsta0)) {
     // Could not set the alternate window station. There is a possibility
     // that the theme wont be correctly initialized.
     NOTREACHED() << "Unable to switch to WinSta0, we: "<< ::GetLastError();
+    ::CloseWindowStation(winsta0);
+    return;
   }
 
   HWND window = ::CreateWindowExW(0, L"Static", L"", WS_POPUP | WS_DISABLED,
@@ -400,6 +408,27 @@ int RunZygote(const MainFunctionParams& main_function_params,
 #endif  // defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
 
 #if !defined(OS_IOS)
+static void RegisterMainThreadFactories() {
+#if !defined(CHROME_MULTIPLE_DLL_BROWSER)
+  UtilityProcessHost::RegisterUtilityMainThreadFactory(
+      CreateInProcessUtilityThread);
+  RenderProcessHost::RegisterRendererMainThreadFactory(
+      CreateInProcessRendererThread);
+  GpuProcessHost::RegisterGpuMainThreadFactory(
+      CreateInProcessGpuThread);
+#else
+  CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  if (command_line.HasSwitch(switches::kSingleProcess)) {
+    LOG(FATAL) <<
+        "--single-process is not supported in chrome multiple dll browser.";
+  }
+  if (command_line.HasSwitch(switches::kInProcessGPU)) {
+    LOG(FATAL) <<
+        "--in-process-gpu is not supported in chrome multiple dll browser.";
+  }
+#endif
+}
+
 // Run the FooMain() for a given process type.
 // If |process_type| is empty, runs BrowserMain().
 // Returns the exit code for this process.
@@ -423,6 +452,8 @@ int RunNamedProcessTypeMain(
     { switches::kGpuProcess,         GpuMain },
 #endif  // !CHROME_MULTIPLE_DLL_BROWSER
   };
+
+  RegisterMainThreadFactories();
 
   for (size_t i = 0; i < arraysize(kMainFunctions); ++i) {
     if (process_type == kMainFunctions[i].name) {
@@ -657,10 +688,6 @@ class ContentMainRunnerImpl : public ContentMainRunner {
     // It's important not to allocate the ports for processes which don't
     // register with the power monitor - see crbug.com/88867.
     if (process_type.empty() ||
-        process_type == switches::kPluginProcess ||
-        process_type == switches::kRendererProcess ||
-        process_type == switches::kUtilityProcess ||
-        process_type == switches::kWorkerProcess ||
         (delegate &&
          delegate->ProcessRegistersWithSystemProcess(process_type))) {
       base::PowerMonitorDeviceSource::AllocateSystemIOPorts();
@@ -671,6 +698,9 @@ class ContentMainRunnerImpl : public ContentMainRunner {
       MachBroker::ChildSendTaskPortToParent();
     }
 #elif defined(OS_WIN)
+    if (command_line.HasSwitch(switches::kEnableHighResolutionTime))
+      base::TimeTicks::SetNowIsHighResNowIfSupported();
+
     // This must be done early enough since some helper functions like
     // IsTouchEnabled, needed to load resources, may call into the theme dll.
     EnableThemeSupportOnAllWindowStations();
@@ -703,7 +733,7 @@ class ContentMainRunnerImpl : public ContentMainRunner {
     RegisterPathProvider();
     RegisterContentSchemes(true);
 
-    CHECK(icu_util::Initialize());
+    CHECK(base::i18n::InitializeICU());
 
     InitializeStatsTable(command_line);
 

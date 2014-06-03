@@ -23,13 +23,13 @@ namespace nacl_io {
 
 MountMem::MountMem() : root_(NULL) {}
 
-Error MountMem::Init(int dev, StringMap_t& args, PepperInterface* ppapi) {
-  Error error = Mount::Init(dev, args, ppapi);
+Error MountMem::Init(const MountInitArgs& args) {
+  Error error = Mount::Init(args);
   if (error)
     return error;
 
   root_.reset(new MountNodeDir(this));
-  error = root_->Init(S_IREAD | S_IWRITE);
+  error = root_->Init(0);
   if (error) {
     root_.reset(NULL);
     return error;
@@ -93,14 +93,15 @@ Error MountMem::Access(const Path& path, int a_mode) {
   return 0;
 }
 
-Error MountMem::Open(const Path& path, int mode, ScopedMountNode* out_node) {
+Error MountMem::Open(const Path& path, int open_flags,
+                     ScopedMountNode* out_node) {
   out_node->reset(NULL);
   ScopedMountNode node;
 
   Error error = FindNode(path, 0, &node);
   if (error) {
     // If the node does not exist and we can't create it, fail
-    if ((mode & O_CREAT) == 0)
+    if ((open_flags & O_CREAT) == 0)
       return ENOENT;
 
     // Now first find the parent directory to see if we can add it
@@ -110,7 +111,7 @@ Error MountMem::Open(const Path& path, int mode, ScopedMountNode* out_node) {
       return error;
 
     node.reset(new MountNodeMem(this));
-    error = node->Init(OpenModeToPermission(mode));
+    error = node->Init(open_flags);
     if (error)
       return error;
 
@@ -118,23 +119,21 @@ Error MountMem::Open(const Path& path, int mode, ScopedMountNode* out_node) {
     if (error)
       return error;
 
-    *out_node = node;
-    return 0;
+  } else {
+    // Opening an existing file.
+
+    // Directories can only be opened read-only.
+    if (node->IsaDir() && (open_flags & 3) != O_RDONLY)
+      return EISDIR;
+
+    // If we were expected to create it exclusively, fail
+    if (open_flags & O_EXCL)
+      return EEXIST;
+
+    if (open_flags & O_TRUNC)
+      static_cast<MountNodeMem*>(node.get())->Resize(0);
   }
 
-  // Directories can only be opened read-only.
-  if (node->IsaDir() && (mode & 3) != O_RDONLY)
-    return EISDIR;
-
-  // If we were expected to create it exclusively, fail
-  if (mode & O_EXCL)
-    return EEXIST;
-
-  // Verify we got the requested permissions.
-  int req_mode = OpenModeToPermission(mode);
-  int obj_mode = node->GetMode() & OpenModeToPermission(O_RDWR);
-  if ((obj_mode & req_mode) != req_mode)
-    return EACCES;
 
   *out_node = node;
   return 0;
@@ -166,7 +165,7 @@ Error MountMem::Mkdir(const Path& path, int mode) {
   // it will get ref counted again.  In either case, release the
   // recount we have on exit.
   node.reset(new MountNodeDir(this));
-  error = node->Init(S_IREAD | S_IWRITE);
+  error = node->Init(0);
   if (error)
     return error;
 
@@ -183,6 +182,75 @@ Error MountMem::Rmdir(const Path& path) {
 
 Error MountMem::Remove(const Path& path) {
   return RemoveInternal(path, REMOVE_ALL);
+}
+
+Error MountMem::Rename(const Path& src_path, const Path& target_path) {
+  ScopedMountNode src_node;
+  ScopedMountNode src_parent;
+  ScopedMountNode target_node;
+  ScopedMountNode target_parent;
+  int error = FindNode(src_path, 0, &src_node);
+  if (error)
+    return error;
+
+  // The source must exist
+  error = FindNode(src_path.Parent(), S_IFDIR, &src_parent);
+  if (error)
+    return error;
+
+  // The parent of the target must exist
+  error = FindNode(target_path.Parent(), 0, &target_parent);
+  if (error)
+    return error;
+
+  std::string target_name = target_path.Basename();
+
+  // The target itself need not exist but if it does there are
+  // certain restrictions
+  error = FindNode(target_path, 0, &target_node);
+  bool replacing_target = error == 0;
+  if (replacing_target) {
+    if (target_node->IsaDir()) {
+      // If the target is a direcotry it must be empty
+      if (target_node->ChildCount()) {
+        return ENOTEMPTY;
+      }
+
+      if (src_node->IsaDir()) {
+        // Replacing an existing directory.
+        RemoveInternal(target_path, REMOVE_ALL);
+      } else {
+        // Renaming into an existing directory.
+        target_name = src_path.Basename();
+        target_parent = target_node;
+      }
+    } else {
+      if (src_node->IsaDir())
+        // Can't replace a file with a direcotory
+        return EISDIR;
+
+      // Replacing an existing file.
+      target_parent->RemoveChild(target_path.Basename());
+    }
+  }
+
+  // Perform that actual rename. Simply re-parent the original source node
+  // onto its new parent node.
+  error = src_parent->RemoveChild(src_path.Basename());
+  if (error)
+    return error;
+
+  error = target_parent->AddChild(target_name, src_node);
+  if (error) {
+    // Re-parent the old target_node if we failed to add the new one.
+    if (replacing_target)
+      target_parent->AddChild(target_path.Basename(), target_node);
+    // Re-parent the src_node
+    target_parent->AddChild(target_path.Basename(), src_node);
+    return error;
+  }
+
+  return 0;
 }
 
 Error MountMem::RemoveInternal(const Path& path, int remove_type) {
@@ -224,4 +292,3 @@ Error MountMem::RemoveInternal(const Path& path, int remove_type) {
 }
 
 }  // namespace nacl_io
-

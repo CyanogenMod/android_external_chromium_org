@@ -20,8 +20,6 @@ APIActivityLogger::APIActivityLogger(
     : ChromeV8Extension(dispatcher, context) {
   RouteFunction("LogEvent", base::Bind(&APIActivityLogger::LogEvent));
   RouteFunction("LogAPICall", base::Bind(&APIActivityLogger::LogAPICall));
-  RouteFunction("LogBlockedCall",
-                base::Bind(&APIActivityLogger::LogBlockedCallWrapper));
 }
 
 // static
@@ -45,11 +43,11 @@ void APIActivityLogger::LogInternal(
   DCHECK(args[1]->IsString());
   DCHECK(args[2]->IsArray());
 
-  std::string ext_id = *v8::String::AsciiValue(args[0]);
+  std::string ext_id = *v8::String::Utf8Value(args[0]);
   ExtensionHostMsg_APIActionOrEvent_Params params;
-  params.api_call = *v8::String::AsciiValue(args[1]);
+  params.api_call = *v8::String::Utf8Value(args[1]);
   if (args.Length() == 4)  // Extras are optional.
-    params.extra = *v8::String::AsciiValue(args[3]);
+    params.extra = *v8::String::Utf8Value(args[3]);
   else
     params.extra = "";
 
@@ -64,7 +62,7 @@ void APIActivityLogger::LogInternal(
     for (size_t i = 0; i < arg_array->Length(); ++i) {
       arg_list->Set(i,
                     converter->FromV8Value(arg_array->Get(i),
-                    v8::Context::GetCurrent()));
+                    args.GetIsolate()->GetCurrentContext()));
     }
     params.arguments.Swap(arg_list.get());
   }
@@ -77,36 +75,5 @@ void APIActivityLogger::LogInternal(
         new ExtensionHostMsg_AddEventToActivityLog(ext_id, params));
   }
 }
-
-// static
-void APIActivityLogger::LogBlockedCallWrapper(
-    const v8::FunctionCallbackInfo<v8::Value>& args) {
-  DCHECK_EQ(args.Length(), 3);
-  DCHECK(args[0]->IsString());
-  DCHECK(args[1]->IsString());
-  DCHECK(args[2]->IsNumber());
-  int result;
-  scoped_ptr<V8ValueConverter> converter(V8ValueConverter::create());
-  converter->FromV8Value(args[2],
-                         v8::Context::GetCurrent())->GetAsInteger(&result);
-  LogBlockedCall(*v8::String::AsciiValue(args[0]),
-                 *v8::String::AsciiValue(args[1]),
-                 static_cast<Feature::AvailabilityResult>(result));
-}
-
-// static
-void APIActivityLogger::LogBlockedCall(const std::string& extension_id,
-                                       const std::string& function_name,
-                                       Feature::AvailabilityResult result) {
-  // We don't really want to bother logging if it isn't permission related.
-  if (result == Feature::INVALID_MIN_MANIFEST_VERSION ||
-      result == Feature::INVALID_MAX_MANIFEST_VERSION ||
-      result == Feature::UNSUPPORTED_CHANNEL)
-    return;
-  content::RenderThread::Get()->Send(
-      new ExtensionHostMsg_AddBlockedCallToActivityLog(extension_id,
-                                                       function_name));
-}
-
 
 }  // namespace extensions

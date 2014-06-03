@@ -55,7 +55,7 @@ class SpellingMenuObserver : public RenderViewContextMenuObserver {
   void OnTextCheckComplete(
       SpellingServiceClient::ServiceType type,
       bool success,
-      const string16& text,
+      const base::string16& text,
       const std::vector<SpellCheckResult>& results);
 
  private:
@@ -70,12 +70,12 @@ class SpellingMenuObserver : public RenderViewContextMenuObserver {
   // Suggested words from the local spellchecker. If the spelling service
   // returns a word in this list, we hide the context-menu item to prevent
   // showing the same word twice.
-  std::vector<string16> suggestions_;
+  std::vector<base::string16> suggestions_;
 
   // The string used for animation until we receive a response from the Spelling
   // service. The current animation just adds periods at the end of this string:
   //   'Loading' -> 'Loading.' -> 'Loading..' -> 'Loading...' (-> 'Loading')
-  string16 loading_message_;
+  base::string16 loading_message_;
   size_t loading_frame_;
 
   // A flag represending whether a JSON-RPC call to the Spelling service
@@ -86,7 +86,7 @@ class SpellingMenuObserver : public RenderViewContextMenuObserver {
 
   // The misspelled word. When we choose the "Add to dictionary" item, we add
   // this word to the custom-word dictionary.
-  string16 misspelled_word_;
+  base::string16 misspelled_word_;
 
   // The hash identifier for the misspelled word. Used for collecting user
   // feedback to spellcheck suggestions.
@@ -98,7 +98,7 @@ class SpellingMenuObserver : public RenderViewContextMenuObserver {
   // stores the input string. (Since the Spelling service sends only misspelled
   // words, we replace these misspelled words in the input text with the
   // suggested words to create suggestion text.
-  string16 result_;
+  base::string16 result_;
 
   // The URLFetcher object used for sending a JSON-RPC request.
   scoped_ptr<SpellingServiceClient> client_;

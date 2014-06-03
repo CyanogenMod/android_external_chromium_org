@@ -9,9 +9,9 @@
 #include "apps/switches.h"
 #include "base/process/launch.h"
 #include "base/test/test_timeouts.h"
+#include "chrome/browser/apps/app_browsertest_util.h"
 #include "chrome/browser/extensions/extension_browsertest.h"
 #include "chrome/browser/extensions/extension_test_message_listener.h"
-#include "chrome/browser/extensions/platform_app_browsertest_util.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/chrome_switches.h"
 #include "content/public/test/test_launcher.h"
@@ -136,8 +136,9 @@ class PlatformAppLoadAndLaunchBrowserTest : public PlatformAppBrowserTest {
 }  // namespace
 
 
-// TODO(jackhou): Make this test not flaky on Vista. See http://crbug.com/176897
-#if defined(OS_WIN)
+// TODO(jackhou): Make this test not flaky on Vista or Linux Aura. See
+// http://crbug.com/176897
+#if defined(OS_WIN) || (defined(OS_LINUX) && defined(USE_AURA))
 #define MAYBE_LoadAndLaunchAppChromeNotRunning \
         DISABLED_LoadAndLaunchAppChromeNotRunning
 #else

@@ -26,6 +26,7 @@ LOCAL_GENERATED_SOURCES :=
 GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 
 LOCAL_SRC_FILES := \
+	base/async_socket_io_handler_posix.cc \
 	base/event_recorder_stubs.cc \
 	base/linux_util.cc \
 	base/md5.cc \
@@ -43,6 +44,8 @@ LOCAL_SRC_FILES := \
 	base/android/activity_status.cc \
 	base/android/base_jni_registrar.cc \
 	base/android/build_info.cc \
+	base/android/command_line_android.cc \
+	base/android/content_uri_utils.cc \
 	base/android/cpu_features.cc \
 	base/android/fifo_utils.cc \
 	base/android/important_file_writer_android.cc \
@@ -58,11 +61,13 @@ LOCAL_SRC_FILES := \
 	base/android/path_utils.cc \
 	base/android/sys_utils.cc \
 	base/at_exit.cc \
+	base/barrier_closure.cc \
 	base/base_paths.cc \
 	base/base_paths_android.cc \
 	base/base64.cc \
 	base/bind_helpers.cc \
 	base/build_time.cc \
+	base/callback_helpers.cc \
 	base/callback_internal.cc \
 	base/command_line.cc \
 	base/cpu.cc \
@@ -77,18 +82,21 @@ LOCAL_SRC_FILES := \
 	base/debug/trace_event_android.cc \
 	base/debug/trace_event_impl.cc \
 	base/debug/trace_event_impl_constants.cc \
+	base/debug/trace_event_system_stats_monitor.cc \
 	base/debug/trace_event_memory.cc \
 	base/deferred_sequenced_task_runner.cc \
 	base/environment.cc \
 	base/file_util.cc \
 	base/file_util_android.cc \
 	base/file_util_posix.cc \
+	base/files/file.cc \
 	base/files/file_enumerator.cc \
 	base/files/file_enumerator_posix.cc \
 	base/files/file_path.cc \
 	base/files/file_path_constants.cc \
 	base/files/file_path_watcher.cc \
 	base/files/file_path_watcher_linux.cc \
+	base/files/file_posix.cc \
 	base/files/file_util_proxy.cc \
 	base/files/important_file_writer.cc \
 	base/files/memory_mapped_file.cc \
@@ -109,8 +117,10 @@ LOCAL_SRC_FILES := \
 	base/location.cc \
 	base/logging.cc \
 	base/memory/aligned_memory.cc \
-	base/memory/discardable_memory.cc \
+	base/memory/discardable_memory_allocator_android.cc \
 	base/memory/discardable_memory_android.cc \
+	base/memory/discardable_memory_emulated.cc \
+	base/memory/discardable_memory_provider.cc \
 	base/memory/memory_pressure_listener.cc \
 	base/memory/ref_counted.cc \
 	base/memory/ref_counted_memory.cc \
@@ -129,6 +139,7 @@ LOCAL_SRC_FILES := \
 	base/metrics/bucket_ranges.cc \
 	base/metrics/histogram.cc \
 	base/metrics/histogram_base.cc \
+	base/metrics/histogram_delta_serialization.cc \
 	base/metrics/histogram_samples.cc \
 	base/metrics/histogram_snapshot_manager.cc \
 	base/metrics/sparse_histogram.cc \
@@ -151,12 +162,14 @@ LOCAL_SRC_FILES := \
 	base/process/internal_linux.cc \
 	base/process/kill.cc \
 	base/process/kill_posix.cc \
+	base/process/launch.cc \
 	base/process/launch_posix.cc \
 	base/process/memory_linux.cc \
 	base/process/process_handle_linux.cc \
 	base/process/process_handle_posix.cc \
 	base/process/process_iterator.cc \
 	base/process/process_iterator_linux.cc \
+	base/process/process_metrics.cc \
 	base/process/process_metrics_linux.cc \
 	base/process/process_metrics_posix.cc \
 	base/process/process_posix.cc \
@@ -173,6 +186,7 @@ LOCAL_SRC_FILES := \
 	base/sha1_portable.cc \
 	base/strings/latin1_string_conversions.cc \
 	base/strings/nullable_string16.cc \
+	base/strings/safe_sprintf.cc \
 	base/strings/string16.cc \
 	base/strings/string_number_conversions.cc \
 	base/strings/string_split.cc \
@@ -220,6 +234,7 @@ LOCAL_SRC_FILES := \
 	base/time/tick_clock.cc \
 	base/time/time.cc \
 	base/time/time_posix.cc \
+	base/timer/elapsed_timer.cc \
 	base/timer/hi_res_timer_manager_posix.cc \
 	base/timer/timer.cc \
 	base/tracked_objects.cc \
@@ -264,22 +279,22 @@ MY_CFLAGS_Debug := \
 	-ffunction-sections
 
 MY_DEFS_Debug := \
-	'-DANGLE_DX11' \
+	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
-	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
-	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DLOGGING_IS_OFFICIAL_BUILD=1' \
-	'-DTRACING_IS_OFFICIAL_BUILD=1' \
-	'-DENABLE_GPU=1' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
+	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
+	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DBASE_IMPLEMENTATION' \
@@ -350,22 +365,22 @@ MY_CFLAGS_Release := \
 	-fomit-frame-pointer
 
 MY_DEFS_Release := \
-	'-DANGLE_DX11' \
+	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
-	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
-	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DLOGGING_IS_OFFICIAL_BUILD=1' \
-	'-DTRACING_IS_OFFICIAL_BUILD=1' \
-	'-DENABLE_GPU=1' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
+	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
+	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DBASE_IMPLEMENTATION' \

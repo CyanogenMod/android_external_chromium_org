@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "base/stl_util.h"
+#include "chrome/browser/chromeos/file_manager/drive_test_util.h"
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chromeos/dbus/cros_disks_client.h"
 #include "chromeos/disks/mock_disk_mount_manager.h"
@@ -106,14 +107,14 @@ TestDiskInfo kTestDisks[] = {
 
 }  // namespace
 
-class ExtensionFileBrowserPrivateApiTest : public ExtensionApiTest {
+class FileBrowserPrivateApiTest : public ExtensionApiTest {
  public:
-  ExtensionFileBrowserPrivateApiTest()
+  FileBrowserPrivateApiTest()
       : disk_mount_manager_mock_(NULL) {
     InitMountPoints();
   }
 
-  virtual ~ExtensionFileBrowserPrivateApiTest() {
+  virtual ~FileBrowserPrivateApiTest() {
     DCHECK(!disk_mount_manager_mock_);
     STLDeleteValues(&volumes_);
   }
@@ -130,7 +131,7 @@ class ExtensionFileBrowserPrivateApiTest : public ExtensionApiTest {
     // OVERRIDE FindDiskBySourcePath mock function.
     ON_CALL(*disk_mount_manager_mock_, FindDiskBySourcePath(_)).
         WillByDefault(Invoke(
-            this, &ExtensionFileBrowserPrivateApiTest::FindVolumeBySourcePath));
+            this, &FileBrowserPrivateApiTest::FindVolumeBySourcePath));
   }
 
   // ExtensionApiTest override
@@ -233,7 +234,10 @@ class ExtensionFileBrowserPrivateApiTest : public ExtensionApiTest {
   DiskMountManager::MountPointMap mount_points_;
 };
 
-IN_PROC_BROWSER_TEST_F(ExtensionFileBrowserPrivateApiTest, FileBrowserMount) {
+IN_PROC_BROWSER_TEST_F(FileBrowserPrivateApiTest, Mount) {
+  file_manager::test_util::WaitUntilDriveMountPointIsAdded(
+      browser()->profile());
+
   // We will call fileBrowserPrivate.unmountVolume once. To test that method, we
   // check that UnmountPath is really called with the same value.
   EXPECT_CALL(*disk_mount_manager_mock_, UnmountPath(_, _,  _))
@@ -250,5 +254,6 @@ IN_PROC_BROWSER_TEST_F(ExtensionFileBrowserPrivateApiTest, FileBrowserMount) {
   EXPECT_CALL(*disk_mount_manager_mock_, mount_points())
       .WillRepeatedly(ReturnRef(mount_points_));
 
-  ASSERT_TRUE(RunComponentExtensionTest("filebrowser_mount"))  << message_;
+  ASSERT_TRUE(RunComponentExtensionTest("file_browser/mount_test"))
+      << message_;
 }

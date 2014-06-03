@@ -9,8 +9,8 @@
 #include "base/compiler_specific.h"
 #include "base/lazy_instance.h"
 #include "chrome/common/extensions/permissions/chrome_api_permissions.h"
+#include "chrome/common/extensions/permissions/chrome_permission_message_provider.h"
 #include "extensions/common/extensions_client.h"
-#include "extensions/common/permissions/permissions_provider.h"
 
 namespace extensions {
 
@@ -21,16 +21,37 @@ class ChromeExtensionsClient : public ExtensionsClient {
   ChromeExtensionsClient();
   virtual ~ChromeExtensionsClient();
 
+  virtual void Initialize() OVERRIDE;
+
   virtual const PermissionsProvider& GetPermissionsProvider() const OVERRIDE;
-  virtual void RegisterManifestHandlers() const OVERRIDE;
+  virtual const PermissionMessageProvider& GetPermissionMessageProvider() const
+      OVERRIDE;
   virtual FeatureProvider* GetFeatureProviderByName(const std::string& name)
       const OVERRIDE;
-
+  virtual void FilterHostPermissions(
+      const URLPatternSet& hosts,
+      URLPatternSet* new_hosts,
+      std::set<PermissionMessage>* messages) const OVERRIDE;
+  virtual void SetScriptingWhitelist(const ScriptingWhitelist& whitelist)
+      OVERRIDE;
+  virtual const ScriptingWhitelist& GetScriptingWhitelist() const OVERRIDE;
+  virtual URLPatternSet GetPermittedChromeSchemeHosts(
+      const Extension* extension,
+      const APIPermissionSet& api_permissions) const OVERRIDE;
+  virtual bool IsScriptableURL(const GURL& url, std::string* error) const
+      OVERRIDE;
   // Get the LazyInstance for ChromeExtensionsClient.
   static ChromeExtensionsClient* GetInstance();
 
  private:
   const ChromeAPIPermissions chrome_api_permissions_;
+  const ChromePermissionMessageProvider permission_message_provider_;
+
+  // A whitelist of extensions that can script anywhere. Do not add to this
+  // list (except in tests) without consulting the Extensions team first.
+  // Note: Component extensions have this right implicitly and do not need to be
+  // added to this list.
+  ScriptingWhitelist scripting_whitelist_;
 
   friend struct base::DefaultLazyInstanceTraits<ChromeExtensionsClient>;
 

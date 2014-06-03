@@ -63,9 +63,9 @@ class ConfirmInstallDialogDelegate : public TabModalConfirmDialogDelegate,
                                scoped_ptr<PluginMetadata> plugin_metadata);
 
   // TabModalConfirmDialogDelegate methods:
-  virtual string16 GetTitle() OVERRIDE;
-  virtual string16 GetMessage() OVERRIDE;
-  virtual string16 GetAcceptButtonTitle() OVERRIDE;
+  virtual base::string16 GetTitle() OVERRIDE;
+  virtual base::string16 GetMessage() OVERRIDE;
+  virtual base::string16 GetAcceptButtonTitle() OVERRIDE;
   virtual void OnAccepted() OVERRIDE;
   virtual void OnCanceled() OVERRIDE;
 
@@ -88,17 +88,17 @@ ConfirmInstallDialogDelegate::ConfirmInstallDialogDelegate(
       plugin_metadata_(plugin_metadata.Pass()) {
 }
 
-string16 ConfirmInstallDialogDelegate::GetTitle() {
+base::string16 ConfirmInstallDialogDelegate::GetTitle() {
   return l10n_util::GetStringFUTF16(
       IDS_PLUGIN_CONFIRM_INSTALL_DIALOG_TITLE, plugin_metadata_->name());
 }
 
-string16 ConfirmInstallDialogDelegate::GetMessage() {
+base::string16 ConfirmInstallDialogDelegate::GetMessage() {
   return l10n_util::GetStringFUTF16(IDS_PLUGIN_CONFIRM_INSTALL_DIALOG_MSG,
                                     plugin_metadata_->name());
 }
 
-string16 ConfirmInstallDialogDelegate::GetAcceptButtonTitle() {
+base::string16 ConfirmInstallDialogDelegate::GetAcceptButtonTitle() {
   return l10n_util::GetStringUTF16(
       IDS_PLUGIN_CONFIRM_INSTALL_DIALOG_ACCEPT_BUTTON);
 }
@@ -127,7 +127,7 @@ class PluginObserver::PluginPlaceholderHost : public PluginInstallerObserver {
  public:
   PluginPlaceholderHost(PluginObserver* observer,
                         int routing_id,
-                        string16 plugin_name,
+                        base::string16 plugin_name,
                         PluginInstaller* installer)
       : PluginInstallerObserver(installer),
         observer_(observer),
@@ -182,13 +182,45 @@ PluginObserver::~PluginObserver() {
 #endif
 }
 
+void PluginObserver::RenderViewCreated(
+    content::RenderViewHost* render_view_host) {
+#if defined(USE_AURA) && defined(OS_WIN)
+  // If the window belongs to the Ash desktop, before we navigate we need
+  // to tell the renderview that NPAPI plugins are not supported so it does
+  // not try to instantiate them. The final decision is actually done in
+  // the IO thread by PluginInfoMessageFilter of this proces,s but it's more
+  // complex to manage a map of Ash views in PluginInfoMessageFilter than
+  // just telling the renderer via IPC.
+
+  // TODO(shrikant): Implement solution which will help associate
+  // render_view_host/webcontents/view/window instance with host desktop.
+  // Refer to issue http://crbug.com/317940.
+  // When non-active tabs are restored they are not added in view/window parent
+  // hierarchy (chrome::CreateRestoredTab/CreateParams). Normally we traverse
+  // parent hierarchy to identify containing desktop (like in function
+  // chrome::GetHostDesktopTypeForNativeView).
+  // Possible issue with chrome::GetActiveDesktop, is that it's global
+  // state, which remembers last active desktop, which may break in scenarios
+  // where we have instances on both Ash and Native desktop.
+
+  // We will do both tests. Both have some factor of unreliability.
+  aura::Window* window = web_contents()->GetView()->GetNativeView();
+  if (chrome::GetActiveDesktop() == chrome::HOST_DESKTOP_TYPE_ASH ||
+      chrome::GetHostDesktopTypeForNativeView(window) ==
+      chrome::HOST_DESKTOP_TYPE_ASH) {
+    int routing_id = render_view_host->GetRoutingID();
+    render_view_host->Send(new ChromeViewMsg_NPAPINotSupported(routing_id));
+  }
+#endif
+}
+
 void PluginObserver::PluginCrashed(const base::FilePath& plugin_path,
                                    base::ProcessId plugin_pid) {
   DCHECK(!plugin_path.value().empty());
 
-  string16 plugin_name =
+  base::string16 plugin_name =
       PluginService::GetInstance()->GetPluginDisplayNameByPath(plugin_path);
-  string16 infobar_text;
+  base::string16 infobar_text;
 #if defined(OS_WIN)
   // Find out whether the plugin process is still alive.
   // Note: Although the chances are slim, it is possible that after the plugin
@@ -254,33 +286,8 @@ bool PluginObserver::OnMessageReceived(const IPC::Message& message) {
   return true;
 }
 
-void PluginObserver::AboutToNavigateRenderView(
-    content::RenderViewHost* render_view_host) {
-#if defined(USE_AURA) && defined(OS_WIN)
-  // If the window belongs to the Ash desktop, before we navigate we need
-  // to tell the renderview that NPAPI plugins are not supported so it does
-  // not try to instantiate them. The final decision is actually done in
-  // the IO thread by PluginInfoMessageFilter of this proces,s but it's more
-  // complex to manage a map of Ash views in PluginInfoMessageFilter than
-  // just telling the renderer via IPC.
-  if (!web_contents())
-    return;
-
-  content::WebContentsView* wcv = web_contents()->GetView();
-  if (!wcv)
-    return;
-
-  aura::Window* window = wcv->GetNativeView();
-  if (chrome::GetHostDesktopTypeForNativeView(window) ==
-      chrome::HOST_DESKTOP_TYPE_ASH) {
-    int routing_id = render_view_host->GetRoutingID();
-    render_view_host->Send(new ChromeViewMsg_NPAPINotSupported(routing_id));
-  }
-#endif
-}
-
 void PluginObserver::OnBlockedUnauthorizedPlugin(
-    const string16& name,
+    const base::string16& name,
     const std::string& identifier) {
   UnauthorizedPluginInfoBarDelegate::Create(
       InfoBarService::FromWebContents(web_contents()),
@@ -366,13 +373,13 @@ void PluginObserver::OnOpenAboutPlugins() {
   web_contents()->OpenURL(OpenURLParams(
       GURL(chrome::kAboutPluginsURL),
       content::Referrer(web_contents()->GetURL(),
-                        WebKit::WebReferrerPolicyDefault),
+                        blink::WebReferrerPolicyDefault),
       NEW_FOREGROUND_TAB, content::PAGE_TRANSITION_AUTO_BOOKMARK, false));
 }
 
 void PluginObserver::OnCouldNotLoadPlugin(const base::FilePath& plugin_path) {
   g_browser_process->metrics_service()->LogPluginLoadingError(plugin_path);
-  string16 plugin_name =
+  base::string16 plugin_name =
       PluginService::GetInstance()->GetPluginDisplayNameByPath(plugin_path);
   SimpleAlertInfoBarDelegate::Create(
       InfoBarService::FromWebContents(web_contents()),

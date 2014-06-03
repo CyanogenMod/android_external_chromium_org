@@ -12,20 +12,46 @@
 namespace cc {
 
 TracedPicture::TracedPicture(scoped_refptr<Picture> picture)
-  : picture_(picture) {
+  : picture_(picture),
+    is_alias_(false) {
 }
 
 TracedPicture::~TracedPicture() {
 }
 
-scoped_ptr<base::debug::ConvertableToTraceFormat>
+scoped_refptr<base::debug::ConvertableToTraceFormat>
     TracedPicture::AsTraceablePicture(Picture* picture) {
-  TracedPicture* ptr = new TracedPicture(picture);
-  scoped_ptr<TracedPicture> result(ptr);
-  return result.PassAs<base::debug::ConvertableToTraceFormat>();
+  return scoped_refptr<base::debug::ConvertableToTraceFormat>(
+      new TracedPicture(picture));
+}
+
+scoped_refptr<base::debug::ConvertableToTraceFormat>
+    TracedPicture::AsTraceablePictureAlias(Picture* original) {
+  scoped_refptr<TracedPicture> ptr = new TracedPicture(original);
+  ptr->is_alias_ = true;
+  return scoped_refptr<base::debug::ConvertableToTraceFormat>(ptr);
 }
 
 void TracedPicture::AppendAsTraceFormat(std::string* out) const {
+  if (is_alias_)
+    AppendPictureAlias(out);
+  else
+    AppendPicture(out);
+}
+
+void TracedPicture::AppendPictureAlias(std::string* out) const {
+  scoped_ptr<base::DictionaryValue> alias(new base::DictionaryValue());
+  alias->SetString("id_ref", base::StringPrintf("%p", picture_.get()));
+
+  scoped_ptr<base::DictionaryValue> res(new base::DictionaryValue());
+  res->Set("alias", alias.release());
+
+  std::string tmp;
+  base::JSONWriter::Write(res.get(), &tmp);
+  out->append(tmp);
+}
+
+void TracedPicture::AppendPicture(std::string* out) const {
   scoped_ptr<base::Value> value = picture_->AsValue();
   std::string tmp;
   base::JSONWriter::Write(value.get(), &tmp);

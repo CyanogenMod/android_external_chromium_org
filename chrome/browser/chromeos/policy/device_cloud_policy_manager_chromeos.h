@@ -11,11 +11,16 @@
 #include "base/basictypes.h"
 #include "base/callback.h"
 #include "base/compiler_specific.h"
+#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/chromeos/policy/enrollment_status_chromeos.h"
-#include "chrome/browser/policy/cloud/cloud_policy_client.h"
-#include "chrome/browser/policy/cloud/cloud_policy_manager.h"
-#include "chrome/browser/policy/cloud/cloud_policy_store.h"
+#include "components/policy/core/common/cloud/cloud_policy_client.h"
+#include "components/policy/core/common/cloud/cloud_policy_manager.h"
+#include "components/policy/core/common/cloud/cloud_policy_store.h"
+
+namespace base {
+class SequencedTaskRunner;
+}
 
 namespace chromeos {
 namespace attestation {
@@ -40,8 +45,13 @@ class DeviceCloudPolicyManagerChromeOS : public CloudPolicyManager {
   typedef std::bitset<32> AllowedDeviceModes;
   typedef base::Callback<void(EnrollmentStatus)> EnrollmentCallback;
 
+  // |task_runner| is the runner for policy refresh tasks.
+  // |background_task_runner| is used to execute long-running background tasks
+  // that may involve file I/O.
   DeviceCloudPolicyManagerChromeOS(
       scoped_ptr<DeviceCloudPolicyStoreChromeOS> store,
+      const scoped_refptr<base::SequencedTaskRunner>& task_runner,
+      const scoped_refptr<base::SequencedTaskRunner>& background_task_runner,
       EnterpriseInstallAttributes* install_attributes);
   virtual ~DeviceCloudPolicyManagerChromeOS();
 
@@ -105,9 +115,13 @@ class DeviceCloudPolicyManagerChromeOS : public CloudPolicyManager {
   void EnrollmentCompleted(const EnrollmentCallback& callback,
                            EnrollmentStatus status);
 
+  // Initializes requisition settings at OOBE with values from VPD.
+  void InitalizeRequisition();
+
   // Points to the same object as the base CloudPolicyManager::store(), but with
   // actual device policy specific type.
   scoped_ptr<DeviceCloudPolicyStoreChromeOS> device_store_;
+  scoped_refptr<base::SequencedTaskRunner> background_task_runner_;
   EnterpriseInstallAttributes* install_attributes_;
 
   DeviceManagementService* device_management_service_;

@@ -24,13 +24,14 @@ class MountHtml5Fs : public Mount {
   virtual Error Mkdir(const Path& path, int permissions);
   virtual Error Rmdir(const Path& path);
   virtual Error Remove(const Path& path);
+  virtual Error Rename(const Path& path, const Path& newpath);
 
   PP_Resource filesystem_resource() { return filesystem_resource_; }
 
  protected:
   MountHtml5Fs();
 
-  virtual Error Init(int dev, StringMap_t& args, PepperInterface* ppapi);
+  virtual Error Init(const MountInitArgs& args);
   virtual void Destroy();
 
   Error BlockUntilFilesystemOpen();

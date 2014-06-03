@@ -7,9 +7,9 @@
 
 #include <string>
 
-#include "ppapi/c/dev/ppb_testing_dev.h"
 #include "ppapi/c/pp_instance.h"
 #include "ppapi/c/pp_stdint.h"
+#include "ppapi/c/private/ppb_testing_private.h"
 #include "ppapi/cpp/completion_callback.h"
 #include "ppapi/cpp/message_loop.h"
 #include "ppapi/utility/completion_callback_factory.h"
@@ -21,7 +21,7 @@ class NetAddress;
 // Timeout to wait for some action to complete.
 extern const int kActionTimeoutMs;
 
-const PPB_Testing_Dev* GetTestingInterface();
+const PPB_Testing_Private* GetTestingInterface();
 std::string ReportError(const char* method, int32_t error);
 void PlatformSleep(int duration_ms);
 bool GetLocalHostPort(PP_Instance instance, std::string* host, uint16_t* port);
@@ -34,6 +34,11 @@ bool ResolveHost(PP_Instance instance,
                  const std::string& host,
                  uint16_t port,
                  pp::NetAddress* addr);
+bool ReplacePort(PP_Instance instance,
+                 const pp::NetAddress& input_addr,
+                 uint16_t port,
+                 pp::NetAddress* output_addr);
+uint16_t GetPort(const pp::NetAddress& addr);
 
 // NestedEvent allows you to run a nested MessageLoop and wait for a particular
 // event to complete. For example, you can use it to wait for a callback on a

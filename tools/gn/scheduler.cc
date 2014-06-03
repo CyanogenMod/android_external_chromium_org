@@ -5,28 +5,54 @@
 #include "tools/gn/scheduler.h"
 
 #include "base/bind.h"
-#include "tools/gn/ninja_target_writer.h"
+#include "base/command_line.h"
+#include "base/strings/string_number_conversions.h"
 #include "tools/gn/standard_out.h"
 
 Scheduler* g_scheduler = NULL;
 
+namespace {
+
+int GetThreadCount() {
+  std::string thread_count =
+      CommandLine::ForCurrentProcess()->GetSwitchValueASCII("threads");
+
+  int result;
+  if (thread_count.empty() || !base::StringToInt(thread_count, &result))
+    return 32;
+  return result;
+}
+
+}  // namespace
+
 Scheduler::Scheduler()
-    : pool_(new base::SequencedWorkerPool(32, "worker_")),
+    : pool_(new base::SequencedWorkerPool(GetThreadCount(), "worker_")),
       input_file_manager_(new InputFileManager),
       verbose_logging_(false),
       work_count_(0),
-      is_failed_(false) {
+      is_failed_(false),
+      has_been_shutdown_(false) {
   g_scheduler = this;
 }
 
 Scheduler::~Scheduler() {
+  if (!has_been_shutdown_)
+    pool_->Shutdown();
   g_scheduler = NULL;
 }
 
 bool Scheduler::Run() {
   runner_.Run();
+  bool local_is_failed;
+  {
+    base::AutoLock lock(lock_);
+    local_is_failed = is_failed();
+    has_been_shutdown_ = true;
+  }
+  // Don't do this inside the lock since it will block on the workers, which
+  // may be in turn waiting on the lock.
   pool_->Shutdown();
-  return !is_failed();
+  return !local_is_failed;
 }
 
 void Scheduler::Log(const std::string& verb, const std::string& msg) {
@@ -46,7 +72,7 @@ void Scheduler::FailWithError(const Err& err) {
   {
     base::AutoLock lock(lock_);
 
-    if (is_failed_)
+    if (is_failed_ || has_been_shutdown_)
       return;  // Ignore errors once we see one.
     is_failed_ = true;
   }
@@ -70,19 +96,12 @@ void Scheduler::ScheduleWork(const base::Closure& work) {
       base::SequencedWorkerPool::BLOCK_SHUTDOWN);
 }
 
-void Scheduler::ScheduleTargetFileWrite(const Target* target) {
-  pool_->PostWorkerTaskWithShutdownBehavior(
-      FROM_HERE, base::Bind(&Scheduler::DoTargetFileWrite,
-                            base::Unretained(this), target),
-      base::SequencedWorkerPool::BLOCK_SHUTDOWN);
-}
-
-void Scheduler::AddGenDependency(const SourceFile& source_file) {
+void Scheduler::AddGenDependency(const base::FilePath& file) {
   base::AutoLock lock(lock_);
-  gen_dependencies_.push_back(source_file);
+  gen_dependencies_.push_back(file);
 }
 
-std::vector<SourceFile> Scheduler::GetGenDependencies() const {
+std::vector<base::FilePath> Scheduler::GetGenDependencies() const {
   base::AutoLock lock(lock_);
   return gen_dependencies_;
 }
@@ -112,10 +131,6 @@ void Scheduler::LogOnMainThread(const std::string& verb,
 void Scheduler::FailWithErrorOnMainThread(const Err& err) {
   err.PrintToStdout();
   runner_.Quit();
-}
-
-void Scheduler::DoTargetFileWrite(const Target* target) {
-  NinjaTargetWriter::RunAndWriteFile(target);
 }
 
 void Scheduler::DoWork(const base::Closure& closure) {

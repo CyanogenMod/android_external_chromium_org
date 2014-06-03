@@ -19,11 +19,11 @@ const char kWidevineCdmDisplayName[] = "Widevine Content Decryption Module";
 // Will be parsed as HTML.
 const char kWidevineCdmDescription[] =
     "Enables Widevine licenses for playback of HTML audio/video content.";
+
 #if defined(ENABLE_PEPPER_CDMS)
 const char kWidevineCdmPluginMimeType[] = "application/x-ppapi-widevine-cdm";
 const char kWidevineCdmPluginMimeTypeDescription[] =
     "Widevine Content Decryption Module";
-#endif
 
 // File name of the CDM on different platforms.
 const char kWidevineCdmFileName[] =
@@ -35,7 +35,6 @@ const char kWidevineCdmFileName[] =
     "libwidevinecdm.so";
 #endif
 
-#if defined(ENABLE_PEPPER_CDMS)
 // File name of the adapter on different platforms.
 const char kWidevineCdmAdapterFileName[] =
 #if defined(OS_MACOSX)
@@ -45,12 +44,22 @@ const char kWidevineCdmAdapterFileName[] =
 #else  // OS_LINUX, etc.
     "libwidevinecdmadapter.so";
 #endif
-#endif  // defined(ENABLE_PEPPER_CDMS)
 
+// The following strings are used to communicate supported codecs (from the
+// component manifest) via WebPluginInfo::WebPluginMimeType's additional params.
+const char kCdmSupportedCodecsParamName[] = "codecs";
+const char kCdmSupportedCodecsValueDelimiter = ',';
+const char kCdmSupportedCodecVorbis[] = "vorbis";
+const char kCdmSupportedCodecVp8[] = "vp8";
+#if defined(USE_PROPRIETARY_CODECS)
+const char kCdmSupportedCodecAac[] = "aac";
+const char kCdmSupportedCodecAvc1[] = "avc1";
+#endif  // defined(USE_PROPRIETARY_CODECS)
 
-#if defined(ENABLE_PEPPER_CDMS) && (defined(OS_MACOSX) || defined(OS_WIN))
+#if defined(OS_MACOSX) || defined(OS_WIN)
 // CDM is installed by the component installer instead of the Chrome installer.
 #define WIDEVINE_CDM_IS_COMPONENT
-#endif
+#endif  // defined(OS_MACOSX) || defined(OS_WIN)
+#endif  // defined(ENABLE_PEPPER_CDMS)
 
 #endif  // WIDEVINE_CDM_WIDEVINE_CDM_COMMON_H_

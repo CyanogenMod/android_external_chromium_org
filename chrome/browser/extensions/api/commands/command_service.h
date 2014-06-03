@@ -10,11 +10,11 @@
 #include "base/basictypes.h"
 #include "chrome/browser/extensions/api/profile_keyed_api_factory.h"
 #include "chrome/common/extensions/command.h"
-#include "chrome/common/extensions/extension.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_source.h"
+#include "extensions/common/extension.h"
 
 class Profile;
 
@@ -45,6 +45,15 @@ class CommandService : public ProfileKeyedAPI,
     ACTIVE_ONLY,
   };
 
+  // An enum specifying whether the command is global in scope or not. Global
+  // commands -- unlike regular commands -- have a global keyboard hook
+  // associated with them (and therefore work when Chrome doesn't have focus).
+  enum CommandScope {
+    REGULAR,    // Regular (non-globally scoped) command.
+    GLOBAL,     // Global command (works when Chrome doesn't have focus)
+    ANY_SCOPE,  // All commands, regardless of scope (used when querying).
+  };
+
   // Register prefs for keybinding.
   static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
 
@@ -57,6 +66,11 @@ class CommandService : public ProfileKeyedAPI,
 
   // Convenience method to get the CommandService for a profile.
   static CommandService* Get(Profile* profile);
+
+  // Return true if the specified accelerator is one of the following multimedia
+  // keys: Next Track key, Previous Track key, Stop Media key, Play/Pause Media
+  // key, without any modifiers.
+  static bool IsMediaKey(const ui::Accelerator& accelerator);
 
   // Gets the command (if any) for the browser action of an extension given
   // its |extension_id|. The function consults the master list to see if
@@ -94,10 +108,11 @@ class CommandService : public ProfileKeyedAPI,
   // Gets the active command (if any) for the named commands of an extension
   // given its |extension_id|. The function consults the master list to see if
   // the command is active. Returns an empty map if the extension has no
-  // named commands or no active named commands when |type| requested is
-  // ACTIVE_ONLY.
+  // named commands of the right |scope| or no such active named commands when
+  // |type| requested is ACTIVE_ONLY.
   bool GetNamedCommands(const std::string& extension_id,
                         QueryType type,
+                        CommandScope scope,
                         extensions::CommandMap* command_map);
 
   // Records a keybinding |accelerator| as active for an extension with id
@@ -105,12 +120,14 @@ class CommandService : public ProfileKeyedAPI,
   // |allow_overrides| is false, the keybinding must be free for the change to
   // be recorded (as determined by the master list in |user_prefs|). If
   // |allow_overwrites| is true, any previously recorded keybinding for this
-  // |accelerator| will be overwritten. Returns true if the change was
-  // successfully recorded.
+  // |accelerator| will be overwritten. If |global| is true, the command will
+  // be registered as a global command (be active even when Chrome does not have
+  // focus. Returns true if the change was successfully recorded.
   bool AddKeybindingPref(const ui::Accelerator& accelerator,
                          std::string extension_id,
                          std::string command_name,
-                         bool allow_overrides);
+                         bool allow_overrides,
+                         bool global);
 
   // Removes all keybindings for a given extension by its |extension_id|.
   // |command_name| is optional and if specified, causes only the command with
@@ -125,12 +142,18 @@ class CommandService : public ProfileKeyedAPI,
                              const std::string& command_name,
                              const std::string& keystroke);
 
-  // Finds the shortcut assigned to a command with the name |command_name|
-  // within an extension with id |extension_id|. Returns an empty Accelerator
-  // object (with keycode VKEY_UNKNOWN) if no shortcut is assigned or the
-  // command is not found.
-  ui::Accelerator FindShortcutForCommand(const std::string& extension_id,
-                                         const std::string& command);
+  // Set the scope of the keybinding. If |global| is true, the keybinding works
+  // even when Chrome does not have focus. If the scope requested is already
+  // set, the function returns false, otherwise true.
+  bool SetScope(const std::string& extension_id,
+                const std::string& command_name,
+                bool global);
+
+  // Finds the command with the name |command_name| within an extension with id
+  // |extension_id| . Returns an empty Command object (with keycode
+  // VKEY_UNKNOWN) if the command is not found.
+  Command FindCommandByName(const std::string& extension_id,
+                            const std::string& command);
 
   // Overridden from content::NotificationObserver.
   virtual void Observe(int type,
@@ -174,6 +197,9 @@ class CommandService : public ProfileKeyedAPI,
 
   DISALLOW_COPY_AND_ASSIGN(CommandService);
 };
+
+template <>
+void ProfileKeyedAPIFactory<CommandService>::DeclareFactoryDependencies();
 
 }  //  namespace extensions
 

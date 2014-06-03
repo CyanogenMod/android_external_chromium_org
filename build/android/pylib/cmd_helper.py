@@ -4,21 +4,27 @@
 
 """A wrapper for subprocess to make calling shell commands easier."""
 
-import os
 import logging
 import pipes
 import signal
 import subprocess
 import tempfile
 
-import constants
+from utils import timeout_retry
 
 
-def _Call(args, stdout=None, stderr=None, shell=None, cwd=None):
-  return subprocess.call(
+def Popen(args, stdout=None, stderr=None, shell=None, cwd=None, env=None):
+  return subprocess.Popen(
       args=args, cwd=cwd, stdout=stdout, stderr=stderr,
-      shell=shell, close_fds=True,
+      shell=shell, close_fds=True, env=env,
       preexec_fn=lambda: signal.signal(signal.SIGPIPE, signal.SIG_DFL))
+
+
+def Call(args, stdout=None, stderr=None, shell=None, cwd=None, env=None):
+  pipe = Popen(args, stdout=stdout, stderr=stderr, shell=shell, cwd=cwd,
+               env=env)
+  pipe.communicate()
+  return pipe.wait()
 
 
 def RunCmd(args, cwd=None):
@@ -34,7 +40,7 @@ def RunCmd(args, cwd=None):
     Return code from the command execution.
   """
   logging.info(str(args) + ' ' + (cwd or ''))
-  return _Call(args, cwd=cwd)
+  return Call(args, cwd=cwd)
 
 
 def GetCmdOutput(args, cwd=None, shell=False):
@@ -66,7 +72,7 @@ def GetCmdStatusAndOutput(args, cwd=None, shell=False):
     shell: Whether to execute args as a shell command.
 
   Returns:
-    The tuple (exit code, output).
+    The 2-tuple (exit code, output).
   """
   if isinstance(args, basestring):
     args_repr = args
@@ -84,7 +90,7 @@ def GetCmdStatusAndOutput(args, cwd=None, shell=False):
   logging.info(s)
   tmpout = tempfile.TemporaryFile(bufsize=0)
   tmperr = tempfile.TemporaryFile(bufsize=0)
-  exit_code = _Call(args, cwd=cwd, stdout=tmpout, stderr=tmperr, shell=shell)
+  exit_code = Call(args, cwd=cwd, stdout=tmpout, stderr=tmperr, shell=shell)
   tmperr.seek(0)
   stderr = tmperr.read()
   tmperr.close()
@@ -99,12 +105,16 @@ def GetCmdStatusAndOutput(args, cwd=None, shell=False):
   return (exit_code, stdout)
 
 
-class OutDirectory(object):
-  _out_directory = os.path.join(constants.DIR_SOURCE_ROOT,
-      os.environ.get('CHROMIUM_OUT_DIR','out'))
-  @staticmethod
-  def set(out_directory):
-    OutDirectory._out_directory = out_directory
-  @staticmethod
-  def get():
-    return OutDirectory._out_directory
+def GetCmdStatusAndOutputWithTimeoutAndRetries(args, timeout, retries):
+  """Executes a subprocess with a timeout and retries.
+
+  Args:
+    args: List of arguments to the program, the program to execute is the first
+      element.
+    timeout: the timeout in seconds.
+    retries: the number of retries.
+
+  Returns:
+    The 2-tuple (exit code, output).
+  """
+  return timeout_retry.Run(GetCmdStatusAndOutput, timeout, retries, [args])

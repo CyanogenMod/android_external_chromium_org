@@ -69,11 +69,6 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemBackend {
       OpenFileSystemMode mode,
       const OpenFileSystemCallback& callback) = 0;
 
-  // Returns the specialized FileSystemFileUtil for this backend.
-  // It is ok to return NULL if the filesystem doesn't support synchronous
-  // version of FileUtil.
-  virtual FileSystemFileUtil* GetFileUtil(FileSystemType type) = 0;
-
   // Returns the specialized AsyncFileUtil for this backend.
   virtual AsyncFileUtil* GetAsyncFileUtil(FileSystemType type) = 0;
 
@@ -103,10 +98,10 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemBackend {
   // This method itself does *not* check if the given path exists and is a
   // regular file.
   virtual scoped_ptr<webkit_blob::FileStreamReader> CreateFileStreamReader(
-    const FileSystemURL& url,
-    int64 offset,
-    const base::Time& expected_modification_time,
-    FileSystemContext* context) const = 0;
+      const FileSystemURL& url,
+      int64 offset,
+      const base::Time& expected_modification_time,
+      FileSystemContext* context) const = 0;
 
   // Creates a new file stream writer for a given filesystem URL |url| with an
   // offset |offset|.

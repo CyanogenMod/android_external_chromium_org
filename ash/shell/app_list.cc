@@ -8,18 +8,22 @@
 #include "ash/shell.h"
 #include "ash/shell/example_factory.h"
 #include "ash/shell/toplevel_window.h"
+#include "ash/shell_delegate.h"
 #include "base/basictypes.h"
 #include "base/callback.h"
 #include "base/files/file_path.h"
 #include "base/i18n/case_conversion.h"
 #include "base/i18n/string_search.h"
 #include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
+#include "ui/app_list/app_list_item_list.h"
 #include "ui/app_list/app_list_item_model.h"
 #include "ui/app_list/app_list_model.h"
 #include "ui/app_list/app_list_view_delegate.h"
 #include "ui/app_list/search_box_model.h"
 #include "ui/app_list/search_result.h"
+#include "ui/app_list/speech_ui_model.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/font.h"
 #include "ui/gfx/image/image_skia.h"
@@ -44,9 +48,12 @@ class WindowTypeLauncherItem : public app_list::AppListItemModel {
     LAST_TYPE,
   };
 
-  explicit WindowTypeLauncherItem(Type type) : type_(type) {
+  explicit WindowTypeLauncherItem(const std::string& id, Type type)
+      : app_list::AppListItemModel(id),
+        type_(type) {
+    std::string title(GetTitle(type));
     SetIcon(GetIcon(type), false);
-    SetTitle(GetTitle(type));
+    SetTitleAndFullName(title, title);
   }
 
   static gfx::ImageSkia GetIcon(Type type) {
@@ -98,7 +105,7 @@ class WindowTypeLauncherItem : public app_list::AppListItemModel {
     }
   }
 
-  static void Activate(Type type, int event_flags) {
+  static void ActivateItem(Type type, int event_flags) {
      switch (type) {
       case TOPLEVEL_WINDOW: {
         ToplevelWindow::CreateParams params;
@@ -119,11 +126,10 @@ class WindowTypeLauncherItem : public app_list::AppListItemModel {
         break;
       }
       case EXAMPLES_WINDOW: {
-#if !defined(OS_MACOSX)
         views::examples::ShowExamplesWindowWithContent(
             views::examples::DO_NOTHING_ON_CLOSE,
-            ash::Shell::GetInstance()->browser_context());
-#endif
+            Shell::GetInstance()->delegate()->GetActiveBrowserContext(),
+            NULL);
         break;
       }
       default:
@@ -131,8 +137,9 @@ class WindowTypeLauncherItem : public app_list::AppListItemModel {
     }
   }
 
-  void Activate(int event_flags) {
-    Activate(type_, event_flags);
+  // AppListItemModel
+  virtual void Activate(int event_flags) OVERRIDE {
+    ActivateItem(type_, event_flags);
   }
 
  private:
@@ -188,16 +195,21 @@ class ExampleSearchResult : public app_list::SearchResult {
 
 class ExampleAppListViewDelegate : public app_list::AppListViewDelegate {
  public:
-  ExampleAppListViewDelegate() : model_(NULL) {}
+  ExampleAppListViewDelegate()
+      : model_(new app_list::AppListModel) {
+    PopulateApps(model_->item_list());
+    DecorateSearchBox(model_->search_box());
+  }
 
  private:
-  void PopulateApps(app_list::AppListModel::Apps* apps) {
+  void PopulateApps(app_list::AppListItemList* item_list) {
     for (int i = 0;
          i < static_cast<int>(WindowTypeLauncherItem::LAST_TYPE);
          ++i) {
       WindowTypeLauncherItem::Type type =
           static_cast<WindowTypeLauncherItem::Type>(i);
-      apps->Add(new WindowTypeLauncherItem(type));
+      std::string id = base::StringPrintf("%d", i);
+      item_list->AddItem(new WindowTypeLauncherItem(id, type));
     }
   }
 
@@ -205,8 +217,7 @@ class ExampleAppListViewDelegate : public app_list::AppListViewDelegate {
     const base::string16 icon_text = ASCIIToUTF16("ash");
     const gfx::Size icon_size(32, 32);
 
-    gfx::Canvas canvas(icon_size, ui::SCALE_FACTOR_100P,
-                       false /* is_opaque */);
+    gfx::Canvas canvas(icon_size, 1.0f, false /* is_opaque */);
     canvas.DrawStringInt(icon_text,
                          gfx::Font(),
                          SK_ColorBLACK,
@@ -222,32 +233,40 @@ class ExampleAppListViewDelegate : public app_list::AppListViewDelegate {
     search_box_model->SetHintText(ASCIIToUTF16("Type to search..."));
   }
 
-  // Overridden from ash::AppListViewDelegate:
-  virtual void SetModel(app_list::AppListModel* model) OVERRIDE {
-    model_ = model;
-    PopulateApps(model_->apps());
-    DecorateSearchBox(model_->search_box());
+  // Overridden from app_list::AppListViewDelegate:
+  virtual bool ForceNativeDesktop() const OVERRIDE {
+    return false;
   }
+
+  virtual void SetProfileByPath(const base::FilePath& profile_path) OVERRIDE {
+    // Nothing needs to be done.
+  }
+
+  virtual const Users& GetUsers() const OVERRIDE {
+    return users_;
+  }
+
+  virtual app_list::AppListModel* GetModel() OVERRIDE { return model_.get(); }
 
   virtual app_list::SigninDelegate* GetSigninDelegate() OVERRIDE {
     return NULL;
   }
 
+  virtual app_list::SpeechUIModel* GetSpeechUI() OVERRIDE {
+    return &speech_ui_;
+  }
+
   virtual void GetShortcutPathForApp(
       const std::string& app_id,
       const base::Callback<void(const base::FilePath&)>& callback) OVERRIDE {
-  }
-
-  virtual void ActivateAppListItem(app_list::AppListItemModel* item,
-                                   int event_flags) OVERRIDE {
-    static_cast<WindowTypeLauncherItem*>(item)->Activate(event_flags);
+    callback.Run(base::FilePath());
   }
 
   virtual void OpenSearchResult(app_list::SearchResult* result,
                                 int event_flags) OVERRIDE {
     const ExampleSearchResult* example_result =
         static_cast<const ExampleSearchResult*>(result);
-    WindowTypeLauncherItem::Activate(example_result->type(), event_flags);
+    WindowTypeLauncherItem::ActivateItem(example_result->type(), event_flags);
   }
 
   virtual void InvokeSearchResultAction(app_list::SearchResult* result,
@@ -294,20 +313,8 @@ class ExampleAppListViewDelegate : public app_list::AppListViewDelegate {
     // Nothing needs to be done.
   }
 
-  virtual void ViewActivationChanged(bool active) OVERRIDE {
-    // Nothing needs to be done.
-  }
-
   virtual gfx::ImageSkia GetWindowIcon() OVERRIDE {
     return gfx::ImageSkia();
-  }
-
-  virtual base::string16 GetCurrentUserName() OVERRIDE {
-    return base::string16();
-  }
-
-  virtual base::string16 GetCurrentUserEmail() OVERRIDE {
-    return base::string16();
   }
 
   virtual void OpenSettings() OVERRIDE {
@@ -322,7 +329,22 @@ class ExampleAppListViewDelegate : public app_list::AppListViewDelegate {
     // Nothing needs to be done.
   }
 
-  app_list::AppListModel* model_;
+  virtual void ToggleSpeechRecognition() OVERRIDE {
+    NOTIMPLEMENTED();
+  }
+
+  virtual void ShowForProfileByPath(
+      const base::FilePath& profile_path) OVERRIDE {
+    // Nothing needs to be done.
+  }
+
+  virtual content::WebContents* GetStartPageContents() OVERRIDE {
+    return NULL;
+  }
+
+  scoped_ptr<app_list::AppListModel> model_;
+  app_list::SpeechUIModel speech_ui_;
+  Users users_;
 
   DISALLOW_COPY_AND_ASSIGN(ExampleAppListViewDelegate);
 };

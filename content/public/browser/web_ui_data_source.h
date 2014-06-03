@@ -30,7 +30,8 @@ class WebUIDataSource {
                                  WebUIDataSource* source);
 
   // Adds a string keyed to its name to our dictionary.
-  virtual void AddString(const std::string& name, const string16& value) = 0;
+  virtual void AddString(const std::string& name,
+                         const base::string16& value) = 0;
 
   // Adds a string keyed to its name to our dictionary.
   virtual void AddString(const std::string& name, const std::string& value) = 0;
@@ -78,6 +79,9 @@ class WebUIDataSource {
   // NOTE: it's not acceptable to call DisableContentSecurityPolicy for new
   // pages, see URLDataSource::ShouldAddContentSecurityPolicy and talk to
   // tsepez.
+
+  // Currently only used by embedders for WebUIs with multiple instances.
+  virtual void DisableReplaceExistingSource() = 0;
   virtual void DisableContentSecurityPolicy() = 0;
   virtual void OverrideContentSecurityPolicyObjectSrc(
       const std::string& data) = 0;

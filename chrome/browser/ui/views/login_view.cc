@@ -25,7 +25,7 @@ using views::GridLayout;
 ///////////////////////////////////////////////////////////////////////////////
 // LoginView, public:
 
-LoginView::LoginView(const string16& explanation,
+LoginView::LoginView(const base::string16& explanation,
                      LoginModel* model)
     : username_field_(new views::Textfield),
       password_field_(new views::Textfield(views::Textfield::STYLE_OBSCURED)),
@@ -88,11 +88,11 @@ LoginView::~LoginView() {
     login_model_->RemoveObserver(this);
 }
 
-string16 LoginView::GetUsername() {
+base::string16 LoginView::GetUsername() {
   return username_field_->text();
 }
 
-string16 LoginView::GetPassword() {
+base::string16 LoginView::GetPassword() {
   return password_field_->text();
 }
 
@@ -103,8 +103,8 @@ views::View* LoginView::GetInitiallyFocusedView() {
 ///////////////////////////////////////////////////////////////////////////////
 // LoginView, views::View, views::LoginModelObserver overrides:
 
-void LoginView::OnAutofillDataAvailable(const string16& username,
-                                        const string16& password) {
+void LoginView::OnAutofillDataAvailable(const base::string16& username,
+                                        const base::string16& password) {
   if (username_field_->text().empty()) {
     username_field_->SetText(username);
     password_field_->SetText(password);

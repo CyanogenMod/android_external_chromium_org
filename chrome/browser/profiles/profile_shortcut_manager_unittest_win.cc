@@ -67,7 +67,8 @@ class ProfileShortcutManagerTest : public testing::Test {
     for (int i = 0; i < num_profiles; ++i) {
       const base::FilePath profile_path =
           profile_info_cache_->GetPathOfProfileAtIndex(0);
-      string16 profile_name = profile_info_cache_->GetNameOfProfileAtIndex(0);
+      base::string16 profile_name =
+          profile_info_cache_->GetNameOfProfileAtIndex(0);
       profile_info_cache_->DeleteProfileFromCache(profile_path);
       RunPendingTasks();
       ASSERT_FALSE(ProfileShortcutExistsAtDefaultPath(profile_name));
@@ -78,10 +79,10 @@ class ProfileShortcutManagerTest : public testing::Test {
     }
   }
 
-  base::FilePath CreateProfileDirectory(const string16& profile_name) {
+  base::FilePath CreateProfileDirectory(const base::string16& profile_name) {
     const base::FilePath profile_path =
         profile_info_cache_->GetUserDataDir().Append(profile_name);
-    file_util::CreateDirectory(profile_path);
+    base::CreateDirectory(profile_path);
     return profile_path;
   }
 
@@ -97,7 +98,7 @@ class ProfileShortcutManagerTest : public testing::Test {
     ASSERT_FALSE(ProfileShortcutExistsAtDefaultPath(profile_1_name_))
         << location.ToString();
     profile_info_cache_->AddProfileToCache(profile_1_path_, profile_1_name_,
-                                           string16(), 0, std::string());
+                                           base::string16(), 0, std::string());
     // Also create a non-badged shortcut for Chrome, which is conveniently done
     // by |CreateProfileShortcut()| since there is only one profile.
     profile_shortcut_manager_->CreateProfileShortcut(profile_1_path_);
@@ -114,14 +115,14 @@ class ProfileShortcutManagerTest : public testing::Test {
 
   // Returns the default shortcut path for this profile.
   base::FilePath GetDefaultShortcutPathForProfile(
-      const string16& profile_name) {
+      const base::string16& profile_name) {
     return GetUserShortcutsDirectory().Append(
         profiles::internal::GetShortcutFilenameForProfile(profile_name,
                                                           GetDistribution()));
   }
 
   // Returns true if the shortcut for this profile exists.
-  bool ProfileShortcutExistsAtDefaultPath(const string16& profile_name) {
+  bool ProfileShortcutExistsAtDefaultPath(const base::string16& profile_name) {
     return base::PathExists(
         GetDefaultShortcutPathForProfile(profile_name));
   }
@@ -153,7 +154,7 @@ class ProfileShortcutManagerTest : public testing::Test {
   // Calls base::win::ValidateShortcut() with expected properties for
   // |profile_name|'s shortcut.
   void ValidateProfileShortcut(const tracked_objects::Location& location,
-                               const string16& profile_name,
+                               const base::string16& profile_name,
                                const base::FilePath& profile_path) {
     ValidateProfileShortcutAtPath(
         location, GetDefaultShortcutPathForProfile(profile_name), profile_path);
@@ -166,7 +167,7 @@ class ProfileShortcutManagerTest : public testing::Test {
 
     base::win::ShortcutProperties expected_properties;
     expected_properties.set_target(GetExePath());
-    expected_properties.set_arguments(string16());
+    expected_properties.set_arguments(base::string16());
     expected_properties.set_icon(GetExePath(), 0);
     expected_properties.set_description(GetDistribution()->GetAppDescription());
     expected_properties.set_dual_mode(false);
@@ -175,17 +176,17 @@ class ProfileShortcutManagerTest : public testing::Test {
 
   void ValidateNonProfileShortcut(const tracked_objects::Location& location) {
     const base::FilePath shortcut_path =
-        GetDefaultShortcutPathForProfile(string16());
+        GetDefaultShortcutPathForProfile(base::string16());
     ValidateNonProfileShortcutAtPath(location, shortcut_path);
   }
 
   void CreateProfileWithShortcut(const tracked_objects::Location& location,
-                                 const string16& profile_name,
+                                 const base::string16& profile_name,
                                  const base::FilePath& profile_path) {
     ASSERT_FALSE(ProfileShortcutExistsAtDefaultPath(profile_name))
         << location.ToString();
     profile_info_cache_->AddProfileToCache(profile_path, profile_name,
-                                           string16(), 0, std::string());
+                                           base::string16(), 0, std::string());
     profile_shortcut_manager_->CreateProfileShortcut(profile_path);
     RunPendingTasks();
     ValidateProfileShortcut(location, profile_name, profile_path);
@@ -195,7 +196,7 @@ class ProfileShortcutManagerTest : public testing::Test {
   // returns its path. Fails the test if an error occurs.
   base::FilePath CreateRegularShortcutWithName(
       const tracked_objects::Location& location,
-      const string16& shortcut_name) {
+      const base::string16& shortcut_name) {
     const base::FilePath shortcut_path =
         GetUserShortcutsDirectory().Append(shortcut_name + installer::kLnkExt);
     EXPECT_FALSE(base::PathExists(shortcut_path)) << location.ToString();
@@ -223,7 +224,9 @@ class ProfileShortcutManagerTest : public testing::Test {
         ShellUtil::SHELL_SHORTCUT_CREATE_ALWAYS)) << location.ToString();
     const base::FilePath system_level_shortcut_path =
         GetSystemShortcutsDirectory().Append(
-            distribution->GetAppShortCutName() + installer::kLnkExt);
+            distribution->
+                GetShortcutName(BrowserDistribution::SHORTCUT_CHROME) +
+                installer::kLnkExt);
     EXPECT_TRUE(base::PathExists(system_level_shortcut_path))
         << location.ToString();
     return system_level_shortcut_path;
@@ -231,7 +234,7 @@ class ProfileShortcutManagerTest : public testing::Test {
 
   void RenameProfile(const tracked_objects::Location& location,
                      const base::FilePath& profile_path,
-                     const string16& new_profile_name) {
+                     const base::string16& new_profile_name) {
     const size_t profile_index =
         profile_info_cache_->GetIndexOfProfileWithPath(profile_2_path_);
     ASSERT_NE(std::string::npos, profile_index);
@@ -278,18 +281,18 @@ class ProfileShortcutManagerTest : public testing::Test {
   ProfileInfoCache* profile_info_cache_;
   base::ScopedPathOverride fake_user_desktop_;
   base::ScopedPathOverride fake_system_desktop_;
-  string16 profile_1_name_;
+  base::string16 profile_1_name_;
   base::FilePath profile_1_path_;
-  string16 profile_2_name_;
+  base::string16 profile_2_name_;
   base::FilePath profile_2_path_;
-  string16 profile_3_name_;
+  base::string16 profile_3_name_;
   base::FilePath profile_3_path_;
 };
 
 TEST_F(ProfileShortcutManagerTest, ShortcutFilename) {
-  const string16 kProfileName = L"Harry";
+  const base::string16 kProfileName = L"Harry";
   BrowserDistribution* distribution = GetDistribution();
-  const string16 expected_name = kProfileName + L" - " +
+  const base::string16 expected_name = kProfileName + L" - " +
       l10n_util::GetStringUTF16(IDS_SHORT_PRODUCT_NAME) + installer::kLnkExt;
   EXPECT_EQ(expected_name,
             profiles::internal::GetShortcutFilenameForProfile(kProfileName,
@@ -297,21 +300,22 @@ TEST_F(ProfileShortcutManagerTest, ShortcutFilename) {
 }
 
 TEST_F(ProfileShortcutManagerTest, ShortcutLongFilenameIsTrimmed) {
-  const string16 kLongProfileName = L"Harry Harry Harry Harry Harry Harry Harry"
+  const base::string16 kLongProfileName =
+      L"Harry Harry Harry Harry Harry Harry Harry"
       L"Harry Harry Harry Harry Harry Harry Harry Harry Harry Harry Harry"
       L"Harry Harry Harry Harry Harry Harry Harry Harry Harry Harry Harry";
-  const string16 file_name =
+  const base::string16 file_name =
       profiles::internal::GetShortcutFilenameForProfile(kLongProfileName,
                                                         GetDistribution());
   EXPECT_LT(file_name.size(), kLongProfileName.size());
 }
 
 TEST_F(ProfileShortcutManagerTest, ShortcutFilenameStripsReservedCharacters) {
-  const string16 kProfileName = L"<Harry/>";
-  const string16 kSanitizedProfileName = L"Harry";
+  const base::string16 kProfileName = L"<Harry/>";
+  const base::string16 kSanitizedProfileName = L"Harry";
   BrowserDistribution* distribution = GetDistribution();
-  const string16 expected_name = kSanitizedProfileName + L" - " +
-      distribution->GetAppShortCutName() + installer::kLnkExt;
+  const base::string16 expected_name = kSanitizedProfileName + L" - " +
+      l10n_util::GetStringUTF16(IDS_SHORT_PRODUCT_NAME) + installer::kLnkExt;
   EXPECT_EQ(expected_name,
             profiles::internal::GetShortcutFilenameForProfile(kProfileName,
                                                               distribution));
@@ -319,13 +323,15 @@ TEST_F(ProfileShortcutManagerTest, ShortcutFilenameStripsReservedCharacters) {
 
 TEST_F(ProfileShortcutManagerTest, UnbadgedShortcutFilename) {
   BrowserDistribution* distribution = GetDistribution();
-  EXPECT_EQ(distribution->GetAppShortCutName() + installer::kLnkExt,
-            profiles::internal::GetShortcutFilenameForProfile(string16(),
-                                                              distribution));
+  EXPECT_EQ(
+      distribution->GetShortcutName(BrowserDistribution::SHORTCUT_CHROME) +
+          installer::kLnkExt,
+      profiles::internal::GetShortcutFilenameForProfile(base::string16(),
+                                                        distribution));
 }
 
 TEST_F(ProfileShortcutManagerTest, ShortcutFlags) {
-  const string16 kProfileName = L"MyProfileX";
+  const base::string16 kProfileName = L"MyProfileX";
   const base::FilePath profile_path =
       profile_info_cache_->GetUserDataDir().Append(kProfileName);
   EXPECT_EQ(L"--profile-directory=\"" + kProfileName + L"\"",
@@ -345,7 +351,7 @@ TEST_F(ProfileShortcutManagerTest, DesktopShortcutsUpdate) {
 
   // Cause an update in ProfileShortcutManager by modifying the profile info
   // cache.
-  const string16 new_profile_2_name = L"New Profile Name";
+  const base::string16 new_profile_2_name = L"New Profile Name";
   RenameProfile(FROM_HERE, profile_2_path_, new_profile_2_name);
   EXPECT_FALSE(ProfileShortcutExistsAtDefaultPath(profile_2_name_));
   ValidateProfileShortcut(FROM_HERE, new_profile_2_name, profile_2_path_);
@@ -354,17 +360,17 @@ TEST_F(ProfileShortcutManagerTest, DesktopShortcutsUpdate) {
 TEST_F(ProfileShortcutManagerTest, CreateSecondProfileBadgesFirstShortcut) {
   SetupDefaultProfileShortcut(FROM_HERE);
   // Assert that a shortcut without a profile name exists.
-  ASSERT_TRUE(ProfileShortcutExistsAtDefaultPath(string16()));
+  ASSERT_TRUE(ProfileShortcutExistsAtDefaultPath(base::string16()));
 
   // Create a second profile without a shortcut.
   profile_info_cache_->AddProfileToCache(profile_2_path_, profile_2_name_,
-                                         string16(), 0, std::string());
+                                         base::string16(), 0, std::string());
   RunPendingTasks();
 
   // Ensure that the second profile doesn't have a shortcut and that the first
   // profile's shortcut got renamed and badged.
   EXPECT_FALSE(ProfileShortcutExistsAtDefaultPath(profile_2_name_));
-  EXPECT_FALSE(ProfileShortcutExistsAtDefaultPath(string16()));
+  EXPECT_FALSE(ProfileShortcutExistsAtDefaultPath(base::string16()));
   ValidateProfileShortcut(FROM_HERE, profile_1_name_, profile_1_path_);
 }
 
@@ -436,7 +442,7 @@ TEST_F(ProfileShortcutManagerTest, DeleteOnlyProfileWithShortcuts) {
   CreateProfileWithShortcut(FROM_HERE, profile_3_name_, profile_3_path_);
 
   const base::FilePath non_profile_shortcut_path =
-      GetDefaultShortcutPathForProfile(string16());
+      GetDefaultShortcutPathForProfile(base::string16());
   const base::FilePath profile_1_shortcut_path =
       GetDefaultShortcutPathForProfile(profile_1_name_);
   const base::FilePath profile_2_shortcut_path =
@@ -483,7 +489,7 @@ TEST_F(ProfileShortcutManagerTest, DesktopShortcutsCreateSecond) {
   // Verify that the original shortcut received the profile's name.
   ValidateProfileShortcut(FROM_HERE, profile_1_name_, profile_1_path_);
   // Verify that a default shortcut no longer exists.
-  EXPECT_FALSE(ProfileShortcutExistsAtDefaultPath(string16()));
+  EXPECT_FALSE(ProfileShortcutExistsAtDefaultPath(base::string16()));
 }
 
 TEST_F(ProfileShortcutManagerTest, RenamedDesktopShortcuts) {
@@ -559,7 +565,7 @@ TEST_F(ProfileShortcutManagerTest, RenamedDesktopShortcutsAfterProfileRename) {
                                 profile_2_path_);
 
   // Now, rename the profile.
-  const string16 new_profile_2_name = L"New profile";
+  const base::string16 new_profile_2_name = L"New profile";
   RenameProfile(FROM_HERE, profile_2_path_, new_profile_2_name);
 
   // The original shortcut should be renamed but the copied shortcut should
@@ -575,11 +581,12 @@ TEST_F(ProfileShortcutManagerTest, UpdateShortcutWithNoFlags) {
 
   // Delete the shortcut that got created for this profile and instead make
   // a new one without any command-line flags.
-  ASSERT_TRUE(base::DeleteFile(GetDefaultShortcutPathForProfile(string16()),
-                                false));
+  ASSERT_TRUE(base::DeleteFile(
+      GetDefaultShortcutPathForProfile(base::string16()), false));
   const base::FilePath regular_shortcut_path =
       CreateRegularShortcutWithName(FROM_HERE,
-                                    GetDistribution()->GetAppShortCutName());
+                                    GetDistribution()->GetShortcutName(
+                                        BrowserDistribution::SHORTCUT_CHROME));
 
   // Add another profile and check that the shortcut was replaced with
   // a badged shortcut with the right command line for the profile
@@ -593,11 +600,12 @@ TEST_F(ProfileShortcutManagerTest, UpdateTwoShortcutsWithNoFlags) {
 
   // Delete the shortcut that got created for this profile and instead make
   // two new ones without any command-line flags.
-  ASSERT_TRUE(base::DeleteFile(GetDefaultShortcutPathForProfile(string16()),
-                                false));
+  ASSERT_TRUE(base::DeleteFile(
+      GetDefaultShortcutPathForProfile(base::string16()), false));
   const base::FilePath regular_shortcut_path =
       CreateRegularShortcutWithName(FROM_HERE,
-                                    GetDistribution()->GetAppShortCutName());
+                                    GetDistribution()->GetShortcutName(
+                                        BrowserDistribution::SHORTCUT_CHROME));
   const base::FilePath customized_regular_shortcut_path =
       CreateRegularShortcutWithName(FROM_HERE, L"MyChrome");
 
@@ -678,14 +686,14 @@ TEST_F(ProfileShortcutManagerTest, ProfileShortcutsWithSystemLevelShortcut) {
 
   // Create the initial profile.
   profile_info_cache_->AddProfileToCache(profile_1_path_, profile_1_name_,
-                                         string16(), 0, std::string());
+                                         base::string16(), 0, std::string());
   RunPendingTasks();
   ASSERT_EQ(1U, profile_info_cache_->GetNumberOfProfiles());
 
   // Ensure system-level continues to exist and user-level was not created.
   EXPECT_TRUE(base::PathExists(system_level_shortcut_path));
   EXPECT_FALSE(base::PathExists(
-                   GetDefaultShortcutPathForProfile(string16())));
+                   GetDefaultShortcutPathForProfile(base::string16())));
 
   // Create another profile with a shortcut and ensure both profiles receive
   // user-level profile shortcuts and the system-level one still exists.
@@ -696,7 +704,7 @@ TEST_F(ProfileShortcutManagerTest, ProfileShortcutsWithSystemLevelShortcut) {
 
   // Create a third profile without a shortcut and ensure it doesn't get one.
   profile_info_cache_->AddProfileToCache(profile_3_path_, profile_3_name_,
-                                         string16(), 0, std::string());
+                                         base::string16(), 0, std::string());
   RunPendingTasks();
   EXPECT_FALSE(ProfileShortcutExistsAtDefaultPath(profile_3_name_));
 
@@ -707,7 +715,7 @@ TEST_F(ProfileShortcutManagerTest, ProfileShortcutsWithSystemLevelShortcut) {
   RunPendingTasks();
   EXPECT_FALSE(ProfileShortcutExistsAtDefaultPath(profile_3_name_));
 
-  const string16 new_profile_3_name = L"New Name 3";
+  const base::string16 new_profile_3_name = L"New Name 3";
   profile_info_cache_->SetNameOfProfileAtIndex(
       profile_info_cache_->GetIndexOfProfileWithPath(profile_3_path_),
       new_profile_3_name);
@@ -716,7 +724,7 @@ TEST_F(ProfileShortcutManagerTest, ProfileShortcutsWithSystemLevelShortcut) {
   EXPECT_FALSE(ProfileShortcutExistsAtDefaultPath(new_profile_3_name));
 
   // Rename the second profile and ensure its shortcut got renamed.
-  const string16 new_profile_2_name = L"New Name 2";
+  const base::string16 new_profile_2_name = L"New Name 2";
   profile_info_cache_->SetNameOfProfileAtIndex(
       profile_info_cache_->GetIndexOfProfileWithPath(profile_2_path_),
       new_profile_2_name);
@@ -738,7 +746,7 @@ TEST_F(ProfileShortcutManagerTest,
   RunPendingTasks();
 
   EXPECT_TRUE(base::PathExists(system_level_shortcut_path));
-  EXPECT_FALSE(ProfileShortcutExistsAtDefaultPath(string16()));
+  EXPECT_FALSE(ProfileShortcutExistsAtDefaultPath(base::string16()));
   EXPECT_FALSE(ProfileShortcutExistsAtDefaultPath(profile_1_name_));
   EXPECT_FALSE(ProfileShortcutExistsAtDefaultPath(profile_2_name_));
 }
@@ -769,7 +777,7 @@ TEST_F(ProfileShortcutManagerTest,
   // Verify that only the system-level shortcut still exists.
   EXPECT_TRUE(base::PathExists(system_level_shortcut_path));
   EXPECT_FALSE(base::PathExists(
-                   GetDefaultShortcutPathForProfile(string16())));
+                   GetDefaultShortcutPathForProfile(base::string16())));
   EXPECT_FALSE(base::PathExists(profile_1_shortcut_path));
   EXPECT_FALSE(base::PathExists(profile_2_shortcut_path));
 }
@@ -784,8 +792,7 @@ TEST_F(ProfileShortcutManagerTest, CreateProfileIcon) {
   EXPECT_TRUE(base::DeleteFile(icon_path, false));
   EXPECT_FALSE(base::PathExists(icon_path));
 
-  profile_shortcut_manager_->CreateOrUpdateProfileIcon(profile_1_path_,
-                                                       base::Closure());
+  profile_shortcut_manager_->CreateOrUpdateProfileIcon(profile_1_path_);
   RunPendingTasks();
   EXPECT_TRUE(base::PathExists(icon_path));
 }
@@ -799,7 +806,7 @@ TEST_F(ProfileShortcutManagerTest, UnbadgeProfileIconOnDeletion) {
 
   // Default profile has unbadged icon to start.
   std::string unbadged_icon_1;
-  EXPECT_TRUE(file_util::ReadFileToString(icon_path_1, &unbadged_icon_1));
+  EXPECT_TRUE(base::ReadFileToString(icon_path_1, &unbadged_icon_1));
 
   // Creating a new profile adds a badge to both the new profile icon and the
   // default profile icon. Since they use the same icon index, the icon files
@@ -807,9 +814,9 @@ TEST_F(ProfileShortcutManagerTest, UnbadgeProfileIconOnDeletion) {
   CreateProfileWithShortcut(FROM_HERE, profile_2_name_, profile_2_path_);
 
   std::string badged_icon_1;
-  EXPECT_TRUE(file_util::ReadFileToString(icon_path_1, &badged_icon_1));
+  EXPECT_TRUE(base::ReadFileToString(icon_path_1, &badged_icon_1));
   std::string badged_icon_2;
-  EXPECT_TRUE(file_util::ReadFileToString(icon_path_2, &badged_icon_2));
+  EXPECT_TRUE(base::ReadFileToString(icon_path_2, &badged_icon_2));
 
   EXPECT_NE(badged_icon_1, unbadged_icon_1);
   EXPECT_EQ(badged_icon_1, badged_icon_2);
@@ -820,7 +827,7 @@ TEST_F(ProfileShortcutManagerTest, UnbadgeProfileIconOnDeletion) {
   RunPendingTasks();
 
   std::string unbadged_icon_2;
-  EXPECT_TRUE(file_util::ReadFileToString(icon_path_2, &unbadged_icon_2));
+  EXPECT_TRUE(base::ReadFileToString(icon_path_2, &unbadged_icon_2));
   EXPECT_EQ(unbadged_icon_1, unbadged_icon_2);
 }
 
@@ -834,9 +841,9 @@ TEST_F(ProfileShortcutManagerTest, ProfileIconOnAvatarChange) {
       profile_info_cache_->GetIndexOfProfileWithPath(profile_1_path_);
 
   std::string badged_icon_1;
-  EXPECT_TRUE(file_util::ReadFileToString(icon_path_1, &badged_icon_1));
+  EXPECT_TRUE(base::ReadFileToString(icon_path_1, &badged_icon_1));
   std::string badged_icon_2;
-  EXPECT_TRUE(file_util::ReadFileToString(icon_path_2, &badged_icon_2));
+  EXPECT_TRUE(base::ReadFileToString(icon_path_2, &badged_icon_2));
 
   // Profile 1 and 2 are created with the same icon.
   EXPECT_EQ(badged_icon_1, badged_icon_2);
@@ -846,7 +853,7 @@ TEST_F(ProfileShortcutManagerTest, ProfileIconOnAvatarChange) {
   RunPendingTasks();
 
   std::string new_badged_icon_1;
-  EXPECT_TRUE(file_util::ReadFileToString(icon_path_1, &new_badged_icon_1));
+  EXPECT_TRUE(base::ReadFileToString(icon_path_1, &new_badged_icon_1));
   EXPECT_NE(new_badged_icon_1, badged_icon_1);
 
   // Ensure the new icon is not the unbadged icon.
@@ -854,7 +861,7 @@ TEST_F(ProfileShortcutManagerTest, ProfileIconOnAvatarChange) {
   RunPendingTasks();
 
   std::string unbadged_icon_1;
-  EXPECT_TRUE(file_util::ReadFileToString(icon_path_1, &unbadged_icon_1));
+  EXPECT_TRUE(base::ReadFileToString(icon_path_1, &unbadged_icon_1));
   EXPECT_NE(unbadged_icon_1, new_badged_icon_1);
 
   // Ensure the icon doesn't change on avatar change without 2 profiles.
@@ -862,6 +869,6 @@ TEST_F(ProfileShortcutManagerTest, ProfileIconOnAvatarChange) {
   RunPendingTasks();
 
   std::string unbadged_icon_1_a;
-  EXPECT_TRUE(file_util::ReadFileToString(icon_path_1, &unbadged_icon_1_a));
+  EXPECT_TRUE(base::ReadFileToString(icon_path_1, &unbadged_icon_1_a));
   EXPECT_EQ(unbadged_icon_1, unbadged_icon_1_a);
 }

@@ -42,7 +42,7 @@ void SetGtkTransientForAura(GtkWidget* dialog, aura::Window* parent) {
   // display server ever happens. Otherwise, this will crash.
   XSetTransientForHint(GDK_WINDOW_XDISPLAY(gdk_window),
                        GDK_WINDOW_XID(gdk_window),
-                       parent->GetRootWindow()->GetAcceleratedWidget());
+                       parent->GetDispatcher()->host()->GetAcceleratedWidget());
 
   // We also set the |parent| as a property of |dialog|, so that we can unlink
   // the two later.
@@ -79,7 +79,7 @@ class SelectFileDialogImplGTK : public SelectFileDialogImpl,
   // |params| is user data we pass back via the Listener interface.
   virtual void SelectFileImpl(
       Type type,
-      const string16& title,
+      const base::string16& title,
       const base::FilePath& default_path,
       const FileTypeInfo* file_types,
       int file_type_index,
@@ -215,7 +215,7 @@ void SelectFileDialogImplGTK::OnWindowDestroying(aura::Window* window) {
 // We ignore |default_extension|.
 void SelectFileDialogImplGTK::SelectFileImpl(
     Type type,
-    const string16& title,
+    const base::string16& title,
     const base::FilePath& default_path,
     const FileTypeInfo* file_types,
     int file_type_index,
@@ -335,12 +335,14 @@ void SelectFileDialogImplGTK::AddFilters(GtkFileChooser* chooser) {
 
 void SelectFileDialogImplGTK::FileSelected(GtkWidget* dialog,
                                            const base::FilePath& path) {
-  if (type_ == SELECT_SAVEAS_FILE)
+  if (type_ == SELECT_SAVEAS_FILE) {
     *last_saved_path_ = path.DirName();
-  else if (type_ == SELECT_OPEN_FILE || type_ == SELECT_FOLDER)
+  } else if (type_ == SELECT_OPEN_FILE || type_ == SELECT_FOLDER ||
+             type_ == SELECT_UPLOAD_FOLDER) {
     *last_opened_path_ = path.DirName();
-  else
+  } else {
     NOTREACHED();
+  }
 
   if (listener_) {
     GtkFileFilter* selected_filter =

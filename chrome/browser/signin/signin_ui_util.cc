@@ -16,8 +16,8 @@
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/text/text_elider.h"
-#include "ui/gfx/font.h"
+#include "ui/gfx/font_list.h"
+#include "ui/gfx/text_elider.h"
 
 namespace {
 // Maximum width of a username - we trim emails that are wider than this so
@@ -57,7 +57,7 @@ std::vector<GlobalError*> GetSignedInServiceErrors(Profile* profile) {
   return errors;
 }
 
-string16 GetSigninMenuLabel(Profile* profile) {
+base::string16 GetSigninMenuLabel(Profile* profile) {
   GlobalError* error = signin_ui_util::GetSignedInServiceError(profile);
   if (error)
     return error->MenuItemLabel();
@@ -75,9 +75,9 @@ string16 GetSigninMenuLabel(Profile* profile) {
     if (signin_manager)
       username = signin_manager->GetAuthenticatedUsername();
     if (!username.empty() && !signin_manager->AuthInProgress()) {
-      string16 elided_username = ui::ElideEmail(UTF8ToUTF16(username),
-                                                gfx::Font(),
-                                                kUsernameMaxWidth);
+      base::string16 elided_username = gfx::ElideEmail(UTF8ToUTF16(username),
+                                                 gfx::FontList(),
+                                                 kUsernameMaxWidth);
       return l10n_util::GetStringFUTF16(IDS_SYNC_MENU_SYNCED_LABEL,
                                         elided_username);
     }
@@ -90,10 +90,11 @@ string16 GetSigninMenuLabel(Profile* profile) {
 // that can be used to display information about the state.
 void GetStatusLabelsForAuthError(Profile* profile,
                                  const SigninManagerBase& signin_manager,
-                                 string16* status_label,
-                                 string16* link_label) {
-  string16 username = UTF8ToUTF16(signin_manager.GetAuthenticatedUsername());
-  string16 product_name = l10n_util::GetStringUTF16(IDS_PRODUCT_NAME);
+                                 base::string16* status_label,
+                                 base::string16* link_label) {
+  base::string16 username =
+      UTF8ToUTF16(signin_manager.GetAuthenticatedUsername());
+  base::string16 product_name = l10n_util::GetStringUTF16(IDS_PRODUCT_NAME);
   if (link_label)
     link_label->assign(l10n_util::GetStringUTF16(IDS_SYNC_RELOGIN_LINK_LABEL));
 
@@ -101,6 +102,7 @@ void GetStatusLabelsForAuthError(Profile* profile,
       SigninGlobalError::GetForProfile(profile)->GetLastAuthError().state();
   switch (state) {
     case GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS:
+    case GoogleServiceAuthError::SERVICE_ERROR:
     case GoogleServiceAuthError::ACCOUNT_DELETED:
     case GoogleServiceAuthError::ACCOUNT_DISABLED:
       // If the user name is empty then the first login failed, otherwise the

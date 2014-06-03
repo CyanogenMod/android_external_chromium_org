@@ -24,14 +24,15 @@
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_contents_view.h"
 #include "content/public/test/test_utils.h"
+#include "grit/webui_resources.h"
 #include "net/base/net_util.h"
 #include "net/cookies/cookie_store.h"
 #include "net/test/python_utils.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "testing/gtest/include/gtest/gtest.h"
-
-static const int kDefaultWsPort = 8880;
+#include "ui/base/resource/resource_bundle.h"
+#include "ui/events/keycodes/dom4/keycode_converter.h"
 
 namespace content {
 namespace {
@@ -117,39 +118,35 @@ bool ExecuteScriptHelper(RenderViewHost* render_view_host,
   return true;
 }
 
-void BuildSimpleWebKeyEvent(WebKit::WebInputEvent::Type type,
-                            ui::KeyboardCode key,
-                            bool control,
-                            bool shift,
-                            bool alt,
-                            bool command,
+void BuildSimpleWebKeyEvent(blink::WebInputEvent::Type type,
+                            ui::KeyboardCode key_code,
+                            int native_key_code,
+                            int modifiers,
                             NativeWebKeyboardEvent* event) {
-  event->nativeKeyCode = 0;
-  event->windowsKeyCode = key;
+  event->nativeKeyCode = native_key_code;
+  event->windowsKeyCode = key_code;
   event->setKeyIdentifierFromWindowsKeyCode();
   event->type = type;
-  event->modifiers = 0;
+  event->modifiers = modifiers;
   event->isSystemKey = false;
   event->timeStampSeconds = base::Time::Now().ToDoubleT();
   event->skip_in_browser = true;
 
-  if (type == WebKit::WebInputEvent::Char ||
-      type == WebKit::WebInputEvent::RawKeyDown) {
-    event->text[0] = key;
-    event->unmodifiedText[0] = key;
+  if (type == blink::WebInputEvent::Char ||
+      type == blink::WebInputEvent::RawKeyDown) {
+    event->text[0] = key_code;
+    event->unmodifiedText[0] = key_code;
   }
+}
 
-  if (control)
-    event->modifiers |= WebKit::WebInputEvent::ControlKey;
-
-  if (shift)
-    event->modifiers |= WebKit::WebInputEvent::ShiftKey;
-
-  if (alt)
-    event->modifiers |= WebKit::WebInputEvent::AltKey;
-
-  if (command)
-    event->modifiers |= WebKit::WebInputEvent::MetaKey;
+void InjectRawKeyEvent(WebContents* web_contents,
+                       blink::WebInputEvent::Type type,
+                       ui::KeyboardCode key_code,
+                       int native_key_code,
+                       int modifiers) {
+  NativeWebKeyboardEvent event;
+  BuildSimpleWebKeyEvent(type, key_code, native_key_code, modifiers, &event);
+  web_contents->GetRenderViewHost()->ForwardKeyboardEvent(event);
 }
 
 void GetCookiesCallback(std::string* cookies_out,
@@ -225,7 +222,7 @@ void CrashTab(WebContents* web_contents) {
 
 void SimulateMouseClick(WebContents* web_contents,
                         int modifiers,
-                        WebKit::WebMouseEvent::Button button) {
+                        blink::WebMouseEvent::Button button) {
   int x = web_contents->GetView()->GetContainerSize().width() / 2;
   int y = web_contents->GetView()->GetContainerSize().height() / 2;
   SimulateMouseClickAt(web_contents, modifiers, button, gfx::Point(x, y));
@@ -233,10 +230,10 @@ void SimulateMouseClick(WebContents* web_contents,
 
 void SimulateMouseClickAt(WebContents* web_contents,
                           int modifiers,
-                          WebKit::WebMouseEvent::Button button,
+                          blink::WebMouseEvent::Button button,
                           const gfx::Point& point) {
-  WebKit::WebMouseEvent mouse_event;
-  mouse_event.type = WebKit::WebInputEvent::MouseDown;
+  blink::WebMouseEvent mouse_event;
+  mouse_event.type = blink::WebInputEvent::MouseDown;
   mouse_event.button = button;
   mouse_event.x = point.x();
   mouse_event.y = point.y();
@@ -248,14 +245,14 @@ void SimulateMouseClickAt(WebContents* web_contents,
   mouse_event.globalY = point.y() + offset.y();
   mouse_event.clickCount = 1;
   web_contents->GetRenderViewHost()->ForwardMouseEvent(mouse_event);
-  mouse_event.type = WebKit::WebInputEvent::MouseUp;
+  mouse_event.type = blink::WebInputEvent::MouseUp;
   web_contents->GetRenderViewHost()->ForwardMouseEvent(mouse_event);
 }
 
 void SimulateMouseEvent(WebContents* web_contents,
-                        WebKit::WebInputEvent::Type type,
+                        blink::WebInputEvent::Type type,
                         const gfx::Point& point) {
-  WebKit::WebMouseEvent mouse_event;
+  blink::WebMouseEvent mouse_event;
   mouse_event.type = type;
   mouse_event.x = point.x();
   mouse_event.y = point.y();
@@ -263,28 +260,132 @@ void SimulateMouseEvent(WebContents* web_contents,
 }
 
 void SimulateKeyPress(WebContents* web_contents,
-                      ui::KeyboardCode key,
+                      ui::KeyboardCode key_code,
                       bool control,
                       bool shift,
                       bool alt,
                       bool command) {
-  NativeWebKeyboardEvent event_down;
-  BuildSimpleWebKeyEvent(
-      WebKit::WebInputEvent::RawKeyDown, key, control, shift, alt, command,
-      &event_down);
-  web_contents->GetRenderViewHost()->ForwardKeyboardEvent(event_down);
+  SimulateKeyPressWithCode(
+      web_contents, key_code, NULL, control, shift, alt, command);
+}
 
-  NativeWebKeyboardEvent char_event;
-  BuildSimpleWebKeyEvent(
-      WebKit::WebInputEvent::Char, key, control, shift, alt, command,
-      &char_event);
-  web_contents->GetRenderViewHost()->ForwardKeyboardEvent(char_event);
+void SimulateKeyPressWithCode(WebContents* web_contents,
+                              ui::KeyboardCode key_code,
+                              const char* code,
+                              bool control,
+                              bool shift,
+                              bool alt,
+                              bool command) {
+  ui::KeycodeConverter* key_converter = ui::KeycodeConverter::GetInstance();
+  int native_key_code = key_converter->CodeToNativeKeycode(code);
 
-  NativeWebKeyboardEvent event_up;
-  BuildSimpleWebKeyEvent(
-      WebKit::WebInputEvent::KeyUp, key, control, shift, alt, command,
-      &event_up);
-  web_contents->GetRenderViewHost()->ForwardKeyboardEvent(event_up);
+  int modifiers = 0;
+
+  // The order of these key down events shouldn't matter for our simulation.
+  // For our simulation we can use either the left keys or the right keys.
+  if (control) {
+    modifiers |= blink::WebInputEvent::ControlKey;
+    InjectRawKeyEvent(
+        web_contents,
+        blink::WebInputEvent::RawKeyDown,
+        ui::VKEY_CONTROL,
+        key_converter->CodeToNativeKeycode("ControlLeft"),
+        modifiers);
+  }
+
+  if (shift) {
+    modifiers |= blink::WebInputEvent::ShiftKey;
+    InjectRawKeyEvent(
+        web_contents,
+        blink::WebInputEvent::RawKeyDown,
+        ui::VKEY_SHIFT,
+        key_converter->CodeToNativeKeycode("ShiftLeft"),
+        modifiers);
+  }
+
+  if (alt) {
+    modifiers |= blink::WebInputEvent::AltKey;
+    InjectRawKeyEvent(
+        web_contents,
+        blink::WebInputEvent::RawKeyDown,
+        ui::VKEY_MENU,
+        key_converter->CodeToNativeKeycode("AltLeft"),
+        modifiers);
+  }
+
+  if (command) {
+    modifiers |= blink::WebInputEvent::MetaKey;
+    InjectRawKeyEvent(
+        web_contents,
+        blink::WebInputEvent::RawKeyDown,
+        ui::VKEY_COMMAND,
+        key_converter->CodeToNativeKeycode("OSLeft"),
+        modifiers);
+  }
+
+  InjectRawKeyEvent(
+      web_contents,
+      blink::WebInputEvent::RawKeyDown,
+      key_code,
+      native_key_code,
+      modifiers);
+
+  InjectRawKeyEvent(
+      web_contents,
+      blink::WebInputEvent::Char,
+      key_code,
+      native_key_code,
+      modifiers);
+
+  InjectRawKeyEvent(
+      web_contents,
+      blink::WebInputEvent::KeyUp,
+      key_code,
+      native_key_code,
+      modifiers);
+
+  // The order of these key releases shouldn't matter for our simulation.
+  if (control) {
+    modifiers &= ~blink::WebInputEvent::ControlKey;
+    InjectRawKeyEvent(
+        web_contents,
+        blink::WebInputEvent::KeyUp,
+        ui::VKEY_CONTROL,
+        key_converter->CodeToNativeKeycode("ControlLeft"),
+        modifiers);
+  }
+
+  if (shift) {
+    modifiers &= ~blink::WebInputEvent::ShiftKey;
+    InjectRawKeyEvent(
+        web_contents,
+        blink::WebInputEvent::KeyUp,
+        ui::VKEY_SHIFT,
+        key_converter->CodeToNativeKeycode("ShiftLeft"),
+        modifiers);
+  }
+
+  if (alt) {
+    modifiers &= ~blink::WebInputEvent::AltKey;
+    InjectRawKeyEvent(
+        web_contents,
+        blink::WebInputEvent::KeyUp,
+        ui::VKEY_MENU,
+        key_converter->CodeToNativeKeycode("AltLeft"),
+        modifiers);
+  }
+
+  if (command) {
+    modifiers &= ~blink::WebInputEvent::MetaKey;
+    InjectRawKeyEvent(
+        web_contents,
+        blink::WebInputEvent::KeyUp,
+        ui::VKEY_COMMAND,
+        key_converter->CodeToNativeKeycode("OSLeft"),
+        modifiers);
+  }
+
+  ASSERT_EQ(modifiers, 0);
 }
 
 namespace internal {
@@ -374,6 +475,39 @@ bool ExecuteScriptAndExtractString(const internal::ToRenderViewHost& adapter,
                                               result);
 }
 
+bool ExecuteWebUIResourceTest(
+    const internal::ToRenderViewHost& adapter,
+    const std::vector<int>& js_resource_ids) {
+  // Inject WebUI test runner script first prior to other scripts required to
+  // run the test as scripts may depend on it being declared.
+  std::vector<int> ids;
+  ids.push_back(IDR_WEBUI_JS_WEBUI_RESOURCE_TEST);
+  ids.insert(ids.end(), js_resource_ids.begin(), js_resource_ids.end());
+
+  std::string script;
+  for (std::vector<int>::iterator iter = ids.begin();
+       iter != ids.end();
+       ++iter) {
+    ResourceBundle::GetSharedInstance().GetRawDataResource(*iter)
+        .AppendToString(&script);
+    script.append("\n");
+  }
+  if (!content::ExecuteScript(adapter, script))
+    return false;
+
+  content::DOMMessageQueue message_queue;
+  if (!content::ExecuteScript(adapter, "runTests()"))
+    return false;
+
+  std::string message;
+  do {
+    if (!message_queue.WaitForMessage(&message))
+      return false;
+  } while (message.compare("\"PENDING\"") == 0);
+
+  return message.compare("\"SUCCESS\"") == 0;
+}
+
 std::string GetCookies(BrowserContext* browser_context, const GURL& url) {
   std::string cookies;
   base::WaitableEvent event(true, false);
@@ -405,70 +539,66 @@ bool SetCookie(BrowserContext* browser_context,
 }
 
 TitleWatcher::TitleWatcher(WebContents* web_contents,
-                           const string16& expected_title)
-    : web_contents_(web_contents),
-      expected_title_observed_(false),
-      quit_loop_on_observation_(false) {
+                           const base::string16& expected_title)
+    : WebContentsObserver(web_contents),
+      message_loop_runner_(new MessageLoopRunner) {
   EXPECT_TRUE(web_contents != NULL);
   expected_titles_.push_back(expected_title);
-  notification_registrar_.Add(this,
-                              NOTIFICATION_WEB_CONTENTS_TITLE_UPDATED,
-                              Source<WebContents>(web_contents));
-
-  // When navigating through the history, the restored NavigationEntry's title
-  // will be used. If the entry ends up having the same title after we return
-  // to it, as will usually be the case, the
-  // NOTIFICATION_WEB_CONTENTS_TITLE_UPDATED will then be suppressed, since the
-  // NavigationEntry's title hasn't changed.
-  notification_registrar_.Add(
-      this,
-      NOTIFICATION_LOAD_STOP,
-      Source<NavigationController>(&web_contents->GetController()));
 }
 
-void TitleWatcher::AlsoWaitForTitle(const string16& expected_title) {
+void TitleWatcher::AlsoWaitForTitle(const base::string16& expected_title) {
   expected_titles_.push_back(expected_title);
 }
 
 TitleWatcher::~TitleWatcher() {
 }
 
-const string16& TitleWatcher::WaitAndGetTitle() {
-  if (expected_title_observed_)
-    return observed_title_;
-  quit_loop_on_observation_ = true;
-  message_loop_runner_ = new MessageLoopRunner;
+const base::string16& TitleWatcher::WaitAndGetTitle() {
   message_loop_runner_->Run();
   return observed_title_;
 }
 
-void TitleWatcher::Observe(int type,
-                           const NotificationSource& source,
-                           const NotificationDetails& details) {
-  if (type == NOTIFICATION_WEB_CONTENTS_TITLE_UPDATED) {
-    WebContents* source_contents = Source<WebContents>(source).ptr();
-    ASSERT_EQ(web_contents_, source_contents);
-  } else if (type == NOTIFICATION_LOAD_STOP) {
-    NavigationController* controller =
-        Source<NavigationController>(source).ptr();
-    ASSERT_EQ(&web_contents_->GetController(), controller);
-  } else {
-    FAIL() << "Unexpected notification received.";
-  }
+void TitleWatcher::DidStopLoading(RenderViewHost* render_view_host) {
+  // When navigating through the history, the restored NavigationEntry's title
+  // will be used. If the entry ends up having the same title after we return
+  // to it, as will usually be the case, then WebContentsObserver::TitleSet
+  // will then be suppressed, since the NavigationEntry's title hasn't changed.
+  TestTitle();
+}
 
-  std::vector<string16>::const_iterator it =
+void TitleWatcher::TitleWasSet(NavigationEntry* entry, bool explicit_set) {
+  TestTitle();
+}
+
+void TitleWatcher::TestTitle() {
+  std::vector<base::string16>::const_iterator it =
       std::find(expected_titles_.begin(),
                 expected_titles_.end(),
-                web_contents_->GetTitle());
+                web_contents()->GetTitle());
   if (it == expected_titles_.end())
     return;
+
   observed_title_ = *it;
-  expected_title_observed_ = true;
-  if (quit_loop_on_observation_) {
-    // Only call Quit once, on first Observe:
-    quit_loop_on_observation_ = false;
-    message_loop_runner_->Quit();
-  }
+  message_loop_runner_->Quit();
+}
+
+WebContentsDestroyedWatcher::WebContentsDestroyedWatcher(
+    WebContents* web_contents)
+    : WebContentsObserver(web_contents),
+      message_loop_runner_(new MessageLoopRunner) {
+  EXPECT_TRUE(web_contents != NULL);
+}
+
+WebContentsDestroyedWatcher::~WebContentsDestroyedWatcher() {
+}
+
+void WebContentsDestroyedWatcher::Wait() {
+  message_loop_runner_->Run();
+}
+
+void WebContentsDestroyedWatcher::WebContentsDestroyed(
+    WebContents* web_contents) {
+  message_loop_runner_->Quit();
 }
 
 DOMMessageQueue::DOMMessageQueue() : waiting_for_message_(false) {

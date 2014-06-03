@@ -26,13 +26,6 @@ namespace utils = extension_function_test_utils;
 
 namespace {
 
-// TODO(jschuh): Hanging plugin tests. crbug.com/244653
-#if defined(OS_WIN) && defined(ARCH_CPU_X86_64)
-#define MAYBE(x) DISABLED_##x
-#else
-#define MAYBE(x) x
-#endif
-
 const std::string kHostname = "127.0.0.1";
 const int kPort = 8888;
 
@@ -82,8 +75,7 @@ class SocketPpapiTest : public SocketApiTest {
     command_line->AppendSwitch("enable-pepper-testing");
 
     PathService::Get(chrome::DIR_GEN_TEST_DATA, &app_dir_);
-    app_dir_ = app_dir_.AppendASCII(
-        "chrome/test/data/extensions/api_test/socket/ppapi/newlib");
+    app_dir_ = app_dir_.AppendASCII("ppapi/tests/extensions/socket/newlib");
   }
 
  protected:
@@ -91,11 +83,12 @@ class SocketPpapiTest : public SocketApiTest {
     const Extension* extension = LoadExtension(app_dir_);
     ASSERT_TRUE(extension);
 
-    chrome::AppLaunchParams params(browser()->profile(), extension,
-                                   extension_misc::LAUNCH_NONE,
-                                   NEW_WINDOW);
+    AppLaunchParams params(browser()->profile(),
+                           extension,
+                           extensions::LAUNCH_CONTAINER_NONE,
+                           NEW_WINDOW);
     params.command_line = CommandLine::ForCurrentProcess();
-    chrome::OpenApplication(params);
+    OpenApplication(params);
   }
 
  private:
@@ -254,7 +247,14 @@ IN_PROC_BROWSER_TEST_F(SocketApiTest, SocketMulticast) {
 }
 
 #if !defined(DISABLE_NACL)
-IN_PROC_BROWSER_TEST_F(SocketPpapiTest, MAYBE(UDP)) {
+
+// TODO(jschuh): Hanging plugin tests. crbug.com/244653
+#if defined(OS_WIN) && defined(ARCH_CPU_X86_64)
+#define MAYBE_UDP DISABLED_UDP
+#else
+#define MAYBE_UDP UDP
+#endif
+IN_PROC_BROWSER_TEST_F(SocketPpapiTest, MAYBE_UDP) {
   scoped_ptr<net::SpawnedTestServer> test_server(
       new net::SpawnedTestServer(
           net::SpawnedTestServer::TYPE_UDP_ECHO,
@@ -283,7 +283,13 @@ IN_PROC_BROWSER_TEST_F(SocketPpapiTest, MAYBE(UDP)) {
   EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
 }
 
-IN_PROC_BROWSER_TEST_F(SocketPpapiTest, MAYBE(TCP)) {
+// TODO(jschuh): Hanging plugin tests. crbug.com/244653
+#if defined(OS_WIN) && defined(ARCH_CPU_X86_64)
+#define MAYBE_TCP DISABLED_TCP
+#else
+#define MAYBE_TCP TCP
+#endif
+IN_PROC_BROWSER_TEST_F(SocketPpapiTest, MAYBE_TCP) {
   scoped_ptr<net::SpawnedTestServer> test_server(
       new net::SpawnedTestServer(
           net::SpawnedTestServer::TYPE_TCP_ECHO,
@@ -312,7 +318,15 @@ IN_PROC_BROWSER_TEST_F(SocketPpapiTest, MAYBE(TCP)) {
   EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
 }
 
-IN_PROC_BROWSER_TEST_F(SocketPpapiTest, MAYBE(TCPServer)) {
+// TODO(jschuh): Hanging plugin tests. crbug.com/244653
+// Also fails on official Mac builds. See http://crbug.com/312916
+#if (defined(OS_WIN) && defined(ARCH_CPU_X86_64)) || \
+    (defined(OS_MACOSX) && defined(GOOGLE_CHROME_BUILD))
+#define MAYBE_TCPServer DISABLED_TCPServer
+#else
+#define MAYBE_TCPServer TCPServer
+#endif
+IN_PROC_BROWSER_TEST_F(SocketPpapiTest, MAYBE_TCPServer) {
   ResultCatcher catcher;
   catcher.RestrictToProfile(browser()->profile());
   ExtensionTestMessageListener listener("info_please", true);
@@ -326,7 +340,8 @@ IN_PROC_BROWSER_TEST_F(SocketPpapiTest, MAYBE(TCPServer)) {
   EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
 }
 
-IN_PROC_BROWSER_TEST_F(SocketPpapiTest, MAYBE(Multicast)) {
+// Disabled due to flakiness: http://crbug.com/314899
+IN_PROC_BROWSER_TEST_F(SocketPpapiTest, DISABLED_Multicast) {
   ResultCatcher catcher;
   catcher.RestrictToProfile(browser()->profile());
   ExtensionTestMessageListener listener("info_please", true);

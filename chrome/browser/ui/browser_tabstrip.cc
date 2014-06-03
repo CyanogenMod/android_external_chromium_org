@@ -6,7 +6,6 @@
 
 #include "base/command_line.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/blocked_content/blocked_content_tab_helper.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/browser/ui/tab_contents/core_tab_helper.h"
@@ -19,15 +18,16 @@
 
 namespace chrome {
 
-void AddBlankTabAt(Browser* browser, int index, bool foreground) {
+void AddTabAt(Browser* browser, const GURL& url, int idx, bool foreground) {
   // Time new tab page creation time.  We keep track of the timing data in
   // WebContents, but we want to include the time it takes to create the
   // WebContents object too.
   base::TimeTicks new_tab_start_time = base::TimeTicks::Now();
-  chrome::NavigateParams params(browser, GURL(chrome::kChromeUINewTabURL),
-                                content::PAGE_TRANSITION_TYPED);
+  chrome::NavigateParams params(browser,
+      url.is_empty() ? GURL(chrome::kChromeUINewTabURL) : url,
+      content::PAGE_TRANSITION_TYPED);
   params.disposition = foreground ? NEW_FOREGROUND_TAB : NEW_BACKGROUND_TAB;
-  params.tabstrip_index = index;
+  params.tabstrip_index = idx;
   chrome::Navigate(&params);
   CoreTabHelper* core_tab_helper =
       CoreTabHelper::FromWebContents(params.target_contents);
@@ -56,47 +56,15 @@ void AddWebContents(Browser* browser,
   // Can't create a new contents for the current tab - invalid case.
   DCHECK(disposition != CURRENT_TAB);
 
-  BlockedContentTabHelper* source_blocked_content = NULL;
-  if (source_contents) {
-    source_blocked_content =
-        BlockedContentTabHelper::FromWebContents(source_contents);
-  }
-
-  if (source_blocked_content) {
-    // Handle blocking of tabs.
-    if (source_blocked_content->all_contents_blocked()) {
-      source_blocked_content->AddWebContents(
-          new_contents, disposition, initial_pos, user_gesture);
-      if (was_blocked)
-        *was_blocked = true;
-      return;
-    }
-
-    // Handle blocking of popups.
-    if ((disposition == NEW_POPUP || disposition == NEW_FOREGROUND_TAB ||
-         disposition == NEW_BACKGROUND_TAB) && !user_gesture &&
-        !CommandLine::ForCurrentProcess()->HasSwitch(
-            switches::kDisablePopupBlocking) &&
-        CommandLine::ForCurrentProcess()->HasSwitch(
-            switches::kDisableBetterPopupBlocking)) {
-      // Unrequested popups from normal pages are constrained unless they're in
-      // the white list.  The popup owner will handle checking this.
-      source_blocked_content->AddPopup(
-          new_contents, disposition, initial_pos, user_gesture);
-      if (was_blocked)
-        *was_blocked = true;
-      return;
-    }
-
-    new_contents->GetRenderViewHost()->DisassociateFromPopupCount();
-  }
-
   NavigateParams params(browser, new_contents);
   params.source_contents = source_contents;
   params.disposition = disposition;
   params.window_bounds = initial_pos;
   params.window_action = NavigateParams::SHOW_WINDOW;
-  params.user_gesture = user_gesture;
+  // At this point, we're already beyond the popup blocker. Even if the popup
+  // was created without a user gesture, we have to set |user_gesture| to true,
+  // so it gets correctly focused.
+  params.user_gesture = true;
   Navigate(&params);
 }
 

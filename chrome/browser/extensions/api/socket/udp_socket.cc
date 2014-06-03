@@ -14,6 +14,17 @@
 
 namespace extensions {
 
+static base::LazyInstance<ProfileKeyedAPIFactory<
+      ApiResourceManager<ResumableUDPSocket> > >
+          g_factory = LAZY_INSTANCE_INITIALIZER;
+
+// static
+template <>
+ProfileKeyedAPIFactory<ApiResourceManager<ResumableUDPSocket> >*
+ApiResourceManager<ResumableUDPSocket>::GetFactoryInstance() {
+  return &g_factory.Get();
+}
+
 UDPSocket::UDPSocket(const std::string& owner_extension_id)
     : Socket(owner_extension_id),
       socket_(net::DatagramSocket::DEFAULT_BIND,
@@ -23,9 +34,7 @@ UDPSocket::UDPSocket(const std::string& owner_extension_id)
 }
 
 UDPSocket::~UDPSocket() {
-  if (is_connected_) {
-    Disconnect();
-  }
+  Disconnect();
 }
 
 void UDPSocket::Connect(const std::string& address,
@@ -50,6 +59,9 @@ void UDPSocket::Connect(const std::string& address,
 }
 
 int UDPSocket::Bind(const std::string& address, int port) {
+  if (IsBound())
+    return net::ERR_CONNECTION_FAILED;
+
   net::IPEndPoint ip_end_point;
   if (!StringAndPortToIPEndPoint(address, port, &ip_end_point))
     return net::ERR_INVALID_ARGUMENT;
@@ -60,6 +72,10 @@ int UDPSocket::Bind(const std::string& address, int port) {
 void UDPSocket::Disconnect() {
   is_connected_ = false;
   socket_.Close();
+  read_callback_.Reset();
+  recv_from_callback_.Reset();
+  send_to_callback_.Reset();
+  multicast_groups_.clear();
 }
 
 void UDPSocket::Read(int count,
@@ -228,6 +244,10 @@ void UDPSocket::OnSendToComplete(int result) {
   send_to_callback_.Reset();
 }
 
+bool UDPSocket::IsBound() {
+  return socket_.is_connected();
+}
+
 int UDPSocket::JoinGroup(const std::string& address) {
   net::IPAddressNumber ip;
   if (!net::ParseIPLiteralToNumber(address, &ip))
@@ -276,6 +296,17 @@ int UDPSocket::SetMulticastLoopbackMode(bool loopback) {
 
 const std::vector<std::string>& UDPSocket::GetJoinedGroups() const {
   return multicast_groups_;
+}
+
+ResumableUDPSocket::ResumableUDPSocket(const std::string& owner_extension_id)
+    : UDPSocket(owner_extension_id),
+      persistent_(false),
+      buffer_size_(0),
+      paused_(false) {
+}
+
+bool ResumableUDPSocket::IsPersistent() const {
+  return persistent();
 }
 
 }  // namespace extensions

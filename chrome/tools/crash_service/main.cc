@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "chrome/tools/crash_service/crash_service.h"
-
 #include <windows.h>
 #include <stdlib.h>
 #include <tchar.h>
@@ -12,6 +10,10 @@
 #include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/logging.h"
+#include "base/path_service.h"
+#include "chrome/common/chrome_constants.h"
+#include "chrome/common/chrome_paths.h"
+#include "components/breakpad/tools/crash_service.h"
 
 namespace {
 
@@ -19,11 +21,11 @@ const wchar_t kStandardLogFile[] = L"operation_log.txt";
 
 bool GetCrashServiceDirectory(base::FilePath* dir) {
   base::FilePath temp_dir;
-  if (!file_util::GetTempDir(&temp_dir))
+  if (!base::GetTempDir(&temp_dir))
     return false;
   temp_dir = temp_dir.Append(L"chrome_crashes");
   if (!base::PathExists(temp_dir)) {
-    if (!file_util::CreateDirectory(temp_dir))
+    if (!base::CreateDirectory(temp_dir))
       return false;
   }
   *dir = temp_dir;
@@ -38,6 +40,8 @@ int __stdcall wWinMain(HINSTANCE instance, HINSTANCE, wchar_t* cmd_line,
   base::AtExitManager exit_manager;
 
   CommandLine::Init(0, NULL);
+
+  chrome::RegisterPathProvider();
 
   // We use/create a directory under the user's temp folder, for logging.
   base::FilePath operating_dir;
@@ -55,8 +59,14 @@ int __stdcall wWinMain(HINSTANCE instance, HINSTANCE, wchar_t* cmd_line,
 
   VLOG(1) << "session start. cmdline is [" << cmd_line << "]";
 
-  CrashService crash_service(operating_dir.value());
-  if (!crash_service.Initialize(::GetCommandLineW()))
+  base::FilePath dumps_path;
+  if (!PathService::Get(chrome::DIR_CRASH_DUMPS, &dumps_path)) {
+    LOG(ERROR) << "could not get DIR_CRASH_DUMPS";
+    return 1;
+  }
+
+  breakpad::CrashService crash_service;
+  if (!crash_service.Initialize(operating_dir, dumps_path))
     return 1;
 
   VLOG(1) << "ready to process crash requests";

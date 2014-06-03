@@ -14,10 +14,10 @@
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/policy/device_local_account.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
-#include "chrome/browser/chromeos/settings/cros_settings_names.h"
 #include "chrome/browser/chromeos/settings/device_settings_test_helper.h"
 #include "chrome/test/base/scoped_testing_local_state.h"
 #include "chrome/test/base/testing_browser_process.h"
+#include "chromeos/settings/cros_settings_names.h"
 #include "content/public/test/test_browser_thread.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -34,7 +34,6 @@ namespace {
 const char kAutoLoginAccountId[] = "public_session_user@localhost";
 // These values are only used to test the configuration.  They don't
 // delay the test.
-const int kAutoLoginNoDelay = 0;
 const int kAutoLoginDelay1 = 60000;
 const int kAutoLoginDelay2 = 180000;
 
@@ -87,12 +86,10 @@ class ExistingUserControllerAutoLoginTest : public ::testing::Test {
     CrosSettings::Get()->Set(kAccountsPrefDeviceLocalAccounts, accounts);
 
     // Prevent settings changes from auto-starting the timer.
-    CrosSettings::Get()->RemoveSettingsObserver(
-        kAccountsPrefDeviceLocalAccountAutoLoginId,
-        existing_user_controller());
-    CrosSettings::Get()->RemoveSettingsObserver(
-        kAccountsPrefDeviceLocalAccountAutoLoginDelay,
-        existing_user_controller());
+    existing_user_controller_->
+        local_account_auto_login_id_subscription_.reset();
+    existing_user_controller_->
+        local_account_auto_login_delay_subscription_.reset();
   }
 
   const ExistingUserController* existing_user_controller() const {

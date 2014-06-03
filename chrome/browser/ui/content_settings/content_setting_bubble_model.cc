@@ -10,7 +10,6 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/content_settings/content_settings_utils.h"
 #include "chrome/browser/content_settings/cookie_settings.h"
-#include "chrome/browser/content_settings/tab_specific_content_settings.h"
 #include "chrome/browser/custom_handlers/protocol_handler_registry.h"
 #include "chrome/browser/custom_handlers/protocol_handler_registry_factory.h"
 #include "chrome/browser/favicon/favicon_tab_helper.h"
@@ -18,8 +17,6 @@
 #include "chrome/browser/media/media_capture_devices_dispatcher.h"
 #include "chrome/browser/plugins/chrome_plugin_service_filter.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/blocked_content/blocked_content_tab_helper.h"
-#include "chrome/browser/ui/blocked_content/blocked_content_tab_helper_delegate.h"
 #include "chrome/browser/ui/blocked_content/popup_blocker_tab_helper.h"
 #include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/browser/ui/collected_cookies_infobar_delegate.h"
@@ -50,6 +47,9 @@ using content_settings::SETTING_SOURCE_USER;
 using content_settings::SETTING_SOURCE_NONE;
 
 namespace {
+
+const int kAllowButtonIndex = 0;
+
 struct ContentSettingsTypeIdEntry {
   ContentSettingsType type;
   int id;
@@ -92,20 +92,8 @@ ContentSettingTitleAndLinkModel::ContentSettingTitleAndLinkModel(
         delegate_(delegate) {
   // Notifications do not have a bubble.
   DCHECK_NE(content_type, CONTENT_SETTINGS_TYPE_NOTIFICATIONS);
-  SetBlockedResources();
   SetTitle();
   SetManageLink();
-}
-
-void ContentSettingTitleAndLinkModel::SetBlockedResources() {
-  TabSpecificContentSettings* settings =
-      TabSpecificContentSettings::FromWebContents(web_contents());
-  const std::set<std::string>& resources = settings->BlockedResourcesForType(
-      content_type());
-  for (std::set<std::string>::const_iterator it = resources.begin();
-       it != resources.end(); ++it) {
-    AddBlockedResource(*it);
-  }
 }
 
 void ContentSettingTitleAndLinkModel::SetTitle() {
@@ -122,10 +110,6 @@ void ContentSettingTitleAndLinkModel::SetTitle() {
     {CONTENT_SETTINGS_TYPE_AUTOMATIC_DOWNLOADS, IDS_BLOCKED_DOWNLOAD_TITLE},
   };
   // Fields as for kBlockedTitleIDs, above.
-  static const ContentSettingsTypeIdEntry
-      kResourceSpecificBlockedTitleIDs[] = {
-        {CONTENT_SETTINGS_TYPE_PLUGINS, IDS_BLOCKED_PLUGINS_TITLE},
-      };
   static const ContentSettingsTypeIdEntry kAccessedTitleIDs[] = {
     {CONTENT_SETTINGS_TYPE_COOKIES, IDS_ACCESSED_COOKIES_TITLE},
     {CONTENT_SETTINGS_TYPE_PPAPI_BROKER, IDS_ALLOWED_PPAPI_BROKER_TITLE},
@@ -140,9 +124,6 @@ void ContentSettingTitleAndLinkModel::SetTitle() {
           web_contents())->IsContentBlocked(content_type())) {
     title_ids = kAccessedTitleIDs;
     num_title_ids = arraysize(kAccessedTitleIDs);
-  } else if (!bubble_content().resource_identifiers.empty()) {
-    title_ids = kResourceSpecificBlockedTitleIDs;
-    num_title_ids = arraysize(kResourceSpecificBlockedTitleIDs);
   }
   int title_id =
       GetIdForContentType(title_ids, num_title_ids, content_type());
@@ -221,11 +202,11 @@ class ContentSettingSingleRadioGroup
 
  protected:
   bool settings_changed() const;
+  int selected_item() const { return selected_item_; }
 
  private:
   void SetRadioGroup();
-  void AddException(ContentSetting setting,
-                    const std::string& resource_identifier);
+  void AddException(ContentSetting setting);
   virtual void OnRadioClicked(int radio_index) OVERRIDE;
 
   ContentSetting block_setting_;
@@ -247,17 +228,10 @@ ContentSettingSingleRadioGroup::ContentSettingSingleRadioGroup(
 ContentSettingSingleRadioGroup::~ContentSettingSingleRadioGroup() {
   if (settings_changed()) {
     ContentSetting setting =
-        selected_item_ == 0 ? CONTENT_SETTING_ALLOW : block_setting_;
-    const std::set<std::string>& resources =
-        bubble_content().resource_identifiers;
-    if (resources.empty()) {
-      AddException(setting, std::string());
-    } else {
-      for (std::set<std::string>::const_iterator it = resources.begin();
-           it != resources.end(); ++it) {
-        AddException(setting, *it);
-      }
-    }
+        selected_item_ == kAllowButtonIndex ?
+                          CONTENT_SETTING_ALLOW :
+                          block_setting_;
+    AddException(setting);
   }
 }
 
@@ -269,7 +243,7 @@ bool ContentSettingSingleRadioGroup::settings_changed() const {
 // content type and setting the default value based on the content setting.
 void ContentSettingSingleRadioGroup::SetRadioGroup() {
   GURL url = web_contents()->GetURL();
-  string16 display_host;
+  base::string16 display_host;
   net::AppendFormattedHost(
       url,
       profile()->GetPrefs()->GetString(prefs::kAcceptLanguages),
@@ -277,9 +251,6 @@ void ContentSettingSingleRadioGroup::SetRadioGroup() {
 
   if (display_host.empty())
     display_host = ASCIIToUTF16(url.spec());
-
-  const std::set<std::string>& resources =
-      bubble_content().resource_identifiers;
 
   TabSpecificContentSettings* content_settings =
       TabSpecificContentSettings::FromWebContents(web_contents());
@@ -301,9 +272,6 @@ void ContentSettingSingleRadioGroup::SetRadioGroup() {
     {CONTENT_SETTINGS_TYPE_AUTOMATIC_DOWNLOADS, IDS_BLOCKED_DOWNLOAD_UNBLOCK},
   };
   // Fields as for kBlockedAllowIDs, above.
-  static const ContentSettingsTypeIdEntry kResourceSpecificBlockedAllowIDs[] = {
-    {CONTENT_SETTINGS_TYPE_PLUGINS, IDS_BLOCKED_PLUGINS_UNBLOCK},
-  };
   static const ContentSettingsTypeIdEntry kAllowedAllowIDs[] = {
     // TODO(bauerb): The string shouldn't be "unblock" (they weren't blocked).
     {CONTENT_SETTINGS_TYPE_COOKIES, IDS_BLOCKED_COOKIES_UNBLOCK},
@@ -319,15 +287,9 @@ void ContentSettingSingleRadioGroup::SetRadioGroup() {
     radio_allow_label = (content_type() == CONTENT_SETTINGS_TYPE_COOKIES) ?
         l10n_util::GetStringFUTF8(resource_id, display_host) :
         l10n_util::GetStringUTF8(resource_id);
-  } else if (resources.empty()) {
-    radio_allow_label = l10n_util::GetStringFUTF8(
-        GetIdForContentType(kBlockedAllowIDs, arraysize(kBlockedAllowIDs),
-                            content_type()),
-        display_host);
   } else {
     radio_allow_label = l10n_util::GetStringFUTF8(
-        GetIdForContentType(kResourceSpecificBlockedAllowIDs,
-                            arraysize(kResourceSpecificBlockedAllowIDs),
+        GetIdForContentType(kBlockedAllowIDs, arraysize(kBlockedAllowIDs),
                             content_type()),
         display_host);
   }
@@ -364,52 +326,42 @@ void ContentSettingSingleRadioGroup::SetRadioGroup() {
 
   radio_group.radio_items.push_back(radio_allow_label);
   radio_group.radio_items.push_back(radio_block_label);
-  HostContentSettingsMap* map = profile()->GetHostContentSettingsMap();
-  CookieSettings* cookie_settings =
-      CookieSettings::Factory::GetForProfile(profile()).get();
-  ContentSetting most_restrictive_setting;
-  SettingSource most_restrictive_setting_source = SETTING_SOURCE_NONE;
+  ContentSetting setting;
+  SettingSource setting_source = SETTING_SOURCE_NONE;
+  bool setting_is_wildcard = false;
 
-  if (resources.empty()) {
-    if (content_type() == CONTENT_SETTINGS_TYPE_COOKIES) {
-      most_restrictive_setting = cookie_settings->GetCookieSetting(
-          url, url, true, &most_restrictive_setting_source);
-    } else {
-      SettingInfo info;
-      scoped_ptr<Value> value(map->GetWebsiteSetting(
-          url, url, content_type(), std::string(), &info));
-      most_restrictive_setting =
-          content_settings::ValueToContentSetting(value.get());
-      most_restrictive_setting_source = info.source;
-    }
+  if (content_type() == CONTENT_SETTINGS_TYPE_COOKIES) {
+    CookieSettings* cookie_settings =
+        CookieSettings::Factory::GetForProfile(profile()).get();
+    setting = cookie_settings->GetCookieSetting(
+        url, url, true, &setting_source);
   } else {
-    most_restrictive_setting = CONTENT_SETTING_ALLOW;
-    for (std::set<std::string>::const_iterator it = resources.begin();
-         it != resources.end(); ++it) {
-      SettingInfo info;
-      scoped_ptr<Value> value(map->GetWebsiteSetting(
-          url, url, content_type(), *it, &info));
-      ContentSetting setting =
-          content_settings::ValueToContentSetting(value.get());
-      if (setting == CONTENT_SETTING_BLOCK) {
-        most_restrictive_setting = CONTENT_SETTING_BLOCK;
-        most_restrictive_setting_source = info.source;
-        break;
-      }
-      if (setting == CONTENT_SETTING_ASK) {
-        most_restrictive_setting = CONTENT_SETTING_ASK;
-        most_restrictive_setting_source = info.source;
-      }
-    }
+    SettingInfo info;
+    HostContentSettingsMap* map = profile()->GetHostContentSettingsMap();
+    scoped_ptr<Value> value(map->GetWebsiteSetting(
+        url, url, content_type(), std::string(), &info));
+    setting = content_settings::ValueToContentSetting(value.get());
+    setting_source = info.source;
+    setting_is_wildcard =
+        info.primary_pattern == ContentSettingsPattern::Wildcard() &&
+        info.secondary_pattern == ContentSettingsPattern::Wildcard();
   }
-  if (most_restrictive_setting == CONTENT_SETTING_ALLOW) {
-    radio_group.default_item = 0;
+
+  if (content_type() == CONTENT_SETTINGS_TYPE_PLUGINS &&
+      setting == CONTENT_SETTING_ALLOW &&
+      setting_is_wildcard) {
+    // In the corner case of unrecognized plugins (which are now blocked by
+    // default) we indicate the blocked state in the UI and allow the user to
+    // whitelist.
+    radio_group.default_item = 1;
+  } else if (setting == CONTENT_SETTING_ALLOW) {
+    radio_group.default_item = kAllowButtonIndex;
     // |block_setting_| is already set to |CONTENT_SETTING_BLOCK|.
   } else {
     radio_group.default_item = 1;
-    block_setting_ = most_restrictive_setting;
+    block_setting_ = setting;
   }
-  if (most_restrictive_setting_source != SETTING_SOURCE_USER) {
+  if (setting_source != SETTING_SOURCE_USER) {
     set_radio_group_enabled(false);
   } else {
     set_radio_group_enabled(true);
@@ -418,15 +370,12 @@ void ContentSettingSingleRadioGroup::SetRadioGroup() {
   set_radio_group(radio_group);
 }
 
-void ContentSettingSingleRadioGroup::AddException(
-    ContentSetting setting,
-    const std::string& resource_identifier) {
+void ContentSettingSingleRadioGroup::AddException(ContentSetting setting) {
   if (profile()) {
     profile()->GetHostContentSettingsMap()->AddExceptionForURL(
         bubble_content().radio_group.url,
         bubble_content().radio_group.url,
         content_type(),
-        resource_identifier,
         setting);
   }
 }
@@ -486,7 +435,7 @@ class ContentSettingPluginBubbleModel : public ContentSettingSingleRadioGroup {
                                   Profile* profile,
                                   ContentSettingsType content_type);
 
-  virtual ~ContentSettingPluginBubbleModel() {}
+  virtual ~ContentSettingPluginBubbleModel();
 
  private:
   virtual void OnCustomLinkClicked() OVERRIDE;
@@ -503,6 +452,14 @@ ContentSettingPluginBubbleModel::ContentSettingPluginBubbleModel(
   set_custom_link_enabled(web_contents &&
                           TabSpecificContentSettings::FromWebContents(
                               web_contents)->load_plugins_link_enabled());
+}
+
+ContentSettingPluginBubbleModel::~ContentSettingPluginBubbleModel() {
+  if (settings_changed()) {
+    // If the user elected to allow all plugins then run plugins at this time.
+    if (selected_item() == kAllowButtonIndex)
+      OnCustomLinkClicked();
+  }
 }
 
 void ContentSettingPluginBubbleModel::OnCustomLinkClicked() {
@@ -546,53 +503,29 @@ ContentSettingPopupBubbleModel::ContentSettingPopupBubbleModel(
 
 
 void ContentSettingPopupBubbleModel::SetPopups() {
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDisableBetterPopupBlocking)) {
-    std::map<int32, GURL> blocked_popups =
-        PopupBlockerTabHelper::FromWebContents(web_contents())
-            ->GetBlockedPopupRequests();
-    for (std::map<int32, GURL>::const_iterator iter = blocked_popups.begin();
-         iter != blocked_popups.end();
-         ++iter) {
-      std::string title(iter->second.spec());
-      // The popup may not have a valid URL.
-      if (title.empty())
-        title = l10n_util::GetStringUTF8(IDS_TAB_LOADING_TITLE);
-      PopupItem popup_item(
-          ui::ResourceBundle::GetSharedInstance().GetImageNamed(
-              IDR_DEFAULT_FAVICON),
-          title,
-          iter->first);
-      add_popup(popup_item);
-    }
-    return;
-  }
-  std::vector<WebContents*> blocked_contents;
-  BlockedContentTabHelper::FromWebContents(web_contents())->
-      GetBlockedContents(&blocked_contents);
-  for (std::vector<WebContents*>::const_iterator
-       i = blocked_contents.begin(); i != blocked_contents.end(); ++i) {
-    std::string title(UTF16ToUTF8((*i)->GetTitle()));
-    // The popup may not have committed a load yet, in which case it won't
-    // have a URL or title.
+  std::map<int32, GURL> blocked_popups =
+      PopupBlockerTabHelper::FromWebContents(web_contents())
+          ->GetBlockedPopupRequests();
+  for (std::map<int32, GURL>::const_iterator iter = blocked_popups.begin();
+       iter != blocked_popups.end();
+       ++iter) {
+    std::string title(iter->second.spec());
+    // The popup may not have a valid URL.
     if (title.empty())
       title = l10n_util::GetStringUTF8(IDS_TAB_LOADING_TITLE);
     PopupItem popup_item(
-        FaviconTabHelper::FromWebContents(*i)->GetFavicon(), title, *i);
+        ui::ResourceBundle::GetSharedInstance().GetImageNamed(
+            IDR_DEFAULT_FAVICON),
+        title,
+        iter->first);
     add_popup(popup_item);
   }
 }
 
 void ContentSettingPopupBubbleModel::OnPopupClicked(int index) {
   if (web_contents()) {
-    if (!CommandLine::ForCurrentProcess()->HasSwitch(
-            switches::kDisableBetterPopupBlocking)) {
-      PopupBlockerTabHelper::FromWebContents(web_contents())->
-          ShowBlockedPopup(bubble_content().popup_items[index].popup_id);
-    } else {
-      BlockedContentTabHelper::FromWebContents(web_contents())->
-          LaunchForContents(bubble_content().popup_items[index].web_contents);
-    }
+    PopupBlockerTabHelper::FromWebContents(web_contents())->
+        ShowBlockedPopup(bubble_content().popup_items[index].popup_id);
   }
 }
 
@@ -607,7 +540,6 @@ class ContentSettingMediaStreamBubbleModel
   virtual ~ContentSettingMediaStreamBubbleModel();
 
  private:
-  // Sets the title of the bubble.
   void SetTitle();
   // Sets the data for the radio buttons of the bubble.
   void SetRadioGroup();
@@ -717,11 +649,13 @@ void ContentSettingMediaStreamBubbleModel::SetTitle() {
 }
 
 void ContentSettingMediaStreamBubbleModel::SetRadioGroup() {
-  GURL url = web_contents()->GetURL();
+  TabSpecificContentSettings* content_settings =
+      TabSpecificContentSettings::FromWebContents(web_contents());
+  GURL url = content_settings->media_stream_access_origin();
   RadioGroup radio_group;
   radio_group.url = url;
 
-  string16 display_host_utf16;
+  base::string16 display_host_utf16;
   net::AppendFormattedHost(
       url,
       profile()->GetPrefs()->GetString(prefs::kAcceptLanguages),
@@ -804,12 +738,15 @@ void ContentSettingMediaStreamBubbleModel::UpdateSettings(
   if (profile()) {
     HostContentSettingsMap* content_settings =
         profile()->GetHostContentSettingsMap();
+    TabSpecificContentSettings* tab_content_settings =
+        TabSpecificContentSettings::FromWebContents(web_contents());
     // The same patterns must be used as in other places (e.g. the infobar) in
     // order to override the existing rule. Otherwise a new rule is created.
     // TODO(markusheintz): Extract to a helper so that there is only a single
     // place to touch.
     ContentSettingsPattern primary_pattern =
-        ContentSettingsPattern::FromURLNoWildcard(web_contents()->GetURL());
+        ContentSettingsPattern::FromURLNoWildcard(
+            tab_content_settings->media_stream_access_origin());
     ContentSettingsPattern secondary_pattern =
         ContentSettingsPattern::Wildcard();
     if (state_ == TabSpecificContentSettings::MICROPHONE_ACCESSED ||
@@ -844,6 +781,13 @@ void ContentSettingMediaStreamBubbleModel::UpdateDefaultDeviceForType(
 }
 
 void ContentSettingMediaStreamBubbleModel::SetMediaMenus() {
+  TabSpecificContentSettings* content_settings =
+      TabSpecificContentSettings::FromWebContents(web_contents());
+  const std::string& requested_microphone =
+       content_settings->media_stream_requested_audio_device();
+   const std::string& requested_camera =
+       content_settings->media_stream_requested_video_device();
+
   // Add microphone menu.
   PrefService* prefs = profile()->GetPrefs();
   MediaCaptureDevicesDispatcher* dispatcher =
@@ -867,8 +811,18 @@ void ContentSettingMediaStreamBubbleModel::SetMediaMenus() {
     MediaMenu mic_menu;
     mic_menu.label = l10n_util::GetStringUTF8(IDS_MEDIA_SELECTED_MIC_LABEL);
     if (!microphones.empty()) {
-      std::string preferred_mic =
-          prefs->GetString(prefs::kDefaultAudioCaptureDevice);
+      std::string preferred_mic;
+      if (requested_microphone.empty()) {
+        preferred_mic = prefs->GetString(prefs::kDefaultAudioCaptureDevice);
+        mic_menu.disabled = false;
+      } else {
+        // Set the |disabled| to true in order to disable the device selection
+        // menu on the media settings bubble. This must be done if the website
+        // manages the microphone devices itself.
+        preferred_mic = requested_microphone;
+        mic_menu.disabled = true;
+      }
+
       mic_menu.default_device = GetMediaDeviceById(preferred_mic, microphones);
       mic_menu.selected_device = mic_menu.default_device;
     }
@@ -882,8 +836,17 @@ void ContentSettingMediaStreamBubbleModel::SetMediaMenus() {
     camera_menu.label =
         l10n_util::GetStringUTF8(IDS_MEDIA_SELECTED_CAMERA_LABEL);
     if (!cameras.empty()) {
-      std::string preferred_camera =
-          prefs->GetString(prefs::kDefaultVideoCaptureDevice);
+      std::string preferred_camera;
+      if (requested_camera.empty()) {
+        preferred_camera = prefs->GetString(prefs::kDefaultVideoCaptureDevice);
+        camera_menu.disabled = false;
+      } else {
+        // Disable the menu since the website is managing the camera devices
+        // itself.
+        preferred_camera = requested_camera;
+        camera_menu.disabled = true;
+      }
+
       camera_menu.default_device =
           GetMediaDeviceById(preferred_camera, cameras);
       camera_menu.selected_device = camera_menu.default_device;
@@ -1052,7 +1015,7 @@ ContentSettingRPHBubbleModel::ContentSettingRPHBubbleModel(
   pending_handler_ = content_settings->pending_protocol_handler();
   previous_handler_ = content_settings->previous_protocol_handler();
 
-  string16 protocol;
+  base::string16 protocol;
   if (pending_handler_.protocol() == "mailto") {
     protocol = l10n_util::GetStringUTF16(
         IDS_REGISTER_PROTOCOL_HANDLER_MAILTO_NAME);
@@ -1319,18 +1282,16 @@ ContentSettingBubbleModel::DomainList::DomainList() {}
 
 ContentSettingBubbleModel::DomainList::~DomainList() {}
 
+ContentSettingBubbleModel::MediaMenu::MediaMenu() : disabled(false) {}
+
+ContentSettingBubbleModel::MediaMenu::~MediaMenu() {}
+
 ContentSettingBubbleModel::BubbleContent::BubbleContent()
     : radio_group_enabled(false),
       custom_link_enabled(false) {
 }
 
 ContentSettingBubbleModel::BubbleContent::~BubbleContent() {}
-
-
-void ContentSettingBubbleModel::AddBlockedResource(
-    const std::string& resource_identifier) {
-  bubble_content_.resource_identifiers.insert(resource_identifier);
-}
 
 void ContentSettingBubbleModel::Observe(
     int type,

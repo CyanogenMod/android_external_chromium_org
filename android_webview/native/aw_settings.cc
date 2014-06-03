@@ -8,17 +8,17 @@
 #include "android_webview/native/aw_contents.h"
 #include "base/android/jni_android.h"
 #include "base/android/jni_string.h"
+#include "base/command_line.h"
 #include "base/supports_user_data.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_client.h"
-#include "content/public/common/page_zoom.h"
+#include "content/public/common/content_switches.h"
 #include "jni/AwSettings_jni.h"
 #include "webkit/common/user_agent/user_agent.h"
 #include "webkit/common/webpreferences.h"
-#include "webkit/glue/webkit_glue.h"
 
 using base::android::ConvertJavaStringToUTF16;
 using base::android::ConvertUTF8ToJavaString;
@@ -44,9 +44,12 @@ class AwSettingsUserData : public base::SupportsUserData::Data {
   AwSettings* settings_;
 };
 
-AwSettings::AwSettings(JNIEnv* env, jobject obj, jint web_contents)
+AwSettings::AwSettings(JNIEnv* env, jobject obj, jlong web_contents)
     : WebContentsObserver(
           reinterpret_cast<content::WebContents*>(web_contents)),
+      accelerated_2d_canvas_disabled_by_switch_(
+          CommandLine::ForCurrentProcess()->HasSwitch(
+              switches::kDisableAccelerated2dCanvas)),
       aw_settings_(env, obj) {
   reinterpret_cast<content::WebContents*>(web_contents)->
       SetUserData(kAwSettingsUserDataKey, new AwSettingsUserData(this));
@@ -62,7 +65,7 @@ AwSettings::~AwSettings() {
   jobject obj = scoped_obj.obj();
   if (!obj) return;
   Java_AwSettings_nativeAwSettingsGone(env, obj,
-                                       reinterpret_cast<jint>(this));
+                                       reinterpret_cast<intptr_t>(this));
 }
 
 void AwSettings::Destroy(JNIEnv* env, jobject obj) {
@@ -185,14 +188,20 @@ void AwSettings::PopulateFixedPreferences(WebPreferences* web_prefs) {
 void AwSettings::PopulateWebPreferences(WebPreferences* web_prefs) {
   JNIEnv* env = base::android::AttachCurrentThread();
   CHECK(env);
-
-  AwRenderViewHostExt* render_view_host_ext = GetAwRenderViewHostExt();
-  if (!render_view_host_ext) return;
-
   ScopedJavaLocalRef<jobject> scoped_obj = aw_settings_.get(env);
   jobject obj = scoped_obj.obj();
   if (!obj) return;
+  // Grab the lock and call PopulateWebPreferencesLocked.
+  Java_AwSettings_populateWebPreferences(
+      env, obj, reinterpret_cast<jlong>(web_prefs));
+}
 
+void AwSettings::PopulateWebPreferencesLocked(
+    JNIEnv* env, jobject obj, jlong web_prefs_ptr) {
+  AwRenderViewHostExt* render_view_host_ext = GetAwRenderViewHostExt();
+  if (!render_view_host_ext) return;
+
+  WebPreferences* web_prefs = reinterpret_cast<WebPreferences*>(web_prefs_ptr);
   PopulateFixedPreferences(web_prefs);
 
   web_prefs->text_autosizing_enabled =
@@ -202,12 +211,11 @@ void AwSettings::PopulateWebPreferences(WebPreferences* web_prefs) {
   if (web_prefs->text_autosizing_enabled) {
     web_prefs->font_scale_factor = text_size_percent / 100.0f;
     web_prefs->force_enable_zoom = text_size_percent >= 130;
-    // Use the default zoom level value when Text Autosizer is turned on.
-    render_view_host_ext->SetTextZoomLevel(0);
+    // Use the default zoom factor value when Text Autosizer is turned on.
+    render_view_host_ext->SetTextZoomFactor(1);
   } else {
     web_prefs->force_enable_zoom = false;
-    render_view_host_ext->SetTextZoomLevel(content::ZoomFactorToZoomLevel(
-        text_size_percent / 100.0f));
+    render_view_host_ext->SetTextZoomFactor(text_size_percent / 100.0f);
   }
 
   web_prefs->standard_font_family_map[webkit_glue::kCommonScript] =
@@ -285,8 +293,11 @@ void AwSettings::PopulateWebPreferences(WebPreferences* web_prefs) {
       Java_AwSettings_getDatabaseEnabledLocked(env, obj);
 
   web_prefs->wide_viewport_quirk = true;
-  web_prefs->double_tap_to_zoom_enabled = web_prefs->use_wide_viewport =
+  web_prefs->use_wide_viewport =
       Java_AwSettings_getUseWideViewportLocked(env, obj);
+
+  web_prefs->double_tap_to_zoom_enabled =
+      Java_AwSettings_supportsDoubleTapZoomLocked(env, obj);
 
   web_prefs->initialize_at_minimum_page_scale =
       Java_AwSettings_getLoadWithOverviewModeLocked(env, obj);
@@ -306,11 +317,14 @@ void AwSettings::PopulateWebPreferences(WebPreferences* web_prefs) {
       GURL(ConvertJavaStringToUTF8(url)) : GURL();
 
   bool support_quirks = Java_AwSettings_getSupportLegacyQuirksLocked(env, obj);
+  // Please see the corresponding Blink settings for bug references.
   web_prefs->support_deprecated_target_density_dpi = support_quirks;
   web_prefs->use_legacy_background_size_shorthand_behavior = support_quirks;
   web_prefs->viewport_meta_layout_size_quirk = support_quirks;
-  web_prefs->viewport_meta_merge_quirk = support_quirks;
+  web_prefs->viewport_meta_merge_content_quirk = support_quirks;
+  web_prefs->viewport_meta_non_user_scalable_quirk = support_quirks;
   web_prefs->viewport_meta_zero_values_quirk = support_quirks;
+  web_prefs->clobber_user_agent_initial_scale_quirk = support_quirks;
   web_prefs->ignore_main_frame_overflow_hidden_quirk = support_quirks;
   web_prefs->report_screen_size_in_physical_pixels_quirk = support_quirks;
 
@@ -318,13 +332,24 @@ void AwSettings::PopulateWebPreferences(WebPreferences* web_prefs) {
       Java_AwSettings_getPasswordEchoEnabledLocked(env, obj);
   web_prefs->spatial_navigation_enabled =
       Java_AwSettings_getSpatialNavigationLocked(env, obj);
+
+  web_prefs->accelerated_2d_canvas_enabled = true;
+  if (accelerated_2d_canvas_disabled_by_switch_ ||
+      !Java_AwSettings_getEnableSupportedHardwareAcceleratedFeaturesLocked(
+          env, obj)) {
+    // Any canvas smaller than this will fallback to software. Abusing this
+    // slightly to turn canvas off without changing
+    // accelerated_2d_canvas_enabled, which also affects compositing mode.
+    // Using 100M instead of max int to avoid overflows.
+    web_prefs->minimum_accelerated_2d_canvas_size = 100 * 1000 * 1000;
+  }
 }
 
-static jint Init(JNIEnv* env,
-                 jobject obj,
-                 jint web_contents) {
+static jlong Init(JNIEnv* env,
+                  jobject obj,
+                  jlong web_contents) {
   AwSettings* settings = new AwSettings(env, obj, web_contents);
-  return reinterpret_cast<jint>(settings);
+  return reinterpret_cast<intptr_t>(settings);
 }
 
 static jstring GetDefaultUserAgent(JNIEnv* env, jclass clazz) {

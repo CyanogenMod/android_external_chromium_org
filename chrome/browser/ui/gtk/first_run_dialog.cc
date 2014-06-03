@@ -10,7 +10,6 @@
 #include "base/i18n/rtl.h"
 #include "base/message_loop/message_loop.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/app/breakpad_linux.h"
 #include "chrome/browser/first_run/first_run_dialog.h"
 #include "chrome/browser/platform_util.h"
 #include "chrome/browser/process_singleton.h"
@@ -20,6 +19,7 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/installer/util/google_update_settings.h"
+#include "components/breakpad/app/breakpad_linux.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
@@ -34,45 +34,16 @@
 #include "chrome/browser/browser_process.h"
 #endif
 
-namespace {
-
-// Set the (x, y) coordinates of the welcome message (which floats on top of
-// the omnibox image at the top of the first run dialog).
-void SetWelcomePosition(GtkFloatingContainer* container,
-                        GtkAllocation* allocation,
-                        GtkWidget* label) {
-  GValue value = { 0, };
-  g_value_init(&value, G_TYPE_INT);
-
-  GtkRequisition req;
-  gtk_widget_size_request(label, &req);
-
-  int x = base::i18n::IsRTL() ?
-      allocation->width - req.width - ui::kContentAreaSpacing :
-      ui::kContentAreaSpacing;
-  g_value_set_int(&value, x);
-  gtk_container_child_set_property(GTK_CONTAINER(container),
-                                   label, "x", &value);
-
-  int y = allocation->height / 2 - req.height / 2;
-  g_value_set_int(&value, y);
-  gtk_container_child_set_property(GTK_CONTAINER(container),
-                                   label, "y", &value);
-  g_value_unset(&value);
-}
-
-}  // namespace
-
 namespace first_run {
 
 bool ShowFirstRunDialog(Profile* profile) {
-  return FirstRunDialog::Show();
+  return FirstRunDialog::Show(profile);
 }
 
 }  // namespace first_run
 
 // static
-bool FirstRunDialog::Show() {
+bool FirstRunDialog::Show(Profile* profile) {
   bool dialog_shown = false;
 #if defined(GOOGLE_CHROME_BUILD)
   // If the metrics reporting is managed, we won't ask.
@@ -84,7 +55,7 @@ bool FirstRunDialog::Show() {
 
   if (show_reporting_dialog) {
     // Object deletes itself.
-    new FirstRunDialog();
+    new FirstRunDialog(profile);
     dialog_shown = true;
 
     // TODO(port): it should be sufficient to just run the dialog:
@@ -98,8 +69,9 @@ bool FirstRunDialog::Show() {
   return dialog_shown;
 }
 
-FirstRunDialog::FirstRunDialog()
-    : dialog_(NULL),
+FirstRunDialog::FirstRunDialog(Profile* profile)
+    : profile_(profile),
+      dialog_(NULL),
       report_crashes_(NULL),
       make_default_(NULL) {
   ShowReportingDialog();
@@ -164,7 +136,7 @@ void FirstRunDialog::OnResponseDialog(GtkWidget* widget, int response) {
   if (report_crashes_ &&
       gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(report_crashes_))) {
     if (GoogleUpdateSettings::SetCollectStatsConsent(true))
-      InitCrashReporter();
+      breakpad::InitCrashReporter(std::string());
   } else {
     GoogleUpdateSettings::SetCollectStatsConsent(false);
   }
@@ -179,7 +151,7 @@ void FirstRunDialog::OnResponseDialog(GtkWidget* widget, int response) {
 }
 
 void FirstRunDialog::OnLearnMoreLinkClicked(GtkButton* button) {
-  platform_util::OpenExternal(GURL(chrome::kLearnMoreReportingURL));
+  platform_util::OpenExternal(profile_, GURL(chrome::kLearnMoreReportingURL));
 }
 
 void FirstRunDialog::FirstRunDone() {

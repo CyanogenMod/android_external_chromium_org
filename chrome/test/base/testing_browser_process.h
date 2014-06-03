@@ -30,6 +30,10 @@ namespace content {
 class NotificationService;
 }
 
+namespace extensions {
+class ExtensionsBrowserClient;
+}
+
 namespace policy {
 class BrowserPolicyConnector;
 class PolicyService;
@@ -41,8 +45,11 @@ class PrerenderTracker;
 
 class TestingBrowserProcess : public BrowserProcess {
  public:
-  TestingBrowserProcess();
-  virtual ~TestingBrowserProcess();
+  // Initializes |g_browser_process| with a new TestingBrowserProcess.
+  static void CreateInstance();
+
+  // Cleanly destroys |g_browser_process|, which has special deletion semantics.
+  static void DeleteInstance();
 
   // Convenience method to get g_browser_process as a TestingBrowserProcess*.
   static TestingBrowserProcess* GetGlobal();
@@ -105,9 +112,8 @@ class TestingBrowserProcess : public BrowserProcess {
   virtual CRLSetFetcher* crl_set_fetcher() OVERRIDE;
   virtual PnaclComponentInstaller* pnacl_component_installer() OVERRIDE;
   virtual BookmarkPromptController* bookmark_prompt_controller() OVERRIDE;
-  virtual chrome::StorageMonitor* storage_monitor() OVERRIDE;
-  virtual chrome::MediaFileSystemRegistry*
-      media_file_system_registry() OVERRIDE;
+  virtual StorageMonitor* storage_monitor() OVERRIDE;
+  virtual MediaFileSystemRegistry* media_file_system_registry() OVERRIDE;
   virtual bool created_local_state() const OVERRIDE;
 
 #if defined(ENABLE_WEBRTC)
@@ -123,9 +129,13 @@ class TestingBrowserProcess : public BrowserProcess {
   void SetSafeBrowsingService(SafeBrowsingService* sb_service);
   void SetBookmarkPromptController(BookmarkPromptController* controller);
   void SetSystemRequestContext(net::URLRequestContextGetter* context_getter);
-  void SetStorageMonitor(scoped_ptr<chrome::StorageMonitor> storage_monitor);
+  void SetStorageMonitor(scoped_ptr<StorageMonitor> storage_monitor);
 
  private:
+  // See CreateInstance() and DestoryInstance() above.
+  TestingBrowserProcess();
+  virtual ~TestingBrowserProcess();
+
   scoped_ptr<content::NotificationService> notification_service_;
   unsigned int module_ref_count_;
   std::string app_locale_;
@@ -141,6 +151,7 @@ class TestingBrowserProcess : public BrowserProcess {
   scoped_ptr<NotificationUIManager> notification_ui_manager_;
 
 #if defined(ENABLE_FULL_PRINTING)
+  scoped_ptr<printing::PrintJobManager> print_job_manager_;
   scoped_ptr<printing::BackgroundPrintingManager> background_printing_manager_;
   scoped_refptr<printing::PrintPreviewDialogController>
       print_preview_dialog_controller_;
@@ -153,8 +164,8 @@ class TestingBrowserProcess : public BrowserProcess {
 #endif  // !defined(OS_IOS)
 
 #if !defined(OS_IOS) && !defined(OS_ANDROID)
-  scoped_ptr<chrome::StorageMonitor> storage_monitor_;
-  scoped_ptr<chrome::MediaFileSystemRegistry> media_file_system_registry_;
+  scoped_ptr<StorageMonitor> storage_monitor_;
+  scoped_ptr<MediaFileSystemRegistry> media_file_system_registry_;
 #endif
 
   // The following objects are not owned by TestingBrowserProcess:
@@ -164,7 +175,32 @@ class TestingBrowserProcess : public BrowserProcess {
 
   scoped_ptr<BrowserProcessPlatformPart> platform_part_;
 
+  scoped_ptr<extensions::ExtensionsBrowserClient> extensions_browser_client_;
+
   DISALLOW_COPY_AND_ASSIGN(TestingBrowserProcess);
+};
+
+// RAII (resource acquisition is initialization) for TestingBrowserProcess.
+// Allows you to initialize TestingBrowserProcess/NotificationService before
+// other member variables.
+//
+// This can be helpful if you are running a unit test inside the browser_tests
+// suite because browser_tests do not make a TestingBrowserProcess for you.
+//
+// class MyUnitTestRunningAsBrowserTest : public testing::Test {
+//  ...stuff...
+//  private:
+//   TestingBrowserProcessInitializer initializer_;
+//   LocalState local_state_;  // Needs a BrowserProcess to initialize.
+//   NotificationRegistrar registar_;  // Needs NotificationService.
+// };
+class TestingBrowserProcessInitializer {
+ public:
+  TestingBrowserProcessInitializer();
+  ~TestingBrowserProcessInitializer();
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(TestingBrowserProcessInitializer);
 };
 
 #endif  // CHROME_TEST_BASE_TESTING_BROWSER_PROCESS_H_

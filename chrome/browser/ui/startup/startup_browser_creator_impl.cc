@@ -32,6 +32,8 @@
 #include "chrome/browser/defaults.h"
 #include "chrome/browser/extensions/extension_creator.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_system.h"
+#include "chrome/browser/extensions/launch_util.h"
 #include "chrome/browser/extensions/pack_extension_job.h"
 #include "chrome/browser/first_run/first_run.h"
 #include "chrome/browser/google/google_util.h"
@@ -86,6 +88,7 @@
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
+#include "extensions/common/constants.h"
 #include "grit/locale_settings.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -102,8 +105,8 @@
 #endif
 
 #if defined(OS_WIN)
-#include "apps/app_launch_for_metro_restart_win.h"
 #include "base/win/windows_version.h"
+#include "chrome/browser/apps/app_launch_for_metro_restart_win.h"
 #endif
 
 using content::ChildProcessSecurityPolicy;
@@ -137,9 +140,9 @@ LaunchMode GetLaunchShortcutKind() {
   if (si.dwFlags & 0x800) {
     if (!si.lpTitle)
       return LM_SHORTCUT_NONAME;
-    string16 shortcut(si.lpTitle);
+    base::string16 shortcut(si.lpTitle);
     // The windows quick launch path is not localized.
-    if (shortcut.find(L"\\Quick Launch\\") != string16::npos) {
+    if (shortcut.find(L"\\Quick Launch\\") != base::string16::npos) {
       if (base::win::GetVersion() >= base::win::VERSION_WIN7)
         return LM_SHORTCUT_TASKBAR;
       else
@@ -185,12 +188,11 @@ bool GetAppLaunchContainer(
     Profile* profile,
     const std::string& app_id,
     const Extension** out_extension,
-    extension_misc::LaunchContainer* out_launch_container) {
+    extensions::LaunchContainer* out_launch_container) {
 
   ExtensionService* extensions_service = profile->GetExtensionService();
   const Extension* extension =
       extensions_service->GetExtensionById(app_id, false);
-
   // The extension with id |app_id| may have been uninstalled.
   if (!extension)
     return false;
@@ -199,11 +201,14 @@ bool GetAppLaunchContainer(
   if (profile->IsOffTheRecord() && extension->is_platform_app())
     return false;
 
-  // Look at preferences to find the right launch container.  If no
+  // Look at preferences to find the right launch container. If no
   // preference is set, launch as a window.
-  extension_misc::LaunchContainer launch_container =
-      extensions_service->extension_prefs()->GetLaunchContainer(
-          extension, extensions::ExtensionPrefs::LAUNCH_WINDOW);
+  extensions::LaunchContainer launch_container = extensions::GetLaunchContainer(
+      extensions_service->extension_prefs(), extension);
+
+  if (!extensions::HasPreferredLaunchContainer(
+          extensions_service->extension_prefs(), extension))
+    launch_container = extensions::LAUNCH_CONTAINER_WINDOW;
 
   *out_extension = extension;
   *out_launch_container = launch_container;
@@ -297,6 +302,14 @@ class WebContentsCloseObserver : public content::NotificationObserver {
   DISALLOW_COPY_AND_ASSIGN(WebContentsCloseObserver);
 };
 
+const Extension* GetDisabledPlatformApp(Profile* profile,
+                                        const std::string& extension_id) {
+  ExtensionService* service =
+      extensions::ExtensionSystem::Get(profile)->extension_service();
+  const Extension* extension = service->GetExtensionById(extension_id, true);
+  return extension && extension->is_platform_app() ? extension : NULL;
+}
+
 }  // namespace
 
 namespace internals {
@@ -349,9 +362,25 @@ bool StartupBrowserCreatorImpl::Launch(Profile* profile,
   }
 
   AppListService::InitAll(profile);
-  if (command_line_.HasSwitch(switches::kShowAppList)) {
+  if (command_line_.HasSwitch(switches::kAppId)) {
+    std::string app_id = command_line_.GetSwitchValueASCII(switches::kAppId);
+    const Extension* extension = GetDisabledPlatformApp(profile, app_id);
+    // If |app_id| is a disabled platform app we handle it specially here,
+    // otherwise it will be handled below.
+    if (extension) {
+      RecordCmdLineAppHistogram(extensions::Manifest::TYPE_PLATFORM_APP);
+      AppLaunchParams params(profile, extension,
+                             extensions::LAUNCH_CONTAINER_NONE, NEW_WINDOW);
+      params.command_line = &command_line_;
+      params.current_directory = cur_dir_;
+      OpenApplicationWithReenablePrompt(params);
+      return true;
+    }
+  } else if (command_line_.HasSwitch(switches::kShowAppList)) {
+    // This switch is used for shortcuts on the native desktop.
     AppListService::RecordShowTimings(command_line_);
-    AppListService::Get()->ShowForProfile(profile);
+    AppListService::Get(chrome::HOST_DESKTOP_TYPE_NATIVE)->
+        ShowForProfile(profile);
     return true;
   }
 
@@ -438,19 +467,20 @@ bool StartupBrowserCreatorImpl::OpenApplicationTab(Profile* profile) {
   if (!IsAppLaunch(NULL, &app_id) || app_id.empty())
     return false;
 
-  extension_misc::LaunchContainer launch_container;
+  extensions::LaunchContainer launch_container;
   const Extension* extension;
   if (!GetAppLaunchContainer(profile, app_id, &extension, &launch_container))
     return false;
 
   // If the user doesn't want to open a tab, fail.
-  if (launch_container != extension_misc::LAUNCH_TAB)
+  if (launch_container != extensions::LAUNCH_CONTAINER_TAB)
     return false;
 
   RecordCmdLineAppHistogram(extension->GetType());
 
-  WebContents* app_tab = chrome::OpenApplication(chrome::AppLaunchParams(
-      profile, extension, extension_misc::LAUNCH_TAB, NEW_FOREGROUND_TAB));
+  WebContents* app_tab = OpenApplication(AppLaunchParams(
+      profile, extension, extensions::LAUNCH_CONTAINER_TAB,
+      NEW_FOREGROUND_TAB));
   return (app_tab != NULL);
 }
 
@@ -470,7 +500,7 @@ bool StartupBrowserCreatorImpl::OpenApplicationWindow(
   // TODO(skerner): Do something reasonable here. Pop up a warning panel?
   // Open an URL to the gallery page of the extension id?
   if (!app_id.empty()) {
-    extension_misc::LaunchContainer launch_container;
+    extensions::LaunchContainer launch_container;
     const Extension* extension;
     if (!GetAppLaunchContainer(profile, app_id, &extension, &launch_container))
       return false;
@@ -479,16 +509,15 @@ bool StartupBrowserCreatorImpl::OpenApplicationWindow(
     // and avoid calling GetAppLaunchContainer() both here and in
     // OpenApplicationTab().
 
-    if (launch_container == extension_misc::LAUNCH_TAB)
+    if (launch_container == extensions::LAUNCH_CONTAINER_TAB)
       return false;
 
     RecordCmdLineAppHistogram(extension->GetType());
 
-    chrome::AppLaunchParams params(profile, extension,
-                                   launch_container, NEW_WINDOW);
+    AppLaunchParams params(profile, extension, launch_container, NEW_WINDOW);
     params.command_line = &command_line_;
     params.current_directory = cur_dir_;
-    WebContents* tab_in_app_window = chrome::OpenApplication(params);
+    WebContents* tab_in_app_window = OpenApplication(params);
 
     if (out_app_contents)
       *out_app_contents = tab_in_app_window;
@@ -524,9 +553,9 @@ bool StartupBrowserCreatorImpl::OpenApplicationWindow(
       gfx::Rect override_bounds;
       ExtractOptionalAppWindowSize(&override_bounds);
 
-      WebContents* app_tab = chrome::OpenAppShortcutWindow(profile,
-                                                           url,
-                                                           override_bounds);
+      WebContents* app_tab = OpenAppShortcutWindow(profile,
+                                                   url,
+                                                   override_bounds);
 
       if (out_app_contents)
         *out_app_contents = app_tab;
@@ -555,7 +584,7 @@ void StartupBrowserCreatorImpl::ProcessLaunchURLs(
   if (base::win::GetVersion() >= base::win::VERSION_WIN8) {
     // See if there are apps for this profile that should be launched on startup
     // due to a switch from Metro mode.
-    apps::HandleAppLaunchForMetroRestart(profile_);
+    app_metro_launch::HandleAppLaunchForMetroRestart(profile_);
   }
 #endif
 
@@ -573,7 +602,8 @@ void StartupBrowserCreatorImpl::ProcessLaunchURLs(
     // Chrome may have been running in the background due to an app with a
     // background page being installed, or running with only an app window
     // displayed.
-    SessionService* service = SessionServiceFactory::GetForProfile(profile_);
+    SessionService* service =
+        SessionServiceFactory::GetForProfileForSessionRestore(profile_);
     if (service && service->ShouldNewWindowStartSession()) {
       // Restore the last session if any.
       if (!HasPendingUncleanExit(profile_) &&
@@ -837,7 +867,7 @@ Browser* StartupBrowserCreatorImpl::OpenTabsInBrowser(
   if (!browser->tab_strip_model()->GetActiveWebContents()) {
     // TODO: this is a work around for 110909. Figure out why it's needed.
     if (!browser->tab_strip_model()->count())
-      chrome::AddBlankTabAt(browser, -1, true);
+      chrome::AddTabAt(browser, GURL(), -1, true);
     else
       browser->tab_strip_model()->ActivateTabAt(0, false);
   }
@@ -864,20 +894,16 @@ void StartupBrowserCreatorImpl::AddInfoBarsIfNecessary(
   // The below info bars are only added to the first profile which is launched.
   // Other profiles might be restoring the browsing sessions asynchronously,
   // so we cannot add the info bars to the focused tabs here.
-  if (is_process_startup == chrome::startup::IS_PROCESS_STARTUP) {
+  if (is_process_startup == chrome::startup::IS_PROCESS_STARTUP &&
+      !command_line_.HasSwitch(switches::kTestType)) {
     chrome::ShowBadFlagsPrompt(browser);
-    if (!command_line_.HasSwitch(switches::kTestType)) {
-      GoogleApiKeysInfoBarDelegate::Create(InfoBarService::FromWebContents(
-          browser->tab_strip_model()->GetActiveWebContents()));
+    GoogleApiKeysInfoBarDelegate::Create(InfoBarService::FromWebContents(
+        browser->tab_strip_model()->GetActiveWebContents()));
+    ObsoleteOSInfoBarDelegate::Create(InfoBarService::FromWebContents(
+        browser->tab_strip_model()->GetActiveWebContents()));
 
-      // TODO(phajdan.jr): Always enable after migrating bots:
-      // http://crbug.com/170262 .
-      ObsoleteOSInfoBarDelegate::Create(InfoBarService::FromWebContents(
-          browser->tab_strip_model()->GetActiveWebContents()));
-    }
-
-    if (browser_defaults::kOSSupportsOtherBrowsers &&
-        !command_line_.HasSwitch(switches::kNoDefaultBrowserCheck)) {
+#if !defined(OS_CHROMEOS)
+    if (!command_line_.HasSwitch(switches::kNoDefaultBrowserCheck)) {
       // Generally, the default browser prompt should not be shown on first
       // run. However, when the set-as-default dialog has been suppressed, we
       // need to allow it.
@@ -889,6 +915,7 @@ void StartupBrowserCreatorImpl::AddInfoBarsIfNecessary(
                                          browser->host_desktop_type());
       }
     }
+#endif
   }
 }
 

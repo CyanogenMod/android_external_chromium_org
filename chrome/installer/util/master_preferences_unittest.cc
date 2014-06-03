@@ -10,6 +10,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/values.h"
 #include "chrome/common/chrome_paths.h"
+#include "chrome/common/pref_names.h"
 #include "chrome/installer/util/master_preferences.h"
 #include "chrome/installer/util/master_preferences_constants.h"
 #include "chrome/installer/util/util_constants.h"
@@ -19,7 +20,7 @@ namespace {
 class MasterPreferencesTest : public testing::Test {
  protected:
   virtual void SetUp() {
-    ASSERT_TRUE(file_util::CreateTemporaryFile(&prefs_file_));
+    ASSERT_TRUE(base::CreateTemporaryFile(&prefs_file_));
   }
 
   virtual void TearDown() {
@@ -240,7 +241,7 @@ TEST(MasterPrefsExtension, ValidateExtensionJSON) {
 TEST_F(MasterPreferencesTest, GetInstallPreferencesTest) {
   // Create a temporary prefs file.
   base::FilePath prefs_file;
-  ASSERT_TRUE(file_util::CreateTemporaryFile(&prefs_file));
+  ASSERT_TRUE(base::CreateTemporaryFile(&prefs_file));
   const char text[] =
     "{ \n"
     "  \"distribution\": { \n"
@@ -299,55 +300,30 @@ TEST_F(MasterPreferencesTest, GetInstallPreferencesTest) {
 }
 
 TEST_F(MasterPreferencesTest, TestDefaultInstallConfig) {
-  std::wstringstream chrome_cmd, cf_cmd;
+  std::wstringstream chrome_cmd;
   chrome_cmd << "setup.exe";
-  cf_cmd << "setup.exe --" << installer::switches::kChromeFrame;
 
   CommandLine chrome_install(CommandLine::FromString(chrome_cmd.str()));
-  CommandLine cf_install(CommandLine::FromString(cf_cmd.str()));
 
   installer::MasterPreferences pref_chrome(chrome_install);
-  installer::MasterPreferences pref_cf(cf_install);
 
   EXPECT_FALSE(pref_chrome.is_multi_install());
   EXPECT_TRUE(pref_chrome.install_chrome());
-  EXPECT_FALSE(pref_chrome.install_chrome_frame());
-
-  EXPECT_FALSE(pref_cf.is_multi_install());
-  EXPECT_FALSE(pref_cf.install_chrome());
-  EXPECT_TRUE(pref_cf.install_chrome_frame());
 }
 
 TEST_F(MasterPreferencesTest, TestMultiInstallConfig) {
   using installer::switches::kMultiInstall;
   using installer::switches::kChrome;
-  using installer::switches::kChromeFrame;
 
   std::wstringstream chrome_cmd, cf_cmd, chrome_cf_cmd;
   chrome_cmd << "setup.exe --" << kMultiInstall << " --" << kChrome;
-  cf_cmd << "setup.exe --" << kMultiInstall << " --" << kChromeFrame;
-  chrome_cf_cmd << "setup.exe --" << kMultiInstall << " --" << kChrome <<
-      " --" << kChromeFrame;
 
   CommandLine chrome_install(CommandLine::FromString(chrome_cmd.str()));
-  CommandLine cf_install(CommandLine::FromString(cf_cmd.str()));
-  CommandLine chrome_cf_install(CommandLine::FromString(chrome_cf_cmd.str()));
 
   installer::MasterPreferences pref_chrome(chrome_install);
-  installer::MasterPreferences pref_cf(cf_install);
-  installer::MasterPreferences pref_chrome_cf(chrome_cf_install);
 
   EXPECT_TRUE(pref_chrome.is_multi_install());
   EXPECT_TRUE(pref_chrome.install_chrome());
-  EXPECT_FALSE(pref_chrome.install_chrome_frame());
-
-  EXPECT_TRUE(pref_cf.is_multi_install());
-  EXPECT_FALSE(pref_cf.install_chrome());
-  EXPECT_TRUE(pref_cf.install_chrome_frame());
-
-  EXPECT_TRUE(pref_chrome_cf.is_multi_install());
-  EXPECT_TRUE(pref_chrome_cf.install_chrome());
-  EXPECT_TRUE(pref_chrome_cf.install_chrome_frame());
 }
 
 TEST_F(MasterPreferencesTest, EnforceLegacyCreateAllShortcutsFalse) {
@@ -432,4 +408,73 @@ TEST_F(MasterPreferencesTest, DontEnforceLegacyCreateAllShortcutsNotSpecified) {
     EXPECT_FALSE(do_not_create_desktop_shortcut);
     EXPECT_FALSE(do_not_create_quick_launch_shortcut);
     EXPECT_FALSE(do_not_create_taskbar_shortcut);
+}
+
+TEST_F(MasterPreferencesTest, MigrateOldStartupUrlsPref) {
+  static const char kOldMasterPrefs[] =
+      "{ \n"
+      "  \"distribution\": { \n"
+      "     \"show_welcome_page\": true,\n"
+      "     \"import_search_engine\": true,\n"
+      "     \"import_history\": true,\n"
+      "     \"import_bookmarks\": true\n"
+      "  },\n"
+      "  \"session\": {\n"
+      "     \"urls_to_restore_on_startup\": [\"http://www.google.com\"]\n"
+      "  }\n"
+      "} \n";
+
+  const installer::MasterPreferences prefs(kOldMasterPrefs);
+  const base::DictionaryValue& master_dictionary =
+      prefs.master_dictionary();
+
+  const base::ListValue* old_startup_urls_list = NULL;
+  EXPECT_TRUE(master_dictionary.GetList(prefs::kURLsToRestoreOnStartupOld,
+                                        &old_startup_urls_list));
+  EXPECT_TRUE(old_startup_urls_list != NULL);
+
+  // The MasterPreferences dictionary should also conjure up the new setting
+  // as per EnforceLegacyPreferences.
+  const base::ListValue* new_startup_urls_list = NULL;
+  EXPECT_TRUE(master_dictionary.GetList(prefs::kURLsToRestoreOnStartup,
+                                        &new_startup_urls_list));
+  EXPECT_TRUE(new_startup_urls_list != NULL);
+}
+
+TEST_F(MasterPreferencesTest, DontMigrateOldStartupUrlsPrefWhenNewExists) {
+  static const char kOldAndNewMasterPrefs[] =
+      "{ \n"
+      "  \"distribution\": { \n"
+      "     \"show_welcome_page\": true,\n"
+      "     \"import_search_engine\": true,\n"
+      "     \"import_history\": true,\n"
+      "     \"import_bookmarks\": true\n"
+      "  },\n"
+      "  \"session\": {\n"
+      "     \"urls_to_restore_on_startup\": [\"http://www.google.com\"],\n"
+      "     \"startup_urls\": [\"http://www.example.com\"]\n"
+      "  }\n"
+      "} \n";
+
+  const installer::MasterPreferences prefs(kOldAndNewMasterPrefs);
+  const base::DictionaryValue& master_dictionary =
+      prefs.master_dictionary();
+
+  const base::ListValue* old_startup_urls_list = NULL;
+  EXPECT_TRUE(master_dictionary.GetList(prefs::kURLsToRestoreOnStartupOld,
+                                        &old_startup_urls_list));
+  ASSERT_TRUE(old_startup_urls_list != NULL);
+  std::string url_value;
+  EXPECT_TRUE(old_startup_urls_list->GetString(0, &url_value));
+  EXPECT_EQ("http://www.google.com", url_value);
+
+  // The MasterPreferences dictionary should also conjure up the new setting
+  // as per EnforceLegacyPreferences.
+  const base::ListValue* new_startup_urls_list = NULL;
+  EXPECT_TRUE(master_dictionary.GetList(prefs::kURLsToRestoreOnStartup,
+                                        &new_startup_urls_list));
+  ASSERT_TRUE(new_startup_urls_list != NULL);
+  std::string new_url_value;
+  EXPECT_TRUE(new_startup_urls_list->GetString(0, &new_url_value));
+  EXPECT_EQ("http://www.example.com", new_url_value);
 }

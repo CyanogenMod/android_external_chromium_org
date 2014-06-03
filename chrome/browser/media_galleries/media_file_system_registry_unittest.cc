@@ -34,7 +34,6 @@
 #include "chrome/browser/storage_monitor/storage_monitor.h"
 #include "chrome/browser/storage_monitor/test_storage_monitor.h"
 #include "chrome/common/chrome_paths.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
@@ -45,6 +44,7 @@
 #include "content/public/test/mock_render_process_host.h"
 #include "content/public/test/test_browser_thread.h"
 #include "content/public/test/web_contents_tester.h"
+#include "extensions/common/extension.h"
 #include "sync/api/string_ordinal.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -55,8 +55,6 @@
 #endif
 
 using content::BrowserThread;
-
-namespace chrome {
 
 // Not anonymous so it can be friends with MediaFileSystemRegistry.
 class TestMediaFileSystemContext : public MediaFileSystemContext {
@@ -77,12 +75,8 @@ class TestMediaFileSystemContext : public MediaFileSystemContext {
   virtual ~TestMediaFileSystemContext() {}
 
   // MediaFileSystemContext implementation.
-  virtual std::string RegisterFileSystemForMassStorage(
+  virtual std::string RegisterFileSystem(
       const std::string& device_id, const base::FilePath& path) OVERRIDE;
-
-  virtual std::string RegisterFileSystemForMTPDevice(
-      const std::string& device_id, const base::FilePath& path,
-      scoped_refptr<ScopedMTPDeviceMapEntry>* entry) OVERRIDE;
 
   virtual void RevokeFileSystem(const std::string& fsid) OVERRIDE;
 
@@ -126,19 +120,10 @@ TestMediaFileSystemContext::TestMediaFileSystemContext(
   registry_->file_system_context_.reset(this);
 }
 
-std::string TestMediaFileSystemContext::RegisterFileSystemForMassStorage(
+std::string TestMediaFileSystemContext::RegisterFileSystem(
     const std::string& device_id, const base::FilePath& path) {
-  CHECK(StorageInfo::IsMassStorageDevice(device_id));
-  return AddFSEntry(device_id, path);
-}
-
-std::string TestMediaFileSystemContext::RegisterFileSystemForMTPDevice(
-    const std::string& device_id, const base::FilePath& path,
-    scoped_refptr<ScopedMTPDeviceMapEntry>* entry) {
-  CHECK(!StorageInfo::IsMassStorageDevice(device_id));
-  DCHECK(entry);
-  *entry = registry_->GetOrCreateScopedMTPDeviceMapEntry(path.value());
-  return AddFSEntry(device_id, path);
+  std::string fsid = AddFSEntry(device_id, path);
+  return fsid;
 }
 
 void TestMediaFileSystemContext::RevokeFileSystem(const std::string& fsid) {
@@ -242,14 +227,16 @@ class ProfileState {
   extensions::Extension* regular_permission_extension();
   Profile* profile();
 
-  void AddNameForReadCompare(const string16& name);
-  void AddNameForAllCompare(const string16& name);
+  void AddNameForReadCompare(const base::string16& name);
+  void AddNameForAllCompare(const base::string16& name);
 
  private:
   void CompareResults(const std::string& test,
-                      const std::vector<string16>& names,
+                      const std::vector<base::string16>& names,
                       const std::vector<MediaFileSystemInfo>& expected,
                       const std::vector<MediaFileSystemInfo>& actual);
+  bool ContainsEntry(const MediaFileSystemInfo& info,
+                     const std::vector<MediaFileSystemInfo>& container);
 
   int GetAndClearComparisonCount();
 
@@ -270,8 +257,8 @@ class ProfileState {
   content::MockRenderProcessHost* single_rph_;
   content::MockRenderProcessHost* shared_rph_;
 
-  std::vector<string16> compare_names_read_;
-  std::vector<string16> compare_names_all_;
+  std::vector<base::string16> compare_names_read_;
+  std::vector<base::string16> compare_names_all_;
 
   DISALLOW_COPY_AND_ASSIGN(ProfileState);
 };
@@ -330,9 +317,10 @@ class MediaFileSystemRegistryTest : public ChromeRenderViewHostTestHarness {
       ProfileState* profile_state);
 
   void ProcessAttach(const std::string& id,
-                     const string16& name,
+                     const base::string16& name,
                      const base::FilePath::StringType& location) {
-    StorageInfo info(id, string16(), location, name, string16(), string16(), 0);
+    StorageInfo info(id, base::string16(), location, name, base::string16(),
+                     base::string16(), 0);
     StorageMonitor::GetInstance()->receiver()->ProcessAttach(info);
   }
 
@@ -474,7 +462,12 @@ ProfileState::~ProfileState() {
 }
 
 MediaGalleriesPreferences* ProfileState::GetMediaGalleriesPrefs() {
-  return MediaGalleriesPreferencesFactory::GetForProfile(profile_.get());
+  MediaGalleriesPreferences* prefs =
+      MediaGalleriesPreferencesFactory::GetForProfile(profile_.get());
+  base::RunLoop loop;
+  prefs->EnsureInitialized(loop.QuitClosure());
+  loop.Run();
+  return prefs;
 }
 
 void ProfileState::CheckGalleries(
@@ -487,7 +480,7 @@ void ProfileState::CheckGalleries(
 
   // No Media Galleries permissions.
   std::vector<MediaFileSystemInfo> empty_expectation;
-  std::vector<string16> empty_names;
+  std::vector<base::string16> empty_names;
   registry->GetMediaFileSystemsForExtension(
       rvh, no_permissions_extension_.get(),
       base::Bind(&ProfileState::CompareResults, base::Unretained(this),
@@ -542,17 +535,31 @@ Profile* ProfileState::profile() {
   return profile_.get();
 }
 
-void ProfileState::AddNameForReadCompare(const string16& name) {
+void ProfileState::AddNameForReadCompare(const base::string16& name) {
   compare_names_read_.push_back(name);
 }
 
-void ProfileState::AddNameForAllCompare(const string16& name) {
+void ProfileState::AddNameForAllCompare(const base::string16& name) {
   compare_names_all_.push_back(name);
+}
+
+bool ProfileState::ContainsEntry(
+    const MediaFileSystemInfo& info,
+    const std::vector<MediaFileSystemInfo>& container) {
+  for (size_t i = 0; i < container.size(); ++i) {
+    if (info.path.value() == container[i].path.value()) {
+      EXPECT_FALSE(container[i].fsid.empty());
+      if (!info.fsid.empty())
+        EXPECT_EQ(info.fsid, container[i].fsid);
+      return true;
+    }
+  }
+  return false;
 }
 
 void ProfileState::CompareResults(
     const std::string& test,
-    const std::vector<string16>& names,
+    const std::vector<base::string16>& names,
     const std::vector<MediaFileSystemInfo>& expected,
     const std::vector<MediaFileSystemInfo>& actual) {
   num_comparisons_++;
@@ -563,16 +570,13 @@ void ProfileState::CompareResults(
   std::sort(sorted.begin(), sorted.end(), MediaFileSystemInfoComparator);
   std::vector<MediaFileSystemInfo> expect(expected);
   std::sort(expect.begin(), expect.end(), MediaFileSystemInfoComparator);
-  std::vector<string16> expect_names(names);
+  std::vector<base::string16> expect_names(names);
   std::sort(expect_names.begin(), expect_names.end());
 
   for (size_t i = 0; i < expect.size() && i < sorted.size(); ++i) {
     if (expect_names.size() > i)
-      EXPECT_EQ(expect_names[i], sorted[i].name);
-    EXPECT_EQ(expect[i].path.value(), sorted[i].path.value()) << test;
-    EXPECT_FALSE(sorted[i].fsid.empty()) << test;
-    if (!expect[i].fsid.empty())
-      EXPECT_EQ(expect[i].fsid, sorted[i].fsid) << test;
+      EXPECT_EQ(expect_names[i], sorted[i].name) << test;
+    EXPECT_TRUE(ContainsEntry(expect[i], sorted)) << test;
   }
 }
 
@@ -601,7 +605,11 @@ ProfileState* MediaFileSystemRegistryTest::GetProfileState(size_t i) {
 
 MediaGalleriesPreferences* MediaFileSystemRegistryTest::GetPreferences(
     Profile* profile) {
-  return registry()->GetPreferences(profile);
+  MediaGalleriesPreferences* prefs = registry()->GetPreferences(profile);
+  base::RunLoop loop;
+  prefs->EnsureInitialized(loop.QuitClosure());
+  loop.Run();
+  return prefs;
 }
 
 std::string MediaFileSystemRegistryTest::AddUserGallery(
@@ -614,7 +622,8 @@ std::string MediaFileSystemRegistryTest::AddUserGallery(
   for (size_t i = 0; i < profile_states_.size(); ++i) {
     profile_states_[i]->GetMediaGalleriesPrefs()->AddGallery(
         device_id, base::FilePath(), true /*user_added*/,
-        string16(), string16(), string16(), 0, base::Time::Now());
+        base::string16(), base::string16(), base::string16(), 0,
+        base::Time::Now());
   }
   return device_id;
 }
@@ -625,7 +634,7 @@ std::string MediaFileSystemRegistryTest::AttachDevice(
     const base::FilePath& location) {
   std::string device_id = StorageInfo::MakeDeviceId(type, unique_id);
   DCHECK(StorageInfo::IsRemovableDevice(device_id));
-  string16 label = location.BaseName().LossyDisplayName();
+  base::string16 label = location.BaseName().LossyDisplayName();
   ProcessAttach(device_id, label, location.value());
   base::MessageLoop::current()->RunUntilIdle();
   return device_id;
@@ -745,7 +754,7 @@ size_t MediaFileSystemRegistryTest::GetExtensionGalleriesHostCount(
 
 void MediaFileSystemRegistryTest::SetUp() {
   ChromeRenderViewHostTestHarness::SetUp();
-  ASSERT_TRUE(test::TestStorageMonitor::CreateAndInstall());
+  ASSERT_TRUE(TestStorageMonitor::CreateAndInstall());
 
   DeleteContents();
   SetRenderProcessHostFactory(&rph_factory_);
@@ -759,10 +768,10 @@ void MediaFileSystemRegistryTest::SetUp() {
 
   ASSERT_TRUE(galleries_dir_.CreateUniqueTempDir());
   empty_dir_ = galleries_dir_.path().AppendASCII("empty");
-  ASSERT_TRUE(file_util::CreateDirectory(empty_dir_));
+  ASSERT_TRUE(base::CreateDirectory(empty_dir_));
   dcim_dir_ = galleries_dir_.path().AppendASCII("with_dcim");
-  ASSERT_TRUE(file_util::CreateDirectory(dcim_dir_));
-  ASSERT_TRUE(file_util::CreateDirectory(dcim_dir_.Append(kDCIMDirectoryName)));
+  ASSERT_TRUE(base::CreateDirectory(dcim_dir_));
+  ASSERT_TRUE(base::CreateDirectory(dcim_dir_.Append(kDCIMDirectoryName)));
 }
 
 void MediaFileSystemRegistryTest::TearDown() {
@@ -770,6 +779,7 @@ void MediaFileSystemRegistryTest::TearDown() {
   MediaFileSystemRegistry* registry =
       g_browser_process->media_file_system_registry();
   EXPECT_EQ(0U, GetExtensionGalleriesHostCount(registry));
+  TestStorageMonitor::RemoveSingleton();
 #if defined(OS_CHROMEOS)
   test_user_manager_.reset();
 #endif
@@ -1009,25 +1019,43 @@ TEST_F(MediaFileSystemRegistryTest, TestNameConstruction) {
   one_expectation.push_back(added_info);
 
   profile_state->AddNameForReadCompare(
+#if defined(OS_CHROMEOS)
       empty_dir().BaseName().LossyDisplayName());
+#else
+      empty_dir().LossyDisplayName());
+#endif
   profile_state->AddNameForAllCompare(
+#if defined(OS_CHROMEOS)
       empty_dir().BaseName().LossyDisplayName());
+#else
+      empty_dir().LossyDisplayName());
+#endif
 
   // This part of the test is conditional on default directories existing
   // on the test platform. In ChromeOS, these directories do not exist.
   base::FilePath path;
   if (num_auto_galleries() > 0) {
     ASSERT_TRUE(PathService::Get(chrome::DIR_USER_MUSIC, &path));
+#if defined(OS_CHROMEOS)
     profile_state->AddNameForAllCompare(path.BaseName().LossyDisplayName());
+#else
+    profile_state->AddNameForAllCompare(path.LossyDisplayName());
+#endif
     ASSERT_TRUE(PathService::Get(chrome::DIR_USER_PICTURES, &path));
+#if defined(OS_CHROMEOS)
     profile_state->AddNameForAllCompare(path.BaseName().LossyDisplayName());
+#else
+    profile_state->AddNameForAllCompare(path.LossyDisplayName());
+#endif
     ASSERT_TRUE(PathService::Get(chrome::DIR_USER_VIDEOS, &path));
+#if defined(OS_CHROMEOS)
     profile_state->AddNameForAllCompare(path.BaseName().LossyDisplayName());
+#else
+    profile_state->AddNameForAllCompare(path.LossyDisplayName());
+#endif
 
     profile_state->CheckGalleries("names-dir", one_expectation, auto_galleries);
   } else {
     profile_state->CheckGalleries("names", one_expectation, one_expectation);
   }
 }
-
-}  // namespace chrome

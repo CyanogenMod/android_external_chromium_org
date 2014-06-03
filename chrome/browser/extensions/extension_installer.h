@@ -12,7 +12,7 @@
 #include "base/strings/string16.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/requirements_checker.h"
-#include "chrome/common/extensions/extension.h"
+#include "extensions/common/extension.h"
 
 class Profile;
 
@@ -35,7 +35,7 @@ class ExtensionInstaller {
   void CheckRequirements(const RequirementsCallback& callback);
 
   // Checks the management policy if the extension can be installed.
-  string16 CheckManagementPolicy();
+  base::string16 CheckManagementPolicy();
 
   Profile* profile() const {
     return profile_;

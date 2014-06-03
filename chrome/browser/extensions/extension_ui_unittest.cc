@@ -8,14 +8,14 @@
 #include "base/path_service.h"
 #include "base/strings/string_util.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/management_policy.h"
 #include "chrome/browser/extensions/test_extension_system.h"
 #include "chrome/browser/ui/webui/extensions/extension_settings_handler.h"
 #include "chrome/common/chrome_paths.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/test/test_browser_thread.h"
+#include "extensions/browser/management_policy.h"
 #include "extensions/common/constants.h"
+#include "extensions/common/extension.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 #if defined(OS_CHROMEOS)
@@ -144,10 +144,10 @@ TEST_F(ExtensionUITest, GenerateExtensionsJSONData) {
   std::vector<ExtensionPage> pages;
   pages.push_back(ExtensionPage(
       GURL("chrome-extension://behllobkkfkfnphdnhnkndlbkcpglgmj/bar.html"),
-      42, 88, false));
+      42, 88, false, false));
   pages.push_back(ExtensionPage(
       GURL("chrome-extension://behllobkkfkfnphdnhnkndlbkcpglgmj/dog.html"),
-      0, 0, false));
+      0, 0, false, false));
 
   expected_output_path = data_test_dir_path.AppendASCII("extensions")
       .AppendASCII("ui")

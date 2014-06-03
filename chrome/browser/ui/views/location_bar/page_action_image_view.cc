@@ -21,10 +21,9 @@
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/location_bar/location_bar_view.h"
 #include "chrome/browser/ui/webui/extensions/extension_info_ui.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
+#include "extensions/common/extension.h"
 #include "ui/base/accessibility/accessible_view_state.h"
-#include "ui/base/events/event.h"
+#include "ui/events/event.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/image/image.h"
 #include "ui/views/controls/menu/menu_item_view.h"
@@ -55,7 +54,7 @@ PageActionImageView::PageActionImageView(LocationBarView* owner,
       new ExtensionActionIconFactory(
           owner_->profile(), extension, page_action, this));
 
-  set_accessibility_focusable(true);
+  SetAccessibilityFocusable(true);
   set_context_menu_controller(this);
 
   extensions::CommandService* command_service =
@@ -215,7 +214,8 @@ void PageActionImageView::UpdateVisibility(WebContents* contents,
                                            const GURL& url) {
   // Save this off so we can pass it back to the extension when the action gets
   // executed. See PageActionImageView::OnMousePressed.
-  current_tab_id_ = contents ? ExtensionTabUtil::GetTabId(contents) : -1;
+  current_tab_id_ =
+      contents ? extensions::ExtensionTabUtil::GetTabId(contents) : -1;
   current_url_ = url;
 
   if (!contents ||

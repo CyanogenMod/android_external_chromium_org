@@ -13,9 +13,10 @@
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/extensions/app_sync_data.h"
+#include "chrome/browser/extensions/sync_bundle.h"
 #include "sync/api/syncable_service.h"
 
-class ExtensionService;
+class ExtensionSyncService;
 class ExtensionSet;
 
 namespace syncer {
@@ -28,9 +29,9 @@ namespace extensions {
 class Extension;
 
 // Bundle of app specific sync stuff.
-class AppSyncBundle {
+class AppSyncBundle : public SyncBundle {
  public:
-  explicit AppSyncBundle(ExtensionService* extension_service);
+  explicit AppSyncBundle(ExtensionSyncService* extension_sync_service);
   virtual ~AppSyncBundle();
 
   // Setup this bundle to be sync application data.
@@ -55,9 +56,6 @@ class AppSyncBundle {
   // Get all the sync data contained in this bundle.
   syncer::SyncDataList GetAllSyncData() const;
 
-  // Sync a newly-installed application or change an existing one.
-  void SyncChangeIfNeeded(const Extension& extension);
-
   // Process the given sync change and apply it.
   void ProcessSyncChange(AppSyncData app_sync_data);
 
@@ -77,11 +75,15 @@ class AppSyncBundle {
 
   // Appends sync data objects for every app in |extensions|.
   void GetAppSyncDataListHelper(
-      const ExtensionSet& extensions,
+      const ExtensionSet* extensions,
       std::vector<extensions::AppSyncData>* sync_data_list) const;
 
+  // Overrides for SyncBundle.
   // Returns true if SetupSync has been called, false otherwise.
-  bool IsSyncing() const;
+  virtual bool IsSyncing() const OVERRIDE;
+
+  // Sync a newly-installed application or change an existing one.
+  virtual void SyncChangeIfNeeded(const Extension& extension) OVERRIDE;
 
  private:
   // Add a synced app.
@@ -93,7 +95,7 @@ class AppSyncBundle {
   // Change an app from being pending to synced.
   void MarkPendingAppSynced(const std::string& id);
 
-  ExtensionService* extension_service_; // Own us.
+  ExtensionSyncService* extension_sync_service_; // Own us.
   scoped_ptr<syncer::SyncChangeProcessor> sync_processor_;
   scoped_ptr<syncer::SyncErrorFactory> sync_error_factory_;
 

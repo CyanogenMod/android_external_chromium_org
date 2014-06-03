@@ -14,20 +14,18 @@
 #include "chrome/browser/chromeos/attestation/attestation_ca_client.h"
 #include "chrome/browser/chromeos/attestation/attestation_key_payload.pb.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
-#include "chrome/browser/policy/cloud/cloud_policy_client.h"
-#include "chrome/browser/policy/cloud/cloud_policy_manager.h"
 #include "chromeos/attestation/attestation_flow.h"
 #include "chromeos/cryptohome/async_method_caller.h"
 #include "chromeos/dbus/cryptohome_client.h"
 #include "chromeos/dbus/dbus_method_call_status.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
+#include "components/policy/core/common/cloud/cloud_policy_client.h"
+#include "components/policy/core/common/cloud/cloud_policy_manager.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
 #include "net/cert/x509_certificate.h"
 
 namespace {
-
-const char kEnterpriseMachineKey[] = "attest-ent-machine";
 
 // The number of days before a certificate expires during which it is
 // considered 'expiring soon' and replacement is initiated.  The Chrome OS CA
@@ -102,7 +100,10 @@ AttestationPolicyObserver::AttestationPolicyObserver(
       retry_delay_(kRetryDelay),
       weak_factory_(this) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
-  cros_settings_->AddSettingsObserver(kDeviceAttestationEnabled, this);
+  attestation_subscription_ = cros_settings_->AddSettingsObserver(
+      kDeviceAttestationEnabled,
+      base::Bind(&AttestationPolicyObserver::AttestationSettingChanged,
+                 base::Unretained(this)));
   Start();
 }
 
@@ -118,26 +119,19 @@ AttestationPolicyObserver::AttestationPolicyObserver(
       retry_delay_(kRetryDelay),
       weak_factory_(this) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
-  cros_settings_->AddSettingsObserver(kDeviceAttestationEnabled, this);
+  attestation_subscription_ = cros_settings_->AddSettingsObserver(
+      kDeviceAttestationEnabled,
+      base::Bind(&AttestationPolicyObserver::AttestationSettingChanged,
+                 base::Unretained(this)));
   Start();
 }
 
 AttestationPolicyObserver::~AttestationPolicyObserver() {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
-  cros_settings_->RemoveSettingsObserver(kDeviceAttestationEnabled, this);
 }
 
-void AttestationPolicyObserver::Observe(
-    int type,
-    const content::NotificationSource& source,
-    const content::NotificationDetails& details) {
+void AttestationPolicyObserver::AttestationSettingChanged() {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
-  std::string* path = content::Details<std::string>(details).ptr();
-  if (type != chrome::NOTIFICATION_SYSTEM_SETTING_CHANGED ||
-      *path != kDeviceAttestationEnabled) {
-    LOG(WARNING) << "AttestationPolicyObserver: Unexpected event received.";
-    return;
-  }
   num_retries_ = 0;
   Start();
 }
@@ -176,6 +170,7 @@ void AttestationPolicyObserver::Start() {
                  weak_factory_.GetWeakPtr());
   cryptohome_client_->TpmAttestationDoesKeyExist(
       KEY_DEVICE,
+      std::string(),  // Not used.
       kEnterpriseMachineKey,
       base::Bind(DBusBoolRedirectCallback,
                  on_does_exist,
@@ -189,6 +184,8 @@ void AttestationPolicyObserver::GetNewCertificate() {
   // We can reuse the dbus callback handler logic.
   attestation_flow_->GetCertificate(
       PROFILE_ENTERPRISE_MACHINE_CERTIFICATE,
+      std::string(),  // Not used.
+      std::string(),  // Not used.
       true,  // Force a new key to be generated.
       base::Bind(DBusStringCallback,
                  base::Bind(&AttestationPolicyObserver::UploadCertificate,
@@ -202,6 +199,7 @@ void AttestationPolicyObserver::GetNewCertificate() {
 void AttestationPolicyObserver::GetExistingCertificate() {
   cryptohome_client_->TpmAttestationGetCertificate(
       KEY_DEVICE,
+      std::string(),  // Not used.
       kEnterpriseMachineKey,
       base::Bind(DBusStringCallback,
                  base::Bind(&AttestationPolicyObserver::CheckCertificateExpiry,
@@ -259,6 +257,7 @@ void AttestationPolicyObserver::GetKeyPayload(
     base::Callback<void(const std::string&)> callback) {
   cryptohome_client_->TpmAttestationGetKeyPayload(
       KEY_DEVICE,
+      std::string(),  // Not used.
       kEnterpriseMachineKey,
       base::Bind(DBusStringCallback,
                  callback,
@@ -270,7 +269,7 @@ void AttestationPolicyObserver::GetKeyPayload(
 void AttestationPolicyObserver::OnUploadComplete(bool status) {
   if (!status)
     return;
-  LOG(INFO) << "Enterprise Machine Certificate uploaded to DMServer.";
+  VLOG(1) << "Enterprise Machine Certificate uploaded to DMServer.";
   GetKeyPayload(base::Bind(&AttestationPolicyObserver::MarkAsUploaded,
                            weak_factory_.GetWeakPtr()));
 }
@@ -287,6 +286,7 @@ void AttestationPolicyObserver::MarkAsUploaded(const std::string& key_payload) {
   }
   cryptohome_client_->TpmAttestationSetKeyPayload(
       KEY_DEVICE,
+      std::string(),  // Not used.
       kEnterpriseMachineKey,
       new_payload,
       base::Bind(DBusBoolRedirectCallback,

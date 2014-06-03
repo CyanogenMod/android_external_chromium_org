@@ -15,6 +15,7 @@
 #include "media/base/bind_to_loop.h"
 #include "media/base/decoder_buffer.h"
 #include "media/base/demuxer.h"
+#include "media/base/limits.h"
 #include "media/base/pipeline.h"
 #include "media/base/sample_format.h"
 #include "media/ffmpeg/ffmpeg_common.h"
@@ -73,15 +74,13 @@ FFmpegAudioDecoder::FFmpegAudioDecoder(
     : message_loop_(message_loop),
       weak_factory_(this),
       demuxer_stream_(NULL),
-      codec_context_(NULL),
       bytes_per_channel_(0),
       channel_layout_(CHANNEL_LAYOUT_NONE),
       channels_(0),
       samples_per_second_(0),
       av_sample_format_(0),
       last_input_timestamp_(kNoTimestamp()),
-      output_frames_to_drop_(0),
-      av_frame_(NULL) {
+      output_frames_to_drop_(0) {
 }
 
 void FFmpegAudioDecoder::Initialize(
@@ -150,7 +149,7 @@ void FFmpegAudioDecoder::Reset(const base::Closure& closure) {
   DCHECK(message_loop_->BelongsToCurrentThread());
   base::Closure reset_cb = BindToCurrentLoop(closure);
 
-  avcodec_flush_buffers(codec_context_);
+  avcodec_flush_buffers(codec_context_.get());
   ResetTimestampState();
   queued_audio_.clear();
   reset_cb.Run();
@@ -171,29 +170,52 @@ int FFmpegAudioDecoder::GetAudioBuffer(AVCodecContext* codec,
   AVSampleFormat format = static_cast<AVSampleFormat>(frame->format);
   SampleFormat sample_format = AVSampleFormatToSampleFormat(format);
   int channels = DetermineChannels(frame);
+  if ((channels <= 0) || (channels >= limits::kMaxChannels)) {
+    DLOG(ERROR) << "Requested number of channels (" << channels
+                << ") exceeds limit.";
+    return AVERROR(EINVAL);
+  }
+
   int bytes_per_channel = SampleFormatToBytesPerChannel(sample_format);
   if (frame->nb_samples <= 0)
     return AVERROR(EINVAL);
 
   // Determine how big the buffer should be and allocate it. FFmpeg may adjust
-  // how big each channel data is in order to meet it's alignment policy, so
+  // how big each channel data is in order to meet the alignment policy, so
   // we need to take this into consideration.
   int buffer_size_in_bytes =
-      av_samples_get_buffer_size(NULL, channels, frame->nb_samples, format, 1);
+      av_samples_get_buffer_size(&frame->linesize[0],
+                                 channels,
+                                 frame->nb_samples,
+                                 format,
+                                 AudioBuffer::kChannelAlignment);
+  // Check for errors from av_samples_get_buffer_size().
+  if (buffer_size_in_bytes < 0)
+    return buffer_size_in_bytes;
   int frames_required = buffer_size_in_bytes / bytes_per_channel / channels;
   DCHECK_GE(frames_required, frame->nb_samples);
   scoped_refptr<AudioBuffer> buffer =
       AudioBuffer::CreateBuffer(sample_format, channels, frames_required);
 
-  // Initialize the data[], linesize[], and extended_data[] fields.
-  int ret = avcodec_fill_audio_frame(frame,
-                                     channels,
-                                     format,
-                                     buffer->writable_data(),
-                                     buffer_size_in_bytes,
-                                     1);
-  if (ret < 0)
-    return ret;
+  // Initialize the data[] and extended_data[] fields to point into the memory
+  // allocated for AudioBuffer. |number_of_planes| will be 1 for interleaved
+  // audio and equal to |channels| for planar audio.
+  int number_of_planes = buffer->channel_data().size();
+  if (number_of_planes <= AV_NUM_DATA_POINTERS) {
+    DCHECK_EQ(frame->extended_data, frame->data);
+    for (int i = 0; i < number_of_planes; ++i)
+      frame->data[i] = buffer->channel_data()[i];
+  } else {
+    // There are more channels than can fit into data[], so allocate
+    // extended_data[] and fill appropriately.
+    frame->extended_data = static_cast<uint8**>(
+        av_malloc(number_of_planes * sizeof(*frame->extended_data)));
+    int i = 0;
+    for (; i < AV_NUM_DATA_POINTERS; ++i)
+      frame->extended_data[i] = frame->data[i] = buffer->channel_data()[i];
+    for (; i < number_of_planes; ++i)
+      frame->extended_data[i] = buffer->channel_data()[i];
+  }
 
   // Now create an AVBufferRef for the data just allocated. It will own the
   // reference to the AudioBuffer object.
@@ -263,25 +285,22 @@ void FFmpegAudioDecoder::BufferReady(
     return;
   }
 
-  bool is_vorbis = codec_context_->codec_id == AV_CODEC_ID_VORBIS;
   if (!input->end_of_stream()) {
-    if (last_input_timestamp_ == kNoTimestamp()) {
-      if (is_vorbis && (input->timestamp() < base::TimeDelta())) {
-        // Dropping frames for negative timestamps as outlined in section A.2
-        // in the Vorbis spec. http://xiph.org/vorbis/doc/Vorbis_I_spec.html
-        output_frames_to_drop_ = floor(
-            0.5 + -input->timestamp().InSecondsF() * samples_per_second_);
-      } else {
-        last_input_timestamp_ = input->timestamp();
-      }
-    } else if (input->timestamp() != kNoTimestamp()) {
-      if (input->timestamp() < last_input_timestamp_) {
-        base::TimeDelta diff = input->timestamp() - last_input_timestamp_;
-        DVLOG(1) << "Input timestamps are not monotonically increasing! "
-                 << " ts " << input->timestamp().InMicroseconds() << " us"
-                 << " diff " << diff.InMicroseconds() << " us";
-        base::ResetAndReturn(&read_cb_).Run(kDecodeError, NULL);
-        return;
+    if (last_input_timestamp_ == kNoTimestamp() &&
+        codec_context_->codec_id == AV_CODEC_ID_VORBIS &&
+        input->timestamp() < base::TimeDelta()) {
+      // Dropping frames for negative timestamps as outlined in section A.2
+      // in the Vorbis spec. http://xiph.org/vorbis/doc/Vorbis_I_spec.html
+      output_frames_to_drop_ = floor(
+          0.5 + -input->timestamp().InSecondsF() * samples_per_second_);
+    } else {
+      if (last_input_timestamp_ != kNoTimestamp() &&
+          input->timestamp() < last_input_timestamp_) {
+        const base::TimeDelta diff = input->timestamp() - last_input_timestamp_;
+        DLOG(WARNING)
+            << "Input timestamps are not monotonically increasing! "
+            << " ts " << input->timestamp().InMicroseconds() << " us"
+            << " diff " << diff.InMicroseconds() << " us";
       }
 
       last_input_timestamp_ = input->timestamp();
@@ -320,7 +339,7 @@ bool FFmpegAudioDecoder::ConfigureDecoder() {
     return false;
   }
 
-  if (codec_context_ &&
+  if (codec_context_.get() &&
       (bytes_per_channel_ != config.bytes_per_channel() ||
        channel_layout_ != config.channel_layout() ||
        samples_per_second_ != config.samples_per_second())) {
@@ -338,21 +357,22 @@ bool FFmpegAudioDecoder::ConfigureDecoder() {
   ReleaseFFmpegResources();
 
   // Initialize AVCodecContext structure.
-  codec_context_ = avcodec_alloc_context3(NULL);
-  AudioDecoderConfigToAVCodecContext(config, codec_context_);
+  codec_context_.reset(avcodec_alloc_context3(NULL));
+  AudioDecoderConfigToAVCodecContext(config, codec_context_.get());
 
   codec_context_->opaque = this;
   codec_context_->get_buffer2 = GetAudioBufferImpl;
+  codec_context_->refcounted_frames = 1;
 
   AVCodec* codec = avcodec_find_decoder(codec_context_->codec_id);
-  if (!codec || avcodec_open2(codec_context_, codec, NULL) < 0) {
+  if (!codec || avcodec_open2(codec_context_.get(), codec, NULL) < 0) {
     DLOG(ERROR) << "Could not initialize audio decoder: "
                 << codec_context_->codec_id;
     return false;
   }
 
   // Success!
-  av_frame_ = avcodec_alloc_frame();
+  av_frame_.reset(av_frame_alloc());
   channel_layout_ = config.channel_layout();
   samples_per_second_ = config.samples_per_second();
   output_timestamp_helper_.reset(
@@ -376,16 +396,8 @@ bool FFmpegAudioDecoder::ConfigureDecoder() {
 }
 
 void FFmpegAudioDecoder::ReleaseFFmpegResources() {
-  if (codec_context_) {
-    av_free(codec_context_->extradata);
-    avcodec_close(codec_context_);
-    av_free(codec_context_);
-  }
-
-  if (av_frame_) {
-    av_free(av_frame_);
-    av_frame_ = NULL;
-  }
+  codec_context_.reset();
+  av_frame_.reset();
 }
 
 void FFmpegAudioDecoder::ResetTimestampState() {
@@ -412,12 +424,9 @@ void FFmpegAudioDecoder::RunDecodeLoop(
   // want to hand it to the decoder at least once, otherwise we would end up
   // skipping end of stream packets since they have a size of zero.
   do {
-    // Reset frame to default values.
-    avcodec_get_frame_defaults(av_frame_);
-
     int frame_decoded = 0;
     int result = avcodec_decode_audio4(
-        codec_context_, av_frame_, &frame_decoded, &packet);
+        codec_context_.get(), av_frame_.get(), &frame_decoded, &packet);
 
     if (result < 0) {
       DCHECK(!input->end_of_stream())
@@ -425,14 +434,12 @@ void FFmpegAudioDecoder::RunDecodeLoop(
           << "This is quite possibly a bug in the audio decoder not handling "
           << "end of stream AVPackets correctly.";
 
-      DLOG(ERROR)
-          << "Error decoding an audio frame with timestamp: "
+      DLOG(WARNING)
+          << "Failed to decode an audio frame with timestamp: "
           << input->timestamp().InMicroseconds() << " us, duration: "
           << input->duration().InMicroseconds() << " us, packet size: "
           << input->data_size() << " bytes";
 
-      // TODO(dalecurtis): We should return a kDecodeError here instead:
-      // http://crbug.com/145276
       break;
     }
 
@@ -457,7 +464,7 @@ void FFmpegAudioDecoder::RunDecodeLoop(
     scoped_refptr<AudioBuffer> output;
     int decoded_frames = 0;
     int original_frames = 0;
-    int channels = DetermineChannels(av_frame_);
+    int channels = DetermineChannels(av_frame_.get());
     if (frame_decoded) {
       if (av_frame_->sample_rate != samples_per_second_ ||
           channels != channels_ ||
@@ -473,6 +480,7 @@ void FFmpegAudioDecoder::RunDecodeLoop(
         // This is an unrecoverable error, so bail out.
         QueuedAudioBuffer queue_entry = { kDecodeError, NULL };
         queued_audio_.push_back(queue_entry);
+        av_frame_unref(av_frame_.get());
         break;
       }
 
@@ -495,7 +503,10 @@ void FFmpegAudioDecoder::RunDecodeLoop(
       }
 
       decoded_frames = output->frame_count();
+      av_frame_unref(av_frame_.get());
     }
+
+    // WARNING: |av_frame_| no longer has valid data at this point.
 
     if (decoded_frames > 0) {
       // Set the timestamp/duration once all the extra frames have been

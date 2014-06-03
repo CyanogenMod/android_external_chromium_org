@@ -21,7 +21,6 @@
 #include "content/public/common/gpu_memory_stats.h"
 #include "content/public/common/three_d_api_types.h"
 #include "gpu/config/gpu_info.h"
-#include "gpu/config/gpu_switching_option.h"
 
 class CommandLine;
 class GURL;
@@ -80,6 +79,7 @@ class CONTENT_EXPORT GpuDataManagerImpl
                             std::string* gl_renderer,
                             std::string* gl_version) OVERRIDE;
   virtual void DisableHardwareAcceleration() OVERRIDE;
+  virtual bool CanUseGpuBrowserCompositor() const OVERRIDE;
 
   // This collects preliminary GPU info, load GpuBlacklist, and compute the
   // preliminary blacklisted features; it should only be called at browser
@@ -107,8 +107,6 @@ class CONTENT_EXPORT GpuDataManagerImpl
 
   // Update WebPreferences for renderer based on blacklisting decisions.
   void UpdateRendererWebPrefs(WebPreferences* prefs) const;
-
-  gpu::GpuSwitchingOption GetGpuSwitchingOption() const;
 
   std::string GetBlacklistVersion() const;
   std::string GetDriverBugListVersion() const;
@@ -140,8 +138,6 @@ class CONTENT_EXPORT GpuDataManagerImpl
   // presenting by itself.
   bool IsUsingAcceleratedSurface() const;
 #endif
-
-  bool CanUseGpuBrowserCompositor() const;
 
   // Maintenance of domains requiring explicit user permission before
   // using client-facing 3D APIs (WebGL, Pepper 3D), either because
@@ -176,6 +172,8 @@ class CONTENT_EXPORT GpuDataManagerImpl
 
   // Called when GPU process initialization failed.
   void OnGpuProcessInitFailure();
+
+  bool IsDriverBugWorkaroundActive(int feature) const;
 
  private:
   friend class GpuDataManagerImplPrivate;

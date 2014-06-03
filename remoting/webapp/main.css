@@ -31,7 +31,11 @@ body {
 * The "app-v2" class is added to the <html> node by remoting.init if it's
 * running as a V2 app.
 */
-body.apps-v2 .apps-v1-only {
+html.apps-v2 .apps-v1-only {
+  display: none !important;
+}
+
+html:not(.apps-v2) .apps-v2-only {
   display: none !important;
 }
 
@@ -249,7 +253,24 @@ h2 {
   margin-bottom: 10px;
 }
 
-section > h2 {
+.h2-secondary {
+  float: __MSG_@@bidi_end_edge__;
+}
+
+#host-list-loading-indicator:not(.loading) #host-list-loading,
+#host-list-loading-indicator.loading #host-list-reload {
+  display: none;
+}
+
+.icon-black > img {
+  opacity: 0.3;
+}
+
+.icon-black:hover > img {
+  opacity: 0.4;
+}
+
+section h2 {
   color: #666;
 }
 
@@ -530,18 +551,13 @@ button {
 .waiting {
   background-image: url('spinner.gif');
   background-repeat: no-repeat;
-  background-position-y: 3px;
-  padding-__MSG_@@bidi_start_edge__: 30px;
-  padding-top: 5px;
+  background-position: __MSG_@@bidi_start_edge__ 3px;
+  padding: 5px 30px;
   color: rgb(180, 180, 180);
 }
 
 .prominent {
   color: #222;
-}
-
-.space-before {
-  margin-top: 20px;
 }
 
 #access-code-countdown-container {

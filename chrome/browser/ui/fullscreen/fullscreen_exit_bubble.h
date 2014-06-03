@@ -7,7 +7,7 @@
 
 #include "base/timer/timer.h"
 #include "chrome/browser/ui/fullscreen/fullscreen_exit_bubble_type.h"
-#include "ui/base/animation/animation_delegate.h"
+#include "ui/gfx/animation/animation_delegate.h"
 #include "ui/gfx/point.h"
 #include "url/gurl.h"
 
@@ -17,7 +17,7 @@ namespace gfx {
 class Rect;
 }
 
-class FullscreenExitBubble : public ui::AnimationDelegate {
+class FullscreenExitBubble : public gfx::AnimationDelegate {
  public:
   explicit FullscreenExitBubble(Browser* browser,
                                 const GURL& url,
@@ -75,12 +75,12 @@ class FullscreenExitBubble : public ui::AnimationDelegate {
   void Cancel();
 
   // The following strings may change according to the content type and URL.
-  string16 GetCurrentMessageText() const;
-  string16 GetCurrentDenyButtonText() const;
+  base::string16 GetCurrentMessageText() const;
+  base::string16 GetCurrentDenyButtonText() const;
 
   // The following strings never change.
-  string16 GetAllowButtonText() const;
-  string16 GetInstructionText() const;
+  base::string16 GetAllowButtonText() const;
+  base::string16 GetInstructionText() const;
 
   // The browser this bubble is in.
   Browser* browser_;

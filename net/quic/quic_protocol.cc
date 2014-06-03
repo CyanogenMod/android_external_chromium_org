@@ -74,15 +74,6 @@ QuicPacketPublicHeader::QuicPacketPublicHeader(
 
 QuicPacketPublicHeader::~QuicPacketPublicHeader() {}
 
-QuicPacketPublicHeader& QuicPacketPublicHeader::operator=(
-    const QuicPacketPublicHeader& other) {
-  guid = other.guid;
-  reset_flag = other.reset_flag;
-  version_flag = other.version_flag;
-  versions = other.versions;
-  return *this;
-}
-
 QuicPacketHeader::QuicPacketHeader()
     : fec_flag(false),
       entropy_flag(false),
@@ -104,14 +95,34 @@ QuicPacketHeader::QuicPacketHeader(const QuicPacketPublicHeader& header)
 
 QuicStreamFrame::QuicStreamFrame() {}
 
+QuicStreamFrame::QuicStreamFrame(const QuicStreamFrame& frame)
+    : stream_id(frame.stream_id),
+      fin(frame.fin),
+      offset(frame.offset),
+      data(frame.data),
+      notifier(frame.notifier) {
+}
+
 QuicStreamFrame::QuicStreamFrame(QuicStreamId stream_id,
                                  bool fin,
                                  QuicStreamOffset offset,
-                                 StringPiece data)
+                                 IOVector data)
     : stream_id(stream_id),
       fin(fin),
       offset(offset),
-      data(data) {
+      data(data),
+      notifier(NULL) {
+}
+
+string* QuicStreamFrame::GetDataAsString() const {
+  string* data_string = new string();
+  data_string->reserve(data.TotalBufferSize());
+  for (size_t i = 0; i < data.Size(); ++i) {
+    data_string->append(static_cast<char*>(data.iovec()[i].iov_base),
+                        data.iovec()[i].iov_len);
+  }
+  DCHECK_EQ(data_string->size(), data.TotalBufferSize());
+  return data_string;
 }
 
 uint32 MakeQuicTag(char a, char b, char c, char d) {
@@ -121,18 +132,18 @@ uint32 MakeQuicTag(char a, char b, char c, char d) {
          static_cast<uint32>(d) << 24;
 }
 
-QuicVersion QuicVersionMax() { return kSupportedQuicVersions[0]; }
-
-QuicVersion QuicVersionMin() {
-  return kSupportedQuicVersions[arraysize(kSupportedQuicVersions) - 1];
+QuicVersionVector QuicSupportedVersions() {
+  QuicVersionVector supported_versions;
+  for (size_t i = 0; i < arraysize(kSupportedQuicVersions); ++i) {
+    supported_versions.push_back(kSupportedQuicVersions[i]);
+  }
+  return supported_versions;
 }
 
 QuicTag QuicVersionToQuicTag(const QuicVersion version) {
   switch (version) {
-    case QUIC_VERSION_7:
-      return MakeQuicTag('Q', '0', '0', '7');
-    case QUIC_VERSION_8:
-      return MakeQuicTag('Q', '0', '0', '8');
+    case QUIC_VERSION_12:
+      return MakeQuicTag('Q', '0', '1', '2');
     default:
       // This shold be an ERROR because we should never attempt to convert an
       // invalid QuicVersion to be written to the wire.
@@ -142,19 +153,15 @@ QuicTag QuicVersionToQuicTag(const QuicVersion version) {
 }
 
 QuicVersion QuicTagToQuicVersion(const QuicTag version_tag) {
-  const QuicTag quic_tag_v7 = MakeQuicTag('Q', '0', '0', '7');
-  const QuicTag quic_tag_v8 = MakeQuicTag('Q', '0', '0', '8');
-
-  if (version_tag == quic_tag_v7) {
-    return QUIC_VERSION_7;
-  } else if (version_tag == quic_tag_v8) {
-    return QUIC_VERSION_8;
-  } else {
-    // Reading from the client so this should not be considered an ERROR.
-    DLOG(INFO) << "Unsupported QuicTag version: "
-               << QuicUtils::TagToString(version_tag);
-    return QUIC_VERSION_UNSUPPORTED;
+  for (size_t i = 0; i < arraysize(kSupportedQuicVersions); ++i) {
+    if (version_tag == QuicVersionToQuicTag(kSupportedQuicVersions[i])) {
+      return kSupportedQuicVersions[i];
+    }
   }
+  // Reading from the client so this should not be considered an ERROR.
+  DVLOG(1) << "Unsupported QuicTag version: "
+             << QuicUtils::TagToString(version_tag);
+  return QUIC_VERSION_UNSUPPORTED;
 }
 
 #define RETURN_STRING_LITERAL(x) \
@@ -163,20 +170,19 @@ return #x
 
 string QuicVersionToString(const QuicVersion version) {
   switch (version) {
-    RETURN_STRING_LITERAL(QUIC_VERSION_7);
-    RETURN_STRING_LITERAL(QUIC_VERSION_8);
+    RETURN_STRING_LITERAL(QUIC_VERSION_12);
     default:
       return "QUIC_VERSION_UNSUPPORTED";
   }
 }
 
-string QuicVersionArrayToString(const QuicVersion versions[],
-                                int num_versions) {
+string QuicVersionVectorToString(const QuicVersionVector& versions) {
   string result = "";
-  for (int i = 0; i < num_versions; ++i) {
-    const QuicVersion& version = versions[i];
-    result.append(QuicVersionToString(version));
-    result.append(",");
+  for (size_t i = 0; i < versions.size(); ++i) {
+    if (i != 0) {
+      result.append(",");
+    }
+    result.append(QuicVersionToString(versions[i]));
   }
   return result;
 }
@@ -184,6 +190,8 @@ string QuicVersionArrayToString(const QuicVersion versions[],
 ostream& operator<<(ostream& os, const QuicPacketHeader& header) {
   os << "{ guid: " << header.public_header.guid
      << ", guid_length:" << header.public_header.guid_length
+     << ", sequence_number_length:"
+     << header.public_header.sequence_number_length
      << ", reset_flag: " << header.public_header.reset_flag
      << ", version_flag: " << header.public_header.version_flag;
   if (header.public_header.version_flag) {
@@ -201,10 +209,10 @@ ostream& operator<<(ostream& os, const QuicPacketHeader& header) {
   return os;
 }
 
-// TODO(ianswett): Initializing largest_observed to 0 should not be necessary.
 ReceivedPacketInfo::ReceivedPacketInfo()
     : largest_observed(0),
-      delta_time_largest_observed(QuicTime::Delta::Infinite()) {
+      delta_time_largest_observed(QuicTime::Delta::Infinite()),
+      is_truncated(false) {
 }
 
 ReceivedPacketInfo::~ReceivedPacketInfo() {}
@@ -293,13 +301,13 @@ ostream& operator<<(ostream& os,
       break;
     }
   }
- return os;
+  return os;
 }
 
 ostream& operator<<(ostream& os, const QuicAckFrame& ack_frame) {
   os << "sent info { " << ack_frame.sent_info << " } "
      << "received info { " << ack_frame.received_info << " }\n";
- return os;
+  return os;
 }
 
 CongestionFeedbackMessageFixRate::CongestionFeedbackMessageFixRate()
@@ -394,12 +402,12 @@ RetransmittableFrames::~RetransmittableFrames() {
 
 const QuicFrame& RetransmittableFrames::AddStreamFrame(
     QuicStreamFrame* stream_frame) {
-  // Make an owned copy of the StringPiece.
-  string* stream_data = new string(stream_frame->data.data(),
-                                   stream_frame->data.size());
-  // Ensure the frame's StringPiece points to the owned copy of the data.
-  stream_frame->data = StringPiece(*stream_data);
-  stream_data_.push_back(stream_data);
+  // Make an owned copy of the stream frame's data.
+  stream_data_.push_back(stream_frame->GetDataAsString());
+  // Ensure the stream frame's IOVector points to the owned copy of the data.
+  stream_frame->data.Clear();
+  stream_frame->data.Append(const_cast<char*>(stream_data_.back()->data()),
+                            stream_data_.back()->size());
   frames_.push_back(QuicFrame(stream_frame));
   return frames_.back();
 }
@@ -413,6 +421,27 @@ const QuicFrame& RetransmittableFrames::AddNonStreamFrame(
 
 void RetransmittableFrames::set_encryption_level(EncryptionLevel level) {
   encryption_level_ = level;
+}
+
+SerializedPacket::SerializedPacket(
+    QuicPacketSequenceNumber sequence_number,
+    QuicSequenceNumberLength sequence_number_length,
+    QuicPacket* packet,
+    QuicPacketEntropyHash entropy_hash,
+    RetransmittableFrames* retransmittable_frames)
+    : sequence_number(sequence_number),
+      sequence_number_length(sequence_number_length),
+      packet(packet),
+      entropy_hash(entropy_hash),
+      retransmittable_frames(retransmittable_frames) {
+}
+
+SerializedPacket::~SerializedPacket() {}
+
+QuicEncryptedPacket* QuicEncryptedPacket::Clone() const {
+  char* buffer = new char[this->length()];
+  memcpy(buffer, this->data(), this->length());
+  return new QuicEncryptedPacket(buffer, this->length(), true);
 }
 
 ostream& operator<<(ostream& os, const QuicEncryptedPacket& s) {

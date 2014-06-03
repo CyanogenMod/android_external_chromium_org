@@ -14,14 +14,21 @@
 #include "base/file_version_info.h"
 #include "base/memory/singleton.h"
 #include "base/message_loop/message_loop.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/win/windows_version.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/extensions/api/feedback_private/feedback_private_api.h"
+#include "chrome/browser/feedback/feedback_data.h"
 #include "chrome/browser/metrics/variations/variations_http_header_provider.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/safe_browsing/safe_browsing_util.h"
+#include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_list.h"
+#include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/metrics/metrics_log_manager.h"
@@ -42,21 +49,31 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "url/gurl.h"
 
-using content::WebContents;
+#if defined(OS_CHROMEOS)
+#include "ash/shell.h"
+#include "ui/aura/root_window.h"
+#include "ui/aura/window.h"
+#endif
 
 namespace {
-const base::FilePath::CharType kLogsFilename[] =
-    FILE_PATH_LITERAL("system_logs.txt");
+
+void DispatchFeedback(Profile* profile, std::string* post_body, int64 delay);
+
+GURL GetTargetTabUrl(int session_id, int index) {
+  Browser* browser = chrome::FindBrowserWithID(session_id);
+  // Sanity checks.
+  if (!browser || index >= browser->tab_strip_model()->count())
+    return GURL();
+
+  if (index >= 0) {
+    content::WebContents* target_tab =
+        browser->tab_strip_model()->GetWebContentsAt(index);
+    if (target_tab)
+      return target_tab->GetURL();
+  }
+
+  return GURL();
 }
-
-namespace chrome {
-const char kAppLauncherCategoryTag[] = "AppLauncher";
-}  // namespace chrome
-
-const int kFeedbackVersion = 1;
-
-const char kReportPhishingUrl[] =
-    "http://www.google.com/safebrowsing/report_phish/";
 
 // URL to post bug reports to.
 const char kFeedbackPostUrl[] =
@@ -64,10 +81,6 @@ const char kFeedbackPostUrl[] =
 
 const char kProtBufMimeType[] = "application/x-protobuf";
 const char kPngMimeType[] = "image/png";
-
-// Tags we use in product specific data
-const char kChromeVersionTag[] = "CHROME VERSION";
-const char kOsVersionTag[] = "OS VERSION";
 
 const int kHttpPostSuccessNoContent = 204;
 const int kHttpPostFailNoConnection = -1;
@@ -78,22 +91,18 @@ const int64 kInitialRetryDelay = 900000;  // 15 minutes
 const int64 kRetryDelayIncreaseFactor = 2;
 const int64 kRetryDelayLimit = 14400000;  // 4 hours
 
-#if defined(OS_CHROMEOS)
-const size_t kFeedbackMaxLength = 4 * 1024;
-const size_t kFeedbackMaxLineCount = 40;
-
 const char kArbitraryMimeType[] = "application/octet-stream";
+const char kHistogramsAttachmentName[] = "histograms.zip";
 const char kLogsAttachmentName[] = "system_logs.zip";
 
-const char kTimestampTag[] = "TIMESTAMP";
-
+#if defined(OS_CHROMEOS)
 const int kChromeOSProductId = 208;
+#else
+const int kChromeBrowserProductId = 237;
 #endif
 
-const int kChromeBrowserProductId = 237;
-
 // Simple net::URLFetcherDelegate to clean up URLFetcher on completion.
-class FeedbackUtil::PostCleanup : public net::URLFetcherDelegate {
+class PostCleanup : public net::URLFetcherDelegate {
  public:
   PostCleanup(Profile* profile,
               std::string* post_body,
@@ -117,7 +126,7 @@ class FeedbackUtil::PostCleanup : public net::URLFetcherDelegate {
 // Don't use the data parameter, instead use the pointer we pass into every
 // post cleanup object - that pointer will be deleted and deleted only on a
 // successful post to the feedback server.
-void FeedbackUtil::PostCleanup::OnURLFetchComplete(
+void PostCleanup::OnURLFetchComplete(
     const net::URLFetcher* source) {
   std::stringstream error_stream;
   int response_code = source->GetResponseCode();
@@ -134,7 +143,7 @@ void FeedbackUtil::PostCleanup::OnURLFetchComplete(
     } else {
       previous_delay_ = kInitialRetryDelay;
     }
-    FeedbackUtil::DispatchFeedback(profile_, post_body_, previous_delay_);
+    DispatchFeedback(profile_, post_body_, previous_delay_);
 
     // Process the error for debug output
     if (response_code == kHttpPostFailNoConnection) {
@@ -158,41 +167,9 @@ void FeedbackUtil::PostCleanup::OnURLFetchComplete(
   delete this;
 }
 
-// static
-void FeedbackUtil::SetOSVersion(std::string* os_version) {
-#if defined(OS_WIN)
-  base::win::OSInfo* os_info = base::win::OSInfo::GetInstance();
-  base::win::OSInfo::VersionNumber version_number = os_info->version_number();
-  *os_version = base::StringPrintf("%d.%d.%d",
-                                   version_number.major,
-                                   version_number.minor,
-                                   version_number.build);
-  int service_pack = os_info->service_pack().major;
-  if (service_pack > 0)
-    os_version->append(base::StringPrintf("Service Pack %d", service_pack));
-#elif defined(OS_MACOSX)
-  *os_version = base::SysInfo::OperatingSystemVersion();
-#else
-  *os_version = "unknown";
-#endif
-}
-
-// static
-void FeedbackUtil::DispatchFeedback(Profile* profile,
-                                    std::string* post_body,
-                                    int64 delay) {
-  DCHECK(post_body);
-
-  base::MessageLoop::current()->PostDelayedTask(
-      FROM_HERE,
-      base::Bind(&FeedbackUtil::SendFeedback, profile, post_body, delay),
-      base::TimeDelta::FromMilliseconds(delay));
-}
-
-// static
-void FeedbackUtil::SendFeedback(Profile* profile,
-                                std::string* post_body,
-                                int64 previous_delay) {
+void SendFeedback(Profile* profile,
+                  std::string* post_body,
+                  int64 previous_delay) {
   DCHECK(post_body);
 
   GURL post_url;
@@ -205,7 +182,7 @@ void FeedbackUtil::SendFeedback(Profile* profile,
 
   net::URLFetcher* fetcher = net::URLFetcher::Create(
       post_url, net::URLFetcher::POST,
-      new FeedbackUtil::PostCleanup(profile, post_body, previous_delay));
+      new PostCleanup(profile, post_body, previous_delay));
   fetcher->SetRequestContext(profile->GetRequestContext());
   fetcher->SetLoadFlags(
       net::LOAD_DO_NOT_SAVE_COOKIES | net::LOAD_DO_NOT_SEND_COOKIES);
@@ -219,11 +196,18 @@ void FeedbackUtil::SendFeedback(Profile* profile,
   fetcher->Start();
 }
 
+void DispatchFeedback(Profile* profile, std::string* post_body, int64 delay) {
+  DCHECK(post_body);
 
-// static
-void FeedbackUtil::AddFeedbackData(
-    userfeedback::ExtensionSubmit* feedback_data,
-    const std::string& key, const std::string& value) {
+  base::MessageLoop::current()->PostDelayedTask(
+      FROM_HERE,
+      base::Bind(&SendFeedback, profile, post_body, delay),
+      base::TimeDelta::FromMilliseconds(delay));
+}
+
+
+void AddFeedbackData(userfeedback::ExtensionSubmit* feedback_data,
+                     const std::string& key, const std::string& value) {
   // Don't bother with empty keys or values
   if (key == "" || value == "") return;
   // Create log_value object and add it to the web_data object
@@ -234,136 +218,133 @@ void FeedbackUtil::AddFeedbackData(
   *(web_data->add_product_specific_data()) = log_value;
 }
 
-#if defined(OS_CHROMEOS)
-bool FeedbackUtil::ValidFeedbackSize(const std::string& content) {
-  if (content.length() > kFeedbackMaxLength)
-    return false;
-  const size_t line_count = std::count(content.begin(), content.end(), '\n');
-  if (line_count > kFeedbackMaxLineCount)
-    return false;
-  return true;
-}
-#endif
+// Adds data as an attachment to feedback_data if the data is non-empty.
+void AddAttachment(userfeedback::ExtensionSubmit* feedback_data,
+                   const char* name,
+                   std::string* data) {
+  if (data == NULL || data->empty())
+    return;
 
-// static
-void FeedbackUtil::SendReport(scoped_refptr<FeedbackData> data) {
+  userfeedback::ProductSpecificBinaryData* attachment =
+      feedback_data->add_product_specific_binary_data();
+  attachment->set_mime_type(kArbitraryMimeType);
+  attachment->set_name(name);
+  attachment->set_data(*data);
+}
+
+}  // namespace
+
+namespace chrome {
+
+const char kAppLauncherCategoryTag[] = "AppLauncher";
+
+void ShowFeedbackPage(Browser* browser,
+                      const std::string& description_template,
+                      const std::string& category_tag) {
+  GURL page_url;
+  if (browser) {
+    page_url = GetTargetTabUrl(browser->session_id().id(),
+                               browser->tab_strip_model()->active_index());
+  }
+
+  Profile* profile = NULL;
+  if (browser) {
+    profile = browser->profile();
+  } else {
+    profile = ProfileManager::GetLastUsedProfileAllowedByPolicy();
+  }
+  if (!profile) {
+    LOG(ERROR) << "Cannot invoke feedback: No profile found!";
+    return;
+  }
+
+  extensions::FeedbackPrivateAPI* api =
+      extensions::FeedbackPrivateAPI::GetFactoryInstance()->GetForProfile(
+          profile);
+
+  api->RequestFeedback(description_template,
+                       category_tag,
+                       page_url);
+}
+
+}  // namespace chrome
+
+namespace feedback_util {
+
+void SendReport(scoped_refptr<FeedbackData> data) {
   if (!data.get()) {
-    LOG(ERROR) << "FeedbackUtil::SendReport called with NULL data!";
+    LOG(ERROR) << "SendReport called with NULL data!";
     NOTREACHED();
     return;
   }
 
-  // Create google feedback protocol buffer objects
   userfeedback::ExtensionSubmit feedback_data;
-  // type id set to 0, unused field but needs to be initialized to 0
+  // Unused field, needs to be 0 though.
   feedback_data.set_type_id(0);
 
   userfeedback::CommonData* common_data = feedback_data.mutable_common_data();
-  userfeedback::WebData* web_data = feedback_data.mutable_web_data();
-
-  // Set our user agent.
-  userfeedback::Navigator* navigator = web_data->mutable_navigator();
-  navigator->set_user_agent(content::GetUserAgent(GURL()));
-
-  // Set GAIA id to 0. We're not using gaia id's for recording
-  // use feedback - we're using the e-mail field, allows users to
-  // submit feedback from incognito mode and specify any mail id
-  // they wish
+  // We're not using gaia ids, we're using the e-mail field instead.
   common_data->set_gaia_id(0);
-
-  // Add the user e-mail to the feedback object
   common_data->set_user_email(data->user_email());
-
-  // Add the description to the feedback object
   common_data->set_description(data->description());
 
-  // Add the language
   std::string chrome_locale = g_browser_process->GetApplicationLocale();
   common_data->set_source_description_language(chrome_locale);
 
-  // Set the url
+  userfeedback::WebData* web_data = feedback_data.mutable_web_data();
   web_data->set_url(data->page_url());
+  web_data->mutable_navigator()->set_user_agent(content::GetUserAgent(GURL()));
 
-  // Add the Chrome version
-  chrome::VersionInfo version_info;
-  if (version_info.is_valid()) {
-    std::string chrome_version = version_info.Name() + " - " +
-        version_info.Version() +
-        " (" + version_info.LastChange() + ")";
-    AddFeedbackData(&feedback_data, std::string(kChromeVersionTag),
-                    chrome_version);
+  gfx::Rect screen_size;
+  if (data->sys_info()) {
+    for (FeedbackData::SystemLogsMap::const_iterator i =
+        data->sys_info()->begin(); i != data->sys_info()->end(); ++i) {
+      if (FeedbackData::BelowCompressionThreshold(i->second))
+        AddFeedbackData(&feedback_data, i->first, i->second);
+    }
+
+    AddAttachment(&feedback_data, kLogsAttachmentName, data->compressed_logs());
   }
 
-  // We don't need the OS version for ChromeOS since we get it in
-  // CHROMEOS_RELEASE_VERSION from /etc/lsb-release
-#if !defined(OS_CHROMEOS)
-  // Add OS version (eg, for WinXP SP2: "5.1.2600 Service Pack 2").
-  std::string os_version;
-  SetOSVersion(&os_version);
-  AddFeedbackData(&feedback_data, std::string(kOsVersionTag), os_version);
-#endif
+  if (data->histograms()) {
+    AddAttachment(&feedback_data,
+                  kHistogramsAttachmentName,
+                  data->compressed_histograms());
+  }
 
-  // Include the page image if we have one.
-  if (data->image().get() && data->image()->size()) {
+  if (!data->attached_filename().empty()) {
+    // We need to use the UTF8Unsafe methods here to accomodate Windows, which
+    // uses wide strings to store filepaths.
+    std::string name = base::FilePath::FromUTF8Unsafe(
+        data->attached_filename()).BaseName().AsUTF8Unsafe();
+    AddAttachment(&feedback_data, name.c_str(), data->attached_filedata());
+  }
+
+  // NOTE: Screenshot needs to be processed after system info since we'll get
+  // the screenshot dimensions from system info.
+  if (data->image() && data->image()->size()) {
     userfeedback::PostedScreenshot screenshot;
     screenshot.set_mime_type(kPngMimeType);
-    // Set the dimensions of the screenshot
+
+    // Set that we 'have' dimensions of the screenshot. These dimensions are
+    // ignored by the server but are a 'required' field in the protobuf.
     userfeedback::Dimensions dimensions;
-    gfx::Rect& screen_size = GetScreenshotSize();
-    dimensions.set_width(static_cast<float>(screen_size.width()));
-    dimensions.set_height(static_cast<float>(screen_size.height()));
+    dimensions.set_width(0.0);
+    dimensions.set_height(0.0);
+
     *(screenshot.mutable_dimensions()) = dimensions;
+    screenshot.set_binary_content(*data->image());
 
-    int image_data_size = data->image()->size();
-    char* image_data = reinterpret_cast<char*>(&(data->image()->front()));
-    screenshot.set_binary_content(std::string(image_data, image_data_size));
-
-    // Set the screenshot object in feedback
     *(feedback_data.mutable_screenshot()) = screenshot;
   }
 
-#if defined(OS_CHROMEOS)
-  if (data->sys_info()) {
-    // Add the product specific data
-    for (chromeos::SystemLogsResponse::const_iterator i =
-        data->sys_info()->begin(); i != data->sys_info()->end(); ++i) {
-      if (ValidFeedbackSize(i->second)) {
-        AddFeedbackData(&feedback_data, i->first, i->second);
-      }
-    }
-
-    if (data->compressed_logs() && data->compressed_logs()->size()) {
-      userfeedback::ProductSpecificBinaryData attachment;
-      attachment.set_mime_type(kArbitraryMimeType);
-      attachment.set_name(kLogsAttachmentName);
-      attachment.set_data(*(data->compressed_logs()));
-      *(feedback_data.add_product_specific_binary_data()) = attachment;
-    }
-  }
-
-  if (data->timestamp() != "")
-    AddFeedbackData(&feedback_data, std::string(kTimestampTag),
-                    data->timestamp());
-
-  if (data->attached_filename() != "" &&
-      data->attached_filedata() &&
-      data->attached_filedata()->size()) {
-    userfeedback::ProductSpecificBinaryData attached_file;
-    attached_file.set_mime_type(kArbitraryMimeType);
-    attached_file.set_name(data->attached_filename());
-    attached_file.set_data(*data->attached_filedata());
-    *(feedback_data.add_product_specific_binary_data()) = attached_file;
-  }
-#endif
-
-  // Set our category tag if we have one
   if (data->category_tag().size())
     feedback_data.set_bucket(data->category_tag());
 
-  // Set our Chrome specific data
+  // Set whether we're reporting from ChromeOS or Chrome on another platform.
   userfeedback::ChromeData chrome_data;
-  chrome_data.set_chrome_platform(
 #if defined(OS_CHROMEOS)
+  chrome_data.set_chrome_platform(
       userfeedback::ChromeData_ChromePlatform_CHROME_OS);
   userfeedback::ChromeOsData chrome_os_data;
   chrome_os_data.set_category(
@@ -371,6 +352,7 @@ void FeedbackUtil::SendReport(scoped_refptr<FeedbackData> data) {
   *(chrome_data.mutable_chrome_os_data()) = chrome_os_data;
   feedback_data.set_product_id(kChromeOSProductId);
 #else
+  chrome_data.set_chrome_platform(
       userfeedback::ChromeData_ChromePlatform_CHROME_BROWSER);
   userfeedback::ChromeBrowserData chrome_browser_data;
   chrome_browser_data.set_category(
@@ -381,78 +363,35 @@ void FeedbackUtil::SendReport(scoped_refptr<FeedbackData> data) {
 
   *(feedback_data.mutable_chrome_data()) = chrome_data;
 
-  // Serialize our report to a string pointer we can pass around
+  // This pointer will eventually get deleted by the PostCleanup class, after
+  // we've either managed to successfully upload the report or died trying.
   std::string* post_body = new std::string;
   feedback_data.SerializeToString(post_body);
 
-  // We have the body of our POST, so send it off to the server with 0 delay
   DispatchFeedback(data->profile(), post_body, 0);
 }
 
-#if defined(FULL_SAFE_BROWSING)
-// static
-void FeedbackUtil::ReportPhishing(WebContents* current_tab,
-                                  const std::string& phishing_url) {
-  current_tab->GetController().LoadURL(
-      safe_browsing_util::GeneratePhishingReportUrl(
-          kReportPhishingUrl, phishing_url,
-          false /* not client-side detection */),
-      content::Referrer(),
-      content::PAGE_TRANSITION_LINK,
-      std::string());
-}
-#endif
-
-static std::vector<unsigned char>* screenshot_png = NULL;
-static gfx::Rect* screenshot_size = NULL;
-
-// static
-std::vector<unsigned char>* FeedbackUtil::GetScreenshotPng() {
-  if (screenshot_png == NULL)
-    screenshot_png = new std::vector<unsigned char>;
-  return screenshot_png;
-}
-
-// static
-void FeedbackUtil::ClearScreenshotPng() {
-  if (screenshot_png)
-    screenshot_png->clear();
-}
-
-// static
-gfx::Rect& FeedbackUtil::GetScreenshotSize() {
-  if (screenshot_size == NULL)
-    screenshot_size = new gfx::Rect();
-  return *screenshot_size;
-}
-
-// static
-void FeedbackUtil::SetScreenshotSize(const gfx::Rect& rect) {
-  gfx::Rect& screen_size = GetScreenshotSize();
-  screen_size = rect;
-}
-
-// static
-bool FeedbackUtil::ZipString(const std::string& logs,
-                             std::string* compressed_logs) {
+bool ZipString(const base::FilePath& filename,
+               const std::string& data, std::string* compressed_logs) {
   base::FilePath temp_path;
   base::FilePath zip_file;
 
   // Create a temporary directory, put the logs into a file in it. Create
   // another temporary file to receive the zip file in.
-  if (!file_util::CreateNewTempDirectory(FILE_PATH_LITERAL(""), &temp_path))
+  if (!base::CreateNewTempDirectory(base::FilePath::StringType(), &temp_path))
     return false;
-  if (file_util::WriteFile(temp_path.Append(kLogsFilename),
-                           logs.c_str(), logs.size()) == -1)
-    return false;
-  if (!file_util::CreateTemporaryFile(&zip_file))
+  if (file_util::WriteFile(temp_path.Append(filename),
+                           data.c_str(), data.size()) == -1)
     return false;
 
-  if (!zip::Zip(temp_path, zip_file, false))
-    return false;
+  bool succeed = base::CreateTemporaryFile(&zip_file) &&
+      zip::Zip(temp_path, zip_file, false) &&
+      base::ReadFileToString(zip_file, compressed_logs);
 
-  if (!file_util::ReadFileToString(zip_file, compressed_logs))
-    return false;
+  base::DeleteFile(temp_path, true);
+  base::DeleteFile(zip_file, false);
 
-  return true;
+  return succeed;
 }
+
+}  // namespace feedback_util

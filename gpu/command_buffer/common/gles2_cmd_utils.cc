@@ -555,7 +555,7 @@ uint32 GLES2Util::GLErrorToErrorBit(uint32 error) {
     case GL_INVALID_FRAMEBUFFER_OPERATION:
       return gl_error_bit::kInvalidFrameBufferOperation;
     default:
-      GPU_NOTREACHED();
+      NOTREACHED();
       return gl_error_bit::kNoError;
   }
 }
@@ -573,7 +573,7 @@ uint32 GLES2Util::GLErrorBitToGLError(uint32 error_bit) {
     case gl_error_bit::kInvalidFrameBufferOperation:
       return GL_INVALID_FRAMEBUFFER_OPERATION;
     default:
-      GPU_NOTREACHED();
+      NOTREACHED();
       return GL_NO_ERROR;
   }
 }
@@ -588,6 +588,43 @@ uint32 GLES2Util::IndexToGLFaceTarget(int index) {
     GL_TEXTURE_CUBE_MAP_NEGATIVE_Z,
   };
   return faces[index];
+}
+
+uint32 GLES2Util::GetPreferredGLReadPixelsFormat(uint32 internal_format) {
+  switch (internal_format) {
+    case GL_RGB16F_EXT:
+    case GL_RGB32F_EXT:
+      return GL_RGB;
+    case GL_RGBA16F_EXT:
+    case GL_RGBA32F_EXT:
+      return GL_RGBA;
+    default:
+      return GL_RGBA;
+  }
+}
+
+uint32 GLES2Util::GetPreferredGLReadPixelsType(
+    uint32 internal_format, uint32 texture_type) {
+  switch (internal_format) {
+    case GL_RGBA32F_EXT:
+    case GL_RGB32F_EXT:
+      return GL_FLOAT;
+    case GL_RGBA16F_EXT:
+    case GL_RGB16F_EXT:
+      return GL_HALF_FLOAT_OES;
+    case GL_RGBA:
+    case GL_RGB:
+      // Unsized internal format, check the type
+      switch (texture_type) {
+        case GL_FLOAT:
+        case GL_HALF_FLOAT_OES:
+          return GL_FLOAT;
+        default:
+          return GL_UNSIGNED_BYTE;
+      }
+    default:
+      return GL_UNSIGNED_BYTE;
+  }
 }
 
 uint32 GLES2Util::GetChannelsForFormat(int format) {
@@ -715,7 +752,30 @@ bool GLES2Util::ParseUniformName(
   return true;
 }
 
-ContextCreationAttribParser::ContextCreationAttribParser()
+namespace {
+
+// From <EGL/egl.h>.
+const int32 kAlphaSize       = 0x3021;  // EGL_ALPHA_SIZE
+const int32 kBlueSize        = 0x3022;  // EGL_BLUE_SIZE
+const int32 kGreenSize       = 0x3023;  // EGL_GREEN_SIZE
+const int32 kRedSize         = 0x3024;  // EGL_RED_SIZE
+const int32 kDepthSize       = 0x3025;  // EGL_DEPTH_SIZE
+const int32 kStencilSize     = 0x3026;  // EGL_STENCIL_SIZE
+const int32 kSamples         = 0x3031;  // EGL_SAMPLES
+const int32 kSampleBuffers   = 0x3032;  // EGL_SAMPLE_BUFFERS
+const int32 kNone            = 0x3038;  // EGL_NONE
+const int32 kSwapBehavior    = 0x3093;  // EGL_SWAP_BEHAVIOR
+const int32 kBufferPreserved = 0x3094;  // EGL_BUFFER_PRESERVED
+const int32 kBufferDestroyed = 0x3095;  // EGL_BUFFER_DESTROYED
+
+// Chromium only.
+const int32 kShareResources        = 0x10000;
+const int32 kBindGeneratesResource = 0x10001;
+const int32 kFailIfMajorPerfCaveat = 0x10002;
+
+}  // namespace
+
+ContextCreationAttribHelper::ContextCreationAttribHelper()
   : alpha_size_(-1),
     blue_size_(-1),
     green_size_(-1),
@@ -726,79 +786,110 @@ ContextCreationAttribParser::ContextCreationAttribParser()
     sample_buffers_(-1),
     buffer_preserved_(true),
     share_resources_(false),
-    bind_generates_resource_(true) {
+    bind_generates_resource_(true),
+    fail_if_major_perf_caveat_(false) {
 }
 
-bool ContextCreationAttribParser::Parse(const std::vector<int32>& attribs) {
-  // From <EGL/egl.h>.
-  const int32 EGL_ALPHA_SIZE = 0x3021;
-  const int32 EGL_BLUE_SIZE = 0x3022;
-  const int32 EGL_GREEN_SIZE = 0x3023;
-  const int32 EGL_RED_SIZE = 0x3024;
-  const int32 EGL_DEPTH_SIZE = 0x3025;
-  const int32 EGL_STENCIL_SIZE = 0x3026;
-  const int32 EGL_SAMPLES = 0x3031;
-  const int32 EGL_SAMPLE_BUFFERS = 0x3032;
-  const int32 EGL_NONE = 0x3038;
-  const int32 EGL_SWAP_BEHAVIOR = 0x3093;
-  const int32 EGL_BUFFER_PRESERVED = 0x3094;
+void ContextCreationAttribHelper::Serialize(std::vector<int32>* attribs) {
+  if (alpha_size_ != -1) {
+    attribs->push_back(kAlphaSize);
+    attribs->push_back(alpha_size_);
+  }
+  if (blue_size_ != -1) {
+    attribs->push_back(kBlueSize);
+    attribs->push_back(blue_size_);
+  }
+  if (green_size_ != -1) {
+    attribs->push_back(kGreenSize);
+    attribs->push_back(green_size_);
+  }
+  if (red_size_ != -1) {
+    attribs->push_back(kRedSize);
+    attribs->push_back(red_size_);
+  }
+  if (depth_size_ != -1) {
+    attribs->push_back(kDepthSize);
+    attribs->push_back(depth_size_);
+  }
+  if (stencil_size_ != -1) {
+    attribs->push_back(kStencilSize);
+    attribs->push_back(stencil_size_);
+  }
+  if (samples_ != -1) {
+    attribs->push_back(kSamples);
+    attribs->push_back(samples_);
+  }
+  if (sample_buffers_ != -1) {
+    attribs->push_back(kSampleBuffers);
+    attribs->push_back(sample_buffers_);
+  }
+  attribs->push_back(kSwapBehavior);
+  attribs->push_back(buffer_preserved_ ? kBufferPreserved : kBufferDestroyed);
+  attribs->push_back(kShareResources);
+  attribs->push_back(share_resources_ ? 1 : 0);
+  attribs->push_back(kBindGeneratesResource);
+  attribs->push_back(bind_generates_resource_ ? 1 : 0);
+  attribs->push_back(kFailIfMajorPerfCaveat);
+  attribs->push_back(fail_if_major_perf_caveat_ ? 1 : 0);
+  attribs->push_back(kNone);
+}
 
-  // Chromium only.
-  const int32 SHARE_RESOURCES           = 0x10000;
-  const int32 BIND_GENERATES_RESOURCES  = 0x10001;
-
+bool ContextCreationAttribHelper::Parse(const std::vector<int32>& attribs) {
   for (size_t i = 0; i < attribs.size(); i += 2) {
     const int32 attrib = attribs[i];
     if (i + 1 >= attribs.size()) {
-      if (attrib == EGL_NONE) {
+      if (attrib == kNone) {
         return true;
       }
 
-      GPU_DLOG(ERROR) << "Missing value after context creation attribute: "
-                      << attrib;
+      DLOG(ERROR) << "Missing value after context creation attribute: "
+                  << attrib;
       return false;
     }
 
     const int32 value = attribs[i+1];
     switch (attrib) {
-      case EGL_ALPHA_SIZE:
+      case kAlphaSize:
         alpha_size_ = value;
         break;
-      case EGL_BLUE_SIZE:
+      case kBlueSize:
         blue_size_ = value;
         break;
-      case EGL_GREEN_SIZE:
+      case kGreenSize:
         green_size_ = value;
         break;
-      case EGL_RED_SIZE:
+      case kRedSize:
         red_size_ = value;
         break;
-      case EGL_DEPTH_SIZE:
+      case kDepthSize:
         depth_size_ = value;
         break;
-      case EGL_STENCIL_SIZE:
+      case kStencilSize:
         stencil_size_ = value;
         break;
-      case EGL_SAMPLES:
+      case kSamples:
         samples_ = value;
         break;
-      case EGL_SAMPLE_BUFFERS:
+      case kSampleBuffers:
         sample_buffers_ = value;
         break;
-      case EGL_SWAP_BEHAVIOR:
-        buffer_preserved_ = value == EGL_BUFFER_PRESERVED;
+      case kSwapBehavior:
+        buffer_preserved_ = value == kBufferPreserved;
         break;
-      case SHARE_RESOURCES:
+      case kShareResources:
         share_resources_ = value != 0;
         break;
-      case BIND_GENERATES_RESOURCES:
+      case kBindGeneratesResource:
         bind_generates_resource_ = value != 0;
         break;
-      case EGL_NONE:
+      case kFailIfMajorPerfCaveat:
+        fail_if_major_perf_caveat_ = value != 0;
+        break;
+      case kNone:
         // Terminate list, even if more attributes.
         return true;
       default:
-        GPU_DLOG(ERROR) << "Invalid context creation attribute: " << attrib;
+        DLOG(ERROR) << "Invalid context creation attribute: " << attrib;
         return false;
     }
   }

@@ -5,6 +5,7 @@
 #include "chrome/test/chromedriver/window_commands.h"
 
 #include <list>
+#include <string>
 
 #include "base/callback.h"
 #include "base/strings/string_number_conversions.h"
@@ -13,7 +14,9 @@
 #include "base/time/time.h"
 #include "base/values.h"
 #include "chrome/test/chromedriver/basic_types.h"
+#include "chrome/test/chromedriver/chrome/automation_extension.h"
 #include "chrome/test/chromedriver/chrome/chrome.h"
+#include "chrome/test/chromedriver/chrome/chrome_desktop_impl.h"
 #include "chrome/test/chromedriver/chrome/devtools_client.h"
 #include "chrome/test/chromedriver/chrome/geoposition.h"
 #include "chrome/test/chromedriver/chrome/javascript_dialog_manager.h"
@@ -121,6 +124,67 @@ Status GetVisibleCookies(WebView* web_view,
   return Status(kOk);
 }
 
+Status ScrollCoordinateInToView(
+    Session* session, WebView* web_view, int x, int y, int* offset_x,
+    int* offset_y) {
+  scoped_ptr<base::Value> value;
+  base::ListValue args;
+  args.AppendInteger(x);
+  args.AppendInteger(y);
+  Status status = web_view->CallFunction(
+      std::string(),
+      "function(x, y) {"
+      "  if (x < window.pageXOffset ||"
+      "      x >= window.pageXOffset + window.innerWidth ||"
+      "      y < window.pageYOffset ||"
+      "      y >= window.pageYOffset + window.innerHeight) {"
+      "    window.scrollTo(x - window.innerWidth/2, y - window.innerHeight/2);"
+      "  }"
+      "  return {"
+      "    view_x: Math.floor(window.pageXOffset),"
+      "    view_y: Math.floor(window.pageYOffset),"
+      "    view_width: Math.floor(window.innerWidth),"
+      "    view_height: Math.floor(window.innerHeight)};"
+      "}",
+      args,
+      &value);
+  if (!status.IsOk())
+    return status;
+  base::DictionaryValue* view_attrib;
+  value->GetAsDictionary(&view_attrib);
+  int view_x, view_y, view_width, view_height;
+  view_attrib->GetInteger("view_x", &view_x);
+  view_attrib->GetInteger("view_y", &view_y);
+  view_attrib->GetInteger("view_width", &view_width);
+  view_attrib->GetInteger("view_height", &view_height);
+  *offset_x = x - view_x;
+  *offset_y = y - view_y;
+  if (*offset_x < 0 || *offset_x >= view_width || *offset_y < 0 ||
+      *offset_y >= view_height)
+    return Status(kUnknownError, "Failed to scroll coordinate into view");
+  return Status(kOk);
+}
+
+Status ExecuteTouchEvent(
+    Session* session, WebView* web_view, TouchEventType type,
+    const base::DictionaryValue& params) {
+  int x, y;
+  if (!params.GetInteger("x", &x))
+    return Status(kUnknownError, "'x' must be an integer");
+  if (!params.GetInteger("y", &y))
+    return Status(kUnknownError, "'y' must be an integer");
+  int relative_x = x;
+  int relative_y = y;
+  Status status = ScrollCoordinateInToView(
+      session, web_view, x, y, &relative_x, &relative_y);
+  if (!status.IsOk())
+    return status;
+  std::list<TouchEvent> events;
+  events.push_back(
+      TouchEvent(type, relative_x, relative_y));
+  return web_view->DispatchTouchEvents(events);
+}
+
 }  // namespace
 
 Status ExecuteWindowCommand(
@@ -153,21 +217,18 @@ Status ExecuteWindowCommand(
       else
         break;
     }
-    nav_status =
-        web_view->WaitForPendingNavigations(session->GetCurrentFrameId(),
-                                            session->page_load_timeout);
+    nav_status = web_view->WaitForPendingNavigations(
+        session->GetCurrentFrameId(), session->page_load_timeout, true);
     if (nav_status.IsError())
       return nav_status;
 
     status = command.Run(session, web_view, params, value);
   }
 
-  nav_status =
-      web_view->WaitForPendingNavigations(session->GetCurrentFrameId(),
-                                          session->page_load_timeout);
+  nav_status = web_view->WaitForPendingNavigations(
+      session->GetCurrentFrameId(), session->page_load_timeout, true);
 
   if (status.IsOk() && nav_status.IsError() &&
-      nav_status.code() != kDisconnected &&
       nav_status.code() != kUnexpectedAlertOpen)
     return nav_status;
   if (status.code() == kUnexpectedAlertOpen)
@@ -194,12 +255,16 @@ Status ExecuteExecuteScript(
   std::string script;
   if (!params.GetString("script", &script))
     return Status(kUnknownError, "'script' must be a string");
-  const base::ListValue* args;
-  if (!params.GetList("args", &args))
-    return Status(kUnknownError, "'args' must be a list");
+  if (script == ":takeHeapSnapshot") {
+    return web_view->TakeHeapSnapshot(value);
+  } else {
+    const base::ListValue* args;
+    if (!params.GetList("args", &args))
+      return Status(kUnknownError, "'args' must be a list");
 
-  return web_view->CallFunction(
-      session->GetCurrentFrameId(), "function(){" + script + "}", *args, value);
+    return web_view->CallFunction(session->GetCurrentFrameId(),
+                                  "function(){" + script + "}", *args, value);
+  }
 }
 
 Status ExecuteExecuteAsyncScript(
@@ -216,7 +281,7 @@ Status ExecuteExecuteAsyncScript(
 
   return web_view->CallUserAsyncFunction(
       session->GetCurrentFrameId(), "function(){" + script + "}", *args,
-      base::TimeDelta::FromMilliseconds(session->script_timeout), value);
+      session->script_timeout, value);
 }
 
 Status ExecuteSwitchToFrame(
@@ -499,17 +564,36 @@ Status ExecuteMouseDoubleClick(
   return web_view->DispatchMouseEvents(events, session->GetCurrentFrameId());
 }
 
+Status ExecuteTouchDown(
+    Session* session,
+    WebView* web_view,
+    const base::DictionaryValue& params,
+    scoped_ptr<base::Value>* value) {
+  return ExecuteTouchEvent(session, web_view, kTouchStart, params);
+}
+
+Status ExecuteTouchUp(
+    Session* session,
+    WebView* web_view,
+    const base::DictionaryValue& params,
+    scoped_ptr<base::Value>* value) {
+  return ExecuteTouchEvent(session, web_view, kTouchEnd, params);
+}
+
+Status ExecuteTouchMove(
+    Session* session,
+    WebView* web_view,
+    const base::DictionaryValue& params,
+    scoped_ptr<base::Value>* value) {
+  return ExecuteTouchEvent(session, web_view, kTouchMove, params);
+}
+
 Status ExecuteGetActiveElement(
     Session* session,
     WebView* web_view,
     const base::DictionaryValue& params,
     scoped_ptr<base::Value>* value) {
-  base::ListValue args;
-  return web_view->CallFunction(
-      session->GetCurrentFrameId(),
-      "function() { return document.activeElement || document.body }",
-      args,
-      value);
+  return GetActiveElement(session, web_view, value);
 }
 
 Status ExecuteSendKeysToActiveElement(
@@ -651,10 +735,27 @@ Status ExecuteScreenshot(
     WebView* web_view,
     const base::DictionaryValue& params,
     scoped_ptr<base::Value>* value) {
-  std::string screenshot;
-  Status status = web_view->CaptureScreenshot(&screenshot);
+  Status status = session->chrome->ActivateWebView(web_view->GetId());
   if (status.IsError())
     return status;
+
+  std::string screenshot;
+  if (session->chrome->GetAsDesktop() && !session->force_devtools_screenshot) {
+    AutomationExtension* extension = NULL;
+    status =
+        session->chrome->GetAsDesktop()->GetAutomationExtension(&extension);
+    if (status.IsError())
+      return status;
+    status = extension->CaptureScreenshot(&screenshot);
+    // If the screenshot was forbidden, fallback to DevTools.
+    if (status.code() == kForbidden)
+      status = web_view->CaptureScreenshot(&screenshot);
+  } else {
+    status = web_view->CaptureScreenshot(&screenshot);
+  }
+  if (status.IsError())
+    return status;
+
   value->reset(new base::StringValue(screenshot));
   return Status(kOk);
 }
@@ -761,4 +862,12 @@ Status ExecuteSetLocation(
   if (status.IsOk())
     session->overridden_geoposition.reset(new Geoposition(geoposition));
   return status;
+}
+
+Status ExecuteTakeHeapSnapshot(
+    Session* session,
+    WebView* web_view,
+    const base::DictionaryValue& params,
+    scoped_ptr<base::Value>* value) {
+  return web_view->TakeHeapSnapshot(value);
 }

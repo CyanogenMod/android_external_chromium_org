@@ -22,15 +22,19 @@ class ProfileInfoInterface {
   virtual size_t GetIndexOfProfileWithPath(
       const base::FilePath& profile_path) const = 0;
 
-  virtual string16 GetNameOfProfileAtIndex(size_t index) const = 0;
+  virtual base::string16 GetNameOfProfileAtIndex(size_t index) const = 0;
 
-  virtual string16 GetShortcutNameOfProfileAtIndex(size_t index) const = 0;
+  virtual base::string16 GetShortcutNameOfProfileAtIndex(
+      size_t index) const = 0;
 
   virtual base::FilePath GetPathOfProfileAtIndex(size_t index) const = 0;
 
-  virtual string16 GetUserNameOfProfileAtIndex(size_t index) const = 0;
+  virtual base::string16 GetUserNameOfProfileAtIndex(size_t index) const = 0;
 
   virtual const gfx::Image& GetAvatarIconOfProfileAtIndex(
+      size_t index) const = 0;
+
+  virtual std::string GetLocalAuthCredentialsOfProfileAtIndex(
       size_t index) const = 0;
 
   // Returns true if the profile at the given index is currently running any
@@ -38,7 +42,10 @@ class ProfileInfoInterface {
   virtual bool GetBackgroundStatusOfProfileAtIndex(
       size_t index) const = 0;
 
-  virtual string16 GetGAIANameOfProfileAtIndex(size_t index) const = 0;
+  virtual base::string16 GetGAIANameOfProfileAtIndex(size_t index) const = 0;
+
+  virtual base::string16 GetGAIAGivenNameOfProfileAtIndex(
+      size_t index) const = 0;
 
   // Checks if the GAIA name should be used as the profile's name.
   virtual bool IsUsingGAIANameOfProfileAtIndex(size_t index) const = 0;
@@ -55,6 +62,9 @@ class ProfileInfoInterface {
 
   // This profile is associated with an account but has been signed-out.
   virtual bool ProfileIsSigninRequiredAtIndex(size_t index) const = 0;
+
+  // Profile is known to be ephemeral and should be deleted when closed.
+  virtual bool ProfileIsEphemeralAtIndex(size_t index) const = 0;
 
  protected:
   virtual ~ProfileInfoInterface() {}

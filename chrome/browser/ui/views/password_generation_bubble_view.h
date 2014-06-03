@@ -6,8 +6,8 @@
 #define CHROME_BROWSER_UI_VIEWS_PASSWORD_GENERATION_BUBBLE_VIEW_H_
 
 #include "base/basictypes.h"
+#include "components/autofill/core/common/password_form.h"
 #include "components/autofill/core/common/password_generation_util.h"
-#include "content/public/common/password_form.h"
 #include "ui/gfx/rect.h"
 #include "ui/views/bubble/bubble_delegate.h"
 #include "ui/views/controls/button/button.h"
@@ -39,7 +39,7 @@ class PasswordGenerationBubbleView : public views::BubbleDelegateView,
                                      public views::ButtonListener,
                                      public views::TextfieldController {
  public:
-  PasswordGenerationBubbleView(const content::PasswordForm& form,
+  PasswordGenerationBubbleView(const autofill::PasswordForm& form,
                                const gfx::Rect& anchor_rect,
                                views::View* anchor_view,
                                content::RenderViewHost* render_view_host,
@@ -65,7 +65,7 @@ class PasswordGenerationBubbleView : public views::BubbleDelegateView,
 
   // views::TextfieldController
   virtual void ContentsChanged(views::Textfield* sender,
-                               const string16& new_contents) OVERRIDE;
+                               const base::string16& new_contents) OVERRIDE;
   virtual bool HandleKeyEvent(views::Textfield* sender,
                               const ui::KeyEvent& key_event) OVERRIDE;
 
@@ -80,7 +80,7 @@ class PasswordGenerationBubbleView : public views::BubbleDelegateView,
   views::View* textfield_wrapper_;
 
   // The form associated with the password field(s) that we are generated.
-  content::PasswordForm form_;
+  autofill::PasswordForm form_;
 
   // Location that the bubble points to
   gfx::Rect anchor_rect_;

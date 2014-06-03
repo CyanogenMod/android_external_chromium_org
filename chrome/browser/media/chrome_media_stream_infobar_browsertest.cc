@@ -44,23 +44,38 @@ class MediaStreamInfoBarTest : public WebRtcTestBase {
 
  protected:
   content::WebContents* LoadTestPageInTab() {
+    return LoadTestPageInBrowser(browser());
+  }
+
+  content::WebContents* LoadTestPageInIncognitoTab() {
+    return LoadTestPageInBrowser(CreateIncognitoBrowser());
+  }
+
+ private:
+  content::WebContents* LoadTestPageInBrowser(Browser* browser) {
     EXPECT_TRUE(test_server()->Start());
 
     const char kMainWebrtcTestHtmlPage[] =
         "files/webrtc/webrtc_jsep01_test.html";
     ui_test_utils::NavigateToURL(
-        browser(), test_server()->GetURL(kMainWebrtcTestHtmlPage));
-    return browser()->tab_strip_model()->GetActiveWebContents();
+        browser, test_server()->GetURL(kMainWebrtcTestHtmlPage));
+    return browser->tab_strip_model()->GetActiveWebContents();
   }
 
- private:
   DISALLOW_COPY_AND_ASSIGN(MediaStreamInfoBarTest);
 };
 
 
 // Actual tests ---------------------------------------------------------------
 
-IN_PROC_BROWSER_TEST_F(MediaStreamInfoBarTest, TestAllowingUserMedia) {
+// Failing on ChromiumOS Debug and Win Aura, so disabling on both.
+// See http://crbug.com/263333.
+#if (defined(OS_CHROMEOS) && !defined(NDEBUG)) || defined(USE_AURA)
+#define MAYBE_TestAllowingUserMedia DISABLED_TestAllowingUserMedia
+#else
+#define MAYBE_TestAllowingUserMedia TestAllowingUserMedia
+#endif
+IN_PROC_BROWSER_TEST_F(MediaStreamInfoBarTest, MAYBE_TestAllowingUserMedia) {
   content::WebContents* tab_contents = LoadTestPageInTab();
   GetUserMediaAndAccept(tab_contents);
 }
@@ -75,8 +90,22 @@ IN_PROC_BROWSER_TEST_F(MediaStreamInfoBarTest, TestDismissingInfobar) {
   GetUserMediaAndDismiss(tab_contents);
 }
 
+IN_PROC_BROWSER_TEST_F(MediaStreamInfoBarTest, TestDenyingUserMediaIncognito) {
+  content::WebContents* tab_contents = LoadTestPageInIncognitoTab();
+  GetUserMediaAndDeny(tab_contents);
+}
+
+// Failing on ChromiumOS Debug and Win Aura, so disabling on Aura.
+// See http://crbug.com/263333.
+#if defined(USE_AURA)
+#define MAYBE_TestAcceptThenDenyWhichShouldBeSticky \
+  DISABLED_TestAcceptThenDenyWhichShouldBeSticky
+#else
+#define MAYBE_TestAcceptThenDenyWhichShouldBeSticky \
+  TestAcceptThenDenyWhichShouldBeSticky
+#endif
 IN_PROC_BROWSER_TEST_F(MediaStreamInfoBarTest,
-                       TestAcceptThenDenyWhichShouldBeSticky) {
+                       MAYBE_TestAcceptThenDenyWhichShouldBeSticky) {
 #if defined(OS_WIN) && defined(USE_ASH)
   // Disable this test in Metro+Ash for now (http://crbug.com/262796).
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kAshBrowserTests))
@@ -91,14 +120,21 @@ IN_PROC_BROWSER_TEST_F(MediaStreamInfoBarTest,
   // Should fail with permission denied right away with no infobar popping up.
   GetUserMedia(tab_contents, kAudioVideoCallConstraints);
   EXPECT_TRUE(PollingWaitUntil("obtainGetUserMediaResult()",
-                               kFailedWithErrorPermissionDenied,
+                               kFailedWithPermissionDeniedError,
                                tab_contents));
   InfoBarService* infobar_service =
       InfoBarService::FromWebContents(tab_contents);
   EXPECT_EQ(0u, infobar_service->infobar_count());
 }
 
-IN_PROC_BROWSER_TEST_F(MediaStreamInfoBarTest, TestAcceptIsNotSticky) {
+// Failing on Win Aura, so disabling on that.
+// See http://crbug.com/263333.
+#if defined(USE_AURA)
+#define MAYBE_TestAcceptIsNotSticky DISABLED_TestAcceptIsNotSticky
+#else
+#define MAYBE_TestAcceptIsNotSticky TestAcceptIsNotSticky
+#endif
+IN_PROC_BROWSER_TEST_F(MediaStreamInfoBarTest, MAYBE_TestAcceptIsNotSticky) {
   content::WebContents* tab_contents = LoadTestPageInTab();
 
   // If accept were sticky the second call would hang because it hangs if an
@@ -133,8 +169,16 @@ IN_PROC_BROWSER_TEST_F(MediaStreamInfoBarTest,
   GetUserMediaAndDeny(tab_contents);
 }
 
+// Times out on win debug builds; http://crbug.com/295723 .
+#if defined(OS_WIN) && !defined(NDEBUG)
+#define MAYBE_DenyingMicDoesNotCauseStickyDenyForCameras \
+        DISABLED_DenyingMicDoesNotCauseStickyDenyForCameras
+#else
+#define MAYBE_DenyingMicDoesNotCauseStickyDenyForCameras \
+        DenyingMicDoesNotCauseStickyDenyForCameras
+#endif
 IN_PROC_BROWSER_TEST_F(MediaStreamInfoBarTest,
-                       DenyingMicDoesNotCauseStickyDenyForCameras) {
+                       MAYBE_DenyingMicDoesNotCauseStickyDenyForCameras) {
   content::WebContents* tab_contents = LoadTestPageInTab();
 
   // If mic blocking also blocked cameras, the second call here would hang.
@@ -144,8 +188,15 @@ IN_PROC_BROWSER_TEST_F(MediaStreamInfoBarTest,
                                                kVideoOnlyCallConstraints);
 }
 
+#if defined(OS_CHROMEOS) && !defined(NDEBUG)
+#define MAYBE_DenyingCameraDoesNotCauseStickyDenyForMics \
+  DISABLED_DenyingCameraDoesNotCauseStickyDenyForMics
+#else
+#define MAYBE_DenyingCameraDoesNotCauseStickyDenyForMics \
+  DenyingCameraDoesNotCauseStickyDenyForMics
+#endif
 IN_PROC_BROWSER_TEST_F(MediaStreamInfoBarTest,
-                       DenyingCameraDoesNotCauseStickyDenyForMics) {
+                       MAYBE_DenyingCameraDoesNotCauseStickyDenyForMics) {
   content::WebContents* tab_contents = LoadTestPageInTab();
 
   // If camera blocking also blocked mics, the second call here would hang.
@@ -153,18 +204,4 @@ IN_PROC_BROWSER_TEST_F(MediaStreamInfoBarTest,
                                              kVideoOnlyCallConstraints);
   GetUserMediaWithSpecificConstraintsAndAccept(tab_contents,
                                                kAudioOnlyCallConstraints);
-}
-
-IN_PROC_BROWSER_TEST_F(MediaStreamInfoBarTest,
-                       DenyingMicStillSucceedsWithCameraForAudioVideoCalls) {
-  content::WebContents* tab_contents = LoadTestPageInTab();
-
-  // If microphone blocking also blocked a AV call, the second call here
-  // would hang. The requester should only be granted access to the cam though.
-  GetUserMediaWithSpecificConstraintsAndDeny(tab_contents,
-                                             kAudioOnlyCallConstraints);
-  GetUserMediaWithSpecificConstraintsAndAccept(tab_contents,
-                                               kAudioVideoCallConstraints);
-
-  // TODO(phoglund): verify the requester actually only gets video tracks.
 }

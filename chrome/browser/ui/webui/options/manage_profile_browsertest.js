@@ -5,9 +5,6 @@
 // None of these tests is relevant for Chrome OS.
 GEN('#if !defined(OS_CHROMEOS)');
 
-GEN('#include "base/command_line.h"');
-GEN('#include "chrome/common/chrome_switches.h"');
-
 /**
  * TestFixture for ManageProfileOverlay and CreateProfileOverlay WebUI testing.
  * @extends {testing.Test}
@@ -27,12 +24,6 @@ ManageProfileUITest.prototype = {
    * @override
    */
   runAccessibilityChecks: false,
-
-  /** @override */
-  testGenPreamble: function() {
-    GEN('CommandLine::ForCurrentProcess()->' +
-        'AppendSwitch(switches::kEnableManagedUsers);');
-  },
 
   /**
    * Returns a test profile-info object with configurable "managed" status.
@@ -66,6 +57,38 @@ ManageProfileUITest.prototype = {
   },
 };
 
+// Receiving the new profile defaults in the manage-user overlay shouldn't mess
+// up the focus in a visible higher-level overlay.
+TEST_F('ManageProfileUITest', 'NewProfileDefaultsFocus', function() {
+  var self = this;
+
+  function checkFocus(pageName, expectedFocus, initialFocus) {
+    OptionsPage.showPageByName(pageName);
+    initialFocus.focus();
+    expectEquals(initialFocus, document.activeElement, pageName);
+
+    ManageProfileOverlay.receiveNewProfileDefaults(
+        self.testProfileInfo_(false));
+    expectEquals(expectedFocus, document.activeElement, pageName);
+    OptionsPage.closeOverlay();
+  }
+
+  // Receiving new profile defaults sets focus to the name field if the create
+  // overlay is open, and should not change focus at all otherwise.
+  checkFocus('manageProfile',
+             $('manage-profile-cancel'),
+             $('manage-profile-cancel'));
+  checkFocus('createProfile',
+             $('create-profile-name'),
+             $('create-profile-cancel'));
+  checkFocus('managedUserLearnMore',
+             $('managed-user-learn-more-done'),
+             $('managed-user-learn-more-done'));
+  checkFocus('managedUserLearnMore',
+             document.querySelector('#managed-user-learn-more-text a'),
+             document.querySelector('#managed-user-learn-more-text a'));
+});
+
 // The default options should be reset each time the creation overlay is shown.
 TEST_F('ManageProfileUITest', 'DefaultCreateOptions', function() {
   OptionsPage.showPageByName('createProfile');
@@ -81,18 +104,6 @@ TEST_F('ManageProfileUITest', 'DefaultCreateOptions', function() {
   OptionsPage.showPageByName('createProfile');
   assertEquals(shortcutsAllowed, createShortcut.checked);
   assertFalse(createManaged.checked);
-});
-
-// Creating managed users should be disallowed when they are not enabled.
-TEST_F('ManageProfileUITest', 'CreateManagedUserAllowed', function() {
-  var container = $('create-profile-managed-container');
-
-  ManageProfileOverlay.getInstance().initializePage();
-  assertFalse(container.hidden);
-
-  loadTimeData.overrideValues({'managedUsersEnabled': false});
-  ManageProfileOverlay.getInstance().initializePage();
-  assertTrue(container.hidden);
 });
 
 // The checkbox label should change depending on whether the user is signed in.
@@ -120,17 +131,22 @@ TEST_F('ManageProfileUITest', 'CreateManagedUserText', function() {
   assertTrue($('create-profile-managed').disabled);
 });
 
-// Managed users should not be able to edit their profile names.
+// Managed users should not be able to edit their profile names, and the initial
+// focus should be adjusted accordingly.
 TEST_F('ManageProfileUITest', 'EditManagedUserNameAllowed', function() {
   var nameField = $('manage-profile-name');
 
   this.setProfileManaged_(false);
   ManageProfileOverlay.showManageDialog();
-  assertFalse(nameField.disabled);
+  expectFalse(nameField.disabled);
+  expectEquals(nameField, document.activeElement);
+
+  OptionsPage.closeOverlay();
 
   this.setProfileManaged_(true);
   ManageProfileOverlay.showManageDialog();
-  assertTrue(nameField.disabled);
+  expectTrue(nameField.disabled);
+  expectEquals($('manage-profile-ok'), document.activeElement);
 });
 
 // Setting profile information should allow the confirmation to be shown.
@@ -165,6 +181,7 @@ TEST_F('ManageProfileUITest', 'ShowCreateConfirmationOnSuccess', function() {
   CreateProfileOverlay.onSuccess(this.testProfileInfo_(true));
   assertEquals('managedUserCreateConfirm',
                OptionsPage.getTopmostVisiblePage().name);
+  expectEquals($('managed-user-created-switch'), document.activeElement);
 });
 
 // An error should be shown if creating a new managed user fails.
@@ -174,12 +191,7 @@ TEST_F('ManageProfileUITest', 'NoCreateConfirmationOnError', function() {
   var errorBubble = $('create-profile-error-bubble');
   assertTrue(errorBubble.hidden);
 
-  CreateProfileOverlay.onLocalError();
-  assertEquals('createProfile', OptionsPage.getTopmostVisiblePage().name);
-  assertFalse(errorBubble.hidden);
-
-  errorBubble.hidden = true;
-  CreateProfileOverlay.onRemoteError();
+  CreateProfileOverlay.onError('An Error Message!');
   assertEquals('createProfile', OptionsPage.getTopmostVisiblePage().name);
   assertFalse(errorBubble.hidden);
 });
@@ -304,6 +316,36 @@ TEST_F('ManageProfileUITest', 'PolicyDynamicRefresh', function() {
   assertFalse(link.hidden, 're-allowed and signed in');
   assertEquals('none', window.getComputedStyle(indicator, null).display,
                're-allowed and signed in');
+});
+
+// The managed user checkbox should correctly update its state during profile
+// creation and afterwards.
+TEST_F('ManageProfileUITest', 'CreateInProgress', function() {
+  ManageProfileOverlay.getInstance().initializePage();
+
+  var custodianEmail = 'chrome.playpen.test@gmail.com';
+  CreateProfileOverlay.updateSignedInStatus(custodianEmail);
+  CreateProfileOverlay.updateManagedUsersAllowed(true);
+  var checkbox = $('create-profile-managed');
+  var link = $('create-profile-managed-not-signed-in-link');
+  var indicator = $('create-profile-managed-indicator');
+
+  assertFalse(checkbox.disabled, 'allowed and signed in');
+  assertFalse(link.hidden, 'allowed and signed in');
+  assertEquals('none', window.getComputedStyle(indicator, null).display,
+               'allowed and signed in');
+  assertFalse(indicator.hasAttribute('controlled-by'));
+
+  CreateProfileOverlay.updateCreateInProgress(true);
+  assertTrue(checkbox.disabled, 'creation in progress');
+
+  // A no-op update to the sign-in status should not change the UI.
+  CreateProfileOverlay.updateSignedInStatus(custodianEmail);
+  CreateProfileOverlay.updateManagedUsersAllowed(true);
+  assertTrue(checkbox.disabled, 'creation in progress');
+
+  CreateProfileOverlay.updateCreateInProgress(false);
+  assertFalse(checkbox.disabled, 'creation finished');
 });
 
 // Managed users shouldn't be able to open the delete or create dialogs.

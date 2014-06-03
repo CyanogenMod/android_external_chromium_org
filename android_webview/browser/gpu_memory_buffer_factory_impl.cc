@@ -4,10 +4,8 @@
 
 #include "android_webview/browser/gpu_memory_buffer_factory_impl.h"
 
-#include "android_webview/browser/gpu_memory_handle_impl.h"
 #include "android_webview/public/browser/draw_gl.h"
 #include "base/logging.h"
-#include "base/memory/ref_counted.h"
 #include "ui/gfx/gpu_memory_buffer.h"
 #include "ui/gfx/size.h"
 #include "ui/gl/gl_bindings.h"
@@ -22,12 +20,14 @@ AwDrawGLFunctionTable* g_gl_draw_functions = NULL;
 class GpuMemoryBufferImpl : public gfx::GpuMemoryBuffer {
  public:
   GpuMemoryBufferImpl(int buffer_id, gfx::Size size)
-      : handle_(new android_webview::GpuMemoryHandleImpl(buffer_id)),
+      : buffer_id_(buffer_id),
         size_(size),
         mapped_(false) {
-    DCHECK(buffer_id);
+    DCHECK(buffer_id_);
   }
+
   virtual ~GpuMemoryBufferImpl() {
+    g_gl_draw_functions->release_graphic_buffer(buffer_id_);
   }
 
   // Overridden from gfx::GpuMemoryBuffer:
@@ -47,29 +47,31 @@ class GpuMemoryBufferImpl : public gfx::GpuMemoryBuffer {
       default:
         LOG(DFATAL) << "Unknown map mode: " << mode;
     }
-    int err = g_gl_draw_functions->map(handle_->GetBufferId(), map_mode, vaddr);
+    int err = g_gl_draw_functions->map(buffer_id_, map_mode, vaddr);
     DCHECK(!err);
     mapped_ = true;
   }
   virtual void Unmap() OVERRIDE {
-    int err = g_gl_draw_functions->unmap(handle_->GetBufferId());
+    int err = g_gl_draw_functions->unmap(buffer_id_);
     DCHECK(!err);
     mapped_ = false;
   }
   virtual bool IsMapped() const OVERRIDE { return mapped_; }
-  virtual uint GetStride() const OVERRIDE {
-    return g_gl_draw_functions->get_stride(handle_->GetBufferId());
+  virtual uint32 GetStride() const OVERRIDE {
+    return g_gl_draw_functions->get_stride(buffer_id_);
   }
   virtual gfx::GpuMemoryBufferHandle GetHandle() const OVERRIDE {
     gfx::GpuMemoryBufferHandle handle;
     handle.type = gfx::EGL_CLIENT_BUFFER;
-    handle.native_buffer_handle = handle_;
+    handle.native_buffer = g_gl_draw_functions->get_native_buffer(buffer_id_);
     return handle;
   }
+
  private:
-  scoped_refptr<GpuMemoryHandleImpl> handle_;
+  int buffer_id_;
   gfx::Size size_;
   bool mapped_;
+
   DISALLOW_COPY_AND_ASSIGN(GpuMemoryBufferImpl);
 };
 
@@ -100,7 +102,6 @@ gfx::GpuMemoryBuffer* GpuMemoryBufferFactoryImpl::CreateGpuMemoryBuffer(
 void GpuMemoryBufferFactoryImpl::SetAwDrawGLFunctionTable(
     AwDrawGLFunctionTable* table) {
   g_gl_draw_functions = table;
-  GpuMemoryHandleImpl::SetAwDrawGLFunctionTable(table);
 }
 
 }  // namespace android_webview

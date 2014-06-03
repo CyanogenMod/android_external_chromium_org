@@ -6,10 +6,10 @@
 
 #include "base/logging.h"
 #include "chrome/common/extensions/api/plugins/plugins_handler.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
-#include "chrome/common/extensions/manifest.h"
 #include "chrome/common/extensions/manifest_url_handler.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/manifest.h"
 
 namespace extensions {
 namespace sync_helper {
@@ -82,7 +82,8 @@ bool IsSyncable(const Extension* extension) {
   // apps, creates a new profile (which get default apps) and then enables sync
   // for it, then their profile everywhere gets the default apps.
   bool is_syncable = (extension->location() == Manifest::INTERNAL &&
-                      !extension->was_installed_by_default());
+                      !extension->was_installed_by_default() &&
+                      !extension->is_ephemeral());
   // Sync the chrome web store to maintain its position on the new tab page.
   is_syncable |= (extension->id() == extension_misc::kWebStoreAppId);
   // Sync the chrome component app to maintain its position on the app list.

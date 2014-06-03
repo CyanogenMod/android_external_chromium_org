@@ -22,7 +22,6 @@ using content::BrowserThread;
 namespace {
 
 // Config attributes names.
-const char kVersionAttr[] = "version";
 const char kAcceptedConfigVersion[] = "1.0";
 const char kDefaultAttr[] = "default";
 
@@ -42,7 +41,6 @@ const char kInfoURLAttr[] = "info_url";
 const char kNotificationCountAttr[] = "notification_count";
 const char kDealExpireDateAttr[] = "expire_date";
 const char kLocalizedContentAttr[] = "localized_content";
-const char kNotificationTextAttr[] = "notification_text";
 
 // Initial locale carrier config attributes.
 const char kInitialLocalesAttr[] = "initial_locales";
@@ -360,11 +358,11 @@ void MobileConfig::ReadConfigInBackground(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
   std::string global_config;
   std::string local_config;
-  if (!file_util::ReadFileToString(global_config_file, &global_config)) {
+  if (!base::ReadFileToString(global_config_file, &global_config)) {
     VLOG(1) << "Failed to load global mobile config from: "
             << global_config_file.value();
   }
-  if (!file_util::ReadFileToString(local_config_file, &local_config)) {
+  if (!base::ReadFileToString(local_config_file, &local_config)) {
     VLOG(1) << "Failed to load local mobile config from: "
             << local_config_file.value();
   }

@@ -9,11 +9,15 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "cc/layers/texture_layer_client.h"
-#include "cc/resources/texture_mailbox.h"
 #include "third_party/WebKit/public/platform/WebExternalTextureLayer.h"
 #include "webkit/renderer/compositor_bindings/webkit_compositor_bindings_export.h"
 
-namespace WebKit {
+namespace cc {
+class SingleReleaseCallback;
+class TextureMailbox;
+}
+
+namespace blink {
 struct WebFloatRect;
 struct WebExternalTextureMailbox;
 }
@@ -24,16 +28,16 @@ class WebLayerImpl;
 class WebExternalBitmapImpl;
 
 class WebExternalTextureLayerImpl
-    : public WebKit::WebExternalTextureLayer,
+    : public blink::WebExternalTextureLayer,
       public cc::TextureLayerClient,
       public base::SupportsWeakPtr<WebExternalTextureLayerImpl> {
  public:
   WEBKIT_COMPOSITOR_BINDINGS_EXPORT explicit WebExternalTextureLayerImpl(
-      WebKit::WebExternalTextureLayerClient*);
+      blink::WebExternalTextureLayerClient*);
   virtual ~WebExternalTextureLayerImpl();
 
-  // WebKit::WebExternalTextureLayer implementation.
-  virtual WebKit::WebLayer* layer();
+  // blink::WebExternalTextureLayer implementation.
+  virtual blink::WebLayer* layer();
   virtual void clearTexture();
   virtual void setOpaque(bool opaque);
   virtual void setPremultipliedAlpha(bool premultiplied);
@@ -42,21 +46,22 @@ class WebExternalTextureLayerImpl
 
   // TextureLayerClient implementation.
   virtual unsigned PrepareTexture() OVERRIDE;
-  virtual WebKit::WebGraphicsContext3D* Context3d() OVERRIDE;
-  virtual bool PrepareTextureMailbox(cc::TextureMailbox* mailbox,
-                                     bool use_shared_memory) OVERRIDE;
+  virtual bool PrepareTextureMailbox(
+      cc::TextureMailbox* mailbox,
+      scoped_ptr<cc::SingleReleaseCallback>* release_callback,
+      bool use_shared_memory) OVERRIDE;
 
  private:
   static void DidReleaseMailbox(
       base::WeakPtr<WebExternalTextureLayerImpl> layer,
-      const WebKit::WebExternalTextureMailbox& mailbox,
+      const blink::WebExternalTextureMailbox& mailbox,
       WebExternalBitmapImpl* bitmap,
       unsigned sync_point,
       bool lost_resource);
 
   WebExternalBitmapImpl* AllocateBitmap();
 
-  WebKit::WebExternalTextureLayerClient* client_;
+  blink::WebExternalTextureLayerClient* client_;
   scoped_ptr<WebLayerImpl> layer_;
   ScopedVector<WebExternalBitmapImpl> free_bitmaps_;
 

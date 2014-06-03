@@ -12,6 +12,7 @@
 #include "base/bind.h"
 #include "base/json/json_writer.h"
 #include "base/lazy_instance.h"
+#include "base/logging.h"
 #include "base/memory/linked_ptr.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/metrics/histogram.h"
@@ -20,31 +21,32 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/api/management/management_api_constants.h"
-#include "chrome/browser/extensions/event_names.h"
-#include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_uninstall_dialog.h"
-#include "chrome/browser/extensions/management_policy.h"
+#include "chrome/browser/extensions/launch_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/extensions/application_launch.h"
 #include "chrome/browser/ui/webui/extensions/extension_icon_source.h"
 #include "chrome/common/chrome_utility_messages.h"
 #include "chrome/common/extensions/api/management.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_icon_set.h"
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "chrome/common/extensions/manifest_handlers/icons_handler.h"
-#include "chrome/common/extensions/manifest_handlers/offline_enabled_info.h"
 #include "chrome/common/extensions/manifest_url_handler.h"
-#include "chrome/common/extensions/permissions/permission_set.h"
-#include "chrome/common/extensions/permissions/permissions_data.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/utility_process_host.h"
 #include "content/public/browser/utility_process_host_client.h"
+#include "extensions/browser/event_router.h"
+#include "extensions/browser/management_policy.h"
+#include "extensions/common/constants.h"
 #include "extensions/common/error_utils.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/manifest_handlers/offline_enabled_info.h"
+#include "extensions/common/permissions/permission_set.h"
+#include "extensions/common/permissions/permissions_data.h"
 #include "extensions/common/url_pattern.h"
 
 #if !defined(OS_ANDROID)
@@ -60,7 +62,6 @@ namespace keys = extension_management_api_constants;
 
 namespace extensions {
 
-namespace events = event_names;
 namespace management = api::management;
 
 namespace {
@@ -96,6 +97,7 @@ scoped_ptr<management::ExtensionInfo> CreateExtensionInfo(
 
   info->id = extension.id();
   info->name = extension.name();
+  info->short_name = extension.short_name();
   info->enabled = service->IsExtensionEnabled(info->id);
   info->offline_enabled = OfflineEnabledInfo::IsOfflineEnabled(&extension);
   info->version = extension.VersionString();
@@ -191,10 +193,15 @@ scoped_ptr<management::ExtensionInfo> CreateExtensionInfo(
     case Manifest::EXTERNAL_PREF_DOWNLOAD:
       info->install_type = management::ExtensionInfo::INSTALL_TYPE_SIDELOAD;
       break;
+    case Manifest::EXTERNAL_POLICY:
     case Manifest::EXTERNAL_POLICY_DOWNLOAD:
       info->install_type = management::ExtensionInfo::INSTALL_TYPE_ADMIN;
       break;
-    default:
+    case Manifest::NUM_LOCATIONS:
+      NOTREACHED();
+    case Manifest::INVALID_LOCATION:
+    case Manifest::COMPONENT:
+    case Manifest::EXTERNAL_COMPONENT:
       info->install_type = management::ExtensionInfo::INSTALL_TYPE_OTHER;
       break;
   }
@@ -220,16 +227,16 @@ void AddExtensionInfo(const ExtensionSet& extensions,
 } // namespace
 
 ExtensionService* ManagementFunction::service() {
-  return profile()->GetExtensionService();
+  return GetProfile()->GetExtensionService();
 }
 
 ExtensionService* AsyncManagementFunction::service() {
-  return profile()->GetExtensionService();
+  return GetProfile()->GetExtensionService();
 }
 
 bool ManagementGetAllFunction::RunImpl() {
   ExtensionInfoList extensions;
-  ExtensionSystem* system = ExtensionSystem::Get(profile());
+  ExtensionSystem* system = ExtensionSystem::Get(GetProfile());
 
   AddExtensionInfo(*service()->extensions(), system, &extensions);
   AddExtensionInfo(*service()->disabled_extensions(), system, &extensions);
@@ -251,8 +258,8 @@ bool ManagementGetFunction::RunImpl() {
     return false;
   }
 
-  scoped_ptr<management::ExtensionInfo> info = CreateExtensionInfo(
-      *extension, ExtensionSystem::Get(profile()));
+  scoped_ptr<management::ExtensionInfo> info =
+      CreateExtensionInfo(*extension, ExtensionSystem::Get(GetProfile()));
   results_ = management::Get::Results::Create(*info);
 
   return true;
@@ -299,7 +306,6 @@ class SafeManifestJSONParser : public UtilityProcessHostClient {
     CHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
     UtilityProcessHost* host = UtilityProcessHost::Create(
         this, base::MessageLoopProxy::current().get());
-    host->EnableZygote();
     host->Send(new ChromeUtilityMsg_ParseJSON(manifest_));
   }
 
@@ -343,7 +349,7 @@ class SafeManifestJSONParser : public UtilityProcessHostClient {
   void ReportResultFromUIThread() {
     CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
     if (error_.empty() && parsed_manifest_.get())
-      client_->OnParseSuccess(parsed_manifest_.release());
+      client_->OnParseSuccess(parsed_manifest_.Pass());
     else
       client_->OnParseFailure(error_);
   }
@@ -382,8 +388,8 @@ bool ManagementGetPermissionWarningsByManifestFunction::RunImpl() {
 }
 
 void ManagementGetPermissionWarningsByManifestFunction::OnParseSuccess(
-    base::DictionaryValue* parsed_manifest) {
-  CHECK(parsed_manifest);
+    scoped_ptr<base::DictionaryValue> parsed_manifest) {
+  CHECK(parsed_manifest.get());
 
   scoped_refptr<Extension> extension = Extension::Create(
       base::FilePath(), Manifest::INVALID_LOCATION, *parsed_manifest,
@@ -428,14 +434,12 @@ bool ManagementLaunchAppFunction::RunImpl() {
   }
 
   // Look at prefs to find the right launch container.
-  // |default_pref_value| is set to LAUNCH_DEFAULT so that if
-  // the user has not set a preference, we open the app in a tab.
-  extension_misc::LaunchContainer launch_container =
-      service()->extension_prefs()->GetLaunchContainer(
-          extension, ExtensionPrefs::LAUNCH_DEFAULT);
-  chrome::OpenApplication(chrome::AppLaunchParams(profile(), extension,
-                                                  launch_container,
-                                                  NEW_FOREGROUND_TAB));
+  // If the user has not set a preference, the default launch value will be
+  // returned.
+  LaunchContainer launch_container =
+      GetLaunchContainer(service()->extension_prefs(), extension);
+  OpenApplication(AppLaunchParams(
+      GetProfile(), extension, launch_container, NEW_FOREGROUND_TAB));
 #if !defined(OS_ANDROID)
   CoreAppLauncherHandler::RecordAppLaunchType(
       extension_misc::APP_LAUNCH_EXTENSION_API,
@@ -465,9 +469,11 @@ bool ManagementSetEnabledFunction::RunImpl() {
     return false;
   }
 
-  const ManagementPolicy* policy = ExtensionSystem::Get(profile())->
-      management_policy();
-  if (!policy->UserMayModifySettings(extension, NULL)) {
+  const ManagementPolicy* policy =
+      ExtensionSystem::Get(GetProfile())->management_policy();
+  if (!policy->UserMayModifySettings(extension, NULL) ||
+      (!params->enabled && policy->MustRemainEnabled(extension, NULL)) ||
+      (params->enabled && policy->MustRemainDisabled(extension, NULL, NULL))) {
     error_ = ErrorUtils::FormatErrorMessage(
         keys::kUserCantModifyError, extension_id_);
     return false;
@@ -530,8 +536,9 @@ bool ManagementUninstallFunctionBase::Uninstall(
     return false;
   }
 
-  if (!ExtensionSystem::Get(profile())->management_policy()->
-      UserMayModifySettings(extension, NULL)) {
+  if (!ExtensionSystem::Get(GetProfile())
+           ->management_policy()
+           ->UserMayModifySettings(extension, NULL)) {
     error_ = ErrorUtils::FormatErrorMessage(
         keys::kUserCantModifyError, extension_id_);
     return false;
@@ -541,7 +548,7 @@ bool ManagementUninstallFunctionBase::Uninstall(
     if (show_confirm_dialog) {
       AddRef(); // Balanced in ExtensionUninstallAccepted/Canceled
       extension_uninstall_dialog_.reset(ExtensionUninstallDialog::Create(
-          profile(), GetCurrentBrowser(), this));
+          GetProfile(), GetCurrentBrowser(), this));
       extension_uninstall_dialog_->ConfirmUninstall(extension);
     } else {
       Finish(true);
@@ -652,20 +659,20 @@ void ManagementEventRouter::Observe(
 
   switch (type) {
     case chrome::NOTIFICATION_EXTENSION_INSTALLED:
-      event_name = events::kOnExtensionInstalled;
+      event_name = management::OnInstalled::kEventName;
       extension =
           content::Details<const InstalledExtensionInfo>(details)->extension;
       break;
     case chrome::NOTIFICATION_EXTENSION_UNINSTALLED:
-      event_name = events::kOnExtensionUninstalled;
+      event_name = management::OnUninstalled::kEventName;
       extension = content::Details<const Extension>(details).ptr();
       break;
     case chrome::NOTIFICATION_EXTENSION_LOADED:
-      event_name = events::kOnExtensionEnabled;
+      event_name = management::OnEnabled::kEventName;
       extension = content::Details<const Extension>(details).ptr();
       break;
     case chrome::NOTIFICATION_EXTENSION_UNLOADED:
-      event_name = events::kOnExtensionDisabled;
+      event_name = management::OnDisabled::kEventName;
       extension =
           content::Details<const UnloadedExtensionInfo>(details)->extension;
       break;
@@ -680,8 +687,8 @@ void ManagementEventRouter::Observe(
     return; // Don't dispatch events for built-in extensions.
 
   scoped_ptr<base::ListValue> args(new base::ListValue());
-  if (event_name == events::kOnExtensionUninstalled) {
-    args->Append(Value::CreateStringValue(extension->id()));
+  if (event_name == management::OnUninstalled::kEventName) {
+    args->Append(new base::StringValue(extension->id()));
   } else {
     scoped_ptr<management::ExtensionInfo> info = CreateExtensionInfo(
         *extension, ExtensionSystem::Get(profile));
@@ -695,13 +702,13 @@ void ManagementEventRouter::Observe(
 ManagementAPI::ManagementAPI(Profile* profile)
     : profile_(profile) {
   ExtensionSystem::Get(profile_)->event_router()->RegisterObserver(
-      this, events::kOnExtensionInstalled);
+      this, management::OnInstalled::kEventName);
   ExtensionSystem::Get(profile_)->event_router()->RegisterObserver(
-      this, events::kOnExtensionUninstalled);
+      this, management::OnUninstalled::kEventName);
   ExtensionSystem::Get(profile_)->event_router()->RegisterObserver(
-      this, events::kOnExtensionEnabled);
+      this, management::OnEnabled::kEventName);
   ExtensionSystem::Get(profile_)->event_router()->RegisterObserver(
-      this, events::kOnExtensionDisabled);
+      this, management::OnDisabled::kEventName);
 }
 
 ManagementAPI::~ManagementAPI() {

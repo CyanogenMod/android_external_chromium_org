@@ -16,6 +16,7 @@
 #include "chrome/browser/ui/cocoa/cocoa_profile_test.h"
 #include "chrome/browser/ui/cocoa/history_menu_bridge.h"
 #include "chrome/common/favicon/favicon_types.h"
+#include "chrome/test/base/testing_profile.h"
 #include "components/sessions/serialized_navigation_entry_test_helper.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -84,7 +85,7 @@ class HistoryMenuBridgeTest : public CocoaProfileTest {
     return item;
   }
 
-  HistoryMenuBridge::HistoryItem* CreateItem(const string16& title) {
+  HistoryMenuBridge::HistoryItem* CreateItem(const base::string16& title) {
     HistoryMenuBridge::HistoryItem* item =
         new HistoryMenuBridge::HistoryItem();
     item->title = title;
@@ -174,8 +175,8 @@ TEST_F(HistoryMenuBridgeTest, ClearHistoryMenuEmpty) {
 TEST_F(HistoryMenuBridgeTest, AddItemToMenu) {
   NSMenu* menu = [[[NSMenu alloc] initWithTitle:@"history foo"] autorelease];
 
-  const string16 short_url = ASCIIToUTF16("http://foo/");
-  const string16 long_url = ASCIIToUTF16("http://super-duper-long-url--."
+  const base::string16 short_url = ASCIIToUTF16("http://foo/");
+  const base::string16 long_url = ASCIIToUTF16("http://super-duper-long-url--."
       "that.cannot.possibly.fit.even-in-80-columns"
       "or.be.reasonably-displayed-in-a-menu"
       "without.looking-ridiculous.com/"); // 140 chars total

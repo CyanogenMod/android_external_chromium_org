@@ -10,16 +10,18 @@
 
 #include "base/memory/shared_memory.h"
 #include "base/values.h"
-#include "chrome/common/extensions/extension.h"
+#include "chrome/common/extensions/api/messaging/message.h"
 #include "chrome/common/extensions/permissions/bluetooth_permission_data.h"
 #include "chrome/common/extensions/permissions/media_galleries_permission_data.h"
-#include "chrome/common/extensions/permissions/permission_set.h"
 #include "chrome/common/extensions/permissions/socket_permission_data.h"
 #include "chrome/common/extensions/permissions/usb_device_permission_data.h"
 #include "chrome/common/web_application_info.h"
 #include "content/public/common/common_param_traits.h"
 #include "content/public/common/socket_permission_request.h"
 #include "extensions/common/draggable_region.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/extensions_client.h"
+#include "extensions/common/permissions/permission_set.h"
 #include "extensions/common/url_pattern.h"
 #include "extensions/common/url_pattern_set.h"
 #include "extensions/common/view_type.h"
@@ -49,7 +51,7 @@ IPC_STRUCT_BEGIN(ExtensionHostMsg_DOMAction_Params)
   IPC_STRUCT_MEMBER(GURL, url)
 
   // Title of the page.
-  IPC_STRUCT_MEMBER(string16, url_title)
+  IPC_STRUCT_MEMBER(base::string16, url_title)
 
   // API name.
   IPC_STRUCT_MEMBER(std::string, api_call)
@@ -117,6 +119,14 @@ IPC_STRUCT_BEGIN(ExtensionMsg_ExecuteCode_Params)
 
   // Whether the request is coming from a <webview>.
   IPC_STRUCT_MEMBER(bool, is_web_view)
+
+  // Whether the caller is interested in the result value. Manifest-declared
+  // content scripts and executeScript() calls without a response callback
+  // are examples of when this will be false.
+  IPC_STRUCT_MEMBER(bool, wants_result)
+
+  // The URL of the file that was injected, if any.
+  IPC_STRUCT_MEMBER(GURL, file_url)
 IPC_STRUCT_END()
 
 // Struct containing the data for external connections to extensions. Used to
@@ -131,6 +141,16 @@ IPC_STRUCT_BEGIN(ExtensionMsg_ExternalConnectionInfo)
 
   // The URL of the frame that initiated the request.
   IPC_STRUCT_MEMBER(GURL, source_url)
+IPC_STRUCT_END()
+
+// Parameters structure for ExtensionMsg_UpdatePermissions.
+IPC_STRUCT_BEGIN(ExtensionMsg_UpdatePermissions_Params)
+  IPC_STRUCT_MEMBER(int /* UpdateExtensionPermissionsInfo::REASON */, reason_id)
+  IPC_STRUCT_MEMBER(std::string, extension_id)
+  IPC_STRUCT_MEMBER(extensions::APIPermissionSet, apis)
+  IPC_STRUCT_MEMBER(extensions::ManifestPermissionSet, manifest_permissions)
+  IPC_STRUCT_MEMBER(extensions::URLPatternSet, explicit_hosts)
+  IPC_STRUCT_MEMBER(extensions::URLPatternSet, scriptable_hosts)
 IPC_STRUCT_END()
 
 IPC_STRUCT_TRAITS_BEGIN(WebApplicationInfo::IconInfo)
@@ -163,9 +183,13 @@ IPC_STRUCT_TRAITS_BEGIN(content::SocketPermissionRequest)
   IPC_STRUCT_TRAITS_MEMBER(port)
 IPC_STRUCT_TRAITS_END()
 
+IPC_STRUCT_TRAITS_BEGIN(extensions::SocketPermissionEntry)
+  IPC_STRUCT_TRAITS_MEMBER(pattern_)
+  IPC_STRUCT_TRAITS_MEMBER(match_subdomains_)
+IPC_STRUCT_TRAITS_END()
+
 IPC_STRUCT_TRAITS_BEGIN(extensions::SocketPermissionData)
-  IPC_STRUCT_TRAITS_MEMBER(pattern())
-  IPC_STRUCT_TRAITS_MEMBER(match_subdomains())
+  IPC_STRUCT_TRAITS_MEMBER(entry())
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(extensions::UsbDevicePermissionData)
@@ -179,6 +203,11 @@ IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(extensions::BluetoothPermissionData)
   IPC_STRUCT_TRAITS_MEMBER(uuid())
+IPC_STRUCT_TRAITS_END()
+
+IPC_STRUCT_TRAITS_BEGIN(extensions::Message)
+  IPC_STRUCT_TRAITS_MEMBER(data)
+  IPC_STRUCT_TRAITS_MEMBER(user_gesture)
 IPC_STRUCT_TRAITS_END()
 
 // Singly-included section for custom IPC traits.
@@ -214,6 +243,7 @@ struct ExtensionMsg_Loaded_Params {
 
   // The extension's active permissions.
   extensions::APIPermissionSet apis;
+  extensions::ManifestPermissionSet manifest_permissions;
   extensions::URLPatternSet explicit_hosts;
   extensions::URLPatternSet scriptable_hosts;
 
@@ -259,6 +289,14 @@ struct ParamTraits<extensions::APIPermission*> {
 template <>
 struct ParamTraits<extensions::APIPermissionSet> {
   typedef extensions::APIPermissionSet param_type;
+  static void Write(Message* m, const param_type& p);
+  static bool Read(const Message* m, PickleIterator* iter, param_type* r);
+  static void Log(const param_type& p, std::string* l);
+};
+
+template <>
+struct ParamTraits<extensions::ManifestPermissionSet> {
+  typedef extensions::ManifestPermissionSet param_type;
   static void Write(Message* m, const param_type& p);
   static bool Read(const Message* m, PickleIterator* iter, param_type* r);
   static void Log(const param_type& p, std::string* l);
@@ -329,7 +367,7 @@ IPC_MESSAGE_CONTROL1(ExtensionMsg_Unloaded,
 // only used for testing.
 IPC_MESSAGE_CONTROL1(ExtensionMsg_SetScriptingWhitelist,
                      // extension ids
-                     extensions::Extension::ScriptingWhitelist)
+                     extensions::ExtensionsClient::ScriptingWhitelist)
 
 // Notification that renderer should run some JavaScript code.
 IPC_MESSAGE_ROUTED1(ExtensionMsg_ExecuteCode,
@@ -355,12 +393,8 @@ IPC_MESSAGE_ROUTED1(ExtensionMsg_SetTabId,
                     int /* id of tab */)
 
 // Tell the renderer to update an extension's permission set.
-IPC_MESSAGE_CONTROL5(ExtensionMsg_UpdatePermissions,
-                     int /* UpdateExtensionPermissionsInfo::REASON */,
-                     std::string /* extension_id */,
-                     extensions::APIPermissionSet /* permissions */,
-                     extensions::URLPatternSet /* explicit_hosts */,
-                     extensions::URLPatternSet /* scriptable_hosts */)
+IPC_MESSAGE_CONTROL1(ExtensionMsg_UpdatePermissions,
+                     ExtensionMsg_UpdatePermissions_Params)
 
 // Tell the renderer about new tab-specific permissions for an extension.
 IPC_MESSAGE_CONTROL4(ExtensionMsg_UpdateTabSpecificPermissions,
@@ -414,16 +448,17 @@ IPC_MESSAGE_ROUTED2(ExtensionMsg_GetAppInstallStateResponse,
                     int32 /* callback_id */)
 
 // Dispatch the Port.onConnect event for message channels.
-IPC_MESSAGE_ROUTED4(ExtensionMsg_DispatchOnConnect,
+IPC_MESSAGE_ROUTED5(ExtensionMsg_DispatchOnConnect,
                     int /* target_port_id */,
                     std::string /* channel_name */,
                     base::DictionaryValue /* source_tab */,
-                    ExtensionMsg_ExternalConnectionInfo)
+                    ExtensionMsg_ExternalConnectionInfo,
+                    std::string /* tls_channel_id */)
 
 // Deliver a message sent with ExtensionHostMsg_PostMessage.
 IPC_MESSAGE_ROUTED2(ExtensionMsg_DeliverMessage,
                     int /* target_port_id */,
-                    std::string /* message */)
+                    extensions::Message)
 
 // Dispatch the Port.onDisconnect event for message channels.
 IPC_MESSAGE_ROUTED2(ExtensionMsg_DispatchOnDisconnect,
@@ -508,10 +543,11 @@ IPC_MESSAGE_ROUTED0(ExtensionHostMsg_EventAck)
 // the given ID.  This always returns a valid port ID which can be used for
 // sending messages.  If an error occurred, the opener will be notified
 // asynchronously.
-IPC_SYNC_MESSAGE_CONTROL3_1(ExtensionHostMsg_OpenChannelToExtension,
+IPC_SYNC_MESSAGE_CONTROL4_1(ExtensionHostMsg_OpenChannelToExtension,
                             int /* routing_id */,
                             ExtensionMsg_ExternalConnectionInfo,
                             std::string /* channel_name */,
+                            bool /* include_tls_channel_id */,
                             int /* port_id */)
 
 IPC_SYNC_MESSAGE_CONTROL3_1(ExtensionHostMsg_OpenChannelToNativeApp,
@@ -533,7 +569,7 @@ IPC_SYNC_MESSAGE_CONTROL4_1(ExtensionHostMsg_OpenChannelToTab,
 // by ViewHostMsg_OpenChannelTo*.
 IPC_MESSAGE_ROUTED2(ExtensionHostMsg_PostMessage,
                     int /* port_id */,
-                    std::string /* message */)
+                    extensions::Message)
 
 // Send a message to an extension process.  The handle is the value returned
 // by ViewHostMsg_OpenChannelTo*.
@@ -620,11 +656,6 @@ IPC_MESSAGE_ROUTED1(ExtensionHostMsg_UpdateDraggableRegions,
 IPC_MESSAGE_CONTROL2(ExtensionHostMsg_AddAPIActionToActivityLog,
                      std::string /* extension_id */,
                      ExtensionHostMsg_APIActionOrEvent_Params)
-
-// Sent by the renderer to log a blocked API action to the activity log.
-IPC_MESSAGE_CONTROL2(ExtensionHostMsg_AddBlockedCallToActivityLog,
-                    std::string /* extension_id */,
-                    std::string /* api call function name */)
 
 // Sent by the renderer to log an event to the extension activity log.
 IPC_MESSAGE_CONTROL2(ExtensionHostMsg_AddEventToActivityLog,

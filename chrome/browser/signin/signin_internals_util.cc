@@ -20,58 +20,19 @@ namespace signin_internals_util {
 
 const char kSigninPrefPrefix[] = "google.services.signin.";
 const char kTokenPrefPrefix[] = "google.services.signin.tokens.";
-const char kOperationsBaseToken[] = "OperationsBase";
-const char kUserPolicySigninServiceToken[] = "UserCloudPolicyManagerToken";
-const char kProfileDownloaderToken[] = "ProfileDownloader";
 
-// TODO(vishwath): These two services need their information plumbed to
-// about:signin-internals.
-const char kObfuscatedGaiaIdFetcherToken[] = "ObfuscatedGaiaIdFetcher";
-const char kOAuth2MintTokenFlowToken[] = "OAuth2MintTokenFlow";
-const char* kTokenPrefsArray[] = {
-  GaiaConstants::kSyncService,
-  GaiaConstants::kLSOService,
-  GaiaConstants::kGaiaOAuth2LoginRefreshToken,
-  kOperationsBaseToken,
-  kUserPolicySigninServiceToken,
-  kProfileDownloaderToken,
-  kObfuscatedGaiaIdFetcherToken,
-  kOAuth2MintTokenFlowToken
-};
-
-const size_t kNumTokenPrefs = arraysize(kTokenPrefsArray);
-
-
-namespace {
-
-// Gets the first 6 hex characters of the SHA256 hash of the passed in string.
-// These are enough to perform equality checks across a single users tokens,
-// while preventing outsiders from reverse-engineering the actual token from
-// the displayed value.
-// Note that for readability (in about:signin-internals), an empty string
-// is not hashed, but simply returned as an empty string.
-const size_t kTruncateSize = 3;
-std::string GetTruncatedHash(const std::string& str) {
-  if (str.empty())
-    return str;
-
-  char hash_val[kTruncateSize];
-  crypto::SHA256HashString(str, &hash_val[0], kTruncateSize);
-  return StringToLowerASCII(base::HexEncode(&hash_val[0], kTruncateSize));
-}
-
-} // namespace
-
-TokenInfo::TokenInfo(const std::string& token,
+TokenInfo::TokenInfo(const std::string& truncated_token,
                      const std::string& status,
                      const std::string& time,
                      const int64& time_internal,
                      const std::string& service)
-    : token(token),
+    : truncated_token(truncated_token),
       status(status),
       time(time),
       time_internal(time_internal),
       service(service) {
+  // This should be a truncated and hashed token.
+  DCHECK_LE(truncated_token.length(), kTruncateTokenStringLength);
 }
 
 TokenInfo::TokenInfo() {
@@ -83,7 +44,7 @@ TokenInfo::~TokenInfo() {
 DictionaryValue* TokenInfo::ToValue() {
   scoped_ptr<DictionaryValue> token_info(new DictionaryValue());
   token_info->SetString("service", service);
-  token_info->SetString("token", GetTruncatedHash(token));
+  token_info->SetString("token", truncated_token);
   token_info->SetString("status", status);
   token_info->SetString("time", time);
 
@@ -111,6 +72,8 @@ std::string SigninStatusFieldToString(TimedSigninStatusField field) {
     ENUM_CASE(CLIENT_LOGIN_STATUS);
     ENUM_CASE(OAUTH_LOGIN_STATUS);
     ENUM_CASE(GET_USER_INFO_STATUS);
+    ENUM_CASE(UBER_TOKEN_STATUS);
+    ENUM_CASE(MERGE_SESSION_STATUS);
     case TIMED_FIELDS_END:
       NOTREACHED();
       return std::string();
@@ -153,17 +116,6 @@ void AddSectionEntry(ListValue* section_list,
   section_list->Append(entry.release());
 }
 
-
-void AddSectionEntry(ListValue* section_list,
-                     const std::string& field_name,
-                     uint32 field_val) {
-  std::stringstream ss;
-  ss << field_val;
-  scoped_ptr<DictionaryValue> entry(new DictionaryValue());
-  entry->SetString("label", field_name);
-  entry->SetString("value", ss.str());
-  section_list->Append(entry.release());
-}
 
 // Returns a string describing the chrome version environment. Version format:
 // <Build Info> <OS> <Version number> (<Last change>)<channel or "-devel">
@@ -224,6 +176,12 @@ TimedSigninStatusValue SigninStatusFieldToLabel(
     case GET_USER_INFO_STATUS:
       return TimedSigninStatusValue("Last OnGetUserInfo Status",
                                     "Last OnGetUserInfo Time");
+    case UBER_TOKEN_STATUS:
+      return TimedSigninStatusValue("Last OnUberToken Status",
+                                    "Last OnUberToken Time");
+    case MERGE_SESSION_STATUS:
+      return TimedSigninStatusValue("Last OnMergeSession Status",
+                                    "Last OnMergeSession Time");
     case TIMED_FIELDS_END:
       NOTREACHED();
       return TimedSigninStatusValue("Error", std::string());
@@ -246,26 +204,18 @@ scoped_ptr<DictionaryValue> SigninStatus::ToValue() {
       "Not Signed In" : "Signed In";
   AddSectionEntry(basic_info, "Chrome Version", GetVersionString());
   AddSectionEntry(basic_info, "Signin Status", signin_status_string);
-  int i;
-  for (i = UNTIMED_FIELDS_BEGIN; i < UNTIMED_FIELDS_END; ++i) {
-    const std::string field =
-        SigninStatusFieldToLabel(static_cast<UntimedSigninStatusField>(i));
-    if (i == SID || i == LSID) {
-      AddSectionEntry(
-          basic_info,
-          field,
-          GetTruncatedHash(untimed_signin_fields[i - UNTIMED_FIELDS_BEGIN]));
-    } else {
-      AddSectionEntry(
-          basic_info,
-          field,
-          untimed_signin_fields[i - UNTIMED_FIELDS_BEGIN]);
-    }
-  }
+
+  // Only add username.  SID and LSID have moved to tokens section.
+  const std::string field =
+      SigninStatusFieldToLabel(static_cast<UntimedSigninStatusField>(USERNAME));
+  AddSectionEntry(
+      basic_info,
+      field,
+      untimed_signin_fields[USERNAME - UNTIMED_FIELDS_BEGIN]);
 
   // Time and status information of the possible sign in types.
   ListValue* detailed_info = AddSection(signin_info, "Last Signin Details");
-  for (; i < TIMED_FIELDS_END; ++i) {
+  for (int i = TIMED_FIELDS_BEGIN; i < TIMED_FIELDS_END; ++i) {
     const std::string value_field =
         SigninStatusFieldToLabel(static_cast<TimedSigninStatusField>(i)).first;
     const std::string time_field =
@@ -288,6 +238,25 @@ scoped_ptr<DictionaryValue> SigninStatus::ToValue() {
   }
 
   return signin_status.Pass();
+}
+
+// Gets the first few hex characters of the SHA256 hash of the passed in string.
+// These are enough to perform equality checks across a single users tokens,
+// while preventing outsiders from reverse-engineering the actual token from
+// the displayed value.
+// Note that for readability (in about:signin-internals), an empty string
+// is not hashed, but simply returned as an empty string.
+std::string GetTruncatedHash(const std::string& str) {
+  if (str.empty())
+    return str;
+
+  // Since each character in the hash string generates two hex charaters
+  // we only need half as many charaters in |hash_val| as hex characters
+  // returned.
+  const int kTruncateSize = kTruncateTokenStringLength / 2;
+  char hash_val[kTruncateSize];
+  crypto::SHA256HashString(str, &hash_val[0], kTruncateSize);
+  return StringToLowerASCII(base::HexEncode(&hash_val[0], kTruncateSize));
 }
 
 } //  namespace signin_internals_util

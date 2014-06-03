@@ -12,7 +12,7 @@
 #include "base/basictypes.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
-#include "ui/base/ui_export.h"
+#include "ui/gfx/gfx_export.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/size.h"
 
@@ -57,7 +57,7 @@ class SkBitmap;
 //   ::DestroyIcon(icon);
 //
 ///////////////////////////////////////////////////////////////////////////////
-class UI_EXPORT IconUtil {
+class GFX_EXPORT IconUtil {
  public:
   // The size of the large icon entries in .ico files on Windows Vista+.
   static const int kLargeIconSize = 256;

@@ -58,6 +58,10 @@ std::string GetHistogramName(Origin origin, uint8 experiment_id,
       return ComposeHistogramName("webcross", name);
     case ORIGIN_LOCAL_PREDICTOR:
       return ComposeHistogramName("localpredictor", name);
+    case ORIGIN_EXTERNAL_REQUEST:
+        return ComposeHistogramName("externalrequest", name);
+    case ORIGIN_INSTANT:
+      return ComposeHistogramName("Instant", name);
     case ORIGIN_GWS_PRERENDER:  // Handled above.
     default:
       NOTREACHED();
@@ -99,6 +103,12 @@ bool OriginIsOmnibox(Origin origin) {
   /* Do not rename.  HISTOGRAM expects a local variable "name". */ \
   std::string name = GetHistogramName(origin, experiment, wash, \
                                       histogram_name); \
+  /* Usually, a browsing session should only have a single experiment. */ \
+  /* Therefore, when there is a second experiment ID other than the one */ \
+  /* being recorded, don't record anything. */ \
+  /* Furthermore, experiments only apply if the origin is GWS. Should there */ \
+  /* somehow be an experiment ID if the origin is not GWS, ignore the */ \
+  /* experiment ID. */ \
   static uint8 recording_experiment = kNoExperiment; \
   if (recording_experiment == kNoExperiment && experiment != kNoExperiment) \
     recording_experiment = experiment; \
@@ -116,6 +126,10 @@ bool OriginIsOmnibox(Origin origin) {
   } else if (origin == ORIGIN_LINK_REL_PRERENDER_CROSSDOMAIN) { \
     HISTOGRAM; \
   } else if (origin == ORIGIN_LOCAL_PREDICTOR) { \
+    HISTOGRAM; \
+  } else if (origin == ORIGIN_EXTERNAL_REQUEST) { \
+    HISTOGRAM; \
+  } else if (origin == ORIGIN_INSTANT) { \
     HISTOGRAM; \
   } else if (experiment != kNoExperiment) { \
     HISTOGRAM; \
@@ -250,7 +264,7 @@ void PrerenderHistograms::RecordPerceivedPageLoadTime(
     base::TimeDelta perceived_page_load_time,
     bool was_prerender,
     bool was_complete_prerender, const GURL& url) {
-  if (!IsWebURL(url))
+  if (!url.SchemeIsHTTPOrHTTPS())
     return;
   bool within_window = WithinWindow();
   bool is_google_url = IsGoogleDomain(url);
@@ -303,7 +317,7 @@ void PrerenderHistograms::RecordPageLoadTimeNotSwappedIn(
     const GURL& url) const {
   // If the URL to be prerendered is not a http[s] URL, or is a Google URL,
   // do not record.
-  if (!IsWebURL(url) || IsGoogleDomain(url))
+  if (!url.SchemeIsHTTPOrHTTPS() || IsGoogleDomain(url))
     return;
   RECORD_PLT("PrerenderNotSwappedInPLT", page_load_time);
 }
@@ -377,6 +391,34 @@ void PrerenderHistograms::RecordFinalStatus(
         "FinalStatusMatchComplete", origin, experiment_id,
         UMA_HISTOGRAM_ENUMERATION(name, final_status, FINAL_STATUS_MAX));
   }
+}
+
+void PrerenderHistograms::RecordEvent(Origin origin, uint8 experiment_id,
+                                      PrerenderEvent event) const {
+  DCHECK_LT(event, PRERENDER_EVENT_MAX);
+  PREFIXED_HISTOGRAM_ORIGIN_EXPERIMENT(
+      "Event", origin, experiment_id,
+      UMA_HISTOGRAM_ENUMERATION(name, event, PRERENDER_EVENT_MAX));
+}
+
+void PrerenderHistograms::RecordCookieStatus(Origin origin,
+                                             uint8 experiment_id,
+                                             int cookie_status) const {
+  DCHECK_GE(cookie_status, 0);
+  DCHECK_LT(cookie_status, PrerenderContents::kNumCookieStatuses);
+  PREFIXED_HISTOGRAM_ORIGIN_EXPERIMENT(
+      "CookieStatus", origin, experiment_id,
+      UMA_HISTOGRAM_ENUMERATION(name, cookie_status,
+                                PrerenderContents::kNumCookieStatuses));
+}
+
+void PrerenderHistograms::RecordPrerenderPageVisitedStatus(
+    Origin origin,
+    uint8 experiment_id,
+    bool visited_before) const {
+  PREFIXED_HISTOGRAM_ORIGIN_EXPERIMENT(
+      "PageVisitedStatus", origin, experiment_id,
+      UMA_HISTOGRAM_BOOLEAN(name, visited_before));
 }
 
 uint8 PrerenderHistograms::GetCurrentExperimentId() const {

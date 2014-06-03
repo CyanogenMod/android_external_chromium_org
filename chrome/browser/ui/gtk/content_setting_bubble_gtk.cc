@@ -22,8 +22,6 @@
 #include "chrome/browser/ui/gtk/gtk_theme_service.h"
 #include "chrome/browser/ui/gtk/gtk_util.h"
 #include "chrome/common/content_settings.h"
-#include "content/public/browser/notification_source.h"
-#include "content/public/browser/notification_types.h"
 #include "content/public/browser/plugin_service.h"
 #include "content/public/browser/web_contents.h"
 #include "grit/generated_resources.h"
@@ -31,8 +29,9 @@
 #include "ui/base/gtk/gtk_hig_constants.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/models/simple_menu_model.h"
-#include "ui/base/text/text_elider.h"
+#include "ui/gfx/font.h"
 #include "ui/gfx/gtk_util.h"
+#include "ui/gfx/text_elider.h"
 
 using content::PluginService;
 using content::WebContents;
@@ -48,11 +47,11 @@ const int kMinMediaMenuButtonWidth = 100;
 const int kMaxMediaMenuButtonWidth = 600;
 
 std::string BuildElidedText(const std::string& input) {
-  return UTF16ToUTF8(ui::ElideText(
+  return UTF16ToUTF8(gfx::ElideText(
       UTF8ToUTF16(input),
       gfx::Font(),
       kMaxLinkPixelSize,
-      ui::ELIDE_AT_END));
+      gfx::ELIDE_AT_END));
 }
 
 }  // namespace
@@ -61,16 +60,12 @@ ContentSettingBubbleGtk::ContentSettingBubbleGtk(
     GtkWidget* anchor,
     BubbleDelegateGtk* delegate,
     ContentSettingBubbleModel* content_setting_bubble_model,
-    Profile* profile,
-    WebContents* web_contents)
+    Profile* profile)
     : anchor_(anchor),
       profile_(profile),
-      web_contents_(web_contents),
       delegate_(delegate),
       content_setting_bubble_model_(content_setting_bubble_model),
       bubble_(NULL) {
-  registrar_.Add(this, content::NOTIFICATION_WEB_CONTENTS_DESTROYED,
-                 content::Source<WebContents>(web_contents));
   BuildBubble();
 }
 
@@ -102,15 +97,6 @@ void ContentSettingBubbleGtk::BubbleClosing(BubbleGtk* bubble,
   delete this;
 }
 
-void ContentSettingBubbleGtk::Observe(
-    int type,
-    const content::NotificationSource& source,
-    const content::NotificationDetails& details) {
-  DCHECK(type == content::NOTIFICATION_WEB_CONTENTS_DESTROYED);
-  DCHECK(source == content::Source<WebContents>(web_contents_));
-  web_contents_ = NULL;
-}
-
 void ContentSettingBubbleGtk::BuildBubble() {
   GtkThemeService* theme_provider = GtkThemeService::GetFrom(profile_);
 
@@ -126,27 +112,6 @@ void ContentSettingBubbleGtk::BuildBubble() {
                                                   ui::kGdkBlack);
     gtk_misc_set_alignment(GTK_MISC(label), 0, 0.5);
     gtk_box_pack_start(GTK_BOX(bubble_content), label, FALSE, FALSE, 0);
-  }
-
-  const std::set<std::string>& plugins = content.resource_identifiers;
-  if (!plugins.empty()) {
-    GtkWidget* list_content = gtk_vbox_new(FALSE, ui::kControlSpacing);
-
-    PluginFinder* finder = PluginFinder::GetInstance();
-    for (std::set<std::string>::const_iterator it = plugins.begin();
-        it != plugins.end(); ++it) {
-      std::string name = UTF16ToUTF8(finder->FindPluginNameWithIdentifier(*it));
-      GtkWidget* label = theme_provider->BuildLabel(
-          BuildElidedText(name).c_str(), ui::kGdkBlack);
-      GtkWidget* label_box = gtk_hbox_new(FALSE, 0);
-      gtk_box_pack_start(GTK_BOX(label_box), label, FALSE, FALSE, 0);
-
-      gtk_box_pack_start(GTK_BOX(list_content),
-                         label_box,
-                         FALSE, FALSE, 0);
-    }
-    gtk_box_pack_start(GTK_BOX(bubble_content), list_content, FALSE, FALSE,
-                       ui::kControlSpacing);
   }
 
   if (content_setting_bubble_model_->content_type() ==
@@ -194,11 +159,9 @@ void ContentSettingBubbleGtk::BuildBubble() {
        radio_group.radio_items.begin();
        i != radio_group.radio_items.end(); ++i) {
     std::string elided = BuildElidedText(*i);
-    GtkWidget* radio =
-        radio_group_gtk_.empty() ?
-            gtk_radio_button_new(NULL) :
-            gtk_radio_button_new_from_widget(
-                GTK_RADIO_BUTTON(radio_group_gtk_[0]));
+    GtkWidget* radio = radio_group_gtk_.empty() ?
+        gtk_radio_button_new(NULL) :
+        gtk_radio_button_new_from_widget(GTK_RADIO_BUTTON(radio_group_gtk_[0]));
     GtkWidget* label =
         theme_provider->BuildLabel(elided.c_str(), ui::kGdkBlack);
     gtk_container_add(GTK_CONTAINER(radio), label);
@@ -220,12 +183,12 @@ void ContentSettingBubbleGtk::BuildBubble() {
 
   // Layout code for the media device menus.
   if (content_setting_bubble_model_->content_type() ==
-        CONTENT_SETTINGS_TYPE_MEDIASTREAM) {
+          CONTENT_SETTINGS_TYPE_MEDIASTREAM) {
     GtkWidget* table = gtk_table_new(content.media_menus.size(), 2, FALSE);
     int menu_width = 0;
     int row = 0;
-    for (ContentSettingBubbleModel::MediaMenuMap::const_iterator
-             i(content.media_menus.begin());
+    for (ContentSettingBubbleModel::MediaMenuMap::const_iterator i(
+             content.media_menus.begin());
          i != content.media_menus.end();
          ++i, ++row) {
       GtkWidget* label = theme_provider->BuildLabel(
@@ -258,21 +221,26 @@ void ContentSettingBubbleGtk::BuildBubble() {
       media_menus_[button] = gtk_menu;
 
       if (!gtk_menu->menu_model->GetItemCount()) {
-        // Show a "None available" title and grey out the menu when there is no
-        // available device.
+        // Show a "None available" title and grey out the menu when there is
+        // no available device.
         UpdateMenuLabel(
             gtk_menu->type,
             l10n_util::GetStringUTF8(IDS_MEDIA_MENU_NO_DEVICE_TITLE));
         gtk_widget_set_sensitive(button, FALSE);
       }
 
+      // Disable the device selection when the website is managing the devices
+      // itself.
+      if (i->second.disabled)
+        gtk_widget_set_sensitive(button, FALSE);
+
       // Use the longest width of the menus as the width of the menu buttons.
       GtkRequisition menu_req;
       gtk_widget_size_request(gtk_menu->menu->widget(), &menu_req);
       menu_width = std::max(menu_width, menu_req.width);
 
-      g_signal_connect(button, "clicked", G_CALLBACK(OnMenuButtonClickedThunk),
-                       this);
+      g_signal_connect(button, "clicked",
+                       G_CALLBACK(OnMenuButtonClickedThunk), this);
       gtk_table_attach(GTK_TABLE(table), button, 1, 2, row, row + 1,
                        GTK_FILL, GTK_FILL, ui::kControlSpacing * 2,
                        ui::kControlSpacing / 2);
@@ -343,13 +311,13 @@ void ContentSettingBubbleGtk::BuildBubble() {
                    this);
   gtk_box_pack_start(GTK_BOX(bottom_box), manage_link, FALSE, FALSE, 0);
 
-  GtkWidget* button = gtk_button_new_with_label(
-      l10n_util::GetStringUTF8(IDS_DONE).c_str());
+  GtkWidget* button =
+      gtk_button_new_with_label(l10n_util::GetStringUTF8(IDS_DONE).c_str());
   g_signal_connect(button, "clicked", G_CALLBACK(OnCloseButtonClickedThunk),
                    this);
   gtk_box_pack_end(GTK_BOX(bottom_box), button, FALSE, FALSE, 0);
+
   gtk_box_pack_start(GTK_BOX(bubble_content), bottom_box, FALSE, FALSE, 0);
-  gtk_widget_grab_focus(bottom_box);
   gtk_widget_grab_focus(button);
 
   bubble_ = BubbleGtk::Show(anchor_,
@@ -396,7 +364,7 @@ void ContentSettingBubbleGtk::OnRadioToggled(GtkWidget* widget) {
   NOTREACHED() << "unknown radio toggled";
 }
 
-void ContentSettingBubbleGtk::OnCloseButtonClicked(GtkWidget *button) {
+void ContentSettingBubbleGtk::OnCloseButtonClicked(GtkWidget* button) {
   content_setting_bubble_model_->OnDoneClicked();
   Close();
 }

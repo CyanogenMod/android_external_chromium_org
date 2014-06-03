@@ -11,6 +11,7 @@
 #include "base/android/jni_string.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
+#include "chrome/browser/bookmarks/bookmark_test_helpers.h"
 #include "chrome/browser/history/android/android_history_provider_service.h"
 #include "chrome/browser/history/android/android_history_types.h"
 #include "chrome/browser/history/android/android_time.h"
@@ -20,7 +21,6 @@
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
 #include "chrome/test/base/testing_profile_manager.h"
-#include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/test/test_browser_thread.h"
 #include "content/public/test/test_utils.h"
@@ -60,7 +60,7 @@ class SQLiteCursorTest : public testing::Test,
         chrome::kInitialProfile);
 
     testing_profile_->CreateBookmarkModel(true);
-    ui_test_utils::WaitForBookmarkModelToLoad(testing_profile_);
+    test::WaitForBookmarkModelToLoad(testing_profile_);
 
     testing_profile_->CreateFaviconService();
     ASSERT_TRUE(testing_profile_->CreateHistoryService(true, false));
@@ -179,7 +179,7 @@ TEST_F(SQLiteCursorTest, Run) {
 
   // Query the inserted row.
   service_->QueryHistoryAndBookmarks(projections, std::string(),
-      std::vector<string16>(), std::string(), &cancelable_consumer_,
+      std::vector<base::string16>(), std::string(), &cancelable_consumer_,
       Bind(&CallbackHelper::OnQueryResult, callback.get()));
   base::MessageLoop::current()->Run();
   ASSERT_TRUE(callback->success());
@@ -195,7 +195,7 @@ TEST_F(SQLiteCursorTest, Run) {
   column_names.push_back(HistoryAndBookmarkRow::GetAndroidName(
       HistoryAndBookmarkRow::FAVICON));
 
-  FaviconService* favicon_service = new FaviconService(hs_);
+  FaviconService* favicon_service = new FaviconService(testing_profile_);
 
   SQLiteCursor* cursor = new SQLiteCursor(column_names, statement,
       service_.get(), favicon_service);

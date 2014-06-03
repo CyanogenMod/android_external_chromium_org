@@ -4,7 +4,9 @@
 
 #include "ui/views/controls/menu/menu_host.h"
 
+#include "base/auto_reset.h"
 #include "base/debug/trace_event.h"
+#include "ui/events/gestures/gesture_recognizer.h"
 #include "ui/gfx/path.h"
 #include "ui/native_theme/native_theme.h"
 #include "ui/views/controls/menu/menu_controller.h"
@@ -29,6 +31,7 @@ MenuHost::MenuHost(SubmenuView* submenu)
     : submenu_(submenu),
       destroying_(false),
       ignore_capture_lost_(false) {
+  set_auto_release_capture(false);
 }
 
 MenuHost::~MenuHost() {
@@ -72,11 +75,16 @@ bool MenuHost::IsMenuHostVisible() {
 void MenuHost::ShowMenuHost(bool do_capture) {
   // Doing a capture may make us get capture lost. Ignore it while we're in the
   // process of showing.
-  ignore_capture_lost_ = true;
+  base::AutoReset<bool> reseter(&ignore_capture_lost_, true);
   Show();
-  if (do_capture)
+  if (do_capture) {
+#if defined(USE_AURA)
+    // Cancel existing touches, so we don't miss some touch release/cancel
+    // events due to the menu taking capture.
+    ui::GestureRecognizer::Get()->TransferEventsTo(GetNativeWindow(), NULL);
+#endif  // USE_AURA
     native_widget_private()->SetCapture();
-  ignore_capture_lost_ = false;
+  }
 }
 
 void MenuHost::HideMenuHost() {
@@ -107,10 +115,6 @@ void MenuHost::ReleaseMenuHostCapture() {
 
 internal::RootView* MenuHost::CreateRootView() {
   return new MenuHostRootView(this, submenu_);
-}
-
-bool MenuHost::ShouldReleaseCaptureOnMouseReleased() const {
-  return false;
 }
 
 void MenuHost::OnMouseCaptureLost() {

@@ -40,13 +40,13 @@ void StatusIconGtk::SetPressedImage(const gfx::ImageSkia& image) {
   // pressed status icons.
 }
 
-void StatusIconGtk::SetToolTip(const string16& tool_tip) {
+void StatusIconGtk::SetToolTip(const base::string16& tool_tip) {
   gtk_status_icon_set_tooltip_text(icon_, UTF16ToUTF8(tool_tip).c_str());
 }
 
 void StatusIconGtk::DisplayBalloon(const gfx::ImageSkia& icon,
-                                   const string16& title,
-                                   const string16& contents) {
+                                   const base::string16& title,
+                                   const base::string16& contents) {
   notification_.DisplayBalloon(icon, title, contents);
 }
 
@@ -54,7 +54,7 @@ void StatusIconGtk::OnClick(GtkWidget* widget) {
   DispatchClickEvent();
 }
 
-void StatusIconGtk::UpdatePlatformContextMenu(ui::MenuModel* model) {
+void StatusIconGtk::UpdatePlatformContextMenu(StatusIconMenuModel* model) {
   if (!model)
     menu_.reset();
   else

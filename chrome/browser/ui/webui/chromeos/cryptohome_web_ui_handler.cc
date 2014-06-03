@@ -8,8 +8,11 @@
 #include "base/values.h"
 #include "chromeos/dbus/cryptohome_client.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/web_ui.h"
 #include "crypto/nss_util.h"
+
+using content::BrowserThread;
 
 namespace chromeos {
 
@@ -36,20 +39,21 @@ void CryptohomeWebUIHandler::OnPageLoaded(const base::ListValue* args) {
       GetCryptohomeBoolCallback("tpm-is-being-owned"));
   cryptohome_client->Pkcs11IsTpmTokenReady(
       GetCryptohomeBoolCallback("pkcs11-is-tpm-token-ready"));
-  base::FundamentalValue is_tpm_token_ready(crypto::IsTPMTokenReady());
-  SetCryptohomeProperty("is-tpm-token-ready", is_tpm_token_ready);
 
-  if (crypto::IsTPMTokenReady()) {
-    std::string token_name;
-    std::string user_pin;
-    crypto::GetTPMTokenInfo(&token_name, &user_pin);
-    // Hide user_pin.
-    user_pin = std::string(user_pin.length(), '*');
-    base::StringValue token_name_value(token_name);
-    SetCryptohomeProperty("token-name", token_name_value);
-    base::StringValue user_pin_value(user_pin);
-    SetCryptohomeProperty("user-pin", user_pin_value);
-  }
+  BrowserThread::PostTaskAndReplyWithResult(
+      BrowserThread::IO,
+      FROM_HERE,
+      base::Bind(&crypto::IsTPMTokenReady, base::Closure()),
+      base::Bind(&CryptohomeWebUIHandler::DidGetNSSUtilInfoOnUIThread,
+                 weak_ptr_factory_.GetWeakPtr()));
+}
+
+void CryptohomeWebUIHandler::DidGetNSSUtilInfoOnUIThread(
+    bool is_tpm_token_ready) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  base::FundamentalValue is_tpm_token_ready_value(is_tpm_token_ready);
+  SetCryptohomeProperty("is-tpm-token-ready", is_tpm_token_ready_value);
 }
 
 BoolDBusMethodCallback CryptohomeWebUIHandler::GetCryptohomeBoolCallback(

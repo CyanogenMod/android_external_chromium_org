@@ -26,6 +26,8 @@ namespace ui {
 class InputMethod;
 }
 
+// Subclass of KeyboardControllerProxy. It is used by KeyboardController to get
+// access to the virtual keyboard window and setup Chrome extension functions.
 class AshKeyboardControllerProxy
     : public keyboard::KeyboardControllerProxy,
       public content::WebContentsObserver,
@@ -45,6 +47,16 @@ class AshKeyboardControllerProxy
       const content::MediaResponseCallback& callback) OVERRIDE;
   virtual void SetupWebContents(content::WebContents* contents) OVERRIDE;
   virtual void ShowKeyboardContainer(aura::Window* container) OVERRIDE;
+  virtual void HideKeyboardContainer(aura::Window* container) OVERRIDE;
+
+  // The overridden implementation dispatches
+  // chrome.virtualKeyboardPrivate.onTextInputBoxFocused event to extension to
+  // provide the input type information. Naturally, when the virtual keyboard
+  // extension is used as an IME then chrome.input.ime.onFocus provides the
+  // information, but not when the virtual keyboard is used in conjunction with
+  // another IME. virtualKeyboardPrivate.onTextInputBoxFocused is the remedy in
+  // that case.
+  virtual void SetUpdateInputType(ui::TextInputType type) OVERRIDE;
 
   // ExtensionFunctionDispatcher::Delegate overrides
   virtual extensions::WindowController* GetExtensionWindowController() const

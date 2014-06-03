@@ -41,7 +41,7 @@ def GetIncompatibleDirectories():
 
   whitelist = [
     'Apache( Version)? 2(\.0)?',
-    '(New )?BSD( [23]-Clause)?( with advertising clause)?',
+    '(New )?([23]-Clause )?BSD( [23]-Clause)?( with advertising clause)?',
     'L?GPL ?v?2(\.[01])?( or later)?',
     'MIT(/X11)?(-like)?',
     'MPL 1\.1 ?/ ?GPL 2(\.0)? ?/ ?LGPL 2\.1',
@@ -91,7 +91,7 @@ def _CheckLicenseHeaders(excluded_dirs_list, whitelisted_files):
   """
 
   excluded_dirs_list = [d for d in excluded_dirs_list if not 'third_party' in d]
-  # Using a commond pattern for third-partyies makes the ignore regexp shorter
+  # Using a common pattern for third-partyies makes the ignore regexp shorter
   excluded_dirs_list.append('third_party')
   # VCS dirs
   excluded_dirs_list.append('.git')
@@ -105,10 +105,14 @@ def _CheckLicenseHeaders(excluded_dirs_list, whitelisted_files):
   excluded_dirs_list.append('chrome/tools/test/reference_build')
   # This is tests directory, doesn't exist in the snapshot
   excluded_dirs_list.append('content/test/data')
+  # This is a tests directory that doesn't exist in the shipped product.
+  excluded_dirs_list.append('gin/test')
   # This is a test output directory
   excluded_dirs_list.append('data/dom_perf')
   # Histogram tools, doesn't exist in the snapshot
   excluded_dirs_list.append('tools/histograms')
+  # Swarming tools, doesn't exist in the snapshot
+  excluded_dirs_list.append('tools/swarming_client')
   # Arm sysroot tools, doesn't exist in the snapshot
   excluded_dirs_list.append('arm-sysroot')
   # Data is not part of open source chromium, but are included on some bots.
@@ -191,6 +195,8 @@ def _FindThirdPartyDirs():
     # third_party directories in this tree aren't actually third party, but
     # provide a way to shadow experimental buildfiles into those directories.
     os.path.join('tools', 'gn', 'secondary'),
+    # Not shipped, Chromium code
+    os.path.join('tools', 'swarming_client'),
   ]
   third_party_dirs = licenses.FindThirdPartyDirs(prune_paths, REPOSITORY_ROOT)
   return licenses.FilterDirsWithFiles(third_party_dirs, REPOSITORY_ROOT)

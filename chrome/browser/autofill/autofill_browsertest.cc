@@ -18,6 +18,7 @@
 #include "chrome/browser/autofill/personal_data_manager_factory.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/infobars/confirm_infobar_delegate.h"
+#include "chrome/browser/infobars/infobar.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
@@ -28,8 +29,8 @@
 #include "chrome/test/base/test_switches.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "components/autofill/content/browser/autofill_driver_impl.h"
-#include "components/autofill/core/browser/autofill_common_test.h"
 #include "components/autofill/core/browser/autofill_profile.h"
+#include "components/autofill/core/browser/autofill_test_utils.h"
 #include "components/autofill/core/browser/credit_card.h"
 #include "components/autofill/core/browser/personal_data_manager.h"
 #include "components/autofill/core/browser/personal_data_manager_observer.h"
@@ -46,7 +47,7 @@
 #include "net/url_request/test_url_fetcher_factory.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "ui/base/keycodes/keyboard_codes.h"
+#include "ui/events/keycodes/keyboard_codes.h"
 
 namespace autofill {
 
@@ -100,7 +101,7 @@ class WindowedPersonalDataManagerObserver
     infobar_service_ = InfoBarService::FromWebContents(
         browser_->tab_strip_model()->GetActiveWebContents());
     ConfirmInfoBarDelegate* infobar_delegate =
-        infobar_service_->infobar_at(0)->AsConfirmInfoBarDelegate();
+        infobar_service_->infobar_at(0)->delegate()->AsConfirmInfoBarDelegate();
     ASSERT_TRUE(infobar_delegate);
     infobar_delegate->Accept();
   }
@@ -199,16 +200,20 @@ class AutofillTest : public InProcessBrowserTest {
     base::FilePath data_file =
         ui_test_utils::GetTestFilePath(base::FilePath().AppendASCII("autofill"),
                                        base::FilePath().AppendASCII(filename));
-    CHECK(file_util::ReadFileToString(data_file, &data));
+    CHECK(base::ReadFileToString(data_file, &data));
     std::vector<std::string> lines;
     base::SplitString(data, '\n', &lines);
+    int parsed_profiles = 0;
     for (size_t i = 0; i < lines.size(); ++i) {
       if (StartsWithASCII(lines[i], "#", false))
         continue;
+
       std::vector<std::string> fields;
       base::SplitString(lines[i], '|', &fields);
       if (fields.empty())
         continue;  // Blank line.
+
+      ++parsed_profiles;
       CHECK_EQ(12u, fields.size());
 
       FormMap data;
@@ -227,7 +232,7 @@ class AutofillTest : public InProcessBrowserTest {
 
       FillFormAndSubmit("duplicate_profiles_test.html", data);
     }
-    return lines.size();
+    return parsed_profiles;
   }
 
   void ExpectFieldValue(const std::string& field_name,
@@ -495,10 +500,10 @@ IN_PROC_BROWSER_TEST_F(AutofillTest,
   SubmitCreditCard("Jane Doe", "4417-1234-5678-9113", "10", "2013");
 
   ASSERT_EQ(2u, personal_data_manager()->GetCreditCards().size());
-  string16 cc1 = personal_data_manager()->GetCreditCards()[0]->GetRawInfo(
+  base::string16 cc1 = personal_data_manager()->GetCreditCards()[0]->GetRawInfo(
       CREDIT_CARD_NUMBER);
   ASSERT_TRUE(autofill::IsValidCreditCardNumber(cc1));
-  string16 cc2 = personal_data_manager()->GetCreditCards()[1]->GetRawInfo(
+  base::string16 cc2 = personal_data_manager()->GetCreditCards()[1]->GetRawInfo(
       CREDIT_CARD_NUMBER);
   ASSERT_TRUE(autofill::IsValidCreditCardNumber(cc2));
 }
@@ -558,9 +563,7 @@ IN_PROC_BROWSER_TEST_F(AutofillTest, ProfilesNotAggregatedWithInvalidEmail) {
 // Test profile is saved if phone number is valid in selected country.
 // The data file contains two profiles with valid phone numbers and two
 // profiles with invalid phone numbers from their respective country.
-// DISABLED: http://crbug.com/150084
-IN_PROC_BROWSER_TEST_F(AutofillTest,
-                       DISABLED_ProfileSavedWithValidCountryPhone) {
+IN_PROC_BROWSER_TEST_F(AutofillTest, ProfileSavedWithValidCountryPhone) {
   ASSERT_TRUE(test_server()->Start());
   std::vector<FormMap> profiles;
 
@@ -615,7 +618,7 @@ IN_PROC_BROWSER_TEST_F(AutofillTest,
   ASSERT_EQ(ASCIIToUTF16("(408) 871-4567"),
             personal_data_manager()->GetProfiles()[0]->GetRawInfo(
                 PHONE_HOME_WHOLE_NUMBER));
-  ASSERT_EQ(ASCIIToUTF16("+49 40/808179000"),
+  ASSERT_EQ(ASCIIToUTF16("+49 40 808179000"),
             personal_data_manager()->GetProfiles()[1]->GetRawInfo(
                 PHONE_HOME_WHOLE_NUMBER));
 }
@@ -638,7 +641,7 @@ IN_PROC_BROWSER_TEST_F(AutofillTest, AppendCountryCodeForAggregatedPhones) {
   FillFormAndSubmit("autofill_test_form.html", data);
 
   ASSERT_EQ(1u, personal_data_manager()->GetProfiles().size());
-  string16 phone = personal_data_manager()->GetProfiles()[0]->GetRawInfo(
+  base::string16 phone = personal_data_manager()->GetProfiles()[0]->GetRawInfo(
       PHONE_HOME_WHOLE_NUMBER);
   ASSERT_TRUE(StartsWith(phone, ASCIIToUTF16("+49"), true));
 }
@@ -691,10 +694,10 @@ IN_PROC_BROWSER_TEST_F(AutofillTest, ProfileWithEmailInOtherFieldNotSaved) {
 // 'Address Line 1' and 'City' data match. When two profiles are merged, any
 // remaining address fields are expected to be overwritten. Any non-address
 // fields should accumulate multi-valued data.
-// DISABLED: http://crbug.com/150084
+// DISABLED: http://crbug.com/281541
 IN_PROC_BROWSER_TEST_F(AutofillTest,
                        DISABLED_MergeAggregatedProfilesWithSameAddress) {
-  AggregateProfilesIntoAutofillPrefs("dataset_2.txt");
+  AggregateProfilesIntoAutofillPrefs("dataset_same_address.txt");
 
   ASSERT_EQ(3u, personal_data_manager()->GetProfiles().size());
 }
@@ -703,7 +706,7 @@ IN_PROC_BROWSER_TEST_F(AutofillTest,
 // Mininum address values needed during aggregation are: address line 1, city,
 // state, and zip code.
 // Profiles are merged when data for address line 1 and city match.
-// DISABLED: http://crbug.com/150084
+// DISABLED: http://crbug.com/281541
 IN_PROC_BROWSER_TEST_F(AutofillTest,
                        DISABLED_ProfilesNotMergedWhenNoMinAddressData) {
   AggregateProfilesIntoAutofillPrefs("dataset_no_address.txt");
@@ -713,11 +716,11 @@ IN_PROC_BROWSER_TEST_F(AutofillTest,
 
 // Test Autofill ability to merge duplicate profiles and throw away junk.
 // TODO(isherman): this looks redundant, consider removing.
-// DISABLED: http://crbug.com/150084
+// DISABLED: http://crbug.com/281541
 IN_PROC_BROWSER_TEST_F(AutofillTest,
                        DISABLED_MergeAggregatedDuplicatedProfiles) {
   int num_of_profiles =
-      AggregateProfilesIntoAutofillPrefs("dataset_no_address.txt");
+      AggregateProfilesIntoAutofillPrefs("dataset_duplicated_profiles.txt");
 
   ASSERT_GT(num_of_profiles,
             static_cast<int>(personal_data_manager()->GetProfiles().size()));

@@ -41,7 +41,7 @@ int SyncGlobalError::MenuItemCommandID() {
   return IDC_SHOW_SIGNIN_ERROR;
 }
 
-string16 SyncGlobalError::MenuItemLabel() {
+base::string16 SyncGlobalError::MenuItemLabel() {
   return menu_label_;
 }
 
@@ -60,20 +60,20 @@ bool SyncGlobalError::HasBubbleView() {
   return !bubble_message_.empty() && !bubble_accept_label_.empty();
 }
 
-string16 SyncGlobalError::GetBubbleViewTitle() {
+base::string16 SyncGlobalError::GetBubbleViewTitle() {
   return l10n_util::GetStringUTF16(IDS_SYNC_ERROR_BUBBLE_VIEW_TITLE);
 }
 
-std::vector<string16> SyncGlobalError::GetBubbleViewMessages() {
-  return std::vector<string16>(1, bubble_message_);
+std::vector<base::string16> SyncGlobalError::GetBubbleViewMessages() {
+  return std::vector<base::string16>(1, bubble_message_);
 }
 
-string16 SyncGlobalError::GetBubbleViewAcceptButtonLabel() {
+base::string16 SyncGlobalError::GetBubbleViewAcceptButtonLabel() {
   return bubble_accept_label_;
 }
 
-string16 SyncGlobalError::GetBubbleViewCancelButtonLabel() {
-  return string16();
+base::string16 SyncGlobalError::GetBubbleViewCancelButtonLabel() {
+  return base::string16();
 }
 
 void SyncGlobalError::OnBubbleViewDidClose(Browser* browser) {
@@ -88,9 +88,9 @@ void SyncGlobalError::BubbleViewCancelButtonPressed(Browser* browser) {
 }
 
 void SyncGlobalError::OnStateChanged() {
-  string16 menu_label;
-  string16 bubble_message;
-  string16 bubble_accept_label;
+  base::string16 menu_label;
+  base::string16 bubble_message;
+  base::string16 bubble_accept_label;
   sync_ui_util::GetStatusLabelsForSyncGlobalError(
       service_, *signin_, &menu_label, &bubble_message, &bubble_accept_label);
 

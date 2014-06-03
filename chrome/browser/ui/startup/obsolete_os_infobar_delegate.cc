@@ -4,6 +4,7 @@
 
 #include "chrome/browser/ui/startup/obsolete_os_infobar_delegate.h"
 
+#include "chrome/browser/infobars/infobar.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "content/public/browser/web_contents.h"
 #include "grit/chromium_strings.h"
@@ -35,19 +36,18 @@ void ObsoleteOSInfoBarDelegate::Create(InfoBarService* infobar_service) {
   return;
 #endif
 
-  infobar_service->AddInfoBar(scoped_ptr<InfoBarDelegate>(
-      new ObsoleteOSInfoBarDelegate(infobar_service)));
+  infobar_service->AddInfoBar(ConfirmInfoBarDelegate::CreateInfoBar(
+      scoped_ptr<ConfirmInfoBarDelegate>(new ObsoleteOSInfoBarDelegate())));
 }
 
-ObsoleteOSInfoBarDelegate::ObsoleteOSInfoBarDelegate(
-    InfoBarService* infobar_service)
-    : ConfirmInfoBarDelegate(infobar_service) {
+ObsoleteOSInfoBarDelegate::ObsoleteOSInfoBarDelegate()
+    : ConfirmInfoBarDelegate() {
 }
 
 ObsoleteOSInfoBarDelegate::~ObsoleteOSInfoBarDelegate() {
 }
 
-string16 ObsoleteOSInfoBarDelegate::GetMessageText() const {
+base::string16 ObsoleteOSInfoBarDelegate::GetMessageText() const {
   return l10n_util::GetStringUTF16(IDS_SYSTEM_OBSOLETE_MESSAGE);
 }
 
@@ -55,7 +55,7 @@ int ObsoleteOSInfoBarDelegate::GetButtons() const {
   return BUTTON_NONE;
 }
 
-string16 ObsoleteOSInfoBarDelegate::GetLinkText() const {
+base::string16 ObsoleteOSInfoBarDelegate::GetLinkText() const {
   return l10n_util::GetStringUTF16(IDS_LEARN_MORE);
 }
 

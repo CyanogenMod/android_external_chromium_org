@@ -38,7 +38,10 @@
   <div id="manage-profile-overlay-delete" hidden>
     <h1 i18n-content="deleteProfileTitle"></h1>
     <div class="content-area">
-      <div id="delete-profile-message"></div>
+      <div id="delete-profile-message">
+        <img id="delete-profile-icon" class="profile-icon">
+        <div id="delete-profile-text"></div>
+      </div>
       <div id="delete-managed-profile-addendum"
           i18n-values=".innerHTML:deleteManagedProfileAddendum" hidden>
       </div>
@@ -65,7 +68,7 @@
       </div>
       <div id="create-profile-error-bubble" hidden></div>
     </div>
-    <div class="content-area">
+    <div id="create-profile-managed-content-area" class="content-area">
       <div id="create-shortcut-container" class="checkbox" hidden>
         <label>
           <input id="create-shortcut" type="checkbox">
@@ -74,7 +77,7 @@
           </span>
         </label>
       </div>
-      <div id="create-profile-managed-container" class="checkbox" hidden>
+      <div id="create-profile-managed-container" class="checkbox">
         <label>
           <input id="create-profile-managed" type="checkbox">
           <span id="create-profile-managed-signed-in">
@@ -100,20 +103,6 @@
             </button>
           </span>
         </label>
-        <label>
-          <span id="select-existing-managed-profile">
-            <input id="select-existing-managed-profile-checkbox"
-                type="checkbox">
-            <span id="select-existing-managed-profile-label"
-                for="select-existing-managed-profile-checkbox"
-                i18n-content="manageProfilesSelectExistingManagedProfileLabel">
-            </span>
-          </span>
-        </label>
-        <label>
-          <select id="choose-existing-managed-profile">
-          </select>
-        </label>
         <span id="create-profile-managed-indicator"
             class="bubble-button controlled-setting-indicator">
         </span>
@@ -121,6 +110,9 @@
     </div>
     <div class="action-area">
       <div id="create-profile-throbber" class="throbber"></div>
+      <button id="import-existing-managed-user-link" class="link-button"
+          i18n-content="importExistingManagedUserLink">
+      </button>
       <div class="button-strip">
         <button id="create-profile-cancel" i18n-content="cancel"></button>
         <button id="create-profile-ok" i18n-content="createProfileConfirm"

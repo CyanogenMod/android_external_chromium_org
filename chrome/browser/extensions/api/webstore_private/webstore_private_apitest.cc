@@ -104,7 +104,7 @@ class ExtensionWebstorePrivateApiTest : public ExtensionApiTest {
     // API functions.
     host_resolver()->AddRule("www.example.com", "127.0.0.1");
     ASSERT_TRUE(test_server()->Start());
-    ExtensionInstallUI::DisableFailureUIForTests();
+    ExtensionInstallUI::set_disable_failure_ui_for_tests();
   }
 
  protected:
@@ -151,14 +151,14 @@ IN_PROC_BROWSER_TEST_F(ExtensionWebstorePrivateApiTest,
                        DISABLED_FrameWebstorePageBlocked) {
   content::WebContents* contents =
       browser()->tab_strip_model()->GetActiveWebContents();
-  string16 expected_title = UTF8ToUTF16("PASS: about:blank");
-  string16 failure_title = UTF8ToUTF16("FAIL");
+  base::string16 expected_title = UTF8ToUTF16("PASS: about:blank");
+  base::string16 failure_title = UTF8ToUTF16("FAIL");
   content::TitleWatcher watcher(contents, expected_title);
   watcher.AlsoWaitForTitle(failure_title);
   GURL url = test_server()->GetURL(
       "files/extensions/api_test/webstore_private/noframe.html");
   ui_test_utils::NavigateToURL(browser(), url);
-  string16 final_title = watcher.WaitAndGetTitle();
+  base::string16 final_title = watcher.WaitAndGetTitle();
   EXPECT_EQ(expected_title, final_title);
 }
 
@@ -168,14 +168,14 @@ IN_PROC_BROWSER_TEST_F(ExtensionWebstorePrivateApiTest,
                        DISABLED_FrameErrorPageBlocked) {
   content::WebContents* contents =
       browser()->tab_strip_model()->GetActiveWebContents();
-  string16 expected_title = UTF8ToUTF16("PASS: about:blank");
-  string16 failure_title = UTF8ToUTF16("FAIL");
+  base::string16 expected_title = UTF8ToUTF16("PASS: about:blank");
+  base::string16 failure_title = UTF8ToUTF16("FAIL");
   content::TitleWatcher watcher(contents, expected_title);
   watcher.AlsoWaitForTitle(failure_title);
   GURL url = test_server()->GetURL(
       "files/extensions/api_test/webstore_private/noframe2.html");
   ui_test_utils::NavigateToURL(browser(), url);
-  string16 final_title = watcher.WaitAndGetTitle();
+  base::string16 final_title = watcher.WaitAndGetTitle();
   EXPECT_EQ(expected_title, final_title);
 }
 
@@ -313,6 +313,10 @@ IN_PROC_BROWSER_TEST_F(ExtensionWebstorePrivateApiTest, EmptyCrx) {
 class ExtensionWebstoreGetWebGLStatusTest : public InProcessBrowserTest {
  protected:
   void RunTest(bool webgl_allowed) {
+    // If Gpu access is disallowed then WebGL will not be available.
+    if (!content::GpuDataManager::GetInstance()->GpuAccessAllowed(NULL))
+      webgl_allowed = false;
+
     static const char kEmptyArgs[] = "[]";
     static const char kWebGLStatusAllowed[] = "webgl_allowed";
     static const char kWebGLStatusBlocked[] = "webgl_blocked";

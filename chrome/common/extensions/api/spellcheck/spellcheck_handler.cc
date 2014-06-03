@@ -5,12 +5,12 @@
 #include "chrome/common/extensions/api/spellcheck/spellcheck_handler.h"
 
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
+#include "extensions/common/manifest_constants.h"
 
 namespace extensions {
 
-namespace keys = extension_manifest_keys;
-namespace errors = extension_manifest_errors;
+namespace keys = manifest_keys;
+namespace errors = manifest_errors;
 
 SpellcheckDictionaryInfo::SpellcheckDictionaryInfo() {
 }
@@ -24,7 +24,7 @@ SpellcheckHandler::SpellcheckHandler() {
 SpellcheckHandler::~SpellcheckHandler() {
 }
 
-bool SpellcheckHandler::Parse(Extension* extension, string16* error) {
+bool SpellcheckHandler::Parse(Extension* extension, base::string16* error) {
   const base::DictionaryValue* spellcheck_value = NULL;
   if (!extension->manifest()->GetDictionary(keys::kSpellcheck,
                                             &spellcheck_value)) {

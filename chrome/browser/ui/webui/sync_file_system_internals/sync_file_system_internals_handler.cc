@@ -10,7 +10,6 @@
 #include "chrome/browser/drive/drive_notification_manager.h"
 #include "chrome/browser/drive/drive_notification_manager_factory.h"
 #include "chrome/browser/extensions/api/sync_file_system/sync_file_system_api_helpers.h"
-#include "chrome/browser/google_apis/time_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync_file_system/logger.h"
 #include "chrome/browser/sync_file_system/sync_file_system_service.h"
@@ -19,6 +18,7 @@
 #include "chrome/common/extensions/api/sync_file_system.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_ui.h"
+#include "google_apis/drive/time_util.h"
 
 using drive::EventLogger;
 using sync_file_system::SyncFileSystemServiceFactory;
@@ -49,6 +49,10 @@ void SyncFileSystemInternalsHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback(
       "getLog",
       base::Bind(&SyncFileSystemInternalsHandler::GetLog,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "clearLogs",
+      base::Bind(&SyncFileSystemInternalsHandler::ClearLogs,
                  base::Unretained(this)));
   web_ui()->RegisterMessageCallback(
       "getNotificationSource",
@@ -90,7 +94,7 @@ void SyncFileSystemInternalsHandler::GetServiceStatus(
 void SyncFileSystemInternalsHandler::GetNotificationSource(
     const base::ListValue* args) {
   drive::DriveNotificationManager* drive_notification_manager =
-      drive::DriveNotificationManagerFactory::GetForProfile(profile_);
+      drive::DriveNotificationManagerFactory::GetForBrowserContext(profile_);
   bool xmpp_enabled = drive_notification_manager->push_notification_enabled();
   std::string notification_source = xmpp_enabled ? "XMPP" : "Polling";
   web_ui()->CallJavascriptFunction("SyncService.onGetNotificationSource",
@@ -126,6 +130,10 @@ void SyncFileSystemInternalsHandler::GetLog(
     return;
 
   web_ui()->CallJavascriptFunction("SyncService.onGetLog", list);
+}
+
+void SyncFileSystemInternalsHandler::ClearLogs(const base::ListValue* args) {
+  sync_file_system::util::ClearLog();
 }
 
 }  // namespace syncfs_internals

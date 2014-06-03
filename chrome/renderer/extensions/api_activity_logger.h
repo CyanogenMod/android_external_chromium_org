@@ -6,9 +6,9 @@
 #define CHROME_RENDERER_EXTENSIONS_API_ACTIVITY_LOGGER_H_
 
 #include <string>
-#include "chrome/common/extensions/features/feature.h"
 #include "chrome/renderer/extensions/chrome_v8_extension.h"
 #include "chrome/renderer/extensions/dispatcher.h"
+#include "extensions/common/features/feature.h"
 #include "v8/include/v8.h"
 
 namespace extensions {
@@ -19,11 +19,6 @@ namespace extensions {
 class APIActivityLogger : public ChromeV8Extension {
  public:
   APIActivityLogger(Dispatcher* dispatcher, ChromeV8Context* context);
-
-  // This is to use to log blocked API calls.
-  static void LogBlockedCall(const std::string& extension_id,
-                             const std::string& function_name,
-                             Feature::AvailabilityResult result);
 
  private:
    // Used to distinguish API calls & events from each other in LogInternal.
@@ -45,13 +40,6 @@ class APIActivityLogger : public ChromeV8Extension {
    //    arg2 - Event arguments
    //    arg3 - any extra logging info as a string (optional)
    static void LogEvent(const v8::FunctionCallbackInfo<v8::Value>& args);
-
-   // This is invoked in binding.js with JavaScript arguments.
-   //    arg0 - extension ID as string
-   //    arg1 - Function name as a string
-   //    arg2 - Reason for the failure
-   static void LogBlockedCallWrapper(
-       const v8::FunctionCallbackInfo<v8::Value>& args);
 
    // LogAPICall and LogEvent are really the same underneath except for
    // how they are ultimately dispatched to the log.

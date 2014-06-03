@@ -7,10 +7,11 @@
 
 #include <sys/types.h>
 
-#if defined(__native_client__)
+#if !defined(WIN32)
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <poll.h>
 #include <sys/socket.h>
 #include <sys/select.h>

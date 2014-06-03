@@ -11,19 +11,18 @@
 // permission API would only be available for channels CHANNEL_DEV and
 // CHANNEL_CANARY.
 
-var createEvent = require('webView').CreateEvent;
-var WebRequestEvent = require('webRequestInternal').WebRequestEvent;
-var webRequestSchema =
-    requireNative('schema_registry').GetSchema('webRequest');
+var CreateEvent = require('webView').CreateEvent;
+var MessagingNatives = requireNative('messaging_natives');
+var WebViewInternal = require('webView').WebViewInternal;
 var WebView = require('webView').WebView;
 
-var WEB_VIEW_EXPERIMENTAL_EXT_EVENTS = {
+var WEB_VIEW_EXPERIMENTAL_EVENTS = {
   'dialog': {
     cancelable: true,
-    customHandler: function(webview, event, webviewEvent) {
-      webview.maybeSetupExtDialogEvent_(event, webviewEvent);
+    customHandler: function(webViewInternal, event, webViewEvent) {
+      webViewInternal.handleDialogEvent_(event, webViewEvent);
     },
-    evt: createEvent('webview.onDialog'),
+    evt: CreateEvent('webview.onDialog'),
     fields: ['defaultPromptText', 'messageText', 'messageType', 'url']
   }
 };
@@ -31,57 +30,14 @@ var WEB_VIEW_EXPERIMENTAL_EXT_EVENTS = {
 /**
  * @private
  */
-WebView.prototype.maybeSetupExperimentalAPI_ = function() {
-  this.setupWebRequestEvents_();
-};
-
-/**
- * @private
- */
-WebView.prototype.setupWebRequestEvents_ = function() {
-  var self = this;
-  var request = {};
-  var createWebRequestEvent = function(webRequestEvent) {
-    return function() {
-      if (!self[webRequestEvent.name + '_']) {
-        self[webRequestEvent.name + '_'] =
-            new WebRequestEvent(
-                'webview.' + webRequestEvent.name,
-                webRequestEvent.parameters,
-                webRequestEvent.extraParameters, null,
-                self.viewInstanceId_);
-      }
-      return self[webRequestEvent.name + '_'];
-    };
-  };
-
-  // Populate the WebRequest events from the API definition.
-  for (var i = 0; i < webRequestSchema.events.length; ++i) {
-    var webRequestEvent = createWebRequestEvent(webRequestSchema.events[i]);
-    Object.defineProperty(
-        request,
-        webRequestSchema.events[i].name,
-        {
-          get: webRequestEvent,
-          enumerable: true
-        }
-    );
-    Object.defineProperty(
-        this.webviewNode_,
-        webRequestSchema.events[i].name,
-        {
-          get: webRequestEvent,
-          enumerable: true
-        }
-    );
-  }
+WebViewInternal.prototype.maybeAttachWebRequestEventToObject_ =
+    function(obj, eventName, webRequestEvent) {
   Object.defineProperty(
-      this.webviewNode_,
-      'request',
+      obj,
+      eventName,
       {
-        value: request,
-        enumerable: true,
-        writable: false
+        get: webRequestEvent,
+        enumerable: true
       }
   );
 };
@@ -89,14 +45,15 @@ WebView.prototype.setupWebRequestEvents_ = function() {
 /**
  * @private
  */
-WebView.prototype.maybeSetupExtDialogEvent_ = function(event, webviewEvent) {
+WebViewInternal.prototype.handleDialogEvent_ =
+    function(event, webViewEvent) {
   var showWarningMessage = function(dialogType) {
     var VOWELS = ['a', 'e', 'i', 'o', 'u'];
     var WARNING_MSG_DIALOG_BLOCKED = '<webview>: %1 %2 dialog was blocked.';
     var article = (VOWELS.indexOf(dialogType.charAt(0)) >= 0) ? 'An' : 'A';
     var output = WARNING_MSG_DIALOG_BLOCKED.replace('%1', article);
     output = output.replace('%2', dialogType);
-    console.warn(output);
+    window.console.warn(output);
   };
 
   var self = this;
@@ -105,21 +62,6 @@ WebView.prototype.maybeSetupExtDialogEvent_ = function(event, webviewEvent) {
 
   var requestId = event.requestId;
   var actionTaken = false;
-
-  var onTrackedObjectGone = function(requestId, dialogType, e) {
-    var detail = e.detail ? JSON.parse(e.detail) : {};
-    if (detail.id != requestId) {
-      return;
-    }
-
-    // Avoid showing a warning message if the decision has already been made.
-    if (actionTaken) {
-      return;
-    }
-
-    chrome.webview.setPermission(self.instanceId_, requestId, false, '');
-    showWarningMessage(dialogType);
-  }
 
   var validateCall = function() {
     var ERROR_MSG_DIALOG_ACTION_ALREADY_TAKEN = '<webview>: ' +
@@ -135,17 +77,16 @@ WebView.prototype.maybeSetupExtDialogEvent_ = function(event, webviewEvent) {
     ok: function(user_input) {
       validateCall();
       user_input = user_input || '';
-      chrome.webview.setPermission(
-          self.instanceId_, requestId, true, user_input);
+      WebView.setPermission(self.instanceId_, requestId, 'allow', user_input);
     },
     cancel: function() {
       validateCall();
-      chrome.webview.setPermission(self.instanceId_, requestId, false, '');
+      WebView.setPermission(self.instanceId_, requestId, 'deny');
     }
   };
-  webviewEvent.dialog = dialog;
+  webViewEvent.dialog = dialog;
 
-  var defaultPrevented = !webviewNode.dispatchEvent(webviewEvent);
+  var defaultPrevented = !webviewNode.dispatchEvent(webViewEvent);
   if (actionTaken) {
     return;
   }
@@ -153,23 +94,96 @@ WebView.prototype.maybeSetupExtDialogEvent_ = function(event, webviewEvent) {
   if (defaultPrevented) {
     // Tell the JavaScript garbage collector to track lifetime of |dialog| and
     // call back when the dialog object has been collected.
-    var onTrackedObjectGoneWithRequestId =
-        $Function.bind(
-            onTrackedObjectGone, self, requestId, event.messageType);
-    browserPluginNode.addEventListener('-internal-trackedobjectgone',
-        onTrackedObjectGoneWithRequestId);
-    browserPluginNode['-internal-trackObjectLifetime'](dialog, requestId);
+    MessagingNatives.BindToGC(dialog, function() {
+      // Avoid showing a warning message if the decision has already been made.
+      if (actionTaken) {
+        return;
+      }
+      WebView.setPermission(
+          self.instanceId_, requestId, 'default', '', function(allowed) {
+        if (allowed) {
+          return;
+        }
+        showWarningMessage(event.messageType);
+      });
+    });
   } else {
     actionTaken = true;
     // The default action is equivalent to canceling the dialog.
-    chrome.webview.setPermission(self.instanceId_, requestId, false, '');
-    showWarningMessage(event.messageType);
+    WebView.setPermission(
+        self.instanceId_, requestId, 'default', '', function(allowed) {
+      if (allowed) {
+        return;
+      }
+      showWarningMessage(event.messageType);
+    });
   }
 };
 
-/**
- * @private
- */
-WebView.prototype.maybeGetWebviewExperimentalExtEvents_ = function() {
-  return WEB_VIEW_EXPERIMENTAL_EXT_EVENTS;
+/** @private */
+WebViewInternal.prototype.maybeGetExperimentalEvents_ = function() {
+  return WEB_VIEW_EXPERIMENTAL_EVENTS;
+};
+
+WebViewInternal.prototype.maybeGetExperimentalPermissions_ = function() {
+  return [];
+};
+
+/** @private */
+WebViewInternal.prototype.clearData_ = function(var_args) {
+  if (!this.instanceId_) {
+    return;
+  }
+  var args = $Array.concat([this.instanceId_], $Array.slice(arguments));
+  $Function.apply(WebView.clearData, null, args);
+};
+
+/** @private */
+WebViewInternal.prototype.getUserAgent_ = function() {
+  return this.userAgentOverride_ || navigator.userAgent;
+};
+
+/** @private */
+WebViewInternal.prototype.isUserAgentOverridden_ = function() {
+  return !!this.userAgentOverride_ &&
+      this.userAgentOverride_ != navigator.userAgent;
+};
+
+/** @private */
+WebViewInternal.prototype.setUserAgentOverride_ = function(userAgentOverride) {
+  this.userAgentOverride_ = userAgentOverride;
+  if (!this.instanceId_) {
+    // If we are not attached yet, then we will pick up the user agent on
+    // attachment.
+    return;
+  }
+  WebView.overrideUserAgent(this.instanceId_, userAgentOverride);
+};
+
+/** @private */
+WebViewInternal.prototype.captureVisibleRegion_ = function(spec, callback) {
+  WebView.captureVisibleRegion(this.instanceId_, spec, callback);
+};
+
+WebViewInternal.maybeRegisterExperimentalAPIs = function(proto, secret) {
+  proto.clearData = function(var_args) {
+    var internal = this.internal_(secret);
+    $Function.apply(internal.clearData_, internal, arguments);
+  };
+
+  proto.getUserAgent = function() {
+    return this.internal_(secret).getUserAgent_();
+  };
+
+  proto.isUserAgentOverridden = function() {
+    return this.internal_(secret).isUserAgentOverridden_();
+  };
+
+  proto.setUserAgentOverride = function(userAgentOverride) {
+    this.internal_(secret).setUserAgentOverride_(userAgentOverride);
+  };
+
+  proto.captureVisibleRegion = function(spec, callback) {
+    this.internal_(secret).captureVisibleRegion_(spec, callback);
+  };
 };

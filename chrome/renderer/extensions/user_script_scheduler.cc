@@ -7,10 +7,9 @@
 #include "base/bind.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/common/extensions/extension_messages.h"
-#include "chrome/common/extensions/permissions/permissions_data.h"
 #include "chrome/renderer/chrome_render_process_observer.h"
+#include "chrome/renderer/extensions/chrome_v8_context.h"
 #include "chrome/renderer/extensions/dispatcher.h"
 #include "chrome/renderer/extensions/dom_activity_logger.h"
 #include "chrome/renderer/extensions/extension_groups.h"
@@ -19,6 +18,8 @@
 #include "content/public/renderer/render_view.h"
 #include "content/public/renderer/v8_value_converter.h"
 #include "extensions/common/error_utils.h"
+#include "extensions/common/manifest_constants.h"
+#include "extensions/common/permissions/permissions_data.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebVector.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
@@ -32,11 +33,11 @@ namespace {
 const int kUserScriptIdleTimeoutMs = 200;
 }
 
-using WebKit::WebDocument;
-using WebKit::WebFrame;
-using WebKit::WebString;
-using WebKit::WebVector;
-using WebKit::WebView;
+using blink::WebDocument;
+using blink::WebFrame;
+using blink::WebString;
+using blink::WebVector;
+using blink::WebView;
 
 namespace extensions {
 
@@ -192,39 +193,31 @@ void UserScriptScheduler::ExecuteCodeImpl(
           continue;
         } else {
           error = ErrorUtils::FormatErrorMessage(
-              extension_manifest_errors::kCannotAccessPage,
+              manifest_errors::kCannotAccessPage,
               child_frame->document().url().spec());
           break;
         }
       }
 
-      WebScriptSource source(WebString::fromUTF8(params.code));
-      v8::Isolate* isolate = v8::Isolate::GetCurrent();
-      v8::HandleScope scope(isolate);
+      WebScriptSource source(WebString::fromUTF8(params.code), params.file_url);
+      v8::HandleScope scope(v8::Isolate::GetCurrent());
 
       scoped_ptr<content::V8ValueConverter> v8_converter(
           content::V8ValueConverter::create());
-      v8::Handle<v8::Value> script_value;
+      v8::Local<v8::Value> script_value;
 
       if (params.in_main_world) {
-        DOMActivityLogger::AttachToWorld(
-            DOMActivityLogger::kMainWorldId,
-            extension->id(),
-            UserScriptSlave::GetDataSourceURLForFrame(child_frame),
-            child_frame->document().title());
+        DOMActivityLogger::AttachToWorld(DOMActivityLogger::kMainWorldId,
+                                         extension->id());
         script_value = child_frame->executeScriptAndReturnValue(source);
       } else {
-        WebKit::WebVector<v8::Local<v8::Value> > results;
+        blink::WebVector<v8::Local<v8::Value> > results;
         std::vector<WebScriptSource> sources;
         sources.push_back(source);
         int isolated_world_id =
             dispatcher_->user_script_slave()->GetIsolatedWorldIdForExtension(
                 extension, child_frame);
-        DOMActivityLogger::AttachToWorld(
-            isolated_world_id,
-            extension->id(),
-            UserScriptSlave::GetDataSourceURLForFrame(child_frame),
-            child_frame->document().title());
+        DOMActivityLogger::AttachToWorld(isolated_world_id, extension->id());
         child_frame->executeScriptInIsolatedWorld(
             isolated_world_id, &sources.front(),
             sources.size(), EXTENSION_GROUP_CONTENT_SCRIPTS, &results);
@@ -232,20 +225,22 @@ void UserScriptScheduler::ExecuteCodeImpl(
         if (results.size() == 1 && !results[0].IsEmpty())
           script_value = results[0];
       }
-      if (!script_value.IsEmpty()) {
-        v8::Local<v8::Context> context = v8::Context::New(isolate);
-        base::Value* base_val =
-            v8_converter->FromV8Value(script_value, context);
+
+      if (params.wants_result && !script_value.IsEmpty()) {
+        // It's safe to always use the main world context when converting here.
+        // V8ValueConverterImpl shouldn't actually care about the context scope,
+        // and it switches to v8::Object's creation context when encountered.
+        v8::Local<v8::Context> context = child_frame->mainWorldScriptContext();
+        base::Value* result = v8_converter->FromV8Value(script_value, context);
         // Always append an execution result (i.e. no result == null result) so
         // that |execution_results| lines up with the frames.
-        execution_results.Append(base_val ? base_val :
-                                            base::Value::CreateNullValue());
-        script_value.Clear();
+        execution_results.Append(
+            result ? result : base::Value::CreateNullValue());
       }
     } else {
       child_frame->document().insertUserStyleSheet(
           WebString::fromUTF8(params.code),
-          // Author level is consistent with WebView::addUserStyleSheet.
+          // Author level is consistent with WebView::injectStyleSheet.
           WebDocument::UserStyleAuthorLevel);
     }
   }

@@ -20,21 +20,16 @@
 namespace {
 class OmniboxEditControllerMock : public OmniboxEditController {
  public:
-  MOCK_METHOD4(OnAutocompleteAccept, void(const GURL& url,
-                                          WindowOpenDisposition disposition,
-                                          content::PageTransition transition,
-                                          const GURL& alternate_nav_url));
-  MOCK_METHOD0(OnChanged, void());
-  MOCK_METHOD0(OnSelectionBoundsChanged, void());
-  MOCK_METHOD1(OnInputInProgress, void(bool in_progress));
-  MOCK_METHOD0(OnKillFocus, void());
-  MOCK_METHOD0(OnSetFocus, void());
-  MOCK_CONST_METHOD0(GetFavicon, gfx::Image());
-  MOCK_CONST_METHOD0(GetTitle, string16());
-  MOCK_METHOD0(GetInstant, InstantController*());
-  MOCK_CONST_METHOD0(GetWebContents, content::WebContents*());
-
+  OmniboxEditControllerMock() : OmniboxEditController(NULL) {}
   virtual ~OmniboxEditControllerMock() {}
+
+  MOCK_METHOD1(Update, void(const content::WebContents* contents));
+  MOCK_METHOD0(OnChanged, void());
+  MOCK_METHOD0(OnSetFocus, void());
+  MOCK_METHOD0(GetInstant, InstantController*());
+  MOCK_METHOD0(GetWebContents, content::WebContents*());
+  MOCK_METHOD0(GetToolbarModel, ToolbarModel*());
+  MOCK_CONST_METHOD0(GetToolbarModel, ToolbarModel*());
 };
 }  // namespace
 
@@ -47,9 +42,7 @@ class OmniboxViewGtkTest : public PlatformTest {
     profile_.reset(new TestingProfile);
     window_ = gtk_window_new(GTK_WINDOW_POPUP);
     controller_.reset(new OmniboxEditControllerMock);
-    view_.reset(new OmniboxViewGtk(controller_.get(), NULL,
-                                   NULL,
-                                   profile_.get(),
+    view_.reset(new OmniboxViewGtk(controller_.get(), NULL, profile_.get(),
                                    NULL, false, window_));
     view_->Init();
     text_buffer_ = view_->text_buffer_;

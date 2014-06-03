@@ -35,22 +35,25 @@ class VIEWS_EXPORT PrefixSelector : public ui::TextInputClient {
   virtual ui::TextInputType GetTextInputType() const OVERRIDE;
   virtual ui::TextInputMode GetTextInputMode() const OVERRIDE;
   virtual bool CanComposeInline() const OVERRIDE;
-  virtual gfx::Rect GetCaretBounds() OVERRIDE;
+  virtual gfx::Rect GetCaretBounds() const OVERRIDE;
   virtual bool GetCompositionCharacterBounds(uint32 index,
-                                             gfx::Rect* rect) OVERRIDE;
-  virtual bool HasCompositionText() OVERRIDE;
-  virtual bool GetTextRange(ui::Range* range) OVERRIDE;
-  virtual bool GetCompositionTextRange(ui::Range* range) OVERRIDE;
-  virtual bool GetSelectionRange(ui::Range* range) OVERRIDE;
-  virtual bool SetSelectionRange(const ui::Range& range) OVERRIDE;
-  virtual bool DeleteRange(const ui::Range& range) OVERRIDE;
-  virtual bool GetTextFromRange(const ui::Range& range,
-                                string16* text) OVERRIDE;
+                                             gfx::Rect* rect) const OVERRIDE;
+  virtual bool HasCompositionText() const OVERRIDE;
+  virtual bool GetTextRange(gfx::Range* range) const OVERRIDE;
+  virtual bool GetCompositionTextRange(gfx::Range* range) const OVERRIDE;
+  virtual bool GetSelectionRange(gfx::Range* range) const OVERRIDE;
+  virtual bool SetSelectionRange(const gfx::Range& range) OVERRIDE;
+  virtual bool DeleteRange(const gfx::Range& range) OVERRIDE;
+  virtual bool GetTextFromRange(const gfx::Range& range,
+                                string16* text) const OVERRIDE;
   virtual void OnInputMethodChanged() OVERRIDE;
   virtual bool ChangeTextDirectionAndLayoutAlignment(
       base::i18n::TextDirection direction) OVERRIDE;
   virtual void ExtendSelectionAndDelete(size_t before, size_t after) OVERRIDE;
   virtual void EnsureCaretInRect(const gfx::Rect& rect) OVERRIDE;
+  virtual void OnCandidateWindowShown() OVERRIDE;
+  virtual void OnCandidateWindowUpdated() OVERRIDE;
+  virtual void OnCandidateWindowHidden() OVERRIDE;
 
  private:
   // Invoked when text is typed. Tries to change the selection appropriately.

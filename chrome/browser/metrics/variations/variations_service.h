@@ -12,8 +12,6 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/metrics/field_trial.h"
 #include "base/time/time.h"
-#include "chrome/browser/metrics/proto/study.pb.h"
-#include "chrome/browser/metrics/proto/trials_seed.pb.h"
 #include "chrome/browser/metrics/variations/variations_request_scheduler.h"
 #include "chrome/browser/web_resource/resource_request_allowed_notifier.h"
 #include "chrome/common/chrome_version_info.h"
@@ -28,6 +26,8 @@ class PrefService;
 class PrefRegistrySimple;
 
 namespace chrome_variations {
+
+class VariationsSeed;
 
 // Used to setup field trials based on stored variations seed data, and fetch
 // new seed data from the variations server.
@@ -87,6 +87,7 @@ class VariationsService
   FRIEND_TEST_ALL_PREFIXES(VariationsServiceTest, StoreSeed);
   FRIEND_TEST_ALL_PREFIXES(VariationsServiceTest, SeedStoredWhenOKStatus);
   FRIEND_TEST_ALL_PREFIXES(VariationsServiceTest, SeedNotStoredWhenNonOKStatus);
+  FRIEND_TEST_ALL_PREFIXES(VariationsServiceTest, SeedDateUpdatedOn304Status);
 
   // Creates the VariationsService with the given |local_state| prefs service.
   // Use the |Create| factory method to create a VariationsService.
@@ -108,10 +109,10 @@ class VariationsService
   // fails, the existing prefs are left as is and the function returns false.
   bool StoreSeedData(const std::string& seed_data, const base::Time& seed_date);
 
-  // Loads the Variations seed data from local state into |seed|. If there is a
+  // Loads the variations seed data from local state into |seed|. If there is a
   // problem with loading, the pref value is cleared and false is returned. If
   // successful, |seed| will contain the loaded data and true is returned.
-  bool LoadTrialsSeedFromPref(TrialsSeed* seed);
+  bool LoadVariationsSeedFromPref(VariationsSeed* seed);
 
   // Record the time of the most recent successful fetch.
   void RecordLastFetchTime();

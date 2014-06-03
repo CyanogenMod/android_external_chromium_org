@@ -28,7 +28,9 @@ class ThumbnailServiceImpl : public ThumbnailService {
   virtual ThumbnailingAlgorithm* GetThumbnailingAlgorithm() const OVERRIDE;
   virtual bool GetPageThumbnail(
       const GURL& url,
+      bool prefix_match,
       scoped_refptr<base::RefCountedMemory>* bytes) OVERRIDE;
+  virtual void AddForcedURL(const GURL& url) OVERRIDE;
   virtual bool ShouldAcquirePageThumbnail(const GURL& url) OVERRIDE;
 
   // Implementation of RefcountedBrowserContextKeyedService.
@@ -43,6 +45,6 @@ class ThumbnailServiceImpl : public ThumbnailService {
   DISALLOW_COPY_AND_ASSIGN(ThumbnailServiceImpl);
 };
 
-}
+}  // namespace thumbnails
 
 #endif  // CHROME_BROWSER_THUMBNAILS_THUMBNAIL_SERVICE_IMPL_H_

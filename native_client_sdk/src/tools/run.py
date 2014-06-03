@@ -46,7 +46,7 @@ def main(args):
       dest='test_mode', action='store_true')
   parser.add_option('-p', '--port',
       help='Port to run server on. Default is 5103, ephemeral is 0.',
-      default=5103)
+      type='int', default=5103)
   options, args = parser.parse_args(args)
   if not args:
     parser.error('No executable given.')
@@ -67,11 +67,15 @@ def main(args):
 
   # If any debug args are passed in, assume we want to debug
   if options.debug:
-    if getos.GetPlatform() != 'win':
+    if getos.GetPlatform() == 'linux':
       cmd = ['xterm', '-title', 'NaCl Debugger', '-e']
+      cmd += options.debug
+    elif getos.GetPlatform() == 'mac':
+      cmd = ['osascript', '-e',
+             'tell application "Terminal" to do script "%s"' %
+                 ' '.join(r'\"%s\"' % x for x in options.debug)]
     else:
       cmd = []
-    cmd += options.debug
     print 'Starting debugger: ' + ' '.join(cmd)
     debug_process = subprocess.Popen(cmd, env=env)
   else:

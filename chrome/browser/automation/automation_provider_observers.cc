@@ -32,7 +32,6 @@
 #include "chrome/browser/content_settings/tab_specific_content_settings.h"
 #include "chrome/browser/extensions/crx_installer.h"
 #include "chrome/browser/extensions/extension_host.h"
-#include "chrome/browser/extensions/extension_process_manager.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
@@ -69,8 +68,7 @@
 #include "chrome/common/automation_constants.h"
 #include "chrome/common/automation_messages.h"
 #include "chrome/common/content_settings_types.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/manifest.h"
+#include "chrome/common/extensions/extension_constants.h"
 #include "content/public/browser/dom_operation_notification_details.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/notification_service.h"
@@ -78,6 +76,9 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/process_type.h"
+#include "extensions/browser/process_manager.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/manifest.h"
 #include "extensions/common/view_type.h"
 #include "ui/gfx/codec/png_codec.h"
 #include "ui/gfx/rect.h"
@@ -522,9 +523,9 @@ void TabCountChangeObserver::CheckTabCount() {
   delete this;
 }
 
-bool DidExtensionViewsStopLoading(ExtensionProcessManager* manager) {
-  ExtensionProcessManager::ViewSet all_views = manager->GetAllViews();
-  for (ExtensionProcessManager::ViewSet::const_iterator iter =
+bool DidExtensionViewsStopLoading(extensions::ProcessManager* manager) {
+  extensions::ProcessManager::ViewSet all_views = manager->GetAllViews();
+  for (extensions::ProcessManager::ViewSet::const_iterator iter =
            all_views.begin();
        iter != all_views.end(); ++iter) {
     if ((*iter)->IsLoading())
@@ -591,7 +592,7 @@ void ExtensionUninstallObserver::Observe(
 }
 
 ExtensionReadyNotificationObserver::ExtensionReadyNotificationObserver(
-    ExtensionProcessManager* manager, ExtensionService* service,
+    extensions::ProcessManager* manager, ExtensionService* service,
     AutomationProvider* automation, IPC::Message* reply_message)
     : manager_(manager),
       service_(service),
@@ -691,7 +692,7 @@ void ExtensionUnloadNotificationObserver::Observe(
 }
 
 ExtensionsUpdatedObserver::ExtensionsUpdatedObserver(
-    ExtensionProcessManager* manager, AutomationProvider* automation,
+    extensions::ProcessManager* manager, AutomationProvider* automation,
     IPC::Message* reply_message)
     : manager_(manager), automation_(automation->AsWeakPtr()),
       reply_message_(reply_message), updater_finished_(false) {
@@ -765,7 +766,7 @@ void BrowserOpenedNotificationObserver::Observe(
   if (type == chrome::NOTIFICATION_BROWSER_OPENED) {
     // Store the new browser ID and continue waiting for a new tab within it
     // to stop loading.
-    new_window_id_ = ExtensionTabUtil::GetWindowId(
+    new_window_id_ = extensions::ExtensionTabUtil::GetWindowId(
         content::Source<Browser>(source).ptr());
   } else {
     DCHECK_EQ(content::NOTIFICATION_LOAD_STOP, type);
@@ -1123,7 +1124,7 @@ void DomOperationObserver::Observe(
     if (dom_op_details->automation_id == automation_id_)
       OnDomOperationCompleted(dom_op_details->json);
   } else if (type == chrome::NOTIFICATION_APP_MODAL_DIALOG_SHOWN) {
-    OnModalDialogShown();
+    OnJavascriptBlocked();
   } else {
     DCHECK_EQ(chrome::NOTIFICATION_WEB_CONTENT_SETTINGS_CHANGED, type);
     WebContents* web_contents = content::Source<WebContents>(source).ptr();
@@ -1164,14 +1165,6 @@ void DomOperationMessageSender::OnDomOperationCompleted(
     }
   }
   delete this;
-}
-
-void DomOperationMessageSender::OnModalDialogShown() {
-  if (automation_.get() && use_json_interface_) {
-    AutomationJSONReply(automation_.get(), reply_message_.release())
-        .SendErrorCode(automation::kBlockedByModalDialog);
-    delete this;
-  }
 }
 
 void DomOperationMessageSender::OnJavascriptBlocked() {
@@ -1559,7 +1552,7 @@ AutomationProviderGetPasswordsObserver::
 
 void AutomationProviderGetPasswordsObserver::OnPasswordStoreRequestDone(
     CancelableRequestProvider::Handle handle,
-    const std::vector<content::PasswordForm*>& result) {
+    const std::vector<autofill::PasswordForm*>& result) {
   if (!provider_.get()) {
     delete this;
     return;
@@ -1568,10 +1561,10 @@ void AutomationProviderGetPasswordsObserver::OnPasswordStoreRequestDone(
   scoped_ptr<DictionaryValue> return_value(new DictionaryValue);
 
   ListValue* passwords = new ListValue;
-  for (std::vector<content::PasswordForm*>::const_iterator it =
+  for (std::vector<autofill::PasswordForm*>::const_iterator it =
            result.begin(); it != result.end(); ++it) {
     DictionaryValue* password_val = new DictionaryValue;
-    content::PasswordForm* password_form = *it;
+    autofill::PasswordForm* password_form = *it;
     password_val->SetString("username_value", password_form->username_value);
     password_val->SetString("password_value", password_form->password_value);
     password_val->SetString("signon_realm", password_form->signon_realm);
@@ -1595,7 +1588,7 @@ void AutomationProviderGetPasswordsObserver::OnPasswordStoreRequestDone(
 }
 
 void AutomationProviderGetPasswordsObserver::OnGetPasswordStoreResults(
-    const std::vector<content::PasswordForm*>& results) {
+    const std::vector<autofill::PasswordForm*>& results) {
   // TODO(kaiwang): Implement when I refactor
   // PasswordManager::GetAutofillableLogins.
   NOTIMPLEMENTED();
@@ -1776,13 +1769,13 @@ std::vector<DictionaryValue*>* GetAppInfoFromExtensions(
         NOTREACHED() << "Can't get integer from key " << kLaunchType;
         continue;
       }
-      if (launch_type == extensions::ExtensionPrefs::LAUNCH_PINNED) {
+      if (launch_type == extensions::LAUNCH_TYPE_PINNED) {
         app_info->SetString(kLaunchType, "pinned");
-      } else if (launch_type == extensions::ExtensionPrefs::LAUNCH_REGULAR) {
+      } else if (launch_type == extensions::LAUNCH_TYPE_REGULAR) {
         app_info->SetString(kLaunchType, "regular");
-      } else if (launch_type == extensions::ExtensionPrefs::LAUNCH_FULLSCREEN) {
+      } else if (launch_type == extensions::LAUNCH_TYPE_FULLSCREEN) {
         app_info->SetString(kLaunchType, "fullscreen");
-      } else if (launch_type == extensions::ExtensionPrefs::LAUNCH_WINDOW) {
+      } else if (launch_type == extensions::LAUNCH_TYPE_WINDOW) {
         app_info->SetString(kLaunchType, "window");
       } else {
         app_info->SetString(kLaunchType, "unknown");
@@ -1896,7 +1889,7 @@ void NTPInfoObserver::Observe(int type,
     if (request_ == *request_details.ptr()) {
       top_sites_->GetMostVisitedURLs(
           base::Bind(&NTPInfoObserver::OnTopSitesReceived,
-                     base::Unretained(this)));
+                     base::Unretained(this)), false);
     }
   }
 }
@@ -1932,13 +1925,13 @@ AppLaunchObserver::AppLaunchObserver(
     NavigationController* controller,
     AutomationProvider* automation,
     IPC::Message* reply_message,
-    extension_misc::LaunchContainer launch_container)
+    extensions::LaunchContainer launch_container)
     : controller_(controller),
       automation_(automation->AsWeakPtr()),
       reply_message_(reply_message),
       launch_container_(launch_container),
       new_window_id_(extension_misc::kUnknownWindowId) {
-  if (launch_container_ == extension_misc::LAUNCH_TAB) {
+  if (launch_container_ == extensions::LAUNCH_CONTAINER_TAB) {
     // Need to wait for the currently-active tab to reload.
     content::Source<NavigationController> source(controller_);
     registrar_.Add(this, content::NOTIFICATION_LOAD_STOP, source);
@@ -1957,15 +1950,15 @@ void AppLaunchObserver::Observe(int type,
                                 const content::NotificationSource& source,
                                 const content::NotificationDetails& details) {
   if (type == chrome::NOTIFICATION_BROWSER_WINDOW_READY) {
-    new_window_id_ =
-        ExtensionTabUtil::GetWindowId(content::Source<Browser>(source).ptr());
+    new_window_id_ = extensions::ExtensionTabUtil::GetWindowId(
+        content::Source<Browser>(source).ptr());
     return;
   }
 
   DCHECK_EQ(content::NOTIFICATION_LOAD_STOP, type);
   SessionTabHelper* session_tab_helper = SessionTabHelper::FromWebContents(
       content::Source<NavigationController>(source)->GetWebContents());
-  if ((launch_container_ == extension_misc::LAUNCH_TAB) ||
+  if ((launch_container_ == extensions::LAUNCH_CONTAINER_TAB) ||
       (session_tab_helper &&
           (session_tab_helper->window_id().id() == new_window_id_))) {
     if (automation_.get()) {
@@ -2528,7 +2521,7 @@ void BrowserOpenedWithNewProfileNotificationObserver::Observe(
   } else if (type == chrome::NOTIFICATION_BROWSER_OPENED) {
     // Store the new browser ID and continue waiting for a new tab within it
     // to stop loading.
-    new_window_id_ = ExtensionTabUtil::GetWindowId(
+    new_window_id_ = extensions::ExtensionTabUtil::GetWindowId(
         content::Source<Browser>(source).ptr());
   } else {
     DCHECK_EQ(content::NOTIFICATION_LOAD_STOP, type);
@@ -2638,7 +2631,7 @@ void BrowserOpenedWithExistingProfileNotificationObserver::Observe(
 
   if (type == chrome::NOTIFICATION_BROWSER_OPENED) {
     // Store the new browser ID and continue waiting for NOTIFICATION_LOAD_STOP.
-    new_window_id_ = ExtensionTabUtil::GetWindowId(
+    new_window_id_ = extensions::ExtensionTabUtil::GetWindowId(
         content::Source<Browser>(source).ptr());
   } else if (type == content::NOTIFICATION_LOAD_STOP) {
     // Only consider if the loaded tab is in the new window.

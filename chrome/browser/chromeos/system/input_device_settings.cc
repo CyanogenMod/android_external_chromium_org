@@ -9,7 +9,6 @@
 #include <vector>
 
 #include "base/bind.h"
-#include "base/chromeos/chromeos_version.h"
 #include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/files/file_path.h"
@@ -18,14 +17,16 @@
 #include "base/process/kill.h"
 #include "base/process/launch.h"
 #include "base/process/process_handle.h"
+#include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
+#include "base/sys_info.h"
 #include "base/task_runner.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/policy/device_cloud_policy_manager_chromeos.h"
-#include "chrome/browser/chromeos/system/statistics_provider.h"
 #include "chrome/browser/policy/browser_policy_connector.h"
 #include "chrome/common/pref_names.h"
+#include "chromeos/system/statistics_provider.h"
 #include "content/public/browser/browser_thread.h"
 
 namespace chromeos {
@@ -52,7 +53,7 @@ void ExecuteScriptOnFileThread(const std::vector<std::string>& argv) {
   const std::string& script(argv[0]);
 
   // Script must exist on device.
-  DCHECK(!base::chromeos::IsRunningOnChromeOS() || ScriptExists(script));
+  DCHECK(!base::SysInfo::IsRunningOnChromeOS() || ScriptExists(script));
 
   if (!ScriptExists(script))
     return;
@@ -155,7 +156,6 @@ void SetTapToClick(bool enabled) {
 void SetThreeFingerClick(bool enabled) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
 
-  SetTPControl("three_finger_click", enabled);
   // For Alex/ZGB.
   SetTPControl("t5r2_three_finger_click", enabled);
 }
@@ -200,8 +200,10 @@ bool ForceKeyboardDrivenUINavigation() {
   if (!policy_manager)
     return false;
 
-  if (policy_manager->GetDeviceRequisition() == kRemoraRequisition)
+  if (base::strcasecmp(policy_manager->GetDeviceRequisition().c_str(),
+                       kRemoraRequisition) == 0) {
     return true;
+  }
 
   bool keyboard_driven = false;
   if (chromeos::system::StatisticsProvider::GetInstance()->GetMachineFlag(

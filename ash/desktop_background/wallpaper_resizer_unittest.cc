@@ -41,7 +41,8 @@ gfx::ImageSkia CreateTestImage(const gfx::Size& size) {
     }
   }
 
-  return gfx::ImageSkia::CreateFrom1xBitmap(src);
+  gfx::ImageSkia image = gfx::ImageSkia::CreateFrom1xBitmap(src);
+  return image;
 }
 
 bool IsColor(const gfx::ImageSkia& image, const uint32_t expect) {
@@ -74,7 +75,7 @@ class WallpaperResizerTest : public testing::Test,
     resizer->StartResize();
     WaitForResize();
     resizer->RemoveObserver(this);
-    return resizer->wallpaper_image();
+    return resizer->image();
   }
 
   void WaitForResize() {
@@ -104,16 +105,14 @@ TEST_F(WallpaperResizerTest, BasicResize) {
 
   for (int i = 0; i < length; i++) {
     WallpaperLayout layout = layouts[i];
-    gfx::ImageSkia small_image(gfx::ImageSkiaRep(gfx::Size(10, 20),
-                                                 ui::SCALE_FACTOR_100P));
+    gfx::ImageSkia small_image(gfx::ImageSkiaRep(gfx::Size(10, 20), 1.0f));
 
     gfx::ImageSkia resized_small = Resize(small_image, gfx::Size(800, 600),
                                           layout);
     EXPECT_EQ(10, resized_small.width());
     EXPECT_EQ(20, resized_small.height());
 
-    gfx::ImageSkia large_image(gfx::ImageSkiaRep(gfx::Size(1000, 1000),
-                                                 ui::SCALE_FACTOR_100P));
+    gfx::ImageSkia large_image(gfx::ImageSkiaRep(gfx::Size(1000, 1000), 1.0f));
     gfx::ImageSkia resized_large = Resize(large_image, gfx::Size(800, 600),
                                           layout);
     EXPECT_EQ(800, resized_large.width());
@@ -141,6 +140,21 @@ TEST_F(WallpaperResizerTest, AllLayoutDifferent) {
   EXPECT_TRUE(IsColor(center_cropped, kExpectedCenterCropped));
   EXPECT_TRUE(IsColor(stretch, kExpectedStretch));
   EXPECT_TRUE(IsColor(tile, kExpectedTile));
+}
+
+TEST_F(WallpaperResizerTest, ImageId) {
+  gfx::ImageSkia image = CreateTestImage(
+      gfx::Size(kTestImageWidth, kTestImageHeight));
+
+  // Create a WallpaperResizer and check that it reports an original image ID
+  // both pre- and post-resize that matches the ID returned by GetImageId().
+  WallpaperResizer resizer(image, gfx::Size(10, 20), WALLPAPER_LAYOUT_STRETCH);
+  EXPECT_EQ(WallpaperResizer::GetImageId(image), resizer.original_image_id());
+  resizer.AddObserver(this);
+  resizer.StartResize();
+  WaitForResize();
+  resizer.RemoveObserver(this);
+  EXPECT_EQ(WallpaperResizer::GetImageId(image), resizer.original_image_id());
 }
 
 }  // namespace internal

@@ -10,6 +10,7 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system_factory.h"
+#include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/app_list/search/app_result.h"
 #include "chrome/browser/ui/app_list/search/tokenized_string.h"
@@ -44,14 +45,14 @@ AppSearchProvider::AppSearchProvider(
       list_controller_(list_controller) {
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_LOADED,
                  content::Source<Profile>(profile_->GetOriginalProfile()));
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED,
+  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNINSTALLED,
                  content::Source<Profile>(profile_->GetOriginalProfile()));
   RefreshApps();
 }
 
 AppSearchProvider::~AppSearchProvider() {}
 
-void AppSearchProvider::Start(const string16& query) {
+void AppSearchProvider::Start(const base::string16& query) {
   const TokenizedString query_terms(query);
 
   ClearResults();
@@ -72,6 +73,22 @@ void AppSearchProvider::Start(const string16& query) {
 
 void AppSearchProvider::Stop() {}
 
+void AppSearchProvider::AddApps(const ExtensionSet* extensions,
+                                ExtensionService* service) {
+  for (ExtensionSet::const_iterator iter = extensions->begin();
+       iter != extensions->end(); ++iter) {
+    const extensions::Extension* app = iter->get();
+
+    if (!app->ShouldDisplayInAppLauncher())
+      continue;
+
+    if (profile_->IsOffTheRecord() &&
+        !extension_util::CanLoadInIncognito(app, service))
+      continue;
+    apps_.push_back(new App(app));
+  }
+}
+
 void AppSearchProvider::RefreshApps() {
   ExtensionService* extension_service =
       extensions::ExtensionSystemFactory::GetForProfile(profile_)->
@@ -79,19 +96,11 @@ void AppSearchProvider::RefreshApps() {
   if (!extension_service)
     return;  // During testing, there is no extension service.
 
-  const ExtensionSet* extensions = extension_service->extensions();
   apps_.clear();
-  for (ExtensionSet::const_iterator iter = extensions->begin();
-       iter != extensions->end(); ++iter) {
-    const extensions::Extension* app = iter->get();
-    if (!app->ShouldDisplayInAppLauncher())
-      continue;
 
-    if (profile_->IsOffTheRecord() &&
-        !extension_service->CanLoadInIncognito(app))
-      continue;
-    apps_.push_back(new App(app));
-  }
+  AddApps(extension_service->extensions(), extension_service);
+  AddApps(extension_service->disabled_extensions(), extension_service);
+  AddApps(extension_service->terminated_extensions(), extension_service);
 }
 
 void AppSearchProvider::Observe(int type,

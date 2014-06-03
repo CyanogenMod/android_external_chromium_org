@@ -25,6 +25,20 @@ GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 LOCAL_SRC_FILES := \
 	google_apis/cup/client_update_protocol.cc \
 	google_apis/cup/client_update_protocol_openssl.cc \
+	google_apis/drive/auth_service.cc \
+	google_apis/drive/base_requests.cc \
+	google_apis/drive/drive_api_parser.cc \
+	google_apis/drive/drive_api_requests.cc \
+	google_apis/drive/drive_api_url_generator.cc \
+	google_apis/drive/gdata_contacts_requests.cc \
+	google_apis/drive/gdata_errorcode.cc \
+	google_apis/drive/gdata_wapi_requests.cc \
+	google_apis/drive/gdata_wapi_parser.cc \
+	google_apis/drive/gdata_wapi_url_generator.cc \
+	google_apis/drive/request_sender.cc \
+	google_apis/drive/request_util.cc \
+	google_apis/drive/task_util.cc \
+	google_apis/drive/time_util.cc \
 	google_apis/gaia/gaia_auth_consumer.cc \
 	google_apis/gaia/gaia_auth_fetcher.cc \
 	google_apis/gaia/gaia_auth_util.cc \
@@ -37,6 +51,7 @@ LOCAL_SRC_FILES := \
 	google_apis/gaia/oauth2_access_token_fetcher.cc \
 	google_apis/gaia/oauth2_api_call_flow.cc \
 	google_apis/gaia/oauth2_mint_token_flow.cc \
+	google_apis/gaia/oauth2_token_service.cc \
 	google_apis/google_api_keys.cc
 
 
@@ -76,22 +91,24 @@ MY_CFLAGS_Debug := \
 	-ffunction-sections
 
 MY_DEFS_Debug := \
-	'-DANGLE_DX11' \
+	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
-	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
-	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DLOGGING_IS_OFFICIAL_BUILD=1' \
-	'-DTRACING_IS_OFFICIAL_BUILD=1' \
-	'-DENABLE_GPU=1' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
+	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
+	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
+	'-DENABLE_MANAGED_USERS=1' \
+	'-DLIBXML_STATIC' \
+	'-DU_USING_ICU_NAMESPACE=0' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \
@@ -110,6 +127,10 @@ LOCAL_C_INCLUDES_Debug := \
 	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
 	$(LOCAL_PATH) \
+	$(LOCAL_PATH)/third_party/libxml/linux/include \
+	$(LOCAL_PATH)/third_party/libxml/src/include \
+	$(PWD)/external/icu4c/common \
+	$(PWD)/external/icu4c/i18n \
 	$(LOCAL_PATH)/third_party/openssl/openssl/include \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
@@ -165,22 +186,24 @@ MY_CFLAGS_Release := \
 	-fno-asynchronous-unwind-tables
 
 MY_DEFS_Release := \
-	'-DANGLE_DX11' \
+	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
-	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
-	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DLOGGING_IS_OFFICIAL_BUILD=1' \
-	'-DTRACING_IS_OFFICIAL_BUILD=1' \
-	'-DENABLE_GPU=1' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
+	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
+	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
+	'-DENABLE_MANAGED_USERS=1' \
+	'-DLIBXML_STATIC' \
+	'-DU_USING_ICU_NAMESPACE=0' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \
@@ -200,6 +223,10 @@ LOCAL_C_INCLUDES_Release := \
 	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
 	$(LOCAL_PATH) \
+	$(LOCAL_PATH)/third_party/libxml/linux/include \
+	$(LOCAL_PATH)/third_party/libxml/src/include \
+	$(PWD)/external/icu4c/common \
+	$(PWD)/external/icu4c/i18n \
 	$(LOCAL_PATH)/third_party/openssl/openssl/include \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \

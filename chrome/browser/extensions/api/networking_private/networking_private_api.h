@@ -12,12 +12,13 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/values.h"
-#include "chrome/browser/extensions/extension_function.h"
+#include "chrome/browser/extensions/chrome_extension_function.h"
 #include "chromeos/dbus/dbus_method_call_status.h"
 #include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 
 // Implements the chrome.networkingPrivate.getProperties method.
-class NetworkingPrivateGetPropertiesFunction : public AsyncExtensionFunction {
+class NetworkingPrivateGetPropertiesFunction
+    : public ChromeAsyncExtensionFunction {
  public:
   NetworkingPrivateGetPropertiesFunction() {}
   DECLARE_EXTENSION_FUNCTION("networkingPrivate.getProperties",
@@ -39,7 +40,7 @@ class NetworkingPrivateGetPropertiesFunction : public AsyncExtensionFunction {
 
 // Implements the chrome.networkingPrivate.getManagedProperties method.
 class NetworkingPrivateGetManagedPropertiesFunction
-    : public AsyncExtensionFunction {
+    : public ChromeAsyncExtensionFunction {
  public:
   NetworkingPrivateGetManagedPropertiesFunction() {}
   DECLARE_EXTENSION_FUNCTION("networkingPrivate.getManagedProperties",
@@ -62,7 +63,7 @@ class NetworkingPrivateGetManagedPropertiesFunction
 };
 
 // Implements the chrome.networkingPrivate.getState method.
-class NetworkingPrivateGetStateFunction : public AsyncExtensionFunction {
+class NetworkingPrivateGetStateFunction : public ChromeAsyncExtensionFunction {
  public:
   NetworkingPrivateGetStateFunction() {}
   DECLARE_EXTENSION_FUNCTION("networkingPrivate.getState",
@@ -75,11 +76,17 @@ class NetworkingPrivateGetStateFunction : public AsyncExtensionFunction {
   virtual bool RunImpl() OVERRIDE;
 
  private:
+  void Success(const std::string& service_path,
+               const base::DictionaryValue& result);
+  void Failure(const std::string& error_name,
+               scoped_ptr<base::DictionaryValue> error_data);
+
   DISALLOW_COPY_AND_ASSIGN(NetworkingPrivateGetStateFunction);
 };
 
 // Implements the chrome.networkingPrivate.setProperties method.
-class NetworkingPrivateSetPropertiesFunction : public AsyncExtensionFunction {
+class NetworkingPrivateSetPropertiesFunction
+    : public ChromeAsyncExtensionFunction {
  public:
   NetworkingPrivateSetPropertiesFunction() {}
   DECLARE_EXTENSION_FUNCTION("networkingPrivate.setProperties",
@@ -98,9 +105,30 @@ class NetworkingPrivateSetPropertiesFunction : public AsyncExtensionFunction {
   DISALLOW_COPY_AND_ASSIGN(NetworkingPrivateSetPropertiesFunction);
 };
 
+// Implements the chrome.networkingPrivate.createNetwork method.
+class NetworkingPrivateCreateNetworkFunction
+    : public ChromeAsyncExtensionFunction {
+ public:
+  NetworkingPrivateCreateNetworkFunction() {}
+  DECLARE_EXTENSION_FUNCTION("networkingPrivate.createNetwork",
+                             NETWORKINGPRIVATE_CREATENETWORK);
+
+ protected:
+  virtual ~NetworkingPrivateCreateNetworkFunction();
+
+  // AsyncExtensionFunction overrides.
+  virtual bool RunImpl() OVERRIDE;
+
+ private:
+  void ErrorCallback(const std::string& error_name,
+                     const scoped_ptr<base::DictionaryValue> error_data);
+  void ResultCallback(const std::string& guid);
+  DISALLOW_COPY_AND_ASSIGN(NetworkingPrivateCreateNetworkFunction);
+};
+
 // Implements the chrome.networkingPrivate.getVisibleNetworks method.
 class NetworkingPrivateGetVisibleNetworksFunction
-    : public SyncExtensionFunction {
+    : public ChromeAsyncExtensionFunction {
  public:
   NetworkingPrivateGetVisibleNetworksFunction() {}
   DECLARE_EXTENSION_FUNCTION("networkingPrivate.getVisibleNetworks",
@@ -109,16 +137,72 @@ class NetworkingPrivateGetVisibleNetworksFunction
  protected:
   virtual ~NetworkingPrivateGetVisibleNetworksFunction();
 
+  // AsyncExtensionFunction overrides.
+  virtual bool RunImpl() OVERRIDE;
+
+ private:
+  void ResultCallback(const base::ListValue& network_list);
+
+  DISALLOW_COPY_AND_ASSIGN(NetworkingPrivateGetVisibleNetworksFunction);
+};
+
+// Implements the chrome.networkingPrivate.getEnabledNetworkTypes method.
+class NetworkingPrivateGetEnabledNetworkTypesFunction
+    : public ChromeSyncExtensionFunction {
+ public:
+  NetworkingPrivateGetEnabledNetworkTypesFunction() {}
+  DECLARE_EXTENSION_FUNCTION("networkingPrivate.getEnabledNetworkTypes",
+                             NETWORKINGPRIVATE_GETENABLEDNETWORKTYPES);
+
+ protected:
+  virtual ~NetworkingPrivateGetEnabledNetworkTypesFunction();
+
   // SyncExtensionFunction overrides.
   virtual bool RunImpl() OVERRIDE;
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(NetworkingPrivateGetVisibleNetworksFunction);
+  DISALLOW_COPY_AND_ASSIGN(NetworkingPrivateGetEnabledNetworkTypesFunction);
+};
+
+// Implements the chrome.networkingPrivate.enableNetworkType method.
+class NetworkingPrivateEnableNetworkTypeFunction
+    : public ChromeSyncExtensionFunction {
+ public:
+  NetworkingPrivateEnableNetworkTypeFunction() {}
+  DECLARE_EXTENSION_FUNCTION("networkingPrivate.enableNetworkType",
+                             NETWORKINGPRIVATE_ENABLENETWORKTYPE);
+
+ protected:
+  virtual ~NetworkingPrivateEnableNetworkTypeFunction();
+
+  // SyncExtensionFunction overrides.
+  virtual bool RunImpl() OVERRIDE;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(NetworkingPrivateEnableNetworkTypeFunction);
+};
+
+// Implements the chrome.networkingPrivate.disableNetworkType method.
+class NetworkingPrivateDisableNetworkTypeFunction
+    : public ChromeSyncExtensionFunction {
+ public:
+  NetworkingPrivateDisableNetworkTypeFunction() {}
+  DECLARE_EXTENSION_FUNCTION("networkingPrivate.disableNetworkType",
+                             NETWORKINGPRIVATE_DISABLENETWORKTYPE);
+
+ protected:
+  virtual ~NetworkingPrivateDisableNetworkTypeFunction();
+
+  // SyncExtensionFunction overrides.
+  virtual bool RunImpl() OVERRIDE;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(NetworkingPrivateDisableNetworkTypeFunction);
 };
 
 // Implements the chrome.networkingPrivate.requestNetworkScan method.
 class NetworkingPrivateRequestNetworkScanFunction
-    : public SyncExtensionFunction {
+    : public ChromeSyncExtensionFunction {
  public:
   NetworkingPrivateRequestNetworkScanFunction() {}
   DECLARE_EXTENSION_FUNCTION("networkingPrivate.requestNetworkScan",
@@ -136,7 +220,8 @@ class NetworkingPrivateRequestNetworkScanFunction
 
 
 // Implements the chrome.networkingPrivate.startConnect method.
-class NetworkingPrivateStartConnectFunction : public AsyncExtensionFunction {
+class NetworkingPrivateStartConnectFunction
+    : public ChromeAsyncExtensionFunction {
  public:
   NetworkingPrivateStartConnectFunction() {}
   DECLARE_EXTENSION_FUNCTION("networkingPrivate.startConnect",
@@ -162,7 +247,7 @@ class NetworkingPrivateStartConnectFunction : public AsyncExtensionFunction {
 
 // Implements the chrome.networkingPrivate.startDisconnect method.
 class NetworkingPrivateStartDisconnectFunction
-    : public AsyncExtensionFunction {
+    : public ChromeAsyncExtensionFunction {
  public:
   NetworkingPrivateStartDisconnectFunction() {}
   DECLARE_EXTENSION_FUNCTION("networkingPrivate.startDisconnect",
@@ -188,7 +273,7 @@ class NetworkingPrivateStartDisconnectFunction
 
 // Implements the chrome.networkingPrivate.verifyDestination method.
 class NetworkingPrivateVerifyDestinationFunction
-    : public AsyncExtensionFunction {
+    : public ChromeAsyncExtensionFunction {
  public:
   NetworkingPrivateVerifyDestinationFunction() {}
   DECLARE_EXTENSION_FUNCTION("networkingPrivate.verifyDestination",
@@ -209,7 +294,7 @@ class NetworkingPrivateVerifyDestinationFunction
 
 // Implements the chrome.networkingPrivate.verifyAndEncryptCredentials method.
 class NetworkingPrivateVerifyAndEncryptCredentialsFunction
-    : public AsyncExtensionFunction {
+    : public ChromeAsyncExtensionFunction {
  public:
   NetworkingPrivateVerifyAndEncryptCredentialsFunction() {}
   DECLARE_EXTENSION_FUNCTION("networkingPrivate.verifyAndEncryptCredentials",
@@ -231,7 +316,7 @@ class NetworkingPrivateVerifyAndEncryptCredentialsFunction
 
 // Implements the chrome.networkingPrivate.verifyAndEncryptData method.
 class NetworkingPrivateVerifyAndEncryptDataFunction
-    : public AsyncExtensionFunction {
+    : public ChromeAsyncExtensionFunction {
  public:
   NetworkingPrivateVerifyAndEncryptDataFunction() {}
   DECLARE_EXTENSION_FUNCTION("networkingPrivate.verifyAndEncryptData",
@@ -251,4 +336,3 @@ class NetworkingPrivateVerifyAndEncryptDataFunction
 };
 
 #endif  // CHROME_BROWSER_EXTENSIONS_API_NETWORKING_PRIVATE_NETWORKING_PRIVATE_API_H_
-

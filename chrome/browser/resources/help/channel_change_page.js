@@ -11,7 +11,7 @@ cr.define('help', function() {
   cr.addSingletonGetter(ChannelChangePage);
 
   ChannelChangePage.prototype = {
-    __proto__: HTMLDivElement.prototype,
+    __proto__: help.HelpBasePage.prototype,
 
     /**
      * Name of the channel the device is currently on.
@@ -50,6 +50,8 @@ cr.define('help', function() {
      * Perform initial setup.
      */
     initialize: function() {
+      help.HelpBasePage.prototype.initialize.call(this, 'channel-change-page');
+
       var self = this;
 
       $('channel-change-page-cancel-button').onclick = function() {
@@ -75,6 +77,20 @@ cr.define('help', function() {
       };
     },
 
+    onBeforeShow: function() {
+      help.HelpBasePage.prototype.onBeforeShow.call(this);
+      if (this.targetChannel_ != null)
+        this.selectOption_(this.targetChannel_);
+      else if (this.currentChannel_ != null)
+        this.selectOption_(this.currentChannel_);
+      var options = this.getAllChannelOptions_();
+      for (var i = 0; i < options.length; i++) {
+        var option = options[i];
+        if (option.checked)
+          option.focus();
+      }
+    },
+
     /**
      * Returns the list of all radio buttons responsible for channel selection.
      * @return {Array.<HTMLInputElement>} Array of radio buttons
@@ -98,6 +114,22 @@ cr.define('help', function() {
           return option.value;
       }
       return null;
+    },
+
+    /**
+     * Selects option for a given channel.
+     * @param {string} channel Name of channel option that should be selected.
+     * @private
+     */
+    selectOption_: function(channel) {
+      var options = this.getAllChannelOptions_();
+      for (var i = 0; i < options.length; i++) {
+        var option = options[i];
+        if (option.value == channel) {
+          option.checked = true;
+        }
+      }
+      this.updateUI_(channel);
     },
 
     /**
@@ -175,13 +207,7 @@ cr.define('help', function() {
      if (this.channelList_.indexOf(channel) < 0)
         return;
       this.currentChannel_ = channel;
-
-      var options = this.getAllChannelOptions_();
-      for (var i = 0; i < options.length; i++) {
-        var option = options[i];
-        if (option.value == channel)
-          option.checked = true;
-      }
+      this.selectOption_(channel);
       help.HelpPage.updateChannelChangePageContainerVisibility();
     },
 

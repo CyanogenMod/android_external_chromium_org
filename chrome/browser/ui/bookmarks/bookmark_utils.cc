@@ -4,7 +4,6 @@
 
 #include "chrome/browser/ui/bookmarks/bookmark_utils.h"
 
-#include "apps/app_launcher.h"
 #include "base/basictypes.h"
 #include "base/logging.h"
 #include "base/prefs/pref_service.h"
@@ -13,6 +12,7 @@
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search/search.h"
+#include "chrome/browser/ui/app_list/app_list_util.h"
 #include "chrome/browser/ui/bookmarks/bookmark_editor.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_navigator.h"
@@ -131,9 +131,9 @@ int ChildURLCountTotal(const BookmarkNode* node) {
 
 // Returns in |urls|, the url and title pairs for each open tab in browser.
 void GetURLsForOpenTabs(Browser* browser,
-                        std::vector<std::pair<GURL, string16> >* urls) {
+                        std::vector<std::pair<GURL, base::string16> >* urls) {
   for (int i = 0; i < browser->tab_strip_model()->count(); ++i) {
-    std::pair<GURL, string16> entry;
+    std::pair<GURL, base::string16> entry;
     GetURLAndTitleToBookmark(browser->tab_strip_model()->GetWebContentsAt(i),
                              &(entry.first), &(entry.second));
     urls->push_back(entry);
@@ -244,7 +244,7 @@ GURL GetURLToBookmark(content::WebContents* web_contents) {
 
 void GetURLAndTitleToBookmark(content::WebContents* web_contents,
                               GURL* url,
-                              string16* title) {
+                              base::string16* title) {
   *url = GetURLToBookmark(web_contents);
   *title = web_contents->GetTitle();
 }
@@ -257,8 +257,8 @@ void ToggleBookmarkBarWhenVisible(content::BrowserContext* browser_context) {
   prefs->SetBoolean(prefs::kShowBookmarkBar, always_show);
 }
 
-string16 FormatBookmarkURLForDisplay(const GURL& url,
-                                     const PrefService* prefs) {
+base::string16 FormatBookmarkURLForDisplay(const GURL& url,
+                                           const PrefService* prefs) {
   std::string languages;
   if (prefs)
     languages = prefs->GetString(prefs::kAcceptLanguages);
@@ -273,23 +273,24 @@ string16 FormatBookmarkURLForDisplay(const GURL& url,
       net::UnescapeRule::SPACES, NULL, NULL, NULL);
 }
 
-bool IsAppsShortcutEnabled(const Profile* profile) {
-#if defined(USE_ASH)
-  // Don't show the apps shortcut in ash when the app launcher is enabled.
-  if (apps::IsAppLauncherEnabled())
-    return false;
-#endif
-
-  return chrome::IsInstantExtendedAPIEnabled() && !profile->IsOffTheRecord();
-}
-
-bool ShouldShowAppsShortcutInBookmarkBar(Profile* profile) {
+bool IsAppsShortcutEnabled(Profile* profile,
+                           chrome::HostDesktopType host_desktop_type) {
   // Managed users can not have apps installed currently so there's no need to
   // show the apps shortcut.
   if (profile->IsManaged())
     return false;
 
-  return IsAppsShortcutEnabled(profile) &&
+  // Don't show the apps shortcut in ash since the app launcher is enabled.
+  if (host_desktop_type == chrome::HOST_DESKTOP_TYPE_ASH)
+    return false;
+
+  return chrome::IsInstantExtendedAPIEnabled() && !profile->IsOffTheRecord();
+}
+
+bool ShouldShowAppsShortcutInBookmarkBar(
+  Profile* profile,
+  chrome::HostDesktopType host_desktop_type) {
+  return IsAppsShortcutEnabled(profile, host_desktop_type) &&
       profile->GetPrefs()->GetBoolean(prefs::kShowAppsShortcutInBookmarkBar);
 }
 

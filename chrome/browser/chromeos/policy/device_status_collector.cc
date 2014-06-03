@@ -8,27 +8,31 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
+#include "base/command_line.h"
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/prefs/pref_registry_simple.h"
 #include "base/prefs/pref_service.h"
+#include "base/prefs/scoped_user_pref_update.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/values.h"
-#include "chrome/browser/chrome_notification_types.h"
+#include "chrome/browser/browser_process.h"
+#include "chrome/browser/chromeos/login/user.h"
+#include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
-#include "chrome/browser/chromeos/settings/cros_settings_names.h"
-#include "chrome/browser/chromeos/system/statistics_provider.h"
-#include "chrome/browser/policy/proto/cloud/device_management_backend.pb.h"
-#include "chrome/browser/prefs/scoped_user_pref_update.h"
+#include "chrome/browser/policy/browser_policy_connector.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/pref_names.h"
+#include "chromeos/chromeos_switches.h"
 #include "chromeos/network/device_state.h"
 #include "chromeos/network/network_handler.h"
 #include "chromeos/network/network_state_handler.h"
+#include "chromeos/settings/cros_settings_names.h"
+#include "chromeos/system/statistics_provider.h"
+#include "components/policy/core/common/cloud/cloud_policy_constants.h"
 #include "content/public/browser/browser_thread.h"
-#include "content/public/browser/notification_details.h"
-#include "content/public/browser/notification_source.h"
+#include "policy/proto/device_management_backend.pb.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
 
 using base::Time;
@@ -69,6 +73,9 @@ int64 TimestampToDayKey(Time timestamp) {
   timestamp.LocalMidnight().LocalExplode(&exploded);
   return (Time::FromUTCExploded(exploded) - Time::UnixEpoch()).InMilliseconds();
 }
+
+// Maximum number of users to report.
+const int kMaxUserCount = 5;
 
 }  // namespace
 
@@ -133,6 +140,7 @@ DeviceStatusCollector::DeviceStatusCollector(
       report_boot_mode_(false),
       report_location_(false),
       report_network_interfaces_(false),
+      report_users_(false),
       context_(new Context()) {
   if (location_update_requester) {
     location_update_requester_ = *location_update_requester;
@@ -148,13 +156,21 @@ DeviceStatusCollector::DeviceStatusCollector(
 
   // Watch for changes to the individual policies that control what the status
   // reports contain.
-  cros_settings_->AddSettingsObserver(chromeos::kReportDeviceVersionInfo, this);
-  cros_settings_->AddSettingsObserver(chromeos::kReportDeviceActivityTimes,
-                                      this);
-  cros_settings_->AddSettingsObserver(chromeos::kReportDeviceBootMode, this);
-  cros_settings_->AddSettingsObserver(chromeos::kReportDeviceLocation, this);
-  cros_settings_->AddSettingsObserver(chromeos::kReportDeviceNetworkInterfaces,
-                                      this);
+  base::Closure callback =
+      base::Bind(&DeviceStatusCollector::UpdateReportingSettings,
+                 base::Unretained(this));
+  version_info_subscription_ = cros_settings_->AddSettingsObserver(
+      chromeos::kReportDeviceVersionInfo, callback);
+  activity_times_subscription_ = cros_settings_->AddSettingsObserver(
+      chromeos::kReportDeviceActivityTimes, callback);
+  boot_mode_subscription_ = cros_settings_->AddSettingsObserver(
+      chromeos::kReportDeviceBootMode, callback);
+  location_subscription_ = cros_settings_->AddSettingsObserver(
+      chromeos::kReportDeviceLocation, callback);
+  network_interfaces_subscription_ = cros_settings_->AddSettingsObserver(
+      chromeos::kReportDeviceNetworkInterfaces, callback);
+  users_subscription_ = cros_settings_->AddSettingsObserver(
+      chromeos::kReportDeviceUsers, callback);
 
   // The last known location is persisted in local state. This makes location
   // information available immediately upon startup and avoids the need to
@@ -191,14 +207,6 @@ DeviceStatusCollector::DeviceStatusCollector(
 }
 
 DeviceStatusCollector::~DeviceStatusCollector() {
-  cros_settings_->RemoveSettingsObserver(chromeos::kReportDeviceVersionInfo,
-                                         this);
-  cros_settings_->RemoveSettingsObserver(chromeos::kReportDeviceActivityTimes,
-                                         this);
-  cros_settings_->RemoveSettingsObserver(chromeos::kReportDeviceBootMode, this);
-  cros_settings_->RemoveSettingsObserver(chromeos::kReportDeviceLocation, this);
-  cros_settings_->RemoveSettingsObserver(
-      chromeos::kReportDeviceNetworkInterfaces, this);
 }
 
 // static
@@ -235,6 +243,8 @@ void DeviceStatusCollector::UpdateReportingSettings() {
       chromeos::kReportDeviceLocation, &report_location_);
   cros_settings_->GetBoolean(
       chromeos::kReportDeviceNetworkInterfaces, &report_network_interfaces_);
+  cros_settings_->GetBoolean(
+      chromeos::kReportDeviceUsers, &report_users_);
 
   if (report_location_) {
     ScheduleGeolocationUpdateRequest();
@@ -417,11 +427,11 @@ void DeviceStatusCollector::GetNetworkInterfaces(
     const char* type_string;
     em::NetworkInterface::NetworkDeviceType type_constant;
   } kDeviceTypeMap[] = {
-    { flimflam::kTypeEthernet,  em::NetworkInterface::TYPE_ETHERNET,  },
-    { flimflam::kTypeWifi,      em::NetworkInterface::TYPE_WIFI,      },
-    { flimflam::kTypeWimax,     em::NetworkInterface::TYPE_WIMAX,     },
-    { flimflam::kTypeBluetooth, em::NetworkInterface::TYPE_BLUETOOTH, },
-    { flimflam::kTypeCellular,  em::NetworkInterface::TYPE_CELLULAR,  },
+    { shill::kTypeEthernet,  em::NetworkInterface::TYPE_ETHERNET,  },
+    { shill::kTypeWifi,      em::NetworkInterface::TYPE_WIFI,      },
+    { shill::kTypeWimax,     em::NetworkInterface::TYPE_WIMAX,     },
+    { shill::kTypeBluetooth, em::NetworkInterface::TYPE_BLUETOOTH, },
+    { shill::kTypeCellular,  em::NetworkInterface::TYPE_CELLULAR,  },
   };
 
   chromeos::NetworkStateHandler::DeviceStateList device_list;
@@ -453,6 +463,36 @@ void DeviceStatusCollector::GetNetworkInterfaces(
   }
 }
 
+void DeviceStatusCollector::GetUsers(em::DeviceStatusReportRequest* request) {
+  BrowserPolicyConnector* connector =
+      g_browser_process->browser_policy_connector();
+  bool found_managed_user = false;
+  const chromeos::UserList& users = chromeos::UserManager::Get()->GetUsers();
+  chromeos::UserList::const_iterator user;
+  for (user = users.begin(); user != users.end(); ++user) {
+    // Only regular users are reported.
+    if ((*user)->GetType() != chromeos::User::USER_TYPE_REGULAR)
+      continue;
+
+    em::DeviceUser* device_user = request->add_user();
+    const std::string& email = (*user)->email();
+    if (connector->GetUserAffiliation(email) == USER_AFFILIATION_MANAGED) {
+      device_user->set_type(em::DeviceUser::USER_TYPE_MANAGED);
+      device_user->set_email(email);
+      found_managed_user = true;
+    } else {
+      device_user->set_type(em::DeviceUser::USER_TYPE_UNMANAGED);
+      // Do not report the email address of unmanaged users.
+    }
+
+    // Add only kMaxUserCount entries, unless no managed users are found in the
+    // first kMaxUserCount users. In that case, continue until at least one
+    // managed user is found.
+    if (request->user_size() >= kMaxUserCount && found_managed_user)
+      break;
+  }
+}
+
 void DeviceStatusCollector::GetStatus(em::DeviceStatusReportRequest* request) {
   // TODO(mnissler): Remove once the old cloud policy stack is retired. The old
   // stack doesn't support reporting successful submissions back to here, so
@@ -478,6 +518,11 @@ bool DeviceStatusCollector::GetDeviceStatus(
   if (report_network_interfaces_)
     GetNetworkInterfaces(status);
 
+  if (report_users_ && !CommandLine::ForCurrentProcess()->HasSwitch(
+        chromeos::switches::kDisableEnterpriseUserReporting)) {
+    GetUsers(status);
+  }
+
   return true;
 }
 
@@ -497,16 +542,6 @@ void DeviceStatusCollector::OnOSVersion(const std::string& version) {
 
 void DeviceStatusCollector::OnOSFirmware(const std::string& version) {
   firmware_version_ = version;
-}
-
-void DeviceStatusCollector::Observe(
-    int type,
-    const content::NotificationSource& source,
-    const content::NotificationDetails& details) {
-  if (type == chrome::NOTIFICATION_SYSTEM_SETTING_CHANGED)
-    UpdateReportingSettings();
-  else
-    NOTREACHED();
 }
 
 void DeviceStatusCollector::ScheduleGeolocationUpdateRequest() {

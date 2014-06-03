@@ -12,9 +12,13 @@
 #include <X11/extensions/Xrandr.h>
 
 #include <cmath>
+#include <set>
+#include <utility>
 
 #include "base/logging.h"
-#include "base/message_loop/message_pump_aurax11.h"
+#include "base/message_loop/message_pump_x11.h"
+#include "base/x11/edid_parser_x11.h"
+#include "base/x11/x11_error_tracker.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/power_manager_client.h"
 #include "chromeos/display/output_util.h"
@@ -28,6 +32,17 @@ const float kMmInInch = 25.4;
 const float kDpi96 = 96.0;
 const float kPixelsToMmScale = kMmInInch / kDpi96;
 
+// Prefixes of output name
+const char kOutputName_VGA[] = "VGA";
+const char kOutputName_HDMI[] = "HDMI";
+const char kOutputName_DVI[] = "DVI";
+const char kOutputName_DisplayPort[] = "DP";
+
+const char kContentProtectionAtomName[] = "Content Protection";
+const char kProtectionUndesiredAtomName[] = "Undesired";
+const char kProtectionDesiredAtomName[] = "Desired";
+const char kProtectionEnabledAtomName[] = "Enabled";
+
 bool IsInternalOutput(const XRROutputInfo* output_info) {
   return IsInternalOutputName(std::string(output_info->name));
 }
@@ -39,17 +54,12 @@ RRMode GetOutputNativeMode(const XRROutputInfo* output_info) {
 }  // namespace
 
 RealOutputConfiguratorDelegate::RealOutputConfiguratorDelegate()
-    : display_(base::MessagePumpAuraX11::GetDefaultXDisplay()),
+    : display_(base::MessagePumpX11::GetDefaultXDisplay()),
       window_(DefaultRootWindow(display_)),
-      screen_(NULL),
-      is_panel_fitting_enabled_(false) {
+      screen_(NULL) {
 }
 
 RealOutputConfiguratorDelegate::~RealOutputConfiguratorDelegate() {
-}
-
-void RealOutputConfiguratorDelegate::SetPanelFittingEnabled(bool enabled) {
-  is_panel_fitting_enabled_ = enabled;
 }
 
 void RealOutputConfiguratorDelegate::InitXRandRExtension(int* event_base) {
@@ -105,151 +115,36 @@ void RealOutputConfiguratorDelegate::ForceDPMSOn() {
 }
 
 std::vector<OutputConfigurator::OutputSnapshot>
-RealOutputConfiguratorDelegate::GetOutputs(
-    const OutputConfigurator::StateController* state_controller) {
+RealOutputConfiguratorDelegate::GetOutputs() {
   CHECK(screen_) << "Server not grabbed";
 
   std::vector<OutputConfigurator::OutputSnapshot> outputs;
-  XRROutputInfo* one_info = NULL;
-  XRROutputInfo* two_info = NULL;
   RRCrtc last_used_crtc = None;
 
   for (int i = 0; i < screen_->noutput && outputs.size() < 2; ++i) {
-    RROutput this_id = screen_->outputs[i];
-    XRROutputInfo* output_info = XRRGetOutputInfo(display_, screen_, this_id);
-    bool is_connected = (output_info->connection == RR_Connected);
-
-    if (is_connected) {
-      OutputConfigurator::OutputSnapshot to_populate;
-      to_populate.output = this_id;
-      to_populate.has_display_id =
-          GetDisplayId(this_id, i, &to_populate.display_id);
-      to_populate.is_internal = IsInternalOutput(output_info);
-      // Use the index as a valid display id even if the internal
-      // display doesn't have valid EDID because the index
-      // will never change.
-      if (!to_populate.has_display_id && to_populate.is_internal)
-        to_populate.has_display_id = true;
-
-      (outputs.empty() ? one_info : two_info) = output_info;
-
-      // Now, look up the current CRTC and any related info.
-      if (output_info->crtc) {
-        XRRCrtcInfo* crtc_info = XRRGetCrtcInfo(
-            display_, screen_, output_info->crtc);
-        to_populate.current_mode = crtc_info->mode;
-        to_populate.x = crtc_info->x;
-        to_populate.y = crtc_info->y;
-        XRRFreeCrtcInfo(crtc_info);
-      }
-
-      // Assign a CRTC that isn't already in use.
-      for (int j = 0; j < output_info->ncrtc; ++j) {
-        if (output_info->crtcs[j] != last_used_crtc) {
-          to_populate.crtc = output_info->crtcs[j];
-          last_used_crtc = to_populate.crtc;
-          break;
-        }
-      }
-      to_populate.native_mode = GetOutputNativeMode(output_info);
-      if (to_populate.has_display_id) {
-        int width = 0, height = 0;
-        if (state_controller &&
-            state_controller->GetResolutionForDisplayId(
-                to_populate.display_id, &width, &height)) {
-          to_populate.selected_mode =
-              FindOutputModeMatchingSize(screen_, output_info, width, height);
-        }
-      }
-      // Fallback to native mode.
-      if (to_populate.selected_mode == None)
-        to_populate.selected_mode = to_populate.native_mode;
-
-      to_populate.is_aspect_preserving_scaling =
-          IsOutputAspectPreservingScaling(this_id);
-      to_populate.touch_device_id = None;
-
+    RROutput output_id = screen_->outputs[i];
+    XRROutputInfo* output_info = XRRGetOutputInfo(display_, screen_, output_id);
+    if (output_info->connection == RR_Connected) {
+      OutputConfigurator::OutputSnapshot output = InitOutputSnapshot(
+          output_id, output_info, &last_used_crtc, i);
       VLOG(2) << "Found display " << outputs.size() << ":"
-              << " output=" << to_populate.output
-              << " crtc=" << to_populate.crtc
-              << " current_mode=" << to_populate.current_mode;
-      outputs.push_back(to_populate);
-    } else {
-      XRRFreeOutputInfo(output_info);
+              << " output=" << output.output
+              << " crtc=" << output.crtc
+              << " current_mode=" << output.current_mode;
+      outputs.push_back(output);
     }
-  }
-
-  if (outputs.size() == 2) {
-    bool one_is_internal = IsInternalOutput(one_info);
-    bool two_is_internal = IsInternalOutput(two_info);
-    int internal_outputs = (one_is_internal ? 1 : 0) +
-        (two_is_internal ? 1 : 0);
-    DCHECK_LT(internal_outputs, 2);
-    LOG_IF(WARNING, internal_outputs == 2)
-        << "Two internal outputs detected.";
-
-    bool can_mirror = false;
-    for (int attempt = 0; !can_mirror && attempt < 2; ++attempt) {
-      // Try preserving external output's aspect ratio on the first attempt.
-      // If that fails, fall back to the highest matching resolution.
-      bool preserve_aspect = attempt == 0;
-
-      if (internal_outputs == 1) {
-        if (one_is_internal) {
-          can_mirror = FindOrCreateMirrorMode(one_info, two_info,
-              outputs[0].output, is_panel_fitting_enabled_, preserve_aspect,
-              &outputs[0].mirror_mode, &outputs[1].mirror_mode);
-        } else {  // if (two_is_internal)
-          can_mirror = FindOrCreateMirrorMode(two_info, one_info,
-              outputs[1].output, is_panel_fitting_enabled_, preserve_aspect,
-              &outputs[1].mirror_mode, &outputs[0].mirror_mode);
-        }
-      } else {  // if (internal_outputs == 0)
-        // No panel fitting for external outputs, so fall back to exact match.
-        can_mirror = FindOrCreateMirrorMode(one_info, two_info,
-            outputs[0].output, false, preserve_aspect,
-            &outputs[0].mirror_mode, &outputs[1].mirror_mode);
-        if (!can_mirror && preserve_aspect) {
-          // FindOrCreateMirrorMode will try to preserve aspect ratio of
-          // what it thinks is external display, so if it didn't succeed
-          // with one, maybe it will succeed with the other.  This way we
-          // will have correct aspect ratio on at least one of them.
-          can_mirror = FindOrCreateMirrorMode(two_info, one_info,
-              outputs[1].output, false, preserve_aspect,
-              &outputs[1].mirror_mode, &outputs[0].mirror_mode);
-        }
-      }
-    }
+    XRRFreeOutputInfo(output_info);
   }
 
   GetTouchscreens(&outputs);
-  XRRFreeOutputInfo(one_info);
-  XRRFreeOutputInfo(two_info);
   return outputs;
 }
 
-bool RealOutputConfiguratorDelegate::GetModeDetails(RRMode mode,
-                                                    int* width,
-                                                    int* height,
-                                                    bool* interlaced) {
+void RealOutputConfiguratorDelegate::AddOutputMode(RROutput output,
+                                                   RRMode mode) {
   CHECK(screen_) << "Server not grabbed";
-  // TODO: Determine if we need to organize modes in a way which provides
-  // better than O(n) lookup time.  In many call sites, for example, the
-  // "next" mode is typically what we are looking for so using this
-  // helper might be too expensive.
-  for (int i = 0; i < screen_->nmode; ++i) {
-    if (mode == screen_->modes[i].id) {
-      const XRRModeInfo& info = screen_->modes[i];
-      if (width)
-        *width = info.width;
-      if (height)
-        *height = info.height;
-      if (interlaced)
-        *interlaced = info.modeFlags & RR_Interlace;
-      return true;
-    }
-  }
-  return false;
+  VLOG(1) << "AddOutputMode: output=" << output << " mode=" << mode;
+  XRRAddOutputMode(display_, output, mode);
 }
 
 bool RealOutputConfiguratorDelegate::ConfigureCrtc(
@@ -343,6 +238,179 @@ void RealOutputConfiguratorDelegate::SendProjectingStateToPowerManager(
       SetIsProjecting(projecting);
 }
 
+bool RealOutputConfiguratorDelegate::InitModeInfo(
+    RRMode mode,
+    OutputConfigurator::ModeInfo* mode_info) {
+  DCHECK(mode_info);
+  CHECK(screen_) << "Server not grabbed";
+  // TODO: Determine if we need to organize modes in a way which provides
+  // better than O(n) lookup time.  In many call sites, for example, the
+  // "next" mode is typically what we are looking for so using this
+  // helper might be too expensive.
+  for (int i = 0; i < screen_->nmode; ++i) {
+    if (mode == screen_->modes[i].id) {
+      const XRRModeInfo& info = screen_->modes[i];
+      mode_info->width = info.width;
+      mode_info->height = info.height;
+      mode_info->interlaced = info.modeFlags & RR_Interlace;
+      if (info.hTotal && info.vTotal) {
+        mode_info->refresh_rate = static_cast<float>(info.dotClock) /
+            (static_cast<float>(info.hTotal) *
+             static_cast<float>(info.vTotal));
+      } else {
+        mode_info->refresh_rate = 0.0f;
+      }
+      return true;
+    }
+  }
+  return false;
+}
+
+OutputConfigurator::OutputSnapshot
+RealOutputConfiguratorDelegate::InitOutputSnapshot(
+    RROutput id,
+    XRROutputInfo* info,
+    RRCrtc* last_used_crtc,
+    int index) {
+  OutputConfigurator::OutputSnapshot output;
+  output.output = id;
+  output.width_mm = info->mm_width;
+  output.height_mm = info->mm_height;
+  output.has_display_id = base::GetDisplayId(id, index, &output.display_id);
+  output.is_internal = IsInternalOutput(info);
+  output.index = index;
+
+  // Use the index as a valid display ID even if the internal
+  // display doesn't have valid EDID because the index
+  // will never change.
+  if (!output.has_display_id && output.is_internal)
+    output.has_display_id = true;
+
+  if (info->crtc) {
+    XRRCrtcInfo* crtc_info = XRRGetCrtcInfo(display_, screen_, info->crtc);
+    output.current_mode = crtc_info->mode;
+    output.x = crtc_info->x;
+    output.y = crtc_info->y;
+    XRRFreeCrtcInfo(crtc_info);
+  }
+
+  // Assign a CRTC that isn't already in use.
+  for (int i = 0; i < info->ncrtc; ++i) {
+    if (info->crtcs[i] != *last_used_crtc) {
+      output.crtc = info->crtcs[i];
+      *last_used_crtc = output.crtc;
+      break;
+    }
+  }
+
+  output.native_mode = GetOutputNativeMode(info);
+  output.is_aspect_preserving_scaling = IsOutputAspectPreservingScaling(id);
+  output.touch_device_id = None;
+
+  for (int i = 0; i < info->nmode; ++i) {
+    const RRMode mode = info->modes[i];
+    OutputConfigurator::ModeInfo mode_info;
+    if (InitModeInfo(mode, &mode_info))
+      output.mode_infos.insert(std::make_pair(mode, mode_info));
+    else
+      LOG(WARNING) << "Unable to find XRRModeInfo for mode " << mode;
+  }
+
+  std::string name(info->name);
+  if (output.is_internal) {
+    output.type = OUTPUT_TYPE_INTERNAL;
+  } else if (name.find(kOutputName_VGA) == 0) {
+    output.type = OUTPUT_TYPE_VGA;
+  } else if (name.find(kOutputName_HDMI) == 0) {
+    output.type = OUTPUT_TYPE_HDMI;
+  } else if (name.find(kOutputName_DVI) == 0) {
+    output.type = OUTPUT_TYPE_DVI;
+  } else if (name.find(kOutputName_DisplayPort) == 0) {
+    output.type = OUTPUT_TYPE_DISPLAYPORT;
+  } else {
+    LOG(ERROR) << "Unknown link type: " << name;
+    output.type = OUTPUT_TYPE_UNKNOWN;
+  }
+
+  return output;
+}
+
+bool RealOutputConfiguratorDelegate::GetHDCPState(RROutput id,
+                                                  HDCPState* state) {
+  unsigned char* values = NULL;
+  int actual_format = 0;
+  unsigned long nitems = 0;
+  unsigned long bytes_after = 0;
+  Atom actual_type = None;
+  int success = 0;
+  // TODO(kcwu): Use X11AtomCache to save round trip time of XInternAtom.
+  Atom prop = XInternAtom(display_, kContentProtectionAtomName, False);
+
+  bool ok = true;
+  // TODO(kcwu): Move this to x11_util (similar method calls in this file and
+  // output_util.cc)
+  success = XRRGetOutputProperty(display_, id, prop, 0, 100, False,
+                                 False, AnyPropertyType, &actual_type,
+                                 &actual_format, &nitems, &bytes_after,
+                                 &values);
+  if (actual_type == None) {
+    LOG(ERROR) << "Property '" << kContentProtectionAtomName
+               << "' does not exist";
+    ok = false;
+  } else if (success == Success && actual_type == XA_ATOM &&
+             actual_format == 32 && nitems == 1) {
+    Atom value = reinterpret_cast<Atom*>(values)[0];
+    if (value == XInternAtom(display_, kProtectionUndesiredAtomName, False)) {
+      *state = HDCP_STATE_UNDESIRED;
+    } else if (value == XInternAtom(display_, kProtectionDesiredAtomName,
+                                    False)) {
+      *state = HDCP_STATE_DESIRED;
+    } else if (value == XInternAtom(display_, kProtectionEnabledAtomName,
+                                    False)) {
+      *state = HDCP_STATE_ENABLED;
+    } else {
+      LOG(ERROR) << "Unknown " << kContentProtectionAtomName << " value: "
+                 << value;
+      ok = false;
+    }
+  } else {
+    LOG(ERROR) << "XRRGetOutputProperty failed";
+    ok = false;
+  }
+  if (values)
+    XFree(values);
+
+  VLOG(3) << "HDCP state: " << ok << "," << *state;
+  return ok;
+}
+
+bool RealOutputConfiguratorDelegate::SetHDCPState(RROutput id,
+                                                  HDCPState state) {
+  Atom name = XInternAtom(display_, kContentProtectionAtomName, False);
+  Atom value = None;
+  switch (state) {
+    case HDCP_STATE_UNDESIRED:
+      value = XInternAtom(display_, kProtectionUndesiredAtomName, False);
+      break;
+    case HDCP_STATE_DESIRED:
+      value = XInternAtom(display_, kProtectionDesiredAtomName, False);
+      break;
+    default:
+      NOTREACHED() << "Invalid HDCP state: " << state;
+      return false;
+  }
+  base::X11ErrorTracker err_tracker;
+  unsigned char* data = reinterpret_cast<unsigned char*>(&value);
+  XRRChangeOutputProperty(display_, id, name, XA_ATOM, 32,
+                          PropModeReplace, data, 1);
+  if (err_tracker.FoundNewError()) {
+    LOG(ERROR) << "XRRChangeOutputProperty failed";
+    return false;
+  } else {
+    return true;
+  }
+}
+
 void RealOutputConfiguratorDelegate::DestroyUnusedCrtcs(
     const std::vector<OutputConfigurator::OutputSnapshot>& outputs) {
   CHECK(screen_) << "Server not grabbed";
@@ -362,25 +430,28 @@ void RealOutputConfiguratorDelegate::DestroyUnusedCrtcs(
     RRCrtc crtc = screen_->crtcs[i];
     RRMode mode = None;
     RROutput output = None;
+    const OutputConfigurator::ModeInfo* mode_info = NULL;
     for (std::vector<OutputConfigurator::OutputSnapshot>::const_iterator it =
          outputs.begin(); it != outputs.end(); ++it) {
       if (crtc == it->crtc) {
         mode = it->current_mode;
         output = it->output;
+        if (mode != None)
+          mode_info = OutputConfigurator::GetModeInfo(*it, mode);
         break;
       }
     }
 
-    if (mode != None) {
+    if (mode_info) {
       // In case our CRTC doesn't fit in our current framebuffer, disable it.
       // It'll get reenabled after we resize the framebuffer.
-      int mode_width = 0, mode_height = 0;
-      CHECK(GetModeDetails(mode, &mode_width, &mode_height, NULL));
       int current_width = DisplayWidth(display_, DefaultScreen(display_));
       int current_height = DisplayHeight(display_, DefaultScreen(display_));
-      if (mode_width > current_width || mode_height > current_height) {
+      if (mode_info->width > current_width ||
+          mode_info->height > current_height) {
         mode = None;
         output = None;
+        mode_info = NULL;
       }
     }
 
@@ -428,80 +499,6 @@ bool RealOutputConfiguratorDelegate::IsOutputAspectPreservingScaling(
   return ret;
 }
 
-bool RealOutputConfiguratorDelegate::FindOrCreateMirrorMode(
-    XRROutputInfo* internal_info,
-    XRROutputInfo* external_info,
-    RROutput internal_output_id,
-    bool try_creating,
-    bool preserve_aspect,
-    RRMode* internal_mirror_mode,
-    RRMode* external_mirror_mode) {
-  RRMode internal_mode_id = GetOutputNativeMode(internal_info);
-  RRMode external_mode_id = GetOutputNativeMode(external_info);
-
-  if (internal_mode_id == None || external_mode_id == None)
-    return false;
-
-  int internal_native_width = 0, internal_native_height = 0;
-  int external_native_width = 0, external_native_height = 0;
-  CHECK(GetModeDetails(internal_mode_id, &internal_native_width,
-                       &internal_native_height, NULL));
-  CHECK(GetModeDetails(external_mode_id, &external_native_width,
-                       &external_native_height, NULL));
-
-  // Check if some external output resolution can be mirrored on internal.
-  // Prefer the modes in the order that X sorts them,
-  // assuming this is the order in which they look better on the monitor.
-  // If X's order is not satisfactory, we can either fix X's sorting,
-  // or implement our sorting here.
-  for (int i = 0; i < external_info->nmode; i++) {
-    external_mode_id = external_info->modes[i];
-    int external_width = 0, external_height = 0;
-    bool is_external_interlaced = false;
-    CHECK(GetModeDetails(external_mode_id, &external_width, &external_height,
-                         &is_external_interlaced));
-    bool is_native_aspect_ratio =
-        external_native_width * external_height ==
-        external_native_height * external_width;
-    if (preserve_aspect && !is_native_aspect_ratio)
-      continue;  // Allow only aspect ratio preserving modes for mirroring
-
-    // Try finding exact match
-    for (int j = 0; j < internal_info->nmode; j++) {
-      internal_mode_id = internal_info->modes[j];
-      int internal_width = 0, internal_height = 0;
-      bool is_internal_interlaced = false;
-      CHECK(GetModeDetails(internal_mode_id, &internal_width,
-                           &internal_height, &is_internal_interlaced));
-      if (internal_width == external_width &&
-          internal_height == external_height &&
-          is_internal_interlaced == is_external_interlaced) {
-        *internal_mirror_mode = internal_mode_id;
-        *external_mirror_mode = external_mode_id;
-        return true;  // Mirror mode found
-      }
-    }
-
-    // Try to create a matching internal output mode by panel fitting
-    if (try_creating) {
-      // We can downscale by 1.125, and upscale indefinitely
-      // Downscaling looks ugly, so, can fit == can upscale
-      // Also, internal panels don't support fitting interlaced modes
-      bool can_fit =
-          internal_native_width >= external_width &&
-          internal_native_height >= external_height &&
-          !is_external_interlaced;
-      if (can_fit) {
-        XRRAddOutputMode(display_, internal_output_id, external_mode_id);
-        *internal_mirror_mode = *external_mirror_mode = external_mode_id;
-        return true;  // Mirror mode created
-      }
-    }
-  }
-
-  return false;
-}
-
 void RealOutputConfiguratorDelegate::GetTouchscreens(
     std::vector<OutputConfigurator::OutputSnapshot>* outputs) {
   int ndevices = 0;
@@ -510,6 +507,7 @@ void RealOutputConfiguratorDelegate::GetTouchscreens(
   if (valuator_x == None || valuator_y == None)
     return;
 
+  std::set<int> no_match_touchscreen;
   XIDeviceInfo* info = XIQueryDevice(display_, XIAllDevices, &ndevices);
   for (int i = 0; i < ndevices; i++) {
     if (!info[i].enabled || info[i].use != XIFloatingSlave)
@@ -554,12 +552,13 @@ void RealOutputConfiguratorDelegate::GetTouchscreens(
     if (width > 0.0 && height > 0.0 && is_direct_touch) {
       size_t k = 0;
       for (; k < outputs->size(); k++) {
-        if ((*outputs)[k].native_mode == None ||
-            (*outputs)[k].touch_device_id != None)
+        OutputConfigurator::OutputSnapshot* output = &(*outputs)[k];
+        if (output->native_mode == None || output->touch_device_id != None)
           continue;
-        int native_mode_width = 0, native_mode_height = 0;
-        if (!GetModeDetails((*outputs)[k].native_mode, &native_mode_width,
-                            &native_mode_height, NULL))
+
+        const OutputConfigurator::ModeInfo* mode_info =
+            OutputConfigurator::GetModeInfo(*output, output->native_mode);
+        if (!mode_info)
           continue;
 
         // Allow 1 pixel difference between screen and touchscreen
@@ -567,23 +566,45 @@ void RealOutputConfiguratorDelegate::GetTouchscreens(
         // 1024x768 touchscreen's resolution would be 1024x768, but for
         // some 1023x767.  It really depends on touchscreen's firmware
         // configuration.
-        if (std::abs(native_mode_width - width) <= 1.0 &&
-            std::abs(native_mode_height - height) <= 1.0) {
-          (*outputs)[k].touch_device_id = info[i].deviceid;
+        if (std::abs(mode_info->width - width) <= 1.0 &&
+            std::abs(mode_info->height - height) <= 1.0) {
+          output->touch_device_id = info[i].deviceid;
 
           VLOG(2) << "Found touchscreen for output #" << k
-                  << " id " << (*outputs)[k].touch_device_id
+                  << " id " << output->touch_device_id
                   << " width " << width
                   << " height " << height;
           break;
         }
       }
 
-      VLOG_IF(2, k == outputs->size())
-          << "No matching output - ignoring touchscreen"
-          << " id " << info[i].deviceid
-          << " width " << width
-          << " height " << height;
+      if (k == outputs->size()) {
+        no_match_touchscreen.insert(info[i].deviceid);
+        VLOG(2) << "No matching output for touchscreen"
+                << " id " << info[i].deviceid
+                << " width " << width
+                << " height " << height;
+      }
+
+    }
+  }
+
+  // Sometimes we can't find a matching screen for the touchscreen, e.g.
+  // due to the touchscreen's reporting range having no correlation with the
+  // screen's resolution. In this case, we arbitrarily assign unmatched
+  // touchscreens to unmatched screens.
+  for (std::set<int>::iterator it = no_match_touchscreen.begin();
+       it != no_match_touchscreen.end();
+       it++) {
+    for (size_t i = 0; i < outputs->size(); i++) {
+      if ((*outputs)[i].is_internal == false &&
+          (*outputs)[i].native_mode != None &&
+          (*outputs)[i].touch_device_id == None ) {
+        (*outputs)[i].touch_device_id = *it;
+        VLOG(2) << "Arbitrarily matching touchscreen "
+                << (*outputs)[i].touch_device_id << " to output #" << i;
+        break;
+      }
     }
   }
 

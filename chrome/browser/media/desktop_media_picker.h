@@ -9,10 +9,10 @@
 #include "base/callback_forward.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string16.h"
-#include "content/public/common/desktop_media_id.h"
+#include "content/public/browser/desktop_media_id.h"
 #include "ui/gfx/native_widget_types.h"
 
-class DesktopMediaPickerModel;
+class DesktopMediaList;
 
 // Abstract interface for desktop media picker UI. It's used by Desktop Media
 // API to let user choose a desktop media source.
@@ -28,12 +28,12 @@ class DesktopMediaPicker {
   virtual ~DesktopMediaPicker() {}
 
   // Shows dialog with list of desktop media sources (screens, windows, tabs)
-  // provided by |model| and calls |done_callback| when user chooses one of the
+  // provided by |list| and calls |done_callback| when user chooses one of the
   // sources or closes the dialog.
   virtual void Show(gfx::NativeWindow context,
                     gfx::NativeWindow parent,
-                    const string16& app_name,
-                    scoped_ptr<DesktopMediaPickerModel> model,
+                    const base::string16& app_name,
+                    scoped_ptr<DesktopMediaList> list,
                     const DoneCallback& done_callback) = 0;
 
  private:

@@ -15,10 +15,10 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "content/public/browser/notification_service.h"
-#include "content/public/browser/notification_source.h"
 #include "ui/base/accessibility/accessible_view_state.h"
 #include "ui/views/controls/menu/menu_item_view.h"
 #include "ui/views/controls/menu/submenu_view.h"
+#include "ui/views/controls/tree/tree_view.h"
 #include "ui/views/focus/view_storage.h"
 #include "ui/views/view.h"
 #include "ui/views/widget/widget.h"
@@ -48,44 +48,19 @@ void AccessibilityEventRouterViews::HandleAccessibilityEvent(
     return;
   }
 
-  chrome::NotificationType notification_type;
-  switch (event_type) {
-    case ui::AccessibilityTypes::EVENT_FOCUS:
-      notification_type = chrome::NOTIFICATION_ACCESSIBILITY_CONTROL_FOCUSED;
-      break;
-    case ui::AccessibilityTypes::EVENT_MENUSTART:
-    case ui::AccessibilityTypes::EVENT_MENUPOPUPSTART:
-      notification_type = chrome::NOTIFICATION_ACCESSIBILITY_MENU_OPENED;
-      break;
-    case ui::AccessibilityTypes::EVENT_MENUEND:
-    case ui::AccessibilityTypes::EVENT_MENUPOPUPEND:
-      notification_type = chrome::NOTIFICATION_ACCESSIBILITY_MENU_CLOSED;
-      break;
-    case ui::AccessibilityTypes::EVENT_TEXT_CHANGED:
-    case ui::AccessibilityTypes::EVENT_SELECTION_CHANGED:
-      // These two events should only be sent for views that have focus. This
-      // enforces the invariant that we fire events triggered by user action and
-      // not by programmatic logic. For example, the location bar can be updated
-      // by javascript while the user focus is within some other part of the
-      // user interface. In contrast, the other supported events here do not
-      // depend on focus. For example, a menu within a menubar can open or close
-      // while focus is within the location bar or anywhere else as a result of
-      // user action. Note that the below logic can at some point be removed if
-      // we pass more information along to the listener such as focused state.
-      if (!view->GetFocusManager() ||
-          view->GetFocusManager()->GetFocusedView() != view)
-        return;
-      notification_type = chrome::NOTIFICATION_ACCESSIBILITY_TEXT_CHANGED;
-      break;
-    case ui::AccessibilityTypes::EVENT_VALUE_CHANGED:
-      notification_type = chrome::NOTIFICATION_ACCESSIBILITY_CONTROL_ACTION;
-      break;
-    case ui::AccessibilityTypes::EVENT_ALERT:
-      notification_type = chrome::NOTIFICATION_ACCESSIBILITY_WINDOW_OPENED;
-      break;
-    case ui::AccessibilityTypes::EVENT_NAME_CHANGED:
-    default:
-      NOTIMPLEMENTED();
+  if (event_type == ui::AccessibilityTypes::EVENT_TEXT_CHANGED ||
+      event_type == ui::AccessibilityTypes::EVENT_SELECTION_CHANGED) {
+    // These two events should only be sent for views that have focus. This
+    // enforces the invariant that we fire events triggered by user action and
+    // not by programmatic logic. For example, the location bar can be updated
+    // by javascript while the user focus is within some other part of the
+    // user interface. In contrast, the other supported events here do not
+    // depend on focus. For example, a menu within a menubar can open or close
+    // while focus is within the location bar or anywhere else as a result of
+    // user action. Note that the below logic can at some point be removed if
+    // we pass more information along to the listener such as focused state.
+    if (!view->GetFocusManager() ||
+        view->GetFocusManager()->GetFocusedView() != view)
       return;
   }
 
@@ -99,14 +74,14 @@ void AccessibilityEventRouterViews::HandleAccessibilityEvent(
   base::MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(
-          &AccessibilityEventRouterViews::DispatchNotificationOnViewStorageId,
+          &AccessibilityEventRouterViews::DispatchEventOnViewStorageId,
           view_storage_id,
-          notification_type));
+          event_type));
 }
 
 void AccessibilityEventRouterViews::HandleMenuItemFocused(
-    const string16& menu_name,
-    const string16& menu_item_name,
+    const base::string16& menu_name,
+    const base::string16& menu_item_name,
     int item_index,
     int item_count,
     bool has_submenu) {
@@ -124,8 +99,8 @@ void AccessibilityEventRouterViews::HandleMenuItemFocused(
                                  has_submenu,
                                  item_index,
                                  item_count);
-  SendAccessibilityNotification(
-      chrome::NOTIFICATION_ACCESSIBILITY_CONTROL_FOCUSED, &info);
+  SendControlAccessibilityNotification(
+      ui::AccessibilityTypes::EVENT_FOCUS, &info);
 }
 
 void AccessibilityEventRouterViews::Observe(
@@ -142,9 +117,9 @@ void AccessibilityEventRouterViews::Observe(
 // Private methods
 //
 
-void AccessibilityEventRouterViews::DispatchNotificationOnViewStorageId(
+void AccessibilityEventRouterViews::DispatchEventOnViewStorageId(
     int view_storage_id,
-    chrome::NotificationType type) {
+    ui::AccessibilityTypes::Event type) {
   views::ViewStorage* view_storage = views::ViewStorage::GetInstance();
   views::View* view = view_storage->RetrieveView(view_storage_id);
   view_storage->RemoveView(view_storage_id);
@@ -153,11 +128,11 @@ void AccessibilityEventRouterViews::DispatchNotificationOnViewStorageId(
 
   AccessibilityEventRouterViews* instance =
       AccessibilityEventRouterViews::GetInstance();
-  instance->DispatchAccessibilityNotification(view, type);
+  instance->DispatchAccessibilityEvent(view, type);
 }
 
-void AccessibilityEventRouterViews::DispatchAccessibilityNotification(
-    views::View* view, chrome::NotificationType type) {
+void AccessibilityEventRouterViews::DispatchAccessibilityEvent(
+    views::View* view, ui::AccessibilityTypes::Event type) {
   // Get the profile associated with this view. If it's not found, use
   // the most recent profile where accessibility events were sent, or
   // the default profile.
@@ -180,8 +155,10 @@ void AccessibilityEventRouterViews::DispatchAccessibilityNotification(
 
   most_recent_profile_ = profile;
 
-  if (type == chrome::NOTIFICATION_ACCESSIBILITY_MENU_OPENED ||
-      type == chrome::NOTIFICATION_ACCESSIBILITY_MENU_CLOSED) {
+  if (type == ui::AccessibilityTypes::EVENT_MENUSTART ||
+      type == ui::AccessibilityTypes::EVENT_MENUPOPUPSTART ||
+      type == ui::AccessibilityTypes::EVENT_MENUEND ||
+      type == ui::AccessibilityTypes::EVENT_MENUPOPUPEND) {
     SendMenuNotification(view, type, profile);
     return;
   }
@@ -189,8 +166,16 @@ void AccessibilityEventRouterViews::DispatchAccessibilityNotification(
   ui::AccessibleViewState state;
   view->GetAccessibleState(&state);
 
+  if (type == ui::AccessibilityTypes::EVENT_ALERT &&
+      !(state.role == ui::AccessibilityTypes::ROLE_ALERT ||
+        state.role == ui::AccessibilityTypes::ROLE_WINDOW)) {
+    SendAlertControlNotification(view, type, profile);
+    return;
+  }
+
   switch (state.role) {
   case ui::AccessibilityTypes::ROLE_ALERT:
+  case ui::AccessibilityTypes::ROLE_DIALOG:
   case ui::AccessibilityTypes::ROLE_WINDOW:
     SendWindowNotification(view, type, profile);
     break;
@@ -224,6 +209,12 @@ void AccessibilityEventRouterViews::DispatchAccessibilityNotification(
   case ui::AccessibilityTypes::ROLE_SLIDER:
     SendSliderNotification(view, type, profile);
     break;
+  case ui::AccessibilityTypes::ROLE_OUTLINE:
+    SendTreeNotification(view, type, profile);
+    break;
+  case ui::AccessibilityTypes::ROLE_OUTLINEITEM:
+    SendTreeItemNotification(view, type, profile);
+    break;
   default:
     // If this is encountered, please file a bug with the role that wasn't
     // caught so we can add accessibility extension API support.
@@ -234,35 +225,35 @@ void AccessibilityEventRouterViews::DispatchAccessibilityNotification(
 // static
 void AccessibilityEventRouterViews::SendButtonNotification(
     views::View* view,
-    int type,
+    ui::AccessibilityTypes::Event event,
     Profile* profile) {
   AccessibilityButtonInfo info(
       profile, GetViewName(view), GetViewContext(view));
-  SendAccessibilityNotification(type, &info);
+  SendControlAccessibilityNotification(event, &info);
 }
 
 // static
 void AccessibilityEventRouterViews::SendLinkNotification(
     views::View* view,
-    int type,
+    ui::AccessibilityTypes::Event event,
     Profile* profile) {
   AccessibilityLinkInfo info(profile, GetViewName(view), GetViewContext(view));
-  SendAccessibilityNotification(type, &info);
+  SendControlAccessibilityNotification(event, &info);
 }
 
 // static
 void AccessibilityEventRouterViews::SendMenuNotification(
     views::View* view,
-    int type,
+    ui::AccessibilityTypes::Event event,
     Profile* profile) {
   AccessibilityMenuInfo info(profile, GetViewName(view));
-  SendAccessibilityNotification(type, &info);
+  SendMenuAccessibilityNotification(event, &info);
 }
 
 // static
 void AccessibilityEventRouterViews::SendMenuItemNotification(
     views::View* view,
-    int type,
+    ui::AccessibilityTypes::Event event,
     Profile* profile) {
   std::string name = GetViewName(view);
   std::string context = GetViewContext(view);
@@ -286,13 +277,67 @@ void AccessibilityEventRouterViews::SendMenuItemNotification(
 
   AccessibilityMenuItemInfo info(
       profile, name, context, has_submenu, index, count);
-  SendAccessibilityNotification(type, &info);
+  SendControlAccessibilityNotification(event, &info);
+}
+
+// static
+void AccessibilityEventRouterViews::SendTreeNotification(
+    views::View* view,
+    ui::AccessibilityTypes::Event event,
+    Profile* profile) {
+  AccessibilityTreeInfo info(profile, GetViewName(view));
+  SendControlAccessibilityNotification(event, &info);
+}
+
+// static
+void AccessibilityEventRouterViews::SendTreeItemNotification(
+    views::View* view,
+    ui::AccessibilityTypes::Event event,
+    Profile* profile) {
+  std::string name = GetViewName(view);
+  std::string context = GetViewContext(view);
+
+  if (strcmp(view->GetClassName(), views::TreeView::kViewClassName) != 0) {
+    NOTREACHED();
+    return;
+  }
+
+  views::TreeView* tree = static_cast<views::TreeView*>(view);
+  ui::TreeModelNode* selected_node = tree->GetSelectedNode();
+  ui::TreeModel* model = tree->model();
+
+  int siblings_count = model->GetChildCount(model->GetRoot());
+  int children_count = -1;
+  int index = -1;
+  int depth = -1;
+  bool is_expanded = false;
+
+  if (selected_node) {
+    children_count = model->GetChildCount(selected_node);
+    is_expanded = tree->IsExpanded(selected_node);
+    ui::TreeModelNode* parent_node = model->GetParent(selected_node);
+    if (parent_node) {
+      index = model->GetIndexOf(parent_node, selected_node);
+      siblings_count = model->GetChildCount(parent_node);
+    }
+    // Get node depth.
+    depth = 0;
+    while (parent_node) {
+      depth++;
+      parent_node = model->GetParent(parent_node);
+    }
+  }
+
+  AccessibilityTreeItemInfo info(
+      profile, name, context, depth, index, siblings_count, children_count,
+      is_expanded);
+  SendControlAccessibilityNotification(event, &info);
 }
 
 // static
 void AccessibilityEventRouterViews::SendTextfieldNotification(
     views::View* view,
-    int type,
+    ui::AccessibilityTypes::Event event,
     Profile* profile) {
   ui::AccessibleViewState state;
   view->GetAccessibleState(&state);
@@ -303,13 +348,13 @@ void AccessibilityEventRouterViews::SendTextfieldNotification(
   AccessibilityTextBoxInfo info(profile, name, context, password);
   std::string value = UTF16ToUTF8(state.value);
   info.SetValue(value, state.selection_start, state.selection_end);
-  SendAccessibilityNotification(type, &info);
+  SendControlAccessibilityNotification(event, &info);
 }
 
 // static
 void AccessibilityEventRouterViews::SendComboboxNotification(
     views::View* view,
-    int type,
+    ui::AccessibilityTypes::Event event,
     Profile* profile) {
   ui::AccessibleViewState state;
   view->GetAccessibleState(&state);
@@ -318,31 +363,30 @@ void AccessibilityEventRouterViews::SendComboboxNotification(
   std::string context = GetViewContext(view);
   AccessibilityComboBoxInfo info(
       profile, name, context, value, state.index, state.count);
-  SendAccessibilityNotification(type, &info);
+  SendControlAccessibilityNotification(event, &info);
 }
 
 // static
 void AccessibilityEventRouterViews::SendCheckboxNotification(
     views::View* view,
-    int type,
+    ui::AccessibilityTypes::Event event,
     Profile* profile) {
   ui::AccessibleViewState state;
   view->GetAccessibleState(&state);
   std::string name = UTF16ToUTF8(state.name);
-  std::string value = UTF16ToUTF8(state.value);
   std::string context = GetViewContext(view);
   AccessibilityCheckboxInfo info(
       profile,
       name,
       context,
       state.state == ui::AccessibilityTypes::STATE_CHECKED);
-  SendAccessibilityNotification(type, &info);
+  SendControlAccessibilityNotification(event, &info);
 }
 
 // static
 void AccessibilityEventRouterViews::SendWindowNotification(
     views::View* view,
-    int type,
+    ui::AccessibilityTypes::Event event,
     Profile* profile) {
   ui::AccessibleViewState state;
   view->GetAccessibleState(&state);
@@ -358,13 +402,13 @@ void AccessibilityEventRouterViews::SendWindowNotification(
     window_text = UTF16ToUTF8(state.name);
 
   AccessibilityWindowInfo info(profile, window_text);
-  SendAccessibilityNotification(type, &info);
+  SendWindowAccessibilityNotification(event, &info);
 }
 
 // static
 void AccessibilityEventRouterViews::SendSliderNotification(
     views::View* view,
-    int type,
+    ui::AccessibilityTypes::Event event,
     Profile* profile) {
   ui::AccessibleViewState state;
   view->GetAccessibleState(&state);
@@ -377,7 +421,22 @@ void AccessibilityEventRouterViews::SendSliderNotification(
       name,
       context,
       value);
-  SendAccessibilityNotification(type, &info);
+  SendControlAccessibilityNotification(event, &info);
+}
+
+// static
+void AccessibilityEventRouterViews::SendAlertControlNotification(
+    views::View* view,
+    ui::AccessibilityTypes::Event event,
+    Profile* profile) {
+  ui::AccessibleViewState state;
+  view->GetAccessibleState(&state);
+
+  std::string name = UTF16ToUTF8(state.name);
+  AccessibilityAlertInfo info(
+      profile,
+      name);
+  SendControlAccessibilityNotification(event, &info);
 }
 
 // static
@@ -398,9 +457,11 @@ std::string AccessibilityEventRouterViews::GetViewContext(views::View* view) {
     // Two cases are handled right now. More could be added in the future
     // depending on how the UI evolves.
 
-    // A control in a toolbar should use the toolbar's accessible name
-    // as the context.
-    if (state.role == ui::AccessibilityTypes::ROLE_TOOLBAR &&
+    // A control inside of alert, toolbar or dialog should use that container's
+    // accessible name.
+    if ((state.role == ui::AccessibilityTypes::ROLE_ALERT ||
+         state.role == ui::AccessibilityTypes::ROLE_DIALOG ||
+         state.role == ui::AccessibilityTypes::ROLE_TOOLBAR) &&
         !state.name.empty()) {
       return UTF16ToUTF8(state.name);
     }
@@ -444,28 +505,6 @@ views::View* AccessibilityEventRouterViews::FindDescendantWithAccessibleRole(
 }
 
 // static
-bool AccessibilityEventRouterViews::IsMenuEvent(
-    views::View* view,
-    int type) {
-  if (type == chrome::NOTIFICATION_ACCESSIBILITY_MENU_OPENED ||
-      type == chrome::NOTIFICATION_ACCESSIBILITY_MENU_CLOSED)
-    return true;
-
-  while (view) {
-    ui::AccessibleViewState state;
-    view->GetAccessibleState(&state);
-    ui::AccessibilityTypes::Role role = state.role;
-    if (role == ui::AccessibilityTypes::ROLE_MENUITEM ||
-        role == ui::AccessibilityTypes::ROLE_MENUPOPUP) {
-      return true;
-    }
-    view = view->parent();
-  }
-
-  return false;
-}
-
-// static
 void AccessibilityEventRouterViews::RecursiveGetMenuItemIndexAndCount(
     views::View* menu,
     views::View* item,
@@ -473,6 +512,9 @@ void AccessibilityEventRouterViews::RecursiveGetMenuItemIndexAndCount(
     int* count) {
   for (int i = 0; i < menu->child_count(); ++i) {
     views::View* child = menu->child_at(i);
+    if (!child->visible())
+      continue;
+
     int previous_count = *count;
     RecursiveGetMenuItemIndexAndCount(child, item, index, count);
     ui::AccessibleViewState state;

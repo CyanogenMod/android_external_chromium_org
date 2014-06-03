@@ -44,7 +44,7 @@ void ShiftOriginY(NSView* view, CGFloat amount) {
          syncCallback:(const BrowserWindow::StartSyncCallback&)syncCallback
         closeCallback:(const base::Closure&)closeCallback
          isSyncDialog:(BOOL)isSyncDialog
-                email:(const string16&)email
+                email:(const base::string16&)email
          errorMessage:(NSString*)errorMessage {
   if ((self = [super initWithNibName:nibName
                               bundle:base::mac::FrameworkBundle()])) {
@@ -67,7 +67,7 @@ void ShiftOriginY(NSView* view, CGFloat amount) {
   // the window and nothing else has initiated the sync, we must do so here
   if (isSyncDialog_ && !startSyncCallback_.is_null()) {
     base::ResetAndReturn(&startSyncCallback_).Run(
-        OneClickSigninSyncStarter::SYNC_WITH_DEFAULT_SETTINGS);
+        OneClickSigninSyncStarter::UNDO_SYNC);
   }
 }
 
@@ -168,7 +168,7 @@ void ShiftOriginY(NSView* view, CGFloat amount) {
 
   if (isSyncDialog_) {
     [messageTextField_ setStringValue:l10n_util::GetNSStringWithFixup(
-        IDS_ONE_CLICK_SIGNIN_DIALOG_TITLE)];
+        IDS_ONE_CLICK_SIGNIN_DIALOG_TITLE_NEW)];
   } else if ([errorMessage_ length] != 0) {
     [messageTextField_ setStringValue:errorMessage_];
   }

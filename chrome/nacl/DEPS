@@ -4,6 +4,6 @@ include_rules = [
   "+components/breakpad",
   "+components/nacl",
   "+content/public/app/startup_helper_win.h",
-  "+sandbox/linux/services",
+  "+content/public/common/content_switches.h",
   "+sandbox/win/src",
 ]

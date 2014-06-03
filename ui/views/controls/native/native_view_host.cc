@@ -6,6 +6,7 @@
 
 #include "base/logging.h"
 #include "ui/gfx/canvas.h"
+#include "ui/views/accessibility/native_view_accessibility.h"
 #include "ui/views/controls/native/native_view_host_wrapper.h"
 #include "ui/views/widget/widget.h"
 
@@ -13,9 +14,10 @@ namespace views {
 
 // static
 const char NativeViewHost::kViewClassName[] = "NativeViewHost";
+const char kWidgetNativeViewHostKey[] = "WidgetNativeViewHost";
 
 #if defined(USE_AURA)
-// Views implmenetatxion draws the focus.
+// Views implementation draws the focus.
 // TODO(oshima): Eliminate this flag and consolidate
 // the focus border code.
 const bool NativeViewHost::kRenderNativeControlFocus = false;
@@ -48,6 +50,10 @@ void NativeViewHost::Attach(gfx::NativeView native_view) {
   native_wrapper_->NativeViewWillAttach();
   Widget::ReparentNativeView(native_view_, GetWidget()->GetNativeView());
   Layout();
+
+  Widget* widget = Widget::GetWidgetForNativeView(native_view);
+  if (widget)
+    widget->SetNativeWindowProperty(kWidgetNativeViewHostKey, this);
 }
 
 void NativeViewHost::Detach() {
@@ -154,8 +160,8 @@ void NativeViewHost::ViewHierarchyChanged(
   // is being reparented.  If the previous and new parents belong to the same
   // widget, don't remove |this| from the widget.  This saves resources from
   // removing from widget and immediately followed by adding to widget; in
-  // particular, there wouldn't be spurious webkitvisibilitychange events for
-  // web contents of |WebView|.
+  // particular, there wouldn't be spurious visibilitychange events for web
+  // contents of |WebView|.
   if (details.move_view && this_widget &&
       details.move_view->GetWidget() == this_widget) {
     return;
@@ -195,8 +201,12 @@ gfx::NativeViewAccessible NativeViewHost::GetNativeViewAccessible() {
 
 void NativeViewHost::Detach(bool destroyed) {
   if (native_view_) {
-    if (!destroyed)
+    if (!destroyed) {
+      Widget* widget = Widget::GetWidgetForNativeView(native_view_);
+      if (widget)
+        widget->SetNativeWindowProperty(kWidgetNativeViewHostKey, NULL);
       ClearFocus();
+    }
     native_wrapper_->NativeViewDetaching(destroyed);
     native_view_ = NULL;
   }

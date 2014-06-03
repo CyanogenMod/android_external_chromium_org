@@ -146,7 +146,7 @@ CursorLoader* CursorLoader::Create() {
 }
 
 CursorLoaderX11::CursorLoaderX11()
-    : invisible_cursor_(CreateInvisibleCursor(), GetXDisplay()) {
+    : invisible_cursor_(CreateInvisibleCursor(), gfx::GetXDisplay()) {
 }
 
 CursorLoaderX11::~CursorLoaderX11() {
@@ -159,7 +159,7 @@ void CursorLoaderX11::LoadImageCursor(int id,
   const gfx::ImageSkia* image =
       ResourceBundle::GetSharedInstance().GetImageSkiaNamed(resource_id);
   const gfx::ImageSkiaRep& image_rep = image->GetRepresentation(
-      GetScaleFactorFromScale(display().device_scale_factor()));
+      display().device_scale_factor());
   SkBitmap bitmap = image_rep.sk_bitmap();
   gfx::Point hotpoint = hot;
   ScaleAndRotateCursorBitmapAndHotpoint(
@@ -177,7 +177,7 @@ void CursorLoaderX11::LoadAnimatedCursor(int id,
   const gfx::ImageSkia* image =
       ResourceBundle::GetSharedInstance().GetImageSkiaNamed(resource_id);
   const gfx::ImageSkiaRep& image_rep = image->GetRepresentation(
-      GetScaleFactorFromScale(display().device_scale_factor()));
+      display().device_scale_factor());
   SkBitmap bitmap = image_rep.sk_bitmap();
   int frame_width = bitmap.height();
   int frame_height = frame_width;
@@ -205,7 +205,7 @@ void CursorLoaderX11::LoadAnimatedCursor(int id,
   }
 
   animated_cursors_[id] = std::make_pair(
-      XcursorImagesLoadCursor(GetXDisplay(), x_images), x_images);
+      XcursorImagesLoadCursor(gfx::GetXDisplay(), x_images), x_images);
   // |bitmap| is owned by the resource bundle. So we do not need to free it.
 }
 
@@ -218,7 +218,7 @@ void CursorLoaderX11::UnloadAll() {
   for (AnimatedCursorMap::iterator it = animated_cursors_.begin();
        it != animated_cursors_.end(); ++it) {
     XcursorImagesDestroy(it->second.second);  // also frees individual frames.
-    XFreeCursor(GetXDisplay(), it->second.first);
+    XFreeCursor(gfx::GetXDisplay(), it->second.first);
   }
 }
 

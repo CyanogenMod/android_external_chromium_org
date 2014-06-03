@@ -53,9 +53,9 @@ class PrintPreviewUI : public ConstrainedWebDialogUI {
   int GetAvailableDraftPageCount();
 
   // Setters
-  void SetInitiatorTitle(const string16& initiator_title);
+  void SetInitiatorTitle(const base::string16& initiator_title);
 
-  string16 initiator_title() { return initiator_title_; }
+  base::string16 initiator_title() { return initiator_title_; }
 
   bool source_is_modifiable() { return source_is_modifiable_; }
 
@@ -104,10 +104,6 @@ class PrintPreviewUI : public ConstrainedWebDialogUI {
   void OnPreviewDataIsAvailable(int expected_pages_count,
                                 int preview_request_id);
 
-  // Notifies the Web UI renderer to reuse the preview data.
-  // |preview_request_id| indicates which request resulted in this response.
-  void OnReusePreviewData(int preview_request_id);
-
   // Notifies the Web UI that preview dialog has been destroyed. This is the
   // last chance to communicate with the initiator before the association is
   // erased.
@@ -147,6 +143,18 @@ class PrintPreviewUI : public ConstrainedWebDialogUI {
   // default.
   void OnPrintPreviewScalingDisabled();
 
+  // Allows tests to wait until the print preview dialog is loaded. Optionally
+  // also instructs the dialog to auto-cancel, which is used for testing only.
+  class TestingDelegate {
+   public:
+    virtual bool IsAutoCancelEnabled() = 0;
+    virtual void DidGetPreviewPageCount(int page_count) = 0;
+    virtual void DidRenderPreviewPage(
+        const content::WebContents& preview_dialog) = 0;
+  };
+
+  static void SetDelegateForTesting(TestingDelegate* delegate);
+
  private:
   friend class PrintPreviewHandlerTest;
   FRIEND_TEST_ALL_PREFIXES(PrintPreviewHandlerTest, StickyMarginsCustom);
@@ -183,7 +191,7 @@ class PrintPreviewUI : public ConstrainedWebDialogUI {
 
   // Store the initiator title, used for populating the print preview dialog
   // title.
-  string16 initiator_title_;
+  base::string16 initiator_title_;
 
   // Keeps track of whether OnClosePrintPreviewDialog() has been called or not.
   bool dialog_closed_;

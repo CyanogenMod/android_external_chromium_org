@@ -26,9 +26,9 @@ Mount::Mount() : dev_(0) {}
 
 Mount::~Mount() {}
 
-Error Mount::Init(int dev, StringMap_t& args, PepperInterface* ppapi) {
-  dev_ = dev;
-  ppapi_ = ppapi;
+Error Mount::Init(const MountInitArgs& args) {
+  dev_ = args.dev;
+  ppapi_ = args.ppapi;
   return 0;
 }
 
@@ -37,19 +37,6 @@ void Mount::Destroy() {}
 Error Mount::OpenResource(const Path& path, ScopedMountNode* out_node) {
   out_node->reset(NULL);
   return EINVAL;
-}
-
-int Mount::OpenModeToPermission(int mode) {
-  int out;
-  switch (mode & 3) {
-    case O_RDONLY:
-      out = S_IREAD;
-    case O_WRONLY:
-      out = S_IWRITE;
-    case O_RDWR:
-      out = S_IREAD | S_IWRITE;
-  }
-  return out;
 }
 
 void Mount::OnNodeCreated(MountNode* node) {

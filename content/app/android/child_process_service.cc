@@ -45,13 +45,13 @@ class SurfaceTexturePeerChildImpl : public content::SurfaceTexturePeer,
 
   virtual void EstablishSurfaceTexturePeer(
       base::ProcessHandle pid,
-      scoped_refptr<gfx::SurfaceTextureBridge> surface_texture_bridge,
+      scoped_refptr<gfx::SurfaceTexture> surface_texture,
       int primary_id,
       int secondary_id) OVERRIDE {
     JNIEnv* env = base::android::AttachCurrentThread();
     content::Java_ChildProcessService_establishSurfaceTexturePeer(
         env, service_.obj(), pid,
-        surface_texture_bridge->j_surface_texture().obj(), primary_id,
+        surface_texture->j_surface_texture().obj(), primary_id,
         secondary_id);
     CheckException(env);
   }
@@ -126,7 +126,7 @@ void InitChildProcess(JNIEnv* env,
 }
 
 void ExitChildProcess(JNIEnv* env, jclass clazz) {
-  LOG(INFO) << "ChildProcessService: Exiting child process.";
+  VLOG(0) << "ChildProcessService: Exiting child process.";
   LibraryLoaderExitHook();
   _exit(0);
 }

@@ -15,14 +15,13 @@
 #include "base/timer/timer.h"
 #include "components/autofill/content/renderer/form_cache.h"
 #include "components/autofill/content/renderer/page_click_listener.h"
-#include "components/autofill/core/common/autocheckout_status.h"
 #include "components/autofill/core/common/forms_seen_state.h"
 #include "content/public/renderer/render_view_observer.h"
 #include "third_party/WebKit/public/web/WebAutofillClient.h"
 #include "third_party/WebKit/public/web/WebFormElement.h"
 #include "third_party/WebKit/public/web/WebInputElement.h"
 
-namespace WebKit {
+namespace blink {
 class WebNode;
 class WebView;
 }
@@ -44,7 +43,7 @@ class PasswordAutofillAgent;
 
 class AutofillAgent : public content::RenderViewObserver,
                       public PageClickListener,
-                      public WebKit::WebAutofillClient {
+                      public blink::WebAutofillClient {
  public:
   // PasswordAutofillAgent is guaranteed to outlive AutofillAgent.
   AutofillAgent(content::RenderView* render_view,
@@ -60,41 +59,39 @@ class AutofillAgent : public content::RenderViewObserver,
 
   // RenderView::Observer:
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-  virtual void DidFinishDocumentLoad(WebKit::WebFrame* frame) OVERRIDE;
-  virtual void DidStartProvisionalLoad(WebKit::WebFrame* frame) OVERRIDE;
-  virtual void DidFailProvisionalLoad(
-      WebKit::WebFrame* frame,
-      const WebKit::WebURLError& error) OVERRIDE;
-  virtual void DidCommitProvisionalLoad(WebKit::WebFrame* frame,
+  virtual void DidFinishDocumentLoad(blink::WebFrame* frame) OVERRIDE;
+  virtual void DidCommitProvisionalLoad(blink::WebFrame* frame,
                                         bool is_new_navigation) OVERRIDE;
-  virtual void FrameDetached(WebKit::WebFrame* frame) OVERRIDE;
-  virtual void WillSubmitForm(WebKit::WebFrame* frame,
-                              const WebKit::WebFormElement& form) OVERRIDE;
+  virtual void FrameDetached(blink::WebFrame* frame) OVERRIDE;
+  virtual void WillSubmitForm(blink::WebFrame* frame,
+                              const blink::WebFormElement& form) OVERRIDE;
   virtual void ZoomLevelChanged() OVERRIDE;
-  virtual void DidChangeScrollOffset(WebKit::WebFrame* frame) OVERRIDE;
-  virtual void FocusedNodeChanged(const WebKit::WebNode& node) OVERRIDE;
+  virtual void DidChangeScrollOffset(blink::WebFrame* frame) OVERRIDE;
+  virtual void FocusedNodeChanged(const blink::WebNode& node) OVERRIDE;
+  virtual void OrientationChangeEvent(int orientation) OVERRIDE;
 
   // PageClickListener:
-  virtual void InputElementClicked(const WebKit::WebInputElement& element,
+  virtual void InputElementClicked(const blink::WebInputElement& element,
                                    bool was_focused,
                                    bool is_focused) OVERRIDE;
   virtual void InputElementLostFocus() OVERRIDE;
 
-  // WebKit::WebAutofillClient:
-  virtual void didClearAutofillSelection(const WebKit::WebNode& node) OVERRIDE;
+  // blink::WebAutofillClient:
+  virtual void didClearAutofillSelection(const blink::WebNode& node) OVERRIDE;
   virtual void textFieldDidEndEditing(
-      const WebKit::WebInputElement& element) OVERRIDE;
+      const blink::WebInputElement& element) OVERRIDE;
   virtual void textFieldDidChange(
-      const WebKit::WebInputElement& element) OVERRIDE;
+      const blink::WebInputElement& element) OVERRIDE;
   virtual void textFieldDidReceiveKeyDown(
-      const WebKit::WebInputElement& element,
-      const WebKit::WebKeyboardEvent& event) OVERRIDE;
+      const blink::WebInputElement& element,
+      const blink::WebKeyboardEvent& event) OVERRIDE;
   virtual void didRequestAutocomplete(
-      WebKit::WebFrame* frame,
-      const WebKit::WebFormElement& form) OVERRIDE;
+      blink::WebFrame* frame,
+      const blink::WebFormElement& form) OVERRIDE;
   virtual void setIgnoreTextChanges(bool ignore) OVERRIDE;
   virtual void didAssociateFormControls(
-      const WebKit::WebVector<WebKit::WebNode>& nodes) OVERRIDE;
+      const blink::WebVector<blink::WebNode>& nodes) OVERRIDE;
+  virtual void openTextDataListChooser(const blink::WebInputElement& element);
 
   void OnFormDataFilled(int query_id, const FormData& form);
   void OnFieldTypePredictionsAvailable(
@@ -107,44 +104,24 @@ class AutofillAgent : public content::RenderViewObserver,
   void OnClearPreviewedForm();
   void OnSetNodeText(const base::string16& value);
   void OnAcceptDataListSuggestion(const base::string16& value);
-  void OnAcceptPasswordAutofillSuggestion(const base::string16& value);
-  void OnGetAllForms();
+  void OnAcceptPasswordAutofillSuggestion(const base::string16& username);
 
   // Called when interactive autocomplete finishes.
   void OnRequestAutocompleteResult(
-      WebKit::WebFormElement::AutocompleteResult result,
+      blink::WebFormElement::AutocompleteResult result,
       const FormData& form_data);
 
   // Called when an autocomplete request succeeds or fails with the |result|.
   void FinishAutocompleteRequest(
-      WebKit::WebFormElement::AutocompleteResult result);
-
-  // Called when the Autofill server hints that this page should be filled using
-  // Autocheckout. All the relevant form fields in |form_data| will be filled
-  // and then element specified by |element_descriptor| will be clicked to
-  // proceed to the next step of the form.
-  void OnFillFormsAndClick(
-      const std::vector<FormData>& form_data,
-      const std::vector<WebElementDescriptor>& click_elements_before_form_fill,
-      const std::vector<WebElementDescriptor>& click_elements_after_form_fill,
-      const WebElementDescriptor& element_descriptor);
-
-  // Called when |topmost_frame_| is supported for Autocheckout.
-  void OnAutocheckoutSupported();
+      blink::WebFormElement::AutocompleteResult result);
 
   // Called when the page is actually shown in the browser, as opposed to simply
   // being preloaded.
   void OnPageShown();
 
-  // Called when an Autocheckout page is completed by the renderer.
-  void CompleteAutocheckoutPage(autofill::AutocheckoutStatus status);
-
-  // Called when clicking an Autocheckout proceed element fails to do anything.
-  void ClickFailed();
-
   // Called in a posted task by textFieldDidChange() to work-around a WebKit bug
   // http://bugs.webkit.org/show_bug.cgi?id=16976
-  void TextFieldDidChangeImpl(const WebKit::WebInputElement& element);
+  void TextFieldDidChangeImpl(const blink::WebInputElement& element);
 
   // Shows the autofill suggestions for |element|.
   // This call is asynchronous and may or may not lead to the showing of a
@@ -157,15 +134,20 @@ class AutofillAgent : public content::RenderViewObserver,
   // displayed to the user if Autofill has suggestions available, but cannot
   // fill them because it is disabled (e.g. when trying to fill a credit card
   // form on a non-secure website).
-  void ShowSuggestions(const WebKit::WebInputElement& element,
+  // |datalist_only| specifies whether all of <datalist> suggestions and no
+  // autofill suggestions are shown. |autofill_on_empty_values| and
+  // |requires_caret_at_end| are ignored if |datalist_only| is true.
+  void ShowSuggestions(const blink::WebInputElement& element,
                        bool autofill_on_empty_values,
                        bool requires_caret_at_end,
-                       bool display_warning_if_disabled);
+                       bool display_warning_if_disabled,
+                       bool datalist_only);
 
   // Queries the browser for Autocomplete and Autofill suggestions for the given
   // |element|.
-  void QueryAutofillSuggestions(const WebKit::WebInputElement& element,
-                                bool display_warning_if_disabled);
+  void QueryAutofillSuggestions(const blink::WebInputElement& element,
+                                bool display_warning_if_disabled,
+                                bool datalist_only);
 
   // Sets the element value to reflect the selected |suggested_value|.
   void AcceptDataListSuggestion(const base::string16& suggested_value);
@@ -174,27 +156,22 @@ class AutofillAgent : public content::RenderViewObserver,
   // |value| is the current text in the field, and |unique_id| is the selected
   // profile's unique ID.  |action| specifies whether to Fill or Preview the
   // values returned from the AutofillManager.
-  void FillAutofillFormData(const WebKit::WebNode& node,
+  void FillAutofillFormData(const blink::WebNode& node,
                             int unique_id,
                             AutofillAction action);
 
   // Fills |form| and |field| with the FormData and FormField corresponding to
   // |node|. Returns true if the data was found; and false otherwise.
   bool FindFormAndFieldForNode(
-      const WebKit::WebNode& node,
+      const blink::WebNode& node,
       FormData* form,
       FormFieldData* field) WARN_UNUSED_RESULT;
 
   // Set |node| to display the given |value|.
-  void SetNodeText(const base::string16& value, WebKit::WebInputElement* node);
+  void SetNodeText(const base::string16& value, blink::WebInputElement* node);
 
   // Hides any currently showing Autofill UI.
   void HideAutofillUI();
-
-  void MaybeSendDynamicFormsSeen();
-
-  // Send |AutofillHostMsg_MaybeShowAutocheckoutBubble| to browser if needed.
-  void MaybeShowAutocheckoutBubble();
 
   FormCache form_cache_;
 
@@ -205,23 +182,19 @@ class AutofillAgent : public content::RenderViewObserver,
   int autofill_query_id_;
 
   // The element corresponding to the last request sent for form field Autofill.
-  WebKit::WebInputElement element_;
+  blink::WebInputElement element_;
 
   // The form element currently requesting an interactive autocomplete.
-  WebKit::WebFormElement in_flight_request_form_;
+  blink::WebFormElement in_flight_request_form_;
 
   // All the form elements seen in the top frame.
-  std::vector<WebKit::WebFormElement> form_elements_;
+  std::vector<blink::WebFormElement> form_elements_;
 
   // The action to take when receiving Autofill data from the AutofillManager.
   AutofillAction autofill_action_;
 
-  // Pointer to the current topmost frame.  Used in autocheckout flows so
-  // elements can be clicked.
-  WebKit::WebFrame* topmost_frame_;
-
   // Pointer to the WebView. Used to access page scale factor.
-  WebKit::WebView* web_view_;
+  blink::WebView* web_view_;
 
   // Should we display a warning if autofill is disabled?
   bool display_warning_if_disabled_;
@@ -235,16 +208,6 @@ class AutofillAgent : public content::RenderViewObserver,
 
   // If true we just set the node text so we shouldn't show the popup.
   bool did_set_node_text_;
-
-  // Watchdog timer for clicking in Autocheckout flows.
-  base::OneShotTimer<AutofillAgent> click_timer_;
-
-  // Used to signal that we need to watch for loading failures in an
-  // Autocheckout flow.
-  bool autocheckout_click_in_progress_;
-
-  // Whether or not |topmost_frame_| is whitelisted for Autocheckout.
-  bool is_autocheckout_supported_;
 
   // Whether or not new forms/fields have been dynamically added
   // since the last loaded forms were sent to the browser process.

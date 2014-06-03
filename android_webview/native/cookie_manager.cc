@@ -6,6 +6,7 @@
 
 #include "android_webview/browser/aw_browser_context.h"
 #include "android_webview/browser/aw_cookie_access_policy.h"
+#include "android_webview/browser/net/init_native_callback.h"
 #include "android_webview/browser/scoped_allow_wait_for_legacy_web_view_api.h"
 #include "android_webview/native/aw_browser_dependency_factory.h"
 #include "base/android/jni_string.h"
@@ -25,6 +26,7 @@
 #include "base/threading/thread_restrictions.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/cookie_crypto_delegate.h"
 #include "content/public/browser/cookie_store_factory.h"
 #include "content/public/common/url_constants.h"
 #include "jni/AwCookieManager_jni.h"
@@ -63,17 +65,25 @@ void ImportLegacyCookieStore(const FilePath& cookie_store_path) {
     return;
 
   // WebViewClassic gets the database path from Context and appends a
-  // hardcoded name. (see https://android.googlesource.com/platform/frameworks/base/+/bf6f6f9de72c9fd15e6bd/core/java/android/webkit/JniUtil.java and
-  // https://android.googlesource.com/platform/external/webkit/+/7151ed0c74599/Source/WebKit/android/WebCoreSupport/WebCookieJar.cpp)
+  // hardcoded name. See:
+  // https://android.googlesource.com/platform/frameworks/base/+/bf6f6f9d/core/java/android/webkit/JniUtil.java
+  // https://android.googlesource.com/platform/external/webkit/+/7151e/
+  //     Source/WebKit/android/WebCoreSupport/WebCookieJar.cpp
   FilePath old_cookie_store_path;
   base::android::GetDatabaseDirectory(&old_cookie_store_path);
   old_cookie_store_path = old_cookie_store_path.Append(
       FILE_PATH_LITERAL("webviewCookiesChromium.db"));
   if (base::PathExists(old_cookie_store_path) &&
       !base::Move(old_cookie_store_path, cookie_store_path)) {
-         LOG(WARNING) << "Failed to move old cookie store path from "
-                      << old_cookie_store_path.AsUTF8Unsafe() << " to "
-                      << cookie_store_path.AsUTF8Unsafe();
+    LOG(WARNING) << "Failed to move old cookie store path from "
+                 << old_cookie_store_path.AsUTF8Unsafe() << " to "
+                 << cookie_store_path.AsUTF8Unsafe();
+  }
+}
+
+void GetUserDataDir(FilePath* user_data_dir) {
+  if (!PathService::Get(base::DIR_ANDROID_APP_DATA, user_data_dir)) {
+    NOTREACHED() << "Failed to get app data directory for Android WebView";
   }
 }
 
@@ -81,7 +91,7 @@ class CookieManager {
  public:
   static CookieManager* GetInstance();
 
-  scoped_refptr<net::CookieStore> CreateCookieStore(
+  scoped_refptr<net::CookieStore> CreateBrowserThreadCookieStore(
       AwBrowserContext* browser_context);
 
   void SetAcceptCookie(bool accept);
@@ -103,14 +113,13 @@ class CookieManager {
   ~CookieManager();
 
   typedef base::Callback<void(base::WaitableEvent*)> CookieTask;
-  void ExecCookieTask(const CookieTask& task,
-                      const bool wait_for_completion);
+  void ExecCookieTask(const CookieTask& task);
 
   void SetCookieAsyncHelper(
       const GURL& host,
       const std::string& value,
       base::WaitableEvent* completion);
-  void SetCookieCompleted(bool success);
+  void SetCookieCompleted(base::WaitableEvent* completion, bool success);
 
   void GetCookieValueAsyncHelper(
       const GURL& host,
@@ -122,7 +131,7 @@ class CookieManager {
 
   void RemoveSessionCookieAsyncHelper(base::WaitableEvent* completion);
   void RemoveAllCookieAsyncHelper(base::WaitableEvent* completion);
-  void RemoveCookiesCompleted(int num_deleted);
+  void RemoveCookiesCompleted(base::WaitableEvent* completion, int num_deleted);
 
   void FlushCookieStoreAsyncHelper(base::WaitableEvent* completion);
 
@@ -144,8 +153,8 @@ class CookieManager {
   scoped_refptr<base::MessageLoopProxy> cookie_monster_proxy_;
   base::Lock cookie_monster_lock_;
 
-  // Both these threads are normally NULL. They only exist when the temporary
-  // cookie monster is in use.
+  // Both these threads are normally NULL. They only exist if CookieManager was
+  // accessed before Chromium was started.
   scoped_ptr<base::Thread> cookie_monster_client_thread_;
   scoped_ptr<base::Thread> cookie_monster_backend_thread_;
 
@@ -182,9 +191,11 @@ void CookieManager::CreateCookieMonster(
     NULL,
     NULL,
     client_task_runner,
-    background_task_runner);
+    background_task_runner,
+    scoped_ptr<content::CookieCryptoDelegate>());
   cookie_monster_ = cookie_store->GetCookieMonster();
   cookie_monster_->SetPersistSessionCookies(true);
+  SetAcceptFileSchemeCookiesLocked(kDefaultFileSchemeAllowed);
 }
 
 void CookieManager::EnsureCookieMonsterExistsLocked() {
@@ -193,85 +204,66 @@ void CookieManager::EnsureCookieMonsterExistsLocked() {
     return;
   }
 
-  // Create temporary cookie monster.
+  // Create cookie monster using WebView-specific threads, as the rest of the
+  // browser has not been started yet.
   FilePath user_data_dir;
-  if (!PathService::Get(base::DIR_ANDROID_APP_DATA, &user_data_dir)) {
-    NOTREACHED() << "Failed to get app data directory for Android WebView";
-  }
+  GetUserDataDir(&user_data_dir);
   cookie_monster_client_thread_.reset(
-      new base::Thread("TempCookieMonsterClient"));
+      new base::Thread("CookieMonsterClient"));
   cookie_monster_client_thread_->Start();
   cookie_monster_proxy_ = cookie_monster_client_thread_->message_loop_proxy();
   cookie_monster_backend_thread_.reset(
-      new base::Thread("TempCookieMonsterBackend"));
+      new base::Thread("CookieMonsterBackend"));
   cookie_monster_backend_thread_->Start();
 
   CreateCookieMonster(user_data_dir,
                       cookie_monster_proxy_,
                       cookie_monster_backend_thread_->message_loop_proxy());
-  SetAcceptFileSchemeCookiesLocked(kDefaultFileSchemeAllowed);
 }
 
-// Executes the |task| on the FILE thread. |wait_for_completion| should only be
-// true if the Java API method returns a value or is explicitly stated to be
-// synchronous.
-void CookieManager::ExecCookieTask(const CookieTask& task,
-                                   const bool wait_for_completion) {
+// Executes the |task| on the |cookie_monster_proxy_| message loop.
+void CookieManager::ExecCookieTask(const CookieTask& task) {
   base::WaitableEvent completion(false, false);
   base::AutoLock lock(cookie_monster_lock_);
 
   EnsureCookieMonsterExistsLocked();
 
-  cookie_monster_proxy_->PostTask(FROM_HERE,
-      base::Bind(task, wait_for_completion ? &completion : NULL));
+  cookie_monster_proxy_->PostTask(FROM_HERE, base::Bind(task, &completion));
 
-  if (wait_for_completion) {
-    ScopedAllowWaitForLegacyWebViewApi wait;
-    completion.Wait();
-  }
+  // We always wait for the posted task to complete, even when it doesn't return
+  // a value, because previous versions of the CookieManager API were
+  // synchronous in most/all cases and the caller may be relying on this.
+  ScopedAllowWaitForLegacyWebViewApi wait;
+  completion.Wait();
 }
 
-scoped_refptr<net::CookieStore> CookieManager::CreateCookieStore(
+scoped_refptr<net::CookieStore> CookieManager::CreateBrowserThreadCookieStore(
     AwBrowserContext* browser_context) {
   base::AutoLock lock(cookie_monster_lock_);
-  bool accept_file_scheme_cookies = kDefaultFileSchemeAllowed;
 
   if (cookie_monster_client_thread_) {
-    accept_file_scheme_cookies = AllowFileSchemeCookiesLocked();
-    // We created a temporary cookie monster on its own threads, and now need to
-    // carefully shut everything down in the right order before starting the
-    // 'real' one.
-
-    // 1. Flush any pending commits to the store and wait for this to complete.
-    base::WaitableEvent flush_completion(false, false);
-    base::Closure flush_callback =
-        base::Bind(&base::WaitableEvent::Signal,
-                   base::Unretained(&flush_completion));
-    cookie_monster_proxy_->PostTask(FROM_HERE,
-        base::Bind(&CookieMonster::FlushStore,
-                   cookie_monster_,
-                   flush_callback));
-    flush_completion.Wait();
-
-    // 2. Delete the cookie monster.
-    cookie_monster_ = NULL;
-
-    // 3. Shut down the threads.
-    cookie_monster_client_thread_.reset();
-    cookie_monster_backend_thread_.reset();
+    // We created a cookie monster already on its own threads; we'll just keep
+    // using it rather than creating one on the normal Chromium threads.
+    // CookieMonster is threadsafe, so this is fine.
+    return cookie_monster_;
   }
 
-  // Now go ahead and create the real cookie monster.
+  // Go ahead and create the cookie monster using the normal Chromium threads.
   DCHECK(!cookie_monster_.get());
+  DCHECK(BrowserThread::IsMessageLoopValid(BrowserThread::IO));
+
+  FilePath user_data_dir;
+  GetUserDataDir(&user_data_dir);
+  DCHECK(browser_context->GetPath() == user_data_dir);
 
   cookie_monster_proxy_ =
       BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO);
   scoped_refptr<base::SequencedTaskRunner> background_task_runner =
       BrowserThread::GetBlockingPool()->GetSequencedTaskRunner(
           BrowserThread::GetBlockingPool()->GetSequenceToken());
-
-  CreateCookieMonster(browser_context->GetPath(), NULL, background_task_runner);
-  SetAcceptFileSchemeCookiesLocked(accept_file_scheme_cookies);
+  CreateCookieMonster(user_data_dir,
+                      cookie_monster_proxy_,
+                      background_task_runner);
   return cookie_monster_;
 }
 
@@ -288,25 +280,28 @@ void CookieManager::SetCookie(const GURL& host,
   ExecCookieTask(base::Bind(&CookieManager::SetCookieAsyncHelper,
                             base::Unretained(this),
                             host,
-                            cookie_value), false);
+                            cookie_value));
 }
 
 void CookieManager::SetCookieAsyncHelper(
     const GURL& host,
     const std::string& value,
     base::WaitableEvent* completion) {
-  DCHECK(!completion);
   net::CookieOptions options;
   options.set_include_httponly();
 
   cookie_monster_->SetCookieWithOptionsAsync(
       host, value, options,
-      base::Bind(&CookieManager::SetCookieCompleted, base::Unretained(this)));
+      base::Bind(&CookieManager::SetCookieCompleted,
+                 base::Unretained(this),
+                 completion));
 }
 
-void CookieManager::SetCookieCompleted(bool success) {
+void CookieManager::SetCookieCompleted(base::WaitableEvent* completion,
+                                       bool success) {
   // The CookieManager API does not return a value for SetCookie,
   // so we don't need to propagate the |success| value back to the caller.
+  completion->Signal();
 }
 
 std::string CookieManager::GetCookie(const GURL& host) {
@@ -314,7 +309,7 @@ std::string CookieManager::GetCookie(const GURL& host) {
   ExecCookieTask(base::Bind(&CookieManager::GetCookieValueAsyncHelper,
                             base::Unretained(this),
                             host,
-                            &cookie_value), true);
+                            &cookie_value));
 
   return cookie_value;
 }
@@ -339,42 +334,41 @@ void CookieManager::GetCookieValueCompleted(base::WaitableEvent* completion,
                                             std::string* result,
                                             const std::string& value) {
   *result = value;
-  DCHECK(completion);
   completion->Signal();
 }
 
 void CookieManager::RemoveSessionCookie() {
   ExecCookieTask(base::Bind(&CookieManager::RemoveSessionCookieAsyncHelper,
-                            base::Unretained(this)), false);
+                            base::Unretained(this)));
 }
 
 void CookieManager::RemoveSessionCookieAsyncHelper(
     base::WaitableEvent* completion) {
-  DCHECK(!completion);
   cookie_monster_->DeleteSessionCookiesAsync(
       base::Bind(&CookieManager::RemoveCookiesCompleted,
-                 base::Unretained(this)));
+                 base::Unretained(this),
+                 completion));
 }
 
-void CookieManager::RemoveCookiesCompleted(int num_deleted) {
+void CookieManager::RemoveCookiesCompleted(base::WaitableEvent* completion,
+                                           int num_deleted) {
   // The CookieManager API does not return a value for removeSessionCookie or
   // removeAllCookie, so we don't need to propagate the |num_deleted| value back
   // to the caller.
+  completion->Signal();
 }
 
 void CookieManager::RemoveAllCookie() {
   ExecCookieTask(base::Bind(&CookieManager::RemoveAllCookieAsyncHelper,
-                            base::Unretained(this)), false);
+                            base::Unretained(this)));
 }
 
-// TODO(kristianm): Pass a null callback so it will not be invoked
-// across threads.
 void CookieManager::RemoveAllCookieAsyncHelper(
     base::WaitableEvent* completion) {
-  DCHECK(!completion);
   cookie_monster_->DeleteAllAsync(
       base::Bind(&CookieManager::RemoveCookiesCompleted,
-                 base::Unretained(this)));
+                 base::Unretained(this),
+                 completion));
 }
 
 void CookieManager::RemoveExpiredCookie() {
@@ -384,20 +378,20 @@ void CookieManager::RemoveExpiredCookie() {
 
 void CookieManager::FlushCookieStoreAsyncHelper(
     base::WaitableEvent* completion) {
-  DCHECK(!completion);
-  cookie_monster_->FlushStore(base::Bind(&base::DoNothing));
+  cookie_monster_->FlushStore(base::Bind(&base::WaitableEvent::Signal,
+                                         base::Unretained(completion)));
 }
 
 void CookieManager::FlushCookieStore() {
   ExecCookieTask(base::Bind(&CookieManager::FlushCookieStoreAsyncHelper,
-                            base::Unretained(this)), false);
+                            base::Unretained(this)));
 }
 
 bool CookieManager::HasCookies() {
   bool has_cookies;
   ExecCookieTask(base::Bind(&CookieManager::HasCookiesAsyncHelper,
                             base::Unretained(this),
-                            &has_cookies), true);
+                            &has_cookies));
   return has_cookies;
 }
 
@@ -416,7 +410,6 @@ void CookieManager::HasCookiesCompleted(base::WaitableEvent* completion,
                                         bool* result,
                                         const CookieList& cookies) {
   *result = cookies.size() != 0;
-  DCHECK(completion);
   completion->Signal();
 }
 
@@ -502,7 +495,8 @@ static void SetAcceptFileSchemeCookies(JNIEnv* env, jobject obj,
 
 scoped_refptr<net::CookieStore> CreateCookieStore(
     AwBrowserContext* browser_context) {
-  return CookieManager::GetInstance()->CreateCookieStore(browser_context);
+  return CookieManager::GetInstance()->CreateBrowserThreadCookieStore(
+      browser_context);
 }
 
 bool RegisterCookieManager(JNIEnv* env) {

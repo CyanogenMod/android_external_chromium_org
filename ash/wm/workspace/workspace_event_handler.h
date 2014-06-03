@@ -13,6 +13,10 @@ class Window;
 }
 
 namespace ash {
+namespace wm {
+class WindowState;
+}
+
 namespace internal {
 
 class WorkspaceEventHandlerTestHelper;
@@ -33,13 +37,10 @@ class WorkspaceEventHandler : public ToplevelWindowEventHandler {
   // bottom vertical resize edge, and if so toggles the vertical height of the
   // window between its restored state and the full available height of the
   // workspace.
-  void HandleVerticalResizeDoubleClick(aura::Window* target,
+  void HandleVerticalResizeDoubleClick(wm::WindowState* window_state,
                                        ui::MouseEvent* event);
 
   MultiWindowResizeController multi_window_resize_controller_;
-
-  // If non-NULL, set to true in the destructor.
-  bool* destroyed_;
 
   DISALLOW_COPY_AND_ASSIGN(WorkspaceEventHandler);
 };

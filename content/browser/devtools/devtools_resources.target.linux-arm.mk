@@ -12,7 +12,7 @@ gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared)
 
 # Make sure our deps are built first.
 GYP_TARGET_DEPENDENCIES := \
-	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_devtools_generate_devtools_grd_gyp)/generate_devtools_grd.stamp
+	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_generate_devtools_grd_gyp)/blink_generate_devtools_grd.stamp
 
 ### Rules for action "devtools_resources":
 $(gyp_shared_intermediate_dir)/webkit/grit/devtools_resources.h: gyp_local_path := $(LOCAL_PATH)

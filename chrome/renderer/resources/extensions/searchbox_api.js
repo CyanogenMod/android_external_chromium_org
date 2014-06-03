@@ -13,12 +13,13 @@ if (!chrome.embeddedSearch) {
       // =======================================================================
       //                            Private functions
       // =======================================================================
-      native function GetFont();
-      native function GetFontSize();
+      native function Focus();
+      native function GetDisplayInstantResults();
       native function GetMostVisitedItemData();
       native function GetQuery();
       native function GetRightToLeft();
       native function GetStartMargin();
+      native function GetSuggestionToPrefetch();
       native function IsFocused();
       native function IsKeyCaptureEnabled();
       native function Paste();
@@ -29,13 +30,17 @@ if (!chrome.embeddedSearch) {
       // =======================================================================
       //                           Exported functions
       // =======================================================================
-      this.__defineGetter__('font', GetFont);
-      this.__defineGetter__('fontSize', GetFontSize);
+      this.__defineGetter__('displayInstantResults', GetDisplayInstantResults);
       this.__defineGetter__('isFocused', IsFocused);
       this.__defineGetter__('isKeyCaptureEnabled', IsKeyCaptureEnabled);
       this.__defineGetter__('rtl', GetRightToLeft);
       this.__defineGetter__('startMargin', GetStartMargin);
+      this.__defineGetter__('suggestion', GetSuggestionToPrefetch);
       this.__defineGetter__('value', GetQuery);
+
+      this.focus = function() {
+        Focus();
+      };
 
       // This method is restricted to chrome-search://most-visited pages by
       // checking the invoking context's origin in searchbox_extension.cc.
@@ -63,10 +68,10 @@ if (!chrome.embeddedSearch) {
       this.onkeycapturechange = null;
       this.onmarginchange = null;
       this.onsubmit = null;
+      this.onsuggestionchange = null;
       this.ontogglevoicesearch = null;
 
-      // TODO(jered): Remove these when google no longer requires them.
-      this.displayInstantResults = false;
+      //TODO(jered): Remove this empty method when google no longer requires it.
       this.setRestrictedValue = function() {};
     };
 
@@ -75,12 +80,14 @@ if (!chrome.embeddedSearch) {
       // =======================================================================
       //                            Private functions
       // =======================================================================
+      native function CheckIsUserSignedInToChromeAs();
       native function DeleteMostVisitedItem();
       native function GetAppLauncherEnabled();
       native function GetMostVisitedItems();
       native function GetThemeBackgroundInfo();
       native function IsInputInProgress();
       native function LogEvent();
+      native function LogImpression();
       native function NavigateContentWindow();
       native function UndoAllMostVisitedDeletions();
       native function UndoMostVisitedDeletion();
@@ -118,10 +125,20 @@ if (!chrome.embeddedSearch) {
         DeleteMostVisitedItem(restrictedId);
       };
 
+      this.checkIsUserSignedIntoChromeAs = function(identity) {
+        CheckIsUserSignedInToChromeAs(identity);
+      };
+
       // This method is restricted to chrome-search://most-visited pages by
       // checking the invoking context's origin in searchbox_extension.cc.
       this.logEvent = function(histogram_name) {
         LogEvent(histogram_name);
+      };
+
+      // This method is restricted to chrome-search://most-visited pages by
+      // checking the invoking context's origin in searchbox_extension.cc.
+      this.logImpression = function(position, provider) {
+        LogImpression(position, provider);
       };
 
       this.navigateContentWindow = function(destination, disposition) {
@@ -136,6 +153,7 @@ if (!chrome.embeddedSearch) {
         UndoMostVisitedDeletion(restrictedId);
       };
 
+      this.onsignedincheckdone = null;
       this.oninputcancel = null;
       this.oninputstart = null;
       this.onmostvisitedchange = null;

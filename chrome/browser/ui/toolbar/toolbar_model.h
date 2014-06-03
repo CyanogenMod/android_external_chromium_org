@@ -29,33 +29,37 @@ class ToolbarModel {
 #undef DEFINE_TOOLBAR_MODEL_SECURITY_LEVEL
   };
 
-  virtual ~ToolbarModel() {}
+  virtual ~ToolbarModel();
 
   // Returns the text for the current page's URL. This will have been formatted
   // for display to the user:
   //   - Some characters may be unescaped.
   //   - The scheme and/or trailing slash may be dropped.
-  //   - if |display_search_urls_as_search_terms| is true, the query will be
-  //   extracted from search URLs for the user's default search engine and those
-  //   will be displayed in place of the URL.
-  virtual string16 GetText(bool display_search_urls_as_search_terms) const = 0;
+  //   - If the current page's URL is a search URL for the user's default search
+  //     engine, the query will be extracted and returned for display instead
+  //     of the URL.
+  virtual base::string16 GetText() const = 0;
 
   // Some search URLs bundle a special "corpus" param that we can extract and
   // display next to users' search terms in cases where we'd show the search
   // terms instead of the URL anyway.  For example, a Google image search might
   // show the corpus "Images:" plus a search string.  This is only used on
   // mobile.
-  virtual string16 GetCorpusNameForMobile() const = 0;
+  virtual base::string16 GetCorpusNameForMobile() const = 0;
 
   // Returns the URL of the current navigation entry.
   virtual GURL GetURL() const = 0;
 
-  // Returns true if a call to GetText(true) would successfully replace the URL
+  // Returns true if a call to GetText() would successfully replace the URL
   // with search terms.  If |ignore_editing| is true, the result reflects the
   // underlying state of the page without regard to any user edits that may be
   // in progress in the omnibox.
-  virtual bool WouldReplaceSearchURLWithSearchTerms(bool ignore_editing)
-      const = 0;
+  virtual bool WouldPerformSearchTermReplacement(bool ignore_editing) const = 0;
+
+  // Returns true if a call to GetText() would return something other than the
+  // URL because of either search term replacement or URL omission in favor of
+  // the origin chip.
+  bool WouldReplaceURL() const;
 
   // Returns the security level that the toolbar should display.  If
   // |ignore_editing| is true, the result reflects the underlying state of the
@@ -64,25 +68,51 @@ class ToolbarModel {
   virtual SecurityLevel GetSecurityLevel(bool ignore_editing) const = 0;
 
   // Returns the resource_id of the icon to show to the left of the address,
-  // based on the current URL.  This doesn't cover specialized icons while the
+  // based on the current URL.  When search term replacement is active, this
+  // returns a search icon.  This doesn't cover specialized icons while the
   // user is editing; see OmniboxView::GetIcon().
   virtual int GetIcon() const = 0;
 
+  // As |GetIcon()|, but returns the icon only taking into account the security
+  // |level| given, ignoring search term replacement state.
+  virtual int GetIconForSecurityLevel(SecurityLevel level) const = 0;
+
   // Returns the name of the EV cert holder.  Only call this when the security
   // level is EV_SECURE.
-  virtual string16 GetEVCertName() const = 0;
+  virtual base::string16 GetEVCertName() const = 0;
 
   // Returns whether the URL for the current navigation entry should be
   // in the location bar.
   virtual bool ShouldDisplayURL() const = 0;
 
-  // Getter/setter of whether the text in location bar is currently being
-  // edited.
-  virtual void SetInputInProgress(bool value) = 0;
-  virtual bool GetInputInProgress() const = 0;
+  // Whether the text in the omnibox is currently being edited.
+  void set_input_in_progress(bool input_in_progress) {
+    input_in_progress_ = input_in_progress;
+  }
+  bool input_in_progress() const { return input_in_progress_; }
+
+  // Whether URL replacement should be enabled.
+  void set_url_replacement_enabled(bool enabled) {
+    url_replacement_enabled_ = enabled;
+  }
+  bool url_replacement_enabled() const {
+    return url_replacement_enabled_;
+  }
 
  protected:
-   ToolbarModel() {}
+  ToolbarModel();
+
+ private:
+  // Returns true if a call to GetText() would return an empty string instead of
+  // the URL that would have otherwise been displayed because the host/origin is
+  // instead being displayed in the origin chip.  This returns false when we
+  // wouldn't have displayed a URL to begin with (e.g. for the NTP).
+  virtual bool WouldOmitURLDueToOriginChip() const = 0;
+
+  bool input_in_progress_;
+  bool url_replacement_enabled_;
+
+  DISALLOW_COPY_AND_ASSIGN(ToolbarModel);
 };
 
 #endif  // CHROME_BROWSER_UI_TOOLBAR_TOOLBAR_MODEL_H_

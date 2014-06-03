@@ -7,9 +7,9 @@
 #include "base/files/file_path.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_set.h"
 #include "content/public/browser/browser_thread.h"
+#include "extensions/common/extension.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "net/base/escape.h"
@@ -183,7 +183,7 @@ std::string ExtensionWarning::GetLocalizedMessage(
   // These parameters may be unsafe (URLs and Extension names) and need
   // to be HTML-escaped before being embedded in the UI. Also extension IDs
   // are translated to full extension names.
-  std::vector<string16> final_parameters;
+  std::vector<base::string16> final_parameters;
   for (size_t i = 0; i < message_parameters_.size(); ++i) {
     std::string message = message_parameters_[i];
     if (StartsWithASCII(message, kTranslate, true)) {

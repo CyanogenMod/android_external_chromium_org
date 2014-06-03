@@ -4,6 +4,8 @@
 
 #include "net/quic/congestion_control/hybrid_slow_start.h"
 
+#include <algorithm>
+
 namespace net {
 
 // Note(pwestin): the magic clamping numbers come from the original code in
@@ -32,7 +34,7 @@ void HybridSlowStart::Restart() {
 }
 
 void HybridSlowStart::Reset(QuicPacketSequenceNumber end_sequence_number) {
-  DLOG(INFO) << "Reset hybrid slow start @" << end_sequence_number;
+  DVLOG(1) << "Reset hybrid slow start @" << end_sequence_number;
   round_start_ = last_time_ = clock_->ApproximateNow();
   end_sequence_number_ = end_sequence_number;
   current_rtt_ = QuicTime::Delta::Zero();
@@ -102,11 +104,6 @@ bool HybridSlowStart::Exit() {
     return true;
   }
   return false;
-}
-
-QuicTime::Delta HybridSlowStart::SmoothedRtt() {
-  // TODO(satyamshekhar): Calculate and return smooth average of rtt over time.
-  return current_rtt_;
 }
 
 }  // namespace net

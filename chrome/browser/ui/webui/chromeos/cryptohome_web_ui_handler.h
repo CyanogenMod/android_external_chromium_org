@@ -34,6 +34,8 @@ class CryptohomeWebUIHandler : public content::WebUIMessageHandler {
   // This method is called from JavaScript.
   void OnPageLoaded(const base::ListValue* args);
 
+  void DidGetNSSUtilInfoOnUIThread(bool is_tpm_token_ready);
+
   // Returns a callback to handle Cryptohome property values.
   BoolDBusMethodCallback GetCryptohomeBoolCallback(
       const std::string& destination_id);

@@ -97,6 +97,9 @@ struct CONTENT_EXPORT RendererPreferences {
   // Browser wants a look at all top-level navigation requests.
   bool browser_handles_all_top_level_requests;
 
+  // Browser wants a look at all top-level link clicks.
+  bool browser_handles_all_top_level_link_clicks;
+
   // Cursor blink rate in seconds.
   // Currently only changed from default on Linux.  Uses |gtk-cursor-blink|
   // from GtkSettings.
@@ -137,6 +140,13 @@ struct CONTENT_EXPORT RendererPreferences {
 
   // How to handle a tap gesture touching multiple targets
   TapMultipleTargetsStrategy tap_multiple_targets_strategy;
+
+  // Disables rendering default error page when client choses to block a page.
+  // Corresponds to net::ERR_BLOCKED_BY_CLIENT.
+  bool disable_client_blocked_error_page;
+
+  // Determines whether plugins are allowed to enter fullscreen mode.
+  bool plugin_fullscreen_allowed;
 };
 
 }  // namespace content

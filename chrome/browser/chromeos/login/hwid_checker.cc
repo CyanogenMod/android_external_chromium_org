@@ -6,13 +6,13 @@
 
 #include <cstdio>
 
-#include "base/chromeos/chromeos_version.h"
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "base/strings/string_util.h"
-#include "chrome/browser/chromeos/system/statistics_provider.h"
+#include "base/sys_info.h"
 #include "chrome/common/chrome_switches.h"
 #include "chromeos/chromeos_switches.h"
+#include "chromeos/system/statistics_provider.h"
 #include "third_party/re2/re2/re2.h"
 #include "third_party/zlib/zlib.h"
 
@@ -67,7 +67,7 @@ bool IsCorrectExceptionalHWID(const std::string& hwid) {
   if (bom.length() < 2)
     return false;
   std::string hwid_without_dashes;
-  RemoveChars(hwid, "-", &hwid_without_dashes);
+  base::RemoveChars(hwid, "-", &hwid_without_dashes);
   LOG_ASSERT(hwid_without_dashes.length() >= 2);
   std::string not_checksum =
       hwid_without_dashes.substr(0, hwid_without_dashes.length() - 2);
@@ -95,7 +95,7 @@ bool IsCorrectHWIDv3(const std::string& hwid) {
   std::string not_checksum, checksum;
   if (!RE2::FullMatch(hwid, regex, &not_checksum, &checksum))
     return false;
-  RemoveChars(not_checksum, "-", &not_checksum);
+  base::RemoveChars(not_checksum, "-", &not_checksum);
   return CalculateHWIDv3Checksum(not_checksum) == checksum;
 }
 
@@ -116,12 +116,12 @@ bool IsMachineHWIDCorrect() {
   if (cmd_line->HasSwitch(::switches::kTestType) ||
       cmd_line->HasSwitch(chromeos::switches::kSkipHWIDCheck))
     return true;
-  if (!base::chromeos::IsRunningOnChromeOS())
+  if (!base::SysInfo::IsRunningOnChromeOS())
     return true;
   std::string hwid;
   chromeos::system::StatisticsProvider* stats =
       chromeos::system::StatisticsProvider::GetInstance();
-  if (!stats->GetMachineStatistic(chromeos::system::kHardwareClass, &hwid)) {
+  if (!stats->GetMachineStatistic(chromeos::system::kHardwareClassKey, &hwid)) {
     LOG(ERROR) << "Couldn't get machine statistic 'hardware_class'.";
     return false;
   }
@@ -133,4 +133,3 @@ bool IsMachineHWIDCorrect() {
 }
 
 } // namespace chromeos
-

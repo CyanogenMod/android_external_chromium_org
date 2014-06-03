@@ -5,7 +5,10 @@
 #ifndef UI_BASE_CURSOR_CURSORS_AURA_H_
 #define UI_BASE_CURSOR_CURSORS_AURA_H_
 
+#include "ui/base/cursor/cursor.h"
 #include "ui/base/ui_export.h"
+
+class SkBitmap;
 
 namespace gfx {
 class Point;
@@ -19,16 +22,24 @@ const int kAnimatedCursorFrameDelayMs = 25;
 // ui::kCursorHelp. The IDR will be placed in |resource_id| and the hotspots
 // for the different DPIs will be placed in |hot_1x| and |hot_2x|. Returns
 // false if |id| is invalid.
-bool UI_EXPORT GetCursorDataFor(int id,
+bool UI_EXPORT GetCursorDataFor(CursorSetType cursor_set_id,
+                                int id,
                                 float scale_factor,
                                 int* resource_id,
                                 gfx::Point* point);
 
 // Like above, but for animated cursors.
-bool UI_EXPORT GetAnimatedCursorDataFor(int id,
+bool UI_EXPORT GetAnimatedCursorDataFor(CursorSetType cursor_set_id,
+                                        int id,
                                         float scale_factor,
                                         int* resource_id,
                                         gfx::Point* point);
+
+// Returns the cursor bitmap for |cursor|. Returns false if |cursor| is invalid.
+// The cursor hot point location is set in |point|.
+bool UI_EXPORT GetCursorBitmap(const Cursor& cursor,
+                               SkBitmap* bitmap,
+                               gfx::Point* point);
 
 }  // namespace ui
 

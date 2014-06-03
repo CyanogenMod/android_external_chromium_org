@@ -10,6 +10,7 @@
 #include "base/compiler_specific.h"
 #include "base/message_loop/message_loop.h"
 #include "base/time/time.h"
+#include "sync/internal_api/public/base/cancelation_signal.h"
 #include "sync/internal_api/public/base/model_type_test_util.h"
 #include "sync/protocol/bookmark_specifics.pb.h"
 #include "sync/protocol/password_specifics.pb.h"
@@ -44,7 +45,6 @@ class MockDelegate : public sessions::SyncSession::Delegate {
   MOCK_METHOD1(OnReceivedSessionsCommitDelay, void(const base::TimeDelta&));
   MOCK_METHOD1(OnReceivedClientInvalidationHintBufferSize, void(int));
   MOCK_METHOD1(OnSyncProtocolError, void(const sessions::SyncSessionSnapshot&));
-  MOCK_METHOD0(OnShouldStopSyncingPermanently, void());
   MOCK_METHOD1(OnSilencedUntil, void(const base::TimeTicks&));
 };
 
@@ -254,8 +254,8 @@ TEST_F(SyncerProtoUtilTest, AddRequestBirthday) {
 
 class DummyConnectionManager : public ServerConnectionManager {
  public:
-  DummyConnectionManager()
-      : ServerConnectionManager("unused", 0, false, false),
+  DummyConnectionManager(CancelationSignal* signal)
+      : ServerConnectionManager("unused", 0, false, signal),
         send_error_(false),
         access_denied_(false) {}
 
@@ -290,7 +290,8 @@ class DummyConnectionManager : public ServerConnectionManager {
 };
 
 TEST_F(SyncerProtoUtilTest, PostAndProcessHeaders) {
-  DummyConnectionManager dcm;
+  CancelationSignal signal;
+  DummyConnectionManager dcm(&signal);
   ClientToServerMessage msg;
   SyncerProtoUtil::SetProtocolVersion(&msg);
   msg.set_share("required");

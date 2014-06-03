@@ -5,11 +5,12 @@
 #ifndef GPU_COMMAND_BUFFER_SERVICE_FRAMEBUFFER_MANAGER_H_
 #define GPU_COMMAND_BUFFER_SERVICE_FRAMEBUFFER_MANAGER_H_
 
+#include <vector>
+
 #include "base/basictypes.h"
 #include "base/containers/hash_tables.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/observer_list.h"
 #include "gpu/command_buffer/service/gl_utils.h"
 #include "gpu/gpu_export.h"
 
@@ -31,6 +32,7 @@ class GPU_EXPORT Framebuffer : public base::RefCounted<Framebuffer> {
     virtual GLsizei width() const = 0;
     virtual GLsizei height() const = 0;
     virtual GLenum internal_format() const = 0;
+    virtual GLenum texture_type() const = 0;
     virtual GLsizei samples() const = 0;
     virtual GLuint object_name() const = 0;
     virtual bool cleared() const = 0;
@@ -47,6 +49,8 @@ class GPU_EXPORT Framebuffer : public base::RefCounted<Framebuffer> {
         GLenum attachment_type, uint32 max_color_attachments) = 0;
     virtual void AddToSignature(
         TextureManager* texture_manager, std::string* signature) const = 0;
+    virtual void OnWillRenderTo() const = 0;
+    virtual void OnDidRenderTo() const = 0;
 
    protected:
     friend class base::RefCounted<Attachment>;
@@ -102,6 +106,9 @@ class GPU_EXPORT Framebuffer : public base::RefCounted<Framebuffer> {
   bool HasDepthAttachment() const;
   bool HasStencilAttachment() const;
   GLenum GetColorAttachmentFormat() const;
+  // If the color attachment is a texture, returns its type; otherwise,
+  // returns 0.
+  GLenum GetColorAttachmentTextureType() const;
 
   // Verify all the rules in OpenGL ES 2.0.25 4.4.5 are followed.
   // Returns GL_FRAMEBUFFER_COMPLETE if there are no reasons we know we can't
@@ -132,6 +139,8 @@ class GPU_EXPORT Framebuffer : public base::RefCounted<Framebuffer> {
   }
 
   void OnTextureRefDetached(TextureRef* texture);
+  void OnWillRenderTo() const;
+  void OnDidRenderTo() const;
 
  private:
   friend class FramebufferManager;
@@ -183,6 +192,19 @@ class GPU_EXPORT Framebuffer : public base::RefCounted<Framebuffer> {
   DISALLOW_COPY_AND_ASSIGN(Framebuffer);
 };
 
+struct DecoderFramebufferState {
+  DecoderFramebufferState();
+  ~DecoderFramebufferState();
+
+  // State saved for clearing so we can clear render buffers and then
+  // restore to these values.
+  bool clear_state_dirty;
+
+  // The currently bound framebuffers
+  scoped_refptr<Framebuffer> bound_read_framebuffer;
+  scoped_refptr<Framebuffer> bound_draw_framebuffer;
+};
+
 // This class keeps track of the frambebuffers and their attached renderbuffers
 // so we can correctly clear them.
 class GPU_EXPORT FramebufferManager {
@@ -232,11 +254,15 @@ class GPU_EXPORT FramebufferManager {
   }
 
   void AddObserver(TextureDetachObserver* observer) {
-    texture_detach_observers_.AddObserver(observer);
+    texture_detach_observers_.push_back(observer);
   }
 
   void RemoveObserver(TextureDetachObserver* observer) {
-    texture_detach_observers_.RemoveObserver(observer);
+    texture_detach_observers_.erase(
+        std::remove(texture_detach_observers_.begin(),
+                    texture_detach_observers_.end(),
+                    observer),
+        texture_detach_observers_.end());
   }
 
  private:
@@ -265,7 +291,8 @@ class GPU_EXPORT FramebufferManager {
   uint32 max_draw_buffers_;
   uint32 max_color_attachments_;
 
-  ObserverList<TextureDetachObserver> texture_detach_observers_;
+  typedef std::vector<TextureDetachObserver*> TextureDetachObserverVector;
+  TextureDetachObserverVector texture_detach_observers_;
 
   DISALLOW_COPY_AND_ASSIGN(FramebufferManager);
 };

@@ -15,11 +15,16 @@
 #include "chromeos/dbus/shill_service_client.h"
 #include "chromeos/network/network_state.h"
 #include "chromeos/network/network_state_handler.h"
+#include "chromeos/network/shill_property_util.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "dbus/object_path.h"
 #include "net/base/net_errors.h"
+#include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
+
+using testing::Mock;
+using testing::_;
 
 namespace chromeos {
 
@@ -29,6 +34,15 @@ void ErrorCallbackFunction(const std::string& error_name,
                            const std::string& error_message) {
   LOG(ERROR) << "Shill Error: " << error_name << " : " << error_message;
 }
+
+class MockObserver : public NetworkPortalDetector::Observer {
+ public:
+  virtual ~MockObserver() {}
+
+  MOCK_METHOD2(OnPortalDetectionCompleted,
+               void(const NetworkState* network,
+                    const NetworkPortalDetector::CaptivePortalState& state));
+};
 
 }  // namespace
 
@@ -49,7 +63,6 @@ class NetworkPortalDetectorImplTest
     profile_.reset(new TestingProfile());
     network_portal_detector_.reset(
         new NetworkPortalDetectorImpl(profile_->GetRequestContext()));
-    network_portal_detector_->Init();
     network_portal_detector_->Enable(false);
 
     set_detector(network_portal_detector_->captive_portal_detector_.get());
@@ -59,7 +72,7 @@ class NetworkPortalDetectorImplTest
   }
 
   virtual void TearDown() {
-    network_portal_detector_->Shutdown();
+    network_portal_detector_.reset();
     profile_.reset();
     NetworkHandler::Shutdown();
     DBusThreadManager::Shutdown();
@@ -166,14 +179,16 @@ class NetworkPortalDetectorImplTest
   void SetBehindPortal(const std::string& service_path) {
     DBusThreadManager::Get()->GetShillServiceClient()->SetProperty(
         dbus::ObjectPath(service_path),
-        flimflam::kStateProperty, base::StringValue(flimflam::kStatePortal),
+        shill::kStateProperty, base::StringValue(shill::kStatePortal),
         base::Bind(&base::DoNothing), base::Bind(&ErrorCallbackFunction));
     base::RunLoop().RunUntilIdle();
   }
 
   void SetNetworkDeviceEnabled(const std::string& type, bool enabled) {
     NetworkHandler::Get()->network_state_handler()->SetTechnologyEnabled(
-        type, enabled, network_handler::ErrorCallback());
+        NetworkTypePattern::Primitive(type),
+        enabled,
+        network_handler::ErrorCallback());
     base::RunLoop().RunUntilIdle();
   }
 
@@ -181,6 +196,13 @@ class NetworkPortalDetectorImplTest
     DBusThreadManager::Get()->GetShillServiceClient()->Connect(
         dbus::ObjectPath(service_path),
         base::Bind(&base::DoNothing), base::Bind(&ErrorCallbackFunction));
+    base::RunLoop().RunUntilIdle();
+  }
+
+  void SetDisconnected(const std::string& service_path) {
+    DBusThreadManager::Get()->GetShillServiceClient()->Disconnect(
+        dbus::ObjectPath(service_path),
+        base::Bind(&*base::DoNothing), base::Bind(&ErrorCallbackFunction));
     base::RunLoop().RunUntilIdle();
   }
 
@@ -194,19 +216,19 @@ class NetworkPortalDetectorImplTest
     const bool add_to_watchlist = true;
     service_test->AddService(kStubEthernet,
                              kStubEthernet,
-                             flimflam::kTypeEthernet, flimflam::kStateIdle,
+                             shill::kTypeEthernet, shill::kStateIdle,
                              add_to_visible, add_to_watchlist);
     service_test->AddService(kStubWireless1,
                              kStubWireless1,
-                             flimflam::kTypeWifi, flimflam::kStateIdle,
+                             shill::kTypeWifi, shill::kStateIdle,
                              add_to_visible, add_to_watchlist);
     service_test->AddService(kStubWireless2,
                              kStubWireless2,
-                             flimflam::kTypeWifi, flimflam::kStateIdle,
+                             shill::kTypeWifi, shill::kStateIdle,
                              add_to_visible, add_to_watchlist);
     service_test->AddService(kStubCellular,
                              kStubCellular,
-                             flimflam::kTypeCellular, flimflam::kStateIdle,
+                             shill::kTypeCellular, shill::kStateIdle,
                              add_to_visible, add_to_watchlist);
   }
 
@@ -270,13 +292,52 @@ TEST_F(NetworkPortalDetectorImplTest, Portal) {
                    kStubEthernet);
 }
 
+TEST_F(NetworkPortalDetectorImplTest, Online2Offline) {
+  ASSERT_TRUE(is_state_idle());
+
+  MockObserver observer;
+  network_portal_detector()->AddObserver(&observer);
+
+  // WiFi is in online state.
+  {
+    NetworkPortalDetector::CaptivePortalState state;
+    state.status = NetworkPortalDetector::CAPTIVE_PORTAL_STATUS_ONLINE;
+    state.response_code = 204;
+    EXPECT_CALL(observer, OnPortalDetectionCompleted(_, state)).Times(1);
+
+    SetConnected(kStubWireless1);
+    ASSERT_TRUE(is_state_checking_for_portal());
+
+    CompleteURLFetch(net::OK, 204, NULL);
+    ASSERT_TRUE(is_state_idle());
+
+    // Check that observer was notified about online state.
+    Mock::VerifyAndClearExpectations(&observer);
+  }
+
+  // WiFi is turned off.
+  {
+    NetworkPortalDetector::CaptivePortalState state;
+    state.status = NetworkPortalDetector::CAPTIVE_PORTAL_STATUS_OFFLINE;
+    EXPECT_CALL(observer, OnPortalDetectionCompleted(NULL, state)).Times(1);
+
+    SetDisconnected(kStubWireless1);
+    ASSERT_TRUE(is_state_idle());
+
+    // Check that observer was notified about offline state.
+    Mock::VerifyAndClearExpectations(&observer);
+  }
+
+  network_portal_detector()->RemoveObserver(&observer);
+}
+
 TEST_F(NetworkPortalDetectorImplTest, TwoNetworks) {
   ASSERT_TRUE(is_state_idle());
 
   SetConnected(kStubWireless1);
   ASSERT_TRUE(is_state_checking_for_portal());
 
-  // wifi is in portal state.
+  // WiFi is in portal state.
   CompleteURLFetch(net::OK, 200, NULL);
   ASSERT_TRUE(is_state_idle());
 
@@ -301,10 +362,10 @@ TEST_F(NetworkPortalDetectorImplTest, NetworkChanged) {
   fetcher()->set_response_code(200);
   ASSERT_TRUE(is_state_checking_for_portal());
 
-  // Active network is changed during portal detection for wifi.
+  // Active network is changed during portal detection for WiFi.
   SetConnected(kStubEthernet);
 
-  // Portal detection for wifi is cancelled, portal detection for
+  // Portal detection for WiFi is cancelled, portal detection for
   // ethernet is initiated.
   ASSERT_TRUE(is_state_checking_for_portal());
 
@@ -491,24 +552,6 @@ TEST_F(NetworkPortalDetectorImplTest, ProxyAuthRequired) {
   SetConnected(kStubWireless1);
   CompleteURLFetch(net::OK, 407, NULL);
   ASSERT_EQ(1, attempt_count());
-  ASSERT_TRUE(is_state_portal_detection_pending());
-  CheckPortalState(NetworkPortalDetector::CAPTIVE_PORTAL_STATUS_UNKNOWN, -1,
-                   kStubWireless1);
-
-  // To run CaptivePortalDetector::DetectCaptivePortal().
-  base::RunLoop().RunUntilIdle();
-
-  CompleteURLFetch(net::OK, 407, NULL);
-  ASSERT_EQ(2, attempt_count());
-  ASSERT_TRUE(is_state_portal_detection_pending());
-  CheckPortalState(NetworkPortalDetector::CAPTIVE_PORTAL_STATUS_UNKNOWN, -1,
-                   kStubWireless1);
-
-  // To run CaptivePortalDetector::DetectCaptivePortal().
-  base::RunLoop().RunUntilIdle();
-
-  CompleteURLFetch(net::OK, 407, NULL);
-  ASSERT_EQ(3, attempt_count());
   ASSERT_TRUE(is_state_idle());
   CheckPortalState(
       NetworkPortalDetector::CAPTIVE_PORTAL_STATUS_PROXY_AUTH_REQUIRED, 407,
@@ -704,7 +747,7 @@ TEST_F(NetworkPortalDetectorImplTest, RequestTimeouts) {
   set_min_time_between_attempts(base::TimeDelta());
   set_lazy_check_interval(base::TimeDelta());
 
-  SetNetworkDeviceEnabled(flimflam::kTypeWifi, false);
+  SetNetworkDeviceEnabled(shill::kTypeWifi, false);
   SetConnected(kStubCellular);
 
   // First portal detection attempt for cellular1 uses 5sec timeout.
@@ -734,7 +777,7 @@ TEST_F(NetworkPortalDetectorImplTest, RequestTimeouts) {
                                         net::URLFetcher::RESPONSE_CODE_INVALID);
   ASSERT_TRUE(is_state_idle());
 
-  SetNetworkDeviceEnabled(flimflam::kTypeWifi, true);
+  SetNetworkDeviceEnabled(shill::kTypeWifi, true);
   SetConnected(kStubWireless1);
 
   // First portal detection attempt for wifi1 uses 5sec timeout.

@@ -11,7 +11,6 @@
 #include "chrome/common/media_galleries/picasa_types.h"
 #include "content/public/utility/content_utility_client.h"
 #include "ipc/ipc_platform_file.h"
-#include "printing/pdf_render_settings.h"
 
 namespace base {
 class FilePath;
@@ -23,6 +22,7 @@ class Rect;
 }
 
 namespace printing {
+class PdfRenderSettings;
 struct PageRange;
 }
 
@@ -52,8 +52,12 @@ class ChromeContentUtilityClient : public content::ContentUtilityClient {
   void OnRenderPDFPagesToMetafile(
       base::PlatformFile pdf_file,
       const base::FilePath& metafile_path,
-      const printing::PdfRenderSettings& pdf_render_settings,
+      const printing::PdfRenderSettings& settings,
       const std::vector<printing::PageRange>& page_ranges);
+  void OnRenderPDFPagesToPWGRaster(
+      IPC::PlatformFileForTransit pdf_transit,
+      const printing::PdfRenderSettings& settings,
+      IPC::PlatformFileForTransit bitmap_transit);
   void OnRobustJPEGDecodeImage(
       const std::vector<unsigned char>& encoded_data);
   void OnParseJSON(const std::string& json);
@@ -70,13 +74,16 @@ class ChromeContentUtilityClient : public content::ContentUtilityClient {
   bool RenderPDFToWinMetafile(
       base::PlatformFile pdf_file,
       const base::FilePath& metafile_path,
-      const gfx::Rect& render_area,
-      int render_dpi,
-      bool autorotate,
+      const printing::PdfRenderSettings& settings,
       const std::vector<printing::PageRange>& page_ranges,
       int* highest_rendered_page_number,
       double* scale_factor);
 #endif   // defined(OS_WIN)
+
+  bool RenderPDFPagesToPWGRaster(
+      base::PlatformFile pdf_file,
+      const printing::PdfRenderSettings& settings,
+      base::PlatformFile bitmap_file);
 
   void OnGetPrinterCapsAndDefaults(const std::string& printer_name);
   void OnStartupPing();
@@ -90,6 +97,11 @@ class ChromeContentUtilityClient : public content::ContentUtilityClient {
 #if defined(OS_WIN)
   void OnParseITunesPrefXml(const std::string& itunes_xml_data);
 #endif  // defined(OS_WIN)
+
+#if defined(OS_MACOSX)
+  void OnParseIPhotoLibraryXmlFile(
+      const IPC::PlatformFileForTransit& iphoto_library_file);
+#endif  // defined(OS_MACOSX)
 
 #if defined(OS_WIN) || defined(OS_MACOSX)
   void OnParseITunesLibraryXmlFile(

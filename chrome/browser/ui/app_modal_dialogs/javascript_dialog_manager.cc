@@ -4,62 +4,102 @@
 
 #include "chrome/browser/ui/app_modal_dialogs/javascript_dialog_manager.h"
 
+#include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/i18n/rtl.h"
 #include "base/memory/singleton.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/extensions/extension_host.h"
-#include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/ui/app_modal_dialogs/app_modal_dialog.h"
 #include "chrome/browser/ui/app_modal_dialogs/app_modal_dialog_queue.h"
 #include "chrome/browser/ui/app_modal_dialogs/javascript_app_modal_dialog.h"
 #include "chrome/browser/ui/app_modal_dialogs/native_app_modal_dialog.h"
 #include "chrome/common/chrome_constants.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
-#include "content/public/browser/notification_service.h"
+#include "content/public/browser/web_contents.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/javascript_message_type.h"
+#include "extensions/browser/process_manager.h"
 #include "grit/generated_resources.h"
 #include "net/base/net_util.h"
 #include "ui/base/l10n/l10n_util.h"
 
+using content::BrowserContext;
 using content::JavaScriptDialogManager;
 using content::WebContents;
+using extensions::Extension;
 
 namespace {
 
-class ChromeJavaScriptDialogManager : public JavaScriptDialogManager,
-                                      public content::NotificationObserver {
+// Returns the ProcessManager for the browser context from |web_contents|.
+extensions::ProcessManager* GetExtensionsProcessManager(
+    WebContents* web_contents) {
+#if defined(ENABLE_EXTENSIONS)
+  return extensions::ExtensionSystem::GetForBrowserContext(
+      web_contents->GetBrowserContext())->process_manager();
+#else
+  return NULL;
+#endif  // defined(ENABLE_EXTENSIONS)
+}
+
+// Returns the extension associated with |web_contents| or NULL if there is no
+// associated extension (or extensions are not supported).
+const Extension* GetExtensionForWebContents(WebContents* web_contents) {
+#if defined(ENABLE_EXTENSIONS)
+  extensions::ProcessManager* pm = GetExtensionsProcessManager(web_contents);
+  return pm->GetExtensionForRenderViewHost(web_contents->GetRenderViewHost());
+#else
+  return NULL;
+#endif  // defined(ENABLE_EXTENSIONS)
+}
+
+// Keeps an |extension| from shutting down its lazy background page. If an
+// extension opens a dialog its lazy background page must stay alive until the
+// dialog closes.
+void IncrementLazyKeepaliveCount(const Extension* extension,
+                                 WebContents* web_contents) {
+  DCHECK(extension);
+  DCHECK(web_contents);
+  extensions::ProcessManager* pm = GetExtensionsProcessManager(web_contents);
+  if (pm)
+    pm->IncrementLazyKeepaliveCount(extension);
+}
+
+// Allows an |extension| to shut down its lazy background page after a dialog
+// closes (if nothing else is keeping it open).
+void DecrementLazyKeepaliveCount(const Extension* extension,
+                                 WebContents* web_contents) {
+  DCHECK(extension);
+  DCHECK(web_contents);
+  extensions::ProcessManager* pm = GetExtensionsProcessManager(web_contents);
+  if (pm)
+    pm->DecrementLazyKeepaliveCount(extension);
+}
+
+class ChromeJavaScriptDialogManager : public JavaScriptDialogManager {
  public:
   static ChromeJavaScriptDialogManager* GetInstance();
-
-  explicit ChromeJavaScriptDialogManager(
-      extensions::ExtensionHost* extension_host);
-  virtual ~ChromeJavaScriptDialogManager();
 
   virtual void RunJavaScriptDialog(
       WebContents* web_contents,
       const GURL& origin_url,
       const std::string& accept_lang,
       content::JavaScriptMessageType message_type,
-      const string16& message_text,
-      const string16& default_prompt_text,
+      const base::string16& message_text,
+      const base::string16& default_prompt_text,
       const DialogClosedCallback& callback,
       bool* did_suppress_message) OVERRIDE;
 
   virtual void RunBeforeUnloadDialog(
       WebContents* web_contents,
-      const string16& message_text,
+      const base::string16& message_text,
       bool is_reload,
       const DialogClosedCallback& callback) OVERRIDE;
 
   virtual bool HandleJavaScriptDialog(
       WebContents* web_contents,
       bool accept,
-      const string16* prompt_override) OVERRIDE;
+      const base::string16* prompt_override) OVERRIDE;
 
   virtual void CancelActiveAndPendingDialogs(
       WebContents* web_contents) OVERRIDE;
@@ -67,35 +107,26 @@ class ChromeJavaScriptDialogManager : public JavaScriptDialogManager,
   virtual void WebContentsDestroyed(WebContents* web_contents) OVERRIDE;
 
  private:
-  ChromeJavaScriptDialogManager();
-
   friend struct DefaultSingletonTraits<ChromeJavaScriptDialogManager>;
 
-  // Overridden from content::NotificationObserver:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  ChromeJavaScriptDialogManager();
+  virtual ~ChromeJavaScriptDialogManager();
 
-  string16 GetTitle(const GURL& origin_url,
-                    const std::string& accept_lang,
-                    bool is_alert);
+  base::string16 GetTitle(WebContents* web_contents,
+                          const GURL& origin_url,
+                          const std::string& accept_lang,
+                          bool is_alert);
 
   // Wrapper around a DialogClosedCallback so that we can intercept it before
   // passing it onto the original callback.
-  void OnDialogClosed(DialogClosedCallback callback,
+  void OnDialogClosed(WebContents* web_contents,
+                      DialogClosedCallback callback,
                       bool success,
-                      const string16& user_input);
+                      const base::string16& user_input);
 
   // Mapping between the WebContents and their extra data. The key
   // is a void* because the pointer is just a cookie and is never dereferenced.
   JavaScriptAppModalDialog::ExtraDataMap javascript_dialog_extra_data_;
-
-  // Extension Host which owns the ChromeJavaScriptDialogManager instance.
-  // It's used to get a extension name from a URL.
-  // If it's not owned by any Extension, it should be NULL.
-  extensions::ExtensionHost* extension_host_;
-
-  content::NotificationRegistrar registrar_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromeJavaScriptDialogManager);
 };
@@ -103,19 +134,10 @@ class ChromeJavaScriptDialogManager : public JavaScriptDialogManager,
 ////////////////////////////////////////////////////////////////////////////////
 // ChromeJavaScriptDialogManager, public:
 
-ChromeJavaScriptDialogManager::ChromeJavaScriptDialogManager()
-    : extension_host_(NULL) {
+ChromeJavaScriptDialogManager::ChromeJavaScriptDialogManager() {
 }
 
 ChromeJavaScriptDialogManager::~ChromeJavaScriptDialogManager() {
-  extension_host_ = NULL;
-}
-
-ChromeJavaScriptDialogManager::ChromeJavaScriptDialogManager(
-    extensions::ExtensionHost* extension_host)
-    : extension_host_(extension_host) {
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_HOST_DESTROYED,
-                 content::Source<Profile>(extension_host_->profile()));
 }
 
 // static
@@ -128,8 +150,8 @@ void ChromeJavaScriptDialogManager::RunJavaScriptDialog(
     const GURL& origin_url,
     const std::string& accept_lang,
     content::JavaScriptMessageType message_type,
-    const string16& message_text,
-    const string16& default_prompt_text,
+    const base::string16& message_text,
+    const base::string16& default_prompt_text,
     const DialogClosedCallback& callback,
     bool* did_suppress_message)  {
   *did_suppress_message = false;
@@ -156,10 +178,12 @@ void ChromeJavaScriptDialogManager::RunJavaScriptDialog(
   }
 
   bool is_alert = message_type == content::JAVASCRIPT_MESSAGE_TYPE_ALERT;
-  string16 dialog_title = GetTitle(origin_url, accept_lang, is_alert);
+  base::string16 dialog_title =
+      GetTitle(web_contents, origin_url, accept_lang, is_alert);
 
-  if (extension_host_)
-    extension_host_->WillRunJavaScriptDialog();
+  const Extension* extension = GetExtensionForWebContents(web_contents);
+  if (extension)
+    IncrementLazyKeepaliveCount(extension, web_contents);
 
   AppModalDialogQueue::GetInstance()->AddDialog(new JavaScriptAppModalDialog(
       web_contents,
@@ -172,23 +196,24 @@ void ChromeJavaScriptDialogManager::RunJavaScriptDialog(
       false,  // is_before_unload_dialog
       false,  // is_reload
       base::Bind(&ChromeJavaScriptDialogManager::OnDialogClosed,
-                 base::Unretained(this), callback)));
+                 base::Unretained(this), web_contents, callback)));
 }
 
 void ChromeJavaScriptDialogManager::RunBeforeUnloadDialog(
     WebContents* web_contents,
-    const string16& message_text,
+    const base::string16& message_text,
     bool is_reload,
     const DialogClosedCallback& callback) {
-  const string16 title = l10n_util::GetStringUTF16(is_reload ?
+  const base::string16 title = l10n_util::GetStringUTF16(is_reload ?
       IDS_BEFORERELOAD_MESSAGEBOX_TITLE : IDS_BEFOREUNLOAD_MESSAGEBOX_TITLE);
-  const string16 footer = l10n_util::GetStringUTF16(is_reload ?
+  const base::string16 footer = l10n_util::GetStringUTF16(is_reload ?
       IDS_BEFORERELOAD_MESSAGEBOX_FOOTER : IDS_BEFOREUNLOAD_MESSAGEBOX_FOOTER);
 
-  string16 full_message = message_text + ASCIIToUTF16("\n\n") + footer;
+  base::string16 full_message = message_text + ASCIIToUTF16("\n\n") + footer;
 
-  if (extension_host_)
-    extension_host_->WillRunJavaScriptDialog();
+  const Extension* extension = GetExtensionForWebContents(web_contents);
+  if (extension)
+    IncrementLazyKeepaliveCount(extension, web_contents);
 
   AppModalDialogQueue::GetInstance()->AddDialog(new JavaScriptAppModalDialog(
       web_contents,
@@ -196,18 +221,18 @@ void ChromeJavaScriptDialogManager::RunBeforeUnloadDialog(
       title,
       content::JAVASCRIPT_MESSAGE_TYPE_CONFIRM,
       full_message,
-      string16(),  // default_prompt_text
+      base::string16(),  // default_prompt_text
       false,       // display_suppress_checkbox
       true,        // is_before_unload_dialog
       is_reload,
       base::Bind(&ChromeJavaScriptDialogManager::OnDialogClosed,
-                 base::Unretained(this), callback)));
+                 base::Unretained(this), web_contents, callback)));
 }
 
 bool ChromeJavaScriptDialogManager::HandleJavaScriptDialog(
     WebContents* web_contents,
     bool accept,
-    const string16* prompt_override) {
+    const base::string16* prompt_override) {
   AppModalDialogQueue* dialog_queue = AppModalDialogQueue::GetInstance();
   if (!dialog_queue->HasActiveDialog() ||
       !dialog_queue->active_dialog()->IsJavaScriptModalDialog() ||
@@ -232,17 +257,11 @@ void ChromeJavaScriptDialogManager::WebContentsDestroyed(
   javascript_dialog_extra_data_.erase(web_contents);
 }
 
-void ChromeJavaScriptDialogManager::Observe(
-    int type,
-    const content::NotificationSource& source,
-    const content::NotificationDetails& details) {
-  DCHECK_EQ(type, chrome::NOTIFICATION_EXTENSION_HOST_DESTROYED);
-  extension_host_ = NULL;
-}
-
-string16 ChromeJavaScriptDialogManager::GetTitle(const GURL& origin_url,
-                                                 const std::string& accept_lang,
-                                                 bool is_alert) {
+base::string16 ChromeJavaScriptDialogManager::GetTitle(
+    WebContents* web_contents,
+    const GURL& origin_url,
+    const std::string& accept_lang,
+    bool is_alert) {
   // If the URL hasn't any host, return the default string.
   if (!origin_url.has_host()) {
       return l10n_util::GetStringUTF16(
@@ -250,19 +269,13 @@ string16 ChromeJavaScriptDialogManager::GetTitle(const GURL& origin_url,
                    : IDS_JAVASCRIPT_MESSAGEBOX_DEFAULT_TITLE);
   }
 
-  // If the URL is a chrome extension one, return the extension name.
-  if (extension_host_) {
-    const extensions::Extension* extension = extension_host_->
-      profile()->GetExtensionService()->extensions()->
-      GetExtensionOrAppByURL(origin_url);
-    if (extension) {
-      return UTF8ToUTF16(base::StringPiece(extension->name()));
-    }
-  }
+  const Extension* extension = GetExtensionForWebContents(web_contents);
+  if (extension)
+    return UTF8ToUTF16(extension->name());
 
   // Otherwise, return the formatted URL.
   // In this case, force URL to have LTR directionality.
-  string16 url_string = net::FormatUrl(origin_url, accept_lang);
+  base::string16 url_string = net::FormatUrl(origin_url, accept_lang);
   return l10n_util::GetStringFUTF16(
       is_alert ? IDS_JAVASCRIPT_ALERT_TITLE
       : IDS_JAVASCRIPT_MESSAGEBOX_TITLE,
@@ -283,11 +296,17 @@ void ChromeJavaScriptDialogManager::CancelActiveAndPendingDialogs(
 }
 
 void ChromeJavaScriptDialogManager::OnDialogClosed(
+    WebContents* web_contents,
     DialogClosedCallback callback,
     bool success,
-    const string16& user_input) {
-  if (extension_host_)
-    extension_host_->DidCloseJavaScriptDialog();
+    const base::string16& user_input) {
+  // If an extension opened this dialog then the extension may shut down its
+  // lazy background page after the dialog closes. (Dialogs are closed before
+  // their WebContents is destroyed so |web_contents| is still valid here.)
+  const Extension* extension = GetExtensionForWebContents(web_contents);
+  if (extension)
+    DecrementLazyKeepaliveCount(extension, web_contents);
+
   callback.Run(success, user_input);
 }
 
@@ -295,9 +314,4 @@ void ChromeJavaScriptDialogManager::OnDialogClosed(
 
 content::JavaScriptDialogManager* GetJavaScriptDialogManagerInstance() {
   return ChromeJavaScriptDialogManager::GetInstance();
-}
-
-content::JavaScriptDialogManager* CreateJavaScriptDialogManagerInstance(
-    extensions::ExtensionHost* extension_host) {
-  return new ChromeJavaScriptDialogManager(extension_host);
 }

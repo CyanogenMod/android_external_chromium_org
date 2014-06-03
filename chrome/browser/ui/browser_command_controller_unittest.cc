@@ -4,22 +4,23 @@
 
 #include "chrome/browser/ui/browser_command_controller.h"
 
+#include "base/command_line.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/command_updater.h"
-#include "chrome/browser/profiles/profile_destroyer.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/profiles/profiles_state.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_window_state.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/browser_with_test_window_test.h"
 #include "chrome/test/base/test_browser_window.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile_manager.h"
 #include "content/public/browser/native_web_keyboard_event.h"
-#include "ui/base/keycodes/keyboard_codes.h"
+#include "ui/events/keycodes/keyboard_codes.h"
 
 typedef BrowserWithTestWindowTest BrowserCommandControllerTest;
 
@@ -27,14 +28,14 @@ TEST_F(BrowserCommandControllerTest, IsReservedCommandOrKey) {
 #if defined(OS_CHROMEOS)
   // F1-3 keys are reserved Chrome accelerators on Chrome OS.
   EXPECT_TRUE(browser()->command_controller()->IsReservedCommandOrKey(
-      IDC_BACK, content::NativeWebKeyboardEvent(ui::ET_KEY_PRESSED, false,
-                                                ui::VKEY_F1, 0, 0)));
+      IDC_BACK, content::NativeWebKeyboardEvent(
+          ui::ET_KEY_PRESSED, false, ui::VKEY_BROWSER_BACK, 0, 0)));
   EXPECT_TRUE(browser()->command_controller()->IsReservedCommandOrKey(
-      IDC_FORWARD, content::NativeWebKeyboardEvent(ui::ET_KEY_PRESSED, false,
-                                                   ui::VKEY_F2, 0, 0)));
+      IDC_FORWARD, content::NativeWebKeyboardEvent(
+          ui::ET_KEY_PRESSED, false, ui::VKEY_BROWSER_FORWARD, 0, 0)));
   EXPECT_TRUE(browser()->command_controller()->IsReservedCommandOrKey(
-      IDC_RELOAD, content::NativeWebKeyboardEvent(ui::ET_KEY_PRESSED, false,
-                                                  ui::VKEY_F3, 0, 0)));
+      IDC_RELOAD, content::NativeWebKeyboardEvent(
+          ui::ET_KEY_PRESSED, false, ui::VKEY_BROWSER_REFRESH, 0, 0)));
 
   // When there are modifier keys pressed, don't reserve.
   EXPECT_FALSE(browser()->command_controller()->IsReservedCommandOrKey(
@@ -141,9 +142,11 @@ TEST_F(BrowserCommandControllerTest, AppFullScreen) {
   EXPECT_TRUE(chrome::IsCommandEnabled(browser(), IDC_FULLSCREEN));
 }
 
-TEST_F(BrowserCommandControllerTest, AvatarMenuDisabledWhenOnlyOneProfile) {
+TEST_F(BrowserCommandControllerTest, OldAvatarMenuDisabledWhenOnlyOneProfile) {
   if (!profiles::IsMultipleProfilesEnabled())
     return;
+
+  EXPECT_FALSE(profiles::IsNewProfileManagementEnabled());
 
   TestingProfileManager testing_profile_manager(
       TestingBrowserProcess::GetGlobal());
@@ -167,6 +170,107 @@ TEST_F(BrowserCommandControllerTest, AvatarMenuDisabledWhenOnlyOneProfile) {
   EXPECT_FALSE(command_updater->IsCommandEnabled(IDC_SHOW_AVATAR_MENU));
 
   testing_profile_manager.DeleteTestingProfile("p2");
+}
+
+TEST_F(BrowserCommandControllerTest, NewAvatarMenuEnabledWhenOnlyOneProfile) {
+  if (!profiles::IsMultipleProfilesEnabled())
+    return;
+
+  // The command line is reset at the end of every test by the test suite.
+  CommandLine::ForCurrentProcess()->AppendSwitch(
+      switches::kNewProfileManagement);
+  EXPECT_TRUE(profiles::IsNewProfileManagementEnabled());
+
+  TestingProfileManager testing_profile_manager(
+      TestingBrowserProcess::GetGlobal());
+  ASSERT_TRUE(testing_profile_manager.SetUp());
+  ProfileManager* profile_manager = testing_profile_manager.profile_manager();
+
+  chrome::BrowserCommandController command_controller(browser(),
+                                                      profile_manager);
+  const CommandUpdater* command_updater = command_controller.command_updater();
+
+  testing_profile_manager.CreateTestingProfile("p1");
+  ASSERT_EQ(1U, profile_manager->GetNumberOfProfiles());
+  EXPECT_TRUE(command_updater->IsCommandEnabled(IDC_SHOW_AVATAR_MENU));
+  testing_profile_manager.DeleteTestingProfile("p1");
+}
+
+TEST_F(BrowserCommandControllerTest, NewAvatarMenuEnabledInGuestMode) {
+  if (!profiles::IsMultipleProfilesEnabled())
+    return;
+
+  // The command line is reset at the end of every test by the test suite.
+  CommandLine::ForCurrentProcess()->AppendSwitch(
+      switches::kNewProfileManagement);
+  EXPECT_TRUE(profiles::IsNewProfileManagementEnabled());
+
+  TestingProfileManager testing_profile_manager(
+      TestingBrowserProcess::GetGlobal());
+  ASSERT_TRUE(testing_profile_manager.SetUp());
+  ProfileManager* profile_manager = testing_profile_manager.profile_manager();
+
+  // Set up guest a profile.
+  TestingProfile::Builder guest_builder;
+  guest_builder.SetIncognito();  // Guest profiles are off the record.
+  guest_builder.SetGuestSession();
+  guest_builder.SetPath(ProfileManager::GetGuestProfilePath());
+  scoped_ptr<TestingProfile>guest_profile = guest_builder.Build();
+
+  ASSERT_TRUE(guest_profile->IsGuestSession());
+
+  // Create a new browser based on the guest profile.
+  Browser::CreateParams profile_params(guest_profile.get(),
+                                       chrome::GetActiveDesktop());
+  scoped_ptr<Browser> guest_browser(
+      chrome::CreateBrowserWithTestWindowForParams(&profile_params));
+  chrome::BrowserCommandController command_controller(guest_browser.get(),
+                                                      profile_manager);
+  const CommandUpdater* command_updater = command_controller.command_updater();
+  EXPECT_TRUE(command_updater->IsCommandEnabled(IDC_SHOW_AVATAR_MENU));
+}
+
+TEST_F(BrowserCommandControllerTest, AvatarMenuAlwaysDisabledInIncognitoMode) {
+  if (!profiles::IsMultipleProfilesEnabled())
+    return;
+
+  TestingProfileManager testing_profile_manager(
+      TestingBrowserProcess::GetGlobal());
+  ASSERT_TRUE(testing_profile_manager.SetUp());
+
+  // Set up a profile with an off the record profile.
+  TestingProfile::Builder otr_builder;
+  otr_builder.SetIncognito();
+  scoped_ptr<TestingProfile> otr_profile(otr_builder.Build());
+
+  TestingProfile::Builder normal_builder;
+  scoped_ptr<TestingProfile> original_profile = normal_builder.Build();
+  otr_profile->SetOriginalProfile(original_profile.get());
+  EXPECT_EQ(otr_profile->GetOriginalProfile(), original_profile.get());
+
+  original_profile->SetOffTheRecordProfile(otr_profile.PassAs<Profile>());
+
+  // Create a new browser based on the off the record profile.
+  Browser::CreateParams profile_params(
+      original_profile->GetOffTheRecordProfile(), chrome::GetActiveDesktop());
+  scoped_ptr<Browser> otr_browser(
+      chrome::CreateBrowserWithTestWindowForParams(&profile_params));
+
+  ProfileManager* profile_manager = testing_profile_manager.profile_manager();
+  chrome::BrowserCommandController command_controller(otr_browser.get(),
+                                                      profile_manager);
+  const CommandUpdater* command_updater = command_controller.command_updater();
+
+  // The old style avatar menu should be disabled.
+  EXPECT_FALSE(profiles::IsNewProfileManagementEnabled());
+  EXPECT_FALSE(command_updater->IsCommandEnabled(IDC_SHOW_AVATAR_MENU));
+
+  // The new style avatar menu should also be disabled.
+  // The command line is reset at the end of every test by the test suite.
+  CommandLine::ForCurrentProcess()->AppendSwitch(
+      switches::kNewProfileManagement);
+  EXPECT_TRUE(profiles::IsNewProfileManagementEnabled());
+  EXPECT_FALSE(command_updater->IsCommandEnabled(IDC_SHOW_AVATAR_MENU));
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -227,7 +331,9 @@ TEST_F(BrowserCommandControllerFullscreenTest,
   EXPECT_TRUE(chrome::IsCommandEnabled(browser(), IDC_FOCUS_PREVIOUS_PANE));
   EXPECT_TRUE(chrome::IsCommandEnabled(browser(), IDC_FOCUS_BOOKMARKS));
   EXPECT_TRUE(chrome::IsCommandEnabled(browser(), IDC_DEVELOPER_MENU));
+#if defined(GOOGLE_CHROME_BUILD)
   EXPECT_TRUE(chrome::IsCommandEnabled(browser(), IDC_FEEDBACK));
+#endif
   EXPECT_TRUE(chrome::IsCommandEnabled(browser(), IDC_OPTIONS));
   EXPECT_TRUE(chrome::IsCommandEnabled(browser(), IDC_IMPORT_SETTINGS));
   EXPECT_TRUE(chrome::IsCommandEnabled(browser(), IDC_EDIT_SEARCH_ENGINES));
@@ -252,7 +358,9 @@ TEST_F(BrowserCommandControllerFullscreenTest,
   EXPECT_FALSE(chrome::IsCommandEnabled(browser(), IDC_FOCUS_PREVIOUS_PANE));
   EXPECT_FALSE(chrome::IsCommandEnabled(browser(), IDC_FOCUS_BOOKMARKS));
   EXPECT_FALSE(chrome::IsCommandEnabled(browser(), IDC_DEVELOPER_MENU));
+#if defined(GOOGLE_CHROME_BUILD)
   EXPECT_FALSE(chrome::IsCommandEnabled(browser(), IDC_FEEDBACK));
+#endif
   EXPECT_FALSE(chrome::IsCommandEnabled(browser(), IDC_OPTIONS));
   EXPECT_FALSE(chrome::IsCommandEnabled(browser(), IDC_IMPORT_SETTINGS));
   EXPECT_FALSE(chrome::IsCommandEnabled(browser(), IDC_EDIT_SEARCH_ENGINES));
@@ -275,7 +383,9 @@ TEST_F(BrowserCommandControllerFullscreenTest,
   EXPECT_TRUE(chrome::IsCommandEnabled(browser(), IDC_FOCUS_PREVIOUS_PANE));
   EXPECT_TRUE(chrome::IsCommandEnabled(browser(), IDC_FOCUS_BOOKMARKS));
   EXPECT_TRUE(chrome::IsCommandEnabled(browser(), IDC_DEVELOPER_MENU));
+#if defined(GOOGLE_CHROME_BUILD)
   EXPECT_TRUE(chrome::IsCommandEnabled(browser(), IDC_FEEDBACK));
+#endif
   EXPECT_TRUE(chrome::IsCommandEnabled(browser(), IDC_OPTIONS));
   EXPECT_TRUE(chrome::IsCommandEnabled(browser(), IDC_IMPORT_SETTINGS));
   EXPECT_TRUE(chrome::IsCommandEnabled(browser(), IDC_EDIT_SEARCH_ENGINES));
@@ -293,31 +403,29 @@ TEST_F(BrowserCommandControllerTest,
 
   // Set up a profile with an off the record profile.
   TestingProfile::Builder builder;
-  TestingProfile* profile2 = builder.Build().release();
-  profile2->set_incognito(true);
+  builder.SetIncognito();
+  scoped_ptr<TestingProfile> profile2(builder.Build());
   TestingProfile::Builder builder2;
-  TestingProfile* profile1 = builder2.Build().release();
-  profile2->SetOriginalProfile(profile1);
-  EXPECT_EQ(profile2->GetOriginalProfile(), profile1);
-  profile1->SetOffTheRecordProfile(profile2);
+  scoped_ptr<TestingProfile> profile1 = builder2.Build();
+  profile2->SetOriginalProfile(profile1.get());
+  EXPECT_EQ(profile2->GetOriginalProfile(), profile1.get());
+  profile1->SetOffTheRecordProfile(profile2.PassAs<Profile>());
 
   // Create a new browser based on the off the record profile.
-  Browser::CreateParams profile_params(profile2, chrome::GetActiveDesktop());
+  Browser::CreateParams profile_params(profile1->GetOffTheRecordProfile(),
+                                       chrome::GetActiveDesktop());
   scoped_ptr<Browser> browser2(
       chrome::CreateBrowserWithTestWindowForParams(&profile_params));
 
   ProfileManager* profile_manager = testing_profile_manager.profile_manager();
-  chrome::BrowserCommandController* command_controller =
-      new chrome::BrowserCommandController(browser2.get(), profile_manager);
-  const CommandUpdater* command_updater = command_controller->command_updater();
+  chrome::BrowserCommandController command_controller(browser2.get(),
+                                                      profile_manager);
+  const CommandUpdater* command_updater = command_controller.command_updater();
 
   // Check that the SYNC_SETUP command is updated on preference change.
   EXPECT_TRUE(command_updater->IsCommandEnabled(IDC_SHOW_SYNC_SETUP));
   profile1->GetPrefs()->SetBoolean(prefs::kSigninAllowed, false);
   EXPECT_FALSE(command_updater->IsCommandEnabled(IDC_SHOW_SYNC_SETUP));
-  delete command_controller;
-  browser2.reset();
-  ProfileDestroyer::DestroyProfileWhenAppropriate(profile1);
 }
 
 TEST_F(BrowserCommandControllerTest,

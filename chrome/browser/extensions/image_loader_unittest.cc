@@ -9,14 +9,14 @@
 #include "base/path_service.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_icon_set.h"
-#include "chrome/common/extensions/manifest.h"
 #include "chrome/common/extensions/manifest_handlers/icons_handler.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/test/test_browser_thread.h"
+#include "extensions/common/extension.h"
 #include "extensions/common/extension_resource.h"
+#include "extensions/common/manifest.h"
 #include "grit/component_extension_resources.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -29,6 +29,7 @@ using extensions::Extension;
 using extensions::ExtensionResource;
 using extensions::ImageLoader;
 using extensions::Manifest;
+using extensions::UnloadedExtensionInfo;
 
 class ImageLoaderTest : public testing::Test {
  public:
@@ -169,12 +170,12 @@ TEST_F(ImageLoaderTest, DeleteExtensionWhileWaitingForCache) {
   EXPECT_EQ(0, image_loaded_count());
 
   // Send out notification the extension was uninstalled.
-  extensions::UnloadedExtensionInfo details(extension.get(),
-      extension_misc::UNLOAD_REASON_UNINSTALL);
+  UnloadedExtensionInfo details(extension.get(),
+                                UnloadedExtensionInfo::REASON_UNINSTALL);
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_EXTENSION_UNLOADED,
       content::NotificationService::AllSources(),
-      content::Details<extensions::UnloadedExtensionInfo>(&details));
+      content::Details<UnloadedExtensionInfo>(&details));
 
   // Chuck the extension, that way if anyone tries to access it we should crash
   // or get valgrind errors.

@@ -19,12 +19,13 @@ class ListValue;
 class Value;
 }
 
+class DebuggerTracker;
 class DevToolsClient;
 class DomTracker;
 class FrameTracker;
 class GeolocationOverrideManager;
+class HeapSnapshotTaker;
 struct KeyEvent;
-class Log;
 struct MouseEvent;
 class NavigationTracker;
 class Status;
@@ -33,12 +34,12 @@ class WebViewImpl : public WebView {
  public:
   WebViewImpl(const std::string& id,
               int build_no,
-              scoped_ptr<DevToolsClient> client,
-              Log* log);
+              scoped_ptr<DevToolsClient> client);
   virtual ~WebViewImpl();
 
   // Overridden from WebView:
   virtual std::string GetId() OVERRIDE;
+  virtual bool WasCrashed() OVERRIDE;
   virtual Status ConnectIfNecessary() OVERRIDE;
   virtual Status HandleReceivedEvents() OVERRIDE;
   virtual Status Load(const std::string& url) OVERRIDE;
@@ -74,7 +75,8 @@ class WebViewImpl : public WebView {
   virtual Status DeleteCookie(const std::string& name,
                               const std::string& url) OVERRIDE;
   virtual Status WaitForPendingNavigations(const std::string& frame_id,
-                                           int timeout) OVERRIDE;
+                                           const base::TimeDelta& timeout,
+                                           bool stop_load_on_timeout) OVERRIDE;
   virtual Status IsPendingNavigation(
       const std::string& frame_id, bool* is_pending) OVERRIDE;
   virtual JavaScriptDialogManager* GetJavaScriptDialogManager() OVERRIDE;
@@ -84,6 +86,7 @@ class WebViewImpl : public WebView {
       const std::string& frame,
       const base::DictionaryValue& element,
       const std::vector<base::FilePath>& files) OVERRIDE;
+  virtual Status TakeHeapSnapshot(scoped_ptr<base::Value>* snapshot) OVERRIDE;
 
  private:
   Status CallAsyncFunctionInternal(const std::string& frame,
@@ -101,8 +104,9 @@ class WebViewImpl : public WebView {
   scoped_ptr<NavigationTracker> navigation_tracker_;
   scoped_ptr<JavaScriptDialogManager> dialog_manager_;
   scoped_ptr<GeolocationOverrideManager> geolocation_override_manager_;
+  scoped_ptr<HeapSnapshotTaker> heap_snapshot_taker_;
+  scoped_ptr<DebuggerTracker> debugger_;
   scoped_ptr<DevToolsClient> client_;
-  Log* log_;
 };
 
 namespace internal {

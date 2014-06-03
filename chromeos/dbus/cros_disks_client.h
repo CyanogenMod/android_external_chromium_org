@@ -11,6 +11,7 @@
 #include "base/basictypes.h"
 #include "base/callback_forward.h"
 #include "chromeos/chromeos_export.h"
+#include "chromeos/dbus/dbus_client.h"
 #include "chromeos/dbus/dbus_client_implementation_type.h"
 
 namespace base {
@@ -18,7 +19,6 @@ class FilePath;
 }
 
 namespace dbus {
-class Bus;
 class Response;
 }
 
@@ -33,8 +33,6 @@ enum MountType {
   MOUNT_TYPE_INVALID,
   MOUNT_TYPE_DEVICE,
   MOUNT_TYPE_ARCHIVE,
-  MOUNT_TYPE_GOOGLE_DRIVE,
-  MOUNT_TYPE_NETWORK_STORAGE,
 };
 
 // Type of device.
@@ -190,7 +188,7 @@ class CHROMEOS_EXPORT DiskInfo {
 // A class to make the actual DBus calls for cros-disks service.
 // This class only makes calls, result/error handling should be done
 // by callbacks.
-class CHROMEOS_EXPORT CrosDisksClient {
+class CHROMEOS_EXPORT CrosDisksClient : public DBusClient {
  public:
   // A callback to handle the result of EnumerateAutoMountableDevices.
   // The argument is the enumerated device paths.
@@ -276,8 +274,7 @@ class CHROMEOS_EXPORT CrosDisksClient {
 
   // Factory function, creates a new instance and returns ownership.
   // For normal usage, access the singleton via DBusThreadManager::Get().
-  static CrosDisksClient* Create(DBusClientImplementationType type,
-                                 dbus::Bus* bus);
+  static CrosDisksClient* Create(DBusClientImplementationType type);
 
   // Returns the path of the mount point for archive files.
   static base::FilePath GetArchiveMountPoint();

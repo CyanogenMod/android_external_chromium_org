@@ -59,9 +59,7 @@ bool IsArchitectureArm() {
 
 // TODO(jln): figure out why base/.../dynamic_annotations.h's
 // RunningOnValgrind() cannot link.
-bool IsRunningOnValgrind() {
-  return RUNNING_ON_VALGRIND;
-}
+bool IsRunningOnValgrind() { return RUNNING_ON_VALGRIND; }
 
 static const int kExpectedValue = 42;
 static const int kIgnoreThisTest = 43;
@@ -69,13 +67,12 @@ static const int kExitWithAssertionFailure = 1;
 static const int kExitForTimeout = 2;
 
 static void SigAlrmHandler(int) {
-    const char failure_message[] = "Timeout reached!\n";
-    // Make sure that we never block here.
-    if (!fcntl(2, F_SETFL,  O_NONBLOCK)) {
-      if (write(2, failure_message, sizeof(failure_message) - 1) < 0) {
-      }
-    }
-    _exit(kExitForTimeout);
+  const char failure_message[] = "Timeout reached!\n";
+  // Make sure that we never block here.
+  if (!fcntl(2, F_SETFL, O_NONBLOCK)) {
+    ignore_result(write(2, failure_message, sizeof(failure_message) - 1));
+  }
+  _exit(kExitForTimeout);
 }
 
 // Set a timeout with a handler that will automatically fail the
@@ -105,8 +102,10 @@ static void SetProcessTimeout(int time_in_seconds) {
 // in the BPF sandbox, as it potentially makes global state changes and as
 // it also tends to raise fatal errors, if the code has been used in an
 // insecure manner.
-void UnitTests::RunTestInProcess(UnitTests::Test test, void *arg,
-                                 DeathCheck death, const void *death_aux) {
+void UnitTests::RunTestInProcess(UnitTests::Test test,
+                                 void* arg,
+                                 DeathCheck death,
+                                 const void* death_aux) {
   // We need to fork(), so we can't be multi-threaded, as threads could hold
   // locks.
   int num_threads = CountThreads();
@@ -144,22 +143,22 @@ void UnitTests::RunTestInProcess(UnitTests::Test test, void *arg,
 
     // Disable core files. They are not very useful for our individual test
     // cases.
-    struct rlimit no_core = { 0 };
+    struct rlimit no_core = {0};
     setrlimit(RLIMIT_CORE, &no_core);
 
     test(arg);
     _exit(kExpectedValue);
   }
 
-  (void)HANDLE_EINTR(close(fds[1]));
+  close(fds[1]);
   std::vector<char> msg_buf;
   ssize_t rc;
 
   // Make sure read() will never block as we'll use poll() to
   // block with a timeout instead.
-  const int fcntl_ret = fcntl(fds[0], F_SETFL,  O_NONBLOCK);
+  const int fcntl_ret = fcntl(fds[0], F_SETFL, O_NONBLOCK);
   ASSERT_EQ(fcntl_ret, 0);
-  struct pollfd poll_fd = { fds[0], POLLIN | POLLRDHUP, 0 };
+  struct pollfd poll_fd = {fds[0], POLLIN | POLLRDHUP, 0};
 
   int poll_ret;
   // We prefer the SIGALRM timeout to trigger in the child than this timeout
@@ -176,7 +175,7 @@ void UnitTests::RunTestInProcess(UnitTests::Test test, void *arg,
   }
   ASSERT_NE(poll_ret, -1) << "poll() failed";
   ASSERT_NE(poll_ret, 0) << "Timeout while reading child state";
-  (void)HANDLE_EINTR(close(fds[0]));
+  close(fds[0]);
   std::string msg(msg_buf.begin(), msg_buf.end());
 
   int status = 0;
@@ -198,8 +197,7 @@ void UnitTests::RunTestInProcess(UnitTests::Test test, void *arg,
   }
 }
 
-void UnitTests::DeathSuccess(int status, const std::string& msg,
-                             const void *) {
+void UnitTests::DeathSuccess(int status, const std::string& msg, const void*) {
   std::string details(TestFailedMessage(msg));
 
   bool subprocess_terminated_normally = WIFEXITED(status);
@@ -210,22 +208,24 @@ void UnitTests::DeathSuccess(int status, const std::string& msg,
   EXPECT_FALSE(subprocess_exited_but_printed_messages) << details;
 }
 
-void UnitTests::DeathMessage(int status, const std::string& msg,
-                             const void *aux) {
+void UnitTests::DeathMessage(int status,
+                             const std::string& msg,
+                             const void* aux) {
   std::string details(TestFailedMessage(msg));
-  const char *expected_msg = static_cast<const char *>(aux);
+  const char* expected_msg = static_cast<const char*>(aux);
 
   bool subprocess_terminated_normally = WIFEXITED(status);
   ASSERT_TRUE(subprocess_terminated_normally) << details;
   int subprocess_exit_status = WEXITSTATUS(status);
   ASSERT_EQ(kExitWithAssertionFailure, subprocess_exit_status) << details;
   bool subprocess_exited_without_matching_message =
-    msg.find(expected_msg) == std::string::npos;
+      msg.find(expected_msg) == std::string::npos;
   EXPECT_FALSE(subprocess_exited_without_matching_message) << details;
 }
 
-void UnitTests::DeathExitCode(int status, const std::string& msg,
-                              const void *aux) {
+void UnitTests::DeathExitCode(int status,
+                              const std::string& msg,
+                              const void* aux) {
   int expected_exit_code = static_cast<int>(reinterpret_cast<intptr_t>(aux));
   std::string details(TestFailedMessage(msg));
 
@@ -235,8 +235,9 @@ void UnitTests::DeathExitCode(int status, const std::string& msg,
   ASSERT_EQ(subprocess_exit_status, expected_exit_code) << details;
 }
 
-void UnitTests::DeathBySignal(int status, const std::string& msg,
-                              const void *aux) {
+void UnitTests::DeathBySignal(int status,
+                              const std::string& msg,
+                              const void* aux) {
   int expected_signo = static_cast<int>(reinterpret_cast<intptr_t>(aux));
   std::string details(TestFailedMessage(msg));
 
@@ -246,8 +247,7 @@ void UnitTests::DeathBySignal(int status, const std::string& msg,
   ASSERT_EQ(subprocess_signal_number, expected_signo) << details;
 }
 
-void UnitTests::AssertionFailure(const char *expr, const char *file,
-                                 int line) {
+void UnitTests::AssertionFailure(const char* expr, const char* file, int line) {
   fprintf(stderr, "%s:%d:%s", file, line, expr);
   fflush(stderr);
   _exit(kExitWithAssertionFailure);

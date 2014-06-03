@@ -21,14 +21,10 @@
       }],
     ],
   },
-  'includes': [
-    'content_tests.gypi',
-  ],
   'conditions': [
     ['OS != "ios"', {
       'includes': [
         '../build/win_precompile.gypi',
-        'content_shell.gypi',
       ],
     }],
     # In component mode, we build all of content as a single DLL.
@@ -46,14 +42,13 @@
           'target_name': 'content',
           'type': 'none',
           'dependencies': [
-            'content_app_browser',
             'content_browser',
-            'content_child',
             'content_common',
           ],
           'conditions': [
             ['OS != "ios"', {
               'dependencies': [
+                'content_child',
                 'content_gpu',
                 'content_plugin',
                 'content_ppapi_plugin',
@@ -123,17 +118,17 @@
             'content_resources.gyp:content_resources',
           ],
           'conditions': [
-            ['OS != "ios" and chrome_multiple_dll != 1', {
+            ['java_bridge==1', {
+              'dependencies': [
+                'content_child',
+              ]
+            }],
+            ['OS=="android"', {
               'dependencies': [
                 'content_gpu',
                 'content_utility',
               ],
             }],
-            ['java_bridge==1', {
-              'dependencies': [
-                'content_child',
-              ]
-            }]
           ],
         },
         {
@@ -153,28 +148,23 @@
           # Disable c4267 warnings until we fix size_t to int truncations.
           'msvs_disabled_warnings': [ 4267, ],
         },
-        {
-          'target_name': 'content_child',
-          'type': 'static_library',
-          'variables': { 'enable_wexit_time_destructors': 1, },
-          'includes': [
-            'content_child.gypi',
-          ],
-          'conditions': [
-            ['OS != "ios"', {
-              'dependencies': [
-                'content_resources.gyp:content_resources',
-              ],
-            }],
-          ],
-          # Disable c4267 warnings until we fix size_t to int truncations.
-          'msvs_disabled_warnings': [ 4267, ],
-        },
-
       ],
       'conditions': [
         ['OS != "ios"', {
           'targets': [
+            {
+              'target_name': 'content_child',
+              'type': 'static_library',
+              'variables': { 'enable_wexit_time_destructors': 1, },
+              'includes': [
+                'content_child.gypi',
+              ],
+              'dependencies': [
+                'content_resources.gyp:content_resources',
+              ],
+              # Disable c4267 warnings until we fix size_t to int truncations.
+              'msvs_disabled_warnings': [ 4267, ],
+            },
             {
               'target_name': 'content_gpu',
               'type': 'static_library',
@@ -402,10 +392,11 @@
             '../base/base.gyp:base',
             '../media/media.gyp:media_java',
             '../net/net.gyp:net',
-            '../ui/ui.gyp:ui_java',
+            '../ui/android/ui_android.gyp:ui_java',
             'common_aidl',
             'content_common',
             'page_transition_types_java',
+            'popup_item_type_java',
             'result_codes_java',
             'speech_recognition_error_java',
             'top_controls_state_java',
@@ -438,6 +429,18 @@
           'variables': {
             'package_name': 'org/chromium/content/browser',
             'template_deps': ['public/common/page_transition_types_list.h'],
+          },
+          'includes': [ '../build/android/java_cpp_template.gypi' ],
+        },
+        {
+          'target_name': 'popup_item_type_java',
+          'type': 'none',
+          'sources': [
+            'public/android/java/src/org/chromium/content/browser/input/PopupItemType.template',
+          ],
+          'variables': {
+            'package_name': 'org/chromium/content/browser/input',
+            'template_deps': ['browser/android/popup_item_type_list.h'],
           },
           'includes': [ '../build/android/java_cpp_template.gypi' ],
         },
@@ -486,12 +489,11 @@
           },
           'includes': [ '../build/jar_file_jni_generator.gypi' ],
         },
-
         {
           'target_name': 'content_jni_headers',
           'type': 'none',
           'dependencies': [
-            'java_set_jni_headers',
+            'java_set_jni_headers'
           ],
           'direct_dependent_settings': {
             'include_dirs': [
@@ -500,6 +502,24 @@
           },
           'includes': [ 'content_jni.gypi' ],
         },
+        {
+          'target_name': 'content_android_linker',
+          'type': 'shared_library',
+          'conditions': [
+            ['android_webview_build == 0', {
+              # Avoid breaking the webview build because it doesn't have
+              # <(android_ndk_root)/crazy_linker.gyp. Note that it never uses
+              # the linker anyway.
+              'sources': [
+                'common/android/linker/linker_jni.cc',
+              ],
+              'dependencies': [
+                '<(android_ndk_root)/crazy_linker.gyp:crazy_linker',
+              ],
+            }],
+          ],
+        },
+
       ],
     }],  # OS == "android"
   ],

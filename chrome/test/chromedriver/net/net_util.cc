@@ -2,19 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "chrome/test/chromedriver/net/net_util.h"
+
 #include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
+#include "base/strings/stringprintf.h"
 #include "base/synchronization/waitable_event.h"
 #include "chrome/test/chromedriver/net/url_request_context_getter.h"
-#include "net/base/ip_endpoint.h"
-#include "net/base/net_errors.h"
-#include "net/base/net_log.h"
-#include "net/base/net_util.h"
-#include "net/socket/tcp_server_socket.h"
 #include "net/url_request/url_fetcher.h"
 #include "net/url_request/url_fetcher_delegate.h"
 #include "url/gurl.h"
@@ -63,26 +61,33 @@ class SyncUrlFetcher : public net::URLFetcherDelegate {
 
 }  // namespace
 
+NetAddress::NetAddress() : port_(-1) {}
+
+NetAddress::NetAddress(int port) : host_("127.0.0.1"), port_(port) {}
+
+NetAddress::NetAddress(const std::string& host, int port)
+    : host_(host), port_(port) {}
+
+NetAddress::~NetAddress() {}
+
+bool NetAddress::IsValid() const {
+  return port_ >= 0 && port_ < (1 << 16);
+}
+
+std::string NetAddress::ToString() const {
+  return host_ + base::StringPrintf(":%d", port_);
+}
+
+const std::string& NetAddress::host() const {
+  return host_;
+}
+
+int NetAddress::port() const {
+  return port_;
+}
+
 bool FetchUrl(const std::string& url,
               URLRequestContextGetter* getter,
               std::string* response) {
   return SyncUrlFetcher(GURL(url), getter, response).Fetch();
-}
-
-bool FindOpenPort(int* port) {
-  char parts[] = {127, 0, 0, 1};
-  net::IPAddressNumber address(parts, parts + arraysize(parts));
-  net::NetLog::Source source;
-  for (int i = 0; i < 10; ++i) {
-    net::TCPServerSocket sock(NULL, source);
-    // Use port 0, so that the OS will assign an available ephemeral port.
-    if (sock.Listen(net::IPEndPoint(address, 0), 1) != net::OK)
-      continue;
-    net::IPEndPoint end_point;
-    if (sock.GetLocalAddress(&end_point) != net::OK)
-      continue;
-    *port = end_point.port();
-    return true;
-  }
-  return false;
 }

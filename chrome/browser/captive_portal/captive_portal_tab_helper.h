@@ -79,6 +79,7 @@ class CaptivePortalTabHelper
 
   virtual void DidCommitProvisionalLoadForFrame(
       int64 frame_id,
+      const base::string16& frame_unique_name,
       bool is_main_frame,
       const GURL& url,
       content::PageTransition transition_type,
@@ -86,10 +87,11 @@ class CaptivePortalTabHelper
 
   virtual void DidFailProvisionalLoad(
       int64 frame_id,
+      const base::string16& frame_unique_name,
       bool is_main_frame,
       const GURL& validated_url,
       int error_code,
-      const string16& error_description,
+      const base::string16& error_description,
       content::RenderViewHost* render_view_host) OVERRIDE;
 
   virtual void DidStopLoading(

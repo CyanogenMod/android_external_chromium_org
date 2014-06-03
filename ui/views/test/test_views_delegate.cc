@@ -36,11 +36,18 @@ void TestViewsDelegate::SaveWindowPlacement(const Widget* window,
 }
 
 bool TestViewsDelegate::GetSavedWindowPlacement(
+    const Widget* window,
     const std::string& window_name,
     gfx::Rect* bounds,
     ui:: WindowShowState* show_state) const {
   return false;
 }
+
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+gfx::ImageSkia* TestViewsDelegate::GetDefaultWindowIcon() const {
+  return NULL;
+}
+#endif
 
 NonClientFrameView* TestViewsDelegate::CreateDefaultNonClientFrameView(
     Widget* widget) {

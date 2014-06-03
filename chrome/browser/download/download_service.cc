@@ -43,7 +43,7 @@ ChromeDownloadManagerDelegate* DownloadService::GetDownloadManagerDelegate() {
   // In case the delegate has already been set by
   // SetDownloadManagerDelegateForTesting.
   if (!manager_delegate_.get())
-    manager_delegate_ = new ChromeDownloadManagerDelegate(profile_);
+    manager_delegate_.reset(new ChromeDownloadManagerDelegate(profile_));
 
   manager_delegate_->SetDownloadManager(manager);
 
@@ -55,8 +55,8 @@ ChromeDownloadManagerDelegate* DownloadService::GetDownloadManagerDelegate() {
   if (!profile_->IsOffTheRecord()) {
     HistoryService* history = HistoryServiceFactory::GetForProfile(
         profile_, Profile::EXPLICIT_ACCESS);
-    history->GetNextDownloadId(base::Bind(
-        &ChromeDownloadManagerDelegate::SetNextId, manager_delegate_));
+    history->GetNextDownloadId(
+        manager_delegate_->GetDownloadIdReceiverCallback());
     download_history_.reset(new DownloadHistory(
         manager,
         scoped_ptr<DownloadHistory::HistoryAdapter>(
@@ -88,41 +88,60 @@ bool DownloadService::HasCreatedDownloadManager() {
   return download_manager_created_;
 }
 
-int DownloadService::DownloadCount() const {
+int DownloadService::NonMaliciousDownloadCount() const {
   if (!download_manager_created_)
     return 0;
-  return BrowserContext::GetDownloadManager(profile_)->InProgressCount();
+  return BrowserContext::GetDownloadManager(profile_)->
+      NonMaliciousInProgressCount();
 }
 
 // static
-int DownloadService::DownloadCountAllProfiles() {
+int DownloadService::NonMaliciousDownloadCountAllProfiles() {
   std::vector<Profile*> profiles(
       g_browser_process->profile_manager()->GetLoadedProfiles());
 
   int count = 0;
   for (std::vector<Profile*>::iterator it = profiles.begin();
        it < profiles.end(); ++it) {
-    count += DownloadServiceFactory::GetForBrowserContext(*it)->DownloadCount();
+    count += DownloadServiceFactory::GetForBrowserContext(*it)->
+        NonMaliciousDownloadCount();
     if ((*it)->HasOffTheRecordProfile())
       count += DownloadServiceFactory::GetForBrowserContext(
-          (*it)->GetOffTheRecordProfile())->DownloadCount();
+          (*it)->GetOffTheRecordProfile())->NonMaliciousDownloadCount();
   }
 
   return count;
 }
 
-void DownloadService::SetDownloadManagerDelegateForTesting(
-    ChromeDownloadManagerDelegate* new_delegate) {
-  // Set the new delegate first so that if BrowserContext::GetDownloadManager()
-  // causes a new download manager to be created, we won't create a redundant
-  // ChromeDownloadManagerDelegate().
-  manager_delegate_ = new_delegate;
-  // Guarantee everything is properly initialized.
-  DownloadManager* dm = BrowserContext::GetDownloadManager(profile_);
-  if (dm->GetDelegate() != new_delegate) {
-    dm->SetDelegate(new_delegate);
-    new_delegate->SetDownloadManager(dm);
+// static
+void DownloadService::CancelAllDownloads() {
+  std::vector<Profile*> profiles(
+      g_browser_process->profile_manager()->GetLoadedProfiles());
+  for (std::vector<Profile*>::iterator it = profiles.begin();
+       it < profiles.end();
+       ++it) {
+    content::DownloadManager* download_manager =
+        content::BrowserContext::GetDownloadManager(*it);
+    content::DownloadManager::DownloadVector downloads;
+    download_manager->GetAllDownloads(&downloads);
+    for (content::DownloadManager::DownloadVector::iterator it =
+             downloads.begin();
+         it != downloads.end();
+         ++it) {
+      if ((*it)->GetState() == content::DownloadItem::IN_PROGRESS)
+        (*it)->Cancel(false);
+    }
   }
+}
+
+void DownloadService::SetDownloadManagerDelegateForTesting(
+    scoped_ptr<ChromeDownloadManagerDelegate> new_delegate) {
+  manager_delegate_.swap(new_delegate);
+  DownloadManager* dm = BrowserContext::GetDownloadManager(profile_);
+  dm->SetDelegate(manager_delegate_.get());
+  manager_delegate_->SetDownloadManager(dm);
+  if (new_delegate)
+    new_delegate->Shutdown();
 }
 
 bool DownloadService::IsShelfEnabled() {
@@ -146,6 +165,6 @@ void DownloadService::Shutdown() {
 #if !defined(OS_ANDROID)
   extension_event_router_.reset();
 #endif
-  manager_delegate_ = NULL;
+  manager_delegate_.reset();
   download_history_.reset();
 }

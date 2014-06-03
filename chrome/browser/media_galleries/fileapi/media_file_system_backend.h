@@ -13,12 +13,6 @@ namespace base {
 class SequencedTaskRunner;
 }
 
-namespace fileapi {
-class AsyncFileUtilAdapter;
-}
-
-namespace chrome {
-
 class MediaPathFilter;
 
 class DeviceMediaAsyncFileUtil;
@@ -43,8 +37,6 @@ class MediaFileSystemBackend : public fileapi::FileSystemBackend {
       fileapi::FileSystemType type,
       fileapi::OpenFileSystemMode mode,
       const OpenFileSystemCallback& callback) OVERRIDE;
-  virtual fileapi::FileSystemFileUtil* GetFileUtil(
-      fileapi::FileSystemType type) OVERRIDE;
   virtual fileapi::AsyncFileUtil* GetAsyncFileUtil(
       fileapi::FileSystemType type) OVERRIDE;
   virtual fileapi::CopyOrMoveFileValidatorFactory*
@@ -82,10 +74,11 @@ class MediaFileSystemBackend : public fileapi::FileSystemBackend {
   scoped_ptr<fileapi::AsyncFileUtil> picasa_file_util_;
   scoped_ptr<fileapi::AsyncFileUtil> itunes_file_util_;
 #endif  // defined(OS_WIN) || defined(OS_MACOSX)
+#if defined(OS_MACOSX)
+  scoped_ptr<fileapi::AsyncFileUtil> iphoto_file_util_;
+#endif  // defined(OS_MACOSX)
 
   DISALLOW_COPY_AND_ASSIGN(MediaFileSystemBackend);
 };
-
-}  // namespace chrome
 
 #endif  // CHROME_BROWSER_MEDIA_GALLERIES_FILEAPI_MEDIA_FILE_SYSTEM_BACKEND_H_

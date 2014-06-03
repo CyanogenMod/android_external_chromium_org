@@ -17,6 +17,7 @@
 #include "content/renderer/render_thread_impl.h"
 #include "ppapi/shared_impl/api_id.h"
 #include "ppapi/shared_impl/id_assignment.h"
+#include "ppapi/shared_impl/proxy_lock.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/web/WebConsoleMessage.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
@@ -28,14 +29,14 @@ using ppapi::CheckIdType;
 using ppapi::MakeTypedId;
 using ppapi::PPIdType;
 using ppapi::ResourceTracker;
-using WebKit::WebConsoleMessage;
-using WebKit::WebString;
+using blink::WebConsoleMessage;
+using blink::WebString;
 
 namespace content {
 
 namespace {
 
-typedef std::set<WebKit::WebPluginContainer*> ContainerSet;
+typedef std::set<blink::WebPluginContainer*> ContainerSet;
 
 // Adds all WebPluginContainers associated with the given module to the set.
 void GetAllContainersForModule(PluginModule* module,
@@ -81,13 +82,9 @@ HostGlobals::HostGlobals()
       resource_tracker_(ResourceTracker::SINGLE_THREADED) {
   DCHECK(!host_globals_);
   host_globals_ = this;
-}
-
-HostGlobals::HostGlobals(
-    ppapi::PpapiGlobals::PerThreadForTest per_thread_for_test)
-    : ppapi::PpapiGlobals(per_thread_for_test),
-      resource_tracker_(ResourceTracker::SINGLE_THREADED) {
-  DCHECK(!host_globals_);
+  // We do not support calls off of the main thread on the host side, and thus
+  // do not lock.
+  ppapi::ProxyLock::DisableLocking();
 }
 
 HostGlobals::~HostGlobals() {
@@ -141,11 +138,6 @@ void HostGlobals::PreCacheFontForFlash(const void* logfontw) {
   // Not implemented in-process.
 }
 
-base::Lock* HostGlobals::GetProxyLock() {
-  // We do not lock on the host side.
-  return NULL;
-}
-
 void HostGlobals::LogWithSource(PP_Instance instance,
                                 PP_LogLevel level,
                                 const std::string& source,
@@ -185,7 +177,7 @@ void HostGlobals::BroadcastLogWithSource(PP_Module pp_module,
      (*i)->element().document().frame()->addMessageToConsole(message);
 }
 
-base::TaskRunner* HostGlobals::GetFileTaskRunner(PP_Instance instance) {
+base::TaskRunner* HostGlobals::GetFileTaskRunner() {
   return RenderThreadImpl::current()->GetFileThreadMessageLoopProxy().get();
 }
 

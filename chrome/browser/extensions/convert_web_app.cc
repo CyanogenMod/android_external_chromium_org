@@ -16,23 +16,24 @@
 #include "base/json/json_file_value_serializer.h"
 #include "base/logging.h"
 #include "base/path_service.h"
+#include "base/safe_numerics.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "chrome/common/chrome_paths.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_file_util.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/common/web_application_info.h"
 #include "crypto/sha2.h"
 #include "extensions/common/constants.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/manifest_constants.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/codec/png_codec.h"
 #include "url/gurl.h"
 
 namespace extensions {
 
-namespace keys = extension_manifest_keys;
+namespace keys = manifest_keys;
 
 using base::Time;
 
@@ -57,8 +58,7 @@ std::string GenerateKey(const GURL& manifest_url) {
   return key;
 }
 
-}
-
+}  // namespace
 
 // Generates a version for the converted app using the current date. This isn't
 // really needed, but it seems like useful information.
@@ -133,14 +133,14 @@ scoped_refptr<Extension> ConvertWebAppToExtension(
   base::ListValue* permissions = new base::ListValue();
   root->Set(keys::kPermissions, permissions);
   for (size_t i = 0; i < web_app.permissions.size(); ++i) {
-    permissions->Append(Value::CreateStringValue(web_app.permissions[i]));
+    permissions->Append(new base::StringValue(web_app.permissions[i]));
   }
 
   // Add the URLs.
   base::ListValue* urls = new base::ListValue();
   root->Set(keys::kWebURLs, urls);
   for (size_t i = 0; i < web_app.urls.size(); ++i) {
-    urls->Append(Value::CreateStringValue(web_app.urls[i].spec()));
+    urls->Append(new base::StringValue(web_app.urls[i].spec()));
   }
 
   // Write the manifest.
@@ -153,7 +153,7 @@ scoped_refptr<Extension> ConvertWebAppToExtension(
 
   // Write the icon files.
   base::FilePath icons_dir = temp_dir.path().AppendASCII(kIconsDirName);
-  if (!file_util::CreateDirectory(icons_dir)) {
+  if (!base::CreateDirectory(icons_dir)) {
     LOG(ERROR) << "Could not create icons directory.";
     return NULL;
   }
@@ -173,7 +173,8 @@ scoped_refptr<Extension> ConvertWebAppToExtension(
     }
 
     const char* image_data_ptr = reinterpret_cast<const char*>(&image_data[0]);
-    if (!file_util::WriteFile(icon_file, image_data_ptr, image_data.size())) {
+    int size = base::checked_numeric_cast<int>(image_data.size());
+    if (file_util::WriteFile(icon_file, image_data_ptr, size) != size) {
       LOG(ERROR) << "Could not write icon file.";
       return NULL;
     }

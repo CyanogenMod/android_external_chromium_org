@@ -27,6 +27,7 @@
 #include "content/public/browser/navigation_details.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/plugin_service.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/user_metrics.h"
@@ -37,8 +38,8 @@
 #include "grit/theme_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/base/webui/jstemplate_builder.h"
 #include "ui/gfx/image/image.h"
-#include "ui/webui/jstemplate_builder.h"
 
 #if defined(OS_WIN)
 #include "base/win/metro.h"
@@ -54,9 +55,11 @@ using content::WebPluginInfo;
 
 namespace {
 
-static const char kAdobeReaderIdentifier[] = "adobe-reader";
-static const char kAdobeReaderUpdateUrl[] =
-    "http://www.adobe.com/go/getreader_chrome";
+const char kAdobeReaderUpdateUrl[] = "http://www.adobe.com/go/getreader_chrome";
+
+#if defined(OS_WIN) && defined(ENABLE_PLUGIN_INSTALLATION)
+const char kAdobeReaderIdentifier[] = "adobe-reader";
+#endif
 
 // The prompt delegate used to ask the user if they want to use Adobe Reader
 // by default.
@@ -67,9 +70,9 @@ class PDFEnableAdobeReaderPromptDelegate
   virtual ~PDFEnableAdobeReaderPromptDelegate();
 
   // OpenPDFInReaderPromptDelegate
-  virtual string16 GetMessageText() const OVERRIDE;
-  virtual string16 GetAcceptButtonText() const OVERRIDE;
-  virtual string16 GetCancelButtonText() const OVERRIDE;
+  virtual base::string16 GetMessageText() const OVERRIDE;
+  virtual base::string16 GetAcceptButtonText() const OVERRIDE;
+  virtual base::string16 GetCancelButtonText() const OVERRIDE;
   virtual bool ShouldExpire(
       const content::LoadCommittedDetails& details) const OVERRIDE;
   virtual void Accept() OVERRIDE;
@@ -108,22 +111,22 @@ void PDFEnableAdobeReaderPromptDelegate::Accept() {
   plugin_prefs->EnablePluginGroup(
       true, ASCIIToUTF16(PluginMetadata::kAdobeReaderGroupName));
   plugin_prefs->EnablePluginGroup(
-      false, ASCIIToUTF16(chrome::ChromeContentClient::kPDFPluginName));
+      false, ASCIIToUTF16(ChromeContentClient::kPDFPluginName));
 }
 
 void PDFEnableAdobeReaderPromptDelegate::Cancel() {
   content::RecordAction(UserMetricsAction("PDF_EnableReaderInfoBarCancel"));
 }
 
-string16 PDFEnableAdobeReaderPromptDelegate::GetAcceptButtonText() const {
+base::string16 PDFEnableAdobeReaderPromptDelegate::GetAcceptButtonText() const {
   return l10n_util::GetStringUTF16(IDS_PDF_INFOBAR_ALWAYS_USE_READER_BUTTON);
 }
 
-string16 PDFEnableAdobeReaderPromptDelegate::GetCancelButtonText() const {
+base::string16 PDFEnableAdobeReaderPromptDelegate::GetCancelButtonText() const {
   return l10n_util::GetStringUTF16(IDS_DONE);
 }
 
-string16 PDFEnableAdobeReaderPromptDelegate::GetMessageText() const {
+base::string16 PDFEnableAdobeReaderPromptDelegate::GetMessageText() const {
   return l10n_util::GetStringUTF16(IDS_PDF_INFOBAR_QUESTION_ALWAYS_USE_READER);
 }
 
@@ -139,9 +142,9 @@ void OpenReaderUpdateURL(WebContents* web_contents) {
 void OpenUsingReader(WebContents* web_contents,
                      const WebPluginInfo& reader_plugin,
                      OpenPDFInReaderPromptDelegate* delegate) {
-  ChromePluginServiceFilter::GetInstance()->OverridePluginForTab(
+  ChromePluginServiceFilter::GetInstance()->OverridePluginForFrame(
       web_contents->GetRenderProcessHost()->GetID(),
-      web_contents->GetRenderViewHost()->GetRoutingID(),
+      web_contents->GetMainFrame()->GetRoutingID(),
       web_contents->GetURL(),
       reader_plugin);
   web_contents->GetRenderViewHost()->ReloadFrame();
@@ -248,9 +251,9 @@ class PDFUnsupportedFeaturePromptDelegate
   virtual ~PDFUnsupportedFeaturePromptDelegate();
 
   // OpenPDFInReaderPromptDelegate:
-  virtual string16 GetMessageText() const OVERRIDE;
-  virtual string16 GetAcceptButtonText() const OVERRIDE;
-  virtual string16 GetCancelButtonText() const OVERRIDE;
+  virtual base::string16 GetMessageText() const OVERRIDE;
+  virtual base::string16 GetAcceptButtonText() const OVERRIDE;
+  virtual base::string16 GetCancelButtonText() const OVERRIDE;
   virtual bool ShouldExpire(
       const content::LoadCommittedDetails& details) const OVERRIDE;
   virtual void Accept() OVERRIDE;
@@ -295,11 +298,12 @@ PDFUnsupportedFeaturePromptDelegate::PDFUnsupportedFeaturePromptDelegate(
 PDFUnsupportedFeaturePromptDelegate::~PDFUnsupportedFeaturePromptDelegate() {
 }
 
-string16 PDFUnsupportedFeaturePromptDelegate::GetMessageText() const {
+base::string16 PDFUnsupportedFeaturePromptDelegate::GetMessageText() const {
   return l10n_util::GetStringUTF16(IDS_PDF_BUBBLE_MESSAGE);
 }
 
-string16 PDFUnsupportedFeaturePromptDelegate::GetAcceptButtonText() const {
+base::string16 PDFUnsupportedFeaturePromptDelegate::GetAcceptButtonText()
+    const {
 #if defined(OS_WIN)
   if (base::win::IsMetroProcess())
     return l10n_util::GetStringUTF16(IDS_PDF_BUBBLE_METRO_MODE_LINK);
@@ -311,7 +315,8 @@ string16 PDFUnsupportedFeaturePromptDelegate::GetAcceptButtonText() const {
   return l10n_util::GetStringUTF16(IDS_PDF_BUBBLE_INSTALL_READER_LINK);
 }
 
-string16 PDFUnsupportedFeaturePromptDelegate::GetCancelButtonText() const {
+base::string16 PDFUnsupportedFeaturePromptDelegate::GetCancelButtonText()
+    const {
   return l10n_util::GetStringUTF16(IDS_DONE);
 }
 

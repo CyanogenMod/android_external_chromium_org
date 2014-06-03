@@ -21,8 +21,6 @@ TabModalConfirmDialogDelegate::TabModalConfirmDialogDelegate(
   NavigationController* controller = &web_contents->GetController();
   registrar_.Add(this, content::NOTIFICATION_LOAD_START,
                  content::Source<NavigationController>(controller));
-  registrar_.Add(this, chrome::NOTIFICATION_TAB_CLOSING,
-                 content::Source<NavigationController>(controller));
 }
 
 TabModalConfirmDialogDelegate::~TabModalConfirmDialogDelegate() {
@@ -51,28 +49,15 @@ void TabModalConfirmDialogDelegate::Accept() {
   CloseDialog();
 }
 
-void TabModalConfirmDialogDelegate::LinkClicked(
-    WindowOpenDisposition disposition) {
-  if (closing_)
-    return;
-  // Make sure we won't do anything when another action occurs.
-  closing_ = true;
-  OnLinkClicked(disposition);
-  CloseDialog();
-}
-
 void TabModalConfirmDialogDelegate::Observe(
     int type,
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
   // Close the dialog if we load a page (because the action might not apply to
-  // the same page anymore) or if the tab is closed.
-  if (type == content::NOTIFICATION_LOAD_START ||
-      type == chrome::NOTIFICATION_TAB_CLOSING) {
-    Close();
-  } else {
-    NOTREACHED();
-  }
+  // the same page anymore).
+  DCHECK_EQ(content::NOTIFICATION_LOAD_START, type);
+
+  Close();
 }
 
 void TabModalConfirmDialogDelegate::Close() {
@@ -84,20 +69,27 @@ void TabModalConfirmDialogDelegate::Close() {
   CloseDialog();
 }
 
+void TabModalConfirmDialogDelegate::LinkClicked(
+    WindowOpenDisposition disposition) {
+  if (closing_)
+    return;
+  OnLinkClicked(disposition);
+}
+
 gfx::Image* TabModalConfirmDialogDelegate::GetIcon() {
   return NULL;
 }
 
-string16 TabModalConfirmDialogDelegate::GetAcceptButtonTitle() {
+base::string16 TabModalConfirmDialogDelegate::GetAcceptButtonTitle() {
   return l10n_util::GetStringUTF16(IDS_OK);
 }
 
-string16 TabModalConfirmDialogDelegate::GetCancelButtonTitle() {
+base::string16 TabModalConfirmDialogDelegate::GetCancelButtonTitle() {
   return l10n_util::GetStringUTF16(IDS_CANCEL);
 }
 
-string16 TabModalConfirmDialogDelegate::GetLinkText() const {
-  return string16();
+base::string16 TabModalConfirmDialogDelegate::GetLinkText() const {
+  return base::string16();
 }
 
 const char* TabModalConfirmDialogDelegate::GetAcceptButtonIcon() {

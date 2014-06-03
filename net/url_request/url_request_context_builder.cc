@@ -156,6 +156,11 @@ class BasicURLRequestContext : public URLRequestContext {
     return file_thread_.message_loop();
   }
 
+  scoped_refptr<base::MessageLoopProxy> file_message_loop_proxy() {
+    DCHECK(file_thread_.IsRunning());
+    return file_thread_.message_loop_proxy();
+  }
+
  protected:
   virtual ~BasicURLRequestContext() {}
 
@@ -190,15 +195,15 @@ URLRequestContextBuilder::URLRequestContextBuilder()
 #if !defined(DISABLE_FTP_SUPPORT)
       ftp_enabled_(false),
 #endif
-      http_cache_enabled_(true) {}
+      http_cache_enabled_(true) {
+}
+
 URLRequestContextBuilder::~URLRequestContextBuilder() {}
 
-#if defined(OS_LINUX) || defined(OS_ANDROID)
 void URLRequestContextBuilder::set_proxy_config_service(
     ProxyConfigService* proxy_config_service) {
   proxy_config_service_.reset(proxy_config_service);
 }
-#endif  // defined(OS_LINUX) || defined(OS_ANDROID)
 
 URLRequestContext* URLRequestContextBuilder::Build() {
   BasicURLRequestContext* context = new BasicURLRequestContext;
@@ -212,7 +217,9 @@ URLRequestContext* URLRequestContextBuilder::Build() {
   NetworkDelegate* network_delegate = network_delegate_.release();
   storage->set_network_delegate(network_delegate);
 
-  storage->set_host_resolver(net::HostResolver::CreateDefaultResolver(NULL));
+  if (!host_resolver_)
+    host_resolver_ = net::HostResolver::CreateDefaultResolver(NULL);
+  storage->set_host_resolver(host_resolver_.Pass());
 
   context->StartFileThread();
 
@@ -221,10 +228,15 @@ URLRequestContext* URLRequestContextBuilder::Build() {
 #if defined(OS_LINUX) || defined(OS_ANDROID)
   ProxyConfigService* proxy_config_service = proxy_config_service_.release();
 #else
-  ProxyConfigService* proxy_config_service =
-      ProxyService::CreateSystemProxyConfigService(
-          base::ThreadTaskRunnerHandle::Get().get(),
-          context->file_message_loop());
+  ProxyConfigService* proxy_config_service = NULL;
+  if (proxy_config_service_) {
+    proxy_config_service = proxy_config_service_.release();
+  } else {
+    proxy_config_service =
+        ProxyService::CreateSystemProxyConfigService(
+            base::ThreadTaskRunnerHandle::Get().get(),
+            context->file_message_loop());
+  }
 #endif  // defined(OS_LINUX) || defined(OS_ANDROID)
   storage->set_proxy_service(
       ProxyService::CreateUsingSystemProxyResolver(
@@ -301,7 +313,8 @@ URLRequestContext* URLRequestContextBuilder::Build() {
   if (data_enabled_)
     job_factory->SetProtocolHandler("data", new DataProtocolHandler);
   if (file_enabled_)
-    job_factory->SetProtocolHandler("file", new FileProtocolHandler);
+    job_factory->SetProtocolHandler(
+        "file", new FileProtocolHandler(context->file_message_loop_proxy()));
 #if !defined(DISABLE_FTP_SUPPORT)
   if (ftp_enabled_) {
     ftp_transaction_factory_.reset(

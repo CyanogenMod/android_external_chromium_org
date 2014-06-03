@@ -36,10 +36,11 @@ bool IsBigEndian() {
 
 const int kActionTimeoutMs = 10000;
 
-const PPB_Testing_Dev* GetTestingInterface() {
-  static const PPB_Testing_Dev* g_testing_interface =
-      static_cast<const PPB_Testing_Dev*>(
-          pp::Module::Get()->GetBrowserInterface(PPB_TESTING_DEV_INTERFACE));
+const PPB_Testing_Private* GetTestingInterface() {
+  static const PPB_Testing_Private* g_testing_interface =
+      static_cast<const PPB_Testing_Private*>(
+          pp::Module::Get()->GetBrowserInterface(
+              PPB_TESTING_PRIVATE_INTERFACE));
   return g_testing_interface;
 }
 
@@ -63,7 +64,7 @@ bool GetLocalHostPort(PP_Instance instance, std::string* host, uint16_t* port) {
   if (!host || !port)
     return false;
 
-  const PPB_Testing_Dev* testing = GetTestingInterface();
+  const PPB_Testing_Private* testing = GetTestingInterface();
   if (!testing)
     return false;
 
@@ -175,6 +176,53 @@ bool ResolveHost(PP_Instance instance,
     }
     default: {
       return false;
+    }
+  }
+}
+
+bool ReplacePort(PP_Instance instance,
+                 const pp::NetAddress& input_addr,
+                 uint16_t port,
+                 pp::NetAddress* output_addr) {
+  switch (input_addr.GetFamily()) {
+    case PP_NETADDRESS_FAMILY_IPV4: {
+      PP_NetAddress_IPv4 ipv4_addr;
+      if (!input_addr.DescribeAsIPv4Address(&ipv4_addr))
+        return false;
+      ipv4_addr.port = ConvertToNetEndian16(port);
+      *output_addr = pp::NetAddress(pp::InstanceHandle(instance), ipv4_addr);
+      return true;
+    }
+    case PP_NETADDRESS_FAMILY_IPV6: {
+      PP_NetAddress_IPv6 ipv6_addr;
+      if (!input_addr.DescribeAsIPv6Address(&ipv6_addr))
+        return false;
+      ipv6_addr.port = ConvertToNetEndian16(port);
+      *output_addr = pp::NetAddress(pp::InstanceHandle(instance), ipv6_addr);
+      return true;
+    }
+    default: {
+      return false;
+    }
+  }
+}
+
+uint16_t GetPort(const pp::NetAddress& addr) {
+  switch (addr.GetFamily()) {
+    case PP_NETADDRESS_FAMILY_IPV4: {
+      PP_NetAddress_IPv4 ipv4_addr;
+      if (!addr.DescribeAsIPv4Address(&ipv4_addr))
+        return 0;
+      return ConvertFromNetEndian16(ipv4_addr.port);
+    }
+    case PP_NETADDRESS_FAMILY_IPV6: {
+      PP_NetAddress_IPv6 ipv6_addr;
+      if (!addr.DescribeAsIPv6Address(&ipv6_addr))
+        return 0;
+      return ConvertFromNetEndian16(ipv6_addr.port);
+    }
+    default: {
+      return 0;
     }
   }
 }

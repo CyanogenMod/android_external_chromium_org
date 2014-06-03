@@ -21,7 +21,7 @@
 #include "content/public/browser/web_contents.h"
 #include "net/test/spawned_test_server/spawned_test_server.h"
 #include "ui/base/clipboard/clipboard.h"
-#include "ui/base/keycodes/keyboard_codes.h"
+#include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/views/focus/focus_manager.h"
 #include "ui/views/view.h"
 #include "ui/views/views_delegate.h"
@@ -38,13 +38,12 @@ class FindInPageTest : public InProcessBrowserTest {
     FindBarHost::disable_animations_during_testing_ = true;
   }
 
-  string16 GetFindBarText() {
-    FindBarTesting* find_bar =
-        browser()->GetFindBarController()->find_bar()->GetFindBarTesting();
+  base::string16 GetFindBarText() {
+    FindBar* find_bar = browser()->GetFindBarController()->find_bar();
     return find_bar->GetFindText();
   }
 
-  string16 GetFindBarSelectedText() {
+  base::string16 GetFindBarSelectedText() {
     FindBarTesting* find_bar =
         browser()->GetFindBarController()->find_bar()->GetFindBarTesting();
     return find_bar->GetFindSelectedText();
@@ -91,8 +90,15 @@ IN_PROC_BROWSER_TEST_F(FindInPageTest, CrashEscHandlers) {
       browser(), ui::VKEY_ESCAPE, false, false, false, false));
 }
 
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(USE_AURA)
+// TODO(erg): linux_aura bringup: http://crbug.com/163931
+#define MAYBE_FocusRestore DISABLED_FocusRestore
+#else
+#define MAYBE_FocusRestore FocusRestore
+#endif
+
 // Flaky because the test server fails to start? See: http://crbug.com/96594.
-IN_PROC_BROWSER_TEST_F(FindInPageTest, FocusRestore) {
+IN_PROC_BROWSER_TEST_F(FindInPageTest, MAYBE_FocusRestore) {
   ASSERT_TRUE(test_server()->Start());
 
   GURL url = test_server()->GetURL("title1.html");
@@ -139,8 +145,90 @@ IN_PROC_BROWSER_TEST_F(FindInPageTest, FocusRestore) {
   EXPECT_TRUE(ui_test_utils::IsViewFocused(browser(), VIEW_ID_OMNIBOX));
 }
 
+
+// TODO(phajdan.jr): Disabling due to possible timing issues on XP
+// interactive_ui_tests.
+// http://crbug.com/311363
+IN_PROC_BROWSER_TEST_F(FindInPageTest, DISABLED_SelectionRestoreOnTabSwitch) {
+  ASSERT_TRUE(test_server()->Start());
+
+  // Make sure Chrome is in the foreground, otherwise sending input
+  // won't do anything and the test will hang.
+  ASSERT_TRUE(ui_test_utils::BringBrowserWindowToFront(browser()));
+
+  // First we navigate to any page in the current tab (tab A).
+  GURL url = test_server()->GetURL(kSimplePage);
+  ui_test_utils::NavigateToURL(browser(), url);
+
+  // Show the Find bar.
+  browser()->GetFindBarController()->Show();
+
+  // Search for "abc".
+  ASSERT_TRUE(ui_test_utils::SendKeyPressSync(
+      browser(), ui::VKEY_A, false, false, false, false));
+  ASSERT_TRUE(ui_test_utils::SendKeyPressSync(
+      browser(), ui::VKEY_B, false, false, false, false));
+  ASSERT_TRUE(ui_test_utils::SendKeyPressSync(
+      browser(), ui::VKEY_C, false, false, false, false));
+  EXPECT_EQ(ASCIIToUTF16("abc"), GetFindBarText());
+
+  // Select "bc".
+  ASSERT_TRUE(ui_test_utils::SendKeyPressSync(
+      browser(), ui::VKEY_LEFT, false, true, false, false));
+  ASSERT_TRUE(ui_test_utils::SendKeyPressSync(
+      browser(), ui::VKEY_LEFT, false, true, false, false));
+  EXPECT_EQ(ASCIIToUTF16("bc"), GetFindBarSelectedText());
+
+  // Open another tab (tab B).
+  content::WindowedNotificationObserver observer(
+      content::NOTIFICATION_LOAD_STOP,
+      content::NotificationService::AllSources());
+  chrome::AddSelectedTabWithURL(browser(), url, content::PAGE_TRANSITION_TYPED);
+  observer.Wait();
+
+  // Show the Find bar.
+  browser()->GetFindBarController()->Show();
+
+  // Search for "def".
+  ASSERT_TRUE(ui_test_utils::SendKeyPressSync(
+      browser(), ui::VKEY_D, false, false, false, false));
+  ASSERT_TRUE(ui_test_utils::SendKeyPressSync(
+      browser(), ui::VKEY_E, false, false, false, false));
+  ASSERT_TRUE(ui_test_utils::SendKeyPressSync(
+      browser(), ui::VKEY_F, false, false, false, false));
+  EXPECT_EQ(ASCIIToUTF16("def"), GetFindBarText());
+
+  // Select "de".
+  ASSERT_TRUE(ui_test_utils::SendKeyPressSync(
+      browser(), ui::VKEY_HOME, false, false, false, false));
+  ASSERT_TRUE(ui_test_utils::SendKeyPressSync(
+      browser(), ui::VKEY_RIGHT, false, true, false, false));
+  ASSERT_TRUE(ui_test_utils::SendKeyPressSync(
+      browser(), ui::VKEY_RIGHT, false, true, false, false));
+  EXPECT_EQ(ASCIIToUTF16("de"), GetFindBarSelectedText());
+
+  // Select tab A. Find bar should select "bc".
+  browser()->tab_strip_model()->ActivateTabAt(0, true);
+  EXPECT_TRUE(ui_test_utils::IsViewFocused(browser(),
+                                           VIEW_ID_FIND_IN_PAGE_TEXT_FIELD));
+  EXPECT_EQ(ASCIIToUTF16("bc"), GetFindBarSelectedText());
+
+  // Select tab B. Find bar should select "de".
+  browser()->tab_strip_model()->ActivateTabAt(1, true);
+  EXPECT_TRUE(ui_test_utils::IsViewFocused(browser(),
+                                           VIEW_ID_FIND_IN_PAGE_TEXT_FIELD));
+  EXPECT_EQ(ASCIIToUTF16("de"), GetFindBarSelectedText());
+}
+
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(USE_AURA)
+// TODO(erg): linux_aura bringup: http://crbug.com/163931
+#define MAYBE_FocusRestoreOnTabSwitch DISABLED_FocusRestoreOnTabSwitch
+#else
+#define MAYBE_FocusRestoreOnTabSwitch FocusRestoreOnTabSwitch
+#endif
+
 // Flaky because the test server fails to start? See: http://crbug.com/96594.
-IN_PROC_BROWSER_TEST_F(FindInPageTest, FocusRestoreOnTabSwitch) {
+IN_PROC_BROWSER_TEST_F(FindInPageTest, MAYBE_FocusRestoreOnTabSwitch) {
   ASSERT_TRUE(test_server()->Start());
 
   // First we navigate to our test page (tab A).
@@ -151,14 +239,11 @@ IN_PROC_BROWSER_TEST_F(FindInPageTest, FocusRestoreOnTabSwitch) {
   EXPECT_TRUE(ui_test_utils::IsViewFocused(browser(),
                                            VIEW_ID_FIND_IN_PAGE_TEXT_FIELD));
 
-  FindBarTesting* find_bar =
-      browser()->GetFindBarController()->find_bar()->GetFindBarTesting();
-
   // Search for 'a'.
   ui_test_utils::FindInPage(
       browser()->tab_strip_model()->GetActiveWebContents(),
       ASCIIToUTF16("a"), true, false, NULL, NULL);
-  EXPECT_TRUE(ASCIIToUTF16("a") == find_bar->GetFindSelectedText());
+  EXPECT_EQ(ASCIIToUTF16("a"), GetFindBarSelectedText());
 
   // Open another tab (tab B).
   content::WindowedNotificationObserver observer(
@@ -176,7 +261,7 @@ IN_PROC_BROWSER_TEST_F(FindInPageTest, FocusRestoreOnTabSwitch) {
   ui_test_utils::FindInPage(
       browser()->tab_strip_model()->GetActiveWebContents(),
       ASCIIToUTF16("b"), true, false, NULL, NULL);
-  EXPECT_TRUE(ASCIIToUTF16("b") == find_bar->GetFindSelectedText());
+  EXPECT_EQ(ASCIIToUTF16("b"), GetFindBarSelectedText());
 
   // Set focus away from the Find bar (to the Location bar).
   chrome::FocusLocationBar(browser());
@@ -186,7 +271,7 @@ IN_PROC_BROWSER_TEST_F(FindInPageTest, FocusRestoreOnTabSwitch) {
   browser()->tab_strip_model()->ActivateTabAt(0, true);
   EXPECT_TRUE(ui_test_utils::IsViewFocused(browser(),
                                            VIEW_ID_FIND_IN_PAGE_TEXT_FIELD));
-  EXPECT_TRUE(ASCIIToUTF16("a") == find_bar->GetFindSelectedText());
+  EXPECT_EQ(ASCIIToUTF16("a"), GetFindBarSelectedText());
 
   // Select tab B. Location bar should get focus.
   browser()->tab_strip_model()->ActivateTabAt(1, true);
@@ -196,9 +281,9 @@ IN_PROC_BROWSER_TEST_F(FindInPageTest, FocusRestoreOnTabSwitch) {
 // Flaky because the test server fails to start? See: http://crbug.com/96594.
 // This tests that whenever you clear values from the Find box and close it that
 // it respects that and doesn't show you the last search, as reported in bug:
-// http://crbug.com/40121.
+// http://crbug.com/40121. For Aura see bug http://crbug.com/292299.
 IN_PROC_BROWSER_TEST_F(FindInPageTest, PrepopulateRespectBlank) {
-#if defined(OS_MACOSX)
+#if defined(OS_MACOSX) || defined(USE_AURA)
   // FindInPage on Mac doesn't use prepopulated values. Search there is global.
   return;
 #endif
@@ -227,7 +312,7 @@ IN_PROC_BROWSER_TEST_F(FindInPageTest, PrepopulateRespectBlank) {
       browser(), ui::VKEY_BACK, false, false, false, false));
 
   // Validate we have cleared the text.
-  EXPECT_EQ(string16(), GetFindBarText());
+  EXPECT_EQ(base::string16(), GetFindBarText());
 
   // Close the Find box.
   ASSERT_TRUE(ui_test_utils::SendKeyPressSync(
@@ -238,7 +323,7 @@ IN_PROC_BROWSER_TEST_F(FindInPageTest, PrepopulateRespectBlank) {
 
   // After the Find box has been reopened, it should not have been prepopulated
   // with "a" again.
-  EXPECT_EQ(string16(), GetFindBarText());
+  EXPECT_EQ(base::string16(), GetFindBarText());
 
   // Close the Find box.
   ASSERT_TRUE(ui_test_utils::SendKeyPressSync(
@@ -250,12 +335,13 @@ IN_PROC_BROWSER_TEST_F(FindInPageTest, PrepopulateRespectBlank) {
 
   // After the Find box has been reopened, it should still have no prepopulate
   // value.
-  EXPECT_EQ(string16(), GetFindBarText());
+  EXPECT_EQ(base::string16(), GetFindBarText());
 }
 
 // Flaky on Win. http://crbug.com/92467
 // Flaky on ChromeOS. http://crbug.com/118216
-#if defined(OS_WIN) || defined(OS_CHROMEOS)
+// Flaky on linux aura. http://crbug.com/163931
+#if defined(TOOLKIT_VIEWS)
 #define MAYBE_PasteWithoutTextChange DISABLED_PasteWithoutTextChange
 #else
 #define MAYBE_PasteWithoutTextChange PasteWithoutTextChange
@@ -301,9 +387,9 @@ IN_PROC_BROWSER_TEST_F(FindInPageTest, MAYBE_PasteWithoutTextChange) {
   ASSERT_TRUE(ui_test_utils::SendKeyPressSync(
       browser(), ui::VKEY_C, true, false, false, false));
 
-  string16 str;
-  ui::Clipboard::GetForCurrentThread()->
-      ReadText(ui::Clipboard::BUFFER_STANDARD, &str);
+  base::string16 str;
+  ui::Clipboard::GetForCurrentThread()->ReadText(ui::CLIPBOARD_TYPE_COPY_PASTE,
+                                                 &str);
 
   // Make sure the text is copied successfully.
   EXPECT_EQ(ASCIIToUTF16("a"), str);
@@ -324,3 +410,36 @@ IN_PROC_BROWSER_TEST_F(FindInPageTest, MAYBE_PasteWithoutTextChange) {
   ASSERT_TRUE(observer.GetDetailsFor(notification_source.map_key(), &details));
   EXPECT_TRUE(details.number_of_matches() > 0);
 }
+
+#if defined(OS_WIN)
+// TODO(phajdan.jr): Disabling due to possible timing issues on XP
+// interactive_ui_tests.
+// http://crbug.com/311363
+IN_PROC_BROWSER_TEST_F(FindInPageTest, DISABLED_CtrlEnter) {
+  ui_test_utils::NavigateToURL(browser(),
+                               GURL("data:text/html,This is some text with a "
+                                    "<a href=\"about:blank\">link</a>."));
+
+  browser()->GetFindBarController()->Show();
+
+  // Search for "link".
+  ASSERT_TRUE(ui_test_utils::SendKeyPressSync(
+      browser(), ui::VKEY_L, false, false, false, false));
+  ASSERT_TRUE(ui_test_utils::SendKeyPressSync(
+      browser(), ui::VKEY_I, false, false, false, false));
+  ASSERT_TRUE(ui_test_utils::SendKeyPressSync(
+      browser(), ui::VKEY_N, false, false, false, false));
+  ASSERT_TRUE(ui_test_utils::SendKeyPressSync(
+      browser(), ui::VKEY_K, false, false, false, false));
+  EXPECT_EQ(ASCIIToUTF16("link"), GetFindBarText());
+
+  ui_test_utils::UrlLoadObserver observer(
+      GURL("about:blank"), content::NotificationService::AllSources());
+
+  // Send Ctrl-Enter, should cause navigation to about:blank.
+  ASSERT_TRUE(ui_test_utils::SendKeyPressSync(
+      browser(), ui::VKEY_RETURN, true, false, false, false));
+
+  observer.Wait();
+}
+#endif

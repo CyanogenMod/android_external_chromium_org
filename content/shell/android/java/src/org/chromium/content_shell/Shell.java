@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -24,7 +24,7 @@ import org.chromium.base.JNINamespace;
 import org.chromium.content.browser.ContentView;
 import org.chromium.content.browser.ContentViewRenderView;
 import org.chromium.content.browser.LoadUrlParams;
-import org.chromium.ui.WindowAndroid;
+import org.chromium.ui.base.WindowAndroid;
 
 /**
  * Container for the various UI components that make up a shell window.
@@ -34,7 +34,7 @@ public class Shell extends LinearLayout {
 
     private static final long COMPLETED_PROGRESS_TIMEOUT_MS = 200;
 
-    private Runnable mClearProgressRunnable = new Runnable() {
+    private final Runnable mClearProgressRunnable = new Runnable() {
         @Override
         public void run() {
             mProgressDrawable.setLevel(0);
@@ -141,7 +141,7 @@ public class Shell extends LinearLayout {
         if (url == null) return;
 
         if (TextUtils.equals(url, mContentView.getUrl())) {
-            mContentView.reload();
+            mContentView.getContentViewCore().reload(true);
         } else {
             mContentView.loadUrl(new LoadUrlParams(sanitizeUrl(url)));
         }
@@ -215,7 +215,7 @@ public class Shell extends LinearLayout {
      */
     @SuppressWarnings("unused")
     @CalledByNative
-    private void initFromNativeTabContents(int nativeTabContents) {
+    private void initFromNativeTabContents(long nativeTabContents) {
         mContentView = ContentView.newInstance(getContext(), nativeTabContents, mWindow);
         if (mContentView.getUrl() != null) mUrlTextView.setText(mContentView.getUrl());
         ((FrameLayout) findViewById(R.id.contentview_holder)).addView(mContentView,

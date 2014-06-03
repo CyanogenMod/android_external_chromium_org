@@ -4,27 +4,31 @@
 
 #include "base/command_line.h"
 #include "base/memory/scoped_vector.h"
+#include "base/path_service.h"
 #include "base/strings/stringprintf.h"
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/extensions/extension_host.h"
-#include "chrome/browser/extensions/extension_process_manager.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_test_message_listener.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_iterator.h"
 #include "chrome/browser/ui/panels/panel_manager.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
+#include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/test/base/test_switches.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/result_codes.h"
 #include "content/public/test/browser_test_utils.h"
+#include "extensions/browser/process_manager.h"
+#include "extensions/common/extension.h"
 #include "extensions/common/switches.h"
 #include "net/dns/mock_host_resolver.h"
+#include "net/test/embedded_test_server/embedded_test_server.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 #if defined(USE_ASH)
@@ -130,6 +134,19 @@ IN_PROC_BROWSER_TEST_F(ExtensionApiTest, WindowOpenPopupDefault) {
 
   const int num_tabs = 1;
   const int num_popups = 0;
+  EXPECT_TRUE(WaitForTabsAndPopups(browser(), num_tabs, num_popups, 0));
+}
+
+IN_PROC_BROWSER_TEST_F(ExtensionApiTest, WindowOpenPopupIframe) {
+  ASSERT_TRUE(StartEmbeddedTestServer());
+  base::FilePath test_data_dir;
+  PathService::Get(chrome::DIR_TEST_DATA, &test_data_dir);
+  embedded_test_server()->ServeFilesFromDirectory(test_data_dir);
+  ASSERT_TRUE(LoadExtension(
+      test_data_dir_.AppendASCII("window_open").AppendASCII("popup_iframe")));
+
+  const int num_tabs = 0;
+  const int num_popups = 1;
   EXPECT_TRUE(WaitForTabsAndPopups(browser(), num_tabs, num_popups, 0));
 }
 
@@ -425,7 +442,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, WindowOpenExtension) {
       test_data_dir_.AppendASCII("uitest").AppendASCII("window_open")));
 
   GURL start_url(std::string("chrome-extension://") +
-      last_loaded_extension_id_ + "/test.html");
+      last_loaded_extension_id() + "/test.html");
   ui_test_utils::NavigateToURL(browser(), start_url);
   WebContents* newtab = NULL;
   ASSERT_NO_FATAL_FAILURE(
@@ -445,7 +462,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, WindowOpenInvalidExtension) {
       test_data_dir_.AppendASCII("uitest").AppendASCII("window_open")));
 
   GURL start_url(std::string("chrome-extension://") +
-      last_loaded_extension_id_ + "/test.html");
+      last_loaded_extension_id() + "/test.html");
   ui_test_utils::NavigateToURL(browser(), start_url);
   ASSERT_NO_FATAL_FAILURE(
       OpenWindow(browser()->tab_strip_model()->GetActiveWebContents(),
@@ -467,7 +484,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, WindowOpenNoPrivileges) {
   WebContents* newtab = NULL;
   ASSERT_NO_FATAL_FAILURE(
       OpenWindow(browser()->tab_strip_model()->GetActiveWebContents(),
-      GURL(std::string("chrome-extension://") + last_loaded_extension_id_ +
+      GURL(std::string("chrome-extension://") + last_loaded_extension_id() +
           "/newtab.html"), false, &newtab));
 
   // Extension API should succeed.

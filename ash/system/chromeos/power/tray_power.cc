@@ -5,12 +5,16 @@
 #include "ash/system/chromeos/power/tray_power.h"
 
 #include "ash/ash_switches.h"
+#include "ash/shell.h"
 #include "ash/system/chromeos/power/power_status_view.h"
 #include "ash/system/date/date_view.h"
+#include "ash/system/system_notifier.h"
+#include "ash/system/tray/system_tray_delegate.h"
 #include "ash/system/tray/tray_constants.h"
 #include "ash/system/tray/tray_notification_view.h"
 #include "ash/system/tray/tray_utils.h"
 #include "base/command_line.h"
+#include "base/metrics/histogram.h"
 #include "grit/ash_resources.h"
 #include "grit/ash_strings.h"
 #include "third_party/icu/source/i18n/unicode/fieldpos.h"
@@ -33,23 +37,6 @@ using message_center::Notification;
 
 namespace ash {
 namespace internal {
-
-namespace {
-// Top/bottom padding of the text items.
-const int kPaddingVertical = 10;
-// Specify min width of status label for layout.
-const int kLabelMinWidth = 120;
-// Notification times.
-const int kCriticalSeconds = 5 * 60;
-const int kLowPowerSeconds = 15 * 60;
-const int kNoWarningSeconds = 30 * 60;
-// Notification in battery percentage.
-const double kCriticalPercentage = 5.0;
-const double kLowPowerPercentage = 10.0;
-const double kNoWarningPercentage = 15.0;
-
-}  // namespace
-
 namespace tray {
 
 // This view is used only for the tray.
@@ -111,13 +98,21 @@ class PowerNotificationView : public TrayNotificationView {
 
 using tray::PowerNotificationView;
 
+const int TrayPower::kCriticalMinutes = 5;
+const int TrayPower::kLowPowerMinutes = 15;
+const int TrayPower::kNoWarningMinutes = 30;
+const int TrayPower::kCriticalPercentage = 5;
+const int TrayPower::kLowPowerPercentage = 10;
+const int TrayPower::kNoWarningPercentage = 15;
+
 TrayPower::TrayPower(SystemTray* system_tray, MessageCenter* message_center)
     : SystemTrayItem(system_tray),
       message_center_(message_center),
       power_tray_(NULL),
       notification_view_(NULL),
       notification_state_(NOTIFICATION_NONE),
-      usb_charger_was_connected_(false) {
+      usb_charger_was_connected_(false),
+      line_power_was_connected_(false) {
   PowerStatus::Get()->AddObserver(this);
 }
 
@@ -171,6 +166,13 @@ void TrayPower::UpdateAfterShelfAlignmentChange(ShelfAlignment alignment) {
 }
 
 void TrayPower::OnPowerStatusChanged() {
+  RecordChargerType();
+
+  if (PowerStatus::Get()->IsOriginalSpringChargerConnected()) {
+    ash::Shell::GetInstance()->system_tray_delegate()->
+        ShowSpringChargerReplacementDialog();
+  }
+
   bool battery_alert = UpdateNotificationState();
   if (power_tray_)
     power_tray_->UpdateStatus(battery_alert);
@@ -191,6 +193,7 @@ void TrayPower::OnPowerStatusChanged() {
     HideNotificationView();
 
   usb_charger_was_connected_ = PowerStatus::Get()->IsUsbChargerConnected();
+  line_power_was_connected_ = PowerStatus::Get()->IsLinePowerConnected();
 }
 
 bool TrayPower::MaybeShowUsbChargerNotification() {
@@ -204,10 +207,13 @@ bool TrayPower::MaybeShowUsbChargerNotification() {
         message_center::NOTIFICATION_TYPE_SIMPLE,
         kNotificationId,
         rb.GetLocalizedString(IDS_ASH_STATUS_TRAY_LOW_POWER_CHARGER_TITLE),
-        rb.GetLocalizedString(IDS_ASH_STATUS_TRAY_LOW_POWER_CHARGER_MESSAGE),
+        rb.GetLocalizedString(
+            IDS_ASH_STATUS_TRAY_LOW_POWER_CHARGER_MESSAGE_SHORT),
         rb.GetImageNamed(IDR_AURA_NOTIFICATION_LOW_POWER_CHARGER),
         base::string16(),
-        std::string(),
+        message_center::NotifierId(
+            message_center::NotifierId::SYSTEM_COMPONENT,
+            system_notifier::kNotifierPower),
         message_center::RichNotificationData(),
         NULL));
     message_center_->AddNotification(notification.Pass());
@@ -227,7 +233,8 @@ bool TrayPower::UpdateNotificationState() {
   const PowerStatus& status = *PowerStatus::Get();
   if (!status.IsBatteryPresent() ||
       status.IsBatteryTimeBeingCalculated() ||
-      status.IsMainsChargerConnected()) {
+      status.IsMainsChargerConnected() ||
+      status.IsOriginalSpringChargerConnected()) {
     notification_state_ = NOTIFICATION_NONE;
     return false;
   }
@@ -238,27 +245,30 @@ bool TrayPower::UpdateNotificationState() {
 }
 
 bool TrayPower::UpdateNotificationStateForRemainingTime() {
-  const int remaining_seconds =
-      PowerStatus::Get()->GetBatteryTimeToEmpty().InSeconds();
+  // The notification includes a rounded minutes value, so round the estimate
+  // received from the power manager to match.
+  const int remaining_minutes = static_cast<int>(
+      PowerStatus::Get()->GetBatteryTimeToEmpty().InSecondsF() / 60.0 + 0.5);
 
-  if (remaining_seconds >= kNoWarningSeconds) {
+  if (remaining_minutes >= kNoWarningMinutes ||
+      PowerStatus::Get()->IsBatteryFull()) {
     notification_state_ = NOTIFICATION_NONE;
     return false;
   }
 
   switch (notification_state_) {
     case NOTIFICATION_NONE:
-      if (remaining_seconds <= kCriticalSeconds) {
+      if (remaining_minutes <= kCriticalMinutes) {
         notification_state_ = NOTIFICATION_CRITICAL;
         return true;
       }
-      if (remaining_seconds <= kLowPowerSeconds) {
+      if (remaining_minutes <= kLowPowerMinutes) {
         notification_state_ = NOTIFICATION_LOW_POWER;
         return true;
       }
       return false;
     case NOTIFICATION_LOW_POWER:
-      if (remaining_seconds <= kCriticalSeconds) {
+      if (remaining_minutes <= kCriticalMinutes) {
         notification_state_ = NOTIFICATION_CRITICAL;
         return true;
       }
@@ -271,9 +281,13 @@ bool TrayPower::UpdateNotificationStateForRemainingTime() {
 }
 
 bool TrayPower::UpdateNotificationStateForRemainingPercentage() {
-  const double remaining_percentage = PowerStatus::Get()->GetBatteryPercent();
+  // The notification includes a rounded percentage, so round the value received
+  // from the power manager to match.
+  const int remaining_percentage =
+      PowerStatus::Get()->GetRoundedBatteryPercent();
 
-  if (remaining_percentage > kNoWarningPercentage) {
+  if (remaining_percentage >= kNoWarningPercentage ||
+      PowerStatus::Get()->IsBatteryFull()) {
     notification_state_ = NOTIFICATION_NONE;
     return false;
   }
@@ -300,6 +314,30 @@ bool TrayPower::UpdateNotificationStateForRemainingPercentage() {
   }
   NOTREACHED();
   return false;
+}
+
+void TrayPower::RecordChargerType() {
+  if (!PowerStatus::Get()->IsLinePowerConnected() ||
+      line_power_was_connected_)
+    return;
+
+  ChargerType current_charger = UNKNOWN_CHARGER;
+  if (PowerStatus::Get()->IsMainsChargerConnected()) {
+    current_charger = MAINS_CHARGER;
+  } else if (PowerStatus::Get()->IsUsbChargerConnected()) {
+    current_charger = USB_CHARGER;
+  } else if (PowerStatus::Get()->IsOriginalSpringChargerConnected()) {
+    current_charger =
+        ash::Shell::GetInstance()->system_tray_delegate()->
+            HasUserConfirmedSafeSpringCharger() ?
+        SAFE_SPRING_CHARGER : UNCONFIRMED_SPRING_CHARGER;
+  }
+
+  if (current_charger != UNKNOWN_CHARGER) {
+    UMA_HISTOGRAM_ENUMERATION("Power.ChargerType",
+                              current_charger,
+                              CHARGER_TYPE_COUNT);
+  }
 }
 
 }  // namespace internal

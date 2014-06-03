@@ -6,6 +6,7 @@
 
 #include "base/bind.h"
 #include "base/file_util.h"
+#include "base/prefs/pref_change_registrar.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/stringprintf.h"
 #include "base/threading/sequenced_worker_pool.h"
@@ -16,22 +17,20 @@
 #include "chrome/browser/chromeos/drive/file_cache.h"
 #include "chrome/browser/chromeos/drive/file_system.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
-#include "chrome/browser/chromeos/drive/file_write_helper.h"
 #include "chrome/browser/chromeos/drive/job_scheduler.h"
 #include "chrome/browser/chromeos/drive/logging.h"
 #include "chrome/browser/chromeos/drive/resource_metadata.h"
 #include "chrome/browser/chromeos/drive/resource_metadata_storage.h"
+#include "chrome/browser/chromeos/file_manager/path_util.h"
 #include "chrome/browser/chromeos/profiles/profile_util.h"
+#include "chrome/browser/download/download_prefs.h"
 #include "chrome/browser/download/download_service.h"
 #include "chrome/browser/download/download_service_factory.h"
-#include "chrome/browser/download/download_util.h"
 #include "chrome/browser/drive/drive_api_service.h"
 #include "chrome/browser/drive/drive_api_util.h"
 #include "chrome/browser/drive/drive_notification_manager.h"
 #include "chrome/browser/drive/drive_notification_manager_factory.h"
 #include "chrome/browser/drive/gdata_wapi_service.h"
-#include "chrome/browser/google_apis/auth_service.h"
-#include "chrome/browser/google_apis/gdata_wapi_url_generator.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/profile_oauth2_token_service.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
@@ -40,6 +39,10 @@
 #include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
+#include "google_apis/drive/auth_service.h"
+#include "google_apis/drive/gdata_wapi_url_generator.h"
+#include "grit/generated_resources.h"
+#include "ui/base/l10n/l10n_util.h"
 #include "webkit/browser/fileapi/external_mount_points.h"
 #include "webkit/common/user_agent/user_agent_util.h"
 
@@ -49,21 +52,16 @@ using content::BrowserThread;
 namespace drive {
 namespace {
 
-// Returns true if Drive is enabled for the given Profile.
-bool IsDriveEnabledForProfile(Profile* profile) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+// Name of the directory used to store metadata.
+const base::FilePath::CharType kMetadataDirectory[] = FILE_PATH_LITERAL("meta");
 
-  if (!chromeos::IsProfileAssociatedWithGaiaAccount(profile))
-    return false;
+// Name of the directory used to store cached files.
+const base::FilePath::CharType kCacheFileDirectory[] =
+    FILE_PATH_LITERAL("files");
 
-  // Disable Drive if preference is set.  This can happen with commandline flag
-  // --disable-gdata or enterprise policy, or probably with user settings too
-  // in the future.
-  if (profile->GetPrefs()->GetBoolean(prefs::kDisableDrive))
-    return false;
-
-  return true;
-}
+// Name of the directory used to store temporary files.
+const base::FilePath::CharType kTemporaryFileDirectory[] =
+    FILE_PATH_LITERAL("tmp");
 
 // Returns a user agent string used for communicating with the Drive backend,
 // both WAPI and Drive API.  The user agent looks like:
@@ -100,26 +98,29 @@ FileError InitializeMetadata(
     const base::FilePath& cache_root_directory,
     internal::ResourceMetadataStorage* metadata_storage,
     internal::FileCache* cache,
-    internal::ResourceMetadata* resource_metadata) {
-  if (!file_util::CreateDirectory(cache_root_directory.Append(
-          util::kMetadataDirectory)) ||
-      !file_util::CreateDirectory(cache_root_directory.Append(
-          util::kCacheFileDirectory)) ||
-      !file_util::CreateDirectory(cache_root_directory.Append(
-          util::kTemporaryFileDirectory))) {
+    internal::ResourceMetadata* resource_metadata,
+    const ResourceIdCanonicalizer& id_canonicalizer,
+    const base::FilePath& downloads_directory) {
+  if (!base::CreateDirectory(cache_root_directory.Append(
+          kMetadataDirectory)) ||
+      !base::CreateDirectory(cache_root_directory.Append(
+          kCacheFileDirectory)) ||
+      !base::CreateDirectory(cache_root_directory.Append(
+          kTemporaryFileDirectory))) {
     LOG(WARNING) << "Failed to create directories.";
     return FILE_ERROR_FAILED;
   }
 
   // Change permissions of cache file directory to u+rwx,og+x (711) in order to
   // allow archive files in that directory to be mounted by cros-disks.
-  file_util::SetPosixFilePermissions(
-      cache_root_directory.Append(util::kCacheFileDirectory),
-      file_util::FILE_PERMISSION_USER_MASK |
-      file_util::FILE_PERMISSION_EXECUTE_BY_GROUP |
-      file_util::FILE_PERMISSION_EXECUTE_BY_OTHERS);
+  base::SetPosixFilePermissions(
+      cache_root_directory.Append(kCacheFileDirectory),
+      base::FILE_PERMISSION_USER_MASK |
+      base::FILE_PERMISSION_EXECUTE_BY_GROUP |
+      base::FILE_PERMISSION_EXECUTE_BY_OTHERS);
 
-  util::MigrateCacheFilesFromOldDirectories(cache_root_directory);
+  internal::ResourceMetadataStorage::UpgradeOldDB(
+      metadata_storage->directory_path(), id_canonicalizer);
 
   if (!metadata_storage->Initialize()) {
     LOG(WARNING) << "Failed to initialize the metadata storage.";
@@ -131,6 +132,32 @@ FileError InitializeMetadata(
     return FILE_ERROR_FAILED;
   }
 
+  if (metadata_storage->cache_file_scan_is_needed()) {
+    // Generate unique directory name.
+    const std::string& dest_directory_name = l10n_util::GetStringUTF8(
+        IDS_FILE_BROWSER_RECOVERED_FILES_FROM_GOOGLE_DRIVE_DIRECTORY_NAME);
+    base::FilePath dest_directory = downloads_directory.Append(
+        base::FilePath::FromUTF8Unsafe(dest_directory_name));
+    for (int uniquifier = 1; base::PathExists(dest_directory); ++uniquifier) {
+      dest_directory = downloads_directory.Append(
+          base::FilePath::FromUTF8Unsafe(dest_directory_name))
+          .InsertBeforeExtensionASCII(base::StringPrintf(" (%d)", uniquifier));
+    }
+
+    internal::ResourceMetadataStorage::RecoveredCacheInfoMap
+        recovered_cache_info;
+    metadata_storage->RecoverCacheInfoFromTrashedResourceMap(
+        &recovered_cache_info);
+
+    LOG(WARNING) << "DB could not be opened for some reasons. "
+                 << "Recovering cache files to " << dest_directory.value();
+    if (!cache->RecoverFilesFromCacheDirectory(dest_directory,
+                                               recovered_cache_info)) {
+      LOG(WARNING) << "Failed to recover cache files.";
+      return FILE_ERROR_FAILED;
+    }
+  }
+
   FileError error = resource_metadata->Initialize();
   LOG_IF(WARNING, error != FILE_ERROR_OK)
       << "Failed to initialize resource metadata. " << FileErrorToString(error);
@@ -139,13 +166,49 @@ FileError InitializeMetadata(
 
 }  // namespace
 
+// Observes drive disable Preference's change.
+class DriveIntegrationService::PreferenceWatcher {
+ public:
+  explicit PreferenceWatcher(PrefService* pref_service)
+      : pref_service_(pref_service),
+        integration_service_(NULL),
+        weak_ptr_factory_(this) {
+    DCHECK(pref_service);
+    pref_change_registrar_.Init(pref_service);
+    pref_change_registrar_.Add(
+        prefs::kDisableDrive,
+        base::Bind(&PreferenceWatcher::OnPreferenceChanged,
+                   weak_ptr_factory_.GetWeakPtr()));
+  }
+
+  void set_integration_service(DriveIntegrationService* integration_service) {
+    integration_service_ = integration_service;
+  }
+
+ private:
+  void OnPreferenceChanged() {
+    DCHECK(integration_service_);
+    integration_service_->SetEnabled(
+        !pref_service_->GetBoolean(prefs::kDisableDrive));
+  }
+
+  PrefService* pref_service_;
+  PrefChangeRegistrar pref_change_registrar_;
+  DriveIntegrationService* integration_service_;
+
+  base::WeakPtrFactory<PreferenceWatcher> weak_ptr_factory_;
+  DISALLOW_COPY_AND_ASSIGN(PreferenceWatcher);
+};
+
 DriveIntegrationService::DriveIntegrationService(
     Profile* profile,
+    PreferenceWatcher* preference_watcher,
     DriveServiceInterface* test_drive_service,
     const base::FilePath& test_cache_root,
     FileSystemInterface* test_file_system)
     : profile_(profile),
-      drive_disabled_(false),
+      state_(NOT_INITIALIZED),
+      enabled_(false),
       cache_root_directory_(!test_cache_root.empty() ?
                             test_cache_root : util::GetCacheRootPath(profile)),
       weak_ptr_factory_(this) {
@@ -155,7 +218,7 @@ DriveIntegrationService::DriveIntegrationService(
   blocking_task_runner_ = blocking_pool->GetSequencedTaskRunner(
       blocking_pool->GetSequenceToken());
 
-  OAuth2TokenService* oauth_service =
+  ProfileOAuth2TokenService* oauth_service =
       ProfileOAuth2TokenServiceFactory::GetForProfile(profile);
 
   if (test_drive_service) {
@@ -183,11 +246,11 @@ DriveIntegrationService::DriveIntegrationService(
       drive_service_.get(),
       blocking_task_runner_.get()));
   metadata_storage_.reset(new internal::ResourceMetadataStorage(
-      cache_root_directory_.Append(util::kMetadataDirectory),
+      cache_root_directory_.Append(kMetadataDirectory),
       blocking_task_runner_.get()));
   cache_.reset(new internal::FileCache(
       metadata_storage_.get(),
-      cache_root_directory_.Append(util::kCacheFileDirectory),
+      cache_root_directory_.Append(kCacheFileDirectory),
       blocking_task_runner_.get(),
       NULL /* free_disk_space_getter */));
   drive_app_registry_.reset(new DriveAppRegistry(scheduler_.get()));
@@ -203,51 +266,89 @@ DriveIntegrationService::DriveIntegrationService(
           scheduler_.get(),
           resource_metadata_.get(),
           blocking_task_runner_.get(),
-          cache_root_directory_.Append(util::kTemporaryFileDirectory)));
-  file_write_helper_.reset(new FileWriteHelper(file_system()));
-  download_handler_.reset(new DownloadHandler(file_write_helper(),
-                                              file_system()));
+          cache_root_directory_.Append(kTemporaryFileDirectory)));
+  download_handler_.reset(new DownloadHandler(file_system()));
   debug_info_collector_.reset(
-      new DebugInfoCollector(file_system(), cache_.get()));
+      new DebugInfoCollector(file_system(), cache_.get(),
+                             blocking_task_runner_.get()));
+
+  if (preference_watcher) {
+    preference_watcher_.reset(preference_watcher);
+    preference_watcher->set_integration_service(this);
+  }
+
+  SetEnabled(drive::util::IsDriveEnabledForProfile(profile));
 }
 
 DriveIntegrationService::~DriveIntegrationService() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 }
 
-void DriveIntegrationService::Initialize() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  drive_service_->Initialize();
-  file_system_->Initialize();
-
-  base::PostTaskAndReplyWithResult(
-      blocking_task_runner_.get(),
-      FROM_HERE,
-      base::Bind(&InitializeMetadata,
-                 cache_root_directory_,
-                 metadata_storage_.get(),
-                 cache_.get(),
-                 resource_metadata_.get()),
-      base::Bind(&DriveIntegrationService::InitializeAfterMetadataInitialized,
-                 weak_ptr_factory_.GetWeakPtr()));
-}
-
 void DriveIntegrationService::Shutdown() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
+  weak_ptr_factory_.InvalidateWeakPtrs();
+
   DriveNotificationManager* drive_notification_manager =
-      DriveNotificationManagerFactory::GetForProfile(profile_);
+      DriveNotificationManagerFactory::GetForBrowserContext(profile_);
   if (drive_notification_manager)
     drive_notification_manager->RemoveObserver(this);
 
   RemoveDriveMountPoint();
   debug_info_collector_.reset();
   download_handler_.reset();
-  file_write_helper_.reset();
   file_system_.reset();
   drive_app_registry_.reset();
   scheduler_.reset();
   drive_service_.reset();
+}
+
+void DriveIntegrationService::SetEnabled(bool enabled) {
+  // If Drive is being disabled, ensure the download destination preference to
+  // be out of Drive. Do this before "Do nothing if not changed." because we
+  // want to run the check for the first SetEnabled() called in the constructor,
+  // which may be a change from false to false.
+  if (!enabled)
+    AvoidDriveAsDownloadDirecotryPreference();
+
+  // Do nothing if not changed.
+  if (enabled_ == enabled)
+    return;
+
+  if (enabled) {
+    enabled_ = true;
+    switch (state_) {
+      case NOT_INITIALIZED:
+        // If the initialization is not yet done, trigger it.
+        Initialize();
+        return;
+
+      case INITIALIZING:
+      case REMOUNTING:
+        // If the state is INITIALIZING or REMOUNTING, at the end of the
+        // process, it tries to mounting (with re-checking enabled state).
+        // Do nothing for now.
+        return;
+
+      case INITIALIZED:
+        // The integration service is already initialized. Add the mount point.
+        AddDriveMountPoint();
+        return;
+    }
+    NOTREACHED();
+  } else {
+    RemoveDriveMountPoint();
+    enabled_ = false;
+  }
+}
+
+bool DriveIntegrationService::IsMounted() const {
+  // Look up the registered path, and just discard it.
+  // GetRegisteredPath() returns true if the path is available.
+  const base::FilePath& drive_mount_point = util::GetDriveMountPointPath();
+  base::FilePath unused;
+  return BrowserContext::GetMountPoints(profile_)->GetRegisteredPath(
+      drive_mount_point.BaseName().AsUTF8Unsafe(), &unused);
 }
 
 void DriveIntegrationService::AddObserver(
@@ -275,31 +376,23 @@ void DriveIntegrationService::OnPushNotificationEnabled(bool enabled) {
   util::Log(logging::LOG_INFO, "Push notification is %s", status);
 }
 
-bool DriveIntegrationService::IsDriveEnabled() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
-  if (!IsDriveEnabledForProfile(profile_))
-    return false;
-
-  // Drive may be disabled for cache initialization failure, etc.
-  if (drive_disabled_)
-    return false;
-
-  return true;
-}
-
 void DriveIntegrationService::ClearCacheAndRemountFileSystem(
     const base::Callback<void(bool)>& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
-  RemoveDriveMountPoint();
-  // Reloading the file system will clear the resource metadata.
-  file_system_->Reload();
-  // Reload the Drive app registry too.
-  drive_app_registry_->Update();
+  if (state_ != INITIALIZED) {
+    callback.Run(false);
+    return;
+  }
 
-  cache_->ClearAllOnUIThread(base::Bind(
+  RemoveDriveMountPoint();
+
+  state_ = REMOUNTING;
+  // Reloads the Drive app registry.
+  drive_app_registry_->Update();
+  // Reloading the file system clears resource metadata and cache.
+  file_system_->Reload(base::Bind(
       &DriveIntegrationService::AddBackDriveMountPoint,
       weak_ptr_factory_.GetWeakPtr(),
       callback));
@@ -307,24 +400,26 @@ void DriveIntegrationService::ClearCacheAndRemountFileSystem(
 
 void DriveIntegrationService::AddBackDriveMountPoint(
     const base::Callback<void(bool)>& callback,
-    bool success) {
+    FileError error) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
-  if (!success) {
+  state_ = error == FILE_ERROR_OK ? INITIALIZED : NOT_INITIALIZED;
+
+  if (error != FILE_ERROR_OK || !enabled_) {
+    // Failed to reload, or Drive was disabled during the reloading.
     callback.Run(false);
     return;
   }
 
-  file_system_->Initialize();
-  drive_app_registry_->Update();
   AddDriveMountPoint();
-
   callback.Run(true);
 }
 
 void DriveIntegrationService::AddDriveMountPoint() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_EQ(INITIALIZED, state_);
+  DCHECK(enabled_);
 
   const base::FilePath drive_mount_point = util::GetDriveMountPointPath();
   fileapi::ExternalMountPoints* mount_points =
@@ -334,6 +429,7 @@ void DriveIntegrationService::AddDriveMountPoint() {
   bool success = mount_points->RegisterFileSystem(
       drive_mount_point.BaseName().AsUTF8Unsafe(),
       fileapi::kFileSystemTypeDrive,
+      fileapi::FileSystemMountOption(),
       drive_mount_point);
 
   if (success) {
@@ -360,14 +456,45 @@ void DriveIntegrationService::RemoveDriveMountPoint() {
   util::Log(logging::LOG_INFO, "Drive mount point is removed");
 }
 
+void DriveIntegrationService::Initialize() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_EQ(NOT_INITIALIZED, state_);
+  DCHECK(enabled_);
+
+  state_ = INITIALIZING;
+
+  base::PostTaskAndReplyWithResult(
+      blocking_task_runner_.get(),
+      FROM_HERE,
+      base::Bind(&InitializeMetadata,
+                 cache_root_directory_,
+                 metadata_storage_.get(),
+                 cache_.get(),
+                 resource_metadata_.get(),
+                 drive_service_->GetResourceIdCanonicalizer(),
+                 file_manager::util::GetDownloadsFolderForProfile(profile_)),
+      base::Bind(&DriveIntegrationService::InitializeAfterMetadataInitialized,
+                 weak_ptr_factory_.GetWeakPtr()));
+}
+
 void DriveIntegrationService::InitializeAfterMetadataInitialized(
     FileError error) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_EQ(INITIALIZING, state_);
+
+  drive_service_->Initialize(
+      ProfileOAuth2TokenServiceFactory::GetForProfile(profile_)->
+          GetPrimaryAccountId());
 
   if (error != FILE_ERROR_OK) {
-    LOG(WARNING) << "Failed to initialize. Disabling Drive : "
-                 << FileErrorToString(error);
-    DisableDrive();
+    LOG(WARNING) << "Failed to initialize: " << FileErrorToString(error);
+
+    // Cannot used Drive. Set the download destination preference out of Drive.
+    AvoidDriveAsDownloadDirecotryPreference();
+
+    // Back to NOT_INITIALIZED state. Then, re-running Initialize() should
+    // work if the error is recoverable manually (such as out of disk space).
+    state_ = NOT_INITIALIZED;
     return;
   }
 
@@ -376,11 +503,11 @@ void DriveIntegrationService::InitializeAfterMetadataInitialized(
       BrowserContext::GetDownloadManager(profile_) : NULL;
   download_handler_->Initialize(
       download_manager,
-      cache_root_directory_.Append(util::kTemporaryFileDirectory));
+      cache_root_directory_.Append(kTemporaryFileDirectory));
 
   // Register for Google Drive invalidation notifications.
   DriveNotificationManager* drive_notification_manager =
-      DriveNotificationManagerFactory::GetForProfile(profile_);
+      DriveNotificationManagerFactory::GetForBrowserContext(profile_);
   if (drive_notification_manager) {
     drive_notification_manager->AddObserver(this);
     const bool registered =
@@ -392,20 +519,22 @@ void DriveIntegrationService::InitializeAfterMetadataInitialized(
       drive_app_registry_->Update();
   }
 
-  AddDriveMountPoint();
+  state_ = INITIALIZED;
+
+  // Mount only when the drive is enabled. Initialize is triggered by
+  // SetEnabled(true), but there is a change to disable it again during
+  // the metadata initialization, so we need to look this up again here.
+  if (enabled_)
+    AddDriveMountPoint();
 }
 
-void DriveIntegrationService::DisableDrive() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
-  drive_disabled_ = true;
-  // Change the download directory to the default value if the download
-  // destination is set to under Drive mount point.
+void DriveIntegrationService::AvoidDriveAsDownloadDirecotryPreference() {
   PrefService* pref_service = profile_->GetPrefs();
   if (util::IsUnderDriveMountPoint(
           pref_service->GetFilePath(prefs::kDownloadDefaultDirectory))) {
-    pref_service->SetFilePath(prefs::kDownloadDefaultDirectory,
-                              download_util::GetDefaultDownloadDirectory());
+    pref_service->SetFilePath(
+        prefs::kDownloadDefaultDirectory,
+        file_manager::util::GetDownloadsFolderForProfile(profile_));
   }
 }
 
@@ -414,11 +543,7 @@ void DriveIntegrationService::DisableDrive() {
 // static
 DriveIntegrationService* DriveIntegrationServiceFactory::GetForProfile(
     Profile* profile) {
-  DriveIntegrationService* service = GetForProfileRegardlessOfStates(profile);
-  if (service && !service->IsDriveEnabled())
-    return NULL;
-
-  return service;
+  return GetForProfileRegardlessOfStates(profile);
 }
 
 // static
@@ -432,11 +557,7 @@ DriveIntegrationServiceFactory::GetForProfileRegardlessOfStates(
 // static
 DriveIntegrationService* DriveIntegrationServiceFactory::FindForProfile(
     Profile* profile) {
-  DriveIntegrationService* service = FindForProfileRegardlessOfStates(profile);
-  if (service && !service->IsDriveEnabled())
-    return NULL;
-
-  return service;
+  return FindForProfileRegardlessOfStates(profile);
 }
 
 // static
@@ -473,17 +594,23 @@ DriveIntegrationServiceFactory::~DriveIntegrationServiceFactory() {
 BrowserContextKeyedService*
 DriveIntegrationServiceFactory::BuildServiceInstanceFor(
     content::BrowserContext* context) const {
-  Profile* profile = static_cast<Profile*>(context);
+  Profile* profile = Profile::FromBrowserContext(context);
 
   DriveIntegrationService* service = NULL;
   if (factory_for_test_.is_null()) {
-    service = new DriveIntegrationService(
-        profile, NULL, base::FilePath(), NULL);
+    DriveIntegrationService::PreferenceWatcher* preference_watcher = NULL;
+    if (chromeos::IsProfileAssociatedWithGaiaAccount(profile)) {
+      // Drive File System can be enabled.
+      preference_watcher =
+          new DriveIntegrationService::PreferenceWatcher(profile->GetPrefs());
+    }
+
+    service = new DriveIntegrationService(profile, preference_watcher,
+                                          NULL, base::FilePath(), NULL);
   } else {
     service = factory_for_test_.Run(profile);
   }
 
-  service->Initialize();
   return service;
 }
 

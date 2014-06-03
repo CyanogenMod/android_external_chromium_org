@@ -8,9 +8,7 @@
 #include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
-#include "chrome/browser/extensions/process_map.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/blocked_content/blocked_content_tab_helper.h"
 #include "chrome/browser/ui/blocked_content/popup_blocker_tab_helper.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
@@ -19,7 +17,6 @@
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_file_util.h"
 #include "chrome/test/base/test_switches.h"
 #include "chrome/test/base/ui_test_utils.h"
@@ -27,15 +24,20 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
+#include "content/public/browser/site_instance.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/test_navigation_observer.h"
+#include "extensions/browser/process_map.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/switches.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "sync/api/string_ordinal.h"
 
 using content::NavigationController;
 using content::RenderViewHost;
+using content::SiteInstance;
 using content::WebContents;
 using extensions::Extension;
 
@@ -59,7 +61,7 @@ class AppApiTest : public ExtensionApiTest {
     CommandLine::ForCurrentProcess()->AppendSwitch(
         switches::kDisablePopupBlocking);
     CommandLine::ForCurrentProcess()->AppendSwitch(
-        switches::kAllowHTTPBackgroundPage);
+        extensions::switches::kAllowHTTPBackgroundPage);
   }
 
   // Helper function to test that independent tabs of the named app are loaded
@@ -134,7 +136,7 @@ class BlockedAppApiTest : public AppApiTest {
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     ExtensionApiTest::SetUpCommandLine(command_line);
     CommandLine::ForCurrentProcess()->AppendSwitch(
-        switches::kAllowHTTPBackgroundPage);
+        extensions::switches::kAllowHTTPBackgroundPage);
   }
 };
 
@@ -588,15 +590,6 @@ IN_PROC_BROWSER_TEST_F(AppApiTest, ReloadIntoAppProcessWithJavaScript) {
       contents->GetRenderProcessHost()->GetID()));
 }
 
-namespace {
-
-void RenderViewHostCreated(std::vector<content::RenderViewHost*>* rvh_vector,
-                           content::RenderViewHost* rvh) {
-  rvh_vector->push_back(rvh);
-}
-
-}  // namespace
-
 // Tests that if we have a non-app process (path3/container.html) that has an
 // iframe with  a URL in the app's extent (path1/iframe.html), then opening a
 // link from that iframe to a new window to a URL in the app's extent (path1/
@@ -622,20 +615,21 @@ IN_PROC_BROWSER_TEST_F(AppApiTest, OpenAppFromIframe) {
       LoadExtension(test_data_dir_.AppendASCII("app_process"));
   ASSERT_TRUE(app);
 
-  std::vector<content::RenderViewHost*> rvh_vector;
-  content::RenderViewHost::CreatedCallback rvh_callback(
-      base::Bind(&RenderViewHostCreated, &rvh_vector));
-  content::RenderViewHost::AddCreatedCallback(rvh_callback);
   ui_test_utils::NavigateToURL(browser(),
                                base_url.Resolve("path3/container.html"));
-  content::RenderViewHost::RemoveCreatedCallback(rvh_callback);
   EXPECT_FALSE(process_map->Contains(
       browser()->tab_strip_model()->GetWebContentsAt(0)->
           GetRenderProcessHost()->GetID()));
 
+  const BrowserList* active_browser_list =
+      BrowserList::GetInstance(chrome::GetActiveDesktop());
+  EXPECT_EQ(2U, active_browser_list->size());
+  content::WebContents* popup_contents =
+      active_browser_list->get(1)->tab_strip_model()->GetActiveWebContents();
+  content::WaitForLoadStop(popup_contents);
+
   // Popup window should be in the app's process.
-  ASSERT_EQ(3U, rvh_vector.size());
-  RenderViewHost* popup_host = rvh_vector[2];
+  RenderViewHost* popup_host = popup_contents->GetRenderViewHost();
   EXPECT_TRUE(process_map->Contains(popup_host->GetProcess()->GetID()));
 }
 
@@ -660,24 +654,16 @@ IN_PROC_BROWSER_TEST_F(BlockedAppApiTest, MAYBE_OpenAppFromIframe) {
       browser(), GetTestBaseURL("app_process").Resolve("path3/container.html"));
 
   WebContents* tab = browser()->tab_strip_model()->GetActiveWebContents();
-  BlockedContentTabHelper* blocked_content_tab_helper =
-      BlockedContentTabHelper::FromWebContents(tab);
   PopupBlockerTabHelper* popup_blocker_tab_helper =
       PopupBlockerTabHelper::FromWebContents(tab);
-  if (!blocked_content_tab_helper->GetBlockedContentsCount() &&
-      (!popup_blocker_tab_helper ||
-       !popup_blocker_tab_helper->GetBlockedPopupsCount())) {
+  if (!popup_blocker_tab_helper->GetBlockedPopupsCount()) {
     content::WindowedNotificationObserver observer(
         chrome::NOTIFICATION_WEB_CONTENT_SETTINGS_CHANGED,
         content::NotificationService::AllSources());
     observer.Wait();
   }
 
-  EXPECT_EQ(1u,
-            blocked_content_tab_helper->GetBlockedContentsCount() +
-                (popup_blocker_tab_helper
-                     ? popup_blocker_tab_helper->GetBlockedPopupsCount()
-                     : 0));
+  EXPECT_EQ(1u, popup_blocker_tab_helper->GetBlockedPopupsCount());
 }
 
 // Tests that if an extension launches an app via chrome.tabs.create with an URL
@@ -708,10 +694,7 @@ IN_PROC_BROWSER_TEST_F(AppApiTest, ServerRedirectToAppFromExtension) {
       ui_test_utils::BROWSER_TEST_WAIT_FOR_NAVIGATION);
 
   // Wait for app tab to be created and loaded.
-  test_navigation_observer.WaitForObservation(
-      base::Bind(&content::RunMessageLoop),
-      base::Bind(&base::MessageLoop::Quit,
-                 base::Unretained(base::MessageLoopForUI::current())));
+  test_navigation_observer.Wait();
 
   // App has loaded, and chrome.app.isInstalled should be true.
   bool is_installed = false;
@@ -750,10 +733,7 @@ IN_PROC_BROWSER_TEST_F(AppApiTest, ClientRedirectToAppFromExtension) {
       ui_test_utils::BROWSER_TEST_WAIT_FOR_NAVIGATION);
 
   // Wait for app tab to be created and loaded.
-  test_navigation_observer.WaitForObservation(
-      base::Bind(&content::RunMessageLoop),
-      base::Bind(&base::MessageLoop::Quit,
-                 base::Unretained(base::MessageLoopForUI::current())));
+  test_navigation_observer.Wait();
 
   // App has loaded, and chrome.app.isInstalled should be true.
   bool is_installed = false;
@@ -785,20 +765,21 @@ IN_PROC_BROWSER_TEST_F(AppApiTest, OpenWebPopupFromWebIframe) {
       LoadExtension(test_data_dir_.AppendASCII("app_process"));
   ASSERT_TRUE(app);
 
-  std::vector<content::RenderViewHost*> rvh_vector;
-  content::RenderViewHost::CreatedCallback rvh_callback(
-      base::Bind(&RenderViewHostCreated, &rvh_vector));
-  content::RenderViewHost::AddCreatedCallback(rvh_callback);
   ui_test_utils::NavigateToURL(browser(),
                                base_url.Resolve("path1/container.html"));
-  content::RenderViewHost::RemoveCreatedCallback(rvh_callback);
   content::RenderProcessHost* process =
       browser()->tab_strip_model()->GetWebContentsAt(0)->GetRenderProcessHost();
   EXPECT_TRUE(process_map->Contains(process->GetID()));
 
   // Popup window should be in the app's process.
-  ASSERT_EQ(2U, rvh_vector.size());
-  RenderViewHost* popup_host = rvh_vector[1];
+  const BrowserList* active_browser_list =
+      BrowserList::GetInstance(chrome::GetActiveDesktop());
+  EXPECT_EQ(2U, active_browser_list->size());
+  content::WebContents* popup_contents =
+      active_browser_list->get(1)->tab_strip_model()->GetActiveWebContents();
+  content::WaitForLoadStop(popup_contents);
+
+  RenderViewHost* popup_host = popup_contents->GetRenderViewHost();
   EXPECT_EQ(process, popup_host->GetProcess());
 }
 
@@ -845,4 +826,49 @@ IN_PROC_BROWSER_TEST_F(AppApiTest, MAYBE_ReloadAppAfterCrash) {
       "window.domAutomationController.send(chrome.app.isInstalled)",
       &is_installed));
   ASSERT_TRUE(is_installed);
+}
+
+// Test that a cross-process navigation away from a hosted app stays in the same
+// BrowsingInstance, so that postMessage calls to the app's other windows still
+// work.
+IN_PROC_BROWSER_TEST_F(AppApiTest, SameBrowsingInstanceAfterSwap) {
+  extensions::ProcessMap* process_map = extensions::ExtensionSystem::Get(
+      browser()->profile())->extension_service()->process_map();
+
+  host_resolver()->AddRule("*", "127.0.0.1");
+  ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
+
+  GURL base_url = GetTestBaseURL("app_process");
+
+  // Load app and start URL (in the app).
+  const Extension* app =
+      LoadExtension(test_data_dir_.AppendASCII("app_process"));
+  ASSERT_TRUE(app);
+
+  ui_test_utils::NavigateToURL(browser(),
+                               base_url.Resolve("path1/iframe.html"));
+  content::SiteInstance* app_instance =
+      browser()->tab_strip_model()->GetWebContentsAt(0)->GetSiteInstance();
+  EXPECT_TRUE(process_map->Contains(app_instance->GetProcess()->GetID()));
+
+  // Popup window should be in the app's process.
+  const BrowserList* active_browser_list =
+      BrowserList::GetInstance(chrome::GetActiveDesktop());
+  EXPECT_EQ(2U, active_browser_list->size());
+  content::WebContents* popup_contents =
+      active_browser_list->get(1)->tab_strip_model()->GetActiveWebContents();
+  content::WaitForLoadStop(popup_contents);
+
+  SiteInstance* popup_instance = popup_contents->GetSiteInstance();
+  EXPECT_EQ(app_instance, popup_instance);
+
+  // Navigate the popup to another process outside the app.
+  GURL non_app_url(base_url.Resolve("path3/empty.html"));
+  ui_test_utils::NavigateToURL(active_browser_list->get(1), non_app_url);
+  SiteInstance* new_instance = popup_contents->GetSiteInstance();
+  EXPECT_NE(app_instance, new_instance);
+
+  // It should still be in the same BrowsingInstance, allowing postMessage to
+  // work.
+  EXPECT_TRUE(app_instance->IsRelatedSiteInstance(new_instance));
 }

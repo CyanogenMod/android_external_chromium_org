@@ -4,6 +4,7 @@
 
 #include "cc/resources/raster_worker_pool.h"
 
+#include <limits>
 #include <vector>
 
 #include "cc/resources/image_raster_worker_pool.h"
@@ -13,6 +14,8 @@
 #include "cc/resources/resource_provider.h"
 #include "cc/resources/scoped_resource.h"
 #include "cc/test/fake_output_surface.h"
+#include "cc/test/fake_output_surface_client.h"
+#include "cc/test/test_web_graphics_context_3d.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace cc {
@@ -32,8 +35,10 @@ class TestRasterWorkerPoolTaskImpl : public internal::RasterWorkerPoolTask {
         did_raster_(false) {}
 
   // Overridden from internal::WorkerPoolTask:
-  virtual bool RunOnWorkerThread(SkDevice* device, unsigned thread_index)
-      OVERRIDE {
+  virtual bool RunOnWorkerThread(unsigned thread_index,
+                                 void* buffer,
+                                 gfx::Size size,
+                                 int stride) OVERRIDE {
     did_raster_ = true;
     return true;
   }
@@ -55,12 +60,15 @@ class RasterWorkerPoolTest : public testing::Test,
                              public RasterWorkerPoolClient  {
  public:
   RasterWorkerPoolTest()
-      : output_surface_(FakeOutputSurface::Create3d()),
-        resource_provider_(
-            ResourceProvider::Create(output_surface_.get(), 0)),
+      : context_provider_(TestContextProvider::Create()),
         check_interval_milliseconds_(1),
         timeout_seconds_(5),
         timed_out_(false) {
+    output_surface_ = FakeOutputSurface::Create3d(context_provider_).Pass();
+    CHECK(output_surface_->BindToClient(&output_surface_client_));
+
+    resource_provider_ = ResourceProvider::Create(
+        output_surface_.get(), NULL, 0, false, 1).Pass();
   }
   virtual ~RasterWorkerPoolTest() {
     resource_provider_.reset();
@@ -96,10 +104,13 @@ class RasterWorkerPoolTest : public testing::Test,
   void RunTest(bool use_map_image) {
     if (use_map_image) {
       raster_worker_pool_ = ImageRasterWorkerPool::Create(
-          resource_provider(), 1);
+          resource_provider(), 1, GL_TEXTURE_2D);
     } else {
-      raster_worker_pool_ = PixelBufferRasterWorkerPool::Create(
-          resource_provider(), 1);
+      raster_worker_pool_ =
+          PixelBufferRasterWorkerPool::Create(
+              resource_provider(),
+              1,
+              std::numeric_limits<size_t>::max());
     }
 
     raster_worker_pool_->SetClient(this);
@@ -148,8 +159,8 @@ class RasterWorkerPoolTest : public testing::Test,
     const gfx::Size size(1, 1);
 
     scoped_ptr<ScopedResource> resource(
-        ScopedResource::create(resource_provider()));
-    resource->Allocate(size, GL_RGBA, ResourceProvider::TextureUsageAny);
+        ScopedResource::Create(resource_provider()));
+    resource->Allocate(size, ResourceProvider::TextureUsageAny, RGBA_8888);
     const Resource* const_resource = resource.get();
 
     RasterWorkerPool::Task::Set empty;
@@ -190,6 +201,8 @@ class RasterWorkerPoolTest : public testing::Test,
   }
 
  protected:
+  scoped_refptr<TestContextProvider> context_provider_;
+  FakeOutputSurfaceClient output_surface_client_;
   scoped_ptr<FakeOutputSurface> output_surface_;
   scoped_ptr<ResourceProvider> resource_provider_;
   scoped_ptr<RasterWorkerPool> raster_worker_pool_;
@@ -259,8 +272,7 @@ class RasterWorkerPoolTestFailedMapResource : public RasterWorkerPoolTest {
 
   // Overridden from RasterWorkerPoolTest:
   virtual void BeginTest() OVERRIDE {
-    TestWebGraphicsContext3D* context3d =
-        static_cast<TestWebGraphicsContext3D*>(output_surface_->context3d());
+    TestWebGraphicsContext3D* context3d = context_provider_->TestContext3d();
     context3d->set_times_map_image_chromium_succeeds(0);
     context3d->set_times_map_buffer_chromium_succeeds(0);
     AppendTask(0u);

@@ -35,7 +35,6 @@ namespace net {
 
 namespace {
 
-const int kKeySizeInBits = 1024;
 const int kValidityPeriodInDays = 365;
 // When we check the system time, we add this many days to the end of the check
 // so the result will still hold even after chrome has been running for a
@@ -43,7 +42,8 @@ const int kValidityPeriodInDays = 365;
 const int kSystemTimeValidityBufferInDays = 90;
 
 // Used by the GetDomainBoundCertResult histogram to record the final
-// outcome of each GetDomainBoundCert call.  Do not re-use values.
+// outcome of each GetDomainBoundCert or GetOrCreateDomainBoundCert call.
+// Do not re-use values.
 enum GetCertResult {
   // Synchronously found and returned an existing domain bound cert.
   SYNC_SUCCESS = 0,
@@ -57,7 +57,8 @@ enum GetCertResult {
   ASYNC_FAILURE_CREATE_CERT = 4,
   ASYNC_FAILURE_EXPORT_KEY = 5,
   ASYNC_FAILURE_UNKNOWN = 6,
-  // GetDomainBoundCert was called with invalid arguments.
+  // GetDomainBoundCert or GetOrCreateDomainBoundCert was called with
+  // invalid arguments.
   INVALID_ARGUMENT = 7,
   // We don't support any of the cert types the server requested.
   UNSUPPORTED_TYPE = 8,
@@ -97,15 +98,13 @@ scoped_ptr<ServerBoundCertStore::ServerBoundCert> GenerateCert(
       not_valid_before + base::TimeDelta::FromDays(kValidityPeriodInDays);
   std::string der_cert;
   std::vector<uint8> private_key_info;
-  scoped_ptr<crypto::ECPrivateKey> key(crypto::ECPrivateKey::Create());
-  if (!key.get()) {
-    DLOG(ERROR) << "Unable to create key pair for client";
-    *error = ERR_KEY_GENERATION_FAILED;
-    return result.Pass();
-  }
-  if (!x509_util::CreateDomainBoundCertEC(key.get(), server_identifier,
-                                          serial_number, not_valid_before,
-                                          not_valid_after, &der_cert)) {
+  scoped_ptr<crypto::ECPrivateKey> key;
+  if (!x509_util::CreateKeyAndDomainBoundCertEC(server_identifier,
+                                                serial_number,
+                                                not_valid_before,
+                                                not_valid_after,
+                                                &key,
+                                                &der_cert)) {
     DLOG(ERROR) << "Unable to create x509 cert for client";
     *error = ERR_ORIGIN_BOUND_CERT_GENERATION_FAILED;
     return result.Pass();
@@ -277,14 +276,18 @@ class ServerBoundCertServiceWorker {
 // origin message loop.
 class ServerBoundCertServiceJob {
  public:
-  ServerBoundCertServiceJob() { }
+  ServerBoundCertServiceJob(bool create_if_missing)
+      : create_if_missing_(create_if_missing) {
+  }
 
   ~ServerBoundCertServiceJob() {
     if (!requests_.empty())
       DeleteAllCanceled();
   }
 
-  void AddRequest(ServerBoundCertServiceRequest* request) {
+  void AddRequest(ServerBoundCertServiceRequest* request,
+                  bool create_if_missing = false) {
+    create_if_missing_ |= create_if_missing;
     requests_.push_back(request);
   }
 
@@ -293,6 +296,8 @@ class ServerBoundCertServiceJob {
                     const std::string& cert) {
     PostAll(error, private_key, cert);
   }
+
+  bool CreateIfMissing() const { return create_if_missing_; }
 
  private:
   void PostAll(int error,
@@ -320,6 +325,7 @@ class ServerBoundCertServiceJob {
   }
 
   std::vector<ServerBoundCertServiceRequest*> requests_;
+  bool create_if_missing_;
 };
 
 // static
@@ -363,11 +369,11 @@ ServerBoundCertService::ServerBoundCertService(
     const scoped_refptr<base::TaskRunner>& task_runner)
     : server_bound_cert_store_(server_bound_cert_store),
       task_runner_(task_runner),
-      weak_ptr_factory_(this),
       requests_(0),
       cert_store_hits_(0),
       inflight_joins_(0),
-      workers_created_(0) {
+      workers_created_(0),
+      weak_ptr_factory_(this) {
   base::Time start = base::Time::Now();
   base::Time end = start + base::TimeDelta::FromDays(
       kValidityPeriodInDays + kSystemTimeValidityBufferInDays);
@@ -386,6 +392,70 @@ std::string ServerBoundCertService::GetDomainForHost(const std::string& host) {
   if (domain.empty())
     return host;
   return domain;
+}
+
+int ServerBoundCertService::GetOrCreateDomainBoundCert(
+    const std::string& host,
+    std::string* private_key,
+    std::string* cert,
+    const CompletionCallback& callback,
+    RequestHandle* out_req) {
+  DVLOG(1) << __FUNCTION__ << " " << host;
+  DCHECK(CalledOnValidThread());
+  base::TimeTicks request_start = base::TimeTicks::Now();
+
+  if (callback.is_null() || !private_key || !cert || host.empty()) {
+    RecordGetDomainBoundCertResult(INVALID_ARGUMENT);
+    return ERR_INVALID_ARGUMENT;
+  }
+
+  std::string domain = GetDomainForHost(host);
+  if (domain.empty()) {
+    RecordGetDomainBoundCertResult(INVALID_ARGUMENT);
+    return ERR_INVALID_ARGUMENT;
+  }
+
+  requests_++;
+
+  // See if a request for the same domain is currently in flight.
+  bool create_if_missing = true;
+  if (JoinToInFlightRequest(request_start, domain, private_key, cert,
+                            create_if_missing, callback, out_req)) {
+    return ERR_IO_PENDING;
+  }
+
+  int err = LookupDomainBoundCert(request_start, domain, private_key, cert,
+                                  create_if_missing, callback, out_req);
+  if (err == ERR_FILE_NOT_FOUND) {
+    // Sync lookup did not find a valid cert.  Start generating a new one.
+    workers_created_++;
+    ServerBoundCertServiceWorker* worker = new ServerBoundCertServiceWorker(
+        domain,
+        base::Bind(&ServerBoundCertService::GeneratedServerBoundCert,
+                   weak_ptr_factory_.GetWeakPtr()));
+    if (!worker->Start(task_runner_)) {
+      // TODO(rkn): Log to the NetLog.
+      LOG(ERROR) << "ServerBoundCertServiceWorker couldn't be started.";
+      RecordGetDomainBoundCertResult(WORKER_FAILURE);
+      return ERR_INSUFFICIENT_RESOURCES;
+    }
+    // We are waiting for cert generation.  Create a job & request to track it.
+    ServerBoundCertServiceJob* job =
+        new ServerBoundCertServiceJob(create_if_missing);
+    inflight_[domain] = job;
+
+    ServerBoundCertServiceRequest* request = new ServerBoundCertServiceRequest(
+        request_start,
+        base::Bind(&RequestHandle::OnRequestComplete,
+                   base::Unretained(out_req)),
+        private_key,
+        cert);
+    job->AddRequest(request);
+    out_req->RequestStarted(this, request, callback);
+    return ERR_IO_PENDING;
+  }
+
+  return err;
 }
 
 int ServerBoundCertService::GetDomainBoundCert(
@@ -411,80 +481,15 @@ int ServerBoundCertService::GetDomainBoundCert(
 
   requests_++;
 
-  // See if an identical request is currently in flight.
-  ServerBoundCertServiceJob* job = NULL;
-  std::map<std::string, ServerBoundCertServiceJob*>::const_iterator j;
-  j = inflight_.find(domain);
-  if (j != inflight_.end()) {
-    // An identical request is in flight already. We'll just attach our
-    // callback.
-    job = j->second;
-    inflight_joins_++;
-
-    ServerBoundCertServiceRequest* request = new ServerBoundCertServiceRequest(
-        request_start,
-        base::Bind(&RequestHandle::OnRequestComplete,
-                   base::Unretained(out_req)),
-        private_key, cert);
-    job->AddRequest(request);
-    out_req->RequestStarted(this, request, callback);
+  // See if a request for the same domain currently in flight.
+  bool create_if_missing = false;
+  if (JoinToInFlightRequest(request_start, domain, private_key, cert,
+                            create_if_missing, callback, out_req)) {
     return ERR_IO_PENDING;
   }
 
-  // Check if a domain bound cert of an acceptable type already exists for this
-  // domain. Note that |expiration_time| is ignored, and expired certs are
-  // considered valid.
-  base::Time expiration_time;
-  int err = server_bound_cert_store_->GetServerBoundCert(
-      domain,
-      &expiration_time  /* ignored */,
-      private_key,
-      cert,
-      base::Bind(&ServerBoundCertService::GotServerBoundCert,
-                 weak_ptr_factory_.GetWeakPtr()));
-
-  if (err == OK) {
-    // Sync lookup found a valid cert.
-    DVLOG(1) << "Cert store had valid cert for " << domain;
-    cert_store_hits_++;
-    RecordGetDomainBoundCertResult(SYNC_SUCCESS);
-    base::TimeDelta request_time = base::TimeTicks::Now() - request_start;
-    UMA_HISTOGRAM_TIMES("DomainBoundCerts.GetCertTimeSync", request_time);
-    RecordGetCertTime(request_time);
-    return OK;
-  }
-
-  if (err == ERR_FILE_NOT_FOUND) {
-    // Sync lookup did not find a valid cert.  Start generating a new one.
-    workers_created_++;
-    ServerBoundCertServiceWorker* worker = new ServerBoundCertServiceWorker(
-        domain,
-        base::Bind(&ServerBoundCertService::GeneratedServerBoundCert,
-                   weak_ptr_factory_.GetWeakPtr()));
-    if (!worker->Start(task_runner_)) {
-      // TODO(rkn): Log to the NetLog.
-      LOG(ERROR) << "ServerBoundCertServiceWorker couldn't be started.";
-      RecordGetDomainBoundCertResult(WORKER_FAILURE);
-      return ERR_INSUFFICIENT_RESOURCES;
-    }
-  }
-
-  if (err == ERR_IO_PENDING || err == ERR_FILE_NOT_FOUND) {
-    // We are either waiting for async DB lookup, or waiting for cert
-    // generation.  Create a job & request to track it.
-    job = new ServerBoundCertServiceJob();
-    inflight_[domain] = job;
-
-    ServerBoundCertServiceRequest* request = new ServerBoundCertServiceRequest(
-        request_start,
-        base::Bind(&RequestHandle::OnRequestComplete,
-                   base::Unretained(out_req)),
-        private_key, cert);
-    job->AddRequest(request);
-    out_req->RequestStarted(this, request, callback);
-    return ERR_IO_PENDING;
-  }
-
+  int err = LookupDomainBoundCert(request_start, domain, private_key, cert,
+                                  create_if_missing, callback, out_req);
   return err;
 }
 
@@ -511,7 +516,13 @@ void ServerBoundCertService::GotServerBoundCert(
     HandleResult(OK, server_identifier, key, cert);
     return;
   }
-  // Async lookup did not find a valid cert. Start generating a new one.
+  // Async lookup did not find a valid cert. If no request asked to create one,
+  // return the error directly.
+  if (!j->second->CreateIfMissing()) {
+    HandleResult(err, server_identifier, key, cert);
+    return;
+  }
+  // At least one request asked to create a cert => start generating a new one.
   workers_created_++;
   ServerBoundCertServiceWorker* worker = new ServerBoundCertServiceWorker(
       server_identifier,
@@ -524,7 +535,6 @@ void ServerBoundCertService::GotServerBoundCert(
                  server_identifier,
                  std::string(),
                  std::string());
-    return;
   }
 }
 
@@ -577,6 +587,86 @@ void ServerBoundCertService::HandleResult(
 
   job->HandleResult(error, private_key, cert);
   delete job;
+}
+
+bool ServerBoundCertService::JoinToInFlightRequest(
+    const base::TimeTicks& request_start,
+    const std::string& domain,
+    std::string* private_key,
+    std::string* cert,
+    bool create_if_missing,
+    const CompletionCallback& callback,
+    RequestHandle* out_req) {
+  ServerBoundCertServiceJob* job = NULL;
+  std::map<std::string, ServerBoundCertServiceJob*>::const_iterator j =
+      inflight_.find(domain);
+  if (j != inflight_.end()) {
+    // A request for the same domain is in flight already. We'll attach our
+    // callback, but we'll also mark it as requiring a cert if one's mising.
+    job = j->second;
+    inflight_joins_++;
+
+    ServerBoundCertServiceRequest* request = new ServerBoundCertServiceRequest(
+        request_start,
+        base::Bind(&RequestHandle::OnRequestComplete,
+                   base::Unretained(out_req)),
+        private_key,
+        cert);
+    job->AddRequest(request, create_if_missing);
+    out_req->RequestStarted(this, request, callback);
+    return true;
+  }
+  return false;
+}
+
+int ServerBoundCertService::LookupDomainBoundCert(
+    const base::TimeTicks& request_start,
+    const std::string& domain,
+    std::string* private_key,
+    std::string* cert,
+    bool create_if_missing,
+    const CompletionCallback& callback,
+    RequestHandle* out_req) {
+  // Check if a domain bound cert already exists for this domain. Note that
+  // |expiration_time| is ignored, and expired certs are considered valid.
+  base::Time expiration_time;
+  int err = server_bound_cert_store_->GetServerBoundCert(
+      domain,
+      &expiration_time  /* ignored */,
+      private_key,
+      cert,
+      base::Bind(&ServerBoundCertService::GotServerBoundCert,
+                 weak_ptr_factory_.GetWeakPtr()));
+
+  if (err == OK) {
+    // Sync lookup found a valid cert.
+    DVLOG(1) << "Cert store had valid cert for " << domain;
+    cert_store_hits_++;
+    RecordGetDomainBoundCertResult(SYNC_SUCCESS);
+    base::TimeDelta request_time = base::TimeTicks::Now() - request_start;
+    UMA_HISTOGRAM_TIMES("DomainBoundCerts.GetCertTimeSync", request_time);
+    RecordGetCertTime(request_time);
+    return OK;
+  }
+
+  if (err == ERR_IO_PENDING) {
+    // We are waiting for async DB lookup.  Create a job & request to track it.
+    ServerBoundCertServiceJob* job =
+        new ServerBoundCertServiceJob(create_if_missing);
+    inflight_[domain] = job;
+
+    ServerBoundCertServiceRequest* request = new ServerBoundCertServiceRequest(
+        request_start,
+        base::Bind(&RequestHandle::OnRequestComplete,
+                   base::Unretained(out_req)),
+        private_key,
+        cert);
+    job->AddRequest(request);
+    out_req->RequestStarted(this, request, callback);
+    return ERR_IO_PENDING;
+  }
+
+  return err;
 }
 
 int ServerBoundCertService::cert_count() {

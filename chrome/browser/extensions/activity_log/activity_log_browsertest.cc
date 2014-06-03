@@ -29,7 +29,6 @@ class ActivityLogPrerenderTest : public ExtensionApiTest {
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     ExtensionBrowserTest::SetUpCommandLine(command_line);
     command_line->AppendSwitch(switches::kEnableExtensionActivityLogging);
-    command_line->AppendSwitch(switches::kEnableExtensionActivityLogTesting);
     command_line->AppendSwitchASCII(switches::kPrerenderMode,
                                     switches::kPrerenderModeSwitchValueEnabled);
   }
@@ -45,21 +44,26 @@ class ActivityLogPrerenderTest : public ExtensionApiTest {
     ASSERT_TRUE(i->size());
     scoped_refptr<Action> last = i->front();
 
-    std::string args = base::StringPrintf(
-        "ID=%s CATEGORY=content_script API= ARGS=[\"/google_cs.js\"] "
-        "PAGE_URL=http://www.google.com.bo:%d/test.html "
-        "PAGE_TITLE=\"www.google.com.bo:%d/test.html\" "
-        "OTHER={\"prerender\":true}",
-        extension_id.c_str(), port, port);
-    // TODO: Replace PrintForDebug with field testing
-    // when this feature will be available
-    ASSERT_EQ(args, last->PrintForDebug());
+    ASSERT_EQ(extension_id, last->extension_id());
+    ASSERT_EQ(Action::ACTION_CONTENT_SCRIPT, last->action_type());
+    ASSERT_EQ("[\"/google_cs.js\"]",
+              ActivityLogPolicy::Util::Serialize(last->args()));
+    ASSERT_EQ(
+        base::StringPrintf("http://www.google.com.bo:%d/test.html", port),
+        last->SerializePageUrl());
+    ASSERT_EQ(
+        base::StringPrintf("www.google.com.bo:%d/test.html", port),
+        last->page_title());
+    ASSERT_EQ("{\"prerender\":true}",
+              ActivityLogPolicy::Util::Serialize(last->other()));
+    ASSERT_EQ("", last->api_name());
+    ASSERT_EQ("", last->SerializeArgUrl());
   }
 };
 
 IN_PROC_BROWSER_TEST_F(ActivityLogPrerenderTest, TestScriptInjected) {
   host_resolver()->AddRule("*", "127.0.0.1");
-  StartEmbeddedTestServer();
+  ASSERT_TRUE(StartEmbeddedTestServer());
   int port = embedded_test_server()->port();
 
   // Get the extension (chrome/test/data/extensions/activity_log)
@@ -75,9 +79,13 @@ IN_PROC_BROWSER_TEST_F(ActivityLogPrerenderTest, TestScriptInjected) {
       prerender::PrerenderManagerFactory::GetForProfile(profile());
   ASSERT_TRUE(prerender_manager);
   prerender_manager->mutable_config().rate_limit_enabled = false;
-  // Increase maximum size of prerenderer, otherwise this test fails
+  // Increase prerenderer limits, otherwise this test fails
   // on Windows XP.
   prerender_manager->mutable_config().max_bytes = 1000 * 1024 * 1024;
+  prerender_manager->mutable_config().time_to_live =
+      base::TimeDelta::FromMinutes(10);
+  prerender_manager->mutable_config().abandon_time_to_live =
+      base::TimeDelta::FromMinutes(10);
 
   content::WebContents* web_contents =
       browser()->tab_strip_model()->GetActiveWebContents();;
@@ -100,8 +108,14 @@ IN_PROC_BROWSER_TEST_F(ActivityLogPrerenderTest, TestScriptInjected) {
 
   page_observer.Wait();
 
-  activity_log->GetActions(
-      ext->id(), 0, base::Bind(
+  activity_log->GetFilteredActions(
+      ext->id(),
+      Action::ACTION_ANY,
+      "",
+      "",
+      "",
+      -1,
+      base::Bind(
           ActivityLogPrerenderTest::Prerender_Arguments, ext->id(), port));
 
   // Allow invocation of Prerender_Arguments

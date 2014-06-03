@@ -14,21 +14,25 @@ class BrowserBackend(object):
 
   WEBPAGEREPLAY_HOST = '127.0.0.1'
 
-  def __init__(self, is_content_shell, supports_extensions, options,
+  def __init__(self, is_content_shell, supports_extensions, browser_options,
                tab_list_backend):
-    self.browser_type = options.browser_type
+    assert browser_options.browser_type
+    self.browser_type = browser_options.browser_type
     self.is_content_shell = is_content_shell
     self._supports_extensions = supports_extensions
-    self.options = options
+    self.browser_options = browser_options
     self._browser = None
     self._tab_list_backend = tab_list_backend(self)
 
-  def AddReplayServerOptions(self, options):
+  def AddReplayServerOptions(self, extra_wpr_args):
     pass
 
   def SetBrowser(self, browser):
     self._browser = browser
     self._tab_list_backend.Init()
+    if (self.browser_options.netsim and
+        not browser.platform.CanLaunchApplication('ipfw')):
+      browser.platform.InstallApplication('ipfw')
 
   @property
   def browser(self):
@@ -41,7 +45,7 @@ class BrowserBackend(object):
 
   @property
   def wpr_mode(self):
-    return self.options.wpr_mode
+    return self.browser_options.wpr_mode
 
   @property
   def supports_tab_control(self):
@@ -55,6 +59,10 @@ class BrowserBackend(object):
   def supports_tracing(self):
     raise NotImplementedError()
 
+  @property
+  def supports_system_info(self):
+    return False
+
   def StartTracing(self, custom_categories=None,
                    timeout=web_contents.DEFAULT_WEB_CONTENTS_TIMEOUT):
     raise NotImplementedError()
@@ -62,11 +70,8 @@ class BrowserBackend(object):
   def StopTracing(self):
     raise NotImplementedError()
 
-  def GetTraceResultAndReset(self):
-    raise NotImplementedError()
-
   def GetRemotePort(self, _):
-    return util.GetAvailableLocalPort()
+    return util.GetUnreservedAvailableLocalPort()
 
   def Start(self):
     raise NotImplementedError()
@@ -82,6 +87,10 @@ class BrowserBackend(object):
 
   def GetStackTrace(self):
     raise NotImplementedError()
+
+  def GetSystemInfo(self):
+    raise NotImplementedError()
+
 
 class DoNothingForwarder(object):
   def __init__(self, *port_pairs):

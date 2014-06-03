@@ -50,7 +50,7 @@ class TestSearchProvider : public SearchProvider {
   virtual ~TestSearchProvider() {}
 
   // SearchProvider overrides:
-  virtual void Start(const string16& query) OVERRIDE {
+  virtual void Start(const base::string16& query) OVERRIDE {
     ClearResults();
     for (size_t i = 0; i < count_; ++i) {
       const std::string id =
@@ -84,16 +84,18 @@ class MixerTest : public testing::Test {
     providers_.push_back(new TestSearchProvider("app"));
     providers_.push_back(new TestSearchProvider("omnibox"));
     providers_.push_back(new TestSearchProvider("webstore"));
+    providers_.push_back(new TestSearchProvider("people"));
 
     mixer_.reset(new Mixer(results_.get()));
     mixer_->Init();
     mixer_->AddProviderToGroup(Mixer::MAIN_GROUP, providers_[0]);
     mixer_->AddProviderToGroup(Mixer::OMNIBOX_GROUP, providers_[1]);
     mixer_->AddProviderToGroup(Mixer::WEBSTORE_GROUP, providers_[2]);
+    mixer_->AddProviderToGroup(Mixer::PEOPLE_GROUP, providers_[3]);
   }
 
   void RunQuery() {
-    const string16 query;
+    const base::string16 query;
 
     for (size_t i = 0; i < providers_.size(); ++i) {
       providers_[i]->Start(query);

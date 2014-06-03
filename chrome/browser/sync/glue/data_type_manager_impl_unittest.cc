@@ -169,12 +169,23 @@ class TestDataTypeManager : public DataTypeManagerImpl {
     custom_priority_types_ = priority_types;
   }
 
+  DataTypeManager::ConfigureResult configure_result() const {
+    return configure_result_;
+  }
+
+  virtual void OnModelAssociationDone(
+      const DataTypeManager::ConfigureResult& result) OVERRIDE {
+    configure_result_ = result;
+    DataTypeManagerImpl::OnModelAssociationDone(result);
+  }
+
  private:
   virtual syncer::ModelTypeSet GetPriorityTypes() const OVERRIDE {
     return custom_priority_types_;
   }
 
   syncer::ModelTypeSet custom_priority_types_;
+  DataTypeManager::ConfigureResult configure_result_;
 };
 
 // The actual test harness class, parametrized on nigori state (i.e., tests are
@@ -298,53 +309,6 @@ TEST_F(SyncDataTypeManagerImplTest, ConfigureOne) {
   dtm_->Stop();
   EXPECT_EQ(DataTypeManager::STOPPED, dtm_->state());
 }
-
-// Set up a DTM with 2 controllers. configure it. One of them finishes loading
-// after the  timeout. Make sure eventually all are configured.
-TEST_F(SyncDataTypeManagerImplTest, ConfigureSlowLoadingType) {
-  AddController(BOOKMARKS);
-  AddController(APPS);
-
-  GetController(BOOKMARKS)->SetDelayModelLoad();
-
-  SetConfigureStartExpectation();
-  SetConfigureDoneExpectation(DataTypeManager::PARTIAL_SUCCESS);
-
-  syncer::ModelTypeSet types;
-  types.Put(BOOKMARKS);
-  types.Put(APPS);
-
-  Configure(dtm_.get(), types);
-  EXPECT_EQ(DataTypeManager::DOWNLOAD_PENDING, dtm_->state());
-
-  FinishDownload(*dtm_, ModelTypeSet(), ModelTypeSet());
-  FinishDownload(*dtm_, types, ModelTypeSet());
-  EXPECT_EQ(DataTypeManager::CONFIGURING, dtm_->state());
-
-  base::OneShotTimer<ModelAssociationManager>* timer =
-    dtm_->GetModelAssociationManagerForTesting()->GetTimerForTesting();
-
-  base::Closure task = timer->user_task();
-  timer->Stop();
-  task.Run();
-
-  SetConfigureDoneExpectation(DataTypeManager::OK);
-  GetController(APPS)->FinishStart(DataTypeController::OK);
-
-  SetConfigureStartExpectation();
-  GetController(BOOKMARKS)->SimulateModelLoadFinishing();
-
-  FinishDownload(*dtm_, ModelTypeSet(), ModelTypeSet());
-  FinishDownload(*dtm_, ModelTypeSet(), ModelTypeSet());
-  GetController(BOOKMARKS)->SimulateModelLoadFinishing();
-
-  GetController(BOOKMARKS)->FinishStart(DataTypeController::OK);
-  EXPECT_EQ(DataTypeManager::CONFIGURED, dtm_->state());
-
-  dtm_->Stop();
-  EXPECT_EQ(DataTypeManager::STOPPED, dtm_->state());
-}
-
 
 // Set up a DTM with a single controller, configure it, but stop it
 // before finishing the download.  It should still be safe to run the
@@ -1002,7 +966,8 @@ TEST_F(SyncDataTypeManagerImplTest, PrioritizedConfigurationStop) {
   // PERFERENCES controller is associating while BOOKMARKS is downloading.
   EXPECT_EQ(DataTypeController::ASSOCIATING,
             GetController(PREFERENCES)->state());
-  EXPECT_EQ(DataTypeController::NOT_RUNNING, GetController(BOOKMARKS)->state());
+  EXPECT_EQ(DataTypeController::MODEL_LOADED,
+            GetController(BOOKMARKS)->state());
 
   dtm_->Stop();
   EXPECT_EQ(DataTypeManager::STOPPED, dtm_->state());
@@ -1037,7 +1002,8 @@ TEST_F(SyncDataTypeManagerImplTest, PrioritizedConfigurationDownloadError) {
   // PERFERENCES controller is associating while BOOKMARKS is downloading.
   EXPECT_EQ(DataTypeController::ASSOCIATING,
             GetController(PREFERENCES)->state());
-  EXPECT_EQ(DataTypeController::NOT_RUNNING, GetController(BOOKMARKS)->state());
+  EXPECT_EQ(DataTypeController::MODEL_LOADED,
+            GetController(BOOKMARKS)->state());
 
   // Make BOOKMARKS download fail.
   FinishDownload(*dtm_, ModelTypeSet(), ModelTypeSet(BOOKMARKS));
@@ -1073,7 +1039,8 @@ TEST_F(SyncDataTypeManagerImplTest, HighPriorityAssociationFailure) {
   // PERFERENCES controller is associating while BOOKMARKS is downloading.
   EXPECT_EQ(DataTypeController::ASSOCIATING,
             GetController(PREFERENCES)->state());
-  EXPECT_EQ(DataTypeController::NOT_RUNNING, GetController(BOOKMARKS)->state());
+  EXPECT_EQ(DataTypeController::MODEL_LOADED,
+            GetController(BOOKMARKS)->state());
 
   // Make PREFERENCES association fail.
   GetController(PREFERENCES)->FinishStart(
@@ -1126,7 +1093,8 @@ TEST_F(SyncDataTypeManagerImplTest, LowPriorityAssociationFailure) {
   // PERFERENCES controller is associating while BOOKMARKS is downloading.
   EXPECT_EQ(DataTypeController::ASSOCIATING,
             GetController(PREFERENCES)->state());
-  EXPECT_EQ(DataTypeController::NOT_RUNNING, GetController(BOOKMARKS)->state());
+  EXPECT_EQ(DataTypeController::MODEL_LOADED,
+            GetController(BOOKMARKS)->state());
 
   // BOOKMARKS finishes downloading and PREFERENCES finishes associating.
   FinishDownload(*dtm_, ModelTypeSet(BOOKMARKS), ModelTypeSet());

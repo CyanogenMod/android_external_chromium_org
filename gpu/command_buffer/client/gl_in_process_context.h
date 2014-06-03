@@ -8,6 +8,7 @@
 #include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "gles2_impl_export.h"
+#include "gpu/command_buffer/service/in_process_command_buffer.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gl/gl_surface.h"
 #include "ui/gl/gpu_preference.h"
@@ -18,7 +19,7 @@ class Size;
 
 #if defined(OS_ANDROID)
 namespace gfx {
-class SurfaceTextureBridge;
+class SurfaceTexture;
 }
 #endif
 
@@ -27,8 +28,6 @@ namespace gpu {
 namespace gles2 {
 class GLES2Implementation;
 }
-
-class GpuMemoryBufferFactory;
 
 // The default uninitialized value is -1.
 struct GLES2_IMPL_EXPORT GLInProcessContextAttribs {
@@ -42,14 +41,12 @@ struct GLES2_IMPL_EXPORT GLInProcessContextAttribs {
   int32 stencil_size;
   int32 samples;
   int32 sample_buffers;
+  int32 fail_if_major_perf_caveat;
 };
 
 class GLES2_IMPL_EXPORT GLInProcessContext {
  public:
   virtual ~GLInProcessContext() {}
-
-  // Must be called before any GLInProcessContext instances are created.
-  static void SetGpuMemoryBufferFactory(GpuMemoryBufferFactory* factory);
 
   // Create a GLInProcessContext, if |is_offscreen| is true, renders to an
   // offscreen context. |attrib_list| must be NULL or a NONE-terminated list
@@ -59,7 +56,6 @@ class GLES2_IMPL_EXPORT GLInProcessContext {
       gfx::AcceleratedWidget window,
       const gfx::Size& size,
       bool share_resources,
-      const char* allowed_extensions,
       const GLInProcessContextAttribs& attribs,
       gfx::GpuPreference gpu_preference);
 
@@ -69,24 +65,19 @@ class GLES2_IMPL_EXPORT GLInProcessContext {
   // thread safe.
   static GLInProcessContext* CreateWithSurface(
       scoped_refptr<gfx::GLSurface> surface,
-      bool share_resources,
-      const char* allowed_extensions,
+      scoped_refptr<gpu::InProcessCommandBuffer::Service> service,
+      GLInProcessContext* share_context,
       const GLInProcessContextAttribs& attribs,
       gfx::GpuPreference gpu_preference);
 
   virtual void SetContextLostCallback(const base::Closure& callback) = 0;
-
-  virtual void SignalSyncPoint(unsigned sync_point,
-                               const base::Closure& callback) = 0;
-
-  virtual void SignalQuery(unsigned query, const base::Closure& callback) = 0;
 
   // Allows direct access to the GLES2 implementation so a GLInProcessContext
   // can be used without making it current.
   virtual gles2::GLES2Implementation* GetImplementation() = 0;
 
 #if defined(OS_ANDROID)
-  virtual scoped_refptr<gfx::SurfaceTextureBridge> GetSurfaceTexture(
+  virtual scoped_refptr<gfx::SurfaceTexture> GetSurfaceTexture(
       uint32 stream_id) = 0;
 #endif
 };

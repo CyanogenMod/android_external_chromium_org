@@ -63,9 +63,7 @@ std::string RsaKeyPair::ToString() const {
   CHECK(key_->ExportPrivateKey(&key_buf));
   std::string key_str(key_buf.begin(), key_buf.end());
   std::string key_base64;
-  if (!base::Base64Encode(key_str, &key_base64)) {
-    LOG(FATAL) << "Base64Encode failed";
-  }
+  base::Base64Encode(key_str, &key_base64);
   return key_base64;
 }
 
@@ -93,8 +91,12 @@ std::string RsaKeyPair::SignMessage(const std::string& message) const {
 
 std::string RsaKeyPair::GenerateCertificate() const {
   std::string der_cert;
+  // Certificates are SHA1-signed because |key_| has likely been used to sign
+  // with SHA1 previously, and you should not re-use a key for signing data with
+  // multiple signature algorithms.
   net::x509_util::CreateSelfSignedCert(
       key_.get(),
+      net::x509_util::DIGEST_SHA1,
       "CN=chromoting",
       base::RandInt(1, std::numeric_limits<int>::max()),
       base::Time::Now(),

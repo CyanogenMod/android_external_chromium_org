@@ -18,29 +18,28 @@
 #include "chrome/browser/media_galleries/fileapi/media_path_filter.h"
 #include "chrome/browser/media_galleries/fileapi/native_media_file_util.h"
 #include "content/public/browser/browser_thread.h"
-#include "webkit/browser/blob/local_file_stream_reader.h"
-#include "webkit/browser/fileapi/async_file_util_adapter.h"
+#include "webkit/browser/blob/file_stream_reader.h"
 #include "webkit/browser/fileapi/copy_or_move_file_validator.h"
+#include "webkit/browser/fileapi/file_stream_writer.h"
 #include "webkit/browser/fileapi/file_system_context.h"
-#include "webkit/browser/fileapi/file_system_file_stream_reader.h"
+#include "webkit/browser/fileapi/file_system_operation.h"
 #include "webkit/browser/fileapi/file_system_operation_context.h"
-#include "webkit/browser/fileapi/file_system_operation_impl.h"
 #include "webkit/browser/fileapi/isolated_context.h"
-#include "webkit/browser/fileapi/isolated_file_util.h"
-#include "webkit/browser/fileapi/local_file_stream_writer.h"
 #include "webkit/browser/fileapi/native_file_util.h"
 #include "webkit/common/fileapi/file_system_types.h"
 #include "webkit/common/fileapi/file_system_util.h"
 
 #if defined(OS_WIN) || defined(OS_MACOSX)
 #include "chrome/browser/media_galleries/fileapi/itunes_file_util.h"
-#include "chrome/browser/media_galleries/fileapi/picasa/picasa_file_util.h"
+#include "chrome/browser/media_galleries/fileapi/picasa_file_util.h"
 #endif  // defined(OS_WIN) || defined(OS_MACOSX)
+
+#if defined(OS_MACOSX)
+#include "chrome/browser/media_galleries/fileapi/iphoto_file_util.h"
+#endif  // defined(OS_MACOSX)
 
 using fileapi::FileSystemContext;
 using fileapi::FileSystemURL;
-
-namespace chrome {
 
 const char MediaFileSystemBackend::kMediaTaskRunnerName[] =
     "media-task-runner";
@@ -61,6 +60,10 @@ MediaFileSystemBackend::MediaFileSystemBackend(
       picasa_file_util_(new picasa::PicasaFileUtil(media_path_filter_.get())),
       itunes_file_util_(new itunes::ITunesFileUtil(media_path_filter_.get()))
 #endif  // defined(OS_WIN) || defined(OS_MACOSX)
+#if defined(OS_MACOSX)
+      ,
+      iphoto_file_util_(new iphoto::IPhotoFileUtil(media_path_filter_.get()))
+#endif  // defined(OS_MACOSX)
 {
 }
 
@@ -93,6 +96,9 @@ bool MediaFileSystemBackend::CanHandleType(
     case fileapi::kFileSystemTypePicasa:
     case fileapi::kFileSystemTypeItunes:
 #endif  // defined(OS_WIN) || defined(OS_MACOSX)
+#if defined(OS_MACOSX)
+    case fileapi::kFileSystemTypeIphoto:
+#endif  // defined(OS_MACOSX)
       return true;
     default:
       return false;
@@ -116,12 +122,6 @@ void MediaFileSystemBackend::OpenFileSystem(
                  base::PLATFORM_FILE_ERROR_SECURITY));
 }
 
-fileapi::FileSystemFileUtil* MediaFileSystemBackend::GetFileUtil(
-    fileapi::FileSystemType type) {
-  NOTREACHED();
-  return NULL;
-}
-
 fileapi::AsyncFileUtil* MediaFileSystemBackend::GetAsyncFileUtil(
     fileapi::FileSystemType type) {
   switch (type) {
@@ -135,6 +135,10 @@ fileapi::AsyncFileUtil* MediaFileSystemBackend::GetAsyncFileUtil(
     case fileapi::kFileSystemTypePicasa:
       return picasa_file_util_.get();
 #endif  // defined(OS_WIN) || defined(OS_MACOSX)
+#if defined(OS_MACOSX)
+    case fileapi::kFileSystemTypeIphoto:
+      return iphoto_file_util_.get();
+#endif  // defined(OS_MACOSX)
     default:
       NOTREACHED();
   }
@@ -149,6 +153,7 @@ MediaFileSystemBackend::GetCopyOrMoveFileValidatorFactory(
   switch (type) {
     case fileapi::kFileSystemTypeNativeMedia:
     case fileapi::kFileSystemTypeDeviceMedia:
+    case fileapi::kFileSystemTypeIphoto:
     case fileapi::kFileSystemTypeItunes:
       if (!media_copy_or_move_file_validator_factory_) {
         *error_code = base::PLATFORM_FILE_ERROR_SECURITY;
@@ -169,8 +174,8 @@ MediaFileSystemBackend::CreateFileSystemOperation(
   scoped_ptr<fileapi::FileSystemOperationContext> operation_context(
       new fileapi::FileSystemOperationContext(
           context, media_task_runner_.get()));
-  return new fileapi::FileSystemOperationImpl(url, context,
-                                              operation_context.Pass());
+  return fileapi::FileSystemOperation::Create(
+      url, context, operation_context.Pass());
 }
 
 scoped_ptr<webkit_blob::FileStreamReader>
@@ -180,7 +185,7 @@ MediaFileSystemBackend::CreateFileStreamReader(
     const base::Time& expected_modification_time,
     FileSystemContext* context) const {
   return scoped_ptr<webkit_blob::FileStreamReader>(
-      new webkit_blob::LocalFileStreamReader(
+      webkit_blob::FileStreamReader::CreateForLocalFile(
           context->default_file_task_runner(),
           url.path(), offset, expected_modification_time));
 }
@@ -191,7 +196,7 @@ MediaFileSystemBackend::CreateFileStreamWriter(
     int64 offset,
     FileSystemContext* context) const {
   return scoped_ptr<fileapi::FileStreamWriter>(
-      new fileapi::LocalFileStreamWriter(
+      fileapi::FileStreamWriter::CreateForLocalFile(
           context->default_file_task_runner(),
           url.path(), offset));
 }
@@ -201,5 +206,3 @@ MediaFileSystemBackend::GetQuotaUtil() {
   // No quota support.
   return NULL;
 }
-
-}  // namespace chrome

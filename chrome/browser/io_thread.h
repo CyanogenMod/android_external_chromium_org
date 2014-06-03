@@ -6,6 +6,7 @@
 #define CHROME_BROWSER_IO_THREAD_H_
 
 #include <string>
+#include <vector>
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
@@ -40,6 +41,7 @@ class EventRouterForwarder;
 namespace net {
 class CertVerifier;
 class CookieStore;
+class CTVerifier;
 class FtpTransactionFactory;
 class HostMappingRules;
 class HostResolver;
@@ -117,6 +119,7 @@ class IOThread : public content::BrowserThreadDelegate {
     // used to enforce pinning for system requests and will only use built-in
     // pins.
     scoped_ptr<net::TransportSecurityState> transport_security_state;
+    scoped_ptr<net::CTVerifier> cert_transparency_verifier;
     scoped_refptr<net::SSLConfigService> ssl_config_service;
     scoped_ptr<net::HttpAuthHandlerFactory> http_auth_handler_factory;
     scoped_ptr<net::HttpServerProperties> http_server_properties;
@@ -158,13 +161,13 @@ class IOThread : public content::BrowserThreadDelegate {
     Optional<size_t> max_spdy_concurrent_streams_limit;
     Optional<bool> force_spdy_single_domain;
     Optional<bool> enable_spdy_ip_pooling;
-    Optional<bool> enable_spdy_credential_frames;
     Optional<bool> enable_spdy_compression;
     Optional<bool> enable_spdy_ping_based_connection_checking;
     Optional<net::NextProto> spdy_default_protocol;
     Optional<string> trusted_spdy_proxy;
     Optional<bool> enable_quic;
     Optional<bool> enable_quic_https;
+    Optional<size_t> quic_max_packet_length;
     Optional<net::HostPortPair> origin_to_force_quic_on;
     bool enable_user_alternate_protocol_ports;
     // NetErrorTabHelper uses |dns_probe_service| to send DNS probes when a
@@ -221,8 +224,8 @@ class IOThread : public content::BrowserThreadDelegate {
 
   void InitializeNetworkOptions(const CommandLine& parsed_command_line);
 
-  // Enable the SPDY protocol.  If this function is not called, SPDY/3
-  // will be enabled.
+  // Enable SPDY with the given mode, which may contain the following:
+  //
   //   "off"                      : Disables SPDY support entirely.
   //   "ssl"                      : Forces SPDY for all HTTPS requests.
   //   "no-ssl"                   : Forces SPDY for all HTTP requests.
@@ -230,7 +233,7 @@ class IOThread : public content::BrowserThreadDelegate {
   //   "exclude=<host>"           : Disables SPDY support for the host <host>.
   //   "no-compress"              : Disables SPDY header compression.
   //   "no-alt-protocols          : Disables alternate protocol support.
-  //   "force-alt-protocols       : Forces an alternate protocol of SPDY/2
+  //   "force-alt-protocols       : Forces an alternate protocol of SPDY/3
   //                                on port 443.
   //   "single-domain"            : Forces all spdy traffic to a single domain.
   //   "init-max-streams=<limit>" : Specifies the maximum number of concurrent
@@ -258,13 +261,25 @@ class IOThread : public content::BrowserThreadDelegate {
 
   void UpdateDnsClientEnabled();
 
+  // Configures QUIC options based on the flags in |command_line| as
+  // well as the QUIC field trial group.
+  void ConfigureQuic(const CommandLine& command_line);
+
   // Returns true if QUIC should be enabled, either as a result
   // of a field trial or a command line flag.
-  bool ShouldEnableQuic(const CommandLine& command_line);
+  bool ShouldEnableQuic(const CommandLine& command_line,
+                        base::StringPiece quic_trial_group);
 
   // Returns true if HTTPS over QUIC should be enabled, either as a result
   // of a field trial or a command line flag.
-  bool ShouldEnableQuicHttps(const CommandLine& command_line);
+  bool ShouldEnableQuicHttps(const CommandLine& command_line,
+                             base::StringPiece quic_trial_group);
+
+  // Returns the maximum length for QUIC packets, based on any flags in
+  // |command_line| or the field trial.  Returns 0 if there is an error
+  // parsing any of the options, or if the default value should be used.
+  size_t GetQuicMaxPacketLength(const CommandLine& command_line,
+                                base::StringPiece quic_trial_group);
 
   // The NetLog is owned by the browser process, to allow logging from other
   // threads during shutdown, but is used most frequently on the IOThread.
@@ -299,7 +314,7 @@ class IOThread : public content::BrowserThreadDelegate {
   std::string auth_server_whitelist_;
   std::string auth_delegate_whitelist_;
   std::string gssapi_library_name_;
-  std::string spdyproxy_auth_origin_;
+  std::vector<GURL> spdyproxy_auth_origins_;
 
   // This is an instance of the default SSLConfigServiceManager for the current
   // platform and it gets SSL preferences from local_state object.

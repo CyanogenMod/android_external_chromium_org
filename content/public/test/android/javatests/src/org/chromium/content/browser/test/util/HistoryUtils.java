@@ -1,10 +1,12 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 package org.chromium.content.browser.test.util;
 
 import android.app.Instrumentation;
+
+import static org.chromium.base.test.util.ScalableTimeout.ScaleTimeout;
 
 import org.chromium.base.test.util.InstrumentationUtils;
 import org.chromium.content.browser.ContentView;
@@ -19,7 +21,7 @@ import java.util.concurrent.TimeUnit;
  */
 public class HistoryUtils {
 
-    protected final static int WAIT_TIMEOUT_SECONDS = 15;
+    protected static final long WAIT_TIMEOUT_SECONDS = ScaleTimeout(15);
 
     /**
      * Calls {@link ContentView#canGoBack()} on UI thread.

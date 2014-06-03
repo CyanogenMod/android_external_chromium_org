@@ -38,10 +38,10 @@ void MemoryInternalsHandler::OnJSUpdate(const base::ListValue* list) {
   proxy_->StartFetch(list);
 }
 
-void MemoryInternalsHandler::OnUpdate(const string16& update) {
+void MemoryInternalsHandler::OnUpdate(const base::string16& update) {
   // Don't try to execute JavaScript in a RenderView that no longer exists.
   content::RenderViewHost* host =
       web_ui()->GetWebContents()->GetRenderViewHost();
   if (host)
-    host->ExecuteJavascriptInWebFrame(string16(), update);
+    host->ExecuteJavascriptInWebFrame(base::string16(), update);
 }

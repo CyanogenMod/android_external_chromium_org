@@ -9,9 +9,10 @@
 #include <map>
 #include <string>
 
+#include "base/callback_forward.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
-#include "chrome/common/extensions/extension.h"
+#include "extensions/common/extension.h"
 #include "url/gurl.h"
 
 // The one true extension container. Extensions are identified by their id.
@@ -21,6 +22,8 @@ class ExtensionSet {
   typedef std::pair<base::FilePath, std::string> ExtensionPathAndDefaultLocale;
   typedef std::map<std::string, scoped_refptr<const extensions::Extension> >
       ExtensionMap;
+  typedef base::Callback<void(const extensions::ExtensionIdSet&)>
+      ModificationCallback;
 
   // Iteration over the values of the map (given that it's an ExtensionSet,
   // it should iterate like a set iterator).
@@ -31,18 +34,28 @@ class ExtensionSet {
     const_iterator();
     const_iterator(const const_iterator& other);
     explicit const_iterator(ExtensionMap::const_iterator it);
+    ~const_iterator();
     const_iterator& operator++() {
       ++it_;
       return *this;
     }
-    const scoped_refptr<const extensions::Extension> operator*() {
+    const_iterator operator++(int) {
+      const const_iterator old(*this);
+      ++it_;
+      return old;
+    }
+    const scoped_refptr<const extensions::Extension>& operator*() const {
       return it_->second;
     }
-    const scoped_refptr<const extensions::Extension>* operator->() {
+    const scoped_refptr<const extensions::Extension>* operator->() const {
       return &it_->second;
     }
-    bool operator!=(const const_iterator& other) { return it_ != other.it_; }
-    bool operator==(const const_iterator& other) { return it_ == other.it_; }
+    bool operator!=(const const_iterator& other) const {
+      return it_ != other.it_;
+    }
+    bool operator==(const const_iterator& other) const {
+      return it_ == other.it_;
+    }
 
    private:
     ExtensionMap::const_iterator it_;
@@ -104,17 +117,28 @@ class ExtensionSet {
   const extensions::Extension* GetByID(const std::string& id) const;
 
   // Gets the IDs of all extensions in the set.
-  std::set<std::string> GetIDs() const;
+  extensions::ExtensionIdSet GetIDs() const;
 
   // Returns true if |info| should get extension api bindings and be permitted
   // to make api calls. Note that this is independent of what extension
   // permissions the given extension has been granted.
   bool ExtensionBindingsAllowed(const GURL& url) const;
 
+  void set_modification_callback(
+      const ModificationCallback& modification_callback) {
+    modification_callback_ = modification_callback;
+  }
+
  private:
   FRIEND_TEST_ALL_PREFIXES(ExtensionSetTest, ExtensionSet);
 
   ExtensionMap extensions_;
+
+  // If non-null, called with the extension ids in this set after a modification
+  // occurred. This is not called on Clear() which is typically used when
+  // discarding the set (e.g., on shutdown) and we do not want to track that as
+  // a real modification.
+  ModificationCallback modification_callback_;
 
   DISALLOW_COPY_AND_ASSIGN(ExtensionSet);
 };

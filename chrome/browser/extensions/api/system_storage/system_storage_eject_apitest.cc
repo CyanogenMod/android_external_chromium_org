@@ -10,15 +10,15 @@
 #include "chrome/browser/extensions/api/system_storage/storage_api_test_util.h"
 #include "chrome/browser/extensions/api/system_storage/storage_info_provider.h"
 #include "chrome/browser/extensions/extension_apitest.h"
-#include "chrome/browser/extensions/extension_process_manager.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_test_message_listener.h"
 #include "chrome/browser/storage_monitor/storage_info.h"
 #include "chrome/browser/storage_monitor/storage_monitor.h"
 #include "chrome/browser/storage_monitor/test_storage_monitor.h"
-#include "chrome/common/extensions/extension.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/test/test_utils.h"
+#include "extensions/browser/process_manager.h"
+#include "extensions/common/extension.h"
 
 namespace {
 
@@ -34,7 +34,7 @@ class SystemStorageEjectApiTest : public ExtensionApiTest {
 
  protected:
   virtual void SetUpOnMainThread() OVERRIDE {
-    monitor_ = chrome::test::TestStorageMonitor::CreateForBrowserTests();
+    monitor_ = TestStorageMonitor::CreateForBrowserTests();
     ExtensionApiTest::SetUpOnMainThread();
   }
 
@@ -50,27 +50,28 @@ class SystemStorageEjectApiTest : public ExtensionApiTest {
                                const std::string& js_command,
                                const std::string& ok_message) {
     ExtensionTestMessageListener listener(ok_message, false);
-    host->ExecuteJavascriptInWebFrame(string16(), ASCIIToUTF16(js_command));
+    host->ExecuteJavascriptInWebFrame(base::string16(),
+                                      ASCIIToUTF16(js_command));
     EXPECT_TRUE(listener.WaitUntilSatisfied());
   }
 
   void Attach() {
-    DCHECK(chrome::StorageMonitor::GetInstance()->IsInitialized());
-    chrome::StorageMonitor::GetInstance()->receiver()->ProcessAttach(
+    DCHECK(StorageMonitor::GetInstance()->IsInitialized());
+    StorageMonitor::GetInstance()->receiver()->ProcessAttach(
         extensions::test::BuildStorageInfoFromTestStorageUnitInfo(
             kRemovableStorageData));
     content::RunAllPendingInMessageLoop();
   }
 
   void Detach() {
-    DCHECK(chrome::StorageMonitor::GetInstance()->IsInitialized());
-    chrome::StorageMonitor::GetInstance()->receiver()->ProcessDetach(
+    DCHECK(StorageMonitor::GetInstance()->IsInitialized());
+    StorageMonitor::GetInstance()->receiver()->ProcessDetach(
         kRemovableStorageData.device_id);
     content::RunAllPendingInMessageLoop();
   }
 
  protected:
-  chrome::test::TestStorageMonitor* monitor_;
+  TestStorageMonitor* monitor_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(SystemStorageEjectApiTest);

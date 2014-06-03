@@ -19,13 +19,15 @@ class ChromeAndroidImpl : public ChromeImpl {
   ChromeAndroidImpl(
       scoped_ptr<DevToolsHttpClient> client,
       ScopedVector<DevToolsEventListener>& devtools_event_listeners,
-      scoped_ptr<Device> device,
-      Log* log);
+      scoped_ptr<PortReservation> port_reservation,
+      scoped_ptr<Device> device);
   virtual ~ChromeAndroidImpl();
 
   // Overridden from Chrome:
   virtual std::string GetOperatingSystemName() OVERRIDE;
-  virtual Status Quit() OVERRIDE;
+
+  // Overridden from ChromeImpl:
+  virtual Status QuitImpl() OVERRIDE;
 
  private:
   scoped_ptr<Device> device_;

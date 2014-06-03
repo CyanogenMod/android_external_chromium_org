@@ -3,6 +3,8 @@
 # found in the LICENSE file.
 
 from file_system import FileSystem, FileNotFoundError
+from future import Gettable, Future
+
 
 class OfflineFileSystem(FileSystem):
   '''An offline FileSystem which masquerades as another file system. It throws
@@ -11,8 +13,10 @@ class OfflineFileSystem(FileSystem):
   def __init__(self, fs):
     self._fs = fs
 
-  def Read(self, paths, binary=False):
-    raise FileNotFoundError('File system is offline, cannot read %s' % paths)
+  def Read(self, paths):
+    def raise_file_not_found():
+      raise FileNotFoundError('File system is offline, cannot read %s' % paths)
+    return Future(delegate=Gettable(raise_file_not_found))
 
   def Stat(self, path):
     raise FileNotFoundError('File system is offline, cannot read %s' % path)

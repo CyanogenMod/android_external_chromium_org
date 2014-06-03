@@ -25,10 +25,12 @@
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/content_switches.h"
 #include "google_apis/gaia/gaia_urls.h"
+#include "net/http/http_status_code.h"
 #include "net/url_request/test_url_fetcher_factory.h"
+#include "net/url_request/url_request_status.h"
 
 namespace {
-  const char kNonSigninURL[] = "www.google.com";
+const char kNonSigninURL[] = "www.google.com";
 }
 
 class SigninBrowserTest : public InProcessBrowserTest {
@@ -54,10 +56,11 @@ class SigninBrowserTest : public InProcessBrowserTest {
     factory_.reset(new net::URLFetcherImplFactory());
     fake_factory_.reset(new net::FakeURLFetcherFactory(factory_.get()));
     fake_factory_->SetFakeResponse(
-        GaiaUrls::GetInstance()->service_login_url(),
-        std::string(),
-        true);
-    fake_factory_->SetFakeResponse(kNonSigninURL, std::string(), true);
+        GaiaUrls::GetInstance()->service_login_url(), std::string(),
+        net::HTTP_OK, net::URLRequestStatus::SUCCESS);
+    fake_factory_->SetFakeResponse(
+        GURL(kNonSigninURL), std::string(), net::HTTP_OK,
+        net::URLRequestStatus::SUCCESS);
     // Yield control back to the InProcessBrowserTest framework.
     InProcessBrowserTest::SetUp();
   }
@@ -109,7 +112,7 @@ IN_PROC_BROWSER_TEST_F(SigninBrowserTest, MAYBE_ProcessIsolation) {
   EXPECT_EQ(kOneClickSigninEnabled, signin->HasSigninProcess());
 
   // Navigating away should change the process.
-  ui_test_utils::NavigateToURL(browser(), GURL(chrome::kChromeUINewTabURL));
+  ui_test_utils::NavigateToURL(browser(), GURL(chrome::kChromeUIOmniboxURL));
   EXPECT_FALSE(signin->HasSigninProcess());
 
   ui_test_utils::NavigateToURL(browser(), signin::GetPromoURL(
@@ -136,7 +139,7 @@ IN_PROC_BROWSER_TEST_F(SigninBrowserTest, MAYBE_ProcessIsolation) {
             signin->IsSigninProcess(active_tab_process_id));
 
   // Navigating away should change the process.
-  ui_test_utils::NavigateToURL(browser(), GURL(kNonSigninURL));
+  ui_test_utils::NavigateToURL(browser(), GURL(chrome::kChromeUINewTabURL));
   EXPECT_FALSE(signin->IsSigninProcess(
       active_tab->GetRenderProcessHost()->GetID()));
 }
@@ -171,11 +174,13 @@ class BackOnNTPCommitObserver : public content::WebContentsObserver {
 
   virtual void DidCommitProvisionalLoadForFrame(
       int64 frame_id,
+      const base::string16& frame_unique_name,
       bool is_main_frame,
       const GURL& url,
       content::PageTransition transition_type,
       content::RenderViewHost* render_view_host) OVERRIDE {
-    if (url == GURL(chrome::kChromeUINewTabURL)) {
+    if (url == GURL(chrome::kChromeUINewTabURL) ||
+        url == GURL(chrome::kChromeSearchLocalNtpUrl)) {
       content::WindowedNotificationObserver observer(
           content::NOTIFICATION_NAV_ENTRY_COMMITTED,
           content::NotificationService::AllSources());

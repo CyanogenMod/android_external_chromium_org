@@ -154,14 +154,14 @@ void RunOnUIThread(const base::Closure& task) {
 
 
 // static
-jint GetDefaultNativeAwQuotaManagerBridge(JNIEnv* env, jclass clazz) {
+jlong GetDefaultNativeAwQuotaManagerBridge(JNIEnv* env, jclass clazz) {
   AwBrowserContext* browser_context =
       AwContentBrowserClient::GetAwBrowserContext();
 
   AwQuotaManagerBridgeImpl* bridge = static_cast<AwQuotaManagerBridgeImpl*>(
       browser_context->GetQuotaManagerBridge());
   DCHECK(bridge);
-  return reinterpret_cast<jint>(bridge);
+  return reinterpret_cast<intptr_t>(bridge);
 }
 
 // static
@@ -207,14 +207,16 @@ void AwQuotaManagerBridgeImpl::DeleteAllData(JNIEnv* env, jobject object) {
 
 void AwQuotaManagerBridgeImpl::DeleteAllDataOnUiThread() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  GetStoragePartition()->ClearDataForUnboundedRange(
+  GetStoragePartition()->ClearData(
       // Clear all web storage data except cookies.
       StoragePartition::REMOVE_DATA_MASK_APPCACHE |
           StoragePartition::REMOVE_DATA_MASK_FILE_SYSTEMS |
           StoragePartition::REMOVE_DATA_MASK_INDEXEDDB |
           StoragePartition::REMOVE_DATA_MASK_LOCAL_STORAGE |
           StoragePartition::REMOVE_DATA_MASK_WEBSQL,
-      StoragePartition::QUOTA_MANAGED_STORAGE_MASK_TEMPORARY);
+      StoragePartition::QUOTA_MANAGED_STORAGE_MASK_TEMPORARY,
+      NULL, StoragePartition::OriginMatcherFunction(),
+      base::Time(), base::Time::Max(), base::Bind(&base::DoNothing));
 }
 
 void AwQuotaManagerBridgeImpl::DeleteOrigin(

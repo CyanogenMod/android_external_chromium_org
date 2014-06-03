@@ -10,6 +10,7 @@
 #include "base/compiler_specific.h"
 #include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/json/json_file_value_serializer.h"
 #include "base/lazy_instance.h"
 #include "base/memory/ref_counted.h"
 #include "base/message_loop/message_loop.h"
@@ -174,7 +175,7 @@ base::FilePath GetDefaultPrefFilePath(bool create_profile_dir,
       profiles::GetDefaultProfileDir(user_data_dir);
   if (create_profile_dir) {
     if (!base::PathExists(default_pref_dir)) {
-      if (!file_util::CreateDirectory(default_pref_dir))
+      if (!base::CreateDirectory(default_pref_dir))
         return base::FilePath();
     }
   }
@@ -388,10 +389,7 @@ void FirstRunBubbleLauncher::Observe(
           Profile::FromBrowserContext(contents->GetBrowserContext());
       SigninManagerBase* manager =
           SigninManagerFactory::GetForProfile(profile);
-      bool signin_in_progress = manager &&
-          (!manager->GetAuthenticatedUsername().empty() &&
-              SigninTracker::GetSigninState(profile, NULL) !=
-                  SigninTracker::SIGNIN_COMPLETE);
+      bool signin_in_progress = manager && manager->AuthInProgress();
       bool is_promo_bubble_visible =
           profile->GetPrefs()->GetBoolean(prefs::kSignInPromoShowNTPBubble);
 
@@ -415,26 +413,22 @@ void FirstRunBubbleLauncher::Observe(
   delete this;
 }
 
-}  // namespace
-
-namespace first_run {
-namespace internal {
-
-FirstRunState first_run_ = FIRST_RUN_UNKNOWN;
-
 static base::LazyInstance<base::FilePath> master_prefs_path_for_testing
     = LAZY_INSTANCE_INITIALIZER;
 
-installer::MasterPreferences*
-    LoadMasterPrefs(base::FilePath* master_prefs_path) {
+// Loads master preferences from the master preference file into the installer
+// master preferences. Returns the pointer to installer::MasterPreferences
+// object if successful; otherwise, returns NULL.
+installer::MasterPreferences* LoadMasterPrefs() {
+  base::FilePath master_prefs_path;
   if (!master_prefs_path_for_testing.Get().empty())
-    *master_prefs_path = master_prefs_path_for_testing.Get();
+    master_prefs_path = master_prefs_path_for_testing.Get();
   else
-    *master_prefs_path = base::FilePath(MasterPrefsPath());
-  if (master_prefs_path->empty())
+    master_prefs_path = base::FilePath(first_run::internal::MasterPrefsPath());
+  if (master_prefs_path.empty())
     return NULL;
   installer::MasterPreferences* install_prefs =
-      new installer::MasterPreferences(*master_prefs_path);
+      new installer::MasterPreferences(master_prefs_path);
   if (!install_prefs->read_from_file()) {
     delete install_prefs;
     return NULL;
@@ -443,15 +437,50 @@ installer::MasterPreferences*
   return install_prefs;
 }
 
-bool CopyPrefFile(const base::FilePath& user_data_dir,
-                  const base::FilePath& master_prefs_path) {
+// Makes chrome the user's default browser according to policy or
+// |make_chrome_default_for_user| if no policy is set.
+void ProcessDefaultBrowserPolicy(bool make_chrome_default_for_user) {
+  // Only proceed if chrome can be made default unattended. The interactive case
+  // (Windows 8+) is handled by the first run default browser prompt.
+  if (ShellIntegration::CanSetAsDefaultBrowser() ==
+          ShellIntegration::SET_DEFAULT_UNATTENDED) {
+    // The policy has precedence over the user's choice.
+    if (g_browser_process->local_state()->IsManagedPreference(
+            prefs::kDefaultBrowserSettingEnabled)) {
+      if (g_browser_process->local_state()->GetBoolean(
+          prefs::kDefaultBrowserSettingEnabled)) {
+        ShellIntegration::SetAsDefaultBrowser();
+      }
+    } else if (make_chrome_default_for_user) {
+        ShellIntegration::SetAsDefaultBrowser();
+    }
+  }
+}
+
+}  // namespace
+
+namespace first_run {
+namespace internal {
+
+FirstRunState first_run_ = FIRST_RUN_UNKNOWN;
+
+bool GeneratePrefFile(const base::FilePath& user_data_dir,
+                      const installer::MasterPreferences& master_prefs) {
   base::FilePath user_prefs = GetDefaultPrefFilePath(true, user_data_dir);
   if (user_prefs.empty())
     return false;
 
-  // The master prefs are regular prefs so we can just copy the file
-  // to the default place and they just work.
-  return base::CopyFile(master_prefs_path, user_prefs);
+  const base::DictionaryValue& master_prefs_dict =
+      master_prefs.master_dictionary();
+
+  JSONFileValueSerializer serializer(user_prefs);
+
+  // Call Serialize (which does IO) on the main thread, which would _normally_
+  // be verboten. In this case however, we require this IO to synchronously
+  // complete before Chrome can start (as master preferences seed the Local
+  // State and Preferences files). This won't trip ThreadIORestrictions as they
+  // won't have kicked in yet on the main thread.
+  return serializer.Serialize(master_prefs_dict);
 }
 
 void SetupMasterPrefsFromInstallPrefs(
@@ -519,7 +548,7 @@ void SetupMasterPrefsFromInstallPrefs(
   if (install_prefs.GetBool(
           installer::master_preferences::kMakeChromeDefaultForUser,
           &value) && value) {
-    out_prefs->make_chrome_default = true;
+    out_prefs->make_chrome_default_for_user = true;
   }
 
   if (install_prefs.GetBool(
@@ -537,25 +566,6 @@ void SetupMasterPrefsFromInstallPrefs(
   install_prefs.GetString(
       installer::master_preferences::kDistroSuppressDefaultBrowserPromptPref,
       &out_prefs->suppress_default_browser_prompt_for_version);
-}
-
-void SetDefaultBrowser(installer::MasterPreferences* install_prefs){
-  // Even on the first run we only allow for the user choice to take effect if
-  // no policy has been set by the admin.
-  if (!g_browser_process->local_state()->IsManagedPreference(
-          prefs::kDefaultBrowserSettingEnabled)) {
-    bool value = false;
-    if (install_prefs->GetBool(
-            installer::master_preferences::kMakeChromeDefaultForUser,
-            &value) && value) {
-      ShellIntegration::SetAsDefaultBrowser();
-    }
-  } else {
-    if (g_browser_process->local_state()->GetBoolean(
-            prefs::kDefaultBrowserSettingEnabled)) {
-      ShellIntegration::SetAsDefaultBrowser();
-    }
-  }
 }
 
 bool CreateSentinel() {
@@ -582,7 +592,7 @@ MasterPrefs::MasterPrefs()
       homepage_defined(false),
       do_import_items(0),
       dont_import_items(0),
-      make_chrome_default(false),
+      make_chrome_default_for_user(false),
       suppress_first_run_default_browser_prompt(false) {
 }
 
@@ -681,7 +691,7 @@ void LogFirstRunMetric(FirstRunBubbleMetric metric) {
 }
 
 void SetMasterPrefsPathForTesting(const base::FilePath& master_prefs) {
-  internal::master_prefs_path_for_testing.Get() = master_prefs;
+  master_prefs_path_for_testing.Get() = master_prefs;
 }
 
 ProcessMasterPreferencesResult ProcessMasterPreferences(
@@ -689,9 +699,7 @@ ProcessMasterPreferencesResult ProcessMasterPreferences(
     MasterPrefs* out_prefs) {
   DCHECK(!user_data_dir.empty());
 
-  base::FilePath master_prefs_path;
-  scoped_ptr<installer::MasterPreferences>
-      install_prefs(internal::LoadMasterPrefs(&master_prefs_path));
+  scoped_ptr<installer::MasterPreferences> install_prefs(LoadMasterPrefs());
 
   // Default value in case master preferences is missing or corrupt, or
   // ping_delay is missing.
@@ -700,14 +708,12 @@ ProcessMasterPreferencesResult ProcessMasterPreferences(
     if (!internal::ShowPostInstallEULAIfNeeded(install_prefs.get()))
       return EULA_EXIT_NOW;
 
-    if (!internal::CopyPrefFile(user_data_dir, master_prefs_path))
-      DLOG(ERROR) << "Failed to copy master_preferences to user data dir.";
+    if (!internal::GeneratePrefFile(user_data_dir, *install_prefs.get()))
+      DLOG(ERROR) << "Failed to generate master_preferences in user data dir.";
 
     DoDelayedInstallExtensionsIfNeeded(install_prefs.get());
 
     internal::SetupMasterPrefsFromInstallPrefs(*install_prefs, out_prefs);
-
-    internal::SetDefaultBrowser(install_prefs.get());
   }
 
   return FIRST_RUN_PROCEED;
@@ -719,23 +725,16 @@ void AutoImport(
     int import_items,
     int dont_import_items,
     const std::string& import_bookmarks_path) {
-  // Deletes itself.
-  ExternalProcessImporterHost* importer_host = new ExternalProcessImporterHost;
-
   base::FilePath local_state_path;
   PathService::Get(chrome::FILE_LOCAL_STATE, &local_state_path);
   bool local_state_file_exists = base::PathExists(local_state_path);
 
   scoped_refptr<ImporterList> importer_list(new ImporterList());
   importer_list->DetectSourceProfilesHack(
-      g_browser_process->GetApplicationLocale());
+      g_browser_process->GetApplicationLocale(), false);
 
   // Do import if there is an available profile for us to import.
   if (importer_list->count() > 0) {
-    // Don't show the warning dialog if import fails.
-    importer_host->set_headless();
-    int items = 0;
-
     if (internal::IsOrganicFirstRun()) {
       // Home page is imported in organic builds only unless turned off or
       // defined in master_preferences.
@@ -754,6 +753,7 @@ void AutoImport(
     }
 
     PrefService* user_prefs = profile->GetPrefs();
+    int items = 0;
 
     SetImportItem(user_prefs,
                   prefs::kImportHistory,
@@ -780,6 +780,13 @@ void AutoImport(
                   importer::FAVORITES,
                   &items);
 
+    // Deletes itself.
+    ExternalProcessImporterHost* importer_host =
+        new ExternalProcessImporterHost;
+
+    // Don't show the warning dialog if import fails.
+    importer_host->set_headless();
+
     importer::LogImporterUseToMetrics(
         "AutoImport", importer_list->GetSourceProfileAt(0).importer_type);
 
@@ -800,12 +807,10 @@ void AutoImport(
   g_auto_import_state |= AUTO_IMPORT_CALLED;
 }
 
-void DoPostImportTasks(Profile* profile, bool make_chrome_default) {
-  if (make_chrome_default &&
-      ShellIntegration::CanSetAsDefaultBrowser() ==
-          ShellIntegration::SET_DEFAULT_UNATTENDED) {
-    ShellIntegration::SetAsDefaultBrowser();
-  }
+void DoPostImportTasks(Profile* profile, bool make_chrome_default_for_user) {
+  // Only set default browser after import as auto import relies on the current
+  // default browser to know what to import from.
+  ProcessDefaultBrowserPolicy(make_chrome_default_for_user);
 
   // Display the first run bubble if there is a default search provider.
   TemplateURLService* template_url =

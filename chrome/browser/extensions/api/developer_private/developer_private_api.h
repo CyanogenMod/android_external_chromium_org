@@ -8,8 +8,7 @@
 #include "base/platform_file.h"
 #include "chrome/browser/extensions/api/developer_private/entry_picker.h"
 #include "chrome/browser/extensions/api/file_system/file_system_api.h"
-#include "chrome/browser/extensions/event_router.h"
-#include "chrome/browser/extensions/extension_function.h"
+#include "chrome/browser/extensions/chrome_extension_function.h"
 #include "chrome/browser/extensions/extension_install_prompt.h"
 #include "chrome/browser/extensions/extension_uninstall_dialog.h"
 #include "chrome/browser/extensions/pack_extension_job.h"
@@ -18,6 +17,7 @@
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/render_view_host.h"
+#include "extensions/browser/event_router.h"
 #include "ui/shell_dialogs/select_file_dialog.h"
 #include "webkit/browser/fileapi/file_system_context.h"
 #include "webkit/browser/fileapi/file_system_operation.h"
@@ -116,7 +116,7 @@ class DeveloperPrivateAPI : public BrowserContextKeyedService,
 
 namespace api {
 
-class DeveloperPrivateAutoUpdateFunction : public SyncExtensionFunction {
+class DeveloperPrivateAutoUpdateFunction : public ChromeSyncExtensionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("developerPrivate.autoUpdate",
                              DEVELOPERPRIVATE_AUTOUPDATE)
@@ -128,7 +128,8 @@ class DeveloperPrivateAutoUpdateFunction : public SyncExtensionFunction {
   virtual bool RunImpl() OVERRIDE;
 };
 
-class DeveloperPrivateGetItemsInfoFunction : public AsyncExtensionFunction {
+class DeveloperPrivateGetItemsInfoFunction
+    : public ChromeAsyncExtensionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("developerPrivate.getItemsInfo",
                              DEVELOPERPRIVATE_GETITEMSINFO)
@@ -151,6 +152,7 @@ class DeveloperPrivateGetItemsInfoFunction : public AsyncExtensionFunction {
 
   // Helper that lists the current inspectable html pages for the extension.
   void GetInspectablePagesForExtensionProcess(
+      const Extension* extension,
       const std::set<content::RenderViewHost*>& views,
       ItemInspectViewList* result);
 
@@ -166,10 +168,11 @@ class DeveloperPrivateGetItemsInfoFunction : public AsyncExtensionFunction {
       const GURL& url,
       int render_process_id,
       int render_view_id,
-      bool incognito);
+      bool incognito,
+      bool generated_background_page);
 };
 
-class DeveloperPrivateInspectFunction : public SyncExtensionFunction {
+class DeveloperPrivateInspectFunction : public ChromeSyncExtensionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("developerPrivate.inspect",
                              DEVELOPERPRIVATE_INSPECT)
@@ -181,7 +184,8 @@ class DeveloperPrivateInspectFunction : public SyncExtensionFunction {
   virtual bool RunImpl() OVERRIDE;
 };
 
-class DeveloperPrivateAllowFileAccessFunction : public SyncExtensionFunction {
+class DeveloperPrivateAllowFileAccessFunction
+    : public ChromeSyncExtensionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("developerPrivate.allowFileAccess",
                              DEVELOPERPRIVATE_ALLOWFILEACCESS);
@@ -193,7 +197,8 @@ class DeveloperPrivateAllowFileAccessFunction : public SyncExtensionFunction {
   virtual bool RunImpl() OVERRIDE;
 };
 
-class DeveloperPrivateAllowIncognitoFunction : public SyncExtensionFunction {
+class DeveloperPrivateAllowIncognitoFunction
+    : public ChromeSyncExtensionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("developerPrivate.allowIncognito",
                              DEVELOPERPRIVATE_ALLOWINCOGNITO);
@@ -205,7 +210,7 @@ class DeveloperPrivateAllowIncognitoFunction : public SyncExtensionFunction {
   virtual bool RunImpl() OVERRIDE;
 };
 
-class DeveloperPrivateReloadFunction : public SyncExtensionFunction {
+class DeveloperPrivateReloadFunction : public ChromeSyncExtensionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("developerPrivate.reload",
                              DEVELOPERPRIVATE_RELOAD);
@@ -218,7 +223,7 @@ class DeveloperPrivateReloadFunction : public SyncExtensionFunction {
 };
 
 class DeveloperPrivateShowPermissionsDialogFunction
-    : public SyncExtensionFunction,
+    : public ChromeSyncExtensionFunction,
       public ExtensionInstallPrompt::Delegate {
  public:
   DECLARE_EXTENSION_FUNCTION("developerPrivate.showPermissionsDialog",
@@ -240,20 +245,8 @@ class DeveloperPrivateShowPermissionsDialogFunction
 
 };
 
-class DeveloperPrivateRestartFunction : public SyncExtensionFunction {
- public:
-  DECLARE_EXTENSION_FUNCTION("developerPrivate.restart",
-                             DEVELOPERPRIVATE_RESTART);
-
- protected:
-  virtual ~DeveloperPrivateRestartFunction();
-
-  // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
-};
-
 class DeveloperPrivateEnableFunction
-    : public SyncExtensionFunction,
+    : public ChromeSyncExtensionFunction,
       public base::SupportsWeakPtr<DeveloperPrivateEnableFunction> {
  public:
   DECLARE_EXTENSION_FUNCTION("developerPrivate.enable",
@@ -274,14 +267,14 @@ class DeveloperPrivateEnableFunction
   scoped_ptr<extensions::RequirementsChecker> requirements_checker_;
 };
 
-class DeveloperPrivateChooseEntryFunction : public AsyncExtensionFunction,
+class DeveloperPrivateChooseEntryFunction : public ChromeAsyncExtensionFunction,
                                             public EntryPickerClient {
  protected:
   virtual ~DeveloperPrivateChooseEntryFunction();
   virtual bool RunImpl() OVERRIDE;
   bool ShowPicker(ui::SelectFileDialog::Type picker_type,
                   const base::FilePath& last_directory,
-                  const string16& select_title,
+                  const base::string16& select_title,
                   const ui::SelectFileDialog::FileTypeInfo& info,
                   int file_type_index);
 
@@ -322,7 +315,7 @@ class DeveloperPrivateChoosePathFunction
 };
 
 class DeveloperPrivatePackDirectoryFunction
-    : public AsyncExtensionFunction,
+    : public ChromeAsyncExtensionFunction,
       public extensions::PackExtensionJob::Client {
 
  public:
@@ -348,7 +341,7 @@ class DeveloperPrivatePackDirectoryFunction
   std::string key_path_str_;
 };
 
-class DeveloperPrivateGetStringsFunction : public SyncExtensionFunction {
+class DeveloperPrivateGetStringsFunction : public ChromeSyncExtensionFunction {
   public:
    DECLARE_EXTENSION_FUNCTION("developerPrivate.getStrings",
                               DEVELOPERPRIVATE_GETSTRINGS);
@@ -360,8 +353,21 @@ class DeveloperPrivateGetStringsFunction : public SyncExtensionFunction {
    virtual bool RunImpl() OVERRIDE;
 };
 
+class DeveloperPrivateIsProfileManagedFunction
+    : public ChromeSyncExtensionFunction {
+  public:
+   DECLARE_EXTENSION_FUNCTION("developerPrivate.isProfileManaged",
+                              DEVELOPERPRIVATE_ISPROFILEMANAGED);
+
+  protected:
+   virtual ~DeveloperPrivateIsProfileManagedFunction();
+
+   // ExtensionFunction
+   virtual bool RunImpl() OVERRIDE;
+};
+
 class DeveloperPrivateExportSyncfsFolderToLocalfsFunction
-    : public AsyncExtensionFunction {
+    : public ChromeAsyncExtensionFunction {
   public:
    DECLARE_EXTENSION_FUNCTION("developerPrivate.exportSyncfsFolderToLocalfs",
                               DEVELOPERPRIVATE_LOADUNPACKEDCROS);
@@ -406,7 +412,8 @@ class DeveloperPrivateExportSyncfsFolderToLocalfsFunction
    bool success_;
 };
 
-class DeveloperPrivateLoadProjectFunction : public AsyncExtensionFunction {
+class DeveloperPrivateLoadProjectFunction
+    : public ChromeAsyncExtensionFunction {
   public:
    DECLARE_EXTENSION_FUNCTION("developerPrivate.loadProject",
                               DEVELOPERPRIVATE_LOADPROJECT);

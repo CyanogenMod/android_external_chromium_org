@@ -4,17 +4,18 @@
 
 #include "chrome/browser/translate/translate_prefs.h"
 
-#include "base/command_line.h"
+#include <set>
+
 #include "base/prefs/pref_service.h"
+#include "base/prefs/scoped_user_pref_update.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
-#include "chrome/browser/prefs/scoped_user_pref_update.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/translate/translate_accept_languages.h"
 #include "chrome/browser/translate/translate_manager.h"
-#include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/common/translate/translate_util.h"
+#include "components/translate/common/translate_util.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 
 const char TranslatePrefs::kPrefTranslateLanguageBlacklist[] =
@@ -34,6 +35,7 @@ namespace {
 
 void GetBlacklistedLanguages(const PrefService* prefs,
                              std::vector<std::string>* languages) {
+  DCHECK(languages);
   DCHECK(languages->empty());
 
   const char* key = TranslatePrefs::kPrefTranslateLanguageBlacklist;
@@ -45,71 +47,86 @@ void GetBlacklistedLanguages(const PrefService* prefs,
   }
 }
 
-}  // namespace
+// Expands language codes to make these more suitable for Accept-Language.
+// Example: ['en-US', 'ja', 'en-CA'] => ['en-US', 'en', 'ja', 'en-CA'].
+// 'en' won't appear twice as this function eliminates duplicates.
+void ExpandLanguageCodes(const std::vector<std::string>& languages,
+                         std::vector<std::string>* expanded_languages) {
+  DCHECK(expanded_languages);
+  DCHECK(expanded_languages->empty());
 
-namespace {
+  // used to eliminate duplicates.
+  std::set<std::string> seen;
 
-void AppendLanguageToAcceptLanguages(PrefService* prefs,
-                                     const std::string& language) {
-  if (!TranslateAcceptLanguages::CanBeAcceptLanguage(language))
-    return;
+  for (std::vector<std::string>::const_iterator it = languages.begin();
+       it != languages.end(); ++it) {
+    const std::string& language = *it;
+    if (seen.find(language) == seen.end()) {
+      expanded_languages->push_back(language);
+      seen.insert(language);
+    }
 
-  std::string accept_language = language;
-  TranslateUtil::ToChromeLanguageSynonym(&accept_language);
-
-  std::string accept_languages_str = prefs->GetString(prefs::kAcceptLanguages);
-  std::vector<std::string> accept_languages;
-  base::SplitString(accept_languages_str, ',', &accept_languages);
-  if (std::find(accept_languages.begin(),
-                accept_languages.end(),
-                accept_language) == accept_languages.end()) {
-    accept_languages.push_back(accept_language);
+    std::vector<std::string> tokens;
+    base::SplitString(language, '-', &tokens);
+    if (tokens.size() == 0)
+      continue;
+    const std::string& main_part = tokens[0];
+    if (seen.find(main_part) == seen.end()) {
+      expanded_languages->push_back(main_part);
+      seen.insert(main_part);
+    }
   }
-  accept_languages_str = JoinString(accept_languages, ',');
-  prefs->SetString(prefs::kAcceptLanguages, accept_languages_str);
 }
 
 }  // namespace
-
-// TranslatePrefs: public: -----------------------------------------------------
 
 TranslatePrefs::TranslatePrefs(PrefService* user_prefs)
     : prefs_(user_prefs) {
 }
 
+void TranslatePrefs::ResetToDefaults() {
+  ClearBlockedLanguages();
+  ClearBlacklistedSites();
+  ClearWhitelistedLanguagePairs();
+
+  std::vector<std::string> languages;
+  GetLanguageList(&languages);
+  for (std::vector<std::string>::const_iterator it = languages.begin();
+      it != languages.end(); ++it) {
+    const std::string& language = *it;
+    ResetTranslationAcceptedCount(language);
+    ResetTranslationDeniedCount(language);
+  }
+}
+
 bool TranslatePrefs::IsBlockedLanguage(
     const std::string& original_language) const {
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
-  if (command_line->HasSwitch(switches::kEnableTranslateSettings)) {
-    return IsValueBlacklisted(kPrefTranslateBlockedLanguages,
-                              original_language);
-  } else {
-    return IsValueBlacklisted(kPrefTranslateLanguageBlacklist,
-                              original_language);
-  }
+  return IsValueBlacklisted(kPrefTranslateBlockedLanguages,
+                            original_language);
 }
 
 void TranslatePrefs::BlockLanguage(
     const std::string& original_language) {
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
-  if (command_line->HasSwitch(switches::kEnableTranslateSettings)) {
-    BlacklistValue(kPrefTranslateBlockedLanguages, original_language);
-    AppendLanguageToAcceptLanguages(prefs_, original_language);
-  } else {
-    BlacklistValue(kPrefTranslateLanguageBlacklist, original_language);
+  BlacklistValue(kPrefTranslateBlockedLanguages, original_language);
+
+  // Add the language to the language list at chrome://settings/languages.
+  std::string language = original_language;
+  translate::ToChromeLanguageSynonym(&language);
+
+  std::vector<std::string> languages;
+  GetLanguageList(&languages);
+
+  if (std::find(languages.begin(), languages.end(), language) ==
+      languages.end()) {
+    languages.push_back(language);
+    UpdateLanguageList(languages);
   }
 }
 
 void TranslatePrefs::UnblockLanguage(
     const std::string& original_language) {
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
-  if (command_line->HasSwitch(switches::kEnableTranslateSettings)) {
-    RemoveValueFromBlacklist(kPrefTranslateBlockedLanguages,
-                             original_language);
-  } else {
-    RemoveValueFromBlacklist(kPrefTranslateLanguageBlacklist,
-                             original_language);
-  }
+  RemoveValueFromBlacklist(kPrefTranslateBlockedLanguages,
+                           original_language);
 }
 
 void TranslatePrefs::RemoveLanguageFromLegacyBlacklist(
@@ -167,20 +184,12 @@ void TranslatePrefs::RemoveLanguagePairFromWhitelist(
   dict->Remove(original_language, NULL);
 }
 
-bool TranslatePrefs::HasBlacklistedLanguages() const {
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
-  if (command_line->HasSwitch(switches::kEnableTranslateSettings))
-    return !IsListEmpty(kPrefTranslateBlockedLanguages);
-  else
-    return !IsListEmpty(kPrefTranslateLanguageBlacklist);
+bool TranslatePrefs::HasBlockedLanguages() const {
+  return !IsListEmpty(kPrefTranslateBlockedLanguages);
 }
 
-void TranslatePrefs::ClearBlacklistedLanguages() {
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
-  if (command_line->HasSwitch(switches::kEnableTranslateSettings))
-    prefs_->ClearPref(kPrefTranslateBlockedLanguages);
-  else
-    prefs_->ClearPref(kPrefTranslateLanguageBlacklist);
+void TranslatePrefs::ClearBlockedLanguages() {
+  prefs_->ClearPref(kPrefTranslateBlockedLanguages);
 }
 
 bool TranslatePrefs::HasBlacklistedSites() const {
@@ -244,7 +253,35 @@ void TranslatePrefs::ResetTranslationAcceptedCount(
   update.Get()->SetInteger(language, 0);
 }
 
-// TranslatePrefs: public, static: ---------------------------------------------
+void TranslatePrefs::GetLanguageList(std::vector<std::string>* languages) {
+  DCHECK(languages);
+  DCHECK(languages->empty());
+
+#if defined(OS_CHROMEOS)
+  const char* key = prefs::kLanguagePreferredLanguages;
+#else
+  const char* key = prefs::kAcceptLanguages;
+#endif
+
+  std::string languages_str = prefs_->GetString(key);
+  base::SplitString(languages_str, ',', languages);
+}
+
+void TranslatePrefs::UpdateLanguageList(
+    const std::vector<std::string>& languages) {
+#if defined(OS_CHROMEOS)
+  std::string languages_str = JoinString(languages, ',');
+  prefs_->SetString(prefs::kLanguagePreferredLanguages, languages_str);
+#endif
+
+  // Save the same language list as accept languages preference as well, but we
+  // need to expand the language list, to make it more acceptable. For instance,
+  // some web sites don't understand 'en-US' but 'en'. See crosbug.com/9884.
+  std::vector<std::string> accept_languages;
+  ExpandLanguageCodes(languages, &accept_languages);
+  std::string accept_languages_str = JoinString(accept_languages, ',');
+  prefs_->SetString(prefs::kAcceptLanguages, accept_languages_str);
+}
 
 // static
 bool TranslatePrefs::CanTranslateLanguage(Profile* profile,
@@ -252,27 +289,20 @@ bool TranslatePrefs::CanTranslateLanguage(Profile* profile,
   TranslatePrefs translate_prefs(profile->GetPrefs());
   bool blocked = translate_prefs.IsBlockedLanguage(language);
 
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
-  if (command_line->HasSwitch(switches::kEnableTranslateSettings)) {
-    bool is_accept_language =
-        TranslateManager::IsAcceptLanguage(profile, language);
-    bool can_be_accept_language =
-        TranslateAcceptLanguages::CanBeAcceptLanguage(language);
+  bool is_accept_language =
+      TranslateManager::IsAcceptLanguage(profile, language);
+  bool can_be_accept_language =
+      TranslateAcceptLanguages::CanBeAcceptLanguage(language);
 
-    // Don't translate any user black-listed languages. Checking
-    // |is_accept_language| is necessary because if the user eliminates the
-    // language from the preference, it is natural to forget whether or not
-    // the language should be translated. Checking |cannot_be_accept_language|
-    // is also necessary because some minor languages can't be selected in the
-    // language preference even though the language is available in Translate
-    // server.
-    if (blocked && (is_accept_language || !can_be_accept_language))
-      return false;
-  } else {
-    // Don't translate any user user selected language.
-    if (blocked)
-      return false;
-  }
+  // Don't translate any user black-listed languages. Checking
+  // |is_accept_language| is necessary because if the user eliminates the
+  // language from the preference, it is natural to forget whether or not
+  // the language should be translated. Checking |cannot_be_accept_language|
+  // is also necessary because some minor languages can't be selected in the
+  // language preference even though the language is available in Translate
+  // server.
+  if (blocked && (is_accept_language || !can_be_accept_language))
+    return false;
 
   return true;
 }
@@ -353,11 +383,7 @@ void TranslatePrefs::MigrateUserPrefs(PrefService* user_prefs) {
   // enable settings for users.
   bool merged = user_prefs->HasPrefPath(kPrefTranslateBlockedLanguages);
 
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  bool enabled_translate_settings =
-      command_line.HasSwitch(switches::kEnableTranslateSettings);
-
-  if (!merged && enabled_translate_settings) {
+  if (!merged) {
     std::vector<std::string> blacklisted_languages;
     GetBlacklistedLanguages(user_prefs, &blacklisted_languages);
 
@@ -373,16 +399,16 @@ void TranslatePrefs::MigrateUserPrefs(PrefService* user_prefs) {
 
     // Create the new preference kPrefTranslateBlockedLanguages.
     {
-      ListValue* blocked_languages_list = new ListValue();
+      ListValue blocked_languages_list;
       for (std::vector<std::string>::const_iterator it =
                blocked_languages.begin();
            it != blocked_languages.end(); ++it) {
-        blocked_languages_list->Append(new StringValue(*it));
+        blocked_languages_list.Append(new StringValue(*it));
       }
       ListPrefUpdate update(user_prefs, kPrefTranslateBlockedLanguages);
       ListValue* list = update.Get();
       DCHECK(list != NULL);
-      list->Swap(blocked_languages_list);
+      list->Swap(&blocked_languages_list);
     }
 
     // Update kAcceptLanguages
@@ -390,7 +416,7 @@ void TranslatePrefs::MigrateUserPrefs(PrefService* user_prefs) {
              blocked_languages.begin();
          it != blocked_languages.end(); ++it) {
       std::string lang = *it;
-      TranslateUtil::ToChromeLanguageSynonym(&lang);
+      translate::ToChromeLanguageSynonym(&lang);
       bool not_found =
           std::find(accept_languages.begin(), accept_languages.end(), lang) ==
           accept_languages.end();
@@ -403,13 +429,12 @@ void TranslatePrefs::MigrateUserPrefs(PrefService* user_prefs) {
   }
 }
 
-// TranslatePrefs: private: ----------------------------------------------------
-
 // static
 void TranslatePrefs::CreateBlockedLanguages(
     std::vector<std::string>* blocked_languages,
     const std::vector<std::string>& blacklisted_languages,
     const std::vector<std::string>& accept_languages) {
+  DCHECK(blocked_languages);
   DCHECK(blocked_languages->empty());
 
   std::set<std::string> result;
@@ -420,15 +445,43 @@ void TranslatePrefs::CreateBlockedLanguages(
     result.insert(*it);
   }
 
+  const std::string& app_locale = g_browser_process->GetApplicationLocale();
+  std::string ui_lang = TranslateManager::GetLanguageCode(app_locale);
+  bool is_ui_english = ui_lang == "en" ||
+      StartsWithASCII(ui_lang, "en-", false);
+
   for (std::vector<std::string>::const_iterator it = accept_languages.begin();
        it != accept_languages.end(); ++it) {
-    std::string lang = *it;
-    TranslateUtil::ToTranslateLanguageSynonym(&lang);
-    result.insert(lang);
+    std::string converted_lang = ConvertLangCodeForTranslation(*it);
+
+    // Regarding http://crbug.com/36182, even though English exists in Accept
+    // language list, English could be translated on non-English locale.
+    if (converted_lang == "en" && !is_ui_english)
+      continue;
+
+    result.insert(converted_lang);
   }
 
   blocked_languages->insert(blocked_languages->begin(),
                             result.begin(), result.end());
+}
+
+// static
+std::string TranslatePrefs::ConvertLangCodeForTranslation(
+    const std::string &lang) {
+  std::vector<std::string> tokens;
+  base::SplitString(lang, '-', &tokens);
+  if (tokens.size() < 1)
+    return lang;
+
+  std::string main_part = tokens[0];
+
+  // Translate doesn't support General Chinese and the sub code is necessary.
+  if (main_part == "zh")
+    return lang;
+
+  translate::ToTranslateLanguageSynonym(&main_part);
+  return main_part;
 }
 
 bool TranslatePrefs::IsValueInList(const ListValue* list,

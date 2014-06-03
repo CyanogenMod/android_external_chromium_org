@@ -26,13 +26,14 @@ namespace cloud_print {
 // CloudPrintConnector will notify client over Client interface.
 class CloudPrintConnector
     : public base::RefCountedThreadSafe<CloudPrintConnector>,
-      private PrintServerWatcherDelegate,
+      private PrintSystem::PrintServerWatcher::Delegate,
       private PrinterJobHandlerDelegate,
       private CloudPrintURLFetcherDelegate {
  public:
   class Client {
    public:
     virtual void OnAuthFailed() = 0;
+    virtual void OnXmppPingUpdated(int ping_timeout) = 0;
    protected:
      virtual ~Client() {}
   };
@@ -49,6 +50,9 @@ class CloudPrintConnector
   // Check for jobs for specific printer. If printer id is empty
   // jobs will be checked for all available printers.
   void CheckForJobs(const std::string& reason, const std::string& printer_id);
+
+  // Update settings for specific printer.
+  void UpdatePrinterSettings(const std::string& printer_id);
 
  private:
   friend class base::RefCountedThreadSafe<CloudPrintConnector>;
@@ -106,6 +110,12 @@ class CloudPrintConnector
       DictionaryValue* json_data,
       bool succeeded);
 
+  CloudPrintURLFetcher::ResponseAction HandlePrinterListResponseSettingsUpdate(
+      const net::URLFetcher* source,
+      const GURL& url,
+      DictionaryValue* json_data,
+      bool succeeded);
+
   CloudPrintURLFetcher::ResponseAction HandlePrinterDeleteResponse(
       const net::URLFetcher* source,
       const GURL& url,
@@ -123,7 +133,8 @@ class CloudPrintConnector
   void StartGetRequest(const GURL& url,
                        int max_retries,
                        ResponseHandler handler);
-  void StartPostRequest(const GURL& url,
+  void StartPostRequest(CloudPrintURLFetcher::RequestType type,
+                        const GURL& url,
                         int max_retries,
                         const std::string& mime_type,
                         const std::string& post_data,
@@ -137,6 +148,8 @@ class CloudPrintConnector
                              printing::PrinterList* printer_list);
 
   void InitJobHandlerForPrinter(DictionaryValue* printer_data);
+
+  void UpdateSettingsFromPrintersList(DictionaryValue* json_data);
 
   void AddPendingAvailableTask();
   void AddPendingDeleteTask(const std::string& id);
@@ -159,6 +172,9 @@ class CloudPrintConnector
   bool IsSamePrinter(const std::string& name1, const std::string& name2) const;
   bool InitPrintSystem();
 
+  void ScheduleStatsReport();
+  void ReportStats();
+
   // CloudPrintConnector client.
   Client* client_;
   // Connector settings.
@@ -180,6 +196,7 @@ class CloudPrintConnector
   scoped_refptr<CloudPrintURLFetcher> request_;
   // The CloudPrintURLFetcher instance for the user message request.
   scoped_refptr<CloudPrintURLFetcher> user_message_request_;
+  base::WeakPtrFactory<CloudPrintConnector> stats_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(CloudPrintConnector);
 };

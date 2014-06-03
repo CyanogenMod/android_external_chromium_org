@@ -4,6 +4,7 @@
 
 #include "nacl_io/mount_node.h"
 
+#include <assert.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
@@ -13,6 +14,7 @@
 #include <algorithm>
 #include <string>
 
+#include "nacl_io/kernel_handle.h"
 #include "nacl_io/kernel_wrap_real.h"
 #include "nacl_io/mount.h"
 #include "nacl_io/osmman.h"
@@ -27,6 +29,7 @@ MountNode::MountNode(Mount* mount) : mount_(mount) {
   memset(&stat_, 0, sizeof(stat_));
   stat_.st_gid = GRP_ID;
   stat_.st_uid = USR_ID;
+  stat_.st_mode = S_IRALL | S_IWALL;
 
   // Mount should normally never be NULL, but may be null in tests.
   // If NULL, at least set the inode to a valid (nonzero) value.
@@ -38,8 +41,7 @@ MountNode::MountNode(Mount* mount) : mount_(mount) {
 
 MountNode::~MountNode() {}
 
-Error MountNode::Init(int perm) {
-  stat_.st_mode |= perm;
+Error MountNode::Init(int open_flags) {
   return 0;
 }
 
@@ -49,13 +51,27 @@ void MountNode::Destroy() {
   }
 }
 
-// Declared in EventEmitter, default to regular files which always return
-// a ready of TRUE for read, write, or error.
+EventEmitter* MountNode::GetEventEmitter() { return NULL; }
+
 uint32_t MountNode::GetEventStatus() {
-  uint32_t val = POLLIN | POLLOUT | POLLERR;
-  return val;
+  if (GetEventEmitter())
+    return GetEventEmitter()->GetEventStatus();
+
+  return POLLIN | POLLOUT;
 }
 
+bool MountNode::CanOpen(int open_flags) {
+  switch (open_flags & 3) {
+    case O_RDONLY:
+      return (stat_.st_mode & S_IRALL) != 0;
+    case O_WRONLY:
+      return (stat_.st_mode & S_IWALL) != 0;
+    case O_RDWR:
+      return (stat_.st_mode & S_IRALL) != 0 && (stat_.st_mode & S_IWALL) != 0;
+  }
+
+  return false;
+}
 
 Error MountNode::FSync() { return 0; }
 
@@ -75,14 +91,25 @@ Error MountNode::GetStat(struct stat* pstat) {
   return 0;
 }
 
-Error MountNode::Ioctl(int request, char* arg) { return EINVAL; }
+Error MountNode::Ioctl(int request, ...) {
+  va_list ap;
+  va_start(ap, request);
+  Error rtn = VIoctl(request, ap);
+  va_end(ap);
+  return rtn;
+}
 
-Error MountNode::Read(size_t offs, void* buf, size_t count, int* out_bytes) {
+Error MountNode::VIoctl(int request, va_list args) { return EINVAL; }
+
+Error MountNode::Read(const HandleAttr& attr,
+                      void* buf,
+                      size_t count,
+                      int* out_bytes) {
   *out_bytes = 0;
   return EINVAL;
 }
 
-Error MountNode::Write(size_t offs,
+Error MountNode::Write(const HandleAttr& attr,
                        const void* buf,
                        size_t count,
                        int* out_bytes) {
@@ -114,8 +141,11 @@ Error MountNode::MMap(void* addr,
     return mmap_error;
   }
 
+  HandleAttr data;
+  data.offs = offset;
+  data.flags = 0;
   int bytes_read;
-  Error read_error = Read(offset, new_addr, length, &bytes_read);
+  Error read_error = Read(data, new_addr, length, &bytes_read);
   if (read_error) {
     _real_munmap(new_addr, length);
     return read_error;
@@ -149,9 +179,17 @@ Error MountNode::GetSize(size_t* out_size) {
 
 int MountNode::GetType() { return stat_.st_mode & S_IFMT; }
 
+void MountNode::SetType(int type) {
+  assert((type & ~S_IFMT) == 0);
+  stat_.st_mode &= ~S_IFMT;
+  stat_.st_mode |= type;
+}
+
 bool MountNode::IsaDir() { return (stat_.st_mode & S_IFDIR) != 0; }
 
 bool MountNode::IsaFile() { return (stat_.st_mode & S_IFREG) != 0; }
+
+bool MountNode::IsaSock() { return (stat_.st_mode & S_IFSOCK) != 0; }
 
 bool MountNode::IsaTTY() { return (stat_.st_mode & S_IFCHR) != 0; }
 
@@ -174,4 +212,3 @@ void MountNode::Link() { stat_.st_nlink++; }
 void MountNode::Unlink() { stat_.st_nlink--; }
 
 }  // namespace nacl_io
-

@@ -12,18 +12,12 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
-#include "extensions/common/extension_resource.h"
 
-class ExtensionServiceInterface;
 class Profile;
 
 namespace base {
 class DictionaryValue;
 class ListValue;
-}
-
-namespace extensions {
-class Extension;
 }
 
 // This class represents a "site list" that is part of a content pack. It is
@@ -39,11 +33,11 @@ class Extension;
 class ManagedModeSiteList {
  public:
   struct Site {
-    Site(const string16& name, int category_id);
+    Site(const base::string16& name, int category_id);
     ~Site();
 
     // The human-readable name for the site.
-    string16 name;
+    base::string16 name;
 
     // An identifier for the category. Categories are hardcoded and start with
     // 1, but apart from the offset correspond to the return values from
@@ -59,7 +53,7 @@ class ManagedModeSiteList {
   };
 
   ManagedModeSiteList(const std::string& extension_id,
-                      const extensions::ExtensionResource& path);
+                      const base::FilePath& path);
   ~ManagedModeSiteList();
 
   // Creates a copy of the site list.
@@ -69,7 +63,7 @@ class ManagedModeSiteList {
   // Returns a list of all categories.
   // TODO(bauerb): The list is hardcoded for now, but if we allow custom
   // categories, this should live in some registry.
-  static void GetCategoryNames(std::vector<string16>* categories);
+  static void GetCategoryNames(std::vector<base::string16>* categories);
 
   // Returns a list of all sites in this site list.
   void GetSites(std::vector<Site>* sites);
@@ -80,7 +74,7 @@ class ManagedModeSiteList {
                         base::DictionaryValue* dest);
 
   std::string extension_id_;
-  extensions::ExtensionResource path_;
+  base::FilePath path_;
   scoped_ptr<base::DictionaryValue> categories_;
   scoped_ptr<base::ListValue> sites_;
 

@@ -14,7 +14,7 @@
 #include "ui/aura/client/capture_client.h"
 #include "ui/aura/root_window.h"
 #include "ui/base/cursor/cursor.h"
-#include "ui/base/events/event.h"
+#include "ui/events/event.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/rect.h"
 #include "ui/views/view.h"
@@ -84,8 +84,8 @@ PartialScreenshotView::StartPartialScreenshot(
     ScreenshotDelegate* screenshot_delegate) {
   std::vector<PartialScreenshotView*> views;
   OverlayDelegate* overlay_delegate = new OverlayDelegate();
-  Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
-  for (Shell::RootWindowList::iterator it = root_windows.begin();
+  aura::Window::Windows root_windows = Shell::GetAllRootWindows();
+  for (aura::Window::Windows::iterator it = root_windows.begin();
        it != root_windows.end(); ++it) {
     PartialScreenshotView* new_view = new PartialScreenshotView(
         overlay_delegate, screenshot_delegate);
@@ -108,7 +108,7 @@ PartialScreenshotView::~PartialScreenshotView() {
   screenshot_delegate_ = NULL;
 }
 
-void PartialScreenshotView::Init(aura::RootWindow* root_window) {
+void PartialScreenshotView::Init(aura::Window* root_window) {
   views::Widget* widget = new views::Widget;
   views::Widget::InitParams params(
       views::Widget::InitParams::TYPE_WINDOW_FRAMELESS);
@@ -163,7 +163,7 @@ void PartialScreenshotView::OnSelectionFinished() {
 
   is_dragging_ = false;
   if (screenshot_delegate_) {
-    aura::RootWindow *root_window =
+    aura::Window*root_window =
         GetWidget()->GetNativeWindow()->GetRootWindow();
     screenshot_delegate_->HandleTakePartialScreenshot(
         root_window,

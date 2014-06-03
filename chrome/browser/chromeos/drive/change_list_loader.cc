@@ -17,8 +17,9 @@
 #include "chrome/browser/chromeos/drive/logging.h"
 #include "chrome/browser/chromeos/drive/resource_metadata.h"
 #include "chrome/browser/drive/drive_api_util.h"
-#include "chrome/browser/google_apis/drive_api_parser.h"
+#include "chrome/browser/drive/drive_service_interface.h"
 #include "content/public/browser/browser_thread.h"
+#include "google_apis/drive/drive_api_parser.h"
 #include "url/gurl.h"
 
 using content::BrowserThread;
@@ -26,19 +27,304 @@ using content::BrowserThread;
 namespace drive {
 namespace internal {
 
+typedef base::Callback<void(FileError, ScopedVector<ChangeList>)>
+    FeedFetcherCallback;
+
+class ChangeListLoader::FeedFetcher {
+ public:
+  virtual ~FeedFetcher() {}
+  virtual void Run(const FeedFetcherCallback& callback) = 0;
+};
+
+namespace {
+
+// Fetches all the (currently available) resource entries from the server.
+class FullFeedFetcher : public ChangeListLoader::FeedFetcher {
+ public:
+  explicit FullFeedFetcher(JobScheduler* scheduler)
+      : scheduler_(scheduler),
+        weak_ptr_factory_(this) {
+  }
+
+  virtual ~FullFeedFetcher() {
+  }
+
+  virtual void Run(const FeedFetcherCallback& callback) OVERRIDE {
+    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+    DCHECK(!callback.is_null());
+
+    // Remember the time stamp for usage stats.
+    start_time_ = base::TimeTicks::Now();
+
+    // This is full resource list fetch.
+    scheduler_->GetAllResourceList(
+        base::Bind(&FullFeedFetcher::OnFileListFetched,
+                   weak_ptr_factory_.GetWeakPtr(), callback));
+  }
+
+ private:
+  void OnFileListFetched(
+      const FeedFetcherCallback& callback,
+      google_apis::GDataErrorCode status,
+      scoped_ptr<google_apis::ResourceList> resource_list) {
+    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+    DCHECK(!callback.is_null());
+
+    FileError error = GDataToFileError(status);
+    if (error != FILE_ERROR_OK) {
+      callback.Run(error, ScopedVector<ChangeList>());
+      return;
+    }
+
+    DCHECK(resource_list);
+    change_lists_.push_back(new ChangeList(*resource_list));
+
+    GURL next_url;
+    if (resource_list->GetNextFeedURL(&next_url) && !next_url.is_empty()) {
+      // There is the remaining result so fetch it.
+      scheduler_->GetRemainingFileList(
+          next_url,
+          base::Bind(&FullFeedFetcher::OnFileListFetched,
+                     weak_ptr_factory_.GetWeakPtr(), callback));
+      return;
+    }
+
+    UMA_HISTOGRAM_LONG_TIMES("Drive.FullFeedLoadTime",
+                             base::TimeTicks::Now() - start_time_);
+
+    // Note: The fetcher is managed by ChangeListLoader, and the instance
+    // will be deleted in the callback. Do not touch the fields after this
+    // invocation.
+    callback.Run(FILE_ERROR_OK, change_lists_.Pass());
+  }
+
+  JobScheduler* scheduler_;
+  ScopedVector<ChangeList> change_lists_;
+  base::TimeTicks start_time_;
+  base::WeakPtrFactory<FullFeedFetcher> weak_ptr_factory_;
+  DISALLOW_COPY_AND_ASSIGN(FullFeedFetcher);
+};
+
+// Fetches the delta changes since |start_change_id|.
+class DeltaFeedFetcher : public ChangeListLoader::FeedFetcher {
+ public:
+  DeltaFeedFetcher(JobScheduler* scheduler, int64 start_change_id)
+      : scheduler_(scheduler),
+        start_change_id_(start_change_id),
+        weak_ptr_factory_(this) {
+  }
+
+  virtual ~DeltaFeedFetcher() {
+  }
+
+  virtual void Run(const FeedFetcherCallback& callback) OVERRIDE {
+    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+    DCHECK(!callback.is_null());
+
+    scheduler_->GetChangeList(
+        start_change_id_,
+        base::Bind(&DeltaFeedFetcher::OnChangeListFetched,
+                   weak_ptr_factory_.GetWeakPtr(), callback));
+  }
+
+ private:
+  void OnChangeListFetched(
+      const FeedFetcherCallback& callback,
+      google_apis::GDataErrorCode status,
+      scoped_ptr<google_apis::ResourceList> resource_list) {
+    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+    DCHECK(!callback.is_null());
+
+    FileError error = GDataToFileError(status);
+    if (error != FILE_ERROR_OK) {
+      callback.Run(error, ScopedVector<ChangeList>());
+      return;
+    }
+
+    DCHECK(resource_list);
+    change_lists_.push_back(new ChangeList(*resource_list));
+
+    GURL next_url;
+    if (resource_list->GetNextFeedURL(&next_url) && !next_url.is_empty()) {
+      // There is the remaining result so fetch it.
+      scheduler_->GetRemainingChangeList(
+          next_url,
+          base::Bind(&DeltaFeedFetcher::OnChangeListFetched,
+                     weak_ptr_factory_.GetWeakPtr(), callback));
+      return;
+    }
+
+    // Note: The fetcher is managed by ChangeListLoader, and the instance
+    // will be deleted in the callback. Do not touch the fields after this
+    // invocation.
+    callback.Run(FILE_ERROR_OK, change_lists_.Pass());
+  }
+
+  JobScheduler* scheduler_;
+  int64 start_change_id_;
+  ScopedVector<ChangeList> change_lists_;
+  base::WeakPtrFactory<DeltaFeedFetcher> weak_ptr_factory_;
+  DISALLOW_COPY_AND_ASSIGN(DeltaFeedFetcher);
+};
+
+// Fetches the resource entries in the directory with |directory_resource_id|.
+class FastFetchFeedFetcher : public ChangeListLoader::FeedFetcher {
+ public:
+  FastFetchFeedFetcher(ChangeListLoader* change_list_loader,
+                       JobScheduler* scheduler,
+                       DriveServiceInterface* drive_service,
+                       const std::string& directory_resource_id)
+      : change_list_loader_(change_list_loader),
+        scheduler_(scheduler),
+        drive_service_(drive_service),
+        directory_resource_id_(directory_resource_id),
+        weak_ptr_factory_(this) {
+  }
+
+  virtual ~FastFetchFeedFetcher() {
+  }
+
+  virtual void Run(const FeedFetcherCallback& callback) OVERRIDE {
+    // Remember the time stamp for usage stats.
+    start_time_ = base::TimeTicks::Now();
+
+    // Fetch the root folder id from the server.
+    change_list_loader_->GetAboutResource(
+        base::Bind(&FastFetchFeedFetcher::RunAfterGetAboutResource,
+                   weak_ptr_factory_.GetWeakPtr(), callback));
+  }
+
+ private:
+  void RunAfterGetAboutResource(
+      const FeedFetcherCallback& callback,
+      google_apis::GDataErrorCode status,
+      scoped_ptr<google_apis::AboutResource> about_resource) {
+    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+    DCHECK(!callback.is_null());
+
+    FileError error = GDataToFileError(status);
+    if (error != FILE_ERROR_OK) {
+      callback.Run(error, ScopedVector<ChangeList>());
+      return;
+    }
+
+    root_folder_id_ = about_resource->root_folder_id();
+    StartGetResourceListInDirectory(callback);
+  }
+
+  void StartGetResourceListInDirectory(const FeedFetcherCallback& callback) {
+    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+    DCHECK(!callback.is_null());
+    DCHECK(!directory_resource_id_.empty());
+    DCHECK(!util::IsDriveV2ApiEnabled() || !root_folder_id_.empty());
+
+    // We use WAPI's GetResourceListInDirectory even if Drive API v2 is
+    // enabled. This is the short term work around of the performance
+    // regression.
+
+    std::string resource_id = directory_resource_id_;
+    if (util::IsDriveV2ApiEnabled() &&
+        directory_resource_id_ == root_folder_id_) {
+      // GData WAPI doesn't accept the root directory id which is used in Drive
+      // API v2. So it is necessary to translate it here.
+      resource_id = util::kWapiRootDirectoryResourceId;
+    }
+
+    scheduler_->GetResourceListInDirectoryByWapi(
+        resource_id,
+        base::Bind(&FastFetchFeedFetcher::OnResourceListFetched,
+                   weak_ptr_factory_.GetWeakPtr(), callback));
+  }
+
+  void OnResourceListFetched(
+      const FeedFetcherCallback& callback,
+      google_apis::GDataErrorCode status,
+      scoped_ptr<google_apis::ResourceList> resource_list) {
+    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+    DCHECK(!callback.is_null());
+
+    FileError error = GDataToFileError(status);
+    if (error != FILE_ERROR_OK) {
+      callback.Run(error, ScopedVector<ChangeList>());
+      return;
+    }
+
+    // Add the current change list to the list of collected lists.
+    DCHECK(resource_list);
+    ChangeList* change_list = new ChangeList(*resource_list);
+    if (util::IsDriveV2ApiEnabled())
+      FixResourceIdInChangeList(change_list);
+    change_lists_.push_back(change_list);
+
+    GURL next_url;
+    if (resource_list->GetNextFeedURL(&next_url) && !next_url.is_empty()) {
+      // There is the remaining result so fetch it.
+      scheduler_->GetRemainingResourceList(
+          next_url,
+          base::Bind(&FastFetchFeedFetcher::OnResourceListFetched,
+                     weak_ptr_factory_.GetWeakPtr(), callback));
+      return;
+    }
+
+    UMA_HISTOGRAM_TIMES("Drive.DirectoryFeedLoadTime",
+                        base::TimeTicks::Now() - start_time_);
+
+    // Note: The fetcher is managed by ChangeListLoader, and the instance
+    // will be deleted in the callback. Do not touch the fields after this
+    // invocation.
+    callback.Run(FILE_ERROR_OK, change_lists_.Pass());
+  }
+
+  // Fixes resource IDs in |change_list| into the format that |drive_service_|
+  // can understand. Note that |change_list| contains IDs in GData WAPI format
+  // since currently we always use WAPI for fast fetch, regardless of the flag.
+  void FixResourceIdInChangeList(ChangeList* change_list) {
+    std::vector<ResourceEntry>* entries = change_list->mutable_entries();
+    std::vector<std::string>* parent_resource_ids =
+        change_list->mutable_parent_resource_ids();
+    for (size_t i = 0; i < entries->size(); ++i) {
+      ResourceEntry* entry = &(*entries)[i];
+      if (entry->has_resource_id())
+        entry->set_resource_id(FixResourceId(entry->resource_id()));
+
+      (*parent_resource_ids)[i] = FixResourceId((*parent_resource_ids)[i]);
+    }
+  }
+
+  std::string FixResourceId(const std::string& resource_id) {
+    if (resource_id == util::kWapiRootDirectoryResourceId)
+      return root_folder_id_;
+    return drive_service_->GetResourceIdCanonicalizer().Run(resource_id);
+  }
+
+  ChangeListLoader* change_list_loader_;
+  JobScheduler* scheduler_;
+  DriveServiceInterface* drive_service_;
+  std::string directory_resource_id_;
+  std::string root_folder_id_;
+  ScopedVector<ChangeList> change_lists_;
+  base::TimeTicks start_time_;
+  base::WeakPtrFactory<FastFetchFeedFetcher> weak_ptr_factory_;
+  DISALLOW_COPY_AND_ASSIGN(FastFetchFeedFetcher);
+};
+
+}  // namespace
+
 ChangeListLoader::ChangeListLoader(
     base::SequencedTaskRunner* blocking_task_runner,
     ResourceMetadata* resource_metadata,
-    JobScheduler* scheduler)
+    JobScheduler* scheduler,
+    DriveServiceInterface* drive_service)
     : blocking_task_runner_(blocking_task_runner),
       resource_metadata_(resource_metadata),
       scheduler_(scheduler),
-      last_known_remote_changestamp_(0),
+      drive_service_(drive_service),
       loaded_(false),
       weak_ptr_factory_(this) {
 }
 
 ChangeListLoader::~ChangeListLoader() {
+  STLDeleteElements(&fast_fetch_feed_fetcher_set_);
 }
 
 bool ChangeListLoader::IsRefreshing() const {
@@ -97,17 +383,22 @@ void ChangeListLoader::LoadIfNeeded(
   Load(directory_fetch_info, callback);
 }
 
-void ChangeListLoader::LoadDirectoryFromServer(
-    const std::string& directory_resource_id,
-    const FileOperationCallback& callback) {
+void ChangeListLoader::GetAboutResource(
+    const google_apis::AboutResourceCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
-  scheduler_->GetAboutResource(
-      base::Bind(&ChangeListLoader::LoadDirectoryFromServerAfterGetAbout,
-                 weak_ptr_factory_.GetWeakPtr(),
-                 directory_resource_id,
-                 callback));
+  if (cached_about_resource_) {
+    base::MessageLoopProxy::current()->PostTask(
+        FROM_HERE,
+        base::Bind(
+            callback,
+            google_apis::HTTP_NO_CONTENT,
+            base::Passed(scoped_ptr<google_apis::AboutResource>(
+                new google_apis::AboutResource(*cached_about_resource_)))));
+  } else {
+    UpdateAboutResource(callback);
+  }
 }
 
 void ChangeListLoader::Load(const DirectoryFetchInfo& directory_fetch_info,
@@ -136,7 +427,11 @@ void ChangeListLoader::Load(const DirectoryFetchInfo& directory_fetch_info,
   }
 
   // Check the current status of local metadata, and start loading if needed.
-  resource_metadata_->GetLargestChangestampOnUIThread(
+  base::PostTaskAndReplyWithResult(
+      blocking_task_runner_,
+      FROM_HERE,
+      base::Bind(&ResourceMetadata::GetLargestChangestamp,
+                 base::Unretained(resource_metadata_)),
       base::Bind(is_initial_load ? &ChangeListLoader::DoInitialLoad
                                  : &ChangeListLoader::DoUpdateLoad,
                  weak_ptr_factory_.GetWeakPtr(),
@@ -250,7 +545,7 @@ void ChangeListLoader::LoadFromServerIfNeeded(
 
   // First fetch the latest changestamp to see if there were any new changes
   // there at all.
-  scheduler_->GetAboutResource(
+  UpdateAboutResource(
       base::Bind(&ChangeListLoader::LoadFromServerIfNeededAfterGetAbout,
                  weak_ptr_factory_.GetWeakPtr(),
                  directory_fetch_info,
@@ -263,22 +558,20 @@ void ChangeListLoader::LoadFromServerIfNeededAfterGetAbout(
     google_apis::GDataErrorCode status,
     scoped_ptr<google_apis::AboutResource> about_resource) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK_EQ(GDataToFileError(status) == FILE_ERROR_OK,
-            about_resource.get() != NULL);
 
-  if (GDataToFileError(status) == FILE_ERROR_OK) {
-    DCHECK(about_resource);
-    last_known_remote_changestamp_ = about_resource->largest_change_id();
+  FileError error = GDataToFileError(status);
+  if (error != FILE_ERROR_OK) {
+    OnChangeListLoadComplete(error);
+    return;
   }
 
-  int64 remote_changestamp =
-      about_resource ? about_resource->largest_change_id() : 0;
+  DCHECK(about_resource);
+
+  int64 remote_changestamp = about_resource->largest_change_id();
   if (remote_changestamp > 0 && local_changestamp >= remote_changestamp) {
     if (local_changestamp > remote_changestamp) {
       LOG(WARNING) << "Local resource metadata is fresher than server, local = "
-                   << local_changestamp
-                   << ", server = "
-                   << remote_changestamp;
+                   << local_changestamp << ", server = " << remote_changestamp;
     }
 
     // No changes detected, tell the client that the loading was successful.
@@ -287,15 +580,6 @@ void ChangeListLoader::LoadFromServerIfNeededAfterGetAbout(
   }
 
   int64 start_changestamp = local_changestamp > 0 ? local_changestamp + 1 : 0;
-  if (start_changestamp == 0 && !about_resource.get()) {
-    // Full update needs AboutResource. If this is a full update, we should
-    // just give up. Note that to exit from the change list loading, we
-    // always have to flush the pending callback tasks via
-    // OnChangeListLoadComplete.
-    OnChangeListLoadComplete(FILE_ERROR_FAILED);
-    return;
-  }
-
   if (directory_fetch_info.empty()) {
     // If the caller is not interested in a particular directory, just start
     // loading the change list.
@@ -321,6 +605,7 @@ void ChangeListLoader::LoadFromServerIfNeededAfterLoadDirectory(
     int64 start_changestamp,
     FileError error) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(about_resource);
 
   if (error == FILE_ERROR_OK) {
     // The directory fast-fetch succeeded. Runs the callbacks waiting for the
@@ -335,87 +620,36 @@ void ChangeListLoader::LoadChangeListFromServer(
     scoped_ptr<google_apis::AboutResource> about_resource,
     int64 start_changestamp) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!change_feed_fetcher_);
+  DCHECK(about_resource);
 
   bool is_delta_update = start_changestamp != 0;
-  const LoadChangeListCallback& completion_callback =
+
+  // Set up feed fetcher.
+  if (is_delta_update) {
+    change_feed_fetcher_.reset(
+        new DeltaFeedFetcher(scheduler_, start_changestamp));
+  } else {
+    change_feed_fetcher_.reset(new FullFeedFetcher(scheduler_));
+  }
+
+  change_feed_fetcher_->Run(
       base::Bind(&ChangeListLoader::LoadChangeListFromServerAfterLoadChangeList,
                  weak_ptr_factory_.GetWeakPtr(),
                  base::Passed(&about_resource),
-                 is_delta_update);
-  base::TimeTicks start_time = base::TimeTicks::Now();
-  if (is_delta_update) {
-    scheduler_->GetChangeList(
-        start_changestamp,
-        base::Bind(&ChangeListLoader::OnGetChangeList,
-                   weak_ptr_factory_.GetWeakPtr(),
-                   base::Passed(ScopedVector<ChangeList>()),
-                   completion_callback,
-                   start_time));
-  } else {
-    // This is full resource list fetch.
-    scheduler_->GetAllResourceList(
-        base::Bind(&ChangeListLoader::OnGetChangeList,
-                   weak_ptr_factory_.GetWeakPtr(),
-                   base::Passed(ScopedVector<ChangeList>()),
-                   completion_callback,
-                   start_time));
-  }
-}
-
-void ChangeListLoader::OnGetChangeList(
-    ScopedVector<ChangeList> change_lists,
-    const LoadChangeListCallback& callback,
-    base::TimeTicks start_time,
-    google_apis::GDataErrorCode status,
-    scoped_ptr<google_apis::ResourceList> resource_list) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!callback.is_null());
-
-  // Looks the UMA stats we take here is useless as many methods use this
-  // callback. crbug.com/229407
-  if (change_lists.empty()) {
-    UMA_HISTOGRAM_TIMES("Drive.InitialFeedLoadTime",
-                        base::TimeTicks::Now() - start_time);
-  }
-
-  FileError error = GDataToFileError(status);
-  if (error != FILE_ERROR_OK) {
-    callback.Run(ScopedVector<ChangeList>(), error);
-    return;
-  }
-
-  // Add the current change list to the list of collected lists.
-  DCHECK(resource_list);
-  change_lists.push_back(new ChangeList(*resource_list));
-
-  GURL next_url;
-  if (resource_list->GetNextFeedURL(&next_url) &&
-      !next_url.is_empty()) {
-    // There is the remaining result so fetch it.
-    scheduler_->ContinueGetResourceList(
-        next_url,
-        base::Bind(&ChangeListLoader::OnGetChangeList,
-                   weak_ptr_factory_.GetWeakPtr(),
-                   base::Passed(&change_lists),
-                   callback,
-                   start_time));
-    return;
-  }
-
-  // This UMA stats looks also different from what we want. crbug.com/229407
-  UMA_HISTOGRAM_TIMES("Drive.EntireFeedLoadTime",
-                      base::TimeTicks::Now() - start_time);
-
-  // Run the callback so the client can process the retrieved change lists.
-  callback.Run(change_lists.Pass(), FILE_ERROR_OK);
+                 is_delta_update));
 }
 
 void ChangeListLoader::LoadChangeListFromServerAfterLoadChangeList(
     scoped_ptr<google_apis::AboutResource> about_resource,
     bool is_delta_update,
-    ScopedVector<ChangeList> change_lists,
-    FileError error) {
+    FileError error,
+    ScopedVector<ChangeList> change_lists) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(about_resource);
+
+  // Delete the fetcher first.
+  change_feed_fetcher_.reset();
 
   if (error != FILE_ERROR_OK) {
     OnChangeListLoadComplete(error);
@@ -440,22 +674,6 @@ void ChangeListLoader::LoadChangeListFromServerAfterUpdate() {
                     OnLoadFromServerComplete());
 }
 
-void ChangeListLoader::LoadDirectoryFromServerAfterGetAbout(
-    const std::string& directory_resource_id,
-    const FileOperationCallback& callback,
-    google_apis::GDataErrorCode status,
-    scoped_ptr<google_apis::AboutResource> about_resource) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!callback.is_null());
-
-  if (GDataToFileError(status) == FILE_ERROR_OK)
-    last_known_remote_changestamp_ = about_resource->largest_change_id();
-
-  DoLoadDirectoryFromServer(
-      DirectoryFetchInfo(directory_resource_id, last_known_remote_changestamp_),
-      callback);
-}
-
 void ChangeListLoader::CheckChangestampAndLoadDirectoryIfNeeded(
     const DirectoryFetchInfo& directory_fetch_info,
     int64 local_changestamp,
@@ -466,6 +684,9 @@ void ChangeListLoader::CheckChangestampAndLoadDirectoryIfNeeded(
   int64 directory_changestamp = std::max(directory_fetch_info.changestamp(),
                                          local_changestamp);
 
+  int64 last_known_remote_changestamp =
+      cached_about_resource_ ? cached_about_resource_->largest_change_id() : 0;
+
   // We may not fetch from the server at all if the local metadata is new
   // enough, but we log this message here, so "Fast-fetch start" and
   // "Fast-fetch complete" always match.
@@ -473,14 +694,14 @@ void ChangeListLoader::CheckChangestampAndLoadDirectoryIfNeeded(
   util::Log(logging::LOG_INFO,
             "Fast-fetch start: %s; Server changestamp: %s",
             directory_fetch_info.ToString().c_str(),
-            base::Int64ToString(last_known_remote_changestamp_).c_str());
+            base::Int64ToString(last_known_remote_changestamp).c_str());
 
   // If the directory's changestamp is up-to-date, just schedule to run the
   // callback, as there is no need to fetch the directory.
   // Note that |last_known_remote_changestamp_| is 0 when it is not received
   // yet. In that case we conservatively assume that we need to fetch.
-  if (last_known_remote_changestamp_ > 0 &&
-      directory_changestamp >= last_known_remote_changestamp_) {
+  if (last_known_remote_changestamp > 0 &&
+      directory_changestamp >= last_known_remote_changestamp) {
     callback.Run(FILE_ERROR_OK);
     return;
   }
@@ -489,7 +710,7 @@ void ChangeListLoader::CheckChangestampAndLoadDirectoryIfNeeded(
   // |last_known_remote_changestamp_|.
   DirectoryFetchInfo new_directory_fetch_info(
       directory_fetch_info.resource_id(),
-      std::max(directory_changestamp, last_known_remote_changestamp_));
+      std::max(directory_changestamp, last_known_remote_changestamp));
   DoLoadDirectoryFromServer(new_directory_fetch_info, callback);
 }
 
@@ -501,16 +722,7 @@ void ChangeListLoader::DoLoadDirectoryFromServer(
   DCHECK(!directory_fetch_info.empty());
   DVLOG(1) << "Start loading directory: " << directory_fetch_info.ToString();
 
-  if (directory_fetch_info.resource_id() ==
-          util::kDriveOtherDirSpecialResourceId) {
-    // Load for a <other> directory is meaningless in the server.
-    // Let it succeed and use what we have locally.
-    callback.Run(FILE_ERROR_OK);
-    return;
-  }
-
-  if (directory_fetch_info.resource_id() ==
-          util::kDriveGrandRootSpecialResourceId) {
+  if (directory_fetch_info.resource_id() == util::kDriveGrandRootLocalId) {
     // Load for a grand root directory means slightly different from other
     // directories. It should have two directories; <other> and mydrive root.
     // <other> directory should always exist, but mydrive root should be
@@ -527,19 +739,18 @@ void ChangeListLoader::DoLoadDirectoryFromServer(
     return;
   }
 
-  const LoadChangeListCallback& completion_callback =
+  FastFetchFeedFetcher* fetcher = new FastFetchFeedFetcher(
+      this,
+      scheduler_,
+      drive_service_,
+      directory_fetch_info.resource_id());
+  fast_fetch_feed_fetcher_set_.insert(fetcher);
+  fetcher->Run(
       base::Bind(&ChangeListLoader::DoLoadDirectoryFromServerAfterLoad,
                  weak_ptr_factory_.GetWeakPtr(),
                  directory_fetch_info,
-                 callback);
-  base::TimeTicks start_time = base::TimeTicks::Now();
-  scheduler_->GetResourceListInDirectory(
-      directory_fetch_info.resource_id(),
-      base::Bind(&ChangeListLoader::OnGetChangeList,
-                 weak_ptr_factory_.GetWeakPtr(),
-                 base::Passed(ScopedVector<ChangeList>()),
-                 completion_callback,
-                 start_time));
+                 callback,
+                 fetcher));
 }
 
 void
@@ -550,8 +761,7 @@ ChangeListLoader::DoLoadGrandRootDirectoryFromServerAfterGetResourceEntryByPath(
     scoped_ptr<ResourceEntry> entry) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
-  DCHECK_EQ(directory_fetch_info.resource_id(),
-            util::kDriveGrandRootSpecialResourceId);
+  DCHECK_EQ(directory_fetch_info.resource_id(), util::kDriveGrandRootLocalId);
 
   if (error == FILE_ERROR_OK) {
     // MyDrive root already exists. Just return success.
@@ -560,7 +770,7 @@ ChangeListLoader::DoLoadGrandRootDirectoryFromServerAfterGetResourceEntryByPath(
   }
 
   // Fetch root resource id from the server.
-  scheduler_->GetAboutResource(
+  GetAboutResource(
       base::Bind(
           &ChangeListLoader
               ::DoLoadGrandRootDirectoryFromServerAfterGetAboutResource,
@@ -576,8 +786,8 @@ void ChangeListLoader::DoLoadGrandRootDirectoryFromServerAfterGetAboutResource(
     scoped_ptr<google_apis::AboutResource> about_resource) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
-  DCHECK_EQ(directory_fetch_info.resource_id(),
-            util::kDriveGrandRootSpecialResourceId);
+  DCHECK(about_resource);
+  DCHECK_EQ(directory_fetch_info.resource_id(), util::kDriveGrandRootLocalId);
 
   FileError error = GDataToFileError(status);
   if (error != FILE_ERROR_OK) {
@@ -585,31 +795,52 @@ void ChangeListLoader::DoLoadGrandRootDirectoryFromServerAfterGetAboutResource(
     return;
   }
 
-  // Build entry map for grand root directory, which has two entries;
-  // "/drive/root" and "/drive/other".
-  ResourceEntryMap grand_root_entry_map;
+  // Add "My Drive".
   const std::string& root_resource_id = about_resource->root_folder_id();
-  grand_root_entry_map[root_resource_id] =
-      util::CreateMyDriveRootEntry(root_resource_id);
-  grand_root_entry_map[util::kDriveOtherDirSpecialResourceId] =
-      util::CreateOtherDirEntry();
-  resource_metadata_->RefreshDirectoryOnUIThread(
-      directory_fetch_info,
-      grand_root_entry_map,
-      base::Bind(&ChangeListLoader::DoLoadDirectoryFromServerAfterRefresh,
+  std::string* local_id = new std::string;
+  base::PostTaskAndReplyWithResult(
+      blocking_task_runner_,
+      FROM_HERE,
+      base::Bind(&ResourceMetadata::AddEntry,
+                 base::Unretained(resource_metadata_),
+                 util::CreateMyDriveRootEntry(root_resource_id),
+                 local_id),
+      base::Bind(&ChangeListLoader::DoLoadDirectoryFromServerAfterAddMyDrive,
                  weak_ptr_factory_.GetWeakPtr(),
                  directory_fetch_info,
-                 callback));
+                 callback,
+                 base::Owned(local_id)));
+}
+
+void ChangeListLoader::DoLoadDirectoryFromServerAfterAddMyDrive(
+    const DirectoryFetchInfo& directory_fetch_info,
+    const FileOperationCallback& callback,
+    std::string* local_id,
+    FileError error) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!callback.is_null());
+  DCHECK_EQ(directory_fetch_info.resource_id(), util::kDriveGrandRootLocalId);
+
+  const base::FilePath changed_directory_path(util::GetDriveGrandRootPath());
+  DoLoadDirectoryFromServerAfterRefresh(directory_fetch_info,
+                                        callback,
+                                        &changed_directory_path,
+                                        error);
 }
 
 void ChangeListLoader::DoLoadDirectoryFromServerAfterLoad(
     const DirectoryFetchInfo& directory_fetch_info,
     const FileOperationCallback& callback,
-    ScopedVector<ChangeList> change_lists,
-    FileError error) {
+    FeedFetcher* fetcher,
+    FileError error,
+    ScopedVector<ChangeList> change_lists) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
   DCHECK(!directory_fetch_info.empty());
+
+  // Delete the fetcher.
+  fast_fetch_feed_fetcher_set_.erase(fetcher);
+  delete fetcher;
 
   if (error != FILE_ERROR_OK) {
     LOG(ERROR) << "Failed to load directory: "
@@ -619,22 +850,27 @@ void ChangeListLoader::DoLoadDirectoryFromServerAfterLoad(
     return;
   }
 
-  ChangeListProcessor::ResourceEntryMap entry_map;
-  ChangeListProcessor::ConvertToMap(change_lists.Pass(), &entry_map, NULL);
-  resource_metadata_->RefreshDirectoryOnUIThread(
-      directory_fetch_info,
-      entry_map,
+  base::FilePath* directory_path = new base::FilePath;
+  base::PostTaskAndReplyWithResult(
+      blocking_task_runner_,
+      FROM_HERE,
+      base::Bind(&ChangeListProcessor::RefreshDirectory,
+                 resource_metadata_,
+                 directory_fetch_info,
+                 base::Passed(&change_lists),
+                 directory_path),
       base::Bind(&ChangeListLoader::DoLoadDirectoryFromServerAfterRefresh,
                  weak_ptr_factory_.GetWeakPtr(),
                  directory_fetch_info,
-                 callback));
+                 callback,
+                 base::Owned(directory_path)));
 }
 
 void ChangeListLoader::DoLoadDirectoryFromServerAfterRefresh(
     const DirectoryFetchInfo& directory_fetch_info,
     const FileOperationCallback& callback,
-    FileError error,
-    const base::FilePath& directory_path) {
+    const base::FilePath* directory_path,
+    FileError error) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
@@ -643,7 +879,7 @@ void ChangeListLoader::DoLoadDirectoryFromServerAfterRefresh(
   // Also notify the observers.
   if (error == FILE_ERROR_OK) {
     FOR_EACH_OBSERVER(ChangeListLoaderObserver, observers_,
-                      OnDirectoryChanged(directory_path));
+                      OnDirectoryChanged(*directory_path));
   }
 }
 
@@ -654,6 +890,7 @@ void ChangeListLoader::UpdateFromChangeList(
     const base::Closure& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
+  DCHECK(about_resource);
 
   ChangeListProcessor* change_list_processor =
       new ChangeListProcessor(resource_metadata_);
@@ -664,7 +901,8 @@ void ChangeListLoader::UpdateFromChangeList(
   util::Log(logging::LOG_INFO,
             "Apply change lists (is delta: %d)",
             is_delta_update);
-  blocking_task_runner_->PostTaskAndReply(
+  base::PostTaskAndReplyWithResult(
+      blocking_task_runner_,
       FROM_HERE,
       base::Bind(&ChangeListProcessor::Apply,
                  base::Unretained(change_list_processor),
@@ -683,7 +921,8 @@ void ChangeListLoader::UpdateFromChangeListAfterApply(
     ChangeListProcessor* change_list_processor,
     bool should_notify_changed_directories,
     base::Time start_time,
-    const base::Closure& callback) {
+    const base::Closure& callback,
+    FileError error) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(change_list_processor);
   DCHECK(!callback.is_null());
@@ -704,6 +943,41 @@ void ChangeListLoader::UpdateFromChangeListAfterApply(
   }
 
   callback.Run();
+}
+
+void ChangeListLoader::UpdateAboutResource(
+    const google_apis::AboutResourceCallback& callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!callback.is_null());
+
+  scheduler_->GetAboutResource(
+      base::Bind(&ChangeListLoader::UpdateAboutResourceAfterGetAbout,
+                 weak_ptr_factory_.GetWeakPtr(),
+                 callback));
+}
+
+void ChangeListLoader::UpdateAboutResourceAfterGetAbout(
+    const google_apis::AboutResourceCallback& callback,
+    google_apis::GDataErrorCode status,
+    scoped_ptr<google_apis::AboutResource> about_resource) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!callback.is_null());
+  FileError error = GDataToFileError(status);
+
+  if (error == FILE_ERROR_OK) {
+    if (cached_about_resource_ &&
+        cached_about_resource_->largest_change_id() >
+        about_resource->largest_change_id()) {
+      LOG(WARNING) << "Local cached about resource is fresher than server, "
+                   << "local = " << cached_about_resource_->largest_change_id()
+                   << ", server = " << about_resource->largest_change_id();
+    }
+
+    cached_about_resource_.reset(
+        new google_apis::AboutResource(*about_resource));
+  }
+
+  callback.Run(status, about_resource.Pass());
 }
 
 }  // namespace internal

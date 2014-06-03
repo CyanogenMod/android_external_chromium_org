@@ -10,7 +10,7 @@
 #include "base/basictypes.h"
 #include "base/callback.h"
 #include "chromeos/chromeos_export.h"
-#include "chromeos/dbus/dbus_client_implementation_type.h"
+#include "chromeos/dbus/dbus_client.h"
 #include "chromeos/dbus/shill_client_helper.h"
 
 namespace base {
@@ -22,7 +22,6 @@ class DictionaryValue;
 
 namespace dbus {
 
-class Bus;
 class ObjectPath;
 
 }  // namespace dbus
@@ -33,7 +32,7 @@ namespace chromeos {
 // service.
 // All methods should be called from the origin thread which initializes the
 // DBusThreadManager instance.
-class CHROMEOS_EXPORT ShillServiceClient {
+class CHROMEOS_EXPORT ShillServiceClient : public DBusClient {
  public:
   typedef ShillClientHelper::PropertyChangedHandler PropertyChangedHandler;
   typedef ShillClientHelper::DictionaryValueCallback DictionaryValueCallback;
@@ -44,10 +43,6 @@ class CHROMEOS_EXPORT ShillServiceClient {
   // GetTestInterface(), only implemented in the stub implementation.
   class TestInterface {
    public:
-    // Adds a set of default services. Must be called after all Shill
-    // clients have been created.
-    virtual void AddDefaultServices() = 0;
-
     // Adds a Service to the Manager and Service stubs.
     virtual void AddService(const std::string& service_path,
                             const std::string& name,
@@ -78,6 +73,9 @@ class CHROMEOS_EXPORT ShillServiceClient {
     // Clears all Services from the Manager and Service stubs.
     virtual void ClearServices() = 0;
 
+    virtual void SetConnectBehavior(const std::string& service_path,
+                                    const base::Closure& behavior) = 0;
+
    protected:
     virtual ~TestInterface() {}
   };
@@ -85,8 +83,7 @@ class CHROMEOS_EXPORT ShillServiceClient {
 
   // Factory function, creates a new instance which is owned by the caller.
   // For normal usage, access the singleton via DBusThreadManager::Get().
-  static ShillServiceClient* Create(DBusClientImplementationType type,
-                                    dbus::Bus* bus);
+  static ShillServiceClient* Create();
 
   // Adds a property changed |observer| to the service at |service_path|.
   virtual void AddPropertyChangedObserver(
@@ -165,15 +162,6 @@ class CHROMEOS_EXPORT ShillServiceClient {
       const base::Closure& callback,
       const ErrorCallback& error_callback) = 0;
 
-  // DEPRECATED DO NOT USE: Calls ActivateCellularModem method and blocks until
-  // the method call finishes.
-  //
-  // TODO(hashimoto): Refactor CrosActivateCellularModem and remove this method.
-  // crosbug.com/29902
-  virtual bool CallActivateCellularModemAndBlock(
-      const dbus::ObjectPath& service_path,
-      const std::string& carrier) = 0;
-
   // Calls the GetLoadableProfileEntries method.
   // |callback| is called after the method call succeeds.
   virtual void GetLoadableProfileEntries(
@@ -184,6 +172,8 @@ class CHROMEOS_EXPORT ShillServiceClient {
   virtual TestInterface* GetTestInterface() = 0;
 
  protected:
+  friend class ShillServiceClientTest;
+
   // Create() should be used instead.
   ShillServiceClient();
 

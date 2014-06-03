@@ -15,7 +15,6 @@
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/defaults.h"
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
@@ -25,45 +24,41 @@
 #include "chrome/browser/ui/tabs/tab_strip_model_order_controller.h"
 #include "chrome/browser/ui/tabs/test_tab_strip_model_delegate.h"
 #include "chrome/browser/ui/webui/ntp/new_tab_ui.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
-#include "content/public/browser/notification_details.h"
-#include "content/public/browser/notification_registrar.h"
-#include "content/public/browser/notification_source.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_observer.h"
+#include "extensions/common/extension.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using content::SiteInstance;
 using content::WebContents;
 using extensions::Extension;
+using web_modal::NativeWebContentsModalDialog;
 
 namespace {
 
 // Class used to delete a WebContents and TabStripModel when another WebContents
 // is destroyed.
 class DeleteWebContentsOnDestroyedObserver
-    : public content::NotificationObserver {
+    : public content::WebContentsObserver {
  public:
   // When |source| is deleted both |tab_to_delete| and |tab_strip| are deleted.
   // |tab_to_delete| and |tab_strip| may be NULL.
   DeleteWebContentsOnDestroyedObserver(WebContents* source,
                                        WebContents* tab_to_delete,
                                        TabStripModel* tab_strip)
-      : source_(source),
+      : WebContentsObserver(source),
         tab_to_delete_(tab_to_delete),
         tab_strip_(tab_strip) {
-    registrar_.Add(this, content::NOTIFICATION_WEB_CONTENTS_DESTROYED,
-                   content::Source<WebContents>(source));
   }
 
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE {
+  virtual void WebContentsDestroyed(WebContents* web_contents) OVERRIDE {
     WebContents* tab_to_delete = tab_to_delete_;
     tab_to_delete_ = NULL;
     TabStripModel* tab_strip_to_delete = tab_strip_;
@@ -73,10 +68,8 @@ class DeleteWebContentsOnDestroyedObserver
   }
 
  private:
-  WebContents* source_;
   WebContents* tab_to_delete_;
   TabStripModel* tab_strip_;
-  content::NotificationRegistrar registrar_;
 
   DISALLOW_COPY_AND_ASSIGN(DeleteWebContentsOnDestroyedObserver);
 };
@@ -109,6 +102,69 @@ class TabStripModelTestIDUserData : public base::SupportsUserData::Data {
 
  private:
   int id_;
+};
+
+class DummyNativeWebContentsModalDialogManager
+    : public web_modal::NativeWebContentsModalDialogManager {
+ public:
+  explicit DummyNativeWebContentsModalDialogManager(
+      web_modal::NativeWebContentsModalDialogManagerDelegate* delegate)
+      : delegate_(delegate) {}
+  virtual ~DummyNativeWebContentsModalDialogManager() {}
+
+  virtual void ManageDialog(NativeWebContentsModalDialog dialog) OVERRIDE {}
+  virtual void ShowDialog(NativeWebContentsModalDialog dialog) OVERRIDE {}
+  virtual void HideDialog(NativeWebContentsModalDialog dialog) OVERRIDE {}
+  virtual void CloseDialog(NativeWebContentsModalDialog dialog) OVERRIDE {
+    delegate_->WillClose(dialog);
+  }
+  virtual void FocusDialog(NativeWebContentsModalDialog dialog) OVERRIDE {}
+  virtual void PulseDialog(NativeWebContentsModalDialog dialog) OVERRIDE {}
+  virtual void HostChanged(
+      web_modal::WebContentsModalDialogHost* new_host) OVERRIDE {}
+
+ private:
+  web_modal::NativeWebContentsModalDialogManagerDelegate* delegate_;
+
+  DISALLOW_COPY_AND_ASSIGN(DummyNativeWebContentsModalDialogManager);
+};
+
+// Test Browser-like class for TabStripModelTest.TabBlockedState.
+class TabBlockedStateTestBrowser
+    : public TabStripModelObserver,
+      public web_modal::WebContentsModalDialogManagerDelegate {
+ public:
+  explicit TabBlockedStateTestBrowser(TabStripModel* tab_strip_model)
+      : tab_strip_model_(tab_strip_model) {
+    tab_strip_model_->AddObserver(this);
+  }
+
+  virtual ~TabBlockedStateTestBrowser() {
+    tab_strip_model_->RemoveObserver(this);
+  }
+
+ private:
+  // TabStripModelObserver
+  virtual void TabInsertedAt(WebContents* contents,
+                             int index,
+                             bool foreground) OVERRIDE {
+    web_modal::WebContentsModalDialogManager* manager =
+        web_modal::WebContentsModalDialogManager::FromWebContents(contents);
+    if (manager)
+      manager->SetDelegate(this);
+  }
+
+  // WebContentsModalDialogManagerDelegate
+  virtual void SetWebContentsBlocked(content::WebContents* contents,
+                                     bool blocked) OVERRIDE {
+    int index = tab_strip_model_->GetIndexOfWebContents(contents);
+    ASSERT_GE(index, 0);
+    tab_strip_model_->SetTabBlocked(index, blocked);
+  }
+
+  TabStripModel* tab_strip_model_;
+
+  DISALLOW_COPY_AND_ASSIGN(TabBlockedStateTestBrowser);
 };
 
 }  // namespace
@@ -1644,8 +1700,17 @@ TEST_F(TabStripModelTest, NavigationForgettingDoesntAffectNewTab) {
   strip.CloseAllTabs();
 }
 
+// This fails on Linux when run with the rest of unit_tests (crbug.com/302156)
+// and fails consistently on Mac and Windows.
+#if defined(OS_LINUX) || defined(OS_MACOSX) || defined(OS_WIN)
+#define MAYBE_FastShutdown \
+    DISABLED_FastShutdown
+#else
+#define MAYBE_FastShutdown \
+    FastShutdown
+#endif
 // Tests that fast shutdown is attempted appropriately.
-TEST_F(TabStripModelTest, FastShutdown) {
+TEST_F(TabStripModelTest, MAYBE_FastShutdown) {
   TabStripDummyDelegate delegate;
   TabStripModel tabstrip(&delegate, profile());
   MockTabStripModelObserver observer(&tabstrip);
@@ -2210,6 +2275,65 @@ TEST_F(TabStripModelTest, MoveSelectedTabsTo) {
   }
 }
 
+// Tests that moving a tab forgets all groups referencing it.
+TEST_F(TabStripModelTest, MoveSelectedTabsTo_ForgetGroups) {
+  TabStripDummyDelegate delegate;
+  TabStripModel strip(&delegate, profile());
+
+  // Open page A as a new tab and then A1 in the background from A.
+  WebContents* page_a_contents = CreateWebContents();
+  strip.AddWebContents(page_a_contents, -1,
+                       content::PAGE_TRANSITION_AUTO_TOPLEVEL,
+                       TabStripModel::ADD_ACTIVE);
+  WebContents* page_a1_contents = CreateWebContents();
+  strip.AddWebContents(page_a1_contents, -1, content::PAGE_TRANSITION_LINK,
+                       TabStripModel::ADD_NONE);
+
+  // Likewise, open pages B and B1.
+  WebContents* page_b_contents = CreateWebContents();
+  strip.AddWebContents(page_b_contents, -1,
+                       content::PAGE_TRANSITION_AUTO_TOPLEVEL,
+                       TabStripModel::ADD_ACTIVE);
+  WebContents* page_b1_contents = CreateWebContents();
+  strip.AddWebContents(page_b1_contents, -1, content::PAGE_TRANSITION_LINK,
+                       TabStripModel::ADD_NONE);
+
+  EXPECT_EQ(page_a_contents, strip.GetWebContentsAt(0));
+  EXPECT_EQ(page_a1_contents, strip.GetWebContentsAt(1));
+  EXPECT_EQ(page_b_contents, strip.GetWebContentsAt(2));
+  EXPECT_EQ(page_b1_contents, strip.GetWebContentsAt(3));
+
+  // Move page B to the start of the tab strip.
+  strip.MoveSelectedTabsTo(0);
+
+  // Open page B2 in the background from B. It should end up after B.
+  WebContents* page_b2_contents = CreateWebContents();
+  strip.AddWebContents(page_b2_contents, -1, content::PAGE_TRANSITION_LINK,
+                       TabStripModel::ADD_NONE);
+  EXPECT_EQ(page_b_contents, strip.GetWebContentsAt(0));
+  EXPECT_EQ(page_b2_contents, strip.GetWebContentsAt(1));
+  EXPECT_EQ(page_a_contents, strip.GetWebContentsAt(2));
+  EXPECT_EQ(page_a1_contents, strip.GetWebContentsAt(3));
+  EXPECT_EQ(page_b1_contents, strip.GetWebContentsAt(4));
+
+  // Switch to A.
+  strip.ActivateTabAt(2, true);
+  EXPECT_EQ(page_a_contents, strip.GetActiveWebContents());
+
+  // Open page A2 in the background from A. It should end up after A1.
+  WebContents* page_a2_contents = CreateWebContents();
+  strip.AddWebContents(page_a2_contents, -1, content::PAGE_TRANSITION_LINK,
+                       TabStripModel::ADD_NONE);
+  EXPECT_EQ(page_b_contents, strip.GetWebContentsAt(0));
+  EXPECT_EQ(page_b2_contents, strip.GetWebContentsAt(1));
+  EXPECT_EQ(page_a_contents, strip.GetWebContentsAt(2));
+  EXPECT_EQ(page_a1_contents, strip.GetWebContentsAt(3));
+  EXPECT_EQ(page_a2_contents, strip.GetWebContentsAt(4));
+  EXPECT_EQ(page_b1_contents, strip.GetWebContentsAt(5));
+
+  strip.CloseAllTabs();
+}
+
 TEST_F(TabStripModelTest, CloseSelectedTabs) {
   TabStripDummyDelegate delegate;
   TabStripModel strip(&delegate, profile());
@@ -2365,4 +2489,53 @@ TEST_F(TabStripModelTest, MultipleToSingle) {
   EXPECT_TRUE(observer.StateEquals(0, s));
   strip.RemoveObserver(&observer);
   strip.CloseAllTabs();
+}
+
+// Verifies a newly inserted tab retains its previous blocked state.
+// http://crbug.com/276334
+TEST_F(TabStripModelTest, TabBlockedState) {
+  // Start with a source tab strip.
+  TabStripDummyDelegate dummy_tab_strip_delegate;
+  TabStripModel strip_src(&dummy_tab_strip_delegate, profile());
+  TabBlockedStateTestBrowser browser_src(&strip_src);
+
+  // Add a tab.
+  WebContents* contents1 = CreateWebContents();
+  web_modal::WebContentsModalDialogManager::CreateForWebContents(contents1);
+  strip_src.AppendWebContents(contents1, false);
+
+  // Add another tab.
+  WebContents* contents2 = CreateWebContents();
+  web_modal::WebContentsModalDialogManager::CreateForWebContents(contents2);
+  strip_src.AppendWebContents(contents2, false);
+
+  // Create a destination tab strip.
+  TabStripModel strip_dst(&dummy_tab_strip_delegate, profile());
+  TabBlockedStateTestBrowser browser_dst(&strip_dst);
+
+  // Setup a NativeWebContentsModalDialogManager for tab |contents2|.
+  web_modal::WebContentsModalDialogManager* modal_dialog_manager =
+      web_modal::WebContentsModalDialogManager::FromWebContents(contents2);
+  web_modal::WebContentsModalDialogManager::TestApi test_api(
+      modal_dialog_manager);
+  test_api.ResetNativeManager(
+      new DummyNativeWebContentsModalDialogManager(modal_dialog_manager));
+
+  // Show a dialog that blocks tab |contents2|.
+  // DummyNativeWebContentsModalDialogManager doesn't care about the
+  // NativeWebContentsModalDialog value, so any dummy value works.
+  modal_dialog_manager->ShowDialog(
+      reinterpret_cast<NativeWebContentsModalDialog>(0));
+  EXPECT_TRUE(strip_src.IsTabBlocked(1));
+
+  // Detach the tab.
+  WebContents* moved_contents = strip_src.DetachWebContentsAt(1);
+  EXPECT_EQ(contents2, moved_contents);
+
+  // Attach the tab to the destination tab strip.
+  strip_dst.AppendWebContents(moved_contents, true);
+  EXPECT_TRUE(strip_dst.IsTabBlocked(0));
+
+  strip_dst.CloseAllTabs();
+  strip_src.CloseAllTabs();
 }

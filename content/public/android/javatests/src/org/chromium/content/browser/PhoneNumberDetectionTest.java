@@ -1,15 +1,13 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 package org.chromium.content.browser;
 
 import android.test.FlakyTest;
-import android.test.suitebuilder.annotation.LargeTest;
-import android.test.suitebuilder.annotation.MediumTest;
 
 import org.chromium.base.test.util.Feature;
-import org.chromium.content.common.CommandLine;
+import org.chromium.content.common.ContentSwitches;
 
 /**
  * Test suite for phone number detection.
@@ -34,7 +32,7 @@ public class PhoneNumberDetectionTest extends ContentDetectionTestBase {
     private void startActivityWithTestUrlAndCountryIso(String testUrl, String countryIso)
             throws Throwable {
         final String[] cmdlineArgs = countryIso == null ? null : new String[] {
-                "--" + CommandLine.NETWORK_COUNTRY_ISO + "=" + countryIso };
+                "--" + ContentSwitches.NETWORK_COUNTRY_ISO + "=" + countryIso };
         startActivityWithTestUrlAndCommandLineArgs(testUrl, cmdlineArgs);
     }
 

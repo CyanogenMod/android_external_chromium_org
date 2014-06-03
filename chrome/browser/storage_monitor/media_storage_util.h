@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// chrome::MediaStorageUtil provides information about storage devices attached
+// MediaStorageUtil provides information about storage devices attached
 // to the computer.
 
 #ifndef CHROME_BROWSER_STORAGE_MONITOR_MEDIA_STORAGE_UTIL_H_
@@ -14,8 +14,6 @@
 #include "base/basictypes.h"
 #include "base/callback_forward.h"
 #include "base/files/file_path.h"
-
-namespace chrome {
 
 struct StorageInfo;
 
@@ -55,7 +53,7 @@ class MediaStorageUtil {
   // mass storage device, as defined by IsMassStorageDevice().
   static void RecordDeviceInfoHistogram(bool mass_storage,
                                         const std::string& device_uuid,
-                                        const string16& device_label);
+                                        const base::string16& device_label);
 
   // Returns true if the |id| is both a removable device and also
   // currently attached.
@@ -64,7 +62,5 @@ class MediaStorageUtil {
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(MediaStorageUtil);
 };
-
-}  // namespace chrome
 
 #endif  // CHROME_BROWSER_STORAGE_MONITOR_MEDIA_STORAGE_UTIL_H_

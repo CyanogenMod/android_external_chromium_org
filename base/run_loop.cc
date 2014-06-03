@@ -10,29 +10,31 @@ namespace base {
 
 RunLoop::RunLoop()
     : loop_(MessageLoop::current()),
-      weak_factory_(this),
       previous_run_loop_(NULL),
       run_depth_(0),
       run_called_(false),
       quit_called_(false),
       running_(false),
-      quit_when_idle_received_(false) {
-#if !defined(OS_MACOSX) && !defined(OS_ANDROID)
+      quit_when_idle_received_(false),
+      weak_factory_(this) {
+#if !defined(OS_MACOSX) && !defined(OS_ANDROID) && \
+    !defined(USE_GTK_MESSAGE_PUMP)
    dispatcher_ = NULL;
 #endif
 }
 
-#if !defined(OS_MACOSX) && !defined(OS_ANDROID)
+#if !defined(OS_MACOSX) && !defined(OS_ANDROID) && \
+    !defined(USE_GTK_MESSAGE_PUMP)
 RunLoop::RunLoop(MessageLoop::Dispatcher* dispatcher)
     : loop_(MessageLoop::current()),
-      weak_factory_(this),
       previous_run_loop_(NULL),
       dispatcher_(dispatcher),
       run_depth_(0),
       run_called_(false),
       quit_called_(false),
       running_(false),
-      quit_when_idle_received_(false) {
+      quit_when_idle_received_(false),
+      weak_factory_(this) {
 }
 #endif
 

@@ -13,12 +13,14 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_dialogs.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/extension.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/test/test_notification_tracker.h"
 #include "content/public/test/test_utils.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/switches.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 
@@ -33,7 +35,7 @@ class AppBackgroundPageApiTest : public ExtensionApiTest {
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     ExtensionApiTest::SetUpCommandLine(command_line);
     command_line->AppendSwitch(switches::kDisablePopupBlocking);
-    command_line->AppendSwitch(switches::kAllowHTTPBackgroundPage);
+    command_line->AppendSwitch(extensions::switches::kAllowHTTPBackgroundPage);
   }
 
   bool CreateApp(const std::string& app_manifest,
@@ -69,7 +71,7 @@ class AppBackgroundPageApiTest : public ExtensionApiTest {
       DLOG(WARNING) << "Skipping check - background mode disabled";
       return true;
     }
-    if (manager->IsBackgroundModeActiveForTest() == expected_background_mode)
+    if (manager->IsBackgroundModeActive() == expected_background_mode)
       return true;
 
     // We are not currently in the expected state - wait for the state to
@@ -78,7 +80,7 @@ class AppBackgroundPageApiTest : public ExtensionApiTest {
         chrome::NOTIFICATION_BACKGROUND_MODE_CHANGED,
         content::NotificationService::AllSources());
     watcher.Wait();
-    return manager->IsBackgroundModeActiveForTest() == expected_background_mode;
+    return manager->IsBackgroundModeActive() == expected_background_mode;
 #endif
   }
 
@@ -216,6 +218,11 @@ IN_PROC_BROWSER_TEST_F(AppBackgroundPageApiTest, ManifestBackgroundPage) {
 }
 
 IN_PROC_BROWSER_TEST_F(AppBackgroundPageApiTest, NoJsBackgroundPage) {
+  // Keep the task manager up through this test to verify that a crash doesn't
+  // happen when window.open creates a background page that switches
+  // RenderViewHosts. See http://crbug.com/165138.
+  chrome::ShowTaskManager(browser());
+
   // Make sure that no BackgroundContentses get deleted (a signal that repeated
   // window.open calls recreate instances, instead of being no-ops).
   content::TestNotificationTracker background_deleted_tracker;

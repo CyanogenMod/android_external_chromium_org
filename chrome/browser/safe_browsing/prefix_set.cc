@@ -154,13 +154,13 @@ void PrefixSet::GetPrefixes(std::vector<SBPrefix>* prefixes) const {
 // static
 PrefixSet* PrefixSet::LoadFile(const base::FilePath& filter_name) {
   int64 size_64;
-  if (!file_util::GetFileSize(filter_name, &size_64))
+  if (!base::GetFileSize(filter_name, &size_64))
     return NULL;
   using base::MD5Digest;
   if (size_64 < static_cast<int64>(sizeof(FileHeader) + sizeof(MD5Digest)))
     return NULL;
 
-  file_util::ScopedFILE file(file_util::OpenFile(filter_name, "rb"));
+  file_util::ScopedFILE file(base::OpenFile(filter_name, "rb"));
   if (!file.get())
     return NULL;
 
@@ -243,7 +243,7 @@ bool PrefixSet::WriteFile(const base::FilePath& filter_name) const {
     return false;
   }
 
-  file_util::ScopedFILE file(file_util::OpenFile(filter_name, "wb"));
+  file_util::ScopedFILE file(base::OpenFile(filter_name, "wb"));
   if (!file.get())
     return false;
 

@@ -29,7 +29,6 @@
 #include "chrome/browser/ui/panels/panel_manager.h"
 #include "chrome/browser/ui/panels/stacked_panel_collection.h"
 #include "chrome/browser/web_applications/web_app.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/manifest_handlers/icons_handler.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
@@ -37,6 +36,7 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/common/extension.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/rect.h"
 
@@ -121,7 +121,7 @@ base::DictionaryValue* PanelExtensionWindowController::CreateTabValue(
   tab_value->SetString(
       extensions::tabs_constants::kUrlKey, web_contents->GetURL().spec());
   tab_value->SetString(extensions::tabs_constants::kStatusKey,
-                       ExtensionTabUtil::GetTabStatusText(
+                       extensions::ExtensionTabUtil::GetTabStatusText(
                            web_contents->IsLoading()));
   tab_value->SetBoolean(
       extensions::tabs_constants::kActiveKey, panel_->IsActive());
@@ -150,7 +150,7 @@ bool PanelExtensionWindowController::IsVisibleToExtension(
   return extension->id() == panel_->extension_id();
 }
 
-}  // namespace internal
+}  // namespace panel_internal
 
 Panel::~Panel() {
   DCHECK(!collection_);
@@ -350,6 +350,10 @@ bool Panel::IsAlwaysOnTop() const {
   return native_panel_->IsPanelAlwaysOnTop();
 }
 
+void Panel::SetAlwaysOnTop(bool on_top) {
+  native_panel_->SetPanelAlwaysOnTop(on_top);
+}
+
 void Panel::ExecuteCommandWithDisposition(int id,
                                           WindowOpenDisposition disposition) {
   DCHECK(command_updater_.IsCommandEnabled(id)) << "Invalid/disabled command "
@@ -411,14 +415,14 @@ void Panel::ExecuteCommandWithDisposition(int id,
       DevToolsWindow::ToggleDevToolsWindow(
           GetWebContents()->GetRenderViewHost(),
           true,
-          DEVTOOLS_TOGGLE_ACTION_SHOW);
+          DevToolsToggleAction::Show());
       break;
     case IDC_DEV_TOOLS_CONSOLE:
       content::RecordAction(UserMetricsAction("DevTools_ToggleConsole"));
       DevToolsWindow::ToggleDevToolsWindow(
           GetWebContents()->GetRenderViewHost(),
           true,
-          DEVTOOLS_TOGGLE_ACTION_SHOW_CONSOLE);
+          DevToolsToggleAction::ShowConsole());
       break;
 
     default:
@@ -431,7 +435,7 @@ void Panel::Observe(int type,
                     const content::NotificationSource& source,
                     const content::NotificationDetails& details) {
   switch (type) {
-    case content::NOTIFICATION_WEB_CONTENTS_SWAPPED:
+    case content::NOTIFICATION_RENDER_VIEW_HOST_CHANGED:
       ConfigureAutoResize(content::Source<content::WebContents>(source).ptr());
       break;
     case chrome::NOTIFICATION_EXTENSION_UNLOADED:
@@ -582,7 +586,7 @@ void Panel::SetAutoResizable(bool resizable) {
       EnableWebContentsAutoResize(web_contents);
   } else {
     if (web_contents) {
-      registrar_.Remove(this, content::NOTIFICATION_WEB_CONTENTS_SWAPPED,
+      registrar_.Remove(this, content::NOTIFICATION_RENDER_VIEW_HOST_CHANGED,
                         content::Source<content::WebContents>(web_contents));
 
       // NULL might be returned if the tab has not been added.
@@ -600,11 +604,11 @@ void Panel::EnableWebContentsAutoResize(content::WebContents* web_contents) {
   // We also need to know when the render view host changes in order
   // to turn on auto-resize notifications in the new render view host.
   if (!registrar_.IsRegistered(
-          this, content::NOTIFICATION_WEB_CONTENTS_SWAPPED,
+          this, content::NOTIFICATION_RENDER_VIEW_HOST_CHANGED,
           content::Source<content::WebContents>(web_contents))) {
     registrar_.Add(
         this,
-        content::NOTIFICATION_WEB_CONTENTS_SWAPPED,
+        content::NOTIFICATION_RENDER_VIEW_HOST_CHANGED,
         content::Source<content::WebContents>(web_contents));
   }
 }
@@ -658,18 +662,9 @@ void Panel::HandleKeyboardEvent(const content::NativeWebKeyboardEvent& event) {
   native_panel_->HandlePanelKeyboardEvent(event);
 }
 
-void Panel::SetAlwaysOnTop(bool on_top) {
-  native_panel_->SetPanelAlwaysOnTop(on_top);
-}
-
 void Panel::SetPreviewMode(bool in_preview) {
   DCHECK_NE(in_preview_mode_, in_preview);
   in_preview_mode_ = in_preview;
-}
-
-void Panel::EnableResizeByMouse(bool enable) {
-  DCHECK(native_panel_);
-  native_panel_->EnableResizeByMouse(enable);
 }
 
 void Panel::UpdateMinimizeRestoreButtonVisibility() {
@@ -753,9 +748,9 @@ bool Panel::ExecuteCommandIfEnabled(int id) {
   return false;
 }
 
-string16 Panel::GetWindowTitle() const {
+base::string16 Panel::GetWindowTitle() const {
   content::WebContents* contents = GetWebContents();
-  string16 title;
+  base::string16 title;
 
   // |contents| can be NULL during the window's creation.
   if (contents) {
@@ -893,11 +888,12 @@ void Panel::UpdateAppIcon() {
 }
 
 // static
-void Panel::FormatTitleForDisplay(string16* title) {
+void Panel::FormatTitleForDisplay(base::string16* title) {
   size_t current_index = 0;
   size_t match_index;
-  while ((match_index = title->find(L'\n', current_index)) != string16::npos) {
-    title->replace(match_index, 1, string16());
+  while ((match_index = title->find(L'\n', current_index)) !=
+         base::string16::npos) {
+    title->replace(match_index, 1, base::string16());
     current_index = match_index;
   }
 }

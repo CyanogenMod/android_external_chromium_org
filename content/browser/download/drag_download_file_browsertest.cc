@@ -16,9 +16,9 @@
 #include "content/public/common/content_client.h"
 #include "content/public/test/download_test_observer.h"
 #include "content/public/test/test_utils.h"
-#include "content/shell/shell.h"
-#include "content/shell/shell_browser_context.h"
-#include "content/shell/shell_download_manager_delegate.h"
+#include "content/shell/browser/shell.h"
+#include "content/shell/browser/shell_browser_context.h"
+#include "content/shell/browser/shell_download_manager_delegate.h"
 #include "content/test/content_browser_test.h"
 #include "content/test/content_browser_test_utils.h"
 #include "content/test/net/url_request_mock_http_job.h"
@@ -94,12 +94,9 @@ IN_PROC_BROWSER_TEST_F(DragDownloadFileTest, DragDownloadFileTest_NetError) {
       "download-test.lib"))));
   Referrer referrer;
   std::string referrer_encoding;
-  DragDownloadFile* file = new DragDownloadFile(name,
-                                                scoped_ptr<net::FileStream>(),
-                                                url,
-                                                referrer,
-                                                referrer_encoding,
-                                                shell()->web_contents());
+  scoped_refptr<DragDownloadFile> file(
+      new DragDownloadFile(name, scoped_ptr<net::FileStream>(), url, referrer,
+                           referrer_encoding, shell()->web_contents()));
   scoped_refptr<MockDownloadFileObserver> observer(
       new MockDownloadFileObserver());
   EXPECT_CALL(*observer.get(), OnDownloadAborted())
@@ -119,9 +116,9 @@ IN_PROC_BROWSER_TEST_F(DragDownloadFileTest, DragDownloadFileTest_Complete) {
   std::string referrer_encoding;
   net::FileStream* stream = NULL;
   SetUpServer();
-  DragDownloadFile* file = new DragDownloadFile(
+  scoped_refptr<DragDownloadFile> file(new DragDownloadFile(
       name, scoped_ptr<net::FileStream>(stream), url, referrer,
-      referrer_encoding, shell()->web_contents());
+      referrer_encoding, shell()->web_contents()));
   scoped_refptr<MockDownloadFileObserver> observer(
       new MockDownloadFileObserver());
   EXPECT_CALL(*observer.get(), OnDownloadCompleted(_))

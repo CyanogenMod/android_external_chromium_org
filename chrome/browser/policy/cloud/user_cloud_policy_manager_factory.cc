@@ -4,15 +4,53 @@
 
 #include "chrome/browser/policy/cloud/user_cloud_policy_manager_factory.h"
 
-#include "base/command_line.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
-#include "chrome/browser/policy/cloud/user_cloud_policy_manager.h"
-#include "chrome/browser/policy/cloud/user_cloud_policy_store.h"
-#include "chrome/browser/profiles/profile.h"
-#include "chrome/common/chrome_switches.h"
+#include "base/message_loop/message_loop_proxy.h"
+#include "base/sequenced_task_runner.h"
+#include "chrome/browser/policy/schema_registry_service.h"
+#include "chrome/browser/policy/schema_registry_service_factory.h"
 #include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
+#include "components/policy/core/common/cloud/cloud_external_data_manager.h"
+#include "components/policy/core/common/cloud/user_cloud_policy_manager.h"
+#include "components/policy/core/common/cloud/user_cloud_policy_store.h"
+#include "content/public/browser/browser_context.h"
 
 namespace policy {
+
+namespace {
+
+// Directory inside the profile directory where policy-related resources are
+// stored.
+const base::FilePath::CharType kPolicy[] = FILE_PATH_LITERAL("Policy");
+
+// Directory under kPolicy, in the user's profile dir, where policy for
+// components is cached.
+const base::FilePath::CharType kComponentsDir[] =
+    FILE_PATH_LITERAL("Components");
+
+}  // namespace
+
+// A BrowserContextKeyedService that wraps a UserCloudPolicyManager.
+class UserCloudPolicyManagerFactory::ManagerWrapper
+    : public BrowserContextKeyedService {
+ public:
+  explicit ManagerWrapper(UserCloudPolicyManager* manager)
+      : manager_(manager) {}
+  virtual ~ManagerWrapper() {}
+
+  virtual void Shutdown() OVERRIDE {
+    manager_->Shutdown();
+  }
+
+  UserCloudPolicyManager* manager() { return manager_; }
+
+ private:
+  UserCloudPolicyManager* manager_;
+
+  DISALLOW_COPY_AND_ASSIGN(ManagerWrapper);
+};
 
 // static
 UserCloudPolicyManagerFactory* UserCloudPolicyManagerFactory::GetInstance() {
@@ -20,87 +58,129 @@ UserCloudPolicyManagerFactory* UserCloudPolicyManagerFactory::GetInstance() {
 }
 
 // static
-UserCloudPolicyManager* UserCloudPolicyManagerFactory::GetForProfile(
-    Profile* profile) {
-  return GetInstance()->GetManagerForProfile(profile);
+UserCloudPolicyManager* UserCloudPolicyManagerFactory::GetForBrowserContext(
+    content::BrowserContext* context) {
+  return GetInstance()->GetManagerForBrowserContext(context);
 }
 
 // static
 scoped_ptr<UserCloudPolicyManager>
-    UserCloudPolicyManagerFactory::CreateForProfile(Profile* profile,
-                                                    bool force_immediate_load) {
-  return GetInstance()->CreateManagerForProfile(profile, force_immediate_load);
+UserCloudPolicyManagerFactory::CreateForOriginalBrowserContext(
+    content::BrowserContext* context,
+    bool force_immediate_load,
+    const scoped_refptr<base::SequencedTaskRunner>& background_task_runner,
+    const scoped_refptr<base::SequencedTaskRunner>& file_task_runner,
+    const scoped_refptr<base::SequencedTaskRunner>& io_task_runner) {
+  return GetInstance()->CreateManagerForOriginalBrowserContext(
+      context,
+      force_immediate_load,
+      background_task_runner,
+      file_task_runner,
+      io_task_runner);
+}
+
+// static
+UserCloudPolicyManager*
+UserCloudPolicyManagerFactory::RegisterForOffTheRecordBrowserContext(
+    content::BrowserContext* original_context,
+    content::BrowserContext* off_the_record_context) {
+  return GetInstance()->RegisterManagerForOffTheRecordBrowserContext(
+      original_context, off_the_record_context);
+}
+
+void UserCloudPolicyManagerFactory::RegisterForTesting(
+    content::BrowserContext* context,
+    UserCloudPolicyManager* manager) {
+  ManagerWrapper*& manager_wrapper = manager_wrappers_[context];
+  delete manager_wrapper;
+  manager_wrapper = new ManagerWrapper(manager);
 }
 
 UserCloudPolicyManagerFactory::UserCloudPolicyManagerFactory()
     : BrowserContextKeyedBaseFactory(
         "UserCloudPolicyManager",
-        BrowserContextDependencyManager::GetInstance()) {}
+        BrowserContextDependencyManager::GetInstance()) {
+  DependsOn(SchemaRegistryServiceFactory::GetInstance());
+}
 
-UserCloudPolicyManagerFactory::~UserCloudPolicyManagerFactory() {}
+UserCloudPolicyManagerFactory::~UserCloudPolicyManagerFactory() {
+  DCHECK(manager_wrappers_.empty());
+}
 
-UserCloudPolicyManager* UserCloudPolicyManagerFactory::GetManagerForProfile(
-    Profile* profile) {
-  // Get the manager for the original profile, since the PolicyService is
-  // also shared between the incognito Profile and the original Profile.
-  ManagerMap::const_iterator it = managers_.find(profile->GetOriginalProfile());
-  return it != managers_.end() ? it->second : NULL;
+UserCloudPolicyManager*
+UserCloudPolicyManagerFactory::GetManagerForBrowserContext(
+    content::BrowserContext* context) {
+  // In case |context| is an incognito Profile/Context, |manager_wrappers_|
+  // will have a matching entry pointing to the manager of the original context.
+  ManagerWrapperMap::const_iterator it = manager_wrappers_.find(context);
+  return it != manager_wrappers_.end() ? it->second->manager() : NULL;
 }
 
 scoped_ptr<UserCloudPolicyManager>
-    UserCloudPolicyManagerFactory::CreateManagerForProfile(
-        Profile* profile,
-        bool force_immediate_load) {
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDisableCloudPolicyOnSignin)) {
-    return scoped_ptr<UserCloudPolicyManager>();
-  }
-  scoped_ptr<UserCloudPolicyStore> store(UserCloudPolicyStore::Create(profile));
+UserCloudPolicyManagerFactory::CreateManagerForOriginalBrowserContext(
+    content::BrowserContext* context,
+    bool force_immediate_load,
+    const scoped_refptr<base::SequencedTaskRunner>& background_task_runner,
+    const scoped_refptr<base::SequencedTaskRunner>& file_task_runner,
+    const scoped_refptr<base::SequencedTaskRunner>& io_task_runner) {
+  DCHECK(!context->IsOffTheRecord());
+
+  scoped_ptr<UserCloudPolicyStore> store(
+      UserCloudPolicyStore::Create(context->GetPath(), background_task_runner));
   if (force_immediate_load)
     store->LoadImmediately();
+
+  const base::FilePath component_policy_cache_dir =
+      context->GetPath().Append(kPolicy).Append(kComponentsDir);
+
   scoped_ptr<UserCloudPolicyManager> manager(
-      new UserCloudPolicyManager(profile, store.Pass()));
-  manager->Init();
+      new UserCloudPolicyManager(store.Pass(),
+                                 component_policy_cache_dir,
+                                 scoped_ptr<CloudExternalDataManager>(),
+                                 base::MessageLoopProxy::current(),
+                                 file_task_runner,
+                                 io_task_runner));
+  manager->Init(SchemaRegistryServiceFactory::GetForContext(context));
+  manager_wrappers_[context] = new ManagerWrapper(manager.get());
   return manager.Pass();
+}
+
+UserCloudPolicyManager*
+UserCloudPolicyManagerFactory::RegisterManagerForOffTheRecordBrowserContext(
+    content::BrowserContext* original_context,
+    content::BrowserContext* off_the_record_context) {
+  // Register the UserCloudPolicyManager of the original context for the
+  // respective incognito context. See also GetManagerForBrowserContext.
+  UserCloudPolicyManager* manager =
+      GetManagerForBrowserContext(original_context);
+  manager_wrappers_[off_the_record_context] = new ManagerWrapper(manager);
+  return manager;
 }
 
 void UserCloudPolicyManagerFactory::BrowserContextShutdown(
     content::BrowserContext* context) {
-  Profile* profile = static_cast<Profile*>(context);
-  if (profile->IsOffTheRecord())
+  if (context->IsOffTheRecord())
     return;
-  UserCloudPolicyManager* manager = GetManagerForProfile(profile);
-  if (manager) {
-    manager->CloudPolicyManager::Shutdown();
-    manager->BrowserContextKeyedService::Shutdown();
+  ManagerWrapperMap::iterator it = manager_wrappers_.find(context);
+  // E.g. for a TestingProfile there might not be a manager created.
+  if (it != manager_wrappers_.end())
+    it->second->Shutdown();
+}
+
+void UserCloudPolicyManagerFactory::BrowserContextDestroyed(
+    content::BrowserContext* context) {
+  ManagerWrapperMap::iterator it = manager_wrappers_.find(context);
+  if (it != manager_wrappers_.end()) {
+    // The manager is not owned by the factory, so it's not deleted here.
+    delete it->second;
+    manager_wrappers_.erase(it);
   }
 }
 
 void UserCloudPolicyManagerFactory::SetEmptyTestingFactory(
-    content::BrowserContext* profile) {
-}
+    content::BrowserContext* context) {}
 
 void UserCloudPolicyManagerFactory::CreateServiceNow(
-    content::BrowserContext* profile) {
-}
-
-void UserCloudPolicyManagerFactory::Register(Profile* profile,
-                                             UserCloudPolicyManager* instance) {
-  UserCloudPolicyManager*& entry = managers_[profile];
-  DCHECK(!entry);
-  entry = instance;
-}
-
-void UserCloudPolicyManagerFactory::Unregister(
-    Profile* profile,
-    UserCloudPolicyManager* instance) {
-  ManagerMap::iterator entry = managers_.find(profile);
-  if (entry != managers_.end()) {
-    DCHECK_EQ(instance, entry->second);
-    managers_.erase(entry);
-  } else {
-    NOTREACHED();
-  }
-}
+    content::BrowserContext* context) {}
 
 }  // namespace policy

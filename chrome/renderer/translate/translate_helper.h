@@ -13,7 +13,7 @@
 #include "chrome/common/translate/translate_errors.h"
 #include "content/public/renderer/render_view_observer.h"
 
-namespace WebKit {
+namespace blink {
 class WebDocument;
 class WebFrame;
 }
@@ -27,7 +27,7 @@ class TranslateHelper : public content::RenderViewObserver {
   virtual ~TranslateHelper();
 
   // Informs us that the page's text has been extracted.
-  void PageCaptured(int page_id, const string16& contents);
+  void PageCaptured(int page_id, const base::string16& contents);
 
  protected:
   // The following methods are protected so they can be overridden in
@@ -106,7 +106,7 @@ class TranslateHelper : public content::RenderViewObserver {
   // Returns whether the page associated with |document| is a candidate for
   // translation.  Some pages can explictly specify (via a meta-tag) that they
   // should not be translated.
-  static bool IsTranslationAllowed(WebKit::WebDocument* document);
+  static bool IsTranslationAllowed(blink::WebDocument* document);
 
   // RenderViewObserver implementation.
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
@@ -130,7 +130,7 @@ class TranslateHelper : public content::RenderViewObserver {
 
   // Convenience method to access the main frame.  Can return NULL, typically
   // if the page is being closed.
-  WebKit::WebFrame* GetMainFrame();
+  blink::WebFrame* GetMainFrame();
 
   // ID to represent a page which TranslateHelper captured and determined a
   // content language.

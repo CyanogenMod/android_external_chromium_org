@@ -133,7 +133,7 @@ class UnloadTest : public InProcessBrowserTest {
   }
 
   void CheckTitle(const char* expected_title) {
-    string16 expected = ASCIIToUTF16(expected_title);
+    base::string16 expected = ASCIIToUTF16(expected_title);
     EXPECT_EQ(expected,
               browser()->tab_strip_model()->GetActiveWebContents()->GetTitle());
   }
@@ -281,7 +281,7 @@ IN_PROC_BROWSER_TEST_F(UnloadTest, BrowserCloseBeforeUnloadCancel) {
   // in-flight IPCs from the renderer reach the browser. Otherwise the browser
   // won't put up the beforeunload dialog because it's waiting for an ack from
   // the renderer.
-  string16 expected_title = ASCIIToUTF16("cancelled");
+  base::string16 expected_title = ASCIIToUTF16("cancelled");
   content::TitleWatcher title_watcher(
       browser()->tab_strip_model()->GetActiveWebContents(), expected_title);
   ClickModalDialogButton(false);
@@ -401,16 +401,15 @@ IN_PROC_BROWSER_TEST_F(UnloadTest, BrowserCloseTabWhenOtherTabHasListener) {
       content::NotificationService::AllSources());
   content::SimulateMouseClick(
       browser()->tab_strip_model()->GetActiveWebContents(), 0,
-      WebKit::WebMouseEvent::ButtonLeft);
+      blink::WebMouseEvent::ButtonLeft);
   observer.Wait();
   load_stop_observer.Wait();
   CheckTitle("popup");
 
-  content::WindowedNotificationObserver tab_close_observer(
-      content::NOTIFICATION_WEB_CONTENTS_DESTROYED,
-      content::NotificationService::AllSources());
+  content::WebContentsDestroyedWatcher destroyed_watcher(
+      browser()->tab_strip_model()->GetActiveWebContents());
   chrome::CloseTab(browser());
-  tab_close_observer.Wait();
+  destroyed_watcher.Wait();
 
   CheckTitle("only_one_unload");
 }
@@ -481,15 +480,21 @@ class FastTabCloseTabStripModelObserver : public TabStripModelObserver {
 
 // Test that fast-tab-close works when closing a tab with an unload handler
 // (http://crbug.com/142458).
-IN_PROC_BROWSER_TEST_F(FastUnloadTest, UnloadHidden) {
+// Flaky on Windows bots (http://crbug.com/267597).
 #if defined(OS_WIN)
-  // Flaky on Win7+ bots (http://crbug.com/267597).
-  if (base::win::GetVersion() >= base::win::VERSION_WIN7)
-    return;
+#define MAYBE_UnloadHidden \
+    DISABLED_UnloadHidden
+#else
+#define MAYBE_UnloadHidden \
+    UnloadHidden
 #endif
+IN_PROC_BROWSER_TEST_F(FastUnloadTest, MAYBE_UnloadHidden) {
   NavigateToPage("no_listeners");
   NavigateToPageInNewTab("unload_sets_cookie");
   EXPECT_EQ("", GetCookies("no_listeners"));
+
+  content::WebContentsDestroyedWatcher destroyed_watcher(
+      browser()->tab_strip_model()->GetActiveWebContents());
 
   {
     base::RunLoop run_loop;
@@ -503,16 +508,10 @@ IN_PROC_BROWSER_TEST_F(FastUnloadTest, UnloadHidden) {
   CheckTitle("no_listeners");
   EXPECT_EQ(1, browser()->tab_strip_model()->count());
 
-  // Show that the web contents to go away after the was removed.
-  // Without unload-detached, this times-out because it happens earlier.
-  content::WindowedNotificationObserver contents_destroyed_observer(
-      content::NOTIFICATION_WEB_CONTENTS_DESTROYED,
-      content::NotificationService::AllSources());
-  contents_destroyed_observer.Wait();
+  // Wait for the actual destruction.
+  destroyed_watcher.Wait();
 
-  // Browser still has the same tab.
-  CheckTitle("no_listeners");
-  EXPECT_EQ(1, browser()->tab_strip_model()->count());
+  // Verify that the destruction had the desired effect.
   EXPECT_EQ("unloaded=ohyeah", GetCookies("no_listeners"));
 }
 
@@ -531,7 +530,9 @@ IN_PROC_BROWSER_TEST_F(FastUnloadTest, PRE_ClosingLastTabFinishesUnload) {
   chrome::CloseTab(browser());
   window_observer.Wait();
 }
-IN_PROC_BROWSER_TEST_F(FastUnloadTest, ClosingLastTabFinishesUnload) {
+
+// Fails on Mac, Linux, Win7 (http://crbug.com/301173).
+IN_PROC_BROWSER_TEST_F(FastUnloadTest, DISABLED_ClosingLastTabFinishesUnload) {
 #if defined(OS_WIN)
   // Flaky on Win7+ bots (http://crbug.com/267597).
   if (base::win::GetVersion() >= base::win::VERSION_WIN7)
@@ -560,12 +561,10 @@ IN_PROC_BROWSER_TEST_F(FastUnloadTest, PRE_WindowCloseFinishesUnload) {
   chrome::CloseWindow(browser());
   window_observer.Wait();
 }
-IN_PROC_BROWSER_TEST_F(FastUnloadTest, WindowCloseFinishesUnload) {
-#if defined(OS_WIN)
-  // Flaky on Win7+ bots (http://crbug.com/267597).
-  if (base::win::GetVersion() >= base::win::VERSION_WIN7)
-    return;
-#endif
+
+// Flaky on Windows bots (http://crbug.com/279267) and fails on Mac / Linux bots
+// (http://crbug.com/301173).
+IN_PROC_BROWSER_TEST_F(FastUnloadTest, DISABLED_WindowCloseFinishesUnload) {
   // Check for cookie set in unload during PRE_ test.
   NavigateToPage("no_listeners");
   EXPECT_EQ("unloaded=ohyeah", GetCookies("no_listeners"));

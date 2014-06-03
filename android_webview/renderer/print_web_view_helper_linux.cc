@@ -1,6 +1,8 @@
-// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+
+// TODO(sgurun) copied from chrome/renderer. Remove after crbug.com/322276
 
 #include "android_webview/renderer/print_web_view_helper.h"
 
@@ -24,8 +26,7 @@
 
 namespace printing {
 
-using WebKit::WebFrame;
-using WebKit::WebNode;
+using blink::WebFrame;
 
 bool PrintWebViewHelper::RenderPreviewPage(
     int page_number,
@@ -58,8 +59,7 @@ bool PrintWebViewHelper::RenderPreviewPage(
   return PreviewPageRendered(page_number, draft_metafile.get());
 }
 
-bool PrintWebViewHelper::PrintPagesNative(WebKit::WebFrame* frame,
-                                          const WebKit::WebNode& node,
+bool PrintWebViewHelper::PrintPagesNative(blink::WebFrame* frame,
                                           int page_count,
                                           const gfx::Size& canvas_size) {
   NativeMetafile metafile;
@@ -92,7 +92,7 @@ bool PrintWebViewHelper::PrintPagesNative(WebKit::WebFrame* frame,
     PrintPageInternal(page_params, canvas_size, frame, &metafile);
   }
 
-  // WebKit::printEnd() for PDF should be called before metafile is closed.
+  // blink::printEnd() for PDF should be called before metafile is closed.
   FinishFramePrinting();
 
   metafile.FinishDocument();
@@ -167,8 +167,9 @@ void PrintWebViewHelper::PrintPageInternal(
   gfx::Rect canvas_area =
       params.params.display_header_footer ? gfx::Rect(page_size) : content_area;
 
-  SkDevice* device = metafile->StartPageForVectorCanvas(page_size, canvas_area,
-                                                        scale_factor);
+  SkBaseDevice* device = metafile->StartPageForVectorCanvas(page_size,
+                                                            canvas_area,
+                                                            scale_factor);
   if (!device)
     return;
 

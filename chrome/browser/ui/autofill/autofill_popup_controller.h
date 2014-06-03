@@ -18,6 +18,10 @@ class Rect;
 class RectF;
 }
 
+namespace ui {
+class MouseEvent;
+}
+
 namespace autofill {
 
 // This interface provides data to an AutofillPopupView.
@@ -32,21 +36,27 @@ class AutofillPopupController {
   // Recalculates the height and width of the popup and triggers a redraw.
   virtual void UpdateBoundsAndRedrawPopup() = 0;
 
-  // The user has moved the mouse within the popup.
-  virtual void MouseHovered(int x, int y) = 0;
+  // The user selected the line at (x, y), e.g. by hovering the mouse cursor.
+  // |x| and |y| must be in the popup coordinates.
+  virtual void LineSelectedAtPoint(int x, int y) = 0;
 
-  // The user clicked the mouse within the popup.
-  virtual void MouseClicked(int x, int y) = 0;
+  // The user accepted the line at (x, y); e.g., by clicking on it using the
+  // mouse. |x| and |y| must be in the popup coordinates.
+  virtual void LineAcceptedAtPoint(int x, int y) = 0;
 
-  // The user has moved the mouse outside of the popup.
-  virtual void MouseExitedPopup() = 0;
+  // The user cleared the selected line, e.g. by moving the mouse cursor out of
+  // the popup bounds.
+  virtual void SelectionCleared() = 0;
+
+  // Whether |event| should be reposted to the native window management.
+  virtual bool ShouldRepostEvent(const ui::MouseEvent& event) = 0;
 
   // Accepts the suggestion at |index|.
   virtual void AcceptSuggestion(size_t index) = 0;
 
   // Gets the resource value for the given resource, returning -1 if the
   // resource isn't recognized.
-  virtual int GetIconResourceID(const string16& resource_name) = 0;
+  virtual int GetIconResourceID(const base::string16& resource_name) const = 0;
 
   // Returns true if the given index refers to an element that can be deleted.
   virtual bool CanDelete(size_t index) const = 0;
@@ -78,13 +88,13 @@ class AutofillPopupController {
   // to take in the row index and return a single element, instead of the
   // whole vector.
   // The main labels for each autofill item.
-  virtual const std::vector<string16>& names() const = 0;
+  virtual const std::vector<base::string16>& names() const = 0;
 
   // Smaller labels for each autofill item.
-  virtual const std::vector<string16>& subtexts() const = 0;
+  virtual const std::vector<base::string16>& subtexts() const = 0;
 
   // A string which identifies the icon to be shown for each autofill item.
-  virtual const std::vector<string16>& icons() const = 0;
+  virtual const std::vector<base::string16>& icons() const = 0;
 
   // Identifier for the row.
   virtual const std::vector<int>& identifiers() const = 0;
@@ -99,6 +109,9 @@ class AutofillPopupController {
   // Returns the index of the selected line. A line is "selected" when it is
   // hovered or has keyboard focus.
   virtual int selected_line() const = 0;
+
+  // Whether the view should be hidden on outside mouse presses.
+  virtual bool hide_on_outside_click() const = 0;
 
  protected:
   virtual ~AutofillPopupController() {}

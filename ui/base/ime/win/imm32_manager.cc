@@ -329,9 +329,9 @@ void IMM32Manager::GetCompositionInfo(HIMC imm_context, LPARAM lparam,
     // IMM32 does not support non-zero-width selection in a composition. So
     // always use the caret position as selection range.
     int cursor = ::ImmGetCompositionString(imm_context, GCS_CURSORPOS, NULL, 0);
-    composition->selection = ui::Range(cursor);
+    composition->selection = gfx::Range(cursor);
   } else {
-    composition->selection = ui::Range(0);
+    composition->selection = gfx::Range(0);
   }
 
   // Retrieve the clause segmentations and convert them to underlines.
@@ -605,6 +605,10 @@ bool IMM32Manager::IsCtrlShiftPressed(base::i18n::TextDirection* direction) {
   keystate[VK_CONTROL] = 0;
   keystate[VK_RCONTROL] = 0;
   keystate[VK_LCONTROL] = 0;
+  // Oddly, pressing F10 in another application seemingly breaks all subsequent
+  // calls to GetKeyboardState regarding the state of the F22 key. Perhaps this
+  // defect is limited to my keyboard driver, but ignoring F22 should be okay.
+  keystate[VK_F22] = 0;
   for (int i = 0; i <= VK_PACKET; ++i) {
     if (keystate[i] & kKeyDownMask)
       return false;

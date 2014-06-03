@@ -7,20 +7,22 @@
 #include "android_webview/browser/aw_form_database_service.h"
 #include "android_webview/browser/aw_pref_store.h"
 #include "android_webview/browser/aw_quota_manager_bridge.h"
+#include "android_webview/browser/aw_resource_context.h"
 #include "android_webview/browser/jni_dependency_factory.h"
 #include "android_webview/browser/net/aw_url_request_context_getter.h"
+#include "android_webview/browser/net/init_native_callback.h"
 #include "base/prefs/pref_registry_simple.h"
 #include "base/prefs/pref_service.h"
-#include "base/prefs/pref_service_builder.h"
+#include "base/prefs/pref_service_factory.h"
 #include "components/autofill/core/common/autofill_pref_names.h"
 #include "components/user_prefs/user_prefs.h"
 #include "components/visitedlink/browser/visitedlink_master.h"
 #include "content/public/browser/browser_thread.h"
-#include "content/public/browser/resource_context.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
-#include "net/url_request/url_request_context.h"
+#include "net/cookies/cookie_store.h"
 
+using base::FilePath;
 using content::BrowserThread;
 
 namespace android_webview {
@@ -31,44 +33,15 @@ namespace {
 void HandleReadError(PersistentPrefStore::PrefReadError error) {
 }
 
-class AwResourceContext : public content::ResourceContext {
- public:
-  explicit AwResourceContext(net::URLRequestContextGetter* getter)
-      : getter_(getter) {}
-  virtual ~AwResourceContext() {}
-
-  // content::ResourceContext implementation.
-  virtual net::HostResolver* GetHostResolver() OVERRIDE {
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-    return getter_->GetURLRequestContext()->host_resolver();
-  }
-  virtual net::URLRequestContext* GetRequestContext() OVERRIDE {
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-    return getter_->GetURLRequestContext();
-  }
-  virtual bool AllowMicAccess(const GURL& origin) OVERRIDE {
-    return false;
-  }
-  virtual bool AllowCameraAccess(const GURL& origin) OVERRIDE {
-    return false;
-  }
-
- private:
-  net::URLRequestContextGetter* getter_;
-
-  DISALLOW_COPY_AND_ASSIGN(AwResourceContext);
-};
-
 AwBrowserContext* g_browser_context = NULL;
 
 }  // namespace
 
 AwBrowserContext::AwBrowserContext(
-    const base::FilePath path,
+    const FilePath path,
     JniDependencyFactory* native_factory)
     : context_storage_path_(path),
-      native_factory_(native_factory),
-      user_pref_service_ready_(false) {
+      native_factory_(native_factory) {
   DCHECK(g_browser_context == NULL);
   g_browser_context = this;
 
@@ -96,12 +69,11 @@ AwBrowserContext* AwBrowserContext::FromWebContents(
   return static_cast<AwBrowserContext*>(web_contents->GetBrowserContext());
 }
 
-void AwBrowserContext::InitializeBeforeThreadCreation() {
-  DCHECK(!url_request_context_getter_.get());
-  url_request_context_getter_ = new AwURLRequestContextGetter(this);
-}
-
 void AwBrowserContext::PreMainMessageLoopRun() {
+  cookie_store_ = CreateCookieStore(this);
+  url_request_context_getter_ =
+      new AwURLRequestContextGetter(GetPath(), cookie_store_.get());
+
   visitedlink_master_.reset(
       new visitedlink::VisitedLinkMaster(this, this, false));
   visitedlink_master_->Init();
@@ -117,9 +89,14 @@ void AwBrowserContext::AddVisitedURLs(const std::vector<GURL>& urls) {
 
 net::URLRequestContextGetter* AwBrowserContext::CreateRequestContext(
     content::ProtocolHandlerMap* protocol_handlers) {
-  CHECK(url_request_context_getter_.get());
+  // This function cannot actually create the request context because
+  // there is a reentrant dependency on GetResourceContext() via
+  // content::StoragePartitionImplMap::Create(). This is not fixable
+  // until http://crbug.com/159193. Until then, assert that the context
+  // has already been allocated and just handle setting the protocol_handlers.
+  DCHECK(url_request_context_getter_);
   url_request_context_getter_->SetProtocolHandlers(protocol_handlers);
-  return url_request_context_getter_.get();
+  return url_request_context_getter_;
 }
 
 net::URLRequestContextGetter*
@@ -127,8 +104,8 @@ AwBrowserContext::CreateRequestContextForStoragePartition(
     const base::FilePath& partition_path,
     bool in_memory,
     content::ProtocolHandlerMap* protocol_handlers) {
-  CHECK(url_request_context_getter_.get());
-  return url_request_context_getter_.get();
+  NOTREACHED();
+  return NULL;
 }
 
 AwQuotaManagerBridge* AwBrowserContext::GetQuotaManagerBridge() {
@@ -144,10 +121,9 @@ AwFormDatabaseService* AwBrowserContext::GetFormDatabaseService() {
 
 // Create user pref service for autofill functionality.
 void AwBrowserContext::CreateUserPrefServiceIfNecessary() {
-  if (user_pref_service_ready_)
+  if (user_pref_service_)
     return;
 
-  user_pref_service_ready_ = true;
   PrefRegistrySimple* pref_registry = new PrefRegistrySimple();
   // We only use the autocomplete feature of the Autofill, which is
   // controlled via the manager_delegate. We don't use the rest
@@ -159,12 +135,12 @@ void AwBrowserContext::CreateUserPrefServiceIfNecessary() {
   pref_registry->RegisterDoublePref(
       autofill::prefs::kAutofillNegativeUploadRate, 0.0);
 
-  PrefServiceBuilder pref_service_builder;
-  pref_service_builder.WithUserPrefs(new AwPrefStore());
-  pref_service_builder.WithReadErrorCallback(base::Bind(&HandleReadError));
+  base::PrefServiceFactory pref_service_factory;
+  pref_service_factory.set_user_prefs(make_scoped_refptr(new AwPrefStore()));
+  pref_service_factory.set_read_error_callback(base::Bind(&HandleReadError));
+  user_pref_service_ = pref_service_factory.Create(pref_registry).Pass();
 
-  user_prefs::UserPrefs::Set(this,
-                             pref_service_builder.Create(pref_registry));
+  user_prefs::UserPrefs::Set(this, user_pref_service_.get());
 }
 
 base::FilePath AwBrowserContext::GetPath() const {
@@ -193,10 +169,18 @@ net::URLRequestContextGetter* AwBrowserContext::GetMediaRequestContext() {
 void AwBrowserContext::RequestMIDISysExPermission(
       int render_process_id,
       int render_view_id,
+      int bridge_id,
       const GURL& requesting_frame,
       const MIDISysExPermissionCallback& callback) {
   // TODO(toyoshim): Android is not supported yet.
   callback.Run(false);
+}
+
+void AwBrowserContext::CancelMIDISysExPermissionRequest(
+    int render_process_id,
+    int render_view_id,
+    int bridge_id,
+    const GURL& requesting_frame) {
 }
 
 net::URLRequestContextGetter*
@@ -209,12 +193,12 @@ net::URLRequestContextGetter*
 AwBrowserContext::GetMediaRequestContextForStoragePartition(
     const base::FilePath& partition_path,
     bool in_memory) {
-  return GetRequestContext();
+  NOTREACHED();
+  return NULL;
 }
 
 content::ResourceContext* AwBrowserContext::GetResourceContext() {
   if (!resource_context_) {
-    CHECK(url_request_context_getter_.get());
     resource_context_.reset(
         new AwResourceContext(url_request_context_getter_.get()));
   }

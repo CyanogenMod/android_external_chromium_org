@@ -9,14 +9,11 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "ui/base/events/event_handler.h"
+#include "ui/events/event_handler.h"
 
 namespace ash {
 
 class EventRewriterDelegate;
-#if defined(OS_CHROMEOS)
-class StickyKeys;
-#endif  // OS_CHROMEOS
 
 namespace internal {
 
@@ -28,18 +25,12 @@ class ASH_EXPORT EventRewriterEventFilter : public ui::EventHandler {
 
   void SetEventRewriterDelegate(scoped_ptr<EventRewriterDelegate> delegate);
 
-  // Enables or disables sticky keys.
-  void EnableStickyKeys(bool enabled);
-
  private:
   // Overridden from ui::EventHandler:
   virtual void OnKeyEvent(ui::KeyEvent* event) OVERRIDE;
   virtual void OnMouseEvent(ui::MouseEvent* event) OVERRIDE;
 
   scoped_ptr<EventRewriterDelegate> delegate_;
-#if defined(OS_CHROMEOS)
-  scoped_ptr<StickyKeys> sticky_keys_;
-#endif  // OS_CHROMEOS
 
   DISALLOW_COPY_AND_ASSIGN(EventRewriterEventFilter);
 };

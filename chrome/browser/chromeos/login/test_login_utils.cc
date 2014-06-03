@@ -20,7 +20,6 @@ TestLoginUtils::~TestLoginUtils() {}
 void TestLoginUtils::PrepareProfile(
     const UserContext& credentials,
     const std::string& display_email,
-    bool using_oauth,
     bool has_cookies,
     bool has_active_session,
     Delegate* delegate) {
@@ -40,9 +39,6 @@ scoped_refptr<Authenticator> TestLoginUtils::CreateAuthenticator(
 }
 
 void TestLoginUtils::InitRlzDelayed(Profile* user_profile) {
-}
-
-void TestLoginUtils::StopBackgroundFetchers() {
 }
 
 }  // namespace chromeos

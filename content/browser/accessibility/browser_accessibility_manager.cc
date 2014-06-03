@@ -69,7 +69,7 @@ void BrowserAccessibilityManager::Initialize(const AccessibilityNodeData src) {
 AccessibilityNodeData BrowserAccessibilityManager::GetEmptyDocument() {
   AccessibilityNodeData empty_document;
   empty_document.id = 0;
-  empty_document.role = AccessibilityNodeData::ROLE_ROOT_WEB_AREA;
+  empty_document.role = blink::WebAXRoleRootWebArea;
   return empty_document;
 }
 
@@ -93,7 +93,7 @@ void BrowserAccessibilityManager::GotFocus(bool touch_event_context) {
   if (!focus_)
     return;
 
-  NotifyAccessibilityEvent(AccessibilityNotificationFocusChanged, focus_);
+  NotifyAccessibilityEvent(blink::WebAXEventFocus, focus_);
 }
 
 void BrowserAccessibilityManager::WasHidden() {
@@ -102,7 +102,7 @@ void BrowserAccessibilityManager::WasHidden() {
 
 void BrowserAccessibilityManager::GotMouseDown() {
   osk_state_ = OSK_ALLOWED_WITHIN_FOCUSED_OBJECT;
-  NotifyAccessibilityEvent(AccessibilityNotificationFocusChanged, focus_);
+  NotifyAccessibilityEvent(blink::WebAXEventFocus, focus_);
 }
 
 bool BrowserAccessibilityManager::IsOSKAllowed(const gfx::Rect& bounds) {
@@ -124,24 +124,44 @@ void BrowserAccessibilityManager::RemoveNode(BrowserAccessibility* node) {
   renderer_id_map_.erase(renderer_id);
 }
 
-void BrowserAccessibilityManager::OnAccessibilityNotifications(
-    const std::vector<AccessibilityHostMsg_NotificationParams>& params) {
-  for (uint32 index = 0; index < params.size(); index++) {
-    const AccessibilityHostMsg_NotificationParams& param = params[index];
+void BrowserAccessibilityManager::OnAccessibilityEvents(
+    const std::vector<AccessibilityHostMsg_EventParams>& params) {
+  bool should_send_initial_focus = false;
 
-    // Update nodes that changed.
+  // Process all changes to the accessibility tree first.
+  for (uint32 index = 0; index < params.size(); index++) {
+    const AccessibilityHostMsg_EventParams& param = params[index];
     if (!UpdateNodes(param.nodes))
       return;
 
+    // Set initial focus when a page is loaded.
+    blink::WebAXEvent event_type = param.event_type;
+    if (event_type == blink::WebAXEventLoadComplete) {
+      if (!focus_) {
+        SetFocus(root_, false);
+        should_send_initial_focus = true;
+      }
+    }
+  }
+
+  if (should_send_initial_focus &&
+      (!delegate_ || delegate_->HasFocus())) {
+    NotifyAccessibilityEvent(blink::WebAXEventFocus, focus_);
+  }
+
+  // Now iterate over the events again and fire the events.
+  for (uint32 index = 0; index < params.size(); index++) {
+    const AccessibilityHostMsg_EventParams& param = params[index];
+
     // Find the node corresponding to the id that's the target of the
-    // notification (which may not be the root of the update tree).
+    // event (which may not be the root of the update tree).
     BrowserAccessibility* node = GetFromRendererID(param.id);
     if (!node)
       continue;
 
-    int notification_type = param.notification_type;
-    if (notification_type == AccessibilityNotificationFocusChanged ||
-        notification_type == AccessibilityNotificationBlur) {
+    blink::WebAXEvent event_type = param.event_type;
+    if (event_type == blink::WebAXEventFocus ||
+        event_type == blink::WebAXEventBlur) {
       SetFocus(node, false);
 
       if (osk_state_ != OSK_DISALLOWED_BECAUSE_TAB_HIDDEN &&
@@ -154,16 +174,8 @@ void BrowserAccessibilityManager::OnAccessibilityNotifications(
         continue;
     }
 
-    // Send the notification event to the operating system.
-    NotifyAccessibilityEvent(notification_type, node);
-
-    // Set initial focus when a page is loaded.
-    if (notification_type == AccessibilityNotificationLoadComplete) {
-      if (!focus_)
-        SetFocus(root_, false);
-      if (!delegate_ || delegate_->HasFocus())
-        NotifyAccessibilityEvent(AccessibilityNotificationFocusChanged, focus_);
-    }
+    // Send the event event to the operating system.
+    NotifyAccessibilityEvent(event_type, node);
   }
 }
 
@@ -333,16 +345,18 @@ bool BrowserAccessibilityManager::UpdateNode(const AccessibilityNodeData& src) {
   // and this is a serious error.
   BrowserAccessibility* instance = GetFromRendererID(src.id);
   if (!instance) {
-    if (src.role != AccessibilityNodeData::ROLE_ROOT_WEB_AREA)
+    if (src.role != blink::WebAXRoleRootWebArea)
       return false;
     instance = CreateNode(NULL, src.id, 0);
   }
 
-  if (src.bool_attributes.find(
-          AccessibilityNodeData::ATTR_UPDATE_LOCATION_ONLY) !=
-              src.bool_attributes.end()) {
-    instance->SetLocation(src.location);
-    return true;
+  // TODO(dmazzoni): avoid a linear scan here.
+  for (size_t i = 0; i < src.bool_attributes.size(); i++) {
+    if (src.bool_attributes[i].first ==
+        AccessibilityNodeData::ATTR_UPDATE_LOCATION_ONLY) {
+      instance->SetLocation(src.location);
+      return true;
+    }
   }
 
   // Update all of the node-specific data, like its role, state, name, etc.
@@ -398,7 +412,7 @@ bool BrowserAccessibilityManager::UpdateNode(const AccessibilityNodeData& src) {
   instance->SwapChildren(new_children);
 
   // Handle the case where this node is the new root of the tree.
-  if (src.role == AccessibilityNodeData::ROLE_ROOT_WEB_AREA &&
+  if (src.role == blink::WebAXRoleRootWebArea &&
       (!root_ || root_->renderer_id() != src.id)) {
     if (root_)
       root_->Destroy();
@@ -408,9 +422,9 @@ bool BrowserAccessibilityManager::UpdateNode(const AccessibilityNodeData& src) {
   }
 
   // Keep track of what node is focused.
-  if (src.role != AccessibilityNodeData::ROLE_ROOT_WEB_AREA &&
-      src.role != AccessibilityNodeData::ROLE_WEB_AREA &&
-      (src.state >> AccessibilityNodeData::STATE_FOCUSED & 1)) {
+  if (src.role != blink::WebAXRoleRootWebArea &&
+      src.role != blink::WebAXRoleWebArea &&
+      (src.state >> blink::WebAXStateFocused & 1)) {
     SetFocus(instance, false);
   }
   return success;

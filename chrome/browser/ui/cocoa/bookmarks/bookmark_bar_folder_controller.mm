@@ -8,7 +8,7 @@
 #include "base/mac/mac_util.h"
 #include "base/strings/sys_string_conversions.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
-#include "chrome/browser/bookmarks/bookmark_utils.h"
+#include "chrome/browser/bookmarks/bookmark_node_data.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_bar_constants.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_bar_controller.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_bar_folder_button_cell.h"
@@ -107,6 +107,13 @@ struct LayoutMetrics {
     folderY(0.0),
     folderTop(0.0) {}
 };
+
+NSRect GetFirstButtonFrameForHeight(CGFloat height) {
+  CGFloat y = height - bookmarks::kBookmarkFolderButtonHeight -
+      bookmarks::kBookmarkVerticalPadding;
+  return NSMakeRect(0, y, bookmarks::kDefaultBookmarkWidth,
+                    bookmarks::kBookmarkFolderButtonHeight);
+}
 
 }  // namespace
 
@@ -283,7 +290,8 @@ struct LayoutMetrics {
                                         subFolderGrowthToRight]];
     barController_ = barController;  // WEAK
     buttons_.reset([[NSMutableArray alloc] init]);
-    folderTarget_.reset([[BookmarkFolderTarget alloc] initWithController:self]);
+    folderTarget_.reset(
+        [[BookmarkFolderTarget alloc] initWithController:self profile:profile]);
     [self configureWindow];
     hoverState_.reset([[BookmarkBarFolderHoverState alloc] init]);
   }
@@ -786,12 +794,7 @@ struct LayoutMetrics {
 
   // TODO(jrg): combine with frame code in bookmark_bar_controller.mm
   // http://crbug.com/35966
-  NSRect buttonsOuterFrame = NSMakeRect(
-      0,
-      height - bookmarks::kBookmarkFolderButtonHeight -
-          bookmarks::kBookmarkVerticalPadding,
-      bookmarks::kDefaultBookmarkWidth,
-      bookmarks::kBookmarkFolderButtonHeight);
+  NSRect buttonsOuterFrame = GetFirstButtonFrameForHeight(height);
 
   // TODO(jrg): combine with addNodesToButtonList: code from
   // bookmark_bar_controller.mm (but use y offset)
@@ -1464,7 +1467,7 @@ static BOOL ValueInRangeInclusive(CGFloat low, CGFloat value, CGFloat high) {
 - (std::vector<const BookmarkNode*>)retrieveBookmarkNodeData {
   std::vector<const BookmarkNode*> dragDataNodes;
   BookmarkNodeData dragData;
-  if (dragData.ReadFromDragClipboard()) {
+  if (dragData.ReadFromClipboard(ui::CLIPBOARD_TYPE_DRAG)) {
     std::vector<const BookmarkNode*> nodes(dragData.GetNodes(profile_));
     dragDataNodes.assign(nodes.begin(), nodes.end());
   }
@@ -1910,15 +1913,14 @@ static BOOL ValueInRangeInclusive(CGFloat low, CGFloat value, CGFloat high) {
     for (NSButton* aButton in buttons_.get()) {
       // If this button is showing its menu then we need to move the menu, too.
       if (aButton == subButton)
-        [folderController_ offsetFolderMenuWindow:NSMakeSize(0.0,
-         bookmarks::kBookmarkBarHeight)];
+        [folderController_
+            offsetFolderMenuWindow:NSMakeSize(0.0, chrome::kBookmarkBarHeight)];
     }
   } else {
     // If all nodes have been removed from this folder then add in the
     // 'empty' placeholder button.
     NSRect buttonFrame =
-        NSMakeRect(0.0, 0.0, bookmarks::kDefaultBookmarkWidth,
-                   bookmarks::kBookmarkFolderButtonHeight);
+        GetFirstButtonFrameForHeight([self menuHeightForButtonCount:1]);
     BookmarkButton* button = [self makeButtonForNode:nil
                                                frame:buttonFrame];
     [buttons_ addObject:button];

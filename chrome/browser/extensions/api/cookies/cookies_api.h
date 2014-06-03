@@ -14,12 +14,12 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/extensions/api/profile_keyed_api_factory.h"
-#include "chrome/browser/extensions/event_router.h"
-#include "chrome/browser/extensions/extension_function.h"
+#include "chrome/browser/extensions/chrome_extension_function.h"
 #include "chrome/browser/net/chrome_cookie_notification_details.h"
 #include "chrome/common/extensions/api/cookies.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
+#include "extensions/browser/event_router.h"
 #include "net/cookies/canonical_cookie.h"
 #include "url/gurl.h"
 
@@ -66,8 +66,8 @@ class CookiesEventRouter : public content::NotificationObserver {
 // AsyncExtensionFunction, and are not threadsafe, so they should not be
 // concurrently accessed from multiple threads. They modify |result_| and other
 // member variables directly.
-// See chrome/browser/extensions/extension_function.h for more information.
-class CookiesFunction : public AsyncExtensionFunction {
+// See extensions/browser/extension_function.h for more information.
+class CookiesFunction : public ChromeAsyncExtensionFunction {
  protected:
   virtual ~CookiesFunction() {}
 

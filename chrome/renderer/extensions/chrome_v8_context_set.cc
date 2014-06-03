@@ -8,12 +8,12 @@
 #include "base/message_loop/message_loop.h"
 #include "base/tracked_objects.h"
 #include "base/values.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/renderer/extensions/chrome_v8_context.h"
 #include "content/public/renderer/render_thread.h"
 #include "content/public/renderer/render_view.h"
 #include "extensions/common/constants.h"
+#include "extensions/common/extension.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
 #include "third_party/WebKit/public/platform/WebURLRequest.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
@@ -60,12 +60,14 @@ ChromeV8ContextSet::ContextSet ChromeV8ContextSet::GetAll() const {
 }
 
 ChromeV8Context* ChromeV8ContextSet::GetCurrent() const {
-  return v8::Context::InContext() ?
-      GetByV8Context(v8::Context::GetCurrent()) : NULL;
+  v8::Isolate* isolate = v8::Isolate::GetCurrent();
+  return isolate->InContext() ? GetByV8Context(isolate->GetCurrentContext())
+                              : NULL;
 }
 
 ChromeV8Context* ChromeV8ContextSet::GetCalling() const {
-  v8::Local<v8::Context> calling = v8::Context::GetCalling();
+  v8::Isolate* isolate = v8::Isolate::GetCurrent();
+  v8::Local<v8::Context> calling = isolate->GetCallingContext();
   return calling.IsEmpty() ? NULL : GetByV8Context(calling);
 }
 

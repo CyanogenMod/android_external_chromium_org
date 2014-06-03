@@ -7,7 +7,6 @@
 
 #include "base/basictypes.h"
 #include "chrome/browser/task_manager/resource_provider.h"
-#include "content/public/browser/render_view_host_observer.h"
 
 namespace content {
 class RenderViewHost;
@@ -17,8 +16,7 @@ namespace task_manager {
 
 // Base class for various types of render process resources that provides common
 // functionality like stats tracking.
-class RendererResource : public Resource,
-                         public content::RenderViewHostObserver {
+class RendererResource : public Resource {
  public:
   RendererResource(base::ProcessHandle process,
                    content::RenderViewHost* render_view_host);
@@ -31,7 +29,7 @@ class RendererResource : public Resource,
   virtual int GetRoutingID() const OVERRIDE;
 
   virtual bool ReportsCacheStats() const OVERRIDE;
-  virtual WebKit::WebCache::ResourceTypeStats GetWebCoreCacheStats() const
+  virtual blink::WebCache::ResourceTypeStats GetWebCoreCacheStats() const
       OVERRIDE;
   virtual bool ReportsFPS() const OVERRIDE;
   virtual float GetFPS() const OVERRIDE;
@@ -50,16 +48,12 @@ class RendererResource : public Resource,
   virtual void Refresh() OVERRIDE;
 
   virtual void NotifyResourceTypeStats(
-      const WebKit::WebCache::ResourceTypeStats& stats) OVERRIDE;
+      const blink::WebCache::ResourceTypeStats& stats) OVERRIDE;
 
   virtual void NotifyFPS(float fps) OVERRIDE;
 
   virtual void NotifyV8HeapStats(size_t v8_memory_allocated,
                                  size_t v8_memory_used) OVERRIDE;
-
-  // content::RenderViewHostObserver implementation.
-  virtual void RenderViewHostDestroyed(
-      content::RenderViewHost* render_view_host) OVERRIDE;
 
   content::RenderViewHost* render_view_host() const {
     return render_view_host_;
@@ -74,7 +68,7 @@ class RendererResource : public Resource,
   content::RenderViewHost* render_view_host_;
   // The stats_ field holds information about resource usage in the renderer
   // process and so it is updated asynchronously by the Refresh() call.
-  WebKit::WebCache::ResourceTypeStats stats_;
+  blink::WebCache::ResourceTypeStats stats_;
   // This flag is true if we are waiting for the renderer to report its stats.
   bool pending_stats_update_;
 

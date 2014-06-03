@@ -8,7 +8,6 @@
 #include "base/logging.h"
 #include "base/strings/stringprintf.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_set.h"
 #include "chrome/common/extensions/manifest_handlers/icons_handler.h"
 #include "chrome/common/extensions/manifest_url_handler.h"
@@ -16,6 +15,7 @@
 #include "chrome/common/url_constants.h"
 #include "content/public/common/page_transition_types.h"
 #include "extensions/common/constants.h"
+#include "extensions/common/extension.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/web/WebConsoleMessage.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
@@ -33,7 +33,7 @@ namespace extensions {
 // static
 bool ResourceRequestPolicy::CanRequestResource(
     const GURL& resource_url,
-    WebKit::WebFrame* frame,
+    blink::WebFrame* frame,
     content::PageTransition transition_type,
     const ExtensionSet* loaded_extensions) {
   CHECK(resource_url.SchemeIs(extensions::kExtensionScheme));
@@ -95,8 +95,8 @@ bool ResourceRequestPolicy::CanRequestResource(
           "pages outside the extension.",
           resource_url.spec().c_str());
       frame->addMessageToConsole(
-          WebKit::WebConsoleMessage(WebKit::WebConsoleMessage::LevelError,
-                                    WebKit::WebString::fromUTF8(message)));
+          blink::WebConsoleMessage(blink::WebConsoleMessage::LevelError,
+                                    blink::WebString::fromUTF8(message)));
       return false;
     }
   }
@@ -107,7 +107,7 @@ bool ResourceRequestPolicy::CanRequestResource(
 // static
 bool ResourceRequestPolicy::CanRequestExtensionResourceScheme(
     const GURL& resource_url,
-    WebKit::WebFrame* frame) {
+    blink::WebFrame* frame) {
   CHECK(resource_url.SchemeIs(chrome::kExtensionResourceScheme));
 
   GURL frame_url = frame->document().url();
@@ -118,8 +118,8 @@ bool ResourceRequestPolicy::CanRequestExtensionResourceScheme(
         "loaded from extensions.",
       resource_url.spec().c_str());
     frame->addMessageToConsole(
-        WebKit::WebConsoleMessage(WebKit::WebConsoleMessage::LevelError,
-                                  WebKit::WebString::fromUTF8(message)));
+        blink::WebConsoleMessage(blink::WebConsoleMessage::LevelError,
+                                  blink::WebString::fromUTF8(message)));
     return false;
   }
 

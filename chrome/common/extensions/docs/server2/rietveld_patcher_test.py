@@ -4,20 +4,26 @@
 # found in the LICENSE file.
 
 import os
+import posixpath
 import sys
 import unittest
 from appengine_url_fetcher import AppEngineUrlFetcher
+from extensions_paths import (
+    ARTICLES_TEMPLATES, EXTENSIONS, DOCS, JSON_TEMPLATES, PUBLIC_TEMPLATES)
 from fake_fetchers import ConfigureFakeFetchers
 from file_system import FileNotFoundError
 from rietveld_patcher import RietveldPatcher
-from svn_constants import EXTENSIONS_PATH
 import url_constants
+
+
+def _PrefixWith(prefix, lst):
+  return [posixpath.join(prefix, item) for item in lst]
+
 
 class RietveldPatcherTest(unittest.TestCase):
   def setUp(self):
     ConfigureFakeFetchers()
     self._patcher = RietveldPatcher(
-        EXTENSIONS_PATH,
         '14096030',
         AppEngineUrlFetcher(url_constants.CODEREVIEW_SERVER))
 
@@ -29,46 +35,39 @@ class RietveldPatcherTest(unittest.TestCase):
                            filename), 'r') as f:
       return f.read()
 
-  def _ApplySingle(self, path, binary=False):
-    return self._patcher.Apply([path], None, binary).Get()[path]
+  def _ApplySingle(self, path):
+    return self._patcher.Apply([path], None).Get()[path]
 
   def testGetVersion(self):
     self.assertEqual(self._patcher.GetVersion(), '22002')
 
   def testGetPatchedFiles(self):
     added, deleted, modified = self._patcher.GetPatchedFiles()
-    self.assertEqual(sorted(added),
-                     sorted([
-        u'docs/templates/articles/test_foo.html',
-        u'docs/templates/public/extensions/test_foo.html']))
-    self.assertEqual(sorted(deleted),
-                     sorted([
-        u'docs/templates/public/extensions/runtime.html']))
-    self.assertEqual(sorted(modified),
-                     sorted([
-        u'api/test.json',
-        u'docs/templates/json/extensions_sidenav.json']))
+    self.assertEqual(
+        sorted(added),
+        _PrefixWith(DOCS, ['examples/test',
+                           'templates/articles/test_foo.html',
+                           'templates/public/extensions/test_foo.html']))
+    self.assertEqual(deleted,
+                     ['%s/extensions/runtime.html' % PUBLIC_TEMPLATES])
+    self.assertEqual(
+        sorted(modified),
+        _PrefixWith(EXTENSIONS, ['api/test.json',
+                                 'docs/templates/json/extensions_sidenav.json',
+                                 'manifest.h']))
 
   def testApply(self):
-    article_path = 'docs/templates/articles/test_foo.html'
-
-    # Make sure RietveldPatcher handles |binary| correctly.
-    self.assertTrue(isinstance(self._ApplySingle(article_path, True), str),
-        'Expected result is binary. It was text.')
-    self.assertTrue(isinstance(self._ApplySingle(article_path), unicode),
-        'Expected result is text. It was binary.')
+    article_path = '%s/test_foo.html' % ARTICLES_TEMPLATES
 
     # Apply to an added file.
     self.assertEqual(
         self._ReadLocalFile('test_foo.html'),
-        self._ApplySingle(
-            'docs/templates/public/extensions/test_foo.html'))
+        self._ApplySingle('%s/extensions/test_foo.html' % PUBLIC_TEMPLATES))
 
     # Apply to a modified file.
     self.assertEqual(
         self._ReadLocalFile('extensions_sidenav.json'),
-        self._ApplySingle(
-            'docs/templates/json/extensions_sidenav.json'))
+        self._ApplySingle('%s/extensions_sidenav.json' % JSON_TEMPLATES))
 
     # Applying to a deleted file doesn't throw exceptions. It just returns
     # empty content.

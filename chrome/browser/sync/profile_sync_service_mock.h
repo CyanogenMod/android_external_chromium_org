@@ -20,10 +20,10 @@
 #include "sync/protocol/sync_protocol_error.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
+using ::testing::Invoke;
+
 class ProfileSyncServiceMock : public ProfileSyncService {
  public:
-  // no-arg constructor provided so TestingProfile can use NiceMock.
-  ProfileSyncServiceMock();
   explicit ProfileSyncServiceMock(Profile* profile);
   virtual ~ProfileSyncServiceMock();
 
@@ -49,7 +49,7 @@ class ProfileSyncServiceMock : public ProfileSyncService {
                     const std::string& captcha,
                     const std::string& access_code));
   MOCK_METHOD0(OnUserCancelledDialog, void());
-  MOCK_CONST_METHOD0(GetAuthenticatedUsername, string16());
+  MOCK_CONST_METHOD0(GetAuthenticatedUsername, base::string16());
   MOCK_METHOD2(OnUserChoseDatatypes,
                void(bool sync_everything,
                     syncer::ModelTypeSet chosen_types));
@@ -87,7 +87,7 @@ class ProfileSyncServiceMock : public ProfileSyncService {
                bool(browser_sync::SyncBackendHost::Status* result));
   MOCK_CONST_METHOD0(GetAuthError, const GoogleServiceAuthError&());
   MOCK_CONST_METHOD0(FirstSetupInProgress, bool());
-  MOCK_CONST_METHOD0(GetLastSyncedTimeString, string16());
+  MOCK_CONST_METHOD0(GetLastSyncedTimeString, base::string16());
   MOCK_CONST_METHOD0(HasUnrecoverableError, bool());
   MOCK_CONST_METHOD0(sync_initialized, bool());
   MOCK_CONST_METHOD0(IsStartSuppressed, bool());
@@ -96,6 +96,8 @@ class ProfileSyncServiceMock : public ProfileSyncService {
       const syncer::SyncProtocolError&));
   MOCK_METHOD1(SetSetupInProgress, void(bool));
 
+  MOCK_METHOD0(GetOpenTabsUIDelegate,
+               browser_sync::OpenTabsUIDelegate*());
   MOCK_CONST_METHOD0(GetAllSignedInDevicesMock,
                      std::vector<browser_sync::DeviceInfo*>* ());
   // This is to get around the fact that GMOCK does not handle Scoped*.

@@ -15,12 +15,13 @@
 namespace chromeos {
 
 // A fake implementation of GsmSMSClient used for tests.
-class FakeGsmSMSClient : public GsmSMSClient {
+class CHROMEOS_EXPORT FakeGsmSMSClient : public GsmSMSClient {
  public:
   FakeGsmSMSClient();
   virtual ~FakeGsmSMSClient();
 
-  // GsmSMSClient overrides.
+  // GsmSMSClient overrides
+  virtual void Init(dbus::Bus* bus) OVERRIDE;
   virtual void SetSmsReceivedHandler(const std::string& service_name,
                                      const dbus::ObjectPath& object_path,
                                      const SmsReceivedHandler& handler)

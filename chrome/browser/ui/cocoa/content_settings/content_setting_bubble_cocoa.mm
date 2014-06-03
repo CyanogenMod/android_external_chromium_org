@@ -45,10 +45,6 @@ const int kGeoLabelHeight = 14;
 // Height of the "Clear" button in the geolocation bubble.
 const int kGeoClearButtonHeight = 17;
 
-// Padding between radio buttons and "Load all plugins" button
-// in the plugin bubble.
-const int kLoadAllPluginsButtonVerticalPadding = 8;
-
 // General padding between elements in the geolocation bubble.
 const int kGeoPadding = 8;
 
@@ -112,7 +108,8 @@ void SetTitleForPopUpButton(NSPopUpButton* button, NSString* title) {
 // longgest item as the width of the popup menu.
 CGFloat BuildPopUpMenuFromModel(NSPopUpButton* button,
                                 ContentSettingMediaMenuModel* model,
-                                const std::string& title) {
+                                const std::string& title,
+                                bool disabled) {
   [[button cell] setControlSize:NSSmallControlSize];
   [[button cell] setArrowPosition:NSPopUpArrowAtBottom];
   [button setFont:[NSFont systemFontOfSize:[NSFont smallSystemFontSize]]];
@@ -152,6 +149,11 @@ CGFloat BuildPopUpMenuFromModel(NSPopUpButton* button,
     [button setEnabled:NO];
   } else {
     SetTitleForPopUpButton(button, base::SysUTF8ToNSString(title));
+
+    // Disable the device selection when the website is managing the devices
+    // itself.
+    if (disabled)
+      [button setEnabled:NO];
   }
 
   return menuWidth;
@@ -344,29 +346,12 @@ MediaMenuParts::~MediaMenuParts() {}
 }
 
 - (void)initializeBlockedPluginsList {
-  NSMutableArray* pluginArray = [NSMutableArray array];
-  const std::set<std::string>& plugins =
-      contentSettingBubbleModel_->bubble_content().resource_identifiers;
-  if (plugins.empty()) {
-    int delta = NSMinY([titleLabel_ frame]) -
-                NSMinY([blockedResourcesField_ frame]);
-    [blockedResourcesField_ removeFromSuperview];
-    NSRect frame = [[self window] frame];
-    frame.size.height -= delta;
-    [[self window] setFrame:frame display:NO];
-  } else {
-    PluginFinder* finder = PluginFinder::GetInstance();
-    for (std::set<std::string>::iterator it = plugins.begin();
-         it != plugins.end(); ++it) {
-      NSString* name =
-          SysUTF16ToNSString(finder->FindPluginNameWithIdentifier(*it));
-      [pluginArray addObject:name];
-    }
-    [blockedResourcesField_
-        setStringValue:[pluginArray componentsJoinedByString:@"\n"]];
-    [GTMUILocalizerAndLayoutTweaker
-        sizeToFitFixedWidthTextField:blockedResourcesField_];
-  }
+  int delta = NSMinY([titleLabel_ frame]) -
+              NSMinY([blockedResourcesField_ frame]);
+  [blockedResourcesField_ removeFromSuperview];
+  NSRect frame = [[self window] frame];
+  frame.size.height -= delta;
+  [[self window] setFrame:frame display:NO];
 }
 
 - (void)initializePopupList {
@@ -522,7 +507,7 @@ MediaMenuParts::~MediaMenuParts() {}
     [cell setAlignment:NSRightTextAlignment];
     [GTMUILocalizerAndLayoutTweaker sizeToFitView:label];
     maxLabelWidth = std::max(maxLabelWidth, [label frame].size.width);
-    [[self bubble]  addSubview:label];
+    [[self bubble] addSubview:label];
 
     // |buttonFrame| will be resized and repositioned later on.
     NSRect buttonFrame = NSMakeRect(NSMinX(radioFrame), 0, 0, 0);
@@ -540,7 +525,8 @@ MediaMenuParts::~MediaMenuParts() {}
     mediaMenus_[button] = menuParts;
     CGFloat width = BuildPopUpMenuFromModel(button,
                                             menuParts->model.get(),
-                                            it->second.selected_device.name);
+                                            it->second.selected_device.name,
+                                            it->second.disabled);
     maxMenuWidth = std::max(maxMenuWidth, width);
 
     [[self bubble] addSubview:button
@@ -550,7 +536,7 @@ MediaMenuParts::~MediaMenuParts() {}
     maxMenuHeight = std::max(maxMenuHeight, [button frame].size.height);
   }
 
-  // Make room for the media menu(s) and enlarege the windows to fit the views.
+  // Make room for the media menu(s) and enlarge the windows to fit the views.
   // The bubble view and its subviews autosize themselves when the window is
   // enlarged.
   int delta = media_menus.size() * maxMenuHeight +

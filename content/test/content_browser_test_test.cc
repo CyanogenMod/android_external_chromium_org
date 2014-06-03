@@ -8,11 +8,16 @@
 #include "base/strings/utf_string_conversions.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/test/browser_test_utils.h"
-#include "content/shell/shell.h"
+#include "content/shell/browser/shell.h"
 #include "content/test/content_browser_test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace content {
+
+IN_PROC_BROWSER_TEST_F(ContentBrowserTest, MANUAL_ShouldntRun) {
+  // Ensures that tests with MANUAL_ prefix don't run automatically.
+  ASSERT_TRUE(false);
+}
 
 class ContentBrowserTestSanityTest : public ContentBrowserTest {
  public:
@@ -26,10 +31,10 @@ class ContentBrowserTestSanityTest : public ContentBrowserTest {
   void Test() {
     GURL url = GetTestUrl(".", "simple_page.html");
 
-    string16 expected_title(ASCIIToUTF16("OK"));
+    base::string16 expected_title(ASCIIToUTF16("OK"));
     TitleWatcher title_watcher(shell()->web_contents(), expected_title);
     NavigateToURL(shell(), url);
-    string16 title = title_watcher.WaitAndGetTitle();
+    base::string16 title = title_watcher.WaitAndGetTitle();
     EXPECT_EQ(expected_title, title);
   }
 };

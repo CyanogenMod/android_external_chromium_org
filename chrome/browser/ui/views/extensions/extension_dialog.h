@@ -20,7 +20,7 @@ class WebContents;
 }
 
 namespace extensions {
-class ExtensionHost;
+class ExtensionViewHost;
 }
 
 namespace ui {
@@ -47,7 +47,7 @@ class ExtensionDialog : public views::DialogDelegate,
                                int height,
                                int min_width,
                                int min_height,
-                               const string16& title,
+                               const base::string16& title,
                                ExtensionDialogObserver* observer);
 
   // Notifies the dialog that the observer has been destroyed and should not
@@ -58,19 +58,19 @@ class ExtensionDialog : public views::DialogDelegate,
   void MaybeFocusRenderView();
 
   // Sets the window title.
-  void set_title(const string16& title) { window_title_ = title; }
+  void set_title(const base::string16& title) { window_title_ = title; }
 
   // Sets minimum contents size in pixels and makes the window resizable.
   void SetMinimumContentsSize(int width, int height);
 
-  extensions::ExtensionHost* host() const { return extension_host_.get(); }
+  extensions::ExtensionViewHost* host() const { return host_.get(); }
 
   // views::DialogDelegate override.
   virtual int GetDialogButtons() const OVERRIDE;
   virtual bool CanResize() const OVERRIDE;
   virtual ui::ModalType GetModalType() const OVERRIDE;
   virtual bool ShouldShowWindowTitle() const OVERRIDE;
-  virtual string16 GetWindowTitle() const OVERRIDE;
+  virtual base::string16 GetWindowTitle() const OVERRIDE;
   virtual void WindowClosing() OVERRIDE;
   virtual void DeleteDelegate() OVERRIDE;
   virtual views::Widget* GetWidget() OVERRIDE;
@@ -90,27 +90,16 @@ class ExtensionDialog : public views::DialogDelegate,
   friend class base::RefCounted<ExtensionDialog>;
 
   // Use Show() to create instances.
-  ExtensionDialog(extensions::ExtensionHost* host,
+  ExtensionDialog(extensions::ExtensionViewHost* host,
                   ExtensionDialogObserver* observer);
-
-  static ExtensionDialog* ShowInternal(const GURL& url,
-                                       ui::BaseWindow* base_window,
-                                       extensions::ExtensionHost* host,
-                                       int width,
-                                       int height,
-                                       const string16& title,
-                                       ExtensionDialogObserver* observer);
-
-  static extensions::ExtensionHost* CreateExtensionHost(const GURL& url,
-                                                        Profile* profile);
 
   void InitWindow(ui::BaseWindow* base_window, int width, int height);
 
   // Window Title
-  string16 window_title_;
+  base::string16 window_title_;
 
   // The contained host for the view.
-  scoped_ptr<extensions::ExtensionHost> extension_host_;
+  scoped_ptr<extensions::ExtensionViewHost> host_;
 
   content::NotificationRegistrar registrar_;
 

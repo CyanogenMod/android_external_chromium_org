@@ -7,9 +7,12 @@
 #include "base/files/file_path.h"
 #include "base/path_service.h"
 #include "net/base/test_data_directory.h"
-#include "net/cert/nss_cert_database.h"
 #include "net/test/cert_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+#if defined(USE_NSS)
+#include "net/cert/nss_cert_database.h"
+#endif
 
 TEST(X509CertificateModelTest, GetTypeCA) {
   scoped_refptr<net::X509Certificate> cert(
@@ -19,7 +22,7 @@ TEST(X509CertificateModelTest, GetTypeCA) {
 
 #if defined(USE_OPENSSL)
   // Remove this when OpenSSL build implements the necessary functions.
-  EXPECT_EQ(net::UNKNOWN_CERT,
+  EXPECT_EQ(net::OTHER_CERT,
             x509_certificate_model::GetType(cert->os_cert_handle()));
 #else
   EXPECT_EQ(net::CA_CERT,
@@ -43,14 +46,14 @@ TEST(X509CertificateModelTest, GetTypeServer) {
 
 #if defined(USE_OPENSSL)
   // Remove this when OpenSSL build implements the necessary functions.
-  EXPECT_EQ(net::UNKNOWN_CERT,
+  EXPECT_EQ(net::OTHER_CERT,
             x509_certificate_model::GetType(cert->os_cert_handle()));
 #else
   // Test mozilla_security_manager::GetCertType with server certs and default
   // trust.  Currently this doesn't work.
   // TODO(mattm): make mozilla_security_manager::GetCertType smarter so we can
   // tell server certs even if they have no trust bits set.
-  EXPECT_EQ(net::UNKNOWN_CERT,
+  EXPECT_EQ(net::OTHER_CERT,
             x509_certificate_model::GetType(cert->os_cert_handle()));
 
   net::NSSCertDatabase* cert_db = net::NSSCertDatabase::GetInstance();

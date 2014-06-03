@@ -11,8 +11,9 @@
 #include "base/strings/string_split.h"
 #include "chrome/browser/extensions/api/push_messaging/push_messaging_invalidation_handler_delegate.h"
 #include "chrome/browser/invalidation/invalidation_service.h"
-#include "chrome/common/extensions/extension.h"
+#include "extensions/common/extension.h"
 #include "google/cacheinvalidation/types.pb.h"
+#include "sync/notifier/object_id_invalidation_map.h"
 
 namespace extensions {
 
@@ -124,23 +125,57 @@ void PushMessagingInvalidationHandler::OnInvalidatorStateChange(
 void PushMessagingInvalidationHandler::OnIncomingInvalidation(
     const syncer::ObjectIdInvalidationMap& invalidation_map) {
   DCHECK(thread_checker_.CalledOnValidThread());
-  for (syncer::ObjectIdInvalidationMap::const_iterator it =
-           invalidation_map.begin(); it != invalidation_map.end(); ++it) {
-    service_->AcknowledgeInvalidation(it->first, it->second.ack_handle);
+  invalidation_map.AcknowledgeAll();
 
-    syncer::ObjectIdSet::iterator suppressed_id =
-        suppressed_ids_.find(it->first);
+  syncer::ObjectIdSet ids = invalidation_map.GetObjectIds();
+  for (syncer::ObjectIdSet::const_iterator it = ids.begin();
+       it != ids.end(); ++it) {
+    const syncer::SingleObjectInvalidationSet& list =
+        invalidation_map.ForObject(*it);
+    const syncer::Invalidation& invalidation = list.back();
+
+    std::string payload;
+    if (invalidation.is_unknown_version()) {
+      payload = std::string();
+    } else {
+      payload = list.back().payload();
+    }
+
+    syncer::ObjectIdSet::iterator suppressed_id = suppressed_ids_.find(*it);
     if (suppressed_id != suppressed_ids_.end()) {
       suppressed_ids_.erase(suppressed_id);
       continue;
     }
+    DVLOG(2) << "Incoming push message, id is: "
+             << syncer::ObjectIdToString(*it)
+             << " and payload is:" << payload;
 
     std::string extension_id;
     int subchannel;
-    if (ObjectIdToExtensionAndSubchannel(it->first,
-                                         &extension_id,
-                                         &subchannel)) {
-      delegate_->OnMessage(extension_id, subchannel, it->second.payload);
+    if (ObjectIdToExtensionAndSubchannel(*it, &extension_id, &subchannel)) {
+      const syncer::SingleObjectInvalidationSet& invalidation_list =
+          invalidation_map.ForObject(*it);
+
+      // We always forward unknown version invalidation when we receive one.
+      if (invalidation_list.StartsWithUnknownVersion()) {
+        DVLOG(2) << "Sending push message to reciever, extension is "
+            << extension_id << ", subchannel is " << subchannel
+            << "and payload was lost";
+        delegate_->OnMessage(extension_id, subchannel, std::string());
+      }
+
+      // If we receive a new max version for this object, forward its payload.
+      const syncer::Invalidation& max_invalidation = invalidation_list.back();
+      if (!max_invalidation.is_unknown_version() &&
+          max_invalidation.version() > max_object_version_map_[*it]) {
+        max_object_version_map_[*it] = max_invalidation.version();
+        DVLOG(2) << "Sending push message to reciever, extension is "
+            << extension_id << ", subchannel is " << subchannel
+            << ", and payload is " << max_invalidation.payload();
+        delegate_->OnMessage(extension_id,
+                             subchannel,
+                             max_invalidation.payload());
+      }
     }
   }
 }

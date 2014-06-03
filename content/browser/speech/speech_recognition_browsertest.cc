@@ -1,136 +1,202 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/command_line.h"
-#include "base/files/file_path.h"
+#include <list>
+
+#include "base/bind.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop/message_loop.h"
-#include "base/strings/string_number_conversions.h"
+#include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
-#include "content/browser/renderer_host/render_view_host_impl.h"
-#include "content/browser/web_contents/web_contents_impl.h"
+#include "content/browser/speech/google_streaming_remote_engine.h"
+#include "content/browser/speech/speech_recognition_manager_impl.h"
+#include "content/browser/speech/speech_recognizer_impl.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/common/content_switches.h"
-#include "content/public/common/speech_recognition_error.h"
-#include "content/public/common/speech_recognition_result.h"
-#include "content/public/common/url_constants.h"
-#include "content/public/test/fake_speech_recognition_manager.h"
+#include "content/public/test/browser_test_utils.h"
 #include "content/public/test/test_utils.h"
-#include "content/shell/shell.h"
+#include "content/shell/browser/shell.h"
 #include "content/test/content_browser_test.h"
 #include "content/test/content_browser_test_utils.h"
-#include "third_party/WebKit/public/web/WebInputEvent.h"
+#include "content/test/mock_google_streaming_server.h"
+#include "media/audio/mock_audio_manager.h"
+#include "media/audio/test_audio_input_controller_factory.h"
+#include "testing/gtest/include/gtest/gtest.h"
+
+using base::RunLoop;
 
 namespace content {
 
-class SpeechRecognitionBrowserTest : public ContentBrowserTest {
+class SpeechRecognitionBrowserTest :
+    public ContentBrowserTest,
+    public MockGoogleStreamingServer::Delegate,
+    public media::TestAudioInputControllerDelegate {
  public:
-  // ContentBrowserTest methods
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
-    EXPECT_TRUE(!command_line->HasSwitch(switches::kDisableSpeechInput));
+  enum StreamingServerState {
+    kIdle,
+    kTestAudioControllerOpened,
+    kClientConnected,
+    kClientAudioUpload,
+    kClientAudioUploadComplete,
+    kTestAudioControllerClosed,
+    kClientDisconnected
+  };
+
+  // MockGoogleStreamingServerDelegate methods.
+  virtual void OnClientConnected() OVERRIDE {
+    ASSERT_EQ(kTestAudioControllerOpened, streaming_server_state_);
+    streaming_server_state_ = kClientConnected;
+  }
+
+  virtual void OnClientAudioUpload() OVERRIDE {
+    if (streaming_server_state_ == kClientConnected)
+      streaming_server_state_ = kClientAudioUpload;
+  }
+
+  virtual void OnClientAudioUploadComplete() OVERRIDE {
+    ASSERT_EQ(kTestAudioControllerClosed, streaming_server_state_);
+    streaming_server_state_ = kClientAudioUploadComplete;
+  }
+
+  virtual void OnClientDisconnected() OVERRIDE {
+    ASSERT_EQ(kClientAudioUploadComplete, streaming_server_state_);
+    streaming_server_state_ = kClientDisconnected;
+  }
+
+  // media::TestAudioInputControllerDelegate methods.
+  virtual void TestAudioControllerOpened(
+      media::TestAudioInputController* controller) OVERRIDE {
+    ASSERT_EQ(kIdle, streaming_server_state_);
+    streaming_server_state_ = kTestAudioControllerOpened;
+    const int capture_packet_interval_ms =
+        (1000 * controller->audio_parameters().frames_per_buffer()) /
+        controller->audio_parameters().sample_rate();
+    ASSERT_EQ(GoogleStreamingRemoteEngine::kAudioPacketIntervalMs,
+        capture_packet_interval_ms);
+    FeedAudioController(500 /* ms */, /*noise=*/ false);
+    FeedAudioController(1000 /* ms */, /*noise=*/ true);
+    FeedAudioController(1000 /* ms */, /*noise=*/ false);
+  }
+
+  virtual void TestAudioControllerClosed(
+      media::TestAudioInputController* controller) OVERRIDE {
+    ASSERT_EQ(kClientAudioUpload, streaming_server_state_);
+    streaming_server_state_ = kTestAudioControllerClosed;
+    mock_streaming_server_->MockGoogleStreamingServer::SimulateResult(
+        GetGoodSpeechResult());
+  }
+
+  // Helper methods used by test fixtures.
+  GURL GetTestUrlFromFragment(const std::string fragment) {
+    return GURL(GetTestUrl("speech", "web_speech_recognition.html").spec() +
+        "#" + fragment);
+  }
+
+  std::string GetPageFragment() {
+    return shell()->web_contents()->GetURL().ref();
+  }
+
+  const StreamingServerState &streaming_server_state() {
+    return streaming_server_state_;
   }
 
  protected:
-  void LoadAndStartSpeechRecognitionTest(const char* filename) {
-    // The test page calculates the speech button's coordinate in the page on
-    // load & sets that coordinate in the URL fragment. We send mouse down & up
-    // events at that coordinate to trigger speech recognition.
-    GURL test_url = GetTestUrl("speech", filename);
-    NavigateToURL(shell(), test_url);
-
-    WebKit::WebMouseEvent mouse_event;
-    mouse_event.type = WebKit::WebInputEvent::MouseDown;
-    mouse_event.button = WebKit::WebMouseEvent::ButtonLeft;
-    mouse_event.x = 0;
-    mouse_event.y = 0;
-    mouse_event.clickCount = 1;
-    WebContents* web_contents = shell()->web_contents();
-
-    WindowedNotificationObserver observer(
-        NOTIFICATION_LOAD_STOP,
-        Source<NavigationController>(&web_contents->GetController()));
-    web_contents->GetRenderViewHost()->ForwardMouseEvent(mouse_event);
-    mouse_event.type = WebKit::WebInputEvent::MouseUp;
-    web_contents->GetRenderViewHost()->ForwardMouseEvent(mouse_event);
-    fake_speech_recognition_manager_.WaitForRecognitionStarted();
-
-    // We should wait for a navigation event, raised by the test page JS code
-    // upon the onwebkitspeechchange event, in all cases except when the
-    // speech response is inhibited.
-    if (fake_speech_recognition_manager_.should_send_fake_response())
-      observer.Wait();
-  }
-
-  void RunSpeechRecognitionTest(const char* filename) {
-    // The fake speech input manager would receive the speech input
-    // request and return the test string as recognition result. The test page
-    // then sets the URL fragment as 'pass' if it received the expected string.
-    LoadAndStartSpeechRecognitionTest(filename);
-
-    EXPECT_EQ("pass", shell()->web_contents()->GetURL().ref());
-  }
-
   // ContentBrowserTest methods.
   virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
-    fake_speech_recognition_manager_.set_should_send_fake_response(true);
-    speech_recognition_manager_ = &fake_speech_recognition_manager_;
+    test_audio_input_controller_factory_.set_delegate(this);
+    media::AudioInputController::set_factory_for_testing(
+        &test_audio_input_controller_factory_);
+    mock_streaming_server_.reset(new MockGoogleStreamingServer(this));
+    streaming_server_state_ = kIdle;
+  }
 
-    // Inject the fake manager factory so that the test result is returned to
-    // the web page.
-    SpeechRecognitionManager::SetManagerForTests(speech_recognition_manager_);
+  virtual void SetUpOnMainThread() OVERRIDE {
+    ASSERT_TRUE(SpeechRecognitionManagerImpl::GetInstance());
+    SpeechRecognizerImpl::SetAudioManagerForTesting(
+        new media::MockAudioManager(BrowserThread::GetMessageLoopProxyForThread(
+            BrowserThread::IO)));
+  }
+
+  virtual void TearDownOnMainThread() OVERRIDE {
+    SpeechRecognizerImpl::SetAudioManagerForTesting(NULL);
   }
 
   virtual void TearDownInProcessBrowserTestFixture() OVERRIDE {
-    speech_recognition_manager_ = NULL;
+    test_audio_input_controller_factory_.set_delegate(NULL);
+    mock_streaming_server_.reset();
   }
 
-  FakeSpeechRecognitionManager fake_speech_recognition_manager_;
+ private:
+  static void FeedSingleBufferToAudioController(
+      scoped_refptr<media::TestAudioInputController> controller,
+      size_t buffer_size,
+      bool fill_with_noise) {
+    DCHECK(controller.get());
+    scoped_ptr<uint8[]> audio_buffer(new uint8[buffer_size]);
+    if (fill_with_noise) {
+      for (size_t i = 0; i < buffer_size; ++i)
+        audio_buffer[i] = static_cast<uint8>(127 * sin(i * 3.14F /
+            (16 * buffer_size)));
+    } else {
+      memset(audio_buffer.get(), 0, buffer_size);
+    }
+    controller->event_handler()->OnData(controller,
+                                        audio_buffer.get(),
+                                        buffer_size);
+  }
 
-  // This is used by the static |fakeManager|, and it is a pointer rather than a
-  // direct instance per the style guide.
-  static SpeechRecognitionManager* speech_recognition_manager_;
+  void FeedAudioController(int duration_ms, bool feed_with_noise) {
+    media::TestAudioInputController* controller =
+        test_audio_input_controller_factory_.controller();
+    ASSERT_TRUE(controller);
+    const media::AudioParameters& audio_params = controller->audio_parameters();
+    const size_t buffer_size = audio_params.GetBytesPerBuffer();
+    const int ms_per_buffer = audio_params.frames_per_buffer() * 1000 /
+                              audio_params.sample_rate();
+    // We can only simulate durations that are integer multiples of the
+    // buffer size. In this regard see
+    // SpeechRecognitionEngine::GetDesiredAudioChunkDurationMs().
+    ASSERT_EQ(0, duration_ms % ms_per_buffer);
+
+    const int n_buffers = duration_ms / ms_per_buffer;
+    for (int i = 0; i < n_buffers; ++i) {
+      base::MessageLoop::current()->PostTask(FROM_HERE, base::Bind(
+          &FeedSingleBufferToAudioController,
+          scoped_refptr<media::TestAudioInputController>(controller),
+          buffer_size,
+          feed_with_noise));
+    }
+  }
+
+  SpeechRecognitionResult GetGoodSpeechResult() {
+    SpeechRecognitionResult result;
+    result.hypotheses.push_back(SpeechRecognitionHypothesis(
+        UTF8ToUTF16("Pictures of the moon"), 1.0F));
+    return result;
+  }
+
+  StreamingServerState streaming_server_state_;
+  scoped_ptr<MockGoogleStreamingServer> mock_streaming_server_;
+  media::TestAudioInputControllerFactory test_audio_input_controller_factory_;
 };
 
-SpeechRecognitionManager*
-    SpeechRecognitionBrowserTest::speech_recognition_manager_ = NULL;
+// Simply loads the test page and checks if it was able to create a Speech
+// Recognition object in JavaScript, to make sure the Web Speech API is enabled.
+IN_PROC_BROWSER_TEST_F(SpeechRecognitionBrowserTest, Precheck) {
+  NavigateToURLBlockUntilNavigationsComplete(
+      shell(), GetTestUrlFromFragment("precheck"), 2);
 
-// TODO(satish): Once this flakiness has been fixed, add a second test here to
-// check for sending many clicks in succession to the speech button and verify
-// that it doesn't cause any crash but works as expected. This should act as the
-// test for http://crbug.com/59173
-//
-// TODO(satish): Similar to above, once this flakiness has been fixed add
-// another test here to check that when speech recognition is in progress and
-// a renderer crashes, we get a call to
-// SpeechRecognitionManager::CancelAllRequestsWithDelegate.
-IN_PROC_BROWSER_TEST_F(SpeechRecognitionBrowserTest, TestBasicRecognition) {
-  RunSpeechRecognitionTest("basic_recognition.html");
-  EXPECT_TRUE(fake_speech_recognition_manager_.grammar().empty());
+  EXPECT_EQ(kIdle, streaming_server_state());
+  EXPECT_EQ("success", GetPageFragment());
 }
 
-IN_PROC_BROWSER_TEST_F(SpeechRecognitionBrowserTest, GrammarAttribute) {
-  RunSpeechRecognitionTest("grammar_attribute.html");
-  EXPECT_EQ("http://example.com/grammar.xml",
-            fake_speech_recognition_manager_.grammar());
-}
+IN_PROC_BROWSER_TEST_F(SpeechRecognitionBrowserTest, OneShotRecognition) {
+  NavigateToURLBlockUntilNavigationsComplete(
+      shell(), GetTestUrlFromFragment("oneshot"), 2);
 
-// Flaky on Linux, Windows and Mac http://crbug.com/140765.
-IN_PROC_BROWSER_TEST_F(SpeechRecognitionBrowserTest, DISABLED_TestCancelAll) {
-  // The test checks that the cancel-all callback gets issued when a session
-  // is pending, so don't send a fake response.
-  // We are not expecting a navigation event being raised from the JS of the
-  // test page JavaScript in this case.
-  fake_speech_recognition_manager_.set_should_send_fake_response(false);
-
-  LoadAndStartSpeechRecognitionTest("basic_recognition.html");
-
-  // Make the renderer crash. This should trigger
-  // InputTagSpeechDispatcherHost to cancel all pending sessions.
-  NavigateToURL(shell(), GURL(kChromeUICrashURL));
-
-  EXPECT_TRUE(fake_speech_recognition_manager_.did_cancel_all());
+  EXPECT_EQ(kClientDisconnected, streaming_server_state());
+  EXPECT_EQ("goodresult1", GetPageFragment());
 }
 
 }  // namespace content

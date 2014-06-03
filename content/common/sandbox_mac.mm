@@ -6,6 +6,7 @@
 
 #import <Cocoa/Cocoa.h>
 
+#include <CoreFoundation/CFTimeZone.h>
 extern "C" {
 #include <sandbox.h>
 }
@@ -35,6 +36,7 @@ extern "C" {
 #include "third_party/icu/source/common/unicode/uchar.h"
 #include "ui/base/layout.h"
 #include "ui/gl/gl_surface.h"
+#include "ui/gl/io_surface_support_mac.h"
 
 namespace content {
 namespace {
@@ -306,7 +308,22 @@ void Sandbox::SandboxWarmup(int sandbox_type) {
     base::GetUrandomFD();
   }
 
+  { // IOSurfaceLookup() - 10.7
+    // Needed by zero-copy texture update framework - crbug.com/323338
+    IOSurfaceSupport* io_surface_support = IOSurfaceSupport::Initialize();
+    if (io_surface_support) {
+      base::ScopedCFTypeRef<CFTypeRef> io_surface(
+          io_surface_support->IOSurfaceLookup(0));
+    }
+  }
+
   // Process-type dependent warm-up.
+  if (sandbox_type == SANDBOX_TYPE_UTILITY) {
+    // CFTimeZoneCopyZone() tries to read /etc and /private/etc/localtime - 10.8
+    // Needed by Media Galleries API Picasa - crbug.com/151701
+    CFTimeZoneCopySystem();
+  }
+
   if (sandbox_type == SANDBOX_TYPE_GPU) {
     // Preload either the desktop GL or the osmesa so, depending on the
     // --use-gl flag.

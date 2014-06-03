@@ -4,10 +4,10 @@
 
 #include "chrome/renderer/extensions/render_view_observer_natives.h"
 
-#include "chrome/common/extensions/api/extension_api.h"
 #include "chrome/renderer/extensions/dispatcher.h"
 #include "content/public/renderer/render_view.h"
 #include "content/public/renderer/render_view_observer.h"
+#include "extensions/common/extension_api.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebScopedMicrotaskSuppression.h"
 
@@ -26,21 +26,22 @@ class LoadWatcher : public content::RenderViewObserver {
         callback_(cb) {
   }
 
-  virtual void DidCreateDocumentElement(WebKit::WebFrame* frame) OVERRIDE {
+  virtual void DidCreateDocumentElement(blink::WebFrame* frame) OVERRIDE {
     CallbackAndDie(true);
   }
 
   virtual void DidFailProvisionalLoad(
-      WebKit::WebFrame* frame,
-      const WebKit::WebURLError& error) OVERRIDE {
+      blink::WebFrame* frame,
+      const blink::WebURLError& error) OVERRIDE {
     CallbackAndDie(false);
   }
 
  private:
   void CallbackAndDie(bool succeeded) {
-    v8::HandleScope handle_scope;
-    v8::Handle<v8::Value> args[] = { v8::Boolean::New(succeeded) };
-    context_->CallFunction(callback_.get(), 1, args);
+    v8::Isolate* isolate = context_->isolate();
+    v8::HandleScope handle_scope(isolate);
+    v8::Handle<v8::Value> args[] = { v8::Boolean::New(isolate, succeeded) };
+    context_->CallFunction(callback_.NewHandle(isolate), 1, args);
     delete this;
   }
 

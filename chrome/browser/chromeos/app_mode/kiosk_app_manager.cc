@@ -8,26 +8,24 @@
 #include <set>
 
 #include "base/bind.h"
-#include "base/chromeos/chromeos_version.h"
 #include "base/logging.h"
 #include "base/path_service.h"
 #include "base/prefs/pref_registry_simple.h"
 #include "base/prefs/pref_service.h"
+#include "base/prefs/scoped_user_pref_update.h"
 #include "base/stl_util.h"
+#include "base/sys_info.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/app_mode/kiosk_app_data.h"
 #include "chrome/browser/chromeos/app_mode/kiosk_app_manager_observer.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/policy/device_local_account.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
-#include "chrome/browser/chromeos/settings/cros_settings_names.h"
 #include "chrome/browser/chromeos/settings/owner_key_util.h"
 #include "chrome/browser/policy/browser_policy_connector.h"
-#include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/common/chrome_paths.h"
 #include "chromeos/cryptohome/async_method_caller.h"
-#include "chromeos/cryptohome/cryptohome_library.h"
+#include "chromeos/settings/cros_settings_names.h"
 #include "content/public/browser/browser_thread.h"
 
 namespace chromeos {
@@ -100,7 +98,7 @@ std::string KioskAppManager::GetAutoLaunchApp() const {
 
 void KioskAppManager::SetAutoLaunchApp(const std::string& app_id) {
   SetAutoLoginState(AUTOLOGIN_REQUESTED);
-  // Clean first, so the proper change notifications are triggered even
+  // Clean first, so the proper change callbacks are triggered even
   // if we are only changing AutoLoginState here.
   if (!auto_launch_app_id_.empty()) {
     CrosSettings::Get()->SetString(kAccountsPrefDeviceLocalAccountAutoLoginId,
@@ -169,7 +167,7 @@ void KioskAppManager::OnReadImmutableAttributes(
       g_browser_process->browser_policy_connector()->GetInstallAttributes();
   switch (attributes->GetMode()) {
     case policy::DEVICE_MODE_NOT_SET: {
-      if (!base::chromeos::IsRunningOnChromeOS()) {
+      if (!base::SysInfo::IsRunningOnChromeOS()) {
         status = CONSUMER_KIOSK_MODE_CONFIGURABLE;
       } else if (!ownership_established_) {
         bool* owner_present = new bool(false);
@@ -241,8 +239,7 @@ void KioskAppManager::AddApp(const std::string& app_id) {
   device_local_accounts.push_back(policy::DeviceLocalAccount(
       policy::DeviceLocalAccount::TYPE_KIOSK_APP,
       GenerateKioskAppAccountId(app_id),
-      app_id,
-      std::string()));
+      app_id));
 
   policy::SetDeviceLocalAccounts(CrosSettings::Get(), device_local_accounts);
 }
@@ -272,6 +269,7 @@ void KioskAppManager::RemoveApp(const std::string& app_id) {
 }
 
 void KioskAppManager::GetApps(Apps* apps) const {
+  apps->clear();
   apps->reserve(apps_.size());
   for (size_t i = 0; i < apps_.size(); ++i)
     apps->push_back(App(*apps_[i]));
@@ -305,6 +303,25 @@ bool KioskAppManager::GetDisableBailoutShortcut() const {
   return false;
 }
 
+void KioskAppManager::ClearAppData(const std::string& app_id) {
+  KioskAppData* app_data = GetAppDataMutable(app_id);
+  if (!app_data)
+    return;
+
+  app_data->ClearCache();
+}
+
+void KioskAppManager::UpdateAppDataFromProfile(
+    const std::string& app_id,
+    Profile* profile,
+    const extensions::Extension* app) {
+  KioskAppData* app_data = GetAppDataMutable(app_id);
+  if (!app_data)
+    return;
+
+  app_data->LoadFromInstalledApp(profile, app);
+}
+
 void KioskAppManager::AddObserver(KioskAppManagerObserver* observer) {
   observers_.AddObserver(observer);
 }
@@ -315,19 +332,21 @@ void KioskAppManager::RemoveObserver(KioskAppManagerObserver* observer) {
 
 KioskAppManager::KioskAppManager() : ownership_established_(false) {
   UpdateAppData();
-  CrosSettings::Get()->AddSettingsObserver(
-      kAccountsPrefDeviceLocalAccounts, this);
-  CrosSettings::Get()->AddSettingsObserver(
-      kAccountsPrefDeviceLocalAccountAutoLoginId, this);
+  local_accounts_subscription_ =
+      CrosSettings::Get()->AddSettingsObserver(
+          kAccountsPrefDeviceLocalAccounts,
+          base::Bind(&KioskAppManager::UpdateAppData, base::Unretained(this)));
+  local_account_auto_login_id_subscription_ =
+      CrosSettings::Get()->AddSettingsObserver(
+          kAccountsPrefDeviceLocalAccountAutoLoginId,
+          base::Bind(&KioskAppManager::UpdateAppData, base::Unretained(this)));
 }
 
 KioskAppManager::~KioskAppManager() {}
 
 void KioskAppManager::CleanUp() {
-  CrosSettings::Get()->RemoveSettingsObserver(
-      kAccountsPrefDeviceLocalAccounts, this);
-  CrosSettings::Get()->RemoveSettingsObserver(
-      kAccountsPrefDeviceLocalAccountAutoLoginId, this);
+  local_accounts_subscription_.reset();
+  local_account_auto_login_id_subscription_.reset();
   apps_.clear();
 }
 
@@ -340,6 +359,10 @@ const KioskAppData* KioskAppManager::GetAppData(
   }
 
   return NULL;
+}
+
+KioskAppData* KioskAppManager::GetAppDataMutable(const std::string& app_id) {
+  return const_cast<KioskAppData*>(GetAppData(app_id));
 }
 
 void KioskAppManager::UpdateAppData() {
@@ -393,13 +416,6 @@ void KioskAppManager::UpdateAppData() {
 
   FOR_EACH_OBSERVER(KioskAppManagerObserver, observers_,
                     OnKioskAppsSettingsChanged());
-}
-
-void KioskAppManager::Observe(int type,
-                              const content::NotificationSource& source,
-                              const content::NotificationDetails& details) {
-  DCHECK_EQ(chrome::NOTIFICATION_SYSTEM_SETTING_CHANGED, type);
-  UpdateAppData();
 }
 
 void KioskAppManager::GetKioskAppIconCacheDir(base::FilePath* cache_dir) {

@@ -31,6 +31,10 @@ import getos
 
 def StepBuildExamples(pepperdir):
   for config in ('Debug', 'Release'):
+    build_sdk.BuildStepMakeAll(pepperdir, 'getting_started',
+                               'Build Getting Started (%s)' % config,
+                               deps=False, config=config)
+
     build_sdk.BuildStepMakeAll(pepperdir, 'examples',
                                'Build Examples (%s)' % config,
                                deps=False, config=config)
@@ -101,6 +105,7 @@ def StepRunBrowserTests(toolchains, experimental):
   args = [
     sys.executable,
     os.path.join(SCRIPT_DIR, 'test_projects.py'),
+    '--retry-times=3',
   ]
 
   if experimental:
@@ -125,6 +130,15 @@ def main(args):
     # We don't want the currently configured NACL_SDK_ROOT to have any effect
     # of the build.
     del os.environ['NACL_SDK_ROOT']
+
+  # To setup bash completion for this command first install optcomplete
+  # and then add this line to your .bashrc:
+  #  complete -F _optcomplete test_sdk.py
+  try:
+    import optcomplete
+    optcomplete.autocomplete(parser)
+  except ImportError:
+    pass
 
   options, args = parser.parse_args(args[1:])
 

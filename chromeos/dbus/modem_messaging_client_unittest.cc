@@ -47,14 +47,6 @@ const char kServiceName[] = "service.name";
 // D-Bus object path used by test.
 const char kObjectPath[] = "/object/path";
 
-// Keys of SMS dictionary.
-const char kNumberKey[] = "number";
-const char kTextKey[] = "text";
-
-// Example values of SMS dictionary.
-const char kExampleNumber[] = "00012345678";
-const char kExampleText[] = "Hello.";
-
 }  // namespace
 
 class ModemMessagingClientTest : public testing::Test {
@@ -93,8 +85,8 @@ class ModemMessagingClientTest : public testing::Test {
     EXPECT_CALL(*mock_bus_.get(), ShutdownAndBlock()).WillOnce(Return());
 
     // Create a client with the mock bus.
-    client_.reset(ModemMessagingClient::Create(REAL_DBUS_CLIENT_IMPLEMENTATION,
-                                               mock_bus_.get()));
+    client_.reset(ModemMessagingClient::Create());
+    client_->Init(mock_bus_.get());
   }
 
   virtual void TearDown() OVERRIDE {

@@ -3,11 +3,19 @@
     <div class="signed-in-indicator" i18n-content="signedIn" hidden></div>
     <img class="user-image" alt="">
     <div class="name"></div>
-    <input type="password" class="password"
-           i18n-values="placeholder:passwordHint">
-    <img class="capslock-hint"
-         src="chrome://theme/IDR_LOGIN_PASSWORD_CAPS_LOCK" alt="">
+    <div class="password-area">
+      <div class="password-input-container">
+        <input type="password" class="password"
+               i18n-values="placeholder:passwordHint">
+        <img class="capslock-hint"
+             src="chrome://theme/IDR_LOGIN_PASSWORD_CAPS_LOCK" alt="">
+      </div>
+      <button class="custom-button custom-appearance" hidden>
+        <img class="custom-button-icon"></img>
+      </button>
+    </div>
     <button class="signin-button" i18n-content="signinButton"></button>
+    <div class="locked-indicator" hidden></div>
   </div>
   <div class="action-box-area">
     <div class="custom-appearance action-box-button"></div>
@@ -41,8 +49,10 @@
   <div class="side-pane-divider"></div>
   <div class="side-pane-container">
     <div class="side-pane-contents">
-      <div class="side-pane-name"></div>
-      <div class="side-pane-learn-more"></div>
+      <div class="side-pane-name-plus-learn">
+        <div class="side-pane-name"></div>
+        <div class="side-pane-learn-more"></div>
+      </div>
       <p class="info"></p>
       <p class="reminder" i18n-content="publicAccountReminder"></p>
       <button class="enter-button"

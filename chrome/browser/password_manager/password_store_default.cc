@@ -17,8 +17,8 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 
+using autofill::PasswordForm;
 using content::BrowserThread;
-using content::PasswordForm;
 
 PasswordStoreDefault::PasswordStoreDefault(LoginDatabase* login_db,
                                            Profile* profile)
@@ -84,6 +84,7 @@ void PasswordStoreDefault::RemoveLoginsCreatedBetweenImpl(
         changes.push_back(PasswordStoreChange(PasswordStoreChange::REMOVE,
                                               **it));
       }
+      LogStatsForBulkDeletion(changes.size());
       content::NotificationService::current()->Notify(
           chrome::NOTIFICATION_LOGINS_CHANGED,
           content::Source<PasswordStore>(this),
@@ -94,7 +95,8 @@ void PasswordStoreDefault::RemoveLoginsCreatedBetweenImpl(
 }
 
 void PasswordStoreDefault::GetLoginsImpl(
-    const content::PasswordForm& form,
+    const autofill::PasswordForm& form,
+    AuthorizationPromptPolicy prompt_policy,
     const ConsumerCallbackRunner& callback_runner) {
   std::vector<PasswordForm*> matched_forms;
   login_db_->GetLogins(form, &matched_forms);

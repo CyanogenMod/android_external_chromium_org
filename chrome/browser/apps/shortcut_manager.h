@@ -7,22 +7,32 @@
 
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/profiles/profile_info_cache_observer.h"
-#include "chrome/common/extensions/extension.h"
 #include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
+#include "extensions/common/extension.h"
 
 class PrefService;
 class Profile;
+
+namespace user_prefs {
+class PrefRegistrySyncable;
+}
 
 // This class manages the installation of shortcuts for platform apps.
 class AppShortcutManager : public BrowserContextKeyedService,
                            public content::NotificationObserver,
                            public ProfileInfoCacheObserver {
  public:
+  static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
+
   explicit AppShortcutManager(Profile* profile);
 
   virtual ~AppShortcutManager();
+
+  // Checks if kShortcutsEnabled is set in prefs. If not, this sets it and
+  // creates shortcuts for all apps.
+  void OnceOffCreateShortcuts();
 
   // content::NotificationObserver
   virtual void Observe(int type,
@@ -34,10 +44,6 @@ class AppShortcutManager : public BrowserContextKeyedService,
       const base::FilePath& profile_path) OVERRIDE;
 
  private:
-  // Checks if kShortcutsEnabled is set in prefs. If not, this sets it and
-  // creates shortcuts for all apps.
-  void OnceOffCreateShortcuts();
-
   void DeleteApplicationShortcuts(const extensions::Extension* extension);
 
   content::NotificationRegistrar registrar_;

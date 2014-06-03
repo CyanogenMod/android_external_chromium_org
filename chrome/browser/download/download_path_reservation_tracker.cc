@@ -15,7 +15,6 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/third_party/icu/icu_utf.h"
-#include "chrome/browser/download/download_util.h"
 #include "chrome/common/chrome_paths.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/download_item.h"
@@ -126,7 +125,7 @@ bool TruncateFileName(base::FilePath* path, size_t limit) {
   base::FilePath::StringType truncated;
 #if defined(OS_CHROMEOS) || defined(OS_MACOSX)
   // UTF-8.
-  TruncateUTF8ToByteSize(name, limit, &truncated);
+  base::TruncateUTF8ToByteSize(name, limit, &truncated);
 #elif defined(OS_WIN)
   // UTF-16.
   DCHECK(name.size() > limit);
@@ -184,7 +183,7 @@ void CreateReservation(
       (create_directory ||
        (!default_download_path.empty() &&
         (default_download_path == target_dir)))) {
-    file_util::CreateDirectory(target_dir);
+    base::CreateDirectory(target_dir);
   }
 
   // Check writability of the suggested path. If we can't write to it, default

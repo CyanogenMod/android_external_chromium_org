@@ -5,9 +5,12 @@
 #ifndef CHROME_BROWSER_CHROMEOS_POLICY_CONFIGURATION_POLICY_HANDLER_CHROMEOS_H_
 #define CHROME_BROWSER_CHROMEOS_POLICY_CONFIGURATION_POLICY_HANDLER_CHROMEOS_H_
 
-#include "chrome/browser/policy/configuration_policy_handler.h"
+#include "base/basictypes.h"
+#include "base/compiler_specific.h"
+#include "chrome/browser/extensions/policy_handlers.h"
 #include "chromeos/network/network_ui_data.h"
-#include "chromeos/network/onc/onc_constants.h"
+#include "components/onc/onc_constants.h"
+#include "components/policy/core/browser/configuration_policy_handler.h"
 
 namespace base {
 class DictionaryValue;
@@ -15,6 +18,23 @@ class Value;
 }
 
 namespace policy {
+
+// ConfigurationPolicyHandler for policies referencing external data.
+class ExternalDataPolicyHandler : public TypeCheckingPolicyHandler {
+ public:
+  explicit ExternalDataPolicyHandler(const char* policy_name);
+  virtual ~ExternalDataPolicyHandler();
+
+  // TypeCheckingPolicyHandler:
+  virtual bool CheckPolicySettings(const PolicyMap& policies,
+                                   PolicyErrorMap* errors) OVERRIDE;
+
+  virtual void ApplyPolicySettings(const PolicyMap& policies,
+                                   PrefValueMap* prefs) OVERRIDE;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(ExternalDataPolicyHandler);
+};
 
 // ConfigurationPolicyHandler for validation of the network configuration
 // policies. These actually don't set any preferences, but the handler just
@@ -36,7 +56,7 @@ class NetworkConfigurationPolicyHandler : public TypeCheckingPolicyHandler {
  private:
   explicit NetworkConfigurationPolicyHandler(
       const char* policy_name,
-      chromeos::onc::ONCSource onc_source,
+      ::onc::ONCSource onc_source,
       const char* pref_path);
 
   // Takes network policy in Value representation and produces an output Value
@@ -47,7 +67,7 @@ class NetworkConfigurationPolicyHandler : public TypeCheckingPolicyHandler {
 
   // The kind of ONC source that this handler represents. ONCSource
   // distinguishes between user and device policy.
-  const chromeos::onc::ONCSource onc_source_;
+  const ::onc::ONCSource onc_source_;
 
   // The name of the pref to apply the policy to.
   const char* pref_path_;
@@ -56,7 +76,8 @@ class NetworkConfigurationPolicyHandler : public TypeCheckingPolicyHandler {
 };
 
 // Maps the PinnedLauncherApps policy to the corresponding pref.
-class PinnedLauncherAppsPolicyHandler : public ExtensionListPolicyHandler {
+class PinnedLauncherAppsPolicyHandler
+    : public extensions::ExtensionListPolicyHandler {
  public:
   PinnedLauncherAppsPolicyHandler();
   virtual ~PinnedLauncherAppsPolicyHandler();

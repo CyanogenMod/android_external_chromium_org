@@ -8,9 +8,9 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
-#include "chrome/common/extensions/manifest.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/manifest.h"
+#include "extensions/common/manifest_constants.h"
 
 namespace extensions {
 
@@ -24,8 +24,8 @@ const char kKeyword[] = "keyword";
 // static
 const std::string& OmniboxInfo::GetKeyword(const Extension* extension) {
   OmniboxInfo* info = static_cast<OmniboxInfo*>(
-      extension->GetManifestData(extension_manifest_keys::kOmnibox));
-  return info ? info->keyword : EmptyString();
+      extension->GetManifestData(manifest_keys::kOmnibox));
+  return info ? info->keyword : base::EmptyString();
 }
 
 OmniboxHandler::OmniboxHandler() {
@@ -34,22 +34,22 @@ OmniboxHandler::OmniboxHandler() {
 OmniboxHandler::~OmniboxHandler() {
 }
 
-bool OmniboxHandler::Parse(Extension* extension, string16* error) {
+bool OmniboxHandler::Parse(Extension* extension, base::string16* error) {
   scoped_ptr<OmniboxInfo> info(new OmniboxInfo);
   const base::DictionaryValue* dict = NULL;
-  if (!extension->manifest()->GetDictionary(extension_manifest_keys::kOmnibox,
+  if (!extension->manifest()->GetDictionary(manifest_keys::kOmnibox,
                                             &dict) ||
       !dict->GetString(kKeyword, &info->keyword) ||
       info->keyword.empty()) {
-    *error = ASCIIToUTF16(extension_manifest_errors::kInvalidOmniboxKeyword);
+    *error = ASCIIToUTF16(manifest_errors::kInvalidOmniboxKeyword);
     return false;
   }
-  extension->SetManifestData(extension_manifest_keys::kOmnibox, info.release());
+  extension->SetManifestData(manifest_keys::kOmnibox, info.release());
   return true;
 }
 
 const std::vector<std::string> OmniboxHandler::Keys() const {
-  return SingleKey(extension_manifest_keys::kOmnibox);
+  return SingleKey(manifest_keys::kOmnibox);
 }
 
 }  // namespace extensions

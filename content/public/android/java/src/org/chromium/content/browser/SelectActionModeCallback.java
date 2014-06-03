@@ -1,17 +1,11 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 package org.chromium.content.browser;
 
-import android.app.Activity;
-import android.app.SearchManager;
 import android.content.ClipboardManager;
 import android.content.Context;
-import android.content.Intent;
-import android.content.pm.PackageManager;
-import android.provider.Browser;
-import android.text.TextUtils;
 import android.view.ActionMode;
 import android.view.Menu;
 import android.view.MenuItem;
@@ -30,27 +24,33 @@ public class SelectActionModeCallback implements ActionMode.Callback {
     public interface ActionHandler {
         /**
          * Perform a select all action.
-         * @return true iff the action was successful.
          */
-        boolean selectAll();
+        void selectAll();
 
         /**
          * Perform a copy (to clipboard) action.
-         * @return true iff the action was successful.
          */
-        boolean copy();
+        void copy();
 
         /**
          * Perform a cut (to clipboard) action.
-         * @return true iff the action was successful.
          */
-        boolean cut();
+        void cut();
 
         /**
          * Perform a paste action.
-         * @return true iff the action was successful.
          */
-        boolean paste();
+        void paste();
+
+        /**
+         * Perform a share action.
+         */
+        void share();
+
+        /**
+         * Perform a search action.
+         */
+        void search();
 
         /**
          * @return true iff the current selection is editable (e.g. text within an input field).
@@ -58,18 +58,23 @@ public class SelectActionModeCallback implements ActionMode.Callback {
         boolean isSelectionEditable();
 
         /**
-         * @return the currently selected text String.
-         */
-        String getSelectedText();
-
-        /**
          * Called when the onDestroyActionMode of the SelectActionmodeCallback is called.
          */
         void onDestroyActionMode();
+
+        /**
+         * @return Whether or not share is available.
+         */
+        boolean isShareAvailable();
+
+        /**
+         * @return Whether or not web search is available.
+         */
+        boolean isWebSearchAvailable();
     }
 
-    private Context mContext;
-    private ActionHandler mActionHandler;
+    private final Context mContext;
+    private final ActionHandler mActionHandler;
     private final boolean mIncognito;
     private boolean mEditable;
 
@@ -115,18 +120,17 @@ public class SelectActionModeCallback implements ActionMode.Callback {
             menu.removeItem(R.id.select_action_menu_cut);
         }
 
-        if (mEditable || !isShareHandlerAvailable()) {
+        if (mEditable || !mActionHandler.isShareAvailable()) {
             menu.removeItem(R.id.select_action_menu_share);
         }
 
-        if (mEditable || mIncognito || !isWebSearchAvailable()) {
+        if (mEditable || mIncognito || !mActionHandler.isWebSearchAvailable()) {
             menu.removeItem(R.id.select_action_menu_web_search);
         }
     }
 
     @Override
     public boolean onActionItemClicked(ActionMode mode, MenuItem item) {
-        String selection = mActionHandler.getSelectedText();
         int id = item.getItemId();
 
         if (id == R.id.select_action_menu_select_all) {
@@ -139,35 +143,10 @@ public class SelectActionModeCallback implements ActionMode.Callback {
         } else if (id == R.id.select_action_menu_paste) {
             mActionHandler.paste();
         } else if (id == R.id.select_action_menu_share) {
-            if (!TextUtils.isEmpty(selection)) {
-                Intent send = new Intent(Intent.ACTION_SEND);
-                send.setType("text/plain");
-                send.putExtra(Intent.EXTRA_TEXT, selection);
-                try {
-                    Intent i = Intent.createChooser(send, getContext().getString(
-                            R.string.actionbar_share));
-                    i.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                    getContext().startActivity(i);
-                } catch (android.content.ActivityNotFoundException ex) {
-                    // If no app handles it, do nothing.
-                }
-            }
+            mActionHandler.share();
             mode.finish();
         } else if (id == R.id.select_action_menu_web_search) {
-            if (!TextUtils.isEmpty(selection)) {
-                Intent i = new Intent(Intent.ACTION_WEB_SEARCH);
-                i.putExtra(SearchManager.EXTRA_NEW_SEARCH, true);
-                i.putExtra(SearchManager.QUERY, selection);
-                i.putExtra(Browser.EXTRA_APPLICATION_ID, getContext().getPackageName());
-                if (!(getContext() instanceof Activity)) {
-                    i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                }
-                try {
-                    getContext().startActivity(i);
-                } catch (android.content.ActivityNotFoundException ex) {
-                    // If no app handles it, do nothing.
-                }
-            }
+            mActionHandler.search();
             mode.finish();
         } else {
             return false;
@@ -184,19 +163,5 @@ public class SelectActionModeCallback implements ActionMode.Callback {
         ClipboardManager clipMgr = (ClipboardManager)
                 getContext().getSystemService(Context.CLIPBOARD_SERVICE);
         return clipMgr.hasPrimaryClip();
-    }
-
-    private boolean isShareHandlerAvailable() {
-        Intent intent = new Intent(Intent.ACTION_SEND);
-        intent.setType("text/plain");
-        return getContext().getPackageManager()
-                .queryIntentActivities(intent, PackageManager.MATCH_DEFAULT_ONLY).size() > 0;
-    }
-
-    private boolean isWebSearchAvailable() {
-        Intent intent = new Intent(Intent.ACTION_WEB_SEARCH);
-        intent.putExtra(SearchManager.EXTRA_NEW_SEARCH, true);
-        return getContext().getPackageManager()
-                .queryIntentActivities(intent, PackageManager.MATCH_DEFAULT_ONLY).size() > 0;
     }
 }

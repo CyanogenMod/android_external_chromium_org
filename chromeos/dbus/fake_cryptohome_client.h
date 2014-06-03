@@ -1,28 +1,30 @@
-// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROMEOS_DBUS_FAKE_CRYPTOHOME_CLIENT_H_
 #define CHROMEOS_DBUS_FAKE_CRYPTOHOME_CLIENT_H_
 
-#include <string>
+#include <map>
 
+#include "base/basictypes.h"
+#include "base/memory/weak_ptr.h"
 #include "chromeos/dbus/cryptohome_client.h"
 
 namespace chromeos {
 
-// A fake implementation of CryptohomeClient. This only calls callbacks given
-// as parameters.
-class FakeCryptohomeClient : public CryptohomeClient {
+class CHROMEOS_EXPORT FakeCryptohomeClient : public CryptohomeClient {
  public:
   FakeCryptohomeClient();
   virtual ~FakeCryptohomeClient();
 
-  // CryptohomeClient overrides.
+  virtual void Init(dbus::Bus* bus) OVERRIDE;
   virtual void SetAsyncCallStatusHandlers(
       const AsyncCallStatusHandler& handler,
       const AsyncCallStatusWithDataHandler& data_handler) OVERRIDE;
   virtual void ResetAsyncCallStatusHandlers() OVERRIDE;
+  virtual void WaitForServiceToBeAvailable(
+      const WaitForServiceToBeAvailableCallback& callback) OVERRIDE;
   virtual void IsMounted(const BoolDBusMethodCallback& callback) OVERRIDE;
   virtual bool Unmount(bool* success) OVERRIDE;
   virtual void AsyncCheckKey(const std::string& username,
@@ -34,7 +36,7 @@ class FakeCryptohomeClient : public CryptohomeClient {
                                const AsyncMethodCallback& callback) OVERRIDE;
   virtual void AsyncRemove(const std::string& username,
                            const AsyncMethodCallback& callback) OVERRIDE;
-  virtual bool GetSystemSalt(std::vector<uint8>* salt) OVERRIDE;
+  virtual void GetSystemSalt(const GetSystemSaltCallback& callback) OVERRIDE;
   virtual void GetSanitizedUsername(
       const std::string& username,
       const StringDBusMethodCallback& callback) OVERRIDE;
@@ -70,6 +72,9 @@ class FakeCryptohomeClient : public CryptohomeClient {
       const BoolDBusMethodCallback& callback) OVERRIDE;
   virtual void Pkcs11GetTpmTokenInfo(
       const Pkcs11GetTpmTokenInfoCallback& callback) OVERRIDE;
+  virtual void Pkcs11GetTpmTokenInfoForUser(
+      const std::string& username,
+      const Pkcs11GetTpmTokenInfoCallback& callback) OVERRIDE;
   virtual bool InstallAttributesGet(const std::string& name,
                                     std::vector<uint8>* value,
                                     bool* successful) OVERRIDE;
@@ -82,40 +87,48 @@ class FakeCryptohomeClient : public CryptohomeClient {
   virtual bool InstallAttributesIsInvalid(bool* is_invalid) OVERRIDE;
   virtual bool InstallAttributesIsFirstInstall(bool* is_first_install) OVERRIDE;
   virtual void TpmAttestationIsPrepared(
-        const BoolDBusMethodCallback& callback) OVERRIDE;
+      const BoolDBusMethodCallback& callback) OVERRIDE;
   virtual void TpmAttestationIsEnrolled(
-        const BoolDBusMethodCallback& callback) OVERRIDE;
+      const BoolDBusMethodCallback& callback) OVERRIDE;
   virtual void AsyncTpmAttestationCreateEnrollRequest(
       const AsyncMethodCallback& callback) OVERRIDE;
   virtual void AsyncTpmAttestationEnroll(
       const std::string& pca_response,
       const AsyncMethodCallback& callback) OVERRIDE;
   virtual void AsyncTpmAttestationCreateCertRequest(
-      int options,
+      attestation::AttestationCertificateProfile certificate_profile,
+      const std::string& user_id,
+      const std::string& request_origin,
       const AsyncMethodCallback& callback) OVERRIDE;
   virtual void AsyncTpmAttestationFinishCertRequest(
       const std::string& pca_response,
       attestation::AttestationKeyType key_type,
+      const std::string& user_id,
       const std::string& key_name,
       const AsyncMethodCallback& callback) OVERRIDE;
   virtual void TpmAttestationDoesKeyExist(
       attestation::AttestationKeyType key_type,
+      const std::string& user_id,
       const std::string& key_name,
       const BoolDBusMethodCallback& callback) OVERRIDE;
   virtual void TpmAttestationGetCertificate(
       attestation::AttestationKeyType key_type,
+      const std::string& user_id,
       const std::string& key_name,
       const DataMethodCallback& callback) OVERRIDE;
   virtual void TpmAttestationGetPublicKey(
       attestation::AttestationKeyType key_type,
+      const std::string& user_id,
       const std::string& key_name,
       const DataMethodCallback& callback) OVERRIDE;
   virtual void TpmAttestationRegisterKey(
       attestation::AttestationKeyType key_type,
+      const std::string& user_id,
       const std::string& key_name,
       const AsyncMethodCallback& callback) OVERRIDE;
   virtual void TpmAttestationSignEnterpriseChallenge(
       attestation::AttestationKeyType key_type,
+      const std::string& user_id,
       const std::string& key_name,
       const std::string& domain,
       const std::string& device_id,
@@ -124,30 +137,72 @@ class FakeCryptohomeClient : public CryptohomeClient {
       const AsyncMethodCallback& callback) OVERRIDE;
   virtual void TpmAttestationSignSimpleChallenge(
       attestation::AttestationKeyType key_type,
+      const std::string& user_id,
       const std::string& key_name,
       const std::string& challenge,
       const AsyncMethodCallback& callback) OVERRIDE;
   virtual void TpmAttestationGetKeyPayload(
       attestation::AttestationKeyType key_type,
+      const std::string& user_id,
       const std::string& key_name,
       const DataMethodCallback& callback) OVERRIDE;
   virtual void TpmAttestationSetKeyPayload(
       attestation::AttestationKeyType key_type,
+      const std::string& user_id,
       const std::string& key_name,
       const std::string& payload,
       const BoolDBusMethodCallback& callback) OVERRIDE;
+  virtual void TpmAttestationDeleteKeys(
+      attestation::AttestationKeyType key_type,
+      const std::string& user_id,
+      const std::string& key_prefix,
+      const BoolDBusMethodCallback& callback) OVERRIDE;
 
-  // Sets the unmount result of Unmount() call. Unmount() always sets the result
-  // and pretends that the underlying method call succeeds.
+  // Changes the behavior of WaitForServiceToBeAvailable(). This method runs
+  // pending callbacks if is_available is true.
+  void SetServiceIsAvailable(bool is_available);
+
+  // Sets the unmount result of Unmount() call.
   void set_unmount_result(bool result) {
     unmount_result_= result;
   }
 
- private:
-  AsyncCallStatusHandler handler_;
-  AsyncCallStatusWithDataHandler data_handler_;
+  // Sets the system salt which will be returned from GetSystemSalt(). By
+  // default, GetSystemSalt() returns the value generated by
+  // GetStubSystemSalt().
+  void set_system_salt(const std::vector<uint8>& system_salt) {
+    system_salt_ = system_salt;
+  }
 
+  // Returns the stub system salt as raw bytes. (not as a string encoded in the
+  // format used by SystemSaltGetter::ConvertRawSaltToHexString()).
+  static std::vector<uint8> GetStubSystemSalt();
+
+ private:
+  // Posts tasks which return fake results to the UI thread.
+  void ReturnAsyncMethodResult(const AsyncMethodCallback& callback,
+                               bool returns_data);
+
+  // This method is used to implement ReturnAsyncMethodResult.
+  void ReturnAsyncMethodResultInternal(const AsyncMethodCallback& callback,
+                                       bool returns_data);
+
+  bool service_is_available_;
+  int async_call_id_;
+  AsyncCallStatusHandler async_call_status_handler_;
+  AsyncCallStatusWithDataHandler async_call_status_data_handler_;
+  int tpm_is_ready_counter_;
   bool unmount_result_;
+  std::vector<uint8> system_salt_;
+
+  std::vector<WaitForServiceToBeAvailableCallback>
+      pending_wait_for_service_to_be_available_callbacks_;
+
+  // A stub store for InstallAttributes, mapping an attribute name to the
+  // associated data blob. Used to implement InstallAttributesSet and -Get.
+  std::map<std::string, std::vector<uint8> > install_attrs_;
+  bool locked_;
+  base::WeakPtrFactory<FakeCryptohomeClient> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(FakeCryptohomeClient);
 };

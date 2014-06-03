@@ -11,16 +11,16 @@
 #include "base/lazy_instance.h"
 #include "base/time/time.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/common/extensions/api/location.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/permissions/permission_set.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/geolocation_provider.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/common/geoposition.h"
+#include "extensions/browser/event_router.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/permissions/permission_set.h"
 
 using content::BrowserThread;
 
@@ -382,12 +382,12 @@ void LocationManager::SendLocationUpdate(
     location.timestamp = position.timestamp.ToJsTime();
 
     args->Append(location.ToValue().release());
-    event_name = "location.onLocationUpdate";
+    event_name = location::OnLocationUpdate::kEventName;
   } else {
     // Set data for onLocationError event.
     // TODO(vadimt): Set name.
     args->AppendString(position.error_message);
-    event_name = "location.onLocationError";
+    event_name = location::OnLocationError::kEventName;
   }
 
   scoped_ptr<Event> event(new Event(event_name, args.Pass()));

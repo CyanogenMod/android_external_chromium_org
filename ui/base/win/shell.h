@@ -16,6 +16,7 @@ class FilePath;
 
 namespace ui {
 namespace win {
+
 // Open or run a file via the Windows shell. In the event that there is no
 // default application registered for the file specified by 'full_path',
 // ask the user, via the Windows "Open With" dialog.
@@ -40,6 +41,19 @@ UI_EXPORT bool OpenAnyViaShell(const string16& full_path,
 // to open the file specified by 'full_path'.
 // Returns 'true' on successful open, 'false' otherwise.
 bool OpenItemWithExternalApp(const string16& full_path);
+
+// Disables the ability of the specified window to be pinned to the taskbar or
+// the Start menu. This will remove "Pin this program to taskbar" from the
+// taskbar menu of the specified window.
+UI_EXPORT bool PreventWindowFromPinning(HWND hwnd);
+
+// Sets the application id, app icon, relaunch command and relaunch display name
+// for the given window.
+UI_EXPORT void SetAppDetailsForWindow(const string16& app_id,
+                                      const string16& app_icon,
+                                      const string16& relaunch_command,
+                                      const string16& relaunch_display_name,
+                                      HWND hwnd);
 
 // Sets the application id given as the Application Model ID for the window
 // specified.  This method is used to insure that different web applications

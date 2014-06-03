@@ -90,7 +90,7 @@ IFrameLoader::IFrameLoader(Browser* browser, int iframe_id, const GURL& url)
       "window.domAutomationController.send(addIFrame(%d, \"%s\"));",
       iframe_id, url.spec().c_str()));
   web_contents->GetRenderViewHost()->ExecuteJavascriptInWebFrame(
-      string16(), UTF8ToUTF16(script));
+      base::string16(), UTF8ToUTF16(script));
   content::RunMessageLoop();
 
   EXPECT_EQ(base::StringPrintf("\"%d\"", iframe_id), javascript_response_);
@@ -141,12 +141,12 @@ class GeolocationNotificationObserver : public content::NotificationObserver {
                                       const std::string& iframe_xpath);
 
   bool has_infobar() const { return !!infobar_; }
-  InfoBarDelegate* infobar() { return infobar_; }
+  InfoBar* infobar() { return infobar_; }
 
  private:
   content::NotificationRegistrar registrar_;
   bool wait_for_infobar_;
-  InfoBarDelegate* infobar_;
+  InfoBar* infobar_;
   bool navigation_started_;
   bool navigation_completed_;
   std::string javascript_response_;
@@ -183,9 +183,9 @@ void GeolocationNotificationObserver::Observe(
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
   if (type == chrome::NOTIFICATION_TAB_CONTENTS_INFOBAR_ADDED) {
-    infobar_ = content::Details<InfoBarAddedDetails>(details).ptr();
-    ASSERT_FALSE(infobar_->GetIcon().IsEmpty());
-    ASSERT_TRUE(infobar_->AsConfirmInfoBarDelegate());
+    infobar_ = content::Details<InfoBar::AddedDetails>(details).ptr();
+    ASSERT_FALSE(infobar_->delegate()->GetIcon().IsEmpty());
+    ASSERT_TRUE(infobar_->delegate()->AsConfirmInfoBarDelegate());
   } else if (type == content::NOTIFICATION_DOM_OPERATION_RESPONSE) {
     content::Details<DomOperationNotificationDetails> dom_op_details(details);
     javascript_response_ = dom_op_details->json;
@@ -198,7 +198,7 @@ void GeolocationNotificationObserver::Observe(
     navigation_completed_ = true;
   }
 
-  // We're either waiting for just the inforbar, or for both a javascript
+  // We're either waiting for just the infobar, or for both a javascript
   // prompt and response.
   if ((wait_for_infobar_ && infobar_) ||
       (navigation_completed_ && !javascript_response_.empty()))
@@ -264,20 +264,41 @@ class GeolocationBrowserTest : public InProcessBrowserTest {
   double fake_latitude() const { return fake_latitude_; }
   double fake_longitude() const { return fake_longitude_; }
 
+  // Initializes the test server and navigates to the initial url.
   bool Initialize(InitializationOptions options) WARN_UNUSED_RESULT;
+
+  // Loads the specified number of iframes.
   void LoadIFrames(int number_iframes);
+
+  // Start watching for geolocation notifications. If |wait_for_infobar| is
+  // true, wait for the infobar to be displayed. Otherwise wait for a javascript
+  // response.
   void AddGeolocationWatch(bool wait_for_infobar);
+
+  // Checks that no errors have been received in javascript, and checks that the
+  // position most recently received in javascript matches |latitude| and
+  // |longitude|.
   void CheckGeoposition(double latitude, double longitude);
+
+  // For |requesting_url| if |allowed| is true accept the infobar. Otherwise
+  // cancel it.
   void SetInfoBarResponse(const GURL& requesting_url, bool allowed);
+
+  // Executes |function| in |web_contents| and checks that the return value
+  // matches |expected|.
   void CheckStringValueFromJavascriptForTab(const std::string& expected,
                                             const std::string& function,
                                             WebContents* web_contents);
+
+  // Executes |function| and checks that the return value matches |expected|.
   void CheckStringValueFromJavascript(const std::string& expected,
                                       const std::string& function);
+
+  // Sets a new position and sends a notification with the new position.
   void NotifyGeoposition(double latitude, double longitude);
 
  private:
-  InfoBarDelegate* infobar_;
+  InfoBar* infobar_;
   Browser* current_browser_;
   // path element of a URL referencing the html content for this test.
   std::string html_for_tests_;
@@ -386,9 +407,9 @@ void GeolocationBrowserTest::SetInfoBarResponse(const GURL& requesting_url,
         content::NOTIFICATION_LOAD_STOP,
         content::Source<NavigationController>(&web_contents->GetController()));
     if (allowed)
-      infobar_->AsConfirmInfoBarDelegate()->Accept();
+      infobar_->delegate()->AsConfirmInfoBarDelegate()->Accept();
     else
-      infobar_->AsConfirmInfoBarDelegate()->Cancel();
+      infobar_->delegate()->AsConfirmInfoBarDelegate()->Cancel();
     observer.Wait();
   }
 
@@ -456,13 +477,8 @@ IN_PROC_BROWSER_TEST_F(GeolocationBrowserTest,
   CheckStringValueFromJavascript("1", "geoGetLastError()");
 }
 
-// http://crbug.com/44589. Hangs on Mac, crashes on Windows
-#if defined(OS_MACOSX) || defined(OS_WIN)
-#define MAYBE_NoInfobarForSecondTab DISABLED_NoInfobarForSecondTab
-#else
-#define MAYBE_NoInfobarForSecondTab NoInfobarForSecondTab
-#endif
-IN_PROC_BROWSER_TEST_F(GeolocationBrowserTest, MAYBE_NoInfobarForSecondTab) {
+// See http://crbug.com/308358
+IN_PROC_BROWSER_TEST_F(GeolocationBrowserTest, DISABLED_NoInfobarForSecondTab) {
   ASSERT_TRUE(Initialize(INITIALIZATION_NONE));
   AddGeolocationWatch(true);
   SetInfoBarResponse(current_url(), true);
@@ -475,13 +491,7 @@ IN_PROC_BROWSER_TEST_F(GeolocationBrowserTest, MAYBE_NoInfobarForSecondTab) {
   CheckGeoposition(fake_latitude(), fake_longitude());
 }
 
-// http://crbug.com/44589. Hangs on Mac, crashes on Windows
-#if defined(OS_MACOSX) || defined(OS_WIN)
-#define MAYBE_NoInfobarForDeniedOrigin DISABLED_NoInfobarForDeniedOrigin
-#else
-#define MAYBE_NoInfobarForDeniedOrigin NoInfobarForDeniedOrigin
-#endif
-IN_PROC_BROWSER_TEST_F(GeolocationBrowserTest, MAYBE_NoInfobarForDeniedOrigin) {
+IN_PROC_BROWSER_TEST_F(GeolocationBrowserTest, NoInfobarForDeniedOrigin) {
   ASSERT_TRUE(Initialize(INITIALIZATION_NONE));
   current_browser()->profile()->GetHostContentSettingsMap()->SetContentSetting(
       ContentSettingsPattern::FromURLNoWildcard(current_url()),

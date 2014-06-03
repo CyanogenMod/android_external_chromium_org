@@ -8,13 +8,13 @@
 #include <string>
 
 #include "build/build_config.h"
-#include "ui/base/ui_export.h"
+#include "ui/gfx/gfx_export.h"
 #include "ui/gfx/insets_base.h"
 
 namespace gfx {
 
 // A floating versin of gfx::Insets.
-class UI_EXPORT InsetsF : public InsetsBase<InsetsF, float> {
+class GFX_EXPORT InsetsF : public InsetsBase<InsetsF, float> {
  public:
   InsetsF();
   InsetsF(float top, float left, float bottom, float right);

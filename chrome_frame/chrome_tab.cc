@@ -15,6 +15,7 @@
 #include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/file_version_info.h"
+#include "base/i18n/icu_util.h"
 #include "base/logging.h"
 #include "base/logging_win.h"
 #include "base/path_service.h"
@@ -29,7 +30,6 @@
 #include "base/win/windows_version.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/metrics/entropy_provider.h"
 #include "chrome/installer/util/google_update_settings.h"
 #include "chrome_frame/bho.h"
 #include "chrome_frame/chrome_active_document.h"
@@ -43,8 +43,15 @@
 #include "chrome_frame/pin_module.h"
 #include "chrome_frame/resource.h"
 #include "chrome_frame/utils.h"
+#include "components/variations/entropy_provider.h"
 #include "grit/chrome_frame_resources.h"
 #include "url/url_util.h"
+
+#if _ATL_VER >= 0x0C00
+// This was removed between the VS2010 version and the VS2013 version, and
+// the unsuffixed version was repurposed to mean 'S'.
+#define UpdateRegistryFromResourceS UpdateRegistryFromResource
+#endif
 
 using base::win::RegKey;
 
@@ -101,7 +108,9 @@ class ChromeTabModule : public CAtlDllModuleT<ChromeTabModule> {
  public:
   typedef CAtlDllModuleT<ChromeTabModule> ParentClass;
 
-  ChromeTabModule() : do_system_registration_(true), crash_reporting_(NULL) {}
+  ChromeTabModule() : do_system_registration_(true),
+                      crash_reporting_(NULL),
+                      icu_initialized_(false) {}
 
   DECLARE_LIBID(LIBID_ChromeTabLib)
   DECLARE_REGISTRY_APPID_RESOURCEID(IDR_CHROMETAB,
@@ -193,13 +202,20 @@ class ChromeTabModule : public CAtlDllModuleT<ChromeTabModule> {
 
   // The module is "locked" when an object takes a reference on it. The first
   // time it is locked, take a reference on crash reporting to bind its lifetime
-  // to the module.
+  // to the module and initialize ICU.
   virtual LONG Lock() throw() {
     LONG result = ParentClass::Lock();
     if (result == 1) {
       DCHECK_EQ(crash_reporting_,
                 static_cast<chrome_frame::ScopedCrashReporting*>(NULL));
       crash_reporting_ = new chrome_frame::ScopedCrashReporting();
+
+      // Initialize ICU if this is the first time the module has been locked.
+      if (!icu_initialized_) {
+        icu_initialized_ = true;
+        // Best-effort since something is better than nothing here.
+        ignore_result(base::i18n::InitializeICU());
+      }
     }
     return result;
   }
@@ -227,6 +243,10 @@ class ChromeTabModule : public CAtlDllModuleT<ChromeTabModule> {
   // reporting to shut down at exit, which would lead to problems with the
   // loader lock.
   chrome_frame::ScopedCrashReporting* crash_reporting_;
+
+  // Initially false, this is flipped to true to indicate that ICU has been
+  // initialized for the module.
+  bool icu_initialized_;
 };
 
 ChromeTabModule _AtlModule;
@@ -562,25 +582,51 @@ struct TokenWithPrivileges {
   CSid user_;
 };
 
-HRESULT SetOrDeleteMimeHandlerKey(bool set, HKEY root_key) {
-  std::wstring key_name = kInternetSettings;
+const wchar_t* const kMimeHandlerKeyValues[] = {
+  L"ChromeTab.ChromeActiveDocument",
+  L"ChromeTab.ChromeActiveDocument.1",
+};
+
+// Returns true if the values are present or absent in |root_key|'s Secure Mime
+// Handlers key based on |for_installed|. Returns false if the values are not as
+// expected or if an error occurred.
+bool MimeHandlerKeyIsConfigured(bool for_install, HKEY root_key) {
+  string16 key_name(kInternetSettings);
   key_name.append(L"\\Secure Mime Handlers");
-  RegKey key(root_key, key_name.c_str(), KEY_READ | KEY_WRITE);
+  RegKey key(root_key, key_name.c_str(), KEY_QUERY_VALUE);
   if (!key.Valid())
     return false;
 
-  LONG result1 = ERROR_SUCCESS;
-  LONG result2 = ERROR_SUCCESS;
-  if (set) {
-    result1 = key.WriteValue(L"ChromeTab.ChromeActiveDocument", 1);
-    result2 = key.WriteValue(L"ChromeTab.ChromeActiveDocument.1", 1);
-  } else {
-    result1 = key.DeleteValue(L"ChromeTab.ChromeActiveDocument");
-    result2 = key.DeleteValue(L"ChromeTab.ChromeActiveDocument.1");
+  for (size_t i = 0; i < arraysize(kMimeHandlerKeyValues); ++i) {
+    DWORD value = 0;
+    LONG result = key.ReadValueDW(kMimeHandlerKeyValues[i], &value);
+    if (for_install) {
+      if (result != ERROR_SUCCESS || value != 1)
+        return false;
+    } else {
+      if (result != ERROR_FILE_NOT_FOUND)
+        return false;
+    }
   }
+  return true;
+}
 
-  return result1 != ERROR_SUCCESS ? HRESULT_FROM_WIN32(result1) :
-                                    HRESULT_FROM_WIN32(result2);
+HRESULT SetOrDeleteMimeHandlerKey(bool set, HKEY root_key) {
+  string16 key_name(kInternetSettings);
+  key_name.append(L"\\Secure Mime Handlers");
+  RegKey key(root_key, key_name.c_str(), KEY_SET_VALUE);
+  if (!key.Valid())
+    return false;
+
+  HRESULT result = S_OK;
+  for (size_t i = 0; i < arraysize(kMimeHandlerKeyValues); ++i) {
+    LONG intermediate = set ?
+        key.WriteValue(kMimeHandlerKeyValues[i], 1) :
+        key.DeleteValue(kMimeHandlerKeyValues[i]);
+    if (intermediate != ERROR_SUCCESS && result == S_OK)
+      result = HRESULT_FROM_WIN32(intermediate);
+  }
+  return result;
 }
 
 void OnPinModule() {
@@ -591,11 +637,12 @@ void OnPinModule() {
 // Chrome Frame registration functions.
 //-----------------------------------------------------------------------------
 HRESULT RegisterSecuredMimeHandler(bool enable, bool is_system) {
-  if (!is_system) {
+  if (MimeHandlerKeyIsConfigured(enable, HKEY_LOCAL_MACHINE))
+    return S_OK;
+  if (!is_system)
     return SetOrDeleteMimeHandlerKey(enable, HKEY_CURRENT_USER);
-  } else if (base::win::GetVersion() < base::win::VERSION_VISTA) {
+  if (base::win::GetVersion() < base::win::VERSION_VISTA)
     return SetOrDeleteMimeHandlerKey(enable, HKEY_LOCAL_MACHINE);
-  }
 
   std::wstring mime_key = kInternetSettings;
   mime_key.append(L"\\Secure Mime Handlers");
@@ -860,7 +907,7 @@ extern "C" BOOL WINAPI DllMain(HINSTANCE instance,
                                LPVOID reserved) {
   UNREFERENCED_PARAMETER(instance);
   if (reason == DLL_PROCESS_ATTACH) {
-#ifndef NDEBUG
+#if _ATL_VER < 0x0C00 && !defined(NDEBUG)
     // Silence traces from the ATL registrar to reduce the log noise.
     ATL::CTrace::s_trace.ChangeCategory(atlTraceRegistrar, 0,
                                         ATLTRACESTATUS_DISABLED);
@@ -918,6 +965,11 @@ STDAPI DllCanUnloadNow() {
 // Returns a class factory to create an object of the requested type
 STDAPI DllGetClassObject(REFCLSID rclsid, REFIID riid, LPVOID* ppv) {
   chrome_frame::ScopedCrashReporting crash_reporting;
+
+  // IE 11+ are unsupported.
+  if (GetIEVersion() > IE_10) {
+    return CLASS_E_CLASSNOTAVAILABLE;
+  }
 
   // If we found another module present when we were loaded, then delegate to
   // that:

@@ -5,6 +5,7 @@
 #include "content/browser/renderer_host/media/midi_dispatcher_host.h"
 
 #include "base/bind.h"
+#include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/common/media/midi_messages.h"
 #include "content/public/browser/browser_context.h"
@@ -28,6 +29,8 @@ bool MIDIDispatcherHost::OnMessageReceived(const IPC::Message& message,
   IPC_BEGIN_MESSAGE_MAP_EX(MIDIDispatcherHost, message, *message_was_ok)
     IPC_MESSAGE_HANDLER(MIDIHostMsg_RequestSysExPermission,
                         OnRequestSysExPermission)
+    IPC_MESSAGE_HANDLER(MIDIHostMsg_CancelSysExPermissionRequest,
+                        OnCancelSysExPermissionRequest)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP_EX()
   return handled;
@@ -35,29 +38,42 @@ bool MIDIDispatcherHost::OnMessageReceived(const IPC::Message& message,
 
 void MIDIDispatcherHost::OverrideThreadForMessage(
     const IPC::Message& message, BrowserThread::ID* thread) {
-  if (message.type() == MIDIHostMsg_RequestSysExPermission::ID)
+  if (IPC_MESSAGE_CLASS(message) == MIDIMsgStart)
     *thread = BrowserThread::UI;
 }
 
 void MIDIDispatcherHost::OnRequestSysExPermission(int render_view_id,
-                                                  int client_id,
+                                                  int bridge_id,
                                                   const GURL& origin) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   browser_context_->RequestMIDISysExPermission(
       render_process_id_,
       render_view_id,
+      bridge_id,
       origin,
       base::Bind(&MIDIDispatcherHost::WasSysExPermissionGranted,
                  base::Unretained(this),
                  render_view_id,
-                 client_id));
+                 bridge_id));
 }
 
+void MIDIDispatcherHost::OnCancelSysExPermissionRequest(
+    int render_view_id,
+    int bridge_id,
+    const GURL& requesting_frame) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DVLOG(1) << __FUNCTION__ << " " << render_process_id_ << ":" << render_view_id
+           << ":" << bridge_id;
+  browser_context_->CancelMIDISysExPermissionRequest(
+      render_process_id_, render_view_id, bridge_id, requesting_frame);
+}
 void MIDIDispatcherHost::WasSysExPermissionGranted(int render_view_id,
-                                                   int client_id,
+                                                   int bridge_id,
                                                    bool success) {
-  Send(new MIDIMsg_SysExPermissionApproved(render_view_id, client_id, success));
+  ChildProcessSecurityPolicyImpl::GetInstance()->GrantSendMIDISysExMessage(
+      render_process_id_);
+  Send(new MIDIMsg_SysExPermissionApproved(render_view_id, bridge_id, success));
 }
 
 }  // namespace content

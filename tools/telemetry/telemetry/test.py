@@ -1,7 +1,7 @@
 # Copyright (c) 2013 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-import optparse
+
 import os
 
 from telemetry.core import repeat_options
@@ -20,6 +20,15 @@ class Test(object):
   options = {}
   enabled = True
 
+  @classmethod
+  def GetName(cls):
+    name = cls.__module__.split('.')[-1]
+    if hasattr(cls, 'tag'):
+      name += '.' + cls.tag
+    if hasattr(cls, 'page_set'):
+      name += '.' + os.path.basename(os.path.splitext(cls.page_set)[0])
+    return name
+
   def Run(self, options):
     """Run this test with the given options."""
     assert hasattr(self, 'test'), 'This test has no "test" attribute.'
@@ -30,13 +39,14 @@ class Test(object):
       setattr(options, key, value)
 
     options.repeat_options = self._CreateRepeatOptions(options)
+    self.CustomizeBrowserOptions(options)
 
     test = self.test()
     ps = self.CreatePageSet(options)
     expectations = self.CreateExpectations(ps)
 
     # Ensure the test's default options are set if needed.
-    parser = optparse.OptionParser()
+    parser = options.CreateParser()
     test.AddCommandLineOptions(parser)
     options.MergeDefaultValues(parser.get_default_values())
 
@@ -72,3 +82,16 @@ class Test(object):
       return self.expectations
     else:
       return test_expectations.TestExpectations()
+
+  @staticmethod
+  def AddCommandLineOptions(parser):
+    page_runner.AddCommandLineOptions(parser)
+
+  @staticmethod
+  def AddTestCommandLineOptions(parser):
+    """Override to accept custom command line options."""
+    pass
+
+  def CustomizeBrowserOptions(self, options):
+    """Add browser options that are required by this benchmark."""
+    pass

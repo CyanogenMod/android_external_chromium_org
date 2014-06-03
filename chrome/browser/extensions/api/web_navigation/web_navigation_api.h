@@ -14,8 +14,7 @@
 #include "base/compiler_specific.h"
 #include "chrome/browser/extensions/api/profile_keyed_api_factory.h"
 #include "chrome/browser/extensions/api/web_navigation/frame_navigation_state.h"
-#include "chrome/browser/extensions/event_router.h"
-#include "chrome/browser/extensions/extension_function.h"
+#include "chrome/browser/extensions/chrome_extension_function.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_list_observer.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
@@ -23,6 +22,7 @@
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_contents_user_data.h"
+#include "extensions/browser/event_router.h"
 #include "url/gurl.h"
 
 struct RetargetingDetails;
@@ -66,16 +66,18 @@ class WebNavigationTabObserver
       content::RenderViewHost* render_view_host) OVERRIDE;
   virtual void DidCommitProvisionalLoadForFrame(
       int64 frame_num,
+      const base::string16& frame_unique_name,
       bool is_main_frame,
       const GURL& url,
       content::PageTransition transition_type,
       content::RenderViewHost* render_view_host) OVERRIDE;
   virtual void DidFailProvisionalLoad(
       int64 frame_num,
+      const base::string16& frame_unique_name,
       bool is_main_frame,
       const GURL& validated_url,
       int error_code,
-      const string16& error_description,
+      const base::string16& error_description,
       content::RenderViewHost* render_view_host) OVERRIDE;
   virtual void DocumentLoadedInFrame(
       int64 frame_num,
@@ -90,7 +92,7 @@ class WebNavigationTabObserver
       const GURL& validated_url,
       bool is_main_frame,
       int error_code,
-      const string16& error_description,
+      const base::string16& error_description,
       content::RenderViewHost* render_view_host) OVERRIDE;
   virtual void DidOpenRequestedURL(content::WebContents* new_contents,
                                    const GURL& url,
@@ -204,14 +206,14 @@ class WebNavigationEventRouter : public TabStripModelObserver,
 };
 
 // API function that returns the state of a given frame.
-class WebNavigationGetFrameFunction : public SyncExtensionFunction {
+class WebNavigationGetFrameFunction : public ChromeSyncExtensionFunction {
   virtual ~WebNavigationGetFrameFunction() {}
   virtual bool RunImpl() OVERRIDE;
   DECLARE_EXTENSION_FUNCTION("webNavigation.getFrame", WEBNAVIGATION_GETFRAME)
 };
 
 // API function that returns the states of all frames in a given tab.
-class WebNavigationGetAllFramesFunction : public SyncExtensionFunction {
+class WebNavigationGetAllFramesFunction : public ChromeSyncExtensionFunction {
   virtual ~WebNavigationGetAllFramesFunction() {}
   virtual bool RunImpl() OVERRIDE;
   DECLARE_EXTENSION_FUNCTION("webNavigation.getAllFrames",

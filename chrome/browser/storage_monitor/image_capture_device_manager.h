@@ -15,8 +15,6 @@
 @class ImageCaptureDevice;
 @class ImageCaptureDeviceManagerImpl;
 
-namespace chrome {
-
 // Upon creation, begins monitoring for any attached devices using the
 // ImageCapture API. Notifies clients of the presence of such devices
 // (i.e. cameras,  USB cards) using the SystemMonitor and makes them
@@ -38,10 +36,13 @@ class ImageCaptureDeviceManager {
   // TODO(gbillock): Move this to be a constructor argument.
   void SetNotifications(StorageMonitor::Receiver* notifications);
 
+  // Eject the given device. The ID passed is not the device ID, but the
+  // ImageCapture UUID.
+  void EjectDevice(const std::string& uuid,
+                   base::Callback<void(StorageMonitor::EjectStatus)> callback);
+
  private:
   base::scoped_nsobject<ImageCaptureDeviceManagerImpl> device_browser_;
 };
-
-}  // namespace chrome
 
 #endif  // CHROME_BROWSER_STORAGE_MONITOR_IMAGE_CAPTURE_DEVICE_MANAGER_H_

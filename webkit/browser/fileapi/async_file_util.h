@@ -5,11 +5,14 @@
 #ifndef WEBKIT_BROWSER_FILEAPI_ASYNC_FILE_UTIL_H_
 #define WEBKIT_BROWSER_FILEAPI_ASYNC_FILE_UTIL_H_
 
+#include <vector>
+
 #include "base/basictypes.h"
 #include "base/callback_forward.h"
 #include "base/files/file_util_proxy.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/platform_file.h"
+#include "webkit/browser/fileapi/file_system_operation.h"
 #include "webkit/browser/webkit_storage_browser_export.h"
 #include "webkit/common/fileapi/directory_entry.h"
 
@@ -42,7 +45,7 @@ class FileSystemURL;
 // It is NOT valid to give null callback to this class, and implementors
 // can assume that they don't get any null callbacks.
 //
-class WEBKIT_STORAGE_BROWSER_EXPORT AsyncFileUtil {
+class AsyncFileUtil {
  public:
   typedef base::Callback<
       void(base::PlatformFileError result)> StatusCallback;
@@ -73,8 +76,19 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AsyncFileUtil {
       void(base::PlatformFileError result,
            const base::PlatformFileInfo& file_info,
            const base::FilePath& platform_path,
-           const scoped_refptr<webkit_blob::ShareableFileReference>& file_ref
-           )> CreateSnapshotFileCallback;
+           const scoped_refptr<webkit_blob::ShareableFileReference>& file_ref)>
+      CreateSnapshotFileCallback;
+
+
+  typedef base::Callback<void(int64 size)> CopyFileProgressCallback;
+
+  typedef FileSystemOperation::CopyOrMoveOption CopyOrMoveOption;
+
+  // Creates an AsyncFileUtil instance which performs file operations on
+  // local native file system. The created instance assumes
+  // FileSystemURL::path() has the target platform path.
+  WEBKIT_STORAGE_BROWSER_EXPORT static AsyncFileUtil*
+      CreateForLocalFileSystem();
 
   AsyncFileUtil() {}
   virtual ~AsyncFileUtil() {}
@@ -85,7 +99,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AsyncFileUtil {
   // PLATFORM_FILE_ERROR_FILE_EXISTS if the |url| already exists.
   //
   // FileSystemOperationImpl::OpenFile calls this.
-  // This is used only by Pepper/NaCL File API.
+  // This is used only by Pepper/NaCl File API.
   //
   virtual void CreateOrOpen(
       scoped_ptr<FileSystemOperationContext> context,
@@ -171,7 +185,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AsyncFileUtil {
   // create a file unlike 'touch' command on Linux.
   //
   // FileSystemOperationImpl::TouchFile calls this.
-  // This is used only by Pepper/NaCL File API.
+  // This is used only by Pepper/NaCl File API.
   //
   virtual void Touch(
       scoped_ptr<FileSystemOperationContext> context,
@@ -198,6 +212,12 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AsyncFileUtil {
   // Copies a file from |src_url| to |dest_url|.
   // This must be called for files that belong to the same filesystem
   // (i.e. type() and origin() of the |src_url| and |dest_url| must match).
+  // |progress_callback| is a callback to report the progress update.
+  // See file_system_operations.h for details. This should be called on the
+  // same thread as where the method's called (IO thread). Calling this
+  // is optional. It is recommended to use this callback for heavier operations
+  // (such as file network downloading), so that, e.g., clients (UIs) can
+  // update its state to show progress to users. This may be a null callback.
   //
   // FileSystemOperationImpl::Copy calls this for same-filesystem copy case.
   //
@@ -214,6 +234,8 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AsyncFileUtil {
       scoped_ptr<FileSystemOperationContext> context,
       const FileSystemURL& src_url,
       const FileSystemURL& dest_url,
+      CopyOrMoveOption option,
+      const CopyFileProgressCallback& progress_callback,
       const StatusCallback& callback) = 0;
 
   // Moves a local file from |src_url| to |dest_url|.
@@ -235,6 +257,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AsyncFileUtil {
       scoped_ptr<FileSystemOperationContext> context,
       const FileSystemURL& src_url,
       const FileSystemURL& dest_url,
+      CopyOrMoveOption option,
       const StatusCallback& callback) = 0;
 
   // Copies in a single file from a different filesystem.

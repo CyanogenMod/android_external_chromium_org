@@ -18,6 +18,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/metrics/field_trial.h"
 #include "base/process/kill.h"
+#include "base/time/time.h"
 #include "chrome/browser/metrics/metrics_log.h"
 #include "chrome/browser/metrics/tracking_synchronizer_observer.h"
 #include "chrome/common/metrics/metrics_service_base.h"
@@ -43,6 +44,10 @@ class DictionaryValue;
 class MessageLoopProxy;
 }
 
+namespace chrome_variations {
+struct ActiveGroupId;
+}
+
 namespace content {
 class RenderProcessHost;
 class WebContents;
@@ -66,6 +71,27 @@ namespace tracked_objects {
 struct ProcessDataSnapshot;
 }
 
+// A Field Trial and its selected group, which represent a particular
+// Chrome configuration state. For example, the trial name could map to
+// a preference name, and the group name could map to a preference value.
+struct SyntheticTrialGroup {
+ public:
+  ~SyntheticTrialGroup();
+
+  chrome_variations::ActiveGroupId id;
+  base::TimeTicks start_time;
+
+ private:
+  friend class MetricsService;
+  FRIEND_TEST_ALL_PREFIXES(MetricsServiceTest, RegisterSyntheticTrial);
+
+  // This constructor is private specifically so as to control which code is
+  // able to access it. New code that wishes to use it should be added as a
+  // friend class.
+  SyntheticTrialGroup(uint32 trial, uint32 group, base::TimeTicks start);
+
+};
+
 class MetricsService
     : public chrome_browser_metrics::TrackingSynchronizerObserver,
       public content::BrowserChildProcessObserver,
@@ -73,8 +99,32 @@ class MetricsService
       public net::URLFetcherDelegate,
       public MetricsServiceBase {
  public:
+  // The execution phase of the browser.
+  enum ExecutionPhase {
+    UNINITIALIZED_PHASE = 0,
+    START_METRICS_RECORDING = 100,
+    CREATE_PROFILE = 200,
+    STARTUP_TIMEBOMB_ARM = 300,
+    THREAD_WATCHER_START = 400,
+    MAIN_MESSAGE_LOOP_RUN = 500,
+    SHUTDOWN_TIMEBOMB_ARM = 600,
+    SHUTDOWN_COMPLETE = 700,
+  };
+
+  enum ReportingState {
+    REPORTING_ENABLED,
+    REPORTING_DISABLED,
+  };
+
   MetricsService();
   virtual ~MetricsService();
+
+  // Initializes metrics recording state. Updates various bookkeeping values in
+  // prefs and sets up the scheduler. This is a separate function rather than
+  // being done by the constructor so that field trials could be created before
+  // this is run. Takes |reporting_state| parameter which specifies whether UMA
+  // is enabled.
+  void InitializeMetricsRecordingState(ReportingState reporting_state);
 
   // Starts the metrics system, turning on recording and uploading of metrics.
   // Should be called when starting up with metrics enabled, or when metrics
@@ -115,7 +165,7 @@ class MetricsService
   // because this method may need to be called before the MetricsService needs
   // to be started.
   scoped_ptr<const base::FieldTrial::EntropyProvider> CreateEntropyProvider(
-      bool reporting_will_be_enabled);
+      ReportingState reporting_state);
 
   // Force the client ID to be generated. This is useful in case it's needed
   // before recording.
@@ -163,6 +213,8 @@ class MetricsService
   static void LogNeedForCleanShutdown();
 #endif  // defined(OS_ANDROID) || defined(OS_IOS)
 
+  static void SetExecutionPhase(ExecutionPhase execution_phase);
+
   // Saves in the preferences if the crash report registration was successful.
   // This count is eventually send via UMA logs.
   void RecordBreakpadRegistration(bool success);
@@ -171,9 +223,11 @@ class MetricsService
   // This count is eventually send via UMA logs.
   void RecordBreakpadHasDebugger(bool has_debugger);
 
-  // Save any unsent logs into a persistent store in a pref.  We always do this
-  // at shutdown, but we can do it as we reduce the list as well.
-  void StoreUnsentLogs();
+#if defined(OS_WIN)
+  // Counts (and removes) the browser crash dump attempt signals left behind by
+  // any previous browser processes which generated a crash dump.
+  void CountBrowserCrashDumpAttempts();
+#endif  // OS_WIN
 
 #if defined(OS_CHROMEOS)
   // Start the external metrics service, which collects metrics from Chrome OS
@@ -193,16 +247,28 @@ class MetricsService
   // This value should be true when process has completed shutdown.
   static bool UmaMetricsProperlyShutdown();
 
+  // Registers a field trial name and group to be used to annotate a UMA report
+  // with a particular Chrome configuration state. A UMA report will be
+  // annotated with this trial group if and only if all events in the report
+  // were created after the trial is registered. Only one group name may be
+  // registered at a time for a given trial_name. Only the last group name that
+  // is registered for a given trial name will be recorded. The values passed
+  // in must not correspond to any real field trial in the code.
+  // To use this method, SyntheticTrialGroup should friend your class.
+  void RegisterSyntheticFieldTrial(const SyntheticTrialGroup& trial_group);
+
  private:
   // The MetricsService has a lifecycle that is stored as a state.
   // See metrics_service.cc for description of this lifecycle.
   enum State {
-    INITIALIZED,            // Constructor was called.
-    INIT_TASK_SCHEDULED,    // Waiting for deferred init tasks to complete.
-    INIT_TASK_DONE,         // Waiting for timer to send initial log.
-    INITIAL_LOG_READY,      // Initial log generated, and waiting for reply.
-    SENDING_OLD_LOGS,       // Sending unsent logs from previous session.
-    SENDING_CURRENT_LOGS,   // Sending standard current logs as they acrue.
+    INITIALIZED,                    // Constructor was called.
+    INIT_TASK_SCHEDULED,            // Waiting for deferred init tasks to
+                                    // complete.
+    INIT_TASK_DONE,                 // Waiting for timer to send initial log.
+    SENDING_INITIAL_STABILITY_LOG,  // Initial stability log being sent.
+    SENDING_INITIAL_METRICS_LOG,    // Initial metrics log being sent.
+    SENDING_OLD_LOGS,               // Sending unsent logs from last session.
+    SENDING_CURRENT_LOGS,           // Sending ongoing logs as they accrue.
   };
 
   enum ShutdownCleanliness {
@@ -220,6 +286,8 @@ class MetricsService
   };
 
   struct ChildProcessStats;
+
+  typedef std::vector<SyntheticTrialGroup> SyntheticTrialGroups;
 
   // First part of the init task. Called on the FILE thread to load hardware
   // class information.
@@ -254,6 +322,10 @@ class MetricsService
   // Callback that moves the state to INIT_TASK_DONE.
   virtual void FinishedReceivingProfilerData() OVERRIDE;
 
+  // Get the amount of uptime since this function was last called.
+  // This updates the cumulative uptime metric for uninstall as a side effect.
+  base::TimeDelta GetIncrementalUptime(PrefService* pref);
+
   // Returns the low entropy source for this client. This is a random value
   // that is non-identifying amongst browser clients. This method will
   // generate the entropy source value if it has not been called before.
@@ -287,7 +359,7 @@ class MetricsService
   void HandleIdleSinceLastTransmission(bool in_idle);
 
   // Set up client ID, session ID, etc.
-  void InitializeMetricsState();
+  void InitializeMetricsState(ReportingState reporting_state);
 
   // Generates a new client ID to use to identify self to metrics server.
   static std::string GenerateClientID();
@@ -331,8 +403,15 @@ class MetricsService
   // (depending on |state_|), and stages it for upload.
   void StageNewLog();
 
-  // Record stats, client ID, Session ID, etc. in a special "first" log.
-  void PrepareInitialLog();
+  // Prepares the initial stability log, which is only logged when the previous
+  // run of Chrome crashed.  This log contains any stability metrics left over
+  // from that previous run, and only these stability metrics.  It uses the
+  // system profile from the previous session.
+  void PrepareInitialStabilityLog();
+
+  // Prepares the initial metrics log, which includes startup histograms and
+  // profiler data, as well as incremental stability-related metrics.
+  void PrepareInitialMetricsLog(MetricsLog::LogType log_type);
 
   // Uploads the currently staged log (which must be non-null).
   void SendStagedLog();
@@ -390,6 +469,11 @@ class MetricsService
   // process, and false otherwise.
   static bool IsPluginProcess(int process_type);
 
+  // Returns a list of synthetic field trials that were active for the entire
+  // duration of the current log.
+  void GetCurrentSyntheticFieldTrials(
+      std::vector<chrome_variations::ActiveGroupId>* synthetic_trials);
+
   content::ActionCallback action_callback_;
 
   content::NotificationRegistrar registrar_;
@@ -404,9 +488,12 @@ class MetricsService
   // be cut, and logs are neither persisted nor uploaded.
   bool test_mode_active_;
 
-  // The progession of states made by the browser are recorded in the following
+  // The progression of states made by the browser are recorded in the following
   // state.
   State state_;
+
+  // Whether the initial stability log has been recorded during startup.
+  bool has_initial_stability_log_;
 
   // Chrome OS hardware class (e.g., hardware qualification ID). This
   // class identifies the configured system components such as CPU,
@@ -420,8 +507,10 @@ class MetricsService
   // Google Update statistics, which were retrieved on a blocking pool thread.
   GoogleUpdateMetrics google_update_metrics_;
 
-  // The initial log, used to record startup metrics.
-  scoped_ptr<MetricsLog> initial_log_;
+  // The initial metrics log, used to record startup metrics (histograms and
+  // profiler data). Note that if a crash occurred in the previous session, an
+  // initial stability log may be sent before this.
+  scoped_ptr<MetricsLog> initial_metrics_log_;
 
   // The outstanding transmission appears as a URL Fetch operation.
   scoped_ptr<net::URLFetcher> current_fetch_;
@@ -453,7 +542,7 @@ class MetricsService
   int next_window_id_;
 
   // Buffer of child process notifications for quick access.
-  std::map<string16, ChildProcessStats> child_process_stats_buffer_;
+  std::map<base::string16, ChildProcessStats> child_process_stats_buffer_;
 
   // Weak pointers factory used to post task on different threads. All weak
   // pointers managed by this factory have the same lifetime as MetricsService.
@@ -470,6 +559,9 @@ class MetricsService
   // This is used only for debugging.
   bool waiting_for_asynchronous_reporting_step_;
 
+  // Number of async histogram fetch requests in progress.
+  int num_async_histogram_fetches_in_progress_;
+
 #if defined(OS_CHROMEOS)
   // The external metric service is used to log ChromeOS UMA events.
   scoped_refptr<chromeos::ExternalMetrics> external_metrics_;
@@ -478,15 +570,25 @@ class MetricsService
   // The last entropy source returned by this service, used for testing.
   EntropySourceReturned entropy_source_returned_;
 
+  // Stores the time of the last call to |GetIncrementalUptime()|.
+  base::TimeTicks last_updated_time_;
+
+  // Execution phase the browser is in.
+  static ExecutionPhase execution_phase_;
+
   // Reduntant marker to check that we completed our shutdown, and set the
   // exited-cleanly bit in the prefs.
   static ShutdownCleanliness clean_shutdown_status_;
+
+  // Field trial groups that map to Chrome configuration states.
+  SyntheticTrialGroups synthetic_trial_groups_;
 
   FRIEND_TEST_ALL_PREFIXES(MetricsServiceTest, ClientIdCorrectlyFormatted);
   FRIEND_TEST_ALL_PREFIXES(MetricsServiceTest, IsPluginProcess);
   FRIEND_TEST_ALL_PREFIXES(MetricsServiceTest, LowEntropySource0NotReset);
   FRIEND_TEST_ALL_PREFIXES(MetricsServiceTest,
                            PermutedEntropyCacheClearedWhenLowEntropyReset);
+  FRIEND_TEST_ALL_PREFIXES(MetricsServiceTest, RegisterSyntheticTrial);
   FRIEND_TEST_ALL_PREFIXES(MetricsServiceBrowserTest,
                            CheckLowEntropySourceUsed);
   FRIEND_TEST_ALL_PREFIXES(MetricsServiceReportingTest,

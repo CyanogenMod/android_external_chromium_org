@@ -7,11 +7,19 @@
 
 #include <string>
 
-#include "chrome/browser/google_apis/auth_service_interface.h"
-#include "chrome/browser/google_apis/base_requests.h"
-#include "chrome/browser/google_apis/drive_common_callbacks.h"
+#include "google_apis/drive/auth_service_interface.h"
+#include "google_apis/drive/base_requests.h"
+#include "google_apis/drive/drive_common_callbacks.h"
+
+namespace base {
+class Time;
+}
 
 namespace drive {
+
+// Function which converts the given resource ID into the desired format.
+typedef base::Callback<std::string(
+    const std::string& resource_id)> ResourceIdCanonicalizer;
 
 // Observer interface for DriveServiceInterface.
 class DriveServiceObserver {
@@ -37,8 +45,8 @@ class DriveServiceInterface {
 
   // Common service:
 
-  // Initializes the documents service.
-  virtual void Initialize() = 0;
+  // Initializes the documents service with |account_id|.
+  virtual void Initialize(const std::string& account_id) = 0;
 
   // Adds an observer.
   virtual void AddObserver(DriveServiceObserver* observer) = 0;
@@ -49,9 +57,9 @@ class DriveServiceInterface {
   // True if ready to send requests.
   virtual bool CanSendRequest() const = 0;
 
-  // Converts the given resource ID into the desired format.
-  virtual std::string CanonicalizeResourceId(
-      const std::string& resource_id) const = 0;
+  // Returns a function which converts the given resource ID into the desired
+  // format.
+  virtual ResourceIdCanonicalizer GetResourceIdCanonicalizer() const = 0;
 
   // Authentication service:
 
@@ -80,7 +88,7 @@ class DriveServiceInterface {
   // completion.
   // If the list is too long, it may be paged. In such a case, a URL to fetch
   // remaining results will be included in the returned result. See also
-  // ContinueGetResourceList.
+  // GetRemainingFileList.
   //
   // |callback| must not be null.
   virtual google_apis::CancelCallback GetAllResourceList(
@@ -90,7 +98,7 @@ class DriveServiceInterface {
   // |callback| will be called upon completion.
   // If the list is too long, it may be paged. In such a case, a URL to fetch
   // remaining results will be included in the returned result. See also
-  // ContinueGetResourceList.
+  // GetRemainingFileList.
   //
   // |directory_resource_id| must not be empty.
   // |callback| must not be null.
@@ -102,7 +110,7 @@ class DriveServiceInterface {
   // resources. |callback| will be called upon completion.
   // If the list is too long, it may be paged. In such a case, a URL to fetch
   // remaining results will be included in the returned result. See also
-  // ContinueGetResourceList.
+  // GetRemainingFileList.
   //
   // |search_query| must not be empty.
   // |callback| must not be null.
@@ -116,7 +124,7 @@ class DriveServiceInterface {
   // the resources directly under the directory with |directory_resource_id|.
   // If the list is too long, it may be paged. In such a case, a URL to fetch
   // remaining results will be included in the returned result. See also
-  // ContinueGetResourceList.
+  // GetRemainingFileList.
   //
   // |title| must not be empty, and |callback| must not be null.
   virtual google_apis::CancelCallback SearchByTitle(
@@ -128,21 +136,31 @@ class DriveServiceInterface {
   // called upon completion.
   // If the list is too long, it may be paged. In such a case, a URL to fetch
   // remaining results will be included in the returned result. See also
-  // ContinueGetResourceList.
+  // GetRemainingChangeList.
   //
   // |callback| must not be null.
   virtual google_apis::CancelCallback GetChangeList(
       int64 start_changestamp,
       const google_apis::GetResourceListCallback& callback) = 0;
 
-  // Requests returning GetResourceList may be paged. In such a case,
-  // a URL to fetch remaining result is returned. The URL can be used for this
-  // method. |callback| will be called upon completion.
+  // The result of GetChangeList() and GetAllResourceList() may be paged.
+  // In such a case, a next link to fetch remaining result is returned.
+  // The page token can be used for this method. |callback| will be called upon
+  // completion.
   //
-  // |override_url| must not be empty.
-  // |callback| must not be null.
-  virtual google_apis::CancelCallback ContinueGetResourceList(
-      const GURL& override_url,
+  // |next_link| must not be empty. |callback| must not be null.
+  virtual google_apis::CancelCallback GetRemainingChangeList(
+      const GURL& next_link,
+      const google_apis::GetResourceListCallback& callback) = 0;
+
+  // The result of GetResourceListInDirectory(), Search() and SearchByTitle()
+  // may be paged. In such a case, a next link to fetch remaining result is
+  // returned. The page token can be used for this method. |callback| will be
+  // called upon completion.
+  //
+  // |next_link| must not be empty. |callback| must not be null.
+  virtual google_apis::CancelCallback GetRemainingFileList(
+      const GURL& next_link,
       const google_apis::GetResourceListCallback& callback) = 0;
 
   // Fetches single entry metadata from server. The entry's resource id equals
@@ -166,15 +184,15 @@ class DriveServiceInterface {
   // Upon completion, invokes |callback| with results on the calling thread.
   // |callback| must not be null.
   virtual google_apis::CancelCallback GetAboutResource(
-      const google_apis::GetAboutResourceCallback& callback) = 0;
+      const google_apis::AboutResourceCallback& callback) = 0;
 
   // Gets the application information from the server.
   // Upon completion, invokes |callback| with results on the calling thread.
   // |callback| must not be null.
   virtual google_apis::CancelCallback GetAppList(
-      const google_apis::GetAppListCallback& callback) = 0;
+      const google_apis::AppListCallback& callback) = 0;
 
-  // Deletes a resource identified by its |resource_id|.
+  // Permanently deletes a resource identified by its |resource_id|.
   // If |etag| is not empty and did not match, the deletion fails with
   // HTTP_PRECONDITION error.
   // Upon completion, invokes |callback| with results on the calling thread.
@@ -184,9 +202,18 @@ class DriveServiceInterface {
       const std::string& etag,
       const google_apis::EntryActionCallback& callback) = 0;
 
+  // Trashes a resource identified by its |resource_id|.
+  // Upon completion, invokes |callback| with results on the calling thread.
+  // |callback| must not be null.
+  virtual google_apis::CancelCallback TrashResource(
+      const std::string& resource_id,
+      const google_apis::EntryActionCallback& callback) = 0;
+
   // Makes a copy of a resource with |resource_id|.
   // The new resource will be put under a directory with |parent_resource_id|,
   // and it'll be named |new_title|.
+  // If |last_modified| is not null, the modified date of the resource on the
+  // server will be set to the date.
   // This request is supported only on DriveAPIService, because GData WAPI
   // doesn't support the function unfortunately.
   // Upon completion, invokes |callback| with results on the calling thread.
@@ -195,19 +222,23 @@ class DriveServiceInterface {
       const std::string& resource_id,
       const std::string& parent_resource_id,
       const std::string& new_title,
+      const base::Time& last_modified,
       const google_apis::GetResourceEntryCallback& callback) = 0;
 
-  // Makes a copy of a hosted document identified by its |resource_id|.
-  // The copy is named as the UTF-8 encoded |new_title| and is not added to any
-  // collection. Use AddResourceToDirectory() to add the copy to a collection
-  // when needed. Upon completion, invokes |callback| with results on the
-  // calling thread.
+  // Updates a resource with |resource_id| to the directory of
+  // |parent_resource_id| with renaming to |new_title|.
+  // If |last_modified| or |last_accessed| is not null, the modified/accessed
+  // date of the resource on the server will be set to the date.
+  // This request is supported only on DriveAPIService, because GData WAPI
+  // doesn't support the function unfortunately.
+  // Upon completion, invokes |callback| with results on the calling thread.
   // |callback| must not be null.
-  // TODO(hidehiko): After the migration to Drive API v2, remove this method,
-  // because we can use CopyResource instead.
-  virtual google_apis::CancelCallback CopyHostedDocument(
+  virtual google_apis::CancelCallback UpdateResource(
       const std::string& resource_id,
+      const std::string& parent_resource_id,
       const std::string& new_title,
+      const base::Time& last_modified,
+      const base::Time& last_viewed_by_me,
       const google_apis::GetResourceEntryCallback& callback) = 0;
 
   // Renames a document or collection identified by its |resource_id|
@@ -218,17 +249,6 @@ class DriveServiceInterface {
       const std::string& resource_id,
       const std::string& new_title,
       const google_apis::EntryActionCallback& callback) = 0;
-
-  // Touches the resource with |resource_id|.
-  // Its modifiedDate and lastViewedByMeDate fields on the server will be
-  // updated to |modified_date| and |last_viewed_by_me_date| respectively.
-  // Upon completion, invokes |callback| with the updated resource data.
-  // |modified_date|, |last_viewed_by_me_date| and |callback| must not be null.
-  virtual google_apis::CancelCallback TouchResource(
-      const std::string& resource_id,
-      const base::Time& modified_date,
-      const base::Time& last_viewed_by_me_date,
-      const google_apis::GetResourceEntryCallback& callback) = 0;
 
   // Adds a resource (document, file, or collection) identified by its
   // |resource_id| to a collection represented by the |parent_resource_id|.
@@ -329,6 +349,27 @@ class DriveServiceInterface {
       const std::string& resource_id,
       const std::string& app_id,
       const google_apis::AuthorizeAppCallback& callback) = 0;
+
+  // This is introduced as a temporary short term solution of the performance
+  // regression issue on Drive API v2.
+  //
+  // This fetches the resource list in a directory by usinig GData WAPI
+  // regardless of base protocol. In other words, even if we enabels Drive API
+  // v2, this method uses GData WAPI to fetch the resource list.
+  //
+  // |directory_resource_id| must not be empty.
+  // |callback| must not be null.
+  virtual google_apis::CancelCallback GetResourceListInDirectoryByWapi(
+      const std::string& directory_resource_id,
+      const google_apis::GetResourceListCallback& callback) = 0;
+
+  // GetResourceListInDirectoryByWapi can be paged. This method fetches the
+  // following pages.
+  //
+  // |callback| must not be null.
+  virtual google_apis::CancelCallback GetRemainingResourceList(
+      const GURL& next_link,
+      const google_apis::GetResourceListCallback& callback) = 0;
 };
 
 }  // namespace drive

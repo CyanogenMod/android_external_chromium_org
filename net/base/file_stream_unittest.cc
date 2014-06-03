@@ -8,8 +8,10 @@
 #include "base/callback.h"
 #include "base/file_util.h"
 #include "base/message_loop/message_loop.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/path_service.h"
 #include "base/platform_file.h"
+#include "base/run_loop.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/test/test_timeouts.h"
 #include "net/base/capturing_net_log.h"
@@ -18,6 +20,10 @@
 #include "net/base/test_completion_callback.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
+
+#if defined(OS_ANDROID)
+#include "base/test/test_file_util.h"
+#endif
 
 namespace net {
 
@@ -40,12 +46,15 @@ class FileStreamTest : public PlatformTest {
   virtual void SetUp() {
     PlatformTest::SetUp();
 
-    file_util::CreateTemporaryFile(&temp_file_path_);
+    base::CreateTemporaryFile(&temp_file_path_);
     file_util::WriteFile(temp_file_path_, kTestData, kTestDataSize);
   }
   virtual void TearDown() {
     EXPECT_TRUE(base::DeleteFile(temp_file_path_, false));
 
+    // FileStreamContexts must be asynchronously closed on the file task runner
+    // before they can be deleted. Pump the RunLoop to avoid leaks.
+    base::RunLoop().RunUntilIdle();
     PlatformTest::TearDown();
   }
 
@@ -60,7 +69,7 @@ namespace {
 TEST_F(FileStreamTest, BasicOpenClose) {
   base::PlatformFile file = base::kInvalidPlatformFileValue;
   {
-    FileStream stream(NULL);
+    FileStream stream(NULL, base::MessageLoopProxy::current());
     int rv = stream.OpenSync(temp_file_path(),
         base::PLATFORM_FILE_OPEN | base::PLATFORM_FILE_READ);
     EXPECT_EQ(OK, rv);
@@ -70,6 +79,66 @@ TEST_F(FileStreamTest, BasicOpenClose) {
   EXPECT_NE(base::kInvalidPlatformFileValue, file);
   base::PlatformFileInfo info;
   // The file should be closed.
+  EXPECT_FALSE(base::GetPlatformFileInfo(file, &info));
+}
+
+TEST_F(FileStreamTest, BasicOpenExplicitClose) {
+  base::PlatformFile file = base::kInvalidPlatformFileValue;
+  FileStream stream(NULL);
+  int rv = stream.OpenSync(temp_file_path(),
+      base::PLATFORM_FILE_OPEN | base::PLATFORM_FILE_READ);
+  EXPECT_EQ(OK, rv);
+  EXPECT_TRUE(stream.IsOpen());
+  file = stream.GetPlatformFileForTesting();
+  EXPECT_NE(base::kInvalidPlatformFileValue, file);
+  EXPECT_EQ(OK, stream.CloseSync());
+  EXPECT_FALSE(stream.IsOpen());
+  base::PlatformFileInfo info;
+  // The file should be closed.
+  EXPECT_FALSE(base::GetPlatformFileInfo(file, &info));
+}
+
+TEST_F(FileStreamTest, AsyncOpenExplicitClose) {
+  base::PlatformFile file = base::kInvalidPlatformFileValue;
+  TestCompletionCallback callback;
+  FileStream stream(NULL);
+  int flags = base::PLATFORM_FILE_OPEN |
+              base::PLATFORM_FILE_READ |
+              base::PLATFORM_FILE_ASYNC;
+  int rv = stream.Open(temp_file_path(), flags, callback.callback());
+  EXPECT_EQ(ERR_IO_PENDING, rv);
+  EXPECT_EQ(OK, callback.WaitForResult());
+  EXPECT_TRUE(stream.IsOpen());
+  file = stream.GetPlatformFileForTesting();
+  EXPECT_EQ(ERR_IO_PENDING, stream.Close(callback.callback()));
+  EXPECT_EQ(OK, callback.WaitForResult());
+  EXPECT_FALSE(stream.IsOpen());
+  base::PlatformFileInfo info;
+  // The file should be closed.
+  EXPECT_FALSE(base::GetPlatformFileInfo(file, &info));
+}
+
+TEST_F(FileStreamTest, AsyncOpenExplicitCloseOrphaned) {
+  base::PlatformFile file = base::kInvalidPlatformFileValue;
+  TestCompletionCallback callback;
+  base::PlatformFileInfo info;
+  scoped_ptr<FileStream> stream(new FileStream(
+      NULL, base::MessageLoopProxy::current()));
+  int flags = base::PLATFORM_FILE_OPEN |
+              base::PLATFORM_FILE_READ |
+              base::PLATFORM_FILE_ASYNC;
+  int rv = stream->Open(temp_file_path(), flags, callback.callback());
+  EXPECT_EQ(ERR_IO_PENDING, rv);
+  EXPECT_EQ(OK, callback.WaitForResult());
+  EXPECT_TRUE(stream->IsOpen());
+  file = stream->GetPlatformFileForTesting();
+  EXPECT_EQ(ERR_IO_PENDING, stream->Close(callback.callback()));
+  stream.reset();
+  // File isn't actually closed yet.
+  EXPECT_TRUE(base::GetPlatformFileInfo(file, &info));
+  base::RunLoop runloop;
+  runloop.RunUntilIdle();
+  // The file should now be closed, though the callback has not been called.
   EXPECT_FALSE(base::GetPlatformFileInfo(file, &info));
 }
 
@@ -83,7 +152,8 @@ TEST_F(FileStreamTest, FileHandleNotLeftOpen) {
 
   {
     // Seek to the beginning of the file and read.
-    FileStream read_stream(file, flags, NULL);
+    FileStream read_stream(file, flags, NULL,
+                           base::MessageLoopProxy::current());
     EXPECT_TRUE(read_stream.IsOpen());
   }
 
@@ -105,7 +175,8 @@ TEST_F(FileStreamTest, UseFileHandle) {
       temp_file_path(), flags, &created, NULL);
 
   // Seek to the beginning of the file and read.
-  scoped_ptr<FileStream> read_stream(new FileStream(file, flags, NULL));
+  scoped_ptr<FileStream> read_stream(
+      new FileStream(file, flags, NULL, base::MessageLoopProxy::current()));
   ASSERT_EQ(0, read_stream->SeekSync(FROM_BEGIN, 0));
   ASSERT_EQ(kTestDataSize, read_stream->Available());
   // Read into buffer and compare.
@@ -120,7 +191,8 @@ TEST_F(FileStreamTest, UseFileHandle) {
   flags = base::PLATFORM_FILE_OPEN_ALWAYS | base::PLATFORM_FILE_WRITE;
   file = base::CreatePlatformFile(temp_file_path(), flags, &created, NULL);
 
-  scoped_ptr<FileStream> write_stream(new FileStream(file, flags, NULL));
+  scoped_ptr<FileStream> write_stream(
+      new FileStream(file, flags, NULL, base::MessageLoopProxy::current()));
   ASSERT_EQ(0, write_stream->SeekSync(FROM_BEGIN, 0));
   ASSERT_EQ(kTestDataSize,
             write_stream->WriteSync(kTestData, kTestDataSize));
@@ -128,12 +200,12 @@ TEST_F(FileStreamTest, UseFileHandle) {
 
   // Read into buffer and compare to make sure the handle worked fine.
   ASSERT_EQ(kTestDataSize,
-      file_util::ReadFile(temp_file_path(), buffer, kTestDataSize));
+            base::ReadFile(temp_file_path(), buffer, kTestDataSize));
   ASSERT_EQ(0, memcmp(kTestData, buffer, kTestDataSize));
 }
 
 TEST_F(FileStreamTest, UseClosedStream) {
-  FileStream stream(NULL);
+  FileStream stream(NULL, base::MessageLoopProxy::current());
 
   EXPECT_FALSE(stream.IsOpen());
 
@@ -153,10 +225,10 @@ TEST_F(FileStreamTest, UseClosedStream) {
 
 TEST_F(FileStreamTest, BasicRead) {
   int64 file_size;
-  bool ok = file_util::GetFileSize(temp_file_path(), &file_size);
+  bool ok = base::GetFileSize(temp_file_path(), &file_size);
   EXPECT_TRUE(ok);
 
-  FileStream stream(NULL);
+  FileStream stream(NULL, base::MessageLoopProxy::current());
   int flags = base::PLATFORM_FILE_OPEN |
               base::PLATFORM_FILE_READ;
   int rv = stream.OpenSync(temp_file_path(), flags);
@@ -183,10 +255,10 @@ TEST_F(FileStreamTest, BasicRead) {
 
 TEST_F(FileStreamTest, AsyncRead) {
   int64 file_size;
-  bool ok = file_util::GetFileSize(temp_file_path(), &file_size);
+  bool ok = base::GetFileSize(temp_file_path(), &file_size);
   EXPECT_TRUE(ok);
 
-  FileStream stream(NULL);
+  FileStream stream(NULL, base::MessageLoopProxy::current());
   int flags = base::PLATFORM_FILE_OPEN |
               base::PLATFORM_FILE_READ |
               base::PLATFORM_FILE_ASYNC;
@@ -218,10 +290,11 @@ TEST_F(FileStreamTest, AsyncRead) {
 
 TEST_F(FileStreamTest, AsyncRead_EarlyDelete) {
   int64 file_size;
-  bool ok = file_util::GetFileSize(temp_file_path(), &file_size);
+  bool ok = base::GetFileSize(temp_file_path(), &file_size);
   EXPECT_TRUE(ok);
 
-  scoped_ptr<FileStream> stream(new FileStream(NULL));
+  scoped_ptr<FileStream> stream(
+      new FileStream(NULL, base::MessageLoopProxy::current()));
   int flags = base::PLATFORM_FILE_OPEN |
               base::PLATFORM_FILE_READ |
               base::PLATFORM_FILE_ASYNC;
@@ -239,7 +312,7 @@ TEST_F(FileStreamTest, AsyncRead_EarlyDelete) {
   if (rv < 0) {
     EXPECT_EQ(ERR_IO_PENDING, rv);
     // The callback should not be called if the request is cancelled.
-    base::MessageLoop::current()->RunUntilIdle();
+    base::RunLoop().RunUntilIdle();
     EXPECT_FALSE(callback.have_result());
   } else {
     EXPECT_EQ(std::string(kTestData, rv), std::string(buf->data(), rv));
@@ -248,10 +321,10 @@ TEST_F(FileStreamTest, AsyncRead_EarlyDelete) {
 
 TEST_F(FileStreamTest, BasicRead_FromOffset) {
   int64 file_size;
-  bool ok = file_util::GetFileSize(temp_file_path(), &file_size);
+  bool ok = base::GetFileSize(temp_file_path(), &file_size);
   EXPECT_TRUE(ok);
 
-  FileStream stream(NULL);
+  FileStream stream(NULL, base::MessageLoopProxy::current());
   int flags = base::PLATFORM_FILE_OPEN |
               base::PLATFORM_FILE_READ;
   int rv = stream.OpenSync(temp_file_path(), flags);
@@ -283,10 +356,10 @@ TEST_F(FileStreamTest, BasicRead_FromOffset) {
 
 TEST_F(FileStreamTest, AsyncRead_FromOffset) {
   int64 file_size;
-  bool ok = file_util::GetFileSize(temp_file_path(), &file_size);
+  bool ok = base::GetFileSize(temp_file_path(), &file_size);
   EXPECT_TRUE(ok);
 
-  FileStream stream(NULL);
+  FileStream stream(NULL, base::MessageLoopProxy::current());
   int flags = base::PLATFORM_FILE_OPEN |
               base::PLATFORM_FILE_READ |
               base::PLATFORM_FILE_ASYNC;
@@ -324,7 +397,7 @@ TEST_F(FileStreamTest, AsyncRead_FromOffset) {
 }
 
 TEST_F(FileStreamTest, SeekAround) {
-  FileStream stream(NULL);
+  FileStream stream(NULL, base::MessageLoopProxy::current());
   int flags = base::PLATFORM_FILE_OPEN |
               base::PLATFORM_FILE_READ;
   int rv = stream.OpenSync(temp_file_path(), flags);
@@ -347,7 +420,7 @@ TEST_F(FileStreamTest, SeekAround) {
 }
 
 TEST_F(FileStreamTest, AsyncSeekAround) {
-  FileStream stream(NULL);
+  FileStream stream(NULL, base::MessageLoopProxy::current());
   int flags = base::PLATFORM_FILE_OPEN |
               base::PLATFORM_FILE_ASYNC |
               base::PLATFORM_FILE_READ;
@@ -383,14 +456,15 @@ TEST_F(FileStreamTest, AsyncSeekAround) {
 }
 
 TEST_F(FileStreamTest, BasicWrite) {
-  scoped_ptr<FileStream> stream(new FileStream(NULL));
+  scoped_ptr<FileStream> stream(
+      new FileStream(NULL, base::MessageLoopProxy::current()));
   int flags = base::PLATFORM_FILE_CREATE_ALWAYS |
               base::PLATFORM_FILE_WRITE;
   int rv = stream->OpenSync(temp_file_path(), flags);
   EXPECT_EQ(OK, rv);
 
   int64 file_size;
-  bool ok = file_util::GetFileSize(temp_file_path(), &file_size);
+  bool ok = base::GetFileSize(temp_file_path(), &file_size);
   EXPECT_TRUE(ok);
   EXPECT_EQ(0, file_size);
 
@@ -398,13 +472,13 @@ TEST_F(FileStreamTest, BasicWrite) {
   EXPECT_EQ(kTestDataSize, rv);
   stream.reset();
 
-  ok = file_util::GetFileSize(temp_file_path(), &file_size);
+  ok = base::GetFileSize(temp_file_path(), &file_size);
   EXPECT_TRUE(ok);
   EXPECT_EQ(kTestDataSize, file_size);
 }
 
 TEST_F(FileStreamTest, AsyncWrite) {
-  FileStream stream(NULL);
+  FileStream stream(NULL, base::MessageLoopProxy::current());
   int flags = base::PLATFORM_FILE_CREATE_ALWAYS |
               base::PLATFORM_FILE_WRITE |
               base::PLATFORM_FILE_ASYNC;
@@ -414,7 +488,7 @@ TEST_F(FileStreamTest, AsyncWrite) {
   EXPECT_EQ(OK, callback.WaitForResult());
 
   int64 file_size;
-  bool ok = file_util::GetFileSize(temp_file_path(), &file_size);
+  bool ok = base::GetFileSize(temp_file_path(), &file_size);
   EXPECT_TRUE(ok);
   EXPECT_EQ(0, file_size);
 
@@ -434,13 +508,14 @@ TEST_F(FileStreamTest, AsyncWrite) {
     drainable->DidConsume(rv);
     total_bytes_written += rv;
   }
-  ok = file_util::GetFileSize(temp_file_path(), &file_size);
+  ok = base::GetFileSize(temp_file_path(), &file_size);
   EXPECT_TRUE(ok);
   EXPECT_EQ(file_size, total_bytes_written);
 }
 
 TEST_F(FileStreamTest, AsyncWrite_EarlyDelete) {
-  scoped_ptr<FileStream> stream(new FileStream(NULL));
+  scoped_ptr<FileStream> stream(
+      new FileStream(NULL, base::MessageLoopProxy::current()));
   int flags = base::PLATFORM_FILE_CREATE_ALWAYS |
               base::PLATFORM_FILE_WRITE |
               base::PLATFORM_FILE_ASYNC;
@@ -450,7 +525,7 @@ TEST_F(FileStreamTest, AsyncWrite_EarlyDelete) {
   EXPECT_EQ(OK, callback.WaitForResult());
 
   int64 file_size;
-  bool ok = file_util::GetFileSize(temp_file_path(), &file_size);
+  bool ok = base::GetFileSize(temp_file_path(), &file_size);
   EXPECT_TRUE(ok);
   EXPECT_EQ(0, file_size);
 
@@ -460,24 +535,25 @@ TEST_F(FileStreamTest, AsyncWrite_EarlyDelete) {
   if (rv < 0) {
     EXPECT_EQ(ERR_IO_PENDING, rv);
     // The callback should not be called if the request is cancelled.
-    base::MessageLoop::current()->RunUntilIdle();
+    base::RunLoop().RunUntilIdle();
     EXPECT_FALSE(callback.have_result());
   } else {
-    ok = file_util::GetFileSize(temp_file_path(), &file_size);
+    ok = base::GetFileSize(temp_file_path(), &file_size);
     EXPECT_TRUE(ok);
     EXPECT_EQ(file_size, rv);
   }
 }
 
 TEST_F(FileStreamTest, BasicWrite_FromOffset) {
-  scoped_ptr<FileStream> stream(new FileStream(NULL));
+  scoped_ptr<FileStream> stream(
+      new FileStream(NULL, base::MessageLoopProxy::current()));
   int flags = base::PLATFORM_FILE_OPEN |
               base::PLATFORM_FILE_WRITE;
   int rv = stream->OpenSync(temp_file_path(), flags);
   EXPECT_EQ(OK, rv);
 
   int64 file_size;
-  bool ok = file_util::GetFileSize(temp_file_path(), &file_size);
+  bool ok = base::GetFileSize(temp_file_path(), &file_size);
   EXPECT_TRUE(ok);
   EXPECT_EQ(kTestDataSize, file_size);
 
@@ -489,17 +565,17 @@ TEST_F(FileStreamTest, BasicWrite_FromOffset) {
   EXPECT_EQ(kTestDataSize, rv);
   stream.reset();
 
-  ok = file_util::GetFileSize(temp_file_path(), &file_size);
+  ok = base::GetFileSize(temp_file_path(), &file_size);
   EXPECT_TRUE(ok);
   EXPECT_EQ(kTestDataSize * 2, file_size);
 }
 
 TEST_F(FileStreamTest, AsyncWrite_FromOffset) {
   int64 file_size;
-  bool ok = file_util::GetFileSize(temp_file_path(), &file_size);
+  bool ok = base::GetFileSize(temp_file_path(), &file_size);
   EXPECT_TRUE(ok);
 
-  FileStream stream(NULL);
+  FileStream stream(NULL, base::MessageLoopProxy::current());
   int flags = base::PLATFORM_FILE_OPEN |
               base::PLATFORM_FILE_WRITE |
               base::PLATFORM_FILE_ASYNC;
@@ -531,17 +607,18 @@ TEST_F(FileStreamTest, AsyncWrite_FromOffset) {
     drainable->DidConsume(rv);
     total_bytes_written += rv;
   }
-  ok = file_util::GetFileSize(temp_file_path(), &file_size);
+  ok = base::GetFileSize(temp_file_path(), &file_size);
   EXPECT_TRUE(ok);
   EXPECT_EQ(file_size, kTestDataSize * 2);
 }
 
 TEST_F(FileStreamTest, BasicReadWrite) {
   int64 file_size;
-  bool ok = file_util::GetFileSize(temp_file_path(), &file_size);
+  bool ok = base::GetFileSize(temp_file_path(), &file_size);
   EXPECT_TRUE(ok);
 
-  scoped_ptr<FileStream> stream(new FileStream(NULL));
+  scoped_ptr<FileStream> stream(
+      new FileStream(NULL, base::MessageLoopProxy::current()));
   int flags = base::PLATFORM_FILE_OPEN |
               base::PLATFORM_FILE_READ |
               base::PLATFORM_FILE_WRITE;
@@ -570,17 +647,18 @@ TEST_F(FileStreamTest, BasicReadWrite) {
   EXPECT_EQ(kTestDataSize, rv);
   stream.reset();
 
-  ok = file_util::GetFileSize(temp_file_path(), &file_size);
+  ok = base::GetFileSize(temp_file_path(), &file_size);
   EXPECT_TRUE(ok);
   EXPECT_EQ(kTestDataSize * 2, file_size);
 }
 
 TEST_F(FileStreamTest, BasicWriteRead) {
   int64 file_size;
-  bool ok = file_util::GetFileSize(temp_file_path(), &file_size);
+  bool ok = base::GetFileSize(temp_file_path(), &file_size);
   EXPECT_TRUE(ok);
 
-  scoped_ptr<FileStream> stream(new FileStream(NULL));
+  scoped_ptr<FileStream> stream(
+      new FileStream(NULL, base::MessageLoopProxy::current()));
   int flags = base::PLATFORM_FILE_OPEN |
               base::PLATFORM_FILE_READ |
               base::PLATFORM_FILE_WRITE;
@@ -613,7 +691,7 @@ TEST_F(FileStreamTest, BasicWriteRead) {
   }
   stream.reset();
 
-  ok = file_util::GetFileSize(temp_file_path(), &file_size);
+  ok = base::GetFileSize(temp_file_path(), &file_size);
   EXPECT_TRUE(ok);
   EXPECT_EQ(kTestDataSize * 2, file_size);
   EXPECT_EQ(kTestDataSize * 2, total_bytes_read);
@@ -625,10 +703,11 @@ TEST_F(FileStreamTest, BasicWriteRead) {
 
 TEST_F(FileStreamTest, BasicAsyncReadWrite) {
   int64 file_size;
-  bool ok = file_util::GetFileSize(temp_file_path(), &file_size);
+  bool ok = base::GetFileSize(temp_file_path(), &file_size);
   EXPECT_TRUE(ok);
 
-  scoped_ptr<FileStream> stream(new FileStream(NULL));
+  scoped_ptr<FileStream> stream(
+      new FileStream(NULL, base::MessageLoopProxy::current()));
   int flags = base::PLATFORM_FILE_OPEN |
               base::PLATFORM_FILE_READ |
               base::PLATFORM_FILE_WRITE |
@@ -677,17 +756,18 @@ TEST_F(FileStreamTest, BasicAsyncReadWrite) {
 
   stream.reset();
 
-  ok = file_util::GetFileSize(temp_file_path(), &file_size);
+  ok = base::GetFileSize(temp_file_path(), &file_size);
   EXPECT_TRUE(ok);
   EXPECT_EQ(kTestDataSize * 2, file_size);
 }
 
 TEST_F(FileStreamTest, BasicAsyncWriteRead) {
   int64 file_size;
-  bool ok = file_util::GetFileSize(temp_file_path(), &file_size);
+  bool ok = base::GetFileSize(temp_file_path(), &file_size);
   EXPECT_TRUE(ok);
 
-  scoped_ptr<FileStream> stream(new FileStream(NULL));
+  scoped_ptr<FileStream> stream(
+      new FileStream(NULL, base::MessageLoopProxy::current()));
   int flags = base::PLATFORM_FILE_OPEN |
               base::PLATFORM_FILE_READ |
               base::PLATFORM_FILE_WRITE |
@@ -746,7 +826,7 @@ TEST_F(FileStreamTest, BasicAsyncWriteRead) {
   }
   stream.reset();
 
-  ok = file_util::GetFileSize(temp_file_path(), &file_size);
+  ok = base::GetFileSize(temp_file_path(), &file_size);
   EXPECT_TRUE(ok);
   EXPECT_EQ(kTestDataSize * 2, file_size);
 
@@ -778,7 +858,7 @@ class TestWriteReadCompletionCallback {
     DCHECK(!waiting_for_result_);
     while (!have_result_) {
       waiting_for_result_ = true;
-      base::MessageLoop::current()->Run();
+      base::RunLoop().Run();
       waiting_for_result_ = false;
     }
     have_result_ = false;  // auto-reset for next callback
@@ -850,10 +930,11 @@ class TestWriteReadCompletionCallback {
 
 TEST_F(FileStreamTest, AsyncWriteRead) {
   int64 file_size;
-  bool ok = file_util::GetFileSize(temp_file_path(), &file_size);
+  bool ok = base::GetFileSize(temp_file_path(), &file_size);
   EXPECT_TRUE(ok);
 
-  scoped_ptr<FileStream> stream(new FileStream(NULL));
+  scoped_ptr<FileStream> stream(
+      new FileStream(NULL, base::MessageLoopProxy::current()));
   int flags = base::PLATFORM_FILE_OPEN |
               base::PLATFORM_FILE_READ |
               base::PLATFORM_FILE_WRITE |
@@ -884,7 +965,7 @@ TEST_F(FileStreamTest, AsyncWriteRead) {
 
   stream.reset();
 
-  ok = file_util::GetFileSize(temp_file_path(), &file_size);
+  ok = base::GetFileSize(temp_file_path(), &file_size);
   EXPECT_TRUE(ok);
   EXPECT_EQ(kTestDataSize * 2, file_size);
 
@@ -911,7 +992,7 @@ class TestWriteCloseCompletionCallback {
     DCHECK(!waiting_for_result_);
     while (!have_result_) {
       waiting_for_result_ = true;
-      base::MessageLoop::current()->Run();
+      base::RunLoop().Run();
       waiting_for_result_ = false;
     }
     have_result_ = false;  // auto-reset for next callback
@@ -959,10 +1040,11 @@ class TestWriteCloseCompletionCallback {
 
 TEST_F(FileStreamTest, AsyncWriteClose) {
   int64 file_size;
-  bool ok = file_util::GetFileSize(temp_file_path(), &file_size);
+  bool ok = base::GetFileSize(temp_file_path(), &file_size);
   EXPECT_TRUE(ok);
 
-  scoped_ptr<FileStream> stream(new FileStream(NULL));
+  scoped_ptr<FileStream> stream(
+      new FileStream(NULL, base::MessageLoopProxy::current()));
   int flags = base::PLATFORM_FILE_OPEN |
               base::PLATFORM_FILE_READ |
               base::PLATFORM_FILE_WRITE |
@@ -990,7 +1072,7 @@ TEST_F(FileStreamTest, AsyncWriteClose) {
 
   stream.reset();
 
-  ok = file_util::GetFileSize(temp_file_path(), &file_size);
+  ok = base::GetFileSize(temp_file_path(), &file_size);
   EXPECT_TRUE(ok);
   EXPECT_EQ(kTestDataSize * 2, file_size);
 }
@@ -999,7 +1081,8 @@ TEST_F(FileStreamTest, AsyncWriteClose) {
 TEST_F(FileStreamTest, Truncate) {
   int flags = base::PLATFORM_FILE_CREATE_ALWAYS | base::PLATFORM_FILE_WRITE;
 
-  scoped_ptr<FileStream> write_stream(new FileStream(NULL));
+  scoped_ptr<FileStream> write_stream(
+      new FileStream(NULL, base::MessageLoopProxy::current()));
   ASSERT_EQ(OK, write_stream->OpenSync(temp_file_path(), flags));
 
   // Write some data to the file.
@@ -1017,13 +1100,14 @@ TEST_F(FileStreamTest, Truncate) {
 
   // Read in the contents and make sure we get back what we expected.
   std::string read_contents;
-  EXPECT_TRUE(file_util::ReadFileToString(temp_file_path(), &read_contents));
+  EXPECT_TRUE(base::ReadFileToString(temp_file_path(), &read_contents));
 
   EXPECT_EQ("01230123", read_contents);
 }
 
 TEST_F(FileStreamTest, AsyncOpenAndDelete) {
-  scoped_ptr<FileStream> stream(new FileStream(NULL));
+  scoped_ptr<FileStream> stream(
+      new FileStream(NULL, base::MessageLoopProxy::current()));
   int flags = base::PLATFORM_FILE_OPEN |
       base::PLATFORM_FILE_WRITE |
       base::PLATFORM_FILE_ASYNC;
@@ -1035,47 +1119,112 @@ TEST_F(FileStreamTest, AsyncOpenAndDelete) {
   // complete. Should be safe.
   stream.reset();
   // open_callback won't be called.
-  base::MessageLoop::current()->RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
   EXPECT_FALSE(open_callback.have_result());
 }
 
 // Verify that async Write() errors are mapped correctly.
 TEST_F(FileStreamTest, AsyncWriteError) {
-  scoped_ptr<FileStream> stream(new FileStream(NULL));
-  int flags = base::PLATFORM_FILE_CREATE_ALWAYS |
-              base::PLATFORM_FILE_WRITE |
-              base::PLATFORM_FILE_ASYNC;
-  TestCompletionCallback callback;
-  int rv = stream->Open(temp_file_path(), flags, callback.callback());
-  EXPECT_EQ(ERR_IO_PENDING, rv);
-  EXPECT_EQ(OK, callback.WaitForResult());
+  // Try opening file as read-only and then writing to it using FileStream.
+  base::PlatformFile file = base::CreatePlatformFile(
+      temp_file_path(),
+      base::PLATFORM_FILE_OPEN | base::PLATFORM_FILE_READ |
+          base::PLATFORM_FILE_ASYNC,
+      NULL,
+      NULL);
+  ASSERT_NE(base::kInvalidPlatformFileValue, file);
 
-  // Try passing NULL buffer to Write() and check that it fails.
-  scoped_refptr<IOBuffer> buf = new WrappedIOBuffer(NULL);
-  rv = stream->Write(buf.get(), 1, callback.callback());
+  int flags = base::PLATFORM_FILE_CREATE_ALWAYS | base::PLATFORM_FILE_WRITE |
+              base::PLATFORM_FILE_ASYNC;
+  scoped_ptr<FileStream> stream(
+      new FileStream(file, flags, NULL, base::MessageLoopProxy::current()));
+
+  scoped_refptr<IOBuffer> buf = new IOBuffer(1);
+  buf->data()[0] = 0;
+
+  TestCompletionCallback callback;
+  int rv = stream->Write(buf.get(), 1, callback.callback());
   if (rv == ERR_IO_PENDING)
     rv = callback.WaitForResult();
   EXPECT_LT(rv, 0);
+
+  base::ClosePlatformFile(file);
 }
 
 // Verify that async Read() errors are mapped correctly.
 TEST_F(FileStreamTest, AsyncReadError) {
-  scoped_ptr<FileStream> stream(new FileStream(NULL));
+  // Try opening file for write and then reading from it using FileStream.
+  base::PlatformFile file = base::CreatePlatformFile(
+      temp_file_path(),
+      base::PLATFORM_FILE_OPEN | base::PLATFORM_FILE_WRITE |
+          base::PLATFORM_FILE_ASYNC,
+      NULL,
+      NULL);
+  ASSERT_NE(base::kInvalidPlatformFileValue, file);
+
+  int flags = base::PLATFORM_FILE_OPEN | base::PLATFORM_FILE_READ |
+              base::PLATFORM_FILE_ASYNC;
+  scoped_ptr<FileStream> stream(
+      new FileStream(file, flags, NULL, base::MessageLoopProxy::current()));
+
+  scoped_refptr<IOBuffer> buf = new IOBuffer(1);
+  TestCompletionCallback callback;
+  int rv = stream->Read(buf.get(), 1, callback.callback());
+  if (rv == ERR_IO_PENDING)
+    rv = callback.WaitForResult();
+  EXPECT_LT(rv, 0);
+
+  base::ClosePlatformFile(file);
+}
+
+#if defined(OS_ANDROID)
+TEST_F(FileStreamTest, ContentUriAsyncRead) {
+  base::FilePath test_dir;
+  PathService::Get(base::DIR_SOURCE_ROOT, &test_dir);
+  test_dir = test_dir.AppendASCII("net");
+  test_dir = test_dir.AppendASCII("data");
+  test_dir = test_dir.AppendASCII("file_stream_unittest");
+  ASSERT_TRUE(base::PathExists(test_dir));
+  base::FilePath image_file = test_dir.Append(FILE_PATH_LITERAL("red.png"));
+
+  // Insert the image into MediaStore. MediaStore will do some conversions, and
+  // return the content URI.
+  base::FilePath path = file_util::InsertImageIntoMediaStore(image_file);
+  EXPECT_TRUE(path.IsContentUri());
+  EXPECT_TRUE(base::PathExists(path));
+  int64 file_size;
+  EXPECT_TRUE(base::GetFileSize(path, &file_size));
+  EXPECT_LT(0, file_size);
+
+  FileStream stream(NULL, base::MessageLoopProxy::current());
   int flags = base::PLATFORM_FILE_OPEN |
               base::PLATFORM_FILE_READ |
               base::PLATFORM_FILE_ASYNC;
   TestCompletionCallback callback;
-  int rv = stream->Open(temp_file_path(), flags, callback.callback());
+  int rv = stream.Open(path, flags, callback.callback());
   EXPECT_EQ(ERR_IO_PENDING, rv);
   EXPECT_EQ(OK, callback.WaitForResult());
 
-  // Try passing NULL buffer to Read() and check that it fails.
-  scoped_refptr<IOBuffer> buf = new WrappedIOBuffer(NULL);
-  rv = stream->Read(buf.get(), 1, callback.callback());
-  if (rv == ERR_IO_PENDING)
-    rv = callback.WaitForResult();
-  EXPECT_LT(rv, 0);
+  int64 total_bytes_avail = stream.Available();
+  EXPECT_EQ(file_size, total_bytes_avail);
+
+  int total_bytes_read = 0;
+
+  std::string data_read;
+  for (;;) {
+    scoped_refptr<IOBufferWithSize> buf = new IOBufferWithSize(4);
+    rv = stream.Read(buf.get(), buf->size(), callback.callback());
+    if (rv == ERR_IO_PENDING)
+      rv = callback.WaitForResult();
+    EXPECT_LE(0, rv);
+    if (rv <= 0)
+      break;
+    total_bytes_read += rv;
+    data_read.append(buf->data(), rv);
+  }
+  EXPECT_EQ(file_size, total_bytes_read);
 }
+#endif
 
 }  // namespace
 

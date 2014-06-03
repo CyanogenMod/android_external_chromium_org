@@ -6,7 +6,9 @@
 #define BASE_METRICS_HISTOGRAM_BASE_H_
 
 #include <string>
+#include <vector>
 
+#include "base/atomicops.h"
 #include "base/base_export.h"
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
@@ -42,16 +44,12 @@ std::string HistogramTypeToString(HistogramType type);
 BASE_EXPORT_PRIVATE HistogramBase* DeserializeHistogramInfo(
     PickleIterator* iter);
 
-// Create or find existing histogram and add the samples from pickle.
-// Silently returns when seeing any data problem in the pickle.
-BASE_EXPORT void DeserializeHistogramAndAddSamples(PickleIterator* iter);
-
 ////////////////////////////////////////////////////////////////////////////////
 
 class BASE_EXPORT HistogramBase {
  public:
-  typedef int Sample;  // Used for samples.
-  typedef int Count;   // Used to count samples.
+  typedef int Sample;                   // Used for samples.
+  typedef subtle::Atomic32 Count;     // Used to count samples.
 
   static const Sample kSampleType_MAX;  // INT_MAX
 

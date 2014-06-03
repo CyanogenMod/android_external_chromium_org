@@ -15,14 +15,15 @@
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
 #include "base/message_loop/message_loop_proxy.h"
-#include "base/rand_util.h"
 #include "base/strings/string_util.h"
 #include "base/timer/timer.h"
+#include "content/common/gpu/devtools_gpu_agent.h"
 #include "content/common/gpu/gpu_channel_manager.h"
 #include "content/common/gpu/gpu_messages.h"
+#include "content/common/gpu/media/gpu_video_encode_accelerator.h"
 #include "content/common/gpu/sync_point_manager.h"
 #include "content/public/common/content_switches.h"
-#include "crypto/hmac.h"
+#include "crypto/random.h"
 #include "gpu/command_buffer/common/mailbox.h"
 #include "gpu/command_buffer/service/gpu_scheduler.h"
 #include "gpu/command_buffer/service/image_manager.h"
@@ -77,8 +78,7 @@ const int64 kStopPreemptThresholdMs = kVsyncIntervalMs;
 class GpuChannelMessageFilter : public IPC::ChannelProxy::MessageFilter {
  public:
   // Takes ownership of gpu_channel (see below).
-  GpuChannelMessageFilter(const std::string& private_key,
-                          base::WeakPtr<GpuChannel>* gpu_channel,
+  GpuChannelMessageFilter(base::WeakPtr<GpuChannel>* gpu_channel,
                           scoped_refptr<SyncPointManager> sync_point_manager,
                           scoped_refptr<base::MessageLoopProxy> message_loop)
       : preemption_state_(IDLE),
@@ -87,10 +87,7 @@ class GpuChannelMessageFilter : public IPC::ChannelProxy::MessageFilter {
         sync_point_manager_(sync_point_manager),
         message_loop_(message_loop),
         messages_forwarded_to_channel_(0),
-        a_stub_is_descheduled_(false),
-        hmac_(crypto::HMAC::SHA256) {
-    bool success = hmac_.Init(base::StringPiece(private_key));
-    DCHECK(success);
+        a_stub_is_descheduled_(false) {
   }
 
   virtual void OnFilterAdded(IPC::Channel* channel) OVERRIDE {
@@ -181,18 +178,8 @@ class GpuChannelMessageFilter : public IPC::ChannelProxy::MessageFilter {
 
     result->resize(num);
 
-    for (unsigned i = 0; i < num; ++i) {
-      char name[GL_MAILBOX_SIZE_CHROMIUM];
-      base::RandBytes(name, sizeof(name) / 2);
-
-      bool success = hmac_.Sign(
-          base::StringPiece(name, sizeof(name) / 2),
-          reinterpret_cast<unsigned char*>(name) + sizeof(name) / 2,
-          sizeof(name) / 2);
-      DCHECK(success);
-
-      (*result)[i].SetName(reinterpret_cast<int8*>(name));
-    }
+    for (unsigned i = 0; i < num; ++i)
+      crypto::RandBytes((*result)[i].name, sizeof((*result)[i].name));
   }
 
   void OnGenerateMailboxNamesAsync(unsigned num) {
@@ -425,8 +412,6 @@ class GpuChannelMessageFilter : public IPC::ChannelProxy::MessageFilter {
   base::OneShotTimer<GpuChannelMessageFilter> timer_;
 
   bool a_stub_is_descheduled_;
-
-  crypto::HMAC hmac_;
 };
 
 GpuChannel::GpuChannel(GpuChannelManager* gpu_channel_manager,
@@ -479,12 +464,13 @@ bool GpuChannel::Init(base::MessageLoopProxy* io_message_loop,
       weak_factory_.GetWeakPtr()));
 
   filter_ = new GpuChannelMessageFilter(
-      mailbox_manager_->private_key(),
       weak_ptr,
       gpu_channel_manager_->sync_point_manager(),
       base::MessageLoopProxy::current());
   io_message_loop_ = io_message_loop;
   channel_->AddFilter(filter_.get());
+
+  devtools_gpu_agent_.reset(new DevToolsGpuAgent(this));
 
   return true;
 }
@@ -616,8 +602,6 @@ void GpuChannel::CreateViewCommandBuffer(
 
   *route_id = MSG_ROUTING_NONE;
 
-#if defined(ENABLE_GPU)
-
   GpuCommandBufferStub* share_group = stubs_.Lookup(init_params.share_group_id);
 
   // Virtualize compositor contexts on OS X to prevent performance regressions
@@ -637,7 +621,6 @@ void GpuChannel::CreateViewCommandBuffer(
                                image_manager_.get(),
                                gfx::Size(),
                                disallowed_features_,
-                               init_params.allowed_extensions,
                                init_params.attribs,
                                init_params.gpu_preference,
                                use_virtualized_gl_context,
@@ -650,7 +633,6 @@ void GpuChannel::CreateViewCommandBuffer(
     stub->SetPreemptByFlag(preempted_flag_);
   router_.AddRoute(*route_id, stub.get());
   stubs_.AddWithID(stub.release(), *route_id);
-#endif  // ENABLE_GPU
 }
 
 GpuCommandBufferStub* GpuChannel::LookupCommandBuffer(int32 route_id) {
@@ -754,9 +736,16 @@ bool GpuChannel::OnControlMessageReceived(const IPC::Message& msg) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(GpuChannel, msg)
     IPC_MESSAGE_HANDLER(GpuChannelMsg_CreateOffscreenCommandBuffer,
-                                    OnCreateOffscreenCommandBuffer)
+                        OnCreateOffscreenCommandBuffer)
     IPC_MESSAGE_HANDLER(GpuChannelMsg_DestroyCommandBuffer,
-                                    OnDestroyCommandBuffer)
+                        OnDestroyCommandBuffer)
+    IPC_MESSAGE_HANDLER(GpuChannelMsg_CreateVideoEncoder, OnCreateVideoEncoder)
+    IPC_MESSAGE_HANDLER(GpuChannelMsg_DestroyVideoEncoder,
+                        OnDestroyVideoEncoder)
+    IPC_MESSAGE_HANDLER(GpuChannelMsg_DevToolsStartEventsRecording,
+                        OnDevToolsStartEventsRecording)
+    IPC_MESSAGE_HANDLER(GpuChannelMsg_DevToolsStopEventsRecording,
+                        OnDevToolsStopEventsRecording)
 #if defined(OS_ANDROID)
     IPC_MESSAGE_HANDLER(GpuChannelMsg_RegisterStreamTextureProxy,
                         OnRegisterStreamTextureProxy)
@@ -864,7 +853,6 @@ void GpuChannel::OnCreateOffscreenCommandBuffer(
       image_manager_.get(),
       size,
       disallowed_features_,
-      init_params.allowed_extensions,
       init_params.attribs,
       init_params.gpu_preference,
       false,
@@ -897,6 +885,34 @@ void GpuChannel::OnDestroyCommandBuffer(int32 route_id) {
     // This stub won't get a chance to reschedule, so update the count now.
     StubSchedulingChanged(true);
   }
+}
+
+void GpuChannel::OnCreateVideoEncoder(int32* route_id) {
+  TRACE_EVENT0("gpu", "GpuChannel::OnCreateVideoEncoder");
+
+  *route_id = GenerateRouteID();
+  GpuVideoEncodeAccelerator* encoder =
+      new GpuVideoEncodeAccelerator(this, *route_id);
+  router_.AddRoute(*route_id, encoder);
+  video_encoders_.AddWithID(encoder, *route_id);
+}
+
+void GpuChannel::OnDestroyVideoEncoder(int32 route_id) {
+  TRACE_EVENT1(
+      "gpu", "GpuChannel::OnDestroyVideoEncoder", "route_id", route_id);
+  GpuVideoEncodeAccelerator* encoder = video_encoders_.Lookup(route_id);
+  if (!encoder)
+    return;
+  router_.RemoveRoute(route_id);
+  video_encoders_.Remove(route_id);
+}
+
+void GpuChannel::OnDevToolsStartEventsRecording(int32* route_id) {
+  devtools_gpu_agent_->StartEventsRecording(route_id);
+}
+
+void GpuChannel::OnDevToolsStopEventsRecording() {
+  devtools_gpu_agent_->StopEventsRecording();
 }
 
 #if defined(OS_ANDROID)
@@ -942,6 +958,11 @@ void GpuChannel::OnCollectRenderingStatsForSurface(
       stats->total_processing_commands_time += total_processing_commands_time;
     }
   }
+
+  GPUVideoMemoryUsageStats usage_stats;
+  gpu_channel_manager_->gpu_memory_manager()->GetVideoMemoryUsageStats(
+      &usage_stats);
+  stats->global_video_memory_bytes_allocated = usage_stats.bytes_allocated;
 }
 
 void GpuChannel::MessageProcessed() {
@@ -959,6 +980,14 @@ void GpuChannel::CacheShader(const std::string& key,
                              const std::string& shader) {
   gpu_channel_manager_->Send(
       new GpuHostMsg_CacheShader(client_id_, key, shader));
+}
+
+void GpuChannel::AddFilter(IPC::ChannelProxy::MessageFilter* filter) {
+  channel_->AddFilter(filter);
+}
+
+void GpuChannel::RemoveFilter(IPC::ChannelProxy::MessageFilter* filter) {
+  channel_->RemoveFilter(filter);
 }
 
 }  // namespace content

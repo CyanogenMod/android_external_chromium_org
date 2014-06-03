@@ -55,6 +55,7 @@ cr.define('options', function() {
 
       imageGrid.previewElement = previewElement;
       imageGrid.selectionType = 'default';
+      imageGrid.flipPhotoElement = $('flip-photo');
 
       imageGrid.addEventListener('select',
                                  this.handleImageSelected_.bind(this));
@@ -103,7 +104,7 @@ cr.define('options', function() {
       this.oldImage_ = null;
 
       $('change-picture-overlay-confirm').addEventListener(
-          'click', this.closePage_.bind(this));
+          'click', this.closeOverlay_.bind(this));
 
       chrome.send('onChangePicturePageInitialized');
     },
@@ -142,11 +143,12 @@ cr.define('options', function() {
     },
 
     /**
-     * Closes current page, returning back to Personal Stuff page.
+     * Closes the overlay, returning to the main settings page.
      * @private
      */
-    closePage_: function() {
-      OptionsPage.closeOverlay();
+    closeOverlay_: function() {
+      if (!$('change-picture-page').hidden)
+        OptionsPage.closeOverlay();
     },
 
     /**
@@ -159,7 +161,7 @@ cr.define('options', function() {
 
     /**
      * Handle photo captured event.
-     * @param {cr.Event} e Event with 'dataURL' property containing a data URL.
+     * @param {Event} e Event with 'dataURL' property containing a data URL.
      */
     handlePhotoTaken_: function(e) {
       chrome.send('photoTaken', [e.dataURL]);
@@ -171,7 +173,7 @@ cr.define('options', function() {
      */
     handleChooseFile_: function() {
       chrome.send('chooseFile');
-      this.closePage_();
+      this.closeOverlay_();
     },
 
     /**
@@ -223,7 +225,7 @@ cr.define('options', function() {
           this.handleChooseFile_();
           break;
         default:
-          this.closePage_();
+          this.closeOverlay_();
           break;
       }
     },
@@ -297,6 +299,7 @@ cr.define('options', function() {
 
   // Forward public APIs to private implementations.
   [
+    'closeOverlay',
     'setCameraPresent',
     'setDefaultImages',
     'setOldImage',

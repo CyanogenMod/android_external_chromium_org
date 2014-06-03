@@ -12,16 +12,16 @@
 #include "chrome/browser/ui/gtk/gtk_util.h"
 #include "grit/ui_resources.h"
 #include "third_party/WebKit/public/web/WebAutofillClient.h"
-#include "ui/base/gtk/gtk_compat.h"
 #include "ui/base/gtk/gtk_hig_constants.h"
 #include "ui/base/gtk/gtk_windowing.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/gfx/gtk_compat.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/pango_util.h"
 #include "ui/gfx/rect.h"
 
-using WebKit::WebAutofillClient;
+using blink::WebAutofillClient;
 
 namespace {
 
@@ -117,7 +117,7 @@ gboolean AutofillPopupViewGtk::HandleButtonRelease(GtkWidget* widget,
   if (event->button != 1)
     return FALSE;
 
-  controller_->MouseClicked(event->x, event->y);
+  controller_->LineAcceptedAtPoint(event->x, event->y);
   return TRUE;
 }
 
@@ -158,14 +158,14 @@ gboolean AutofillPopupViewGtk::HandleExpose(GtkWidget* widget,
 
 gboolean AutofillPopupViewGtk::HandleLeave(GtkWidget* widget,
                                            GdkEventCrossing* event) {
-  controller_->MouseExitedPopup();
+  controller_->SelectionCleared();
 
   return FALSE;
 }
 
 gboolean AutofillPopupViewGtk::HandleMotion(GtkWidget* widget,
                                             GdkEventMotion* event) {
-  controller_->MouseHovered(event->x, event->y);
+  controller_->LineSelectedAtPoint(event->x, event->y);
 
   return TRUE;
 }
@@ -175,7 +175,7 @@ void AutofillPopupViewGtk::SetUpLayout() {
   pango_layout_set_height(layout_, window_->allocation.height * PANGO_SCALE);
 }
 
-void AutofillPopupViewGtk::SetLayoutText(const string16& text,
+void AutofillPopupViewGtk::SetLayoutText(const base::string16& text,
                                          const gfx::Font& font,
                                          const GdkColor text_color) {
   PangoAttrList* attrs = pango_attr_list_new();
@@ -249,20 +249,21 @@ void AutofillPopupViewGtk::DrawAutofillEntry(cairo_t* cairo_context,
   if (!controller_->icons()[index].empty()) {
     int icon = controller_->GetIconResourceID(controller_->icons()[index]);
     DCHECK_NE(-1, icon);
-    int icon_y = entry_rect.y() + (row_height - kAutofillIconHeight) / 2;
+    const gfx::Image& image =
+        ui::ResourceBundle::GetSharedInstance().GetImageNamed(icon);
+    int icon_y = entry_rect.y() + (row_height - image.Height()) / 2;
 
-    x_align_left += is_rtl ? 0 : -kAutofillIconWidth;
+    x_align_left += is_rtl ? 0 : -image.Width();
 
     cairo_save(cairo_context);
-    ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
     gtk_util::DrawFullImage(cairo_context,
                             window_,
-                            rb.GetImageNamed(icon),
+                            image,
                             x_align_left,
                             icon_y);
     cairo_restore(cairo_context);
 
-    x_align_left += is_rtl ? kAutofillIconWidth + kIconPadding : -kIconPadding;
+    x_align_left += is_rtl ? image.Width() + kIconPadding : -kIconPadding;
   }
 
   // Draw the subtext.

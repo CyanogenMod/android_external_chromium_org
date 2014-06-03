@@ -42,7 +42,8 @@ class ModuleSystem : public ObjectBackedNativeHandler {
   class SourceMap {
    public:
     virtual ~SourceMap() {}
-    virtual v8::Handle<v8::Value> GetSource(const std::string& name) = 0;
+    virtual v8::Handle<v8::Value> GetSource(v8::Isolate* isolate,
+                                            const std::string& name) = 0;
     virtual bool Contains(const std::string& name) = 0;
   };
 
@@ -134,6 +135,8 @@ class ModuleSystem : public ObjectBackedNativeHandler {
     exception_handler_ = handler.Pass();
   }
 
+  v8::Isolate* GetIsolate() const;
+
  protected:
   friend class ChromeV8Context;
   virtual void Invalidate() OVERRIDE;
@@ -162,7 +165,7 @@ class ModuleSystem : public ObjectBackedNativeHandler {
                                   v8::Handle<v8::String> name);
 
   void RequireForJs(const v8::FunctionCallbackInfo<v8::Value>& args);
-  v8::Handle<v8::Value> RequireForJsInner(v8::Handle<v8::String> module_name);
+  v8::Local<v8::Value> RequireForJsInner(v8::Handle<v8::String> module_name);
 
   typedef v8::Handle<v8::Value> (ModuleSystem::*RequireFunction)(
       const std::string&);
@@ -185,6 +188,9 @@ class ModuleSystem : public ObjectBackedNativeHandler {
 
   // Wraps |source| in a (function(require, requireNative, exports) {...}).
   v8::Handle<v8::String> WrapSource(v8::Handle<v8::String> source);
+
+  // NativeHandler implementation which returns the private area of an Object.
+  void Private(const v8::FunctionCallbackInfo<v8::Value>& args);
 
   ChromeV8Context* context_;
 

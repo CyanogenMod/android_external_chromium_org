@@ -8,20 +8,20 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
-#include "chrome/common/extensions/manifest.h"
+#include "extensions/common/manifest.h"
+#include "extensions/common/manifest_constants.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
 namespace extensions {
 
-namespace keys = extension_manifest_keys;
-namespace errors = extension_manifest_errors;
+namespace keys = manifest_keys;
+namespace errors = manifest_errors;
 
 namespace {
 
 bool LoadImages(const base::DictionaryValue* theme_value,
-                string16* error,
+                base::string16* error,
                 ThemeInfo* theme_info) {
   const base::DictionaryValue* images_value = NULL;
   if (theme_value->GetDictionary(keys::kThemeImages, &images_value)) {
@@ -56,7 +56,7 @@ bool LoadImages(const base::DictionaryValue* theme_value,
 }
 
 bool LoadColors(const base::DictionaryValue* theme_value,
-                string16* error,
+                base::string16* error,
                 ThemeInfo* theme_info) {
   const base::DictionaryValue* colors_value = NULL;
   if (theme_value->GetDictionary(keys::kThemeColors, &colors_value)) {
@@ -88,7 +88,7 @@ bool LoadColors(const base::DictionaryValue* theme_value,
 }
 
 bool LoadTints(const base::DictionaryValue* theme_value,
-               string16* error,
+               base::string16* error,
                ThemeInfo* theme_info) {
   const base::DictionaryValue* tints_value = NULL;
   if (!theme_value->GetDictionary(keys::kThemeTints, &tints_value))
@@ -113,7 +113,7 @@ bool LoadTints(const base::DictionaryValue* theme_value,
 }
 
 bool LoadDisplayProperties(const base::DictionaryValue* theme_value,
-                           string16* error,
+                           base::string16* error,
                            ThemeInfo* theme_info) {
   const base::DictionaryValue* display_properties_value = NULL;
   if (theme_value->GetDictionary(keys::kThemeDisplayProperties,
@@ -167,7 +167,7 @@ ThemeHandler::ThemeHandler() {
 ThemeHandler::~ThemeHandler() {
 }
 
-bool ThemeHandler::Parse(Extension* extension, string16* error) {
+bool ThemeHandler::Parse(Extension* extension, base::string16* error) {
   const base::DictionaryValue* theme_value = NULL;
   if (!extension->manifest()->GetDictionary(keys::kTheme, &theme_value)) {
     *error = ASCIIToUTF16(errors::kInvalidTheme);

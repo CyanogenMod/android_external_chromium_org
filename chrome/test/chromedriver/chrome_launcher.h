@@ -24,16 +24,17 @@ class FilePath;
 
 class Chrome;
 class DeviceManager;
-class Log;
+class PortManager;
+class PortServer;
 class Status;
 class URLRequestContextGetter;
 
 Status LaunchChrome(
     URLRequestContextGetter* context_getter,
-    int port,
     const SyncWebSocketFactory& socket_factory,
-    Log* log,
     DeviceManager* device_manager,
+    PortServer* port_server,
+    PortManager* port_manager,
     const Capabilities& capabilities,
     ScopedVector<DevToolsEventListener>& devtools_event_listeners,
     scoped_ptr<Chrome>* chrome);
@@ -42,7 +43,8 @@ namespace internal {
 Status ProcessExtensions(const std::vector<std::string>& extensions,
                          const base::FilePath& temp_dir,
                          bool include_automation_extension,
-                         CommandLine* command);
+                         Switches* switches,
+                         std::vector<std::string>* bg_pages);
 Status PrepareUserDataDir(
     const base::FilePath& user_data_dir,
     const base::DictionaryValue* custom_prefs,

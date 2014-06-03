@@ -30,52 +30,44 @@
 
 namespace installer {
 
-bool InstallerState::IsMultiInstallUpdate(const MasterPreferences& prefs,
+bool InstallerState::IsMultiInstallUpdate(
+    const MasterPreferences& prefs,
     const InstallationState& machine_state) {
-  // First, is the package present?
-  const ProductState* package =
+  // First, are the binaries present?
+  const ProductState* binaries =
       machine_state.GetProductState(level_ == SYSTEM_LEVEL,
                                     BrowserDistribution::CHROME_BINARIES);
-  if (package == NULL) {
-    // The multi-install package has not been installed, so it certainly isn't
-    // being updated.
+  if (binaries == NULL) {
+    // The multi-install binaries have not been installed, so they certainly
+    // aren't being updated.
     return false;
   }
 
-  BrowserDistribution::Type types[2];
-  size_t num_types = 0;
-  if (prefs.install_chrome())
-    types[num_types++] = BrowserDistribution::CHROME_BROWSER;
-  if (prefs.install_chrome_frame())
-    types[num_types++] = BrowserDistribution::CHROME_FRAME;
-
-  for (const BrowserDistribution::Type* scan = &types[0],
-           *end = &types[num_types]; scan != end; ++scan) {
+  if (prefs.install_chrome()) {
     const ProductState* product =
-        machine_state.GetProductState(level_ == SYSTEM_LEVEL, *scan);
+        machine_state.GetProductState(level_ == SYSTEM_LEVEL,
+                                      BrowserDistribution::CHROME_BROWSER);
     if (product == NULL) {
-      VLOG(2) << "It seems that distribution type " << *scan
-              << " is being installed for the first time.";
+      VLOG(2) << "It seems that chrome is being installed for the first time.";
       return false;
     }
-    if (!product->channel().Equals(package->channel())) {
-      VLOG(2) << "It seems that distribution type " << *scan
-              << " is being over installed.";
+    if (!product->channel().Equals(binaries->channel())) {
+      VLOG(2) << "It seems that chrome is being over installed.";
       return false;
     }
   }
 
-  VLOG(2) << "It seems that the package is being updated.";
+  VLOG(2) << "It seems that the binaries are being updated.";
 
   return true;
 }
 
 InstallerState::InstallerState()
     : operation_(UNINITIALIZED),
+      state_type_(BrowserDistribution::CHROME_BROWSER),
       multi_package_distribution_(NULL),
       level_(UNKNOWN_LEVEL),
       package_type_(UNKNOWN_PACKAGE_TYPE),
-      state_type_(BrowserDistribution::CHROME_BROWSER),
       root_key_(NULL),
       msi_(false),
       verbose_logging_(false),
@@ -84,10 +76,10 @@ InstallerState::InstallerState()
 
 InstallerState::InstallerState(Level level)
     : operation_(UNINITIALIZED),
+      state_type_(BrowserDistribution::CHROME_BROWSER),
       multi_package_distribution_(NULL),
       level_(UNKNOWN_LEVEL),
       package_type_(UNKNOWN_PACKAGE_TYPE),
-      state_type_(BrowserDistribution::CHROME_BROWSER),
       root_key_(NULL),
       msi_(false),
       verbose_logging_(false),
@@ -99,6 +91,8 @@ InstallerState::InstallerState(Level level)
 void InstallerState::Initialize(const CommandLine& command_line,
                                 const MasterPreferences& prefs,
                                 const InstallationState& machine_state) {
+  Clear();
+
   bool pref_bool;
   if (!prefs.GetBool(master_preferences::kSystemLevel, &pref_bool))
     pref_bool = false;
@@ -123,20 +117,14 @@ void InstallerState::Initialize(const CommandLine& command_line,
     Product* p = AddProductFromPreferences(
         BrowserDistribution::CHROME_BROWSER, prefs, machine_state);
     VLOG(1) << (is_uninstall ? "Uninstall" : "Install")
-            << " distribution: " << p->distribution()->GetAppShortCutName();
-  }
-  if (prefs.install_chrome_frame()) {
-    Product* p = AddProductFromPreferences(
-        BrowserDistribution::CHROME_FRAME, prefs, machine_state);
-    VLOG(1) << (is_uninstall ? "Uninstall" : "Install")
-            << " distribution: " << p->distribution()->GetAppShortCutName();
+            << " distribution: " << p->distribution()->GetDisplayName();
   }
 
   if (prefs.install_chrome_app_launcher()) {
     Product* p = AddProductFromPreferences(
         BrowserDistribution::CHROME_APP_HOST, prefs, machine_state);
     VLOG(1) << (is_uninstall ? "Uninstall" : "Install")
-            << " distribution: " << p->distribution()->GetAppShortCutName();
+            << " distribution: " << p->distribution()->GetDisplayName();
   }
 
   if (!is_uninstall && is_multi_install()) {
@@ -157,11 +145,8 @@ void InstallerState::Initialize(const CommandLine& command_line,
       }
     }
 
-    // Chrome/Chrome Frame multi need Binaries at their own level.
+    // Chrome multi needs Binaries at its own level.
     if (FindProduct(BrowserDistribution::CHROME_BROWSER))
-      need_binaries = true;
-
-    if (FindProduct(BrowserDistribution::CHROME_FRAME))
       need_binaries = true;
 
     if (need_binaries && !FindProduct(BrowserDistribution::CHROME_BINARIES)) {
@@ -169,7 +154,7 @@ void InstallerState::Initialize(const CommandLine& command_line,
       Product* p = AddProductFromPreferences(
           BrowserDistribution::CHROME_BINARIES, prefs, machine_state);
       VLOG(1) << "Install distribution: "
-              << p->distribution()->GetAppShortCutName();
+              << p->distribution()->GetDisplayName();
     }
   }
 
@@ -183,10 +168,6 @@ void InstallerState::Initialize(const CommandLine& command_line,
         const char* switch_name;
         bool switch_expected;
       } conditional_additions[] = {
-        // If Chrome Frame is installed in Ready Mode, remove it with Chrome.
-        { BrowserDistribution::CHROME_FRAME,
-          switches::kChromeFrameReadyMode,
-          true },
         // If the App Host is installed, but not the App Launcher, remove it
         // with Chrome. Note however that for system-level Chrome uninstalls,
         // any installed user-level App Host will remain even if there is no
@@ -208,7 +189,7 @@ void InstallerState::Initialize(const CommandLine& command_line,
           Product* p = AddProductFromPreferences(
               conditional_additions[i].type, prefs, machine_state);
           VLOG(1) << "Uninstall distribution: "
-                  << p->distribution()->GetAppShortCutName();
+                  << p->distribution()->GetDisplayName();
         }
       }
     }
@@ -271,7 +252,7 @@ void InstallerState::Initialize(const CommandLine& command_line,
       Product* p = AddProductFromPreferences(
           BrowserDistribution::CHROME_BINARIES, prefs, machine_state);
       VLOG(1) << (is_uninstall ? "Uninstall" : "Install")
-              << " distribution: " << p->distribution()->GetAppShortCutName();
+              << " distribution: " << p->distribution()->GetDisplayName();
     }
   }
 
@@ -292,16 +273,13 @@ void InstallerState::Initialize(const CommandLine& command_line,
     operation_ = MULTI_INSTALL;
   }
 
-  // Initial, over, and un-installs will take place under one of the
-  // product app guids (Chrome, Chrome Frame, App Host, or Binaries, in order of
-  // preference).
+  // Initial, over, and un-installs will take place under one of the product app
+  // guids (Chrome, App Host, or Binaries, in order of preference).
   if (operand == NULL) {
     BrowserDistribution::Type operand_distribution_type =
         BrowserDistribution::CHROME_BINARIES;
     if (prefs.install_chrome())
       operand_distribution_type = BrowserDistribution::CHROME_BROWSER;
-    else if (prefs.install_chrome_frame())
-      operand_distribution_type = BrowserDistribution::CHROME_FRAME;
     else if (prefs.install_chrome_app_launcher())
       operand_distribution_type = BrowserDistribution::CHROME_APP_HOST;
 
@@ -591,20 +569,15 @@ Version InstallerState::DetermineCriticalVersion(
 
 bool InstallerState::IsChromeFrameRunning(
     const InstallationState& machine_state) const {
-  // We check only for the current version (e.g. the version we are upgrading
-  // _from_). We don't need to check interstitial versions if any (as would
-  // occur in the case of multiple updates) since if they are in use, we are
-  // guaranteed that the current version is in use too.
-  bool in_use = false;
-  scoped_ptr<Version> current_version(GetCurrentVersion(machine_state));
-  if (current_version != NULL) {
-    base::FilePath cf_install_path(
-        target_path().AppendASCII(current_version->GetString())
-                     .Append(kChromeFrameDll));
-    in_use = base::PathExists(cf_install_path) &&
-        IsFileInUse(cf_install_path);
-  }
-  return in_use;
+  return AnyExistsAndIsInUse(machine_state, CHROME_FRAME_DLL);
+}
+
+bool InstallerState::AreBinariesInUse(
+    const InstallationState& machine_state) const {
+  return AnyExistsAndIsInUse(
+      machine_state,
+      (CHROME_FRAME_HELPER_EXE | CHROME_FRAME_HELPER_DLL |
+       CHROME_FRAME_DLL | CHROME_DLL));
 }
 
 base::FilePath InstallerState::GetInstallerDirectory(
@@ -620,6 +593,57 @@ bool InstallerState::IsFileInUse(const base::FilePath& file) {
   return !base::win::ScopedHandle(CreateFile(file.value().c_str(),
                                              GENERIC_WRITE, 0, NULL,
                                              OPEN_EXISTING, 0, 0)).IsValid();
+}
+
+void InstallerState::Clear() {
+  operation_ = UNINITIALIZED;
+  target_path_.clear();
+  state_key_.clear();
+  state_type_ = BrowserDistribution::CHROME_BROWSER;
+  products_.clear();
+  multi_package_distribution_ = NULL;
+  critical_update_version_ = base::Version();
+  level_ = UNKNOWN_LEVEL;
+  package_type_ = UNKNOWN_PACKAGE_TYPE;
+  root_key_ = NULL;
+  msi_ = false;
+  verbose_logging_ = false;
+  ensure_google_update_present_ = false;
+}
+
+bool InstallerState::AnyExistsAndIsInUse(
+    const InstallationState& machine_state,
+    uint32 file_bits) const {
+  static const wchar_t* const kBinaryFileNames[] = {
+    kChromeDll,
+    kChromeFrameDll,
+    kChromeFrameHelperDll,
+    kChromeFrameHelperExe,
+  };
+  DCHECK_NE(file_bits, 0U);
+  DCHECK_LT(file_bits, 1U << NUM_BINARIES);
+  COMPILE_ASSERT(CHROME_DLL == 1, no_youre_out_of_order);
+  COMPILE_ASSERT(CHROME_FRAME_DLL == 2, no_youre_out_of_order);
+  COMPILE_ASSERT(CHROME_FRAME_HELPER_DLL == 4, no_youre_out_of_order);
+  COMPILE_ASSERT(CHROME_FRAME_HELPER_EXE == 8, no_youre_out_of_order);
+
+  // Check only for the current version (i.e., the version we are upgrading
+  // _from_). Later versions from pending in-use updates need not be checked
+  // since the current version is guaranteed to be in use if any such are.
+  bool in_use = false;
+  scoped_ptr<Version> current_version(GetCurrentVersion(machine_state));
+  if (!current_version)
+    return false;
+  base::FilePath directory(
+      target_path().AppendASCII(current_version->GetString()));
+  for (int i = 0; i < NUM_BINARIES; ++i) {
+    if (!(file_bits & (1U << i)))
+      continue;
+    base::FilePath file(directory.Append(kBinaryFileNames[i]));
+    if (base::PathExists(file) && IsFileInUse(file))
+      return true;
+  }
+  return false;
 }
 
 void InstallerState::GetExistingExeVersions(
@@ -779,8 +803,6 @@ void InstallerState::WriteInstallerResult(
     InstallStatus status,
     int string_resource_id,
     const std::wstring* const launch_cmd) const {
-  DWORD installer_result =
-      (InstallUtil::GetInstallReturnCode(status) == 0) ? 0 : 1;
   // Use a no-rollback list since this is a best-effort deal.
   scoped_ptr<WorkItemList> install_list(
       WorkItem::CreateNoRollbackWorkItemList());

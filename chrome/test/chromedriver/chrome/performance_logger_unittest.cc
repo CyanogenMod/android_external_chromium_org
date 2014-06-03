@@ -68,18 +68,21 @@ class FakeDevToolsClient : public StubDevToolsClient {
 struct LogEntry {
   const base::Time timestamp;
   const Log::Level level;
+  const std::string source;
   const std::string message;
 
   LogEntry(const base::Time& timestamp,
            Log::Level level,
+           const std::string& source,
            const std::string& message)
-      : timestamp(timestamp), level(level), message(message) {}
+      : timestamp(timestamp), level(level), source(source), message(message) {}
 };
 
 class FakeLog : public Log {
  public:
   virtual void AddEntryTimestamped(const base::Time& timestamp,
                         Level level,
+                        const std::string& source,
                         const std::string& message) OVERRIDE;
 
   const ScopedVector<LogEntry>& GetEntries() {
@@ -90,9 +93,11 @@ class FakeLog : public Log {
   ScopedVector<LogEntry> entries_;
 };
 
-void FakeLog::AddEntryTimestamped(
-    const base::Time& timestamp, Level level, const std::string& message) {
-  entries_.push_back(new LogEntry(timestamp, level, message));
+void FakeLog::AddEntryTimestamped(const base::Time& timestamp,
+                                  Level level,
+                                  const std::string& source,
+                                  const std::string& message) {
+  entries_.push_back(new LogEntry(timestamp, level, source, message));
 }
 
 scoped_ptr<DictionaryValue> ParseDictionary(const std::string& json) {
@@ -117,7 +122,7 @@ scoped_ptr<DictionaryValue> ParseDictionary(const std::string& json) {
 void ValidateLogEntry(const LogEntry *entry,
                       const std::string& expected_webview,
                       const std::string& expected_method) {
-  EXPECT_EQ(Log::kLog, entry->level);
+  EXPECT_EQ(Log::kInfo, entry->level);
   EXPECT_LT(0, entry->timestamp.ToTimeT());
 
   scoped_ptr<base::DictionaryValue> message(ParseDictionary(entry->message));

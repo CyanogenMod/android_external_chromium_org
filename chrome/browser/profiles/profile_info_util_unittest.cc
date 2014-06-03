@@ -8,9 +8,30 @@
 #include "grit/theme_resources.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/gfx/canvas.h"
+#include "ui/gfx/image/image_skia.h"
+#include "ui/gfx/image/image_skia_rep.h"
 #include "ui/gfx/image/image_unittest_util.h"
 
 namespace {
+
+// Helper function to check that the image is sized properly
+// and supports multiple pixel densities.
+void VerifyScaling(gfx::Image& image, gfx::Size& size) {
+  gfx::Size canvas_size(100, 100);
+  gfx::Canvas canvas(canvas_size, 1.0f, false);
+  gfx::Canvas canvas2(canvas_size, 2.0f, false);
+
+  ASSERT_FALSE(gfx::test::IsEmpty(image));
+  EXPECT_EQ(image.Size(), size);
+
+  gfx::ImageSkia image_skia = *image.ToImageSkia();
+  canvas.DrawImageInt(image_skia, 15, 10);
+  EXPECT_TRUE(image.ToImageSkia()->HasRepresentation(1.0f));
+
+  canvas2.DrawImageInt(image_skia, 15, 10);
+  EXPECT_TRUE(image.ToImageSkia()->HasRepresentation(2.0f));
+}
 
 TEST(ProfileInfoUtilTest, SizedMenuIcon) {
   // Test that an avatar icon isn't changed.
@@ -18,15 +39,19 @@ TEST(ProfileInfoUtilTest, SizedMenuIcon) {
       ResourceBundle::GetSharedInstance().GetImageNamed(IDR_PROFILE_AVATAR_0));
   gfx::Image result =
       profiles::GetSizedAvatarIconWithBorder(profile_image, false, 50, 50);
+
   EXPECT_FALSE(gfx::test::IsEmpty(result));
   EXPECT_TRUE(gfx::test::IsEqual(profile_image, result));
 
-  // Test that a GAIA picture is changed.
-  gfx::Image gaia_picture(gfx::test::CreateImage());
+  // Test that a rectangular picture (e.g., GAIA image) is changed.
+  gfx::Image rect_picture(gfx::test::CreateImage());
+
+  gfx::Size size(30, 20);
   gfx::Image result2 =
-      profiles::GetSizedAvatarIconWithBorder(gaia_picture, true, 50, 50);
-  EXPECT_FALSE(gfx::test::IsEmpty(result2));
-  EXPECT_FALSE(gfx::test::IsEqual(gaia_picture, result2));
+      profiles::GetSizedAvatarIconWithBorder(
+          rect_picture, true, size.width(), size.height());
+
+  VerifyScaling(result2, size);
 }
 
 TEST(ProfileInfoUtilTest, MenuIcon) {
@@ -37,11 +62,12 @@ TEST(ProfileInfoUtilTest, MenuIcon) {
   EXPECT_FALSE(gfx::test::IsEmpty(result));
   EXPECT_TRUE(gfx::test::IsEqual(profile_image, result));
 
-  // Test that a GAIA picture is changed.
-  gfx::Image gaia_picture(gfx::test::CreateImage());
-  gfx::Image result2 = profiles::GetAvatarIconForMenu(gaia_picture, true);
-  EXPECT_FALSE(gfx::test::IsEmpty(result2));
-  EXPECT_FALSE(gfx::test::IsEqual(gaia_picture, result2));
+  // Test that a rectangular picture is changed.
+  gfx::Image rect_picture(gfx::test::CreateImage());
+  gfx::Size size(profiles::kAvatarIconWidth, profiles::kAvatarIconHeight);
+  gfx::Image result2 = profiles::GetAvatarIconForMenu(rect_picture, true);
+
+  VerifyScaling(result2, size);
 }
 
 TEST(ProfileInfoUtilTest, WebUIIcon) {
@@ -52,28 +78,34 @@ TEST(ProfileInfoUtilTest, WebUIIcon) {
   EXPECT_FALSE(gfx::test::IsEmpty(result));
   EXPECT_TRUE(gfx::test::IsEqual(profile_image, result));
 
-  // Test that a GAIA picture is changed.
-  gfx::Image gaia_picture(gfx::test::CreateImage());
-  gfx::Image result2 = profiles::GetAvatarIconForWebUI(gaia_picture, true);
-  EXPECT_FALSE(gfx::test::IsEmpty(result2));
-  EXPECT_FALSE(gfx::test::IsEqual(gaia_picture, result2));
+  // Test that a rectangular picture is changed.
+  gfx::Image rect_picture(gfx::test::CreateImage());
+  gfx::Size size(profiles::kAvatarIconWidth, profiles::kAvatarIconHeight);
+  gfx::Image result2 = profiles::GetAvatarIconForWebUI(rect_picture, true);
+
+  VerifyScaling(result2, size);
 }
 
 TEST(ProfileInfoUtilTest, TitleBarIcon) {
+  int width = 100;
+  int height = 40;
+
   // Test that an avatar icon isn't changed.
   const gfx::Image& profile_image(
       ResourceBundle::GetSharedInstance().GetImageNamed(IDR_PROFILE_AVATAR_0));
   gfx::Image result = profiles::GetAvatarIconForTitleBar(
-      profile_image, false, 100, 40);
+      profile_image, false, width, height);
   EXPECT_FALSE(gfx::test::IsEmpty(result));
   EXPECT_TRUE(gfx::test::IsEqual(profile_image, result));
 
-  // Test that a GAIA picture is changed.
-  gfx::Image gaia_picture(gfx::test::CreateImage());
+  // Test that a rectangular picture is changed.
+  gfx::Image rect_picture(gfx::test::CreateImage());
+
+  gfx::Size size(width, height);
   gfx::Image result2 = profiles::GetAvatarIconForTitleBar(
-      gaia_picture, true, 100, 40);
-  EXPECT_FALSE(gfx::test::IsEmpty(result2));
-  EXPECT_FALSE(gfx::test::IsEqual(gaia_picture, result2));
+      rect_picture, true, width, height);
+
+  VerifyScaling(result2, size);
 }
 
 }  // namespace

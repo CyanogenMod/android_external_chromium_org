@@ -3,8 +3,6 @@
 // found in the LICENSE file.
 
 #include "chrome/browser/extensions/extension_browsertest.h"
-#include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_toolbar_model.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
@@ -28,9 +26,7 @@ class ExtensionToolbarModelTest : public ExtensionBrowserTest,
   }
 
   virtual void SetUpOnMainThread() OVERRIDE {
-    ExtensionService* service = extensions::ExtensionSystem::Get(
-        browser()->profile())->extension_service();
-    model_ = service->toolbar_model();
+    model_ = ExtensionToolbarModel::Get(browser()->profile());
     model_->AddObserver(this);
   }
 
@@ -107,7 +103,13 @@ IN_PROC_BROWSER_TEST_F(ExtensionToolbarModelTest, Basic) {
   EXPECT_EQ(NULL, ExtensionAt(0));
 }
 
-IN_PROC_BROWSER_TEST_F(ExtensionToolbarModelTest, ReorderAndReinsert) {
+#if defined(OS_MACOSX)
+// Flaky on Mac 10.8 Blink canary bots: http://crbug.com/166580
+#define MAYBE_ReorderAndReinsert DISABLED_ReorderAndReinsert
+#else
+#define MAYBE_ReorderAndReinsert ReorderAndReinsert
+#endif
+IN_PROC_BROWSER_TEST_F(ExtensionToolbarModelTest, MAYBE_ReorderAndReinsert) {
   // Load an extension with a browser action.
   base::FilePath extension_a_path(test_data_dir_.AppendASCII("api_test")
                                           .AppendASCII("browser_action")

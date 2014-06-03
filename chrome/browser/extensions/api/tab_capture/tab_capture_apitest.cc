@@ -17,17 +17,16 @@
 #include "chrome/browser/ui/fullscreen/fullscreen_controller.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
-#include "chrome/common/extensions/feature_switch.h"
 #include "chrome/common/extensions/features/base_feature_provider.h"
 #include "chrome/common/extensions/features/complex_feature.h"
-#include "chrome/common/extensions/features/feature.h"
 #include "chrome/common/extensions/features/simple_feature.h"
 #include "chrome/test/base/test_switches.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/common/content_switches.h"
-
-namespace chrome {
+#include "extensions/common/feature_switch.h"
+#include "extensions/common/features/feature.h"
+#include "ui/compositor/compositor_switches.h"
 
 namespace {
 
@@ -42,6 +41,13 @@ class TabCaptureApiTest : public ExtensionApiTest {
     // crbug.com/269087
     UseRealGLBindings();
 
+    // These test should be using OSMesa on CrOS, which would make this
+    // unneeded.
+    // crbug.com/313128
+#if !defined(OS_CHROMEOS)
+    UseRealGLContexts();
+#endif
+
     ExtensionApiTest::SetUp();
   }
 
@@ -53,13 +59,7 @@ class TabCaptureApiTest : public ExtensionApiTest {
 
 }  // namespace
 
-// http://crbug.com/261493 and http://crbug.com/268644
-#if defined(OS_LINUX) || defined(OS_CHROMEOS) || defined(USE_AURA)
-#define MAYBE_ApiTests DISABLED_ApiTests
-#else
-#define MAYBE_ApiTests ApiTests
-#endif
-IN_PROC_BROWSER_TEST_F(TabCaptureApiTest, MAYBE_ApiTests) {
+IN_PROC_BROWSER_TEST_F(TabCaptureApiTest, ApiTests) {
 #if defined(OS_WIN) && defined(USE_ASH)
   // Disable this test in Metro+Ash for now (http://crbug.com/262796).
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kAshBrowserTests))
@@ -78,13 +78,7 @@ IN_PROC_BROWSER_TEST_F(TabCaptureApiTest, MAYBE_ApiTests) {
                                   "api_tests.html")) << message_;
 }
 
-// http://crbug.com/268644
-#if defined(USE_AURA)
-#define MAYBE_ApiTestsAudio DISABLED_ApiTestsAudio
-#else
-#define MAYBE_ApiTestsAudio ApiTestsAudio
-#endif
-IN_PROC_BROWSER_TEST_F(TabCaptureApiTest, MAYBE_ApiTestsAudio) {
+IN_PROC_BROWSER_TEST_F(TabCaptureApiTest, ApiTestsAudio) {
 #if defined(OS_WIN)
   // TODO(justinlin): Disabled for WinXP due to timeout issues.
   if (base::win::GetVersion() < base::win::VERSION_VISTA) {
@@ -97,8 +91,9 @@ IN_PROC_BROWSER_TEST_F(TabCaptureApiTest, MAYBE_ApiTestsAudio) {
                                   "api_tests_audio.html")) << message_;
 }
 
-// http://crbug.com/177163 and http://crbug.com/268644
-#if defined(OS_WIN) && (!defined(NDEBUG) || defined(USE_AURA))
+// http://crbug.com/177163
+// http://crbug.com/326328
+#if (defined(OS_WIN) && !defined(NDEBUG)) || defined(OS_MACOSX)
 #define MAYBE_EndToEnd DISABLED_EndToEnd
 #else
 #define MAYBE_EndToEnd EndToEnd
@@ -109,12 +104,6 @@ IN_PROC_BROWSER_TEST_F(TabCaptureApiTest, MAYBE_EndToEnd) {
   if (base::win::GetVersion() < base::win::VERSION_VISTA) {
     return;
   }
-#endif
-#if defined(OS_MACOSX)
-  // TODO(miu): Disabled for Mac OS X 10.6 due to timeout issues.
-  // http://crbug.com/174640
-  if (base::mac::IsOSSnowLeopard())
-    return;
 #endif
 
   AddExtensionToCommandLineWhitelist();
@@ -154,7 +143,7 @@ IN_PROC_BROWSER_TEST_F(TabCaptureApiTest, MAYBE_GetUserMediaTest) {
 }
 
 // http://crbug.com/177163
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(NDEBUG)
 #define MAYBE_ActiveTabPermission DISABLED_ActiveTabPermission
 #else
 #define MAYBE_ActiveTabPermission ActiveTabPermission
@@ -256,4 +245,61 @@ IN_PROC_BROWSER_TEST_F(TabCaptureApiTest, MAYBE_FullscreenEvents) {
   EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
 }
 
-}  // namespace chrome
+// Times out on Win dbg bots: http://crbug.com/177163
+// #if defined(OS_WIN) && !defined(NDEBUG)
+// Times out on all Win bots: http://crbug.com/294431
+#if defined(OS_WIN)
+#define MAYBE_GrantForChromePages DISABLED_GrantForChromePages
+#else
+#define MAYBE_GrantForChromePages GrantForChromePages
+#endif
+// Make sure tabCapture API can be granted for Chrome:// pages.
+IN_PROC_BROWSER_TEST_F(TabCaptureApiTest, MAYBE_GrantForChromePages) {
+  ExtensionTestMessageListener before_open_tab("ready1", true);
+  ASSERT_TRUE(RunExtensionSubtest("tab_capture/experimental",
+                                  "active_tab_chrome_pages.html")) << message_;
+  EXPECT_TRUE(before_open_tab.WaitUntilSatisfied());
+
+  // Open a tab on a chrome:// page and make sure we can capture.
+  content::OpenURLParams params(GURL("chrome://version"), content::Referrer(),
+                                NEW_FOREGROUND_TAB,
+                                content::PAGE_TRANSITION_LINK, false);
+  content::WebContents* web_contents = browser()->OpenURL(params);
+  ExtensionService* extension_service =
+      Profile::FromBrowserContext(web_contents->GetBrowserContext())
+          ->GetExtensionService();
+  extensions::TabHelper::FromWebContents(web_contents)
+      ->active_tab_permission_granter()->GrantIfRequested(
+            extension_service->GetExtensionById(kExtensionId, false));
+  before_open_tab.Reply("");
+
+  ResultCatcher catcher;
+  catcher.RestrictToProfile(browser()->profile());
+  EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
+}
+
+#if (defined(OS_WIN) && !defined(NDEBUG)) || defined(OS_MACOSX)
+// http://crbug.com/326319
+#define MAYBE_CaptureInSplitIncognitoMode DISABLED_CaptureInSplitIncognitoMode
+#else
+#define MAYBE_CaptureInSplitIncognitoMode CaptureInSplitIncognitoMode
+#endif
+// Test that a tab can be captured in split incognito mode.
+IN_PROC_BROWSER_TEST_F(TabCaptureApiTest, MAYBE_CaptureInSplitIncognitoMode) {
+  AddExtensionToCommandLineWhitelist();
+  ASSERT_TRUE(RunExtensionSubtest("tab_capture/experimental",
+                                  "incognito.html",
+                                  kFlagEnableIncognito | kFlagUseIncognito))
+      << message_;
+}
+
+#if defined(OS_WIN) && !defined(NDEBUG)
+#define MAYBE_Constraints DISABLED_Constraints
+#else
+#define MAYBE_Constraints Constraints
+#endif
+IN_PROC_BROWSER_TEST_F(TabCaptureApiTest, MAYBE_Constraints) {
+  AddExtensionToCommandLineWhitelist();
+  ASSERT_TRUE(RunExtensionSubtest("tab_capture/experimental",
+                                  "constraints.html")) << message_;
+}

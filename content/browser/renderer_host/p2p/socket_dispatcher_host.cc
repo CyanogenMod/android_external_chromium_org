@@ -22,6 +22,8 @@ using content::BrowserThread;
 
 namespace content {
 
+const size_t kMaximumPacketSize = 32768;
+
 class P2PSocketDispatcherHost::DnsRequest {
  public:
   typedef base::Callback<void(const net::IPAddressNumber&)> DoneCallback;
@@ -51,7 +53,9 @@ class P2PSocketDispatcherHost::DnsRequest {
 
     net::HostResolver::RequestInfo info(net::HostPortPair(host_name_, 0));
     int result = resolver_.Resolve(
-        info, &addresses_,
+        info,
+        net::DEFAULT_PRIORITY,
+        &addresses_,
         base::Bind(&P2PSocketDispatcherHost::DnsRequest::OnDone,
                    base::Unretained(this)),
         net::BoundNetLog());
@@ -92,8 +96,6 @@ P2PSocketDispatcherHost::P2PSocketDispatcherHost(
 }
 
 void P2PSocketDispatcherHost::OnChannelClosing() {
-  BrowserMessageFilter::OnChannelClosing();
-
   // Since the IPC channel is gone, close pending connections.
   STLDeleteContainerPairSecondPointers(sockets_.begin(), sockets_.end());
   sockets_.clear();
@@ -190,8 +192,8 @@ void P2PSocketDispatcherHost::OnCreateSocket(
     return;
   }
 
-  scoped_ptr<P2PSocketHost> socket(
-      P2PSocketHost::Create(this, socket_id, type, url_context_.get()));
+  scoped_ptr<P2PSocketHost> socket(P2PSocketHost::Create(
+      this, socket_id, type, url_context_.get(), &throttler_));
 
   if (!socket) {
     Send(new P2PMsg_OnError(socket_id));
@@ -221,13 +223,25 @@ void P2PSocketDispatcherHost::OnAcceptIncomingTcpConnection(
 
 void P2PSocketDispatcherHost::OnSend(int socket_id,
                                      const net::IPEndPoint& socket_address,
-                                     const std::vector<char>& data) {
+                                     const std::vector<char>& data,
+                                     net::DiffServCodePoint dscp,
+                                     uint64 packet_id) {
   P2PSocketHost* socket = LookupSocket(socket_id);
   if (!socket) {
     LOG(ERROR) << "Received P2PHostMsg_Send for invalid socket_id.";
     return;
   }
-  socket->Send(socket_address, data);
+
+  if (data.size() > kMaximumPacketSize) {
+    LOG(ERROR) << "Received P2PHostMsg_Send with a packet that is too big: "
+               << data.size();
+    Send(new P2PMsg_OnError(socket_id));
+    delete socket;
+    sockets_.erase(socket_id);
+    return;
+  }
+
+  socket->Send(socket_address, data, dscp, packet_id);
 }
 
 void P2PSocketDispatcherHost::OnDestroySocket(int socket_id) {

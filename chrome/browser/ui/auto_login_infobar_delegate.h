@@ -12,7 +12,7 @@
 #include "content/public/browser/notification_registrar.h"
 
 class PrefService;
-class TokenService;
+class Profile;
 
 namespace content {
 class NavigationController;
@@ -32,11 +32,13 @@ class AutoLoginInfoBarDelegate : public ConfirmInfoBarDelegate,
     std::string username;
   };
 
-  // Creates an autologin infobar delegate and adds it to |infobar_service|.
-  static void Create(InfoBarService* infobar_service, const Params& params);
+  // Creates an autologin infobar and delegate and adds the infobar to the
+  // infobar service for |web_contents|.  Returns whether the infobar was
+  // successfully added.
+  static bool Create(content::WebContents* web_contents, const Params& params);
 
  protected:
-  AutoLoginInfoBarDelegate(InfoBarService* owner, const Params& params);
+  AutoLoginInfoBarDelegate(const Params& params, Profile* profile);
   virtual ~AutoLoginInfoBarDelegate();
 
  private:
@@ -56,8 +58,8 @@ class AutoLoginInfoBarDelegate : public ConfirmInfoBarDelegate,
   virtual int GetIconID() const OVERRIDE;
   virtual Type GetInfoBarType() const OVERRIDE;
   virtual AutoLoginInfoBarDelegate* AsAutoLoginInfoBarDelegate() OVERRIDE;
-  virtual string16 GetMessageText() const OVERRIDE;
-  virtual string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
+  virtual base::string16 GetMessageText() const OVERRIDE;
+  virtual base::string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
   virtual bool Accept() OVERRIDE;
   virtual bool Cancel() OVERRIDE;
 

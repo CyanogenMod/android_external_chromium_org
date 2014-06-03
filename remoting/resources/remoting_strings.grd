@@ -530,8 +530,11 @@
       <message desc="Label for general-purpose OK buttons." name="IDR_OK">
         OK
       </message>
-      <message desc="Modified version of the host name shown for hosts that are not currently accessible." name="IDR_OFFLINE">
+      <message desc="Modified version of the host name shown for hosts that are not currently accessible, and for which no last-online status is available." name="IDR_OFFLINE">
         <ph name="HOSTNAME">$1<ex>My Linux desktop</ex></ph> (offline)
+      </message>
+      <message desc="Modified version of the host name shown for hosts that are not currently accessible." name="IDR_LAST_ONLINE">
+        <ph name="HOSTNAME">$1<ex>My Linux desktop</ex></ph> (last online <ph name="DATE">$2<ex>1/6/13</ex></ph>)
       </message>
       <message desc="Modified version of the host name shown for hosts that are running an out-of-date version of the Me2Me host software." name="IDR_UPDATE_REQUIRED">
         <ph name="HOSTNAME">$1<ex>My Linux desktop</ex></ph> (out-of-date)
@@ -551,7 +554,7 @@
       <message desc="Error message displayed to the user if they enter different PINs in the boxes marked 'PIN' and 'retype PIN'." name="IDR_PINS_NOT_EQUAL">
         Please enter the same PIN in both boxes.
       </message>
-      <message desc="Web-app description. Displayed in Chrome's extensions page." name="IDR_PRODUCT_DESCRIPTION">
+      <message desc="Web-app description. Displayed in Chrome's extensions page. KEEP THIS TO 132 CHARACTERS OR LESS, as this is a hard limit imposed by Chrome Web Store." name="IDR_PRODUCT_DESCRIPTION">
         Access other computers or allow another user to access your computer securely over the Internet.
       </message>
       <message desc="Label for button to reconnect to the previous Me2Me host. This button appears on the 'session-finished' page." name="IDR_RECONNECT">
@@ -595,6 +598,9 @@
       </message>
       <message desc="The tool-tip shown when the user hovers over the 'delete host' button. Clicking this button removes the host from the list and disables connections to it." name="IDR_TOOLTIP_DELETE">
         Disable remote connections to this computer
+      </message>
+      <message desc="The tool-tip shown when the user hovers over the 'refresh host list' button. Clicking this button reloads the host list without reloading the app." name="IDR_TOOLTIP_REFRESH">
+        Refresh the list of hosts
       </message>
       <message desc="The tool-tip shown when the user hovers over the 'rename host' button. Clicking this button allows the host name to be edited in-place." name="IDR_TOOLTIP_RENAME">
         Edit computer name
@@ -673,6 +679,12 @@
       </message>
       <message desc="Text shown while a background operation is in progress." name="IDR_WORKING">
         Working…
+      </message>
+      <message desc="Menu option to open a new connection." name="IDR_NEW_CONNECTION">
+        New connection
+      </message>
+      <message desc="Menu option to open a new window." name="IDR_NEW_WINDOW">
+        New window…
       </message>
     </messages>
   </release>

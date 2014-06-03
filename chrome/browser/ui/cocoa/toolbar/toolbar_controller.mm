@@ -46,7 +46,6 @@
 #include "chrome/browser/ui/global_error/global_error_service_factory.h"
 #include "chrome/browser/ui/omnibox/omnibox_view.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/browser/ui/toolbar/toolbar_model.h"
 #include "chrome/browser/ui/toolbar/wrench_menu_model.h"
 #include "chrome/browser/upgrade_detector.h"
 #include "chrome/common/net/url_fixer_upper.h"
@@ -148,16 +147,14 @@ class NotificationBridge
 
 @synthesize browser = browser_;
 
-- (id)initWithModel:(ToolbarModel*)model
-           commands:(CommandUpdater*)commands
-            profile:(Profile*)profile
-            browser:(Browser*)browser
-     resizeDelegate:(id<ViewResizer>)resizeDelegate
-       nibFileNamed:(NSString*)nibName {
-  DCHECK(model && commands && profile && [nibName length]);
+- (id)initWithCommands:(CommandUpdater*)commands
+               profile:(Profile*)profile
+               browser:(Browser*)browser
+        resizeDelegate:(id<ViewResizer>)resizeDelegate
+          nibFileNamed:(NSString*)nibName {
+  DCHECK(commands && profile && [nibName length]);
   if ((self = [super initWithNibName:nibName
                               bundle:base::mac::FrameworkBundle()])) {
-    toolbarModel_ = model;
     commands_ = commands;
     profile_ = profile;
     browser_ = browser;
@@ -176,17 +173,15 @@ class NotificationBridge
   return self;
 }
 
-- (id)initWithModel:(ToolbarModel*)model
-           commands:(CommandUpdater*)commands
-            profile:(Profile*)profile
-            browser:(Browser*)browser
-     resizeDelegate:(id<ViewResizer>)resizeDelegate {
-  if ((self = [self initWithModel:model
-                         commands:commands
-                          profile:profile
-                          browser:browser
-                   resizeDelegate:resizeDelegate
-                     nibFileNamed:@"Toolbar"])) {
+- (id)initWithCommands:(CommandUpdater*)commands
+               profile:(Profile*)profile
+               browser:(Browser*)browser
+        resizeDelegate:(id<ViewResizer>)resizeDelegate {
+  if ((self = [self initWithCommands:commands
+                             profile:profile
+                             browser:browser
+                      resizeDelegate:resizeDelegate
+                        nibFileNamed:@"Toolbar"])) {
   }
   return self;
 }
@@ -270,8 +265,7 @@ class NotificationBridge
 
   [self initCommandStatus:commands_];
 
-  locationBarView_.reset(new LocationBarViewMac(locationBar_,
-                                                commands_, toolbarModel_,
+  locationBarView_.reset(new LocationBarViewMac(locationBar_, commands_,
                                                 profile_, browser_));
   [locationBar_ setFont:[NSFont systemFontOfSize:[NSFont systemFontSize]]];
   // Register pref observers for the optional home and page/options buttons
@@ -435,9 +429,8 @@ class NotificationBridge
   [homeButton_ setEnabled:commands->IsCommandEnabled(IDC_HOME) ? YES : NO];
 }
 
-- (void)updateToolbarWithContents:(WebContents*)tab
-               shouldRestoreState:(BOOL)shouldRestore {
-  locationBarView_->Update(tab, shouldRestore ? true : false);
+- (void)updateToolbarWithContents:(WebContents*)tab {
+  locationBarView_->Update(tab);
 
   [locationBar_ updateMouseTracking];
 
@@ -781,8 +774,8 @@ class NotificationBridge
   GURL url(URLFixerUpper::FixupURL(
       base::SysNSStringToUTF8([urls objectAtIndex:0]), std::string()));
 
-  if (url.SchemeIs(chrome::kJavaScriptScheme)) {
-    browser_->window()->GetLocationBar()->GetLocationEntry()->SetUserText(
+  if (url.SchemeIs(content::kJavaScriptScheme)) {
+    browser_->window()->GetLocationBar()->GetOmniboxView()->SetUserText(
           OmniboxView::StripJavascriptSchemas(UTF8ToUTF16(url.spec())));
   }
   OpenURLParams params(

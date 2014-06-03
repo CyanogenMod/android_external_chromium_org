@@ -7,10 +7,7 @@ import unittest
 from caching_rietveld_patcher import (CachingRietveldPatcher,
                                       _VERSION_CACHE_MAXAGE)
 from datetime import datetime
-from file_system import FileNotFoundError
-from future import Future
 from object_store_creator import ObjectStoreCreator
-from patcher import Patcher
 from test_patcher import TestPatcher
 
 _TEST_PATCH_VERSION = '1'
@@ -30,11 +27,9 @@ class FakeDateTime(object):
 class CachingRietveldPatcherTest(unittest.TestCase):
   def setUp(self):
     self._datetime = FakeDateTime()
-    # CachingRietveldPatcher should always call Apply with binary=True.
     self._test_patcher = TestPatcher(_TEST_PATCH_VERSION,
                                      _TEST_PATCH_FILES,
-                                     _TEST_PATCH_DATA,
-                                     assert_binary=True)
+                                     _TEST_PATCH_DATA)
     self._patcher = CachingRietveldPatcher(
         self._test_patcher,
         ObjectStoreCreator(start_empty=False),
@@ -70,14 +65,6 @@ class CachingRietveldPatcherTest(unittest.TestCase):
     # Should read from cache even though it's reading another file.
     self._patcher.Apply(['modify.txt'], None).Get()
     self.assertEqual(count, self._test_patcher.apply_count)
-
-    # Make sure RietveldPatcher handles |binary| correctly.
-    self.assertTrue(isinstance(self._patcher.Apply(['add.txt'], None, True).
-        Get()['add.txt'], str),
-        'Expected result is binary. It was text.')
-    self.assertTrue(isinstance(self._patcher.Apply(['add.txt'], None).
-        Get()['add.txt'], unicode),
-        'Expected result is text. It was binary.')
 
 if __name__ == '__main__':
   unittest.main()

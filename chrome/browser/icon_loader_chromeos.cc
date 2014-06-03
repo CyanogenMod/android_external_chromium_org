@@ -68,11 +68,13 @@ const IdrBySize kImageIdrs = {
   IDR_FILE_MANAGER_IMG_FILETYPE_IMAGE,
   IDR_FILE_MANAGER_IMG_FILETYPE_IMAGE
 };
+#if defined(USE_PROPRIETARY_CODECS)
 const IdrBySize kPdfIdrs = {
   IDR_FILE_MANAGER_IMG_FILETYPE_PDF,
   IDR_FILE_MANAGER_IMG_FILETYPE_PDF,
   IDR_FILE_MANAGER_IMG_FILETYPE_PDF
 };
+#endif
 const IdrBySize kVideoIdrs = {
   IDR_FILE_MANAGER_IMG_FILETYPE_VIDEO,
   IDR_FILE_MANAGER_IMG_FILETYPE_LARGE_VIDEO,
@@ -91,7 +93,7 @@ IconMapper::IconMapper() {
   // 'video': /\.(mov|mp4|m4v|mpe?g4?|ogm|ogv|ogx|webm)$/i
 
   const ExtensionIconMap::value_type kExtensionIdrBySizeData[] = {
-#if defined(GOOGLE_CHROME_BUILD) || defined(USE_PROPRIETARY_CODECS)
+#if defined(USE_PROPRIETARY_CODECS)
     std::make_pair(".m4a", kAudioIdrs),
     std::make_pair(".mp3", kAudioIdrs),
     std::make_pair(".pdf", kPdfIdrs),

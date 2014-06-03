@@ -14,16 +14,16 @@
 #include "ui/aura/client/capture_client.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/test/event_generator.h"
-#include "ui/base/animation/linear_animation.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/clipboard/scoped_clipboard_writer.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
 #include "ui/base/dragdrop/drag_utils.h"
 #include "ui/base/dragdrop/os_exchange_data.h"
-#include "ui/base/events/event.h"
-#include "ui/base/events/event_utils.h"
-#include "ui/base/gestures/gesture_types.h"
 #include "ui/base/ui_base_switches.h"
+#include "ui/events/event.h"
+#include "ui/events/event_utils.h"
+#include "ui/events/gestures/gesture_types.h"
+#include "ui/gfx/animation/linear_animation.h"
 #include "ui/gfx/image/image_skia_rep.h"
 #include "ui/views/test/test_views_delegate.h"
 #include "ui/views/view.h"
@@ -77,7 +77,7 @@ class DragTestView : public views::View {
   virtual void WriteDragData(const gfx::Point& p,
                              OSExchangeData* data) OVERRIDE {
     data->SetString(UTF8ToUTF16("I am being dragged"));
-    gfx::ImageSkiaRep image_rep(gfx::Size(10, 20), ui::SCALE_FACTOR_100P);
+    gfx::ImageSkiaRep image_rep(gfx::Size(10, 20), 1.0f);
     gfx::ImageSkia image_skia(image_rep);
 
     drag_utils::SetDragImageOnDataObject(
@@ -130,12 +130,12 @@ class DragTestView : public views::View {
   DISALLOW_COPY_AND_ASSIGN(DragTestView);
 };
 
-class CompletableLinearAnimation : public ui::LinearAnimation {
+class CompletableLinearAnimation : public gfx::LinearAnimation {
  public:
   CompletableLinearAnimation(int duration,
                              int frame_rate,
-                             ui::AnimationDelegate* delegate)
-      : ui::LinearAnimation(duration, frame_rate, delegate),
+                             gfx::AnimationDelegate* delegate)
+      : gfx::LinearAnimation(duration, frame_rate, delegate),
         duration_(duration) {
   }
 
@@ -163,7 +163,7 @@ class TestDragDropController : public internal::DragDropController {
 
   virtual int StartDragAndDrop(
       const ui::OSExchangeData& data,
-      aura::RootWindow* root_window,
+      aura::Window* root_window,
       aura::Window* source_window,
       const gfx::Point& location,
       int operation,
@@ -191,10 +191,10 @@ class TestDragDropController : public internal::DragDropController {
     drag_canceled_ = true;
   }
 
-  virtual ui::LinearAnimation* CreateCancelAnimation(
+  virtual gfx::LinearAnimation* CreateCancelAnimation(
       int duration,
       int frame_rate,
-      ui::AnimationDelegate* delegate) OVERRIDE {
+      gfx::AnimationDelegate* delegate) OVERRIDE {
     return new CompletableLinearAnimation(duration, frame_rate, delegate);
   }
 
@@ -283,33 +283,8 @@ void DispatchGesture(ui::EventType gesture_type, gfx::Point location) {
       ui::EventTimeForNow(),
       ui::GestureEventDetails(gesture_type, 0, 0),
       1);
-  Shell::GetPrimaryRootWindow()->DispatchGestureEvent(&gesture_event);
-}
-
-bool IsGestureEventType(ui::EventType type) {
-  switch (type) {
-    case ui::ET_GESTURE_SCROLL_BEGIN:
-    case ui::ET_GESTURE_SCROLL_END:
-    case ui::ET_GESTURE_SCROLL_UPDATE:
-    case ui::ET_GESTURE_TAP:
-    case ui::ET_GESTURE_TAP_CANCEL:
-    case ui::ET_GESTURE_TAP_DOWN:
-    case ui::ET_GESTURE_BEGIN:
-    case ui::ET_GESTURE_END:
-    case ui::ET_GESTURE_TWO_FINGER_TAP:
-    case ui::ET_GESTURE_PINCH_BEGIN:
-    case ui::ET_GESTURE_PINCH_END:
-    case ui::ET_GESTURE_PINCH_UPDATE:
-    case ui::ET_GESTURE_LONG_PRESS:
-    case ui::ET_GESTURE_LONG_TAP:
-    case ui::ET_GESTURE_MULTIFINGER_SWIPE:
-    case ui::ET_SCROLL_FLING_CANCEL:
-    case ui::ET_SCROLL_FLING_START:
-      return true;
-    default:
-      break;
-  }
-  return false;
+  Shell::GetPrimaryRootWindow()->GetDispatcher()->DispatchGestureEvent(
+      &gesture_event);
 }
 
 }  // namespace
@@ -657,11 +632,11 @@ TEST_F(DragDropControllerTest, DragLeavesClipboardAloneTest) {
   std::string clip_str("I am on the clipboard");
   {
     // We first copy some text to the clipboard.
-    ui::ScopedClipboardWriter scw(cb, ui::Clipboard::BUFFER_STANDARD);
+    ui::ScopedClipboardWriter scw(cb, ui::CLIPBOARD_TYPE_COPY_PASTE);
     scw.WriteText(ASCIIToUTF16(clip_str));
   }
   EXPECT_TRUE(cb->IsFormatAvailable(ui::Clipboard::GetPlainTextFormatType(),
-      ui::Clipboard::BUFFER_STANDARD));
+      ui::CLIPBOARD_TYPE_COPY_PASTE));
 
   scoped_ptr<views::Widget> widget(CreateNewWidget());
   DragTestView* drag_view = new DragTestView;
@@ -682,8 +657,8 @@ TEST_F(DragDropControllerTest, DragLeavesClipboardAloneTest) {
   // Verify the clipboard contents haven't changed
   std::string result;
   EXPECT_TRUE(cb->IsFormatAvailable(ui::Clipboard::GetPlainTextFormatType(),
-      ui::Clipboard::BUFFER_STANDARD));
-  cb->ReadAsciiText(ui::Clipboard::BUFFER_STANDARD, &result);
+      ui::CLIPBOARD_TYPE_COPY_PASTE));
+  cb->ReadAsciiText(ui::CLIPBOARD_TYPE_COPY_PASTE, &result);
   EXPECT_EQ(clip_str, result);
   // Destory the clipboard here because ash doesn't delete it.
   // crbug.com/158150.
@@ -762,8 +737,8 @@ TEST_F(DragDropControllerTest, SyntheticEventsDuringDragDrop) {
     gfx::Point mouse_move_location = drag_view->bounds().CenterPoint();
     ui::MouseEvent mouse_move(ui::ET_MOUSE_MOVED, mouse_move_location,
                               mouse_move_location, 0);
-    Shell::GetPrimaryRootWindow()->AsRootWindowHostDelegate()->OnHostMouseEvent(
-        &mouse_move);
+    Shell::GetPrimaryRootWindow()->GetDispatcher()->AsRootWindowHostDelegate()->
+        OnHostMouseEvent(&mouse_move);
   }
 
   generator.ReleaseLeftButton();
@@ -1019,9 +994,9 @@ TEST_F(DragDropControllerTest, DragCancelAcrossDisplays) {
     return;
 
   UpdateDisplay("400x400,400x400");
-  Shell::RootWindowList root_windows =
+  aura::Window::Windows root_windows =
       Shell::GetInstance()->GetAllRootWindows();
-  for (Shell::RootWindowList::iterator iter = root_windows.begin();
+  for (aura::Window::Windows::iterator iter = root_windows.begin();
        iter != root_windows.end(); ++iter) {
     aura::client::SetDragDropClient(*iter, drag_drop_controller_.get());
   }
@@ -1098,7 +1073,7 @@ TEST_F(DragDropControllerTest, DragCancelAcrossDisplays) {
 
     EXPECT_EQ("405,405", observer.window_location_on_destroying().ToString());
   }
-  for (Shell::RootWindowList::iterator iter = root_windows.begin();
+  for (aura::Window::Windows::iterator iter = root_windows.begin();
        iter != root_windows.end(); ++iter) {
     aura::client::SetDragDropClient(*iter, NULL);
   }

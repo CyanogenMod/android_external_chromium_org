@@ -14,7 +14,7 @@ namespace extensions {
 
 InstallTracker::InstallTracker(Profile* profile,
                                extensions::ExtensionPrefs* prefs) {
-  ExtensionSorting* sorting = prefs->extension_sorting();
+  AppSorting* sorting = prefs->app_sorting();
 
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_INSTALLED,
       content::Source<Profile>(profile));
@@ -25,12 +25,12 @@ InstallTracker::InstallTracker(Profile* profile,
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNINSTALLED,
       content::Source<Profile>(profile));
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_LAUNCHER_REORDERED,
-      content::Source<ExtensionSorting>(sorting));
+      content::Source<AppSorting>(sorting));
   registrar_.Add(this, chrome::NOTIFICATION_APP_INSTALLED_TO_APPLIST,
       content::Source<Profile>(profile));
 
   pref_change_registrar_.Init(prefs->pref_service());
-  pref_change_registrar_.Add(extensions::ExtensionPrefs::kExtensionsPref,
+  pref_change_registrar_.Add(prefs::kExtensionsPref,
                              base::Bind(&InstallTracker::OnAppsReordered,
                                         base::Unretained(this)));
 }
@@ -47,17 +47,9 @@ void InstallTracker::RemoveObserver(InstallObserver* observer) {
 }
 
 void InstallTracker::OnBeginExtensionInstall(
-    const std::string& extension_id,
-    const std::string& extension_name,
-    const gfx::ImageSkia& installing_icon,
-    bool is_app,
-    bool is_platform_app) {
+    const InstallObserver::ExtensionInstallParams& params) {
   FOR_EACH_OBSERVER(InstallObserver, observers_,
-                    OnBeginExtensionInstall(extension_id,
-                                            extension_name,
-                                            installing_icon,
-                                            is_app,
-                                            is_platform_app));
+                    OnBeginExtensionInstall(params));
 }
 
 void InstallTracker::OnDownloadProgress(const std::string& extension_id,

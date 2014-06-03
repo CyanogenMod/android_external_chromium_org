@@ -19,6 +19,7 @@
 #include "chrome/browser/sync/glue/model_association_manager.h"
 
 namespace syncer {
+struct DataTypeConfigurationStats;
 class DataTypeDebugInfoListener;
 template <typename T> class WeakHandle;
 }
@@ -65,7 +66,6 @@ class DataTypeManagerImpl : public DataTypeManager,
       const syncer::DataTypeAssociationStats& association_stats) OVERRIDE;
   virtual void OnModelAssociationDone(
       const DataTypeManager::ConfigureResult& result) OVERRIDE;
-  virtual void OnTypesLoaded() OVERRIDE;
 
   // Used by unit tests. TODO(sync) : This would go away if we made
   // this class be able to do Dependency injection. crbug.com/129212.
@@ -137,8 +137,6 @@ class DataTypeManagerImpl : public DataTypeManager,
   // valid value only when |needs_reconfigure_| is set.
   syncer::ConfigureReason last_configure_reason_;
 
-  base::WeakPtrFactory<DataTypeManagerImpl> weak_ptr_factory_;
-
   // The last time Restart() was called.
   base::Time last_restart_time_;
 
@@ -182,6 +180,11 @@ class DataTypeManagerImpl : public DataTypeManager,
   // The encryption handler lets the DataTypeManager know the state of sync
   // datatype encryption.
   const browser_sync::DataTypeEncryptionHandler* encryption_handler_;
+
+  // Association and time stats of data type configuration.
+  std::vector<syncer::DataTypeConfigurationStats> configuration_stats_;
+
+  base::WeakPtrFactory<DataTypeManagerImpl> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(DataTypeManagerImpl);
 };

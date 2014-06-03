@@ -61,9 +61,12 @@ FileError CheckPreConditionForCreateFile(internal::ResourceMetadata* metadata,
     // Here, populate them.
     *parent_resource_id = parent.resource_id();
 
-    // If mime type is unsure, use octet stream by default.
-    if (!net::GetMimeTypeFromFile(file_path, mime_type))
+    // If mime_type is not set or "application/octet-stream", guess from the
+    // |file_path|. If it is still unsure, use octet-stream by default.
+    if ((mime_type->empty() || *mime_type == kMimeTypeOctetStream) &&
+        !net::GetMimeTypeFromFile(file_path, mime_type)) {
       *mime_type = kMimeTypeOctetStream;
+    }
   }
 
   return error;
@@ -82,28 +85,38 @@ FileError UpdateLocalStateForCreateFile(
   DCHECK(file_path);
 
   // Add the entry to the local resource metadata.
-  FileError error = FILE_ERROR_NOT_A_FILE;
   ResourceEntry entry;
-  if (ConvertToResourceEntry(*resource_entry, &entry))
-    error = metadata->AddEntry(entry);
+  std::string parent_resource_id;
+  if (!ConvertToResourceEntry(*resource_entry, &entry, &parent_resource_id))
+    return FILE_ERROR_NOT_A_FILE;
+
+  std::string parent_local_id;
+  FileError error = metadata->GetIdByResourceId(parent_resource_id,
+                                                &parent_local_id);
+  if (error != FILE_ERROR_OK)
+    return error;
+  entry.set_parent_local_id(parent_local_id);
+
+  std::string local_id;
+  error = metadata->AddEntry(entry, &local_id);
 
   // Depending on timing, the metadata may have inserted via change list
   // already. So, FILE_ERROR_EXISTS is not an error.
   if (error == FILE_ERROR_EXISTS)
-    error = FILE_ERROR_OK;
+    error = metadata->GetIdByResourceId(entry.resource_id(), &local_id);
 
   if (error == FILE_ERROR_OK) {
     // At this point, upload to the server is fully succeeded.
     // Populate the |file_path| which will be used to notify the observer.
-    *file_path = metadata->GetFilePath(entry.resource_id());
+    *file_path = metadata->GetFilePath(local_id);
 
     // Also store an empty file to the cache.
     // Here, failure is not a fatal error, so ignore the returned code.
     FileError cache_store_error = FILE_ERROR_FAILED;
     base::FilePath empty_file;
-    if (file_util::CreateTemporaryFile(&empty_file)) {
+    if (base::CreateTemporaryFile(&empty_file)) {
       cache_store_error =  cache->Store(
-          entry.resource_id(),
+          local_id,
           entry.file_specific_info().md5(),
           empty_file,
           internal::FileCache::FILE_OPERATION_MOVE);
@@ -111,7 +124,7 @@ FileError UpdateLocalStateForCreateFile(
     DLOG_IF(WARNING, cache_store_error != FILE_ERROR_OK)
         << "Failed to store a cache file: "
         << FileErrorToString(cache_store_error)
-        << ", resource_id: " << entry.resource_id();
+        << ", local_id: " << local_id;
   }
 
   return error;
@@ -140,12 +153,13 @@ CreateFileOperation::~CreateFileOperation() {
 
 void CreateFileOperation::CreateFile(const base::FilePath& file_path,
                                      bool is_exclusive,
+                                     const std::string& mime_type,
                                      const FileOperationCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
   std::string* parent_resource_id = new std::string;
-  std::string* mime_type = new std::string;
+  std::string* determined_mime_type = new std::string(mime_type);
   base::PostTaskAndReplyWithResult(
       blocking_task_runner_.get(),
       FROM_HERE,
@@ -154,13 +168,13 @@ void CreateFileOperation::CreateFile(const base::FilePath& file_path,
                  file_path,
                  is_exclusive,
                  parent_resource_id,
-                 mime_type),
+                 determined_mime_type),
       base::Bind(&CreateFileOperation::CreateFileAfterCheckPreCondition,
                  weak_ptr_factory_.GetWeakPtr(),
                  file_path,
                  callback,
                  base::Owned(parent_resource_id),
-                 base::Owned(mime_type)));
+                 base::Owned(determined_mime_type)));
 }
 
 void CreateFileOperation::CreateFileAfterCheckPreCondition(

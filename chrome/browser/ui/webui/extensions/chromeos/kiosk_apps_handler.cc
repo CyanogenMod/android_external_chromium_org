@@ -10,21 +10,22 @@
 #include <vector>
 
 #include "base/bind.h"
-#include "base/chromeos/chromeos_version.h"
 #include "base/command_line.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/sys_info.h"
 #include "base/values.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
-#include "chrome/browser/chromeos/settings/cros_settings_names.h"
-#include "chrome/common/extensions/extension.h"
+#include "chrome/common/extensions/extension_constants.h"
 #include "chromeos/chromeos_switches.h"
+#include "chromeos/settings/cros_settings_names.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_data_source.h"
+#include "extensions/common/extension.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/webui/web_ui_util.h"
+#include "ui/base/webui/web_ui_util.h"
 #include "url/gurl.h"
 
 namespace chromeos {
@@ -158,7 +159,7 @@ void KioskAppsHandler::GetLocalizedValues(content::WebUIDataSource* source) {
       "kioskDisableBailoutShortcutWarningBold",
       l10n_util::GetStringUTF16(
           IDS_OPTIONS_KIOSK_DISABLE_BAILOUT_SHORTCUT_WARNING_BOLD));
-  const string16 product_os_name =
+  const base::string16 product_os_name =
       l10n_util::GetStringUTF16(IDS_SHORT_PRODUCT_OS_NAME);
   source->AddString(
       "kioskDisableBailoutShortcutWarning",
@@ -172,6 +173,7 @@ void KioskAppsHandler::GetLocalizedValues(content::WebUIDataSource* source) {
       "kioskDisableBailoutShortcutCancel",
       l10n_util::GetStringUTF16(IDS_CONFIRM_MESSAGEBOX_NO_BUTTON_LABEL));
   source->AddString("done", l10n_util::GetStringUTF16(IDS_DONE));
+  source->AddString("add", l10n_util::GetStringUTF16(IDS_ADD));
 }
 
 void KioskAppsHandler::OnKioskAppDataChanged(const std::string& app_id) {
@@ -199,7 +201,7 @@ void KioskAppsHandler::OnGetConsumerKioskModeStatus(
   is_kiosk_enabled_ =
       ((status == KioskAppManager::CONSUMER_KIOSK_MODE_ENABLED) &&
           chromeos::UserManager::Get()->IsCurrentUserOwner()) ||
-      !base::chromeos::IsRunningOnChromeOS();
+      !base::SysInfo::IsRunningOnChromeOS();
 
   if (is_kiosk_enabled_) {
     base::FundamentalValue enabled(is_kiosk_enabled_);

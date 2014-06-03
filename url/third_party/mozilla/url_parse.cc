@@ -455,7 +455,9 @@ void DoParseFileSystemURL(const CHAR* spec, int spec_len, Parsed* parsed) {
 // Initializes a path URL which is merely a scheme followed by a path. Examples
 // include "about:foo" and "javascript:alert('bar');"
 template<typename CHAR>
-void DoParsePathURL(const CHAR* spec, int spec_len, Parsed* parsed) {
+void DoParsePathURL(const CHAR* spec, int spec_len,
+                    bool trim_path_end,
+                    Parsed* parsed) {
   // Get the non-path and non-scheme parts of the URL out of the way, we never
   // use them.
   parsed->username.reset();
@@ -467,32 +469,36 @@ void DoParsePathURL(const CHAR* spec, int spec_len, Parsed* parsed) {
   parsed->ref.reset();
 
   // Strip leading & trailing spaces and control characters.
-  int begin = 0;
-  TrimURL(spec, &begin, &spec_len);
+  int scheme_begin = 0;
+  TrimURL(spec, &scheme_begin, &spec_len, trim_path_end);
 
   // Handle empty specs or ones that contain only whitespace or control chars.
-  if (begin == spec_len) {
+  if (scheme_begin == spec_len) {
     parsed->scheme.reset();
     parsed->path.reset();
     return;
   }
 
+  int path_begin;
   // Extract the scheme, with the path being everything following. We also
   // handle the case where there is no scheme.
-  if (ExtractScheme(&spec[begin], spec_len - begin, &parsed->scheme)) {
+  if (ExtractScheme(&spec[scheme_begin], spec_len - scheme_begin,
+                    &parsed->scheme)) {
     // Offset the results since we gave ExtractScheme a substring.
-    parsed->scheme.begin += begin;
-    begin = parsed->scheme.end() + 1;
+    parsed->scheme.begin += scheme_begin;
+    path_begin = parsed->scheme.end() + 1;
   } else {
+    // No scheme case.
     parsed->scheme.reset();
+    path_begin = scheme_begin;
   }
 
-  if (begin == spec_len)
+  if (path_begin == spec_len)
     return;
-  DCHECK_LT(begin, spec_len);
+  DCHECK_LT(path_begin, spec_len);
 
   ParsePath(spec,
-            MakeRange(begin, spec_len),
+            MakeRange(path_begin, spec_len),
             &parsed->path,
             &parsed->query,
             &parsed->ref);
@@ -877,12 +883,18 @@ void ParseStandardURL(const base::char16* url, int url_len, Parsed* parsed) {
   DoParseStandardURL(url, url_len, parsed);
 }
 
-void ParsePathURL(const char* url, int url_len, Parsed* parsed) {
-  DoParsePathURL(url, url_len, parsed);
+void ParsePathURL(const char* url,
+                  int url_len,
+                  bool trim_path_end,
+                  Parsed* parsed) {
+  DoParsePathURL(url, url_len, trim_path_end, parsed);
 }
 
-void ParsePathURL(const base::char16* url, int url_len, Parsed* parsed) {
-  DoParsePathURL(url, url_len, parsed);
+void ParsePathURL(const base::char16* url,
+                  int url_len,
+                  bool trim_path_end,
+                  Parsed* parsed) {
+  DoParsePathURL(url, url_len, trim_path_end, parsed);
 }
 
 void ParseFileSystemURL(const char* url, int url_len, Parsed* parsed) {

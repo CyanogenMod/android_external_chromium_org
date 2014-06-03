@@ -8,14 +8,14 @@
 #include "base/command_line.h"
 #include "base/memory/ref_counted.h"
 #include "base/run_loop.h"
-#include "chrome/browser/chromeos/cros/cros_in_process_browser_test.h"
 #include "chrome/browser/chromeos/login/user.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/test/base/in_process_browser_test.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/cryptohome_client.h"
+#include "chromeos/dbus/fake_dbus_thread_manager.h"
 #include "chromeos/dbus/fake_session_manager_client.h"
-#include "chromeos/dbus/mock_dbus_thread_manager_without_gmock.h"
 #include "chromeos/dbus/session_manager_client.h"
 #include "content/public/test/test_utils.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -31,7 +31,7 @@ const char kUserId3[] = "user3@example.com";
 
 }  // namespace
 
-class CrashRestoreSimpleTest : public CrosInProcessBrowserTest {
+class CrashRestoreSimpleTest : public InProcessBrowserTest {
  protected:
   CrashRestoreSimpleTest() {}
 
@@ -47,11 +47,12 @@ class CrashRestoreSimpleTest : public CrosInProcessBrowserTest {
 
   virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
     // Redirect session_manager DBus calls to FakeSessionManagerClient.
-    MockDBusThreadManagerWithoutGMock* dbus_thread_manager =
-        new MockDBusThreadManagerWithoutGMock();
-    session_manager_client_ =
-        dbus_thread_manager->fake_session_manager_client();
-    DBusThreadManager::InitializeForTesting(dbus_thread_manager);
+    FakeDBusThreadManager* dbus_thread_manager = new FakeDBusThreadManager;
+    dbus_thread_manager->SetFakeClients();
+    session_manager_client_ = new FakeSessionManagerClient;
+    dbus_thread_manager->SetSessionManagerClient(
+        scoped_ptr<SessionManagerClient>(session_manager_client_));
+    DBusThreadManager::SetInstanceForTesting(dbus_thread_manager);
     session_manager_client_->StartSession(kUserId1);
   }
 

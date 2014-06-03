@@ -41,6 +41,10 @@ class WebUILoginDisplay : public LoginDisplay,
   virtual void OnLoginSuccess(const std::string& username) OVERRIDE;
   virtual void SetUIEnabled(bool is_enabled) OVERRIDE;
   virtual void SelectPod(int index) OVERRIDE;
+  virtual void ShowBannerMessage(const std::string& message) OVERRIDE;
+  virtual void ShowUserPodButton(const std::string& username,
+                                 const std::string& iconURL,
+                                 const base::Closure& click_callback) OVERRIDE;
   virtual void ShowError(int error_msg_id,
                          int login_attempts,
                          HelpAppLauncher::HelpTopic help_topic_id) OVERRIDE;
@@ -84,6 +88,7 @@ class WebUILoginDisplay : public LoginDisplay,
   virtual bool IsUserSigninCompleted() const OVERRIDE;
   virtual void SetDisplayEmail(const std::string& email) OVERRIDE;
   virtual void Signout() OVERRIDE;
+  virtual void LoginAsKioskApp(const std::string& app_id) OVERRIDE;
 
   // UserActivityDetector implementation:
   virtual void OnUserActivity(const ui::Event* event) OVERRIDE;

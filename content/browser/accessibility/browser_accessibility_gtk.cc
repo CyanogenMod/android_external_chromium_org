@@ -178,7 +178,8 @@ static const gchar* browser_accessibility_get_name(AtkObject* atk_object) {
   BrowserAccessibilityGtk* obj = ToBrowserAccessibilityGtk(atk_object);
   if (!obj)
     return NULL;
-  return obj->atk_acc_name().c_str();
+
+  return obj->GetStringAttribute(AccessibilityNodeData::ATTR_NAME).c_str();
 }
 
 static const gchar* browser_accessibility_get_description(
@@ -186,7 +187,9 @@ static const gchar* browser_accessibility_get_description(
   BrowserAccessibilityGtk* obj = ToBrowserAccessibilityGtk(atk_object);
   if (!obj)
     return NULL;
-  return obj->atk_acc_description().c_str();
+
+  return obj->GetStringAttribute(
+      AccessibilityNodeData::ATTR_DESCRIPTION).c_str();
 }
 
 static AtkObject* browser_accessibility_get_parent(AtkObject* atk_object) {
@@ -205,7 +208,8 @@ static gint browser_accessibility_get_n_children(AtkObject* atk_object) {
   BrowserAccessibilityGtk* obj = ToBrowserAccessibilityGtk(atk_object);
   if (!obj)
     return 0;
-  return obj->children().size();
+
+  return obj->PlatformChildCount();
 }
 
 static AtkObject* browser_accessibility_ref_child(
@@ -213,6 +217,10 @@ static AtkObject* browser_accessibility_ref_child(
   BrowserAccessibilityGtk* obj = ToBrowserAccessibilityGtk(atk_object);
   if (!obj)
     return NULL;
+
+  if (index < 0 || index >= static_cast<gint>(obj->PlatformChildCount()))
+    return NULL;
+
   AtkObject* result =
       obj->children()[index]->ToBrowserAccessibilityGtk()->GetAtkObject();
   g_object_ref(result);
@@ -247,11 +255,11 @@ static AtkStateSet* browser_accessibility_ref_state_set(AtkObject* atk_object) {
           ref_state_set(atk_object);
   int32 state = obj->state();
 
-  if (state & (1 << AccessibilityNodeData::STATE_FOCUSABLE))
+  if (state & (1 << blink::WebAXStateFocusable))
     atk_state_set_add_state(state_set, ATK_STATE_FOCUSABLE);
   if (obj->manager()->GetFocus(NULL) == obj)
     atk_state_set_add_state(state_set, ATK_STATE_FOCUSED);
-  if (!(state & (1 << AccessibilityNodeData::STATE_UNAVAILABLE)))
+  if (state & (1 << blink::WebAXStateEnabled))
     atk_state_set_add_state(state_set, ATK_STATE_ENABLED);
 
   return state_set;
@@ -356,9 +364,9 @@ static int GetInterfaceMaskFromObject(BrowserAccessibilityGtk* obj) {
   interface_mask |= 1 << ATK_COMPONENT_INTERFACE;
 
   int role = obj->role();
-  if (role == AccessibilityNodeData::ROLE_PROGRESS_INDICATOR ||
-      role == AccessibilityNodeData::ROLE_SCROLLBAR ||
-      role == AccessibilityNodeData::ROLE_SLIDER) {
+  if (role == blink::WebAXRoleProgressIndicator ||
+      role == blink::WebAXRoleScrollBar ||
+      role == blink::WebAXRoleSlider) {
     interface_mask |= 1 << ATK_VALUE_INTERFACE;
   }
 
@@ -467,48 +475,39 @@ bool BrowserAccessibilityGtk::IsNative() const {
 }
 
 void BrowserAccessibilityGtk::InitRoleAndState() {
-  atk_acc_name_ = UTF16ToUTF8(name());
-
-  string16 description;
-  GetStringAttribute(AccessibilityNodeData::ATTR_DESCRIPTION, &description);
-  atk_acc_description_ = UTF16ToUTF8(description);
-
-  switch(role_) {
-    case AccessibilityNodeData::ROLE_DOCUMENT:
-    case AccessibilityNodeData::ROLE_ROOT_WEB_AREA:
-    case AccessibilityNodeData::ROLE_WEB_AREA:
+  switch(role()) {
+    case blink::WebAXRoleDocument:
+    case blink::WebAXRoleRootWebArea:
+    case blink::WebAXRoleWebArea:
       atk_role_ = ATK_ROLE_DOCUMENT_WEB;
       break;
-    case AccessibilityNodeData::ROLE_GROUP:
-    case AccessibilityNodeData::ROLE_DIV:
+    case blink::WebAXRoleGroup:
+    case blink::WebAXRoleDiv:
       atk_role_ = ATK_ROLE_SECTION;
       break;
-    case AccessibilityNodeData::ROLE_BUTTON:
+    case blink::WebAXRoleButton:
       atk_role_ = ATK_ROLE_PUSH_BUTTON;
       break;
-    case AccessibilityNodeData::ROLE_CHECKBOX:
+    case blink::WebAXRoleCheckBox:
       atk_role_ = ATK_ROLE_CHECK_BOX;
       break;
-    case AccessibilityNodeData::ROLE_COMBO_BOX:
+    case blink::WebAXRoleComboBox:
       atk_role_ = ATK_ROLE_COMBO_BOX;
       break;
-    case AccessibilityNodeData::ROLE_LINK:
+    case blink::WebAXRoleLink:
       atk_role_ = ATK_ROLE_LINK;
       break;
-    case AccessibilityNodeData::ROLE_RADIO_BUTTON:
+    case blink::WebAXRoleRadioButton:
       atk_role_ = ATK_ROLE_RADIO_BUTTON;
       break;
-    case AccessibilityNodeData::ROLE_STATIC_TEXT:
+    case blink::WebAXRoleStaticText:
       atk_role_ = ATK_ROLE_TEXT;
       break;
-    case AccessibilityNodeData::ROLE_TEXTAREA:
+    case blink::WebAXRoleTextArea:
       atk_role_ = ATK_ROLE_ENTRY;
       break;
-    case AccessibilityNodeData::ROLE_TEXT_FIELD:
+    case blink::WebAXRoleTextField:
       atk_role_ = ATK_ROLE_ENTRY;
-      break;
-    case AccessibilityNodeData::ROLE_WEBCORE_LINK:
-      atk_role_ = ATK_ROLE_LINK;
       break;
     default:
       atk_role_ = ATK_ROLE_UNKNOWN;

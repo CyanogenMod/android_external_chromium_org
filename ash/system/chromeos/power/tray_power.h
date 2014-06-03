@@ -41,12 +41,33 @@ class ASH_EXPORT TrayPower : public SystemTrayItem,
     NOTIFICATION_CRITICAL,
   };
 
+  // Time-based notification thresholds when on battery power.
+  static const int kCriticalMinutes;
+  static const int kLowPowerMinutes;
+  static const int kNoWarningMinutes;
+
+  // Percentage-based notification thresholds when using a low-power charger.
+  static const int kCriticalPercentage;
+  static const int kLowPowerPercentage;
+  static const int kNoWarningPercentage;
+
   TrayPower(SystemTray* system_tray,
             message_center::MessageCenter* message_center);
   virtual ~TrayPower();
 
  private:
   friend class TrayPowerTest;
+
+  // This enum is used for histogram. The existing values should not be removed,
+  // and the new values should be added just before CHARGER_TYPE_COUNT.
+  enum ChargerType{
+    UNKNOWN_CHARGER,
+    MAINS_CHARGER,
+    USB_CHARGER,
+    UNCONFIRMED_SPRING_CHARGER,
+    SAFE_SPRING_CHARGER,
+    CHARGER_TYPE_COUNT,
+  };
 
   // Overridden from SystemTrayItem.
   virtual views::View* CreateTrayView(user::LoginStatus status) OVERRIDE;
@@ -72,6 +93,9 @@ class ASH_EXPORT TrayPower : public SystemTrayItem,
   bool UpdateNotificationStateForRemainingTime();
   bool UpdateNotificationStateForRemainingPercentage();
 
+  // Records the charger type in UMA.
+  void RecordChargerType();
+
   message_center::MessageCenter* message_center_;  // Not owned.
   tray::PowerTrayView* power_tray_;
   tray::PowerNotificationView* notification_view_;
@@ -80,6 +104,9 @@ class ASH_EXPORT TrayPower : public SystemTrayItem,
   // Was a USB charger connected the last time OnPowerStatusChanged() was
   // called?
   bool usb_charger_was_connected_;
+
+  // Was line power connected the last time onPowerStatusChanged() was called?
+  bool line_power_was_connected_;
 
   DISALLOW_COPY_AND_ASSIGN(TrayPower);
 };

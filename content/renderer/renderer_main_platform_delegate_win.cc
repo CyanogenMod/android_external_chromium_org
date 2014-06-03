@@ -38,17 +38,10 @@ void SkiaPreCacheFontCharacters(const LOGFONT& logfont,
                                 unsigned int text_length) {
   RenderThreadImpl* render_thread_impl = RenderThreadImpl::current();
   if (render_thread_impl) {
-    render_thread_impl->PreCacheFontCharacters(logfont,
-                                               string16(text, text_length));
+    render_thread_impl->PreCacheFontCharacters(
+        logfont,
+        base::string16(text, text_length));
   }
-}
-
-void InitExitInterceptions() {
-  // If code subsequently tries to exit using exit(), _exit(), abort(), or
-  // ExitProcess(), force a crash (since otherwise these would be silent
-  // terminations and fly under the radar).
-  base::win::SetShouldCrashOnProcessDetach(true);
-  base::win::SetAbortBehaviorForCrashReporting();
 }
 
 #if !defined(NDEBUG)
@@ -58,7 +51,6 @@ LRESULT CALLBACK WindowsHookCBT(int code, WPARAM w_param, LPARAM l_param) {
   return CallNextHookEx(NULL, code, w_param, l_param);
 }
 #endif  // !NDEBUG
-
 
 }  // namespace
 
@@ -80,8 +72,6 @@ void RendererMainPlatformDelegate::PlatformInitialize() {
   PCHECK(
       SetWindowsHookEx(WH_CBT, WindowsHookCBT, NULL, ::GetCurrentThreadId()));
 #endif  // !NDEBUG
-
-  InitExitInterceptions();
 
   const CommandLine& command_line = parameters_.command_line;
 
@@ -109,9 +99,6 @@ void RendererMainPlatformDelegate::PlatformInitialize() {
 }
 
 void RendererMainPlatformDelegate::PlatformUninitialize() {
-  // At this point we are shutting down in a normal code path, so undo our
-  // hack to crash on exit.
-  base::win::SetShouldCrashOnProcessDetach(false);
 }
 
 bool RendererMainPlatformDelegate::InitSandboxTests(bool no_sandbox) {

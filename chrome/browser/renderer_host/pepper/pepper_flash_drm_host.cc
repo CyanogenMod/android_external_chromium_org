@@ -26,6 +26,7 @@
 
 #if defined(USE_AURA)
 #include "ui/aura/root_window.h"
+#include "ui/aura/window.h"
 #endif
 
 using content::BrowserPpapiHost;
@@ -80,10 +81,10 @@ class MonitorFinder : public base::RefCountedThreadSafe<MonitorFinder> {
       return;
     gfx::NativeView native_view = view->GetNativeView();
 #if defined(USE_AURA)
-    aura::RootWindow* root = native_view->GetRootWindow();
-    if (!root)
+    aura::WindowEventDispatcher* dispatcher = native_view->GetDispatcher();
+    if (!dispatcher)
       return;
-    HWND window = root->GetAcceleratedWidget();
+    HWND window = dispatcher->host()->GetAcceleratedWidget();
 #else
     HWND window = native_view;
 #endif
@@ -144,6 +145,8 @@ int32_t PepperFlashDRMHost::OnResourceMessageReceived(
                                         OnHostMsgGetDeviceID)
     PPAPI_DISPATCH_HOST_RESOURCE_CALL_0(PpapiHostMsg_FlashDRM_GetHmonitor,
                                         OnHostMsgGetHmonitor)
+    PPAPI_DISPATCH_HOST_RESOURCE_CALL_0(PpapiHostMsg_FlashDRM_MonitorIsExternal,
+                                        OnHostMsgMonitorIsExternal)
   IPC_END_MESSAGE_MAP()
   return PP_ERROR_FAILED;
 }
@@ -169,11 +172,28 @@ int32_t PepperFlashDRMHost::OnHostMsgGetHmonitor(
   }
 }
 
+int32_t PepperFlashDRMHost::OnHostMsgMonitorIsExternal(
+    ppapi::host::HostMessageContext* context) {
+  int64_t monitor_id = monitor_finder_->GetMonitor();
+  if (monitor_id) {
+    // TODO(bbudge) get information about whether monitor is external.
+    context->reply_msg =
+        PpapiPluginMsg_FlashDRM_MonitorIsExternalReply(PP_FALSE);
+    return PP_OK;
+  } else {
+    return PP_ERROR_FAILED;
+  }
+}
+
 void PepperFlashDRMHost::GotDeviceID(
     ppapi::host::ReplyMessageContext reply_context,
-    const std::string& id) {
-  reply_context.params.set_result(
-      id.empty() ? PP_ERROR_FAILED : PP_OK);
+    const std::string& id,
+    int32_t result) {
+  if (id.empty() && result == PP_OK) {
+    NOTREACHED();
+    result = PP_ERROR_FAILED;
+  }
+  reply_context.params.set_result(result);
   host()->SendReply(reply_context,
                     PpapiPluginMsg_FlashDRM_GetDeviceIDReply(id));
 }

@@ -6,12 +6,17 @@
 
 #include <assert.h>
 #include <errno.h>
+#include <signal.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/ioctl.h>
+#include <unistd.h>
 
 #include <algorithm>
 
 #include "nacl_io/ioctl.h"
+#include "nacl_io/kernel_handle.h"
+#include "nacl_io/kernel_intercept.h"
 #include "nacl_io/mount.h"
 #include "nacl_io/pepper_interface.h"
 #include "sdk_util/auto_lock.h"
@@ -24,12 +29,21 @@
 #define IS_ECHOCTL CHECK_LFLAG(termios_, ECHOCTL)
 #define IS_ICANON CHECK_LFLAG(termios_, ICANON)
 
+#define DEFAULT_TTY_COLS 80
+#define DEFAULT_TTY_ROWS 30
+
 namespace nacl_io {
 
-MountNodeTty::MountNodeTty(Mount* mount) : MountNodeCharDevice(mount),
-                                           is_readable_(false) {
-  pthread_cond_init(&is_readable_cond_, NULL);
+MountNodeTty::MountNodeTty(Mount* mount)
+    : MountNodeCharDevice(mount),
+      emitter_(new EventEmitter),
+      rows_(DEFAULT_TTY_ROWS),
+      cols_(DEFAULT_TTY_COLS) {
+  output_handler_.handler = NULL;
   InitTermios();
+
+  // Output will never block
+  emitter_->RaiseEvents_Locked(POLLOUT);
 }
 
 void MountNodeTty::InitTermios() {
@@ -60,61 +74,48 @@ void MountNodeTty::InitTermios() {
   termios_.c_cc[VEOL2] = 0;
 }
 
-MountNodeTty::~MountNodeTty() {
-  pthread_cond_destroy(&is_readable_cond_);
+EventEmitter* MountNodeTty::GetEventEmitter() {
+  return emitter_.get();
 }
 
-Error MountNodeTty::Write(size_t offs,
-                     const void* buf,
-                     size_t count,
-                     int* out_bytes) {
-  return Write(offs, buf, count, out_bytes, false);
-}
-
-Error MountNodeTty::Write(size_t offs,
-                     const void* buf,
-                     size_t count,
-                     int* out_bytes,
-                     bool locked) {
+Error MountNodeTty::Write(const HandleAttr& attr,
+                          const void* buf,
+                          size_t count,
+                          int* out_bytes) {
+  AUTO_LOCK(output_lock_);
   *out_bytes = 0;
 
-  if (!mount_->ppapi())
-    return ENOSYS;
+  // No handler registered.
+  if (output_handler_.handler == NULL)
+    return EIO;
 
-  MessagingInterface* msg_intr = mount_->ppapi()->GetMessagingInterface();
-  VarInterface* var_intr = mount_->ppapi()->GetVarInterface();
+  int rtn = output_handler_.handler(static_cast<const char*>(buf),
+                                    count,
+                                    output_handler_.user_data);
 
-  if (!(var_intr && msg_intr))
-    return ENOSYS;
+  // Negative return value means an error occured and the return
+  // value is a negated errno value.
+  if (rtn < 0)
+    return -rtn;
 
-  // We append the prefix_ to the data in buf, then package it up
-  // and post it as a message.
-  const char* data = static_cast<const char*>(buf);
-  std::string message;
-  if (locked) {
-    message = prefix_;
-  } else {
-    AUTO_LOCK(node_lock_);
-    message = prefix_;
-  }
-
-  message.append(data, count);
-  uint32_t len = static_cast<uint32_t>(message.size());
-  struct PP_Var val = var_intr->VarFromUtf8(message.data(), len);
-  msg_intr->PostMessage(mount_->ppapi()->GetInstance(), val);
-  var_intr->Release(val);
-  *out_bytes = count;
+  *out_bytes = rtn;
   return 0;
 }
 
-Error MountNodeTty::Read(size_t offs, void* buf, size_t count, int* out_bytes) {
-  AUTO_LOCK(node_lock_);
-  while (!is_readable_) {
-    pthread_cond_wait(&is_readable_cond_, node_lock_.mutex());
-  }
+
+Error MountNodeTty::Read(const HandleAttr& attr,
+                         void* buf,
+                         size_t count,
+                         int* out_bytes) {
+  EventListenerLock wait(GetEventEmitter());
+  *out_bytes = 0;
+
+  // If interrupted, return
+  Error err = wait.WaitOnEvent(POLLIN, -1);
+  if (err != 0)
+    return err;
 
   size_t bytes_to_copy = std::min(count, input_buffer_.size());
-
   if (IS_ICANON) {
     // Only read up to (and including) the first newline
     std::deque<char>::iterator nl = std::find(input_buffer_.begin(),
@@ -139,19 +140,23 @@ Error MountNodeTty::Read(size_t offs, void* buf, size_t count, int* out_bytes) {
   // mark input as no longer readable if we consumed
   // the entire buffer or, in the case of buffered input,
   // we consumed the final \n char.
+  bool avail;
   if (IS_ICANON)
-    is_readable_ =
-        std::find(input_buffer_.begin(),
-                  input_buffer_.end(), '\n') != input_buffer_.end();
+    avail = std::find(input_buffer_.begin(),
+                      input_buffer_.end(), '\n') != input_buffer_.end();
   else
-    is_readable_ = input_buffer_.size() > 0;
+    avail = input_buffer_.size() > 0;
+
+  if (!avail)
+    emitter_->ClearEvents_Locked(POLLIN);
 
   return 0;
 }
 
 Error MountNodeTty::Echo(const char* string, int count) {
   int wrote;
-  Error error = Write(0, string, count, &wrote, true);
+  HandleAttr data;
+  Error error = Write(data, string, count, &wrote);
   if (error != 0 || wrote != count) {
     // TOOD(sbc): Do something more useful in response to a
     // failure to echo.
@@ -162,16 +167,12 @@ Error MountNodeTty::Echo(const char* string, int count) {
 }
 
 Error MountNodeTty::ProcessInput(struct tioc_nacl_input_string* message) {
-  AUTO_LOCK(node_lock_);
-  if (message->length < prefix_.size() ||
-      strncmp(message->buffer, prefix_.data(), prefix_.size()) != 0) {
-    return ENOTTY;
-  }
+  AUTO_LOCK(emitter_->GetLock())
 
-  const char* buffer = message->buffer + prefix_.size();
-  int num_bytes = message->length - prefix_.size();
+  const char* buffer = message->buffer;
+  size_t num_bytes = message->length;
 
-  for (int i = 0; i < num_bytes; i++) {
+  for (size_t i = 0; i < num_bytes; i++) {
     char c = buffer[i];
     // Transform characters according to input flags.
     if (c == '\r') {
@@ -226,33 +227,61 @@ Error MountNodeTty::ProcessInput(struct tioc_nacl_input_string* message) {
       input_buffer_.push_back(c);
 
     if (c == '\n' || c == termios_.c_cc[VEOF] || !IS_ICANON)
-      is_readable_ = true;
+      emitter_->RaiseEvents_Locked(POLLIN);
   }
 
-  if (is_readable_)
-    pthread_cond_broadcast(&is_readable_cond_);
   return 0;
 }
 
-Error MountNodeTty::Ioctl(int request, char* arg) {
-  if (request == TIOCNACLPREFIX) {
-    // This ioctl is used to change the prefix for this tty node.
-    // The prefix is used to distinguish messages intended for this
-    // tty node from all the other messages cluttering up the
-    // javascript postMessage() channel.
-    AUTO_LOCK(node_lock_);
-    prefix_ = arg;
-    return 0;
-  } else if (request == TIOCNACLINPUT) {
-    // This ioctl is used to deliver data from the user to this tty node's
-    // input buffer. We check if the prefix in the input data matches the
-    // prefix for this node, and only deliver the data if so.
-    struct tioc_nacl_input_string* message =
-      reinterpret_cast<struct tioc_nacl_input_string*>(arg);
-    return ProcessInput(message);
-  } else {
-    return EINVAL;
+Error MountNodeTty::VIoctl(int request, va_list args) {
+  switch (request) {
+    case TIOCNACLOUTPUT: {
+      struct tioc_nacl_output* arg = va_arg(args, struct tioc_nacl_output*);
+      AUTO_LOCK(output_lock_);
+      if (arg == NULL) {
+        output_handler_.handler = NULL;
+        return 0;
+      }
+      if (output_handler_.handler != NULL)
+        return EALREADY;
+      output_handler_ = *arg;
+      return 0;
+    }
+    case TIOCNACLINPUT: {
+      // This ioctl is used to deliver data from the user to this tty node's
+      // input buffer.
+      struct tioc_nacl_input_string* message =
+        va_arg(args, struct tioc_nacl_input_string*);
+      return ProcessInput(message);
+    }
+    case TIOCSWINSZ: {
+      struct winsize* size = va_arg(args, struct winsize*);
+      {
+        AUTO_LOCK(node_lock_);
+        if (rows_ == size->ws_row && cols_ == size->ws_col)
+          return 0;
+        rows_ = size->ws_row;
+        cols_ = size->ws_col;
+      }
+      ki_kill(getpid(), SIGWINCH);
+      {
+        // Wake up any thread waiting on Read with POLLERR then immediate
+        // clear it to signal EINTR.
+        AUTO_LOCK(emitter_->GetLock())
+        emitter_->RaiseEvents_Locked(POLLERR);
+        emitter_->ClearEvents_Locked(POLLERR);
+      }
+      return 0;
+    }
+    case TIOCGWINSZ: {
+      struct winsize* size = va_arg(args, struct winsize*);
+      size->ws_row = rows_;
+      size->ws_col = cols_;
+      return 0;
+    }
   }
+
+  return EINVAL;
 }
 
 Error MountNodeTty::Tcgetattr(struct termios* termios_p) {

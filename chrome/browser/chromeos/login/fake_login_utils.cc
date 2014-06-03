@@ -6,15 +6,20 @@
 
 #include "base/command_line.h"
 #include "base/path_service.h"
+#include "base/prefs/pref_service.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/login/login_display_host.h"
 #include "chrome/browser/chromeos/login/mock_authenticator.h"
+#include "chrome/browser/chromeos/login/supervised_user_manager.h"
 #include "chrome/browser/first_run/first_run.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/startup/startup_browser_creator.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
+#include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_profile.h"
+#include "content/public/browser/notification_service.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace chromeos {
@@ -25,6 +30,11 @@ FakeLoginUtils::~FakeLoginUtils() {}
 
 void FakeLoginUtils::DoBrowserLaunch(Profile* profile,
                                      LoginDisplayHost* login_host) {
+
+  if (!UserManager::Get()->GetCurrentUserFlow()->ShouldLaunchBrowser()) {
+      UserManager::Get()->GetCurrentUserFlow()->LaunchExtraSteps(profile);
+      return;
+  }
   login_host->BeforeSessionStart();
   if (should_launch_browser_) {
     StartupBrowserCreator browser_creator;
@@ -46,7 +56,6 @@ void FakeLoginUtils::DoBrowserLaunch(Profile* profile,
 
 void FakeLoginUtils::PrepareProfile(const UserContext& user_context,
                                     const std::string& display_email,
-                                    bool using_oauth,
                                     bool has_cookies,
                                     bool has_active_session,
                                     LoginUtils::Delegate* delegate) {
@@ -56,10 +65,29 @@ void FakeLoginUtils::PrepareProfile(const UserContext& user_context,
   if (should_launch_browser_) {
     profile = CreateProfile(user_context.username);
   } else {
-    profile = new TestingProfile();
+    TestingProfile* testing_profile = new TestingProfile();
+    testing_profile->set_profile_name(user_context.username);
+
+    profile = testing_profile;
     g_browser_process->profile_manager()->
         RegisterTestingProfile(profile, false, false);
   }
+
+  if (UserManager::Get()->IsLoggedInAsLocallyManagedUser()) {
+    User* active_user = UserManager::Get()->GetActiveUser();
+    std::string managed_user_sync_id =
+        UserManager::Get()->GetSupervisedUserManager()->
+            GetUserSyncId(active_user->email());
+    if (managed_user_sync_id.empty())
+      managed_user_sync_id = "DUMMY ID";
+    profile->GetPrefs()->SetString(prefs::kManagedUserId,
+                                   managed_user_sync_id);
+  }
+
+  content::NotificationService::current()->Notify(
+      chrome::NOTIFICATION_LOGIN_USER_PROFILE_PREPARED,
+      content::NotificationService::AllSources(),
+      content::Details<Profile>(profile));
   if (delegate)
     delegate->OnProfilePrepared(profile);
 }
@@ -84,10 +112,6 @@ scoped_refptr<Authenticator> FakeLoginUtils::CreateAuthenticator(
 }
 
 void FakeLoginUtils::RestoreAuthenticationSession(Profile* profile) {
-  NOTREACHED() << "Method not implemented.";
-}
-
-void FakeLoginUtils::StopBackgroundFetchers() {
   NOTREACHED() << "Method not implemented.";
 }
 

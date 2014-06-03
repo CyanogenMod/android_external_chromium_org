@@ -21,6 +21,7 @@
 #include "chrome/browser/ui/libgtk2ui/select_file_dialog_impl.h"
 #include "chrome/browser/ui/libgtk2ui/skia_utils_gtk2.h"
 #include "chrome/browser/ui/libgtk2ui/unity_service.h"
+#include "chrome/browser/ui/libgtk2ui/x11_input_method_context_impl_gtk2.h"
 #include "grit/theme_resources.h"
 #include "grit/ui_resources.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -34,6 +35,11 @@
 #include "ui/gfx/size.h"
 #include "ui/gfx/skbitmap_operations.h"
 #include "ui/gfx/skia_util.h"
+#include "ui/views/linux_ui/window_button_order_observer.h"
+
+#if defined(USE_GCONF)
+#include "chrome/browser/ui/libgtk2ui/gconf_titlebar_listener.h"
+#endif
 
 // A minimized port of GtkThemeService into something that can provide colors
 // and images for aura.
@@ -50,6 +56,20 @@
 // - Everything else that we're not doing.
 
 namespace {
+
+struct GObjectDeleter {
+  void operator()(void* ptr) {
+    g_object_unref(ptr);
+  }
+};
+struct GtkIconInfoDeleter {
+  void operator()(GtkIconInfo* ptr) {
+    gtk_icon_info_free(ptr);
+  }
+};
+typedef scoped_ptr<GIcon, GObjectDeleter> ScopedGIcon;
+typedef scoped_ptr<GtkIconInfo, GtkIconInfoDeleter> ScopedGtkIconInfo;
+typedef scoped_ptr<GdkPixbuf, GObjectDeleter> ScopedGdkPixbuf;
 
 // Prefix for app indicator ids
 const char kAppIndicatorIdPrefix[] = "chrome_app_indicator_";
@@ -80,7 +100,6 @@ const double kLightInactiveSaturation = 0.3;
 const GdkColor kDefaultLinkColor = { 0, 0, 0, 0xeeee };
 
 const int kSkiaToGDKMultiplier = 257;
-
 
 // TODO(erg): ThemeService has a whole interface just for reading default
 // constants. Figure out what to do with that more long term; for now, just
@@ -291,10 +310,11 @@ color_utils::HSL GetDefaultTint(int id) {
 
 namespace libgtk2ui {
 
-Gtk2UI::Gtk2UI() {
-  DLOG(ERROR) << "Activating the gtk2 component";
+Gtk2UI::Gtk2UI() : use_gtk_(false) {
   GtkInitFromCommandLine(*CommandLine::ForCurrentProcess());
+}
 
+void Gtk2UI::Initialize() {
   // Create our fake widgets.
   fake_window_ = gtk_window_new(GTK_WINDOW_TOPLEVEL);
   fake_frame_ = chrome_gtk_frame_new();
@@ -313,6 +333,11 @@ Gtk2UI::Gtk2UI() {
   LoadGtkValues();
   SetXDGIconTheme();
 
+#if defined(USE_GCONF)
+  // We must build this after GTK gets initialized.
+  titlebar_listener_.reset(new GConfTitlebarListener(this));
+#endif  // defined(USE_GCONF)
+
   indicators_count = 0;
 }
 
@@ -323,10 +348,6 @@ Gtk2UI::~Gtk2UI() {
   fake_entry_.Destroy();
 
   ClearAllThemeData();
-}
-
-bool Gtk2UI::UseNativeTheme() const {
-  return true;
 }
 
 gfx::Image Gtk2UI::GetThemeImageNamed(int id) const {
@@ -359,8 +380,65 @@ bool Gtk2UI::HasCustomImage(int id) const {
   return IsOverridableImage(id);
 }
 
+SkColor Gtk2UI::GetFocusRingColor() const {
+  return focus_ring_color_;
+}
+
+SkColor Gtk2UI::GetThumbActiveColor() const {
+  return thumb_active_color_;
+}
+
+SkColor Gtk2UI::GetThumbInactiveColor() const {
+  return thumb_inactive_color_;
+}
+
+SkColor Gtk2UI::GetTrackColor() const {
+  return track_color_;
+}
+
+SkColor Gtk2UI::GetActiveSelectionBgColor() const {
+  return active_selection_bg_color_;
+}
+
+SkColor Gtk2UI::GetActiveSelectionFgColor() const {
+  return active_selection_fg_color_;
+}
+
+SkColor Gtk2UI::GetInactiveSelectionBgColor() const {
+  return inactive_selection_bg_color_;
+}
+
+SkColor Gtk2UI::GetInactiveSelectionFgColor() const {
+  return inactive_selection_fg_color_;
+}
+
+double Gtk2UI::GetCursorBlinkInterval() const {
+  // From http://library.gnome.org/devel/gtk/unstable/GtkSettings.html, this is
+  // the default value for gtk-cursor-blink-time.
+  static const gint kGtkDefaultCursorBlinkTime = 1200;
+
+  // Dividing GTK's cursor blink cycle time (in milliseconds) by this value
+  // yields an appropriate value for
+  // content::RendererPreferences::caret_blink_interval.  This matches the
+  // logic in the WebKit GTK port.
+  static const double kGtkCursorBlinkCycleFactor = 2000.0;
+
+  gint cursor_blink_time = kGtkDefaultCursorBlinkTime;
+  gboolean cursor_blink = TRUE;
+  g_object_get(gtk_settings_get_default(),
+               "gtk-cursor-blink-time", &cursor_blink_time,
+               "gtk-cursor-blink", &cursor_blink,
+               NULL);
+  return cursor_blink ? (cursor_blink_time / kGtkCursorBlinkCycleFactor) : 0.0;
+}
+
 ui::NativeTheme* Gtk2UI::GetNativeTheme() const {
-  return NativeThemeGtk2::instance();
+  return use_gtk_ ? NativeThemeGtk2::instance() :
+                    ui::NativeTheme::instance();
+}
+
+void Gtk2UI::SetUseSystemTheme(bool use_system_theme) {
+  use_gtk_ = use_system_theme;
 }
 
 bool Gtk2UI::GetDefaultUsesSystemTheme() const {
@@ -395,24 +473,85 @@ bool Gtk2UI::IsStatusIconSupported() const {
   return AppIndicatorIcon::CouldOpen();
 }
 
-scoped_ptr<StatusIconLinux> Gtk2UI::CreateLinuxStatusIcon(
+scoped_ptr<views::StatusIconLinux> Gtk2UI::CreateLinuxStatusIcon(
     const gfx::ImageSkia& image,
-    const string16& tool_tip) const {
+    const base::string16& tool_tip) const {
   if (AppIndicatorIcon::CouldOpen()) {
     ++indicators_count;
-    return scoped_ptr<StatusIconLinux>(new AppIndicatorIcon(
+    return scoped_ptr<views::StatusIconLinux>(new AppIndicatorIcon(
         base::StringPrintf("%s%d", kAppIndicatorIdPrefix, indicators_count),
         image,
         tool_tip));
   } else {
-    return scoped_ptr<StatusIconLinux>();
+    return scoped_ptr<views::StatusIconLinux>();
   }
+}
+
+gfx::Image Gtk2UI::GetIconForContentType(
+    const std::string& content_type,
+    int size) const {
+  // This call doesn't take a reference.
+  GtkIconTheme* theme = gtk_icon_theme_get_default();
+
+  ScopedGIcon icon(g_content_type_get_icon(content_type.c_str()));
+  ScopedGtkIconInfo icon_info(
+      gtk_icon_theme_lookup_by_gicon(
+          theme, icon.get(), size,
+          static_cast<GtkIconLookupFlags>(GTK_ICON_LOOKUP_FORCE_SIZE)));
+  if (!icon_info)
+    return gfx::Image();
+  ScopedGdkPixbuf pixbuf(gtk_icon_info_load_icon(icon_info.get(), NULL));
+  if (!pixbuf)
+    return gfx::Image();
+
+  SkBitmap bitmap = GdkPixbufToImageSkia(pixbuf.get());
+  DCHECK_EQ(size, bitmap.width());
+  DCHECK_EQ(size, bitmap.height());
+  gfx::ImageSkia image_skia = gfx::ImageSkia::CreateFrom1xBitmap(bitmap);
+  image_skia.MakeThreadSafe();
+  return gfx::Image(image_skia);
+}
+
+void Gtk2UI::AddWindowButtonOrderObserver(
+    views::WindowButtonOrderObserver* observer) {
+  if (!leading_buttons_.empty() || !trailing_buttons_.empty()) {
+    observer->OnWindowButtonOrderingChange(leading_buttons_,
+                                           trailing_buttons_);
+  }
+
+  observer_list_.AddObserver(observer);
+}
+
+void Gtk2UI::RemoveWindowButtonOrderObserver(
+    views::WindowButtonOrderObserver* observer) {
+  observer_list_.RemoveObserver(observer);
+}
+
+void Gtk2UI::SetWindowButtonOrdering(
+    const std::vector<views::FrameButton>& leading_buttons,
+    const std::vector<views::FrameButton>& trailing_buttons) {
+  leading_buttons_ = leading_buttons;
+  trailing_buttons_ = trailing_buttons;
+
+  FOR_EACH_OBSERVER(views::WindowButtonOrderObserver, observer_list_,
+                    OnWindowButtonOrderingChange(leading_buttons_,
+                                                 trailing_buttons_));
+}
+
+scoped_ptr<ui::LinuxInputMethodContext> Gtk2UI::CreateInputMethodContext(
+    ui::LinuxInputMethodContextDelegate* delegate) const {
+  return scoped_ptr<ui::LinuxInputMethodContext>(
+      new X11InputMethodContextImplGtk2(delegate));
 }
 
 ui::SelectFileDialog* Gtk2UI::CreateSelectFileDialog(
     ui::SelectFileDialog::Listener* listener,
     ui::SelectFilePolicy* policy) const {
   return SelectFileDialogImpl::Create(listener, policy);
+}
+
+bool Gtk2UI::UnityIsRunning() {
+  return unity::IsRunning();
 }
 
 void Gtk2UI::GetScrollbarColors(GdkColor* thumb_active_color,
@@ -546,6 +685,7 @@ void Gtk2UI::LoadGtkValues() {
   GdkColor label_color = label_style->fg[GTK_STATE_NORMAL];
   SetThemeColorFromGtk(ThemeProperties::COLOR_TAB_TEXT, &label_color);
   SetThemeColorFromGtk(ThemeProperties::COLOR_BOOKMARK_TEXT, &label_color);
+  SetThemeColorFromGtk(ThemeProperties::COLOR_STATUS_BAR_TEXT, &label_color);
 
   // Build the various icon tints.
   GetNormalButtonTintHSL(&button_tint_);
@@ -837,7 +977,7 @@ SkBitmap Gtk2UI::GenerateFrameImage(
   SkColor base = it->second;
 
   gfx::Canvas canvas(gfx::Size(kToolbarImageWidth, kToolbarImageHeight),
-      ui::SCALE_FACTOR_100P, true);
+      1.0f, true);
 
   int gradient_size;
   GdkColor* gradient_top_color = NULL;
@@ -1042,6 +1182,6 @@ void Gtk2UI::ClearAllThemeData() {
 
 }  // namespace libgtk2ui
 
-ui::LinuxUI* BuildGtk2UI() {
+views::LinuxUI* BuildGtk2UI() {
   return new libgtk2ui::Gtk2UI;
 }

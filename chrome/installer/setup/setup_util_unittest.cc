@@ -55,12 +55,14 @@ static const wchar_t kTestedPrivilege[] = SE_RESTORE_NAME;
 // Returns true if the current process' token has privilege |privilege_name|
 // enabled.
 bool CurrentProcessHasPrivilege(const wchar_t* privilege_name) {
-  base::win::ScopedHandle token;
+  HANDLE temp_handle;
   if (!::OpenProcessToken(::GetCurrentProcess(), TOKEN_QUERY,
-                          token.Receive())) {
+                          &temp_handle)) {
     ADD_FAILURE();
     return false;
   }
+
+  base::win::ScopedHandle token(temp_handle);
 
   // First get the size of the buffer needed for |privileges| below.
   DWORD size;
@@ -98,7 +100,7 @@ bool CurrentProcessHasPrivilege(const wchar_t* privilege_name) {
 TEST_F(SetupUtilTestWithDir, GetMaxVersionFromArchiveDirTest) {
   // Create a version dir
   base::FilePath chrome_dir = test_dir_.path().AppendASCII("1.0.0.0");
-  file_util::CreateDirectory(chrome_dir);
+  base::CreateDirectory(chrome_dir);
   ASSERT_TRUE(base::PathExists(chrome_dir));
   scoped_ptr<Version> version(
       installer::GetMaxVersionFromArchiveDir(test_dir_.path()));
@@ -109,22 +111,22 @@ TEST_F(SetupUtilTestWithDir, GetMaxVersionFromArchiveDirTest) {
   ASSERT_TRUE(installer::GetMaxVersionFromArchiveDir(test_dir_.path()) == NULL);
 
   chrome_dir = test_dir_.path().AppendASCII("ABC");
-  file_util::CreateDirectory(chrome_dir);
+  base::CreateDirectory(chrome_dir);
   ASSERT_TRUE(base::PathExists(chrome_dir));
   ASSERT_TRUE(installer::GetMaxVersionFromArchiveDir(test_dir_.path()) == NULL);
 
   chrome_dir = test_dir_.path().AppendASCII("2.3.4.5");
-  file_util::CreateDirectory(chrome_dir);
+  base::CreateDirectory(chrome_dir);
   ASSERT_TRUE(base::PathExists(chrome_dir));
   version.reset(installer::GetMaxVersionFromArchiveDir(test_dir_.path()));
   ASSERT_EQ(version->GetString(), "2.3.4.5");
 
   // Create multiple version dirs, ensure that we select the greatest.
   chrome_dir = test_dir_.path().AppendASCII("9.9.9.9");
-  file_util::CreateDirectory(chrome_dir);
+  base::CreateDirectory(chrome_dir);
   ASSERT_TRUE(base::PathExists(chrome_dir));
   chrome_dir = test_dir_.path().AppendASCII("1.1.1.1");
-  file_util::CreateDirectory(chrome_dir);
+  base::CreateDirectory(chrome_dir);
   ASSERT_TRUE(base::PathExists(chrome_dir));
 
   version.reset(installer::GetMaxVersionFromArchiveDir(test_dir_.path()));
@@ -133,7 +135,7 @@ TEST_F(SetupUtilTestWithDir, GetMaxVersionFromArchiveDirTest) {
 
 TEST_F(SetupUtilTestWithDir, DeleteFileFromTempProcess) {
   base::FilePath test_file;
-  file_util::CreateTemporaryFileInDir(test_dir_.path(), &test_file);
+  base::CreateTemporaryFileInDir(test_dir_.path(), &test_file);
   ASSERT_TRUE(base::PathExists(test_file));
   file_util::WriteFile(test_file, "foo", 3);
   EXPECT_TRUE(installer::DeleteFileFromTempProcess(test_file, 0));
@@ -304,10 +306,10 @@ class FindArchiveToPatchTest : public SetupUtilTestWithDir {
 
     // Create archives in the two version dirs.
     ASSERT_TRUE(
-        file_util::CreateDirectory(GetProductVersionArchivePath().DirName()));
+        base::CreateDirectory(GetProductVersionArchivePath().DirName()));
     ASSERT_EQ(1, file_util::WriteFile(GetProductVersionArchivePath(), "a", 1));
     ASSERT_TRUE(
-        file_util::CreateDirectory(GetMaxVersionArchivePath().DirName()));
+        base::CreateDirectory(GetMaxVersionArchivePath().DirName()));
     ASSERT_EQ(1, file_util::WriteFile(GetMaxVersionArchivePath(), "b", 1));
   }
 
@@ -410,10 +412,6 @@ class MigrateMultiToSingleTest : public testing::Test {
                                                 L"MigrateMultiToSingleTest");
   }
 
-  virtual void TearDown() OVERRIDE {
-    registry_override_manager_.RemoveAllOverrides();
-  }
-
   static const bool kSystemLevel = false;
   static const HKEY kRootKey;
   static const wchar_t kVersionString[];
@@ -486,4 +484,13 @@ TEST_F(MigrateMultiToSingleTest, ChromeFrame) {
   ASSERT_TRUE(binaries.Initialize(kSystemLevel,
                                   BrowserDistribution::CHROME_BINARIES));
   EXPECT_EQ(L"2.0-dev-multi", binaries.channel().value());
+}
+
+TEST(SetupUtilTest, ContainsUnsupportedSwitch) {
+  EXPECT_FALSE(installer::ContainsUnsupportedSwitch(
+      CommandLine::FromString(L"foo.exe")));
+  EXPECT_FALSE(installer::ContainsUnsupportedSwitch(
+      CommandLine::FromString(L"foo.exe --multi-install --chrome")));
+  EXPECT_TRUE(installer::ContainsUnsupportedSwitch(
+      CommandLine::FromString(L"foo.exe --chrome-frame")));
 }

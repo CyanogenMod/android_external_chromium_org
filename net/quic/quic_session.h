@@ -13,14 +13,15 @@
 #include "base/containers/hash_tables.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/linked_hash_map.h"
-#include "net/quic/blocked_list.h"
 #include "net/quic/quic_connection.h"
 #include "net/quic/quic_crypto_stream.h"
+#include "net/quic/quic_data_stream.h"
 #include "net/quic/quic_packet_creator.h"
 #include "net/quic/quic_protocol.h"
 #include "net/quic/quic_spdy_compressor.h"
 #include "net/quic/quic_spdy_decompressor.h"
 #include "net/quic/reliable_quic_stream.h"
+#include "net/spdy/write_blocked_list.h"
 
 namespace net {
 
@@ -53,32 +54,39 @@ class NET_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface {
   };
 
   QuicSession(QuicConnection* connection,
-              const QuicConfig& config,
-              bool is_server);
+              const QuicConfig& config);
 
   virtual ~QuicSession();
 
   // QuicConnectionVisitorInterface methods:
-  virtual bool OnPacket(const IPEndPoint& self_address,
-                        const IPEndPoint& peer_address,
-                        const QuicPacketHeader& header,
-                        const std::vector<QuicStreamFrame>& frame) OVERRIDE;
+  virtual bool OnStreamFrames(
+      const std::vector<QuicStreamFrame>& frames) OVERRIDE;
   virtual void OnRstStream(const QuicRstStreamFrame& frame) OVERRIDE;
   virtual void OnGoAway(const QuicGoAwayFrame& frame) OVERRIDE;
-  virtual void ConnectionClose(QuicErrorCode error, bool from_peer) OVERRIDE;
+  virtual void OnConnectionClosed(QuicErrorCode error, bool from_peer) OVERRIDE;
+  virtual void OnSuccessfulVersionNegotiation(
+      const QuicVersion& version) OVERRIDE {}
+  virtual void OnConfigNegotiated() OVERRIDE;
   // Not needed for HTTP.
-  virtual void OnAck(const SequenceNumberSet& acked_packets) OVERRIDE {}
   virtual bool OnCanWrite() OVERRIDE;
+  virtual bool HasPendingHandshake() const OVERRIDE;
 
   // Called by streams when they want to write data to the peer.
   // Returns a pair with the number of bytes consumed from data, and a boolean
   // indicating if the fin bit was consumed.  This does not indicate the data
   // has been sent on the wire: it may have been turned into a packet and queued
   // if the socket was unexpectedly blocked.
-  virtual QuicConsumedData WriteData(QuicStreamId id,
-                                     base::StringPiece data,
-                                     QuicStreamOffset offset,
-                                     bool fin);
+  // If provided, |ack_notifier_delegate| will be registered to be notified when
+  // we have seen ACKs for all packets resulting from this call. Not owned by
+  // this class.
+  virtual QuicConsumedData WritevData(
+      QuicStreamId id,
+      const struct iovec* iov,
+      int iov_count,
+      QuicStreamOffset offset,
+      bool fin,
+      QuicAckNotifier::DelegateInterface* ack_notifier_delegate);
+
   // Called by streams when they want to close the stream in both directions.
   virtual void SendRstStream(QuicStreamId id, QuicRstStreamErrorCode error);
 
@@ -106,6 +114,14 @@ class NET_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface {
   // Servers will simply call it once with HANDSHAKE_CONFIRMED.
   virtual void OnCryptoHandshakeEvent(CryptoHandshakeEvent event);
 
+  // Called by the QuicCryptoStream when a handshake message is sent.
+  virtual void OnCryptoHandshakeMessageSent(
+      const CryptoHandshakeMessage& message);
+
+  // Called by the QuicCryptoStream when a handshake message is received.
+  virtual void OnCryptoHandshakeMessageReceived(
+      const CryptoHandshakeMessage& message);
+
   // Returns mutable config for this session. Returned config is owned
   // by QuicSession.
   QuicConfig* config();
@@ -129,7 +145,11 @@ class NET_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface {
   // been implicitly created.
   virtual size_t GetNumOpenStreams() const;
 
-  void MarkWriteBlocked(QuicStreamId id);
+  void MarkWriteBlocked(QuicStreamId id, QuicPriority priority);
+
+  // Returns true if the session has data to be sent, either queued in the
+  // connection, or in a write-blocked stream.
+  bool HasQueuedData() const;
 
   // Marks that |stream_id| is blocked waiting to decompress the
   // headers identified by |decompression_id|.
@@ -152,26 +172,32 @@ class NET_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface {
 
   QuicErrorCode error() const { return error_; }
 
+  bool is_server() const { return connection_->is_server(); }
+
  protected:
+  typedef base::hash_map<QuicStreamId, QuicDataStream*> DataStreamMap;
+
   // Creates a new stream, owned by the caller, to handle a peer-initiated
   // stream.  Returns NULL and does error handling if the stream can not be
   // created.
-  virtual ReliableQuicStream* CreateIncomingReliableStream(QuicStreamId id) = 0;
+  virtual QuicDataStream* CreateIncomingDataStream(QuicStreamId id) = 0;
 
   // Create a new stream, owned by the caller, to handle a locally-initiated
   // stream.  Returns NULL if max streams have already been opened.
-  virtual ReliableQuicStream* CreateOutgoingReliableStream() = 0;
+  virtual QuicDataStream* CreateOutgoingDataStream() = 0;
 
   // Return the reserved crypto stream.
   virtual QuicCryptoStream* GetCryptoStream() = 0;
 
   // Adds 'stream' to the active stream map.
-  virtual void ActivateStream(ReliableQuicStream* stream);
+  virtual void ActivateStream(QuicDataStream* stream);
 
   // Returns the stream id for a new stream.
   QuicStreamId GetNextStreamId();
 
-  ReliableQuicStream* GetIncomingReliableStream(QuicStreamId stream_id);
+  QuicDataStream* GetIncomingReliableStream(QuicStreamId stream_id);
+
+  QuicDataStream* GetDataStream(const QuicStreamId stream_id);
 
   ReliableQuicStream* GetStream(const QuicStreamId stream_id);
 
@@ -181,17 +207,15 @@ class NET_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface {
   // operations are being done on the streams at this time)
   virtual void PostProcessAfterData();
 
-  base::hash_map<QuicStreamId, ReliableQuicStream*>* streams() {
+  base::hash_map<QuicStreamId, QuicDataStream*>* streams() {
     return &stream_map_;
   }
 
-  const base::hash_map<QuicStreamId, ReliableQuicStream*>* streams() const {
+  const base::hash_map<QuicStreamId, QuicDataStream*>* streams() const {
     return &stream_map_;
   }
 
-  std::vector<ReliableQuicStream*>* closed_streams() {
-    return &closed_streams_;
-  }
+  std::vector<QuicDataStream*>* closed_streams() { return &closed_streams_; }
 
   size_t get_max_open_streams() const {
     return max_open_streams_;
@@ -201,7 +225,23 @@ class NET_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface {
   friend class test::QuicSessionPeer;
   friend class VisitorShim;
 
-  typedef base::hash_map<QuicStreamId, ReliableQuicStream*> ReliableStreamMap;
+  // Performs the work required to close |stream_id|.  If |locally_reset|
+  // then the stream has been reset by this endpoint, not by the peer.  This
+  // means the stream may become a zombie stream which needs to stay
+  // around until headers have been decompressed.
+  void CloseStreamInner(QuicStreamId stream_id, bool locally_reset);
+
+  // Adds |stream_id| to the zobmie stream map, closing the oldest
+  // zombie stream if the set is full.
+  void AddZombieStream(QuicStreamId stream_id);
+
+  // Closes the zombie stream |stream_id| and removes it from the zombie
+  // stream map.
+  void CloseZombieStream(QuicStreamId stream_id);
+
+  // Adds |stream_id| to the prematurely closed stream map, removing the
+  // oldest prematurely closed stream if the set is full.
+  void AddPrematurelyClosedStream(QuicStreamId stream_id);
 
   scoped_ptr<QuicConnection> connection_;
 
@@ -210,11 +250,17 @@ class NET_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface {
   // Ideally this would be a linked_hash_set as the boolean is unused.
   linked_hash_map<QuicStreamId, bool> prematurely_closed_streams_;
 
+  // Streams which have been locally reset before decompressing headers
+  // from the peer.  These streams need to stay open long enough to
+  // process any headers from the peer.
+  // Ideally this would be a linked_hash_set as the boolean is unused.
+  linked_hash_map<QuicStreamId, bool> zombie_streams_;
+
   // A shim to stand between the connection and the session, to handle stream
   // deletions.
   scoped_ptr<VisitorShim> visitor_shim_;
 
-  std::vector<ReliableQuicStream*> closed_streams_;
+  std::vector<QuicDataStream*> closed_streams_;
 
   QuicSpdyDecompressor decompressor_;
   QuicSpdyCompressor compressor_;
@@ -225,16 +271,15 @@ class NET_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface {
   size_t max_open_streams_;
 
   // Map from StreamId to pointers to streams that are owned by the caller.
-  ReliableStreamMap stream_map_;
+  DataStreamMap stream_map_;
   QuicStreamId next_stream_id_;
-  bool is_server_;
 
   // Set of stream ids that have been "implicitly created" by receipt
   // of a stream id larger than the next expected stream id.
   base::hash_set<QuicStreamId> implicitly_created_streams_;
 
   // A list of streams which need to write more data.
-  BlockedList<QuicStreamId> write_blocked_streams_;
+  WriteBlockedList<QuicStreamId> write_blocked_streams_;
 
   // A map of headers waiting to be compressed, and the streams
   // they are associated with.
@@ -249,6 +294,9 @@ class NET_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface {
   bool goaway_received_;
   // Whether a GoAway has been sent.
   bool goaway_sent_;
+
+  // Indicate if there is pending data for the crypto stream.
+  bool has_pending_handshake_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicSession);
 };

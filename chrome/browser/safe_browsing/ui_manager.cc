@@ -121,6 +121,14 @@ void SafeBrowsingUIManager::OnBlockingPageDone(
 void SafeBrowsingUIManager::DoDisplayBlockingPage(
     const UnsafeResource& resource) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  // Indicate to interested observers that the resource in question matched the
+  // SB filters. If the resource is already whitelisted, OnSafeBrowsingHit
+  // won't be called.
+  if (resource.threat_type != SB_THREAT_TYPE_SAFE) {
+    FOR_EACH_OBSERVER(Observer, observer_list_, OnSafeBrowsingMatch(resource));
+  }
+
   // Check if the user has already ignored our warning for this render_view
   // and domain.
   if (IsWhitelisted(resource)) {
@@ -269,15 +277,19 @@ bool SafeBrowsingUIManager::IsWhitelisted(const UnsafeResource& resource) {
     const WhiteListedEntry& entry = white_listed_entries_[i];
     if (entry.render_process_host_id == resource.render_process_host_id &&
         entry.render_view_id == resource.render_view_id &&
-        // Threat type must be the same or in the case of phishing they can
-        // either be client-side phishing URL or a SafeBrowsing phishing URL.
-        // If we show one type of phishing warning we don't want to show a
-        // second phishing warning.
+        // Threat type must be the same or they can either be client-side
+        // phishing/malware URL or a SafeBrowsing phishing/malware URL.
+        // If we show one type of phishing/malware warning we don't want to show
+        // a second phishing/malware warning.
         (entry.threat_type == resource.threat_type ||
          (entry.threat_type == SB_THREAT_TYPE_URL_PHISHING &&
           resource.threat_type == SB_THREAT_TYPE_CLIENT_SIDE_PHISHING_URL) ||
          (entry.threat_type == SB_THREAT_TYPE_CLIENT_SIDE_PHISHING_URL &&
-          resource.threat_type == SB_THREAT_TYPE_URL_PHISHING))) {
+          resource.threat_type == SB_THREAT_TYPE_URL_PHISHING) ||
+         (entry.threat_type == SB_THREAT_TYPE_URL_MALWARE &&
+          resource.threat_type == SB_THREAT_TYPE_CLIENT_SIDE_MALWARE_URL) ||
+         (entry.threat_type == SB_THREAT_TYPE_CLIENT_SIDE_MALWARE_URL &&
+          resource.threat_type == SB_THREAT_TYPE_URL_MALWARE))) {
       return entry.domain ==
           net::registry_controlled_domains::GetDomainAndRegistry(
               resource.url,
@@ -286,3 +298,4 @@ bool SafeBrowsingUIManager::IsWhitelisted(const UnsafeResource& resource) {
   }
   return false;
 }
+

@@ -9,18 +9,24 @@
 #include "base/bind.h"
 #include "base/file_util.h"
 #include "base/location.h"
+#include "base/prefs/pref_registry_simple.h"
+#include "base/prefs/pref_service.h"
+#include "base/prefs/scoped_user_pref_update.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
+#include "base/values.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/kiosk_mode/kiosk_mode_settings.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
-#include "chrome/browser/chromeos/system/statistics_provider.h"
 #include "chrome/browser/chromeos/ui/echo_dialog_view.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/common/extensions/api/echo_private.h"
-#include "chrome/common/extensions/extension.h"
+#include "chrome/common/pref_names.h"
+#include "chromeos/system/statistics_provider.h"
 #include "content/public/browser/browser_thread.h"
+#include "extensions/common/extension.h"
 
 namespace echo_api = extensions::api::echo_private;
 
@@ -34,6 +40,18 @@ const char kMoreInfoLink[] =
     "answer=2677280";
 
 }  // namespace
+
+namespace chromeos {
+
+namespace echo_offer {
+
+void RegisterPrefs(PrefRegistrySimple* registry) {
+  registry->RegisterDictionaryPref(prefs::kEchoCheckedOffers);
+}
+
+} // namespace echo_offer
+
+} // namespace chromeos
 
 EchoPrivateGetRegistrationCodeFunction::
     EchoPrivateGetRegistrationCodeFunction() {}
@@ -80,6 +98,52 @@ bool EchoPrivateGetRegistrationCodeFunction::RunImpl() {
   return true;
 }
 
+EchoPrivateSetOfferInfoFunction::EchoPrivateSetOfferInfoFunction() {}
+
+EchoPrivateSetOfferInfoFunction::~EchoPrivateSetOfferInfoFunction() {}
+
+bool EchoPrivateSetOfferInfoFunction::RunImpl() {
+  scoped_ptr<echo_api::SetOfferInfo::Params> params =
+      echo_api::SetOfferInfo::Params::Create(*args_);
+  EXTENSION_FUNCTION_VALIDATE(params);
+
+  const std::string& service_id = params->id;
+  base::DictionaryValue* dict = params->offer_info.
+      additional_properties.DeepCopyWithoutEmptyChildren();
+
+  PrefService* local_state = g_browser_process->local_state();
+  DictionaryPrefUpdate offer_update(local_state, prefs::kEchoCheckedOffers);
+  offer_update->SetWithoutPathExpansion("echo." + service_id, dict);
+  return true;
+}
+
+EchoPrivateGetOfferInfoFunction::EchoPrivateGetOfferInfoFunction() {}
+
+EchoPrivateGetOfferInfoFunction::~EchoPrivateGetOfferInfoFunction() {}
+
+bool EchoPrivateGetOfferInfoFunction::RunImpl() {
+  scoped_ptr<echo_api::GetOfferInfo::Params> params =
+      echo_api::GetOfferInfo::Params::Create(*args_);
+  EXTENSION_FUNCTION_VALIDATE(params);
+
+  const std::string& service_id = params->id;
+  PrefService* local_state = g_browser_process->local_state();
+  const base::DictionaryValue* offer_infos = local_state->
+      GetDictionary(prefs::kEchoCheckedOffers);
+
+  const base::DictionaryValue* offer_info = NULL;
+  if (!offer_infos->GetDictionaryWithoutPathExpansion(
+         "echo." + service_id, &offer_info)) {
+    error_ = "Not found";
+    return false;
+  }
+
+  echo_api::GetOfferInfo::Results::Result result;
+  result.additional_properties.MergeDictionary(offer_info);
+  results_ = echo_api::GetOfferInfo::Results::Create(result);
+  return true;
+}
+
 EchoPrivateGetOobeTimestampFunction::EchoPrivateGetOobeTimestampFunction() {
 }
 
@@ -107,7 +171,7 @@ bool EchoPrivateGetOobeTimestampFunction::GetOobeTimestampOnFileThread() {
   const char kOobeTimestampFile[] = "/home/chronos/.oobe_completed";
   std::string timestamp = "";
   base::PlatformFileInfo fileInfo;
-  if (file_util::GetFileInfo(base::FilePath(kOobeTimestampFile), &fileInfo)) {
+  if (base::GetFileInfo(base::FilePath(kOobeTimestampFile), &fileInfo)) {
     base::Time::Exploded ctime;
     fileInfo.creation_time.UTCExplode(&ctime);
     timestamp += base::StringPrintf("%u-%u-%u",
@@ -116,37 +180,6 @@ bool EchoPrivateGetOobeTimestampFunction::GetOobeTimestampOnFileThread() {
                                     ctime.day_of_month);
   }
   results_ = echo_api::GetOobeTimestamp::Results::Create(timestamp);
-  return true;
-}
-
-EchoPrivateCheckAllowRedeemOffersFunction::
-    EchoPrivateCheckAllowRedeemOffersFunction() {
-}
-
-EchoPrivateCheckAllowRedeemOffersFunction::
-    ~EchoPrivateCheckAllowRedeemOffersFunction() {
-}
-
-void EchoPrivateCheckAllowRedeemOffersFunction::CheckAllowRedeemOffers() {
-  chromeos::CrosSettingsProvider::TrustedStatus status =
-      chromeos::CrosSettings::Get()->PrepareTrustedValues(base::Bind(
-          &EchoPrivateCheckAllowRedeemOffersFunction::CheckAllowRedeemOffers,
-          this));
-  if (status == chromeos::CrosSettingsProvider::TEMPORARILY_UNTRUSTED)
-    return;
-
-  bool allow = true;
-  chromeos::CrosSettings::Get()->GetBoolean(
-      chromeos::kAllowRedeemChromeOsRegistrationOffers, &allow);
-  results_ = echo_api::CheckAllowRedeemOffers::Results::Create(allow);
-  SendResponse(true);
-}
-
-// Check the enterprise policy kAllowRedeemChromeOsRegistrationOffers flag
-// value. This policy is used to control whether user can redeem offers using
-// enterprise device.
-bool EchoPrivateCheckAllowRedeemOffersFunction::RunImpl() {
-  CheckAllowRedeemOffers();
   return true;
 }
 
@@ -180,9 +213,8 @@ void EchoPrivateGetUserConsentFunction::OnCancel() {
 }
 
 void EchoPrivateGetUserConsentFunction::OnMoreInfoLinkClicked() {
-  chrome::NavigateParams params(profile(),
-                                GURL(kMoreInfoLink),
-                                content::PAGE_TRANSITION_LINK);
+  chrome::NavigateParams params(
+      GetProfile(), GURL(kMoreInfoLink), content::PAGE_TRANSITION_LINK);
   // Open the link in a new window. The echo dialog is modal, so the current
   // window is useless until the dialog is closed.
   params.disposition = NEW_WINDOW;

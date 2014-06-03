@@ -10,7 +10,7 @@
 #include "base/basictypes.h"
 #include "base/callback.h"
 #include "chromeos/chromeos_export.h"
-#include "chromeos/dbus/dbus_client_implementation_type.h"
+#include "chromeos/dbus/dbus_client.h"
 #include "chromeos/dbus/shill_client_helper.h"
 
 namespace base {
@@ -22,7 +22,6 @@ class DictionaryValue;
 
 namespace dbus {
 
-class Bus;
 class ObjectPath;
 
 }  // namespace dbus
@@ -34,7 +33,7 @@ class ShillPropertyChangedObserver;
 // ShillIPConfigClient is used to communicate with the Shill IPConfig
 // service.  All methods should be called from the origin thread which
 // initializes the DBusThreadManager instance.
-class CHROMEOS_EXPORT ShillIPConfigClient {
+class CHROMEOS_EXPORT ShillIPConfigClient : public DBusClient {
  public:
   typedef ShillClientHelper::PropertyChangedHandler PropertyChangedHandler;
   typedef ShillClientHelper::DictionaryValueCallback DictionaryValueCallback;
@@ -42,8 +41,7 @@ class CHROMEOS_EXPORT ShillIPConfigClient {
 
   // Factory function, creates a new instance which is owned by the caller.
   // For normal usage, access the singleton via DBusThreadManager::Get().
-  static ShillIPConfigClient* Create(DBusClientImplementationType type,
-                                        dbus::Bus* bus);
+  static ShillIPConfigClient* Create();
 
   // Adds a property changed |observer| for the ipconfig at |ipconfig_path|.
   virtual void AddPropertyChangedObserver(
@@ -65,15 +63,6 @@ class CHROMEOS_EXPORT ShillIPConfigClient {
   virtual void GetProperties(const dbus::ObjectPath& ipconfig_path,
                              const DictionaryValueCallback& callback) = 0;
 
-  // DEPRECATED DO NOT USE: Calls GetProperties method and blocks until the
-  // method call finishes.  The caller is responsible to delete the result.
-  // Thie method returns NULL when method call fails.
-  //
-  // TODO(hashimoto): Refactor CrosListIPConfigs to remove this method.
-  // crosbug.com/29902
-  virtual base::DictionaryValue* CallGetPropertiesAndBlock(
-      const dbus::ObjectPath& ipconfig_path) = 0;
-
   // Calls SetProperty method.
   // |callback| is called after the method call succeeds.
   virtual void SetProperty(const dbus::ObjectPath& ipconfig_path,
@@ -93,6 +82,8 @@ class CHROMEOS_EXPORT ShillIPConfigClient {
                       const VoidDBusMethodCallback& callback) = 0;
 
  protected:
+  friend class ShillIPConfigClientTest;
+
   // Create() should be used instead.
   ShillIPConfigClient();
 

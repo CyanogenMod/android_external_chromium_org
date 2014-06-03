@@ -289,15 +289,13 @@ base::FilePath DatabaseTracker::GetFullDBFilePath(
   if (!LazyInit())
     return base::FilePath();
 
-  int64 id = databases_table_->GetDatabaseID(
-      origin_identifier, database_name);
+  int64 id = databases_table_->GetDatabaseID(origin_identifier, database_name);
   if (id < 0)
     return base::FilePath();
 
-  base::FilePath file_name = base::FilePath::FromWStringHack(
-      UTF8ToWide(base::Int64ToString(id)));
-  return db_dir_.Append(base::FilePath::FromWStringHack(
-      UTF16ToWide(GetOriginDirectory(origin_identifier)))).Append(file_name);
+  return db_dir_.Append(base::FilePath::FromUTF16Unsafe(
+      GetOriginDirectory(origin_identifier))).AppendASCII(
+          base::Int64ToString(id));
 }
 
 bool DatabaseTracker::GetOriginInfo(const std::string& origin_identifier,
@@ -404,9 +402,9 @@ bool DatabaseTracker::DeleteOrigin(const std::string& origin_identifier,
   // as we can't delete the origin directory on windows if it contains opened
   // files.
   base::FilePath new_origin_dir;
-  file_util::CreateTemporaryDirInDir(db_dir_,
-                                     kTemporaryDirectoryPrefix,
-                                     &new_origin_dir);
+  base::CreateTemporaryDirInDir(db_dir_,
+                                kTemporaryDirectoryPrefix,
+                                &new_origin_dir);
   base::FileEnumerator databases(
       origin_dir,
       false,
@@ -482,7 +480,7 @@ bool DatabaseTracker::LazyInit() {
     meta_table_.reset(new sql::MetaTable());
 
     is_initialized_ =
-        file_util::CreateDirectory(db_dir_) &&
+        base::CreateDirectory(db_dir_) &&
         (db_->is_open() ||
          (is_incognito_ ? db_->OpenInMemory() :
           db_->Open(kTrackerDatabaseFullPath))) &&
@@ -576,7 +574,7 @@ int64 DatabaseTracker::GetDBFileSize(const std::string& origin_identifier,
   base::FilePath db_file_name = GetFullDBFilePath(origin_identifier,
                                                   database_name);
   int64 db_file_size = 0;
-  if (!file_util::GetFileSize(db_file_name, &db_file_size))
+  if (!base::GetFileSize(db_file_name, &db_file_size))
     db_file_size = 0;
   return db_file_size;
 }
@@ -694,7 +692,7 @@ int DatabaseTracker::DeleteDataModifiedSince(
          db != details.end(); ++db) {
       base::FilePath db_file = GetFullDBFilePath(*ori, db->database_name);
       base::PlatformFileInfo file_info;
-      file_util::GetFileInfo(db_file, &file_info);
+      base::GetFileInfo(db_file, &file_info);
       if (file_info.last_modified < cutoff)
         continue;
 
@@ -788,7 +786,6 @@ bool DatabaseTracker::HasSavedIncognitoFileHandle(
 }
 
 void DatabaseTracker::DeleteIncognitoDBDirectory() {
-  shutting_down_ = true;
   is_initialized_ = false;
 
   for (FileHandlesMap::iterator it = incognito_file_handles_.begin();
@@ -802,8 +799,6 @@ void DatabaseTracker::DeleteIncognitoDBDirectory() {
 }
 
 void DatabaseTracker::ClearSessionOnlyOrigins() {
-  shutting_down_ = true;
-
   bool has_session_only_databases =
       special_storage_policy_.get() &&
       special_storage_policy_->HasSessionOnlyOrigins();
@@ -854,10 +849,12 @@ void DatabaseTracker::Shutdown() {
     NOTREACHED();
     return;
   }
+  shutting_down_ = true;
   if (is_incognito_)
     DeleteIncognitoDBDirectory();
   else if (!force_keep_session_state_)
     ClearSessionOnlyOrigins();
+  CloseTrackerDatabaseAndClearCaches();
 }
 
 void DatabaseTracker::SetForceKeepSessionState() {

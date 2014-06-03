@@ -8,7 +8,7 @@
 #include <string>
 
 #include "build/build_config.h"
-#include "ui/base/ui_export.h"
+#include "ui/gfx/gfx_export.h"
 #include "ui/gfx/insets_base.h"
 
 #if defined(TOOLKIT_GTK)
@@ -18,7 +18,7 @@ typedef struct _GtkBorder GtkBorder;
 namespace gfx {
 
 // An integer version of gfx::Insets.
-class UI_EXPORT Insets : public InsetsBase<Insets, int> {
+class GFX_EXPORT Insets : public InsetsBase<Insets, int> {
  public:
   Insets();
   Insets(int top, int left, int bottom, int right);

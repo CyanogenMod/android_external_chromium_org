@@ -6,14 +6,16 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/prefs/pref_service.h"
+#include "base/prefs/scoped_user_pref_update.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/views/accessibility/accessibility_event_router_views.h"
 #include "chrome/common/pref_names.h"
+#include "grit/chrome_unscaled_resources.h"
+#include "ui/base/resource/resource_bundle.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/screen.h"
@@ -39,6 +41,7 @@
 
 #if defined(USE_ASH)
 #include "ash/shell.h"
+#include "ash/wm/window_state.h"
 #include "chrome/browser/ui/ash/ash_init.h"
 #include "chrome/browser/ui/ash/ash_util.h"
 #endif
@@ -92,6 +95,7 @@ void ChromeViewsDelegate::SaveWindowPlacement(const views::Widget* window,
 }
 
 bool ChromeViewsDelegate::GetSavedWindowPlacement(
+    const views::Widget* widget,
     const std::string& window_name,
     gfx::Rect* bounds,
     ui::WindowShowState* show_state) const {
@@ -115,6 +119,18 @@ bool ChromeViewsDelegate::GetSavedWindowPlacement(
     dictionary->GetBoolean("maximized", &maximized);
   *show_state = maximized ? ui::SHOW_STATE_MAXIMIZED : ui::SHOW_STATE_NORMAL;
 
+#if defined(USE_ASH)
+  // On Ash environment, a window won't span across displays.  Adjust
+  // the bounds to fit the work area.
+  gfx::NativeView window = widget->GetNativeView();
+  if (chrome::GetHostDesktopTypeForNativeView(window) ==
+      chrome::HOST_DESKTOP_TYPE_ASH) {
+    gfx::Display display = gfx::Screen::GetScreenFor(window)->
+        GetDisplayMatching(*bounds);
+    bounds->AdjustToFit(display.work_area());
+    ash::wm::GetWindowState(window)->set_minimum_visibility(true);
+  }
+#endif
   return true;
 }
 
@@ -124,11 +140,12 @@ void ChromeViewsDelegate::NotifyAccessibilityEvent(
       view, event_type);
 }
 
-void ChromeViewsDelegate::NotifyMenuItemFocused(const string16& menu_name,
-                                                const string16& menu_item_name,
-                                                int item_index,
-                                                int item_count,
-                                                bool has_submenu) {
+void ChromeViewsDelegate::NotifyMenuItemFocused(
+    const base::string16& menu_name,
+    const base::string16& menu_item_name,
+    int item_index,
+    int item_count,
+    bool has_submenu) {
   AccessibilityEventRouterViews::GetInstance()->HandleMenuItemFocused(
       menu_name, menu_item_name, item_index, item_count, has_submenu);
 }
@@ -136,6 +153,16 @@ void ChromeViewsDelegate::NotifyMenuItemFocused(const string16& menu_name,
 #if defined(OS_WIN)
 HICON ChromeViewsDelegate::GetDefaultWindowIcon() const {
   return GetAppIcon();
+}
+
+bool ChromeViewsDelegate::IsWindowInMetro(gfx::NativeWindow window) const {
+  return chrome::IsNativeViewInAsh(window);
+}
+
+#elif defined(OS_LINUX) && !defined(OS_CHROMEOS)
+gfx::ImageSkia* ChromeViewsDelegate::GetDefaultWindowIcon() const {
+  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
+  return rb.GetImageSkiaNamed(IDR_PRODUCT_LOGO_64);
 }
 #endif
 
@@ -237,13 +264,15 @@ void ChromeViewsDelegate::OnBeforeWidgetInit(
   // but have neither a context nor a parent. Provide a fallback context so
   // users don't crash. Developers will hit the DCHECK and should provide a
   // context.
+  if (params->context)
+    params->context = params->context->GetRootWindow();
   DCHECK(params->parent || params->context || params->top_level)
       << "Please provide a parent or context for this widget.";
   if (!params->parent && !params->context)
     params->context = ash::Shell::GetPrimaryRootWindow();
 #elif defined(USE_AURA)
   // While the majority of the time, context wasn't plumbed through due to the
-  // existence of a global StackingClient, if this window is a toplevel, it's
+  // existence of a global WindowTreeClient, if this window is a toplevel, it's
   // possible that there is no contextual state that we can use.
   if (params->parent == NULL && params->context == NULL && params->top_level) {
     // We need to make a decision about where to place this window based on the
@@ -278,9 +307,7 @@ void ChromeViewsDelegate::OnBeforeWidgetInit(
 #endif
 }
 
-#if !defined(OS_CHROMEOS)
 base::TimeDelta
 ChromeViewsDelegate::GetDefaultTextfieldObscuredRevealDuration() {
   return base::TimeDelta();
 }
-#endif

@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,6 +7,8 @@ package org.chromium.android_webview.test;
 import android.app.Instrumentation;
 import android.content.Context;
 import android.test.ActivityInstrumentationTestCase2;
+
+import static org.chromium.base.test.util.ScalableTimeout.ScaleTimeout;
 
 import org.chromium.android_webview.AwBrowserContext;
 import org.chromium.android_webview.AwBrowserProcess;
@@ -32,7 +34,7 @@ import java.util.concurrent.atomic.AtomicReference;
  */
 public class AwTestBase
         extends ActivityInstrumentationTestCase2<AwTestRunnerActivity> {
-    protected static final int WAIT_TIMEOUT_SECONDS = 15;
+    protected static final long WAIT_TIMEOUT_MS = ScaleTimeout(15000);
     protected static final int CHECK_INTERVAL = 100;
 
     public AwTestBase() {
@@ -42,13 +44,22 @@ public class AwTestBase
     @Override
     protected void setUp() throws Exception {
         super.setUp();
-        final Context context = getActivity();
-        getInstrumentation().runOnMainSync(new Runnable() {
-            @Override
-            public void run() {
-                AwBrowserProcess.start(context);
-             }
-        });
+        if (needsBrowserProcessStarted()) {
+            final Context context = getActivity();
+            getInstrumentation().runOnMainSync(new Runnable() {
+                @Override
+                public void run() {
+                    AwBrowserProcess.start(context);
+                }
+            });
+        }
+    }
+
+    /* Override this to return false if the test doesn't want the browser startup sequence to
+     * be run automatically.
+     */
+    protected boolean needsBrowserProcessStarted() {
+        return true;
     }
 
     /**
@@ -76,6 +87,16 @@ public class AwTestBase
         });
     }
 
+    protected void setNetworkAvailableOnUiThread(final AwContents awContents,
+            final boolean networkUp) {
+        getInstrumentation().runOnMainSync(new Runnable() {
+            @Override
+            public void run() {
+                awContents.setNetworkAvailable(networkUp);
+            }
+        });
+    }
+
     /**
      * Loads url on the UI thread and blocks until onPageFinished is called.
      */
@@ -84,8 +105,8 @@ public class AwTestBase
                                final String url) throws Exception {
         int currentCallCount = onPageFinishedHelper.getCallCount();
         loadUrlAsync(awContents, url);
-        onPageFinishedHelper.waitForCallback(currentCallCount, 1, WAIT_TIMEOUT_SECONDS,
-                TimeUnit.SECONDS);
+        onPageFinishedHelper.waitForCallback(currentCallCount, 1, WAIT_TIMEOUT_MS,
+                TimeUnit.MILLISECONDS);
     }
 
     protected void loadUrlSyncAndExpectError(final AwContents awContents,
@@ -95,10 +116,10 @@ public class AwTestBase
         int onErrorCallCount = onReceivedErrorHelper.getCallCount();
         int onFinishedCallCount = onPageFinishedHelper.getCallCount();
         loadUrlAsync(awContents, url);
-        onReceivedErrorHelper.waitForCallback(onErrorCallCount, 1, WAIT_TIMEOUT_SECONDS,
-                TimeUnit.SECONDS);
-        onPageFinishedHelper.waitForCallback(onFinishedCallCount, 1, WAIT_TIMEOUT_SECONDS,
-                TimeUnit.SECONDS);
+        onReceivedErrorHelper.waitForCallback(onErrorCallCount, 1, WAIT_TIMEOUT_MS,
+                TimeUnit.MILLISECONDS);
+        onPageFinishedHelper.waitForCallback(onFinishedCallCount, 1, WAIT_TIMEOUT_MS,
+                TimeUnit.MILLISECONDS);
     }
 
     /**
@@ -122,8 +143,8 @@ public class AwTestBase
             byte[] postData) throws Exception {
         int currentCallCount = onPageFinishedHelper.getCallCount();
         postUrlAsync(awContents, url, postData);
-        onPageFinishedHelper.waitForCallback(currentCallCount, 1, WAIT_TIMEOUT_SECONDS,
-                TimeUnit.SECONDS);
+        onPageFinishedHelper.waitForCallback(currentCallCount, 1, WAIT_TIMEOUT_MS,
+                TimeUnit.MILLISECONDS);
     }
 
     /**
@@ -154,8 +175,8 @@ public class AwTestBase
                                 final boolean isBase64Encoded) throws Exception {
         int currentCallCount = onPageFinishedHelper.getCallCount();
         loadDataAsync(awContents, data, mimeType, isBase64Encoded);
-        onPageFinishedHelper.waitForCallback(currentCallCount, 1, WAIT_TIMEOUT_SECONDS,
-                TimeUnit.SECONDS);
+        onPageFinishedHelper.waitForCallback(currentCallCount, 1, WAIT_TIMEOUT_MS,
+                TimeUnit.MILLISECONDS);
     }
 
     protected void loadDataSyncWithCharset(final AwContents awContents,
@@ -171,8 +192,8 @@ public class AwTestBase
                         data, mimeType, isBase64Encoded, charset));
             }
         });
-        onPageFinishedHelper.waitForCallback(currentCallCount, 1, WAIT_TIMEOUT_SECONDS,
-                TimeUnit.SECONDS);
+        onPageFinishedHelper.waitForCallback(currentCallCount, 1, WAIT_TIMEOUT_MS,
+                TimeUnit.MILLISECONDS);
     }
 
     /**
@@ -190,6 +211,44 @@ public class AwTestBase
         });
     }
 
+    protected void loadDataWithBaseUrlSync(final AwContents awContents,
+            CallbackHelper onPageFinishedHelper, final String data, final String mimeType,
+            final boolean isBase64Encoded, final String baseUrl,
+            final String historyUrl) throws Throwable {
+        int currentCallCount = onPageFinishedHelper.getCallCount();
+        loadDataWithBaseUrlAsync(awContents, data, mimeType, isBase64Encoded, baseUrl, historyUrl);
+        onPageFinishedHelper.waitForCallback(currentCallCount, 1, WAIT_TIMEOUT_MS,
+                TimeUnit.MILLISECONDS);
+    }
+
+    protected void loadDataWithBaseUrlAsync(final AwContents awContents,
+            final String data, final String mimeType, final boolean isBase64Encoded,
+            final String baseUrl, final String historyUrl) throws Throwable {
+        runTestOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                awContents.loadUrl(LoadUrlParams.createLoadDataParamsWithBaseUrl(
+                        data, mimeType, isBase64Encoded, baseUrl, historyUrl));
+            }
+        });
+    }
+
+    /**
+     * Reloads the current page synchronously.
+     */
+    protected void reloadSync(final AwContents awContents,
+                              CallbackHelper onPageFinishedHelper) throws Throwable {
+        int currentCallCount = onPageFinishedHelper.getCallCount();
+        getInstrumentation().runOnMainSync(new Runnable() {
+            @Override
+            public void run() {
+                awContents.getContentViewCore().reload(true);
+            }
+        });
+        onPageFinishedHelper.waitForCallback(currentCallCount, 1, WAIT_TIMEOUT_MS,
+                TimeUnit.MILLISECONDS);
+    }
+
     /**
      * Factory class used in creation of test AwContents instances.
      *
@@ -202,6 +261,9 @@ public class AwTestBase
         }
         public AwTestContainerView createAwTestContainerView(AwTestRunnerActivity activity) {
             return new AwTestContainerView(activity);
+        }
+        public AwSettings createAwSettings(Context context, boolean supportsLegacyQuirks) {
+            return new AwSettings(context, false, supportsLegacyQuirks);
         }
     }
 
@@ -237,12 +299,13 @@ public class AwTestBase
         final TestDependencyFactory testDependencyFactory = createTestDependencyFactory();
         final AwTestContainerView testContainerView =
             testDependencyFactory.createAwTestContainerView(getActivity());
+        AwSettings awSettings = testDependencyFactory.createAwSettings(getActivity(),
+                supportsLegacyQuirks);
         // TODO(mnaganov): Should also have tests for the "pure Chromium" mode.
         // See http://crbug.com/278106
         testContainerView.initialize(new AwContents(
                 mBrowserContext, testContainerView, testContainerView.getInternalAccessDelegate(),
-                awContentsClient, false, testDependencyFactory.createLayoutSizer(),
-                supportsLegacyQuirks));
+                awContentsClient, awSettings, testDependencyFactory.createLayoutSizer()));
         AwContents.setShouldDownloadFavicons();
         return testContainerView;
     }
@@ -342,7 +405,7 @@ public class AwTestBase
         getInstrumentation().runOnMainSync(new Runnable() {
             @Override
             public void run() {
-              awContents.clearCache(includeDiskFiles);
+                awContents.clearCache(includeDiskFiles);
             }
         });
     }
@@ -354,7 +417,7 @@ public class AwTestBase
         return runTestOnUiThreadAndGetResult(new Callable<Float>() {
             @Override
             public Float call() throws Exception {
-                return awContents.getContentViewCore().getScale();
+                return awContents.getPageScaleFactor();
             }
         });
     }
@@ -367,6 +430,30 @@ public class AwTestBase
             @Override
             public Float call() throws Exception {
                 return awContents.getScale();
+            }
+        });
+    }
+
+    /**
+     * Returns whether a user can zoom the page in.
+     */
+    protected boolean canZoomInOnUiThread(final AwContents awContents) throws Throwable {
+        return runTestOnUiThreadAndGetResult(new Callable<Boolean>() {
+            @Override
+            public Boolean call() throws Exception {
+                return awContents.canZoomIn();
+            }
+        });
+    }
+
+    /**
+     * Returns whether a user can zoom the page out.
+     */
+    protected boolean canZoomOutOnUiThread(final AwContents awContents) throws Throwable {
+        return runTestOnUiThreadAndGetResult(new Callable<Boolean>() {
+            @Override
+            public Boolean call() throws Exception {
+                return awContents.canZoomOut();
             }
         });
     }

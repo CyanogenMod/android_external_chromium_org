@@ -8,7 +8,7 @@
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/profiles/avatar_menu_model.h"
+#include "chrome/browser/profiles/avatar_menu.h"
 #include "chrome/browser/profiles/profile_info_util.h"
 #include "chrome/browser/profiles/profile_metrics.h"
 #include "chrome/browser/profiles/profiles_state.h"
@@ -25,17 +25,24 @@ static inline int Round(double x) {
   return static_cast<int>(x + 0.5);
 }
 
-AvatarMenuButton::AvatarMenuButton(Browser* browser, bool incognito)
-    : MenuButton(NULL, string16(), this, false),
+// static
+const char AvatarMenuButton::kViewClassName[] = "AvatarMenuButton";
+
+AvatarMenuButton::AvatarMenuButton(Browser* browser, bool disabled)
+    : MenuButton(NULL, base::string16(), this, false),
       browser_(browser),
-      incognito_(incognito),
-      is_gaia_picture_(false),
+      disabled_(disabled),
+      is_rectangle_(false),
       old_height_(0) {
   // In RTL mode, the avatar icon should be looking the opposite direction.
   EnableCanvasFlippingForRTLUI(true);
 }
 
 AvatarMenuButton::~AvatarMenuButton() {
+}
+
+const char* AvatarMenuButton::GetClassName() const {
+  return kViewClassName;
 }
 
 void AvatarMenuButton::OnPaint(gfx::Canvas* canvas) {
@@ -45,7 +52,7 @@ void AvatarMenuButton::OnPaint(gfx::Canvas* canvas) {
   if (old_height_ != height() || button_icon_.isNull()) {
     old_height_ = height();
     button_icon_ = *profiles::GetAvatarIconForTitleBar(
-        *icon_, is_gaia_picture_, width(), height()).ToImageSkia();
+        *icon_, is_rectangle_, width(), height()).ToImageSkia();
   }
 
   // Scale the image to fit the width of the button.
@@ -70,23 +77,23 @@ void AvatarMenuButton::OnPaint(gfx::Canvas* canvas) {
 }
 
 bool AvatarMenuButton::HitTestRect(const gfx::Rect& rect) const {
-  if (incognito_)
+  if (disabled_)
     return false;
   return views::MenuButton::HitTestRect(rect);
 }
 
 void AvatarMenuButton::SetAvatarIcon(const gfx::Image& icon,
-                                     bool is_gaia_picture) {
+                                     bool is_rectangle) {
   icon_.reset(new gfx::Image(icon));
   button_icon_ = gfx::ImageSkia();
-  is_gaia_picture_ = is_gaia_picture;
+  is_rectangle_ = is_rectangle;
   SchedulePaint();
 }
 
 // views::MenuButtonListener implementation
 void AvatarMenuButton::OnMenuButtonClicked(views::View* source,
                                            const gfx::Point& point) {
-  if (incognito_)
+  if (disabled_)
     return;
 
   ShowAvatarBubble();
@@ -96,14 +103,16 @@ void AvatarMenuButton::ShowAvatarBubble() {
   gfx::Point origin;
   views::View::ConvertPointToScreen(this, &origin);
   gfx::Rect bounds(origin, size());
+  views::BubbleBorder::Arrow arrow = button_on_right_ ?
+      views::BubbleBorder::TOP_RIGHT : views::BubbleBorder::TOP_LEFT;
   if (profiles::IsNewProfileManagementEnabled()) {
     ProfileChooserView::ShowBubble(
-        this, views::BubbleBorder::TOP_LEFT,
-        views::BubbleBorder::ALIGN_ARROW_TO_MID_ANCHOR, bounds, browser_);
+        this, arrow, views::BubbleBorder::ALIGN_ARROW_TO_MID_ANCHOR, bounds,
+        browser_);
   } else {
     AvatarMenuBubbleView::ShowBubble(
-        this, views::BubbleBorder::TOP_LEFT,
-        views::BubbleBorder::ALIGN_ARROW_TO_MID_ANCHOR, bounds, browser_);
+        this, arrow, views::BubbleBorder::ALIGN_ARROW_TO_MID_ANCHOR, bounds,
+        browser_);
   }
 
   ProfileMetrics::LogProfileOpenMethod(ProfileMetrics::ICON_AVATAR_BUBBLE);

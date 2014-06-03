@@ -15,19 +15,21 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/run_loop.h"
 #include "base/stl_util.h"
-#include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/invalidation/invalidation_service_factory.h"
 #include "chrome/browser/sessions/session_tab_helper.h"
+#include "chrome/browser/signin/profile_oauth2_token_service.h"
+#include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
-#include "chrome/browser/signin/token_service_factory.h"
 #include "chrome/browser/sync/abstract_profile_sync_service_test.h"
+#include "chrome/browser/sync/fake_oauth2_token_service.h"
 #include "chrome/browser/sync/glue/device_info.h"
 #include "chrome/browser/sync/glue/session_change_processor.h"
 #include "chrome/browser/sync/glue/session_data_type_controller.h"
 #include "chrome/browser/sync/glue/session_model_associator.h"
+#include "chrome/browser/sync/glue/session_sync_test_helper.h"
 #include "chrome/browser/sync/glue/sync_backend_host.h"
 #include "chrome/browser/sync/glue/synced_device_tracker.h"
 #include "chrome/browser/sync/glue/synced_tab_delegate.h"
@@ -83,13 +85,13 @@ class FakeProfileSyncService : public TestProfileSyncService {
       ProfileSyncComponentsFactory* factory,
       Profile* profile,
       SigninManagerBase* signin,
-      ProfileSyncService::StartBehavior behavior,
-      bool synchronous_backend_initialization)
+      ProfileOAuth2TokenService* oauth2_token_service,
+      ProfileSyncService::StartBehavior behavior)
       : TestProfileSyncService(factory,
                                profile,
                                signin,
-                               behavior,
-                               synchronous_backend_initialization) {}
+                               oauth2_token_service,
+                               behavior) {}
   virtual ~FakeProfileSyncService() {}
 
   virtual scoped_ptr<DeviceInfo> GetLocalDeviceInfo() const OVERRIDE {
@@ -100,73 +102,6 @@ class FakeProfileSyncService : public TestProfileSyncService {
                                                  sync_pb::SyncEnums::TYPE_WIN));
   }
 };
-
-void BuildSessionSpecifics(const std::string& tag,
-                           sync_pb::SessionSpecifics* meta) {
-  meta->set_session_tag(tag);
-  sync_pb::SessionHeader* header = meta->mutable_header();
-  header->set_device_type(sync_pb::SyncEnums_DeviceType_TYPE_LINUX);
-  header->set_client_name("name");
-}
-
-void AddWindowSpecifics(int window_id,
-                        const std::vector<int>& tab_list,
-                        sync_pb::SessionSpecifics* meta) {
-  sync_pb::SessionHeader* header = meta->mutable_header();
-  sync_pb::SessionWindow* window = header->add_window();
-  window->set_window_id(window_id);
-  window->set_selected_tab_index(0);
-  window->set_browser_type(sync_pb::SessionWindow_BrowserType_TYPE_TABBED);
-  for (std::vector<int>::const_iterator iter = tab_list.begin();
-       iter != tab_list.end(); ++iter) {
-    window->add_tab(*iter);
-  }
-}
-
-// Verifies number of windows, number of tabs, and basic fields.
-void VerifySyncedSession(
-    const std::string& tag,
-    const std::vector<std::vector<SessionID::id_type> >& windows,
-    const SyncedSession& session) {
-  ASSERT_EQ(tag, session.session_tag);
-  ASSERT_EQ(SyncedSession::TYPE_LINUX, session.device_type);
-  ASSERT_EQ("name", session.session_name);
-  ASSERT_EQ(windows.size(), session.windows.size());
-
-  // We assume the window id's are in increasing order.
-  int i = 0;
-  for (std::vector<std::vector<int> >::const_iterator win_iter =
-           windows.begin();
-       win_iter != windows.end(); ++win_iter, ++i) {
-    SessionWindow* win_ptr;
-    SyncedSession::SyncedWindowMap::const_iterator map_iter =
-        session.windows.find(i);
-    if (map_iter != session.windows.end())
-      win_ptr = map_iter->second;
-    else
-      FAIL();
-    ASSERT_EQ(win_iter->size(), win_ptr->tabs.size());
-    ASSERT_EQ(0, win_ptr->selected_tab_index);
-    ASSERT_EQ(1, win_ptr->type);
-    int j = 0;
-    for (std::vector<int>::const_iterator tab_iter = (*win_iter).begin();
-         tab_iter != (*win_iter).end(); ++tab_iter, ++j) {
-      SessionTab* tab = win_ptr->tabs[j];
-      ASSERT_EQ(*tab_iter, tab->tab_id.id());
-      ASSERT_EQ(1U, tab->navigations.size());
-      ASSERT_EQ(1, tab->tab_visual_index);
-      ASSERT_EQ(0, tab->current_navigation_index);
-      ASSERT_TRUE(tab->pinned);
-      ASSERT_EQ("app_id", tab->extension_app_id);
-      ASSERT_EQ(1U, tab->navigations.size());
-      ASSERT_EQ(tab->navigations[0].virtual_url(), GURL("http://foo/1"));
-      ASSERT_EQ(tab->navigations[0].referrer().url, GURL("referrer"));
-      ASSERT_EQ(tab->navigations[0].title(), string16(ASCIIToUTF16("title")));
-      ASSERT_EQ(tab->navigations[0].transition_type(),
-                content::PAGE_TRANSITION_TYPED);
-    }
-  }
-}
 
 bool CompareMemoryToString(
     const std::string& str,
@@ -188,37 +123,21 @@ class ProfileSyncServiceSessionTest
  public:
   ProfileSyncServiceSessionTest()
       : window_bounds_(0, 1, 2, 3),
-        notified_of_update_(false),
         notified_of_refresh_(false),
-        max_tab_node_id_(0) {}
+        notified_of_update_(false) {}
   ProfileSyncService* sync_service() { return sync_service_.get(); }
-
-  void BuildTabSpecifics(const std::string& tag, int window_id, int tab_id,
-                         sync_pb::SessionSpecifics* tab_base) {
-    tab_base->set_session_tag(tag);
-    tab_base->set_tab_node_id(++max_tab_node_id_);
-    sync_pb::SessionTab* tab = tab_base->mutable_tab();
-    tab->set_tab_id(tab_id);
-    tab->set_tab_visual_index(1);
-    tab->set_current_navigation_index(0);
-    tab->set_pinned(true);
-    tab->set_extension_app_id("app_id");
-    sync_pb::TabNavigation* navigation = tab->add_navigation();
-    navigation->set_virtual_url("http://foo/1");
-    navigation->set_referrer("referrer");
-    navigation->set_title("title");
-    navigation->set_page_transition(sync_pb::SyncEnums_PageTransition_TYPED);
-  }
 
  protected:
   virtual TestingProfile* CreateProfile() OVERRIDE {
-    TestingProfile* profile = new TestingProfile();
+    TestingProfile::Builder builder;
+    builder.AddTestingFactory(ProfileOAuth2TokenServiceFactory::GetInstance(),
+                              FakeOAuth2TokenService::BuildTokenService);
     // Don't want the profile to create a real ProfileSyncService.
-    ProfileSyncServiceFactory::GetInstance()->SetTestingFactory(profile,
-                                                                NULL);
+    builder.AddTestingFactory(ProfileSyncServiceFactory::GetInstance(), NULL);
+    scoped_ptr<TestingProfile> profile(builder.Build());
     invalidation::InvalidationServiceFactory::GetInstance()->
         SetBuildOnlyFakeInvalidatorsForTest(true);
-    return profile;
+    return profile.release();
   }
 
   virtual void SetUp() {
@@ -248,7 +167,6 @@ class ProfileSyncServiceSessionTest
   }
 
   virtual void TearDown() {
-    max_tab_node_id_ = 0;
     sync_service_->Shutdown();
     sync_service_.reset();
 
@@ -271,16 +189,16 @@ class ProfileSyncServiceSessionTest
     SigninManagerBase* signin =
         SigninManagerFactory::GetForProfile(profile());
     signin->SetAuthenticatedUsername("test_user");
-    ProfileOAuth2TokenServiceFactory::GetInstance()->SetTestingFactory(
-        profile(), FakeOAuth2TokenService::BuildTokenService);
+    ProfileOAuth2TokenService* oauth2_token_service =
+        ProfileOAuth2TokenServiceFactory::GetForProfile(profile());
     ProfileSyncComponentsFactoryMock* factory =
         new ProfileSyncComponentsFactoryMock();
     sync_service_.reset(new FakeProfileSyncService(
         factory,
         profile(),
         signin,
-        ProfileSyncService::AUTO_START,
-        false));
+        oauth2_token_service,
+        ProfileSyncService::AUTO_START));
     sync_service_->set_backend_init_callback(callback);
 
     // Register the session data type.
@@ -301,10 +219,8 @@ class ProfileSyncServiceSessionTest
     EXPECT_CALL(*factory, CreateDataTypeManager(_, _, _, _, _, _)).
         WillOnce(ReturnNewDataTypeManager());
 
-    TokenServiceFactory::GetForProfile(profile())->IssueAuthTokenForTest(
-        GaiaConstants::kGaiaOAuth2LoginRefreshToken, "oauth2_login_token");
-    TokenServiceFactory::GetForProfile(profile())->IssueAuthTokenForTest(
-        GaiaConstants::kSyncService, "token");
+    ProfileOAuth2TokenServiceFactory::GetForProfile(profile())
+        ->UpdateCredentials("test_user", "oauth2_login_token");
     sync_service_->Initialize();
     base::MessageLoop::current()->Run();
     return true;
@@ -317,11 +233,11 @@ class ProfileSyncServiceSessionTest
   SessionID window_id_;
   scoped_ptr<TestProfileSyncService> sync_service_;
   const gfx::Rect window_bounds_;
-  bool notified_of_update_;
   bool notified_of_refresh_;
+  bool notified_of_update_;
   content::NotificationRegistrar registrar_;
   net::TestURLFetcherFactory fetcher_factory_;
-  int max_tab_node_id_;
+  SessionSyncTestHelper helper_;
 };
 
 class CreateRootHelper {
@@ -450,17 +366,11 @@ TEST_F(ProfileSyncServiceSessionTest, WriteForeignSessionToNode) {
 
   // Fill an instance of session specifics with a foreign session's data.
   std::string tag = "tag1";
-  sync_pb::SessionSpecifics meta;
-  BuildSessionSpecifics(tag, &meta);
-  SessionID::id_type tab_nums1[] = {5, 10, 13, 17};
-  std::vector<SessionID::id_type> tab_list1(
-      tab_nums1, tab_nums1 + arraysize(tab_nums1));
-  AddWindowSpecifics(0, tab_list1, &meta);
+  SessionID::id_type nums1[] = {5, 10, 13, 17};
   std::vector<sync_pb::SessionSpecifics> tabs1;
-  tabs1.resize(tab_list1.size());
-  for (size_t i = 0; i < tab_list1.size(); ++i) {
-    BuildTabSpecifics(tag, 0, tab_list1[i], &tabs1[i]);
-  }
+  std::vector<SessionID::id_type> tab_list1(nums1, nums1 + arraysize(nums1));
+  sync_pb::SessionSpecifics meta(helper_.BuildForeignSession(
+      tag, tab_list1, &tabs1));
 
   // Update associator with the session's meta node containing one window.
   model_associator_->AssociateForeignSpecifics(meta, base::Time());
@@ -476,7 +386,7 @@ TEST_F(ProfileSyncServiceSessionTest, WriteForeignSessionToNode) {
   ASSERT_EQ(1U, foreign_sessions.size());
   std::vector<std::vector<SessionID::id_type> > session_reference;
   session_reference.push_back(tab_list1);
-  VerifySyncedSession(tag, session_reference, *(foreign_sessions[0]));
+  helper_.VerifySyncedSession(tag, session_reference, *(foreign_sessions[0]));
 }
 
 // Write a foreign session with one window to a node. Sync, then add a window.
@@ -488,17 +398,11 @@ TEST_F(ProfileSyncServiceSessionTest, WriteForeignSessionToNodeThreeWindows) {
 
   // Build a foreign session with one window and four tabs.
   std::string tag = "tag1";
-  sync_pb::SessionSpecifics meta;
-  BuildSessionSpecifics(tag, &meta);
-  SessionID::id_type tab_nums1[] = {5, 10, 13, 17};
-  std::vector<SessionID::id_type> tab_list1(
-      tab_nums1, tab_nums1 + arraysize(tab_nums1));
-  AddWindowSpecifics(0, tab_list1, &meta);
+  SessionID::id_type nums1[] = {5, 10, 13, 17};
   std::vector<sync_pb::SessionSpecifics> tabs1;
-  tabs1.resize(tab_list1.size());
-  for (size_t i = 0; i < tab_list1.size(); ++i) {
-    BuildTabSpecifics(tag, 0, tab_list1[i], &tabs1[i]);
-  }
+  std::vector<SessionID::id_type> tab_list1(nums1, nums1 + arraysize(nums1));
+  sync_pb::SessionSpecifics meta(helper_.BuildForeignSession(
+      tag, tab_list1, &tabs1));
   // Update associator with the session's meta node containing one window.
   model_associator_->AssociateForeignSpecifics(meta, base::Time());
   // Add tabs for first window.
@@ -512,17 +416,17 @@ TEST_F(ProfileSyncServiceSessionTest, WriteForeignSessionToNodeThreeWindows) {
   ASSERT_TRUE(model_associator_->GetAllForeignSessions(&foreign_sessions));
   std::vector<std::vector<SessionID::id_type> > session_reference;
   session_reference.push_back(tab_list1);
-  VerifySyncedSession(tag, session_reference, *(foreign_sessions[0]));
+  helper_.VerifySyncedSession(tag, session_reference, *(foreign_sessions[0]));
 
   // Add a second window.
   SessionID::id_type tab_nums2[] = {7, 15, 18, 20};
   std::vector<SessionID::id_type> tab_list2(
       tab_nums2, tab_nums2 + arraysize(tab_nums2));
-  AddWindowSpecifics(1, tab_list2, &meta);
+  helper_.AddWindowSpecifics(1, tab_list2, &meta);
   std::vector<sync_pb::SessionSpecifics> tabs2;
   tabs2.resize(tab_list2.size());
   for (size_t i = 0; i < tab_list2.size(); ++i) {
-    BuildTabSpecifics(tag, 0, tab_list2[i], &tabs2[i]);
+    helper_.BuildTabSpecifics(tag, 0, tab_list2[i], &tabs2[i]);
   }
   // Update associator with the session's meta node containing two windows.
   model_associator_->AssociateForeignSpecifics(meta, base::Time());
@@ -537,17 +441,17 @@ TEST_F(ProfileSyncServiceSessionTest, WriteForeignSessionToNodeThreeWindows) {
   ASSERT_TRUE(model_associator_->GetAllForeignSessions(&foreign_sessions));
   ASSERT_EQ(1U, foreign_sessions.size());
   session_reference.push_back(tab_list2);
-  VerifySyncedSession(tag, session_reference, *(foreign_sessions[0]));
+  helper_.VerifySyncedSession(tag, session_reference, *(foreign_sessions[0]));
 
   // Add a third window.
   SessionID::id_type tab_nums3[] = {8, 16, 19, 21};
   std::vector<SessionID::id_type> tab_list3(
       tab_nums3, tab_nums3 + arraysize(tab_nums3));
-  AddWindowSpecifics(2, tab_list3, &meta);
+  helper_.AddWindowSpecifics(2, tab_list3, &meta);
   std::vector<sync_pb::SessionSpecifics> tabs3;
   tabs3.resize(tab_list3.size());
   for (size_t i = 0; i < tab_list3.size(); ++i) {
-    BuildTabSpecifics(tag, 0, tab_list3[i], &tabs3[i]);
+    helper_.BuildTabSpecifics(tag, 0, tab_list3[i], &tabs3[i]);
   }
   // Update associator with the session's meta node containing three windows.
   model_associator_->AssociateForeignSpecifics(meta, base::Time());
@@ -562,12 +466,12 @@ TEST_F(ProfileSyncServiceSessionTest, WriteForeignSessionToNodeThreeWindows) {
   ASSERT_TRUE(model_associator_->GetAllForeignSessions(&foreign_sessions));
   ASSERT_EQ(1U, foreign_sessions.size());
   session_reference.push_back(tab_list3);
-  VerifySyncedSession(tag, session_reference, *(foreign_sessions[0]));
+  helper_.VerifySyncedSession(tag, session_reference, *(foreign_sessions[0]));
 
   // Close third window (by clearing and then not adding it back).
   meta.mutable_header()->clear_window();
-  AddWindowSpecifics(0, tab_list1, &meta);
-  AddWindowSpecifics(1, tab_list2, &meta);
+  helper_.AddWindowSpecifics(0, tab_list1, &meta);
+  helper_.AddWindowSpecifics(1, tab_list2, &meta);
   // Update associator with just the meta node, now containing only two windows.
   model_associator_->AssociateForeignSpecifics(meta, base::Time());
 
@@ -576,11 +480,11 @@ TEST_F(ProfileSyncServiceSessionTest, WriteForeignSessionToNodeThreeWindows) {
   ASSERT_TRUE(model_associator_->GetAllForeignSessions(&foreign_sessions));
   ASSERT_EQ(1U, foreign_sessions.size());
   session_reference.pop_back();  // Pop off the data for the third window.
-  VerifySyncedSession(tag, session_reference, *(foreign_sessions[0]));
+  helper_.VerifySyncedSession(tag, session_reference, *(foreign_sessions[0]));
 
   // Close second window (by clearing and then not adding it back).
   meta.mutable_header()->clear_window();
-  AddWindowSpecifics(0, tab_list1, &meta);
+  helper_.AddWindowSpecifics(0, tab_list1, &meta);
   // Update associator with just the meta node, now containing only one windows.
   model_associator_->AssociateForeignSpecifics(meta, base::Time());
 
@@ -589,7 +493,7 @@ TEST_F(ProfileSyncServiceSessionTest, WriteForeignSessionToNodeThreeWindows) {
   ASSERT_TRUE(model_associator_->GetAllForeignSessions(&foreign_sessions));
   ASSERT_EQ(1U, foreign_sessions.size());
   session_reference.pop_back();  // Pop off the data for the second window.
-  VerifySyncedSession(tag, session_reference, *(foreign_sessions[0]));
+  helper_.VerifySyncedSession(tag, session_reference, *(foreign_sessions[0]));
 }
 
 // Write a foreign session to a node, with the tabs arriving first, and then
@@ -601,17 +505,11 @@ TEST_F(ProfileSyncServiceSessionTest, WriteForeignSessionToNodeTabsFirst) {
 
   // Fill an instance of session specifics with a foreign session's data.
   std::string tag = "tag1";
-  sync_pb::SessionSpecifics meta;
-  BuildSessionSpecifics(tag, &meta);
-  SessionID::id_type tab_nums1[] = {5, 10, 13, 17};
-  std::vector<SessionID::id_type> tab_list1(
-      tab_nums1, tab_nums1 + arraysize(tab_nums1));
-  AddWindowSpecifics(0, tab_list1, &meta);
+  SessionID::id_type nums1[] = {5, 10, 13, 17};
   std::vector<sync_pb::SessionSpecifics> tabs1;
-  tabs1.resize(tab_list1.size());
-  for (size_t i = 0; i < tab_list1.size(); ++i) {
-    BuildTabSpecifics(tag, 0, tab_list1[i], &tabs1[i]);
-  }
+  std::vector<SessionID::id_type> tab_list1 (nums1, nums1 + arraysize(nums1));
+  sync_pb::SessionSpecifics meta(helper_.BuildForeignSession(
+      tag, tab_list1, &tabs1));
 
   // Add tabs for first window.
   for (std::vector<sync_pb::SessionSpecifics>::iterator iter = tabs1.begin();
@@ -627,7 +525,7 @@ TEST_F(ProfileSyncServiceSessionTest, WriteForeignSessionToNodeTabsFirst) {
   ASSERT_EQ(1U, foreign_sessions.size());
   std::vector<std::vector<SessionID::id_type> > session_reference;
   session_reference.push_back(tab_list1);
-  VerifySyncedSession(tag, session_reference, *(foreign_sessions[0]));
+  helper_.VerifySyncedSession(tag, session_reference, *(foreign_sessions[0]));
 }
 
 // Write a foreign session to a node with some tabs that never arrive.
@@ -638,27 +536,21 @@ TEST_F(ProfileSyncServiceSessionTest, WriteForeignSessionToNodeMissingTabs) {
 
   // Fill an instance of session specifics with a foreign session's data.
   std::string tag = "tag1";
-  sync_pb::SessionSpecifics meta;
-  BuildSessionSpecifics(tag, &meta);
-  SessionID::id_type tab_nums1[] = {5, 10, 13, 17};
-  std::vector<SessionID::id_type> tab_list1(
-      tab_nums1, tab_nums1 + arraysize(tab_nums1));
-  AddWindowSpecifics(0, tab_list1, &meta);
+  SessionID::id_type nums1[] = {5, 10, 13, 17};
   std::vector<sync_pb::SessionSpecifics> tabs1;
-  tabs1.resize(tab_list1.size());  // First window has all the tabs
-  for (size_t i = 0; i < tab_list1.size(); ++i) {
-    BuildTabSpecifics(tag, 0, tab_list1[i], &tabs1[i]);
-  }
+  std::vector<SessionID::id_type> tab_list1 (nums1, nums1 + arraysize(nums1));
+  sync_pb::SessionSpecifics meta(helper_.BuildForeignSession(
+      tag, tab_list1, &tabs1));
   // Add a second window, but this time only create two tab nodes, despite the
   // window expecting four tabs.
   SessionID::id_type tab_nums2[] = {7, 15, 18, 20};
   std::vector<SessionID::id_type> tab_list2(
       tab_nums2, tab_nums2 + arraysize(tab_nums2));
-  AddWindowSpecifics(1, tab_list2, &meta);
+  helper_.AddWindowSpecifics(1, tab_list2, &meta);
   std::vector<sync_pb::SessionSpecifics> tabs2;
   tabs2.resize(2);
   for (size_t i = 0; i < 2; ++i) {
-    BuildTabSpecifics(tag, 0, tab_list2[i], &tabs2[i]);
+    helper_.BuildTabSpecifics(tag, 0, tab_list2[i], &tabs2[i]);
   }
 
   // Update associator with the session's meta node containing two windows.
@@ -684,7 +576,7 @@ TEST_F(ProfileSyncServiceSessionTest, WriteForeignSessionToNodeMissingTabs) {
 
   // Close the second window.
   meta.mutable_header()->clear_window();
-  AddWindowSpecifics(0, tab_list1, &meta);
+  helper_.AddWindowSpecifics(0, tab_list1, &meta);
 
   // Update associator with the session's meta node containing one window.
   model_associator_->AssociateForeignSpecifics(meta, base::Time());
@@ -696,7 +588,7 @@ TEST_F(ProfileSyncServiceSessionTest, WriteForeignSessionToNodeMissingTabs) {
   ASSERT_EQ(1U, foreign_sessions[0]->windows.size());
   std::vector<std::vector<SessionID::id_type> > session_reference;
   session_reference.push_back(tab_list1);
-  VerifySyncedSession(tag, session_reference, *(foreign_sessions[0]));
+  helper_.VerifySyncedSession(tag, session_reference, *(foreign_sessions[0]));
 }
 
 // Test the DataTypeController on update.
@@ -839,21 +731,19 @@ TEST_F(ProfileSyncServiceSessionTest, DeleteForeignSession) {
   // Should do nothing if the foreign session doesn't exist.
   std::vector<const SyncedSession*> foreign_sessions;
   ASSERT_FALSE(model_associator_->GetAllForeignSessions(&foreign_sessions));
+  ASSERT_FALSE(notified_of_update_);
   model_associator_->DeleteForeignSession(tag);
   ASSERT_FALSE(model_associator_->GetAllForeignSessions(&foreign_sessions));
+  // Verify that deleteForeignSession did not trigger the
+  // NOTIFICATION_FOREIGN_SESSION_DISABLED notification.
+  ASSERT_FALSE(notified_of_update_);
 
   // Fill an instance of session specifics with a foreign session's data.
-  sync_pb::SessionSpecifics meta;
-  BuildSessionSpecifics(tag, &meta);
-  SessionID::id_type tab_nums1[] = {5, 10, 13, 17};
-  std::vector<SessionID::id_type> tab_list1(
-      tab_nums1, tab_nums1 + arraysize(tab_nums1));
-  AddWindowSpecifics(0, tab_list1, &meta);
+  SessionID::id_type nums1[] = {5, 10, 13, 17};
   std::vector<sync_pb::SessionSpecifics> tabs1;
-  tabs1.resize(tab_list1.size());
-  for (size_t i = 0; i < tab_list1.size(); ++i) {
-    BuildTabSpecifics(tag, 0, tab_list1[i], &tabs1[i]);
-  }
+  std::vector<SessionID::id_type> tab_list1 (nums1, nums1 + arraysize(nums1));
+  sync_pb::SessionSpecifics meta(helper_.BuildForeignSession(
+      tag, tab_list1, &tabs1));
 
   // Update associator with the session's meta node containing one window.
   model_associator_->AssociateForeignSpecifics(meta, base::Time());
@@ -868,11 +758,16 @@ TEST_F(ProfileSyncServiceSessionTest, DeleteForeignSession) {
   ASSERT_EQ(1U, foreign_sessions.size());
   std::vector<std::vector<SessionID::id_type> > session_reference;
   session_reference.push_back(tab_list1);
-  VerifySyncedSession(tag, session_reference, *(foreign_sessions[0]));
+  helper_.VerifySyncedSession(tag, session_reference, *(foreign_sessions[0]));
 
+  ASSERT_FALSE(notified_of_update_);
   // Now delete the foreign session.
   model_associator_->DeleteForeignSession(tag);
   ASSERT_FALSE(model_associator_->GetAllForeignSessions(&foreign_sessions));
+
+  // Verify that deleteForeignSession triggers the
+  // NOTIFICATION_FOREIGN_SESSION_DISABLED notification.
+  ASSERT_TRUE(notified_of_update_);
 }
 
 // Associate both a non-stale foreign session and a stale foreign session.
@@ -884,28 +779,22 @@ TEST_F(ProfileSyncServiceSessionTest, DeleteStaleSessions) {
 
   // Fill two instances of session specifics with a foreign session's data.
   std::string tag = "tag1";
-  sync_pb::SessionSpecifics meta;
-  BuildSessionSpecifics(tag, &meta);
-  SessionID::id_type tab_nums1[] = {5, 10, 13, 17};
-  std::vector<SessionID::id_type> tab_list1(
-      tab_nums1, tab_nums1 + arraysize(tab_nums1));
-  AddWindowSpecifics(0, tab_list1, &meta);
+  SessionID::id_type nums1[] = {5, 10, 13, 17};
   std::vector<sync_pb::SessionSpecifics> tabs1;
-  tabs1.resize(tab_list1.size());
-  for (size_t i = 0; i < tab_list1.size(); ++i) {
-    BuildTabSpecifics(tag, 0, tab_list1[i], &tabs1[i]);
-  }
+  std::vector<SessionID::id_type> tab_list1 (nums1, nums1 + arraysize(nums1));
+  sync_pb::SessionSpecifics meta(helper_.BuildForeignSession(
+      tag, tab_list1, &tabs1));
   std::string tag2 = "tag2";
   sync_pb::SessionSpecifics meta2;
-  BuildSessionSpecifics(tag2, &meta2);
+  helper_.BuildSessionSpecifics(tag2, &meta2);
   SessionID::id_type tab_nums2[] = {8, 15, 18, 20};
   std::vector<SessionID::id_type> tab_list2(
       tab_nums2, tab_nums2 + arraysize(tab_nums2));
-  AddWindowSpecifics(0, tab_list2, &meta2);
+  helper_.AddWindowSpecifics(0, tab_list2, &meta2);
   std::vector<sync_pb::SessionSpecifics> tabs2;
   tabs2.resize(tab_list2.size());
   for (size_t i = 0; i < tab_list2.size(); ++i) {
-    BuildTabSpecifics(tag2, 0, tab_list2[i], &tabs2[i]);
+    helper_.BuildTabSpecifics(tag2, 0, tab_list2[i], &tabs2[i]);
   }
 
   // Set the modification time for tag1 to be 21 days ago, tag2 to 5 days ago.
@@ -935,7 +824,7 @@ TEST_F(ProfileSyncServiceSessionTest, DeleteStaleSessions) {
   ASSERT_EQ(1U, foreign_sessions.size());
   std::vector<std::vector<SessionID::id_type> > session_reference;
   session_reference.push_back(tab_list2);
-  VerifySyncedSession(tag2, session_reference, *(foreign_sessions[0]));
+  helper_.VerifySyncedSession(tag2, session_reference, *(foreign_sessions[0]));
 }
 
 // Write a stale foreign session to a node. Then update one of its tabs so
@@ -946,17 +835,11 @@ TEST_F(ProfileSyncServiceSessionTest, StaleSessionRefresh) {
   ASSERT_TRUE(create_root.success());
 
   std::string tag = "tag1";
-  sync_pb::SessionSpecifics meta;
-  BuildSessionSpecifics(tag, &meta);
-  SessionID::id_type tab_nums1[] = {5, 10, 13, 17};
-  std::vector<SessionID::id_type> tab_list1(
-      tab_nums1, tab_nums1 + arraysize(tab_nums1));
-  AddWindowSpecifics(0, tab_list1, &meta);
+  SessionID::id_type nums1[] = {5, 10, 13, 17};
   std::vector<sync_pb::SessionSpecifics> tabs1;
-  tabs1.resize(tab_list1.size());
-  for (size_t i = 0; i < tab_list1.size(); ++i) {
-    BuildTabSpecifics(tag, 0, tab_list1[i], &tabs1[i]);
-  }
+  std::vector<SessionID::id_type> tab_list1 (nums1, nums1 + arraysize(nums1));
+  sync_pb::SessionSpecifics meta(helper_.BuildForeignSession(
+      tag, tab_list1, &tabs1));
 
   // Associate.
   base::Time stale_time = base::Time::Now() - base::TimeDelta::FromDays(21);
@@ -980,7 +863,7 @@ TEST_F(ProfileSyncServiceSessionTest, StaleSessionRefresh) {
   ASSERT_EQ(1U, foreign_sessions.size());
   std::vector<std::vector<SessionID::id_type> > session_reference;
   session_reference.push_back(tab_list1);
-  VerifySyncedSession(tag, session_reference, *(foreign_sessions[0]));
+  helper_.VerifySyncedSession(tag, session_reference, *(foreign_sessions[0]));
 }
 
 // Crashes sometimes on Windows, particularly XP.
@@ -1212,12 +1095,12 @@ TEST_F(ProfileSyncServiceSessionTest, Favicons) {
   // Build a foreign session with one window and one tab.
   std::string tag = "tag1";
   sync_pb::SessionSpecifics meta;
-  BuildSessionSpecifics(tag, &meta);
+  helper_.BuildSessionSpecifics(tag, &meta);
   std::vector<SessionID::id_type> tab_list;
   tab_list.push_back(5);
-  AddWindowSpecifics(0, tab_list, &meta);
+  helper_.AddWindowSpecifics(0, tab_list, &meta);
   sync_pb::SessionSpecifics tab;
-  BuildTabSpecifics(tag, 0, tab_list[0], &tab);
+  helper_.BuildTabSpecifics(tag, 0, tab_list[0], &tab);
   std::string url = tab.tab().navigation(0).virtual_url();
   scoped_refptr<base::RefCountedMemory> favicon;
 

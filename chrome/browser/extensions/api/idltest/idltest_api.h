@@ -5,12 +5,11 @@
 #ifndef CHROME_BROWSER_EXTENSIONS_API_IDLTEST_IDLTEST_API_H_
 #define CHROME_BROWSER_EXTENSIONS_API_IDLTEST_IDLTEST_API_H_
 
-#include "chrome/browser/extensions/extension_function.h"
+#include "extensions/browser/extension_function.h"
 
 class IdltestSendArrayBufferFunction : public SyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION("experimental.idltest.sendArrayBuffer",
-                             EXPERIMENTAL_IDLTEST_SENDARRAYBUFFER)
+  DECLARE_EXTENSION_FUNCTION("idltest.sendArrayBuffer", IDLTEST_SENDARRAYBUFFER)
 
  protected:
   virtual ~IdltestSendArrayBufferFunction() {}
@@ -19,8 +18,8 @@ class IdltestSendArrayBufferFunction : public SyncExtensionFunction {
 
 class IdltestSendArrayBufferViewFunction : public SyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION("experimental.idltest.sendArrayBufferView",
-                             EXPERIMENTAL_IDLTEST_SENDARRAYBUFFERVIEW)
+  DECLARE_EXTENSION_FUNCTION("idltest.sendArrayBufferView",
+                             IDLTEST_SENDARRAYBUFFERVIEW)
 
  protected:
   virtual ~IdltestSendArrayBufferViewFunction() {}
@@ -29,8 +28,7 @@ class IdltestSendArrayBufferViewFunction : public SyncExtensionFunction {
 
 class IdltestGetArrayBufferFunction : public SyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION("experimental.idltest.getArrayBuffer",
-                             EXPERIMENTAL_IDLTEST_GETARRAYBUFFER)
+  DECLARE_EXTENSION_FUNCTION("idltest.getArrayBuffer", IDLTEST_GETARRAYBUFFER)
 
  protected:
   virtual ~IdltestGetArrayBufferFunction() {}

@@ -8,11 +8,9 @@
 #include "base/stl_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
-#include "chrome/browser/bookmarks/bookmark_model_factory.h"
-#include "chrome/browser/bookmarks/bookmark_node_data.h"
-#include "chrome/browser/bookmarks/bookmark_utils.h"
-#include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/bookmarks/bookmark_stats.h"
 #include "chrome/browser/ui/views/bookmarks/bookmark_bar_view.h"
+#include "chrome/browser/ui/views/bookmarks/bookmark_menu_controller_observer.h"
 #include "chrome/browser/ui/views/bookmarks/bookmark_menu_delegate.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/page_navigator.h"
@@ -36,14 +34,15 @@ BookmarkMenuController::BookmarkMenuController(Browser* browser,
                                                const BookmarkNode* node,
                                                int start_child_index)
     : menu_delegate_(
-        new BookmarkMenuDelegate(browser, page_navigator, parent, 1)),
+        new BookmarkMenuDelegate(browser, page_navigator, parent, 1,
+                                 kint32max)),
       node_(node),
       observer_(NULL),
       for_drop_(false),
       bookmark_bar_(NULL) {
   menu_delegate_->Init(this, NULL, node, start_child_index,
                        BookmarkMenuDelegate::HIDE_PERMANENT_FOLDERS,
-                       bookmark_utils::LAUNCH_BAR_SUBFOLDER);
+                       BOOKMARK_LAUNCH_LOCATION_BAR_SUBFOLDER);
   menu_runner_.reset(new views::MenuRunner(menu_delegate_->menu()));
 }
 
@@ -60,8 +59,7 @@ void BookmarkMenuController::RunMenuAt(BookmarkBarView* bookmark_bar,
   gfx::Rect bounds(screen_loc.x(), screen_loc.y(), menu_button->width(),
                    menu_button->height() - 1);
   for_drop_ = for_drop;
-  BookmarkModelFactory::GetForProfile(
-      menu_delegate_->profile())->AddObserver(this);
+  menu_delegate_->GetBookmarkModel()->AddObserver(this);
   // We only delete ourself after the menu completes, so we can safely ignore
   // the return value.
   ignore_result(menu_runner_->RunMenuAt(menu_delegate_->parent(), menu_button,
@@ -87,7 +85,7 @@ void BookmarkMenuController::SetPageNavigator(PageNavigator* navigator) {
   menu_delegate_->SetPageNavigator(navigator);
 }
 
-string16 BookmarkMenuController::GetTooltipText(int id,
+base::string16 BookmarkMenuController::GetTooltipText(int id,
                                                 const gfx::Point& p) const {
   return menu_delegate_->GetTooltipText(id, p);
 }
@@ -171,7 +169,7 @@ views::MenuItemView* BookmarkMenuController::GetSiblingMenu(
   if (!bookmark_bar_ || for_drop_)
     return NULL;
   gfx::Point bookmark_bar_loc(screen_point);
-  views::View::ConvertPointToTarget(NULL, bookmark_bar_, &bookmark_bar_loc);
+  views::View::ConvertPointFromScreen(bookmark_bar_, &bookmark_bar_loc);
   int start_index;
   const BookmarkNode* node = bookmark_bar_->GetNodeForButtonAtModelIndex(
       bookmark_bar_loc, &start_index);
@@ -195,8 +193,7 @@ void BookmarkMenuController::BookmarkModelChanged() {
 }
 
 BookmarkMenuController::~BookmarkMenuController() {
-  BookmarkModelFactory::GetForProfile(
-      menu_delegate_->profile())->RemoveObserver(this);
+  menu_delegate_->GetBookmarkModel()->RemoveObserver(this);
   if (observer_)
-    observer_->BookmarkMenuDeleted(this);
+    observer_->BookmarkMenuControllerDeleted(this);
 }

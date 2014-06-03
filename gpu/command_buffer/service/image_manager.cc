@@ -9,10 +9,43 @@
 namespace gpu {
 namespace gles2 {
 
-ImageManager::ImageManager() {
+ImageManager::ImageManager() : release_after_use_(false) {
 }
 
 ImageManager::~ImageManager() {
+}
+
+bool ImageManager::RegisterGpuMemoryBuffer(int32 id,
+                                           gfx::GpuMemoryBufferHandle buffer,
+                                           size_t width,
+                                           size_t height,
+                                           unsigned internalformat) {
+  if (id <= 0) {
+    DVLOG(0) << "Cannot register GPU memory buffer with non-positive ID.";
+    return false;
+  }
+
+  if (LookupImage(id)) {
+    DVLOG(0) << "GPU memory buffer ID already in use.";
+    return false;
+  }
+
+  scoped_refptr<gfx::GLImage> gl_image =
+      gfx::GLImage::CreateGLImageForGpuMemoryBuffer(buffer,
+                                                    gfx::Size(width, height),
+                                                    internalformat);
+  if (!gl_image)
+    return false;
+
+  if (release_after_use_)
+    gl_image->SetReleaseAfterUse();
+
+  AddImage(gl_image.get(), id);
+  return true;
+}
+
+void ImageManager::DestroyGpuMemoryBuffer(int32 id) {
+  RemoveImage(id);
 }
 
 void ImageManager::AddImage(gfx::GLImage* image, int32 service_id) {
@@ -29,6 +62,10 @@ gfx::GLImage* ImageManager::LookupImage(int32 service_id) {
     return iter->second.get();
 
   return NULL;
+}
+
+void ImageManager::SetReleaseAfterUse() {
+  release_after_use_ = true;
 }
 
 }  // namespace gles2

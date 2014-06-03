@@ -7,7 +7,7 @@ from telemetry.page import page_measurement
 
 class ImageDecoding(page_measurement.PageMeasurement):
   def CustomizeBrowserOptions(self, options):
-    options.extra_browser_args.append('--enable-gpu-benchmarking')
+    options.AppendExtraBrowserArgs('--enable-gpu-benchmarking')
 
   def WillNavigateToPage(self, page, tab):
     tab.ExecuteJavaScript("""
@@ -19,8 +19,8 @@ class ImageDecoding(page_measurement.PageMeasurement):
     """)
     tab.StartTimelineRecording()
 
-  def NeedsBrowserRestartAfterEachRun(self, tab):
-    return not tab.ExecuteJavaScript("""
+  def NeedsBrowserRestartAfterEachRun(self, browser):
+    return not browser.tabs[0].ExecuteJavaScript("""
         window.chrome &&
             chrome.gpuBenchmarking &&
             chrome.gpuBenchmarking.clearImageCache;

@@ -4,16 +4,137 @@
 
 #include "chrome/browser/extensions/api/webview/webview_api.h"
 
+#include "chrome/browser/extensions/api/browsing_data/browsing_data_api.h"
 #include "chrome/browser/extensions/tab_helper.h"
-#include "chrome/browser/guestview/webview/webview_guest.h"
 #include "chrome/common/extensions/api/webview.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
-#include "content/public/browser/user_metrics.h"
+#include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/common/error_utils.h"
 
+using content::WebContents;
 using extensions::api::tabs::InjectDetails;
+using extensions::api::webview::SetPermission::Params;
+namespace webview = extensions::api::webview;
+
+namespace extensions {
+
+namespace {
+int MaskForKey(const char* key) {
+  if (strcmp(key, extension_browsing_data_api_constants::kAppCacheKey) == 0)
+    return content::StoragePartition::REMOVE_DATA_MASK_APPCACHE;
+  if (strcmp(key, extension_browsing_data_api_constants::kCookiesKey) == 0)
+    return content::StoragePartition::REMOVE_DATA_MASK_COOKIES;
+  if (strcmp(key, extension_browsing_data_api_constants::kFileSystemsKey) == 0)
+    return content::StoragePartition::REMOVE_DATA_MASK_FILE_SYSTEMS;
+  if (strcmp(key, extension_browsing_data_api_constants::kIndexedDBKey) == 0)
+    return content::StoragePartition::REMOVE_DATA_MASK_INDEXEDDB;
+  if (strcmp(key, extension_browsing_data_api_constants::kLocalStorageKey) == 0)
+    return content::StoragePartition::REMOVE_DATA_MASK_LOCAL_STORAGE;
+  if (strcmp(key, extension_browsing_data_api_constants::kWebSQLKey) == 0)
+    return content::StoragePartition::REMOVE_DATA_MASK_WEBSQL;
+  return 0;
+}
+
+}  // namespace
+
+bool WebviewExtensionFunction::RunImpl() {
+  int instance_id = 0;
+  EXTENSION_FUNCTION_VALIDATE(args_->GetInteger(0, &instance_id));
+  WebViewGuest* guest = WebViewGuest::From(
+      render_view_host()->GetProcess()->GetID(), instance_id);
+  if (!guest)
+    return false;
+
+  return RunImplSafe(guest);
+}
+
+WebviewClearDataFunction::WebviewClearDataFunction()
+    : remove_mask_(0),
+      bad_message_(false) {
+};
+
+WebviewClearDataFunction::~WebviewClearDataFunction() {
+};
+
+// Parses the |dataToRemove| argument to generate the remove mask. Sets
+// |bad_message_| (like EXTENSION_FUNCTION_VALIDATE would if this were a bool
+// method) if 'dataToRemove' is not present.
+uint32 WebviewClearDataFunction::GetRemovalMask() {
+  base::DictionaryValue* data_to_remove;
+  if (!args_->GetDictionary(2, &data_to_remove)) {
+    bad_message_ = true;
+    return 0;
+  }
+
+  uint32 remove_mask = 0;
+  for (base::DictionaryValue::Iterator i(*data_to_remove);
+       !i.IsAtEnd();
+       i.Advance()) {
+    bool selected = false;
+    if (!i.value().GetAsBoolean(&selected)) {
+      bad_message_ = true;
+      return 0;
+    }
+    if (selected)
+      remove_mask |= MaskForKey(i.key().c_str());
+  }
+
+  return remove_mask;
+}
+
+// TODO(lazyboy): Parameters in this extension function are similar (or a
+// sub-set) to BrowsingDataRemoverFunction. How can we share this code?
+bool WebviewClearDataFunction::RunImplSafe(WebViewGuest* guest) {
+  // Grab the initial |options| parameter, and parse out the arguments.
+  base::DictionaryValue* options;
+  EXTENSION_FUNCTION_VALIDATE(args_->GetDictionary(1, &options));
+  DCHECK(options);
+
+  // If |ms_since_epoch| isn't set, default it to 0.
+  double ms_since_epoch;
+  if (!options->GetDouble(extension_browsing_data_api_constants::kSinceKey,
+                          &ms_since_epoch)) {
+    ms_since_epoch = 0;
+  }
+
+  // base::Time takes a double that represents seconds since epoch. JavaScript
+  // gives developers milliseconds, so do a quick conversion before populating
+  // the object. Also, Time::FromDoubleT converts double time 0 to empty Time
+  // object. So we need to do special handling here.
+  remove_since_ = (ms_since_epoch == 0) ?
+      base::Time::UnixEpoch() :
+      base::Time::FromDoubleT(ms_since_epoch / 1000.0);
+
+  remove_mask_ = GetRemovalMask();
+  if (bad_message_)
+    return false;
+
+  AddRef();  // Balanced below or in WebviewClearDataFunction::Done().
+
+  bool scheduled = false;
+  if (remove_mask_) {
+    scheduled = guest->ClearData(
+        remove_since_,
+        remove_mask_,
+        base::Bind(&WebviewClearDataFunction::ClearDataDone,
+                   this));
+  }
+  if (!remove_mask_ || !scheduled) {
+    SendResponse(false);
+    Release();  // Balanced above.
+    return false;
+  }
+
+  // Will finish asynchronously.
+  return true;
+}
+
+void WebviewClearDataFunction::ClearDataDone() {
+  Release();  // Balanced in RunImpl().
+  SendResponse(true);
+}
 
 WebviewExecuteCodeFunction::WebviewExecuteCodeFunction()
     : guest_instance_id_(0) {
@@ -72,7 +193,6 @@ void WebviewExecuteScriptFunction::OnExecuteCodeFinished(
     int32 on_page_id,
     const GURL& on_url,
     const base::ListValue& result) {
-  content::RecordAction(content::UserMetricsAction("WebView.ExecuteScript"));
   if (error.empty())
     SetResult(result.DeepCopy());
   WebviewExecuteCodeFunction::OnExecuteCodeFinished(error, on_page_id, on_url,
@@ -86,25 +206,39 @@ bool WebviewInsertCSSFunction::ShouldInsertCSS() const {
   return true;
 }
 
+WebviewCaptureVisibleRegionFunction::WebviewCaptureVisibleRegionFunction() {
+}
+
+WebviewCaptureVisibleRegionFunction::~WebviewCaptureVisibleRegionFunction() {
+}
+
+bool WebviewCaptureVisibleRegionFunction::IsScreenshotEnabled() {
+  return true;
+}
+
+WebContents* WebviewCaptureVisibleRegionFunction::GetWebContentsForID(
+    int instance_id) {
+  WebViewGuest* guest = WebViewGuest::From(
+      render_view_host()->GetProcess()->GetID(), instance_id);
+  return guest ? guest->guest_web_contents() : NULL;
+}
+
+void WebviewCaptureVisibleRegionFunction::OnCaptureFailure(
+    FailureReason reason) {
+  SendResponse(false);
+}
+
 WebviewGoFunction::WebviewGoFunction() {
 }
 
 WebviewGoFunction::~WebviewGoFunction() {
 }
 
-bool WebviewGoFunction::RunImpl() {
-  int instance_id = 0;
-  EXTENSION_FUNCTION_VALIDATE(args_->GetInteger(0, &instance_id));
+bool WebviewGoFunction::RunImplSafe(WebViewGuest* guest) {
+  scoped_ptr<webview::Go::Params> params(webview::Go::Params::Create(*args_));
+  EXTENSION_FUNCTION_VALIDATE(params.get());
 
-  int relative_index = 0;
-  EXTENSION_FUNCTION_VALIDATE(args_->GetInteger(1, &relative_index));
-
-  WebViewGuest* guest = WebViewGuest::From(
-      render_view_host()->GetProcess()->GetID(), instance_id);
-  if (!guest)
-    return false;
-
-  guest->Go(relative_index);
+  guest->Go(params->relative_index);
   return true;
 }
 
@@ -114,15 +248,7 @@ WebviewReloadFunction::WebviewReloadFunction() {
 WebviewReloadFunction::~WebviewReloadFunction() {
 }
 
-bool WebviewReloadFunction::RunImpl() {
-  int instance_id = 0;
-  EXTENSION_FUNCTION_VALIDATE(args_->GetInteger(0, &instance_id));
-
-  WebViewGuest* guest = WebViewGuest::From(
-      render_view_host()->GetProcess()->GetID(), instance_id);
-  if (!guest)
-    return false;
-
+bool WebviewReloadFunction::RunImplSafe(WebViewGuest* guest) {
   guest->Reload();
   return true;
 }
@@ -133,26 +259,52 @@ WebviewSetPermissionFunction::WebviewSetPermissionFunction() {
 WebviewSetPermissionFunction::~WebviewSetPermissionFunction() {
 }
 
-bool WebviewSetPermissionFunction::RunImpl() {
-  int instance_id = 0;
-  EXTENSION_FUNCTION_VALIDATE(args_->GetInteger(0, &instance_id));
+bool WebviewSetPermissionFunction::RunImplSafe(WebViewGuest* guest) {
+  scoped_ptr<webview::SetPermission::Params> params(
+      webview::SetPermission::Params::Create(*args_));
+  EXTENSION_FUNCTION_VALIDATE(params.get());
 
-  int request_id = 0;
-  EXTENSION_FUNCTION_VALIDATE(args_->GetInteger(1, &request_id));
-
-  bool should_allow = false;
-  EXTENSION_FUNCTION_VALIDATE(args_->GetBoolean(2, &should_allow));
+  WebViewGuest::PermissionResponseAction action = WebViewGuest::DEFAULT;
+  switch (params->action) {
+    case Params::ACTION_ALLOW:
+      action = WebViewGuest::ALLOW;
+      break;
+    case Params::ACTION_DENY:
+      action = WebViewGuest::DENY;
+      break;
+    case Params::ACTION_DEFAULT:
+      break;
+    default:
+      NOTREACHED();
+  }
 
   std::string user_input;
-  EXTENSION_FUNCTION_VALIDATE(args_->GetString(3, &user_input));
+  if (params->user_input)
+    user_input = *params->user_input;
 
-  WebViewGuest* guest = WebViewGuest::From(
-      render_view_host()->GetProcess()->GetID(), instance_id);
-  if (!guest)
-    return false;
+  WebViewGuest::SetPermissionResult result =
+      guest->SetPermission(params->request_id, action, user_input);
 
-  EXTENSION_FUNCTION_VALIDATE(
-      guest->SetPermission(request_id, should_allow, user_input));
+  EXTENSION_FUNCTION_VALIDATE(result != WebViewGuest::SET_PERMISSION_INVALID);
+
+  SetResult(base::Value::CreateBooleanValue(
+      result == WebViewGuest::SET_PERMISSION_ALLOWED));
+  SendResponse(true);
+  return true;
+}
+
+WebviewOverrideUserAgentFunction::WebviewOverrideUserAgentFunction() {
+}
+
+WebviewOverrideUserAgentFunction::~WebviewOverrideUserAgentFunction() {
+}
+
+bool WebviewOverrideUserAgentFunction::RunImplSafe(WebViewGuest* guest) {
+  scoped_ptr<extensions::api::webview::OverrideUserAgent::Params> params(
+      extensions::api::webview::OverrideUserAgent::Params::Create(*args_));
+  EXTENSION_FUNCTION_VALIDATE(params.get());
+
+  guest->SetUserAgentOverride(params->user_agent_override);
   return true;
 }
 
@@ -162,15 +314,7 @@ WebviewStopFunction::WebviewStopFunction() {
 WebviewStopFunction::~WebviewStopFunction() {
 }
 
-bool WebviewStopFunction::RunImpl() {
-  int instance_id = 0;
-  EXTENSION_FUNCTION_VALIDATE(args_->GetInteger(0, &instance_id));
-
-  WebViewGuest* guest = WebViewGuest::From(
-      render_view_host()->GetProcess()->GetID(), instance_id);
-  if (!guest)
-    return false;
-
+bool WebviewStopFunction::RunImplSafe(WebViewGuest* guest) {
   guest->Stop();
   return true;
 }
@@ -181,15 +325,9 @@ WebviewTerminateFunction::WebviewTerminateFunction() {
 WebviewTerminateFunction::~WebviewTerminateFunction() {
 }
 
-bool WebviewTerminateFunction::RunImpl() {
-  int instance_id = 0;
-  EXTENSION_FUNCTION_VALIDATE(args_->GetInteger(0, &instance_id));
-
-  WebViewGuest* guest = WebViewGuest::From(
-      render_view_host()->GetProcess()->GetID(), instance_id);
-  if (!guest)
-    return false;
-
+bool WebviewTerminateFunction::RunImplSafe(WebViewGuest* guest) {
   guest->Terminate();
   return true;
 }
+
+}  // namespace extensions

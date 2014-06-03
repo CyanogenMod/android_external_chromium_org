@@ -7,7 +7,6 @@
 #include "base/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/mac/foundation_util.h"
-#include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
@@ -16,10 +15,8 @@
 #include "chrome/browser/storage_monitor/storage_info.h"
 #include "chrome/browser/storage_monitor/test_storage_monitor.h"
 #include "chrome/test/base/testing_browser_process.h"
-#include "content/public/test/test_browser_thread.h"
+#include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gtest/include/gtest/gtest.h"
-
-namespace chrome {
 
 uint64 kTestSize = 1000000ULL;
 
@@ -31,8 +28,8 @@ StorageInfo CreateStorageInfo(
     const base::FilePath& mount_point,
     uint64 size_bytes) {
   return StorageInfo(
-      device_id, string16(), mount_point.value(),
-      string16(), string16(), UTF8ToUTF16(model_name),
+      device_id, base::string16(), mount_point.value(),
+      base::string16(), base::string16(), UTF8ToUTF16(model_name),
       size_bytes);
 }
 
@@ -40,13 +37,10 @@ StorageInfo CreateStorageInfo(
 
 class StorageMonitorMacTest : public testing::Test {
  public:
-  StorageMonitorMacTest()
-      : ui_thread_(content::BrowserThread::UI, &message_loop_),
-        file_thread_(content::BrowserThread::FILE, &message_loop_) {
-  }
+  StorageMonitorMacTest() {}
 
   virtual void SetUp() OVERRIDE {
-    test::TestStorageMonitor::RemoveSingleton();
+    TestStorageMonitor::RemoveSingleton();
     monitor_ = new StorageMonitorMac;
     scoped_ptr<StorageMonitor> pass_monitor(monitor_);
     TestingBrowserProcess* browser_process = TestingBrowserProcess::GetGlobal();
@@ -73,10 +67,7 @@ class StorageMonitorMacTest : public testing::Test {
   }
 
  protected:
-  // The message loop and file thread to run tests on.
-  base::MessageLoopForUI message_loop_;
-  content::TestBrowserThread ui_thread_;
-  content::TestBrowserThread file_thread_;
+  content::TestBrowserThreadBundle thread_bundle_;
 
   scoped_ptr<MockRemovableStorageObserver> mock_storage_observer_;
 
@@ -95,7 +86,7 @@ TEST_F(StorageMonitorMacTest, AddRemove) {
   EXPECT_EQ(1, mock_storage_observer_->attach_calls());
   EXPECT_EQ(0, mock_storage_observer_->detach_calls());
   EXPECT_EQ(device_id_, mock_storage_observer_->last_attached().device_id());
-  EXPECT_EQ(string16(), mock_storage_observer_->last_attached().name());
+  EXPECT_EQ(base::string16(), mock_storage_observer_->last_attached().name());
   EXPECT_EQ(mount_point_.value(),
             mock_storage_observer_->last_attached().location());
 
@@ -112,7 +103,7 @@ TEST_F(StorageMonitorMacTest, UpdateVolumeName) {
   EXPECT_EQ(1, mock_storage_observer_->attach_calls());
   EXPECT_EQ(0, mock_storage_observer_->detach_calls());
   EXPECT_EQ(device_id_, mock_storage_observer_->last_attached().device_id());
-  EXPECT_EQ(string16(), mock_storage_observer_->last_attached().name());
+  EXPECT_EQ(base::string16(), mock_storage_observer_->last_attached().name());
   EXPECT_EQ(kTestSize,
             mock_storage_observer_->last_attached().total_size_in_bytes());
   EXPECT_EQ(mount_point_.value(),
@@ -121,13 +112,13 @@ TEST_F(StorageMonitorMacTest, UpdateVolumeName) {
   StorageInfo info2 = CreateStorageInfo(
       device_id_, "", mount_point_, kTestSize * 2);
   UpdateDisk(info2, StorageMonitorMac::UPDATE_DEVICE_CHANGED);
-  message_loop_.RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
 
   EXPECT_EQ(1, mock_storage_observer_->detach_calls());
   EXPECT_EQ(device_id_, mock_storage_observer_->last_detached().device_id());
   EXPECT_EQ(2, mock_storage_observer_->attach_calls());
   EXPECT_EQ(device_id_, mock_storage_observer_->last_attached().device_id());
-  EXPECT_EQ(string16(), mock_storage_observer_->last_attached().name());
+  EXPECT_EQ(base::string16(), mock_storage_observer_->last_attached().name());
   EXPECT_EQ(kTestSize * 2,
             mock_storage_observer_->last_attached().total_size_in_bytes());
   EXPECT_EQ(mount_point_.value(),
@@ -137,7 +128,7 @@ TEST_F(StorageMonitorMacTest, UpdateVolumeName) {
 TEST_F(StorageMonitorMacTest, DCIM) {
   base::ScopedTempDir temp_dir;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
-  ASSERT_TRUE(file_util::CreateDirectory(
+  ASSERT_TRUE(base::CreateDirectory(
       temp_dir.path().Append(kDCIMDirectoryName)));
 
   base::FilePath mount_point = temp_dir.path();
@@ -150,7 +141,7 @@ TEST_F(StorageMonitorMacTest, DCIM) {
   EXPECT_EQ(1, mock_storage_observer_->attach_calls());
   EXPECT_EQ(0, mock_storage_observer_->detach_calls());
   EXPECT_EQ(device_id, mock_storage_observer_->last_attached().device_id());
-  EXPECT_EQ(string16(), mock_storage_observer_->last_attached().name());
+  EXPECT_EQ(base::string16(), mock_storage_observer_->last_attached().name());
   EXPECT_EQ(mount_point.value(),
             mock_storage_observer_->last_attached().location());
 }
@@ -161,7 +152,7 @@ TEST_F(StorageMonitorMacTest, GetStorageInfo) {
   EXPECT_EQ(1, mock_storage_observer_->attach_calls());
   EXPECT_EQ(0, mock_storage_observer_->detach_calls());
   EXPECT_EQ(device_id_, mock_storage_observer_->last_attached().device_id());
-  EXPECT_EQ(string16(), mock_storage_observer_->last_attached().name());
+  EXPECT_EQ(base::string16(), mock_storage_observer_->last_attached().name());
   EXPECT_EQ(mount_point_.value(),
             mock_storage_observer_->last_attached().location());
 
@@ -169,7 +160,7 @@ TEST_F(StorageMonitorMacTest, GetStorageInfo) {
   EXPECT_TRUE(monitor_->GetStorageInfoForPath(mount_point_.AppendASCII("foo"),
                                               &info));
   EXPECT_EQ(device_id_, info.device_id());
-  EXPECT_EQ(string16(), info.name());
+  EXPECT_EQ(base::string16(), info.name());
   EXPECT_EQ(mount_point_.value(), info.location());
   EXPECT_EQ(kTestSize, info.total_size_in_bytes());
 
@@ -184,5 +175,3 @@ TEST_F(StorageMonitorMacTest, DMG) {
   UpdateDisk(info, StorageMonitorMac::UPDATE_DEVICE_ADDED);
   EXPECT_EQ(0, mock_storage_observer_->attach_calls());
 }
-
-}  // namespace chrome

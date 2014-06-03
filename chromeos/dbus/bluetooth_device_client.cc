@@ -7,7 +7,6 @@
 #include "base/bind.h"
 #include "base/logging.h"
 #include "base/stl_util.h"
-#include "chromeos/dbus/fake_bluetooth_device_client.h"
 #include "dbus/bus.h"
 #include "dbus/message.h"
 #include "dbus/object_manager.h"
@@ -53,16 +52,7 @@ class BluetoothDeviceClientImpl
     : public BluetoothDeviceClient,
       public dbus::ObjectManager::Interface {
  public:
-  explicit BluetoothDeviceClientImpl(dbus::Bus* bus)
-      : bus_(bus),
-        weak_ptr_factory_(this) {
-    object_manager_ = bus_->GetObjectManager(
-        bluetooth_object_manager::kBluetoothObjectManagerServiceName,
-        dbus::ObjectPath(
-            bluetooth_object_manager::kBluetoothObjectManagerServicePath));
-    object_manager_->RegisterInterface(
-        bluetooth_device::kBluetoothDeviceInterface, this);
-  }
+  BluetoothDeviceClientImpl() : weak_ptr_factory_(this) {}
 
   virtual ~BluetoothDeviceClientImpl() {
     object_manager_->UnregisterInterface(
@@ -277,6 +267,16 @@ class BluetoothDeviceClientImpl
                    weak_ptr_factory_.GetWeakPtr(), error_callback));
   }
 
+ protected:
+  virtual void Init(dbus::Bus* bus) OVERRIDE {
+    object_manager_ = bus->GetObjectManager(
+        bluetooth_object_manager::kBluetoothObjectManagerServiceName,
+        dbus::ObjectPath(
+            bluetooth_object_manager::kBluetoothObjectManagerServicePath));
+    object_manager_->RegisterInterface(
+        bluetooth_device::kBluetoothDeviceInterface, this);
+  }
+
  private:
   // Called by dbus::ObjectManager when an object with the device interface
   // is created. Informs observers.
@@ -327,7 +327,6 @@ class BluetoothDeviceClientImpl
     error_callback.Run(error_name, error_message);
   }
 
-  dbus::Bus* bus_;
   dbus::ObjectManager* object_manager_;
 
   // List of observers interested in event notifications from us.
@@ -348,13 +347,8 @@ BluetoothDeviceClient::BluetoothDeviceClient() {
 BluetoothDeviceClient::~BluetoothDeviceClient() {
 }
 
-BluetoothDeviceClient* BluetoothDeviceClient::Create(
-    DBusClientImplementationType type,
-    dbus::Bus* bus) {
-  if (type == REAL_DBUS_CLIENT_IMPLEMENTATION)
-    return new BluetoothDeviceClientImpl(bus);
-  DCHECK_EQ(STUB_DBUS_CLIENT_IMPLEMENTATION, type);
-  return new FakeBluetoothDeviceClient();
+BluetoothDeviceClient* BluetoothDeviceClient::Create() {
+  return new BluetoothDeviceClientImpl();
 }
 
 }  // namespace chromeos

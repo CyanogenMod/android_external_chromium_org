@@ -21,6 +21,14 @@ do { \
   EXPECT_FLOAT_EQ((expected).height(), (actual).height()); \
 } while (false)
 
+#define EXPECT_RECT_NEAR(expected, actual, abs_error) \
+do { \
+  EXPECT_NEAR((expected).x(), (actual).x(), (abs_error)); \
+  EXPECT_NEAR((expected).y(), (actual).y(), (abs_error)); \
+  EXPECT_NEAR((expected).width(), (actual).width(), (abs_error)); \
+  EXPECT_NEAR((expected).height(), (actual).height(), (abs_error)); \
+} while (false)
+
 #define EXPECT_RECT_EQ(expected, actual) \
 do { \
   EXPECT_EQ((expected).x(), (actual).x()); \
@@ -54,6 +62,12 @@ do { \
   EXPECT_EQ((expected).y(), (actual).y()); \
 } while (false)
 
+#define EXPECT_VECTOR2DF_EQ(expected, actual) \
+do { \
+  EXPECT_FLOAT_EQ((expected).x(), (actual).x()); \
+  EXPECT_FLOAT_EQ((expected).y(), (actual).y()); \
+} while (false)
+
 #define EXPECT_FLOAT_ARRAY_EQ(expected, actual, count) \
 do { \
   for (int i = 0; i < count; i++) { \
@@ -70,10 +84,10 @@ void ExpectTransformationMatrixEq(const gfx::Transform& expected,
                                   const gfx::Transform& actual);
 
 #define EXPECT_TRANSFORMATION_MATRIX_EQ(expected, actual) \
-do { \
-  SCOPED_TRACE(""); \
-  cc::ExpectTransformationMatrixEq(expected, actual); \
-} while (false)
+  do {                                                    \
+    SCOPED_TRACE("");                                     \
+    ExpectTransformationMatrixEq(expected, actual);       \
+  } while (false)
 
 // Should be used in test code only, for convenience. Production code should use
 // the gfx::Transform::GetInverse() API.

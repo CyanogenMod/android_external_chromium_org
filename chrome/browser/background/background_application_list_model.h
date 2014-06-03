@@ -10,9 +10,9 @@
 
 #include "base/basictypes.h"
 #include "base/observer_list.h"
-#include "chrome/common/extensions/extension.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
+#include "extensions/common/extension.h"
 
 class Profile;
 
@@ -138,6 +138,13 @@ class BackgroundApplicationListModel : public content::NotificationObserver {
 
   // Refresh the list of background applications and generate notifications.
   void Update();
+
+  // Determines if the given extension has to be considered a "background app"
+  // due to its use of PushMessaging. Normally every extension that expectes
+  // push messages is classified as "background app", however there are some
+  // rare exceptions, so this function implements a whitelist.
+  static bool RequiresBackgroundModeForPushMessaging(
+      const extensions::Extension& extension);
 
   ApplicationMap applications_;
   extensions::ExtensionList extensions_;

@@ -32,7 +32,7 @@ SuggestionsMenuModel::SuggestionsMenuModel(
 SuggestionsMenuModel::~SuggestionsMenuModel() {}
 
 void SuggestionsMenuModel::AddKeyedItem(
-    const std::string& key, const string16& display_label) {
+    const std::string& key, const base::string16& display_label) {
   Item item = { key, true };
   items_.push_back(item);
   AddCheckItem(items_.size() - 1, display_label);
@@ -40,27 +40,27 @@ void SuggestionsMenuModel::AddKeyedItem(
 
 void SuggestionsMenuModel::AddKeyedItemWithIcon(
     const std::string& key,
-    const string16& display_label,
+    const base::string16& display_label,
     const gfx::Image& icon) {
   AddKeyedItem(key, display_label);
   SetIcon(items_.size() - 1, icon);
 }
 
-void SuggestionsMenuModel::AddKeyedItemWithSublabel(
+void SuggestionsMenuModel::AddKeyedItemWithMinorText(
     const std::string& key,
-    const string16& display_label,
-    const string16& display_sublabel) {
+    const base::string16& display_label,
+    const base::string16& display_minor_text) {
   AddKeyedItem(key, display_label);
-  SetSublabel(items_.size() - 1, display_sublabel);
+  SetMinorText(items_.size() - 1, display_minor_text);
 }
 
-void SuggestionsMenuModel::AddKeyedItemWithSublabelAndIcon(
+void SuggestionsMenuModel::AddKeyedItemWithMinorTextAndIcon(
     const std::string& key,
-    const string16& display_label,
-    const string16& display_sublabel,
+    const base::string16& display_label,
+    const base::string16& display_minor_text,
     const gfx::Image& icon) {
   AddKeyedItemWithIcon(key, display_label, icon);
-  SetSublabel(items_.size() - 1, display_sublabel);
+  SetMinorText(items_.size() - 1, display_minor_text);
 }
 
 void SuggestionsMenuModel::Reset() {
@@ -81,7 +81,12 @@ std::string SuggestionsMenuModel::GetItemKeyForCheckedItem() const {
 }
 
 void SuggestionsMenuModel::SetCheckedItem(const std::string& item_key) {
-  SetCheckedItemNthWithKey(item_key, 1);
+  for (size_t i = 0; i < items_.size(); ++i) {
+    if (items_[i].key == item_key) {
+      checked_item_ = i;
+      break;
+    }
+  }
 }
 
 void SuggestionsMenuModel::SetCheckedIndex(size_t index) {
@@ -89,20 +94,13 @@ void SuggestionsMenuModel::SetCheckedIndex(size_t index) {
   checked_item_ = index;
 }
 
-void SuggestionsMenuModel::SetCheckedItemNthWithKey(const std::string& item_key,
-                                                    size_t n) {
-  for (size_t i = 0; i < items_.size(); ++i) {
-    if (items_[i].key == item_key) {
-      checked_item_ = i;
-      if (n-- <= 1)
-        return;
-    }
-  }
-}
-
 void SuggestionsMenuModel::SetEnabled(const std::string& item_key,
                                       bool enabled) {
   items_[GetItemIndex(item_key)].enabled = enabled;
+}
+
+void SuggestionsMenuModel::MenuWillShow() {
+  ui::SimpleMenuModel::MenuWillShow();
 }
 
 bool SuggestionsMenuModel::IsCommandIdChecked(
@@ -128,6 +126,10 @@ void SuggestionsMenuModel::ExecuteCommand(int command_id, int event_flags) {
   delegate_->SuggestionItemSelected(this, command_id);
 }
 
+void SuggestionsMenuModel::MenuWillShow(ui::SimpleMenuModel* source) {
+  delegate_->SuggestionsMenuWillShow();
+}
+
 size_t SuggestionsMenuModel::GetItemIndex(const std::string& item_key) {
   for (size_t i = 0; i < items_.size(); ++i) {
     if (items_[i].key == item_key)
@@ -150,11 +152,11 @@ int MonthComboboxModel::GetItemCount() const {
 }
 
 // static
-string16 MonthComboboxModel::FormatMonth(int index) {
+base::string16 MonthComboboxModel::FormatMonth(int index) {
   return ASCIIToUTF16(base::StringPrintf("%.2d", index));
 }
 
-string16 MonthComboboxModel::GetItemAt(int index) {
+base::string16 MonthComboboxModel::GetItemAt(int index) {
   return index == 0 ?
       l10n_util::GetStringUTF16(IDS_AUTOFILL_DIALOG_PLACEHOLDER_EXPIRY_MONTH) :
       FormatMonth(index);
@@ -176,7 +178,7 @@ int YearComboboxModel::GetItemCount() const {
   return 11;
 }
 
-string16 YearComboboxModel::GetItemAt(int index) {
+base::string16 YearComboboxModel::GetItemAt(int index) {
   if (index == 0) {
     return l10n_util::GetStringUTF16(
         IDS_AUTOFILL_DIALOG_PLACEHOLDER_EXPIRY_YEAR);

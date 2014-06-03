@@ -14,16 +14,13 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/gtk/browser_window_gtk.h"
-#include "chrome/common/extensions/extension.h"
+#include "extensions/common/extension.h"
 #include "grit/generated_resources.h"
 #include "ui/base/gtk/gtk_hig_constants.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/gtk_util.h"
 
 namespace {
-
-// Left or right margin.
-const int kPanelHorizMargin = 13;
 
 // GTK implementation of the uninstall dialog.
 class ExtensionUninstallDialogGtk : public ExtensionUninstallDialog {

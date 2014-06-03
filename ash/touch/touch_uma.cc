@@ -4,15 +4,16 @@
 
 #include "ash/touch/touch_uma.h"
 
-#include "ash/shell_delegate.h"
+#include "ash/metrics/user_metrics_recorder.h"
+#include "ash/shell.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/stringprintf.h"
 #include "ui/aura/env.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_property.h"
-#include "ui/base/events/event.h"
-#include "ui/base/events/event_utils.h"
+#include "ui/events/event.h"
+#include "ui/events/event_utils.h"
 #include "ui/gfx/point_conversions.h"
 
 #if defined(USE_XI2_MT)
@@ -55,8 +56,10 @@ enum UMAEventType {
   UMA_ET_GESTURE_PINCH_UPDATE_3,
   UMA_ET_GESTURE_PINCH_UPDATE_4P,
   UMA_ET_GESTURE_LONG_TAP,
+  UMA_ET_GESTURE_SHOW_PRESS,
+  UMA_ET_GESTURE_TAP_CANCEL,
   // NOTE: Add new event types only immediately above this line. Make sure to
-  // update the enum list in tools/histogram/histograms.xml accordingly.
+  // update the enum list in tools/metrics/histogram/histograms.xml accordingly.
   UMA_ET_COUNT
 };
 
@@ -157,6 +160,10 @@ UMAEventType UMAEventTypeFromEvent(const ui::Event& event) {
         return UMA_ET_GESTURE_MULTIFINGER_SWIPE_3;
       return UMA_ET_GESTURE_MULTIFINGER_SWIPE;
     }
+    case ui::ET_GESTURE_TAP_CANCEL:
+      return UMA_ET_GESTURE_TAP_CANCEL;
+    case ui::ET_GESTURE_SHOW_PRESS:
+      return UMA_ET_GESTURE_SHOW_PRESS;
     case ui::ET_SCROLL:
       return UMA_ET_SCROLL;
     case ui::ET_SCROLL_FLING_START:
@@ -164,6 +171,7 @@ UMAEventType UMAEventTypeFromEvent(const ui::Event& event) {
     case ui::ET_SCROLL_FLING_CANCEL:
       return UMA_ET_SCROLL_FLING_CANCEL;
     default:
+      NOTREACHED();
       return UMA_ET_UNKNOWN;
   }
 }
@@ -263,7 +271,7 @@ void TouchUMA::RecordTouchEvent(aura::Window* target,
       0, kBucketCountForLocation, kBucketCountForLocation + 1);
 
   if (event.type() == ui::ET_TOUCH_PRESSED) {
-    Shell::GetInstance()->delegate()->RecordUserMetricsAction(
+    Shell::GetInstance()->metrics()->RecordUserMetricsAction(
         UMA_TOUCHSCREEN_TAP_DOWN);
 
     details->last_start_time_[event.touch_id()] = event.time_stamp();
@@ -292,7 +300,7 @@ void TouchUMA::RecordTouchEvent(aura::Window* target,
     if (details->last_start_time_.count(event.touch_id())) {
       base::TimeDelta duration = event.time_stamp() -
                                  details->last_start_time_[event.touch_id()];
-      UMA_HISTOGRAM_COUNTS_100("Ash.TouchDuration", duration.InMilliseconds());
+      UMA_HISTOGRAM_TIMES("Ash.TouchDuration2", duration);
 
       // Look for touches that were [almost] stationary for a long time.
       const double kLongStationaryTouchDuration = 10;

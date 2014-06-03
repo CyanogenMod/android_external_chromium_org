@@ -23,8 +23,11 @@ struct ImportedBookmarkEntry;
 struct ImportedFaviconUsage;
 class InProcessImporterBridge;
 
-namespace content {
+namespace autofill {
 struct PasswordForm;
+}
+
+namespace content{
 class UtilityProcessHost;
 }
 
@@ -40,10 +43,11 @@ struct URLKeywordInfo;
 // importer host, who actually does the writing.
 class ExternalProcessImporterClient : public content::UtilityProcessHostClient {
  public:
-  ExternalProcessImporterClient(ExternalProcessImporterHost* importer_host,
-                                const importer::SourceProfile& source_profile,
-                                uint16 items,
-                                InProcessImporterBridge* bridge);
+  ExternalProcessImporterClient(
+      base::WeakPtr<ExternalProcessImporterHost> importer_host,
+      const importer::SourceProfile& source_profile,
+      uint16 items,
+      InProcessImporterBridge* bridge);
 
   // Launches the task to start the external process.
   void Start();
@@ -65,14 +69,14 @@ class ExternalProcessImporterClient : public content::UtilityProcessHostClient {
       const std::vector<ImporterURLRow>& history_rows_group,
       int visit_source);
   void OnHomePageImportReady(const GURL& home_page);
-  void OnBookmarksImportStart(const string16& first_folder_name,
+  void OnBookmarksImportStart(const base::string16& first_folder_name,
                               size_t total_bookmarks_count);
   void OnBookmarksImportGroup(
       const std::vector<ImportedBookmarkEntry>& bookmarks_group);
   void OnFaviconsImportStart(size_t total_favicons_count);
   void OnFaviconsImportGroup(
       const std::vector<ImportedFaviconUsage>& favicons_group);
-  void OnPasswordFormImportReady(const content::PasswordForm& form);
+  void OnPasswordFormImportReady(const autofill::PasswordForm& form);
   void OnKeywordsImportReady(
       const std::vector<importer::URLKeywordInfo>& url_keywords,
       bool unique_on_host_and_path);
@@ -107,7 +111,7 @@ class ExternalProcessImporterClient : public content::UtilityProcessHostClient {
 
   // Usually some variation on IDS_BOOKMARK_GROUP_...; the name of the folder
   // under which imported bookmarks will be placed.
-  string16 bookmarks_first_folder_name_;
+  base::string16 bookmarks_first_folder_name_;
 
   // Total number of bookmarks to import.
   size_t total_bookmarks_count_;
@@ -121,8 +125,10 @@ class ExternalProcessImporterClient : public content::UtilityProcessHostClient {
   // Notifications received from the ProfileImportProcessHost are passed back
   // to process_importer_host_, which calls the ProfileWriter to record the
   // import data.  When the import process is done, process_importer_host_
-  // deletes itself.
-  ExternalProcessImporterHost* process_importer_host_;
+  // deletes itself. This is a weak ptr so that any messages received after
+  // the host has deleted itself are ignored (e.g., it's possible to receive
+  // OnProcessCrashed() after NotifyImportEnded()).
+  base::WeakPtr<ExternalProcessImporterHost> process_importer_host_;
 
   // Handles sending messages to the external process.  Deletes itself when
   // the external process dies (see

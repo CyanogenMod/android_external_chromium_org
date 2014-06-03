@@ -21,8 +21,8 @@
 #include "chromeos/dbus/shill_profile_client.h"
 #include "chromeos/dbus/shill_service_client.h"
 #include "chromeos/network/network_event_log.h"
-#include "chromeos/network/network_state.h"
 #include "chromeos/network/network_state_handler.h"
+#include "chromeos/network/shill_property_util.h"
 #include "dbus/object_path.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
 
@@ -38,15 +38,13 @@ std::string StripQuotations(const std::string& in_str) {
   return in_str;
 }
 
-void InvokeErrorCallback(const std::string& error,
-                         const std::string& path,
-                         const network_handler::ErrorCallback& error_callback) {
-  NET_LOG_ERROR(error, path);
-  if (error_callback.is_null())
-    return;
-  scoped_ptr<base::DictionaryValue> error_data(
-      network_handler::CreateErrorData(path, error, ""));
-  error_callback.Run(error, error_data.Pass());
+void InvokeErrorCallback(const std::string& service_path,
+                         const network_handler::ErrorCallback& error_callback,
+                         const std::string& error_name) {
+  std::string error_msg = "Config Error: " + error_name;
+  NET_LOG_ERROR(error_msg, service_path);
+  network_handler::RunErrorCallback(
+      error_callback, service_path, error_name, error_msg);
 }
 
 void GetPropertiesCallback(
@@ -57,23 +55,18 @@ void GetPropertiesCallback(
     const base::DictionaryValue& properties) {
   // Get the correct name from WifiHex if necessary.
   scoped_ptr<base::DictionaryValue> properties_copy(properties.DeepCopy());
-  std::string name = NetworkState::GetNameFromProperties(
-      service_path, properties);
+  std::string name =
+      shill_property_util::GetNameFromProperties(service_path, properties);
   if (!name.empty()) {
-    properties_copy->SetStringWithoutPathExpansion(
-        flimflam::kNameProperty, name);
+    properties_copy->SetStringWithoutPathExpansion(shill::kNameProperty, name);
   }
   if (call_status != DBUS_METHOD_CALL_SUCCESS) {
     // Because network services are added and removed frequently, we will see
     // failures regularly, so don't log these.
-    if (!error_callback.is_null()) {
-      scoped_ptr<base::DictionaryValue> error_data(
-          network_handler::CreateErrorData(
-              service_path,
-              network_handler::kDBusFailedError,
-              network_handler::kDBusFailedErrorMessage));
-      error_callback.Run(network_handler::kDBusFailedError, error_data.Pass());
-    }
+    network_handler::RunErrorCallback(error_callback,
+                                      service_path,
+                                      network_handler::kDBusFailedError,
+                                      network_handler::kDBusFailedErrorMessage);
   } else if (!callback.is_null()) {
     callback.Run(service_path, *properties_copy.get());
   }
@@ -92,16 +85,15 @@ void SetNetworkProfileErrorCallback(
 }
 
 bool IsPassphrase(const std::string& key) {
-  return key == flimflam::kEapPrivateKeyPasswordProperty ||
-      key == flimflam::kEapPasswordProperty ||
-      key == flimflam::kL2tpIpsecPasswordProperty ||
-      key == flimflam::kOpenVPNPasswordProperty ||
-      key == flimflam::kPassphraseProperty ||
-      key == flimflam::kOpenVPNOTPProperty ||
-      key == flimflam::kEapPrivateKeyProperty ||
-      key == flimflam::kEapPrivateKeyPasswordProperty ||
-      key == flimflam::kEapPinProperty ||
-      key == flimflam::kApnPasswordProperty;
+  return key == shill::kEapPrivateKeyPasswordProperty ||
+      key == shill::kEapPasswordProperty ||
+      key == shill::kL2tpIpsecPasswordProperty ||
+      key == shill::kOpenVPNPasswordProperty ||
+      key == shill::kPassphraseProperty ||
+      key == shill::kOpenVPNOTPProperty ||
+      key == shill::kEapPrivateKeyProperty ||
+      key == shill::kEapPinProperty ||
+      key == shill::kApnPasswordProperty;
 }
 
 void LogConfigProperties(const std::string& desc,
@@ -149,7 +141,7 @@ class NetworkConfigurationHandler::ProfileEntryDeleter
       const base::DictionaryValue& profile_entries) {
     if (call_status != DBUS_METHOD_CALL_SUCCESS) {
       InvokeErrorCallback(
-          "GetLoadableProfileEntries Failed", service_path_, error_callback_);
+          service_path_, error_callback_, "GetLoadableProfileEntriesFailed");
       owner_->ProfileEntryDeleterCompleted(service_path_);  // Deletes this.
       return;
     }
@@ -286,13 +278,20 @@ void NetworkConfigurationHandler::CreateConfiguration(
   ShillManagerClient* manager =
       DBusThreadManager::Get()->GetShillManagerClient();
   std::string type;
-  properties.GetStringWithoutPathExpansion(flimflam::kTypeProperty, &type);
+  properties.GetStringWithoutPathExpansion(shill::kTypeProperty, &type);
+  if (NetworkTypePattern::Ethernet().MatchesType(type)) {
+    InvokeErrorCallback(
+        "" /* no service path */,
+        error_callback,
+        "ConfigureServiceForProfile is not implemented for Ethernet");
+    return;
+  }
 
   NET_LOG_USER("CreateConfiguration", type);
   LogConfigProperties("Configure", type, properties);
 
   std::string profile;
-  properties.GetStringWithoutPathExpansion(flimflam::kProfileProperty,
+  properties.GetStringWithoutPathExpansion(shill::kProfileProperty,
                                            &profile);
   DCHECK(!profile.empty());
   manager->ConfigureServiceForProfile(
@@ -313,9 +312,9 @@ void NetworkConfigurationHandler::RemoveConfiguration(
     const network_handler::ErrorCallback& error_callback) {
   // Service.Remove is not reliable. Instead, request the profile entries
   // for the service and remove each entry.
-  if (profile_entry_deleters_.count(service_path)) {
+  if (ContainsKey(profile_entry_deleters_,service_path)) {
     InvokeErrorCallback(
-        "RemoveConfiguration In-Progress", service_path, error_callback);
+        service_path, error_callback, "RemoveConfigurationInProgress");
     return;
   }
   NET_LOG_USER("Remove Configuration", service_path);
@@ -334,7 +333,7 @@ void NetworkConfigurationHandler::SetNetworkProfile(
   base::StringValue profile_path_value(profile_path);
   DBusThreadManager::Get()->GetShillServiceClient()->SetProperty(
       dbus::ObjectPath(service_path),
-      flimflam::kProfileProperty,
+      shill::kProfileProperty,
       profile_path_value,
       callback,
       base::Bind(&SetNetworkProfileErrorCallback,

@@ -81,7 +81,7 @@ class SYNC_EXPORT_PRIVATE SyncManagerImpl :
       scoped_ptr<UnrecoverableErrorHandler> unrecoverable_error_handler,
       ReportUnrecoverableErrorFunction
           report_unrecoverable_error_function,
-      bool use_oauth2_token) OVERRIDE;
+      CancelationSignal* cancelation_signal) OVERRIDE;
   virtual void ThrowUnrecoverableError() OVERRIDE;
   virtual ModelTypeSet InitialSyncEndedTypes() OVERRIDE;
   virtual ModelTypeSet GetTypesWithEmptyProgressMarkerToken(
@@ -106,7 +106,6 @@ class SYNC_EXPORT_PRIVATE SyncManagerImpl :
   virtual void RemoveObserver(SyncManager::Observer* observer) OVERRIDE;
   virtual SyncStatus GetDetailedStatus() const OVERRIDE;
   virtual void SaveChanges() OVERRIDE;
-  virtual void StopSyncingForShutdown() OVERRIDE;
   virtual void ShutdownOnSyncThread() OVERRIDE;
   virtual UserShare* GetUserShare() OVERRIDE;
   virtual const std::string cache_guid() OVERRIDE;
@@ -181,6 +180,11 @@ class SYNC_EXPORT_PRIVATE SyncManagerImpl :
 
   bool GetHasInvalidAuthTokenForTest() const;
 
+ protected:
+  // Helper functions.  Virtual for testing.
+  virtual void NotifyInitializationSuccess();
+  virtual void NotifyInitializationFailure();
+
  private:
   friend class SyncManagerTest;
   FRIEND_TEST_ALL_PREFIXES(SyncManagerTest, NudgeDelayTest);
@@ -251,8 +255,7 @@ class SYNC_EXPORT_PRIVATE SyncManagerImpl :
 
   // Called for every notification. This updates the notification statistics
   // to be displayed in about:sync.
-  void UpdateNotificationInfo(
-      const ModelTypeInvalidationMap& invalidation_map);
+  void UpdateNotificationInfo(const ObjectIdInvalidationMap& invalidation_map);
 
   // Checks for server reachabilty and requests a nudge.
   void OnNetworkConnectivityChangedImpl();
@@ -285,8 +288,6 @@ class SYNC_EXPORT_PRIVATE SyncManagerImpl :
   const std::string name_;
 
   base::ThreadChecker thread_checker_;
-
-  base::WeakPtrFactory<SyncManagerImpl> weak_ptr_factory_;
 
   // Thread-safe handle used by
   // HandleCalculateChangesChangeEventFromSyncApi(), which can be
@@ -367,6 +368,8 @@ class SYNC_EXPORT_PRIVATE SyncManagerImpl :
   // changing passphrases, and in general handles sync-specific interactions
   // with the cryptographer.
   scoped_ptr<SyncEncryptionHandlerImpl> sync_encryption_handler_;
+
+  base::WeakPtrFactory<SyncManagerImpl> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(SyncManagerImpl);
 };

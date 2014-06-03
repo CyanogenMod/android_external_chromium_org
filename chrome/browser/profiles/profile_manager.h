@@ -45,6 +45,28 @@ class ProfileManager : public base::NonThreadSafe,
   // Physically remove deleted profile directories from disk.
   static void NukeDeletedProfilesFromDisk();
 
+  // Only to be used in ChromeOS:
+  // This is a temporary solution to get rid of the DEPRICATED GetDefaultProfile
+  // functions below. Going forward we will do architectural changes to reduce
+  // the Profile to get the browser context instead and by moving it into ash,
+  // but for the short time fix we add these two functions here, enabling us to
+  // get rid of GetDefaultProfile as a first step.
+  // TODO(skuhne): Move into ash's new user management function.
+
+  // Get the profile for the user which created the current session.
+  // Note that in case of a guest account this will return a 'suitable' profile.
+  static Profile* GetPrimaryUserProfile();
+
+  // Get the profile for the currently active user.
+  // Note that in case of a guest account this will return a 'suitable' profile.
+  static Profile* GetActiveUserProfile();
+
+  // Same as GetPrimaryUserProfile. Do not use!
+  static Profile* GetPrimaryUserProfileOrOffTheRecord();
+
+  // Same as GetPrimaryUserProfile. Do not use!
+  static Profile* GetActiveUserProfileOrOffTheRecord();
+
   // The following DEPRECATED functions should be removed: crbug.com/83792.
 
   // DEPRECATED: DO NOT USE unless in ChromeOS.
@@ -63,11 +85,11 @@ class ProfileManager : public base::NonThreadSafe,
 
   // DEPRECATED: DO NOT USE unless in ChromeOS.
   // Same as instance method but provides the default user_data_dir as well.
+  // Note that in case of a guest account this will return a 'suitable' profile.
   static Profile* GetDefaultProfile();
 
   // DEPRECATED: DO NOT USE unless in ChromeOS.
-  // Same as GetDefaultProfile() but returns OffTheRecord profile
-  // if guest login.
+  // Same as GetDefaultProfile(). Do not use.
   static Profile* GetDefaultProfileOrOffTheRecord();
 
   // Returns a profile for a specific profile directory within the user data
@@ -83,16 +105,9 @@ class ProfileManager : public base::NonThreadSafe,
   // immediately. Should be called on the UI thread.
   void CreateProfileAsync(const base::FilePath& profile_path,
                           const CreateCallback& callback,
-                          const string16& name,
-                          const string16& icon_url,
+                          const base::string16& name,
+                          const base::string16& icon_url,
                           const std::string& managed_user_id);
-
-  // Initiates profile creation identified by |active_profile_username_hash_|.
-  // If profile has already been created then the callback is called
-  // immediately. Should be called on the UI thread.
-  // This method is only used on Chrome OS where every user profile
-  // has username_hash associated with it.
-  static void CreateDefaultProfileAsync(const CreateCallback& callback);
 
   // Returns true if the profile pointer is known to point to an existing
   // profile.
@@ -165,13 +180,20 @@ class ProfileManager : public base::NonThreadSafe,
   // prohibited. Returns the file path to the profile that will be created
   // asynchronously.
   static base::FilePath CreateMultiProfileAsync(
-      const string16& name,
-      const string16& icon_url,
+      const base::string16& name,
+      const base::string16& icon_url,
       const CreateCallback& callback,
       const std::string& managed_user_id);
 
   // Returns the full path to be used for guest profiles.
   static base::FilePath GetGuestProfilePath();
+
+  // Get the path of the next profile directory and increment the internal
+  // count.
+  // Lack of side effects:
+  // This function doesn't actually create the directory or touch the file
+  // system.
+  base::FilePath GenerateNextProfileDirectoryPath();
 
   // Returns a ProfileInfoCache object which can be used to get information
   // about profiles without having to load them from disk.
@@ -187,11 +209,21 @@ class ProfileManager : public base::NonThreadSafe,
   void ScheduleProfileForDeletion(const base::FilePath& profile_dir,
                                   const CreateCallback& callback);
 
+  // Called on start-up if there are any stale ephemeral profiles to be deleted.
+  // This can be the case if the browser has crashed and the clean-up code had
+  // no chance to run then.
+  static void CleanUpStaleProfiles(
+      const std::vector<base::FilePath>& profile_paths);
+
   // Autoloads profiles if they are running background apps.
   void AutoloadProfiles();
 
   // Sign-Out a profile against use until re-authentication.
   void SignOutProfile(Profile* profile);
+
+  // Initializes user prefs of |profile|. This includes profile name and
+  // avatar values.
+  void InitProfileUserPrefs(Profile* profile);
 
   // Register and add testing profile to the ProfileManager. Use ONLY in tests.
   // This allows the creation of Profiles outside of the standard creation path
@@ -266,7 +298,7 @@ class ProfileManager : public base::NonThreadSafe,
   // RegisterProfile.
   ProfileInfo* GetProfileInfoByPath(const base::FilePath& path) const;
 
-  typedef std::pair<base::FilePath, string16> ProfilePathAndName;
+  typedef std::pair<base::FilePath, base::string16> ProfilePathAndName;
   typedef std::vector<ProfilePathAndName> ProfilePathAndNames;
   ProfilePathAndNames GetSortedProfilesFromDirectoryMap();
 
@@ -277,19 +309,11 @@ class ProfileManager : public base::NonThreadSafe,
   // Adds |profile| to the profile info cache if it hasn't been added yet.
   void AddProfileToCache(Profile* profile);
 
-  // Initializes user prefs of |profile|. This includes profile name and
-  // avatar values
-  void InitProfileUserPrefs(Profile* profile);
+  // Apply settings for (desktop) Guest User profile.
+  void SetGuestProfilePrefs(Profile* profile);
 
   // For ChromeOS, determines if profile should be otr.
   bool ShouldGoOffTheRecord(Profile* profile);
-
-  // Get the path of the next profile directory and increment the internal
-  // count.
-  // Lack of side effects:
-  // This function doesn't actually create the directory or touch the file
-  // system.
-  base::FilePath GenerateNextProfileDirectoryPath();
 
   void RunCallbacks(const std::vector<CreateCallback>& callbacks,
                     Profile* profile,

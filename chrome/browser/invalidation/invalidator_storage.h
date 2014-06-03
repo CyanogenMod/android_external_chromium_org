@@ -14,6 +14,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/threading/thread_checker.h"
 #include "sync/notifier/invalidation_state_tracker.h"
+#include "sync/notifier/unacked_invalidation_set.h"
 
 class PrefService;
 
@@ -33,29 +34,20 @@ class InvalidatorStorage : public base::SupportsWeakPtr<InvalidatorStorage>,
  public:
   static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
 
-  // |pref_service| may be NULL (for unit tests), but in that case no setter
-  // methods should be called. Does not own |pref_service|.
+  // |pref_service| may not be NULL. Does not own |pref_service|.
   explicit InvalidatorStorage(PrefService* pref_service);
   virtual ~InvalidatorStorage();
 
   // InvalidationStateTracker implementation.
-  virtual syncer::InvalidationStateMap GetAllInvalidationStates() const
-      OVERRIDE;
-  virtual void SetMaxVersionAndPayload(const invalidation::ObjectId& id,
-                                       int64 max_version,
-                                       const std::string& payload) OVERRIDE;
-  virtual void Forget(const syncer::ObjectIdSet& ids) OVERRIDE;
   virtual void SetInvalidatorClientId(const std::string& client_id) OVERRIDE;
   virtual std::string GetInvalidatorClientId() const OVERRIDE;
   virtual void SetBootstrapData(const std::string& data) OVERRIDE;
   virtual std::string GetBootstrapData() const OVERRIDE;
+  virtual void SetSavedInvalidations(
+      const syncer::UnackedInvalidationsMap& map) OVERRIDE;
+  virtual syncer::UnackedInvalidationsMap GetSavedInvalidations()
+      const OVERRIDE;
   virtual void Clear() OVERRIDE;
-  virtual void GenerateAckHandles(
-      const syncer::ObjectIdSet& ids,
-      const scoped_refptr<base::TaskRunner>& task_runner,
-      base::Callback<void(const syncer::AckHandleMap&)> callback) OVERRIDE;
-  virtual void Acknowledge(const invalidation::ObjectId& id,
-                           const syncer::AckHandle& ack_handle) OVERRIDE;
 
  private:
   FRIEND_TEST_ALL_PREFIXES(InvalidatorStorageTest, SerializeEmptyMap);
@@ -79,21 +71,6 @@ class InvalidatorStorage : public base::SupportsWeakPtr<InvalidatorStorage>,
 
   base::ThreadChecker thread_checker_;
 
-  // Helpers to convert between InvalidationStateMap <--> ListValue.
-  static void DeserializeFromList(
-      const base::ListValue& state_map_list,
-      syncer::InvalidationStateMap* state_map);
-  static void SerializeToList(
-      const syncer::InvalidationStateMap& state_map,
-      base::ListValue* state_map_list);
-
-  // Code for migrating from old MaxInvalidationVersions pref, which was a map
-  // from sync types to max invalidation versions.
-  void MigrateMaxInvalidationVersionsPref();
-  static void DeserializeMap(const base::DictionaryValue* max_versions_dict,
-                             syncer::InvalidationStateMap* map);
-
-  // May be NULL.
   PrefService* const pref_service_;
 
   DISALLOW_COPY_AND_ASSIGN(InvalidatorStorage);

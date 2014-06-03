@@ -10,7 +10,8 @@
 #include "ui/aura/client/capture_client.h"
 #include "ui/aura/client/focus_change_observer.h"
 #include "ui/aura/env.h"
-#include "ui/base/events/event.h"
+#include "ui/aura/window_tracker.h"
+#include "ui/events/event.h"
 #include "ui/views/corewm/focus_rules.h"
 
 namespace views {
@@ -130,9 +131,12 @@ void FocusController::FocusWindow(aura::Window* window) {
     return;
   }
 
-  // We should not be messing with the focus if the window has capture.
-  if (window && (aura::client::GetCaptureWindow(window) == window))
+  // We should not be messing with the focus if the window has capture, unless
+  // no has focus.
+  if (window && (aura::client::GetCaptureWindow(window) == window) &&
+      focused_window_) {
     return;
+  }
 
   // Focusing a window also activates its containing activatable window. Note
   // that the rules could redirect activation activation and/or focus.
@@ -174,15 +178,6 @@ void FocusController::ResetFocusWithinActiveWindow(aura::Window* window) {
 
 aura::Window* FocusController::GetFocusedWindow() {
   return focused_window_;
-}
-
-void FocusController::OnWindowHiddenInRootWindow(
-    aura::Window* window,
-    aura::RootWindow* root_window,
-    bool destroyed) {
-  //NOTREACHED();
-  // This method is only for compat with aura::FocusManager. It should not be
-  // needed in the new FocusController.
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -300,6 +295,11 @@ void FocusController::SetActiveWindow(aura::Window* requested_window,
 
   base::AutoReset<bool> updating_activation(&updating_activation_, true);
   aura::Window* lost_activation = active_window_;
+  // Allow for the window losing activation to be deleted during dispatch. If
+  // it is deleted pass NULL to observers instead of a deleted window.
+  aura::WindowTracker window_tracker;
+  if (lost_activation)
+    window_tracker.Add(lost_activation);
   if (active_window_ && observer_manager_.IsObserving(active_window_) &&
       focused_window_ != active_window_) {
     observer_manager_.Remove(active_window_);
@@ -312,16 +312,23 @@ void FocusController::SetActiveWindow(aura::Window* requested_window,
     active_window_->parent()->StackChildAtTop(active_window_);
   }
 
-  aura::client::ActivationChangeObserver* observer =
-      aura::client::GetActivationChangeObserver(lost_activation);
-  if (observer)
-    observer->OnWindowActivated(active_window_, lost_activation);
+  aura::client::ActivationChangeObserver* observer = NULL;
+  if (window_tracker.Contains(lost_activation)) {
+    observer = aura::client::GetActivationChangeObserver(lost_activation);
+    if (observer)
+      observer->OnWindowActivated(active_window_, lost_activation);
+  }
   observer = aura::client::GetActivationChangeObserver(active_window_);
-  if (observer)
-    observer->OnWindowActivated(active_window_, lost_activation);
+  if (observer) {
+    observer->OnWindowActivated(
+        active_window_,
+        window_tracker.Contains(lost_activation) ? lost_activation : NULL);
+  }
   FOR_EACH_OBSERVER(aura::client::ActivationChangeObserver,
                     activation_observers_,
-                    OnWindowActivated(active_window_, lost_activation));
+                    OnWindowActivated(active_window_,
+                                      window_tracker.Contains(lost_activation) ?
+                                      lost_activation : NULL));
 }
 
 void FocusController::WindowLostFocusFromDispositionChange(

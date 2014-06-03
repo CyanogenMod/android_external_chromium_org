@@ -13,13 +13,11 @@
 #include "base/threading/thread.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_version_info.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/browser_thread.h"
 #include "extensions/common/constants.h"
-#include "grit/chromium_strings.h"
-#include "ui/base/l10n/l10n_util.h"
+#include "extensions/common/extension.h"
 
 using content::BrowserThread;
 
@@ -44,7 +42,7 @@ void DeleteShortcutsOnFileThread(
 }
 
 void UpdateShortcutsOnFileThread(
-    const string16& old_app_title,
+    const base::string16& old_app_title,
     const ShellIntegration::ShortcutInfo& shortcut_info) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
 
@@ -68,9 +66,9 @@ static const char* kCrxAppPrefix = "_crx_";
 
 namespace internals {
 
-base::FilePath GetSanitizedFileName(const string16& name) {
+base::FilePath GetSanitizedFileName(const base::string16& name) {
 #if defined(OS_WIN)
-  string16 file_name = name;
+  base::string16 file_name = name;
 #else
   std::string file_name = UTF16ToUTF8(name);
 #endif
@@ -169,7 +167,7 @@ void DeleteAllShortcuts(const ShellIntegration::ShortcutInfo& shortcut_info) {
       base::Bind(&DeleteShortcutsOnFileThread, shortcut_info));
 }
 
-void UpdateAllShortcuts(const string16& old_app_title,
+void UpdateAllShortcuts(const base::string16& old_app_title,
                         const ShellIntegration::ShortcutInfo& shortcut_info) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
@@ -197,9 +195,9 @@ bool IsValidUrl(const GURL& url) {
   static const char* const kValidUrlSchemes[] = {
       chrome::kFileScheme,
       chrome::kFileSystemScheme,
-      chrome::kFtpScheme,
-      chrome::kHttpScheme,
-      chrome::kHttpsScheme,
+      content::kFtpScheme,
+      content::kHttpScheme,
+      content::kHttpsScheme,
       extensions::kExtensionScheme,
   };
 
@@ -228,19 +226,12 @@ void GetIconsInfo(const WebApplicationInfo& app_info,
 }
 #endif
 
-#if defined(TOOLKIT_GTK)
+#if defined(OS_LINUX)
 std::string GetWMClassFromAppName(std::string app_name) {
   file_util::ReplaceIllegalCharactersInPath(&app_name, '_');
-  TrimString(app_name, "_", &app_name);
+  base::TrimString(app_name, "_", &app_name);
   return app_name;
 }
 #endif
-
-string16 GetAppShortcutsSubdirName() {
-  chrome::VersionInfo::Channel channel = chrome::VersionInfo::GetChannel();
-  if (channel == chrome::VersionInfo::CHANNEL_CANARY)
-    return l10n_util::GetStringUTF16(IDS_APP_SHORTCUTS_SUBDIR_NAME_CANARY);
-  return l10n_util::GetStringUTF16(IDS_APP_SHORTCUTS_SUBDIR_NAME);
-}
 
 }  // namespace web_app

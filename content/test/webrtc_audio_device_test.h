@@ -45,14 +45,15 @@ class ScopedCOMInitializer;
 
 namespace content {
 
-class AudioInputRendererHost;
 class AudioMirroringManager;
-class AudioRendererHost;
 class ContentRendererClient;
 class MediaStreamManager;
 class RenderThreadImpl;
 class ResourceContext;
+class TestAudioInputRendererHost;
+class TestAudioRendererHost;
 class TestBrowserThread;
+class WebRtcAudioRenderer;
 class WebRTCMockRenderProcess;
 
 // Scoped class for WebRTC interfaces.  Fetches the wrapped interface
@@ -114,11 +115,9 @@ class ReplaceContentClientRenderer;
 
 // Temporarily disabled in LeakSanitizer builds due to memory leaks.
 // http://crbug.com/148865
-#if defined(LEAK_SANITIZER)
+// Disabling all tests for now since they are flaky.
+// http://crbug.com/167298
 #define MAYBE_WebRTCAudioDeviceTest DISABLED_WebRTCAudioDeviceTest
-#else
-#define MAYBE_WebRTCAudioDeviceTest WebRTCAudioDeviceTest
-#endif
 
 class MAYBE_WebRTCAudioDeviceTest : public ::testing::Test,
                                     public IPC::Listener {
@@ -133,6 +132,9 @@ class MAYBE_WebRTCAudioDeviceTest : public ::testing::Test,
   bool Send(IPC::Message* message);
 
   void SetAudioHardwareConfig(media::AudioHardwareConfig* hardware_config);
+
+  scoped_refptr<WebRtcAudioRenderer> CreateDefaultWebRtcAudioRenderer(
+      int render_view_id);
 
  protected:
   void InitializeIOThread(const char* thread_name);
@@ -151,11 +153,6 @@ class MAYBE_WebRTCAudioDeviceTest : public ::testing::Test,
   void WaitForAudioManagerCompletion();
   void WaitForMessageLoopCompletion(base::MessageLoopProxy* loop);
 
-  // Convenience getter for gmock.
-  MockMediaInternals& media_observer() const {
-    return *media_internals_.get();
-  }
-
   std::string GetTestDataPath(const base::FilePath::StringType& file_name);
 
   scoped_ptr<ReplaceContentClientRenderer> saved_content_renderer_;
@@ -163,15 +160,14 @@ class MAYBE_WebRTCAudioDeviceTest : public ::testing::Test,
   ContentRendererClient content_renderer_client_;
   RenderThreadImpl* render_thread_;  // Owned by mock_process_.
   scoped_ptr<WebRTCMockRenderProcess> mock_process_;
-  scoped_ptr<MockMediaInternals> media_internals_;
   scoped_ptr<MediaStreamManager> media_stream_manager_;
   scoped_ptr<media::AudioManager> audio_manager_;
   scoped_ptr<AudioMirroringManager> mirroring_manager_;
   scoped_ptr<net::URLRequestContext> test_request_context_;
   scoped_ptr<ResourceContext> resource_context_;
   scoped_ptr<IPC::Channel> channel_;
-  scoped_refptr<AudioRendererHost> audio_render_host_;
-  scoped_refptr<AudioInputRendererHost> audio_input_renderer_host_;
+  scoped_refptr<TestAudioRendererHost> audio_render_host_;
+  scoped_refptr<TestAudioInputRendererHost> audio_input_renderer_host_;
 
   media::AudioHardwareConfig* audio_hardware_config_;  // Weak reference.
 

@@ -13,11 +13,7 @@
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sessions/session_id.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_builder.h"
-#include "chrome/common/extensions/features/feature.h"
-#include "chrome/common/extensions/permissions/permissions_data.h"
-#include "chrome/common/extensions/value_builder.h"
+#include "chrome/common/extensions/features/feature_channel.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_details.h"
@@ -28,6 +24,11 @@
 #include "content/public/common/frame_navigate_params.h"
 #include "content/public/common/page_transition_types.h"
 #include "content/public/test/test_browser_thread.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/extension_builder.h"
+#include "extensions/common/features/feature.h"
+#include "extensions/common/permissions/permissions_data.h"
+#include "extensions/common/value_builder.h"
 
 using base::DictionaryValue;
 using base::ListValue;
@@ -39,10 +40,13 @@ namespace {
 
 scoped_refptr<const Extension> CreateTestExtension(
     const std::string& id,
-    bool has_active_tab_permission) {
+    bool has_active_tab_permission,
+    bool has_tab_capture_permission) {
   ListBuilder permissions;
   if (has_active_tab_permission)
     permissions.Append("activeTab");
+  if (has_tab_capture_permission)
+    permissions.Append("tabCapture");
   return ExtensionBuilder()
       .SetManifest(DictionaryBuilder()
           .Set("name", "Extension with ID " + id)
@@ -56,9 +60,15 @@ scoped_refptr<const Extension> CreateTestExtension(
 class ActiveTabTest : public ChromeRenderViewHostTestHarness {
  protected:
   ActiveTabTest()
-      : extension(CreateTestExtension("deadbeef", true)),
-        another_extension(CreateTestExtension("feedbeef", true)),
-        extension_without_active_tab(CreateTestExtension("badbeef", false)) {}
+      : current_channel(chrome::VersionInfo::CHANNEL_DEV),
+        extension(CreateTestExtension("deadbeef", true, false)),
+        another_extension(CreateTestExtension("feedbeef", true, false)),
+        extension_without_active_tab(CreateTestExtension("badbeef",
+                                                         false,
+                                                         false)),
+        extension_with_tab_capture(CreateTestExtension("cafebeef",
+                                                       true,
+                                                       true)) {}
 
   virtual void SetUp() OVERRIDE {
     ChromeRenderViewHostTestHarness::SetUp();
@@ -114,6 +124,17 @@ class ActiveTabTest : public ChromeRenderViewHostTestHarness {
         extension.get(), tab_id, APIPermission::kTab);
   }
 
+  bool IsGrantedForTab(const Extension* extension,
+                       const content::WebContents* web_contents) {
+    return PermissionsData::HasAPIPermissionForTab(
+        extension,
+        SessionID::IdForTab(web_contents),
+        APIPermission::kTab);
+  }
+
+  // TODO(justinlin): Remove when tabCapture is moved to stable.
+  ScopedCurrentChannel current_channel;
+
   // An extension with the activeTab permission.
   scoped_refptr<const Extension> extension;
 
@@ -122,6 +143,9 @@ class ActiveTabTest : public ChromeRenderViewHostTestHarness {
 
   // An extension without the activeTab permission.
   scoped_refptr<const Extension> extension_without_active_tab;
+
+  // An extension with both the activeTab and tabCapture permission.
+  scoped_refptr<const Extension> extension_with_tab_capture;
 };
 
 TEST_F(ActiveTabTest, GrantToSinglePage) {
@@ -241,19 +265,18 @@ TEST_F(ActiveTabTest, Uninstalling) {
 
   active_tab_permission_granter()->GrantIfRequested(extension.get());
 
-  EXPECT_TRUE(active_tab_permission_granter()->IsGranted(extension.get()));
+  EXPECT_TRUE(IsGrantedForTab(extension.get(), web_contents()));
   EXPECT_TRUE(IsAllowed(extension, google));
 
   // Uninstalling the extension should clear its tab permissions.
   UnloadedExtensionInfo details(extension.get(),
-                                extension_misc::UNLOAD_REASON_DISABLE);
+                                UnloadedExtensionInfo::REASON_DISABLE);
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_EXTENSION_UNLOADED,
       content::Source<Profile>(Profile::FromBrowserContext(
           web_contents()->GetBrowserContext())),
       content::Details<UnloadedExtensionInfo>(&details));
 
-  EXPECT_FALSE(active_tab_permission_granter()->IsGranted(extension.get()));
   // Note: can't EXPECT_FALSE(IsAllowed) here because uninstalled extensions
   // are just that... considered to be uninstalled, and the manager might
   // just ignore them from here on.
@@ -261,7 +284,7 @@ TEST_F(ActiveTabTest, Uninstalling) {
   // Granting the extension again should give them back.
   active_tab_permission_granter()->GrantIfRequested(extension.get());
 
-  EXPECT_TRUE(active_tab_permission_granter()->IsGranted(extension.get()));
+  EXPECT_TRUE(IsGrantedForTab(extension.get(), web_contents()));
   EXPECT_TRUE(IsAllowed(extension, google));
 }
 
@@ -317,6 +340,25 @@ TEST_F(ActiveTabTest, NavigateInPage) {
   EXPECT_FALSE(IsAllowed(extension, google_h1, tab_id()));
   EXPECT_FALSE(IsAllowed(extension, chromium, tab_id()));
   EXPECT_FALSE(IsAllowed(extension, chromium_h1, tab_id()));
+}
+
+TEST_F(ActiveTabTest, ChromeUrlGrants) {
+  GURL internal("chrome://version");
+  NavigateAndCommit(internal);
+  active_tab_permission_granter()->GrantIfRequested(
+      extension_with_tab_capture.get());
+  // Do not grant tabs/hosts permissions for tab.
+  EXPECT_TRUE(IsBlocked(extension_with_tab_capture, internal, tab_id()));
+  EXPECT_TRUE(PermissionsData::HasAPIPermissionForTab(
+      extension_with_tab_capture.get(),
+      tab_id(),
+      APIPermission::kTabCaptureForTab));
+
+  EXPECT_TRUE(IsBlocked(extension_with_tab_capture, internal, tab_id() + 1));
+  EXPECT_FALSE(PermissionsData::HasAPIPermissionForTab(
+      extension_with_tab_capture.get(),
+      tab_id() + 1,
+      APIPermission::kTabCaptureForTab));
 }
 
 }  // namespace

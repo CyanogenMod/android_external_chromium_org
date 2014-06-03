@@ -25,6 +25,7 @@
 #include "chromeos/network/network_event_log.h"
 #include "chromeos/network/network_state_handler.h"
 #include "chromeos/network/network_state_handler_observer.h"
+#include "chromeos/network/shill_property_util.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/url_data_source.h"
@@ -36,8 +37,8 @@
 #include "third_party/cros_system_api/dbus/service_constants.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/webui/jstemplate_builder.h"
-#include "ui/webui/web_ui_util.h"
+#include "ui/base/webui/jstemplate_builder.h"
+#include "ui/base/webui/web_ui_util.h"
 
 using content::BrowserThread;
 using content::WebContents;
@@ -63,7 +64,6 @@ const char kTriesLeft[] = "tries";
 
 // Error constants, passed to the page.
 const char kErrorPin[] = "incorrectPin";
-const char kErrorPuk[] = "incorrectPuk";
 const char kErrorOk[] = "ok";
 
 chromeos::NetworkDeviceHandler* GetNetworkDeviceHandler() {
@@ -363,8 +363,9 @@ SimUnlockHandler::SimUnlockHandler()
       dialog_mode_(SimDialogDelegate::SIM_DIALOG_UNLOCK),
       pending_pin_operation_(false),
       weak_ptr_factory_(this) {
-  if (GetNetworkStateHandler()->GetTechnologyState(flimflam::kTypeCellular)
-      != NetworkStateHandler::TECHNOLOGY_UNAVAILABLE)
+  if (GetNetworkStateHandler()
+          ->GetTechnologyState(NetworkTypePattern::Cellular()) !=
+      NetworkStateHandler::TECHNOLOGY_UNAVAILABLE)
     GetNetworkStateHandler()->AddObserver(this, FROM_HERE);
 }
 
@@ -706,8 +707,9 @@ void SimUnlockHandler::InitializeSimStatus() {
   // TODO(armansito): For now, we're initializing the device path to the first
   // available cellular device. We should try to obtain a specific device here,
   // as there can be multiple cellular devices present.
-  const DeviceState* cellular_device = GetNetworkStateHandler()->
-      GetDeviceStateByType(flimflam::kTypeCellular);
+  const DeviceState* cellular_device =
+      GetNetworkStateHandler()
+          ->GetDeviceStateByType(NetworkTypePattern::Cellular());
   if (cellular_device) {
     cellular_device_path_ = cellular_device->path();
     sim_lock_type_ = cellular_device->sim_lock_type();
@@ -729,9 +731,9 @@ void SimUnlockHandler::ProcessSimCardState(
             << " retries: " << retries_left;
     switch (state_) {
       case SIM_UNLOCK_LOADING:
-        if (sim_lock_type_ == flimflam::kSIMLockPin) {
+        if (sim_lock_type_ == shill::kSIMLockPin) {
           state_ = SIM_LOCKED_PIN;
-        } else if (sim_lock_type_ == flimflam::kSIMLockPuk) {
+        } else if (sim_lock_type_ == shill::kSIMLockPuk) {
           if (retries_left > 0)
             state_ = SIM_LOCKED_PUK;
           else
@@ -762,7 +764,7 @@ void SimUnlockHandler::ProcessSimCardState(
         // that means entered PIN was incorrect.
         if (sim_lock_type_.empty()) {
           error_msg = kErrorPin;
-        } else if (sim_lock_type_ == flimflam::kSIMLockPuk) {
+        } else if (sim_lock_type_ == shill::kSIMLockPuk) {
           state_ = SIM_LOCKED_NO_PIN_TRIES_LEFT;
         } else {
           NOTREACHED()
@@ -771,9 +773,9 @@ void SimUnlockHandler::ProcessSimCardState(
         }
         break;
       case SIM_LOCKED_PIN:
-        if (sim_lock_type_ == flimflam::kSIMLockPuk) {
+        if (sim_lock_type_ == shill::kSIMLockPuk) {
           state_ = SIM_LOCKED_NO_PIN_TRIES_LEFT;
-        } else if (sim_lock_type_ == flimflam::kSIMLockPin) {
+        } else if (sim_lock_type_ == shill::kSIMLockPin) {
           // Still locked with PIN.
           error_msg = kErrorPin;
         } else {
@@ -785,8 +787,8 @@ void SimUnlockHandler::ProcessSimCardState(
         state_ = SIM_LOCKED_PUK;
         break;
       case SIM_LOCKED_PUK:
-        if (sim_lock_type_ != flimflam::kSIMLockPin &&
-            sim_lock_type_ != flimflam::kSIMLockPuk) {
+        if (sim_lock_type_ != shill::kSIMLockPin &&
+            sim_lock_type_ != shill::kSIMLockPuk) {
           state_ = SIM_ABSENT_NOT_LOCKED;
         } else if (retries_left == 0) {
           state_ = SIM_LOCKED_NO_PUK_TRIES_LEFT;

@@ -2,10 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/bind.h"
+#include "base/command_line.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/aura/client/focus_client.h"
+#include "ui/aura/layout_manager.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/test/aura_test_helper.h"
 #include "ui/aura/test/event_generator.h"
@@ -18,6 +21,7 @@
 #include "ui/gfx/rect.h"
 #include "ui/keyboard/keyboard_controller.h"
 #include "ui/keyboard/keyboard_controller_proxy.h"
+#include "ui/keyboard/keyboard_switches.h"
 
 namespace keyboard {
 namespace {
@@ -26,7 +30,7 @@ namespace {
 // used to match the focus manger behaviour in ash and views.
 class TestFocusController : public ui::EventHandler {
  public:
-  explicit TestFocusController(aura::RootWindow* root)
+  explicit TestFocusController(aura::Window* root)
       : root_(root) {
     root_->AddPreTargetHandler(this);
   }
@@ -127,24 +131,27 @@ class TestTextInputClient : public ui::TextInputClient {
     return ui::TEXT_INPUT_MODE_DEFAULT;
   }
   virtual bool CanComposeInline() const OVERRIDE { return false; }
-  virtual gfx::Rect GetCaretBounds() OVERRIDE { return gfx::Rect(); }
+  virtual gfx::Rect GetCaretBounds() const OVERRIDE { return gfx::Rect(); }
 
-  virtual bool GetCompositionCharacterBounds(uint32 index,
-                                             gfx::Rect* rect) OVERRIDE {
+  virtual bool GetCompositionCharacterBounds(
+      uint32 index,
+      gfx::Rect* rect) const OVERRIDE {
     return false;
   }
-  virtual bool HasCompositionText() OVERRIDE { return false; }
-  virtual bool GetTextRange(ui::Range* range) OVERRIDE { return false; }
-  virtual bool GetCompositionTextRange(ui::Range* range) OVERRIDE {
+  virtual bool HasCompositionText() const OVERRIDE { return false; }
+  virtual bool GetTextRange(gfx::Range* range) const OVERRIDE { return false; }
+  virtual bool GetCompositionTextRange(gfx::Range* range) const OVERRIDE {
     return false;
   }
-  virtual bool GetSelectionRange(ui::Range* range) OVERRIDE { return false; }
-  virtual bool SetSelectionRange(const ui::Range& range) OVERRIDE {
+  virtual bool GetSelectionRange(gfx::Range* range) const OVERRIDE {
     return false;
   }
-  virtual bool DeleteRange(const ui::Range& range) OVERRIDE { return false; }
-  virtual bool GetTextFromRange(const ui::Range& range,
-                                base::string16* text) OVERRIDE {
+  virtual bool SetSelectionRange(const gfx::Range& range) OVERRIDE {
+    return false;
+  }
+  virtual bool DeleteRange(const gfx::Range& range) OVERRIDE { return false; }
+  virtual bool GetTextFromRange(const gfx::Range& range,
+                                base::string16* text) const OVERRIDE {
     return false;
   }
   virtual void OnInputMethodChanged() OVERRIDE {}
@@ -152,10 +159,34 @@ class TestTextInputClient : public ui::TextInputClient {
       base::i18n::TextDirection direction) OVERRIDE { return false; }
   virtual void ExtendSelectionAndDelete(size_t before, size_t after) OVERRIDE {}
   virtual void EnsureCaretInRect(const gfx::Rect& rect) OVERRIDE {}
+  virtual void OnCandidateWindowShown() OVERRIDE {}
+  virtual void OnCandidateWindowUpdated() OVERRIDE {}
+  virtual void OnCandidateWindowHidden() OVERRIDE {}
 
   ui::TextInputType type_;
 
   DISALLOW_COPY_AND_ASSIGN(TestTextInputClient);
+};
+
+class KeyboardContainerObserver : public aura::WindowObserver {
+ public:
+  explicit KeyboardContainerObserver(aura::Window* window) : window_(window) {
+    window_->AddObserver(this);
+  }
+  virtual ~KeyboardContainerObserver() {
+    window_->RemoveObserver(this);
+  }
+
+ private:
+  virtual void OnWindowVisibilityChanged(aura::Window* window,
+                                         bool visible) OVERRIDE {
+    if (!visible)
+      base::MessageLoop::current()->Quit();
+  }
+
+  aura::Window* window_;
+
+  DISALLOW_COPY_AND_ASSIGN(KeyboardContainerObserver);
 };
 
 }  // namespace
@@ -170,6 +201,8 @@ class KeyboardControllerTest : public testing::Test {
     aura_test_helper_->SetUp();
     ui::SetUpInputMethodFactoryForTesting();
     focus_controller_.reset(new TestFocusController(root_window()));
+    proxy_ = new TestKeyboardControllerProxy();
+    controller_.reset(new KeyboardController(proxy_));
   }
 
   virtual void TearDown() OVERRIDE {
@@ -177,38 +210,44 @@ class KeyboardControllerTest : public testing::Test {
     aura_test_helper_->TearDown();
   }
 
-  aura::RootWindow* root_window() { return aura_test_helper_->root_window(); }
+  aura::Window* root_window() { return aura_test_helper_->root_window(); }
+  KeyboardControllerProxy* proxy() { return proxy_; }
+  KeyboardController* controller() { return controller_.get(); }
 
-  void ShowKeyboard(KeyboardController* controller) {
+  void ShowKeyboard() {
     TestTextInputClient test_text_input_client(ui::TEXT_INPUT_TYPE_TEXT);
-    controller->OnTextInputStateChanged(&test_text_input_client);
+    controller_->OnTextInputStateChanged(&test_text_input_client);
   }
 
  protected:
+  bool WillHideKeyboard() {
+    return controller_->WillHideKeyboard();
+  }
+
   base::MessageLoopForUI message_loop_;
   scoped_ptr<aura::test::AuraTestHelper> aura_test_helper_;
   scoped_ptr<TestFocusController> focus_controller_;
 
  private:
+  KeyboardControllerProxy* proxy_;
+  scoped_ptr<KeyboardController> controller_;
+
   DISALLOW_COPY_AND_ASSIGN(KeyboardControllerTest);
 };
 
 TEST_F(KeyboardControllerTest, KeyboardSize) {
-  KeyboardControllerProxy* proxy = new TestKeyboardControllerProxy();
-  KeyboardController controller(proxy);
-
-  scoped_ptr<aura::Window> container(controller.GetContainerWindow());
+  aura::Window* container(controller()->GetContainerWindow());
   gfx::Rect bounds(0, 0, 100, 100);
   container->SetBounds(bounds);
 
-  const gfx::Rect& before_bounds = proxy->GetKeyboardWindow()->bounds();
+  const gfx::Rect& before_bounds = proxy()->GetKeyboardWindow()->bounds();
   gfx::Rect new_bounds(
       before_bounds.x(), before_bounds.y(),
       before_bounds.width() / 2, before_bounds.height() / 2);
 
   // The KeyboardController's LayoutManager shouldn't let this happen
-  proxy->GetKeyboardWindow()->SetBounds(new_bounds);
-  ASSERT_EQ(before_bounds, proxy->GetKeyboardWindow()->bounds());
+  proxy()->GetKeyboardWindow()->SetBounds(new_bounds);
+  ASSERT_EQ(before_bounds, proxy()->GetKeyboardWindow()->bounds());
 }
 
 // Tests that tapping/clicking inside the keyboard does not give it focus.
@@ -222,16 +261,13 @@ TEST_F(KeyboardControllerTest, ClickDoesNotFocusKeyboard) {
   window->Show();
   window->Focus();
 
-  KeyboardControllerProxy* proxy = new TestKeyboardControllerProxy();
-  KeyboardController controller(proxy);
-
-  scoped_ptr<aura::Window> keyboard_container(controller.GetContainerWindow());
+  aura::Window* keyboard_container(controller()->GetContainerWindow());
   keyboard_container->SetBounds(root_bounds);
 
-  root_window()->AddChild(keyboard_container.get());
+  root_window()->AddChild(keyboard_container);
   keyboard_container->Show();
 
-  ShowKeyboard(&controller);
+  ShowKeyboard();
 
   EXPECT_TRUE(window->IsVisible());
   EXPECT_TRUE(keyboard_container->IsVisible());
@@ -244,7 +280,7 @@ TEST_F(KeyboardControllerTest, ClickDoesNotFocusKeyboard) {
   keyboard_container->AddPreTargetHandler(&observer);
 
   aura::test::EventGenerator generator(root_window());
-  generator.MoveMouseTo(proxy->GetKeyboardWindow()->bounds().CenterPoint());
+  generator.MoveMouseTo(proxy()->GetKeyboardWindow()->bounds().CenterPoint());
   generator.ClickLeftButton();
   EXPECT_TRUE(window->HasFocus());
   EXPECT_FALSE(keyboard_container->HasFocus());
@@ -260,33 +296,147 @@ TEST_F(KeyboardControllerTest, ClickDoesNotFocusKeyboard) {
 
 TEST_F(KeyboardControllerTest, VisibilityChangeWithTextInputTypeChange) {
   const gfx::Rect& root_bounds = root_window()->bounds();
-  aura::test::EventCountDelegate delegate;
-  scoped_ptr<aura::Window> window(new aura::Window(&delegate));
-  window->Init(ui::LAYER_NOT_DRAWN);
-  window->SetBounds(root_bounds);
-  root_window()->AddChild(window.get());
-  window->Show();
-  window->Focus();
 
-  KeyboardControllerProxy* proxy = new TestKeyboardControllerProxy();
-  ui::InputMethod* input_method = proxy->GetInputMethod();
+  ui::InputMethod* input_method = proxy()->GetInputMethod();
+  TestTextInputClient input_client_0(ui::TEXT_INPUT_TYPE_TEXT);
+  TestTextInputClient input_client_1(ui::TEXT_INPUT_TYPE_TEXT);
+  TestTextInputClient input_client_2(ui::TEXT_INPUT_TYPE_TEXT);
+  TestTextInputClient no_input_client_0(ui::TEXT_INPUT_TYPE_NONE);
+  TestTextInputClient no_input_client_1(ui::TEXT_INPUT_TYPE_NONE);
+  input_method->SetFocusedTextInputClient(&input_client_0);
+
+  aura::Window* keyboard_container(controller()->GetContainerWindow());
+  scoped_ptr<KeyboardContainerObserver> keyboard_container_observer(
+      new KeyboardContainerObserver(keyboard_container));
+  keyboard_container->SetBounds(root_bounds);
+  root_window()->AddChild(keyboard_container);
+
+  EXPECT_TRUE(keyboard_container->IsVisible());
+
+  input_method->SetFocusedTextInputClient(&no_input_client_0);
+  // Keyboard should not immediately hide itself. It is delayed to avoid layout
+  // flicker when the focus of input field quickly change.
+  EXPECT_TRUE(keyboard_container->IsVisible());
+  EXPECT_TRUE(WillHideKeyboard());
+  // Wait for hide keyboard to finish.
+  base::MessageLoop::current()->Run();
+  EXPECT_FALSE(keyboard_container->IsVisible());
+
+  input_method->SetFocusedTextInputClient(&input_client_1);
+  EXPECT_TRUE(keyboard_container->IsVisible());
+
+  // Schedule to hide keyboard.
+  input_method->SetFocusedTextInputClient(&no_input_client_1);
+  EXPECT_TRUE(WillHideKeyboard());
+  // Cancel keyboard hide.
+  input_method->SetFocusedTextInputClient(&input_client_2);
+
+  EXPECT_FALSE(WillHideKeyboard());
+  EXPECT_TRUE(keyboard_container->IsVisible());
+}
+
+TEST_F(KeyboardControllerTest, AlwaysVisibleWhenLocked) {
+  const gfx::Rect& root_bounds = root_window()->bounds();
+
+  ui::InputMethod* input_method = proxy()->GetInputMethod();
+  TestTextInputClient input_client_0(ui::TEXT_INPUT_TYPE_TEXT);
+  TestTextInputClient input_client_1(ui::TEXT_INPUT_TYPE_TEXT);
+  TestTextInputClient no_input_client_0(ui::TEXT_INPUT_TYPE_NONE);
+  TestTextInputClient no_input_client_1(ui::TEXT_INPUT_TYPE_NONE);
+  input_method->SetFocusedTextInputClient(&input_client_0);
+
+  aura::Window* keyboard_container(controller()->GetContainerWindow());
+  scoped_ptr<KeyboardContainerObserver> keyboard_container_observer(
+      new KeyboardContainerObserver(keyboard_container));
+  keyboard_container->SetBounds(root_bounds);
+  root_window()->AddChild(keyboard_container);
+
+  EXPECT_TRUE(keyboard_container->IsVisible());
+
+  // Lock keyboard.
+  controller()->set_lock_keyboard(true);
+
+  input_method->SetFocusedTextInputClient(&no_input_client_0);
+  // Keyboard should not try to hide itself as it is locked.
+  EXPECT_TRUE(keyboard_container->IsVisible());
+  EXPECT_FALSE(WillHideKeyboard());
+
+  input_method->SetFocusedTextInputClient(&input_client_1);
+  EXPECT_TRUE(keyboard_container->IsVisible());
+
+  // Unlock keyboard.
+  controller()->set_lock_keyboard(false);
+
+  // Keyboard should hide when focus on no input client.
+  input_method->SetFocusedTextInputClient(&no_input_client_1);
+  EXPECT_TRUE(WillHideKeyboard());
+
+  // Wait for hide keyboard to finish.
+  base::MessageLoop::current()->Run();
+  EXPECT_FALSE(keyboard_container->IsVisible());
+}
+
+TEST_F(KeyboardControllerTest, KeyboardResizingFromContents) {
+  aura::Window* keyboard_container = controller()->GetContainerWindow();
+  aura::Window* keyboard_window = proxy()->GetKeyboardWindow();
+  keyboard_container->SetBounds(gfx::Rect(800, 600));
+  keyboard_container->AddChild(keyboard_window);
+
+  // Default keyboard size.
+  EXPECT_EQ(180, keyboard_window->bounds().height());
+
+  // Resizes from contents when flag is unset.
+  keyboard_window->SetBounds(gfx::Rect(100, 80));
+  EXPECT_EQ(180, keyboard_window->bounds().height());
+
+  // Resizes from contents when flag is set.
+  proxy()->set_resizing_from_contents(true);
+  keyboard_window->SetBounds(gfx::Rect(100, 80));
+  EXPECT_EQ(80, keyboard_window->bounds().height());
+
+  // Resizes from container when flag is set.
+  keyboard_container->SetBounds(gfx::Rect(400, 300));
+  EXPECT_EQ(80, keyboard_window->bounds().height());
+
+  // Resizes from container when flag is unset.
+  proxy()->set_resizing_from_contents(false);
+  keyboard_container->SetBounds(gfx::Rect(800, 600));
+  EXPECT_EQ(180, keyboard_window->bounds().height());
+}
+
+class KeyboardControllerUsabilityTest : public KeyboardControllerTest {
+ public:
+  KeyboardControllerUsabilityTest() {}
+  virtual ~KeyboardControllerUsabilityTest() {}
+
+  virtual void SetUp() OVERRIDE {
+    CommandLine::ForCurrentProcess()->AppendSwitch(
+        switches::kKeyboardUsabilityExperiment);
+    KeyboardControllerTest::SetUp();
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(KeyboardControllerUsabilityTest);
+};
+
+TEST_F(KeyboardControllerUsabilityTest, KeyboardAlwaysVisibleInUsabilityTest) {
+  const gfx::Rect& root_bounds = root_window()->bounds();
+
+  ui::InputMethod* input_method = proxy()->GetInputMethod();
   TestTextInputClient input_client(ui::TEXT_INPUT_TYPE_TEXT);
   TestTextInputClient no_input_client(ui::TEXT_INPUT_TYPE_NONE);
   input_method->SetFocusedTextInputClient(&input_client);
 
-  KeyboardController controller(proxy);
-
-  scoped_ptr<aura::Window> keyboard_container(controller.GetContainerWindow());
+  aura::Window* keyboard_container(controller()->GetContainerWindow());
   keyboard_container->SetBounds(root_bounds);
-  root_window()->AddChild(keyboard_container.get());
+  root_window()->AddChild(keyboard_container);
 
   EXPECT_TRUE(keyboard_container->IsVisible());
 
   input_method->SetFocusedTextInputClient(&no_input_client);
-  EXPECT_FALSE(keyboard_container->IsVisible());
-
-  input_method->SetFocusedTextInputClient(&input_client);
+  // Keyboard should not hide itself after lost focus.
   EXPECT_TRUE(keyboard_container->IsVisible());
+  EXPECT_FALSE(WillHideKeyboard());
 }
 
 }  // namespace keyboard

@@ -73,7 +73,7 @@ class ShellUtilShortcutTest : public testing::Test {
                                      fake_common_start_menu_.path()));
 
     base::FilePath icon_path;
-    file_util::CreateTemporaryFileInDir(temp_dir_.path(), &icon_path);
+    base::CreateTemporaryFileInDir(temp_dir_.path(), &icon_path);
     test_properties_.set_target(chrome_exe_);
     test_properties_.set_arguments(L"--test --chrome");
     test_properties_.set_description(L"Makes polar bears dance.");
@@ -101,10 +101,12 @@ class ShellUtilShortcutTest : public testing::Test {
             fake_user_quick_launch_.path() :
             fake_default_user_quick_launch_.path();
         break;
-      case ShellUtil::SHORTCUT_LOCATION_START_MENU:
+      case ShellUtil::SHORTCUT_LOCATION_START_MENU_CHROME_DIR:
         expected_path = (properties.level == ShellUtil::CURRENT_USER) ?
             fake_start_menu_.path() : fake_common_start_menu_.path();
-        expected_path = expected_path.Append(dist_->GetAppShortCutName());
+        expected_path = expected_path.Append(
+            dist_->GetStartMenuShortcutSubfolder(
+                BrowserDistribution::SUBFOLDER_CHROME));
         break;
       default:
         ADD_FAILURE() << "Unknown location";
@@ -112,10 +114,12 @@ class ShellUtilShortcutTest : public testing::Test {
     }
 
     string16 shortcut_name;
-    if (properties.has_shortcut_name())
+    if (properties.has_shortcut_name()) {
       shortcut_name = properties.shortcut_name;
-    else
-      shortcut_name = dist_->GetAppShortCutName();
+    } else {
+      shortcut_name =
+          dist_->GetShortcutName(BrowserDistribution::SHORTCUT_CHROME);
+    }
     shortcut_name.append(installer::kLnkExt);
     expected_path = expected_path.Append(shortcut_name);
 
@@ -141,7 +145,7 @@ class ShellUtilShortcutTest : public testing::Test {
     if (properties.has_icon()) {
       expected_properties.set_icon(properties.icon, 0);
     } else {
-      int icon_index = dist->GetIconIndex();
+      int icon_index = dist->GetIconIndex(BrowserDistribution::SHORTCUT_CHROME);
       expected_properties.set_icon(chrome_exe_, icon_index);
     }
 
@@ -200,12 +204,16 @@ TEST_F(ShellUtilShortcutTest, GetShortcutPath) {
   ShellUtil::GetShortcutPath(ShellUtil::SHORTCUT_LOCATION_QUICK_LAUNCH, dist_,
                              ShellUtil::SYSTEM_LEVEL, &path);
   EXPECT_EQ(fake_default_user_quick_launch_.path(), path);
-  ShellUtil::GetShortcutPath(ShellUtil::SHORTCUT_LOCATION_START_MENU, dist_,
-                             ShellUtil::CURRENT_USER, &path);
-  EXPECT_EQ(fake_start_menu_.path().Append(dist_->GetAppShortCutName()), path);
-  ShellUtil::GetShortcutPath(ShellUtil::SHORTCUT_LOCATION_START_MENU, dist_,
-                             ShellUtil::SYSTEM_LEVEL, &path);
-  EXPECT_EQ(fake_common_start_menu_.path().Append(dist_->GetAppShortCutName()),
+  string16 start_menu_subfolder =
+      dist_->GetStartMenuShortcutSubfolder(
+          BrowserDistribution::SUBFOLDER_CHROME);
+  ShellUtil::GetShortcutPath(ShellUtil::SHORTCUT_LOCATION_START_MENU_CHROME_DIR,
+                             dist_, ShellUtil::CURRENT_USER, &path);
+  EXPECT_EQ(fake_start_menu_.path().Append(start_menu_subfolder),
+            path);
+  ShellUtil::GetShortcutPath(ShellUtil::SHORTCUT_LOCATION_START_MENU_CHROME_DIR,
+                             dist_, ShellUtil::SYSTEM_LEVEL, &path);
+  EXPECT_EQ(fake_common_start_menu_.path().Append(start_menu_subfolder),
             path);
 }
 
@@ -223,11 +231,11 @@ TEST_F(ShellUtilShortcutTest, CreateStartMenuShortcutWithAllProperties) {
   test_properties_.set_shortcut_name(L"Bobo le shortcut");
   test_properties_.level = ShellUtil::SYSTEM_LEVEL;
   ASSERT_TRUE(ShellUtil::CreateOrUpdateShortcut(
-                  ShellUtil::SHORTCUT_LOCATION_START_MENU,
+                  ShellUtil::SHORTCUT_LOCATION_START_MENU_CHROME_DIR,
                   dist_, test_properties_,
                   ShellUtil::SHELL_SHORTCUT_CREATE_ALWAYS));
-  ValidateChromeShortcut(ShellUtil::SHORTCUT_LOCATION_START_MENU, dist_,
-                         test_properties_);
+  ValidateChromeShortcut(ShellUtil::SHORTCUT_LOCATION_START_MENU_CHROME_DIR,
+                         dist_, test_properties_);
 }
 
 TEST_F(ShellUtilShortcutTest, ReplaceSystemLevelQuickLaunchShortcut) {
@@ -283,20 +291,20 @@ TEST_F(ShellUtilShortcutTest, UpdateAddDualModeToStartMenuShortcut) {
   ShellUtil::ShortcutProperties properties(ShellUtil::CURRENT_USER);
   product_->AddDefaultShortcutProperties(chrome_exe_, &properties);
   ASSERT_TRUE(ShellUtil::CreateOrUpdateShortcut(
-                  ShellUtil::SHORTCUT_LOCATION_START_MENU, dist_, properties,
-                  ShellUtil::SHELL_SHORTCUT_CREATE_ALWAYS));
+                  ShellUtil::SHORTCUT_LOCATION_START_MENU_CHROME_DIR, dist_,
+                  properties, ShellUtil::SHELL_SHORTCUT_CREATE_ALWAYS));
 
   ShellUtil::ShortcutProperties added_properties(ShellUtil::CURRENT_USER);
   added_properties.set_dual_mode(true);
   ASSERT_TRUE(ShellUtil::CreateOrUpdateShortcut(
-                  ShellUtil::SHORTCUT_LOCATION_START_MENU, dist_,
+                  ShellUtil::SHORTCUT_LOCATION_START_MENU_CHROME_DIR, dist_,
                   added_properties, ShellUtil::SHELL_SHORTCUT_UPDATE_EXISTING));
 
   ShellUtil::ShortcutProperties expected_properties(properties);
   expected_properties.set_dual_mode(true);
 
-  ValidateChromeShortcut(ShellUtil::SHORTCUT_LOCATION_START_MENU, dist_,
-                         expected_properties);
+  ValidateChromeShortcut(ShellUtil::SHORTCUT_LOCATION_START_MENU_CHROME_DIR,
+                         dist_, expected_properties);
 }
 
 TEST_F(ShellUtilShortcutTest, CreateIfNoSystemLevel) {
@@ -308,7 +316,9 @@ TEST_F(ShellUtilShortcutTest, CreateIfNoSystemLevel) {
 }
 
 TEST_F(ShellUtilShortcutTest, CreateIfNoSystemLevelWithSystemLevelPresent) {
-  string16 shortcut_name(dist_->GetAppShortCutName() + installer::kLnkExt);
+  string16 shortcut_name(
+      dist_->GetShortcutName(BrowserDistribution::SHORTCUT_CHROME) +
+      installer::kLnkExt);
 
   test_properties_.level = ShellUtil::SYSTEM_LEVEL;
   ASSERT_TRUE(ShellUtil::CreateOrUpdateShortcut(
@@ -327,15 +337,17 @@ TEST_F(ShellUtilShortcutTest, CreateIfNoSystemLevelWithSystemLevelPresent) {
 
 TEST_F(ShellUtilShortcutTest, CreateIfNoSystemLevelStartMenu) {
   ASSERT_TRUE(ShellUtil::CreateOrUpdateShortcut(
-                  ShellUtil::SHORTCUT_LOCATION_START_MENU,
+                  ShellUtil::SHORTCUT_LOCATION_START_MENU_CHROME_DIR,
                   dist_, test_properties_,
                   ShellUtil::SHELL_SHORTCUT_CREATE_IF_NO_SYSTEM_LEVEL));
-  ValidateChromeShortcut(ShellUtil::SHORTCUT_LOCATION_START_MENU, dist_,
-                         test_properties_);
+  ValidateChromeShortcut(ShellUtil::SHORTCUT_LOCATION_START_MENU_CHROME_DIR,
+                         dist_, test_properties_);
 }
 
 TEST_F(ShellUtilShortcutTest, CreateAlwaysUserWithSystemLevelPresent) {
-  string16 shortcut_name(dist_->GetAppShortCutName() + installer::kLnkExt);
+  string16 shortcut_name(
+      dist_->GetShortcutName(BrowserDistribution::SHORTCUT_CHROME) +
+      installer::kLnkExt);
 
   test_properties_.level = ShellUtil::SYSTEM_LEVEL;
   ASSERT_TRUE(ShellUtil::CreateOrUpdateShortcut(
@@ -357,7 +369,9 @@ TEST_F(ShellUtilShortcutTest, RemoveChromeShortcut) {
                   ShellUtil::SHORTCUT_LOCATION_DESKTOP, dist_, test_properties_,
                   ShellUtil::SHELL_SHORTCUT_CREATE_ALWAYS));
 
-  string16 shortcut_name(dist_->GetAppShortCutName() + installer::kLnkExt);
+  string16 shortcut_name(
+      dist_->GetShortcutName(BrowserDistribution::SHORTCUT_CHROME) +
+      installer::kLnkExt);
   base::FilePath shortcut_path(fake_user_desktop_.path().Append(shortcut_name));
   ASSERT_TRUE(base::PathExists(shortcut_path));
 
@@ -374,7 +388,9 @@ TEST_F(ShellUtilShortcutTest, RemoveSystemLevelChromeShortcut) {
                   ShellUtil::SHORTCUT_LOCATION_DESKTOP, dist_, test_properties_,
                   ShellUtil::SHELL_SHORTCUT_CREATE_ALWAYS));
 
-  string16 shortcut_name(dist_->GetAppShortCutName() + installer::kLnkExt);
+  string16 shortcut_name(
+      dist_->GetShortcutName(BrowserDistribution::SHORTCUT_CHROME) +
+      installer::kLnkExt);
   base::FilePath shortcut_path(
       fake_common_desktop_.path().Append(shortcut_name));
   ASSERT_TRUE(base::PathExists(shortcut_path));
@@ -418,20 +434,22 @@ TEST_F(ShellUtilShortcutTest, RemoveMultipleChromeShortcuts) {
   ASSERT_TRUE(base::PathExists(shortcut1_path.DirName()));
 }
 
-TEST_F(ShellUtilShortcutTest, UpdateChromeShortcut) {
+TEST_F(ShellUtilShortcutTest, UpdateChromeShortcutsWithArgs) {
   ASSERT_TRUE(ShellUtil::CreateOrUpdateShortcut(
                   ShellUtil::SHORTCUT_LOCATION_DESKTOP, dist_, test_properties_,
                   ShellUtil::SHELL_SHORTCUT_CREATE_ALWAYS));
 
-  string16 shortcut_name(dist_->GetAppShortCutName() + installer::kLnkExt);
+  string16 shortcut_name(
+      dist_->GetShortcutName(BrowserDistribution::SHORTCUT_CHROME) +
+      installer::kLnkExt);
   base::FilePath shortcut_path(fake_user_desktop_.path().Append(shortcut_name));
   ASSERT_TRUE(base::PathExists(shortcut_path));
 
   base::FilePath new_exe = temp_dir_.path().Append(kManganeseExe);
   ShellUtil::ShortcutProperties updated_properties(ShellUtil::CURRENT_USER);
   updated_properties.set_target(new_exe);
-
-  ASSERT_TRUE(ShellUtil::UpdateShortcuts(
+  // |updated_properties| has arguments.
+  ASSERT_TRUE(ShellUtil::UpdateShortcutsWithArgs(
       ShellUtil::SHORTCUT_LOCATION_DESKTOP, dist_, ShellUtil::CURRENT_USER,
       chrome_exe_, updated_properties));
 
@@ -441,13 +459,15 @@ TEST_F(ShellUtilShortcutTest, UpdateChromeShortcut) {
                          expected_properties);
 }
 
-TEST_F(ShellUtilShortcutTest, UpdateSystemLevelChromeShortcut) {
+TEST_F(ShellUtilShortcutTest, UpdateSystemLevelChromeShortcutsWithArgs) {
   test_properties_.level = ShellUtil::SYSTEM_LEVEL;
   ASSERT_TRUE(ShellUtil::CreateOrUpdateShortcut(
                   ShellUtil::SHORTCUT_LOCATION_DESKTOP, dist_, test_properties_,
                   ShellUtil::SHELL_SHORTCUT_CREATE_ALWAYS));
 
-  string16 shortcut_name(dist_->GetAppShortCutName() + installer::kLnkExt);
+  string16 shortcut_name(
+      dist_->GetShortcutName(BrowserDistribution::SHORTCUT_CHROME) +
+      installer::kLnkExt);
   base::FilePath shortcut_path(
       fake_common_desktop_.path().Append(shortcut_name));
   ASSERT_TRUE(base::PathExists(shortcut_path));
@@ -455,8 +475,8 @@ TEST_F(ShellUtilShortcutTest, UpdateSystemLevelChromeShortcut) {
   base::FilePath new_exe = temp_dir_.path().Append(kManganeseExe);
   ShellUtil::ShortcutProperties updated_properties(ShellUtil::CURRENT_USER);
   updated_properties.set_target(new_exe);
-
-  ASSERT_TRUE(ShellUtil::UpdateShortcuts(
+  // |updated_properties| has arguments.
+  ASSERT_TRUE(ShellUtil::UpdateShortcutsWithArgs(
       ShellUtil::SHORTCUT_LOCATION_DESKTOP, dist_, ShellUtil::SYSTEM_LEVEL,
       chrome_exe_, updated_properties));
 
@@ -466,22 +486,22 @@ TEST_F(ShellUtilShortcutTest, UpdateSystemLevelChromeShortcut) {
                          expected_properties);
 }
 
-TEST_F(ShellUtilShortcutTest, UpdateMultipleChromeShortcuts) {
+TEST_F(ShellUtilShortcutTest, UpdateMultipleChromeShortcutsWithArgs) {
   const wchar_t kShortcutName1[] = L"Chrome 1";
   const wchar_t kShortcutName2[] = L"Chrome 2";
 
-  // Setup shortcut 1.
+  // Setup shortcut 1, which has empty arguments.
   test_properties_.set_shortcut_name(kShortcutName1);
+  test_properties_.set_arguments(L"");
   ASSERT_TRUE(ShellUtil::CreateOrUpdateShortcut(
                   ShellUtil::SHORTCUT_LOCATION_DESKTOP, dist_, test_properties_,
                   ShellUtil::SHELL_SHORTCUT_CREATE_ALWAYS));
-  string16 shortcut1_name(
-      string16(kShortcutName1).append(installer::kLnkExt));
+  string16 shortcut1_name(string16(kShortcutName1).append(installer::kLnkExt));
   base::FilePath shortcut1_path(
       fake_user_desktop_.path().Append(shortcut1_name));
   ShellUtil::ShortcutProperties expected_properties1(test_properties_);
 
-  // Setup shortcut 2, which also has arguments.
+  // Setup shortcut 2, which has non-empty arguments.
   string16 shortcut2_args = L"--profile-directory=\"Profile 2\"";
   test_properties_.set_shortcut_name(kShortcutName2);
   test_properties_.set_arguments(shortcut2_args);
@@ -498,15 +518,16 @@ TEST_F(ShellUtilShortcutTest, UpdateMultipleChromeShortcuts) {
   base::FilePath new_exe = temp_dir_.path().Append(kManganeseExe);
   ShellUtil::ShortcutProperties updated_properties(ShellUtil::CURRENT_USER);
   updated_properties.set_target(new_exe);
-  ASSERT_TRUE(ShellUtil::UpdateShortcuts(
+
+  // Only changing shrotcuts that have non-empty arguments, i.e., shortcut 2.
+  ASSERT_TRUE(ShellUtil::UpdateShortcutsWithArgs(
       ShellUtil::SHORTCUT_LOCATION_DESKTOP, dist_, ShellUtil::CURRENT_USER,
       chrome_exe_, updated_properties));
-
   // Verify shortcut 1.
-  expected_properties1.set_target(new_exe);
+  // |expected_properties1| was unchanged and still targets "chrome.exe", since
+  // it has empty target, yet we passed |require_args| = true.
   ValidateChromeShortcut(ShellUtil::SHORTCUT_LOCATION_DESKTOP, dist_,
                          expected_properties1);
-
   // Verify shortcut 2.
   expected_properties2.set_target(new_exe);
   ValidateChromeShortcut(ShellUtil::SHORTCUT_LOCATION_DESKTOP, dist_,
@@ -515,29 +536,82 @@ TEST_F(ShellUtilShortcutTest, UpdateMultipleChromeShortcuts) {
 
 TEST_F(ShellUtilShortcutTest, CreateMultipleStartMenuShortcutsAndRemoveFolder) {
   ASSERT_TRUE(ShellUtil::CreateOrUpdateShortcut(
-                  ShellUtil::SHORTCUT_LOCATION_START_MENU,
+                  ShellUtil::SHORTCUT_LOCATION_START_MENU_CHROME_DIR,
+                  dist_, test_properties_,
+                  ShellUtil::SHELL_SHORTCUT_CREATE_ALWAYS));
+  ASSERT_TRUE(ShellUtil::CreateOrUpdateShortcut(
+                  ShellUtil::SHORTCUT_LOCATION_START_MENU_CHROME_APPS_DIR,
                   dist_, test_properties_,
                   ShellUtil::SHELL_SHORTCUT_CREATE_ALWAYS));
   test_properties_.set_shortcut_name(L"A second shortcut");
   ASSERT_TRUE(ShellUtil::CreateOrUpdateShortcut(
-                  ShellUtil::SHORTCUT_LOCATION_START_MENU,
+                  ShellUtil::SHORTCUT_LOCATION_START_MENU_CHROME_DIR,
+                  dist_, test_properties_,
+                  ShellUtil::SHELL_SHORTCUT_CREATE_ALWAYS));
+  ASSERT_TRUE(ShellUtil::CreateOrUpdateShortcut(
+                  ShellUtil::SHORTCUT_LOCATION_START_MENU_CHROME_APPS_DIR,
                   dist_, test_properties_,
                   ShellUtil::SHELL_SHORTCUT_CREATE_ALWAYS));
 
-  base::FilePath shortcut_folder(
-      fake_start_menu_.path().Append(dist_->GetAppShortCutName()));
-  base::FileEnumerator file_counter(shortcut_folder, false,
-                                    base::FileEnumerator::FILES);
+  base::FilePath chrome_shortcut_folder(
+      fake_start_menu_.path().Append(
+          dist_->GetStartMenuShortcutSubfolder(
+              BrowserDistribution::SUBFOLDER_CHROME)));
+  base::FilePath chrome_apps_shortcut_folder(
+      fake_start_menu_.path().Append(
+          dist_->GetStartMenuShortcutSubfolder(
+              BrowserDistribution::SUBFOLDER_APPS)));
+
+  base::FileEnumerator chrome_file_counter(chrome_shortcut_folder, false,
+                                           base::FileEnumerator::FILES);
   int count = 0;
-  while (!file_counter.Next().empty())
+  while (!chrome_file_counter.Next().empty())
     ++count;
   EXPECT_EQ(2, count);
 
-  ASSERT_TRUE(base::PathExists(shortcut_folder));
+  base::FileEnumerator chrome_apps_file_counter(chrome_apps_shortcut_folder,
+                                                false,
+                                                base::FileEnumerator::FILES);
+  count = 0;
+  while (!chrome_apps_file_counter.Next().empty())
+    ++count;
+  EXPECT_EQ(2, count);
+
+  ASSERT_TRUE(base::PathExists(chrome_shortcut_folder));
   ASSERT_TRUE(ShellUtil::RemoveShortcuts(
-      ShellUtil::SHORTCUT_LOCATION_START_MENU, dist_, ShellUtil::CURRENT_USER,
-      chrome_exe_));
-  ASSERT_FALSE(base::PathExists(shortcut_folder));
+      ShellUtil::SHORTCUT_LOCATION_START_MENU_CHROME_DIR, dist_,
+      ShellUtil::CURRENT_USER, chrome_exe_));
+  ASSERT_FALSE(base::PathExists(chrome_shortcut_folder));
+
+  ASSERT_TRUE(base::PathExists(chrome_apps_shortcut_folder));
+  ASSERT_TRUE(ShellUtil::RemoveShortcuts(
+      ShellUtil::SHORTCUT_LOCATION_START_MENU_CHROME_APPS_DIR, dist_,
+      ShellUtil::CURRENT_USER, chrome_exe_));
+  ASSERT_FALSE(base::PathExists(chrome_apps_shortcut_folder));
+}
+
+TEST_F(ShellUtilShortcutTest,
+       DeleteStartMenuRootShortcutWithoutRemovingFolder) {
+  ASSERT_TRUE(ShellUtil::CreateOrUpdateShortcut(
+                  ShellUtil::SHORTCUT_LOCATION_START_MENU_ROOT,
+                  dist_, test_properties_,
+                  ShellUtil::SHELL_SHORTCUT_CREATE_ALWAYS));
+
+  string16 shortcut_name(
+      dist_->GetShortcutName(BrowserDistribution::SHORTCUT_CHROME) +
+      installer::kLnkExt);
+  base::FilePath shortcut_path(
+      fake_start_menu_.path().Append(shortcut_name));
+
+  ASSERT_TRUE(base::PathExists(fake_start_menu_.path()));
+  ASSERT_TRUE(base::PathExists(shortcut_path));
+  ASSERT_TRUE(ShellUtil::RemoveShortcuts(
+      ShellUtil::SHORTCUT_LOCATION_START_MENU_ROOT, dist_,
+      ShellUtil::CURRENT_USER, chrome_exe_));
+  // The shortcut should be removed but the "Start Menu" root directory should
+  // remain.
+  ASSERT_TRUE(base::PathExists(fake_start_menu_.path()));
+  ASSERT_FALSE(base::PathExists(shortcut_path));
 }
 
 TEST_F(ShellUtilShortcutTest, DontRemoveChromeShortcutIfPointsToAnotherChrome) {
@@ -552,7 +626,9 @@ TEST_F(ShellUtilShortcutTest, DontRemoveChromeShortcutIfPointsToAnotherChrome) {
                   ShellUtil::SHORTCUT_LOCATION_DESKTOP, dist_, test_properties_,
                   ShellUtil::SHELL_SHORTCUT_CREATE_ALWAYS));
 
-  string16 shortcut_name(dist_->GetAppShortCutName() + installer::kLnkExt);
+  string16 shortcut_name(
+      dist_->GetShortcutName(BrowserDistribution::SHORTCUT_CHROME) +
+      installer::kLnkExt);
   base::FilePath shortcut_path(fake_user_desktop_.path().Append(shortcut_name));
   ASSERT_TRUE(base::PathExists(shortcut_path));
 

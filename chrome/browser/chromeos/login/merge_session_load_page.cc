@@ -14,12 +14,12 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/chrome_notification_types.h"
+#include "chrome/browser/chromeos/login/oauth2_login_manager_factory.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/renderer_preferences_util.h"
 #include "chrome/browser/tab_contents/tab_util.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_icon_set.h"
 #include "chrome/common/url_constants.h"
@@ -27,12 +27,13 @@
 #include "content/public/browser/interstitial_page.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/common/extension.h"
 #include "grit/browser_resources.h"
 #include "grit/generated_resources.h"
 #include "net/base/escape.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/webui/jstemplate_builder.h"
+#include "ui/base/webui/jstemplate_builder.h"
 
 using content::BrowserThread;
 using content::InterstitialPage;
@@ -57,17 +58,21 @@ MergeSessionLoadPage::MergeSessionLoadPage(WebContents* web_contents,
       proceeded_(false),
       web_contents_(web_contents),
       url_(url) {
-  UserManager::Get()->AddObserver(this);
   interstitial_page_ = InterstitialPage::Create(web_contents, true, url, this);
 }
 
 MergeSessionLoadPage::~MergeSessionLoadPage() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  UserManager::Get()->RemoveObserver(this);
 }
 
 void MergeSessionLoadPage::Show() {
-  interstitial_page_->Show();
+  OAuth2LoginManager* manager = GetOAuth2LoginManager();
+  if (manager && manager->ShouldBlockTabLoading()) {
+    manager->AddObserver(this);
+    interstitial_page_->Show();
+  } else {
+    interstitial_page_->Proceed();
+  }
 }
 
 std::string MergeSessionLoadPage::GetHTMLContents() {
@@ -125,22 +130,40 @@ void MergeSessionLoadPage::CommandReceived(const std::string& cmd) {
 }
 
 void MergeSessionLoadPage::NotifyBlockingPageComplete() {
+  OAuth2LoginManager* manager = GetOAuth2LoginManager();
+  if (manager)
+    manager->RemoveObserver(this);
+
   if (!callback_.is_null()) {
     BrowserThread::PostTask(
         BrowserThread::IO, FROM_HERE, callback_);
   }
 }
 
-void MergeSessionLoadPage::MergeSessionStateChanged(
-    UserManager::MergeSessionState state) {
+OAuth2LoginManager* MergeSessionLoadPage::GetOAuth2LoginManager() {
+  content::BrowserContext* browser_context = web_contents_->GetBrowserContext();
+  if (!browser_context)
+    return NULL;
+
+  Profile* profile = Profile::FromBrowserContext(browser_context);
+  if (!profile)
+    return NULL;
+
+  return OAuth2LoginManagerFactory::GetInstance()->GetForProfile(profile);
+}
+
+void MergeSessionLoadPage::OnSessionRestoreStateChanged(
+    Profile* user_profile, OAuth2LoginManager::SessionRestoreState state) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DVLOG(1) << "Merge session is "
-           << (state !=  UserManager:: MERGE_STATUS_IN_PROCESS ?
+
+  OAuth2LoginManager* manager = GetOAuth2LoginManager();
+  DVLOG(1) << "Merge session should "
+           << (!manager->ShouldBlockTabLoading() ?
                   " NOT " : "")
-           << " in progress, "
+           << " be blocking now, "
            << state;
-  if (state !=  UserManager:: MERGE_STATUS_IN_PROCESS) {
-    UserManager::Get()->RemoveObserver(this);
+  if (!manager->ShouldBlockTabLoading()) {
+    manager->RemoveObserver(this);
     interstitial_page_->Proceed();
   }
 }

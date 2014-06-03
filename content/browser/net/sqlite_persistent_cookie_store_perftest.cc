@@ -7,12 +7,13 @@
 #include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/files/scoped_temp_dir.h"
-#include "base/perftimer.h"
 #include "base/sequenced_task_runner.h"
 #include "base/strings/stringprintf.h"
 #include "base/synchronization/waitable_event.h"
+#include "base/test/perf_time_logger.h"
 #include "base/test/sequenced_worker_pool_owner.h"
 #include "base/threading/sequenced_worker_pool.h"
+#include "content/public/browser/cookie_crypto_delegate.h"
 #include "net/cookies/canonical_cookie.h"
 #include "net/cookies/cookie_constants.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -66,7 +67,8 @@ class SQLitePersistentCookieStorePerfTest : public testing::Test {
         temp_dir_.path().Append(cookie_filename),
         client_task_runner(),
         background_task_runner(),
-        false, NULL);
+        false, NULL,
+        scoped_ptr<content::CookieCryptoDelegate>());
     std::vector<net::CanonicalCookie*> cookies;
     Load();
     ASSERT_EQ(0u, cookies_.size());
@@ -97,7 +99,8 @@ class SQLitePersistentCookieStorePerfTest : public testing::Test {
         temp_dir_.path().Append(cookie_filename),
         client_task_runner(),
         background_task_runner(),
-        false, NULL);
+        false, NULL,
+        scoped_ptr<content::CookieCryptoDelegate>());
   }
 
   virtual void TearDown() OVERRIDE {
@@ -118,7 +121,7 @@ class SQLitePersistentCookieStorePerfTest : public testing::Test {
 TEST_F(SQLitePersistentCookieStorePerfTest, TestLoadForKeyPerformance) {
   for (int domain_num = 0; domain_num < 3; ++domain_num) {
     std::string domain_name(base::StringPrintf("domain_%d.com", domain_num));
-    PerfTimeLogger timer(
+    base::PerfTimeLogger timer(
       ("Load cookies for the eTLD+1 " + domain_name).c_str());
     store_->LoadCookiesForKey(domain_name,
       base::Bind(&SQLitePersistentCookieStorePerfTest::OnKeyLoaded,
@@ -132,7 +135,7 @@ TEST_F(SQLitePersistentCookieStorePerfTest, TestLoadForKeyPerformance) {
 
 // Test the performance of load
 TEST_F(SQLitePersistentCookieStorePerfTest, TestLoadPerformance) {
-  PerfTimeLogger timer("Load all cookies");
+  base::PerfTimeLogger timer("Load all cookies");
   Load();
   timer.Done();
 

@@ -9,6 +9,8 @@
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/ui/tabs/tab_strip_model_delegate.h"
 
+class GURL;
+
 namespace chrome {
 
 class BrowserTabStripModelDelegate : public TabStripModelDelegate {
@@ -18,7 +20,9 @@ class BrowserTabStripModelDelegate : public TabStripModelDelegate {
 
  private:
   // Overridden from TabStripModelDelegate:
-  virtual void AddBlankTabAt(int index, bool foreground) OVERRIDE;
+  virtual void AddTabAt(const GURL& url,
+                           int index,
+                           bool foreground) OVERRIDE;
   virtual Browser* CreateNewStripWithContents(
       const std::vector<NewStripContents>& contentses,
       const gfx::Rect& window_bounds,
@@ -31,6 +35,8 @@ class BrowserTabStripModelDelegate : public TabStripModelDelegate {
   virtual void CloseFrameAfterDragSession() OVERRIDE;
   virtual void CreateHistoricalTab(content::WebContents* contents) OVERRIDE;
   virtual bool RunUnloadListenerBeforeClosing(
+      content::WebContents* contents) OVERRIDE;
+  virtual bool ShouldRunUnloadListenerBeforeClosing(
       content::WebContents* contents) OVERRIDE;
   virtual bool CanBookmarkAllTabs() const OVERRIDE;
   virtual void BookmarkAllTabs() OVERRIDE;

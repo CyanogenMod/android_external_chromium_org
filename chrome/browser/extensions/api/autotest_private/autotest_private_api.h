@@ -8,12 +8,12 @@
 #include <string>
 
 #include "base/compiler_specific.h"
-#include "chrome/browser/extensions/extension_function.h"
+#include "chrome/browser/extensions/chrome_extension_function.h"
 #include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 
 namespace extensions {
 
-class AutotestPrivateLogoutFunction : public SyncExtensionFunction {
+class AutotestPrivateLogoutFunction : public ChromeSyncExtensionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("autotestPrivate.logout", AUTOTESTPRIVATE_LOGOUT)
 
@@ -22,7 +22,7 @@ class AutotestPrivateLogoutFunction : public SyncExtensionFunction {
   virtual bool RunImpl() OVERRIDE;
 };
 
-class AutotestPrivateRestartFunction: public SyncExtensionFunction {
+class AutotestPrivateRestartFunction : public ChromeSyncExtensionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("autotestPrivate.restart", AUTOTESTPRIVATE_RESTART)
 
@@ -31,7 +31,7 @@ class AutotestPrivateRestartFunction: public SyncExtensionFunction {
   virtual bool RunImpl() OVERRIDE;
 };
 
-class AutotestPrivateShutdownFunction: public SyncExtensionFunction {
+class AutotestPrivateShutdownFunction : public ChromeSyncExtensionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("autotestPrivate.shutdown",
                              AUTOTESTPRIVATE_SHUTDOWN)
@@ -41,13 +41,45 @@ class AutotestPrivateShutdownFunction: public SyncExtensionFunction {
   virtual bool RunImpl() OVERRIDE;
 };
 
-class AutotestPrivateLoginStatusFunction: public SyncExtensionFunction {
+class AutotestPrivateLoginStatusFunction : public ChromeSyncExtensionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("autotestPrivate.loginStatus",
                              AUTOTESTPRIVATE_LOGINSTATUS)
 
  private:
   virtual ~AutotestPrivateLoginStatusFunction() {}
+  virtual bool RunImpl() OVERRIDE;
+};
+
+class AutotestPrivateLockScreenFunction : public ChromeSyncExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("autotestPrivate.lockScreen",
+                             AUTOTESTPRIVATE_LOCKSCREEN)
+
+ private:
+  virtual ~AutotestPrivateLockScreenFunction() {}
+  virtual bool RunImpl() OVERRIDE;
+};
+
+class AutotestPrivateGetExtensionsInfoFunction
+    : public ChromeSyncExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("autotestPrivate.getExtensionsInfo",
+                             AUTOTESTPRIVATE_GETEXTENSIONSINFO)
+
+ private:
+  virtual ~AutotestPrivateGetExtensionsInfoFunction() {}
+  virtual bool RunImpl() OVERRIDE;
+};
+
+class AutotestPrivateSimulateAsanMemoryBugFunction
+    : public ChromeSyncExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("autotestPrivate.simulateAsanMemoryBug",
+                             AUTOTESTPRIVATE_SIMULATEASANMEMORYBUG)
+
+ private:
+  virtual ~AutotestPrivateSimulateAsanMemoryBugFunction() {}
   virtual bool RunImpl() OVERRIDE;
 };
 

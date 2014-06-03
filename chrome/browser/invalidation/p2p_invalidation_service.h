@@ -5,7 +5,6 @@
 #include "base/threading/non_thread_safe.h"
 #include "chrome/browser/invalidation/invalidation_service.h"
 #include "components/browser_context_keyed_service/browser_context_keyed_service.h"
-#include "sync/notifier/object_id_invalidation_map.h"
 
 #ifndef CHROME_BROWSER_INVALIDATION_P2P_INVALIDATION_SERVICE_H_
 #define CHROME_BROWSER_INVALIDATION_P2P_INVALIDATION_SERVICE_H_
@@ -40,17 +39,13 @@ class P2PInvalidationService
       const syncer::ObjectIdSet& ids) OVERRIDE;
   virtual void UnregisterInvalidationHandler(
       syncer::InvalidationHandler* handler) OVERRIDE;
-  virtual void AcknowledgeInvalidation(
-      const invalidation::ObjectId& id,
-      const syncer::AckHandle& ack_handle) OVERRIDE;
   virtual syncer::InvalidatorState GetInvalidatorState() const OVERRIDE;
   virtual std::string GetInvalidatorClientId() const OVERRIDE;
 
   void UpdateCredentials(const std::string& username,
                          const std::string& password);
 
-  void SendInvalidation(
-      const syncer::ObjectIdInvalidationMap& invalidation_map);
+  void SendInvalidation(const syncer::ObjectIdSet& ids);
 
  private:
   scoped_ptr<syncer::P2PInvalidator> invalidator_;

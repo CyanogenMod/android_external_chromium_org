@@ -86,7 +86,7 @@ class UpdatableTile : public LayerTilingData::Tile {
 
 TiledLayer::TiledLayer()
     : ContentsScalingLayer(),
-      texture_format_(GL_INVALID_ENUM),
+      texture_format_(RGBA_8888),
       skips_draw_(false),
       failed_update_(false),
       tiling_option_(AUTO_TILE) {
@@ -235,9 +235,7 @@ void TiledLayer::PushPropertiesTo(LayerImpl* layer) {
   needs_push_properties_ = true;
 }
 
-bool TiledLayer::BlocksPendingCommit() const { return true; }
-
-PrioritizedResourceManager* TiledLayer::ResourceManager() const {
+PrioritizedResourceManager* TiledLayer::ResourceManager() {
   if (!layer_tree_host())
     return NULL;
   return layer_tree_host()->contents_texture_manager();
@@ -336,8 +334,10 @@ bool TiledLayer::UpdateTiles(int left,
     return false;
   }
 
-  gfx::Rect paint_rect =
-      MarkTilesForUpdate(left, top, right, bottom, ignore_occlusions);
+  gfx::Rect update_rect;
+  gfx::Rect paint_rect;
+  MarkTilesForUpdate(
+    &update_rect, &paint_rect, left, top, right, bottom, ignore_occlusions);
 
   if (occlusion)
     occlusion->overdraw_metrics()->DidPaint(paint_rect);
@@ -347,7 +347,7 @@ bool TiledLayer::UpdateTiles(int left,
 
   *updated = true;
   UpdateTileTextures(
-      paint_rect, left, top, right, bottom, queue, occlusion);
+      update_rect, paint_rect, left, top, right, bottom, queue, occlusion);
   return true;
 }
 
@@ -380,10 +380,7 @@ void TiledLayer::MarkOcclusionsAndRequestTextures(
       if (occlusion && occlusion->Occluded(render_target(),
                                            visible_tile_rect,
                                            draw_transform(),
-                                           draw_transform_is_animating(),
-                                           is_clipped(),
-                                           clip_rect(),
-                                           NULL)) {
+                                           draw_transform_is_animating())) {
         tile->occluded = true;
         occluded_tile_count++;
       } else {
@@ -427,12 +424,13 @@ bool TiledLayer::HaveTexturesForTiles(int left,
   return true;
 }
 
-gfx::Rect TiledLayer::MarkTilesForUpdate(int left,
-                                         int top,
-                                         int right,
-                                         int bottom,
-                                         bool ignore_occlusions) {
-  gfx::Rect paint_rect;
+void TiledLayer::MarkTilesForUpdate(gfx::Rect* update_rect,
+                                    gfx::Rect* paint_rect,
+                                    int left,
+                                    int top,
+                                    int right,
+                                    int bottom,
+                                    bool ignore_occlusions) {
   for (int j = top; j <= bottom; ++j) {
     for (int i = left; i <= right; ++i) {
       UpdatableTile* tile = TileAt(i, j);
@@ -442,10 +440,14 @@ gfx::Rect TiledLayer::MarkTilesForUpdate(int left,
         continue;
       if (tile->occluded && !ignore_occlusions)
         continue;
+
+      // Prepare update rect from original dirty rects.
+      update_rect->Union(tile->dirty_rect);
+
       // TODO(reveman): Decide if partial update should be allowed based on cost
       // of update. https://bugs.webkit.org/show_bug.cgi?id=77376
-      if (tile->is_dirty() && layer_tree_host() &&
-          layer_tree_host()->buffered_updates()) {
+      if (tile->is_dirty() &&
+          !layer_tree_host()->AlwaysUsePartialTextureUpdates()) {
         // If we get a partial update, we use the same texture, otherwise return
         // the current texture backing, so we don't update visible textures
         // non-atomically.  If the current backing is in-use, it won't be
@@ -460,14 +462,14 @@ gfx::Rect TiledLayer::MarkTilesForUpdate(int left,
         }
       }
 
-      paint_rect.Union(tile->dirty_rect);
+      paint_rect->Union(tile->dirty_rect);
       tile->MarkForUpdate();
     }
   }
-  return paint_rect;
 }
 
-void TiledLayer::UpdateTileTextures(gfx::Rect paint_rect,
+void TiledLayer::UpdateTileTextures(gfx::Rect update_rect,
+                                    gfx::Rect paint_rect,
                                     int left,
                                     int top,
                                     int right,
@@ -482,7 +484,7 @@ void TiledLayer::UpdateTileTextures(gfx::Rect paint_rect,
   float height_scale =
       paint_properties().bounds.height() /
       static_cast<float>(content_bounds().height());
-  update_rect_ = gfx::ScaleRect(paint_rect, width_scale, height_scale);
+  update_rect_ = gfx::ScaleRect(update_rect, width_scale, height_scale);
 
   // Calling PrepareToUpdate() calls into WebKit to paint, which may have the
   // side effect of disabling compositing, which causes our reference to the
@@ -731,6 +733,10 @@ bool TiledLayer::Update(ResourceUpdateQueue* queue,
                         const OcclusionTracker* occlusion) {
   DCHECK(!skips_draw_ && !failed_update_);  // Did ResetUpdateState get skipped?
 
+  // Tiled layer always causes commits to wait for activation, as it does
+  // not support pending trees.
+  SetNextCommitWaitsForActivation();
+
   bool updated = false;
 
   {
@@ -849,6 +855,19 @@ bool TiledLayer::Update(ResourceUpdateQueue* queue,
     }
   }
   return updated;
+}
+
+void TiledLayer::OnOutputSurfaceCreated() {
+  // Ensure that all textures are of the right format.
+  for (LayerTilingData::TileMap::const_iterator iter = tiler_->tiles().begin();
+       iter != tiler_->tiles().end();
+       ++iter) {
+    UpdatableTile* tile = static_cast<UpdatableTile*>(iter->second);
+    if (!tile)
+      continue;
+    PrioritizedResource* resource = tile->managed_resource();
+    resource->SetDimensions(resource->size(), texture_format_);
+  }
 }
 
 bool TiledLayer::NeedsIdlePaint() {

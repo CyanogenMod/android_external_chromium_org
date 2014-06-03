@@ -41,6 +41,7 @@ namespace {
 // exists only for testing.
 bool g_should_prompt_for_filename = true;
 
+#if !defined(OS_CHROMEOS)
 // Used for mapping between SavePageType constants and the indexes above.
 const SavePageType kIndexToSaveType[] = {
   content::SAVE_PAGE_TYPE_UNKNOWN,
@@ -56,6 +57,7 @@ int SavePackageTypeToIndex(SavePageType type) {
   NOTREACHED();
   return -1;
 }
+#endif
 
 // Indexes used for specifying which element in the extensions dropdown
 // the user chooses when picking a save type.
@@ -142,11 +144,11 @@ SavePackageFilePicker::SavePackageFilePicker(
     // == can_save_as_complete_ on chromeos.
     bool add_extra_extension = false;
     base::FilePath::StringType extra_extension;
-    if (!suggested_path_copy.Extension().empty() &&
+    if (!suggested_path_copy.FinalExtension().empty() &&
         !suggested_path_copy.MatchesExtension(FILE_PATH_LITERAL(".htm")) &&
         !suggested_path_copy.MatchesExtension(FILE_PATH_LITERAL(".html"))) {
       add_extra_extension = true;
-      extra_extension = suggested_path_copy.Extension().substr(1);
+      extra_extension = suggested_path_copy.FinalExtension().substr(1);
     }
 
     static const size_t kNumberExtensions = arraysize(kIndexToIDS) - 1;
@@ -187,7 +189,8 @@ SavePackageFilePicker::SavePackageFilePicker(
     // The contents can not be saved as complete-HTML, so do not show the file
     // filters.
     file_type_info.extensions.resize(1);
-    file_type_info.extensions[0].push_back(suggested_path_copy.Extension());
+    file_type_info.extensions[0].push_back(
+        suggested_path_copy.FinalExtension());
 
     if (!file_type_info.extensions[0][0].empty()) {
       // Drop the .
@@ -203,7 +206,7 @@ SavePackageFilePicker::SavePackageFilePicker(
         this, new ChromeSelectFilePolicy(web_contents));
     select_file_dialog_->SelectFile(
         ui::SelectFileDialog::SELECT_SAVEAS_FILE,
-        string16(),
+        base::string16(),
         suggested_path_copy,
         &file_type_info,
         file_type_index,

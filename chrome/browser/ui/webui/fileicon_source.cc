@@ -16,10 +16,10 @@
 #include "grit/generated_resources.h"
 #include "net/base/escape.h"
 #include "third_party/skia/include/core/SkBitmap.h"
+#include "ui/base/webui/web_ui_util.h"
 #include "ui/gfx/codec/png_codec.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/image/image_skia.h"
-#include "ui/webui/web_ui_util.h"
 #include "url/gurl.h"
 
 namespace {
@@ -103,7 +103,8 @@ void FileIconSource::FetchFileIcon(
   if (icon) {
     scoped_refptr<base::RefCountedBytes> icon_data(new base::RefCountedBytes);
     gfx::PNGCodec::EncodeBGRASkBitmap(
-        icon->ToImageSkia()->GetRepresentation(scale_factor).sk_bitmap(),
+        icon->ToImageSkia()->GetRepresentation(
+            ui::GetImageScale(scale_factor)).sk_bitmap(),
         false, &icon_data->data());
 
     callback.Run(icon_data.get());
@@ -150,8 +151,8 @@ void FileIconSource::OnFileIconDataAvailable(const IconRequestDetails& details,
   if (icon) {
     scoped_refptr<base::RefCountedBytes> icon_data(new base::RefCountedBytes);
     gfx::PNGCodec::EncodeBGRASkBitmap(
-        icon->ToImageSkia()->GetRepresentation(details.scale_factor)
-            .sk_bitmap(),
+        icon->ToImageSkia()->GetRepresentation(
+            ui::GetImageScale(details.scale_factor)).sk_bitmap(),
         false,
         &icon_data->data());
 

@@ -12,6 +12,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/prefs/pref_change_registrar.h"
 #include "base/scoped_observer.h"
+#include "chrome/browser/extensions/error_console/error_console.h"
 #include "chrome/browser/extensions/extension_install_prompt.h"
 #include "chrome/browser/extensions/extension_install_ui.h"
 #include "chrome/browser/extensions/extension_uninstall_dialog.h"
@@ -20,7 +21,6 @@
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
-#include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_ui_message_handler.h"
 #include "ui/shell_dialogs/select_file_dialog.h"
@@ -52,11 +52,13 @@ struct ExtensionPage {
   ExtensionPage(const GURL& url,
                 int render_process_id,
                 int render_view_id,
-                bool incognito);
+                bool incognito,
+                bool generated_background_page);
   GURL url;
   int render_process_id;
   int render_view_id;
   bool incognito;
+  bool generated_background_page;
 };
 
 // Extension Settings UI handler.
@@ -65,6 +67,7 @@ class ExtensionSettingsHandler
       public content::NotificationObserver,
       public content::WebContentsObserver,
       public ui::SelectFileDialog::Listener,
+      public ErrorConsole::Observer,
       public ExtensionInstallPrompt::Delegate,
       public ExtensionUninstallDialog::Delegate,
       public ExtensionWarningService::Observer,
@@ -87,13 +90,12 @@ class ExtensionSettingsHandler
 
  private:
   friend class ExtensionUITest;
-
-  void RenderViewHostCreated(content::RenderViewHost* render_view_host);
+  friend class BrokerDelegate;
 
   // content::WebContentsObserver implementation.
   virtual void RenderViewDeleted(
       content::RenderViewHost* render_view_host) OVERRIDE;
-  virtual void NavigateToPendingEntry(
+  virtual void DidStartNavigationToPendingEntry(
       const GURL& url,
       content::NavigationController::ReloadType reload_type) OVERRIDE;
 
@@ -110,7 +112,10 @@ class ExtensionSettingsHandler
                             void* params) OVERRIDE;
   virtual void MultiFilesSelected(
       const std::vector<base::FilePath>& files, void* params) OVERRIDE;
-  virtual void FileSelectionCanceled(void* params) OVERRIDE {}
+  virtual void FileSelectionCanceled(void* params) OVERRIDE;
+
+  // ErrorConsole::Observer implementation.
+  virtual void OnErrorAdded(const ExtensionError* error) OVERRIDE;
 
   // content::NotificationObserver implementation.
   virtual void Observe(int type,
@@ -143,9 +148,6 @@ class ExtensionSettingsHandler
 
   // Callback for "launch" message.
   void HandleLaunchMessage(const ListValue* args);
-
-  // Callback for "restart" message.
-  void HandleRestartMessage(const ListValue* args);
 
   // Callback for "reload" message.
   void HandleReloadMessage(const base::ListValue* args);
@@ -194,6 +196,7 @@ class ExtensionSettingsHandler
   std::vector<ExtensionPage> GetInspectablePagesForExtension(
       const Extension* extension, bool extension_is_enabled);
   void GetInspectablePagesForExtensionProcess(
+      const Extension* extension,
       const std::set<content::RenderViewHost*>& views,
       std::vector<ExtensionPage>* result);
   void GetShellWindowPagesForExtensionProfile(
@@ -239,6 +242,9 @@ class ExtensionSettingsHandler
   // it is removed from the process). Keep a pointer to it so we can exclude
   // it from the active views.
   content::RenderViewHost* deleting_rvh_;
+  // Do the same for a deleting RenderWidgetHost ID and RenderProcessHost ID.
+  int deleting_rwh_id_;
+  int deleting_rph_id_;
 
   // We want to register for notifications only after we've responded at least
   // once to the page, otherwise we'd be calling JavaScript functions on objects
@@ -250,8 +256,6 @@ class ExtensionSettingsHandler
 
   PrefChangeRegistrar pref_registrar_;
 
-  content::RenderViewHost::CreatedCallback rvh_created_callback_;
-
   // This will not be empty when a requirements check is in progress. Doing
   // another Check() before the previous one is complete will cause the first
   // one to abort.
@@ -262,6 +266,13 @@ class ExtensionSettingsHandler
 
   ScopedObserver<ExtensionWarningService, ExtensionWarningService::Observer>
       warning_service_observer_;
+
+  // An observer to listen for when Extension errors are reported.
+  ScopedObserver<ErrorConsole, ErrorConsole::Observer> error_console_observer_;
+
+  // Whether we found any DISABLE_NOT_VERIFIED extensions and want to kick off
+  // a verification check to try and rescue them.
+  bool should_do_verification_check_;
 
   DISALLOW_COPY_AND_ASSIGN(ExtensionSettingsHandler);
 };

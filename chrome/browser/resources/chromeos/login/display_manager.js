@@ -20,6 +20,9 @@
 /** @const */ var SCREEN_PASSWORD_CHANGED = 'password-changed';
 /** @const */ var SCREEN_CREATE_MANAGED_USER_FLOW =
     'managed-user-creation';
+/** @const */ var SCREEN_APP_LAUNCH_SPLASH = 'app-launch-splash';
+/** @const */ var SCREEN_CONFIRM_PASSWORD = 'confirm-password';
+/** @const */ var SCREEN_MESSAGE_BOX = 'message-box';
 
 /* Accelerator identifiers. Must be kept in sync with webui_login_view.cc. */
 /** @const */ var ACCELERATOR_CANCEL = 'cancel';
@@ -27,14 +30,12 @@
 /** @const */ var ACCELERATOR_KIOSK_ENABLE = 'kiosk_enable';
 /** @const */ var ACCELERATOR_VERSION = 'version';
 /** @const */ var ACCELERATOR_RESET = 'reset';
-/** @const */ var ACCELERATOR_LEFT = 'left';
-/** @const */ var ACCELERATOR_RIGHT = 'right';
+/** @const */ var ACCELERATOR_FOCUS_PREV = 'focus_prev';
+/** @const */ var ACCELERATOR_FOCUS_NEXT = 'focus_next';
 /** @const */ var ACCELERATOR_DEVICE_REQUISITION = 'device_requisition';
 /** @const */ var ACCELERATOR_DEVICE_REQUISITION_REMORA =
     'device_requisition_remora';
-
-/* Help topic identifiers. */
-/** @const */ var HELP_TOPIC_ENTERPRISE_REPORTING = 2535613;
+/** @const */ var ACCELERATOR_APP_LAUNCH_BAILOUT = 'app_launch_bailout';
 
 /* Signin UI state constants. Used to control header bar UI. */
 /** @const */ var SIGNIN_UI_STATE = {
@@ -50,7 +51,20 @@
   UNKNOWN: 'ui-state-unknown',
   UPDATE: 'ui-state-update',
   SIGNIN: 'ui-state-signin',
-  MANAGED_USER_CREATION_FLOW: 'ui-state-locally-managed'
+  MANAGED_USER_CREATION_FLOW: 'ui-state-locally-managed',
+  KIOSK_MODE: 'ui-state-kiosk-mode',
+  LOCAL_STATE_ERROR: 'ui-state-local-state-error'
+};
+
+/* Possible types of UI. */
+/** @const */ var DISPLAY_TYPE = {
+  UNKNOWN: 'unknown',
+  OOBE: 'oobe',
+  LOGIN: 'login',
+  LOCK: 'lock',
+  USER_ADDING: 'user-adding',
+  APP_LAUNCH_SPLASH: 'app-launch-splash',
+  DESKTOP_USER_MANAGER: 'login-add-user'
 };
 
 cr.define('cr.ui.login', function() {
@@ -65,26 +79,6 @@ cr.define('cr.ui.login', function() {
    * @const
    */
   var MAX_SCREEN_TRANSITION_DURATION = 250;
-
-  /**
-   * webkitTransitionEnd does not always fire (e.g. when animation is aborted
-   * or when no paint happens during the animation). This function sets up
-   * a timer and emulate the event if it is not fired when the timer expires.
-   * @param {!HTMLElement} el The element to watch for webkitTransitionEnd.
-   * @param {number} timeOut The maximum wait time in milliseconds for the
-   *     webkitTransitionEnd to happen.
-   */
-  function ensureTransitionEndEvent(el, timeOut) {
-    var fired = false;
-    el.addEventListener('webkitTransitionEnd', function f(e) {
-      el.removeEventListener('webkitTransitionEnd', f);
-      fired = true;
-    });
-    window.setTimeout(function() {
-      if (!fired)
-        cr.dispatchSimpleEvent(el, 'webkitTransitionEnd');
-    }, timeOut);
-  }
 
   /**
    * Groups of screens (screen IDs) that should have the same dimensions.
@@ -130,6 +124,30 @@ cr.define('cr.ui.login', function() {
     forceKeyboardFlow_: false,
 
     /**
+     * Type of UI.
+     * @type {string}
+     */
+    displayType_: DISPLAY_TYPE.UNKNOWN,
+
+    get displayType() {
+      return this.displayType_;
+    },
+
+    set displayType(displayType) {
+      this.displayType_ = displayType;
+      document.documentElement.setAttribute('screen', displayType);
+    },
+
+    /**
+     * Returns dimensions of screen exluding header bar.
+     * @type {Object}
+     */
+    get clientAreaSize() {
+      var container = $('outer-container');
+      return {width: container.offsetWidth, height: container.offsetHeight};
+    },
+
+    /**
      * Gets current screen element.
      * @type {HTMLElement}
      */
@@ -146,13 +164,26 @@ cr.define('cr.ui.login', function() {
     },
 
     /**
+     * Toggles background of main body between transparency and solid.
+     * @param {boolean} solid Whether to show a solid background.
+     */
+    set solidBackground(solid) {
+      if (solid)
+        document.body.classList.add('solid');
+      else
+        document.body.classList.remove('solid');
+    },
+
+    /**
      * Forces keyboard based OOBE navigation.
      * @param {boolean} value True if keyboard navigation flow is forced.
      */
     set forceKeyboardFlow(value) {
       this.forceKeyboardFlow_ = value;
-      if (value)
+      if (value) {
         keyboard.initializeKeyboardFlow();
+        cr.ui.Dropdown.enableKeyboardFlow();
+      }
     },
 
     /**
@@ -208,19 +239,21 @@ cr.define('cr.ui.login', function() {
         if (this.isOobeUI())
           this.showDeviceRequisitionPrompt_();
       } else if (name == ACCELERATOR_DEVICE_REQUISITION_REMORA) {
-        if (this.isOobeUI()) {
-          this.deviceRequisition_ = 'remora';
-          this.showDeviceRequisitionPrompt_();
-        }
+        if (this.isOobeUI())
+          this.showDeviceRequisitionRemoraPrompt_();
+      } else if (name == ACCELERATOR_APP_LAUNCH_BAILOUT) {
+        var currentStepId = this.screens_[this.currentStep_];
+        if (currentStepId == SCREEN_APP_LAUNCH_SPLASH)
+          chrome.send('cancelAppLaunch');
       }
 
       if (!this.forceKeyboardFlow_)
         return;
 
       // Handle special accelerators for keyboard enhanced navigation flow.
-      if (name == ACCELERATOR_LEFT)
+      if (name == ACCELERATOR_FOCUS_PREV)
         keyboard.raiseKeyFocusPrevious(document.activeElement);
-      else if (name == ACCELERATOR_RIGHT)
+      else if (name == ACCELERATOR_FOCUS_NEXT)
         keyboard.raiseKeyFocusNext(document.activeElement);
     },
 
@@ -289,18 +322,12 @@ cr.define('cr.ui.login', function() {
       if (oldStep.onBeforeHide)
         oldStep.onBeforeHide();
 
+      $('oobe').className = nextStepId;
+
       if (newStep.onBeforeShow)
         newStep.onBeforeShow(screenData);
 
       newStep.classList.remove('hidden');
-
-      if (newStep.onAfterShow)
-        newStep.onAfterShow(screenData);
-
-      this.disableButtons_(newStep, false);
-
-      // Default control to be focused (if specified).
-      var defaultControl = newStep.defaultControl;
 
       if (this.isOobeUI()) {
         // Start gliding animation for OOBE steps.
@@ -319,8 +346,16 @@ cr.define('cr.ui.login', function() {
         newStep.classList.remove('faded');
       }
 
+      this.disableButtons_(newStep, false);
+
       // Adjust inner container height based on new step's height.
       this.updateScreenSize(newStep);
+
+      if (newStep.onAfterShow)
+        newStep.onAfterShow(screenData);
+
+      // Default control to be focused (if specified).
+      var defaultControl = newStep.defaultControl;
 
       var innerContainer = $('inner-container');
       if (this.currentStep_ != nextStepIndex &&
@@ -348,8 +383,7 @@ cr.define('cr.ui.login', function() {
         }
       } else {
         // First screen on OOBE launch.
-        if (document.body.classList.contains('oobe-display') &&
-            innerContainer.classList.contains('down')) {
+        if (this.isOobeUI() && innerContainer.classList.contains('down')) {
           innerContainer.classList.remove('down');
           innerContainer.addEventListener(
               'webkitTransitionEnd', function f(e) {
@@ -366,11 +400,10 @@ cr.define('cr.ui.login', function() {
         } else {
           if (defaultControl)
             defaultControl.focus();
+          chrome.send('loginVisible', ['oobe']);
         }
-        newHeader.classList.remove('right');  // Old OOBE.
       }
       this.currentStep_ = nextStepIndex;
-      $('oobe').className = nextStepId;
 
       $('step-logo').hidden = newStep.classList.contains('no-logo');
 
@@ -463,19 +496,23 @@ cr.define('cr.ui.login', function() {
      */
     updateScreenSize: function(screen) {
       // Have to reset any previously predefined screen size first
-      // so that screen contents would define it instead (offsetHeight/width).
-      // http://crbug.com/146539
+      // so that screen contents would define it instead.
+      $('inner-container').style.height = '';
+      $('inner-container').style.width = '';
       screen.style.width = '';
       screen.style.height = '';
 
-      var height = screen.offsetHeight;
-      var width = screen.offsetWidth;
+     $('outer-container').classList.toggle(
+        'fullscreen', screen.classList.contains('fullscreen'));
+
+      var width = screen.getPreferredSize().width;
+      var height = screen.getPreferredSize().height;
       for (var i = 0, screenGroup; screenGroup = SCREEN_GROUPS[i]; i++) {
         if (screenGroup.indexOf(screen.id) != -1) {
           // Set screen dimensions to maximum dimensions within this group.
           for (var j = 0, screen2; screen2 = $(screenGroup[j]); j++) {
-            height = Math.max(height, screen2.offsetHeight);
-            width = Math.max(width, screen2.offsetWidth);
+            width = Math.max(width, screen2.getPreferredSize().width);
+            height = Math.max(height, screen2.getPreferredSize().height);
           }
           break;
         }
@@ -546,10 +583,22 @@ cr.define('cr.ui.login', function() {
     /**
      * Confirmation handle for the device requisition prompt.
      * @param {string} value The value entered by the user.
+     * @private
      */
     onConfirmDeviceRequisitionPrompt_: function(value) {
       this.deviceRequisition_ = value;
-      chrome.send('setDeviceRequisition', [value]);
+      chrome.send('setDeviceRequisition', [value == '' ? 'none' : value]);
+    },
+
+    /**
+     * Called when window size changed. Notifies current screen about change.
+     * @private
+     */
+    onWindowResize_: function() {
+      var currentScreenId = this.screens_[this.currentStep_];
+      var currentScreen = $(currentScreenId);
+      if (currentScreen)
+        currentScreen.onWindowResize();
     },
 
     /*
@@ -561,26 +610,34 @@ cr.define('cr.ui.login', function() {
     },
 
     /**
+     * Shows the special remora device requisition prompt.
+     * @private
+     */
+    showDeviceRequisitionRemoraPrompt_: function() {
+      if (!this.deviceRequisitionRemoraDialog_) {
+        this.deviceRequisitionRemoraDialog_ =
+            new cr.ui.dialogs.ConfirmDialog(document.body);
+        this.deviceRequisitionRemoraDialog_.setOkLabel(
+            loadTimeData.getString('deviceRequisitionRemoraPromptOk'));
+        this.deviceRequisitionRemoraDialog_.setCancelLabel(
+            loadTimeData.getString('deviceRequisitionRemoraPromptCancel'));
+      }
+      this.deviceRequisitionRemoraDialog_.showWithTitle(
+          loadTimeData.getString('deviceRequisitionRemoraPromptTitle'),
+          loadTimeData.getString('deviceRequisitionRemoraPromptText'),
+          function() {  // onShow
+            chrome.send('setDeviceRequisition', ['remora']);
+          },
+          function() {  // onCancel
+             chrome.send('setDeviceRequisition', ['none']);
+          });
+    },
+
+    /**
      * Returns true if Oobe UI is shown.
      */
     isOobeUI: function() {
-      return !document.body.classList.contains('login-display');
-    },
-
-    /**
-     * Returns true if the current UI type is the "Sign-in to add user"
-     * (another user session is already active).
-     */
-    isSignInToAddScreen: function() {
-      return document.documentElement.getAttribute('screen') ==
-          'user-adding';
-    },
-
-    /**
-     * Returns true if the current UI type is the lock screen.
-     */
-    isLockScreen: function() {
-      return document.documentElement.getAttribute('screen') == 'lock';
+      return document.body.classList.contains('oobe-display');
     },
 
     /**
@@ -589,27 +646,45 @@ cr.define('cr.ui.login', function() {
     shouldLoadWallpaperOnBoot: function() {
       return loadTimeData.getString('bootIntoWallpaper') == 'on';
     },
+
+    /**
+     * Sets or unsets given |className| for top-level container. Useful for
+     * customizing #inner-container with CSS rules. All classes set with with
+     * this method will be removed after screen change.
+     * @param {string} className Class to toggle.
+     * @param {boolean} enabled Whether class should be enabled or disabled.
+     */
+    toggleClass: function(className, enabled) {
+      $('oobe').classList.toggle(className, enabled);
+    }
   };
 
   /**
    * Initializes display manager.
    */
   DisplayManager.initialize = function() {
-    // Extracting screen type from URL.
-    var hash = window.location.hash;
-    var screenType;
-    if (!hash) {
-      console.error('Screen type not found. Setting default value "login".');
-      screenType = 'login';
+    var givenDisplayType = DISPLAY_TYPE.UNKNOWN;
+    if (document.documentElement.hasAttribute('screen')) {
+      // Display type set in HTML property.
+      givenDisplayType = document.documentElement.getAttribute('screen');
     } else {
-      screenType = hash.substring(1);
+      // Extracting display type from URL.
+      givenDisplayType = window.location.pathname.substr(1);
     }
-    document.documentElement.setAttribute('screen', screenType);
+    var instance = Oobe.getInstance();
+    Object.getOwnPropertyNames(DISPLAY_TYPE).forEach(function(type) {
+      if (DISPLAY_TYPE[type] == givenDisplayType) {
+        instance.displayType = givenDisplayType;
+      }
+    });
+    if (instance.displayType == DISPLAY_TYPE.UNKNOWN) {
+      console.error("Unknown display type '" + givenDisplayType +
+          "'. Setting default.");
+      instance.displayType = DISPLAY_TYPE.LOGIN;
+    }
 
-    var link = $('enterprise-info-hint-link');
-    link.addEventListener(
-        'click', DisplayManager.handleEnterpriseHintLinkClick);
-  },
+    window.addEventListener('resize', instance.onWindowResize_.bind(instance));
+  };
 
   /**
    * Returns offset (top, left) of the element.
@@ -704,8 +779,9 @@ cr.define('cr.ui.login', function() {
       error.appendChild(helpLink);
     }
 
-    var currentScreenId = Oobe.getInstance().currentScreen.id;
-    $(currentScreenId).showErrorBubble(loginAttempts, error);
+    var currentScreen = Oobe.getInstance().currentScreen;
+    if (currentScreen && typeof currentScreen.showErrorBubble === 'function')
+      currentScreen.showErrorBubble(loginAttempts, error);
   };
 
   /**
@@ -745,15 +821,6 @@ cr.define('cr.ui.login', function() {
   DisplayManager.setLabelText = function(labelId, labelText) {
     $(labelId).textContent = labelText;
   };
-
-  /**
-   * Shows help topic about enrolled devices.
-   * @param {MouseEvent} Event object.
-   */
-  DisplayManager.handleEnterpriseHintLinkClick = function(e) {
-    chrome.send('launchHelpApp', [HELP_TOPIC_ENTERPRISE_REPORTING]);
-    e.preventDefault();
-  }
 
   /**
    * Sets the text content of the enterprise info message.

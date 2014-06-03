@@ -59,9 +59,6 @@ const float kWindowAnimation_ShowOpacity = 1.f;
 // TODO(sky): if we end up sticking with 0, nuke the code doing the rotation.
 const float kWindowAnimation_MinimizeRotate = 0.f;
 
-// Tween type when cross fading a workspace window.
-const ui::Tween::Type kCrossFadeTweenType = ui::Tween::EASE_IN_OUT;
-
 // Scales for AshWindow above/below current workspace.
 const float kLayerScaleAboveSize = 1.1f;
 const float kLayerScaleBelowSize = .9f;
@@ -108,15 +105,15 @@ void AddLayerAnimationsForMinimize(aura::Window* window, bool show) {
 
   rotation_about_pivot->SetReversed(show);
 
-  base::TimeDelta duration = base::TimeDelta::FromMilliseconds(
-      kLayerAnimationsForMinimizeDurationMS);
+  base::TimeDelta duration = window->layer()->GetAnimator()->
+      GetTransitionDuration();
 
   scoped_ptr<ui::LayerAnimationElement> transition(
       ui::LayerAnimationElement::CreateInterpolatedTransformElement(
           rotation_about_pivot.release(), duration));
 
   transition->set_tween_type(
-      show ? ui::Tween::EASE_IN : ui::Tween::EASE_IN_OUT);
+      show ? gfx::Tween::EASE_IN : gfx::Tween::EASE_IN_OUT);
 
   window->layer()->GetAnimator()->ScheduleAnimation(
       new ui::LayerAnimationSequence(transition.release()));
@@ -139,6 +136,10 @@ void AddLayerAnimationsForMinimize(aura::Window* window, bool show) {
 void AnimateShowWindow_Minimize(aura::Window* window) {
   window->layer()->set_delegate(window);
   window->layer()->SetOpacity(kWindowAnimation_HideOpacity);
+  ui::ScopedLayerAnimationSettings settings(window->layer()->GetAnimator());
+  base::TimeDelta duration = base::TimeDelta::FromMilliseconds(
+      kLayerAnimationsForMinimizeDurationMS);
+  settings.SetTransitionDuration(duration);
   AddLayerAnimationsForMinimize(window, true);
 
   // Now that the window has been restored, we need to clear its animation style
@@ -318,13 +319,14 @@ class CrossFadeObserver : public ui::CompositorObserver,
 // animating. Returns the duration of the fade.
 base::TimeDelta CrossFadeImpl(aura::Window* window,
                               ui::Layer* old_layer,
-                              ui::Tween::Type tween_type) {
+                              gfx::Tween::Type tween_type) {
   const gfx::Rect old_bounds(old_layer->bounds());
   const gfx::Rect new_bounds(window->bounds());
   const bool old_on_top = (old_bounds.width() > new_bounds.width());
 
   // Shorten the animation if there's not much visual movement.
-  const base::TimeDelta duration = GetCrossFadeDuration(old_bounds, new_bounds);
+  const base::TimeDelta duration = GetCrossFadeDuration(window,
+                                                        old_bounds, new_bounds);
 
   // Scale up the old layer while translating to new position.
   {
@@ -413,26 +415,13 @@ void CrossFadeToBounds(aura::Window* window, const gfx::Rect& new_bounds) {
   else
     old_layer->parent()->StackAbove(new_layer, old_layer);
 
-  CrossFadeImpl(window, old_layer, ui::Tween::EASE_OUT);
+  CrossFadeImpl(window, old_layer, gfx::Tween::EASE_OUT);
 }
 
-void CrossFadeWindowBetweenWorkspaces(aura::Window* new_workspace,
-                                      aura::Window* window,
-                                      ui::Layer* old_layer) {
-  ui::Layer* layer_parent = new_workspace->layer()->parent();
-  layer_parent->Add(old_layer);
-  const bool restoring = old_layer->bounds().width() > window->bounds().width();
-  if (restoring)
-    layer_parent->StackAbove(old_layer, new_workspace->layer());
-  else
-    layer_parent->StackBelow(old_layer, new_workspace->layer());
-
-  CrossFadeImpl(window, old_layer, kCrossFadeTweenType);
-}
-
-base::TimeDelta GetCrossFadeDuration(const gfx::Rect& old_bounds,
+base::TimeDelta GetCrossFadeDuration(aura::Window* window,
+                                     const gfx::Rect& old_bounds,
                                      const gfx::Rect& new_bounds) {
-  if (views::corewm::WindowAnimationsDisabled(NULL))
+  if (views::corewm::WindowAnimationsDisabled(window))
     return base::TimeDelta();
 
   int old_area = old_bounds.width() * old_bounds.height();
@@ -473,7 +462,7 @@ bool AnimateOnChildWindowVisibilityChanged(aura::Window* window, bool visible) {
 std::vector<ui::LayerAnimationSequence*>
 CreateBrightnessGrayscaleAnimationSequence(float target_value,
                                            base::TimeDelta duration) {
-  ui::Tween::Type animation_type = ui::Tween::EASE_OUT;
+  gfx::Tween::Type animation_type = gfx::Tween::EASE_OUT;
   scoped_ptr<ui::LayerAnimationSequence> brightness_sequence(
       new ui::LayerAnimationSequence());
   scoped_ptr<ui::LayerAnimationSequence> grayscale_sequence(
@@ -513,11 +502,10 @@ void SetTransformForScaleAnimation(ui::Layer* layer,
 
 gfx::Rect GetMinimizeAnimationTargetBoundsInScreen(aura::Window* window) {
   Launcher* launcher = Launcher::ForWindow(window);
-  // Launcher is created lazily and can be NULL.
+  // Shelf is created lazily and can be NULL.
   if (!launcher)
     return gfx::Rect();
-  gfx::Rect item_rect = launcher->
-      GetScreenBoundsOfItemIconForWindow(window);
+  gfx::Rect item_rect = launcher->GetScreenBoundsOfItemIconForWindow(window);
 
   // The launcher item is visible and has an icon.
   if (!item_rect.IsEmpty())

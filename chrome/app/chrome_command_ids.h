@@ -69,6 +69,12 @@
 #define IDC_WIN8_DESKTOP_RESTART        34042
 #define IDC_WIN8_METRO_RESTART          34043
 #define IDC_TOGGLE_ASH_DESKTOP          34044
+#define IDC_WINDOW_MENU                 34045
+#define IDC_MINIMIZE_WINDOW             34046
+#define IDC_MAXIMIZE_WINDOW             34047
+#define IDC_ALL_WINDOWS_FRONT           34048
+#define IDC_VISIT_DESKTOP_OF_LRU_USER_2 34049
+#define IDC_VISIT_DESKTOP_OF_LRU_USER_3 34050
 
 // Page-related commands
 #define IDC_BOOKMARK_PAGE               35000
@@ -81,6 +87,7 @@
 #define IDC_ADVANCED_PRINT              35007
 #define IDC_PRINT_TO_DESTINATION        35008
 #define IDC_BOOKMARK_PAGE_FROM_STAR     35009
+#define IDC_TRANSLATE_PAGE              35010
 
 // When adding a new encoding to this list, be sure to append it to the
 // EncodingMenuController::kValidEncodingIds array in
@@ -127,7 +134,6 @@
 // Clipboard commands
 #define IDC_CUT                         36000
 #define IDC_COPY                        36001
-#define IDC_COPY_URL                    36002
 #define IDC_PASTE                       36003
 #define IDC_EDIT_MENU                   36004
 
@@ -135,6 +141,7 @@
 #define IDC_FIND                        37000
 #define IDC_FIND_NEXT                   37001
 #define IDC_FIND_PREVIOUS               37002
+#define IDC_FIND_MENU                   37100
 
 // Zoom
 #define IDC_ZOOM_MENU                   38000
@@ -156,11 +163,15 @@
 // Show various bits of UI
 #define IDC_OPEN_FILE                   40000
 #define IDC_CREATE_SHORTCUTS            40001
-#define IDC_DEVELOPER_MENU              40002
-#define IDC_DEV_TOOLS                   40003
-#define IDC_DEV_TOOLS_CONSOLE           40004
-#define IDC_TASK_MANAGER                40005
+#define IDC_CREATE_HOSTED_APP           40002
+#define IDC_DEVELOPER_MENU              40003
+#define IDC_DEV_TOOLS                   40004
+#define IDC_DEV_TOOLS_CONSOLE           40005
+#define IDC_TASK_MANAGER                40006
+#define IDC_DEV_TOOLS_DEVICES           40007
+#if defined(GOOGLE_CHROME_BUILD)
 #define IDC_FEEDBACK                    40008
+#endif
 #define IDC_SHOW_BOOKMARK_BAR           40009
 #define IDC_SHOW_HISTORY                40010
 #define IDC_SHOW_BOOKMARK_MANAGER       40011
@@ -197,6 +208,7 @@
 #define IDC_EXTERNAL_EXTENSION_ALERT    40238
 #define IDC_RECENT_TABS_MENU            40239
 #define IDC_RECENT_TABS_NO_DEVICE_TABS  40240
+#define IDC_SHOW_SETTINGS_RESET_BUBBLE  40241
 
 // Spell-check
 // Insert any additional suggestions before _LAST; these have to be consecutive.
@@ -216,10 +228,10 @@
 #define IDC_SPELLCHECK_ADD_TO_DICTIONARY 41110
 
 // Writing direction
-#define IDC_WRITING_DIRECTION_MENU       41120     // OSX only
-#define IDC_WRITING_DIRECTION_DEFAULT    41121     // OSX only
-#define IDC_WRITING_DIRECTION_LTR        41122     // OSX only
-#define IDC_WRITING_DIRECTION_RTL        41123     // OSX only
+#define IDC_WRITING_DIRECTION_MENU       41120
+#define IDC_WRITING_DIRECTION_DEFAULT    41121
+#define IDC_WRITING_DIRECTION_LTR        41122
+#define IDC_WRITING_DIRECTION_RTL        41123
 
 // Translate
 #define IDC_TRANSLATE_OPTIONS_ALWAYS                42000
@@ -236,6 +248,9 @@
 // Identifiers for platform-specific items.
 // Placed in a common file to help insure they never collide.
 #define IDC_VIEW_MENU                   44000     // OSX only
+#define IDC_FILE_MENU                   44001     // OSX only
+#define IDC_CHROME_MENU                 44002     // OSX only
+#define IDC_HIDE_APP                    44003     // OSX only
 #define IDC_HISTORY_MENU                46000     // OSX only
 #define IDC_PROFILE_MAIN_MENU           46100     // OSX only
 #define IDC_INPUT_METHODS_MENU          46300     // Linux only
@@ -321,6 +336,8 @@
 #define IDC_BOOKMARK_MANAGER 51009
 #define IDC_BOOKMARK_BAR_ALWAYS_SHOW 51010
 #define IDC_BOOKMARK_BAR_SHOW_APPS_SHORTCUT 51011
+#define IDC_BOOKMARK_BAR_UNDO 51012
+#define IDC_BOOKMARK_BAR_REDO 51013
 
 // Context menu items in the status tray
 #define IDC_STATUS_TRAY_KEEP_CHROME_RUNNING_IN_BACKGROUND 51100

@@ -5,9 +5,9 @@
 #include "chrome/browser/chromeos/extensions/media_player_event_router.h"
 
 #include "base/memory/singleton.h"
-#include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
+#include "extensions/browser/event_router.h"
 
 namespace extensions {
 
@@ -30,10 +30,6 @@ MediaPlayerEventRouter::~MediaPlayerEventRouter() {
 
 void MediaPlayerEventRouter::NotifyNextTrack() {
   BroadcastEvent(profile_, "mediaPlayerPrivate.onNextTrack");
-}
-
-void MediaPlayerEventRouter::NotifyPlaylistChanged() {
-  BroadcastEvent(profile_, "mediaPlayerPrivate.onPlaylistChanged");
 }
 
 void MediaPlayerEventRouter::NotifyPrevTrack() {

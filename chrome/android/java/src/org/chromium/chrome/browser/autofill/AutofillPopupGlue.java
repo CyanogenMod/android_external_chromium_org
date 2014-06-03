@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,29 +6,29 @@ package org.chromium.chrome.browser.autofill;
 
 import org.chromium.base.CalledByNative;
 import org.chromium.base.JNINamespace;
-import org.chromium.ui.ViewAndroid;
-import org.chromium.ui.ViewAndroidDelegate;
-import org.chromium.ui.WindowAndroid;
 import org.chromium.ui.autofill.AutofillPopup;
 import org.chromium.ui.autofill.AutofillPopup.AutofillPopupDelegate;
 import org.chromium.ui.autofill.AutofillSuggestion;
+import org.chromium.ui.base.ViewAndroid;
+import org.chromium.ui.base.ViewAndroidDelegate;
+import org.chromium.ui.base.WindowAndroid;
 
 /**
 * JNI call glue for AutofillExternalDelagate C++ and Java objects.
 */
 @JNINamespace("autofill")
 public class AutofillPopupGlue implements AutofillPopupDelegate{
-    private final int mNativeAutofillPopup;
+    private final long mNativeAutofillPopup;
     private final AutofillPopup mAutofillPopup;
 
-    public AutofillPopupGlue(int nativeAutofillPopupViewAndroid, WindowAndroid windowAndroid,
+    public AutofillPopupGlue(long nativeAutofillPopupViewAndroid, WindowAndroid windowAndroid,
             ViewAndroidDelegate containerViewDelegate) {
         mNativeAutofillPopup = nativeAutofillPopupViewAndroid;
         mAutofillPopup = new AutofillPopup(windowAndroid.getContext(), containerViewDelegate, this);
     }
 
     @CalledByNative
-    private static AutofillPopupGlue create(int nativeAutofillPopupViewAndroid,
+    private static AutofillPopupGlue create(long nativeAutofillPopupViewAndroid,
             WindowAndroid windowAndroid, ViewAndroid viewAndroid) {
         return new AutofillPopupGlue(nativeAutofillPopupViewAndroid, windowAndroid,
                 viewAndroid.getViewAndroidDelegate());
@@ -93,7 +93,7 @@ public class AutofillPopupGlue implements AutofillPopupDelegate{
         array[index] = new AutofillSuggestion(label, sublabel, uniqueId);
     }
 
-    private native void nativeRequestHide(int nativeAutofillPopupViewAndroid);
-    private native void nativeSuggestionSelected(int nativeAutofillPopupViewAndroid,
+    private native void nativeRequestHide(long nativeAutofillPopupViewAndroid);
+    private native void nativeSuggestionSelected(long nativeAutofillPopupViewAndroid,
             int listIndex);
 }

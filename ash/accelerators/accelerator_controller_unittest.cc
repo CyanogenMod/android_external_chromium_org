@@ -4,29 +4,34 @@
 
 #include "ash/accelerators/accelerator_controller.h"
 #include "ash/accelerators/accelerator_table.h"
+#include "ash/accessibility_delegate.h"
+#include "ash/ash_switches.h"
 #include "ash/caps_lock_delegate.h"
 #include "ash/display/display_manager.h"
 #include "ash/ime_control_delegate.h"
-#include "ash/screenshot_delegate.h"
+#include "ash/screen_ash.h"
 #include "ash/shell.h"
 #include "ash/shell_window_ids.h"
-#include "ash/system/brightness/brightness_control_delegate.h"
+#include "ash/system/brightness_control_delegate.h"
 #include "ash/system/keyboard_brightness/keyboard_brightness_control_delegate.h"
 #include "ash/system/tray/system_tray_delegate.h"
 #include "ash/test/ash_test_base.h"
 #include "ash/test/display_manager_test_api.h"
+#include "ash/test/test_screenshot_delegate.h"
 #include "ash/test/test_shell_delegate.h"
 #include "ash/volume_control_delegate.h"
+#include "ash/wm/window_state.h"
 #include "ash/wm/window_util.h"
+#include "base/command_line.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/test/test_window_delegate.h"
 #include "ui/aura/test/test_windows.h"
 #include "ui/aura/window.h"
-#include "ui/base/events/event.h"
+#include "ui/events/event.h"
 
 #if defined(USE_X11)
 #include <X11/Xlib.h>
-#include "ui/base/x/x11_util.h"
+#include "ui/events/test/events_test_utils_x11.h"
 #endif
 
 namespace ash {
@@ -62,36 +67,6 @@ class ReleaseAccelerator : public ui::Accelerator {
       : ui::Accelerator(keycode, modifiers) {
     set_type(ui::ET_KEY_RELEASED);
   }
-};
-
-class DummyScreenshotDelegate : public ScreenshotDelegate {
- public:
-  DummyScreenshotDelegate()
-      : handle_take_screenshot_count_(0) {
-  }
-  virtual ~DummyScreenshotDelegate() {}
-
-  // Overridden from ScreenshotDelegate:
-  virtual void HandleTakeScreenshotForAllRootWindows() OVERRIDE {
-    ++handle_take_screenshot_count_;
-  }
-
-  virtual void HandleTakePartialScreenshot(
-      aura::Window* window, const gfx::Rect& rect) OVERRIDE {
-  }
-
-  virtual bool CanTakeScreenshot() OVERRIDE {
-    return true;
-  }
-
-  int handle_take_screenshot_count() const {
-    return handle_take_screenshot_count_;
-  }
-
- private:
-  int handle_take_screenshot_count_;
-
-  DISALLOW_COPY_AND_ASSIGN(DummyScreenshotDelegate);
 };
 
 class DummyVolumeControlDelegate : public VolumeControlDelegate {
@@ -494,11 +469,16 @@ TEST_F(AcceleratorControllerTest, IsRegistered) {
 }
 
 TEST_F(AcceleratorControllerTest, WindowSnap) {
+  CommandLine::ForCurrentProcess()->AppendSwitch(
+      switches::kAshMultipleSnapWindowWidths);
+
   scoped_ptr<aura::Window> window(
       CreateTestWindowInShellWithBounds(gfx::Rect(5, 5, 20, 20)));
   const ui::Accelerator dummy;
 
-  wm::ActivateWindow(window.get());
+  wm::WindowState* window_state = wm::GetWindowState(window.get());
+
+  window_state->Activate();
 
   {
     GetController()->PerformAction(WINDOW_SNAP_LEFT, dummy);
@@ -525,36 +505,69 @@ TEST_F(AcceleratorControllerTest, WindowSnap) {
     EXPECT_EQ(window->bounds().ToString(), snap_right.ToString());
   }
   {
-    gfx::Rect normal_bounds = window->bounds();
+    gfx::Rect normal_bounds = window_state->GetRestoreBoundsInParent();
 
     GetController()->PerformAction(TOGGLE_MAXIMIZED, dummy);
-    EXPECT_TRUE(wm::IsWindowMaximized(window.get()));
+    EXPECT_TRUE(window_state->IsMaximized());
     EXPECT_NE(normal_bounds.ToString(), window->bounds().ToString());
 
     GetController()->PerformAction(TOGGLE_MAXIMIZED, dummy);
-    EXPECT_FALSE(wm::IsWindowMaximized(window.get()));
+    EXPECT_FALSE(window_state->IsMaximized());
+    // Window gets restored to its restore bounds since side-maximized state
+    // is treated as a "maximized" state.
     EXPECT_EQ(normal_bounds.ToString(), window->bounds().ToString());
 
     GetController()->PerformAction(TOGGLE_MAXIMIZED, dummy);
     GetController()->PerformAction(WINDOW_SNAP_LEFT, dummy);
-    EXPECT_FALSE(wm::IsWindowMaximized(window.get()));
+    EXPECT_FALSE(window_state->IsMaximized());
 
     GetController()->PerformAction(TOGGLE_MAXIMIZED, dummy);
     GetController()->PerformAction(WINDOW_SNAP_RIGHT, dummy);
-    EXPECT_FALSE(wm::IsWindowMaximized(window.get()));
+    EXPECT_FALSE(window_state->IsMaximized());
 
     GetController()->PerformAction(TOGGLE_MAXIMIZED, dummy);
-    EXPECT_TRUE(wm::IsWindowMaximized(window.get()));
+    EXPECT_TRUE(window_state->IsMaximized());
     GetController()->PerformAction(WINDOW_MINIMIZE, dummy);
-    EXPECT_FALSE(wm::IsWindowMaximized(window.get()));
-    EXPECT_TRUE(wm::IsWindowMinimized(window.get()));
-    wm::RestoreWindow(window.get());
-    wm::ActivateWindow(window.get());
+    EXPECT_FALSE(window_state->IsMaximized());
+    EXPECT_TRUE(window_state->IsMinimized());
+    window_state->Restore();
+    window_state->Activate();
   }
   {
     GetController()->PerformAction(WINDOW_MINIMIZE, dummy);
-    EXPECT_TRUE(wm::IsWindowMinimized(window.get()));
+    EXPECT_TRUE(window_state->IsMinimized());
   }
+}
+
+TEST_F(AcceleratorControllerTest, CenterWindowAccelerator) {
+  scoped_ptr<aura::Window> window(
+      CreateTestWindowInShellWithBounds(gfx::Rect(5, 5, 20, 20)));
+  const ui::Accelerator dummy;
+  wm::WindowState* window_state = wm::GetWindowState(window.get());
+  window_state->Activate();
+
+  // Center the window using accelerator.
+  GetController()->PerformAction(WINDOW_POSITION_CENTER, dummy);
+  gfx::Rect work_area =
+      Shell::GetScreen()->GetDisplayNearestWindow(window.get()).work_area();
+  gfx::Rect bounds = window->GetBoundsInScreen();
+  EXPECT_NEAR(bounds.x() - work_area.x(),
+              work_area.right() - bounds.right(),
+              1);
+  EXPECT_NEAR(bounds.y() - work_area.y(),
+              work_area.bottom() - bounds.bottom(),
+              1);
+
+  // Add the window to docked container and try to center it.
+  window->SetBounds(gfx::Rect(0, 0, 20, 20));
+  aura::Window* docked_container = Shell::GetContainer(
+      window->GetRootWindow(), internal::kShellWindowId_DockedContainer);
+  docked_container->AddChild(window.get());
+  gfx::Rect docked_bounds = window->GetBoundsInScreen();
+  GetController()->PerformAction(WINDOW_POSITION_CENTER, dummy);
+  // It should not get centered and should remain docked.
+  EXPECT_EQ(internal::kShellWindowId_DockedContainer, window->parent()->id());
+  EXPECT_EQ(docked_bounds.ToString(), window->GetBoundsInScreen().ToString());
 }
 
 TEST_F(AcceleratorControllerTest, ControllerContext) {
@@ -591,71 +604,83 @@ TEST_F(AcceleratorControllerTest, ControllerContext) {
             GetController()->context()->previous_accelerator().type());
 }
 
-TEST_F(AcceleratorControllerTest, SuppressToggleMaximized) {
+#if defined(OS_WIN) && defined(USE_AURA)
+// crbug.com/314674
+#define MAYBE_SuppressToggleMaximized DISABLED_SuppressToggleMaximized
+#else
+#define MAYBE_SuppressToggleMaximized SuppressToggleMaximized
+#endif
+
+TEST_F(AcceleratorControllerTest, MAYBE_SuppressToggleMaximized) {
   scoped_ptr<aura::Window> window(
       CreateTestWindowInShellWithBounds(gfx::Rect(5, 5, 20, 20)));
   wm::ActivateWindow(window.get());
   const ui::Accelerator accelerator(ui::VKEY_A, ui::EF_NONE);
   const ui::Accelerator empty_accelerator;
 
+  wm::WindowState* window_state = wm::GetWindowState(window.get());
+
   // Toggling not suppressed.
   GetController()->context()->UpdateContext(accelerator);
   GetController()->PerformAction(TOGGLE_MAXIMIZED, accelerator);
-  EXPECT_TRUE(wm::IsWindowMaximized(window.get()));
+  EXPECT_TRUE(window_state->IsMaximized());
 
   // The same accelerator - toggling suppressed.
   GetController()->context()->UpdateContext(accelerator);
   GetController()->PerformAction(TOGGLE_MAXIMIZED, accelerator);
-  EXPECT_TRUE(wm::IsWindowMaximized(window.get()));
+  EXPECT_TRUE(window_state->IsMaximized());
 
   // Suppressed but not for gesture events.
   GetController()->PerformAction(TOGGLE_MAXIMIZED, empty_accelerator);
-  EXPECT_FALSE(wm::IsWindowMaximized(window.get()));
+  EXPECT_FALSE(window_state->IsMaximized());
 }
 
+#if defined(OS_WIN) && defined(USE_AURA)
+// crbug.com/317592
+#define MAYBE_ProcessOnce DISABLED_ProcessOnce
+#else
+#define MAYBE_ProcessOnce ProcessOnce
+#endif
+
 #if defined(OS_WIN) || defined(USE_X11)
-TEST_F(AcceleratorControllerTest, ProcessOnce) {
+TEST_F(AcceleratorControllerTest, MAYBE_ProcessOnce) {
   ui::Accelerator accelerator_a(ui::VKEY_A, ui::EF_NONE);
   TestTarget target;
   GetController()->Register(accelerator_a, &target);
 
   // The accelerator is processed only once.
+  aura::WindowEventDispatcher* dispatcher =
+      Shell::GetPrimaryRootWindow()->GetDispatcher();
 #if defined(OS_WIN)
   MSG msg1 = { NULL, WM_KEYDOWN, ui::VKEY_A, 0 };
   ui::TranslatedKeyEvent key_event1(msg1, false);
-  EXPECT_TRUE(Shell::GetPrimaryRootWindow()->AsRootWindowHostDelegate()->
-      OnHostKeyEvent(&key_event1));
+  EXPECT_TRUE(dispatcher->AsRootWindowHostDelegate()->OnHostKeyEvent(
+      &key_event1));
 
   MSG msg2 = { NULL, WM_CHAR, L'A', 0 };
   ui::TranslatedKeyEvent key_event2(msg2, true);
-  EXPECT_FALSE(Shell::GetPrimaryRootWindow()->AsRootWindowHostDelegate()->
-      OnHostKeyEvent(&key_event2));
+  EXPECT_FALSE(dispatcher->AsRootWindowHostDelegate()->OnHostKeyEvent(
+      &key_event2));
 
   MSG msg3 = { NULL, WM_KEYUP, ui::VKEY_A, 0 };
   ui::TranslatedKeyEvent key_event3(msg3, false);
-  EXPECT_FALSE(Shell::GetPrimaryRootWindow()->AsRootWindowHostDelegate()->
-      OnHostKeyEvent(&key_event3));
+  EXPECT_FALSE(dispatcher->AsRootWindowHostDelegate()->OnHostKeyEvent(
+      &key_event3));
 #elif defined(USE_X11)
-  XEvent key_event;
-  ui::InitXKeyEventForTesting(ui::ET_KEY_PRESSED,
-                              ui::VKEY_A,
-                              0,
-                              &key_event);
-  ui::TranslatedKeyEvent key_event1(&key_event, false);
-  EXPECT_TRUE(Shell::GetPrimaryRootWindow()->AsRootWindowHostDelegate()->
-      OnHostKeyEvent(&key_event1));
+  ui::ScopedXI2Event key_event;
+  key_event.InitKeyEvent(ui::ET_KEY_PRESSED, ui::VKEY_A, 0);
+  ui::TranslatedKeyEvent key_event1(key_event, false);
+  EXPECT_TRUE(dispatcher->AsRootWindowHostDelegate()->OnHostKeyEvent(
+      &key_event1));
 
-  ui::TranslatedKeyEvent key_event2(&key_event, true);
-  EXPECT_FALSE(Shell::GetPrimaryRootWindow()->AsRootWindowHostDelegate()->
-      OnHostKeyEvent(&key_event2));
+  ui::TranslatedKeyEvent key_event2(key_event, true);
+  EXPECT_FALSE(dispatcher->AsRootWindowHostDelegate()->OnHostKeyEvent(
+      &key_event2));
 
-  ui::InitXKeyEventForTesting(ui::ET_KEY_RELEASED,
-                              ui::VKEY_A,
-                              0,
-                              &key_event);
-  ui::TranslatedKeyEvent key_event3(&key_event, false);
-  EXPECT_FALSE(Shell::GetPrimaryRootWindow()->AsRootWindowHostDelegate()->
-      OnHostKeyEvent(&key_event3));
+  key_event.InitKeyEvent(ui::ET_KEY_RELEASED, ui::VKEY_A, 0);
+  ui::TranslatedKeyEvent key_event3(key_event, false);
+  EXPECT_FALSE(dispatcher->AsRootWindowHostDelegate()->OnHostKeyEvent(
+      &key_event3));
 #endif
   EXPECT_EQ(1, target.accelerator_pressed_count());
 }
@@ -668,17 +693,16 @@ TEST_F(AcceleratorControllerTest, GlobalAccelerators) {
   // CycleForward
   EXPECT_TRUE(ProcessWithContext(
       ui::Accelerator(ui::VKEY_TAB, ui::EF_ALT_DOWN)));
-#if defined(OS_CHROMEOS)
-  // CycleBackward
-  EXPECT_TRUE(ProcessWithContext(
-      ui::Accelerator(ui::VKEY_MEDIA_LAUNCH_APP1, ui::EF_SHIFT_DOWN)));
-  // CycleForward
+  // CycleLinear
   EXPECT_TRUE(ProcessWithContext(
       ui::Accelerator(ui::VKEY_MEDIA_LAUNCH_APP1, ui::EF_NONE)));
 
+#if defined(OS_CHROMEOS)
   // Take screenshot / partial screenshot
   // True should always be returned regardless of the existence of the delegate.
   {
+    test::TestScreenshotDelegate* delegate = GetScreenshotDelegate();
+    delegate->set_can_take_screenshot(false);
     EXPECT_TRUE(ProcessWithContext(
         ui::Accelerator(ui::VKEY_MEDIA_LAUNCH_APP1, ui::EF_CONTROL_DOWN)));
     EXPECT_TRUE(ProcessWithContext(
@@ -686,9 +710,8 @@ TEST_F(AcceleratorControllerTest, GlobalAccelerators) {
     EXPECT_TRUE(ProcessWithContext(
         ui::Accelerator(ui::VKEY_MEDIA_LAUNCH_APP1,
                         ui::EF_SHIFT_DOWN | ui::EF_CONTROL_DOWN)));
-    DummyScreenshotDelegate* delegate = new DummyScreenshotDelegate;
-    GetController()->SetScreenshotDelegate(
-        scoped_ptr<ScreenshotDelegate>(delegate).Pass());
+
+    delegate->set_can_take_screenshot(true);
     EXPECT_EQ(0, delegate->handle_take_screenshot_count());
     EXPECT_TRUE(ProcessWithContext(
         ui::Accelerator(ui::VKEY_MEDIA_LAUNCH_APP1, ui::EF_CONTROL_DOWN)));
@@ -963,10 +986,6 @@ TEST_F(AcceleratorControllerTest, GlobalAccelerators) {
       ui::Accelerator(ui::VKEY_ESCAPE, ui::EF_SHIFT_DOWN)));
 
 #if defined(OS_CHROMEOS)
-  // Open 'open file' dialog
-  EXPECT_TRUE(ProcessWithContext(
-      ui::Accelerator(ui::VKEY_O, ui::EF_CONTROL_DOWN)));
-
   // Open file manager
   EXPECT_TRUE(ProcessWithContext(
       ui::Accelerator(ui::VKEY_M, ui::EF_SHIFT_DOWN  | ui::EF_ALT_DOWN)));
@@ -981,9 +1000,8 @@ TEST_F(AcceleratorControllerTest, GlobalAccelerators) {
 }
 
 TEST_F(AcceleratorControllerTest, GlobalAcceleratorsToggleAppList) {
-  test::TestShellDelegate* delegate =
-      reinterpret_cast<test::TestShellDelegate*>(
-          ash::Shell::GetInstance()->delegate());
+  AccessibilityDelegate* delegate =
+          ash::Shell::GetInstance()->accessibility_delegate();
   EXPECT_FALSE(ash::Shell::GetInstance()->GetAppListTargetVisibility());
 
   // The press event should not open the AppList, the release should instead.
@@ -1229,6 +1247,8 @@ TEST_F(AcceleratorControllerTest, DisallowedAtModalWindow) {
   //
   // Screenshot
   {
+    test::TestScreenshotDelegate* delegate = GetScreenshotDelegate();
+    delegate->set_can_take_screenshot(false);
     EXPECT_TRUE(ProcessWithContext(
         ui::Accelerator(ui::VKEY_MEDIA_LAUNCH_APP1, ui::EF_CONTROL_DOWN)));
     EXPECT_TRUE(ProcessWithContext(
@@ -1236,9 +1256,7 @@ TEST_F(AcceleratorControllerTest, DisallowedAtModalWindow) {
     EXPECT_TRUE(ProcessWithContext(
         ui::Accelerator(ui::VKEY_MEDIA_LAUNCH_APP1,
                         ui::EF_SHIFT_DOWN | ui::EF_CONTROL_DOWN)));
-    DummyScreenshotDelegate* delegate = new DummyScreenshotDelegate;
-    GetController()->SetScreenshotDelegate(
-        scoped_ptr<ScreenshotDelegate>(delegate).Pass());
+    delegate->set_can_take_screenshot(true);
     EXPECT_EQ(0, delegate->handle_take_screenshot_count());
     EXPECT_TRUE(ProcessWithContext(
         ui::Accelerator(ui::VKEY_MEDIA_LAUNCH_APP1, ui::EF_CONTROL_DOWN)));
@@ -1339,5 +1357,36 @@ TEST_F(AcceleratorControllerTest, DisallowedAtModalWindow) {
   }
 }
 #endif
+
+TEST_F(AcceleratorControllerTest, DisallowedWithNoWindow) {
+  const ui::Accelerator dummy;
+  AccessibilityDelegate* delegate =
+      ash::Shell::GetInstance()->accessibility_delegate();
+
+  for (size_t i = 0; i < kActionsNeedingWindowLength; ++i) {
+    delegate->TriggerAccessibilityAlert(A11Y_ALERT_NONE);
+    EXPECT_TRUE(
+        GetController()->PerformAction(kActionsNeedingWindow[i], dummy));
+    EXPECT_EQ(delegate->GetLastAccessibilityAlert(), A11Y_ALERT_WINDOW_NEEDED);
+  }
+
+  // Make sure we don't alert if we do have a window.
+  scoped_ptr<aura::Window> window(
+      CreateTestWindowInShellWithBounds(gfx::Rect(5, 5, 20, 20)));
+  wm::ActivateWindow(window.get());
+  for (size_t i = 0; i < kActionsNeedingWindowLength; ++i) {
+    delegate->TriggerAccessibilityAlert(A11Y_ALERT_NONE);
+    GetController()->PerformAction(kActionsNeedingWindow[i], dummy);
+    EXPECT_EQ(delegate->GetLastAccessibilityAlert(), A11Y_ALERT_NONE);
+  }
+
+  // Don't alert if we have a minimized window either.
+  GetController()->PerformAction(WINDOW_MINIMIZE, dummy);
+  for (size_t i = 0; i < kActionsNeedingWindowLength; ++i) {
+    delegate->TriggerAccessibilityAlert(A11Y_ALERT_NONE);
+    GetController()->PerformAction(kActionsNeedingWindow[i], dummy);
+    EXPECT_EQ(delegate->GetLastAccessibilityAlert(), A11Y_ALERT_NONE);
+  }
+}
 
 }  // namespace ash

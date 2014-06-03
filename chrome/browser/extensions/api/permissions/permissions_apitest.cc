@@ -8,7 +8,7 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/common/extensions/permissions/permission_set.h"
+#include "extensions/common/permissions/permission_set.h"
 #include "extensions/common/switches.h"
 #include "net/dns/mock_host_resolver.h"
 
@@ -72,10 +72,12 @@ IN_PROC_BROWSER_TEST_F(ExtensionApiTest, OptionalPermissionsGranted) {
   // Mark all the tested APIs as granted to bypass the confirmation UI.
   APIPermissionSet apis;
   apis.insert(APIPermission::kBookmark);
+  ManifestPermissionSet manifest_permissions;
   URLPatternSet explicit_hosts;
   AddPattern(&explicit_hosts, "http://*.c.com/*");
   scoped_refptr<PermissionSet> granted_permissions =
-      new PermissionSet(apis, explicit_hosts, URLPatternSet());
+      new PermissionSet(apis, manifest_permissions,
+                        explicit_hosts, URLPatternSet());
 
   ExtensionPrefs* prefs =
       browser()->profile()->GetExtensionService()->extension_prefs();

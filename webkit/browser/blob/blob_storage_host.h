@@ -62,6 +62,8 @@ class WEBKIT_STORAGE_BROWSER_EXPORT BlobStorageHost {
   std::set<GURL> public_blob_urls_;
 
   base::WeakPtr<BlobStorageContext> context_;
+
+  DISALLOW_COPY_AND_ASSIGN(BlobStorageHost);
 };
 
 }  // namespace webkit_blob

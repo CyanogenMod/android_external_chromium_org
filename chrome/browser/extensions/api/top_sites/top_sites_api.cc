@@ -18,13 +18,13 @@ TopSitesGetFunction::TopSitesGetFunction()
 TopSitesGetFunction::~TopSitesGetFunction() {}
 
 bool TopSitesGetFunction::RunImpl() {
-  history::TopSites* ts = profile()->GetTopSites();
+  history::TopSites* ts = GetProfile()->GetTopSites();
   if (!ts)
     return false;
 
   ts->GetMostVisitedURLs(
       base::Bind(&TopSitesGetFunction::OnMostVisitedURLsAvailable,
-                 weak_ptr_factory_.GetWeakPtr()));
+                 weak_ptr_factory_.GetWeakPtr()), false);
   return true;
 }
 

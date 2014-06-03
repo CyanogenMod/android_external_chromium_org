@@ -10,7 +10,7 @@ namespace identity {
     // approve the application's requested scopes. If the interactive
     // flag is <code>true</code>, <code>getAuthToken</code> will
     // prompt the user as necessary. When the flag is
-    // <code>false</code> or ommitted, <code>getAuthToken</code> will
+    // <code>false</code> or omitted, <code>getAuthToken</code> will
     // return failure any time a prompt would be required.
     boolean? interactive;
   };
@@ -33,10 +33,16 @@ namespace identity {
     //
     // If the interactive flag is <code>true</code>, the window will
     // be displayed when a page load completes. If the flag is
-    // <code>false</code> or ommitted, <code>launchWebAuthFlow</code>
+    // <code>false</code> or omitted, <code>launchWebAuthFlow</code>
     // will return with an error if the initial navigation does not
     // complete the flow.
     boolean? interactive;
+  };
+
+  dictionary AccountInfo {
+    // A unique identifier for the account. This ID will not change
+    // for the lifetime of the account.
+    DOMString id;
   };
 
   callback GetAuthTokenCallback = void (optional DOMString token);
@@ -85,6 +91,18 @@ namespace identity {
     // |callback| : Called with the URL redirected back to your application.
     static void launchWebAuthFlow(WebAuthFlowDetails details,
                                   LaunchWebAuthFlowCallback callback);
-  }
-  ;
+
+    // Generates a redirect URL to be used in |launchWebAuthFlow|.
+    //
+    // The generated URLs match the pattern
+    // <code>https://&lt;app-id&gt;.chromiumapp.org/*</code>.
+    //
+    // |path| : The path appended to the end of the generated URL.
+    [nocompile] static DOMString getRedirectURL(optional DOMString path);
+  };
+
+  interface Events {
+    // Fired when signin state changes for an account on the user's profile.
+    static void onSignInChanged(AccountInfo account, boolean signedIn);
+  };
 };

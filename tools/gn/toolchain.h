@@ -8,6 +8,8 @@
 #include "base/compiler_specific.h"
 #include "base/strings/string_piece.h"
 #include "tools/gn/item.h"
+#include "tools/gn/scope.h"
+#include "tools/gn/value.h"
 
 // Holds information on a specific toolchain. This data is filled in when we
 // encounter a toolchain definition.
@@ -29,6 +31,7 @@ class Toolchain : public Item {
     TYPE_CXX,
     TYPE_OBJC,
     TYPE_OBJCXX,
+    TYPE_RC,
     TYPE_ASM,
     TYPE_ALINK,
     TYPE_SOLINK,
@@ -43,6 +46,7 @@ class Toolchain : public Item {
   static const char* kToolCxx;
   static const char* kToolObjC;
   static const char* kToolObjCxx;
+  static const char* kToolRc;
   static const char* kToolAsm;
   static const char* kToolAlink;
   static const char* kToolSolink;
@@ -54,23 +58,19 @@ class Toolchain : public Item {
     Tool();
     ~Tool();
 
-    bool empty() const {
-      return command.empty() && depfile.empty() && deps.empty() &&
-             description.empty() && pool.empty() && restat.empty() &&
-             rspfile.empty() && rspfile_content.empty();
-    }
-
     std::string command;
     std::string depfile;
     std::string deps;
     std::string description;
+    std::string lib_dir_prefix;
+    std::string lib_prefix;
     std::string pool;
     std::string restat;
     std::string rspfile;
     std::string rspfile_content;
   };
 
-  Toolchain(const Label& label);
+  Toolchain(const Settings* settings, const Label& label);
   virtual ~Toolchain();
 
   // Item overrides.
@@ -84,13 +84,24 @@ class Toolchain : public Item {
   const Tool& GetTool(ToolType type) const;
   void SetTool(ToolType type, const Tool& t);
 
-  const std::string& environment() const { return environment_; }
-  void set_environment(const std::string& env) { environment_ = env; }
+  // This extra stuff is specified by the build and will be added to the top
+  // of a generated GYP file (right after the opening "{").
+  std::string gyp_header() const { return gyp_header_; }
+  void set_gyp_header(const std::string& gh) { gyp_header_ = gh; }
+
+  // Specifies build argument overrides that will be set on the base scope. It
+  // will be as if these arguments were passed in on the command line. This
+  // allows a toolchain to override the OS type of the default toolchain or
+  // pass in other settings.
+  Scope::KeyValueMap& args() { return args_; }
+  const Scope::KeyValueMap& args() const { return args_; }
 
  private:
   Tool tools_[TYPE_NUMTYPES];
 
-  std::string environment_;
+  Scope::KeyValueMap args_;
+
+  std::string gyp_header_;
 };
 
 #endif  // TOOLS_GN_TOOLCHAIN_H_

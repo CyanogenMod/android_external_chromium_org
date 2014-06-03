@@ -24,8 +24,7 @@
 
 namespace printing {
 
-using WebKit::WebFrame;
-using WebKit::WebNode;
+using blink::WebFrame;
 
 bool PrintWebViewHelper::RenderPreviewPage(
     int page_number,
@@ -58,8 +57,7 @@ bool PrintWebViewHelper::RenderPreviewPage(
   return PreviewPageRendered(page_number, draft_metafile.get());
 }
 
-bool PrintWebViewHelper::PrintPagesNative(WebKit::WebFrame* frame,
-                                          const WebKit::WebNode& node,
+bool PrintWebViewHelper::PrintPagesNative(blink::WebFrame* frame,
                                           int page_count,
                                           const gfx::Size& canvas_size) {
   NativeMetafile metafile;
@@ -92,7 +90,7 @@ bool PrintWebViewHelper::PrintPagesNative(WebKit::WebFrame* frame,
     PrintPageInternal(page_params, canvas_size, frame, &metafile);
   }
 
-  // WebKit::printEnd() for PDF should be called before metafile is closed.
+  // blink::printEnd() for PDF should be called before metafile is closed.
   FinishFramePrinting();
 
   metafile.FinishDocument();
@@ -167,8 +165,9 @@ void PrintWebViewHelper::PrintPageInternal(
   gfx::Rect canvas_area =
       params.params.display_header_footer ? gfx::Rect(page_size) : content_area;
 
-  SkDevice* device = metafile->StartPageForVectorCanvas(page_size, canvas_area,
-                                                        scale_factor);
+  SkBaseDevice* device = metafile->StartPageForVectorCanvas(page_size,
+                                                            canvas_area,
+                                                            scale_factor);
   if (!device)
     return;
 

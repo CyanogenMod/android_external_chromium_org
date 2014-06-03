@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "ui/views/controls/label.h"
+
 #include "base/i18n/rtl.h"
 #include "base/strings/utf_string_conversions.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -9,24 +11,19 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/canvas.h"
 #include "ui/views/border.h"
-#include "ui/views/controls/label.h"
 
 namespace views {
 
 // All text sizing measurements (width and height) should be greater than this.
 const int kMinTextDimension = 4;
 
-TEST(LabelTest, FontPropertyCourier) {
+TEST(LabelTest, FontPropertySymbol) {
   Label label;
-  std::string font_name("courier");
-  // Note: This test is size dependent since Courier does not support all sizes.
+  std::string font_name("symbol");
   gfx::Font font(font_name, 26);
-  label.SetFont(font);
-  gfx::Font font_used = label.font();
-#if defined(OS_WIN)
-  // On Linux, this results in "Sans" instead of "courier".
+  label.SetFontList(gfx::FontList(font));
+  gfx::Font font_used = label.font_list().GetPrimaryFont();
   EXPECT_EQ(font_name, font_used.GetFontName());
-#endif
   EXPECT_EQ(26, font_used.GetFontSize());
 }
 
@@ -34,8 +31,8 @@ TEST(LabelTest, FontPropertyArial) {
   Label label;
   std::string font_name("arial");
   gfx::Font font(font_name, 30);
-  label.SetFont(font);
-  gfx::Font font_used = label.font();
+  label.SetFontList(gfx::FontList(font));
+  gfx::Font font_used = label.font_list().GetPrimaryFont();
   EXPECT_EQ(font_name, font_used.GetFontName());
   EXPECT_EQ(30, font_used.GetFontSize());
 }
@@ -204,7 +201,7 @@ TEST(LabelTest, MultilineSmallAvailableWidthSizing) {
 
 TEST(LabelTest, MultiLineSizing) {
   Label label;
-  label.set_focusable(false);
+  label.SetFocusable(false);
   string16 test_text(
       ASCIIToUTF16("A random string\nwith multiple lines\nand returns!"));
   label.SetText(test_text);
@@ -325,7 +322,7 @@ TEST(LabelTest, AutoDetectDirectionality) {
 
 TEST(LabelTest, DrawSingleLineString) {
   Label label;
-  label.set_focusable(false);
+  label.SetFocusable(false);
 
   // Turn off mirroring so that we don't need to figure out if
   // align right really means align left.
@@ -461,7 +458,7 @@ TEST(LabelTest, DrawSingleLineString) {
 // multiline lables to not ellide in Linux only.
 TEST(LabelTest, DrawMultiLineString) {
   Label label;
-  label.set_focusable(false);
+  label.SetFocusable(false);
 
   // Turn off mirroring so that we don't need to figure out if
   // align right really means align left.
@@ -602,7 +599,7 @@ TEST(LabelTest, DrawMultiLineString) {
 
 TEST(LabelTest, DrawSingleLineStringInRTL) {
   Label label;
-  label.set_focusable(false);
+  label.SetFocusable(false);
 
   std::string locale = l10n_util::GetApplicationLocale("");
   base::i18n::SetICUDefaultLocale("he");
@@ -741,7 +738,7 @@ TEST(LabelTest, DrawSingleLineStringInRTL) {
 // multiline lables to not ellide in Linux only.
 TEST(LabelTest, DrawMultiLineStringInRTL) {
   Label label;
-  label.set_focusable(false);
+  label.SetFocusable(false);
 
   // Test for RTL.
   std::string locale = l10n_util::GetApplicationLocale("");

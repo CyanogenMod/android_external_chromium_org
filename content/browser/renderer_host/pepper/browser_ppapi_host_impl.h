@@ -13,16 +13,15 @@
 #include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "content/browser/renderer_host/pepper/content_browser_pepper_host_factory.h"
-#include "content/browser/renderer_host/pepper/pepper_message_filter.h"
+#include "content/browser/renderer_host/pepper/ssl_context_helper.h"
 #include "content/common/content_export.h"
+#include "content/common/pepper_renderer_instance_data.h"
 #include "content/public/browser/browser_ppapi_host.h"
 #include "content/public/common/process_type.h"
 #include "ipc/ipc_channel_proxy.h"
 #include "ppapi/host/ppapi_host.h"
 
 namespace content {
-
-struct PepperRendererInstanceData;
 
 class CONTENT_EXPORT BrowserPpapiHostImpl : public BrowserPpapiHost {
  public:
@@ -37,10 +36,8 @@ class CONTENT_EXPORT BrowserPpapiHostImpl : public BrowserPpapiHost {
       const std::string& plugin_name,
       const base::FilePath& plugin_path,
       const base::FilePath& profile_data_directory,
-      bool external_plugin,
-      // TODO (ygorshenin@): remove this once TCP sockets are
-      // converted to the new design.
-      const scoped_refptr<PepperMessageFilter>& pepper_message_filter);
+      bool in_process,
+      bool external_plugin);
   virtual ~BrowserPpapiHostImpl();
 
   // BrowserPpapiHost.
@@ -60,7 +57,8 @@ class CONTENT_EXPORT BrowserPpapiHostImpl : public BrowserPpapiHost {
     plugin_process_handle_ = handle;
   }
 
-  bool external_plugin() { return external_plugin_; }
+  bool in_process() const { return in_process_; }
+  bool external_plugin() const { return external_plugin_; }
 
   // These two functions are notifications that an instance has been created
   // or destroyed. They allow us to maintain a mapping of PP_Instance to data
@@ -71,6 +69,10 @@ class CONTENT_EXPORT BrowserPpapiHostImpl : public BrowserPpapiHost {
 
   scoped_refptr<IPC::ChannelProxy::MessageFilter> message_filter() {
     return message_filter_;
+  }
+
+  const scoped_refptr<SSLContextHelper>& ssl_context_helper() const {
+    return ssl_context_helper_;
   }
 
  private:
@@ -100,9 +102,14 @@ class CONTENT_EXPORT BrowserPpapiHostImpl : public BrowserPpapiHost {
   base::FilePath plugin_path_;
   base::FilePath profile_data_directory_;
 
+  // If true, this refers to a plugin running in the renderer process.
+  bool in_process_;
+
   // If true, this is an external plugin, i.e. created by the embedder using
   // BrowserPpapiHost::CreateExternalPluginProcess.
   bool external_plugin_;
+
+  scoped_refptr<SSLContextHelper> ssl_context_helper_;
 
   // Tracks all PP_Instances in this plugin and associated renderer-related
   // data.

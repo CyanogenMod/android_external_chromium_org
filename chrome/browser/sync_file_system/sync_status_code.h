@@ -39,12 +39,13 @@ enum SyncStatusCode {
   SYNC_FILE_ERROR_NOT_A_FILE = -13,
   SYNC_FILE_ERROR_NOT_EMPTY = -14,
   SYNC_FILE_ERROR_INVALID_URL = -15,
+  SYNC_FILE_ERROR_IO = -16,
 
   // Database related errors.
-  SYNC_DATABASE_ERROR_NOT_FOUND = -16,
-  SYNC_DATABASE_ERROR_CORRUPTION = -17,
-  SYNC_DATABASE_ERROR_IO_ERROR = -18,
-  SYNC_DATABASE_ERROR_FAILED = -19,
+  SYNC_DATABASE_ERROR_NOT_FOUND = -50,
+  SYNC_DATABASE_ERROR_CORRUPTION = -51,
+  SYNC_DATABASE_ERROR_IO_ERROR = -52,
+  SYNC_DATABASE_ERROR_FAILED = -53,
 
   // Sync specific status code.
   SYNC_STATUS_FILE_BUSY = -100,
@@ -52,13 +53,14 @@ enum SyncStatusCode {
   SYNC_STATUS_NO_CONFLICT = -102,
   SYNC_STATUS_ABORT = -103,
   SYNC_STATUS_NO_CHANGE_TO_SYNC = -104,
-  SYNC_STATUS_RETRY = -105,
+  SYNC_STATUS_SERVICE_TEMPORARILY_UNAVAILABLE = -105,
   SYNC_STATUS_NETWORK_ERROR = -106,
   SYNC_STATUS_AUTHENTICATION_FAILED = -107,
   SYNC_STATUS_UNKNOWN_ORIGIN = -108,
   SYNC_STATUS_NOT_MODIFIED = -109,
   SYNC_STATUS_SYNC_DISABLED = -110,
   SYNC_STATUS_ACCESS_FORBIDDEN = -111,
+  SYNC_STATUS_RETRY = -112,
 };
 
 const char* SyncStatusCodeToString(SyncStatusCode status);
@@ -67,6 +69,9 @@ SyncStatusCode LevelDBStatusToSyncStatusCode(const leveldb::Status& status);
 
 SyncStatusCode PlatformFileErrorToSyncStatusCode(
     base::PlatformFileError file_error);
+
+base::PlatformFileError SyncStatusCodeToPlatformFileError(
+    SyncStatusCode status);
 
 }  // namespace sync_file_system
 

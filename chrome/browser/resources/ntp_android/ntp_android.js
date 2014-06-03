@@ -943,11 +943,17 @@ cr.define('ntp', function() {
       data.splice(8, data.length - 8);
     }
 
+    data.forEach(function(item, index) {
+      item.mostVisitedIndex = index;
+    });
+
     if (equals(data, mostVisitedData_))
       return;
 
     var clickFunction = function(item) {
       chrome.send('openedMostVisited');
+      chrome.send('metricsHandler:recordInHistogram',
+          ['NewTabPage.MostVisited', item.mostVisitedIndex, 8]);
       window.location = item.url;
     };
     populateData(findList('most_visited'), SectionType.MOST_VISITED, data,
@@ -1183,9 +1189,7 @@ cr.define('ntp', function() {
    * @param {Object} evt User interface event that triggered the action.
    */
   function executePromoAction(evt) {
-    if (evt.preventDefault)
-      evt.preventDefault();
-    evt.returnValue = false;
+    evt.preventDefault();
     chrome.send('promoActionTriggered');
   }
 
@@ -1206,6 +1210,12 @@ cr.define('ntp', function() {
         case ContextMenuItemIds.MOST_VISITED_OPEN_IN_NEW_TAB:
         case ContextMenuItemIds.MOST_VISITED_OPEN_IN_INCOGNITO_TAB:
           chrome.send('openedMostVisited');
+          if (contextMenuItem) {
+            chrome.send('metricsHandler:recordInHistogram',
+                ['NewTabPage.MostVisited',
+                 contextMenuItem.mostVisitedIndex,
+                 8]);
+          }
           break;
 
         case ContextMenuItemIds.RECENTLY_CLOSED_OPEN_IN_NEW_TAB:
@@ -2155,7 +2165,7 @@ cr.define('ntp', function() {
     currentPane = pane;
     currentPaneIndex = paneIndex;
 
-    document.body.scrollTop = 0;
+    setScrollTopForDocument(document, 0);
 
     var panelPrefix = sectionPrefixes[paneIndex];
     var title = templateData[panelPrefix + '_document_title'];
@@ -2475,7 +2485,8 @@ cr.define('ntp', function() {
             [ContextMenuItemIds.BOOKMARK_DELETE, templateData.bookmarkdelete]);
       }
       if (contextMenuUrl.search('chrome://') == -1 &&
-          contextMenuUrl.search('about://') == -1) {
+          contextMenuUrl.search('about://') == -1 &&
+          document.body.getAttribute('shortcut_item_enabled') == 'true') {
         menuOptions.push([
           ContextMenuItemIds.BOOKMARK_SHORTCUT,
           templateData.bookmarkshortcut

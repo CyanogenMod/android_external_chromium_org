@@ -97,6 +97,7 @@ void BookmarkCurrentPageFromStar(Browser* browser);
 bool CanBookmarkCurrentPage(const Browser* browser);
 void BookmarkAllTabs(Browser* browser);
 bool CanBookmarkAllTabs(const Browser* browser);
+void Translate(Browser* browser);
 void TogglePagePinnedToStartScreen(Browser* browser);
 void SavePage(Browser* browser);
 bool CanSavePage(const Browser* browser);
@@ -157,6 +158,7 @@ void ViewSelectedSource(Browser* browser);
 bool CanViewSource(const Browser* browser);
 
 void CreateApplicationShortcuts(Browser* browser);
+void CreateHostedAppFromCurrentWebContents(Browser* browser);
 bool CanCreateApplicationShortcuts(const Browser* browser);
 
 void ConvertTabToAppWindow(Browser* browser, content::WebContents* contents);

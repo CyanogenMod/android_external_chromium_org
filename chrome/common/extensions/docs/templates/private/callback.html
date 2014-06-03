@@ -1,4 +1,4 @@
-<h4>Callback</h4>
+{{#callback}}
 <p>
   {{?optional}}
       If you specify the <em>{{name}}</em> parameter, it should
@@ -8,7 +8,7 @@
       that looks like this:
   {{/optional}}
 </p>
-<pre>function({{#parameters}}{{+partials.variable_type}} {{name}}{{^last}}, {{/}}{{/}}) <span class="subdued">{...}</span>;</pre>
+<pre>function({{#p:parameters}}{{+partials.variable_type type:p/}} {{p.name}}{{^p.last}}, {{/}}{{/}}) <span class="subdued">{...}</span>;</pre>
 {{?description}}
 <p>
   {{{description}}}
@@ -16,8 +16,9 @@
 {{/description}}
 {{?parameters}}
 <dl>
-  {{#parameters}}
-    {{+partials.parameter_full}}
+  {{#p:parameters}}
+    {{+partials.parameter_full parameter:p parentName:name hideParamTOC:true /}}
   {{/parameters}}
 </dl>
 {{/parameters}}
+{{/callback}}

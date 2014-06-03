@@ -98,6 +98,9 @@ bool AsyncPixelTransfersCompletedQuery::End(uint32 submit_count) {
   mem_params.shm_size = buffer.size;
   mem_params.shm_data_offset = shm_offset();
   mem_params.shm_data_size = sizeof(QuerySync);
+  uint32 end = mem_params.shm_data_offset + mem_params.shm_data_size;
+  if (end > mem_params.shm_size || end < mem_params.shm_data_offset)
+    return false;
 
   observer_ = new AsyncPixelTransferCompletionObserverImpl(submit_count);
 
@@ -431,11 +434,12 @@ QueryManager::Query* QueryManager::CreateQuery(
     case GL_LATENCY_QUERY_CHROMIUM:
       query = new CommandLatencyQuery(this, target, shm_id, shm_offset);
       break;
-    case GL_ASYNC_PIXEL_TRANSFERS_COMPLETED_CHROMIUM:
+    case GL_ASYNC_PIXEL_UNPACK_COMPLETED_CHROMIUM:
+      // Currently async pixel transfer delegates only support uploads.
       query = new AsyncPixelTransfersCompletedQuery(
           this, target, shm_id, shm_offset);
       break;
-    case GL_ASYNC_READ_PIXELS_COMPLETED_CHROMIUM:
+    case GL_ASYNC_PIXEL_PACK_COMPLETED_CHROMIUM:
       query = new AsyncReadPixelsCompletedQuery(
           this, target, shm_id, shm_offset);
       break;

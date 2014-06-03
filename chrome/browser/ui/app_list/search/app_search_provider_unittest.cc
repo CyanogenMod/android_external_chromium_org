@@ -19,7 +19,6 @@ namespace test {
 
 const char kHostedAppId[] = "dceacbkfkmllgmjmbhgkpjegnodmildf";
 const char kPackagedApp1Id[] = "emfkafnhnpcmabnnkckkchdilgeoekbo";
-const char kPackagedApp2Id[] = "jlklkagmeajbjiobondfhiekepofmljl";
 
 class AppSearchProviderTest : public ExtensionServiceTestBase {
  public:
@@ -93,7 +92,7 @@ TEST_F(AppSearchProviderTest, DisableAndEnable) {
 
   service_->DisableExtension(kHostedAppId,
                              extensions::Extension::DISABLE_NONE);
-  EXPECT_EQ("", RunQuery("host"));
+  EXPECT_EQ("Hosted App", RunQuery("host"));
 
   service_->EnableExtension(kHostedAppId);
   EXPECT_EQ("Hosted App", RunQuery("host"));

@@ -19,7 +19,7 @@ class ActivityLogConverterStrategyTest : public testing::Test {
       : isolate_(v8::Isolate::GetCurrent())
       , handle_scope_(isolate_)
       , context_(v8::Context::New(isolate_))
-      , context_scope_(context_.get()) {
+      , context_scope_(context()) {
   }
 
  protected:
@@ -32,7 +32,7 @@ class ActivityLogConverterStrategyTest : public testing::Test {
 
   testing::AssertionResult VerifyNull(v8::Local<v8::Value> v8_value) {
     scoped_ptr<base::Value> value(
-        converter_->FromV8Value(v8_value, context_.get()));
+        converter_->FromV8Value(v8_value, context()));
     if (value->IsType(base::Value::TYPE_NULL))
       return testing::AssertionSuccess();
     return testing::AssertionFailure();
@@ -42,7 +42,7 @@ class ActivityLogConverterStrategyTest : public testing::Test {
                                          bool expected) {
     bool out;
     scoped_ptr<base::Value> value(
-        converter_->FromV8Value(v8_value, context_.get()));
+        converter_->FromV8Value(v8_value, context()));
     if (value->IsType(base::Value::TYPE_BOOLEAN)
         && value->GetAsBoolean(&out)
         && out == expected)
@@ -54,7 +54,7 @@ class ActivityLogConverterStrategyTest : public testing::Test {
                                          int expected) {
     int out;
     scoped_ptr<base::Value> value(
-        converter_->FromV8Value(v8_value, context_.get()));
+        converter_->FromV8Value(v8_value, context()));
     if (value->IsType(base::Value::TYPE_INTEGER)
         && value->GetAsInteger(&out)
         && out == expected)
@@ -66,7 +66,7 @@ class ActivityLogConverterStrategyTest : public testing::Test {
                                         double expected) {
     double out;
     scoped_ptr<base::Value> value(
-        converter_->FromV8Value(v8_value, context_.get()));
+        converter_->FromV8Value(v8_value, context()));
     if (value->IsType(base::Value::TYPE_DOUBLE)
         && value->GetAsDouble(&out)
         && out == expected)
@@ -78,12 +78,16 @@ class ActivityLogConverterStrategyTest : public testing::Test {
                                         const std::string& expected) {
     std::string out;
     scoped_ptr<base::Value> value(
-        converter_->FromV8Value(v8_value, context_.get()));
+        converter_->FromV8Value(v8_value, context()));
     if (value->IsType(base::Value::TYPE_STRING)
         && value->GetAsString(&out)
         && out == expected)
       return testing::AssertionSuccess();
     return testing::AssertionFailure();
+  }
+
+  v8::Handle<v8::Context> context() const {
+    return context_.NewHandle(isolate_);
   }
 
   v8::Isolate* isolate_;
@@ -120,39 +124,49 @@ TEST_F(ActivityLogConverterStrategyTest, ConversionTest) {
       "};"
       "})();";
 
-  v8::Handle<v8::Script> script(v8::Script::New(v8::String::New(source)));
+  v8::Handle<v8::Script> script(
+      v8::Script::New(v8::String::NewFromUtf8(isolate_, source)));
   v8::Handle<v8::Object> v8_object = script->Run().As<v8::Object>();
 
   EXPECT_TRUE(VerifyString(v8_object, "[Object]"));
-  EXPECT_TRUE(VerifyNull(v8_object->Get(v8::String::New("null"))));
-  EXPECT_TRUE(VerifyBoolean(v8_object->Get(v8::String::New("true")), true));
-  EXPECT_TRUE(VerifyBoolean(v8_object->Get(v8::String::New("false")), false));
-  EXPECT_TRUE(VerifyInteger(v8_object->Get(v8::String::New("positive_int")),
-                            42));
-  EXPECT_TRUE(VerifyInteger(v8_object->Get(v8::String::New("negative_int")),
-                            -42));
-  EXPECT_TRUE(VerifyInteger(v8_object->Get(v8::String::New("zero")), 0));
-  EXPECT_TRUE(VerifyDouble(v8_object->Get(v8::String::New("double")), 88.8));
+  EXPECT_TRUE(
+      VerifyNull(v8_object->Get(v8::String::NewFromUtf8(isolate_, "null"))));
+  EXPECT_TRUE(VerifyBoolean(
+      v8_object->Get(v8::String::NewFromUtf8(isolate_, "true")), true));
+  EXPECT_TRUE(VerifyBoolean(
+      v8_object->Get(v8::String::NewFromUtf8(isolate_, "false")), false));
+  EXPECT_TRUE(VerifyInteger(
+      v8_object->Get(v8::String::NewFromUtf8(isolate_, "positive_int")), 42));
+  EXPECT_TRUE(VerifyInteger(
+      v8_object->Get(v8::String::NewFromUtf8(isolate_, "negative_int")), -42));
+  EXPECT_TRUE(VerifyInteger(
+      v8_object->Get(v8::String::NewFromUtf8(isolate_, "zero")), 0));
   EXPECT_TRUE(VerifyDouble(
-      v8_object->Get(v8::String::New("big_integral_double")),
+      v8_object->Get(v8::String::NewFromUtf8(isolate_, "double")), 88.8));
+  EXPECT_TRUE(VerifyDouble(
+      v8_object->Get(v8::String::NewFromUtf8(isolate_, "big_integral_double")),
       9007199254740992.0));
-  EXPECT_TRUE(VerifyString(v8_object->Get(v8::String::New("string")),
-                           "foobar"));
-  EXPECT_TRUE(VerifyString(v8_object->Get(v8::String::New("empty_string")),
-                           ""));
-  EXPECT_TRUE(VerifyString(v8_object->Get(v8::String::New("dictionary")),
-                           "[Object]"));
-  EXPECT_TRUE(VerifyString(v8_object->Get(v8::String::New("empty_dictionary")),
-                           "[Object]"));
-  EXPECT_TRUE(VerifyString(v8_object->Get(v8::String::New("list")),
-                           "[Array]"));
-  EXPECT_TRUE(VerifyString(v8_object->Get(v8::String::New("empty_list")),
-                           "[Array]"));
-  EXPECT_TRUE(VerifyString(v8_object->Get(v8::String::New("function")),
-                           "[Function]"));
-  EXPECT_TRUE(VerifyString(v8_object->Get(v8::String::New("named_function")),
-                           "[Function foo()]"));
+  EXPECT_TRUE(VerifyString(
+      v8_object->Get(v8::String::NewFromUtf8(isolate_, "string")), "foobar"));
+  EXPECT_TRUE(VerifyString(
+      v8_object->Get(v8::String::NewFromUtf8(isolate_, "empty_string")), ""));
+  EXPECT_TRUE(VerifyString(
+      v8_object->Get(v8::String::NewFromUtf8(isolate_, "dictionary")),
+      "[Object]"));
+  EXPECT_TRUE(VerifyString(
+      v8_object->Get(v8::String::NewFromUtf8(isolate_, "empty_dictionary")),
+      "[Object]"));
+  EXPECT_TRUE(VerifyString(
+      v8_object->Get(v8::String::NewFromUtf8(isolate_, "list")), "[Array]"));
+  EXPECT_TRUE(VerifyString(
+      v8_object->Get(v8::String::NewFromUtf8(isolate_, "empty_list")),
+      "[Array]"));
+  EXPECT_TRUE(VerifyString(
+      v8_object->Get(v8::String::NewFromUtf8(isolate_, "function")),
+      "[Function]"));
+  EXPECT_TRUE(VerifyString(
+      v8_object->Get(v8::String::NewFromUtf8(isolate_, "named_function")),
+      "[Function foo()]"));
 }
 
 }  // namespace extensions
-

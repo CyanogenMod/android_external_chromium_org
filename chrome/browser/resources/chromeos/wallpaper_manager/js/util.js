@@ -58,13 +58,17 @@ WallpaperUtil.fetchURL = function(url, type, onSuccess, onFailure, opt_xhr) {
     xhr = new XMLHttpRequest();
 
   try {
-    xhr.addEventListener('loadend', function(e) {
+    // Do not use loadend here to handle both success and failure case. It gets
+    // complicated with abortion. Unexpected error message may show up. See
+    // http://crbug.com/242581.
+    xhr.addEventListener('load', function(e) {
       if (this.status == 200) {
         onSuccess(this);
       } else {
         onFailure();
       }
     });
+    xhr.addEventListener('error', onFailure);
     xhr.open('GET', url, true);
     xhr.responseType = type;
     xhr.send(null);
@@ -82,8 +86,7 @@ WallpaperUtil.fetchURL = function(url, type, onSuccess, onFailure, opt_xhr) {
  */
 WallpaperUtil.setOnlineWallpaper = function(url, layout, onSuccess, onFailure) {
   var self = this;
-  chrome.wallpaperPrivate.setWallpaperIfExists(url, layout,
-      Constants.WallpaperSourceEnum.Online, function(exists) {
+  chrome.wallpaperPrivate.setWallpaperIfExists(url, layout, function(exists) {
     if (exists) {
       onSuccess();
       return;

@@ -10,6 +10,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/common/pref_names.h"
 #include "components/autofill/core/browser/autofill_metrics.h"
 #include "grit/generated_resources.h"
@@ -19,52 +20,82 @@
 
 namespace autofill {
 
-const int AccountChooserModel::kActiveWalletItemId = 0;
+const int AccountChooserModel::kWalletAddAccountId = 0;
 const int AccountChooserModel::kAutofillItemId = 1;
+const int AccountChooserModel::kWalletAccountsStartId = 2;
 
 AccountChooserModelDelegate::~AccountChooserModelDelegate() {}
 
 AccountChooserModel::AccountChooserModel(
     AccountChooserModelDelegate* delegate,
-    PrefService* prefs,
-    const AutofillMetrics& metric_logger,
-    DialogType dialog_type)
+    Profile* profile,
+    bool disable_wallet,
+    const AutofillMetrics& metric_logger)
     : ui::SimpleMenuModel(this),
       delegate_(delegate),
-      checked_item_(
-          prefs->GetBoolean(::prefs::kAutofillDialogPayWithoutWallet) ?
-              kAutofillItemId : kActiveWalletItemId),
-      metric_logger_(metric_logger),
-      dialog_type_(dialog_type) {
+      checked_item_(kWalletAccountsStartId),
+      had_wallet_error_(false),
+      metric_logger_(metric_logger) {
+  if (profile->GetPrefs()->GetBoolean(
+          ::prefs::kAutofillDialogPayWithoutWallet) ||
+      profile->IsOffTheRecord() ||
+      disable_wallet) {
+    checked_item_ = kAutofillItemId;
+  }
+
   ReconstructMenuItems();
 }
 
-AccountChooserModel::~AccountChooserModel() {
+AccountChooserModel::~AccountChooserModel() {}
+
+void AccountChooserModel::MenuWillShow() {
+  ui::SimpleMenuModel::MenuWillShow();
 }
 
-void AccountChooserModel::SelectActiveWalletAccount() {
-  ExecuteCommand(kActiveWalletItemId, 0);
+void AccountChooserModel::SelectWalletAccount(size_t user_index) {
+  DCHECK(user_index == 0U || user_index < wallet_accounts_.size());
+  checked_item_ = kWalletAccountsStartId + user_index;
 }
 
 void AccountChooserModel::SelectUseAutofill() {
-  ExecuteCommand(kAutofillItemId, 0);
+  checked_item_ = kAutofillItemId;
 }
 
 bool AccountChooserModel::HasAccountsToChoose() const {
-  return !active_wallet_account_name_.empty();
+  return !wallet_accounts_.empty();
 }
 
-void AccountChooserModel::SetActiveWalletAccountName(
-    const string16& account) {
-  active_wallet_account_name_ = account;
+void AccountChooserModel::SetWalletAccounts(
+    const std::vector<std::string>& accounts,
+    size_t active_index) {
+  wallet_accounts_ = accounts;
+  SelectWalletAccount(active_index);
+
   ReconstructMenuItems();
   delegate_->UpdateAccountChooserView();
 }
 
-void AccountChooserModel::ClearActiveWalletAccountName() {
-  active_wallet_account_name_.clear();
+void AccountChooserModel::ClearWalletAccounts() {
+  wallet_accounts_.clear();
+  if (WalletIsSelected())
+    checked_item_ = kWalletAccountsStartId;
+
   ReconstructMenuItems();
   delegate_->UpdateAccountChooserView();
+}
+
+base::string16 AccountChooserModel::GetActiveWalletAccountName() const {
+  if (wallet_accounts_.empty())
+    return base::string16();
+
+  return UTF8ToUTF16(wallet_accounts_[GetActiveWalletAccountIndex()]);
+}
+
+size_t AccountChooserModel::GetActiveWalletAccountIndex() const {
+  if (!WalletIsSelected())
+    return 0;
+
+  return checked_item_ - kWalletAccountsStartId;
 }
 
 bool AccountChooserModel::IsCommandIdChecked(int command_id) const {
@@ -73,7 +104,7 @@ bool AccountChooserModel::IsCommandIdChecked(int command_id) const {
 
 bool AccountChooserModel::IsCommandIdEnabled(int command_id) const {
   // Currently, _any_ (non-sign-in) error disables _all_ Wallet accounts.
-  if (command_id != kAutofillItemId && HadWalletError())
+  if (command_id != kAutofillItemId && had_wallet_error_)
     return false;
 
   return true;
@@ -94,6 +125,9 @@ void AccountChooserModel::ExecuteCommand(int command_id, int event_flags) {
   if (command_id == kAutofillItemId) {
     chooser_event =
         AutofillMetrics::DIALOG_UI_ACCOUNT_CHOOSER_SWITCHED_TO_AUTOFILL;
+  } else if (command_id == kWalletAddAccountId) {
+    chooser_event =
+        AutofillMetrics::DIALOG_UI_ACCOUNT_CHOOSER_TRIED_TO_ADD_ACCOUNT;
   } else if (checked_item_ == kAutofillItemId) {
     chooser_event =
         AutofillMetrics::DIALOG_UI_ACCOUNT_CHOOSER_SWITCHED_TO_WALLET;
@@ -101,26 +135,31 @@ void AccountChooserModel::ExecuteCommand(int command_id, int event_flags) {
     chooser_event =
         AutofillMetrics::DIALOG_UI_ACCOUNT_CHOOSER_SWITCHED_WALLET_ACCOUNT;
   }
-  metric_logger_.LogDialogUiEvent(dialog_type_, chooser_event);
+  metric_logger_.LogDialogUiEvent(chooser_event);
+
+  if (command_id == kWalletAddAccountId) {
+    delegate_->AddAccount();
+    return;
+  }
 
   checked_item_ = command_id;
   ReconstructMenuItems();
   delegate_->AccountChoiceChanged();
 }
 
-void AccountChooserModel::SetHadWalletError(const base::string16& message) {
+void AccountChooserModel::MenuWillShow(ui::SimpleMenuModel* source) {
+  delegate_->AccountChooserWillShow();
+}
+
+void AccountChooserModel::SetHadWalletError() {
   // Any non-sign-in error disables all Wallet accounts.
-  wallet_error_message_ = message;
-  ClearActiveWalletAccountName();
+  had_wallet_error_ = true;
+  ClearWalletAccounts();
   ExecuteCommand(kAutofillItemId, 0);
 }
 
-bool AccountChooserModel::HadWalletError() const {
-  return !wallet_error_message_.empty();
-}
-
 void AccountChooserModel::SetHadWalletSigninError() {
-  ClearActiveWalletAccountName();
+  ClearWalletAccounts();
   ExecuteCommand(kAutofillItemId, 0);
 }
 
@@ -128,27 +167,23 @@ bool AccountChooserModel::WalletIsSelected() const {
   return checked_item_ != kAutofillItemId;
 }
 
-bool AccountChooserModel::IsActiveWalletAccountSelected() const {
-  return checked_item_ == kActiveWalletItemId;
-}
-
 void AccountChooserModel::ReconstructMenuItems() {
   Clear();
-  const gfx::Image& wallet_icon =
-      ui::ResourceBundle::GetSharedInstance().GetImageNamed(IDR_WALLET_ICON);
 
-  if (!active_wallet_account_name_.empty()) {
-    AddCheckItem(kActiveWalletItemId, active_wallet_account_name_);
-    SetIcon(GetIndexOfCommandId(kActiveWalletItemId), wallet_icon);
-  } else if (checked_item_ == kActiveWalletItemId) {
-    // A selected active Wallet account with an empty account name means
+  if (!wallet_accounts_.empty()) {
+    for (size_t i = 0; i < wallet_accounts_.size(); ++i) {
+      int item_id = kWalletAccountsStartId + i;
+      AddCheckItem(item_id, UTF8ToUTF16(wallet_accounts_[i]));
+    }
+  } else if (checked_item_ == kWalletAccountsStartId) {
+    // A selected active Wallet account without account names means
     // that the sign-in attempt is in progress.
-    // TODO(aruslan): http://crbug.com/230932
-    // A throbber should be shown until the Wallet account name is set.
-    AddCheckItem(kActiveWalletItemId,
+    AddCheckItem(kWalletAccountsStartId,
                  l10n_util::GetStringUTF16(IDS_AUTOFILL_DIALOG_GOOGLE_WALLET));
   }
 
+  AddCheckItemWithStringId(kWalletAddAccountId,
+                           IDS_AUTOFILL_DIALOG_ADD_ACCOUNT);
   AddCheckItemWithStringId(kAutofillItemId,
                            IDS_AUTOFILL_DIALOG_PAY_WITHOUT_WALLET);
 }

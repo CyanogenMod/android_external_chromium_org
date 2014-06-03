@@ -43,8 +43,7 @@ BitmapContentLayerUpdater::BitmapContentLayerUpdater(
     scoped_ptr<LayerPainter> painter,
     RenderingStatsInstrumentation* stats_instrumentation,
     int layer_id)
-    : ContentLayerUpdater(painter.Pass(), stats_instrumentation, layer_id),
-      opaque_(false) {}
+    : ContentLayerUpdater(painter.Pass(), stats_instrumentation, layer_id) {}
 
 BitmapContentLayerUpdater::~BitmapContentLayerUpdater() {}
 
@@ -60,20 +59,22 @@ void BitmapContentLayerUpdater::PrepareToUpdate(
     float contents_width_scale,
     float contents_height_scale,
     gfx::Rect* resulting_opaque_rect) {
-  devtools_instrumentation::ScopedLayerTask paint_layer(
-      devtools_instrumentation::kPaintLayer, layer_id_);
   if (canvas_size_ != content_rect.size()) {
     devtools_instrumentation::ScopedLayerTask paint_setup(
         devtools_instrumentation::kPaintSetup, layer_id_);
     canvas_size_ = content_rect.size();
-    canvas_ = skia::AdoptRef(skia::CreateBitmapCanvas(
-        canvas_size_.width(), canvas_size_.height(), opaque_));
+    bitmap_backing_.setConfig(
+        SkBitmap::kARGB_8888_Config,
+        canvas_size_.width(), canvas_size_.height(),
+        0, layer_is_opaque_ ? kOpaque_SkAlphaType : kPremul_SkAlphaType);
+    bitmap_backing_.allocPixels();
+    canvas_ = skia::AdoptRef(new SkCanvas(bitmap_backing_));
   }
 
   base::TimeTicks start_time =
       rendering_stats_instrumentation_->StartRecording();
   PaintContents(canvas_.get(),
-                content_rect,
+                content_rect.origin(),
                 contents_width_scale,
                 contents_height_scale,
                 resulting_opaque_rect);
@@ -108,11 +109,12 @@ void BitmapContentLayerUpdater::ReduceMemoryUsage() {
 }
 
 void BitmapContentLayerUpdater::SetOpaque(bool opaque) {
-  if (opaque != opaque_) {
+  if (opaque != layer_is_opaque_) {
     canvas_.clear();
     canvas_size_ = gfx::Size();
   }
-  opaque_ = opaque;
+
+  ContentLayerUpdater::SetOpaque(opaque);
 }
 
 }  // namespace cc

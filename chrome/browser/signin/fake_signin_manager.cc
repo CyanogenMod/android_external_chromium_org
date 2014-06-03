@@ -21,9 +21,6 @@ FakeSigninManagerBase::FakeSigninManagerBase() {
 FakeSigninManagerBase::~FakeSigninManagerBase() {
 }
 
-void FakeSigninManagerBase::InitTokenService() {
-}
-
 // static
 BrowserContextKeyedService* FakeSigninManagerBase::Build(
     content::BrowserContext* profile) {
@@ -38,16 +35,6 @@ FakeSigninManager::FakeSigninManager(Profile* profile)
 }
 
 FakeSigninManager::~FakeSigninManager() {
-}
-
-void FakeSigninManager::InitTokenService() {
-}
-
-void FakeSigninManager::StartSignIn(const std::string& username,
-                                    const std::string& password,
-                                    const std::string& login_token,
-                                    const std::string& login_captcha) {
-  SetAuthenticatedUsername(username);
 }
 
 void FakeSigninManager::StartSignInWithCredentials(

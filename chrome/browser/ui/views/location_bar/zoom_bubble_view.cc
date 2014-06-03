@@ -56,7 +56,7 @@ void ZoomBubbleView::ShowBubble(content::WebContents* web_contents,
   // is equal to |auto_close|, the bubble can be reused and only the label text
   // needs to be updated.
   if (zoom_bubble_ &&
-      zoom_bubble_->anchor_view() == anchor_view &&
+      zoom_bubble_->GetAnchorView() == anchor_view &&
       zoom_bubble_->auto_close_ == auto_close) {
     zoom_bubble_->Refresh();
   } else {
@@ -83,7 +83,10 @@ void ZoomBubbleView::ShowBubble(content::WebContents* web_contents,
     if (is_fullscreen)
       zoom_bubble_->AdjustForFullscreen(browser_view->GetBoundsInScreen());
 
-    zoom_bubble_->GetWidget()->Show();
+    if (zoom_bubble_->use_focusless())
+      zoom_bubble_->GetWidget()->ShowInactive();
+    else
+      zoom_bubble_->GetWidget()->Show();
   }
 }
 
@@ -135,7 +138,7 @@ ZoomBubbleView::~ZoomBubbleView() {
 }
 
 void ZoomBubbleView::AdjustForFullscreen(const gfx::Rect& screen_bounds) {
-  if (anchor_view())
+  if (GetAnchorView())
     return;
 
   // TODO(dbeam): should RTL logic be done in views::BubbleDelegateView?
@@ -143,11 +146,7 @@ void ZoomBubbleView::AdjustForFullscreen(const gfx::Rect& screen_bounds) {
   const int x_pos = base::i18n::IsRTL() ?
       screen_bounds.x() + bubble_half_width + kFullscreenPaddingEnd :
       screen_bounds.right() - bubble_half_width - kFullscreenPaddingEnd;
-  set_anchor_rect(gfx::Rect(x_pos, screen_bounds.y(), 0, 0));
-
-  // Used to update |views::BubbleDelegate::anchor_rect_| in a semi-hacky way.
-  // TODO(dbeam): update only the bounds of this view or its border or frame.
-  SizeToContents();
+  SetAnchorRect(gfx::Rect(x_pos, screen_bounds.y(), 0, 0));
 }
 
 void ZoomBubbleView::Refresh() {
@@ -182,10 +181,12 @@ void ZoomBubbleView::StopTimer() {
 }
 
 void ZoomBubbleView::OnMouseEntered(const ui::MouseEvent& event) {
+  set_use_focusless(false);
   StopTimer();
 }
 
 void ZoomBubbleView::OnMouseExited(const ui::MouseEvent& event) {
+  set_use_focusless(auto_close_);
   StartTimerIfNecessary();
 }
 

@@ -9,7 +9,7 @@
 #include "base/compiler_specific.h"
 #include "chrome/browser/extensions/extension_error_ui.h"
 #include "chrome/browser/ui/global_error/global_error.h"
-#include "chrome/common/extensions/extension.h"
+#include "extensions/common/extension.h"
 
 class Browser;
 class ExtensionService;
@@ -25,7 +25,7 @@ class ExtensionErrorUIDefault : public ExtensionErrorUI {
   virtual void Close() OVERRIDE;
 
  private:
-  class ExtensionGlobalError : public GlobalError {
+  class ExtensionGlobalError : public GlobalErrorWithStandardBubble {
    public:
     explicit ExtensionGlobalError(ExtensionErrorUIDefault* error_ui);
 
@@ -33,13 +33,12 @@ class ExtensionErrorUIDefault : public ExtensionErrorUI {
     // GlobalError methods.
     virtual bool HasMenuItem() OVERRIDE;
     virtual int MenuItemCommandID() OVERRIDE;
-    virtual string16 MenuItemLabel() OVERRIDE;
+    virtual base::string16 MenuItemLabel() OVERRIDE;
     virtual void ExecuteMenuItem(Browser* browser) OVERRIDE;
-    virtual bool HasBubbleView() OVERRIDE;
-    virtual string16 GetBubbleViewTitle() OVERRIDE;
-    virtual std::vector<string16> GetBubbleViewMessages() OVERRIDE;
-    virtual string16 GetBubbleViewAcceptButtonLabel() OVERRIDE;
-    virtual string16 GetBubbleViewCancelButtonLabel() OVERRIDE;
+    virtual base::string16 GetBubbleViewTitle() OVERRIDE;
+    virtual std::vector<base::string16> GetBubbleViewMessages() OVERRIDE;
+    virtual base::string16 GetBubbleViewAcceptButtonLabel() OVERRIDE;
+    virtual base::string16 GetBubbleViewCancelButtonLabel() OVERRIDE;
     virtual void OnBubbleViewDidClose(Browser* browser) OVERRIDE;
     virtual void BubbleViewAcceptButtonPressed(Browser* browser) OVERRIDE;
     virtual void BubbleViewCancelButtonPressed(Browser* browser) OVERRIDE;

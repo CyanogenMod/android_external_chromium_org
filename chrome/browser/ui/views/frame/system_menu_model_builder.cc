@@ -15,6 +15,15 @@
 #include "ui/base/accelerators/accelerator.h"
 #include "ui/base/models/simple_menu_model.h"
 
+#if defined(OS_CHROMEOS)
+#include "ash/session_state_delegate.h"
+#include "ash/shell.h"
+#include "chrome/browser/ui/ash/multi_user/multi_user_util.h"
+#include "chrome/browser/ui/ash/multi_user/multi_user_window_manager.h"
+#include "chrome/browser/ui/browser_window.h"
+#include "ui/base/l10n/l10n_util.h"
+#endif
+
 SystemMenuModelBuilder::SystemMenuModelBuilder(
     ui::AcceleratorProvider* provider,
     Browser* browser)
@@ -55,6 +64,7 @@ void SystemMenuModelBuilder::BuildSystemMenuForBrowserWindow(
     model->AddSeparator(ui::NORMAL_SEPARATOR);
     model->AddItemWithStringId(IDC_TASK_MANAGER, IDS_TASK_MANAGER);
   }
+  AppendTeleportMenu(model);
   // If it's a regular browser window with tabs, we don't add any more items,
   // since it already has menus (Page, Chrome).
 }
@@ -87,6 +97,8 @@ void SystemMenuModelBuilder::BuildSystemMenuForAppOrPopupWindow(
     model->AddSeparator(ui::NORMAL_SEPARATOR);
     model->AddItemWithStringId(IDC_TASK_MANAGER, IDS_TASK_MANAGER);
   }
+
+  AppendTeleportMenu(model);
 }
 
 void SystemMenuModelBuilder::AddFrameToggleItems(ui::SimpleMenuModel* model) {
@@ -97,3 +109,39 @@ void SystemMenuModelBuilder::AddFrameToggleItems(ui::SimpleMenuModel* model) {
   }
 }
 
+void SystemMenuModelBuilder::AppendTeleportMenu(ui::SimpleMenuModel* model) {
+#if defined(OS_CHROMEOS)
+  DCHECK(browser()->window());
+  // If there is no manager, we are not in the proper multi user mode.
+  if (chrome::MultiUserWindowManager::GetMultiProfileMode() !=
+          chrome::MultiUserWindowManager::MULTI_PROFILE_MODE_SEPARATED)
+    return;
+
+  // To show the menu we need at least two logged in users.
+  ash::SessionStateDelegate* delegate =
+      ash::Shell::GetInstance()->session_state_delegate();
+  int logged_in_users = delegate->NumberOfLoggedInUsers();
+  if (logged_in_users <= 1)
+    return;
+
+  // If this does not belong to a profile or there is no window, or the window
+  // is not owned by anyone, we don't show the menu addition.
+  chrome::MultiUserWindowManager* manager =
+      chrome::MultiUserWindowManager::GetInstance();
+  const std::string user_id =
+      multi_user_util::GetUserIDFromProfile(browser()->profile());
+  aura::Window* window = browser()->window()->GetNativeWindow();
+  if (user_id.empty() || !window || manager->GetWindowOwner(window).empty())
+    return;
+
+  model->AddSeparator(ui::NORMAL_SEPARATOR);
+  DCHECK(logged_in_users <= 3);
+  for (int user_index = 1; user_index < logged_in_users; ++user_index) {
+    model->AddItem(
+        user_index == 1 ? IDC_VISIT_DESKTOP_OF_LRU_USER_2 :
+                          IDC_VISIT_DESKTOP_OF_LRU_USER_3,
+        l10n_util::GetStringFUTF16(IDS_VISIT_DESKTOP_OF_LRU_USER,
+                                   delegate->GetUserDisplayName(user_index)));
+  }
+#endif
+}

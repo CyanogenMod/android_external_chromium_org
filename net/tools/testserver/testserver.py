@@ -21,6 +21,7 @@ import hashlib
 import logging
 import minica
 import os
+import json
 import random
 import re
 import select
@@ -34,15 +35,22 @@ import urllib
 import urlparse
 import zlib
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(BASE_DIR)))
+
 import echo_message
-import pyftpdlib.ftpserver
 import testserver_base
+
+# Append at the end of sys.path, it's fine to use the system library.
+sys.path.append(os.path.join(ROOT_DIR, 'third_party', 'pyftpdlib', 'src'))
+sys.path.append(os.path.join(ROOT_DIR, 'third_party', 'tlslite'))
+import pyftpdlib.ftpserver
 import tlslite
 import tlslite.api
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(
-    0, os.path.join(BASE_DIR, '..', '..', '..', 'third_party/pywebsocket/src'))
+# Insert at the beginning of the path, we want this to be used
+# unconditionally.
+sys.path.insert(0, os.path.join(ROOT_DIR, 'third_party', 'pywebsocket', 'src'))
 from mod_pywebsocket.standalone import WebSocketServer
 
 SERVER_HTTP = 0
@@ -127,7 +135,8 @@ class HTTPSServer(tlslite.api.TLSSocketServerMixIn,
 
   def __init__(self, server_address, request_hander_class, pem_cert_and_key,
                ssl_client_auth, ssl_client_cas, ssl_bulk_ciphers,
-               record_resume_info, tls_intolerant):
+               record_resume_info, tls_intolerant, signed_cert_timestamps,
+               fallback_scsv_enabled, ocsp_response):
     self.cert_chain = tlslite.api.X509CertChain().parseChain(pem_cert_and_key)
     # Force using only python implementation - otherwise behavior is different
     # depending on whether m2crypto Python module is present (error is thrown
@@ -139,6 +148,9 @@ class HTTPSServer(tlslite.api.TLSSocketServerMixIn,
     self.ssl_client_auth = ssl_client_auth
     self.ssl_client_cas = []
     self.tls_intolerant = tls_intolerant
+    self.signed_cert_timestamps = signed_cert_timestamps
+    self.fallback_scsv_enabled = fallback_scsv_enabled
+    self.ocsp_response = ocsp_response
 
     for ca_file in ssl_client_cas:
       s = open(ca_file).read()
@@ -170,7 +182,11 @@ class HTTPSServer(tlslite.api.TLSSocketServerMixIn,
                                     reqCert=self.ssl_client_auth,
                                     settings=self.ssl_handshake_settings,
                                     reqCAs=self.ssl_client_cas,
-                                    tlsIntolerant=self.tls_intolerant)
+                                    tlsIntolerant=self.tls_intolerant,
+                                    signedCertTimestamps=
+                                    self.signed_cert_timestamps,
+                                    fallbackSCSV=self.fallback_scsv_enabled,
+                                    ocspResponse = self.ocsp_response)
       tlsConnection.ignoreAbruptClose = True
       return True
     except tlslite.api.TLSAbruptCloseError:
@@ -282,7 +298,8 @@ class TestPageHandler(testserver_base.BasePageHandler):
     post_handlers = [
       self.EchoTitleHandler,
       self.EchoHandler,
-      self.PostOnlyFileHandler] + get_handlers
+      self.PostOnlyFileHandler,
+      self.EchoMultipartPostHandler] + get_handlers
     put_handlers = [
       self.EchoTitleHandler,
       self.EchoHandler] + get_handlers
@@ -298,6 +315,7 @@ class TestPageHandler(testserver_base.BasePageHandler):
       'jpg' : 'image/jpeg',
       'json': 'application/json',
       'pdf' : 'application/pdf',
+      'txt' : 'text/plain',
       'wav' : 'audio/wav',
       'xml' : 'text/xml'
     }
@@ -660,6 +678,37 @@ class TestPageHandler(testserver_base.BasePageHandler):
     self.wfile.write('<h1>Request Headers:</h1><pre>%s</pre>' % self.headers)
 
     self.wfile.write('</body></html>')
+    return True
+
+  def EchoMultipartPostHandler(self):
+    """This handler echoes received multipart post data as json format."""
+
+    if not (self._ShouldHandleRequest("/echomultipartpost") or
+            self._ShouldHandleRequest("/searchbyimage")):
+      return False
+
+    content_type, parameters = cgi.parse_header(
+        self.headers.getheader('content-type'))
+    if content_type == 'multipart/form-data':
+      post_multipart = cgi.parse_multipart(self.rfile, parameters)
+    elif content_type == 'application/x-www-form-urlencoded':
+      raise Exception('POST by application/x-www-form-urlencoded is '
+                      'not implemented.')
+    else:
+      post_multipart = {}
+
+    # Since the data can be binary, we encode them by base64.
+    post_multipart_base64_encoded = {}
+    for field, values in post_multipart.items():
+      post_multipart_base64_encoded[field] = [base64.b64encode(value)
+                                              for value in values]
+
+    result = {'POST_multipart' : post_multipart_base64_encoded}
+
+    self.send_response(200)
+    self.send_header("Content-type", "text/plain")
+    self.end_headers()
+    self.wfile.write(json.dumps(result, indent=2, sort_keys=False))
     return True
 
   def DownloadHandler(self):
@@ -1314,7 +1363,7 @@ class TestPageHandler(testserver_base.BasePageHandler):
     if query_char < 0 or len(self.path) <= query_char + 1:
       self.sendRedirectHelp(test_name)
       return True
-    dest = self.path[query_char + 1:]
+    dest = urllib.unquote(self.path[query_char + 1:])
 
     self.send_response(301)  # moved permanently
     self.send_header('Location', dest)
@@ -1338,7 +1387,7 @@ class TestPageHandler(testserver_base.BasePageHandler):
     if query_char < 0 or len(self.path) <= query_char + 1:
       self.sendRedirectHelp(test_name)
       return True
-    dest = self.path[query_char + 1:]
+    dest = urllib.unquote(self.path[query_char + 1:])
 
     self.send_response(200)
     self.send_header('Content-Type', 'text/html')
@@ -1444,6 +1493,8 @@ class TestPageHandler(testserver_base.BasePageHandler):
     if not self._ShouldHandleRequest('/rangereset'):
       return False
 
+    # HTTP/1.1 is required for ETag and range support.
+    self.protocol_version = 'HTTP/1.1'
     _, _, url_path, _, query, _ = urlparse.urlparse(self.path)
 
     # Defaults
@@ -1524,7 +1575,10 @@ class TestPageHandler(testserver_base.BasePageHandler):
     self.send_header('Content-Type', 'application/octet-stream')
     self.send_header('Content-Length', last_byte - first_byte + 1)
     if send_verifiers:
-      self.send_header('Etag', '"XYZZY"')
+      # If fail_precondition is non-zero, then the ETag for each request will be
+      # different.
+      etag = "%s%d" % (token, fail_precondition)
+      self.send_header('ETag', etag)
       self.send_header('Last-Modified', 'Tue, 19 Feb 2013 14:32 EST')
     self.end_headers()
 
@@ -1894,12 +1948,21 @@ class ServerRunner(testserver_base.TestServerRunner):
             raise testserver_base.OptionError(
                 'specified trusted client CA file not found: ' + ca_cert +
                 ' exiting...')
+
+        stapled_ocsp_response = None
+        if self.__ocsp_server and self.options.staple_ocsp_response:
+          stapled_ocsp_response = self.__ocsp_server.ocsp_response
+
         server = HTTPSServer((host, port), TestPageHandler, pem_cert_and_key,
                              self.options.ssl_client_auth,
                              self.options.ssl_client_ca,
                              self.options.ssl_bulk_cipher,
                              self.options.record_resume,
-                             self.options.tls_intolerant)
+                             self.options.tls_intolerant,
+                             self.options.signed_cert_timestamps_tls_ext.decode(
+                                 "base64"),
+                             self.options.fallback_scsv,
+                             stapled_ocsp_response)
         print 'HTTPS server started on %s:%d...' % (host, server.server_port)
       else:
         server = HTTPServer((host, port), TestPageHandler)
@@ -2037,6 +2100,26 @@ class ServerRunner(testserver_base.TestServerRunner):
                                   'aborted. 2 means TLS 1.1 or higher will be '
                                   'aborted. 3 means TLS 1.2 or higher will be '
                                   'aborted.')
+    self.option_parser.add_option('--signed-cert-timestamps-tls-ext',
+                                  dest='signed_cert_timestamps_tls_ext',
+                                  default='',
+                                  help='Base64 encoded SCT list. If set, '
+                                  'server will respond with a '
+                                  'signed_certificate_timestamp TLS extension '
+                                  'whenever the client supports it.')
+    self.option_parser.add_option('--fallback-scsv', dest='fallback_scsv',
+                                  default=False, const=True,
+                                  action='store_const',
+                                  help='If given, TLS_FALLBACK_SCSV support '
+                                  'will be enabled. This causes the server to '
+                                  'reject fallback connections from compatible '
+                                  'clients (e.g. Chrome).')
+    self.option_parser.add_option('--staple-ocsp-response',
+                                  dest='staple_ocsp_response',
+                                  default=False, action='store_true',
+                                  help='If set, server will staple the OCSP '
+                                  'response whenever OCSP is on and the client '
+                                  'supports OCSP stapling.')
     self.option_parser.add_option('--https-record-resume',
                                   dest='record_resume', const=True,
                                   default=False, action='store_const',

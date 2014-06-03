@@ -9,6 +9,7 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/logging.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/stl_util.h"
 
 #include "content/common/gpu/gpu_channel.h"
@@ -17,6 +18,7 @@
 #include "gpu/command_buffer/common/command_buffer.h"
 #include "ipc/ipc_message_macros.h"
 #include "ipc/ipc_message_utils.h"
+#include "media/base/limits.h"
 #include "ui/gl/gl_context.h"
 #include "ui/gl/gl_surface_egl.h"
 
@@ -32,10 +34,7 @@
 #include "content/common/gpu/media/android_video_decode_accelerator.h"
 #endif
 
-#include "gpu/command_buffer/service/texture_manager.h"
 #include "ui/gfx/size.h"
-
-using gpu::gles2::TextureManager;
 
 namespace content {
 
@@ -54,32 +53,106 @@ static bool MakeDecoderContextCurrent(
   return true;
 }
 
-GpuVideoDecodeAccelerator::GpuVideoDecodeAccelerator(int32 host_route_id,
-                                                     GpuCommandBufferStub* stub)
+// A helper class that works like AutoLock but only acquires the lock when
+// DCHECK is on.
+class DebugAutoLock {
+ public:
+  explicit DebugAutoLock(base::Lock& lock) : lock_(lock) {
+    if (DCHECK_IS_ON())
+      lock_.Acquire();
+  }
+
+  ~DebugAutoLock() {
+    if (DCHECK_IS_ON()) {
+      lock_.AssertAcquired();
+      lock_.Release();
+    }
+  }
+
+ private:
+  base::Lock& lock_;
+  DISALLOW_COPY_AND_ASSIGN(DebugAutoLock);
+};
+
+class GpuVideoDecodeAccelerator::MessageFilter
+    : public IPC::ChannelProxy::MessageFilter {
+ public:
+  MessageFilter(GpuVideoDecodeAccelerator* owner, int32 host_route_id)
+      : owner_(owner), host_route_id_(host_route_id) {}
+
+  virtual void OnChannelError() OVERRIDE { channel_ = NULL; }
+
+  virtual void OnChannelClosing() OVERRIDE { channel_ = NULL; }
+
+  virtual void OnFilterAdded(IPC::Channel* channel) OVERRIDE {
+    channel_ = channel;
+  }
+
+  virtual void OnFilterRemoved() OVERRIDE {
+    // This will delete |owner_| and |this|.
+    owner_->OnFilterRemoved();
+  }
+
+  virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE {
+    if (msg.routing_id() != host_route_id_)
+      return false;
+
+    IPC_BEGIN_MESSAGE_MAP(MessageFilter, msg)
+      IPC_MESSAGE_FORWARD(AcceleratedVideoDecoderMsg_Decode, owner_,
+                          GpuVideoDecodeAccelerator::OnDecode)
+      IPC_MESSAGE_UNHANDLED(return false;)
+    IPC_END_MESSAGE_MAP()
+    return true;
+  }
+
+  bool SendOnIOThread(IPC::Message* message) {
+    DCHECK(!message->is_sync());
+    if (!channel_) {
+      delete message;
+      return false;
+    }
+    return channel_->Send(message);
+  }
+
+ protected:
+  virtual ~MessageFilter() {}
+
+ private:
+  GpuVideoDecodeAccelerator* owner_;
+  int32 host_route_id_;
+  // The channel to which this filter was added.
+  IPC::Channel* channel_;
+};
+
+GpuVideoDecodeAccelerator::GpuVideoDecodeAccelerator(
+    int32 host_route_id,
+    GpuCommandBufferStub* stub,
+    const scoped_refptr<base::MessageLoopProxy>& io_message_loop)
     : init_done_msg_(NULL),
       host_route_id_(host_route_id),
       stub_(stub),
-      texture_target_(0) {
+      texture_target_(0),
+      filter_removed_(true, false),
+      io_message_loop_(io_message_loop),
+      weak_factory_for_io_(this) {
   DCHECK(stub_);
   stub_->AddDestructionObserver(this);
   stub_->channel()->AddRoute(host_route_id_, this);
+  child_message_loop_ = base::MessageLoopProxy::current();
   make_context_current_ =
       base::Bind(&MakeDecoderContextCurrent, stub_->AsWeakPtr());
 }
 
 GpuVideoDecodeAccelerator::~GpuVideoDecodeAccelerator() {
-  DCHECK(stub_);
-  if (video_decode_accelerator_)
-    video_decode_accelerator_.release()->Destroy();
-
-  stub_->channel()->RemoveRoute(host_route_id_);
-  stub_->RemoveDestructionObserver(this);
+  // This class can only be self-deleted from OnWillDestroyStub(), which means
+  // the VDA has already been destroyed in there.
+  CHECK(!video_decode_accelerator_.get());
 }
 
 bool GpuVideoDecodeAccelerator::OnMessageReceived(const IPC::Message& msg) {
-  DCHECK(stub_);
   if (!video_decode_accelerator_)
     return false;
+
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(GpuVideoDecodeAccelerator, msg)
     IPC_MESSAGE_HANDLER(AcceleratedVideoDecoderMsg_Decode, OnDecode)
@@ -99,12 +172,21 @@ void GpuVideoDecodeAccelerator::ProvidePictureBuffers(
     uint32 requested_num_of_buffers,
     const gfx::Size& dimensions,
     uint32 texture_target) {
+  if (dimensions.width() > media::limits::kMaxDimension ||
+      dimensions.height() > media::limits::kMaxDimension ||
+      dimensions.GetArea() > media::limits::kMaxCanvas) {
+    NotifyError(media::VideoDecodeAccelerator::PLATFORM_FAILURE);
+    return;
+  }
   if (!Send(new AcceleratedVideoDecoderHostMsg_ProvidePictureBuffers(
-          host_route_id_, requested_num_of_buffers, dimensions,
-          texture_target))) {
+           host_route_id_,
+           requested_num_of_buffers,
+           dimensions,
+           texture_target))) {
     DLOG(ERROR) << "Send(AcceleratedVideoDecoderHostMsg_ProvidePictureBuffers) "
                 << "failed";
   }
+  texture_dimensions_ = dimensions;
   texture_target_ = texture_target;
 }
 
@@ -116,10 +198,25 @@ void GpuVideoDecodeAccelerator::DismissPictureBuffer(
     DLOG(ERROR) << "Send(AcceleratedVideoDecoderHostMsg_DismissPictureBuffer) "
                 << "failed";
   }
+  DebugAutoLock auto_lock(debug_uncleared_textures_lock_);
+  uncleared_textures_.erase(picture_buffer_id);
 }
 
 void GpuVideoDecodeAccelerator::PictureReady(
     const media::Picture& picture) {
+  // VDA may call PictureReady on IO thread. SetTextureCleared should run on
+  // the child thread. VDA is responsible to call PictureReady on the child
+  // thread when a picture buffer is delivered the first time.
+  if (child_message_loop_->BelongsToCurrentThread()) {
+    SetTextureCleared(picture);
+  } else {
+    DCHECK(io_message_loop_->BelongsToCurrentThread());
+    if (DCHECK_IS_ON()) {
+      DebugAutoLock auto_lock(debug_uncleared_textures_lock_);
+      DCHECK_EQ(0u, uncleared_textures_.count(picture.picture_buffer_id()));
+    }
+  }
+
   if (!Send(new AcceleratedVideoDecoderHostMsg_PictureReady(
           host_route_id_,
           picture.picture_buffer_id(),
@@ -150,7 +247,6 @@ void GpuVideoDecodeAccelerator::NotifyError(
 void GpuVideoDecodeAccelerator::Initialize(
     const media::VideoCodecProfile profile,
     IPC::Message* init_done_msg) {
-  DCHECK(stub_);
   DCHECK(!video_decode_accelerator_.get());
   DCHECK(!init_done_msg_);
   DCHECK(init_done_msg);
@@ -171,7 +267,7 @@ void GpuVideoDecodeAccelerator::Initialize(
     NotifyError(media::VideoDecodeAccelerator::PLATFORM_FAILURE);
     return;
   }
-  DLOG(INFO) << "Initializing DXVA HW decoder for windows.";
+  DVLOG(0) << "Initializing DXVA HW decoder for windows.";
   video_decode_accelerator_.reset(new DXVAVideoDecodeAccelerator(
       this, make_context_current_));
 #elif defined(OS_CHROMEOS) && defined(ARCH_CPU_ARMEL) && defined(USE_X11)
@@ -179,7 +275,9 @@ void GpuVideoDecodeAccelerator::Initialize(
       gfx::GLSurfaceEGL::GetHardwareDisplay(),
       stub_->decoder()->GetGLContext()->GetHandle(),
       this,
-      make_context_current_));
+      weak_factory_for_io_.GetWeakPtr(),
+      make_context_current_,
+      io_message_loop_));
 #elif defined(OS_CHROMEOS) && defined(ARCH_CPU_X86_FAMILY) && defined(USE_X11)
   gfx::GLContextGLX* glx_context =
       static_cast<gfx::GLContextGLX*>(stub_->decoder()->GetGLContext());
@@ -199,28 +297,40 @@ void GpuVideoDecodeAccelerator::Initialize(
   return;
 #endif
 
+  if (video_decode_accelerator_->CanDecodeOnIOThread()) {
+    filter_ = new MessageFilter(this, host_route_id_);
+    stub_->channel()->AddFilter(filter_.get());
+  }
+
   if (!video_decode_accelerator_->Initialize(profile))
     NotifyError(media::VideoDecodeAccelerator::PLATFORM_FAILURE);
 }
 
+// Runs on IO thread if video_decode_accelerator_->CanDecodeOnIOThread() is
+// true, otherwise on the main thread.
 void GpuVideoDecodeAccelerator::OnDecode(
     base::SharedMemoryHandle handle, int32 id, uint32 size) {
   DCHECK(video_decode_accelerator_.get());
   if (id < 0) {
-    DLOG(FATAL) << "BitstreamBuffer id " << id << " out of range";
-    NotifyError(media::VideoDecodeAccelerator::INVALID_ARGUMENT);
+    DLOG(ERROR) << "BitstreamBuffer id " << id << " out of range";
+    if (child_message_loop_->BelongsToCurrentThread()) {
+      NotifyError(media::VideoDecodeAccelerator::INVALID_ARGUMENT);
+    } else {
+      child_message_loop_->PostTask(
+          FROM_HERE,
+          base::Bind(&GpuVideoDecodeAccelerator::NotifyError,
+                     base::Unretained(this),
+                     media::VideoDecodeAccelerator::INVALID_ARGUMENT));
+    }
     return;
   }
   video_decode_accelerator_->Decode(media::BitstreamBuffer(id, handle, size));
 }
 
 void GpuVideoDecodeAccelerator::OnAssignPictureBuffers(
-      const std::vector<int32>& buffer_ids,
-      const std::vector<uint32>& texture_ids,
-      const std::vector<gfx::Size>& sizes) {
-  DCHECK(stub_);
-  if (buffer_ids.size() != texture_ids.size() ||
-      buffer_ids.size() != sizes.size()) {
+    const std::vector<int32>& buffer_ids,
+    const std::vector<uint32>& texture_ids) {
+  if (buffer_ids.size() != texture_ids.size()) {
     NotifyError(media::VideoDecodeAccelerator::INVALID_ARGUMENT);
     return;
   }
@@ -230,53 +340,67 @@ void GpuVideoDecodeAccelerator::OnAssignPictureBuffers(
       command_decoder->GetContextGroup()->texture_manager();
 
   std::vector<media::PictureBuffer> buffers;
+  std::vector<scoped_refptr<gpu::gles2::TextureRef> > textures;
   for (uint32 i = 0; i < buffer_ids.size(); ++i) {
     if (buffer_ids[i] < 0) {
-      DLOG(FATAL) << "Buffer id " << buffer_ids[i] << " out of range";
+      DLOG(ERROR) << "Buffer id " << buffer_ids[i] << " out of range";
       NotifyError(media::VideoDecodeAccelerator::INVALID_ARGUMENT);
       return;
     }
     gpu::gles2::TextureRef* texture_ref = texture_manager->GetTexture(
         texture_ids[i]);
     if (!texture_ref) {
-      DLOG(FATAL) << "Failed to find texture id " << texture_ids[i];
+      DLOG(ERROR) << "Failed to find texture id " << texture_ids[i];
       NotifyError(media::VideoDecodeAccelerator::INVALID_ARGUMENT);
       return;
     }
     gpu::gles2::Texture* info = texture_ref->texture();
     if (info->target() != texture_target_) {
-      DLOG(FATAL) << "Texture target mismatch for texture id "
+      DLOG(ERROR) << "Texture target mismatch for texture id "
                   << texture_ids[i];
       NotifyError(media::VideoDecodeAccelerator::INVALID_ARGUMENT);
       return;
     }
-    // GL_TEXTURE_EXTERNAL_OES textures have their dimensions defined by the
-    // underlying EGLImage.
-    if (texture_target_ != GL_TEXTURE_EXTERNAL_OES) {
+    if (texture_target_ == GL_TEXTURE_EXTERNAL_OES) {
+      // GL_TEXTURE_EXTERNAL_OES textures have their dimensions defined by the
+      // underlying EGLImage.  Use |texture_dimensions_| for this size.
+      texture_manager->SetLevelInfo(texture_ref,
+                                    GL_TEXTURE_EXTERNAL_OES,
+                                    0,
+                                    0,
+                                    texture_dimensions_.width(),
+                                    texture_dimensions_.height(),
+                                    1,
+                                    0,
+                                    0,
+                                    0,
+                                    false);
+    } else {
+      // For other targets, texture dimensions should already be defined.
       GLsizei width = 0, height = 0;
       info->GetLevelSize(texture_target_, 0, &width, &height);
-      if (width != sizes[i].width() || height != sizes[i].height()) {
-        DLOG(FATAL) << "Size mismatch for texture id " << texture_ids[i];
+      if (width != texture_dimensions_.width() ||
+          height != texture_dimensions_.height()) {
+        DLOG(ERROR) << "Size mismatch for texture id " << texture_ids[i];
         NotifyError(media::VideoDecodeAccelerator::INVALID_ARGUMENT);
         return;
       }
     }
-    if (!texture_manager->ClearRenderableLevels(command_decoder, texture_ref)) {
-      DLOG(FATAL) << "Failed to Clear texture id " << texture_ids[i];
-      NotifyError(media::VideoDecodeAccelerator::PLATFORM_FAILURE);
-      return;
-    }
     uint32 service_texture_id;
     if (!command_decoder->GetServiceTextureId(
             texture_ids[i], &service_texture_id)) {
-      DLOG(FATAL) << "Failed to translate texture!";
+      DLOG(ERROR) << "Failed to translate texture!";
       NotifyError(media::VideoDecodeAccelerator::PLATFORM_FAILURE);
       return;
     }
     buffers.push_back(media::PictureBuffer(
-        buffer_ids[i], sizes[i], service_texture_id));
+        buffer_ids[i], texture_dimensions_, service_texture_id));
+    textures.push_back(texture_ref);
   }
   video_decode_accelerator_->AssignPictureBuffers(buffers);
+  DebugAutoLock auto_lock(debug_uncleared_textures_lock_);
+  for (uint32 i = 0; i < buffer_ids.size(); ++i)
+    uncleared_textures_[buffer_ids[i]] = textures[i];
 }
 
 void GpuVideoDecodeAccelerator::OnReusePictureBuffer(
@@ -297,7 +421,13 @@ void GpuVideoDecodeAccelerator::OnReset() {
 
 void GpuVideoDecodeAccelerator::OnDestroy() {
   DCHECK(video_decode_accelerator_.get());
-  delete this;
+  OnWillDestroyStub();
+}
+
+void GpuVideoDecodeAccelerator::OnFilterRemoved() {
+  // We're destroying; cancel all callbacks.
+  weak_factory_for_io_.InvalidateWeakPtrs();
+  filter_removed_.Signal();
 }
 
 void GpuVideoDecodeAccelerator::NotifyEndOfBitstreamBuffer(
@@ -329,12 +459,51 @@ void GpuVideoDecodeAccelerator::NotifyResetDone() {
 }
 
 void GpuVideoDecodeAccelerator::OnWillDestroyStub() {
+  // The stub is going away, so we have to stop and destroy VDA here, before
+  // returning, because the VDA may need the GL context to run and/or do its
+  // cleanup. We cannot destroy the VDA before the IO thread message filter is
+  // removed however, since we cannot service incoming messages with VDA gone.
+  // We cannot simply check for existence of VDA on IO thread though, because
+  // we don't want to synchronize the IO thread with the ChildThread.
+  // So we have to wait for the RemoveFilter callback here instead and remove
+  // the VDA after it arrives and before returning.
+  if (filter_.get()) {
+    stub_->channel()->RemoveFilter(filter_.get());
+    filter_removed_.Wait();
+  }
+
+  stub_->channel()->RemoveRoute(host_route_id_);
+  stub_->RemoveDestructionObserver(this);
+
+  if (video_decode_accelerator_)
+    video_decode_accelerator_.release()->Destroy();
+
   delete this;
 }
 
 bool GpuVideoDecodeAccelerator::Send(IPC::Message* message) {
-  DCHECK(stub_);
+  if (filter_.get() && io_message_loop_->BelongsToCurrentThread())
+    return filter_->SendOnIOThread(message);
+  DCHECK(child_message_loop_->BelongsToCurrentThread());
   return stub_->channel()->Send(message);
+}
+
+void GpuVideoDecodeAccelerator::SetTextureCleared(
+    const media::Picture& picture) {
+  DCHECK(child_message_loop_->BelongsToCurrentThread());
+  DebugAutoLock auto_lock(debug_uncleared_textures_lock_);
+  std::map<int32, scoped_refptr<gpu::gles2::TextureRef> >::iterator it;
+  it = uncleared_textures_.find(picture.picture_buffer_id());
+  if (it == uncleared_textures_.end())
+    return;  // the texture has been cleared
+
+  scoped_refptr<gpu::gles2::TextureRef> texture_ref = it->second;
+  GLenum target = texture_ref->texture()->target();
+  gpu::gles2::TextureManager* texture_manager =
+      stub_->decoder()->GetContextGroup()->texture_manager();
+  DCHECK(!texture_ref->texture()->IsLevelCleared(target, 0));
+  texture_manager->SetLevelCleared(texture_ref, target, 0, true);
+  uncleared_textures_.erase(it);
 }
 
 }  // namespace content

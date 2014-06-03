@@ -15,7 +15,7 @@ class SigninManagerBase;
 
 // Shows sync errors on the wrench menu using a bubble view and a
 // menu item.
-class SyncGlobalError : public GlobalError,
+class SyncGlobalError : public GlobalErrorWithStandardBubble,
                         public ProfileSyncServiceObserver {
  public:
   SyncGlobalError(ProfileSyncService* service, SigninManagerBase* signin);
@@ -23,14 +23,14 @@ class SyncGlobalError : public GlobalError,
 
   virtual bool HasMenuItem() OVERRIDE;
   virtual int MenuItemCommandID() OVERRIDE;
-  virtual string16 MenuItemLabel() OVERRIDE;
+  virtual base::string16 MenuItemLabel() OVERRIDE;
   virtual void ExecuteMenuItem(Browser* browser) OVERRIDE;
 
   virtual bool HasBubbleView() OVERRIDE;
-  virtual string16 GetBubbleViewTitle() OVERRIDE;
-  virtual std::vector<string16> GetBubbleViewMessages() OVERRIDE;
-  virtual string16 GetBubbleViewAcceptButtonLabel() OVERRIDE;
-  virtual string16 GetBubbleViewCancelButtonLabel() OVERRIDE;
+  virtual base::string16 GetBubbleViewTitle() OVERRIDE;
+  virtual std::vector<base::string16> GetBubbleViewMessages() OVERRIDE;
+  virtual base::string16 GetBubbleViewAcceptButtonLabel() OVERRIDE;
+  virtual base::string16 GetBubbleViewCancelButtonLabel() OVERRIDE;
   virtual void OnBubbleViewDidClose(Browser* browser) OVERRIDE;
   virtual void BubbleViewAcceptButtonPressed(Browser* browser) OVERRIDE;
   virtual void BubbleViewCancelButtonPressed(Browser* browser) OVERRIDE;
@@ -39,9 +39,9 @@ class SyncGlobalError : public GlobalError,
   virtual void OnStateChanged() OVERRIDE;
 
  private:
-  string16 bubble_accept_label_;
-  string16 bubble_message_;
-  string16 menu_label_;
+  base::string16 bubble_accept_label_;
+  base::string16 bubble_message_;
+  base::string16 menu_label_;
   ProfileSyncService* service_;
   SigninManagerBase* signin_;
 

@@ -2,27 +2,28 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "chrome/browser/history/history_backend.h"
+
 #include <algorithm>
 #include <set>
 #include <vector>
 
 #include "base/basictypes.h"
 #include "base/bind.h"
-#include "base/bind_helpers.h"
 #include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
-#include "base/platform_file.h"
+#include "base/run_loop.h"
 #include "base/strings/string16.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
+#include "chrome/browser/bookmarks/bookmark_test_helpers.h"
 #include "chrome/browser/bookmarks/bookmark_utils.h"
-#include "chrome/browser/history/history_backend.h"
 #include "chrome/browser/history/history_notifications.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
@@ -33,17 +34,11 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/importer/imported_favicon_usage.h"
-#include "chrome/common/thumbnail_score.h"
 #include "chrome/test/base/testing_profile.h"
-#include "chrome/test/base/ui_test_utils.h"
-#include "chrome/tools/profiles/thumbnail-inl.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/skia/include/core/SkBitmap.h"
-#include "ui/gfx/codec/jpeg_codec.h"
-#include "ui/gfx/image/image.h"
 #include "url/gurl.h"
 
 using base::Time;
@@ -55,10 +50,6 @@ using base::TimeDelta;
 // harder than calling it directly for many things.
 
 namespace {
-
-// data we'll put into the thumbnail database
-static const unsigned char blob1[] =
-    "12346102356120394751634516591348710478123649165419234519234512349134";
 
 static const gfx::Size kTinySize = gfx::Size(10, 10);
 static const gfx::Size kSmallSize = gfx::Size(16, 16);
@@ -95,7 +86,6 @@ class HistoryBackendTestDelegate : public HistoryBackend::Delegate {
   virtual void BroadcastNotifications(int type,
                                       HistoryDetails* details) OVERRIDE;
   virtual void DBLoaded(int backend_id) OVERRIDE;
-  virtual void StartTopSitesMigration(int backend_id) OVERRIDE;
   virtual void NotifyVisitDBObserversOnAddVisit(
       const BriefVisitInfo& info) OVERRIDE {}
 
@@ -372,8 +362,8 @@ class HistoryBackendTest : public testing::Test {
  protected:
   // testing::Test
   virtual void SetUp() {
-    if (!file_util::CreateNewTempDirectory(FILE_PATH_LITERAL("BackendTest"),
-                                           &test_dir_))
+    if (!base::CreateNewTempDirectory(FILE_PATH_LITERAL("BackendTest"),
+                                      &test_dir_))
       return;
     backend_ = new HistoryBackend(test_dir_,
                                   0,
@@ -435,10 +425,6 @@ void HistoryBackendTestDelegate::BroadcastNotifications(
 
 void HistoryBackendTestDelegate::DBLoaded(int backend_id) {
   test_->loaded_ = true;
-}
-
-void HistoryBackendTestDelegate::StartTopSitesMigration(int backend_id) {
-  test_->backend_->MigrateThumbnailsDatabase();
 }
 
 // http://crbug.com/114287
@@ -516,27 +502,9 @@ TEST_F(HistoryBackendTest, DeleteAll) {
   URLRow outrow1;
   EXPECT_TRUE(mem_backend_->db_->GetRowForURL(row1.url(), NULL));
 
-  // Add thumbnails for each page. The |Images| take ownership of SkBitmap
-  // created from decoding the images.
-  ThumbnailScore score(0.25, true, true);
-  scoped_ptr<SkBitmap> google_bitmap(
-      gfx::JPEGCodec::Decode(kGoogleThumbnail, sizeof(kGoogleThumbnail)));
-
-  gfx::Image google_image = gfx::Image::CreateFrom1xBitmap(*google_bitmap);
-
-  Time time;
-  GURL gurl;
-  backend_->thumbnail_db_->SetPageThumbnail(gurl, row1_id, &google_image,
-                                            score, time);
-  scoped_ptr<SkBitmap> weewar_bitmap(
-     gfx::JPEGCodec::Decode(kWeewarThumbnail, sizeof(kWeewarThumbnail)));
-  gfx::Image weewar_image = gfx::Image::CreateFrom1xBitmap(*weewar_bitmap);
-  backend_->thumbnail_db_->SetPageThumbnail(gurl, row2_id, &weewar_image,
-                                            score, time);
-
   // Star row1.
   bookmark_model_.AddURL(
-      bookmark_model_.bookmark_bar_node(), 0, string16(), row1.url());
+      bookmark_model_.bookmark_bar_node(), 0, base::string16(), row1.url());
 
   // Now finally clear all history.
   backend_->DeleteAllHistory();
@@ -556,12 +524,6 @@ TEST_F(HistoryBackendTest, DeleteAll) {
   VisitVector all_visits;
   backend_->db_->GetAllVisitsInRange(Time(), Time(), 0, &all_visits);
   ASSERT_EQ(0U, all_visits.size());
-
-  // All thumbnails should be deleted.
-  std::vector<unsigned char> out_data;
-  EXPECT_FALSE(backend_->thumbnail_db_->GetPageThumbnail(outrow1.id(),
-                                                         &out_data));
-  EXPECT_FALSE(backend_->thumbnail_db_->GetPageThumbnail(row2_id, &out_data));
 
   // We should have a favicon and favicon bitmaps for the first URL only. We
   // look them up by favicon URL since the IDs may have changed.
@@ -692,8 +654,10 @@ TEST_F(HistoryBackendTest, URLsNoLongerBookmarked) {
   URLID row2_id = backend_->db_->GetRowForURL(row2.url(), NULL);
 
   // Star the two URLs.
-  bookmark_utils::AddIfNotBookmarked(&bookmark_model_, row1.url(), string16());
-  bookmark_utils::AddIfNotBookmarked(&bookmark_model_, row2.url(), string16());
+  bookmark_utils::AddIfNotBookmarked(&bookmark_model_, row1.url(),
+                                     base::string16());
+  bookmark_utils::AddIfNotBookmarked(&bookmark_model_, row2.url(),
+                                     base::string16());
 
   // Delete url 2. Because url 2 is starred this won't delete the URL, only
   // the visits.
@@ -900,8 +864,8 @@ TEST_F(HistoryBackendTest, ImportedFaviconsTest) {
   EXPECT_TRUE(backend_->db_->GetRowForURL(url3, &url_row3) == 0);
 
   // If the URL is bookmarked, it should get added to history with 0 visits.
-  bookmark_model_.AddURL(bookmark_model_.bookmark_bar_node(), 0, string16(),
-                         url3);
+  bookmark_model_.AddURL(bookmark_model_.bookmark_bar_node(), 0,
+                         base::string16(), url3);
   backend_->SetImportedFavicons(favicons);
   EXPECT_FALSE(backend_->db_->GetRowForURL(url3, &url_row3) == 0);
   EXPECT_TRUE(url_row3.visit_count() == 0);
@@ -1246,7 +1210,7 @@ TEST_F(HistoryBackendTest, MigrationVisitSource) {
   // in Teardown.
   base::FilePath new_history_path(getTestDir());
   base::DeleteFile(new_history_path, true);
-  file_util::CreateDirectory(new_history_path);
+  base::CreateDirectory(new_history_path);
   base::FilePath new_history_file =
       new_history_path.Append(chrome::kHistoryFilename);
   ASSERT_TRUE(base::CopyFile(old_history_path, new_history_file));
@@ -1960,6 +1924,115 @@ TEST_F(HistoryBackendTest, MergeFaviconShowsUpInGetFaviconsForURLResult) {
   EXPECT_TRUE(BitmapDataEqual('c', result.bitmap_data));
 }
 
+// Tests GetFaviconsForURL with icon_types priority,
+TEST_F(HistoryBackendTest, TestGetFaviconsForURLWithIconTypesPriority) {
+  GURL page_url("http://www.google.com");
+  GURL icon_url("http://www.google.com/favicon.ico");
+  GURL touch_icon_url("http://wwww.google.com/touch_icon.ico");
+
+  std::vector<chrome::FaviconBitmapData> favicon_bitmap_data;
+  std::vector<gfx::Size> favicon_size;
+  favicon_size.push_back(gfx::Size(16, 16));
+  favicon_size.push_back(gfx::Size(32, 32));
+  GenerateFaviconBitmapData(icon_url, favicon_size, &favicon_bitmap_data);
+  ASSERT_EQ(2u, favicon_bitmap_data.size());
+
+  std::vector<chrome::FaviconBitmapData> touch_icon_bitmap_data;
+  std::vector<gfx::Size> touch_icon_size;
+  touch_icon_size.push_back(gfx::Size(64, 64));
+  GenerateFaviconBitmapData(icon_url, touch_icon_size, &touch_icon_bitmap_data);
+  ASSERT_EQ(1u, touch_icon_bitmap_data.size());
+
+  // Set some preexisting favicons for |page_url|.
+  backend_->SetFavicons(page_url, chrome::FAVICON, favicon_bitmap_data);
+  backend_->SetFavicons(page_url, chrome::TOUCH_ICON, touch_icon_bitmap_data);
+
+  chrome::FaviconBitmapResult result;
+  std::vector<int> icon_types;
+  icon_types.push_back(chrome::FAVICON);
+  icon_types.push_back(chrome::TOUCH_ICON);
+
+  backend_->GetLargestFaviconForURL(page_url, icon_types, 16, &result);
+
+  // Verify the result icon is 32x32 favicon.
+  EXPECT_EQ(gfx::Size(32, 32), result.pixel_size);
+  EXPECT_EQ(chrome::FAVICON, result.icon_type);
+
+  // Change Minimal size to 32x32 and verify the 64x64 touch icon returned.
+  backend_->GetLargestFaviconForURL(page_url, icon_types, 32, &result);
+  EXPECT_EQ(gfx::Size(64, 64), result.pixel_size);
+  EXPECT_EQ(chrome::TOUCH_ICON, result.icon_type);
+}
+
+// Test the the first types of icon is returned if its size equal to the
+// second types icon.
+TEST_F(HistoryBackendTest, TestGetFaviconsForURLReturnFavicon) {
+  GURL page_url("http://www.google.com");
+  GURL icon_url("http://www.google.com/favicon.ico");
+  GURL touch_icon_url("http://wwww.google.com/touch_icon.ico");
+
+  std::vector<chrome::FaviconBitmapData> favicon_bitmap_data;
+  std::vector<gfx::Size> favicon_size;
+  favicon_size.push_back(gfx::Size(16, 16));
+  favicon_size.push_back(gfx::Size(32, 32));
+  GenerateFaviconBitmapData(icon_url, favicon_size, &favicon_bitmap_data);
+  ASSERT_EQ(2u, favicon_bitmap_data.size());
+
+  std::vector<chrome::FaviconBitmapData> touch_icon_bitmap_data;
+  std::vector<gfx::Size> touch_icon_size;
+  touch_icon_size.push_back(gfx::Size(32, 32));
+  GenerateFaviconBitmapData(icon_url, touch_icon_size, &touch_icon_bitmap_data);
+  ASSERT_EQ(1u, touch_icon_bitmap_data.size());
+
+  // Set some preexisting favicons for |page_url|.
+  backend_->SetFavicons(page_url, chrome::FAVICON, favicon_bitmap_data);
+  backend_->SetFavicons(page_url, chrome::TOUCH_ICON, touch_icon_bitmap_data);
+
+  chrome::FaviconBitmapResult result;
+  std::vector<int> icon_types;
+  icon_types.push_back(chrome::FAVICON);
+  icon_types.push_back(chrome::TOUCH_ICON);
+
+  backend_->GetLargestFaviconForURL(page_url, icon_types, 16, &result);
+
+  // Verify the result icon is 32x32 favicon.
+  EXPECT_EQ(gfx::Size(32, 32), result.pixel_size);
+  EXPECT_EQ(chrome::FAVICON, result.icon_type);
+
+  // Change minimal size to 32x32 and verify the 32x32 favicon returned.
+  chrome::FaviconBitmapResult result1;
+  backend_->GetLargestFaviconForURL(page_url, icon_types, 32, &result1);
+  EXPECT_EQ(gfx::Size(32, 32), result1.pixel_size);
+  EXPECT_EQ(chrome::FAVICON, result1.icon_type);
+}
+
+// Test the favicon is returned if its size is smaller than minimal size,
+// because it is only one available.
+TEST_F(HistoryBackendTest, TestGetFaviconsForURLReturnFaviconEvenItSmaller) {
+  GURL page_url("http://www.google.com");
+  GURL icon_url("http://www.google.com/favicon.ico");
+
+  std::vector<chrome::FaviconBitmapData> favicon_bitmap_data;
+  std::vector<gfx::Size> favicon_size;
+  favicon_size.push_back(gfx::Size(16, 16));
+  GenerateFaviconBitmapData(icon_url, favicon_size, &favicon_bitmap_data);
+  ASSERT_EQ(1u, favicon_bitmap_data.size());
+
+  // Set preexisting favicons for |page_url|.
+  backend_->SetFavicons(page_url, chrome::FAVICON, favicon_bitmap_data);
+
+  chrome::FaviconBitmapResult result;
+  std::vector<int> icon_types;
+  icon_types.push_back(chrome::FAVICON);
+  icon_types.push_back(chrome::TOUCH_ICON);
+
+  backend_->GetLargestFaviconForURL(page_url, icon_types, 32, &result);
+
+  // Verify 16x16 icon is returned, even it small than minimal_size.
+  EXPECT_EQ(gfx::Size(16, 16), result.pixel_size);
+  EXPECT_EQ(chrome::FAVICON, result.icon_type);
+}
+
 // Test UpdateFaviconMapingsAndFetch() when multiple icon types are passed in.
 TEST_F(HistoryBackendTest, UpdateFaviconMappingsAndFetchMultipleIconTypes) {
   GURL page_url1("http://www.google.com");
@@ -2485,7 +2558,7 @@ TEST_F(HistoryBackendTest, MigrationVisitDuration) {
   // in Teardown.
   base::FilePath new_history_path(getTestDir());
   base::DeleteFile(new_history_path, true);
-  file_util::CreateDirectory(new_history_path);
+  base::CreateDirectory(new_history_path);
   base::FilePath new_history_file =
       new_history_path.Append(chrome::kHistoryFilename);
   base::FilePath new_archived_file =
@@ -2541,7 +2614,7 @@ TEST_F(HistoryBackendTest, AddPageNoVisitForBookmark) {
   ASSERT_TRUE(backend_.get());
 
   GURL url("http://www.google.com");
-  string16 title(UTF8ToUTF16("Bookmark title"));
+  base::string16 title(UTF8ToUTF16("Bookmark title"));
   backend_->AddPageNoVisitForBookmark(url, title);
 
   URLRow row;
@@ -2551,7 +2624,7 @@ TEST_F(HistoryBackendTest, AddPageNoVisitForBookmark) {
   EXPECT_EQ(0, row.visit_count());
 
   backend_->DeleteURL(url);
-  backend_->AddPageNoVisitForBookmark(url, string16());
+  backend_->AddPageNoVisitForBookmark(url, base::string16());
   backend_->GetURL(url, &row);
   EXPECT_EQ(url, row.url());
   EXPECT_EQ(UTF8ToUTF16(url.spec()), row.title());
@@ -2670,6 +2743,63 @@ TEST_F(HistoryBackendTest, ExpireHistory) {
   ASSERT_EQ(0U, visits.size());
 }
 
+TEST_F(HistoryBackendTest, DeleteMatchingUrlsForKeyword) {
+  // Set up urls and keyword_search_terms
+  GURL url1("https://www.bing.com/?q=bar");
+  URLRow url_info1(url1);
+  url_info1.set_visit_count(0);
+  url_info1.set_typed_count(0);
+  url_info1.set_last_visit(Time());
+  url_info1.set_hidden(false);
+  const URLID url1_id = backend_->db()->AddURL(url_info1);
+  EXPECT_NE(0, url1_id);
+
+  TemplateURLID keyword_id = 1;
+  base::string16 keyword = UTF8ToUTF16("bar");
+  ASSERT_TRUE(backend_->db()->SetKeywordSearchTermsForURL(
+      url1_id, keyword_id, keyword));
+
+  GURL url2("https://www.google.com/?q=bar");
+  URLRow url_info2(url2);
+  url_info2.set_visit_count(0);
+  url_info2.set_typed_count(0);
+  url_info2.set_last_visit(Time());
+  url_info2.set_hidden(false);
+  const URLID url2_id = backend_->db()->AddURL(url_info2);
+  EXPECT_NE(0, url2_id);
+
+  TemplateURLID keyword_id2 = 2;
+  ASSERT_TRUE(backend_->db()->SetKeywordSearchTermsForURL(
+      url2_id, keyword_id2, keyword));
+
+  // Add another visit to the same URL
+  URLRow url_info3(url2);
+  url_info3.set_visit_count(0);
+  url_info3.set_typed_count(0);
+  url_info3.set_last_visit(Time());
+  url_info3.set_hidden(false);
+  const URLID url3_id = backend_->db()->AddURL(url_info3);
+  EXPECT_NE(0, url3_id);
+  ASSERT_TRUE(backend_->db()->SetKeywordSearchTermsForURL(
+      url3_id, keyword_id2, keyword));
+
+  // Test that deletion works correctly
+  backend_->DeleteMatchingURLsForKeyword(keyword_id2, keyword);
+
+  // Test that rows 2 and 3 are deleted, while 1 is intact
+  URLRow row;
+  EXPECT_TRUE(backend_->db()->GetURLRow(url1_id, &row));
+  EXPECT_EQ(url1.spec(), row.url().spec());
+  EXPECT_FALSE(backend_->db()->GetURLRow(url2_id, &row));
+  EXPECT_FALSE(backend_->db()->GetURLRow(url3_id, &row));
+
+  // Test that corresponding keyword search terms are deleted for rows 2 & 3,
+  // but not for row 1
+  EXPECT_TRUE(backend_->db()->GetKeywordSearchTermRow(url1_id, NULL));
+  EXPECT_FALSE(backend_->db()->GetKeywordSearchTermRow(url2_id, NULL));
+  EXPECT_FALSE(backend_->db()->GetKeywordSearchTermRow(url3_id, NULL));
+}
+
 class HistoryBackendSegmentDurationTest : public HistoryBackendTest {
  public:
   HistoryBackendSegmentDurationTest() {}
@@ -2764,7 +2894,7 @@ TEST_F(HistoryBackendTest, RemoveNotification) {
   ASSERT_TRUE(profile->CreateHistoryService(false, false));
   profile->CreateBookmarkModel(true);
   BookmarkModel* model = BookmarkModelFactory::GetForProfile(profile.get());
-  ui_test_utils::WaitForBookmarkModelToLoad(model);
+  test::WaitForBookmarkModelToLoad(model);
 
   // Add a URL.
   GURL url("http://www.google.com");
@@ -2801,7 +2931,7 @@ TEST_F(HistoryBackendTest, DeleteFTSIndexDatabases) {
   ASSERT_TRUE(file_util::WriteFile(db1_wal, data, data_len));
   ASSERT_TRUE(file_util::WriteFile(db2_actual, data, data_len));
 #if defined(OS_POSIX)
-  EXPECT_TRUE(file_util::CreateSymbolicLink(db2_actual, db2_symlink));
+  EXPECT_TRUE(base::CreateSymbolicLink(db2_actual, db2_symlink));
 #endif
 
   // Delete all DTS index databases.

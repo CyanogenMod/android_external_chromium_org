@@ -20,55 +20,6 @@ namespace file_manager {
 
 FileBrowserPrivateAPI::FileBrowserPrivateAPI(Profile* profile)
     : event_router_(new EventRouter(profile)) {
-  ExtensionFunctionRegistry* registry =
-      ExtensionFunctionRegistry::GetInstance();
-  // Tasks related functions.
-  registry->RegisterFunction<ExecuteTaskFunction>();
-  registry->RegisterFunction<GetFileTasksFunction>();
-  registry->RegisterFunction<SetDefaultTaskFunction>();
-  registry->RegisterFunction<ViewFilesFunction>();
-
-  // Drive related functions.
-  registry->RegisterFunction<GetDriveEntryPropertiesFunction>();
-  registry->RegisterFunction<PinDriveFileFunction>();
-  registry->RegisterFunction<GetDriveFilesFunction>();
-  registry->RegisterFunction<CancelFileTransfersFunction>();
-  registry->RegisterFunction<SearchDriveFunction>();
-  registry->RegisterFunction<SearchDriveMetadataFunction>();
-  registry->RegisterFunction<ClearDriveCacheFunction>();
-  registry->RegisterFunction<GetDriveConnectionStateFunction>();
-  registry->RegisterFunction<RequestAccessTokenFunction>();
-  registry->RegisterFunction<GetShareUrlFunction>();
-
-  // Select file dialog related functions.
-  registry->RegisterFunction<CancelFileDialogFunction>();
-  registry->RegisterFunction<SelectFileFunction>();
-  registry->RegisterFunction<SelectFilesFunction>();
-
-  // Mount points related functions.
-  registry->RegisterFunction<AddMountFunction>();
-  registry->RegisterFunction<RemoveMountFunction>();
-  registry->RegisterFunction<GetMountPointsFunction>();
-
-  // Hundreds of strings for the file manager.
-  registry->RegisterFunction<GetStringsFunction>();
-
-  // File system related functions.
-  registry->RegisterFunction<RequestFileSystemFunction>();
-  registry->RegisterFunction<AddFileWatchFunction>();
-  registry->RegisterFunction<RemoveFileWatchFunction>();
-  registry->RegisterFunction<SetLastModifiedFunction>();
-  registry->RegisterFunction<GetSizeStatsFunction>();
-  registry->RegisterFunction<GetVolumeMetadataFunction>();
-  registry->RegisterFunction<ValidatePathNameLengthFunction>();
-  registry->RegisterFunction<FormatDeviceFunction>();
-
-  // Miscellaneous functions.
-  registry->RegisterFunction<LogoutUserFunction>();
-  registry->RegisterFunction<GetPreferencesFunction>();
-  registry->RegisterFunction<SetPreferencesFunction>();
-  registry->RegisterFunction<ZipSelectionFunction>();
-  registry->RegisterFunction<ZoomFunction>();
   event_router_->ObserveFileSystemEvents();
 }
 

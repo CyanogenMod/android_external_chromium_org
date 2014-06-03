@@ -8,6 +8,7 @@
 #include "base/android/jni_array.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
+#include "content/browser/media/android/browser_media_player_manager.h"
 #include "content/browser/renderer_host/compositor_impl_android.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/public/browser/browser_thread.h"
@@ -15,7 +16,6 @@
 #include "content/public/common/content_switches.h"
 #include "jni/ChildProcessLauncher_jni.h"
 #include "media/base/android/media_player_android.h"
-#include "media/base/android/media_player_manager.h"
 #include "ui/gl/android/scoped_java_surface.h"
 
 using base::android::AttachCurrentThread;
@@ -70,7 +70,7 @@ static void SetSurfacePeer(
 // the ChildProcess could not be created.
 static void OnChildProcessStarted(JNIEnv*,
                                   jclass,
-                                  jint client_context,
+                                  jlong client_context,
                                   jint handle) {
   StartChildProcessCallback* callback =
       reinterpret_cast<StartChildProcessCallback*>(client_context);
@@ -122,13 +122,20 @@ void StartChildProcess(
       j_file_ids.obj(),
       j_file_fds.obj(),
       j_file_auto_close.obj(),
-      reinterpret_cast<jint>(new StartChildProcessCallback(callback)));
+      reinterpret_cast<intptr_t>(new StartChildProcessCallback(callback)));
 }
 
 void StopChildProcess(base::ProcessHandle handle) {
   JNIEnv* env = AttachCurrentThread();
   DCHECK(env);
   Java_ChildProcessLauncher_stop(env, static_cast<jint>(handle));
+}
+
+bool IsChildProcessOomProtected(base::ProcessHandle handle) {
+  JNIEnv* env = AttachCurrentThread();
+  DCHECK(env);
+  return Java_ChildProcessLauncher_isOomProtected(env,
+      static_cast<jint>(handle));
 }
 
 void EstablishSurfacePeer(

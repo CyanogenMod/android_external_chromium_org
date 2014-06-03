@@ -29,7 +29,7 @@
 #include "grit/component_strings.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/webui/web_ui_util.h"
+#include "ui/base/webui/web_ui_util.h"
 
 using autofill::AutofillCountry;
 using autofill::ServerFieldType;
@@ -42,13 +42,12 @@ namespace {
 const char kSettingsOrigin[] = "Chrome settings";
 
 // Sets data related to the country <select>.
-void SetCountryData(DictionaryValue* localized_strings) {
-  std::string default_country_code = AutofillCountry::CountryCodeForLocale(
-      g_browser_process->GetApplicationLocale());
-  localized_strings->SetString("defaultCountryCode", default_country_code);
-
-  autofill::CountryComboboxModel model;
+void SetCountryData(const PersonalDataManager& manager,
+                    DictionaryValue* localized_strings) {
+  autofill::CountryComboboxModel model(manager);
   const std::vector<AutofillCountry*>& countries = model.countries();
+  localized_strings->SetString("defaultCountryCode",
+                               countries.front()->country_code());
 
   // An ordered list of options to show in the <select>.
   scoped_ptr<ListValue> country_list(new ListValue());
@@ -81,7 +80,7 @@ void GetValueList(const AutofillProfile& profile,
                   scoped_ptr<ListValue>* list) {
   list->reset(new ListValue);
 
-  std::vector<string16> values;
+  std::vector<base::string16> values;
   profile.GetRawMultiInfo(type, &values);
 
   // |GetRawMultiInfo()| always returns at least one, potentially empty, item.
@@ -97,9 +96,9 @@ void GetValueList(const AutofillProfile& profile,
 void SetValueList(const ListValue* list,
                   ServerFieldType type,
                   AutofillProfile* profile) {
-  std::vector<string16> values(list->GetSize());
+  std::vector<base::string16> values(list->GetSize());
   for (size_t i = 0; i < list->GetSize(); ++i) {
-    string16 value;
+    base::string16 value;
     if (list->GetString(i, &value))
       values[i] = value;
   }
@@ -111,9 +110,9 @@ void GetNameList(const AutofillProfile& profile,
                  scoped_ptr<ListValue>* names) {
   names->reset(new ListValue);
 
-  std::vector<string16> first_names;
-  std::vector<string16> middle_names;
-  std::vector<string16> last_names;
+  std::vector<base::string16> first_names;
+  std::vector<base::string16> middle_names;
+  std::vector<base::string16> last_names;
   profile.GetRawMultiInfo(autofill::NAME_FIRST, &first_names);
   profile.GetRawMultiInfo(autofill::NAME_MIDDLE, &middle_names);
   profile.GetRawMultiInfo(autofill::NAME_LAST, &last_names);
@@ -138,26 +137,26 @@ void GetNameList(const AutofillProfile& profile,
 // Set the multi-valued element for |type| from input |list| values.
 void SetNameList(const ListValue* names, AutofillProfile* profile) {
   const size_t size = names->GetSize();
-  std::vector<string16> first_names(size);
-  std::vector<string16> middle_names(size);
-  std::vector<string16> last_names(size);
+  std::vector<base::string16> first_names(size);
+  std::vector<base::string16> middle_names(size);
+  std::vector<base::string16> last_names(size);
 
   for (size_t i = 0; i < size; ++i) {
     const ListValue* name;
     bool success = names->GetList(i, &name);
     DCHECK(success);
 
-    string16 first_name;
+    base::string16 first_name;
     success = name->GetString(0, &first_name);
     DCHECK(success);
     first_names[i] = first_name;
 
-    string16 middle_name;
+    base::string16 middle_name;
     success = name->GetString(1, &middle_name);
     DCHECK(success);
     middle_names[i] = middle_name;
 
-    string16 last_name;
+    base::string16 last_name;
     success = name->GetString(2, &last_name);
     DCHECK(success);
     last_names[i] = last_name;
@@ -201,7 +200,7 @@ void ExtractPhoneNumberInformation(const ListValue* args,
 void RemoveDuplicatePhoneNumberAtIndex(size_t index,
                                        const std::string& country_code,
                                        ListValue* list) {
-  string16 new_value;
+  base::string16 new_value;
   if (!list->GetString(index, &new_value)) {
     NOTREACHED() << "List should have a value at index " << index;
     return;
@@ -213,7 +212,7 @@ void RemoveDuplicatePhoneNumberAtIndex(size_t index,
     if (i == index)
       continue;
 
-    string16 existing_value;
+    base::string16 existing_value;
     if (!list->GetString(i, &existing_value)) {
       NOTREACHED() << "List should have a value at index " << i;
       continue;
@@ -242,8 +241,7 @@ scoped_ptr<ListValue> ValidatePhoneArguments(const ListValue* args) {
 namespace options {
 
 AutofillOptionsHandler::AutofillOptionsHandler()
-    : personal_data_(NULL) {
-}
+    : personal_data_(NULL) {}
 
 AutofillOptionsHandler::~AutofillOptionsHandler() {
   if (personal_data_)
@@ -282,8 +280,6 @@ void AutofillOptionsHandler::GetLocalizedValues(
 }
 
 void AutofillOptionsHandler::InitializeHandler() {
-  personal_data_ = autofill::PersonalDataManagerFactory::GetForProfile(
-      Profile::FromWebUI(web_ui()));
   // personal_data_ is NULL in guest mode on Chrome OS.
   if (personal_data_)
     personal_data_->AddObserver(this);
@@ -295,6 +291,9 @@ void AutofillOptionsHandler::InitializePage() {
 }
 
 void AutofillOptionsHandler::RegisterMessages() {
+  personal_data_ = autofill::PersonalDataManagerFactory::GetForProfile(
+      Profile::FromWebUI(web_ui()));
+
   web_ui()->RegisterMessageCallback(
       "removeData",
       base::Bind(&AutofillOptionsHandler::RemoveData,
@@ -360,7 +359,7 @@ void AutofillOptionsHandler::SetAddressOverlayStrings(
       l10n_util::GetStringUTF16(IDS_AUTOFILL_FIELD_LABEL_ADD_PHONE));
   localized_strings->SetString("autofillAddEmailPlaceholder",
       l10n_util::GetStringUTF16(IDS_AUTOFILL_FIELD_LABEL_ADD_EMAIL));
-  SetCountryData(localized_strings);
+  SetCountryData(*personal_data_, localized_strings);
 }
 
 void AutofillOptionsHandler::SetCreditCardOverlayStrings(
@@ -379,13 +378,17 @@ void AutofillOptionsHandler::LoadAutofillData() {
   if (!IsPersonalDataLoaded())
     return;
 
+  const std::vector<AutofillProfile*>& profiles =
+      personal_data_->web_profiles();
+  std::vector<base::string16> labels;
+  AutofillProfile::CreateDifferentiatingLabels(profiles, &labels);
+  DCHECK_EQ(labels.size(), profiles.size());
+
   ListValue addresses;
-  for (std::vector<AutofillProfile*>::const_iterator i =
-           personal_data_->web_profiles().begin();
-       i != personal_data_->web_profiles().end(); ++i) {
+  for (size_t i = 0; i < profiles.size(); ++i) {
     ListValue* entry = new ListValue();
-    entry->Append(new StringValue((*i)->guid()));
-    entry->Append(new StringValue((*i)->Label()));
+    entry->Append(new StringValue(profiles[i]->guid()));
+    entry->Append(new StringValue(labels[i]));
     addresses.Append(entry);
   }
 
@@ -517,7 +520,7 @@ void AutofillOptionsHandler::SetAddress(const ListValue* args) {
   AutofillProfile profile(guid, kSettingsOrigin);
 
   std::string country_code;
-  string16 value;
+  base::string16 value;
   const ListValue* list_value;
   if (args->GetList(1, &list_value))
     SetNameList(list_value, &profile);
@@ -570,7 +573,7 @@ void AutofillOptionsHandler::SetCreditCard(const ListValue* args) {
 
   CreditCard credit_card(guid, kSettingsOrigin);
 
-  string16 value;
+  base::string16 value;
   if (args->GetString(1, &value))
     credit_card.SetRawInfo(autofill::CREDIT_CARD_NAME, value);
 

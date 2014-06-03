@@ -7,8 +7,8 @@
 
 #include "base/strings/string16.h"
 #include "ui/base/ime/composition_underline.h"
-#include "ui/base/range/range.h"
 #include "ui/base/ui_export.h"
+#include "ui/gfx/range/range.h"
 
 namespace ui {
 
@@ -36,7 +36,7 @@ struct UI_EXPORT CompositionText {
   void Clear();
 
   // Content of the composition text.
-  string16 text;
+  base::string16 text;
 
   // Underline information of the composition text.
   // They must be sorted in ascending order by their start_offset and cannot be
@@ -47,7 +47,7 @@ struct UI_EXPORT CompositionText {
   // if the range length is zero. Usually it's used for representing the target
   // clause (on Windows). Gtk doesn't have such concept, so background color is
   // usually used instead.
-  Range selection;
+  gfx::Range selection;
 };
 
 }  // namespace ui

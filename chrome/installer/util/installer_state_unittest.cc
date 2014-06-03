@@ -83,8 +83,6 @@ void BuildSingleChromeState(const base::FilePath& target_dir,
   installer_state->set_target_path(target_dir);
   EXPECT_TRUE(installer_state->FindProduct(BrowserDistribution::CHROME_BROWSER)
       != NULL);
-  EXPECT_TRUE(installer_state->FindProduct(BrowserDistribution::CHROME_FRAME)
-      == NULL);
 }
 
 wchar_t text_content_1[] = L"delete me";
@@ -97,27 +95,27 @@ TEST_F(InstallerStateTest, Delete) {
   // Create a Chrome dir
   base::FilePath chrome_dir(test_dir_.path());
   chrome_dir = chrome_dir.AppendASCII("chrome");
-  file_util::CreateDirectory(chrome_dir);
+  base::CreateDirectory(chrome_dir);
   ASSERT_TRUE(base::PathExists(chrome_dir));
 
   base::FilePath chrome_dir_1(chrome_dir);
   chrome_dir_1 = chrome_dir_1.AppendASCII("1.0.1.0");
-  file_util::CreateDirectory(chrome_dir_1);
+  base::CreateDirectory(chrome_dir_1);
   ASSERT_TRUE(base::PathExists(chrome_dir_1));
 
   base::FilePath chrome_dir_2(chrome_dir);
   chrome_dir_2 = chrome_dir_2.AppendASCII("1.0.2.0");
-  file_util::CreateDirectory(chrome_dir_2);
+  base::CreateDirectory(chrome_dir_2);
   ASSERT_TRUE(base::PathExists(chrome_dir_2));
 
   base::FilePath chrome_dir_3(chrome_dir);
   chrome_dir_3 = chrome_dir_3.AppendASCII("1.0.3.0");
-  file_util::CreateDirectory(chrome_dir_3);
+  base::CreateDirectory(chrome_dir_3);
   ASSERT_TRUE(base::PathExists(chrome_dir_3));
 
   base::FilePath chrome_dir_4(chrome_dir);
   chrome_dir_4 = chrome_dir_4.AppendASCII("1.0.4.0");
-  file_util::CreateDirectory(chrome_dir_4);
+  base::CreateDirectory(chrome_dir_4);
   ASSERT_TRUE(base::PathExists(chrome_dir_4));
 
   base::FilePath chrome_dll_1(chrome_dir_1);
@@ -163,27 +161,27 @@ TEST_F(InstallerStateTest, DeleteInUsed) {
   // Create a Chrome dir
   base::FilePath chrome_dir(test_dir_.path());
   chrome_dir = chrome_dir.AppendASCII("chrome");
-  file_util::CreateDirectory(chrome_dir);
+  base::CreateDirectory(chrome_dir);
   ASSERT_TRUE(base::PathExists(chrome_dir));
 
   base::FilePath chrome_dir_1(chrome_dir);
   chrome_dir_1 = chrome_dir_1.AppendASCII("1.0.1.0");
-  file_util::CreateDirectory(chrome_dir_1);
+  base::CreateDirectory(chrome_dir_1);
   ASSERT_TRUE(base::PathExists(chrome_dir_1));
 
   base::FilePath chrome_dir_2(chrome_dir);
   chrome_dir_2 = chrome_dir_2.AppendASCII("1.0.2.0");
-  file_util::CreateDirectory(chrome_dir_2);
+  base::CreateDirectory(chrome_dir_2);
   ASSERT_TRUE(base::PathExists(chrome_dir_2));
 
   base::FilePath chrome_dir_3(chrome_dir);
   chrome_dir_3 = chrome_dir_3.AppendASCII("1.0.3.0");
-  file_util::CreateDirectory(chrome_dir_3);
+  base::CreateDirectory(chrome_dir_3);
   ASSERT_TRUE(base::PathExists(chrome_dir_3));
 
   base::FilePath chrome_dir_4(chrome_dir);
   chrome_dir_4 = chrome_dir_4.AppendASCII("1.0.4.0");
-  file_util::CreateDirectory(chrome_dir_4);
+  base::CreateDirectory(chrome_dir_4);
   ASSERT_TRUE(base::PathExists(chrome_dir_4));
 
   base::FilePath chrome_dll_1(chrome_dir_1);
@@ -284,10 +282,10 @@ TEST_F(InstallerStateTest, Basic) {
   EXPECT_FALSE(base::PathExists(old_version_dir));
 
   EXPECT_FALSE(base::PathExists(installer_dir));
-  file_util::CreateDirectory(installer_dir);
+  base::CreateDirectory(installer_dir);
   EXPECT_TRUE(base::PathExists(new_version_dir));
 
-  file_util::CreateDirectory(old_version_dir);
+  base::CreateDirectory(old_version_dir);
   EXPECT_TRUE(base::PathExists(old_version_dir));
 
   // Create a fake chrome.dll key file in the old version directory.  This
@@ -474,7 +472,7 @@ TEST_F(InstallerStateTest, IsFileInUse) {
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
 
   base::FilePath temp_file;
-  ASSERT_TRUE(file_util::CreateTemporaryFileInDir(temp_dir.path(), &temp_file));
+  ASSERT_TRUE(base::CreateTemporaryFileInDir(temp_dir.path(), &temp_file));
 
   EXPECT_FALSE(MockInstallerState::IsFileInUse(temp_file));
 
@@ -534,7 +532,7 @@ TEST_F(InstallerStateTest, RemoveOldVersionDirs) {
 
   // Create the version directories.
   for (int i = 0; i < arraysize(version_dirs); i++) {
-    file_util::CreateDirectory(version_dirs[i]);
+    base::CreateDirectory(version_dirs[i]);
     EXPECT_TRUE(base::PathExists(version_dirs[i]));
   }
 
@@ -602,6 +600,59 @@ TEST_F(InstallerStateTest, RemoveOldVersionDirs) {
     ADD_FAILURE() << "Expected to find version dir for " << *iter;
 }
 
+TEST_F(InstallerStateTest, InitializeTwice) {
+  InstallationState machine_state;
+  machine_state.Initialize();
+
+  InstallerState installer_state;
+
+  // Initialize the instance to install multi Chrome.
+  {
+    CommandLine cmd_line(
+        CommandLine::FromString(L"setup.exe --multi-install --chrome"));
+    MasterPreferences prefs(cmd_line);
+    installer_state.Initialize(cmd_line, prefs, machine_state);
+  }
+  // Confirm the expected state.
+  EXPECT_EQ(InstallerState::USER_LEVEL, installer_state.level());
+  EXPECT_EQ(InstallerState::MULTI_PACKAGE, installer_state.package_type());
+  EXPECT_EQ(InstallerState::MULTI_INSTALL, installer_state.operation());
+  EXPECT_TRUE(wcsstr(installer_state.target_path().value().c_str(),
+                     BrowserDistribution::GetSpecificDistribution(
+                         BrowserDistribution::CHROME_BINARIES)->
+                         GetInstallSubDir().c_str()));
+  EXPECT_FALSE(installer_state.verbose_logging());
+  EXPECT_EQ(installer_state.state_key(),
+            BrowserDistribution::GetSpecificDistribution(
+                BrowserDistribution::CHROME_BROWSER)->GetStateKey());
+  EXPECT_EQ(installer_state.state_type(), BrowserDistribution::CHROME_BROWSER);
+  EXPECT_TRUE(installer_state.multi_package_binaries_distribution());
+  EXPECT_TRUE(installer_state.FindProduct(BrowserDistribution::CHROME_BROWSER));
+
+  // Now initialize it to install system-level single Chrome.
+  {
+    CommandLine cmd_line(
+        CommandLine::FromString(L"setup.exe --system-level --verbose-logging"));
+    MasterPreferences prefs(cmd_line);
+    installer_state.Initialize(cmd_line, prefs, machine_state);
+  }
+
+  // Confirm that the old state is gone.
+  EXPECT_EQ(InstallerState::SYSTEM_LEVEL, installer_state.level());
+  EXPECT_EQ(InstallerState::SINGLE_PACKAGE, installer_state.package_type());
+  EXPECT_EQ(InstallerState::SINGLE_INSTALL_OR_UPDATE,
+            installer_state.operation());
+  EXPECT_TRUE(wcsstr(installer_state.target_path().value().c_str(),
+                     BrowserDistribution::GetSpecificDistribution(
+                         BrowserDistribution::CHROME_BROWSER)->
+                         GetInstallSubDir().c_str()));
+  EXPECT_TRUE(installer_state.verbose_logging());
+  EXPECT_EQ(installer_state.state_key(),
+            BrowserDistribution::GetSpecificDistribution(
+                BrowserDistribution::CHROME_BROWSER)->GetStateKey());
+  EXPECT_EQ(installer_state.state_type(), BrowserDistribution::CHROME_BROWSER);
+  EXPECT_TRUE(installer_state.FindProduct(BrowserDistribution::CHROME_BROWSER));
+}
 
 // A fixture for testing InstallerState::DetermineCriticalVersion.  Individual
 // tests must invoke Initialize() with a critical version.

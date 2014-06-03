@@ -16,12 +16,14 @@
 #include "chrome/browser/ui/extensions/application_launch.h"
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/extension_constants.h"
+#include "extensions/common/constants.h"
 
 namespace wallpaper_manager_util {
 
 void OpenWallpaperManager() {
-  Profile* profile = ProfileManager::GetDefaultProfileOrOffTheRecord();
+  Profile* profile = ProfileManager::GetActiveUserProfile();
+  DCHECK(profile);
+
   ExtensionService* service =
       extensions::ExtensionSystem::Get(profile)->extension_service();
   if (!service)
@@ -32,9 +34,9 @@ void OpenWallpaperManager() {
   if (!extension)
     return;
 
-  chrome::OpenApplication(chrome::AppLaunchParams(profile, extension,
-                                                  extension_misc::LAUNCH_WINDOW,
-                                                  NEW_WINDOW));
+  OpenApplication(AppLaunchParams(profile, extension,
+                                  extensions::LAUNCH_CONTAINER_WINDOW,
+                                  NEW_WINDOW));
 }
 
 }  // namespace wallpaper_manager_util

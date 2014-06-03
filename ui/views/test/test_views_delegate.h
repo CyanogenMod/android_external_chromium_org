@@ -33,6 +33,7 @@ class TestViewsDelegate : public ViewsDelegate {
                                    const gfx::Rect& bounds,
                                    ui::WindowShowState show_state) OVERRIDE;
   virtual bool GetSavedWindowPlacement(
+      const Widget* window,
       const std::string& window_name,
       gfx::Rect* bounds,
       ui::WindowShowState* show_state) const OVERRIDE;
@@ -49,6 +50,12 @@ class TestViewsDelegate : public ViewsDelegate {
   virtual HICON GetDefaultWindowIcon() const OVERRIDE {
     return NULL;
   }
+
+  virtual bool IsWindowInMetro(gfx::NativeWindow window) const {
+    return false;
+  }
+#elif defined(OS_LINUX) && !defined(OS_CHROMEOS)
+  virtual gfx::ImageSkia* GetDefaultWindowIcon() const OVERRIDE;
 #endif
   virtual NonClientFrameView* CreateDefaultNonClientFrameView(
       Widget* widget) OVERRIDE;

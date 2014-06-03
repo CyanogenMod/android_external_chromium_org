@@ -5,6 +5,8 @@
 // IPC messages for WebRTC logging.
 // Multiply-included message file, hence no include guard.
 
+#include <string>
+
 #include "base/memory/shared_memory.h"
 #include "ipc/ipc_message_macros.h"
 
@@ -12,17 +14,18 @@
 
 // Messages sent from the renderer to the browser.
 
-// Request to open a log.
-IPC_MESSAGE_CONTROL2(WebRtcLoggingMsg_OpenLog,
-                     std::string /* app_session_id */,
-                     std::string /* app_url */)
+// Send log message to add to log.
+IPC_MESSAGE_CONTROL1(WebRtcLoggingMsg_AddLogMessage,
+                     std::string /* message */)
+
+// Notification that the renderer has stopped sending log messages to the
+// browser.
+IPC_MESSAGE_CONTROL0(WebRtcLoggingMsg_LoggingStopped)
 
 // Messages sent from the browser to the renderer.
 
-// Notification that a log could not be opened.
-IPC_MESSAGE_CONTROL0(WebRtcLoggingMsg_OpenLogFailed)
+// Tells the renderer to start sending log messages to the browser.
+IPC_MESSAGE_CONTROL0(WebRtcLoggingMsg_StartLogging)
 
-// Notification that a log has been opened.
-IPC_MESSAGE_CONTROL2(WebRtcLoggingMsg_LogOpened,
-                     base::SharedMemoryHandle /* handle */,
-                     uint32 /* length */)
+// Tells the renderer to stop sending log messages to the browser.
+IPC_MESSAGE_CONTROL0(WebRtcLoggingMsg_StopLogging)

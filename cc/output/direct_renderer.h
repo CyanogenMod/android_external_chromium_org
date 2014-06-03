@@ -7,6 +7,7 @@
 
 #include "base/basictypes.h"
 #include "base/callback.h"
+#include "base/containers/scoped_ptr_hash_map.h"
 #include "cc/base/cc_export.h"
 #include "cc/output/renderer.h"
 #include "cc/resources/resource_provider.h"
@@ -28,9 +29,14 @@ class CC_EXPORT DirectRenderer : public Renderer {
   virtual bool CanReadPixels() const OVERRIDE;
   virtual void DecideRenderPassAllocationsForFrame(
       const RenderPassList& render_passes_in_draw_order) OVERRIDE;
-  virtual bool HaveCachedResourcesForRenderPassId(RenderPass::Id id) const
+  virtual bool HasAllocatedResourcesForTesting(RenderPass::Id id) const
       OVERRIDE;
   virtual void DrawFrame(RenderPassList* render_passes_in_draw_order,
+                         ContextProvider* offscreen_context_provider,
+                         float device_scale_factor,
+                         gfx::Rect device_viewport_rect,
+                         gfx::Rect device_clip_rect,
+                         bool allow_partial_swap,
                          bool disable_picture_quad_image_filtering) OVERRIDE;
 
   struct CC_EXPORT DrawingFrame {
@@ -42,9 +48,13 @@ class CC_EXPORT DirectRenderer : public Renderer {
     const ScopedResource* current_texture;
 
     gfx::RectF root_damage_rect;
+    gfx::Rect device_viewport_rect;
+    gfx::Rect device_clip_rect;
 
     gfx::Transform projection_matrix;
     gfx::Transform window_matrix;
+
+    ContextProvider* offscreen_context_provider;
 
     bool disable_picture_quad_image_filtering;
   };
@@ -53,30 +63,9 @@ class CC_EXPORT DirectRenderer : public Renderer {
 
  protected:
   DirectRenderer(RendererClient* client,
+                 const LayerTreeSettings* settings,
                  OutputSurface* output_surface,
                  ResourceProvider* resource_provider);
-
-  class CachedResource : public ScopedResource {
-   public:
-    static scoped_ptr<CachedResource> Create(
-        ResourceProvider* resource_provider) {
-      return make_scoped_ptr(new CachedResource(resource_provider));
-    }
-    virtual ~CachedResource() {}
-
-    bool is_complete() const { return is_complete_; }
-    void set_is_complete(bool is_complete) { is_complete_ = is_complete; }
-
-   protected:
-    explicit CachedResource(ResourceProvider* resource_provider)
-        : ScopedResource(resource_provider),
-          is_complete_(false) {}
-
-   private:
-    bool is_complete_;
-
-    DISALLOW_COPY_AND_ASSIGN(CachedResource);
-  };
 
   static gfx::RectF QuadVertexRect();
   static void QuadRectTransform(gfx::Transform* quad_rect_transform,
@@ -88,7 +77,8 @@ class CC_EXPORT DirectRenderer : public Renderer {
                           gfx::Size surface_size);
   gfx::Rect MoveFromDrawToWindowSpace(const gfx::RectF& draw_rect) const;
 
-  gfx::Rect DeviceClipRect(const DrawingFrame* frame) const;
+  bool NeedDeviceClip(const DrawingFrame* frame) const;
+  gfx::Rect DeviceClipRectInWindowSpace(const DrawingFrame* frame) const;
   static gfx::RectF ComputeScissorRectForRenderPass(const DrawingFrame* frame);
   void SetScissorStateForQuad(const DrawingFrame* frame, const DrawQuad& quad);
   void SetScissorStateForQuadWithRenderPassScissor(
@@ -100,9 +90,10 @@ class CC_EXPORT DirectRenderer : public Renderer {
                                      gfx::RectF draw_space_rect);
 
   static gfx::Size RenderPassTextureSize(const RenderPass* render_pass);
-  static GLenum RenderPassTextureFormat(const RenderPass* render_pass);
 
-  void DrawRenderPass(DrawingFrame* frame, const RenderPass* render_pass);
+  void DrawRenderPass(DrawingFrame* frame,
+                      const RenderPass* render_pass,
+                      bool allow_partial_swap);
   bool UseRenderPass(DrawingFrame* frame, const RenderPass* render_pass);
 
   virtual void BindFramebufferToOutputSurface(DrawingFrame* frame) = 0;
@@ -111,7 +102,10 @@ class CC_EXPORT DirectRenderer : public Renderer {
                                         gfx::Rect target_rect) = 0;
   virtual void SetDrawViewport(gfx::Rect window_space_viewport) = 0;
   virtual void SetScissorTestRect(gfx::Rect scissor_rect) = 0;
-  virtual void ClearFramebuffer(DrawingFrame* frame) = 0;
+  virtual void DiscardPixels(bool has_external_stencil_test,
+                             bool draw_rect_covers_full_surface) = 0;
+  virtual void ClearFramebuffer(DrawingFrame* frame,
+                                bool has_external_stencil_test) = 0;
   virtual void DoDrawQuad(DrawingFrame* frame, const DrawQuad* quad) = 0;
   virtual void BeginDrawingFrame(DrawingFrame* frame) = 0;
   virtual void FinishDrawingFrame(DrawingFrame* frame) = 0;
@@ -126,7 +120,7 @@ class CC_EXPORT DirectRenderer : public Renderer {
       DrawingFrame* frame,
       scoped_ptr<CopyOutputRequest> request) = 0;
 
-  ScopedPtrHashMap<RenderPass::Id, CachedResource> render_pass_textures_;
+  base::ScopedPtrHashMap<RenderPass::Id, ScopedResource> render_pass_textures_;
   OutputSurface* output_surface_;
   ResourceProvider* resource_provider_;
 

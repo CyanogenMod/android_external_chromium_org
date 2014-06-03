@@ -53,16 +53,15 @@ class RendererAccessibilityFocusOnly : public RendererAccessibility {
   virtual ~RendererAccessibilityFocusOnly();
 
   // RendererAccessibility implementation.
-  virtual void HandleWebAccessibilityNotification(
-      const WebKit::WebAccessibilityObject& obj,
-      WebKit::WebAccessibilityNotification notification) OVERRIDE;
+  virtual void HandleWebAccessibilityEvent(
+      const blink::WebAXObject& obj, blink::WebAXEvent event) OVERRIDE;
 
   // RenderView::Observer implementation.
-  virtual void FocusedNodeChanged(const WebKit::WebNode& node) OVERRIDE;
-  virtual void DidFinishLoad(WebKit::WebFrame* frame) OVERRIDE;
+  virtual void FocusedNodeChanged(const blink::WebNode& node) OVERRIDE;
+  virtual void DidFinishLoad(blink::WebFrame* frame) OVERRIDE;
 
  private:
-  void HandleFocusedNodeChanged(const WebKit::WebNode& node,
+  void HandleFocusedNodeChanged(const blink::WebNode& node,
                                 bool send_focus_event);
 
   int next_id_;

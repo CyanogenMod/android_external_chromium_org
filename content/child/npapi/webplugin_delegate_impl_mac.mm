@@ -27,10 +27,10 @@
 #include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
 #include "webkit/common/cursors/webcursor.h"
 
-using WebKit::WebKeyboardEvent;
-using WebKit::WebInputEvent;
-using WebKit::WebMouseEvent;
-using WebKit::WebMouseWheelEvent;
+using blink::WebKeyboardEvent;
+using blink::WebInputEvent;
+using blink::WebMouseEvent;
+using blink::WebMouseWheelEvent;
 
 // Important implementation notes: The Mac definition of NPAPI, particularly
 // the distinction between windowed and windowless modes, differs from the
@@ -146,11 +146,12 @@ int ExternalDragTracker::WebEventButtonModifierMask() {
 #pragma mark Core WebPluginDelegate implementation
 
 WebPluginDelegateImpl::WebPluginDelegateImpl(
+    WebPlugin* plugin,
     PluginInstance* instance)
     : windowed_handle_(gfx::kNullPluginWindow),
       // all Mac plugins are "windowless" in the Windows/X11 sense
       windowless_(true),
-      plugin_(NULL),
+      plugin_(plugin),
       instance_(instance),
       quirks_(0),
       use_buffer_context_(true),
@@ -275,8 +276,7 @@ void WebPluginDelegateImpl::UpdateGeometryAndContext(
   UpdateGeometry(window_rect, clip_rect);
 }
 
-void WebPluginDelegateImpl::Paint(WebKit::WebCanvas* canvas,
-                                  const gfx::Rect& rect) {
+void WebPluginDelegateImpl::Paint(SkCanvas* canvas, const gfx::Rect& rect) {
   gfx::SkiaBitLocker bit_locker(canvas);
   CGContextRef context = bit_locker.cgContext();
   CGPaint(context, rect);

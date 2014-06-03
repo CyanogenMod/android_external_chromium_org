@@ -92,6 +92,8 @@ class ThemeProperties {
     COLOR_MANAGED_USER_LABEL_BACKGROUND,
     COLOR_MANAGED_USER_LABEL_BORDER,
 
+    COLOR_STATUS_BAR_TEXT,
+
 #if defined(OS_MACOSX)
     COLOR_TOOLBAR_BEZEL,
     COLOR_TOOLBAR_STROKE,
@@ -140,9 +142,9 @@ class ThemeProperties {
   // Returns SK_ColorRED if |id| is invalid.
   static SkColor GetDefaultColor(int id);
 
-  // Returns true and sets |result| to the requested default property, if |id|
-  // is valid.
-  static bool GetDefaultDisplayProperty(int id, int* result);
+  // Returns the default value for the given property |id|. Returns -1 if |id|
+  // is invalid.
+  static int GetDefaultDisplayProperty(int id);
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(ThemeProperties);

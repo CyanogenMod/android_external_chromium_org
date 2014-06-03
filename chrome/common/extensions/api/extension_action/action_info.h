@@ -8,8 +8,8 @@
 #include <string>
 
 #include "base/strings/string16.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_icon_set.h"
+#include "extensions/common/extension.h"
 #include "url/gurl.h"
 
 namespace base {
@@ -35,7 +35,7 @@ struct ActionInfo {
   // Loads an ActionInfo from the given DictionaryValue.
   static scoped_ptr<ActionInfo> Load(const Extension* extension,
                                      const base::DictionaryValue* dict,
-                                     string16* error);
+                                     base::string16* error);
 
   // Returns the extension's browser action, if any.
   static const ActionInfo* GetBrowserActionInfo(const Extension* extension);

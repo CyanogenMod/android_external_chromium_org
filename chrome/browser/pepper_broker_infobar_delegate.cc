@@ -7,6 +7,7 @@
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/content_settings/tab_specific_content_settings.h"
+#include "chrome/browser/infobars/infobar.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/plugins/plugin_finder.h"
 #include "chrome/browser/plugins/plugin_metadata.h"
@@ -95,11 +96,11 @@ void PepperBrokerInfoBarDelegate::Create(
         content::UserMetricsAction("PPAPI.BrokerInfobarDisplayed"));
     InfoBarService* infobar_service =
         InfoBarService::FromWebContents(web_contents);
-    infobar_service->AddInfoBar(scoped_ptr<InfoBarDelegate>(
-        new PepperBrokerInfoBarDelegate(
-            infobar_service, url, plugin_path,
+    infobar_service->AddInfoBar(ConfirmInfoBarDelegate::CreateInfoBar(
+        scoped_ptr<ConfirmInfoBarDelegate>(new PepperBrokerInfoBarDelegate(
+            url, plugin_path,
             profile->GetPrefs()->GetString(prefs::kAcceptLanguages),
-            content_settings, tab_content_settings, callback)));
+            content_settings, tab_content_settings, callback))));
     return;
   }
 
@@ -112,14 +113,13 @@ void PepperBrokerInfoBarDelegate::Create(
 }
 
 PepperBrokerInfoBarDelegate::PepperBrokerInfoBarDelegate(
-    InfoBarService* infobar_service,
     const GURL& url,
     const base::FilePath& plugin_path,
     const std::string& languages,
     HostContentSettingsMap* content_settings,
     TabSpecificContentSettings* tab_content_settings,
     const base::Callback<void(bool)>& callback)
-    : ConfirmInfoBarDelegate(infobar_service),
+    : ConfirmInfoBarDelegate(),
       url_(url),
       plugin_path_(plugin_path),
       languages_(languages),
@@ -137,7 +137,7 @@ int PepperBrokerInfoBarDelegate::GetIconID() const {
   return IDR_INFOBAR_PLUGIN_INSTALL;
 }
 
-string16 PepperBrokerInfoBarDelegate::GetMessageText() const {
+base::string16 PepperBrokerInfoBarDelegate::GetMessageText() const {
   content::PluginService* plugin_service =
       content::PluginService::GetInstance();
   content::WebPluginInfo plugin;
@@ -151,7 +151,7 @@ string16 PepperBrokerInfoBarDelegate::GetMessageText() const {
                                                    languages_));
 }
 
-string16 PepperBrokerInfoBarDelegate::GetButtonLabel(
+base::string16 PepperBrokerInfoBarDelegate::GetButtonLabel(
     InfoBarButton button) const {
   return l10n_util::GetStringUTF16((button == BUTTON_OK) ?
       IDS_PEPPER_BROKER_ALLOW_BUTTON : IDS_PEPPER_BROKER_DENY_BUTTON);
@@ -167,7 +167,7 @@ bool PepperBrokerInfoBarDelegate::Cancel() {
   return true;
 }
 
-string16 PepperBrokerInfoBarDelegate::GetLinkText() const {
+base::string16 PepperBrokerInfoBarDelegate::GetLinkText() const {
   return l10n_util::GetStringUTF16(IDS_LEARN_MORE);
 }
 

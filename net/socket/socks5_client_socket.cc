@@ -28,34 +28,18 @@ COMPILE_ASSERT(sizeof(struct in_addr) == 4, incorrect_system_size_of_IPv4);
 COMPILE_ASSERT(sizeof(struct in6_addr) == 16, incorrect_system_size_of_IPv6);
 
 SOCKS5ClientSocket::SOCKS5ClientSocket(
-    ClientSocketHandle* transport_socket,
+    scoped_ptr<ClientSocketHandle> transport_socket,
     const HostResolver::RequestInfo& req_info)
     : io_callback_(base::Bind(&SOCKS5ClientSocket::OnIOComplete,
                               base::Unretained(this))),
-      transport_(transport_socket),
+      transport_(transport_socket.Pass()),
       next_state_(STATE_NONE),
       completed_handshake_(false),
       bytes_sent_(0),
       bytes_received_(0),
       read_header_size(kReadHeaderSize),
       host_request_info_(req_info),
-      net_log_(transport_socket->socket()->NetLog()) {
-}
-
-SOCKS5ClientSocket::SOCKS5ClientSocket(
-    StreamSocket* transport_socket,
-    const HostResolver::RequestInfo& req_info)
-    : io_callback_(base::Bind(&SOCKS5ClientSocket::OnIOComplete,
-                              base::Unretained(this))),
-      transport_(new ClientSocketHandle()),
-      next_state_(STATE_NONE),
-      completed_handshake_(false),
-      bytes_sent_(0),
-      bytes_received_(0),
-      read_header_size(kReadHeaderSize),
-      host_request_info_(req_info),
-      net_log_(transport_socket->NetLog()) {
-  transport_->set_socket(transport_socket);
+      net_log_(transport_->socket()->NetLog()) {
 }
 
 SOCKS5ClientSocket::~SOCKS5ClientSocket() {
@@ -270,7 +254,6 @@ int SOCKS5ClientSocket::DoLoop(int last_io_result) {
 }
 
 const char kSOCKS5GreetWriteData[] = { 0x05, 0x01, 0x00 };  // no authentication
-const char kSOCKS5GreetReadData[] = { 0x05, 0x00 };
 
 int SOCKS5ClientSocket::DoGreetWrite() {
   // Since we only have 1 byte to send the hostname length in, if the

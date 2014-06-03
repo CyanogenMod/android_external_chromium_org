@@ -28,9 +28,9 @@
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/base/text/text_elider.h"
 #include "ui/base/window_open_disposition.h"
 #include "ui/gfx/favicon_size.h"
+#include "ui/gfx/text_elider.h"
 
 using content::NavigationController;
 using content::NavigationEntry;
@@ -90,27 +90,27 @@ int BackForwardMenuModel::GetCommandIdAt(int index) const {
   return index;
 }
 
-string16 BackForwardMenuModel::GetLabelAt(int index) const {
+base::string16 BackForwardMenuModel::GetLabelAt(int index) const {
   // Return label "Show Full History" for the last item of the menu.
   if (index == GetItemCount() - 1)
     return l10n_util::GetStringUTF16(IDS_SHOWFULLHISTORY_LINK);
 
   // Return an empty string for a separator.
   if (IsSeparator(index))
-    return string16();
+    return base::string16();
 
   // Return the entry title, escaping any '&' characters and eliding it if it's
   // super long.
   NavigationEntry* entry = GetNavigationEntry(index);
   Profile* profile =
       Profile::FromBrowserContext(GetWebContents()->GetBrowserContext());
-  string16 menu_text(entry->GetTitleForDisplay(
+  base::string16 menu_text(entry->GetTitleForDisplay(
       profile->GetPrefs()->GetString(prefs::kAcceptLanguages)));
   menu_text =
-      ui::ElideText(menu_text, gfx::Font(), kMaxWidth, ui::ELIDE_AT_END);
+      gfx::ElideText(menu_text, gfx::Font(), kMaxWidth, gfx::ELIDE_AT_END);
 
 #if !defined(OS_MACOSX)
-  for (size_t i = menu_text.find('&'); i != string16::npos;
+  for (size_t i = menu_text.find('&'); i != base::string16::npos;
        i = menu_text.find('&', i + 2)) {
     menu_text.insert(i, 1, '&');
   }
@@ -255,8 +255,7 @@ void BackForwardMenuModel::FetchFavicon(NavigationEntry* entry) {
     return;
 
   favicon_service->GetFaviconImageForURL(
-      FaviconService::FaviconForURLParams(browser_->profile(),
-                                          entry->GetURL(),
+      FaviconService::FaviconForURLParams(entry->GetURL(),
                                           chrome::FAVICON,
                                           gfx::kFaviconSize),
       base::Bind(&BackForwardMenuModel::OnFavIconDataAvailable,
@@ -416,7 +415,7 @@ bool BackForwardMenuModel::ItemHasIcon(int index) const {
   return index < GetItemCount() && !IsSeparator(index);
 }
 
-string16 BackForwardMenuModel::GetShowFullHistoryLabel() const {
+base::string16 BackForwardMenuModel::GetShowFullHistoryLabel() const {
   return l10n_util::GetStringUTF16(IDS_SHOWFULLHISTORY_LINK);
 }
 

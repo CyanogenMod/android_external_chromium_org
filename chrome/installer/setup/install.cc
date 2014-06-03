@@ -17,6 +17,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
 #include "base/process/launch.h"
+#include "base/safe_numerics.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
@@ -76,8 +77,17 @@ void LogShortcutOperation(ShellUtil::ShortcutLocation location,
     case ShellUtil::SHORTCUT_LOCATION_QUICK_LAUNCH:
       message.append("Quick Launch ");
       break;
-    case ShellUtil::SHORTCUT_LOCATION_START_MENU:
-      message.append("Start menu ");
+    case ShellUtil::SHORTCUT_LOCATION_START_MENU_CHROME_DIR:
+      message.append("Start menu/" +
+                     UTF16ToUTF8(dist->GetStartMenuShortcutSubfolder(
+                                     BrowserDistribution::SUBFOLDER_CHROME)) +
+                      " ");
+      break;
+    case ShellUtil::SHORTCUT_LOCATION_START_MENU_CHROME_APPS_DIR:
+      message.append("Start menu/" +
+                     UTF16ToUTF8(dist->GetStartMenuShortcutSubfolder(
+                                     BrowserDistribution::SUBFOLDER_APPS)) +
+                     " ");
       break;
     default:
       NOTREACHED();
@@ -87,7 +97,7 @@ void LogShortcutOperation(ShellUtil::ShortcutLocation location,
   if (properties.has_shortcut_name())
     message.append(UTF16ToUTF8(properties.shortcut_name));
   else
-    message.append(UTF16ToUTF8(dist->GetAppShortCutName()));
+    message.append(UTF16ToUTF8(dist->GetDisplayName()));
   message.push_back('"');
 
   message.append(" shortcut to ");
@@ -253,8 +263,8 @@ void CleanupLegacyShortcuts(const InstallerState& installer_state,
   ShellUtil::ShellChange shortcut_level = installer_state.system_install() ?
       ShellUtil::SYSTEM_LEVEL : ShellUtil::CURRENT_USER;
   base::FilePath uninstall_shortcut_path;
-  ShellUtil::GetShortcutPath(ShellUtil::SHORTCUT_LOCATION_START_MENU, dist,
-                             shortcut_level, &uninstall_shortcut_path);
+  ShellUtil::GetShortcutPath(ShellUtil::SHORTCUT_LOCATION_START_MENU_CHROME_DIR,
+                             dist, shortcut_level, &uninstall_shortcut_path);
   uninstall_shortcut_path = uninstall_shortcut_path.Append(
       dist->GetUninstallLinkName() + installer::kLnkExt);
   base::DeleteFile(uninstall_shortcut_path, false);
@@ -288,9 +298,9 @@ installer::InstallShortcutOperation GetAppLauncherShortcutOperation(
 namespace installer {
 
 void EscapeXmlAttributeValueInSingleQuotes(string16* att_value) {
-  ReplaceChars(*att_value, L"&", L"&amp;", att_value);
-  ReplaceChars(*att_value, L"'", L"&apos;", att_value);
-  ReplaceChars(*att_value, L"<", L"&lt;", att_value);
+  base::ReplaceChars(*att_value, L"&", L"&amp;", att_value);
+  base::ReplaceChars(*att_value, L"'", L"&apos;", att_value);
+  base::ReplaceChars(*att_value, L"<", L"&lt;", att_value);
 }
 
 bool CreateVisualElementsManifest(const base::FilePath& src_path,
@@ -330,7 +340,7 @@ bool CreateVisualElementsManifest(const base::FilePath& src_path,
         BrowserDistribution::CHROME_BROWSER);
     // TODO(grt): http://crbug.com/75152 Write a reference to a localized
     // resource for |display_name|.
-    string16 display_name(dist->GetAppShortCutName());
+    string16 display_name(dist->GetDisplayName());
     EscapeXmlAttributeValueInSingleQuotes(&display_name);
 
     // Fill the manifest with the desired values.
@@ -340,9 +350,10 @@ bool CreateVisualElementsManifest(const base::FilePath& src_path,
 
     // Write the manifest to |src_path|.
     const std::string manifest(UTF16ToUTF8(manifest16));
+    int size = base::checked_numeric_cast<int>(manifest.size());
     if (file_util::WriteFile(
-            src_path.Append(installer::kVisualElementsManifest),
-            manifest.c_str(), manifest.size())) {
+        src_path.Append(installer::kVisualElementsManifest),
+            manifest.c_str(), size) == size) {
       VLOG(1) << "Successfully wrote " << installer::kVisualElementsManifest
               << " to " << src_path.value();
       return true;
@@ -411,8 +422,11 @@ void CreateOrUpdateShortcuts(
   if (!do_not_create_desktop_shortcut ||
       shortcut_operation == ShellUtil::SHELL_SHORTCUT_REPLACE_EXISTING) {
     ShellUtil::ShortcutProperties desktop_properties(base_properties);
-    if (alternate_desktop_shortcut)
-      desktop_properties.set_shortcut_name(dist->GetAlternateApplicationName());
+    if (alternate_desktop_shortcut) {
+      desktop_properties.set_shortcut_name(
+          dist->GetShortcutName(
+              BrowserDistribution::SHORTCUT_CHROME_ALTERNATE));
+    }
     ExecuteAndLogShortcutOperation(
         ShellUtil::SHORTCUT_LOCATION_DESKTOP, dist, desktop_properties,
         shortcut_operation);
@@ -421,7 +435,9 @@ void CreateOrUpdateShortcuts(
     // Desktop shortcut.
     if (!alternate_desktop_shortcut &&
         shortcut_operation == ShellUtil::SHELL_SHORTCUT_REPLACE_EXISTING) {
-      desktop_properties.set_shortcut_name(dist->GetAlternateApplicationName());
+      desktop_properties.set_shortcut_name(
+          dist->GetShortcutName(
+              BrowserDistribution::SHORTCUT_CHROME_ALTERNATE));
       ExecuteAndLogShortcutOperation(
           ShellUtil::SHORTCUT_LOCATION_DESKTOP, dist, desktop_properties,
           shortcut_operation);
@@ -450,9 +466,9 @@ void CreateOrUpdateShortcuts(
            ShellUtil::SHELL_SHORTCUT_CREATE_IF_NO_SYSTEM_LEVEL)) {
     start_menu_properties.set_pin_to_taskbar(true);
   }
-  ExecuteAndLogShortcutOperation(ShellUtil::SHORTCUT_LOCATION_START_MENU,
-                                 dist, start_menu_properties,
-                                 shortcut_operation);
+  ExecuteAndLogShortcutOperation(
+      ShellUtil::SHORTCUT_LOCATION_START_MENU_CHROME_DIR, dist,
+      start_menu_properties, shortcut_operation);
 }
 
 void RegisterChromeOnMachine(const InstallerState& installer_state,
@@ -491,19 +507,15 @@ InstallStatus InstallOrUpdateProduct(
     const base::FilePath& prefs_path,
     const MasterPreferences& prefs,
     const Version& new_version) {
+  DCHECK(!installer_state.products().empty());
+
   // TODO(robertshield): Removing the pending on-reboot moves should be done
   // elsewhere.
-  // TODO(erikwright): Understand why this is Chrome Frame only and whether
-  // it also applies to App Host. Shouldn't it apply to any multi-install too?
-  const Products& products = installer_state.products();
-  DCHECK(products.size());
-  if (installer_state.FindProduct(BrowserDistribution::CHROME_FRAME)) {
-    // Make sure that we don't end up deleting installed files on next reboot.
-    if (!RemoveFromMovesPendingReboot(
-            installer_state.target_path().value().c_str())) {
-      LOG(ERROR) << "Error accessing pending moves value.";
-    }
-  }
+  // Remove any scheduled MOVEFILE_DELAY_UNTIL_REBOOT entries in the target of
+  // this installation. These may have been added during a previous uninstall of
+  // the same version.
+  LOG_IF(ERROR, !RemoveFromMovesPendingReboot(installer_state.target_path()))
+      << "Error accessing pending moves value.";
 
   // Create VisualElementManifest.xml in |src_path| (if required) so that it
   // looks as if it had been extracted from the archive when calling

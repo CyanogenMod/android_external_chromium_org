@@ -115,8 +115,6 @@ void EnsureRedirectStream(FILE* stream,
 
 }  // namespace
 
-// This method is called on a separate java thread so that we won't trigger
-// an ANR.
 static void RunTests(JNIEnv* env,
                      jobject obj,
                      jstring jfiles_dir,
@@ -130,7 +128,7 @@ static void RunTests(JNIEnv* env,
   // Set the application context in base.
   base::android::ScopedJavaLocalRef<jobject> scoped_context(
       env, env->NewLocalRef(app_context));
-  base::android::InitApplicationContext(scoped_context);
+  base::android::InitApplicationContext(env, scoped_context);
   base::android::RegisterJni(env);
 
   std::vector<std::string> args;

@@ -1,4 +1,4 @@
-// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,9 +7,9 @@ package org.chromium.android_webview.test;
 import android.test.suitebuilder.annotation.SmallTest;
 import android.util.Pair;
 
+import org.chromium.android_webview.AwContents;
 import org.chromium.base.test.util.Feature;
 import org.chromium.content.browser.test.util.CallbackHelper;
-import org.chromium.android_webview.AwContents;
 import org.chromium.net.test.util.TestWebServer;
 
 import java.util.ArrayList;

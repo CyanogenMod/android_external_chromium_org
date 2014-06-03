@@ -8,14 +8,15 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/message_loop/message_loop_proxy.h"
+#include "base/metrics/histogram.h"
 #include "base/stl_util.h"
 #include "chrome/browser/password_manager/password_store_consumer.h"
+#include "components/autofill/core/common/password_form.h"
 #include "content/public/browser/browser_thread.h"
-#include "content/public/common/password_form.h"
 
+using autofill::PasswordForm;
 using content::BrowserThread;
 using std::vector;
-using content::PasswordForm;
 
 namespace {
 
@@ -119,6 +120,7 @@ void PasswordStore::RemoveLoginsCreatedBetween(const base::Time& delete_begin,
 
 CancelableTaskTracker::TaskId PasswordStore::GetLogins(
     const PasswordForm& form,
+    AuthorizationPromptPolicy prompt_policy,
     PasswordStoreConsumer* consumer) {
   // Per http://crbug.com/121738, we deliberately ignore saved logins for
   // http*://www.google.com/ that were stored prior to 2012. (Google now uses
@@ -148,8 +150,8 @@ CancelableTaskTracker::TaskId PasswordStore::GetLogins(
                  is_canceled_cb,
                  consumer,
                  ignore_logins_cutoff);
-  ScheduleTask(
-      base::Bind(&PasswordStore::GetLoginsImpl, this, form, callback_runner));
+  ScheduleTask(base::Bind(&PasswordStore::GetLoginsImpl,
+                          this, form, prompt_policy, callback_runner));
   return id;
 }
 
@@ -189,6 +191,11 @@ bool PasswordStore::ScheduleTask(const base::Closure& task) {
 void PasswordStore::ForwardLoginsResult(GetLoginsRequest* request) {
   request->ApplyIgnoreLoginsCutoff();
   request->ForwardResult(request->handle(), request->value);
+}
+
+void PasswordStore::LogStatsForBulkDeletion(int num_deletions) {
+  UMA_HISTOGRAM_COUNTS("PasswordManager.NumPasswordsDeletedByBulkDelete",
+                       num_deletions);
 }
 
 template<typename BackendFunc>

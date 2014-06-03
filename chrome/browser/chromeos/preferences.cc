@@ -4,17 +4,19 @@
 
 #include "chrome/browser/chromeos/preferences.h"
 
+#include "ash/autoclick/autoclick_controller.h"
 #include "ash/magnifier/magnifier_constants.h"
 #include "ash/shell.h"
-#include "base/chromeos/chromeos_version.h"
 #include "base/command_line.h"
 #include "base/i18n/time_formatting.h"
 #include "base/metrics/histogram.h"
 #include "base/prefs/pref_member.h"
 #include "base/prefs/pref_registry_simple.h"
+#include "base/prefs/scoped_user_pref_update.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/sys_info.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/accessibility/magnification_manager.h"
@@ -23,20 +25,19 @@
 #include "chrome/browser/chromeos/login/login_utils.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/system/input_device_settings.h"
-#include "chrome/browser/chromeos/system/statistics_provider.h"
-#include "chrome/browser/download/download_util.h"
+#include "chrome/browser/download/download_prefs.h"
 #include "chrome/browser/feedback/tracing_manager.h"
 #include "chrome/browser/prefs/pref_service_syncable.h"
-#include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/ime/input_method_manager.h"
 #include "chromeos/ime/xkeyboard.h"
+#include "chromeos/system/statistics_provider.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "third_party/icu/source/i18n/unicode/timezone.h"
-#include "ui/base/events/event_constants.h"
-#include "ui/base/events/event_utils.h"
+#include "ui/events/event_constants.h"
+#include "ui/events/event_utils.h"
 #include "url/gurl.h"
 
 namespace chromeos {
@@ -49,7 +50,8 @@ static const char kEnableTouchpadThreeFingerSwipe[] =
 
 Preferences::Preferences()
     : prefs_(NULL),
-      input_method_manager_(input_method::InputMethodManager::Get()) {
+      input_method_manager_(input_method::InputMethodManager::Get()),
+      is_primary_user_prefs_(true) {
   // Do not observe shell, if there is no shell instance; e.g., in some unit
   // tests.
   if (ash::Shell::HasInstance())
@@ -58,7 +60,8 @@ Preferences::Preferences()
 
 Preferences::Preferences(input_method::InputMethodManager* input_method_manager)
     : prefs_(NULL),
-      input_method_manager_(input_method_manager) {
+      input_method_manager_(input_method_manager),
+      is_primary_user_prefs_(true) {
   // Do not observe shell, if there is no shell instance; e.g., in some unit
   // tests.
   if (ash::Shell::HasInstance())
@@ -85,7 +88,7 @@ void Preferences::RegisterProfilePrefs(
     user_prefs::PrefRegistrySyncable* registry) {
   std::string hardware_keyboard_id;
   // TODO(yusukes): Remove the runtime hack.
-  if (base::chromeos::IsRunningOnChromeOS()) {
+  if (base::SysInfo::IsRunningOnChromeOS()) {
     input_method::InputMethodManager* manager =
         input_method::InputMethodManager::Get();
     if (manager) {
@@ -133,7 +136,7 @@ void Preferences::RegisterProfilePrefs(
   registry->RegisterBooleanPref(
       prefs::kStickyKeysEnabled,
       false,
-      user_prefs::PrefRegistrySyncable::SYNCABLE_PRIORITY_PREF);
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
   registry->RegisterBooleanPref(
       prefs::kLargeCursorEnabled,
       false,
@@ -141,27 +144,35 @@ void Preferences::RegisterProfilePrefs(
   registry->RegisterBooleanPref(
       prefs::kSpokenFeedbackEnabled,
       false,
-      user_prefs::PrefRegistrySyncable::SYNCABLE_PRIORITY_PREF);
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   registry->RegisterBooleanPref(
       prefs::kHighContrastEnabled,
       false,
-      user_prefs::PrefRegistrySyncable::SYNCABLE_PRIORITY_PREF);
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
   registry->RegisterBooleanPref(
       prefs::kScreenMagnifierEnabled,
       false,
-      user_prefs::PrefRegistrySyncable::SYNCABLE_PRIORITY_PREF);
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
   registry->RegisterIntegerPref(
       prefs::kScreenMagnifierType,
       ash::kDefaultMagnifierType,
-      user_prefs::PrefRegistrySyncable::SYNCABLE_PRIORITY_PREF);
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
   registry->RegisterDoublePref(
       prefs::kScreenMagnifierScale,
       std::numeric_limits<double>::min(),
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   registry->RegisterBooleanPref(
+      prefs::kAutoclickEnabled,
+      false,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterIntegerPref(
+      prefs::kAutoclickDelayMs,
+      ash::AutoclickController::kDefaultAutoclickDelayMs,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterBooleanPref(
       prefs::kShouldAlwaysShowAccessibilityMenu,
       false,
-      user_prefs::PrefRegistrySyncable::SYNCABLE_PRIORITY_PREF);
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
   registry->RegisterIntegerPref(
       prefs::kMouseSensitivity,
       3,
@@ -211,73 +222,7 @@ void Preferences::RegisterProfilePrefs(
       prefs::kLanguageEnabledExtensionImes,
       "",
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-  for (size_t i = 0; i < language_prefs::kNumChewingBooleanPrefs; ++i) {
-    registry->RegisterBooleanPref(
-        language_prefs::kChewingBooleanPrefs[i].pref_name,
-        language_prefs::kChewingBooleanPrefs[i].default_pref_value,
-        language_prefs::kChewingBooleanPrefs[i].sync_status);
-  }
-  for (size_t i = 0; i < language_prefs::kNumChewingMultipleChoicePrefs; ++i) {
-    registry->RegisterStringPref(
-        language_prefs::kChewingMultipleChoicePrefs[i].pref_name,
-        language_prefs::kChewingMultipleChoicePrefs[i].default_pref_value,
-        language_prefs::kChewingMultipleChoicePrefs[i].sync_status);
-  }
-  registry->RegisterIntegerPref(
-      language_prefs::kChewingHsuSelKeyType.pref_name,
-      language_prefs::kChewingHsuSelKeyType.default_pref_value,
-      language_prefs::kChewingHsuSelKeyType.sync_status);
 
-  for (size_t i = 0; i < language_prefs::kNumChewingIntegerPrefs; ++i) {
-    registry->RegisterIntegerPref(
-        language_prefs::kChewingIntegerPrefs[i].pref_name,
-        language_prefs::kChewingIntegerPrefs[i].default_pref_value,
-        language_prefs::kChewingIntegerPrefs[i].sync_status);
-  }
-  registry->RegisterStringPref(
-      prefs::kLanguageHangulKeyboard,
-      language_prefs::kHangulKeyboardNameIDPairs[0].keyboard_id,
-      user_prefs::PrefRegistrySyncable::SYNCABLE_PRIORITY_PREF);
-  registry->RegisterStringPref(
-      prefs::kLanguageHangulHanjaBindingKeys,
-      language_prefs::kHangulHanjaBindingKeys,
-      // Don't sync the pref as it's not user-configurable
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-  for (size_t i = 0; i < language_prefs::kNumPinyinBooleanPrefs; ++i) {
-    registry->RegisterBooleanPref(
-        language_prefs::kPinyinBooleanPrefs[i].pref_name,
-        language_prefs::kPinyinBooleanPrefs[i].default_pref_value,
-        language_prefs::kPinyinBooleanPrefs[i].sync_status);
-  }
-  for (size_t i = 0; i < language_prefs::kNumPinyinIntegerPrefs; ++i) {
-    registry->RegisterIntegerPref(
-        language_prefs::kPinyinIntegerPrefs[i].pref_name,
-        language_prefs::kPinyinIntegerPrefs[i].default_pref_value,
-        language_prefs::kPinyinIntegerPrefs[i].sync_status);
-  }
-  registry->RegisterIntegerPref(
-      language_prefs::kPinyinDoublePinyinSchema.pref_name,
-      language_prefs::kPinyinDoublePinyinSchema.default_pref_value,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-
-  for (size_t i = 0; i < language_prefs::kNumMozcBooleanPrefs; ++i) {
-    registry->RegisterBooleanPref(
-        language_prefs::kMozcBooleanPrefs[i].pref_name,
-        language_prefs::kMozcBooleanPrefs[i].default_pref_value,
-        language_prefs::kMozcBooleanPrefs[i].sync_status);
-  }
-  for (size_t i = 0; i < language_prefs::kNumMozcMultipleChoicePrefs; ++i) {
-    registry->RegisterStringPref(
-        language_prefs::kMozcMultipleChoicePrefs[i].pref_name,
-        language_prefs::kMozcMultipleChoicePrefs[i].default_pref_value,
-        language_prefs::kMozcMultipleChoicePrefs[i].sync_status);
-  }
-  for (size_t i = 0; i < language_prefs::kNumMozcIntegerPrefs; ++i) {
-    registry->RegisterIntegerPref(
-        language_prefs::kMozcIntegerPrefs[i].pref_name,
-        language_prefs::kMozcIntegerPrefs[i].default_pref_value,
-        language_prefs::kMozcIntegerPrefs[i].sync_status);
-  }
   registry->RegisterIntegerPref(
       prefs::kLanguageRemapSearchKeyTo,
       input_method::kSearchKey,
@@ -301,6 +246,13 @@ void Preferences::RegisterProfilePrefs(
       prefs::kLanguageRemapDiamondKeyTo,
       input_method::kControlKey,
       user_prefs::PrefRegistrySyncable::SYNCABLE_PRIORITY_PREF);
+  // The following pref isn't synced since the user may desire a different value
+  // depending on whether an external keyboard is attached to a particular
+  // device.
+  registry->RegisterBooleanPref(
+      prefs::kLanguageSendFunctionKeys,
+      false,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   // We don't sync the following keyboard prefs since they are not user-
   // configurable.
   registry->RegisterBooleanPref(
@@ -407,46 +359,6 @@ void Preferences::InitUserPrefs(PrefServiceSyncable* prefs) {
   previous_input_method_.Init(prefs::kLanguagePreviousInputMethod,
                               prefs, callback);
 
-  for (size_t i = 0; i < language_prefs::kNumChewingBooleanPrefs; ++i) {
-    chewing_boolean_prefs_[i].Init(
-        language_prefs::kChewingBooleanPrefs[i].pref_name, prefs, callback);
-  }
-  for (size_t i = 0; i < language_prefs::kNumChewingMultipleChoicePrefs; ++i) {
-    chewing_multiple_choice_prefs_[i].Init(
-        language_prefs::kChewingMultipleChoicePrefs[i].pref_name,
-        prefs, callback);
-  }
-  chewing_hsu_sel_key_type_.Init(
-      language_prefs::kChewingHsuSelKeyType.pref_name, prefs, callback);
-  for (size_t i = 0; i < language_prefs::kNumChewingIntegerPrefs; ++i) {
-    chewing_integer_prefs_[i].Init(
-        language_prefs::kChewingIntegerPrefs[i].pref_name, prefs, callback);
-  }
-  hangul_keyboard_.Init(prefs::kLanguageHangulKeyboard, prefs, callback);
-  hangul_hanja_binding_keys_.Init(
-      prefs::kLanguageHangulHanjaBindingKeys, prefs, callback);
-  for (size_t i = 0; i < language_prefs::kNumPinyinBooleanPrefs; ++i) {
-    pinyin_boolean_prefs_[i].Init(
-        language_prefs::kPinyinBooleanPrefs[i].pref_name, prefs, callback);
-  }
-  for (size_t i = 0; i < language_prefs::kNumPinyinIntegerPrefs; ++i) {
-    pinyin_int_prefs_[i].Init(
-        language_prefs::kPinyinIntegerPrefs[i].pref_name, prefs, callback);
-  }
-  pinyin_double_pinyin_schema_.Init(
-      language_prefs::kPinyinDoublePinyinSchema.pref_name, prefs, callback);
-  for (size_t i = 0; i < language_prefs::kNumMozcBooleanPrefs; ++i) {
-    mozc_boolean_prefs_[i].Init(
-        language_prefs::kMozcBooleanPrefs[i].pref_name, prefs, callback);
-  }
-  for (size_t i = 0; i < language_prefs::kNumMozcMultipleChoicePrefs; ++i) {
-    mozc_multiple_choice_prefs_[i].Init(
-        language_prefs::kMozcMultipleChoicePrefs[i].pref_name, prefs, callback);
-  }
-  for (size_t i = 0; i < language_prefs::kNumMozcIntegerPrefs; ++i) {
-    mozc_integer_prefs_[i].Init(
-        language_prefs::kMozcIntegerPrefs[i].pref_name, prefs, callback);
-  }
   xkb_auto_repeat_enabled_.Init(
       prefs::kLanguageXkbAutoRepeatEnabled, prefs, callback);
   xkb_auto_repeat_delay_pref_.Init(
@@ -458,7 +370,8 @@ void Preferences::InitUserPrefs(PrefServiceSyncable* prefs) {
   prefs->ClearPref(kEnableTouchpadThreeFingerSwipe);
 }
 
-void Preferences::Init(PrefServiceSyncable* prefs) {
+void Preferences::Init(PrefServiceSyncable* prefs, bool is_primary_user) {
+  is_primary_user_prefs_ = is_primary_user;
   InitUserPrefs(prefs);
 
   // This causes OnIsSyncingChanged to be called when the value of
@@ -495,7 +408,8 @@ void Preferences::NotifyPrefChanged(const std::string* pref_name) {
     else
       tracing_manager_.reset();
   }
-  if (!pref_name || *pref_name == prefs::kTapToClickEnabled) {
+  if ((!pref_name && is_primary_user_prefs_) ||
+      (pref_name && *pref_name == prefs::kTapToClickEnabled)) {
     const bool enabled = tap_to_click_enabled_.GetValue();
     system::touchpad_settings::SetTapToClick(enabled);
     if (pref_name)
@@ -510,7 +424,8 @@ void Preferences::NotifyPrefChanged(const std::string* pref_name) {
         prefs->SetBoolean(prefs::kOwnerTapToClickEnabled, enabled);
     }
   }
-  if (!pref_name || *pref_name == prefs::kTapDraggingEnabled) {
+  if ((!pref_name && is_primary_user_prefs_) ||
+      (pref_name && *pref_name == prefs::kTapDraggingEnabled)) {
     const bool enabled = tap_dragging_enabled_.GetValue();
     system::touchpad_settings::SetTapDragging(enabled);
     if (pref_name)
@@ -518,7 +433,8 @@ void Preferences::NotifyPrefChanged(const std::string* pref_name) {
     else
       UMA_HISTOGRAM_BOOLEAN("Touchpad.TapDragging.Started", enabled);
   }
-  if (!pref_name || *pref_name == prefs::kEnableTouchpadThreeFingerClick) {
+  if ((!pref_name && is_primary_user_prefs_) ||
+      (pref_name && *pref_name == prefs::kEnableTouchpadThreeFingerClick)) {
     const bool enabled = three_finger_click_enabled_.GetValue();
     system::touchpad_settings::SetThreeFingerClick(enabled);
     if (pref_name)
@@ -526,7 +442,8 @@ void Preferences::NotifyPrefChanged(const std::string* pref_name) {
     else
       UMA_HISTOGRAM_BOOLEAN("Touchpad.ThreeFingerClick.Started", enabled);
   }
-  if (!pref_name || *pref_name == prefs::kNaturalScroll) {
+  if ((!pref_name && is_primary_user_prefs_) ||
+      (pref_name && *pref_name == prefs::kNaturalScroll)) {
     // Force natural scroll default if we've sync'd and if the cmd line arg is
     // set.
     ForceNaturalScrollDefault();
@@ -539,7 +456,8 @@ void Preferences::NotifyPrefChanged(const std::string* pref_name) {
     else
       UMA_HISTOGRAM_BOOLEAN("Touchpad.NaturalScroll.Started", enabled);
   }
-  if (!pref_name || *pref_name == prefs::kMouseSensitivity) {
+  if ((!pref_name && is_primary_user_prefs_) ||
+      (pref_name && *pref_name == prefs::kMouseSensitivity)) {
     const int sensitivity = mouse_sensitivity_.GetValue();
     system::mouse_settings::SetSensitivity(sensitivity);
     if (pref_name) {
@@ -552,7 +470,8 @@ void Preferences::NotifyPrefChanged(const std::string* pref_name) {
                                 system::kMaxPointerSensitivity + 1);
     }
   }
-  if (!pref_name || *pref_name == prefs::kTouchpadSensitivity) {
+  if ((!pref_name && is_primary_user_prefs_) ||
+      (pref_name && *pref_name == prefs::kTouchpadSensitivity)) {
     const int sensitivity = touchpad_sensitivity_.GetValue();
     system::touchpad_settings::SetSensitivity(sensitivity);
     if (pref_name) {
@@ -565,7 +484,8 @@ void Preferences::NotifyPrefChanged(const std::string* pref_name) {
                                 system::kMaxPointerSensitivity + 1);
     }
   }
-  if (!pref_name || *pref_name == prefs::kPrimaryMouseButtonRight) {
+  if ((!pref_name && is_primary_user_prefs_) ||
+      (pref_name && *pref_name == prefs::kPrimaryMouseButtonRight)) {
     const bool right = primary_mouse_button_right_.GetValue();
     system::mouse_settings::SetPrimaryButtonRight(right);
     if (pref_name)
@@ -581,13 +501,6 @@ void Preferences::NotifyPrefChanged(const std::string* pref_name) {
     }
   }
   if (!pref_name || *pref_name == prefs::kDownloadDefaultDirectory) {
-    const base::FilePath pref_path = download_default_directory_.GetValue();
-    // TODO(haruki): Remove this when migration completes. crbug.com/229304.
-    if (drive::util::NeedsNamespaceMigration(pref_path)) {
-      prefs_->SetFilePath(prefs::kDownloadDefaultDirectory,
-                          drive::util::ConvertToMyDriveNamespace(pref_path));
-    }
-
     const bool default_download_to_drive = drive::util::IsUnderDriveMountPoint(
         download_default_directory_.GetValue());
     if (pref_name)
@@ -599,27 +512,8 @@ void Preferences::NotifyPrefChanged(const std::string* pref_name) {
           "FileBrowser.DownloadDestination.IsGoogleDrive.Started",
           default_download_to_drive);
   }
-  if (!pref_name || *pref_name == prefs::kSelectFileLastDirectory) {
-    const base::FilePath pref_path = select_file_last_directory_.GetValue();
-    // This pref can contain a Drive path, which needs to be updated due to
-    // namespaces introduced by crbug.com/174233.
-    // TODO(haruki): Remove this when migration completes. crbug.com/229304.
-    if (drive::util::NeedsNamespaceMigration(pref_path)) {
-      prefs_->SetFilePath(prefs::kSelectFileLastDirectory,
-                          drive::util::ConvertToMyDriveNamespace(pref_path));
-    }
-  }
-  if (!pref_name || *pref_name == prefs::kSaveFileDefaultDirectory) {
-    const base::FilePath pref_path = save_file_default_directory_.GetValue();
-    // This pref can contain a Drive path, which needs to be updated due to
-    // namespaces introduced by crbug.com/174233.
-    // TODO(haruki): Remove this when migration completes. crbug.com/229304.
-    if (drive::util::NeedsNamespaceMigration(pref_path)) {
-      prefs_->SetFilePath(prefs::kSaveFileDefaultDirectory,
-                          drive::util::ConvertToMyDriveNamespace(pref_path));
-    }
-  }
-  if (!pref_name || *pref_name == prefs::kTouchHudProjectionEnabled) {
+  if ((!pref_name && is_primary_user_prefs_) ||
+      (pref_name && *pref_name == prefs::kTouchHudProjectionEnabled)) {
     const bool enabled = touch_hud_projection_enabled_.GetValue();
     ash::Shell::GetInstance()->SetTouchHudProjectionEnabled(enabled);
   }
@@ -655,125 +549,6 @@ void Preferences::NotifyPrefChanged(const std::string* pref_name) {
 
     input_method_manager_->SetEnabledExtensionImes(&split_values);
   }
-
-  // Do not check |*pref_name| of the prefs for remembering current/previous
-  // input methods here. We're only interested in initial values of the prefs.
-
-  // TODO(nona): remove all IME preference entries. crbug.com/256102
-  for (size_t i = 0; i < language_prefs::kNumChewingBooleanPrefs; ++i) {
-    if (!pref_name ||
-        *pref_name == language_prefs::kChewingBooleanPrefs[i].pref_name) {
-      SetLanguageConfigBoolean(
-          language_prefs::kChewingSectionName,
-          language_prefs::kChewingBooleanPrefs[i].ibus_config_name,
-          chewing_boolean_prefs_[i].GetValue());
-    }
-  }
-  for (size_t i = 0; i < language_prefs::kNumChewingMultipleChoicePrefs; ++i) {
-    if (!pref_name ||
-        *pref_name ==
-        language_prefs::kChewingMultipleChoicePrefs[i].pref_name) {
-      SetLanguageConfigString(
-          language_prefs::kChewingSectionName,
-          language_prefs::kChewingMultipleChoicePrefs[i].ibus_config_name,
-          chewing_multiple_choice_prefs_[i].GetValue());
-    }
-  }
-  if (!pref_name ||
-      *pref_name == language_prefs::kChewingHsuSelKeyType.pref_name) {
-    SetLanguageConfigInteger(
-        language_prefs::kChewingSectionName,
-        language_prefs::kChewingHsuSelKeyType.ibus_config_name,
-        chewing_hsu_sel_key_type_.GetValue());
-  }
-  for (size_t i = 0; i < language_prefs::kNumChewingIntegerPrefs; ++i) {
-    if (!pref_name ||
-        *pref_name == language_prefs::kChewingIntegerPrefs[i].pref_name) {
-      SetLanguageConfigInteger(
-          language_prefs::kChewingSectionName,
-          language_prefs::kChewingIntegerPrefs[i].ibus_config_name,
-          chewing_integer_prefs_[i].GetValue());
-    }
-  }
-  if (!pref_name ||
-      *pref_name == prefs::kLanguageHangulKeyboard) {
-    std::vector<std::string> new_input_method_ids;
-    if (input_method_manager_->MigrateKoreanKeyboard(
-            hangul_keyboard_.GetValue(),
-            &new_input_method_ids)) {
-      preload_engines_.SetValue(JoinString(new_input_method_ids, ','));
-      hangul_keyboard_.SetValue("dummy_value_already_migrated");
-    }
-  }
-  if (!pref_name || *pref_name == prefs::kLanguageHangulHanjaBindingKeys) {
-    SetLanguageConfigString(language_prefs::kHangulSectionName,
-                            language_prefs::kHangulHanjaBindingKeysConfigName,
-                            hangul_hanja_binding_keys_.GetValue());
-  }
-  for (size_t i = 0; i < language_prefs::kNumPinyinBooleanPrefs; ++i) {
-    if (!pref_name ||
-        *pref_name == language_prefs::kPinyinBooleanPrefs[i].pref_name) {
-      SetLanguageConfigBoolean(
-          language_prefs::kPinyinSectionName,
-          language_prefs::kPinyinBooleanPrefs[i].ibus_config_name,
-          pinyin_boolean_prefs_[i].GetValue());
-    }
-  }
-  for (size_t i = 0; i < language_prefs::kNumPinyinIntegerPrefs; ++i) {
-    if (!pref_name ||
-        *pref_name == language_prefs::kPinyinIntegerPrefs[i].pref_name) {
-      SetLanguageConfigInteger(
-          language_prefs::kPinyinSectionName,
-          language_prefs::kPinyinIntegerPrefs[i].ibus_config_name,
-          pinyin_int_prefs_[i].GetValue());
-    }
-  }
-  if (!pref_name ||
-      *pref_name == language_prefs::kPinyinDoublePinyinSchema.pref_name) {
-    SetLanguageConfigInteger(
-        language_prefs::kPinyinSectionName,
-        language_prefs::kPinyinDoublePinyinSchema.ibus_config_name,
-        pinyin_double_pinyin_schema_.GetValue());
-  }
-  for (size_t i = 0; i < language_prefs::kNumMozcBooleanPrefs; ++i) {
-    if (!pref_name ||
-        *pref_name == language_prefs::kMozcBooleanPrefs[i].pref_name) {
-      SetLanguageConfigBoolean(
-          language_prefs::kMozcSectionName,
-          language_prefs::kMozcBooleanPrefs[i].ibus_config_name,
-          mozc_boolean_prefs_[i].GetValue());
-    }
-  }
-  for (size_t i = 0; i < language_prefs::kNumMozcMultipleChoicePrefs; ++i) {
-    if (!pref_name ||
-        *pref_name == language_prefs::kMozcMultipleChoicePrefs[i].pref_name) {
-      SetLanguageConfigString(
-          language_prefs::kMozcSectionName,
-          language_prefs::kMozcMultipleChoicePrefs[i].ibus_config_name,
-          mozc_multiple_choice_prefs_[i].GetValue());
-    }
-  }
-  for (size_t i = 0; i < language_prefs::kNumMozcIntegerPrefs; ++i) {
-    if (!pref_name ||
-        *pref_name == language_prefs::kMozcIntegerPrefs[i].pref_name) {
-      SetLanguageConfigInteger(
-          language_prefs::kMozcSectionName,
-          language_prefs::kMozcIntegerPrefs[i].ibus_config_name,
-          mozc_integer_prefs_[i].GetValue());
-    }
-  }
-
-  // Change the download directory to the default value if a Drive directory is
-  // selected and Drive is disabled.
-  if (!pref_name || *pref_name == prefs::kDisableDrive) {
-    if (disable_drive_.GetValue()) {
-      if (drive::util::IsUnderDriveMountPoint(
-          download_default_directory_.GetValue())) {
-        prefs_->SetFilePath(prefs::kDownloadDefaultDirectory,
-                            download_util::GetDefaultDownloadDirectory());
-      }
-    }
-  }
 }
 
 void Preferences::OnIsSyncingChanged() {
@@ -793,45 +568,6 @@ void Preferences::ForceNaturalScrollDefault() {
   }
 }
 
-void Preferences::SetLanguageConfigBoolean(const char* section,
-                                           const char* name,
-                                           bool value) {
-  input_method::InputMethodConfigValue config;
-  config.type = input_method::InputMethodConfigValue::kValueTypeBool;
-  config.bool_value = value;
-  input_method_manager_->SetInputMethodConfig(section, name, config);
-}
-
-void Preferences::SetLanguageConfigInteger(const char* section,
-                                           const char* name,
-                                           int value) {
-  input_method::InputMethodConfigValue config;
-  config.type = input_method::InputMethodConfigValue::kValueTypeInt;
-  config.int_value = value;
-  input_method_manager_->SetInputMethodConfig(section, name, config);
-}
-
-void Preferences::SetLanguageConfigString(const char* section,
-                                          const char* name,
-                                          const std::string& value) {
-  input_method::InputMethodConfigValue config;
-  config.type = input_method::InputMethodConfigValue::kValueTypeString;
-  config.string_value = value;
-  input_method_manager_->SetInputMethodConfig(section, name, config);
-}
-
-void Preferences::SetLanguageConfigStringList(
-    const char* section,
-    const char* name,
-    const std::vector<std::string>& values) {
-  input_method::InputMethodConfigValue config;
-  config.type = input_method::InputMethodConfigValue::kValueTypeStringList;
-  for (size_t i = 0; i < values.size(); ++i)
-    config.string_list_value.push_back(values[i]);
-
-  input_method_manager_->SetInputMethodConfig(section, name, config);
-}
-
 void Preferences::SetLanguageConfigStringListAsCSV(const char* section,
                                                    const char* name,
                                                    const std::string& value) {
@@ -843,17 +579,9 @@ void Preferences::SetLanguageConfigStringListAsCSV(const char* section,
 
   if (section == std::string(language_prefs::kGeneralSectionName) &&
       name == std::string(language_prefs::kPreloadEnginesConfigName)) {
-    // TODO(nona): Remove this function after few milestones are passed.
-    //             (http://crbug.com/236747)
-    if (input_method_manager_->MigrateOldInputMethods(&split_values))
-      preload_engines_.SetValue(JoinString(split_values, ','));
     input_method_manager_->EnableInputMethods(split_values);
     return;
   }
-
-  // We should call the cros API even when |value| is empty, to disable default
-  // config.
-  SetLanguageConfigStringList(section, name, split_values);
 }
 
 void Preferences::SetInputMethodList() {
@@ -883,7 +611,7 @@ void Preferences::SetInputMethodList() {
 
 void Preferences::UpdateAutoRepeatRate() {
   // Avoid setting repeat rate on desktop dev environment.
-  if (!base::chromeos::IsRunningOnChromeOS())
+  if (!base::SysInfo::IsRunningOnChromeOS())
     return;
 
   input_method::AutoRepeatRate rate;

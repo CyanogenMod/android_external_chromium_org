@@ -42,6 +42,7 @@
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/infobars/confirm_infobar_delegate.h"
+#include "chrome/browser/infobars/infobar.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/net/url_request_mock_util.h"
 #include "chrome/browser/profiles/profile.h"
@@ -56,7 +57,6 @@
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_paths.h"
-#include "chrome/common/extensions/feature_switch.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/in_process_browser_test.h"
@@ -79,6 +79,7 @@
 #include "content/public/test/test_navigation_observer.h"
 #include "content/test/net/url_request_mock_http_job.h"
 #include "content/test/net/url_request_slow_download_job.h"
+#include "extensions/common/feature_switch.h"
 #include "grit/generated_resources.h"
 #include "net/base/net_util.h"
 #include "net/test/spawned_test_server/spawned_test_server.h"
@@ -677,10 +678,9 @@ class DownloadTest : public InProcessBrowserTest {
       return false;
 
     int64 origin_file_size = 0;
-    EXPECT_TRUE(file_util::GetFileSize(origin_file, &origin_file_size));
+    EXPECT_TRUE(base::GetFileSize(origin_file, &origin_file_size));
     std::string original_file_contents;
-    EXPECT_TRUE(
-        file_util::ReadFileToString(origin_file, &original_file_contents));
+    EXPECT_TRUE(base::ReadFileToString(origin_file, &original_file_contents));
     EXPECT_TRUE(
         VerifyFile(downloaded_file, original_file_contents, origin_file_size));
 
@@ -704,6 +704,7 @@ class DownloadTest : public InProcessBrowserTest {
     GURL slow_download_url(URLRequestSlowDownloadJob::kUnknownSizeUrl);
     DownloadManager* manager = DownloadManagerForBrowser(browser());
 
+    EXPECT_EQ(0, manager->NonMaliciousInProgressCount());
     EXPECT_EQ(0, manager->InProgressCount());
     if (manager->InProgressCount() != 0)
       return NULL;
@@ -745,9 +746,9 @@ class DownloadTest : public InProcessBrowserTest {
     // |expected_title_finished| need to be checked.
     base::FilePath filename;
     net::FileURLToFilePath(url, &filename);
-    string16 expected_title_in_progress(
+    base::string16 expected_title_in_progress(
         ASCIIToUTF16(partial_indication) + filename.LossyDisplayName());
-    string16 expected_title_finished(
+    base::string16 expected_title_finished(
         ASCIIToUTF16(total_indication) + filename.LossyDisplayName());
 
     // Download a partial web page in a background tab and wait.
@@ -831,7 +832,7 @@ class DownloadTest : public InProcessBrowserTest {
                   const int64 file_size) {
     std::string file_contents;
 
-    bool read = file_util::ReadFileToString(path, &file_contents);
+    bool read = base::ReadFileToString(path, &file_contents);
     EXPECT_TRUE(read) << "Failed reading file: " << path.value() << std::endl;
     if (!read)
       return false;  // Couldn't read the file.
@@ -1294,10 +1295,7 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, DownloadResourceThrottleCancels) {
       "window.domAutomationController.send(startDownload());",
       &download_assempted));
   ASSERT_TRUE(download_assempted);
-  observer.WaitForObservation(
-      base::Bind(&content::RunMessageLoop),
-      base::Bind(&base::MessageLoop::Quit,
-                 base::Unretained(base::MessageLoopForUI::current())));
+  observer.Wait();
 
   // Check that we did not download the file.
   base::FilePath file(FILE_PATH_LITERAL("download-test1.lib"));
@@ -1473,9 +1471,9 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, DownloadTest_IncognitoRegular) {
       "downloads/a_zip_file.zip"))));
   ASSERT_TRUE(base::PathExists(origin));
   int64 origin_file_size = 0;
-  EXPECT_TRUE(file_util::GetFileSize(origin, &origin_file_size));
+  EXPECT_TRUE(base::GetFileSize(origin, &origin_file_size));
   std::string original_contents;
-  EXPECT_TRUE(file_util::ReadFileToString(origin, &original_contents));
+  EXPECT_TRUE(base::ReadFileToString(origin, &original_contents));
 
   std::vector<DownloadItem*> download_items;
   GetDownloads(browser(), &download_items);
@@ -2334,7 +2332,7 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, SavePageNonHTMLViaGet) {
           DownloadManagerForBrowser(browser()), 1,
           content::DownloadTestObserver::ON_DANGEROUS_DOWNLOAD_FAIL));
   content::ContextMenuParams context_menu_params;
-  context_menu_params.media_type = WebKit::WebContextMenuData::MediaTypeImage;
+  context_menu_params.media_type = blink::WebContextMenuData::MediaTypeImage;
   context_menu_params.src_url = url;
   context_menu_params.page_url = url;
   TestRenderViewContextMenu menu(
@@ -2385,7 +2383,7 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, SavePageNonHTMLViaPost) {
   content::RenderViewHost* render_view_host = web_contents->GetRenderViewHost();
   ASSERT_TRUE(render_view_host != NULL);
   render_view_host->ExecuteJavascriptInWebFrame(
-        string16(), ASCIIToUTF16("SubmitForm()"));
+        base::string16(), ASCIIToUTF16("SubmitForm()"));
   observer.Wait();
   EXPECT_EQ(jpeg_url, web_contents->GetURL());
 
@@ -2415,7 +2413,7 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, SavePageNonHTMLViaPost) {
           DownloadManagerForBrowser(browser()), 1,
           content::DownloadTestObserver::ON_DANGEROUS_DOWNLOAD_FAIL));
   content::ContextMenuParams context_menu_params;
-  context_menu_params.media_type = WebKit::WebContextMenuData::MediaTypeImage;
+  context_menu_params.media_type = blink::WebContextMenuData::MediaTypeImage;
   context_menu_params.src_url = jpeg_url;
   context_menu_params.page_url = jpeg_url;
   TestRenderViewContextMenu menu(web_contents, context_menu_params);
@@ -2738,15 +2736,15 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, LoadURLExternallyReferrerPolicy) {
   // Click on the link with the alt key pressed. This will download the link
   // target.
   WebContents* tab = browser()->tab_strip_model()->GetActiveWebContents();
-  WebKit::WebMouseEvent mouse_event;
-  mouse_event.type = WebKit::WebInputEvent::MouseDown;
-  mouse_event.button = WebKit::WebMouseEvent::ButtonLeft;
+  blink::WebMouseEvent mouse_event;
+  mouse_event.type = blink::WebInputEvent::MouseDown;
+  mouse_event.button = blink::WebMouseEvent::ButtonLeft;
   mouse_event.x = 15;
   mouse_event.y = 15;
   mouse_event.clickCount = 1;
-  mouse_event.modifiers = WebKit::WebInputEvent::AltKey;
+  mouse_event.modifiers = blink::WebInputEvent::AltKey;
   tab->GetRenderViewHost()->ForwardMouseEvent(mouse_event);
-  mouse_event.type = WebKit::WebInputEvent::MouseUp;
+  mouse_event.type = blink::WebInputEvent::MouseUp;
   tab->GetRenderViewHost()->ForwardMouseEvent(mouse_event);
 
   waiter->WaitForFinished();
@@ -2818,8 +2816,9 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, TestMultipleDownloadsInfobar) {
   ASSERT_EQ(1u, infobar_service->infobar_count());
 
   // Get the infobar at index 0.
-  InfoBarDelegate* infobar = infobar_service->infobar_at(0);
-  ConfirmInfoBarDelegate* confirm_infobar = infobar->AsConfirmInfoBarDelegate();
+  InfoBar* infobar = infobar_service->infobar_at(0);
+  ConfirmInfoBarDelegate* confirm_infobar =
+      infobar->delegate()->AsConfirmInfoBarDelegate();
   ASSERT_TRUE(confirm_infobar != NULL);
 
   // Verify multi download warning infobar message.
@@ -2846,7 +2845,7 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, DownloadTest_Renaming) {
       "downloads/a_zip_file.zip"))));
   ASSERT_TRUE(base::PathExists(origin_file));
   std::string origin_contents;
-  ASSERT_TRUE(file_util::ReadFileToString(origin_file, &origin_contents));
+  ASSERT_TRUE(base::ReadFileToString(origin_file, &origin_contents));
 
   // Download the same url several times and expect that all downloaded files
   // after the zero-th contain a deduplication counter.
@@ -2897,10 +2896,10 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, DownloadTest_CrazyFilenames) {
   static const int kFlags = (base::PLATFORM_FILE_CREATE |
                base::PLATFORM_FILE_WRITE);
   base::FilePath origin(FILE_PATH_LITERAL("origin"));
-  ASSERT_TRUE(file_util::CreateDirectory(DestinationFile(browser(), origin)));
+  ASSERT_TRUE(base::CreateDirectory(DestinationFile(browser(), origin)));
 
   for (size_t index = 0; index < arraysize(kCrazyFilenames); ++index) {
-    string16 crazy16;
+    base::string16 crazy16;
     std::string crazy8;
     const wchar_t* crazy_w = kCrazyFilenames[index];
     ASSERT_TRUE(WideToUTF8(crazy_w, wcslen(crazy_w), &crazy8));
@@ -3016,7 +3015,7 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, MAYBE_DownloadTest_PercentComplete) {
   fd = base::kInvalidPlatformFileValue;
 #if defined(OS_POSIX)
   // Make it readable by chronos on chromeos
-  file_util::SetPosixFilePermissions(file_path, 0755);
+  base::SetPosixFilePermissions(file_path, 0755);
 #endif
 
   // Ensure that we have enough disk space.
@@ -3049,7 +3048,7 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, MAYBE_DownloadTest_PercentComplete) {
   // Check that the file downloaded correctly.
   ASSERT_TRUE(base::PathExists(download_items[0]->GetTargetFilePath()));
   int64 downloaded_size = 0;
-  ASSERT_TRUE(file_util::GetFileSize(
+  ASSERT_TRUE(base::GetFileSize(
       download_items[0]->GetTargetFilePath(), &downloaded_size));
 #if defined(OS_WIN)
   ASSERT_EQ(1, downloaded_size);

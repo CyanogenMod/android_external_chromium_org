@@ -53,12 +53,6 @@ const char kHTMLType[] = "text/html";
 // Mime type for as you type suggestions.
 const char kSuggestionType[] = "application/x-suggestions+json";
 
-// Namespace identifier.
-const char kOSDNS[] = "xmlns";
-
-// The namespace for documents we understand.
-const char kNameSpace[] = "http://a9.com/-/spec/opensearch/1.1/";
-
 std::string XMLCharToString(const xmlChar* value) {
   return std::string(reinterpret_cast<const char*>(value));
 }
@@ -100,8 +94,8 @@ bool IsHTTPRef(const std::string& url) {
   if (url.empty())
     return true;
   GURL gurl(url);
-  return gurl.is_valid() && (gurl.SchemeIs(chrome::kHttpScheme) ||
-                             gurl.SchemeIs(chrome::kHttpsScheme));
+  return gurl.is_valid() && (gurl.SchemeIs(content::kHttpScheme) ||
+                             gurl.SchemeIs(content::kHttpsScheme));
 }
 
 }  // namespace
@@ -172,7 +166,7 @@ class TemplateURLParsingContext {
   bool image_is_valid_for_favicon_;
 
   // Character content for the current element.
-  string16 string_;
+  base::string16 string_;
 
   TemplateURLParser::ParameterFilter* parameter_filter_;
 
@@ -258,8 +252,8 @@ void TemplateURLParsingContext::EndElementImpl(void* ctx, const xmlChar* name) {
         // favicon from the URL.
         context->derive_image_from_url_ = true;
       } else if (context->image_is_valid_for_favicon_ && image_url.is_valid() &&
-                 (image_url.SchemeIs(chrome::kHttpScheme) ||
-                  image_url.SchemeIs(chrome::kHttpsScheme))) {
+                 (image_url.SchemeIs(content::kHttpScheme) ||
+                  image_url.SchemeIs(content::kHttpsScheme))) {
         context->data_.favicon_url = image_url;
       }
       context->image_is_valid_for_favicon_ = false;

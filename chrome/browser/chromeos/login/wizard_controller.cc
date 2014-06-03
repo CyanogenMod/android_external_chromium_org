@@ -19,9 +19,8 @@
 #include "base/prefs/pref_service.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/values.h"
-#include "chrome/app/breakpad_linux.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/chromeos/app_mode/kiosk_app_launcher.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/app_mode/kiosk_app_manager.h"
 #include "chrome/browser/chromeos/customization_document.h"
 #include "chrome/browser/chromeos/login/enrollment/enrollment_screen.h"
@@ -47,64 +46,30 @@
 #include "chrome/browser/chromeos/net/network_portal_detector.h"
 #include "chrome/browser/chromeos/policy/device_cloud_policy_manager_chromeos.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
-#include "chrome/browser/chromeos/settings/cros_settings_names.h"
 #include "chrome/browser/policy/browser_policy_connector.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/options/options_util.h"
+#include "chrome/browser/ui/webui/chromeos/login/signin_screen_handler.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/pref_names.h"
 #include "chromeos/chromeos_constants.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/session_manager_client.h"
 #include "chromeos/network/network_state_handler.h"
+#include "chromeos/settings/cros_settings_names.h"
+#include "components/breakpad/app/breakpad_linux.h"
 #include "content/public/browser/browser_thread.h"
 #include "ui/base/accelerators/accelerator.h"
 #include "ui/base/l10n/l10n_util.h"
 
 using content::BrowserThread;
 
-namespace {
-
-// A string pref with initial locale set in VPD or manifest.
-const char kInitialLocale[] = "intl.initial_locale";
-
-// A boolean pref of the OOBE complete flag (first OOBE part before login).
-const char kOobeComplete[] = "OobeComplete";
-
-// A boolean pref of the device registered flag (second part after first login).
-const char kDeviceRegistered[] = "DeviceRegistered";
-
-// Time in seconds that we wait for the device to reboot.
 // If reboot didn't happen, ask user to reboot device manually.
 const int kWaitForRebootTimeSec = 3;
 
 // Interval in ms which is used for smooth screen showing.
 static int kShowDelayMs = 400;
-
-// Saves boolean "Local State" preference and forces its persistence to disk.
-void SaveBoolPreferenceForced(const char* pref_name, bool value) {
-  PrefService* prefs = g_browser_process->local_state();
-  prefs->SetBoolean(pref_name, value);
-  prefs->CommitPendingWrite();
-}
-
-// Saves integer "Local State" preference and forces its persistence to disk.
-void SaveIntegerPreferenceForced(const char* pref_name, int value) {
-  PrefService* prefs = g_browser_process->local_state();
-  prefs->SetInteger(pref_name, value);
-  prefs->CommitPendingWrite();
-}
-
-// Saves string "Local State" preference and forces its persistence to disk.
-void SaveStringPreferenceForced(const char* pref_name,
-                                const std::string& value) {
-  PrefService* prefs = g_browser_process->local_state();
-  prefs->SetString(pref_name, value);
-  prefs->CommitPendingWrite();
-}
-
-}  // namespace
 
 namespace chromeos {
 
@@ -122,6 +87,8 @@ const char WizardController::kTermsOfServiceScreenName[] = "tos";
 const char WizardController::kWrongHWIDScreenName[] = "wrong-hwid";
 const char WizardController::kLocallyManagedUserCreationScreenName[] =
   "locally-managed-user-creation-flow";
+const char WizardController::kAppLaunchSplashScreenName[] =
+  "app-launch-splash";
 
 // Passing this parameter as a "first screen" initiates full OOBE flow.
 const char WizardController::kOutOfBoxScreenName[] = "oobe";
@@ -142,6 +109,8 @@ bool WizardController::zero_delay_enabled_ = false;
 ///////////////////////////////////////////////////////////////////////////////
 // WizardController, public:
 
+PrefService* WizardController::local_state_for_testing_ = NULL;
+
 WizardController::WizardController(chromeos::LoginDisplayHost* host,
                                    chromeos::OobeDisplay* oobe_display)
     : current_screen_(NULL),
@@ -157,7 +126,8 @@ WizardController::WizardController(chromeos::LoginDisplayHost* host,
       usage_statistics_reporting_(true),
       skip_update_enroll_after_eula_(false),
       login_screen_started_(false),
-      user_image_screen_return_to_previous_hack_(false) {
+      user_image_screen_return_to_previous_hack_(false),
+      weak_factory_(this) {
   DCHECK(default_controller_ == NULL);
   default_controller_ = this;
 }
@@ -180,6 +150,30 @@ void WizardController::Init(
   bool oobe_complete = StartupUtils::IsOobeCompleted();
   if (!oobe_complete || first_screen_name == kOutOfBoxScreenName)
     is_out_of_box_ = true;
+
+  // This is a hacky way to check for local state corruption, because
+  // it depends on the fact that the local state is loaded
+  // synchroniously and at the first demand. IsEnterpriseManaged()
+  // check is required because currently powerwash is disabled for
+  // enterprise-entrolled devices.
+  //
+  // TODO (ygorshenin@): implement handling of the local state
+  // corruption in the case of asynchronious loading.
+  //
+  // TODO (ygorshenin@): remove IsEnterpriseManaged() check once
+  // crbug.com/241313 will be fixed.
+  if (!g_browser_process->browser_policy_connector()->IsEnterpriseManaged()) {
+    const PrefService::PrefInitializationStatus status =
+        GetLocalState()->GetInitializationStatus();
+    if (status == PrefService::INITIALIZATION_STATUS_ERROR) {
+      OnLocalStateInitialized(false);
+      return;
+    } else if (status == PrefService::INITIALIZATION_STATUS_WAITING) {
+      GetLocalState()->AddPrefInitObserver(
+          base::Bind(&WizardController::OnLocalStateInitialized,
+                     weak_factory_.GetWeakPtr()));
+    }
+  }
 
   AdvanceToScreen(first_screen_name);
   if (!IsMachineHWIDCorrect() && !StartupUtils::IsDeviceRegistered() &&
@@ -289,14 +283,14 @@ void WizardController::ShowNetworkScreen() {
   SetCurrentScreen(GetNetworkScreen());
 }
 
-void WizardController::ShowLoginScreen() {
+void WizardController::ShowLoginScreen(const LoginScreenContext& context) {
   if (!time_eula_accepted_.is_null()) {
     base::TimeDelta delta = base::Time::Now() - time_eula_accepted_;
     UMA_HISTOGRAM_MEDIUM_TIMES("OOBE.EULAToSignInTime", delta);
   }
   VLOG(1) << "Showing login screen.";
   SetStatusAreaVisible(true);
-  host_->StartSignInScreen();
+  host_->StartSignInScreen(context);
   smooth_show_timer_.Stop();
   oobe_display_ = NULL;
   login_screen_started_ = true;
@@ -345,7 +339,6 @@ void WizardController::ShowUserImageScreen() {
   screen->SetProfilePictureEnabled(profile_picture_enabled);
 
   SetCurrentScreen(screen);
-  host_->SetShutdownButtonEnabled(false);
 }
 
 void WizardController::ShowEulaScreen() {
@@ -419,15 +412,12 @@ void WizardController::ShowLocallyManagedUserCreationScreen() {
   SetCurrentScreen(screen);
 }
 
-void WizardController::SkipToLoginForTesting() {
+void WizardController::SkipToLoginForTesting(
+    const LoginScreenContext& context) {
   StartupUtils::MarkEulaAccepted();
   PerformPostEulaActions();
   PerformPostUpdateActions();
-  ShowLoginScreen();
-}
-
-void WizardController::SkipPostLoginScreensForTesting() {
-  skip_post_login_screens_ = true;
+  ShowLoginScreen(context);
 }
 
 void WizardController::AddObserver(Observer* observer) {
@@ -467,12 +457,12 @@ void WizardController::OnNetworkConnected() {
 void WizardController::OnNetworkOffline() {
   // TODO(dpolukhin): if(is_out_of_box_) we cannot work offline and
   // should report some error message here and stay on the same screen.
-  ShowLoginScreen();
+  ShowLoginScreen(LoginScreenContext());
 }
 
 void WizardController::OnConnectionFailed() {
   // TODO(dpolukhin): show error message after login screen is displayed.
-  ShowLoginScreen();
+  ShowLoginScreen(LoginScreenContext());
 }
 
 void WizardController::OnUpdateCompleted() {
@@ -490,7 +480,7 @@ void WizardController::OnEulaAccepted() {
 #if defined(GOOGLE_CHROME_BUILD)
     // The crash reporter initialization needs IO to complete.
     base::ThreadRestrictions::ScopedAllowIO allow_io;
-    InitCrashReporter();
+    breakpad::InitCrashReporter(std::string());
 #endif
   }
 
@@ -560,18 +550,18 @@ void WizardController::OnEnrollmentDone() {
   if (KioskAppManager::Get()->IsAutoLaunchEnabled())
     AutoLaunchKioskApp();
   else
-    ShowLoginScreen();
+    ShowLoginScreen(LoginScreenContext());
 }
 
 void WizardController::OnResetCanceled() {
   if (previous_screen_)
     SetCurrentScreen(previous_screen_);
   else
-    ShowLoginScreen();
+    ShowLoginScreen(LoginScreenContext());
 }
 
 void WizardController::OnKioskAutolaunchCanceled() {
-  ShowLoginScreen();
+  ShowLoginScreen(LoginScreenContext());
 }
 
 void WizardController::OnKioskAutolaunchConfirmed() {
@@ -580,14 +570,14 @@ void WizardController::OnKioskAutolaunchConfirmed() {
 }
 
 void WizardController::OnKioskEnableCompleted() {
-  ShowLoginScreen();
+  ShowLoginScreen(LoginScreenContext());
 }
 
 void WizardController::OnWrongHWIDWarningSkipped() {
   if (previous_screen_)
     SetCurrentScreen(previous_screen_);
   else
-    ShowLoginScreen();
+    ShowLoginScreen(LoginScreenContext());
 }
 
 void WizardController::OnAutoEnrollmentDone() {
@@ -600,7 +590,7 @@ void WizardController::OnOOBECompleted() {
     ShowEnrollmentScreen();
   } else {
     PerformPostUpdateActions();
-    ShowLoginScreen();
+    ShowLoginScreen(LoginScreenContext());
   }
 }
 
@@ -628,9 +618,7 @@ void WizardController::PerformPostEulaActions() {
       NetworkStateHandler::kDefaultCheckPortalList);
   host_->CheckForAutoEnrollment();
   host_->PrewarmAuthentication();
-  NetworkPortalDetector* detector = NetworkPortalDetector::GetInstance();
-  if (NetworkPortalDetector::IsEnabledInCommandLine() && detector)
-    detector->Enable(true);
+  NetworkPortalDetector::Get()->Enable(true);
 }
 
 void WizardController::PerformPostUpdateActions() {
@@ -696,7 +684,7 @@ void WizardController::AdvanceToScreen(const std::string& screen_name) {
   if (screen_name == kNetworkScreenName) {
     ShowNetworkScreen();
   } else if (screen_name == kLoginScreenName) {
-    ShowLoginScreen();
+    ShowLoginScreen(LoginScreenContext());
   } else if (screen_name == kUpdateScreenName) {
     InitiateOOBEUpdate();
   } else if (screen_name == kUserImageScreenName) {
@@ -717,11 +705,13 @@ void WizardController::AdvanceToScreen(const std::string& screen_name) {
     ShowWrongHWIDScreen();
   } else if (screen_name == kLocallyManagedUserCreationScreenName) {
     ShowLocallyManagedUserCreationScreen();
+  } else if (screen_name == kAppLaunchSplashScreenName) {
+    AutoLaunchKioskApp();
   } else if (screen_name != kTestNoScreenName) {
     if (is_out_of_box_) {
       ShowNetworkScreen();
     } else {
-      ShowLoginScreen();
+      ShowLoginScreen(LoginScreenContext());
     }
   }
 }
@@ -729,7 +719,7 @@ void WizardController::AdvanceToScreen(const std::string& screen_name) {
 ///////////////////////////////////////////////////////////////////////////////
 // WizardController, chromeos::ScreenObserver overrides:
 void WizardController::OnExit(ExitCodes exit_code) {
-  LOG(INFO) << "Wizard screen exit code: " << exit_code;
+  VLOG(1) << "Wizard screen exit code: " << exit_code;
   switch (exit_code) {
     case NETWORK_CONNECTED:
       OnNetworkConnected();
@@ -758,6 +748,9 @@ void WizardController::OnExit(ExitCodes exit_code) {
       break;
     case ENTERPRISE_ENROLLMENT_COMPLETED:
       OnEnrollmentDone();
+      break;
+    case ENTERPRISE_ENROLLMENT_BACK:
+      ShowNetworkScreen();
       break;
     case RESET_CANCELED:
       OnResetCanceled();
@@ -825,16 +818,8 @@ void WizardController::AutoLaunchKioskApp() {
   KioskAppManager::App app_data;
   std::string app_id = KioskAppManager::Get()->GetAutoLaunchApp();
   CHECK(KioskAppManager::Get()->GetApp(app_id, &app_data));
-  if (ExistingUserController::current_controller())
-    ExistingUserController::current_controller()->PrepareKioskAppLaunch();
 
-  // KioskAppLauncher deletes itself when done.
-  (new KioskAppLauncher(KioskAppManager::Get(), app_id))->Start();
-}
-
-// static
-bool WizardController::IsZeroDelayEnabled() {
-  return zero_delay_enabled_;
+  host_->StartAppLaunch(app_id);
 }
 
 // static
@@ -843,7 +828,18 @@ void WizardController::SetZeroDelays() {
   zero_delay_enabled_ = true;
 }
 
-bool WizardController::ShouldAutoStartEnrollment() const {
+// static
+bool WizardController::IsZeroDelayEnabled() {
+  return zero_delay_enabled_;
+}
+
+// static
+void WizardController::SkipPostLoginScreensForTesting() {
+  skip_post_login_screens_ = true;
+}
+
+// static
+bool WizardController::ShouldAutoStartEnrollment() {
   return g_browser_process->browser_policy_connector()->
       GetDeviceCloudPolicyManager()->ShouldAutoStartEnrollment();
 }
@@ -851,6 +847,22 @@ bool WizardController::ShouldAutoStartEnrollment() const {
 bool WizardController::CanExitEnrollment() const {
   return g_browser_process->browser_policy_connector()->
       GetDeviceCloudPolicyManager()->CanExitEnrollment();
+}
+
+void WizardController::OnLocalStateInitialized(bool /* succeeded */) {
+  if (GetLocalState()->GetInitializationStatus() !=
+      PrefService::INITIALIZATION_STATUS_ERROR) {
+    return;
+  }
+  GetErrorScreen()->SetUIState(ErrorScreen::UI_STATE_LOCAL_STATE_ERROR);
+  SetStatusAreaVisible(false);
+  ShowErrorScreen();
+}
+
+PrefService* WizardController::GetLocalState() {
+  if (local_state_for_testing_)
+    return local_state_for_testing_;
+  return g_browser_process->local_state();
 }
 
 }  // namespace chromeos

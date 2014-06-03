@@ -12,12 +12,13 @@
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string16.h"
+#include "chrome/browser/ui/tabs/tab_utils.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "third_party/skia/include/core/SkBitmap.h"
-#include "ui/base/animation/animation_delegate.h"
 #include "ui/base/gtk/gtk_signal.h"
 #include "ui/base/gtk/owned_widget_gtk.h"
+#include "ui/gfx/animation/animation_delegate.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/font.h"
 #include "ui/gfx/image/cairo_cached_surface.h"
@@ -27,6 +28,8 @@ namespace gfx {
 class CairoCachedSurface;
 class Image;
 class Size;
+class SlideAnimation;
+class ThrobAnimation;
 }  // namespace gfx
 
 class CustomDrawButton;
@@ -36,12 +39,7 @@ namespace content {
 class WebContents;
 }
 
-namespace ui {
-class SlideAnimation;
-class ThrobAnimation;
-}
-
-class TabRendererGtk : public ui::AnimationDelegate,
+class TabRendererGtk : public gfx::AnimationDelegate,
                        public content::NotificationObserver {
  public:
   // Possible animation states.
@@ -179,6 +177,10 @@ class TabRendererGtk : public ui::AnimationDelegate,
   // Returns whether the Tab should display a favicon.
   bool ShouldShowIcon() const;
 
+  // Invoked from Layout() to adjust the position of the favicon or media
+  // indicator for mini tabs.
+  void MaybeAdjustLeftForMiniTab(gfx::Rect* bounds) const;
+
   // Returns the minimum possible size of a single unselected Tab.
   static gfx::Size GetMinimumUnselectedSize();
   // Returns the minimum possible size of a selected Tab. Selected tabs must
@@ -226,7 +228,7 @@ class TabRendererGtk : public ui::AnimationDelegate,
   void Raise() const;
 
   // Returns the title of the Tab.
-  string16 GetTitle() const;
+  base::string16 GetTitle() const;
 
   // enter-notify-event handler that signals when the mouse enters the tab.
   CHROMEGTK_CALLBACK_1(TabRendererGtk, gboolean, OnEnterNotifyEvent,
@@ -239,12 +241,6 @@ class TabRendererGtk : public ui::AnimationDelegate,
  private:
   class FaviconCrashAnimation;
 
-  enum CaptureState {
-    NONE,
-    RECORDING,
-    PROJECTING
-  };
-
   // Model data. We store this here so that we don't need to ask the underlying
   // model, which is tricky since instances of this object can outlive the
   // corresponding objects in the underlying model.
@@ -254,9 +250,8 @@ class TabRendererGtk : public ui::AnimationDelegate,
 
     SkBitmap favicon;
     gfx::CairoCachedSurface cairo_favicon;
-    gfx::CairoCachedSurface cairo_overlay;
     bool is_default_favicon;
-    string16 title;
+    base::string16 title;
     bool loading;
     bool crashed;
     bool incognito;
@@ -265,13 +260,14 @@ class TabRendererGtk : public ui::AnimationDelegate,
     bool blocked;
     bool animating_mini_change;
     bool app;
-    CaptureState capture_state;
+    TabMediaState media_state;
+    TabMediaState previous_media_state;
   };
 
-  // Overridden from ui::AnimationDelegate:
-  virtual void AnimationProgressed(const ui::Animation* animation) OVERRIDE;
-  virtual void AnimationCanceled(const ui::Animation* animation) OVERRIDE;
-  virtual void AnimationEnded(const ui::Animation* animation) OVERRIDE;
+  // Overridden from gfx::AnimationDelegate:
+  virtual void AnimationProgressed(const gfx::Animation* animation) OVERRIDE;
+  virtual void AnimationCanceled(const gfx::Animation* animation) OVERRIDE;
+  virtual void AnimationEnded(const gfx::Animation* animation) OVERRIDE;
 
   // Starts/Stops the crash animation.
   void StartCrashAnimation();
@@ -280,15 +276,15 @@ class TabRendererGtk : public ui::AnimationDelegate,
   // Return true if the crash animation is currently running.
   bool IsPerformingCrashAnimation() const;
 
+  // Starts the media indicator fade-in/out animation. There's no stop method
+  // because this is not a continuous animation.
+  void StartMediaIndicatorAnimation();
+
   // Set the temporary offset for the favicon. This is used during animation.
   void SetFaviconHidingOffset(int offset);
 
   void DisplayCrashedFavicon();
   void ResetCrashedFavicon();
-
-  // Sets up an overlay for the favicon and starts a throbbing animation
-  // if this tab is currently capturing media.
-  void UpdateFaviconOverlay(content::WebContents* contents);
 
   // Generates the bounds for the interior items of the tab.
   void Layout();
@@ -308,6 +304,7 @@ class TabRendererGtk : public ui::AnimationDelegate,
   // Paint various portions of the Tab
   void PaintTitle(GtkWidget* widget, cairo_t* cr);
   void PaintIcon(GtkWidget* widget, cairo_t* cr);
+  void PaintMediaIndicator(GtkWidget* widget, cairo_t* cr);
   void PaintTabBackground(GtkWidget* widget, cairo_t* cr);
   void PaintInactiveTabBackground(GtkWidget* widget, cairo_t* cr);
   void PaintActiveTabBackground(GtkWidget* widget, cairo_t* cr);
@@ -331,6 +328,9 @@ class TabRendererGtk : public ui::AnimationDelegate,
   // Returns the number of favicon-size elements that can fit in the tab's
   // current size.
   int IconCapacity() const;
+
+  // Returns whether the Tab should display the media indicator.
+  bool ShouldShowMediaIndicator() const;
 
   // Returns whether the Tab should display a close button.
   bool ShouldShowCloseBox() const;
@@ -363,6 +363,7 @@ class TabRendererGtk : public ui::AnimationDelegate,
   // The bounds of various sections of the display.
   gfx::Rect favicon_bounds_;
   gfx::Rect title_bounds_;
+  gfx::Rect media_indicator_bounds_;
   gfx::Rect close_button_bounds_;
 
   TabData data_;
@@ -387,6 +388,10 @@ class TabRendererGtk : public ui::AnimationDelegate,
   // changes and layout appropriately.
   bool showing_icon_;
 
+  // Whether we're showing the media indicator. It is cached so that we can
+  // detect when it changes and layout appropriately.
+  bool showing_media_indicator_;
+
   // Whether we are showing the close button. It is cached so that we can
   // detect when it changes and layout appropriately.
   bool showing_close_button_;
@@ -408,13 +413,15 @@ class TabRendererGtk : public ui::AnimationDelegate,
   gfx::Rect requisition_;
 
   // Hover animation.
-  scoped_ptr<ui::SlideAnimation> hover_animation_;
+  scoped_ptr<gfx::SlideAnimation> hover_animation_;
 
   // Animation used when the title of an inactive mini-tab changes.
-  scoped_ptr<ui::ThrobAnimation> mini_title_animation_;
+  scoped_ptr<gfx::ThrobAnimation> mini_title_animation_;
 
-  // Animation used when the favicon has an overlay (e.g. for recording).
-  scoped_ptr<ui::ThrobAnimation> favicon_overlay_animation_;
+  // Media indicator fade-in/out animation (i.e., only on show/hide, not a
+  // continuous animation).
+  scoped_ptr<gfx::Animation> media_indicator_animation_;
+  TabMediaState animating_media_state_;
 
   // Contains the loading animation state.
   LoadingAnimation loading_animation_;

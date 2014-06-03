@@ -3,9 +3,9 @@
 // found in the LICENSE file.
 
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/sync/profile_sync_service_harness.h"
 #include "chrome/browser/sync/test/integration/autofill_helper.h"
 #include "chrome/browser/sync/test/integration/bookmarks_helper.h"
+#include "chrome/browser/sync/test/integration/profile_sync_service_harness.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
 #include "components/autofill/core/browser/autofill_profile.h"
 #include "components/autofill/core/browser/credit_card.h"
@@ -382,7 +382,7 @@ IN_PROC_BROWSER_TEST_F(TwoClientAutofillSyncTest, DisableSync) {
   ASSERT_TRUE(GetClient(1)->DisableSyncForAllDatatypes());
   AddProfile(0, CreateAutofillProfile(PROFILE_FRASIER));
   MakeABookmarkChange(0);
-  ASSERT_TRUE(GetClient(0)->AwaitFullSyncCompletion("Added a profile."));
+  ASSERT_TRUE(GetClient(0)->AwaitFullSyncCompletion());
   ASSERT_FALSE(ProfilesMatch(0, 1));
   ASSERT_EQ(2U, GetAllProfiles(0).size());
   ASSERT_EQ(1U, GetAllProfiles(1).size());
@@ -403,7 +403,7 @@ IN_PROC_BROWSER_TEST_F(TwoClientAutofillSyncTest, MaxLength) {
   ASSERT_TRUE(ProfilesMatch(0, 1));
   ASSERT_EQ(1U, GetAllProfiles(0).size());
 
-  string16 max_length_string(AutofillTable::kMaxDataLength, '.');
+  base::string16 max_length_string(AutofillTable::kMaxDataLength, '.');
   UpdateProfile(0,
                 GetAllProfiles(0)[0]->guid(),
                 AutofillType(autofill::NAME_FIRST),
@@ -435,7 +435,8 @@ IN_PROC_BROWSER_TEST_F(TwoClientAutofillSyncTest, ExceedsMaxLength) {
   ASSERT_TRUE(ProfilesMatch(0, 1));
   ASSERT_EQ(1U, GetAllProfiles(0).size());
 
-  string16 exceeds_max_length_string(AutofillTable::kMaxDataLength + 1, '.');
+  base::string16 exceeds_max_length_string(
+      AutofillTable::kMaxDataLength + 1, '.');
   UpdateProfile(0,
                 GetAllProfiles(0)[0]->guid(),
                 AutofillType(autofill::NAME_FIRST),

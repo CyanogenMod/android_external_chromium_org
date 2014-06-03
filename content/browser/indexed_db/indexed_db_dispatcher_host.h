@@ -12,8 +12,8 @@
 #include "base/id_map.h"
 #include "base/memory/ref_counted.h"
 #include "content/public/browser/browser_message_filter.h"
+#include "url/gurl.h"
 
-class GURL;
 struct IndexedDBDatabaseMetadata;
 struct IndexedDBHostMsg_DatabaseCount_Params;
 struct IndexedDBHostMsg_DatabaseCreateIndex_Params;
@@ -41,8 +41,7 @@ struct IndexedDBDatabaseMetadata;
 class IndexedDBDispatcherHost : public BrowserMessageFilter {
  public:
   // Only call the constructor from the UI thread.
-  IndexedDBDispatcherHost(int ipc_process_id,
-                          IndexedDBContextImpl* indexed_db_context);
+  explicit IndexedDBDispatcherHost(IndexedDBContextImpl* indexed_db_context);
 
   static ::IndexedDBDatabaseMetadata ConvertMetadata(
       const content::IndexedDBDatabaseMetadata& metadata);
@@ -71,8 +70,15 @@ class IndexedDBDispatcherHost : public BrowserMessageFilter {
 
   IndexedDBCursor* GetCursorFromId(int32 ipc_cursor_id);
 
+  // These are called to map a 32-bit front-end (renderer-specific) transaction
+  // id to and from a back-end ("host") transaction id that encodes the process
+  // id in the high 32 bits. The mapping is host-specific and ids are validated.
   int64 HostTransactionId(int64 transaction_id);
   int64 RendererTransactionId(int64 host_transaction_id);
+
+  // These are called to decode a host transaction ID, for diagnostic purposes.
+  static uint32 TransactionIdToRendererTransactionId(int64 host_transaction_id);
+  static uint32 TransactionIdToProcessId(int64 host_transaction_id);
 
  private:
   // Friends to enable OnDestruct() delegation.
@@ -148,7 +154,6 @@ class IndexedDBDispatcherHost : public BrowserMessageFilter {
 
     void CloseAll();
     bool OnMessageReceived(const IPC::Message& message, bool* msg_is_ok);
-    void Send(IPC::Message* message);
 
     void OnCreateObjectStore(
         const IndexedDBHostMsg_DatabaseCreateObjectStore_Params& params);
@@ -157,9 +162,6 @@ class IndexedDBDispatcherHost : public BrowserMessageFilter {
                              int64 object_store_id);
     void OnCreateTransaction(
         const IndexedDBHostMsg_DatabaseCreateTransaction_Params&);
-    void OnOpen(int32 ipc_database_id,
-                int32 ipc_thread_id,
-                int32 ipc_callbacks_id);
     void OnClose(int32 ipc_database_id);
     void OnDestroyed(int32 ipc_database_id);
 
@@ -203,7 +205,6 @@ class IndexedDBDispatcherHost : public BrowserMessageFilter {
     ~CursorDispatcherHost();
 
     bool OnMessageReceived(const IPC::Message& message, bool* msg_is_ok);
-    void Send(IPC::Message* message);
 
     void OnAdvance(int32 ipc_object_store_id,
                    int32 ipc_thread_id,
@@ -212,7 +213,8 @@ class IndexedDBDispatcherHost : public BrowserMessageFilter {
     void OnContinue(int32 ipc_object_store_id,
                     int32 ipc_thread_id,
                     int32 ipc_callbacks_id,
-                    const IndexedDBKey& key);
+                    const IndexedDBKey& key,
+                    const IndexedDBKey& primary_key);
     void OnPrefetch(int32 ipc_cursor_id,
                     int32 ipc_thread_id,
                     int32 ipc_callbacks_id,
@@ -231,9 +233,6 @@ class IndexedDBDispatcherHost : public BrowserMessageFilter {
   // Only access on IndexedDB thread.
   scoped_ptr<DatabaseDispatcherHost> database_dispatcher_host_;
   scoped_ptr<CursorDispatcherHost> cursor_dispatcher_host_;
-
-  // Used to dispatch messages to the correct view host.
-  int ipc_process_id_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(IndexedDBDispatcherHost);
 };

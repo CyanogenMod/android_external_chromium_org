@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -98,7 +98,8 @@ public class ChromiumTestShellUrlTest extends ChromiumTestShellTestBase {
                 @Override
                 public void run() {
                     ContentViewRenderView contentViewRenderView =
-                            new ContentViewRenderView(getInstrumentation().getTargetContext());
+                            new ContentViewRenderView(getInstrumentation().getTargetContext(),
+                                    activity.getWindowAndroid());
                     contentViewRenderView.setCurrentContentView(activity.getActiveContentView());
                 }
             });

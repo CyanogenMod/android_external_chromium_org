@@ -41,10 +41,10 @@ class ValueStoreFrontend::Backend : public base::RefCountedThreadSafe<Backend> {
     // callback.
     scoped_ptr<base::Value> value;
     if (!result->HasError()) {
-      result->settings()->RemoveWithoutPathExpansion(key, &value);
+      result->settings().RemoveWithoutPathExpansion(key, &value);
     } else {
-      LOG(INFO) << "Reading " << key << " from " << db_path_.value()
-                << " failed: " << result->error();
+      LOG(WARNING) << "Reading " << key << " from " << db_path_.value()
+                   << " failed: " << result->error().message;
     }
 
     BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
@@ -99,11 +99,11 @@ ValueStoreFrontend::ValueStoreFrontend(const base::FilePath& db_path)
   Init(db_path);
 }
 
-ValueStoreFrontend::ValueStoreFrontend(ValueStore* value_store)
+ValueStoreFrontend::ValueStoreFrontend(scoped_ptr<ValueStore> value_store)
     : backend_(new Backend()) {
   BrowserThread::PostTask(BrowserThread::FILE, FROM_HERE,
       base::Bind(&ValueStoreFrontend::Backend::InitWithStore,
-                 backend_, base::Passed(scoped_ptr<ValueStore>(value_store))));
+                 backend_, base::Passed(&value_store)));
 }
 
 ValueStoreFrontend::~ValueStoreFrontend() {

@@ -4,12 +4,14 @@
 
 #include "base/test/values_test_util.h"
 #include "chrome/common/extensions/api/identity/oauth2_manifest_handler.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/common/extensions/manifest_tests/extension_manifest_test.h"
+#include "extensions/common/manifest_constants.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace keys = extension_manifest_keys;
-namespace errors = extension_manifest_errors;
+namespace extensions {
+
+namespace keys = manifest_keys;
+namespace errors = manifest_errors;
 
 namespace {
 
@@ -22,8 +24,6 @@ const char kAutoApproveNotAllowedWarning[] =
     "'oauth2.auto_approve' is not allowed for specified extension ID.";
 
 }  // namespace
-
-namespace extensions {
 
 class OAuth2ManifestTest : public ExtensionManifestTest {
  protected:
@@ -147,8 +147,8 @@ TEST_F(OAuth2ManifestTest, OAuth2SectionParsing) {
     EXPECT_EQ(1U, extension->install_warnings().size());
     const extensions::InstallWarning& warning =
         extension->install_warnings()[0];
-    EXPECT_EQ("'oauth2' is only allowed for extensions, legacy packaged apps "
-                  "and packaged apps, and this is a hosted app.",
+    EXPECT_EQ("'oauth2' is only allowed for extensions, legacy packaged apps, "
+                  "and packaged apps, but this is a hosted app.",
               warning.message);
     EXPECT_EQ("", OAuth2Info::GetOAuth2Info(extension.get()).client_id);
     EXPECT_TRUE(OAuth2Info::GetOAuth2Info(extension.get()).scopes.empty());

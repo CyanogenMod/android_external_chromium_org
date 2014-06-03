@@ -11,8 +11,8 @@
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/ui/omnibox/omnibox_view.h"
 #include "chrome/browser/ui/toolbar/toolbar_model.h"
-#include "ui/base/range/range.h"
 #include "ui/base/window_open_disposition.h"
+#include "ui/gfx/range/range.h"
 #include "ui/views/controls/textfield/textfield.h"
 #include "ui/views/controls/textfield/textfield_controller.h"
 
@@ -42,13 +42,11 @@ class OmniboxViewViews
   static const char kViewClassName[];
 
   OmniboxViewViews(OmniboxEditController* controller,
-                   ToolbarModel* toolbar_model,
                    Profile* profile,
                    CommandUpdater* command_updater,
                    bool popup_window_mode,
                    LocationBarView* location_bar,
-                   const gfx::FontList& font_list,
-                   int font_y_offset);
+                   const gfx::FontList& font_list);
   virtual ~OmniboxViewViews();
 
   // Initialize, create the underlying views, etc;
@@ -73,45 +71,50 @@ class OmniboxViewViews
 
   // OmniboxView:
   virtual void SaveStateToTab(content::WebContents* tab) OVERRIDE;
-  virtual void Update(
-      const content::WebContents* tab_for_state_restoring) OVERRIDE;
-  virtual string16 GetText() const OVERRIDE;
-  virtual void SetWindowTextAndCaretPos(const string16& text,
+  virtual void OnTabChanged(const content::WebContents* web_contents) OVERRIDE;
+  virtual void Update() OVERRIDE;
+  virtual base::string16 GetText() const OVERRIDE;
+  virtual void SetUserText(const base::string16& text,
+                           const base::string16& display_text,
+                           bool update_popup) OVERRIDE;
+  virtual void SetWindowTextAndCaretPos(const base::string16& text,
                                         size_t caret_pos,
                                         bool update_popup,
                                         bool notify_text_changed) OVERRIDE;
   virtual void SetForcedQuery() OVERRIDE;
   virtual bool IsSelectAll() const OVERRIDE;
   virtual bool DeleteAtEndPressed() OVERRIDE;
-  virtual void GetSelectionBounds(string16::size_type* start,
-                                  string16::size_type* end) const OVERRIDE;
+  virtual void GetSelectionBounds(
+      base::string16::size_type* start,
+      base::string16::size_type* end) const OVERRIDE;
   virtual void SelectAll(bool reversed) OVERRIDE;
+  virtual void RevertAll() OVERRIDE;
   virtual void UpdatePopup() OVERRIDE;
   virtual void SetFocus() OVERRIDE;
   virtual void ApplyCaretVisibility() OVERRIDE;
   virtual void OnTemporaryTextMaybeChanged(
-      const string16& display_text,
+      const base::string16& display_text,
       bool save_original_selection,
       bool notify_text_changed) OVERRIDE;
   virtual bool OnInlineAutocompleteTextMaybeChanged(
-      const string16& display_text, size_t user_text_length) OVERRIDE;
+      const base::string16& display_text, size_t user_text_length) OVERRIDE;
+  virtual void OnInlineAutocompleteTextCleared() OVERRIDE;
   virtual void OnRevertTemporaryText() OVERRIDE;
   virtual void OnBeforePossibleChange() OVERRIDE;
   virtual bool OnAfterPossibleChange() OVERRIDE;
   virtual gfx::NativeView GetNativeView() const OVERRIDE;
   virtual gfx::NativeView GetRelativeWindowForPopup() const OVERRIDE;
-  virtual void SetGrayTextAutocompletion(const string16& input) OVERRIDE;
-  virtual string16 GetGrayTextAutocompletion() const OVERRIDE;
-  virtual int TextWidth() const OVERRIDE;
+  virtual void SetGrayTextAutocompletion(const base::string16& input) OVERRIDE;
+  virtual base::string16 GetGrayTextAutocompletion() const OVERRIDE;
+  virtual int GetTextWidth() const OVERRIDE;
+  virtual int GetWidth() const OVERRIDE;
   virtual bool IsImeComposing() const OVERRIDE;
   virtual bool IsImeShowingPopup() const OVERRIDE;
-  virtual int GetMaxEditWidth(int entry_width) const OVERRIDE;
-  virtual views::View* AddToView(views::View* parent) OVERRIDE;
   virtual int OnPerformDrop(const ui::DropTargetEvent& event) OVERRIDE;
 
   // views::TextfieldController:
   virtual void ContentsChanged(views::Textfield* sender,
-                               const string16& new_contents) OVERRIDE;
+                               const base::string16& new_contents) OVERRIDE;
   virtual bool HandleKeyEvent(views::Textfield* sender,
                               const ui::KeyEvent& key_event) OVERRIDE;
   virtual void OnBeforeUserAction(views::Textfield* sender) OVERRIDE;
@@ -126,7 +129,7 @@ class OmniboxViewViews
   virtual void UpdateContextMenu(ui::SimpleMenuModel* menu_contents) OVERRIDE;
   virtual bool IsCommandIdEnabled(int command_id) const OVERRIDE;
   virtual bool IsItemForCommandIdDynamic(int command_id) const OVERRIDE;
-  virtual string16 GetLabelForCommandId(int command_id) const OVERRIDE;
+  virtual base::string16 GetLabelForCommandId(int command_id) const OVERRIDE;
   virtual bool HandlesCommand(int command_id) const OVERRIDE;
   virtual void ExecuteCommand(int command_id, int event_flags) OVERRIDE;
 
@@ -146,14 +149,11 @@ class OmniboxViewViews
   virtual void EmphasizeURLComponents() OVERRIDE;
 
   // Update the field with |text| and set the selection.
-  void SetTextAndSelectedRange(const string16& text,
-                               const ui::Range& range);
+  void SetTextAndSelectedRange(const base::string16& text,
+                               const gfx::Range& range);
 
   // Returns the selected text.
-  string16 GetSelectedText() const;
-
-  // Copy the URL instead of the text in the textfield into clipboard.
-  void CopyURL();
+  base::string16 GetSelectedText() const;
 
   // Paste text from the clipboard into the omnibox.
   // Textfields implementation of Paste() pastes the contents of the clipboard
@@ -162,6 +162,9 @@ class OmniboxViewViews
   // It is assumed this is invoked after a call to OnBeforePossibleChange() and
   // that after invoking this OnAfterPossibleChange() is invoked.
   void OnPaste();
+
+  // Handle keyword hint tab-to-search and tabbing through dropdown results.
+  bool HandleEarlyTabActions(const ui::KeyEvent& event);
 
   // When true, the location bar view is read only and also is has a slightly
   // different presentation (smaller font size). This is used for popups.
@@ -172,11 +175,15 @@ class OmniboxViewViews
   ToolbarModel::SecurityLevel security_level_;
 
   // Selection persisted across temporary text changes, like popup suggestions.
-  ui::Range saved_temporary_selection_;
+  gfx::Range saved_temporary_selection_;
+
+  // Holds the user's selection across focus changes.  There is only a saved
+  // selection if this range IsValid().
+  gfx::Range saved_selection_for_focus_change_;
 
   // Tracking state before and after a possible change.
-  string16 text_before_change_;
-  ui::Range sel_before_change_;
+  base::string16 text_before_change_;
+  gfx::Range sel_before_change_;
   bool ime_composing_before_change_;
 
   // Was the delete key pressed with an empty selection at the end of the edit?

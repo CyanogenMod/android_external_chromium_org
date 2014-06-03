@@ -7,7 +7,7 @@
 
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
-#include "chromeos/dbus/ibus/ibus_lookup_table.h"
+#include "chromeos/ime/candidate_window.h"
 #include "ui/views/view.h"
 
 namespace gfx {
@@ -15,10 +15,10 @@ class Font;
 }
 
 namespace chromeos {
-class IBusLookupTable;
 namespace input_method {
 
 class CandidateView;
+class CandidateWindow;
 class HidableArea;
 class InformationTextArea;
 
@@ -30,9 +30,7 @@ class CandidateWindowView : public views::View {
    public:
     virtual ~Observer() {}
     // The function is called when a candidate is committed.
-    // See comments at NotifyCandidateClicked() in chromeos_input_method_ui.h
-    // for details about the parameters.
-    virtual void OnCandidateCommitted(int index, int button, int flag) = 0;
+    virtual void OnCandidateCommitted(int index) = 0;
 
     virtual void OnCandidateWindowOpened() = 0;
     virtual void OnCandidateWindowClosed() = 0;
@@ -97,12 +95,12 @@ class CandidateWindowView : public views::View {
   // don't have to update candidate views. This happens when the user just
   // moves the cursor in the same page in the candidate window.
   static bool ShouldUpdateCandidateViews(
-      const IBusLookupTable& old_table,
-      const IBusLookupTable& new_table);
+      const CandidateWindow& old_candidate_window,
+      const CandidateWindow& new_candidate_window);
 
-  // Updates candidates of the candidate window from |lookup_table|.
+  // Updates candidates of the candidate window from |candidate_window|.
   // Candidates are arranged per |orientation|.
-  void UpdateCandidates(const IBusLookupTable& lookup_table);
+  void UpdateCandidates(const CandidateWindow& candidate_window);
 
   // Resizes and moves the parent frame. The two actions should be
   // performed consecutively as resizing may require the candidate window
@@ -126,18 +124,18 @@ class CandidateWindowView : public views::View {
   // Returns 0 if no candidate is present.
   int GetHorizontalOffset();
 
-  void set_cursor_location(const gfx::Rect& cursor_location) {
-    cursor_location_ = cursor_location;
+  void set_cursor_bounds(const gfx::Rect& cursor_bounds) {
+    cursor_bounds_ = cursor_bounds;
   }
 
-  void set_composition_head_location(
-      const gfx::Rect& composition_head_location) {
-    composition_head_location_ = composition_head_location;
+  void set_composition_head_bounds(
+      const gfx::Rect& composition_head_bounds) {
+    composition_head_bounds_ = composition_head_bounds;
   }
 
-  const gfx::Rect& cursor_location() const { return cursor_location_; }
-  const gfx::Rect& composition_head_location() const {
-    return composition_head_location_;
+  const gfx::Rect& cursor_bounds() const { return cursor_bounds_; }
+  const gfx::Rect& composition_head_bounds() const {
+    return composition_head_bounds_;
   }
 
  protected:
@@ -155,7 +153,7 @@ class CandidateWindowView : public views::View {
                            DoNotChangeRowHeightWithLabelSwitchTest);
 
   // Initializes the candidate views if needed.
-  void MaybeInitializeCandidateViews(const IBusLookupTable& lookup_table);
+  void MaybeInitializeCandidateViews(const CandidateWindow& candidate_window);
 
   // Returns the appropriate area (header or footer) to put auxiliary texts.
   InformationTextArea* GetAuxiliaryTextArea();
@@ -168,8 +166,8 @@ class CandidateWindowView : public views::View {
   // changed from the previous call to this function.
   void NotifyIfCandidateWindowOpenedOrClosed();
 
-  // The lookup table (candidates).
-  IBusLookupTable lookup_table_;
+  // The candidate window.
+  CandidateWindow candidate_window_;
 
   // The index in the current page of the candidate currently being selected.
   int selected_candidate_index_in_page_;
@@ -205,11 +203,11 @@ class CandidateWindowView : public views::View {
   gfx::Size previous_candidate_column_size_;
   gfx::Size previous_annotation_column_size_;
 
-  // The last cursor location.
-  gfx::Rect cursor_location_;
+  // The last cursor bounds.
+  gfx::Rect cursor_bounds_;
 
-  // The last compostion head location.
-  gfx::Rect composition_head_location_;
+  // The last compostion head bounds.
+  gfx::Rect composition_head_bounds_;
 
   // True if the candidate window should be shown with aligning with composition
   // text as opposed to the cursor.

@@ -20,6 +20,8 @@ class Widget;
 
 namespace chromeos {
 
+class AppLaunchController;
+class LoginScreenContext;
 class WebUILoginView;
 class WizardController;
 
@@ -28,6 +30,12 @@ class WizardController;
 // UI implementation (such as LoginDisplay).
 class LoginDisplayHost {
  public:
+  // Callback for GetAutoEnrollmentCheckResult. It is invoked with when
+  // a decision is made for auto enrollment. It is invoked with "true" when
+  // auto enrollment check is finished and auto enrollment should be enforced.
+  // Otherwise, it is invoked with "false".
+  typedef base::Callback<void(bool)> GetAutoEnrollmentCheckResultCallback;
+
   virtual ~LoginDisplayHost() {}
 
   // Creates UI implementation specific login display instance (views/WebUI).
@@ -40,9 +48,6 @@ class LoginDisplayHost {
 
   // Returns the current login view.
   virtual WebUILoginView* GetWebUILoginView() const = 0;
-
-  // Returns corresponding widget.
-  virtual views::Widget* GetWidget() const = 0;
 
   // Called when browsing session starts before creating initial browser.
   virtual void BeforeSessionStart() = 0;
@@ -57,18 +62,18 @@ class LoginDisplayHost {
   // Open proxy settings dialog.
   virtual void OpenProxySettings() = 0;
 
-  // Toggles OOBE progress bar visibility, the bar is hidden by default.
-  virtual void SetOobeProgressBarVisible(bool visible) = 0;
-
-  // Enable/disable shutdown button.
-  virtual void SetShutdownButtonEnabled(bool enable) = 0;
-
   // Toggles status area visibility.
   virtual void SetStatusAreaVisible(bool visible) = 0;
 
   // Signals the LoginDisplayHost that it can proceed with the Enterprise
   // Auto-Enrollment checks now.
   virtual void CheckForAutoEnrollment() = 0;
+
+  // Gets the auto enrollment check results. If the check is still pending,
+  // |callback| will be invoked asynchronously after it is finished. Otherwise,
+  // |callback| is invoked synchronously before this call returns.
+  virtual void GetAutoEnrollmentCheckResult(
+      const GetAutoEnrollmentCheckResultCallback& callback) = 0;
 
   // Starts out-of-box-experience flow or shows other screen handled by
   // Wizard controller i.e. camera, recovery.
@@ -82,13 +87,17 @@ class LoginDisplayHost {
   // Result should not be stored.
   virtual WizardController* GetWizardController() = 0;
 
+  // Returns current AppLaunchController, if it exists.
+  // Result should not be stored.
+  virtual AppLaunchController* GetAppLaunchController() = 0;
+
   // Starts screen for adding user into session.
   // |completion_callback| called before display host shutdown.
   // |completion_callback| can be null.
   virtual void StartUserAdding(const base::Closure& completion_callback) = 0;
 
   // Starts sign in screen.
-  virtual void StartSignInScreen() = 0;
+  virtual void StartSignInScreen(const LoginScreenContext& context) = 0;
 
   // Resumes a previously started sign in screen.
   virtual void ResumeSignInScreen() = 0;
@@ -98,6 +107,9 @@ class LoginDisplayHost {
 
   // Initiates authentication network prewarming.
   virtual void PrewarmAuthentication() = 0;
+
+  // Starts app launch splash screen.
+  virtual void StartAppLaunch(const std::string& app_id) = 0;
 };
 
 }  // namespace chromeos

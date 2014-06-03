@@ -26,9 +26,6 @@ class RealPepperInterface : public PepperInterface {
                       PPB_GetInterface get_browser_interface);
 
   virtual PP_Instance GetInstance();
-  virtual void AddRefResource(PP_Resource);
-  virtual void ReleaseResource(PP_Resource);
-  virtual bool IsMainThread();
 
 // Interface getters.
 #include "nacl_io/pepper/undef_macros.h"
@@ -38,12 +35,8 @@ class RealPepperInterface : public PepperInterface {
     virtual BaseClass* Get##BaseClass();
 #include "nacl_io/pepper/all_interfaces.h"
 
-  int32_t InitializeMessageLoop();
-
  private:
   PP_Instance instance_;
-  const PPB_Core* core_interface_;
-  const PPB_MessageLoop* message_loop_interface_;
 
 // Interface pointers.
 #include "nacl_io/pepper/undef_macros.h"

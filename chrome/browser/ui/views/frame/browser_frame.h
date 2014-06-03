@@ -16,6 +16,7 @@ class AvatarMenuButton;
 class BrowserRootView;
 class BrowserView;
 class NativeBrowserFrame;
+class NewAvatarButton;
 class NonClientFrameView;
 class SystemMenuModelBuilder;
 
@@ -58,11 +59,11 @@ class BrowserFrame
   // TabStrip view.
   gfx::Rect GetBoundsForTabStrip(views::View* tabstrip) const;
 
-  // Returns the y coordinate within the window at which the horizontal TabStrip
-  // begins (or would begin).  If |force_restored| is true, this is calculated
-  // as if we were in restored mode regardless of the current mode.
-  BrowserNonClientFrameView::TabStripInsets GetTabStripInsets(
-      bool force_restored) const;
+  // Returns the inset of the topmost view in the client view from the top of
+  // the non-client view. The topmost view depends on the window type. The
+  // topmost view is the tab strip for tabbed browser windows, the toolbar for
+  // popups, the web contents for app windows and varies for fullscreen windows
+  int GetTopInset() const;
 
   // Returns the amount that the theme background should be inset.
   int GetThemeBackgroundXInset() const;
@@ -72,10 +73,6 @@ class BrowserFrame
 
   // Returns the NonClientFrameView of this frame.
   views::View* GetFrameView() const;
-
-  // Notifies the frame that the tab strip display mode changed so it can update
-  // its frame treatment if necessary.
-  void TabStripDisplayModeChanged();
 
   // Overridden from views::Widget:
   virtual views::internal::RootView* CreateRootView() OVERRIDE;
@@ -98,7 +95,10 @@ class BrowserFrame
 
   AvatarMenuButton* GetAvatarMenuButton();
 
+  NewAvatarButton* GetNewAvatarMenuButton();
+
   // Returns the menu model. BrowserFrame owns the returned model.
+  // Note that in multi user mode this will upon each call create a new model.
   ui::MenuModel* GetSystemMenuModel();
 
  private:

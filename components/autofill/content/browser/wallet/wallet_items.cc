@@ -8,6 +8,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
+#include "components/autofill/content/browser/wallet/gaia_account.h"
 #include "components/autofill/core/browser/autofill_type.h"
 #include "components/autofill/core/browser/credit_card.h"
 #include "grit/component_strings.h"
@@ -80,6 +81,21 @@ WalletItems::MaskedInstrument::Status
   return WalletItems::MaskedInstrument::INAPPLICABLE;
 }
 
+base::string16 DisplayStringFromType(WalletItems::MaskedInstrument::Type type) {
+  switch (type) {
+    case WalletItems::MaskedInstrument::AMEX:
+      return CreditCard::TypeForDisplay(kAmericanExpressCard);
+    case WalletItems::MaskedInstrument::DISCOVER:
+      return CreditCard::TypeForDisplay(kDiscoverCard);
+    case WalletItems::MaskedInstrument::MASTER_CARD:
+      return CreditCard::TypeForDisplay(kMasterCard);
+    case WalletItems::MaskedInstrument::VISA:
+      return CreditCard::TypeForDisplay(kVisaCard);
+    default:
+      return CreditCard::TypeForDisplay(kGenericCard);
+  }
+}
+
 }  // anonymous namespace
 
 WalletItems::MaskedInstrument::MaskedInstrument(
@@ -101,7 +117,7 @@ WalletItems::MaskedInstrument::MaskedInstrument(
       address_(address.Pass()),
       status_(status),
       object_id_(object_id) {
-  DCHECK(address_.get());
+  DCHECK(address_);
 }
 
 WalletItems::MaskedInstrument::~MaskedInstrument() {}
@@ -146,7 +162,7 @@ scoped_ptr<WalletItems::MaskedInstrument>
   }
   scoped_ptr<Address> address = Address::CreateDisplayAddress(*address_dict);
 
-  if (!address.get()) {
+  if (!address) {
     DLOG(ERROR) << "Response from Google wallet contained malformed address";
     return scoped_ptr<MaskedInstrument>();
   }
@@ -200,14 +216,14 @@ bool WalletItems::MaskedInstrument::operator==(
     return false;
   if (expiration_year_ != other.expiration_year_)
     return false;
-  if (address_.get()) {
-    if (other.address_.get()) {
-      if (*address_.get() != *other.address_.get())
+  if (address_) {
+    if (other.address_) {
+      if (*address_ != *other.address_)
         return false;
     } else {
       return false;
     }
-  } else if (other.address_.get()) {
+  } else if (other.address_) {
     return false;
   }
   if (status_ != other.status_)
@@ -242,6 +258,37 @@ bool WalletItems::HasRequiredAction(RequiredAction action) const {
                    action) != required_actions_.end();
 }
 
+bool WalletItems::SupportsCard(const base::string16& card_number,
+                               base::string16* message) const {
+  std::string card_type = CreditCard::GetCreditCardType(card_number);
+
+  if (card_type == kVisaCard ||
+      card_type == kMasterCard ||
+      card_type == kDiscoverCard) {
+    return true;
+  }
+
+  if (card_type == kAmericanExpressCard) {
+    if (amex_permission_ == AMEX_ALLOWED)
+      return true;
+
+    *message = l10n_util::GetStringUTF16(
+        IDS_AUTOFILL_CREDIT_CARD_NOT_SUPPORTED_BY_WALLET_FOR_MERCHANT);
+    return false;
+  }
+
+  *message = l10n_util::GetStringUTF16(
+      IDS_AUTOFILL_CREDIT_CARD_NOT_SUPPORTED_BY_WALLET);
+   return false;
+}
+
+std::string WalletItems::ObfuscatedGaiaId() const {
+  if (active_account_index_ >= gaia_accounts_.size())
+    return std::string();
+
+  return gaia_accounts_[active_account_index_]->obfuscated_id();
+}
+
 base::string16 WalletItems::MaskedInstrument::DisplayName() const {
 #if defined(OS_ANDROID)
   // TODO(aruslan): improve this stub implementation.
@@ -261,21 +308,9 @@ base::string16 WalletItems::MaskedInstrument::DisplayNameDetail() const {
 }
 
 base::string16 WalletItems::MaskedInstrument::TypeAndLastFourDigits() const {
-  base::string16 display_type;
-
-  if (type_ == AMEX)
-    display_type = CreditCard::TypeForDisplay(kAmericanExpressCard);
-  else if (type_ == DISCOVER)
-    display_type = CreditCard::TypeForDisplay(kDiscoverCard);
-  else if (type_ == MASTER_CARD)
-    display_type = CreditCard::TypeForDisplay(kMasterCard);
-  else if (type_ == VISA)
-    display_type = CreditCard::TypeForDisplay(kVisaCard);
-  else
-    display_type = CreditCard::TypeForDisplay(kGenericCard);
-
   // TODO(dbeam): i18n.
-  return display_type + ASCIIToUTF16(" - ") + last_four_digits();
+  return DisplayStringFromType(type_) + ASCIIToUTF16(" - ") +
+         last_four_digits();
 }
 
 const gfx::Image& WalletItems::MaskedInstrument::CardIcon() const {
@@ -326,6 +361,9 @@ base::string16 WalletItems::MaskedInstrument::GetInfo(
 
     case CREDIT_CARD_VERIFICATION_CODE:
       break;
+
+    case CREDIT_CARD_TYPE:
+      return DisplayStringFromType(type_);
 
     default:
       NOTREACHED();
@@ -386,12 +424,13 @@ WalletItems::WalletItems(const std::vector<RequiredAction>& required_actions,
                          const std::string& google_transaction_id,
                          const std::string& default_instrument_id,
                          const std::string& default_address_id,
-                         const std::string& obfuscated_gaia_id)
+                         AmexPermission amex_permission)
     : required_actions_(required_actions),
       google_transaction_id_(google_transaction_id),
       default_instrument_id_(default_instrument_id),
       default_address_id_(default_address_id),
-      obfuscated_gaia_id_(obfuscated_gaia_id) {}
+      active_account_index_(std::numeric_limits<size_t>::max()),
+      amex_permission_(amex_permission) {}
 
 WalletItems::~WalletItems() {}
 
@@ -431,15 +470,36 @@ scoped_ptr<WalletItems>
   if (!dictionary.GetString("default_address_id", &default_address_id))
     DVLOG(1) << "Response from Google wallet missing default_address_id";
 
-  std::string obfuscated_gaia_id;
-  if (!dictionary.GetString("obfuscated_gaia_id", &obfuscated_gaia_id))
-    DVLOG(1) << "Response from Google wallet missing obfuscated gaia id";
+  // obfuscated_gaia_id is deprecated.
+
+  bool amex_disallowed = true;
+  if (!dictionary.GetBoolean("amex_disallowed", &amex_disallowed))
+    DVLOG(1) << "Response from Google wallet missing the amex_disallowed field";
+  AmexPermission amex_permission =
+      amex_disallowed ? AMEX_DISALLOWED : AMEX_ALLOWED;
 
   scoped_ptr<WalletItems> wallet_items(new WalletItems(required_action,
                                                        google_transaction_id,
                                                        default_instrument_id,
                                                        default_address_id,
-                                                       obfuscated_gaia_id));
+                                                       amex_permission));
+  std::vector<std::string> gaia_accounts;
+  const base::ListValue* gaia_profiles;
+  if (dictionary.GetList("gaia_profile", &gaia_profiles)) {
+    for (size_t i = 0; i < gaia_profiles->GetSize(); ++i) {
+      const base::DictionaryValue* account_dict;
+      std::string email;
+      if (!gaia_profiles->GetDictionary(i, &account_dict))
+        continue;
+
+      scoped_ptr<GaiaAccount> gaia_account(
+          GaiaAccount::Create(*account_dict));
+      if (gaia_account)
+        wallet_items->AddAccount(gaia_account.Pass());
+    }
+  } else {
+    DVLOG(1) << "Response from Google wallet missing GAIA accounts";
+  }
 
   const ListValue* legal_docs;
   if (dictionary.GetList("required_legal_document", &legal_docs)) {
@@ -448,13 +508,10 @@ scoped_ptr<WalletItems>
       if (legal_docs->GetDictionary(i, &legal_doc_dict)) {
         scoped_ptr<LegalDocument> legal_doc(
             LegalDocument::CreateLegalDocument(*legal_doc_dict));
-        if (legal_doc.get()) {
+        if (legal_doc)
           wallet_items->AddLegalDocument(legal_doc.Pass());
-        } else {
-          DLOG(ERROR) << "Malformed legal document in response from "
-                         "Google wallet";
+        else
           return scoped_ptr<WalletItems>();
-        }
       }
     }
 
@@ -474,10 +531,8 @@ scoped_ptr<WalletItems>
       if (instruments->GetDictionary(i, &instrument_dict)) {
         scoped_ptr<MaskedInstrument> instrument(
             MaskedInstrument::CreateMaskedInstrument(*instrument_dict));
-        if (instrument.get())
+        if (instrument)
           wallet_items->AddInstrument(instrument.Pass());
-        else
-          DLOG(ERROR) << "Malformed instrument in response from Google Wallet";
       }
     }
   } else {
@@ -491,10 +546,8 @@ scoped_ptr<WalletItems>
       if (addresses->GetDictionary(i, &address_dict)) {
         scoped_ptr<Address> address(
             Address::CreateAddressWithID(*address_dict));
-        if (address.get())
+        if (address)
           wallet_items->AddAddress(address.Pass());
-        else
-          DLOG(ERROR) << "Malformed address in response from Google Wallet";
       }
     }
   } else {
@@ -504,17 +557,33 @@ scoped_ptr<WalletItems>
   return wallet_items.Pass();
 }
 
+void WalletItems::AddAccount(scoped_ptr<GaiaAccount> account) {
+  if (account->index() != gaia_accounts_.size()) {
+    DVLOG(1) << "Tried to add account out of order";
+    return;
+  }
+
+  if (account->is_active())
+    active_account_index_ = account->index();
+
+  gaia_accounts_.push_back(account.release());
+}
+
 bool WalletItems::operator==(const WalletItems& other) const {
   return google_transaction_id_ == other.google_transaction_id_ &&
          default_instrument_id_ == other.default_instrument_id_ &&
          default_address_id_ == other.default_address_id_ &&
          required_actions_ == other.required_actions_ &&
-         obfuscated_gaia_id_ == other.obfuscated_gaia_id_ &&
+         // This check is technically redundant, but is useful for tests.
+         ObfuscatedGaiaId() == other.ObfuscatedGaiaId() &&
+         active_account_index() == other.active_account_index() &&
+         VectorsAreEqual<GaiaAccount>(gaia_accounts(),
+                                      other.gaia_accounts()) &&
          VectorsAreEqual<MaskedInstrument>(instruments(),
-                                           other.instruments()) &&
+                                            other.instruments()) &&
          VectorsAreEqual<Address>(addresses(), other.addresses()) &&
          VectorsAreEqual<LegalDocument>(legal_documents(),
-                                        other.legal_documents());
+                                         other.legal_documents());
 }
 
 bool WalletItems::operator!=(const WalletItems& other) const {

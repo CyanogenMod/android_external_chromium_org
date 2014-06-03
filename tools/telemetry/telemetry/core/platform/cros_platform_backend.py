@@ -2,11 +2,12 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-from telemetry.core.platform import platform_backend
-from telemetry.core.platform import proc_util
+from telemetry.core.platform import proc_supporting_platform_backend
+from telemetry.core.platform import ps_util
 
 
-class CrosPlatformBackend(platform_backend.PlatformBackend):
+class CrosPlatformBackend(
+    proc_supporting_platform_backend.ProcSupportingPlatformBackend):
 
   def __init__(self, cri):
     super(CrosPlatformBackend, self).__init__()
@@ -36,15 +37,6 @@ class CrosPlatformBackend(platform_backend.PlatformBackend):
     except AssertionError:
       return ''
 
-  def GetSystemCommitCharge(self):
-    meminfo_contents = self._GetFileContents('/proc/meminfo')
-    return proc_util.GetSystemCommitCharge(meminfo_contents)
-
-  def GetMemoryStats(self, pid):
-    status = self._GetFileContents('/proc/%s/status' % pid)
-    stats = self._GetFileContents('/proc/%s/stat' % pid).split()
-    return proc_util.GetMemoryStats(status, stats)
-
   def GetIOStats(self, pid):
     # There is no '/proc/<pid>/io' file on CrOS platforms
     # Returns empty dict as it does in PlatformBackend.
@@ -52,6 +44,17 @@ class CrosPlatformBackend(platform_backend.PlatformBackend):
 
   def GetOSName(self):
     return 'chromeos'
+
+  def GetChildPids(self, pid):
+    """Returns a list of child pids of |pid|."""
+    all_process_info = self._cri.ListProcesses()
+    processes = [(curr_pid, curr_ppid, curr_state)
+                 for curr_pid, _, curr_ppid, curr_state in all_process_info]
+    return ps_util.GetChildPids(processes, pid)
+
+  def GetCommandLine(self, pid):
+    procs = self._cri.ListProcesses()
+    return next((proc[1] for proc in procs if proc[0] == pid), None)
 
   def CanFlushIndividualFilesFromSystemCache(self):
     return True

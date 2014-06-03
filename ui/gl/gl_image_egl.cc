@@ -7,34 +7,14 @@
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_surface_egl.h"
 
-// === START ANDROID WORKAROUND b/11392857
-#include <sys/system_properties.h>
-
-namespace {
-bool RequiresGrallocUnbind() {
-  static const char* kPropertyName = "ro.webview.gralloc_unbind";
-  char prop_value[PROP_VALUE_MAX];
-  int prop_value_length = __system_property_get(kPropertyName, prop_value);
-  if (prop_value_length == 1) {
-    if (strcmp(prop_value, "1") == 0) {
-      return true;
-    } else if (strcmp(prop_value, "0") == 0) {
-      return false;
-    }
-  }
-  LOG_IF(WARNING, prop_value_length > 0)
-      << "Unrecognized value for " << kPropertyName << ": " << prop_value;
-  return strcmp((char*)glGetString(GL_VENDOR), "NVIDIA Corporation") == 0;
-}
-}
-// === END   ANDROID WORKAROUND b/11392857
-
 namespace gfx {
 
 GLImageEGL::GLImageEGL(gfx::Size size)
     : egl_image_(EGL_NO_IMAGE_KHR),
       size_(size),
-      in_use_(false) {
+      release_after_use_(false),
+      in_use_(false),
+      target_(0) {
 }
 
 GLImageEGL::~GLImageEGL() {
@@ -42,7 +22,7 @@ GLImageEGL::~GLImageEGL() {
 }
 
 bool GLImageEGL::Initialize(gfx::GpuMemoryBufferHandle buffer) {
-  DCHECK(buffer.native_buffer_handle->GetNativeHandle());
+  DCHECK(buffer.native_buffer);
   EGLint attrs[] = {
     EGL_IMAGE_PRESERVED_KHR, EGL_TRUE,
     EGL_NONE,
@@ -51,7 +31,7 @@ bool GLImageEGL::Initialize(gfx::GpuMemoryBufferHandle buffer) {
       GLSurfaceEGL::GetHardwareDisplay(),
       EGL_NO_CONTEXT,
       EGL_NATIVE_BUFFER_ANDROID,
-      buffer.native_buffer_handle->GetNativeHandle(),
+      buffer.native_buffer,
       attrs);
 
   if (egl_image_ == EGL_NO_IMAGE_KHR) {
@@ -82,42 +62,54 @@ gfx::Size GLImageEGL::GetSize() {
   return size_;
 }
 
-bool GLImageEGL::BindTexImage() {
+bool GLImageEGL::BindTexImage(unsigned target) {
   if (egl_image_ == EGL_NO_IMAGE_KHR) {
     LOG(ERROR) << "NULL EGLImage in BindTexImage";
     return false;
   }
 
+  if (target == GL_TEXTURE_RECTANGLE_ARB) {
+    LOG(ERROR) << "EGLImage cannot be bound to TEXTURE_RECTANGLE_ARB target";
+    return false;
+  }
+
+  if (target_ && target_ != target) {
+    LOG(ERROR) << "EGLImage can only be bound to one target";
+    return false;
+  }
+  target_ = target;
+
   // Defer ImageTargetTexture2D if not currently in use.
   if (!in_use_)
     return true;
 
-  glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, egl_image_);
+  glEGLImageTargetTexture2DOES(target_, egl_image_);
   DCHECK_EQ(static_cast<GLenum>(GL_NO_ERROR), glGetError());
   return true;
 }
 
-void GLImageEGL::ReleaseTexImage() {
-  // Nothing to do here as image is released after each use.
+void GLImageEGL::ReleaseTexImage(unsigned target) {
+  // Nothing to do here as image is released after each use or there is no need
+  // to release image.
 }
 
 void GLImageEGL::WillUseTexImage() {
   DCHECK(egl_image_);
   DCHECK(!in_use_);
   in_use_ = true;
-  glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, egl_image_);
+  glEGLImageTargetTexture2DOES(target_, egl_image_);
   DCHECK_EQ(static_cast<GLenum>(GL_NO_ERROR), glGetError());
 }
 
 void GLImageEGL::DidUseTexImage() {
   DCHECK(in_use_);
   in_use_ = false;
-  // === START ANDROID WORKAROUND b/11392857
-  static bool requires_gralloc_unbind = RequiresGrallocUnbind();
-  if (!requires_gralloc_unbind) return;
-  // === END   ANDROID WORKAROUND b/11392857
+
+  if (!release_after_use_)
+    return;
+
   char zero[4] = { 0, };
-  glTexImage2D(GL_TEXTURE_2D,
+  glTexImage2D(target_,
                0,
                GL_RGBA,
                1,
@@ -126,6 +118,10 @@ void GLImageEGL::DidUseTexImage() {
                GL_RGBA,
                GL_UNSIGNED_BYTE,
                &zero);
+}
+
+void GLImageEGL::SetReleaseAfterUse() {
+  release_after_use_ = true;
 }
 
 }  // namespace gfx

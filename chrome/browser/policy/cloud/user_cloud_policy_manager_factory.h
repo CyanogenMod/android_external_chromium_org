@@ -8,10 +8,17 @@
 #include <map>
 
 #include "base/basictypes.h"
+#include "base/memory/ref_counted.h"
 #include "base/memory/singleton.h"
 #include "components/browser_context_keyed_service/browser_context_keyed_base_factory.h"
 
-class Profile;
+namespace base {
+class SequencedTaskRunner;
+}
+
+namespace content {
+class BrowserContext;
+}
 
 namespace policy {
 
@@ -24,8 +31,8 @@ class UserCloudPolicyManager;
 // UserCloudPolicyManager is handled different than other
 // BrowserContextKeyedServices because it is a dependency of PrefService.
 // Therefore, lifetime of instances is managed by Profile, Profile startup code
-// invokes CreateForProfile() explicitly, takes ownership, and the instance
-// is only deleted after PrefService destruction.
+// invokes CreateForBrowserContext() explicitly, takes ownership, and the
+// instance is only deleted after PrefService destruction.
 //
 // TODO(mnissler): Remove the special lifetime management in favor of
 // PrefService directly depending on UserCloudPolicyManager once the former has
@@ -36,45 +43,71 @@ class UserCloudPolicyManagerFactory : public BrowserContextKeyedBaseFactory {
   // Returns an instance of the UserCloudPolicyManagerFactory singleton.
   static UserCloudPolicyManagerFactory* GetInstance();
 
-  // Returns the UserCloudPolicyManager instance associated with |profile|.
-  static UserCloudPolicyManager* GetForProfile(Profile* profile);
+  // Returns the UserCloudPolicyManager instance associated with |context|.
+  static UserCloudPolicyManager* GetForBrowserContext(
+      content::BrowserContext* context);
 
-  // Creates an instance for |profile|. Note that the caller is responsible for
-  // managing the lifetime of the instance. Subsequent calls to GetForProfile()
-  // will return the created instance as long as it lives.
+  // Creates an instance for |context|. Note that the caller is responsible for
+  // managing the lifetime of the instance. Subsequent calls to
+  // GetForBrowserContext() will return the created instance as long as it
+  // lives.
   //
   // If |force_immediate_load| is true, policy is loaded synchronously from
   // UserCloudPolicyStore at startup.
-  static scoped_ptr<UserCloudPolicyManager> CreateForProfile(
-      Profile* profile,
-      bool force_immediate_load);
+  //
+  // |background_task_runner| is used for the cloud policy store.
+  // |file_task_runner| is used for file operations. Currently this must be the
+  // FILE BrowserThread.
+  // |io_task_runner| is used for network IO. Currently this must be the IO
+  // BrowserThread.
+  static scoped_ptr<UserCloudPolicyManager> CreateForOriginalBrowserContext(
+      content::BrowserContext* context,
+      bool force_immediate_load,
+      const scoped_refptr<base::SequencedTaskRunner>& background_task_runner,
+      const scoped_refptr<base::SequencedTaskRunner>& file_task_runner,
+      const scoped_refptr<base::SequencedTaskRunner>& io_task_runner);
+
+  static UserCloudPolicyManager* RegisterForOffTheRecordBrowserContext(
+      content::BrowserContext* original_context,
+      content::BrowserContext* off_the_record_context);
+
+  void RegisterForTesting(content::BrowserContext* context,
+                          UserCloudPolicyManager* manager);
 
  private:
-  friend class UserCloudPolicyManager;
+  class ManagerWrapper;
   friend struct DefaultSingletonTraits<UserCloudPolicyManagerFactory>;
 
   UserCloudPolicyManagerFactory();
   virtual ~UserCloudPolicyManagerFactory();
 
   // See comments for the static versions above.
-  UserCloudPolicyManager* GetManagerForProfile(Profile* profile);
-  scoped_ptr<UserCloudPolicyManager> CreateManagerForProfile(
-      Profile* profile,
-      bool force_immediate_load);
+  UserCloudPolicyManager* GetManagerForBrowserContext(
+      content::BrowserContext* context);
+
+  scoped_ptr<UserCloudPolicyManager> CreateManagerForOriginalBrowserContext(
+      content::BrowserContext* context,
+      bool force_immediate_load,
+      const scoped_refptr<base::SequencedTaskRunner>& background_task_runner,
+      const scoped_refptr<base::SequencedTaskRunner>& file_task_runner,
+      const scoped_refptr<base::SequencedTaskRunner>& io_task_runner);
+
+  UserCloudPolicyManager* RegisterManagerForOffTheRecordBrowserContext(
+      content::BrowserContext* original_context,
+      content::BrowserContext* off_the_record_context);
 
   // BrowserContextKeyedBaseFactory:
   virtual void BrowserContextShutdown(
-      content::BrowserContext* profile) OVERRIDE;
+      content::BrowserContext* context) OVERRIDE;
+  virtual void BrowserContextDestroyed(
+      content::BrowserContext* context) OVERRIDE;
   virtual void SetEmptyTestingFactory(
-      content::BrowserContext* profile) OVERRIDE;
-  virtual void CreateServiceNow(content::BrowserContext* profile) OVERRIDE;
+      content::BrowserContext* context) OVERRIDE;
+  virtual void CreateServiceNow(content::BrowserContext* context) OVERRIDE;
 
-  // Invoked by UserCloudPolicyManager to register/unregister instances.
-  void Register(Profile* profile, UserCloudPolicyManager* instance);
-  void Unregister(Profile* profile, UserCloudPolicyManager* instance);
+  typedef std::map<content::BrowserContext*, ManagerWrapper*> ManagerWrapperMap;
 
-  typedef std::map<Profile*, UserCloudPolicyManager*> ManagerMap;
-  ManagerMap managers_;
+  ManagerWrapperMap manager_wrappers_;
 
   DISALLOW_COPY_AND_ASSIGN(UserCloudPolicyManagerFactory);
 };

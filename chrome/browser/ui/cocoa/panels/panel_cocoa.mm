@@ -16,15 +16,6 @@
 using content::NativeWebKeyboardEvent;
 using content::WebContents;
 
-namespace {
-
-// Use this instead of 0 for minimum size of a window when doing opening and
-// closing animations, since OSX window manager does not like 0-sized windows
-// (according to avi@).
-const int kMinimumWindowSize = 1;
-
-}  // namespace
-
 // This creates a shim window class, which in turn creates a Cocoa window
 // controller which in turn creates actual NSWindow by loading a nib.
 // Overall chain of ownership is:
@@ -261,10 +252,6 @@ void PanelCocoa::SetPanelAlwaysOnTop(bool on_top) {
   [controller_ updateWindowCollectionBehavior];
 }
 
-void PanelCocoa::EnableResizeByMouse(bool enable) {
-  [controller_ enableResizeByMouse:enable];
-}
-
 void PanelCocoa::UpdatePanelMinimizeRestoreButtonVisibility() {
   [controller_ updateTitleBarMinimizeRestoreButtonVisibility];
 }
@@ -350,6 +337,7 @@ class CocoaNativePanelTesting : public NativePanelTesting {
   virtual bool VerifyActiveState(bool is_active) OVERRIDE;
   virtual bool VerifyAppIcon() const OVERRIDE;
   virtual bool VerifySystemMinimizeState() const OVERRIDE;
+  virtual bool IsWindowVisible() const OVERRIDE;
   virtual bool IsWindowSizeKnown() const OVERRIDE;
   virtual bool IsAnimatingBounds() const OVERRIDE;
   virtual bool IsButtonVisible(
@@ -427,6 +415,10 @@ bool CocoaNativePanelTesting::VerifyAppIcon() const {
 bool CocoaNativePanelTesting::VerifySystemMinimizeState() const {
   // TODO(jianli): to be implemented.
   return true;
+}
+
+bool CocoaNativePanelTesting::IsWindowVisible() const {
+  return [[native_panel_window_->controller_ window] isVisible];
 }
 
 bool CocoaNativePanelTesting::IsWindowSizeKnown() const {

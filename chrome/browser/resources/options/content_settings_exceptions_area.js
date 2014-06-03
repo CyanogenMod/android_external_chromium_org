@@ -104,6 +104,7 @@ cr.define('options.contentSettings', function() {
         this.editable = false;
       }
 
+      this.addEditField(select, this.settingLabel);
       this.contentElement.appendChild(select);
       select.className = 'exception-setting';
       select.setAttribute('aria-labelledby', 'exception-behavior-column');
@@ -166,7 +167,7 @@ cr.define('options.contentSettings', function() {
         indicator.setAttribute('content-exception', this.contentType);
         // Create a synthetic pref change event decorated as
         // CoreOptionsHandler::CreateValueForPref() does.
-        var event = new cr.Event(this.contentType);
+        var event = new Event(this.contentType);
         event.value = { controlledBy: controlledBy };
         indicator.handlePrefChange(event);
         this.appendChild(indicator);
@@ -371,11 +372,6 @@ cr.define('options.contentSettings', function() {
 
       chrome.send('setException',
                   [this.contentType, this.mode, newPattern, newSetting]);
-    },
-
-    /** @override */
-    isExtraFocusableControl: function(element) {
-      return element === this.select;
     },
   };
 

@@ -48,14 +48,14 @@ class GPU_EXPORT ContextGroup : public base::RefCounted<ContextGroup> {
       ImageManager* image_manager,
       MemoryTracker* memory_tracker,
       StreamTextureManager* stream_texture_manager,
+      FeatureInfo* feature_info,
       bool bind_generates_resource);
 
   // This should only be called by GLES2Decoder. This must be paired with a
   // call to destroy if it succeeds.
   bool Initialize(
       GLES2Decoder* decoder,
-      const DisallowedFeatures& disallowed_features,
-      const char* allowed_features);
+      const DisallowedFeatures& disallowed_features);
 
   // Destroys all the resources when called for the last context in the group.
   // It should only be called by GLES2Decoder.

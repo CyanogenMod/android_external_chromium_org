@@ -7,7 +7,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/history/history_types.h"
 #include "chrome/browser/sessions/session_service.h"
-#include "chrome/browser/sync/profile_sync_service_harness.h"
+#include "chrome/browser/sync/test/integration/profile_sync_service_harness.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
 #include "chrome/browser/sync/test/integration/typed_urls_helper.h"
 
@@ -26,7 +26,7 @@ class MultipleClientTypedUrlsSyncTest : public SyncTest {
 
 // TCM: 3728323
 IN_PROC_BROWSER_TEST_F(MultipleClientTypedUrlsSyncTest, AddToOne) {
-  const string16 kHistoryUrl(
+  const base::string16 kHistoryUrl(
       ASCIIToUTF16("http://www.add-one-history.google.com/"));
   ASSERT_TRUE(SetupSync()) << "SetupSync() failed.";
 
@@ -45,7 +45,7 @@ IN_PROC_BROWSER_TEST_F(MultipleClientTypedUrlsSyncTest, AddToOne) {
 }
 
 IN_PROC_BROWSER_TEST_F(MultipleClientTypedUrlsSyncTest, AddToAll) {
-  const string16 kHistoryUrl(
+  const base::string16 kHistoryUrl(
       ASCIIToUTF16("http://www.add-all-history.google.com/"));
   ASSERT_TRUE(SetupSync()) << "SetupSync() failed.";
 
@@ -54,7 +54,7 @@ IN_PROC_BROWSER_TEST_F(MultipleClientTypedUrlsSyncTest, AddToAll) {
     history::URLRows urls = GetTypedUrlsFromClient(i);
     ASSERT_EQ(0U, urls.size());
 
-    string16 unique_url = kHistoryUrl + base::FormatNumber(i);
+    base::string16 unique_url = kHistoryUrl + base::FormatNumber(i);
     GURL new_url(unique_url);
     AddUrlToHistory(i, new_url);
 

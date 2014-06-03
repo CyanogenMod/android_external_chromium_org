@@ -40,8 +40,9 @@ BookmarkSyncPromoView::BookmarkSyncPromoView(BookmarkBubbleDelegate* delegate)
                                                    0,
                                                    kBorderColor));
   size_t offset;
-  string16 link_text = l10n_util::GetStringUTF16(IDS_BOOKMARK_SYNC_PROMO_LINK);
-  string16 promo_text = l10n_util::GetStringFUTF16(
+  base::string16 link_text =
+      l10n_util::GetStringUTF16(IDS_BOOKMARK_SYNC_PROMO_LINK);
+  base::string16 promo_text = l10n_util::GetStringFUTF16(
       IDS_BOOKMARK_SYNC_PROMO_MESSAGE,
       link_text,
       &offset);
@@ -52,15 +53,15 @@ BookmarkSyncPromoView::BookmarkSyncPromoView(BookmarkBubbleDelegate* delegate)
   views::StyledLabel::RangeStyleInfo link_style =
       views::StyledLabel::RangeStyleInfo::CreateForLink();
   link_style.font_style = gfx::Font::NORMAL;
-  promo_label->AddStyleRange(ui::Range(offset, offset + link_text.length()),
+  promo_label->AddStyleRange(gfx::Range(offset, offset + link_text.length()),
                              link_style);
 
   views::StyledLabel::RangeStyleInfo promo_style;
   promo_style.color = kTextColor;
-  ui::Range before_link_range(0, offset);
+  gfx::Range before_link_range(0, offset);
   if (!before_link_range.is_empty())
     promo_label->AddStyleRange(before_link_range, promo_style);
-  ui::Range after_link_range(offset + link_text.length(), promo_text.length());
+  gfx::Range after_link_range(offset + link_text.length(), promo_text.length());
   if (!after_link_range.is_empty())
     promo_label->AddStyleRange(after_link_range, promo_style);
 
@@ -72,7 +73,7 @@ BookmarkSyncPromoView::BookmarkSyncPromoView(BookmarkBubbleDelegate* delegate)
   AddChildView(promo_label);
 }
 
-void BookmarkSyncPromoView::StyledLabelLinkClicked(const ui::Range& range,
+void BookmarkSyncPromoView::StyledLabelLinkClicked(const gfx::Range& range,
                                                    int event_flags) {
   delegate_->OnSignInLinkClicked();
 }

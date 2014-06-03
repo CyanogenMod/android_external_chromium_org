@@ -40,6 +40,10 @@ bool SessionStateDelegate::IsScreenLocked() const {
   return false;
 }
 
+bool SessionStateDelegate::ShouldLockScreenBeforeSuspending() const {
+  return false;
+}
+
 void SessionStateDelegate::LockScreen() {
 }
 
@@ -62,6 +66,12 @@ const std::string SessionStateDelegate::GetUserEmail(
   return "";
 }
 
+const std::string SessionStateDelegate::GetUserID(
+    ash::MultiProfileIndex index) const {
+  NOTIMPLEMENTED();
+  return "";
+}
+
 const gfx::ImageSkia& SessionStateDelegate::GetUserImage(
     ash::MultiProfileIndex index) const {
   NOTIMPLEMENTED();
@@ -77,6 +87,10 @@ void SessionStateDelegate::SwitchActiveUser(const std::string& user_id) {
   NOTIMPLEMENTED();
 }
 
+void SessionStateDelegate::CycleActiveUser(CycleUser cycle_user) {
+  NOTIMPLEMENTED();
+}
+
 void SessionStateDelegate::AddSessionStateObserver(
     ash::SessionStateObserver* observer) {
   NOTIMPLEMENTED();
@@ -85,4 +99,11 @@ void SessionStateDelegate::AddSessionStateObserver(
 void SessionStateDelegate::RemoveSessionStateObserver(
     ash::SessionStateObserver* observer) {
   NOTIMPLEMENTED();
+}
+
+bool SessionStateDelegate::TransferWindowToDesktopOfUser(
+    aura::Window* window,
+    ash::MultiProfileIndex index) {
+  NOTIMPLEMENTED();
+  return false;
 }

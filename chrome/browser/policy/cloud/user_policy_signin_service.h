@@ -9,10 +9,16 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/policy/cloud/user_policy_signin_service_base.h"
+#include "chrome/browser/signin/profile_oauth2_token_service.h"
 
 class Profile;
+
+namespace net {
+class URLRequestContextGetter;
+}
 
 namespace policy {
 
@@ -20,24 +26,29 @@ class CloudPolicyClientRegistrationHelper;
 
 // A specialization of the UserPolicySigninServiceBase for the desktop
 // platforms (Windows, Mac and Linux).
-class UserPolicySigninService : public UserPolicySigninServiceBase {
+class UserPolicySigninService : public UserPolicySigninServiceBase,
+                                public OAuth2TokenService::Observer {
  public:
   // Creates a UserPolicySigninService associated with the passed |profile|.
-  explicit UserPolicySigninService(Profile* profile);
+  UserPolicySigninService(
+      Profile* profile,
+      PrefService* local_state,
+      DeviceManagementService* device_management_service,
+      scoped_refptr<net::URLRequestContextGetter> system_request_context,
+      ProfileOAuth2TokenService* oauth2_token_service);
   virtual ~UserPolicySigninService();
 
   // Registers a CloudPolicyClient for fetching policy for a user. The
   // |oauth2_login_token| and |username| are explicitly passed because
-  // the user is not signed in yet (TokenService does not have any tokens yet
-  // to prevent services from using it until after we've fetched policy).
-  void RegisterPolicyClient(const std::string& username,
-                            const std::string& oauth2_login_token,
-                            const PolicyRegistrationCallback& callback);
+  // the user is not signed in yet (ProfileOAuth2TokenService does not have
+  // any tokens yet to prevent services from using it until after we've fetched
+  // policy).
+  void RegisterForPolicy(const std::string& username,
+                         const std::string& oauth2_login_token,
+                         const PolicyRegistrationCallback& callback);
 
-  // content::NotificationObserver implementation:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  // OAuth2TokenService::Observer implementation:
+  virtual void OnRefreshTokenAvailable(const std::string& account_id) OVERRIDE;
 
   // CloudPolicyService::Observer implementation:
   virtual void OnInitializationCompleted(CloudPolicyService* service) OVERRIDE;
@@ -45,9 +56,13 @@ class UserPolicySigninService : public UserPolicySigninServiceBase {
   // BrowserContextKeyedService implementation:
   virtual void Shutdown() OVERRIDE;
 
+ protected:
   // UserPolicySigninServiceBase implementation:
   virtual void InitializeUserCloudPolicyManager(
+      const std::string& username,
       scoped_ptr<CloudPolicyClient> client) OVERRIDE;
+
+  virtual void PrepareForUserCloudPolicyManagerShutdown() OVERRIDE;
   virtual void ShutdownUserCloudPolicyManager() OVERRIDE;
 
  private:
@@ -55,7 +70,7 @@ class UserPolicySigninService : public UserPolicySigninServiceBase {
   // the cloud policy server. |oauth_login_token| should contain an OAuth login
   // refresh token that can be downscoped to get an access token for the
   // device_management service.
-  void RegisterCloudPolicyService(const std::string& oauth_login_token);
+  void RegisterCloudPolicyService();
 
   // Callback invoked when policy registration has finished.
   void OnRegistrationComplete();
@@ -69,6 +84,10 @@ class UserPolicySigninService : public UserPolicySigninServiceBase {
                                       PolicyRegistrationCallback callback);
 
   scoped_ptr<CloudPolicyClientRegistrationHelper> registration_helper_;
+
+  // Weak pointer to the token service we use to authenticate during
+  // CloudPolicyClient registration.
+  ProfileOAuth2TokenService* oauth2_token_service_;
 
   DISALLOW_COPY_AND_ASSIGN(UserPolicySigninService);
 };

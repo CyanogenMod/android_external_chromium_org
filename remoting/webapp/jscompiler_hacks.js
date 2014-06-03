@@ -12,6 +12,9 @@ Document.prototype.activeElement;
 /** @type {Array.<HTMLElement>} */
 Document.prototype.all;
 
+/** @type {boolean} */
+Document.prototype.hidden;
+
 /** @type {function(string): void} */
 Document.prototype.execCommand = function(command) {};
 
@@ -119,6 +122,15 @@ chrome.app.window = {
    * @param {Object} parameters
    */
   create: function(name, parameters) {}
+};
+
+/**
+ * @type {Object}
+ * @see http://code.google.com/chrome/extensions/dev/contextMenus.html
+ */
+chrome.contextMenus = {
+  /** @type {chrome.Event} */
+  onClicked: null
 };
 
 /** @type {Object} */

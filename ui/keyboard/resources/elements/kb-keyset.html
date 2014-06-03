@@ -5,15 +5,13 @@
   -->
 
 <polymer-element name="kb-keyset" attributes="nextKeyset isDefault"
-    on-key-up="keyUp" on-key-longpress="keyLongpress">
+    on-key-up="{{keyUp}}" on-key-longpress="{{keyLongpress}}">
   <template>
     <style>
-      @host {
-        * {
-          -webkit-box-orient: vertical;
-          -webkit-box-flex: 1;
-          display: -webkit-box;
-        }
+      :host {
+        -webkit-box-flex: 1;
+        -webkit-box-orient: vertical;
+        display: -webkit-box;
       }
     </style>
     <content select="kb-row"></content>
@@ -27,6 +25,14 @@
       nextKeyset: undefined,
       // TODO(bshe): support select keyset on down, long and dbl events.
       keyUp: function(event, detail) {
+        switch (detail.char) {
+          case 'Shift':
+          case 'Alt':
+          case 'Ctrl':
+            return;
+          default:
+            break;
+        }
         if (!detail.toKeyset)
           detail.toKeyset = this.nextKeyset;
       },
@@ -40,7 +46,7 @@
 
         var altkeyMetadata = this.$.altkeyMetadata;
         var altkeys = altkeyMetadata.getAltkeys(detail.char,
-                                                !!detail.superscript);
+                                                !!detail.hintText);
         if (!altkeys)
           return;
 
@@ -55,12 +61,12 @@
           activeAltKeySet = altkeyMetadata.createAltkeySet(detail.char,
                                                            maxLeftOffset,
                                                            maxRightOffset,
-                                                           detail.superscript);
+                                                           detail.hintText);
           altkeyContainer.appendChild(activeAltKeySet);
         }
 
         altkeyContainer.keyset = id;
-        event.target.classList.remove('active');
+        event.target.dropKey();
         activeAltKeySet.style.width = event.target.clientWidth *
             activeAltKeySet.childElementCount + 'px';
         activeAltKeySet.style.height = event.target.clientHeight + 'px';

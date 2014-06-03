@@ -288,7 +288,8 @@ IN_PROC_BROWSER_TEST_F(ContentSettingsTest, RedirectCrossOrigin) {
       IsContentBlocked(CONTENT_SETTINGS_TYPE_COOKIES));
 }
 
-#if !defined(USE_AURA)  // No NPAPI plugins with Aura.
+// On Aura NPAPI only works on Windows.
+#if !defined(USE_AURA) || defined(OS_WIN)
 
 class ClickToPlayPluginTest : public ContentSettingsTest {
  public:
@@ -314,7 +315,7 @@ IN_PROC_BROWSER_TEST_F(ClickToPlayPluginTest, Basic) {
       base::FilePath(), base::FilePath().AppendASCII("clicktoplay.html"));
   ui_test_utils::NavigateToURL(browser(), url);
 
-  string16 expected_title(ASCIIToUTF16("OK"));
+  base::string16 expected_title(ASCIIToUTF16("OK"));
   content::TitleWatcher title_watcher(
       browser()->tab_strip_model()->GetActiveWebContents(), expected_title);
 
@@ -346,7 +347,7 @@ IN_PROC_BROWSER_TEST_F(ClickToPlayPluginTest, AllowException) {
                           std::string(),
                           CONTENT_SETTING_ALLOW);
 
-  string16 expected_title(ASCIIToUTF16("OK"));
+  base::string16 expected_title(ASCIIToUTF16("OK"));
   content::TitleWatcher title_watcher(
       browser()->tab_strip_model()->GetActiveWebContents(), expected_title);
   ui_test_utils::NavigateToURL(browser(), url);
@@ -365,7 +366,7 @@ IN_PROC_BROWSER_TEST_F(ClickToPlayPluginTest, BlockException) {
                           std::string(),
                           CONTENT_SETTING_BLOCK);
 
-  string16 expected_title(ASCIIToUTF16("Click To Play"));
+  base::string16 expected_title(ASCIIToUTF16("Click To Play"));
   content::TitleWatcher title_watcher(
       browser()->tab_strip_model()->GetActiveWebContents(), expected_title);
   ui_test_utils::NavigateToURL(browser(), url);
@@ -390,7 +391,7 @@ IN_PROC_BROWSER_TEST_F(ClickToPlayPluginTest, MAYBE_LoadAllBlockedPlugins) {
       base::FilePath().AppendASCII("load_all_blocked_plugins.html"));
   ui_test_utils::NavigateToURL(browser(), url);
 
-  string16 expected_title1(ASCIIToUTF16("1"));
+  base::string16 expected_title1(ASCIIToUTF16("1"));
   content::TitleWatcher title_watcher1(
       browser()->tab_strip_model()->GetActiveWebContents(), expected_title1);
 
@@ -402,7 +403,7 @@ IN_PROC_BROWSER_TEST_F(ClickToPlayPluginTest, MAYBE_LoadAllBlockedPlugins) {
       host->GetRoutingID(), std::string()));
   EXPECT_EQ(expected_title1, title_watcher1.WaitAndGetTitle());
 
-  string16 expected_title2(ASCIIToUTF16("2"));
+  base::string16 expected_title2(ASCIIToUTF16("2"));
   content::TitleWatcher title_watcher2(
       browser()->tab_strip_model()->GetActiveWebContents(), expected_title2);
 
@@ -427,7 +428,7 @@ IN_PROC_BROWSER_TEST_F(ClickToPlayPluginTest, NoCallbackAtLoad) {
       browser()->tab_strip_model()->GetActiveWebContents(),
       "CallOnStartup = function() { document.title = \"OK\"; }"));
 
-  string16 expected_title(ASCIIToUTF16("OK"));
+  base::string16 expected_title(ASCIIToUTF16("OK"));
   content::TitleWatcher title_watcher(
       browser()->tab_strip_model()->GetActiveWebContents(), expected_title);
 
@@ -451,7 +452,7 @@ IN_PROC_BROWSER_TEST_F(ClickToPlayPluginTest, DeleteSelfAtLoad) {
       base::FilePath().AppendASCII("plugin_delete_self_at_load.html"));
   ui_test_utils::NavigateToURL(browser(), url);
 
-  string16 expected_title(ASCIIToUTF16("OK"));
+  base::string16 expected_title(ASCIIToUTF16("OK"));
   content::TitleWatcher title_watcher(
       browser()->tab_strip_model()->GetActiveWebContents(), expected_title);
 
@@ -465,7 +466,7 @@ IN_PROC_BROWSER_TEST_F(ClickToPlayPluginTest, DeleteSelfAtLoad) {
   EXPECT_EQ(expected_title, title_watcher.WaitAndGetTitle());
 }
 
-#endif  // !defined(USE_AURA)
+#endif  // !defined(USE_AURA) || defined(OS_WIN)
 
 #if defined(ENABLE_PLUGINS)
 
@@ -517,7 +518,7 @@ class PepperContentSettingsTest : public ContentSettingsTest {
     content::WebContents* web_contents =
         browser()->tab_strip_model()->GetActiveWebContents();
 
-    string16 expected_title(ASCIIToUTF16(expected_result));
+    base::string16 expected_title(ASCIIToUTF16(expected_result));
     content::TitleWatcher title_watcher(web_contents, expected_title);
 
     // GetTestUrl assumes paths, so we must append query parameters to result.
@@ -543,7 +544,7 @@ class PepperContentSettingsTest : public ContentSettingsTest {
         browser()->tab_strip_model()->GetActiveWebContents();
     TabSpecificContentSettings* tab_settings =
         TabSpecificContentSettings::FromWebContents(web_contents);
-    string16 expected_title(ASCIIToUTF16(kExpectedTitle));
+    base::string16 expected_title(ASCIIToUTF16(kExpectedTitle));
     content::TitleWatcher title_watcher(web_contents, expected_title);
 
     GURL url = ui_test_utils::GetTestUrl(
@@ -562,7 +563,7 @@ const char* const PepperContentSettingsTest::kExternalClearKeyMimeType =
     "application/x-ppapi-clearkey-cdm";
 
 // Tests Pepper plugins that use JavaScript instead of Plug-ins settings.
-IN_PROC_BROWSER_TEST_F(PepperContentSettingsTest, PluginSpecialCases) {
+IN_PROC_BROWSER_TEST_F(PepperContentSettingsTest, DISABLED_PluginSpecialCases) {
 #if defined(OS_WIN) && defined(USE_ASH)
   // Disable this test in Metro+Ash for now (http://crbug.com/262796).
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kAshBrowserTests))

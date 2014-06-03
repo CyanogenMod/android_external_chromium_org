@@ -16,15 +16,15 @@
 #include "base/values.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/policy/browser_policy_connector.h"
-#include "chrome/browser/policy/external_data_fetcher.h"
-#include "chrome/browser/policy/policy_map.h"
-#include "chrome/browser/policy/policy_types.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "components/policy/core/common/external_data_fetcher.h"
+#include "components/policy/core/common/policy_map.h"
+#include "components/policy/core/common/policy_types.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/render_view_host.h"
@@ -40,19 +40,19 @@
 #include "chrome/browser/chromeos/net/proxy_config_handler.h"
 #include "chrome/browser/chromeos/proxy_cros_settings_parser.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
-#include "chrome/browser/chromeos/settings/cros_settings_names.h"
 #include "chrome/browser/prefs/proxy_config_dictionary.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/shill_profile_client.h"
 #include "chromeos/dbus/shill_service_client.h"
+#include "chromeos/network/favorite_state.h"
 #include "chromeos/network/network_state.h"
 #include "chromeos/network/network_state_handler.h"
+#include "chromeos/settings/cros_settings_names.h"
 #include "content/public/test/test_utils.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
 #endif
 
 using testing::AllOf;
-using testing::AnyNumber;
 using testing::Mock;
 using testing::Property;
 using testing::Return;
@@ -190,8 +190,6 @@ void PreferencesBrowserTest::SetUpInProcessBrowserTestFixture() {
   // Sets up a mock policy provider for user and device policies.
   EXPECT_CALL(policy_provider_, IsInitializationComplete(_))
       .WillRepeatedly(Return(true));
-  EXPECT_CALL(policy_provider_, RegisterPolicyDomain(_))
-      .Times(AnyNumber());
   policy::BrowserPolicyConnector::SetPolicyProviderForTesting(
       &policy_provider_);
 };
@@ -230,7 +228,8 @@ void PreferencesBrowserTest::VerifyKeyValue(const base::DictionaryValue& dict,
                                             const base::Value& expected) {
   const base::Value* actual = NULL;
   EXPECT_TRUE(dict.Get(key, &actual)) << "Was checking key: " << key;
-  EXPECT_EQ(expected, *actual) << "Was checking key: " << key;
+  if (actual)
+    EXPECT_EQ(expected, *actual) << "Was checking key: " << key;
 }
 
 void PreferencesBrowserTest::VerifyPref(const base::DictionaryValue* prefs,
@@ -239,20 +238,21 @@ void PreferencesBrowserTest::VerifyPref(const base::DictionaryValue* prefs,
                                         const std::string& controlledBy,
                                         bool disabled,
                                         bool uncommitted) {
-  const base::Value* pref;
-  const base::DictionaryValue* dict;
+  const base::Value* pref = NULL;
+  const base::DictionaryValue* dict = NULL;
   ASSERT_TRUE(prefs->GetWithoutPathExpansion(name, &pref));
   ASSERT_TRUE(pref->GetAsDictionary(&dict));
   VerifyKeyValue(*dict, "value", *value);
-  if (!controlledBy.empty()) {
+  if (!controlledBy.empty())
     VerifyKeyValue(*dict, "controlledBy", base::StringValue(controlledBy));
-  } else {
+  else
     EXPECT_FALSE(dict->HasKey("controlledBy"));
-  }
+
   if (disabled)
     VerifyKeyValue(*dict, "disabled", base::FundamentalValue(true));
   else if (dict->HasKey("disabled"))
     VerifyKeyValue(*dict, "disabled", base::FundamentalValue(false));
+
   if (uncommitted)
     VerifyKeyValue(*dict, "uncommitted", base::FundamentalValue(true));
   else if (dict->HasKey("uncommitted"))
@@ -702,7 +702,7 @@ IN_PROC_BROWSER_TEST_F(PreferencesBrowserTest, ChromeOSDeviceFetchPrefs) {
   // Verify notifications when default values are in effect.
   SetupJavaScriptTestEnvironment(pref_names_, &observed_json);
   VerifyObservedPrefs(observed_json, pref_names_, default_values_,
-                      "", true, false);
+                      "owner", true, false);
 
   // Verify notifications when mandatory values are in effect.
   chromeos::CrosSettings* cros_settings = chromeos::CrosSettings::Get();
@@ -713,7 +713,7 @@ IN_PROC_BROWSER_TEST_F(PreferencesBrowserTest, ChromeOSDeviceFetchPrefs) {
   // decorated with "controlledBy: policy".
   SetupJavaScriptTestEnvironment(pref_names_, &observed_json);
   VerifyObservedPrefs(observed_json, pref_names_, decorated_non_default_values,
-                      "", true, false);
+                      "owner", true, false);
 
   STLDeleteElements(&decorated_non_default_values);
 }
@@ -736,8 +736,10 @@ class ProxyPreferencesBrowserTest : public PreferencesBrowserTest {
 
     ProxyConfigDictionary proxy_config(proxy_config_dict.get());
 
-    const chromeos::NetworkState* network = GetDefaultNetwork();
-    chromeos::proxy_config::SetProxyConfigForNetwork(proxy_config, *network);
+    const chromeos::FavoriteState* network = GetDefaultFavoriteNetwork();
+    ASSERT_TRUE(network);
+    chromeos::proxy_config::SetProxyConfigForFavoriteNetwork(proxy_config,
+                                                             *network);
 
     std::string url = base::StringPrintf("%s?network=%s",
                                          chrome::kChromeUIProxySettingsURL,
@@ -761,15 +763,15 @@ class ProxyPreferencesBrowserTest : public PreferencesBrowserTest {
     service_test->ClearServices();
     service_test->AddService("stub_ethernet",
                              "eth0",
-                             flimflam::kTypeEthernet,
-                             flimflam::kStateOnline,
+                             shill::kTypeEthernet,
+                             shill::kStateOnline,
                              true,   // add to visible
                              true);  // add to watchlist
     service_test->SetServiceProperty("stub_ethernet",
-                                     flimflam::kGuidProperty,
+                                     shill::kGuidProperty,
                                      base::StringValue("stub_ethernet"));
     service_test->SetServiceProperty("stub_ethernet",
-                                     flimflam::kProfileProperty,
+                                     shill::kProfileProperty,
                                      base::StringValue(kUserProfilePath));
     profile_test->AddService(kUserProfilePath, "stub_wifi2");
   }
@@ -801,9 +803,10 @@ class ProxyPreferencesBrowserTest : public PreferencesBrowserTest {
     content::RunAllPendingInMessageLoop();
   }
 
-  const chromeos::NetworkState* GetDefaultNetwork() {
-    return chromeos::NetworkHandler::Get()->network_state_handler()
-        ->DefaultNetwork();
+  const chromeos::FavoriteState* GetDefaultFavoriteNetwork() {
+    chromeos::NetworkStateHandler* handler =
+        chromeos::NetworkHandler::Get()->network_state_handler();
+    return handler->DefaultFavoriteNetwork();
   }
 
   void SetProxyPref(const std::string& name, const base::Value& value) {
@@ -827,14 +830,17 @@ class ProxyPreferencesBrowserTest : public PreferencesBrowserTest {
   }
 
   void VerifyCurrentProxyServer(const std::string& expected_server,
-                                chromeos::onc::ONCSource expected_source) {
-    chromeos::onc::ONCSource actual_source;
+                                onc::ONCSource expected_source) {
+    const chromeos::FavoriteState* network = GetDefaultFavoriteNetwork();
+    ASSERT_TRUE(network);
+    onc::ONCSource actual_source;
     scoped_ptr<ProxyConfigDictionary> proxy_dict =
-        chromeos::proxy_config::GetProxyConfigForNetwork(
+        chromeos::proxy_config::GetProxyConfigForFavoriteNetwork(
             pref_service_,
             g_browser_process->local_state(),
-            *GetDefaultNetwork(),
+            *network,
             &actual_source);
+    ASSERT_TRUE(proxy_dict);
     std::string actual_proxy_server;
     EXPECT_TRUE(proxy_dict->GetProxyServer(&actual_proxy_server));
     EXPECT_EQ(expected_server, actual_proxy_server);
@@ -960,7 +966,7 @@ IN_PROC_BROWSER_TEST_F(ProxyPreferencesBrowserTest, ChromeOSSetProxy) {
   SetProxyPref(chromeos::kProxySingleHttp, base::StringValue("www.adomain.xy"));
 
   VerifyCurrentProxyServer("www.adomain.xy:123",
-                           chromeos::onc::ONC_SOURCE_NONE);
+                           onc::ONC_SOURCE_NONE);
 }
 
 // Verify that default proxy ports are used and that ports can be updated
@@ -980,7 +986,7 @@ IN_PROC_BROWSER_TEST_F(ProxyPreferencesBrowserTest, ChromeOSProxyDefaultPorts) {
   // Verify default ports.
   VerifyCurrentProxyServer(
       "http=a.com:80;https=4.3.2.1:80;ftp=c.com:80;socks=socks4://d.com:1080",
-      chromeos::onc::ONC_SOURCE_NONE);
+      onc::ONC_SOURCE_NONE);
 
   // Set and verify the ports.
   SetProxyPref(chromeos::kProxyHttpPort, base::FundamentalValue(1));
@@ -990,7 +996,7 @@ IN_PROC_BROWSER_TEST_F(ProxyPreferencesBrowserTest, ChromeOSProxyDefaultPorts) {
 
   VerifyCurrentProxyServer(
       "http=a.com:1;https=4.3.2.1:2;ftp=c.com:3;socks=socks4://d.com:4",
-      chromeos::onc::ONC_SOURCE_NONE);
+      onc::ONC_SOURCE_NONE);
 }
 
 #endif

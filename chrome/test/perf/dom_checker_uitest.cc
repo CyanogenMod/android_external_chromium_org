@@ -2,6 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <list>
+#include <set>
+#include <string>
+#include <vector>
+
 #include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/files/file_path.h"
@@ -22,13 +27,13 @@
 
 namespace {
 
-static const base::FilePath::CharType kBaseUrl[] =
+const base::FilePath::CharType kBaseUrl[] =
     FILE_PATH_LITERAL("http://localhost:8000/");
 
-static const base::FilePath::CharType kTestDirectory[] =
+const base::FilePath::CharType kTestDirectory[] =
     FILE_PATH_LITERAL("dom_checker/");
 
-static const base::FilePath::CharType kStartFile[] =
+const base::FilePath::CharType kStartFile[] =
     FILE_PATH_LITERAL("dom_checker.html");
 
 const char kRunDomCheckerTest[] = "run-dom-checker-test";
@@ -113,7 +118,7 @@ class DomCheckerTest : public UITest {
                            std::string* results) {
     base::FilePath results_path = GetDomCheckerDir();
     results_path = results_path.AppendASCII(failures_file);
-    return file_util::ReadFileToString(results_path, results);
+    return base::ReadFileToString(results_path, results);
   }
 
   void ParseExpectedFailures(const std::string& input, ResultsSet* output) {

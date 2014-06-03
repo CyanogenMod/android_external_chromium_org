@@ -9,10 +9,7 @@
 
 #include "chrome/browser/storage_monitor/storage_monitor.h"
 
-namespace chrome {
-namespace test {
-
-class TestStorageMonitor : public chrome::StorageMonitor {
+class TestStorageMonitor : public StorageMonitor {
  public:
   TestStorageMonitor();
   virtual ~TestStorageMonitor();
@@ -47,8 +44,8 @@ class TestStorageMonitor : public chrome::StorageMonitor {
 #if defined(OS_WIN)
   virtual bool GetMTPStorageInfoFromDeviceId(
       const std::string& storage_device_id,
-      string16* device_location,
-      string16* storage_object_id) const OVERRIDE;
+      base::string16* device_location,
+      base::string16* storage_object_id) const OVERRIDE;
 #endif
 
 #if defined(OS_LINUX)
@@ -79,8 +76,5 @@ class TestStorageMonitor : public chrome::StorageMonitor {
       media_transfer_protocol_manager_;
 #endif
 };
-
-}  // namespace test
-}  // namespace chrome
 
 #endif  // CHROME_BROWSER_STORAGE_MONITOR_TEST_STORAGE_MONITOR_H_

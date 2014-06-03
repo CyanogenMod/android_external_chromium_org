@@ -7,17 +7,18 @@
   "description": "File Manager",
   "incognito" : "split",
   "icons": {
-    "16": "images/icon16.png",
-    "32": "images/icon32.png",
-    "48": "images/icon48.png",
-    "64": "images/icon64.png",
-    "96": "images/icon96.png",
-    "128": "images/icon128.png",
-    "256": "images/icon256.png"
+    "16": "common/images/icon16.png",
+    "32": "common/images/icon32.png",
+    "48": "common/images/icon48.png",
+    "64": "common/images/icon64.png",
+    "96": "common/images/icon96.png",
+    "128": "common/images/icon128.png",
+    "256": "common/images/icon256.png"
   },
   "permissions": [
     "contextMenus",
     "experimental",
+    "echoPrivate",
     "storage",
     "fileBrowserHandler",
     "fileBrowserPrivate",
@@ -25,6 +26,7 @@
     "mediaPlayerPrivate",
     "mediaGalleriesPrivate",
     "metricsPrivate",
+    "notifications",
     "commandLinePrivate",
     "unlimitedStorage",
     "webview",
@@ -35,6 +37,7 @@
     "tabs",
     "clipboardWrite",
     "clipboardRead",
+    "power",
     "https://docs.google.com/",
     "https://*.googleusercontent.com/",
     "https://drive.google.com/"
@@ -43,7 +46,7 @@
     {
       "id": "play",
       "default_title": "__MSG_PLAY_MEDIA__",
-      "default_icon": "images/filetype_audio.png",
+      "default_icon": "common/images/file_types/200/audio.png",
       "file_filters": [
         "filesystem:*.amr",
         "filesystem:*.flac",
@@ -57,7 +60,7 @@
     {
       "id": "watch",
       "default_title": "__MSG_PLAY_MEDIA__",
-      "default_icon": "images/filetype_video.png",
+      "default_icon": "common/images/file_types/200/video.png",
       "file_filters": [
         "filesystem:*.3gp",
         "filesystem:*.avi",
@@ -78,22 +81,16 @@
     {
       "id": "mount-archive",
       "default_title": "__MSG_MOUNT_ARCHIVE__",
-      "default_icon": "images/filetype_archive.png",
+      "default_icon": "common/images/file_types/200/archive.png",
       "file_filters": [
         "filesystem:*.rar",
-        "filesystem:*.tar",
-        "filesystem:*.tar.bz2",
-        "filesystem:*.tar.gz",
-        "filesystem:*.tbz",
-        "filesystem:*.tbz2",
-        "filesystem:*.tgz",
         "filesystem:*.zip"
       ]
     },
     {
       "id": "view-pdf",
       "default_title": "__MSG_OPEN_ACTION__",
-      "default_icon": "images/filetype_pdf.png",
+      "default_icon": "common/images/file_types/200/pdf.png",
       "file_filters": [
         "filesystem:*.pdf"
       ]
@@ -101,7 +98,7 @@
     {
       "id": "view-swf",
       "default_title": "__MSG_OPEN_ACTION__",
-      "default_icon": "images/filetype_generic.png",
+      "default_icon": "common/images/file_types/200/generic.png",
       "file_filters": [
         "filesystem:*.swf"
       ]
@@ -109,7 +106,7 @@
     {
       "id": "view-in-browser",
       "default_title": "__MSG_OPEN_ACTION__",
-      "default_icon": "images/filetype_generic.png",
+      "default_icon": "common/images/file_types/200/generic.png",
       "file_filters": [
         "filesystem:*.htm",
         "filesystem:*.html",
@@ -119,21 +116,14 @@
       ]
     },
     {
-      "id": "install-crx",
-      "default_title": "__MSG_INSTALL_CRX__",
-      "default_icon": "images/filetype_generic.png",
-      "file_filters": [
-        "filesystem:*.crx"
-      ]
-    },
-    {
       "id": "gallery",
       "default_title": "__MSG_OPEN_ACTION__",
-      "default_icon": "images/filetype_image.png",
+      "default_icon": "common/images/file_types/200/image.png",
       "file_filters": [
         // Image formats
         "filesystem:*.bmp",
         "filesystem:*.gif",
+        "filesystem:*.ico",
         "filesystem:*.jpg",
         "filesystem:*.jpeg",
         "filesystem:*.png",
@@ -158,16 +148,17 @@
     {
       "id": "open-hosted-generic",
       "default_title": "__MSG_HOSTED__",
-      "default_icon": "images/filetype_generic.png",
+      "default_icon": "common/images/file_types/200generic.png",
       "file_filters": [
         "filesystem:*.gdraw",
-        "filesystem:*.gtable"
+        "filesystem:*.gtable",
+        "filesystem:*.gform"
       ]
     },
     {
       "id": "open-hosted-gdoc",
       "default_title": "__MSG_HOSTED__",
-      "default_icon": "images/filetype_generic.png",
+      "default_icon": "common/images/file_types/200/generic.png",
       "file_filters": [
         "filesystem:*.gdoc"
       ]
@@ -175,7 +166,7 @@
     {
       "id": "open-hosted-gsheet",
       "default_title": "__MSG_HOSTED__",
-      "default_icon": "images/filetype_generic.png",
+      "default_icon": "common/images/file_types/200/generic.png",
       "file_filters": [
         "filesystem:*.gsheet"
       ]
@@ -183,7 +174,7 @@
     {
       "id": "open-hosted-gslides",
       "default_title": "__MSG_HOSTED__",
-      "default_icon": "images/filetype_generic.png",
+      "default_icon": "common/images/file_types/200/generic.png",
       "file_filters": [
         "filesystem:*.gslides"
       ]
@@ -194,42 +185,45 @@
     {
       "id": "auto-open",
       "default_title": "__MSG_OPEN_ACTION__",
-      "default_icon": "images/filetype_generic.png",
+      "default_icon": "common/images/file_types/200/generic.png",
       "file_filters": []
     },
     // Selects the passed file after launching Files.app.
     {
       "id": "select",
       "default_title": "__MSG_OPEN_ACTION__",
-      "default_icon": "images/filetype_generic.png",
+      "default_icon": "common/images/file_types/200/generic.png",
       "file_filters": []
     },
     // Opens the passed directory after launching Files.app.
     {
       "id": "open",
       "default_title": "__MSG_OPEN_ACTION__",
-      "default_icon": "images/filetype_generic.png",
+      "default_icon": "common/images/file_types/200/generic.png",
       "file_filters": []
     }
   ],
-  "chrome_url_overrides": {
-    "files": "main.html"
-  },
   // Required to import scripts in a web worker. Note, that in Apps v2, it is
   // enough that anything is passed to web_accessible_resources. If there is
   // at least any file, then all files are allowed. http://crbug.com/179127.
-  "web_accessible_resources": ["js/metadata/byte_reader.js"],
+  "web_accessible_resources": ["foreground/js/metadata/byte_reader.js"],
   "app": {
     "background": {
       "scripts": [
+        "chrome://resources/js/load_time_data.js",
         "chrome://resources/js/cr.js",
         "chrome://resources/js/cr/event_target.js",
-        "js/file_copy_manager.js",
-        "js/async_util.js",
-        "js/path_util.js",
-        "js/util.js",
-        "js/test_util.js",
-        "js/background.js"]
+        "chrome://resources/js/cr/ui/array_data_model.js",
+        "common/js/async_util.js",
+        "common/js/path_util.js",
+        "common/js/progress_center_common.js",
+        "common/js/util.js",
+        "background/js/volume_manager.js",
+        "background/js/file_operation_handler.js",
+        "background/js/file_operation_manager.js",
+        "background/js/test_util.js",
+        "background/js/progress_center.js",
+        "background/js/background.js"]
     },
     // chrome-extension://pmfjbimdmchhbnneeidfognadeopoehp is the image loader extension.
     "content_security_policy": "default-src 'none'; script-src 'self' chrome://resources chrome-extension://pmfjbimdmchhbnneeidfognadeopoehp; style-src 'self' 'unsafe-inline' chrome://resources; frame-src 'self' about:; img-src 'self' chrome://resources chrome://theme data: https://docs.google.com https://*.googleusercontent.com chrome://extension-icon; media-src 'self' https://*.googleusercontent.com; connect-src https://drive.google.com; object-src 'self'"

@@ -15,22 +15,27 @@
 #include "base/message_loop/message_loop.h"
 #include "content/browser/renderer_host/p2p/socket_host.h"
 #include "content/common/content_export.h"
-#include "content/common/p2p_sockets.h"
+#include "content/public/common/p2p_socket_type.h"
 #include "net/base/ip_endpoint.h"
 #include "net/udp/udp_server_socket.h"
 
 namespace content {
 
+class P2PMessageThrottler;
+
 class CONTENT_EXPORT P2PSocketHostUdp : public P2PSocketHost {
  public:
-  P2PSocketHostUdp(IPC::Sender* message_sender, int id);
+  P2PSocketHostUdp(IPC::Sender* message_sender, int id,
+                   P2PMessageThrottler* throttler);
   virtual ~P2PSocketHostUdp();
 
   // P2PSocketHost overrides.
   virtual bool Init(const net::IPEndPoint& local_address,
                     const net::IPEndPoint& remote_address) OVERRIDE;
   virtual void Send(const net::IPEndPoint& to,
-                    const std::vector<char>& data) OVERRIDE;
+                    const std::vector<char>& data,
+                    net::DiffServCodePoint dscp,
+                    uint64 packet_id) OVERRIDE;
   virtual P2PSocketHost* AcceptIncomingTcpConnection(
       const net::IPEndPoint& remote_address, int id) OVERRIDE;
 
@@ -42,11 +47,13 @@ class CONTENT_EXPORT P2PSocketHostUdp : public P2PSocketHost {
   struct PendingPacket {
     PendingPacket(const net::IPEndPoint& to,
                   const std::vector<char>& content,
+                  net::DiffServCodePoint dscp,
                   uint64 id);
     ~PendingPacket();
     net::IPEndPoint to;
     scoped_refptr<net::IOBuffer> data;
     int size;
+    net::DiffServCodePoint dscp;
     uint64 id;
   };
 
@@ -66,11 +73,12 @@ class CONTENT_EXPORT P2PSocketHostUdp : public P2PSocketHost {
 
   std::deque<PendingPacket> send_queue_;
   bool send_pending_;
-  uint64 send_packet_count_;
+  net::DiffServCodePoint last_dscp_;
 
   // Set of peer for which we have received STUN binding request or
   // response or relay allocation request or response.
   ConnectedPeerSet connected_peers_;
+  P2PMessageThrottler* throttler_;
 
   DISALLOW_COPY_AND_ASSIGN(P2PSocketHostUdp);
 };

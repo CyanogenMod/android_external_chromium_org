@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,7 +12,7 @@ import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 
 import org.chromium.content.browser.ContentViewRenderView;
-import org.chromium.ui.WindowAndroid;
+import org.chromium.ui.base.WindowAndroid;
 
 /**
  * The TabManager hooks together all of the related {@link View}s that are used to represent
@@ -42,10 +42,17 @@ public class TabManager extends LinearLayout {
     @Override
     protected void onFinishInflate() {
         super.onFinishInflate();
+    }
 
+    /**
+     * @param window The window used to generate all ContentViews.
+     */
+    public void setWindow(WindowAndroid window) {
+        assert window != null;
+        mWindow = window;
         mContentViewHolder = (ViewGroup) findViewById(R.id.content_container);
         mToolbar = (TestShellToolbar) findViewById(R.id.toolbar);
-        mContentViewRenderView = new ContentViewRenderView(getContext()) {
+        mContentViewRenderView = new ContentViewRenderView(getContext(), mWindow) {
             @Override
             protected void onReadyToRender() {
                 if (mCurrentTab == null) createTab(mStartupUrl);
@@ -55,13 +62,6 @@ public class TabManager extends LinearLayout {
                 new FrameLayout.LayoutParams(
                         FrameLayout.LayoutParams.MATCH_PARENT,
                         FrameLayout.LayoutParams.MATCH_PARENT));
-    }
-
-    /**
-     * @param window The window used to generate all ContentViews.
-     */
-    public void setWindow(WindowAndroid window) {
-        mWindow = window;
     }
 
     /**

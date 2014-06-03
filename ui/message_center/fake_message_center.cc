@@ -19,7 +19,11 @@ void FakeMessageCenter::AddObserver(MessageCenterObserver* observer) {
 void FakeMessageCenter::RemoveObserver(MessageCenterObserver* observer) {
 }
 
-void FakeMessageCenter::SetDelegate(Delegate* delegate) {
+void FakeMessageCenter::AddNotificationBlocker(NotificationBlocker* blocker) {
+}
+
+void FakeMessageCenter::RemoveNotificationBlocker(
+    NotificationBlocker* blocker) {
 }
 
 size_t FakeMessageCenter::NotificationCount() const {
@@ -46,7 +50,8 @@ bool FakeMessageCenter::HasClickedListener(const std::string& id) {
   return false;
 }
 
-const NotificationList::Notifications& FakeMessageCenter::GetNotifications() {
+const NotificationList::Notifications&
+FakeMessageCenter::GetVisibleNotifications() {
   return empty_notifications_;
 }
 
@@ -69,6 +74,9 @@ void FakeMessageCenter::RemoveNotification(const std::string& id,
 void FakeMessageCenter::RemoveAllNotifications(bool by_user) {
 }
 
+void FakeMessageCenter::RemoveAllVisibleNotifications(bool by_user) {
+}
+
 void FakeMessageCenter::SetNotificationIcon(const std::string& notification_id,
                                             const gfx::Image& image) {
 }
@@ -83,13 +91,8 @@ void FakeMessageCenter::SetNotificationButtonIcon(
     const gfx::Image& image) {
 }
 
-void FakeMessageCenter::DisableNotificationsByExtension(const std::string& id) {
-}
-
-void FakeMessageCenter::DisableNotificationsByUrl(const std::string& id) {
-}
-
-void FakeMessageCenter::ShowNotificationSettings(const std::string& id) {
+void FakeMessageCenter::DisableNotificationsByNotifier(
+    const NotifierId& notifier_id) {
 }
 
 void FakeMessageCenter::ExpandNotification(const std::string& id) {
@@ -124,10 +127,10 @@ void FakeMessageCenter::EnterQuietModeWithExpire(
     const base::TimeDelta& expires_in) {
 }
 
-void FakeMessageCenter::SetMessageCenterVisible(bool visible) {
+void FakeMessageCenter::SetVisibility(Visibility visible) {
 }
 
-bool FakeMessageCenter::IsMessageCenterVisible() {
+bool FakeMessageCenter::IsMessageCenterVisible() const {
   return false;
 }
 

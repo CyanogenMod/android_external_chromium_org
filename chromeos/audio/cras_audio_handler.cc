@@ -30,6 +30,11 @@ const int kMuteThresholdPercent = 1;
 
 static CrasAudioHandler* g_cras_audio_handler = NULL;
 
+bool IsSameAudioDevice(const AudioDevice& a, const AudioDevice& b) {
+  return a.id == b.id && a.is_input == b.is_input && a.type == b.type
+      && a.device_name == b.device_name;
+}
+
 }  // namespace
 
 CrasAudioHandler::AudioObserver::AudioObserver() {
@@ -134,9 +139,7 @@ int CrasAudioHandler::GetOutputVolumePercentForDevice(uint64 device_id) {
     return output_volume_;
   } else {
     const AudioDevice* device = GetDeviceFromId(device_id);
-    if (!device)
-      return kDefaultVolumeGainPercent;
-    return static_cast<int>(audio_pref_handler_->GetVolumeGainValue(*device));
+    return static_cast<int>(audio_pref_handler_->GetOutputVolumeValue(device));
   }
 }
 
@@ -149,9 +152,7 @@ int CrasAudioHandler::GetInputGainPercentForDevice(uint64 device_id) {
     return input_gain_;
   } else {
     const AudioDevice* device = GetDeviceFromId(device_id);
-    if (!device)
-      return kDefaultVolumeGainPercent;
-    return static_cast<int>(audio_pref_handler_->GetVolumeGainValue(*device));
+    return static_cast<int>(audio_pref_handler_->GetInputGainValue(device));
   }
 }
 
@@ -292,6 +293,10 @@ void CrasAudioHandler::SetMuteForDevice(uint64 device_id, bool mute_on) {
     audio_pref_handler_->SetMuteValue(*device, mute_on);
 }
 
+void CrasAudioHandler::LogErrors() {
+  log_errors_ = true;
+}
+
 CrasAudioHandler::CrasAudioHandler(
     scoped_refptr<AudioDevicesPrefHandler> audio_pref_handler)
     : audio_pref_handler_(audio_pref_handler),
@@ -305,7 +310,8 @@ CrasAudioHandler::CrasAudioHandler(
       has_alternative_input_(false),
       has_alternative_output_(false),
       output_mute_locked_(false),
-      input_mute_locked_(false) {
+      input_mute_locked_(false),
+      log_errors_(false) {
   if (!audio_pref_handler.get())
     return;
   // If the DBusThreadManager or the CrasAudioClient aren't available, there
@@ -316,6 +322,10 @@ CrasAudioHandler::CrasAudioHandler(
     return;
   chromeos::DBusThreadManager::Get()->GetCrasAudioClient()->AddObserver(this);
   audio_pref_handler_->AddAudioPrefObserver(this);
+  if (chromeos::DBusThreadManager::Get()->GetSessionManagerClient()) {
+    chromeos::DBusThreadManager::Get()->GetSessionManagerClient()->
+        AddObserver(this);
+  }
   InitializeAudioState();
 }
 
@@ -326,12 +336,17 @@ CrasAudioHandler::~CrasAudioHandler() {
     return;
   chromeos::DBusThreadManager::Get()->GetCrasAudioClient()->
       RemoveObserver(this);
+  chromeos::DBusThreadManager::Get()->GetSessionManagerClient()->
+      RemoveObserver(this);
   if (audio_pref_handler_.get())
     audio_pref_handler_->RemoveAudioPrefObserver(this);
   audio_pref_handler_ = NULL;
 }
 
 void CrasAudioHandler::AudioClientRestarted() {
+  // Make sure the logging is enabled in case cras server
+  // restarts after crashing.
+  LogErrors();
   InitializeAudioState();
 }
 
@@ -345,8 +360,13 @@ void CrasAudioHandler::ActiveOutputNodeChanged(uint64 node_id) {
     return;
 
   // Active audio output device should always be changed by chrome.
-  LOG(WARNING) << "Active output node changed unexpectedly by system node_id="
-      << "0x" << std::hex << node_id;
+  // During system boot, cras may change active input to unknown device 0x1,
+  // we don't need to log it, since it is not an valid device.
+  if (GetDeviceFromId(node_id)) {
+    LOG_IF(WARNING, log_errors_)
+        << "Active output node changed unexpectedly by system node_id="
+        << "0x" << std::hex << node_id;
+  }
 }
 
 void CrasAudioHandler::ActiveInputNodeChanged(uint64 node_id) {
@@ -354,12 +374,23 @@ void CrasAudioHandler::ActiveInputNodeChanged(uint64 node_id) {
     return;
 
   // Active audio input device should always be changed by chrome.
-  LOG(WARNING) << "Active input node changed unexpectedly by system node_id="
-      << "0x" << std::hex << node_id;
+  // During system boot, cras may change active input to unknown device 0x2,
+  // we don't need to log it, since it is not an valid device.
+  if (GetDeviceFromId(node_id)) {
+    LOG_IF(WARNING, log_errors_)
+        << "Active input node changed unexpectedly by system node_id="
+        << "0x" << std::hex << node_id;
+  }
 }
 
 void CrasAudioHandler::OnAudioPolicyPrefChanged() {
   ApplyAudioPolicy();
+}
+
+void CrasAudioHandler::EmitLoginPromptVisibleCalled() {
+  // Enable logging after cras server is started, which will be after
+  // EmitLoginPromptVisible.
+  LogErrors();
 }
 
 const AudioDevice* CrasAudioHandler::GetDeviceFromId(uint64 device_id) const {
@@ -374,12 +405,13 @@ void CrasAudioHandler::SetupAudioInputState() {
   // Set the initial audio state to the ones read from audio prefs.
   const AudioDevice* device = GetDeviceFromId(active_input_node_id_);
   if (!device) {
-    LOG(ERROR) << "Can't set up audio state for unknow input device id ="
+    LOG_IF(ERROR, log_errors_)
+        << "Can't set up audio state for unknown input device id ="
         << "0x" << std::hex << active_input_node_id_;
     return;
   }
   input_mute_on_ = audio_pref_handler_->GetMuteValue(*device);
-  input_gain_ = audio_pref_handler_->GetVolumeGainValue(*device);
+  input_gain_ = audio_pref_handler_->GetInputGainValue(device);
   SetInputMuteInternal(input_mute_on_);
   // TODO(rkc,jennyz): Set input gain once we decide on how to store
   // the gain values since the range and step are both device specific.
@@ -388,12 +420,13 @@ void CrasAudioHandler::SetupAudioInputState() {
 void CrasAudioHandler::SetupAudioOutputState() {
   const AudioDevice* device = GetDeviceFromId(active_output_node_id_);
   if (!device) {
-    LOG(ERROR) << "Can't set up audio state for unknow output device id ="
-               << "0x" << std::hex << active_output_node_id_;
+    LOG_IF(ERROR, log_errors_)
+        << "Can't set up audio state for unknown output device id ="
+        << "0x" << std::hex << active_output_node_id_;
     return;
   }
   output_mute_on_ = audio_pref_handler_->GetMuteValue(*device);
-  output_volume_ = audio_pref_handler_->GetVolumeGainValue(*device);
+  output_volume_ = audio_pref_handler_->GetOutputVolumeValue(device);
 
   SetOutputMuteInternal(output_mute_on_);
   SetOutputNodeVolume(active_output_node_id_, output_volume_);
@@ -419,7 +452,10 @@ void CrasAudioHandler::ApplyAudioPolicy() {
 
   input_mute_locked_ = false;
   if (audio_pref_handler_->GetAudioCaptureAllowedValue()) {
-    SetInputMute(false);
+    // Set input mute if we have discovered active input device.
+    const AudioDevice* device = GetDeviceFromId(active_input_node_id_);
+    if (device)
+      SetInputMuteInternal(false);
   } else {
     SetInputMute(true);
     input_mute_locked_ = true;
@@ -459,6 +495,8 @@ bool CrasAudioHandler::SetInputMuteInternal(bool mute_on) {
 void CrasAudioHandler::GetNodes() {
   chromeos::DBusThreadManager::Get()->GetCrasAudioClient()->GetNodes(
       base::Bind(&CrasAudioHandler::HandleGetNodes,
+                 weak_ptr_factory_.GetWeakPtr()),
+      base::Bind(&CrasAudioHandler::HandleGetNodesError,
                  weak_ptr_factory_.GetWeakPtr()));
 }
 
@@ -491,16 +529,8 @@ bool CrasAudioHandler::NonActiveDeviceUnplugged(
     size_t old_devices_size,
     size_t new_devices_size,
     uint64 current_active_node) {
-  // There could be cases that more than one NodesChanged signals are
-  // triggered by cras for unplugging or plugging one audio devices, both coming
-  // with the same node data. After handling the first NodesChanged signal, the
-  // audio_devices_ can be overwritten by staled node data from handling 2nd
-  // NodesChanged signal. Therefore, we need to check if the device with
-  // current_active_node is consistently active or not.
-  // crbug.com/274641.
-  return (new_devices_size <= old_devices_size &&
-          GetDeviceFromId(current_active_node) &&
-          audio_devices_[current_active_node].active);
+  return (new_devices_size < old_devices_size &&
+          GetDeviceFromId(current_active_node));
 }
 
 void CrasAudioHandler::SwitchToDevice(const AudioDevice& device) {
@@ -529,10 +559,72 @@ bool CrasAudioHandler::HasDeviceChange(const AudioNodeList& new_nodes,
 
   for (AudioNodeList::const_iterator it = new_nodes.begin();
        it != new_nodes.end(); ++it) {
-    if (is_input == it->is_input)
+    if (is_input == it->is_input) {
       ++num_new_devices;
+      // Look to see if the new device not in the old device list.
+      AudioDevice device(*it);
+      if (FoundNewDevice(device))
+        return true;
+    }
   }
   return num_old_devices != num_new_devices;
+}
+
+bool CrasAudioHandler::FoundNewDevice(const AudioDevice& device) {
+  const AudioDevice* device_found = GetDeviceFromId(device.id);
+  if (!device_found)
+    return true;
+
+  if (!IsSameAudioDevice(device, *device_found)) {
+    LOG(WARNING) << "Different Audio devices with same id:"
+        << " new device: " << device.ToString()
+        << " old device: " << device_found->ToString();
+    return true;
+  }
+  return false;
+}
+
+// Sanitize the audio node data. When a device is plugged in or unplugged, there
+// should be only one NodesChanged signal from cras. However, we've observed
+// the case that multiple NodesChanged signals being sent from cras. After the
+// first NodesChanged being processed, chrome sets the active node properly.
+// However, the NodesChanged received after the first one, can return stale
+// nodes data in GetNodes call, the staled nodes data does not reflect the
+// latest active node state. Since active audio node should only be set by
+// chrome, the inconsistent data from cras could be the result of stale data
+// described above and sanitized.
+AudioDevice CrasAudioHandler::GetSanitizedAudioDevice(const AudioNode& node) {
+  AudioDevice device(node);
+  if (device.is_input) {
+    if (device.active && device.id != active_input_node_id_) {
+      LOG(WARNING) << "Stale audio device data, should not be active: "
+          << " device = " << device.ToString()
+          << " current active input node id = 0x" << std::hex
+          << active_input_node_id_;
+      device.active = false;
+    } else if (device.id == active_input_node_id_ && !device.active) {
+      LOG(WARNING) << "Stale audio device data, should be active:"
+          << " device = " << device.ToString()
+          << " current active input node id = 0x" << std::hex
+          << active_input_node_id_;
+      device.active = true;
+    }
+  } else {
+    if (device.active && device.id != active_output_node_id_) {
+      LOG(WARNING) << "Stale audio device data, should not be active: "
+          << " device = " << device.ToString()
+          << " current active output node id = 0x" << std::hex
+          << active_output_node_id_;
+      device.active = false;
+    } else if (device.id == active_output_node_id_ && !device.active) {
+      LOG(WARNING) << "Stale audio device data, should be active:"
+          << " device = " << device.ToString()
+          << " current active output node id = 0x" << std::hex
+          << active_output_node_id_;
+      device.active = true;
+    }
+  }
+  return device;
 }
 
 void CrasAudioHandler::UpdateDevicesAndSwitchActive(
@@ -550,7 +642,7 @@ void CrasAudioHandler::UpdateDevicesAndSwitchActive(
     output_devices_pq_.pop();
 
   for (size_t i = 0; i < nodes.size(); ++i) {
-    AudioDevice device(nodes[i]);
+    AudioDevice device = GetSanitizedAudioDevice(nodes[i]);
     audio_devices_[device.id] = device;
 
     if (!has_alternative_input_ &&
@@ -590,7 +682,7 @@ void CrasAudioHandler::UpdateDevicesAndSwitchActive(
 void CrasAudioHandler::HandleGetNodes(const chromeos::AudioNodeList& node_list,
                                       bool success) {
   if (!success) {
-    LOG(ERROR) << "Failed to retrieve audio nodes data";
+    LOG_IF(ERROR, log_errors_) << "Failed to retrieve audio nodes data";
     return;
   }
 
@@ -598,4 +690,9 @@ void CrasAudioHandler::HandleGetNodes(const chromeos::AudioNodeList& node_list,
   FOR_EACH_OBSERVER(AudioObserver, observers_, OnAudioNodesChanged());
 }
 
+void CrasAudioHandler::HandleGetNodesError(const std::string& error_name,
+                                           const std::string& error_msg) {
+  LOG_IF(ERROR, log_errors_) << "Failed to call GetNodes: "
+      << error_name  << ": " << error_msg;
+}
 }  // namespace chromeos

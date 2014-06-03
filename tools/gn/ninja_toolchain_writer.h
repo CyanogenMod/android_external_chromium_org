@@ -6,6 +6,8 @@
 #define TOOLS_GN_NINJA_TOOLCHAIN_WRITER_H_
 
 #include <iosfwd>
+#include <set>
+#include <string>
 #include <vector>
 
 #include "tools/gn/ninja_helper.h"
@@ -14,16 +16,19 @@
 class BuildSettings;
 class Settings;
 class Target;
+class Toolchain;
 
 class NinjaToolchainWriter {
  public:
   // Takes the settings for the toolchain, as well as the list of all targets
   // assicoated with the toolchain.
   static bool RunAndWriteFile(const Settings* settings,
+                              const Toolchain* toolchain,
                               const std::vector<const Target*>& targets);
 
  private:
   NinjaToolchainWriter(const Settings* settings,
+                       const Toolchain* toolchain,
                        const std::vector<const Target*>& targets,
                        std::ostream& out);
   ~NinjaToolchainWriter();
@@ -34,6 +39,7 @@ class NinjaToolchainWriter {
   void WriteSubninjas();
 
   const Settings* settings_;
+  const Toolchain* toolchain_;
   std::vector<const Target*> targets_;
   std::ostream& out_;
   PathOutput path_output_;

@@ -4,17 +4,21 @@
 
 #include "chrome/browser/ui/chrome_pages.h"
 
+#include "base/command_line.h"
 #include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "chrome/browser/download/download_shelf.h"
+#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/extensions/application_launch.h"
+#include "chrome/browser/ui/scoped_tabbed_browser_displayer.h"
 #include "chrome/browser/ui/singleton_tabs.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/webui/options/content_settings_handler.h"
@@ -26,6 +30,11 @@
 
 #if defined(OS_WIN)
 #include "chrome/browser/enumerate_modules_model_win.h"
+#endif
+
+#if defined(OS_CHROMEOS)
+#include "chrome/browser/chromeos/genius_app/app_id.h"
+#include "chromeos/chromeos_switches.h"
 #endif
 
 using content::UserMetricsAction;
@@ -53,6 +62,48 @@ void NavigateToSingletonTab(Browser* browser, const GURL& url) {
   NavigateParams params(GetSingletonTabNavigateParams(browser, url));
   params.path_behavior = NavigateParams::IGNORE_AND_NAVIGATE;
   ShowSingletonTabOverwritingNTP(browser, params);
+}
+
+// Shows either the help app or the appropriate help page for |source|. If
+// |browser| is NULL and the help page is used (vs the app), the help page is
+// shown in the last active browser. If there is no such browser, a new browser
+// is created.
+void ShowHelpImpl(Browser* browser,
+                  Profile* profile,
+                  HostDesktopType host_desktop_type,
+                  HelpSource source) {
+  content::RecordAction(UserMetricsAction("ShowHelpTab"));
+#if defined(OS_CHROMEOS) && defined(OFFICIAL_BUILD)
+  const CommandLine* command_line = CommandLine::ForCurrentProcess();
+  if (!command_line->HasSwitch(chromeos::switches::kDisableGeniusApp)) {
+    const extensions::Extension* extension = profile->GetExtensionService()->
+        GetInstalledExtension(genius_app::kGeniusAppId);
+    OpenApplication(
+        AppLaunchParams(profile, extension, 0, host_desktop_type));
+    return;
+  }
+#endif
+  GURL url;
+  switch (source) {
+    case HELP_SOURCE_KEYBOARD:
+      url = GURL(kChromeHelpViaKeyboardURL);
+      break;
+    case HELP_SOURCE_MENU:
+      url = GURL(kChromeHelpViaMenuURL);
+      break;
+    case HELP_SOURCE_WEBUI:
+      url = GURL(kChromeHelpViaWebUIURL);
+      break;
+    default:
+      NOTREACHED() << "Unhandled help source " << source;
+  }
+  scoped_ptr<ScopedTabbedBrowserDisplayer> displayer;
+  if (!browser) {
+    displayer.reset(
+        new ScopedTabbedBrowserDisplayer(profile, host_desktop_type));
+    browser = displayer->browser();
+  }
+  ShowSingletonTab(browser, url);
 }
 
 }  // namespace
@@ -125,22 +176,14 @@ void ShowConflicts(Browser* browser) {
 }
 
 void ShowHelp(Browser* browser, HelpSource source) {
-  content::RecordAction(UserMetricsAction("ShowHelpTab"));
-  GURL url;
-  switch (source) {
-    case HELP_SOURCE_KEYBOARD:
-      url = GURL(kChromeHelpViaKeyboardURL);
-      break;
-    case HELP_SOURCE_MENU:
-      url = GURL(kChromeHelpViaMenuURL);
-      break;
-    case HELP_SOURCE_WEBUI:
-      url = GURL(kChromeHelpViaWebUIURL);
-      break;
-    default:
-      NOTREACHED() << "Unhandled help source " << source;
-  }
-  ShowSingletonTab(browser, url);
+  ShowHelpImpl(browser, browser->profile(), browser->host_desktop_type(),
+      source);
+}
+
+void ShowHelpForProfile(Profile* profile,
+                        HostDesktopType host_desktop_type,
+                        HelpSource source) {
+  ShowHelpImpl(NULL, profile, host_desktop_type, source);
 }
 
 void ShowPolicy(Browser* browser) {
@@ -222,10 +265,11 @@ void ShowBrowserSignin(Browser* browser, signin::Source source) {
     // If the browser's profile is an incognito profile, make sure to use
     // a browser window from the original profile.  The user cannot sign in
     // from an incognito window.
+    scoped_ptr<ScopedTabbedBrowserDisplayer> displayer;
     if (browser->profile()->IsOffTheRecord()) {
-      browser =
-          chrome::FindOrCreateTabbedBrowser(original_profile,
-                                            chrome::HOST_DESKTOP_TYPE_NATIVE);
+      displayer.reset(new ScopedTabbedBrowserDisplayer(
+          original_profile, chrome::HOST_DESKTOP_TYPE_NATIVE));
+      browser = displayer->browser();
     }
 
     NavigateToSingletonTab(browser,

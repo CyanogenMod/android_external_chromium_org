@@ -124,7 +124,7 @@ void ScreensaverView::Close() {
 
 void ScreensaverView::AddChildWebContents() {
   content::BrowserContext* context =
-      Shell::GetInstance()->delegate()->GetCurrentBrowserContext();
+      Shell::GetInstance()->delegate()->GetActiveBrowserContext();
   screensaver_webview_ = new views::WebView(context);
   SetLayoutManager(new views::FillLayout);
   AddChildView(screensaver_webview_);
@@ -143,7 +143,7 @@ void ScreensaverView::LoadScreensaver() {
 }
 
 void ScreensaverView::ShowWindow() {
-  aura::RootWindow* root_window = ash::Shell::GetPrimaryRootWindow();
+  aura::Window* root_window = ash::Shell::GetPrimaryRootWindow();
   gfx::Rect screen_rect =
       Shell::GetScreen()->GetDisplayNearestWindow(root_window).bounds();
 

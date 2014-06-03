@@ -8,20 +8,21 @@
 #include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/infobars/confirm_infobar_delegate.h"
 #include "chrome/browser/infobars/infobar_service.h"
+#include "chrome/browser/infobars/simple_alert_infobar_delegate.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/ui/bookmarks/bookmark_utils.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_list.h"
-#include "chrome/browser/ui/browser_tabstrip.cc"
 #include "chrome/browser/ui/browser_window.h"
 #import "chrome/browser/ui/cocoa/browser/avatar_button_controller.h"
 #include "chrome/browser/ui/cocoa/browser_window_cocoa.h"
 #import "chrome/browser/ui/cocoa/browser_window_controller_private.h"
 #import "chrome/browser/ui/cocoa/fast_resize_view.h"
 #import "chrome/browser/ui/cocoa/history_overlay_controller.h"
+#import "chrome/browser/ui/cocoa/infobars/infobar_cocoa.h"
 #import "chrome/browser/ui/cocoa/infobars/infobar_container_controller.h"
 #import "chrome/browser/ui/cocoa/nsview_additions.h"
 #import "chrome/browser/ui/cocoa/tab_contents/overlayable_contents_controller.h"
@@ -68,25 +69,6 @@ enum ViewID {
   VIEW_ID_COUNT,
 };
 
-// A very simple info bar implementation used to show an infobar on the browser
-// window.
-class DummyInfoBar : public ConfirmInfoBarDelegate {
- public:
-  explicit DummyInfoBar(InfoBarService* service)
-      : ConfirmInfoBarDelegate(service) {
-  }
-
-  virtual ~DummyInfoBar() {
-  }
-
-  virtual string16 GetMessageText() const OVERRIDE {
-    return string16();
-  }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(DummyInfoBar);
-};
-
 }  // namespace
 
 class BrowserWindowControllerTest : public InProcessBrowserTest {
@@ -104,15 +86,11 @@ class BrowserWindowControllerTest : public InProcessBrowserTest {
         browser()->window()->GetNativeWindow()];
   }
 
-  void ShowInfoBar() {
-    content::WebContents* web_contents =
-        browser()->tab_strip_model()->GetActiveWebContents();
-    InfoBarService* service =
-        InfoBarService::FromWebContents(web_contents);
-    info_bar_delegate_.reset(new DummyInfoBar(service));
-    [[controller() infoBarContainerController]
-        addInfoBar:info_bar_delegate_->CreateInfoBar(service)
-           animate:NO];
+  static void ShowInfoBar(Browser* browser) {
+    SimpleAlertInfoBarDelegate::Create(
+        InfoBarService::FromWebContents(
+            browser->tab_strip_model()->GetActiveWebContents()),
+        0, base::string16(), false);
   }
 
   NSView* GetViewWithID(ViewID view_id) const {
@@ -164,8 +142,6 @@ class BrowserWindowControllerTest : public InProcessBrowserTest {
   }
 
  private:
-  scoped_ptr<InfoBarDelegate> info_bar_delegate_;
-
   DISALLOW_COPY_AND_ASSIGN(BrowserWindowControllerTest);
 };
 
@@ -209,7 +185,7 @@ IN_PROC_BROWSER_TEST_F(BrowserWindowControllerTest,
       profile_manager->user_data_dir().Append("test"),
       create_callback,
       ASCIIToUTF16("avatar_test"),
-      string16(),
+      base::string16(),
       std::string());
 
   run_loop.Run();
@@ -309,7 +285,7 @@ IN_PROC_BROWSER_TEST_F(BrowserWindowControllerTest, SheetPosition) {
   EXPECT_EQ(NSMinY(alertFrame), NSMinY(toolbarFrame));
 
   // Open sheet with normal browser window, persistent bookmark bar.
-  browser()->window()->ToggleBookmarkBar();
+  chrome::ToggleBookmarkBarWhenVisible(browser()->profile());
   EXPECT_TRUE([controller() isBookmarkBarVisible]);
   alertFrame = [controller() window:window
                   willPositionSheet:nil
@@ -319,11 +295,11 @@ IN_PROC_BROWSER_TEST_F(BrowserWindowControllerTest, SheetPosition) {
 
   // Make sure the profile does not have the bookmark visible so that
   // we'll create the shortcut window without the bookmark bar.
-  browser()->window()->ToggleBookmarkBar();
+  chrome::ToggleBookmarkBarWhenVisible(browser()->profile());
   // Open application mode window.
   gfx::Rect initial_bounds(0, 0, 400, 400);
-  chrome::OpenAppShortcutWindow(
-      browser()->profile(), GURL("about:blank"), initial_bounds);
+  OpenAppShortcutWindow(browser()->profile(), GURL("about:blank"),
+                        initial_bounds);
   Browser* popup_browser = BrowserList::GetInstance(
       chrome::GetActiveDesktop())->GetLastActive();
   NSWindow* popupWindow = popup_browser->window()->GetNativeWindow();
@@ -353,13 +329,13 @@ IN_PROC_BROWSER_TEST_F(BrowserWindowControllerTest, SheetPosition) {
 // Verify that the info bar tip is hidden when the toolbar is not visible.
 IN_PROC_BROWSER_TEST_F(BrowserWindowControllerTest,
                        InfoBarTipHiddenForWindowWithoutToolbar) {
-  ShowInfoBar();
+  ShowInfoBar(browser());
   EXPECT_FALSE(
       [[controller() infoBarContainerController] shouldSuppressTopInfoBarTip]);
 
   gfx::Rect initial_bounds(0, 0, 400, 400);
-  chrome::OpenAppShortcutWindow(
-      browser()->profile(), GURL("about:blank"), initial_bounds);
+  OpenAppShortcutWindow(browser()->profile(), GURL("about:blank"),
+                        initial_bounds);
   Browser* popup_browser = BrowserList::GetInstance(
       chrome::HOST_DESKTOP_TYPE_NATIVE)->GetLastActive();
   NSWindow* popupWindow = popup_browser->window()->GetNativeWindow();
@@ -368,14 +344,7 @@ IN_PROC_BROWSER_TEST_F(BrowserWindowControllerTest,
   EXPECT_FALSE([popupController hasToolbar]);
 
   // Show infobar for controller.
-  content::WebContents* web_contents =
-      popup_browser->tab_strip_model()->GetActiveWebContents();
-  InfoBarService* service = InfoBarService::FromWebContents(web_contents);
-  scoped_ptr<InfoBarDelegate> info_bar_delegate(new DummyInfoBar(service));
-  [[popupController infoBarContainerController]
-      addInfoBar:info_bar_delegate->CreateInfoBar(service)
-         animate:NO];
-
+  ShowInfoBar(popup_browser);
   EXPECT_TRUE(
       [[popupController infoBarContainerController]
           shouldSuppressTopInfoBarTip]);

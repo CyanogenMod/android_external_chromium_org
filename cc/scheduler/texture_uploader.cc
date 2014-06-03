@@ -7,18 +7,19 @@
 #include <algorithm>
 #include <vector>
 
-#include "base/debug/alias.h"
 #include "base/debug/trace_event.h"
 #include "base/metrics/histogram.h"
 #include "cc/base/util.h"
 #include "cc/resources/prioritized_resource.h"
 #include "cc/resources/resource.h"
 #include "gpu/GLES2/gl2extchromium.h"
-#include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
+#include "gpu/command_buffer/client/gles2_interface.h"
 #include "third_party/khronos/GLES2/gl2.h"
 #include "third_party/khronos/GLES2/gl2ext.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/vector2d.h"
+
+using gpu::gles2::GLES2Interface;
 
 namespace {
 
@@ -39,50 +40,46 @@ static const size_t kTextureUploadFlushPeriod = 4;
 
 namespace cc {
 
-TextureUploader::Query::Query(WebKit::WebGraphicsContext3D* context)
-    : context_(context),
+TextureUploader::Query::Query(GLES2Interface* gl)
+    : gl_(gl),
       query_id_(0),
       value_(0),
       has_value_(false),
       is_non_blocking_(false) {
-  query_id_ = context_->createQueryEXT();
+  gl_->GenQueriesEXT(1, &query_id_);
 }
 
-TextureUploader::Query::~Query() { context_->deleteQueryEXT(query_id_); }
+TextureUploader::Query::~Query() { gl_->DeleteQueriesEXT(1, &query_id_); }
 
 void TextureUploader::Query::Begin() {
   has_value_ = false;
   is_non_blocking_ = false;
-  context_->beginQueryEXT(GL_COMMANDS_ISSUED_CHROMIUM, query_id_);
+  gl_->BeginQueryEXT(GL_COMMANDS_ISSUED_CHROMIUM, query_id_);
 }
 
 void TextureUploader::Query::End() {
-  context_->endQueryEXT(GL_COMMANDS_ISSUED_CHROMIUM);
+  gl_->EndQueryEXT(GL_COMMANDS_ISSUED_CHROMIUM);
 }
 
 bool TextureUploader::Query::IsPending() {
   unsigned available = 1;
-  context_->getQueryObjectuivEXT(
+  gl_->GetQueryObjectuivEXT(
       query_id_, GL_QUERY_RESULT_AVAILABLE_EXT, &available);
   return !available;
 }
 
 unsigned TextureUploader::Query::Value() {
   if (!has_value_) {
-    context_->getQueryObjectuivEXT(query_id_, GL_QUERY_RESULT_EXT, &value_);
+    gl_->GetQueryObjectuivEXT(query_id_, GL_QUERY_RESULT_EXT, &value_);
     has_value_ = true;
   }
   return value_;
 }
 
-TextureUploader::TextureUploader(WebKit::WebGraphicsContext3D* context,
-                                 bool use_map_tex_sub_image,
-                                 bool use_shallow_flush)
-    : context_(context),
+TextureUploader::TextureUploader(GLES2Interface* gl)
+    : gl_(gl),
       num_blocking_texture_uploads_(0),
-      use_map_tex_sub_image_(use_map_tex_sub_image),
       sub_image_size_(0),
-      use_shallow_flush_(use_shallow_flush),
       num_texture_uploads_since_last_flush_(0) {
   for (size_t i = kUploadHistorySizeInitial; i > 0; i--)
     textures_per_second_history_.insert(kDefaultEstimatedTexturesPerSecond);
@@ -120,7 +117,7 @@ double TextureUploader::EstimatedTexturesPerSecond() {
 
 void TextureUploader::BeginQuery() {
   if (available_queries_.empty())
-    available_queries_.push_back(Query::Create(context_));
+    available_queries_.push_back(Query::Create(gl_));
 
   available_queries_.front()->Begin();
 }
@@ -135,7 +132,7 @@ void TextureUploader::Upload(const uint8* image,
                              gfx::Rect image_rect,
                              gfx::Rect source_rect,
                              gfx::Vector2d dest_offset,
-                             GLenum format,
+                             ResourceFormat format,
                              gfx::Size size) {
   CHECK(image_rect.Contains(source_rect));
 
@@ -144,11 +141,13 @@ void TextureUploader::Upload(const uint8* image,
   if (is_full_upload)
     BeginQuery();
 
-  if (use_map_tex_sub_image_) {
+  if (format == ETC1) {
+    // ETC1 does not support subimage uploads.
+    DCHECK(is_full_upload);
+    UploadWithTexImageETC1(image, size);
+  } else {
     UploadWithMapTexSubImage(
         image, image_rect, source_rect, dest_offset, format);
-  } else {
-    UploadWithTexSubImage(image, image_rect, source_rect, dest_offset, format);
   }
 
   if (is_full_upload)
@@ -163,8 +162,7 @@ void TextureUploader::Flush() {
   if (!num_texture_uploads_since_last_flush_)
     return;
 
-  if (use_shallow_flush_)
-    context_->shallowFlushCHROMIUM();
+  gl_->ShallowFlushCHROMIUM();
 
   num_texture_uploads_since_last_flush_ = 0;
 }
@@ -178,39 +176,23 @@ void TextureUploader::UploadWithTexSubImage(const uint8* image,
                                             gfx::Rect image_rect,
                                             gfx::Rect source_rect,
                                             gfx::Vector2d dest_offset,
-                                            GLenum format) {
-  // Instrumentation to debug issue 156107
-  int source_rect_x = source_rect.x();
-  int source_rect_y = source_rect.y();
-  int source_rect_width = source_rect.width();
-  int source_rect_height = source_rect.height();
-  int image_rect_x = image_rect.x();
-  int image_rect_y = image_rect.y();
-  int image_rect_width = image_rect.width();
-  int image_rect_height = image_rect.height();
-  int dest_offset_x = dest_offset.x();
-  int dest_offset_y = dest_offset.y();
-  base::debug::Alias(&image);
-  base::debug::Alias(&source_rect_x);
-  base::debug::Alias(&source_rect_y);
-  base::debug::Alias(&source_rect_width);
-  base::debug::Alias(&source_rect_height);
-  base::debug::Alias(&image_rect_x);
-  base::debug::Alias(&image_rect_y);
-  base::debug::Alias(&image_rect_width);
-  base::debug::Alias(&image_rect_height);
-  base::debug::Alias(&dest_offset_x);
-  base::debug::Alias(&dest_offset_y);
+                                            ResourceFormat format) {
   TRACE_EVENT0("cc", "TextureUploader::UploadWithTexSubImage");
+
+  // Early-out if this is a no-op, and assert that |image| be valid if this is
+  // not a no-op.
+  if (source_rect.IsEmpty())
+    return;
+  DCHECK(image);
 
   // Offset from image-rect to source-rect.
   gfx::Vector2d offset(source_rect.origin() - image_rect.origin());
 
   const uint8* pixel_source;
-  unsigned int bytes_per_pixel = Resource::BytesPerPixel(format);
+  unsigned bytes_per_pixel = BitsPerPixel(format) / 8;
   // Use 4-byte row alignment (OpenGL default) for upload performance.
   // Assuming that GL_UNPACK_ALIGNMENT has not changed from default.
-  unsigned int upload_image_stride =
+  unsigned upload_image_stride =
       RoundUp(bytes_per_pixel * source_rect.width(), 4u);
 
   if (upload_image_stride == image_rect.width() * bytes_per_pixel &&
@@ -227,73 +209,58 @@ void TextureUploader::UploadWithTexSubImage(const uint8* image,
     for (int row = 0; row < source_rect.height(); ++row)
       memcpy(&sub_image_[upload_image_stride * row],
              &image[bytes_per_pixel *
-                 (offset.x() + (offset.y() + row) * image_rect.width())],
+                    (offset.x() + (offset.y() + row) * image_rect.width())],
              source_rect.width() * bytes_per_pixel);
 
     pixel_source = &sub_image_[0];
   }
 
-  context_->texSubImage2D(GL_TEXTURE_2D,
-                          0,
-                          dest_offset.x(),
-                          dest_offset.y(),
-                          source_rect.width(),
-                          source_rect.height(),
-                          format,
-                          GL_UNSIGNED_BYTE,
-                          pixel_source);
+  gl_->TexSubImage2D(GL_TEXTURE_2D,
+                     0,
+                     dest_offset.x(),
+                     dest_offset.y(),
+                     source_rect.width(),
+                     source_rect.height(),
+                     GLDataFormat(format),
+                     GLDataType(format),
+                     pixel_source);
 }
 
 void TextureUploader::UploadWithMapTexSubImage(const uint8* image,
                                                gfx::Rect image_rect,
                                                gfx::Rect source_rect,
                                                gfx::Vector2d dest_offset,
-                                               GLenum format) {
-  // Instrumentation to debug issue 156107
-  int source_rect_x = source_rect.x();
-  int source_rect_y = source_rect.y();
-  int source_rect_width = source_rect.width();
-  int source_rect_height = source_rect.height();
-  int image_rect_x = image_rect.x();
-  int image_rect_y = image_rect.y();
-  int image_rect_width = image_rect.width();
-  int image_rect_height = image_rect.height();
-  int dest_offset_x = dest_offset.x();
-  int dest_offset_y = dest_offset.y();
-  base::debug::Alias(&image);
-  base::debug::Alias(&source_rect_x);
-  base::debug::Alias(&source_rect_y);
-  base::debug::Alias(&source_rect_width);
-  base::debug::Alias(&source_rect_height);
-  base::debug::Alias(&image_rect_x);
-  base::debug::Alias(&image_rect_y);
-  base::debug::Alias(&image_rect_width);
-  base::debug::Alias(&image_rect_height);
-  base::debug::Alias(&dest_offset_x);
-  base::debug::Alias(&dest_offset_y);
-
+                                               ResourceFormat format) {
   TRACE_EVENT0("cc", "TextureUploader::UploadWithMapTexSubImage");
+
+  // Early-out if this is a no-op, and assert that |image| be valid if this is
+  // not a no-op.
+  if (source_rect.IsEmpty())
+    return;
+  DCHECK(image);
+  // Compressed textures have no implementation of mapTexSubImage.
+  DCHECK_NE(ETC1, format);
 
   // Offset from image-rect to source-rect.
   gfx::Vector2d offset(source_rect.origin() - image_rect.origin());
 
-  unsigned int bytes_per_pixel = Resource::BytesPerPixel(format);
+  unsigned bytes_per_pixel = BitsPerPixel(format) / 8;
   // Use 4-byte row alignment (OpenGL default) for upload performance.
   // Assuming that GL_UNPACK_ALIGNMENT has not changed from default.
-  unsigned int upload_image_stride =
+  unsigned upload_image_stride =
       RoundUp(bytes_per_pixel * source_rect.width(), 4u);
 
   // Upload tile data via a mapped transfer buffer
-  uint8* pixel_dest = static_cast<uint8*>(
-      context_->mapTexSubImage2DCHROMIUM(GL_TEXTURE_2D,
-                                         0,
-                                         dest_offset.x(),
-                                         dest_offset.y(),
-                                         source_rect.width(),
-                                         source_rect.height(),
-                                         format,
-                                         GL_UNSIGNED_BYTE,
-                                         GL_WRITE_ONLY));
+  uint8* pixel_dest =
+      static_cast<uint8*>(gl_->MapTexSubImage2DCHROMIUM(GL_TEXTURE_2D,
+                                                        0,
+                                                        dest_offset.x(),
+                                                        dest_offset.y(),
+                                                        source_rect.width(),
+                                                        source_rect.height(),
+                                                        GLDataFormat(format),
+                                                        GLDataType(format),
+                                                        GL_WRITE_ONLY));
 
   if (!pixel_dest) {
     UploadWithTexSubImage(image, image_rect, source_rect, dest_offset, format);
@@ -311,12 +278,28 @@ void TextureUploader::UploadWithMapTexSubImage(const uint8* image,
     for (int row = 0; row < source_rect.height(); ++row) {
       memcpy(&pixel_dest[upload_image_stride * row],
              &image[bytes_per_pixel *
-                 (offset.x() + (offset.y() + row) * image_rect.width())],
+                    (offset.x() + (offset.y() + row) * image_rect.width())],
              source_rect.width() * bytes_per_pixel);
     }
   }
 
-  context_->unmapTexSubImage2DCHROMIUM(pixel_dest);
+  gl_->UnmapTexSubImage2DCHROMIUM(pixel_dest);
+}
+
+void TextureUploader::UploadWithTexImageETC1(const uint8* image,
+                                             gfx::Size size) {
+  TRACE_EVENT0("cc", "TextureUploader::UploadWithTexImageETC1");
+  DCHECK_EQ(0, size.width() % 4);
+  DCHECK_EQ(0, size.height() % 4);
+
+  gl_->CompressedTexImage2D(GL_TEXTURE_2D,
+                            0,
+                            GLInternalFormat(ETC1),
+                            size.width(),
+                            size.height(),
+                            0,
+                            Resource::MemorySizeBytes(size, ETC1),
+                            image);
 }
 
 void TextureUploader::ProcessQueries() {

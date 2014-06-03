@@ -9,14 +9,7 @@
 
 namespace {
 
-// This test fails on Linux ASAN bots: <http://crbug.com/161709>.
-#if defined(OS_LINUX) && defined(ADDRESS_SANITIZER)
-#define MAYBE_SuccessfulLoadUMA DISABLED_SuccessfulLoadUMA
-#else
-#define MAYBE_SuccessfulLoadUMA SuccessfulLoadUMA
-#endif
-
-NACL_BROWSER_TEST_F(NaClBrowserTest, MAYBE_SuccessfulLoadUMA, {
+NACL_BROWSER_TEST_F(NaClBrowserTest, SuccessfulLoadUMA, {
   // Load a NaCl module to generate UMA data.
   RunLoadTest(FILE_PATH_LITERAL("nacl_load_test.html"));
 
@@ -34,7 +27,7 @@ NACL_BROWSER_TEST_F(NaClBrowserTest, MAYBE_SuccessfulLoadUMA, {
                                 LOAD_OK, 1);
 
   // Make sure we have other important histograms.
-  if (!IsPnacl()) {
+  if (!IsAPnaclTest()) {
     histograms.ExpectTotalCount("NaCl.Perf.StartupTime.LoadModule", 1);
     histograms.ExpectTotalCount("NaCl.Perf.StartupTime.Total", 1);
     histograms.ExpectTotalCount("NaCl.Perf.Size.Manifest", 1);

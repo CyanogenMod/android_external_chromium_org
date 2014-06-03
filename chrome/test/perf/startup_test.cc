@@ -28,6 +28,7 @@
 #include "chrome/test/ui/ui_perf_test.h"
 #include "content/public/common/content_switches.h"
 #include "net/base/net_util.h"
+#include "testing/perf/perf_test.h"
 
 using base::TimeDelta;
 using base::TimeTicks;
@@ -117,7 +118,7 @@ class StartupTest : public UIPerfTest {
 
     // Read in preferences template.
     std::string pref_string;
-    EXPECT_TRUE(file_util::ReadFileToString(pref_template_path, &pref_string));
+    EXPECT_TRUE(base::ReadFileToString(pref_template_path, &pref_string));
     string16 format_string = ASCIIToUTF16(pref_string);
 
     // Make sure temp directory has the proper format for writing to prefs file.

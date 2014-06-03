@@ -15,13 +15,13 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/time/time.h"
 #include "chrome/browser/extensions/api/declarative/declarative_rule.h"
-#include "chrome/browser/extensions/api/declarative/rules_registry_with_cache.h"
+#include "chrome/browser/extensions/api/declarative/rules_registry.h"
 #include "chrome/browser/extensions/api/declarative_content/content_action.h"
 #include "chrome/browser/extensions/api/declarative_content/content_condition.h"
-#include "chrome/browser/extensions/extension_info_map.h"
+#include "components/url_matcher/url_matcher.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
-#include "extensions/common/matcher/url_matcher.h"
+#include "extensions/browser/info_map.h"
 
 class Profile;
 class ContentPermissions;
@@ -59,14 +59,12 @@ typedef DeclarativeRule<ContentCondition, ContentAction> ContentRule;
 // The evaluation of URL related condition attributes (host_suffix, path_prefix)
 // is delegated to a URLMatcher, because this is capable of evaluating many
 // of such URL related condition attributes in parallel.
-class ContentRulesRegistry : public RulesRegistryWithCache,
+class ContentRulesRegistry : public RulesRegistry,
                              public content::NotificationObserver {
  public:
   // For testing, |ui_part| can be NULL. In that case it constructs the
   // registry with storage functionality suspended.
-  ContentRulesRegistry(
-      Profile* profile,
-      scoped_ptr<RulesRegistryWithCache::RuleStorageOnUI>* ui_part);
+  ContentRulesRegistry(Profile* profile, RulesCacheDelegate* cache_delegate);
 
   // Applies all content rules given an update (CSS match change or
   // page navigation, for now) from the renderer.
@@ -78,7 +76,7 @@ class ContentRulesRegistry : public RulesRegistryWithCache,
                             const content::LoadCommittedDetails& details,
                             const content::FrameNavigateParams& params);
 
-  // Implementation of RulesRegistryWithCache:
+  // Implementation of RulesRegistry:
   virtual std::string AddRulesImpl(
       const std::string& extension_id,
       const std::vector<linked_ptr<RulesRegistry::Rule> >& rules) OVERRIDE;
@@ -118,11 +116,10 @@ class ContentRulesRegistry : public RulesRegistryWithCache,
   // ExtensionMsg_WatchPages.
   void InstructRenderProcess(content::RenderProcessHost* process);
 
-  typedef std::map<URLMatcherConditionSet::ID, ContentRule*> URLMatcherIdToRule;
+  typedef std::map<url_matcher::URLMatcherConditionSet::ID, ContentRule*>
+      URLMatcherIdToRule;
   typedef std::map<ContentRule::GlobalRuleId, linked_ptr<ContentRule> >
       RulesMap;
-
-  Profile* const profile_;
 
   // Map that tells us which ContentRules may match under the condition that
   // the URLMatcherConditionSet::ID was returned by the |url_matcher_|.
@@ -135,7 +132,7 @@ class ContentRulesRegistry : public RulesRegistryWithCache,
   std::map<int, std::set<ContentRule*> > active_rules_;
 
   // Matches URLs for the page_url condition.
-  URLMatcher url_matcher_;
+  url_matcher::URLMatcher url_matcher_;
 
   // All CSS selectors any rule's conditions watch for.
   std::vector<std::string> watched_css_selectors_;
@@ -143,7 +140,7 @@ class ContentRulesRegistry : public RulesRegistryWithCache,
   // Manages our notification registrations.
   content::NotificationRegistrar registrar_;
 
-  scoped_refptr<ExtensionInfoMap> extension_info_map_;
+  scoped_refptr<InfoMap> extension_info_map_;
 
   DISALLOW_COPY_AND_ASSIGN(ContentRulesRegistry);
 };

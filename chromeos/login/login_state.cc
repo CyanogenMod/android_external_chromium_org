@@ -4,9 +4,9 @@
 
 #include "chromeos/login/login_state.h"
 
-#include "base/chromeos/chromeos_version.h"
 #include "base/command_line.h"
 #include "base/logging.h"
+#include "base/sys_info.h"
 #include "chromeos/chromeos_switches.h"
 
 namespace chromeos {
@@ -16,8 +16,8 @@ namespace {
 // When running a Chrome OS build outside of a device (i.e. on a developer's
 // workstation) and not running as login-manager, pretend like we're always
 // logged in.
-bool AlwaysLoggedIn() {
-  return !base::chromeos::IsRunningOnChromeOS() &&
+bool AlwaysLoggedInByDefault() {
+  return !base::SysInfo::IsRunningOnChromeOS() &&
       !CommandLine::ForCurrentProcess()->HasSwitch(switches::kLoginManager);
 }
 
@@ -67,22 +67,23 @@ void LoginState::SetLoggedInState(LoggedInState state,
   NotifyObservers();
 }
 
-LoginState::LoggedInState LoginState::GetLoggedInState() const {
-  if (AlwaysLoggedIn())
-    return LOGGED_IN_ACTIVE;
-  return logged_in_state_;
-}
-
 LoginState::LoggedInUserType LoginState::GetLoggedInUserType() const {
   return logged_in_user_type_;
 }
 
 bool LoginState::IsUserLoggedIn() const {
-  return GetLoggedInState() == LOGGED_IN_ACTIVE;
+  if (always_logged_in_)
+    return true;
+  return logged_in_state_ == LOGGED_IN_ACTIVE;
+}
+
+bool LoginState::IsInSafeMode() const {
+  DCHECK(!always_logged_in_ || logged_in_state_ != LOGGED_IN_SAFE_MODE);
+  return logged_in_state_ == LOGGED_IN_SAFE_MODE;
 }
 
 bool LoginState::IsGuestUser() const {
-  if (GetLoggedInState() != LOGGED_IN_ACTIVE)
+  if (!IsUserLoggedIn())
     return false;
   switch (logged_in_user_type_) {
     case LOGGED_IN_USER_NONE:
@@ -116,7 +117,8 @@ bool LoginState::IsUserGaiaAuthenticated() const {
 // Private methods
 
 LoginState::LoginState() : logged_in_state_(LOGGED_IN_OOBE),
-                           logged_in_user_type_(LOGGED_IN_USER_NONE) {
+                           logged_in_user_type_(LOGGED_IN_USER_NONE),
+                           always_logged_in_(AlwaysLoggedInByDefault()) {
 }
 
 LoginState::~LoginState() {
@@ -124,7 +126,7 @@ LoginState::~LoginState() {
 
 void LoginState::NotifyObservers() {
   FOR_EACH_OBSERVER(LoginState::Observer, observer_list_,
-                    LoggedInStateChanged(GetLoggedInState()));
+                    LoggedInStateChanged());
 }
 
 }  // namespace chromeos

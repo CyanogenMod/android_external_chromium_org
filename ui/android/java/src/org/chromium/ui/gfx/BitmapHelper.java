@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,10 +7,14 @@ package org.chromium.ui.gfx;
 import android.content.res.Resources;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+
 import org.chromium.base.CalledByNative;
 import org.chromium.base.JNINamespace;
 
-@JNINamespace("ui")
+/**
+ * Helper class to decode and sample down bitmap resources.
+ */
+@JNINamespace("gfx")
 public class BitmapHelper {
     @CalledByNative
     public static Bitmap createBitmap(int width, int height) {

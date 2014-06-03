@@ -26,6 +26,11 @@ cr.define('options', function() {
   // the boxes are restored to their most recent checked state from this cache.
   var dataTypeBoxes_ = {};
 
+  // Used to determine whether to bring the OK button / passphrase field into
+  // focus.
+  var confirmPageVisible_ = false;
+  var customizePageVisible_ = false;
+
   /**
    * The user's selection in the synced data type drop-down menu, as an index.
    * @enum {number}
@@ -90,6 +95,7 @@ cr.define('options', function() {
     closeOverlay_: function() {
       this.syncConfigureArgs_ = null;
       this.dataTypeBoxes_ = {};
+
       var overlay = $('sync-setup-overlay');
       if (!overlay.hidden)
         OptionsPage.closeOverlay();
@@ -415,6 +421,11 @@ cr.define('options', function() {
       if (args)
         this.syncConfigureArgs_ = args;
 
+      // Required in order to determine whether to give focus to the OK button
+      // or passphrase field. See crbug.com/310555 and crbug.com/306353.
+      this.confirmPageVisible_ = false;
+      this.customizePageVisible_ = false;
+
       // Once the advanced sync settings dialog is visible, we transition
       // between its drop-down menu items as follows:
       // "Sync everything": Show encryption and passphrase sections, and disable
@@ -461,13 +472,8 @@ cr.define('options', function() {
                           DataTypeSelection.SYNC_EVERYTHING :
                           DataTypeSelection.CHOOSE_WHAT_TO_SYNC;
           this.showCustomizePage_(args, index);
-          if (args.showPassphrase)
-            $('passphrase').focus();
-          else
-            $('choose-datatypes-ok').focus();
         } else {
           this.showSyncEverythingPage_();
-          $('confirm-everything-ok').focus();
         }
       }
     },
@@ -483,6 +489,11 @@ cr.define('options', function() {
     },
 
     showSyncEverythingPage_: function() {
+      // Determine whether to bring the OK button into focus.
+      var wasConfirmPageHidden = !this.confirmPageVisible_;
+      this.confirmPageVisible_ = true;
+      this.customizePageVisible_ = false;
+
       $('confirm-sync-preferences').hidden = false;
       $('customize-sync-preferences').hidden = true;
 
@@ -497,6 +508,10 @@ cr.define('options', function() {
 
       if (!this.useEncryptEverything_ && !this.usePassphrase_)
         $('basic-encryption-option').checked = true;
+
+      // Give the OK button focus only when the dialog wasn't already visible.
+      if (wasConfirmPageHidden)
+        $('confirm-everything-ok').focus();
     },
 
     /**
@@ -571,6 +586,11 @@ cr.define('options', function() {
      * @private
      */
     showCustomizePage_: function(args, index) {
+      // Determine whether to bring the OK button field into focus.
+      var wasCustomizePageHidden = !this.customizePageVisible_;
+      this.customizePageVisible_ = true;
+      this.confirmPageVisible_ = false;
+
       $('confirm-sync-preferences').hidden = true;
       $('customize-sync-preferences').hidden = false;
 
@@ -584,8 +604,16 @@ cr.define('options', function() {
       this.setDataTypeCheckboxesEnabled_(
           index == DataTypeSelection.CHOOSE_WHAT_TO_SYNC);
 
+      // Give the OK button focus only when the dialog wasn't already visible.
+      if (wasCustomizePageHidden)
+        $('choose-datatypes-ok').focus();
+
       if (args && args.showPassphrase) {
         this.showPassphraseContainer_(args);
+        // Give the passphrase field focus only when the dialog wasn't already
+        // visible.
+        if (wasCustomizePageHidden)
+          $('passphrase').focus();
       } else {
         // We only show the 'Use Default' link if we're not prompting for an
         // existing passphrase.
@@ -605,6 +633,14 @@ cr.define('options', function() {
      *     section.
      */
     showSyncSetupPage_: function(page, args) {
+      // If the user clicks the OK button, dismiss the dialog immediately, and
+      // do not go through the process of hiding elements of the overlay.
+      // See crbug.com/308873.
+      if (page == 'done') {
+        this.closeOverlay_();
+        return;
+      }
+
       this.setThrobbersVisible_(false);
 
       // Hide an existing visible overlay (ensuring the close button is not
@@ -630,10 +666,7 @@ cr.define('options', function() {
       // focus, we need to ensure that the overlay container and dialog aren't
       // [hidden] (as trying to focus() nodes inside of a [hidden] DOM section
       // doesn't work).
-      if (page == 'done')
-        this.closeOverlay_();
-      else
-        this.showOverlay_();
+      this.showOverlay_();
 
       if (page == 'configure' || page == 'passphrase')
         this.showConfigure_(args);

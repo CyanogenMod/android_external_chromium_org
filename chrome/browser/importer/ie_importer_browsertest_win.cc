@@ -43,8 +43,8 @@
 #include "chrome/common/importer/pstore_declarations.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/testing_profile.h"
-#include "components/webdata/encryptor/ie7_password.h"
-#include "content/public/common/password_form.h"
+#include "components/autofill/core/common/password_form.h"
+#include "components/webdata/encryptor/ie7_password_win.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace {
@@ -115,8 +115,8 @@ const FaviconGroup kIEFaviconGroup[2] = {
 };
 
 bool CreateOrderBlob(const base::FilePath& favorites_folder,
-                     const string16& path,
-                     const std::vector<string16>& entries) {
+                     const base::string16& path,
+                     const std::vector<base::string16>& entries) {
   if (entries.size() > 255)
     return false;
 
@@ -160,8 +160,8 @@ bool CreateOrderBlob(const base::FilePath& favorites_folder,
 }
 
 bool CreateUrlFileWithFavicon(const base::FilePath& file,
-                              const string16& url,
-                              const string16& favicon_url) {
+                              const base::string16& url,
+                              const base::string16& favicon_url) {
   base::win::ScopedComPtr<IUniformResourceLocator> locator;
   HRESULT result = locator.CreateInstance(CLSID_InternetShortcut, NULL,
                                           CLSCTX_INPROC_SERVER);
@@ -208,8 +208,8 @@ bool CreateUrlFileWithFavicon(const base::FilePath& file,
       sizeof kDummyFaviconImageData) != -1);
 }
 
-bool CreateUrlFile(const base::FilePath& file, const string16& url) {
-  return CreateUrlFileWithFavicon(file, url, string16());
+bool CreateUrlFile(const base::FilePath& file, const base::string16& url) {
+  return CreateUrlFileWithFavicon(file, url, base::string16());
 }
 
 void ClearPStoreType(IPStore* pstore, const GUID* type, const GUID* subtype) {
@@ -302,7 +302,7 @@ class TestObserver : public ProfileWriter,
     return true;
   }
 
-  virtual void AddPasswordForm(const content::PasswordForm& form) {
+  virtual void AddPasswordForm(const autofill::PasswordForm& form) {
     // Importer should obtain this password form only.
     EXPECT_EQ(GURL("http://localhost:8080/security/index.htm"), form.origin);
     EXPECT_EQ("http://localhost:8080/", form.signon_realm);
@@ -325,8 +325,9 @@ class TestObserver : public ProfileWriter,
     EXPECT_EQ(history::SOURCE_IE_IMPORTED, visit_source);
   }
 
-  virtual void AddBookmarks(const std::vector<ImportedBookmarkEntry>& bookmarks,
-                            const string16& top_level_folder_name) OVERRIDE {
+  virtual void AddBookmarks(
+      const std::vector<ImportedBookmarkEntry>& bookmarks,
+      const base::string16& top_level_folder_name) OVERRIDE {
     ASSERT_LE(bookmark_count_ + bookmarks.size(), arraysize(kIEBookmarks));
     // Importer should import the IE Favorites folder the same as the list,
     // in the same order.
@@ -419,13 +420,14 @@ class MalformedFavoritesRegistryTestObserver
   virtual bool BookmarkModelIsLoaded() const { return true; }
   virtual bool TemplateURLServiceIsLoaded() const { return true; }
 
-  virtual void AddPasswordForm(const content::PasswordForm& form) {}
+  virtual void AddPasswordForm(const autofill::PasswordForm& form) {}
   virtual void AddHistoryPage(const history::URLRows& page,
                               history::VisitSource visit_source) {}
   virtual void AddKeyword(std::vector<TemplateURL*> template_url,
                           int default_keyword_index) {}
-  virtual void AddBookmarks(const std::vector<ImportedBookmarkEntry>& bookmarks,
-                            const string16& top_level_folder_name) OVERRIDE {
+  virtual void AddBookmarks(
+      const std::vector<ImportedBookmarkEntry>& bookmarks,
+      const base::string16& top_level_folder_name) OVERRIDE {
     ASSERT_LE(bookmark_count_ + bookmarks.size(),
               arraysize(kIESortedBookmarks));
     for (size_t i = 0; i < bookmarks.size(); ++i) {
@@ -510,7 +512,8 @@ IN_PROC_BROWSER_TEST_F(IEImporterBrowserTest, IEImporter) {
   };
   ASSERT_TRUE(CreateOrderBlob(
       base::FilePath(path), L"",
-      std::vector<string16>(root_links, root_links + arraysize(root_links))));
+      std::vector<base::string16>(root_links,
+                                  root_links + arraysize(root_links))));
 
   HRESULT res;
 

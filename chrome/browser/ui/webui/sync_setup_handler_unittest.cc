@@ -48,7 +48,6 @@ namespace {
 MATCHER_P(ModelTypeSetMatches, value, "") { return arg.Equals(value); }
 
 const char kTestUser[] = "chrome.p13n.test@gmail.com";
-const char kTestPassword[] = "passwd";
 
 // Returns a ModelTypeSet with all user selectable types set.
 syncer::ModelTypeSet GetAllTypes() {
@@ -98,16 +97,6 @@ std::string GetConfiguration(const DictionaryValue* extra_values,
   return args;
 }
 
-void CheckInt(const DictionaryValue* dictionary,
-              const std::string& key,
-              int expected_value) {
-  int actual_value;
-  EXPECT_TRUE(dictionary->GetInteger(key, &actual_value)) <<
-      "Did not expect to find value for " << key;
-  EXPECT_EQ(actual_value, expected_value) <<
-      "Mismatch found for " << key;
-}
-
 // Checks whether the passed |dictionary| contains a |key| with the given
 // |expected_value|. If |omit_if_false| is true, then the value should only
 // be present if |expected_value| is true.
@@ -131,22 +120,6 @@ void CheckBool(const DictionaryValue* dictionary,
                const std::string& key,
                bool expected_value) {
   return CheckBool(dictionary, key, expected_value, false);
-}
-
-void CheckString(const DictionaryValue* dictionary,
-                 const std::string& key,
-                 const std::string& expected_value,
-                 bool omit_if_empty) {
-  if (omit_if_empty && expected_value.empty()) {
-    EXPECT_FALSE(dictionary->HasKey(key)) <<
-        "Did not expect to find value for " << key;
-  } else {
-    std::string actual_value;
-    EXPECT_TRUE(dictionary->GetString(key, &actual_value)) <<
-        "No value found for " << key;
-    EXPECT_EQ(actual_value, expected_value) <<
-        "Mismatch found for " << key;
-  }
 }
 
 // Checks to make sure that the values stored in |dictionary| match the values
@@ -223,10 +196,10 @@ class TestWebUI : public content::WebUI {
   virtual ui::ScaleFactor GetDeviceScaleFactor() const OVERRIDE {
     return ui::SCALE_FACTOR_100P;
   }
-  virtual const string16& GetOverriddenTitle() const OVERRIDE {
+  virtual const base::string16& GetOverriddenTitle() const OVERRIDE {
     return temp_string_;
   }
-  virtual void OverrideTitle(const string16& title) OVERRIDE {}
+  virtual void OverrideTitle(const base::string16& title) OVERRIDE {}
   virtual content::PageTransition GetLinkTransitionType() const OVERRIDE {
     return content::PAGE_TRANSITION_LINK;
   }
@@ -267,7 +240,7 @@ class TestWebUI : public content::WebUI {
   const std::vector<CallData>& call_data() { return call_data_; }
  private:
   std::vector<CallData> call_data_;
-  string16 temp_string_;
+  base::string16 temp_string_;
 };
 
 class TestingSyncSetupHandler : public SyncSetupHandler {
@@ -691,7 +664,11 @@ TEST_F(SyncSetupHandlerTest, TestSyncNothing) {
   EXPECT_CALL(*mock_pss_, DisableForUser());
   SetupInitializedProfileSyncService();
   handler_->HandleConfigure(&list_args);
-  ASSERT_EQ(0U, web_ui_.call_data().size());
+
+  // We expect a call to SyncSetupOverlay.showSyncSetupPage.
+  ASSERT_EQ(1U, web_ui_.call_data().size());
+  const TestWebUI::CallData& data = web_ui_.call_data()[0];
+  EXPECT_EQ("SyncSetupOverlay.showSyncSetupPage", data.function_name);
 }
 
 TEST_F(SyncSetupHandlerTest, TurnOnEncryptAll) {
@@ -896,7 +873,7 @@ TEST_F(SyncSetupHandlerTest, ShowSigninOnAuthError) {
   mock_signin_->SetAuthenticatedUsername(kTestUser);
   FakeAuthStatusProvider provider(
       SigninGlobalError::GetForProfile(profile_.get()));
-  provider.SetAuthError(error_);
+  provider.SetAuthError(kTestUser, error_);
   EXPECT_CALL(*mock_pss_, IsSyncEnabledAndLoggedIn())
       .WillRepeatedly(Return(true));
   EXPECT_CALL(*mock_pss_, IsOAuthRefreshTokenAvailable())

@@ -8,10 +8,13 @@
 #include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/command_line.h"
+#include "base/compiler_specific.h"
 #include "base/message_loop/message_loop.h"
 #include "base/prefs/pref_service.h"
+#include "base/prefs/scoped_user_pref_update.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/time/time.h"
 #include "base/values.h"
 #include "chrome/browser/background/background_contents_service_factory.h"
 #include "chrome/browser/browser_process.h"
@@ -22,16 +25,15 @@
 #include "chrome/browser/extensions/image_loader.h"
 #include "chrome/browser/notifications/desktop_notification_service.h"
 #include "chrome/browser/notifications/notification.h"
+#include "chrome/browser/notifications/notification_delegate.h"
 #include "chrome/browser/notifications/notification_ui_manager.h"
-#include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/background_info.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_icon_set.h"
 #include "chrome/common/extensions/manifest_handlers/icons_handler.h"
@@ -39,12 +41,19 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/manifest_handlers/background_info.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "ipc/ipc_message.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/image/image.h"
+
+#if defined(ENABLE_NOTIFICATIONS)
+#include "ui/message_center/message_center.h"
+#include "ui/message_center/message_center_util.h"
+#endif
 
 using content::SiteInstance;
 using content::WebContents;
@@ -56,10 +65,21 @@ namespace {
 
 const char kNotificationPrefix[] = "app.background.crashed.";
 
-void CloseBalloon(const std::string id) {
-  g_browser_process->notification_ui_manager()->CancelById(id);
+void CloseBalloon(const std::string& balloon_id) {
+  NotificationUIManager* notification_ui_manager =
+      g_browser_process->notification_ui_manager();
+  bool cancelled ALLOW_UNUSED = notification_ui_manager->CancelById(balloon_id);
+#if defined(ENABLE_NOTIFICATIONS)
+  if (cancelled && message_center::IsRichNotificationEnabled()) {
+    // TODO(dewittj): Add this functionality to the notification UI manager's
+    // API.
+    g_browser_process->message_center()->SetVisibility(
+        message_center::VISIBILITY_TRANSIENT);
+  }
+#endif
 }
 
+// Closes the crash notification balloon for the app/extension with this id.
 void ScheduleCloseBalloon(const std::string& extension_id) {
   if (!base::MessageLoop::current())  // For unit_tests
     return;
@@ -67,6 +87,8 @@ void ScheduleCloseBalloon(const std::string& extension_id) {
       FROM_HERE, base::Bind(&CloseBalloon, kNotificationPrefix + extension_id));
 }
 
+// Delegate for the app/extension crash notification balloon. Restarts the
+// app/extension when the balloon is clicked.
 class CrashNotificationDelegate : public NotificationDelegate {
  public:
   CrashNotificationDelegate(Profile* profile,
@@ -107,8 +129,8 @@ class CrashNotificationDelegate : public NotificationDelegate {
           ReloadExtension(copied_extension_id);
     }
 
-    // Closing the balloon here should be OK, but it causes a crash on Mac
-    // http://crbug.com/78167
+    // Closing the crash notification balloon for the app/extension here should
+    // be OK, but it causes a crash on Mac, see: http://crbug.com/78167
     ScheduleCloseBalloon(copied_extension_id);
   }
 
@@ -136,8 +158,7 @@ class CrashNotificationDelegate : public NotificationDelegate {
 #if defined(ENABLE_NOTIFICATIONS)
 void NotificationImageReady(
     const std::string extension_name,
-    const string16 message,
-    const GURL extension_url,
+    const base::string16 message,
     scoped_refptr<CrashNotificationDelegate> delegate,
     Profile* profile,
     const gfx::Image& icon) {
@@ -146,30 +167,35 @@ void NotificationImageReady(
     ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
     notification_icon = rb.GetImageNamed(IDR_EXTENSION_DEFAULT_ICON);
   }
-  string16 title;  // no notification title
-  DesktopNotificationService::AddIconNotification(extension_url,
-                                                  title,
-                                                  message,
-                                                  notification_icon,
-                                                  string16(),
-                                                  delegate.get(),
-                                                  profile);
+
+  // Origin URL must be different from the crashed extension to avoid the
+  // conflict. NotificationSystemObserver will cancel all notifications from
+  // the same origin when NOTIFICATION_EXTENSION_UNLOADED.
+  // TODO(mukai, dewittj): remove this and switch to message center
+  // notifications.
+  DesktopNotificationService::AddIconNotification(
+      GURL() /* empty origin */,
+      base::string16(),
+      message,
+      icon,
+      base::string16(),
+      delegate.get(),
+      profile);
 }
 #endif
 
+// Show a popup notification balloon with a crash message for a given app/
+// extension.
 void ShowBalloon(const Extension* extension, Profile* profile) {
 #if defined(ENABLE_NOTIFICATIONS)
-  string16 message = l10n_util::GetStringFUTF16(
+  const base::string16 message = l10n_util::GetStringFUTF16(
       extension->is_app() ? IDS_BACKGROUND_CRASHED_APP_BALLOON_MESSAGE :
                             IDS_BACKGROUND_CRASHED_EXTENSION_BALLOON_MESSAGE,
       UTF8ToUTF16(extension->name()));
-
   extension_misc::ExtensionIcons size(extension_misc::EXTENSION_ICON_MEDIUM);
   extensions::ExtensionResource resource =
       extensions::IconsInfo::GetIconResource(
           extension, size, ExtensionIconSet::MATCH_SMALLER);
-  scoped_refptr<CrashNotificationDelegate> delegate =
-    new CrashNotificationDelegate(profile, extension);
   // We can't just load the image in the Observe method below because, despite
   // what this method is called, it may call the callback synchronously.
   // However, it's possible that the extension went away during the interim,
@@ -182,13 +208,30 @@ void ShowBalloon(const Extension* extension, Profile* profile) {
           &NotificationImageReady,
           extension->name(),
           message,
-          extension->url(),
-          delegate,
+          make_scoped_refptr(new CrashNotificationDelegate(profile, extension)),
           profile));
 #endif
 }
 
+void ReloadExtension(const std::string& extension_id, Profile* profile) {
+  if (g_browser_process->IsShuttingDown() ||
+      !g_browser_process->profile_manager()->IsValidProfile(profile)) {
+      return;
+  }
+  extensions::ExtensionSystem* extension_system =
+      extensions::ExtensionSystem::Get(profile);
+  if (!extension_system || !extension_system->extension_service())
+    return;
+  if (!extension_system->extension_service()->
+          GetTerminatedExtension(extension_id)) {
+    // Either the app/extension was uninstalled by policy or it has since
+    // been restarted successfully by someone else (the user).
+    return;
+  }
+  extension_system->extension_service()->ReloadExtension(extension_id);
 }
+
+}  // namespace
 
 // Keys for the information we store about individual BackgroundContents in
 // prefs. There is one top-level DictionaryValue (stored at
@@ -204,6 +247,8 @@ void ShowBalloon(const Extension* extension, Profile* profile) {
 //    }
 const char kUrlKey[] = "url";
 const char kFrameNameKey[] = "name";
+
+int BackgroundContentsService::restart_delay_in_ms_ = 3000;  // 3 seconds.
 
 BackgroundContentsService::BackgroundContentsService(
     Profile* profile, const CommandLine* command_line)
@@ -223,6 +268,13 @@ BackgroundContentsService::~BackgroundContentsService() {
   // BackgroundContents should be shutdown before we go away, as otherwise
   // our browser process refcount will be off.
   DCHECK(contents_map_.empty());
+}
+
+// static
+void BackgroundContentsService::
+    SetRestartDelayForForceInstalledAppsAndExtensionsForTesting(
+        int restart_delay_in_ms) {
+  restart_delay_in_ms_ = restart_delay_in_ms;
 }
 
 std::vector<BackgroundContents*>
@@ -314,7 +366,7 @@ void BackgroundContentsService::Observe(
       BackgroundContents* bgcontents =
           content::Details<BackgroundContents>(details).ptr();
       Profile* profile = content::Source<Profile>(source).ptr();
-      const string16& appid = GetParentApplicationId(bgcontents);
+      const base::string16& appid = GetParentApplicationId(bgcontents);
       ExtensionService* extension_service =
           extensions::ExtensionSystem::Get(profile)->extension_service();
       // extension_service can be NULL when running tests.
@@ -350,7 +402,7 @@ void BackgroundContentsService::Observe(
         }
       }
 
-      // Remove any "This extension has crashed" balloons.
+      // Close the crash notification balloon for the app/extension, if any.
       ScheduleCloseBalloon(extension->id());
       SendChangeNotification(profile);
       break;
@@ -376,27 +428,28 @@ void BackgroundContentsService::Observe(
       if (!extension)
         break;
 
-      // When an extension crashes, EXTENSION_PROCESS_TERMINATED is followed by
-      // an EXTENSION_UNLOADED notification. This UNLOADED signal causes all the
-      // notifications for this extension to be cancelled by
-      // DesktopNotificationService. For this reason, instead of showing the
-      // balloon right now, we schedule it to show a little later.
-      base::MessageLoop::current()->PostTask(
-          FROM_HERE, base::Bind(&ShowBalloon, extension, profile));
+      const bool force_installed =
+          extensions::Manifest::IsPolicyLocation(extension->location());
+      if (!force_installed) {
+        ShowBalloon(extension, profile);
+      } else {
+        // Restart the extension.
+        RestartForceInstalledExtensionOnCrash(extension, profile);
+      }
       break;
     }
     case chrome::NOTIFICATION_EXTENSION_UNLOADED:
       switch (content::Details<UnloadedExtensionInfo>(details)->reason) {
-        case extension_misc::UNLOAD_REASON_DISABLE:    // Fall through.
-        case extension_misc::UNLOAD_REASON_TERMINATE:  // Fall through.
-        case extension_misc::UNLOAD_REASON_UNINSTALL:  // Fall through.
-        case extension_misc::UNLOAD_REASON_BLACKLIST:
+        case UnloadedExtensionInfo::REASON_DISABLE:    // Fall through.
+        case UnloadedExtensionInfo::REASON_TERMINATE:  // Fall through.
+        case UnloadedExtensionInfo::REASON_UNINSTALL:  // Fall through.
+        case UnloadedExtensionInfo::REASON_BLACKLIST:
           ShutdownAssociatedBackgroundContents(
               ASCIIToUTF16(content::Details<UnloadedExtensionInfo>(details)->
                   extension->id()));
           SendChangeNotification(content::Source<Profile>(source).ptr());
           break;
-        case extension_misc::UNLOAD_REASON_UPDATE: {
+        case UnloadedExtensionInfo::REASON_UPDATE: {
           // If there is a manifest specified background page, then shut it down
           // here, since if the updated extension still has the background page,
           // then it will be loaded from LOADED callback. Otherwise, leave
@@ -419,7 +472,7 @@ void BackgroundContentsService::Observe(
       break;
 
     case chrome::NOTIFICATION_EXTENSION_UNINSTALLED: {
-      // Remove any "This extension has crashed" balloons.
+      // Close the crash notification balloon for the app/extension, if any.
       ScheduleCloseBalloon(
           content::Details<const Extension>(details).ptr()->id());
       break;
@@ -429,6 +482,14 @@ void BackgroundContentsService::Observe(
       NOTREACHED();
       break;
   }
+}
+
+void BackgroundContentsService::RestartForceInstalledExtensionOnCrash(
+    const Extension* extension,
+    Profile* profile) {
+  base::MessageLoop::current()->PostDelayedTask(FROM_HERE,
+      base::Bind(&ReloadExtension, extension->id(), profile),
+      base::TimeDelta::FromMilliseconds(restart_delay_in_ms_));
 }
 
 // Loads all background contents whose urls have been stored in prefs.
@@ -509,7 +570,7 @@ void BackgroundContentsService::LoadBackgroundContentsFromDictionary(
       dict == NULL)
     return;
 
-  string16 frame_name;
+  base::string16 frame_name;
   std::string url;
   dict->GetString(kUrlKey, &url);
   dict->GetString(kFrameNameKey, &frame_name);
@@ -539,8 +600,8 @@ void BackgroundContentsService::LoadBackgroundContentsFromManifests(
 void BackgroundContentsService::LoadBackgroundContents(
     Profile* profile,
     const GURL& url,
-    const string16& frame_name,
-    const string16& application_id) {
+    const base::string16& frame_name,
+    const base::string16& application_id) {
   // We are depending on the fact that we will initialize before any user
   // actions or session restore can take place, so no BackgroundContents should
   // be running yet for the passed application_id.
@@ -554,7 +615,9 @@ void BackgroundContentsService::LoadBackgroundContents(
       MSG_ROUTING_NONE,
       profile,
       frame_name,
-      application_id);
+      application_id,
+      std::string(),
+      NULL);
 
   // TODO(atwilson): Create RenderViews asynchronously to avoid increasing
   // startup latency (http://crbug.com/47236).
@@ -566,9 +629,12 @@ BackgroundContents* BackgroundContentsService::CreateBackgroundContents(
     SiteInstance* site,
     int routing_id,
     Profile* profile,
-    const string16& frame_name,
-    const string16& application_id) {
-  BackgroundContents* contents = new BackgroundContents(site, routing_id, this);
+    const base::string16& frame_name,
+    const base::string16& application_id,
+    const std::string& partition_id,
+    content::SessionStorageNamespace* session_storage_namespace) {
+  BackgroundContents* contents = new BackgroundContents(
+      site, routing_id, this, partition_id, session_storage_namespace);
 
   // Register the BackgroundContents internally, then send out a notification
   // to external listeners.
@@ -598,7 +664,7 @@ void BackgroundContentsService::RegisterBackgroundContents(
   // feedback (http://crbug.com/47118).
   DictionaryPrefUpdate update(prefs_, prefs::kRegisteredBackgroundContents);
   DictionaryValue* pref = update.Get();
-  const string16& appid = GetParentApplicationId(background_contents);
+  const base::string16& appid = GetParentApplicationId(background_contents);
   DictionaryValue* current;
   if (pref->GetDictionaryWithoutPathExpansion(UTF16ToUTF8(appid), &current))
     return;
@@ -611,7 +677,7 @@ void BackgroundContentsService::RegisterBackgroundContents(
 }
 
 bool BackgroundContentsService::HasRegisteredBackgroundContents(
-    const string16& app_id) {
+    const base::string16& app_id) {
   if (!prefs_)
     return false;
   std::string app = UTF16ToUTF8(app_id);
@@ -625,13 +691,13 @@ void BackgroundContentsService::UnregisterBackgroundContents(
   if (!prefs_)
     return;
   DCHECK(IsTracked(background_contents));
-  const string16 appid = GetParentApplicationId(background_contents);
+  const base::string16 appid = GetParentApplicationId(background_contents);
   DictionaryPrefUpdate update(prefs_, prefs::kRegisteredBackgroundContents);
   update.Get()->RemoveWithoutPathExpansion(UTF16ToUTF8(appid), NULL);
 }
 
 void BackgroundContentsService::ShutdownAssociatedBackgroundContents(
-    const string16& appid) {
+    const base::string16& appid) {
   BackgroundContents* contents = GetAppBackgroundContents(appid);
   if (contents) {
     UnregisterBackgroundContents(contents);
@@ -662,24 +728,24 @@ void BackgroundContentsService::BackgroundContentsShutdown(
     BackgroundContents* background_contents) {
   // Remove the passed object from our list.
   DCHECK(IsTracked(background_contents));
-  string16 appid = GetParentApplicationId(background_contents);
+  base::string16 appid = GetParentApplicationId(background_contents);
   contents_map_.erase(appid);
 }
 
 BackgroundContents* BackgroundContentsService::GetAppBackgroundContents(
-    const string16& application_id) {
+    const base::string16& application_id) {
   BackgroundContentsMap::const_iterator it = contents_map_.find(application_id);
   return (it != contents_map_.end()) ? it->second.contents : NULL;
 }
 
-const string16& BackgroundContentsService::GetParentApplicationId(
+const base::string16& BackgroundContentsService::GetParentApplicationId(
     BackgroundContents* contents) const {
   for (BackgroundContentsMap::const_iterator it = contents_map_.begin();
        it != contents_map_.end(); ++it) {
     if (contents == it->second.contents)
       return it->first;
   }
-  return EmptyString16();
+  return base::EmptyString16();
 }
 
 void BackgroundContentsService::AddWebContents(

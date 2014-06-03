@@ -9,7 +9,7 @@
 #include <map>
 #include <utility>
 
-#include "ui/base/ui_export.h"
+#include "ui/gfx/gfx_export.h"
 #include "ui/gfx/image/image.h"
 
 namespace gfx {
@@ -25,20 +25,30 @@ class Size;
 // size, with high-DPI bitmap versions; use an Image or ImageSkia for that. Each
 // image in an ImageFamily should have a different logical size (and may also
 // include high-DPI representations).
-class UI_EXPORT ImageFamily {
+class GFX_EXPORT ImageFamily {
  private:
-  // Forward declaration.
-  struct MapKey;
+  // An <aspect ratio, DIP width> pair.
+  // A 0x0 image has aspect ratio 1.0. 0xN and Nx0 images are treated as 0x0.
+  struct MapKey : std::pair<float, int> {
+    MapKey(float aspect, int width)
+        : std::pair<float, int>(aspect, width) {}
+
+    float aspect() const { return first; }
+
+    int width() const { return second; }
+  };
 
  public:
   // Type for iterating over all images in the family, in order.
   // Dereferencing this iterator returns a gfx::Image.
-  class UI_EXPORT const_iterator :
+  class GFX_EXPORT const_iterator :
     std::iterator<std::bidirectional_iterator_tag, const gfx::Image> {
    public:
     const_iterator();
 
     const_iterator(const const_iterator& other);
+
+    ~const_iterator();
 
     const_iterator& operator++() {
       ++map_iterator_;
@@ -127,17 +137,6 @@ class UI_EXPORT ImageFamily {
   const gfx::Image* GetBest(const gfx::Size& size) const;
 
  private:
-  // An <aspect ratio, DIP width> pair.
-  // A 0x0 image has aspect ratio 1.0. 0xN and Nx0 images are treated as 0x0.
-  struct MapKey : std::pair<float, int> {
-    MapKey(float aspect, int width)
-        : std::pair<float, int>(aspect, width) {}
-
-    float aspect() const { return first; }
-
-    int width() const { return second; }
-  };
-
   // Find the closest aspect ratio in the map to |desired_aspect|.
   // Ties are broken by the thinner aspect.
   // |map_| must not be empty. |desired_aspect| must be > 0.0.

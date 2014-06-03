@@ -7,6 +7,7 @@
 
 #include <vector>
 
+#include "base/callback.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/observer_list.h"
@@ -14,14 +15,15 @@
 #include "base/stl_util.h"
 #include "chrome/browser/password_manager/password_form_manager.h"
 #include "chrome/browser/ui/login/login_model.h"
+#include "components/autofill/core/common/password_form.h"
 #include "components/autofill/core/common/password_form_fill_data.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_contents_user_data.h"
-#include "content/public/common/password_form.h"
 
 class PasswordManagerDelegate;
 class PasswordManagerTest;
 class PasswordFormManager;
+class PrefRegistrySimple;
 
 namespace user_prefs {
 class PrefRegistrySyncable;
@@ -36,11 +38,21 @@ class PasswordManager : public LoginModel,
                         public content::WebContentsUserData<PasswordManager> {
  public:
   static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
-
+#if defined(OS_WIN)
+  static void RegisterLocalPrefs(PrefRegistrySimple* registry);
+#endif
   static void CreateForWebContentsAndDelegate(
       content::WebContents* contents,
       PasswordManagerDelegate* delegate);
   virtual ~PasswordManager();
+
+  typedef base::Callback<void(const autofill::PasswordForm&)>
+      PasswordSubmittedCallback;
+
+  // There is no corresponding remove function as currently all of the
+  // owners of these callbacks have sufficient lifetimes so that the callbacks
+  // should always be valid when called.
+  void AddSubmissionCallback(const PasswordSubmittedCallback& callback);
 
   // Is saving new data for password autofill enabled for the current profile?
   // For example, saving new data is disabled in Incognito mode, whereas filling
@@ -49,9 +61,9 @@ class PasswordManager : public LoginModel,
 
   // Called by a PasswordFormManager when it decides a form can be autofilled
   // on the page.
-  virtual void Autofill(const content::PasswordForm& form_for_autofill,
-                        const content::PasswordFormMap& best_matches,
-                        const content::PasswordForm& preferred_match,
+  virtual void Autofill(const autofill::PasswordForm& form_for_autofill,
+                        const autofill::PasswordFormMap& best_matches,
+                        const autofill::PasswordForm& preferred_match,
                         bool wait_for_username) const;
 
   // LoginModel implementation.
@@ -59,17 +71,17 @@ class PasswordManager : public LoginModel,
   virtual void RemoveObserver(LoginModelObserver* observer) OVERRIDE;
 
   // Mark this form as having a generated password.
-  void SetFormHasGeneratedPassword(const content::PasswordForm& form);
+  void SetFormHasGeneratedPassword(const autofill::PasswordForm& form);
 
   // TODO(isherman): This should not be public, but is currently being used by
   // the LoginPrompt code.
   // When a form is submitted, we prepare to save the password but wait
   // until we decide the user has successfully logged in. This is step 1
   // of 2 (see SavePassword).
-  void ProvisionallySavePassword(const content::PasswordForm& form);
+  void ProvisionallySavePassword(const autofill::PasswordForm& form);
 
   // content::WebContentsObserver overrides.
-  virtual void DidNavigateAnyFrame(
+  virtual void DidNavigateMainFrame(
       const content::LoadCommittedDetails& details,
       const content::FrameNavigateParams& params) OVERRIDE;
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
@@ -77,17 +89,37 @@ class PasswordManager : public LoginModel,
   // TODO(isherman): This should not be public, but is currently being used by
   // the LoginPrompt code.
   void OnPasswordFormsParsed(
-      const std::vector<content::PasswordForm>& forms);
+      const std::vector<autofill::PasswordForm>& forms);
   void OnPasswordFormsRendered(
-      const std::vector<content::PasswordForm>& visible_forms);
+      const std::vector<autofill::PasswordForm>& visible_forms);
 
  protected:
   // Subclassed for unit tests.
   PasswordManager(content::WebContents* web_contents,
                   PasswordManagerDelegate* delegate);
 
+  // Handle notification that a password form was submitted.
+  virtual void OnPasswordFormSubmitted(
+      const autofill::PasswordForm& password_form);
+
  private:
   friend class content::WebContentsUserData<PasswordManager>;
+
+  enum ProvisionalSaveFailure {
+    SAVING_DISABLED,
+    EMPTY_PASSWORD,
+    NO_MATCHING_FORM,
+    MATCHING_NOT_COMPLETE,
+    FORM_BLACKLISTED,
+    INVALID_FORM,
+    AUTOCOMPLETE_OFF,
+    MAX_FAILURE_VALUE
+  };
+
+  // Log failure for UMA. Logs additional metrics if the |form_origin|
+  // corresponds to one of the top, explicitly monitored websites.
+  void RecordFailure(ProvisionalSaveFailure failure,
+                     const std::string& form_origin);
 
   // Possibly set up FieldTrial for testing other possible usernames. This only
   // happens if there are other_possible_usernames to be shown and the
@@ -96,7 +128,7 @@ class PasswordManager : public LoginModel,
   // of users so we want to include a larger fraction of these users than the
   // normal 10%.
   void PossiblyInitializeUsernamesExperiment(
-      const content::PasswordFormMap& matches) const;
+      const autofill::PasswordFormMap& matches) const;
 
   // Returns true if we can show possible usernames to users in cases where
   // the username for the form is ambigious.
@@ -141,6 +173,9 @@ class PasswordManager : public LoginModel,
   // Observers to be notified of LoginModel events.  This is mutable to allow
   // notification in const member functions.
   mutable ObserverList<LoginModelObserver> observers_;
+
+  // Callbacks to be notified when a password form has been submitted.
+  std::vector<PasswordSubmittedCallback> submission_callbacks_;
 
   DISALLOW_COPY_AND_ASSIGN(PasswordManager);
 };

@@ -34,9 +34,6 @@ void InstantNTP::InitContents(const base::Closure& on_stale_callback) {
   content::WebContents* content = contents();
   SearchTabHelper::FromWebContents(content)->InitForPreloadedNTP();
 
-  NTPUserDataLogger::CreateForWebContents(content);
-  NTPUserDataLogger::FromWebContents(content)->set_ntp_url(instantNTP_url);
-
   loader_.Load();
 }
 
@@ -47,11 +44,6 @@ scoped_ptr<content::WebContents> InstantNTP::ReleaseContents() {
 
 void InstantNTP::LoadCompletedMainFrame() {
   ntp_prerenderer_->LoadCompletedMainFrame();
-}
-
-void InstantNTP::RenderViewCreated(content::RenderViewHost* render_view_host) {
-  InitializeFonts();
-  InitializePromos();
 }
 
 void InstantNTP::RenderProcessGone(base::TerminationStatus /* status */) {

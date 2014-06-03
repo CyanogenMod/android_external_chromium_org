@@ -43,6 +43,14 @@ TEST(CommandTest, ExtensionCommandParsing) {
   const ui::Accelerator ctrl_end = ui::Accelerator(ui::VKEY_END, ctrl);
   const ui::Accelerator ctrl_pgup = ui::Accelerator(ui::VKEY_PRIOR, ctrl);
   const ui::Accelerator ctrl_pgdwn = ui::Accelerator(ui::VKEY_NEXT, ctrl);
+  const ui::Accelerator next_track =
+      ui::Accelerator(ui::VKEY_MEDIA_NEXT_TRACK, ui::EF_NONE);
+  const ui::Accelerator prev_track =
+      ui::Accelerator(ui::VKEY_MEDIA_PREV_TRACK, ui::EF_NONE);
+  const ui::Accelerator play_pause =
+      ui::Accelerator(ui::VKEY_MEDIA_PLAY_PAUSE, ui::EF_NONE);
+  const ui::Accelerator stop =
+      ui::Accelerator(ui::VKEY_MEDIA_STOP, ui::EF_NONE);
 
   const struct {
     bool expected_result;
@@ -100,6 +108,14 @@ TEST(CommandTest, ExtensionCommandParsing) {
     { true, ctrl_end, "_execute_browser_action", "Ctrl+End", "" },
     { true, ctrl_pgup, "_execute_browser_action", "Ctrl+PageUp", "" },
     { true, ctrl_pgdwn, "_execute_browser_action", "Ctrl+PageDown", "" },
+    // Media keys.
+    { true, next_track, "command", "MediaNextTrack", "description" },
+    { true, play_pause, "command", "MediaPlayPause", "description" },
+    { true, prev_track, "command", "MediaPrevTrack", "description" },
+    { true, stop, "command", "MediaStop", "description" },
+    { false, none, "_execute_browser_action", "MediaNextTrack", "" },
+    { false, none, "_execute_page_action", "MediaPrevTrack", "" },
+    { false, none, "command", "Ctrl+Shift+MediaPrevTrack", "description" },
   };
 
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kTests); ++i) {
@@ -114,7 +130,7 @@ TEST(CommandTest, ExtensionCommandParsing) {
                  "| index: " + base::IntToString(i));
 
     extensions::Command command;
-    string16 error;
+    base::string16 error;
     bool result =
         command.Parse(input.get(), kTests[i].command_name, i, &error);
 
@@ -166,7 +182,7 @@ TEST(CommandTest, ExtensionCommandParsingFallback) {
   input->SetString("description", description);
 
   extensions::Command command;
-  string16 error;
+  base::string16 error;
   EXPECT_TRUE(command.Parse(input.get(), command_name, 0, &error));
   EXPECT_STREQ(description.c_str(),
                UTF16ToASCII(command.description()).c_str());

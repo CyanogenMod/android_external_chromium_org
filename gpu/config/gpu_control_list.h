@@ -46,8 +46,6 @@ class GPU_EXPORT GpuControlList {
   // Loads control list information from a json file.
   // If failed, the current GpuControlList is un-touched.
   bool LoadList(const std::string& json_context, OsFilter os_filter);
-  bool LoadList(const std::string& browser_version_string,
-                const std::string& json_context, OsFilter os_filter);
 
   // Collects system information and combines them with gpu_info and control
   // list information to decide which entries are applied to the current
@@ -85,9 +83,6 @@ class GPU_EXPORT GpuControlList {
   // If yes, we should create a gl context and do a full gpu info collection.
   bool needs_more_info() const { return needs_more_info_; }
 
-  // Check if any entries contain unknown fields.  This is only for tests.
-  bool contains_unknown_fields() const { return contains_unknown_fields_; }
-
   // Returns the number of entries.  This is only for tests.
   size_t num_entries() const;
 
@@ -96,6 +91,13 @@ class GPU_EXPORT GpuControlList {
   // Register whether "all" is recognized as all features.
   void set_supports_feature_type_all(bool supported);
 
+  // Enables logging of control list decisions.
+  void enable_control_list_logging(
+      const std::string& control_list_logging_name) {
+    control_list_logging_enabled_ = true;
+    control_list_logging_name_ = control_list_logging_name;
+  }
+
  private:
   friend class GpuControlListEntryTest;
   friend class MachineModelInfoTest;
@@ -103,12 +105,6 @@ class GPU_EXPORT GpuControlList {
   friend class OsInfoTest;
   friend class StringInfoTest;
   friend class VersionInfoTest;
-
-  enum BrowserVersionSupport {
-    kSupported,
-    kUnsupported,
-    kMalformed
-  };
 
   enum NumericOp {
     kBetween,  // <= * <=
@@ -292,6 +288,11 @@ class GPU_EXPORT GpuControlList {
         const FeatureMap& feature_map,
         bool supports_feature_type_all);
 
+    // Logs a control list match for this rule in the list identified by
+    // |control_list_logging_name|.
+    void LogControlListMatch(
+        const std::string& control_list_logging_name) const;
+
     // Determines if a given os/gc/machine_model/driver is included in the
     // Entry set.
     bool Contains(OsType os_type, const std::string& os_version,
@@ -319,15 +320,6 @@ class GPU_EXPORT GpuControlList {
 
     // Returns the blacklisted features in this entry.
     const std::set<int>& features() const;
-
-    // Returns true if an unknown field is encountered.
-    bool contains_unknown_fields() const {
-      return contains_unknown_fields_;
-    }
-    // Returns true if an unknown blacklist feature is encountered.
-    bool contains_unknown_features() const {
-      return contains_unknown_features_;
-    }
 
    private:
     friend class base::RefCounted<GpuControlListEntry>;
@@ -457,8 +449,6 @@ class GPU_EXPORT GpuControlList {
     scoped_ptr<IntInfo> gpu_count_info_;
     std::set<int> features_;
     std::vector<ScopedGpuControlListEntry> exceptions_;
-    bool contains_unknown_fields_;
-    bool contains_unknown_features_;
   };
 
   // Gets the current OS type.
@@ -468,18 +458,10 @@ class GPU_EXPORT GpuControlList {
 
   void Clear();
 
-  // Check if the entry is supported by the current version of browser.
-  // By default, if there is no browser version information in the entry,
-  // return kSupported;
-  BrowserVersionSupport IsEntrySupportedByCurrentBrowserVersion(
-      const base::DictionaryValue* value);
-
   static NumericOp StringToNumericOp(const std::string& op);
 
   std::string version_;
   std::vector<ScopedGpuControlListEntry> entries_;
-
-  std::string browser_version_;
 
   // This records all the blacklist entries that are appliable to the current
   // user machine.  It is updated everytime MakeDecision() is called and is
@@ -488,13 +470,14 @@ class GPU_EXPORT GpuControlList {
 
   uint32 max_entry_id_;
 
-  bool contains_unknown_fields_;
-
   bool needs_more_info_;
 
   // The features a GpuControlList recognizes and handles.
   FeatureMap feature_map_;
   bool supports_feature_type_all_;
+
+  bool control_list_logging_enabled_;
+  std::string control_list_logging_name_;
 };
 
 }  // namespace gpu

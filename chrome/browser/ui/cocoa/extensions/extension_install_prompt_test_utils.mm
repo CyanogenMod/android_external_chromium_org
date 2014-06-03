@@ -9,7 +9,7 @@
 #include "base/json/json_file_value_serializer.h"
 #include "base/path_service.h"
 #include "chrome/common/chrome_paths.h"
-#include "chrome/common/extensions/extension.h"
+#include "extensions/common/extension.h"
 
 using extensions::Extension;
 
@@ -23,14 +23,16 @@ void MockExtensionInstallPromptDelegate::InstallUIAbort(bool user_initiated) {
   ++abort_count_;
 }
 
-scoped_refptr<Extension> LoadInstallPromptExtension() {
+scoped_refptr<extensions::Extension> LoadInstallPromptExtension(
+    const char* extension_dir_name,
+    const char* manifest_file) {
   scoped_refptr<Extension> extension;
 
   base::FilePath path;
   PathService::Get(chrome::DIR_TEST_DATA, &path);
   path = path.AppendASCII("extensions")
-             .AppendASCII("install_prompt")
-             .AppendASCII("extension.json");
+             .AppendASCII(extension_dir_name)
+             .AppendASCII(manifest_file);
 
   std::string error;
   JSONFileValueSerializer serializer(path);
@@ -50,6 +52,10 @@ scoped_refptr<Extension> LoadInstallPromptExtension() {
   return extension;
 }
 
+scoped_refptr<Extension> LoadInstallPromptExtension() {
+  return LoadInstallPromptExtension("install_prompt", "extension.json");
+}
+
 gfx::Image LoadInstallPromptIcon() {
   base::FilePath path;
   PathService::Get(chrome::DIR_TEST_DATA, &path);
@@ -58,7 +64,7 @@ gfx::Image LoadInstallPromptIcon() {
              .AppendASCII("icon.png");
 
   std::string file_contents;
-  file_util::ReadFileToString(path, &file_contents);
+  base::ReadFileToString(path, &file_contents);
 
   return gfx::Image::CreateFrom1xPNGBytes(
       reinterpret_cast<const unsigned char*>(file_contents.c_str()),

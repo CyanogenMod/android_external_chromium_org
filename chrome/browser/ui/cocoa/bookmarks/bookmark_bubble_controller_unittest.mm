@@ -17,6 +17,7 @@
 #include "chrome/browser/ui/cocoa/browser_window_controller.h"
 #include "chrome/browser/ui/cocoa/cocoa_profile_test.h"
 #import "chrome/browser/ui/cocoa/info_bubble_window.h"
+#include "chrome/test/base/testing_profile.h"
 #include "content/public/browser/notification_service.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #import "testing/gtest_mac.h"
@@ -204,7 +205,7 @@ TEST_F(BookmarkBubbleControllerTest, TestFolderWithBlankName) {
                                                ASCIIToUTF16("one"));
   EXPECT_TRUE(node1);
   const BookmarkNode* node2 = model->AddFolder(bookmarkBarNode, 1,
-                                               string16());
+                                               base::string16());
   EXPECT_TRUE(node2);
   const BookmarkNode* node3 = model->AddFolder(bookmarkBarNode, 2,
                                                ASCIIToUTF16("three"));

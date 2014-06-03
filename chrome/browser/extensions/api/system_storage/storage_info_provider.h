@@ -22,10 +22,10 @@ namespace extensions {
 
 namespace systeminfo {
 
-// Build StorageUnitInfo struct from chrome::StorageInfo instance. The |unit|
+// Build StorageUnitInfo struct from StorageInfo instance. The |unit|
 // parameter is the output value.
-void BuildStorageUnitInfo(const chrome::StorageInfo& info,
-    api::system_storage::StorageUnitInfo* unit);
+void BuildStorageUnitInfo(const StorageInfo& info,
+                          api::system_storage::StorageUnitInfo* unit);
 
 }  // namespace systeminfo
 
@@ -35,6 +35,9 @@ typedef std::vector<linked_ptr<
 
 class StorageInfoProvider : public SystemInfoProvider {
  public:
+  typedef base::Callback<void(const std::string&, double)>
+      GetStorageFreeSpaceCallback;
+
   // Get the single shared instance of StorageInfoProvider.
   static StorageInfoProvider* Get();
 
@@ -42,6 +45,9 @@ class StorageInfoProvider : public SystemInfoProvider {
   virtual void PrepareQueryOnUIThread() OVERRIDE;
   virtual void InitializeProvider(const base::Closure& do_query_info_callback)
       OVERRIDE;
+
+  virtual double GetStorageFreeSpaceFromTransientIdOnFileThread(
+      const std::string& transient_id);
 
   const StorageUnitInfoList& storage_unit_info_list() const;
 

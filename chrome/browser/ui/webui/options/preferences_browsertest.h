@@ -12,9 +12,9 @@
 #include "base/compiler_specific.h"
 #include "base/prefs/pref_change_registrar.h"
 #include "base/prefs/pref_service.h"
-#include "chrome/browser/policy/mock_configuration_policy_provider.h"
-#include "chrome/browser/policy/policy_types.h"
 #include "chrome/test/base/in_process_browser_test.h"
+#include "components/policy/core/common/mock_configuration_policy_provider.h"
+#include "components/policy/core/common/policy_types.h"
 #include "content/public/browser/notification_observer.h"
 #include "testing/gmock/include/gmock/gmock.h"
 

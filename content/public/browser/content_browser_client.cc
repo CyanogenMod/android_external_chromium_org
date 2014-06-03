@@ -60,6 +60,11 @@ bool ContentBrowserClient::CanCommitURL(RenderProcessHost* process_host,
   return true;
 }
 
+bool ContentBrowserClient::ShouldAllowOpenURL(SiteInstance* site_instance,
+                                              const GURL& url) {
+  return true;
+}
+
 bool ContentBrowserClient::IsSuitableHost(RenderProcessHost* process_host,
                                           const GURL& site_url) {
   return true;
@@ -70,7 +75,7 @@ bool ContentBrowserClient::ShouldTryToUseExistingProcessHost(
   return false;
 }
 
-bool ContentBrowserClient::ShouldSwapProcessesForNavigation(
+bool ContentBrowserClient::ShouldSwapBrowsingInstancesForNavigation(
     SiteInstance* site_instance,
     const GURL& current_url,
     const GURL& new_url) {
@@ -136,8 +141,8 @@ bool ContentBrowserClient::AllowSaveLocalState(ResourceContext* context) {
 
 bool ContentBrowserClient::AllowWorkerDatabase(
     const GURL& url,
-    const string16& name,
-    const string16& display_name,
+    const base::string16& name,
+    const base::string16& display_name,
     unsigned long estimated_size,
     ResourceContext* context,
     const std::vector<std::pair<int, int> >& render_views) {
@@ -153,7 +158,7 @@ bool ContentBrowserClient::AllowWorkerFileSystem(
 
 bool ContentBrowserClient::AllowWorkerIndexedDB(
     const GURL& url,
-    const string16& name,
+    const base::string16& name,
     ResourceContext* context,
     const std::vector<std::pair<int, int> >& render_views) {
   return true;
@@ -198,12 +203,12 @@ MediaObserver* ContentBrowserClient::GetMediaObserver() {
   return NULL;
 }
 
-WebKit::WebNotificationPresenter::Permission
+blink::WebNotificationPresenter::Permission
     ContentBrowserClient::CheckDesktopNotificationPermission(
         const GURL& source_origin,
         ResourceContext* context,
         int render_process_id) {
-  return WebKit::WebNotificationPresenter::PermissionAllowed;
+  return blink::WebNotificationPresenter::PermissionAllowed;
 }
 
 bool ContentBrowserClient::CanCreateWindow(
@@ -214,7 +219,7 @@ bool ContentBrowserClient::CanCreateWindow(
     const GURL& target_url,
     const content::Referrer& referrer,
     WindowOpenDisposition disposition,
-    const WebKit::WebWindowFeatures& features,
+    const blink::WebWindowFeatures& features,
     bool user_gesture,
     bool opener_suppressed,
     content::ResourceContext* context,
@@ -270,7 +275,7 @@ bool ContentBrowserClient::AllowPepperSocketAPI(
     BrowserContext* browser_context,
     const GURL& url,
     bool private_api,
-    const SocketPermissionRequest& params) {
+    const SocketPermissionRequest* params) {
   return false;
 }
 
@@ -283,17 +288,24 @@ LocationProvider* ContentBrowserClient::OverrideSystemLocationProvider() {
   return NULL;
 }
 
+VibrationProvider* ContentBrowserClient::OverrideVibrationProvider() {
+  return NULL;
+}
+
 #if defined(OS_WIN)
 const wchar_t* ContentBrowserClient::GetResourceDllName() {
   return NULL;
 }
 #endif
 
-#if defined(USE_NSS)
-crypto::CryptoModuleBlockingPasswordDelegate*
-    ContentBrowserClient::GetCryptoPasswordDelegate(const GURL& url) {
-  return NULL;
+bool ContentBrowserClient::IsPluginAllowedToCallRequestOSFileHandle(
+    content::BrowserContext* browser_context,
+    const GURL& url) {
+  return false;
 }
-#endif
+
+bool ContentBrowserClient::IsPluginAllowedToUseDevChannelAPIs() {
+  return false;
+}
 
 }  // namespace content

@@ -9,12 +9,13 @@
 #include <utility>
 #include <vector>
 
-#include "base/compiler_specific.h"
 #include "base/logging.h"
+#include "base/memory/scoped_ptr.h"
 #include "chrome/browser/infobars/infobar_delegate.h"
 #include "chrome/browser/translate/translate_prefs.h"
-#include "chrome/common/chrome_constants.h"
+#include "chrome/browser/translate/translate_ui_delegate.h"
 #include "chrome/common/translate/translate_errors.h"
+#include "components/translate/common/translate_constants.h"
 
 class PrefService;
 
@@ -56,11 +57,11 @@ class TranslateInfoBarDelegate : public InfoBarDelegate {
   // |original_language| == kUnknownLanguageCode.
   //
   // If |replace_existing_infobar| is true, the infobar is created and added to
-  // |infobar_service|, replacing any other translate infobar already present
-  // there.  Otherwise, the infobar will only be added if there is no other
-  // translate infobar already present.
+  // the infobar service for |web_contents|, replacing any other translate
+  // infobar already present there.  Otherwise, the infobar will only be added
+  // if there is no other translate infobar already present.
   static void Create(bool replace_existing_infobar,
-                     InfoBarService* infobar_service,
+                     content::WebContents* web_contents,
                      Type infobar_type,
                      const std::string& original_language,
                      const std::string& target_language,
@@ -69,45 +70,38 @@ class TranslateInfoBarDelegate : public InfoBarDelegate {
                      const ShortcutConfiguration& shortcut_config);
 
   // Returns the number of languages supported.
-  size_t num_languages() const { return languages_.size(); }
+  size_t num_languages() const { return ui_delegate_.GetNumberOfLanguages(); }
 
   // Returns the ISO code for the language at |index|.
   std::string language_code_at(size_t index) const {
-    DCHECK_LT(index, num_languages());
-    return languages_[index].first;
+    return ui_delegate_.GetLanguageCodeAt(index);
   }
 
   // Returns the displayable name for the language at |index|.
-  string16 language_name_at(size_t index) const {
-    if (index == kNoIndex)
-      return string16();
-    DCHECK_LT(index, num_languages());
-    return languages_[index].second;
+  base::string16 language_name_at(size_t index) const {
+    return ui_delegate_.GetLanguageNameAt(index);
   }
 
   Type infobar_type() const { return infobar_type_; }
 
   TranslateErrors::Type error_type() const { return error_type_; }
 
-  size_t original_language_index() const { return original_language_index_; }
-  void set_original_language_index(size_t language_index) {
-    DCHECK_LT(language_index, num_languages());
-    original_language_index_ = language_index;
+  size_t original_language_index() const {
+    return ui_delegate_.GetOriginalLanguageIndex();
   }
-  size_t target_language_index() const { return target_language_index_; }
-  void set_target_language_index(size_t language_index) {
-    DCHECK_LT(language_index, num_languages());
-    target_language_index_ = language_index;
+  void UpdateOriginalLanguageIndex(size_t language_index);
+
+  size_t target_language_index() const {
+    return ui_delegate_.GetTargetLanguageIndex();
   }
+  void UpdateTargetLanguageIndex(size_t language_index);
 
   // Convenience methods.
   std::string original_language_code() const {
-    return (original_language_index() == kNoIndex) ?
-        chrome::kUnknownLanguageCode :
-        language_code_at(original_language_index());
+    return ui_delegate_.GetOriginalLanguageCode();
   }
   std::string target_language_code() const {
-    return language_code_at(target_language_index());
+    return ui_delegate_.GetTargetLanguageCode();
   }
 
   // Returns true if the current infobar indicates an error (in which case it
@@ -144,8 +138,8 @@ class TranslateInfoBarDelegate : public InfoBarDelegate {
 
   // The following methods are called by the infobar that displays the status
   // while translating and also the one displaying the error message.
-  string16 GetMessageInfoBarText();
-  string16 GetMessageInfoBarButtonText();
+  base::string16 GetMessageInfoBarText();
+  base::string16 GetMessageInfoBarButtonText();
   void MessageInfoBarButtonPressed();
   bool ShouldShowMessageInfoBarButton();
 
@@ -159,7 +153,8 @@ class TranslateInfoBarDelegate : public InfoBarDelegate {
 
   // Convenience method that returns the displayable language name for
   // |language_code| in the current application locale.
-  static string16 GetLanguageDisplayableName(const std::string& language_code);
+  static base::string16 GetLanguageDisplayableName(
+      const std::string& language_code);
 
   // Adds the strings that should be displayed in the after translate infobar to
   // |strings|. If |autodetermined_source_language| is false, the text in that
@@ -173,12 +168,12 @@ class TranslateInfoBarDelegate : public InfoBarDelegate {
   // should be inverted (some languages express the sentense as "The page has
   // been translate to <lang2> from <lang1>."). It is ignored if
   // |autodetermined_source_language| is true.
-  static void GetAfterTranslateStrings(std::vector<string16>* strings,
+  static void GetAfterTranslateStrings(std::vector<base::string16>* strings,
                                        bool* swap_languages,
                                        bool autodetermined_source_language);
 
  protected:
-  TranslateInfoBarDelegate(InfoBarService* infobar_service,
+  TranslateInfoBarDelegate(content::WebContents* web_contents,
                            Type infobar_type,
                            TranslateInfoBarDelegate* old_delegate,
                            const std::string& original_language,
@@ -188,10 +183,14 @@ class TranslateInfoBarDelegate : public InfoBarDelegate {
                            ShortcutConfiguration shortcut_config);
 
  private:
-  typedef std::pair<std::string, string16> LanguageNamePair;
+  friend class TranslationInfoBarTest;
+  typedef std::pair<std::string, base::string16> LanguageNamePair;
+
+  // Returns a translate infobar that owns |delegate|.
+  static scoped_ptr<InfoBar> CreateInfoBar(
+      scoped_ptr<TranslateInfoBarDelegate> delegate);
 
   // InfoBarDelegate:
-  virtual InfoBar* CreateInfoBar(InfoBarService* infobar_service) OVERRIDE;
   virtual void InfoBarDismissed() OVERRIDE;
   virtual int GetIconID() const OVERRIDE;
   virtual InfoBarDelegate::Type GetInfoBarType() const OVERRIDE;
@@ -199,34 +198,13 @@ class TranslateInfoBarDelegate : public InfoBarDelegate {
        const content::LoadCommittedDetails& details) const OVERRIDE;
   virtual TranslateInfoBarDelegate* AsTranslateInfoBarDelegate() OVERRIDE;
 
-  // Gets the host of the page being translated, or an empty string if no URL is
-  // associated with the current page.
-  std::string GetPageHost();
-
   Type infobar_type_;
 
   // The type of fading animation if any that should be used when showing this
   // infobar.
   BackgroundAnimationType background_animation_;
 
-  // The list supported languages for translation.
-  // The pair first string is the language ISO code (ex: en, fr...), the second
-  // string is the displayable name on the current locale.
-  // The languages are sorted alphabetically based on the displayable name.
-  std::vector<LanguageNamePair> languages_;
-
-  // The index for language the page is originally in.
-  size_t original_language_index_;
-
-  // The index for language the page is originally in that was originally
-  // reported (original_language_index_ changes if the user selects a new
-  // original language, but this one does not).  This is necessary to report
-  // language detection errors with the right original language even if the user
-  // changed the original language.
-  size_t initial_original_language_index_;
-
-  // The index for language the page should be translated to.
-  size_t target_language_index_;
+  TranslateUIDelegate ui_delegate_;
 
   // The error that occurred when trying to translate (NONE if no error).
   TranslateErrors::Type error_type_;

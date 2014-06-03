@@ -10,6 +10,7 @@
 #include "chrome/browser/ui/browser.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_menu_cocoa_controller.h"
 #include "chrome/browser/ui/cocoa/cocoa_profile_test.h"
+#include "chrome/test/base/testing_profile.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 @interface FakeBookmarkMenuController : BookmarkMenuCocoaController {
@@ -27,7 +28,7 @@
 
 - (id)initWithProfile:(Profile*)profile {
   if ((self = [super init])) {
-    string16 empty;
+    base::string16 empty;
     BookmarkModel* model = BookmarkModelFactory::GetForProfile(profile);
     const BookmarkNode* bookmark_bar = model->bookmark_bar_node();
     nodes_[0] = model->AddURL(bookmark_bar, 0, empty, GURL("http://0.com"));

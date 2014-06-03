@@ -6,9 +6,7 @@
 #include "base/message_loop/message_loop.h"
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/download/download_prefs.h"
-#include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_apitest.h"
-#include "chrome/browser/extensions/extension_info_map.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
@@ -23,6 +21,7 @@
 #include "content/public/browser/resource_controller.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/download_test_observer.h"
+#include "extensions/browser/event_router.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/test/embedded_test_server/http_request.h"
 #include "net/test/embedded_test_server/http_response.h"
@@ -97,9 +96,7 @@ class StreamsPrivateApiTest : public ExtensionApiTest {
 
   virtual void SetUpOnMainThread() OVERRIDE {
     // Init test server.
-    test_server_.reset(new EmbeddedTestServer(
-                           content::BrowserThread::GetMessageLoopProxyForThread(
-                               content::BrowserThread::IO)));
+    test_server_.reset(new EmbeddedTestServer);
     ASSERT_TRUE(test_server_->InitializeAndWaitUntilReady());
     test_server_->RegisterRequestHandler(base::Bind(&HandleRequest));
 

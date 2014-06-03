@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -87,8 +87,12 @@ public class InsertionHandleTest extends ContentShellTestBase {
     }
 
 
-    @MediumTest
-    @Feature({"TextSelection", "TextInput", "Main"})
+    /**
+     * @MediumTest
+     * @Feature({"TextSelection", "TextInput", "Main"})
+     * http://crbug.com/169648
+     */
+    @DisabledTest
     public void testKeyEventHidesHandle() throws Throwable {
         launchWithUrl(TEXTAREA_DATA_URL);
         clickNodeToShowInsertionHandle(TEXTAREA_ID);

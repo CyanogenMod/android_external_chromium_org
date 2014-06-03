@@ -1,19 +1,21 @@
 <img src="{{static}}/images/bookmarks.png"
-     width="210" height="147" alt="Clicking the star adds a bookmark" />
+     width="486" height="211" alt="Clicking the star adds a bookmark" />
 
 <h2 id="manifest">Manifest</h2>
 <p>You must declare the "bookmarks" permission
 in the <a href="manifest.html">extension manifest</a>
 to use the bookmarks API.
 For example:</p>
-<pre>{
+<pre data-filename="manifest.json">
+{
   "name": "My extension",
   ...
   <b>"permissions": [
     "bookmarks"
   ]</b>,
   ...
-}</pre>
+}
+</pre>
 
 <h2 id="description">Objects and properties</h2>
 

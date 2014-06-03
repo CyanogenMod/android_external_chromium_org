@@ -8,14 +8,12 @@
 
 #include "base/i18n/rtl.h"
 #include "base/strings/string16.h"
-#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/task_manager/resource_provider.h"
 #include "chrome/browser/task_manager/task_manager.h"
 #include "components/nacl/common/nacl_process_type.h"
 #include "content/public/browser/browser_child_process_host_iterator.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/child_process_data.h"
-#include "content/public/browser/notification_service.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -31,14 +29,14 @@ namespace task_manager {
 class ChildProcessResource : public Resource {
  public:
   ChildProcessResource(int process_type,
-                       const string16& name,
+                       const base::string16& name,
                        base::ProcessHandle handle,
                        int unique_process_id);
   virtual ~ChildProcessResource();
 
   // Resource methods:
-  virtual string16 GetTitle() const OVERRIDE;
-  virtual string16 GetProfileName() const OVERRIDE;
+  virtual base::string16 GetTitle() const OVERRIDE;
+  virtual base::string16 GetProfileName() const OVERRIDE;
   virtual gfx::ImageSkia GetIcon() const OVERRIDE;
   virtual base::ProcessHandle GetProcess() const OVERRIDE;
   virtual int GetUniqueChildProcessId() const OVERRIDE;
@@ -52,14 +50,14 @@ class ChildProcessResource : public Resource {
  private:
   // Returns a localized title for the child process.  For example, a plugin
   // process would be "Plug-in: Flash" when name is "Flash".
-  string16 GetLocalizedTitle() const;
+  base::string16 GetLocalizedTitle() const;
 
   int process_type_;
-  string16 name_;
+  base::string16 name_;
   base::ProcessHandle handle_;
   int pid_;
   int unique_process_id_;
-  mutable string16 title_;
+  mutable base::string16 title_;
   bool network_usage_support_;
 
   // The icon painted for the child processs.
@@ -74,7 +72,7 @@ gfx::ImageSkia* ChildProcessResource::default_icon_ = NULL;
 
 ChildProcessResource::ChildProcessResource(
     int process_type,
-    const string16& name,
+    const base::string16& name,
     base::ProcessHandle handle,
     int unique_process_id)
     : process_type_(process_type),
@@ -96,15 +94,15 @@ ChildProcessResource::~ChildProcessResource() {
 }
 
 // Resource methods:
-string16 ChildProcessResource::GetTitle() const {
+base::string16 ChildProcessResource::GetTitle() const {
   if (title_.empty())
     title_ = GetLocalizedTitle();
 
   return title_;
 }
 
-string16 ChildProcessResource::GetProfileName() const {
-  return string16();
+base::string16 ChildProcessResource::GetProfileName() const {
+  return base::string16();
 }
 
 gfx::ImageSkia ChildProcessResource::GetIcon() const {
@@ -151,8 +149,8 @@ void ChildProcessResource::SetSupportNetworkUsage() {
   network_usage_support_ = true;
 }
 
-string16 ChildProcessResource::GetLocalizedTitle() const {
-  string16 title = name_;
+base::string16 ChildProcessResource::GetLocalizedTitle() const {
+  base::string16 title = name_;
   if (title.empty()) {
     switch (process_type_) {
       case content::PROCESS_TYPE_PLUGIN:
@@ -343,10 +341,7 @@ void ChildProcessResourceProvider::ChildProcessDataRetreived(
   for (size_t i = 0; i < child_processes.size(); ++i)
     AddToTaskManager(child_processes[i]);
 
-  content::NotificationService::current()->Notify(
-      chrome::NOTIFICATION_TASK_MANAGER_CHILD_PROCESSES_DATA_READY,
-      content::Source<ChildProcessResourceProvider>(this),
-      content::NotificationService::NoDetails());
+  task_manager_->model()->NotifyDataReady();
 }
 
 }  // namespace task_manager

@@ -8,6 +8,7 @@
 #include <set>
 
 #include "base/files/scoped_temp_dir.h"
+#include "chrome/browser/chromeos/drive/change_list_loader.h"
 #include "chrome/browser/chromeos/drive/drive.pb.h"
 #include "chrome/browser/chromeos/drive/file_system/operation_observer.h"
 #include "chrome/browser/chromeos/drive/test_util.h"
@@ -49,21 +50,29 @@ class OperationTestBase : public testing::Test {
     virtual void OnDirectoryChangedByOperation(
         const base::FilePath& path) OVERRIDE;
     virtual void OnCacheFileUploadNeededByOperation(
-        const std::string& resource_id) OVERRIDE;
+        const std::string& local_id) OVERRIDE;
+    virtual void OnEntryUpdatedByOperation(
+        const std::string& local_id) OVERRIDE;
 
     // Gets the set of changed paths.
     const std::set<base::FilePath>& get_changed_paths() {
       return changed_paths_;
     }
 
-    // Gets the set of upload needed resource IDs.
-    const std::set<std::string>& upload_needed_resource_ids() const {
-      return upload_needed_resource_ids_;
+    // Gets the set of upload needed local IDs.
+    const std::set<std::string>& upload_needed_local_ids() const {
+      return upload_needed_local_ids_;
+    }
+
+    // Gets the set of updated local IDs.
+    const std::set<std::string>& updated_local_ids() const {
+      return updated_local_ids_;
     }
 
    private:
     std::set<base::FilePath> changed_paths_;
-    std::set<std::string> upload_needed_resource_ids_;
+    std::set<std::string> upload_needed_local_ids_;
+    std::set<std::string> updated_local_ids_;
   };
 
   OperationTestBase();
@@ -80,6 +89,18 @@ class OperationTestBase : public testing::Test {
   // ResourceMetadta.
   FileError GetLocalResourceEntry(const base::FilePath& path,
                                   ResourceEntry* entry);
+
+  // Synchronously gets the resource entry corresponding to the ID from local
+  // ResourceMetadta.
+  FileError GetLocalResourceEntryById(const std::string& local_id,
+                                      ResourceEntry* entry);
+
+  // Gets the local ID of the entry specified by the path.
+  std::string GetLocalId(const base::FilePath& path);
+
+  // Synchronously updates |metadata_| by fetching the change feed from the
+  // |fake_service_|.
+  FileError CheckForUpdates();
 
   // Accessors for the components.
   FakeDriveService* fake_service() {
@@ -111,6 +132,7 @@ class OperationTestBase : public testing::Test {
       metadata_;
   scoped_ptr<FakeFreeDiskSpaceGetter> fake_free_disk_space_getter_;
   scoped_ptr<internal::FileCache, test_util::DestroyHelperForTests> cache_;
+  scoped_ptr<internal::ChangeListLoader> change_list_loader_;
 };
 
 }  // namespace file_system

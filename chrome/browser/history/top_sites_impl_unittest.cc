@@ -3,42 +3,23 @@
 // found in the LICENSE file.
 
 #include "base/bind.h"
-#include "base/bind_helpers.h"
-#include "base/file_util.h"
-#include "base/files/scoped_temp_dir.h"
-#include "base/format_macros.h"
 #include "base/memory/weak_ptr.h"
+#include "base/message_loop/message_loop.h"
 #include "base/path_service.h"
-#include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/values.h"
-#include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/history/history_backend.h"
-#include "chrome/browser/history/history_database.h"
 #include "chrome/browser/history/history_db_task.h"
-#include "chrome/browser/history/history_marshaling.h"
-#include "chrome/browser/history/history_notifications.h"
 #include "chrome/browser/history/history_service_factory.h"
+#include "chrome/browser/history/history_types.h"
 #include "chrome/browser/history/history_unittest_base.h"
-#include "chrome/browser/history/top_sites_backend.h"
 #include "chrome/browser/history/top_sites_cache.h"
-#include "chrome/browser/history/top_sites_database.h"
 #include "chrome/browser/history/top_sites_impl.h"
-#include "chrome/browser/ui/webui/ntp/most_visited_handler.h"
 #include "chrome/common/cancelable_task_tracker.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
-#include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/testing_profile.h"
-#include "chrome/tools/profiles/thumbnail-inl.h"
 #include "content/public/test/test_browser_thread.h"
-#include "content/public/test/test_utils.h"
-#include "grit/chromium_strings.h"
-#include "grit/generated_resources.h"
-#include "grit/locale_settings.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkBitmap.h"
-#include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/codec/jpeg_codec.h"
 #include "url/gurl.h"
 
@@ -81,10 +62,19 @@ class TopSitesQuerier {
   // Queries top sites. If |wait| is true a nested message loop is run until the
   // callback is notified.
   void QueryTopSites(TopSitesImpl* top_sites, bool wait) {
+    QueryAllTopSites(top_sites, wait, false);
+  }
+
+  // Queries top sites, including potentially forced URLs if
+  // |include_forced_urls| is true.
+  void QueryAllTopSites(TopSitesImpl* top_sites,
+                        bool wait,
+                        bool include_forced_urls) {
     int start_number_of_callbacks = number_of_callbacks_;
     top_sites->GetMostVisitedURLs(
         base::Bind(&TopSitesQuerier::OnTopSitesAvailable,
-                   weak_ptr_factory_.GetWeakPtr()));
+                   weak_ptr_factory_.GetWeakPtr()),
+        include_forced_urls);
     if (wait && start_number_of_callbacks == number_of_callbacks_) {
       waiting_ = true;
       base::MessageLoop::current()->Run();
@@ -167,7 +157,7 @@ class TopSitesImplTest : public HistoryUnitTestBase {
   // Gets the thumbnail for |url| from TopSites.
   SkBitmap GetThumbnail(const GURL& url) {
     scoped_refptr<base::RefCountedMemory> data;
-    return top_sites()->GetPageThumbnail(url, &data) ?
+    return top_sites()->GetPageThumbnail(url, false, &data) ?
         ExtractThumbnail(*data.get()) : SkBitmap();
   }
 
@@ -253,7 +243,7 @@ class TopSitesImplTest : public HistoryUnitTestBase {
   }
 
   // Adds a page to history.
-  void AddPageToHistory(const GURL& url, const string16& title) {
+  void AddPageToHistory(const GURL& url, const base::string16& title) {
     RedirectList redirects;
     redirects.push_back(url);
     history_service()->AddPage(
@@ -265,7 +255,7 @@ class TopSitesImplTest : public HistoryUnitTestBase {
 
   // Adds a page to history.
   void AddPageToHistory(const GURL& url,
-                        const string16& title,
+                        const base::string16& title,
                         const history::RedirectList& redirects,
                         base::Time time) {
     history_service()->AddPage(
@@ -306,6 +296,10 @@ class TopSitesImplTest : public HistoryUnitTestBase {
     top_sites()->SetTopSites(new_top_sites);
   }
 
+  bool AddForcedURL(const GURL& url, base::Time time) {
+    return top_sites()->AddForcedURL(url, time);
+  }
+
   void StartQueryForMostVisited() {
     top_sites()->StartQueryForMostVisited();
   }
@@ -323,7 +317,13 @@ class TopSitesImplTest : public HistoryUnitTestBase {
   bool IsTopSitesLoaded() { return top_sites()->loaded_; }
 
   bool AddPrepopulatedPages(MostVisitedURLList* urls) {
-    return top_sites()->AddPrepopulatedPages(urls);
+    return top_sites()->AddPrepopulatedPages(urls, 0u);
+  }
+
+  void EmptyThreadSafeCache() {
+    base::AutoLock lock(top_sites()->lock_);
+    MostVisitedURLList empty;
+    top_sites()->thread_safe_cache_->SetTopSites(empty);
   }
 
  private:
@@ -341,70 +341,24 @@ class TopSitesImplTest : public HistoryUnitTestBase {
   DISALLOW_COPY_AND_ASSIGN(TopSitesImplTest);
 };  // Class TopSitesImplTest
 
-class TopSitesMigrationTest : public TopSitesImplTest {
- public:
-  TopSitesMigrationTest() {}
-
-  virtual void SetUp() {
-    TopSitesImplTest::SetUp();
-
-    base::FilePath data_path;
-    ASSERT_TRUE(PathService::Get(chrome::DIR_TEST_DATA, &data_path));
-    data_path = data_path.AppendASCII("top_sites");
-
-    // Set up history and thumbnails as they would be before migration.
-    ASSERT_NO_FATAL_FAILURE(ExecuteSQLScript(
-        data_path.AppendASCII("history.19.sql"),
-        profile()->GetPath().Append(chrome::kHistoryFilename)));
-    ASSERT_NO_FATAL_FAILURE(ExecuteSQLScript(
-        data_path.AppendASCII("thumbnails.3.sql"),
-        profile()->GetPath().Append(chrome::kThumbnailsFilename)));
-
-    ASSERT_TRUE(profile()->CreateHistoryService(false, false));
-    profile()->CreateTopSites();
-    profile()->BlockUntilTopSitesLoaded();
-  }
-
-  // Returns true if history and top sites should be created in SetUp.
-  virtual bool CreateHistoryAndTopSites() OVERRIDE {
-    return false;
-  }
-
- protected:
-  // Assertions for the migration test. This is extracted into a standalone
-  // method so that it can be invoked twice.
-  void MigrationAssertions() {
-    TopSitesQuerier querier;
-    querier.QueryTopSites(top_sites(), false);
-
-    // We shouldn't have gotten a callback.
-    EXPECT_EQ(1, querier.number_of_callbacks());
-
-    // The data we loaded should contain google and yahoo.
-    ASSERT_EQ(2u + GetPrepopulatePages().size(), querier.urls().size());
-    EXPECT_EQ(GURL("http://google.com/"), querier.urls()[0].url);
-    EXPECT_EQ(GURL("http://yahoo.com/"), querier.urls()[1].url);
-    ASSERT_NO_FATAL_FAILURE(ContainsPrepopulatePages(querier, 2));
-
-    SkBitmap goog_thumbnail = GetThumbnail(GURL("http://google.com/"));
-    EXPECT_EQ(1, goog_thumbnail.width());
-
-    SkBitmap yahoo_thumbnail = GetThumbnail(GURL("http://yahoo.com/"));
-    EXPECT_EQ(2, yahoo_thumbnail.width());
-
-    // Favicon assertions are handled in ThumbnailDatabase.
-  }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(TopSitesMigrationTest);
-};
-
 // Helper function for appending a URL to a vector of "most visited" URLs,
 // using the default values for everything but the URL.
 static void AppendMostVisitedURL(std::vector<MostVisitedURL>* list,
                                  const GURL& url) {
   MostVisitedURL mv;
   mv.url = url;
+  mv.redirects.push_back(url);
+  list->push_back(mv);
+}
+
+// Helper function for appending a URL to a vector of "most visited" URLs,
+// using the default values for everything but the URL.
+static void AppendForcedMostVisitedURL(std::vector<MostVisitedURL>* list,
+                                       const GURL& url,
+                                       double last_forced_time) {
+  MostVisitedURL mv;
+  mv.url = url;
+  mv.last_forced_time = base::Time::FromJsTime(last_forced_time);
   mv.redirects.push_back(url);
   list->push_back(mv);
 }
@@ -457,7 +411,7 @@ TEST_F(TopSitesImplTest, DiffMostVisited) {
   GURL stays_the_same("http://staysthesame/");
   GURL gets_added_1("http://getsadded1/");
   GURL gets_added_2("http://getsadded2/");
-  GURL gets_deleted_1("http://getsdeleted2/");
+  GURL gets_deleted_1("http://getsdeleted1/");
   GURL gets_moved_1("http://getsmoved1/");
 
   std::vector<MostVisitedURL> old_list;
@@ -475,17 +429,80 @@ TEST_F(TopSitesImplTest, DiffMostVisited) {
   history::TopSitesImpl::DiffMostVisited(old_list, new_list, &delta);
 
   ASSERT_EQ(2u, delta.added.size());
-  ASSERT_TRUE(gets_added_1 == delta.added[0].url.url);
-  ASSERT_EQ(1, delta.added[0].rank);
-  ASSERT_TRUE(gets_added_2 == delta.added[1].url.url);
-  ASSERT_EQ(2, delta.added[1].rank);
+  EXPECT_TRUE(gets_added_1 == delta.added[0].url.url);
+  EXPECT_EQ(1, delta.added[0].rank);
+  EXPECT_TRUE(gets_added_2 == delta.added[1].url.url);
+  EXPECT_EQ(2, delta.added[1].rank);
 
   ASSERT_EQ(1u, delta.deleted.size());
-  ASSERT_TRUE(gets_deleted_1 == delta.deleted[0].url);
+  EXPECT_TRUE(gets_deleted_1 == delta.deleted[0].url);
 
   ASSERT_EQ(1u, delta.moved.size());
-  ASSERT_TRUE(gets_moved_1 == delta.moved[0].url.url);
-  ASSERT_EQ(3, delta.moved[0].rank);
+  EXPECT_TRUE(gets_moved_1 == delta.moved[0].url.url);
+  EXPECT_EQ(3, delta.moved[0].rank);
+}
+
+// Tests DiffMostVisited with forced URLs.
+TEST_F(TopSitesImplTest, DiffMostVisitedWithForced) {
+  // Forced URLs.
+  GURL stays_the_same_1("http://staysthesame1/");
+  GURL new_last_forced_time("http://newlastforcedtime/");
+  GURL stays_the_same_2("http://staysthesame2/");
+  GURL move_to_nonforced("http://movetononforced/");
+  GURL gets_added_1("http://getsadded1/");
+  GURL gets_deleted_1("http://getsdeleted1/");
+  // Non-forced URLs.
+  GURL move_to_forced("http://movetoforced/");
+  GURL stays_the_same_3("http://staysthesame3/");
+  GURL gets_added_2("http://getsadded2/");
+  GURL gets_deleted_2("http://getsdeleted2/");
+  GURL gets_moved_1("http://getsmoved1/");
+
+  std::vector<MostVisitedURL> old_list;
+  AppendForcedMostVisitedURL(&old_list, stays_the_same_1, 1000);
+  AppendForcedMostVisitedURL(&old_list, new_last_forced_time, 2000);
+  AppendForcedMostVisitedURL(&old_list, stays_the_same_2, 3000);
+  AppendForcedMostVisitedURL(&old_list, move_to_nonforced, 4000);
+  AppendForcedMostVisitedURL(&old_list, gets_deleted_1, 5000);
+  AppendMostVisitedURL(&old_list, move_to_forced);
+  AppendMostVisitedURL(&old_list, stays_the_same_3);
+  AppendMostVisitedURL(&old_list, gets_deleted_2);
+  AppendMostVisitedURL(&old_list, gets_moved_1);
+
+  std::vector<MostVisitedURL> new_list;
+  AppendForcedMostVisitedURL(&new_list, stays_the_same_1, 1000);
+  AppendForcedMostVisitedURL(&new_list, stays_the_same_2, 3000);
+  AppendForcedMostVisitedURL(&new_list, new_last_forced_time, 4000);
+  AppendForcedMostVisitedURL(&new_list, gets_added_1, 5000);
+  AppendForcedMostVisitedURL(&new_list, move_to_forced, 6000);
+  AppendMostVisitedURL(&new_list, move_to_nonforced);
+  AppendMostVisitedURL(&new_list, stays_the_same_3);
+  AppendMostVisitedURL(&new_list, gets_added_2);
+  AppendMostVisitedURL(&new_list, gets_moved_1);
+
+  history::TopSitesDelta delta;
+  history::TopSitesImpl::DiffMostVisited(old_list, new_list, &delta);
+
+  ASSERT_EQ(2u, delta.added.size());
+  EXPECT_TRUE(gets_added_1 == delta.added[0].url.url);
+  EXPECT_EQ(-1, delta.added[0].rank);
+  EXPECT_TRUE(gets_added_2 == delta.added[1].url.url);
+  EXPECT_EQ(2, delta.added[1].rank);
+
+  ASSERT_EQ(2u, delta.deleted.size());
+  EXPECT_TRUE(gets_deleted_1 == delta.deleted[0].url);
+  EXPECT_TRUE(gets_deleted_2 == delta.deleted[1].url);
+
+  ASSERT_EQ(3u, delta.moved.size());
+  EXPECT_TRUE(new_last_forced_time == delta.moved[0].url.url);
+  EXPECT_EQ(-1, delta.moved[0].rank);
+  EXPECT_EQ(base::Time::FromJsTime(4000), delta.moved[0].url.last_forced_time);
+  EXPECT_TRUE(move_to_forced == delta.moved[1].url.url);
+  EXPECT_EQ(-1, delta.moved[1].rank);
+  EXPECT_EQ(base::Time::FromJsTime(6000), delta.moved[1].url.last_forced_time);
+  EXPECT_TRUE(move_to_nonforced == delta.moved[2].url.url);
+  EXPECT_EQ(0, delta.moved[2].rank);
+  EXPECT_TRUE(delta.moved[2].url.last_forced_time.is_null());
 }
 
 // Tests SetPageThumbnail.
@@ -555,13 +572,13 @@ TEST_F(TopSitesImplTest, ThumbnailRemoved) {
 
   // Make sure the thumbnail was actually set.
   scoped_refptr<base::RefCountedMemory> result;
-  EXPECT_TRUE(top_sites()->GetPageThumbnail(url, &result));
+  EXPECT_TRUE(top_sites()->GetPageThumbnail(url, false, &result));
   EXPECT_TRUE(ThumbnailEqualsBytes(thumbnail, result.get()));
 
   // Reset the thumbnails and make sure we don't get it back.
   SetTopSites(MostVisitedURLList());
   RefreshTopSitesAndRecreate();
-  EXPECT_FALSE(top_sites()->GetPageThumbnail(url, &result));
+  EXPECT_FALSE(top_sites()->GetPageThumbnail(url, false, &result));
 }
 
 // Tests GetPageThumbnail.
@@ -586,19 +603,21 @@ TEST_F(TopSitesImplTest, GetPageThumbnail) {
 
   scoped_refptr<base::RefCountedMemory> result;
   EXPECT_TRUE(top_sites()->SetPageThumbnail(url1.url, thumbnail, score));
-  EXPECT_TRUE(top_sites()->GetPageThumbnail(url1.url, &result));
+  EXPECT_TRUE(top_sites()->GetPageThumbnail(url1.url, false, &result));
 
   EXPECT_TRUE(top_sites()->SetPageThumbnail(GURL("http://gmail.com"),
-                                           thumbnail, score));
+                                            thumbnail, score));
   EXPECT_TRUE(top_sites()->GetPageThumbnail(GURL("http://gmail.com"),
+                                            false,
                                             &result));
   // Get a thumbnail via a redirect.
   EXPECT_TRUE(top_sites()->GetPageThumbnail(GURL("http://mail.google.com"),
+                                            false,
                                             &result));
 
   EXPECT_TRUE(top_sites()->SetPageThumbnail(GURL("http://mail.google.com"),
-                                           thumbnail, score));
-  EXPECT_TRUE(top_sites()->GetPageThumbnail(url2.url, &result));
+                                            thumbnail, score));
+  EXPECT_TRUE(top_sites()->GetPageThumbnail(url2.url, false, &result));
 
   EXPECT_TRUE(ThumbnailEqualsBytes(thumbnail, result.get()));
 }
@@ -630,11 +649,11 @@ TEST_F(TopSitesImplTest, GetMostVisited) {
 TEST_F(TopSitesImplTest, SaveToDB) {
   MostVisitedURL url;
   GURL asdf_url("http://asdf.com");
-  string16 asdf_title(ASCIIToUTF16("ASDF"));
+  base::string16 asdf_title(ASCIIToUTF16("ASDF"));
   GURL google_url("http://google.com");
-  string16 google_title(ASCIIToUTF16("Google"));
+  base::string16 google_title(ASCIIToUTF16("Google"));
   GURL news_url("http://news.google.com");
-  string16 news_title(ASCIIToUTF16("Google News"));
+  base::string16 news_title(ASCIIToUTF16("Google News"));
 
   // Add asdf_url to history.
   AddPageToHistory(asdf_url, asdf_title);
@@ -659,7 +678,7 @@ TEST_F(TopSitesImplTest, SaveToDB) {
     ASSERT_NO_FATAL_FAILURE(ContainsPrepopulatePages(querier, 1));
 
     scoped_refptr<base::RefCountedMemory> read_data;
-    EXPECT_TRUE(top_sites()->GetPageThumbnail(asdf_url, &read_data));
+    EXPECT_TRUE(top_sites()->GetPageThumbnail(asdf_url, false, &read_data));
     EXPECT_TRUE(ThumbnailEqualsBytes(tmp_bitmap, read_data.get()));
   }
 
@@ -690,17 +709,77 @@ TEST_F(TopSitesImplTest, SaveToDB) {
   }
 }
 
+// Makes sure forced URLs in top sites get mirrored to the db.
+TEST_F(TopSitesImplTest, SaveForcedToDB) {
+  MostVisitedURL url;
+  GURL asdf_url("http://asdf.com");
+  base::string16 asdf_title(ASCIIToUTF16("ASDF"));
+  GURL google_url("http://google.com");
+  base::string16 google_title(ASCIIToUTF16("Google"));
+  GURL news_url("http://news.google.com");
+  base::string16 news_title(ASCIIToUTF16("Google News"));
+
+  // Add a number of forced URLs.
+  std::vector<MostVisitedURL> list;
+  AppendForcedMostVisitedURL(&list, GURL("http://forced1"), 1000);
+  list[0].title = ASCIIToUTF16("forced1");
+  AppendForcedMostVisitedURL(&list, GURL("http://forced2"), 2000);
+  AppendForcedMostVisitedURL(&list, GURL("http://forced3"), 3000);
+  AppendForcedMostVisitedURL(&list, GURL("http://forced4"), 4000);
+  SetTopSites(list);
+
+  // Add a thumbnail.
+  gfx::Image red_thumbnail(CreateBitmap(SK_ColorRED));
+  ASSERT_TRUE(top_sites()->SetPageThumbnail(
+                  GURL("http://forced1"), red_thumbnail, ThumbnailScore()));
+
+  // Get the original thumbnail for later comparison. Some compression can
+  // happen in |top_sites| and we don't want to depend on that.
+  SkBitmap orig_thumbnail = GetThumbnail(GURL("http://forced1"));
+
+  // Force-flush the cache to ensure we don't reread from it inadvertently.
+  EmptyThreadSafeCache();
+
+  // Make TopSites reread from the db.
+  StartQueryForMostVisited();
+  WaitForHistory();
+
+  TopSitesQuerier querier;
+  querier.QueryAllTopSites(top_sites(), true, true);
+
+  ASSERT_EQ(4u + GetPrepopulatePages().size(), querier.urls().size());
+  EXPECT_EQ(GURL("http://forced1"), querier.urls()[0].url);
+  EXPECT_EQ(ASCIIToUTF16("forced1"), querier.urls()[0].title);
+  SkBitmap thumbnail = GetThumbnail(GURL("http://forced1"));
+  ASSERT_EQ(orig_thumbnail.getSize(), thumbnail.getSize());
+  orig_thumbnail.lockPixels();
+  thumbnail.lockPixels();
+  EXPECT_EQ(0, memcmp(orig_thumbnail.getPixels(), thumbnail.getPixels(),
+                      orig_thumbnail.getSize()));
+  thumbnail.unlockPixels();
+  orig_thumbnail.unlockPixels();
+  EXPECT_EQ(base::Time::FromJsTime(1000), querier.urls()[0].last_forced_time);
+  EXPECT_EQ(GURL("http://forced2"), querier.urls()[1].url);
+  EXPECT_EQ(base::Time::FromJsTime(2000), querier.urls()[1].last_forced_time);
+  EXPECT_EQ(GURL("http://forced3"), querier.urls()[2].url);
+  EXPECT_EQ(base::Time::FromJsTime(3000), querier.urls()[2].last_forced_time);
+  EXPECT_EQ(GURL("http://forced4"), querier.urls()[3].url);
+  EXPECT_EQ(base::Time::FromJsTime(4000), querier.urls()[3].last_forced_time);
+
+  ASSERT_NO_FATAL_FAILURE(ContainsPrepopulatePages(querier, 4));
+}
+
 // More permutations of saving to db.
 TEST_F(TopSitesImplTest, RealDatabase) {
   MostVisitedURL url;
   GURL asdf_url("http://asdf.com");
-  string16 asdf_title(ASCIIToUTF16("ASDF"));
+  base::string16 asdf_title(ASCIIToUTF16("ASDF"));
   GURL google1_url("http://google.com");
   GURL google2_url("http://google.com/redirect");
   GURL google3_url("http://www.google.com");
-  string16 google_title(ASCIIToUTF16("Google"));
+  base::string16 google_title(ASCIIToUTF16("Google"));
   GURL news_url("http://news.google.com");
-  string16 news_title(ASCIIToUTF16("Google News"));
+  base::string16 news_title(ASCIIToUTF16("Google News"));
 
   url.url = asdf_url;
   url.title = asdf_title;
@@ -724,7 +803,7 @@ TEST_F(TopSitesImplTest, RealDatabase) {
     ASSERT_NO_FATAL_FAILURE(ContainsPrepopulatePages(querier, 1));
 
     scoped_refptr<base::RefCountedMemory> read_data;
-    EXPECT_TRUE(top_sites()->GetPageThumbnail(asdf_url, &read_data));
+    EXPECT_TRUE(top_sites()->GetPageThumbnail(asdf_url, false, &read_data));
     EXPECT_TRUE(ThumbnailEqualsBytes(asdf_thumbnail, read_data.get()));
   }
 
@@ -756,7 +835,7 @@ TEST_F(TopSitesImplTest, RealDatabase) {
     EXPECT_EQ(google1_url, querier.urls()[0].url);
     EXPECT_EQ(google_title, querier.urls()[0].title);
     ASSERT_EQ(3u, querier.urls()[0].redirects.size());
-    EXPECT_TRUE(top_sites()->GetPageThumbnail(google3_url, &read_data));
+    EXPECT_TRUE(top_sites()->GetPageThumbnail(google3_url, false, &read_data));
     EXPECT_TRUE(ThumbnailEqualsBytes(google_thumbnail, read_data.get()));
 
     EXPECT_EQ(asdf_url, querier.urls()[1].url);
@@ -778,7 +857,7 @@ TEST_F(TopSitesImplTest, RealDatabase) {
   RefreshTopSitesAndRecreate();
   {
     scoped_refptr<base::RefCountedMemory> read_data;
-    EXPECT_TRUE(top_sites()->GetPageThumbnail(google3_url, &read_data));
+    EXPECT_TRUE(top_sites()->GetPageThumbnail(google3_url, false, &read_data));
     EXPECT_TRUE(ThumbnailEqualsBytes(weewar_bitmap, read_data.get()));
   }
 
@@ -798,7 +877,7 @@ TEST_F(TopSitesImplTest, RealDatabase) {
   RefreshTopSitesAndRecreate();
   {
     scoped_refptr<base::RefCountedMemory> read_data;
-    EXPECT_TRUE(top_sites()->GetPageThumbnail(google3_url, &read_data));
+    EXPECT_TRUE(top_sites()->GetPageThumbnail(google3_url, false, &read_data));
     EXPECT_FALSE(ThumbnailEqualsBytes(weewar_bitmap, read_data.get()));
     EXPECT_TRUE(ThumbnailEqualsBytes(green_bitmap, read_data.get()));
   }
@@ -808,9 +887,9 @@ TEST_F(TopSitesImplTest, DeleteNotifications) {
   GURL google1_url("http://google.com");
   GURL google2_url("http://google.com/redirect");
   GURL google3_url("http://www.google.com");
-  string16 google_title(ASCIIToUTF16("Google"));
+  base::string16 google_title(ASCIIToUTF16("Google"));
   GURL news_url("http://news.google.com");
-  string16 news_title(ASCIIToUTF16("Google News"));
+  base::string16 news_title(ASCIIToUTF16("Google News"));
 
   AddPageToHistory(google1_url, google_title);
   AddPageToHistory(news_url, news_title);
@@ -897,27 +976,6 @@ TEST_F(TopSitesImplTest, GetUpdateDelay) {
 
   SetLastNumUrlsChanged(20);
   EXPECT_EQ(1, GetUpdateDelay().InMinutes());
-}
-
-TEST_F(TopSitesMigrationTest, Migrate) {
-  EXPECT_TRUE(IsTopSitesLoaded());
-
-  // Make sure the data was migrated to top sites.
-  ASSERT_NO_FATAL_FAILURE(MigrationAssertions());
-
-  // We need to wait for top sites and history to finish processing requests.
-  WaitForTopSites();
-  WaitForHistory();
-
-  // Make sure there is no longer a Thumbnails file on disk.
-  ASSERT_FALSE(base::PathExists(
-                   profile()->GetPath().Append(chrome::kThumbnailsFilename)));
-
-  // Recreate top sites and make sure everything is still there.
-  ASSERT_TRUE(profile()->CreateHistoryService(false, false));
-  RecreateTopSitesAndBlock();
-
-  ASSERT_NO_FATAL_FAILURE(MigrationAssertions());
 }
 
 // Verifies that callbacks are notified correctly if requested before top sites
@@ -1062,7 +1120,7 @@ TEST_F(TopSitesImplTest, AddTemporaryThumbnail) {
 
   // We shouldn't get the thumnail back though (the url isn't in to sites yet).
   scoped_refptr<base::RefCountedMemory> out;
-  EXPECT_FALSE(top_sites()->GetPageThumbnail(unknown_url, &out));
+  EXPECT_FALSE(top_sites()->GetPageThumbnail(unknown_url, false, &out));
   // But we should be able to get the temporary page thumbnail score.
   ThumbnailScore out_score;
   EXPECT_TRUE(top_sites()->GetTemporaryPageThumbnailScore(unknown_url,
@@ -1081,7 +1139,7 @@ TEST_F(TopSitesImplTest, AddTemporaryThumbnail) {
   // Update URLs. This should result in using thumbnail.
   SetTopSites(list);
 
-  ASSERT_TRUE(top_sites()->GetPageThumbnail(unknown_url, &out));
+  ASSERT_TRUE(top_sites()->GetPageThumbnail(unknown_url, false, &out));
   EXPECT_TRUE(ThumbnailEqualsBytes(thumbnail, out.get()));
 }
 
@@ -1191,77 +1249,300 @@ TEST_F(TopSitesImplTest, AddPrepopulatedPages) {
   ASSERT_NO_FATAL_FAILURE(ContainsPrepopulatePages(q, 0));
 }
 
-// Makes sure creating top sites before history is created works.
-TEST_F(TopSitesImplTest, CreateTopSitesThenHistory) {
-  profile()->DestroyTopSites();
-  profile()->DestroyHistoryService();
+// Ensure calling SetTopSites with forced sites already in the DB works.
+// This test both eviction and
+TEST_F(TopSitesImplTest, SetForcedTopSites) {
+  // Create forced elements in old URL list.
+  MostVisitedURLList old_url_list;
+  AppendForcedMostVisitedURL(&old_url_list, GURL("http://oldforced/0"), 1000);
+  AppendForcedMostVisitedURL(&old_url_list, GURL("http://oldforced/1"), 4000);
+  AppendForcedMostVisitedURL(&old_url_list, GURL("http://oldforced/2"), 7000);
+  AppendForcedMostVisitedURL(&old_url_list, GURL("http://oldforced/3"), 10000);
+  AppendForcedMostVisitedURL(&old_url_list, GURL("http://oldforced/4"), 11000);
+  AppendForcedMostVisitedURL(&old_url_list, GURL("http://oldforced/5"), 12000);
+  AppendForcedMostVisitedURL(&old_url_list, GURL("http://oldforced/6"), 13000);
+  AppendForcedMostVisitedURL(&old_url_list, GURL("http://oldforced/7"), 18000);
+  AppendForcedMostVisitedURL(&old_url_list, GURL("http://oldforced/8"), 21000);
+  const size_t kNumOldForcedURLs = 9;
 
-  // Remove the TopSites file. This forces TopSites to wait until history loads
-  // before TopSites is considered loaded.
-  sql::Connection::Delete(
-      profile()->GetPath().Append(chrome::kTopSitesFilename));
+  // Create forced elements in new URL list.
+  MostVisitedURLList new_url_list;
+  AppendForcedMostVisitedURL(&new_url_list, GURL("http://newforced/0"), 2000);
+  AppendForcedMostVisitedURL(&new_url_list, GURL("http://newforced/1"), 3000);
+  AppendForcedMostVisitedURL(&new_url_list, GURL("http://newforced/2"), 5000);
+  AppendForcedMostVisitedURL(&new_url_list, GURL("http://newforced/3"), 6000);
+  AppendForcedMostVisitedURL(&new_url_list, GURL("http://newforced/4"), 8000);
+  AppendForcedMostVisitedURL(&new_url_list, GURL("http://newforced/5"), 9000);
+  AppendForcedMostVisitedURL(&new_url_list, GURL("http://newforced/6"), 14000);
+  AppendForcedMostVisitedURL(&new_url_list, GURL("http://newforced/7"), 15000);
+  AppendForcedMostVisitedURL(&new_url_list, GURL("http://newforced/8"), 16000);
+  AppendForcedMostVisitedURL(&new_url_list, GURL("http://newforced/9"), 17000);
+  AppendForcedMostVisitedURL(&new_url_list, GURL("http://newforced/10"), 19000);
+  AppendForcedMostVisitedURL(&new_url_list, GURL("http://newforced/11"), 20000);
+  AppendForcedMostVisitedURL(&new_url_list, GURL("http://newforced/12"), 22000);
 
-  // Create TopSites, but not History.
-  profile()->CreateTopSites();
-  WaitForTopSites();
-  EXPECT_FALSE(IsTopSitesLoaded());
-
-  // Load history, which should make TopSites finish loading too.
-  ASSERT_TRUE(profile()->CreateHistoryService(false, false));
-  profile()->BlockUntilTopSitesLoaded();
-  EXPECT_TRUE(IsTopSitesLoaded());
-}
-
-class TopSitesUnloadTest : public TopSitesImplTest {
- public:
-  TopSitesUnloadTest() {}
-
-  virtual bool CreateHistoryAndTopSites() OVERRIDE {
-    return false;
+  // Setup a number non-forced URLs in both old and new list.
+  const size_t kNumNonForcedURLs = 20;  // Maximum number of non-forced URLs.
+  for (size_t i = 0; i < kNumNonForcedURLs; ++i) {
+    std::ostringstream url;
+    url << "http://oldnonforced/" << i;
+    AppendMostVisitedURL(&old_url_list, GURL(url.str()));
+    url.str("");
+    url << "http://newnonforced/" << i;
+    AppendMostVisitedURL(&new_url_list, GURL(url.str()));
   }
 
- private:
-  DISALLOW_COPY_AND_ASSIGN(TopSitesUnloadTest);
-};
+  // Set the initial list of URLs.
+  SetTopSites(old_url_list);
+  EXPECT_EQ(kNumOldForcedURLs + kNumNonForcedURLs, last_num_urls_changed());
 
-// Makes sure if history is unloaded after topsites is loaded we don't hit any
-// assertions.
-TEST_F(TopSitesUnloadTest, UnloadHistoryTest) {
-  ASSERT_TRUE(profile()->CreateHistoryService(false, false));
-  profile()->CreateTopSites();
-  profile()->BlockUntilTopSitesLoaded();
-  HistoryServiceFactory::GetForProfile(
-      profile(), Profile::EXPLICIT_ACCESS)->UnloadBackend();
-  profile()->BlockUntilHistoryProcessesPendingRequests();
+  TopSitesQuerier querier;
+  // Query only non-forced URLs first.
+  querier.QueryTopSites(top_sites(), false);
+  ASSERT_EQ(kNumNonForcedURLs, querier.urls().size());
+
+  // Check first URL.
+  EXPECT_EQ("http://oldnonforced/0", querier.urls()[0].url.spec());
+
+  // Query all URLs.
+  querier.QueryAllTopSites(top_sites(), false, true);
+  EXPECT_EQ(kNumOldForcedURLs + kNumNonForcedURLs, querier.urls().size());
+
+  // Check first URLs.
+  EXPECT_EQ("http://oldforced/0", querier.urls()[0].url.spec());
+  EXPECT_EQ("http://oldnonforced/0",
+            querier.urls()[kNumOldForcedURLs].url.spec());
+
+  // Set the new list of URLs.
+  SetTopSites(new_url_list);
+
+  // Query all URLs.
+  querier.QueryAllTopSites(top_sites(), false, true);
+
+  // We should have reached the maximum of 20 forced URLs.
+  ASSERT_EQ(20 + kNumNonForcedURLs, querier.urls().size());
+
+  // Check forced URLs. They follow the order of timestamps above, smaller
+  // timestamps since they were evicted.
+  EXPECT_EQ("http://newforced/1", querier.urls()[0].url.spec());
+  EXPECT_EQ(3000, querier.urls()[0].last_forced_time.ToJsTime());
+  EXPECT_EQ("http://oldforced/1", querier.urls()[1].url.spec());
+  EXPECT_EQ(4000, querier.urls()[1].last_forced_time.ToJsTime());
+  EXPECT_EQ("http://newforced/2", querier.urls()[2].url.spec());
+  EXPECT_EQ(5000, querier.urls()[2].last_forced_time.ToJsTime());
+  EXPECT_EQ("http://newforced/3", querier.urls()[3].url.spec());
+  EXPECT_EQ(6000, querier.urls()[3].last_forced_time.ToJsTime());
+  EXPECT_EQ("http://oldforced/2", querier.urls()[4].url.spec());
+  EXPECT_EQ(7000, querier.urls()[4].last_forced_time.ToJsTime());
+  EXPECT_EQ("http://newforced/4", querier.urls()[5].url.spec());
+  EXPECT_EQ(8000, querier.urls()[5].last_forced_time.ToJsTime());
+  EXPECT_EQ("http://newforced/5", querier.urls()[6].url.spec());
+  EXPECT_EQ(9000, querier.urls()[6].last_forced_time.ToJsTime());
+  EXPECT_EQ("http://oldforced/3", querier.urls()[7].url.spec());
+  EXPECT_EQ(10000, querier.urls()[7].last_forced_time.ToJsTime());
+  EXPECT_EQ("http://oldforced/4", querier.urls()[8].url.spec());
+  EXPECT_EQ(11000, querier.urls()[8].last_forced_time.ToJsTime());
+  EXPECT_EQ("http://oldforced/5", querier.urls()[9].url.spec());
+  EXPECT_EQ(12000, querier.urls()[9].last_forced_time.ToJsTime());
+  EXPECT_EQ("http://oldforced/6", querier.urls()[10].url.spec());
+  EXPECT_EQ(13000, querier.urls()[10].last_forced_time.ToJsTime());
+  EXPECT_EQ("http://newforced/6", querier.urls()[11].url.spec());
+  EXPECT_EQ(14000, querier.urls()[11].last_forced_time.ToJsTime());
+  EXPECT_EQ("http://newforced/7", querier.urls()[12].url.spec());
+  EXPECT_EQ(15000, querier.urls()[12].last_forced_time.ToJsTime());
+  EXPECT_EQ("http://newforced/8", querier.urls()[13].url.spec());
+  EXPECT_EQ(16000, querier.urls()[13].last_forced_time.ToJsTime());
+  EXPECT_EQ("http://newforced/9", querier.urls()[14].url.spec());
+  EXPECT_EQ(17000, querier.urls()[14].last_forced_time.ToJsTime());
+  EXPECT_EQ("http://oldforced/7", querier.urls()[15].url.spec());
+  EXPECT_EQ(18000, querier.urls()[15].last_forced_time.ToJsTime());
+  EXPECT_EQ("http://newforced/10", querier.urls()[16].url.spec());
+  EXPECT_EQ(19000, querier.urls()[16].last_forced_time.ToJsTime());
+  EXPECT_EQ("http://newforced/11", querier.urls()[17].url.spec());
+  EXPECT_EQ(20000, querier.urls()[17].last_forced_time.ToJsTime());
+  EXPECT_EQ("http://oldforced/8", querier.urls()[18].url.spec());
+  EXPECT_EQ(21000, querier.urls()[18].last_forced_time.ToJsTime());
+  EXPECT_EQ("http://newforced/12", querier.urls()[19].url.spec());
+  EXPECT_EQ(22000, querier.urls()[19].last_forced_time.ToJsTime());
+
+  // Check first and last non-forced URLs.
+  EXPECT_EQ("http://newnonforced/0", querier.urls()[20].url.spec());
+  EXPECT_TRUE(querier.urls()[20].last_forced_time.is_null());
+  EXPECT_EQ("http://newnonforced/19", querier.urls()[39].url.spec());
+  EXPECT_TRUE(querier.urls()[39].last_forced_time.is_null());
 }
 
-// Makes sure if history (with migration code) is unloaded after topsites is
-// loaded we don't hit any assertions.
-TEST_F(TopSitesUnloadTest, UnloadWithMigration) {
-  // Set up history and thumbnails as they would be before migration.
-  base::FilePath data_path;
-  ASSERT_TRUE(PathService::Get(chrome::DIR_TEST_DATA, &data_path));
-  data_path = data_path.AppendASCII("top_sites");
-  ASSERT_NO_FATAL_FAILURE(ExecuteSQLScript(
-      data_path.AppendASCII("history.19.sql"),
-      profile()->GetPath().Append(chrome::kHistoryFilename)));
-  ASSERT_NO_FATAL_FAILURE(ExecuteSQLScript(
-      data_path.AppendASCII("thumbnails.3.sql"),
-      profile()->GetPath().Append(chrome::kThumbnailsFilename)));
+TEST_F(TopSitesImplTest, SetForcedTopSitesWithCollisions) {
 
-  // Create history and block until it's loaded.
-  ASSERT_TRUE(profile()->CreateHistoryService(false, false));
-  profile()->BlockUntilHistoryProcessesPendingRequests();
+  // Setup an old URL list in order to generate some collisions.
+  MostVisitedURLList old_url_list;
+  AppendForcedMostVisitedURL(&old_url_list, GURL("http://url/0"), 1000);
+  // The following three will be evicted.
+  AppendForcedMostVisitedURL(&old_url_list, GURL("http://collision/0"), 4000);
+  AppendForcedMostVisitedURL(&old_url_list, GURL("http://collision/1"), 6000);
+  AppendForcedMostVisitedURL(&old_url_list, GURL("http://collision/2"), 7000);
+  // The following is evicted since all non-forced URLs are, therefore it
+  // doesn't cause a collision.
+  AppendMostVisitedURL(&old_url_list, GURL("http://noncollision/0"));
+  SetTopSites(old_url_list);
 
-  // Create top sites and unload history.
-  content::WindowedNotificationObserver observer(
-      chrome::NOTIFICATION_TOP_SITES_LOADED,
-      content::Source<Profile>(profile()));
-  profile()->CreateTopSites();
-  HistoryServiceFactory::GetForProfile(
-      profile(), Profile::EXPLICIT_ACCESS)->UnloadBackend();
-  profile()->BlockUntilHistoryProcessesPendingRequests();
-  observer.Wait();
+  // Setup a new URL list that will cause collisions.
+  MostVisitedURLList new_url_list;
+  AppendForcedMostVisitedURL(&new_url_list, GURL("http://collision/1"), 2000);
+  AppendForcedMostVisitedURL(&new_url_list, GURL("http://url/2"), 3000);
+  AppendForcedMostVisitedURL(&new_url_list, GURL("http://collision/0"), 5000);
+  AppendForcedMostVisitedURL(&new_url_list, GURL("http://noncollision/0"),
+                             9000);
+  AppendMostVisitedURL(&new_url_list, GURL("http://collision/2"));
+  AppendMostVisitedURL(&new_url_list, GURL("http://url/3"));
+  SetTopSites(new_url_list);
+
+  // Query all URLs.
+  TopSitesQuerier querier;
+  querier.QueryAllTopSites(top_sites(), false, true);
+
+  // Check URLs. When collision occurs, the incoming one is always preferred.
+  ASSERT_EQ(7u + GetPrepopulatePages().size(), querier.urls().size());
+  EXPECT_EQ("http://url/0", querier.urls()[0].url.spec());
+  EXPECT_EQ(1000u, querier.urls()[0].last_forced_time.ToJsTime());
+  EXPECT_EQ("http://collision/1", querier.urls()[1].url.spec());
+  EXPECT_EQ(2000u, querier.urls()[1].last_forced_time.ToJsTime());
+  EXPECT_EQ("http://url/2", querier.urls()[2].url.spec());
+  EXPECT_EQ(3000u, querier.urls()[2].last_forced_time.ToJsTime());
+  EXPECT_EQ("http://collision/0", querier.urls()[3].url.spec());
+  EXPECT_EQ(5000u, querier.urls()[3].last_forced_time.ToJsTime());
+  EXPECT_EQ("http://noncollision/0", querier.urls()[4].url.spec());
+  EXPECT_EQ(9000u, querier.urls()[4].last_forced_time.ToJsTime());
+  EXPECT_EQ("http://collision/2", querier.urls()[5].url.spec());
+  EXPECT_TRUE(querier.urls()[5].last_forced_time.is_null());
+  EXPECT_EQ("http://url/3", querier.urls()[6].url.spec());
+  EXPECT_TRUE(querier.urls()[6].last_forced_time.is_null());
+  ASSERT_NO_FATAL_FAILURE(ContainsPrepopulatePages(querier, 7));
+}
+
+TEST_F(TopSitesImplTest, SetTopSitesIdentical) {
+  // Set the initial list of URLs.
+  MostVisitedURLList url_list;
+  AppendForcedMostVisitedURL(&url_list, GURL("http://url/0"), 1000);
+  AppendMostVisitedURL(&url_list, GURL("http://url/1"));
+  AppendMostVisitedURL(&url_list, GURL("http://url/2"));
+  SetTopSites(url_list);
+
+  // Set the new list of URLs to be exactly the same.
+  SetTopSites(MostVisitedURLList(url_list));
+
+  // Query all URLs.
+  TopSitesQuerier querier;
+  querier.QueryAllTopSites(top_sites(), false, true);
+
+  // Check URLs. When collision occurs, the incoming one is always preferred.
+  ASSERT_EQ(3u + GetPrepopulatePages().size(), querier.urls().size());
+  EXPECT_EQ("http://url/0", querier.urls()[0].url.spec());
+  EXPECT_EQ(1000u, querier.urls()[0].last_forced_time.ToJsTime());
+  EXPECT_EQ("http://url/1", querier.urls()[1].url.spec());
+  EXPECT_EQ("http://url/2", querier.urls()[2].url.spec());
+  ASSERT_NO_FATAL_FAILURE(ContainsPrepopulatePages(querier, 3));
+}
+
+TEST_F(TopSitesImplTest, AddForcedURL) {
+  // Set the initial list of URLs.
+  MostVisitedURLList url_list;
+  AppendForcedMostVisitedURL(&url_list, GURL("http://forced/0"), 2000);
+  AppendForcedMostVisitedURL(&url_list, GURL("http://forced/1"), 4000);
+  AppendMostVisitedURL(&url_list, GURL("http://nonforced/0"));
+  AppendMostVisitedURL(&url_list, GURL("http://nonforced/1"));
+  AppendMostVisitedURL(&url_list, GURL("http://nonforced/2"));
+  SetTopSites(url_list);
+
+  // Add forced sites here and there to exercise a couple of cases.
+  EXPECT_TRUE(AddForcedURL(GURL("http://forced/2"),
+                           base::Time::FromJsTime(5000)));
+  EXPECT_TRUE(AddForcedURL(GURL("http://forced/3"),
+                           base::Time::FromJsTime(1000)));
+  EXPECT_TRUE(AddForcedURL(GURL("http://forced/4"),
+                           base::Time::FromJsTime(3000)));
+
+  // Check URLs.
+  TopSitesQuerier querier;
+  querier.QueryAllTopSites(top_sites(), false, true);
+  ASSERT_EQ(8u + GetPrepopulatePages().size(), querier.urls().size());
+  EXPECT_EQ("http://forced/3", querier.urls()[0].url.spec());
+  EXPECT_EQ(1000u, querier.urls()[0].last_forced_time.ToJsTime());
+  EXPECT_EQ("http://forced/0", querier.urls()[1].url.spec());
+  EXPECT_EQ(2000u, querier.urls()[1].last_forced_time.ToJsTime());
+  EXPECT_EQ("http://forced/4", querier.urls()[2].url.spec());
+  EXPECT_EQ(3000u, querier.urls()[2].last_forced_time.ToJsTime());
+  EXPECT_EQ("http://forced/1", querier.urls()[3].url.spec());
+  EXPECT_EQ(4000u, querier.urls()[3].last_forced_time.ToJsTime());
+  EXPECT_EQ("http://forced/2", querier.urls()[4].url.spec());
+  EXPECT_EQ(5000u, querier.urls()[4].last_forced_time.ToJsTime());
+  EXPECT_EQ("http://nonforced/0", querier.urls()[5].url.spec());
+  EXPECT_TRUE(querier.urls()[5].last_forced_time.is_null());
+  EXPECT_EQ("http://nonforced/1", querier.urls()[6].url.spec());
+  EXPECT_TRUE(querier.urls()[6].last_forced_time.is_null());
+  EXPECT_EQ("http://nonforced/2", querier.urls()[7].url.spec());
+  EXPECT_TRUE(querier.urls()[7].last_forced_time.is_null());
+  ASSERT_NO_FATAL_FAILURE(ContainsPrepopulatePages(querier, 8));
+
+  // Add some collisions with forced and non-forced. Non-forced URLs are never
+  // expected to move.
+  EXPECT_TRUE(AddForcedURL(GURL("http://forced/3"),
+                           base::Time::FromJsTime(4000)));
+  EXPECT_TRUE(AddForcedURL(GURL("http://forced/1"),
+                            base::Time::FromJsTime(1000)));
+  EXPECT_FALSE(AddForcedURL(GURL("http://nonforced/0"),
+                            base::Time::FromJsTime(6000)));
+
+  // Check relevant URLs.
+  querier.QueryAllTopSites(top_sites(), false, true);
+  ASSERT_EQ(8u + GetPrepopulatePages().size(), querier.urls().size());
+  EXPECT_EQ("http://forced/1", querier.urls()[0].url.spec());
+  EXPECT_EQ(1000u, querier.urls()[0].last_forced_time.ToJsTime());
+  EXPECT_EQ("http://forced/3", querier.urls()[3].url.spec());
+  EXPECT_EQ(4000u, querier.urls()[3].last_forced_time.ToJsTime());
+  EXPECT_EQ("http://nonforced/0", querier.urls()[5].url.spec());
+  EXPECT_TRUE(querier.urls()[5].last_forced_time.is_null());
+
+  // Add a timestamp collision and make sure things don't break.
+  EXPECT_TRUE(AddForcedURL(GURL("http://forced/5"),
+                           base::Time::FromJsTime(4000)));
+  querier.QueryAllTopSites(top_sites(), false, true);
+  ASSERT_EQ(9u + GetPrepopulatePages().size(), querier.urls().size());
+  EXPECT_EQ(4000u, querier.urls()[3].last_forced_time.ToJsTime());
+  EXPECT_EQ(4000u, querier.urls()[4].last_forced_time.ToJsTime());
+  // We don't care which order they get sorted in.
+  if (querier.urls()[3].url.spec() == "http://forced/3") {
+    EXPECT_EQ("http://forced/3", querier.urls()[3].url.spec());
+    EXPECT_EQ("http://forced/5", querier.urls()[4].url.spec());
+  } else {
+    EXPECT_EQ("http://forced/5", querier.urls()[3].url.spec());
+    EXPECT_EQ("http://forced/3", querier.urls()[4].url.spec());
+  }
+
+  // Make sure the thumbnail is not lost when the timestamp is updated.
+  gfx::Image red_thumbnail(CreateBitmap(SK_ColorRED));
+  ASSERT_TRUE(top_sites()->SetPageThumbnail(
+                  GURL("http://forced/5"), red_thumbnail, ThumbnailScore()));
+
+  // Get the original thumbnail for later comparison. Some compression can
+  // happen in |top_sites| and we don't want to depend on that.
+  SkBitmap orig_thumbnail = GetThumbnail(GURL("http://forced/5"));
+
+  EXPECT_TRUE(AddForcedURL(GURL("http://forced/5"),
+                           base::Time::FromJsTime(6000)));
+
+  // Ensure the thumbnail is still there even if the timestamp changed.
+  querier.QueryAllTopSites(top_sites(), false, true);
+  EXPECT_EQ("http://forced/5", querier.urls()[5].url.spec());
+  EXPECT_EQ(6000u, querier.urls()[5].last_forced_time.ToJsTime());
+  SkBitmap thumbnail = GetThumbnail(GURL("http://forced/5"));
+  ASSERT_EQ(orig_thumbnail.getSize(), thumbnail.getSize());
+  orig_thumbnail.lockPixels();
+  thumbnail.lockPixels();
+  EXPECT_EQ(0, memcmp(orig_thumbnail.getPixels(), thumbnail.getPixels(),
+                      orig_thumbnail.getSize()));
+  thumbnail.unlockPixels();
+  orig_thumbnail.unlockPixels();
 }
 
 }  // namespace history

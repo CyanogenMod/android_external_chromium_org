@@ -15,24 +15,23 @@
 #include "ui/base/l10n/l10n_util.h"
 
 AfterTranslateInfoBar::AfterTranslateInfoBar(
-    InfoBarService* owner,
-    TranslateInfoBarDelegate* delegate)
-    : TranslateInfoBarBase(owner, delegate),
+    scoped_ptr<TranslateInfoBarDelegate> delegate)
+    : TranslateInfoBarBase(delegate.Pass()),
       weak_factory_(this) {
 }
 
 AfterTranslateInfoBar::~AfterTranslateInfoBar() {
 }
 
-void AfterTranslateInfoBar::InitWidgets() {
-  TranslateInfoBarBase::InitWidgets();
+void AfterTranslateInfoBar::PlatformSpecificSetOwner() {
+  TranslateInfoBarBase::PlatformSpecificSetOwner();
 
   bool swapped_language_combos = false;
   bool autodetermined_source_language =
       GetDelegate()->original_language_index() ==
       TranslateInfoBarDelegate::kNoIndex;
 
-  std::vector<string16> strings;
+  std::vector<base::string16> strings;
   TranslateInfoBarDelegate::GetAfterTranslateStrings(
         &strings, &swapped_language_combos, autodetermined_source_language);
   DCHECK_EQ(autodetermined_source_language ? 2U : 3U, strings.size());
@@ -90,12 +89,12 @@ bool AfterTranslateInfoBar::ShowOptionsMenuButton() const {
 }
 
 void AfterTranslateInfoBar::SetOriginalLanguage(size_t language_index) {
-  GetDelegate()->set_original_language_index(language_index);
+  GetDelegate()->UpdateOriginalLanguageIndex(language_index);
   GetDelegate()->Translate();
 }
 
 void AfterTranslateInfoBar::SetTargetLanguage(size_t language_index) {
-  GetDelegate()->set_target_language_index(language_index);
+  GetDelegate()->UpdateTargetLanguageIndex(language_index);
   GetDelegate()->Translate();
 }
 

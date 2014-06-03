@@ -24,11 +24,17 @@ QuicCryptoStream::QuicCryptoStream(QuicSession* session)
 }
 
 void QuicCryptoStream::OnError(CryptoFramer* framer) {
-  session()->ConnectionClose(framer->error(), false);
+  DLOG(WARNING) << "Error processing crypto data: "
+                << QuicUtils::ErrorToString(framer->error());
 }
 
-uint32 QuicCryptoStream::ProcessData(const char* data,
-                                     uint32 data_len) {
+void QuicCryptoStream::OnHandshakeMessage(
+    const CryptoHandshakeMessage& message) {
+  session()->OnCryptoHandshakeMessageReceived(message);
+}
+
+uint32 QuicCryptoStream::ProcessRawData(const char* data,
+                                        uint32 data_len) {
   // Do not process handshake messages after the handshake is confirmed.
   if (handshake_confirmed()) {
     CloseConnection(QUIC_CRYPTO_MESSAGE_AFTER_HANDSHAKE_COMPLETE);
@@ -41,20 +47,20 @@ uint32 QuicCryptoStream::ProcessData(const char* data,
   return data_len;
 }
 
-void QuicCryptoStream::CloseConnection(QuicErrorCode error) {
-  session()->connection()->SendConnectionClose(error);
-}
-
-void QuicCryptoStream::CloseConnectionWithDetails(QuicErrorCode error,
-                                                  const string& details) {
-  session()->connection()->SendConnectionCloseWithDetails(error, details);
+QuicPriority QuicCryptoStream::EffectivePriority() const {
+  return QuicUtils::HighestPriority();
 }
 
 void QuicCryptoStream::SendHandshakeMessage(
     const CryptoHandshakeMessage& message) {
+  session()->OnCryptoHandshakeMessageSent(message);
   const QuicData& data = message.GetSerialized();
+  // To make reasoning about crypto frames easier, we don't combine them with
+  // any other frames in a single packet.
+  session()->connection()->Flush();
   // TODO(wtc): check the return value.
-  WriteData(string(data.data(), data.length()), false);
+  WriteOrBufferData(string(data.data(), data.length()), false);
+  session()->connection()->Flush();
 }
 
 const QuicCryptoNegotiatedParameters&

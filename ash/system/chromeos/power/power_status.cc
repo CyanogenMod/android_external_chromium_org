@@ -112,7 +112,9 @@ void PowerStatus::SplitTimeIntoHoursAndMinutes(const base::TimeDelta& time,
   DCHECK(hours);
   DCHECK(minutes);
   *hours = time.InHours();
-  *minutes = (time - base::TimeDelta::FromHours(*hours)).InMinutes();
+  const double seconds =
+      (time - base::TimeDelta::FromHours(*hours)).InSecondsF();
+  *minutes = static_cast<int>(seconds / 60.0 + 0.5);
 }
 
 void PowerStatus::AddObserver(Observer* observer) {
@@ -184,6 +186,11 @@ bool PowerStatus::IsMainsChargerConnected() const {
 bool PowerStatus::IsUsbChargerConnected() const {
   return proto_.external_power() ==
       power_manager::PowerSupplyProperties_ExternalPower_USB;
+}
+
+bool PowerStatus::IsOriginalSpringChargerConnected() const {
+  return proto_.external_power() == power_manager::
+      PowerSupplyProperties_ExternalPower_ORIGINAL_SPRING_CHARGER;
 }
 
 gfx::ImageSkia PowerStatus::GetBatteryImage(IconSet icon_set) const {

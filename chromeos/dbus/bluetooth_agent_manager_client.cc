@@ -6,7 +6,6 @@
 
 #include "base/bind.h"
 #include "base/logging.h"
-#include "chromeos/dbus/fake_bluetooth_agent_manager_client.h"
 #include "dbus/bus.h"
 #include "dbus/message.h"
 #include "dbus/object_path.h"
@@ -22,15 +21,7 @@ const char BluetoothAgentManagerClient::kNoResponseError[] =
 class BluetoothAgentManagerClientImpl
     : public BluetoothAgentManagerClient {
  public:
-  explicit BluetoothAgentManagerClientImpl(dbus::Bus* bus)
-      : bus_(bus),
-        weak_ptr_factory_(this) {
-    DCHECK(bus_);
-    object_proxy_ = bus_->GetObjectProxy(
-        bluetooth_agent_manager::kBluetoothAgentManagerServiceName,
-        dbus::ObjectPath(
-            bluetooth_agent_manager::kBluetoothAgentManagerServicePath));
-  }
+  BluetoothAgentManagerClientImpl() : weak_ptr_factory_(this) {}
 
   virtual ~BluetoothAgentManagerClientImpl() {
   }
@@ -99,6 +90,15 @@ class BluetoothAgentManagerClientImpl
                    weak_ptr_factory_.GetWeakPtr(), error_callback));
   }
 
+ protected:
+  virtual void Init(dbus::Bus* bus) OVERRIDE {
+    DCHECK(bus);
+    object_proxy_ = bus->GetObjectProxy(
+        bluetooth_agent_manager::kBluetoothAgentManagerServiceName,
+        dbus::ObjectPath(
+            bluetooth_agent_manager::kBluetoothAgentManagerServicePath));
+  }
+
  private:
   // Called when a response for successful method call is received.
   void OnSuccess(const base::Closure& callback,
@@ -124,7 +124,6 @@ class BluetoothAgentManagerClientImpl
     error_callback.Run(error_name, error_message);
   }
 
-  dbus::Bus* bus_;
   dbus::ObjectProxy* object_proxy_;
 
   // Weak pointer factory for generating 'this' pointers that might live longer
@@ -143,13 +142,8 @@ BluetoothAgentManagerClient::BluetoothAgentManagerClient() {
 BluetoothAgentManagerClient::~BluetoothAgentManagerClient() {
 }
 
-BluetoothAgentManagerClient* BluetoothAgentManagerClient::Create(
-    DBusClientImplementationType type,
-    dbus::Bus* bus) {
-  if (type == REAL_DBUS_CLIENT_IMPLEMENTATION)
-    return new BluetoothAgentManagerClientImpl(bus);
-  DCHECK_EQ(STUB_DBUS_CLIENT_IMPLEMENTATION, type);
-  return new FakeBluetoothAgentManagerClient();
+BluetoothAgentManagerClient* BluetoothAgentManagerClient::Create() {
+  return new BluetoothAgentManagerClientImpl();
 }
 
 }  // namespace chromeos

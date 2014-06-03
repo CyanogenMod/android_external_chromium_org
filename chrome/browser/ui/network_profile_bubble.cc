@@ -1,5 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style license that can be
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.  // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/ui/network_profile_bubble.h"
@@ -127,10 +126,10 @@ void NetworkProfileBubble::CheckNetworkProfile(
       base::FilePath temp_file;
       // Try to create some non-empty temp file in the profile dir and use
       // it to check if there is a reparse-point free path to it.
-      if (file_util::CreateTemporaryFileInDir(profile_folder, &temp_file) &&
-          file_util::WriteFile(temp_file, ".", 1)) {
+      if (base::CreateTemporaryFileInDir(profile_folder, &temp_file) &&
+          (file_util::WriteFile(temp_file, ".", 1) == 1)) {
         base::FilePath normalized_temp_file;
-        if (!file_util::NormalizeFilePath(temp_file, &normalized_temp_file))
+        if (!base::NormalizeFilePath(temp_file, &normalized_temp_file))
           profile_on_network = true;
       } else {
         RecordUmaEvent(METRIC_CHECK_IO_FAILED);

@@ -23,6 +23,11 @@ NSColor* BackgroundColor() {
   return [NSColor whiteColor];
 }
 
+// The color of the border around the popup.
+NSColor* BorderColor() {
+  return [NSColor colorForControlTint:[NSColor currentControlTint]];
+}
+
 NSColor* SeparatorColor() {
   return [NSColor colorWithCalibratedWhite:220 / 255.0 alpha:1];
 }
@@ -107,8 +112,19 @@ NSColor* SubtextColor() {
   if (!controller_)
     return;
 
-  [BackgroundColor() set];
-  [NSBezierPath fillRect:[self bounds]];
+  // Draw the popup's background and border.
+  // The inset is needed since the border is centered on the |path|.
+  // TODO(isherman): We should consider using asset-based drawing for the
+  // border, creating simple bitmaps for the view's border and background, and
+  // drawing them using NSDrawNinePartImage().
+  CGFloat inset = autofill::AutofillPopupView::kBorderThickness / 2.0;
+  NSRect borderRect = NSInsetRect([self bounds], inset, inset);
+  NSBezierPath* path = [NSBezierPath bezierPathWithRect:borderRect];
+  [BackgroundColor() setFill];
+  [path fill];
+  [path setLineWidth:autofill::AutofillPopupView::kBorderThickness];
+  [BorderColor() setStroke];
+  [path stroke];
 
   for (size_t i = 0; i < controller_->names().size(); ++i) {
     // Skip rows outside of the dirty rect.
@@ -118,7 +134,7 @@ NSColor* SubtextColor() {
       continue;
 
     if (controller_->identifiers()[i] ==
-            WebKit::WebAutofillClient::MenuItemIDSeparator) {
+            blink::WebAutofillClient::MenuItemIDSeparator) {
       [self drawSeparatorWithBounds:rowBounds];
     } else {
       NSString* name = SysUTF16ToNSString(controller_->names()[i]);
@@ -142,8 +158,8 @@ NSColor* SubtextColor() {
                                fromView:nil];
 
   if (NSPointInRect(location, [self bounds])) {
-    controller_->MouseClicked(static_cast<int>(location.x),
-                              static_cast<int>(location.y));
+    controller_->LineAcceptedAtPoint(static_cast<int>(location.x),
+                                     static_cast<int>(location.y));
   }
 }
 
@@ -155,8 +171,8 @@ NSColor* SubtextColor() {
   NSPoint location = [self convertPoint:[theEvent locationInWindow]
                                fromView:nil];
 
-  controller_->MouseHovered(static_cast<int>(location.x),
-                            static_cast<int>(location.y));
+  controller_->LineSelectedAtPoint(static_cast<int>(location.x),
+                                   static_cast<int>(location.y));
 }
 
 - (void)mouseDragged:(NSEvent*)theEvent {
@@ -168,7 +184,7 @@ NSColor* SubtextColor() {
   if (!controller_)
     return;
 
-  controller_->MouseExitedPopup();
+  controller_->SelectionCleared();
 }
 
 #pragma mark -

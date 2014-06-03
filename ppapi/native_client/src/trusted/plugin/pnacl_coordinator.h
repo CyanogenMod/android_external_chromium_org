@@ -15,16 +15,10 @@
 #include "native_client/src/shared/srpc/nacl_srpc.h"
 #include "native_client/src/trusted/desc/nacl_desc_wrapper.h"
 
-#include "ppapi/c/pp_file_info.h"
-#include "ppapi/c/trusted/ppb_file_io_trusted.h"
 #include "ppapi/cpp/completion_callback.h"
-#include "ppapi/cpp/file_io.h"
-#include "ppapi/cpp/file_ref.h"
-#include "ppapi/cpp/file_system.h"
 
 #include "ppapi/native_client/src/trusted/plugin/callback_source.h"
 #include "ppapi/native_client/src/trusted/plugin/file_downloader.h"
-#include "ppapi/native_client/src/trusted/plugin/local_temp_file.h"
 #include "ppapi/native_client/src/trusted/plugin/nacl_subprocess.h"
 #include "ppapi/native_client/src/trusted/plugin/plugin_error.h"
 #include "ppapi/native_client/src/trusted/plugin/pnacl_options.h"
@@ -60,10 +54,10 @@ class TempFile;
 // (2) ld links the object code in obj_file_ and produces a nexe in nexe_file_.
 //
 // The coordinator proceeds through several states.  They are
-// LOAD_TRANSLATOR_BINARIES
-//     Complete when ResourcesDidLoad is invoked.
 // OPEN_BITCODE_STREAM
 //       Complete when BitcodeStreamDidOpen is invoked
+// LOAD_TRANSLATOR_BINARIES
+//     Complete when ResourcesDidLoad is invoked.
 // GET_NEXE_FD
 //       Get an FD which contains the cached nexe, or is writeable for
 //       translation output. Complete when NexeFdDidOpen is called.
@@ -94,7 +88,7 @@ class PnaclCoordinator: public CallbackSource<FileStreamData> {
 
   // Call this to take ownership of the FD of the translated nexe after
   // BitcodeToNative has completed (and the finish_callback called).
-  nacl::DescWrapper* ReleaseTranslatedFD() { return translated_fd_.release(); }
+  nacl::DescWrapper* ReleaseTranslatedFD();
 
   // Run |translate_notify_callback_| with an error condition that is not
   // PPAPI specific.  Also set ErrorInfo report.
@@ -145,31 +139,20 @@ class PnaclCoordinator: public CallbackSource<FileStreamData> {
                    const PnaclOptions& pnacl_options,
                    const pp::CompletionCallback& translate_notify_callback);
 
-  // Callback for when we know PNaCl is installed.
-  void DidCheckPnaclInstalled(int32_t pp_error);
+  // Invoke to issue a GET request for bitcode.
+  void OpenBitcodeStream();
+  // Invoked when we've started an URL fetch for the pexe to check for
+  // caching metadata.
+  void BitcodeStreamDidOpen(int32_t pp_error);
 
   // Callback for when the resource info JSON file has been read.
   void ResourceInfoWasRead(int32_t pp_error);
 
   // Callback for when llc and ld have been downloaded.
   void ResourcesDidLoad(int32_t pp_error);
-
-  // Callbacks for temporary file related stages.
-  // They are invoked from ResourcesDidLoad and proceed in declaration order.
-  // Invoked when the temporary file system is successfully opened in PPAPI.
-  void FileSystemDidOpen(int32_t pp_error);
-  // Invoked after we are sure the PNaCl temporary directory exists.
-  void DirectoryWasCreated(int32_t pp_error);
-  // Invoke to issue a GET request for bitcode.
-  void OpenBitcodeStream();
-  // Invoked when we've started an URL fetch for the pexe to check for
-  // caching metadata.
-  void BitcodeStreamDidOpen(int32_t pp_error);
   // Invoked when we've gotten a temp FD for the nexe, either with the nexe
   // data, or a writeable fd to save to.
   void NexeFdDidOpen(int32_t pp_error);
-  // Invoked after we have checked the PNaCl cache for a translated version.
-  void CachedFileDidOpen(int32_t pp_error);
   // Invoked when a pexe data chunk arrives (when using streaming translation)
   void BitcodeStreamGotData(int32_t pp_error, FileStreamData data);
   // Invoked when a pexe data chunk is compiled.
@@ -186,21 +169,6 @@ class PnaclCoordinator: public CallbackSource<FileStreamData> {
   // Invoked when translation is finished.
   void TranslateFinished(int32_t pp_error);
 
-  // If the cache is enabled, open a cache file for write, then copy
-  // the nexe data from temp_nexe_file_ to> cached_nexe_file_.
-  // Once the copy is done, we commit it to the cache by renaming the
-  // cache file to the final name.
-  void CachedNexeOpenedForWrite(int32_t pp_error);
-  void DidCopyNexeToCachePartial(int32_t pp_error, int32_t num_read_prev,
-                                 int64_t cur_offset);
-  void NexeWasCopiedToCache(int32_t pp_error);
-  // If the copy of the nexe to the not-yet-committed-to-cache file
-  // failed after partial writes, we attempt to delete the partially written
-  // file. This callback is invoked when the delete is completed.
-  void CorruptCacheFileWasDeleted(int32_t delete_pp_error,
-                                  int32_t orig_pp_error);
-  // Invoked when the nexe_file_ temporary has been renamed to the nexe name.
-  void NexeFileWasRenamed(int32_t pp_error);
   // Invoked when the read descriptor for nexe_file_ is created.
   void NexeReadDidOpen(int32_t pp_error);
 
@@ -212,23 +180,21 @@ class PnaclCoordinator: public CallbackSource<FileStreamData> {
   Plugin* plugin_;
 
   pp::CompletionCallback translate_notify_callback_;
+  // Set to true when the translation (if applicable) is finished and the nexe
+  // file is loaded, (or when there was an error), and the browser has been
+  // notified via ReportTranslationFinished. If it is not set before
+  // plugin/coordinator destruction, the destructor will call
+  // ReportTranslationFinished.
+  bool translation_finished_reported_;
   // Threadsafety is required to support file lookups.
   pp::CompletionCallbackFactory<PnaclCoordinator,
                                 pp::ThreadSafeThreadTraits> callback_factory_;
 
-  // Nexe from the final native Link.
-  nacl::scoped_ptr<nacl::DescWrapper> translated_fd_;
-
-  // Translation creates local temporary files.
-  nacl::scoped_ptr<pp::FileSystem> file_system_;
   // The manifest used by resource loading and ld + llc's reverse service
   // to look up objects and libraries.
   nacl::scoped_ptr<const Manifest> manifest_;
   // An auxiliary class that manages downloaded resources (llc and ld nexes).
   nacl::scoped_ptr<PnaclResources> resources_;
-
-  // State used for querying the temporary directory.
-  nacl::scoped_ptr<pp::FileRef> dir_ref_;
 
   // The URL for the pexe file.
   nacl::string pexe_url_;
@@ -239,19 +205,9 @@ class PnaclCoordinator: public CallbackSource<FileStreamData> {
   nacl::scoped_ptr<TempFile> obj_file_;
   // Translated nexe file, produced by the linker.
   nacl::scoped_ptr<TempFile> temp_nexe_file_;
-  // Cached nexe file, consumed by sel_ldr.  This will be NULL if we do
-  // not have a writeable cache file.  That is currently the case when
-  // off_the_record_ is true.
-  nacl::scoped_ptr<LocalTempFile> cached_nexe_file_;
-  // True if the new cache flow is enabled. Currently set by an environment
-  // variable on construction. TODO(dschuff): remove old cache stuff.
-  bool use_new_cache_;
   // Passed to the browser, which sets it to true if there is a translation
   // cache hit.
   PP_Bool is_cache_hit_;
-  // Passed to the browser, which sets it to the handle for the nexe file
-  // (either the translated nexe from the cache, or a temp file to write to).
-  PP_FileHandle nexe_handle_;
 
   // Downloader for streaming translation
   nacl::scoped_ptr<FileDownloader> streaming_downloader_;
@@ -262,9 +218,6 @@ class PnaclCoordinator: public CallbackSource<FileStreamData> {
   // True if an error was already reported, and translate_notify_callback_
   // was already run/consumed.
   bool error_already_reported_;
-
-  // True if compilation is off_the_record.
-  bool off_the_record_;
 
   // State for timing and size information for UMA stats.
   int64_t pnacl_init_time_;

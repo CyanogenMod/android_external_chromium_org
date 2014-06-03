@@ -10,9 +10,11 @@
 #include "chrome/browser/infobars/confirm_infobar_delegate.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/ui/cocoa/cocoa_profile_test.h"
+#import "chrome/browser/ui/cocoa/infobars/infobar_cocoa.h"
 #import "chrome/browser/ui/cocoa/infobars/infobar_container_controller.h"
 #include "chrome/browser/ui/cocoa/infobars/mock_confirm_infobar_delegate.h"
 #include "chrome/browser/ui/cocoa/run_loop_testing.h"
+#include "chrome/test/base/testing_profile.h"
 #import "content/public/browser/web_contents.h"
 #include "ipc/ipc_message.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -35,15 +37,16 @@ using content::WebContents;
 @end
 
 
-@interface InfoBarContainerTest : NSObject<InfoBarContainer> {
+@interface InfoBarContainerTest : NSObject<InfoBarContainerControllerBase> {
   InfoBarController* controller_;
 }
+
 - (id)initWithController:(InfoBarController*)controller;
-- (void)willRemoveController:(InfoBarController*)controller;
-- (void)removeController:(InfoBarController*)controller;
+
 @end
 
 @implementation InfoBarContainerTest
+
 - (id)initWithController:(InfoBarController*)controller {
   if ((self = [super init])) {
     controller_ = controller;
@@ -51,17 +54,18 @@ using content::WebContents;
   return self;
 }
 
-- (void)willRemoveController:(InfoBarController*)controller {
-}
-
-- (void)removeController:(InfoBarController*)controller {
-  DCHECK(controller_ == controller);
-  controller_ = nil;
-}
-
 - (BrowserWindowController*)browserWindowController {
   return nil;
 }
+
+- (BOOL)shouldSuppressTopInfoBarTip {
+  return NO;
+}
+
+- (CGFloat)infobarArrowX {
+  return 0;
+}
+
 @end
 
 @interface TestConfirmInfoBarController : ConfirmInfoBarController
@@ -70,7 +74,9 @@ using content::WebContents;
 
 @implementation TestConfirmInfoBarController
 - (void)removeSelf {
-  [self close];
+  [self infobarWillClose];
+  if ([self infobar])
+    [self infobar]->CloseSoon();
 }
 @end
 
@@ -79,17 +85,21 @@ namespace {
 class ConfirmInfoBarControllerTest : public CocoaProfileTest,
                                      public MockConfirmInfoBarDelegate::Owner {
  public:
-  virtual void SetUp() {
+  virtual void SetUp() OVERRIDE {
     CocoaProfileTest::SetUp();
     web_contents_.reset(
         WebContents::Create(WebContents::CreateParams(profile())));
-    InfoBarService::CreateForWebContents(web_contents_.get());
+   InfoBarService::CreateForWebContents(web_contents_.get());
 
-    InfoBarService* infobar_service =
-        InfoBarService::FromWebContents(web_contents_.get());
-    delegate_ = new MockConfirmInfoBarDelegate(this);
+    scoped_ptr<InfoBarDelegate> delegate(
+        new MockConfirmInfoBarDelegate(this));
+    infobar_ = new InfoBarCocoa(delegate.Pass());
+    infobar_->SetOwner(InfoBarService::FromWebContents(web_contents_.get()));
+
     controller_.reset([[TestConfirmInfoBarController alloc]
-        initWithDelegate:delegate_ owner:infobar_service]);
+        initWithInfoBar:infobar_]);
+    infobar_->set_controller(controller_);
+
     container_.reset(
         [[InfoBarContainerTest alloc] initWithController:controller_]);
     [controller_ setContainerController:container_];
@@ -97,19 +107,22 @@ class ConfirmInfoBarControllerTest : public CocoaProfileTest,
     closed_delegate_ok_clicked_ = false;
     closed_delegate_cancel_clicked_ = false;
     closed_delegate_link_clicked_ = false;
+    delegate_closed_ = false;
   }
 
-  virtual void TearDown() {
-    if (delegate_)
-      delete delegate_;
+  virtual void TearDown() OVERRIDE {
+    [controller_ removeSelf];
     CocoaProfileTest::TearDown();
   }
 
  protected:
-  // Hopefully-obvious: If this returns true, you must not deref |delegate_|!
-  bool delegate_closed() const { return delegate_ == NULL; }
+  // True if delegate is closed.
+  bool delegate_closed() const { return delegate_closed_; }
 
-  MockConfirmInfoBarDelegate* delegate_;  // Owns itself.
+  MockConfirmInfoBarDelegate* delegate() const {
+    return static_cast<MockConfirmInfoBarDelegate*>(infobar_->delegate());
+  }
+
   base::scoped_nsobject<id> container_;
   base::scoped_nsobject<ConfirmInfoBarController> controller_;
   bool closed_delegate_ok_clicked_;
@@ -118,13 +131,16 @@ class ConfirmInfoBarControllerTest : public CocoaProfileTest,
 
  private:
   virtual void OnInfoBarDelegateClosed() OVERRIDE {
-    closed_delegate_ok_clicked_ = delegate_->ok_clicked();
-    closed_delegate_cancel_clicked_ = delegate_->cancel_clicked();
-    closed_delegate_link_clicked_ = delegate_->link_clicked();
-    delegate_ = NULL;
+    closed_delegate_ok_clicked_ = delegate()->ok_clicked();
+    closed_delegate_cancel_clicked_ = delegate()->cancel_clicked();
+    closed_delegate_link_clicked_ = delegate()->link_clicked();
+    delegate_closed_ = true;
+    controller_.reset();
   }
 
   scoped_ptr<WebContents> web_contents_;
+  InfoBarCocoa* infobar_;  // Weak, will delete itself.
+  bool delegate_closed_;
 };
 
 
@@ -132,9 +148,9 @@ TEST_VIEW(ConfirmInfoBarControllerTest, [controller_ view]);
 
 TEST_F(ConfirmInfoBarControllerTest, ShowAndDismiss) {
   // Make sure someone looked at the message, link, and icon.
-  EXPECT_TRUE(delegate_->message_text_accessed());
-  EXPECT_TRUE(delegate_->link_text_accessed());
-  EXPECT_TRUE(delegate_->icon_accessed());
+  EXPECT_TRUE(delegate()->message_text_accessed());
+  EXPECT_TRUE(delegate()->link_text_accessed());
+  EXPECT_TRUE(delegate()->icon_accessed());
 
   // Check to make sure the infobar message was set properly.
   EXPECT_EQ(MockConfirmInfoBarDelegate::kMessage,
@@ -159,15 +175,15 @@ TEST_F(ConfirmInfoBarControllerTest, ShowAndClickOK) {
 }
 
 TEST_F(ConfirmInfoBarControllerTest, ShowAndClickOKWithoutClosing) {
-  delegate_->set_dont_close_on_action();
+  delegate()->set_dont_close_on_action();
 
   // Check that clicking the OK button calls Accept() but does not close
   // the infobar.
   [controller_ ok:nil];
   ASSERT_FALSE(delegate_closed());
-  EXPECT_TRUE(delegate_->ok_clicked());
-  EXPECT_FALSE(delegate_->cancel_clicked());
-  EXPECT_FALSE(delegate_->link_clicked());
+  EXPECT_TRUE(delegate()->ok_clicked());
+  EXPECT_FALSE(delegate()->cancel_clicked());
+  EXPECT_FALSE(delegate()->link_clicked());
 }
 
 TEST_F(ConfirmInfoBarControllerTest, ShowAndClickCancel) {
@@ -181,15 +197,15 @@ TEST_F(ConfirmInfoBarControllerTest, ShowAndClickCancel) {
 }
 
 TEST_F(ConfirmInfoBarControllerTest, ShowAndClickCancelWithoutClosing) {
-  delegate_->set_dont_close_on_action();
+  delegate()->set_dont_close_on_action();
 
   // Check that clicking the cancel button calls Cancel() but does not close
   // the infobar.
   [controller_ cancel:nil];
   ASSERT_FALSE(delegate_closed());
-  EXPECT_FALSE(delegate_->ok_clicked());
-  EXPECT_TRUE(delegate_->cancel_clicked());
-  EXPECT_FALSE(delegate_->link_clicked());
+  EXPECT_FALSE(delegate()->ok_clicked());
+  EXPECT_TRUE(delegate()->cancel_clicked());
+  EXPECT_FALSE(delegate()->link_clicked());
 }
 
 TEST_F(ConfirmInfoBarControllerTest, ShowAndClickLink) {
@@ -203,15 +219,15 @@ TEST_F(ConfirmInfoBarControllerTest, ShowAndClickLink) {
 }
 
 TEST_F(ConfirmInfoBarControllerTest, ShowAndClickLinkWithoutClosing) {
-  delegate_->set_dont_close_on_action();
+  delegate()->set_dont_close_on_action();
 
   // Check that clicking on the link calls LinkClicked() on the
   // delegate.  It should not close the infobar.
   [controller_ linkClicked];
   ASSERT_FALSE(delegate_closed());
-  EXPECT_FALSE(delegate_->ok_clicked());
-  EXPECT_FALSE(delegate_->cancel_clicked());
-  EXPECT_TRUE(delegate_->link_clicked());
+  EXPECT_FALSE(delegate()->ok_clicked());
+  EXPECT_FALSE(delegate()->cancel_clicked());
+  EXPECT_TRUE(delegate()->link_clicked());
 }
 
 TEST_F(ConfirmInfoBarControllerTest, ResizeView) {

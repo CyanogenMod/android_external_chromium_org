@@ -7,7 +7,7 @@
 #include "base/basictypes.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "ui/base/accelerators/accelerator.h"
-#include "ui/base/events/event_constants.h"
+#include "ui/events/event_constants.h"
 
 #if defined(USE_ASH)
 #include "ash/accelerators/accelerator_table.h"
@@ -46,6 +46,7 @@ const AcceleratorMapping kAcceleratorMap[] = {
     IDC_DEV_TOOLS_CONSOLE },
   { ui::VKEY_C, ui::EF_SHIFT_DOWN | ui::EF_CONTROL_DOWN,
     IDC_DEV_TOOLS_INSPECT },
+  { ui::VKEY_O, ui::EF_CONTROL_DOWN, IDC_OPEN_FILE },
   { ui::VKEY_P, ui::EF_CONTROL_DOWN, IDC_PRINT},
   { ui::VKEY_P, ui::EF_SHIFT_DOWN | ui::EF_CONTROL_DOWN, IDC_ADVANCED_PRINT},
   { ui::VKEY_R, ui::EF_CONTROL_DOWN, IDC_RELOAD },
@@ -55,6 +56,13 @@ const AcceleratorMapping kAcceleratorMap[] = {
   { ui::VKEY_S, ui::EF_CONTROL_DOWN, IDC_SAVE_PAGE },
   { ui::VKEY_9, ui::EF_CONTROL_DOWN, IDC_SELECT_LAST_TAB },
   { ui::VKEY_NUMPAD9, ui::EF_CONTROL_DOWN, IDC_SELECT_LAST_TAB },
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+  { ui::VKEY_9, ui::EF_ALT_DOWN, IDC_SELECT_LAST_TAB },
+  { ui::VKEY_NUMPAD9, ui::EF_ALT_DOWN, IDC_SELECT_LAST_TAB },
+  { ui::VKEY_NEXT, ui::EF_CONTROL_DOWN | ui::EF_SHIFT_DOWN, IDC_MOVE_TAB_NEXT },
+  { ui::VKEY_PRIOR, ui::EF_CONTROL_DOWN | ui::EF_SHIFT_DOWN,
+    IDC_MOVE_TAB_PREVIOUS },
+#endif
   { ui::VKEY_TAB, ui::EF_CONTROL_DOWN, IDC_SELECT_NEXT_TAB },
   { ui::VKEY_NEXT, ui::EF_CONTROL_DOWN, IDC_SELECT_NEXT_TAB },
   { ui::VKEY_TAB, ui::EF_SHIFT_DOWN | ui::EF_CONTROL_DOWN,
@@ -76,6 +84,24 @@ const AcceleratorMapping kAcceleratorMap[] = {
   { ui::VKEY_NUMPAD7, ui::EF_CONTROL_DOWN, IDC_SELECT_TAB_6 },
   { ui::VKEY_8, ui::EF_CONTROL_DOWN, IDC_SELECT_TAB_7 },
   { ui::VKEY_NUMPAD8, ui::EF_CONTROL_DOWN, IDC_SELECT_TAB_7 },
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+  { ui::VKEY_1, ui::EF_ALT_DOWN, IDC_SELECT_TAB_0 },
+  { ui::VKEY_NUMPAD1, ui::EF_ALT_DOWN, IDC_SELECT_TAB_0 },
+  { ui::VKEY_2, ui::EF_ALT_DOWN, IDC_SELECT_TAB_1 },
+  { ui::VKEY_NUMPAD2, ui::EF_ALT_DOWN, IDC_SELECT_TAB_1 },
+  { ui::VKEY_3, ui::EF_ALT_DOWN, IDC_SELECT_TAB_2 },
+  { ui::VKEY_NUMPAD3, ui::EF_ALT_DOWN, IDC_SELECT_TAB_2 },
+  { ui::VKEY_4, ui::EF_ALT_DOWN, IDC_SELECT_TAB_3 },
+  { ui::VKEY_NUMPAD4, ui::EF_ALT_DOWN, IDC_SELECT_TAB_3 },
+  { ui::VKEY_5, ui::EF_ALT_DOWN, IDC_SELECT_TAB_4 },
+  { ui::VKEY_NUMPAD5, ui::EF_ALT_DOWN, IDC_SELECT_TAB_4 },
+  { ui::VKEY_6, ui::EF_ALT_DOWN, IDC_SELECT_TAB_5 },
+  { ui::VKEY_NUMPAD6, ui::EF_ALT_DOWN, IDC_SELECT_TAB_5 },
+  { ui::VKEY_7, ui::EF_ALT_DOWN, IDC_SELECT_TAB_6 },
+  { ui::VKEY_NUMPAD7, ui::EF_ALT_DOWN, IDC_SELECT_TAB_6 },
+  { ui::VKEY_8, ui::EF_ALT_DOWN, IDC_SELECT_TAB_7 },
+  { ui::VKEY_NUMPAD8, ui::EF_ALT_DOWN, IDC_SELECT_TAB_7 },
+#endif
   { ui::VKEY_B, ui::EF_SHIFT_DOWN | ui::EF_CONTROL_DOWN,
     IDC_SHOW_BOOKMARK_BAR },
   { ui::VKEY_O, ui::EF_SHIFT_DOWN | ui::EF_CONTROL_DOWN,
@@ -123,6 +149,8 @@ const AcceleratorMapping kAcceleratorMap[] = {
   { ui::VKEY_BROWSER_REFRESH, ui::EF_SHIFT_DOWN, IDC_RELOAD_IGNORING_CACHE },
   { ui::VKEY_BROWSER_FAVORITES, ui::EF_NONE, IDC_SHOW_BOOKMARK_MANAGER },
   { ui::VKEY_BROWSER_STOP, ui::EF_NONE, IDC_STOP },
+  // Not implemented inside Ash to allow web pages to capture the key.
+  { ui::VKEY_M, ui::EF_CONTROL_DOWN, IDC_MINIMIZE_WINDOW },
 #else  // OS_CHROMEOS
   { ui::VKEY_DELETE, ui::EF_SHIFT_DOWN | ui::EF_CONTROL_DOWN,
     IDC_CLEAR_BROWSING_DATA },
@@ -141,13 +169,14 @@ const AcceleratorMapping kAcceleratorMap[] = {
 #if !defined(OS_CHROMEOS)
   // For each entry here add an entry into kChromeCmdId2AshActionId below
   // if Ash has a corresponding accelerator.
+#if defined(GOOGLE_CHROME_BUILD)
   { ui::VKEY_I, ui::EF_SHIFT_DOWN | ui::EF_ALT_DOWN, IDC_FEEDBACK },
+#endif
   { ui::VKEY_Q, ui::EF_SHIFT_DOWN | ui::EF_CONTROL_DOWN, IDC_EXIT },
   { ui::VKEY_N, ui::EF_SHIFT_DOWN | ui::EF_CONTROL_DOWN,
     IDC_NEW_INCOGNITO_WINDOW },
   { ui::VKEY_T, ui::EF_CONTROL_DOWN, IDC_NEW_TAB },
   { ui::VKEY_N, ui::EF_CONTROL_DOWN, IDC_NEW_WINDOW },
-  { ui::VKEY_O, ui::EF_CONTROL_DOWN, IDC_OPEN_FILE },
   { ui::VKEY_T, ui::EF_SHIFT_DOWN | ui::EF_CONTROL_DOWN, IDC_RESTORE_TAB },
   { ui::VKEY_ESCAPE, ui::EF_SHIFT_DOWN, IDC_TASK_MANAGER },
 #endif
@@ -163,14 +192,13 @@ struct ChromeCmdId2AshActionId {
   const ash::AcceleratorAction ash_action_id;
 };
 const ChromeCmdId2AshActionId kChromeCmdId2AshActionId[] = {
+#if defined(GOOGLE_CHROME_BUILD)
   { IDC_FEEDBACK,             ash::OPEN_FEEDBACK_PAGE },
+#endif
   { IDC_EXIT,                 ash::EXIT },
   { IDC_NEW_INCOGNITO_WINDOW, ash::NEW_INCOGNITO_WINDOW },
   { IDC_NEW_TAB,              ash::NEW_TAB },
   { IDC_NEW_WINDOW,           ash::NEW_WINDOW },
-#if defined(OS_CHROMEOS)
-  { IDC_OPEN_FILE,            ash::OPEN_FILE_DIALOG },
-#endif
   { IDC_RESTORE_TAB,          ash::RESTORE_TAB },
   { IDC_TASK_MANAGER,         ash::SHOW_TASK_MANAGER },
 };

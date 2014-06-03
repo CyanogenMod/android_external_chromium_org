@@ -7,10 +7,10 @@
 
 #include <string>
 
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_icon_set.h"
-#include "chrome/common/extensions/manifest_handler.h"
+#include "extensions/common/extension.h"
 #include "extensions/common/extension_resource.h"
+#include "extensions/common/manifest_handler.h"
 
 namespace extensions {
 
@@ -46,7 +46,7 @@ class IconsHandler : public ManifestHandler {
   IconsHandler();
   virtual ~IconsHandler();
 
-  virtual bool Parse(Extension* extension, string16* error) OVERRIDE;
+  virtual bool Parse(Extension* extension, base::string16* error) OVERRIDE;
   virtual bool Validate(const Extension* extension,
                         std::string* error,
                         std::vector<InstallWarning>* warnings) const OVERRIDE;

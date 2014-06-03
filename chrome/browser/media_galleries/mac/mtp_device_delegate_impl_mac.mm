@@ -8,13 +8,10 @@
 
 #include "base/mac/scoped_nsobject.h"
 #include "base/threading/sequenced_worker_pool.h"
-#include "chrome/browser/media_galleries/mtp_device_delegate_impl.h"
 #include "chrome/browser/storage_monitor/image_capture_device.h"
 #include "chrome/browser/storage_monitor/image_capture_device_manager.h"
 #include "content/public/browser/browser_thread.h"
 #include "webkit/browser/fileapi/async_file_util.h"
-
-namespace chrome {
 
 namespace {
 
@@ -478,6 +475,3 @@ void CreateMTPDeviceAsyncDelegate(
 
   cb.Run(new MTPDeviceDelegateImplMac(device_id, device_location));
 }
-
-}  // namespace chrome
-

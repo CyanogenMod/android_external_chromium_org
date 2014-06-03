@@ -57,6 +57,8 @@ const wchar_t kStageUnpacking[] = L"unpacking";
 const wchar_t kStageUpdatingChannels[] = L"updating_channels";
 const wchar_t kStageCreatingVisualManifest[] = L"creating_visual_manifest";
 const wchar_t kStageDeferringToHigherVersion[] = L"deferring_to_higher_version";
+const wchar_t kStageUninstallingBinaries[] = L"uninstalling_binaries";
+const wchar_t kStageUninstallingChromeFrame[] = L"uninstalling_chrome_frame";
 
 const wchar_t* const kStages[] = {
   NULL,
@@ -78,6 +80,8 @@ const wchar_t* const kStages[] = {
   kStageConfiguringAutoLaunch,
   kStageCreatingVisualManifest,
   kStageDeferringToHigherVersion,
+  kStageUninstallingBinaries,
+  kStageUninstallingChromeFrame,
 };
 
 COMPILE_ASSERT(installer::NUM_STAGES == arraysize(kStages),
@@ -223,12 +227,12 @@ void InstallUtil::GetChromeVersion(BrowserDistribution* dist,
 
   *version = Version();
   if (result == ERROR_SUCCESS && !version_str.empty()) {
-    VLOG(1) << "Existing " << dist->GetAppShortCutName() << " version found "
+    VLOG(1) << "Existing " << dist->GetDisplayName() << " version found "
             << version_str;
     *version = Version(WideToASCII(version_str));
   } else {
     DCHECK_EQ(ERROR_FILE_NOT_FOUND, result);
-    VLOG(1) << "No existing " << dist->GetAppShortCutName()
+    VLOG(1) << "No existing " << dist->GetDisplayName()
             << " install found.";
   }
 }
@@ -249,12 +253,12 @@ void InstallUtil::GetCriticalUpdateVersion(BrowserDistribution* dist,
 
   *version = Version();
   if (result == ERROR_SUCCESS && !version_str.empty()) {
-    VLOG(1) << "Critical Update version for " << dist->GetAppShortCutName()
+    VLOG(1) << "Critical Update version for " << dist->GetDisplayName()
             << " found " << version_str;
     *version = Version(WideToASCII(version_str));
   } else {
     DCHECK_EQ(ERROR_FILE_NOT_FOUND, result);
-    VLOG(1) << "No existing " << dist->GetAppShortCutName()
+    VLOG(1) << "No existing " << dist->GetDisplayName()
             << " install found.";
   }
 }
@@ -349,8 +353,7 @@ bool InstallUtil::IsMultiInstall(BrowserDistribution* dist,
                                  bool system_install) {
   DCHECK(dist);
   ProductState state;
-  return state.Initialize(system_install, dist->GetType()) &&
-         state.is_multi_install();
+  return state.Initialize(system_install, dist) && state.is_multi_install();
 }
 
 bool CheckIsChromeSxSProcess() {
@@ -365,10 +368,27 @@ bool CheckIsChromeSxSProcess() {
   PathService::Get(base::DIR_EXE, &exe_dir);
   string16 chrome_sxs_dir(installer::kGoogleChromeInstallSubDir2);
   chrome_sxs_dir.append(installer::kSxSSuffix);
-  return base::FilePath::CompareEqualIgnoreCase(
-          exe_dir.BaseName().value(), installer::kInstallBinaryDir) &&
-      base::FilePath::CompareEqualIgnoreCase(
-          exe_dir.DirName().BaseName().value(), chrome_sxs_dir);
+
+  // This is SxS if current EXE is in or under (possibly multiple levels under)
+  // |chrome_sxs_dir|\|installer::kInstallBinaryDir|
+  std::vector<base::FilePath::StringType> components;
+  exe_dir.GetComponents(&components);
+  // We need at least 1 element in the array for the behavior of the following
+  // loop to be defined.  This should always be true, since we're splitting the
+  // path to our executable and one of the components will be the drive letter.
+  DCHECK(!components.empty());
+  typedef std::vector<base::FilePath::StringType>::const_reverse_iterator
+      ComponentsIterator;
+  for (ComponentsIterator current = components.rbegin(), parent = current + 1;
+       parent != components.rend(); current = parent++) {
+    if (base::FilePath::CompareEqualIgnoreCase(
+            *current, installer::kInstallBinaryDir) &&
+        base::FilePath::CompareEqualIgnoreCase(*parent, chrome_sxs_dir)) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 bool InstallUtil::IsChromeSxSProcess() {
@@ -507,6 +527,7 @@ int InstallUtil::GetInstallReturnCode(installer::InstallStatus status) {
     case installer::INSTALL_REPAIRED:
     case installer::NEW_VERSION_UPDATED:
     case installer::IN_USE_UPDATED:
+    case installer::UNUSED_BINARIES_UNINSTALLED:
       return 0;
     default:
       return status;

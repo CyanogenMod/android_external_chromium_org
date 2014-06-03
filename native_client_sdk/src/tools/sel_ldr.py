@@ -34,9 +34,8 @@ Log.verbose = False
 
 def main(argv):
   usage = 'Usage: %prog [options] <.nexe>'
-  description = __doc__
   epilog = 'Example: sel_ldr.py my_nexe.nexe'
-  parser = optparse.OptionParser(usage, description=description, epilog=epilog)
+  parser = optparse.OptionParser(usage, description=__doc__, epilog=epilog)
   parser.add_option('-v', '--verbose', action='store_true',
                     help='Verbose output')
   parser.add_option('-d', '--debug', action='store_true',
@@ -44,6 +43,16 @@ def main(argv):
   parser.add_option('--debug-libs', action='store_true',
                     help='For dynamic executables, reference debug '
                          'libraries rather then release')
+
+  # To enable bash completion for this command first install optcomplete
+  # and then add this line to your .bashrc:
+  #  complete -F _optcomplete sel_ldr.py
+  try:
+    import optcomplete
+    optcomplete.autocomplete(parser)
+  except ImportError:
+    pass
+
   options, args = parser.parse_args(argv)
   if not args:
     parser.error('No executable file specified')
@@ -59,8 +68,6 @@ def main(argv):
     raise Error('not a file: %s' % nexe)
 
   arch, dynamic = create_nmf.ParseElfHeader(nexe)
-  if osname == 'mac' and arch == 'x86-64':
-    raise Error('Running of x86-64 executables is not supported on mac')
 
   if arch == 'arm':
     raise Error('Cannot run ARM executables under sel_ldr')
@@ -74,15 +81,23 @@ def main(argv):
   Log('ROOT    = %s' % NACL_SDK_ROOT)
   Log('SEL_LDR = %s' % sel_ldr)
   Log('IRT     = %s' % irt)
-  cmd = [sel_ldr, '-a', '-B', irt, '-l', os.devnull]
+  cmd = [sel_ldr]
+
+  if osname == 'linux':
+    # Run sel_ldr under nacl_helper_bootstrap
+    helper = os.path.join(SCRIPT_DIR, 'nacl_helper_bootstrap_%s' % arch_suffix)
+    Log('HELPER  = %s' % helper)
+    cmd.insert(0, helper)
+    cmd.append('--r_debug=0xXXXXXXXXXXXXXXXX')
+    cmd.append('--reserved_at_zero=0xXXXXXXXXXXXXXXXX')
+
+  cmd += ['-a', '-B', irt]
 
   if options.debug:
     cmd.append('-g')
 
-  if osname == 'linux':
-    helper = os.path.join(SCRIPT_DIR, 'nacl_helper_bootstrap_%s' % arch_suffix)
-    Log('HELPER  = %s' % helper)
-    cmd.insert(0, helper)
+  if not options.verbose:
+    cmd += ['-l', os.devnull]
 
   if dynamic:
     if options.debug_libs:
@@ -100,13 +115,16 @@ def main(argv):
       sdk_lib_dir = os.path.join(sdk_lib_dir, 'lib32')
     ldso = os.path.join(sdk_lib_dir, 'runnable-ld.so')
     cmd.append(ldso)
-    Log('LD.SO   = %s' % ldso)
+    Log('LD.SO = %s' % ldso)
     libpath += ':' + sdk_lib_dir
     cmd.append('--library-path')
     cmd.append(libpath)
 
 
-  cmd += args
+  if args:
+    # Append arguments for the executable itself.
+    cmd += args
+
   Log(cmd)
   rtn = subprocess.call(cmd)
   return rtn

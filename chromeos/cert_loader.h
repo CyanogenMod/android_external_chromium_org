@@ -69,10 +69,15 @@ class CHROMEOS_EXPORT CertLoader : public net::CertDatabase::Observer,
 
   static std::string GetPkcs11IdForCert(const net::X509Certificate& cert);
 
+  // By default, CertLoader tries to load the TPMToken only if running in a
+  // ChromeOS environment. Tests can call this function after Initialize() and
+  // before SetCryptoTaskRunner() to enable the TPM initialization.
+  void InitializeTPMForTest();
+
   // |crypto_task_runner| is the task runner that any synchronous crypto calls
   // should be made from, e.g. in Chrome this is the IO thread. Must be called
-  // after the thread is started. Certificate loading will not happen unless
-  // this is set.
+  // after the thread is started. Starts TPM initialization and Certificate
+  // loading.
   void SetCryptoTaskRunner(
       const scoped_refptr<base::SequencedTaskRunner>& crypto_task_runner);
 
@@ -95,7 +100,7 @@ class CHROMEOS_EXPORT CertLoader : public net::CertDatabase::Observer,
   // TPM info is only valid once the TPM is available (IsHardwareBacked is
   // true). Otherwise empty strings will be returned.
   const std::string& tpm_token_name() const { return tpm_token_name_; }
-  const std::string& tpm_token_slot() const { return tpm_token_slot_; }
+  int tpm_token_slot_id() const { return tpm_token_slot_id_; }
   const std::string& tpm_user_pin() const { return tpm_user_pin_; }
 
   // This will be empty until certificates_loaded() is true.
@@ -105,7 +110,6 @@ class CHROMEOS_EXPORT CertLoader : public net::CertDatabase::Observer,
   CertLoader();
   virtual ~CertLoader();
 
-  void Init();
   void MaybeRequestCertificates();
 
   // This is the cyclic chain of callbacks to initialize the TPM token and to
@@ -119,23 +123,34 @@ class CHROMEOS_EXPORT CertLoader : public net::CertDatabase::Observer,
                                bool is_tpm_token_ready);
   void OnPkcs11GetTpmTokenInfo(DBusMethodCallStatus call_status,
                                const std::string& token_name,
-                               const std::string& user_pin);
+                               const std::string& user_pin,
+                               int token_slot_id);
   void OnTPMTokenInitialized(bool success);
 
   // These calls handle the updating of the certificate list after the TPM token
   // was initialized.
+
+  // Start certificate loading. Must be called at most once.
   void StartLoadCertificates();
+
+  // Trigger a certificate load. If a certificate loading task is already in
+  // progress, will start a reload once the current task finised.
+  void LoadCertificates();
+
+  // Called if a certificate load task is finished.
   void UpdateCertificates(net::CertificateList* cert_list);
 
   void NotifyCertificatesLoaded(bool initial_load);
 
   // net::CertDatabase::Observer
-  virtual void OnCertTrustChanged(const net::X509Certificate* cert) OVERRIDE;
+  virtual void OnCACertChanged(const net::X509Certificate* cert) OVERRIDE;
   virtual void OnCertAdded(const net::X509Certificate* cert) OVERRIDE;
   virtual void OnCertRemoved(const net::X509Certificate* cert) OVERRIDE;
 
   // LoginState::Observer
-  virtual void LoggedInStateChanged(LoginState::LoggedInState state) OVERRIDE;
+  virtual void LoggedInStateChanged() OVERRIDE;
+
+  bool initialize_tpm_for_test_;
 
   ObserverList<Observer> observers_;
 
@@ -163,7 +178,7 @@ class CHROMEOS_EXPORT CertLoader : public net::CertDatabase::Observer,
 
   // Cached TPM token info.
   std::string tpm_token_name_;
-  std::string tpm_token_slot_;
+  int tpm_token_slot_id_;
   std::string tpm_user_pin_;
 
   // Cached Certificates.

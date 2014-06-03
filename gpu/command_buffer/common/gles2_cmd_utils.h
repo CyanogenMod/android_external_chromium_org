@@ -132,6 +132,11 @@ class GLES2_UTILS_EXPORT GLES2Util {
 
   static uint32 IndexToGLFaceTarget(int index);
 
+  static uint32 GetPreferredGLReadPixelsFormat(uint32 internal_format);
+
+  static uint32 GetPreferredGLReadPixelsType(
+      uint32 internal_format, uint32 texture_type);
+
   // Returns a bitmask for the channels the given format supports.
   // See ChannelBits.
   static uint32 GetChannelsForFormat(int format);
@@ -174,9 +179,11 @@ class GLES2_UTILS_EXPORT GLES2Util {
   int num_shader_binary_formats_;
 };
 
-class GLES2_UTILS_EXPORT ContextCreationAttribParser {
+class GLES2_UTILS_EXPORT ContextCreationAttribHelper {
  public:
-  ContextCreationAttribParser();
+  ContextCreationAttribHelper();
+
+  void Serialize(std::vector<int32>* attribs);
   bool Parse(const std::vector<int32>& attribs);
 
   // -1 if invalid or unspecified.
@@ -191,6 +198,7 @@ class GLES2_UTILS_EXPORT ContextCreationAttribParser {
   bool buffer_preserved_;
   bool share_resources_;
   bool bind_generates_resource_;
+  bool fail_if_major_perf_caveat_;
 };
 
 }  // namespace gles2

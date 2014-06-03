@@ -19,6 +19,7 @@ MappedHostResolver::~MappedHostResolver() {
 }
 
 int MappedHostResolver::Resolve(const RequestInfo& original_info,
+                                RequestPriority priority,
                                 AddressList* addresses,
                                 const CompletionCallback& callback,
                                 RequestHandle* out_req,
@@ -28,7 +29,7 @@ int MappedHostResolver::Resolve(const RequestInfo& original_info,
   if (rv != OK)
     return rv;
 
-  return impl_->Resolve(info, addresses, callback, out_req, net_log);
+  return impl_->Resolve(info, priority, addresses, callback, out_req, net_log);
 }
 
 int MappedHostResolver::ResolveFromCache(const RequestInfo& original_info,
@@ -46,8 +47,16 @@ void MappedHostResolver::CancelRequest(RequestHandle req) {
   impl_->CancelRequest(req);
 }
 
+void MappedHostResolver::SetDnsClientEnabled(bool enabled) {
+  impl_->SetDnsClientEnabled(enabled);
+}
+
 HostCache* MappedHostResolver::GetHostCache() {
   return impl_->GetHostCache();
+}
+
+base::Value* MappedHostResolver::GetDnsConfigAsValue() const {
+  return impl_->GetDnsConfigAsValue();
 }
 
 int MappedHostResolver::ApplyRules(RequestInfo* info) const {

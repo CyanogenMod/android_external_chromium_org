@@ -32,6 +32,10 @@ FileSystemURL CreateFileSystemURL(const std::string& extension,
 }
 
 TEST(ChromeOSFileSystemBackendTest, DefaultMountPoints) {
+  // Make sure no system-level mount points are registered before testing
+  // to avoid flakiness.
+  fileapi::ExternalMountPoints::GetSystemInstance()->RevokeAllFileSystems();
+
   scoped_refptr<quota::SpecialStoragePolicy> storage_policy =
       new quota::MockSpecialStoragePolicy();
   scoped_refptr<fileapi::ExternalMountPoints> mount_points(
@@ -45,12 +49,9 @@ TEST(ChromeOSFileSystemBackendTest, DefaultMountPoints) {
   std::vector<base::FilePath> root_dirs = backend.GetRootDirectories();
   std::set<base::FilePath> root_dirs_set(root_dirs.begin(), root_dirs.end());
 
-  // By default there should be 4 mount points (in system mount points):
-  EXPECT_EQ(4u, root_dirs.size());
-  base::FilePath home_path;
-  ASSERT_TRUE(PathService::Get(base::DIR_HOME, &home_path));
+  // By default there should be 3 mount points (in system mount points):
+  EXPECT_EQ(3u, root_dirs.size());
 
-  EXPECT_TRUE(root_dirs_set.count(home_path.AppendASCII("Downloads")));
   EXPECT_TRUE(root_dirs_set.count(
       chromeos::CrosDisksClient::GetRemovableDiskMountPoint()));
   EXPECT_TRUE(root_dirs_set.count(
@@ -78,17 +79,21 @@ TEST(ChromeOSFileSystemBackendTest, GetRootDirectories) {
   // Register 'local' test mount points.
   mount_points->RegisterFileSystem("c",
                                    fileapi::kFileSystemTypeNativeLocal,
+                                   fileapi::FileSystemMountOption(),
                                    base::FilePath(FPL("/a/b/c")));
   mount_points->RegisterFileSystem("d",
                                    fileapi::kFileSystemTypeNativeLocal,
+                                   fileapi::FileSystemMountOption(),
                                    base::FilePath(FPL("/b/c/d")));
 
   // Register system test mount points.
   system_mount_points->RegisterFileSystem("d",
                                           fileapi::kFileSystemTypeNativeLocal,
+                                          fileapi::FileSystemMountOption(),
                                           base::FilePath(FPL("/g/c/d")));
   system_mount_points->RegisterFileSystem("e",
                                           fileapi::kFileSystemTypeNativeLocal,
+                                          fileapi::FileSystemMountOption(),
                                           base::FilePath(FPL("/g/d/e")));
 
   std::vector<base::FilePath> root_dirs = backend.GetRootDirectories();
@@ -123,14 +128,17 @@ TEST(ChromeOSFileSystemBackendTest, AccessPermissions) {
   ASSERT_TRUE(system_mount_points->RegisterFileSystem(
       "system",
       fileapi::kFileSystemTypeNativeLocal,
+      fileapi::FileSystemMountOption(),
       base::FilePath(FPL("/g/system"))));
   ASSERT_TRUE(mount_points->RegisterFileSystem(
       "removable",
       fileapi::kFileSystemTypeNativeLocal,
+      fileapi::FileSystemMountOption(),
       base::FilePath(FPL("/media/removable"))));
   ASSERT_TRUE(mount_points->RegisterFileSystem(
       "oem",
       fileapi::kFileSystemTypeRestrictedNativeLocal,
+      fileapi::FileSystemMountOption(),
       base::FilePath(FPL("/usr/share/oem"))));
 
   // Backend specific mount point access.
@@ -182,6 +190,7 @@ TEST(ChromeOSFileSystemBackendTest, AccessPermissions) {
   ASSERT_TRUE(mount_points->RegisterFileSystem(
       "test",
       fileapi::kFileSystemTypeNativeLocal,
+      fileapi::FileSystemMountOption(),
       base::FilePath(FPL("/foo/test"))));
   EXPECT_FALSE(backend.IsAccessAllowed(
       CreateFileSystemURL(extension, "test_/foo", mount_points.get())));
@@ -212,23 +221,25 @@ TEST(ChromeOSFileSystemBackendTest, GetVirtualPathConflictWithSystemPoints) {
       system_mount_points.get());
 
   const fileapi::FileSystemType type = fileapi::kFileSystemTypeNativeLocal;
+  const fileapi::FileSystemMountOption option =
+      fileapi::FileSystemMountOption();
 
   // Backend specific mount points.
-  ASSERT_TRUE(
-      mount_points->RegisterFileSystem("b", type, base::FilePath(FPL("/a/b"))));
-  ASSERT_TRUE(
-      mount_points->RegisterFileSystem("y", type, base::FilePath(FPL("/z/y"))));
-  ASSERT_TRUE(
-      mount_points->RegisterFileSystem("n", type, base::FilePath(FPL("/m/n"))));
+  ASSERT_TRUE(mount_points->RegisterFileSystem(
+      "b", type, option, base::FilePath(FPL("/a/b"))));
+  ASSERT_TRUE(mount_points->RegisterFileSystem(
+      "y", type, option, base::FilePath(FPL("/z/y"))));
+  ASSERT_TRUE(mount_points->RegisterFileSystem(
+      "n", type, option, base::FilePath(FPL("/m/n"))));
 
   // System mount points
   ASSERT_TRUE(system_mount_points->RegisterFileSystem(
-      "gb", type, base::FilePath(FPL("/a/b"))));
+      "gb", type, option, base::FilePath(FPL("/a/b"))));
   ASSERT_TRUE(
       system_mount_points->RegisterFileSystem(
-          "gz", type, base::FilePath(FPL("/z"))));
+          "gz", type, option, base::FilePath(FPL("/z"))));
   ASSERT_TRUE(system_mount_points->RegisterFileSystem(
-       "gp", type, base::FilePath(FPL("/m/n/o/p"))));
+       "gp", type, option, base::FilePath(FPL("/m/n/o/p"))));
 
   struct TestCase {
     const base::FilePath::CharType* const local_path;

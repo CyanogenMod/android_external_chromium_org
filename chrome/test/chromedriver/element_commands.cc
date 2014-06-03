@@ -33,7 +33,8 @@ Status SendKeysToElement(
     const std::string& element_id,
     const ListValue* key_list) {
   bool is_displayed = false;
-  base::Time start_time = base::Time::Now();
+  bool is_focused = false;
+  base::TimeTicks start_time = base::TimeTicks::Now();
   while (true) {
     Status status = IsElementDisplayed(
         session, web_view, element_id, true, &is_displayed);
@@ -41,25 +42,34 @@ Status SendKeysToElement(
       return status;
     if (is_displayed)
       break;
-    if ((base::Time::Now() - start_time).InMilliseconds() >=
-        session->implicit_wait) {
+    status = IsElementFocused(session, web_view, element_id, &is_focused);
+    if (status.IsError())
+      return status;
+    if (is_focused)
+      break;
+    if (base::TimeTicks::Now() - start_time >= session->implicit_wait) {
       return Status(kElementNotVisible);
     }
     base::PlatformThread::Sleep(base::TimeDelta::FromMilliseconds(100));
   }
+
   bool is_enabled = false;
   Status status = IsElementEnabled(session, web_view, element_id, &is_enabled);
   if (status.IsError())
     return status;
   if (!is_enabled)
     return Status(kInvalidElementState);
-  base::ListValue args;
-  args.Append(CreateElement(element_id));
-  scoped_ptr<base::Value> result;
-  status = web_view->CallFunction(
-      session->GetCurrentFrameId(), kFocusScript, args, &result);
-  if (status.IsError())
-    return status;
+
+  if (!is_focused) {
+    base::ListValue args;
+    args.Append(CreateElement(element_id));
+    scoped_ptr<base::Value> result;
+    status = web_view->CallFunction(
+        session->GetCurrentFrameId(), kFocusScript, args, &result);
+    if (status.IsError())
+      return status;
+  }
+
   return SendKeysOnWindow(web_view, key_list, true, &session->sticky_modifiers);
 }
 

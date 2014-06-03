@@ -10,11 +10,12 @@
 #include "ash/desktop_background/desktop_background_widget_controller.h"
 #include "ash/desktop_background/user_wallpaper_delegate.h"
 #include "ash/desktop_background/wallpaper_resizer.h"
+#include "ash/display/display_info.h"
+#include "ash/display/display_manager.h"
 #include "ash/root_window_controller.h"
 #include "ash/shell.h"
 #include "ash/shell_factory.h"
 #include "ash/shell_window_ids.h"
-#include "ash/wm/property_util.h"
 #include "ash/wm/root_window_layout_manager.h"
 #include "base/bind.h"
 #include "base/command_line.h"
@@ -38,29 +39,9 @@ using content::BrowserThread;
 namespace ash {
 namespace {
 
-const SkColor kTransparentColor = SkColorSetARGB(0x00, 0x00, 0x00, 0x00);
-
-internal::RootWindowLayoutManager* GetRootWindowLayoutManager(
-    aura::RootWindow* root_window) {
-  return static_cast<internal::RootWindowLayoutManager*>(
-      root_window->layout_manager());
-}
-
-// Returns the maximum width and height of all root windows.
-gfx::Size GetRootWindowsSize() {
-  int width = 0;
-  int height = 0;
-  Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
-  for (Shell::RootWindowList::iterator iter = root_windows.begin();
-       iter != root_windows.end(); ++iter) {
-    gfx::Size root_window_size = (*iter)->GetHostSize();
-    if (root_window_size.width() > width)
-      width = root_window_size.width();
-    if (root_window_size.height() > height)
-      height = root_window_size.height();
-  }
-  return gfx::Size(width, height);
-}
+// How long to wait reloading the wallpaper after the max display has
+// changed?
+const int kWallpaperReloadDelayMs = 2000;
 
 }  // namespace
 
@@ -115,7 +96,7 @@ class DesktopBackgroundController::WallpaperLoader
   static scoped_ptr<SkBitmap> LoadSkBitmapFromJPEGFile(
       const base::FilePath& path) {
     std::string data;
-    if (!file_util::ReadFileToString(path, &data)) {
+    if (!base::ReadFileToString(path, &data)) {
       LOG(ERROR) << "Unable to read data from " << path.value();
       return scoped_ptr<SkBitmap>();
     }
@@ -140,10 +121,10 @@ class DesktopBackgroundController::WallpaperLoader
     if (file_bitmap_) {
       gfx::ImageSkia image = gfx::ImageSkia::CreateFrom1xBitmap(*file_bitmap_);
       wallpaper_resizer_.reset(new WallpaperResizer(
-          image, GetRootWindowsSize(), file_layout_));
+          image, GetMaxDisplaySizeInNative(), file_layout_));
     } else {
       wallpaper_resizer_.reset(new WallpaperResizer(
-          resource_id_, GetRootWindowsSize(), resource_layout_));
+          resource_id_, GetMaxDisplaySizeInNative(), resource_layout_));
     }
   }
 
@@ -175,18 +156,20 @@ DesktopBackgroundController::DesktopBackgroundController()
     : command_line_for_testing_(NULL),
       locked_(false),
       desktop_background_mode_(BACKGROUND_NONE),
-      background_color_(kTransparentColor),
       current_default_wallpaper_resource_id_(-1),
-      weak_ptr_factory_(this) {
+      weak_ptr_factory_(this),
+      wallpaper_reload_delay_(kWallpaperReloadDelayMs) {
+  Shell::GetInstance()->display_controller()->AddObserver(this);
 }
 
 DesktopBackgroundController::~DesktopBackgroundController() {
   CancelPendingWallpaperOperation();
+  Shell::GetInstance()->display_controller()->RemoveObserver(this);
 }
 
 gfx::ImageSkia DesktopBackgroundController::GetWallpaper() const {
   if (current_wallpaper_)
-    return current_wallpaper_->wallpaper_image();
+    return current_wallpaper_->image();
   return gfx::ImageSkia();
 }
 
@@ -206,28 +189,18 @@ WallpaperLayout DesktopBackgroundController::GetWallpaperLayout() const {
   return WALLPAPER_LAYOUT_CENTER_CROPPED;
 }
 
-void DesktopBackgroundController::OnRootWindowAdded(
-    aura::RootWindow* root_window) {
+void DesktopBackgroundController::OnRootWindowAdded(aura::Window* root_window) {
   // The background hasn't been set yet.
   if (desktop_background_mode_ == BACKGROUND_NONE)
     return;
 
   // Handle resolution change for "built-in" images.
-  if (BACKGROUND_IMAGE == desktop_background_mode_ &&
-      current_wallpaper_.get()) {
-    gfx::Size root_window_size = root_window->GetHostSize();
-    int width = current_wallpaper_->wallpaper_image().width();
-    int height = current_wallpaper_->wallpaper_image().height();
-    // Reloads wallpaper if current wallpaper is smaller than the new added root
-    // window.
-    if (width < root_window_size.width() ||
-        height < root_window_size.height()) {
-      current_wallpaper_.reset(NULL);
-      current_default_wallpaper_path_ = base::FilePath();
-      current_default_wallpaper_resource_id_ = -1;
-      ash::Shell::GetInstance()->user_wallpaper_delegate()->
-          UpdateWallpaper();
-    }
+  gfx::Size max_display_size = GetMaxDisplaySizeInNative();
+  if (current_max_display_size_ != max_display_size) {
+    current_max_display_size_ = max_display_size;
+    if (desktop_background_mode_ == BACKGROUND_IMAGE &&
+        current_wallpaper_.get())
+      UpdateWallpaper();
   }
 
   InstallDesktopController(root_window);
@@ -244,13 +217,16 @@ bool DesktopBackgroundController::SetDefaultWallpaper(bool is_guest) {
       IDR_AURA_WALLPAPER_DEFAULT_SMALL;
   WallpaperLayout resource_layout = WALLPAPER_LAYOUT_TILE;
 
-  const char* switch_name = is_guest ?
-      (use_large ? switches::kAshDefaultGuestWallpaperLarge :
-       switches::kAshDefaultGuestWallpaperSmall) :
-      (use_large ? switches::kAshDefaultWallpaperLarge :
-       switches::kAshDefaultWallpaperSmall);
   CommandLine* command_line = command_line_for_testing_ ?
       command_line_for_testing_ : CommandLine::ForCurrentProcess();
+  const char* switch_name = NULL;
+  if (is_guest) {
+    switch_name = use_large ? switches::kAshGuestWallpaperLarge :
+        switches::kAshGuestWallpaperSmall;
+  } else {
+    switch_name = use_large ? switches::kAshDefaultWallpaperLarge :
+        switches::kAshDefaultWallpaperSmall;
+  }
   file_path = command_line->GetSwitchValuePath(switch_name);
 
   if (DefaultWallpaperIsAlreadyLoadingOrLoaded(file_path, resource_id))
@@ -277,7 +253,7 @@ void DesktopBackgroundController::SetCustomWallpaper(
     return;
 
   current_wallpaper_.reset(new WallpaperResizer(
-      image, GetRootWindowsSize(), layout));
+      image, GetMaxDisplaySizeInNative(), layout));
   current_wallpaper_->StartResize();
 
   current_default_wallpaper_path_ = base::FilePath();
@@ -297,14 +273,6 @@ void DesktopBackgroundController::CancelPendingWallpaperOperation() {
   weak_ptr_factory_.InvalidateWeakPtrs();
 }
 
-void DesktopBackgroundController::SetDesktopBackgroundSolidColorMode(
-    SkColor color) {
-  background_color_ = color;
-  desktop_background_mode_ = BACKGROUND_SOLID_COLOR;
-
-  InstallDesktopControllerForAllWindows();
-}
-
 void DesktopBackgroundController::CreateEmptyWallpaper() {
   current_wallpaper_.reset(NULL);
   SetDesktopBackgroundImageMode();
@@ -312,19 +280,10 @@ void DesktopBackgroundController::CreateEmptyWallpaper() {
 
 WallpaperResolution DesktopBackgroundController::GetAppropriateResolution() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
-  for (Shell::RootWindowList::iterator iter = root_windows.begin();
-       iter != root_windows.end(); ++iter) {
-    // Compare to host size as constants are defined in terms of
-    // physical pixel size.
-    // TODO(oshima): This may not be ideal for fractional scaling
-    // scenario. Revisit and fix if necessary.
-    gfx::Size host_window_size = (*iter)->GetHostSize();
-    if (host_window_size.width() > kSmallWallpaperMaxWidth ||
-        host_window_size.height() > kSmallWallpaperMaxHeight)
-      return WALLPAPER_RESOLUTION_LARGE;
-  }
-  return WALLPAPER_RESOLUTION_SMALL;
+  gfx::Size size = GetMaxDisplaySizeInNative();
+  return (size.width() > kSmallWallpaperMaxWidth ||
+          size.height() > kSmallWallpaperMaxHeight) ?
+      WALLPAPER_RESOLUTION_LARGE : WALLPAPER_RESOLUTION_SMALL;
 }
 
 bool DesktopBackgroundController::MoveDesktopToLockedContainer() {
@@ -343,6 +302,21 @@ bool DesktopBackgroundController::MoveDesktopToUnlockedContainer() {
                                    GetBackgroundContainerId(false));
 }
 
+void DesktopBackgroundController::OnDisplayConfigurationChanged() {
+  gfx::Size max_display_size = GetMaxDisplaySizeInNative();
+  if (current_max_display_size_ != max_display_size) {
+    current_max_display_size_ = max_display_size;
+    if (desktop_background_mode_ == BACKGROUND_IMAGE &&
+        current_wallpaper_.get()) {
+      timer_.Stop();
+      timer_.Start(FROM_HERE,
+                   base::TimeDelta::FromMilliseconds(wallpaper_reload_delay_),
+                   this,
+                   &DesktopBackgroundController::UpdateWallpaper);
+    }
+  }
+}
+
 bool DesktopBackgroundController::DefaultWallpaperIsAlreadyLoadingOrLoaded(
     const base::FilePath& image_file, int image_resource_id) const {
   return (wallpaper_loader_.get() &&
@@ -356,7 +330,8 @@ bool DesktopBackgroundController::DefaultWallpaperIsAlreadyLoadingOrLoaded(
 bool DesktopBackgroundController::CustomWallpaperIsAlreadyLoaded(
     const gfx::ImageSkia& image) const {
   return current_wallpaper_.get() &&
-      current_wallpaper_->wallpaper_image().BackedBySameObjectAs(image);
+      (WallpaperResizer::GetImageId(image) ==
+       current_wallpaper_->original_image_id());
 }
 
 void DesktopBackgroundController::SetDesktopBackgroundImageMode() {
@@ -379,20 +354,8 @@ void DesktopBackgroundController::OnDefaultWallpaperLoadCompleted(
   wallpaper_loader_ = NULL;
 }
 
-ui::Layer* DesktopBackgroundController::SetColorLayerForContainer(
-    SkColor color,
-    aura::RootWindow* root_window,
-    int container_id) {
-  ui::Layer* background_layer = new ui::Layer(ui::LAYER_SOLID_COLOR);
-  background_layer->SetColor(color);
-
-  Shell::GetContainer(root_window,container_id)->
-      layer()->Add(background_layer);
-  return background_layer;
-}
-
 void DesktopBackgroundController::InstallDesktopController(
-    aura::RootWindow* root_window) {
+    aura::Window* root_window) {
   internal::DesktopBackgroundWidgetController* component = NULL;
   int container_id = GetBackgroundContainerId(locked_);
 
@@ -403,29 +366,24 @@ void DesktopBackgroundController::InstallDesktopController(
       component = new internal::DesktopBackgroundWidgetController(widget);
       break;
     }
-    case BACKGROUND_SOLID_COLOR: {
-      ui::Layer* layer = SetColorLayerForContainer(background_color_,
-                                                   root_window,
-                                                   container_id);
-      component = new internal::DesktopBackgroundWidgetController(layer);
-      break;
-    }
     case BACKGROUND_NONE:
       NOTREACHED();
       return;
   }
-  GetRootWindowController(root_window)->SetAnimatingWallpaperController(
-      new internal::AnimatingDesktopController(component));
+  internal::GetRootWindowController(root_window)->
+      SetAnimatingWallpaperController(
+          new internal::AnimatingDesktopController(component));
 
-  component->StartAnimating(GetRootWindowController(root_window));
+  component->StartAnimating(internal::GetRootWindowController(root_window));
 }
 
 void DesktopBackgroundController::InstallDesktopControllerForAllWindows() {
-  Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
-  for (Shell::RootWindowList::iterator iter = root_windows.begin();
+  aura::Window::Windows root_windows = Shell::GetAllRootWindows();
+  for (aura::Window::Windows::iterator iter = root_windows.begin();
        iter != root_windows.end(); ++iter) {
     InstallDesktopController(*iter);
   }
+  current_max_display_size_ = GetMaxDisplaySizeInNative();
 }
 
 bool DesktopBackgroundController::ReparentBackgroundWidgets(int src_container,
@@ -469,6 +427,37 @@ bool DesktopBackgroundController::ReparentBackgroundWidgets(int src_container,
 int DesktopBackgroundController::GetBackgroundContainerId(bool locked) {
   return locked ? internal::kShellWindowId_LockScreenBackgroundContainer :
                   internal::kShellWindowId_DesktopBackgroundContainer;
+}
+
+void DesktopBackgroundController::UpdateWallpaper() {
+  current_wallpaper_.reset(NULL);
+  current_default_wallpaper_path_ = base::FilePath();
+  current_default_wallpaper_resource_id_ = -1;
+  ash::Shell::GetInstance()->user_wallpaper_delegate()->
+      UpdateWallpaper();
+}
+
+// static
+gfx::Size DesktopBackgroundController::GetMaxDisplaySizeInNative() {
+  int width = 0;
+  int height = 0;
+  std::vector<gfx::Display> displays = Shell::GetScreen()->GetAllDisplays();
+  internal::DisplayManager* display_manager =
+      Shell::GetInstance()->display_manager();
+
+  for (std::vector<gfx::Display>::iterator iter = displays.begin();
+       iter != displays.end(); ++iter) {
+    // Don't use size_in_pixel because we want to use the native pixel size.
+    gfx::Size size_in_pixel =
+        display_manager->GetDisplayInfo(iter->id()).bounds_in_native().size();
+    if (iter->rotation() == gfx::Display::ROTATE_90 ||
+        iter->rotation() == gfx::Display::ROTATE_270) {
+      size_in_pixel = gfx::Size(size_in_pixel.height(), size_in_pixel.width());
+    }
+    width = std::max(size_in_pixel.width(), width);
+    height = std::max(size_in_pixel.height(), height);
+  }
+  return gfx::Size(width, height);
 }
 
 }  // namespace ash

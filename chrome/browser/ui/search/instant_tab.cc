@@ -21,43 +21,10 @@ void InstantTab::Init(content::WebContents* contents) {
 }
 
 // static
-void InstantTab::CountMouseover(content::WebContents* contents) {
-  NTPUserDataLogger* data = NTPUserDataLogger::FromWebContents(contents);
-  if (data)
-    data->increment_number_of_mouseovers();
-}
-
-// static
-void InstantTab::EmitMouseoverCount(content::WebContents* contents) {
-  NTPUserDataLogger* data = NTPUserDataLogger::FromWebContents(contents);
-  if (data)
-    data->EmitMouseoverCount();
+void InstantTab::EmitNtpStatistics(content::WebContents* contents) {
+  NTPUserDataLogger::GetOrCreateFromWebContents(contents)->EmitNtpStatistics();
 }
 
 bool InstantTab::ShouldProcessAboutToNavigateMainFrame() {
-  return true;
-}
-
-bool InstantTab::ShouldProcessFocusOmnibox() {
-  return true;
-}
-
-bool InstantTab::ShouldProcessNavigateToURL() {
-  return true;
-}
-
-bool InstantTab::ShouldProcessPasteIntoOmnibox() {
-  return true;
-}
-
-bool InstantTab::ShouldProcessDeleteMostVisitedItem() {
-  return true;
-}
-
-bool InstantTab::ShouldProcessUndoMostVisitedDeletion() {
-  return true;
-}
-
-bool InstantTab::ShouldProcessUndoAllMostVisitedDeletions() {
   return true;
 }

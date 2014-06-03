@@ -10,7 +10,7 @@
 #include "build/build_config.h"
 #include "content/common/content_export.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
-#include "ui/base/events/event_constants.h"
+#include "ui/events/event_constants.h"
 #include "ui/gfx/native_widget_types.h"
 
 namespace content {
@@ -18,7 +18,7 @@ namespace content {
 // Owns a platform specific event; used to pass own and pass event through
 // platform independent code.
 struct CONTENT_EXPORT NativeWebKeyboardEvent :
-  NON_EXPORTED_BASE(public WebKit::WebKeyboardEvent) {
+  NON_EXPORTED_BASE(public blink::WebKeyboardEvent) {
   NativeWebKeyboardEvent();
 
   explicit NativeWebKeyboardEvent(gfx::NativeEvent native_event);
@@ -37,7 +37,7 @@ struct CONTENT_EXPORT NativeWebKeyboardEvent :
                          int state,
                          double time_stamp_seconds);
 #elif defined(OS_ANDROID)
-  NativeWebKeyboardEvent(WebKit::WebInputEvent::Type type,
+  NativeWebKeyboardEvent(blink::WebInputEvent::Type type,
                          int modifiers,
                          double time_secs,
                          int keycode,
@@ -45,7 +45,7 @@ struct CONTENT_EXPORT NativeWebKeyboardEvent :
                          bool is_system_key);
   // Takes ownership of android_key_event.
   NativeWebKeyboardEvent(jobject android_key_event,
-                         WebKit::WebInputEvent::Type type,
+                         blink::WebInputEvent::Type type,
                          int modifiers,
                          double time_secs,
                          int keycode,
@@ -75,7 +75,7 @@ struct CONTENT_EXPORT NativeWebKeyboardEvent :
 #endif
 };
 
-// Returns a bitmak of values from ui/base/events/event_constants.h.
+// Returns a bitmak of values from ui/events/event_constants.h.
 CONTENT_EXPORT int GetModifiersFromNativeWebKeyboardEvent(
     const NativeWebKeyboardEvent& event);
 

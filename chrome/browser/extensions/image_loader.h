@@ -16,7 +16,9 @@
 #include "ui/base/layout.h"
 #include "ui/gfx/size.h"
 
-class Profile;
+namespace content {
+class BrowserContext;
+}
 
 namespace gfx {
 class Image;
@@ -25,6 +27,8 @@ class Image;
 namespace extensions {
 
 class Extension;
+
+typedef base::Callback<void(const gfx::Image&)> ImageLoaderCallback;
 
 // This class is responsible for asynchronously loading extension images and
 // calling a callback when an image is loaded.
@@ -64,9 +68,9 @@ class ImageLoader : public BrowserContextKeyedService {
 
   struct LoadResult;
 
-  // Returns the instance for the given profile, or NULL if none. This is
-  // a convenience wrapper around ImageLoaderFactory::GetForProfile.
-  static ImageLoader* Get(Profile* profile);
+  // Returns the instance for the given |context| or NULL if none. This is
+  // a convenience wrapper around ImageLoaderFactory::GetForBrowserContext.
+  static ImageLoader* Get(content::BrowserContext* context);
 
   ImageLoader();
   virtual ~ImageLoader();
@@ -89,26 +93,22 @@ class ImageLoader : public BrowserContextKeyedService {
   void LoadImageAsync(const extensions::Extension* extension,
                       const ExtensionResource& resource,
                       const gfx::Size& max_size,
-                      const base::Callback<void(const gfx::Image&)>& callback);
+                      const ImageLoaderCallback& callback);
 
   // Same as LoadImage() above except it loads multiple images from the same
   // extension. This is used to load multiple resolutions of the same image
   // type.
   void LoadImagesAsync(const extensions::Extension* extension,
                        const std::vector<ImageRepresentation>& info_list,
-                       const base::Callback<void(const gfx::Image&)>& callback);
+                       const ImageLoaderCallback& callback);
 
  private:
+  void ReplyBack(const ImageLoaderCallback& callback,
+                 const std::vector<LoadResult>& load_result);
+
   base::WeakPtrFactory<ImageLoader> weak_ptr_factory_;
 
-  static void LoadImagesOnBlockingPool(
-      const std::vector<ImageRepresentation>& info_list,
-      const std::vector<SkBitmap>& bitmaps,
-      std::vector<LoadResult>* load_result);
-
-  void ReplyBack(
-      const std::vector<LoadResult>* load_result,
-      const base::Callback<void(const gfx::Image&)>& callback);
+  DISALLOW_COPY_AND_ASSIGN(ImageLoader);
 };
 
 }  // namespace extensions

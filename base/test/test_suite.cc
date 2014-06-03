@@ -7,19 +7,25 @@
 #include "base/at_exit.h"
 #include "base/base_paths.h"
 #include "base/base_switches.h"
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/debug/debug_on_start_win.h"
 #include "base/debug/debugger.h"
 #include "base/debug/stack_trace.h"
+#include "base/file_util.h"
 #include "base/files/file_path.h"
 #include "base/i18n/icu_util.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
 #include "base/process/memory.h"
+#include "base/test/gtest_xml_util.h"
+#include "base/test/launcher/unit_test_launcher.h"
 #include "base/test/multiprocess_test.h"
+#include "base/test/test_switches.h"
 #include "base/test/test_timeouts.h"
 #include "base/time/time.h"
+#include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/multiprocess_func_list.h"
 
@@ -78,6 +84,16 @@ class TestClientInitializer : public testing::EmptyTestEventListener {
 
 }  // namespace
 
+namespace base {
+
+int RunUnitTestsUsingBaseTestSuite(int argc, char **argv) {
+  TestSuite test_suite(argc, argv);
+  return base::LaunchUnitTests(
+      argc, argv, Bind(&TestSuite::Run, Unretained(&test_suite)));
+}
+
+}  // namespace base
+
 TestSuite::TestSuite(int argc, char** argv) : initialized_command_line_(false) {
   PreInitialize(argc, argv, true);
 }
@@ -96,10 +112,12 @@ void TestSuite::PreInitialize(int argc, char** argv,
                               bool create_at_exit_manager) {
 #if defined(OS_WIN)
   testing::GTEST_FLAG(catch_exceptions) = false;
+  base::TimeTicks::SetNowIsHighResNowIfSupported();
 #endif
   base::EnableTerminationOnHeapCorruption();
   initialized_command_line_ = CommandLine::Init(argc, argv);
   testing::InitGoogleTest(&argc, argv);
+  testing::InitGoogleMock(&argc, argv);
 #if defined(OS_LINUX) && defined(USE_AURA)
   // When calling native char conversion functions (e.g wrctomb) we need to
   // have the locale set. In the absence of such a call the "C" locale is the
@@ -141,6 +159,34 @@ void TestSuite::ResetCommandLine() {
       testing::UnitTest::GetInstance()->listeners();
   listeners.Append(new TestClientInitializer);
 }
+
+#if !defined(OS_IOS)
+void TestSuite::AddTestLauncherResultPrinter() {
+  // Only add the custom printer if requested.
+  if (!CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kTestLauncherOutput)) {
+    return;
+  }
+
+  FilePath output_path(CommandLine::ForCurrentProcess()->GetSwitchValuePath(
+                           switches::kTestLauncherOutput));
+
+  // Do not add the result printer if output path already exists. It's an
+  // indicator there is a process printing to that file, and we're likely
+  // its child. Do not clobber the results in that case.
+  if (PathExists(output_path)) {
+    LOG(WARNING) << "Test launcher output path " << output_path.AsUTF8Unsafe()
+                 << " exists. Not adding test launcher result printer.";
+    return;
+  }
+
+  XmlUnitTestResultPrinter* printer = new XmlUnitTestResultPrinter;
+  CHECK(printer->Initialize(output_path));
+  testing::TestEventListeners& listeners =
+      testing::UnitTest::GetInstance()->listeners();
+  listeners.Append(printer);
+}
+#endif  // !defined(OS_IOS)
 
 // Don't add additional code to this method.  Instead add it to
 // Initialize().  See bug 6436.
@@ -246,10 +292,13 @@ void TestSuite::Initialize() {
     logging::SetLogAssertHandler(UnitTestAssertHandler);
   }
 
-  icu_util::Initialize();
+  base::i18n::InitializeICU();
 
   CatchMaybeTests();
   ResetCommandLine();
+#if !defined(OS_IOS)
+  AddTestLauncherResultPrinter();
+#endif  // !defined(OS_IOS)
 
   TestTimeouts::Initialize();
 }

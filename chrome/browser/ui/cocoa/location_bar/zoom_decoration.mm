@@ -7,7 +7,6 @@
 #include "base/strings/string16.h"
 #include "base/strings/string_number_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
-#import "chrome/browser/ui/cocoa/browser/zoom_bubble_controller.h"
 #import "chrome/browser/ui/cocoa/location_bar/autocomplete_text_field.h"
 #import "chrome/browser/ui/cocoa/location_bar/autocomplete_text_field_cell.h"
 #import "chrome/browser/ui/cocoa/location_bar/location_bar_view_mac.h"
@@ -35,21 +34,19 @@ void ZoomDecoration::Update(ZoomController* zoom_controller) {
   SetImage(OmniboxViewMac::ImageForResource(
       zoom_controller->GetResourceForZoomLevel()));
 
-  string16 zoom_percent = base::IntToString16(zoom_controller->zoom_percent());
+  base::string16 zoom_percent =
+      base::IntToString16(zoom_controller->zoom_percent());
   NSString* zoom_string =
       l10n_util::GetNSStringFWithFixup(IDS_TOOLTIP_ZOOM, zoom_percent);
   tooltip_.reset([zoom_string retain]);
 
   SetVisible(true);
-
   [bubble_ onZoomChanged];
 }
 
-void ZoomDecoration::ToggleBubble(BOOL auto_close) {
-  if (bubble_) {
-    [bubble_ close];
+void ZoomDecoration::ShowBubble(BOOL auto_close) {
+  if (bubble_)
     return;
-  }
 
   content::WebContents* web_contents = owner_->GetWebContents();
   if (!web_contents)
@@ -57,32 +54,21 @@ void ZoomDecoration::ToggleBubble(BOOL auto_close) {
 
   // Get the frame of the decoration.
   AutocompleteTextField* field = owner_->GetAutocompleteTextField();
-  AutocompleteTextFieldCell* cell = [field cell];
-  const NSRect frame = [cell frameForDecoration:this
-                                        inFrame:[field bounds]];
+  const NSRect frame =
+      [[field cell] frameForDecoration:this inFrame:[field bounds]];
 
   // Find point for bubble's arrow in screen coordinates.
   NSPoint anchor = GetBubblePointInFrame(frame);
   anchor = [field convertPoint:anchor toView:nil];
   anchor = [[field window] convertBaseToScreen:anchor];
 
-  if (!bubble_) {
-    void(^observer)(ZoomBubbleController*) = ^(ZoomBubbleController*) {
-        bubble_ = nil;
-        // If the page is at default zoom then hiding the zoom decoration was
-        // suppressed while the bubble was open. Now that the bubble is closed
-        // the decoration can be hidden.
-        if (IsAtDefaultZoom())
-          SetVisible(false);
-    };
-    bubble_ =
-        [[ZoomBubbleController alloc] initWithParentWindow:[field window]
-                                             closeObserver:observer];
-  }
+  bubble_ = [[ZoomBubbleController alloc] initWithParentWindow:[field window]
+                                                      delegate:this];
+  [bubble_ showAnchoredAt:anchor autoClose:auto_close];
+}
 
-  [bubble_ showForWebContents:web_contents
-                   anchoredAt:anchor
-                    autoClose:auto_close];
+void ZoomDecoration::CloseBubble() {
+  [bubble_ close];
 }
 
 NSPoint ZoomDecoration::GetBubblePointInFrame(NSRect frame) {
@@ -93,17 +79,16 @@ bool ZoomDecoration::IsAtDefaultZoom() const {
   content::WebContents* web_contents = owner_->GetWebContents();
   if (!web_contents)
     return false;
+
   ZoomController* zoomController =
       ZoomController::FromWebContents(web_contents);
   return zoomController && zoomController->IsAtDefaultZoom();
 }
 
 bool ZoomDecoration::ShouldShowDecoration() const {
-  if (owner_->toolbar_model()->GetInputInProgress())
-    return false;
-  if (bubble_)
-    return true;
-  return !IsAtDefaultZoom();
+  return owner_->GetWebContents() != NULL &&
+      !owner_->GetToolbarModel()->input_in_progress() &&
+      (bubble_ || !IsAtDefaultZoom());
 }
 
 bool ZoomDecoration::AcceptsMousePress() {
@@ -111,10 +96,29 @@ bool ZoomDecoration::AcceptsMousePress() {
 }
 
 bool ZoomDecoration::OnMousePressed(NSRect frame) {
-  ToggleBubble(NO);
+  if (bubble_)
+    CloseBubble();
+  else
+    ShowBubble(NO);
   return true;
 }
 
 NSString* ZoomDecoration::GetToolTip() {
   return tooltip_.get();
+}
+
+content::WebContents* ZoomDecoration::GetWebContents() {
+  return owner_->GetWebContents();
+}
+
+void ZoomDecoration::OnClose() {
+  bubble_ = nil;
+
+  // If the page is at default zoom then hiding the zoom decoration
+  // was suppressed while the bubble was open. Now that the bubble is
+  // closed the decoration can be hidden.
+  if (IsAtDefaultZoom() && IsVisible()) {
+    SetVisible(false);
+    owner_->OnDecorationsChanged();
+  }
 }

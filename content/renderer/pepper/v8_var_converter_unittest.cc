@@ -9,7 +9,11 @@
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/message_loop/message_loop.h"
+#include "base/run_loop.h"
+#include "base/synchronization/waitable_event.h"
 #include "base/values.h"
+#include "content/renderer/pepper/resource_converter.h"
 #include "ppapi/c/pp_bool.h"
 #include "ppapi/c/pp_var.h"
 #include "ppapi/shared_impl/array_var.h"
@@ -38,6 +42,21 @@ using ppapi::VarTracker;
 namespace content {
 
 namespace {
+
+class MockResourceConverter : public content::ResourceConverter {
+ public:
+  virtual ~MockResourceConverter() {}
+  virtual void Flush(const base::Callback<void(bool)>& callback) OVERRIDE {
+    callback.Run(true);
+  }
+  virtual bool FromV8Value(v8::Handle<v8::Object> val,
+                           v8::Handle<v8::Context> context,
+                           PP_Var* result,
+                           bool* was_resource) OVERRIDE {
+    *was_resource = false;
+    return true;
+  }
+};
 
 // Maps PP_Var IDs to the V8 value handle they correspond to.
 typedef base::hash_map<int64_t, v8::Handle<v8::Value> > VarHandleMap;
@@ -133,7 +152,13 @@ bool Equals(const PP_Var& var,
 class V8VarConverterTest : public testing::Test {
  public:
   V8VarConverterTest()
-      : isolate_(v8::Isolate::GetCurrent()) {}
+      : isolate_(v8::Isolate::GetCurrent()),
+        conversion_success_(false) {
+    PP_Instance dummy = 1234;
+    converter_.reset(new V8VarConverter(
+        dummy,
+        scoped_ptr<ResourceConverter>(new MockResourceConverter).Pass()));
+  }
   virtual ~V8VarConverterTest() {}
 
   // testing::Test implementation.
@@ -144,23 +169,47 @@ class V8VarConverterTest : public testing::Test {
     context_.Reset(isolate_, v8::Context::New(isolate_, NULL, global));
   }
   virtual void TearDown() {
-    context_.Dispose();
+    context_.Reset();
     ASSERT_TRUE(PpapiGlobals::Get()->GetVarTracker()->GetLiveVars().empty());
     ProxyLock::Release();
   }
 
  protected:
+  bool FromV8ValueSync(v8::Handle<v8::Value> val,
+                       v8::Handle<v8::Context> context,
+                       PP_Var* result) {
+    base::RunLoop loop;
+    converter_->FromV8Value(val, context, base::Bind(
+        &V8VarConverterTest::FromV8ValueComplete, base::Unretained(this),
+        loop.QuitClosure()));
+    loop.Run();
+    if (conversion_success_)
+      *result = conversion_result_;
+    return conversion_success_;
+  }
+
+  void FromV8ValueComplete(base::Closure quit_closure,
+                           const ScopedPPVar& scoped_var,
+                           bool success) {
+    conversion_success_ = success;
+    if (success) {
+      ScopedPPVar var = scoped_var;
+      conversion_result_ = var.Release();
+    }
+    quit_closure.Run();
+  }
+
   bool RoundTrip(const PP_Var& var, PP_Var* result) {
     v8::HandleScope handle_scope(isolate_);
-    v8::Context::Scope context_scope(isolate_, context_);
     v8::Local<v8::Context> context =
         v8::Local<v8::Context>::New(isolate_, context_);
+    v8::Context::Scope context_scope(context);
     v8::Handle<v8::Value> v8_result;
-    if (!V8VarConverter::ToV8Value(var, context, &v8_result))
+    if (!converter_->ToV8Value(var, context, &v8_result))
       return false;
     if (!Equals(var, v8_result))
       return false;
-    if (!V8VarConverter::FromV8Value(v8_result, context, result))
+    if (!FromV8ValueSync(v8_result, context, result))
       return false;
     return true;
   }
@@ -180,8 +229,14 @@ class V8VarConverterTest : public testing::Test {
   // Context for the JavaScript in the test.
   v8::Persistent<v8::Context> context_;
 
+  scoped_ptr<V8VarConverter> converter_;
+
  private:
   TestGlobals globals_;
+
+  PP_Var conversion_result_;
+  bool conversion_success_;
+  base::MessageLoop message_loop_;
 };
 
 }  // namespace
@@ -274,9 +329,9 @@ TEST_F(V8VarConverterTest, DictionaryArrayRoundTripTest) {
 TEST_F(V8VarConverterTest, Cycles) {
   // Check that cycles aren't converted.
   v8::HandleScope handle_scope(isolate_);
-  v8::Context::Scope context_scope(isolate_, context_);
   v8::Local<v8::Context> context =
       v8::Local<v8::Context>::New(isolate_, context_);
+  v8::Context::Scope context_scope(context);
 
   // Var->V8 conversion.
   {
@@ -293,8 +348,8 @@ TEST_F(V8VarConverterTest, Cycles) {
 
     // Array <-> dictionary cycle.
     dictionary->SetWithStringKey("1", release_array.get());
-    ASSERT_FALSE(V8VarConverter::ToV8Value(release_dictionary.get(),
-                                           context, &v8_result));
+    ASSERT_FALSE(converter_->ToV8Value(release_dictionary.get(),
+                                       context, &v8_result));
     // Break the cycle.
     // TODO(raymes): We need some better machinery for releasing vars with
     // cycles. Remove the code below once we have that.
@@ -302,29 +357,32 @@ TEST_F(V8VarConverterTest, Cycles) {
 
     // Array with self reference.
     array->Set(0, release_array.get());
-    ASSERT_FALSE(V8VarConverter::ToV8Value(release_array.get(),
-                                           context, &v8_result));
+    ASSERT_FALSE(converter_->ToV8Value(release_array.get(),
+                                       context, &v8_result));
     // Break the self reference.
     array->Set(0, PP_MakeUndefined());
   }
 
   // V8->Var conversion.
   {
-    v8::Handle<v8::Object> object = v8::Object::New();
-    v8::Handle<v8::Array> array = v8::Array::New();
+    v8::Handle<v8::Object> object = v8::Object::New(isolate_);
+    v8::Handle<v8::Array> array = v8::Array::New(isolate_);
 
     PP_Var var_result;
 
     // Array <-> dictionary cycle.
     std::string key = "1";
-    object->Set(v8::String::New(key.c_str(), key.length()), array);
+    object->Set(
+        v8::String::NewFromUtf8(
+            isolate_, key.c_str(), v8::String::kNormalString, key.length()),
+        array);
     array->Set(0, object);
 
-    ASSERT_FALSE(V8VarConverter::FromV8Value(object, context, &var_result));
+    ASSERT_FALSE(FromV8ValueSync(object, context, &var_result));
 
     // Array with self reference.
     array->Set(0, array);
-    ASSERT_FALSE(V8VarConverter::FromV8Value(array, context, &var_result));
+    ASSERT_FALSE(FromV8ValueSync(array, context, &var_result));
   }
 }
 
@@ -340,7 +398,9 @@ TEST_F(V8VarConverterTest, StrangeDictionaryKeyTest) {
   {
     // Test non-string key types. They should be cast to strings.
     v8::HandleScope handle_scope(isolate_);
-    v8::Context::Scope context_scope(isolate_, context_);
+    v8::Local<v8::Context> context =
+        v8::Local<v8::Context>::New(isolate_, context_);
+    v8::Context::Scope context_scope(context);
 
     const char* source = "(function() {"
         "return {"
@@ -353,12 +413,13 @@ TEST_F(V8VarConverterTest, StrangeDictionaryKeyTest) {
         "};"
         "})();";
 
-    v8::Handle<v8::Script> script(v8::Script::New(v8::String::New(source)));
+    v8::Handle<v8::Script> script(
+        v8::Script::New(v8::String::NewFromUtf8(isolate_, source)));
     v8::Handle<v8::Object> object = script->Run().As<v8::Object>();
     ASSERT_FALSE(object.IsEmpty());
 
     PP_Var actual;
-    ASSERT_TRUE(V8VarConverter::FromV8Value(object,
+    ASSERT_TRUE(FromV8ValueSync(object,
         v8::Local<v8::Context>::New(isolate_, context_), &actual));
     ScopedPPVar release_actual(ScopedPPVar::PassRef(), actual);
 

@@ -9,9 +9,9 @@
 #include <vector>
 
 #include "base/memory/scoped_ptr.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/manifest_handler.h"
+#include "extensions/common/extension.h"
 #include "extensions/common/install_warning.h"
+#include "extensions/common/manifest_handler.h"
 #include "extensions/common/url_pattern_set.h"
 
 class GURL;
@@ -38,7 +38,7 @@ class ExternallyConnectableHandler : public ManifestHandler {
   ExternallyConnectableHandler();
   virtual ~ExternallyConnectableHandler();
 
-  virtual bool Parse(Extension* extension, string16* error) OVERRIDE;
+  virtual bool Parse(Extension* extension, base::string16* error) OVERRIDE;
 
  private:
   virtual const std::vector<std::string> Keys() const OVERRIDE;
@@ -58,7 +58,7 @@ struct ExternallyConnectableInfo : public Extension::ManifestData {
   static scoped_ptr<ExternallyConnectableInfo> FromValue(
       const base::Value& value,
       std::vector<InstallWarning>* install_warnings,
-      string16* error);
+      base::string16* error);
 
   virtual ~ExternallyConnectableInfo();
 
@@ -72,6 +72,10 @@ struct ExternallyConnectableInfo : public Extension::ManifestData {
   // to an ID of "*" in |ids|.
   const bool all_ids;
 
+  // True if extension accepts the TLS channel ID, when requested by the
+  // connecting origin.
+  const bool accepts_tls_channel_id;
+
   // Returns true if |ids| contains |id| or if |all_ids| is true.
   //
   // More convenient for callers than checking each individually, and it makes
@@ -81,7 +85,8 @@ struct ExternallyConnectableInfo : public Extension::ManifestData {
   // Public only for testing. Use FromValue in production.
   ExternallyConnectableInfo(const URLPatternSet& matches,
                             const std::vector<std::string>& ids,
-                            bool all_ids);
+                            bool all_ids,
+                            bool accepts_tls_channel_id);
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ExternallyConnectableInfo);

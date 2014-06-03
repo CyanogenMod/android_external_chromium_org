@@ -42,8 +42,8 @@ ppapi::host::ReplyMessageContext GetPermissionOnUIThread(
     return reply;  // RVH destroyed while task was pending.
 
 #if defined(USE_ASH)
-  string16 title;
-  string16 message;
+  base::string16 title;
+  base::string16 message;
 
   switch (permission) {
     case PP_TALKPERMISSION_SCREENCAST:
@@ -69,7 +69,7 @@ ppapi::host::ReplyMessageContext GetPermissionOnUIThread(
   // TODO(brettw). We should not be grabbing the active toplevel window, we
   // should use the toplevel window associated with the render view.
   aura::Window* parent = ash::Shell::GetContainer(
-      ash::Shell::GetActiveRootWindow(),
+      ash::Shell::GetTargetRootWindow(),
       ash::internal::kShellWindowId_SystemModalContainer);
   reply.params.set_result(static_cast<int32_t>(
       chrome::ShowMessageBox(parent, title, message,
@@ -81,10 +81,12 @@ ppapi::host::ReplyMessageContext GetPermissionOnUIThread(
   return reply;
 }
 
+#if defined(USE_ASH) && defined(OS_CHROMEOS)
 void OnTerminateRemotingEventOnUIThread(const base::Closure& stop_callback) {
   content::BrowserThread::PostTask(content::BrowserThread::IO, FROM_HERE,
                                    stop_callback);
 }
+#endif  // defined(USE_ASH) && defined(OS_CHROMEOS)
 
 ppapi::host::ReplyMessageContext StartRemotingOnUIThread(
     const base::Closure& stop_callback,
@@ -138,9 +140,9 @@ PepperTalkHost::PepperTalkHost(content::BrowserPpapiHost* host,
                                PP_Instance instance,
                                PP_Resource resource)
     : ppapi::host::ResourceHost(host->GetPpapiHost(), instance, resource),
-      weak_factory_(this),
       browser_ppapi_host_(host),
-      remoting_started_(false) {
+      remoting_started_(false),
+      weak_factory_(this) {
 }
 
 PepperTalkHost::~PepperTalkHost() {

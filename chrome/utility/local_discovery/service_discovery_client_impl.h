@@ -108,6 +108,10 @@ class ServiceWatcherImpl : public ServiceWatcher,
   void DeliverDeferredUpdate(ServiceWatcher::UpdateType update_type,
                              const std::string& service_name);
 
+  void ScheduleQuery(int timeout_seconds);
+
+  void SendQuery(int next_timeout_seconds, bool force_update);
+
   std::string service_type_;
   ServiceListenersMap services_;
   scoped_ptr<net::MDnsTransaction> transaction_network_;
@@ -212,6 +216,10 @@ class LocalDomainResolverImpl : public LocalDomainResolver {
 
   scoped_ptr<net::MDnsTransaction> CreateTransaction(uint16 type);
 
+  bool IsSuccess();
+
+  void SendResolvedAddresses();
+
   std::string domain_;
   net::AddressFamily address_family_;
   IPAddressCallback callback_;
@@ -219,9 +227,14 @@ class LocalDomainResolverImpl : public LocalDomainResolver {
   scoped_ptr<net::MDnsTransaction> transaction_a_;
   scoped_ptr<net::MDnsTransaction> transaction_aaaa_;
 
-  int transaction_failures_;
+  int transactions_finished_;
 
   net::MDnsClient* mdns_client_;
+
+  net::IPAddressNumber address_ipv4_;
+  net::IPAddressNumber address_ipv6_;
+
+  base::CancelableCallback<void()> timeout_callback_;
 
   DISALLOW_COPY_AND_ASSIGN(LocalDomainResolverImpl);
 };

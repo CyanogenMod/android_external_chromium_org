@@ -5,9 +5,9 @@
 #ifndef CHROME_BROWSER_EXTENSIONS_INSTALL_OBSERVER_H_
 #define CHROME_BROWSER_EXTENSIONS_INSTALL_OBSERVER_H_
 
-namespace gfx {
-class ImageSkia;
-}
+#include <string>
+
+#include "ui/gfx/image/image_skia.h"
 
 namespace extensions {
 
@@ -15,12 +15,24 @@ class Extension;
 
 class InstallObserver {
  public:
+  struct ExtensionInstallParams {
+    ExtensionInstallParams(
+        std::string extension_id,
+        std::string extension_name,
+        gfx::ImageSkia installing_icon,
+        bool is_app,
+        bool is_platform_app);
+
+    std::string extension_id;
+    std::string extension_name;
+    gfx::ImageSkia installing_icon;
+    bool is_app;
+    bool is_platform_app;
+    bool is_ephemeral;
+  };
+
   virtual void OnBeginExtensionInstall(
-      const std::string& extension_id,
-      const std::string& extension_name,
-      const gfx::ImageSkia& installing_icon,
-      bool is_app,
-      bool is_platform_app) = 0;
+      const ExtensionInstallParams& params) = 0;
 
   virtual void OnDownloadProgress(const std::string& extension_id,
                                   int percent_downloaded) = 0;

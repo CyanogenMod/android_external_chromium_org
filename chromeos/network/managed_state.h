@@ -21,10 +21,11 @@ namespace chromeos {
 class DeviceState;
 class FavoriteState;
 class NetworkState;
+class NetworkTypePattern;
 
 // Base class for states managed by NetworkStateManger which are associated
 // with a Shill path (e.g. service path or device path).
-class ManagedState {
+class CHROMEOS_EXPORT ManagedState {
  public:
   enum ManagedType {
     MANAGED_TYPE_NETWORK,
@@ -74,6 +75,8 @@ class ManagedState {
     update_requested_ = update_requested;
   }
 
+  bool Matches(const NetworkTypePattern& pattern) const;
+
  protected:
   ManagedState(ManagedType type, const std::string& path);
 
@@ -107,8 +110,8 @@ class ManagedState {
   std::string path_;
 
   // Common properties shared by all managed state objects.
-  std::string name_;  // flimflam::kNameProperty
-  std::string type_;  // flimflam::kTypeProperty
+  std::string name_;  // shill::kNameProperty
+  std::string type_;  // shill::kTypeProperty
 
   // Set to true when the an update has been received.
   bool update_received_;

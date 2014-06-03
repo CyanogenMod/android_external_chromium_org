@@ -9,23 +9,27 @@
 #include "base/prefs/pref_service.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
+#include "chrome/browser/infobars/infobar.h"
+#include "chrome/browser/infobars/infobar_delegate.h"
+#include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/managed_mode/managed_user_service.h"
 #include "chrome/browser/managed_mode/managed_user_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/common/url_constants.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/interstitial_page.h"
+#include "content/public/browser/navigation_controller.h"
+#include "content/public/browser/navigation_details.h"
+#include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_delegate.h"
 #include "content/public/browser/web_ui.h"
 #include "grit/browser_resources.h"
 #include "grit/generated_resources.h"
 #include "net/base/net_util.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/webui/jstemplate_builder.h"
-#include "ui/webui/web_ui_util.h"
+#include "ui/base/webui/jstemplate_builder.h"
+#include "ui/base/webui/web_ui_util.h"
 
 using content::BrowserThread;
 
@@ -34,13 +38,60 @@ ManagedModeInterstitial::ManagedModeInterstitial(
     const GURL& url,
     const base::Callback<void(bool)>& callback)
     : web_contents_(web_contents),
+      interstitial_page_(NULL),
       url_(url),
-      weak_ptr_factory_(this),
       callback_(callback) {
+  if (ShouldProceed()) {
+    // It can happen that the site was only allowed very recently and the URL
+    // filter on the IO thread had not been updated yet. Proceed with the
+    // request without showing the interstitial.
+    DispatchContinueRequest(true);
+    delete this;
+    return;
+  }
+
+  InfoBarService* service = InfoBarService::FromWebContents(web_contents);
+  if (service) {
+    // Remove all the infobars which are attached to |web_contents| and for
+    // which ShouldExpire() returns true.
+    content::LoadCommittedDetails details;
+    // |details.is_in_page| is default false, and |details.is_main_frame| is
+    // default true. This results in is_navigation_to_different_page() returning
+    // true.
+    DCHECK(details.is_navigation_to_different_page());
+    const content::NavigationController& controller =
+        web_contents->GetController();
+    details.entry = controller.GetActiveEntry();
+    if (controller.GetLastCommittedEntry()) {
+      details.previous_entry_index = controller.GetLastCommittedEntryIndex();
+      details.previous_url = controller.GetLastCommittedEntry()->GetURL();
+    }
+    details.type = content::NAVIGATION_TYPE_NEW_PAGE;
+    for (int i = service->infobar_count() - 1; i >= 0; --i) {
+      if (service->infobar_at(i)->delegate()->ShouldExpire(details))
+        service->RemoveInfoBar(service->infobar_at(i));
+    }
+  }
+
+  // TODO(bauerb): Extract an observer callback on ManagedUserService for this.
   Profile* profile =
       Profile::FromBrowserContext(web_contents->GetBrowserContext());
-  languages_ = profile->GetPrefs()->GetString(prefs::kAcceptLanguages);
+  PrefService* prefs = profile->GetPrefs();
+  pref_change_registrar_.Init(prefs);
+  pref_change_registrar_.Add(
+      prefs::kDefaultManagedModeFilteringBehavior,
+      base::Bind(&ManagedModeInterstitial::OnFilteringPrefsChanged,
+                 base::Unretained(this)));
+  pref_change_registrar_.Add(
+      prefs::kManagedModeManualHosts,
+      base::Bind(&ManagedModeInterstitial::OnFilteringPrefsChanged,
+                 base::Unretained(this)));
+  pref_change_registrar_.Add(
+      prefs::kManagedModeManualURLs,
+      base::Bind(&ManagedModeInterstitial::OnFilteringPrefsChanged,
+                 base::Unretained(this)));
 
+  languages_ = prefs->GetString(prefs::kAcceptLanguages);
   interstitial_page_ =
       content::InterstitialPage::Create(web_contents, true, url_, this);
   interstitial_page_->Show();
@@ -61,7 +112,8 @@ std::string ManagedModeInterstitial::GetHTMLContents() {
   bool allow_access_requests = managed_user_service->AccessRequestsEnabled();
   strings.SetBoolean("allowAccessRequests", allow_access_requests);
 
-  string16 custodian = UTF8ToUTF16(managed_user_service->GetCustodianName());
+  base::string16 custodian =
+      UTF8ToUTF16(managed_user_service->GetCustodianName());
   strings.SetString(
       "blockPageMessage",
       allow_access_requests
@@ -125,10 +177,31 @@ void ManagedModeInterstitial::CommandReceived(const std::string& command) {
   NOTREACHED();
 }
 
-void ManagedModeInterstitial::OnProceed() { NOTREACHED(); }
+void ManagedModeInterstitial::OnProceed() {
+  // CHECK instead of DCHECK as defense in depth in case we'd accidentally
+  // proceed on a blocked page.
+  CHECK(ShouldProceed());
+  DispatchContinueRequest(true);
+}
 
 void ManagedModeInterstitial::OnDontProceed() {
   DispatchContinueRequest(false);
+}
+
+bool ManagedModeInterstitial::ShouldProceed() {
+  Profile* profile =
+      Profile::FromBrowserContext(web_contents_->GetBrowserContext());
+  ManagedUserService* managed_user_service =
+      ManagedUserServiceFactory::GetForProfile(profile);
+  ManagedModeURLFilter* url_filter =
+      managed_user_service->GetURLFilterForUIThread();
+  return url_filter->GetFilteringBehaviorForURL(url_) !=
+         ManagedModeURLFilter::BLOCK;
+}
+
+void ManagedModeInterstitial::OnFilteringPrefsChanged() {
+  if (ShouldProceed())
+    interstitial_page_->Proceed();
 }
 
 void ManagedModeInterstitial::DispatchContinueRequest(bool continue_request) {

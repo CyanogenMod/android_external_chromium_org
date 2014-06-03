@@ -20,8 +20,8 @@
 #include "base/file_util.h"
 #include "printing/image.h"
 
-using WebKit::WebFrame;
-using WebKit::WebString;
+using blink::WebFrame;
+using blink::WebString;
 #endif
 
 namespace printing {
@@ -31,6 +31,13 @@ namespace {
 // A simple web page.
 const char kHelloWorldHTML[] = "<body><p>Hello World!</p></body>";
 
+// A simple webpage with a button to print itself with.
+const char kPrintOnUserAction[] =
+    "<body>"
+    "  <button id=\"print\" onclick=\"window.print();\">Hello World!</button>"
+    "</body>";
+
+#if !defined(OS_CHROMEOS)
 // HTML with 3 pages.
 const char kMultipageHTML[] =
   "<html><head><style>"
@@ -66,12 +73,6 @@ const char kHTMLWithLandscapePageCss[] =
     "<body>Lorem Ipsum:"
     "</body></html>";
 
-// A simple webpage with a button to print itself with.
-const char kPrintOnUserAction[] =
-    "<body>"
-    "  <button id=\"print\" onclick=\"window.print();\">Hello World!</button>"
-    "</body>";
-
 // A longer web page.
 const char kLongPageHTML[] =
     "<body><img src=\"\" width=10 height=10000 /></body>";
@@ -98,6 +99,7 @@ void CreatePrintSettingsDictionary(base::DictionaryValue* dict) {
   dict->SetBoolean(kSettingShouldPrintBackgrounds, false);
   dict->SetBoolean(kSettingShouldPrintSelectionOnly, false);
 }
+#endif  // !defined(OS_CHROMEOS)
 
 }  // namespace
 
@@ -263,14 +265,14 @@ TEST_F(PrintWebViewHelperTest, AllowUserOriginatedPrinting) {
 
   gfx::Rect bounds = GetElementBounds("print");
   EXPECT_FALSE(bounds.IsEmpty());
-  WebKit::WebMouseEvent mouse_event;
-  mouse_event.type = WebKit::WebInputEvent::MouseDown;
-  mouse_event.button = WebKit::WebMouseEvent::ButtonLeft;
+  blink::WebMouseEvent mouse_event;
+  mouse_event.type = blink::WebInputEvent::MouseDown;
+  mouse_event.button = blink::WebMouseEvent::ButtonLeft;
   mouse_event.x = bounds.CenterPoint().x();
   mouse_event.y = bounds.CenterPoint().y();
   mouse_event.clickCount = 1;
   SendWebMouseEvent(mouse_event);
-  mouse_event.type = WebKit::WebInputEvent::MouseUp;
+  mouse_event.type = blink::WebInputEvent::MouseUp;
   SendWebMouseEvent(mouse_event);
   ProcessPendingMessages();
 
@@ -347,6 +349,7 @@ struct TestPageData {
   const wchar_t* file;
 };
 
+#if defined(OS_WIN) || defined(OS_MACOSX)
 const TestPageData kTestPages[] = {
   {"<html>"
   "<head>"
@@ -369,6 +372,7 @@ const TestPageData kTestPages[] = {
   NULL,
   },
 };
+#endif  // defined(OS_WIN) || defined(OS_MACOSX)
 }  // namespace
 
 // TODO(estade): need to port MockPrinter to get this on Linux. This involves
@@ -418,11 +422,11 @@ TEST_F(PrintWebViewHelperTest, PrintLayoutTest) {
       // Save the source data and the bitmap data into temporary files to
       // create base-line results.
       base::FilePath source_path;
-      file_util::CreateTemporaryFile(&source_path);
+      base::CreateTemporaryFile(&source_path);
       chrome_render_thread_->printer()->SaveSource(0, source_path);
 
       base::FilePath bitmap_path;
-      file_util::CreateTemporaryFile(&bitmap_path);
+      base::CreateTemporaryFile(&bitmap_path);
       chrome_render_thread_->printer()->SaveBitmap(0, bitmap_path);
     }
   }
@@ -667,7 +671,7 @@ TEST_F(PrintWebViewHelperPreviewTest, PrintPreviewCenterToFitPage) {
   OnPrintPreview(dict);
 
   EXPECT_EQ(0, chrome_render_thread_->print_preview_pages_remaining());
-  VerifyDefaultPageLayout(288, 288, 252, 252, 162, 162, true);
+  VerifyDefaultPageLayout(216, 216, 288, 288, 198, 198, true);
   VerifyPrintPreviewCancelled(false);
   VerifyPrintPreviewFailed(false);
   VerifyPrintPreviewGenerated(true);
@@ -697,7 +701,7 @@ TEST_F(PrintWebViewHelperPreviewTest, PrintPreviewShrinkToFitPage) {
   OnPrintPreview(dict);
 
   EXPECT_EQ(0, chrome_render_thread_->print_preview_pages_remaining());
-  VerifyDefaultPageLayout(612, 693, 49, 50, 0, 0, true);
+  VerifyDefaultPageLayout(571, 652, 69, 71, 20, 21, true);
   VerifyPrintPreviewCancelled(false);
   VerifyPrintPreviewFailed(false);
 }
@@ -776,7 +780,7 @@ TEST_F(PrintWebViewHelperPreviewTest, OnPrintPreviewForSelectedPages) {
 TEST_F(PrintWebViewHelperPreviewTest, OnPrintPreviewForSelectedText) {
   LoadHTML(kMultipageHTML);
   GetMainFrame()->selectRange(
-      WebKit::WebRange::fromDocumentRange(GetMainFrame(), 1, 3));
+      blink::WebRange::fromDocumentRange(GetMainFrame(), 1, 3));
 
   // Fill in some dummy values.
   base::DictionaryValue dict;

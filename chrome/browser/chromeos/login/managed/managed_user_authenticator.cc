@@ -8,8 +8,9 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "chrome/browser/chromeos/boot_times_loader.h"
+#include "chrome/browser/chromeos/login/parallel_authenticator.h"
 #include "chromeos/cryptohome/async_method_caller.h"
-#include "chromeos/cryptohome/cryptohome_library.h"
+#include "chromeos/cryptohome/system_salt_getter.h"
 #include "chromeos/dbus/cryptohome_client.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "content/public/browser/browser_thread.h"
@@ -22,12 +23,6 @@ using content::BrowserThread;
 namespace chromeos {
 
 namespace {
-
-// Milliseconds until we timeout our attempt to hit ClientLogin.
-const int kClientLoginTimeoutMs = 10000;
-
-// Length of password hashed with SHA-256.
-const int kPasswordHashLength = 32;
 
 // Records status and calls resolver->Resolve().
 void TriggerResolve(ManagedUserAuthenticator::AuthAttempt* attempt,
@@ -63,13 +58,14 @@ void TriggerResolveWithLoginTimeMarker(
 // Calls cryptohome's mount method.
 void Mount(ManagedUserAuthenticator::AuthAttempt* attempt,
            scoped_refptr<ManagedUserAuthenticator> resolver,
-           int flags) {
+           int flags,
+           const std::string& system_salt) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   chromeos::BootTimesLoader::Get()->AddLoginTimeMarker(
       "CryptohomeMount-LMU-Start", false);
   cryptohome::AsyncMethodCaller::GetInstance()->AsyncMount(
       attempt->username,
-      attempt->hashed_password,
+      ParallelAuthenticator::HashPassword(attempt->password, system_salt),
       flags,
       base::Bind(&TriggerResolveWithLoginTimeMarker,
                  "CryptohomeMount-LMU-End",
@@ -84,37 +80,19 @@ void Mount(ManagedUserAuthenticator::AuthAttempt* attempt,
 // Calls cryptohome's addKey method.
 void AddKey(ManagedUserAuthenticator::AuthAttempt* attempt,
             scoped_refptr<ManagedUserAuthenticator> resolver,
-            const std::string& hashed_master_key) {
+            const std::string& master_key,
+            const std::string& system_salt) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   chromeos::BootTimesLoader::Get()->AddLoginTimeMarker(
       "CryptohomeAddKey-LMU-Start", false);
   cryptohome::AsyncMethodCaller::GetInstance()->AsyncAddKey(
       attempt->username,
-      attempt->hashed_password,
-      hashed_master_key,
+      ParallelAuthenticator::HashPassword(attempt->password, system_salt),
+      ParallelAuthenticator::HashPassword(master_key, system_salt),
       base::Bind(&TriggerResolveWithLoginTimeMarker,
                  "CryptohomeAddKey-LMU-End",
                  attempt,
                  resolver));
-}
-
-// Returns hash of |password|, salted with the system salt.
-std::string HashPassword(const std::string& password) {
-  // Get salt, ascii encode, update sha with that, then update with ascii
-  // of password, then end.
-  std::string ascii_salt = CryptohomeLibrary::Get()->GetSystemSalt();
-  char passhash_buf[kPasswordHashLength];
-
-  // Hash salt and password
-  crypto::SHA256HashString(
-      ascii_salt + password, &passhash_buf, sizeof(passhash_buf));
-
-  // Only want the top half for 'weak' hashing so that the passphrase is not
-  // immediately exposed even if the output is reversed.
-  const int encoded_length = sizeof(passhash_buf) / 2;
-
-  return StringToLowerASCII(base::HexEncode(
-      reinterpret_cast<const void*>(passhash_buf), encoded_length));
 }
 
 }  // namespace
@@ -128,14 +106,13 @@ void ManagedUserAuthenticator::AuthenticateToMount(
   std::string canonicalized = gaia::CanonicalizeEmail(username);
 
   current_state_.reset(new ManagedUserAuthenticator::AuthAttempt(
-      canonicalized, password, HashPassword(password), false));
+      canonicalized, password, false));
 
-  BrowserThread::PostTask(BrowserThread::UI,
-      FROM_HERE,
+  SystemSaltGetter::Get()->GetSystemSalt(
       base::Bind(&Mount,
-          current_state_.get(),
-          scoped_refptr<ManagedUserAuthenticator>(this),
-          cryptohome::MOUNT_FLAGS_NONE));
+                 current_state_.get(),
+                 scoped_refptr<ManagedUserAuthenticator>(this),
+                 cryptohome::MOUNT_FLAGS_NONE));
 }
 
 void ManagedUserAuthenticator::AuthenticateToCreate(
@@ -144,14 +121,13 @@ void ManagedUserAuthenticator::AuthenticateToCreate(
   std::string canonicalized = gaia::CanonicalizeEmail(username);
 
   current_state_.reset(new ManagedUserAuthenticator::AuthAttempt(
-      canonicalized, password, HashPassword(password), false));
+      canonicalized, password, false));
 
-  BrowserThread::PostTask(BrowserThread::UI,
-      FROM_HERE,
+  SystemSaltGetter::Get()->GetSystemSalt(
       base::Bind(&Mount,
-           current_state_.get(),
-           scoped_refptr<ManagedUserAuthenticator>(this),
-           cryptohome::CREATE_IF_MISSING));
+                 current_state_.get(),
+                 scoped_refptr<ManagedUserAuthenticator>(this),
+                 cryptohome::CREATE_IF_MISSING));
 }
 
 void ManagedUserAuthenticator::AddMasterKey(
@@ -161,14 +137,13 @@ void ManagedUserAuthenticator::AddMasterKey(
   std::string canonicalized = gaia::CanonicalizeEmail(username);
 
   current_state_.reset(new ManagedUserAuthenticator::AuthAttempt(
-      canonicalized, password, HashPassword(password), true));
+      canonicalized, password, true));
 
-  BrowserThread::PostTask(BrowserThread::UI,
-      FROM_HERE,
+  SystemSaltGetter::Get()->GetSystemSalt(
       base::Bind(&AddKey,
-           current_state_.get(),
-           scoped_refptr<ManagedUserAuthenticator>(this),
-           HashPassword(master_key)));
+                 current_state_.get(),
+                 scoped_refptr<ManagedUserAuthenticator>(this),
+                 master_key));
 }
 
 void ManagedUserAuthenticator::OnAuthenticationSuccess(
@@ -298,11 +273,9 @@ ManagedUserAuthenticator::AuthState
 
 ManagedUserAuthenticator::AuthAttempt::AuthAttempt(const std::string& username,
                                                    const std::string& password,
-                                                   const std::string& hashed,
                                                    bool add_key_attempt)
     : username(username),
       password(password),
-      hashed_password(hashed),
       add_key(add_key_attempt),
       cryptohome_complete_(false),
       cryptohome_outcome_(false),

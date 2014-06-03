@@ -4,7 +4,7 @@
 
 #include "apps/app_window_contents.h"
 
-#include "apps/native_app_window.h"
+#include "apps/ui/native_app_window.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/api/app_window.h"
@@ -18,6 +18,12 @@
 #include "content/public/common/renderer_preferences.h"
 
 namespace app_window = extensions::api::app_window;
+
+namespace {
+
+const int kUnboundedSize = apps::ShellWindow::SizeConstraints::kUnboundedSize;
+
+}
 
 namespace apps {
 
@@ -60,16 +66,15 @@ void AppWindowContents::LoadContents(int32 creator_process_id) {
   }
 
   // TODO(jeremya): there's a bug where navigating a web contents to an
-  // extension URL causes it to create a new RVH and discard the old
-  // (perfectly usable) one. To work around this, we watch for a RVH_CHANGED
-  // message from the web contents (which will be sent during LoadURL) and
-  // suspend resource requests on the new RVH to ensure that we block the new
-  // RVH from loading anything. It should be okay to remove the
-  // NOTIFICATION_RVH_CHANGED registration once http://crbug.com/123007 is
-  // fixed.
+  // extension URL causes it to create a new RVH and discard the old (perfectly
+  // usable) one. To work around this, we watch for a
+  // NOTIFICATION_RENDER_VIEW_HOST_CHANGED message from the web contents (which
+  // will be sent during LoadURL) and suspend resource requests on the new RVH
+  // to ensure that we block the new RVH from loading anything. It should be
+  // okay to remove the NOTIFICATION_RENDER_VIEW_HOST_CHANGED registration once
+  // http://crbug.com/123007 is fixed.
   registrar_.Add(this, content::NOTIFICATION_RENDER_VIEW_HOST_CHANGED,
-                 content::Source<content::NavigationController>(
-                     &web_contents()->GetController()));
+                 content::Source<content::WebContents>(web_contents()));
   web_contents_->GetController().LoadURL(
       url_, content::Referrer(), content::PAGE_TRANSITION_LINK,
       std::string());
@@ -93,10 +98,24 @@ void AppWindowContents::NativeWindowChanged(
                          native_app_window->IsFullscreenOrPending());
   dictionary->SetBoolean("minimized", native_app_window->IsMinimized());
   dictionary->SetBoolean("maximized", native_app_window->IsMaximized());
+  dictionary->SetBoolean("alwaysOnTop", host_->IsAlwaysOnTop());
+
+  const ShellWindow::SizeConstraints& size_constraints =
+      host_->size_constraints();
+  gfx::Size min_size = size_constraints.GetMinimumSize();
+  gfx::Size max_size = size_constraints.GetMaximumSize();
+  if (min_size.width() != kUnboundedSize)
+    dictionary->SetInteger("minWidth", min_size.width());
+  if (min_size.height() != kUnboundedSize)
+    dictionary->SetInteger("minHeight", min_size.height());
+  if (max_size.width() != kUnboundedSize)
+    dictionary->SetInteger("maxWidth", max_size.width());
+  if (max_size.height() != kUnboundedSize)
+    dictionary->SetInteger("maxHeight", max_size.height());
 
   content::RenderViewHost* rvh = web_contents_->GetRenderViewHost();
   rvh->Send(new ExtensionMsg_MessageInvoke(rvh->GetRoutingID(),
-                                           host_->extension()->id(),
+                                           host_->extension_id(),
                                            "app.window",
                                            "updateAppWindowProperties",
                                            args,

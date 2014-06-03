@@ -7,8 +7,10 @@
 #include "ash/shell.h"
 #include "ash/shell_window_ids.h"
 #include "ash/wm/coordinate_conversion.h"
+#include "ui/aura/client/window_tree_client.h"
 #include "ui/aura/root_window.h"
-#include "ui/base/events/event.h"
+#include "ui/aura/window.h"
+#include "ui/events/event.h"
 #include "ui/gfx/screen.h"
 
 namespace ash {
@@ -17,12 +19,12 @@ namespace internal {
 namespace {
 
 // Creates a window for capturing drag events.
-aura::Window* CreateCaptureWindow(aura::RootWindow* context_root,
+aura::Window* CreateCaptureWindow(aura::Window* context_root,
                                   aura::WindowDelegate* delegate) {
   aura::Window* window = new aura::Window(delegate);
   window->SetType(aura::client::WINDOW_TYPE_NORMAL);
   window->Init(ui::LAYER_NOT_DRAWN);
-  window->SetDefaultParentByRootWindow(context_root, gfx::Rect());
+  aura::client::ParentWindowWithContext(window, context_root, gfx::Rect());
   window->Show();
   DCHECK(window->bounds().size().IsEmpty());
   return window;
@@ -30,7 +32,7 @@ aura::Window* CreateCaptureWindow(aura::RootWindow* context_root,
 
 }  // namespace
 
-DragDropTracker::DragDropTracker(aura::RootWindow* context_root,
+DragDropTracker::DragDropTracker(aura::Window* context_root,
                                  aura::WindowDelegate* delegate)
     : capture_window_(CreateCaptureWindow(context_root, delegate)) {
 }
@@ -48,7 +50,7 @@ aura::Window* DragDropTracker::GetTarget(const ui::LocatedEvent& event) {
   gfx::Point location_in_screen = event.location();
   wm::ConvertPointToScreen(capture_window_.get(),
                            &location_in_screen);
-  aura::RootWindow* root_window_at_point =
+  aura::Window* root_window_at_point =
       wm::GetRootWindowAt(location_in_screen);
   gfx::Point location_in_root = location_in_screen;
   wm::ConvertPointFromScreen(root_window_at_point, &location_in_root);

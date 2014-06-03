@@ -84,6 +84,7 @@ class BrowserWindowGtk
   virtual bool IsActive() const OVERRIDE;
   virtual void FlashFrame(bool flash) OVERRIDE;
   virtual bool IsAlwaysOnTop() const OVERRIDE;
+  virtual void SetAlwaysOnTop(bool always_on_top) OVERRIDE;
   virtual gfx::NativeWindow GetNativeWindow() OVERRIDE;
   virtual BrowserWindowTesting* GetBrowserWindowTesting() OVERRIDE;
   virtual StatusBubble* GetStatusBubble() OVERRIDE;
@@ -93,6 +94,11 @@ class BrowserWindowGtk
   virtual void UpdateDevTools() OVERRIDE;
   virtual void UpdateLoadingAnimations(bool should_animate) OVERRIDE;
   virtual void SetStarredState(bool is_starred) OVERRIDE;
+  virtual void SetTranslateIconToggled(bool is_lit) OVERRIDE;
+  virtual void OnActiveTabChanged(content::WebContents* old_contents,
+                                  content::WebContents* new_contents,
+                                  int index,
+                                  int reason) OVERRIDE;
   virtual void ZoomChangedForActiveTab(bool can_show_bubble) OVERRIDE;
   virtual gfx::Rect GetRestoredBounds() const OVERRIDE;
   virtual ui::WindowShowState GetRestoredState() const OVERRIDE;
@@ -114,8 +120,7 @@ class BrowserWindowGtk
   virtual LocationBar* GetLocationBar() const OVERRIDE;
   virtual void SetFocusToLocationBar(bool select_all) OVERRIDE;
   virtual void UpdateReloadStopState(bool is_loading, bool force) OVERRIDE;
-  virtual void UpdateToolbar(content::WebContents* contents,
-                             bool should_restore_state) OVERRIDE;
+  virtual void UpdateToolbar(content::WebContents* contents) OVERRIDE;
   virtual void FocusToolbar() OVERRIDE;
   virtual void FocusAppMenu() OVERRIDE;
   virtual void FocusBookmarksToolbar() OVERRIDE;
@@ -128,20 +133,27 @@ class BrowserWindowGtk
   virtual gfx::Rect GetRootWindowResizerRect() const OVERRIDE;
   virtual void ConfirmAddSearchProvider(TemplateURL* template_url,
                                         Profile* profile) OVERRIDE;
-  virtual void ToggleBookmarkBar() OVERRIDE;
   virtual void ShowUpdateChromeDialog() OVERRIDE;
   virtual void ShowBookmarkBubble(const GURL& url,
                                   bool already_bookmarked) OVERRIDE;
+  virtual void ShowTranslateBubble(
+      content::WebContents* contents,
+      TranslateBubbleModel::ViewState view_state,
+      TranslateErrors::Type error_type) OVERRIDE;
 #if defined(ENABLE_ONE_CLICK_SIGNIN)
   virtual void ShowOneClickSigninBubble(
       OneClickSigninBubbleType type,
-      const string16& email,
-      const string16& error_message,
+      const base::string16& email,
+      const base::string16& error_message,
       const StartSyncCallback& start_sync_callback) OVERRIDE;
 #endif
   virtual bool IsDownloadShelfVisible() const OVERRIDE;
   virtual DownloadShelf* GetDownloadShelf() OVERRIDE;
-  virtual void ConfirmBrowserCloseWithPendingDownloads() OVERRIDE;
+  virtual void ConfirmBrowserCloseWithPendingDownloads(
+      int download_count,
+      Browser::DownloadClosePreventionType dialog_type,
+      bool app_modal,
+      const base::Callback<void(bool)>& callback) OVERRIDE;
   virtual void UserChangedTheme() OVERRIDE;
   virtual int GetExtraRenderViewHeight() const OVERRIDE;
   virtual void WebContentsFocused(content::WebContents* contents) OVERRIDE;
@@ -155,9 +167,6 @@ class BrowserWindowGtk
       bool* is_keyboard_shortcut) OVERRIDE;
   virtual void HandleKeyboardEvent(
       const content::NativeWebKeyboardEvent& event) OVERRIDE;
-  virtual void ShowCreateChromeAppShortcutsDialog(
-      Profile* profile,
-      const extensions::Extension* app) OVERRIDE;
   virtual void Cut() OVERRIDE;
   virtual void Copy() OVERRIDE;
   virtual void Paste() OVERRIDE;
@@ -171,8 +180,9 @@ class BrowserWindowGtk
   virtual void ShowAvatarBubbleFromAvatarButton() OVERRIDE;
   virtual void ShowPasswordGenerationBubble(
       const gfx::Rect& rect,
-      const content::PasswordForm& form,
+      const autofill::PasswordForm& form,
       autofill::PasswordGenerator* password_generator) OVERRIDE;
+  virtual int GetRenderViewHeightInsetWithDetachedBookmarkBar() OVERRIDE;
 
   // Overridden from NotificationObserver:
   virtual void Observe(int type,
@@ -182,10 +192,6 @@ class BrowserWindowGtk
   // Overridden from TabStripModelObserver:
   virtual void TabDetachedAt(content::WebContents* contents,
                              int index) OVERRIDE;
-  virtual void ActiveTabChanged(content::WebContents* old_contents,
-                                content::WebContents* new_contents,
-                                int index,
-                                int reason) OVERRIDE;
 
   // Overridden from ActiveWindowWatcherXObserver.
   virtual void ActiveWindowChanged(GdkWindow* active_window) OVERRIDE;
@@ -569,9 +575,13 @@ class BrowserWindowGtk
   // The accelerator group used to handle accelerators, owned by this object.
   GtkAccelGroup* accel_group_;
 
-  scoped_ptr<FullscreenExitBubbleGtk> fullscreen_exit_bubble_;
+  // Set to true while this BrowserWindowGtk is fullscreened.  This is needed
+  // because GTK cannot ensure requests to fullscreen the window will be honored
+  // by all window managers; and therefore bit-testing |state_| is not a
+  // reliable "is fullscreened" test.  http://crbug.com/286545
+  bool is_fullscreen_;
 
-  FullscreenExitBubbleType fullscreen_exit_bubble_type_;
+  scoped_ptr<FullscreenExitBubbleGtk> fullscreen_exit_bubble_;
 
   content::NotificationRegistrar registrar_;
 

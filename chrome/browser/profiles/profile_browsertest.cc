@@ -12,6 +12,8 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/profiles/chrome_version_service.h"
 #include "chrome/browser/profiles/profile_impl.h"
+#include "chrome/browser/profiles/startup_task_runner_service.h"
+#include "chrome/browser/profiles/startup_task_runner_service_factory.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/pref_names.h"
@@ -24,6 +26,7 @@ namespace {
 
 class MockProfileDelegate : public Profile::Delegate {
  public:
+  MOCK_METHOD1(OnPrefsLoaded, void(Profile*));
   MOCK_METHOD3(OnProfileCreated, void(Profile*, bool, bool));
 };
 
@@ -72,6 +75,8 @@ IN_PROC_BROWSER_TEST_F(ProfileBrowserTest,
       temp_dir.path(), &delegate, Profile::CREATE_MODE_SYNCHRONOUS));
   ASSERT_TRUE(profile.get());
   CheckChromeVersion(profile.get(), true);
+  StartupTaskRunnerServiceFactory::GetForProfile(profile.get())->
+              StartDeferredTaskRunners();
 }
 
 // Test OnProfileCreate is called with is_new_profile set to false when
@@ -90,6 +95,8 @@ IN_PROC_BROWSER_TEST_F(ProfileBrowserTest,
       temp_dir.path(), &delegate, Profile::CREATE_MODE_SYNCHRONOUS));
   ASSERT_TRUE(profile.get());
   CheckChromeVersion(profile.get(), false);
+  StartupTaskRunnerServiceFactory::GetForProfile(profile.get())->
+              StartDeferredTaskRunners();
 }
 
 // Test OnProfileCreate is called with is_new_profile set to true when
@@ -106,6 +113,8 @@ IN_PROC_BROWSER_TEST_F(ProfileBrowserTest,
   scoped_ptr<Profile> profile(Profile::CreateProfile(
       temp_dir.path(), &delegate, Profile::CREATE_MODE_ASYNCHRONOUS));
   ASSERT_TRUE(profile.get());
+  StartupTaskRunnerServiceFactory::GetForProfile(profile.get())->
+              StartDeferredTaskRunners();
 
   // Wait for the profile to be created.
   content::WindowedNotificationObserver observer(
@@ -129,6 +138,8 @@ IN_PROC_BROWSER_TEST_F(ProfileBrowserTest,
   scoped_ptr<Profile> profile(Profile::CreateProfile(
       temp_dir.path(), &delegate, Profile::CREATE_MODE_ASYNCHRONOUS));
   ASSERT_TRUE(profile.get());
+  StartupTaskRunnerServiceFactory::GetForProfile(profile.get())->
+              StartDeferredTaskRunners();
 
   // Wait for the profile to be created.
   content::WindowedNotificationObserver observer(
@@ -153,6 +164,8 @@ IN_PROC_BROWSER_TEST_F(ProfileBrowserTest, DISABLED_ProfileReadmeCreated) {
   scoped_ptr<Profile> profile(Profile::CreateProfile(
       temp_dir.path(), &delegate, Profile::CREATE_MODE_ASYNCHRONOUS));
   ASSERT_TRUE(profile.get());
+  StartupTaskRunnerServiceFactory::GetForProfile(profile.get())->
+              StartDeferredTaskRunners();
 
   // Wait for the profile to be created.
   content::WindowedNotificationObserver observer(
@@ -181,6 +194,8 @@ IN_PROC_BROWSER_TEST_F(ProfileBrowserTest, ProfileDeletedBeforeReadmeCreated) {
   scoped_ptr<Profile> profile(Profile::CreateProfile(
       temp_dir.path(), &delegate, Profile::CREATE_MODE_SYNCHRONOUS));
   ASSERT_TRUE(profile.get());
+  StartupTaskRunnerServiceFactory::GetForProfile(profile.get())->
+              StartDeferredTaskRunners();
 
   // Delete the Profile instance and run pending tasks (this includes the task
   // for README creation).
@@ -207,6 +222,8 @@ IN_PROC_BROWSER_TEST_F(ProfileBrowserTest, MAYBE_ExitType) {
   scoped_ptr<Profile> profile(Profile::CreateProfile(
       temp_dir.path(), &delegate, Profile::CREATE_MODE_SYNCHRONOUS));
   ASSERT_TRUE(profile.get());
+  StartupTaskRunnerServiceFactory::GetForProfile(profile.get())->
+              StartDeferredTaskRunners();
 
   PrefService* prefs = profile->GetPrefs();
   // The initial state is crashed; store for later reference.

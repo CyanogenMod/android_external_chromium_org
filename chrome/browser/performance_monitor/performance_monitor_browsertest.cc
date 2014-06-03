@@ -32,7 +32,6 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/notification_registrar.h"
@@ -41,6 +40,7 @@
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/test_navigation_observer.h"
 #include "content/public/test/test_utils.h"
+#include "extensions/common/extension.h"
 
 #if defined(OS_CHROMEOS)
 #include "chromeos/chromeos_switches.h"
@@ -118,7 +118,7 @@ void CheckEventType(int expected_event_type, const linked_ptr<Event>& event) {
 
 // Verify that we received the proper number of events, checking the type of
 // each one.
-void CheckEventTypes(const std::vector<int> expected_event_types,
+void CheckEventTypes(const std::vector<int>& expected_event_types,
                      const Database::EventVector& events) {
   ASSERT_EQ(expected_event_types.size(), events.size());
 
@@ -161,25 +161,24 @@ class PerformanceMonitorBrowserTest : public ExtensionBrowserTest {
         chrome::NOTIFICATION_PERFORMANCE_MONITOR_INITIALIZED,
         content::NotificationService::AllSources());
 
-    performance_monitor_->Start();
-
-    windowed_observer.Wait();
-
     // We stop the timer in charge of doing timed collections so that we can
     // enforce when, and how many times, we do these collections.
-    performance_monitor_->timer_.Stop();
+    performance_monitor_->disable_timer_autostart_for_testing_ = true;
+    // Force metrics to be stored, regardless of switches used.
+    performance_monitor_->database_logging_enabled_ = true;
+    performance_monitor_->Initialize();
+
+    windowed_observer.Wait();
   }
 
   // A handle for gathering statistics from the database, which must be done on
   // the background thread. Since we are testing, we can mock synchronicity with
   // FlushForTesting().
   void GatherStatistics() {
-    content::BrowserThread::PostBlockingPoolSequencedTask(
-        Database::kDatabaseSequenceToken,
-        FROM_HERE,
-        base::Bind(&PerformanceMonitor::GatherStatisticsOnBackgroundThread,
-                   base::Unretained(performance_monitor())));
+    performance_monitor_->next_collection_time_ = base::Time::Now();
+    performance_monitor_->GatherMetricsMapOnUIThread();
 
+    RunAllPendingInMessageLoop(content::BrowserThread::IO);
     content::BrowserThread::GetBlockingPool()->FlushForTesting();
   }
 
@@ -301,7 +300,7 @@ class PerformanceMonitorUncleanExitBrowserTest
 
     base::FilePath first_profile =
         user_data_directory.AppendASCII(first_profile_name_);
-    CHECK(file_util::CreateDirectory(first_profile));
+    CHECK(base::CreateDirectory(first_profile));
 
     base::FilePath stock_prefs_file;
     PathService::Get(chrome::DIR_TEST_DATA, &stock_prefs_file);
@@ -320,7 +319,7 @@ class PerformanceMonitorUncleanExitBrowserTest
 
     base::FilePath second_profile =
         user_data_directory.AppendASCII(second_profile_name_);
-    CHECK(file_util::CreateDirectory(second_profile));
+    CHECK(base::CreateDirectory(second_profile));
 
     base::FilePath second_profile_prefs_file =
         second_profile.Append(chrome::kPreferencesFilename);
@@ -759,12 +758,12 @@ IN_PROC_BROWSER_TEST_F(PerformanceMonitorBrowserTest, NetworkBytesRead) {
   PathService::Get(chrome::DIR_TEST_DATA, &test_dir);
 
   int64 page1_size = 0;
-  ASSERT_TRUE(file_util::GetFileSize(test_dir.AppendASCII("title1.html"),
-                                     &page1_size));
+  ASSERT_TRUE(base::GetFileSize(test_dir.AppendASCII("title1.html"),
+                                &page1_size));
 
   int64 page2_size = 0;
-  ASSERT_TRUE(file_util::GetFileSize(test_dir.AppendASCII("title2.html"),
-                                     &page2_size));
+  ASSERT_TRUE(base::GetFileSize(test_dir.AppendASCII("title2.html"),
+                                &page2_size));
 
   ASSERT_TRUE(test_server()->Start());
 
@@ -772,11 +771,7 @@ IN_PROC_BROWSER_TEST_F(PerformanceMonitorBrowserTest, NetworkBytesRead) {
       browser(),
       test_server()->GetURL(std::string("files/").append("title1.html")));
 
-  performance_monitor()->DoTimedCollections();
-
-  // Since network bytes are read and set on the IO thread, we must flush this
-  // additional thread to be sure that all messages are run.
-  RunAllPendingInMessageLoop(content::BrowserThread::IO);
+  GatherStatistics();
 
   Database::MetricVector metrics = GetStats(METRIC_NETWORK_BYTES_READ);
   ASSERT_EQ(1u, metrics.size());
@@ -789,7 +784,7 @@ IN_PROC_BROWSER_TEST_F(PerformanceMonitorBrowserTest, NetworkBytesRead) {
       browser(),
       test_server()->GetURL(std::string("files/").append("title2.html")));
 
-  performance_monitor()->DoTimedCollections();
+  GatherStatistics();
 
   metrics = GetStats(METRIC_NETWORK_BYTES_READ);
   ASSERT_EQ(2u, metrics.size());

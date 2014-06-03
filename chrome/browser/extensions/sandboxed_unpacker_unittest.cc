@@ -12,11 +12,11 @@
 #include "base/values.h"
 #include "chrome/browser/extensions/sandboxed_unpacker.h"
 #include "chrome/common/chrome_paths.h"
-#include "chrome/common/extensions/extension.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "content/public/test/test_utils.h"
 #include "extensions/common/constants.h"
+#include "extensions/common/extension.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 
@@ -47,7 +47,7 @@ class MockSandboxedUnpackerClient : public SandboxedUnpackerClient {
 
   }
 
-  virtual void OnUnpackFailure(const string16& error) OVERRIDE {
+  virtual void OnUnpackFailure(const base::string16& error) OVERRIDE {
     ASSERT_TRUE(false);
   }
 

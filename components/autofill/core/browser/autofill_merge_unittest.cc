@@ -10,7 +10,7 @@
 #include "base/path_service.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "components/autofill/core/browser/autofill_common_test.h"
+#include "components/autofill/core/browser/autofill_test_utils.h"
 #include "components/autofill/core/browser/autofill_type.h"
 #include "components/autofill/core/browser/data_driven_test.h"
 #include "components/autofill/core/browser/form_structure.h"
@@ -88,7 +88,8 @@ class PersonalDataManagerMock : public PersonalDataManager {
   void Reset();
 
   // PersonalDataManager:
-  virtual void SaveImportedProfile(const AutofillProfile& profile) OVERRIDE;
+  virtual std::string SaveImportedProfile(
+      const AutofillProfile& profile) OVERRIDE;
   virtual const std::vector<AutofillProfile*>& web_profiles() const OVERRIDE;
 
  private:
@@ -108,11 +109,14 @@ void PersonalDataManagerMock::Reset() {
   profiles_.clear();
 }
 
-void PersonalDataManagerMock::SaveImportedProfile(
+std::string PersonalDataManagerMock::SaveImportedProfile(
     const AutofillProfile& profile) {
   std::vector<AutofillProfile> profiles;
-  if (!MergeProfile(profile, profiles_.get(), "en-US", &profiles))
+  std::string merged_guid =
+      MergeProfile(profile, profiles_.get(), "en-US", &profiles);
+  if (merged_guid == profile.guid())
     profiles_.push_back(new AutofillProfile(profile));
+  return merged_guid;
 }
 
 const std::vector<AutofillProfile*>& PersonalDataManagerMock::web_profiles()
@@ -213,7 +217,7 @@ void AutofillMergeTest::MergeProfiles(const std::string& profiles,
     // followed by an explicit separator.
     if ((i > 0 && line == kProfileSeparator) || i == lines.size() - 1) {
       // Reached the end of a profile.  Try to import it.
-      FormStructure form_structure(form, std::string());
+      FormStructure form_structure(form);
       for (size_t i = 0; i < form_structure.field_count(); ++i) {
         // Set the heuristic type for each field, which is currently serialized
         // into the field's name.
@@ -224,9 +228,9 @@ void AutofillMergeTest::MergeProfiles(const std::string& profiles,
       }
 
       // Import the profile.
-      const CreditCard* imported_credit_card;
+      scoped_ptr<CreditCard> imported_credit_card;
       personal_data_.ImportFormData(form_structure, &imported_credit_card);
-      EXPECT_EQ(static_cast<const CreditCard*>(NULL), imported_credit_card);
+      EXPECT_EQ(static_cast<CreditCard*>(NULL), imported_credit_card.get());
 
       // Clear the |form| to start a new profile.
       form.fields.clear();

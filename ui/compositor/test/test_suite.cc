@@ -6,7 +6,6 @@
 
 #include "base/command_line.h"
 #include "base/message_loop/message_loop.h"
-#include "ui/base/ui_base_paths.h"
 #include "ui/compositor/compositor.h"
 #include "ui/compositor/compositor_switches.h"
 #include "ui/gfx/gfx_paths.h"
@@ -14,6 +13,10 @@
 
 #if defined(USE_X11)
 #include <X11/Xlib.h>
+#endif
+
+#if defined(OS_WIN)
+#include "ui/gfx/win/dpi.h"
 #endif
 
 namespace ui {
@@ -32,6 +35,10 @@ void CompositorTestSuite::Initialize() {
   base::TestSuite::Initialize();
 
   gfx::RegisterPathProvider();
+
+#if defined(OS_WIN)
+  gfx::InitDeviceScaleFactor(1.0f);
+#endif
 
   message_loop_.reset(new base::MessageLoop(base::MessageLoop::TYPE_UI));
 }

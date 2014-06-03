@@ -3,23 +3,45 @@
 // found in the LICENSE file.
 
 #include "base/values.h"
-#include "content/browser/renderer_host/render_view_host_impl.h"
+#include "content/browser/frame_host/navigation_entry_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/browser/load_notification_details.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_types.h"
+#include "content/public/browser/render_view_host.h"
+#include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents_observer.h"
+#include "content/public/browser/web_contents_view.h"
 #include "content/public/common/content_paths.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/test_utils.h"
-#include "content/shell/shell.h"
+#include "content/shell/browser/shell.h"
 #include "content/test/content_browser_test.h"
 #include "content/test/content_browser_test_utils.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 
 namespace content {
+
+void ResizeWebContentsView(Shell* shell, const gfx::Size& size,
+                           bool set_start_page) {
+  // Shell::SizeTo is not implemented on Aura; WebContentsView::SizeContents
+  // works on Win and ChromeOS but not Linux - we need to resize the shell
+  // window on Linux because if we don't, the next layout of the unchanged shell
+  // window will resize WebContentsView back to the previous size.
+  // The cleaner and shorter SizeContents is preferred as more platforms convert
+  // to Aura.
+#if defined(TOOLKIT_GTK) || defined(OS_MACOSX)
+  shell->SizeTo(size);
+  // If |set_start_page| is true, start with blank page to make sure resize
+  // takes effect.
+  if (set_start_page)
+    NavigateToURL(shell, GURL("about://blank"));
+#else
+  shell->web_contents()->GetView()->SizeContents(size);
+#endif  // defined(TOOLKIT_GTK) || defined(OS_MACOSX)
+}
 
 class WebContentsImplBrowserTest : public ContentBrowserTest {
  public:
@@ -82,8 +104,61 @@ class NavigateOnCommitObserver : public WebContentsObserver {
   bool done_;
 };
 
+class RenderViewSizeDelegate : public WebContentsDelegate {
+ public:
+  void set_size_insets(const gfx::Size& size_insets) {
+    size_insets_ = size_insets;
+  }
+
+  // WebContentsDelegate:
+  virtual gfx::Size GetSizeForNewRenderView(
+      const WebContents* web_contents) const OVERRIDE {
+    gfx::Size size(web_contents->GetView()->GetContainerSize());
+    size.Enlarge(size_insets_.width(), size_insets_.height());
+    return size;
+  }
+
+ private:
+  gfx::Size size_insets_;
+};
+
+class RenderViewSizeObserver : public WebContentsObserver {
+ public:
+  RenderViewSizeObserver(Shell* shell, const gfx::Size& wcv_new_size)
+      : WebContentsObserver(shell->web_contents()),
+        shell_(shell),
+        wcv_new_size_(wcv_new_size) {
+  }
+
+  // WebContentsObserver:
+  virtual void RenderViewCreated(RenderViewHost* rvh) OVERRIDE {
+    rwhv_create_size_ = rvh->GetView()->GetViewBounds().size();
+  }
+
+  virtual void DidStartNavigationToPendingEntry(
+      const GURL& url,
+      NavigationController::ReloadType reload_type) OVERRIDE {
+    ResizeWebContentsView(shell_, wcv_new_size_, false);
+  }
+
+  gfx::Size rwhv_create_size() const { return rwhv_create_size_; }
+
+ private:
+  Shell* shell_;  // Weak ptr.
+  gfx::Size wcv_new_size_;
+  gfx::Size rwhv_create_size_;
+};
+
+// See: http://crbug.com/298193
+#if defined(OS_WIN)
+#define MAYBE_DidStopLoadingDetails DISABLED_DidStopLoadingDetails
+#else
+#define MAYBE_DidStopLoadingDetails DidStopLoadingDetails
+#endif
+
 // Test that DidStopLoading includes the correct URL in the details.
-IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest, DidStopLoadingDetails) {
+IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
+                       MAYBE_DidStopLoadingDetails) {
   ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
 
   LoadStopNotificationObserver load_observer(
@@ -97,10 +172,18 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest, DidStopLoadingDetails) {
             load_observer.controller_);
 }
 
+// See: http://crbug.com/298193
+#if defined(OS_WIN)
+#define MAYBE_DidStopLoadingDetailsWithPending \
+  DISABLED_DidStopLoadingDetailsWithPending
+#else
+#define MAYBE_DidStopLoadingDetailsWithPending DidStopLoadingDetailsWithPending
+#endif
+
 // Test that DidStopLoading includes the correct URL in the details when a
 // pending entry is present.
 IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
-                       DidStopLoadingDetailsWithPending) {
+                       MAYBE_DidStopLoadingDetailsWithPending) {
   ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
 
   // Listen for the first load to stop.
@@ -147,43 +230,88 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
             shell()->web_contents()->GetVisibleURL());
 }
 
-// Test that the browser receives the proper frame attach/detach messages from
-// the renderer and builds proper frame tree.
-IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest, FrameTree) {
+// TODO(sail): enable this for MAC when auto resizing of WebContentsViewCocoa is
+// fixed.
+// TODO(shrikant): enable this for Windows when issue with
+// force-compositing-mode is resolved (http://crbug.com/281726).
+#if defined(OS_WIN) || defined(OS_MACOSX) || defined(OS_ANDROID)
+#define MAYBE_GetSizeForNewRenderView DISABLED_GetSizeForNewRenderView
+#else
+#define MAYBE_GetSizeForNewRenderView GetSizeForNewRenderView
+#endif
+// Test that RenderViewHost is created and updated at the size specified by
+// WebContentsDelegate::GetSizeForNewRenderView().
+IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
+                       MAYBE_GetSizeForNewRenderView) {
   ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
+  // Create a new server with a different site.
+  net::SpawnedTestServer https_server(
+      net::SpawnedTestServer::TYPE_HTTPS,
+      net::SpawnedTestServer::kLocalhost,
+      base::FilePath(FILE_PATH_LITERAL("content/test/data")));
+  ASSERT_TRUE(https_server.Start());
 
-  NavigateToURL(shell(),
-                embedded_test_server()->GetURL("/frame_tree/top.html"));
+  scoped_ptr<RenderViewSizeDelegate> delegate(new RenderViewSizeDelegate());
+  shell()->web_contents()->SetDelegate(delegate.get());
+  ASSERT_TRUE(shell()->web_contents()->GetDelegate() == delegate.get());
 
-  WebContentsImpl* wc = static_cast<WebContentsImpl*>(shell()->web_contents());
-  RenderViewHostImpl* rvh = static_cast<RenderViewHostImpl*>(
-      wc->GetRenderViewHost());
-  FrameTreeNode* root = wc->GetFrameTreeRootForTesting();
+  // When no size is set, RenderWidgetHostView adopts the size of
+  // WebContenntsView.
+  NavigateToURL(shell(), embedded_test_server()->GetURL("/title2.html"));
+  EXPECT_EQ(shell()->web_contents()->GetView()->GetContainerSize(),
+            shell()->web_contents()->GetRenderWidgetHostView()->GetViewBounds().
+                size());
 
-  // Check that the root node is properly created with the frame id of the
-  // initial navigation.
-  EXPECT_EQ(3UL, root->child_count());
-  EXPECT_EQ(std::string(), root->frame_name());
-  EXPECT_EQ(rvh->main_frame_id(), root->frame_id());
+  // When a size is set, RenderWidgetHostView and WebContentsView honor this
+  // size.
+  gfx::Size size(300, 300);
+  gfx::Size size_insets(-10, -15);
+  ResizeWebContentsView(shell(), size, true);
+  delegate->set_size_insets(size_insets);
+  NavigateToURL(shell(), https_server.GetURL("/"));
+  size.Enlarge(size_insets.width(), size_insets.height());
+  EXPECT_EQ(size,
+            shell()->web_contents()->GetRenderWidgetHostView()->GetViewBounds().
+                size());
+  EXPECT_EQ(size, shell()->web_contents()->GetView()->GetContainerSize());
 
-  EXPECT_EQ(2UL, root->child_at(0)->child_count());
-  EXPECT_STREQ("1-1-name", root->child_at(0)->frame_name().c_str());
-
-  // Verify the deepest node exists and has the right name.
-  EXPECT_EQ(2UL, root->child_at(2)->child_count());
-  EXPECT_EQ(1UL, root->child_at(2)->child_at(1)->child_count());
-  EXPECT_EQ(0UL, root->child_at(2)->child_at(1)->child_at(0)->child_count());
-  EXPECT_STREQ("3-1-id",
-      root->child_at(2)->child_at(1)->child_at(0)->frame_name().c_str());
-
-  // Navigate to about:blank, which should leave only the root node of the frame
-  // tree in the browser process.
+  // If WebContentsView is resized after RenderWidgetHostView is created but
+  // before pending navigation entry is committed, both RenderWidgetHostView and
+  // WebContentsView use the new size of WebContentsView.
+  gfx::Size init_size(200, 200);
+  gfx::Size new_size(100, 100);
+  size_insets = gfx::Size(-20, -30);
+  ResizeWebContentsView(shell(), init_size, true);
+  delegate->set_size_insets(size_insets);
+  RenderViewSizeObserver observer(shell(), new_size);
   NavigateToURL(shell(), embedded_test_server()->GetURL("/title1.html"));
-
-  root = wc->GetFrameTreeRootForTesting();
-  EXPECT_EQ(0UL, root->child_count());
-  EXPECT_EQ(std::string(), root->frame_name());
-  EXPECT_EQ(rvh->main_frame_id(), root->frame_id());
+  // RenderWidgetHostView is created at specified size.
+  init_size.Enlarge(size_insets.width(), size_insets.height());
+  EXPECT_EQ(init_size, observer.rwhv_create_size());
+  // RenderViewSizeObserver resizes WebContentsView in
+  // DidStartNavigationToPendingEntry, so both WebContentsView and
+  // RenderWidgetHostView adopt this new size.
+  new_size.Enlarge(size_insets.width(), size_insets.height());
+  EXPECT_EQ(new_size,
+            shell()->web_contents()->GetRenderWidgetHostView()->GetViewBounds().
+                size());
+  EXPECT_EQ(new_size, shell()->web_contents()->GetView()->GetContainerSize());
 }
+
+IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest, OpenURLSubframe) {
+
+  // Navigate with source_frame_id 3, FrameTreeNode ID 4.
+  const GURL url("http://foo");
+  OpenURLParams params(url, Referrer(), 3, 4, CURRENT_TAB, PAGE_TRANSITION_LINK,
+                       true);
+  shell()->web_contents()->OpenURL(params);
+
+  // Make sure the NavigationEntry ends up with the FrameTreeNode ID.
+  NavigationController* controller = &shell()->web_contents()->GetController();
+  EXPECT_TRUE(controller->GetPendingEntry());
+  EXPECT_EQ(4, NavigationEntryImpl::FromNavigationEntry(
+                controller->GetPendingEntry())->frame_tree_node_id());
+}
+
 
 }  // namespace content

@@ -12,10 +12,10 @@
 #include "chrome/browser/extensions/extension_prefs_factory.h"
 #include "chrome/browser/profiles/incognito_helpers.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/extensions/extension.h"
 #include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
+#include "extensions/common/extension.h"
 
 namespace {
 
@@ -111,6 +111,9 @@ void ShellWindowGeometryCache::SyncToStorage() {
       base::DictionaryValue* value = new base::DictionaryValue;
       const gfx::Rect& bounds = it->second.bounds;
       const gfx::Rect& screen_bounds = it->second.screen_bounds;
+      DCHECK(!bounds.IsEmpty());
+      DCHECK(!screen_bounds.IsEmpty());
+      DCHECK(it->second.window_state != ui::SHOW_STATE_DEFAULT);
       value->SetInteger("x", bounds.x());
       value->SetInteger("y", bounds.y());
       value->SetInteger("w", bounds.width());
@@ -123,7 +126,13 @@ void ShellWindowGeometryCache::SyncToStorage() {
       value->SetString(
           "ts", base::Int64ToString(it->second.last_change.ToInternalValue()));
       dict->SetWithoutPathExpansion(it->first, value);
+
+      FOR_EACH_OBSERVER(
+        Observer,
+        observers_,
+        OnGeometryCacheChanged(extension_id, it->first, bounds));
     }
+
     prefs_->SetGeometryCache(extension_id, dict.Pass());
   }
 }
@@ -311,6 +320,14 @@ content::BrowserContext*
 ShellWindowGeometryCache::Factory::GetBrowserContextToUse(
     content::BrowserContext* context) const {
   return chrome::GetBrowserContextRedirectedInIncognito(context);
+}
+
+void ShellWindowGeometryCache::AddObserver(Observer* observer) {
+  observers_.AddObserver(observer);
+}
+
+void ShellWindowGeometryCache::RemoveObserver(Observer* observer) {
+  observers_.RemoveObserver(observer);
 }
 
 } // namespace apps

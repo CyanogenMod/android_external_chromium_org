@@ -9,10 +9,10 @@
 
 #include "base/logging.h"
 #include "base/values.h"
-#include "chrome/common/extensions/api/extension_api.h"
 #include "chrome/renderer/extensions/chrome_v8_context.h"
 #include "chrome/renderer/extensions/object_backed_native_handler.h"
 #include "content/public/renderer/v8_value_converter.h"
+#include "extensions/common/extension_api.h"
 
 using content::V8ValueConverter;
 
@@ -35,7 +35,7 @@ class SchemaRegistryNativeHandler : public ObjectBackedNativeHandler {
  private:
   void GetSchema(const v8::FunctionCallbackInfo<v8::Value>& args) {
     args.GetReturnValue().Set(
-      registry_->GetSchema(*v8::String::AsciiValue(args[0])));
+      registry_->GetSchema(*v8::String::Utf8Value(args[0])));
   }
 
   scoped_ptr<ChromeV8Context> context_;
@@ -66,16 +66,16 @@ scoped_ptr<NativeHandler> V8SchemaRegistry::AsNativeHandler() {
 v8::Handle<v8::Array> V8SchemaRegistry::GetSchemas(
     const std::vector<std::string>& apis) {
   v8::Isolate* isolate = v8::Isolate::GetCurrent();
-  v8::HandleScope handle_scope(isolate);
+  v8::EscapableHandleScope handle_scope(isolate);
   v8::Context::Scope context_scope(GetOrCreateContext(isolate));
 
-  v8::Handle<v8::Array> v8_apis(v8::Array::New(apis.size()));
+  v8::Local<v8::Array> v8_apis(v8::Array::New(isolate, apis.size()));
   size_t api_index = 0;
   for (std::vector<std::string>::const_iterator i = apis.begin();
        i != apis.end(); ++i) {
     v8_apis->Set(api_index++, GetSchema(*i));
   }
-  return handle_scope.Close(v8_apis);
+  return handle_scope.Escape(v8_apis);
 }
 
 v8::Handle<v8::Object> V8SchemaRegistry::GetSchema(const std::string& api) {
@@ -85,7 +85,7 @@ v8::Handle<v8::Object> V8SchemaRegistry::GetSchema(const std::string& api) {
     return maybe_schema->second.newLocal(v8::Isolate::GetCurrent());
 
   v8::Isolate* isolate = v8::Isolate::GetCurrent();
-  v8::HandleScope handle_scope(isolate);
+  v8::EscapableHandleScope handle_scope(isolate);
   v8::Handle<v8::Context> context = GetOrCreateContext(isolate);
   v8::Context::Scope context_scope(context);
 
@@ -101,19 +101,19 @@ v8::Handle<v8::Object> V8SchemaRegistry::GetSchema(const std::string& api) {
   v8::Local<v8::Object> to_return =
       v8::Local<v8::Object>::New(isolate, v8_schema);
   schema_cache_[api] = UnsafePersistent<v8::Object>(&v8_schema);
-  return handle_scope.Close(to_return);
+  return handle_scope.Escape(to_return);
 }
 
 v8::Handle<v8::Context> V8SchemaRegistry::GetOrCreateContext(
     v8::Isolate* isolate) {
   // It's ok to create local handles in this function, since this is only called
   // when we have a HandleScope.
-  if (context_.get().IsEmpty()) {
+  if (context_.IsEmpty()) {
     v8::Handle<v8::Context> context = v8::Context::New(isolate);
     context_.reset(context);
     return context;
   }
-  return v8::Local<v8::Context>::New(isolate, context_.get());
+  return context_.NewHandle(isolate);
 }
 
 }  // namespace extensions

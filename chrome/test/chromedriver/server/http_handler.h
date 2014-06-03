@@ -35,7 +35,8 @@ class HttpServerResponseInfo;
 
 class Adb;
 class DeviceManager;
-class Log;
+class PortManager;
+class PortServer;
 class URLRequestContextGetter;
 
 enum HttpMethod {
@@ -60,11 +61,12 @@ typedef base::Callback<void(scoped_ptr<net::HttpServerResponseInfo>)>
 
 class HttpHandler {
  public:
-  HttpHandler(Log* log, const std::string& url_base);
+  explicit HttpHandler(const std::string& url_base);
   HttpHandler(const base::Closure& quit_func,
               const scoped_refptr<base::SingleThreadTaskRunner> io_task_runner,
-              Log* log,
-              const std::string& url_base);
+              const std::string& url_base,
+              int adb_port,
+              scoped_ptr<PortServer> port_server);
   ~HttpHandler();
 
   void Handle(const net::HttpServerRequestInfo& request,
@@ -78,9 +80,11 @@ class HttpHandler {
   FRIEND_TEST_ALL_PREFIXES(HttpHandlerTest, HandleCommand);
   typedef std::vector<CommandMapping> CommandMap;
 
-  Command WrapToCommand(const SessionCommand& session_command);
-  Command WrapToCommand(const WindowCommand& window_command);
-  Command WrapToCommand(const ElementCommand& element_command);
+  Command WrapToCommand(const char* name,
+                        const SessionCommand& session_command);
+  Command WrapToCommand(const char* name, const WindowCommand& window_command);
+  Command WrapToCommand(const char* name,
+                        const ElementCommand& element_command);
   void HandleCommand(const net::HttpServerRequestInfo& request,
                      const std::string& trimmed_path,
                      const HttpResponseSenderFunc& send_response_func);
@@ -97,7 +101,6 @@ class HttpHandler {
 
   base::ThreadChecker thread_checker_;
   base::Closure quit_func_;
-  Log* log_;
   std::string url_base_;
   bool received_shutdown_;
   scoped_refptr<URLRequestContextGetter> context_getter_;
@@ -106,6 +109,8 @@ class HttpHandler {
   scoped_ptr<CommandMap> command_map_;
   scoped_ptr<Adb> adb_;
   scoped_ptr<DeviceManager> device_manager_;
+  scoped_ptr<PortServer> port_server_;
+  scoped_ptr<PortManager> port_manager_;
 
   base::WeakPtrFactory<HttpHandler> weak_ptr_factory_;
 

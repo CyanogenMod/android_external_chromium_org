@@ -27,8 +27,6 @@
 #include "chrome/browser/storage_monitor/udev_util_linux.h"
 #include "device/media_transfer_protocol/media_transfer_protocol_manager.h"
 
-namespace chrome {
-
 using content::BrowserThread;
 typedef MtabWatcherLinux::MountPointDeviceMap MountPointDeviceMap;
 
@@ -113,23 +111,6 @@ uint64 GetDeviceStorageSize(const base::FilePath& device_path,
       total_size_in_bytes * 512 : 0;
 }
 
-// Constructs the device name from the device properties. If the device details
-// are unavailable, returns an empty string.
-void GetDeviceName(struct udev_device* device,
-                   string16* out_volume_label,
-                   string16* out_vendor_name,
-                   string16* out_model_name) {
-  std::string device_label = GetUdevDevicePropertyValue(device, kLabel);
-  std::string vendor_name = GetUdevDevicePropertyValue(device, kVendor);
-  std::string model_name = GetUdevDevicePropertyValue(device, kModel);
-  if (out_volume_label)
-    *out_volume_label = UTF8ToUTF16(device_label);
-  if (out_vendor_name)
-    *out_vendor_name = UTF8ToUTF16(vendor_name);
-  if (out_model_name)
-    *out_model_name = UTF8ToUTF16(model_name);
-}
-
 // Gets the device information using udev library.
 scoped_ptr<StorageInfo> GetDeviceInfo(const base::FilePath& device_path,
                                       const base::FilePath& mount_point) {
@@ -162,12 +143,12 @@ scoped_ptr<StorageInfo> GetDeviceInfo(const base::FilePath& device_path,
   if (!device.get())
     return storage_info.Pass();
 
-  string16 volume_label = UTF8ToUTF16(GetUdevDevicePropertyValue(device.get(),
-                                                                 kLabel));
-  string16 vendor_name = UTF8ToUTF16(GetUdevDevicePropertyValue(device.get(),
-                                                                kVendor));
-  string16 model_name = UTF8ToUTF16(GetUdevDevicePropertyValue(device.get(),
-                                                               kModel));
+  base::string16 volume_label =
+      UTF8ToUTF16(GetUdevDevicePropertyValue(device.get(), kLabel));
+  base::string16 vendor_name =
+      UTF8ToUTF16(GetUdevDevicePropertyValue(device.get(), kVendor));
+  base::string16 model_name =
+      UTF8ToUTF16(GetUdevDevicePropertyValue(device.get(), kModel));
 
   std::string unique_id = MakeDeviceUniqueId(device.get());
 
@@ -199,7 +180,7 @@ scoped_ptr<StorageInfo> GetDeviceInfo(const base::FilePath& device_path,
 
   storage_info.reset(new StorageInfo(
       StorageInfo::MakeDeviceId(type, unique_id),
-      string16(),
+      base::string16(),
       mount_point.value(),
       volume_label,
       vendor_name,
@@ -334,6 +315,17 @@ void StorageMonitorLinux::SetMediaTransferProtocolManagerForTest(
 void StorageMonitorLinux::EjectDevice(
     const std::string& device_id,
     base::Callback<void(EjectStatus)> callback) {
+  StorageInfo::Type type;
+  if (!StorageInfo::CrackDeviceId(device_id, &type, NULL)) {
+    callback.Run(EJECT_FAILURE);
+    return;
+  }
+
+  if (type == StorageInfo::MTP_OR_PTP) {
+    media_transfer_protocol_device_observer_->EjectDevice(device_id, callback);
+    return;
+  }
+
   // Find the mount point for the given device ID.
   base::FilePath path;
   base::FilePath device;
@@ -508,5 +500,3 @@ StorageMonitor* StorageMonitor::Create() {
   const base::FilePath kDefaultMtabPath("/etc/mtab");
   return new StorageMonitorLinux(kDefaultMtabPath);
 }
-
-}  // namespace chrome

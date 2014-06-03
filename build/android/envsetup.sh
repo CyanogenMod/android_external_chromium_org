@@ -9,13 +9,12 @@
 # ANDROID_SDK_BUILD=1 will then be defined and used in the rest of the setup to
 # specifiy build type.
 
-# TODO(ilevy): Figure out the right check here. This breaks the webkit build as
-# is since it's sourced from another script:
-# http://build.webkit.org/builders/Chromium%20Android%20Release/builds/34681
-#if [ "$_" == "$0" ]; then
-#  echo "ERROR: envsetup must be sourced."
-#  exit 1
-#fi
+# Make sure we're being sourced (possibly by another script). Check for bash
+# since zsh sets $0 when sourcing.
+if [[ -n "$BASH_VERSION" && "${BASH_SOURCE:-$0}" == "$0" ]]; then
+  echo "ERROR: envsetup must be sourced."
+  exit 1
+fi
 
 # Source functions script.  The file is in the same directory as this script.
 SCRIPT_DIR="$(dirname "${BASH_SOURCE:-$0}")"
@@ -109,26 +108,6 @@ elif [[ -n "$CHROME_ANDROID_BUILD_WEBVIEW" ]]; then
   webview_build_init
 fi
 
-java -version 2>&1 | grep -qs "Java HotSpot"
-if [ $? -ne 0 ]; then
-  echo "Please check and make sure you are using the Oracle Java SDK, and it"
-  echo "appears before other Java SDKs in your path."
-  echo "Refer to the \"Install prerequisites\" section here:"
-  echo "https://code.google.com/p/chromium/wiki/AndroidBuildInstructions"
-  return 1
-fi
-
-if [[ -n "$JAVA_HOME" && -x "$JAVA_HOME/bin/java" ]]; then
-  "$JAVA_HOME/bin/java" -version 2>&1 | grep -qs "Java HotSpot"
-  if [ $? -ne 0 ]; then
-    echo "If JAVA_HOME is defined then it must refer to the install location"
-    echo "of the Oracle Java SDK."
-    echo "Refer to the \"Install prerequisites\" section here:"
-    echo "https://code.google.com/p/chromium/wiki/AndroidBuildInstructions"
-    return 1
-  fi
-fi
-
 # Workaround for valgrind build
 if [[ -n "$CHROME_ANDROID_VALGRIND_BUILD" ]]; then
 # arm_thumb=0 is a workaround for https://bugs.kde.org/show_bug.cgi?id=270709
@@ -140,11 +119,16 @@ fi
 # Source a bunch of helper functions
 . ${CHROME_SRC}/build/android/adb_device_functions.sh
 
-ANDROID_GOMA_WRAPPER=""
 if [[ -d $GOMA_DIR ]]; then
-  ANDROID_GOMA_WRAPPER="$GOMA_DIR/gomacc"
+  num_cores="$(grep --count ^processor /proc/cpuinfo)"
+# Goma is IO-ish you want more threads than you have cores.
+  let "goma_threads=num_cores*2"
+  if [ -z "${GOMA_COMPILER_PROXY_THREADS}" -a "${goma_threads}" -gt 16 ]; then
+# The default is 16 threads, if the machine has many cores we crank it up a bit
+    GOMA_COMPILER_PROXY_THREADS="${goma_threads}"
+    export GOMA_COMPILER_PROXY_THREADS
+  fi
 fi
-export ANDROID_GOMA_WRAPPER
 
 # Declare Android are cross compile.
 export GYP_CROSSCOMPILE=1

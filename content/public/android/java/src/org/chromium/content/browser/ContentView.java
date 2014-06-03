@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -24,7 +24,7 @@ import android.widget.FrameLayout;
 import com.google.common.annotations.VisibleForTesting;
 
 import org.chromium.content.common.TraceEvent;
-import org.chromium.ui.WindowAndroid;
+import org.chromium.ui.base.WindowAndroid;
 
 /**
  * The containing view for {@link ContentViewCore} that exists in the Android UI hierarchy and
@@ -40,6 +40,7 @@ public class ContentView extends FrameLayout
 
     private float mCurrentTouchOffsetX;
     private float mCurrentTouchOffsetY;
+    private final int[] mLocationInWindow = new int[2];
 
     /**
      * Creates an instance of a ContentView.
@@ -49,7 +50,7 @@ public class ContentView extends FrameLayout
      * @param windowAndroid An instance of the WindowAndroid.
      * @return A ContentView instance.
      */
-    public static ContentView newInstance(Context context, int nativeWebContents,
+    public static ContentView newInstance(Context context, long nativeWebContents,
             WindowAndroid windowAndroid) {
         return newInstance(context, nativeWebContents, windowAndroid, null,
                 android.R.attr.webViewStyle);
@@ -64,7 +65,7 @@ public class ContentView extends FrameLayout
      * @param attrs The attributes of the XML tag that is inflating the view.
      * @return A ContentView instance.
      */
-    public static ContentView newInstance(Context context, int nativeWebContents,
+    public static ContentView newInstance(Context context, long nativeWebContents,
             WindowAndroid windowAndroid, AttributeSet attrs) {
         // TODO(klobag): use the WebViewStyle as the default style for now. It enables scrollbar.
         // When ContentView is moved to framework, we can define its own style in the res.
@@ -82,7 +83,7 @@ public class ContentView extends FrameLayout
      * @param defStyle The default style to apply to this view.
      * @return A ContentView instance.
      */
-    public static ContentView newInstance(Context context, int nativeWebContents,
+    public static ContentView newInstance(Context context, long nativeWebContents,
             WindowAndroid windowAndroid, AttributeSet attrs, int defStyle) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN) {
             return new ContentView(context, nativeWebContents, windowAndroid, attrs, defStyle);
@@ -92,7 +93,7 @@ public class ContentView extends FrameLayout
         }
     }
 
-    protected ContentView(Context context, int nativeWebContents, WindowAndroid windowAndroid,
+    protected ContentView(Context context, long nativeWebContents, WindowAndroid windowAndroid,
             AttributeSet attrs, int defStyle) {
         super(context, attrs, defStyle);
 
@@ -105,18 +106,17 @@ public class ContentView extends FrameLayout
         setFocusableInTouchMode(true);
 
         mContentViewCore = new ContentViewCore(context);
-        mContentViewCore.initialize(this, this, nativeWebContents, windowAndroid,
-                Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN ?
-                ContentViewCore.INPUT_EVENTS_DELIVERED_AT_VSYNC :
-                ContentViewCore.INPUT_EVENTS_DELIVERED_IMMEDIATELY);
+        mContentViewCore.initialize(this, this, nativeWebContents, windowAndroid);
     }
 
-    // PageInfo implementation.
-
-    @Override
+    /**
+     * @return The URL of the page.
+     */
     public String getUrl() {
         return mContentViewCore.getUrl();
     }
+
+    // PageInfo implementation.
 
     @Override
     public String getTitle() {
@@ -125,7 +125,7 @@ public class ContentView extends FrameLayout
 
     @Override
     public boolean isReadyForSnapshot() {
-        return !isCrashed() && isReady();
+        return isReady();
     }
 
     @Override
@@ -274,13 +274,6 @@ public class ContentView extends FrameLayout
     }
 
     /**
-     * Reload the current page.
-     */
-    public void reload() {
-        mContentViewCore.reload();
-    }
-
-    /**
      * Clears the WebView's page history in both the backwards and forwards
      * directions.
      */
@@ -338,6 +331,11 @@ public class ContentView extends FrameLayout
         mContentViewCore.getContentViewGestureHandler().setIgnoreSingleTap(value);
     }
 
+    /** @see ContentViewGestureHandler#setIgnoreRemainingTouchEvents */
+    public void setIgnoreRemainingTouchEvents() {
+        mContentViewCore.getContentViewGestureHandler().setIgnoreRemainingTouchEvents();
+    }
+
     /**
      * Modify the ContentView magnification level. The effect of calling this
      * method is exactly as after "pinch zoom".
@@ -362,20 +360,6 @@ public class ContentView extends FrameLayout
      */
     public void evaluateJavaScript(String script) throws IllegalStateException {
         mContentViewCore.evaluateJavaScript(script, null);
-    }
-
-    /**
-     * This method should be called when the containing activity is paused.
-     **/
-    public void onActivityPause() {
-        mContentViewCore.onActivityPause();
-    }
-
-    /**
-     * This method should be called when the containing activity is resumed.
-     **/
-    public void onActivityResume() {
-        mContentViewCore.onActivityResume();
     }
 
     /**
@@ -417,12 +401,27 @@ public class ContentView extends FrameLayout
         return super.drawChild(canvas, child, drawingTime);
     }
 
+    // Needed by ContentViewCore.InternalAccessDelegate
+    @Override
+    public void onScrollChanged(int l, int t, int oldl, int oldt) {
+        super.onScrollChanged(l, t, oldl, oldt);
+    }
+
     @Override
     protected void onSizeChanged(int w, int h, int ow, int oh) {
         TraceEvent.begin();
         super.onSizeChanged(w, h, ow, oh);
         mContentViewCore.onSizeChanged(w, h, ow, oh);
         TraceEvent.end();
+    }
+
+    @Override
+    protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
+        super.onLayout(changed, left, top, right, bottom);
+        if (changed) {
+            getLocationInWindow(mLocationInWindow);
+            mContentViewCore.onLocationInWindowChanged(mLocationInWindow[0], mLocationInWindow[1]);
+        }
     }
 
     @Override
@@ -486,6 +485,7 @@ public class ContentView extends FrameLayout
         MotionEvent offset = createOffsetMotionEvent(event);
         boolean consumed = mContentViewCore.onHoverEvent(offset);
         offset.recycle();
+        super.onHoverEvent(event);
         return consumed;
     }
 
@@ -539,7 +539,7 @@ public class ContentView extends FrameLayout
 
     @Override
     protected int computeHorizontalScrollExtent() {
-        // TODO (dtrainor): Need to expose scroll events properly to public. Either make getScroll*
+        // TODO(dtrainor): Need to expose scroll events properly to public. Either make getScroll*
         // work or expose computeHorizontalScrollOffset()/computeVerticalScrollOffset as public.
         return mContentViewCore.computeHorizontalScrollExtent();
     }
@@ -652,21 +652,42 @@ public class ContentView extends FrameLayout
     }
 
     /**
-     * @return Whether the native ContentView has crashed.
+     * Zooms in the WebView by 25% (or less if that would result in zooming in
+     * more than possible).
+     *
+     * @return True if there was a zoom change, false otherwise.
      */
-    public boolean isCrashed() {
-        return mContentViewCore.isCrashed();
+    // This method uses the term 'zoom' for legacy reasons, but relates
+    // to what chrome calls the 'page scale factor'.
+    public boolean zoomIn() {
+        return mContentViewCore.zoomIn();
     }
 
     /**
-     * @return Whether a reload happens when this ContentView is activated.
+     * Zooms out the WebView by 20% (or less if that would result in zooming out
+     * more than possible).
+     *
+     * @return True if there was a zoom change, false otherwise.
      */
-    public boolean needsReload() {
-        return mContentViewCore.needsReload();
+    // This method uses the term 'zoom' for legacy reasons, but relates
+    // to what chrome calls the 'page scale factor'.
+    public boolean zoomOut() {
+        return mContentViewCore.zoomOut();
     }
 
     /**
-     * Return the current scale.
+     * Resets the zoom factor of the WebView.
+     *
+     * @return True if there was a zoom change, false otherwise.
+     */
+    // This method uses the term 'zoom' for legacy reasons, but relates
+    // to what chrome calls the 'page scale factor'.
+    public boolean zoomReset() {
+        return mContentViewCore.zoomReset();
+    }
+
+    /**
+     * Return the current scale of the WebView
      * @return The current scale.
      */
     public float getScale() {

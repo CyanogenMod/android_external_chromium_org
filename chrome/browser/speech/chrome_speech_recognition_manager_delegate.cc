@@ -17,6 +17,7 @@
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/tab_contents/tab_util.h"
 #include "chrome/common/pref_names.h"
+#include "chrome/common/url_constants.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_source.h"
@@ -43,6 +44,24 @@ using content::WebContents;
 
 namespace speech {
 
+namespace {
+
+void TabClosedCallbackOnIOThread(int render_process_id, int render_view_id) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+
+  SpeechRecognitionManager* manager = SpeechRecognitionManager::GetInstance();
+  // |manager| becomes NULL if a browser shutdown happens between the post of
+  // this task (from the UI thread) and this call (on the IO thread). In this
+  // case we just return.
+  if (!manager)
+    return;
+
+  manager->AbortAllSessionsForRenderView(render_process_id, render_view_id);
+}
+
+}  // namespace
+
+
 // Asynchronously fetches the PC and audio hardware/driver info if
 // the user has opted into UMA. This information is sent with speech input
 // requests to the server for identifying and improving quality issues with
@@ -62,19 +81,22 @@ class ChromeSpeechRecognitionManagerDelegate::OptionalRequestInfo
 
   void CheckUMAAndGetHardwareInfo() {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+    // prefs::kMetricsReportingEnabled is not registered for OS_CHROMEOS.
+#if !defined(OS_CHROMEOS)
     if (g_browser_process->local_state()->GetBoolean(
         prefs::kMetricsReportingEnabled)) {
       // Access potentially slow OS calls from the FILE thread.
       BrowserThread::PostTask(BrowserThread::FILE, FROM_HERE,
           base::Bind(&OptionalRequestInfo::GetHardwareInfo, this));
     }
+#endif
   }
 
   void GetHardwareInfo() {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
     base::AutoLock lock(lock_);
     can_report_metrics_ = true;
-    string16 device_model =
+    base::string16 device_model =
         SpeechRecognitionManager::GetInstance()->GetAudioInputDeviceModel();
 #if defined(OS_WIN)
     value_ = UTF16ToUTF8(
@@ -107,8 +129,8 @@ class ChromeSpeechRecognitionManagerDelegate::OptionalRequestInfo
 };
 
 // Simple utility to get notified when a WebContent (a tab or an extension's
-// background page) is closed or crashes. Both the callback site and the
-// callback thread are passed by the caller in the constructor.
+// background page) is closed or crashes. The callback will always be called on
+// the UI thread.
 // There is no restriction on the constructor, however this class must be
 // destroyed on the UI thread, due to the NotificationRegistrar dependency.
 class ChromeSpeechRecognitionManagerDelegate::TabWatcher
@@ -118,10 +140,8 @@ class ChromeSpeechRecognitionManagerDelegate::TabWatcher
   typedef base::Callback<void(int render_process_id, int render_view_id)>
       TabClosedCallback;
 
-  TabWatcher(TabClosedCallback tab_closed_callback,
-             BrowserThread::ID callback_thread)
-      : tab_closed_callback_(tab_closed_callback),
-        callback_thread_(callback_thread) {
+  explicit TabWatcher(TabClosedCallback tab_closed_callback)
+      : tab_closed_callback_(tab_closed_callback) {
   }
 
   // Starts monitoring the WebContents corresponding to the given
@@ -157,7 +177,7 @@ class ChromeSpeechRecognitionManagerDelegate::TabWatcher
       registrar_.reset(new content::NotificationRegistrar());
 
     registrar_->Add(this,
-                    content::NOTIFICATION_WEB_CONTENTS_SWAPPED,
+                    content::NOTIFICATION_RENDER_VIEW_HOST_CHANGED,
                     content::Source<WebContents>(web_contents));
     registrar_->Add(this,
                     content::NOTIFICATION_WEB_CONTENTS_DISCONNECTED,
@@ -170,7 +190,7 @@ class ChromeSpeechRecognitionManagerDelegate::TabWatcher
                        const content::NotificationDetails& details) OVERRIDE {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
     DCHECK(type == content::NOTIFICATION_WEB_CONTENTS_DISCONNECTED ||
-           type == content::NOTIFICATION_WEB_CONTENTS_SWAPPED);
+           type == content::NOTIFICATION_RENDER_VIEW_HOST_CHANGED);
 
     WebContents* web_contents = content::Source<WebContents>(source).ptr();
     std::vector<WebContentsInfo>::iterator iter = FindWebContents(web_contents);
@@ -180,14 +200,13 @@ class ChromeSpeechRecognitionManagerDelegate::TabWatcher
     registered_web_contents_.erase(iter);
 
     registrar_->Remove(this,
-                       content::NOTIFICATION_WEB_CONTENTS_SWAPPED,
+                       content::NOTIFICATION_RENDER_VIEW_HOST_CHANGED,
                        content::Source<WebContents>(web_contents));
     registrar_->Remove(this,
                        content::NOTIFICATION_WEB_CONTENTS_DISCONNECTED,
                        content::Source<WebContents>(web_contents));
 
-    BrowserThread::PostTask(callback_thread_, FROM_HERE, base::Bind(
-        tab_closed_callback_, render_process_id, render_view_id));
+    tab_closed_callback_.Run(render_process_id, render_view_id);
   }
 
  private:
@@ -240,7 +259,6 @@ class ChromeSpeechRecognitionManagerDelegate::TabWatcher
   // Callback used to notify, on the thread specified by |callback_thread_| the
   // closure of a registered tab.
   TabClosedCallback tab_closed_callback_;
-  content::BrowserThread::ID callback_thread_;
 
   DISALLOW_COPY_AND_ASSIGN(TabWatcher);
 };
@@ -255,16 +273,12 @@ ChromeSpeechRecognitionManagerDelegate
 
 void ChromeSpeechRecognitionManagerDelegate::TabClosedCallback(
     int render_process_id, int render_view_id) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  SpeechRecognitionManager* manager = SpeechRecognitionManager::GetInstance();
-  // |manager| becomes NULL if a browser shutdown happens between the post of
-  // this task (from the UI thread) and this call (on the IO thread). In this
-  // case we just return.
-  if (!manager)
-    return;
-
-  manager->AbortAllSessionsForRenderView(render_process_id, render_view_id);
+  // Tell the S.R. Manager (which lives on the IO thread) to abort all the
+  // sessions for the given renderer view.
+  BrowserThread::PostTask(BrowserThread::IO, FROM_HERE, base::Bind(
+      &TabClosedCallbackOnIOThread, render_process_id, render_view_id));
 }
 
 void ChromeSpeechRecognitionManagerDelegate::OnRecognitionStart(
@@ -277,8 +291,7 @@ void ChromeSpeechRecognitionManagerDelegate::OnRecognitionStart(
   if (!tab_watcher_.get()) {
     tab_watcher_ = new TabWatcher(
         base::Bind(&ChromeSpeechRecognitionManagerDelegate::TabClosedCallback,
-                   base::Unretained(this)),
-        BrowserThread::IO);
+                   base::Unretained(this)));
   }
   tab_watcher_->Watch(context.render_process_id, context.render_view_id);
 }
@@ -345,13 +358,22 @@ void ChromeSpeechRecognitionManagerDelegate::CheckRecognitionIsAllowed(
   // |render_process_id| field, which is needed later to retrieve the profile.
   DCHECK_NE(context.render_process_id, 0);
 
+  int render_process_id = context.render_process_id;
+  int render_view_id = context.render_view_id;
+  if (context.embedder_render_process_id) {
+    // If this is a request originated from a guest, we need to re-route the
+    // permission check through the embedder (app).
+    render_process_id = context.embedder_render_process_id;
+    render_view_id = context.embedder_render_view_id;
+  }
+
   // Check that the render view type is appropriate, and whether or not we
   // need to request permission from the user.
   BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
                           base::Bind(&CheckRenderViewType,
                                      callback,
-                                     context.render_process_id,
-                                     context.render_view_id,
+                                     render_process_id,
+                                     render_view_id,
                                      !context.requested_by_page_element));
 }
 
@@ -371,6 +393,7 @@ bool ChromeSpeechRecognitionManagerDelegate::FilterProfanities(
       GetBoolean(prefs::kSpeechRecognitionFilterProfanities);
 }
 
+// static.
 void ChromeSpeechRecognitionManagerDelegate::CheckRenderViewType(
     base::Callback<void(bool ask_user, bool is_allowed)> callback,
     int render_process_id,
@@ -381,25 +404,34 @@ void ChromeSpeechRecognitionManagerDelegate::CheckRenderViewType(
       content::RenderViewHost::FromID(render_process_id, render_view_id);
 
   bool allowed = false;
-  bool ask_permission = false;
+  bool check_permission = false;
 
   if (!render_view_host) {
     if (!js_api) {
       // If there is no render view, we cannot show the speech bubble, so this
       // is not allowed.
       allowed = false;
-      ask_permission = false;
+      check_permission = false;
     } else {
       // This happens for extensions. Manifest should be checked for permission.
       allowed = true;
-      ask_permission = false;
+      check_permission = false;
     }
     BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
-                            base::Bind(callback, ask_permission, allowed));
+                            base::Bind(callback, check_permission, allowed));
     return;
   }
 
   WebContents* web_contents = WebContents::FromRenderViewHost(render_view_host);
+
+  // chrome://app-list/ uses speech recognition.
+  if (web_contents->GetCommittedWebUI() &&
+      web_contents->GetLastCommittedURL().spec() ==
+      chrome::kChromeUIAppListStartPageURL) {
+    allowed = true;
+    check_permission = false;
+  }
+
   extensions::ViewType view_type = extensions::GetViewType(web_contents);
 
   // TODO(kalman): Also enable speech bubble for extension popups
@@ -409,17 +441,25 @@ void ChromeSpeechRecognitionManagerDelegate::CheckRenderViewType(
   // click.
   if (view_type == extensions::VIEW_TYPE_TAB_CONTENTS ||
       view_type == extensions::VIEW_TYPE_APP_SHELL ||
-      view_type == extensions::VIEW_TYPE_VIRTUAL_KEYBOARD) {
-    // If it is a tab, we can show the speech input bubble or ask for
+      view_type == extensions::VIEW_TYPE_VIRTUAL_KEYBOARD ||
+      // Only allow requests through JavaScript API (|js_api| = true).
+      // Requests originating from html element (|js_api| = false) would want
+      // to show bubble which isn't quite intuitive from a background page. Also
+      // see todo above about issues with rendering such bubbles from extension
+      // popups.
+      (view_type == extensions::VIEW_TYPE_EXTENSION_BACKGROUND_PAGE &&
+           js_api)) {
+    // If it is a tab, we can show the speech input bubble or check for
+    // permission. For apps, this means manifest would be checked for
     // permission.
 
     allowed = true;
     if (js_api)
-      ask_permission = true;
+      check_permission = true;
   }
 
   BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
-                          base::Bind(callback, ask_permission, allowed));
+                          base::Bind(callback, check_permission, allowed));
 }
 
 }  // namespace speech

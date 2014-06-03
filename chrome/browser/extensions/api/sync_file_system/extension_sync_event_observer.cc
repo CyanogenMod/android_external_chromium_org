@@ -6,13 +6,14 @@
 
 #include "chrome/browser/extensions/api/sync_file_system/sync_file_system_api_helpers.h"
 #include "chrome/browser/extensions/event_names.h"
-#include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync_file_system/sync_event_observer.h"
 #include "chrome/browser/sync_file_system/sync_file_system_service.h"
 #include "chrome/browser/sync_file_system/syncable_file_system_util.h"
 #include "chrome/common/extensions/api/sync_file_system.h"
+#include "extensions/browser/event_router.h"
 #include "webkit/browser/fileapi/file_system_url.h"
 #include "webkit/common/fileapi/file_system_util.h"
 
@@ -65,9 +66,10 @@ void ExtensionSyncEventObserver::OnSyncStateUpdated(
   scoped_ptr<base::ListValue> params(
       api::sync_file_system::OnServiceStatusChanged::Create(service_info));
 
-  BroadcastOrDispatchEvent(app_origin,
-                           event_names::kOnServiceStatusChanged,
-                           params.Pass());
+  BroadcastOrDispatchEvent(
+      app_origin,
+      api::sync_file_system::OnServiceStatusChanged::kEventName,
+      params.Pass());
 }
 
 void ExtensionSyncEventObserver::OnFileSynced(
@@ -92,9 +94,10 @@ void ExtensionSyncEventObserver::OnFileSynced(
   params->AppendString(api::sync_file_system::ToString(action_enum));
   params->AppendString(api::sync_file_system::ToString(direction_enum));
 
-  BroadcastOrDispatchEvent(url.origin(),
-                           event_names::kOnFileStatusChanged,
-                           params.Pass());
+  BroadcastOrDispatchEvent(
+      url.origin(),
+      api::sync_file_system::OnFileStatusChanged::kEventName,
+      params.Pass());
 }
 
 void ExtensionSyncEventObserver::BroadcastOrDispatchEvent(
@@ -108,7 +111,7 @@ void ExtensionSyncEventObserver::BroadcastOrDispatchEvent(
   DCHECK(event_router);
 
   scoped_ptr<Event> event(new Event(event_name, values.Pass()));
-  event->restrict_to_profile = profile_;
+  event->restrict_to_browser_context = profile_;
 
   // No app_origin, broadcast to all listening extensions for this event name.
   if (broadcast_mode) {

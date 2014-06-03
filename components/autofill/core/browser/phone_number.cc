@@ -19,14 +19,8 @@ namespace {
 
 const char16 kPhoneNumberSeparators[] = { ' ', '.', '(', ')', '-', 0 };
 
-// The number of digits in a phone number.
-const size_t kPhoneNumberLength = 7;
-
-// The number of digits in an area code.
-const size_t kPhoneCityCodeLength = 3;
-
 void StripPunctuation(base::string16* number) {
-  RemoveChars(*number, kPhoneNumberSeparators, number);
+  base::RemoveChars(*number, kPhoneNumberSeparators, number);
 }
 
 // Returns the region code for this phone number, which is an ISO 3166 2-letter
@@ -74,8 +68,8 @@ void PhoneNumber::GetSupportedTypes(ServerFieldTypeSet* supported_types) const {
 }
 
 base::string16 PhoneNumber::GetRawInfo(ServerFieldType type) const {
-  // TODO(isherman): Is GetStorableType even necessary?
-  if (AutofillType(type).GetStorableType() == PHONE_HOME_WHOLE_NUMBER)
+  DCHECK_EQ(PHONE_HOME, AutofillType(type).group());
+  if (type == PHONE_HOME_WHOLE_NUMBER)
     return number_;
 
   // Only the whole number is available as raw data.  All of the other types are
@@ -86,8 +80,7 @@ base::string16 PhoneNumber::GetRawInfo(ServerFieldType type) const {
 
 void PhoneNumber::SetRawInfo(ServerFieldType type,
                              const base::string16& value) {
-  // TODO(isherman): Is GetStorableType even necessary?
-  type = AutofillType(type).GetStorableType();
+  DCHECK_EQ(PHONE_HOME, AutofillType(type).group());
   if (type != PHONE_HOME_CITY_AND_NUMBER && type != PHONE_HOME_WHOLE_NUMBER) {
     // Only full phone numbers should be set directly.  The remaining field
     // field types are read-only.

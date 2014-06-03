@@ -16,8 +16,8 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/signin/signin_manager.h"
-#include "chrome/browser/sync/glue/session_model_associator.h"
 #include "chrome/browser/sync/glue/synced_session.h"
+#include "chrome/browser/sync/open_tabs_ui_delegate.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/web_resource/notification_promo.h"
@@ -152,7 +152,7 @@ void PromoHandler::HandlePromoSendEmail(const base::ListValue* args) {
   if (!profile)
     return;
 
-  string16 data_subject, data_body, data_inv;
+  base::string16 data_subject, data_body, data_inv;
   if (!args || args->GetSize() < 3) {
     DVLOG(1) << "promoSendEmail: expected three args, got "
              << (args ? args->GetSize() : 0);
@@ -172,8 +172,8 @@ void PromoHandler::HandlePromoSendEmail(const base::ListValue* args) {
     data_email = service->signin()->GetAuthenticatedUsername();
 
   chrome::android::SendEmail(
-      UTF8ToUTF16(data_email), data_subject, data_body, data_inv,
-      EmptyString16());
+      base::UTF8ToUTF16(data_email), data_subject, data_body, data_inv,
+      base::string16());
   RecordImpressionOnHistogram(PROMO_IMPRESSION_SEND_EMAIL_CLICKED);
 }
 
@@ -312,15 +312,15 @@ void PromoHandler::CheckDesktopSessions() {
     return;
 
   // Check if the sync has any open sessions.
-  browser_sync::SessionModelAssociator* associator =
-      service->GetSessionModelAssociator();
-  if (!associator)
+  browser_sync::OpenTabsUIDelegate* open_tabs =
+      service->GetOpenTabsUIDelegate();
+  if (!open_tabs)
     return;
 
   // Let's see if there are no desktop sessions.
   std::vector<const browser_sync::SyncedSession*> sessions;
   ListValue session_list;
-  if (!associator->GetAllForeignSessions(&sessions))
+  if (!open_tabs->GetAllForeignSessions(&sessions))
     return;
 
   for (size_t i = 0; i < sessions.size(); ++i) {

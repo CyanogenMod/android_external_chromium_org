@@ -14,6 +14,7 @@
 #include "content/public/browser/browser_thread.h"
 #include "net/base/load_flags.h"
 #include "net/base/network_change_notifier.h"
+#include "net/base/request_priority.h"
 #include "net/disk_cache/histogram_macros.h"
 #include "net/http/http_network_layer.h"
 #include "net/http/http_network_session.h"
@@ -89,16 +90,18 @@ Request::Request(int request_id,
                  net::URLRequestContext* url_request_context)
     : delegate_(delegate),
       request_id_(request_id),
-      url_request_(url_request_context->CreateRequest(
-          GURL(base_url + info.filename), this)),
+      url_request_(url_request_context->CreateRequest(GURL(base_url +
+                                                           info.filename),
+                                                      net::DEFAULT_PRIORITY,
+                                                      this)),
       info_(info),
       response_code_(0) {
-  url_request_->set_load_flags(net::LOAD_BYPASS_CACHE |
-                               net::LOAD_DISABLE_CACHE |
-                               net::LOAD_DO_NOT_SAVE_COOKIES |
-                               net::LOAD_DO_NOT_SEND_COOKIES |
-                               net::LOAD_DO_NOT_PROMPT_FOR_LOGIN |
-                               net::LOAD_DO_NOT_SEND_AUTH_DATA);
+  url_request_->SetLoadFlags(net::LOAD_BYPASS_CACHE |
+                             net::LOAD_DISABLE_CACHE |
+                             net::LOAD_DO_NOT_SAVE_COOKIES |
+                             net::LOAD_DO_NOT_SEND_COOKIES |
+                             net::LOAD_DO_NOT_PROMPT_FOR_LOGIN |
+                             net::LOAD_DO_NOT_SEND_AUTH_DATA);
 }
 
 void Request::Start() {

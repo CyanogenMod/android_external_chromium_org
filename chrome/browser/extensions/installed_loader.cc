@@ -16,30 +16,27 @@
 #include "chrome/browser/extensions/extension_prefs.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
-#include "chrome/browser/extensions/management_policy.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/api/managed_mode_private/managed_mode_handler.h"
-#include "chrome/common/extensions/background_info.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_file_util.h"
 #include "chrome/common/extensions/extension_l10n_util.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
-#include "chrome/common/extensions/manifest.h"
 #include "chrome/common/extensions/manifest_url_handler.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/user_metrics.h"
+#include "extensions/browser/management_policy.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/manifest.h"
+#include "extensions/common/manifest_constants.h"
+#include "extensions/common/manifest_handlers/background_info.h"
 
 using content::BrowserThread;
 using content::UserMetricsAction;
-using extensions::Extension;
-using extensions::ExtensionInfo;
-using extensions::Manifest;
-
-namespace errors = extension_manifest_errors;
 
 namespace extensions {
+
+namespace errors = manifest_errors;
 
 namespace {
 
@@ -71,11 +68,14 @@ enum ExternalItemState {
   EXTERNAL_ITEM_WEBSTORE_ENABLED = 3,
   EXTERNAL_ITEM_NONWEBSTORE_DISABLED = 4,
   EXTERNAL_ITEM_NONWEBSTORE_ENABLED = 5,
-  EXTERNAL_ITEM_MAX_ITEMS = 6
+  EXTERNAL_ITEM_WEBSTORE_UNINSTALLED = 6,
+  EXTERNAL_ITEM_NONWEBSTORE_UNINSTALLED = 7,
+  EXTERNAL_ITEM_MAX_ITEMS = 8
 };
 
 bool IsManifestCorrupt(const DictionaryValue* manifest) {
-  if (!manifest) return false;
+  if (!manifest)
+    return false;
 
   // Because of bug #272524 sometimes manifests got mangled in the preferences
   // file, one particularly bad case resulting in having both a background page
@@ -83,10 +83,8 @@ bool IsManifestCorrupt(const DictionaryValue* manifest) {
   // manifest from the extension to fix this.
   const Value* background_page;
   const Value* background_scripts;
-  return manifest->Get(extension_manifest_keys::kBackgroundPage,
-                       &background_page) &&
-         manifest->Get(extension_manifest_keys::kBackgroundScripts,
-                       &background_scripts);
+  return manifest->Get(manifest_keys::kBackgroundPage, &background_page) &&
+      manifest->Get(manifest_keys::kBackgroundScripts, &background_scripts);
 }
 
 ManifestReloadReason ShouldReloadExtensionManifest(const ExtensionInfo& info) {
@@ -113,21 +111,6 @@ BackgroundPageType GetBackgroundPageType(const Extension* extension) {
   if (BackgroundInfo::HasPersistentBackgroundPage(extension))
     return BACKGROUND_PAGE_PERSISTENT;
   return EVENT_PAGE;
-}
-
-void DispatchOnInstalledEvent(
-    Profile* profile,
-    const std::string& extension_id,
-    const Version& old_version,
-    bool chrome_updated) {
-  // profile manager can be NULL in unit tests.
-  if (!g_browser_process->profile_manager())
-    return;
-  if (!g_browser_process->profile_manager()->IsValidProfile(profile))
-    return;
-
-  extensions::RuntimeEventRouter::DispatchOnInstalledEvent(
-      profile, extension_id, old_version, chrome_updated);
 }
 
 }  // namespace
@@ -168,11 +151,22 @@ void InstalledLoader::Load(const ExtensionInfo& info, bool write_to_prefs) {
   // Chrome was not running.
   const ManagementPolicy* policy = extensions::ExtensionSystem::Get(
       extension_service_->profile())->management_policy();
-  if (extension.get() && !policy->UserMayLoad(extension.get(), NULL)) {
-    // The error message from UserMayInstall() often contains the extension ID
-    // and is therefore not well suited to this UI.
-    error = errors::kDisabledByPolicy;
-    extension = NULL;
+  if (extension.get()) {
+    Extension::DisableReason disable_reason = Extension::DISABLE_NONE;
+    bool force_disabled = false;
+    if (!policy->UserMayLoad(extension.get(), NULL)) {
+      // The error message from UserMayInstall() often contains the extension ID
+      // and is therefore not well suited to this UI.
+      error = errors::kDisabledByPolicy;
+      extension = NULL;
+    } else if (!extension_prefs_->IsExtensionDisabled(extension->id()) &&
+               policy->MustRemainDisabled(extension, &disable_reason, NULL)) {
+      extension_prefs_->SetExtensionState(extension->id(), Extension::DISABLED);
+      extension_prefs_->AddDisableReason(extension->id(), disable_reason);
+      force_disabled = true;
+    }
+    UMA_HISTOGRAM_BOOLEAN("ExtensionInstalledLoader.ForceDisabled",
+                          force_disabled);
   }
 
   if (!extension.get()) {
@@ -412,6 +406,7 @@ void InstalledLoader::LoadAllExtensions() {
     extension_service_->RecordPermissionMessagesHistogram(
         ex->get(), "Extensions.Permissions_Load");
   }
+
   const ExtensionSet* disabled_extensions =
       extension_service_->disabled_extensions();
   for (ex = disabled_extensions->begin();
@@ -429,6 +424,25 @@ void InstalledLoader::LoadAllExtensions() {
       } else {
         UMA_HISTOGRAM_ENUMERATION("Extensions.ExternalItemState",
                                   EXTERNAL_ITEM_NONWEBSTORE_DISABLED,
+                                  EXTERNAL_ITEM_MAX_ITEMS);
+      }
+    }
+  }
+
+  scoped_ptr<ExtensionPrefs::ExtensionsInfo> uninstalled_extensions_info(
+      extension_prefs_->GetUninstalledExtensionsInfo());
+  for (size_t i = 0; i < uninstalled_extensions_info->size(); ++i) {
+    ExtensionInfo* info = uninstalled_extensions_info->at(i).get();
+    if (Manifest::IsExternalLocation(info->extension_location)) {
+      std::string update_url;
+      if (info->extension_manifest->GetString("update_url", &update_url) &&
+          extension_urls::IsWebstoreUpdateUrl(GURL(update_url))) {
+        UMA_HISTOGRAM_ENUMERATION("Extensions.ExternalItemState",
+                                  EXTERNAL_ITEM_WEBSTORE_UNINSTALLED,
+                                  EXTERNAL_ITEM_MAX_ITEMS);
+      } else {
+        UMA_HISTOGRAM_ENUMERATION("Extensions.ExternalItemState",
+                                  EXTERNAL_ITEM_NONWEBSTORE_UNINSTALLED,
                                   EXTERNAL_ITEM_MAX_ITEMS);
       }
     }

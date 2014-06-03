@@ -1,6 +1,7 @@
 # Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
+
 import BaseHTTPServer
 from collections import namedtuple
 import gzip
@@ -39,7 +40,7 @@ class MemoryCacheHTTPRequestHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
     self.SendHead()
 
   def SendHead(self):
-    path = self.translate_path(self.path)
+    path = os.path.realpath(self.translate_path(self.path))
     if path not in self.server.resource_map:
       self.send_error(404, 'File not found')
       return None
@@ -77,7 +78,8 @@ class MemoryCacheHTTPRequestHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
       A ByteRange namedtuple object with the requested byte-range values.
       If no Range is explicitly requested or there is a failure parsing,
       return None.
-      Special case: If range specified is in the format "N-", return N-N.
+      If range specified is in the format "N-", return N-END. Refer to
+      http://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html for details.
       If upper range limit is greater than total # of bytes, return upper index.
     """
 
@@ -96,9 +98,12 @@ class MemoryCacheHTTPRequestHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
     to_byte = 0
 
     if len(byte_range_values) == 2:
-      from_byte = int(byte_range_values[0])
-      if byte_range_values[1]:
-        to_byte = int(byte_range_values[1])
+      # If to_range is not defined return all bytes starting from from_byte.
+      to_byte = (int(byte_range_values[1]) if  byte_range_values[1]
+          else total_num_of_bytes - 1)
+      # If from_range is not defined return last 'to_byte' bytes.
+      from_byte = (int(byte_range_values[0]) if byte_range_values[0]
+          else total_num_of_bytes - to_byte)
     else:
       return None
 
@@ -106,12 +111,8 @@ class MemoryCacheHTTPRequestHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
     if from_byte < 0:
       return None
 
-    if to_byte < from_byte:
-      to_byte = from_byte
-
-    if to_byte >= total_num_of_bytes:
-      # End of range requested is greater than length of requested resource.
-      # Only return # of available bytes.
+    # Make to_byte the end byte by default in edge cases.
+    if to_byte < from_byte or to_byte >= total_num_of_bytes:
       to_byte = total_num_of_bytes - 1
 
     return ByteRange(from_byte, to_byte)
@@ -149,42 +150,61 @@ class MemoryCacheHTTPServer(SocketServer.ThreadingMixIn,
 
   def AddFileToResourceMap(self, file_path):
     """Loads file_path into the in-memory resource map."""
+    file_path = os.path.realpath(file_path)
+    if file_path in self.resource_map:
+      return
+
     with open(file_path, 'rb') as fd:
       response = fd.read()
       fs = os.fstat(fd.fileno())
-      content_type = mimetypes.guess_type(file_path)[0]
-      zipped = False
-      if content_type in ['text/html', 'text/css', 'application/javascript']:
-        zipped = True
-        sio = StringIO.StringIO()
-        gzf = gzip.GzipFile(fileobj=sio, compresslevel=9, mode='wb')
-        gzf.write(response)
-        gzf.close()
-        response = sio.getvalue()
-        sio.close()
-      self.resource_map[file_path] = {
-          'content-type': content_type,
-          'content-length': len(response),
-          'last-modified': fs.st_mtime,
-          'response': response,
-          'zipped': zipped
-          }
+    content_type = mimetypes.guess_type(file_path)[0]
+    zipped = False
+    if content_type in ['text/html', 'text/css', 'application/javascript']:
+      zipped = True
+      sio = StringIO.StringIO()
+      gzf = gzip.GzipFile(fileobj=sio, compresslevel=9, mode='wb')
+      gzf.write(response)
+      gzf.close()
+      response = sio.getvalue()
+      sio.close()
+    self.resource_map[file_path] = {
+        'content-type': content_type,
+        'content-length': len(response),
+        'last-modified': fs.st_mtime,
+        'response': response,
+        'zipped': zipped
+        }
 
-      index = os.path.sep + 'index.html'
-      if file_path.endswith(index):
-        self.resource_map[
-            file_path[:-len(index)]] = self.resource_map[file_path]
+    index = 'index.html'
+    if os.path.basename(file_path) == index:
+      dir_path = os.path.dirname(file_path)
+      self.resource_map[dir_path] = self.resource_map[file_path]
+
+
+def _PrintUsageAndExit():
+  print >> sys.stderr, 'usage: %prog [<path1>, <path2>, ...]'
+  sys.exit(1)
 
 
 def Main():
-  assert len(sys.argv) > 2, 'usage: %prog <port> [<path1>, <path2>, ...]'
+  if len(sys.argv) < 2:
+    _PrintUsageAndExit()
 
-  port = int(sys.argv[1])
-  paths = sys.argv[2:]
-  server_address = ('127.0.0.1', port)
+  paths = sys.argv[1:]
+  for path in paths:
+    if not os.path.realpath(path).startswith(os.path.realpath(os.getcwd())):
+      print >> sys.stderr, '"%s" is not under the cwd.' % path
+      sys.exit(1)
+
+  server_address = ('127.0.0.1', 0)
   MemoryCacheHTTPRequestHandler.protocol_version = 'HTTP/1.1'
   httpd = MemoryCacheHTTPServer(server_address, MemoryCacheHTTPRequestHandler,
                                 paths)
+
+  # Note: This message may be scraped. Do not change it.
+  print 'HTTP server started on %s:%d' % (httpd.server_address[0],
+                                          httpd.server_address[1])
+  sys.stdout.flush()
   httpd.serve_forever()
 
 

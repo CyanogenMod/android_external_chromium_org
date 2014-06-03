@@ -13,7 +13,6 @@
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "skia/ext/refptr.h"
-#include "third_party/skia/include/core/SkPicture.h"
 
 namespace content {
 class WebContents;
@@ -28,7 +27,6 @@ namespace android_webview {
 class BrowserViewRenderer;
 
 class AwPdfExporter : public PrintManagerDelegate {
-
  public:
   AwPdfExporter(JNIEnv* env,
                 jobject obj,
@@ -43,8 +41,8 @@ class AwPdfExporter : public PrintManagerDelegate {
                    jobject cancel_signal);
 
   // Implement PrintManagerDelegate methods
-  void DidExportPdf(bool success);
-  bool IsCancelled();
+  virtual void DidExportPdf(bool success) OVERRIDE;
+  virtual bool IsCancelled() OVERRIDE;
 
  private:
   void CreatePdfSettings(JNIEnv* env, jobject obj);

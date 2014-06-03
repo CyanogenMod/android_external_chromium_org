@@ -16,6 +16,10 @@ class SyncedTabDelegate;
 }
 
 namespace chrome {
+struct NavigateParams;
+}
+
+namespace chrome {
 namespace android {
 class ChromeWebContentsDelegateAndroid;
 }
@@ -31,28 +35,15 @@ class WindowAndroid;
 
 class TestShellTab : public TabAndroid {
  public:
-  TestShellTab(JNIEnv* env,
-               jobject obj,
-               content::WebContents* web_contents,
-               ui::WindowAndroid* window_android);
+  TestShellTab(JNIEnv* env, jobject obj);
   void Destroy(JNIEnv* env, jobject obj);
 
   // --------------------------------------------------------------------------
   // TabAndroid Methods
   // --------------------------------------------------------------------------
-  virtual content::WebContents* GetWebContents() OVERRIDE;
-
-  virtual browser_sync::SyncedTabDelegate* GetSyncedTabDelegate() OVERRIDE;
-
   virtual void OnReceivedHttpAuthRequest(jobject auth_handler,
                                          const string16& host,
                                          const string16& realm) OVERRIDE;
-  virtual void ShowContextMenu(
-      const content::ContextMenuParams& params) OVERRIDE;
-
-  virtual void ShowCustomContextMenu(
-      const content::ContextMenuParams& params,
-      const base::Callback<void(int)>& callback) OVERRIDE;
 
   virtual void AddShortcutToBookmark(const GURL& url,
                                      const string16& title,
@@ -60,17 +51,15 @@ class TestShellTab : public TabAndroid {
                                      int r_value,
                                      int g_value,
                                      int b_value) OVERRIDE;
-  virtual void EditBookmark(int64 node_id, bool is_folder) OVERRIDE;
+  virtual void EditBookmark(int64 node_id,
+                            const base::string16& node_title,
+                            bool is_folder,
+                            bool is_partner_bookmark) OVERRIDE;
 
-  virtual void ShowSyncSettings() OVERRIDE;
-  virtual void ShowTermsOfService() OVERRIDE;
   virtual bool ShouldWelcomePageLinkToTermsOfService() OVERRIDE;
   virtual void OnNewTabPageReady() OVERRIDE;
 
-  virtual void RunExternalProtocolDialog(const GURL& url) OVERRIDE;
-
-  virtual int GetSyncId() const OVERRIDE;
-  virtual void SetSyncId(int sync_id) OVERRIDE;
+  virtual void HandlePopupNavigation(chrome::NavigateParams* params) OVERRIDE;
 
   // Register the Tab's native methods through JNI.
   static bool RegisterTestShellTab(JNIEnv* env);
@@ -78,10 +67,6 @@ class TestShellTab : public TabAndroid {
   // --------------------------------------------------------------------------
   // Methods called from Java via JNI
   // --------------------------------------------------------------------------
-  void InitWebContentsDelegate(JNIEnv* env,
-                               jobject obj,
-                               jobject web_contents_delegate);
-
   base::android::ScopedJavaLocalRef<jstring> FixupUrl(JNIEnv* env,
                                                       jobject obj,
                                                       jstring url);
@@ -90,10 +75,6 @@ class TestShellTab : public TabAndroid {
   virtual ~TestShellTab();
 
  private:
-  scoped_ptr<content::WebContents> web_contents_;
-  scoped_ptr<chrome::android::ChromeWebContentsDelegateAndroid>
-          web_contents_delegate_;
-
   DISALLOW_COPY_AND_ASSIGN(TestShellTab);
 };
 

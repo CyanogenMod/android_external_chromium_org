@@ -31,6 +31,11 @@ bool GetDataWriteLocation(base::Environment* env, base::FilePath* search_path);
 // Called on the FILE thread.
 std::vector<base::FilePath> GetDataSearchLocations(base::Environment* env);
 
+// Gets the name for use as the res_class (and possibly res_name) of the
+// window's WM_CLASS property. This is the program name from argv[0], with the
+// first letter capitalized. Equivalent to GDK's gdk_get_program_class().
+std::string GetProgramClassName();
+
 // Returns filename of the desktop shortcut used to launch the browser.
 std::string GetDesktopName(base::Environment* env);
 
@@ -41,7 +46,7 @@ std::string GetIconName();
 // extension with |extension_id| in |profile_path|.
 // This searches the file system for .desktop files in appropriate locations. A
 // shortcut with NoDisplay=true causes hidden to become true, instead of
-// in_applications_menu.
+// creating at APP_MENU_LOCATIONS_SUBDIR_CHROMEAPPS.
 ShellIntegration::ShortcutLocations GetExistingShortcutLocations(
     base::Environment* env,
     const base::FilePath& profile_path,
@@ -85,14 +90,14 @@ std::string GetDesktopFileContents(const base::FilePath& chrome_exe_path,
                                    const GURL& url,
                                    const std::string& extension_id,
                                    const base::FilePath& extension_path,
-                                   const string16& title,
+                                   const base::string16& title,
                                    const std::string& icon_name,
                                    const base::FilePath& profile_path,
                                    bool no_display);
 
 // Returns contents for .directory file named |title| with icon |icon_name|. If
 // |icon_name| is empty, will use the Chrome icon.
-std::string GetDirectoryFileContents(const string16& title,
+std::string GetDirectoryFileContents(const base::string16& title,
                                      const std::string& icon_name);
 
 // Create shortcuts on the desktop or in the application menu (as specified by

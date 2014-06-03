@@ -1254,7 +1254,7 @@ IN_PROC_BROWSER_TEST_F(StackedPanelBrowserTest, ClosePanels) {
 
 // Skip the test since active state might not be fully supported for some window
 // managers.
-#if defined(TOOLKIT_GTK)
+#if defined(TOOLKIT_GTK) || defined(OS_MACOSX)
 #define MAYBE_FocusNextPanelOnPanelClose DISABLED_FocusNextPanelOnPanelClose
 #else
 #define MAYBE_FocusNextPanelOnPanelClose FocusNextPanelOnPanelClose
@@ -1450,6 +1450,36 @@ IN_PROC_BROWSER_TEST_F(StackedPanelBrowserTest,
   EXPECT_EQ(bounds4.width(), bounds5.width());
   EXPECT_EQ(bounds4.bottom(), bounds5.y());
   EXPECT_LE(bounds5.bottom(), primary_work_area.bottom());
+
+  panel_manager->CloseAll();
+}
+
+IN_PROC_BROWSER_TEST_F(StackedPanelBrowserTest,
+                       KeepShowingStackedPanelCreatedBeforeFullScreenMode) {
+  PanelManager* panel_manager = PanelManager::GetInstance();
+
+  // Create 2 stacked panels.
+  StackedPanelCollection* stack = panel_manager->CreateStack();
+  Panel* panel1 = CreateStackedPanel("1", gfx::Rect(100, 50, 200, 150), stack);
+  Panel* panel2 = CreateStackedPanel("2", gfx::Rect(0, 0, 150, 100), stack);
+  scoped_ptr<NativePanelTesting> panel1_testing(
+      CreateNativePanelTesting(panel1));
+  scoped_ptr<NativePanelTesting> panel2_testing(
+      CreateNativePanelTesting(panel2));
+
+  // Panels should be visible at first.
+  EXPECT_TRUE(panel1_testing->IsWindowVisible());
+  EXPECT_TRUE(panel2_testing->IsWindowVisible());
+
+ // Panels' visibility should not be affected when entering full-screen mode.
+  mock_display_settings_provider()->EnableFullScreenMode(true);
+  EXPECT_TRUE(panel1_testing->IsWindowVisible());
+  EXPECT_TRUE(panel2_testing->IsWindowVisible());
+
+  // Panels' visibility should not be affected when leaving full-screen mode.
+  mock_display_settings_provider()->EnableFullScreenMode(false);
+  EXPECT_TRUE(panel1_testing->IsWindowVisible());
+  EXPECT_TRUE(panel2_testing->IsWindowVisible());
 
   panel_manager->CloseAll();
 }

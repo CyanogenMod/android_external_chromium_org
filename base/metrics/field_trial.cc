@@ -4,6 +4,8 @@
 
 #include "base/metrics/field_trial.h"
 
+#include <algorithm>
+
 #include "base/build_time.h"
 #include "base/logging.h"
 #include "base/rand_util.h"
@@ -38,9 +40,26 @@ Time CreateTimeFromParams(int year, int month, int day_of_month) {
   return Time::FromLocalExploded(exploded);
 }
 
-}  // namespace
+// Returns the boundary value for comparing against the FieldTrial's added
+// groups for a given |divisor| (total probability) and |entropy_value|.
+FieldTrial::Probability GetGroupBoundaryValue(
+    FieldTrial::Probability divisor,
+    double entropy_value) {
+  // Add a tiny epsilon value to get consistent results when converting floating
+  // points to int. Without it, boundary values have inconsistent results, e.g.:
+  //
+  //   static_cast<FieldTrial::Probability>(100 * 0.56) == 56
+  //   static_cast<FieldTrial::Probability>(100 * 0.57) == 56
+  //   static_cast<FieldTrial::Probability>(100 * 0.58) == 57
+  //   static_cast<FieldTrial::Probability>(100 * 0.59) == 59
+  const double kEpsilon = 1e-8;
+  const FieldTrial::Probability result =
+      static_cast<FieldTrial::Probability>(divisor * entropy_value + kEpsilon);
+  // Ensure that adding the epsilon still results in a value < |divisor|.
+  return std::min(result, divisor - 1);
+}
 
-static const char kHistogramFieldTrialSeparator('_');
+}  // namespace
 
 // statics
 const int FieldTrial::kNotFinalized = -1;
@@ -52,25 +71,6 @@ int FieldTrialList::kNoExpirationYear = 0;
 
 //------------------------------------------------------------------------------
 // FieldTrial methods and members.
-
-FieldTrial::FieldTrial(const std::string& trial_name,
-                       const Probability total_probability,
-                       const std::string& default_group_name,
-                       double entropy_value)
-    : trial_name_(trial_name),
-      divisor_(total_probability),
-      default_group_name_(default_group_name),
-      random_(static_cast<Probability>(divisor_ * entropy_value)),
-      accumulated_group_probability_(0),
-      next_group_number_(kDefaultGroupNumber + 1),
-      group_(kNotFinalized),
-      enable_field_trial_(true),
-      forced_(false),
-      group_reported_(false) {
-  DCHECK_GT(total_probability, 0);
-  DCHECK(!trial_name_.empty());
-  DCHECK(!default_group_name_.empty());
-}
 
 FieldTrial::EntropyProvider::~EntropyProvider() {
 }
@@ -127,7 +127,8 @@ int FieldTrial::AppendGroup(const std::string& name,
 
 int FieldTrial::group() {
   FinalizeGroupChoice();
-  FieldTrialList::NotifyFieldTrialGroupSelection(this);
+  if (trial_registered_)
+    FieldTrialList::NotifyFieldTrialGroupSelection(this);
   return group_;
 }
 
@@ -136,20 +137,6 @@ const std::string& FieldTrial::group_name() {
   group();
   DCHECK(!group_name_.empty());
   return group_name_;
-}
-
-// static
-std::string FieldTrial::MakeName(const std::string& name_prefix,
-                                 const std::string& trial_name) {
-  std::string big_string(name_prefix);
-  big_string.append(1, kHistogramFieldTrialSeparator);
-  return big_string.append(FieldTrialList::FindFullName(trial_name));
-}
-
-// static
-void FieldTrial::EnableBenchmarking() {
-  DCHECK_EQ(0u, FieldTrialList::GetFieldTrialCount());
-  enable_benchmarking_ = true;
 }
 
 void FieldTrial::SetForced() {
@@ -163,7 +150,49 @@ void FieldTrial::SetForced() {
   forced_ = true;
 }
 
+// static
+void FieldTrial::EnableBenchmarking() {
+  DCHECK_EQ(0u, FieldTrialList::GetFieldTrialCount());
+  enable_benchmarking_ = true;
+}
+
+// static
+FieldTrial* FieldTrial::CreateSimulatedFieldTrial(
+    const std::string& trial_name,
+    Probability total_probability,
+    const std::string& default_group_name,
+    double entropy_value) {
+  return new FieldTrial(trial_name, total_probability, default_group_name,
+                        entropy_value);
+}
+
+FieldTrial::FieldTrial(const std::string& trial_name,
+                       const Probability total_probability,
+                       const std::string& default_group_name,
+                       double entropy_value)
+    : trial_name_(trial_name),
+      divisor_(total_probability),
+      default_group_name_(default_group_name),
+      random_(GetGroupBoundaryValue(total_probability, entropy_value)),
+      accumulated_group_probability_(0),
+      next_group_number_(kDefaultGroupNumber + 1),
+      group_(kNotFinalized),
+      enable_field_trial_(true),
+      forced_(false),
+      group_reported_(false),
+      trial_registered_(false) {
+  DCHECK_GT(total_probability, 0);
+  DCHECK(!trial_name_.empty());
+  DCHECK(!default_group_name_.empty());
+}
+
 FieldTrial::~FieldTrial() {}
+
+void FieldTrial::SetTrialRegistered() {
+  DCHECK_EQ(kNotFinalized, group_);
+  DCHECK(!trial_registered_);
+  trial_registered_ = true;
+}
 
 void FieldTrial::SetGroupChoice(const std::string& group_name, int number) {
   group_ = number;
@@ -423,9 +452,9 @@ FieldTrial* FieldTrialList::CreateFieldTrial(
   }
   const int kTotalProbability = 100;
   field_trial = new FieldTrial(name, kTotalProbability, group_name, 0);
+  FieldTrialList::Register(field_trial);
   // Force the trial, which will also finalize the group choice.
   field_trial->SetForced();
-  FieldTrialList::Register(field_trial);
   return field_trial;
 }
 
@@ -499,6 +528,7 @@ void FieldTrialList::Register(FieldTrial* trial) {
   AutoLock auto_lock(global_->lock_);
   DCHECK(!global_->PreLockedFind(trial->trial_name()));
   trial->AddRef();
+  trial->SetTrialRegistered();
   global_->registered_[trial->trial_name()] = trial;
 }
 

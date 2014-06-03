@@ -10,14 +10,11 @@
 #include "base/logging.h"
 #include "base/memory/shared_memory.h"
 #include "base/metrics/histogram.h"
-#include "base/perftimer.h"
 #include "base/pickle.h"
 #include "base/strings/stringprintf.h"
-#include "chrome/common/extensions/csp_handler.h"
-#include "chrome/common/extensions/extension.h"
+#include "base/timer/elapsed_timer.h"
 #include "chrome/common/extensions/extension_messages.h"
 #include "chrome/common/extensions/extension_set.h"
-#include "chrome/common/extensions/permissions/permissions_data.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/renderer/chrome_render_process_observer.h"
 #include "chrome/renderer/extensions/dom_activity_logger.h"
@@ -25,6 +22,9 @@
 #include "chrome/renderer/isolated_world_ids.h"
 #include "content/public/renderer/render_thread.h"
 #include "content/public/renderer/render_view.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/manifest_handlers/csp_info.h"
+#include "extensions/common/permissions/permissions_data.h"
 #include "grit/renderer_resources.h"
 #include "third_party/WebKit/public/platform/WebURLRequest.h"
 #include "third_party/WebKit/public/platform/WebVector.h"
@@ -37,12 +37,12 @@
 #include "ui/base/resource/resource_bundle.h"
 #include "url/gurl.h"
 
-using WebKit::WebFrame;
-using WebKit::WebSecurityOrigin;
-using WebKit::WebSecurityPolicy;
-using WebKit::WebString;
-using WebKit::WebVector;
-using WebKit::WebView;
+using blink::WebFrame;
+using blink::WebSecurityOrigin;
+using blink::WebSecurityPolicy;
+using blink::WebString;
+using blink::WebVector;
+using blink::WebView;
 using content::RenderThread;
 
 namespace extensions {
@@ -104,8 +104,8 @@ void UserScriptSlave::InitializeIsolatedWorld(int isolated_world_id,
   for (URLPatternSet::const_iterator i = permissions.begin();
        i != permissions.end(); ++i) {
     const char* schemes[] = {
-      chrome::kHttpScheme,
-      chrome::kHttpsScheme,
+      content::kHttpScheme,
+      content::kHttpsScheme,
       chrome::kFileScheme,
       chrome::kChromeUIScheme,
     };
@@ -204,7 +204,7 @@ bool UserScriptSlave::UpdateScripts(base::SharedMemoryHandle shared_memory) {
 
   // Push user styles down into WebCore
   RenderThread::Get()->EnsureWebKitInitialized();
-  WebView::removeAllUserContent();
+  WebView::removeInjectedStyleSheets();
   for (size_t i = 0; i < scripts_.size(); ++i) {
     UserScript* script = scripts_[i];
     if (script->css_scripts().empty())
@@ -227,13 +227,12 @@ bool UserScriptSlave::UpdateScripts(base::SharedMemoryHandle shared_memory) {
       const UserScript::File& file = scripts_[i]->css_scripts()[j];
       std::string content = file.GetContent().as_string();
 
-      WebView::addUserStyleSheet(
+      WebView::injectStyleSheet(
           WebString::fromUTF8(content),
           patterns,
            script->match_all_frames() ?
-              WebView::UserContentInjectInAllFrames :
-              WebView::UserContentInjectInTopFrameOnly,
-          WebView::UserStyleInjectInExistingDocuments);
+              WebView::InjectStyleInAllFrames :
+              WebView::InjectStyleInTopFrameOnly);
     }
   }
 
@@ -249,7 +248,7 @@ GURL UserScriptSlave::GetDataSourceURLForFrame(const WebFrame* frame) {
   // changes to match the parent document after Gmail document.writes into
   // it to create the editor.
   // http://code.google.com/p/chromium/issues/detail?id=86742
-  WebKit::WebDataSource* data_source = frame->provisionalDataSource() ?
+  blink::WebDataSource* data_source = frame->provisionalDataSource() ?
       frame->provisionalDataSource() : frame->dataSource();
   CHECK(data_source);
   return GURL(data_source->request().url());
@@ -265,7 +264,7 @@ void UserScriptSlave::InjectScripts(WebFrame* frame,
     data_source_url = GURL(content::kViewSourceScheme + std::string(":") +
                            data_source_url.spec());
 
-  PerfTimer timer;
+  base::ElapsedTimer timer;
   int num_css = 0;
   int num_scripts = 0;
 
@@ -333,12 +332,8 @@ void UserScriptSlave::InjectScripts(WebFrame* frame,
 
       int isolated_world_id = GetIsolatedWorldIdForExtension(extension, frame);
 
-      PerfTimer exec_timer;
-      DOMActivityLogger::AttachToWorld(
-          isolated_world_id,
-          extension->id(),
-          UserScriptSlave::GetDataSourceURLForFrame(frame),
-          frame->document().title());
+      base::ElapsedTimer exec_timer;
+      DOMActivityLogger::AttachToWorld(isolated_world_id, extension->id());
       frame->executeScriptInIsolatedWorld(
           isolated_world_id, &sources.front(), sources.size(),
           EXTENSION_GROUP_CONTENT_SCRIPTS);
@@ -354,7 +349,7 @@ void UserScriptSlave::InjectScripts(WebFrame* frame,
 
   // Notify the browser if any extensions are now executing scripts.
   if (!extensions_executing_scripts.empty()) {
-    WebKit::WebFrame* top_frame = frame->top();
+    blink::WebFrame* top_frame = frame->top();
     content::RenderView* render_view =
         content::RenderView::FromWebView(top_frame->view());
     render_view->Send(new ExtensionHostMsg_ContentScriptsExecuting(

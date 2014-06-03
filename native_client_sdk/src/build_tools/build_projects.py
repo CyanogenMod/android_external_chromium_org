@@ -13,7 +13,7 @@ import build_version
 import generate_make
 import parse_dsc
 
-from build_paths import NACL_DIR, SDK_SRC_DIR, OUT_DIR, SDK_EXAMPLE_DIR
+from build_paths import NACL_DIR, SDK_SRC_DIR, OUT_DIR, SDK_RESOURCE_DIR
 from build_paths import GSTORE
 from generate_index import LandingPage
 
@@ -54,14 +54,10 @@ def UpdateHelpers(pepperdir, clobber=False):
     buildbot_common.RemoveDir(exampledir)
   buildbot_common.MakeDir(exampledir)
 
-  # Copy files for individual bild and landing page
-  files = ['favicon.ico', 'httpd.cmd']
-  CopyFilesFromTo(files, SDK_EXAMPLE_DIR, exampledir)
-
-  resourcesdir = os.path.join(SDK_EXAMPLE_DIR, 'resources')
-  files = ['index.css', 'index.js', 'button_close.png',
-      'button_close_hover.png']
-  CopyFilesFromTo(files, resourcesdir, exampledir)
+  # Copy files for individual build and landing page
+  files = ['favicon.ico', 'httpd.cmd', 'index.css', 'index.js',
+      'button_close.png', 'button_close_hover.png']
+  CopyFilesFromTo(files, SDK_RESOURCE_DIR, exampledir)
 
   # Copy tools scripts and make includes
   buildbot_common.CopyDir(os.path.join(SDK_SRC_DIR, 'tools', '*.py'),
@@ -133,9 +129,7 @@ def UpdateProjects(pepperdir, project_tree, toolchains,
   if landing_page:
     # Generate the landing page text file.
     index_html = os.path.join(pepperdir, 'examples', 'index.html')
-    example_resources_dir = os.path.join(SDK_EXAMPLE_DIR, 'resources')
-    index_template = os.path.join(example_resources_dir,
-                                  'index.html.template')
+    index_template = os.path.join(SDK_RESOURCE_DIR, 'index.html.template')
     with open(index_html, 'w') as fh:
       out = landing_page.GeneratePage(index_template)
       fh.write(out)
@@ -204,7 +198,7 @@ def BuildProjects(pepperdir, project_tree, deps=True,
     BuildProjectsBranch(pepperdir, branch, deps, clean, config)
 
 
-def main(args):
+def main(argv):
   parser = optparse.OptionParser()
   parser.add_option('-c', '--clobber',
       help='Clobber project directories before copying new files',
@@ -227,9 +221,19 @@ def main(args):
       action='append')
   parser.add_option('-v', '--verbose', action='store_true')
 
-  options, args = parser.parse_args(args[1:])
-  if args:
-    parser.error('Not expecting any arguments.')
+  # To setup bash completion for this command first install optcomplete
+  # and then add this line to your .bashrc:
+  #  complete -F _optcomplete build_projects.py
+  try:
+    import optcomplete
+    optcomplete.autocomplete(parser)
+  except ImportError:
+    pass
+
+  options, args = parser.parse_args(argv[1:])
+  if options.project:
+    parser.error('The -p/--project option is deprecated.\n'
+                 'Just use positional paramaters instead.')
 
   if 'NACL_SDK_ROOT' in os.environ:
     # We don't want the currently configured NACL_SDK_ROOT to have any effect
@@ -240,7 +244,11 @@ def main(args):
   pepperdir = os.path.join(OUT_DIR, 'pepper_' + pepper_ver)
 
   if not options.toolchain:
-    options.toolchain = ['newlib', 'glibc', 'pnacl', 'host']
+    # Order matters here: the default toolchain for an example's Makefile will
+    # be the first toolchain in this list that is available in the example.
+    # e.g. If an example supports newlib and glibc, then the default will be
+    # newlib.
+    options.toolchain = ['pnacl', 'newlib', 'glibc', 'host']
 
   if 'host' in options.toolchain:
     options.toolchain.remove('host')
@@ -258,9 +266,9 @@ def main(args):
   if options.dest:
     filters['DEST'] = options.dest
     print 'Filter by type: ' + str(options.dest)
-  if options.project:
-    filters['NAME'] = options.project
-    print 'Filter by name: ' + str(options.project)
+  if args:
+    filters['NAME'] = args
+    print 'Filter by name: ' + str(args)
 
   try:
     project_tree = parse_dsc.LoadProjectTree(SDK_SRC_DIR, include=filters)

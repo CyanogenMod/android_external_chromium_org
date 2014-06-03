@@ -34,11 +34,11 @@ IN_PROC_BROWSER_TEST_F(TextInput_SurroundingTextChangedTest,
   helper.WaitForTextInputStateChanged(ui::TEXT_INPUT_TYPE_TEXT_AREA);
   EXPECT_EQ(ui::TEXT_INPUT_TYPE_TEXT_AREA, helper.GetTextInputType());
 
-  const string16 sample_text1 = UTF8ToUTF16("abcde");
-  const string16 sample_text2 = UTF8ToUTF16("fghij");
-  const string16 surrounding_text2 = sample_text1 + sample_text2;
-  ui::Range expected_range1(5, 5);
-  ui::Range expected_range2(10, 10);
+  const base::string16 sample_text1 = UTF8ToUTF16("abcde");
+  const base::string16 sample_text2 = UTF8ToUTF16("fghij");
+  const base::string16 surrounding_text2 = sample_text1 + sample_text2;
+  gfx::Range expected_range1(5, 5);
+  gfx::Range expected_range2(10, 10);
 
   ASSERT_TRUE(helper.GetTextInputClient());
 
@@ -71,8 +71,8 @@ IN_PROC_BROWSER_TEST_F(TextInput_SurroundingTextChangedTest,
   helper.WaitForTextInputStateChanged(ui::TEXT_INPUT_TYPE_TEXT_AREA);
   EXPECT_EQ(ui::TEXT_INPUT_TYPE_TEXT_AREA, helper.GetTextInputType());
 
-  const string16 sample_text = UTF8ToUTF16("abcde");
-  ui::Range expected_range(5, 5);
+  const base::string16 sample_text = UTF8ToUTF16("abcde");
+  gfx::Range expected_range(5, 5);
 
   ui::CompositionText composition_text;
   composition_text.text = sample_text;
@@ -103,7 +103,7 @@ IN_PROC_BROWSER_TEST_F(TextInput_SurroundingTextChangedTest,
 
   content::WebContents* tab =
       browser()->tab_strip_model()->GetActiveWebContents();
-  const ui::Range zero_range(0, 0);
+  const gfx::Range zero_range(0, 0);
 
   // We expect no surrounding texts.
   helper.ClickElement("empty_textarea", tab);
@@ -115,8 +115,8 @@ IN_PROC_BROWSER_TEST_F(TextInput_SurroundingTextChangedTest,
 
   // Click textarea containing text, so expecting new surrounding text comes.
   helper.ClickElement("filled_textarea", tab);
-  const string16 expected_text = UTF8ToUTF16("abcde");
-  const ui::Range expected_range(5, 5);
+  const base::string16 expected_text = UTF8ToUTF16("abcde");
+  const gfx::Range expected_range(5, 5);
   helper.WaitForSurroundingTextChanged(expected_text, expected_range);
   EXPECT_EQ(expected_text, helper.GetSurroundingText());
   EXPECT_EQ(expected_range, helper.GetSelectionRange());

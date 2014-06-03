@@ -2,11 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "webkit/glue/webkit_glue.h"
-
 #include <string>
 
-#include "base/message_loop/message_loop.h"
+#include "base/run_loop.h"
 #include "base/time/time.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "webkit/child/webkitplatformsupport_impl.h"
@@ -34,8 +32,8 @@ class TestWebKitPlatformSupport
     return NULL;
   }
 
-  virtual webkit_glue::WebSocketStreamHandleBridge* CreateWebSocketBridge(
-      WebKit::WebSocketStreamHandle*,
+  virtual webkit_glue::WebSocketStreamHandleBridge* CreateWebSocketStreamBridge(
+      blink::WebSocketStreamHandle*,
       webkit_glue::WebSocketStreamHandleDelegate*) OVERRIDE {
     return NULL;
   }
@@ -67,6 +65,7 @@ class TestWebKitPlatformSupport
 
 TEST(WebkitGlueTest, SuspendResumeSharedTimer) {
   base::MessageLoop message_loop;
+
   TestWebKitPlatformSupport platform_support;
 
   // Set a timer to fire as soon as possible.
@@ -75,7 +74,7 @@ TEST(WebkitGlueTest, SuspendResumeSharedTimer) {
   platform_support.SuspendSharedTimer();
   // The above timer would have posted a task which can be processed out of the
   // message loop.
-  message_loop.RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
   // Set a mock time after 1 second to simulate timers suspended for 1 second.
   double new_time = base::Time::Now().ToDoubleT() + 1;
   platform_support.set_mock_monotonically_increasing_time(new_time);

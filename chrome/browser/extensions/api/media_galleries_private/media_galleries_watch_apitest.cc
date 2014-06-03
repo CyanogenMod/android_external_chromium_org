@@ -16,8 +16,8 @@
 #include "chrome/browser/media_galleries/media_galleries_test_util.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/extension.h"
 #include "content/public/browser/render_view_host.h"
+#include "extensions/common/extension.h"
 
 namespace {
 
@@ -26,36 +26,44 @@ namespace {
 const char kTestExtensionId[] = "gceegfkgibmgpfopknlcgleimclbknie";
 const char kTestExtensionPath[] = "media_galleries_private/gallerywatch";
 
+#if !defined(OS_CHROMEOS)
 // JS commands.
-const char kAddGalleryChangedListenerCmd[] = "addGalleryChangedListener()";
 const char kGetAllWatchedGalleryIdsCmd[] = "getAllWatchedGalleryIds()";
 const char kGetMediaFileSystemsCmd[] = "getMediaFileSystems()";
+const char kSetupWatchOnValidGalleriesCmd[] = "setupWatchOnValidGalleries()";
+#if defined(OS_WIN)
+const char kAddGalleryChangedListenerCmd[] = "addGalleryChangedListener()";
 const char kRemoveAllGalleryWatchCmd[] = "removeAllGalleryWatch()";
 const char kRemoveGalleryChangedListenerCmd[] =
     "removeGalleryChangedListener()";
 const char kRemoveGalleryWatchCmd[] = "removeGalleryWatch()";
-const char kSetupWatchOnValidGalleriesCmd[] = "setupWatchOnValidGalleries()";
 const char kSetupWatchOnInvalidGalleryCmd[] = "setupWatchOnInvalidGallery()";
+#endif  // defined(OS_WIN)
 
 // And JS reply messages.
 const char kAddGalleryWatchOK[] = "add_gallery_watch_ok";
-const char kAddGalleryChangedListenerOK[] = "add_gallery_changed_listener_ok";
 const char kGetAllGalleryWatchOK[] = "get_all_gallery_watch_ok";
-const char kGetMediaFileSystemsOK[] = "get_media_file_systems_ok";
 const char kGetMediaFileSystemsCallbackOK[] =
     "get_media_file_systems_callback_ok";
+const char kGetMediaFileSystemsOK[] = "get_media_file_systems_ok";
+#if defined(OS_WIN)
+const char kAddGalleryChangedListenerOK[] = "add_gallery_changed_listener_ok";
 const char kRemoveAllGalleryWatchOK[] = "remove_all_gallery_watch_ok";
 const char kRemoveGalleryChangedListenerOK[] =
     "remove_gallery_changed_listener_ok";
 const char kRemoveGalleryWatchOK[] = "remove_gallery_watch_ok";
+#endif  // defined(OS_WIN)
 
 // Test reply messages.
-const char kAddGalleryWatchRequestSucceeded[] = "add_watch_request_succeeded";
-const char kAddGalleryWatchRequestFailed[] = "add_watch_request_failed";
-const char kGalleryChangedEventReceived[] = "gallery_changed_event_received";
 const char kGetAllGalleryWatchResultA[] = "gallery_watchers_does_not_exists";
+const char kAddGalleryWatchRequestFailed[] = "add_watch_request_failed";
+#if defined(OS_WIN)
+const char kAddGalleryWatchRequestSucceeded[] = "add_watch_request_succeeded";
+const char kGalleryChangedEventReceived[] = "gallery_changed_event_received";
 const char kGetAllGalleryWatchResultB[] =
     "watchers_for_galleries_{1, 2, 3}_found";
+#endif  // defined(OS_WIN)
+#endif  // !defined(OS_CHROMEOS)
 
 }  // namespace
 
@@ -81,7 +89,8 @@ class MediaGalleriesPrivateGalleryWatchApiTest : public ExtensionApiTest {
                               const std::string& js_command,
                               const std::string& ok_message) {
     ExtensionTestMessageListener listener(ok_message, false);
-    host->ExecuteJavascriptInWebFrame(string16(), ASCIIToUTF16(js_command));
+    host->ExecuteJavascriptInWebFrame(base::string16(),
+                                      ASCIIToUTF16(js_command));
     EXPECT_TRUE(listener.WaitUntilSatisfied());
   }
 
@@ -125,7 +134,7 @@ class MediaGalleriesPrivateGalleryWatchApiTest : public ExtensionApiTest {
 #if defined(OS_WIN)
 IN_PROC_BROWSER_TEST_F(MediaGalleriesPrivateGalleryWatchApiTest,
                        BasicGalleryWatch) {
-  chrome::EnsureMediaDirectoriesExists media_directories;
+  EnsureMediaDirectoriesExists media_directories;
   content::RenderViewHost* host = GetBackgroundHostForTestExtension();
   ASSERT_TRUE(host);
 
@@ -173,7 +182,7 @@ IN_PROC_BROWSER_TEST_F(MediaGalleriesPrivateGalleryWatchApiTest,
 
 IN_PROC_BROWSER_TEST_F(MediaGalleriesPrivateGalleryWatchApiTest,
                        RemoveListenerAndModifyGallery) {
-  chrome::EnsureMediaDirectoriesExists media_directories;
+  EnsureMediaDirectoriesExists media_directories;
   content::RenderViewHost* host = GetBackgroundHostForTestExtension();
   ASSERT_TRUE(host);
 
@@ -213,7 +222,7 @@ IN_PROC_BROWSER_TEST_F(MediaGalleriesPrivateGalleryWatchApiTest,
 
 IN_PROC_BROWSER_TEST_F(MediaGalleriesPrivateGalleryWatchApiTest,
                        SetupGalleryWatchWithoutListeners) {
-  chrome::EnsureMediaDirectoriesExists media_directories;
+  EnsureMediaDirectoriesExists media_directories;
   content::RenderViewHost* host = GetBackgroundHostForTestExtension();
   ASSERT_TRUE(host);
 
@@ -239,7 +248,7 @@ IN_PROC_BROWSER_TEST_F(MediaGalleriesPrivateGalleryWatchApiTest,
 
 IN_PROC_BROWSER_TEST_F(MediaGalleriesPrivateGalleryWatchApiTest,
                        SetupGalleryChangedListenerWithoutWatchers) {
-  chrome::EnsureMediaDirectoriesExists media_directories;
+  EnsureMediaDirectoriesExists media_directories;
   content::RenderViewHost* host = GetBackgroundHostForTestExtension();
   ASSERT_TRUE(host);
 
@@ -280,7 +289,7 @@ IN_PROC_BROWSER_TEST_F(MediaGalleriesPrivateGalleryWatchApiTest,
 
 IN_PROC_BROWSER_TEST_F(MediaGalleriesPrivateGalleryWatchApiTest,
                        GetAllGalleryWatch) {
-  chrome::EnsureMediaDirectoriesExists media_directories;
+  EnsureMediaDirectoriesExists media_directories;
   content::RenderViewHost* host = GetBackgroundHostForTestExtension();
   ASSERT_TRUE(host);
 
@@ -330,7 +339,7 @@ IN_PROC_BROWSER_TEST_F(MediaGalleriesPrivateGalleryWatchApiTest,
 
 IN_PROC_BROWSER_TEST_F(MediaGalleriesPrivateGalleryWatchApiTest,
                        RemoveAllGalleryWatch) {
-  chrome::EnsureMediaDirectoriesExists media_directories;
+  EnsureMediaDirectoriesExists media_directories;
   content::RenderViewHost* host = GetBackgroundHostForTestExtension();
   ASSERT_TRUE(host);
 
@@ -375,7 +384,7 @@ IN_PROC_BROWSER_TEST_F(MediaGalleriesPrivateGalleryWatchApiTest,
 // Please refer to crbug.com/144491.
 IN_PROC_BROWSER_TEST_F(MediaGalleriesPrivateGalleryWatchApiTest,
                        SetupGalleryWatch) {
-  chrome::EnsureMediaDirectoriesExists media_directories;
+  EnsureMediaDirectoriesExists media_directories;
   content::RenderViewHost* host = GetBackgroundHostForTestExtension();
   ASSERT_TRUE(host);
 
@@ -399,7 +408,7 @@ IN_PROC_BROWSER_TEST_F(MediaGalleriesPrivateGalleryWatchApiTest,
 // Please refer to crbug.com/144491.
 IN_PROC_BROWSER_TEST_F(MediaGalleriesPrivateGalleryWatchApiTest,
                        GetAllGalleryWatch) {
-  chrome::EnsureMediaDirectoriesExists media_directories;
+  EnsureMediaDirectoriesExists media_directories;
   content::RenderViewHost* host = GetBackgroundHostForTestExtension();
   ASSERT_TRUE(host);
 

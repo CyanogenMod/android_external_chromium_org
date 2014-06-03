@@ -227,8 +227,8 @@ bool FaviconInfoHasValidTypeData(const SyncedFaviconInfo& favicon_info,
 
 FaviconCache::FaviconCache(Profile* profile, int max_sync_favicon_limit)
     : profile_(profile),
-      weak_ptr_factory_(this),
-      max_sync_favicon_limit_(max_sync_favicon_limit) {
+      max_sync_favicon_limit_(max_sync_favicon_limit),
+      weak_ptr_factory_(this) {
   notification_registrar_.Add(this,
                               chrome::NOTIFICATION_HISTORY_URLS_DELETED,
                               content::Source<Profile>(profile_));
@@ -468,8 +468,8 @@ void FaviconCache::OnPageFaviconUpdated(const GURL& page_url) {
   // desired_size_in_dip). Figure out a way to fetch all favicons we support.
   // See crbug.com/181068.
   CancelableTaskTracker::TaskId id = favicon_service->GetFaviconForURL(
-      FaviconService::FaviconForURLParams(
-          profile_, page_url, SupportedFaviconTypes(), kMaxFaviconResolution),
+      FaviconService::FaviconForURLParams(page_url, SupportedFaviconTypes(),
+                                          kMaxFaviconResolution),
       base::Bind(&FaviconCache::OnFaviconDataAvailable,
                  weak_ptr_factory_.GetWeakPtr(), page_url),
       &cancelable_task_tracker_);
@@ -679,6 +679,10 @@ void FaviconCache::OnFaviconDataAvailable(
        ++iter) {
     SyncedFaviconInfo* favicon_info = iter->second.favicon_info;
     const GURL& favicon_url = favicon_info->favicon_url;
+
+    // TODO(zea): support multiple favicon urls per page.
+    page_favicon_map_[page_url] = favicon_url;
+
     if (!favicon_info->last_visit_time.is_null()) {
       UMA_HISTOGRAM_COUNTS_10000(
           "Sync.FaviconVisitPeriod",
@@ -698,9 +702,6 @@ void FaviconCache::OnFaviconDataAvailable(
     if (iter->second.new_tracking)
       tracking_change = syncer::SyncChange::ACTION_ADD;
     UpdateSyncState(favicon_url, image_change, tracking_change);
-
-    // TODO(zea): support multiple favicon urls per page.
-    page_favicon_map_[page_url] = favicon_url;
   }
 }
 

@@ -19,7 +19,8 @@
 class AdViewGuest : public GuestView,
                     public content::WebContentsObserver {
  public:
-  explicit AdViewGuest(content::WebContents* guest_web_contents);
+  AdViewGuest(content::WebContents* guest_web_contents,
+              const std::string& extension_id);
 
   static AdViewGuest* From(int embedder_process_id, int instance_id);
 
@@ -33,16 +34,18 @@ class AdViewGuest : public GuestView,
 
   virtual void DidCommitProvisionalLoadForFrame(
       int64 frame_id,
+      const base::string16& frame_unique_name,
       bool is_main_frame,
       const GURL& url,
       content::PageTransition transition_type,
       content::RenderViewHost* render_view_host) OVERRIDE;
   virtual void DidFailProvisionalLoad(
       int64 frame_id,
+      const base::string16& frame_unique_name,
       bool is_main_frame,
       const GURL& validated_url,
       int error_code,
-      const string16& error_description,
+      const base::string16& error_description,
       content::RenderViewHost* render_view_host) OVERRIDE;
 
   DISALLOW_COPY_AND_ASSIGN(AdViewGuest);

@@ -17,6 +17,7 @@ namespace cc {
 class FakePictureLayerTilingClient : public PictureLayerTilingClient {
  public:
   FakePictureLayerTilingClient();
+  explicit FakePictureLayerTilingClient(ResourceProvider* resource_provider);
   virtual ~FakePictureLayerTilingClient();
 
   // PictureLayerTilingClient implementation.
@@ -33,12 +34,16 @@ class FakePictureLayerTilingClient : public PictureLayerTilingClient {
 
   virtual const Region* GetInvalidation() OVERRIDE;
   virtual const PictureLayerTiling* GetTwinTiling(
-      const PictureLayerTiling* tiling) OVERRIDE;
+      const PictureLayerTiling* tiling) const OVERRIDE;
 
   void set_twin_tiling(PictureLayerTiling* tiling) { twin_tiling_ = tiling; }
   void set_text_rect(gfx::Rect rect) { text_rect_ = rect; }
   void set_allow_create_tile(bool allow) { allow_create_tile_ = allow; }
   void set_invalidation(const Region& region) { invalidation_ = region; }
+
+  TileManager* tile_manager() const {
+    return tile_manager_.get();
+  }
 
  protected:
   FakeTileManagerClient tile_manager_client_;

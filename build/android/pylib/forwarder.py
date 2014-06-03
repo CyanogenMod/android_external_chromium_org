@@ -17,10 +17,6 @@ import constants
 from pylib import valgrind_tools
 
 
-def _MakeBinaryPath(build_type, binary_name):
-  return os.path.join(cmd_helper.OutDirectory.get(), build_type, binary_name)
-
-
 def _GetProcessStartTime(pid):
   return psutil.Process(pid).create_time
 
@@ -55,6 +51,8 @@ class Forwarder(object):
   _LD_LIBRARY_PATH = 'LD_LIBRARY_PATH=%s' % _DEVICE_FORWARDER_FOLDER
   _LOCK_PATH = '/tmp/chrome.forwarder.lock'
   _MULTIPROCESSING_ENV_VAR = 'CHROME_FORWARDER_USE_MULTIPROCESSING'
+  # Defined in host_forwarder_main.cc
+  _HOST_FORWARDER_LOG = '/tmp/host_forwarder_log'
 
   _instance = None
 
@@ -64,7 +62,7 @@ class Forwarder(object):
     os.environ[Forwarder._MULTIPROCESSING_ENV_VAR] = '1'
 
   @staticmethod
-  def Map(port_pairs, adb, build_type='Debug', tool=None):
+  def Map(port_pairs, adb, tool=None):
     """Runs the forwarder.
 
     Args:
@@ -83,7 +81,7 @@ class Forwarder(object):
     if not tool:
       tool = valgrind_tools.CreateTool(None, adb)
     with _FileLock(Forwarder._LOCK_PATH):
-      instance = Forwarder._GetInstanceLocked(build_type, tool)
+      instance = Forwarder._GetInstanceLocked(tool)
       instance._InitDeviceLocked(adb, tool)
 
       device_serial = adb.Adb().GetSerialNumber()
@@ -136,63 +134,76 @@ class Forwarder(object):
       port_pairs: A list of tuples (device_port, host_port) to unmap.
     """
     with _FileLock(Forwarder._LOCK_PATH):
-      port_map = Forwarder._GetInstanceLocked(
-          None, None)._device_to_host_port_map
+      if not Forwarder._instance:
+        return
       adb_serial = adb.Adb().GetSerialNumber()
+      if adb_serial not in Forwarder._instance._initialized_devices:
+        return
+      port_map = Forwarder._GetInstanceLocked(
+          None)._device_to_host_port_map
       for (device_serial, device_port) in port_map.keys():
         if adb_serial == device_serial:
           Forwarder._UnmapDevicePortLocked(device_port, adb)
+      # There are no more ports mapped, kill the device_forwarder.
+      tool = valgrind_tools.CreateTool(None, adb)
+      Forwarder._KillDeviceLocked(adb, tool)
+      Forwarder._instance._initialized_devices.remove(adb_serial)
+
 
   @staticmethod
   def DevicePortForHostPort(host_port):
     """Returns the device port that corresponds to a given host port."""
     with _FileLock(Forwarder._LOCK_PATH):
       (device_serial, device_port) = Forwarder._GetInstanceLocked(
-          None, None)._host_to_device_port_map.get(host_port)
+          None)._host_to_device_port_map.get(host_port)
       return device_port
 
   @staticmethod
-  def _GetInstanceLocked(build_type, tool):
+  def RemoveHostLog():
+    if os.path.exists(Forwarder._HOST_FORWARDER_LOG):
+      os.unlink(Forwarder._HOST_FORWARDER_LOG)
+
+  @staticmethod
+  def GetHostLog():
+    if not os.path.exists(Forwarder._HOST_FORWARDER_LOG):
+      return ''
+    with file(Forwarder._HOST_FORWARDER_LOG, 'r') as f:
+      return f.read()
+
+  @staticmethod
+  def _GetInstanceLocked(tool):
     """Returns the singleton instance.
 
     Note that the global lock must be acquired before calling this method.
 
     Args:
-      build_type: 'Release' or 'Debug'
       tool: Tool class to use to get wrapper, if necessary, for executing the
             forwarder (see valgrind_tools.py).
     """
     if not Forwarder._instance:
-      Forwarder._instance = Forwarder(build_type, tool)
+      Forwarder._instance = Forwarder(tool)
     return Forwarder._instance
 
-  def __init__(self, build_type, tool):
+  def __init__(self, tool):
     """Constructs a new instance of Forwarder.
 
     Note that Forwarder is a singleton therefore this constructor should be
     called only once.
 
     Args:
-      build_type: 'Release' or 'Debug'
       tool: Tool class to use to get wrapper, if necessary, for executing the
             forwarder (see valgrind_tools.py).
     """
     assert not Forwarder._instance
-    self._build_type = build_type
     self._tool = tool
     self._initialized_devices = set()
     self._device_to_host_port_map = dict()
     self._host_to_device_port_map = dict()
-    self._host_forwarder_path = _MakeBinaryPath(
-        self._build_type, 'host_forwarder')
-    if not os.path.exists(self._host_forwarder_path):
-      self._build_type = 'Release' if self._build_type == 'Debug' else 'Debug'
-      self._host_forwarder_path = _MakeBinaryPath(
-          self._build_type, 'host_forwarder')
-      assert os.path.exists(
-          self._host_forwarder_path), 'Please build forwarder2'
+    self._host_forwarder_path = os.path.join(
+        constants.GetOutDirectory(), 'host_forwarder')
+    assert os.path.exists(self._host_forwarder_path), 'Please build forwarder2'
     self._device_forwarder_path_on_host = os.path.join(
-        cmd_helper.OutDirectory.get(), self._build_type, 'forwarder_dist')
+        constants.GetOutDirectory(), 'forwarder_dist')
     self._InitHostLocked()
 
   @staticmethod
@@ -201,7 +212,7 @@ class Forwarder(object):
 
     Note that the global lock must be acquired before calling this method.
     """
-    instance = Forwarder._GetInstanceLocked(None, None)
+    instance = Forwarder._GetInstanceLocked(None)
     serial = adb.Adb().GetSerialNumber()
     serial_with_port = (serial, device_port)
     if not serial_with_port in instance._device_to_host_port_map:

@@ -7,13 +7,12 @@
 #include "base/files/file_path.h"
 #include "base/strings/utf_string_conversions.h"
 #include "content/public/renderer/renderer_ppapi_host.h"
-#include "content/renderer/pepper/ppb_file_ref_impl.h"
+#include "content/renderer/pepper/pepper_file_ref_renderer_host.h"
 #include "content/renderer/render_view_impl.h"
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/host/dispatch_host_message.h"
 #include "ppapi/host/ppapi_host.h"
 #include "ppapi/proxy/ppapi_messages.h"
-#include "ppapi/proxy/ppb_file_ref_proxy.h"
 #include "third_party/WebKit/public/platform/WebCString.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebVector.h"
@@ -23,7 +22,7 @@
 namespace content {
 
 class PepperFileChooserHost::CompletionHandler
-    : public WebKit::WebFileChooserCompletion {
+    : public blink::WebFileChooserCompletion {
  public:
   CompletionHandler(const base::WeakPtr<PepperFileChooserHost>& host)
       : host_(host) {
@@ -32,7 +31,7 @@ class PepperFileChooserHost::CompletionHandler
   virtual ~CompletionHandler() {}
 
   virtual void didChooseFile(
-      const WebKit::WebVector<WebKit::WebString>& file_names) {
+      const blink::WebVector<blink::WebString>& file_names) {
     if (host_.get()) {
       std::vector<PepperFileChooserHost::ChosenFileInfo> files;
       for (size_t i = 0; i < file_names.size(); i++) {
@@ -46,7 +45,7 @@ class PepperFileChooserHost::CompletionHandler
     delete this;
   }
   virtual void didChooseFile(
-      const WebKit::WebVector<SelectedFileInfo>& file_names) {
+      const blink::WebVector<SelectedFileInfo>& file_names) {
     if (host_.get()) {
       std::vector<PepperFileChooserHost::ChosenFileInfo> files;
       for (size_t i = 0; i < file_names.size(); i++) {
@@ -81,7 +80,8 @@ PepperFileChooserHost::PepperFileChooserHost(
     PP_Resource resource)
     : ResourceHost(host->GetPpapiHost(), instance, resource),
       renderer_ppapi_host_(host),
-      handler_(NULL) {
+      handler_(NULL),
+      weak_factory_(this) {
 }
 
 PepperFileChooserHost::~PepperFileChooserHost() {
@@ -98,29 +98,36 @@ int32_t PepperFileChooserHost::OnResourceMessageReceived(
 
 void PepperFileChooserHost::StoreChosenFiles(
     const std::vector<ChosenFileInfo>& files) {
-  std::vector<ppapi::PPB_FileRef_CreateInfo> chosen_files;
+  std::vector<IPC::Message> create_msgs;
+  std::vector<base::FilePath> file_paths;
+  std::vector<std::string> display_names;
   for (size_t i = 0; i < files.size(); i++) {
 #if defined(OS_WIN)
     base::FilePath file_path(UTF8ToWide(files[i].path));
 #else
     base::FilePath file_path(files[i].path);
 #endif
-
-    PPB_FileRef_Impl* ref = PPB_FileRef_Impl::CreateExternal(
-        pp_instance(), file_path, files[i].display_name);
-    ppapi::PPB_FileRef_CreateInfo create_info;
-    ppapi::proxy::PPB_FileRef_Proxy::SerializeFileRef(ref->GetReference(),
-                                                      &create_info);
-    chosen_files.push_back(create_info);
+    file_paths.push_back(file_path);
+    create_msgs.push_back(PpapiHostMsg_FileRef_CreateExternal(file_path));
+    display_names.push_back(files[i].display_name);
   }
 
-  reply_context_.params.set_result(
-      (chosen_files.size() > 0) ? PP_OK : PP_ERROR_USERCANCEL);
-  host()->SendReply(reply_context_,
-                    PpapiPluginMsg_FileChooser_ShowReply(chosen_files));
-
-  reply_context_ = ppapi::host::ReplyMessageContext();
-  handler_ = NULL;  // Handler deletes itself.
+  if (!files.empty()) {
+    renderer_ppapi_host_->CreateBrowserResourceHosts(
+        pp_instance(),
+        create_msgs,
+        base::Bind(&PepperFileChooserHost::DidCreateResourceHosts,
+                   weak_factory_.GetWeakPtr(),
+                   file_paths,
+                   display_names));
+  } else {
+    reply_context_.params.set_result(PP_ERROR_USERCANCEL);
+    std::vector<ppapi::FileRefCreateInfo> chosen_files;
+    host()->SendReply(reply_context_,
+                      PpapiPluginMsg_FileChooser_ShowReply(chosen_files));
+    reply_context_ = ppapi::host::ReplyMessageContext();
+    handler_ = NULL;  // Handler deletes itself.
+  }
 }
 
 int32_t PepperFileChooserHost::OnShow(
@@ -138,17 +145,17 @@ int32_t PepperFileChooserHost::OnShow(
     return PP_ERROR_NO_USER_GESTURE;
   }
 
-  WebKit::WebFileChooserParams params;
+  blink::WebFileChooserParams params;
   if (save_as) {
     params.saveAs = true;
-    params.initialValue = WebKit::WebString::fromUTF8(
+    params.initialValue = blink::WebString::fromUTF8(
         suggested_file_name.data(), suggested_file_name.size());
   } else {
     params.multiSelect = open_multiple;
   }
-  std::vector<WebKit::WebString> mine_types(accept_mime_types.size());
+  std::vector<blink::WebString> mine_types(accept_mime_types.size());
   for (size_t i = 0; i < accept_mime_types.size(); i++) {
-    mine_types[i] = WebKit::WebString::fromUTF8(
+    mine_types[i] = blink::WebString::fromUTF8(
         accept_mime_types[i].data(), accept_mime_types[i].size());
   }
   params.acceptTypes = mine_types;
@@ -165,6 +172,35 @@ int32_t PepperFileChooserHost::OnShow(
 
   reply_context_ = context->MakeReplyMessageContext();
   return PP_OK_COMPLETIONPENDING;
+}
+
+void PepperFileChooserHost::DidCreateResourceHosts(
+    const std::vector<base::FilePath>& file_paths,
+    const std::vector<std::string>& display_names,
+    const std::vector<int>& browser_ids) {
+  DCHECK(file_paths.size() == display_names.size());
+  DCHECK(file_paths.size() == browser_ids.size());
+
+  std::vector<ppapi::FileRefCreateInfo> chosen_files;
+  for (size_t i = 0; i < browser_ids.size(); ++i) {
+    PepperFileRefRendererHost* renderer_host =
+        new PepperFileRefRendererHost(renderer_ppapi_host_,
+                                      pp_instance(),
+                                      0,
+                                      file_paths[i]);
+    int renderer_id =
+        renderer_ppapi_host_->GetPpapiHost()->AddPendingResourceHost(
+            scoped_ptr<ppapi::host::ResourceHost>(renderer_host));
+    ppapi::FileRefCreateInfo info = ppapi::MakeExternalFileRefCreateInfo(
+        file_paths[i], display_names[i], browser_ids[i], renderer_id);
+    chosen_files.push_back(info);
+  }
+
+  reply_context_.params.set_result(PP_OK);
+  host()->SendReply(reply_context_,
+                    PpapiPluginMsg_FileChooser_ShowReply(chosen_files));
+  reply_context_ = ppapi::host::ReplyMessageContext();
+  handler_ = NULL;  // Handler deletes itself.
 }
 
 }  // namespace content

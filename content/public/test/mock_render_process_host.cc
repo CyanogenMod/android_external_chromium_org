@@ -14,18 +14,21 @@
 #include "content/common/child_process_host_impl.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
+#include "content/public/browser/render_widget_host_iterator.h"
 #include "content/public/browser/storage_partition.h"
 
 namespace content {
 
-MockRenderProcessHost::MockRenderProcessHost(
-    BrowserContext* browser_context)
-        : transport_dib_(NULL),
-          bad_msg_count_(0),
-          factory_(NULL),
-          id_(ChildProcessHostImpl::GenerateChildProcessUniqueId()),
-          browser_context_(browser_context),
-          fast_shutdown_started_(false) {
+MockRenderProcessHost::MockRenderProcessHost(BrowserContext* browser_context)
+    : transport_dib_(NULL),
+      bad_msg_count_(0),
+      factory_(NULL),
+      id_(ChildProcessHostImpl::GenerateChildProcessUniqueId()),
+      browser_context_(browser_context),
+      prev_routing_id_(0),
+      fast_shutdown_started_(false),
+      deletion_callback_called_(false),
+      is_guest_(false) {
   // Child process security operations can't be unit tested unless we add
   // ourselves as an existing child process.
   ChildProcessSecurityPolicyImpl::GetInstance()->Add(GetID());
@@ -38,8 +41,14 @@ MockRenderProcessHost::~MockRenderProcessHost() {
   delete transport_dib_;
   if (factory_)
     factory_->Remove(this);
-  // In unit tests, Release() might not have been called.
-  RenderProcessHostImpl::UnregisterHost(GetID());
+
+  // In unit tests, Cleanup() might not have been called.
+  if (!deletion_callback_called_) {
+    FOR_EACH_OBSERVER(RenderProcessHostObserver,
+                      observers_,
+                      RenderProcessHostDestroyed(this));
+    RenderProcessHostImpl::UnregisterHost(GetID());
+  }
 }
 
 void MockRenderProcessHost::EnableSendQueue() {
@@ -50,8 +59,7 @@ bool MockRenderProcessHost::Init() {
 }
 
 int MockRenderProcessHost::GetNextRoutingID() {
-  static int prev_routing_id = 0;
-  return ++prev_routing_id;
+  return ++prev_routing_id_;
 }
 
 void MockRenderProcessHost::AddRoute(
@@ -64,6 +72,15 @@ void MockRenderProcessHost::RemoveRoute(int32 routing_id) {
   DCHECK(listeners_.Lookup(routing_id) != NULL);
   listeners_.Remove(routing_id);
   Cleanup();
+}
+
+void MockRenderProcessHost::AddObserver(RenderProcessHostObserver* observer) {
+  observers_.AddObserver(observer);
+}
+
+void MockRenderProcessHost::RemoveObserver(
+    RenderProcessHostObserver* observer) {
+  observers_.RemoveObserver(observer);
 }
 
 bool MockRenderProcessHost::WaitForBackingStoreMsg(
@@ -88,14 +105,14 @@ int MockRenderProcessHost::VisibleWidgetCount() const {
 }
 
 bool MockRenderProcessHost::IsGuest() const {
-  return false;
+  return is_guest_;
 }
 
 StoragePartition* MockRenderProcessHost::GetStoragePartition() const {
   return NULL;
 }
 
-void MockRenderProcessHost::AddWord(const string16& word) {
+void MockRenderProcessHost::AddWord(const base::string16& word) {
 }
 
 bool MockRenderProcessHost::FastShutdownIfPossible() {
@@ -168,12 +185,16 @@ bool MockRenderProcessHost::IgnoreInputEvents() const {
 
 void MockRenderProcessHost::Cleanup() {
   if (listeners_.IsEmpty()) {
+    FOR_EACH_OBSERVER(RenderProcessHostObserver,
+                      observers_,
+                      RenderProcessHostDestroyed(this));
     NotificationService::current()->Notify(
         NOTIFICATION_RENDERER_PROCESS_TERMINATED,
         Source<RenderProcessHost>(this),
         NotificationService::NoDetails());
     base::MessageLoop::current()->DeleteSoon(FROM_HERE, this);
     RenderProcessHostImpl::UnregisterHost(GetID());
+    deletion_callback_called_ = true;
   }
 }
 
@@ -204,12 +225,16 @@ IPC::ChannelProxy* MockRenderProcessHost::GetChannel() {
   return NULL;
 }
 
+void MockRenderProcessHost::AddFilter(BrowserMessageFilter* filter) {
+}
+
 int MockRenderProcessHost::GetActiveViewCount() {
   int num_active_views = 0;
-  RenderWidgetHost::List widgets = RenderWidgetHost::GetRenderWidgetHosts();
-  for (size_t i = 0; i < widgets.size(); ++i) {
+  scoped_ptr<RenderWidgetHostIterator> widgets(
+      RenderWidgetHost::GetRenderWidgetHosts());
+  while (RenderWidgetHost* widget = widgets->GetNextHost()) {
     // Count only RenderWidgetHosts in this process.
-    if (widgets[i]->GetProcess()->GetID() == GetID())
+    if (widget->GetProcess()->GetID() == GetID())
       num_active_views++;
   }
   return num_active_views;

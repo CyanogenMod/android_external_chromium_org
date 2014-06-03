@@ -39,13 +39,13 @@
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "grit/ui_resources.h"
-#include "ui/base/animation/animation_delegate.h"
-#include "ui/base/animation/slide_animation.h"
 #include "ui/base/dragdrop/gtk_dnd_util.h"
-#include "ui/base/gtk/gtk_compat.h"
 #include "ui/base/gtk/gtk_screen_util.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/gfx/animation/animation_delegate.h"
+#include "ui/gfx/animation/slide_animation.h"
+#include "ui/gfx/gtk_compat.h"
 #include "ui/gfx/gtk_util.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/point.h"
@@ -58,7 +58,6 @@ namespace {
 const int kDefaultAnimationDurationMs = 100;
 const int kResizeLayoutAnimationDurationMs = 166;
 const int kReorderAnimationDurationMs = 166;
-const int kAnimateToBoundsDurationMs = 150;
 const int kMiniTabAnimationDurationMs = 150;
 
 const int kNewTabButtonHOffset = -5;
@@ -75,8 +74,6 @@ const int kLayoutAfterSizeAllocateMs = 10;
 // The range outside of the tabstrip where the pointer must enter/leave to
 // start/stop the resize animation.
 const int kTabStripAnimationVSlop = 40;
-
-const int kHorizontalMoveThreshold = 16;  // pixels
 
 // The horizontal offset from one tab to the next, which results in overlapping
 // tabs.
@@ -131,7 +128,7 @@ bool GdkRectMatchesTabFaviconBounds(const GdkRectangle& gdk_rect, TabGtk* tab) {
 //
 //  A base class for all TabStrip animations.
 //
-class TabStripGtk::TabAnimation : public ui::AnimationDelegate {
+class TabStripGtk::TabAnimation : public gfx::AnimationDelegate {
  public:
   friend class TabStripGtk;
 
@@ -161,7 +158,7 @@ class TabStripGtk::TabAnimation : public ui::AnimationDelegate {
 
   void Start() {
     animation_.SetSlideDuration(GetDuration());
-    animation_.SetTweenType(ui::Tween::EASE_OUT);
+    animation_.SetTweenType(gfx::Tween::EASE_OUT);
     if (!animation_.IsShowing()) {
       animation_.Reset();
       animation_.Show();
@@ -200,17 +197,17 @@ class TabStripGtk::TabAnimation : public ui::AnimationDelegate {
     return tab_width;
   }
 
-  // Overridden from ui::AnimationDelegate:
-  virtual void AnimationProgressed(const ui::Animation* animation) OVERRIDE {
+  // Overridden from gfx::AnimationDelegate:
+  virtual void AnimationProgressed(const gfx::Animation* animation) OVERRIDE {
     tabstrip_->AnimationLayout(end_unselected_width_);
   }
 
-  virtual void AnimationEnded(const ui::Animation* animation) OVERRIDE {
+  virtual void AnimationEnded(const gfx::Animation* animation) OVERRIDE {
     tabstrip_->FinishAnimation(this, layout_on_completion_);
     // This object is destroyed now, so we can't do anything else after this.
   }
 
-  virtual void AnimationCanceled(const ui::Animation* animation) OVERRIDE {
+  virtual void AnimationCanceled(const gfx::Animation* animation) OVERRIDE {
     AnimationEnded(animation);
   }
 
@@ -258,7 +255,7 @@ class TabStripGtk::TabAnimation : public ui::AnimationDelegate {
   }
 
   TabStripGtk* tabstrip_;
-  ui::SlideAnimation animation_;
+  gfx::SlideAnimation animation_;
 
   double start_selected_width_;
   double start_unselected_width_;
@@ -412,7 +409,7 @@ class RemoveTabAnimation : public TabStripGtk::TabAnimation {
     return start_unselected_width_ + (delta * animation_.GetCurrentValue());
   }
 
-  virtual void AnimationEnded(const ui::Animation* animation) OVERRIDE {
+  virtual void AnimationEnded(const gfx::Animation* animation) OVERRIDE {
     tabstrip_->RemoveTabAt(index_);
     TabStripGtk::TabAnimation::AnimationEnded(animation);
   }
@@ -442,8 +439,8 @@ class MoveTabAnimation : public TabStripGtk::TabAnimation {
   }
   virtual ~MoveTabAnimation() {}
 
-  // Overridden from ui::AnimationDelegate:
-  virtual void AnimationProgressed(const ui::Animation* animation) OVERRIDE {
+  // Overridden from gfx::AnimationDelegate:
+  virtual void AnimationProgressed(const gfx::Animation* animation) OVERRIDE {
     // Position Tab A
     double distance = start_tab_b_bounds_.x() - start_tab_a_bounds_.x();
     double delta = distance * animation_.GetCurrentValue();
@@ -495,8 +492,8 @@ class ResizeLayoutAnimation : public TabStripGtk::TabAnimation {
   }
   virtual ~ResizeLayoutAnimation() {}
 
-  // Overridden from ui::AnimationDelegate:
-  virtual void AnimationEnded(const ui::Animation* animation) OVERRIDE {
+  // Overridden from gfx::AnimationDelegate:
+  virtual void AnimationEnded(const gfx::Animation* animation) OVERRIDE {
     tabstrip_->needs_resize_layout_ = false;
     TabStripGtk::TabAnimation::AnimationEnded(animation);
   }
@@ -629,8 +626,8 @@ class MiniMoveAnimation : public TabStripGtk::TabAnimation {
     tab_->set_animating_mini_change(true);
   }
 
-  // Overridden from ui::AnimationDelegate:
-  virtual void AnimationProgressed(const ui::Animation* animation) OVERRIDE {
+  // Overridden from gfx::AnimationDelegate:
+  virtual void AnimationProgressed(const gfx::Animation* animation) OVERRIDE {
     // Do the normal layout.
     TabAnimation::AnimationProgressed(animation);
 
@@ -644,7 +641,7 @@ class MiniMoveAnimation : public TabStripGtk::TabAnimation {
     tabstrip_->SetTabBounds(tab_, tab_bounds);
   }
 
-  virtual void AnimationEnded(const ui::Animation* animation) OVERRIDE {
+  virtual void AnimationEnded(const gfx::Animation* animation) OVERRIDE {
     tabstrip_->needs_resize_layout_ = false;
     TabStripGtk::TabAnimation::AnimationEnded(animation);
   }
@@ -726,10 +723,10 @@ TabStripGtk::TabStripGtk(TabStripModel* model, BrowserWindowGtk* window)
       model_(model),
       window_(window),
       theme_service_(GtkThemeService::GetFrom(model->profile())),
-      weak_factory_(this),
-      layout_factory_(this),
       added_as_message_loop_observer_(false),
-      hover_tab_selector_(model) {
+      hover_tab_selector_(model),
+      weak_factory_(this),
+      layout_factory_(this) {
 }
 
 TabStripGtk::~TabStripGtk() {
@@ -1092,14 +1089,10 @@ void TabStripGtk::TabSelectionChanged(TabStripModel* tab_strip_model,
       GetTabAtAdjustForAnimation(*it)->SchedulePaint();
   }
 
-  ui::ListSelectionModel::SelectedIndices no_longer_selected;
-  std::insert_iterator<std::vector<int> > it2(no_longer_selected,
-                                              no_longer_selected.begin());
-  std::set_difference(old_model.selected_indices().begin(),
-                      old_model.selected_indices().end(),
-                      model_->selection_model().selected_indices().begin(),
-                      model_->selection_model().selected_indices().end(),
-                      it2);
+  ui::ListSelectionModel::SelectedIndices no_longer_selected =
+      base::STLSetDifference<ui::ListSelectionModel::SelectedIndices>(
+          old_model.selected_indices(),
+          model_->selection_model().selected_indices());
   for (std::vector<int>::iterator it = no_longer_selected.begin();
        it != no_longer_selected.end(); ++it) {
     GetTabAtAdjustForAnimation(*it)->StopMiniTabTitleAnimation();
@@ -2192,7 +2185,7 @@ void TabStripGtk::OnNewTabClicked(GtkWidget* widget) {
       content::RecordAction(UserMetricsAction("NewTab_Button"));
       UMA_HISTOGRAM_ENUMERATION("Tab.NewTab", TabStripModel::NEW_TAB_BUTTON,
                                 TabStripModel::NEW_TAB_ENUM_COUNT);
-      model_->delegate()->AddBlankTabAt(-1, true);
+      model_->delegate()->AddTabAt(GURL(), -1, true);
       break;
     case 2: {
       // On middle-click, try to parse the PRIMARY selection as a URL and load

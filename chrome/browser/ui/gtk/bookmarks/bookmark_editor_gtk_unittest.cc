@@ -9,19 +9,19 @@
 #include <string>
 
 #include "base/compiler_specific.h"
+#include "base/message_loop/message_loop.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
+#include "chrome/browser/bookmarks/bookmark_test_helpers.h"
 #include "chrome/browser/ui/gtk/bookmarks/bookmark_tree_model.h"
 #include "chrome/test/base/testing_profile.h"
-#include "chrome/test/base/ui_test_utils.h"
 #include "content/public/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using base::Time;
 using base::TimeDelta;
-using bookmark_utils::GetTitleFromTreeIter;
 using content::BrowserThread;
 
 // Base class for bookmark editor tests. This class is a copy from
@@ -42,7 +42,7 @@ class BookmarkEditorGtkTest : public testing::Test {
     profile_->CreateBookmarkModel(true);
 
     model_ = BookmarkModelFactory::GetForProfile(profile_.get());
-    ui_test_utils::WaitForBookmarkModelToLoad(model_);
+    test::WaitForBookmarkModelToLoad(model_);
 
     AddTestData();
   }
@@ -111,7 +111,7 @@ TEST_F(BookmarkEditorGtkTest, ModelsMatch) {
       profile_.get(),
       NULL,
       BookmarkEditor::EditDetails::AddNodeInFolder(
-          NULL, -1, GURL(), string16()),
+          NULL, -1, GURL(), base::string16()),
       BookmarkEditor::SHOW_TREE);
 
   // The root should have two or three children, one for the bookmark bar node,
@@ -254,12 +254,10 @@ TEST_F(BookmarkEditorGtkTest, MoveToNewParent) {
   // Create two nodes: "F21" as a child of "F2" and "F211" as a child of "F21".
   GtkTreeIter f21_iter;
   editor.AddNewFolder(&f2_iter, &f21_iter);
-  gtk_tree_store_set(editor.tree_store_, &f21_iter,
-                     bookmark_utils::FOLDER_NAME, "F21", -1);
+  gtk_tree_store_set(editor.tree_store_, &f21_iter, FOLDER_NAME, "F21", -1);
   GtkTreeIter f211_iter;
   editor.AddNewFolder(&f21_iter, &f211_iter);
-  gtk_tree_store_set(editor.tree_store_, &f211_iter,
-                     bookmark_utils::FOLDER_NAME, "F211", -1);
+  gtk_tree_store_set(editor.tree_store_, &f211_iter, FOLDER_NAME, "F211", -1);
 
   ASSERT_EQ(1, gtk_tree_model_iter_n_children(store, &f2_iter));
 
@@ -288,7 +286,7 @@ TEST_F(BookmarkEditorGtkTest, NewURL) {
       profile_.get(),
       NULL,
       BookmarkEditor::EditDetails::AddNodeInFolder(
-          NULL, -1, GURL(), string16()),
+          NULL, -1, GURL(), base::string16()),
       BookmarkEditor::SHOW_TREE);
 
   gtk_entry_set_text(GTK_ENTRY(editor.url_entry_),

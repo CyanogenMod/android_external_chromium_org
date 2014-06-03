@@ -1,7 +1,6 @@
 {
   'TOOLS': ['newlib', 'glibc', 'pnacl', 'win', 'linux'],
   'SEARCH': [
-      '.',
       '../../../../ppapi/cpp',
       '../../../../ppapi/cpp/dev',
       '../../../../ppapi/cpp/extensions',
@@ -39,6 +38,8 @@
         'mouse_cursor.cc',
         'mouse_lock.cc',
         'net_address.cc',
+        'network_list.cc',
+        'network_monitor.cc',
         'network_proxy.cc',
         'ppp_entrypoints.cc',
         'rect.cc',
@@ -84,13 +85,9 @@
         'scrollbar_dev.cc',
         'graphics_2d_dev.cc',
         'widget_dev.cc',
-
-        # ppapi/cpp/extensions
-        'event_base.cc',
+        'var_resource_dev.cc',
 
         # ppapi/cpp/extensions/dev
-        'alarms_dev.cc',
-        'events_dev.cc',
         'socket_dev.cc',
 
         # ppapi/utility/graphics
@@ -135,6 +132,8 @@
         'mouse_cursor.h',
         'mouse_lock.h',
         'net_address.h',
+        'network_list.h',
+        'network_monitor.h',
         'network_proxy.h',
         'output_traits.h',
         'pass_ref.h',
@@ -179,6 +178,7 @@
         'text_input_dev.h',
         'truetype_font_dev.h',
         'url_util_dev.h',
+        'var_resource_dev.h',
         'video_capture_client_dev.h',
         'video_capture_dev.h',
         'video_decoder_client_dev.h',
@@ -193,7 +193,6 @@
     {
       'FILES': [
         'dict_field.h',
-        'event_base.h',
         'ext_output_traits.h',
         'from_var_converter.h',
         'optional.h',
@@ -203,8 +202,6 @@
     },
     {
       'FILES': [
-        'alarms_dev.h',
-        'events_dev.h',
         'socket_dev.h',
       ],
       'DEST': 'include/ppapi/cpp/extensions/dev',

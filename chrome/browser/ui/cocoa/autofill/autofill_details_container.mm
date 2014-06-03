@@ -8,20 +8,18 @@
 
 #include "base/mac/foundation_util.h"
 #include "chrome/browser/ui/autofill/autofill_dialog_view_delegate.h"
+#import "chrome/browser/ui/cocoa/autofill/autofill_bubble_controller.h"
 #import "chrome/browser/ui/cocoa/autofill/autofill_section_container.h"
 #import "chrome/browser/ui/cocoa/info_bubble_view.h"
-#include "skia/ext/skia_utils_mac.h"
 
-namespace {
-
-// Imported constant from Views version. TODO(groby): Share.
-SkColor const kWarningColor = 0xffde4932;  // SkColorSetRGB(0xde, 0x49, 0x32);
-
-}  // namespace
+typedef BOOL (^FieldFilterBlock)(NSView<AutofillInputField>*);
 
 @interface AutofillDetailsContainer ()
-// Compute infobubble origin based on anchor/view.
-- (NSPoint)originFromAnchorView:(NSView*)view;
+
+// Find the editable input field that is closest to the top of the dialog and
+// matches the |predicateBlock|.
+- (NSView*)firstEditableFieldMatchingBlock:(FieldFilterBlock)predicateBlock;
+
 @end
 
 @implementation AutofillDetailsContainer
@@ -44,7 +42,6 @@ SkColor const kWarningColor = 0xffde4932;  // SkColorSetRGB(0xde, 0x49, 0x32);
 - (void)loadView {
   details_.reset([[NSMutableArray alloc] init]);
 
-  [self addSection:autofill::SECTION_EMAIL];
   [self addSection:autofill::SECTION_CC];
   [self addSection:autofill::SECTION_BILLING];
   [self addSection:autofill::SECTION_CC_BILLING];
@@ -61,21 +58,6 @@ SkColor const kWarningColor = 0xffde4932;  // SkColorSetRGB(0xde, 0x49, 0x32);
 
   for (AutofillSectionContainer* container in details_.get())
     [[scrollView_ documentView] addSubview:[container view]];
-
-  infoBubble_.reset([[InfoBubbleView alloc] initWithFrame:NSZeroRect]);
-  [infoBubble_ setBackgroundColor:
-      gfx::SkColorToCalibratedNSColor(kWarningColor)];
-  [infoBubble_ setArrowLocation:info_bubble::kTopRight];
-  [infoBubble_ setAlignment:info_bubble::kAlignArrowToAnchor];
-  [infoBubble_ setHidden:YES];
-
-  base::scoped_nsobject<NSTextField> label([[NSTextField alloc] init]);
-  [label setEditable:NO];
-  [label setBordered:NO];
-  [label setDrawsBackground:NO];
-  [infoBubble_ addSubview:label];
-
-  [[scrollView_ documentView] addSubview:infoBubble_];
 
   [self performLayout];
 }
@@ -126,21 +108,106 @@ SkColor const kWarningColor = 0xffde4932;  // SkColorSetRGB(0xde, 0x49, 0x32);
   return allValid;
 }
 
-// TODO(groby): Unify with BaseBubbleController's originFromAnchor:view:.
-- (NSPoint)originFromAnchorView:(NSView*)view {
-  NSView* bubbleParent = [infoBubble_ superview];
-  NSPoint origin = [[view superview] convertPoint:[view frame].origin
-                                           toView:nil];
-  NSRect bubbleFrame =
-      [bubbleParent convertRect:[infoBubble_ frame] toView:nil];
+- (NSView*)firstInvalidField {
+  return [self firstEditableFieldMatchingBlock:
+      ^BOOL (NSView<AutofillInputField>* field) {
+          return [field invalid];
+      }];
+}
 
-  NSSize offsets = NSMakeSize(info_bubble::kBubbleArrowXOffset +
-                              info_bubble::kBubbleArrowWidth / 2.0, 0);
-  offsets = [view convertSize:offsets toView:nil];
-  origin.x -= NSWidth(bubbleFrame) - offsets.width;
+- (NSView*)firstVisibleField {
+  return [self firstEditableFieldMatchingBlock:
+      ^BOOL (NSView<AutofillInputField>* field) {
+          return YES;
+      }];
+}
 
-  origin.y -= NSHeight(bubbleFrame);
-  return [bubbleParent convertPoint:origin fromView:nil];
+- (void)scrollToView:(NSView*)field {
+  const CGFloat bottomPadding = 5.0;  // Padding below the visible field.
+
+  NSClipView* clipView = [scrollView_ contentView];
+  NSRect fieldRect = [field convertRect:[field bounds] toView:clipView];
+
+  // If the entire field is already visible, let's not scroll.
+  NSRect documentRect = [clipView documentVisibleRect];
+  documentRect = [[clipView documentView] convertRect:documentRect
+                                               toView:clipView];
+  if (NSContainsRect(documentRect, fieldRect))
+    return;
+
+  NSPoint scrollPoint = [clipView constrainScrollPoint:
+      NSMakePoint(NSMinX(fieldRect), NSMinY(fieldRect) - bottomPadding)];
+  [clipView scrollToPoint:scrollPoint];
+  [scrollView_ reflectScrolledClipView:clipView];
+  [self updateErrorBubble];
+}
+
+- (void)updateErrorBubble {
+  if (!delegate_->ShouldShowErrorBubble()) {
+    [errorBubbleController_ close];
+  }
+}
+
+- (void)errorBubbleWindowWillClose:(NSNotification*)notification {
+  DCHECK_EQ([notification object], [errorBubbleController_ window]);
+
+  NSNotificationCenter* center = [NSNotificationCenter defaultCenter];
+  [center removeObserver:self
+                    name:NSWindowWillCloseNotification
+                  object:[errorBubbleController_ window]];
+  errorBubbleController_ = nil;
+}
+
+- (void)showErrorBubbleForField:(NSControl<AutofillInputField>*)field {
+  if (errorBubbleController_)
+    [errorBubbleController_ close];
+  DCHECK(!errorBubbleController_);
+  NSWindow* parentWindow = [field window];
+  DCHECK(parentWindow);
+  errorBubbleController_ =
+        [[AutofillBubbleController alloc]
+            initWithParentWindow:parentWindow
+                         message:[field validityMessage]];
+
+  // Handle bubble self-deleting.
+  NSNotificationCenter* center = [NSNotificationCenter defaultCenter];
+  [center addObserver:self
+             selector:@selector(errorBubbleWindowWillClose:)
+                 name:NSWindowWillCloseNotification
+               object:[errorBubbleController_ window]];
+
+  // Compute anchor point (in window coords - views might be flipped).
+  NSRect viewRect = [field convertRect:[field bounds] toView:nil];
+
+  // If a bubble at maximum size with a left-aligned edge would exceed the
+  // window width, align the right edge of bubble and view. In all other
+  // cases, align the left edge of the bubble and the view.
+  // Alignment is based on maximum width to avoid the arrow changing positions
+  // if the validation bubble stays on the same field but gets a message of
+  // differing length. (E.g. "Field is required"/"Invalid Zip Code. Please
+  // check and try again" if an empty zip field gets changed to a bad zip).
+  NSPoint anchorPoint;
+  if ((NSMinX(viewRect) + [errorBubbleController_ maxWidth]) >
+      NSWidth([parentWindow frame])) {
+    anchorPoint = NSMakePoint(NSMaxX(viewRect), NSMinY(viewRect));
+    [[errorBubbleController_ bubble] setArrowLocation:info_bubble::kTopRight];
+    [[errorBubbleController_ bubble] setAlignment:
+        info_bubble::kAlignRightEdgeToAnchorEdge];
+
+  } else {
+    anchorPoint = NSMakePoint(NSMinX(viewRect), NSMinY(viewRect));
+    [[errorBubbleController_ bubble] setArrowLocation:info_bubble::kTopLeft];
+    [[errorBubbleController_ bubble] setAlignment:
+        info_bubble::kAlignLeftEdgeToAnchorEdge];
+  }
+  [errorBubbleController_ setAnchorPoint:
+      [parentWindow convertBaseToScreen:anchorPoint]];
+
+  [errorBubbleController_ showWindow:self];
+}
+
+- (void)hideErrorBubble {
+  [errorBubble_ setHidden:YES];
 }
 
 - (void)updateMessageForField:(NSControl<AutofillInputField>*)field {
@@ -149,26 +216,57 @@ SkColor const kWarningColor = 0xffde4932;  // SkColorSetRGB(0xde, 0x49, 0x32);
   // firstResponder is a subview of the NSTextField, not the field itself.
   NSView* firstResponderView =
       base::mac::ObjCCast<NSView>([[field window] firstResponder]);
-  if (![firstResponderView isDescendantOf:field]) {
+  if (![firstResponderView isDescendantOf:field])
+    return;
+  if (!delegate_->ShouldShowErrorBubble()) {
+    DCHECK(!errorBubbleController_);
     return;
   }
 
   if ([field invalid]) {
-    const CGFloat labelInset = 3.0;
-
-    NSTextField* label = [[infoBubble_ subviews] objectAtIndex:0];
-    [label setStringValue:[field validityMessage]];
-    [label sizeToFit];
-    NSSize bubbleSize = [label frame].size;
-    bubbleSize.width += 2 * labelInset;
-    bubbleSize.height += 2 * labelInset + info_bubble::kBubbleArrowHeight;
-    [infoBubble_ setFrameSize:bubbleSize];
-    [label setFrameOrigin:NSMakePoint(labelInset, labelInset)];
-    [infoBubble_ setFrameOrigin:[self originFromAnchorView:field]];
-    [infoBubble_ setHidden:NO];
+    [self showErrorBubbleForField:field];
   } else {
-    [infoBubble_ setHidden:YES];
+    [errorBubbleController_ close];
   }
+}
+
+- (NSView*)firstEditableFieldMatchingBlock:(FieldFilterBlock)predicateBlock {
+  base::scoped_nsobject<NSMutableArray> fields([[NSMutableArray alloc] init]);
+
+  for (AutofillSectionContainer* details in details_.get()) {
+    if (![[details view] isHidden])
+      [details addInputsToArray:fields];
+  }
+
+  NSPoint selectedFieldOrigin = NSZeroPoint;
+  NSView* selectedField = nil;
+  for (NSControl<AutofillInputField>* field in fields.get()) {
+    if (!base::mac::ObjCCast<NSControl>(field))
+      continue;
+    if (![field conformsToProtocol:@protocol(AutofillInputField)])
+      continue;
+    if ([field isHiddenOrHasHiddenAncestor])
+      continue;
+    if (![field isEnabled])
+      continue;
+    if (![field canBecomeKeyView])
+      continue;
+    if (!predicateBlock(field))
+      continue;
+
+    NSPoint fieldOrigin = [field convertPoint:[field bounds].origin toView:nil];
+    if (fieldOrigin.y < selectedFieldOrigin.y)
+      continue;
+    if (fieldOrigin.y == selectedFieldOrigin.y &&
+        fieldOrigin.x > selectedFieldOrigin.x) {
+      continue;
+    }
+
+    selectedField = field;
+    selectedFieldOrigin = fieldOrigin;
+  }
+
+  return selectedField;
 }
 
 @end

@@ -44,12 +44,10 @@ class PDFBrowserTest : public InProcessBrowserTest,
   PDFBrowserTest()
       : snapshot_different_(true),
         next_dummy_search_value_(0),
-        load_stop_notification_count_(0),
-        pdf_test_server_(
-            content::BrowserThread::GetMessageLoopProxyForThread(
-                content::BrowserThread::IO)) {
-    pdf_test_server_.ServeFilesFromDirectory(
-        base::FilePath(FILE_PATH_LITERAL("pdf/test")));
+        load_stop_notification_count_(0) {
+    base::FilePath src_dir;
+    EXPECT_TRUE(PathService::Get(base::DIR_SOURCE_ROOT, &src_dir));
+    pdf_test_server_.ServeFilesFromDirectory(src_dir.AppendASCII("pdf/test"));
   }
 
  protected:
@@ -116,7 +114,7 @@ class PDFBrowserTest : public InProcessBrowserTest,
     // renderer code will think the second message is to go to next result, but
     // there are none so the plugin will assert.
 
-    string16 query = UTF8ToUTF16(
+    base::string16 query = UTF8ToUTF16(
         std::string("xyzxyz" + base::IntToString(next_dummy_search_value_++)));
     ASSERT_EQ(0, ui_test_utils::FindInPage(
         browser()->tab_strip_model()->GetActiveWebContents(),
@@ -132,10 +130,10 @@ class PDFBrowserTest : public InProcessBrowserTest,
         GetPDFTestDir(),
         base::FilePath().AppendASCII(expected_filename_));
     base::PlatformFileInfo info;
-    ASSERT_TRUE(file_util::GetFileInfo(reference, &info));
+    ASSERT_TRUE(base::GetFileInfo(reference, &info));
     int size = static_cast<size_t>(info.size);
     scoped_ptr<char[]> data(new char[size]);
-    ASSERT_EQ(size, file_util::ReadFile(reference, data.get(), size));
+    ASSERT_EQ(size, base::ReadFile(reference, data.get(), size));
 
     int w, h;
     std::vector<unsigned char> decoded;
@@ -183,7 +181,7 @@ class PDFBrowserTest : public InProcessBrowserTest,
     if (snapshot_different_) {
       std::vector<unsigned char> png_data;
       gfx::PNGCodec::EncodeBGRASkBitmap(bitmap, false, &png_data);
-      if (file_util::CreateTemporaryFile(&snapshot_filename_)) {
+      if (base::CreateTemporaryFile(&snapshot_filename_)) {
         file_util::WriteFile(snapshot_filename_,
             reinterpret_cast<char*>(&png_data[0]), png_data.size());
       }
@@ -250,8 +248,8 @@ IN_PROC_BROWSER_TEST_F(PDFBrowserTest, MAYBE_Scroll) {
   // We use wheel mouse event since that's the only one we can easily push to
   // the renderer.  There's no way to push a cross-platform keyboard event at
   // the moment.
-  WebKit::WebMouseWheelEvent wheel_event;
-  wheel_event.type = WebKit::WebInputEvent::MouseWheel;
+  blink::WebMouseWheelEvent wheel_event;
+  wheel_event.type = blink::WebInputEvent::MouseWheel;
   wheel_event.deltaY = -200;
   wheel_event.wheelTicksY = -2;
   WebContents* web_contents =
@@ -288,14 +286,14 @@ IN_PROC_BROWSER_TEST_F(PDFBrowserTest, MAYBE_FindAndCopy) {
   ui::Clipboard::ObjectMapParams params;
   params.push_back(std::vector<char>());
   objects[ui::Clipboard::CBF_TEXT] = params;
-  clipboard->WriteObjects(ui::Clipboard::BUFFER_STANDARD, objects);
+  clipboard->WriteObjects(ui::CLIPBOARD_TYPE_COPY_PASTE, objects);
 
   browser()->tab_strip_model()->GetActiveWebContents()->
       GetRenderViewHost()->Copy();
   ASSERT_NO_FATAL_FAILURE(WaitForResponse());
 
   std::string text;
-  clipboard->ReadAsciiText(ui::Clipboard::BUFFER_STANDARD, &text);
+  clipboard->ReadAsciiText(ui::CLIPBOARD_TYPE_COPY_PASTE, &text);
   ASSERT_EQ("adipiscing", text);
 }
 
@@ -371,7 +369,13 @@ INSTANTIATE_TEST_CASE_P(PDFTestFiles,
                         PDFBrowserTest,
                         testing::Range(0, kLoadingNumberOfParts));
 
-IN_PROC_BROWSER_TEST_F(PDFBrowserTest, Action) {
+#if defined(GOOGLE_CHROME_BUILD) && defined(OS_MACOSX)
+// http://crbug.com/315160
+#define MAYBE_Action DISABLED_Action
+#else
+#define MAYBE_Action Action
+#endif
+IN_PROC_BROWSER_TEST_F(PDFBrowserTest, MAYBE_Action) {
   ASSERT_NO_FATAL_FAILURE(Load());
 
   ASSERT_TRUE(content::ExecuteScript(

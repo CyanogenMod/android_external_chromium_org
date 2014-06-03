@@ -1,4 +1,4 @@
-// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,8 +11,6 @@ import org.chromium.base.test.util.UrlUtils;
 import org.chromium.content.browser.test.util.TestCallbackHelperContainer;
 import org.chromium.content_shell_apk.ContentShellActivity;
 import org.chromium.content_shell_apk.ContentShellTestBase;
-
-import java.util.concurrent.TimeUnit;
 
 /**
  * Tests for various aspects of navigation.
@@ -46,7 +44,7 @@ public class NavigationTest extends ContentShellTestBase {
                 new Runnable() {
                     @Override
                     public void run() {
-                        contentView.reload();
+                        contentView.getContentViewCore().reload(true);
                     }
                 });
     }

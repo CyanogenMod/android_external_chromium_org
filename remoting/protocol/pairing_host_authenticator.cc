@@ -63,7 +63,6 @@ void PairingHostAuthenticator::ProcessMessage(
     const base::Closure& resume_callback) {
   if (!v2_authenticator_) {
     std::string client_id;
-    std::string paired_secret;
 
     const buzz::XmlElement* pairing_tag = message->FirstNamed(kPairingInfoTag);
     if (pairing_tag) {
@@ -99,7 +98,7 @@ void PairingHostAuthenticator::ProcessMessageWithPairing(
   waiting_for_paired_secret_ = false;
   std::string paired_secret = pairing.shared_secret();
   if (paired_secret.empty()) {
-    LOG(INFO) << "Unknown client id";
+    VLOG(0) << "Unknown client id";
     error_message_ = "unknown-client-id";
   }
 

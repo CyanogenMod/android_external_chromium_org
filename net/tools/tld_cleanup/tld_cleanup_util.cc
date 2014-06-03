@@ -177,7 +177,8 @@ NormalizeResult NormalizeDataToRuleMap(const std::string data,
         // wildcard for the same rule, or that the same domain is listed as both
         // private and not private. If we did, we'd have to update our
         // parsing code to handle this case.
-        CHECK(rules->find(domain) == rules->end());
+        CHECK(rules->find(domain) == rules->end())
+            << "Duplicate rule found for " << domain;
 
         (*rules)[domain] = rule;
         // Add true TLD for multi-level rules.  We don't add them right now, in
@@ -233,7 +234,7 @@ NormalizeResult NormalizeFile(const base::FilePath& in_filename,
                               const base::FilePath& out_filename) {
   RuleMap rules;
   std::string data;
-  if (!file_util::ReadFileToString(in_filename, &data)) {
+  if (!base::ReadFileToString(in_filename, &data)) {
     LOG(ERROR) << "Unable to read file";
     // We return success since we've already reported the error.
     return kSuccess;

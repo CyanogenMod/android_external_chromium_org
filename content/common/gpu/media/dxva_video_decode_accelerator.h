@@ -17,6 +17,7 @@
 #include "base/threading/non_thread_safe.h"
 #include "base/win/scoped_comptr.h"
 #include "content/common/content_export.h"
+#include "content/common/gpu/media/video_decode_accelerator_impl.h"
 #include "media/video/video_decode_accelerator.h"
 
 interface IMFSample;
@@ -29,7 +30,7 @@ namespace content {
 // This class lives on a single thread and DCHECKs that it is never accessed
 // from any other.
 class CONTENT_EXPORT DXVAVideoDecodeAccelerator
-    : public media::VideoDecodeAccelerator,
+    : public VideoDecodeAcceleratorImpl,
       NON_EXPORTED_BASE(public base::NonThreadSafe) {
  public:
   enum State {
@@ -56,23 +57,16 @@ class CONTENT_EXPORT DXVAVideoDecodeAccelerator
   virtual void Reset() OVERRIDE;
   virtual void Destroy() OVERRIDE;
 
-  // Initialization work needed before the process is sandboxed.
-  // This includes:-
-  // 1. Loads the dlls like mf/mfplat/d3d9, etc required for decoding.
-  // 2. Setting up the device manager instance which is shared between all
-  //    decoder instances.
-  static void PreSandboxInitialization();
-
  private:
   typedef void* EGLConfig;
   typedef void* EGLSurface;
   // Creates and initializes an instance of the D3D device and the
   // corresponding device manager. The device manager instance is eventually
   // passed to the IMFTransform interface implemented by the h.264 decoder.
-  static bool CreateD3DDevManager();
+  bool CreateD3DDevManager();
 
   // Creates, initializes and sets the media types for the h.264 decoder.
-  bool InitDecoder();
+  bool InitDecoder(media::VideoCodecProfile profile);
 
   // Validates whether the h.264 decoder supports hardware video acceleration.
   bool CheckDecoderDxvaSupport();
@@ -147,21 +141,30 @@ class CONTENT_EXPORT DXVAVideoDecodeAccelerator
   // Helper for handling the Decode operation.
   void DecodeInternal(const base::win::ScopedComPtr<IMFSample>& input_sample);
 
+  // Handles mid stream resolution changes.
+  void HandleResolutionChanged(int width, int height);
+
+  struct DXVAPictureBuffer;
+  typedef std::map<int32, linked_ptr<DXVAPictureBuffer> > OutputBuffers;
+
+  // Tells the client to dismiss the stale picture buffers passed in.
+  void DismissStaleBuffers(const OutputBuffers& picture_buffers);
+
   // To expose client callbacks from VideoDecodeAccelerator.
   media::VideoDecodeAccelerator::Client* client_;
 
   base::win::ScopedComPtr<IMFTransform> decoder_;
 
-  // These interface pointers are initialized before the process is sandboxed.
-  // They are not released when the GPU process exits. This is ok for now
-  // because the GPU process does not exit normally on Windows. It is always
-  // terminated. The device manager instance is shared among all decoder
-  // instances. This is OK because there is internal locking performed by the
-  // device manager.
-  static IDirect3DDeviceManager9* device_manager_;
-  static IDirect3DDevice9Ex* device_;
-  static IDirect3DQuery9* query_;
-  static IDirect3D9Ex* d3d9_;
+  base::win::ScopedComPtr<IDirect3D9Ex> d3d9_;
+  base::win::ScopedComPtr<IDirect3DDevice9Ex> device_;
+  base::win::ScopedComPtr<IDirect3DDeviceManager9> device_manager_;
+  base::win::ScopedComPtr<IDirect3DQuery9> query_;
+  // Ideally the reset token would be a stack variable which is used while
+  // creating the device manager. However it seems that the device manager
+  // holds onto the token and attempts to access it if the underlying device
+  // changes.
+  // TODO(ananta): This needs to be verified.
+  uint32 dev_manager_reset_token_;
 
   // The EGL config to use for decoded frames.
   EGLConfig egl_config_;
@@ -186,33 +189,16 @@ class CONTENT_EXPORT DXVAVideoDecodeAccelerator
   // List of decoded output samples.
   PendingOutputSamples pending_output_samples_;
 
-  struct DXVAPictureBuffer;
-
   // This map maintains the picture buffers passed the client for decoding.
   // The key is the picture buffer id.
-  typedef std::map<int32, linked_ptr<DXVAPictureBuffer> > OutputBuffers;
   OutputBuffers output_picture_buffers_;
 
   // Set to true if we requested picture slots from the client.
   bool pictures_requested_;
 
-  // Ideally the reset token would be a stack variable which is used while
-  // creating the device manager. However it seems that the device manager
-  // holds onto the token and attempts to access it if the underlying device
-  // changes.
-  // TODO(ananta): This needs to be verified.
-  static uint32 dev_manager_reset_token_;
-
   // Counter which holds the number of input packets before a successful
   // decode.
   int inputs_before_decode_;
-
-  // Set to true if all necessary initialization needed before the GPU process
-  // is sandboxed is done.
-  // This includes the following:
-  // 1. All required decoder dlls were successfully loaded.
-  // 2. The device manager initialization completed.
-  static bool pre_sandbox_init_done_;
 
   // List of input samples waiting to be processed.
   typedef std::list<base::win::ScopedComPtr<IMFSample>> PendingInputs;

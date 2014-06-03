@@ -13,7 +13,7 @@
 
 namespace content {
 
-class RenderWidgetHost;
+class VideoCaptureDeviceImpl;
 
 // A virtualized VideoCaptureDevice that mirrors the displayed contents of a
 // tab (accessed via its associated WebContents instance), producing a stream of
@@ -42,27 +42,14 @@ class CONTENT_EXPORT WebContentsVideoCaptureDevice
   virtual ~WebContentsVideoCaptureDevice();
 
   // VideoCaptureDevice implementation.
-  virtual void Allocate(const media::VideoCaptureCapability& capture_format,
-                        VideoCaptureDevice::EventHandler* observer) OVERRIDE;
-  virtual void Start() OVERRIDE;
-  virtual void Stop() OVERRIDE;
-  virtual void DeAllocate() OVERRIDE;
-
-  // Note: The following is just a pass-through of the device_id provided to the
-  // constructor.  It does not change when the content of the page changes
-  // (e.g., due to navigation), or when the underlying RenderView is
-  // swapped-out.
-  virtual const Name& device_name() OVERRIDE;
+  virtual void AllocateAndStart(const media::VideoCaptureParams& params,
+                                scoped_ptr<Client> client) OVERRIDE;
+  virtual void StopAndDeAllocate() OVERRIDE;
 
  private:
-  class Impl;
+  WebContentsVideoCaptureDevice(int render_process_id, int render_view_id);
 
-  WebContentsVideoCaptureDevice(const Name& name,
-                                int render_process_id,
-                                int render_view_id);
-
-  Name device_name_;
-  const scoped_ptr<Impl> impl_;
+  const scoped_ptr<VideoCaptureDeviceImpl> impl_;
 
   DISALLOW_COPY_AND_ASSIGN(WebContentsVideoCaptureDevice);
 };

@@ -16,6 +16,7 @@
 class BrowserView;
 
 class GlassBrowserFrameView : public BrowserNonClientFrameView,
+                              public views::ButtonListener,
                               public content::NotificationObserver {
  public:
   // Constructs a non-client view for an BrowserFrame.
@@ -24,7 +25,7 @@ class GlassBrowserFrameView : public BrowserNonClientFrameView,
 
   // Overridden from BrowserNonClientFrameView:
   virtual gfx::Rect GetBoundsForTabStrip(views::View* tabstrip) const OVERRIDE;
-  virtual TabStripInsets GetTabStripInsets(bool restored) const OVERRIDE;
+  virtual int GetTopInset() const OVERRIDE;
   virtual int GetThemeBackgroundXInset() const OVERRIDE;
   virtual void UpdateThrobber(bool running) OVERRIDE;
   virtual gfx::Size GetMinimumSize() OVERRIDE;
@@ -46,6 +47,10 @@ class GlassBrowserFrameView : public BrowserNonClientFrameView,
   virtual void Layout() OVERRIDE;
   virtual bool HitTestRect(const gfx::Rect& rect) const OVERRIDE;
 
+  // Overidden from views::ButtonListener:
+  virtual void ButtonPressed(views::Button* sender,
+                             const ui::Event& event) OVERRIDE;
+
  private:
   // Returns the thickness of the border that makes up the window frame edges.
   // This does not include any client edge.
@@ -56,9 +61,8 @@ class GlassBrowserFrameView : public BrowserNonClientFrameView,
   int NonClientBorderThickness() const;
 
   // Returns the height of the entire nonclient top border, including the window
-  // frame, any title area, and any connected client edge.  If |restored| is
-  // true, acts as if the window is restored regardless of the real mode.
-  int NonClientTopBorderHeight(bool restored) const;
+  // frame, any title area, and any connected client edge.
+  int NonClientTopBorderHeight() const;
 
   // Paint various sub-components of this view.
   void PaintToolbarBackground(gfx::Canvas* canvas);
@@ -66,6 +70,7 @@ class GlassBrowserFrameView : public BrowserNonClientFrameView,
 
   // Layout various sub-components of this view.
   void LayoutAvatar();
+  void LayoutNewStyleAvatar();
   void LayoutClientView();
 
   // Returns the insets of the client area.

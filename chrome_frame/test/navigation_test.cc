@@ -205,7 +205,8 @@ TEST_P(FullTabNavigationTest, BackForwardAnchor) {
   // Forward: 0
   EXPECT_CALL(ie_mock_, OnLoad(in_cf, StrEq(GetAnchorPageUrl(0))))
       .Times(testing::AtMost(1));
-  EXPECT_CALL(acc_observer, OnAccDocLoad(TabContentsTitleEq(title)))
+  EXPECT_CALL(acc_observer, OnAccDocLoad(TabContentsTitleEq(GetAnchorPageUrl(0),
+                                                            title)))
       .WillOnce(AccDoDefaultAction(AccObjectMatcher(L"*1", L"link")))
       .RetiresOnSaturation();
 
@@ -347,7 +348,8 @@ TEST_P(FullTabNavigationTest, DISABLED_JavascriptWindowOpenDifferentDomain) {
 
   EXPECT_CALL(ie_mock_, OnLoad(GetParam().invokes_cf(), StrEq(parent_url)));
   EXPECT_CALL(acc_observer,
-              OnAccDocLoad(TabContentsTitleEq(GetWindowOpenTitle())))
+              OnAccDocLoad(TabContentsTitleEq(parent_url,
+                                              GetWindowOpenTitle())))
       .WillOnce(AccLeftClick(AccObjectMatcher()));
 
   ie_mock_.ExpectNewWindow(&new_window_mock);
@@ -390,7 +392,8 @@ TEST_P(FullTabNavigationTest, JavascriptWindowOpenCanClose) {
   // unless a click is involved.
   EXPECT_CALL(ie_mock_, OnLoad(GetParam().invokes_cf(), StrEq(parent_url)));
   EXPECT_CALL(acc_observer,
-              OnAccDocLoad(TabContentsTitleEq(GetWindowOpenTitle())))
+              OnAccDocLoad(TabContentsTitleEq(parent_url,
+                                              GetWindowOpenTitle())))
       .WillOnce(AccLeftClick(AccObjectMatcher()));
 
   ie_mock_.ExpectNewWindow(&new_window_mock);
@@ -485,7 +488,8 @@ TEST_P(NavigationTransitionTest, JavascriptWindowOpen) {
   // Tell the page to open the popup. Some versions of IE will prevent a popup
   // unless a click is involved.
   EXPECT_CALL(acc_observer,
-              OnAccDocLoad(TabContentsTitleEq(GetWindowOpenTitle())))
+              OnAccDocLoad(TabContentsTitleEq(parent_url,
+                                              GetWindowOpenTitle())))
       .WillOnce(AccLeftClick(AccObjectMatcher()));
 
   // If the parent window is in CF, the child should always load in CF since
@@ -546,7 +550,8 @@ TEST_P(NavigationTransitionTest, FollowLink) {
       .WillRepeatedly(SendResponse(&server_mock_, page1_));
   EXPECT_CALL(ie_mock_, OnLoad(page1_.invokes_cf(), StrEq(GetLinkPageUrl())));
   EXPECT_CALL(acc_observer,
-              OnAccDocLoad(TabContentsTitleEq(GetLinkPageTitle())))
+              OnAccDocLoad(TabContentsTitleEq(GetLinkPageUrl(),
+                                              GetLinkPageTitle())))
       .WillOnce(AccDoDefaultAction(AccObjectMatcher(L"", L"link")))
       .RetiresOnSaturation();
 
@@ -650,7 +655,8 @@ TEST_F(NavigationTest, DISABLED_DownloadInNewWindow) {
   LaunchIEAndNavigate(kDownloadFromNewWin);
 }
 
-TEST_P(FullTabNavigationTest, FormPostBackForward) {
+// Flaky on ie6, http://crbug.com/255098.
+TEST_P(FullTabNavigationTest, DISABLED_FormPostBackForward) {
   bool in_cf = GetParam().invokes_cf();
   // Navigate to the form-get.html page:
   // - First set focus to chrome renderer window
@@ -668,7 +674,8 @@ TEST_P(FullTabNavigationTest, FormPostBackForward) {
   server_mock_.ExpectAndServeAnyRequests(GetParam());
   EXPECT_CALL(acc_observer, OnAccDocLoad(_)).Times(testing::AnyNumber());
 
-  EXPECT_CALL(acc_observer, OnAccDocLoad(TabContentsTitleEq(kFormPostTitle)))
+  EXPECT_CALL(acc_observer, OnAccDocLoad(TabContentsTitleEq(kFormPostUrl,
+                                                            kFormPostTitle)))
       .WillOnce(AccDoDefaultAction(AccObjectMatcher(L"Submit")))
       .RetiresOnSaturation();
 
@@ -837,7 +844,7 @@ TEST_F(FullTabDownloadTest, CF_DownloadFileFromPost) {
   EXPECT_CALL(download_window_mock, OnQuit()).Times(testing::AtMost(1));
 
   base::FilePath temp_file_path;
-  ASSERT_TRUE(file_util::CreateTemporaryFile(&temp_file_path));
+  ASSERT_TRUE(base::CreateTemporaryFile(&temp_file_path));
   file_util::DieFileDie(temp_file_path, false);
 
   temp_file_path = temp_file_path.ReplaceExtension(L"txt");
@@ -864,7 +871,7 @@ TEST_F(FullTabDownloadTest, CF_DownloadFileFromPost) {
   LaunchIENavigateAndLoop(src_url, kChromeFrameVeryLongNavigationTimeout);
 
   std::string data;
-  EXPECT_TRUE(file_util::ReadFileToString(temp_file_path, &data));
+  EXPECT_TRUE(base::ReadFileToString(temp_file_path, &data));
   EXPECT_EQ("hello", data);
   file_util::DieFileDie(temp_file_path, false);
 }
@@ -1236,7 +1243,8 @@ TEST_F(FullTabNavigationTest, JavascriptWindowOpenNoReferrerOpensInHost) {
   EXPECT_CALL(ie_mock_, OnLoad(false, StrEq(initial_url)));
 
   EXPECT_CALL(acc_observer,
-              OnAccDocLoad(TabContentsTitleEq(GetWindowOpenTitle())))
+              OnAccDocLoad(TabContentsTitleEq(initial_url,
+                                              GetWindowOpenTitle())))
       .WillOnce(AccLeftClick(AccObjectMatcher()))
       .RetiresOnSaturation();
 

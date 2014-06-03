@@ -16,6 +16,7 @@
 #include "cc/test/fake_layer_tree_host_client.h"
 #include "cc/test/fake_layer_tree_host_impl.h"
 #include "cc/test/fake_output_surface.h"
+#include "cc/test/fake_output_surface_client.h"
 #include "cc/test/fake_proxy.h"
 #include "cc/test/fake_rendering_stats_instrumentation.h"
 #include "cc/test/geometry_test_utils.h"
@@ -47,26 +48,34 @@ class TiledLayerTest : public testing::Test {
  public:
   TiledLayerTest()
       : proxy_(NULL),
-        output_surface_(CreateFakeOutputSurface()),
+        output_surface_(FakeOutputSurface::Create3d()),
         queue_(make_scoped_ptr(new ResourceUpdateQueue)),
-        fake_layer_impl_tree_host_client_(FakeLayerTreeHostClient::DIRECT_3D),
+        impl_thread_("ImplThread"),
+        fake_layer_tree_host_client_(FakeLayerTreeHostClient::DIRECT_3D),
         occlusion_(NULL) {
     settings_.max_partial_texture_updates = std::numeric_limits<size_t>::max();
     settings_.layer_transforms_should_scale_layer_contents = true;
   }
 
   virtual void SetUp() {
-    layer_tree_host_ = LayerTreeHost::Create(&fake_layer_impl_tree_host_client_,
-                                             settings_,
-                                             NULL);
+    impl_thread_.Start();
+    layer_tree_host_ = LayerTreeHost::CreateThreaded(
+        &fake_layer_tree_host_client_,
+        NULL,
+        settings_,
+        impl_thread_.message_loop_proxy());
     proxy_ = layer_tree_host_->proxy();
     resource_manager_ = PrioritizedResourceManager::Create(proxy_);
+    layer_tree_host_->SetLayerTreeHostClientReady();
     layer_tree_host_->InitializeOutputSurfaceIfNeeded();
     layer_tree_host_->SetRootLayer(Layer::Create());
 
+    CHECK(output_surface_->BindToClient(&output_surface_client_));
+
     DebugScopedSetImplThreadAndMainThreadBlocked
-    impl_thread_and_main_thread_blocked(proxy_);
-    resource_provider_ = ResourceProvider::Create(output_surface_.get(), 0);
+        impl_thread_and_main_thread_blocked(proxy_);
+    resource_provider_ =
+        ResourceProvider::Create(output_surface_.get(), NULL, 0, false, 1);
     host_impl_ = make_scoped_ptr(new FakeLayerTreeHostImpl(proxy_));
   }
 
@@ -183,11 +192,13 @@ class TiledLayerTest : public testing::Test {
  public:
   Proxy* proxy_;
   LayerTreeSettings settings_;
+  FakeOutputSurfaceClient output_surface_client_;
   scoped_ptr<OutputSurface> output_surface_;
   scoped_ptr<ResourceProvider> resource_provider_;
   scoped_ptr<ResourceUpdateQueue> queue_;
   PriorityCalculator priority_calculator_;
-  FakeLayerTreeHostClient fake_layer_impl_tree_host_client_;
+  base::Thread impl_thread_;
+  FakeLayerTreeHostClient fake_layer_tree_host_client_;
   scoped_ptr<LayerTreeHost> layer_tree_host_;
   scoped_ptr<FakeLayerTreeHostImpl> host_impl_;
   scoped_ptr<PrioritizedResourceManager> resource_manager_;
@@ -951,8 +962,10 @@ TEST_F(TiledLayerTest, SkipsDrawGetsReset) {
 
   layer_tree_host_->SetRootLayer(root_layer);
   layer_tree_host_->SetViewportSize(gfx::Size(300, 300));
+  layer_tree_host_->contents_texture_manager()->SetMaxMemoryLimitBytes(
+      memory_limit);
 
-  layer_tree_host_->UpdateLayers(queue_.get(), memory_limit);
+  layer_tree_host_->UpdateLayers(queue_.get());
 
   // We'll skip the root layer.
   EXPECT_TRUE(root_layer->SkipsDraw());
@@ -963,7 +976,7 @@ TEST_F(TiledLayerTest, SkipsDrawGetsReset) {
   // Remove the child layer.
   root_layer->RemoveAllChildren();
 
-  layer_tree_host_->UpdateLayers(queue_.get(), memory_limit);
+  layer_tree_host_->UpdateLayers(queue_.get());
   EXPECT_FALSE(root_layer->SkipsDraw());
 
   ResourceManagerClearAllMemory(layer_tree_host_->contents_texture_manager(),
@@ -1029,8 +1042,7 @@ TEST_F(TiledLayerPartialUpdateTest, PartialUpdates) {
   layer_tree_host_->SetViewportSize(gfx::Size(300, 200));
 
   // Full update of all 6 tiles.
-  layer_tree_host_->UpdateLayers(queue_.get(),
-                                 std::numeric_limits<size_t>::max());
+  layer_tree_host_->UpdateLayers(queue_.get());
   {
     scoped_ptr<FakeTiledLayerImpl> layer_impl =
         make_scoped_ptr(new FakeTiledLayerImpl(host_impl_->active_tree(), 1));
@@ -1046,8 +1058,7 @@ TEST_F(TiledLayerPartialUpdateTest, PartialUpdates) {
 
   // Full update of 3 tiles and partial update of 3 tiles.
   layer->InvalidateContentRect(gfx::Rect(0, 0, 300, 150));
-  layer_tree_host_->UpdateLayers(queue_.get(),
-                                 std::numeric_limits<size_t>::max());
+  layer_tree_host_->UpdateLayers(queue_.get());
   {
     scoped_ptr<FakeTiledLayerImpl> layer_impl =
         make_scoped_ptr(new FakeTiledLayerImpl(host_impl_->active_tree(), 1));
@@ -1066,8 +1077,7 @@ TEST_F(TiledLayerPartialUpdateTest, PartialUpdates) {
   {
     scoped_ptr<FakeTiledLayerImpl> layer_impl =
         make_scoped_ptr(new FakeTiledLayerImpl(host_impl_->active_tree(), 1));
-    layer_tree_host_->UpdateLayers(queue_.get(),
-                                   std::numeric_limits<size_t>::max());
+    layer_tree_host_->UpdateLayers(queue_.get());
     EXPECT_EQ(2u, queue_->FullUploadSize());
     EXPECT_EQ(4u, queue_->PartialUploadSize());
     UpdateTextures();
@@ -1092,8 +1102,7 @@ TEST_F(TiledLayerPartialUpdateTest, PartialUpdates) {
   {
     scoped_ptr<FakeTiledLayerImpl> layer_impl =
         make_scoped_ptr(new FakeTiledLayerImpl(host_impl_->active_tree(), 1));
-    layer_tree_host_->UpdateLayers(queue_.get(),
-                                   std::numeric_limits<size_t>::max());
+    layer_tree_host_->UpdateLayers(queue_.get());
     EXPECT_EQ(6u, queue_->FullUploadSize());
     EXPECT_EQ(0u, queue_->PartialUploadSize());
     UpdateTextures();
@@ -1109,8 +1118,7 @@ TEST_F(TiledLayerPartialUpdateTest, PartialUpdates) {
   {
     scoped_ptr<FakeTiledLayerImpl> layer_impl =
         make_scoped_ptr(new FakeTiledLayerImpl(host_impl_->active_tree(), 1));
-    layer_tree_host_->UpdateLayers(queue_.get(),
-                                   std::numeric_limits<size_t>::max());
+    layer_tree_host_->UpdateLayers(queue_.get());
     EXPECT_EQ(0u, queue_->FullUploadSize());
     EXPECT_EQ(4u, queue_->PartialUploadSize());
     UpdateTextures();
@@ -1708,8 +1716,7 @@ TEST_F(TiledLayerTest, DontAllocateContentsWhenTargetSurfaceCantBeAllocated) {
   root->InvalidateContentRect(root_rect);
   child->InvalidateContentRect(child_rect);
   child2->InvalidateContentRect(child2_rect);
-  layer_tree_host_->UpdateLayers(queue_.get(),
-                                 std::numeric_limits<size_t>::max());
+  layer_tree_host_->UpdateLayers(queue_.get());
   {
     UpdateTextures();
     EXPECT_EQ(6, root->fake_layer_updater()->update_count());
@@ -1747,8 +1754,11 @@ TEST_F(TiledLayerTest, DontAllocateContentsWhenTargetSurfaceCantBeAllocated) {
   root->InvalidateContentRect(root_rect);
   child->InvalidateContentRect(child_rect);
   child2->InvalidateContentRect(child2_rect);
-  layer_tree_host_->UpdateLayers(queue_.get(),
-                                 (3 * 2 + 3 * 1) * (100 * 100) * 4);
+
+  size_t memory_limit = (3 * 2 + 3 * 1) * (100 * 100) * 4;
+  layer_tree_host_->contents_texture_manager()->SetMaxMemoryLimitBytes(
+      memory_limit);
+  layer_tree_host_->UpdateLayers(queue_.get());
   {
     UpdateTextures();
     EXPECT_EQ(6, root->fake_layer_updater()->update_count());
@@ -1786,7 +1796,11 @@ TEST_F(TiledLayerTest, DontAllocateContentsWhenTargetSurfaceCantBeAllocated) {
   root->InvalidateContentRect(root_rect);
   child->InvalidateContentRect(child_rect);
   child2->InvalidateContentRect(child2_rect);
-  layer_tree_host_->UpdateLayers(queue_.get(), (3 * 1) * (100 * 100) * 4);
+
+  memory_limit = (3 * 1) * (100 * 100) * 4;
+  layer_tree_host_->contents_texture_manager()->SetMaxMemoryLimitBytes(
+      memory_limit);
+  layer_tree_host_->UpdateLayers(queue_.get());
   {
     UpdateTextures();
     EXPECT_EQ(0, root->fake_layer_updater()->update_count());

@@ -20,6 +20,9 @@ class TestInfo;
 
 namespace base {
 
+// Instantiates TestSuite, runs it and returns exit code.
+int RunUnitTestsUsingBaseTestSuite(int argc, char **argv);
+
 class TestSuite {
  public:
   // Match function used by the GetTestCount method.
@@ -36,6 +39,8 @@ class TestSuite {
   void CatchMaybeTests();
 
   void ResetCommandLine();
+
+  void AddTestLauncherResultPrinter();
 
   int Run();
 

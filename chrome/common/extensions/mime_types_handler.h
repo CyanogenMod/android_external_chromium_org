@@ -10,8 +10,8 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/manifest_handler.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/manifest_handler.h"
 #include "extensions/common/url_pattern.h"
 #include "extensions/common/url_pattern_set.h"
 #include "url/gurl.h"
@@ -54,7 +54,7 @@ class MimeTypesHandlerParser : public extensions::ManifestHandler {
   virtual ~MimeTypesHandlerParser();
 
   virtual bool Parse(extensions::Extension* extension,
-                     string16* error) OVERRIDE;
+                     base::string16* error) OVERRIDE;
 
  private:
   virtual const std::vector<std::string> Keys() const OVERRIDE;

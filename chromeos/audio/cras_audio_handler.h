@@ -15,28 +15,19 @@
 #include "chromeos/audio/audio_pref_observer.h"
 #include "chromeos/dbus/audio_node.h"
 #include "chromeos/dbus/cras_audio_client.h"
+#include "chromeos/dbus/session_manager_client.h"
 #include "chromeos/dbus/volume_state.h"
 
 class PrefRegistrySimple;
 class PrefService;
-
-namespace {
-
-// Default value for the volume pref, as a percent in the range [0.0, 100.0].
-const double kDefaultVolumeGainPercent = 75.0;
-
-// Values used for muted preference.
-const int kPrefMuteOff = 0;
-const int kPrefMuteOn = 1;
-
-}  // namespace
 
 namespace chromeos {
 
 class AudioDevicesPrefHandler;
 
 class CHROMEOS_EXPORT CrasAudioHandler : public CrasAudioClient::Observer,
-                                         public AudioPrefObserver {
+                                         public AudioPrefObserver,
+                                         public SessionManagerClient::Observer {
  public:
   typedef std::priority_queue<AudioDevice,
                               std::vector<AudioDevice>,
@@ -164,20 +155,26 @@ class CHROMEOS_EXPORT CrasAudioHandler : public CrasAudioClient::Observer,
   // Sets the mute for device.
   virtual void SetMuteForDevice(uint64 device_id, bool mute_on);
 
+  // Enables error logging.
+  virtual void LogErrors();
+
  protected:
   explicit CrasAudioHandler(
       scoped_refptr<AudioDevicesPrefHandler> audio_pref_handler);
   virtual ~CrasAudioHandler();
 
  private:
-  // Overriden from CrasAudioClient::Observer.
+  // CrasAudioClient::Observer overrides.
   virtual void AudioClientRestarted() OVERRIDE;
   virtual void NodesChanged() OVERRIDE;
   virtual void ActiveOutputNodeChanged(uint64 node_id) OVERRIDE;
   virtual void ActiveInputNodeChanged(uint64 node_id) OVERRIDE;
 
-  // Overriden from AudioPrefObserver.
+  // AudioPrefObserver overrides.
   virtual void OnAudioPolicyPrefChanged() OVERRIDE;
+
+  // SessionManagerClient::Observer overrides.
+  virtual void EmitLoginPromptVisibleCalled() OVERRIDE;
 
   // Sets the active audio output/input node to the node with |node_id|.
   void SetActiveOutputNode(uint64 node_id);
@@ -237,6 +234,16 @@ class CHROMEOS_EXPORT CrasAudioHandler : public CrasAudioClient::Observer,
   // Handles dbus callback for GetNodes.
   void HandleGetNodes(const chromeos::AudioNodeList& node_list, bool success);
 
+  // Handles the dbus error callback.
+  void HandleGetNodesError(const std::string& error_name,
+                           const std::string& error_msg);
+
+  // Returns true if |device| is not found in audio_devices_.
+  bool FoundNewDevice(const AudioDevice& device);
+
+  // Returns a sanitized AudioDevice from |node|.
+  AudioDevice GetSanitizedAudioDevice(const AudioNode& node);
+
   scoped_refptr<AudioDevicesPrefHandler> audio_pref_handler_;
   base::WeakPtrFactory<CrasAudioHandler> weak_ptr_factory_;
   ObserverList<AudioObserver> observers_;
@@ -258,6 +265,9 @@ class CHROMEOS_EXPORT CrasAudioHandler : public CrasAudioClient::Observer,
 
   bool output_mute_locked_;
   bool input_mute_locked_;
+
+  // Failures are not logged at startup, since CRAS may not be running yet.
+  bool log_errors_;
 
   DISALLOW_COPY_AND_ASSIGN(CrasAudioHandler);
 };

@@ -41,30 +41,30 @@ bool IsLegalNewParent(BaseTransaction* trans, const Id& entry_id,
                     "Invalid new parent",
                     trans))
       return false;
-    ancestor_id = new_parent.Get(PARENT_ID);
+    ancestor_id = new_parent.GetParentId();
   }
   return true;
 }
 
 void ChangeEntryIDAndUpdateChildren(
-    WriteTransaction* trans,
-    MutableEntry* entry,
+    BaseWriteTransaction* trans,
+    ModelNeutralMutableEntry* entry,
     const Id& new_id) {
-  Id old_id = entry->Get(ID);
-  if (!entry->Put(ID, new_id)) {
+  Id old_id = entry->GetId();
+  if (!entry->PutId(new_id)) {
     Entry old_entry(trans, GET_BY_ID, new_id);
     CHECK(old_entry.good());
     LOG(FATAL) << "Attempt to change ID to " << new_id
                << " conflicts with existing entry.\n\n"
                << *entry << "\n\n" << old_entry;
   }
-  if (entry->Get(IS_DIR)) {
+  if (entry->GetIsDir()) {
     // Get all child entries of the old id.
     Directory::Metahandles children;
     trans->directory()->GetChildHandlesById(trans, old_id, &children);
     Directory::Metahandles::iterator i = children.begin();
     while (i != children.end()) {
-      MutableEntry child_entry(trans, GET_BY_HANDLE, *i++);
+      ModelNeutralMutableEntry child_entry(trans, GET_BY_HANDLE, *i++);
       CHECK(child_entry.good());
       // Use the unchecked setter here to avoid touching the child's
       // UNIQUE_POSITION field.  In this case, UNIQUE_POSITION among the
@@ -101,13 +101,13 @@ std::string GenerateSyncableHash(
   hash_input.append(client_tag);
 
   std::string encode_output;
-  CHECK(base::Base64Encode(base::SHA1HashString(hash_input), &encode_output));
+  base::Base64Encode(base::SHA1HashString(hash_input), &encode_output);
   return encode_output;
 }
 
 std::string GenerateSyncableBookmarkHash(
-    const std::string originator_cache_guid,
-    const std::string originator_client_item_id) {
+    const std::string& originator_cache_guid,
+    const std::string& originator_client_item_id) {
   return syncable::GenerateSyncableHash(
       BOOKMARKS, originator_cache_guid + originator_client_item_id);
 }

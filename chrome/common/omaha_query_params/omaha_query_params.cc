@@ -46,34 +46,17 @@ const char kArch[] =
 #endif
 
 const char kChrome[] = "chrome";
-const char kChromeCrx[] = "chromecrx";
-const char kChromiumCrx[] = "chromiumcrx";
 
 const char kStable[] = "stable";
 const char kBeta[] = "beta";
 const char kDev[] = "dev";
 const char kCanary[] = "canary";
 
-const char* GetChannelString() {
-  switch (chrome::VersionInfo::GetChannel()) {
-    case chrome::VersionInfo::CHANNEL_STABLE:
-      return kStable;
-      break;
-    case chrome::VersionInfo::CHANNEL_BETA:
-      return kBeta;
-      break;
-    case chrome::VersionInfo::CHANNEL_DEV:
-      return kDev;
-      break;
-    case chrome::VersionInfo::CHANNEL_CANARY:
-      return kCanary;
-      break;
-    case chrome::VersionInfo::CHANNEL_UNKNOWN:
-      return kUnknown;
-      break;
-  }
-  return kUnknown;
-}
+#if defined(GOOGLE_CHROME_BUILD)
+const char kChromeCrx[] = "chromecrx";
+#else
+const char kChromiumCrx[] = "chromiumcrx";
+#endif  // defined(GOOGLE_CHROME_BUILD)
 
 }  // namespace
 
@@ -140,6 +123,27 @@ const char* OmahaQueryParams::getNaclArch() {
   // comment in the .h file about possible return values from this function.
 #error "You need to add support for your architecture here"
 #endif
+}
+
+const char* OmahaQueryParams::GetChannelString() {
+  switch (chrome::VersionInfo::GetChannel()) {
+    case chrome::VersionInfo::CHANNEL_STABLE:
+      return kStable;
+      break;
+    case chrome::VersionInfo::CHANNEL_BETA:
+      return kBeta;
+      break;
+    case chrome::VersionInfo::CHANNEL_DEV:
+      return kDev;
+      break;
+    case chrome::VersionInfo::CHANNEL_CANARY:
+      return kCanary;
+      break;
+    case chrome::VersionInfo::CHANNEL_UNKNOWN:
+      return kUnknown;
+      break;
+  }
+  return kUnknown;
 }
 
 }  // namespace chrome

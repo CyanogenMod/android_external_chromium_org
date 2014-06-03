@@ -10,6 +10,8 @@
 #include "tools/gn/label.h"
 
 class Config;
+class ParseNode;
+class Settings;
 class Target;
 class Toolchain;
 
@@ -17,10 +19,17 @@ class Toolchain;
 // graph.
 class Item {
  public:
-  Item(const Label& label);
+  Item(const Settings* settings, const Label& label);
   virtual ~Item();
 
+  const Settings* settings() const { return settings_; }
+
+  // This is guaranteed to never change after construction so this can be
+  // accessed from any thread with no locking once the item is constructed.
   const Label& label() const { return label_; }
+
+  const ParseNode* defined_from() const { return defined_from_; }
+  void set_defined_from(const ParseNode* df) { defined_from_ = df; }
 
   // Manual RTTI.
   virtual Config* AsConfig();
@@ -39,7 +48,9 @@ class Item {
   virtual void OnResolved() {}
 
  private:
+  const Settings* settings_;
   Label label_;
+  const ParseNode* defined_from_;
 };
 
 #endif  // TOOLS_GN_ITEM_H_

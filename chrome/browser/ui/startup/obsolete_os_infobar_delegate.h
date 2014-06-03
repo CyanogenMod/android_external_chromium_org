@@ -16,16 +16,17 @@ class InfoBarService;
 // a "Learn More" link.
 class ObsoleteOSInfoBarDelegate : public ConfirmInfoBarDelegate {
  public:
-  // Creates an obsolete OS infobar delegate and adds it to |infobar_service|.
+  // Creates an obsolete OS infobar and delegate and adds the infobar to
+  // |infobar_service|.
   static void Create(InfoBarService* infobar_service);
 
  private:
-  explicit ObsoleteOSInfoBarDelegate(InfoBarService* infobar_service);
+  ObsoleteOSInfoBarDelegate();
   virtual ~ObsoleteOSInfoBarDelegate();
 
-  virtual string16 GetMessageText() const OVERRIDE;
+  virtual base::string16 GetMessageText() const OVERRIDE;
   virtual int GetButtons() const OVERRIDE;
-  virtual string16 GetLinkText() const OVERRIDE;
+  virtual base::string16 GetLinkText() const OVERRIDE;
   virtual bool LinkClicked(WindowOpenDisposition disposition) OVERRIDE;
 
   DISALLOW_COPY_AND_ASSIGN(ObsoleteOSInfoBarDelegate);

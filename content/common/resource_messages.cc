@@ -50,7 +50,7 @@ void ParamTraits<webkit_common::DataElement>::Write(
       break;
     }
     case webkit_common::DataElement::TYPE_FILE_FILESYSTEM: {
-      WriteParam(m, p.url());
+      WriteParam(m, p.filesystem_url());
       WriteParam(m, p.offset());
       WriteParam(m, p.length());
       WriteParam(m, p.expected_modification_time());
@@ -58,7 +58,7 @@ void ParamTraits<webkit_common::DataElement>::Write(
     }
     default: {
       DCHECK(p.type() == webkit_common::DataElement::TYPE_BLOB);
-      WriteParam(m, p.url());
+      WriteParam(m, p.blob_uuid());
       WriteParam(m, p.offset());
       WriteParam(m, p.length());
       break;
@@ -114,15 +114,15 @@ bool ParamTraits<webkit_common::DataElement>::Read(
     }
     default: {
       DCHECK(type == webkit_common::DataElement::TYPE_BLOB);
-      GURL blob_url;
+      std::string blob_uuid;
       uint64 offset, length;
-      if (!ReadParam(m, iter, &blob_url))
+      if (!ReadParam(m, iter, &blob_uuid))
         return false;
       if (!ReadParam(m, iter, &offset))
         return false;
       if (!ReadParam(m, iter, &length))
         return false;
-      r->SetToBlobUrlRange(blob_url, offset, length);
+      r->SetToBlobRange(blob_uuid, offset, length);
       break;
     }
   }

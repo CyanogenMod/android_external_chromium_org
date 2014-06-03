@@ -38,6 +38,7 @@
 #include "build/build_config.h"
 #include "chrome/browser/web_applications/web_app.h"
 #include "chrome/common/chrome_constants.h"
+#include "chrome/common/chrome_version_info.h"
 #include "content/public/browser/browser_thread.h"
 #include "ui/gfx/image/image_family.h"
 #include "url/gurl.h"
@@ -146,14 +147,14 @@ bool CreateShortcutOnDesktop(const base::FilePath& shortcut_filename,
                   O_CREAT | O_EXCL | O_WRONLY,
                   S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH);
   if (fd < 0) {
-    if (HANDLE_EINTR(close(desktop_fd)) < 0)
+    if (IGNORE_EINTR(close(desktop_fd)) < 0)
       PLOG(ERROR) << "close";
     return false;
   }
 
   ssize_t bytes_written = file_util::WriteFileDescriptor(fd, contents.data(),
                                                          contents.length());
-  if (HANDLE_EINTR(close(fd)) < 0)
+  if (IGNORE_EINTR(close(fd)) < 0)
     PLOG(ERROR) << "close";
 
   if (bytes_written != static_cast<ssize_t>(contents.length())) {
@@ -164,7 +165,7 @@ bool CreateShortcutOnDesktop(const base::FilePath& shortcut_filename,
     unlinkat(desktop_fd, shortcut_filename.value().c_str(), 0);
   }
 
-  if (HANDLE_EINTR(close(desktop_fd)) < 0)
+  if (IGNORE_EINTR(close(desktop_fd)) < 0)
     PLOG(ERROR) << "close";
 
   return true;
@@ -371,7 +372,7 @@ bool SetDefaultWebClient(const std::string& protocol) {
 ShellIntegration::DefaultWebClientState GetIsDefaultWebClient(
     const std::string& protocol) {
 #if defined(OS_CHROMEOS)
-  return ShellIntegration::IS_DEFAULT;
+  return ShellIntegration::UNKNOWN_DEFAULT;
 #else
   base::ThreadRestrictions::AssertIOAllowed();
 
@@ -435,6 +436,8 @@ bool GetNoDisplayFromDesktopFile(const std::string& shortcut_contents) {
     if (!g_strcmp0(nodisplay_c_string, "true"))
       nodisplay = true;
     g_free(nodisplay_c_string);
+  } else {
+    g_error_free(err);
   }
 
   g_key_file_free(key_file);
@@ -545,6 +548,16 @@ std::vector<base::FilePath> GetDataSearchLocations(base::Environment* env) {
   return search_paths;
 }
 
+std::string GetProgramClassName() {
+  DCHECK(CommandLine::InitializedForCurrentProcess());
+  // Get the res_name component from argv[0].
+  const CommandLine* command_line = CommandLine::ForCurrentProcess();
+  std::string class_name = command_line->GetProgram().BaseName().value();
+  if (!class_name.empty())
+    class_name[0] = base::ToUpperASCII(class_name[0]);
+  return class_name;
+}
+
 std::string GetDesktopName(base::Environment* env) {
 #if defined(GOOGLE_CHROME_BUILD)
   return "google-chrome.desktop";
@@ -575,7 +588,7 @@ ShellIntegration::ShortcutLocations GetExistingShortcutLocations(
   // If Get returns false, just leave desktop_path empty.
   PathService::Get(base::DIR_USER_DESKTOP, &desktop_path);
   return GetExistingShortcutLocations(env, profile_path, extension_id,
-                                             desktop_path);
+                                      desktop_path);
 }
 
 ShellIntegration::ShortcutLocations GetExistingShortcutLocations(
@@ -599,12 +612,15 @@ ShellIntegration::ShortcutLocations GetExistingShortcutLocations(
   // Determine whether there is a shortcut in the applications directory.
   std::string shortcut_contents;
   if (GetExistingShortcutContents(env, shortcut_filename, &shortcut_contents)) {
-    // Whether this counts as "hidden" or "in_applications_menu" depends on
-    // whether it contains NoDisplay=true.
-    if (GetNoDisplayFromDesktopFile(shortcut_contents))
+    // Whether this counts as "hidden" or "APP_MENU_LOCATION_SUBDIR_CHROMEAPPS"
+    // depends on whether it contains NoDisplay=true. Since these shortcuts are
+    // for apps, they are always in the "Chrome Apps" directory.
+    if (GetNoDisplayFromDesktopFile(shortcut_contents)) {
       locations.hidden = true;
-    else
-      locations.in_applications_menu = true;
+    } else {
+      locations.applications_menu_location =
+          ShellIntegration::APP_MENU_LOCATION_SUBDIR_CHROMEAPPS;
+    }
   }
 
   return locations;
@@ -623,7 +639,7 @@ bool GetExistingShortcutContents(base::Environment* env,
     VLOG(1) << "Looking for desktop file in " << path.value();
     if (base::PathExists(path)) {
       VLOG(1) << "Found desktop file at " << path.value();
-      return file_util::ReadFileToString(path, output);
+      return base::ReadFileToString(path, output);
     }
   }
 
@@ -667,7 +683,7 @@ base::FilePath GetExtensionShortcutFilename(const base::FilePath& profile_path,
   file_util::ReplaceIllegalCharactersInPath(&filename, '_');
   // Spaces in filenames break xdg-desktop-menu
   // (see https://bugs.freedesktop.org/show_bug.cgi?id=66605).
-  ReplaceChars(filename, " ", "_", &filename);
+  base::ReplaceChars(filename, " ", "_", &filename);
   return base::FilePath(filename.append(".desktop"));
 }
 
@@ -683,7 +699,7 @@ std::vector<base::FilePath> GetExistingProfileShortcutFilenames(
   file_util::ReplaceIllegalCharactersInPath(&suffix, '_');
   // Spaces in filenames break xdg-desktop-menu
   // (see https://bugs.freedesktop.org/show_bug.cgi?id=66605).
-  ReplaceChars(suffix, " ", "_", &suffix);
+  base::ReplaceChars(suffix, " ", "_", &suffix);
   std::string glob = prefix + "*" + suffix + ".desktop";
 
   base::FileEnumerator files(directory, false, base::FileEnumerator::FILES,
@@ -703,7 +719,7 @@ std::string GetDesktopFileContents(
     const GURL& url,
     const std::string& extension_id,
     const base::FilePath& extension_path,
-    const string16& title,
+    const base::string16& title,
     const std::string& icon_name,
     const base::FilePath& profile_path,
     bool no_display) {
@@ -761,11 +777,9 @@ std::string GetDesktopFileContents(
   if (no_display)
     g_key_file_set_string(key_file, kDesktopEntry, "NoDisplay", "true");
 
-#if defined(TOOLKIT_GTK)
   std::string wmclass = web_app::GetWMClassFromAppName(app_name);
   g_key_file_set_string(key_file, kDesktopEntry, "StartupWMClass",
                         wmclass.c_str());
-#endif
 
   gsize length = 0;
   gchar* data_dump = g_key_file_to_data(key_file, &length, NULL);
@@ -785,7 +799,7 @@ std::string GetDesktopFileContents(
   return output_buffer;
 }
 
-std::string GetDirectoryFileContents(const string16& title,
+std::string GetDirectoryFileContents(const base::string16& title,
                                      const std::string& icon_name) {
   // See http://standards.freedesktop.org/desktop-entry-spec/latest/
   GKeyFile* key_file = g_key_file_new();
@@ -833,7 +847,11 @@ bool CreateDesktopShortcut(
     // already exist and replace them.
     if (creation_locations.on_desktop)
       DeleteShortcutOnDesktop(shortcut_filename);
-    if (creation_locations.in_applications_menu || creation_locations.hidden)
+    // The 'applications_menu_location' and 'hidden' locations are actually the
+    // same place ('applications').
+    if (creation_locations.applications_menu_location !=
+            ShellIntegration::APP_MENU_LOCATION_NONE ||
+        creation_locations.hidden)
       DeleteShortcutInApplicationsMenu(shortcut_filename, base::FilePath());
   } else {
     shortcut_filename = GetWebShortcutFilename(shortcut_info.url);
@@ -868,18 +886,26 @@ bool CreateDesktopShortcut(
     success = CreateShortcutOnDesktop(shortcut_filename, contents);
   }
 
-  // The 'in_applications_menu' and 'hidden' locations are actually the same
-  // place ('applications').
-  if (creation_locations.in_applications_menu || creation_locations.hidden) {
+  if (creation_locations.applications_menu_location !=
+          ShellIntegration::APP_MENU_LOCATION_NONE ||
+      creation_locations.hidden) {
     base::FilePath directory_filename;
     std::string directory_contents;
-    if (!creation_locations.applications_menu_subdir.empty()) {
-      directory_filename = base::FilePath(kDirectoryFilename);
-      directory_contents = ShellIntegrationLinux::GetDirectoryFileContents(
-          creation_locations.applications_menu_subdir, "");
+    switch (creation_locations.applications_menu_location) {
+      case ShellIntegration::APP_MENU_LOCATION_NONE:
+      case ShellIntegration::APP_MENU_LOCATION_ROOT:
+        break;
+      case ShellIntegration::APP_MENU_LOCATION_SUBDIR_CHROMEAPPS:
+        directory_filename = base::FilePath(kDirectoryFilename);
+        directory_contents = ShellIntegrationLinux::GetDirectoryFileContents(
+            ShellIntegration::GetAppShortcutsSubdirName(), "");
+        break;
+      default:
+        NOTREACHED();
+        break;
     }
-    // Set NoDisplay=true if hidden but not in_applications_menu. This will hide
-    // the application from user-facing menus.
+    // Set NoDisplay=true if hidden but not in the applications menu. This will
+    // hide the application from user-facing menus.
     std::string contents = ShellIntegrationLinux::GetDesktopFileContents(
         chrome_exe_path,
         app_name,
@@ -889,7 +915,8 @@ bool CreateDesktopShortcut(
         shortcut_info.title,
         icon_name,
         shortcut_info.profile_path,
-        !creation_locations.in_applications_menu);
+        creation_locations.applications_menu_location ==
+            ShellIntegration::APP_MENU_LOCATION_NONE);
     success = CreateShortcutInApplicationsMenu(
         shortcut_filename, contents, directory_filename, directory_contents) &&
         success;
@@ -909,9 +936,8 @@ void DeleteDesktopShortcuts(const base::FilePath& profile_path,
   DeleteShortcutOnDesktop(shortcut_filename);
   // Delete shortcuts from |kDirectoryFilename|.
   // Note that it is possible that shortcuts were not created in the Chrome Apps
-  // directory (depending on the value of |applications_menu_subdir| when they
-  // were created). It doesn't matter: this will still delete the shortcut even
-  // if it isn't in the directory.
+  // directory. It doesn't matter: this will still delete the shortcut even if
+  // it isn't in the directory.
   DeleteShortcutInApplicationsMenu(shortcut_filename,
                                    base::FilePath(kDirectoryFilename));
 }

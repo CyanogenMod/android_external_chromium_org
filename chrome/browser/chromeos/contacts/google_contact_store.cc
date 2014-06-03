@@ -15,12 +15,12 @@
 #include "chrome/browser/chromeos/contacts/contact_store_observer.h"
 #include "chrome/browser/chromeos/contacts/gdata_contacts_service.h"
 #include "chrome/browser/chromeos/profiles/profile_util.h"
-#include "chrome/browser/google_apis/auth_service.h"
-#include "chrome/browser/google_apis/time_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/profile_oauth2_token_service.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "content/public/browser/browser_thread.h"
+#include "google_apis/drive/auth_service.h"
+#include "google_apis/drive/time_util.h"
 
 using content::BrowserThread;
 
@@ -129,10 +129,13 @@ void GoogleContactStore::Init() {
     std::vector<std::string> scopes;
     scopes.push_back(kContactsScope);
 
+    ProfileOAuth2TokenService* oauth2_service =
+        ProfileOAuth2TokenServiceFactory::GetForProfile(profile_);
     gdata_service_.reset(new GDataContactsService(
         url_request_context_getter_,
         new google_apis::AuthService(
-            ProfileOAuth2TokenServiceFactory::GetForProfile(profile_),
+            oauth2_service,
+            oauth2_service->GetPrimaryAccountId(),
             url_request_context_getter_, scopes)));
   }
 

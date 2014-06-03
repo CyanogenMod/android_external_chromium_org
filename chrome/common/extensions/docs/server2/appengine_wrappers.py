@@ -15,8 +15,13 @@ def GetAppVersion():
   with open(app_yaml_path, 'r') as app_yaml:
     return AppYamlHelper.ExtractVersion(app_yaml.read())
 
-def IsDevServer():
-  return os.environ.get('SERVER_SOFTWARE', '').find('Development') == 0
+def IsDeadlineExceededError(error):
+  '''A general way of determining whether |error| is a DeadlineExceededError,
+  since there are 3 different types thrown by AppEngine and we might as well
+  handle them all the same way. For more info see:
+  https://developers.google.com/appengine/articles/deadlineexceedederrors
+  '''
+  return error.__class__.__name__ == 'DeadlineExceededError'
 
 # This will attempt to import the actual App Engine modules, and if it fails,
 # they will be replaced with fake modules. This is useful during testing.
@@ -28,8 +33,7 @@ try:
   import google.appengine.ext.blobstore as blobstore
   from google.appengine.ext.blobstore.blobstore import BlobReferenceProperty
   import google.appengine.ext.db as db
-  import google.appengine.ext.webapp as webapp
-  from google.appengine.runtime import DeadlineExceededError
+  import webapp2
 except ImportError:
   import re
   from StringIO import StringIO
@@ -65,9 +69,6 @@ except ImportError:
     def wait(self):
       pass
 
-  class DeadlineExceededError(Exception):
-    pass
-
   class FakeUrlFetch(object):
     """A fake urlfetch module that uses the current
     |FAKE_URL_FETCHER_CONFIGURATION| to map urls to fake fetchers.
@@ -78,7 +79,7 @@ except ImportError:
     class _Response(object):
       def __init__(self, content):
         self.content = content
-        self.headers = { 'content-type': 'none' }
+        self.headers = {'Content-Type': 'none'}
         self.status_code = 200
 
     def fetch(self, url, **kwargs):
@@ -188,9 +189,9 @@ except ImportError:
 
   memcache = InMemoryMemcache()
 
-  class webapp(object):
+  class webapp2(object):
     class RequestHandler(object):
-      """A fake webapp.RequestHandler class for Handler to extend.
+      """A fake webapp2.RequestHandler class for Handler to extend.
       """
       def __init__(self, request, response):
         self.request = request

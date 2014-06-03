@@ -25,7 +25,7 @@ const int kViewPadding = 6;
 }  // namespace
 
 BookmarkBarInstructionsView::BookmarkBarInstructionsView(
-    chrome::BookmarkBarInstructionsDelegate* delegate)
+    BookmarkBarInstructionsDelegate* delegate)
     : delegate_(delegate),
       instructions_(NULL),
       import_link_(NULL),
@@ -40,7 +40,7 @@ BookmarkBarInstructionsView::BookmarkBarInstructionsView(
     import_link_ = new views::Link(
         l10n_util::GetStringUTF16(IDS_BOOKMARK_BAR_IMPORT_LINK));
     // We don't want the link to alter tab navigation.
-    import_link_->set_focusable(false);
+    import_link_->SetFocusable(false);
     import_link_->set_listener(this);
     import_link_->set_context_menu_controller(this);
     import_link_->SetAutoColorReadabilityEnabled(false);

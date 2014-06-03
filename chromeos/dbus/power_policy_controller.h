@@ -52,10 +52,13 @@ class CHROMEOS_EXPORT PowerPolicyController
     Action lid_closed_action;
     bool use_audio_activity;
     bool use_video_activity;
+    double ac_brightness_percent;
+    double battery_brightness_percent;
     bool allow_screen_wake_locks;
     bool enable_screen_lock;
     double presentation_screen_dim_delay_factor;
     double user_activity_screen_dim_delay_factor;
+    bool wait_for_initial_user_activity;
   };
 
   // Returns a string describing |policy|.  Useful for tests.
@@ -68,8 +71,10 @@ class CHROMEOS_EXPORT PowerPolicyController
   // this constant would imply.
   static const int kScreenLockAfterOffDelayMs;
 
-  PowerPolicyController(DBusThreadManager* manager, PowerManagerClient* client);
+  PowerPolicyController();
   virtual ~PowerPolicyController();
+
+  void Init(DBusThreadManager* manager);
 
   // Updates |prefs_policy_| with |values| and sends an updated policy.
   void ApplyPrefs(const PrefValues& values);

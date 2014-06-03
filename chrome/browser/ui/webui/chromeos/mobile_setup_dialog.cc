@@ -23,15 +23,13 @@
 #include "ui/views/widget/widget.h"
 #include "ui/web_dialogs/web_dialog_delegate.h"
 
-using chromeos::CellularNetwork;
 using chromeos::MobileActivator;
 using content::BrowserThread;
 using content::WebContents;
 using content::WebUIMessageHandler;
 using ui::WebDialogDelegate;
 
-class MobileSetupDialogDelegate : public WebDialogDelegate,
-                                  public MobileActivator::Observer {
+class MobileSetupDialogDelegate : public WebDialogDelegate {
  public:
   static MobileSetupDialogDelegate* GetInstance();
   void ShowDialog(const std::string& service_path);
@@ -46,7 +44,7 @@ class MobileSetupDialogDelegate : public WebDialogDelegate,
 
   // WebDialogDelegate overrides.
   virtual ui::ModalType GetDialogModalType() const OVERRIDE;
-  virtual string16 GetDialogTitle() const OVERRIDE;
+  virtual base::string16 GetDialogTitle() const OVERRIDE;
   virtual GURL GetDialogContentURL() const OVERRIDE;
   virtual void GetWebUIMessageHandlers(
       std::vector<WebUIMessageHandler*>* handlers) const OVERRIDE;
@@ -61,12 +59,6 @@ class MobileSetupDialogDelegate : public WebDialogDelegate,
   virtual bool ShouldShowDialogTitle() const OVERRIDE;
   virtual bool HandleContextMenu(
       const content::ContextMenuParams& params) OVERRIDE;
-
-  // MobileActivator::Observer overrides.
-  virtual void OnActivationStateChanged(
-      CellularNetwork* network,
-      MobileActivator::PlanActivationState state,
-      const std::string& error_description) OVERRIDE;
 
  private:
   gfx::NativeWindow dialog_window_;
@@ -91,7 +83,6 @@ MobileSetupDialogDelegate::MobileSetupDialogDelegate() : dialog_window_(NULL) {
 }
 
 MobileSetupDialogDelegate::~MobileSetupDialogDelegate() {
-  MobileActivator::GetInstance()->RemoveObserver(this);
 }
 
 void MobileSetupDialogDelegate::ShowDialog(const std::string& service_path) {
@@ -118,7 +109,7 @@ ui::ModalType MobileSetupDialogDelegate::GetDialogModalType() const {
   return ui::MODAL_TYPE_SYSTEM;
 }
 
-string16 MobileSetupDialogDelegate::GetDialogTitle() const {
+base::string16 MobileSetupDialogDelegate::GetDialogTitle() const {
   return l10n_util::GetStringUTF16(IDS_MOBILE_SETUP_TITLE);
 }
 
@@ -142,12 +133,10 @@ std::string MobileSetupDialogDelegate::GetDialogArgs() const {
 
 void MobileSetupDialogDelegate::OnDialogShown(
     content::WebUI* webui, content::RenderViewHost* render_view_host) {
-  MobileActivator::GetInstance()->AddObserver(this);
 }
 
 
 void MobileSetupDialogDelegate::OnDialogClosed(const std::string& json_retval) {
-  MobileActivator::GetInstance()->RemoveObserver(this);
   dialog_window_ = NULL;
 }
 
@@ -177,10 +166,4 @@ bool MobileSetupDialogDelegate::ShouldShowDialogTitle() const {
 bool MobileSetupDialogDelegate::HandleContextMenu(
     const content::ContextMenuParams& params) {
   return true;
-}
-
-void MobileSetupDialogDelegate::OnActivationStateChanged(
-    CellularNetwork* network,
-    MobileActivator::PlanActivationState state,
-    const std::string& error_description) {
 }

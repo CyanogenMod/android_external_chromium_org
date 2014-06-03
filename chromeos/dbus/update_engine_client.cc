@@ -6,7 +6,10 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
+#include "base/command_line.h"
+#include "base/message_loop/message_loop.h"
 #include "base/strings/string_util.h"
+#include "chromeos/chromeos_switches.h"
 #include "dbus/bus.h"
 #include "dbus/message.h"
 #include "dbus/object_path.h"
@@ -21,24 +24,35 @@ const char kReleaseChannelDev[] = "dev-channel";
 const char kReleaseChannelBeta[] = "beta-channel";
 const char kReleaseChannelStable[] = "stable-channel";
 
+// Delay between successive state transitions during AU.
+const int kStateTransitionDefaultDelayMs = 3000;
+
+// Delay between successive notificatioins about downloading progress
+// during fake AU.
+const int kStateTransitionDownloadingDelayMs = 250;
+
+// Size of parts of a "new" image which are downloaded each
+// |kStateTransitionDownloadingDelayMs| during fake AU.
+const int64_t kDownloadSizeDelta = 1 << 19;
+
 // Returns UPDATE_STATUS_ERROR on error.
 UpdateEngineClient::UpdateStatusOperation UpdateStatusFromString(
     const std::string& str) {
-  if (str == "UPDATE_STATUS_IDLE")
+  if (str == update_engine::kUpdateStatusIdle)
     return UpdateEngineClient::UPDATE_STATUS_IDLE;
-  if (str == "UPDATE_STATUS_CHECKING_FOR_UPDATE")
+  if (str == update_engine::kUpdateStatusCheckingForUpdate)
     return UpdateEngineClient::UPDATE_STATUS_CHECKING_FOR_UPDATE;
-  if (str == "UPDATE_STATUS_UPDATE_AVAILABLE")
+  if (str == update_engine::kUpdateStatusUpdateAvailable)
     return UpdateEngineClient::UPDATE_STATUS_UPDATE_AVAILABLE;
-  if (str == "UPDATE_STATUS_DOWNLOADING")
+  if (str == update_engine::kUpdateStatusDownloading)
     return UpdateEngineClient::UPDATE_STATUS_DOWNLOADING;
-  if (str == "UPDATE_STATUS_VERIFYING")
+  if (str == update_engine::kUpdateStatusVerifying)
     return UpdateEngineClient::UPDATE_STATUS_VERIFYING;
-  if (str == "UPDATE_STATUS_FINALIZING")
+  if (str == update_engine::kUpdateStatusFinalizing)
     return UpdateEngineClient::UPDATE_STATUS_FINALIZING;
-  if (str == "UPDATE_STATUS_UPDATED_NEED_REBOOT")
+  if (str == update_engine::kUpdateStatusUpdatedNeedReboot)
     return UpdateEngineClient::UPDATE_STATUS_UPDATED_NEED_REBOOT;
-  if (str == "UPDATE_STATUS_REPORTING_ERROR_EVENT")
+  if (str == update_engine::kUpdateStatusReportingErrorEvent)
     return UpdateEngineClient::UPDATE_STATUS_REPORTING_ERROR_EVENT;
   return UpdateEngineClient::UPDATE_STATUS_ERROR;
 }
@@ -59,31 +73,8 @@ bool IsValidChannel(const std::string& channel) {
 // The UpdateEngineClient implementation used in production.
 class UpdateEngineClientImpl : public UpdateEngineClient {
  public:
-  explicit UpdateEngineClientImpl(dbus::Bus* bus)
-      : update_engine_proxy_(NULL),
-        last_status_(),
-        weak_ptr_factory_(this) {
-    update_engine_proxy_ = bus->GetObjectProxy(
-        update_engine::kUpdateEngineServiceName,
-        dbus::ObjectPath(update_engine::kUpdateEngineServicePath));
-
-    // Monitor the D-Bus signal for brightness changes. Only the power
-    // manager knows the actual brightness level. We don't cache the
-    // brightness level in Chrome as it will make things less reliable.
-    update_engine_proxy_->ConnectToSignal(
-        update_engine::kUpdateEngineInterface,
-        update_engine::kStatusUpdate,
-        base::Bind(&UpdateEngineClientImpl::StatusUpdateReceived,
-                   weak_ptr_factory_.GetWeakPtr()),
-        base::Bind(&UpdateEngineClientImpl::StatusUpdateConnected,
-                   weak_ptr_factory_.GetWeakPtr()));
-
-    // Get update engine status for the initial status. Update engine won't
-    // send StatusUpdate signal unless there is a status change. If chrome
-    // crashes after UPDATE_STATUS_UPDATED_NEED_REBOOT status is set,
-    // restarted chrome would not get this status. See crbug.com/154104.
-    GetUpdateEngineStatus();
-  }
+  UpdateEngineClientImpl()
+      : update_engine_proxy_(NULL), last_status_(), weak_ptr_factory_(this) {}
 
   virtual ~UpdateEngineClientImpl() {
   }
@@ -178,6 +169,30 @@ class UpdateEngineClientImpl : public UpdateEngineClient {
                    callback));
   }
 
+ protected:
+  virtual void Init(dbus::Bus* bus) OVERRIDE {
+    update_engine_proxy_ = bus->GetObjectProxy(
+        update_engine::kUpdateEngineServiceName,
+        dbus::ObjectPath(update_engine::kUpdateEngineServicePath));
+
+    // Monitor the D-Bus signal for brightness changes. Only the power
+    // manager knows the actual brightness level. We don't cache the
+    // brightness level in Chrome as it will make things less reliable.
+    update_engine_proxy_->ConnectToSignal(
+        update_engine::kUpdateEngineInterface,
+        update_engine::kStatusUpdate,
+        base::Bind(&UpdateEngineClientImpl::StatusUpdateReceived,
+                   weak_ptr_factory_.GetWeakPtr()),
+        base::Bind(&UpdateEngineClientImpl::StatusUpdateConnected,
+                   weak_ptr_factory_.GetWeakPtr()));
+
+    // Get update engine status for the initial status. Update engine won't
+    // send StatusUpdate signal unless there is a status change. If chrome
+    // crashes after UPDATE_STATUS_UPDATED_NEED_REBOOT status is set,
+    // restarted chrome would not get this status. See crbug.com/154104.
+    GetUpdateEngineStatus();
+  }
+
  private:
   void GetUpdateEngineStatus() {
     dbus::MethodCall method_call(
@@ -237,7 +252,8 @@ class UpdateEngineClientImpl : public UpdateEngineClient {
 
   // Called when GetStatus call failed.
   void OnGetStatusError(dbus::ErrorResponse* error) {
-    LOG(ERROR) << "GetStatus request failed with error: " << error->ToString();
+    LOG(ERROR) << "GetStatus request failed with error: "
+               << (error ? error->ToString() : "");
   }
 
   // Called when a response for SetReleaseChannel() is received.
@@ -320,6 +336,7 @@ class UpdateEngineClientImpl : public UpdateEngineClient {
 // which does nothing.
 class UpdateEngineClientStubImpl : public UpdateEngineClient {
   // UpdateEngineClient implementation:
+  virtual void Init(dbus::Bus* bus) OVERRIDE {}
   virtual void AddObserver(Observer* observer) OVERRIDE {}
   virtual void RemoveObserver(Observer* observer) OVERRIDE {}
   virtual bool HasObserver(Observer* observer) OVERRIDE { return false; }
@@ -340,8 +357,105 @@ class UpdateEngineClientStubImpl : public UpdateEngineClient {
                           const GetChannelCallback& callback) OVERRIDE {
     LOG(INFO) << "Requesting to get channel, get_current_channel="
               << get_current_channel;
-    callback.Run("beta-channel");
+    callback.Run(kReleaseChannelBeta);
   }
+};
+
+// The UpdateEngineClient implementation used on Linux desktop, which
+// tries to emulate real update engine client.
+class UpdateEngineClientFakeImpl : public UpdateEngineClientStubImpl {
+ public:
+  UpdateEngineClientFakeImpl() : weak_factory_(this) {
+  }
+
+  virtual ~UpdateEngineClientFakeImpl() {
+  }
+
+  // UpdateEngineClient implementation:
+  virtual void AddObserver(Observer* observer) OVERRIDE {
+    if (observer)
+      observers_.AddObserver(observer);
+  }
+
+  virtual void RemoveObserver(Observer* observer) OVERRIDE {
+    if (observer)
+      observers_.RemoveObserver(observer);
+  }
+
+  virtual bool HasObserver(Observer* observer) OVERRIDE {
+    return observers_.HasObserver(observer);
+  }
+
+  virtual void RequestUpdateCheck(
+      const UpdateCheckCallback& callback) OVERRIDE {
+    if (last_status_.status != UPDATE_STATUS_IDLE) {
+      callback.Run(UPDATE_RESULT_FAILED);
+      return;
+    }
+    callback.Run(UPDATE_RESULT_SUCCESS);
+    last_status_.status = UPDATE_STATUS_CHECKING_FOR_UPDATE;
+    last_status_.download_progress = 0.0;
+    last_status_.last_checked_time = 0;
+    last_status_.new_size = 0;
+    base::MessageLoop::current()->PostDelayedTask(
+        FROM_HERE,
+        base::Bind(&UpdateEngineClientFakeImpl::StateTransition,
+                   weak_factory_.GetWeakPtr()),
+        base::TimeDelta::FromMilliseconds(kStateTransitionDefaultDelayMs));
+  }
+
+  virtual Status GetLastStatus() OVERRIDE { return last_status_; }
+
+ private:
+  void StateTransition() {
+    UpdateStatusOperation next_status = UPDATE_STATUS_ERROR;
+    int delay_ms = kStateTransitionDefaultDelayMs;
+    switch (last_status_.status) {
+      case UPDATE_STATUS_ERROR:
+      case UPDATE_STATUS_IDLE:
+      case UPDATE_STATUS_UPDATED_NEED_REBOOT:
+      case UPDATE_STATUS_REPORTING_ERROR_EVENT:
+        return;
+      case UPDATE_STATUS_CHECKING_FOR_UPDATE:
+        next_status = UPDATE_STATUS_UPDATE_AVAILABLE;
+        break;
+      case UPDATE_STATUS_UPDATE_AVAILABLE:
+        next_status = UPDATE_STATUS_DOWNLOADING;
+        break;
+      case UPDATE_STATUS_DOWNLOADING:
+        if (last_status_.download_progress >= 1.0) {
+          next_status = UPDATE_STATUS_VERIFYING;
+        } else {
+          next_status = UPDATE_STATUS_DOWNLOADING;
+          last_status_.download_progress += 0.01;
+          last_status_.new_size = kDownloadSizeDelta;
+          delay_ms = kStateTransitionDownloadingDelayMs;
+        }
+        break;
+      case UPDATE_STATUS_VERIFYING:
+        next_status = UPDATE_STATUS_FINALIZING;
+        break;
+      case UPDATE_STATUS_FINALIZING:
+        next_status = UPDATE_STATUS_IDLE;
+        break;
+    }
+    last_status_.status = next_status;
+    FOR_EACH_OBSERVER(Observer, observers_, UpdateStatusChanged(last_status_));
+    if (last_status_.status != UPDATE_STATUS_IDLE) {
+      base::MessageLoop::current()->PostDelayedTask(
+          FROM_HERE,
+          base::Bind(&UpdateEngineClientFakeImpl::StateTransition,
+                     weak_factory_.GetWeakPtr()),
+          base::TimeDelta::FromMilliseconds(delay_ms));
+    }
+  }
+
+  ObserverList<Observer> observers_;
+  Status last_status_;
+
+  base::WeakPtrFactory<UpdateEngineClientFakeImpl> weak_factory_;
+
+  DISALLOW_COPY_AND_ASSIGN(UpdateEngineClientFakeImpl);
 };
 
 UpdateEngineClient::UpdateEngineClient() {
@@ -358,12 +472,14 @@ UpdateEngineClient::EmptyUpdateCheckCallback() {
 
 // static
 UpdateEngineClient* UpdateEngineClient::Create(
-    DBusClientImplementationType type,
-    dbus::Bus* bus) {
+    DBusClientImplementationType type) {
   if (type == REAL_DBUS_CLIENT_IMPLEMENTATION)
-    return new UpdateEngineClientImpl(bus);
+    return new UpdateEngineClientImpl();
   DCHECK_EQ(STUB_DBUS_CLIENT_IMPLEMENTATION, type);
-  return new UpdateEngineClientStubImpl();
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kTestAutoUpdateUI))
+    return new UpdateEngineClientFakeImpl();
+  else
+    return new UpdateEngineClientStubImpl();
 }
 
 }  // namespace chromeos

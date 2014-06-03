@@ -5,11 +5,7 @@
 import constants
 import logging
 import traceback
-import warnings
 
-
-# Location where chrome reads command line flags from
-CHROME_COMMAND_FILE = '/data/local/chrome-command-line'
 
 class FlagChanger(object):
   """Changes the flags Chrome runs with.
@@ -21,11 +17,19 @@ class FlagChanger(object):
     once the tests have completed.
   """
 
-  def __init__(self, android_cmd):
-    self._android_cmd = android_cmd
+  def __init__(self, adb,
+               cmdline_file=constants.PACKAGE_INFO['chrome'].cmdline_file):
+    """Initializes the FlagChanger and records the original arguments.
+
+    Args:
+      adb: An instance of AndroidCommands.
+      cmdline_file: Path to the command line file on the device.
+    """
+    self._adb = adb
+    self._cmdline_file = cmdline_file
 
     # Save the original flags.
-    self._orig_line = self._android_cmd.GetFileContents(CHROME_COMMAND_FILE)
+    self._orig_line = self._adb.GetFileContents(self._cmdline_file)
     if self._orig_line:
       self._orig_line = self._orig_line[0].strip()
 
@@ -88,13 +92,27 @@ class FlagChanger(object):
   def _UpdateCommandLineFile(self):
     """Writes out the command line to the file, or removes it if empty."""
     logging.info('Current flags: %s', self._current_flags)
-
+    # Root is not required to write to /data/local/tmp/.
+    use_root = '/data/local/tmp/' not in self._cmdline_file
     if self._current_flags:
-      self._android_cmd.SetProtectedFileContents(CHROME_COMMAND_FILE,
-                                        'chrome ' +
-                                        ' '.join(self._current_flags))
+      # The first command line argument doesn't matter as we are not actually
+      # launching the chrome executable using this command line.
+      cmd_line = ' '.join(['_'] + self._current_flags)
+      if use_root:
+        self._adb.SetProtectedFileContents(self._cmdline_file, cmd_line)
+        file_contents = self._adb.GetProtectedFileContents(self._cmdline_file)
+      else:
+        self._adb.SetFileContents(self._cmdline_file, cmd_line)
+        file_contents = self._adb.GetFileContents(self._cmdline_file)
+      assert len(file_contents) == 1 and file_contents[0] == cmd_line, (
+          'Failed to set the command line file at %s' % self._cmdline_file)
     else:
-      self._android_cmd.RunShellCommand('su -c rm ' + CHROME_COMMAND_FILE)
+      if use_root:
+        self._adb.RunShellCommandWithSU('rm ' + self._cmdline_file)
+      else:
+        self._adb.RunShellCommand('rm ' + self._cmdline_file)
+      assert not self._adb.FileExistsOnDevice(self._cmdline_file), (
+          'Failed to remove the command line file at %s' % self._cmdline_file)
 
   def _TokenizeFlags(self, line):
     """Changes the string containing the command line into a list of flags.
@@ -137,7 +155,7 @@ class FlagChanger(object):
     # Tack on the last flag.
     if not current_flag:
       if within_quotations:
-        warnings.warn("Unterminated quoted string: " + current_flag)
+        logging.warn('Unterminated quoted argument: ' + line)
     else:
       tokenized_flags.append(current_flag)
 

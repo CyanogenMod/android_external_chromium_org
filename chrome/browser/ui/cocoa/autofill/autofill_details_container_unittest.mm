@@ -44,27 +44,25 @@ TEST_F(AutofillDetailsContainerTest, ValidateAllSections) {
   using namespace autofill;
   using namespace testing;
 
-  DetailOutputMap output;
-  ValidityData validity;
+  ValidityMessages validity;
 
-  EXPECT_CALL(delegate_, InputsAreValid(_, _, VALIDATE_FINAL))
-      .Times(4)
-      .WillOnce(Return(validity))
+  EXPECT_CALL(delegate_, InputsAreValid(_, _))
+      .Times(3)
       .WillOnce(Return(validity))
       .WillOnce(Return(validity))
       .WillOnce(Return(validity));
 
   EXPECT_TRUE([container_ validate]);
 
-  ValidityData invalid;
-  invalid[ADDRESS_HOME_ZIP] = ASCIIToUTF16("Some error message");
+  ValidityMessages invalid;
+  invalid.Set(ADDRESS_HOME_ZIP,
+              ValidityMessage(ASCIIToUTF16("Some error message"), false));
 
-  EXPECT_CALL(delegate_, InputsAreValid(_, _, VALIDATE_FINAL))
-      .Times(4)
+  EXPECT_CALL(delegate_, InputsAreValid(_, _))
+      .Times(3)
       .WillOnce(Return(validity))
       .WillOnce(Return(validity))
-      .WillOnce(Return(invalid))
-      .WillOnce(Return(validity));
+      .WillOnce(Return(invalid));
 
   EXPECT_FALSE([container_ validate]);
 }

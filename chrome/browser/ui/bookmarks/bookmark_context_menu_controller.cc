@@ -4,6 +4,7 @@
 
 #include "chrome/browser/ui/bookmarks/bookmark_context_menu_controller.h"
 
+#include "base/command_line.h"
 #include "base/compiler_specific.h"
 #include "base/prefs/pref_service.h"
 #include "chrome/app/chrome_command_ids.h"
@@ -17,6 +18,9 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/chrome_pages.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
+#include "chrome/browser/undo/bookmark_undo_service.h"
+#include "chrome/browser/undo/bookmark_undo_service_factory.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/page_navigator.h"
 #include "content/public/browser/user_metrics.h"
@@ -85,6 +89,11 @@ void BookmarkContextMenuController::BuildMenu() {
 
   AddSeparator();
   AddItem(IDC_BOOKMARK_BAR_REMOVE, IDS_BOOKMARK_BAR_REMOVE);
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kEnableBookmarkUndo)) {
+    AddItem(IDC_BOOKMARK_BAR_UNDO, IDS_BOOKMARK_BAR_UNDO);
+    AddItem(IDC_BOOKMARK_BAR_REDO, IDS_BOOKMARK_BAR_REDO);
+  }
 
   AddSeparator();
   AddItem(IDC_BOOKMARK_BAR_ADD_NEW_BOOKMARK, IDS_BOOKMARK_BAR_ADD_NEW_BOOKMARK);
@@ -92,7 +101,11 @@ void BookmarkContextMenuController::BuildMenu() {
 
   AddSeparator();
   AddItem(IDC_BOOKMARK_MANAGER, IDS_BOOKMARK_MANAGER);
-  if (chrome::IsAppsShortcutEnabled(profile_)) {
+  // Use the native host desktop type in tests.
+  if (chrome::IsAppsShortcutEnabled(
+          profile_,
+          browser_ ? browser_->host_desktop_type()
+                   : chrome::HOST_DESKTOP_TYPE_NATIVE)) {
     AddCheckboxItem(IDC_BOOKMARK_BAR_SHOW_APPS_SHORTCUT,
                     IDS_BOOKMARK_BAR_SHOW_APPS_SHORTCUT);
   }
@@ -163,6 +176,22 @@ void BookmarkContextMenuController::ExecuteCommand(int id, int event_flags) {
                                     BookmarkEditor::NO_TREE);
       break;
 
+    case IDC_BOOKMARK_BAR_UNDO: {
+      content::RecordAction(
+          UserMetricsAction("BookmarkBar_ContextMenu_Undo"));
+      BookmarkUndoServiceFactory::GetForProfile(profile_)->undo_manager()->
+          Undo();
+      break;
+    }
+
+    case IDC_BOOKMARK_BAR_REDO: {
+      content::RecordAction(
+          UserMetricsAction("BookmarkBar_ContextMenu_Redo"));
+      BookmarkUndoServiceFactory::GetForProfile(profile_)->undo_manager()->
+          Redo();
+      break;
+    }
+
     case IDC_BOOKMARK_BAR_REMOVE: {
       content::RecordAction(
           UserMetricsAction("BookmarkBar_ContextMenu_Remove"));
@@ -184,7 +213,7 @@ void BookmarkContextMenuController::ExecuteCommand(int id, int event_flags) {
       const BookmarkNode* parent =
           bookmark_utils::GetParentForNewNodes(parent_, selection_, &index);
       GURL url;
-      string16 title;
+      base::string16 title;
       chrome::GetURLAndTitleToBookmark(
           browser_->tab_strip_model()->GetActiveWebContents(),
           &url, &title);
@@ -304,6 +333,16 @@ bool BookmarkContextMenuController::IsCommandIdEnabled(int command_id) const {
     case IDC_BOOKMARK_BAR_RENAME_FOLDER:
     case IDC_BOOKMARK_BAR_EDIT:
       return selection_.size() == 1 && !is_root_node && can_edit;
+
+    case IDC_BOOKMARK_BAR_UNDO:
+      return can_edit &&
+          BookmarkUndoServiceFactory::GetForProfile(profile_)->
+              undo_manager()->undo_count() > 0;
+
+    case IDC_BOOKMARK_BAR_REDO:
+      return can_edit &&
+          BookmarkUndoServiceFactory::GetForProfile(profile_)->
+              undo_manager()->redo_count() > 0;
 
     case IDC_BOOKMARK_BAR_REMOVE:
       return !selection_.empty() && !is_root_node && can_edit;

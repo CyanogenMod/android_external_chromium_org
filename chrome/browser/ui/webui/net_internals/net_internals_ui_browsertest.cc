@@ -277,7 +277,7 @@ void NetInternalsTest::MessageHandler::NavigateToPrerender(
     const ListValue* list_value) {
   content::RenderViewHost* host =
       browser()->tab_strip_model()->GetWebContentsAt(1)->GetRenderViewHost();
-  host->ExecuteJavascriptInWebFrame(string16(), ASCIIToUTF16("Click()"));
+  host->ExecuteJavascriptInWebFrame(base::string16(), ASCIIToUTF16("Click()"));
 }
 
 void NetInternalsTest::MessageHandler::CreateIncognitoBrowser(
@@ -340,9 +340,9 @@ void NetInternalsTest::MessageHandler::GetNetLogLoggerLog(
   base::ScopedTempDir temp_directory;
   ASSERT_TRUE(temp_directory.CreateUniqueTempDir());
   base::FilePath temp_file;
-  ASSERT_TRUE(file_util::CreateTemporaryFileInDir(temp_directory.path(),
-                                                  &temp_file));
-  FILE* temp_file_handle = file_util::OpenFile(temp_file, "w");
+  ASSERT_TRUE(base::CreateTemporaryFileInDir(temp_directory.path(),
+                                             &temp_file));
+  FILE* temp_file_handle = base::OpenFile(temp_file, "w");
   ASSERT_TRUE(temp_file_handle);
 
   scoped_ptr<base::Value> constants(NetInternalsUI::GetConstants());
@@ -359,7 +359,7 @@ void NetInternalsTest::MessageHandler::GetNetLogLoggerLog(
   net_log_logger.reset();
 
   std::string log_contents;
-  ASSERT_TRUE(file_util::ReadFileToString(temp_file, &log_contents));
+  ASSERT_TRUE(base::ReadFileToString(temp_file, &log_contents));
   ASSERT_GT(log_contents.length(), 0u);
 
   scoped_ptr<Value> log_contents_value(new base::StringValue(log_contents));

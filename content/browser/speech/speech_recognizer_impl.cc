@@ -564,7 +564,7 @@ SpeechRecognizerImpl::StartRecording(const FSMEventArgs&) {
       new OnDataConverter(input_parameters, output_parameters));
 
   audio_controller_ = AudioInputController::Create(
-      audio_manager, this, input_parameters, device_id_);
+      audio_manager, this, input_parameters, device_id_, NULL);
 
   if (!audio_controller_.get()) {
     return Abort(SpeechRecognitionError(SPEECH_RECOGNITION_ERROR_AUDIO));
@@ -802,7 +802,7 @@ void SpeechRecognizerImpl::UpdateSignalAndNoiseLevels(const float& rms,
       session_id(), clip_detected ? 1.0f : audio_level_, noise_level);
 }
 
-void SpeechRecognizerImpl::SetAudioManagerForTests(
+void SpeechRecognizerImpl::SetAudioManagerForTesting(
     AudioManager* audio_manager) {
   audio_manager_for_tests_ = audio_manager;
 }

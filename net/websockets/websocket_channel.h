@@ -10,17 +10,22 @@
 
 #include "base/basictypes.h"
 #include "base/callback.h"
+#include "base/compiler_specific.h"  // for WARN_UNUSED_RESULT
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
+#include "base/time/time.h"
+#include "base/timer/timer.h"
 #include "net/base/net_export.h"
+#include "net/websockets/websocket_event_interface.h"
 #include "net/websockets/websocket_frame.h"
 #include "net/websockets/websocket_stream.h"
 #include "url/gurl.h"
 
 namespace net {
 
+class BoundNetLog;
+class IOBuffer;
 class URLRequestContext;
-class WebSocketEventInterface;
 
 // Transport-independent implementation of WebSockets. Implements protocol
 // semantics that do not depend on the underlying transport. Provides the
@@ -29,7 +34,7 @@ class WebSocketEventInterface;
 // clarification.
 class NET_EXPORT WebSocketChannel {
  public:
-  // The type of a WebSocketStream factory callback. Must match the signature of
+  // The type of a WebSocketStream creator callback. Must match the signature of
   // WebSocketStream::CreateAndConnectStream().
   typedef base::Callback<scoped_ptr<WebSocketStreamRequest>(
       const GURL&,
@@ -37,20 +42,20 @@ class NET_EXPORT WebSocketChannel {
       const GURL&,
       URLRequestContext*,
       const BoundNetLog&,
-      scoped_ptr<WebSocketStream::ConnectDelegate>)> WebSocketStreamFactory;
+      scoped_ptr<WebSocketStream::ConnectDelegate>)> WebSocketStreamCreator;
 
-  // Creates a new WebSocketChannel with the specified parameters.
+  // Creates a new WebSocketChannel in an idle state.
   // SendAddChannelRequest() must be called immediately afterwards to start the
   // connection process.
-  WebSocketChannel(const GURL& socket_url,
-                   scoped_ptr<WebSocketEventInterface> event_interface);
+  WebSocketChannel(scoped_ptr<WebSocketEventInterface> event_interface,
+                   URLRequestContext* url_request_context);
   virtual ~WebSocketChannel();
 
   // Starts the connection process.
   void SendAddChannelRequest(
+      const GURL& socket_url,
       const std::vector<std::string>& requested_protocols,
-      const GURL& origin,
-      URLRequestContext* url_request_context);
+      const GURL& origin);
 
   // Sends a data frame to the remote side. The frame should usually be no
   // larger than 32KB to prevent the time required to copy the buffers from from
@@ -72,7 +77,7 @@ class NET_EXPORT WebSocketChannel {
   // send up to |quota| units of data.
   void SendFlowControl(int64 quota);
 
-  // Start the closing handshake for a client-initiated shutdown of the
+  // Starts the closing handshake for a client-initiated shutdown of the
   // connection. There is no API to close the connection without a closing
   // handshake, but destroying the WebSocketChannel object while connected will
   // effectively do that. |code| must be in the range 1000-4999. |reason| should
@@ -83,25 +88,35 @@ class NET_EXPORT WebSocketChannel {
   // processing to OnClosingHandshake() if necessary.
   void StartClosingHandshake(uint16 code, const std::string& reason);
 
-  // Starts the connection process, using a specified factory function rather
+  // Starts the connection process, using a specified creator callback rather
   // than the default. This is exposed for testing.
   void SendAddChannelRequestForTesting(
+      const GURL& socket_url,
       const std::vector<std::string>& requested_protocols,
       const GURL& origin,
-      URLRequestContext* url_request_context,
-      const WebSocketStreamFactory& factory);
+      const WebSocketStreamCreator& creator);
+
+  // The default timout for the closing handshake is a sensible value (see
+  // kClosingHandshakeTimeoutSeconds in websocket_channel.cc). However, we can
+  // set it to a very small value for testing purposes.
+  void SetClosingHandshakeTimeoutForTesting(base::TimeDelta delay);
 
  private:
-  // We have a simple linear progression of states from FRESHLY_CONSTRUCTED to
-  // CLOSED, except that the SEND_CLOSED and RECV_CLOSED states may be skipped
-  // in case of error.
+  // Methods which return a value of type ChannelState may delete |this|. If the
+  // return value is CHANNEL_DELETED, then the caller must return without making
+  // any further access to member variables or methods.
+  typedef WebSocketEventInterface::ChannelState ChannelState;
+
+  // The object passes through a linear progression of states from
+  // FRESHLY_CONSTRUCTED to CLOSED, except that the SEND_CLOSED and RECV_CLOSED
+  // states may be skipped in case of error.
   enum State {
     FRESHLY_CONSTRUCTED,
     CONNECTING,
     CONNECTED,
-    SEND_CLOSED,  // We have sent a Close frame but not received a Close frame.
+    SEND_CLOSED,  // A Close frame has been sent but not received.
     RECV_CLOSED,  // Used briefly between receiving a Close frame and sending
-                  // the response. Once we have responded, the state changes
+                  // the response. Once the response is sent, the state changes
                   // to CLOSED.
     CLOSE_WAIT,   // The Closing Handshake has completed, but the remote server
                   // has not yet closed the connection.
@@ -109,109 +124,124 @@ class NET_EXPORT WebSocketChannel {
                   // has been closed; or the connection is failed.
   };
 
-  // When failing a channel, we may or may not want to send the real reason for
-  // failing to the remote server. This enum is used by FailChannel() to
-  // choose.
+  // When failing a channel, sometimes it is inappropriate to expose the real
+  // reason for failing to the remote server. This enum is used by FailChannel()
+  // to select between sending the real status or a "Going Away" status.
   enum ExposeError {
     SEND_REAL_ERROR,
     SEND_GOING_AWAY,
   };
 
-  // Our implementation of WebSocketStream::ConnectDelegate. We do not inherit
-  // from WebSocketStream::ConnectDelegate directly to avoid cluttering our
-  // public interface with the implementation of those methods, and because the
+  // Implementation of WebSocketStream::ConnectDelegate for
+  // WebSocketChannel. WebSocketChannel does not inherit from
+  // WebSocketStream::ConnectDelegate directly to avoid cluttering the public
+  // interface with the implementation of those methods, and because the
   // lifetime of a WebSocketChannel is longer than the lifetime of the
   // connection process.
   class ConnectDelegate;
 
-  // Starts the connection progress, using a specified factory function.
-  void SendAddChannelRequestWithFactory(
+  // Starts the connection process, using the supplied creator callback.
+  void SendAddChannelRequestWithSuppliedCreator(
+      const GURL& socket_url,
       const std::vector<std::string>& requested_protocols,
       const GURL& origin,
-      URLRequestContext* url_request_context,
-      const WebSocketStreamFactory& factory);
+      const WebSocketStreamCreator& creator);
 
   // Success callback from WebSocketStream::CreateAndConnectStream(). Reports
-  // success to the event interface.
+  // success to the event interface. May delete |this|.
   void OnConnectSuccess(scoped_ptr<WebSocketStream> stream);
 
   // Failure callback from WebSocketStream::CreateAndConnectStream(). Reports
-  // failure to the event interface.
+  // failure to the event interface. May delete |this|.
   void OnConnectFailure(uint16 websocket_error);
 
   // Returns true if state_ is SEND_CLOSED, CLOSE_WAIT or CLOSED.
   bool InClosingState() const;
 
   // Calls WebSocketStream::WriteFrames() with the appropriate arguments
-  void WriteFrames();
+  ChannelState WriteFrames() WARN_UNUSED_RESULT;
 
   // Callback from WebSocketStream::WriteFrames. Sends pending data or adjusts
   // the send quota of the renderer channel as appropriate. |result| is a net
   // error code, usually OK. If |synchronous| is true, then OnWriteDone() is
   // being called from within the WriteFrames() loop and does not need to call
   // WriteFrames() itself.
-  void OnWriteDone(bool synchronous, int result);
+  ChannelState OnWriteDone(bool synchronous, int result) WARN_UNUSED_RESULT;
 
   // Calls WebSocketStream::ReadFrames() with the appropriate arguments.
-  void ReadFrames();
+  ChannelState ReadFrames() WARN_UNUSED_RESULT;
 
   // Callback from WebSocketStream::ReadFrames. Handles any errors and processes
   // the returned chunks appropriately to their type. |result| is a net error
   // code. If |synchronous| is true, then OnReadDone() is being called from
   // within the ReadFrames() loop and does not need to call ReadFrames() itself.
-  void OnReadDone(bool synchronous, int result);
+  ChannelState OnReadDone(bool synchronous, int result) WARN_UNUSED_RESULT;
 
-  // Processes a single chunk that has been read from the stream.
-  void ProcessFrameChunk(scoped_ptr<WebSocketFrameChunk> chunk);
+  // Processes a single frame that has been read from the stream.
+  ChannelState ProcessFrame(
+      scoped_ptr<WebSocketFrame> frame) WARN_UNUSED_RESULT;
 
-  // Handle a frame that we have received enough of to process. May call
-  // event_interface_ methods, send responses to the server, and change the
-  // value of state_.
-  void HandleFrame(const WebSocketFrameHeader::OpCode opcode,
-                   bool is_first_chunk,
-                   bool is_final_chunk,
-                   const scoped_refptr<IOBufferWithSize>& data_buffer);
+  // Handles a frame that the object has received enough of to process. May call
+  // |event_interface_| methods, send responses to the server, and change the
+  // value of |state_|.
+  ChannelState HandleFrame(const WebSocketFrameHeader::OpCode opcode,
+                           bool final,
+                           const scoped_refptr<IOBuffer>& data_buffer,
+                           size_t size) WARN_UNUSED_RESULT;
 
   // Low-level method to send a single frame. Used for both data and control
   // frames. Either sends the frame immediately or buffers it to be scheduled
   // when the current write finishes. |fin| and |op_code| are defined as for
   // SendFrame() above, except that |op_code| may also be a control frame
   // opcode.
-  void SendIOBufferWithSize(bool fin,
+  ChannelState SendIOBuffer(bool fin,
                             WebSocketFrameHeader::OpCode op_code,
-                            const scoped_refptr<IOBufferWithSize>& buffer);
+                            const scoped_refptr<IOBuffer>& buffer,
+                            size_t size) WARN_UNUSED_RESULT;
 
-  // Perform the "Fail the WebSocket Connection" operation as defined in
+  // Performs the "Fail the WebSocket Connection" operation as defined in
   // RFC6455. The supplied code and reason are sent back to the renderer in an
   // OnDropChannel message. If state_ is CONNECTED then a Close message is sent
   // to the remote host. If |expose| is SEND_REAL_ERROR then the remote host is
-  // given the same status code we gave the renderer; otherwise it is sent a
-  // fixed "Going Away" code.  Resets current_frame_header_, closes the
-  // stream_, and sets state_ to CLOSED.
-  void FailChannel(ExposeError expose, uint16 code, const std::string& reason);
+  // given the same status code passed to the renderer; otherwise it is sent a
+  // fixed "Going Away" code.  Closes the stream_ and sets state_ to CLOSED.
+  // FailChannel() always returns CHANNEL_DELETED. It is not valid to access any
+  // member variables or methods after calling FailChannel().
+  ChannelState FailChannel(ExposeError expose,
+                           uint16 code,
+                           const std::string& reason) WARN_UNUSED_RESULT;
 
   // Sends a Close frame to Start the WebSocket Closing Handshake, or to respond
   // to a Close frame from the server. As a special case, setting |code| to
   // kWebSocketErrorNoStatusReceived will create a Close frame with no payload;
   // this is symmetric with the behaviour of ParseClose.
-  void SendClose(uint16 code, const std::string& reason);
+  ChannelState SendClose(uint16 code,
+                         const std::string& reason) WARN_UNUSED_RESULT;
 
   // Parses a Close frame. If no status code is supplied, then |code| is set to
   // 1005 (No status code) with empty |reason|. If the supplied code is
   // outside the valid range, then 1002 (Protocol error) is set instead. If the
   // reason text is not valid UTF-8, then |reason| is set to an empty string
   // instead.
-  void ParseClose(const scoped_refptr<IOBufferWithSize>& buffer,
+  void ParseClose(const scoped_refptr<IOBuffer>& buffer,
+                  size_t size,
                   uint16* code,
                   std::string* reason);
 
-  // The URL to which we connect.
-  const GURL socket_url_;
+  // Called if the closing handshake times out. Closes the connection and
+  // informs the |event_interface_| if appropriate.
+  void CloseTimeout();
+
+  // The URL of the remote server.
+  GURL socket_url_;
 
   // The object receiving events.
   const scoped_ptr<WebSocketEventInterface> event_interface_;
 
-  // The WebSocketStream to which we are sending/receiving data.
+  // The URLRequestContext to pass to the WebSocketStream creator.
+  URLRequestContext* const url_request_context_;
+
+  // The WebSocketStream on which to send and receive data.
   scoped_ptr<WebSocketStream> stream_;
 
   // A data structure containing a vector of frames to be sent and the total
@@ -224,34 +254,32 @@ class NET_EXPORT WebSocketChannel {
   scoped_ptr<SendBuffer> data_to_send_next_;
 
   // Destination for the current call to WebSocketStream::ReadFrames
-  ScopedVector<WebSocketFrameChunk> read_frame_chunks_;
-  // Frame header for the frame currently being received. Only non-NULL while we
-  // are processing the frame. If the frame arrives in multiple chunks, can
-  // remain non-NULL while we wait for additional chunks to arrive. If the
-  // header of the frame was invalid, this is set to NULL, the channel is
-  // failed, and subsequent chunks of the same frame will be ignored.
-  scoped_ptr<WebSocketFrameHeader> current_frame_header_;
+  ScopedVector<WebSocketFrame> read_frames_;
+
   // Handle to an in-progress WebSocketStream creation request. Only non-NULL
   // during the connection process.
   scoped_ptr<WebSocketStreamRequest> stream_request_;
-  // Although it will almost never happen in practice, we can be passed an
-  // incomplete control frame, in which case we need to keep the data around
-  // long enough to reassemble it. This variable will be NULL the rest of the
-  // time.
-  scoped_refptr<IOBufferWithSize> incomplete_control_frame_body_;
-  // The point at which we give the renderer a quota refresh (quota units).
-  // "quota units" are currently bytes. TODO(ricea): Update the definition of
-  // quota units when necessary.
+
+  // If the renderer's send quota reaches this level, it is sent a quota
+  // refresh. "quota units" are currently bytes. TODO(ricea): Update the
+  // definition of quota units when necessary.
   int send_quota_low_water_mark_;
-  // The amount which we refresh the quota to when it reaches the
-  // low_water_mark (quota units).
+  // The level the quota is refreshed to when it reaches the low_water_mark
+  // (quota units).
   int send_quota_high_water_mark_;
   // The current amount of quota that the renderer has available for sending
   // on this logical channel (quota units).
   int current_send_quota_;
 
-  // Storage for the status code and reason from the time we receive the Close
-  // frame until the connection is closed and we can call OnDropChannel().
+  // Timer for the closing handshake.
+  base::OneShotTimer<WebSocketChannel> timer_;
+
+  // Timeout for the closing handshake.
+  base::TimeDelta timeout_;
+
+  // Storage for the status code and reason from the time the Close frame
+  // arrives until the connection is closed and they are passed to
+  // OnDropChannel().
   uint16 closing_code_;
   std::string closing_reason_;
 

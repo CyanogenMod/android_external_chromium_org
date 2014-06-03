@@ -4,35 +4,38 @@
 
 // VideoCaptureManager is used to open/close, start/stop, enumerate available
 // video capture devices, and manage VideoCaptureController's.
-// All functions are expected to be called from Browser::IO thread.
+// All functions are expected to be called from Browser::IO thread. Some helper
+// functions (*OnDeviceThread) will dispatch operations to the device thread.
 // VideoCaptureManager will open OS dependent instances of VideoCaptureDevice.
 // A device can only be opened once.
 
 #ifndef CONTENT_BROWSER_RENDERER_HOST_MEDIA_VIDEO_CAPTURE_MANAGER_H_
 #define CONTENT_BROWSER_RENDERER_HOST_MEDIA_VIDEO_CAPTURE_MANAGER_H_
 
-#include <list>
 #include <map>
+#include <set>
+#include <string>
 
 #include "base/memory/ref_counted.h"
+#include "base/memory/weak_ptr.h"
+#include "base/process/process_handle.h"
 #include "content/browser/renderer_host/media/media_stream_provider.h"
+#include "content/browser/renderer_host/media/video_capture_controller_event_handler.h"
 #include "content/common/content_export.h"
 #include "content/common/media/media_stream_options.h"
 #include "media/video/capture/video_capture_device.h"
 #include "media/video/capture/video_capture_types.h"
 
 namespace content {
-class MockVideoCaptureManager;
 class VideoCaptureController;
 class VideoCaptureControllerEventHandler;
 
 // VideoCaptureManager opens/closes and start/stops video capture devices.
 class CONTENT_EXPORT VideoCaptureManager : public MediaStreamProvider {
  public:
-  // Calling |Start| of this id will open the first device, even though open has
-  // not been called. This is used to be able to use video capture devices
-  // before MediaStream is implemented in Chrome and WebKit.
-  enum { kStartOpenSessionId = 1 };
+  // Callback used to signal the completion of a controller lookup.
+  typedef base::Callback<
+      void(const base::WeakPtr<VideoCaptureController>&)> DoneCB;
 
   VideoCaptureManager();
 
@@ -48,119 +51,167 @@ class CONTENT_EXPORT VideoCaptureManager : public MediaStreamProvider {
 
   virtual void Close(int capture_session_id) OVERRIDE;
 
-  // Functions used to start and stop media flow.
-  // Start allocates the device and no other application can use the device
-  // before Stop is called. Captured video frames will be delivered to
-  // video_capture_receiver.
-  virtual void Start(const media::VideoCaptureParams& capture_params,
-             media::VideoCaptureDevice::EventHandler* video_capture_receiver);
-
-  // Stops capture device referenced by |capture_session_id|. No more frames
-  // will be delivered to the frame receiver, and |stopped_cb| will be called.
-  // |stopped_cb| can be NULL.
-  virtual void Stop(const media::VideoCaptureSessionId& capture_session_id,
-            base::Closure stopped_cb);
-
   // Used by unit test to make sure a fake device is used instead of a real
   // video capture device. Due to timing requirements, the function must be
   // called before EnumerateDevices and Open.
   void UseFakeDevice();
 
-  // Called by VideoCaptureHost to get a controller for |capture_params|.
-  // The controller is returned via calling |added_cb|.
-  void AddController(
-      const media::VideoCaptureParams& capture_params,
-      VideoCaptureControllerEventHandler* handler,
-      base::Callback<void(VideoCaptureController*)> added_cb);
-  // Called by VideoCaptureHost to remove the |controller|.
-  void RemoveController(
-      VideoCaptureController* controller,
-      VideoCaptureControllerEventHandler* handler);
+  // Called by VideoCaptureHost to locate a capture device for |capture_params|,
+  // adding the Host as a client of the device's controller if successful. The
+  // value of |session_id| controls which device is selected;
+  // this value should be a session id previously returned by Open().
+  //
+  // If the device is not already started (i.e., no other client is currently
+  // capturing from this device), this call will cause a VideoCaptureController
+  // and VideoCaptureDevice to be created, possibly asynchronously.
+  //
+  // On success, the controller is returned via calling |done_cb|, indicating
+  // that the client was successfully added. A NULL controller is passed to
+  // the callback on failure.
+  void StartCaptureForClient(media::VideoCaptureSessionId session_id,
+                             const media::VideoCaptureParams& capture_params,
+                             base::ProcessHandle client_render_process,
+                             VideoCaptureControllerID client_id,
+                             VideoCaptureControllerEventHandler* client_handler,
+                             const DoneCB& done_cb);
+
+  // Called by VideoCaptureHost to remove |client_handler|. If this is the last
+  // client of the device, the |controller| and its VideoCaptureDevice may be
+  // destroyed. The client must not access |controller| after calling this
+  // function.
+  void StopCaptureForClient(VideoCaptureController* controller,
+                            VideoCaptureControllerID client_id,
+                            VideoCaptureControllerEventHandler* client_handler);
+
+  // Retrieves the available capture supported formats for a particular device.
+  // The supported formats are cached during device(s) enumeration.
+  void GetDeviceSupportedFormats(int capture_session_id,
+                                 media::VideoCaptureFormats* supported_formats);
 
  private:
-  friend class MockVideoCaptureManager;
-
   virtual ~VideoCaptureManager();
+  struct DeviceEntry;
 
-  typedef std::list<VideoCaptureControllerEventHandler*> Handlers;
-  struct Controller;
+  // This data structure is a convenient wrap of a devices' name and associated
+  // video capture supported formats.
+  struct DeviceInfo {
+    DeviceInfo();
+    DeviceInfo(const media::VideoCaptureDevice::Name& name,
+               const media::VideoCaptureFormats& supported_formats);
+    ~DeviceInfo();
 
-  // Called by the public functions, executed on device thread.
-  void OnEnumerateDevices(MediaStreamType stream_type);
-  void OnOpen(int capture_session_id, const StreamDeviceInfo& device);
-  void OnClose(int capture_session_id);
-  void OnStart(const media::VideoCaptureParams capture_params,
-               media::VideoCaptureDevice::EventHandler* video_capture_receiver);
-  void OnStop(const media::VideoCaptureSessionId capture_session_id,
-              base::Closure stopped_cb);
-  void DoAddControllerOnDeviceThread(
-      const media::VideoCaptureParams capture_params,
-      VideoCaptureControllerEventHandler* handler,
-      base::Callback<void(VideoCaptureController*)> added_cb);
-  void DoRemoveControllerOnDeviceThread(
-      VideoCaptureController* controller,
-      VideoCaptureControllerEventHandler* handler);
+    media::VideoCaptureDevice::Name name;
+    media::VideoCaptureFormats supported_formats;
+  };
+  typedef std::vector<DeviceInfo> DeviceInfos;
 
-  // Executed on Browser::IO thread to call Listener.
+  // Check to see if |entry| has no clients left on its controller. If so,
+  // remove it from the list of devices, and delete it asynchronously. |entry|
+  // may be freed by this function.
+  void DestroyDeviceEntryIfNoClients(DeviceEntry* entry);
+
+  // Helpers to report an event to our Listener.
   void OnOpened(MediaStreamType type, int capture_session_id);
   void OnClosed(MediaStreamType type, int capture_session_id);
-  void OnDevicesEnumerated(MediaStreamType stream_type,
-                           scoped_ptr<StreamDeviceInfoArray> devices);
-  void OnError(MediaStreamType type, int capture_session_id,
-               MediaStreamProviderError error);
+  void OnDevicesInfoEnumerated(
+      MediaStreamType stream_type,
+      const DeviceInfos& new_devices_info_cache);
 
-  // Executed on device thread to make sure Listener is called from
-  // Browser::IO thread.
-  void PostOnOpened(MediaStreamType type, int capture_session_id);
-  void PostOnClosed(MediaStreamType type, int capture_session_id);
-  void PostOnDevicesEnumerated(MediaStreamType stream_type,
-                               scoped_ptr<StreamDeviceInfoArray> devices);
-  void PostOnError(int capture_session_id, MediaStreamProviderError error);
+  // Find a DeviceEntry by its device ID and type, if it is already opened.
+  DeviceEntry* GetDeviceEntryForMediaStreamDevice(
+      const MediaStreamDevice& device_info);
 
-  // Helpers
-  void GetAvailableDevices(MediaStreamType stream_type,
-                           media::VideoCaptureDevice::Names* device_names);
-  bool DeviceOpened(const media::VideoCaptureDevice::Name& device_name);
-  bool DeviceInUse(const media::VideoCaptureDevice* video_capture_device);
-  media::VideoCaptureDevice* GetOpenedDevice(
-      const StreamDeviceInfo& device_info);
+  // Find a DeviceEntry entry for the indicated session, creating a fresh one
+  // if necessary. Returns NULL if the session id is invalid.
+  DeviceEntry* GetOrCreateDeviceEntry(int capture_session_id);
+
+  // Find the DeviceEntry that owns a particular controller pointer.
+  DeviceEntry* GetDeviceEntryForController(
+      const VideoCaptureController* controller);
+
   bool IsOnDeviceThread() const;
-  media::VideoCaptureDevice* GetDeviceInternal(int capture_session_id);
 
-  // The message loop of media stream device thread that this object runs on.
+  // Queries the Names of the devices in the system; the formats supported by
+  // the new devices are also queried, and consolidated with the copy of the
+  // local device info cache passed. The consolidated list of devices and
+  // supported formats is returned.
+  DeviceInfos GetAvailableDevicesInfoOnDeviceThread(
+      MediaStreamType stream_type,
+      const DeviceInfos& old_device_info_cache);
+
+  // Create and Start a new VideoCaptureDevice, storing the result in
+  // |entry->video_capture_device|. Ownership of |client| passes to
+  // the device.
+  void DoStartDeviceOnDeviceThread(
+      DeviceEntry* entry,
+      const media::VideoCaptureParams& params,
+      scoped_ptr<media::VideoCaptureDevice::Client> client);
+
+  // Stop and destroy the VideoCaptureDevice held in
+  // |entry->video_capture_device|.
+  void DoStopDeviceOnDeviceThread(DeviceEntry* entry);
+
+  DeviceInfo* FindDeviceInfoById(const std::string& id,
+                                 DeviceInfos& device_vector);
+
+  // The message loop of media stream device thread, where VCD's live.
   scoped_refptr<base::MessageLoopProxy> device_loop_;
 
   // Only accessed on Browser::IO thread.
   MediaStreamProviderListener* listener_;
   int new_capture_session_id_;
 
-  // Only accessed from device thread.
-  // VideoCaptureManager owns all VideoCaptureDevices and is responsible for
-  // deleting the instances when they are not used any longer.
+  // An entry is kept in this map for every session that has been created via
+  // the Open() entry point. The keys are session_id's. This map is used to
+  // determine which device to use when StartCaptureForClient() occurs. Used
+  // only on the IO thread.
+  std::map<int, MediaStreamDevice> sessions_;
+
+  // An entry, kept in a map, that owns a VideoCaptureDevice and its associated
+  // VideoCaptureController. VideoCaptureManager owns all VideoCaptureDevices
+  // and VideoCaptureControllers and is responsible for deleting the instances
+  // when they are not used any longer.
+  //
+  // The set of currently started VideoCaptureDevice and VideoCaptureController
+  // objects is only accessed from IO thread, though the DeviceEntry instances
+  // themselves may visit to the device thread for device creation and
+  // destruction.
   struct DeviceEntry {
-    MediaStreamType stream_type;
-    media::VideoCaptureDevice* capture_device;  // Maybe shared across sessions.
+    DeviceEntry(MediaStreamType stream_type,
+                const std::string& id,
+                scoped_ptr<VideoCaptureController> controller);
+    ~DeviceEntry();
+
+    const MediaStreamType stream_type;
+    const std::string id;
+
+    // The controller. Only used from the IO thread.
+    scoped_ptr<VideoCaptureController> video_capture_controller;
+
+    // The capture device. Only used from the device thread.
+    scoped_ptr<media::VideoCaptureDevice> video_capture_device;
   };
-  typedef std::map<int, DeviceEntry> VideoCaptureDevices;
-  VideoCaptureDevices devices_;  // Maps capture_session_id to DeviceEntry.
+  typedef std::set<DeviceEntry*> DeviceEntries;
+  DeviceEntries devices_;
 
-  // Set to true if using fake video capture devices for testing,
-  // false by default.  This is only used for the MEDIA_DEVICE_VIDEO_CAPTURE
-  // device type.
-  bool use_fake_device_;
+  // Local cache of the enumerated video capture devices' names and capture
+  // supported formats. A snapshot of the current devices and their capabilities
+  // is composed in GetAvailableDevicesInfoOnDeviceThread() --coming
+  // from EnumerateDevices()--, and this snapshot is used to update this list in
+  // OnDevicesInfoEnumerated(). GetDeviceSupportedFormats() will
+  // use this list if the device is not started, otherwise it will retrieve the
+  // active device capture format from the VideoCaptureController associated.
+  DeviceInfos devices_info_cache_;
 
-  // Only accessed from device thread.
-  // VideoCaptureManager owns all VideoCaptureController's and is responsible
-  // for deleting the instances when they are not used any longer.
-  // VideoCaptureDevice is one-to-one mapped to VideoCaptureController.
-  typedef std::map<media::VideoCaptureDevice*, Controller*> Controllers;
-  Controllers controllers_;
-
-  // We cache the enumerated video capture devices in GetAvailableDevices
-  // (e.g. called by OnEnumerateDevices) and then look up the requested ID when
-  // a device is opened (see OnOpen).
-  // Used only on the device thread.
-  media::VideoCaptureDevice::Names video_capture_devices_;
+  // For unit testing and for performance/quality tests, a test device can be
+  // used instead of a real one. The device can be a simple fake device (a
+  // rolling pacman), or a file that is played in a loop continuously. This only
+  // applies to the MEDIA_DEVICE_VIDEO_CAPTURE device type.
+  enum {
+    DISABLED,
+    TEST_PATTERN,
+    Y4M_FILE
+  } artificial_device_source_for_testing_;
 
   DISALLOW_COPY_AND_ASSIGN(VideoCaptureManager);
 };

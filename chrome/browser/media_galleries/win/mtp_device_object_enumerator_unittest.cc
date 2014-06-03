@@ -14,15 +14,14 @@
 #include "chrome/browser/media_galleries/win/mtp_device_object_entry.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace chrome {
 namespace {
 
 struct MTPDeviceObjectEntryData {
   // Friendly name of the object, e.g. "IMG_9911.jpeg".
-  string16 name;
+  base::string16 name;
 
   // The object identifier, e.g. "o299".
-  string16 object_id;
+  base::string16 object_id;
 
   // True if the current object is a directory/folder/album content type.
   bool is_directory;
@@ -41,7 +40,7 @@ const MTPDeviceObjectEntryData kTestCases[] = {
 };
 
 void TestEnumeratorIsEmpty(MTPDeviceObjectEnumerator* enumerator) {
-  EXPECT_EQ(string16(), enumerator->GetObjectId());
+  EXPECT_EQ(base::string16(), enumerator->GetObjectId());
   EXPECT_EQ(0, enumerator->Size());
   EXPECT_FALSE(enumerator->IsDirectory());
   EXPECT_TRUE(enumerator->LastModifiedTime().is_null());
@@ -91,4 +90,3 @@ TEST_F(MTPDeviceObjectEnumeratorWinTest, Traversal) {
 }
 
 }  // namespace
-}  // namespace chrome

@@ -4,6 +4,7 @@
 
 #include "remoting/client/plugin/chromoting_instance.h"
 
+#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -18,29 +19,31 @@
 #include "base/synchronization/lock.h"
 #include "base/threading/thread.h"
 #include "base/values.h"
+#include "crypto/random.h"
 #include "jingle/glue/thread_wrapper.h"
 #include "media/base/media.h"
 #include "net/socket/ssl_server_socket.h"
 #include "ppapi/cpp/completion_callback.h"
 #include "ppapi/cpp/dev/url_util_dev.h"
+#include "ppapi/cpp/image_data.h"
 #include "ppapi/cpp/input_event.h"
-#include "ppapi/cpp/mouse_cursor.h"
 #include "ppapi/cpp/rect.h"
 #include "remoting/base/constants.h"
 #include "remoting/base/util.h"
 #include "remoting/client/chromoting_client.h"
 #include "remoting/client/client_config.h"
 #include "remoting/client/frame_consumer_proxy.h"
+#include "remoting/client/plugin/delegating_signal_strategy.h"
 #include "remoting/client/plugin/pepper_audio_player.h"
 #include "remoting/client/plugin/pepper_input_handler.h"
 #include "remoting/client/plugin/pepper_port_allocator.h"
-#include "remoting/client/plugin/pepper_signal_strategy.h"
 #include "remoting/client/plugin/pepper_token_fetcher.h"
 #include "remoting/client/plugin/pepper_view.h"
 #include "remoting/client/rectangle_update_decoder.h"
 #include "remoting/protocol/connection_to_host.h"
 #include "remoting/protocol/host_stub.h"
 #include "remoting/protocol/libjingle_transport_factory.h"
+#include "third_party/libjingle/source/talk/base/helpers.h"
 #include "url/gurl.h"
 
 // Windows defines 'PostMessage', so we have to undef it.
@@ -55,7 +58,13 @@ namespace {
 // 32-bit BGRA is 4 bytes per pixel.
 const int kBytesPerPixel = 4;
 
-// Default DPI to assume for old clients that use notifyClientDimensions.
+#if defined(ARCH_CPU_LITTLE_ENDIAN)
+const uint32_t kPixelAlphaMask = 0xff000000;
+#else  // !defined(ARCH_CPU_LITTLE_ENDIAN)
+const uint32_t kPixelAlphaMask = 0x000000ff;
+#endif  // !defined(ARCH_CPU_LITTLE_ENDIAN)
+
+// Default DPI to assume for old clients that use notifyClientResolution.
 const int kDefaultDPI = 96;
 
 // Interval at which to sample performance statistics.
@@ -67,6 +76,14 @@ const char kChromeExtensionUrlScheme[] = "chrome-extension";
 // Maximum width and height of a mouse cursor supported by PPAPI.
 const int kMaxCursorWidth = 32;
 const int kMaxCursorHeight = 32;
+
+#if defined(USE_OPENSSL)
+// Size of the random seed blob used to initialize RNG in libjingle. Libjingle
+// uses the seed only for OpenSSL builds. OpenSSL needs at least 32 bytes of
+// entropy (see http://wiki.openssl.org/index.php/Random_Numbers), but stores
+// 1039 bytes of state, so we initialize it with 1k or random data.
+const int kRandomSeedSize = 1024;
+#endif  // defined(USE_OPENSSL)
 
 std::string ConnectionStateToString(protocol::ConnectionToHost::State state) {
   // Values returned by this function must match the
@@ -125,6 +142,16 @@ std::string ConnectionErrorToString(protocol::ErrorCode error) {
   return std::string();
 }
 
+// Returns true if |pixel| is not completely transparent.
+bool IsVisiblePixel(uint32_t pixel) {
+  return (pixel & kPixelAlphaMask) != 0;
+}
+
+// Returns true if there is at least one visible pixel in the given range.
+bool IsVisibleRow(const uint32_t* begin, const uint32_t* end) {
+  return std::find_if(begin, end, &IsVisiblePixel) != end;
+}
+
 // This flag blocks LOGs to the UI if we're already in the middle of logging
 // to the UI. This prevents a potential infinite loop if we encounter an error
 // while sending the log message to the UI.
@@ -143,8 +170,8 @@ logging::LogMessageHandlerFunction g_logging_old_handler = NULL;
 // String sent in the "hello" message to the webapp to describe features.
 const char ChromotingInstance::kApiFeatures[] =
     "highQualityScaling injectKeyEvent sendClipboardItem remapKey trapKey "
-    "notifyClientDimensions notifyClientResolution pauseVideo pauseAudio "
-    "asyncPin thirdPartyAuth pinlessAuth extensionMessage";
+    "notifyClientResolution pauseVideo pauseAudio asyncPin thirdPartyAuth "
+    "pinlessAuth extensionMessage allowMouseLock";
 
 const char ChromotingInstance::kRequestedCapabilities[] = "";
 const char ChromotingInstance::kSupportedCapabilities[] = "desktopShape";
@@ -174,15 +201,9 @@ ChromotingInstance::ChromotingInstance(PP_Instance pp_instance)
       plugin_task_runner_(new PluginThreadTaskRunner(&plugin_thread_delegate_)),
       context_(plugin_task_runner_.get()),
       input_tracker_(&mouse_input_filter_),
-#if defined(OS_MACOSX)
-      // On Mac we need an extra filter to inject missing keyup events.
-      // See remoting/client/plugin/mac_key_event_processor.h for more details.
-      mac_key_event_processor_(&input_tracker_),
-      key_mapper_(&mac_key_event_processor_),
-#else
       key_mapper_(&input_tracker_),
-#endif
-      input_handler_(&key_mapper_),
+      normalizing_input_filter_(CreateNormalizingInputFilter(&key_mapper_)),
+      input_handler_(this, normalizing_input_filter_.get()),
       use_async_pin_dialog_(false),
       weak_factory_(this) {
   RequestInputEvents(PP_INPUTEVENT_CLASS_MOUSE | PP_INPUTEVENT_CLASS_WHEEL);
@@ -190,6 +211,13 @@ ChromotingInstance::ChromotingInstance(PP_Instance pp_instance)
 
   // Resister this instance to handle debug log messsages.
   RegisterLoggingInstance();
+
+#if defined(USE_OPENSSL)
+  // Initialize random seed for libjingle. It's necessary only with OpenSSL.
+  char random_seed[kRandomSeedSize];
+  crypto::RandBytes(random_seed, sizeof(random_seed));
+  talk_base::InitRandom(random_seed, sizeof(random_seed));
+#endif  // defined(USE_OPENSSL)
 
   // Send hello message.
   scoped_ptr<base::DictionaryValue> data(new base::DictionaryValue());
@@ -210,6 +238,7 @@ ChromotingInstance::~ChromotingInstance() {
   UnregisterLoggingInstance();
 
   // PepperView must be destroyed before the client.
+  view_weak_factory_.reset();
   view_.reset();
 
   client_.reset();
@@ -278,169 +307,46 @@ void ChromotingInstance::HandleMessage(const pp::Var& message) {
   }
 
   if (method == "connect") {
-    ClientConfig config;
-    std::string auth_methods;
-    if (!data->GetString("hostJid", &config.host_jid) ||
-        !data->GetString("hostPublicKey", &config.host_public_key) ||
-        !data->GetString("localJid", &config.local_jid) ||
-        !data->GetString("authenticationMethods", &auth_methods) ||
-        !ParseAuthMethods(auth_methods, &config) ||
-        !data->GetString("authenticationTag", &config.authentication_tag)) {
-      LOG(ERROR) << "Invalid connect() data.";
-      return;
-    }
-    data->GetString("clientPairingId", &config.client_pairing_id);
-    data->GetString("clientPairedSecret", &config.client_paired_secret);
-    if (use_async_pin_dialog_) {
-      config.fetch_secret_callback =
-          base::Bind(&ChromotingInstance::FetchSecretFromDialog,
-                     weak_factory_.GetWeakPtr());
-    } else {
-      std::string shared_secret;
-      if (!data->GetString("sharedSecret", &shared_secret)) {
-        LOG(ERROR) << "sharedSecret not specified in connect().";
-        return;
-      }
-      config.fetch_secret_callback =
-          base::Bind(&ChromotingInstance::FetchSecretFromString, shared_secret);
-    }
-
-    // Read the list of capabilities, if any.
-    if (data->HasKey("capabilities")) {
-      if (!data->GetString("capabilities", &config.capabilities)) {
-        LOG(ERROR) << "Invalid connect() data.";
-        return;
-      }
-    }
-
-    Connect(config);
+    HandleConnect(*data);
   } else if (method == "disconnect") {
-    Disconnect();
+    HandleDisconnect(*data);
   } else if (method == "incomingIq") {
-    std::string iq;
-    if (!data->GetString("iq", &iq)) {
-      LOG(ERROR) << "Invalid onIq() data.";
-      return;
-    }
-    OnIncomingIq(iq);
+    HandleOnIncomingIq(*data);
   } else if (method == "releaseAllKeys") {
-    ReleaseAllKeys();
+    HandleReleaseAllKeys(*data);
   } else if (method == "injectKeyEvent") {
-    int usb_keycode = 0;
-    bool is_pressed = false;
-    if (!data->GetInteger("usbKeycode", &usb_keycode) ||
-        !data->GetBoolean("pressed", &is_pressed)) {
-      LOG(ERROR) << "Invalid injectKeyEvent.";
-      return;
-    }
-
-    protocol::KeyEvent event;
-    event.set_usb_keycode(usb_keycode);
-    event.set_pressed(is_pressed);
-    InjectKeyEvent(event);
+    HandleInjectKeyEvent(*data);
   } else if (method == "remapKey") {
-    int from_keycode = 0;
-    int to_keycode = 0;
-    if (!data->GetInteger("fromKeycode", &from_keycode) ||
-        !data->GetInteger("toKeycode", &to_keycode)) {
-      LOG(ERROR) << "Invalid remapKey.";
-      return;
-    }
-
-    RemapKey(from_keycode, to_keycode);
+    HandleRemapKey(*data);
   } else if (method == "trapKey") {
-    int keycode = 0;
-    bool trap = false;
-    if (!data->GetInteger("keycode", &keycode) ||
-        !data->GetBoolean("trap", &trap)) {
-      LOG(ERROR) << "Invalid trapKey.";
-      return;
-    }
-
-    TrapKey(keycode, trap);
+    HandleTrapKey(*data);
   } else if (method == "sendClipboardItem") {
-    std::string mime_type;
-    std::string item;
-    if (!data->GetString("mimeType", &mime_type) ||
-        !data->GetString("item", &item)) {
-      LOG(ERROR) << "Invalid sendClipboardItem() data.";
-      return;
-    }
-    SendClipboardItem(mime_type, item);
-  } else if (method == "notifyClientDimensions" ||
-             method == "notifyClientResolution") {
-    // notifyClientResolution's width and height are in pixels,
-    // notifyClientDimension's in DIPs, but since for the latter
-    // we assume 96dpi, DIPs and pixels are equivalent.
-    int width = 0;
-    int height = 0;
-    if (!data->GetInteger("width", &width) ||
-        !data->GetInteger("height", &height) ||
-        width <= 0 || height <= 0) {
-      LOG(ERROR) << "Invalid " << method << ".";
-      return;
-    }
-
-    // notifyClientResolution requires that DPI be specified.
-    // For notifyClientDimensions we assume 96dpi.
-    int x_dpi = kDefaultDPI;
-    int y_dpi = kDefaultDPI;
-    if (method == "notifyClientResolution" &&
-        (!data->GetInteger("x_dpi", &x_dpi) ||
-         !data->GetInteger("y_dpi", &y_dpi) ||
-         x_dpi <= 0 || y_dpi <= 0)) {
-      LOG(ERROR) << "Invalid notifyClientResolution.";
-      return;
-    }
-
-    NotifyClientResolution(width, height, x_dpi, y_dpi);
+    HandleSendClipboardItem(*data);
+  } else if (method == "notifyClientResolution") {
+    HandleNotifyClientResolution(*data);
   } else if (method == "pauseVideo") {
-    bool pause = false;
-    if (!data->GetBoolean("pause", &pause)) {
-      LOG(ERROR) << "Invalid pauseVideo.";
-      return;
-    }
-    PauseVideo(pause);
+    HandlePauseVideo(*data);
   } else if (method == "pauseAudio") {
-    bool pause = false;
-    if (!data->GetBoolean("pause", &pause)) {
-      LOG(ERROR) << "Invalid pauseAudio.";
-      return;
-    }
-    PauseAudio(pause);
+    HandlePauseAudio(*data);
   } else if (method == "useAsyncPinDialog") {
     use_async_pin_dialog_ = true;
   } else if (method == "onPinFetched") {
-    std::string pin;
-    if (!data->GetString("pin", &pin)) {
-      LOG(ERROR) << "Invalid onPinFetched.";
-      return;
-    }
-    OnPinFetched(pin);
+    HandleOnPinFetched(*data);
   } else if (method == "onThirdPartyTokenFetched") {
-    std::string token;
-    std::string shared_secret;
-    if (!data->GetString("token", &token) ||
-        !data->GetString("sharedSecret", &shared_secret)) {
-      LOG(ERROR) << "Invalid onThirdPartyTokenFetched data.";
-      return;
-    }
-    OnThirdPartyTokenFetched(token, shared_secret);
+    HandleOnThirdPartyTokenFetched(*data);
   } else if (method == "requestPairing") {
-    std::string client_name;
-    if (!data->GetString("clientName", &client_name)) {
-      LOG(ERROR) << "Invalid requestPairing";
-      return;
-    }
-    RequestPairing(client_name);
+    HandleRequestPairing(*data);
   } else if (method == "extensionMessage") {
-    std::string type, message;
-    if (!data->GetString("type", &type) || !data->GetString("data", &message)) {
-      LOG(ERROR) << "Invalid extensionMessage.";
-      return;
-    }
-    SendClientMessage(type, message);
+    HandleExtensionMessage(*data);
+  } else if (method == "allowMouseLock") {
+    HandleAllowMouseLockMessage();
   }
+}
+
+void ChromotingInstance::DidChangeFocus(bool has_focus) {
+  DCHECK(plugin_task_runner_->BelongsToCurrentThread());
+
+  input_handler_.DidChangeFocus(has_focus);
 }
 
 void ChromotingInstance::DidChangeView(const pp::View& view) {
@@ -462,8 +368,8 @@ bool ChromotingInstance::HandleInputEvent(const pp::InputEvent& event) {
   return input_handler_.HandleInputEvent(event);
 }
 
-void ChromotingInstance::SetDesktopSize(const SkISize& size,
-                                        const SkIPoint& dpi) {
+void ChromotingInstance::SetDesktopSize(const webrtc::DesktopSize& size,
+                                        const webrtc::DesktopVector& dpi) {
   mouse_input_filter_.set_output_size(size);
 
   scoped_ptr<base::DictionaryValue> data(new base::DictionaryValue());
@@ -476,18 +382,18 @@ void ChromotingInstance::SetDesktopSize(const SkISize& size,
   PostChromotingMessage("onDesktopSize", data.Pass());
 }
 
-void ChromotingInstance::SetDesktopShape(const SkRegion& shape) {
-  if (desktop_shape_ && shape == *desktop_shape_)
+void ChromotingInstance::SetDesktopShape(const webrtc::DesktopRegion& shape) {
+  if (desktop_shape_ && shape.Equals(*desktop_shape_))
     return;
 
-  desktop_shape_.reset(new SkRegion(shape));
+  desktop_shape_.reset(new webrtc::DesktopRegion(shape));
 
   scoped_ptr<base::ListValue> rects_value(new base::ListValue());
-  for (SkRegion::Iterator i(shape); !i.done(); i.next()) {
-    SkIRect rect = i.rect();
+  for (webrtc::DesktopRegion::Iterator i(shape); !i.IsAtEnd(); i.Advance()) {
+    const webrtc::DesktopRect& rect = i.rect();
     scoped_ptr<base::ListValue> rect_value(new base::ListValue());
-    rect_value->AppendInteger(rect.x());
-    rect_value->AppendInteger(rect.y());
+    rect_value->AppendInteger(rect.left());
+    rect_value->AppendInteger(rect.top());
     rect_value->AppendInteger(rect.width());
     rect_value->AppendInteger(rect.height());
     rects_value->Append(rect_value.release());
@@ -600,83 +506,67 @@ void ChromotingInstance::InjectClipboardEvent(
 
 void ChromotingInstance::SetCursorShape(
     const protocol::CursorShapeInfo& cursor_shape) {
-  if (!cursor_shape.has_data() ||
-      !cursor_shape.has_width() ||
-      !cursor_shape.has_height() ||
-      !cursor_shape.has_hotspot_x() ||
-      !cursor_shape.has_hotspot_y()) {
+  COMPILE_ASSERT(sizeof(uint32_t) == kBytesPerPixel, rgba_pixels_are_32bit);
+
+  // pp::MouseCursor requires image to be in the native format.
+  if (pp::ImageData::GetNativeImageDataFormat() !=
+      PP_IMAGEDATAFORMAT_BGRA_PREMUL) {
+    LOG(WARNING) << "Unable to set cursor shape - native image format is not"
+                    " premultiplied BGRA";
     return;
   }
 
   int width = cursor_shape.width();
   int height = cursor_shape.height();
 
-  // Verify that |width| and |height| are within sane limits. Otherwise integer
-  // overflow can occur while calculating |cursor_total_bytes| below.
-  if (width <= 0 || width > (SHRT_MAX / 2) ||
-      height <= 0 || height > (SHRT_MAX / 2)) {
-    VLOG(2) << "Cursor dimensions are out of bounds for SetCursor: "
-            << width << "x" << height;
-    return;
-  }
-
-  uint32 cursor_total_bytes = width * height * kBytesPerPixel;
-  if (cursor_shape.data().size() < cursor_total_bytes) {
-    VLOG(2) << "Expected " << cursor_total_bytes << " bytes for a "
-            << width << "x" << height << " cursor. Only received "
-            << cursor_shape.data().size() << " bytes";
-    return;
-  }
-
-  if (pp::ImageData::GetNativeImageDataFormat() !=
-      PP_IMAGEDATAFORMAT_BGRA_PREMUL) {
-    VLOG(2) << "Unable to set cursor shape - non-native image format";
-    return;
-  }
-
   int hotspot_x = cursor_shape.hotspot_x();
   int hotspot_y = cursor_shape.hotspot_y();
-
   int bytes_per_row = width * kBytesPerPixel;
-  const uint8* src_row_data = reinterpret_cast<const uint8*>(
+  int src_stride = width;
+  const uint32_t* src_row_data = reinterpret_cast<const uint32_t*>(
       cursor_shape.data().data());
-  int stride = bytes_per_row;
+  const uint32_t* src_row_data_end = src_row_data + src_stride * height;
 
-  // If the cursor exceeds the size permitted by PPAPI then crop it, keeping
-  // the hotspot as close to the center of the new cursor shape as possible.
-  if (height > kMaxCursorHeight) {
-    int y = hotspot_y - (kMaxCursorHeight / 2);
-    y = std::max(y, 0);
-    y = std::min(y, height - kMaxCursorHeight);
+  scoped_ptr<pp::ImageData> cursor_image;
+  pp::Point cursor_hotspot;
 
-    src_row_data += stride * y;
-    height = kMaxCursorHeight;
-    hotspot_y -= y;
+  // Check if the cursor is visible.
+  if (IsVisibleRow(src_row_data, src_row_data_end)) {
+    // If the cursor exceeds the size permitted by PPAPI then crop it, keeping
+    // the hotspot as close to the center of the new cursor shape as possible.
+    if (height > kMaxCursorHeight) {
+      int y = hotspot_y - (kMaxCursorHeight / 2);
+      y = std::max(y, 0);
+      y = std::min(y, height - kMaxCursorHeight);
+
+      src_row_data += src_stride * y;
+      height = kMaxCursorHeight;
+      hotspot_y -= y;
+    }
+    if (width > kMaxCursorWidth) {
+      int x = hotspot_x - (kMaxCursorWidth / 2);
+      x = std::max(x, 0);
+      x = std::min(x, height - kMaxCursorWidth);
+
+      src_row_data += x;
+      width = kMaxCursorWidth;
+      bytes_per_row = width * kBytesPerPixel;
+      hotspot_x -= x;
+    }
+
+    cursor_image.reset(new pp::ImageData(this, PP_IMAGEDATAFORMAT_BGRA_PREMUL,
+                                          pp::Size(width, height), false));
+    cursor_hotspot = pp::Point(hotspot_x, hotspot_y);
+
+    uint8* dst_row_data = reinterpret_cast<uint8*>(cursor_image->data());
+    for (int row = 0; row < height; row++) {
+      memcpy(dst_row_data, src_row_data, bytes_per_row);
+      src_row_data += src_stride;
+      dst_row_data += cursor_image->stride();
+    }
   }
-  if (width > kMaxCursorWidth) {
-    int x = hotspot_x - (kMaxCursorWidth / 2);
-    x = std::max(x, 0);
-    x = std::min(x, height - kMaxCursorWidth);
 
-    src_row_data += x * kBytesPerPixel;
-    width = kMaxCursorWidth;
-    bytes_per_row = width * kBytesPerPixel;
-    hotspot_x -= x;
-  }
-
-  pp::ImageData cursor_image(this, PP_IMAGEDATAFORMAT_BGRA_PREMUL,
-                             pp::Size(width, height), false);
-
-  uint8* dst_row_data = reinterpret_cast<uint8*>(cursor_image.data());
-  for (int row = 0; row < height; row++) {
-    memcpy(dst_row_data, src_row_data, bytes_per_row);
-    src_row_data += stride;
-    dst_row_data += cursor_image.stride();
-  }
-
-  pp::MouseCursor::SetCursor(this, PP_MOUSECURSOR_TYPE_CUSTOM,
-                             cursor_image,
-                             pp::Point(hotspot_x, hotspot_y));
+  input_handler_.SetMouseCursor(cursor_image.Pass(), cursor_hotspot);
 }
 
 void ChromotingInstance::OnFirstFrameReceived() {
@@ -684,15 +574,62 @@ void ChromotingInstance::OnFirstFrameReceived() {
   PostChromotingMessage("onFirstFrameReceived", data.Pass());
 }
 
-void ChromotingInstance::Connect(const ClientConfig& config) {
+void ChromotingInstance::HandleConnect(const base::DictionaryValue& data) {
+  ClientConfig config;
+  std::string local_jid;
+  std::string auth_methods;
+  if (!data.GetString("hostJid", &config.host_jid) ||
+      !data.GetString("hostPublicKey", &config.host_public_key) ||
+      !data.GetString("localJid", &local_jid) ||
+      !data.GetString("authenticationMethods", &auth_methods) ||
+      !ParseAuthMethods(auth_methods, &config) ||
+      !data.GetString("authenticationTag", &config.authentication_tag)) {
+    LOG(ERROR) << "Invalid connect() data.";
+    return;
+  }
+  data.GetString("clientPairingId", &config.client_pairing_id);
+  data.GetString("clientPairedSecret", &config.client_paired_secret);
+  if (use_async_pin_dialog_) {
+    config.fetch_secret_callback =
+        base::Bind(&ChromotingInstance::FetchSecretFromDialog,
+                   weak_factory_.GetWeakPtr());
+  } else {
+    std::string shared_secret;
+    if (!data.GetString("sharedSecret", &shared_secret)) {
+      LOG(ERROR) << "sharedSecret not specified in connect().";
+      return;
+    }
+    config.fetch_secret_callback =
+        base::Bind(&ChromotingInstance::FetchSecretFromString, shared_secret);
+  }
+
+  // Read the list of capabilities, if any.
+  if (data.HasKey("capabilities")) {
+    if (!data.GetString("capabilities", &config.capabilities)) {
+      LOG(ERROR) << "Invalid connect() data.";
+      return;
+    }
+  }
+
+  ConnectWithConfig(config, local_jid);
+}
+
+void ChromotingInstance::ConnectWithConfig(const ClientConfig& config,
+                                           const std::string& local_jid) {
   DCHECK(plugin_task_runner_->BelongsToCurrentThread());
 
   jingle_glue::JingleThreadWrapper::EnsureForCurrentMessageLoop();
 
+
+  view_.reset(new PepperView(this, &context_));
+  view_weak_factory_.reset(
+      new base::WeakPtrFactory<FrameConsumer>(view_.get()));
+
   // RectangleUpdateDecoder runs on a separate thread so for now we wrap
   // PepperView with a ref-counted proxy object.
   scoped_refptr<FrameConsumerProxy> consumer_proxy =
-      new FrameConsumerProxy(plugin_task_runner_);
+      new FrameConsumerProxy(plugin_task_runner_,
+                             view_weak_factory_->GetWeakPtr());
 
   host_connection_.reset(new protocol::ConnectionToHost(true));
   scoped_ptr<AudioPlayer> audio_player(new PepperAudioPlayer(this));
@@ -700,8 +637,8 @@ void ChromotingInstance::Connect(const ClientConfig& config) {
                                      host_connection_.get(), this,
                                      consumer_proxy, audio_player.Pass()));
 
-  view_.reset(new PepperView(this, &context_, client_->GetFrameProducer()));
-  consumer_proxy->Attach(view_->AsWeakPtr());
+  view_->Initialize(client_->GetFrameProducer());
+
   if (!plugin_view_.is_null()) {
     view_->SetView(plugin_view_);
   }
@@ -710,19 +647,20 @@ void ChromotingInstance::Connect(const ClientConfig& config) {
   mouse_input_filter_.set_input_stub(host_connection_->input_stub());
   mouse_input_filter_.set_input_size(view_->get_view_size_dips());
 
-  LOG(INFO) << "Connecting to " << config.host_jid
-            << ". Local jid: " << config.local_jid << ".";
+  VLOG(0) << "Connecting to " << config.host_jid
+          << ". Local jid: " << local_jid << ".";
 
-  // Setup the PepperSignalStrategy.
-  signal_strategy_.reset(new PepperSignalStrategy(
-      config.local_jid,
-      base::Bind(&ChromotingInstance::SendOutgoingIq,
-                 weak_factory_.GetWeakPtr())));
+  // Setup the signal strategy.
+  signal_strategy_.reset(new DelegatingSignalStrategy(
+      local_jid, base::Bind(&ChromotingInstance::SendOutgoingIq,
+                            weak_factory_.GetWeakPtr())));
 
   scoped_ptr<cricket::HttpPortAllocatorBase> port_allocator(
       PepperPortAllocator::Create(this));
   scoped_ptr<protocol::TransportFactory> transport_factory(
-      new protocol::LibjingleTransportFactory(port_allocator.Pass(), false));
+      new protocol::LibjingleTransportFactory(
+          signal_strategy_.get(), port_allocator.Pass(),
+          NetworkSettings(NetworkSettings::NAT_TRAVERSAL_ENABLED)));
 
   // Kick off the connection.
   client_->Start(signal_strategy_.get(), transport_factory.Pass());
@@ -734,13 +672,14 @@ void ChromotingInstance::Connect(const ClientConfig& config) {
       base::TimeDelta::FromMilliseconds(kPerfStatsIntervalMs));
 }
 
-void ChromotingInstance::Disconnect() {
+void ChromotingInstance::HandleDisconnect(const base::DictionaryValue& data) {
   DCHECK(plugin_task_runner_->BelongsToCurrentThread());
 
   // PepperView must be destroyed before the client.
+  view_weak_factory_.reset();
   view_.reset();
 
-  LOG(INFO) << "Disconnecting from host.";
+  VLOG(0) << "Disconnecting from host.";
 
   client_.reset();
 
@@ -749,35 +688,77 @@ void ChromotingInstance::Disconnect() {
   host_connection_.reset();
 }
 
-void ChromotingInstance::OnIncomingIq(const std::string& iq) {
+void ChromotingInstance::HandleOnIncomingIq(const base::DictionaryValue& data) {
+  std::string iq;
+  if (!data.GetString("iq", &iq)) {
+    LOG(ERROR) << "Invalid incomingIq() data.";
+    return;
+  }
+
   // Just ignore the message if it's received before Connect() is called. It's
   // likely to be a leftover from a previous session, so it's safe to ignore it.
   if (signal_strategy_)
     signal_strategy_->OnIncomingMessage(iq);
 }
 
-void ChromotingInstance::ReleaseAllKeys() {
+void ChromotingInstance::HandleReleaseAllKeys(
+    const base::DictionaryValue& data) {
   if (IsConnected())
     input_tracker_.ReleaseAll();
 }
 
-void ChromotingInstance::InjectKeyEvent(const protocol::KeyEvent& event) {
+void ChromotingInstance::HandleInjectKeyEvent(
+      const base::DictionaryValue& data) {
+  int usb_keycode = 0;
+  bool is_pressed = false;
+  if (!data.GetInteger("usbKeycode", &usb_keycode) ||
+      !data.GetBoolean("pressed", &is_pressed)) {
+    LOG(ERROR) << "Invalid injectKeyEvent.";
+    return;
+  }
+
+  protocol::KeyEvent event;
+  event.set_usb_keycode(usb_keycode);
+  event.set_pressed(is_pressed);
+
   // Inject after the KeyEventMapper, so the event won't get mapped or trapped.
   if (IsConnected())
     input_tracker_.InjectKeyEvent(event);
 }
 
-void ChromotingInstance::RemapKey(uint32 in_usb_keycode,
-                                  uint32 out_usb_keycode) {
-  key_mapper_.RemapKey(in_usb_keycode, out_usb_keycode);
+void ChromotingInstance::HandleRemapKey(const base::DictionaryValue& data) {
+  int from_keycode = 0;
+  int to_keycode = 0;
+  if (!data.GetInteger("fromKeycode", &from_keycode) ||
+      !data.GetInteger("toKeycode", &to_keycode)) {
+    LOG(ERROR) << "Invalid remapKey.";
+    return;
+  }
+
+  key_mapper_.RemapKey(from_keycode, to_keycode);
 }
 
-void ChromotingInstance::TrapKey(uint32 usb_keycode, bool trap) {
-  key_mapper_.TrapKey(usb_keycode, trap);
+void ChromotingInstance::HandleTrapKey(const base::DictionaryValue& data) {
+  int keycode = 0;
+  bool trap = false;
+  if (!data.GetInteger("keycode", &keycode) ||
+      !data.GetBoolean("trap", &trap)) {
+    LOG(ERROR) << "Invalid trapKey.";
+    return;
+  }
+
+  key_mapper_.TrapKey(keycode, trap);
 }
 
-void ChromotingInstance::SendClipboardItem(const std::string& mime_type,
-                                           const std::string& item) {
+void ChromotingInstance::HandleSendClipboardItem(
+    const base::DictionaryValue& data) {
+  std::string mime_type;
+  std::string item;
+  if (!data.GetString("mimeType", &mime_type) ||
+      !data.GetString("item", &item)) {
+    LOG(ERROR) << "Invalid sendClipboardItem data.";
+    return;
+  }
   if (!IsConnected()) {
     return;
   }
@@ -787,10 +768,22 @@ void ChromotingInstance::SendClipboardItem(const std::string& mime_type,
   host_connection_->clipboard_stub()->InjectClipboardEvent(event);
 }
 
-void ChromotingInstance::NotifyClientResolution(int width,
-                                                int height,
-                                                int x_dpi,
-                                                int y_dpi) {
+void ChromotingInstance::HandleNotifyClientResolution(
+    const base::DictionaryValue& data) {
+  int width = 0;
+  int height = 0;
+  int x_dpi = kDefaultDPI;
+  int y_dpi = kDefaultDPI;
+  if (!data.GetInteger("width", &width) ||
+      !data.GetInteger("height", &height) ||
+      !data.GetInteger("x_dpi", &x_dpi) ||
+      !data.GetInteger("y_dpi", &y_dpi) ||
+      width <= 0 || height <= 0 ||
+      x_dpi <= 0 || y_dpi <= 0) {
+    LOG(ERROR) << "Invalid notifyClientResolution.";
+    return;
+  }
+
   if (!IsConnected()) {
     return;
   }
@@ -808,7 +801,12 @@ void ChromotingInstance::NotifyClientResolution(int width,
   host_connection_->host_stub()->NotifyClientResolution(client_resolution);
 }
 
-void ChromotingInstance::PauseVideo(bool pause) {
+void ChromotingInstance::HandlePauseVideo(const base::DictionaryValue& data) {
+  bool pause = false;
+  if (!data.GetBoolean("pause", &pause)) {
+    LOG(ERROR) << "Invalid pauseVideo.";
+    return;
+  }
   if (!IsConnected()) {
     return;
   }
@@ -817,7 +815,12 @@ void ChromotingInstance::PauseVideo(bool pause) {
   host_connection_->host_stub()->ControlVideo(video_control);
 }
 
-void ChromotingInstance::PauseAudio(bool pause) {
+void ChromotingInstance::HandlePauseAudio(const base::DictionaryValue& data) {
+  bool pause = false;
+  if (!data.GetBoolean("pause", &pause)) {
+    LOG(ERROR) << "Invalid pauseAudio.";
+    return;
+  }
   if (!IsConnected()) {
     return;
   }
@@ -825,7 +828,12 @@ void ChromotingInstance::PauseAudio(bool pause) {
   audio_control.set_enable(!pause);
   host_connection_->host_stub()->ControlAudio(audio_control);
 }
-void ChromotingInstance::OnPinFetched(const std::string& pin) {
+void ChromotingInstance::HandleOnPinFetched(const base::DictionaryValue& data) {
+  std::string pin;
+  if (!data.GetString("pin", &pin)) {
+    LOG(ERROR) << "Invalid onPinFetched.";
+    return;
+  }
   if (!secret_fetched_callback_.is_null()) {
     secret_fetched_callback_.Run(pin);
     secret_fetched_callback_.Reset();
@@ -834,9 +842,15 @@ void ChromotingInstance::OnPinFetched(const std::string& pin) {
   }
 }
 
-void ChromotingInstance::OnThirdPartyTokenFetched(
-    const std::string& token,
-    const std::string& shared_secret) {
+void ChromotingInstance::HandleOnThirdPartyTokenFetched(
+    const base::DictionaryValue& data) {
+  std::string token;
+  std::string shared_secret;
+  if (!data.GetString("token", &token) ||
+      !data.GetString("sharedSecret", &shared_secret)) {
+    LOG(ERROR) << "Invalid onThirdPartyTokenFetched data.";
+    return;
+  }
   if (pepper_token_fetcher_.get()) {
     pepper_token_fetcher_->OnTokenFetched(token, shared_secret);
     pepper_token_fetcher_.reset();
@@ -845,7 +859,13 @@ void ChromotingInstance::OnThirdPartyTokenFetched(
   }
 }
 
-void ChromotingInstance::RequestPairing(const std::string& client_name) {
+void ChromotingInstance::HandleRequestPairing(
+    const base::DictionaryValue& data) {
+  std::string client_name;
+  if (!data.GetString("clientName", &client_name)) {
+    LOG(ERROR) << "Invalid requestPairing";
+    return;
+  }
   if (!IsConnected()) {
     return;
   }
@@ -854,15 +874,26 @@ void ChromotingInstance::RequestPairing(const std::string& client_name) {
   host_connection_->host_stub()->RequestPairing(pairing_request);
 }
 
-void ChromotingInstance::SendClientMessage(const std::string& type,
-                                           const std::string& data) {
+void ChromotingInstance::HandleExtensionMessage(
+    const base::DictionaryValue& data) {
+  std::string type;
+  std::string message_data;
+  if (!data.GetString("type", &type) ||
+      !data.GetString("data", &message_data)) {
+    LOG(ERROR) << "Invalid extensionMessage.";
+    return;
+  }
   if (!IsConnected()) {
     return;
   }
   protocol::ExtensionMessage message;
   message.set_type(type);
-  message.set_data(data);
+  message.set_data(message_data);
   host_connection_->host_stub()->DeliverClientMessage(message);
+}
+
+void ChromotingInstance::HandleAllowMouseLockMessage() {
+  input_handler_.AllowMouseLock();
 }
 
 ChromotingStats* ChromotingInstance::GetStats() {

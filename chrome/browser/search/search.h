@@ -40,6 +40,14 @@ enum OptInState {
   INSTANT_EXTENDED_OPT_IN_STATE_ENUM_COUNT,
 };
 
+enum DisplaySearchButtonConditions {
+  DISPLAY_SEARCH_BUTTON_NEVER,
+  DISPLAY_SEARCH_BUTTON_FOR_STR,         // STR = Search Term Replacement
+  DISPLAY_SEARCH_BUTTON_FOR_STR_OR_IIP,  // IIP = Input In Progress
+  DISPLAY_SEARCH_BUTTON_ALWAYS,
+  DISPLAY_SEARCH_BUTTON_NUM_VALUES,
+};
+
 // Use this value for "start margin" to prevent the "es_sm" parameter from
 // being used.
 extern const int kDisableStartMargin;
@@ -63,13 +71,13 @@ bool IsQueryExtractionEnabled();
 // consider IsQueryExtractionEnabled() and Instant support state of the page and
 // does not check for a privileged process, so most callers should use
 // GetSearchTerms() below instead.
-string16 GetSearchTermsFromURL(Profile* profile, const GURL& url);
+base::string16 GetSearchTermsFromURL(Profile* profile, const GURL& url);
 
 // Returns the search terms attached to a specific NavigationEntry, or empty
 // string otherwise. Does not consider IsQueryExtractionEnabled() and does not
 // check Instant support, so most callers should use GetSearchTerms() below
 // instead.
-string16 GetSearchTermsFromNavigationEntry(
+base::string16 GetSearchTermsFromNavigationEntry(
     const content::NavigationEntry* entry);
 
 // Returns search terms if this WebContents is a search results page. It looks
@@ -79,7 +87,7 @@ string16 GetSearchTermsFromNavigationEntry(
 // Returns a blank string if search terms were not found, or if search terms
 // extraction is disabled for this WebContents or profile, or if |contents|
 // does not support Instant.
-string16 GetSearchTerms(const content::WebContents* contents);
+base::string16 GetSearchTerms(const content::WebContents* contents);
 
 // Returns true if |url| should be rendered in the Instant renderer process.
 bool ShouldAssignURLToInstantRenderer(const GURL& url, Profile* profile);
@@ -107,11 +115,27 @@ bool NavEntryIsInstantNTP(const content::WebContents* contents,
 // because it doesn't satisfy the requirements for extended mode or if Instant
 // is disabled through preferences). Callers must check that the returned URL is
 // valid before using it. The value of |start_margin| is used for the "es_sm"
-// parameter in the URL.
+// parameter in the URL. |force_instant_results| forces a search page to update
+// results incrementally even if that is otherwise disabled by google.com
+// preferences.
 // NOTE: This method expands the default search engine's instant_url template,
 // so it shouldn't be called from SearchTermsData or other such code that would
 // lead to an infinite recursion.
-GURL GetInstantURL(Profile* profile, int start_margin);
+GURL GetInstantURL(Profile* profile,
+                   int start_margin,
+                   bool force_instant_results);
+
+// Returns URLs associated with the default search engine for |profile|.
+std::vector<GURL> GetSearchURLs(Profile* profile);
+
+// Returns the default search engine base page URL to prefetch search results.
+// Returns an empty URL if 'prefetch_results' flag is set to false in field
+// trials.
+GURL GetSearchResultPrefetchBaseURL(Profile* profile);
+
+// Returns true if 'prefetch_results' flag is set to true in field trials to
+// prefetch high-confidence search suggestions.
+bool ShouldPrefetchSearchResults();
 
 // Returns the Local Instant URL of the New Tab Page.
 // TODO(kmadhusu): Remove this function and update the call sites.
@@ -122,23 +146,22 @@ GURL GetLocalInstantURL(Profile* profile);
 // match.  See comments on ShouldHideTopMatch in autocomplete_result.h.
 bool ShouldHideTopVerbatimMatch();
 
-// Returns true if 'use_remote_ntp_on_startup' flag is enabled in field trials
-// to always show the remote NTP on browser startup.
-bool ShouldPreferRemoteNTPOnStartup();
+// Returns true if the cacheable NTP should be shown and false if not.
+// Exposed for testing.
+bool ShouldUseCacheableNTP();
 
 // Returns true if the Instant NTP should be shown and false if not.
 bool ShouldShowInstantNTP();
 
-// Returns true if the recent tabs link should be shown on the local NTP in
-// field trials.
-bool ShouldShowRecentTabsOnNTP();
+// Returns when we should show a search button in the omnibox.  This may be any
+// of several values, some of which depend on whether the underlying state of
+// the page would normally be to perform search term replacement; see also
+// ToolbarModel::WouldPerformSearchTermReplacement().
+DisplaySearchButtonConditions GetDisplaySearchButtonConditions();
 
-// Returns true if Instant Extended should be disabled on the search results
-// page.
-bool ShouldSuppressInstantExtendedOnSRP();
-
-// Returns true if |my_url| matches |other_url|.
-bool MatchesOriginAndPath(const GURL& my_url, const GURL& other_url);
+// Returns true if the origin chip should be shown next to the omnibox. This
+// also includes the related changes to the omnibox.
+bool ShouldDisplayOriginChip();
 
 // Transforms the input |url| into its "effective URL". The returned URL
 // facilitates grouping process-per-site. The |url| is transformed, for
@@ -186,30 +209,27 @@ void SetInstantSupportStateInNavigationEntry(InstantSupportState state,
 InstantSupportState GetInstantSupportStateFromNavigationEntry(
     const content::NavigationEntry& entry);
 
+// Returns true if the field trial flag is enabled to prefetch results on SRP.
+bool ShouldPrefetchSearchResultsOnSRP();
+
 // -----------------------------------------------------
 // The following APIs are exposed for use in tests only.
 // -----------------------------------------------------
 
-// Forces the Instant Extended API to be enabled for tests.
-void EnableInstantExtendedAPIForTesting();
-
-// Forces the Instant Extended API to be disabled for tests.
-void DisableInstantExtendedAPIForTesting();
+// Forces query in the omnibox to be on for tests.
+void EnableQueryExtractionForTesting();
 
 // Type for a collection of experiment configuration parameters.
 typedef std::vector<std::pair<std::string, std::string> > FieldTrialFlags;
 
-// Given a field trial group name, parses out the group number and configuration
+// Finds the active field trial group name and parses out the configuration
 // flags. On success, |flags| will be filled with the field trial flags. |flags|
-// must not be NULL. If not NULL, |group_number| will receive the experiment
-// group number.
-// Returns true iff |group_name| is successfully parsed and not disabled.
+// must not be NULL. Returns true iff the active field trial is successfully
+// parsed and not disabled.
 // Note that |flags| may be successfully populated in some cases when false is
 // returned - in these cases it should not be used.
 // Exposed for testing only.
-bool GetFieldTrialInfo(const std::string& group_name,
-                       FieldTrialFlags* flags,
-                       uint64* group_number);
+bool GetFieldTrialInfo(FieldTrialFlags* flags);
 
 // Given a FieldTrialFlags object, returns the string value of the provided
 // flag.
@@ -231,9 +251,8 @@ bool GetBoolValueForFlagWithDefault(const std::string& flag,
                                     bool default_value,
                                     const FieldTrialFlags& flags);
 
-// Let tests reset the gate that prevents metrics from being sent more than
-// once.
-void ResetInstantExtendedOptInStateGateForTest();
+// Returns the Cacheable New Tab Page URL for the given |profile|.
+GURL GetNewTabPageURL(Profile* profile);
 
 }  // namespace chrome
 

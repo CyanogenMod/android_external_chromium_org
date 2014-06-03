@@ -23,8 +23,9 @@
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
-#include "ui/base/events/event.h"
+#include "ui/base/accessibility/accessible_view_state.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/events/event.h"
 #include "ui/views/background.h"
 #include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/label.h"
@@ -85,7 +86,7 @@ BookmarkEditorView::~BookmarkEditorView() {
   bb_model_->RemoveObserver(this);
 }
 
-string16 BookmarkEditorView::GetDialogButtonLabel(
+base::string16 BookmarkEditorView::GetDialogButtonLabel(
     ui::DialogButton button) const {
   if (button == ui::DIALOG_BUTTON_OK)
     return l10n_util::GetStringUTF16(IDS_SAVE);
@@ -115,7 +116,7 @@ bool BookmarkEditorView::CanResize() const {
   return true;
 }
 
-string16 BookmarkEditorView::GetWindowTitle() const {
+base::string16 BookmarkEditorView::GetWindowTitle() const {
   return l10n_util::GetStringUTF16(details_.GetWindowTitleId());
 }
 
@@ -154,13 +155,19 @@ bool BookmarkEditorView::CanEdit(views::TreeView* tree_view,
 }
 
 void BookmarkEditorView::ContentsChanged(views::Textfield* sender,
-                                         const string16& new_contents) {
+                                         const base::string16& new_contents) {
   UserInputChanged();
 }
 
 bool BookmarkEditorView::HandleKeyEvent(views::Textfield* sender,
                                         const ui::KeyEvent& key_event) {
     return false;
+}
+
+void BookmarkEditorView::GetAccessibleState(ui::AccessibleViewState* state) {
+  state->name =
+      l10n_util::GetStringUTF16(IDS_BOOKMARK_EDITOR_TITLE);
+  state->role = ui::AccessibilityTypes::ROLE_DIALOG;
 }
 
 void BookmarkEditorView::ButtonPressed(views::Button* sender,
@@ -258,7 +265,7 @@ void BookmarkEditorView::Init() {
   title_label_ = new views::Label(
       l10n_util::GetStringUTF16(IDS_BOOKMARK_EDITOR_NAME_LABEL));
 
-  string16 title;
+  base::string16 title;
   GURL url;
   if (details_.type == EditDetails::EXISTING_NODE) {
     title = details_.existing_node->GetTitle();
@@ -270,9 +277,10 @@ void BookmarkEditorView::Init() {
     title = details_.title;
   }
   title_tf_ = new views::Textfield;
+  title_tf_->SetAccessibleName(
+      l10n_util::GetStringUTF16(IDS_BOOKMARK_AX_EDITOR_NAME_LABEL));
   title_tf_->SetText(title);
   title_tf_->SetController(this);
-  title_tf_->SetAccessibleName(title_label_->text());
 
   if (show_tree_) {
     tree_view_ = new views::TreeView;
@@ -301,13 +309,8 @@ void BookmarkEditorView::Init() {
                         GridLayout::USE_PREF, 0, 0);
 
   column_set = layout->AddColumnSet(single_column_view_set_id);
-  if (views::DialogDelegate::UseNewStyle()) {
-    column_set->AddColumn(GridLayout::FILL, GridLayout::FILL, 1,
-                          GridLayout::USE_PREF, 0, 0);
-  } else {
-    column_set->AddColumn(GridLayout::FILL, GridLayout::FILL, 1,
-                          GridLayout::FIXED, 300, 0);
-  }
+  column_set->AddColumn(GridLayout::FILL, GridLayout::FILL, 1,
+                        GridLayout::USE_PREF, 0, 0);
 
   column_set = layout->AddColumnSet(buttons_column_set_id);
   column_set->AddColumn(GridLayout::FILL, GridLayout::LEADING, 0,
@@ -333,7 +336,8 @@ void BookmarkEditorView::Init() {
         profile_ ? user_prefs::UserPrefs::Get(profile_) : NULL;
     url_tf_->SetText(chrome::FormatBookmarkURLForDisplay(url, prefs));
     url_tf_->SetController(this);
-    url_tf_->SetAccessibleName(url_label_->text());
+    url_tf_->SetAccessibleName(
+        l10n_util::GetStringUTF16(IDS_BOOKMARK_AX_EDITOR_URL_LABEL));
 
     layout->AddPaddingRow(0, views::kRelatedControlVerticalSpacing);
 
@@ -478,7 +482,7 @@ void BookmarkEditorView::ExpandAndSelect() {
 }
 
 BookmarkEditorView::EditorNode* BookmarkEditorView::CreateRootNode() {
-  EditorNode* root_node = new EditorNode(string16(), 0);
+  EditorNode* root_node = new EditorNode(base::string16(), 0);
   const BookmarkNode* bb_root_node = bb_model_->root_node();
   CreateNodes(bb_root_node, root_node);
   DCHECK(root_node->child_count() >= 2 && root_node->child_count() <= 3);
@@ -539,7 +543,7 @@ void BookmarkEditorView::ApplyEdits(EditorNode* parent) {
   bb_model_->RemoveObserver(this);
 
   GURL new_url(GetInputURL());
-  string16 new_title(title_tf_->text());
+  base::string16 new_title(title_tf_->text());
 
   if (!show_tree_) {
     BookmarkEditor::ApplyEditsWithNoFolderChange(
@@ -621,8 +625,9 @@ ui::SimpleMenuModel* BookmarkEditorView::GetMenuModel() {
   return context_menu_model_.get();
 }
 
-void BookmarkEditorView::EditorTreeModel::SetTitle(ui::TreeModelNode* node,
-                                                   const string16& title) {
+void BookmarkEditorView::EditorTreeModel::SetTitle(
+    ui::TreeModelNode* node,
+    const base::string16& title) {
   if (!title.empty())
     ui::TreeNodeModel<EditorNode>::SetTitle(node, title);
 }

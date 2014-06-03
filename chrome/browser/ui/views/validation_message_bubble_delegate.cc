@@ -20,13 +20,13 @@ static const int kTextVerticalMargin = 4;
 
 ValidationMessageBubbleDelegate::ValidationMessageBubbleDelegate(
     const gfx::Rect& anchor_in_screen,
-    const string16& main_text,
-    const string16& sub_text,
+    const base::string16& main_text,
+    const base::string16& sub_text,
     Observer* observer)
     : observer_(observer), width_(0), height_(0) {
   set_use_focusless(true);
   set_arrow(views::BubbleBorder::TOP_LEFT);
-  set_anchor_rect(anchor_in_screen);
+  SetAnchorRect(anchor_in_screen);
 
   ResourceBundle& bundle = ResourceBundle::GetSharedInstance();
   views::ImageView* icon = new views::ImageView();
@@ -86,8 +86,7 @@ void ValidationMessageBubbleDelegate::Close() {
 
 void ValidationMessageBubbleDelegate::SetPositionRelativeToAnchor(
     const gfx::Rect& anchor_in_screen) {
-  set_anchor_rect(anchor_in_screen);
-  SizeToContents();
+  SetAnchorRect(anchor_in_screen);
 }
 
 gfx::Size ValidationMessageBubbleDelegate::GetPreferredSize() {

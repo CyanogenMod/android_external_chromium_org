@@ -69,7 +69,7 @@ class DeviceSettingsTestHelper : public SessionManagerClient {
     const std::map<std::string, PolicyState>::const_iterator entry =
         device_local_account_policy_.find(id);
     return entry == device_local_account_policy_.end() ?
-        EmptyString() : entry->second.policy_blob_;
+        base::EmptyString() : entry->second.policy_blob_;
   }
 
   void set_device_local_account_policy_blob(const std::string& id,
@@ -78,19 +78,18 @@ class DeviceSettingsTestHelper : public SessionManagerClient {
   }
 
   // SessionManagerClient:
+  virtual void Init(dbus::Bus* bus) OVERRIDE;
   virtual void AddObserver(Observer* observer) OVERRIDE;
   virtual void RemoveObserver(Observer* observer) OVERRIDE;
   virtual bool HasObserver(Observer* observer) OVERRIDE;
   virtual void EmitLoginPromptReady() OVERRIDE;
   virtual void EmitLoginPromptVisible() OVERRIDE;
   virtual void RestartJob(int pid, const std::string& command_line) OVERRIDE;
-  virtual void RestartEntd() OVERRIDE;
   virtual void StartSession(const std::string& user_email) OVERRIDE;
   virtual void StopSession() OVERRIDE;
   virtual void StartDeviceWipe() OVERRIDE;
   virtual void RequestLockScreen() OVERRIDE;
   virtual void NotifyLockScreenShown() OVERRIDE;
-  virtual void RequestUnlockScreen() OVERRIDE;
   virtual void NotifyLockScreenDismissed() OVERRIDE;
   virtual void RetrieveActiveSessions(
       const ActiveSessionsCallback& callback) OVERRIDE;

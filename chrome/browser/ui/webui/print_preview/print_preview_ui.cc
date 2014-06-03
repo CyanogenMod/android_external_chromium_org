@@ -46,7 +46,7 @@ namespace {
 #if defined(OS_MACOSX)
 // U+0028 U+21E7 U+2318 U+0050 U+0029 in UTF8
 const char kAdvancedPrintShortcut[] = "\x28\xE2\x8c\xA5\xE2\x8C\x98\x50\x29";
-#elif defined(OS_WIN)
+#elif defined(OS_WIN) || defined(OS_CHROMEOS)
 const char kAdvancedPrintShortcut[] = "(Ctrl+Shift+P)";
 #else
 const char kAdvancedPrintShortcut[] = "(Shift+Ctrl+P)";
@@ -209,7 +209,7 @@ content::WebUIDataSource* CreatePrintPreviewUISource() {
                              IDS_PRINT_PREVIEW_PAGE_LABEL_SINGULAR);
   source->AddLocalizedString("printPreviewPageLabelPlural",
                              IDS_PRINT_PREVIEW_PAGE_LABEL_PLURAL);
-  const string16 shortcut_text(UTF8ToUTF16(kAdvancedPrintShortcut));
+  const base::string16 shortcut_text(UTF8ToUTF16(kAdvancedPrintShortcut));
 #if defined(OS_CHROMEOS)
   source->AddString(
       "systemDialogOption",
@@ -238,6 +238,9 @@ content::WebUIDataSource* CreatePrintPreviewUISource() {
       l10n_util::GetStringFUTF16(
         IDS_PRINT_PREVIEW_PRINT_WITH_CLOUD_PRINT_WAIT,
         l10n_util::GetStringUTF16(IDS_GOOGLE_CLOUD_PRINT)));
+  source->AddString(
+      "noDestsPromoLearnMoreUrl",
+      chrome::kCloudPrintNoDestinationsLearnMoreURL);
   source->AddLocalizedString("pageRangeInstruction",
                              IDS_PRINT_PREVIEW_PAGE_RANGE_INSTRUCTION);
   source->AddLocalizedString("copiesInstruction",
@@ -309,12 +312,18 @@ content::WebUIDataSource* CreatePrintPreviewUISource() {
                              IDS_PRINT_PREVIEW_NO_DESTS_PROMO_BODY);
   source->AddLocalizedString("noDestsPromoGcpDesc",
                              IDS_PRINT_PREVIEW_NO_DESTS_GCP_DESC);
+  source->AddLocalizedString("learnMore",
+                             IDS_LEARN_MORE);
   source->AddLocalizedString(
       "noDestsPromoAddPrinterButtonLabel",
       IDS_PRINT_PREVIEW_NO_DESTS_PROMO_ADD_PRINTER_BUTTON_LABEL);
   source->AddLocalizedString(
       "noDestsPromoNotNowButtonLabel",
       IDS_PRINT_PREVIEW_NO_DESTS_PROMO_NOT_NOW_BUTTON_LABEL);
+  source->AddLocalizedString("couldNotPrint",
+                             IDS_PRINT_PREVIEW_COULD_NOT_PRINT);
+  source->AddLocalizedString("registerPromoButtonText",
+                             IDS_PRINT_PREVIEW_REGISTER_PROMO_BUTTON_TEXT);
 
   source->SetJsonPath("strings.js");
   source->AddResourcePath("print_preview.js", IDR_PRINT_PREVIEW_JS);
@@ -337,6 +346,8 @@ content::WebUIDataSource* CreatePrintPreviewUISource() {
   source->OverrideContentSecurityPolicyObjectSrc("object-src 'self';");
   return source;
 }
+
+PrintPreviewUI::TestingDelegate* g_testing_delegate = NULL;
 
 }  // namespace
 
@@ -389,7 +400,7 @@ int PrintPreviewUI::GetAvailableDraftPageCount() {
 }
 
 void PrintPreviewUI::SetInitiatorTitle(
-    const string16& job_title) {
+    const base::string16& job_title) {
   initiator_title_ = job_title;
 }
 
@@ -442,6 +453,10 @@ void PrintPreviewUI::OnInitiatorClosed() {
 }
 
 void PrintPreviewUI::OnPrintPreviewRequest(int request_id) {
+  if (!initial_preview_start_time_.is_null()) {
+    UMA_HISTOGRAM_TIMES("PrintPreview.InitializationTime",
+                        base::TimeTicks::Now() - initial_preview_start_time_);
+  }
   g_print_preview_request_id_map.Get().Set(id_, request_id);
 }
 
@@ -452,6 +467,8 @@ void PrintPreviewUI::OnShowSystemDialog() {
 void PrintPreviewUI::OnDidGetPreviewPageCount(
     const PrintHostMsg_DidGetPreviewPageCount_Params& params) {
   DCHECK_GT(params.page_count, 0);
+  if (g_testing_delegate)
+    g_testing_delegate->DidGetPreviewPageCount(params.page_count);
   base::FundamentalValue count(params.page_count);
   base::FundamentalValue request_id(params.preview_request_id);
   web_ui()->CallJavascriptFunction("onDidGetPreviewPageCount",
@@ -495,15 +512,12 @@ void PrintPreviewUI::OnDidPreviewPage(int page_number,
   base::FundamentalValue number(page_number);
   base::FundamentalValue ui_identifier(id_);
   base::FundamentalValue request_id(preview_request_id);
+  if (g_testing_delegate)
+    g_testing_delegate->DidRenderPreviewPage(*web_ui()->GetWebContents());
   web_ui()->CallJavascriptFunction(
       "onDidPreviewPage", number, ui_identifier, request_id);
-}
-
-void PrintPreviewUI::OnReusePreviewData(int preview_request_id) {
-  base::FundamentalValue ui_identifier(id_);
-  base::FundamentalValue ui_preview_request_id(preview_request_id);
-  web_ui()->CallJavascriptFunction("reloadPreviewPages", ui_identifier,
-                                   ui_preview_request_id);
+  if (g_testing_delegate && g_testing_delegate->IsAutoCancelEnabled())
+    web_ui()->CallJavascriptFunction("autoCancelForTesting");
 }
 
 void PrintPreviewUI::OnPreviewDataIsAvailable(int expected_pages_count,
@@ -516,6 +530,9 @@ void PrintPreviewUI::OnPreviewDataIsAvailable(int expected_pages_count,
                         base::TimeTicks::Now() - initial_preview_start_time_);
     UMA_HISTOGRAM_COUNTS("PrintPreview.PageCount.Initial",
                          expected_pages_count);
+    UMA_HISTOGRAM_COUNTS(
+        "PrintPreview.RegeneratePreviewRequest.BeforeFirstData",
+        handler_->regenerate_preview_request_count());
     initial_preview_start_time_ = base::TimeTicks();
   }
   base::FundamentalValue ui_identifier(id_);
@@ -581,4 +598,9 @@ void PrintPreviewUI::OnReloadPrintersList() {
 
 void PrintPreviewUI::OnPrintPreviewScalingDisabled() {
   web_ui()->CallJavascriptFunction("printScalingDisabledForSourcePDF");
+}
+
+// static
+void PrintPreviewUI::SetDelegateForTesting(TestingDelegate* delegate) {
+  g_testing_delegate = delegate;
 }

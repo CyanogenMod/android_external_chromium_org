@@ -14,6 +14,15 @@
 
 namespace local_discovery {
 
+namespace {
+// TODO(noamsml): Make this configurable through the LocalDomainResolver
+// interface.
+const int kLocalDomainSecondAddressTimeoutMs = 100;
+
+const int kInitialRequeryTimeSeconds = 1;
+const int kMaxRequeryTimeSeconds = 2; // Time for last requery
+}
+
 ServiceDiscoveryClientImpl::ServiceDiscoveryClientImpl(
     net::MDnsClient* mdns_client) : mdns_client_(mdns_client) {
 }
@@ -25,7 +34,7 @@ scoped_ptr<ServiceWatcher> ServiceDiscoveryClientImpl::CreateServiceWatcher(
     const std::string& service_type,
     const ServiceWatcher::UpdatedCallback& callback) {
   return scoped_ptr<ServiceWatcher>(new ServiceWatcherImpl(
-      service_type,  callback, mdns_client_));
+      service_type, callback, mdns_client_));
 }
 
 scoped_ptr<ServiceResolver> ServiceDiscoveryClientImpl::CreateServiceResolver(
@@ -68,8 +77,7 @@ void ServiceWatcherImpl::DiscoverNewServices(bool force_update) {
   DCHECK(started_);
   if (force_update)
     services_.clear();
-  CreateTransaction(true /*network*/, false /*cache*/, force_update,
-                    &transaction_network_);
+  SendQuery(kInitialRequeryTimeSeconds, force_update);
 }
 
 void ServiceWatcherImpl::ReadCachedServices() {
@@ -228,6 +236,25 @@ void ServiceWatcherImpl::OnNsecRecord(const std::string& name,
   // on any name.
 }
 
+void ServiceWatcherImpl::ScheduleQuery(int timeout_seconds) {
+  if (timeout_seconds <= kMaxRequeryTimeSeconds) {
+    base::MessageLoop::current()->PostDelayedTask(
+        FROM_HERE,
+        base::Bind(&ServiceWatcherImpl::SendQuery,
+                   AsWeakPtr(),
+                   timeout_seconds * 2 /*next_timeout_seconds*/,
+                   false /*force_update*/),
+        base::TimeDelta::FromSeconds(timeout_seconds));
+  }
+}
+
+void ServiceWatcherImpl::SendQuery(int next_timeout_seconds,
+                                   bool force_update) {
+  CreateTransaction(true /*network*/, false /*cache*/, force_update,
+                    &transaction_network_);
+  ScheduleQuery(next_timeout_seconds);
+}
+
 ServiceResolverImpl::ServiceResolverImpl(
     const std::string& service_name,
     const ResolveCompleteCallback& callback,
@@ -235,12 +262,13 @@ ServiceResolverImpl::ServiceResolverImpl(
     : service_name_(service_name), callback_(callback),
       metadata_resolved_(false), address_resolved_(false),
       mdns_client_(mdns_client) {
-  service_staging_.service_name = service_name_;
 }
 
 void ServiceResolverImpl::StartResolving() {
   address_resolved_ = false;
   metadata_resolved_ = false;
+  service_staging_ = ServiceDescription();
+  service_staging_.service_name = service_name_;
 
   if (!CreateTxtTransaction() || !CreateSrvTransaction()) {
     ServiceNotFound(ServiceResolver::STATUS_REQUEST_TIMEOUT);
@@ -334,7 +362,6 @@ void ServiceResolverImpl::AlertCallbackIfReady() {
     a_transaction_.reset();
     if (!callback_.is_null())
       callback_.Run(STATUS_SUCCESS, service_staging_);
-    service_staging_ = ServiceDescription();
   }
 }
 
@@ -393,10 +420,11 @@ LocalDomainResolverImpl::LocalDomainResolverImpl(
     const IPAddressCallback& callback,
     net::MDnsClient* mdns_client)
     : domain_(domain), address_family_(address_family), callback_(callback),
-      transaction_failures_(0), mdns_client_(mdns_client) {
+      transactions_finished_(0), mdns_client_(mdns_client) {
 }
 
 LocalDomainResolverImpl::~LocalDomainResolverImpl() {
+  timeout_callback_.Cancel();
 }
 
 void LocalDomainResolverImpl::Start() {
@@ -425,31 +453,44 @@ scoped_ptr<net::MDnsTransaction> LocalDomainResolverImpl::CreateTransaction(
 
 void LocalDomainResolverImpl::OnTransactionComplete(
     net::MDnsTransaction::Result result, const net::RecordParsed* record) {
-  if (result != net::MDnsTransaction::RESULT_RECORD &&
-      address_family_ == net::ADDRESS_FAMILY_UNSPECIFIED) {
-    transaction_failures_++;
+  transactions_finished_++;
 
-    if (transaction_failures_ < 2) {
-      return;
-    }
-  }
-
-  transaction_a_.reset();
-  transaction_aaaa_.reset();
-
-  net::IPAddressNumber address;
   if (result == net::MDnsTransaction::RESULT_RECORD) {
     if (record->type() == net::dns_protocol::kTypeA) {
       const net::ARecordRdata* rdata = record->rdata<net::ARecordRdata>();
-      address = rdata->address();
+      address_ipv4_ = rdata->address();
     } else {
       DCHECK_EQ(net::dns_protocol::kTypeAAAA, record->type());
       const net::AAAARecordRdata* rdata = record->rdata<net::AAAARecordRdata>();
-      address = rdata->address();
+      address_ipv6_ = rdata->address();
     }
   }
 
-  callback_.Run(result == net::MDnsTransaction::RESULT_RECORD, address);
+  if (transactions_finished_ == 1 &&
+      address_family_ == net::ADDRESS_FAMILY_UNSPECIFIED) {
+    timeout_callback_.Reset(base::Bind(
+        &LocalDomainResolverImpl::SendResolvedAddresses,
+        base::Unretained(this)));
+
+    base::MessageLoop::current()->PostDelayedTask(
+        FROM_HERE,
+        timeout_callback_.callback(),
+        base::TimeDelta::FromMilliseconds(kLocalDomainSecondAddressTimeoutMs));
+  } else if (transactions_finished_ == 2
+      || address_family_ != net::ADDRESS_FAMILY_UNSPECIFIED) {
+    SendResolvedAddresses();
+  }
+}
+
+bool LocalDomainResolverImpl::IsSuccess() {
+  return !address_ipv4_.empty() || !address_ipv6_.empty();
+}
+
+void LocalDomainResolverImpl::SendResolvedAddresses() {
+  transaction_a_.reset();
+  transaction_aaaa_.reset();
+  timeout_callback_.Cancel();
+  callback_.Run(IsSuccess(), address_ipv4_, address_ipv6_);
 }
 
 }  // namespace local_discovery

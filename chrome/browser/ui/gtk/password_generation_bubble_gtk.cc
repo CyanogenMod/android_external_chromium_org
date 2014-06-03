@@ -14,8 +14,8 @@
 #include "chrome/browser/ui/gtk/gtk_theme_service.h"
 #include "chrome/browser/ui/gtk/gtk_util.h"
 #include "chrome/common/url_constants.h"
+#include "components/autofill/content/common/autofill_messages.h"
 #include "components/autofill/core/browser/password_generator.h"
-#include "components/autofill/core/common/autofill_messages.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
@@ -40,7 +40,7 @@ GdkPixbuf* GetImage(int resource_id) {
 
 PasswordGenerationBubbleGtk::PasswordGenerationBubbleGtk(
     const gfx::Rect& anchor_rect,
-    const content::PasswordForm& form,
+    const autofill::PasswordForm& form,
     content::WebContents* web_contents,
     autofill::PasswordGenerator* password_generator)
     : form_(form),

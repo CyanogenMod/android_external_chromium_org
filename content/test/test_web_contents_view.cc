@@ -23,13 +23,13 @@ void TestWebContentsView::ShowPopupMenu(const gfx::Rect& bounds,
 
 void TestWebContentsView::StartDragging(
     const DropData& drop_data,
-    WebKit::WebDragOperationsMask allowed_ops,
+    blink::WebDragOperationsMask allowed_ops,
     const gfx::ImageSkia& image,
     const gfx::Vector2d& image_offset,
     const DragEventSourceInfo& event_info) {
 }
 
-void TestWebContentsView::UpdateDragCursor(WebKit::WebDragOperation operation) {
+void TestWebContentsView::UpdateDragCursor(blink::WebDragOperation operation) {
 }
 
 void TestWebContentsView::GotFocus() {
@@ -87,6 +87,13 @@ void TestWebContentsView::SetAllowOverlappingViews(bool overlapping) {
 bool TestWebContentsView::GetAllowOverlappingViews() const {
   return false;
 }
+
+void TestWebContentsView::SetOverlayView(
+    WebContentsView* overlay, const gfx::Point& offset) {
+}
+
+void TestWebContentsView::RemoveOverlayView() {
+}
 #endif
 
 void TestWebContentsView::CreateView(const gfx::Size& initial_size,
@@ -103,7 +110,7 @@ RenderWidgetHostView* TestWebContentsView::CreateViewForPopupWidget(
   return NULL;
 }
 
-void TestWebContentsView::SetPageTitle(const string16& title) {
+void TestWebContentsView::SetPageTitle(const base::string16& title) {
 }
 
 void TestWebContentsView::RenderViewCreated(RenderViewHost* host) {

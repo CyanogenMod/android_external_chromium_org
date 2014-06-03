@@ -8,6 +8,8 @@
 #include "chrome/common/extensions/api/downloads.h"
 #include "chrome/common/extensions/api/downloads_internal.h"
 
+namespace extensions {
+
 DownloadsInternalDetermineFilenameFunction::
     DownloadsInternalDetermineFilenameFunction() {}
 
@@ -24,12 +26,14 @@ bool DownloadsInternalDetermineFilenameFunction::RunImpl() {
   base::FilePath::StringType filename;
   EXTENSION_FUNCTION_VALIDATE(args_->GetString(1, &filename));
   return ExtensionDownloadsEventRouter::DetermineFilename(
-      profile(),
+      GetProfile(),
       include_incognito(),
       GetExtension()->id(),
       params->download_id,
       base::FilePath(filename),
       extensions::api::downloads::ParseFilenameConflictAction(
-        params->conflict_action),
+          params->conflict_action),
       &error_);
 }
+
+}  // namespace extensions

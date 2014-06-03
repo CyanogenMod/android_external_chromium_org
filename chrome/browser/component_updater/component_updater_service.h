@@ -18,6 +18,15 @@ class FilePath;
 
 namespace net {
 class URLRequestContextGetter;
+class URLRequest;
+}
+
+namespace component_updater {
+class OnDemandTester;
+}
+
+namespace content {
+class ResourceThrottle;
 }
 
 class ComponentPatcher;
@@ -46,7 +55,6 @@ class ComponentInstaller {
   virtual bool GetInstalledFile(const std::string& file,
                                 base::FilePath* installed_file) = 0;
 
- protected:
   virtual ~ComponentInstaller() {}
 };
 
@@ -67,6 +75,13 @@ class ComponentObserver {
     // Sent when the new component has been downloaded and an installation
     // or upgrade is about to be attempted.
     COMPONENT_UPDATE_READY,
+
+    // Sent when a component has been successfully updated.
+    COMPONENT_UPDATED,
+
+    // Sent when a component has not been updated following an update check:
+    // either there was no update available, or an update failed.
+    COMPONENT_NOT_UPDATED,
   };
 
   virtual ~ComponentObserver() {}
@@ -81,6 +96,10 @@ class ComponentObserver {
 // |pk_hash| is the SHA256 hash of the component's public key. If the component
 // is to be installed then version should be "0" or "0.0", else it should be
 // the current version. |observer|, |fingerprint|, and |name| are optional.
+// |allow_background_download| specifies that the component can be background
+// downloaded in some cases. The default for this value is |true| and the value
+// can be overriden at the registration time. This is a temporary change until
+// the issue 340448 is resolved.
 struct CrxComponent {
   std::vector<uint8> pk_hash;
   ComponentInstaller* installer;
@@ -88,8 +107,23 @@ struct CrxComponent {
   Version version;
   std::string fingerprint;
   std::string name;
+  bool allow_background_download;
   CrxComponent();
   ~CrxComponent();
+};
+
+// This convenience function returns component id of given CrxComponent.
+std::string GetCrxComponentID(const CrxComponent& component);
+
+// Convenience structure to use with component listing / enumeration.
+struct CrxComponentInfo {
+  // |id| is currently derived from |CrxComponent.pk_hash|, see rest of the
+  // class implementation for details.
+  std::string id;
+  std::string version;
+  std::string name;
+  CrxComponentInfo();
+  ~CrxComponentInfo();
 };
 
 // The component update service is in charge of installing or upgrading
@@ -125,6 +159,9 @@ class ComponentUpdateService {
     virtual int NextCheckDelay() = 0;
     // Delay in seconds from each task step. Used to smooth out CPU/IO usage.
     virtual int StepDelay() = 0;
+    // Delay in seconds between applying updates for different components, if
+    // several updates are available at a given time.
+    virtual int StepDelayMedium() = 0;
     // Minimum delta time in seconds before checking again the same component.
     virtual int MinimumReCheckWait() = 0;
     // Minimum delta time in seconds before an on-demand check is allowed
@@ -136,7 +173,7 @@ class ComponentUpdateService {
     // pings are disabled.
     virtual GURL PingUrl() = 0;
     // Parameters added to each url request. It can be null if none are needed.
-    virtual const char* ExtraRequestParams() = 0;
+    virtual std::string ExtraRequestParams() = 0;
     // How big each update request can be. Don't go above 2000.
     virtual size_t UrlSizeLimit() = 0;
     // The source of contexts for all the url requests.
@@ -148,6 +185,9 @@ class ComponentUpdateService {
     virtual ComponentPatcher* CreateComponentPatcher() = 0;
     // True means that this client can handle delta updates.
     virtual bool DeltasEnabled() const = 0;
+    // True means that the background downloader can be used for downloading
+    // non on-demand components.
+    virtual bool UseBackgroundDownloader() const = 0;
   };
 
   // Start doing update checks and installing new versions of registered
@@ -162,18 +202,28 @@ class ComponentUpdateService {
   // before calling Start().
   virtual Status RegisterComponent(const CrxComponent& component) = 0;
 
-  // Ask the component updater to do an update check for a previously
-  // registered component, soon. If an update or check is already in progress,
-  // returns |kInProgress|. The same component cannot be checked repeatedly
-  // in a short interval either (returns |kError| if so).
-  // There is no guarantee that the item will actually be updated,
-  // since another item may be chosen to be updated. Since there is
-  // no time guarantee, there is no notification if the item is not updated.
-  // However, the ComponentInstaller should know if an update succeeded
-  // via the Install() hook.
-  virtual Status CheckForUpdateSoon(const CrxComponent& component) = 0;
+  // Returns a list of registered components.
+  virtual void GetComponents(std::vector<CrxComponentInfo>* components) = 0;
+
+  // Returns a network resource throttle. It means that a component will be
+  // downloaded and installed before the resource is unthrottled. This is the
+  // only function callable from the IO thread.
+  virtual content::ResourceThrottle* GetOnDemandResourceThrottle(
+      net::URLRequest* request, const std::string& crx_id) = 0;
 
   virtual ~ComponentUpdateService() {}
+
+  friend class ComponentsUI;
+  friend class component_updater::OnDemandTester;
+
+ private:
+  // Ask the component updater to do an update check for a previously
+  // registered component, immediately. If an update or check is already
+  // in progress, returns |kInProgress|.
+  // There is no guarantee that the item will actually be updated,
+  // since an update may not be available. Listeners for the component will
+  // know the outcome of the check.
+  virtual Status OnDemandUpdate(const std::string& component_id) = 0;
 };
 
 // Creates the component updater. You must pass a valid |config| allocated on

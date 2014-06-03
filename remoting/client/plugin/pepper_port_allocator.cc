@@ -8,11 +8,12 @@
 #include "base/strings/string_number_conversions.h"
 #include "net/base/net_util.h"
 #include "ppapi/c/pp_errors.h"
-#include "ppapi/cpp/completion_callback.h"
-#include "ppapi/cpp/private/host_resolver_private.h"
+#include "ppapi/cpp/host_resolver.h"
+#include "ppapi/cpp/net_address.h"
 #include "ppapi/cpp/url_loader.h"
 #include "ppapi/cpp/url_request_info.h"
 #include "ppapi/cpp/url_response_info.h"
+#include "ppapi/utility/completion_callback_factory.h"
 #include "remoting/client/plugin/pepper_network_manager.h"
 #include "remoting/client/plugin/pepper_packet_socket_factory.h"
 #include "remoting/client/plugin/pepper_util.h"
@@ -20,9 +21,6 @@
 namespace remoting {
 
 namespace {
-
-// URL used to create a relay session.
-const char kCreateRelaySessionURL[] = "/create_session";
 
 // Read buffer we allocate per read when reading response from
 // URLLoader. Normally the response from URL loader is smaller than 1kB.
@@ -58,7 +56,7 @@ class PepperPortAllocatorSession
 
   pp::InstanceHandle instance_;
 
-  pp::HostResolverPrivate stun_address_resolver_;
+  pp::HostResolver stun_address_resolver_;
   talk_base::SocketAddress stun_address_;
   int stun_port_;
 
@@ -66,8 +64,7 @@ class PepperPortAllocatorSession
   std::vector<char> relay_response_body_;
   bool relay_response_received_;
 
-  // Used to safely cancel completion callbacks from PPAPI calls.
-  base::WeakPtrFactory<PepperPortAllocatorSession> weak_factory_;
+  pp::CompletionCallbackFactory<PepperPortAllocatorSession> callback_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(PepperPortAllocatorSession);
 };
@@ -95,7 +92,7 @@ PepperPortAllocatorSession::PepperPortAllocatorSession(
       stun_address_resolver_(instance_),
       stun_port_(0),
       relay_response_received_(false),
-      weak_factory_(this) {
+      callback_factory_(this) {
   if (stun_hosts.size() > 0) {
     stun_address_ = stun_hosts[0];
   }
@@ -153,15 +150,15 @@ void PepperPortAllocatorSession::ResolveStunServerAddress() {
   std::string hostname = stun_address_.hostname();
   uint16 port = stun_address_.port();
 
-  PP_HostResolver_Private_Hint hint;
+  PP_HostResolver_Hint hint;
   hint.flags = 0;
-  hint.family = PP_NETADDRESSFAMILY_PRIVATE_IPV4;
-  int result = stun_address_resolver_.Resolve(
-      hostname, port, hint,
-      PpCompletionCallback(base::Bind(
-          &PepperPortAllocatorSession::OnStunAddressResolved,
-          weak_factory_.GetWeakPtr())));
-
+  hint.family = PP_NETADDRESS_FAMILY_IPV4;
+  pp::CompletionCallback callback = callback_factory_.NewCallback(
+      &PepperPortAllocatorSession::OnStunAddressResolved);
+  int result = stun_address_resolver_.Resolve(hostname.c_str(),
+                                              port,
+                                              hint,
+                                              callback);
   DCHECK_EQ(result, PP_OK_COMPLETIONPENDING);
 }
 
@@ -172,20 +169,20 @@ void PepperPortAllocatorSession::OnStunAddressResolved(int32_t result) {
     return;
   }
 
-  if (!stun_address_resolver_.GetSize()) {
+  if (!stun_address_resolver_.GetNetAddressCount()) {
     LOG(WARNING) << "Received 0 addresses for stun server "
                << stun_address_.hostname();
     return;
   }
 
-  PP_NetAddress_Private address;
-  if (!stun_address_resolver_.GetNetAddress(0, &address) ||
-      !PpAddressToSocketAddress(address, &stun_address_)) {
+  pp::NetAddress address = stun_address_resolver_.GetNetAddress(0);
+  if (address.is_null()) {
     LOG(ERROR) << "Failed to get address for STUN server "
                << stun_address_.hostname();
     return;
   }
 
+  PpNetAddressToSocketAddress(address, &stun_address_);
   DCHECK(!stun_address_.IsUnresolved());
 
   if (relay_response_received_) {
@@ -221,11 +218,9 @@ void PepperPortAllocatorSession::SendSessionRequest(
   headers << "X-Stream-Type: " << "chromoting" << "\n\r";
   request_info.SetHeaders(headers.str());
 
-  int result = relay_url_loader_->Open(
-      request_info, PpCompletionCallback(base::Bind(
-          &PepperPortAllocatorSession::OnUrlOpened,
-          weak_factory_.GetWeakPtr())));
-
+  pp::CompletionCallback callback =
+      callback_factory_.NewCallback(&PepperPortAllocatorSession::OnUrlOpened);
+  int result = relay_url_loader_->Open(request_info, callback);
   DCHECK_EQ(result, PP_OK_COMPLETIONPENDING);
 }
 
@@ -257,11 +252,11 @@ void PepperPortAllocatorSession::OnUrlOpened(int32_t result) {
 void PepperPortAllocatorSession::ReadResponseBody() {
   int pos = relay_response_body_.size();
   relay_response_body_.resize(pos + kReadSize);
-  int result = relay_url_loader_->ReadResponseBody(
-      &relay_response_body_[pos], kReadSize,
-      PpCompletionCallback(base::Bind(
-          &PepperPortAllocatorSession::OnResponseBodyRead,
-          weak_factory_.GetWeakPtr())));
+  pp::CompletionCallback callback = callback_factory_.NewCallback(
+      &PepperPortAllocatorSession::OnResponseBodyRead);
+  int result = relay_url_loader_->ReadResponseBody(&relay_response_body_[pos],
+                                                   kReadSize,
+                                                   callback);
   DCHECK_EQ(result, PP_OK_COMPLETIONPENDING);
 }
 
@@ -322,7 +317,8 @@ PepperPortAllocator::PepperPortAllocator(
   // username fragment is shared between all candidates for this
   // channel.
   set_flags(cricket::PORTALLOCATOR_DISABLE_TCP |
-            cricket::PORTALLOCATOR_ENABLE_SHARED_UFRAG);
+            cricket::PORTALLOCATOR_ENABLE_SHARED_UFRAG|
+            cricket::PORTALLOCATOR_ENABLE_IPV6);
 }
 
 PepperPortAllocator::~PepperPortAllocator() {

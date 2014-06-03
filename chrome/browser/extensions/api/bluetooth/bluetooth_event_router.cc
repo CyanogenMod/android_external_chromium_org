@@ -15,7 +15,6 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/extensions/api/bluetooth/bluetooth_api_utils.h"
 #include "chrome/browser/extensions/event_names.h"
-#include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/common/extensions/api/bluetooth.h"
 #include "device/bluetooth/bluetooth_adapter.h"
@@ -23,8 +22,11 @@
 #include "device/bluetooth/bluetooth_device.h"
 #include "device/bluetooth/bluetooth_profile.h"
 #include "device/bluetooth/bluetooth_socket.h"
+#include "extensions/browser/event_router.h"
 
 namespace extensions {
+
+namespace bluetooth = api::bluetooth;
 
 ExtensionBluetoothEventRouter::ExtensionBluetoothEventRouter(Profile* profile)
     : send_discovery_events_(false),
@@ -161,7 +163,7 @@ void ExtensionBluetoothEventRouter::SetSendDiscoveryEvents(bool should_send) {
 }
 
 void ExtensionBluetoothEventRouter::DispatchDeviceEvent(
-    const char* event_name, const extensions::api::bluetooth::Device& device) {
+    const std::string& event_name, const bluetooth::Device& device) {
   scoped_ptr<base::ListValue> args(new base::ListValue());
   args->Append(device.ToValue().release());
   scoped_ptr<Event> event(new Event(event_name, args.Pass()));
@@ -185,7 +187,7 @@ void ExtensionBluetoothEventRouter::DispatchConnectionEvent(
   scoped_ptr<base::ListValue> args(new base::ListValue());
   args->Append(result_socket.ToValue().release());
   scoped_ptr<Event> event(new Event(
-      extensions::event_names::kBluetoothOnConnection, args.Pass()));
+      bluetooth::OnConnection::kEventName, args.Pass()));
   ExtensionSystem::Get(profile_)->event_router()->DispatchEventToExtension(
       extension_id, event.Pass());
 }
@@ -232,9 +234,9 @@ void ExtensionBluetoothEventRouter::DeviceAdded(
     return;
   }
 
-  extensions::api::bluetooth::Device* extension_device =
-      new extensions::api::bluetooth::Device();
-  extensions::api::bluetooth::BluetoothDeviceToApiDevice(
+  bluetooth::Device* extension_device =
+      new bluetooth::Device();
+  bluetooth::BluetoothDeviceToApiDevice(
       *device, extension_device);
   discovered_devices_.push_back(extension_device);
 
@@ -274,7 +276,7 @@ void ExtensionBluetoothEventRouter::DispatchAdapterStateEvent() {
   scoped_ptr<base::ListValue> args(new base::ListValue());
   args->Append(state.ToValue().release());
   scoped_ptr<Event> event(new Event(
-      extensions::event_names::kBluetoothOnAdapterStateChanged,
+      bluetooth::OnAdapterStateChanged::kEventName,
       args.Pass()));
   ExtensionSystem::Get(profile_)->event_router()->BroadcastEvent(event.Pass());
 }

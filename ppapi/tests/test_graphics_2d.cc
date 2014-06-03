@@ -9,7 +9,6 @@
 
 #include <set>
 
-#include "ppapi/c/dev/ppb_testing_dev.h"
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/c/ppb_graphics_2d.h"
 #include "ppapi/cpp/completion_callback.h"
@@ -27,14 +26,6 @@
 REGISTER_TEST_CASE(Graphics2D);
 
 namespace {
-
-// A NOP flush callback for use in various tests.
-void FlushCallbackNOP(void* data, int32_t result) {
-}
-
-void FlushCallbackQuitMessageLoop(void* data, int32_t result) {
-  static_cast<TestGraphics2D*>(data)->QuitMessageLoop();
-}
 
 bool CanFlushContext(pp::Instance* instance, pp::Graphics2D* context) {
   TestCompletionCallback callback(instance->pp_instance());

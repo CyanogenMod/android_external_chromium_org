@@ -48,13 +48,11 @@ class AutocompleteTextFieldObserver {
   // Called when the user does a copy or drag.
   virtual void CopyToPasteboard(NSPasteboard* pboard) = 0;
 
-  // Clears |pboard| and adds the current URL. Specifically used when the user
-  // explicitly requests to copy the URL in cases where extended instant has
-  // overridden the URL with the search terms.
-  virtual void CopyURLToPasteboard(NSPasteboard* pboard) = 0;
+  // Returns true if the Show URL option should be available.
+  virtual bool ShouldEnableShowURL() = 0;
 
-  // Returns true if the Copy to URL option should be available.
-  virtual bool ShouldEnableCopyURL() = 0;
+  // Shows the underlying URL.  See OmniboxView::ShowURL().
+  virtual void ShowURL() = 0;
 
   // Returns true if the current clipboard text supports paste and go
   // (or paste and search).
@@ -103,6 +101,9 @@ class AutocompleteTextFieldObserver {
 
   // Called before the text field handles a mouse down event.
   virtual void OnMouseDown(NSInteger button_number) = 0;
+
+  // Returns true if mouse down should select all.
+  virtual bool ShouldSelectAllOnMouseDown() = 0;
 
  protected:
   virtual ~AutocompleteTextFieldObserver() {}

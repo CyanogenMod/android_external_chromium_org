@@ -8,8 +8,8 @@
 #include "chrome/browser/ui/app_modal_dialogs/javascript_app_modal_dialog.h"
 #include "chrome/browser/ui/views/constrained_window_views.h"
 #include "grit/generated_resources.h"
-#include "ui/base/keycodes/keyboard_codes.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/views/controls/message_box_view.h"
 #include "ui/views/controls/textfield/textfield.h"
 #include "ui/views/widget/widget.h"
@@ -86,7 +86,7 @@ int JavaScriptAppModalDialogViews::GetDialogButtons() const {
   return ui::DIALOG_BUTTON_OK | ui::DIALOG_BUTTON_CANCEL;
 }
 
-string16 JavaScriptAppModalDialogViews::GetWindowTitle() const {
+base::string16 JavaScriptAppModalDialogViews::GetWindowTitle() const {
   return parent_->title();
 }
 
@@ -120,7 +120,7 @@ const views::Widget* JavaScriptAppModalDialogViews::GetWidget() const {
   return message_box_view_->GetWidget();
 }
 
-string16 JavaScriptAppModalDialogViews::GetDialogButtonLabel(
+base::string16 JavaScriptAppModalDialogViews::GetDialogButtonLabel(
     ui::DialogButton button) const {
   if (parent_->is_before_unload_dialog()) {
     if (button == ui::DIALOG_BUTTON_OK) {

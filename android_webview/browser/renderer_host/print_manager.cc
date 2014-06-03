@@ -1,4 +1,4 @@
-// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -100,20 +100,19 @@ void RenderParamsFromPrintSettings(const printing::PrintSettings& settings,
   params->margin_left = settings.page_setup_device_units().content_area().x();
   params->dpi = settings.dpi();
   // Currently hardcoded at 1.25. See PrintSettings' constructor.
-  params->min_shrink = settings.min_shrink;
+  params->min_shrink = settings.min_shrink();
   // Currently hardcoded at 2.0. See PrintSettings' constructor.
-  params->max_shrink = settings.max_shrink;
+  params->max_shrink = settings.max_shrink();
   // Currently hardcoded at 72dpi. See PrintSettings' constructor.
-  params->desired_dpi = settings.desired_dpi;
+  params->desired_dpi = settings.desired_dpi();
   // Always use an invalid cookie.
   params->document_cookie = 0;
-  params->selection_only = settings.selection_only;
+  params->selection_only = settings.selection_only();
   params->supports_alpha_blend = settings.supports_alpha_blend();
-  params->should_print_backgrounds = settings.should_print_backgrounds;
-  params->display_header_footer = settings.display_header_footer;
-  params->date = settings.date;
-  params->title = settings.title;
-  params->url = settings.url;
+  params->should_print_backgrounds = settings.should_print_backgrounds();
+  params->display_header_footer = settings.display_header_footer();
+  params->title = settings.title();
+  params->url = settings.url();
 }
 
 void PrintManager::OnGetDefaultPrintSettingsReply(IPC::Message* reply_msg) {

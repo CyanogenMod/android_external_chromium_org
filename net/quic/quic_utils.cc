@@ -6,10 +6,13 @@
 
 #include <ctype.h>
 
+#include <algorithm>
+
 #include "base/logging.h"
 #include "base/port.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/string_number_conversions.h"
+#include "net/spdy/write_blocked_list.h"
 
 using base::StringPiece;
 using std::string;
@@ -112,11 +115,12 @@ void QuicUtils::SerializeUint128(uint128 v, uint8* out) {
 }
 
 // static
-uint128 QuicUtils::ParseUint128(const uint8* in) {
-  uint64 lo, hi;
-  memcpy(&lo, in, sizeof(lo));
-  memcpy(&hi, in + sizeof(lo), sizeof(hi));
-  return uint128(hi, lo);
+void QuicUtils::SerializeUint128Short(uint128 v, uint8* out) {
+  const uint64 lo = Uint128Low64(v);
+  const uint64 hi = Uint128High64(v);
+  // This assumes that the system is little-endian.
+  memcpy(out, &lo, sizeof(lo));
+  memcpy(out + sizeof(lo), &hi, sizeof(hi) / 2);
 }
 
 #define RETURN_STRING_LITERAL(x) \
@@ -128,10 +132,11 @@ const char* QuicUtils::StreamErrorToString(QuicRstStreamErrorCode error) {
   switch (error) {
     RETURN_STRING_LITERAL(QUIC_STREAM_NO_ERROR);
     RETURN_STRING_LITERAL(QUIC_STREAM_CONNECTION_ERROR);
-    RETURN_STRING_LITERAL(QUIC_SERVER_ERROR_PROCESSING_STREAM);
+    RETURN_STRING_LITERAL(QUIC_ERROR_PROCESSING_STREAM);
     RETURN_STRING_LITERAL(QUIC_MULTIPLE_TERMINATION_OFFSETS);
     RETURN_STRING_LITERAL(QUIC_BAD_APPLICATION_PAYLOAD);
     RETURN_STRING_LITERAL(QUIC_STREAM_PEER_GOING_AWAY);
+    RETURN_STRING_LITERAL(QUIC_STREAM_CANCELLED);
     RETURN_STRING_LITERAL(QUIC_STREAM_LAST_ERROR);
   }
   // Return a default value so that we return this when |error| doesn't match
@@ -148,11 +153,14 @@ const char* QuicUtils::ErrorToString(QuicErrorCode error) {
     RETURN_STRING_LITERAL(QUIC_STREAM_DATA_AFTER_TERMINATION);
     RETURN_STRING_LITERAL(QUIC_INVALID_PACKET_HEADER);
     RETURN_STRING_LITERAL(QUIC_INVALID_FRAME_DATA);
+    RETURN_STRING_LITERAL(QUIC_MISSING_PAYLOAD);
     RETURN_STRING_LITERAL(QUIC_INVALID_FEC_DATA);
+    RETURN_STRING_LITERAL(QUIC_INVALID_STREAM_DATA);
     RETURN_STRING_LITERAL(QUIC_INVALID_RST_STREAM_DATA);
     RETURN_STRING_LITERAL(QUIC_INVALID_CONNECTION_CLOSE_DATA);
     RETURN_STRING_LITERAL(QUIC_INVALID_GOAWAY_DATA);
     RETURN_STRING_LITERAL(QUIC_INVALID_ACK_DATA);
+    RETURN_STRING_LITERAL(QUIC_INVALID_CONGESTION_FEEDBACK_DATA);
     RETURN_STRING_LITERAL(QUIC_INVALID_VERSION_NEGOTIATION_PACKET);
     RETURN_STRING_LITERAL(QUIC_INVALID_PUBLIC_RST_PACKET);
     RETURN_STRING_LITERAL(QUIC_DECRYPTION_FAILURE);
@@ -175,6 +183,7 @@ const char* QuicUtils::ErrorToString(QuicErrorCode error) {
     RETURN_STRING_LITERAL(QUIC_CRYPTO_MESSAGE_PARAMETER_NO_OVERLAP);
     RETURN_STRING_LITERAL(QUIC_CRYPTO_MESSAGE_INDEX_NOT_FOUND);
     RETURN_STRING_LITERAL(QUIC_INVALID_STREAM_ID);
+    RETURN_STRING_LITERAL(QUIC_INVALID_PRIORITY);
     RETURN_STRING_LITERAL(QUIC_TOO_MANY_OPEN_STREAMS);
     RETURN_STRING_LITERAL(QUIC_PUBLIC_RESET);
     RETURN_STRING_LITERAL(QUIC_INVALID_VERSION);
@@ -185,10 +194,16 @@ const char* QuicUtils::ErrorToString(QuicErrorCode error) {
     RETURN_STRING_LITERAL(QUIC_CONNECTION_TIMED_OUT);
     RETURN_STRING_LITERAL(QUIC_ERROR_MIGRATING_ADDRESS);
     RETURN_STRING_LITERAL(QUIC_PACKET_WRITE_ERROR);
+    RETURN_STRING_LITERAL(QUIC_PACKET_READ_ERROR);
+    RETURN_STRING_LITERAL(QUIC_INVALID_STREAM_FRAME);
     RETURN_STRING_LITERAL(QUIC_PROOF_INVALID);
     RETURN_STRING_LITERAL(QUIC_CRYPTO_DUPLICATE_TAG);
     RETURN_STRING_LITERAL(QUIC_CRYPTO_ENCRYPTION_LEVEL_INCORRECT);
     RETURN_STRING_LITERAL(QUIC_CRYPTO_SERVER_CONFIG_EXPIRED);
+    RETURN_STRING_LITERAL(QUIC_INVALID_CHANNEL_ID_SIGNATURE);
+    RETURN_STRING_LITERAL(QUIC_CRYPTO_SYMMETRIC_KEY_SETUP_FAILED);
+    RETURN_STRING_LITERAL(QUIC_CRYPTO_MESSAGE_WHILE_VALIDATING_CLIENT_HELLO);
+    RETURN_STRING_LITERAL(QUIC_VERSION_NEGOTIATION_MISMATCH);
     RETURN_STRING_LITERAL(QUIC_LAST_ERROR);
     // Intentionally have no default case, so we'll break the build
     // if we add errors and don't put them here.
@@ -218,7 +233,7 @@ string QuicUtils::TagToString(QuicTag tag) {
 
   for (size_t i = 0; i < sizeof(chars); i++) {
     chars[i] = tag;
-    if (chars[i] == 0 && i == 3) {
+    if ((chars[i] == 0 || chars[i] == '\xff') && i == 3) {
       chars[i] = ' ';
     }
     if (!isprint(static_cast<unsigned char>(chars[i]))) {
@@ -265,6 +280,16 @@ string QuicUtils::StringToHexASCIIDump(StringPiece in_buffer) {
     s += '\n';
   }
   return s;
+}
+
+// static
+QuicPriority QuicUtils::LowestPriority() {
+  return static_cast<QuicPriority>(kLowestPriority);
+}
+
+// static
+QuicPriority QuicUtils::HighestPriority() {
+  return static_cast<QuicPriority>(kHighestPriority);
 }
 
 }  // namespace net

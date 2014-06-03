@@ -18,7 +18,6 @@
 #include "chrome/browser/sync/glue/shared_change_processor_mock.h"
 #include "chrome/browser/sync/profile_sync_components_factory_mock.h"
 #include "chrome/browser/sync/profile_sync_service_mock.h"
-#include "chrome/test/base/profile_mock.h"
 #include "content/public/test/test_browser_thread.h"
 #include "sync/api/fake_syncable_service.h"
 #include "sync/internal_api/public/engine/model_safe_worker.h"
@@ -152,7 +151,7 @@ class SyncNonUIDataTypeControllerTest : public testing::Test {
  public:
   SyncNonUIDataTypeControllerTest()
       : ui_thread_(BrowserThread::UI, &message_loop_),
-        db_thread_(BrowserThread::DB) {}
+        db_thread_(BrowserThread::DB), service_(&profile_) {}
 
   virtual void SetUp() OVERRIDE {
     EXPECT_CALL(service_, GetUserShare()).WillRepeatedly(
@@ -204,7 +203,7 @@ class SyncNonUIDataTypeControllerTest : public testing::Test {
     EXPECT_CALL(*change_processor_.get(), ActivateDataType(_));
     EXPECT_CALL(*change_processor_.get(), SyncModelHasUserCreatedNodes(_))
         .WillOnce(DoAll(SetArgumentPointee<0>(true), Return(true)));
-    EXPECT_CALL(*change_processor_.get(), GetSyncData(_))
+    EXPECT_CALL(*change_processor_.get(), GetAllSyncDataReturnError(_,_))
         .WillOnce(Return(syncer::SyncError()));
     EXPECT_CALL(*change_processor_.get(), GetSyncCount()).WillOnce(Return(0));
     EXPECT_CALL(*dtc_mock_.get(), RecordAssociationTime(_));
@@ -244,7 +243,7 @@ class SyncNonUIDataTypeControllerTest : public testing::Test {
   base::MessageLoopForUI message_loop_;
   content::TestBrowserThread ui_thread_;
   content::TestBrowserThread db_thread_;
-  ProfileMock profile_;
+  TestingProfile profile_;
   scoped_ptr<ProfileSyncComponentsFactoryMock> profile_sync_factory_;
   StrictMock<ProfileSyncServiceMock> service_;
   StartCallbackMock start_callback_;
@@ -275,7 +274,7 @@ TEST_F(SyncNonUIDataTypeControllerTest, StartFirstRun) {
       .WillOnce(Return(true));
   EXPECT_CALL(*change_processor_.get(), SyncModelHasUserCreatedNodes(_))
       .WillOnce(DoAll(SetArgumentPointee<0>(false), Return(true)));
-  EXPECT_CALL(*change_processor_.get(), GetSyncData(_))
+  EXPECT_CALL(*change_processor_.get(), GetAllSyncDataReturnError(_,_))
       .WillOnce(Return(syncer::SyncError()));
   EXPECT_CALL(*dtc_mock_.get(), RecordAssociationTime(_));
   SetActivateExpectations(DataTypeController::OK_FIRST_RUN);
@@ -315,7 +314,7 @@ TEST_F(SyncNonUIDataTypeControllerTest, StartAssociationFailed) {
       .WillOnce(Return(true));
   EXPECT_CALL(*change_processor_.get(), SyncModelHasUserCreatedNodes(_))
       .WillOnce(DoAll(SetArgumentPointee<0>(true), Return(true)));
-  EXPECT_CALL(*change_processor_.get(), GetSyncData(_))
+  EXPECT_CALL(*change_processor_.get(), GetAllSyncDataReturnError(_,_))
       .WillOnce(Return(syncer::SyncError()));
   EXPECT_CALL(*dtc_mock_.get(), RecordAssociationTime(_));
   SetStartFailExpectations(DataTypeController::ASSOCIATION_FAILED);
@@ -382,11 +381,12 @@ TEST_F(SyncNonUIDataTypeControllerTest, AbortDuringAssociation) {
                       WaitOnEvent(&pause_db_thread),
                       SetArgumentPointee<0>(true),
                       Return(true)));
-  EXPECT_CALL(*change_processor_.get(), GetSyncData(_)).WillOnce(
-      Return(syncer::SyncError(FROM_HERE,
-                               syncer::SyncError::DATATYPE_ERROR,
-                               "Disconnected.",
-                               AUTOFILL_PROFILE)));
+  EXPECT_CALL(*change_processor_.get(), GetAllSyncDataReturnError(_,_))
+      .WillOnce(
+          Return(syncer::SyncError(FROM_HERE,
+                                   syncer::SyncError::DATATYPE_ERROR,
+                                   "Disconnected.",
+                                   AUTOFILL_PROFILE)));
   EXPECT_CALL(*change_processor_.get(), Disconnect())
       .WillOnce(DoAll(SignalEvent(&pause_db_thread), Return(true)));
   EXPECT_CALL(service_, DeactivateDataType(_));

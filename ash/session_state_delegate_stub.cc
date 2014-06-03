@@ -37,6 +37,10 @@ bool SessionStateDelegateStub::IsScreenLocked() const {
   return screen_locked_;
 }
 
+bool SessionStateDelegateStub::ShouldLockScreenBeforeSuspending() const {
+  return false;
+}
+
 void SessionStateDelegateStub::LockScreen() {
   shell::CreateLockScreen();
   screen_locked_ = true;
@@ -62,6 +66,11 @@ const std::string SessionStateDelegateStub::GetUserEmail(
   return "stub-user@domain.com";
 }
 
+const std::string SessionStateDelegateStub::GetUserID(
+    MultiProfileIndex index) const {
+  return GetUserEmail(index);
+}
+
 const gfx::ImageSkia& SessionStateDelegateStub::GetUserImage(
     MultiProfileIndex index) const {
   return null_image_;
@@ -73,12 +82,21 @@ void SessionStateDelegateStub::GetLoggedInUsers(UserIdList* users) {
 void SessionStateDelegateStub::SwitchActiveUser(const std::string& user_id) {
 }
 
+void SessionStateDelegateStub::CycleActiveUser(CycleUser cycle_user) {
+}
+
 void SessionStateDelegateStub::AddSessionStateObserver(
     ash::SessionStateObserver* observer) {
 }
 
 void SessionStateDelegateStub::RemoveSessionStateObserver(
     ash::SessionStateObserver* observer) {
+}
+
+bool SessionStateDelegateStub::TransferWindowToDesktopOfUser(
+    aura::Window* window,
+    ash::MultiProfileIndex index) {
+  return false;
 }
 
 }  // namespace ash

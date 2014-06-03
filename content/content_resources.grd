@@ -21,8 +21,6 @@
       <include name="IDR_INDEXED_DB_INTERNALS_CSS" file="browser/resources/indexed_db/indexeddb_internals.css" flattenhtml="true" type="BINDATA" />
       <include name="IDR_MEDIA_INTERNALS_HTML" file="browser/resources/media/media_internals.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" />
       <include name="IDR_MEDIA_INTERNALS_JS" file="browser/resources/media/media_internals.js" flattenhtml="true" type="BINDATA" />
-      <include name="IDR_MEDIA_INTERNALS_NEW_HTML" file="browser/resources/media/new/media_internals.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" />
-      <include name="IDR_MEDIA_INTERNALS_NEW_JS" file="browser/resources/media/new/media_internals.js" flattenhtml="true" type="BINDATA" />
       <include name="IDR_WEBRTC_INTERNALS_HTML" file="browser/resources/media/webrtc_internals.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" />
       <include name="IDR_WEBRTC_INTERNALS_JS" file="browser/resources/media/webrtc_internals.js" flattenhtml="true" type="BINDATA" />
       <if expr="is_macosx">
@@ -32,6 +30,9 @@
         <include name="IDR_PPAPI_SANDBOX_PROFILE" file="ppapi_plugin/ppapi.sb" type="BINDATA" />
         <include name="IDR_RENDERER_SANDBOX_PROFILE" file="renderer/renderer.sb" type="BINDATA" />
         <include name="IDR_UTILITY_SANDBOX_PROFILE" file="utility/utility.sb" type="BINDATA" />
+      </if>
+      <if expr="is_android">
+        <include name="IDR_MEDIAPLAYER_REMOTE_PLAYBACK_ICON" file="renderer/resources/media/mediaplayer_remote_playback.png" type="BINDATA" />
       </if>
     </includes>
   </release>

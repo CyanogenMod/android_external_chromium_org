@@ -60,8 +60,8 @@ ui::ModalType SimDialogDelegate::GetDialogModalType() const {
   return ui::MODAL_TYPE_SYSTEM;
 }
 
-string16 SimDialogDelegate::GetDialogTitle() const {
-  return string16();
+base::string16 SimDialogDelegate::GetDialogTitle() const {
+  return base::string16();
 }
 
 GURL SimDialogDelegate::GetDialogContentURL() const {

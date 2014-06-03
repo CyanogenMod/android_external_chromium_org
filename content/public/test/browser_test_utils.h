@@ -17,8 +17,9 @@
 #include "base/strings/string16.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
+#include "content/public/browser/web_contents_observer.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
-#include "ui/base/keycodes/keyboard_codes.h"
+#include "ui/events/keycodes/keyboard_codes.h"
 #include "url/gurl.h"
 
 #if defined(OS_WIN)
@@ -64,27 +65,52 @@ void CrashTab(WebContents* web_contents);
 // may contain bits from WebInputEvent::Modifiers.
 void SimulateMouseClick(WebContents* web_contents,
                         int modifiers,
-                        WebKit::WebMouseEvent::Button button);
+                        blink::WebMouseEvent::Button button);
 
 // Simulates clicking at the point |point| of the given tab asynchronously;
 // modifiers may contain bits from WebInputEvent::Modifiers.
 void SimulateMouseClickAt(WebContents* web_contents,
                           int modifiers,
-                          WebKit::WebMouseEvent::Button button,
+                          blink::WebMouseEvent::Button button,
                           const gfx::Point& point);
 
 // Simulates asynchronously a mouse enter/move/leave event.
 void SimulateMouseEvent(WebContents* web_contents,
-                        WebKit::WebInputEvent::Type type,
+                        blink::WebInputEvent::Type type,
                         const gfx::Point& point);
 
 // Sends a key press asynchronously.
+// The native code of the key event will be set to InvalidNativeKeycode().
+// |key_code| alone is good enough for scenarios that only need the char
+// value represented by a key event and not the physical key on the keyboard
+// or the keyboard layout.
+// For scenarios such as chromoting that need the native code,
+// SimulateKeyPressWithCode should be used.
 void SimulateKeyPress(WebContents* web_contents,
-                      ui::KeyboardCode key,
+                      ui::KeyboardCode key_code,
                       bool control,
                       bool shift,
                       bool alt,
                       bool command);
+
+// Sends a key press asynchronously.
+// |code| specifies the UIEvents (aka: DOM4Events) value of the key:
+// https://dvcs.w3.org/hg/d4e/raw-file/tip/source_respec.htm
+// The native code of the key event will be set based on |code|.
+// See ui/base/keycodes/vi usb_keycode_map.h for mappings between |code|
+// and the native code.
+// Examples of the various codes:
+//   key_code: VKEY_A
+//   code: "KeyA"
+//   native key code: 0x001e (for Windows).
+//   native key code: 0x0026 (for Linux).
+void SimulateKeyPressWithCode(WebContents* web_contents,
+                              ui::KeyboardCode key_code,
+                              const char* code,
+                              bool control,
+                              bool shift,
+                              bool alt,
+                              bool command);
 
 // Allow ExecuteScript* methods to target either a WebContents or a
 // RenderViewHost.  Targetting a WebContents means executing script in the
@@ -147,6 +173,13 @@ bool ExecuteScriptAndExtractString(const internal::ToRenderViewHost& adapter,
                                    const std::string& script,
                                    std::string* result) WARN_UNUSED_RESULT;
 
+// Executes the WebUI resource test runner injecting each resource ID in
+// |js_resource_ids| prior to executing the tests.
+//
+// Returns true if tests ran successfully, false otherwise.
+bool ExecuteWebUIResourceTest(const internal::ToRenderViewHost& adapter,
+                              const std::vector<int>& js_resource_ids);
+
 // Returns the cookies for the given url.
 std::string GetCookies(BrowserContext* browser_context, const GURL& url);
 
@@ -155,42 +188,57 @@ bool SetCookie(BrowserContext* browser_context,
                const GURL& url,
                const std::string& value);
 
-// Watches title changes on a tab, blocking until an expected title is set.
-class TitleWatcher : public NotificationObserver {
+// Watches title changes on a WebContents, blocking until an expected title is
+// set.
+class TitleWatcher : public WebContentsObserver {
  public:
   // |web_contents| must be non-NULL and needs to stay alive for the
   // entire lifetime of |this|. |expected_title| is the title that |this|
   // will wait for.
   TitleWatcher(WebContents* web_contents,
-               const string16& expected_title);
+               const base::string16& expected_title);
   virtual ~TitleWatcher();
 
   // Adds another title to watch for.
-  void AlsoWaitForTitle(const string16& expected_title);
+  void AlsoWaitForTitle(const base::string16& expected_title);
 
   // Waits until the title matches either expected_title or one of the titles
-  // added with  AlsoWaitForTitle.  Returns the value of the most recently
+  // added with AlsoWaitForTitle. Returns the value of the most recently
   // observed matching title.
-  const string16& WaitAndGetTitle() WARN_UNUSED_RESULT;
+  const base::string16& WaitAndGetTitle() WARN_UNUSED_RESULT;
 
  private:
-  // NotificationObserver
-  virtual void Observe(int type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details) OVERRIDE;
+  // Overridden WebContentsObserver methods.
+  virtual void DidStopLoading(RenderViewHost* render_view_host) OVERRIDE;
+  virtual void TitleWasSet(NavigationEntry* entry, bool explicit_set) OVERRIDE;
 
-  WebContents* web_contents_;
-  std::vector<string16> expected_titles_;
-  NotificationRegistrar notification_registrar_;
+  void TestTitle();
+
+  std::vector<base::string16> expected_titles_;
   scoped_refptr<MessageLoopRunner> message_loop_runner_;
 
   // The most recently observed expected title, if any.
-  string16 observed_title_;
-
-  bool expected_title_observed_;
-  bool quit_loop_on_observation_;
+  base::string16 observed_title_;
 
   DISALLOW_COPY_AND_ASSIGN(TitleWatcher);
+};
+
+// Watches a WebContents and blocks until it is destroyed.
+class WebContentsDestroyedWatcher : public WebContentsObserver {
+ public:
+  explicit WebContentsDestroyedWatcher(WebContents* web_contents);
+  virtual ~WebContentsDestroyedWatcher();
+
+  // Waits until the WebContents is destroyed.
+  void Wait();
+
+ private:
+  // Overridden WebContentsObserver methods.
+  virtual void WebContentsDestroyed(WebContents* web_contents) OVERRIDE;
+
+  scoped_refptr<MessageLoopRunner> message_loop_runner_;
+
+  DISALLOW_COPY_AND_ASSIGN(WebContentsDestroyedWatcher);
 };
 
 // Watches for responses from the DOMAutomationController and keeps them in a

@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,10 +8,8 @@ import android.test.suitebuilder.annotation.MediumTest;
 import android.webkit.WebSettings;
 
 import org.chromium.android_webview.AwContents;
-import org.chromium.android_webview.AndroidProtocolHandler;
 import org.chromium.android_webview.ErrorCodeConversionHelper;
 import org.chromium.base.test.util.Feature;
-import org.chromium.content.browser.ContentViewCore;
 import org.chromium.content.browser.test.util.TestCallbackHelperContainer;
 
 import java.util.concurrent.TimeUnit;
@@ -45,8 +43,8 @@ public class ClientOnReceivedErrorTest extends AwTestBase {
 
         onReceivedErrorHelper.waitForCallback(onReceivedErrorCallCount,
                                               1 /* numberOfCallsToWaitFor */,
-                                              WAIT_TIMEOUT_SECONDS,
-                                              TimeUnit.SECONDS);
+                                              WAIT_TIMEOUT_MS,
+                                              TimeUnit.MILLISECONDS);
         assertEquals(ErrorCodeConversionHelper.ERROR_HOST_LOOKUP,
                 onReceivedErrorHelper.getErrorCode());
         assertEquals(url, onReceivedErrorHelper.getFailingUrl());

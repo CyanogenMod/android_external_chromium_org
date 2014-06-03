@@ -18,9 +18,7 @@ class ImmersiveModeControllerStub : public ImmersiveModeController {
   virtual ~ImmersiveModeControllerStub();
 
   // ImmersiveModeController overrides:
-  virtual void Init(Delegate* delegate,
-                    views::Widget* widget,
-                    views::View* top_container) OVERRIDE;
+  virtual void Init(BrowserView* browser_view) OVERRIDE;
   virtual void SetEnabled(bool enabled) OVERRIDE;
   virtual bool IsEnabled() const OVERRIDE;
   virtual bool ShouldHideTabIndicators() const OVERRIDE;
@@ -32,6 +30,7 @@ class ImmersiveModeControllerStub : public ImmersiveModeController {
       AnimateReveal animate_reveal) OVERRIDE WARN_UNUSED_RESULT;
   virtual void OnFindBarVisibleBoundsChanged(
       const gfx::Rect& new_visible_bounds_in_screen) OVERRIDE;
+  virtual void SetupForTest() OVERRIDE;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ImmersiveModeControllerStub);

@@ -7,28 +7,27 @@ package org.chromium.content.browser.input;
 import android.graphics.Point;
 import android.graphics.Rect;
 import android.os.SystemClock;
+import android.test.FlakyTest;
+import android.test.suitebuilder.annotation.MediumTest;
 import android.text.Editable;
 import android.text.Selection;
-import android.test.suitebuilder.annotation.MediumTest;
 import android.view.MotionEvent;
-import android.view.View;
-import android.view.inputmethod.EditorInfo;
 
-import java.util.concurrent.Callable;
-
+import org.chromium.base.ThreadUtils;
 import org.chromium.base.test.util.Feature;
 import org.chromium.base.test.util.UrlUtils;
-import org.chromium.base.ThreadUtils;
 import org.chromium.content.browser.ContentView;
 import org.chromium.content.browser.RenderCoordinates;
-import org.chromium.content.browser.test.util.CriteriaHelper;
 import org.chromium.content.browser.test.util.Criteria;
+import org.chromium.content.browser.test.util.CriteriaHelper;
 import org.chromium.content.browser.test.util.DOMUtils;
 import org.chromium.content.browser.test.util.TestCallbackHelperContainer;
 import org.chromium.content.browser.test.util.TestInputMethodManagerWrapper;
 import org.chromium.content.browser.test.util.TestTouchUtils;
 import org.chromium.content.browser.test.util.TouchCommon;
 import org.chromium.content_shell_apk.ContentShellTestBase;
+
+import java.util.concurrent.Callable;
 
 public class SelectionHandleTest extends ContentShellTestBase {
     private static final String META_DISABLE_ZOOM =
@@ -130,9 +129,12 @@ public class SelectionHandleTest extends ContentShellTestBase {
      * selection. Does not check exact handle position as this will depend on
      * screen size; instead, position is expected to be correct within
      * HANDLE_POSITION_TOLERANCE_PIX.
+     *
+     * Test is flaky: crbug.com/290375
+     * @MediumTest
+     * @Feature({ "TextSelection", "Main" })
      */
-    @MediumTest
-    @Feature({ "TextSelection", "Main" })
+    @FlakyTest
     public void testNoneditableSelectionHandles() throws Throwable {
         doSelectionHandleTest(TestPageType.NONEDITABLE);
     }
@@ -415,6 +417,19 @@ public class SelectionHandleTest extends ContentShellTestBase {
         }));
     }
 
+    public void assertWaitForHasInputConnection() {
+        try {
+            assertTrue(CriteriaHelper.pollForCriteria(new Criteria() {
+                @Override
+                public boolean isSatisfied() {
+                    return getContentViewCore().getInputConnectionForTest() != null;
+                }
+            }));
+        } catch (InterruptedException e) {
+            fail();
+        }
+    }
+
     private ImeAdapter getImeAdapter() {
         return getContentViewCore().getImeAdapterForTest();
     }
@@ -428,6 +443,9 @@ public class SelectionHandleTest extends ContentShellTestBase {
     }
 
     private Editable getEditable() {
+        // We have to wait for the input connection (with the IME) to be created before accessing
+        // the ContentViewCore's editable.
+        assertWaitForHasInputConnection();
         return getContentViewCore().getEditableForTest();
     }
 

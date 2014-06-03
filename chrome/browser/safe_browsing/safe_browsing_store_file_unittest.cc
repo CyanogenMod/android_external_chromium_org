@@ -13,9 +13,6 @@
 
 namespace {
 
-const base::FilePath::CharType kFolderPrefix[] =
-    FILE_PATH_LITERAL("SafeBrowsingTestStoreFile");
-
 class SafeBrowsingStoreFileTest : public PlatformTest {
  public:
   virtual void SetUp() {
@@ -84,18 +81,16 @@ TEST_F(SafeBrowsingStoreFileTest, DetectsCorruption) {
 
   // Can successfully open and read the store.
   std::vector<SBAddFullHash> pending_adds;
-  std::set<SBPrefix> prefix_misses;
   SBAddPrefixes orig_prefixes;
   std::vector<SBAddFullHash> orig_hashes;
   EXPECT_TRUE(store_->BeginUpdate());
-  EXPECT_TRUE(store_->FinishUpdate(pending_adds, prefix_misses,
-                                   &orig_prefixes, &orig_hashes));
+  EXPECT_TRUE(store_->FinishUpdate(pending_adds, &orig_prefixes, &orig_hashes));
   EXPECT_GT(orig_prefixes.size(), 0U);
   EXPECT_GT(orig_hashes.size(), 0U);
   EXPECT_FALSE(corruption_detected_);
 
   // Corrupt the store.
-  file_util::ScopedFILE file(file_util::OpenFile(filename_, "rb+"));
+  file_util::ScopedFILE file(base::OpenFile(filename_, "rb+"));
   const long kOffset = 60;
   EXPECT_EQ(fseek(file.get(), kOffset, SEEK_SET), 0);
   const int32 kZero = 0;
@@ -111,8 +106,7 @@ TEST_F(SafeBrowsingStoreFileTest, DetectsCorruption) {
   std::vector<SBAddFullHash> add_hashes;
   corruption_detected_ = false;
   EXPECT_TRUE(store_->BeginUpdate());
-  EXPECT_FALSE(store_->FinishUpdate(pending_adds, prefix_misses,
-                                    &add_prefixes, &add_hashes));
+  EXPECT_FALSE(store_->FinishUpdate(pending_adds, &add_prefixes, &add_hashes));
   EXPECT_TRUE(corruption_detected_);
   EXPECT_EQ(add_prefixes.size(), 0U);
   EXPECT_EQ(add_hashes.size(), 0U);
@@ -120,7 +114,7 @@ TEST_F(SafeBrowsingStoreFileTest, DetectsCorruption) {
   // Make it look like there is a lot of add-chunks-seen data.
   const long kAddChunkCountOffset = 2 * sizeof(int32);
   const int32 kLargeCount = 1000 * 1000 * 1000;
-  file.reset(file_util::OpenFile(filename_, "rb+"));
+  file.reset(base::OpenFile(filename_, "rb+"));
   EXPECT_EQ(fseek(file.get(), kAddChunkCountOffset, SEEK_SET), 0);
   EXPECT_EQ(fwrite(&kLargeCount, sizeof(kLargeCount), 1, file.get()), 1U);
   file.reset();
@@ -162,7 +156,7 @@ TEST_F(SafeBrowsingStoreFileTest, CheckValidityPayload) {
   const size_t kOffset = 37;
 
   {
-    file_util::ScopedFILE file(file_util::OpenFile(filename_, "rb+"));
+    file_util::ScopedFILE file(base::OpenFile(filename_, "rb+"));
     EXPECT_EQ(0, fseek(file.get(), kOffset, SEEK_SET));
     EXPECT_GE(fputs("hello", file.get()), 0);
   }
@@ -182,7 +176,7 @@ TEST_F(SafeBrowsingStoreFileTest, CheckValidityChecksum) {
   const int kOffset = -static_cast<int>(sizeof(base::MD5Digest));
 
   {
-    file_util::ScopedFILE file(file_util::OpenFile(filename_, "rb+"));
+    file_util::ScopedFILE file(base::OpenFile(filename_, "rb+"));
     EXPECT_EQ(0, fseek(file.get(), kOffset, SEEK_END));
     EXPECT_GE(fputs("hello", file.get()), 0);
   }

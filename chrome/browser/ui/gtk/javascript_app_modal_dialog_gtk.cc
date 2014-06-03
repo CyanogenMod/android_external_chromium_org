@@ -24,12 +24,12 @@ const char kSuppressCheckboxId[] = "chrome_suppress_checkbox";
 
 // If there's a text entry in the dialog, get the text from the first one and
 // return it.
-string16 GetPromptText(GtkDialog* dialog) {
+base::string16 GetPromptText(GtkDialog* dialog) {
   GtkWidget* widget = static_cast<GtkWidget*>(
       g_object_get_data(G_OBJECT(dialog), kPromptTextId));
   if (widget)
     return UTF8ToUTF16(gtk_entry_get_text(GTK_ENTRY(widget)));
-  return string16();
+  return base::string16();
 }
 
 // If there's a toggle button in the dialog, return the toggled state.

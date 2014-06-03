@@ -24,8 +24,7 @@
 #include "ui/aura/root_window.h"
 
 #if defined(OS_CHROMEOS)
-#include "base/chromeos/chromeos_version.h"
-#include "chrome/browser/ui/ash/brightness_controller_chromeos.h"
+#include "base/sys_info.h"
 #include "chrome/browser/ui/ash/ime_controller_chromeos.h"
 #include "chrome/browser/ui/ash/volume_controller_chromeos.h"
 #include "chromeos/chromeos_switches.h"
@@ -45,7 +44,7 @@ bool ShouldOpenAshOnStartup() {
 
 void OpenAsh() {
 #if defined(OS_CHROMEOS)
-  if (base::chromeos::IsRunningOnChromeOS()) {
+  if (base::SysInfo::IsRunningOnChromeOS()) {
     // Hides the cursor outside of the Aura root window. The cursor will be
     // drawn within the Aura root window, and it'll remain hidden after the
     // Aura window is closed.
@@ -64,9 +63,6 @@ void OpenAsh() {
   shell->accelerator_controller()->SetScreenshotDelegate(
       scoped_ptr<ash::ScreenshotDelegate>(new ScreenshotTaker).Pass());
 #if defined(OS_CHROMEOS)
-  shell->accelerator_controller()->SetBrightnessControlDelegate(
-      scoped_ptr<ash::BrightnessControlDelegate>(
-          new BrightnessController).Pass());
   shell->accelerator_controller()->SetImeControlDelegate(
       scoped_ptr<ash::ImeControlDelegate>(new ImeController).Pass());
   ash::Shell::GetInstance()->high_contrast_controller()->SetEnabled(
@@ -87,7 +83,7 @@ void OpenAsh() {
     chrome::StartKeepAlive();
   }
 #endif
-  ash::Shell::GetPrimaryRootWindow()->ShowRootWindow();
+  ash::Shell::GetPrimaryRootWindow()->GetDispatcher()->host()->Show();
 }
 
 void CloseAsh() {

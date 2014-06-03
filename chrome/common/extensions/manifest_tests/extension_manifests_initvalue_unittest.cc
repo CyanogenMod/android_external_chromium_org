@@ -6,10 +6,10 @@
 #include "base/path_service.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/common/chrome_paths.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/common/extensions/manifest_tests/extension_manifest_test.h"
 #include "chrome/common/extensions/manifest_url_handler.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/manifest_constants.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -17,10 +17,10 @@
 #include <gtk/gtk.h>
 #endif
 
-namespace errors = extension_manifest_errors;
-namespace keys = extension_manifest_keys;
-
 namespace extensions {
+
+namespace errors = manifest_errors;
+namespace keys = manifest_keys;
 
 class InitValueManifestTest : public ExtensionManifestTest {
 };
@@ -71,6 +71,10 @@ TEST_F(InitValueManifestTest, InitFromValueInvalid) {
              errors::kInvalidMinimumChromeVersion),
     Testcase("init_invalid_chrome_version_too_low.json",
              errors::kChromeVersionTooLow),
+    Testcase("init_invalid_short_name_empty.json",
+             errors::kInvalidShortName),
+    Testcase("init_invalid_short_name_type.json",
+             errors::kInvalidShortName),
   };
 
   RunTestcases(testcases, arraysize(testcases),
@@ -88,6 +92,7 @@ TEST_F(InitValueManifestTest, InitFromValueValid) {
   EXPECT_TRUE(Extension::IdIsValid(extension->id()));
   EXPECT_EQ("1.0.0.0", extension->VersionString());
   EXPECT_EQ("my extension", extension->name());
+  EXPECT_EQ(extension->name(), extension->short_name());
   EXPECT_EQ(extension->id(), extension->url().host());
   EXPECT_EQ(extension->path(), path);
   EXPECT_EQ(path, extension->path());
@@ -103,6 +108,11 @@ TEST_F(InitValueManifestTest, InitFromValueValid) {
             ManifestURL::GetOptionsPage(extension.get()).scheme());
   EXPECT_EQ("/options.html",
             ManifestURL::GetOptionsPage(extension.get()).path());
+
+  // Test optional short_name field.
+  extension = LoadAndExpectSuccess("init_valid_short_name.json");
+  EXPECT_EQ("a very descriptive extension name", extension->name());
+  EXPECT_EQ("concise name", extension->short_name());
 
   Testcase testcases[] = {
     // Test that an empty list of page actions does not stop a browser action
@@ -143,7 +153,7 @@ TEST_F(InitValueManifestTest, InitFromValueValidNameInRTL) {
   scoped_refptr<Extension> extension(LoadAndExpectSuccess(
       "init_valid_name_no_rtl.json"));
 
-  string16 localized_name(ASCIIToUTF16("Dictionary (by Google)"));
+  base::string16 localized_name(ASCIIToUTF16("Dictionary (by Google)"));
   base::i18n::AdjustStringForLocaleDirection(&localized_name);
   EXPECT_EQ(localized_name, UTF8ToUTF16(extension->name()));
 

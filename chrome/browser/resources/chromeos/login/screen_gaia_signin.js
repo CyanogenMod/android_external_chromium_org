@@ -16,6 +16,8 @@ login.createScreen('GaiaSigninScreen', 'gaia-signin', function() {
   // Maximum Gaia loading time in seconds.
   /** @const */ var MAX_GAIA_LOADING_TIME_SEC = 60;
 
+  /** @const */ var HELP_TOPIC_ENTERPRISE_REPORTING = 2535613;
+
   return {
     EXTERNAL_API: [
       'loadAuthExtension',
@@ -37,13 +39,6 @@ login.createScreen('GaiaSigninScreen', 'gaia-signin', function() {
      * @private
      */
     gaiaAuthParams_: null,
-
-    /**
-     * Whether extension should be loaded silently.
-     * @type {boolean}
-     * @private
-     */
-    silentLoad_: false,
 
     /**
      * Whether local version of Gaia page is used.
@@ -75,8 +70,20 @@ login.createScreen('GaiaSigninScreen', 'gaia-signin', function() {
     /** @override */
     decorate: function() {
       this.gaiaAuthHost_ = new cr.login.GaiaAuthHost($('signin-frame'));
-      this.gaiaAuthHost_.addEventListener('ready',
-                                          this.onAuthReady_.bind(this));
+      this.gaiaAuthHost_.addEventListener(
+          'ready', this.onAuthReady_.bind(this));
+      this.gaiaAuthHost_.confirmPasswordCallback =
+          this.onAuthConfirmPassword_.bind(this);
+      this.gaiaAuthHost_.noPasswordCallback =
+          this.onAuthNoPassword_.bind(this);
+      this.gaiaAuthHost_.authPageLoadedCallback =
+          this.onAuthPageLoaded_.bind(this);
+
+      $('enterprise-info-hint-link').addEventListener('click', function(e) {
+        chrome.send('launchHelpApp', [HELP_TOPIC_ENTERPRISE_REPORTING]);
+        e.preventDefault();
+      });
+
 
       this.updateLocalizedContent();
     },
@@ -215,9 +222,9 @@ login.createScreen('GaiaSigninScreen', 'gaia-signin', function() {
      * @private
      */
     loadAuthExtension: function(data) {
-      this.silentLoad_ = data.silentLoad;
       this.isLocal = data.isLocal;
       this.email = '';
+      this.classList.toggle('saml', false);
 
       this.updateAuthExtension(data);
 
@@ -234,7 +241,9 @@ login.createScreen('GaiaSigninScreen', 'gaia-signin', function() {
       if (data.forceReload ||
           JSON.stringify(this.gaiaAuthParams_) != JSON.stringify(params)) {
         this.error_ = 0;
-        this.gaiaAuthHost_.load(data.useOffline,
+        this.gaiaAuthHost_.load(data.useOffline ?
+                                    cr.login.GaiaAuthHost.AuthMode.OFFLINE :
+                                    cr.login.GaiaAuthHost.AuthMode.DEFAULT,
                                 params,
                                 this.onAuthCompleted_.bind(this));
         this.gaiaAuthParams_ = params;
@@ -287,6 +296,16 @@ login.createScreen('GaiaSigninScreen', 'gaia-signin', function() {
     },
 
     /**
+     * Invoked when the auth host notifies about an auth page is loaded.
+     * @param {boolean} isSAML True if the loaded auth page is SAML.
+     */
+    onAuthPageLoaded_: function(isSAML) {
+      this.classList.toggle('saml', isSAML);
+      if (Oobe.getInstance().currentScreen === this)
+        Oobe.getInstance().updateScreenSize(this);
+    },
+
+    /**
      * Invoked when the auth host emits 'ready' event.
      * @private
      */
@@ -305,6 +324,41 @@ login.createScreen('GaiaSigninScreen', 'gaia-signin', function() {
 
       // Warm up the user images screen.
       Oobe.getInstance().preloadScreen({id: SCREEN_USER_IMAGE_PICKER});
+    },
+
+    /**
+     * Invoked when the auth host needs the user to confirm password.
+     * @private
+     */
+    onAuthConfirmPassword_: function() {
+      this.loading = true;
+      Oobe.getInstance().headerHidden = false;
+
+      login.ConfirmPasswordScreen.show(
+          this.onConfirmPasswordCollected_.bind(this));
+    },
+
+    /**
+     * Invoked when the confirm password screen is dismissed.
+     * @private
+     */
+    onConfirmPasswordCollected_: function(password) {
+      this.gaiaAuthHost_.verifyConfirmedPassword(password);
+
+      // Shows signin UI again without changing states.
+      Oobe.showScreen({id: SCREEN_GAIA_SIGNIN});
+    },
+
+    /**
+     * Inovked when the auth flow completes but no password is available.
+     * @param {string} email The authenticated user email.
+     */
+    onAuthNoPassword_: function(email) {
+      login.MessageBoxScreen.show(
+          loadTimeData.getString('noPasswordWarningTitle'),
+          loadTimeData.getString('noPasswordWarningBody'),
+          loadTimeData.getString('noPasswordWarningOkButton'),
+          Oobe.showSigninUI);
     },
 
     /**
@@ -381,15 +435,18 @@ login.createScreen('GaiaSigninScreen', 'gaia-signin', function() {
             'createLocallyManagedUser',
             '<a id="createManagedUserLink" class="signin-link" href="#">',
             '</a>');
-      $('createAccountLink').onclick = function() {
+      $('createAccountLink').addEventListener('click', function(e) {
         chrome.send('createAccount');
-      };
-      $('guestSigninLink').onclick = function() {
+        e.preventDefault();
+      });
+      $('guestSigninLink').addEventListener('click', function(e) {
         chrome.send('launchIncognito');
-      };
-      $('createManagedUserLink').onclick = function() {
+        e.preventDefault();
+      });
+      $('createManagedUserLink').addEventListener('click', function(e) {
         chrome.send('showLocallyManagedUserCreationScreen');
-      };
+        e.preventDefault();
+      });
     },
 
     /**

@@ -11,6 +11,7 @@
 #include "chrome/browser/auto_launch_trial.h"
 #include "chrome/browser/first_run/first_run.h"
 #include "chrome/browser/infobars/confirm_infobar_delegate.h"
+#include "chrome/browser/infobars/infobar.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
@@ -36,20 +37,20 @@ namespace {
 // The delegate for the infobar shown when Chrome is auto-launched.
 class AutolaunchInfoBarDelegate : public ConfirmInfoBarDelegate {
  public:
-  // Creates an autolaunch infobar delegate and adds it to |infobar_service|.
+  // Creates an autolaunch infobar and delegate and adds the infobar to
+  // |infobar_service|.
   static void Create(InfoBarService* infobar_service, Profile* profile);
 
  private:
-  AutolaunchInfoBarDelegate(InfoBarService* infobar_service,
-                            Profile* profile);
+  explicit AutolaunchInfoBarDelegate(Profile* profile);
   virtual ~AutolaunchInfoBarDelegate();
 
   void set_should_expire() { should_expire_ = true; }
 
   // ConfirmInfoBarDelegate:
   virtual int GetIconID() const OVERRIDE;
-  virtual string16 GetMessageText() const OVERRIDE;
-  virtual string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
+  virtual base::string16 GetMessageText() const OVERRIDE;
+  virtual base::string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
   virtual bool Accept() OVERRIDE;
   virtual bool Cancel() OVERRIDE;
   virtual bool ShouldExpireInternal(
@@ -70,14 +71,14 @@ class AutolaunchInfoBarDelegate : public ConfirmInfoBarDelegate {
 // static
 void AutolaunchInfoBarDelegate::Create(InfoBarService* infobar_service,
                                        Profile* profile) {
-  infobar_service->AddInfoBar(scoped_ptr<InfoBarDelegate>(
-      new AutolaunchInfoBarDelegate(infobar_service, profile)));
+  infobar_service->AddInfoBar(ConfirmInfoBarDelegate::CreateInfoBar(
+      scoped_ptr<ConfirmInfoBarDelegate>(
+          new AutolaunchInfoBarDelegate(profile))));
 }
 
 AutolaunchInfoBarDelegate::AutolaunchInfoBarDelegate(
-    InfoBarService* infobar_service,
     Profile* profile)
-    : ConfirmInfoBarDelegate(infobar_service),
+    : ConfirmInfoBarDelegate(),
       profile_(profile),
       should_expire_(false),
       weak_factory_(this) {
@@ -101,11 +102,11 @@ int AutolaunchInfoBarDelegate::GetIconID() const {
   return IDR_PRODUCT_LOGO_32;
 }
 
-string16 AutolaunchInfoBarDelegate::GetMessageText() const {
+base::string16 AutolaunchInfoBarDelegate::GetMessageText() const {
   return l10n_util::GetStringUTF16(IDS_AUTO_LAUNCH_INFOBAR_TEXT);
 }
 
-string16 AutolaunchInfoBarDelegate::GetButtonLabel(
+base::string16 AutolaunchInfoBarDelegate::GetButtonLabel(
     InfoBarButton button) const {
   return l10n_util::GetStringUTF16((button == BUTTON_OK) ?
       IDS_AUTO_LAUNCH_OK : IDS_AUTO_LAUNCH_REVERT);

@@ -7,8 +7,9 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
-#include "chrome/browser/ui/browser_finder.h"
+#include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/extensions/extension_enable_flow_delegate.h"
+#include "chrome/browser/ui/scoped_tabbed_browser_displayer.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 
@@ -38,6 +39,12 @@ void ExtensionEnableFlow::StartForNativeWindow(
     gfx::NativeWindow parent_window) {
   parent_contents_ = NULL;
   parent_window_ = parent_window;
+  Run();
+}
+
+void ExtensionEnableFlow::StartForCurrentlyNonexistentWindow(
+    base::Callback<gfx::NativeWindow(void)> window_getter) {
+  window_getter_ = window_getter;
   Run();
 }
 
@@ -92,6 +99,8 @@ void ExtensionEnableFlow::CheckPermissionAndMaybePromptUser() {
 }
 
 void ExtensionEnableFlow::CreatePrompt() {
+  if (!window_getter_.is_null())
+    parent_window_ = window_getter_.Run();
   prompt_.reset(parent_contents_ ?
       new ExtensionInstallPrompt(parent_contents_) :
       new ExtensionInstallPrompt(profile_, parent_window_, this));
@@ -167,7 +176,7 @@ void ExtensionEnableFlow::InstallUIAbort(bool user_initiated) {
 
 content::WebContents* ExtensionEnableFlow::OpenURL(
     const content::OpenURLParams& params) {
-  Browser* browser = chrome::FindOrCreateTabbedBrowser(
+  chrome::ScopedTabbedBrowserDisplayer displayer(
       profile_, chrome::GetActiveDesktop());
-  return browser->OpenURL(params);
+  return displayer.browser()->OpenURL(params);
 }

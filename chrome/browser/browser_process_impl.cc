@@ -12,6 +12,7 @@
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
 #include "base/debug/alias.h"
+#include "base/debug/leak_annotations.h"
 #include "base/path_service.h"
 #include "base/prefs/json_pref_store.h"
 #include "base/prefs/pref_registry_simple.h"
@@ -19,6 +20,7 @@
 #include "base/synchronization/waitable_event.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_restrictions.h"
+#include "chrome/browser/apps/chrome_apps_client.h"
 #include "chrome/browser/automation/automation_provider_list.h"
 #include "chrome/browser/background/background_mode_manager.h"
 #include "chrome/browser/chrome_browser_main.h"
@@ -31,6 +33,7 @@
 #include "chrome/browser/devtools/remote_debugging_server.h"
 #include "chrome/browser/download/download_request_limiter.h"
 #include "chrome/browser/download/download_status_updater.h"
+#include "chrome/browser/extensions/chrome_extensions_browser_client.h"
 #include "chrome/browser/extensions/event_router_forwarder.h"
 #include "chrome/browser/extensions/extension_renderer_state.h"
 #include "chrome/browser/first_run/upgrade_util.h"
@@ -50,7 +53,6 @@
 #include "chrome/browser/notifications/notification_ui_manager.h"
 #include "chrome/browser/plugins/chrome_plugin_service_filter.h"
 #include "chrome/browser/plugins/plugin_finder.h"
-#include "chrome/browser/policy/policy_service.h"
 #include "chrome/browser/prefs/browser_prefs.h"
 #include "chrome/browser/prefs/chrome_pref_service_factory.h"
 #include "chrome/browser/prerender/prerender_tracker.h"
@@ -76,6 +78,7 @@
 #include "chrome/common/switch_utils.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/installer/util/google_update_constants.h"
+#include "components/policy/core/common/policy_service.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/child_process_security_policy.h"
 #include "content/public/browser/notification_details.h"
@@ -91,7 +94,7 @@
 #if defined(ENABLE_CONFIGURATION_POLICY)
 #include "chrome/browser/policy/browser_policy_connector.h"
 #else
-#include "chrome/browser/policy/policy_service_stub.h"
+#include "components/policy/core/common/policy_service_stub.h"
 #endif  // defined(ENABLE_CONFIGURATION_POLICY)
 
 #if defined(OS_WIN)
@@ -182,8 +185,14 @@ BrowserProcessImpl::BrowserProcessImpl(
   InitIdleMonitor();
 #endif
 
+  apps::AppsClient::Set(ChromeAppsClient::GetInstance());
   extensions::ExtensionsClient::Set(
       extensions::ChromeExtensionsClient::GetInstance());
+
+  extensions_browser_client_.reset(
+      new extensions::ChromeExtensionsBrowserClient);
+  extensions::ExtensionsBrowserClient::Set(extensions_browser_client_.get());
+
   extension_event_router_forwarder_ = new extensions::EventRouterForwarder;
   ExtensionRendererState::GetInstance()->Init();
 
@@ -197,6 +206,7 @@ BrowserProcessImpl::~BrowserProcessImpl() {
 }
 
 void BrowserProcessImpl::StartTearDown() {
+    TRACE_EVENT0("shutdown", "BrowserProcessImpl::StartTearDown");
 #if defined(ENABLE_AUTOMATION)
   // Delete the AutomationProviderList before NotificationService,
   // since it may try to unregister notifications
@@ -235,7 +245,11 @@ void BrowserProcessImpl::StartTearDown() {
   notification_ui_manager_.reset();
 
   // Need to clear profiles (download managers) before the io_thread_.
-  profile_manager_.reset();
+  {
+    TRACE_EVENT0("shutdown",
+                 "BrowserProcessImpl::StartTearDown:ProfileManager");
+    profile_manager_.reset();
+  }
 
 #if !defined(OS_ANDROID)
   // Debugger must be cleaned up before IO thread and NotificationService.
@@ -272,6 +286,10 @@ void BrowserProcessImpl::StartTearDown() {
 #endif
 
   platform_part()->StartTearDown();
+
+#if defined(ENABLE_WEBRTC)
+  webrtc_log_uploader_.reset();
+#endif
 }
 
 void BrowserProcessImpl::PostDestroyThreads() {
@@ -331,8 +349,15 @@ unsigned int BrowserProcessImpl::ReleaseModule() {
     // Wait for the pending print jobs to finish. Don't do this later, since
     // this might cause a nested message loop to run, and we don't want pending
     // tasks to run once teardown has started.
-    print_job_manager_->OnQuit();
-    print_job_manager_.reset();
+    print_job_manager_->Shutdown();
+#endif
+
+#if defined(LEAK_SANITIZER)
+    // Check for memory leaks now, before we start shutting down threads. Doing
+    // this early means we won't report any shutdown-only leaks (as they have
+    // not yet happened at this point).
+    // If leaks are found, this will make the process exit immediately.
+    __lsan_do_leak_check();
 #endif
 
     CHECK(base::MessageLoop::current()->is_running());
@@ -358,9 +383,12 @@ void BrowserProcessImpl::EndSession() {
   MetricsService* metrics = g_browser_process->metrics_service();
   if (metrics && local_state()) {
     metrics->RecordStartOfSessionEnd();
-
+#if !defined(OS_CHROMEOS)
     // MetricsService lazily writes to prefs, force it to write now.
+    // On ChromeOS, chrome gets killed when hangs, so no need to
+    // commit prefs::kStabilitySessionEndCompleted change immediately.
     local_state()->CommitPendingWrite();
+#endif
   }
 
   // http://crbug.com/125207
@@ -553,11 +581,7 @@ bool BrowserProcessImpl::IsShuttingDown() {
 }
 
 printing::PrintJobManager* BrowserProcessImpl::print_job_manager() {
-  // TODO(abarth): DCHECK(CalledOnValidThread());
-  // http://code.google.com/p/chromium/issues/detail?id=6828
-  // print_job_manager_ is initialized in the constructor and destroyed in the
-  // destructor, so it should always be valid.
-  DCHECK(print_job_manager_.get());
+  DCHECK(CalledOnValidThread());
   return print_job_manager_.get();
 }
 
@@ -617,7 +641,7 @@ BookmarkPromptController* BrowserProcessImpl::bookmark_prompt_controller() {
 #endif
 }
 
-chrome::StorageMonitor* BrowserProcessImpl::storage_monitor() {
+StorageMonitor* BrowserProcessImpl::storage_monitor() {
 #if defined(OS_ANDROID) || defined(OS_IOS)
   return NULL;
 #else
@@ -626,19 +650,18 @@ chrome::StorageMonitor* BrowserProcessImpl::storage_monitor() {
 }
 
 void BrowserProcessImpl::set_storage_monitor_for_test(
-    scoped_ptr<chrome::StorageMonitor> monitor) {
+    scoped_ptr<StorageMonitor> monitor) {
 #if !defined(OS_ANDROID) && !defined(OS_IOS)
   storage_monitor_ = monitor.Pass();
 #endif
 }
 
-chrome::MediaFileSystemRegistry*
-BrowserProcessImpl::media_file_system_registry() {
+MediaFileSystemRegistry* BrowserProcessImpl::media_file_system_registry() {
 #if defined(OS_ANDROID) || defined(OS_IOS)
     return NULL;
 #else
   if (!media_file_system_registry_)
-    media_file_system_registry_.reset(new chrome::MediaFileSystemRegistry());
+    media_file_system_registry_.reset(new MediaFileSystemRegistry());
   return media_file_system_registry_.get();
 #endif
 }
@@ -670,8 +693,10 @@ void BrowserProcessImpl::RegisterPrefs(PrefRegistrySimple* registry) {
   registry->RegisterBooleanPref(prefs::kEulaAccepted, false);
 #endif  // defined(OS_CHROMEOS) || defined(OS_ANDROID) || defined(OS_IOS)
 #if defined(OS_WIN)
-  if (base::win::GetVersion() >= base::win::VERSION_WIN8)
-    registry->RegisterBooleanPref(prefs::kRestartSwitchMode, false);
+  if (base::win::GetVersion() >= base::win::VERSION_WIN8) {
+    registry->RegisterStringPref(prefs::kRelaunchMode,
+                                 upgrade_util::kRelaunchModeDefault);
+  }
 #endif
 
   // TODO(brettw,*): this comment about ResourceBundle was here since
@@ -767,6 +792,8 @@ prerender::PrerenderTracker* BrowserProcessImpl::prerender_tracker() {
 
 ComponentUpdateService* BrowserProcessImpl::component_updater() {
   if (!component_updater_.get()) {
+    if (!BrowserThread::CurrentlyOn(BrowserThread::UI))
+      return NULL;
     ComponentUpdateService::Configurator* configurator =
         MakeChromeComponentUpdaterConfigurator(
             CommandLine::ForCurrentProcess(),
@@ -840,13 +867,12 @@ void BrowserProcessImpl::CreateLocalState() {
   // Register local state preferences.
   chrome::RegisterLocalState(pref_registry.get());
 
-  local_state_.reset(
+  local_state_ =
       chrome_prefs::CreateLocalState(local_state_path,
                                      local_state_task_runner_.get(),
                                      policy_service(),
-                                     NULL,
                                      pref_registry,
-                                     false));
+                                     false).Pass();
 
   pref_change_registrar_.Init(local_state_.get());
 
@@ -855,6 +881,15 @@ void BrowserProcessImpl::CreateLocalState() {
       prefs::kDefaultBrowserSettingEnabled,
       base::Bind(&BrowserProcessImpl::ApplyDefaultBrowserPolicy,
                  base::Unretained(this)));
+
+  // This preference must be kept in sync with external values; update them
+  // whenever the preference or its controlling policy changes.
+#if !defined(OS_CHROMEOS) && !defined(OS_ANDROID) && !defined(OS_IOS)
+  pref_change_registrar_.Add(
+      prefs::kMetricsReportingEnabled,
+      base::Bind(&BrowserProcessImpl::ApplyMetricsReportingPolicy,
+                 base::Unretained(this)));
+#endif
 
   int max_per_proxy = local_state_->GetInteger(prefs::kMaxConnectionsPerProxy);
   net::ClientSocketPoolManager::set_max_sockets_per_proxy_server(
@@ -882,6 +917,10 @@ void BrowserProcessImpl::PreMainMessageLoopRun() {
 
   if (local_state_->IsManagedPreference(prefs::kDefaultBrowserSettingEnabled))
     ApplyDefaultBrowserPolicy();
+
+#if !defined(OS_CHROMEOS) && !defined(OS_ANDROID) && !defined(OS_IOS)
+  ApplyMetricsReportingPolicy();
+#endif
 
 #if defined(ENABLE_PLUGINS)
   PluginService* plugin_service = PluginService::GetInstance();
@@ -924,7 +963,7 @@ void BrowserProcessImpl::PreMainMessageLoopRun() {
 #endif
 
 #if !defined(OS_ANDROID) && !defined(OS_IOS)
-  storage_monitor_.reset(chrome::StorageMonitor::Create());
+  storage_monitor_.reset(StorageMonitor::Create());
 #endif
 
   platform_part_->PreMainMessageLoopRun();
@@ -1004,6 +1043,16 @@ void BrowserProcessImpl::ApplyDefaultBrowserPolicy() {
 void BrowserProcessImpl::ApplyAllowCrossOriginAuthPromptPolicy() {
   bool value = local_state()->GetBoolean(prefs::kAllowCrossOriginAuthPrompt);
   ResourceDispatcherHost::Get()->SetAllowCrossOriginAuthPrompt(value);
+}
+
+void BrowserProcessImpl::ApplyMetricsReportingPolicy() {
+#if !defined(OS_CHROMEOS) && !defined(OS_ANDROID) && !defined(OS_IOS)
+  CHECK(BrowserThread::PostTask(
+      BrowserThread::FILE, FROM_HERE,
+      base::Bind(
+          base::IgnoreResult(&GoogleUpdateSettings::SetCollectStatsConsent),
+          local_state()->GetBoolean(prefs::kMetricsReportingEnabled))));
+#endif
 }
 
 // Mac is currently not supported.

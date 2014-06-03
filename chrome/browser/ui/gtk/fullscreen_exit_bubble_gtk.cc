@@ -23,7 +23,6 @@ namespace {
 
 const GdkColor kBackgroundColor = GDK_COLOR_RGB(0xff, 0xff, 0xff);
 const GdkColor kFrameColor = GDK_COLOR_RGB(0x63, 0x63, 0x63);
-const int kMiddlePaddingPx = 30;
 
 }  // namespace
 
@@ -64,7 +63,7 @@ void FullscreenExitBubbleGtk::UpdateContent(
     gtk_widget_show(deny_button_);
   } else {
     bool link_visible = true;
-    string16 accelerator;
+    base::string16 accelerator;
     if (bubble_type == FEB_TYPE_BROWSER_FULLSCREEN_EXIT_INSTRUCTION ||
         bubble_type ==
             FEB_TYPE_BROWSER_EXTENSION_FULLSCREEN_EXIT_INSTRUCTION) {

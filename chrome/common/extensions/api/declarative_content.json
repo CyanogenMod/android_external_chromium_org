@@ -6,7 +6,6 @@
   {
     "namespace": "declarativeContent",
     "description": "Use the <code>chrome.declarativeContent</code> API to take actions depending on the content of a page, without requiring permission to read the page's content.",
-    "documentation_permissions_required": ["declarative", "declarativeContent"],
     "types": [
       {
         "id": "PageStateMatcher",
@@ -21,16 +20,12 @@
           "css": {
             "type": "array",
             "optional": true,
-            "description": "Matches if all of the CSS selectors in the array match in a frame with the same origin as the page's main frame.  Note that listing hundreds of CSS selectors here can slow down web sites.",
+            "description": "Matches if all of the CSS selectors in the array match displayed elements in a frame with the same origin as the page's main frame.  All selectors in this array must be <a href=\"http://www.w3.org/TR/selectors4/#compound\">compound selectors</a> to speed up matching.  Note that listing hundreds of CSS selectors or CSS selectors that match hundreds of times per page can still slow down web sites.",
             // TODO(jyasskin): Figure out if we want to require all
             // the selectors to match in the same frame, or allow several
             // frames to contribute to a match.
             "items": { "type": "string" }
-            // TODO(jyasskin): Validate that the selectors in this
-            // array are valid. Otherwise, we can get exceptions from
-            // content_watcher.js:FindMatchingSelectors() long after the
-            // rule is registered.
-//          },
+//        },
 //          TODO: "text": {
 //            "type": "array",
 //            "optional": true,
@@ -45,7 +40,7 @@
       },
       {
         "id": "ShowPageAction",
-        "description": "Declarative event action that shows the extension's $ref:[pageAction page action] while the corresponding conditions are met.  This action can be used without <a href=\"declare_permissions.html#host-permission\">host permissions</a>.  If the extension takes the <a href=\"activeTab.html\">activeTab</a> permission, a click on the page action will grant access to the active tab.",
+        "description": "Declarative event action that shows the extension's $ref:[pageAction page action] while the corresponding conditions are met.  This action can be used without <a href=\"declare_permissions.html#host-permissions\">host permissions</a>, but the extension must have a page action.  If the extension takes the <a href=\"activeTab.html\">activeTab</a> permission, a click on the page action will grant access to the active tab.",
         "type": "object",
         "properties": {
           "instanceType": {

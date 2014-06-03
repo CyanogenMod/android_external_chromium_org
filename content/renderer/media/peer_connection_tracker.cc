@@ -18,7 +18,7 @@
 
 using std::string;
 using webrtc::MediaConstraintsInterface;
-using WebKit::WebRTCPeerConnectionHandlerClient;
+using blink::WebRTCPeerConnectionHandlerClient;
 
 namespace content {
 
@@ -63,16 +63,16 @@ static string SerializeMediaConstraints(
 }
 
 static string SerializeMediaStreamComponent(
-    const WebKit::WebMediaStreamTrack component) {
+    const blink::WebMediaStreamTrack component) {
   string id = UTF16ToUTF8(component.source().id());
   return id;
 }
 
 static string SerializeMediaDescriptor(
-    const WebKit::WebMediaStream& stream) {
+    const blink::WebMediaStream& stream) {
   string label = UTF16ToUTF8(stream.id());
   string result = "label: " + label;
-  WebKit::WebVector<WebKit::WebMediaStreamTrack> tracks;
+  blink::WebVector<blink::WebMediaStreamTrack> tracks;
   stream.audioTracks(tracks);
   if (!tracks.isEmpty()) {
     result += ", audio: [";
@@ -161,15 +161,9 @@ static base::DictionaryValue* GetDictValueStats(
     return NULL;
 
   DictionaryValue* dict = new base::DictionaryValue();
-  if (!dict)
-    return NULL;
   dict->SetDouble("timestamp", report.timestamp);
 
   base::ListValue* values = new base::ListValue();
-  if (!values) {
-    delete dict;
-    return NULL;
-  }
   dict->Set("values", values);
 
   for (size_t i = 0; i < report.values.size(); ++i) {
@@ -189,14 +183,10 @@ static base::DictionaryValue* GetDictValue(const webrtc::StatsReport& report) {
     return NULL;
 
   result.reset(new base::DictionaryValue());
-  if (!result)
-    return NULL;
-
   // Note:
   // The format must be consistent with what webrtc_internals.js expects.
   // If you change it here, you must change webrtc_internals.js as well.
-  if (stats)
-    result->Set("stats", stats.release());
+  result->Set("stats", stats.release());
   result->SetString("id", report.id);
   result->SetString("type", report.type);
 
@@ -261,7 +251,7 @@ void PeerConnectionTracker::RegisterPeerConnection(
     RTCPeerConnectionHandler* pc_handler,
     const std::vector<webrtc::PeerConnectionInterface::IceServer>& servers,
     const RTCMediaConstraints& constraints,
-    const WebKit::WebFrame* frame) {
+    const blink::WebFrame* frame) {
   DVLOG(1) << "PeerConnectionTracker::RegisterPeerConnection()";
   PeerConnectionInfo info;
 
@@ -314,7 +304,7 @@ void PeerConnectionTracker::TrackCreateAnswer(
 
 void PeerConnectionTracker::TrackSetSessionDescription(
     RTCPeerConnectionHandler* pc_handler,
-    const WebKit::WebRTCSessionDescription& desc,
+    const blink::WebRTCSessionDescription& desc,
     Source source) {
   string sdp = UTF16ToUTF8(desc.sdp());
   string type = UTF16ToUTF8(desc.type());
@@ -340,7 +330,7 @@ void PeerConnectionTracker::TrackUpdateIce(
 
 void PeerConnectionTracker::TrackAddIceCandidate(
       RTCPeerConnectionHandler* pc_handler,
-      const WebKit::WebRTCICECandidate& candidate,
+      const blink::WebRTCICECandidate& candidate,
       Source source) {
   string value = "mid: " + UTF16ToUTF8(candidate.sdpMid()) + ", " +
                  "candidate: " + UTF16ToUTF8(candidate.candidate());
@@ -351,7 +341,7 @@ void PeerConnectionTracker::TrackAddIceCandidate(
 
 void PeerConnectionTracker::TrackAddStream(
     RTCPeerConnectionHandler* pc_handler,
-    const WebKit::WebMediaStream& stream,
+    const blink::WebMediaStream& stream,
     Source source){
   SendPeerConnectionUpdate(
       pc_handler, source == SOURCE_LOCAL ? "addStream" : "onAddStream",
@@ -360,7 +350,7 @@ void PeerConnectionTracker::TrackAddStream(
 
 void PeerConnectionTracker::TrackRemoveStream(
     RTCPeerConnectionHandler* pc_handler,
-    const WebKit::WebMediaStream& stream,
+    const blink::WebMediaStream& stream,
     Source source){
   SendPeerConnectionUpdate(
       pc_handler, source == SOURCE_LOCAL ? "removeStream" : "onRemoveStream",
@@ -439,7 +429,7 @@ void PeerConnectionTracker::TrackOnRenegotiationNeeded(
 
 void PeerConnectionTracker::TrackCreateDTMFSender(
     RTCPeerConnectionHandler* pc_handler,
-    const WebKit::WebMediaStreamTrack& track) {
+    const blink::WebMediaStreamTrack& track) {
   SendPeerConnectionUpdate(pc_handler, "createDTMFSender",
                            UTF16ToUTF8(track.id()));
 }

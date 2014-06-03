@@ -29,9 +29,9 @@
 #include "grit/generated_resources.h"
 #include "ui/base/gtk/owned_widget_gtk.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/text/text_elider.h"
 #include "ui/gfx/codec/png_codec.h"
 #include "ui/gfx/gtk_util.h"
+#include "ui/gfx/text_elider.h"
 
 using content::OpenURLParams;
 
@@ -67,7 +67,7 @@ class GlobalHistoryMenu::HistoryItem {
         session_id(0) {}
 
   // The title for the menu item.
-  string16 title;
+  base::string16 title;
   // The URL that will be navigated to if the user selects this item.
   GURL url;
 
@@ -97,8 +97,8 @@ GlobalHistoryMenu::GlobalHistoryMenu(Browser* browser)
       profile_(browser_->profile()),
       history_menu_(NULL),
       top_sites_(NULL),
-      weak_ptr_factory_(this),
-      tab_restore_service_(NULL) {
+      tab_restore_service_(NULL),
+      weak_ptr_factory_(this) {
 }
 
 GlobalHistoryMenu::~GlobalHistoryMenu() {
@@ -144,7 +144,7 @@ void GlobalHistoryMenu::GetTopSitesData() {
 
   top_sites_->GetMostVisitedURLs(
       base::Bind(&GlobalHistoryMenu::OnTopSitesReceived,
-                 weak_ptr_factory_.GetWeakPtr()));
+                 weak_ptr_factory_.GetWeakPtr()), false);
 }
 
 void GlobalHistoryMenu::OnTopSitesReceived(
@@ -193,12 +193,12 @@ GtkWidget* GlobalHistoryMenu::AddHistoryItemToMenu(HistoryItem* item,
                                                    GtkWidget* menu,
                                                    int tag,
                                                    int index) {
-  string16 title = item->title;
+  base::string16 title = item->title;
   std::string url_string = item->url.possibly_invalid_spec();
 
   if (title.empty())
     title = UTF8ToUTF16(url_string);
-  ui::ElideString(title, kMaximumMenuWidthInChars, &title);
+  gfx::ElideString(title, kMaximumMenuWidthInChars, &title);
 
   GtkWidget* menu_item = gtk_menu_item_new_with_label(
       UTF16ToUTF8(title).c_str());

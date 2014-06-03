@@ -17,6 +17,7 @@ using content::BrowserThread;
 TtsMessageFilter::TtsMessageFilter(int render_process_id, Profile* profile)
     : render_process_id_(render_process_id),
       profile_(profile) {
+  CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   TtsController::GetInstance()->AddVoicesChangedDelegate(this);
 }
 
@@ -48,10 +49,13 @@ bool TtsMessageFilter::OnMessageReceived(const IPC::Message& message,
 }
 
 void TtsMessageFilter::OnChannelClosing() {
-  TtsController::GetInstance()->RemoveVoicesChangedDelegate(this);
+  BrowserThread::PostTask(
+      BrowserThread::UI, FROM_HERE,
+      base::Bind(&TtsMessageFilter::OnChannelClosingInUIThread, this));
 }
 
 void TtsMessageFilter::OnInitializeVoiceList() {
+  CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   TtsController* tts_controller = TtsController::GetInstance();
   std::vector<VoiceData> voices;
   tts_controller->GetVoices(profile_, &voices);
@@ -63,13 +67,14 @@ void TtsMessageFilter::OnInitializeVoiceList() {
     out_voice.voice_uri = voices[i].name;
     out_voice.name = voices[i].name;
     out_voice.lang = voices[i].lang;
-    out_voice.local_service = true;
+    out_voice.local_service = !voices[i].remote;
     out_voice.is_default = (i == 0);
   }
   Send(new TtsMsg_SetVoiceList(out_voices));
 }
 
 void TtsMessageFilter::OnSpeak(const TtsUtteranceRequest& request) {
+  CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   scoped_ptr<Utterance> utterance(new Utterance(profile_));
   utterance->set_src_id(request.id);
   utterance->set_text(request.text);
@@ -83,20 +88,23 @@ void TtsMessageFilter::OnSpeak(const TtsUtteranceRequest& request) {
   params.volume = request.volume;
   utterance->set_continuous_parameters(params);
 
-  utterance->set_event_delegate(this);
+  utterance->set_event_delegate(this->AsWeakPtr());
 
   TtsController::GetInstance()->SpeakOrEnqueue(utterance.release());
 }
 
 void TtsMessageFilter::OnPause() {
+  CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   TtsController::GetInstance()->Pause();
 }
 
 void TtsMessageFilter::OnResume() {
+  CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   TtsController::GetInstance()->Resume();
 }
 
 void TtsMessageFilter::OnCancel() {
+  CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   TtsController::GetInstance()->Stop();
 }
 
@@ -104,6 +112,7 @@ void TtsMessageFilter::OnTtsEvent(Utterance* utterance,
                                   TtsEventType event_type,
                                   int char_index,
                                   const std::string& error_message) {
+  CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   switch (event_type) {
     case TTS_EVENT_START:
       Send(new TtsMsg_DidStartSpeaking(utterance->src_id()));
@@ -140,7 +149,13 @@ void TtsMessageFilter::OnTtsEvent(Utterance* utterance,
 }
 
 void TtsMessageFilter::OnVoicesChanged() {
+  CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   OnInitializeVoiceList();
+}
+
+void TtsMessageFilter::OnChannelClosingInUIThread() {
+  CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  TtsController::GetInstance()->RemoveVoicesChangedDelegate(this);
 }
 
 TtsMessageFilter::~TtsMessageFilter() {

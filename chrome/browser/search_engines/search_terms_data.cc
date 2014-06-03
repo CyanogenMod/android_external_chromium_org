@@ -14,11 +14,13 @@
 #include "chrome/browser/google/google_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search/search.h"
+#include "chrome/browser/sync/glue/device_info.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/themes/theme_service_factory.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_thread.h"
+#include "sync/protocol/sync.pb.h"
 #include "url/gurl.h"
 
 #if defined(ENABLE_RLZ)
@@ -61,8 +63,8 @@ std::string SearchTermsData::GetApplicationLocale() const {
   return "en";
 }
 
-string16 SearchTermsData::GetRlzParameterValue() const {
-  return string16();
+base::string16 SearchTermsData::GetRlzParameterValue() const {
+  return base::string16();
 }
 
 std::string SearchTermsData::GetSearchClient() const {
@@ -73,7 +75,12 @@ std::string SearchTermsData::GetSuggestClient() const {
   return std::string();
 }
 
-std::string SearchTermsData::InstantEnabledParam() const {
+std::string SearchTermsData::GetSuggestRequestIdentifier() const {
+  return std::string();
+}
+
+std::string SearchTermsData::ForceInstantResultsParam(
+    bool for_prerender) const {
   return std::string();
 }
 
@@ -115,10 +122,10 @@ std::string UIThreadSearchTermsData::GetApplicationLocale() const {
 
 // Android implementations are located in search_terms_data_android.cc.
 #if !defined(OS_ANDROID)
-string16 UIThreadSearchTermsData::GetRlzParameterValue() const {
+base::string16 UIThreadSearchTermsData::GetRlzParameterValue() const {
   DCHECK(!BrowserThread::IsThreadInitialized(BrowserThread::UI) ||
       BrowserThread::CurrentlyOn(BrowserThread::UI));
-  string16 rlz_string;
+  base::string16 rlz_string;
 #if defined(ENABLE_RLZ)
   // For organic brandcodes do not use rlz at all. Empty brandcode usually
   // means a chromium install. This is ok.
@@ -147,13 +154,35 @@ std::string UIThreadSearchTermsData::GetSearchClient() const {
 std::string UIThreadSearchTermsData::GetSuggestClient() const {
   DCHECK(!BrowserThread::IsThreadInitialized(BrowserThread::UI) ||
       BrowserThread::CurrentlyOn(BrowserThread::UI));
+#if defined(OS_ANDROID)
+  sync_pb::SyncEnums::DeviceType device_type =
+      browser_sync::DeviceInfo::GetLocalDeviceType();
+  return device_type == sync_pb::SyncEnums_DeviceType_TYPE_PHONE ?
+    "chrome" : "chrome-omni";
+#else
   return chrome::IsInstantExtendedAPIEnabled() ? "chrome-omni" : "chrome";
+#endif
 }
 
-std::string UIThreadSearchTermsData::InstantEnabledParam() const {
+std::string UIThreadSearchTermsData::GetSuggestRequestIdentifier() const {
+  DCHECK(!BrowserThread::IsThreadInitialized(BrowserThread::UI) ||
+      BrowserThread::CurrentlyOn(BrowserThread::UI));
+#if defined(OS_ANDROID)
+  sync_pb::SyncEnums::DeviceType device_type =
+      browser_sync::DeviceInfo::GetLocalDeviceType();
+  return device_type == sync_pb::SyncEnums_DeviceType_TYPE_PHONE ?
+    "chrome-mobile-ext" : "chrome-ext";
+#else
+  return "chrome-ext";
+#endif
+}
+
+std::string UIThreadSearchTermsData::ForceInstantResultsParam(
+    bool for_prerender) const {
   DCHECK(!BrowserThread::IsThreadInitialized(BrowserThread::UI) ||
          BrowserThread::CurrentlyOn(BrowserThread::UI));
-  return chrome::IsInstantExtendedAPIEnabled() ? std::string() : "ion=1&";
+  return (for_prerender || !chrome::IsInstantExtendedAPIEnabled()) ? "ion=1&" :
+      std::string();
 }
 
 std::string UIThreadSearchTermsData::InstantExtendedEnabledParam() const {
@@ -177,7 +206,9 @@ std::string UIThreadSearchTermsData::NTPIsThemedParam() const {
   // TODO(dhollowa): Determine fraction of custom themes that don't affect the
   // NTP background and/or color.
   ThemeService* theme_service = ThemeServiceFactory::GetForProfile(profile_);
-  if (theme_service && !theme_service->UsingDefaultTheme())
+  // NTP is considered themed if the theme is not default and not native (GTK+).
+  if (theme_service && !theme_service->UsingDefaultTheme() &&
+      !theme_service->UsingNativeTheme())
     return "es_th=1&";
 #endif  // defined(ENABLE_THEMES)
 

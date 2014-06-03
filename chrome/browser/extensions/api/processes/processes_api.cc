@@ -15,7 +15,6 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/api/processes/processes_api_constants.h"
 #include "chrome/browser/extensions/api/tabs/tabs_constants.h"
-#include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_function_registry.h"
 #include "chrome/browser/extensions/extension_function_util.h"
 #include "chrome/browser/extensions/extension_service.h"
@@ -31,8 +30,10 @@
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host.h"
+#include "content/public/browser/render_widget_host_iterator.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/result_codes.h"
+#include "extensions/browser/event_router.h"
 #include "extensions/common/error_utils.h"
 
 namespace extensions {
@@ -45,7 +46,7 @@ namespace {
 #if defined(ENABLE_TASK_MANAGER)
 
 base::DictionaryValue* CreateCacheData(
-    const WebKit::WebCache::ResourceTypeStat& stat) {
+    const blink::WebCache::ResourceTypeStat& stat) {
 
   base::DictionaryValue* cache = new base::DictionaryValue();
   cache->SetDouble(keys::kCacheSize, static_cast<double>(stat.size));
@@ -111,21 +112,21 @@ base::ListValue* GetTabsForProcess(int process_id) {
   int tab_id = -1;
   // We need to loop through all the RVHs to ensure we collect the set of all
   // tabs using this renderer process.
-  content::RenderWidgetHost::List widgets =
-      content::RenderWidgetHost::GetRenderWidgetHosts();
-  for (size_t i = 0; i < widgets.size(); ++i) {
-    if (widgets[i]->GetProcess()->GetID() != process_id)
+  scoped_ptr<content::RenderWidgetHostIterator> widgets(
+      content::RenderWidgetHost::GetRenderWidgetHosts());
+  while (content::RenderWidgetHost* widget = widgets->GetNextHost()) {
+    if (widget->GetProcess()->GetID() != process_id)
       continue;
-    if (!widgets[i]->IsRenderView())
+    if (!widget->IsRenderView())
       continue;
 
-    content::RenderViewHost* host = content::RenderViewHost::From(widgets[i]);
+    content::RenderViewHost* host = content::RenderViewHost::From(widget);
     content::WebContents* contents =
         content::WebContents::FromRenderViewHost(host);
     if (contents) {
       tab_id = ExtensionTabUtil::GetTabId(contents);
       if (tab_id != -1)
-        tabs_list->Append(Value::CreateIntegerValue(tab_id));
+        tabs_list->Append(new base::FundamentalValue(tab_id));
     }
   }
 
@@ -168,7 +169,7 @@ base::DictionaryValue* CreateProcessFromModel(int process_id,
     result->SetDouble(keys::kSqliteMemoryKey,
         static_cast<double>(mem));
 
-  WebKit::WebCache::ResourceTypeStats cache_stats;
+  blink::WebCache::ResourceTypeStats cache_stats;
   if (model->GetWebCoreCacheStats(index, &cache_stats)) {
     result->Set(keys::kImageCacheKey,
                 CreateCacheData(cache_stats.images));
@@ -219,7 +220,7 @@ ProcessesEventRouter::ProcessesEventRouter(Profile* profile)
   model_ = TaskManager::GetInstance()->model();
   model_->AddObserver(this);
 
-  registrar_.Add(this, content::NOTIFICATION_RENDERER_PROCESS_HANG,
+  registrar_.Add(this, content::NOTIFICATION_RENDER_WIDGET_HOST_HANG,
       content::NotificationService::AllSources());
   registrar_.Add(this, content::NOTIFICATION_RENDERER_PROCESS_CLOSED,
       content::NotificationService::AllSources());
@@ -228,7 +229,7 @@ ProcessesEventRouter::ProcessesEventRouter(Profile* profile)
 
 ProcessesEventRouter::~ProcessesEventRouter() {
 #if defined(ENABLE_TASK_MANAGER)
-  registrar_.Remove(this, content::NOTIFICATION_RENDERER_PROCESS_HANG,
+  registrar_.Remove(this, content::NOTIFICATION_RENDER_WIDGET_HOST_HANG,
       content::NotificationService::AllSources());
   registrar_.Remove(this, content::NOTIFICATION_RENDERER_PROCESS_CLOSED,
       content::NotificationService::AllSources());
@@ -274,7 +275,7 @@ void ProcessesEventRouter::Observe(
     const content::NotificationDetails& details) {
 
   switch (type) {
-    case content::NOTIFICATION_RENDERER_PROCESS_HANG:
+    case content::NOTIFICATION_RENDER_WIDGET_HOST_HANG:
       ProcessHangEvent(
           content::Source<content::RenderWidgetHost>(source).ptr());
       break;
@@ -341,7 +342,8 @@ void ProcessesEventRouter::OnItemsChanged(int start, int length) {
   for (int i = start; i < start + length; i++) {
     if (model_->IsResourceFirstInGroup(i)) {
       int id = model_->GetUniqueChildProcessId(i);
-      base::DictionaryValue* process = CreateProcessFromModel(id, model_, i, true);
+      base::DictionaryValue* process = CreateProcessFromModel(id, model_, i,
+                                                              true);
       processes_map.AddWithID(process, i);
     }
   }
@@ -401,14 +403,14 @@ void ProcessesEventRouter::OnItemsToBeRemoved(int start, int length) {
   scoped_ptr<base::ListValue> args(new base::ListValue());
 
   // First arg: The id of the process that was closed.
-  args->Append(Value::CreateIntegerValue(
+  args->Append(new base::FundamentalValue(
       model_->GetUniqueChildProcessId(start)));
 
   // Second arg: The exit type for the process.
-  args->Append(Value::CreateIntegerValue(0));
+  args->Append(new base::FundamentalValue(0));
 
   // Third arg: The exit code for the process.
-  args->Append(Value::CreateIntegerValue(0));
+  args->Append(new base::FundamentalValue(0));
 
   DispatchEvent(keys::kOnExited, args.Pass());
 #endif  // defined(ENABLE_TASK_MANAGER)
@@ -452,20 +454,20 @@ void ProcessesEventRouter::ProcessClosedEvent(
   scoped_ptr<base::ListValue> args(new base::ListValue());
 
   // First arg: The id of the process that was closed.
-  args->Append(Value::CreateIntegerValue(rph->GetID()));
+  args->Append(new base::FundamentalValue(rph->GetID()));
 
   // Second arg: The exit type for the process.
-  args->Append(Value::CreateIntegerValue(details->status));
+  args->Append(new base::FundamentalValue(details->status));
 
   // Third arg: The exit code for the process.
-  args->Append(Value::CreateIntegerValue(details->exit_code));
+  args->Append(new base::FundamentalValue(details->exit_code));
 
   DispatchEvent(keys::kOnExited, args.Pass());
 #endif  // defined(ENABLE_TASK_MANAGER)
 }
 
 void ProcessesEventRouter::DispatchEvent(
-    const char* event_name,
+    const std::string& event_name,
     scoped_ptr<base::ListValue> event_args) {
   if (extensions::ExtensionSystem::Get(profile_)->event_router()) {
     scoped_ptr<extensions::Event> event(new extensions::Event(
@@ -549,16 +551,18 @@ bool GetProcessIdForTabFunction::RunImpl() {
   // which will invoke the callback once we have returned from this function.
   // Otherwise, wait for the notification that the task manager is done with
   // the data gathering.
-  if (ProcessesAPI::Get(profile_)->processes_event_router()->
-      is_task_manager_listening()) {
+  if (ProcessesAPI::Get(GetProfile())
+          ->processes_event_router()
+          ->is_task_manager_listening()) {
     base::MessageLoop::current()->PostTask(FROM_HERE, base::Bind(
         &GetProcessIdForTabFunction::GetProcessIdForTab, this));
   } else {
-    registrar_.Add(this,
-                   chrome::NOTIFICATION_TASK_MANAGER_CHILD_PROCESSES_DATA_READY,
-                   content::NotificationService::AllSources());
-    ProcessesAPI::Get(profile_)->processes_event_router()->
-        StartTaskManagerListening();
+    TaskManager::GetInstance()->model()->RegisterOnDataReadyCallback(
+        base::Bind(&GetProcessIdForTabFunction::GetProcessIdForTab, this));
+
+    ProcessesAPI::Get(GetProfile())
+        ->processes_event_router()
+        ->StartTaskManagerListening();
   }
 
   return true;
@@ -568,28 +572,24 @@ bool GetProcessIdForTabFunction::RunImpl() {
 #endif  // defined(ENABLE_TASK_MANAGER)
 }
 
-void GetProcessIdForTabFunction::Observe(
-    int type,
-    const content::NotificationSource& source,
-    const content::NotificationDetails& details) {
-  DCHECK_EQ(type, chrome::NOTIFICATION_TASK_MANAGER_CHILD_PROCESSES_DATA_READY);
-  registrar_.RemoveAll();
-  GetProcessIdForTab();
-}
-
 void GetProcessIdForTabFunction::GetProcessIdForTab() {
   content::WebContents* contents = NULL;
   int tab_index = -1;
-  if (!ExtensionTabUtil::GetTabById(tab_id_, profile(), include_incognito(),
-                                    NULL, NULL, &contents, &tab_index)) {
+  if (!ExtensionTabUtil::GetTabById(tab_id_,
+                                    GetProfile(),
+                                    include_incognito(),
+                                    NULL,
+                                    NULL,
+                                    &contents,
+                                    &tab_index)) {
     error_ = ErrorUtils::FormatErrorMessage(
         extensions::tabs_constants::kTabNotFoundError,
         base::IntToString(tab_id_));
-    SetResult(Value::CreateIntegerValue(-1));
+    SetResult(new base::FundamentalValue(-1));
     SendResponse(false);
   } else {
     int process_id = contents->GetRenderProcessHost()->GetID();
-    SetResult(Value::CreateIntegerValue(process_id));
+    SetResult(new base::FundamentalValue(process_id));
     SendResponse(true);
   }
 
@@ -612,16 +612,18 @@ bool TerminateFunction::RunImpl() {
   // which will invoke the callback once we have returned from this function.
   // Otherwise, wait for the notification that the task manager is done with
   // the data gathering.
-  if (ProcessesAPI::Get(profile_)->processes_event_router()->
-      is_task_manager_listening()) {
+  if (ProcessesAPI::Get(GetProfile())
+          ->processes_event_router()
+          ->is_task_manager_listening()) {
     base::MessageLoop::current()->PostTask(FROM_HERE, base::Bind(
         &TerminateFunction::TerminateProcess, this));
   } else {
-    registrar_.Add(this,
-                   chrome::NOTIFICATION_TASK_MANAGER_CHILD_PROCESSES_DATA_READY,
-                   content::NotificationService::AllSources());
-    ProcessesAPI::Get(profile_)->processes_event_router()->
-        StartTaskManagerListening();
+    TaskManager::GetInstance()->model()->RegisterOnDataReadyCallback(
+        base::Bind(&TerminateFunction::TerminateProcess, this));
+
+    ProcessesAPI::Get(GetProfile())
+        ->processes_event_router()
+        ->StartTaskManagerListening();
   }
 
   return true;
@@ -631,14 +633,6 @@ bool TerminateFunction::RunImpl() {
 #endif  // defined(ENABLE_TASK_MANAGER)
 }
 
-void TerminateFunction::Observe(
-    int type,
-    const content::NotificationSource& source,
-    const content::NotificationDetails& details) {
-  DCHECK_EQ(type, chrome::NOTIFICATION_TASK_MANAGER_CHILD_PROCESSES_DATA_READY);
-  registrar_.RemoveAll();
-  TerminateProcess();
-}
 
 void TerminateFunction::TerminateProcess() {
   TaskManagerModel* model = TaskManager::GetInstance()->model();
@@ -664,7 +658,7 @@ void TerminateFunction::TerminateProcess() {
         base::IntToString(process_id_));
     SendResponse(false);
   } else {
-    SetResult(Value::CreateBooleanValue(killed));
+    SetResult(new base::FundamentalValue(killed));
     SendResponse(true);
   }
 
@@ -700,16 +694,18 @@ bool GetProcessInfoFunction::RunImpl() {
   // which will invoke the callback once we have returned from this function.
   // Otherwise, wait for the notification that the task manager is done with
   // the data gathering.
-  if (ProcessesAPI::Get(profile_)->processes_event_router()->
-      is_task_manager_listening()) {
+  if (ProcessesAPI::Get(GetProfile())
+          ->processes_event_router()
+          ->is_task_manager_listening()) {
     base::MessageLoop::current()->PostTask(FROM_HERE, base::Bind(
         &GetProcessInfoFunction::GatherProcessInfo, this));
   } else {
-    registrar_.Add(this,
-                   chrome::NOTIFICATION_TASK_MANAGER_CHILD_PROCESSES_DATA_READY,
-                   content::NotificationService::AllSources());
-    ProcessesAPI::Get(profile_)->processes_event_router()->
-        StartTaskManagerListening();
+    TaskManager::GetInstance()->model()->RegisterOnDataReadyCallback(
+        base::Bind(&GetProcessInfoFunction::GatherProcessInfo, this));
+
+    ProcessesAPI::Get(GetProfile())
+        ->processes_event_router()
+        ->StartTaskManagerListening();
   }
   return true;
 
@@ -717,15 +713,6 @@ bool GetProcessInfoFunction::RunImpl() {
   error_ = errors::kExtensionNotSupported;
   return false;
 #endif  // defined(ENABLE_TASK_MANAGER)
-}
-
-void GetProcessInfoFunction::Observe(
-    int type,
-    const content::NotificationSource& source,
-    const content::NotificationDetails& details) {
-  DCHECK_EQ(type, chrome::NOTIFICATION_TASK_MANAGER_CHILD_PROCESSES_DATA_READY);
-  registrar_.RemoveAll();
-  GatherProcessInfo();
 }
 
 void GetProcessInfoFunction::GatherProcessInfo() {

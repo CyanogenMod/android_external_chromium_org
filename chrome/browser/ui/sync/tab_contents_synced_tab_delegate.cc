@@ -9,10 +9,10 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sessions/session_tab_helper.h"
 #include "chrome/browser/sync/glue/synced_window_delegate.h"
-#include "chrome/common/extensions/extension.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/common/extension.h"
 
 #if defined(ENABLE_MANAGED_USERS)
 #include "chrome/browser/managed_mode/managed_mode_navigation_observer.h"
@@ -71,7 +71,7 @@ NavigationEntry* TabContentsSyncedTabDelegate::GetEntryAtIndex(int i) const {
 }
 
 NavigationEntry* TabContentsSyncedTabDelegate::GetActiveEntry() const {
-  return web_contents_->GetController().GetActiveEntry();
+  return web_contents_->GetController().GetVisibleEntry();
 }
 
 bool TabContentsSyncedTabDelegate::ProfileIsManaged() const {
@@ -100,6 +100,10 @@ bool TabContentsSyncedTabDelegate::IsPinned() const {
 }
 
 bool TabContentsSyncedTabDelegate::HasWebContents() const { return true; }
+
+content::WebContents* TabContentsSyncedTabDelegate::GetWebContents() const {
+  return web_contents_;
+}
 
 int TabContentsSyncedTabDelegate::GetSyncId() const {
   return sync_session_id_;

@@ -21,15 +21,13 @@ class DownloadManager;
 namespace drive {
 
 class FileSystemInterface;
-class FileWriteHelper;
 class ResourceEntry;
 
 // Observes downloads to temporary local drive folder. Schedules these
 // downloads for upload to drive service.
 class DownloadHandler : public AllDownloadItemNotifier::Observer {
  public:
-  DownloadHandler(FileWriteHelper* file_write_helper,
-                  FileSystemInterface* file_system);
+  explicit DownloadHandler(FileSystemInterface* file_system);
   virtual ~DownloadHandler();
 
   // Utility method to get DownloadHandler with profile.
@@ -58,6 +56,9 @@ class DownloadHandler : public AllDownloadItemNotifier::Observer {
   // Gets the target drive path from external data in |download|.
   base::FilePath GetTargetPath(const content::DownloadItem* download);
 
+  // Gets the downloaded drive cache file path from external data in |download|.
+  base::FilePath GetCacheFilePath(const content::DownloadItem* download);
+
   // Checks if there is a Drive upload associated with |download|
   bool IsDriveDownload(const content::DownloadItem* download);
 
@@ -76,13 +77,6 @@ class DownloadHandler : public AllDownloadItemNotifier::Observer {
   // Removes the download.
   void RemoveDownload(int id);
 
-  // Callback for FileSystem::GetResourceEntryByPath().
-  // Used to implement SubstituteDriveDownloadPath().
-  void OnEntryFound(const base::FilePath& drive_dir_path,
-                    const SubstituteDriveDownloadPathCallback& callback,
-                    FileError error,
-                    scoped_ptr<ResourceEntry> entry);
-
   // Callback for FileSystem::CreateDirectory().
   // Used to implement SubstituteDriveDownloadPath().
   void OnCreateDirectory(const SubstituteDriveDownloadPathCallback& callback,
@@ -91,7 +85,11 @@ class DownloadHandler : public AllDownloadItemNotifier::Observer {
   // Starts the upload of a downloaded/downloading file.
   void UploadDownloadItem(content::DownloadItem* download);
 
-  FileWriteHelper* file_write_helper_;
+  // Sets |cache_file_path| as user data of the download item specified by |id|.
+  void SetCacheFilePath(int id,
+                        const base::FilePath* cache_file_path,
+                        FileError error);
+
   FileSystemInterface* file_system_;  // Owned by DriveIntegrationService.
   // Observe the DownloadManager for new downloads.
   scoped_ptr<AllDownloadItemNotifier> notifier_;

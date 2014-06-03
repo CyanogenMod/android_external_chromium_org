@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "chrome/browser/extensions/active_tab_permission_granter.h"
@@ -19,6 +20,7 @@
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_contents_user_data.h"
+#include "extensions/common/stack_frame.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 
 namespace content {
@@ -35,6 +37,7 @@ class LocationBarController;
 class ScriptBadgeController;
 class ScriptBubbleController;
 class ScriptExecutor;
+class WebstoreInlineInstallerFactory;
 
 // Per-tab extension helper. Also handles non-extension apps.
 class TabHelper : public content::WebContentsObserver,
@@ -46,9 +49,10 @@ class TabHelper : public content::WebContentsObserver,
   // Different types of action when web app info is available.
   // OnDidGetApplicationInfo uses this to dispatch calls.
   enum WebAppAction {
-    NONE,             // No action at all.
-    CREATE_SHORTCUT,  // Bring up create application shortcut dialog.
-    UPDATE_SHORTCUT   // Update icon for app shortcut.
+    NONE,              // No action at all.
+    CREATE_SHORTCUT,   // Bring up create application shortcut dialog.
+    CREATE_HOSTED_APP, // Create and install a hosted app.
+    UPDATE_SHORTCUT    // Update icon for app shortcut.
   };
 
   // Observer base class for classes that need to be notified when content
@@ -92,7 +96,10 @@ class TabHelper : public content::WebContentsObserver,
   }
 
   void CreateApplicationShortcuts();
+  void CreateHostedAppFromWebContents();
   bool CanCreateApplicationShortcuts() const;
+
+  void CreateHostedApp(const WebApplicationInfo& info);
 
   void set_pending_web_app_action(WebAppAction action) {
     pending_web_app_action_ = action;
@@ -154,6 +161,11 @@ class TabHelper : public content::WebContentsObserver,
   // INVALIDATE_TYPE_TITLE navigation state change to trigger repaint of title.
   void SetAppIcon(const SkBitmap& app_icon);
 
+  // Sets the factory used to create inline webstore item installers.
+  // Used for testing. Takes ownership of the factory instance.
+  void SetWebstoreInlineInstallerFactoryForTests(
+      WebstoreInlineInstallerFactory* factory);
+
  private:
   explicit TabHelper(content::WebContents* web_contents);
   friend class content::WebContentsUserData<TabHelper>;
@@ -189,6 +201,10 @@ class TabHelper : public content::WebContentsObserver,
       int32 page_id,
       const GURL& on_url);
   void OnWatchedPageChange(const std::vector<std::string>& css_selectors);
+  void OnDetailedConsoleMessageAdded(const base::string16& message,
+                                     const base::string16& source,
+                                     const StackTrace& stack_trace,
+                                     int32 severity_level);
 
   // App extensions related methods:
 
@@ -257,6 +273,9 @@ class TabHelper : public content::WebContentsObserver,
 
   // Vend weak pointers that can be invalidated to stop in-progress loads.
   base::WeakPtrFactory<TabHelper> image_loader_ptr_factory_;
+
+  // Creates WebstoreInlineInstaller instances for inline install triggers.
+  scoped_ptr<WebstoreInlineInstallerFactory> webstore_inline_installer_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(TabHelper);
 };

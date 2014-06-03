@@ -6,12 +6,15 @@
 #define UI_APP_LIST_VIEWS_APP_LIST_VIEW_H_
 
 #include "base/memory/scoped_ptr.h"
+#include "base/observer_list.h"
 #include "ui/app_list/app_list_export.h"
-#include "ui/app_list/signin_delegate_observer.h"
+#include "ui/app_list/app_list_view_delegate_observer.h"
+#include "ui/app_list/speech_ui_model_observer.h"
 #include "ui/views/bubble/bubble_delegate.h"
+#include "ui/views/widget/widget.h"
 
-namespace views {
-class Widget;
+namespace base {
+class FilePath;
 }
 
 namespace app_list {
@@ -19,26 +22,40 @@ class ApplicationDragAndDropHost;
 class AppListMainView;
 class AppListModel;
 class AppListViewDelegate;
+class AppListViewObserver;
+class HideViewAnimationObserver;
 class PaginationModel;
 class SigninDelegate;
 class SigninView;
+class SpeechView;
 
 // AppListView is the top-level view and controller of app list UI. It creates
 // and hosts a AppsGridView and passes AppListModel to it for display.
 class APP_LIST_EXPORT AppListView : public views::BubbleDelegateView,
-                                    public SigninDelegateObserver {
+                                    public AppListViewDelegateObserver,
+                                    public SpeechUIModelObserver {
  public:
+
   // Takes ownership of |delegate|.
   explicit AppListView(AppListViewDelegate* delegate);
   virtual ~AppListView();
 
-  // Initializes the widget.
-  void InitAsBubble(gfx::NativeView parent,
-                    PaginationModel* pagination_model,
-                    views::View* anchor,
-                    const gfx::Point& anchor_point,
-                    views::BubbleBorder::Arrow arrow,
-                    bool border_accepts_events);
+  // Initializes the widget and use a given |anchor| plus an |anchor_offset| for
+  // positioning.
+  void InitAsBubbleAttachedToAnchor(gfx::NativeView parent,
+                                    PaginationModel* pagination_model,
+                                    views::View* anchor,
+                                    const gfx::Vector2d& anchor_offset,
+                                    views::BubbleBorder::Arrow arrow,
+                                    bool border_accepts_events);
+
+  // Initializes the widget and use a fixed |anchor_point_in_screen| for
+  // positioning.
+  void InitAsBubbleAtFixedLocation(gfx::NativeView parent,
+                                   PaginationModel* pagination_model,
+                                   const gfx::Point& anchor_point_in_screen,
+                                   views::BubbleBorder::Arrow arrow,
+                                   bool border_accepts_events);
 
   void SetBubbleArrow(views::BubbleBorder::Arrow arrow);
 
@@ -49,7 +66,7 @@ class APP_LIST_EXPORT AppListView : public views::BubbleDelegateView,
   // InitAsBubble was called since the app list object needs to exist so that
   // it can set the host.
   void SetDragAndDropHostOfCurrentAppList(
-      app_list::ApplicationDragAndDropHost* drag_and_drop_host);
+      ApplicationDragAndDropHost* drag_and_drop_host);
 
   // Shows the UI when there are no pending icon loads. Otherwise, starts a
   // timer to show the UI when a maximum allowed wait time has expired.
@@ -61,20 +78,42 @@ class APP_LIST_EXPORT AppListView : public views::BubbleDelegateView,
 
   // Overridden from views::View:
   virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual void Paint(gfx::Canvas* canvas) OVERRIDE;
 
   // WidgetDelegate overrides:
   virtual bool ShouldHandleSystemCommands() const OVERRIDE;
 
+  // Overridden from AppListViewDelegateObserver:
+  virtual void OnProfilesChanged() OVERRIDE;
+
   void Prerender();
 
-  // Invoked when the sign-in status is changed to switch on/off sign-in view.
-  void OnSigninStatusChanged();
+  void SetProfileByPath(const base::FilePath& profile_path);
+
+  void AddObserver(AppListViewObserver* observer);
+  void RemoveObserver(AppListViewObserver* observer);
+
+  // Set a callback to be called the next time any app list paints.
+  static void SetNextPaintCallback(void (*callback)());
 
 #if defined(OS_WIN)
   HWND GetHWND() const;
 #endif
 
+  AppListMainView* app_list_main_view() { return app_list_main_view_; }
+
  private:
+  void InitAsBubbleInternal(gfx::NativeView parent,
+                            PaginationModel* pagination_model,
+                            views::BubbleBorder::Arrow arrow,
+                            bool border_accepts_events,
+                            const gfx::Vector2d& anchor_offset);
+
+  // Overridden from views::BubbleDelegateView:
+  virtual void OnBeforeBubbleWidgetInit(
+      views::Widget::InitParams* params,
+      views::Widget* widget) const OVERRIDE;
+
   // Overridden from views::WidgetDelegateView:
   virtual views::View* GetInitiallyFocusedView() OVERRIDE;
   virtual gfx::ImageSkia GetWindowIcon() OVERRIDE;
@@ -92,16 +131,20 @@ class APP_LIST_EXPORT AppListView : public views::BubbleDelegateView,
   virtual void OnWidgetActivationChanged(
       views::Widget* widget, bool active) OVERRIDE;
 
-  // Overridden from SigninDelegateObserver:
-  virtual void OnSigninSuccess() OVERRIDE;
+  // Overridden from SpeechUIModelObserver:
+  virtual void OnSpeechRecognitionStateChanged(
+      SpeechRecognitionState new_state) OVERRIDE;
 
   SigninDelegate* GetSigninDelegate();
 
-  scoped_ptr<AppListModel> model_;
   scoped_ptr<AppListViewDelegate> delegate_;
 
-  AppListMainView*  app_list_main_view_;
+  AppListMainView* app_list_main_view_;
   SigninView* signin_view_;
+  SpeechView* speech_view_;
+
+  ObserverList<AppListViewObserver> observers_;
+  scoped_ptr<HideViewAnimationObserver> animation_observer_;
 
   DISALLOW_COPY_AND_ASSIGN(AppListView);
 };

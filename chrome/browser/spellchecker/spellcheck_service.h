@@ -18,7 +18,7 @@
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 
-class Profile;
+class PrefService;
 class SpellCheckHostMetrics;
 
 namespace base {
@@ -27,6 +27,7 @@ class WaitableEvent;
 
 namespace content {
 class RenderProcessHost;
+class BrowserContext;
 }
 
 // Encapsulates the browser side spellcheck service. There is one of these per
@@ -51,15 +52,15 @@ class SpellcheckService : public BrowserContextKeyedService,
     DICT_UNKNOWN,
   };
 
-  explicit SpellcheckService(Profile* profile);
+  explicit SpellcheckService(content::BrowserContext* context);
   virtual ~SpellcheckService();
 
   // This function computes a vector of strings which are to be displayed in
   // the context menu over a text area for changing spell check languages. It
   // returns the index of the current spell check language in the vector.
-  // TODO(port): this should take a vector of string16, but the implementation
-  // has some dependencies in l10n util that need porting first.
-  static int GetSpellCheckLanguages(Profile* profile,
+  // TODO(port): this should take a vector of base::string16, but the
+  // implementation has some dependencies in l10n util that need porting first.
+  static int GetSpellCheckLanguages(content::BrowserContext* context,
                                     std::vector<std::string>* languages);
 
   // Computes a vector of strings which are to be displayed in the context
@@ -146,11 +147,15 @@ class SpellcheckService : public BrowserContextKeyedService,
   // Notification handler for changes to prefs::kSpellCheckUseSpellingService.
   void OnUseSpellingServiceChanged();
 
+  // Enables the feedback sender if spelling server is available and enabled.
+  // Otherwise disables the feedback sender.
+  void UpdateFeedbackSenderState();
+
   PrefChangeRegistrar pref_change_registrar_;
   content::NotificationRegistrar registrar_;
 
-  // A pointer to the profile which this service refers to.
-  Profile* profile_;
+  // A pointer to the BrowserContext which this service refers to.
+  content::BrowserContext* context_;
 
   scoped_ptr<SpellCheckHostMetrics> metrics_;
 

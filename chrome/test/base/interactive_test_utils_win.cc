@@ -29,7 +29,7 @@ void HideNativeWindow(gfx::NativeWindow window) {
     HideNativeWindowAura(window);
     return;
   }
-  HWND hwnd = window->GetRootWindow()->GetAcceleratedWidget();
+  HWND hwnd = window->GetDispatcher()->host()->GetAcceleratedWidget();
 #else
   HWND hwnd = window;
 #endif
@@ -41,8 +41,9 @@ bool ShowAndFocusNativeWindow(gfx::NativeWindow window) {
   if (chrome::GetHostDesktopTypeForNativeWindow(window) ==
       chrome::HOST_DESKTOP_TYPE_ASH)
     ShowAndFocusNativeWindowAura(window);
+  window->Show();
   // Always make sure the window hosting ash is visible and focused.
-  HWND hwnd = window->GetRootWindow()->GetAcceleratedWidget();
+  HWND hwnd = window->GetDispatcher()->host()->GetAcceleratedWidget();
 #else
   HWND hwnd = window;
 #endif

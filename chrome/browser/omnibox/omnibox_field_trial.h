@@ -6,6 +6,7 @@
 #define CHROME_BROWSER_OMNIBOX_OMNIBOX_FIELD_TRIAL_H_
 
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -22,6 +23,9 @@ class OmniboxFieldTrial {
   // given number.  Omitted types are assumed to have multipliers of 1.0.
   typedef std::map<AutocompleteMatchType::Type, float> DemotionMultipliers;
 
+  // A set of types that should not be demoted when they are the top match.
+  typedef std::set<AutocompleteMatchType::Type> UndemotableTopMatchTypes;
+
   // Creates the static field trial groups.
   // *** MUST NOT BE CALLED MORE THAN ONCE. ***
   static void ActivateStaticTrials();
@@ -30,7 +34,7 @@ class OmniboxFieldTrial {
   // the autocomplete dynamic and static field trials is that the former
   // don't require any code changes on the Chrome side as they are controlled
   // on the server side.  Chrome binary simply propagates all necessary
-  // information through the X-Chrome-Variations header.
+  // information through the X-Client-Data header.
   // This method, unlike ActivateStaticTrials(), may be called multiple times.
   static void ActivateDynamicTrials();
 
@@ -41,6 +45,10 @@ class OmniboxFieldTrial {
   // an integer corresponding to a bitmap mask.  All extracted bitmaps
   // are OR-ed together and returned as the final result.
   static int GetDisabledProviderTypes();
+
+  // Returns whether the user is in any dynamic field trial where the
+  // group has a the prefix |group_prefix|.
+  static bool HasDynamicFieldTrialGroupPrefix(const char *group_prefix);
 
   // ---------------------------------------------------------
   // For the suggest field trial.
@@ -93,6 +101,15 @@ class OmniboxFieldTrial {
   // user clicks on the omnibox but has not typed anything yet.
   static bool InZeroSuggestFieldTrial();
 
+  // Returns whether the user is in a ZeroSuggest field trial, but should
+  // show most visited URL instead.  This is used to compare metrics of
+  // ZeroSuggest and most visited suggestions.
+  static bool InZeroSuggestMostVisitedFieldTrial();
+
+  // Returns whether the user is in a ZeroSuggest field trial and URL-based
+  // suggestions can continue to appear after the user has started typing.
+  static bool InZeroSuggestAfterTypingFieldTrial();
+
   // ---------------------------------------------------------
   // For the ShortcutsScoringMaxRelevance experiment that's part of the
   // bundled omnibox field trial.
@@ -139,6 +156,11 @@ class OmniboxFieldTrial {
       AutocompleteInput::PageClassification current_page_classification,
       DemotionMultipliers* demotions_by_type);
 
+  // Get the set of types that should not be demoted if they are the top
+  // match.
+  static UndemotableTopMatchTypes GetUndemotableTopTypes(
+      AutocompleteInput::PageClassification current_page_classification);
+
   // ---------------------------------------------------------
   // For the ReorderForLegalDefaultMatch experiment that's part of the
   // bundled omnibox field trial.
@@ -153,15 +175,58 @@ class OmniboxFieldTrial {
       AutocompleteInput::PageClassification current_page_classification);
 
   // ---------------------------------------------------------
+  // For the HQPBookmarkValue experiment that's part of the
+  // bundled omnibox field trial.
+
+  // Returns the value an untyped visit to a bookmark should receive.
+  // Compare this value with the default of 1 for non-bookmarked untyped
+  // visits to pages and the default of 20 for typed visits.  Returns
+  // 1 if the bookmark value experiment isn't active.
+  static int HQPBookmarkValue();
+
+  // ---------------------------------------------------------
+  // For the HQPDiscountFrecencyWhenFewVisits experiment that's part of
+  // the bundled omnibox field trial.
+
+  // Returns whether to discount the frecency score estimates when a
+  // URL has fewer than ScoredHistoryMatch::kMaxVisitsToScore visits.
+  // See comments in scored_history_match.h for details.  Returns false
+  // if the discount frecency experiment isn't active.
+  static bool HQPDiscountFrecencyWhenFewVisits();
+
+  // ---------------------------------------------------------
+  // For the HQPAllowMatchInTLD experiment that's part of the
+  // bundled omnibox field trial.
+
+  // Returns true if HQP should allow an input term to match in the
+  // top level domain (e.g., .com) of a URL.  Returns false if the
+  // allow match in TLD experiment isn't active.
+  static bool HQPAllowMatchInTLDValue();
+
+  // ---------------------------------------------------------
+  // For the HQPAllowMatchInScheme experiment that's part of the
+  // bundled omnibox field trial.
+
+  // Returns true if HQP should allow an input term to match in the
+  // scheme (e.g., http://) of a URL.  Returns false if the allow
+  // match in scheme experiment isn't active.
+  static bool HQPAllowMatchInSchemeValue();
+
+  // ---------------------------------------------------------
   // Exposed publicly for the sake of unittests.
   static const char kBundledExperimentFieldTrialName[];
   // Rule names used by the bundled experiment.
   static const char kShortcutsScoringMaxRelevanceRule[];
   static const char kSearchHistoryRule[];
   static const char kDemoteByTypeRule[];
+  static const char kUndemotableTopTypeRule[];
   static const char kReorderForLegalDefaultMatchRule[];
+  static const char kHQPBookmarkValueRule[];
+  static const char kHQPDiscountFrecencyWhenFewVisitsRule[];
+  static const char kHQPAllowMatchInTLDRule[];
+  static const char kHQPAllowMatchInSchemeRule[];
   // Rule values.
-  static const char kReorderForLegalDefaultMatchRuleEnabled[];
+  static const char kReorderForLegalDefaultMatchRuleDisabled[];
 
  private:
   friend class OmniboxFieldTrialTest;

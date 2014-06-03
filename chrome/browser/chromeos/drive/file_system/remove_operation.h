@@ -10,7 +10,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/chromeos/drive/file_errors.h"
-#include "chrome/browser/google_apis/gdata_errorcode.h"
+#include "google_apis/drive/gdata_errorcode.h"
 
 namespace base {
 class FilePath;
@@ -19,7 +19,6 @@ class SequencedTaskRunner;
 
 namespace drive {
 
-class JobScheduler;
 class ResourceEntry;
 
 namespace internal {
@@ -32,13 +31,11 @@ namespace file_system {
 class OperationObserver;
 
 // This class encapsulates the drive Remove function.  It is responsible for
-// sending the request to the drive API, then updating the local state and
-// metadata to reflect the new state.
+// moving the removed entry to the trash.
 class RemoveOperation {
  public:
   RemoveOperation(base::SequencedTaskRunner* blocking_task_runner,
                   OperationObserver* observer,
-                  JobScheduler* scheduler,
                   internal::ResourceMetadata* metadata,
                   internal::FileCache* cache);
   ~RemoveOperation();
@@ -53,24 +50,14 @@ class RemoveOperation {
               const FileOperationCallback& callback);
 
  private:
-  // Part of Remove(). Called after CheckLocalState() completion.
-  void RemoveAfterCheckLocalState(const FileOperationCallback& callback,
-                                  const ResourceEntry* entry,
-                                  FileError error);
-
-  // Part of Remove(). Called after server-side removal is done.
-  void RemoveAfterDeleteResource(const FileOperationCallback& callback,
-                                 const std::string& resource_id,
-                                 google_apis::GDataErrorCode status);
-
   // Part of Remove(). Called after UpdateLocalState() completion.
   void RemoveAfterUpdateLocalState(const FileOperationCallback& callback,
+                                   const std::string* local_id,
                                    const base::FilePath* changed_directory_path,
                                    FileError error);
 
   scoped_refptr<base::SequencedTaskRunner> blocking_task_runner_;
   OperationObserver* observer_;
-  JobScheduler* scheduler_;
   internal::ResourceMetadata* metadata_;
   internal::FileCache* cache_;
 

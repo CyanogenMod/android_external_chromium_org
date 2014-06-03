@@ -31,6 +31,12 @@ class PlatformBackend(object):
   def GetSystemCommitCharge(self):
     raise NotImplementedError()
 
+  def GetCpuStats(self, pid):  # pylint: disable=W0613
+    return {}
+
+  def GetCpuTimestamp(self):  # pylint: disable=W0613
+    return {}
+
   def GetMemoryStats(self, pid):  # pylint: disable=W0613
     return {}
 
@@ -56,4 +62,25 @@ class PlatformBackend(object):
     raise NotImplementedError()
 
   def FlushSystemCacheForDirectory(self, directory, ignoring=None):
+    raise NotImplementedError()
+
+  def LaunchApplication(self, application, parameters=None):
+    raise NotImplementedError()
+
+  def IsApplicationRunning(self, application):
+    raise NotImplementedError()
+
+  def CanLaunchApplication(self, application):
+    return False
+
+  def InstallApplication(self, application):
+    raise NotImplementedError()
+
+  def CanCaptureVideo(self):
+    return False
+
+  def StartVideoCapture(self, min_bitrate_mbps):
+    raise NotImplementedError()
+
+  def StopVideoCapture(self):
     raise NotImplementedError()

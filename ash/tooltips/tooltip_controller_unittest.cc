@@ -71,11 +71,6 @@ TooltipController* GetController() {
       aura::client::GetTooltipClient(Shell::GetPrimaryRootWindow()));
 }
 
-gfx::Font GetDefaultFont() {
-  return ui::ResourceBundle::GetSharedInstance().GetFont(
-      ui::ResourceBundle::BaseFont);
-}
-
 }  // namespace
 
 class TooltipControllerTest : public AshTestBase {
@@ -126,7 +121,9 @@ TEST_F(TooltipControllerTest, HideTooltipWhenCursorHidden) {
   EXPECT_FALSE(helper_->IsTooltipVisible());
 
   // Show the cursor and re-check.
+  RunAllPendingInMessageLoop();
   ash::Shell::GetInstance()->cursor_manager()->EnableMouseEvents();
+  RunAllPendingInMessageLoop();
   helper_->FireTooltipTimer();
   EXPECT_TRUE(helper_->IsTooltipVisible());
 }
@@ -136,7 +133,7 @@ TEST_F(TooltipControllerTest, TooltipsOnMultiDisplayShouldNotCrash) {
     return;
 
   UpdateDisplay("1000x600,600x400");
-  Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
+  aura::Window::Windows root_windows = Shell::GetAllRootWindows();
   scoped_ptr<views::Widget> widget1(CreateNewWidgetWithBoundsOn(
       0, gfx::Rect(10, 10, 100, 100)));
   TooltipTestView* view1 = new TooltipTestView;

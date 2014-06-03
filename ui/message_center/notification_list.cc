@@ -15,6 +15,20 @@
 
 namespace message_center {
 
+namespace {
+
+bool ShouldShowNotificationAsPopup(
+    const Notification& notification,
+    const NotificationBlockers& blockers) {
+  for (size_t i = 0; i < blockers.size(); ++i) {
+    if (!blockers[i]->ShouldShowNotificationAsPopup(notification.notifier_id()))
+      return false;
+  }
+  return true;
+}
+
+}  // namespace
+
 bool ComparePriorityTimestampSerial::operator()(Notification* n1,
                                                 Notification* n2) {
   if (n1->priority() > n2->priority())  // Higher pri go first.
@@ -38,7 +52,6 @@ bool CompareTimestampSerial::operator()(Notification* n1, Notification* n2) {
 
 NotificationList::NotificationList()
     : message_center_visible_(false),
-      unread_count_(0),
       quiet_mode_(false) {
 }
 
@@ -57,18 +70,16 @@ void NotificationList::SetMessageCenterVisible(
   if (!visible)
     return;
 
-  unread_count_ = 0;
-
   for (Notifications::iterator iter = notifications_.begin();
        iter != notifications_.end(); ++iter) {
     Notification* notification = *iter;
+    bool was_popup = notification->shown_as_popup();
+    bool was_read = notification->IsRead();
     if (notification->priority() < SYSTEM_PRIORITY)
       notification->set_shown_as_popup(true);
     notification->set_is_read(true);
-    if (updated_ids &&
-        !(notification->shown_as_popup() && notification->is_read())) {
+    if (updated_ids && !(was_popup && was_read))
       updated_ids->insert(notification->id());
-    }
   }
 }
 
@@ -98,6 +109,9 @@ void NotificationList::UpdateNotificationMessage(
   Notification* old = *iter;
   notifications_.erase(iter);
   delete old;
+
+  // We really don't want duplicate IDs.
+  DCHECK(GetNotification(new_notification->id()) == notifications_.end());
   notifications_.insert(new_notification.release());
 }
 
@@ -105,42 +119,12 @@ void NotificationList::RemoveNotification(const std::string& id) {
   EraseNotification(GetNotification(id));
 }
 
-void NotificationList::RemoveAllNotifications() {
-  for (Notifications::iterator loopiter = notifications_.begin();
-       loopiter != notifications_.end(); ) {
-    Notifications::iterator curiter = loopiter++;
-    EraseNotification(curiter);
-  }
-  unread_count_ = 0;
-}
-
-NotificationList::Notifications NotificationList::GetNotificationsBySource(
-    const std::string& id) {
+NotificationList::Notifications NotificationList::GetNotificationsByNotifierId(
+        const NotifierId& notifier_id) {
   Notifications notifications;
-  Notifications::iterator source_iter = GetNotification(id);
-  if (source_iter == notifications_.end())
-    return notifications;
-
-  string16 display_source = (*source_iter)->display_source();
   for (Notifications::iterator iter = notifications_.begin();
        iter != notifications_.end(); ++iter) {
-    if ((*iter)->display_source() == display_source)
-      notifications.insert(*iter);
-  }
-  return notifications;
-}
-
-NotificationList::Notifications NotificationList::GetNotificationsByExtension(
-        const std::string& id) {
-  Notifications notifications;
-  Notifications::iterator source_iter = GetNotification(id);
-  if (source_iter == notifications_.end())
-    return notifications;
-
-  std::string extension_id = (*source_iter)->extension_id();
-  for (Notifications::iterator iter = notifications_.begin();
-       iter != notifications_.end(); ++iter) {
-    if ((*iter)->extension_id() == extension_id)
+    if ((*iter)->notifier_id() == notifier_id)
       notifications.insert(*iter);
   }
   return notifications;
@@ -178,18 +162,32 @@ bool NotificationList::HasNotification(const std::string& id) {
   return GetNotification(id) != notifications_.end();
 }
 
-bool NotificationList::HasPopupNotifications() {
+bool NotificationList::HasNotificationOfType(const std::string& id,
+                                             const NotificationType type) {
+  Notifications::iterator iter = GetNotification(id);
+  if (iter == notifications_.end())
+    return false;
+
+  return (*iter)->type() == type;
+}
+
+bool NotificationList::HasPopupNotifications(
+    const NotificationBlockers& blockers) {
   for (Notifications::iterator iter = notifications_.begin();
        iter != notifications_.end(); ++iter) {
     if ((*iter)->priority() < DEFAULT_PRIORITY)
       break;
+    if (!ShouldShowNotificationAsPopup(**iter, blockers))
+      continue;
     if (!(*iter)->shown_as_popup())
       return true;
   }
   return false;
 }
 
-NotificationList::PopupNotifications NotificationList::GetPopupNotifications() {
+NotificationList::PopupNotifications NotificationList::GetPopupNotifications(
+    const NotificationBlockers& blockers,
+    std::list<std::string>* blocked_ids) {
   PopupNotifications result;
   size_t default_priority_popup_count = 0;
 
@@ -203,6 +201,12 @@ NotificationList::PopupNotifications NotificationList::GetPopupNotifications() {
     if ((*iter)->priority() < DEFAULT_PRIORITY)
       continue;
 
+    if (!ShouldShowNotificationAsPopup(**iter, blockers)) {
+      if (blocked_ids)
+        blocked_ids->push_back((*iter)->id());
+      continue;
+    }
+
     // Checking limits. No limits for HIGH/MAX priority. DEFAULT priority
     // will return at most kMaxVisiblePopupNotifications entries. If the
     // popup entries are more, older entries are used. see crbug.com/165768
@@ -214,26 +218,6 @@ NotificationList::PopupNotifications NotificationList::GetPopupNotifications() {
     result.insert(*iter);
   }
   return result;
-}
-
-Notification* NotificationList::GetPopup(const std::string& id) {
-  PopupNotifications popups = GetPopupNotifications();
-  for (PopupNotifications::iterator iter = popups.begin(); iter != popups.end();
-       ++iter) {
-    if ((*iter)->id() == id)
-      return *iter;
-  }
-
-  return NULL;
-}
-
-void NotificationList::MarkPopupsAsShown(int priority) {
-  PopupNotifications popups = GetPopupNotifications();
-  for (PopupNotifications::iterator iter = popups.begin();
-       iter != popups.end(); ++iter) {
-    if ((*iter)->priority() == priority)
-      (*iter)->set_shown_as_popup(true);
-  }
 }
 
 void NotificationList::MarkSinglePopupAsShown(
@@ -250,10 +234,8 @@ void NotificationList::MarkSinglePopupAsShown(
 
   // The popup notification is already marked as read when it's displayed.
   // Set the is_read() back to false if necessary.
-  if (!mark_notification_as_read) {
+  if (!mark_notification_as_read)
     (*iter)->set_is_read(false);
-    ++unread_count_;
-  }
 }
 
 void NotificationList::MarkSinglePopupAsDisplayed(const std::string& id) {
@@ -264,10 +246,8 @@ void NotificationList::MarkSinglePopupAsDisplayed(const std::string& id) {
   if ((*iter)->shown_as_popup())
     return;
 
-  if (!(*iter)->is_read()) {
+  if (!(*iter)->IsRead())
     (*iter)->set_is_read(true);
-    --unread_count_;
-  }
 }
 
 void NotificationList::MarkNotificationAsExpanded(const std::string& id) {
@@ -285,33 +265,6 @@ NotificationDelegate* NotificationList::GetNotificationDelegate(
 }
 
 void NotificationList::SetQuietMode(bool quiet_mode) {
-  SetQuietModeInternal(quiet_mode);
-  quiet_mode_timer_.reset();
-}
-
-void NotificationList::EnterQuietModeWithExpire(
-    const base::TimeDelta& expires_in) {
-  if (quiet_mode_timer_.get()) {
-    // Note that the capital Reset() is the method to restart the timer, not
-    // scoped_ptr::reset().
-    quiet_mode_timer_->Reset();
-  } else {
-    SetQuietModeInternal(true);
-    quiet_mode_timer_.reset(new base::OneShotTimer<NotificationList>);
-    quiet_mode_timer_->Start(FROM_HERE, expires_in, base::Bind(
-        &NotificationList::SetQuietMode, base::Unretained(this), false));
-  }
-}
-
-const NotificationList::Notifications& NotificationList::GetNotifications() {
-  return notifications_;
-}
-
-size_t NotificationList::NotificationCount() const {
-  return notifications_.size();
-}
-
-void NotificationList::SetQuietModeInternal(bool quiet_mode) {
   quiet_mode_ = quiet_mode;
   if (quiet_mode_) {
     for (Notifications::iterator iter = notifications_.begin();
@@ -322,8 +275,44 @@ void NotificationList::SetQuietModeInternal(bool quiet_mode) {
   }
 }
 
-NotificationList::Notifications::iterator
-    NotificationList::GetNotification(const std::string& id) {
+NotificationList::Notifications NotificationList::GetVisibleNotifications(
+    const NotificationBlockers& blockers) const {
+  Notifications result;
+  for (Notifications::const_iterator iter = notifications_.begin();
+       iter != notifications_.end(); ++iter) {
+    bool should_show = true;
+    for (size_t i = 0; i < blockers.size(); ++i) {
+      if (!blockers[i]->ShouldShowNotification((*iter)->notifier_id())) {
+        should_show = false;
+        break;
+      }
+    }
+    if (should_show)
+      result.insert(*iter);
+  }
+
+  return result;
+}
+
+size_t NotificationList::NotificationCount(
+    const NotificationBlockers& blockers) const {
+  return GetVisibleNotifications(blockers).size();
+}
+
+size_t NotificationList::UnreadCount(
+    const NotificationBlockers& blockers) const {
+  Notifications notifications = GetVisibleNotifications(blockers);
+  size_t unread_count = 0;
+  for (Notifications::const_iterator iter = notifications.begin();
+       iter != notifications.end(); ++iter) {
+    if (!(*iter)->IsRead())
+      ++unread_count;
+  }
+  return unread_count;
+}
+
+NotificationList::Notifications::iterator NotificationList::GetNotification(
+    const std::string& id) {
   for (Notifications::iterator iter = notifications_.begin();
        iter != notifications_.end(); ++iter) {
     if ((*iter)->id() == id)
@@ -333,8 +322,6 @@ NotificationList::Notifications::iterator
 }
 
 void NotificationList::EraseNotification(Notifications::iterator iter) {
-  if (!(*iter)->is_read() && (*iter)->priority() > MIN_PRIORITY)
-    --unread_count_;
   delete *iter;
   notifications_.erase(iter);
 }
@@ -348,19 +335,15 @@ void NotificationList::PushNotification(scoped_ptr<Notification> notification) {
     notification->CopyState(*iter);
     state_inherited = true;
     EraseNotification(iter);
-    // if |iter| is unread, EraseNotification decrements |unread_count_| but
-    // actually the count is unchanged since |notification| will be added.
-    if (!notification->is_read())
-      ++unread_count_;
   }
   // Add the notification to the the list and mark it unread and unshown.
   if (!state_inherited) {
     // TODO(mukai): needs to distinguish if a notification is dismissed by
     // the quiet mode or user operation.
     notification->set_is_read(false);
-    notification->set_shown_as_popup(message_center_visible_ || quiet_mode_);
-    if (notification->priority() > MIN_PRIORITY)
-      ++unread_count_;
+    notification->set_shown_as_popup(message_center_visible_
+                                     || quiet_mode_
+                                     || notification->shown_as_popup());
   }
   // Take ownership. The notification can only be removed from the list
   // in EraseNotification(), which will delete it.

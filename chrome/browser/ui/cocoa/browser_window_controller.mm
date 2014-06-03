@@ -10,6 +10,7 @@
 #include "base/command_line.h"
 #include "base/mac/bundle_locations.h"
 #include "base/mac/mac_util.h"
+#import "base/mac/sdk_forward_declarations.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"  // IDC_*
@@ -17,7 +18,7 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/fullscreen.h"
-#include "chrome/browser/profiles/avatar_menu_model.h"
+#include "chrome/browser/profiles/avatar_menu.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_manager.h"
@@ -181,15 +182,6 @@ using web_modal::WebContentsModalDialogManager;
     MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_7
 
 enum {
-  NSWindowAnimationBehaviorDefault = 0,
-  NSWindowAnimationBehaviorNone = 2,
-  NSWindowAnimationBehaviorDocumentWindow = 3,
-  NSWindowAnimationBehaviorUtilityWindow = 4,
-  NSWindowAnimationBehaviorAlertPanel = 5
-};
-typedef NSInteger NSWindowAnimationBehavior;
-
-enum {
   NSWindowCollectionBehaviorFullScreenPrimary = 1 << 7,
   NSWindowCollectionBehaviorFullScreenAuxiliary = 1 << 8
 };
@@ -200,7 +192,6 @@ enum {
 
 @interface NSWindow (LionSDKDeclarations)
 - (void)setRestorable:(BOOL)flag;
-- (void)setAnimationBehavior:(NSWindowAnimationBehavior)newAnimationBehavior;
 @end
 
 #endif  // MAC_OS_X_VERSION_10_7
@@ -243,7 +234,7 @@ enum {
     }
   }
 
-  string16 label = signin_ui_util::GetSigninMenuLabel(profile);
+  base::string16 label = signin_ui_util::GetSigninMenuLabel(profile);
   [signinMenuItem setTitle:l10n_util::FixUpWindowsStyleLabel(label)];
   [signinMenuItem setHidden:!showSigninMenuItem];
   [followingSeparator setHidden:!showSigninMenuItem];
@@ -361,11 +352,10 @@ enum {
     // registering for the appropriate command state changes from the back-end.
     // Adds the toolbar to the content area.
     toolbarController_.reset([[ToolbarController alloc]
-              initWithModel:browser->toolbar_model()
-                   commands:browser->command_controller()->command_updater()
-                    profile:browser->profile()
-                    browser:browser
-             resizeDelegate:self]);
+              initWithCommands:browser->command_controller()->command_updater()
+                       profile:browser->profile()
+                       browser:browser
+                resizeDelegate:self]);
     [toolbarController_ setHasToolbar:[self hasToolbar]
                        hasLocationBar:[self hasLocationBar]];
 
@@ -1249,10 +1239,8 @@ enum {
   return [view convertRect:[view bounds] toView:nil];
 }
 
-- (void)updateToolbarWithContents:(WebContents*)tab
-               shouldRestoreState:(BOOL)shouldRestore {
-  [toolbarController_ updateToolbarWithContents:tab
-                             shouldRestoreState:shouldRestore];
+- (void)updateToolbarWithContents:(WebContents*)tab {
+  [toolbarController_ updateToolbarWithContents:tab];
 }
 
 - (void)setStarredState:(BOOL)isStarred {
@@ -1506,7 +1494,7 @@ enum {
     return NO;
   }
 
-  return AvatarMenuModel::ShouldShowAvatarMenu();
+  return AvatarMenu::ShouldShowAvatarMenu();
 }
 
 - (BOOL)isBookmarkBarVisible {
@@ -1587,7 +1575,7 @@ enum {
   if (!contents)
     return NO;
   return !WebContentsModalDialogManager::FromWebContents(contents)->
-      IsShowingDialog();
+      IsDialogActive();
 }
 
 // TabStripControllerDelegate protocol.
@@ -1658,13 +1646,14 @@ enum {
   return style;
 }
 
-- (NSPoint)themePatternPhaseForAlignment:(ThemePatternAlignment)alignment {
+- (NSPoint)themeImagePositionForAlignment:(ThemeImageAlignment)alignment {
   NSView* windowChromeView = [[[self window] contentView] superview];
   NSView* tabStripView = nil;
-  if (alignment == THEME_PATTERN_ALIGN_WITH_TAB_STRIP && [self hasTabStrip])
+  if ([self hasTabStrip])
     tabStripView = [self tabStripView];
-  return [BrowserWindowUtils themePatternPhaseFor:windowChromeView
-                                     withTabStrip:tabStripView];
+  return [BrowserWindowUtils themeImagePositionFor:windowChromeView
+                                      withTabStrip:tabStripView
+                                         alignment:alignment];
 }
 
 - (NSPoint)bookmarkBubblePoint {
@@ -1947,6 +1936,10 @@ willAnimateFromState:(BookmarkBar::State)oldState
 
   // Shift to window base coordinates.
   return [[toolbarView superview] convertRect:anchorRect toView:nil];
+}
+
+- (void)layoutInfoBars {
+  [self layoutSubviews];
 }
 
 - (void)sheetDidEnd:(NSWindow*)sheet

@@ -13,35 +13,38 @@
 #include "chrome/browser/ui/gtk/infobars/translate_message_infobar_gtk.h"
 #include "chrome/browser/ui/gtk/menu_gtk.h"
 #include "grit/generated_resources.h"
-#include "ui/base/animation/slide_animation.h"
 #include "ui/base/gtk/gtk_signal_registrar.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/gfx/animation/slide_animation.h"
 #include "ui/gfx/canvas.h"
 
 
 // TranslateInfoBarDelegate ---------------------------------------------------
 
-InfoBar* TranslateInfoBarDelegate::CreateInfoBar(InfoBarService* owner) {
-  if (infobar_type_ == BEFORE_TRANSLATE)
-    return new BeforeTranslateInfoBar(owner, this);
-  if (infobar_type_ == AFTER_TRANSLATE)
-    return new AfterTranslateInfoBar(owner, this);
-  return new TranslateMessageInfoBar(owner, this);
+// static
+scoped_ptr<InfoBar> TranslateInfoBarDelegate::CreateInfoBar(
+    scoped_ptr<TranslateInfoBarDelegate> delegate) {
+  if (delegate->infobar_type() == BEFORE_TRANSLATE)
+    return scoped_ptr<InfoBar>(new BeforeTranslateInfoBar(delegate.Pass()));
+  if (delegate->infobar_type() == AFTER_TRANSLATE)
+    return scoped_ptr<InfoBar>(new AfterTranslateInfoBar(delegate.Pass()));
+  return scoped_ptr<InfoBar>(new TranslateMessageInfoBar(delegate.Pass()));
 }
 
 
 // TranslateInfoBarBase -------------------------------------------------------
 
-TranslateInfoBarBase::TranslateInfoBarBase(InfoBarService* owner,
-                                           TranslateInfoBarDelegate* delegate)
-    : InfoBarGtk(owner, delegate),
+TranslateInfoBarBase::TranslateInfoBarBase(
+    scoped_ptr<TranslateInfoBarDelegate> delegate)
+    : InfoBarGtk(delegate.PassAs<InfoBarDelegate>()),
       background_error_percent_(0) {
-  DCHECK(delegate);
+  TranslateInfoBarDelegate* translate_delegate = GetDelegate();
+  DCHECK(translate_delegate);
   TranslateInfoBarDelegate::BackgroundAnimationType animation =
-      delegate->background_animation_type();
+      translate_delegate->background_animation_type();
   if (animation != TranslateInfoBarDelegate::NONE) {
-    background_color_animation_.reset(new ui::SlideAnimation(this));
-    background_color_animation_->SetTweenType(ui::Tween::LINEAR);
+    background_color_animation_.reset(new gfx::SlideAnimation(this));
+    background_color_animation_->SetTweenType(gfx::Tween::LINEAR);
     background_color_animation_->SetSlideDuration(500);
     if (animation == TranslateInfoBarDelegate::NORMAL_TO_ERROR) {
       background_color_animation_->Show();
@@ -52,14 +55,15 @@ TranslateInfoBarBase::TranslateInfoBarBase(InfoBarService* owner,
       background_color_animation_->Hide();
     }
   } else {
-    background_error_percent_ = delegate->is_error() ? 1 : 0;
+    background_error_percent_ = translate_delegate->is_error() ? 1 : 0;
   }
 }
 
 TranslateInfoBarBase::~TranslateInfoBarBase() {
 }
 
-void TranslateInfoBarBase::AnimationProgressed(const ui::Animation* animation) {
+void TranslateInfoBarBase::AnimationProgressed(
+    const gfx::Animation* animation) {
   DCHECK(widget());
   if (animation == background_color_animation_.get()) {
     background_error_percent_ = animation->GetCurrentValue();
@@ -68,6 +72,22 @@ void TranslateInfoBarBase::AnimationProgressed(const ui::Animation* animation) {
   } else {
     InfoBar::AnimationProgressed(animation);
   }
+}
+
+void TranslateInfoBarBase::PlatformSpecificSetOwner() {
+  InfoBarGtk::PlatformSpecificSetOwner();
+
+  if (!ShowOptionsMenuButton())
+    return;
+
+  // The options button sits outside the translate_box so that it can be end
+  // packed in hbox().
+  GtkWidget* options_menu_button = CreateMenuButton(
+      l10n_util::GetStringUTF8(IDS_TRANSLATE_INFOBAR_OPTIONS));
+  signals()->Connect(options_menu_button, "clicked",
+                     G_CALLBACK(&OnOptionsClickedThunk), this);
+  gtk_widget_show_all(options_menu_button);
+  gtk_util::CenterWidgetInHBox(hbox(), options_menu_button, true, 0);
 }
 
 void TranslateInfoBarBase::GetTopColor(InfoBarDelegate::Type type,
@@ -120,22 +140,6 @@ void TranslateInfoBarBase::GetBottomColor(InfoBarDelegate::Type type,
   }
 }
 
-void TranslateInfoBarBase::InitWidgets() {
-  InfoBarGtk::InitWidgets();
-
-  if (!ShowOptionsMenuButton())
-    return;
-
-  // The options button sits outside the translate_box so that it can be end
-  // packed in hbox().
-  GtkWidget* options_menu_button = CreateMenuButton(
-      l10n_util::GetStringUTF8(IDS_TRANSLATE_INFOBAR_OPTIONS));
-  signals()->Connect(options_menu_button, "clicked",
-                     G_CALLBACK(&OnOptionsClickedThunk), this);
-  gtk_widget_show_all(options_menu_button);
-  gtk_util::CenterWidgetInHBox(hbox(), options_menu_button, true, 0);
-}
-
 bool TranslateInfoBarBase::ShowOptionsMenuButton() const {
   return false;
 }
@@ -154,7 +158,7 @@ GtkWidget* TranslateInfoBarBase::CreateLanguageCombobox(
     if (i == exclude_language)
       continue;
     GtkTreeIter tree_iter;
-    const string16& name = delegate->language_name_at(i);
+    const base::string16& name = delegate->language_name_at(i);
 
     gtk_list_store_append(model, &tree_iter);
     gtk_list_store_set(model, &tree_iter,

@@ -9,18 +9,18 @@
 #include "base/mac/scoped_nsobject.h"
 #include "chrome/app/chrome_command_ids.h"
 #import "chrome/browser/app_controller_mac.h"
+#include "chrome/browser/apps/app_browsertest_util.h"
 #include "chrome/browser/extensions/extension_test_message_listener.h"
-#include "chrome/browser/extensions/platform_app_browsertest_util.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #import "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/common/extension.h"
 
 namespace {
 
@@ -48,9 +48,11 @@ IN_PROC_BROWSER_TEST_F(AppControllerPlatformAppBrowserTest,
   base::scoped_nsobject<AppController> ac([[AppController alloc] init]);
   NSUInteger old_window_count = [[NSApp windows] count];
   EXPECT_EQ(1u, active_browser_list_->size());
-  BOOL result = [ac applicationShouldHandleReopen:NSApp hasVisibleWindows:YES];
+  [ac applicationShouldHandleReopen:NSApp hasVisibleWindows:YES];
+  // We do not EXPECT_TRUE the result here because the method
+  // deminiaturizes windows manually rather than return YES and have
+  // AppKit do it.
 
-  EXPECT_TRUE(result);
   EXPECT_EQ(old_window_count, [[NSApp windows] count]);
   EXPECT_EQ(1u, active_browser_list_->size());
 }

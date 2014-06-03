@@ -59,9 +59,9 @@ const struct {
   // For traditional Chinese input methods
   { "mozc-chewing", "\xe9\x85\xb7" },  // U+9177
   { "_comp_ime_ekbifjdfhkmdeeajnolmgdlmkllopefizh-hant-t-i0-und",
-    "\xe9\x85\xb7" },  // U+9177
+    "\xE6\xB3\xA8" },  // U+6CE8
   { "_comp_ime_goedamlknlnjaengojinmfgpmdjmkooozh-hant-t-i0-und",
-    "\xe9\x85\xb7" },  // U+9177
+    "\xE6\xB3\xA8" },  // U+6CE8
   { "m17n:zh:cangjie", "\xe5\x80\x89" },  // U+5009
   { "_comp_ime_aeebooiibjahgpgmhkeocbeekccfknbjzh-hant-t-i0-cangjie-1987",
     "\xe5\x80\x89" },  // U+5009
@@ -293,32 +293,6 @@ const struct EnglishToResouceId {
 const size_t kEnglishToResourceIdArraySize =
     arraysize(kEnglishToResourceIdArray);
 
-// The list of language that do not have associated input methods in IBus.
-// For these languages, we associate input methods here.
-const struct ExtraLanguage {
-  const char* language_code;
-  const char* input_method_id;
-} kExtraLanguages[] = {
-  // Language Code  Input Method ID
-  { "en-AU", "xkb:us::eng" },  // For Austrailia, use US keyboard layout.
-  { "id", "xkb:us::eng" },  // For Indonesian, use US keyboard layout.
-  // The code "fil" comes from l10_util.cc.
-  { "fil", "xkb:us::eng" },  // For Filipino, use US keyboard layout.
-  // For Netherlands, use US international keyboard layout.
-  { "nl", "xkb:us:intl:eng" },
-  // The code "es-419" comes from l10_util.cc.
-  // For Spanish in Latin America, use Latin American keyboard layout.
-  { "es-419", "xkb:latam::spa" },
-  // For Malay, use US keyboard layout. crosbug.com/p/8288
-  { "ms", "xkb:us::eng" },
-  // For Brazil, it is common to use US-international keyboard layout.
-  { "pt-BR", "xkb:us:intl:eng" },
-
-  // TODO(yusukes): Add {"sw", "xkb:us::eng"} once Swahili is removed from the
-  // blacklist in src/ui/base/l10n/l10n_util_posix.cc.
-};
-const size_t kExtraLanguagesLength = arraysize(kExtraLanguages);
-
 }  // namespace
 
 InputMethodUtil::InputMethodUtil(
@@ -342,7 +316,7 @@ InputMethodUtil::~InputMethodUtil() {
 }
 
 bool InputMethodUtil::TranslateStringInternal(
-    const std::string& english_string, string16 *out_string) const {
+    const std::string& english_string, base::string16 *out_string) const {
   DCHECK(out_string);
   HashType::const_iterator iter = english_to_resource_id_.find(english_string);
   if (iter == english_to_resource_id_.end()) {
@@ -357,9 +331,9 @@ bool InputMethodUtil::TranslateStringInternal(
   return true;
 }
 
-string16 InputMethodUtil::TranslateString(
+base::string16 InputMethodUtil::TranslateString(
     const std::string& english_string) const {
-  string16 localized_string;
+  base::string16 localized_string;
   if (TranslateStringInternal(english_string, &localized_string)) {
     return localized_string;
   }
@@ -371,7 +345,7 @@ bool InputMethodUtil::IsValidInputMethodId(
   // We can't check the component extension is whilelisted or not here because
   // it might not be initialized.
   return GetInputMethodDescriptorFromId(input_method_id) != NULL ||
-      ComponentExtensionIMEManager::IsComponentExtensionIMEId(input_method_id);
+      extension_ime_util::IsComponentExtensionIME(input_method_id);
 }
 
 // static
@@ -403,7 +377,7 @@ std::string InputMethodUtil::GetKeyboardLayoutName(
 
 std::string InputMethodUtil::GetInputMethodDisplayNameFromId(
     const std::string& input_method_id) const {
-  string16 display_name;
+  base::string16 display_name;
   if (!extension_ime_util::IsExtensionIME(input_method_id) &&
       TranslateStringInternal(input_method_id, &display_name)) {
     return UTF16ToUTF8(display_name);
@@ -412,11 +386,11 @@ std::string InputMethodUtil::GetInputMethodDisplayNameFromId(
   return "";
 }
 
-string16 InputMethodUtil::GetInputMethodShortName(
+base::string16 InputMethodUtil::GetInputMethodShortName(
     const InputMethodDescriptor& input_method) const {
   // For the status area, we use two-letter, upper-case language code like
   // "US" and "JP".
-  string16 text;
+  base::string16 text;
 
   // Check special cases first.
   for (size_t i = 0; i < kMappingFromIdToIndicatorTextLen; ++i) {
@@ -430,7 +404,7 @@ string16 InputMethodUtil::GetInputMethodShortName(
   if (text.empty() &&
       IsKeyboardLayout(input_method.id())) {
     const size_t kMaxKeyboardLayoutNameLen = 2;
-    const string16 keyboard_layout =
+    const base::string16 keyboard_layout =
         UTF8ToUTF16(GetKeyboardLayoutName(input_method.id()));
     text = StringToUpperASCII(keyboard_layout).substr(
         0, kMaxKeyboardLayoutNameLen);
@@ -453,7 +427,7 @@ string16 InputMethodUtil::GetInputMethodShortName(
   return text;
 }
 
-string16 InputMethodUtil::GetInputMethodMediumName(
+base::string16 InputMethodUtil::GetInputMethodMediumName(
     const InputMethodDescriptor& input_method) const {
   // For the "Your input method has changed to..." bubble. In most cases
   // it uses the same name as the short name, unless found in a table
@@ -468,7 +442,7 @@ string16 InputMethodUtil::GetInputMethodMediumName(
   return GetInputMethodShortName(input_method);
 }
 
-string16 InputMethodUtil::GetInputMethodLongName(
+base::string16 InputMethodUtil::GetInputMethodLongName(
     const InputMethodDescriptor& input_method) const {
   if (!input_method.name().empty()) {
     // If the descriptor has a name, use it.
@@ -482,17 +456,18 @@ string16 InputMethodUtil::GetInputMethodLongName(
   // keyboard layouts and share the same layout of keyboard (Belgian). We need
   // to show explicitly the language for the layout. For Arabic, Amharic, and
   // Indic languages: they share "Standard Input Method".
-  const string16 standard_input_method_text = delegate_->GetLocalizedString(
-      IDS_OPTIONS_SETTINGS_LANGUAGES_M17N_STANDARD_INPUT_METHOD);
+  const base::string16 standard_input_method_text =
+      delegate_->GetLocalizedString(
+          IDS_OPTIONS_SETTINGS_LANGUAGES_M17N_STANDARD_INPUT_METHOD);
   DCHECK(!input_method.language_codes().empty());
   const std::string language_code = input_method.language_codes().at(0);
 
-  string16 text = TranslateString(input_method.id());
+  base::string16 text = TranslateString(input_method.id());
   if (text == standard_input_method_text ||
              language_code == "de" ||
              language_code == "fr" ||
              language_code == "nl") {
-    const string16 language_name = delegate_->GetDisplayLanguageName(
+    const base::string16 language_name = delegate_->GetDisplayLanguageName(
         language_code);
 
     text = language_name + UTF8ToUTF16(" - ") + text;
@@ -507,23 +482,6 @@ const InputMethodDescriptor* InputMethodUtil::GetInputMethodDescriptorFromId(
   InputMethodIdToDescriptorMap::const_iterator iter
       = id_to_descriptor_.find(input_method_id);
   return (iter == id_to_descriptor_.end()) ? NULL : &(iter->second);
-}
-
-std::vector<std::string> InputMethodUtil::GetExtraLanguageCodesFromId(
-    const std::string& input_method_id) const {
-  std::vector<std::string> result;
-  for (size_t i = 0; i < kExtraLanguagesLength; ++i) {
-    if (input_method_id == kExtraLanguages[i].input_method_id)
-      result.push_back(kExtraLanguages[i].language_code);
-  }
-  return result;
-}
-
-std::vector<std::string> InputMethodUtil::GetExtraLanguageCodeList() const {
-  std::vector<std::string> result;
-  for (size_t i = 0; i < kExtraLanguagesLength; ++i)
-    result.push_back(kExtraLanguages[i].language_code);
-  return result;
 }
 
 bool InputMethodUtil::GetInputMethodIdsFromLanguageCode(
@@ -680,7 +638,9 @@ InputMethodDescriptor InputMethodUtil::GetFallbackInputMethodDescriptor() {
                                "",
                                layouts,
                                languages,
-                               GURL());  // options page, not available.
+                               true,  // login keyboard.
+                               GURL(),  // options page, not available.
+                               GURL()); // input view page, not available.
 }
 
 void InputMethodUtil::ReloadInternalMaps() {
@@ -713,21 +673,6 @@ void InputMethodUtil::ReloadInternalMaps() {
       xkb_id_to_descriptor_.insert(
           std::make_pair(input_method.GetPreferredKeyboardLayout(),
                          input_method));
-    }
-  }
-
-  // Go through the languages listed in kExtraLanguages.
-  for (size_t i = 0; i < kExtraLanguagesLength; ++i) {
-    const char* language_code = kExtraLanguages[i].language_code;
-    const char* input_method_id = kExtraLanguages[i].input_method_id;
-    InputMethodIdToDescriptorMap::const_iterator iter =
-        id_to_descriptor_.find(input_method_id);
-    // If the associated input method descriptor is found, add the language
-    // code and the input method.
-    if (iter != id_to_descriptor_.end()) {
-      const InputMethodDescriptor& input_method = iter->second;
-      language_code_to_ids_.insert(
-          std::make_pair(language_code, input_method.id()));
     }
   }
 }

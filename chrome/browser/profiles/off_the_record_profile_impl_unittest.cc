@@ -6,10 +6,10 @@
 
 #include "base/prefs/pref_registry_simple.h"
 #include "base/prefs/pref_service.h"
+#include "base/prefs/scoped_user_pref_update.h"
 #include "base/run_loop.h"
 #include "chrome/browser/net/ssl_config_service_manager.h"
 #include "chrome/browser/prefs/browser_prefs.h"
-#include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/browser_with_test_window_test.h"
 #include "chrome/test/base/testing_browser_process.h"
@@ -26,18 +26,14 @@ namespace {
 
 class TestingProfileWithHostZoomMap : public TestingProfile {
  public:
-  TestingProfileWithHostZoomMap()
-      : zoom_callback_(
-          base::Bind(&TestingProfileWithHostZoomMap::OnZoomLevelChanged,
-                     base::Unretained(this))) {
-    HostZoomMap::GetForBrowserContext(this)->AddZoomLevelChangedCallback(
-        zoom_callback_);
+  TestingProfileWithHostZoomMap() {
+    zoom_subscription_ =
+        HostZoomMap::GetForBrowserContext(this)->AddZoomLevelChangedCallback(
+            base::Bind(&TestingProfileWithHostZoomMap::OnZoomLevelChanged,
+                        base::Unretained(this)));
   }
 
-  virtual ~TestingProfileWithHostZoomMap() {
-    HostZoomMap::GetForBrowserContext(this)->RemoveZoomLevelChangedCallback(
-        zoom_callback_);
-  }
+  virtual ~TestingProfileWithHostZoomMap() {}
 
   virtual Profile* GetOffTheRecordProfile() OVERRIDE {
     if (!off_the_record_profile_)
@@ -71,7 +67,7 @@ class TestingProfileWithHostZoomMap : public TestingProfile {
   scoped_ptr<Profile> off_the_record_profile_;
   scoped_ptr<SSLConfigServiceManager> ssl_config_service_manager_;
 
-  HostZoomMap::ZoomLevelChangedCallback zoom_callback_;
+  scoped_ptr<HostZoomMap::Subscription> zoom_subscription_;
 
   DISALLOW_COPY_AND_ASSIGN(TestingProfileWithHostZoomMap);
 };
@@ -151,9 +147,8 @@ TEST_F(OffTheRecordProfileImplTest, GetHostZoomMap) {
       new OffTheRecordProfileImpl(parent_profile.get()));
   child_profile->InitHostZoomMap();
 
-  BrowserContextDependencyManager::GetInstance()->CreateBrowserContextServices(
-      child_profile.get(),
-      true); // For testing.
+  BrowserContextDependencyManager::GetInstance()->
+      CreateBrowserContextServicesForTest(child_profile.get());
 
   // Prepare child host zoom map.
   HostZoomMap* child_zoom_map =

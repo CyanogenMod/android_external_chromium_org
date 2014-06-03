@@ -6,9 +6,12 @@
 
 #include "cc/layers/texture_layer.h"
 #include "cc/resources/resource_update_queue.h"
+#include "cc/resources/single_release_callback.h"
+#include "cc/resources/texture_mailbox.h"
 #include "third_party/WebKit/public/platform/WebExternalTextureLayerClient.h"
 #include "third_party/WebKit/public/platform/WebExternalTextureMailbox.h"
 #include "third_party/WebKit/public/platform/WebFloatRect.h"
+#include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
 #include "third_party/WebKit/public/platform/WebSize.h"
 #include "webkit/renderer/compositor_bindings/web_external_bitmap_impl.h"
 #include "webkit/renderer/compositor_bindings/web_layer_impl.h"
@@ -19,7 +22,7 @@ using cc::ResourceUpdateQueue;
 namespace webkit {
 
 WebExternalTextureLayerImpl::WebExternalTextureLayerImpl(
-    WebKit::WebExternalTextureLayerClient* client)
+    blink::WebExternalTextureLayerClient* client)
     : client_(client) {
   cc::TextureLayerClient* cc_client = client_ ? this : NULL;
   scoped_refptr<TextureLayer> layer = TextureLayer::CreateForMailbox(cc_client);
@@ -31,12 +34,13 @@ WebExternalTextureLayerImpl::~WebExternalTextureLayerImpl() {
   static_cast<TextureLayer*>(layer_->layer())->ClearClient();
 }
 
-WebKit::WebLayer* WebExternalTextureLayerImpl::layer() { return layer_.get(); }
+blink::WebLayer* WebExternalTextureLayerImpl::layer() { return layer_.get(); }
 
 void WebExternalTextureLayerImpl::clearTexture() {
   TextureLayer *layer = static_cast<TextureLayer*>(layer_->layer());
   layer->WillModifyTexture();
-  layer->SetTextureMailbox(cc::TextureMailbox());
+  layer->SetTextureMailbox(cc::TextureMailbox(),
+                           scoped_ptr<cc::SingleReleaseCallback>());
 }
 
 void WebExternalTextureLayerImpl::setOpaque(bool opaque) {
@@ -62,15 +66,11 @@ unsigned WebExternalTextureLayerImpl::PrepareTexture() {
   return 0;
 }
 
-WebKit::WebGraphicsContext3D* WebExternalTextureLayerImpl::Context3d() {
-  DCHECK(client_);
-  return client_->context();
-}
-
 bool WebExternalTextureLayerImpl::PrepareTextureMailbox(
     cc::TextureMailbox* mailbox,
+    scoped_ptr<cc::SingleReleaseCallback>* release_callback,
     bool use_shared_memory) {
-  WebKit::WebExternalTextureMailbox client_mailbox;
+  blink::WebExternalTextureMailbox client_mailbox;
   WebExternalBitmapImpl* bitmap = NULL;
 
   if (use_shared_memory)
@@ -82,17 +82,19 @@ bool WebExternalTextureLayerImpl::PrepareTextureMailbox(
   }
   gpu::Mailbox name;
   name.SetName(client_mailbox.name);
-  cc::TextureMailbox::ReleaseCallback callback =
-      base::Bind(&WebExternalTextureLayerImpl::DidReleaseMailbox,
-                 this->AsWeakPtr(),
-                 client_mailbox,
-                 bitmap);
-  if (bitmap) {
-    *mailbox =
-        cc::TextureMailbox(bitmap->shared_memory(), bitmap->size(), callback);
-  } else {
-    *mailbox = cc::TextureMailbox(name, callback, client_mailbox.syncPoint);
+  if (bitmap)
+    *mailbox = cc::TextureMailbox(bitmap->shared_memory(), bitmap->size());
+  else
+    *mailbox = cc::TextureMailbox(name, client_mailbox.syncPoint);
+
+  if (mailbox->IsValid()) {
+    *release_callback = cc::SingleReleaseCallback::Create(base::Bind(
+        &WebExternalTextureLayerImpl::DidReleaseMailbox,
+        this->AsWeakPtr(),
+        client_mailbox,
+        bitmap));
   }
+
   return true;
 }
 
@@ -108,7 +110,7 @@ WebExternalBitmapImpl* WebExternalTextureLayerImpl::AllocateBitmap() {
 // static
 void WebExternalTextureLayerImpl::DidReleaseMailbox(
     base::WeakPtr<WebExternalTextureLayerImpl> layer,
-    const WebKit::WebExternalTextureMailbox& mailbox,
+    const blink::WebExternalTextureMailbox& mailbox,
     WebExternalBitmapImpl* bitmap,
     unsigned sync_point,
     bool lost_resource) {
@@ -117,7 +119,7 @@ void WebExternalTextureLayerImpl::DidReleaseMailbox(
     return;
   }
 
-  WebKit::WebExternalTextureMailbox available_mailbox;
+  blink::WebExternalTextureMailbox available_mailbox;
   memcpy(available_mailbox.name, mailbox.name, sizeof(available_mailbox.name));
   available_mailbox.syncPoint = sync_point;
   if (bitmap)

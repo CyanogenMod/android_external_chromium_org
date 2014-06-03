@@ -7,13 +7,13 @@
 #include <map>
 
 #include "base/bind.h"
-#include "base/chromeos/chromeos_version.h"
 #include "base/file_util.h"
 #include "base/files/file_path.h"
 #include "base/location.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/stl_util.h"
 #include "base/strings/stringprintf.h"
+#include "base/sys_info.h"
 #include "base/task_runner_util.h"
 #include "base/threading/worker_pool.h"
 #include "base/values.h"
@@ -79,12 +79,7 @@ DeviceType DeviceMediaTypeToDeviceType(uint32 media_type_uint32) {
 // The CrosDisksClient implementation.
 class CrosDisksClientImpl : public CrosDisksClient {
  public:
-  explicit CrosDisksClientImpl(dbus::Bus* bus)
-      : proxy_(bus->GetObjectProxy(
-          cros_disks::kCrosDisksServiceName,
-          dbus::ObjectPath(cros_disks::kCrosDisksServicePath))),
-        weak_ptr_factory_(this) {
-  }
+  CrosDisksClientImpl() : proxy_(NULL), weak_ptr_factory_(this) {}
 
   // CrosDisksClient override.
   virtual void Mount(const std::string& source_path,
@@ -223,6 +218,13 @@ class CrosDisksClientImpl : public CrosDisksClient {
                    weak_ptr_factory_.GetWeakPtr()));
   }
 
+ protected:
+  virtual void Init(dbus::Bus* bus) OVERRIDE {
+    proxy_ = bus->GetObjectProxy(
+        cros_disks::kCrosDisksServiceName,
+        dbus::ObjectPath(cros_disks::kCrosDisksServicePath));
+  }
+
  private:
   // A struct to contain a pair of signal name and mount event type.
   // Used by SetUpConnections.
@@ -250,6 +252,23 @@ class CrosDisksClientImpl : public CrosDisksClient {
       error_callback.Run();
       return;
     }
+
+    // Temporarly allow Unmount method to report failure both by setting dbus
+    // error (in which case response is not set) and by returning mount error
+    // different from MOUNT_ERROR_NONE. This is done so we can change Unmount
+    // method to return mount error (http://crbug.com/288974) without breaking
+    // Chrome.
+    // TODO(tbarzic): When Unmount implementation is changed on cros disks side,
+    // make this fail if reader is not able to read the error code value from
+    // the response.
+    dbus::MessageReader reader(response);
+    unsigned int error_code;
+    if (reader.PopUint32(&error_code) &&
+        static_cast<MountError>(error_code) != MOUNT_ERROR_NONE) {
+      error_callback.Run();
+      return;
+    }
+
     callback.Run();
   }
 
@@ -363,6 +382,7 @@ class CrosDisksClientStubImpl : public CrosDisksClient {
   virtual ~CrosDisksClientStubImpl() {}
 
   // CrosDisksClient overrides:
+  virtual void Init(dbus::Bus* bus) OVERRIDE {}
   virtual void Mount(const std::string& source_path,
                      const std::string& source_format,
                      const std::string& mount_label,
@@ -456,7 +476,7 @@ class CrosDisksClientStubImpl : public CrosDisksClient {
     }
 
     // Just create an empty directory and shows it as the mounted directory.
-    if (!file_util::CreateDirectory(mounted_path)) {
+    if (!base::CreateDirectory(mounted_path)) {
       DLOG(ERROR) << "Failed to create directory at " << mounted_path.value();
       return MOUNT_ERROR_DIRECTORY_CREATION_FAILED;
     }
@@ -693,24 +713,23 @@ CrosDisksClient::CrosDisksClient() {}
 CrosDisksClient::~CrosDisksClient() {}
 
 // static
-CrosDisksClient* CrosDisksClient::Create(DBusClientImplementationType type,
-                                         dbus::Bus* bus) {
+CrosDisksClient* CrosDisksClient::Create(DBusClientImplementationType type) {
   if (type == REAL_DBUS_CLIENT_IMPLEMENTATION)
-    return new CrosDisksClientImpl(bus);
+    return new CrosDisksClientImpl();
   DCHECK_EQ(STUB_DBUS_CLIENT_IMPLEMENTATION, type);
   return new CrosDisksClientStubImpl();
 }
 
 // static
 base::FilePath CrosDisksClient::GetArchiveMountPoint() {
-  return base::FilePath(base::chromeos::IsRunningOnChromeOS() ?
+  return base::FilePath(base::SysInfo::IsRunningOnChromeOS() ?
                         FILE_PATH_LITERAL("/media/archive") :
                         FILE_PATH_LITERAL("/tmp/chromeos/media/archive"));
 }
 
 // static
 base::FilePath CrosDisksClient::GetRemovableDiskMountPoint() {
-  return base::FilePath(base::chromeos::IsRunningOnChromeOS() ?
+  return base::FilePath(base::SysInfo::IsRunningOnChromeOS() ?
                         FILE_PATH_LITERAL("/media/removable") :
                         FILE_PATH_LITERAL("/tmp/chromeos/media/removable"));
 }

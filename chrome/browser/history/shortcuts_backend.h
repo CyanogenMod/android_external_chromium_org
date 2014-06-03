@@ -36,13 +36,39 @@ class ShortcutsBackend : public RefcountedBrowserContextKeyedService,
  public:
   // The following struct encapsulates one previously selected omnibox shortcut.
   struct Shortcut {
+    // The pieces of an AutocompleteMatch that we preserve in a shortcut.
+    struct MatchCore {
+      explicit MatchCore(const AutocompleteMatch& match);
+      MatchCore(const base::string16& fill_into_edit,
+                const GURL& destination_url,
+                const base::string16& contents,
+                const ACMatchClassifications& contents_class,
+                const base::string16& description,
+                const ACMatchClassifications& description_class,
+                content::PageTransition transition,
+                AutocompleteMatch::Type type,
+                const base::string16& keyword);
+      ~MatchCore();
+
+      AutocompleteMatch ToMatch() const;
+
+      base::string16 fill_into_edit;
+      GURL destination_url;
+      base::string16 contents;
+      // For both contents_class and description_class, we strip MATCH
+      // classifications; the ShortcutsProvider will re-mark MATCH regions based
+      // on the user's current typing.
+      ACMatchClassifications contents_class;
+      base::string16 description;
+      ACMatchClassifications description_class;
+      content::PageTransition transition;
+      AutocompleteMatch::Type type;
+      base::string16 keyword;
+    };
+
     Shortcut(const std::string& id,
-             const string16& text,
-             const GURL& url,
-             const string16& contents,
-             const ACMatchClassifications& contents_class,
-             const string16& description,
-             const ACMatchClassifications& description_class,
+             const base::string16& text,
+             const MatchCore& match_core,
              const base::Time& last_access_time,
              int number_of_hits);
     // Required for STL, we don't use this directly.
@@ -50,24 +76,13 @@ class ShortcutsBackend : public RefcountedBrowserContextKeyedService,
     ~Shortcut();
 
     std::string id;  // Unique guid for the shortcut.
-    string16 text;   // The user's original input string.
-    GURL url;        // The corresponding destination URL.
-
-    // Contents and description from the original match, along with their
-    // corresponding markup. We need these in order to correctly mark which
-    // parts are URLs, dim, etc. However, we strip all MATCH classifications
-    // from these since we'll mark the matching portions ourselves as we match
-    // the user's current typing against these Shortcuts.
-    string16 contents;
-    ACMatchClassifications contents_class;
-    string16 description;
-    ACMatchClassifications description_class;
-
+    base::string16 text;   // The user's original input string.
+    MatchCore match_core;
     base::Time last_access_time;  // Last time shortcut was selected.
     int number_of_hits;           // How many times shortcut was selected.
   };
 
-  typedef std::multimap<string16, ShortcutsBackend::Shortcut> ShortcutMap;
+  typedef std::multimap<base::string16, const Shortcut> ShortcutMap;
 
   // |profile| is necessary for profile notifications only and can be NULL in
   // unit-tests. For unit testing, set |suppress_db| to true to prevent creation
@@ -91,44 +106,46 @@ class ShortcutsBackend : public RefcountedBrowserContextKeyedService,
   // multiple times - only the first call will be processed.
   bool Init();
 
-  bool initialized() const { return current_state_ == INITIALIZED; }
-
   // All of the public functions *must* be called on UI thread only!
 
-  // Adds the Shortcut to the database.
-  bool AddShortcut(const ShortcutsBackend::Shortcut& shortcut);
-
-  // Updates timing and selection count for the Shortcut.
-  bool UpdateShortcut(const ShortcutsBackend::Shortcut& shortcut);
-
-  // Deletes the Shortcuts with the id.
-  bool DeleteShortcutsWithIds(const std::vector<std::string>& shortcut_ids);
+  bool initialized() const { return current_state_ == INITIALIZED; }
+  const ShortcutMap& shortcuts_map() const { return shortcuts_map_; }
 
   // Deletes the Shortcuts with the url.
   bool DeleteShortcutsWithUrl(const GURL& shortcut_url);
 
-  // Deletes all of the shortcuts.
-  bool DeleteAllShortcuts();
+  void AddObserver(ShortcutsBackendObserver* obs);
+  void RemoveObserver(ShortcutsBackendObserver* obs);
 
-  const ShortcutMap& shortcuts_map() const {
-    return shortcuts_map_;
-  }
-
-  void AddObserver(ShortcutsBackendObserver* obs) {
-    observer_list_.AddObserver(obs);
-  }
-
-  void RemoveObserver(ShortcutsBackendObserver* obs) {
-    observer_list_.RemoveObserver(obs);
-  }
+  // Looks for an existing shortcut to match.destination_url that starts with
+  // |text|.  Updates that shortcut if found, otherwise adds a new shortcut.
+  void AddOrUpdateShortcut(const base::string16& text,
+                           const AutocompleteMatch& match);
 
  private:
   friend class base::RefCountedThreadSafe<ShortcutsBackend>;
+  friend class ShortcutsProviderTest;
+  FRIEND_TEST_ALL_PREFIXES(ShortcutsBackendTest, AddAndUpdateShortcut);
+  FRIEND_TEST_ALL_PREFIXES(ShortcutsBackendTest, DeleteShortcuts);
 
-  typedef std::map<std::string, ShortcutMap::iterator>
-      GuidToShortcutsIteratorMap;
+  enum CurrentState {
+    NOT_INITIALIZED,  // Backend created but not initialized.
+    INITIALIZING,     // Init() called, but not completed yet.
+    INITIALIZED,      // Initialization completed, all accessors can be safely
+                      // called.
+  };
+
+  typedef std::map<std::string, ShortcutMap::iterator> GuidMap;
 
   virtual ~ShortcutsBackend();
+
+  // RefcountedBrowserContextKeyedService:
+  virtual void ShutdownOnUIThread() OVERRIDE;
+
+  // content::NotificationObserver:
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
   // Internal initialization of the back-end. Posted by Init() to the DB thread.
   // On completion posts InitCompleted() back to UI thread.
@@ -137,20 +154,21 @@ class ShortcutsBackend : public RefcountedBrowserContextKeyedService,
   // Finishes initialization on UI thread, notifies all observers.
   void InitCompleted();
 
-  // content::NotificationObserver:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  // Adds the Shortcut to the database.
+  bool AddShortcut(const Shortcut& shortcut);
 
-  // RefcountedBrowserContextKeyedService
-  virtual void ShutdownOnUIThread() OVERRIDE;
+  // Updates timing and selection count for the Shortcut.
+  bool UpdateShortcut(const Shortcut& shortcut);
 
-  enum CurrentState {
-    NOT_INITIALIZED,  // Backend created but not initialized.
-    INITIALIZING,  // Init() called, but not completed yet.
-    INITIALIZED,  // Initialization completed, all accessors can be safely
-                  // called.
-  };
+  // Deletes the Shortcuts with the id.
+  bool DeleteShortcutsWithIds(const std::vector<std::string>& shortcut_ids);
+
+  // Deletes all shortcuts whose URLs begin with |url|.  If |exact_match| is
+  // true, only shortcuts from exactly |url| are deleted.
+  bool DeleteShortcutsWithUrl(const GURL& url, bool exact_match);
+
+  // Deletes all of the shortcuts.
+  bool DeleteAllShortcuts();
 
   CurrentState current_state_;
   ObserverList<ShortcutsBackendObserver> observer_list_;
@@ -160,11 +178,11 @@ class ShortcutsBackend : public RefcountedBrowserContextKeyedService,
   // between InitInternal() and InitComplete() to avoid doing a potentially huge
   // copy.
   scoped_ptr<ShortcutMap> temp_shortcuts_map_;
-  scoped_ptr<GuidToShortcutsIteratorMap> temp_guid_map_;
+  scoped_ptr<GuidMap> temp_guid_map_;
 
   ShortcutMap shortcuts_map_;
   // This is a helper map for quick access to a shortcut by guid.
-  GuidToShortcutsIteratorMap guid_map_;
+  GuidMap guid_map_;
 
   content::NotificationRegistrar notification_registrar_;
 

@@ -8,15 +8,18 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/accessibility/accessibility_extension_api.h"
-#include "chrome/browser/chrome_notification_types.h"
+#include "chrome/browser/accessibility/accessibility_extension_api_constants.h"
 #include "chrome/browser/ui/views/accessibility/accessibility_event_router_views.h"
 #include "chrome/test/base/testing_profile.h"
-#include "content/public/browser/notification_registrar.h"
-#include "content/public/browser/notification_service.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "ui/base/accessibility/accessibility_types.h"
 #include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/base/models/simple_menu_model.h"
 #include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/label.h"
+#include "ui/views/controls/menu/menu_item_view.h"
+#include "ui/views/controls/menu/menu_runner.h"
+#include "ui/views/controls/menu/submenu_view.h"
 #include "ui/views/layout/grid_layout.h"
 #include "ui/views/test/test_views_delegate.h"
 #include "ui/views/widget/native_widget.h"
@@ -83,7 +86,7 @@ class AccessibilityWindowDelegate : public views::WidgetDelegate {
 
 class ViewWithNameAndRole : public views::View {
  public:
-  explicit ViewWithNameAndRole(const string16& name,
+  explicit ViewWithNameAndRole(const base::string16& name,
                                ui::AccessibilityTypes::Role role)
       : name_(name),
         role_(role) {
@@ -95,19 +98,18 @@ class ViewWithNameAndRole : public views::View {
     state->role = role_;
   }
 
-  void set_name(const string16& name) { name_ = name; }
+  void set_name(const base::string16& name) { name_ = name; }
 
  private:
-  string16 name_;
+  base::string16 name_;
   ui::AccessibilityTypes::Role role_;
   DISALLOW_COPY_AND_ASSIGN(ViewWithNameAndRole);
 };
 
 class AccessibilityEventRouterViewsTest
-    : public testing::Test,
-      public content::NotificationObserver {
+    : public testing::Test {
  public:
-  AccessibilityEventRouterViewsTest() {
+  AccessibilityEventRouterViewsTest() : control_event_count_(0) {
   }
 
   virtual void SetUp() {
@@ -119,9 +121,11 @@ class AccessibilityEventRouterViewsTest
     aura_test_helper_.reset(new aura::test::AuraTestHelper(&message_loop_));
     aura_test_helper_->SetUp();
 #endif  // USE_AURA
+    EnableAccessibilityAndListenToFocusNotifications();
   }
 
   virtual void TearDown() {
+    ClearCallback();
 #if defined(USE_AURA)
     aura_test_helper_->TearDown();
 #endif
@@ -155,35 +159,36 @@ class AccessibilityEventRouterViewsTest
   }
 
   void EnableAccessibilityAndListenToFocusNotifications() {
-    registrar_.Add(this,
-                   chrome::NOTIFICATION_ACCESSIBILITY_CONTROL_FOCUSED,
-                   content::NotificationService::AllSources());
-
     // Switch on accessibility event notifications.
     ExtensionAccessibilityEventRouter* accessibility_event_router =
         ExtensionAccessibilityEventRouter::GetInstance();
     accessibility_event_router->SetAccessibilityEnabled(true);
+    accessibility_event_router->SetControlEventCallbackForTesting(base::Bind(
+        &AccessibilityEventRouterViewsTest::OnControlEvent,
+        base::Unretained(this)));
+  }
+
+  void ClearCallback() {
+    ExtensionAccessibilityEventRouter* accessibility_event_router =
+        ExtensionAccessibilityEventRouter::GetInstance();
+    accessibility_event_router->ClearControlEventCallback();
   }
 
  protected:
-  // Implement NotificationObserver::Observe and store information about a
-  // ACCESSIBILITY_CONTROL_FOCUSED event.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE {
-    ASSERT_EQ(type, chrome::NOTIFICATION_ACCESSIBILITY_CONTROL_FOCUSED);
-    const AccessibilityControlInfo* info =
-        content::Details<const AccessibilityControlInfo>(details).ptr();
-    focus_event_count_++;
+  // Handle Focus event.
+  virtual void OnControlEvent(ui::AccessibilityTypes::Event event,
+                            const AccessibilityControlInfo* info) {
+    control_event_count_++;
+    last_control_type_ = info->type();
     last_control_name_ = info->name();
     last_control_context_ = info->context();
   }
 
   base::MessageLoopForUI message_loop_;
-  int focus_event_count_;
+  int control_event_count_;
+  std::string last_control_type_;
   std::string last_control_name_;
   std::string last_control_context_;
-  content::NotificationRegistrar registrar_;
   TestingProfile profile_;
 #if defined(OS_WIN)
   scoped_ptr<ui::ScopedOleInitializer> ole_initializer_;
@@ -217,12 +222,11 @@ TEST_F(AccessibilityEventRouterViewsTest, TestFocusNotification) {
   // Put the view in a window.
   views::Widget* window = CreateWindowWithContents(contents);
   window->Show();
-  window->Activate();
 
-  // Set focus to the first button initially.
+  // Set focus to the first button initially and run message loop to execute
+  // callback.
   button1->RequestFocus();
-
-  EnableAccessibilityAndListenToFocusNotifications();
+  base::MessageLoop::current()->RunUntilIdle();
 
   // Change the accessible name of button3.
   button3->SetAccessibleName(ASCIIToUTF16(kButton3NewASCII));
@@ -230,22 +234,22 @@ TEST_F(AccessibilityEventRouterViewsTest, TestFocusNotification) {
   // Advance focus to the next button and test that we got the
   // expected notification with the name of button 2.
   views::FocusManager* focus_manager = contents->GetWidget()->GetFocusManager();
-  focus_event_count_ = 0;
+  control_event_count_ = 0;
   focus_manager->AdvanceFocus(false);
   base::MessageLoop::current()->RunUntilIdle();
-  EXPECT_EQ(1, focus_event_count_);
+  EXPECT_EQ(1, control_event_count_);
   EXPECT_EQ(kButton2ASCII, last_control_name_);
 
   // Advance to button 3. Expect the new accessible name we assigned.
   focus_manager->AdvanceFocus(false);
   base::MessageLoop::current()->RunUntilIdle();
-  EXPECT_EQ(2, focus_event_count_);
+  EXPECT_EQ(2, control_event_count_);
   EXPECT_EQ(kButton3NewASCII, last_control_name_);
 
   // Advance to button 1 and check the notification.
   focus_manager->AdvanceFocus(false);
   base::MessageLoop::current()->RunUntilIdle();
-  EXPECT_EQ(3, focus_event_count_);
+  EXPECT_EQ(3, control_event_count_);
   EXPECT_EQ(kButton1ASCII, last_control_name_);
 
   window->CloseNow();
@@ -267,16 +271,14 @@ TEST_F(AccessibilityEventRouterViewsTest, TestToolbarContext) {
   // Put the view in a window.
   views::Widget* window = CreateWindowWithContents(contents);
 
-  EnableAccessibilityAndListenToFocusNotifications();
-
   // Set focus to the button.
-  focus_event_count_ = 0;
+  control_event_count_ = 0;
   button->RequestFocus();
 
   base::MessageLoop::current()->RunUntilIdle();
 
   // Test that we got the event with the expected name and context.
-  EXPECT_EQ(kInitialFocusCount, focus_event_count_);
+  EXPECT_EQ(kInitialFocusCount, control_event_count_);
   EXPECT_EQ(kButtonNameASCII, last_control_name_);
   EXPECT_EQ(kToolbarNameASCII, last_control_context_);
 
@@ -289,7 +291,7 @@ TEST_F(AccessibilityEventRouterViewsTest, TestAlertContext) {
 
   // Create an alert with static text and a button, similar to an infobar.
   views::View* contents = new ViewWithNameAndRole(
-      string16(),
+      base::string16(),
       ui::AccessibilityTypes::ROLE_ALERT);
   views::Label* label = new views::Label(ASCIIToUTF16(kAlertTextASCII));
   contents->AddChildView(label);
@@ -301,16 +303,14 @@ TEST_F(AccessibilityEventRouterViewsTest, TestAlertContext) {
   // Put the view in a window.
   views::Widget* window = CreateWindowWithContents(contents);
 
-  EnableAccessibilityAndListenToFocusNotifications();
-
   // Set focus to the button.
-  focus_event_count_ = 0;
+  control_event_count_ = 0;
   button->RequestFocus();
 
   base::MessageLoop::current()->RunUntilIdle();
 
   // Test that we got the event with the expected name and context.
-  EXPECT_EQ(kInitialFocusCount, focus_event_count_);
+  EXPECT_EQ(kInitialFocusCount, control_event_count_);
   EXPECT_EQ(kButtonNameASCII, last_control_name_);
   EXPECT_EQ(kAlertTextASCII, last_control_context_);
 
@@ -329,28 +329,26 @@ TEST_F(AccessibilityEventRouterViewsTest, StateChangeAfterNotification) {
   ViewWithNameAndRole* child = new ViewWithNameAndRole(
       ASCIIToUTF16(kOldNameASCII),
       ui::AccessibilityTypes::ROLE_PUSHBUTTON);
-  child->set_focusable(true);
+  child->SetFocusable(true);
   contents->AddChildView(child);
 
   // Put the view in a window.
   views::Widget* window = CreateWindowWithContents(contents);
 
-  EnableAccessibilityAndListenToFocusNotifications();
-
   // Set focus to the child view.
-  focus_event_count_ = 0;
+  control_event_count_ = 0;
   child->RequestFocus();
 
   // Change the child's name after the focus notification.
   child->set_name(ASCIIToUTF16(kNewNameASCII));
 
   // We shouldn't get the notification right away.
-  EXPECT_EQ(0, focus_event_count_);
+  EXPECT_EQ(0, control_event_count_);
 
   // Process anything in the event loop. Now we should get the notification,
   // and it should give us the new control name, not the old one.
   base::MessageLoop::current()->RunUntilIdle();
-  EXPECT_EQ(kInitialFocusCount, focus_event_count_);
+  EXPECT_EQ(kInitialFocusCount, control_event_count_);
   EXPECT_EQ(kNewNameASCII, last_control_name_);
 
   window->CloseNow();
@@ -367,28 +365,150 @@ TEST_F(AccessibilityEventRouterViewsTest, NotificationOnDeletedObject) {
   ViewWithNameAndRole* child = new ViewWithNameAndRole(
       ASCIIToUTF16(kNameASCII),
       ui::AccessibilityTypes::ROLE_PUSHBUTTON);
-  child->set_focusable(true);
+  child->SetFocusable(true);
   contents->AddChildView(child);
 
   // Put the view in a window.
   views::Widget* window = CreateWindowWithContents(contents);
 
-  EnableAccessibilityAndListenToFocusNotifications();
-
   // Set focus to the child view.
-  focus_event_count_ = 0;
+  control_event_count_ = 0;
   child->RequestFocus();
 
   // Delete the child!
   delete child;
 
   // We shouldn't get the notification right away.
-  EXPECT_EQ(0, focus_event_count_);
+  EXPECT_EQ(0, control_event_count_);
 
   // Process anything in the event loop. We shouldn't get a notification
   // because the view is no longer valid, and this shouldn't crash.
   base::MessageLoop::current()->RunUntilIdle();
-  EXPECT_EQ(0, focus_event_count_);
+  EXPECT_EQ(0, control_event_count_);
 
   window->CloseNow();
+}
+
+TEST_F(AccessibilityEventRouterViewsTest, AlertsFromWindowAndControl) {
+  const char kButtonASCII[] = "Button";
+  const char* kTypeAlert = extension_accessibility_api_constants::kTypeAlert;
+  const char* kTypeWindow = extension_accessibility_api_constants::kTypeWindow;
+
+  // Create a contents view with a button.
+  views::View* contents = new views::View();
+  views::LabelButton* button = new views::LabelButton(
+      NULL, ASCIIToUTF16(kButtonASCII));
+  button->SetStyle(views::Button::STYLE_NATIVE_TEXTBUTTON);
+  contents->AddChildView(button);
+
+  // Put the view in a window.
+  views::Widget* window = CreateWindowWithContents(contents);
+  window->Show();
+
+  // Send an alert event from the button and let the event loop run.
+  control_event_count_ = 0;
+  button->NotifyAccessibilityEvent(ui::AccessibilityTypes::EVENT_ALERT, true);
+  base::MessageLoop::current()->RunUntilIdle();
+
+  EXPECT_EQ(kTypeAlert, last_control_type_);
+  EXPECT_EQ(1, control_event_count_);
+  EXPECT_EQ(kButtonASCII, last_control_name_);
+
+  // Send an alert event from the window and let the event loop run.
+  control_event_count_ = 0;
+  window->GetRootView()->NotifyAccessibilityEvent(
+      ui::AccessibilityTypes::EVENT_ALERT, true);
+  base::MessageLoop::current()->RunUntilIdle();
+
+  EXPECT_EQ(1, control_event_count_);
+  EXPECT_EQ(kTypeWindow, last_control_type_);
+
+  window->CloseNow();
+}
+
+namespace {
+
+class SimpleMenuDelegate : public ui::SimpleMenuModel::Delegate {
+ public:
+  enum {
+    IDC_MENU_ITEM_1,
+    IDC_MENU_ITEM_2,
+    IDC_MENU_INVISIBLE,
+    IDC_MENU_ITEM_3,
+  };
+
+  SimpleMenuDelegate() {}
+  virtual ~SimpleMenuDelegate() {}
+
+  views::MenuItemView* BuildMenu() {
+    menu_model_.reset(new ui::SimpleMenuModel(this));
+    menu_model_->AddItem(IDC_MENU_ITEM_1, ASCIIToUTF16("Item 1"));
+    menu_model_->AddItem(IDC_MENU_ITEM_2, ASCIIToUTF16("Item 2"));
+    menu_model_->AddSeparator(ui::NORMAL_SEPARATOR);
+    menu_model_->AddItem(IDC_MENU_INVISIBLE, ASCIIToUTF16("Invisible"));
+    menu_model_->AddSeparator(ui::NORMAL_SEPARATOR);
+    menu_model_->AddItem(IDC_MENU_ITEM_3, ASCIIToUTF16("Item 3"));
+
+    menu_runner_.reset(new views::MenuRunner(menu_model_.get()));
+    return menu_runner_->GetMenu();
+  }
+
+  virtual bool IsCommandIdChecked(int command_id) const OVERRIDE {
+    return false;
+  }
+
+  virtual bool IsCommandIdEnabled(int command_id) const OVERRIDE {
+    return true;
+  }
+
+  virtual bool IsCommandIdVisible(int command_id) const OVERRIDE {
+    return command_id != IDC_MENU_INVISIBLE;
+  }
+
+  virtual bool GetAcceleratorForCommandId(
+      int command_id,
+      ui::Accelerator* accelerator) OVERRIDE {
+    return false;
+  }
+
+  virtual void ExecuteCommand(int command_id, int event_flags) OVERRIDE {
+  }
+
+ private:
+  scoped_ptr<ui::SimpleMenuModel> menu_model_;
+  scoped_ptr<views::MenuRunner> menu_runner_;
+
+  DISALLOW_COPY_AND_ASSIGN(SimpleMenuDelegate);
+};
+
+}  // namespace
+
+TEST_F(AccessibilityEventRouterViewsTest, MenuIndexAndCountForInvisibleMenu) {
+  SimpleMenuDelegate menu_delegate;
+  views::MenuItemView* menu = menu_delegate.BuildMenu();
+  views::View* menu_container = menu->CreateSubmenu();
+
+  struct TestCase {
+    int command_id;
+    int expected_index;
+    int expected_count;
+  } kTestCases[] = {
+    { SimpleMenuDelegate::IDC_MENU_ITEM_1, 0, 3 },
+    { SimpleMenuDelegate::IDC_MENU_ITEM_2, 1, 3 },
+    { SimpleMenuDelegate::IDC_MENU_INVISIBLE, 0, 3 },
+    { SimpleMenuDelegate::IDC_MENU_ITEM_3, 2, 3 },
+  };
+
+  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kTestCases); ++i) {
+    int index = 0;
+    int count = 0;
+
+    AccessibilityEventRouterViews::RecursiveGetMenuItemIndexAndCount(
+        menu_container,
+        menu->GetMenuItemByID(kTestCases[i].command_id),
+        &index,
+        &count);
+    EXPECT_EQ(kTestCases[i].expected_index, index) << "Case " << i;
+    EXPECT_EQ(kTestCases[i].expected_count, count) << "Case " << i;
+  }
 }

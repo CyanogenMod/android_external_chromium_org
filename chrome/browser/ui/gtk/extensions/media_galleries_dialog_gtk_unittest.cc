@@ -7,8 +7,8 @@
 #include "chrome/browser/media_galleries/media_galleries_dialog_controller_mock.h"
 #include "chrome/browser/storage_monitor/storage_info.h"
 #include "chrome/browser/ui/gtk/extensions/media_galleries_dialog_gtk.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_test_util.h"
+#include "extensions/common/extension.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using ::testing::_;
@@ -16,8 +16,6 @@ using ::testing::NiceMock;
 using ::testing::Return;
 using ::testing::ReturnPointee;
 using ::testing::ReturnRef;
-
-namespace chrome {
 
 namespace {
 
@@ -137,18 +135,18 @@ TEST_F(MediaGalleriesDialogTest, UpdateAdds) {
   MediaGalleryPrefInfo gallery1 = MakePrefInfoForTesting(1);
   attached_permissions.push_back(
       MediaGalleriesDialogController::GalleryPermission(gallery1, true));
-  dialog.UpdateGallery(gallery1, true);
+  dialog.UpdateGalleries();
   EXPECT_EQ(1U, dialog.checkbox_map_.size());
 
   MediaGalleryPrefInfo gallery2 = MakePrefInfoForTesting(2);
   attached_permissions.push_back(
       MediaGalleriesDialogController::GalleryPermission(gallery2, true));
-  dialog.UpdateGallery(gallery2, true);
+  dialog.UpdateGalleries();
   EXPECT_EQ(2U, dialog.checkbox_map_.size());
 
   attached_permissions.push_back(
       MediaGalleriesDialogController::GalleryPermission(gallery2, false));
-  dialog.UpdateGallery(gallery2, false);
+  dialog.UpdateGalleries();
   EXPECT_EQ(2U, dialog.checkbox_map_.size());
 }
 
@@ -171,18 +169,16 @@ TEST_F(MediaGalleriesDialogTest, ForgetDeletes) {
   MediaGalleryPrefInfo gallery1 = MakePrefInfoForTesting(1);
   attached_permissions.push_back(
       MediaGalleriesDialogController::GalleryPermission(gallery1, true));
-  dialog.UpdateGallery(gallery1, true);
+  dialog.UpdateGalleries();
   EXPECT_EQ(1U, dialog.checkbox_map_.size());
 
   MediaGalleryPrefInfo gallery2 = MakePrefInfoForTesting(2);
   attached_permissions.push_back(
       MediaGalleriesDialogController::GalleryPermission(gallery2, true));
-  dialog.UpdateGallery(gallery2, true);
+  dialog.UpdateGalleries();
   EXPECT_EQ(2U, dialog.checkbox_map_.size());
 
-  dialog.ForgetGallery(gallery2.pref_id);
   attached_permissions.pop_back();
+  dialog.UpdateGalleries();
   EXPECT_EQ(1U, dialog.checkbox_map_.size());
 }
-
-}  // namespace chrome

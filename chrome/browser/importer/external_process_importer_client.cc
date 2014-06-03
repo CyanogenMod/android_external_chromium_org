@@ -21,7 +21,7 @@ using content::BrowserThread;
 using content::UtilityProcessHost;
 
 ExternalProcessImporterClient::ExternalProcessImporterClient(
-    ExternalProcessImporterHost* importer_host,
+    base::WeakPtr<ExternalProcessImporterHost> importer_host,
     const importer::SourceProfile& source_profile,
     uint16 items,
     InProcessImporterBridge* bridge)
@@ -65,7 +65,10 @@ void ExternalProcessImporterClient::OnProcessCrashed(int exit_code) {
   if (cancelled_)
     return;
 
-  process_importer_host_->Cancel();
+  // If the host is still around, cancel the import; otherwise it means the
+  // import was already cancelled or completed and this message can be dropped.
+  if (process_importer_host_.get())
+    process_importer_host_->Cancel();
 }
 
 bool ExternalProcessImporterClient::OnMessageReceived(
@@ -180,7 +183,7 @@ void ExternalProcessImporterClient::OnHomePageImportReady(
 }
 
 void ExternalProcessImporterClient::OnBookmarksImportStart(
-    const string16& first_folder_name,
+    const base::string16& first_folder_name,
     size_t total_bookmarks_count) {
   if (cancelled_)
     return;
@@ -224,7 +227,7 @@ void ExternalProcessImporterClient::OnFaviconsImportGroup(
 }
 
 void ExternalProcessImporterClient::OnPasswordFormImportReady(
-    const content::PasswordForm& form) {
+    const autofill::PasswordForm& form) {
   if (cancelled_)
     return;
 
@@ -261,7 +264,7 @@ void ExternalProcessImporterClient::Cleanup() {
   if (cancelled_)
     return;
 
-  if (process_importer_host_)
+  if (process_importer_host_.get())
     process_importer_host_->NotifyImportEnded();
   Release();
 }
@@ -285,10 +288,10 @@ void ExternalProcessImporterClient::StartProcessOnIOThread(
   utility_process_host_->DisableSandbox();
 
 #if defined(OS_MACOSX)
-  base::EnvironmentVector env;
+  base::EnvironmentMap env;
   std::string dylib_path = GetFirefoxDylibPath().value();
   if (!dylib_path.empty())
-    env.push_back(std::make_pair("DYLD_FALLBACK_LIBRARY_PATH", dylib_path));
+    env["DYLD_FALLBACK_LIBRARY_PATH"] = dylib_path;
   utility_process_host_->SetEnv(env);
 #endif
 

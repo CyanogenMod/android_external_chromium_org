@@ -41,13 +41,6 @@ TabModel::TabModel(Profile* profile)
   }
 }
 
-TabModel::TabModel()
-  : profile_(NULL),
-    is_off_the_record_(false),
-    synced_window_delegate_(
-        new browser_sync::SyncedWindowDelegateAndroid(this)) {
-}
-
 TabModel::~TabModel() {
 }
 
@@ -91,12 +84,8 @@ ToolbarModel* TabModel::GetToolbarModel() {
   return toolbar_model_.get();
 }
 
-ToolbarModel::SecurityLevel TabModel::GetSecurityLevelForCurrentTab() {
-  return toolbar_model_->GetSecurityLevel(false);
-}
-
-string16 TabModel::GetSearchTermsForCurrentTab() {
-  return toolbar_model_->GetText(true);
+base::string16 TabModel::GetSearchTermsForCurrentTab() {
+  return toolbar_model_->GetText();
 }
 
 std::string TabModel::GetQueryExtractionParam() {
@@ -106,7 +95,7 @@ std::string TabModel::GetQueryExtractionParam() {
   return search_terms_data.InstantExtendedEnabledParam();
 }
 
-string16 TabModel::GetCorpusNameForCurrentTab() {
+base::string16 TabModel::GetCorpusNameForCurrentTab() {
   return toolbar_model_->GetCorpusNameForMobile();
 }
 

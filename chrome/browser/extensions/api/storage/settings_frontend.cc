@@ -14,12 +14,12 @@
 #include "chrome/browser/extensions/api/storage/settings_backend.h"
 #include "chrome/browser/extensions/api/storage/sync_or_local_value_store_cache.h"
 #include "chrome/browser/extensions/event_names.h"
-#include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/api/storage.h"
 #include "content/public/browser/browser_thread.h"
+#include "extensions/browser/event_router.h"
 
 #if defined(ENABLE_CONFIGURATION_POLICY)
 #include "chrome/browser/extensions/api/storage/managed_value_store_cache.h"
@@ -28,6 +28,8 @@
 using content::BrowserThread;
 
 namespace extensions {
+
+namespace storage = api::storage;
 
 namespace {
 
@@ -46,10 +48,10 @@ class DefaultObserver : public SettingsObserver {
     // string-based event payloads is removed. http://crbug.com/136045
     scoped_ptr<base::ListValue> args(new base::ListValue());
     args->Append(base::JSONReader::Read(change_json));
-    args->Append(Value::CreateStringValue(settings_namespace::ToString(
+    args->Append(new base::StringValue(settings_namespace::ToString(
         settings_namespace)));
     scoped_ptr<Event> event(new Event(
-        event_names::kOnSettingsChanged, args.Pass()));
+        storage::OnChanged::kEventName, args.Pass()));
     ExtensionSystem::Get(profile_)->event_router()->
         DispatchEventToExtension(extension_id, event.Pass());
   }

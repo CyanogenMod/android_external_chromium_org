@@ -22,8 +22,8 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/ui_test_utils.h"
-#include "components/autofill/core/browser/autofill_common_test.h"
 #include "components/autofill/core/browser/autofill_profile.h"
+#include "components/autofill/core/browser/autofill_test_utils.h"
 #include "components/autofill/core/browser/personal_data_manager.h"
 #include "content/public/browser/browser_thread.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -156,8 +156,8 @@ void WebUIBidiCheckerBrowserTestRTL::CleanUpOnMainThread() {
 //==============================
 
 static void SetupHistoryPageTest(Browser* browser,
-                                 const std::string page_url,
-                                 const std::string page_title) {
+                                 const std::string& page_url,
+                                 const std::string& page_title) {
   HistoryService* history_service = HistoryServiceFactory::GetForProfile(
       browser->profile(), Profile::IMPLICIT_ACCESS);
   const GURL history_url = GURL(page_url);
@@ -166,7 +166,6 @@ static void SetupHistoryPageTest(Browser* browser,
   history_service->SetPageTitle(history_url, UTF8ToUTF16(page_title));
 }
 
-// TODO(estade): fix this test: http://crbug.com/119595
 IN_PROC_BROWSER_TEST_F(WebUIBidiCheckerBrowserTestLTR,
                        TestHistoryPage) {
   // Test an Israeli news site with a Hebrew title.
@@ -176,7 +175,6 @@ IN_PROC_BROWSER_TEST_F(WebUIBidiCheckerBrowserTestLTR,
   RunBidiCheckerOnPage(chrome::kChromeUIHistoryFrameURL);
 }
 
-// TODO(estade): fix this test: http://crbug.com/119595
 IN_PROC_BROWSER_TEST_F(WebUIBidiCheckerBrowserTestRTL,
                        TestHistoryPage) {
   SetupHistoryPageTest(browser(), "http://www.google.com", "Google");
@@ -190,27 +188,6 @@ IN_PROC_BROWSER_TEST_F(WebUIBidiCheckerBrowserTestRTL,
 // This page isn't localized to an RTL language so we test it only in English.
 IN_PROC_BROWSER_TEST_F(WebUIBidiCheckerBrowserTestLTR, TestAboutPage) {
   RunBidiCheckerOnPage(chrome::kChromeUIAboutURL);
-}
-
-//==============================
-// chrome://bugreport
-//==============================
-
-IN_PROC_BROWSER_TEST_F(WebUIBidiCheckerBrowserTestLTR, TestFeedbackPage) {
-  // The bugreport page receives its contents as GET arguments. Here we provide
-  // a custom, Hebrew typed, description message.
-  RunBidiCheckerOnPage(
-      "chrome://feedback?session_id=1&tab_index=0&description=%D7%91%D7%93%D7%99%D7%A7%D7%94");
-}
-
-// Test disabled because it is flaky (http://crbug.com/134434)
-#if defined(OS_CHROMEOS)
-#define MAYBE_TestFeedbackPage DISABLED_TestFeedbackPage
-#else
-#define MAYBE_TestFeedbackPage TestFeedbackPage
-#endif
-IN_PROC_BROWSER_TEST_F(WebUIBidiCheckerBrowserTestRTL, MAYBE_TestFeedbackPage) {
-  RunBidiCheckerOnPage("chrome://feedback?session_id=1&tab_index=0&description=test");
 }
 
 //==============================
@@ -404,15 +381,8 @@ IN_PROC_BROWSER_TEST_F(WebUIBidiCheckerBrowserTestLTR,
   RunBidiCheckerOnPage(url);
 }
 
-#if defined(OS_WIN)
-// Times out on Windows. http://crbug.com/171938
-#define MAYBE_TestSettingsLanguageOptionsPage \
-    DISABLED_TestSettingsLanguageOptionsPage
-#else
-#define MAYBE_TestSettingsLanguageOptionsPage TestSettingsLanguageOptionsPage
-#endif
 IN_PROC_BROWSER_TEST_F(WebUIBidiCheckerBrowserTestRTL,
-                       MAYBE_TestSettingsLanguageOptionsPage) {
+                       TestSettingsLanguageOptionsPage) {
   std::string url(chrome::kChromeUISettingsFrameURL);
   url += std::string(chrome::kLanguageOptionsSubPage);
   RunBidiCheckerOnPage(url);

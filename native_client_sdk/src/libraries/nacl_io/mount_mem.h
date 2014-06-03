@@ -14,7 +14,8 @@ class MountMem : public Mount {
  protected:
   MountMem();
 
-  virtual Error Init(int dev, StringMap_t& args, PepperInterface* ppapi);
+  using Mount::Init;
+  virtual Error Init(const MountInitArgs& args);
 
   // The protected functions are only used internally and will not
   // acquire or release the mount's lock themselves.  The caller is
@@ -34,6 +35,7 @@ class MountMem : public Mount {
   virtual Error Mkdir(const Path& path, int perm);
   virtual Error Rmdir(const Path& path);
   virtual Error Remove(const Path& path);
+  virtual Error Rename(const Path& path, const Path& newpath);
 
 private:
   static const int REMOVE_DIR = 1;

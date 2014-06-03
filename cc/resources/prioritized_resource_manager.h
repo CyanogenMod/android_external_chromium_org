@@ -17,7 +17,6 @@
 #include "cc/resources/priority_calculator.h"
 #include "cc/resources/resource.h"
 #include "cc/trees/proxy.h"
-#include "third_party/khronos/GLES2/gl2.h"
 #include "ui/gfx/size.h"
 
 #if defined(COMPILER_GCC)
@@ -40,7 +39,8 @@ class CC_EXPORT PrioritizedResourceManager {
   static scoped_ptr<PrioritizedResourceManager> Create(const Proxy* proxy) {
     return make_scoped_ptr(new PrioritizedResourceManager(proxy));
   }
-  scoped_ptr<PrioritizedResource> CreateTexture(gfx::Size size, GLenum format) {
+  scoped_ptr<PrioritizedResource> CreateTexture(
+      gfx::Size size, ResourceFormat format) {
     return make_scoped_ptr(new PrioritizedResource(this, size, format));
   }
   ~PrioritizedResourceManager();
@@ -77,6 +77,9 @@ class CC_EXPORT PrioritizedResourceManager {
   void SetExternalPriorityCutoff(int priority_cutoff) {
     external_priority_cutoff_ = priority_cutoff;
   }
+  int ExternalPriorityCutoff() const {
+    return external_priority_cutoff_;
+  }
 
   // Return the amount of texture memory required at particular cutoffs.
   size_t MemoryVisibleBytes() const;
@@ -92,10 +95,6 @@ class CC_EXPORT PrioritizedResourceManager {
   bool ReduceMemoryOnImplThread(size_t limit_bytes,
                                 int priority_cutoff,
                                 ResourceProvider* resource_provider);
-
-  // Delete contents textures' backing resources that can be recycled. This
-  // may be called on the impl thread while the main thread is running.
-  void ReduceWastedMemoryOnImplThread(ResourceProvider* resource_provider);
 
   // Returns true if there exist any textures that are linked to backings that
   // have had their resources evicted. Only when we commit a tree that has no
@@ -126,7 +125,7 @@ class CC_EXPORT PrioritizedResourceManager {
   void PushTexturePrioritiesToBackings();
 
   // Mark all textures' backings as being in the drawing impl tree.
-  void UpdateBackingsInDrawingImplTree();
+  void UpdateBackingsState(ResourceProvider* resource_provider);
 
   const Proxy* ProxyForDebug() const;
 
@@ -153,25 +152,32 @@ class CC_EXPORT PrioritizedResourceManager {
   // Compare backings. Lowest priority first.
   static inline bool CompareBackings(PrioritizedResource::Backing* a,
                                      PrioritizedResource::Backing* b) {
-    // Make textures that can be recycled appear first
-    if (a->CanBeRecycled() != b->CanBeRecycled())
-      return (a->CanBeRecycled() > b->CanBeRecycled());
+    // Make textures that can be recycled appear first.
+    if (a->CanBeRecycledIfNotInExternalUse() !=
+        b->CanBeRecycledIfNotInExternalUse())
+      return (a->CanBeRecycledIfNotInExternalUse() >
+              b->CanBeRecycledIfNotInExternalUse());
     // Then sort by being above or below the priority cutoff.
     if (a->was_above_priority_cutoff_at_last_priority_update() !=
         b->was_above_priority_cutoff_at_last_priority_update())
       return (a->was_above_priority_cutoff_at_last_priority_update() <
               b->was_above_priority_cutoff_at_last_priority_update());
     // Then sort by priority (note that backings that no longer have owners will
-    // always have the lowest priority)
+    // always have the lowest priority).
     if (a->request_priority_at_last_priority_update() !=
         b->request_priority_at_last_priority_update())
       return PriorityCalculator::priority_is_lower(
           a->request_priority_at_last_priority_update(),
           b->request_priority_at_last_priority_update());
-    // Finally sort by being in the impl tree versus being completely
-    // unreferenced
+    // Then sort by being in the impl tree versus being completely
+    // unreferenced.
     if (a->in_drawing_impl_tree() != b->in_drawing_impl_tree())
       return (a->in_drawing_impl_tree() < b->in_drawing_impl_tree());
+    // Finally, prefer to evict textures in the parent compositor because
+    // they will otherwise take another roundtrip to the parent compositor
+    // before they are evicted.
+    if (a->in_parent_compositor() != b->in_parent_compositor())
+      return (a->in_parent_compositor() > b->in_parent_compositor());
     return a < b;
   }
 
@@ -184,7 +190,7 @@ class CC_EXPORT PrioritizedResourceManager {
                                    ResourceProvider* resource_provider);
   PrioritizedResource::Backing* CreateBacking(
       gfx::Size size,
-      GLenum format,
+      ResourceFormat format,
       ResourceProvider* resource_provider);
   void EvictFirstBackingResource(ResourceProvider* resource_provider);
   void SortBackings();

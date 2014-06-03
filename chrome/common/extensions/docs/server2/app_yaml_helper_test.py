@@ -6,11 +6,11 @@
 import unittest
 
 from app_yaml_helper import AppYamlHelper
-from file_system import FileNotFoundError
-from host_file_system_creator import HostFileSystemCreator
+from extensions_paths import SERVER2
+from host_file_system_provider import HostFileSystemProvider
 from mock_file_system import MockFileSystem
 from object_store_creator import ObjectStoreCreator
-from test_file_system import TestFileSystem
+from test_file_system import MoveTo, TestFileSystem
 from test_util import DisableLogging
 
 _ExtractVersion, _IsGreater, _GenerateAppYaml = (
@@ -72,30 +72,34 @@ class AppYamlHelperTest(unittest.TestCase):
   @DisableLogging('warning')
   def testInstanceMethods(self):
     test_data = {
-      'server2': {
-        'app.yaml': _GenerateAppYaml('1-0'),
-        'app_yaml_helper.py': 'Copyright notice etc'
-      }
+      'app.yaml': _GenerateAppYaml('1-0'),
+      'app_yaml_helper.py': 'Copyright notice etc'
     }
 
     updates = []
-
-    file_system_at_head = MockFileSystem(TestFileSystem(test_data))
+    # Pass a specific file system at head to the HostFileSystemProvider so that
+    # we know it's always going to be backed by a MockFileSystem. The Provider
+    # may decide to wrap it in caching etc.
+    file_system_at_head = MockFileSystem(
+        TestFileSystem(test_data, relative_to=SERVER2))
 
     def apply_update(update):
+      update = MoveTo(SERVER2, update)
       file_system_at_head.Update(update)
       updates.append(update)
 
-    def constructor(branch, revision=None):
-      return MockFileSystem.Create(TestFileSystem(test_data),
-                                   updates[:revision])
-    host_file_system_creator = HostFileSystemCreator(
-        ObjectStoreCreator.ForTest(),
-        constructor_for_test=constructor)
-    helper = AppYamlHelper('server2/app.yaml',
-                           file_system_at_head,
-                           ObjectStoreCreator.ForTest(disable_wrappers=False),
-                           host_file_system_creator)
+    def host_file_system_constructor(branch, revision=None):
+      self.assertEqual('trunk', branch)
+      self.assertTrue(revision is not None)
+      return MockFileSystem.Create(
+          TestFileSystem(test_data, relative_to=SERVER2), updates[:revision])
+
+    object_store_creator = ObjectStoreCreator.ForTest()
+    host_file_system_provider = HostFileSystemProvider(
+        object_store_creator,
+        default_trunk_instance=file_system_at_head,
+        constructor_for_test=host_file_system_constructor)
+    helper = AppYamlHelper(object_store_creator, host_file_system_provider)
 
     def assert_is_up_to_date(version):
       self.assertTrue(helper.IsUpToDate(version),
@@ -108,9 +112,9 @@ class AppYamlHelperTest(unittest.TestCase):
     assert_is_up_to_date('1-5-0')
 
     # Revision 1.
-    apply_update({'server2': {
+    apply_update({
       'app.yaml': _GenerateAppYaml('1-5-0')
-    }})
+    })
 
     self.assertEqual(0, helper.GetFirstRevisionGreaterThan('0-5-0'))
     self.assertEqual(1, helper.GetFirstRevisionGreaterThan('1-0-0'))
@@ -118,9 +122,9 @@ class AppYamlHelperTest(unittest.TestCase):
     assert_is_up_to_date('2-5-0')
 
     # Revision 2.
-    apply_update({'server2': {
+    apply_update({
       'app_yaml_helper.py': 'fixed a bug'
-    }})
+    })
 
     self.assertEqual(0, helper.GetFirstRevisionGreaterThan('0-5-0'))
     self.assertEqual(1, helper.GetFirstRevisionGreaterThan('1-0-0'))
@@ -128,9 +132,9 @@ class AppYamlHelperTest(unittest.TestCase):
     assert_is_up_to_date('2-5-0')
 
     # Revision 3.
-    apply_update({'server2': {
+    apply_update({
       'app.yaml': _GenerateAppYaml('1-6-0')
-    }})
+    })
 
     self.assertEqual(0, helper.GetFirstRevisionGreaterThan('0-5-0'))
     self.assertEqual(1, helper.GetFirstRevisionGreaterThan('1-0-0'))
@@ -138,25 +142,25 @@ class AppYamlHelperTest(unittest.TestCase):
     assert_is_up_to_date('2-5-0')
 
     # Revision 4.
-    apply_update({'server2': {
+    apply_update({
       'app.yaml': _GenerateAppYaml('1-8-0')
-    }})
+    })
     # Revision 5.
-    apply_update({'server2': {
+    apply_update({
       'app.yaml': _GenerateAppYaml('2-0-0')
-    }})
+    })
     # Revision 6.
-    apply_update({'server2': {
+    apply_update({
       'app.yaml': _GenerateAppYaml('2-2-0')
-    }})
+    })
     # Revision 7.
-    apply_update({'server2': {
+    apply_update({
       'app.yaml': _GenerateAppYaml('2-4-0')
-    }})
+    })
     # Revision 8.
-    apply_update({'server2': {
+    apply_update({
       'app.yaml': _GenerateAppYaml('2-6-0')
-    }})
+    })
 
     self.assertEqual(0, helper.GetFirstRevisionGreaterThan('0-5-0'))
     self.assertEqual(1, helper.GetFirstRevisionGreaterThan('1-0-0'))

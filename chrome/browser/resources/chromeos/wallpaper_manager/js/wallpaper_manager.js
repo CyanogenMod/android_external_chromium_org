@@ -24,6 +24,7 @@ function WallpaperManager(dialogDom) {
   this.currentWallpaper_ = null;
   this.wallpaperRequest_ = null;
   this.wallpaperDirs_ = WallpaperDirectories.getInstance();
+  this.preManifestDomInit_();
   this.fetchManifest_();
 }
 
@@ -88,7 +89,7 @@ function WallpaperManager(dialogDom) {
   WallpaperManager.prototype.fetchManifest_ = function() {
     var locale = navigator.language;
     if (!this.enableOnlineWallpaper_) {
-      this.initDom_();
+      this.postManifestDomInit_();
       return;
     }
 
@@ -173,7 +174,7 @@ function WallpaperManager(dialogDom) {
   WallpaperManager.prototype.onLoadManifestSuccess_ = function(manifest) {
     this.manifest_ = manifest;
     WallpaperUtil.saveToStorage(Constants.AccessManifestKey, manifest, false);
-    this.initDom_();
+    this.postManifestDomInit_();
   };
 
   // Sets manifest to previously saved object if any and shows connection error.
@@ -184,7 +185,7 @@ function WallpaperManager(dialogDom) {
     Constants.WallpaperLocalStorage.get(accessManifestKey, function(items) {
       self.manifest_ = items[accessManifestKey] ? items[accessManifestKey] : {};
       self.showError_(str('connectionFailed'));
-      self.initDom_();
+      self.postManifestDomInit_();
       $('wallpaper-grid').classList.add('image-picker-offline');
     });
   };
@@ -215,9 +216,33 @@ function WallpaperManager(dialogDom) {
   };
 
   /**
-   * One-time initialization of various DOM nodes.
+   * One-time initialization of various DOM nodes. Fetching manifest may take a
+   * long time due to slow connection. Dom nodes that do not depend on manifest
+   * should be initialized here to unblock from manifest fetching.
    */
-  WallpaperManager.prototype.initDom_ = function() {
+  WallpaperManager.prototype.preManifestDomInit_ = function() {
+    $('window-close-button').addEventListener('click', function() {
+      window.close();
+    });
+    this.document_.defaultView.addEventListener(
+        'resize', this.onResize_.bind(this));
+    this.document_.defaultView.addEventListener(
+        'keydown', this.onKeyDown_.bind(this));
+    $('learn-more').href = LearnMoreURL;
+    $('close-error').addEventListener('click', function() {
+      $('error-container').hidden = true;
+    });
+    $('close-wallpaper-selection').addEventListener('click', function() {
+      $('wallpaper-selection-container').hidden = true;
+      $('set-wallpaper-layout').disabled = true;
+    });
+  };
+
+  /**
+   * One-time initialization of various DOM nodes. Dom nodes that do depend on
+   * manifest should be initialized here.
+   */
+  WallpaperManager.prototype.postManifestDomInit_ = function() {
     i18nTemplate.process(this.document_, loadTimeData);
     this.initCategoriesList_();
     this.initThumbnailsGrid_();
@@ -243,8 +268,7 @@ function WallpaperManager(dialogDom) {
       });
 
       window.addEventListener('offline', function() {
-        chrome.wallpaperPrivate.getOfflineWallpaperList(
-            Constants.WallpaperSourceEnum.Online, function(lists) {
+        chrome.wallpaperPrivate.getOfflineWallpaperList(function(lists) {
           if (!self.downloadedListMap_)
             self.downloadedListMap_ = {};
           for (var i = 0; i < lists.length; i++) {
@@ -269,19 +293,6 @@ function WallpaperManager(dialogDom) {
         $('wallpaper-grid').classList.remove('image-picker-offline');
       });
     }
-    $('window-close-button').addEventListener('click', function() {
-      window.close();
-    });
-    this.document_.defaultView.addEventListener(
-        'resize', this.onResize_.bind(this));
-    $('learn-more').href = LearnMoreURL;
-    $('close-error').addEventListener('click', function() {
-      $('error-container').hidden = true;
-    });
-    $('close-wallpaper-selection').addEventListener('click', function() {
-      $('wallpaper-selection-container').hidden = true;
-      $('set-wallpaper-layout').disabled = true;
-    });
 
     this.onResize_();
     this.initContextMenuAndCommand_();
@@ -393,8 +404,7 @@ function WallpaperManager(dialogDom) {
       // If device is offline, gets the available offline wallpaper list first.
       // Wallpapers which are not in the list will display a grayscaled
       // thumbnail.
-      chrome.wallpaperPrivate.getOfflineWallpaperList(
-          Constants.WallpaperSourceEnum.Online, function(lists) {
+      chrome.wallpaperPrivate.getOfflineWallpaperList(function(lists) {
         if (!self.downloadedListMap_)
           self.downloadedListMap_ = {};
         for (var i = 0; i < lists.length; i++)
@@ -481,6 +491,14 @@ function WallpaperManager(dialogDom) {
         this.wallpaperDirs_.getDirectory(WallpaperDirNameEnum.ORIGINAL,
                                          success, errorHandler);
         break;
+      case Constants.WallpaperSourceEnum.OEM:
+        // Resets back to default wallpaper.
+        chrome.wallpaperPrivate.resetWallpaper();
+        this.currentWallpaper_ = selectedItem.baseURL;
+        this.wallpaperGrid_.activeItem = selectedItem;
+        WallpaperUtil.saveWallpaperInfo(wallpaperURL, selectedItem.layout,
+                                        selectedItem.source);
+        break;
       case Constants.WallpaperSourceEnum.Online:
         var wallpaperURL = selectedItem.baseURL +
             Constants.HighResolutionSuffix;
@@ -488,7 +506,6 @@ function WallpaperManager(dialogDom) {
 
         chrome.wallpaperPrivate.setWallpaperIfExists(wallpaperURL,
                                                      selectedItem.layout,
-                                                     selectedItem.source,
                                                      function(exists) {
           if (exists) {
             self.currentWallpaper_ = wallpaperURL;
@@ -615,7 +632,10 @@ function WallpaperManager(dialogDom) {
    * @private
    */
   WallpaperManager.prototype.setWallpaperAttribution_ = function(selectedItem) {
-    if (selectedItem) {
+    // Only online wallpapers have author and website attributes. All other type
+    // of wallpapers should not show attributions.
+    if (selectedItem &&
+        selectedItem.source == Constants.WallpaperSourceEnum.Online) {
       $('author-name').textContent = selectedItem.author;
       $('author-website').textContent = $('author-website').href =
           selectedItem.authorWebsite;
@@ -650,6 +670,25 @@ function WallpaperManager(dialogDom) {
   WallpaperManager.prototype.onResize_ = function() {
     this.wallpaperGrid_.redraw();
     this.categoriesList_.redraw();
+  };
+
+  /**
+   * Close the last opened overlay on pressing the Escape key.
+   * @param {Event} event A keydown event.
+   */
+  WallpaperManager.prototype.onKeyDown_ = function(event) {
+    if (event.keyCode == 27) {
+      // The last opened overlay coincides with the first match of querySelector
+      // because the Error Container is declared in the DOM before the Wallpaper
+      // Selection Container.
+      // TODO(bshe): Make the overlay selection not dependent on the DOM.
+      var closeButtonSelector = '.overlay-container:not([hidden]) .close';
+      var closeButton = this.document_.querySelector(closeButtonSelector);
+      if (closeButton) {
+        closeButton.click();
+        event.preventDefault();
+      }
+    }
   };
 
   /**
@@ -920,14 +959,25 @@ function WallpaperManager(dialogDom) {
                 source: Constants.WallpaperSourceEnum.Custom,
                 availableOffline: true
           };
-          if (self.currentWallpaper_ == entry.name)
-            selectedItem = wallpaperInfo;
           wallpapersDataModel.push(wallpaperInfo);
+        }
+        if (loadTimeData.getBoolean('isOEMDefaultWallpaper')) {
+          var oemDefaultWallpaperElement = {
+              baseURL: 'OemDefaultWallpaper',
+              layout: 'CENTER_CROPPED',
+              source: Constants.WallpaperSourceEnum.OEM,
+              availableOffline: true
+          };
+          wallpapersDataModel.push(oemDefaultWallpaperElement);
+        }
+        for (var i = 0; i < wallpapersDataModel.length; i++) {
+          if (self.currentWallpaper_ == wallpapersDataModel.item(i).baseURL)
+            selectedItem = wallpapersDataModel.item(i);
         }
         var lastElement = {
             baseURL: '',
             layout: '',
-            source: 'ADDNEW',
+            source: Constants.WallpaperSourceEnum.AddNew,
             availableOffline: true
         };
         wallpapersDataModel.push(lastElement);

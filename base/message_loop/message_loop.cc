@@ -44,7 +44,7 @@ namespace {
 
 // A lazily created thread local storage for quick access to a thread's message
 // loop, if one exists.  This should be safe and free of static constructors.
-LazyInstance<base::ThreadLocalPointer<MessageLoop> > lazy_tls_ptr =
+LazyInstance<base::ThreadLocalPointer<MessageLoop> >::Leaky lazy_tls_ptr =
     LAZY_INSTANCE_INITIALIZER;
 
 // Logical events for Histogram profiling. Run with -message-loop-histogrammer
@@ -144,54 +144,23 @@ MessageLoop::MessageLoop(Type type)
 #endif  // OS_WIN
       message_histogram_(NULL),
       run_loop_(NULL) {
-  DCHECK(!current()) << "should only have one message loop per thread";
-  lazy_tls_ptr.Pointer()->Set(this);
+  Init();
 
-  incoming_task_queue_ = new internal::IncomingTaskQueue(this);
-  message_loop_proxy_ =
-      new internal::MessageLoopProxyImpl(incoming_task_queue_);
-  thread_task_runner_handle_.reset(
-      new ThreadTaskRunnerHandle(message_loop_proxy_));
+  pump_.reset(CreateMessagePumpForType(type));
+}
 
-// TODO(rvargas): Get rid of the OS guards.
+MessageLoop::MessageLoop(scoped_ptr<MessagePump> pump)
+    : pump_(pump.Pass()),
+      type_(TYPE_CUSTOM),
+      exception_restoration_(false),
+      nestable_tasks_allowed_(true),
 #if defined(OS_WIN)
-#define MESSAGE_PUMP_UI new MessagePumpForUI()
-#define MESSAGE_PUMP_IO new MessagePumpForIO()
-#elif defined(OS_IOS)
-#define MESSAGE_PUMP_UI MessagePumpMac::Create()
-#define MESSAGE_PUMP_IO new MessagePumpIOSForIO()
-#elif defined(OS_MACOSX)
-#define MESSAGE_PUMP_UI MessagePumpMac::Create()
-#define MESSAGE_PUMP_IO new MessagePumpLibevent()
-#elif defined(OS_NACL)
-// Currently NaCl doesn't have a UI MessageLoop.
-// TODO(abarth): Figure out if we need this.
-#define MESSAGE_PUMP_UI NULL
-// ipc_channel_nacl.cc uses a worker thread to do socket reads currently, and
-// doesn't require extra support for watching file descriptors.
-#define MESSAGE_PUMP_IO new MessagePumpDefault()
-#elif defined(OS_POSIX)  // POSIX but not MACOSX.
-#define MESSAGE_PUMP_UI new MessagePumpForUI()
-#define MESSAGE_PUMP_IO new MessagePumpLibevent()
-#else
-#error Not implemented
-#endif
-
-  if (type_ == TYPE_UI) {
-    if (message_pump_for_ui_factory_)
-      pump_.reset(message_pump_for_ui_factory_());
-    else
-      pump_.reset(MESSAGE_PUMP_UI);
-  } else if (type_ == TYPE_IO) {
-    pump_.reset(MESSAGE_PUMP_IO);
-#if defined(OS_ANDROID)
-  } else if (type_ == TYPE_JAVA) {
-    pump_.reset(MESSAGE_PUMP_UI);
-#endif
-  } else {
-    DCHECK_EQ(TYPE_DEFAULT, type_);
-    pump_.reset(new MessagePumpDefault());
-  }
+      os_modal_loop_(false),
+#endif  // OS_WIN
+      message_histogram_(NULL),
+      run_loop_(NULL) {
+  DCHECK(pump_.get());
+  Init();
 }
 
 MessageLoop::~MessageLoop() {
@@ -251,6 +220,51 @@ bool MessageLoop::InitMessagePumpForUIFactory(MessagePumpFactory* factory) {
 
   message_pump_for_ui_factory_ = factory;
   return true;
+}
+
+// static
+MessagePump* MessageLoop::CreateMessagePumpForType(Type type) {
+// TODO(rvargas): Get rid of the OS guards.
+#if defined(OS_WIN)
+#define MESSAGE_PUMP_UI new MessagePumpForUI()
+#define MESSAGE_PUMP_IO new MessagePumpForIO()
+#elif defined(OS_IOS)
+#define MESSAGE_PUMP_UI MessagePumpMac::Create()
+#define MESSAGE_PUMP_IO new MessagePumpIOSForIO()
+#elif defined(OS_MACOSX)
+#define MESSAGE_PUMP_UI MessagePumpMac::Create()
+#define MESSAGE_PUMP_IO new MessagePumpLibevent()
+#elif defined(OS_NACL)
+// Currently NaCl doesn't have a UI MessageLoop.
+// TODO(abarth): Figure out if we need this.
+#define MESSAGE_PUMP_UI NULL
+// ipc_channel_nacl.cc uses a worker thread to do socket reads currently, and
+// doesn't require extra support for watching file descriptors.
+#define MESSAGE_PUMP_IO new MessagePumpDefault()
+#elif defined(OS_POSIX)  // POSIX but not MACOSX.
+#define MESSAGE_PUMP_UI new MessagePumpForUI()
+#define MESSAGE_PUMP_IO new MessagePumpLibevent()
+#else
+#error Not implemented
+#endif
+
+  if (type == MessageLoop::TYPE_UI) {
+    if (message_pump_for_ui_factory_)
+      return message_pump_for_ui_factory_();
+    return MESSAGE_PUMP_UI;
+  }
+  if (type == MessageLoop::TYPE_IO)
+    return MESSAGE_PUMP_IO;
+#if defined(TOOLKIT_GTK)
+  if (type == MessageLoop::TYPE_GPU)
+    return new MessagePumpX11();
+#endif
+#if defined(OS_ANDROID)
+  if (type == MessageLoop::TYPE_JAVA)
+    return MESSAGE_PUMP_UI;
+#endif
+  DCHECK_EQ(MessageLoop::TYPE_DEFAULT, type);
+  return new MessagePumpDefault();
 }
 
 void MessageLoop::AddDestructionObserver(
@@ -344,13 +358,12 @@ Closure MessageLoop::QuitWhenIdleClosure() {
 }
 
 void MessageLoop::SetNestableTasksAllowed(bool allowed) {
-  if (nestable_tasks_allowed_ != allowed) {
-    nestable_tasks_allowed_ = allowed;
-    if (!nestable_tasks_allowed_)
-      return;
-    // Start the native pump if we are not already pumping.
+  if (allowed) {
+    // Kick the native pump just in case we enter a OS-driven nested message
+    // loop.
     pump_->ScheduleWork();
   }
+  nestable_tasks_allowed_ = allowed;
 }
 
 bool MessageLoop::NestableTasksAllowed() const {
@@ -393,6 +406,17 @@ void MessageLoop::LockWaitUnLockForTesting(WaitableEvent* caller_wait,
 
 //------------------------------------------------------------------------------
 
+void MessageLoop::Init() {
+  DCHECK(!current()) << "should only have one message loop per thread";
+  lazy_tls_ptr.Pointer()->Set(this);
+
+  incoming_task_queue_ = new internal::IncomingTaskQueue(this);
+  message_loop_proxy_ =
+      new internal::MessageLoopProxyImpl(incoming_task_queue_);
+  thread_task_runner_handle_.reset(
+      new ThreadTaskRunnerHandle(message_loop_proxy_));
+}
+
 // Runs the loop in two different SEH modes:
 // enable_SEH_restoration_ = false : any unhandled exception goes to the last
 // one that calls SetUnhandledExceptionFilter().
@@ -425,7 +449,8 @@ void MessageLoop::RunInternal() {
 
   StartHistogrammer();
 
-#if !defined(OS_MACOSX) && !defined(OS_ANDROID)
+#if !defined(OS_MACOSX) && !defined(OS_ANDROID) && \
+    !defined(USE_GTK_MESSAGE_PUMP)
   if (run_loop_->dispatcher_ && type() == TYPE_UI) {
     static_cast<MessagePumpForUI*>(pump_.get())->
         RunWithDispatcher(this, run_loop_->dispatcher_);
@@ -458,9 +483,13 @@ void MessageLoop::RunTask(const PendingTask& pending_task) {
       TRACE_ID_MANGLE(GetTaskTraceID(pending_task)),
       "queue_duration",
       (start_time - pending_task.EffectiveTimePosted()).InMilliseconds());
-  TRACE_EVENT2("task", "MessageLoop::RunTask",
-               "src_file", pending_task.posted_from.file_name(),
-               "src_func", pending_task.posted_from.function_name());
+  // When tracing memory for posted tasks it's more valuable to attribute the
+  // memory allocations to the source function than generically to "RunTask".
+  TRACE_EVENT_WITH_MEMORY_TAG2(
+      "task", "MessageLoop::RunTask",
+      pending_task.posted_from.function_name(),  // Name for memory tracking.
+      "src_file", pending_task.posted_from.file_name(),
+      "src_func", pending_task.posted_from.function_name());
 
   DCHECK(nestable_tasks_allowed_);
   // Execute the task and assume the worst: It is probably not reentrant.
@@ -539,7 +568,7 @@ bool MessageLoop::DeletePendingTasks() {
 
 uint64 MessageLoop::GetTaskTraceID(const PendingTask& task) {
   return (static_cast<uint64>(task.sequence_num) << 32) |
-         static_cast<uint64>(reinterpret_cast<intptr_t>(this));
+         ((static_cast<uint64>(reinterpret_cast<intptr_t>(this)) << 32) >> 32);
 }
 
 void MessageLoop::ReloadWorkQueue() {
@@ -656,6 +685,20 @@ bool MessageLoop::DoIdleWork() {
   return false;
 }
 
+void MessageLoop::GetQueueingInformation(size_t* queue_size,
+                                         TimeDelta* queueing_delay) {
+  *queue_size = work_queue_.size();
+  if (*queue_size == 0) {
+    *queueing_delay = TimeDelta();
+    return;
+  }
+
+  const PendingTask& next_to_run = work_queue_.front();
+  tracked_objects::Duration duration =
+      tracked_objects::TrackedTime::Now() - next_to_run.EffectiveTimePosted();
+  *queueing_delay = TimeDelta::FromMilliseconds(duration.InMilliseconds());
+}
+
 void MessageLoop::DeleteSoonInternal(const tracked_objects::Location& from_here,
                                      void(*deleter)(const void*),
                                      const void* object) {
@@ -671,12 +714,6 @@ void MessageLoop::ReleaseSoonInternal(
 
 //------------------------------------------------------------------------------
 // MessageLoopForUI
-
-#if defined(OS_WIN)
-void MessageLoopForUI::DidProcessMessage(const MSG& message) {
-  pump_win()->DidProcessMessage(message);
-}
-#endif  // defined(OS_WIN)
 
 #if defined(OS_ANDROID)
 void MessageLoopForUI::Start() {

@@ -44,12 +44,9 @@ class PepperVideoCaptureHost
   virtual void OnPaused(media::VideoCapture* capture) OVERRIDE;
   virtual void OnError(media::VideoCapture* capture, int error_code) OVERRIDE;
   virtual void OnRemoved(media::VideoCapture* capture) OVERRIDE;
-  virtual void OnBufferReady(
+  virtual void OnFrameReady(
       media::VideoCapture* capture,
-      scoped_refptr<media::VideoCapture::VideoFrameBuffer> buffer) OVERRIDE;
-  virtual void OnDeviceInfoReceived(
-      media::VideoCapture* capture,
-      const media::VideoCaptureParams& device_info) OVERRIDE;
+      const scoped_refptr<media::VideoFrame>& frame) OVERRIDE;
 
  private:
   int32_t OnOpen(ppapi::host::HostMessageContext* context,
@@ -64,6 +61,9 @@ class PepperVideoCaptureHost
 
   int32_t StopCapture();
   int32_t Close();
+  void PostErrorReply();
+  void AllocBuffers(const gfx::Size& resolution,
+                    int frame_rate);
   void ReleaseBuffers();
   void SendStatus();
 
@@ -88,10 +88,11 @@ class PepperVideoCaptureHost
 
   RendererPpapiHostImpl* renderer_ppapi_host_;
 
+  gfx::Size alloc_size_;
   std::vector<BufferInfo> buffers_;
   size_t buffer_count_hint_;
 
-  media::VideoCaptureCapability capability_;
+  media::VideoCaptureParams video_capture_params_;
 
   PP_VideoCaptureStatus_Dev status_;
 

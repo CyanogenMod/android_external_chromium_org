@@ -9,18 +9,19 @@
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/values.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
+#include "chrome/common/chrome_version_info.h"  // TODO(finnur): Remove.
 #include "extensions/common/error_utils.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/feature_switch.h"
+#include "extensions/common/manifest_constants.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
-namespace errors = extension_manifest_errors;
-namespace keys = extension_manifest_keys;
-namespace values = extension_manifest_values;
+namespace extensions {
 
-using extensions::ErrorUtils;
-using extensions::Command;
+namespace errors = manifest_errors;
+namespace keys = manifest_keys;
+namespace values = manifest_values;
 
 namespace {
 
@@ -29,10 +30,25 @@ static const char kMissing[] = "Missing";
 static const char kCommandKeyNotSupported[] =
     "Command key is not supported. Note: Ctrl means Command on Mac";
 
+bool IsNamedCommand(const std::string& command_name) {
+  return command_name != values::kPageActionCommandEvent &&
+         command_name != values::kBrowserActionCommandEvent &&
+         command_name != values::kScriptBadgeCommandEvent;
+}
+
+bool DoesRequireModifier(const std::string& accelerator) {
+  return accelerator != values::kKeyMediaNextTrack &&
+         accelerator != values::kKeyMediaPlayPause &&
+         accelerator != values::kKeyMediaPrevTrack &&
+         accelerator != values::kKeyMediaStop;
+}
+
 ui::Accelerator ParseImpl(const std::string& accelerator,
                           const std::string& platform_key,
                           int index,
-                          string16* error) {
+                          bool should_parse_media_keys,
+                          base::string16* error) {
+  error->clear();
   if (platform_key != values::kKeybindingPlatformWin &&
       platform_key != values::kKeybindingPlatformMac &&
       platform_key != values::kKeybindingPlatformChromeOs &&
@@ -47,7 +63,9 @@ ui::Accelerator ParseImpl(const std::string& accelerator,
 
   std::vector<std::string> tokens;
   base::SplitString(accelerator, '+', &tokens);
-  if (tokens.size() < 2 || tokens.size() > 3) {
+  if (tokens.size() == 0 ||
+      (tokens.size() == 1 && DoesRequireModifier(accelerator)) ||
+      tokens.size() > 3) {
     *error = ErrorUtils::FormatErrorMessageUTF16(
         errors::kInvalidKeyBinding,
         base::IntToString(index),
@@ -99,7 +117,11 @@ ui::Accelerator ParseImpl(const std::string& accelerator,
                tokens[i] == values::kKeyEnd ||
                tokens[i] == values::kKeyPgUp ||
                tokens[i] == values::kKeyPgDwn ||
-               tokens[i] == values::kKeyTab) {
+               tokens[i] == values::kKeyTab ||
+               tokens[i] == values::kKeyMediaNextTrack ||
+               tokens[i] == values::kKeyMediaPlayPause ||
+               tokens[i] == values::kKeyMediaPrevTrack ||
+               tokens[i] == values::kKeyMediaStop) {
       if (key != ui::VKEY_UNKNOWN) {
         // Multiple key assignments.
         key = ui::VKEY_UNKNOWN;
@@ -132,6 +154,18 @@ ui::Accelerator ParseImpl(const std::string& accelerator,
         key = ui::VKEY_NEXT;
       } else if (tokens[i] == values::kKeyTab) {
         key = ui::VKEY_TAB;
+      } else if (tokens[i] == values::kKeyMediaNextTrack &&
+                 should_parse_media_keys) {
+        key = ui::VKEY_MEDIA_NEXT_TRACK;
+      } else if (tokens[i] == values::kKeyMediaPlayPause &&
+                 should_parse_media_keys) {
+        key = ui::VKEY_MEDIA_PLAY_PAUSE;
+      } else if (tokens[i] == values::kKeyMediaPrevTrack &&
+                 should_parse_media_keys) {
+        key = ui::VKEY_MEDIA_PREV_TRACK;
+      } else if (tokens[i] == values::kKeyMediaStop &&
+                 should_parse_media_keys) {
+        key = ui::VKEY_MEDIA_STOP;
       } else if (tokens[i].size() == 1 &&
                  tokens[i][0] >= 'A' && tokens[i][0] <= 'Z') {
         key = static_cast<ui::KeyboardCode>(ui::VKEY_A + (tokens[i][0] - 'A'));
@@ -151,6 +185,7 @@ ui::Accelerator ParseImpl(const std::string& accelerator,
       return ui::Accelerator();
     }
   }
+
   bool command = (modifiers & ui::EF_COMMAND_DOWN) != 0;
   bool ctrl = (modifiers & ui::EF_CONTROL_DOWN) != 0;
   bool alt = (modifiers & ui::EF_ALT_DOWN) != 0;
@@ -166,6 +201,19 @@ ui::Accelerator ParseImpl(const std::string& accelerator,
       (shift && !ctrl && !alt && !command)) {
     *error = ErrorUtils::FormatErrorMessageUTF16(
         errors::kInvalidKeyBinding,
+        base::IntToString(index),
+        platform_key,
+        accelerator);
+    return ui::Accelerator();
+  }
+
+  if ((key == ui::VKEY_MEDIA_NEXT_TRACK ||
+       key == ui::VKEY_MEDIA_PREV_TRACK ||
+       key == ui::VKEY_MEDIA_PLAY_PAUSE ||
+       key == ui::VKEY_MEDIA_STOP) &&
+      (shift || ctrl || alt || command)) {
+    *error = ErrorUtils::FormatErrorMessageUTF16(
+        errors::kInvalidKeyBindingMediaKeyWithModifier,
         base::IntToString(index),
         platform_key,
         accelerator);
@@ -204,17 +252,18 @@ std::string NormalizeShortcutSuggestion(const std::string& suggestion,
 
 }  // namespace
 
-namespace extensions {
-
-Command::Command() {}
+Command::Command() : global_(false) {}
 
 Command::Command(const std::string& command_name,
-                 const string16& description,
-                 const std::string& accelerator)
+                 const base::string16& description,
+                 const std::string& accelerator,
+                 bool global)
     : command_name_(command_name),
-      description_(description) {
-  string16 error;
-  accelerator_ = ParseImpl(accelerator, CommandPlatform(), 0, &error);
+      description_(description),
+      global_(global) {
+  base::string16 error;
+  accelerator_ = ParseImpl(accelerator, CommandPlatform(), 0,
+                           IsNamedCommand(command_name), &error);
 }
 
 Command::~Command() {}
@@ -235,11 +284,12 @@ std::string Command::CommandPlatform() {
 }
 
 // static
-ui::Accelerator Command::StringToAccelerator(const std::string& accelerator) {
-  string16 error;
-  Command command;
+ui::Accelerator Command::StringToAccelerator(const std::string& accelerator,
+                                             const std::string& command_name) {
+  base::string16 error;
   ui::Accelerator parsed =
-      ParseImpl(accelerator, Command::CommandPlatform(), 0, &error);
+      ParseImpl(accelerator, Command::CommandPlatform(), 0,
+                IsNamedCommand(command_name), &error);
   return parsed;
 }
 
@@ -312,6 +362,18 @@ std::string Command::AcceleratorToString(const ui::Accelerator& accelerator) {
       case ui::VKEY_TAB:
         shortcut += values::kKeyTab;
         break;
+      case ui::VKEY_MEDIA_NEXT_TRACK:
+        shortcut += values::kKeyMediaNextTrack;
+        break;
+      case ui::VKEY_MEDIA_PLAY_PAUSE:
+        shortcut += values::kKeyMediaPlayPause;
+        break;
+      case ui::VKEY_MEDIA_PREV_TRACK:
+        shortcut += values::kKeyMediaPrevTrack;
+        break;
+      case ui::VKEY_MEDIA_STOP:
+        shortcut += values::kKeyMediaStop;
+        break;
       default:
         return "";
     }
@@ -322,13 +384,11 @@ std::string Command::AcceleratorToString(const ui::Accelerator& accelerator) {
 bool Command::Parse(const base::DictionaryValue* command,
                     const std::string& command_name,
                     int index,
-                    string16* error) {
+                    base::string16* error) {
   DCHECK(!command_name.empty());
 
-  string16 description;
-  if (command_name != values::kPageActionCommandEvent &&
-      command_name != values::kBrowserActionCommandEvent &&
-      command_name != values::kScriptBadgeCommandEvent) {
+  base::string16 description;
+  if (IsNamedCommand(command_name)) {
     if (!command->GetString(keys::kDescription, &description) ||
         description.empty()) {
       *error = ErrorUtils::FormatErrorMessageUTF16(
@@ -376,6 +436,12 @@ bool Command::Parse(const base::DictionaryValue* command,
     }
   }
 
+  // Check if this is a global or a regular shortcut.
+  bool global = false;
+  if (FeatureSwitch::global_commands()->IsEnabled() &&
+      chrome::VersionInfo::GetChannel() <= chrome::VersionInfo::CHANNEL_DEV)
+    command->GetBoolean(keys::kGlobal, &global);
+
   // Normalize the suggestions.
   for (SuggestionMap::iterator iter = suggestions.begin();
        iter != suggestions.end(); ++iter) {
@@ -419,13 +485,16 @@ bool Command::Parse(const base::DictionaryValue* command,
     if (!iter->second.empty()) {
       // Note that we pass iter->first to pretend we are on a platform we're not
       // on.
-      accelerator = ParseImpl(iter->second, iter->first, index, error);
+      accelerator = ParseImpl(iter->second, iter->first, index,
+                              IsNamedCommand(command_name), error);
       if (accelerator.key_code() == ui::VKEY_UNKNOWN) {
-        *error = ErrorUtils::FormatErrorMessageUTF16(
-            errors::kInvalidKeyBinding,
-            base::IntToString(index),
-            iter->first,
-            iter->second);
+        if (error->empty()) {
+          *error = ErrorUtils::FormatErrorMessageUTF16(
+              errors::kInvalidKeyBinding,
+              base::IntToString(index),
+              iter->first,
+              iter->second);
+        }
         return false;
       }
     }
@@ -435,6 +504,7 @@ bool Command::Parse(const base::DictionaryValue* command,
       accelerator_ = accelerator;
       command_name_ = command_name;
       description_ = description;
+      global_ = global;
     }
   }
   return true;
@@ -444,12 +514,14 @@ base::DictionaryValue* Command::ToValue(const Extension* extension,
                                         bool active) const {
   base::DictionaryValue* extension_data = new base::DictionaryValue();
 
-  string16 command_description;
+  base::string16 command_description;
+  bool extension_action = false;
   if (command_name() == values::kBrowserActionCommandEvent ||
       command_name() == values::kPageActionCommandEvent ||
       command_name() == values::kScriptBadgeCommandEvent) {
     command_description =
         l10n_util::GetStringUTF16(IDS_EXTENSION_COMMANDS_GENERIC_ACTIVATE);
+    extension_action = true;
   } else {
     command_description = description();
   }
@@ -458,6 +530,16 @@ base::DictionaryValue* Command::ToValue(const Extension* extension,
   extension_data->SetString("keybinding", accelerator().GetShortcutText());
   extension_data->SetString("command_name", command_name());
   extension_data->SetString("extension_id", extension->id());
+  extension_data->SetBoolean("global", global());
+  extension_data->SetBoolean("extension_action", extension_action);
+
+  if (FeatureSwitch::global_commands()->IsEnabled()) {
+    // TODO(finnur): This is to make sure we don't show the config UI beyond
+    // dev and will be removed when we launch.
+    static bool stable_or_beta =
+        chrome::VersionInfo::GetChannel() >= chrome::VersionInfo::CHANNEL_BETA;
+    extension_data->SetBoolean("scope_ui_visible", !stable_or_beta);
+  }
 
   return extension_data;
 }

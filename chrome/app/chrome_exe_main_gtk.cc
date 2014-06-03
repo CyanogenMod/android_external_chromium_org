@@ -4,6 +4,7 @@
 
 #include "build/build_config.h"
 #include "chrome/browser/first_run/upgrade_util.h"
+#include "components/startup_metric_utils/startup_metric_utils.h"
 
 // The entry point for all invocations of Chromium, browser and renderer. On
 // windows, this does nothing but load chrome.dll and invoke its entry point in
@@ -29,7 +30,7 @@ const char *kAsanDefaultOptions =
 // __asan_default_options should not be instrumented, because it is called
 // before ASan is initialized.
 extern "C"
-__attribute__((no_address_safety_analysis))
+__attribute__((no_sanitize_address))
 const char *__asan_default_options() {
   return kAsanDefaultOptions;
 }
@@ -40,6 +41,7 @@ int ChromeMain(int argc, const char** argv);
 }
 
 int main(int argc, const char** argv) {
+  startup_metric_utils::RecordExeMainEntryTime();
   int return_code = ChromeMain(argc, argv);
 
 #if defined(OS_LINUX)

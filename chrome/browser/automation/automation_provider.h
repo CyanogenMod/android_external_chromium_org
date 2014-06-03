@@ -29,7 +29,6 @@
 #include "components/autofill/core/browser/field_types.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_observer.h"
-#include "content/public/browser/trace_subscriber.h"
 #include "ipc/ipc_channel.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_sender.h"
@@ -82,8 +81,7 @@ class AutomationProvider
       public IPC::Sender,
       public base::SupportsWeakPtr<AutomationProvider>,
       public base::RefCountedThreadSafe<
-          AutomationProvider, content::BrowserThread::DeleteOnUIThread>,
-      public content::TraceSubscriber {
+          AutomationProvider, content::BrowserThread::DeleteOnUIThread> {
  public:
   explicit AutomationProvider(Profile* profile);
 
@@ -109,9 +107,6 @@ class AutomationProvider
   // Called when the inital set of tabs has finished loading.
   // Call SetExpectedTabCount(0) to set this to true immediately.
   void OnInitialTabLoadsComplete();
-
-  // Called when the ChromeOS network library has finished its first update.
-  void OnNetworkLibraryInit();
 
   // Called when the chromeos WebUI OOBE/Login is ready.
   void OnOOBEWebuiReady();
@@ -205,7 +200,7 @@ class AutomationProvider
   void SendFindRequest(
       content::WebContents* web_contents,
       bool with_json,
-      const string16& search_string,
+      const base::string16& search_string,
       bool forward,
       bool match_case,
       bool find_next,
@@ -218,17 +213,6 @@ class AutomationProvider
   bool reinitialize_on_channel_error_;
 
  private:
-  // Storage for EndTracing() to resume operations after a callback.
-  struct TracingData {
-    std::list<std::string> trace_output;
-    scoped_ptr<IPC::Message> reply_message;
-  };
-
-  // TraceSubscriber:
-  virtual void OnEndTracingComplete() OVERRIDE;
-  virtual void OnTraceDataCollected(
-      const scoped_refptr<base::RefCountedString>& trace_fragment) OVERRIDE;
-
   void OnUnhandledMessage(const IPC::Message& message);
 
   // Clear and reinitialize the automation IPC channel.
@@ -257,7 +241,8 @@ class AutomationProvider
 
   void BeginTracing(const std::string& category_patterns, bool* success);
   void EndTracing(IPC::Message* reply_message);
-  void GetTracingOutput(std::string* chunk, bool* success);
+  void OnTraceDataCollected(IPC::Message* reply_message,
+                            const base::FilePath& path);
 
   // Asynchronous request for printing the current tab.
   void PrintAsync(int tab_handle);
@@ -348,18 +333,11 @@ class AutomationProvider
   // True iff browser finished loading initial set of tabs.
   bool initial_tab_loads_complete_;
 
-  // True iff the Chrome OS network library finished initialization.
-  bool network_library_initialized_;
-
   // True iff ChromeOS webui login ui is ready.
   bool login_webui_ready_;
 
   // ID of automation channel.
   std::string channel_id_;
-
-  // Trace data that has been collected but not flushed to the automation
-  // client.
-  TracingData tracing_data_;
 
   DISALLOW_COPY_AND_ASSIGN(AutomationProvider);
 };

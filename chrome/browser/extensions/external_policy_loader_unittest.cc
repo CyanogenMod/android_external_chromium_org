@@ -11,13 +11,13 @@
 #include "base/version.h"
 #include "chrome/browser/extensions/external_policy_loader.h"
 #include "chrome/browser/extensions/external_provider_impl.h"
-#include "chrome/browser/extensions/external_provider_interface.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/manifest.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_pref_service_syncable.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/test/test_browser_thread.h"
+#include "extensions/browser/external_provider_interface.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/manifest.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using content::BrowserThread;
@@ -81,7 +81,7 @@ class MockExternalPolicyProviderVisitor
 
   virtual bool OnExternalExtensionUpdateUrlFound(
       const std::string& id, const GURL& update_url,
-      Manifest::Location location) OVERRIDE {
+      Manifest::Location location, int unused1, bool unused2) OVERRIDE {
     // Extension has the correct location.
     EXPECT_EQ(Manifest::EXTERNAL_POLICY_DOWNLOAD, location);
 

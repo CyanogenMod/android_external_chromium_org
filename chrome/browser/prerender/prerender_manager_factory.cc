@@ -16,11 +16,16 @@
 #include "chrome/browser/prerender/prerender_manager.h"
 #include "chrome/browser/profiles/incognito_helpers.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/prerender_condition_network.h"
 #include "chromeos/network/network_handler.h"
+#endif
+
+#if defined(OS_ANDROID)
+#include "chrome/browser/android/prerender_condition_platform.h"
 #endif
 
 namespace prerender {
@@ -48,13 +53,15 @@ PrerenderManagerFactory::PrerenderManagerFactory()
   // PrerenderLocalPredictor observers the history visit DB.
   DependsOn(HistoryServiceFactory::GetInstance());
   DependsOn(predictors::PredictorDatabaseFactory::GetInstance());
+  DependsOn(ProfileSyncServiceFactory::GetInstance());
 }
 
 PrerenderManagerFactory::~PrerenderManagerFactory() {
 }
 
 BrowserContextKeyedService* PrerenderManagerFactory::BuildServiceInstanceFor(
-    content::BrowserContext* profile) const {
+    content::BrowserContext* browser_context) const {
+  Profile* profile = Profile::FromBrowserContext(browser_context);
   CHECK(g_browser_process->prerender_tracker());
 #if defined(OS_ANDROID)
   if (base::android::SysUtils::IsLowEndDevice())
@@ -62,10 +69,14 @@ BrowserContextKeyedService* PrerenderManagerFactory::BuildServiceInstanceFor(
 #endif
 
   PrerenderManager* prerender_manager = new PrerenderManager(
-      static_cast<Profile*>(profile), g_browser_process->prerender_tracker());
+      profile, g_browser_process->prerender_tracker());
 #if defined(OS_CHROMEOS)
   if (chromeos::NetworkHandler::IsInitialized())
     prerender_manager->AddCondition(new chromeos::PrerenderConditionNetwork);
+#endif
+#if defined(OS_ANDROID)
+  prerender_manager->AddCondition(new android::PrerenderConditionPlatform(
+      browser_context));
 #endif
   return prerender_manager;
 }

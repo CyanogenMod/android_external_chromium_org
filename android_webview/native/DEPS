@@ -11,8 +11,6 @@ include_rules = [
   "+components/user_prefs",
   "+components/web_contents_delegate_android",
 
-# START: Printing fork b/10190508
   "+printing",
-# END: Printing fork b/10190508
 
 ]

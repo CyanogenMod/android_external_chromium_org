@@ -2,11 +2,12 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import distutils.spawn
+import re
 import subprocess
 
-from collections import defaultdict
-
 from telemetry.core.platform import desktop_platform_backend
+from telemetry.core.platform import ps_util
 
 
 class PosixPlatformBackend(desktop_platform_backend.DesktopPlatformBackend):
@@ -38,23 +39,15 @@ class PosixPlatformBackend(desktop_platform_backend.DesktopPlatformBackend):
 
   def GetChildPids(self, pid):
     """Returns a list of child pids of |pid|."""
-    pid_ppid_state_list = self._GetPsOutput(['pid', 'ppid', 'state'])
-
-    child_dict = defaultdict(list)
-    for pid_ppid_state in pid_ppid_state_list:
-      curr_pid, curr_ppid, state = pid_ppid_state.split()
-      if 'Z' in state:
-        continue  # Ignore zombie processes
-      child_dict[int(curr_ppid)].append(int(curr_pid))
-    queue = [pid]
-    child_ids = []
-    while queue:
-      parent = queue.pop()
-      if parent in child_dict:
-        children = child_dict[parent]
-        queue.extend(children)
-        child_ids.extend(children)
-    return child_ids
+    ps_output = self._GetPsOutput(['pid', 'ppid', 'state'])
+    ps_line_re = re.compile(
+        '\s*(?P<pid>\d+)\s*(?P<ppid>\d+)\s*(?P<state>\S*)\s*')
+    processes = []
+    for pid_ppid_state in ps_output:
+      m = ps_line_re.match(pid_ppid_state)
+      assert m, 'Did not understand ps output: %s' % pid_ppid_state
+      processes.append((m.group('pid'), m.group('ppid'), m.group('state')))
+    return ps_util.GetChildPids(processes, pid)
 
   def GetCommandLine(self, pid):
     command = self._GetPsOutput(['command'], pid)
@@ -62,3 +55,6 @@ class PosixPlatformBackend(desktop_platform_backend.DesktopPlatformBackend):
 
   def GetFlushUtilityName(self):
     return 'clear_system_cache'
+
+  def CanLaunchApplication(self, application):
+    return bool(distutils.spawn.find_executable(application))

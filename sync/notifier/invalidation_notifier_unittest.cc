@@ -11,13 +11,11 @@
 #include "jingle/notifier/listener/fake_push_client.h"
 #include "net/url_request/url_request_test_util.h"
 #include "sync/internal_api/public/base/model_type.h"
-#include "sync/internal_api/public/base/model_type_invalidation_map.h"
 #include "sync/internal_api/public/util/weak_handle.h"
 #include "sync/notifier/fake_invalidation_handler.h"
 #include "sync/notifier/fake_invalidation_state_tracker.h"
 #include "sync/notifier/invalidation_state_tracker.h"
 #include "sync/notifier/invalidator_test_template.h"
-#include "sync/notifier/object_id_invalidation_map_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace syncer {
@@ -42,7 +40,7 @@ class InvalidationNotifierTestDelegate {
         new InvalidationNotifier(
             scoped_ptr<notifier::PushClient>(new notifier::FakePushClient()),
             invalidator_client_id,
-            InvalidationStateMap(),
+            UnackedInvalidationsMap(),
             initial_state,
             MakeWeakHandle(invalidation_state_tracker),
             "fake_client_info"));

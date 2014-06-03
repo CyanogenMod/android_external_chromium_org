@@ -50,6 +50,11 @@ EVENT_TYPE(HOST_RESOLVER_IMPL)
 //
 //   {
 //     "host": <Hostname associated with the request>,
+//     "address_family": <The address family to restrict results to>
+//     "allow_cached_response": <Whether it is ok to return a result from
+//                               the host cache>
+//     "is_speculative": <Whether this request was started by the DNS
+//                        prefetcher>
 //     "source_dependency": <Source id, if any, of what created the request>,
 //   }
 //
@@ -553,6 +558,38 @@ EVENT_TYPE(SOCKET_WRITE_ERROR)
 //  }
 EVENT_TYPE(SSL_CERTIFICATES_RECEIVED)
 
+// Signed Certificate Timestamps were received from the server.
+// The following parameters are attached to the event:
+// {
+//    "embedded_scts": Base64-encoded SignedCertificateTimestampList,
+//    "scts_from_ocsp_response": Base64-encoded SignedCertificateTimestampList,
+//    "scts_from_tls_extension": Base64-encoded SignedCertificateTimestampList,
+// }
+//
+// The SignedCertificateTimestampList is defined in RFC6962 and is exactly as
+// received from the server.
+EVENT_TYPE(SIGNED_CERTIFICATE_TIMESTAMPS_RECEIVED)
+
+// Signed Certificate Timestamps were checked.
+// The following parameters are attached to the event:
+// {
+//    "verified_scts": <A list of SCTs>,
+//    "invalid_scts": <A list of SCTs>,
+//    "scts_from_unknown_logs": <A list of SCTs>,
+// }
+//
+// Where each SCT is an object:
+// {
+//    "origin": <one of: "embedded_in_certificate", "tls_extension", "ocsp">,
+//    "version": <numeric version>,
+//    "log_id": <base64-encoded log id>,
+//    "timestamp": <numeric timestamp in milliseconds since the Unix epoch>,
+//    "hash_algorithm": <name of the hash algorithm>,
+//    "signature_algorithm": <name of the signature algorithm>,
+//    "signature_data": <base64-encoded signature bytes>,
+// }
+EVENT_TYPE(SIGNED_CERTIFICATE_TIMESTAMPS_CHECKED)
+
 // ------------------------------------------------------------------------
 // DatagramSocket
 // ------------------------------------------------------------------------
@@ -661,8 +698,8 @@ EVENT_TYPE(TCP_CLIENT_SOCKET_POOL_REQUESTED_SOCKET)
 EVENT_TYPE(TCP_CLIENT_SOCKET_POOL_REQUESTED_SOCKETS)
 
 
-// A backup socket is created due to slow connect
-EVENT_TYPE(SOCKET_BACKUP_CREATED)
+// A backup connect job is created due to slow connect.
+EVENT_TYPE(BACKUP_CONNECT_JOB_CREATED)
 
 // This event is sent when a connect job is eventually bound to a request
 // (because of late binding and socket backup jobs, we don't assign the job to
@@ -721,14 +758,16 @@ EVENT_TYPE(URL_REQUEST_START_JOB)
 //   }
 EVENT_TYPE(URL_REQUEST_REDIRECTED)
 
-// Measures the time a net::URLRequest is blocked waiting for either the
-// NetworkDelegate or a URLRequest::Delegate to respond.
-//
-// The parameters attached to the event are:
+// Measures the time between when a net::URLRequest calls a delegate that can
+// block it, and when the delegate allows the request to resume.
+EVENT_TYPE(URL_REQUEST_DELEGATE)
+
+// Logged when a delegate informs the URL_REQUEST of what's currently blocking
+// the request. The parameters attached to the begin event are:
 //   {
-//     "delegate": <What's blocking the request, if known>,
+//     "delegate_info": <Information about what's blocking the request>,
 //   }
-EVENT_TYPE(URL_REQUEST_BLOCKED_ON_DELEGATE)
+EVENT_TYPE(DELEGATE_INFO)
 
 // The specified number of bytes were read from the net::URLRequest.
 // The filtered event is used when the bytes were passed through a filter before
@@ -1296,6 +1335,15 @@ EVENT_TYPE(QUIC_SESSION_PACKET_RECEIVED)
 //                                as a base-10 string.>,
 //     "size": <The size of the packet in bytes>
 //   }
+EVENT_TYPE(QUIC_SESSION_PACKET_RETRANSMITTED)
+
+// Session retransmitted a QUIC packet.
+//   {
+//     "old_packet_sequence_number": <The old packet's full 64-bit sequence
+//                                    number, as a base-10 string.>,
+//     "new_packet_sequence_number": <The new packet's full 64-bit sequence
+//                                    number, as a base-10 string.>,
+//   }
 EVENT_TYPE(QUIC_SESSION_PACKET_SENT)
 
 // Session received a QUIC packet header for a valid packet.
@@ -1434,6 +1482,55 @@ EVENT_TYPE(QUIC_SESSION_CONNECTION_CLOSE_FRAME_RECEIVED)
 //     "details": <Human readable description>,
 //   }
 EVENT_TYPE(QUIC_SESSION_CONNECTION_CLOSE_FRAME_SENT)
+
+// Session received a public reset packet.
+//   {
+//   }
+EVENT_TYPE(QUIC_SESSION_PUBLIC_RESET_PACKET_RECEIVED)
+
+// Session received a version negotiation packet.
+//   {
+//     "versions": <List of QUIC versions supported by the server>,
+//   }
+EVENT_TYPE(QUIC_SESSION_VERSION_NEGOTIATION_PACKET_RECEIVED)
+
+// Session sucessfully negotiated QUIC version number.
+//   {
+//     "version": <String of QUIC version negotiated with the server>,
+//   }
+EVENT_TYPE(QUIC_SESSION_VERSION_NEGOTIATED)
+
+// Session revived a QUIC packet packet via FEC.
+//   {
+//     "guid": <The 64-bit GUID for this connection, as a base-10 string>,
+//     "public_flags": <The public flags set for this packet>,
+//     "packet_sequence_number": <The packet's full 64-bit sequence number,
+//                                as a base-10 string.>,
+//     "private_flags": <The private flags set for this packet>,
+//     "fec_group": <The FEC group of this packet>,
+//   }
+EVENT_TYPE(QUIC_SESSION_PACKET_HEADER_REVIVED)
+
+// Session received a crypto handshake message.
+//   {
+//     "quic_crypto_handshake_message": <The human readable dump of the message
+//                                       contents>
+//   }
+EVENT_TYPE(QUIC_SESSION_CRYPTO_HANDSHAKE_MESSAGE_RECEIVED)
+
+// Session sent a crypto handshake message.
+//   {
+//     "quic_crypto_handshake_message": <The human readable dump of the message
+//                                       contents>
+//   }
+EVENT_TYPE(QUIC_SESSION_CRYPTO_HANDSHAKE_MESSAGE_SENT)
+
+// Session was closed, either remotely or by the peer.
+//   {
+//     "quic_error": <QuicErrorCode which caused the connection to be closed>,
+//     "from_peer":  <True if the peer closed the connection>
+//   }
+EVENT_TYPE(QUIC_SESSION_CLOSED)
 
 // ------------------------------------------------------------------------
 // QuicHttpStream
@@ -1575,13 +1672,8 @@ EVENT_TYPE(NETWORK_CHANGED)
 //   {
 //     "nameservers":                <List of name server IPs>,
 //     "search":                     <List of domain suffixes>,
-//     "append_to_multi_label_name": <See DnsConfig>,
-//     "ndots":                      <See DnsConfig>,
-//     "timeout":                    <See DnsConfig>,
-//     "attempts":                   <See DnsConfig>,
-//     "rotate":                     <See DnsConfig>,
-//     "edns0":                      <See DnsConfig>,
-//     "num_hosts":                  <Number of entries in the HOSTS file>
+//     "num_hosts":                  <Number of entries in the HOSTS file>,
+//     <other>:                      <See DnsConfig>
 //   }
 EVENT_TYPE(DNS_CONFIG_CHANGED)
 

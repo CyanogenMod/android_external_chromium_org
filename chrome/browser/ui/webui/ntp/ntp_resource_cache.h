@@ -20,16 +20,26 @@ namespace base {
 class RefCountedMemory;
 }
 
+namespace content {
+class RenderProcessHost;
+}
+
 // This class keeps a cache of NTP resources (HTML and CSS) so we don't have to
 // regenerate them all the time.
 class NTPResourceCache : public content::NotificationObserver,
                          public BrowserContextKeyedService {
  public:
+  enum WindowType {
+    NORMAL,
+    INCOGNITO,
+    GUEST,
+  };
+
   explicit NTPResourceCache(Profile* profile);
   virtual ~NTPResourceCache();
 
-  base::RefCountedMemory* GetNewTabHTML(bool is_incognito);
-  base::RefCountedMemory* GetNewTabCSS(bool is_incognito);
+  base::RefCountedMemory* GetNewTabHTML(WindowType win_type);
+  base::RefCountedMemory* GetNewTabCSS(WindowType win_type);
 
   void set_should_show_apps_page(bool should_show_apps_page) {
     should_show_apps_page_ = should_show_apps_page;
@@ -49,6 +59,9 @@ class NTPResourceCache : public content::NotificationObserver,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
+  static WindowType GetWindowType(
+      Profile* profile, content::RenderProcessHost* render_host);
+
  private:
   void OnPreferenceChanged();
 
@@ -66,14 +79,18 @@ class NTPResourceCache : public content::NotificationObserver,
 #if !defined(OS_ANDROID)
   // Returns a message describing any newly-added sync types, or an empty
   // string if all types have already been acknowledged.
-  string16 GetSyncTypeMessage();
+  base::string16 GetSyncTypeMessage();
 
   void CreateNewTabIncognitoHTML();
-
   void CreateNewTabIncognitoCSS();
+
+  void CreateNewTabGuestHTML();
+  void CreateNewTabGuestCSS();
 
   void CreateNewTabCSS();
 
+  scoped_refptr<base::RefCountedMemory> new_tab_guest_html_;
+  scoped_refptr<base::RefCountedMemory> new_tab_guest_css_;
   scoped_refptr<base::RefCountedMemory> new_tab_incognito_html_;
   scoped_refptr<base::RefCountedMemory> new_tab_incognito_css_;
   scoped_refptr<base::RefCountedMemory> new_tab_css_;

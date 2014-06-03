@@ -5,9 +5,12 @@
 #include "chrome/browser/invalidation/ticl_invalidation_service.h"
 
 #include "base/command_line.h"
+#include "base/metrics/histogram.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/invalidation/invalidation_service_util.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/signin/about_signin_internals.h"
+#include "chrome/browser/signin/about_signin_internals_factory.h"
 #include "chrome/browser/signin/profile_oauth2_token_service.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_manager.h"
@@ -53,12 +56,10 @@ namespace invalidation {
 
 TiclInvalidationService::TiclInvalidationService(
     SigninManagerBase* signin,
-    TokenService* token_service,
-    OAuth2TokenService* oauth2_token_service,
+    ProfileOAuth2TokenService* oauth2_token_service,
     Profile* profile)
     : profile_(profile),
       signin_manager_(signin),
-      token_service_(token_service),
       oauth2_token_service_(oauth2_token_service),
       invalidator_registrar_(new syncer::InvalidatorRegistrar()),
       request_access_token_backoff_(&kRequestAccessTokenBackoffPolicy) {
@@ -85,12 +86,7 @@ void TiclInvalidationService::Init() {
   notification_registrar_.Add(this,
                               chrome::NOTIFICATION_GOOGLE_SIGNED_OUT,
                               content::Source<Profile>(profile_));
-  notification_registrar_.Add(this,
-                              chrome::NOTIFICATION_TOKEN_AVAILABLE,
-                              content::Source<TokenService>(token_service_));
-  notification_registrar_.Add(this,
-                              chrome::NOTIFICATION_TOKENS_CLEARED,
-                              content::Source<TokenService>(token_service_));
+  oauth2_token_service_->AddObserver(this);
 }
 
 void TiclInvalidationService::InitForTest(syncer::Invalidator* invalidator) {
@@ -137,15 +133,6 @@ void TiclInvalidationService::UnregisterInvalidationHandler(
   }
 }
 
-void TiclInvalidationService::AcknowledgeInvalidation(
-    const invalidation::ObjectId& id,
-    const syncer::AckHandle& ack_handle) {
-  DCHECK(CalledOnValidThread());
-  if (invalidator_) {
-    invalidator_->Acknowledge(id, ack_handle);
-  }
-}
-
 syncer::InvalidatorState TiclInvalidationService::GetInvalidatorState() const {
   DCHECK(CalledOnValidThread());
   if (invalidator_) {
@@ -168,29 +155,8 @@ void TiclInvalidationService::Observe(
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
   DCHECK(CalledOnValidThread());
-
-  switch (type) {
-    case chrome::NOTIFICATION_TOKEN_AVAILABLE: {
-      if (!IsStarted() && IsReadyToStart()) {
-        StartInvalidator();
-      }
-      break;
-    }
-    case chrome::NOTIFICATION_TOKENS_CLEARED: {
-      access_token_.clear();
-      if (IsStarted()) {
-        UpdateInvalidatorCredentials();
-      }
-      break;
-    }
-    case chrome::NOTIFICATION_GOOGLE_SIGNED_OUT: {
-      Logout();
-      break;
-    }
-    default: {
-      NOTREACHED();
-    }
-  }
+  DCHECK_EQ(type, chrome::NOTIFICATION_GOOGLE_SIGNED_OUT);
+  Logout();
 }
 
 void TiclInvalidationService::RequestAccessToken() {
@@ -203,10 +169,14 @@ void TiclInvalidationService::RequestAccessToken() {
     oauth2_scopes.insert(kOAuth2Scopes[i]);
   // Invalidate previous token, otherwise token service will return the same
   // token again.
-  oauth2_token_service_->InvalidateToken(oauth2_scopes, access_token_);
+  const std::string& account_id = oauth2_token_service_->GetPrimaryAccountId();
+  oauth2_token_service_->InvalidateToken(account_id,
+                                         oauth2_scopes,
+                                         access_token_);
   access_token_.clear();
-  access_token_request_ =
-      oauth2_token_service_->StartRequest(oauth2_scopes, this);
+  access_token_request_ = oauth2_token_service_->StartRequest(account_id,
+                                                              oauth2_scopes,
+                                                              this);
 }
 
 void TiclInvalidationService::OnGetTokenSuccess(
@@ -243,14 +213,51 @@ void TiclInvalidationService::OnGetTokenFailure(
                        base::Unretained(this)));
       break;
     }
+    case GoogleServiceAuthError::SERVICE_ERROR:
     case GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS: {
       // This is a real auth error.
+      // Report time since token was issued for invalid credentials error.
+      base::Time auth_token_time =
+          AboutSigninInternalsFactory::GetForProfile(profile_)->
+              GetTokenTime(GaiaConstants::kGaiaOAuth2LoginRefreshToken);
+      if (!auth_token_time.is_null()) {
+        base::TimeDelta age = base::Time::Now() - auth_token_time;
+        if (age < base::TimeDelta::FromHours(1)) {
+          UMA_HISTOGRAM_CUSTOM_TIMES(
+              "Sync.AuthInvalidationRejectedTokenAgeShort",
+              age,
+              base::TimeDelta::FromSeconds(1),
+              base::TimeDelta::FromHours(1),
+              50);
+        }
+        UMA_HISTOGRAM_COUNTS("Sync.AuthInvalidationRejectedTokenAgeLong",
+                             age.InDays());
+      }
       invalidator_registrar_->UpdateInvalidatorState(
           syncer::INVALIDATION_CREDENTIALS_REJECTED);
       break;
     }
     default: {
       // We have no way to notify the user of this.  Do nothing.
+    }
+  }
+}
+
+void TiclInvalidationService::OnRefreshTokenAvailable(
+    const std::string& account_id) {
+  if (oauth2_token_service_->GetPrimaryAccountId() == account_id) {
+    if (!IsStarted() && IsReadyToStart()) {
+      StartInvalidator();
+    }
+  }
+}
+
+void TiclInvalidationService::OnRefreshTokenRevoked(
+    const std::string& account_id) {
+  if (oauth2_token_service_->GetPrimaryAccountId() == account_id) {
+    access_token_.clear();
+    if (IsStarted()) {
+      UpdateInvalidatorCredentials();
     }
   }
 }
@@ -283,6 +290,7 @@ void TiclInvalidationService::OnIncomingInvalidation(
 
 void TiclInvalidationService::Shutdown() {
   DCHECK(CalledOnValidThread());
+  oauth2_token_service_->RemoveObserver(this);
   if (IsStarted()) {
     StopInvalidator();
   }
@@ -303,11 +311,13 @@ bool TiclInvalidationService::IsReadyToStart() {
 
   if (!oauth2_token_service_) {
     DVLOG(2)
-        << "Not starting TiclInvalidationService: TokenService unavailable.";
+        << "Not starting TiclInvalidationService: "
+        << "OAuth2TokenService unavailable.";
     return false;
   }
 
-  if (!oauth2_token_service_->RefreshTokenIsAvailable()) {
+  if (!oauth2_token_service_->RefreshTokenIsAvailable(
+          oauth2_token_service_->GetPrimaryAccountId())) {
     DVLOG(2)
         << "Not starting TiclInvalidationServce: Waiting for refresh token.";
     return false;
@@ -341,7 +351,7 @@ void TiclInvalidationService::StartInvalidator() {
   invalidator_.reset(new syncer::NonBlockingInvalidator(
           options,
           invalidator_storage_->GetInvalidatorClientId(),
-          invalidator_storage_->GetAllInvalidationStates(),
+          invalidator_storage_->GetSavedInvalidations(),
           invalidator_storage_->GetBootstrapData(),
           syncer::WeakHandle<syncer::InvalidationStateTracker>(
               invalidator_storage_->AsWeakPtr()),

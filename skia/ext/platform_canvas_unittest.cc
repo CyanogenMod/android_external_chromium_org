@@ -33,7 +33,7 @@ namespace {
 bool VerifyRect(const PlatformCanvas& canvas,
                 uint32_t canvas_color, uint32_t rect_color,
                 int x, int y, int w, int h) {
-  SkDevice* device = skia::GetTopDevice(canvas);
+  SkBaseDevice* device = skia::GetTopDevice(canvas);
   const SkBitmap& bitmap = device->accessBitmap(false);
   SkAutoLockPixels lock(bitmap);
 
@@ -72,7 +72,7 @@ bool IsOfColor(const SkBitmap& bitmap, int x, int y, uint32_t color) {
 bool VerifyRoundedRect(const PlatformCanvas& canvas,
                        uint32_t canvas_color, uint32_t rect_color,
                        int x, int y, int w, int h) {
-  SkDevice* device = skia::GetTopDevice(canvas);
+  SkBaseDevice* device = skia::GetTopDevice(canvas);
   const SkBitmap& bitmap = device->accessBitmap(false);
   SkAutoLockPixels lock(bitmap);
 
@@ -186,9 +186,6 @@ const int kInnerX = 4;
 const int kInnerY = 5;
 const int kInnerW = 2;
 const int kInnerH = 3;
-
-// Radius used by some tests to draw a rounded-corner rectangle.
-const SkScalar kRadius = 2.0;
 
 }
 
@@ -381,6 +378,7 @@ TEST(PlatformCanvas, TranslateLayer) {
     SkRect rect;
     rect.iset(kInnerX - 1, kInnerY - 1,
               kInnerX + kInnerW, kInnerY + kInnerH);
+    const SkScalar kRadius = 2.0;
     path.addRoundRect(rect, kRadius, kRadius);
     canvas->clipPath(path);
 

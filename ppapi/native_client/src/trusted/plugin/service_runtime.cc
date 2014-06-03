@@ -44,15 +44,13 @@
 #include "native_client/src/trusted/validator/nacl_file_info.h"
 
 #include "ppapi/c/pp_errors.h"
-#include "ppapi/c/trusted/ppb_file_io_trusted.h"
 #include "ppapi/cpp/core.h"
 #include "ppapi/cpp/completion_callback.h"
-#include "ppapi/cpp/file_io.h"
 
 #include "ppapi/native_client/src/trusted/plugin/manifest.h"
 #include "ppapi/native_client/src/trusted/plugin/plugin.h"
 #include "ppapi/native_client/src/trusted/plugin/plugin_error.h"
-#include "ppapi/native_client/src/trusted/plugin/pnacl_coordinator.h"
+#include "ppapi/native_client/src/trusted/plugin/pnacl_options.h"
 #include "ppapi/native_client/src/trusted/plugin/pnacl_resources.h"
 #include "ppapi/native_client/src/trusted/plugin/sel_ldr_launcher_chrome.h"
 #include "ppapi/native_client/src/trusted/plugin/srpc_client.h"
@@ -61,8 +59,10 @@
 namespace {
 
 // For doing crude quota enforcement on writes to temp files.
-// We do not allow a temp file bigger than 512 MB for now.
-const uint64_t kMaxTempQuota = 0x20000000;
+// We do not allow a temp file bigger than 128 MB for now.
+// There is currently a limit of 32M for nexe text size, so 128M
+// should be plenty for static data
+const int64_t kMaxTempQuota = 0x8000000;
 
 }  // namespace
 
@@ -313,9 +313,9 @@ void PluginReverseInterface::OpenManifestEntry_MainThreadContinuation(
           plugin_,
           PnaclUrls::PnaclComponentURLToFilename(mapped_url).c_str());
       if (fd < 0) {
-        // We should check earlier if the pnacl component wasn't installed
-        // yet.  At this point, we can't do much anymore, so just continue
-        // with an invalid fd.
+        // We checked earlier if the pnacl component wasn't installed
+        // yet, so this shouldn't happen. At this point, we can't do much
+        // anymore, so just continue with an invalid fd.
         NaClLog(4,
                 "OpenManifestEntry_MainThreadContinuation: "
                 "GetReadonlyPnaclFd failed\n");
@@ -333,33 +333,18 @@ void PluginReverseInterface::OpenManifestEntry_MainThreadContinuation(
               "OpenManifestEntry_MainThreadContinuation: GetPnaclFd okay\n");
     }
   } else {
-    // Requires PNaCl translation.
+    // Requires PNaCl translation, but that's not supported.
     NaClLog(4,
             "OpenManifestEntry_MainThreadContinuation: "
-            "pulling down and translating.\n");
-    if (plugin_->nacl_interface()->IsPnaclEnabled()) {
-      pp::CompletionCallback translate_callback =
-          WeakRefNewCallback(
-              anchor_,
-              this,
-              &PluginReverseInterface::BitcodeTranslate_MainThreadContinuation,
-              open_cont);
-      // Will always call the callback on success or failure.
-      pnacl_coordinator_.reset(
-          PnaclCoordinator::BitcodeToNative(plugin_,
-                                            mapped_url,
-                                            pnacl_options,
-                                            translate_callback));
-    } else {
-      nacl::MutexLocker take(&mu_);
-      *p->op_complete_ptr = true;  // done...
-      p->file_info->desc = -1;  // but failed.
-      p->error_info->SetReport(ERROR_PNACL_NOT_ENABLED,
-                               "ServiceRuntime: GetPnaclFd failed -- pnacl not "
-                               "enabled with --enable-pnacl.");
-      NaClXCondVarBroadcast(&cv_);
-      return;
-    }
+            "Requires PNaCl translation -- not supported\n");
+    nacl::MutexLocker take(&mu_);
+    *p->op_complete_ptr = true;  // done...
+    p->file_info->desc = -1;  // but failed.
+    p->error_info->SetReport(
+        ERROR_MANIFEST_OPEN,
+        "ServiceRuntime: Translating OpenManifestEntry files not supported");
+    NaClXCondVarBroadcast(&cv_);
+    return;
   }
   // p is deleted automatically
 }
@@ -389,38 +374,6 @@ void PluginReverseInterface::StreamAsFile_MainThreadContinuation(
   *p->op_complete_ptr = true;
   NaClXCondVarBroadcast(&cv_);
 }
-
-
-void PluginReverseInterface::BitcodeTranslate_MainThreadContinuation(
-    OpenManifestEntryResource* p,
-    int32_t result) {
-  NaClLog(4,
-          "Entered BitcodeTranslate_MainThreadContinuation\n");
-
-  nacl::MutexLocker take(&mu_);
-  if (result == PP_OK) {
-    // TODO(jvoung): clean this up. We are assuming that the NaClDesc is
-    // a host IO desc and doing a downcast. Once the ReverseInterface
-    // accepts NaClDescs we can avoid this downcast.
-    NaClDesc* desc = pnacl_coordinator_->ReleaseTranslatedFD()->desc();
-    struct NaClDescIoDesc* ndiodp = (struct NaClDescIoDesc*)desc;
-    p->file_info->desc = ndiodp->hd->d;
-    pnacl_coordinator_.reset(NULL);
-    NaClLog(4,
-            "BitcodeTranslate_MainThreadContinuation: PP_OK, desc %d\n",
-            p->file_info->desc);
-  } else {
-    NaClLog(4,
-            "BitcodeTranslate_MainThreadContinuation: !PP_OK, "
-            "setting desc -1\n");
-    p->file_info->desc = -1;
-    // Error should have been reported by pnacl coordinator.
-    NaClLog(LOG_ERROR, "PluginReverseInterface::BitcodeTranslate error.\n");
-  }
-  *p->op_complete_ptr = true;
-  NaClXCondVarBroadcast(&cv_);
-}
-
 
 bool PluginReverseInterface::CloseManifestEntry(int32_t desc) {
   bool op_complete = false;
@@ -485,151 +438,45 @@ void PluginReverseInterface::ReportExitStatus(int exit_status) {
   service_runtime_->set_exit_status(exit_status);
 }
 
-void PluginReverseInterface::QuotaRequest_MainThreadContinuation(
-    QuotaRequest* request,
-    int32_t err) {
-  if (err != PP_OK) {
-    return;
-  }
-
-  switch (request->data.type) {
-    case plugin::PepperQuotaType: {
-      const PPB_FileIOTrusted* file_io_trusted =
-          static_cast<const PPB_FileIOTrusted*>(
-              pp::Module::Get()->GetBrowserInterface(
-                  PPB_FILEIOTRUSTED_INTERFACE));
-      // Copy the request object because this one will be deleted on return.
-      // copy ctor!
-      QuotaRequest* cont_for_response = new QuotaRequest(*request);
-      pp::CompletionCallback quota_cc = WeakRefNewCallback(
-          anchor_,
-          this,
-          &PluginReverseInterface::QuotaRequest_MainThreadResponse,
-          cont_for_response);
-      file_io_trusted->WillWrite(request->data.resource,
-                                 request->offset,
-                                 // TODO(sehr): remove need for cast.
-                                 // Unify WillWrite interface vs Quota request.
-                                 nacl::assert_cast<int32_t>(
-                                     request->bytes_requested),
-                                 quota_cc.pp_completion_callback());
-      break;
-    }
-    case plugin::TempQuotaType: {
-      uint64_t len = request->offset + request->bytes_requested;
-      nacl::MutexLocker take(&mu_);
-      // Do some crude quota enforcement.
-      if (len > kMaxTempQuota) {
-        *request->bytes_granted = 0;
-      } else {
-        *request->bytes_granted = request->bytes_requested;
-      }
-      *request->op_complete_ptr = true;
-      NaClXCondVarBroadcast(&cv_);
-      break;
-    }
-  }
-  // request automatically deleted
-}
-
-void PluginReverseInterface::QuotaRequest_MainThreadResponse(
-    QuotaRequest* request,
-    int32_t err) {
-  NaClLog(4,
-          "PluginReverseInterface::QuotaRequest_MainThreadResponse:"
-          " (resource=%" NACL_PRIx32 ", offset=%" NACL_PRId64 ", requested=%"
-          NACL_PRId64 ", err=%" NACL_PRId32 ")\n",
-          request->data.resource,
-          request->offset, request->bytes_requested, err);
-  nacl::MutexLocker take(&mu_);
-  if (err >= PP_OK) {
-    *request->bytes_granted = err;
-  } else {
-    *request->bytes_granted = 0;
-  }
-  *request->op_complete_ptr = true;
-  NaClXCondVarBroadcast(&cv_);
-  // request automatically deleted
-}
-
 int64_t PluginReverseInterface::RequestQuotaForWrite(
     nacl::string file_id, int64_t offset, int64_t bytes_to_write) {
   NaClLog(4,
           "PluginReverseInterface::RequestQuotaForWrite:"
           " (file_id='%s', offset=%" NACL_PRId64 ", bytes_to_write=%"
           NACL_PRId64 ")\n", file_id.c_str(), offset, bytes_to_write);
-  QuotaData quota_data;
-  {
-    nacl::MutexLocker take(&mu_);
-    uint64_t file_key = STRTOULL(file_id.c_str(), NULL, 10);
-    if (quota_map_.find(file_key) == quota_map_.end()) {
-      // Look up failed to find the requested quota managed resource.
-      NaClLog(4, "PluginReverseInterface::RequestQuotaForWrite: failed...\n");
-      return 0;
-    }
-    quota_data = quota_map_[file_key];
-  }
-  // Variables set by requesting quota.
-  int64_t quota_granted = 0;
-  bool op_complete = false;
-  QuotaRequest* continuation =
-      new QuotaRequest(quota_data, offset, bytes_to_write, &quota_granted,
-                       &op_complete);
-  // The reverse service is running on a background thread and the PPAPI quota
-  // methods must be invoked only from the main thread.
-  plugin::WeakRefCallOnMainThread(
-      anchor_,
-      0,  /* delay in ms */
-      this,
-      &plugin::PluginReverseInterface::QuotaRequest_MainThreadContinuation,
-      continuation);
-  // Wait for the main thread to request quota and signal completion.
-  // It is also possible that the main thread will signal shut down.
-  bool shutting_down;
-  do {
-    nacl::MutexLocker take(&mu_);
-    for (;;) {
-      shutting_down = shutting_down_;
-      if (op_complete || shutting_down) {
-        break;
-      }
-      NaClXCondVarWait(&cv_, &mu_);
-    }
-  } while (0);
-  if (shutting_down) return 0;
-  return quota_granted;
-}
-
-void PluginReverseInterface::AddQuotaManagedFile(const nacl::string& file_id,
-                                                 const pp::FileIO& file_io) {
-  PP_Resource resource = file_io.pp_resource();
-  NaClLog(4,
-          "PluginReverseInterface::AddQuotaManagedFile: "
-          "(file_id='%s', file_io_ref=%" NACL_PRIx32 ")\n",
-          file_id.c_str(), resource);
-  nacl::MutexLocker take(&mu_);
   uint64_t file_key = STRTOULL(file_id.c_str(), NULL, 10);
-  QuotaData data(plugin::PepperQuotaType, resource);
-  quota_map_[file_key] = data;
+  nacl::MutexLocker take(&mu_);
+  if (quota_files_.count(file_key) == 0) {
+    // Look up failed to find the requested quota managed resource.
+    NaClLog(4, "PluginReverseInterface::RequestQuotaForWrite: failed...\n");
+    return 0;
+  }
+
+  // Because we now only support this interface for tempfiles which are not
+  // pepper objects, we can just do some crude quota enforcement here rather
+  // than calling out to pepper from the main thread.
+  if (offset + bytes_to_write >= kMaxTempQuota)
+    return 0;
+
+  return bytes_to_write;
 }
 
 void PluginReverseInterface::AddTempQuotaManagedFile(
     const nacl::string& file_id) {
   NaClLog(4, "PluginReverseInterface::AddTempQuotaManagedFile: "
           "(file_id='%s')\n", file_id.c_str());
-  nacl::MutexLocker take(&mu_);
   uint64_t file_key = STRTOULL(file_id.c_str(), NULL, 10);
-  QuotaData data(plugin::TempQuotaType, 0);
-  quota_map_[file_key] = data;
+  nacl::MutexLocker take(&mu_);
+  quota_files_.insert(file_key);
 }
 
 ServiceRuntime::ServiceRuntime(Plugin* plugin,
                                const Manifest* manifest,
-                               bool should_report_uma,
+                               bool main_service_runtime,
                                pp::CompletionCallback init_done_cb,
                                pp::CompletionCallback crash_cb)
     : plugin_(plugin),
-      should_report_uma_(should_report_uma),
+      main_service_runtime_(main_service_runtime),
       reverse_service_(NULL),
       anchor_(new nacl::WeakRefAnchor()),
       rev_interface_(new PluginReverseInterface(anchor_, plugin,
@@ -704,7 +551,7 @@ bool ServiceRuntime::InitCommunication(nacl::DescWrapper* nacl_desc,
   }
   NaClLog(4, "ServiceRuntime::InitCommunication (load_status=%d)\n",
           load_status);
-  if (should_report_uma_) {
+  if (main_service_runtime_) {
     plugin_->ReportSelLdrLoadStatus(load_status);
   }
   if (LOAD_OK != load_status) {
@@ -736,6 +583,7 @@ bool ServiceRuntime::StartSelLdr(const SelLdrStartParams& params) {
                                        params.enable_dev_interfaces,
                                        params.enable_dyncode_syscalls,
                                        params.enable_exception_handling,
+                                       params.enable_crash_throttling,
                                        &error_message);
   if (!started) {
     NaClLog(LOG_ERROR, "ServiceRuntime::Start (start failed)\n");
@@ -863,14 +711,10 @@ ServiceRuntime::~ServiceRuntime() {
   NaClMutexDtor(&mu_);
 }
 
-int ServiceRuntime::exit_status() {
-  nacl::MutexLocker take(&mu_);
-  return exit_status_;
-}
-
 void ServiceRuntime::set_exit_status(int exit_status) {
   nacl::MutexLocker take(&mu_);
-  exit_status_ = exit_status & 0xff;
+  if (main_service_runtime_)
+    plugin_->set_exit_status(exit_status & 0xff);
 }
 
 nacl::string ServiceRuntime::GetCrashLogOutput() {

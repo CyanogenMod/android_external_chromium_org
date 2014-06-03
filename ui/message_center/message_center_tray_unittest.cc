@@ -42,6 +42,8 @@ class MockDelegate : public MessageCenterTrayDelegate {
   DISALLOW_COPY_AND_ASSIGN(MockDelegate);
 };
 
+}  // namespace
+
 class MessageCenterTrayTest : public testing::Test {
  public:
   MessageCenterTrayTest() {}
@@ -63,6 +65,10 @@ class MessageCenterTrayTest : public testing::Test {
   }
 
  protected:
+  NotifierId DummyNotifierId() {
+    return NotifierId();
+  }
+
   void AddNotification(const std::string& id) {
     scoped_ptr<Notification> notification(
         new Notification(message_center::NOTIFICATION_TYPE_SIMPLE,
@@ -71,7 +77,7 @@ class MessageCenterTrayTest : public testing::Test {
                          ASCIIToUTF16("Notification message body."),
                          gfx::Image(),
                          ASCIIToUTF16("www.test.org"),
-                         "" /* extension id */,
+                         DummyNotifierId(),
                          message_center::RichNotificationData(),
                          NULL /* delegate */));
     message_center_->AddNotification(notification.Pass());
@@ -83,8 +89,6 @@ class MessageCenterTrayTest : public testing::Test {
  private:
   DISALLOW_COPY_AND_ASSIGN(MessageCenterTrayTest);
 };
-
-}  // namespace
 
 TEST_F(MessageCenterTrayTest, BasicMessageCenter) {
   ASSERT_FALSE(message_center_tray_->popups_visible());
@@ -147,6 +151,7 @@ TEST_F(MessageCenterTrayTest, MessageCenterClosesPopups) {
   ASSERT_FALSE(message_center_tray_->popups_visible());
   ASSERT_TRUE(message_center_tray_->message_center_visible());
 
+  // The notification is queued if it's added when message center is visible.
   AddNotification("MessageCenterClosesPopups2");
 
   message_center_tray_->ShowPopupBubble();
@@ -156,6 +161,12 @@ TEST_F(MessageCenterTrayTest, MessageCenterClosesPopups) {
 
   message_center_tray_->HideMessageCenterBubble();
 
+  // The queued notification appears as a popup.
+  ASSERT_TRUE(message_center_tray_->popups_visible());
+  ASSERT_FALSE(message_center_tray_->message_center_visible());
+
+  message_center_tray_->ShowMessageCenterBubble();
+  message_center_tray_->HideMessageCenterBubble();
   ASSERT_FALSE(message_center_tray_->popups_visible());
   ASSERT_FALSE(message_center_tray_->message_center_visible());
 }
@@ -171,7 +182,7 @@ TEST_F(MessageCenterTrayTest, MessageCenterReopenPopupsForSystemPriority) {
                        ASCIIToUTF16("Notification message body."),
                        gfx::Image(),
                        ASCIIToUTF16("www.test.org"),
-                       "" /* extension id */,
+                       DummyNotifierId(),
                        message_center::RichNotificationData(),
                        NULL /* delegate */));
   notification->SetSystemPriority();

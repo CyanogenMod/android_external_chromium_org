@@ -465,34 +465,10 @@ bool PNGCodec::Decode(const unsigned char* input, size_t input_size,
   }
 
   // Set the bitmap's opaqueness based on what we saw.
-  bitmap->setIsOpaque(state.is_opaque);
+  bitmap->setAlphaType(state.is_opaque ?
+                       kOpaque_SkAlphaType : kPremul_SkAlphaType);
 
   return true;
-}
-
-// static
-SkBitmap* PNGCodec::CreateSkBitmapFromBGRAFormat(
-    std::vector<unsigned char>& bgra, int width, int height) {
-  SkBitmap* bitmap = new SkBitmap();
-  bitmap->setConfig(SkBitmap::kARGB_8888_Config, width, height);
-  bitmap->allocPixels();
-
-  bool opaque = false;
-  unsigned char* bitmap_data =
-      reinterpret_cast<unsigned char*>(bitmap->getAddr32(0, 0));
-  for (int i = width * height * 4 - 4; i >= 0; i -= 4) {
-    unsigned char alpha = bgra[i + 3];
-    if (!opaque && alpha != 255) {
-      opaque = false;
-    }
-    bitmap_data[i + 3] = alpha;
-    bitmap_data[i] = (bgra[i] * alpha) >> 8;
-    bitmap_data[i + 1] = (bgra[i + 1] * alpha) >> 8;
-    bitmap_data[i + 2] = (bgra[i + 2] * alpha) >> 8;
-  }
-
-  bitmap->setIsOpaque(opaque);
-  return bitmap;
 }
 
 // Encoder --------------------------------------------------------------------
@@ -654,29 +630,14 @@ bool DoLibpngWrite(png_struct* png_ptr, png_info* info_ptr,
   return true;
 }
 
-}  // namespace
-
-// static
-bool PNGCodec::Encode(const unsigned char* input, ColorFormat format,
-                      const Size& size, int row_byte_width,
-                      bool discard_transparency,
-                      const std::vector<Comment>& comments,
-                      std::vector<unsigned char>* output) {
-  return PNGCodec::EncodeWithCompressionLevel(input, format, size,
-                                              row_byte_width,
-                                              discard_transparency,
-                                              comments, Z_DEFAULT_COMPRESSION,
-                                              output);
-}
-
-// static
-bool PNGCodec::EncodeWithCompressionLevel(const unsigned char* input,
-                                          ColorFormat format, const Size& size,
-                                          int row_byte_width,
-                                          bool discard_transparency,
-                                          const std::vector<Comment>& comments,
-                                          int compression_level,
-                                          std::vector<unsigned char>* output) {
+bool EncodeWithCompressionLevel(const unsigned char* input,
+                                PNGCodec::ColorFormat format,
+                                const Size& size,
+                                int row_byte_width,
+                                bool discard_transparency,
+                                const std::vector<PNGCodec::Comment>& comments,
+                                int compression_level,
+                                std::vector<unsigned char>* output) {
   // Run to convert an input row into the output row format, NULL means no
   // conversion is necessary.
   FormatConverter converter = NULL;
@@ -684,13 +645,13 @@ bool PNGCodec::EncodeWithCompressionLevel(const unsigned char* input,
   int input_color_components, output_color_components;
   int png_output_color_type;
   switch (format) {
-    case FORMAT_RGB:
+    case PNGCodec::FORMAT_RGB:
       input_color_components = 3;
       output_color_components = 3;
       png_output_color_type = PNG_COLOR_TYPE_RGB;
       break;
 
-    case FORMAT_RGBA:
+    case PNGCodec::FORMAT_RGBA:
       input_color_components = 4;
       if (discard_transparency) {
         output_color_components = 3;
@@ -703,7 +664,7 @@ bool PNGCodec::EncodeWithCompressionLevel(const unsigned char* input,
       }
       break;
 
-    case FORMAT_BGRA:
+    case PNGCodec::FORMAT_BGRA:
       input_color_components = 4;
       if (discard_transparency) {
         output_color_components = 3;
@@ -716,7 +677,7 @@ bool PNGCodec::EncodeWithCompressionLevel(const unsigned char* input,
       }
       break;
 
-    case FORMAT_SkBitmap:
+    case PNGCodec::FORMAT_SkBitmap:
       input_color_components = 4;
       if (discard_transparency) {
         output_color_components = 3;
@@ -758,22 +719,60 @@ bool PNGCodec::EncodeWithCompressionLevel(const unsigned char* input,
   return success;
 }
 
+
+}  // namespace
+
+// static
+bool PNGCodec::Encode(const unsigned char* input, ColorFormat format,
+                      const Size& size, int row_byte_width,
+                      bool discard_transparency,
+                      const std::vector<Comment>& comments,
+                      std::vector<unsigned char>* output) {
+  return EncodeWithCompressionLevel(input,
+                                    format,
+                                    size,
+                                    row_byte_width,
+                                    discard_transparency,
+                                    comments,
+                                    Z_DEFAULT_COMPRESSION,
+                                    output);
+}
+
 // static
 bool PNGCodec::EncodeBGRASkBitmap(const SkBitmap& input,
                                   bool discard_transparency,
                                   std::vector<unsigned char>* output) {
   static const int bbp = 4;
 
-  SkAutoLockPixels lock_input(input);
   if (input.empty())
     return false;
-  DCHECK(input.bytesPerPixel() == bbp);
-  DCHECK(static_cast<int>(input.rowBytes()) >= input.width() * bbp);
+  DCHECK_EQ(input.bytesPerPixel(), bbp);
+  DCHECK_GE(static_cast<int>(input.rowBytes()), input.width() * bbp);
 
+  SkAutoLockPixels lock_input(input);
   return Encode(reinterpret_cast<unsigned char*>(input.getAddr32(0, 0)),
                 FORMAT_SkBitmap, Size(input.width(), input.height()),
                 static_cast<int>(input.rowBytes()), discard_transparency,
                 std::vector<Comment>(), output);
+}
+
+// static
+bool PNGCodec::FastEncodeBGRASkBitmap(const SkBitmap& input,
+                                      bool discard_transparency,
+                                      std::vector<unsigned char>* output) {
+  static const int bbp = 4;
+
+  if (input.empty())
+    return false;
+  DCHECK_EQ(input.bytesPerPixel(), bbp);
+  DCHECK_GE(static_cast<int>(input.rowBytes()), input.width() * bbp);
+
+  SkAutoLockPixels lock_input(input);
+  return EncodeWithCompressionLevel(
+      reinterpret_cast<unsigned char*>(input.getAddr32(0, 0)),
+      FORMAT_SkBitmap, Size(input.width(), input.height()),
+      static_cast<int>(input.rowBytes()), discard_transparency,
+      std::vector<Comment>(), Z_BEST_SPEED, output);
 }
 
 PNGCodec::Comment::Comment(const std::string& k, const std::string& t)

@@ -19,12 +19,13 @@
 #include "chrome/browser/extensions/extension_pref_store.h"
 #include "chrome/browser/extensions/extension_pref_value_map.h"
 #include "chrome/browser/extensions/extension_prefs.h"
-#include "chrome/browser/prefs/pref_service_mock_builder.h"
+#include "chrome/browser/prefs/pref_service_mock_factory.h"
 #include "chrome/browser/prefs/pref_service_syncable.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/browser_thread.h"
+#include "extensions/browser/extensions_browser_client.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/manifest_constants.h"
 #include "sync/api/string_ordinal.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -62,7 +63,7 @@ TestExtensionPrefs::TestExtensionPrefs(base::SequencedTaskRunner* task_runner)
   EXPECT_TRUE(temp_dir_.CreateUniqueTempDir());
   preferences_file_ = temp_dir_.path().AppendASCII("Preferences");
   extensions_dir_ = temp_dir_.path().AppendASCII("Extensions");
-  EXPECT_TRUE(file_util::CreateDirectory(extensions_dir_));
+  EXPECT_TRUE(base::CreateDirectory(extensions_dir_));
 
   ResetPrefRegistry();
   RecreateExtensionPrefs();
@@ -103,16 +104,17 @@ void TestExtensionPrefs::RecreateExtensionPrefs() {
   }
 
   extension_pref_value_map_.reset(new ExtensionPrefValueMap);
-  PrefServiceMockBuilder builder;
-  builder.WithUserFilePrefs(preferences_file_, task_runner_.get());
-  builder.WithExtensionPrefs(
+  PrefServiceMockFactory factory;
+  factory.SetUserPrefsFile(preferences_file_, task_runner_.get());
+  factory.set_extension_prefs(
       new ExtensionPrefStore(extension_pref_value_map_.get(), false));
-  pref_service_.reset(builder.CreateSyncable(pref_registry_.get()));
+  pref_service_ = factory.CreateSyncable(pref_registry_.get()).Pass();
 
   prefs_.reset(ExtensionPrefs::Create(
       pref_service_.get(),
       temp_dir_.path(),
       extension_pref_value_map_.get(),
+      ExtensionsBrowserClient::Get()->CreateAppSorting().Pass(),
       extensions_disabled_,
       // Guarantee that no two extensions get the same installation time
       // stamp and we can reliably assert the installation order in the tests.
@@ -122,18 +124,17 @@ void TestExtensionPrefs::RecreateExtensionPrefs() {
 
 scoped_refptr<Extension> TestExtensionPrefs::AddExtension(std::string name) {
   DictionaryValue dictionary;
-  dictionary.SetString(extension_manifest_keys::kName, name);
-  dictionary.SetString(extension_manifest_keys::kVersion, "0.1");
+  dictionary.SetString(manifest_keys::kName, name);
+  dictionary.SetString(manifest_keys::kVersion, "0.1");
   return AddExtensionWithManifest(dictionary, Manifest::INTERNAL);
 }
 
 scoped_refptr<Extension> TestExtensionPrefs::AddApp(std::string name) {
   DictionaryValue dictionary;
-  dictionary.SetString(extension_manifest_keys::kName, name);
-  dictionary.SetString(extension_manifest_keys::kVersion, "0.1");
-  dictionary.SetString(extension_manifest_keys::kApp, "true");
-  dictionary.SetString(extension_manifest_keys::kLaunchWebURL,
-                       "http://example.com");
+  dictionary.SetString(manifest_keys::kName, name);
+  dictionary.SetString(manifest_keys::kVersion, "0.1");
+  dictionary.SetString(manifest_keys::kApp, "true");
+  dictionary.SetString(manifest_keys::kLaunchWebURL, "http://example.com");
   return AddExtensionWithManifest(dictionary, Manifest::INTERNAL);
 
 }
@@ -149,7 +150,7 @@ scoped_refptr<Extension> TestExtensionPrefs::AddExtensionWithManifestAndFlags(
     Manifest::Location location,
     int extra_flags) {
   std::string name;
-  EXPECT_TRUE(manifest.GetString(extension_manifest_keys::kName, &name));
+  EXPECT_TRUE(manifest.GetString(manifest_keys::kName, &name));
   base::FilePath path =  extensions_dir_.AppendASCII(name);
   std::string errors;
   scoped_refptr<Extension> extension = Extension::Create(
@@ -161,7 +162,7 @@ scoped_refptr<Extension> TestExtensionPrefs::AddExtensionWithManifestAndFlags(
   EXPECT_TRUE(Extension::IdIsValid(extension->id()));
   prefs_->OnExtensionInstalled(extension.get(),
                                Extension::ENABLED,
-                               Blacklist::NOT_BLACKLISTED,
+                               false,
                                syncer::StringOrdinal::CreateInitialOrdinal());
   return extension;
 }

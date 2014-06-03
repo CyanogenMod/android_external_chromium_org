@@ -14,8 +14,8 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
-#include "ui/base/events/event.h"
-#include "ui/base/keycodes/keyboard_codes.h"
+#include "ui/events/event.h"
+#include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/views/focus/external_focus_tracker.h"
 #include "ui/views/focus/view_storage.h"
 #include "ui/views/widget/root_view.h"
@@ -102,7 +102,7 @@ void FindBarHost::SetFocusAndSelection() {
 }
 
 void FindBarHost::ClearResults(const FindNotificationDetails& results) {
-  find_bar_view()->UpdateForResult(results, string16());
+  find_bar_view()->UpdateForResult(results, base::string16());
 }
 
 void FindBarHost::StopAnimation() {
@@ -130,12 +130,22 @@ void FindBarHost::MoveWindowIfNecessary(const gfx::Rect& selection_rect,
   view()->SchedulePaint();
 }
 
-void FindBarHost::SetFindText(const string16& find_text) {
-  find_bar_view()->SetFindText(find_text);
+void FindBarHost::SetFindTextAndSelectedRange(
+    const base::string16& find_text,
+    const gfx::Range& selected_range) {
+  find_bar_view()->SetFindTextAndSelectedRange(find_text, selected_range);
+}
+
+base::string16 FindBarHost::GetFindText() {
+  return find_bar_view()->GetFindText();
+}
+
+gfx::Range FindBarHost::GetSelectedRange() {
+  return find_bar_view()->GetSelectedRange();
 }
 
 void FindBarHost::UpdateUIForFindResult(const FindNotificationDetails& result,
-                                        const string16& find_text) {
+                                        const base::string16& find_text) {
   // Make sure match count is clear. It may get set again in UpdateForResult
   // if enough data is available.
   find_bar_view()->ClearMatchCount();
@@ -235,15 +245,11 @@ bool FindBarHost::GetFindBarWindowInfo(gfx::Point* position,
   return true;
 }
 
-string16 FindBarHost::GetFindText() {
-  return find_bar_view()->GetFindText();
-}
-
-string16 FindBarHost::GetFindSelectedText() {
+base::string16 FindBarHost::GetFindSelectedText() {
   return find_bar_view()->GetFindSelectedText();
 }
 
-string16 FindBarHost::GetMatchCountText() {
+base::string16 FindBarHost::GetMatchCountText() {
   return find_bar_view()->GetMatchCountText();
 }
 
@@ -364,8 +370,4 @@ void FindBarHost::GetWidgetPositionNative(gfx::Rect* avoid_overlapping_rect) {
       find_bar_controller_->web_contents()->GetView();
   gfx::Rect webcontents_rect = tab_view->GetViewBounds();
   avoid_overlapping_rect->Offset(0, webcontents_rect.y() - frame_rect.y());
-}
-
-FindBarView* FindBarHost::find_bar_view() {
-  return static_cast<FindBarView*>(view());
 }

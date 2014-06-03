@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,19 +6,21 @@ package org.chromium.chrome.browser.autofill;
 
 import android.test.suitebuilder.annotation.SmallTest;
 
+import static org.chromium.base.test.util.ScalableTimeout.ScaleTimeout;
+
 import org.chromium.base.test.util.Feature;
 import org.chromium.chrome.testshell.ChromiumTestShellActivity;
 import org.chromium.chrome.testshell.ChromiumTestShellTestBase;
-import org.chromium.content.browser.test.util.TouchCommon;
-import org.chromium.content.browser.test.util.UiUtils;
 import org.chromium.content.browser.test.util.Criteria;
 import org.chromium.content.browser.test.util.CriteriaHelper;
-import org.chromium.ui.ActivityWindowAndroid;
-import org.chromium.ui.ViewAndroidDelegate;
-import org.chromium.ui.WindowAndroid;
+import org.chromium.content.browser.test.util.TouchCommon;
+import org.chromium.content.browser.test.util.UiUtils;
 import org.chromium.ui.autofill.AutofillPopup;
 import org.chromium.ui.autofill.AutofillPopup.AutofillPopupDelegate;
 import org.chromium.ui.autofill.AutofillSuggestion;
+import org.chromium.ui.base.ActivityWindowAndroid;
+import org.chromium.ui.base.ViewAndroidDelegate;
+import org.chromium.ui.base.WindowAndroid;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -56,9 +58,10 @@ public class AutofillTest extends ChromiumTestShellTestBase {
 
     }
 
+    private static final long CALLBACK_TIMEOUT_MS = ScaleTimeout(4000);
+    private static final int CHECK_INTERVAL_MS = 100;
+
     private class MockAutofillCallback implements AutofillPopupDelegate{
-        private static final int CALLBACK_TIMEOUT_MS = 4000;
-        private static final int CHECK_INTERVAL_MS = 100;
         private final AtomicBoolean mGotPopupSelection = new AtomicBoolean(false);
         public int mListIndex = -1;
 

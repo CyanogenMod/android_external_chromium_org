@@ -8,31 +8,48 @@
 #import <Cocoa/Cocoa.h>
 
 #include "base/mac/scoped_nsobject.h"
+#include "chrome/browser/ui/autofill/autofill_dialog_types.h"
 #import "chrome/browser/ui/cocoa/autofill/autofill_layout.h"
+#include "url/gurl.h"
 
-@class AutofillNotificationView;
+@class AutofillTooltipController;
+@class HyperlinkTextView;
+
+namespace autofill {
+class AutofillDialogViewDelegate;
+}
 
 // Contains a single notification for requestAutocomplete dialog.
-@interface AutofillNotificationController : NSViewController<AutofillLayout> {
+@interface AutofillNotificationController :
+    NSViewController<AutofillLayout, NSTextViewDelegate> {
  @private
-  // NSTextField for label.
-  base::scoped_nsobject<NSTextField> textfield_;
+  // Text view for label.
+  base::scoped_nsobject<HyperlinkTextView> textview_;
 
   // Optional checkbox.
   base::scoped_nsobject<NSButton> checkbox_;
 
-  // Size of a checkbox without title.
-  NSSize checkboxSizeWithoutTitle_;
+  // Optional tooltip icon.
+  base::scoped_nsobject<AutofillTooltipController> tooltipController_;
+
+  // Optional link target.
+  GURL linkURL_;
+
+  // Notification type.
+  autofill::DialogNotification::Type notificationType_;
+
+  // Main delegate for the dialog. Weak, owns dialog.
+  autofill::AutofillDialogViewDelegate* delegate_;
 }
 
-@property(nonatomic, readonly) NSTextField* textfield;
+@property(nonatomic, readonly) NSTextView* textview;
 @property(nonatomic, readonly) NSButton* checkbox;
-@property(nonatomic, retain) NSColor* backgroundColor;
-@property(nonatomic, retain) NSColor* textColor;
-@property(nonatomic, copy) NSString* text;  // Label text.
+@property(nonatomic, readonly) NSView* tooltipView;
 
-// Designated initializer.
-- (id)init;
+// Designated initializer. Initializes the controller as specified by
+// |notification|.
+- (id)initWithNotification:(const autofill::DialogNotification*)notification
+                  delegate:(autofill::AutofillDialogViewDelegate*)delegate;
 
 // Displays arrow on top of notification if set to YES. |anchorView| determines
 // the arrow position - the tip of the arrow is centered on the horizontal
@@ -42,11 +59,10 @@
 // Indicates if the controller draws an arrow.
 - (BOOL)hasArrow;
 
-// Enables the optional checkbox.
-- (void)setHasCheckbox:(BOOL)hasCheckbox;
-
 // Compute preferred size for given width.
 - (NSSize)preferredSizeForWidth:(CGFloat)width;
+
+- (IBAction)checkboxClicked:(id)sender;
 
 @end
 

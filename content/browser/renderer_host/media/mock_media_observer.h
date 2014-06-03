@@ -8,8 +8,8 @@
 #include <string>
 
 #include "base/basictypes.h"
-#include "content/browser/media/media_internals.h"
 #include "content/public/browser/media_observer.h"
+#include "media/audio/audio_parameters.h"
 #include "media/base/media_log_event.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
@@ -36,23 +36,6 @@ class MockMediaObserver : public MediaObserver {
                     bool is_playing,
                     float power_dbfs,
                     bool clipped));
-};
-
-class MockMediaInternals : public MediaInternals {
- public:
-  MockMediaInternals();
-  virtual ~MockMediaInternals();
-
-  MOCK_METHOD2(OnDeleteAudioStream,
-               void(void* host, int stream_id));
-  MOCK_METHOD3(OnSetAudioStreamPlaying,
-               void(void* host, int stream_id, bool playing));
-  MOCK_METHOD3(OnSetAudioStreamStatus,
-               void(void* host, int stream_id, const std::string& status));
-  MOCK_METHOD3(OnSetAudioStreamVolume,
-               void(void* host, int stream_id, double volume));
-  MOCK_METHOD2(OnMediaEvent,
-               void(int source, const media::MediaLogEvent& event));
 };
 
 }  // namespace content

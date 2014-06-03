@@ -11,12 +11,10 @@
 #include "chrome/browser/extensions/api/bluetooth/bluetooth_api_utils.h"
 #include "chrome/browser/extensions/api/bluetooth/bluetooth_event_router.h"
 #include "chrome/browser/extensions/event_names.h"
-#include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/api/bluetooth.h"
 #include "chrome/common/extensions/permissions/bluetooth_permission.h"
-#include "chrome/common/extensions/permissions/permissions_data.h"
 #include "content/public/browser/browser_thread.h"
 #include "device/bluetooth/bluetooth_adapter.h"
 #include "device/bluetooth/bluetooth_device.h"
@@ -25,6 +23,8 @@
 #include "device/bluetooth/bluetooth_service_record.h"
 #include "device/bluetooth/bluetooth_socket.h"
 #include "device/bluetooth/bluetooth_utils.h"
+#include "extensions/browser/event_router.h"
+#include "extensions/common/permissions/permissions_data.h"
 #include "net/base/io_buffer.h"
 
 using device::BluetoothAdapter;
@@ -51,8 +51,6 @@ const char kFailedToConnect[] = "Connection failed";
 const char kInvalidDevice[] = "Invalid device";
 const char kInvalidUuid[] = "Invalid UUID";
 const char kPermissionDenied[] = "Permission to add profile denied.";
-const char kPlatformNotSupported[] =
-    "This operation is not supported on your platform";
 const char kProfileAlreadyRegistered[] =
     "This profile has already been registered";
 const char kProfileNotFound[] = "Profile not found: invalid uuid";
@@ -65,6 +63,7 @@ const char kStopDiscoveryFailed[] = "Failed to stop discovery";
 }  // namespace
 
 namespace AddProfile = extensions::api::bluetooth::AddProfile;
+namespace bluetooth = extensions::api::bluetooth;
 namespace Connect = extensions::api::bluetooth::Connect;
 namespace Disconnect = extensions::api::bluetooth::Disconnect;
 namespace GetDevices = extensions::api::bluetooth::GetDevices;
@@ -85,7 +84,7 @@ BluetoothAPI* BluetoothAPI::Get(Profile* profile) {
 
 BluetoothAPI::BluetoothAPI(Profile* profile) : profile_(profile) {
   ExtensionSystem::Get(profile_)->event_router()->RegisterObserver(
-      this, extensions::event_names::kBluetoothOnAdapterStateChanged);
+      this, bluetooth::OnAdapterStateChanged::kEventName);
 }
 
 BluetoothAPI::~BluetoothAPI() {
@@ -135,7 +134,7 @@ bool BluetoothAddProfileFunction::RunImpl() {
 
   uuid_ = device::bluetooth_utils::CanonicalUuid(params->profile.uuid);
 
-  if (GetEventRouter(profile())->HasProfile(uuid_)) {
+  if (GetEventRouter(GetProfile())->HasProfile(uuid_)) {
     SetError(kProfileAlreadyRegistered);
     return false;
   }
@@ -183,7 +182,7 @@ void BluetoothAddProfileFunction::OnProfileRegistered(
     return;
   }
 
-  if (GetEventRouter(profile())->HasProfile(uuid_)) {
+  if (GetEventRouter(GetProfile())->HasProfile(uuid_)) {
     bluetooth_profile->Unregister();
     SetError(kProfileAlreadyRegistered);
     SendResponse(false);
@@ -192,10 +191,10 @@ void BluetoothAddProfileFunction::OnProfileRegistered(
 
   bluetooth_profile->SetConnectionCallback(
       base::Bind(&ExtensionBluetoothEventRouter::DispatchConnectionEvent,
-                 base::Unretained(GetEventRouter(profile())),
+                 base::Unretained(GetEventRouter(GetProfile())),
                  extension_id(),
                  uuid_));
-  GetEventRouter(profile())->AddProfile(uuid_, bluetooth_profile);
+  GetEventRouter(GetProfile())->AddProfile(uuid_, bluetooth_profile);
   SendResponse(true);
 }
 
@@ -211,12 +210,12 @@ bool BluetoothRemoveProfileFunction::RunImpl() {
   std::string uuid =
       device::bluetooth_utils::CanonicalUuid(params->profile.uuid);
 
-  if (!GetEventRouter(profile())->HasProfile(uuid)) {
+  if (!GetEventRouter(GetProfile())->HasProfile(uuid)) {
     SetError(kProfileNotFound);
     return false;
   }
 
-  GetEventRouter(profile())->RemoveProfile(uuid);
+  GetEventRouter(GetProfile())->RemoveProfile(uuid);
   return true;
 }
 
@@ -267,7 +266,7 @@ void BluetoothGetDevicesFunction::DispatchDeviceSearchResult(
     const BluetoothDevice& device) {
   bluetooth::Device extension_device;
   bluetooth::BluetoothDeviceToApiDevice(device, &extension_device);
-  GetEventRouter(profile())->DispatchDeviceEvent(
+  GetEventRouter(GetProfile())->DispatchDeviceEvent(
       extensions::event_names::kBluetoothOnDeviceSearchResult,
       extension_device);
 
@@ -282,8 +281,9 @@ void BluetoothGetDevicesFunction::FinishDeviceSearch() {
 
   scoped_ptr<extensions::Event> event(new extensions::Event(
       extensions::event_names::kBluetoothOnDeviceSearchFinished, args.Pass()));
-  extensions::ExtensionSystem::Get(profile())->event_router()->
-      BroadcastEvent(event.Pass());
+  extensions::ExtensionSystem::Get(GetProfile())
+      ->event_router()
+      ->BroadcastEvent(event.Pass());
 
   SendResponse(true);
 }
@@ -399,7 +399,7 @@ bool BluetoothConnectFunction::DoWork(scoped_refptr<BluetoothAdapter> adapter) {
       options.profile.uuid);
 
   BluetoothProfile* bluetooth_profile =
-      GetEventRouter(profile())->GetProfile(uuid);
+      GetEventRouter(GetProfile())->GetProfile(uuid);
   if (!bluetooth_profile) {
     SetError(kProfileNotFound);
     SendResponse(false);
@@ -418,7 +418,7 @@ bool BluetoothDisconnectFunction::RunImpl() {
   scoped_ptr<Disconnect::Params> params(Disconnect::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get() != NULL);
   const bluetooth::DisconnectOptions& options = params->options;
-  return GetEventRouter(profile())->ReleaseSocket(options.socket.id);
+  return GetEventRouter(GetProfile())->ReleaseSocket(options.socket.id);
 }
 
 BluetoothReadFunction::BluetoothReadFunction() : success_(false) {}
@@ -429,7 +429,7 @@ bool BluetoothReadFunction::Prepare() {
   EXTENSION_FUNCTION_VALIDATE(params.get() != NULL);
   const bluetooth::ReadOptions& options = params->options;
 
-  socket_ = GetEventRouter(profile())->GetSocket(options.socket.id);
+  socket_ = GetEventRouter(GetProfile())->GetSocket(options.socket.id);
   if (socket_.get() == NULL) {
     SetError(kSocketNotFoundError);
     return false;
@@ -477,7 +477,7 @@ bool BluetoothWriteFunction::Prepare() {
   int socket_id;
   EXTENSION_FUNCTION_VALIDATE(socket->GetInteger("id", &socket_id));
 
-  socket_ = GetEventRouter(profile())->GetSocket(socket_id);
+  socket_ = GetEventRouter(GetProfile())->GetSocket(socket_id);
   if (socket_.get() == NULL) {
     SetError(kSocketNotFoundError);
     return false;
@@ -505,7 +505,7 @@ void BluetoothWriteFunction::Work() {
   success_ = socket_->Send(drainable_io_buffer.get());
   if (success_) {
     if (drainable_io_buffer->BytesConsumed() > 0)
-      SetResult(base::Value::CreateIntegerValue(
+      SetResult(new base::FundamentalValue(
           drainable_io_buffer->BytesConsumed()));
     else
       results_.reset();
@@ -623,20 +623,20 @@ void BluetoothStartDiscoveryFunction::OnSuccessCallback() {
 
 void BluetoothStartDiscoveryFunction::OnErrorCallback() {
   SetError(kStartDiscoveryFailed);
-  GetEventRouter(profile())->SetResponsibleForDiscovery(false);
+  GetEventRouter(GetProfile())->SetResponsibleForDiscovery(false);
   SendResponse(false);
-  GetEventRouter(profile())->OnListenerRemoved();
+  GetEventRouter(GetProfile())->OnListenerRemoved();
 }
 
 bool BluetoothStartDiscoveryFunction::DoWork(
     scoped_refptr<BluetoothAdapter> adapter) {
-  GetEventRouter(profile())->SetSendDiscoveryEvents(true);
+  GetEventRouter(GetProfile())->SetSendDiscoveryEvents(true);
 
   // If this profile is already discovering devices, there should be nothing
   // else to do.
-  if (!GetEventRouter(profile())->IsResponsibleForDiscovery()) {
-    GetEventRouter(profile())->SetResponsibleForDiscovery(true);
-    GetEventRouter(profile())->OnListenerAdded();
+  if (!GetEventRouter(GetProfile())->IsResponsibleForDiscovery()) {
+    GetEventRouter(GetProfile())->SetResponsibleForDiscovery(true);
+    GetEventRouter(GetProfile())->OnListenerAdded();
     adapter->StartDiscovering(
         base::Bind(&BluetoothStartDiscoveryFunction::OnSuccessCallback, this),
         base::Bind(&BluetoothStartDiscoveryFunction::OnErrorCallback, this));
@@ -647,20 +647,20 @@ bool BluetoothStartDiscoveryFunction::DoWork(
 
 void BluetoothStopDiscoveryFunction::OnSuccessCallback() {
   SendResponse(true);
-  GetEventRouter(profile())->OnListenerRemoved();
+  GetEventRouter(GetProfile())->OnListenerRemoved();
 }
 
 void BluetoothStopDiscoveryFunction::OnErrorCallback() {
   SetError(kStopDiscoveryFailed);
-  GetEventRouter(profile())->SetResponsibleForDiscovery(true);
+  GetEventRouter(GetProfile())->SetResponsibleForDiscovery(true);
   SendResponse(false);
-  GetEventRouter(profile())->OnListenerRemoved();
+  GetEventRouter(GetProfile())->OnListenerRemoved();
 }
 
 bool BluetoothStopDiscoveryFunction::DoWork(
     scoped_refptr<BluetoothAdapter> adapter) {
-  GetEventRouter(profile())->SetSendDiscoveryEvents(false);
-  if (GetEventRouter(profile())->IsResponsibleForDiscovery()) {
+  GetEventRouter(GetProfile())->SetSendDiscoveryEvents(false);
+  if (GetEventRouter(GetProfile())->IsResponsibleForDiscovery()) {
     adapter->StopDiscovering(
         base::Bind(&BluetoothStopDiscoveryFunction::OnSuccessCallback, this),
         base::Bind(&BluetoothStopDiscoveryFunction::OnErrorCallback, this));

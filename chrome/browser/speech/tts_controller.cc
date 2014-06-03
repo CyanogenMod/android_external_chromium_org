@@ -15,7 +15,7 @@
 #include "chrome/browser/speech/extension_api/tts_extension_api.h"
 #include "chrome/browser/speech/tts_platform.h"
 #include "chrome/common/extensions/api/speech/tts_engine_manifest_handler.h"
-#include "chrome/common/extensions/extension.h"
+#include "extensions/common/extension.h"
 
 namespace {
 // A value to be used to indicate that there is no char index available.
@@ -57,6 +57,7 @@ UtteranceContinuousParameters::UtteranceContinuousParameters()
 
 VoiceData::VoiceData()
     : gender(TTS_GENDER_NONE),
+      remote(false),
       native(false) {}
 
 VoiceData::~VoiceData() {}
@@ -73,7 +74,7 @@ Utterance::Utterance(Profile* profile)
     : profile_(profile),
       id_(next_utterance_id_++),
       src_id_(-1),
-      event_delegate_(NULL),
+      gender_(TTS_GENDER_NONE),
       can_enqueue_(false),
       char_index_(0),
       finished_(false) {
@@ -95,7 +96,7 @@ void Utterance::OnTtsEvent(TtsEventType event_type,
   if (event_delegate_)
     event_delegate_->OnTtsEvent(this, event_type, char_index, error_message);
   if (finished_)
-    event_delegate_ = NULL;
+    event_delegate_.reset();
 }
 
 void Utterance::Finish() {
@@ -180,6 +181,9 @@ void TtsController::SpeakNow(Utterance* utterance) {
     }
 #endif
   } else {
+    // It's possible for certain platforms to send start events immediately
+    // during |speak|.
+    current_utterance_ = utterance;
     GetPlatformImpl()->clear_error();
     bool success = GetPlatformImpl()->Speak(
         utterance->id(),
@@ -187,6 +191,8 @@ void TtsController::SpeakNow(Utterance* utterance) {
         utterance->lang(),
         voice,
         utterance->continuous_parameters());
+    if (!success)
+      current_utterance_ = NULL;
 
     // If the native voice wasn't able to process this speech, see if
     // the browser has built-in TTS that isn't loaded yet.
@@ -202,7 +208,6 @@ void TtsController::SpeakNow(Utterance* utterance) {
       delete utterance;
       return;
     }
-    current_utterance_ = utterance;
   }
 }
 
@@ -258,9 +263,9 @@ void TtsController::OnTtsEvent(int utterance_id,
   // already finished the utterance (for example because another utterance
   // interrupted or we got a call to Stop). This is normal and we can
   // safely just ignore these events.
-  if (!current_utterance_ || utterance_id != current_utterance_->id())
+  if (!current_utterance_ || utterance_id != current_utterance_->id()) {
     return;
-
+  }
   current_utterance_->OnTtsEvent(event_type, char_index, error_message);
   if (current_utterance_->finished()) {
     FinishCurrentUtterance();
@@ -414,4 +419,3 @@ void TtsController::RemoveVoicesChangedDelegate(
     VoicesChangedDelegate* delegate) {
   voices_changed_delegates_.erase(delegate);
 }
-

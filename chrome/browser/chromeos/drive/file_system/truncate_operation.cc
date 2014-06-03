@@ -27,13 +27,15 @@ namespace {
 
 // Truncates the local file at |local_cache_path| to the |length| bytes,
 // then marks the resource is dirty on |cache|.
-FileError TruncateOnBlockingPool(internal::FileCache* cache,
-                                 const std::string& resource_id,
+FileError TruncateOnBlockingPool(internal::ResourceMetadata* metadata,
+                                 internal::FileCache* cache,
+                                 const std::string& local_id,
                                  const base::FilePath& local_cache_path,
                                  int64 length) {
+  DCHECK(metadata);
   DCHECK(cache);
 
-  FileError error = cache->MarkDirty(resource_id);
+  FileError error = cache->MarkDirty(local_id);
   if (error != FILE_ERROR_OK)
     return error;
 
@@ -66,6 +68,7 @@ TruncateOperation::TruncateOperation(
     const base::FilePath& temporary_file_directory)
     : blocking_task_runner_(blocking_task_runner),
       observer_(observer),
+      metadata_(metadata),
       cache_(cache),
       download_operation_(new DownloadOperation(blocking_task_runner,
                                                 observer,
@@ -83,6 +86,7 @@ void TruncateOperation::Truncate(const base::FilePath& file_path,
                                  int64 length,
                                  const FileOperationCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!callback.is_null());
 
   if (length < 0) {
     base::MessageLoopProxy::current()->PostTask(
@@ -99,11 +103,10 @@ void TruncateOperation::Truncate(const base::FilePath& file_path,
       GetFileContentInitializedCallback(),
       google_apis::GetContentCallback(),
       base::Bind(&TruncateOperation::TruncateAfterEnsureFileDownloadedByPath,
-                 weak_ptr_factory_.GetWeakPtr(), file_path, length, callback));
+                 weak_ptr_factory_.GetWeakPtr(), length, callback));
 }
 
 void TruncateOperation::TruncateAfterEnsureFileDownloadedByPath(
-    const base::FilePath& file_path,
     int64 length,
     const FileOperationCallback& callback,
     FileError error,
@@ -128,22 +131,20 @@ void TruncateOperation::TruncateAfterEnsureFileDownloadedByPath(
       blocking_task_runner_.get(),
       FROM_HERE,
       base::Bind(&TruncateOnBlockingPool,
-                 base::Unretained(cache_),
-                 entry->resource_id(),
-                 local_file_path, length),
+                 metadata_, cache_, entry->local_id(), local_file_path, length),
       base::Bind(
           &TruncateOperation::TruncateAfterTruncateOnBlockingPool,
-          weak_ptr_factory_.GetWeakPtr(), entry->resource_id(), callback));
+          weak_ptr_factory_.GetWeakPtr(), entry->local_id(), callback));
 }
 
 void TruncateOperation::TruncateAfterTruncateOnBlockingPool(
-    const std::string& resource_id,
+    const std::string& local_id,
     const FileOperationCallback& callback,
     FileError error) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
-  observer_->OnCacheFileUploadNeededByOperation(resource_id);
+  observer_->OnCacheFileUploadNeededByOperation(local_id);
 
   callback.Run(error);
 }

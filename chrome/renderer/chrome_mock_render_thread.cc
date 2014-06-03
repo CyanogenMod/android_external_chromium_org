@@ -37,6 +37,16 @@ ChromeMockRenderThread::ChromeMockRenderThread()
 ChromeMockRenderThread::~ChromeMockRenderThread() {
 }
 
+scoped_refptr<base::MessageLoopProxy>
+ChromeMockRenderThread::GetIOMessageLoopProxy() {
+  return io_message_loop_proxy_;
+}
+
+void ChromeMockRenderThread::set_io_message_loop_proxy(
+    const scoped_refptr<base::MessageLoopProxy>& proxy) {
+  io_message_loop_proxy_ = proxy;
+}
+
 bool ChromeMockRenderThread::OnMessageReceived(const IPC::Message& msg) {
   if (content::MockRenderThread::OnMessageReceived(msg))
     return true;
@@ -78,6 +88,7 @@ void ChromeMockRenderThread::OnOpenChannelToExtension(
     int routing_id,
     const ExtensionMsg_ExternalConnectionInfo& info,
     const std::string& channel_name,
+    bool include_tls_channel_id,
     int* port_id) {
   *port_id = 0;
 }
@@ -92,7 +103,7 @@ void ChromeMockRenderThread::OnAllocateTempFileForPrinting(
   renderer_fd->auto_close = false;
 
   base::FilePath path;
-  if (file_util::CreateTemporaryFile(&path)) {
+  if (base::CreateTemporaryFile(&path)) {
     int fd = open(path.value().c_str(), O_WRONLY);
     DCHECK_GE(fd, 0);
     renderer_fd->fd = *browser_fd = fd;

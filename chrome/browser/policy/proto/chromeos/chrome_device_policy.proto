@@ -64,6 +64,8 @@ message DeviceProxySettingsProto {
   optional string proxy_bypass_list = 4;
 }
 
+// This is used by chromeos, make sure to do cleanup there before marking it as
+// obsolette.
 message CameraEnabledProto {
   optional bool camera_enabled = 1;
 }
@@ -94,6 +96,7 @@ message DeviceReportingProto {
   optional bool report_boot_mode = 3;
   optional bool report_location = 4;
   optional bool report_network_interfaces = 5;
+  optional bool report_users = 6;
 }
 
 message EphemeralUsersEnabledProto {
@@ -107,7 +110,10 @@ message EphemeralUsersEnabledProto {
 message AppPackEntryProto {
   optional string extension_id = 1;
   optional string update_url = 2;
-  optional bool online_only = 3;
+
+  // This field was added but never used and there are no plans to support it
+  // eventually either.
+  optional bool OBSOLETE_online_only = 3 [deprecated = true];
 }
 
 message AppPackProto {
@@ -214,6 +220,10 @@ message AutoUpdateSettingsProto {
   // the future and the policy will always apply, regardless of whether a
   // session of any particular type is in progress or not.
   optional bool reboot_after_update = 8;
+
+  // True if AU payloads may be shared with and consumed from other devices
+  // on the LAN, using p2p. False otherwise.
+  optional bool p2p_enabled = 9 [default = false];
 }
 
 message StartUpUrlsProto {
@@ -238,7 +248,11 @@ message SystemTimezoneProto {
 
 message SystemUse24HourClockProto {
   // Specifies an owner-determined clock format that applies to the login
-  // screen and all users.
+  // screen and is used as a default for all user sessions. Users can still
+  // override the format to use for their account.
+  //
+  // True and false select a 24 and 12 hour clock format, respectively. The
+  // default format for the case the setting is not present is 24 hour clock.
   optional bool use_24hour_clock = 1;
 }
 
@@ -249,10 +263,8 @@ message KioskAppInfoProto {
   // specifies the Kiosk App to download and run.
   optional string app_id = 1;
 
-  // Optional extension update URL to download the Kiosk App package from. If
-  // not specified, the app will be downloaded from the standard Chrome Web
-  // Store update URL.
-  optional string update_url = 2;
+  // Obsolete: Kiosk Apps can only be installed from the Chrome Web Store.
+  optional string OBSOLETE_update_url = 2 [deprecated = true];
 }
 
 // Describes a single device-local account.
@@ -301,9 +313,19 @@ message DeviceLocalAccountsProto {
 
   // Whether the keyboard shortcut to prevent zero-delay auto-login should be
   // enabled or not. If this keyboard shortcut is engaged, the auto-login will
-  // be delayed by 3 minutes so administrators can log in or make configuration
+  // be delayed by 3 seconds so administrators can log in or make configuration
   // changes.
   optional bool enable_auto_login_bailout = 4 [default = true];
+
+  // Whether network configuration should be offered or not when the device
+  // does not have access to the Internet. If the policy is omitted or set to
+  // true, the network configuration will be offered. Otherwise, only an error
+  // message is displayed.
+  // Note: If both this policy and enable_auto_login_bailout policy above is
+  // set to false, there are chances that the device might become totally
+  // unusable when there is no Internet access and has to go through the
+  // recovery process.
+  optional bool prompt_for_network_when_offline = 5 [default = true];
 }
 
 message AllowRedeemChromeOsRegistrationOffersProto {
@@ -346,12 +368,19 @@ message VariationsParameterProto {
 message AttestationSettingsProto {
   // Attestation involves proving that a cryptographic key is protected by a
   // legitimate Chrome OS TPM and reporting the operating mode of the platform.
-  // This setting enables attestation features at a device level.  If this is
-  // enabled a machine key will be generated and certified by the Chrome OS
-  // CA.  If this setting is disabled, the device will not communicate with the
-  // Chrome OS CA under any circumstances.  Even users with attestation settings
+  // This setting enables enterprise attestation features at a device level.  If
+  // this is enabled a machine key will be generated and certified by the Chrome
+  // OS CA.  If this setting is disabled, even users with attestation settings
   // enabled will not be able to use those features on the device.
-  optional bool attestation_enabled = 1;
+  optional bool attestation_enabled = 1 [default = false];
+
+  // Chrome OS devices can use remote attestation (Verified Access) to get a
+  // certificate issued by the Chrome OS CA that asserts the device is eligible
+  // to play protected content.  This process involves sending hardware
+  // endorsement information to the Chrome OS CA which uniquely identifies the
+  // device.  This setting allows this feature to be disabled for the device
+  // regardless of any user-specific settings.
+  optional bool content_protection_enabled = 2 [default = true];
 }
 
 message AccessibilitySettingsProto {
@@ -515,6 +544,12 @@ message LoginScreenPowerManagementProto {
   optional string login_screen_power_management = 1;
 }
 
+message AutoCleanupSettigsProto {
+  // Configures strategy for automatic clean-up process that is run when device
+  // runs out of free disk space. One of "remove-lru", "remove-lru-if-dormant".
+  optional string clean_up_strategy = 1;
+}
+
 message ChromeDeviceSettingsProto {
   optional DevicePolicyRefreshRateProto device_policy_refresh_rate = 1;
   optional UserWhitelistProto user_whitelist = 2;
@@ -546,4 +581,5 @@ message ChromeDeviceSettingsProto {
   optional SupervisedUsersSettingsProto supervised_users_settings = 28;
   optional LoginScreenPowerManagementProto login_screen_power_management = 29;
   optional SystemUse24HourClockProto use_24hour_clock = 30;
+  optional AutoCleanupSettigsProto auto_clean_up_settings = 31;
 }

@@ -7,13 +7,16 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/memory/weak_ptr.h"
 #include "ppapi/host/resource_host.h"
+
+namespace base {
+class FilePath;
+}
 
 namespace content {
 class RendererPpapiHost;
 }
-
-namespace chrome {
 
 // TODO(raymes): This is only needed until we move FileRef resources to the
 // browser. After that, get rid of this class altogether.
@@ -31,12 +34,18 @@ class PepperFlashDRMRendererHost : public ppapi::host::ResourceHost {
  private:
   int32_t OnGetVoucherFile(ppapi::host::HostMessageContext* context);
 
+  void DidCreateFileRefHosts(
+      const ppapi::host::ReplyMessageContext& reply_context,
+      const base::FilePath& external_path,
+      int renderer_pending_host_id,
+      const std::vector<int>& browser_pending_host_ids);
+
   // Non-owning pointer.
   content::RendererPpapiHost* renderer_ppapi_host_;
 
+  base::WeakPtrFactory<PepperFlashDRMRendererHost> weak_factory_;
+
   DISALLOW_COPY_AND_ASSIGN(PepperFlashDRMRendererHost);
 };
-
-}  // namespace chrome
 
 #endif  // CHROME_RENDERER_PEPPER_PEPPER_FLASH_DRM_RENDERER_HOST_H_

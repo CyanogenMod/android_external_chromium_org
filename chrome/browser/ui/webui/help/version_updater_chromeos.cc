@@ -13,7 +13,6 @@
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
-#include "chrome/browser/chromeos/settings/cros_settings_names.h"
 #include "chrome/browser/policy/browser_policy_connector.h"
 #include "chrome/browser/ui/webui/help/help_utils_chromeos.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
@@ -21,6 +20,7 @@
 #include "chromeos/network/network_handler.h"
 #include "chromeos/network/network_state.h"
 #include "chromeos/network/network_state_handler.h"
+#include "chromeos/settings/cros_settings_names.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
@@ -52,9 +52,9 @@ NetworkStatus GetNetworkStatus(const chromeos::NetworkState* network) {
 
   // The connection type checking strategy must be the same as the one
   // used in update engine.
-  if (network->type() == flimflam::kTypeBluetooth)
+  if (network->type() == shill::kTypeBluetooth)
     return NETWORK_STATUS_DISALLOWED;
-  if (network->type() == flimflam::kTypeCellular &&
+  if (network->type() == shill::kTypeCellular &&
       !help_utils_chromeos::IsUpdateOverCellularAllowed()) {
     return NETWORK_STATUS_DISALLOWED;
   }
@@ -102,7 +102,7 @@ void VersionUpdaterCros::CheckForUpdate(const StatusCallback& callback) {
                   l10n_util::GetStringUTF16(IDS_UPGRADE_OFFLINE));
     return;
   } else if (status == NETWORK_STATUS_DISALLOWED) {
-    string16 message =
+    base::string16 message =
         l10n_util::GetStringFUTF16(
             IDS_UPGRADE_DISALLOWED,
             help_utils_chromeos::GetConnectionTypeAsUTF16(network->type()));
@@ -161,7 +161,7 @@ void VersionUpdaterCros::UpdateStatusChanged(
     const UpdateEngineClient::Status& status) {
   Status my_status = UPDATED;
   int progress = 0;
-  string16 message;
+  base::string16 message;
 
   // If the updater is currently idle, just show the last operation (unless it
   // was previously checking for an update -- in that case, the system is
@@ -213,5 +213,5 @@ void VersionUpdaterCros::OnUpdateCheck(
   // If version updating is not implemented, this binary is the most up-to-date
   // possible with respect to automatic updating.
   if (result == UpdateEngineClient::UPDATE_RESULT_NOTIMPLEMENTED)
-    callback_.Run(UPDATED, 0, string16());
+    callback_.Run(UPDATED, 0, base::string16());
 }

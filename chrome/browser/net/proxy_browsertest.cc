@@ -137,7 +137,7 @@ IN_PROC_BROWSER_TEST_F(ProxyBrowserTest, MAYBE_BasicAuthWSConnect) {
       browser(),
       ws_server.GetURL("connect_check.html").ReplaceComponents(replacements));
 
-  const string16 result = watcher.WaitAndGetTitle();
+  const base::string16 result = watcher.WaitAndGetTitle();
   EXPECT_TRUE(EqualsASCII(result, "PASS"));
   EXPECT_TRUE(observer.auth_handled());
 }
@@ -235,7 +235,7 @@ class DataProxyScriptBrowserTest : public InProcessBrowserTest {
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     std::string contents;
     // Read in kPACScript contents.
-    ASSERT_TRUE(file_util::ReadFileToString(ui_test_utils::GetTestFilePath(
+    ASSERT_TRUE(base::ReadFileToString(ui_test_utils::GetTestFilePath(
         base::FilePath(base::FilePath::kCurrentDirectory),
         base::FilePath(kPACScript)),
         &contents));

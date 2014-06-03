@@ -7,18 +7,17 @@
 #include "base/file_util.h"
 #include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
-#include "base/md5.h"
 #include "base/message_loop/message_loop.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/google_apis/test_util.h"
 #include "chrome/test/base/testing_profile.h"
+#include "content/public/test/test_file_system_options.h"
+#include "google_apis/drive/test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "webkit/browser/fileapi/external_mount_points.h"
 #include "webkit/browser/fileapi/file_system_backend.h"
 #include "webkit/browser/fileapi/file_system_context.h"
 #include "webkit/browser/fileapi/file_system_url.h"
 #include "webkit/browser/fileapi/isolated_context.h"
-#include "webkit/browser/fileapi/mock_file_system_options.h"
 
 namespace drive {
 namespace util {
@@ -40,7 +39,7 @@ TEST(FileSystemUtilTest, FilePathToDriveURL) {
   EXPECT_EQ(path, DriveURLToFilePath(FilePathToDriveURL(path)));
 
   // Path with multi byte characters.
-  string16 utf16_string;
+  base::string16 utf16_string;
   utf16_string.push_back(0x307b);  // HIRAGANA_LETTER_HO
   utf16_string.push_back(0x3052);  // HIRAGANA_LETTER_GE
   path = GetDriveMyDriveRootPath().Append(
@@ -113,6 +112,7 @@ TEST(FileSystemUtilTest, ExtractDrivePathFromFileSystemUrl) {
   mount_points->RegisterFileSystem(
       drive_mount_name,
       fileapi::kFileSystemTypeDrive,
+      fileapi::FileSystemMountOption(),
       GetDriveMountPointPath());
   EXPECT_EQ(
       base::FilePath::FromUTF8Unsafe(drive_mount_name + "/foo/bar"),
@@ -125,6 +125,7 @@ TEST(FileSystemUtilTest, ExtractDrivePathFromFileSystemUrl) {
   mount_points->RegisterFileSystem(
       "drive2",
       fileapi::kFileSystemTypeDrive,
+      fileapi::FileSystemMountOption(),
       GetDriveMountPointPath());
   EXPECT_EQ(
       base::FilePath::FromUTF8Unsafe(drive_mount_name + "/foo/bar"),
@@ -135,6 +136,7 @@ TEST(FileSystemUtilTest, ExtractDrivePathFromFileSystemUrl) {
   mount_points->RegisterFileSystem(
       "Downloads",
       fileapi::kFileSystemTypeNativeLocal,
+      fileapi::FileSystemMountOption(),
       temp_dir_.path());
   EXPECT_EQ(
       base::FilePath(),
@@ -167,10 +169,17 @@ TEST(FileSystemUtilTest, EscapeUnescapeCacheFileName) {
 TEST(FileSystemUtilTest, NormalizeFileName) {
   EXPECT_EQ("", NormalizeFileName(""));
   EXPECT_EQ("foo", NormalizeFileName("foo"));
-  EXPECT_EQ("foo\xE2\x88\x95zzz", NormalizeFileName("foo/zzz"));
-  EXPECT_EQ("\xE2\x88\x95\xE2\x88\x95\xE2\x88\x95", NormalizeFileName("///"));
+  // Slash
+  EXPECT_EQ("foo_zzz", NormalizeFileName("foo/zzz"));
+  EXPECT_EQ("___", NormalizeFileName("///"));
   // Japanese hiragana "hi" + semi-voiced-mark is normalized to "pi".
   EXPECT_EQ("\xE3\x81\xB4", NormalizeFileName("\xE3\x81\xB2\xE3\x82\x9A"));
+  // Dot
+  EXPECT_EQ("_", NormalizeFileName("."));
+  EXPECT_EQ("_", NormalizeFileName(".."));
+  EXPECT_EQ("_", NormalizeFileName("..."));
+  EXPECT_EQ(".bashrc", NormalizeFileName(".bashrc"));
+  EXPECT_EQ("._", NormalizeFileName("./"));
 }
 
 TEST(FileSystemUtilTest, GetCacheRootPath) {
@@ -178,35 +187,6 @@ TEST(FileSystemUtilTest, GetCacheRootPath) {
   base::FilePath profile_path = profile.GetPath();
   EXPECT_EQ(profile_path.AppendASCII("GCache/v1"),
             util::GetCacheRootPath(&profile));
-}
-
-TEST(FileSystemUtilTest, MigrateCacheFilesFromOldDirectories) {
-  base::ScopedTempDir temp_dir;
-  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
-
-  const base::FilePath persistent_directory =
-      temp_dir.path().AppendASCII("persistent");
-  const base::FilePath tmp_directory = temp_dir.path().AppendASCII("tmp");
-  const base::FilePath files_directory =
-      temp_dir.path().Append(kCacheFileDirectory);
-
-  // Prepare directories.
-  ASSERT_TRUE(file_util::CreateDirectory(persistent_directory));
-  ASSERT_TRUE(file_util::CreateDirectory(tmp_directory));
-  ASSERT_TRUE(file_util::CreateDirectory(files_directory));
-
-  // Put some files.
-  ASSERT_TRUE(google_apis::test_util::WriteStringToFile(
-      persistent_directory.AppendASCII("foo.abc"), "foo"));
-  ASSERT_TRUE(google_apis::test_util::WriteStringToFile(
-      tmp_directory.AppendASCII("bar.123"), "bar"));
-
-  // Migrate.
-  MigrateCacheFilesFromOldDirectories(temp_dir.path());
-
-  EXPECT_FALSE(base::PathExists(persistent_directory));
-  EXPECT_TRUE(base::PathExists(files_directory.AppendASCII("foo.abc")));
-  EXPECT_TRUE(base::PathExists(files_directory.AppendASCII("bar.123")));
 }
 
 TEST(FileSystemUtilTest, NeedsNamespaceMigration) {
@@ -321,17 +301,6 @@ TEST(FileSystemUtilTest, GDocFile) {
   EXPECT_FALSE(HasGDocFileExtension(file));
   EXPECT_TRUE(ReadUrlFromGDocFile(file).is_empty());
   EXPECT_TRUE(ReadResourceIdFromGDocFile(file).empty());
-}
-
-TEST(FileSystemUtilTest, GetMd5Digest) {
-  base::ScopedTempDir temp_dir;
-  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
-
-  base::FilePath path = temp_dir.path().AppendASCII("test.txt");
-  const char kTestData[] = "abcdefghijklmnopqrstuvwxyz0123456789";
-  ASSERT_TRUE(google_apis::test_util::WriteStringToFile(path, kTestData));
-
-  EXPECT_EQ(base::MD5String(kTestData), GetMd5Digest(path));
 }
 
 }  // namespace util

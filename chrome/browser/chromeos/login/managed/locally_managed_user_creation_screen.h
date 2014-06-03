@@ -65,23 +65,30 @@ class LocallyManagedUserCreationScreen
   virtual std::string GetName() const OVERRIDE;
 
   // LocallyManagedUserCreationScreenHandler::Delegate implementation:
-  virtual void OnExit() OVERRIDE;
   virtual void OnActorDestroyed(LocallyManagedUserCreationScreenHandler* actor)
       OVERRIDE;
   virtual void CreateManagedUser(
-      const string16& display_name,
+      const base::string16& display_name,
       const std::string& managed_user_password) OVERRIDE;
+  virtual void ImportManagedUser(const std::string& user_id) OVERRIDE;
+  virtual void ImportManagedUserWithPassword(
+      const std::string& user_id,
+      const std::string& password) OVERRIDE;
   virtual void AuthenticateManager(
       const std::string& manager_id,
       const std::string& manager_password) OVERRIDE;
   virtual void AbortFlow() OVERRIDE;
   virtual void FinishFlow() OVERRIDE;
+  virtual bool FindUserByDisplayName(const base::string16& display_name,
+                                     std::string *out_id) const OVERRIDE;
+  virtual void OnPageSelected(const std::string& page) OVERRIDE;
 
   // LocallyManagedUserController::StatusConsumer overrides.
   virtual void OnCreationError(
       LocallyManagedUserCreationController::ErrorCode code) OVERRIDE;
   virtual void OnCreationTimeout() OVERRIDE;
   virtual void OnCreationSuccess() OVERRIDE;
+  virtual void OnLongCreationWarning() OVERRIDE;
 
   // NetworkPortalDetector::Observer implementation:
   virtual void OnPortalDetectionCompleted(
@@ -105,19 +112,24 @@ class LocallyManagedUserCreationScreen
  private:
   void ApplyPicture();
   void OnCameraPresenceCheckDone();
+  void OnGetManagedUsers(const base::DictionaryValue* users);
 
   base::WeakPtrFactory<LocallyManagedUserCreationScreen> weak_factory_;
   LocallyManagedUserCreationScreenHandler* actor_;
 
   scoped_ptr<LocallyManagedUserCreationController> controller_;
+  scoped_ptr<base::DictionaryValue> existing_users_;
 
   bool on_error_screen_;
-  bool on_image_screen_;
+  std::string last_page_;
 
   gfx::ImageSkia user_photo_;
   scoped_refptr<ImageDecoder> image_decoder_;
   bool apply_photo_after_decoding_;
   int selected_image_;
+
+  // True if camera was available last time.
+  bool was_camera_present_;
 
   DISALLOW_COPY_AND_ASSIGN(LocallyManagedUserCreationScreen);
 };

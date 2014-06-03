@@ -8,6 +8,8 @@
 #include <string>
 
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
+#include "content/common/content_export.h"
 #include "ui/gfx/native_widget_types.h"
 
 namespace gfx {
@@ -19,7 +21,7 @@ class ContextFactory;
 class Texture;
 }
 
-namespace WebKit {
+namespace blink {
 class WebGraphicsContext3D;
 }
 
@@ -27,7 +29,7 @@ namespace content {
 class GLHelper;
 
 // This class provides a way to get notified when surface handles get lost.
-class ImageTransportFactoryObserver {
+class CONTENT_EXPORT ImageTransportFactoryObserver {
  public:
   virtual ~ImageTransportFactoryObserver() {}
 
@@ -44,12 +46,17 @@ class ImageTransportFactoryObserver {
 // cross-process image transport, both for creating the shared surface handle
 // (destination surface for the GPU process) and the transport client (logic for
 // using that surface as a texture). The factory is a process-wide singleton.
-class ImageTransportFactory {
+class CONTENT_EXPORT ImageTransportFactory {
  public:
   virtual ~ImageTransportFactory() {}
 
-  // Initialize the global transport factory.
+  // Initializes the global transport factory.
   static void Initialize();
+
+  // Initializes the global transport factory for unit tests using the provided
+  // context factory.
+  static void InitializeForUnitTests(
+      scoped_ptr<ui::ContextFactory> test_factory);
 
   // Terminates the global transport factory.
   static void Terminate();

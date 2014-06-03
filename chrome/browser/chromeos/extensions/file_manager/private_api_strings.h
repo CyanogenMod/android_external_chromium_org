@@ -7,26 +7,27 @@
 #ifndef CHROME_BROWSER_CHROMEOS_EXTENSIONS_FILE_MANAGER_PRIVATE_API_STRINGS_H_
 #define CHROME_BROWSER_CHROMEOS_EXTENSIONS_FILE_MANAGER_PRIVATE_API_STRINGS_H_
 
-#include "chrome/browser/extensions/extension_function.h"
+#include "chrome/browser/extensions/chrome_extension_function.h"
 
-namespace file_manager {
+namespace extensions {
 
 // Implements the chrome.fileBrowserPrivate.getStrings method.
 // Used to get strings for the file manager from JavaScript.
-class GetStringsFunction : public SyncExtensionFunction {
+class FileBrowserPrivateGetStringsFunction
+    : public ChromeSyncExtensionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("fileBrowserPrivate.getStrings",
                              FILEBROWSERPRIVATE_GETSTRINGS)
 
-  GetStringsFunction();
+  FileBrowserPrivateGetStringsFunction();
 
  protected:
-  virtual ~GetStringsFunction();
+  virtual ~FileBrowserPrivateGetStringsFunction();
 
   // SyncExtensionFunction overrides.
   virtual bool RunImpl() OVERRIDE;
 };
 
-}  // namespace file_manager
+}  // namespace extensions
 
 #endif  // CHROME_BROWSER_CHROMEOS_EXTENSIONS_FILE_MANAGER_PRIVATE_API_STRINGS_H_

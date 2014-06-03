@@ -13,7 +13,6 @@
 #include "base/observer_list.h"
 #include "chromeos/chromeos_export.h"
 #include "chromeos/dbus/bluetooth_profile_manager_client.h"
-#include "chromeos/dbus/dbus_client_implementation_type.h"
 #include "dbus/object_path.h"
 #include "dbus/property.h"
 
@@ -30,7 +29,8 @@ class CHROMEOS_EXPORT FakeBluetoothProfileManagerClient
   FakeBluetoothProfileManagerClient();
   virtual ~FakeBluetoothProfileManagerClient();
 
-  // BluetoothProfileManagerClient override
+  // BluetoothProfileManagerClient overrides
+  virtual void Init(dbus::Bus* bus) OVERRIDE;
   virtual void RegisterProfile(const dbus::ObjectPath& profile_path,
                                const std::string& uuid,
                                const Options& options,

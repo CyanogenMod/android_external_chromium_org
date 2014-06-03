@@ -6,8 +6,9 @@
 
 #include <utility>
 
+#include "base/basictypes.h"
 #include "base/bind.h"
-#include "base/bind_helpers.h"
+#include "base/callback_helpers.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop_proxy.h"
@@ -15,6 +16,7 @@
 #include "tools/android/forwarder2/command.h"
 #include "tools/android/forwarder2/device_listener.h"
 #include "tools/android/forwarder2/socket.h"
+#include "tools/android/forwarder2/util.h"
 
 namespace forwarder2 {
 
@@ -87,13 +89,13 @@ void DeviceController::AcceptHostCommandInternal() {
       if (listener != NULL) {
         LOG(WARNING) << "Already forwarding port " << port
                      << ". Attempting to restart the listener.\n";
-        // Note that this deletes the listener object.
-        listeners_.erase(listener_it);
+        DeleteRefCountedValueInMapFromIterator(listener_it, &listeners_);
       }
       scoped_ptr<DeviceListener> new_listener(
           DeviceListener::Create(
-              socket.Pass(), port, base::Bind(&DeviceController::DeleteListener,
-                                              weak_ptr_factory_.GetWeakPtr())));
+              socket.Pass(), port,
+              base::Bind(&DeviceController::DeleteListenerOnError,
+                         weak_ptr_factory_.GetWeakPtr())));
       if (!new_listener)
         return;
       new_listener->Start();
@@ -119,11 +121,13 @@ void DeviceController::AcceptHostCommandInternal() {
       listener->SetAdbDataSocket(socket.Pass());
       break;
     case command::UNLISTEN:
+      LOG(INFO) << "Unmapping port " << port;
       if (!listener) {
+        LOG(ERROR) << "No listener found for port " << port;
         SendCommand(command::UNLISTEN_ERROR, port, socket.get());
         break;
       }
-      listeners_.erase(listener_it);
+      DeleteRefCountedValueInMapFromIterator(listener_it, &listeners_);
       SendCommand(command::UNLISTEN_SUCCESS, port, socket.get());
       break;
     default:
@@ -134,21 +138,20 @@ void DeviceController::AcceptHostCommandInternal() {
 }
 
 // static
-void DeviceController::DeleteListener(
+void DeviceController::DeleteListenerOnError(
       const base::WeakPtr<DeviceController>& device_controller_ptr,
-      int listener_port) {
+      scoped_ptr<DeviceListener> device_listener) {
   DeviceController* const controller = device_controller_ptr.get();
-  if (!controller)
+  if (!controller) {
+    // |device_listener| was already deleted by the controller that did have
+    // its ownership.
+    ignore_result(device_listener.release());
     return;
+  }
   DCHECK(controller->construction_task_runner_->RunsTasksOnCurrentThread());
-  const ListenersMap::iterator listener_it = controller->listeners_.find(
-      listener_port);
-  if (listener_it == controller->listeners_.end())
-    return;
-  const linked_ptr<DeviceListener> listener = listener_it->second;
-  // Note that the listener is removed from the map before it gets destroyed in
-  // case its destructor would access the map.
-  controller->listeners_.erase(listener_it);
+  bool listener_did_exist = DeleteRefCountedValueInMap(
+      device_listener->listener_port(), &controller->listeners_);
+  DCHECK(listener_did_exist);
 }
 
 }  // namespace forwarder

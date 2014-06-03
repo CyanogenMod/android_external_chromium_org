@@ -4,6 +4,7 @@
 
 #include "ash/system/date/tray_date.h"
 
+#include "ash/metrics/user_metrics_recorder.h"
 #include "ash/session_state_delegate.h"
 #include "ash/shell.h"
 #include "ash/shell_delegate.h"
@@ -39,9 +40,18 @@
 #include "ui/views/view.h"
 #include "ui/views/widget/widget.h"
 
+#if defined(OS_CHROMEOS)
+#include "ash/system/chromeos/system_clock_observer.h"
+#endif
+
 namespace {
 
 const int kPaddingVertical = 19;
+
+}  // namespace
+
+namespace ash {
+namespace internal {
 
 class DateDefaultView : public views::View,
                         public views::ButtonListener {
@@ -49,26 +59,26 @@ class DateDefaultView : public views::View,
   explicit DateDefaultView(ash::user::LoginStatus login)
       : help_(NULL),
         shutdown_(NULL),
-        lock_(NULL) {
+        lock_(NULL),
+        date_view_(NULL) {
     SetLayoutManager(new views::FillLayout);
 
-    ash::internal::tray::DateView* date_view =
-        new ash::internal::tray::DateView();
-    date_view->set_border(views::Border::CreateEmptyBorder(kPaddingVertical,
+    date_view_ = new tray::DateView();
+    date_view_->set_border(views::Border::CreateEmptyBorder(kPaddingVertical,
         ash::kTrayPopupPaddingHorizontal,
         0,
         0));
-    ash::internal::SpecialPopupRow* view = new ash::internal::SpecialPopupRow();
-    view->SetContent(date_view);
+    SpecialPopupRow* view = new SpecialPopupRow();
+    view->SetContent(date_view_);
     AddChildView(view);
 
     if (login == ash::user::LOGGED_IN_LOCKED ||
         login == ash::user::LOGGED_IN_NONE)
       return;
 
-    date_view->SetActionable(true);
+    date_view_->SetActionable(true);
 
-    help_ = new ash::internal::TrayPopupHeaderButton(this,
+    help_ = new TrayPopupHeaderButton(this,
         IDR_AURA_UBER_TRAY_HELP,
         IDR_AURA_UBER_TRAY_HELP,
         IDR_AURA_UBER_TRAY_HELP_HOVER,
@@ -77,9 +87,10 @@ class DateDefaultView : public views::View,
     help_->SetTooltipText(l10n_util::GetStringUTF16(IDS_ASH_STATUS_TRAY_HELP));
     view->AddButton(help_);
 
+#if !defined(OS_WIN)
     if (login != ash::user::LOGGED_IN_LOCKED &&
         login != ash::user::LOGGED_IN_RETAIL_MODE) {
-      shutdown_ = new ash::internal::TrayPopupHeaderButton(this,
+      shutdown_ = new TrayPopupHeaderButton(this,
           IDR_AURA_UBER_TRAY_SHUTDOWN,
           IDR_AURA_UBER_TRAY_SHUTDOWN,
           IDR_AURA_UBER_TRAY_SHUTDOWN_HOVER,
@@ -91,7 +102,7 @@ class DateDefaultView : public views::View,
     }
 
     if (ash::Shell::GetInstance()->session_state_delegate()->CanLockScreen()) {
-      lock_ = new ash::internal::TrayPopupHeaderButton(this,
+      lock_ = new TrayPopupHeaderButton(this,
           IDR_AURA_UBER_TRAY_LOCKSCREEN,
           IDR_AURA_UBER_TRAY_LOCKSCREEN,
           IDR_AURA_UBER_TRAY_LOCKSCREEN_HOVER,
@@ -101,51 +112,65 @@ class DateDefaultView : public views::View,
           l10n_util::GetStringUTF16(IDS_ASH_STATUS_TRAY_LOCK));
       view->AddButton(lock_);
     }
+#endif  // !defined(OS_WIN)
   }
 
   virtual ~DateDefaultView() {}
+
+  views::View* GetHelpButtonView() const {
+    return help_;
+  }
+
+  tray::DateView* GetDateView() const {
+    return date_view_;
+  }
 
  private:
   // Overridden from views::ButtonListener.
   virtual void ButtonPressed(views::Button* sender,
                              const ui::Event& event) OVERRIDE {
     ash::Shell* shell = ash::Shell::GetInstance();
-    ash::ShellDelegate* shell_delegate = shell->delegate();
     ash::SystemTrayDelegate* tray_delegate = shell->system_tray_delegate();
     if (sender == help_) {
-      shell_delegate->RecordUserMetricsAction(ash::UMA_TRAY_HELP);
+      shell->metrics()->RecordUserMetricsAction(ash::UMA_TRAY_HELP);
       tray_delegate->ShowHelp();
     } else if (sender == shutdown_) {
-      shell_delegate->RecordUserMetricsAction(ash::UMA_TRAY_SHUT_DOWN);
+      shell->metrics()->RecordUserMetricsAction(ash::UMA_TRAY_SHUT_DOWN);
       tray_delegate->ShutDown();
     } else if (sender == lock_) {
-      shell_delegate->RecordUserMetricsAction(ash::UMA_TRAY_LOCK_SCREEN);
+      shell->metrics()->RecordUserMetricsAction(ash::UMA_TRAY_LOCK_SCREEN);
       tray_delegate->RequestLockScreen();
     } else {
       NOTREACHED();
     }
   }
 
-  ash::internal::TrayPopupHeaderButton* help_;
-  ash::internal::TrayPopupHeaderButton* shutdown_;
-  ash::internal::TrayPopupHeaderButton* lock_;
+  TrayPopupHeaderButton* help_;
+  TrayPopupHeaderButton* shutdown_;
+  TrayPopupHeaderButton* lock_;
+  tray::DateView* date_view_;
 
   DISALLOW_COPY_AND_ASSIGN(DateDefaultView);
 };
 
-}  // namespace
-
-namespace ash {
-namespace internal {
-
 TrayDate::TrayDate(SystemTray* system_tray)
     : SystemTrayItem(system_tray),
-      time_tray_(NULL) {
+      time_tray_(NULL),
+      default_view_(NULL) {
+#if defined(OS_CHROMEOS)
+  system_clock_observer_.reset(new SystemClockObserver());
+#endif
   Shell::GetInstance()->system_tray_notifier()->AddClockObserver(this);
 }
 
 TrayDate::~TrayDate() {
   Shell::GetInstance()->system_tray_notifier()->RemoveClockObserver(this);
+}
+
+views::View* TrayDate::GetHelpButtonView() const {
+  if (!default_view_)
+    return NULL;
+  return default_view_->GetHelpButtonView();
 }
 
 views::View* TrayDate::CreateTrayView(user::LoginStatus status) {
@@ -161,7 +186,8 @@ views::View* TrayDate::CreateTrayView(user::LoginStatus status) {
 }
 
 views::View* TrayDate::CreateDefaultView(user::LoginStatus status) {
-  return new DateDefaultView(status);
+  default_view_ = new DateDefaultView(status);
+  return default_view_;
 }
 
 views::View* TrayDate::CreateDetailedView(user::LoginStatus status) {
@@ -173,6 +199,7 @@ void TrayDate::DestroyTrayView() {
 }
 
 void TrayDate::DestroyDefaultView() {
+  default_view_ = NULL;
 }
 
 void TrayDate::DestroyDetailedView() {
@@ -193,11 +220,15 @@ void TrayDate::UpdateAfterShelfAlignmentChange(ShelfAlignment alignment) {
 void TrayDate::OnDateFormatChanged() {
   if (time_tray_)
     time_tray_->UpdateTimeFormat();
+  if (default_view_)
+    default_view_->GetDateView()->UpdateTimeFormat();
 }
 
 void TrayDate::OnSystemClockTimeUpdated() {
   if (time_tray_)
     time_tray_->UpdateTimeFormat();
+  if (default_view_)
+    default_view_->GetDateView()->UpdateTimeFormat();
 }
 
 void TrayDate::Refresh() {

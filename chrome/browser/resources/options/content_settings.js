@@ -116,7 +116,7 @@ cr.define('options', function() {
         continue;
       // Create a synthetic pref change event decorated as
       // CoreOptionsHandler::CreateValueForPref() does.
-      var event = new cr.Event(group);
+      var event = new Event(group);
       event.value = {
         value: dict[group].value,
         controlledBy: controlledBy,
@@ -153,7 +153,8 @@ cr.define('options', function() {
     OptionsPage.hideBubble();
     // Create a synthetic pref change event decorated as
     // CoreOptionsHandler::CreateValueForPref() does.
-    var event = new cr.Event();
+    // TODO(arv): It was not clear what event type this should use?
+    var event = new Event('undefined');
     event.value = {};
 
     if (mediaSettings.showBubble) {
@@ -273,6 +274,17 @@ cr.define('options', function() {
     if (defaultIndex >= 0)
       deviceSelect.selectedIndex = defaultIndex;
   };
+
+  /**
+   * Enables/disables the protected content exceptions button.
+   * @param {bool} enable Whether to enable the button.
+   */
+  ContentSettings.enableProtectedContentExceptions = function(enable) {
+    var exceptionsButton = $('protected-content-exceptions');
+    if (exceptionsButton) {
+      exceptionsButton.disabled = !enable;
+    }
+  }
 
   /**
    * Set the default microphone device based on the popup selection.

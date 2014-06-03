@@ -57,7 +57,13 @@ def main():
     parser.print_help()
     return 1
 
-  return bisect_utils.CreateBisectDirectoryAndSetupDepot(opts)
+  if not bisect_utils.CheckIfBisectDepotExists(opts):
+    try:
+      bisect_utils.CreateBisectDirectoryAndSetupDepot(opts,
+          bisect_utils.DEFAULT_GCLIENT_CUSTOM_DEPS)
+    except RuntimeError:
+      return 1
+  return 0
 
 
 if __name__ == '__main__':

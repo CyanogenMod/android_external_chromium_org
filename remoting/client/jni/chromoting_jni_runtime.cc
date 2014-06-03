@@ -4,18 +4,138 @@
 
 #include "remoting/client/jni/chromoting_jni_runtime.h"
 
-#include "base/android/base_jni_registrar.h"
 #include "base/android/jni_android.h"
+#include "base/android/jni_array.h"
+#include "base/android/jni_string.h"
+#include "base/android/scoped_java_ref.h"
+#include "base/basictypes.h"
+#include "base/command_line.h"
 #include "base/memory/singleton.h"
+#include "base/stl_util.h"
 #include "base/synchronization/waitable_event.h"
+#include "google_apis/google_api_keys.h"
+#include "jni/JniInterface_jni.h"
 #include "media/base/yuv_convert.h"
-#include "net/android/net_jni_registrar.h"
 #include "remoting/base/url_request_context.h"
+#include "third_party/webrtc/modules/desktop_capture/desktop_frame.h"
 
-// Class and package name of the Java class supporting the methods we call.
-const char* const kJavaClass = "org/chromium/chromoting/jni/JniInterface";
+using base::android::ConvertJavaStringToUTF8;
+using base::android::ConvertUTF8ToJavaString;
+using base::android::ToJavaByteArray;
+
+namespace {
+
+const int kBytesPerPixel = 4;
+
+}  // namespace
 
 namespace remoting {
+
+bool RegisterJni(JNIEnv* env) {
+  return remoting::RegisterNativesImpl(env);
+}
+
+// Implementation of stubs defined in JniInterface_jni.h. These are the entry
+// points for JNI calls from Java into C++.
+
+static void LoadNative(JNIEnv* env, jclass clazz, jobject context) {
+  base::android::ScopedJavaLocalRef<jobject> context_activity(env, context);
+  base::android::InitApplicationContext(env, context_activity);
+
+  // The google_apis functions check the command-line arguments to make sure no
+  // runtime API keys have been specified by the environment. Unfortunately, we
+  // neither launch Chromium nor have a command line, so we need to prevent
+  // them from DCHECKing out when they go looking.
+  CommandLine::Init(0, NULL);
+
+  // Create the singleton now so that the Chromoting threads will be set up.
+  remoting::ChromotingJniRuntime::GetInstance();
+}
+
+static jstring GetApiKey(JNIEnv* env, jclass clazz) {
+  return env->NewStringUTF(google_apis::GetAPIKey().c_str());
+}
+
+static jstring GetClientId(JNIEnv* env, jclass clazz) {
+  return env->NewStringUTF(
+      google_apis::GetOAuth2ClientID(google_apis::CLIENT_REMOTING).c_str());
+}
+
+static jstring GetClientSecret(JNIEnv* env, jclass clazz) {
+  return env->NewStringUTF(
+      google_apis::GetOAuth2ClientSecret(google_apis::CLIENT_REMOTING).c_str());
+}
+
+static void Connect(JNIEnv* env,
+                    jclass clazz,
+                    jstring username,
+                    jstring authToken,
+                    jstring hostJid,
+                    jstring hostId,
+                    jstring hostPubkey,
+                    jstring pairId,
+                    jstring pairSecret) {
+  remoting::ChromotingJniRuntime::GetInstance()->ConnectToHost(
+      ConvertJavaStringToUTF8(env, username).c_str(),
+      ConvertJavaStringToUTF8(env, authToken).c_str(),
+      ConvertJavaStringToUTF8(env, hostJid).c_str(),
+      ConvertJavaStringToUTF8(env, hostId).c_str(),
+      ConvertJavaStringToUTF8(env, hostPubkey).c_str(),
+      ConvertJavaStringToUTF8(env, pairId).c_str(),
+      ConvertJavaStringToUTF8(env, pairSecret).c_str());
+}
+
+static void Disconnect(JNIEnv* env, jclass clazz) {
+  remoting::ChromotingJniRuntime::GetInstance()->DisconnectFromHost();
+}
+
+static void AuthenticationResponse(JNIEnv* env,
+                                   jclass clazz,
+                                   jstring pin,
+                                   jboolean createPair) {
+  remoting::ChromotingJniRuntime::GetInstance()->session()->ProvideSecret(
+      ConvertJavaStringToUTF8(env, pin).c_str(), createPair);
+}
+
+static void ScheduleRedraw(JNIEnv* env, jclass clazz) {
+  remoting::ChromotingJniRuntime::GetInstance()->session()->RedrawDesktop();
+}
+
+static void MouseAction(JNIEnv* env,
+                        jclass clazz,
+                        jint x,
+                        jint y,
+                        jint whichButton,
+                        jboolean buttonDown) {
+  // Button must be within the bounds of the MouseEvent_MouseButton enum.
+  DCHECK(whichButton >= 0 && whichButton < 5);
+
+  remoting::ChromotingJniRuntime::GetInstance()->session()->PerformMouseAction(
+      x,
+      y,
+      static_cast<remoting::protocol::MouseEvent_MouseButton>(whichButton),
+      buttonDown);
+}
+
+static void MouseWheelDeltaAction(JNIEnv* env,
+                                  jclass clazz,
+                                  jint delta_x,
+                                  jint delta_y) {
+  remoting::ChromotingJniRuntime::GetInstance()
+      ->session()
+      ->PerformMouseWheelDeltaAction(delta_x, delta_y);
+}
+
+static void KeyboardAction(JNIEnv* env,
+                           jclass clazz,
+                           jint keyCode,
+                           jboolean keyDown) {
+  remoting::ChromotingJniRuntime::GetInstance()
+      ->session()
+      ->PerformKeyboardAction(keyCode, keyDown);
+}
+
+// ChromotingJniRuntime implementation.
 
 // static
 ChromotingJniRuntime* ChromotingJniRuntime::GetInstance() {
@@ -23,24 +143,13 @@ ChromotingJniRuntime* ChromotingJniRuntime::GetInstance() {
 }
 
 ChromotingJniRuntime::ChromotingJniRuntime() {
-  // Obtain a reference to the Java environment. (Future calls to this function
-  // made from the same thread return the same stored reference instead of
-  // repeating the work of attaching to the JVM.)
-  JNIEnv* env = base::android::AttachCurrentThread();
-
-  // The base and networks stacks must be registered with JNI in order to work
-  // on Android. An AtExitManager cleans this up at process exit.
   at_exit_manager_.reset(new base::AtExitManager());
-  base::android::RegisterJni(env);
-  net::android::RegisterJni(env);
 
   // On Android, the UI thread is managed by Java, so we need to attach and
   // start a special type of message loop to allow Chromium code to run tasks.
-  LOG(INFO) << "Starting main message loop";
   ui_loop_.reset(new base::MessageLoopForUI());
   ui_loop_->Start();
 
-  LOG(INFO) << "Spawning additional threads";
   // TODO(solb) Stop pretending to control the managed UI thread's lifetime.
   ui_task_runner_ = new AutoThreadTaskRunner(ui_loop_->message_loop_proxy(),
                                              base::MessageLoop::QuitClosure());
@@ -50,13 +159,10 @@ ChromotingJniRuntime::ChromotingJniRuntime() {
   display_task_runner_ = AutoThread::Create("native_disp",
                                             ui_task_runner_);
 
-  url_requester_ = new URLRequestContextGetter(ui_task_runner_,
-                                               network_task_runner_);
+  url_requester_ = new URLRequestContextGetter(network_task_runner_);
 
   // Allows later decoding of video frames.
   media::InitializeCPUSpecificYUVConversions();
-
-  class_ = static_cast<jclass>(env->NewGlobalRef(env->FindClass(kJavaClass)));
 }
 
 ChromotingJniRuntime::~ChromotingJniRuntime() {
@@ -66,9 +172,6 @@ ChromotingJniRuntime::~ChromotingJniRuntime() {
   // The session must be shut down first, since it depends on our other
   // components' still being alive.
   DisconnectFromHost();
-
-  JNIEnv* env = base::android::AttachCurrentThread();
-  env->DeleteGlobalRef(class_);
 
   base::WaitableEvent done_event(false, false);
   network_task_runner_->PostTask(FROM_HERE, base::Bind(
@@ -117,20 +220,14 @@ void ChromotingJniRuntime::ReportConnectionStatus(
   DCHECK(ui_task_runner_->BelongsToCurrentThread());
 
   JNIEnv* env = base::android::AttachCurrentThread();
-  env->CallStaticVoidMethod(
-    class_,
-    env->GetStaticMethodID(class_, "reportConnectionStatus", "(II)V"),
-    state,
-    error);
+  Java_JniInterface_reportConnectionStatus(env, state, error);
 }
 
-void ChromotingJniRuntime::DisplayAuthenticationPrompt() {
+void ChromotingJniRuntime::DisplayAuthenticationPrompt(bool pairing_supported) {
   DCHECK(ui_task_runner_->BelongsToCurrentThread());
 
   JNIEnv* env = base::android::AttachCurrentThread();
-  env->CallStaticVoidMethod(
-      class_,
-      env->GetStaticMethodID(class_, "displayAuthenticationPrompt", "()V"));
+  Java_JniInterface_displayAuthenticationPrompt(env, pairing_supported);
 }
 
 void ChromotingJniRuntime::CommitPairingCredentials(const std::string& host,
@@ -139,55 +236,57 @@ void ChromotingJniRuntime::CommitPairingCredentials(const std::string& host,
   DCHECK(ui_task_runner_->BelongsToCurrentThread());
 
   JNIEnv* env = base::android::AttachCurrentThread();
-  jstring host_jstr = env->NewStringUTF(host.c_str());
-  jbyteArray id_arr = env->NewByteArray(id.size());
-  env->SetByteArrayRegion(id_arr, 0, id.size(),
-      reinterpret_cast<const jbyte*>(id.c_str()));
-  jbyteArray secret_arr = env->NewByteArray(secret.size());
-  env->SetByteArrayRegion(secret_arr, 0, secret.size(),
-      reinterpret_cast<const jbyte*>(secret.c_str()));
+  ScopedJavaLocalRef<jstring> j_host = ConvertUTF8ToJavaString(env, host);
+  ScopedJavaLocalRef<jbyteArray> j_id = ToJavaByteArray(
+      env, reinterpret_cast<const uint8*>(id.data()), id.size());
+  ScopedJavaLocalRef<jbyteArray> j_secret = ToJavaByteArray(
+      env, reinterpret_cast<const uint8*>(secret.data()), secret.size());
 
-  env->CallStaticVoidMethod(
-      class_,
-      env->GetStaticMethodID(
-          class_,
-          "commitPairingCredentials",
-          "(Ljava/lang/String;[B[B)V"),
-      host_jstr,
-      id_arr,
-      secret_arr);
-
-  // Because we passed them as arguments, their corresponding Java objects were
-  // GCd as soon as the managed method returned, so we mustn't release it here.
+  Java_JniInterface_commitPairingCredentials(
+      env, j_host.obj(), j_id.obj(), j_secret.obj());
 }
 
-void ChromotingJniRuntime::UpdateImageBuffer(int width,
-                                             int height,
-                                             jobject buffer) {
+base::android::ScopedJavaLocalRef<jobject> ChromotingJniRuntime::NewBitmap(
+    webrtc::DesktopSize size) {
+  JNIEnv* env = base::android::AttachCurrentThread();
+  return Java_JniInterface_newBitmap(env, size.width(), size.height());
+}
+
+void ChromotingJniRuntime::UpdateFrameBitmap(jobject bitmap) {
   DCHECK(display_task_runner_->BelongsToCurrentThread());
 
   JNIEnv* env = base::android::AttachCurrentThread();
-  env->SetStaticIntField(
-      class_,
-      env->GetStaticFieldID(class_, "sWidth", "I"),
-      width);
-  env->SetStaticIntField(
-      class_,
-      env->GetStaticFieldID(class_, "sHeight", "I"),
-      height);
-  env->SetStaticObjectField(
-      class_,
-      env->GetStaticFieldID(class_, "sBuffer", "Ljava/nio/ByteBuffer;"),
-      buffer);
+  Java_JniInterface_setVideoFrame(env, bitmap);
+}
+
+void ChromotingJniRuntime::UpdateCursorShape(
+    const protocol::CursorShapeInfo& cursor_shape) {
+  DCHECK(display_task_runner_->BelongsToCurrentThread());
+
+  // const_cast<> is safe as long as the Java updateCursorShape() method copies
+  // the data out of the buffer without mutating it, and doesn't keep any
+  // reference to the buffer afterwards. Unfortunately, there seems to be no way
+  // to create a read-only ByteBuffer from a pointer-to-const.
+  char* data = string_as_array(const_cast<std::string*>(&cursor_shape.data()));
+  int cursor_total_bytes =
+      cursor_shape.width() * cursor_shape.height() * kBytesPerPixel;
+
+  JNIEnv* env = base::android::AttachCurrentThread();
+  base::android::ScopedJavaLocalRef<jobject> buffer(env,
+      env->NewDirectByteBuffer(data, cursor_total_bytes));
+  Java_JniInterface_updateCursorShape(env,
+                                      cursor_shape.width(),
+                                      cursor_shape.height(),
+                                      cursor_shape.hotspot_x(),
+                                      cursor_shape.hotspot_y(),
+                                      buffer.obj());
 }
 
 void ChromotingJniRuntime::RedrawCanvas() {
   DCHECK(display_task_runner_->BelongsToCurrentThread());
 
   JNIEnv* env = base::android::AttachCurrentThread();
-  env->CallStaticVoidMethod(
-      class_,
-      env->GetStaticMethodID(class_, "redrawGraphicsInternal", "()V"));
+  Java_JniInterface_redrawGraphicsInternal(env);
 }
 
 void ChromotingJniRuntime::DetachFromVmAndSignal(base::WaitableEvent* waiter) {

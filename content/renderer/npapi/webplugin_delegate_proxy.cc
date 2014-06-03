@@ -28,12 +28,14 @@
 #include "content/child/npapi/npobject_proxy.h"
 #include "content/child/npapi/npobject_stub.h"
 #include "content/child/npapi/npobject_util.h"
-#include "content/child/npapi/webplugin.h"
+#include "content/child/npapi/webplugin_resource_client.h"
 #include "content/child/plugin_messages.h"
 #include "content/common/content_constants_internal.h"
+#include "content/common/frame_messages.h"
 #include "content/common/view_messages.h"
 #include "content/public/renderer/content_renderer_client.h"
 #include "content/renderer/npapi/plugin_channel_host.h"
+#include "content/renderer/npapi/webplugin_impl.h"
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/render_view_impl.h"
 #include "content/renderer/sad_plugin.h"
@@ -52,7 +54,6 @@
 #include "ui/gfx/size.h"
 #include "ui/gfx/skia_util.h"
 #include "webkit/common/cursors/webcursor.h"
-#include "webkit/glue/webkit_glue.h"
 
 #if defined(OS_POSIX)
 #include "ipc/ipc_channel_posix.h"
@@ -66,12 +67,12 @@
 #include "content/public/common/sandbox_init.h"
 #endif
 
-using WebKit::WebBindings;
-using WebKit::WebCursorInfo;
-using WebKit::WebDragData;
-using WebKit::WebInputEvent;
-using WebKit::WebString;
-using WebKit::WebView;
+using blink::WebBindings;
+using blink::WebCursorInfo;
+using blink::WebDragData;
+using blink::WebInputEvent;
+using blink::WebString;
+using blink::WebView;
 
 namespace content {
 
@@ -200,10 +201,13 @@ class ResourceClientProxy : public WebPluginResourceClient {
 }  // namespace
 
 WebPluginDelegateProxy::WebPluginDelegateProxy(
+    WebPluginImpl* plugin,
     const std::string& mime_type,
-    const base::WeakPtr<RenderViewImpl>& render_view)
+    const base::WeakPtr<RenderViewImpl>& render_view,
+    RenderFrameImpl* render_frame)
     : render_view_(render_view),
-      plugin_(NULL),
+      render_frame_(render_frame),
+      plugin_(plugin),
       uses_shared_bitmaps_(false),
 #if defined(OS_MACOSX)
       uses_compositor_(false),
@@ -283,7 +287,6 @@ bool WebPluginDelegateProxy::Initialize(
     const GURL& url,
     const std::vector<std::string>& arg_names,
     const std::vector<std::string>& arg_values,
-    WebPlugin* plugin,
     bool load_manually) {
   // TODO(shess): Attempt to work around http://crbug.com/97285 and
   // http://crbug.com/141055 by retrying the connection.  Reports seem
@@ -305,8 +308,8 @@ bool WebPluginDelegateProxy::Initialize(
 #endif
 
     IPC::ChannelHandle channel_handle;
-    if (!RenderThreadImpl::current()->Send(new ViewHostMsg_OpenChannelToPlugin(
-            render_view_->routing_id(), url, page_url_, mime_type_,
+    if (!RenderThreadImpl::current()->Send(new FrameHostMsg_OpenChannelToPlugin(
+            render_frame_->GetRoutingID(), url, page_url_, mime_type_,
             &channel_handle, &info_))) {
       continue;
     }
@@ -316,7 +319,8 @@ bool WebPluginDelegateProxy::Initialize(
       // shouldn't happen, since if we got here the plugin should exist) or the
       // plugin crashed on initialization.
       if (!info_.path.empty()) {
-        render_view_->PluginCrashed(info_.path, base::kNullProcessId);
+        render_view_->main_render_frame()->PluginCrashed(
+            info_.path, base::kNullProcessId);
         LOG(ERROR) << "Plug-in crashed on start";
 
         // Return true so that the plugin widget is created and we can paint the
@@ -372,13 +376,11 @@ bool WebPluginDelegateProxy::Initialize(
   params.host_render_view_routing_id = render_view_->routing_id();
   params.load_manually = load_manually;
 
-  plugin_ = plugin;
-
   result = false;
   Send(new PluginMsg_Init(instance_id_, params, &transparent_, &result));
 
   if (!result)
-    LOG(ERROR) << "PluginMsg_Init returned false";
+    LOG(WARNING) << "PluginMsg_Init returned false";
 
   render_view_->RegisterPluginDelegate(this);
 
@@ -439,10 +441,6 @@ bool WebPluginDelegateProxy::OnMessageReceived(const IPC::Message& msg) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(WebPluginDelegateProxy, msg)
     IPC_MESSAGE_HANDLER(PluginHostMsg_SetWindow, OnSetWindow)
-#if defined(OS_WIN)
-    IPC_MESSAGE_HANDLER(PluginHostMsg_SetWindowlessData, OnSetWindowlessData)
-    IPC_MESSAGE_HANDLER(PluginHostMsg_NotifyIMEStatus, OnNotifyIMEStatus)
-#endif
     IPC_MESSAGE_HANDLER(PluginHostMsg_CancelResource, OnCancelResource)
     IPC_MESSAGE_HANDLER(PluginHostMsg_InvalidateRect, OnInvalidateRect)
     IPC_MESSAGE_HANDLER(PluginHostMsg_GetWindowScriptNPObject,
@@ -455,9 +453,18 @@ bool WebPluginDelegateProxy::OnMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(PluginHostMsg_CancelDocumentLoad, OnCancelDocumentLoad)
     IPC_MESSAGE_HANDLER(PluginHostMsg_InitiateHTTPRangeRequest,
                         OnInitiateHTTPRangeRequest)
+    IPC_MESSAGE_HANDLER(PluginHostMsg_DidStartLoading, OnDidStartLoading)
+    IPC_MESSAGE_HANDLER(PluginHostMsg_DidStopLoading, OnDidStopLoading)
     IPC_MESSAGE_HANDLER(PluginHostMsg_DeferResourceLoading,
                         OnDeferResourceLoading)
-
+    IPC_MESSAGE_HANDLER(PluginHostMsg_URLRedirectResponse,
+                        OnURLRedirectResponse)
+    IPC_MESSAGE_HANDLER(PluginHostMsg_CheckIfRunInsecureContent,
+                        OnCheckIfRunInsecureContent)
+#if defined(OS_WIN)
+    IPC_MESSAGE_HANDLER(PluginHostMsg_SetWindowlessData, OnSetWindowlessData)
+    IPC_MESSAGE_HANDLER(PluginHostMsg_NotifyIMEStatus, OnNotifyIMEStatus)
+#endif
 #if defined(OS_MACOSX)
     IPC_MESSAGE_HANDLER(PluginHostMsg_FocusChanged,
                         OnFocusChanged);
@@ -470,8 +477,6 @@ bool WebPluginDelegateProxy::OnMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(PluginHostMsg_AcceleratedPluginSwappedIOSurface,
                         OnAcceleratedPluginSwappedIOSurface)
 #endif
-    IPC_MESSAGE_HANDLER(PluginHostMsg_URLRedirectResponse,
-                        OnURLRedirectResponse)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   DCHECK(handled);
@@ -487,8 +492,10 @@ void WebPluginDelegateProxy::OnChannelError() {
     }
     plugin_->Invalidate();
   }
-  if (!channel_host_->expecting_shutdown())
-    render_view_->PluginCrashed(info_.path, channel_host_->peer_pid());
+  if (!channel_host_->expecting_shutdown()) {
+    render_view_->main_render_frame()->PluginCrashed(
+        info_.path, channel_host_->peer_pid());
+  }
 
 #if defined(OS_MACOSX) || defined(OS_WIN)
   // Ensure that the renderer doesn't think the plugin still has focus.
@@ -664,15 +671,7 @@ bool WebPluginDelegateProxy::CreateSharedBitmap(
   return !!canvas->get();
 }
 
-#if defined(OS_MACOSX)
-// Flips |rect| vertically within an enclosing rect with height |height|.
-// Intended for converting rects between flipped and non-flipped contexts.
-static void FlipRectVerticallyWithHeight(gfx::Rect* rect, int height) {
-  rect->set_y(height - rect->bottom());
-}
-#endif
-
-void WebPluginDelegateProxy::Paint(WebKit::WebCanvas* canvas,
+void WebPluginDelegateProxy::Paint(SkCanvas* canvas,
                                    const gfx::Rect& damaged_rect) {
   // Limit the damaged rectangle to whatever is contained inside the plugin
   // rectangle, as that's the rectangle that we'll actually draw.
@@ -753,7 +752,7 @@ NPP WebPluginDelegateProxy::GetPluginNPP() {
   return npp_.get();
 }
 
-bool WebPluginDelegateProxy::GetFormValue(string16* value) {
+bool WebPluginDelegateProxy::GetFormValue(base::string16* value) {
   bool success = false;
   Send(new PluginMsg_GetFormValue(instance_id_, value, &success));
   return success;
@@ -804,7 +803,7 @@ void WebPluginDelegateProxy::SetContentAreaFocus(bool has_focus) {
 
 #if defined(OS_WIN)
 void WebPluginDelegateProxy::ImeCompositionUpdated(
-    const string16& text,
+    const base::string16& text,
     const std::vector<int>& clauses,
     const std::vector<int>& target,
     int cursor_position,
@@ -819,7 +818,7 @@ void WebPluginDelegateProxy::ImeCompositionUpdated(
   Send(msg);
 }
 
-void WebPluginDelegateProxy::ImeCompositionCompleted(const string16& text,
+void WebPluginDelegateProxy::ImeCompositionCompleted(const base::string16& text,
                                                      int plugin_id) {
   // Dispatch the IME text if this plug-in is the focused one.
   if (instance_id_ != plugin_id)
@@ -846,7 +845,7 @@ void WebPluginDelegateProxy::SetContainerVisibility(bool is_visible) {
   if (is_visible) {
     gfx::Rect window_frame = render_view_->rootWindowRect();
     gfx::Rect view_frame = render_view_->windowRect();
-    WebKit::WebView* webview = render_view_->webview();
+    blink::WebView* webview = render_view_->webview();
     msg = new PluginMsg_ContainerShown(instance_id_, window_frame, view_frame,
                                        webview && webview->isActive());
   } else {
@@ -868,7 +867,7 @@ void WebPluginDelegateProxy::WindowFrameChanged(gfx::Rect window_frame,
   msg->set_unblock(true);
   Send(msg);
 }
-void WebPluginDelegateProxy::ImeCompositionCompleted(const string16& text,
+void WebPluginDelegateProxy::ImeCompositionCompleted(const base::string16& text,
                                                      int plugin_id) {
   // If the message isn't intended for this plugin, there's nothing to do.
   if (instance_id_ != plugin_id)
@@ -927,13 +926,13 @@ void WebPluginDelegateProxy::OnNotifyIMEStatus(int input_type,
   render_view_->Send(new ViewHostMsg_TextInputTypeChanged(
       render_view_->routing_id(),
       static_cast<ui::TextInputType>(input_type),
-      true,
-      ui::TEXT_INPUT_MODE_DEFAULT));
+      ui::TEXT_INPUT_MODE_DEFAULT,
+      true));
 
   ViewHostMsg_SelectionBounds_Params bounds_params;
   bounds_params.anchor_rect = bounds_params.focus_rect = caret_rect;
   bounds_params.anchor_dir = bounds_params.focus_dir =
-      WebKit::WebTextDirectionLeftToRight;
+      blink::WebTextDirectionLeftToRight;
   bounds_params.is_anchor_first = true;
   render_view_->Send(new ViewHostMsg_SelectionBoundsChanged(
       render_view_->routing_id(),
@@ -1118,6 +1117,35 @@ WebPluginResourceClient* WebPluginDelegateProxy::CreateSeekableResourceClient(
   return proxy;
 }
 
+void WebPluginDelegateProxy::FetchURL(unsigned long resource_id,
+                                      int notify_id,
+                                      const GURL& url,
+                                      const GURL& first_party_for_cookies,
+                                      const std::string& method,
+                                      const char* buf,
+                                      unsigned int len,
+                                      const GURL& referrer,
+                                      bool notify_redirects,
+                                      bool is_plugin_src_load,
+                                      int origin_pid,
+                                      int render_view_id) {
+  PluginMsg_FetchURL_Params params;
+  params.resource_id = resource_id;
+  params.notify_id = notify_id;
+  params.url = url;
+  params.first_party_for_cookies = first_party_for_cookies;
+  params.method = method;
+  if (len) {
+    params.post_data.resize(len);
+    memcpy(&params.post_data.front(), buf, len);
+  }
+  params.referrer = referrer;
+  params.notify_redirect = notify_redirects;
+  params.is_plugin_src_load = is_plugin_src_load;
+  params.render_view_id = render_view_id;
+  Send(new PluginMsg_FetchURL(instance_id_, params));
+}
+
 #if defined(OS_MACOSX)
 void WebPluginDelegateProxy::OnFocusChanged(bool focused) {
   if (render_view_)
@@ -1144,6 +1172,14 @@ void WebPluginDelegateProxy::OnInitiateHTTPRangeRequest(
     int range_request_id) {
   plugin_->InitiateHTTPRangeRequest(
       url.c_str(), range_info.c_str(), range_request_id);
+}
+
+void WebPluginDelegateProxy::OnDidStartLoading() {
+  plugin_->DidStartLoading();
+}
+
+void WebPluginDelegateProxy::OnDidStopLoading() {
+  plugin_->DidStopLoading();
 }
 
 void WebPluginDelegateProxy::OnDeferResourceLoading(unsigned long resource_id,
@@ -1176,7 +1212,8 @@ bool WebPluginDelegateProxy::UseSynchronousGeometryUpdates() {
   // Need to update geometry synchronously with WMP, otherwise if a site
   // scripts the plugin to start playing while it's in the middle of handling
   // an update geometry message, videos don't play.  See urls in bug 20260.
-  if (info_.name.find(ASCIIToUTF16("Windows Media Player")) != string16::npos)
+  if (info_.name.find(ASCIIToUTF16("Windows Media Player")) !=
+      base::string16::npos)
     return true;
 
   // The move networks plugin needs to be informed of geometry updates
@@ -1201,6 +1238,11 @@ void WebPluginDelegateProxy::OnURLRedirectResponse(bool allow,
     return;
 
   plugin_->URLRedirectResponse(allow, resource_id);
+}
+
+void WebPluginDelegateProxy::OnCheckIfRunInsecureContent(const GURL& url,
+                                                         bool* result) {
+  *result = plugin_->CheckIfRunInsecureContent(url);
 }
 
 }  // namespace content

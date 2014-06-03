@@ -20,11 +20,7 @@ namespace base {
 class SequencedTaskRunner;
 }
 
-namespace chrome {
-
-namespace test {
 class TestPortableDeviceWatcherWin;
-}
 
 // This class watches the portable device mount points and sends notifications
 // about the attached/detached media transfer protocol (MTP) devices.
@@ -33,17 +29,17 @@ class TestPortableDeviceWatcherWin;
 // tasks it spins off to a SequencedTaskRunner.
 class PortableDeviceWatcherWin {
  public:
-  typedef std::vector<string16> StorageObjectIDs;
+  typedef std::vector<base::string16> StorageObjectIDs;
 
   struct DeviceStorageObject {
-    DeviceStorageObject(const string16& temporary_id,
+    DeviceStorageObject(const base::string16& temporary_id,
                         const std::string& persistent_id);
 
     // Storage object temporary identifier, e.g. "s10001". This string ID
     // uniquely identifies the object on the device. This ID need not be
     // persistent across sessions. This ID is obtained from WPD_OBJECT_ID
     // property.
-    string16 object_temporary_id;
+    base::string16 object_temporary_id;
 
     // Storage object persistent identifier,
     // e.g. "StorageSerial:<SID-{10001,D,31080448}>:<123456789>".
@@ -54,10 +50,10 @@ class PortableDeviceWatcherWin {
   // Struct to store attached MTP device details.
   struct DeviceDetails {
     // Device name.
-    string16 name;
+    base::string16 name;
 
     // Device interface path.
-    string16 location;
+    base::string16 location;
 
     // Device storage details. A device can have multiple data partitions.
     StorageObjects storage_objects;
@@ -83,11 +79,11 @@ class PortableDeviceWatcherWin {
   // identifier.
   virtual bool GetMTPStorageInfoFromDeviceId(
       const std::string& storage_device_id,
-      string16* device_location,
-      string16* storage_object_id) const;
+      base::string16* device_location,
+      base::string16* storage_object_id) const;
 
   // Constructs and returns a storage path from storage unique identifier.
-  static string16 GetStoragePathFromStorageId(
+  static base::string16 GetStoragePathFromStorageId(
       const std::string& storage_unique_id);
 
   // Set the volume notifications object to be used when new
@@ -98,7 +94,7 @@ class PortableDeviceWatcherWin {
                    base::Callback<void(StorageMonitor::EjectStatus)> callback);
 
  private:
-  friend class test::TestPortableDeviceWatcherWin;
+  friend class TestPortableDeviceWatcherWin;
 
   // Key: MTP device storage unique id.
   // Value: Metadata for the given storage.
@@ -106,7 +102,7 @@ class PortableDeviceWatcherWin {
 
   // Key: MTP device plug and play ID string.
   // Value: Vector of device storage objects.
-  typedef std::map<string16, StorageObjects> MTPDeviceMap;
+  typedef std::map<base::string16, StorageObjects> MTPDeviceMap;
 
   // Helpers to enumerate existing MTP storage devices.
   virtual void EnumerateAttachedDevices();
@@ -114,12 +110,12 @@ class PortableDeviceWatcherWin {
                                      const bool result);
 
   // Helpers to handle device attach event.
-  virtual void HandleDeviceAttachEvent(const string16& pnp_device_id);
+  virtual void HandleDeviceAttachEvent(const base::string16& pnp_device_id);
   void OnDidHandleDeviceAttachEvent(const DeviceDetails* device_details,
                                     const bool result);
 
   // Handles the detach event of the device specified by |pnp_device_id|.
-  void HandleDeviceDetachEvent(const string16& pnp_device_id);
+  void HandleDeviceDetachEvent(const base::string16& pnp_device_id);
 
   // The portable device notifications handle.
   HDEVNOTIFY notifications_;
@@ -142,7 +138,5 @@ class PortableDeviceWatcherWin {
 
   DISALLOW_COPY_AND_ASSIGN(PortableDeviceWatcherWin);
 };
-
-}  // namespace chrome
 
 #endif  // CHROME_BROWSER_STORAGE_MONITOR_PORTABLE_DEVICE_WATCHER_WIN_H_

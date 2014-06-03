@@ -4,10 +4,7 @@
 
 #include "chrome/browser/printing/print_dialog_gtk.h"
 
-#include <fcntl.h>
 #include <gtk/gtkunixprint.h>
-#include <sys/stat.h>
-#include <sys/types.h>
 
 #include <string>
 #include <vector>
@@ -15,6 +12,7 @@
 #include "base/bind.h"
 #include "base/file_util.h"
 #include "base/files/file_util_proxy.h"
+#include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/strings/utf_string_conversions.h"
@@ -35,6 +33,33 @@ const char kCUPSDuplex[] = "cups-Duplex";
 const char kDuplexNone[] = "None";
 const char kDuplexTumble[] = "DuplexTumble";
 const char kDuplexNoTumble[] = "DuplexNoTumble";
+
+class StickyPrintSettingGtk {
+ public:
+  StickyPrintSettingGtk() : last_used_settings_(gtk_print_settings_new()) {
+  }
+  ~StickyPrintSettingGtk() {
+    NOTREACHED();  // Intended to be used with a Leaky LazyInstance.
+  }
+
+  GtkPrintSettings* settings() {
+    return last_used_settings_;
+  }
+
+  void SetLastUsedSettings(GtkPrintSettings* settings) {
+    DCHECK(last_used_settings_);
+    g_object_unref(last_used_settings_);
+    last_used_settings_ = gtk_print_settings_copy(settings);
+  }
+
+ private:
+  GtkPrintSettings* last_used_settings_;
+
+  DISALLOW_COPY_AND_ASSIGN(StickyPrintSettingGtk);
+};
+
+base::LazyInstance<StickyPrintSettingGtk>::Leaky g_last_used_settings =
+    LAZY_INSTANCE_INITIALIZER;
 
 // Helper class to track GTK printers.
 class GtkPrinterList {
@@ -59,13 +84,13 @@ class GtkPrinterList {
   // Can return NULL if the printer cannot be found due to:
   // - Printer list out of sync with printer dialog UI.
   // - Querying for non-existant printers like 'Print to PDF'.
-  GtkPrinter* GetPrinterWithName(const char* name) {
-    if (!name || !*name)
+  GtkPrinter* GetPrinterWithName(const std::string& name) {
+    if (name.empty())
       return NULL;
 
     for (std::vector<GtkPrinter*>::iterator it = printers_.begin();
          it < printers_.end(); ++it) {
-      if (strcmp(name, gtk_printer_get_name(*it)) == 0) {
+      if (gtk_printer_get_name(*it) == name) {
         return *it;
       }
     }
@@ -76,7 +101,7 @@ class GtkPrinterList {
  private:
   // Callback function used by gtk_enumerate_printers() to get all printer.
   static gboolean SetPrinter(GtkPrinter* printer, gpointer data) {
-    GtkPrinterList *printer_list = (GtkPrinterList*)data;
+    GtkPrinterList* printer_list = reinterpret_cast<GtkPrinterList*>(data);
     if (gtk_printer_is_default(printer))
       printer_list->default_printer_ = printer;
 
@@ -132,93 +157,72 @@ void PrintDialogGtk::UseDefaultSettings() {
   DCHECK(!page_setup_);
   DCHECK(!printer_);
 
-  // |gtk_settings_| is a new object.
-  gtk_settings_ = gtk_print_settings_new();
+  // |gtk_settings_| is a new copy.
+  gtk_settings_ =
+      gtk_print_settings_copy(g_last_used_settings.Get().settings());
   page_setup_ = gtk_page_setup_new();
 
-  // No page range to initialize for default settings.
-  PageRanges ranges_vector;
   PrintSettings settings;
-  InitPrintSettings(ranges_vector, &settings);
+  InitPrintSettings(&settings);
 }
 
-bool PrintDialogGtk::UpdateSettings(const base::DictionaryValue& job_settings,
-                                    const printing::PageRanges& ranges,
-                                    printing::PrintSettings* settings) {
-  bool collate;
-  int color;
-  bool landscape;
-  bool print_to_pdf;
-  int copies;
-  int duplex_mode;
-  std::string device_name;
-
-  if (!job_settings.GetBoolean(printing::kSettingLandscape, &landscape) ||
-      !job_settings.GetBoolean(printing::kSettingCollate, &collate) ||
-      !job_settings.GetInteger(printing::kSettingColor, &color) ||
-      !job_settings.GetBoolean(printing::kSettingPrintToPDF, &print_to_pdf) ||
-      !job_settings.GetInteger(printing::kSettingDuplexMode, &duplex_mode) ||
-      !job_settings.GetInteger(printing::kSettingCopies, &copies) ||
-      !job_settings.GetString(printing::kSettingDeviceName, &device_name)) {
-    return false;
+bool PrintDialogGtk::UpdateSettings(printing::PrintSettings* settings) {
+  if (!gtk_settings_) {
+    gtk_settings_ =
+        gtk_print_settings_copy(g_last_used_settings.Get().settings());
   }
 
-  bool is_cloud_print = job_settings.HasKey(printing::kSettingCloudPrintId);
-
-  if (!gtk_settings_)
-    gtk_settings_ = gtk_print_settings_new();
-
-  if (!print_to_pdf && !is_cloud_print) {
-    scoped_ptr<GtkPrinterList> printer_list(new GtkPrinterList);
-    printer_ = printer_list->GetPrinterWithName(device_name.c_str());
-    if (printer_) {
-      g_object_ref(printer_);
-      gtk_print_settings_set_printer(gtk_settings_,
-                                     gtk_printer_get_name(printer_));
-      if (!page_setup_) {
-        page_setup_ = gtk_printer_get_default_page_size(printer_);
-      }
+  scoped_ptr<GtkPrinterList> printer_list(new GtkPrinterList);
+  printer_ = printer_list->GetPrinterWithName(
+      UTF16ToUTF8(settings->device_name()));
+  if (printer_) {
+    g_object_ref(printer_);
+    gtk_print_settings_set_printer(gtk_settings_,
+                                   gtk_printer_get_name(printer_));
+    if (!page_setup_) {
+      page_setup_ = gtk_printer_get_default_page_size(printer_);
     }
+  }
 
-    gtk_print_settings_set_n_copies(gtk_settings_, copies);
-    gtk_print_settings_set_collate(gtk_settings_, collate);
+  gtk_print_settings_set_n_copies(gtk_settings_, settings->copies());
+  gtk_print_settings_set_collate(gtk_settings_, settings->collate());
 
 #if defined(USE_CUPS)
-    std::string color_value;
-    std::string color_setting_name;
-    printing::GetColorModelForMode(color, &color_setting_name, &color_value);
-    gtk_print_settings_set(gtk_settings_, color_setting_name.c_str(),
-                           color_value.c_str());
+  std::string color_value;
+  std::string color_setting_name;
+  printing::GetColorModelForMode(settings->color(), &color_setting_name,
+                                 &color_value);
+  gtk_print_settings_set(gtk_settings_, color_setting_name.c_str(),
+                         color_value.c_str());
 
-    if (duplex_mode != printing::UNKNOWN_DUPLEX_MODE) {
-      const char* cups_duplex_mode = NULL;
-      switch (duplex_mode) {
-        case printing::LONG_EDGE:
-          cups_duplex_mode = kDuplexNoTumble;
-          break;
-        case printing::SHORT_EDGE:
-          cups_duplex_mode = kDuplexTumble;
-          break;
-        case printing::SIMPLEX:
-          cups_duplex_mode = kDuplexNone;
-          break;
-        default:  // UNKNOWN_DUPLEX_MODE
-          NOTREACHED();
-          break;
-      }
-      gtk_print_settings_set(gtk_settings_, kCUPSDuplex, cups_duplex_mode);
+  if (settings->duplex_mode() != printing::UNKNOWN_DUPLEX_MODE) {
+    const char* cups_duplex_mode = NULL;
+    switch (settings->duplex_mode()) {
+      case printing::LONG_EDGE:
+        cups_duplex_mode = kDuplexNoTumble;
+        break;
+      case printing::SHORT_EDGE:
+        cups_duplex_mode = kDuplexTumble;
+        break;
+      case printing::SIMPLEX:
+        cups_duplex_mode = kDuplexNone;
+        break;
+      default:  // UNKNOWN_DUPLEX_MODE
+        NOTREACHED();
+        break;
     }
-#endif
+    gtk_print_settings_set(gtk_settings_, kCUPSDuplex, cups_duplex_mode);
   }
+#endif
   if (!page_setup_)
     page_setup_ = gtk_page_setup_new();
 
   gtk_print_settings_set_orientation(
       gtk_settings_,
-      landscape ? GTK_PAGE_ORIENTATION_LANDSCAPE :
-                  GTK_PAGE_ORIENTATION_PORTRAIT);
+      settings->landscape() ? GTK_PAGE_ORIENTATION_LANDSCAPE :
+                              GTK_PAGE_ORIENTATION_PORTRAIT);
 
-  InitPrintSettings(ranges, settings);
+  InitPrintSettings(settings);
   return true;
 }
 
@@ -254,12 +258,14 @@ void PrintDialogGtk::ShowDialog(
                                               TRUE);
   gtk_print_unix_dialog_set_has_selection(GTK_PRINT_UNIX_DIALOG(dialog_),
                                           has_selection);
+  gtk_print_unix_dialog_set_settings(GTK_PRINT_UNIX_DIALOG(dialog_),
+                                     gtk_settings_);
   g_signal_connect(dialog_, "response", G_CALLBACK(OnResponseThunk), this);
   gtk_widget_show(dialog_);
 }
 
 void PrintDialogGtk::PrintDocument(const printing::Metafile* metafile,
-                                   const string16& document_name) {
+                                   const base::string16& document_name) {
   // This runs on the print worker thread, does not block the UI thread.
   DCHECK(!BrowserThread::CurrentlyOn(BrowserThread::UI));
 
@@ -268,7 +274,7 @@ void PrintDialogGtk::PrintDocument(const printing::Metafile* metafile,
   AddRef();
 
   bool error = false;
-  if (!file_util::CreateTemporaryFile(&path_to_pdf_)) {
+  if (!base::CreateTemporaryFile(&path_to_pdf_)) {
     LOG(ERROR) << "Creating temporary file failed";
     error = true;
   }
@@ -300,6 +306,10 @@ void PrintDialogGtk::ReleaseDialog() {
 }
 
 void PrintDialogGtk::OnResponse(GtkWidget* dialog, int response_id) {
+  int num_matched_handlers = g_signal_handlers_disconnect_by_func(
+      dialog_, reinterpret_cast<gpointer>(&OnResponseThunk), this);
+  CHECK_EQ(1, num_matched_handlers);
+
   gtk_widget_hide(dialog_);
 
   switch (response_id) {
@@ -353,9 +363,10 @@ void PrintDialogGtk::OnResponse(GtkWidget* dialog, int response_id) {
       }
 
       PrintSettings settings;
+      settings.set_ranges(ranges_vector);
+      settings.set_selection_only(print_selection_only);
       printing::PrintSettingsInitializerGtk::InitPrintSettings(
-          gtk_settings_, page_setup_, ranges_vector, print_selection_only,
-          &settings);
+          gtk_settings_, page_setup_, &settings);
       context_->InitWithSettings(settings);
       callback_.Run(PrintingContextGtk::OK);
       callback_.Reset();
@@ -374,7 +385,8 @@ void PrintDialogGtk::OnResponse(GtkWidget* dialog, int response_id) {
   }
 }
 
-void PrintDialogGtk::SendDocumentToPrinter(const string16& document_name) {
+void PrintDialogGtk::SendDocumentToPrinter(
+    const base::string16& document_name) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   // If |printer_| is NULL then somehow the GTK printer list changed out under
@@ -384,6 +396,9 @@ void PrintDialogGtk::SendDocumentToPrinter(const string16& document_name) {
     Release();
     return;
   }
+
+  // Save the settings for next time.
+  g_last_used_settings.Get().SetLastUsedSettings(gtk_settings_);
 
   GtkPrintJob* print_job = gtk_print_job_new(
       UTF16ToUTF8(document_name).c_str(),
@@ -415,9 +430,8 @@ void PrintDialogGtk::OnJobCompleted(GtkPrintJob* print_job, GError* error) {
   Release();
 }
 
-void PrintDialogGtk::InitPrintSettings(const PageRanges& page_ranges,
-                                       PrintSettings* settings) {
+void PrintDialogGtk::InitPrintSettings(PrintSettings* settings) {
   printing::PrintSettingsInitializerGtk::InitPrintSettings(
-      gtk_settings_, page_setup_, page_ranges, false, settings);
+      gtk_settings_, page_setup_, settings);
   context_->InitWithSettings(*settings);
 }

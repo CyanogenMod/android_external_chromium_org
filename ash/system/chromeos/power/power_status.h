@@ -62,6 +62,9 @@ class ASH_EXPORT PowerStatus : public chromeos::PowerManagerClient::Observer {
   static bool ShouldDisplayBatteryTime(const base::TimeDelta& time);
 
   // Copies the hour and minute components of |time| to |hours| and |minutes|.
+  // The minute component is rounded rather than truncated: a |time| value
+  // corresponding to 92 seconds will produce a |minutes| value of 2, for
+  // example.
   static void SplitTimeIntoHoursAndMinutes(const base::TimeDelta& time,
                                            int* hours,
                                            int* minutes);
@@ -119,6 +122,9 @@ class ASH_EXPORT PowerStatus : public chromeos::PowerManagerClient::Observer {
   // Returns true if a USB charger (which is likely to only support a low
   // charging rate) is connected.
   bool IsUsbChargerConnected() const;
+
+  // Returns true if an original spring charger is connected.
+  bool IsOriginalSpringChargerConnected() const;
 
   // Returns the image that should be shown for the battery's current state.
   gfx::ImageSkia GetBatteryImage(IconSet icon_set) const;

@@ -6,11 +6,10 @@ package org.chromium.android_webview;
 
 import android.os.CancellationSignal;
 import android.os.ParcelFileDescriptor;
+import android.print.PrintAttributes;
 import android.util.Log;
 import android.view.ViewGroup;
 import android.webkit.ValueCallback;
-
-import java.io.OutputStream;
 
 import org.chromium.base.CalledByNative;
 import org.chromium.base.JNINamespace;
@@ -23,11 +22,11 @@ import org.chromium.base.JNINamespace;
 public class AwPdfExporter {
 
     private static final String TAG = "AwPdfExporter";
-    private int mNativeAwPdfExporter;
+    private long mNativeAwPdfExporter;
     // TODO(sgurun) result callback should return an int/object indicating errors.
     // potential errors: invalid print parameters, already pending, IO error
     private ValueCallback<Boolean> mResultCallback;
-    private AwPdfExportAttributes mAttributes;
+    private PrintAttributes mAttributes;
     private ParcelFileDescriptor mFd;
     // Maintain a reference to the top level object (i.e. WebView) since in a common
     // use case (offscreen webview) application may expect the framework's print manager
@@ -38,7 +37,7 @@ public class AwPdfExporter {
         mContainerView = containerView;
     }
 
-    public void exportToPdf(final ParcelFileDescriptor fd, AwPdfExportAttributes attributes,
+    public void exportToPdf(final ParcelFileDescriptor fd, PrintAttributes attributes,
             ValueCallback<Boolean> resultCallback, CancellationSignal cancellationSignal) {
 
         if (fd == null) {
@@ -49,6 +48,15 @@ public class AwPdfExporter {
         }
         if (mResultCallback != null) {
             throw new IllegalStateException("printing is already pending");
+        }
+        if (attributes.getMediaSize() == null) {
+            throw new  IllegalArgumentException("attributes must specify a media size");
+        }
+        if (attributes.getResolution() == null) {
+            throw new IllegalArgumentException("attributes must specify print resolution");
+        }
+        if (attributes.getMinMargins() == null) {
+            throw new IllegalArgumentException("attributes must specify margins");
         }
         if (mNativeAwPdfExporter == 0) {
             resultCallback.onReceiveValue(false);
@@ -71,6 +79,18 @@ public class AwPdfExporter {
         }
     }
 
+    private static int getPrintDpi(PrintAttributes attributes) {
+        // TODO(sgurun) android print attributes support horizontal and
+        // vertical DPI. Chrome has only one DPI. Revisit this.
+        int horizontalDpi = attributes.getResolution().getHorizontalDpi();
+        int verticalDpi = attributes.getResolution().getVerticalDpi();
+        if (horizontalDpi != verticalDpi) {
+            Log.w(TAG, "Horizontal and vertical DPIs differ. Using horizontal DPI " +
+                    " hDpi=" + horizontalDpi + " vDPI=" + verticalDpi);
+        }
+        return horizontalDpi;
+    }
+
     @CalledByNative
     private void didExportPdf(boolean success) {
         mResultCallback.onReceiveValue(success);
@@ -82,39 +102,39 @@ public class AwPdfExporter {
 
     @CalledByNative
     private int getPageWidth() {
-        return mAttributes.pageWidth;
+        return mAttributes.getMediaSize().getWidthMils();
     }
 
     @CalledByNative
     private int getPageHeight() {
-        return mAttributes.pageHeight;
+        return mAttributes.getMediaSize().getHeightMils();
     }
 
     @CalledByNative
     private int getDpi() {
-        return mAttributes.dpi;
+        return getPrintDpi(mAttributes);
     }
 
     @CalledByNative
     private int getLeftMargin() {
-        return mAttributes.leftMargin;
+        return mAttributes.getMinMargins().getLeftMils();
     }
 
     @CalledByNative
     private int getRightMargin() {
-        return mAttributes.rightMargin;
+        return mAttributes.getMinMargins().getRightMils();
     }
 
     @CalledByNative
     private int getTopMargin() {
-        return mAttributes.topMargin;
+        return mAttributes.getMinMargins().getTopMils();
     }
 
     @CalledByNative
     private int getBottomMargin() {
-        return mAttributes.bottomMargin;
+        return mAttributes.getMinMargins().getBottomMils();
     }
 
-    private native void nativeExportToPdf(int nativeAwPdfExporter, int fd,
+    private native void nativeExportToPdf(long nativeAwPdfExporter, int fd,
             CancellationSignal cancellationSignal);
 }

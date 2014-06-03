@@ -38,6 +38,7 @@
 #include "chrome/installer/gcapi/gcapi_reactivation.h"
 #include "chrome/installer/launcher_support/chrome_launcher_support.h"
 #include "chrome/installer/util/google_update_constants.h"
+#include "chrome/installer/util/google_update_settings.h"
 #include "chrome/installer/util/util_constants.h"
 #include "chrome/installer/util/wmi.h"
 #include "google_update/google_update_idl.h"
@@ -68,6 +69,15 @@ const wchar_t kChromeRegLastLaunchCmd[] = L"LastInstallerSuccessLaunchCmdLine";
 const wchar_t kChromeRegVersion[] = L"pv";
 const wchar_t kNoChromeOfferUntil[] =
     L"SOFTWARE\\Google\\No Chrome Offer Until";
+
+const wchar_t kC1FPendingKey[] =
+    L"Software\\Google\\Common\\Rlz\\Events\\C";
+const wchar_t kC1FSentKey[] =
+    L"Software\\Google\\Common\\Rlz\\StatefulEvents\\C";
+const wchar_t kC1FKey[] = L"C1F";
+
+const wchar_t kRelaunchBrandcodeValue[] = L"RelaunchBrandcode";
+const wchar_t kRelaunchAllowedAfterValue[] = L"RelaunchAllowedAfter";
 
 // Prefix used to match the window class for Chrome windows.
 const wchar_t kChromeWindowClassPrefix[] = L"Chrome_WidgetWin_";
@@ -123,6 +133,22 @@ bool GetCompanyName(const wchar_t* filename, wchar_t* buffer, DWORD out_len) {
   return true;
 }
 
+// Offsets the current date by |months|. |months| must be between 0 and 12.
+// The returned date is in the YYYYMMDD format.
+DWORD FormatDateOffsetByMonths(int months) {
+  DCHECK(months >= 0 && months <= 12);
+
+  SYSTEMTIME now;
+  GetLocalTime(&now);
+  now.wMonth += months;
+  if (now.wMonth > 12) {
+    now.wMonth -= 12;
+    now.wYear += 1;
+  }
+
+  return now.wYear * 10000 + now.wMonth * 100 + now.wDay;
+}
+
 // Return true if we can re-offer Chrome; false, otherwise.
 // Each partner can only offer Chrome once every six months.
 bool CanReOfferChrome(BOOL set_flag) {
@@ -144,9 +170,7 @@ bool CanReOfferChrome(BOOL set_flag) {
       0, NULL, REG_OPTION_NON_VOLATILE, KEY_READ | KEY_WRITE,
       NULL, &key, &disposition) == ERROR_SUCCESS) {
     // Get today's date, and format it as YYYYMMDD numeric value.
-    SYSTEMTIME now;
-    GetLocalTime(&now);
-    DWORD today = now.wYear * 10000 + now.wMonth * 100 + now.wDay;
+    DWORD today = FormatDateOffsetByMonths(0);
 
     // Cannot re-offer, if the timer already exists and is not expired yet.
     DWORD value_type = REG_DWORD;
@@ -165,13 +189,7 @@ bool CanReOfferChrome(BOOL set_flag) {
       if (set_flag) {
         // Set expiration date for offer as six months from today,
         // represented as a YYYYMMDD numeric value.
-        SYSTEMTIME timer = now;
-        timer.wMonth = timer.wMonth + 6;
-        if (timer.wMonth > 12) {
-          timer.wMonth = timer.wMonth - 12;
-          timer.wYear = timer.wYear + 1;
-        }
-        DWORD value = timer.wYear * 10000 + timer.wMonth * 100 + timer.wDay;
+        DWORD value = FormatDateOffsetByMonths(6);
         ::RegSetValueEx(key, company, 0, REG_DWORD, (LPBYTE)&value,
                         sizeof(DWORD));
       }
@@ -183,28 +201,30 @@ bool CanReOfferChrome(BOOL set_flag) {
   return can_re_offer;
 }
 
-// Helper function to read a value from registry. Returns true if value
-// is read successfully and stored in parameter value. Returns false otherwise.
-bool ReadValueFromRegistry(HKEY root_key, const wchar_t* sub_key,
-                           const wchar_t* value_name, wchar_t* value,
-                           size_t* size) {
-  HKEY key;
-  if ((::RegOpenKeyEx(root_key, sub_key, NULL,
-                      KEY_READ, &key) == ERROR_SUCCESS) &&
-      (::RegQueryValueEx(key, value_name, NULL, NULL,
-                         reinterpret_cast<LPBYTE>(value),
-                         reinterpret_cast<LPDWORD>(size)) == ERROR_SUCCESS)) {
-    ::RegCloseKey(key);
-    return true;
-  }
-  return false;
+bool IsChromeInstalled(HKEY root_key) {
+  RegKey key;
+  return key.Open(root_key, kChromeRegClientsKey, KEY_READ) == ERROR_SUCCESS &&
+         key.HasValue(kChromeRegVersion);
 }
 
-bool IsChromeInstalled(HKEY root_key) {
-  wchar_t version[64];
-  size_t size = _countof(version);
-  return ReadValueFromRegistry(root_key, kChromeRegClientsKey,
-                               kChromeRegVersion, version, &size);
+// Returns true if the |subkey| in |root| has the kC1FKey entry set to 1.
+bool RegKeyHasC1F(HKEY root, const wchar_t* subkey) {
+  RegKey key;
+  DWORD value;
+  return key.Open(root, subkey, KEY_READ) == ERROR_SUCCESS &&
+      key.ReadValueDW(kC1FKey, &value) == ERROR_SUCCESS &&
+      value == static_cast<DWORD>(1);
+}
+
+bool IsC1FSent() {
+  // The C1F RLZ key can either be in HKCU or in HKLM (the HKLM RLZ key is made
+  // readable to all-users via rlz_lib::CreateMachineState()) and can either be
+  // in sent or pending state. Return true if there is a match for any of these
+  // 4 states.
+  return RegKeyHasC1F(HKEY_CURRENT_USER, kC1FSentKey) ||
+      RegKeyHasC1F(HKEY_CURRENT_USER, kC1FPendingKey) ||
+      RegKeyHasC1F(HKEY_LOCAL_MACHINE, kC1FSentKey) ||
+      RegKeyHasC1F(HKEY_LOCAL_MACHINE, kC1FPendingKey);
 }
 
 enum WindowsVersion {
@@ -665,4 +685,105 @@ BOOL __stdcall ReactivateChrome(wchar_t* brand_code,
   }
 
   return result;
+}
+
+BOOL __stdcall CanOfferRelaunch(const wchar_t** partner_brandcode_list,
+                                int partner_brandcode_list_length,
+                                int shell_mode,
+                                DWORD* error_code) {
+  DCHECK(error_code);
+
+  if (!partner_brandcode_list || partner_brandcode_list_length <= 0) {
+    if (error_code)
+      *error_code = RELAUNCH_ERROR_INVALID_INPUT;
+    return FALSE;
+  }
+
+  // These conditions need to be satisfied for relaunch:
+  // a) Chrome should be installed;
+  if (!IsChromeInstalled(HKEY_LOCAL_MACHINE) &&
+      (shell_mode != GCAPI_INVOKED_STANDARD_SHELL ||
+          !IsChromeInstalled(HKEY_CURRENT_USER))) {
+    if (error_code)
+      *error_code = RELAUNCH_ERROR_NOTINSTALLED;
+    return FALSE;
+  }
+
+  // b) the installed brandcode should belong to that partner (in
+  // brandcode_list);
+  std::wstring installed_brandcode;
+  bool valid_brandcode = false;
+  if (GoogleUpdateSettings::GetBrand(&installed_brandcode)) {
+    for (int i = 0; i < partner_brandcode_list_length; ++i) {
+      if (!_wcsicmp(installed_brandcode.c_str(), partner_brandcode_list[i])) {
+        valid_brandcode = true;
+        break;
+      }
+    }
+  }
+
+  if (!valid_brandcode) {
+    if (error_code)
+      *error_code = RELAUNCH_ERROR_INVALID_PARTNER;
+    return FALSE;
+  }
+
+  // c) C1F ping should not have been sent;
+  if (IsC1FSent()) {
+    if (error_code)
+      *error_code = RELAUNCH_ERROR_PINGS_SENT;
+    return FALSE;
+  }
+
+  // d) a minimum period (30 days) must have passed since Chrome was last used;
+  int days_since_last_run = GoogleChromeDaysSinceLastRun();
+  if (days_since_last_run >= 0 &&
+      days_since_last_run < kRelaunchMinDaysDormant) {
+    if (error_code)
+      *error_code = RELAUNCH_ERROR_NOTDORMANT;
+    return FALSE;
+  }
+
+  // e) a minimum period (6 months) must have passed since the previous
+  // relaunch offer for the current user;
+  RegKey key;
+  DWORD min_relaunch_date;
+  if (key.Open(HKEY_CURRENT_USER, kChromeRegClientStateKey,
+               KEY_QUERY_VALUE) == ERROR_SUCCESS &&
+      key.ReadValueDW(kRelaunchAllowedAfterValue,
+                      &min_relaunch_date) == ERROR_SUCCESS &&
+      FormatDateOffsetByMonths(0) < min_relaunch_date) {
+    if (error_code)
+      *error_code = RELAUNCH_ERROR_ALREADY_RELAUNCHED;
+    return FALSE;
+  }
+
+  return TRUE;
+}
+
+BOOL __stdcall SetRelaunchOffered(const wchar_t** partner_brandcode_list,
+                                  int partner_brandcode_list_length,
+                                  const wchar_t* relaunch_brandcode,
+                                  int shell_mode,
+                                  DWORD* error_code) {
+  if (!CanOfferRelaunch(partner_brandcode_list, partner_brandcode_list_length,
+                        shell_mode, error_code))
+    return FALSE;
+
+  // Store the relaunched brand code and the minimum date for relaunch (6 months
+  // from now), and set the Omaha experiment label.
+  RegKey key;
+  if (key.Create(HKEY_CURRENT_USER, kChromeRegClientStateKey,
+                 KEY_SET_VALUE) != ERROR_SUCCESS ||
+      key.WriteValue(kRelaunchBrandcodeValue,
+                     relaunch_brandcode) != ERROR_SUCCESS ||
+      key.WriteValue(kRelaunchAllowedAfterValue,
+                     FormatDateOffsetByMonths(6)) != ERROR_SUCCESS ||
+      !SetRelaunchExperimentLabels(relaunch_brandcode, shell_mode)) {
+    if (error_code)
+      *error_code = RELAUNCH_ERROR_RELAUNCH_FAILED;
+    return FALSE;
+  }
+
+  return TRUE;
 }

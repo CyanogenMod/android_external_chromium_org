@@ -13,6 +13,7 @@
 #include "net/base/escape.h"
 #include "net/base/io_buffer.h"
 #include "net/base/load_flags.h"
+#include "net/base/request_priority.h"
 #include "net/base/upload_bytes_element_reader.h"
 #include "net/base/upload_data_stream.h"
 #include "net/url_request/url_request.h"
@@ -25,7 +26,6 @@ const char kCloudPrintJsonName[] = "cloud_print";
 const char kEnabledOptionName[] = "enabled";
 
 const char kEmailOptionName[] = "email";
-const char kPasswordOptionName[] = "password";
 const char kProxyIdOptionName[] = "proxy_id";
 const char kRobotEmailOptionName[] = "robot_email";
 const char kRobotTokenOptionName[] = "robot_refresh_token";
@@ -175,11 +175,12 @@ std::string ServiceState::LoginToGoogle(const std::string& service,
   post_body += "&source=" + net::EscapeUrlEncodedData("CP-Service", true);
   post_body += "&service=" + net::EscapeUrlEncodedData(service, true);
 
-  net::URLRequest request(url, &fetcher_delegate, context.get());
+  net::URLRequest request(
+      url, net::DEFAULT_PRIORITY, &fetcher_delegate, context.get());
   int load_flags = request.load_flags();
   load_flags = load_flags | net::LOAD_DO_NOT_SEND_COOKIES;
   load_flags = load_flags | net::LOAD_DO_NOT_SAVE_COOKIES;
-  request.set_load_flags(load_flags);
+  request.SetLoadFlags(load_flags);
 
   scoped_ptr<net::UploadElementReader> reader(
       net::UploadOwnedBytesElementReader::CreateWithString(post_body));
@@ -201,7 +202,6 @@ std::string ServiceState::LoginToGoogle(const std::string& service,
   std::vector<std::string> lines;
   Tokenize(fetcher_delegate.data(), "\r\n", &lines);
   for (size_t i = 0; i < lines.size(); ++i) {
-    std::vector<std::string> tokens;
     if (StartsWithASCII(lines[i], kAuthStart, false))
       return lines[i].substr(arraysize(kAuthStart) - 1);
   }

@@ -6,9 +6,9 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/values.h"
-#include "chromeos/network/onc/onc_constants.h"
 #include "chromeos/network/onc/onc_signature.h"
 #include "chromeos/network/onc/onc_test_utils.h"
+#include "components/onc/onc_constants.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace chromeos {
@@ -42,19 +42,22 @@ INSTANTIATE_TEST_CASE_P(
     ONCTranslatorOncToShillTest,
     ONCTranslatorOncToShillTest,
     ::testing::Values(
-        std::make_pair("managed_ethernet.onc", "shill_ethernet.json"),
+        std::make_pair("ethernet.onc", "shill_ethernet.json"),
+        std::make_pair("ethernet_with_eap_and_cert_pems.onc",
+                       "shill_ethernet_with_eap.json"),
         std::make_pair("valid_wifi_psk.onc", "shill_wifi_psk.json"),
         std::make_pair("wifi_clientcert_with_cert_pems.onc",
                        "shill_wifi_clientcert.json"),
-        std::make_pair("valid_wifi_clientref.onc",
-                       "shill_wifi_clientref.json"),
+        std::make_pair("valid_wifi_clientref.onc", "shill_wifi_clientref.json"),
         std::make_pair("valid_l2tpipsec.onc", "shill_l2tpipsec.json"),
         std::make_pair("l2tpipsec_clientcert_with_cert_pems.onc",
                        "shill_l2tpipsec_clientcert.json"),
         std::make_pair("valid_openvpn_with_cert_pems.onc",
                        "shill_openvpn.json"),
         std::make_pair("openvpn_clientcert_with_cert_pems.onc",
-                       "shill_openvpn_clientcert.json")));
+                       "shill_openvpn_clientcert.json"),
+        std::make_pair("cellular.onc",
+                       "shill_cellular.json")));
 
 // First parameter: Filename of source Shill json.
 // Second parameter: Filename of expected translated ONC network part.
@@ -85,6 +88,10 @@ INSTANTIATE_TEST_CASE_P(
     ONCTranslatorShillToOncTest,
     ONCTranslatorShillToOncTest,
     ::testing::Values(
+        std::make_pair("shill_ethernet.json",
+                       "translation_of_shill_ethernet.onc"),
+        std::make_pair("shill_ethernet_with_eap.json",
+                       "translation_of_shill_ethernet_with_eap.onc"),
         std::make_pair("shill_wifi_clientcert.json",
                        "translation_of_shill_wifi_clientcert.onc"),
         std::make_pair("shill_wifi_wpa1.json",
@@ -96,7 +103,9 @@ INSTANTIATE_TEST_CASE_P(
         std::make_pair("shill_openvpn_with_errors.json",
                        "translation_of_shill_openvpn_with_errors.onc"),
         std::make_pair("shill_wifi_with_state.json",
-                       "translation_of_shill_wifi_with_state.onc")));
+                       "translation_of_shill_wifi_with_state.onc"),
+        std::make_pair("shill_cellular_with_state.json",
+                       "translation_of_shill_cellular_with_state.onc")));
 
 }  // namespace onc
 }  // namespace chromeos

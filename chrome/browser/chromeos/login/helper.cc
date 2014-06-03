@@ -9,11 +9,13 @@
 #include "chromeos/network/network_handler.h"
 #include "chromeos/network/network_state.h"
 #include "chromeos/network/network_state_handler.h"
+#include "chromeos/network/shill_property_util.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/screen.h"
 
 namespace chromeos {
@@ -35,8 +37,7 @@ int GetCurrentUserImageSize() {
   float scale_factor = gfx::Display::GetForcedDeviceScaleFactor();
   if (scale_factor > 1.0f)
     return static_cast<int>(scale_factor * kBaseUserImageSize);
-  return kBaseUserImageSize *
-      ui::GetScaleFactorScale(ui::GetMaxScaleFactor());
+  return kBaseUserImageSize * gfx::ImageSkia::GetMaxSupportedScale();
 }
 
 namespace login {
@@ -44,38 +45,37 @@ namespace login {
 NetworkStateHelper::NetworkStateHelper() {}
 NetworkStateHelper::~NetworkStateHelper() {}
 
-string16 NetworkStateHelper::GetCurrentNetworkName() const {
+base::string16 NetworkStateHelper::GetCurrentNetworkName() const {
   NetworkStateHandler* nsh = NetworkHandler::Get()->network_state_handler();
-  const NetworkState* network = nsh->ConnectedNetworkByType(
-      NetworkStateHandler::kMatchTypeNonVirtual);
+  const NetworkState* network =
+      nsh->ConnectedNetworkByType(NetworkTypePattern::NonVirtual());
   if (network) {
-    if (network->type() == flimflam::kTypeEthernet)
+    if (network->Matches(NetworkTypePattern::Ethernet()))
       return l10n_util::GetStringUTF16(IDS_STATUSBAR_NETWORK_DEVICE_ETHERNET);
     return UTF8ToUTF16(network->name());
   }
 
-  network = nsh->ConnectingNetworkByType(
-      NetworkStateHandler::kMatchTypeNonVirtual);
+  network = nsh->ConnectingNetworkByType(NetworkTypePattern::NonVirtual());
   if (network) {
-    if (network->type() == flimflam::kTypeEthernet)
+    if (network->Matches(NetworkTypePattern::Ethernet()))
       return l10n_util::GetStringUTF16(IDS_STATUSBAR_NETWORK_DEVICE_ETHERNET);
     return UTF8ToUTF16(network->name());
   }
-  return string16();
+  return base::string16();
 }
 
 bool NetworkStateHelper::IsConnected() const {
   chromeos::NetworkStateHandler* nsh =
       chromeos::NetworkHandler::Get()->network_state_handler();
-  return nsh->ConnectedNetworkByType(
-      chromeos::NetworkStateHandler::kMatchTypeDefault) != NULL;
+  return nsh->ConnectedNetworkByType(chromeos::NetworkTypePattern::Default()) !=
+         NULL;
 }
 
 bool NetworkStateHelper::IsConnecting() const {
   chromeos::NetworkStateHandler* nsh =
       chromeos::NetworkHandler::Get()->network_state_handler();
   return nsh->ConnectingNetworkByType(
-      chromeos::NetworkStateHandler::kMatchTypeDefault) != NULL;
+      chromeos::NetworkTypePattern::Default()) != NULL;
 }
 
 }  // namespace login

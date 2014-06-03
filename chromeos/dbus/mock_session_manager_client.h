@@ -17,19 +17,18 @@ class MockSessionManagerClient : public SessionManagerClient {
   MockSessionManagerClient();
   virtual ~MockSessionManagerClient();
 
+  MOCK_METHOD1(Init, void(dbus::Bus* bus));
   MOCK_METHOD1(AddObserver, void(Observer*));
   MOCK_METHOD1(RemoveObserver, void(Observer*));
   MOCK_METHOD1(HasObserver, bool(Observer*));
   MOCK_METHOD0(EmitLoginPromptReady, void(void));
   MOCK_METHOD0(EmitLoginPromptVisible, void(void));
-  MOCK_METHOD0(RestartEntd, void(void));
   MOCK_METHOD2(RestartJob, void(int, const std::string&));
   MOCK_METHOD1(StartSession, void(const std::string&));
   MOCK_METHOD0(StopSession, void(void));
   MOCK_METHOD0(StartDeviceWipe, void(void));
   MOCK_METHOD0(RequestLockScreen, void(void));
   MOCK_METHOD0(NotifyLockScreenShown, void(void));
-  MOCK_METHOD0(RequestUnlockScreen, void(void));
   MOCK_METHOD0(NotifyLockScreenDismissed, void(void));
   MOCK_METHOD1(RetrieveActiveSessions, void(const ActiveSessionsCallback&));
   MOCK_METHOD1(RetrieveDevicePolicy, void(const RetrievePolicyCallback&));

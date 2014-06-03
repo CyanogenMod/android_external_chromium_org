@@ -13,9 +13,12 @@
 #include "chrome/common/extensions/extension_icon_set.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
+#include "ui/base/layout.h"
 #include "ui/gfx/image/image_skia.h"
 
-class Profile;
+namespace content {
+class BrowserContext;
+}
 
 namespace extensions {
 class Extension;
@@ -57,10 +60,10 @@ class IconImage : public content::NotificationObserver {
     virtual ~Observer() {}
   };
 
-  // |profile| is required by the underlying implementation to retrieve the
-  // |ImageLoader| instance associated with the given profile. |ImageLoader| is
+  // |context| is required by the underlying implementation to retrieve the
+  // |ImageLoader| instance associated with the given context. |ImageLoader| is
   // used to perform the asynchronous image load work.
-  IconImage(Profile* profile,
+  IconImage(content::BrowserContext* context,
             const Extension* extension,
             const ExtensionIconSet& icon_set,
             int resource_size_in_dip,
@@ -81,14 +84,14 @@ class IconImage : public content::NotificationObserver {
   // observer's |OnExtensionIconImageLoaded| will be called.
   gfx::ImageSkiaRep LoadImageForScaleFactor(ui::ScaleFactor scale_factor);
 
-  void OnImageLoaded(ui::ScaleFactor scale_factor, const gfx::Image& image);
+  void OnImageLoaded(float scale_factor, const gfx::Image& image);
 
   // content::NotificationObserver overrides:
   virtual void Observe(int type,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
-  Profile* profile_;
+  content::BrowserContext* browser_context_;
   const Extension* extension_;
   const ExtensionIconSet& icon_set_;
   const int resource_size_in_dip_;

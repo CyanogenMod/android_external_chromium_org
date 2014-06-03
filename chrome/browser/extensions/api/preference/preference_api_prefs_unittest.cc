@@ -11,15 +11,12 @@
 #include "chrome/browser/extensions/api/preference/preference_api.h"
 #include "chrome/browser/extensions/extension_prefs.h"
 #include "chrome/browser/extensions/extension_prefs_unittest.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/user_prefs/pref_registry_syncable.h"
+#include "extensions/common/extension.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using base::Value;
-
-namespace keys = extension_manifest_keys;
 
 namespace extensions {
 
@@ -154,7 +151,7 @@ void ExtensionControlledPrefsTest::EnsureExtensionInstalled(
     if (extension == extensions[i] && !installed_[i]) {
       prefs()->OnExtensionInstalled(extension,
                                     Extension::ENABLED,
-                                    Blacklist::NOT_BLACKLISTED,
+                                    false,
                                     syncer::StringOrdinal());
       installed_[i] = true;
       break;
@@ -182,7 +179,7 @@ class ControlledPrefsInstallOneExtension
   virtual void Initialize() OVERRIDE {
     InstallExtensionControlledPref(extension1(),
                                    kPref1,
-                                   Value::CreateStringValue("val1"));
+                                   new base::StringValue("val1"));
   }
   virtual void Verify() OVERRIDE {
     std::string actual = prefs()->pref_service()->GetString(kPref1);
@@ -198,9 +195,9 @@ class ControlledPrefsInstallIncognitoPersistent
  public:
   virtual void Initialize() OVERRIDE {
     InstallExtensionControlledPref(
-        extension1(), kPref1, Value::CreateStringValue("val1"));
+        extension1(), kPref1, new base::StringValue("val1"));
     InstallExtensionControlledPrefIncognito(
-        extension1(), kPref1, Value::CreateStringValue("val2"));
+        extension1(), kPref1, new base::StringValue("val2"));
     scoped_ptr<PrefService> incog_prefs(prefs_.CreateIncognitoPrefService());
     std::string actual = incog_prefs->GetString(kPref1);
     EXPECT_EQ("val2", actual);
@@ -227,9 +224,9 @@ class ControlledPrefsInstallIncognitoSessionOnly
 
   virtual void Initialize() OVERRIDE {
     InstallExtensionControlledPref(
-        extension1(), kPref1, Value::CreateStringValue("val1"));
+        extension1(), kPref1, new base::StringValue("val1"));
     InstallExtensionControlledPrefIncognitoSessionOnly(
-        extension1(), kPref1, Value::CreateStringValue("val2"));
+        extension1(), kPref1, new base::StringValue("val2"));
     scoped_ptr<PrefService> incog_prefs(prefs_.CreateIncognitoPrefService());
     std::string actual = incog_prefs->GetString(kPref1);
     EXPECT_EQ("val2", actual);
@@ -258,9 +255,9 @@ TEST_F(ControlledPrefsInstallIncognitoSessionOnly,
 class ControlledPrefsUninstallExtension : public ExtensionControlledPrefsTest {
   virtual void Initialize() OVERRIDE {
     InstallExtensionControlledPref(
-        extension1(), kPref1, Value::CreateStringValue("val1"));
+        extension1(), kPref1, new base::StringValue("val1"));
     InstallExtensionControlledPref(
-        extension1(), kPref2, Value::CreateStringValue("val2"));
+        extension1(), kPref2, new base::StringValue("val2"));
     ContentSettingsStore* store = prefs()->content_settings_store();
     ContentSettingsPattern pattern =
         ContentSettingsPattern::FromString("http://[*.]example.com");
@@ -308,7 +305,7 @@ class ControlledPrefsNotifyWhenNeeded : public ExtensionControlledPrefsTest {
     EXPECT_CALL(observer, OnPreferenceChanged(_));
     EXPECT_CALL(incognito_observer, OnPreferenceChanged(_));
     InstallExtensionControlledPref(extension1(), kPref1,
-        Value::CreateStringValue("https://www.chromium.org"));
+        new base::StringValue("https://www.chromium.org"));
     Mock::VerifyAndClearExpectations(&observer);
     Mock::VerifyAndClearExpectations(&incognito_observer);
 
@@ -316,7 +313,7 @@ class ControlledPrefsNotifyWhenNeeded : public ExtensionControlledPrefsTest {
     EXPECT_CALL(observer, OnPreferenceChanged(_)).Times(0);
     EXPECT_CALL(incognito_observer, OnPreferenceChanged(_)).Times(0);
     InstallExtensionControlledPref(extension1(), kPref1,
-        Value::CreateStringValue("https://www.chromium.org"));
+        new base::StringValue("https://www.chromium.org"));
     Mock::VerifyAndClearExpectations(&observer);
     Mock::VerifyAndClearExpectations(&incognito_observer);
 
@@ -324,14 +321,14 @@ class ControlledPrefsNotifyWhenNeeded : public ExtensionControlledPrefsTest {
     EXPECT_CALL(observer, OnPreferenceChanged(_));
     EXPECT_CALL(incognito_observer, OnPreferenceChanged(_));
     InstallExtensionControlledPref(extension1(), kPref1,
-        Value::CreateStringValue("chrome://newtab"));
+        new base::StringValue("chrome://newtab"));
     Mock::VerifyAndClearExpectations(&observer);
     Mock::VerifyAndClearExpectations(&incognito_observer);
     // Change only incognito persistent value.
     EXPECT_CALL(observer, OnPreferenceChanged(_)).Times(0);
     EXPECT_CALL(incognito_observer, OnPreferenceChanged(_));
     InstallExtensionControlledPrefIncognito(extension1(), kPref1,
-        Value::CreateStringValue("chrome://newtab2"));
+        new base::StringValue("chrome://newtab2"));
     Mock::VerifyAndClearExpectations(&observer);
     Mock::VerifyAndClearExpectations(&incognito_observer);
 
@@ -339,7 +336,7 @@ class ControlledPrefsNotifyWhenNeeded : public ExtensionControlledPrefsTest {
     EXPECT_CALL(observer, OnPreferenceChanged(_)).Times(0);
     EXPECT_CALL(incognito_observer, OnPreferenceChanged(_));
     InstallExtensionControlledPrefIncognito(extension1(), kPref1,
-        Value::CreateStringValue("chrome://newtab3"));
+        new base::StringValue("chrome://newtab3"));
     Mock::VerifyAndClearExpectations(&observer);
     Mock::VerifyAndClearExpectations(&incognito_observer);
 
@@ -365,7 +362,7 @@ TEST_F(ControlledPrefsNotifyWhenNeeded,
 class ControlledPrefsDisableExtension : public ExtensionControlledPrefsTest {
   virtual void Initialize() OVERRIDE {
     InstallExtensionControlledPref(
-        extension1(), kPref1, Value::CreateStringValue("val1"));
+        extension1(), kPref1, new base::StringValue("val1"));
     std::string actual = prefs()->pref_service()->GetString(kPref1);
     EXPECT_EQ("val1", actual);
     prefs()->SetExtensionState(extension1()->id(), Extension::DISABLED);
@@ -381,7 +378,7 @@ TEST_F(ControlledPrefsDisableExtension, ControlledPrefsDisableExtension) { }
 class ControlledPrefsReenableExtension : public ExtensionControlledPrefsTest {
   virtual void Initialize() OVERRIDE {
     InstallExtensionControlledPref(
-        extension1(), kPref1, Value::CreateStringValue("val1"));
+        extension1(), kPref1, new base::StringValue("val1"));
     prefs()->SetExtensionState(extension1()->id(), Extension::DISABLED);
     prefs()->SetExtensionState(extension1()->id(), Extension::ENABLED);
   }
@@ -448,7 +445,7 @@ class ControlledPrefsDisableExtensions : public ExtensionControlledPrefsTest {
   virtual ~ControlledPrefsDisableExtensions() {}
   virtual void Initialize() OVERRIDE {
     InstallExtensionControlledPref(
-        extension1(), kPref1, Value::CreateStringValue("val1"));
+        extension1(), kPref1, new base::StringValue("val1"));
     // This becomes only active in the second verification phase.
     prefs_.set_extensions_disabled(true);
   }

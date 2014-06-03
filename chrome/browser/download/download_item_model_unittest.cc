@@ -12,14 +12,16 @@
 #include "base/strings/string16.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/common/extensions/extension.h"
 #include "content/public/test/mock_download_item.h"
+#include "extensions/common/extension.h"
 #include "grit/generated_resources.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/base/resource/resource_bundle.h"
 #include "ui/base/text/bytes_formatting.h"
-#include "ui/gfx/font.h"
+#include "ui/gfx/font_list.h"
+#include "ui/gfx/text_utils.h"
 
 using content::DownloadItem;
 using ::testing::Mock;
@@ -246,27 +248,30 @@ TEST_F(DownloadItemModelTest, InterruptTooltip) {
   // tooltips. Used to test eliding logic.
   const int kSmallTooltipWidth = 40;
 
-  gfx::Font font;
+  const gfx::FontList& font_list =
+      ui::ResourceBundle::GetSharedInstance().GetFontList(
+          ui::ResourceBundle::BaseFont);
   SetupDownloadItemDefaults();
   for (unsigned i = 0; i < ARRAYSIZE_UNSAFE(kTestCases); ++i) {
     const TestCase& test_case = kTestCases[i];
     SetupInterruptedDownloadItem(test_case.reason);
 
     // GetTooltipText() elides the tooltip so that the text would fit within a
-    // given width. The following test would fail if kLargeTooltipWidth is large
-    // enough to accomodate all the strings.
+    // given width. The following test would fail if kLargeTooltipWidth isn't
+    // large enough to accomodate all the strings.
     EXPECT_STREQ(
         test_case.expected_tooltip,
-        UTF16ToUTF8(model().GetTooltipText(font, kLargeTooltipWidth)).c_str());
+        UTF16ToUTF8(model().GetTooltipText(font_list,
+                                           kLargeTooltipWidth)).c_str());
 
     // Check that if the width is small, the returned tooltip only contains
     // lines of the given width or smaller.
-    std::vector<string16> lines;
-    string16 truncated_tooltip =
-        model().GetTooltipText(font, kSmallTooltipWidth);
+    std::vector<base::string16> lines;
+    base::string16 truncated_tooltip =
+        model().GetTooltipText(font_list, kSmallTooltipWidth);
     Tokenize(truncated_tooltip, ASCIIToUTF16("\n"), &lines);
     for (unsigned i = 0; i < lines.size(); ++i)
-      EXPECT_GE(kSmallTooltipWidth, font.GetStringWidth(lines[i]));
+      EXPECT_GE(kSmallTooltipWidth, gfx::GetStringWidth(lines[i], font_list));
   }
 }
 

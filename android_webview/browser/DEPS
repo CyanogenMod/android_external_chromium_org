@@ -18,9 +18,7 @@ include_rules = [
   "+content/public/browser",
   "+content/public/test",
 
-# START: Printing fork b/10190508
   "+printing",
-# END: Printing fork b/10190508
 
   "+ui/gfx",
   "+ui/gl",

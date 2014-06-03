@@ -15,6 +15,7 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
+#include "content/public/browser/render_widget_host_iterator.h"
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/web_contents.h"
 #include "grit/generated_resources.h"
@@ -37,8 +38,8 @@ class GuestResource : public RendererResource {
 
   // Resource methods:
   virtual Type GetType() const OVERRIDE;
-  virtual string16 GetTitle() const OVERRIDE;
-  virtual string16 GetProfileName() const OVERRIDE;
+  virtual base::string16 GetTitle() const OVERRIDE;
+  virtual base::string16 GetProfileName() const OVERRIDE;
   virtual gfx::ImageSkia GetIcon() const OVERRIDE;
   virtual content::WebContents* GetWebContents() const OVERRIDE;
   virtual const extensions::Extension* GetExtension() const OVERRIDE;
@@ -60,24 +61,24 @@ Resource::Type GuestResource::GetType() const {
   return GUEST;
 }
 
-string16 GuestResource::GetTitle() const {
+base::string16 GuestResource::GetTitle() const {
   WebContents* web_contents = GetWebContents();
   const int message_id = IDS_TASK_MANAGER_WEBVIEW_TAG_PREFIX;
   if (web_contents) {
-    string16 title = util::GetTitleFromWebContents(web_contents);
+    base::string16 title = util::GetTitleFromWebContents(web_contents);
     return l10n_util::GetStringFUTF16(message_id, title);
   }
-  return l10n_util::GetStringFUTF16(message_id, string16());
+  return l10n_util::GetStringFUTF16(message_id, base::string16());
 }
 
-string16 GuestResource::GetProfileName() const {
+base::string16 GuestResource::GetProfileName() const {
   WebContents* web_contents = GetWebContents();
   if (web_contents) {
     Profile* profile = Profile::FromBrowserContext(
         web_contents->GetBrowserContext());
     return util::GetProfileNameFromInfoCache(profile);
   }
-  return string16();
+  return base::string16();
 }
 
 gfx::ImageSkia GuestResource::GetIcon() const {
@@ -132,10 +133,11 @@ void GuestResourceProvider::StartUpdating() {
   updating_ = true;
 
   // Add all the existing guest WebContents.
-  RenderWidgetHost::List widgets = RenderWidgetHost::GetRenderWidgetHosts();
-  for (size_t i = 0; i < widgets.size(); ++i) {
-    if (widgets[i]->IsRenderView()) {
-      RenderViewHost* rvh = RenderViewHost::From(widgets[i]);
+  scoped_ptr<content::RenderWidgetHostIterator> widgets(
+      RenderWidgetHost::GetRenderWidgetHosts());
+  while (content::RenderWidgetHost* widget = widgets->GetNextHost()) {
+    if (widget->IsRenderView()) {
+      RenderViewHost* rvh = RenderViewHost::From(widget);
       if (rvh->IsSubframe())
         Add(rvh);
     }

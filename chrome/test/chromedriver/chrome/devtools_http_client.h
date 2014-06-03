@@ -17,13 +17,16 @@ class TimeDelta;
 }
 
 class DevToolsClient;
-class Log;
+class NetAddress;
 class Status;
 class URLRequestContextGetter;
 
 struct WebViewInfo {
   enum Type {
+    kApp,
+    kBackgroundPage,
     kPage,
+    kWorker,
     kOther
   };
 
@@ -58,10 +61,9 @@ class WebViewsInfo {
 class DevToolsHttpClient {
  public:
   DevToolsHttpClient(
-      int port,
+      const NetAddress& address,
       scoped_refptr<URLRequestContextGetter> context_getter,
-      const SyncWebSocketFactory& socket_factory,
-      Log* log);
+      const SyncWebSocketFactory& socket_factory);
   ~DevToolsHttpClient();
 
   Status Init(const base::TimeDelta& timeout);
@@ -71,6 +73,8 @@ class DevToolsHttpClient {
   scoped_ptr<DevToolsClient> CreateClient(const std::string& id);
 
   Status CloseWebView(const std::string& id);
+
+  Status ActivateWebView(const std::string& id);
 
   const std::string& version() const;
   int build_no() const;
@@ -84,7 +88,6 @@ class DevToolsHttpClient {
 
   scoped_refptr<URLRequestContextGetter> context_getter_;
   SyncWebSocketFactory socket_factory_;
-  Log* log_;
   std::string server_url_;
   std::string web_socket_url_prefix_;
   std::string version_;

@@ -70,7 +70,8 @@ const char kScript[] =
     "saveBuiltin(Function,\n"
     "            ['apply', 'bind', 'call']);\n"
     "saveBuiltin(Array,\n"
-    "            ['concat', 'forEach', 'join', 'push', 'slice', 'splice']);\n"
+    "            ['concat', 'forEach', 'indexOf', 'join', 'push', 'slice',\n"
+    "             'splice', 'map', 'filter']);\n"
     "saveBuiltin(String,\n"
     "            ['slice', 'split']);\n"
     "saveBuiltin(RegExp,\n"
@@ -116,23 +117,24 @@ const char kScript[] =
     "\n"
     "}());\n";
 
-v8::Local<v8::String> MakeKey(const char* name) {
-  return v8::String::New(
-      base::StringPrintf("%s::%s", kClassName, name).c_str());
+v8::Local<v8::String> MakeKey(const char* name, v8::Isolate* isolate) {
+  return v8::String::NewFromUtf8(
+      isolate, base::StringPrintf("%s::%s", kClassName, name).c_str());
 }
 
 void SaveImpl(const char* name,
               v8::Local<v8::Value> value,
               v8::Local<v8::Context> context) {
   CHECK(!value.IsEmpty() && value->IsObject()) << name;
-  context->Global()->SetHiddenValue(MakeKey(name), value);
+  context->Global()
+      ->SetHiddenValue(MakeKey(name, context->GetIsolate()), value);
 }
 
 v8::Local<v8::Object> Load(const char* name, v8::Handle<v8::Context> context) {
   v8::Local<v8::Value> value =
-      context->Global()->GetHiddenValue(MakeKey(name));
+      context->Global()->GetHiddenValue(MakeKey(name, context->GetIsolate()));
   CHECK(!value.IsEmpty() && value->IsObject()) << name;
-  return v8::Local<v8::Object>::New(value->ToObject());
+  return value->ToObject();
 }
 
 class ExtensionImpl : public v8::Extension {
@@ -140,13 +142,14 @@ class ExtensionImpl : public v8::Extension {
   ExtensionImpl() : v8::Extension(kClassName, kScript) {}
 
  private:
-  virtual v8::Handle<v8::FunctionTemplate> GetNativeFunction(
+  virtual v8::Handle<v8::FunctionTemplate> GetNativeFunctionTemplate(
+      v8::Isolate* isolate,
       v8::Handle<v8::String> name) OVERRIDE {
-    if (name->Equals(v8::String::New("Apply")))
-      return v8::FunctionTemplate::New(Apply);
-    if (name->Equals(v8::String::New("Save")))
-      return v8::FunctionTemplate::New(Save);
-    NOTREACHED() << *v8::String::AsciiValue(name);
+    if (name->Equals(v8::String::NewFromUtf8(isolate, "Apply")))
+      return v8::FunctionTemplate::New(isolate, Apply);
+    if (name->Equals(v8::String::NewFromUtf8(isolate, "Save")))
+      return v8::FunctionTemplate::New(isolate, Save);
+    NOTREACHED() << *v8::String::Utf8Value(name);
     return v8::Handle<v8::FunctionTemplate>();
   }
 
@@ -164,8 +167,10 @@ class ExtensionImpl : public v8::Extension {
     } else if (info[1]->IsString()) {
       recv = v8::StringObject::New(info[1]->ToString())->ToObject();
     } else {
-      v8::ThrowException(v8::Exception::TypeError(v8::String::New(
-          "The first argument is the receiver and must be an object")));
+      info.GetIsolate()->ThrowException(
+          v8::Exception::TypeError(v8::String::NewFromUtf8(
+              info.GetIsolate(),
+              "The first argument is the receiver and must be an object")));
       return;
     }
     v8::Local<v8::Object> args = info[2]->ToObject();
@@ -188,9 +193,9 @@ class ExtensionImpl : public v8::Extension {
     CHECK(info.Length() == 2 &&
           info[0]->IsString() &&
           info[1]->IsObject());
-    SaveImpl(*v8::String::AsciiValue(info[0]),
+    SaveImpl(*v8::String::Utf8Value(info[0]),
              info[1],
-             v8::Context::GetCalling());
+             info.GetIsolate()->GetCallingContext());
   }
 };
 

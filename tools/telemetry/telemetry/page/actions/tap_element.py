@@ -3,8 +3,6 @@
 # found in the LICENSE file.
 
 from telemetry.core import exceptions
-from telemetry.core import util
-from telemetry.page import page as page_module
 from telemetry.page.actions import page_action
 
 class TapElementAction(page_action.PageAction):
@@ -37,9 +35,6 @@ class TapElementAction(page_action.PageAction):
               'function(){window.__tap_event_finished=true})')
       tab.ExecuteJavaScript(code % self.wait_for_event)
       DoTap()
-      util.WaitFor(lambda: tab.EvaluateJavaScript(
-          'window.__tap_event_finished'), 60)
+      tab.WaitForJavaScriptExpression('window.__tap_event_finished', 60)
     else:
       DoTap()
-
-    page_module.Page.WaitForPageToLoad(self, tab, 60)

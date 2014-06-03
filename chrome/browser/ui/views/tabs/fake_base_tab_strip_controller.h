@@ -46,10 +46,12 @@ class FakeBaseTabStripController : public TabStripController {
                            const GURL& url) OVERRIDE;
   virtual bool IsCompatibleWith(TabStrip* other) const OVERRIDE;
   virtual void CreateNewTab() OVERRIDE;
+  virtual void CreateNewTabWithLocation(const base::string16& loc) OVERRIDE;
   virtual bool IsIncognito() OVERRIDE;
   virtual void LayoutTypeMaybeChanged() OVERRIDE;
   virtual void OnStartedDraggingTabs() OVERRIDE;
   virtual void OnStoppedDraggingTabs() OVERRIDE;
+  virtual void CheckFileSupported(const GURL& url) OVERRIDE;
 
  private:
   TabStrip* tab_strip_;

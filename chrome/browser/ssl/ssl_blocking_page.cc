@@ -5,9 +5,10 @@
 #include "chrome/browser/ssl/ssl_blocking_page.h"
 
 #include "base/i18n/rtl.h"
-#include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
+#include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/history/history_service_factory.h"
@@ -29,11 +30,12 @@
 #include "grit/app_locale_settings.h"
 #include "grit/browser_resources.h"
 #include "grit/generated_resources.h"
+#include "net/base/hash_value.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/webui/jstemplate_builder.h"
+#include "ui/base/webui/jstemplate_builder.h"
 
 #if defined(OS_WIN)
 #include "base/win/windows_version.h"
@@ -50,9 +52,8 @@ namespace {
 enum SSLBlockingPageCommands {
   CMD_DONT_PROCEED,
   CMD_PROCEED,
-  CMD_FOCUS,
   CMD_MORE,
-  CMD_SHOW_UNDERSTAND,  // Used by the Finch trial.
+  CMD_RELOAD,
 };
 
 // Events for UMA.
@@ -68,7 +69,7 @@ enum SSLBlockingPageEvent {
   DONT_PROCEED_DATE,
   DONT_PROCEED_AUTHORITY,
   MORE,
-  SHOW_UNDERSTAND,
+  SHOW_UNDERSTAND,  // Used by the summer 2013 Finch trial. Deprecated.
   SHOW_INTERNAL_HOSTNAME,
   PROCEED_INTERNAL_HOSTNAME,
   SHOW_NEW_SITE,
@@ -87,14 +88,12 @@ void RecordSSLBlockingPageDetailedStats(
     int cert_error,
     bool overridable,
     bool internal,
-    const base::TimeTicks& start_time,
     int num_visits) {
   UMA_HISTOGRAM_ENUMERATION("interstitial.ssl_error_type",
      SSLErrorInfo::NetErrorToErrorType(cert_error), SSLErrorInfo::END_OF_ENUM);
-  if (start_time.is_null() || !overridable) {
-    // A null start time will occur if the page never came into focus.
+  if (!overridable) {
     // Overridable is false if the user didn't have any option except to turn
-    // back. In either case, we don't want to record some of our metrics.
+    // back. If that's the case, don't record some of the metrics.
     return;
   }
   if (num_visits == 0)
@@ -137,16 +136,6 @@ void RecordSSLBlockingPageDetailedStats(
   }
 }
 
-// These are the constants for the Finch experiment.
-const char kStudyName[] = "InterstitialSSL517";
-const char kCondition15Control[] = "Condition15SSLControl";
-const char kCondition16Firefox[] = "Condition16SSLFirefox";
-const char kCondition17FancyFirefox[] = "Condition17SSLFancyFirefox";
-const char kCondition18NoImages[] = "Condition18SSLNoImages";
-const char kCondition19Policeman[] = "Condition19SSLPoliceman";
-const char kCondition20Stoplight[] = "Condition20SSLStoplight";
-const char kCondition21Badguy[] = "Condition21SSLBadguy";
-
 }  // namespace
 
 // Note that we always create a navigation entry with SSL errors.
@@ -168,8 +157,6 @@ SSLBlockingPage::SSLBlockingPage(
       strict_enforcement_(strict_enforcement),
       internal_(false),
       num_visits_(-1) {
-  trialCondition_ = base::FieldTrialList::FindFullName(kStudyName);
-
   // For UMA stats.
   if (net::IsHostnameNonUnique(request_url_.HostNoBrackets()))
     internal_ = true;
@@ -192,7 +179,6 @@ SSLBlockingPage::SSLBlockingPage(
 
   interstitial_page_ = InterstitialPage::Create(
       web_contents_, true, request_url, this);
-  display_start_time_ = TimeTicks();
   interstitial_page_->Show();
 }
 
@@ -202,7 +188,6 @@ SSLBlockingPage::~SSLBlockingPage() {
                                        cert_error_,
                                        overridable_ && !strict_enforcement_,
                                        internal_,
-                                       display_start_time_,
                                        num_visits_);
     // The page is closed without the user having chosen what to do, default to
     // deny.
@@ -211,76 +196,145 @@ SSLBlockingPage::~SSLBlockingPage() {
 }
 
 std::string SSLBlockingPage::GetHTMLContents() {
-  // Let's build the html error page.
   DictionaryValue strings;
-  SSLErrorInfo error_info =
-      SSLErrorInfo::CreateError(SSLErrorInfo::NetErrorToErrorType(cert_error_),
-                                ssl_info_.cert.get(),
-                                request_url_);
-
-  int resource_id = IDR_SSL_ROAD_BLOCK_HTML;
-  strings.SetString("headLine", error_info.title());
-  strings.SetString("description", error_info.details());
-  strings.SetString("moreInfoTitle",
-      l10n_util::GetStringUTF16(IDS_CERT_ERROR_EXTRA_INFO_TITLE));
-  SetExtraInfo(&strings, error_info.extra_information());
-
-  strings.SetString("exit",
-                    l10n_util::GetStringUTF16(IDS_SSL_BLOCKING_PAGE_EXIT));
-
+  int resource_id;
   if (overridable_ && !strict_enforcement_) {
-    strings.SetString("title",
-                      l10n_util::GetStringUTF16(IDS_SSL_BLOCKING_PAGE_TITLE));
-    strings.SetString("proceed",
-                      l10n_util::GetStringUTF16(IDS_SSL_BLOCKING_PAGE_PROCEED));
-    strings.SetString("reasonForNotProceeding",
-                      l10n_util::GetStringUTF16(
-                          IDS_SSL_BLOCKING_PAGE_SHOULD_NOT_PROCEED));
+    // Let's build the overridable error page.
+    SSLErrorInfo error_info =
+        SSLErrorInfo::CreateError(
+            SSLErrorInfo::NetErrorToErrorType(cert_error_),
+            ssl_info_.cert.get(),
+            request_url_);
+
+    resource_id = IDR_SSL_ROAD_BLOCK_HTML;
+    strings.SetString("headLine", error_info.title());
+    strings.SetString("description", error_info.details());
+    strings.SetString("moreInfoTitle",
+        l10n_util::GetStringUTF16(IDS_CERT_ERROR_EXTRA_INFO_TITLE));
+    SetExtraInfo(&strings, error_info.extra_information());
+
+    strings.SetString(
+        "exit", l10n_util::GetStringUTF16(IDS_SSL_OVERRIDABLE_PAGE_EXIT));
+    strings.SetString(
+        "title", l10n_util::GetStringUTF16(IDS_SSL_OVERRIDABLE_PAGE_TITLE));
+    strings.SetString(
+        "proceed", l10n_util::GetStringUTF16(IDS_SSL_OVERRIDABLE_PAGE_PROCEED));
+    strings.SetString(
+        "reasonForNotProceeding", l10n_util::GetStringUTF16(
+            IDS_SSL_OVERRIDABLE_PAGE_SHOULD_NOT_PROCEED));
     strings.SetString("errorType", "overridable");
+    strings.SetString("textdirection", base::i18n::IsRTL() ? "rtl" : "ltr");
   } else {
-    strings.SetString("title",
-                      l10n_util::GetStringUTF16(IDS_SSL_ERROR_PAGE_TITLE));
-    if (strict_enforcement_) {
-      strings.SetString("reasonForNotProceeding",
-                        l10n_util::GetStringUTF16(
-                            IDS_SSL_ERROR_PAGE_CANNOT_PROCEED));
+    // Let's build the blocking error page.
+    resource_id = IDR_SSL_BLOCKING_HTML;
+
+    // Strings that are not dependent on the URL.
+    strings.SetString(
+        "title", l10n_util::GetStringUTF16(IDS_SSL_BLOCKING_PAGE_TITLE));
+    strings.SetString(
+        "reloadMsg", l10n_util::GetStringUTF16(IDS_ERRORPAGES_BUTTON_RELOAD));
+    strings.SetString(
+        "more", l10n_util::GetStringUTF16(IDS_ERRORPAGES_BUTTON_MORE));
+    strings.SetString(
+        "less", l10n_util::GetStringUTF16(IDS_ERRORPAGES_BUTTON_LESS));
+    strings.SetString(
+        "moreTitle",
+        l10n_util::GetStringUTF16(IDS_SSL_BLOCKING_PAGE_MORE_TITLE));
+    strings.SetString(
+        "techTitle",
+        l10n_util::GetStringUTF16(IDS_SSL_BLOCKING_PAGE_TECH_TITLE));
+
+    // Strings that are dependent on the URL.
+    base::string16 url(ASCIIToUTF16(request_url_.host()));
+    bool rtl = base::i18n::IsRTL();
+    strings.SetString("textDirection", rtl ? "rtl" : "ltr");
+    if (rtl)
+      base::i18n::WrapStringWithLTRFormatting(&url);
+    strings.SetString(
+        "headline", l10n_util::GetStringFUTF16(IDS_SSL_BLOCKING_PAGE_HEADLINE,
+                                               url.c_str()));
+    strings.SetString(
+        "message", l10n_util::GetStringFUTF16(IDS_SSL_BLOCKING_PAGE_BODY_TEXT,
+                                              url.c_str()));
+    strings.SetString(
+        "moreMessage",
+        l10n_util::GetStringFUTF16(IDS_SSL_BLOCKING_PAGE_MORE_TEXT,
+                                   url.c_str()));
+    strings.SetString("reloadUrl", request_url_.spec());
+
+    // Strings that are dependent on the error type.
+    SSLErrorInfo::ErrorType type =
+        SSLErrorInfo::NetErrorToErrorType(cert_error_);
+    base::string16 errorType;
+    if (type == SSLErrorInfo::CERT_REVOKED) {
+      errorType = base::string16(ASCIIToUTF16("Key revocation"));
+      strings.SetString(
+          "failure",
+          l10n_util::GetStringUTF16(IDS_SSL_BLOCKING_PAGE_REVOKED));
+    } else if (type == SSLErrorInfo::CERT_INVALID) {
+      errorType = base::string16(ASCIIToUTF16("Malformed certificate"));
+      strings.SetString(
+          "failure",
+          l10n_util::GetStringUTF16(IDS_SSL_BLOCKING_PAGE_FORMATTED));
+    } else if (type == SSLErrorInfo::CERT_PINNED_KEY_MISSING) {
+      errorType = base::string16(ASCIIToUTF16("Certificate pinning failure"));
+      strings.SetString(
+          "failure",
+          l10n_util::GetStringFUTF16(IDS_SSL_BLOCKING_PAGE_PINNING,
+                                     url.c_str()));
+    } else if (type == SSLErrorInfo::CERT_WEAK_KEY_DH) {
+      errorType = base::string16(ASCIIToUTF16("Weak DH public key"));
+      strings.SetString(
+          "failure",
+          l10n_util::GetStringFUTF16(IDS_SSL_BLOCKING_PAGE_WEAK_DH,
+                                     url.c_str()));
     } else {
-      strings.SetString("reasonForNotProceeding", std::string());
+      // HSTS failure.
+      errorType = base::string16(ASCIIToUTF16("HSTS failure"));
+      strings.SetString(
+          "failure",
+          l10n_util::GetStringFUTF16(IDS_SSL_BLOCKING_PAGE_HSTS, url.c_str()));
     }
-    strings.SetString("errorType", "notoverridable");
-  }
+    if (rtl)
+      base::i18n::WrapStringWithLTRFormatting(&errorType);
+    strings.SetString(
+        "errorType", l10n_util::GetStringFUTF16(IDS_SSL_BLOCKING_PAGE_ERROR,
+                                                errorType.c_str()));
 
-  strings.SetString("textdirection", base::i18n::IsRTL() ? "rtl" : "ltr");
-
-  // Set up the Finch trial layouts.
-  strings.SetString("trialType", trialCondition_);
-  if (trialCondition_ == kCondition16Firefox ||
-      trialCondition_ == kCondition17FancyFirefox ||
-      trialCondition_ == kCondition18NoImages) {
-    strings.SetString("domain", request_url_.host());
-    std::string font_family = l10n_util::GetStringUTF8(IDS_WEB_FONT_FAMILY);
-#if defined(OS_WIN)
-    if (base::win::GetVersion() < base::win::VERSION_VISTA) {
-      font_family = l10n_util::GetStringUTF8(IDS_WEB_FONT_FAMILY_XP);
+    // Strings that display the invalid cert.
+    base::string16 subject(
+        ASCIIToUTF16(ssl_info_.cert->subject().GetDisplayName()));
+    base::string16 issuer(
+        ASCIIToUTF16(ssl_info_.cert->issuer().GetDisplayName()));
+    std::string hashes;
+    for (std::vector<net::HashValue>::iterator it =
+            ssl_info_.public_key_hashes.begin();
+         it != ssl_info_.public_key_hashes.end();
+         ++it) {
+      base::StringAppendF(&hashes, "%s ", it->ToString().c_str());
     }
-#endif
-#if defined(TOOLKIT_GTK)
-    font_family = ui::ResourceBundle::GetSharedInstance().GetFont(
-        ui::ResourceBundle::BaseFont).GetFontName() + ", " + font_family;
-#endif
-    strings.SetString("fontfamily", font_family);
-    if (trialCondition_ == kCondition16Firefox ||
-        trialCondition_ == kCondition18NoImages) {
-      resource_id = IDR_SSL_FIREFOX_HTML;
-    } else if (trialCondition_ == kCondition17FancyFirefox) {
-      resource_id = IDR_SSL_FANCY_FIREFOX_HTML;
+    base::string16 fingerprint(ASCIIToUTF16(hashes));
+    if (rtl) {
+      // These are always going to be LTR.
+      base::i18n::WrapStringWithLTRFormatting(&subject);
+      base::i18n::WrapStringWithLTRFormatting(&issuer);
+      base::i18n::WrapStringWithLTRFormatting(&fingerprint);
     }
+    strings.SetString(
+        "subject", l10n_util::GetStringFUTF16(IDS_SSL_BLOCKING_PAGE_SUBJECT,
+                                              subject.c_str()));
+    strings.SetString(
+        "issuer", l10n_util::GetStringFUTF16(IDS_SSL_BLOCKING_PAGE_ISSUER,
+                                             issuer.c_str()));
+    strings.SetString(
+        "fingerprint",
+        l10n_util::GetStringFUTF16(IDS_SSL_BLOCKING_PAGE_HASHES,
+                                   fingerprint.c_str()));
   }
 
   base::StringPiece html(
       ResourceBundle::GetSharedInstance().GetRawDataResource(
           resource_id));
-
   return webui::GetI18nTemplateHtml(html, &strings);
 }
 
@@ -307,14 +361,12 @@ void SSLBlockingPage::CommandReceived(const std::string& command) {
     interstitial_page_->DontProceed();
   } else if (cmd == CMD_PROCEED) {
     interstitial_page_->Proceed();
-  } else if (cmd == CMD_FOCUS) {
-    // Start recording the time when the page is first in focus
-    display_start_time_ = base::TimeTicks::Now();
   } else if (cmd == CMD_MORE) {
     RecordSSLBlockingPageEventStats(MORE);
-  } else if (cmd == CMD_SHOW_UNDERSTAND) {
-    // Used in the Finch experiment.
-    RecordSSLBlockingPageEventStats(SHOW_UNDERSTAND);
+  } else if (cmd == CMD_RELOAD) {
+    // The interstitial can't refresh itself.
+    content::NavigationController* controller = &web_contents_->GetController();
+    controller->Reload(true);
   }
 }
 
@@ -330,7 +382,6 @@ void SSLBlockingPage::OnProceed() {
                                      cert_error_,
                                      overridable_ && !strict_enforcement_,
                                      internal_,
-                                     display_start_time_,
                                      num_visits_);
   // Accepting the certificate resumes the loading of the page.
   NotifyAllowCertificate();
@@ -341,7 +392,6 @@ void SSLBlockingPage::OnDontProceed() {
                                      cert_error_,
                                      overridable_ && !strict_enforcement_,
                                      internal_,
-                                     display_start_time_,
                                      num_visits_);
   NotifyDenyCertificate();
 }
@@ -367,7 +417,7 @@ void SSLBlockingPage::NotifyAllowCertificate() {
 // static
 void SSLBlockingPage::SetExtraInfo(
     DictionaryValue* strings,
-    const std::vector<string16>& extra_info) {
+    const std::vector<base::string16>& extra_info) {
   DCHECK_LT(extra_info.size(), 5U);  // We allow 5 paragraphs max.
   const char* keys[5] = {
       "moreInfo1", "moreInfo2", "moreInfo3", "moreInfo4", "moreInfo5"

@@ -11,11 +11,9 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_icon_set.h"
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "chrome/common/extensions/manifest_handlers/icons_handler.h"
-#include "chrome/common/extensions/permissions/permission_set.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/test_switches.h"
 #include "chrome/test/base/ui_test_utils.h"
@@ -25,6 +23,8 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test_utils.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/permissions/permission_set.h"
 
 namespace extensions {
 
@@ -53,14 +53,8 @@ class ExtensionFromWebAppTest
   }
 };
 
-#if defined(OS_CHROMEOS)
-// The Apps tab is not included in the new tab page in Chrome OS.
-#define MAYBE_Basic DISABLED_Basic
-#else
-#define MAYBE_Basic Basic
-#endif
-
-IN_PROC_BROWSER_TEST_F(ExtensionFromWebAppTest, MAYBE_Basic) {
+// TODO(samarth): delete along with rest of the NTP4 code.
+IN_PROC_BROWSER_TEST_F(ExtensionFromWebAppTest, DISABLED_Basic) {
 #if defined(OS_WIN) && defined(USE_ASH)
   // Disable this test in Metro+Ash for now (http://crbug.com/262796).
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kAshBrowserTests))
@@ -92,7 +86,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionFromWebAppTest, MAYBE_Basic) {
   EXPECT_EQ("", installed_extension_->description());
   EXPECT_EQ(GURL("http://www.example.com/"),
             AppLaunchInfo::GetLaunchWebURL(installed_extension_));
-  EXPECT_EQ(extension_misc::LAUNCH_TAB,
+  EXPECT_EQ(LAUNCH_CONTAINER_TAB,
             AppLaunchInfo::GetLaunchContainer(installed_extension_));
   EXPECT_EQ(0u, installed_extension_->GetActivePermissions()->apis().size());
   EXPECT_EQ(0u, IconsInfo::GetIcons(installed_extension_).map().size());

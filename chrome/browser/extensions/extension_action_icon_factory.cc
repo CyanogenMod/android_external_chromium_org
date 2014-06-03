@@ -5,8 +5,9 @@
 #include "chrome/browser/extensions/extension_action_icon_factory.h"
 
 #include "chrome/browser/extensions/extension_action.h"
-#include "chrome/common/extensions/extension.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/extension_icon_set.h"
+#include "extensions/common/extension.h"
 #include "grit/theme_resources.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/image/image_skia.h"

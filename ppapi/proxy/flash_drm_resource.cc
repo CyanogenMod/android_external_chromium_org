@@ -7,9 +7,8 @@
 #include "base/bind.h"
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/proxy/dispatch_reply_message.h"
+#include "ppapi/proxy/file_ref_resource.h"
 #include "ppapi/proxy/ppapi_messages.h"
-#include "ppapi/proxy/ppb_file_ref_proxy.h"
-#include "ppapi/shared_impl/ppb_file_ref_shared.h"
 #include "ppapi/shared_impl/var.h"
 
 namespace ppapi {
@@ -72,6 +71,22 @@ int32_t FlashDRMResource::GetVoucherFile(
   return PP_OK_COMPLETIONPENDING;
 }
 
+int32_t FlashDRMResource::MonitorIsExternal(
+    PP_Bool* is_external,
+    scoped_refptr<TrackedCallback> callback) {
+  if (!is_external)
+    return PP_ERROR_BADARGUMENT;
+
+  *is_external = PP_FALSE;
+
+  Call<PpapiPluginMsg_FlashDRM_MonitorIsExternalReply>(
+      BROWSER,
+      PpapiHostMsg_FlashDRM_MonitorIsExternal(),
+      base::Bind(&FlashDRMResource::OnPluginMsgMonitorIsExternalReply, this,
+                 is_external, callback));
+  return PP_OK_COMPLETIONPENDING;
+}
+
 void FlashDRMResource::OnPluginMsgGetDeviceIDReply(
     PP_Var* dest,
     scoped_refptr<TrackedCallback> callback,
@@ -88,10 +103,26 @@ void FlashDRMResource::OnPluginMsgGetVoucherFileReply(
     PP_Resource* dest,
     scoped_refptr<TrackedCallback> callback,
     const ResourceMessageReplyParams& params,
-    const PPB_FileRef_CreateInfo& file_info) {
+    const FileRefCreateInfo& file_info) {
+  if (TrackedCallback::IsPending(callback)) {
+    if (params.result() == PP_OK) {
+      *dest = FileRefResource::CreateFileRef(
+          connection(),
+          pp_instance(),
+          file_info);
+    }
+    callback->Run(params.result());
+  }
+}
+
+void FlashDRMResource::OnPluginMsgMonitorIsExternalReply(
+    PP_Bool* dest,
+    scoped_refptr<TrackedCallback> callback,
+    const ResourceMessageReplyParams& params,
+    PP_Bool is_external) {
   if (TrackedCallback::IsPending(callback)) {
     if (params.result() == PP_OK)
-      *dest = PPB_FileRef_Proxy::DeserializeFileRef(file_info);
+      *dest = is_external;
     callback->Run(params.result());
   }
 }

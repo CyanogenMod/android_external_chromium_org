@@ -4,16 +4,16 @@
 
 #include "content/test/webkit_unit_test_support.h"
 
-#include "webkit/support/webkit_support.h"
+#include "content/test/webkit_support.h"
 
 namespace content {
 
 void SetUpTestEnvironmentForWebKitUnitTests() {
-  webkit_support::SetUpTestEnvironmentForUnitTests();
+  SetUpTestEnvironmentForUnitTests();
 }
 
 void TearDownEnvironmentForWebKitUnitTests() {
-  webkit_support::TearDownTestEnvironment();
+  TearDownTestEnvironment();
 }
 
-}
+}  // namespace content

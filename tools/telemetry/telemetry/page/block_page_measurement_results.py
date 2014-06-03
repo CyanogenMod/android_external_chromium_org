@@ -12,22 +12,23 @@ class BlockPageMeasurementResults(
     self._output_file = output_file
 
   def DidMeasurePage(self):
-    page_values = self.values_for_current_page
+    values = self.page_specific_values_for_current_page
+    if not values:
+      # Do not output if no results were added on this page.
+      super(BlockPageMeasurementResults, self).DidMeasurePage()
+      return
+    lines = ['name: %s' %
+             values[0].page.display_name]
 
-    lines = ['url: %s' %
-             self.values_for_current_page.page.url]
-    sorted_measurement_names = page_values.measurement_names
-    sorted_measurement_names.sort()
-
-    for measurement_name in sorted_measurement_names:
-      value = page_values.FindValueByMeasurementName(measurement_name)
+    for value in sorted(values, key=lambda x: x.name):
       lines.append('%s (%s): %s' %
-                 (measurement_name,
+                 (value.name,
                   value.units,
-                  value.output_value))
+                  value.GetRepresentativeString()))
     for line in lines:
       self._output_file.write(line)
       self._output_file.write(os.linesep)
     self._output_file.write(os.linesep)
+    self._output_file.flush()
 
     super(BlockPageMeasurementResults, self).DidMeasurePage()

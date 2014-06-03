@@ -1,35 +1,29 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 package org.chromium.android_webview.test;
 
 import android.test.suitebuilder.annotation.SmallTest;
-import android.util.Log;
 import android.util.Pair;
 
-import org.chromium.android_webview.AndroidProtocolHandler;
 import org.chromium.android_webview.AwContents;
 import org.chromium.android_webview.InterceptedRequestData;
 import org.chromium.android_webview.test.util.CommonResources;
-import org.chromium.android_webview.test.util.JSUtils;
 import org.chromium.base.test.util.Feature;
 import org.chromium.base.test.util.TestFileUtil;
 import org.chromium.content.browser.test.util.CallbackHelper;
-import org.chromium.content.browser.test.util.TestCallbackHelperContainer.OnPageFinishedHelper;
-import org.chromium.content.browser.test.util.TestCallbackHelperContainer.OnPageStartedHelper;
 import org.chromium.content.browser.test.util.TestCallbackHelperContainer.OnReceivedErrorHelper;
 import org.chromium.net.test.util.TestWebServer;
 
 import java.io.ByteArrayInputStream;
-import java.io.InputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
-import java.util.List;
-import java.util.Random;
 
 /**
  * Tests for the WebViewClient.shouldInterceptRequest() method.
@@ -41,7 +35,7 @@ public class AwContentsClientShouldInterceptRequestTest extends AwTestBase {
 
         public static class ShouldInterceptRequestHelper extends CallbackHelper {
             private List<String> mShouldInterceptRequestUrls = new ArrayList<String>();
-            private ConcurrentHashMap<String, InterceptedRequestData> mReturnValusByUrls
+            private ConcurrentHashMap<String, InterceptedRequestData> mReturnValuesByUrls
                 = new ConcurrentHashMap<String, InterceptedRequestData>();
             // This is read from the IO thread, so needs to be marked volatile.
             private volatile InterceptedRequestData mShouldInterceptRequestReturnValue = null;
@@ -49,14 +43,14 @@ public class AwContentsClientShouldInterceptRequestTest extends AwTestBase {
                 mShouldInterceptRequestReturnValue = value;
             }
             void setReturnValueForUrl(String url, InterceptedRequestData value) {
-                mReturnValusByUrls.put(url, value);
+                mReturnValuesByUrls.put(url, value);
             }
             public List<String> getUrls() {
                 assert getCallCount() > 0;
                 return mShouldInterceptRequestUrls;
             }
             public InterceptedRequestData getReturnValue(String url) {
-                InterceptedRequestData value = mReturnValusByUrls.get(url);
+                InterceptedRequestData value = mReturnValuesByUrls.get(url);
                 if (value != null) return value;
                 return mShouldInterceptRequestReturnValue;
             }

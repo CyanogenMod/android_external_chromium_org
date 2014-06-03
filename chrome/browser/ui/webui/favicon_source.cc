@@ -11,7 +11,7 @@
 #include "chrome/browser/history/top_sites.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search/instant_io_context.h"
-#include "chrome/browser/sync/glue/session_model_associator.h"
+#include "chrome/browser/sync/open_tabs_ui_delegate.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/common/favicon/favicon_url_parser.h"
@@ -22,7 +22,7 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/layout.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/webui/web_ui_util.h"
+#include "ui/base/webui/web_ui_util.h"
 
 FaviconSource::IconRequest::IconRequest()
     : size_in_dip(gfx::kFaviconSize),
@@ -108,8 +108,8 @@ void FaviconSource::StartDataRequest(
     }
 
     favicon_service->GetRawFaviconForURL(
-        FaviconService::FaviconForURLParams(
-            profile_, url, icon_types_, parsed.size_in_dip),
+        FaviconService::FaviconForURLParams(url, icon_types_,
+                                            parsed.size_in_dip),
         parsed.scale_factor,
         base::Bind(&FaviconSource::OnFaviconDataAvailable,
                    base::Unretained(this),
@@ -143,13 +143,13 @@ bool FaviconSource::HandleMissingResource(const IconRequest& request) {
   // If the favicon is not available, try to use the synced favicon.
   ProfileSyncService* sync_service =
       ProfileSyncServiceFactory::GetInstance()->GetForProfile(profile_);
-  browser_sync::SessionModelAssociator* associator = sync_service ?
-      sync_service->GetSessionModelAssociator() : NULL;
+  browser_sync::OpenTabsUIDelegate* open_tabs = sync_service ?
+      sync_service->GetOpenTabsUIDelegate() : NULL;
 
   scoped_refptr<base::RefCountedMemory> response;
-  if (associator &&
-      associator->GetSyncedFaviconForPageURL(request.request_path.spec(),
-                                             &response)) {
+  if (open_tabs &&
+      open_tabs->GetSyncedFaviconForPageURL(request.request_path.spec(),
+                                            &response)) {
     request.callback.Run(response.get());
     return true;
   }

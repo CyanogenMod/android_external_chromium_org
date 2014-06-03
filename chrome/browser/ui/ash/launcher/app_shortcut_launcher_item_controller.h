@@ -8,8 +8,10 @@
 #include <string>
 
 #include "base/time/time.h"
-#include "chrome/browser/ui/ash/launcher/chrome_launcher_controller_per_app.h"
 #include "chrome/browser/ui/ash/launcher/launcher_item_controller.h"
+#include "url/gurl.h"
+
+class URLPattern;
 
 namespace aura {
 class Window;
@@ -27,26 +29,27 @@ class ChromeLauncherController;
 class AppShortcutLauncherItemController : public LauncherItemController {
  public:
   AppShortcutLauncherItemController(const std::string& app_id,
-                                    ChromeLauncherControllerPerApp* controller);
+                                    ChromeLauncherController* controller);
 
   virtual ~AppShortcutLauncherItemController();
 
+  std::vector<content::WebContents*> GetRunningApplications();
+
   // LauncherItemController overrides:
-  virtual string16 GetTitle() OVERRIDE;
-  virtual bool HasWindow(aura::Window* window) const OVERRIDE;
   virtual bool IsOpen() const OVERRIDE;
   virtual bool IsVisible() const OVERRIDE;
-  virtual void Launch(int event_flags) OVERRIDE;
-  virtual void Activate() OVERRIDE;
+  virtual void Launch(ash::LaunchSource source, int event_flags) OVERRIDE;
+  virtual bool Activate(ash::LaunchSource source) OVERRIDE;
   virtual void Close() OVERRIDE;
-  virtual void Clicked(const ui::Event& event) OVERRIDE;
-  virtual void OnRemoved() OVERRIDE;
-  virtual void LauncherItemChanged(
-      int model_index,
-      const ash::LauncherItem& old_item) OVERRIDE;
   virtual ChromeLauncherAppMenuItems GetApplicationList(
       int event_flags) OVERRIDE;
-  std::vector<content::WebContents*> GetRunningApplications();
+  virtual bool ItemSelected(const ui::Event& event) OVERRIDE;
+  virtual base::string16 GetTitle() OVERRIDE;
+  virtual ui::MenuModel* CreateContextMenu(
+      aura::Window* root_window) OVERRIDE;
+  virtual ash::ShelfMenuModel* CreateApplicationMenu(int event_flags) OVERRIDE;
+  virtual bool IsDraggable() OVERRIDE;
+  virtual bool ShouldShowTooltip() OVERRIDE;
 
   // Get the refocus url pattern, which can be used to identify this application
   // from a URL link.
@@ -60,10 +63,13 @@ class AppShortcutLauncherItemController : public LauncherItemController {
 
   // Returns true if this app matches the given |web_contents|. To accelerate
   // the matching, the app managing |extension| as well as the parsed
-  // |refocus_pattern| get passed.
+  // |refocus_pattern| get passed. If |is_app| is true, the application gets
+  // first checked against its original URL since a windowed app might have
+  // navigated away from its app domain.
   bool WebContentMatchesApp(const extensions::Extension* extension,
                             const URLPattern& refocus_pattern,
-                            content::WebContents* web_contents);
+                            content::WebContents* web_contents,
+                            bool is_app);
 
   // Activate the browser with the given |content| and show the associated tab.
   void ActivateContent(content::WebContents* content);
@@ -79,11 +85,12 @@ class AppShortcutLauncherItemController : public LauncherItemController {
   bool AllowNextLaunchAttempt();
 
   GURL refocus_url_;
-  ChromeLauncherControllerPerApp* app_controller_;
 
   // Since V2 applications can be undetectable after launching, this timer is
   // keeping track of the last launch attempt.
   base::Time last_launch_attempt_;
+
+  ChromeLauncherController* chrome_launcher_controller_;
 
   DISALLOW_COPY_AND_ASSIGN(AppShortcutLauncherItemController);
 };

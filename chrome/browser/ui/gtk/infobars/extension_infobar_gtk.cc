@@ -6,7 +6,7 @@
 
 #include "base/debug/trace_event.h"
 #include "chrome/browser/extensions/extension_context_menu_model.h"
-#include "chrome/browser/extensions/extension_host.h"
+#include "chrome/browser/extensions/extension_view_host.h"
 #include "chrome/browser/extensions/image_loader.h"
 #include "chrome/browser/platform_util.h"
 #include "chrome/browser/ui/gtk/browser_window_gtk.h"
@@ -14,12 +14,12 @@
 #include "chrome/browser/ui/gtk/gtk_chrome_button.h"
 #include "chrome/browser/ui/gtk/gtk_util.h"
 #include "chrome/browser/ui/gtk/infobars/infobar_container_gtk.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_icon_set.h"
 #include "chrome/common/extensions/manifest_handlers/icons_handler.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host_view.h"
+#include "extensions/common/extension.h"
 #include "extensions/common/extension_resource.h"
 #include "grit/theme_resources.h"
 #include "ui/base/gtk/gtk_signal_registrar.h"
@@ -31,52 +31,32 @@
 
 // ExtensionInfoBarDelegate ---------------------------------------------------
 
-InfoBar* ExtensionInfoBarDelegate::CreateInfoBar(InfoBarService* owner) {
-  return new ExtensionInfoBarGtk(owner, this);
+// static
+scoped_ptr<InfoBar> ExtensionInfoBarDelegate::CreateInfoBar(
+    scoped_ptr<ExtensionInfoBarDelegate> delegate) {
+  return scoped_ptr<InfoBar>(new ExtensionInfoBarGtk(delegate.Pass()));
 }
 
 
 // ExtensionInfoBarGtk --------------------------------------------------------
 
-ExtensionInfoBarGtk::ExtensionInfoBarGtk(InfoBarService* owner,
-                                         ExtensionInfoBarDelegate* delegate)
-    : InfoBarGtk(owner, delegate),
-      delegate_(delegate),
+ExtensionInfoBarGtk::ExtensionInfoBarGtk(
+    scoped_ptr<ExtensionInfoBarDelegate> delegate)
+    : InfoBarGtk(delegate.PassAs<InfoBarDelegate>()),
       view_(NULL),
       button_(NULL),
       icon_(NULL),
       alignment_(NULL),
       weak_ptr_factory_(this) {
-  GetDelegate()->set_observer(this);
-
   int height = GetDelegate()->height();
   SetBarTargetHeight((height > 0) ? (height + kSeparatorLineHeight) : 0);
 }
 
 ExtensionInfoBarGtk::~ExtensionInfoBarGtk() {
-  if (GetDelegate())
-    GetDelegate()->set_observer(NULL);
 }
 
-void ExtensionInfoBarGtk::PlatformSpecificHide(bool animate) {
-  DCHECK(view_);
-  DCHECK(alignment_);
-  gtk_util::RemoveAllChildren(alignment_);
-}
-
-void ExtensionInfoBarGtk::GetTopColor(InfoBarDelegate::Type type,
-                                      double* r, double* g, double* b) {
-  // Extension infobars are always drawn with chrome-theme colors.
-  *r = *g = *b = 233.0 / 255.0;
-}
-
-void ExtensionInfoBarGtk::GetBottomColor(InfoBarDelegate::Type type,
-                                         double* r, double* g, double* b) {
-  *r = *g = *b = 218.0 / 255.0;
-}
-
-void ExtensionInfoBarGtk::InitWidgets() {
-  InfoBarGtk::InitWidgets();
+void ExtensionInfoBarGtk::PlatformSpecificSetOwner() {
+  InfoBarGtk::PlatformSpecificSetOwner();
 
   // Always render the close button as if we were doing chrome style widget
   // rendering. For extension infobars, we force chrome style rendering because
@@ -88,8 +68,9 @@ void ExtensionInfoBarGtk::InitWidgets() {
   icon_ = gtk_image_new();
   gtk_misc_set_alignment(GTK_MISC(icon_), 0.5, 0.5);
 
-  extensions::ExtensionHost* extension_host = GetDelegate()->extension_host();
-  const extensions::Extension* extension = extension_host->extension();
+  extensions::ExtensionViewHost* extension_view_host =
+      GetDelegate()->extension_view_host();
+  const extensions::Extension* extension = extension_view_host->extension();
 
   if (extension->ShowConfigureContextMenus()) {
     button_ = gtk_chrome_button_new();
@@ -111,7 +92,7 @@ void ExtensionInfoBarGtk::InitWidgets() {
           ExtensionIconSet::MATCH_EXACTLY);
   // Load image asynchronously, calling back OnImageLoaded.
   extensions::ImageLoader* loader =
-      extensions::ImageLoader::Get(extension_host->profile());
+      extensions::ImageLoader::Get(extension_view_host->browser_context());
   loader->LoadImageAsync(extension, icon_resource,
                          gfx::Size(extension_misc::EXTENSION_ICON_BITTY,
                                    extension_misc::EXTENSION_ICON_BITTY),
@@ -123,7 +104,7 @@ void ExtensionInfoBarGtk::InitWidgets() {
   gtk_alignment_set_padding(GTK_ALIGNMENT(alignment_), 0, 1, 0, 0);
   gtk_box_pack_start(GTK_BOX(hbox()), alignment_, TRUE, TRUE, 0);
 
-  view_ = extension_host->view();
+  view_ = extension_view_host->view();
 
   if (gtk_widget_get_parent(view_->native_view())) {
     gtk_widget_reparent(view_->native_view(), alignment_);
@@ -141,13 +122,26 @@ void ExtensionInfoBarGtk::InitWidgets() {
                      G_CALLBACK(&OnSizeAllocateThunk), this);
 }
 
+void ExtensionInfoBarGtk::PlatformSpecificHide(bool animate) {
+  DCHECK(view_);
+  DCHECK(alignment_);
+  gtk_util::RemoveAllChildren(alignment_);
+}
+
+void ExtensionInfoBarGtk::GetTopColor(InfoBarDelegate::Type type,
+                                      double* r, double* g, double* b) {
+  // Extension infobars are always drawn with chrome-theme colors.
+  *r = *g = *b = 233.0 / 255.0;
+}
+
+void ExtensionInfoBarGtk::GetBottomColor(InfoBarDelegate::Type type,
+                                         double* r, double* g, double* b) {
+  *r = *g = *b = 218.0 / 255.0;
+}
+
 void ExtensionInfoBarGtk::StoppedShowing() {
   if (button_)
     gtk_chrome_button_unset_paint_state(GTK_CHROME_BUTTON(button_));
-}
-
-void ExtensionInfoBarGtk::OnDelegateDeleted() {
-  delegate_ = NULL;
 }
 
 void ExtensionInfoBarGtk::OnImageLoaded(const gfx::Image& image) {
@@ -171,7 +165,7 @@ void ExtensionInfoBarGtk::OnImageLoaded(const gfx::Image& image) {
     static const int kDropArrowLeftMargin = 3;
     scoped_ptr<gfx::Canvas> canvas(new gfx::Canvas(
         gfx::Size(image_size + kDropArrowLeftMargin + drop_image->width(),
-                  image_size), ui::SCALE_FACTOR_100P, false));
+                  image_size), 1.0f, false));
     canvas->DrawImageInt(*icon, 0, 0, icon->width(), icon->height(), 0, 0,
                          image_size, image_size, false);
     canvas->DrawImageInt(*drop_image, image_size + kDropArrowLeftMargin,
@@ -187,7 +181,7 @@ void ExtensionInfoBarGtk::OnImageLoaded(const gfx::Image& image) {
 }
 
 ExtensionInfoBarDelegate* ExtensionInfoBarGtk::GetDelegate() {
-  return delegate_ ? delegate_->AsExtensionInfoBarDelegate() : NULL;
+  return delegate()->AsExtensionInfoBarDelegate();
 }
 
 Browser* ExtensionInfoBarGtk::GetBrowser() {
@@ -215,7 +209,7 @@ void ExtensionInfoBarGtk::OnSizeAllocate(GtkWidget* widget,
                                          GtkAllocation* allocation) {
   gfx::Size new_size(allocation->width, allocation->height);
 
-  GetDelegate()->extension_host()->view()->render_view_host()->GetView()->
+  GetDelegate()->extension_view_host()->view()->render_view_host()->GetView()->
       SetSize(new_size);
 }
 

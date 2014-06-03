@@ -149,12 +149,6 @@ class HistoryDatabase : public DownloadDatabase,
     return needs_version_17_migration_;
   }
 
-  // Marks the database as no longer needing migration.
-  void ThumbnailMigrationDone();
-
-  // Returns true if thumbnails needs to be migrated.
-  bool GetNeedsThumbnailMigration();
-
   // Visit table functions ----------------------------------------------------
 
   // Update the segment id of a visit. Return true on success.
@@ -178,7 +172,6 @@ class HistoryDatabase : public DownloadDatabase,
 #endif
   friend class ::HistoryQuickProviderTest;
   friend class InMemoryURLIndexTest;
-  FRIEND_TEST_ALL_PREFIXES(IconMappingMigrationTest, TestIconMappingMigration);
 
   // Overridden from URLDatabase:
   virtual sql::Connection& GetDB() OVERRIDE;

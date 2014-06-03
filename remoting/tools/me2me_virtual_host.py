@@ -13,6 +13,7 @@ import atexit
 import errno
 import fcntl
 import getpass
+import grp
 import hashlib
 import json
 import logging
@@ -340,6 +341,12 @@ class Desktop:
 
     self.child_env["DISPLAY"] = ":%d" % display
     self.child_env["CHROME_REMOTE_DESKTOP_SESSION"] = "1"
+
+    # Use a separate profile for any instances of Chrome that are started in
+    # the virtual session. Chrome doesn't support sharing a profile between
+    # multiple DISPLAYs, but Chrome Sync allows for a reasonable compromise.
+    chrome_profile = os.path.join(CONFIG_DIR, "chrome-profile")
+    self.child_env["CHROME_USER_DATA_DIR"] = chrome_profile
 
     # Wait for X to be active.
     for _test in range(5):
@@ -936,6 +943,15 @@ Web Store: https://chrome.google.com/remotedesktop"""
     return 0
 
   if options.add_user:
+    user = getpass.getuser()
+    try:
+      if user in grp.getgrnam(CHROME_REMOTING_GROUP_NAME).gr_mem:
+        logging.info("User '%s' is already a member of '%s'." %
+                     (user, CHROME_REMOTING_GROUP_NAME))
+        return 0
+    except KeyError:
+      logging.info("Group '%s' not found." % CHROME_REMOTING_GROUP_NAME)
+
     if os.getenv("DISPLAY"):
       sudo_command = "gksudo --description \"Chrome Remote Desktop\""
     else:
@@ -943,7 +959,7 @@ Web Store: https://chrome.google.com/remotedesktop"""
     command = ("sudo -k && exec %(sudo)s -- sh -c "
                "\"groupadd -f %(group)s && gpasswd --add %(user)s %(group)s\"" %
                { 'group': CHROME_REMOTING_GROUP_NAME,
-                 'user': getpass.getuser(),
+                 'user': user,
                  'sudo': sudo_command })
     os.execv("/bin/sh", ["/bin/sh", "-c", command])
     return 1

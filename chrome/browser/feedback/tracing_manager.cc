@@ -5,17 +5,24 @@
 #include "chrome/browser/feedback/tracing_manager.h"
 
 #include "base/bind.h"
+#include "base/file_util.h"
+#include "base/location.h"
+#include "base/memory/ref_counted_memory.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/feedback/feedback_util.h"
 #include "chrome/common/pref_names.h"
-#include "content/public/browser/trace_controller.h"
+#include "content/public/browser/tracing_controller.h"
 
 namespace {
 // Only once trace manager can exist at a time.
 TracingManager* g_tracing_manager = NULL;
 // Trace IDs start at 1 and increase.
 int g_next_trace_id = 1;
+// Name of the file to store the tracing data as.
+const base::FilePath::CharType kTracingFilename[] =
+    FILE_PATH_LITERAL("tracing.json");
 }
 
 TracingManager::TracingManager()
@@ -38,7 +45,10 @@ int TracingManager::RequestTrace() {
 
   current_trace_id_ = g_next_trace_id;
   ++g_next_trace_id;
-  content::TraceController::GetInstance()->EndTracingAsync(this);
+  content::TracingController::GetInstance()->DisableRecording(
+      base::FilePath(),
+      base::Bind(&TracingManager::OnTraceDataCollected,
+                 weak_ptr_factory_.GetWeakPtr()));
   return current_trace_id_;
 }
 
@@ -73,7 +83,6 @@ void TracingManager::DiscardTraceData(int id) {
   // If the trace is discarded before it is complete, clean up the accumulators.
   if (id == current_trace_id_) {
     current_trace_id_ = 0;
-    data_ = "";
 
     // If the trace has already been requested, provide an empty string.
     if (!trace_callback_.is_null()) {
@@ -84,17 +93,25 @@ void TracingManager::DiscardTraceData(int id) {
 }
 
 void TracingManager::StartTracing() {
-  content::TraceController::GetInstance()->BeginTracing(
-      this, "-test_*",
-      base::debug::TraceLog::RECORD_CONTINUOUSLY);
+  content::TracingController::GetInstance()->EnableRecording(
+      "", content::TracingController::DEFAULT_OPTIONS,
+      content::TracingController::EnableRecordingDoneCallback());
 }
 
-void TracingManager::OnEndTracingComplete() {
+void TracingManager::OnTraceDataCollected(const base::FilePath& path) {
   if (!current_trace_id_)
     return;
 
+  std::string data;
+  if (!base::ReadFileToString(path, &data)) {
+    LOG(ERROR) << "Failed to read trace data from: " << path.value();
+    return;
+  }
+  base::DeleteFile(path, false);
+
   std::string output_val;
-  FeedbackUtil::ZipString(data_, &output_val);
+  feedback_util::ZipString(
+      base::FilePath(kTracingFilename), data, &output_val);
 
   scoped_refptr<base::RefCountedString> output(
       base::RefCountedString::TakeString(&output_val));
@@ -107,7 +124,6 @@ void TracingManager::OnEndTracingComplete() {
   }
 
   current_trace_id_ = 0;
-  data_ = "";
 
   // Tracing has to be restarted asynchronous, so the TracingController can
   // clean up.
@@ -115,12 +131,6 @@ void TracingManager::OnEndTracingComplete() {
       FROM_HERE,
       base::Bind(&TracingManager::StartTracing,
                  weak_ptr_factory_.GetWeakPtr()));
-}
-
-void TracingManager::OnTraceDataCollected(
-    const scoped_refptr<base::RefCountedString>& trace_fragment) {
-  if (current_trace_id_)
-    data_ += trace_fragment->data();
 }
 
 // static

@@ -8,7 +8,6 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/values.h"
 #include "cc/test/fake_content_layer_client.h"
-#include "cc/test/fake_rendering_stats_instrumentation.h"
 #include "cc/test/skia_common.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkCanvas.h"
@@ -33,7 +32,6 @@ TEST(PictureTest, AsBase64String) {
   tile_grid_info.fOffset.setZero();
 
   FakeContentLayerClient content_layer_client;
-  FakeRenderingStatsInstrumentation stats_instrumentation;
 
   scoped_ptr<base::Value> tmp;
 
@@ -52,8 +50,7 @@ TEST(PictureTest, AsBase64String) {
   content_layer_client.add_draw_rect(layer_rect, red_paint);
   scoped_refptr<Picture> one_rect_picture = Picture::Create(layer_rect);
   one_rect_picture->Record(&content_layer_client,
-                           tile_grid_info,
-                           &stats_instrumentation);
+                           tile_grid_info);
   scoped_ptr<base::Value> serialized_one_rect(
       one_rect_picture->AsValue());
 
@@ -79,8 +76,7 @@ TEST(PictureTest, AsBase64String) {
   content_layer_client.add_draw_rect(gfx::Rect(25, 25, 50, 50), green_paint);
   scoped_refptr<Picture> two_rect_picture = Picture::Create(layer_rect);
   two_rect_picture->Record(&content_layer_client,
-                           tile_grid_info,
-                           &stats_instrumentation);
+                           tile_grid_info);
 
   scoped_ptr<base::Value> serialized_two_rect(
       two_rect_picture->AsValue());
@@ -113,7 +109,6 @@ TEST(PictureTest, PixelRefIterator) {
   tile_grid_info.fOffset.setZero();
 
   FakeContentLayerClient content_layer_client;
-  FakeRenderingStatsInstrumentation stats_instrumentation;
 
   // Lazy pixel refs are found in the following grids:
   // |---|---|---|---|
@@ -140,9 +135,8 @@ TEST(PictureTest, PixelRefIterator) {
 
   scoped_refptr<Picture> picture = Picture::Create(layer_rect);
   picture->Record(&content_layer_client,
-                  tile_grid_info,
-                  &stats_instrumentation);
-  picture->GatherPixelRefs(tile_grid_info, &stats_instrumentation);
+                  tile_grid_info);
+  picture->GatherPixelRefs(tile_grid_info);
 
   // Default iterator does not have any pixel refs
   {
@@ -212,7 +206,6 @@ TEST(PictureTest, PixelRefIteratorNonZeroLayer) {
   tile_grid_info.fOffset.setZero();
 
   FakeContentLayerClient content_layer_client;
-  FakeRenderingStatsInstrumentation stats_instrumentation;
 
   // Lazy pixel refs are found in the following grids:
   // |---|---|---|---|
@@ -239,9 +232,8 @@ TEST(PictureTest, PixelRefIteratorNonZeroLayer) {
 
   scoped_refptr<Picture> picture = Picture::Create(layer_rect);
   picture->Record(&content_layer_client,
-                  tile_grid_info,
-                  &stats_instrumentation);
-  picture->GatherPixelRefs(tile_grid_info, &stats_instrumentation);
+                  tile_grid_info);
+  picture->GatherPixelRefs(tile_grid_info);
 
   // Default iterator does not have any pixel refs
   {
@@ -335,7 +327,6 @@ TEST(PictureTest, PixelRefIteratorOnePixelQuery) {
   tile_grid_info.fOffset.setZero();
 
   FakeContentLayerClient content_layer_client;
-  FakeRenderingStatsInstrumentation stats_instrumentation;
 
   // Lazy pixel refs are found in the following grids:
   // |---|---|---|---|
@@ -362,9 +353,8 @@ TEST(PictureTest, PixelRefIteratorOnePixelQuery) {
 
   scoped_refptr<Picture> picture = Picture::Create(layer_rect);
   picture->Record(&content_layer_client,
-                  tile_grid_info,
-                  &stats_instrumentation);
-  picture->GatherPixelRefs(tile_grid_info, &stats_instrumentation);
+                  tile_grid_info);
+  picture->GatherPixelRefs(tile_grid_info);
 
   for (int y = 0; y < 4; ++y) {
     for (int x = 0; x < 4; ++x) {
@@ -379,6 +369,57 @@ TEST(PictureTest, PixelRefIteratorOnePixelQuery) {
       }
     }
   }
+}
+
+TEST(PictureTest, CreateFromSkpValue) {
+  SkGraphics::Init();
+
+  gfx::Rect layer_rect(100, 200);
+
+  SkTileGridPicture::TileGridInfo tile_grid_info;
+  tile_grid_info.fTileInterval = SkISize::Make(100, 200);
+  tile_grid_info.fMargin.setEmpty();
+  tile_grid_info.fOffset.setZero();
+
+  FakeContentLayerClient content_layer_client;
+
+  scoped_ptr<base::Value> tmp;
+
+  SkPaint red_paint;
+  red_paint.setColor(SkColorSetARGB(255, 255, 0, 0));
+  SkPaint green_paint;
+  green_paint.setColor(SkColorSetARGB(255, 0, 255, 0));
+
+  // Invalid picture (not a dict).
+  tmp.reset(new base::StringValue("abc!@#$%"));
+  scoped_refptr<Picture> invalid_picture =
+      Picture::CreateFromSkpValue(tmp.get());
+  EXPECT_TRUE(!invalid_picture.get());
+
+  // Single full-size rect picture.
+  content_layer_client.add_draw_rect(layer_rect, red_paint);
+  scoped_refptr<Picture> one_rect_picture = Picture::Create(layer_rect);
+  one_rect_picture->Record(&content_layer_client,
+                           tile_grid_info);
+  scoped_ptr<base::Value> serialized_one_rect(
+      one_rect_picture->AsValue());
+
+  const base::DictionaryValue* value = NULL;
+  EXPECT_TRUE(serialized_one_rect->GetAsDictionary(&value));
+
+  // Decode the picture from base64.
+  const base::Value* skp_value;
+  EXPECT_TRUE(value->Get("skp64", &skp_value));
+
+  // Reconstruct the picture.
+  scoped_refptr<Picture> one_rect_picture_check =
+      Picture::CreateFromSkpValue(skp_value);
+  EXPECT_TRUE(!!one_rect_picture_check.get());
+
+  EXPECT_EQ(100, one_rect_picture_check->LayerRect().width());
+  EXPECT_EQ(200, one_rect_picture_check->LayerRect().height());
+  EXPECT_EQ(100, one_rect_picture_check->OpaqueRect().width());
+  EXPECT_EQ(200, one_rect_picture_check->OpaqueRect().height());
 }
 }  // namespace
 }  // namespace cc

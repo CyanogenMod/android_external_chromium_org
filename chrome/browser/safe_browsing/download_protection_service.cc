@@ -660,7 +660,7 @@ class DownloadProtectionService::CheckClientDownloadRequest
     VLOG(2) << "Sending a request for URL: "
             << item_->GetUrlChain().back();
     fetcher_.reset(net::URLFetcher::Create(0 /* ID used for testing */,
-                                           GURL(GetDownloadRequestUrl()),
+                                           GetDownloadRequestUrl(),
                                            net::URLFetcher::POST,
                                            this));
     fetcher_->SetLoadFlags(net::LOAD_DISABLE_CACHE);
@@ -880,9 +880,6 @@ void DownloadProtectionService::ShowDetailsForDownload(
     const content::DownloadItem& item,
     content::PageNavigator* navigator) {
   GURL learn_more_url(chrome::kDownloadScanningLearnMoreURL);
-  if (item.GetDangerType() ==
-      content::DOWNLOAD_DANGER_TYPE_POTENTIALLY_UNWANTED)
-    learn_more_url = GURL(chrome::kDownloadPotentiallyUnwantedLearnMoreURL);
   navigator->OpenURL(
       content::OpenURLParams(learn_more_url,
                              content::Referrer(),
@@ -967,13 +964,12 @@ void DownloadProtectionService::GetCertificateWhitelistStrings(
 }
 
 // static
-std::string DownloadProtectionService::GetDownloadRequestUrl() {
-  std::string url = kDownloadRequestUrl;
+GURL DownloadProtectionService::GetDownloadRequestUrl() {
+  GURL url(kDownloadRequestUrl);
   std::string api_key = google_apis::GetAPIKey();
-  if (!api_key.empty()) {
-    base::StringAppendF(&url, "?key=%s",
-                        net::EscapeQueryParamValue(api_key, true).c_str());
-  }
+  if (!api_key.empty())
+    url = url.Resolve("?key=" + net::EscapeQueryParamValue(api_key, true));
+
   return url;
 }
 

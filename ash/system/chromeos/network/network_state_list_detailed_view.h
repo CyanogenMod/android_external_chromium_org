@@ -18,6 +18,10 @@
 #include "base/memory/weak_ptr.h"
 #include "ui/views/controls/button/button.h"
 
+namespace chromeos {
+class NetworkTypePattern;
+}
+
 namespace views {
 class BubbleDelegateView;
 }
@@ -73,6 +77,8 @@ class NetworkStateListDetailedView
   virtual void OnViewClicked(views::View* sender) OVERRIDE;
 
  private:
+  class InfoBubble;
+
   typedef std::map<views::View*, std::string> NetworkMap;
   typedef std::map<std::string, HoverHighlightView*> ServicePathMap;
 
@@ -84,7 +90,7 @@ class NetworkStateListDetailedView
   // Update UI components.
   void UpdateHeaderButtons();
   void UpdateTechnologyButton(TrayPopupHeaderButton* button,
-                              const std::string& technology);
+                              const chromeos::NetworkTypePattern& technology);
 
   void UpdateNetworks(
       const chromeos::NetworkStateHandler::NetworkStateList& networks);
@@ -105,6 +111,7 @@ class NetworkStateListDetailedView
   // Create and manage the network info bubble.
   void ToggleInfoBubble();
   bool ResetInfoBubble();
+  void OnInfoBubbleDestroyed();
   views::View* CreateNetworkInfoView();
 
   // Periodically request a network scan.

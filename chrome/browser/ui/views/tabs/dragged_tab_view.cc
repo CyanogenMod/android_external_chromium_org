@@ -13,12 +13,11 @@
 #if defined(USE_AURA)
 #include "ui/views/widget/native_widget_aura.h"
 #elif defined(OS_WIN)
-#include "ui/base/win/dpi.h"
+#include "ui/gfx/win/dpi.h"
 #include "ui/views/widget/native_widget_win.h"
 #endif
 
 static const int kTransparentAlpha = 200;
-static const int kOpaqueAlpha = 255;
 static const int kDragFrameBorderSize = 2;
 static const int kTwiceDragFrameBorderSize = 2 * kDragFrameBorderSize;
 static const float kScalingFactor = 0.5;
@@ -82,7 +81,7 @@ void DraggedTabView::MoveTo(const gfx::Point& screen_point) {
   int y = screen_point.y() - ScaleValue(mouse_tab_offset_.y());
 
 #if defined(OS_WIN) && !defined(USE_AURA)
-  double scale = ui::win::GetDeviceScaleFactor();
+  double scale = gfx::win::GetDeviceScaleFactor();
   x = static_cast<int>(scale * screen_point.x());
   y = static_cast<int>(scale * screen_point.y());
   // TODO(beng): make this cross-platform
@@ -138,7 +137,7 @@ gfx::Size DraggedTabView::GetPreferredSize() {
 void DraggedTabView::PaintDetachedView(gfx::Canvas* canvas) {
   gfx::Size ps = GetPreferredSize();
   // TODO(pkotwicz): DIP enable this class.
-  gfx::Canvas scale_canvas(ps, ui::SCALE_FACTOR_100P, false);
+  gfx::Canvas scale_canvas(ps, 1.0f, false);
   SkBitmap& bitmap_device = const_cast<SkBitmap&>(
       skia::GetTopDevice(*scale_canvas.sk_canvas())->accessBitmap(true));
   bitmap_device.eraseARGB(0, 0, 0, 0);

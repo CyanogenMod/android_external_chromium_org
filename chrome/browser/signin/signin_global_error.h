@@ -18,19 +18,22 @@ class Profile;
 // register an AuthStatusProvider to report their current authentication state,
 // and should invoke AuthStatusChanged() when their authentication state may
 // have changed.
-class SigninGlobalError : public GlobalError {
+class SigninGlobalError : public GlobalErrorWithStandardBubble {
  public:
   class AuthStatusProvider {
    public:
     AuthStatusProvider();
     virtual ~AuthStatusProvider();
 
+    // Returns the account id with the status specified by GetAuthStatus().
+    virtual std::string GetAccountId() const = 0;
+
     // API invoked by SigninGlobalError to get the current auth status of
     // the various signed in services.
     virtual GoogleServiceAuthError GetAuthStatus() const = 0;
   };
 
-  SigninGlobalError(Profile* profile);
+  explicit SigninGlobalError(Profile* profile);
   virtual ~SigninGlobalError();
 
   // Adds a provider which the SigninGlobalError object will start querying for
@@ -44,18 +47,20 @@ class SigninGlobalError : public GlobalError {
   // Invoked when the auth status of an AuthStatusProvider has changed.
   void AuthStatusChanged();
 
+  std::string GetAccountIdOfLastAuthError() const { return account_id_; }
+
   GoogleServiceAuthError GetLastAuthError() const { return auth_error_; }
 
   // GlobalError implementation.
   virtual bool HasMenuItem() OVERRIDE;
   virtual int MenuItemCommandID() OVERRIDE;
-  virtual string16 MenuItemLabel() OVERRIDE;
+  virtual base::string16 MenuItemLabel() OVERRIDE;
   virtual void ExecuteMenuItem(Browser* browser) OVERRIDE;
   virtual bool HasBubbleView() OVERRIDE;
-  virtual string16 GetBubbleViewTitle() OVERRIDE;
-  virtual std::vector<string16> GetBubbleViewMessages() OVERRIDE;
-  virtual string16 GetBubbleViewAcceptButtonLabel() OVERRIDE;
-  virtual string16 GetBubbleViewCancelButtonLabel() OVERRIDE;
+  virtual base::string16 GetBubbleViewTitle() OVERRIDE;
+  virtual std::vector<base::string16> GetBubbleViewMessages() OVERRIDE;
+  virtual base::string16 GetBubbleViewAcceptButtonLabel() OVERRIDE;
+  virtual base::string16 GetBubbleViewCancelButtonLabel() OVERRIDE;
   virtual void OnBubbleViewDidClose(Browser* browser) OVERRIDE;
   virtual void BubbleViewAcceptButtonPressed(Browser* browser) OVERRIDE;
   virtual void BubbleViewCancelButtonPressed(Browser* browser) OVERRIDE;
@@ -65,6 +70,9 @@ class SigninGlobalError : public GlobalError {
 
  private:
   std::set<const AuthStatusProvider*> provider_set_;
+
+  // The account that generated the last auth error.
+  std::string account_id_;
 
   // The auth error detected the last time AuthStatusChanged() was invoked (or
   // NONE if AuthStatusChanged() has never been invoked).

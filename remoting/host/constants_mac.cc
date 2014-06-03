@@ -17,10 +17,6 @@ namespace remoting {
 
 const char kServiceName[] = SERVICE_NAME;
 
-const char kUpdateSucceededNotificationName[] =
-    SERVICE_NAME ".update_succeeded";
-const char kUpdateFailedNotificationName[] = SERVICE_NAME ".update_failed";
-
 const char kPrefPaneFileName[] = SERVICE_NAME ".prefPane";
 const char kPrefPaneFilePath[] = PREFERENCE_PANES_DIR SERVICE_NAME ".prefPane";
 
@@ -35,6 +31,10 @@ const char kServicePlistPath[] = LAUNCH_AGENTS_DIR SERVICE_NAME ".plist";
 
 const char kLogFilePath[] = LOG_DIR SERVICE_NAME ".log";
 const char kLogFileConfigPath[] = LOG_CONFIG_DIR SERVICE_NAME ".conf";
+
+const char kNativeMessagingManifestPath[] =
+    "/Library/Google/Chrome/NativeMessagingHosts/"
+    "com.google.chrome.remote_desktop.json";
 
 const char kBrandedUninstallerPath[] = APPLICATIONS_DIR
     "Chrome Remote Desktop Host Uninstaller.app";

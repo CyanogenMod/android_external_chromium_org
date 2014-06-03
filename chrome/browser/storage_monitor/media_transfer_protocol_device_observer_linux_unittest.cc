@@ -9,7 +9,6 @@
 #include <string>
 
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
@@ -17,12 +16,9 @@
 #include "chrome/browser/storage_monitor/storage_info.h"
 #include "chrome/browser/storage_monitor/storage_monitor.h"
 #include "chrome/browser/storage_monitor/test_storage_monitor.h"
-#include "chrome/test/base/testing_browser_process.h"
-#include "content/public/test/test_browser_thread.h"
+#include "content/public/test/test_browser_thread_bundle.h"
 #include "device/media_transfer_protocol/media_transfer_protocol_manager.h"
 #include "testing/gtest/include/gtest/gtest.h"
-
-namespace chrome {
 
 namespace {
 
@@ -43,7 +39,7 @@ std::string GetMtpDeviceId(const std::string& unique_id) {
 void GetStorageInfo(const std::string& storage_name,
                     device::MediaTransferProtocolManager* mtp_manager,
                     std::string* id,
-                    string16* label,
+                    base::string16* label,
                     std::string* location) {
   if (storage_name == kStorageWithInvalidInfo)
     return;  // Do not set any storage details.
@@ -90,16 +86,14 @@ class TestMediaTransferProtocolDeviceObserverLinux
 class MediaTransferProtocolDeviceObserverLinuxTest : public testing::Test {
  public:
   MediaTransferProtocolDeviceObserverLinuxTest()
-      : message_loop_(base::MessageLoop::TYPE_IO),
-        file_thread_(content::BrowserThread::FILE, &message_loop_) {}
+      : thread_bundle_(content::TestBrowserThreadBundle::IO_MAINLOOP) {}
 
   virtual ~MediaTransferProtocolDeviceObserverLinuxTest() {}
 
  protected:
   virtual void SetUp() OVERRIDE {
     mock_storage_observer_.reset(new MockRemovableStorageObserver);
-    chrome::test::TestStorageMonitor* monitor =
-        chrome::test::TestStorageMonitor::CreateAndInstall();
+    TestStorageMonitor* monitor = TestStorageMonitor::CreateAndInstall();
     mtp_device_observer_.reset(
         new TestMediaTransferProtocolDeviceObserverLinux(
             monitor->receiver(), monitor->media_transfer_protocol_manager()));
@@ -110,6 +104,7 @@ class MediaTransferProtocolDeviceObserverLinuxTest : public testing::Test {
     StorageMonitor* monitor = g_browser_process->storage_monitor();
     monitor->RemoveObserver(mock_storage_observer_.get());
     mtp_device_observer_.reset();
+    TestStorageMonitor::RemoveSingleton();
   }
 
   // Returns the device changed observer object.
@@ -122,8 +117,7 @@ class MediaTransferProtocolDeviceObserverLinuxTest : public testing::Test {
   }
 
  private:
-  base::MessageLoop message_loop_;
-  content::TestBrowserThread file_thread_;
+  content::TestBrowserThreadBundle thread_bundle_;
 
   scoped_ptr<TestMediaTransferProtocolDeviceObserverLinux> mtp_device_observer_;
   scoped_ptr<MockRemovableStorageObserver> mock_storage_observer_;
@@ -165,5 +159,3 @@ TEST_F(MediaTransferProtocolDeviceObserverLinuxTest, StorageWithInvalidInfo) {
   EXPECT_EQ(0, observer().attach_calls());
   EXPECT_EQ(0, observer().detach_calls());
 }
-
-}  // namespace chrome

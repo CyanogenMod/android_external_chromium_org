@@ -86,7 +86,7 @@ WebsiteSettingsUI::IdentityInfo::IdentityInfo()
       connection_status(WebsiteSettings::SITE_CONNECTION_STATUS_UNKNOWN) {
 }
 
-string16 WebsiteSettingsUI::IdentityInfo::GetIdentityStatusText() const {
+base::string16 WebsiteSettingsUI::IdentityInfo::GetIdentityStatusText() const {
   if (identity_status == WebsiteSettings::SITE_IDENTITY_STATUS_CERT ||
       identity_status ==  WebsiteSettings::SITE_IDENTITY_STATUS_EV_CERT) {
     return l10n_util::GetStringUTF16(IDS_WEBSITE_SETTINGS_IDENTITY_VERIFIED);
@@ -102,7 +102,7 @@ WebsiteSettingsUI::~WebsiteSettingsUI() {
 }
 
 // static
-string16 WebsiteSettingsUI::PermissionTypeToUIString(
+base::string16 WebsiteSettingsUI::PermissionTypeToUIString(
       ContentSettingsType type) {
   switch (type) {
     case CONTENT_SETTINGS_TYPE_IMAGES:
@@ -130,12 +130,13 @@ string16 WebsiteSettingsUI::PermissionTypeToUIString(
       return l10n_util::GetStringUTF16(IDS_WEBSITE_SETTINGS_TYPE_MIDI_SYSEX);
     default:
       NOTREACHED();
-      return string16();
+      return base::string16();
   }
 }
 
 // static
-string16 WebsiteSettingsUI::PermissionValueToUIString(ContentSetting value) {
+base::string16 WebsiteSettingsUI::PermissionValueToUIString(
+    ContentSetting value) {
   switch (value) {
     case CONTENT_SETTING_ALLOW:
       return l10n_util::GetStringUTF16(IDS_WEBSITE_SETTINGS_PERMISSION_ALLOW);
@@ -145,12 +146,12 @@ string16 WebsiteSettingsUI::PermissionValueToUIString(ContentSetting value) {
       return l10n_util::GetStringUTF16(IDS_WEBSITE_SETTINGS_PERMISSION_ASK);
     default:
       NOTREACHED();
-      return string16();
+      return base::string16();
   }
 }
 
 // static
-string16 WebsiteSettingsUI::PermissionActionToUIString(
+base::string16 WebsiteSettingsUI::PermissionActionToUIString(
       ContentSetting setting,
       ContentSetting default_setting,
       content_settings::SettingSource source) {
@@ -176,7 +177,7 @@ string16 WebsiteSettingsUI::PermissionActionToUIString(
     case content_settings::SETTING_SOURCE_NONE:
     default:
       NOTREACHED();
-      return string16();
+      return base::string16();
   }
   int button_text_id = button_text_ids[effective_setting];
   DCHECK_NE(button_text_id, kInvalidResourceID);
@@ -266,7 +267,7 @@ int WebsiteSettingsUI::GetIdentityIconID(
       resource_id = IDR_PAGEINFO_BAD;
       break;
     case WebsiteSettings::SITE_IDENTITY_STATUS_ADMIN_PROVIDED_CERT:
-      resource_id = IDR_CONTROLLED_SETTING_MANDATORY_LARGE;
+      resource_id = IDR_PAGEINFO_ENTERPRISE_MANAGED;
       break;
     default:
       NOTREACHED();
@@ -316,7 +317,7 @@ const gfx::Image& WebsiteSettingsUI::GetConnectionIcon(
 }
 
 // static
-int WebsiteSettingsUI::GetFirstVisitIconID(const string16& first_visit) {
+int WebsiteSettingsUI::GetFirstVisitIconID(const base::string16& first_visit) {
   // FIXME(markusheintz): Display a minor warning icon if the page is visited
   // the first time.
   return IDR_PAGEINFO_INFO;
@@ -324,7 +325,7 @@ int WebsiteSettingsUI::GetFirstVisitIconID(const string16& first_visit) {
 
 // static
 const gfx::Image& WebsiteSettingsUI::GetFirstVisitIcon(
-    const string16& first_visit) {
+    const base::string16& first_visit) {
   ResourceBundle& rb = ResourceBundle::GetSharedInstance();
   return rb.GetNativeImageNamed(GetFirstVisitIconID(first_visit));
 }

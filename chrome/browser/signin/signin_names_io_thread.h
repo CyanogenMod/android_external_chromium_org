@@ -31,7 +31,7 @@ class NotificationSource;
 // ProfileIOData.
 class SigninNamesOnIOThread : public content::NotificationObserver {
  public:
-  typedef std::set<string16> EmailSet;
+  typedef std::set<base::string16> EmailSet;
 
   // Objects should only be created on UI thread.
   SigninNamesOnIOThread();
@@ -59,10 +59,10 @@ class SigninNamesOnIOThread : public content::NotificationObserver {
 
   // Posts a task to the I/O thread to add or remove the email address from
   // the set.
-  void PostTaskToIOThread(int type, const string16& email);
+  void PostTaskToIOThread(int type, const base::string16& email);
 
   // Updates the email set on the I/O thread.  Protected for testing.
-  void UpdateOnIOThread(int type, const string16& email);
+  void UpdateOnIOThread(int type, const base::string16& email);
 
   scoped_ptr<content::NotificationRegistrar> registrar_;
   EmailSet emails_;

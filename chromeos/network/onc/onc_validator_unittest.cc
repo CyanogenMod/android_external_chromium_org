@@ -10,10 +10,10 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/values.h"
-#include "chromeos/network/onc/onc_constants.h"
 #include "chromeos/network/onc/onc_signature.h"
 #include "chromeos/network/onc/onc_test_utils.h"
 #include "chromeos/network/onc/onc_utils.h"
+#include "components/onc/onc_constants.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace chromeos {
@@ -30,7 +30,7 @@ class ONCValidatorTest : public ::testing::Test {
                 scoped_ptr<base::DictionaryValue> onc_object,
                 const OncValueSignature* signature,
                 bool managed_onc,
-                ONCSource onc_source) {
+                ::onc::ONCSource onc_source) {
     scoped_ptr<Validator> validator;
     if (strict) {
       // Create a strict validator that complains about every error.
@@ -77,7 +77,7 @@ struct OncParams {
   OncParams(const std::string& location_of_object,
             const OncValueSignature* onc_signature,
             bool is_managed_onc,
-            ONCSource onc_source = ONC_SOURCE_NONE)
+            ::onc::ONCSource onc_source = ::onc::ONC_SOURCE_NONE)
       : location(location_of_object),
         signature(onc_signature),
         is_managed(is_managed_onc),
@@ -87,7 +87,7 @@ struct OncParams {
   std::string location;
   const OncValueSignature* signature;
   bool is_managed;
-  ONCSource onc_source;
+  ::onc::ONCSource onc_source;
 };
 
 ::std::ostream& operator<<(::std::ostream& os, const OncParams& onc) {
@@ -102,7 +102,7 @@ struct OncParams {
 // ONC toplevel object.
 TEST_F(ONCValidatorTest, EmptyUnencryptedConfiguration) {
   Validate(true, ReadDictionaryFromJson(kEmptyUnencryptedConfiguration),
-           &kToplevelConfigurationSignature, false, ONC_SOURCE_NONE);
+           &kToplevelConfigurationSignature, false, ::onc::ONC_SOURCE_NONE);
   ExpectValid();
 }
 
@@ -133,33 +133,58 @@ TEST_P(ONCValidatorValidTest, LiberalValidationValid) {
 INSTANTIATE_TEST_CASE_P(
     ONCValidatorValidTest,
     ONCValidatorValidTest,
-    ::testing::Values(OncParams("managed_toplevel1.onc",
-                                &kToplevelConfigurationSignature,
-                                true),
-                      OncParams("managed_toplevel2.onc",
-                                &kToplevelConfigurationSignature,
-                                true),
-                      // Check that at least one configuration is accepted for
-                      // device policies.
-                      OncParams("managed_toplevel_wifi_peap.onc",
-                                &kToplevelConfigurationSignature,
-                                true,
-                                ONC_SOURCE_DEVICE_POLICY),
-                      OncParams("toplevel_wifi_wpa_psk.onc",
-                                &kToplevelConfigurationSignature,
-                                false),
-                      OncParams("encrypted.onc",
-                                &kToplevelConfigurationSignature,
-                                true),
-                      OncParams("managed_vpn.onc",
-                                &kNetworkConfigurationSignature,
-                                true),
-                      OncParams("managed_ethernet.onc",
-                                &kNetworkConfigurationSignature,
-                                true),
-                      OncParams("translation_of_shill_wifi_with_state.onc",
-                                &kNetworkWithStateSignature,
-                                false)));
+    ::testing::Values(
+        OncParams("managed_toplevel1.onc",
+                  &kToplevelConfigurationSignature,
+                  true),
+        OncParams("managed_toplevel2.onc",
+                  &kToplevelConfigurationSignature,
+                  true),
+        OncParams("managed_toplevel_with_global_config.onc",
+                  &kToplevelConfigurationSignature,
+                  true),
+        // Check that at least one configuration is accepted for
+        // device policies.
+        OncParams("managed_toplevel_wifi_peap.onc",
+                  &kToplevelConfigurationSignature,
+                  true,
+                  ::onc::ONC_SOURCE_DEVICE_POLICY),
+        OncParams("managed_toplevel_l2tpipsec.onc",
+                  &kToplevelConfigurationSignature,
+                  true),
+        OncParams("toplevel_wifi_wpa_psk.onc",
+                  &kToplevelConfigurationSignature,
+                  false),
+        OncParams("toplevel_wifi_wep_proxy.onc",
+                  &kToplevelConfigurationSignature,
+                  false),
+        OncParams("toplevel_wifi_leap.onc",
+                  &kToplevelConfigurationSignature,
+                  false),
+        OncParams("toplevel_wifi_eap_clientcert_with_cert_pems.onc",
+                  &kToplevelConfigurationSignature,
+                  false),
+        OncParams("toplevel_wifi_remove.onc",
+                  &kToplevelConfigurationSignature,
+                  false),
+        OncParams("toplevel_wifi_open.onc",
+                  &kToplevelConfigurationSignature,
+                  false),
+        OncParams("toplevel_openvpn_clientcert_with_cert_pems.onc",
+                  &kToplevelConfigurationSignature,
+                  false),
+        OncParams("encrypted.onc", &kToplevelConfigurationSignature, true),
+        OncParams("managed_vpn.onc", &kNetworkConfigurationSignature, true),
+        OncParams("ethernet.onc", &kNetworkConfigurationSignature, true),
+        OncParams("ethernet_with_eap.onc",
+                  &kNetworkConfigurationSignature,
+                  true),
+        OncParams("translation_of_shill_wifi_with_state.onc",
+                  &kNetworkWithStateSignature,
+                  false),
+        OncParams("valid_openvpn_with_cert_pems.onc",
+                  &kNetworkConfigurationSignature,
+                  false)));
 
 namespace {
 
@@ -251,46 +276,53 @@ INSTANTIATE_TEST_CASE_P(
     StrictInvalidLiberalRepair,
     ONCValidatorTestRepairable,
     ::testing::Values(
-         std::make_pair(OncParams("network-unknown-fieldname",
-                                  &kNetworkConfigurationSignature,
-                                  false),
-                        RepairParams("", "network-repaired")),
-         std::make_pair(OncParams("managed-network-unknown-fieldname",
-                                  &kNetworkConfigurationSignature,
-                                  true),
-                        RepairParams("", "managed-network-repaired")),
-         std::make_pair(OncParams("managed-network-unknown-recommended",
-                                  &kNetworkConfigurationSignature,
-                                  true),
-                        RepairParams("", "managed-network-repaired")),
-         std::make_pair(OncParams("managed-network-dict-recommended",
-                                  &kNetworkConfigurationSignature,
-                                  true),
-                        RepairParams("", "managed-network-repaired")),
-         std::make_pair(OncParams("network-missing-required",
-                                  &kNetworkConfigurationSignature,
-                                  false),
-                        RepairParams("", "network-missing-required")),
-         std::make_pair(OncParams("managed-network-missing-required",
-                                  &kNetworkConfigurationSignature,
-                                  true),
-                        RepairParams("", "managed-network-missing-required")),
-         // Ensure that state values from Shill aren't accepted as
-         // configuration.
-         std::make_pair(OncParams("network-state-field",
-                                  &kNetworkConfigurationSignature,
-                                  false),
-                        RepairParams("", "network-repaired")),
-         std::make_pair(OncParams("network-nested-state-field",
-                                  &kNetworkConfigurationSignature,
-                                  false),
-                        RepairParams("",
-                                     "network-nested-state-field-repaired")),
-         std::make_pair(OncParams("toplevel-with-repairable-networks",
-                                  &kToplevelConfigurationSignature,
-                                  false,
-                                  ONC_SOURCE_DEVICE_POLICY),
-                        RepairParams("", "toplevel-with-repaired-networks"))));
+        std::make_pair(OncParams("network-unknown-fieldname",
+                                 &kNetworkConfigurationSignature,
+                                 false),
+                       RepairParams("", "network-repaired")),
+        std::make_pair(OncParams("managed-network-unknown-fieldname",
+                                 &kNetworkConfigurationSignature,
+                                 true),
+                       RepairParams("", "managed-network-repaired")),
+        std::make_pair(OncParams("managed-network-unknown-recommended",
+                                 &kNetworkConfigurationSignature,
+                                 true),
+                       RepairParams("", "managed-network-repaired")),
+        std::make_pair(OncParams("managed-network-dict-recommended",
+                                 &kNetworkConfigurationSignature,
+                                 true),
+                       RepairParams("", "managed-network-repaired")),
+        std::make_pair(OncParams("network-missing-required",
+                                 &kNetworkConfigurationSignature,
+                                 false),
+                       RepairParams("", "network-missing-required")),
+        std::make_pair(OncParams("managed-network-missing-required",
+                                 &kNetworkConfigurationSignature,
+                                 true),
+                       RepairParams("", "managed-network-missing-required")),
+        // Ensure that state values from Shill aren't accepted as
+        // configuration.
+        std::make_pair(OncParams("network-state-field",
+                                 &kNetworkConfigurationSignature,
+                                 false),
+                       RepairParams("", "network-repaired")),
+        std::make_pair(OncParams("network-nested-state-field",
+                                 &kNetworkConfigurationSignature,
+                                 false),
+                       RepairParams("", "network-nested-state-field-repaired")),
+        std::make_pair(OncParams("openvpn-missing-verify-x509-name",
+                                 &kNetworkConfigurationSignature, false),
+                        RepairParams("", "openvpn-missing-verify-x509-name")),
+        std::make_pair(OncParams("ipsec-with-client-cert-missing-cacert",
+                                 &kIPsecSignature,
+                                 false),
+                       RepairParams("",
+                                    "ipsec-with-client-cert-missing-cacert")),
+        std::make_pair(OncParams("toplevel-with-repairable-networks",
+                                 &kToplevelConfigurationSignature,
+                                 false,
+                                 ::onc::ONC_SOURCE_DEVICE_POLICY),
+                       RepairParams("", "toplevel-with-repaired-networks"))));
 
 // Strict and liberal validator repair identically.
 INSTANTIATE_TEST_CASE_P(
@@ -315,12 +347,12 @@ INSTANTIATE_TEST_CASE_P(
          std::make_pair(OncParams("toplevel-with-vpn",
                                   &kToplevelConfigurationSignature,
                                   false,
-                                  ONC_SOURCE_DEVICE_POLICY),
+                                  ::onc::ONC_SOURCE_DEVICE_POLICY),
                         RepairParams("toplevel-empty", "toplevel-empty")),
          std::make_pair(OncParams("toplevel-with-server-and-ca-cert",
                                   &kToplevelConfigurationSignature,
                                   true,
-                                  ONC_SOURCE_DEVICE_POLICY),
+                                  ::onc::ONC_SOURCE_DEVICE_POLICY),
                         RepairParams("toplevel-server-and-ca-cert-dropped",
                                      "toplevel-server-and-ca-cert-dropped"))));
 
@@ -348,6 +380,21 @@ INSTANTIATE_TEST_CASE_P(
          std::make_pair(OncParams("network-value-out-of-range",
                                   &kNetworkConfigurationSignature, false),
                         RepairParams("", "")),
+         std::make_pair(OncParams("ipsec-with-psk-and-cacert",
+                                  &kIPsecSignature, false),
+                        RepairParams("", "")),
+         std::make_pair(OncParams("ipsec-with-empty-cacertrefs",
+                                  &kIPsecSignature, false),
+                        RepairParams("", "")),
+         std::make_pair(OncParams("ipsec-with-servercaref-and-servercarefs",
+                                  &kIPsecSignature, false),
+                        RepairParams("", "")),
+         std::make_pair(OncParams("openvpn-with-servercaref-and-servercarefs",
+                                  &kOpenVPNSignature, false),
+                        RepairParams("", "")),
+         std::make_pair(OncParams("eap-with-servercaref-and-servercarefs",
+                                  &kEAPSignature, false),
+                        RepairParams("", "")),
          std::make_pair(OncParams("managed-network-value-out-of-range",
                                   &kNetworkConfigurationSignature, true),
                         RepairParams("", "")),
@@ -359,8 +406,12 @@ INSTANTIATE_TEST_CASE_P(
                         RepairParams("", "")),
          std::make_pair(OncParams("network-with-client-cert-pattern",
                                   &kNetworkConfigurationSignature, true,
-                                  ONC_SOURCE_DEVICE_POLICY),
-                        RepairParams("", ""))));
+                                  ::onc::ONC_SOURCE_DEVICE_POLICY),
+                        RepairParams("", "")),
+         std::make_pair(OncParams("openvpn-invalid-verify-x509-type",
+                                  &kNetworkConfigurationSignature, false),
+                        RepairParams("", ""))
+         ));
 
 }  // namespace onc
 }  // namespace chromeos

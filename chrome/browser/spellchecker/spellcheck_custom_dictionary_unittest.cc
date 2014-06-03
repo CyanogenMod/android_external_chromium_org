@@ -25,6 +25,11 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+#if defined(OS_WIN)
+// For version specific disabled tests below (http://crbug.com/230534).
+#include "base/win/windows_version.h"
+#endif
+
 using base::HistogramBase;
 using base::HistogramSamples;
 using base::StatisticsRecorder;
@@ -122,6 +127,11 @@ class SyncChangeProcessorDelegate : public syncer::SyncChangeProcessor {
     return dictionary_->ProcessSyncChanges(from_here, change_list);
   }
 
+  virtual syncer::SyncDataList GetAllSyncData(syncer::ModelType type) const
+      OVERRIDE {
+    return syncer::SyncDataList();
+  }
+
  private:
   SpellcheckCustomDictionary* dictionary_;
   DISALLOW_COPY_AND_ASSIGN(SyncChangeProcessorDelegate);
@@ -204,7 +214,7 @@ TEST_F(SpellcheckCustomDictionaryTest, SaveAndLoad) {
 
 TEST_F(SpellcheckCustomDictionaryTest, MultiProfile) {
   SpellcheckService* spellcheck_service =
-      SpellcheckServiceFactory::GetForProfile(&profile_);
+      SpellcheckServiceFactory::GetForContext(&profile_);
   SpellcheckCustomDictionary* custom_dictionary =
       spellcheck_service->GetCustomDictionary();
   TestingProfile profile2;
@@ -300,7 +310,7 @@ TEST_F(SpellcheckCustomDictionaryTest, CorruptedWriteShouldBeRecovered) {
   change.AddWord("baz");
   UpdateDictionaryFile(change, path);
   content.clear();
-  file_util::ReadFileToString(path, &content);
+  base::ReadFileToString(path, &content);
   content.append("corruption");
   file_util::WriteFile(path, content.c_str(), content.length());
   loaded_custom_words = LoadDictionaryFile(path);
@@ -310,7 +320,7 @@ TEST_F(SpellcheckCustomDictionaryTest, CorruptedWriteShouldBeRecovered) {
 TEST_F(SpellcheckCustomDictionaryTest,
        GetAllSyncDataAccuratelyReflectsDictionaryState) {
   SpellcheckCustomDictionary* dictionary =
-      SpellcheckServiceFactory::GetForProfile(
+      SpellcheckServiceFactory::GetForContext(
           &profile_)->GetCustomDictionary();
 
   syncer::SyncDataList data = dictionary->GetAllSyncData(syncer::DICTIONARY);
@@ -340,7 +350,7 @@ TEST_F(SpellcheckCustomDictionaryTest,
 
 TEST_F(SpellcheckCustomDictionaryTest, GetAllSyncDataHasLimit) {
   SpellcheckCustomDictionary* dictionary =
-      SpellcheckServiceFactory::GetForProfile(
+      SpellcheckServiceFactory::GetForContext(
           &profile_)->GetCustomDictionary();
 
   SpellcheckCustomDictionary::Change change;
@@ -376,7 +386,7 @@ TEST_F(SpellcheckCustomDictionaryTest, GetAllSyncDataHasLimit) {
 
 TEST_F(SpellcheckCustomDictionaryTest, ProcessSyncChanges) {
   SpellcheckService* spellcheck_service =
-      SpellcheckServiceFactory::GetForProfile(&profile_);
+      SpellcheckServiceFactory::GetForContext(&profile_);
   SpellcheckCustomDictionary* dictionary =
       spellcheck_service->GetCustomDictionary();
 
@@ -447,7 +457,7 @@ TEST_F(SpellcheckCustomDictionaryTest, ProcessSyncChanges) {
 
 TEST_F(SpellcheckCustomDictionaryTest, MergeDataAndStartSyncing) {
   SpellcheckService* spellcheck_service =
-      SpellcheckServiceFactory::GetForProfile(&profile_);
+      SpellcheckServiceFactory::GetForContext(&profile_);
   SpellcheckCustomDictionary* custom_dictionary =
       spellcheck_service->GetCustomDictionary();
   TestingProfile profile2;
@@ -493,7 +503,7 @@ TEST_F(SpellcheckCustomDictionaryTest, MergeDataAndStartSyncing) {
 
 TEST_F(SpellcheckCustomDictionaryTest, DictionaryTooBigBeforeSyncing) {
   SpellcheckService* spellcheck_service =
-      SpellcheckServiceFactory::GetForProfile(&profile_);
+      SpellcheckServiceFactory::GetForContext(&profile_);
   SpellcheckCustomDictionary* custom_dictionary =
       spellcheck_service->GetCustomDictionary();
   TestingProfile profile2;
@@ -536,7 +546,7 @@ TEST_F(SpellcheckCustomDictionaryTest, DictionaryTooBigBeforeSyncing) {
 
 TEST_F(SpellcheckCustomDictionaryTest, DictionaryTooBigAndServerFull) {
   SpellcheckService* spellcheck_service =
-      SpellcheckServiceFactory::GetForProfile(&profile_);
+      SpellcheckServiceFactory::GetForContext(&profile_);
   SpellcheckCustomDictionary* custom_dictionary =
       spellcheck_service->GetCustomDictionary();
   TestingProfile profile2;
@@ -588,7 +598,7 @@ TEST_F(SpellcheckCustomDictionaryTest, DictionaryTooBigAndServerFull) {
 
 TEST_F(SpellcheckCustomDictionaryTest, ServerTooBig) {
   SpellcheckService* spellcheck_service =
-      SpellcheckServiceFactory::GetForProfile(&profile_);
+      SpellcheckServiceFactory::GetForContext(&profile_);
   SpellcheckCustomDictionary* custom_dictionary =
       spellcheck_service->GetCustomDictionary();
   TestingProfile profile2;
@@ -639,7 +649,7 @@ TEST_F(SpellcheckCustomDictionaryTest, ServerTooBig) {
 
 TEST_F(SpellcheckCustomDictionaryTest, DictionaryTooBigToStartSyncing) {
   SpellcheckService* spellcheck_service =
-      SpellcheckServiceFactory::GetForProfile(&profile_);
+      SpellcheckServiceFactory::GetForContext(&profile_);
   SpellcheckCustomDictionary* custom_dictionary =
       spellcheck_service->GetCustomDictionary();
   TestingProfile profile2;
@@ -685,7 +695,7 @@ TEST_F(SpellcheckCustomDictionaryTest, DictionaryTooBigToStartSyncing) {
 
 TEST_F(SpellcheckCustomDictionaryTest, DictionaryTooBigToContiueSyncing) {
   SpellcheckService* spellcheck_service =
-      SpellcheckServiceFactory::GetForProfile(&profile_);
+      SpellcheckServiceFactory::GetForContext(&profile_);
   SpellcheckCustomDictionary* custom_dictionary =
       spellcheck_service->GetCustomDictionary();
   TestingProfile profile2;
@@ -736,7 +746,7 @@ TEST_F(SpellcheckCustomDictionaryTest, DictionaryTooBigToContiueSyncing) {
 
 TEST_F(SpellcheckCustomDictionaryTest, LoadAfterSyncStart) {
   SpellcheckService* spellcheck_service =
-      SpellcheckServiceFactory::GetForProfile(&profile_);
+      SpellcheckServiceFactory::GetForContext(&profile_);
   SpellcheckCustomDictionary* custom_dictionary =
       spellcheck_service->GetCustomDictionary();
   TestingProfile profile2;
@@ -774,7 +784,7 @@ TEST_F(SpellcheckCustomDictionaryTest, LoadAfterSyncStart) {
 
 TEST_F(SpellcheckCustomDictionaryTest, LoadAfterSyncStartTooBigToSync) {
   SpellcheckService* spellcheck_service =
-      SpellcheckServiceFactory::GetForProfile(&profile_);
+      SpellcheckServiceFactory::GetForContext(&profile_);
   SpellcheckCustomDictionary* custom_dictionary =
       spellcheck_service->GetCustomDictionary();
   TestingProfile profile2;
@@ -821,7 +831,7 @@ TEST_F(SpellcheckCustomDictionaryTest, LoadAfterSyncStartTooBigToSync) {
 
 TEST_F(SpellcheckCustomDictionaryTest, LoadDuplicatesAfterSync) {
   SpellcheckService* spellcheck_service =
-      SpellcheckServiceFactory::GetForProfile(&profile_);
+      SpellcheckServiceFactory::GetForContext(&profile_);
   SpellcheckCustomDictionary* custom_dictionary =
       spellcheck_service->GetCustomDictionary();
   TestingProfile profile2;
@@ -868,7 +878,7 @@ TEST_F(SpellcheckCustomDictionaryTest, LoadDuplicatesAfterSync) {
 
 TEST_F(SpellcheckCustomDictionaryTest, DictionaryLoadNotification) {
   SpellcheckService* spellcheck_service =
-      SpellcheckServiceFactory::GetForProfile(&profile_);
+      SpellcheckServiceFactory::GetForContext(&profile_);
   SpellcheckCustomDictionary* custom_dictionary =
       spellcheck_service->GetCustomDictionary();
 
@@ -889,7 +899,7 @@ TEST_F(SpellcheckCustomDictionaryTest, DictionaryLoadNotification) {
 
 TEST_F(SpellcheckCustomDictionaryTest, DictionaryAddWordNotification) {
   SpellcheckService* spellcheck_service =
-      SpellcheckServiceFactory::GetForProfile(&profile_);
+      SpellcheckServiceFactory::GetForContext(&profile_);
   SpellcheckCustomDictionary* custom_dictionary =
       spellcheck_service->GetCustomDictionary();
 
@@ -909,7 +919,7 @@ TEST_F(SpellcheckCustomDictionaryTest, DictionaryAddWordNotification) {
 
 TEST_F(SpellcheckCustomDictionaryTest, DictionaryRemoveWordNotification) {
   SpellcheckService* spellcheck_service =
-      SpellcheckServiceFactory::GetForProfile(&profile_);
+      SpellcheckServiceFactory::GetForContext(&profile_);
   SpellcheckCustomDictionary* custom_dictionary =
       spellcheck_service->GetCustomDictionary();
 
@@ -932,7 +942,7 @@ TEST_F(SpellcheckCustomDictionaryTest, DictionaryRemoveWordNotification) {
 
 TEST_F(SpellcheckCustomDictionaryTest, DictionarySyncNotification) {
   SpellcheckService* spellcheck_service =
-      SpellcheckServiceFactory::GetForProfile(&profile_);
+      SpellcheckServiceFactory::GetForContext(&profile_);
   SpellcheckCustomDictionary* custom_dictionary =
       spellcheck_service->GetCustomDictionary();
   TestingProfile profile2;
@@ -993,7 +1003,7 @@ TEST_F(SpellcheckCustomDictionaryTest, DictionarySyncLimit) {
   // Upload the maximum number of words to the sync server.
   {
     SpellcheckService* spellcheck_service =
-        SpellcheckServiceFactory::GetForProfile(&profile_);
+        SpellcheckServiceFactory::GetForContext(&profile_);
     SpellcheckCustomDictionary* custom_dictionary =
         spellcheck_service->GetCustomDictionary();
 
@@ -1069,8 +1079,17 @@ TEST_F(SpellcheckCustomDictionaryTest, DictionarySyncLimit) {
 }
 
 TEST_F(SpellcheckCustomDictionaryTest, RecordSizeStatsCorrectly) {
+#if defined(OS_WIN)
+// Failing consistently on Win7. See crbug.com/230534.
+  if (base::win::GetVersion() >= base::win::VERSION_VISTA)
+    return;
+#endif
   // Record a baseline.
   SpellCheckHostMetrics::RecordCustomWordCountStats(123);
+
+  // Determine if test failures are due the statistics recorder not being
+  // available or because the histogram just isn't there: crbug.com/230534.
+  EXPECT_TRUE(StatisticsRecorder::IsActive());
 
   HistogramBase* histogram =
       StatisticsRecorder::FindHistogram("SpellCheck.CustomWords");
@@ -1112,7 +1131,7 @@ TEST_F(SpellcheckCustomDictionaryTest, RecordSizeStatsCorrectly) {
 
 TEST_F(SpellcheckCustomDictionaryTest, HasWord) {
   SpellcheckService* spellcheck_service =
-      SpellcheckServiceFactory::GetForProfile(&profile_);
+      SpellcheckServiceFactory::GetForContext(&profile_);
   SpellcheckCustomDictionary* custom_dictionary =
       spellcheck_service->GetCustomDictionary();
   OnLoaded(*custom_dictionary, WordList());

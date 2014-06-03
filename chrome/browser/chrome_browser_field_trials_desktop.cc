@@ -6,41 +6,31 @@
 
 #include <string>
 
-#include "apps/field_trial_names.h"
-#include "apps/pref_names.h"
 #include "base/command_line.h"
+#include "base/environment.h"
 #include "base/metrics/field_trial.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/string_util.h"
 #include "chrome/browser/auto_launch_trial.h"
 #include "chrome/browser/google/google_util.h"
-#include "chrome/browser/gpu/chrome_gpu_util.h"
 #include "chrome/browser/omnibox/omnibox_field_trial.h"
 #include "chrome/browser/prerender/prerender_field_trial.h"
 #include "chrome/browser/profiles/profiles_state.h"
 #include "chrome/browser/safe_browsing/safe_browsing_blocking_page.h"
+#include "chrome/browser/ui/app_list/app_list_util.h"
 #include "chrome/browser/ui/sync/one_click_signin_helper.h"
+#include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/metrics/variations/variations_util.h"
+#include "chrome/common/pref_names.h"
 #include "content/public/common/content_constants.h"
 #include "net/spdy/spdy_session.h"
 #include "ui/base/layout.h"
 
-#if defined(OS_WIN)
-#include "net/socket/tcp_client_socket_win.h"
-#endif  // defined(OS_WIN)
-
 namespace chrome {
 
 namespace {
-
-void SetupAppLauncherFieldTrial(PrefService* local_state) {
-  if (base::FieldTrialList::FindFullName(apps::kLauncherPromoTrialName) ==
-      apps::kResetShowLauncherPromoPrefGroupName) {
-    local_state->SetBoolean(apps::prefs::kShowAppLauncherPromo, true);
-  }
-}
 
 void AutoLaunchChromeFieldTrial() {
   std::string brand;
@@ -71,87 +61,54 @@ void SetupInfiniteCacheFieldTrial() {
 
 void DisableShowProfileSwitcherTrialIfNecessary() {
   // This trial is created by the VariationsService, but it needs to be disabled
-  // if multi-profiles isn't enabled or if browser frame avatar menu is
-  // always hidden (Chrome OS).
-  bool avatar_menu_always_hidden = false;
-#if defined(OS_CHROMEOS)
-  avatar_menu_always_hidden = true;
-#endif
+  // if multi-profiles isn't enabled.
   base::FieldTrial* trial = base::FieldTrialList::Find("ShowProfileSwitcher");
-  if (trial && (!profiles::IsMultipleProfilesEnabled() ||
-                avatar_menu_always_hidden)) {
+  if (trial && !profiles::IsMultipleProfilesEnabled())
     trial->Disable();
-  }
 }
 
-void SetupCacheSensitivityAnalysisFieldTrial() {
-  const base::FieldTrial::Probability kDivisor = 100;
-
-  base::FieldTrial::Probability sensitivity_analysis_probability = 0;
-
-#if defined(OS_ANDROID)
-  switch (chrome::VersionInfo::GetChannel()) {
-    case chrome::VersionInfo::CHANNEL_DEV:
-      sensitivity_analysis_probability = 10;
-      break;
-    case chrome::VersionInfo::CHANNEL_BETA:
-      sensitivity_analysis_probability = 5;
-      break;
-    case chrome::VersionInfo::CHANNEL_STABLE:
-      sensitivity_analysis_probability = 1;
-      break;
-    default:
-      break;
+void SetupPreReadFieldTrial() {
+  // The chrome executable will have set (or not) an environment variable with
+  // the group name into which this client belongs.
+  std::string group;
+  scoped_ptr<base::Environment> env(base::Environment::Create());
+  if (!env->GetVar(chrome::kPreReadEnvironmentVariable, &group) ||
+      group.empty()) {
+    return;
   }
-#endif
 
+  // Initialize the field trial. We declare all of the groups here (so that
+  // the dashboard creation tools can find them) but force the probability
+  // of being assigned to the group already chosen by the executable, if any,
+  // to 100%.
   scoped_refptr<base::FieldTrial> trial(
       base::FieldTrialList::FactoryGetFieldTrial(
-          "CacheSensitivityAnalysis", kDivisor, "No", 2013, 06, 15,
-          base::FieldTrial::SESSION_RANDOMIZED, NULL));
-  trial->AppendGroup("ControlA", sensitivity_analysis_probability);
-  trial->AppendGroup("ControlB", sensitivity_analysis_probability);
-  trial->AppendGroup("100A", sensitivity_analysis_probability);
-  trial->AppendGroup("100B", sensitivity_analysis_probability);
-  trial->AppendGroup("200A", sensitivity_analysis_probability);
-  trial->AppendGroup("200B", sensitivity_analysis_probability);
-  // TODO(gavinp,rvargas): Re-add 400 group to field trial if results justify.
-}
+          "BrowserPreReadExperiment", 100, "100-pct-default",
+          2014, 7, 1, base::FieldTrial::SESSION_RANDOMIZED, NULL));
+  trial->AppendGroup("100-pct-control", group == "100-pct-control" ? 100 : 0);
+  trial->AppendGroup("95-pct", group == "95-pct" ? 100 : 0);
+  trial->AppendGroup("90-pct", group == "90-pct" ? 100 : 0);
+  trial->AppendGroup("85-pct", group == "85-pct" ? 100 : 0);
+  trial->AppendGroup("80-pct", group == "80-pct" ? 100 : 0);
+  trial->AppendGroup("75-pct", group == "75-pct" ? 100 : 0);
+  trial->AppendGroup("70-pct", group == "70-pct" ? 100 : 0);
+  trial->AppendGroup("65-pct", group == "65-pct" ? 100 : 0);
+  trial->AppendGroup("60-pct", group == "60-pct" ? 100 : 0);
+  trial->AppendGroup("55-pct", group == "55-pct" ? 100 : 0);
+  trial->AppendGroup("50-pct", group == "50-pct" ? 100 : 0);
+  trial->AppendGroup("45-pct", group == "45-pct" ? 100 : 0);
+  trial->AppendGroup("40-pct", group == "40-pct" ? 100 : 0);
+  trial->AppendGroup("35-pct", group == "35-pct" ? 100 : 0);
+  trial->AppendGroup("30-pct", group == "30-pct" ? 100 : 0);
+  trial->AppendGroup("25-pct", group == "25-pct" ? 100 : 0);
+  trial->AppendGroup("20-pct", group == "20-pct" ? 100 : 0);
+  trial->AppendGroup("15-pct", group == "15-pct" ? 100 : 0);
+  trial->AppendGroup("10-pct", group == "10-pct" ? 100 : 0);
+  trial->AppendGroup("5-pct", group == "5-pct" ? 100 : 0);
+  trial->AppendGroup("0-pct", group == "0-pct" ? 100 : 0);
 
-void WindowsOverlappedTCPReadsFieldTrial(
-    const CommandLine& parsed_command_line) {
-#if defined(OS_WIN)
-  if (parsed_command_line.HasSwitch(switches::kOverlappedRead)) {
-    std::string option =
-        parsed_command_line.GetSwitchValueASCII(switches::kOverlappedRead);
-    if (LowerCaseEqualsASCII(option, "off"))
-      net::TCPClientSocketWin::DisableOverlappedReads();
-  } else {
-    const base::FieldTrial::Probability kDivisor = 2;  // 1 in 2 chance
-    const base::FieldTrial::Probability kOverlappedReadProbability = 1;
-    scoped_refptr<base::FieldTrial> overlapped_reads_trial(
-        base::FieldTrialList::FactoryGetFieldTrial(
-            "OverlappedReadImpact", kDivisor, "OverlappedReadEnabled",
-            2013, 6, 1, base::FieldTrial::SESSION_RANDOMIZED, NULL));
-    int overlapped_reads_disabled_group =
-        overlapped_reads_trial->AppendGroup("OverlappedReadDisabled",
-                                            kOverlappedReadProbability);
-    int assigned_group = overlapped_reads_trial->group();
-    if (assigned_group == overlapped_reads_disabled_group)
-      net::TCPClientSocketWin::DisableOverlappedReads();
-  }
-#endif
-}
-
-void SetupLowLatencyFlashAudioFieldTrial() {
-  scoped_refptr<base::FieldTrial> trial(
-      base::FieldTrialList::FactoryGetFieldTrial(
-          content::kLowLatencyFlashAudioFieldTrialName, 100, "Standard",
-          2013, 9, 1, base::FieldTrial::SESSION_RANDOMIZED, NULL));
-
-  // Trial is enabled for dev / beta / canary users only.
-  if (chrome::VersionInfo::GetChannel() != chrome::VersionInfo::CHANNEL_STABLE)
-    trial->AppendGroup(content::kLowLatencyFlashAudioFieldTrialEnabledName, 25);
+  // We have to call group in order to mark the experiment as active.
+  trial->group();
 }
 
 }  // namespace
@@ -159,16 +116,13 @@ void SetupLowLatencyFlashAudioFieldTrial() {
 void SetupDesktopFieldTrials(const CommandLine& parsed_command_line,
                              const base::Time& install_time,
                              PrefService* local_state) {
-  prerender::ConfigurePrefetchAndPrerender(parsed_command_line);
+  prerender::ConfigurePrerender(parsed_command_line);
   AutoLaunchChromeFieldTrial();
-  gpu_util::InitializeCompositingFieldTrial();
   OmniboxFieldTrial::ActivateStaticTrials();
   SetupInfiniteCacheFieldTrial();
-  SetupCacheSensitivityAnalysisFieldTrial();
   DisableShowProfileSwitcherTrialIfNecessary();
-  WindowsOverlappedTCPReadsFieldTrial(parsed_command_line);
-  SetupAppLauncherFieldTrial(local_state);
-  SetupLowLatencyFlashAudioFieldTrial();
+  SetupShowAppLauncherPromoFieldTrial(local_state);
+  SetupPreReadFieldTrial();
 }
 
 }  // namespace chrome

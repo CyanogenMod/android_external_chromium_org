@@ -25,28 +25,25 @@ class SeqencedTaskRunner;
 
 namespace drive {
 
-// The JobScheduler is responsible for queuing and scheduling drive
-// jobs.
+// The JobScheduler is responsible for queuing and scheduling drive jobs.
+// Because jobs are executed concurrently by priority and retried for network
+// failures, there is no guarantee of orderings.
 //
-// All jobs are processed in order of priority.
-//   - Jobs that occur as a result of a direct user action are handled
-//     immediately (i.e. the client context is USER_INITIATED).
-//   - Jobs that are done in response to state changes or server actions are run
-//     in the background (i.e. the client context is BACKGROUND).
+// Jobs are grouped into two priority levels:
+//   - USER_INITIATED jobs are those occur as a result of direct user actions.
+//   - BACKGROUND jobs runs in response to state changes, server actions, etc.
+// USER_INITIATED jobs must be handled immediately, thus have higher priority.
+// BACKGROUND jobs run only after all USER_INITIATED jobs have run.
 //
-// All jobs are retried a maximum of kMaxRetryCount when they fail due to
-// throttling or server error.  The delay before retrying a job is shared
-// between jobs.  It doubles in length on each failure, up to 16 seconds.
-//
-// Jobs are grouped into two types:
-//   - File jobs are any job that transfer the contents of files.
-//     By default, they are only run when connected to WiFi.
-//   - Metadata jobs are any jobs that operate on File metadata or
-//     the directory structure.  Up to kMaxJobCount[METADATA_QUEUE] jobs are run
-//     concurrently.
-//
-// Because jobs are executed by priority and the potential for network failures,
-// there is no guarantee of ordering of operations.
+// Orthogonally, jobs are grouped into two types:
+//   - "File jobs" transfer the contents of files.
+//   - "Metadata jobs" operates on file metadata or the directory structure.
+// On WiFi or Ethernet connections, all types of jobs just run.
+// On mobile connections (2G/3G/4G), we don't want large background traffic.
+// USER_INITIATED jobs or metadata jobs will run. BACKGROUND file jobs wait
+// in the queue until the network type changes.
+// On offline case, no jobs run. USER_INITIATED jobs fail immediately.
+// BACKGROUND jobs stay in the queue and wait for network connection.
 class JobScheduler
     : public net::NetworkChangeNotifier::ConnectionTypeObserver,
       public JobListInterface {
@@ -65,11 +62,11 @@ class JobScheduler
 
   // Adds a GetAppList operation to the queue.
   // |callback| must not be null.
-  void GetAppList(const google_apis::GetAppListCallback& callback);
+  void GetAppList(const google_apis::AppListCallback& callback);
 
   // Adds a GetAboutResource operation to the queue.
   // |callback| must not be null.
-  void GetAboutResource(const google_apis::GetAboutResourceCallback& callback);
+  void GetAboutResource(const google_apis::AboutResourceCallback& callback);
 
   // Adds a GetAllResourceList operation to the queue.
   // |callback| must not be null.
@@ -91,10 +88,16 @@ class JobScheduler
   void GetChangeList(int64 start_changestamp,
                      const google_apis::GetResourceListCallback& callback);
 
-  // Adds ContinueGetResourceList operation to the queue.
+  // Adds GetRemainingChangeList operation to the queue.
   // |callback| must not be null.
-  void ContinueGetResourceList(
-      const GURL& next_url,
+  void GetRemainingChangeList(
+      const GURL& next_link,
+      const google_apis::GetResourceListCallback& callback);
+
+  // Adds GetRemainingFileList operation to the queue.
+  // |callback| must not be null.
+  void GetRemainingFileList(
+      const GURL& next_link,
       const google_apis::GetResourceListCallback& callback);
 
   // Adds a GetResourceEntry operation to the queue.
@@ -108,33 +111,33 @@ class JobScheduler
                    const ClientContext& context,
                    const google_apis::GetShareUrlCallback& callback);
 
-  // Adds a DeleteResource operation to the queue.
-  void DeleteResource(const std::string& resource_id,
-                      const google_apis::EntryActionCallback& callback);
+  // Adds a TrashResource operation to the queue.
+  void TrashResource(const std::string& resource_id,
+                     const ClientContext& context,
+                     const google_apis::EntryActionCallback& callback);
 
   // Adds a CopyResource operation to the queue.
   void CopyResource(
       const std::string& resource_id,
       const std::string& parent_resource_id,
       const std::string& new_title,
+      const base::Time& last_modified,
       const google_apis::GetResourceEntryCallback& callback);
 
-  // Adds a CopyHostedDocument operation to the queue.
-  void CopyHostedDocument(
+  // Adds a UpdateResource operation to the queue.
+  void UpdateResource(
       const std::string& resource_id,
+      const std::string& parent_resource_id,
       const std::string& new_title,
+      const base::Time& last_modified,
+      const base::Time& last_viewed_by_me,
+      const ClientContext& context,
       const google_apis::GetResourceEntryCallback& callback);
 
   // Adds a RenameResource operation to the queue.
   void RenameResource(const std::string& resource_id,
                       const std::string& new_title,
                       const google_apis::EntryActionCallback& callback);
-
-  // Adds a TouchResource operation to the queue.
-  void TouchResource(const std::string& resource_id,
-                     const base::Time& modified_date,
-                     const base::Time& last_viewed_by_me_date,
-                     const google_apis::GetResourceEntryCallback& callback);
 
   // Adds a AddResourceToDirectory operation to the queue.
   void AddResourceToDirectory(const std::string& parent_resource_id,
@@ -145,6 +148,7 @@ class JobScheduler
   void RemoveResourceFromDirectory(
       const std::string& parent_resource_id,
       const std::string& resource_id,
+      const ClientContext& context,
       const google_apis::EntryActionCallback& callback);
 
   // Adds a AddNewDirectory operation to the queue.
@@ -153,8 +157,12 @@ class JobScheduler
                        const google_apis::GetResourceEntryCallback& callback);
 
   // Adds a DownloadFile operation to the queue.
+  // The first two arguments |virtual_path| and |expected_file_size| are used
+  // only for filling JobInfo for the operation so that observers can get the
+  // detail. The actual operation never refers these values.
   JobID DownloadFile(
       const base::FilePath& virtual_path,
+      int64 expected_file_size,
       const base::FilePath& local_cache_path,
       const std::string& resource_id,
       const ClientContext& context,
@@ -187,6 +195,18 @@ class JobScheduler
                   const std::string& content_type,
                   const ClientContext& context,
                   const google_apis::GetResourceEntryCallback& callback);
+
+  // Adds a GetResourceListInDirectoryByWapi operation to the queue.
+  // |callback| must not be null.
+  void GetResourceListInDirectoryByWapi(
+      const std::string& directory_resource_id,
+      const google_apis::GetResourceListCallback& callback);
+
+  // Adds GetRemainingResourceList operation to the queue.
+  // |callback| must not be null.
+  void GetRemainingResourceList(
+      const GURL& next_link,
+      const google_apis::GetResourceListCallback& callback);
 
  private:
   friend class JobSchedulerTest;
@@ -264,10 +284,10 @@ class JobScheduler
       google_apis::GDataErrorCode error,
       scoped_ptr<google_apis::ResourceEntry> entry);
 
-  // Callback for job finishing with a GetAboutResourceCallback.
+  // Callback for job finishing with a AboutResourceCallback.
   void OnGetAboutResourceJobDone(
       JobID job_id,
-      const google_apis::GetAboutResourceCallback& callback,
+      const google_apis::AboutResourceCallback& callback,
       google_apis::GDataErrorCode error,
       scoped_ptr<google_apis::AboutResource> about_resource);
 
@@ -278,10 +298,10 @@ class JobScheduler
       google_apis::GDataErrorCode error,
       const GURL& share_url);
 
-  // Callback for job finishing with a GetAppListCallback.
+  // Callback for job finishing with a AppListCallback.
   void OnGetAppListJobDone(
       JobID job_id,
-      const google_apis::GetAppListCallback& callback,
+      const google_apis::AppListCallback& callback,
       google_apis::GDataErrorCode error,
       scoped_ptr<google_apis::AppList> app_list);
 

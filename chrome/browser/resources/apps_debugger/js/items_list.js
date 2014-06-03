@@ -243,15 +243,6 @@ cr.define('apps_dev_tool', function() {
           ItemsList.launchApp(item.id);
         });
         launch.hidden = false;
-
-        // The 'Restart' link.
-        var restart = node.querySelector('.restart-link');
-        restart.addEventListener('click', function(e) {
-          chrome.developerPrivate.restart(item.id, function() {
-            ItemsList.loadItemsInfo();
-          });
-        });
-        restart.hidden = false;
       }
       // The terminated reload link.
       if (!item.terminated)
@@ -287,7 +278,7 @@ cr.define('apps_dev_tool', function() {
         var list = panel.querySelector('ul');
         item.install_warnings.forEach(function(warning) {
           var li = document.createElement('li');
-          li[warning.isHTML ? 'innerHTML' : 'textContent'] = warning.message;
+          li.textContent = warning.message;
           list.appendChild(li);
         });
       }
@@ -366,6 +357,17 @@ cr.define('apps_dev_tool', function() {
     setPackButton_: function(item, el) {
       var packButton = el.querySelector('.pack-link');
       packButton.addEventListener('click', function(e) {
+        if (item.isApp) {
+          $('pack-heading').textContent =
+              loadTimeData.getString('packAppHeading');
+          $('pack-title').textContent =
+              loadTimeData.getString('packAppOverlay');
+        } else {
+          $('pack-heading').textContent =
+              loadTimeData.getString('packExtensionHeading');
+          $('pack-title').textContent =
+              loadTimeData.getString('packExtensionOverlay');
+        }
         $('item-root-dir').value = item.path;
         AppsDevTool.showOverlay($('packItemOverlay'));
       });
@@ -489,8 +491,10 @@ cr.define('apps_dev_tool', function() {
       var link = activeViews.querySelector('a');
 
       item.views.forEach(function(view, i) {
-        var label = view.path +
-            (view.incognito ? ' ' + str('viewIncognito') : '') +
+        var displayName = view.generatedBackgroundPage ?
+            str('backgroundPage') : view.path;
+        var label =
+            displayName + (view.incognito ? ' ' + str('viewIncognito') : '') +
             (view.render_process_id == -1 ? ' ' + str('viewInactive') : '');
         link.textContent = label;
         link.addEventListener('click', function(e) {
@@ -586,17 +590,16 @@ cr.define('apps_dev_tool', function() {
 
     // Scroll relatively to the position of the first item.
     var header = tabNode.querySelector('.unpacked-list .list-header');
-    var container = $('container');
-    if (node.offsetTop - header.offsetTop < container.scrollTop) {
+    if (node.offsetTop - header.offsetTop < tabNode.scrollTop) {
       // Some padding between the top edge and the node is already provided
       // by the HTML layout.
-      container.scrollTop = node.offsetTop - header.offsetTop;
-    } else if (node.offsetTop + node.offsetHeight > container.scrollTop +
-        container.offsetHeight + 20) {
+      tabNode.scrollTop = node.offsetTop - header.offsetTop;
+    } else if (node.offsetTop + node.offsetHeight > tabNode.scrollTop +
+        tabNode.offsetHeight + 20) {
       // Adds padding of 20px between the bottom edge and the bottom of the
       // node.
-      container.scrollTop = node.offsetTop + node.offsetHeight -
-          container.offsetHeight + 20;
+      tabNode.scrollTop = node.offsetTop + node.offsetHeight -
+          tabNode.offsetHeight + 20;
     }
   };
 

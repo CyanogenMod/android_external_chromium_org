@@ -147,6 +147,7 @@ TEST_F(SyncPrefsTest, PreferredTypesNotKeepEverythingSynced) {
       expected_preferred_types.Put(syncer::SEARCH_ENGINES);
     }
     if (it.Get() == syncer::APPS) {
+      expected_preferred_types.Put(syncer::APP_LIST);
       expected_preferred_types.Put(syncer::APP_NOTIFICATIONS);
       expected_preferred_types.Put(syncer::APP_SETTINGS);
     }
@@ -229,19 +230,6 @@ TEST_F(SyncPrefsTest, ClearPreferences) {
 
   EXPECT_FALSE(sync_prefs.HasSyncSetupCompleted());
   EXPECT_EQ(base::Time(), sync_prefs.GetLastSyncedTime());
-  EXPECT_TRUE(sync_prefs.GetEncryptionBootstrapToken().empty());
-}
-
-TEST_F(SyncPrefsTest, NullPrefService) {
-  SyncPrefs sync_prefs(NULL);
-
-  EXPECT_FALSE(sync_prefs.HasSyncSetupCompleted());
-  EXPECT_FALSE(sync_prefs.IsStartSuppressed());
-  EXPECT_EQ(base::Time(), sync_prefs.GetLastSyncedTime());
-  EXPECT_FALSE(sync_prefs.HasKeepEverythingSynced());
-  const syncer::ModelTypeSet user_types = syncer::UserTypes();
-  EXPECT_TRUE(sync_prefs.GetPreferredDataTypes(user_types).Empty());
-  EXPECT_FALSE(sync_prefs.IsManaged());
   EXPECT_TRUE(sync_prefs.GetEncryptionBootstrapToken().empty());
 }
 

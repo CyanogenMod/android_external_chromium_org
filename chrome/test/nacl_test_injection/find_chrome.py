@@ -25,15 +25,13 @@ def FindChrome(src_dir, configs, verbose=False):
     chrome_locations.extend([
         'build/%s/chrome.exe' % config,
         'chrome/%s/chrome.exe' % config,
-        # For Linux buildbots.  scripts/slave/extract_build.py extracts builds
-        # to src/sconsbuild/ rather than src/out/.
-        'sconsbuild/%s/chrome' % config,
         # Windows Chromium ninja builder
         'out/%s/chrome.exe' % config,
+        # Linux
         'out/%s/chrome' % config,
-        # Mac Chromium make builder
+        # Mac Chromium ninja builder
         'out/%s/Chromium.app/Contents/MacOS/Chromium' % config,
-        # Mac release make builder
+        # Mac release ninja builder
         'out/%s/Google Chrome.app/Contents/MacOS/Google Chrome' % config,
         # Mac Chromium xcode builder
         'xcodebuild/%s/Chromium.app/Contents/MacOS/Chromium' % config,

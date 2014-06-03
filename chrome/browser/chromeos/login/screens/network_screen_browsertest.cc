@@ -10,8 +10,8 @@
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/chromeos/login/wizard_in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "chromeos/dbus/fake_dbus_thread_manager.h"
 #include "chromeos/dbus/fake_session_manager_client.h"
-#include "chromeos/dbus/mock_dbus_thread_manager_without_gmock.h"
 #include "content/public/test/test_utils.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -36,7 +36,7 @@ namespace login {
 
 class MockNetworkStateHelper : public NetworkStateHelper {
  public:
-  MOCK_CONST_METHOD0(GetCurrentNetworkName, string16(void));
+  MOCK_CONST_METHOD0(GetCurrentNetworkName, base::string16(void));
   MOCK_CONST_METHOD0(IsConnected, bool(void));
   MOCK_CONST_METHOD0(IsConnecting, bool(void));
 };
@@ -53,11 +53,12 @@ class NetworkScreenTest : public WizardInProcessBrowserTest {
   virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
     WizardInProcessBrowserTest::SetUpInProcessBrowserTestFixture();
 
-    MockDBusThreadManagerWithoutGMock* mock_dbus_thread_manager =
-        new MockDBusThreadManagerWithoutGMock;
-    DBusThreadManager::InitializeForTesting(mock_dbus_thread_manager);
-    fake_session_manager_client_ =
-        mock_dbus_thread_manager->fake_session_manager_client();
+    FakeDBusThreadManager* fake_dbus_thread_manager = new FakeDBusThreadManager;
+    fake_dbus_thread_manager->SetFakeClients();
+    fake_session_manager_client_ = new FakeSessionManagerClient;
+    fake_dbus_thread_manager->SetSessionManagerClient(
+        scoped_ptr<SessionManagerClient>(fake_session_manager_client_));
+    DBusThreadManager::SetInstanceForTesting(fake_dbus_thread_manager);
   }
 
   virtual void SetUpOnMainThread() OVERRIDE {
@@ -78,8 +79,7 @@ class NetworkScreenTest : public WizardInProcessBrowserTest {
   }
 
   virtual void TearDownInProcessBrowserTestFixture() OVERRIDE {
-    CrosInProcessBrowserTest::TearDownInProcessBrowserTestFixture();
-    DBusThreadManager::Shutdown();
+    InProcessBrowserTest::TearDownInProcessBrowserTestFixture();
   }
 
   void EmulateContinueButtonExit(NetworkScreen* network_screen) {
@@ -95,7 +95,7 @@ class NetworkScreenTest : public WizardInProcessBrowserTest {
   void SetDefaultNetworkStateHelperExpectations() {
     EXPECT_CALL(*mock_network_state_helper_, GetCurrentNetworkName())
         .Times(AnyNumber())
-        .WillRepeatedly((Return(string16())));
+        .WillRepeatedly((Return(base::string16())));
     EXPECT_CALL(*mock_network_state_helper_, IsConnected())
         .Times(AnyNumber())
         .WillRepeatedly((Return(false)));
@@ -117,7 +117,7 @@ IN_PROC_BROWSER_TEST_F(NetworkScreenTest, CanConnect) {
   EXPECT_CALL(*mock_network_state_helper_, IsConnecting())
       .WillOnce((Return(true)));
   // EXPECT_FALSE(actor_->IsContinueEnabled());
-  network_screen_->NetworkManagerChanged();
+  network_screen_->UpdateStatus();
 
   EXPECT_CALL(*mock_network_state_helper_, IsConnected())
       .Times(2)
@@ -125,7 +125,7 @@ IN_PROC_BROWSER_TEST_F(NetworkScreenTest, CanConnect) {
   // TODO(nkostylev): Add integration with WebUI actor http://crosbug.com/22570
   // EXPECT_FALSE(actor_->IsContinueEnabled());
   // EXPECT_FALSE(actor_->IsConnecting());
-  network_screen_->NetworkManagerChanged();
+  network_screen_->UpdateStatus();
 
   // EXPECT_TRUE(actor_->IsContinueEnabled());
   EmulateContinueButtonExit(network_screen_);
@@ -137,7 +137,7 @@ IN_PROC_BROWSER_TEST_F(NetworkScreenTest, Timeout) {
   EXPECT_CALL(*mock_network_state_helper_, IsConnecting())
       .WillOnce((Return(true)));
   // EXPECT_FALSE(actor_->IsContinueEnabled());
-  network_screen_->NetworkManagerChanged();
+  network_screen_->UpdateStatus();
 
   EXPECT_CALL(*mock_network_state_helper_, IsConnected())
       .Times(2)

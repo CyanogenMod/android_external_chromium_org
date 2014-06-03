@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "base/base_paths.h"
+#include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/path_service.h"
@@ -16,6 +17,7 @@
 #include "base/prefs/pref_service.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
+#include "base/time/time.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/content_settings/cookie_settings.h"
 #include "chrome/browser/content_settings/tab_specific_content_settings.h"
@@ -23,14 +25,13 @@
 #include "chrome/browser/extensions/api/proxy/proxy_api.h"
 #include "chrome/browser/extensions/api/web_request/web_request_api.h"
 #include "chrome/browser/extensions/event_router_forwarder.h"
-#include "chrome/browser/extensions/extension_info_map.h"
-#include "chrome/browser/extensions/extension_process_manager.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/google/google_util.h"
+#include "chrome/browser/net/chrome_network_data_saving_metrics.h"
+#include "chrome/browser/net/client_hints.h"
 #include "chrome/browser/net/connect_interceptor.h"
 #include "chrome/browser/net/load_time_stats.h"
 #include "chrome/browser/performance_monitor/performance_monitor.h"
-#include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/task_manager/task_manager.h"
 #include "chrome/common/pref_names.h"
@@ -38,6 +39,8 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/resource_request_info.h"
+#include "extensions/browser/info_map.h"
+#include "extensions/browser/process_manager.h"
 #include "extensions/common/constants.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/net_errors.h"
@@ -50,8 +53,8 @@
 #include "net/url_request/url_request.h"
 
 #if defined(OS_CHROMEOS)
-#include "base/chromeos/chromeos_version.h"
 #include "base/command_line.h"
+#include "base/sys_info.h"
 #include "chrome/common/chrome_switches.h"
 #endif
 
@@ -166,7 +169,7 @@ void ForceGoogleSafeSearchCallbackWrapper(
 
 enum RequestStatus { REQUEST_STARTED, REQUEST_DONE };
 
-// Notifies the ExtensionProcessManager that a request has started or stopped
+// Notifies the extensions::ProcessManager that a request has started or stopped
 // for a particular RenderView.
 void NotifyEPMRequestStatus(RequestStatus status,
                             void* profile_id,
@@ -177,10 +180,10 @@ void NotifyEPMRequestStatus(RequestStatus status,
   if (!g_browser_process->profile_manager()->IsValidProfile(profile))
     return;
 
-  ExtensionProcessManager* extension_process_manager =
+  extensions::ProcessManager* process_manager =
       extensions::ExtensionSystem::Get(profile)->process_manager();
   // This may be NULL in unit tests.
-  if (!extension_process_manager)
+  if (!process_manager)
     return;
 
   // Will be NULL if the request was not issued on behalf of a renderer (e.g. a
@@ -189,9 +192,9 @@ void NotifyEPMRequestStatus(RequestStatus status,
       RenderViewHost::FromID(process_id, render_view_id);
   if (render_view_host) {
     if (status == REQUEST_STARTED) {
-      extension_process_manager->OnNetworkRequestStarted(render_view_host);
+      process_manager->OnNetworkRequestStarted(render_view_host);
     } else if (status == REQUEST_DONE) {
-      extension_process_manager->OnNetworkRequestDone(render_view_host);
+      process_manager->OnNetworkRequestDone(render_view_host);
     } else {
       NOTREACHED();
     }
@@ -212,84 +215,11 @@ void ForwardRequestStatus(
   }
 }
 
-#if defined(OS_ANDROID) || defined(OS_IOS)
-// Increments an int64, stored as a string, in a ListPref at the specified
-// index.  The value must already exist and be a string representation of a
-// number.
-void AddInt64ToListPref(size_t index, int64 length,
-                        base::ListValue* list_update) {
-  int64 value = 0;
-  std::string old_string_value;
-  bool rv = list_update->GetString(index, &old_string_value);
-  DCHECK(rv);
-  if (rv) {
-    rv = base::StringToInt64(old_string_value, &value);
-    DCHECK(rv);
-  }
-  value += length;
-  list_update->Set(index, Value::CreateStringValue(base::Int64ToString(value)));
-}
-
-int64 ListPrefInt64Value(const base::ListValue& list_update, size_t index) {
-  std::string string_value;
-  if (!list_update.GetString(index, &string_value))
-    return 0;
-
-  int64 value = 0;
-  bool rv = base::StringToInt64(string_value, &value);
-  DCHECK(rv);
-  return value;
-}
-
-void RecordDailyContentLengthHistograms(
-    int64 original_length,
-    int64 received_length,
-    int64 length_with_data_reduction_enabled,
-    int64 length_via_data_reduction_proxy) {
-  // Record metrics in KB.
-  UMA_HISTOGRAM_COUNTS(
-      "Net.DailyHttpOriginalContentLength", original_length >> 10);
-  UMA_HISTOGRAM_COUNTS(
-      "Net.DailyHttpReceivedContentLength", received_length >> 10);
-  UMA_HISTOGRAM_COUNTS(
-      "Net.DailyHttpContentLengthWithDataReductionProxyEnabled",
-      length_with_data_reduction_enabled >> 10);
-  UMA_HISTOGRAM_COUNTS(
-      "Net.DailyHttpContentLengthViaDataReductionProxy",
-      length_via_data_reduction_proxy >> 10);
-
-  if (original_length > 0 && received_length > 0) {
-    int percent = (100 * (original_length - received_length)) / original_length;
-    // UMA percentage cannot be negative.
-    if (percent < 0)
-      percent = 0;
-    UMA_HISTOGRAM_PERCENTAGE("Net.DailyHttpContentSavings", percent);
-    // If the data reduction proxy is enabled for some responses.
-    if (length_with_data_reduction_enabled > 0) {
-      UMA_HISTOGRAM_PERCENTAGE(
-          "Net.DailyHttpContentSavings_DataReductionProxy", percent);
-    }
-  }
-  if (received_length > 0 && length_with_data_reduction_enabled >= 0) {
-    DCHECK_GE(received_length, length_with_data_reduction_enabled);
-    UMA_HISTOGRAM_PERCENTAGE(
-        "Net.DailyReceivedContentWithDataReductionProxyEnabled",
-        (100 * length_with_data_reduction_enabled) / received_length);
-  }
-  if (received_length > 0 &&
-      length_via_data_reduction_proxy >= 0) {
-    DCHECK_GE(received_length, length_via_data_reduction_proxy);
-    UMA_HISTOGRAM_PERCENTAGE(
-        "Net.DailyReceivedContentViaDataReductionProxy",
-        (100 * length_via_data_reduction_proxy) / received_length);
-  }
-}
-
-#endif  // defined(OS_ANDROID) || defined(OS_IOS)
-
-void UpdateContentLengthPrefs(int received_content_length,
-                              int original_content_length,
-                              bool data_reduction_proxy_was_used) {
+void UpdateContentLengthPrefs(
+    int received_content_length,
+    int original_content_length,
+    chrome_browser_net::DataReductionRequestType data_reduction_type,
+    Profile* profile) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK_GE(received_content_length, 0);
   DCHECK_GE(original_content_length, 0);
@@ -302,142 +232,42 @@ void UpdateContentLengthPrefs(int received_content_length,
   if (!prefs)
     return;
 
-  int64 total_received = prefs->GetInt64(prefs::kHttpReceivedContentLength);
-  int64 total_original = prefs->GetInt64(prefs::kHttpOriginalContentLength);
-  total_received += received_content_length;
-  total_original += original_content_length;
-  prefs->SetInt64(prefs::kHttpReceivedContentLength, total_received);
-  prefs->SetInt64(prefs::kHttpOriginalContentLength, total_original);
-
-#if defined(OS_ANDROID) || defined(OS_IOS)
-  base::Time now = base::Time::Now().LocalMidnight();
-  const size_t kNumDaysInHistory = 60;
-
-  // Each day, we calculate the total number of bytes received and the total
-  // size of all corresponding resources before any data-reducing recompression
-  // is applied. These values are used to compute the data savings realized
-  // by applying our compression techniques. Totals for the last
-  // |kNumDaysInHistory| days are maintained.
-  ListPrefUpdate original_update(prefs, prefs::kDailyHttpOriginalContentLength);
-  ListPrefUpdate received_update(prefs, prefs::kDailyHttpReceivedContentLength);
-  ListPrefUpdate data_reduction_enabled_update(
-      prefs,
-      prefs::kDailyHttpReceivedContentLengthWithDataReductionProxyEnabled);
-  ListPrefUpdate via_data_reduction_update(
-      prefs, prefs::kDailyHttpReceivedContentLengthViaDataReductionProxy);
-
-  // Determine how many days it has been since the last update.
-  int64 then_internal = prefs->GetInt64(
-      prefs::kDailyHttpContentLengthLastUpdateDate);
-  base::Time then = base::Time::FromInternalValue(then_internal);
-  int days_since_last_update = (now - then).InDays();
-
-  if (days_since_last_update) {
-    // Record the last update time.
-    prefs->SetInt64(prefs::kDailyHttpContentLengthLastUpdateDate,
-                    now.ToInternalValue());
-
-    if (days_since_last_update == -1) {
-      // The system may go backwards in time by up to a day for legitimate
-      // reasons, such as with changes to the time zone. In such cases the
-      // history is likely still valid. Shift backwards one day and retain all
-      // values.
-      original_update->Remove(kNumDaysInHistory - 1, NULL);
-      received_update->Remove(kNumDaysInHistory - 1, NULL);
-      data_reduction_enabled_update->Remove(kNumDaysInHistory - 1, NULL);
-      via_data_reduction_update->Remove(kNumDaysInHistory - 1, NULL);
-      original_update->Insert(0, new StringValue(base::Int64ToString(0)));
-      received_update->Insert(0, new StringValue(base::Int64ToString(0)));
-      data_reduction_enabled_update->Insert(
-          0, new StringValue(base::Int64ToString(0)));
-      via_data_reduction_update->Insert(
-          0, new StringValue(base::Int64ToString(0)));
-      days_since_last_update = 0;
-
-    } else if (days_since_last_update < -1) {
-      // Erase all entries if the system went backwards in time by more than
-      // a day.
-      original_update->Clear();
-      received_update->Clear();
-      data_reduction_enabled_update->Clear();
-      via_data_reduction_update->Clear();
-      days_since_last_update = kNumDaysInHistory;
-    }
-
-    // A new day. Report the previous day's data if exists. We'll lose usage
-    // data if Chrome isn't run for a day. Here, we prefer collecting less data
-    // but the collected data are associated with an accurate date.
-    if (days_since_last_update == 1) {
-      RecordDailyContentLengthHistograms(
-          ListPrefInt64Value(*original_update, original_update->GetSize() - 1),
-          ListPrefInt64Value(*received_update, received_update->GetSize() - 1),
-          ListPrefInt64Value(*data_reduction_enabled_update,
-                             data_reduction_enabled_update->GetSize() - 1),
-          ListPrefInt64Value(*via_data_reduction_update,
-                             via_data_reduction_update->GetSize() - 1));
-    }
-
-    // Add entries for days since last update.
-    for (int i = 0;
-         i < days_since_last_update && i < static_cast<int>(kNumDaysInHistory);
-         ++i) {
-      original_update->AppendString(base::Int64ToString(0));
-      received_update->AppendString(base::Int64ToString(0));
-      data_reduction_enabled_update->AppendString(base::Int64ToString(0));
-      via_data_reduction_update->AppendString(base::Int64ToString(0));
-    }
-
-    // Maintain the invariant that there should never be more than
-    // |kNumDaysInHistory| days in the histories.
-    while (original_update->GetSize() > kNumDaysInHistory)
-      original_update->Remove(0, NULL);
-    while (received_update->GetSize() > kNumDaysInHistory)
-      received_update->Remove(0, NULL);
-    while (data_reduction_enabled_update->GetSize() > kNumDaysInHistory)
-      data_reduction_enabled_update->Remove(0, NULL);
-    while (via_data_reduction_update->GetSize() > kNumDaysInHistory)
-      via_data_reduction_update->Remove(0, NULL);
+  // Ignore off-the-record data.
+  if (!g_browser_process->profile_manager()->IsValidProfile(profile) ||
+      profile->IsOffTheRecord()) {
+    return;
   }
-
-  DCHECK_EQ(kNumDaysInHistory, original_update->GetSize());
-  DCHECK_EQ(kNumDaysInHistory, received_update->GetSize());
-  DCHECK_EQ(kNumDaysInHistory, data_reduction_enabled_update->GetSize());
-  DCHECK_EQ(kNumDaysInHistory, via_data_reduction_update->GetSize());
-
-  // Update the counts for the current day.
-  AddInt64ToListPref(kNumDaysInHistory - 1,
-                     original_content_length, original_update.Get());
-  AddInt64ToListPref(kNumDaysInHistory - 1,
-                     received_content_length, received_update.Get());
-
-  if (g_browser_process->profile_manager()->GetDefaultProfile()->
-          GetPrefs()->GetBoolean(prefs::kSpdyProxyAuthEnabled)) {
-    AddInt64ToListPref(kNumDaysInHistory - 1,
-                       received_content_length,
-                       data_reduction_enabled_update.Get());
-  }
-  if (data_reduction_proxy_was_used) {
-    AddInt64ToListPref(kNumDaysInHistory - 1,
-                       received_content_length,
-                       via_data_reduction_update.Get());
-  }
+#if defined(OS_ANDROID)
+  bool with_data_reduction_proxy_enabled =
+      g_browser_process->profile_manager()->GetDefaultProfile()->
+      GetPrefs()->GetBoolean(prefs::kSpdyProxyAuthEnabled);
+#else
+  bool with_data_reduction_proxy_enabled = false;
 #endif
+
+  chrome_browser_net::UpdateContentLengthPrefs(
+      received_content_length,
+      original_content_length,
+      with_data_reduction_proxy_enabled,
+      data_reduction_type, prefs);
 }
 
-void StoreAccumulatedContentLength(int received_content_length,
-                                   int original_content_length,
-                                   bool data_reduction_proxy_was_used) {
+void StoreAccumulatedContentLength(
+    int received_content_length,
+    int original_content_length,
+    chrome_browser_net::DataReductionRequestType data_reduction_type,
+    Profile* profile) {
   BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
       base::Bind(&UpdateContentLengthPrefs,
                  received_content_length, original_content_length,
-                 data_reduction_proxy_was_used));
+                 data_reduction_type, profile));
 }
 
 void RecordContentLengthHistograms(
     int64 received_content_length,
     int64 original_content_length,
     const base::TimeDelta& freshness_lifetime) {
-#if defined(OS_ANDROID) || defined(OS_IOS)
+#if defined(OS_ANDROID)
   // Add the current resource to these histograms only when a valid
   // X-Original-Content-Length header is present.
   if (original_content_length >= 0) {
@@ -475,7 +305,7 @@ void RecordContentLengthHistograms(
     return;
   UMA_HISTOGRAM_COUNTS("Net.HttpContentLengthCacheable24Hours",
                        received_content_length);
-#endif
+#endif  // defined(OS_ANDROID)
 }
 
 }  // namespace
@@ -499,7 +329,7 @@ ChromeNetworkDelegate::ChromeNetworkDelegate(
 ChromeNetworkDelegate::~ChromeNetworkDelegate() {}
 
 void ChromeNetworkDelegate::set_extension_info_map(
-    ExtensionInfoMap* extension_info_map) {
+    extensions::InfoMap* extension_info_map) {
   extension_info_map_ = extension_info_map;
 }
 
@@ -512,6 +342,11 @@ void ChromeNetworkDelegate::set_predictor(
     chrome_browser_net::Predictor* predictor) {
   connect_interceptor_.reset(
       new chrome_browser_net::ConnectInterceptor(predictor));
+}
+
+void ChromeNetworkDelegate::SetEnableClientHints() {
+  client_hints_.reset(new ClientHints());
+  client_hints_->Init();
 }
 
 // static
@@ -598,6 +433,12 @@ int ChromeNetworkDelegate::OnBeforeURLRequest(
   if (enable_do_not_track_ && enable_do_not_track_->GetValue())
     request->SetExtraRequestHeaderByName(kDNTHeader, "1", true /* override */);
 
+  if (client_hints_) {
+    request->SetExtraRequestHeaderByName(
+        ClientHints::kDevicePixelRatioHeader,
+        client_hints_->GetDevicePixelRatioHeader(), true);
+  }
+
   bool force_safe_search = force_google_safe_search_ &&
                            force_google_safe_search_->GetValue();
 
@@ -626,6 +467,7 @@ int ChromeNetworkDelegate::OnBeforeSendHeaders(
     net::URLRequest* request,
     const net::CompletionCallback& callback,
     net::HttpRequestHeaders* headers) {
+  TRACE_EVENT_ASYNC_STEP_PAST0("net", "URLRequest", request, "SendRequest");
   return ExtensionWebRequestEventRouter::GetInstance()->OnBeforeSendHeaders(
       profile_, extension_info_map_.get(), request, callback, headers);
 }
@@ -655,6 +497,7 @@ void ChromeNetworkDelegate::OnBeforeRedirect(net::URLRequest* request,
 
 
 void ChromeNetworkDelegate::OnResponseStarted(net::URLRequest* request) {
+  TRACE_EVENT_ASYNC_STEP_PAST0("net", "URLRequest", request, "ResponseStarted");
   ExtensionWebRequestEventRouter::GetInstance()->OnResponseStarted(
       profile_, extension_info_map_.get(), request);
   ForwardProxyErrors(request, event_router_.get(), profile_);
@@ -662,6 +505,8 @@ void ChromeNetworkDelegate::OnResponseStarted(net::URLRequest* request) {
 
 void ChromeNetworkDelegate::OnRawBytesRead(const net::URLRequest& request,
                                            int bytes_read) {
+  TRACE_EVENT_ASYNC_STEP_PAST1("net", "URLRequest", &request, "DidRead",
+                               "bytes_read", bytes_read);
   performance_monitor::PerformanceMonitor::GetInstance()->BytesReadOnIOThread(
       request, bytes_read);
 
@@ -672,6 +517,7 @@ void ChromeNetworkDelegate::OnRawBytesRead(const net::URLRequest& request,
 
 void ChromeNetworkDelegate::OnCompleted(net::URLRequest* request,
                                         bool started) {
+  TRACE_EVENT_ASYNC_END0("net", "URLRequest", request);
   if (request->status().status() == net::URLRequestStatus::SUCCESS) {
     // For better accuracy, we use the actual bytes read instead of the length
     // specified with the Content-Length header, which may be inaccurate,
@@ -688,21 +534,20 @@ void ChromeNetworkDelegate::OnCompleted(net::URLRequest* request,
       int64 original_content_length =
           request->response_info().headers->GetInt64HeaderValue(
               "x-original-content-length");
-      bool data_reduction_proxy_was_used =
-          request->response_info().headers->HasHeaderValue(
-              "via", "1.1 Chrome Compression Proxy");
+      chrome_browser_net::DataReductionRequestType data_reduction_type =
+          chrome_browser_net::GetDataReductionRequestType(request);
 
-      // Since there was no indication of the original content length, presume
-      // it is no different from the number of bytes read.
-      int64 adjusted_original_content_length = original_content_length;
-      if (adjusted_original_content_length == -1)
-        adjusted_original_content_length = received_content_length;
       base::TimeDelta freshness_lifetime =
           request->response_info().headers->GetFreshnessLifetime(
               request->response_info().response_time);
+      int64 adjusted_original_content_length =
+          chrome_browser_net::GetAdjustedOriginalContentLength(
+              data_reduction_type, original_content_length,
+              received_content_length);
       AccumulateContentLength(received_content_length,
                               adjusted_original_content_length,
-                              data_reduction_proxy_was_used);
+                              data_reduction_type,
+                              profile_);
       RecordContentLengthHistograms(received_content_length,
                                     original_content_length,
                                     freshness_lifetime);
@@ -739,7 +584,7 @@ void ChromeNetworkDelegate::OnURLRequestDestroyed(net::URLRequest* request) {
 }
 
 void ChromeNetworkDelegate::OnPACScriptError(int line_number,
-                                             const string16& error) {
+                                             const base::string16& error) {
   extensions::ProxyEventRouter::GetInstance()->OnPACScriptError(
       event_router_.get(), profile_, line_number, error);
 }
@@ -816,7 +661,7 @@ bool ChromeNetworkDelegate::OnCanAccessFile(const net::URLRequest& request,
 #if defined(OS_CHROMEOS)
   // If we're running Chrome for ChromeOS on Linux, we want to allow file
   // access.
-  if (!base::chromeos::IsRunningOnChromeOS() ||
+  if (!base::SysInfo::IsRunningOnChromeOS() ||
       CommandLine::ForCurrentProcess()->HasSwitch(switches::kTestType)) {
     return true;
   }
@@ -832,6 +677,17 @@ bool ChromeNetworkDelegate::OnCanAccessFile(const net::URLRequest& request,
       "/tmp",
       "/var/log",
   };
+
+  // The actual location of "/home/chronos/user/Downloads" is the Downloads
+  // directory under the profile path ("/home/chronos/user' is a hard link to
+  // current primary logged in profile.) For the support of multi-profile
+  // sessions, we are switching to use explicit "$PROFILE_PATH/Downloads" path
+  // and here whitelist such access.
+  if (!profile_path_.empty()) {
+    const base::FilePath downloads = profile_path_.AppendASCII("Downloads");
+    if (downloads == path.StripTrailingSeparators() || downloads.IsParent(path))
+      return true;
+  }
 #elif defined(OS_ANDROID)
   // Access to files in external storage is allowed.
   base::FilePath external_storage_path;
@@ -910,13 +766,16 @@ void ChromeNetworkDelegate::OnRequestWaitStateChange(
 }
 
 void ChromeNetworkDelegate::AccumulateContentLength(
-    int64 received_content_length, int64 original_content_length,
-    bool data_reduction_proxy_was_used) {
+    int64 received_content_length,
+    int64 original_content_length,
+    chrome_browser_net::DataReductionRequestType data_reduction_type,
+    void* profile) {
   DCHECK_GE(received_content_length, 0);
   DCHECK_GE(original_content_length, 0);
   StoreAccumulatedContentLength(received_content_length,
                                 original_content_length,
-                                data_reduction_proxy_was_used);
+                                data_reduction_type,
+                                reinterpret_cast<Profile*>(profile_));
   received_content_length_ += received_content_length;
   original_content_length_ += original_content_length;
 }

@@ -4,9 +4,6 @@
 
 #include "build/build_config.h"
 
-// TODO(pkasting): Port Mac to use this.
-#if defined(TOOLKIT_VIEWS) || defined(TOOLKIT_GTK) || defined(OS_ANDROID)
-
 #include "chrome/browser/infobars/infobar_container.h"
 
 #include <algorithm>
@@ -18,7 +15,7 @@
 #include "chrome/browser/infobars/infobar_service.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
-#include "ui/base/animation/slide_animation.h"
+#include "ui/gfx/animation/slide_animation.h"
 
 InfoBarContainer::Delegate::~Delegate() {
 }
@@ -50,9 +47,7 @@ void InfoBarContainer::ChangeInfoBarService(InfoBarService* infobar_service) {
     for (size_t i = 0; i < infobar_service_->infobar_count(); ++i) {
       // As when we removed the infobars above, we prevent callbacks to
       // OnInfoBarAnimated() for each infobar.
-      AddInfoBar(
-          infobar_service_->infobar_at(i)->CreateInfoBar(infobar_service_),
-          i, false, NO_CALLBACK);
+      AddInfoBar(infobar_service_->infobar_at(i), i, false, NO_CALLBACK);
     }
   }
 
@@ -109,11 +104,6 @@ void InfoBarContainer::RemoveAllInfoBarsForDestruction() {
   // this point |delegate_| may be shutting down, and it's at best unimportant
   // and at worst disastrous to call that.
   delegate_ = NULL;
-
-  // TODO(pkasting): Remove this once InfoBarService calls CloseSoon().
-  for (size_t i = infobars_.size(); i > 0; --i)
-    infobars_[i - 1]->CloseSoon();
-
   ChangeInfoBarService(NULL);
 }
 
@@ -122,23 +112,30 @@ void InfoBarContainer::Observe(int type,
                                const content::NotificationDetails& details) {
   switch (type) {
     case chrome::NOTIFICATION_TAB_CONTENTS_INFOBAR_ADDED:
-      AddInfoBar(
-          content::Details<InfoBarAddedDetails>(details)->CreateInfoBar(
-              infobar_service_),
-          infobars_.size(), true, WANT_CALLBACK);
+      AddInfoBar(content::Details<InfoBar::AddedDetails>(details).ptr(),
+                 infobars_.size(), true, WANT_CALLBACK);
       break;
 
     case chrome::NOTIFICATION_TAB_CONTENTS_INFOBAR_REMOVED: {
-      InfoBarRemovedDetails* removed_details =
-          content::Details<InfoBarRemovedDetails>(details).ptr();
-      HideInfoBar(FindInfoBar(removed_details->first), removed_details->second);
+      InfoBar::RemovedDetails* removed_details =
+          content::Details<InfoBar::RemovedDetails>(details).ptr();
+      removed_details->first->Hide(removed_details->second);
+      UpdateInfoBarArrowTargetHeights();
       break;
     }
 
     case chrome::NOTIFICATION_TAB_CONTENTS_INFOBAR_REPLACED: {
-      InfoBarReplacedDetails* replaced_details =
-          content::Details<InfoBarReplacedDetails>(details).ptr();
-      ReplaceInfoBar(replaced_details->first, replaced_details->second);
+      InfoBar::ReplacedDetails* replaced_details =
+          content::Details<InfoBar::ReplacedDetails>(details).ptr();
+      InfoBar* old_infobar = replaced_details->first;
+      InfoBar* new_infobar = replaced_details->second;
+      PlatformSpecificReplaceInfoBar(old_infobar, new_infobar);
+      InfoBars::const_iterator i(std::find(infobars_.begin(), infobars_.end(),
+                                           old_infobar));
+      DCHECK(i != infobars_.end());
+      size_t position = i - infobars_.begin();
+      old_infobar->Hide(false);
+      AddInfoBar(new_infobar, position, false, WANT_CALLBACK);
       break;
     }
 
@@ -148,51 +145,14 @@ void InfoBarContainer::Observe(int type,
   }
 }
 
-void InfoBarContainer::ReplaceInfoBar(InfoBarDelegate* old_delegate,
-                                      InfoBarDelegate* new_delegate) {
-  InfoBar* new_infobar = new_delegate->CreateInfoBar(infobar_service_);
-  InfoBar* old_infobar = FindInfoBar(old_delegate);
-#if defined(OS_ANDROID)
-  PlatformSpecificReplaceInfoBar(old_infobar, new_infobar);
-#endif
-  AddInfoBar(
-      new_infobar, HideInfoBar(old_infobar, false), false, WANT_CALLBACK);
-}
-
-InfoBar* InfoBarContainer::FindInfoBar(InfoBarDelegate* delegate) {
-  // Search for the infobar associated with |delegate|.  We cannot search for
-  // |delegate| in |tab_helper_|, because an InfoBar remains alive until its
-  // close animation completes, while the delegate is removed from the tab
-  // immediately.
-  for (InfoBars::iterator i(infobars_.begin()); i != infobars_.end(); ++i) {
-    InfoBar* infobar = *i;
-    if (infobar->delegate() == delegate)
-      return infobar;
-  }
-  NOTREACHED();
-  return NULL;
-}
-
-size_t InfoBarContainer::HideInfoBar(InfoBar* infobar, bool use_animation) {
-  InfoBars::iterator it =
-      std::find(infobars_.begin(), infobars_.end(), infobar);
-  DCHECK(it != infobars_.end());
-  size_t position = it - infobars_.begin();
-  // We merely need hide the infobar; it will call back to RemoveInfoBar()
-  // itself once it's hidden.
-  infobar->Hide(use_animation);
-  infobar->CloseSoon();
-  UpdateInfoBarArrowTargetHeights();
-  return position;
-}
-
 void InfoBarContainer::HideAllInfoBars() {
   registrar_.RemoveAll();
 
   while (!infobars_.empty()) {
     InfoBar* infobar = infobars_.front();
     // Inform the infobar that it's hidden.  If it was already closing, this
-    // closes its delegate.
+    // deletes it.  Otherwise, this ensures the infobar will be deleted if it's
+    // closed while it's not in an InfoBarContainer.
     infobar->Hide(false);
   }
 }
@@ -224,7 +184,7 @@ int InfoBarContainer::ArrowTargetHeightForInfoBar(size_t infobar_index) const {
     return 0;
   if (infobar_index == 0)
     return top_arrow_target_height_;
-  const ui::SlideAnimation& first_infobar_animation =
+  const gfx::SlideAnimation& first_infobar_animation =
       const_cast<const InfoBar*>(infobars_.front())->animation();
   if ((infobar_index > 1) || first_infobar_animation.IsShowing())
     return InfoBar::kDefaultArrowTargetHeight;
@@ -235,5 +195,3 @@ int InfoBarContainer::ArrowTargetHeightForInfoBar(size_t infobar_index) const {
       (InfoBar::kDefaultArrowTargetHeight - top_arrow_target_height_) *
           first_infobar_animation.GetCurrentValue());
 }
-
-#endif  // TOOLKIT_VIEWS || defined(TOOLKIT_GTK) || defined(OS_ANDROID)

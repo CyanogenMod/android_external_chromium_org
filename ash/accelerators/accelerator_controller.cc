@@ -9,30 +9,33 @@
 #include <iostream>
 #include <string>
 
+#include "ash/accelerators/accelerator_commands.h"
 #include "ash/accelerators/accelerator_table.h"
+#include "ash/accelerators/debug_commands.h"
 #include "ash/ash_switches.h"
 #include "ash/caps_lock_delegate.h"
 #include "ash/debug.h"
-#include "ash/desktop_background/desktop_background_controller.h"
-#include "ash/desktop_background/user_wallpaper_delegate.h"
 #include "ash/display/display_controller.h"
 #include "ash/display/display_manager.h"
 #include "ash/focus_cycler.h"
 #include "ash/ime_control_delegate.h"
 #include "ash/launcher/launcher.h"
-#include "ash/launcher/launcher_delegate.h"
-#include "ash/launcher/launcher_model.h"
 #include "ash/magnifier/magnification_controller.h"
 #include "ash/magnifier/partial_magnification_controller.h"
+#include "ash/media_delegate.h"
+#include "ash/multi_profile_uma.h"
+#include "ash/new_window_delegate.h"
 #include "ash/root_window_controller.h"
 #include "ash/rotator/screen_rotation.h"
 #include "ash/screenshot_delegate.h"
 #include "ash/session_state_delegate.h"
+#include "ash/shelf/shelf_delegate.h"
+#include "ash/shelf/shelf_model.h"
 #include "ash/shelf/shelf_widget.h"
 #include "ash/shell.h"
 #include "ash/shell_delegate.h"
 #include "ash/shell_window_ids.h"
-#include "ash/system/brightness/brightness_control_delegate.h"
+#include "ash/system/brightness_control_delegate.h"
 #include "ash/system/keyboard_brightness/keyboard_brightness_control_delegate.h"
 #include "ash/system/status_area_widget.h"
 #include "ash/system/tray/system_tray.h"
@@ -41,26 +44,28 @@
 #include "ash/system/web_notification/web_notification_tray.h"
 #include "ash/touch/touch_hud_debug.h"
 #include "ash/volume_control_delegate.h"
+#include "ash/wm/mru_window_tracker.h"
+#include "ash/wm/overview/window_selector_controller.h"
 #include "ash/wm/partial_screenshot_view.h"
 #include "ash/wm/power_button_controller.h"
-#include "ash/wm/property_util.h"
 #include "ash/wm/window_cycle_controller.h"
-#include "ash/wm/window_selector_controller.h"
+#include "ash/wm/window_state.h"
 #include "ash/wm/window_util.h"
 #include "ash/wm/workspace/snap_sizer.h"
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "content/public/browser/gpu_data_manager.h"
+#include "content/public/browser/user_metrics.h"
 #include "ui/aura/env.h"
 #include "ui/aura/root_window.h"
 #include "ui/base/accelerators/accelerator.h"
 #include "ui/base/accelerators/accelerator_manager.h"
-#include "ui/base/events/event.h"
-#include "ui/base/keycodes/keyboard_codes.h"
 #include "ui/compositor/debug_utils.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/layer_animation_sequence.h"
 #include "ui/compositor/layer_animator.h"
+#include "ui/events/event.h"
+#include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/screen.h"
 #include "ui/oak/oak.h"
 #include "ui/views/controls/webview/webview.h"
@@ -68,14 +73,16 @@
 #include "ui/views/widget/widget.h"
 
 #if defined(OS_CHROMEOS)
+#include "ash/session_state_delegate.h"
 #include "ash/system/chromeos/keyboard_brightness_controller.h"
-#include "base/chromeos/chromeos_version.h"
+#include "base/sys_info.h"
 #endif  // defined(OS_CHROMEOS)
 
 namespace ash {
 namespace {
 
 using internal::DisplayInfo;
+using content::UserMetricsAction;
 
 bool DebugShortcutsEnabled() {
 #if defined(NDEBUG)
@@ -86,32 +93,17 @@ bool DebugShortcutsEnabled() {
 #endif
 }
 
-bool HandleCycleWindowMRU(WindowCycleController::Direction direction,
-                          bool is_alt_down) {
-  Shell::GetInstance()->
-      window_cycle_controller()->HandleCycleWindow(direction, is_alt_down);
-  // Always report we handled the key, even if the window didn't change.
-  return true;
-}
-
-bool HandleCycleWindowOverviewMRU(WindowSelector::Direction direction) {
-  Shell::GetInstance()->
-      window_selector_controller()->HandleCycleWindow(direction);
-  return true;
-}
-
-void HandleCycleWindowLinear(CycleDirection direction) {
-  Shell::GetInstance()->
-      window_cycle_controller()->HandleLinearCycleWindow();
-}
-
-void ToggleOverviewMode() {
-  Shell::GetInstance()->window_selector_controller()->ToggleOverview();
-}
-
 bool HandleAccessibleFocusCycle(bool reverse) {
-  if (!Shell::GetInstance()->delegate()->IsSpokenFeedbackEnabled())
+  if (reverse) {
+    content::RecordAction(UserMetricsAction("Accel_Accessible_Focus_Previous"));
+  } else {
+    content::RecordAction(UserMetricsAction("Accel_Accessible_Focus_Next"));
+  }
+
+  if (!Shell::GetInstance()->accessibility_delegate()->
+      IsSpokenFeedbackEnabled()) {
     return false;
+  }
   aura::Window* active_window = ash::wm::GetActiveWindow();
   if (!active_window)
     return false;
@@ -132,52 +124,235 @@ bool HandleAccessibleFocusCycle(bool reverse) {
   return true;
 }
 
-void HandleSilenceSpokenFeedback() {
-  if (!Shell::GetInstance()->delegate()->IsSpokenFeedbackEnabled())
-    return;
+bool HandleCycleBackwardMRU(const ui::Accelerator& accelerator) {
+  Shell* shell = Shell::GetInstance();
 
-  Shell::GetInstance()->delegate()->SilenceSpokenFeedback();
-}
+  if (accelerator.key_code() == ui::VKEY_TAB)
+    content::RecordAction(content::UserMetricsAction("Accel_PrevWindow_Tab"));
 
-#if defined(OS_CHROMEOS)
-bool HandleLock() {
-  Shell::GetInstance()->session_state_delegate()->LockScreen();
+  if (switches::UseOverviewMode()) {
+    shell->window_selector_controller()->HandleCycleWindow(
+        WindowSelector::BACKWARD);
+    return true;
+  }
+  shell->window_cycle_controller()->HandleCycleWindow(
+      WindowCycleController::BACKWARD, accelerator.IsAltDown());
   return true;
 }
 
-bool HandleFileManager(bool as_dialog) {
-  Shell::GetInstance()->delegate()->OpenFileManager(as_dialog);
+bool HandleCycleForwardMRU(const ui::Accelerator& accelerator) {
+  Shell* shell = Shell::GetInstance();
+
+  if (accelerator.key_code() == ui::VKEY_TAB)
+    content::RecordAction(content::UserMetricsAction("Accel_NextWindow_Tab"));
+
+  if (switches::UseOverviewMode()) {
+    shell->window_selector_controller()->HandleCycleWindow(
+        WindowSelector::FORWARD);
+    return true;
+  }
+  shell->window_cycle_controller()->HandleCycleWindow(
+      WindowCycleController::FORWARD, accelerator.IsAltDown());
   return true;
 }
 
-bool HandleCrosh() {
-  Shell::GetInstance()->delegate()->OpenCrosh();
+bool HandleCycleLinear(const ui::Accelerator& accelerator) {
+  Shell* shell = Shell::GetInstance();
+
+  // TODO(jamescook): When overview becomes the default the AcceleratorAction
+  // should be renamed from CYCLE_LINEAR to TOGGLE_OVERVIEW.
+  if (switches::UseOverviewMode()) {
+    content::RecordAction(content::UserMetricsAction("Accel_Overview_F5"));
+    shell->window_selector_controller()->ToggleOverview();
+    return true;
+  }
+  if (accelerator.key_code() == ui::VKEY_MEDIA_LAUNCH_APP1)
+    content::RecordAction(content::UserMetricsAction("Accel_NextWindow_F5"));
+  shell->window_cycle_controller()->HandleLinearCycleWindow();
   return true;
 }
 
-bool HandleToggleSpokenFeedback() {
-  Shell::GetInstance()->delegate()->
-      ToggleSpokenFeedback(A11Y_NOTIFICATION_SHOW);
+bool HandleDisableCapsLock(ui::KeyboardCode key_code,
+                           ui::EventType previous_event_type,
+                           ui::KeyboardCode previous_key_code) {
+  Shell* shell = Shell::GetInstance();
+
+  if (previous_event_type == ui::ET_KEY_RELEASED ||
+      (previous_key_code != ui::VKEY_LSHIFT &&
+       previous_key_code != ui::VKEY_SHIFT &&
+       previous_key_code != ui::VKEY_RSHIFT)) {
+    // If something else was pressed between the Shift key being pressed
+    // and released, then ignore the release of the Shift key.
+    return false;
+  }
+  content::RecordAction(UserMetricsAction("Accel_Disable_Caps_Lock"));
+  if (shell->caps_lock_delegate()->IsCapsLockEnabled()) {
+    shell->caps_lock_delegate()->SetCapsLockEnabled(false);
+    return true;
+  }
+  return false;
+}
+
+bool HandleFocusLauncher() {
+  Shell* shell = Shell::GetInstance();
+  content::RecordAction(content::UserMetricsAction("Accel_Focus_Launcher"));
+  return shell->focus_cycler()->FocusWidget(
+      Launcher::ForPrimaryDisplay()->shelf_widget());
+}
+
+bool HandleLaunchAppN(int n) {
+  content::RecordAction(UserMetricsAction("Accel_Launch_App"));
+  Launcher::ForPrimaryDisplay()->LaunchAppIndexAt(n);
   return true;
 }
 
-#endif  // defined(OS_CHROMEOS)
+bool HandleLaunchLastApp() {
+  content::RecordAction(UserMetricsAction("Accel_Launch_Last_App"));
+  Launcher::ForPrimaryDisplay()->LaunchAppIndexAt(-1);
+  return true;
+}
+
+// Magnify the screen
+bool HandleMagnifyScreen(int delta_index) {
+  if (ash::Shell::GetInstance()->magnification_controller()->IsEnabled()) {
+    // TODO(yoshiki): Move the following logic to MagnificationController.
+    float scale =
+        ash::Shell::GetInstance()->magnification_controller()->GetScale();
+    // Calculate rounded logarithm (base kMagnificationScaleFactor) of scale.
+    int scale_index =
+        std::floor(std::log(scale) / std::log(kMagnificationScaleFactor) + 0.5);
+
+    int new_scale_index = std::max(0, std::min(8, scale_index + delta_index));
+
+    ash::Shell::GetInstance()->magnification_controller()->
+        SetScale(std::pow(kMagnificationScaleFactor, new_scale_index), true);
+  } else if (ash::Shell::GetInstance()->
+             partial_magnification_controller()->is_enabled()) {
+    float scale = delta_index > 0 ? kDefaultPartialMagnifiedScale : 1;
+    ash::Shell::GetInstance()->partial_magnification_controller()->
+        SetScale(scale);
+  }
+
+  return true;
+}
+
+bool HandleMediaNextTrack() {
+  Shell::GetInstance()->media_delegate()->HandleMediaNextTrack();
+  return true;
+}
+
+bool HandleMediaPlayPause() {
+  Shell::GetInstance()->media_delegate()->HandleMediaPlayPause();
+  return true;
+}
+
+bool HandleMediaPrevTrack() {
+  Shell::GetInstance()->media_delegate()->HandleMediaPrevTrack();
+  return true;
+}
+
+bool HandleNewIncognitoWindow() {
+  content::RecordAction(UserMetricsAction("Accel_New_Incognito_Window"));
+  bool incognito_allowed =
+    Shell::GetInstance()->delegate()->IsIncognitoAllowed();
+  if (incognito_allowed)
+    Shell::GetInstance()->new_window_delegate()->NewWindow(
+        true /* is_incognito */);
+  return incognito_allowed;
+}
+
+bool HandleNewTab(ui::KeyboardCode key_code) {
+  if (key_code == ui::VKEY_T)
+    content::RecordAction(content::UserMetricsAction("Accel_NewTab_T"));
+  Shell::GetInstance()->new_window_delegate()->NewTab();
+  return true;
+}
+
+bool HandleNewWindow() {
+  content::RecordAction(content::UserMetricsAction("Accel_New_Window"));
+  Shell::GetInstance()->new_window_delegate()->NewWindow(
+      false /* is_incognito */);
+  return true;
+}
+
+bool HandleNextIme(ImeControlDelegate* ime_control_delegate,
+                   ui::EventType previous_event_type,
+                   ui::KeyboardCode previous_key_code) {
+  // This check is necessary e.g. not to process the Shift+Alt+
+  // ET_KEY_RELEASED accelerator for Chrome OS (see ash/accelerators/
+  // accelerator_controller.cc) when Shift+Alt+Tab is pressed and then Tab
+  // is released.
+  if (previous_event_type == ui::ET_KEY_RELEASED &&
+      // Workaround for crbug.com/139556. CJK IME users tend to press
+      // Enter (or Space) and Shift+Alt almost at the same time to commit
+      // an IME string and then switch from the IME to the English layout.
+      // This workaround allows the user to trigger NEXT_IME even if the
+      // user presses Shift+Alt before releasing Enter.
+      // TODO(nona|mazda): Fix crbug.com/139556 in a cleaner way.
+      previous_key_code != ui::VKEY_RETURN &&
+      previous_key_code != ui::VKEY_SPACE) {
+    // We totally ignore this accelerator.
+    // TODO(mazda): Fix crbug.com/158217
+    return false;
+  }
+  content::RecordAction(UserMetricsAction("Accel_Next_Ime"));
+  if (ime_control_delegate)
+    return ime_control_delegate->HandleNextIme();
+  return false;
+}
+
+bool HandleOpenFeedbackPage() {
+  content::RecordAction(UserMetricsAction("Accel_Open_Feedback_Page"));
+  ash::Shell::GetInstance()->new_window_delegate()->OpenFeedbackPage();
+  return true;
+}
+
+bool HandlePositionCenter() {
+  content::RecordAction(UserMetricsAction("Accel_Window_Position_Center"));
+  aura::Window* window = wm::GetActiveWindow();
+  // Docked windows do not support centering and ignore accelerator.
+  if (window && !wm::GetWindowState(window)->IsDocked()) {
+    wm::CenterWindow(window);
+    return true;
+  }
+  return false;
+}
+
+bool HandlePreviousIme(ImeControlDelegate* ime_control_delegate,
+                       const ui::Accelerator& accelerator) {
+  content::RecordAction(UserMetricsAction("Accel_Previous_Ime"));
+  if (ime_control_delegate)
+    return ime_control_delegate->HandlePreviousIme(accelerator);
+  return false;
+}
+
+bool HandleRestoreTab() {
+  content::RecordAction(content::UserMetricsAction("Accel_Restore_Tab"));
+  Shell::GetInstance()->new_window_delegate()->RestoreTab();
+  return true;
+}
 
 bool HandleRotatePaneFocus(Shell::Direction direction) {
   Shell* shell = Shell::GetInstance();
   switch (direction) {
-    case Shell::FORWARD:
+    // TODO(stevet): Not sure if this is the same as IDC_FOCUS_NEXT_PANE.
+    case Shell::FORWARD: {
+      content::RecordAction(UserMetricsAction("Accel_Focus_Next_Pane"));
       shell->focus_cycler()->RotateFocus(internal::FocusCycler::FORWARD);
       break;
-    case Shell::BACKWARD:
+    }
+    case Shell::BACKWARD: {
+      content::RecordAction(UserMetricsAction("Accel_Focus_Previous_Pane"));
       shell->focus_cycler()->RotateFocus(internal::FocusCycler::BACKWARD);
       break;
+    }
   }
   return true;
 }
 
 // Rotate the active window.
 bool HandleRotateActiveWindow() {
+  content::RecordAction(UserMetricsAction("Accel_Rotate_Window"));
   aura::Window* active_window = wm::GetActiveWindow();
   if (active_window) {
     // The rotation animation bases its target transform on the current
@@ -208,31 +383,9 @@ gfx::Display::Rotation GetNextRotation(gfx::Display::Rotation current) {
   return gfx::Display::ROTATE_0;
 }
 
-bool HandleScaleUI(bool up) {
-  internal::DisplayManager* display_manager =
-      Shell::GetInstance()->display_manager();
-  int64 display_id = display_manager->GetDisplayIdForUIScaling();
-  if (display_id == gfx::Display::kInvalidDisplayID)
-    return false;
-  const DisplayInfo& display_info = display_manager->GetDisplayInfo(display_id);
-  float next_scale =
-      internal::DisplayManager::GetNextUIScale(display_info, up);
-  display_manager->SetDisplayUIScale(display_id, next_scale);
-  return true;
-}
-
-bool HandleScaleReset() {
-  internal::DisplayManager* display_manager =
-      Shell::GetInstance()->display_manager();
-  int64 display_id = display_manager->GetDisplayIdForUIScaling();
-  if (display_id == gfx::Display::kInvalidDisplayID)
-    return false;
-  display_manager->SetDisplayUIScale(display_id, 1.0f);
-  return true;
-}
-
 // Rotates the screen.
 bool HandleRotateScreen() {
+  content::RecordAction(UserMetricsAction("Accel_Rotate_Window"));
   gfx::Point point = Shell::GetScreen()->GetCursorScreenPoint();
   gfx::Display display = Shell::GetScreen()->GetDisplayNearestPoint(point);
   const DisplayInfo& display_info =
@@ -242,69 +395,313 @@ bool HandleRotateScreen() {
   return true;
 }
 
-bool HandleToggleDesktopBackgroundMode() {
-  DesktopBackgroundController* desktop_background_controller =
-      Shell::GetInstance()->desktop_background_controller();
-  if (desktop_background_controller->desktop_background_mode() ==
-      DesktopBackgroundController::BACKGROUND_IMAGE) {
-    desktop_background_controller->SetDesktopBackgroundSolidColorMode(
-        SK_ColorBLACK);
+bool HandleScaleReset() {
+  internal::DisplayManager* display_manager =
+      Shell::GetInstance()->display_manager();
+  int64 display_id = display_manager->GetDisplayIdForUIScaling();
+  if (display_id == gfx::Display::kInvalidDisplayID)
+    return false;
+
+  content::RecordAction(UserMetricsAction("Accel_Scale_Ui_Reset"));
+
+  display_manager->SetDisplayUIScale(display_id, 1.0f);
+  return true;
+}
+
+bool HandleScaleUI(bool up) {
+  internal::DisplayManager* display_manager =
+      Shell::GetInstance()->display_manager();
+  int64 display_id = display_manager->GetDisplayIdForUIScaling();
+  if (display_id == gfx::Display::kInvalidDisplayID)
+    return false;
+
+  if (up) {
+    content::RecordAction(UserMetricsAction("Accel_Scale_Ui_Up"));
   } else {
-    ash::Shell::GetInstance()->user_wallpaper_delegate()->
-        InitializeWallpaper();
+    content::RecordAction(UserMetricsAction("Accel_Scale_Ui_Down"));
   }
+
+  const DisplayInfo& display_info = display_manager->GetDisplayInfo(display_id);
+  float next_scale =
+      internal::DisplayManager::GetNextUIScale(display_info, up);
+  display_manager->SetDisplayUIScale(display_id, next_scale);
+  return true;
+}
+
+bool HandleSwapPrimaryDisplay() {
+  content::RecordAction(UserMetricsAction("Accel_Swap_Primary_Display"));
+  Shell::GetInstance()->display_controller()->SwapPrimaryDisplay();
+  return true;
+}
+
+bool HandleShowKeyboardOverlay() {
+  content::RecordAction(UserMetricsAction("Accel_Show_Keyboard_Overlay"));
+  ash::Shell::GetInstance()->new_window_delegate()->ShowKeyboardOverlay();
+
+  return true;
+}
+
+void HandleShowMessageCenterBubble() {
+  content::RecordAction(UserMetricsAction("Accel_Show_Message_Center_Bubble"));
+  internal::RootWindowController* controller =
+    internal::RootWindowController::ForTargetRootWindow();
+  internal::StatusAreaWidget* status_area_widget =
+    controller->shelf()->status_area_widget();
+  if (status_area_widget) {
+    WebNotificationTray* notification_tray =
+      status_area_widget->web_notification_tray();
+    if (notification_tray->visible())
+      notification_tray->ShowMessageCenterBubble();
+  }
+}
+
+bool HandleShowOak() {
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+        switches::kAshEnableOak)) {
+    oak::ShowOakWindowWithContext(Shell::GetPrimaryRootWindow());
+    return true;
+  }
+  return false;
+}
+
+bool HandleShowSystemTrayBubble() {
+  content::RecordAction(UserMetricsAction("Accel_Show_System_Tray_Bubble"));
+  internal::RootWindowController* controller =
+    internal::RootWindowController::ForTargetRootWindow();
+  if (!controller->GetSystemTray()->HasSystemBubble()) {
+    controller->GetSystemTray()->ShowDefaultView(BUBBLE_CREATE_NEW);
+    return true;
+  }
+  return false;
+}
+
+bool HandleShowTaskManager() {
+  content::RecordAction(UserMetricsAction("Accel_Show_Task_Manager"));
+  Shell::GetInstance()->new_window_delegate()->ShowTaskManager();
+  return true;
+}
+
+void HandleSilenceSpokenFeedback() {
+  content::RecordAction(UserMetricsAction("Accel_Silence_Spoken_Feedback"));
+
+  AccessibilityDelegate* delegate =
+      Shell::GetInstance()->accessibility_delegate();
+  if (!delegate->IsSpokenFeedbackEnabled())
+    return;
+  delegate->SilenceSpokenFeedback();
+}
+
+bool HandleSwitchIme(ImeControlDelegate* ime_control_delegate,
+                     const ui::Accelerator& accelerator) {
+  content::RecordAction(UserMetricsAction("Accel_Switch_Ime"));
+  if (ime_control_delegate)
+    return ime_control_delegate->HandleSwitchIme(accelerator);
+  return false;
+}
+
+bool HandleTakePartialScreenshot(ScreenshotDelegate* screenshot_delegate) {
+  content::RecordAction(UserMetricsAction("Accel_Take_Partial_Screenshot"));
+  if (screenshot_delegate) {
+    ash::PartialScreenshotView::StartPartialScreenshot(
+        screenshot_delegate);
+  }
+  // Return true to prevent propagation of the key event because
+  // this key combination is reserved for partial screenshot.
+  return true;
+}
+
+bool HandleTakeScreenshot(ScreenshotDelegate* screenshot_delegate) {
+  content::RecordAction(UserMetricsAction("Accel_Take_Screenshot"));
+  if (screenshot_delegate &&
+      screenshot_delegate->CanTakeScreenshot()) {
+    screenshot_delegate->HandleTakeScreenshotForAllRootWindows();
+  }
+  // Return true to prevent propagation of the key event.
+  return true;
+}
+
+bool HandleToggleAppList(ui::KeyboardCode key_code,
+                         ui::EventType previous_event_type,
+                         ui::KeyboardCode previous_key_code,
+                         const ui::Accelerator& accelerator) {
+  // If something else was pressed between the Search key (LWIN)
+  // being pressed and released, then ignore the release of the
+  // Search key.
+  if (key_code == ui::VKEY_LWIN &&
+      (previous_event_type == ui::ET_KEY_RELEASED ||
+       previous_key_code != ui::VKEY_LWIN))
+    return false;
+  if (key_code == ui::VKEY_LWIN)
+    content::RecordAction(content::UserMetricsAction("Accel_Search_LWin"));
+  // When spoken feedback is enabled, we should neither toggle the list nor
+  // consume the key since Search+Shift is one of the shortcuts the a11y
+  // feature uses. crbug.com/132296
+  DCHECK_EQ(ui::VKEY_LWIN, accelerator.key_code());
+  if (Shell::GetInstance()->accessibility_delegate()->
+      IsSpokenFeedbackEnabled())
+    return false;
+  ash::Shell::GetInstance()->ToggleAppList(NULL);
+  return true;
+}
+
+bool HandleToggleCapsLock(ui::KeyboardCode key_code,
+                          ui::EventType previous_event_type,
+                          ui::KeyboardCode previous_key_code) {
+  Shell* shell = Shell::GetInstance();
+  if (key_code == ui::VKEY_LWIN) {
+    // If something else was pressed between the Search key (LWIN)
+    // being pressed and released, then ignore the release of the
+    // Search key.
+    // TODO(danakj): Releasing Alt first breaks this: crbug.com/166495
+    if (previous_event_type == ui::ET_KEY_RELEASED ||
+        previous_key_code != ui::VKEY_LWIN)
+      return false;
+  }
+  content::RecordAction(UserMetricsAction("Accel_Toggle_Caps_Lock"));
+  shell->caps_lock_delegate()->ToggleCapsLock();
+  return true;
+}
+
+bool HandleToggleFullscreen(ui::KeyboardCode key_code) {
+  if (key_code == ui::VKEY_MEDIA_LAUNCH_APP2) {
+    content::RecordAction(UserMetricsAction("Accel_Fullscreen_F4"));
+  }
+  accelerators::ToggleFullscreen();
   return true;
 }
 
 bool HandleToggleRootWindowFullScreen() {
-  Shell::GetPrimaryRootWindow()->ToggleFullScreen();
+  Shell::GetPrimaryRootWindow()->GetDispatcher()->host()->ToggleFullScreen();
   return true;
 }
 
-// Magnify the screen
-bool HandleMagnifyScreen(int delta_index) {
-  if (ash::Shell::GetInstance()->magnification_controller()->IsEnabled()) {
-    // TODO(yoshiki): Move the following logic to MagnificationController.
-    float scale =
-        ash::Shell::GetInstance()->magnification_controller()->GetScale();
-    // Calculate rounded logarithm (base kMagnificationScaleFactor) of scale.
-    int scale_index =
-        std::floor(std::log(scale) / std::log(kMagnificationScaleFactor) + 0.5);
-
-    int new_scale_index = std::max(0, std::min(8, scale_index + delta_index));
-
-    ash::Shell::GetInstance()->magnification_controller()->
-        SetScale(std::pow(kMagnificationScaleFactor, new_scale_index), true);
-  } else if (ash::Shell::GetInstance()->
-             partial_magnification_controller()->is_enabled()) {
-    float scale = delta_index > 0 ? kDefaultPartialMagnifiedScale : 1;
-    ash::Shell::GetInstance()->partial_magnification_controller()->
-        SetScale(scale);
+bool HandleWindowSnap(int action) {
+  wm::WindowState* window_state = wm::GetActiveWindowState();
+  // Disable window snapping shortcut key for full screen window due to
+  // http://crbug.com/135487.
+  if (!window_state ||
+      window_state->window()->type() != aura::client::WINDOW_TYPE_NORMAL ||
+      window_state->IsFullscreen()) {
+    return false;
   }
 
+  if (action == WINDOW_SNAP_LEFT) {
+    content::RecordAction(UserMetricsAction("Accel_Window_Snap_Left"));
+  } else {
+    content::RecordAction(UserMetricsAction("Accel_Window_Snap_Right"));
+  }
+
+  internal::SnapSizer::SnapWindow(window_state,
+      action == WINDOW_SNAP_LEFT ? internal::SnapSizer::LEFT_EDGE :
+      internal::SnapSizer::RIGHT_EDGE);
   return true;
 }
 
-bool HandleMediaNextTrack() {
-  Shell::GetInstance()->delegate()->HandleMediaNextTrack();
+bool HandleWindowMinimize() {
+  content::RecordAction(
+      content::UserMetricsAction("Accel_Toggle_Minimized_Minus"));
+  return accelerators::ToggleMinimized();
+}
+
+#if defined(OS_CHROMEOS)
+bool HandleAddRemoveDisplay() {
+  content::RecordAction(UserMetricsAction("Accel_Add_Remove_Display"));
+  Shell::GetInstance()->display_manager()->AddRemoveDisplay();
   return true;
 }
 
-bool HandleMediaPlayPause() {
-  Shell::GetInstance()->delegate()->HandleMediaPlayPause();
+bool HandleCrosh() {
+  content::RecordAction(UserMetricsAction("Accel_Open_Crosh"));
+
+  Shell::GetInstance()->new_window_delegate()->OpenCrosh();
   return true;
 }
 
-bool HandleMediaPrevTrack() {
-  Shell::GetInstance()->delegate()->HandleMediaPrevTrack();
+bool HandleFileManager() {
+  content::RecordAction(UserMetricsAction("Accel_Open_File_Manager"));
+
+  Shell::GetInstance()->new_window_delegate()->OpenFileManager();
   return true;
 }
+
+bool HandleLock(ui::KeyboardCode key_code) {
+  content::RecordAction(UserMetricsAction("Accel_LockScreen_L"));
+  Shell::GetInstance()->session_state_delegate()->LockScreen();
+  return true;
+}
+
+bool HandleCycleUser(SessionStateDelegate::CycleUser cycle_user) {
+  if (!Shell::GetInstance()->delegate()->IsMultiProfilesEnabled())
+    return false;
+  ash::SessionStateDelegate* delegate =
+      ash::Shell::GetInstance()->session_state_delegate();
+  if (delegate->NumberOfLoggedInUsers() <= 1)
+    return false;
+  MultiProfileUMA::RecordSwitchActiveUser(
+      MultiProfileUMA::SWITCH_ACTIVE_USER_BY_ACCELERATOR);
+  switch (cycle_user) {
+    case SessionStateDelegate::CYCLE_TO_NEXT_USER:
+      content::RecordAction(UserMetricsAction("Accel_Switch_To_Next_User"));
+      break;
+    case SessionStateDelegate::CYCLE_TO_PREVIOUS_USER:
+      content::RecordAction(UserMetricsAction("Accel_Switch_To_Previous_User"));
+      break;
+  }
+  delegate->CycleActiveUser(cycle_user);
+  return true;
+}
+
+bool HandleToggleMirrorMode() {
+  content::RecordAction(UserMetricsAction("Accel_Toggle_Mirror_Mode"));
+  Shell::GetInstance()->display_controller()->ToggleMirrorMode();
+  return true;
+}
+
+bool HandleToggleSpokenFeedback() {
+  content::RecordAction(UserMetricsAction("Accel_Toggle_Spoken_Feedback"));
+
+  Shell::GetInstance()->accessibility_delegate()->
+      ToggleSpokenFeedback(A11Y_NOTIFICATION_SHOW);
+  return true;
+}
+
+bool HandleTouchHudClear() {
+  internal::RootWindowController* controller =
+      internal::RootWindowController::ForTargetRootWindow();
+  if (controller->touch_hud_debug()) {
+    controller->touch_hud_debug()->Clear();
+    return true;
+  }
+  return false;
+}
+
+bool HandleTouchHudModeChange() {
+  internal::RootWindowController* controller =
+      internal::RootWindowController::ForTargetRootWindow();
+  if (controller->touch_hud_debug()) {
+    controller->touch_hud_debug()->ChangeToNextMode();
+    return true;
+  }
+  return false;
+}
+
+bool HandleTouchHudProjectToggle() {
+  content::RecordAction(UserMetricsAction("Accel_Touch_Hud_Clear"));
+  bool enabled = Shell::GetInstance()->is_touch_hud_projection_enabled();
+  Shell::GetInstance()->SetTouchHudProjectionEnabled(!enabled);
+  return true;
+}
+
+#endif  // defined(OS_CHROMEOS)
+
+// Debug print methods.
 
 bool HandlePrintLayerHierarchy() {
-  Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
+  aura::Window::Windows root_windows = Shell::GetAllRootWindows();
   for (size_t i = 0; i < root_windows.size(); ++i) {
-    ui::PrintLayerHierarchy(root_windows[i]->layer(),
-                            root_windows[i]->GetLastMouseLocationInRoot());
+    ui::PrintLayerHierarchy(
+        root_windows[i]->layer(),
+        root_windows[i]->GetDispatcher()->GetLastMouseLocationInRoot());
   }
   return true;
 }
@@ -406,6 +803,8 @@ void AcceleratorController::Init() {
     nonrepeatable_actions_.insert(kNonrepeatableActions[i]);
   for (size_t i = 0; i < kActionsAllowedInAppModeLength; ++i)
     actions_allowed_in_app_mode_.insert(kActionsAllowedInAppMode[i]);
+  for (size_t i = 0; i < kActionsNeedingWindowLength; ++i)
+    actions_needing_window_.insert(kActionsNeedingWindow[i]);
 
   RegisterAccelerators(kAcceleratorData, kAcceleratorDataLength);
 
@@ -494,6 +893,12 @@ bool AcceleratorController::PerformAction(int action,
       actions_allowed_in_app_mode_.end()) {
     return false;
   }
+  if (MruWindowTracker::BuildWindowList(false).empty() &&
+      actions_needing_window_.find(action) != actions_needing_window_.end()) {
+    Shell::GetInstance()->accessibility_delegate()->TriggerAccessibilityAlert(
+        A11Y_ALERT_WINDOW_NEEDED);
+    return true;
+  }
 
   const ui::KeyboardCode key_code = accelerator.key_code();
   // PerformAction() is performed from gesture controllers and passes
@@ -516,186 +921,83 @@ bool AcceleratorController::PerformAction(int action,
   // You *MUST* return true when some action is performed. Otherwise, this
   // function might be called *twice*, via BrowserView::PreHandleKeyboardEvent
   // and BrowserView::HandleKeyboardEvent, for a single accelerator press.
+  //
+  // If your accelerator invokes more than one line of code, please either
+  // implement it in your module's controller code (like TOGGLE_MIRROR_MODE
+  // below) or pull it into a HandleFoo() function above.
   switch (action) {
     case ACCESSIBLE_FOCUS_NEXT:
       return HandleAccessibleFocusCycle(false);
     case ACCESSIBLE_FOCUS_PREVIOUS:
       return HandleAccessibleFocusCycle(true);
     case CYCLE_BACKWARD_MRU:
-      if (key_code == ui::VKEY_TAB)
-        shell->delegate()->RecordUserMetricsAction(UMA_ACCEL_PREVWINDOW_TAB);
-      if (CommandLine::ForCurrentProcess()->HasSwitch(
-              switches::kAshEnableOverviewMode)) {
-        return HandleCycleWindowOverviewMRU(WindowSelector::BACKWARD);
-      }
-      return HandleCycleWindowMRU(WindowCycleController::BACKWARD,
-                                  accelerator.IsAltDown());
+      return HandleCycleBackwardMRU(accelerator);
     case CYCLE_FORWARD_MRU:
-      if (key_code == ui::VKEY_TAB)
-        shell->delegate()->RecordUserMetricsAction(UMA_ACCEL_NEXTWINDOW_TAB);
-      if (CommandLine::ForCurrentProcess()->HasSwitch(
-              switches::kAshEnableOverviewMode)) {
-        return HandleCycleWindowOverviewMRU(WindowSelector::FORWARD);
-      }
-      return HandleCycleWindowMRU(WindowCycleController::FORWARD,
-                                  accelerator.IsAltDown());
-    case CYCLE_BACKWARD_LINEAR:
-      if (CommandLine::ForCurrentProcess()->HasSwitch(
-              switches::kAshEnableOverviewMode)) {
-        shell->delegate()->RecordUserMetricsAction(UMA_ACCEL_OVERVIEW_F5);
-        ToggleOverviewMode();
-        return true;
-      }
-      if (key_code == ui::VKEY_MEDIA_LAUNCH_APP1)
-        shell->delegate()->RecordUserMetricsAction(UMA_ACCEL_PREVWINDOW_F5);
-      HandleCycleWindowLinear(CYCLE_BACKWARD);
-      return true;
-    case CYCLE_FORWARD_LINEAR:
-      if (CommandLine::ForCurrentProcess()->HasSwitch(
-              switches::kAshEnableOverviewMode)) {
-        shell->delegate()->RecordUserMetricsAction(UMA_ACCEL_OVERVIEW_F5);
-        ToggleOverviewMode();
-        return true;
-      }
-      if (key_code == ui::VKEY_MEDIA_LAUNCH_APP1)
-        shell->delegate()->RecordUserMetricsAction(UMA_ACCEL_NEXTWINDOW_F5);
-      HandleCycleWindowLinear(CYCLE_FORWARD);
-      return true;
+      return HandleCycleForwardMRU(accelerator);
+    case CYCLE_LINEAR:
+      return HandleCycleLinear(accelerator);
 #if defined(OS_CHROMEOS)
     case ADD_REMOVE_DISPLAY:
-      Shell::GetInstance()->display_manager()->AddRemoveDisplay();
-      return true;
+      return HandleAddRemoveDisplay();
     case TOGGLE_MIRROR_MODE:
-      Shell::GetInstance()->display_controller()->ToggleMirrorMode();
-      return true;
+      return HandleToggleMirrorMode();
     case LOCK_SCREEN:
-      if (key_code == ui::VKEY_L)
-        shell->delegate()->RecordUserMetricsAction(UMA_ACCEL_LOCK_SCREEN_L);
-      return HandleLock();
-    case OPEN_FILE_DIALOG:
-      return HandleFileManager(true /* as_dialog */);
+      return HandleLock(key_code);
     case OPEN_FILE_MANAGER:
-      return HandleFileManager(false /* as_dialog */);
+      return HandleFileManager();
     case OPEN_CROSH:
       return HandleCrosh();
     case SILENCE_SPOKEN_FEEDBACK:
       HandleSilenceSpokenFeedback();
       break;
     case SWAP_PRIMARY_DISPLAY:
-      Shell::GetInstance()->display_controller()->SwapPrimaryDisplay();
-      return true;
+      return HandleSwapPrimaryDisplay();
+    case SWITCH_TO_NEXT_USER:
+      return HandleCycleUser(SessionStateDelegate::CYCLE_TO_NEXT_USER);
+    case SWITCH_TO_PREVIOUS_USER:
+      return HandleCycleUser(SessionStateDelegate::CYCLE_TO_PREVIOUS_USER);
     case TOGGLE_SPOKEN_FEEDBACK:
       return HandleToggleSpokenFeedback();
     case TOGGLE_WIFI:
       Shell::GetInstance()->system_tray_notifier()->NotifyRequestToggleWifi();
       return true;
-    case TOUCH_HUD_CLEAR: {
-      internal::RootWindowController* controller =
-          internal::RootWindowController::ForActiveRootWindow();
-      if (controller->touch_hud_debug()) {
-        controller->touch_hud_debug()->Clear();
-        return true;
-      }
-      return false;
-    }
-    case TOUCH_HUD_MODE_CHANGE: {
-      internal::RootWindowController* controller =
-          internal::RootWindowController::ForActiveRootWindow();
-      if (controller->touch_hud_debug()) {
-        controller->touch_hud_debug()->ChangeToNextMode();
-        return true;
-      }
-      return false;
-    }
-    case TOUCH_HUD_PROJECTION_TOGGLE: {
-      bool enabled = Shell::GetInstance()->is_touch_hud_projection_enabled();
-      Shell::GetInstance()->SetTouchHudProjectionEnabled(!enabled);
-      return true;
-    }
+    case TOUCH_HUD_CLEAR:
+      return HandleTouchHudClear();
+    case TOUCH_HUD_MODE_CHANGE:
+      return HandleTouchHudModeChange();
+    case TOUCH_HUD_PROJECTION_TOGGLE:
+      return HandleTouchHudProjectToggle();
     case DISABLE_GPU_WATCHDOG:
       content::GpuDataManager::GetInstance()->DisableGpuWatchdog();
       return true;
-#endif
+#endif  // OS_CHROMEOS
     case OPEN_FEEDBACK_PAGE:
-      ash::Shell::GetInstance()->delegate()->OpenFeedbackPage();
-      return true;
+      return HandleOpenFeedbackPage();
     case EXIT:
       // UMA metrics are recorded in the handler.
       exit_warning_handler_.HandleAccelerator();
       return true;
     case NEW_INCOGNITO_WINDOW:
-      Shell::GetInstance()->delegate()->NewWindow(true /* is_incognito */);
-      return true;
+      return HandleNewIncognitoWindow();
     case NEW_TAB:
-      if (key_code == ui::VKEY_T)
-        shell->delegate()->RecordUserMetricsAction(UMA_ACCEL_NEWTAB_T);
-      Shell::GetInstance()->delegate()->NewTab();
-      return true;
+      return HandleNewTab(key_code);
     case NEW_WINDOW:
-      Shell::GetInstance()->delegate()->NewWindow(false /* is_incognito */);
-      return true;
+      return HandleNewWindow();
     case RESTORE_TAB:
-      Shell::GetInstance()->delegate()->RestoreTab();
-      return true;
+      return HandleRestoreTab();
     case TAKE_SCREENSHOT:
-      if (screenshot_delegate_.get() &&
-          screenshot_delegate_->CanTakeScreenshot()) {
-        screenshot_delegate_->HandleTakeScreenshotForAllRootWindows();
-      }
-      // Return true to prevent propagation of the key event.
-      return true;
+      return HandleTakeScreenshot(screenshot_delegate_.get());
     case TAKE_PARTIAL_SCREENSHOT:
-      if (screenshot_delegate_) {
-        ash::PartialScreenshotView::StartPartialScreenshot(
-            screenshot_delegate_.get());
-      }
-      // Return true to prevent propagation of the key event because
-      // this key combination is reserved for partial screenshot.
-      return true;
+      return HandleTakePartialScreenshot(screenshot_delegate_.get());
     case TOGGLE_APP_LIST:
-      // If something else was pressed between the Search key (LWIN)
-      // being pressed and released, then ignore the release of the
-      // Search key.
-      if (key_code == ui::VKEY_LWIN &&
-          (previous_event_type == ui::ET_KEY_RELEASED ||
-           previous_key_code != ui::VKEY_LWIN))
-        return false;
-      if (key_code == ui::VKEY_LWIN)
-        shell->delegate()->RecordUserMetricsAction(UMA_ACCEL_SEARCH_LWIN);
-      // When spoken feedback is enabled, we should neither toggle the list nor
-      // consume the key since Search+Shift is one of the shortcuts the a11y
-      // feature uses. crbug.com/132296
-      DCHECK_EQ(ui::VKEY_LWIN, accelerator.key_code());
-      if (Shell::GetInstance()->delegate()->IsSpokenFeedbackEnabled())
-        return false;
-      ash::Shell::GetInstance()->ToggleAppList(NULL);
-      return true;
+      return HandleToggleAppList(
+          key_code, previous_event_type, previous_key_code, accelerator);
     case DISABLE_CAPS_LOCK:
-      if (previous_event_type == ui::ET_KEY_RELEASED ||
-          (previous_key_code != ui::VKEY_LSHIFT &&
-           previous_key_code != ui::VKEY_SHIFT &&
-           previous_key_code != ui::VKEY_RSHIFT)) {
-        // If something else was pressed between the Shift key being pressed
-        // and released, then ignore the release of the Shift key.
-        return false;
-      }
-      if (shell->caps_lock_delegate()->IsCapsLockEnabled()) {
-        shell->caps_lock_delegate()->SetCapsLockEnabled(false);
-        return true;
-      }
-      return false;
+      return HandleDisableCapsLock(
+          key_code, previous_event_type, previous_key_code);
     case TOGGLE_CAPS_LOCK:
-      if (key_code == ui::VKEY_LWIN) {
-        // If something else was pressed between the Search key (LWIN)
-        // being pressed and released, then ignore the release of the
-        // Search key.
-        // TODO(danakj): Releasing Alt first breaks this: crbug.com/166495
-        if (previous_event_type == ui::ET_KEY_RELEASED ||
-            previous_key_code != ui::VKEY_LWIN)
-          return false;
-      }
-      shell->caps_lock_delegate()->ToggleCapsLock();
-      return true;
+      return HandleToggleCapsLock(
+          key_code, previous_event_type, previous_key_code);
     case BRIGHTNESS_DOWN:
       if (brightness_control_delegate_)
         return brightness_control_delegate_->HandleBrightnessDown(accelerator);
@@ -714,170 +1016,77 @@ bool AcceleratorController::PerformAction(int action,
         return keyboard_brightness_control_delegate_->
             HandleKeyboardBrightnessUp(accelerator);
       break;
-    case VOLUME_MUTE:
-      return shell->system_tray_delegate()->GetVolumeControlDelegate()->
-          HandleVolumeMute(accelerator);
-      break;
-    case VOLUME_DOWN:
-      return shell->system_tray_delegate()->GetVolumeControlDelegate()->
-          HandleVolumeDown(accelerator);
-      break;
-    case VOLUME_UP:
-      return shell->system_tray_delegate()->GetVolumeControlDelegate()->
-          HandleVolumeUp(accelerator);
-      break;
+    case VOLUME_MUTE: {
+      ash::VolumeControlDelegate* volume_delegate =
+          shell->system_tray_delegate()->GetVolumeControlDelegate();
+      return volume_delegate && volume_delegate->HandleVolumeMute(accelerator);
+    }
+    case VOLUME_DOWN: {
+      ash::VolumeControlDelegate* volume_delegate =
+          shell->system_tray_delegate()->GetVolumeControlDelegate();
+      return volume_delegate && volume_delegate->HandleVolumeDown(accelerator);
+    }
+    case VOLUME_UP: {
+      ash::VolumeControlDelegate* volume_delegate =
+          shell->system_tray_delegate()->GetVolumeControlDelegate();
+      return volume_delegate && volume_delegate->HandleVolumeUp(accelerator);
+    }
     case FOCUS_LAUNCHER:
-      return shell->focus_cycler()->FocusWidget(
-          Launcher::ForPrimaryDisplay()->shelf_widget());
-      break;
+      return HandleFocusLauncher();
     case FOCUS_NEXT_PANE:
       return HandleRotatePaneFocus(Shell::FORWARD);
     case FOCUS_PREVIOUS_PANE:
       return HandleRotatePaneFocus(Shell::BACKWARD);
     case SHOW_KEYBOARD_OVERLAY:
-      ash::Shell::GetInstance()->delegate()->ShowKeyboardOverlay();
-      return true;
+      return HandleShowKeyboardOverlay();
     case SHOW_OAK:
-      if (CommandLine::ForCurrentProcess()->HasSwitch(
-              switches::kAshEnableOak)) {
-        oak::ShowOakWindowWithContext(Shell::GetPrimaryRootWindow());
-        return true;
-      }
+      return HandleShowOak();
+    case SHOW_SYSTEM_TRAY_BUBBLE:
+      return HandleShowSystemTrayBubble();
+    case SHOW_MESSAGE_CENTER_BUBBLE:
+      HandleShowMessageCenterBubble();
       break;
-    case SHOW_SYSTEM_TRAY_BUBBLE: {
-      internal::RootWindowController* controller =
-          internal::RootWindowController::ForActiveRootWindow();
-      if (!controller->GetSystemTray()->HasSystemBubble())
-        controller->GetSystemTray()->ShowDefaultView(BUBBLE_CREATE_NEW);
-      break;
-    }
-    case SHOW_MESSAGE_CENTER_BUBBLE: {
-      internal::RootWindowController* controller =
-          internal::RootWindowController::ForActiveRootWindow();
-      internal::StatusAreaWidget* status_area_widget =
-          controller->shelf()->status_area_widget();
-      if (status_area_widget) {
-        WebNotificationTray* notification_tray =
-            status_area_widget->web_notification_tray();
-        if (notification_tray->visible())
-          notification_tray->ShowMessageCenterBubble();
-      }
-      break;
-    }
     case SHOW_TASK_MANAGER:
-      Shell::GetInstance()->delegate()->ShowTaskManager();
-      return true;
+      return HandleShowTaskManager();
     case NEXT_IME:
-      // This check is necessary e.g. not to process the Shift+Alt+
-      // ET_KEY_RELEASED accelerator for Chrome OS (see ash/accelerators/
-      // accelerator_controller.cc) when Shift+Alt+Tab is pressed and then Tab
-      // is released.
-      if (previous_event_type == ui::ET_KEY_RELEASED &&
-          // Workaround for crbug.com/139556. CJK IME users tend to press
-          // Enter (or Space) and Shift+Alt almost at the same time to commit
-          // an IME string and then switch from the IME to the English layout.
-          // This workaround allows the user to trigger NEXT_IME even if the
-          // user presses Shift+Alt before releasing Enter.
-          // TODO(nona|mazda): Fix crbug.com/139556 in a cleaner way.
-          previous_key_code != ui::VKEY_RETURN &&
-          previous_key_code != ui::VKEY_SPACE) {
-        // We totally ignore this accelerator.
-        // TODO(mazda): Fix crbug.com/158217
-        return false;
-      }
-      if (ime_control_delegate_)
-        return ime_control_delegate_->HandleNextIme();
-      break;
+      return HandleNextIme(
+          ime_control_delegate_.get(), previous_event_type, previous_key_code);
     case PREVIOUS_IME:
-      if (ime_control_delegate_)
-        return ime_control_delegate_->HandlePreviousIme(accelerator);
-      break;
+      return HandlePreviousIme(ime_control_delegate_.get(), accelerator);
     case PRINT_UI_HIERARCHIES:
       return HandlePrintUIHierarchies();
     case SWITCH_IME:
-      if (ime_control_delegate_)
-        return ime_control_delegate_->HandleSwitchIme(accelerator);
-      break;
+      return HandleSwitchIme(ime_control_delegate_.get(), accelerator);
     case LAUNCH_APP_0:
-      Launcher::ForPrimaryDisplay()->LaunchAppIndexAt(0);
-      return true;
+      return HandleLaunchAppN(0);
     case LAUNCH_APP_1:
-      Launcher::ForPrimaryDisplay()->LaunchAppIndexAt(1);
-      return true;
+      return HandleLaunchAppN(1);
     case LAUNCH_APP_2:
-      Launcher::ForPrimaryDisplay()->LaunchAppIndexAt(2);
-      return true;
+      return HandleLaunchAppN(2);
     case LAUNCH_APP_3:
-      Launcher::ForPrimaryDisplay()->LaunchAppIndexAt(3);
-      return true;
+      return HandleLaunchAppN(3);
     case LAUNCH_APP_4:
-      Launcher::ForPrimaryDisplay()->LaunchAppIndexAt(4);
-      return true;
+      return HandleLaunchAppN(4);
     case LAUNCH_APP_5:
-      Launcher::ForPrimaryDisplay()->LaunchAppIndexAt(5);
-      return true;
+      return HandleLaunchAppN(5);
     case LAUNCH_APP_6:
-      Launcher::ForPrimaryDisplay()->LaunchAppIndexAt(6);
-      return true;
+      return HandleLaunchAppN(6);
     case LAUNCH_APP_7:
-      Launcher::ForPrimaryDisplay()->LaunchAppIndexAt(7);
-      return true;
+      return HandleLaunchAppN(7);
     case LAUNCH_LAST_APP:
-      Launcher::ForPrimaryDisplay()->LaunchAppIndexAt(-1);
-      return true;
+      return HandleLaunchLastApp();
     case WINDOW_SNAP_LEFT:
-    case WINDOW_SNAP_RIGHT: {
-      aura::Window* window = wm::GetActiveWindow();
-      // Disable window docking shortcut key for full screen window due to
-      // http://crbug.com/135487.
-      if (!window ||
-          window->type() != aura::client::WINDOW_TYPE_NORMAL ||
-          wm::IsWindowFullscreen(window)) {
-        break;
-      }
-
-      internal::SnapSizer::SnapWindow(window,
-          action == WINDOW_SNAP_LEFT ? internal::SnapSizer::LEFT_EDGE :
-                                       internal::SnapSizer::RIGHT_EDGE);
+    case WINDOW_SNAP_RIGHT:
+      return HandleWindowSnap(action);
+    case WINDOW_MINIMIZE:
+      return HandleWindowMinimize();
+    case TOGGLE_FULLSCREEN:
+      return HandleToggleFullscreen(key_code);
+    case TOGGLE_MAXIMIZED:
+      accelerators::ToggleMaximized();
       return true;
-    }
-    case WINDOW_MINIMIZE: {
-      aura::Window* window = wm::GetActiveWindow();
-      // Attempt to restore the window that would be cycled through next from
-      // the launcher when there is no active window.
-      if (!window)
-        return HandleCycleWindowMRU(WindowCycleController::FORWARD, false);
-      // Disable the shortcut for minimizing full screen window due to
-      // crbug.com/131709, which is a crashing issue related to minimizing
-      // full screen pepper window.
-      if (!wm::IsWindowFullscreen(window) && wm::CanMinimizeWindow(window)) {
-        ash::Shell::GetInstance()->delegate()->RecordUserMetricsAction(
-            ash::UMA_MINIMIZE_PER_KEY);
-        wm::MinimizeWindow(window);
-        return true;
-      }
-      break;
-    }
-    case TOGGLE_FULLSCREEN: {
-      if (key_code == ui::VKEY_MEDIA_LAUNCH_APP2) {
-        shell->delegate()->RecordUserMetricsAction(
-            UMA_ACCEL_FULLSCREEN_F4);
-      }
-      shell->delegate()->ToggleFullscreen();
-      return true;
-    }
-    case TOGGLE_MAXIMIZED: {
-      shell->delegate()->ToggleMaximized();
-      return true;
-    }
-    case WINDOW_POSITION_CENTER: {
-      aura::Window* window = wm::GetActiveWindow();
-      if (window) {
-        wm::CenterWindow(window);
-        return true;
-      }
-      break;
-    }
+    case WINDOW_POSITION_CENTER:
+     return HandlePositionCenter();
     case SCALE_UI_UP:
       return HandleScaleUI(true /* up */);
     case SCALE_UI_DOWN:
@@ -889,7 +1098,7 @@ bool AcceleratorController::PerformAction(int action,
     case ROTATE_SCREEN:
       return HandleRotateScreen();
     case TOGGLE_DESKTOP_BACKGROUND_MODE:
-      return HandleToggleDesktopBackgroundMode();
+      return debug::CycleDesktopBackgroundMode();
     case TOGGLE_ROOT_WINDOW_FULL_SCREEN:
       return HandleToggleRootWindowFullScreen();
     case DEBUG_TOGGLE_DEVICE_SCALE_FACTOR:
@@ -917,7 +1126,7 @@ bool AcceleratorController::PerformAction(int action,
     case POWER_PRESSED:  // fallthrough
     case POWER_RELEASED:
 #if defined(OS_CHROMEOS)
-      if (!base::chromeos::IsRunningOnChromeOS()) {
+      if (!base::SysInfo::IsRunningOnChromeOS()) {
         // There is no powerd in linux desktop, so call the
         // PowerButtonController here.
         Shell::GetInstance()->power_button_controller()->

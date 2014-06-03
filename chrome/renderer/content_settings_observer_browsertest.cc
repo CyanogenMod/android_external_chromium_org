@@ -23,8 +23,8 @@ class MockContentSettingsObserver : public ContentSettingsObserver {
 
   virtual bool Send(IPC::Message* message);
 
-  MOCK_METHOD2(OnContentBlocked,
-               void(ContentSettingsType, const std::string&));
+  MOCK_METHOD1(OnContentBlocked,
+               void(ContentSettingsType));
 
   MOCK_METHOD5(OnAllowDOMStorage,
                void(int, const GURL&, const GURL&, bool, IPC::Message*));
@@ -34,7 +34,7 @@ class MockContentSettingsObserver : public ContentSettingsObserver {
 
 MockContentSettingsObserver::MockContentSettingsObserver(
     content::RenderView* render_view)
-    : ContentSettingsObserver(render_view),
+    : ContentSettingsObserver(render_view, NULL),
       image_url_("http://www.foo.com/image.jpg"),
       image_origin_("http://www.foo.com") {
 }
@@ -56,22 +56,12 @@ bool MockContentSettingsObserver::Send(IPC::Message* message) {
 TEST_F(ChromeRenderViewTest, DidBlockContentType) {
   MockContentSettingsObserver observer(view_);
   EXPECT_CALL(observer,
-              OnContentBlocked(CONTENT_SETTINGS_TYPE_COOKIES, std::string()));
-  observer.DidBlockContentType(CONTENT_SETTINGS_TYPE_COOKIES, std::string());
+              OnContentBlocked(CONTENT_SETTINGS_TYPE_COOKIES));
+  observer.DidBlockContentType(CONTENT_SETTINGS_TYPE_COOKIES);
 
   // Blocking the same content type a second time shouldn't send a notification.
-  observer.DidBlockContentType(CONTENT_SETTINGS_TYPE_COOKIES, std::string());
+  observer.DidBlockContentType(CONTENT_SETTINGS_TYPE_COOKIES);
   ::testing::Mock::VerifyAndClearExpectations(&observer);
-
-  // Blocking two different plugins should send two notifications.
-  std::string kFooPlugin = "foo";
-  std::string kBarPlugin = "bar";
-  EXPECT_CALL(observer,
-              OnContentBlocked(CONTENT_SETTINGS_TYPE_PLUGINS, kFooPlugin));
-  EXPECT_CALL(observer,
-              OnContentBlocked(CONTENT_SETTINGS_TYPE_PLUGINS, kBarPlugin));
-  observer.DidBlockContentType(CONTENT_SETTINGS_TYPE_PLUGINS, kFooPlugin);
-  observer.DidBlockContentType(CONTENT_SETTINGS_TYPE_PLUGINS, kBarPlugin);
 }
 
 // Tests that multiple invokations of AllowDOMStorage result in a single IPC.
@@ -84,11 +74,11 @@ TEST_F(ChromeRenderViewTest, DISABLED_AllowDOMStorage) {
           OnAllowDOMStorage(_, _, _, _, _)).WillByDefault(DeleteArg<4>());
   EXPECT_CALL(observer,
               OnAllowDOMStorage(_, _, _, _, _));
-  observer.AllowStorage(view_->GetWebView()->focusedFrame(), true);
+  observer.allowStorage(view_->GetWebView()->focusedFrame(), true);
 
   // Accessing localStorage from the same origin again shouldn't result in a
   // new IPC.
-  observer.AllowStorage(view_->GetWebView()->focusedFrame(), true);
+  observer.allowStorage(view_->GetWebView()->focusedFrame(), true);
   ::testing::Mock::VerifyAndClearExpectations(&observer);
 }
 
@@ -198,8 +188,8 @@ TEST_F(ChromeRenderViewTest, ImagesBlockedByDefault) {
   ContentSettingsObserver* observer = ContentSettingsObserver::Get(view_);
   observer->SetContentSettingRules(&content_setting_rules);
   EXPECT_CALL(mock_observer,
-              OnContentBlocked(CONTENT_SETTINGS_TYPE_IMAGES, std::string()));
-  EXPECT_FALSE(observer->AllowImage(GetMainFrame(),
+              OnContentBlocked(CONTENT_SETTINGS_TYPE_IMAGES));
+  EXPECT_FALSE(observer->allowImage(GetMainFrame(),
                                     true, mock_observer.image_url_));
   ::testing::Mock::VerifyAndClearExpectations(&observer);
 
@@ -215,8 +205,8 @@ TEST_F(ChromeRenderViewTest, ImagesBlockedByDefault) {
 
   EXPECT_CALL(
       mock_observer,
-      OnContentBlocked(CONTENT_SETTINGS_TYPE_IMAGES, std::string())).Times(0);
-  EXPECT_TRUE(observer->AllowImage(GetMainFrame(), true,
+      OnContentBlocked(CONTENT_SETTINGS_TYPE_IMAGES)).Times(0);
+  EXPECT_TRUE(observer->allowImage(GetMainFrame(), true,
                                    mock_observer.image_url_));
   ::testing::Mock::VerifyAndClearExpectations(&observer);
 }
@@ -242,8 +232,8 @@ TEST_F(ChromeRenderViewTest, ImagesAllowedByDefault) {
   observer->SetContentSettingRules(&content_setting_rules);
   EXPECT_CALL(
       mock_observer,
-      OnContentBlocked(CONTENT_SETTINGS_TYPE_IMAGES, std::string())).Times(0);
-  EXPECT_TRUE(observer->AllowImage(GetMainFrame(), true,
+      OnContentBlocked(CONTENT_SETTINGS_TYPE_IMAGES)).Times(0);
+  EXPECT_TRUE(observer->allowImage(GetMainFrame(), true,
                                    mock_observer.image_url_));
   ::testing::Mock::VerifyAndClearExpectations(&observer);
 
@@ -257,8 +247,8 @@ TEST_F(ChromeRenderViewTest, ImagesAllowedByDefault) {
           std::string(),
           false));
   EXPECT_CALL(mock_observer,
-              OnContentBlocked(CONTENT_SETTINGS_TYPE_IMAGES, std::string()));
-  EXPECT_FALSE(observer->AllowImage(GetMainFrame(),
+              OnContentBlocked(CONTENT_SETTINGS_TYPE_IMAGES));
+  EXPECT_FALSE(observer->allowImage(GetMainFrame(),
                                     true, mock_observer.image_url_));
   ::testing::Mock::VerifyAndClearExpectations(&observer);
 }
@@ -381,8 +371,8 @@ TEST_F(ChromeRenderViewTest, ContentSettingsInterstitialPages) {
   // Verify that images are allowed.
   EXPECT_CALL(
       mock_observer,
-      OnContentBlocked(CONTENT_SETTINGS_TYPE_IMAGES, std::string())).Times(0);
-  EXPECT_TRUE(observer->AllowImage(GetMainFrame(), true,
+      OnContentBlocked(CONTENT_SETTINGS_TYPE_IMAGES)).Times(0);
+  EXPECT_TRUE(observer->allowImage(GetMainFrame(), true,
                                    mock_observer.image_url_));
   ::testing::Mock::VerifyAndClearExpectations(&observer);
 }

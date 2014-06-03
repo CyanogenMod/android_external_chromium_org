@@ -20,7 +20,12 @@
 #include "content/public/browser/notification_source.h"
 #include "ui/message_center/notifier_settings.h"
 
+#if defined(OS_CHROMEOS)
+#include "chrome/browser/chromeos/login/user_manager.h"
+#endif
+
 class CancelableTaskTracker;
+class Profile;
 class ProfileInfoCache;
 
 namespace chrome {
@@ -36,6 +41,9 @@ class ProfileNotifierGroup;
 class MessageCenterSettingsController
     : public message_center::NotifierSettingsProvider,
       public content::NotificationObserver,
+#if defined(OS_CHROMEOS)
+      public chromeos::UserManager::UserSessionStateObserver,
+#endif
       public extensions::AppIconLoader::Delegate {
  public:
   explicit MessageCenterSettingsController(
@@ -59,6 +67,16 @@ class MessageCenterSettingsController
   virtual void SetNotifierEnabled(const message_center::Notifier& notifier,
                                   bool enabled) OVERRIDE;
   virtual void OnNotifierSettingsClosing() OVERRIDE;
+  virtual bool NotifierHasAdvancedSettings(
+      const message_center::NotifierId& notifier_id) const OVERRIDE;
+  virtual void OnNotifierAdvancedSettingsRequested(
+      const message_center::NotifierId& notifier_id,
+      const std::string* notification_id) OVERRIDE;
+
+#if defined(OS_CHROMEOS)
+  // Overridden from chromeos::UserManager::UserSessionStateObserver.
+  virtual void ActiveUserChanged(const chromeos::User* active_user) OVERRIDE;
+#endif
 
   // Overridden from extensions::AppIconLoader::Delegate.
   virtual void SetAppImage(const std::string& id,
@@ -73,6 +91,8 @@ class MessageCenterSettingsController
   void OnFaviconLoaded(const GURL& url,
                        const chrome::FaviconImageResult& favicon_result);
 
+  Profile* GetCurrentProfile() const;
+
   void RebuildNotifierGroups();
 
   // The views displaying notifier settings.
@@ -83,7 +103,7 @@ class MessageCenterSettingsController
 
   scoped_ptr<extensions::AppIconLoader> app_icon_loader_;
 
-  std::map<string16, ContentSettingsPattern> patterns_;
+  std::map<base::string16, ContentSettingsPattern> patterns_;
 
   // The list of all configurable notifier groups. This is each profile that is
   // loaded (and in the ProfileInfoCache - so no incognito profiles go here).

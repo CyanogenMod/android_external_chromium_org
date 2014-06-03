@@ -7,7 +7,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
-#include "ui/base/events/event.h"
+#include "ui/events/event.h"
 #include "ui/views/controls/button/label_button.h"
 #include "ui/views/focus/accelerator_handler.h"
 #include "ui/views/focus/focus_manager_test.h"
@@ -73,7 +73,7 @@ TEST_F(FocusManagerTest, FocusStoreRestore) {
   LabelButton* button = new LabelButton(NULL, ASCIIToUTF16("Press me"));
   button->SetStyle(Button::STYLE_NATIVE_TEXTBUTTON);
   View* view = new View();
-  view->set_focusable(true);
+  view->SetFocusable(true);
 
   GetContentsView()->AddChildView(button);
   button->SetBounds(10, 10, 200, 30);

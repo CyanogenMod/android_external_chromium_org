@@ -12,17 +12,25 @@ from file_system import FileNotFoundError
 from reference_resolver import ReferenceResolver
 from test_object_store import TestObjectStore
 
+
 class FakeAPIDataSource(object):
   def __init__(self, json_data):
     self._json = json_data
 
-  def get(self, key):
+  def get(self, key, disable_refs=False):
+    assert disable_refs, 'ReferenceResolve should be disabling refs'
     if key not in self._json:
       raise FileNotFoundError(key)
     return self._json[key]
 
-  def GetAllNames(self):
-    return self._json.keys()
+
+class FakeAPIModels(object):
+  def __init__(self, names):
+    self._names = names
+
+  def GetNames(self):
+    return self._names
+
 
 class APIDataSourceTest(unittest.TestCase):
   def setUp(self):
@@ -33,10 +41,9 @@ class APIDataSourceTest(unittest.TestCase):
       return f.read()
 
   def testGetLink(self):
-    data_source = FakeAPIDataSource(
-        json.loads(self._ReadLocalFile('fake_data_source.json')))
-    resolver = ReferenceResolver(data_source,
-                                 data_source,
+    test_data = json.loads(self._ReadLocalFile('fake_data_source.json'))
+    resolver = ReferenceResolver(FakeAPIDataSource(test_data),
+                                 FakeAPIModels(test_data.keys()),
                                  TestObjectStore('test'))
     self.assertEqual({
       'href': 'foo.html',
@@ -162,6 +169,48 @@ class APIDataSourceTest(unittest.TestCase):
         '<a href="bar.html#type-bon">bar.bon</a>.',
         resolver.ResolveAllLinks('$ref:bar.bon.',
                                  namespace='baz'))
+
+    # If a request is provided it should construct an appropriate relative link.
+    self.assertEqual(
+        'Hi <a href="../../bar.bon.html#property-bar_bon_p3">bar_bon_p3</a>, '
+            '<a href="../../bar.bon.html#property-bar_bon_p3">Bon Bon</a>, '
+            '<a href="../../bar.bon.html#property-bar_bon_p3">bar_bon_p3</a>',
+        resolver.ResolveAllLinks(
+            'Hi $ref:bar_bon_p3, $ref:[bar_bon_p3 Bon Bon], $ref:bar_bon_p3',
+            relative_to='big/long/path/bar.html',
+            namespace='bar.bon'))
+    self.assertEqual(
+        'Hi <a href="bar.bon.html#property-bar_bon_p3">bar_bon_p3</a>, '
+            '<a href="bar.bon.html#property-bar_bon_p3">Bon Bon</a>, '
+            '<a href="bar.bon.html#property-bar_bon_p3">bar_bon_p3</a>',
+        resolver.ResolveAllLinks(
+            'Hi $ref:bar_bon_p3, $ref:[bar_bon_p3 Bon Bon], $ref:bar_bon_p3',
+            relative_to='',
+            namespace='bar.bon'))
+    self.assertEqual(
+        'Hi <a href="bar.bon.html#property-bar_bon_p3">bar_bon_p3</a>, '
+            '<a href="bar.bon.html#property-bar_bon_p3">Bon Bon</a>, '
+            '<a href="bar.bon.html#property-bar_bon_p3">bar_bon_p3</a>',
+        resolver.ResolveAllLinks(
+            'Hi $ref:bar_bon_p3, $ref:[bar_bon_p3 Bon Bon], $ref:bar_bon_p3',
+            relative_to='bar.html',
+            namespace='bar.bon'))
+    self.assertEqual(
+        'Hi <a href="bar.bon.html#property-bar_bon_p3">bar_bon_p3</a>, '
+            '<a href="bar.bon.html#property-bar_bon_p3">Bon Bon</a>, '
+            '<a href="bar.bon.html#property-bar_bon_p3">bar_bon_p3</a>',
+        resolver.ResolveAllLinks(
+            'Hi $ref:bar_bon_p3, $ref:[bar_bon_p3 Bon Bon], $ref:bar_bon_p3',
+            relative_to='foo/bar.html',
+            namespace='bar.bon'))
+    self.assertEqual(
+        'Hi <a href="../bar.bon.html#property-bar_bon_p3">bar_bon_p3</a>, '
+            '<a href="../bar.bon.html#property-bar_bon_p3">Bon Bon</a>, '
+            '<a href="../bar.bon.html#property-bar_bon_p3">bar_bon_p3</a>',
+        resolver.ResolveAllLinks(
+            'Hi $ref:bar_bon_p3, $ref:[bar_bon_p3 Bon Bon], $ref:bar_bon_p3',
+            relative_to='foo/baz/bar.html',
+            namespace='bar.bon'))
 
 if __name__ == '__main__':
   unittest.main()

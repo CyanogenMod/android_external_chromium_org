@@ -529,13 +529,6 @@ TEST_F(FieldTrialTest, DuplicateFieldTrial) {
   EXPECT_TRUE(trial2 == NULL);
 }
 
-TEST_F(FieldTrialTest, MakeName) {
-  FieldTrial* trial = CreateFieldTrial("Field Trial", 10, "Winner", NULL);
-  trial->group();
-  EXPECT_EQ("Histogram_Winner",
-            FieldTrial::MakeName("Histogram", "Field Trial"));
-}
-
 TEST_F(FieldTrialTest, DisableImmediately) {
   int default_group_number = -1;
   FieldTrial* trial =
@@ -854,6 +847,77 @@ TEST_F(FieldTrialTest, ExpirationYearNotExpired) {
       CreateFieldTrial(kTrialName, kProbability, kDefaultGroupName, NULL);
   trial->AppendGroup(kGroupName, kProbability);
   EXPECT_EQ(kGroupName, trial->group_name());
+}
+
+TEST_F(FieldTrialTest, FloatBoundariesGiveEqualGroupSizes) {
+  const int kBucketCount = 100;
+
+  // Try each boundary value |i / 100.0| as the entropy value.
+  for (int i = 0; i < kBucketCount; ++i) {
+    const double entropy = i / static_cast<double>(kBucketCount);
+
+    scoped_refptr<base::FieldTrial> trial(
+        new base::FieldTrial("test", kBucketCount, "default", entropy));
+    for (int j = 0; j < kBucketCount; ++j)
+      trial->AppendGroup(base::StringPrintf("%d", j), 1);
+
+    EXPECT_EQ(base::StringPrintf("%d", i), trial->group_name());
+  }
+}
+
+TEST_F(FieldTrialTest, DoesNotSurpassTotalProbability) {
+  const double kEntropyValue = 1.0 - 1e-9;
+  ASSERT_LT(kEntropyValue, 1.0);
+
+  scoped_refptr<base::FieldTrial> trial(
+      new base::FieldTrial("test", 2, "default", kEntropyValue));
+  trial->AppendGroup("1", 1);
+  trial->AppendGroup("2", 1);
+
+  EXPECT_EQ("2", trial->group_name());
+}
+
+TEST_F(FieldTrialTest, CreateSimulatedFieldTrial) {
+  const char kTrialName[] = "CreateSimulatedFieldTrial";
+  ASSERT_FALSE(FieldTrialList::TrialExists(kTrialName));
+
+  // Different cases to test, e.g. default vs. non default group being chosen.
+  struct {
+    double entropy_value;
+    const char* expected_group;
+  } test_cases[] = {
+    { 0.4, "A" },
+    { 0.85, "B" },
+    { 0.95, kDefaultGroupName },
+  };
+
+  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(test_cases); ++i) {
+    TestFieldTrialObserver observer;
+    scoped_refptr<FieldTrial> trial(
+       FieldTrial::CreateSimulatedFieldTrial(kTrialName, 100, kDefaultGroupName,
+                                             test_cases[i].entropy_value));
+    trial->AppendGroup("A", 80);
+    trial->AppendGroup("B", 10);
+    EXPECT_EQ(test_cases[i].expected_group, trial->group_name());
+
+    // Field trial shouldn't have been registered with the list.
+    EXPECT_FALSE(FieldTrialList::TrialExists(kTrialName));
+    EXPECT_EQ(0u, FieldTrialList::GetFieldTrialCount());
+
+    // Observer shouldn't have been notified.
+    RunLoop().RunUntilIdle();
+    EXPECT_TRUE(observer.trial_name().empty());
+
+    // The trial shouldn't be in the active set of trials.
+    FieldTrial::ActiveGroups active_groups;
+    FieldTrialList::GetActiveFieldTrialGroups(&active_groups);
+    EXPECT_TRUE(active_groups.empty());
+
+    // The trial shouldn't be listed in the |StatesToString()| result.
+    std::string states;
+    FieldTrialList::StatesToString(&states);
+    EXPECT_TRUE(states.empty());
+  }
 }
 
 }  // namespace base

@@ -8,6 +8,7 @@
 
 #include "base/logging.h"
 #include "base/threading/thread_restrictions.h"
+#include "base/win/windows_version.h"
 
 namespace base {
 
@@ -99,7 +100,18 @@ FilePath FileEnumerator::Next() {
       else
         src = src.Append(pattern_);
 
-      find_handle_ = FindFirstFile(src.value().c_str(), &find_data_);
+      if (base::win::GetVersion() >= base::win::VERSION_WIN7) {
+        // Use a "large fetch" on newer Windows which should speed up large
+        // enumerations (we seldom abort in the middle).
+        find_handle_ = FindFirstFileEx(src.value().c_str(),
+                                       FindExInfoBasic,  // Omit short name.
+                                       &find_data_,
+                                       FindExSearchNameMatch,
+                                       NULL,
+                                       FIND_FIRST_EX_LARGE_FETCH);
+      } else {
+        find_handle_ = FindFirstFile(src.value().c_str(), &find_data_);
+      }
       has_find_data_ = true;
     } else {
       // Search for the next file/directory.
@@ -133,8 +145,10 @@ FilePath FileEnumerator::Next() {
       if (recursive_) {
         // If |cur_file| is a directory, and we are doing recursive searching,
         // add it to pending_paths_ so we scan it after we finish scanning this
-        // directory.
-        pending_paths_.push(cur_file);
+        // directory. However, don't do recursion through reparse points or we
+        // may end up with an infinite cycle.
+        if (!(find_data_.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT))
+          pending_paths_.push(cur_file);
       }
       if (file_type_ & FileEnumerator::DIRECTORIES)
         return cur_file;

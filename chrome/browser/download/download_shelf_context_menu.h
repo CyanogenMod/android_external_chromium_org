@@ -28,12 +28,14 @@ class DownloadShelfContextMenu : public ui::SimpleMenuModel::Delegate,
     SHOW_IN_FOLDER = 1,    // Open a folder view window with the item selected.
     OPEN_WHEN_COMPLETE,    // Open the download when it's finished.
     ALWAYS_OPEN_TYPE,      // Default this file extension to always open.
+    PLATFORM_OPEN,         // Open using platform handler.
     CANCEL,                // Cancel the download.
     TOGGLE_PAUSE,          // Pause or resume a download.
     DISCARD,               // Discard the malicious download.
     KEEP,                  // Keep the malicious download.
     LEARN_MORE_SCANNING,   // Show information about download scanning.
     LEARN_MORE_INTERRUPTED,// Show information about interrupted downloads.
+    REPORT,                // Send the download to Google for analysis.
   };
 
   virtual ~DownloadShelfContextMenu();
@@ -56,7 +58,7 @@ class DownloadShelfContextMenu : public ui::SimpleMenuModel::Delegate,
       int command_id,
       ui::Accelerator* accelerator) OVERRIDE;
   virtual bool IsItemForCommandIdDynamic(int command_id) const OVERRIDE;
-  virtual string16 GetLabelForCommandId(int command_id) const OVERRIDE;
+  virtual base::string16 GetLabelForCommandId(int command_id) const OVERRIDE;
 
  private:
   // Detaches self from |download_item_|. Called when the DownloadItem is
@@ -69,6 +71,7 @@ class DownloadShelfContextMenu : public ui::SimpleMenuModel::Delegate,
   ui::SimpleMenuModel* GetInProgressMenuModel();
   ui::SimpleMenuModel* GetFinishedMenuModel();
   ui::SimpleMenuModel* GetInterruptedMenuModel();
+  ui::SimpleMenuModel* GetMaybeMaliciousMenuModel();
   ui::SimpleMenuModel* GetMaliciousMenuModel();
 
   // We show slightly different menus if the download is in progress vs. if the
@@ -76,6 +79,7 @@ class DownloadShelfContextMenu : public ui::SimpleMenuModel::Delegate,
   scoped_ptr<ui::SimpleMenuModel> in_progress_download_menu_model_;
   scoped_ptr<ui::SimpleMenuModel> finished_download_menu_model_;
   scoped_ptr<ui::SimpleMenuModel> interrupted_download_menu_model_;
+  scoped_ptr<ui::SimpleMenuModel> maybe_malicious_download_menu_model_;
   scoped_ptr<ui::SimpleMenuModel> malicious_download_menu_model_;
 
   // Information source.

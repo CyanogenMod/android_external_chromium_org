@@ -14,7 +14,7 @@
 #include "content/public/browser/web_ui.h"
 
 namespace base {
-class DictionaryValue;
+class ListValue;
 }
 
 namespace chromeos {
@@ -24,9 +24,6 @@ class LocallyManagedUserCreationScreenHandler : public BaseScreenHandler {
   class Delegate {
    public:
     virtual ~Delegate() {}
-
-    // Called when screen is exited.
-    virtual void OnExit() = 0;
 
     // This method is called, when actor is being destroyed. Note, if Delegate
     // is destroyed earlier then it has to call SetDelegate(NULL).
@@ -38,12 +35,24 @@ class LocallyManagedUserCreationScreenHandler : public BaseScreenHandler {
     virtual void AuthenticateManager(const std::string& manager_id,
                                      const std::string& manager_password) = 0;
 
-    // Starts managed user creation flow, with manager identified by
-    // |manager_id| and |manager_password|, and locally managed user that would
-    // have |display_name| and authenticated by the |managed_user_password|.
+    // Starts managed user creation flow, with supervised user that would have
+    // |display_name| and authenticated by the |managed_user_password|.
     virtual void CreateManagedUser(
-        const string16& display_name,
+        const base::string16& display_name,
         const std::string& managed_user_password) = 0;
+
+    // Look up if user with name |display_name| already exist and can be
+    // imported. Returns user ID in |out_id|. Returns true if user was found,
+    // false otherwise.
+    virtual bool FindUserByDisplayName(const base::string16& display_name,
+                                       std::string *out_id) const = 0;
+
+    // Starts managed user import flow for user identified with |user_id|.
+    virtual void ImportManagedUser(const std::string& user_id) = 0;
+    // Starts managed user import flow for user identified with |user_id| and
+    // additional |password|.
+    virtual void ImportManagedUserWithPassword(const std::string& user_id,
+                                               const std::string& password) = 0;
 
     virtual void AbortFlow() = 0;
     virtual void FinishFlow() = 0;
@@ -53,6 +62,7 @@ class LocallyManagedUserCreationScreenHandler : public BaseScreenHandler {
     virtual void OnImageSelected(const std::string& image_url,
                                  const std::string& image_type) = 0;
     virtual void OnImageAccepted() = 0;
+    virtual void OnPageSelected(const std::string& page) = 0;
   };
 
   LocallyManagedUserCreationScreenHandler();
@@ -71,14 +81,19 @@ class LocallyManagedUserCreationScreenHandler : public BaseScreenHandler {
 
   // Shows progress or error message close in the button area. |is_progress| is
   // true for progress messages and false for error messages.
-  void ShowStatusMessage(bool is_progress, const string16& message);
+  void ShowStatusMessage(bool is_progress, const base::string16& message);
   void ShowTutorialPage();
 
-  void ShowErrorPage(const string16& title,
-                     const string16& message,
-                     const string16& button_text);
+  void ShowErrorPage(const base::string16& title,
+                     const base::string16& message,
+                     const base::string16& button_text);
+
+  // Navigates to specified page.
+  void ShowPage(const std::string& page);
 
   void SetCameraPresent(bool enabled);
+
+  void ShowExistingManagedUsers(const base::ListValue* users);
 
   // BaseScreenHandler implementation:
   virtual void DeclareLocalizedValues(LocalizedValuesBuilder* builder) OVERRIDE;
@@ -89,18 +104,23 @@ class LocallyManagedUserCreationScreenHandler : public BaseScreenHandler {
 
  private:
   // WebUI message handlers.
-  void HandleCheckLocallyManagedUserName(const string16& name);
+  void HandleCheckLocallyManagedUserName(const base::string16& name);
 
   void HandleManagerSelected(const std::string& manager_id);
+  void HandleImportUserSelected(const std::string& user_id);
 
   void HandleFinishLocalManagedUserCreation();
   void HandleAbortLocalManagedUserCreation();
   void HandleRetryLocalManagedUserCreation(const base::ListValue* args);
+  void HandleCurrentSupervisedUserPage(const std::string& current_page);
 
   void HandleAuthenticateManager(const std::string& raw_manager_username,
                                  const std::string& manager_password);
-  void HandleCreateManagedUser(const string16& new_raw_user_name,
+  void HandleCreateManagedUser(const base::string16& new_raw_user_name,
                                const std::string& new_user_password);
+  void HandleImportSupervisedUser(const std::string& user_id);
+  void HandleImportSupervisedUserWithPassword(const std::string& user_id,
+                                              const std::string& password);
 
   void HandleGetImages();
   void HandlePhotoTaken(const std::string& image_url);
@@ -108,7 +128,7 @@ class LocallyManagedUserCreationScreenHandler : public BaseScreenHandler {
   void HandleSelectImage(const std::string& image_url,
                          const std::string& image_type);
 
-  void UpdateText(const std::string& element_id, const string16& text);
+  void UpdateText(const std::string& element_id, const base::string16& text);
 
   Delegate* delegate_;
 

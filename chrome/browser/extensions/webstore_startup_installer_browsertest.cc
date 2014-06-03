@@ -3,15 +3,13 @@
 // found in the LICENSE file.
 
 #include "base/command_line.h"
-#include "base/strings/stringprintf.h"
-#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_install_ui.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/startup_helper.h"
-#include "chrome/browser/extensions/webstore_standalone_installer.h"
+#include "chrome/browser/extensions/webstore_installer_test.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/managed_mode/managed_user_service.h"
 #include "chrome/browser/managed_mode/managed_user_service_factory.h"
@@ -19,8 +17,6 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/extension_builder.h"
-#include "chrome/common/extensions/value_builder.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/test_switches.h"
@@ -30,7 +26,8 @@
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test_utils.h"
-#include "net/base/host_port_pair.h"
+#include "extensions/common/extension_builder.h"
+#include "extensions/common/value_builder.h"
 #include "net/dns/mock_host_resolver.h"
 #include "url/gurl.h"
 
@@ -44,79 +41,18 @@ const char kWebstoreDomain[] = "cws.com";
 const char kAppDomain[] = "app.com";
 const char kNonAppDomain[] = "nonapp.com";
 const char kTestExtensionId[] = "ecglahbcnmdpdciemllbhojghbkagdje";
+const char kTestDataPath[] = "extensions/api_test/webstore_inline_install";
+const char kCrxFilename[] = "extension.crx";
 
-class WebstoreStartupInstallerTest : public InProcessBrowserTest {
+class WebstoreStartupInstallerTest : public WebstoreInstallerTest {
  public:
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
-    // We start the test server now instead of in
-    // SetUpInProcessBrowserTestFixture so that we can get its port number.
-    ASSERT_TRUE(test_server()->Start());
-
-    net::HostPortPair host_port = test_server()->host_port_pair();
-    test_gallery_url_ = base::StringPrintf(
-        "http://%s:%d/files/extensions/api_test/webstore_inline_install",
-        kWebstoreDomain, host_port.port());
-    command_line->AppendSwitchASCII(
-        switches::kAppsGalleryURL, test_gallery_url_);
-
-    GURL crx_url = GenerateTestServerUrl(kWebstoreDomain, "extension.crx");
-    CommandLine::ForCurrentProcess()->AppendSwitchASCII(
-        switches::kAppsGalleryUpdateURL, crx_url.spec());
-
-    // Allow tests to call window.gc(), so that we can check that callback
-    // functions don't get collected prematurely.
-    command_line->AppendSwitchASCII(switches::kJavaScriptFlags, "--expose-gc");
-  }
-
-  virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
-    host_resolver()->AddRule(kWebstoreDomain, "127.0.0.1");
-    host_resolver()->AddRule(kAppDomain, "127.0.0.1");
-    host_resolver()->AddRule(kNonAppDomain, "127.0.0.1");
-  }
-
- protected:
-  GURL GenerateTestServerUrl(const std::string& domain,
-                             const std::string& page_filename) {
-    GURL page_url = test_server()->GetURL(
-        "files/extensions/api_test/webstore_inline_install/" + page_filename);
-
-    GURL::Replacements replace_host;
-    replace_host.SetHostStr(domain);
-    return page_url.ReplaceComponents(replace_host);
-  }
-
-  void RunTest(const std::string& test_function_name) {
-    bool result = false;
-    std::string script = base::StringPrintf(
-        "%s('%s')", test_function_name.c_str(),
-        test_gallery_url_.c_str());
-    ASSERT_TRUE(content::ExecuteScriptAndExtractBool(
-        browser()->tab_strip_model()->GetActiveWebContents(),
-        script,
-        &result));
-    EXPECT_TRUE(result);
-  }
-
-  // Passes |i| to |test_function_name|, and expects that function to
-  // return one of "FAILED", "KEEPGOING" or "DONE". KEEPGOING should be
-  // returned if more tests remain to be run and the current test succeeded,
-  // FAILED is returned when a test fails, and DONE is returned by the last
-  // test if it succeeds.
-  // This methods returns true iff there are more tests that need to be run.
-  bool RunIndexedTest(const std::string& test_function_name,
-                      int i) {
-    std::string result = "FAILED";
-    std::string script = base::StringPrintf("%s('%s', %d)",
-        test_function_name.c_str(), test_gallery_url_.c_str(), i);
-    EXPECT_TRUE(content::ExecuteScriptAndExtractString(
-        browser()->tab_strip_model()->GetActiveWebContents(),
-        script,
-        &result));
-    EXPECT_TRUE(result != "FAILED");
-    return result == "KEEPGOING";
-  }
-
-  std::string test_gallery_url_;
+  WebstoreStartupInstallerTest()
+      : WebstoreInstallerTest(
+            kWebstoreDomain,
+            kTestDataPath,
+            kCrxFilename,
+            kAppDomain,
+            kNonAppDomain) {}
 };
 
 IN_PROC_BROWSER_TEST_F(WebstoreStartupInstallerTest, Install) {
@@ -235,8 +171,18 @@ IN_PROC_BROWSER_TEST_F(WebstoreStartupInstallerTest, InstallFromHostedApp) {
   EXPECT_TRUE(extension_service->extensions()->Contains(kTestExtensionId));
 }
 
-IN_PROC_BROWSER_TEST_F(WebstoreStartupInstallerTest,
-                       InstallProhibitedForManagedUsers) {
+class WebstoreStartupInstallerManagedUsersTest
+    : public WebstoreStartupInstallerTest {
+ public:
+  // InProcessBrowserTest overrides:
+  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+    WebstoreStartupInstallerTest::SetUpCommandLine(command_line);
+    command_line->AppendSwitchASCII(switches::kManagedUserId, "asdf");
+  }
+};
+
+IN_PROC_BROWSER_TEST_F(WebstoreStartupInstallerManagedUsersTest,
+                       InstallProhibited) {
 #if defined(OS_WIN) && defined(USE_ASH)
   // Disable this test in Metro+Ash for now (http://crbug.com/262796).
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kAshBrowserTests))
@@ -245,12 +191,6 @@ IN_PROC_BROWSER_TEST_F(WebstoreStartupInstallerTest,
 
   CommandLine::ForCurrentProcess()->AppendSwitchASCII(
       switches::kAppsGalleryInstallAutoConfirmForTests, "accept");
-
-  // Make the profile managed such that no extension installs are allowed.
-  browser()->profile()->GetPrefs()->SetBoolean(prefs::kProfileIsManaged, true);
-  ManagedUserService* service =
-      ManagedUserServiceFactory::GetForProfile(browser()->profile());
-  service->Init();
 
   ui_test_utils::NavigateToURL(
       browser(), GenerateTestServerUrl(kAppDomain, "install_prohibited.html"));
@@ -279,7 +219,7 @@ class WebstoreStartupInstallUnpackFailureTest
 
   virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
     WebstoreStartupInstallerTest::SetUpInProcessBrowserTestFixture();
-    ExtensionInstallUI::DisableFailureUIForTests();
+    ExtensionInstallUI::set_disable_failure_ui_for_tests();
   }
 };
 

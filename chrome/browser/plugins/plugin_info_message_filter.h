@@ -12,6 +12,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/prefs/pref_member.h"
 #include "base/sequenced_task_runner_helpers.h"
+#include "chrome/browser/plugins/plugin_prefs.h"
 #include "chrome/common/content_settings.h"
 #include "content/public/browser/browser_message_filter.h"
 
@@ -46,7 +47,7 @@ class PluginInfoMessageFilter : public content::BrowserMessageFilter {
         const content::WebPluginInfo& plugin,
         const PluginMetadata* plugin_metadata,
         ChromeViewHostMsg_GetPluginInfo_Status* status) const;
-    bool FindEnabledPlugin(int render_view_id,
+    bool FindEnabledPlugin(int render_frame_id,
                            const GURL& url,
                            const GURL& top_origin_url,
                            const std::string& mime_type,
@@ -67,6 +68,7 @@ class PluginInfoMessageFilter : public content::BrowserMessageFilter {
     int render_process_id_;
     content::ResourceContext* resource_context_;
     const HostContentSettingsMap* host_content_settings_map_;
+    scoped_refptr<PluginPrefs> plugin_prefs_;
 
     BooleanPrefMember allow_outdated_plugins_;
     BooleanPrefMember always_authorize_plugins_;
@@ -86,7 +88,7 @@ class PluginInfoMessageFilter : public content::BrowserMessageFilter {
 
   virtual ~PluginInfoMessageFilter();
 
-  void OnGetPluginInfo(int render_view_id,
+  void OnGetPluginInfo(int render_frame_id,
                        const GURL& url,
                        const GURL& top_origin_url,
                        const std::string& mime_type,
@@ -97,6 +99,18 @@ class PluginInfoMessageFilter : public content::BrowserMessageFilter {
   void PluginsLoaded(const GetPluginInfo_Params& params,
                      IPC::Message* reply_msg,
                      const std::vector<content::WebPluginInfo>& plugins);
+
+  // Returns whether any internal plugin supporting |mime_type| is registered.
+  // Does not determine whether the plugin can actually be instantiated
+  // (e.g. whether it is allowed or has all its dependencies).
+  // When the returned *|is_registered| is true, |additional_param_names| and
+  // |additional_param_values| contain the name-value pairs, if any, specified
+  // for the *first* plugin found that is registered for |mime_type|.
+  void OnIsInternalPluginRegisteredForMimeType(
+      const std::string& mime_type,
+      bool* is_registered,
+      std::vector<base::string16>* additional_param_names,
+      std::vector<base::string16>* additional_param_values);
 
   Context context_;
 

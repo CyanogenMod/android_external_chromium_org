@@ -3,25 +3,18 @@
 # found in the LICENSE file.
 from __future__ import absolute_import
 
-import os
-import sys
+from telemetry.core import util
 
-def __init__():
-  path = os.path.join(os.path.dirname(__file__),
-                      '..', '..', '..', '..', 'build', 'android')
-  path = os.path.abspath(path)
-  assert os.path.exists(os.path.join(path,
-                                     'pylib', '__init__.py'))
-  if path not in sys.path:
-    sys.path.append(path)
+util.AddDirToPythonPath(util.GetChromiumSrcDir(), 'build', 'util', 'lib',
+                        'common')
+import perf_tests_results_helper  # pylint: disable=F0401
 
-__init__()
 
-from pylib import perf_tests_helper # pylint: disable=F0401
+FlattenList = \
+    perf_tests_results_helper.FlattenList
 GeomMeanAndStdDevFromHistogram = \
-    perf_tests_helper.GeomMeanAndStdDevFromHistogram
+    perf_tests_results_helper.GeomMeanAndStdDevFromHistogram
 PrintPerfResult = \
-    perf_tests_helper.PrintPerfResult
+    perf_tests_results_helper.PrintPerfResult
 PrintPages = \
-    perf_tests_helper.PrintPages
-
+    perf_tests_results_helper.PrintPages

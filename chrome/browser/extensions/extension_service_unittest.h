@@ -12,8 +12,8 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/common/extensions/feature_switch.h"
 #include "content/public/test/test_browser_thread_bundle.h"
+#include "extensions/common/feature_switch.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 #if defined(OS_CHROMEOS)
@@ -36,6 +36,7 @@ class ExtensionServiceTestBase : public testing::Test {
     base::FilePath extensions_install_dir;
     bool autoupdate_enabled;
     bool is_first_run;
+    bool profile_is_managed;
 
     ExtensionServiceInitParams();
   };
@@ -45,15 +46,26 @@ class ExtensionServiceTestBase : public testing::Test {
 
   void InitializeExtensionService(const ExtensionServiceInitParams& params);
 
+  static scoped_ptr<TestingProfile> CreateTestingProfile(
+      const ExtensionServiceInitParams& params);
+
+  static ExtensionService* InitializeExtensionServiceForProfile(
+      const ExtensionServiceInitParams& params,
+      Profile* profile);
+
   void InitializeInstalledExtensionService(
       const base::FilePath& prefs_file,
       const base::FilePath& source_install_dir);
 
+  void InitializeGoodInstalledExtensionService();
+
   void InitializeEmptyExtensionService();
 
-  void InitializeExtensionProcessManager();
+  void InitializeProcessManager();
 
   void InitializeExtensionServiceWithUpdater();
+
+  void InitializeExtensionSyncService();
 
   static void SetUpTestCase();
 
@@ -65,11 +77,14 @@ class ExtensionServiceTestBase : public testing::Test {
   }
 
  protected:
-  void InitializeExtensionServiceHelper(bool autoupdate_enabled,
-                                        bool is_first_run);
+  ExtensionServiceInitParams CreateDefaultInitParams();
+  static ExtensionServiceInitParams CreateDefaultInitParamsInTempDir(
+      base::ScopedTempDir* temp_dir);
 
-  content::TestBrowserThreadBundle thread_bundle_;
+  // Destroying at_exit_manager_ will delete all LazyInstances, so it must come
+  // after thread_bundle_ in the destruction order.
   base::ShadowingAtExitManager at_exit_manager_;
+  content::TestBrowserThreadBundle thread_bundle_;
   base::ScopedTempDir temp_dir_;
   scoped_ptr<TestingProfile> profile_;
   base::FilePath extensions_install_dir_;
@@ -77,6 +92,7 @@ class ExtensionServiceTestBase : public testing::Test {
   // Managed by extensions::ExtensionSystemFactory.
   ExtensionService* service_;
   extensions::ManagementPolicy* management_policy_;
+  scoped_ptr<ExtensionSyncService> extension_sync_service_;
   size_t expected_extensions_count_;
 
 #if defined OS_CHROMEOS

@@ -2,14 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "apps/native_app_window.h"
 #include "apps/shell_window.h"
 #include "apps/shell_window_registry.h"
+#include "apps/ui/native_app_window.h"
 #include "base/run_loop.h"
 #include "base/strings/string_number_conversions.h"
+#include "chrome/browser/apps/app_browsertest_util.h"
 #include "chrome/browser/extensions/extension_test_message_listener.h"
-#include "chrome/browser/extensions/platform_app_browsertest_util.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/common/extensions/features/feature_channel.h"
 #include "chrome/test/base/testing_profile.h"
 #include "ui/base/base_window.h"
 #include "ui/gfx/rect.h"
@@ -136,5 +137,30 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, WindowsApiProperties) {
 }
 
 #endif  // defined(TOOLKIT_VIEWS)
+
+IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest,
+                       WindowsApiAlwaysOnTopWithPermissions) {
+  EXPECT_TRUE(RunPlatformAppTest(
+      "platform_apps/windows_api_always_on_top/has_permissions")) << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest,
+                       WindowsApiAlwaysOnTopWithPermissionsStable) {
+  ScopedCurrentChannel channel(chrome::VersionInfo::CHANNEL_STABLE);
+  EXPECT_TRUE(RunPlatformAppTestWithFlags(
+      "platform_apps/windows_api_always_on_top/has_permissions_stable",
+      ExtensionApiTest::kFlagIgnoreManifestWarnings)) << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest,
+                       WindowsApiAlwaysOnTopNoPermissions) {
+  EXPECT_TRUE(RunPlatformAppTest(
+      "platform_apps/windows_api_always_on_top/no_permissions")) << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, WindowsApiGet) {
+  EXPECT_TRUE(RunPlatformAppTest("platform_apps/windows_api_get"))
+      << message_;
+}
 
 }  // namespace extensions

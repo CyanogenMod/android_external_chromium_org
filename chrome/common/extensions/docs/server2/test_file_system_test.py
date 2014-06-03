@@ -5,8 +5,9 @@
 
 from copy import deepcopy
 from file_system import FileNotFoundError, StatInfo
-from test_file_system import TestFileSystem
+from test_file_system import TestFileSystem, MoveTo
 import unittest
+
 
 _TEST_DATA = {
   '404.html': '404.html contents',
@@ -23,10 +24,12 @@ _TEST_DATA = {
   }
 }
 
+
 def _Get(fn):
   '''Returns a function which calls Future.Get on the result of |fn|.
   '''
   return lambda *args: fn(*args).Get()
+
 
 class TestFileSystemTest(unittest.TestCase):
   def testEmptyFileSystem(self):
@@ -57,15 +60,42 @@ class TestFileSystemTest(unittest.TestCase):
 
   def testNonemptySuccess(self):
     fs = TestFileSystem(deepcopy(_TEST_DATA))
-    self.assertEqual('404.html contents', fs.ReadSingle('404.html'))
-    self.assertEqual('404.html contents', fs.ReadSingle('/404.html'))
-    self.assertEqual('a11y.html contents', fs.ReadSingle('apps/a11y.html'))
-    self.assertEqual(set(['404.html', 'apps/', 'extensions/']),
-                     set(fs.ReadSingle('/')))
-    self.assertEqual(set(['a11y.html', 'about_apps.html', 'fakedir/']),
-                     set(fs.ReadSingle('apps/')))
-    self.assertEqual(set(['a11y.html', 'about_apps.html', 'fakedir/']),
-                     set(fs.ReadSingle('/apps/')))
+    self.assertEqual('404.html contents', fs.ReadSingle('404.html').Get())
+    self.assertEqual('404.html contents', fs.ReadSingle('/404.html').Get())
+    self.assertEqual('a11y.html contents',
+                     fs.ReadSingle('apps/a11y.html').Get())
+    self.assertEqual(['404.html', 'apps/', 'extensions/'],
+                     sorted(fs.ReadSingle('/').Get()))
+    self.assertEqual(['a11y.html', 'about_apps.html', 'fakedir/'],
+                     sorted(fs.ReadSingle('apps/').Get()))
+    self.assertEqual(['a11y.html', 'about_apps.html', 'fakedir/'],
+                     sorted(fs.ReadSingle('/apps/').Get()))
+
+  def testReadFiles(self):
+    fs = TestFileSystem(deepcopy(_TEST_DATA))
+    self.assertEqual('404.html contents',
+                     fs.ReadSingle('404.html').Get())
+    self.assertEqual('404.html contents',
+                     fs.ReadSingle('/404.html').Get())
+    self.assertEqual('a11y.html contents',
+                     fs.ReadSingle('apps/a11y.html').Get())
+    self.assertEqual('a11y.html contents',
+                     fs.ReadSingle('/apps/a11y.html').Get())
+    self.assertEqual('file.html contents',
+                     fs.ReadSingle('apps/fakedir/file.html').Get())
+    self.assertEqual('file.html contents',
+                     fs.ReadSingle('/apps/fakedir/file.html').Get())
+
+  def testReadDirs(self):
+    fs = TestFileSystem(deepcopy(_TEST_DATA))
+    self.assertEqual(['404.html', 'apps/', 'extensions/'],
+                     sorted(fs.ReadSingle('/').Get()))
+    self.assertEqual(['a11y.html', 'about_apps.html', 'fakedir/'],
+                     sorted(fs.ReadSingle('/apps/').Get()))
+    self.assertEqual(['a11y.html', 'about_apps.html', 'fakedir/'],
+                     sorted(fs.ReadSingle('apps/').Get()))
+    self.assertEqual(['file.html'], fs.ReadSingle('/apps/fakedir/').Get())
+    self.assertEqual(['file.html'], fs.ReadSingle('apps/fakedir/').Get())
 
   def testStat(self):
     fs = TestFileSystem(deepcopy(_TEST_DATA))
@@ -114,11 +144,12 @@ class TestFileSystemTest(unittest.TestCase):
 
   def testMoveTo(self):
     self.assertEqual({'foo': {'a': 'b', 'c': 'd'}},
-                    TestFileSystem.MoveTo('foo', {'a': 'b', 'c': 'd'}))
+                     MoveTo('foo', {'a': 'b', 'c': 'd'}))
     self.assertEqual({'foo': {'bar': {'a': 'b', 'c': 'd'}}},
-                    TestFileSystem.MoveTo('foo/bar', {'a': 'b', 'c': 'd'}))
+                     MoveTo('foo/bar', {'a': 'b', 'c': 'd'}))
     self.assertEqual({'foo': {'bar': {'baz': {'a': 'b'}}}},
-                    TestFileSystem.MoveTo('foo/bar/baz', {'a': 'b'}))
+                     MoveTo('foo/bar/baz', {'a': 'b'}))
+
 
 if __name__ == '__main__':
   unittest.main()

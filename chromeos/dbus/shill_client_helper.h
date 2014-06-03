@@ -38,11 +38,11 @@ class Signal;
 
 namespace chromeos {
 
-class BlockingMethodCaller;
-
 // A class to help implement Shill clients.
 class ShillClientHelper {
  public:
+  class RefHolder;
+
   // A callback to handle PropertyChanged signals.
   typedef base::Callback<void(const std::string& name,
                               const base::Value& value)> PropertyChangedHandler;
@@ -70,10 +70,16 @@ class ShillClientHelper {
   // A callback that handles responses for methods with boolean results.
   typedef base::Callback<void(bool result)> BooleanCallback;
 
+  // Callback used to notify owner when this can be safely released.
+  typedef base::Callback<void(ShillClientHelper* helper)> ReleasedCallback;
 
-  ShillClientHelper(dbus::Bus* bus, dbus::ObjectProxy* proxy);
+  explicit ShillClientHelper(dbus::ObjectProxy* proxy);
 
   virtual ~ShillClientHelper();
+
+  // Sets |released_callback_|. This is optional and should only be called at
+  // most once.
+  void SetReleasedCallback(ReleasedCallback callback);
 
   // Adds an |observer| of the PropertyChanged signal.
   void AddPropertyChangedObserver(ShillPropertyChangedObserver* observer);
@@ -133,14 +139,7 @@ class ShillClientHelper {
       const ListValueCallback& callback,
       const ErrorCallback& error_callback);
 
-  // DEPRECATED DO NOT USE: Calls a method without results.
-  bool CallVoidMethodAndBlock(dbus::MethodCall* method_call);
-
-  // DEPRECATED DO NOT USE: Calls a method with a dictionary value result.
-  // The caller is responsible to delete the result.
-  // This method returns NULL when method call fails.
-  base::DictionaryValue* CallDictionaryValueMethodAndBlock(
-      dbus::MethodCall* method_call);
+  const dbus::ObjectProxy* object_proxy() const { return proxy_; }
 
   // Appends the value (basic types and string-to-string dictionary) to the
   // writer as a variant.
@@ -151,6 +150,13 @@ class ShillClientHelper {
   static void AppendServicePropertiesDictionary(
       dbus::MessageWriter* writer,
       const base::DictionaryValue& dictionary);
+
+ protected:
+  // Reference / Ownership management. If the number of active refs (observers
+  // + in-progress method calls) becomes 0, |released_callback_| (if set) will
+  // be called.
+  void AddRef();
+  void Release();
 
  private:
   // Starts monitoring PropertyChanged signal.
@@ -164,9 +170,9 @@ class ShillClientHelper {
   // Handles PropertyChanged signal.
   void OnPropertyChanged(dbus::Signal* signal);
 
-  // TODO(hashimoto): Remove this when we no longer need to make blocking calls.
-  scoped_ptr<BlockingMethodCaller> blocking_method_caller_;
   dbus::ObjectProxy* proxy_;
+  ReleasedCallback released_callback_;
+  int active_refs_;
   PropertyChangedHandler property_changed_handler_;
   ObserverList<ShillPropertyChangedObserver, true /* check_empty */>
       observer_list_;

@@ -10,14 +10,15 @@
 #include "base/values.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
-#include "chrome/browser/extensions/pending_extension_info.h"
-#include "chrome/browser/extensions/pending_extension_manager.h"
+#include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync/test/integration/sync_datatype_helper.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
+#include "extensions/browser/pending_extension_info.h"
+#include "extensions/browser/pending_extension_manager.h"
+#include "extensions/common/extension.h"
 #include "extensions/common/id_util.h"
+#include "extensions/common/manifest_constants.h"
 #include "sync/api/string_ordinal.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -116,20 +117,20 @@ bool SyncExtensionHelper::IsExtensionEnabled(
 
 void SyncExtensionHelper::IncognitoEnableExtension(
     Profile* profile, const std::string& name) {
-  profile->GetExtensionService()->SetIsIncognitoEnabled(
-      extensions::id_util::GenerateId(name), true);
+  extension_util::SetIsIncognitoEnabled(extensions::id_util::GenerateId(name),
+                                        profile->GetExtensionService(), true);
 }
 
 void SyncExtensionHelper::IncognitoDisableExtension(
     Profile* profile, const std::string& name) {
-  profile->GetExtensionService()->SetIsIncognitoEnabled(
-      extensions::id_util::GenerateId(name), false);
+  extension_util::SetIsIncognitoEnabled(extensions::id_util::GenerateId(name),
+                                        profile->GetExtensionService(), false);
 }
 
 bool SyncExtensionHelper::IsIncognitoEnabled(
     Profile* profile, const std::string& name) const {
-  return profile->GetExtensionService()->IsIncognitoEnabled(
-      extensions::id_util::GenerateId(name));
+  return extension_util::IsIncognitoEnabled(
+      extensions::id_util::GenerateId(name), profile->GetExtensionService());
 }
 
 
@@ -197,7 +198,7 @@ SyncExtensionHelper::ExtensionStateMap
         ExtensionState::ENABLED :
         ExtensionState::DISABLED;
     extension_state_map[id].incognito_enabled =
-        extension_service->IsIncognitoEnabled(id);
+        extension_util::IsIncognitoEnabled(id, extension_service);
 
     DVLOG(2) << "Extension " << (*it)->id() << " in profile "
              << profile_debug_name << " is "
@@ -215,7 +216,7 @@ SyncExtensionHelper::ExtensionStateMap
   for (id = pending_crx_ids.begin(); id != pending_crx_ids.end(); ++id) {
     extension_state_map[*id].enabled_state = ExtensionState::PENDING;
     extension_state_map[*id].incognito_enabled =
-        extension_service->IsIncognitoEnabled(*id);
+        extension_util::IsIncognitoEnabled(*id, extension_service);
     DVLOG(2) << "Extension " << *id << " in profile "
              << profile_debug_name << " is pending";
   }
@@ -273,30 +274,30 @@ scoped_refptr<Extension> CreateExtension(const base::FilePath& base_dir,
                                          const std::string& name,
                                          Manifest::Type type) {
   DictionaryValue source;
-  source.SetString(extension_manifest_keys::kName, name);
+  source.SetString(extensions::manifest_keys::kName, name);
   const std::string& public_key = NameToPublicKey(name);
-  source.SetString(extension_manifest_keys::kPublicKey, public_key);
-  source.SetString(extension_manifest_keys::kVersion, "0.0.0.0");
+  source.SetString(extensions::manifest_keys::kPublicKey, public_key);
+  source.SetString(extensions::manifest_keys::kVersion, "0.0.0.0");
   switch (type) {
     case Manifest::TYPE_EXTENSION:
       // Do nothing.
       break;
     case Manifest::TYPE_THEME:
-      source.Set(extension_manifest_keys::kTheme, new DictionaryValue());
+      source.Set(extensions::manifest_keys::kTheme, new DictionaryValue());
       break;
     case Manifest::TYPE_HOSTED_APP:
     case Manifest::TYPE_LEGACY_PACKAGED_APP:
-      source.Set(extension_manifest_keys::kApp, new DictionaryValue());
-      source.SetString(extension_manifest_keys::kLaunchWebURL,
+      source.Set(extensions::manifest_keys::kApp, new DictionaryValue());
+      source.SetString(extensions::manifest_keys::kLaunchWebURL,
                        "http://www.example.com");
       break;
     case Manifest::TYPE_PLATFORM_APP: {
-      source.Set(extension_manifest_keys::kApp, new DictionaryValue());
-      source.Set(extension_manifest_keys::kPlatformAppBackground,
+      source.Set(extensions::manifest_keys::kApp, new DictionaryValue());
+      source.Set(extensions::manifest_keys::kPlatformAppBackground,
                  new DictionaryValue());
       ListValue* scripts = new ListValue();
       scripts->AppendString("main.js");
-      source.Set(extension_manifest_keys::kPlatformAppBackgroundScripts,
+      source.Set(extensions::manifest_keys::kPlatformAppBackgroundScripts,
                  scripts);
       break;
     }
@@ -307,12 +308,12 @@ scoped_refptr<Extension> CreateExtension(const base::FilePath& base_dir,
   const base::FilePath sub_dir = base::FilePath().AppendASCII(name);
   base::FilePath extension_dir;
   if (!base::PathExists(base_dir) &&
-      !file_util::CreateDirectory(base_dir)) {
+      !base::CreateDirectory(base_dir)) {
     ADD_FAILURE();
     return NULL;
   }
-  if (!file_util::CreateTemporaryDirInDir(
-          base_dir, sub_dir.value(), &extension_dir)) {
+  if (!base::CreateTemporaryDirInDir(base_dir, sub_dir.value(),
+                                     &extension_dir)) {
     ADD_FAILURE();
     return NULL;
   }

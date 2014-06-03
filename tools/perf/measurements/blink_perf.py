@@ -2,12 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-"""This measurement runs a blink performance test and reports the results."""
-
 import os
 import sys
 
-from telemetry.core import util
 from telemetry.page import page_measurement
 from telemetry.page import page_set
 
@@ -53,9 +50,10 @@ def CreatePageSetFromPath(path):
   return page_set.PageSet.FromDict(page_set_dict, os.getcwd() + os.sep)
 
 
-class BlinkPerf(page_measurement.PageMeasurement):
+class BlinkPerfMeasurement(page_measurement.PageMeasurement):
+  """Tuns a blink performance test and reports the results."""
   def __init__(self):
-    super(BlinkPerf, self).__init__('')
+    super(BlinkPerfMeasurement, self).__init__('')
     with open(os.path.join(os.path.dirname(__file__),
                            'blink_perf.js'), 'r') as f:
       self._blink_perf_js = f.read()
@@ -81,12 +79,13 @@ class BlinkPerf(page_measurement.PageMeasurement):
     page.script_to_evaluate_on_commit = self._blink_perf_js
 
   def CustomizeBrowserOptions(self, options):
-    options.AppendExtraBrowserArg('--js-flags=--expose_gc')
+    options.AppendExtraBrowserArgs([
+        '--js-flags=--expose_gc',
+        '--enable-experimental-web-platform-features'
+    ])
 
   def MeasurePage(self, page, tab, results):
-    def _IsDone():
-      return tab.EvaluateJavaScript('testRunner.isDone')
-    util.WaitFor(_IsDone, 600)
+    tab.WaitForJavaScriptExpression('testRunner.isDone', 600)
 
     log = tab.EvaluateJavaScript('document.getElementById("log").innerHTML')
 
@@ -96,7 +95,7 @@ class BlinkPerf(page_measurement.PageMeasurement):
       parts = line.split()
       values = [float(v.replace(',', '')) for v in parts[1:-1]]
       units = parts[-1]
-      metric = page.display_url.split('.')[0].replace('/', '_')
+      metric = page.display_name.split('.')[0].replace('/', '_')
       results.Add(metric, units, values)
       break
 

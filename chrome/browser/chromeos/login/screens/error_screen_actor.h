@@ -5,7 +5,9 @@
 #ifndef CHROME_BROWSER_CHROMEOS_LOGIN_SCREENS_ERROR_SCREEN_ACTOR_H_
 #define CHROME_BROWSER_CHROMEOS_LOGIN_SCREENS_ERROR_SCREEN_ACTOR_H_
 
-#include "chrome/browser/chromeos/cros/network_constants.h"
+#include <string>
+
+#include "base/basictypes.h"
 #include "chrome/browser/chromeos/login/screens/error_screen.h"
 #include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
 
@@ -66,10 +68,18 @@ class ErrorScreenActor {
   virtual void AllowGuestSignin(bool allowed) = 0;
   virtual void AllowOfflineLogin(bool allowed) = 0;
 
+  static const char* ErrorReasonString(ErrorReason reason);
+
  protected:
   ErrorScreen::UIState ui_state_;
   ErrorScreen::ErrorState error_state_;
+  std::string network_;
+  bool guest_signin_allowed_;
+  bool offline_login_allowed_;
+
   OobeUI::Screen parent_screen_;
+
+  DISALLOW_COPY_AND_ASSIGN(ErrorScreenActor);
 };
 
 }  // namespace chromeos

@@ -7,9 +7,9 @@
 #include "base/command_line.h"
 #include "base/message_loop/message_loop.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/chromeos/cros/cros_in_process_browser_test.h"
 #include "chrome/browser/notifications/notification_ui_manager.h"
-#include "chromeos/dbus/mock_dbus_thread_manager_without_gmock.h"
+#include "chrome/test/base/in_process_browser_test.h"
+#include "chromeos/dbus/fake_dbus_thread_manager.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/test/test_browser_thread.h"
 #include "content/public/test/test_utils.h"
@@ -31,16 +31,17 @@ const char kTestDeviceName[] = "test device";
 
 namespace chromeos {
 
-class PeripheralBatteryObserverTest : public CrosInProcessBrowserTest {
+class PeripheralBatteryObserverTest : public InProcessBrowserTest {
  public:
   PeripheralBatteryObserverTest () {}
   virtual ~PeripheralBatteryObserverTest () {}
 
   virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
-    MockDBusThreadManagerWithoutGMock* mock_dbus_thread_manager =
-        new MockDBusThreadManagerWithoutGMock;
-    DBusThreadManager::InitializeForTesting(mock_dbus_thread_manager);
-    CrosInProcessBrowserTest::SetUpInProcessBrowserTestFixture();
+    FakeDBusThreadManager* fake_dbus_thread_manager =
+        new FakeDBusThreadManager;
+    fake_dbus_thread_manager->SetFakeClients();
+    DBusThreadManager::SetInstanceForTesting(fake_dbus_thread_manager);
+    InProcessBrowserTest::SetUpInProcessBrowserTestFixture();
   }
 
   virtual void SetUpOnMainThread() OVERRIDE {
@@ -52,8 +53,7 @@ class PeripheralBatteryObserverTest : public CrosInProcessBrowserTest {
   }
 
   virtual void TearDownInProcessBrowserTestFixture() OVERRIDE {
-    CrosInProcessBrowserTest::TearDownInProcessBrowserTestFixture();
-    DBusThreadManager::Shutdown();
+    InProcessBrowserTest::TearDownInProcessBrowserTestFixture();
   }
 
  protected:

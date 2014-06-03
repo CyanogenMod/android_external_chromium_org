@@ -7,9 +7,13 @@
 // language to another.
 // It should be included in the page before the Translate Element script.
 
-var cr = {};
+var cr = cr || {};
 
-cr.googleTranslate = (function(key) {
+/**
+ * An object to provide functions to interact with the Translate library.
+ * @type {object}
+ */
+cr.googleTranslate = (function() {
   /**
    * The Translate Element library's instance.
    * @type {object}
@@ -23,12 +27,36 @@ cr.googleTranslate = (function(key) {
   var libReady = false;
 
   /**
-   * A flag representing if the Translate Element library returns error while
-   * performing translation. Also it is set to true when the Translate Element
-   * library is not initialized in 600 msec from the library is loaded.
-   * @type {boolean}
+   * Error definitions for |errorCode|. See chrome/common/translate_errors.h
+   * to modify the definition.
+   * @const
    */
-  var error = false;
+  var ERROR = {
+    'NONE': 0,
+    'INITIALIZATION_ERROR': 2,
+    'UNSUPPORTED_LANGUAGE': 4,
+    'TRANSLATION_ERROR': 6,
+    'TRANSLATION_TIMEOUT': 7,
+    'UNEXPECTED_SCRIPT_ERROR': 8,
+    'BAD_ORIGIN': 9,
+    'SCRIPT_LOAD_ERROR': 10
+  };
+
+  /**
+   * Error code map from te.dom.DomTranslator.Error to |errorCode|.
+   * See also go/dom_translator.js in google3.
+   * @const
+   */
+  var TRANSLATE_ERROR_TO_ERROR_CODE_MAP = {
+    0: ERROR['NONE'],
+    1: ERROR['TRANSLATION_ERROR'],
+    2: ERROR['UNSUPPORTED_LANGUAGE']
+  };
+
+  /**
+   * An error code happened in translate.js and the Translate Element library.
+   */
+  var errorCode = ERROR['NONE'];
 
   /**
    * A flag representing if the Translate Element has finished a translation.
@@ -74,55 +102,6 @@ cr.googleTranslate = (function(key) {
    */
   var endTime = 0.0;
 
-  // Create another call point for appendChild.
-  var head = document.head;
-  head._appendChild = head.appendChild;
-
-  // TODO(toyoshim): This is temporary solution and will be removed once server
-  // side fixed to use https always. See also, http://crbug.com/164584 .
-  function forceToHttps(url) {
-    if (url.indexOf('http:') == 0)
-      return url.replace('http', 'https');
-
-    return url;
-  }
-
-  /**
-   * Inserts CSS element into the main world.
-   * @param {Object} child Link element for CSS.
-   */
-  function insertCSS(child) {
-    child.href = forceToHttps(child.href);
-    head._appendChild(child);
-  }
-
-  /**
-   * Inserts JavaScript into the isolated world.
-   * @param {string} src JavaScript URL.
-   */
-  function insertJS(src) {
-    var xhr = new XMLHttpRequest();
-    xhr.open('GET', forceToHttps(src), true);
-    xhr.onreadystatechange = function() {
-      if (this.readyState != this.DONE || this.status != 200)
-        return;
-      eval(this.responseText);
-    }
-    xhr.send();
-  }
-
-  /**
-   * Alternate implementation of appendChild. In the isolated world, appendChild
-   * for the first head element is replaced with this function in order to make
-   * CSS link tag and script tag injection work fine like the main world.
-   */
-  head.appendChild = function(child) {
-    if (child.type == 'text/css')
-      insertCSS(child);
-    else
-      insertJS(child.src);
-  };
-
   function checkLibReady() {
     if (lib.isAvailable()) {
       readyTime = performance.now();
@@ -130,7 +109,7 @@ cr.googleTranslate = (function(key) {
       return;
     }
     if (checkReadyCount++ > 5) {
-      error = true;
+      errorCode = ERROR['TRANSLATION_TIMEOUT'];
       return;
     }
     setTimeout(checkLibReady, 100);
@@ -140,8 +119,12 @@ cr.googleTranslate = (function(key) {
     finished = opt_finished;
     // opt_error can be 'undefined'.
     if (typeof opt_error == 'boolean' && opt_error) {
-      error = true;
+      // TODO(toyoshim): Remove boolean case once a server is updated.
+      errorCode = ERROR['TRANSLATION_ERROR'];
       // We failed to translate, restore so the page is in a consistent state.
+      lib.restore();
+    } else if (typeof opt_error == 'number' && opt_error != 0) {
+      errorCode = TRANSLATE_ERROR_TO_ERROR_CODE_MAP[opt_error];
       lib.restore();
     }
     if (finished)
@@ -173,7 +156,15 @@ cr.googleTranslate = (function(key) {
      * @type {boolean}
      */
     get error() {
-      return error;
+      return errorCode != ERROR['NONE'];
+    },
+
+    /**
+     * Returns a number to represent error type.
+     * @type {number}
+     */
+    get errorCode() {
+      return errorCode;
     },
 
     /**
@@ -185,10 +176,10 @@ cr.googleTranslate = (function(key) {
      * @type {boolean}
      */
     get sourceLang() {
-      if (!libReady || !finished || error)
+      if (!libReady || !finished || errorCode != ERROR['NONE'])
         return '';
       if (!lib.getDetectedLanguage)
-        return 'und'; // defined as chrome::kUnknownLanguageCode in C++ world.
+        return 'und'; // Defined as translate::kUnknownLanguageCode in C++.
       return lib.getDetectedLanguage();
     },
 
@@ -226,8 +217,8 @@ cr.googleTranslate = (function(key) {
 
     /**
      * Translate the page contents.  Note that the translation is asynchronous.
-     * You need to regularly check the state of |finished| and |error| to know
-     * if the translation finished or if there was an error.
+     * You need to regularly check the state of |finished| and |errorCode| to
+     * know if the translation finished or if there was an error.
      * @param {string} originalLang The language the page is in.
      * @param {string} targetLang The language the page should be translated to.
      * @return {boolean} False if the translate library was not ready, in which
@@ -235,11 +226,17 @@ cr.googleTranslate = (function(key) {
      */
     translate: function(originalLang, targetLang) {
       finished = false;
-      error = false;
+      errorCode = ERROR['NONE'];
       if (!libReady)
         return false;
       startTime = performance.now();
-      lib.translatePage(originalLang, targetLang, onTranslateProgress);
+      try {
+        lib.translatePage(originalLang, targetLang, onTranslateProgress);
+      } catch (err) {
+        console.error('Translate: ' + err);
+        errorCode = ERROR['UNEXPECTED_SCRIPT_ERROR'];
+        return false;
+      }
       return true;
     },
 
@@ -259,16 +256,59 @@ cr.googleTranslate = (function(key) {
       loadedTime = performance.now();
       try {
         lib = google.translate.TranslateService({
-          'key': key,
+          // translateApiKey is predefined by translate_script.cc.
+          'key': translateApiKey,
           'useSecureConnection': true
         });
+        translateApiKey = undefined;
       } catch (err) {
-        error = true;
+        errorCode = ERROR['INITIALIZATION_ERROR'];
+        translateApiKey = undefined;
         return;
       }
       // The TranslateService is not available immediately as it needs to start
       // Flash.  Let's wait until it is ready.
       checkLibReady();
+    },
+
+    /**
+     * Entry point called by the Translate Element when it want to load an
+     * external CSS resource into the page.
+     * @param {string} url URL of an external CSS resource to load.
+     */
+    onLoadCSS: function(url) {
+      var element = document.createElement('link');
+      element.type = 'text/css';
+      element.rel = 'stylesheet';
+      element.charset = 'UTF-8';
+      element.href = url;
+      document.head.appendChild(element);
+    },
+
+    /**
+     * Entry point called by the Translate Element when it want to load and run
+     * an external JavaScript on the page.
+     * @param {string} url URL of an external JavaScript to load.
+     */
+    onLoadJavascript: function(url) {
+      // securityOrigin is predefined by translate_script.cc.
+      if (url.indexOf(securityOrigin) != 0) {
+        console.error('Translate: ' + url + ' is not allowed to load.');
+        errorCode = ERROR['BAD_ORIGIN'];
+        return;
+      }
+      var xhr = new XMLHttpRequest();
+      xhr.open('GET', url, true);
+      xhr.onreadystatechange = function() {
+        if (this.readyState != this.DONE)
+          return;
+        if (this.status != 200) {
+          errorCode = ERROR['SCRIPT_LOAD_ERROR'];
+          return;
+        }
+        eval(this.responseText);
+      }
+      xhr.send();
     }
   };
-})/* Calling code '(|key|);' will be appended by TranslateHelper in C++ here. */
+})();

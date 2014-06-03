@@ -38,7 +38,7 @@
   "bluetooth": {
     "Learn More": [
       {
-        "link": "app_hardware.html",
+        "link": "app_usb.html",
         "text": "Accessing Hardware Devices"
       }
     ]
@@ -50,7 +50,7 @@
         "text": "\"cookies\""
       },
       {
-        "link": "declare_permissions.html",
+        "link": "declare_permissions.html#host-permissions",
         "text": "host permissions"
       }
     ]
@@ -74,7 +74,7 @@
         "text": "\"declarativeWebRequest\""
       },
       {
-        "link": "declare_permissions.html",
+        "link": "declare_permissions.html#host-permissions",
         "text": "host permissions"
       }
     ]
@@ -99,7 +99,7 @@
       },
       {
         "class": "code",
-        "text": "{\"fileSystem\": [\"write\", \"retainEntries\"]}"
+        "text": "{\"fileSystem\": [\"write\", \"retainEntries\", \"directory\"]}"
       }
     ],
     "Learn More": [
@@ -154,6 +154,14 @@
       }
     ]
   },
+  "permissions": {
+    "Learn More": [
+      {
+        "link": "declare_permissions.html",
+        "text": "Declaring permissions"
+      }
+    ]
+  },
   "pushMessaging": {
     "Learn More": [
       {
@@ -181,7 +189,7 @@
   "serial": {
     "Learn More": [
       {
-        "link": "app_hardware.html",
+        "link": "app_usb.html",
         "text": "Accessing Hardware Devices"
       }
     ]
@@ -242,8 +250,7 @@
   "tabs": {
     "Permissions": [
       {
-        "class": "code",
-        "text": "\"tabs\""
+        "partial": "intro_tables/tabs_permissions.html"
       }
     ]
   },
@@ -258,7 +265,7 @@
   "usb": {
     "Learn More": [
       {
-        "link": "app_hardware.html",
+        "link": "app_usb.html",
         "text": "Accessing Hardware Devices"
       }
     ]
@@ -270,7 +277,7 @@
         "text": "\"webRequest\""
       },
       {
-        "link": "declare_permissions.html",
+        "link": "declare_permissions.html#host-permissions",
         "text": "host permissions"
       }
     ]
@@ -280,6 +287,13 @@
       {
         "link": "https://developers.google.com/chrome/web-store/docs/inline_installation",
         "text": "Using Inline Installation"
+      }
+    ]
+  },
+  "windows": {
+    "Permissions": [
+      {
+        "partial": "intro_tables/windows_permissions.html"
       }
     ]
   }

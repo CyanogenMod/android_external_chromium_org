@@ -4,27 +4,37 @@
 
 #include "chrome/browser/chromeos/policy/user_cloud_policy_manager_factory_chromeos.h"
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/files/file_path.h"
 #include "base/logging.h"
+#include "base/memory/ref_counted.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/path_service.h"
+#include "base/sequenced_task_runner.h"
+#include "base/threading/sequenced_worker_pool.h"
 #include "base/time/time.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chromeos/login/login_utils.h"
 #include "chrome/browser/chromeos/login/user.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/policy/user_cloud_external_data_manager.h"
 #include "chrome/browser/chromeos/policy/user_cloud_policy_manager_chromeos.h"
 #include "chrome/browser/chromeos/policy/user_cloud_policy_store_chromeos.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/policy/browser_policy_connector.h"
-#include "chrome/browser/policy/cloud/device_management_service.h"
-#include "chrome/browser/policy/cloud/resource_cache.h"
+#include "chrome/browser/policy/schema_registry_service.h"
+#include "chrome/browser/policy/schema_registry_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/chrome_switches.h"
 #include "chromeos/chromeos_paths.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
+#include "components/policy/core/common/cloud/cloud_external_data_manager.h"
+#include "components/policy/core/common/cloud/device_management_service.h"
+#include "content/public/browser/browser_thread.h"
 #include "net/url_request/url_request_context_getter.h"
+#include "policy/policy_constants.h"
 
 namespace policy {
 
@@ -33,15 +43,24 @@ namespace {
 // Subdirectory in the user's profile for storing legacy user policies.
 const base::FilePath::CharType kDeviceManagementDir[] =
     FILE_PATH_LITERAL("Device Management");
+
 // File in the above directory for storing legacy user policy dmtokens.
 const base::FilePath::CharType kToken[] = FILE_PATH_LITERAL("Token");
+
 // This constant is used to build two different paths. It can be a file inside
 // kDeviceManagementDir where legacy user policy data is stored, and it can be
 // a directory inside the profile directory where other resources are stored.
 const base::FilePath::CharType kPolicy[] = FILE_PATH_LITERAL("Policy");
-// Directory under kPolicy, in the user's profile dir, where external policy
-// resources are stored.
-const base::FilePath::CharType kResourceDir[] = FILE_PATH_LITERAL("Resources");
+
+// Directory under kPolicy, in the user's profile dir, where policy for
+// components is cached.
+const base::FilePath::CharType kComponentsDir[] =
+    FILE_PATH_LITERAL("Components");
+
+// Directory in which to store external policy data. This is specified relative
+// to kPolicy.
+const base::FilePath::CharType kPolicyExternalDataDir[] =
+    FILE_PATH_LITERAL("External Data");
 
 // Timeout in seconds after which to abandon the initial policy fetch and start
 // the session regardless.
@@ -66,14 +85,18 @@ UserCloudPolicyManagerChromeOS*
 scoped_ptr<UserCloudPolicyManagerChromeOS>
     UserCloudPolicyManagerFactoryChromeOS::CreateForProfile(
         Profile* profile,
-        bool force_immediate_load) {
-  return GetInstance()->CreateManagerForProfile(profile, force_immediate_load);
+        bool force_immediate_load,
+        scoped_refptr<base::SequencedTaskRunner> background_task_runner) {
+  return GetInstance()->CreateManagerForProfile(
+      profile, force_immediate_load, background_task_runner);
 }
 
 UserCloudPolicyManagerFactoryChromeOS::UserCloudPolicyManagerFactoryChromeOS()
     : BrowserContextKeyedBaseFactory(
         "UserCloudPolicyManagerChromeOS",
-        BrowserContextDependencyManager::GetInstance()) {}
+        BrowserContextDependencyManager::GetInstance()) {
+  DependsOn(SchemaRegistryServiceFactory::GetInstance());
+}
 
 UserCloudPolicyManagerFactoryChromeOS::
     ~UserCloudPolicyManagerFactoryChromeOS() {}
@@ -90,7 +113,8 @@ UserCloudPolicyManagerChromeOS*
 scoped_ptr<UserCloudPolicyManagerChromeOS>
     UserCloudPolicyManagerFactoryChromeOS::CreateManagerForProfile(
         Profile* profile,
-        bool force_immediate_load) {
+        bool force_immediate_load,
+        scoped_refptr<base::SequencedTaskRunner> background_task_runner) {
   const CommandLine* command_line = CommandLine::ForCurrentProcess();
   // Don't initialize cloud policy for the signin profile.
   if (chromeos::ProfileHelper::IsSigninProfile(profile))
@@ -100,16 +124,15 @@ scoped_ptr<UserCloudPolicyManagerChromeOS>
   // created as part of the Profile creation, which happens right after
   // sign-in. The just-signed-in User is the active user during that time.
   chromeos::UserManager* user_manager = chromeos::UserManager::Get();
-  chromeos::User* user = user_manager->GetActiveUser();
+  chromeos::User* user = user_manager->GetUserByProfile(profile);
   CHECK(user);
 
   // Only USER_TYPE_REGULAR users have user cloud policy.
-  // USER_TYPE_RETAIL_MODE, USER_TYPE_KIOSK_APP and USER_TYPE_GUEST are not
-  // signed in and can't authenticate the policy registration.
+  // USER_TYPE_RETAIL_MODE, USER_TYPE_KIOSK_APP, USER_TYPE_GUEST and
+  // USER_TYPE_LOCALLY_MANAGED are not signed in and can't authenticate the
+  // policy registration.
   // USER_TYPE_PUBLIC_ACCOUNT gets its policy from the
   // DeviceLocalAccountPolicyService.
-  // USER_TYPE_LOCALLY_MANAGED gets its policy from the
-  // ManagedModePolicyProvider.
   const std::string& username = user->email();
   if (user->GetType() != chromeos::User::USER_TYPE_REGULAR ||
       BrowserPolicyConnector::IsNonEnterpriseUser(username)) {
@@ -134,8 +157,10 @@ scoped_ptr<UserCloudPolicyManagerChromeOS>
   const base::FilePath legacy_dir = profile_dir.Append(kDeviceManagementDir);
   const base::FilePath policy_cache_file = legacy_dir.Append(kPolicy);
   const base::FilePath token_cache_file = legacy_dir.Append(kToken);
-  const base::FilePath resource_cache_dir =
-      profile_dir.Append(kPolicy).Append(kResourceDir);
+  const base::FilePath component_policy_cache_dir =
+      profile_dir.Append(kPolicy).Append(kComponentsDir);
+  const base::FilePath external_data_dir =
+        profile_dir.Append(kPolicy).Append(kPolicyExternalDataDir);
   base::FilePath policy_key_dir;
   CHECK(PathService::Get(chromeos::DIR_USER_POLICY_KEYS, &policy_key_dir));
 
@@ -143,21 +168,48 @@ scoped_ptr<UserCloudPolicyManagerChromeOS>
       new UserCloudPolicyStoreChromeOS(
           chromeos::DBusThreadManager::Get()->GetCryptohomeClient(),
           chromeos::DBusThreadManager::Get()->GetSessionManagerClient(),
+          background_task_runner,
           username, policy_key_dir, token_cache_file, policy_cache_file));
+
+  scoped_refptr<base::SequencedTaskRunner> backend_task_runner =
+      content::BrowserThread::GetBlockingPool()->GetSequencedTaskRunner(
+          content::BrowserThread::GetBlockingPool()->GetSequenceToken());
+  scoped_refptr<base::SequencedTaskRunner> io_task_runner =
+      content::BrowserThread::GetMessageLoopProxyForThread(
+          content::BrowserThread::IO);
+  scoped_ptr<CloudExternalDataManager> external_data_manager(
+      new UserCloudExternalDataManager(base::Bind(&GetChromePolicyDetails),
+                                       backend_task_runner,
+                                       io_task_runner,
+                                       external_data_dir,
+                                       store.get()));
   if (force_immediate_load)
     store->LoadImmediately();
 
-  scoped_ptr<ResourceCache> resource_cache;
-  if (command_line->HasSwitch(switches::kEnableComponentCloudPolicy))
-    resource_cache.reset(new ResourceCache(resource_cache_dir));
+  scoped_refptr<base::SequencedTaskRunner> file_task_runner =
+      content::BrowserThread::GetMessageLoopProxyForThread(
+          content::BrowserThread::FILE);
 
   scoped_ptr<UserCloudPolicyManagerChromeOS> manager(
       new UserCloudPolicyManagerChromeOS(
           store.PassAs<CloudPolicyStore>(),
-          resource_cache.Pass(),
+          external_data_manager.Pass(),
+          component_policy_cache_dir,
           wait_for_initial_policy,
-          base::TimeDelta::FromSeconds(kInitialPolicyFetchTimeoutSeconds)));
-  manager->Init();
+          base::TimeDelta::FromSeconds(kInitialPolicyFetchTimeoutSeconds),
+          base::MessageLoopProxy::current(),
+          file_task_runner,
+          io_task_runner));
+
+  bool wildcard_match = false;
+  if (connector->IsEnterpriseManaged() &&
+      chromeos::LoginUtils::IsWhitelisted(username, &wildcard_match) &&
+      wildcard_match &&
+      !connector->IsNonEnterpriseUser(username)) {
+    manager->EnableWildcardLoginCheck(username);
+  }
+
+  manager->Init(SchemaRegistryServiceFactory::GetForContext(profile));
   manager->Connect(g_browser_process->local_state(),
                    device_management_service,
                    g_browser_process->system_request_context(),

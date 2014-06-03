@@ -11,13 +11,23 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/test/scoped_path_override.h"
 
+#if defined(OS_WIN)
+#include "base/test/test_reg_util_win.h"
+#endif
+
 namespace extensions {
 class Extension;
 }
 
+namespace registry_util {
+class RegistryOverrideManager;
+}
+
 class Profile;
 
-namespace chrome {
+#if defined(OS_MACOSX)
+class MockPreferences;
+#endif
 
 scoped_refptr<extensions::Extension> AddMediaGalleriesApp(
     const std::string& name,
@@ -31,6 +41,15 @@ class EnsureMediaDirectoriesExists {
 
   int num_galleries() const { return num_galleries_; }
 
+  base::FilePath GetFakeAppDataPath() const;
+#if defined(OS_WIN)
+  base::FilePath GetFakeLocalAppDataPath() const;
+#endif
+#if defined(OS_WIN) || defined(OS_MACOSX)
+  void SetCustomPicasaAppDataPath(const base::FilePath& path);
+  base::FilePath GetFakePicasaFoldersRootPath() const;
+#endif
+
  private:
   void Init();
 
@@ -38,14 +57,20 @@ class EnsureMediaDirectoriesExists {
 
   int num_galleries_;
 
-  scoped_ptr<base::ScopedPathOverride> appdir_override_;
+  scoped_ptr<base::ScopedPathOverride> app_data_override_;
   scoped_ptr<base::ScopedPathOverride> music_override_;
   scoped_ptr<base::ScopedPathOverride> pictures_override_;
   scoped_ptr<base::ScopedPathOverride> video_override_;
+#if defined(OS_WIN)
+  scoped_ptr<base::ScopedPathOverride> local_app_data_override_;
+
+  registry_util::RegistryOverrideManager registry_override_;
+#endif
+#if defined(OS_MACOSX)
+  scoped_ptr<MockPreferences> mac_preferences_;
+#endif
 
   DISALLOW_COPY_AND_ASSIGN(EnsureMediaDirectoriesExists);
 };
-
-}  // namespace chrome
 
 #endif  // CHROME_BROWSER_MEDIA_GALLERIES_MEDIA_GALLERIES_TEST_UTIL_H_

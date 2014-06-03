@@ -4,13 +4,16 @@
 
 #include "chrome/browser/metrics/variations/variations_http_header_provider.h"
 
+#include <vector>
+
 #include "base/base64.h"
 #include "base/memory/singleton.h"
 #include "base/metrics/histogram.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "chrome/browser/google/google_util.h"
 #include "chrome/common/metrics/proto/chrome_experiments.pb.h"
-#include "chrome/common/metrics/variations/variations_associated_data.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "net/http/http_request_headers.h"
 #include "url/gurl.h"
@@ -31,7 +34,7 @@ void VariationsHttpHeaderProvider::AppendHeaders(
   // 2. Only transmit for non-Incognito profiles.
   // 3. For the X-Chrome-UMA-Enabled bit, only set it if UMA is in fact enabled
   //    for this install of Chrome.
-  // 4. For the X-Chrome-Variations, only include non-empty variation IDs.
+  // 4. For the X-Client-Data header, only include non-empty variation IDs.
   if (incognito || !ShouldAppendHeaders(url))
     return;
 
@@ -49,9 +52,27 @@ void VariationsHttpHeaderProvider::AppendHeaders(
   }
 
   if (!variation_ids_header_copy.empty()) {
-    headers->SetHeaderIfMissing("X-Chrome-Variations",
+    // Note that prior to M33 this header was named X-Chrome-Variations.
+    headers->SetHeaderIfMissing("X-Client-Data",
                                 variation_ids_header_copy);
   }
+}
+
+bool VariationsHttpHeaderProvider::SetDefaultVariationIds(
+    const std::string& variation_ids) {
+  default_variation_ids_set_.clear();
+  std::vector<std::string> entries;
+  base::SplitString(variation_ids, ',', &entries);
+  for (std::vector<std::string>::const_iterator it = entries.begin();
+       it != entries.end(); ++it) {
+    int variation_id = 0;
+    if (!base::StringToInt(*it, &variation_id)) {
+      default_variation_ids_set_.clear();
+      return false;
+    }
+    default_variation_ids_set_.insert(variation_id);
+  }
+  return true;
 }
 
 VariationsHttpHeaderProvider::VariationsHttpHeaderProvider()
@@ -114,21 +135,27 @@ void VariationsHttpHeaderProvider::UpdateVariationIDsHeaderValue() {
 
   // The header value is a serialized protobuffer of Variation IDs which is
   // base64 encoded before transmitting as a string.
-  if (variation_ids_set_.empty())
+  variation_ids_header_.clear();
+
+  if (variation_ids_set_.empty() && default_variation_ids_set_.empty())
     return;
 
   // This is the bottleneck for the creation of the header, so validate the size
   // here. Force a hard maximum on the ID count in case the Variations server
   // returns too many IDs and DOSs receiving servers with large requests.
   DCHECK_LE(variation_ids_set_.size(), 10U);
-  if (variation_ids_set_.size() > 20) {
-    variation_ids_header_.clear();
+  if (variation_ids_set_.size() > 20)
     return;
-  }
 
-  metrics::ChromeVariations proto;
+  // Merge the two sets of experiment ids.
+  std::set<VariationID> all_variation_ids_set = default_variation_ids_set_;
   for (std::set<VariationID>::const_iterator it = variation_ids_set_.begin();
        it != variation_ids_set_.end(); ++it) {
+    all_variation_ids_set.insert(*it);
+  }
+  metrics::ChromeVariations proto;
+  for (std::set<VariationID>::const_iterator it = all_variation_ids_set.begin();
+       it != all_variation_ids_set.end(); ++it) {
     proto.add_variation_id(*it);
   }
 
@@ -136,16 +163,12 @@ void VariationsHttpHeaderProvider::UpdateVariationIDsHeaderValue() {
   proto.SerializeToString(&serialized);
 
   std::string hashed;
-  if (base::Base64Encode(serialized, &hashed)) {
-    // If successful, swap the header value with the new one.
-    // Note that the list of IDs and the header could be temporarily out of sync
-    // if IDs are added as the header is recreated. The receiving servers are OK
-    // with such discrepancies.
-    variation_ids_header_ = hashed;
-  } else {
-    NOTREACHED() << "Failed to base64 encode Variation IDs value: "
-                 << serialized;
-  }
+  base::Base64Encode(serialized, &hashed);
+  // If successful, swap the header value with the new one.
+  // Note that the list of IDs and the header could be temporarily out of sync
+  // if IDs are added as the header is recreated. The receiving servers are OK
+  // with such discrepancies.
+  variation_ids_header_ = hashed;
 }
 
 // static
@@ -156,7 +179,7 @@ bool VariationsHttpHeaderProvider::ShouldAppendHeaders(const GURL& url) {
   }
 
   // The below mirrors logic in IsGoogleDomainUrl(), but for youtube.<TLD>.
-  if (!url.is_valid() || !(url.SchemeIs("http") || url.SchemeIs("https")))
+  if (!url.is_valid() || !url.SchemeIsHTTPOrHTTPS())
     return false;
 
   const std::string host = url.host();

@@ -14,7 +14,7 @@
 #include "chrome/browser/extensions/api/sync_file_system/extension_sync_event_observer_factory.h"
 #include "chrome/browser/extensions/api/sync_file_system/sync_file_system_api_helpers.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/sync_file_system/drive_backend/drive_file_sync_service.h"
+#include "chrome/browser/sync_file_system/drive_backend_v1/drive_file_sync_service.h"
 #include "chrome/browser/sync_file_system/sync_file_status.h"
 #include "chrome/browser/sync_file_system/sync_file_system_service.h"
 #include "chrome/browser/sync_file_system/sync_file_system_service_factory.h"
@@ -41,8 +41,7 @@ namespace extensions {
 namespace {
 
 // Error messages.
-const char kFileError[] = "File error %d.";
-const char kQuotaError[] = "Quota error %d.";
+const char kErrorMessage[] = "%s (error code: %d).";
 const char kUnsupportedConflictResolutionPolicy[] =
     "Policy %s is not supported.";
 
@@ -58,6 +57,13 @@ sync_file_system::SyncFileSystemService* GetSyncFileSystemService(
   return service;
 }
 
+std::string ErrorToString(SyncStatusCode code) {
+  return base::StringPrintf(
+      kErrorMessage,
+      sync_file_system::SyncStatusCodeToString(code),
+      static_cast<int>(code));
+}
+
 }  // namespace
 
 bool SyncFileSystemDeleteFileSystemFunction::RunImpl() {
@@ -65,9 +71,9 @@ bool SyncFileSystemDeleteFileSystemFunction::RunImpl() {
   EXTENSION_FUNCTION_VALIDATE(args_->GetString(0, &url));
 
   scoped_refptr<fileapi::FileSystemContext> file_system_context =
-      BrowserContext::GetStoragePartition(
-          profile(),
-          render_view_host()->GetSiteInstance())->GetFileSystemContext();
+      BrowserContext::GetStoragePartition(GetProfile(),
+                                          render_view_host()->GetSiteInstance())
+          ->GetFileSystemContext();
   fileapi::FileSystemURL file_system_url(
       file_system_context->CrackURL(GURL(url)));
 
@@ -98,48 +104,25 @@ void SyncFileSystemDeleteFileSystemFunction::DidDeleteFileSystem(
 
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   if (error != base::PLATFORM_FILE_OK) {
-    error_ = base::StringPrintf(kFileError, static_cast<int>(error));
-    SetResult(base::Value::CreateBooleanValue(false));
+    error_ = ErrorToString(
+        sync_file_system::PlatformFileErrorToSyncStatusCode(error));
+    SetResult(new base::FundamentalValue(false));
     SendResponse(false);
     return;
   }
 
-  SetResult(base::Value::CreateBooleanValue(true));
+  SetResult(new base::FundamentalValue(true));
   SendResponse(true);
 }
 
 bool SyncFileSystemRequestFileSystemFunction::RunImpl() {
+  // SyncFileSystem initialization is done in OpenFileSystem below, but we call
+  // GetSyncFileSystemService here too to initialize sync event observer for
+  // extensions API.
+  GetSyncFileSystemService(GetProfile());
+
   // Initializes sync context for this extension and continue to open
   // a new file system.
-  GetSyncFileSystemService(profile())->
-      InitializeForApp(
-          GetFileSystemContext(),
-          source_url().GetOrigin(),
-          base::Bind(&self::DidInitializeFileSystemContext, this));
-  return true;
-}
-
-fileapi::FileSystemContext*
-SyncFileSystemRequestFileSystemFunction::GetFileSystemContext() {
-  DCHECK(render_view_host());
-  return BrowserContext::GetStoragePartition(
-      profile(),
-      render_view_host()->GetSiteInstance())->GetFileSystemContext();
-}
-
-void SyncFileSystemRequestFileSystemFunction::DidInitializeFileSystemContext(
-    SyncStatusCode status) {
-  if (status != sync_file_system::SYNC_STATUS_OK) {
-    error_ = sync_file_system::SyncStatusCodeToString(status);
-    SendResponse(false);
-    return;
-  }
-
-  if (!render_view_host()) {
-    // The app seems to have been closed.
-    return;
-  }
-
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
       Bind(&fileapi::FileSystemContext::OpenFileSystem,
@@ -148,25 +131,35 @@ void SyncFileSystemRequestFileSystemFunction::DidInitializeFileSystemContext(
            fileapi::kFileSystemTypeSyncable,
            fileapi::OPEN_FILE_SYSTEM_CREATE_IF_NONEXISTENT,
            base::Bind(&self::DidOpenFileSystem, this)));
+  return true;
+}
+
+fileapi::FileSystemContext*
+SyncFileSystemRequestFileSystemFunction::GetFileSystemContext() {
+  DCHECK(render_view_host());
+  return BrowserContext::GetStoragePartition(
+      GetProfile(), render_view_host()->GetSiteInstance())
+      ->GetFileSystemContext();
 }
 
 void SyncFileSystemRequestFileSystemFunction::DidOpenFileSystem(
-    base::PlatformFileError error,
+    const GURL& root_url,
     const std::string& file_system_name,
-    const GURL& root_url) {
+    base::PlatformFileError error) {
   // Repost to switch from IO thread to UI thread for SendResponse().
   if (!BrowserThread::CurrentlyOn(BrowserThread::UI)) {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
     BrowserThread::PostTask(
         BrowserThread::UI, FROM_HERE,
         Bind(&SyncFileSystemRequestFileSystemFunction::DidOpenFileSystem,
-             this, error, file_system_name, root_url));
+             this, root_url, file_system_name, error));
     return;
   }
 
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   if (error != base::PLATFORM_FILE_OK) {
-    error_ = base::StringPrintf(kFileError, static_cast<int>(error));
+    error_ = ErrorToString(
+        sync_file_system::PlatformFileErrorToSyncStatusCode(error));
     SendResponse(false);
     return;
   }
@@ -183,16 +176,15 @@ bool SyncFileSystemGetFileStatusFunction::RunImpl() {
   EXTENSION_FUNCTION_VALIDATE(args_->GetString(0, &url));
 
   scoped_refptr<fileapi::FileSystemContext> file_system_context =
-      BrowserContext::GetStoragePartition(
-          profile(),
-          render_view_host()->GetSiteInstance())->GetFileSystemContext();
+      BrowserContext::GetStoragePartition(GetProfile(),
+                                          render_view_host()->GetSiteInstance())
+          ->GetFileSystemContext();
   fileapi::FileSystemURL file_system_url(
       file_system_context->CrackURL(GURL(url)));
 
-  SyncFileSystemServiceFactory::GetForProfile(profile())->GetFileSyncStatus(
+  GetSyncFileSystemService(GetProfile())->GetFileSyncStatus(
       file_system_url,
-      Bind(&SyncFileSystemGetFileStatusFunction::DidGetFileStatus,
-           this));
+      Bind(&SyncFileSystemGetFileStatusFunction::DidGetFileStatus, this));
   return true;
 }
 
@@ -201,7 +193,7 @@ void SyncFileSystemGetFileStatusFunction::DidGetFileStatus(
     const SyncFileStatus sync_file_status) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   if (sync_status_code != sync_file_system::SYNC_STATUS_OK) {
-    error_ = sync_file_system::SyncStatusCodeToString(sync_status_code);
+    error_ = ErrorToString(sync_status_code);
     SendResponse(false);
     return;
   }
@@ -224,9 +216,9 @@ bool SyncFileSystemGetFileStatusesFunction::RunImpl() {
   EXTENSION_FUNCTION_VALIDATE(args_->GetList(0, &file_entry_urls));
 
   scoped_refptr<fileapi::FileSystemContext> file_system_context =
-      BrowserContext::GetStoragePartition(
-          profile(),
-          render_view_host()->GetSiteInstance())->GetFileSystemContext();
+      BrowserContext::GetStoragePartition(GetProfile(),
+                                          render_view_host()->GetSiteInstance())
+          ->GetFileSystemContext();
 
   // Map each file path->SyncFileStatus in the callback map.
   // TODO(calvinlo): Overload GetFileSyncStatus to take in URL array.
@@ -234,7 +226,7 @@ bool SyncFileSystemGetFileStatusesFunction::RunImpl() {
   num_results_received_ = 0;
   file_sync_statuses_.clear();
   sync_file_system::SyncFileSystemService* sync_file_system_service =
-      SyncFileSystemServiceFactory::GetForProfile(profile());
+      GetSyncFileSystemService(GetProfile());
   for (unsigned int i = 0; i < num_expected_results_; i++) {
     std::string url;
     file_entry_urls->GetString(i, &url);
@@ -288,8 +280,7 @@ void SyncFileSystemGetFileStatusesFunction::DidGetFileStatus(
 
     if (file_error == sync_file_system::SYNC_STATUS_OK)
       continue;
-    dict->SetString("error",
-                    sync_file_system::SyncStatusCodeToString(file_error));
+    dict->SetString("error", ErrorToString(file_error));
   }
   SetResult(status_array);
 
@@ -301,16 +292,16 @@ bool SyncFileSystemGetUsageAndQuotaFunction::RunImpl() {
   EXTENSION_FUNCTION_VALIDATE(args_->GetString(0, &url));
 
   scoped_refptr<fileapi::FileSystemContext> file_system_context =
-      BrowserContext::GetStoragePartition(
-          profile(),
-          render_view_host()->GetSiteInstance())->GetFileSystemContext();
+      BrowserContext::GetStoragePartition(GetProfile(),
+                                          render_view_host()->GetSiteInstance())
+          ->GetFileSystemContext();
   fileapi::FileSystemURL file_system_url(
       file_system_context->CrackURL(GURL(url)));
 
   scoped_refptr<quota::QuotaManager> quota_manager =
-      BrowserContext::GetStoragePartition(
-          profile(),
-          render_view_host()->GetSiteInstance())->GetQuotaManager();
+      BrowserContext::GetStoragePartition(GetProfile(),
+                                          render_view_host()->GetSiteInstance())
+          ->GetQuotaManager();
 
   BrowserThread::PostTask(
       BrowserThread::IO,
@@ -362,26 +353,34 @@ bool SyncFileSystemSetConflictResolutionPolicyFunction::RunImpl() {
                                 policy_string.c_str()));
     return false;
   }
-  sync_file_system::SyncFileSystemService* service = GetSyncFileSystemService(
-      profile());
+  sync_file_system::SyncFileSystemService* service =
+      GetSyncFileSystemService(GetProfile());
   DCHECK(service);
   SyncStatusCode status = service->SetConflictResolutionPolicy(policy);
   if (status != sync_file_system::SYNC_STATUS_OK) {
-    SetError(sync_file_system::SyncStatusCodeToString(status));
+    SetError(ErrorToString(status));
     return false;
   }
   return true;
 }
 
 bool SyncFileSystemGetConflictResolutionPolicyFunction::RunImpl() {
-  sync_file_system::SyncFileSystemService* service = GetSyncFileSystemService(
-      profile());
+  sync_file_system::SyncFileSystemService* service =
+      GetSyncFileSystemService(GetProfile());
   DCHECK(service);
   api::sync_file_system::ConflictResolutionPolicy policy =
       ConflictResolutionPolicyToExtensionEnum(
           service->GetConflictResolutionPolicy());
-  SetResult(Value::CreateStringValue(
+  SetResult(new base::StringValue(
           api::sync_file_system::ToString(policy)));
+  return true;
+}
+
+bool SyncFileSystemGetServiceStatusFunction::RunImpl() {
+  sync_file_system::SyncFileSystemService* service =
+      GetSyncFileSystemService(GetProfile());
+  results_ = api::sync_file_system::GetServiceStatus::Results::Create(
+      SyncServiceStateToExtensionEnum(service->GetSyncServiceState()));
   return true;
 }
 

@@ -10,8 +10,8 @@ class BMPImageDecoderTest : public ImageDecoderTest {
   BMPImageDecoderTest() : ImageDecoderTest("bmp") { }
 
  protected:
-  virtual WebKit::WebImageDecoder* CreateWebKitImageDecoder() const OVERRIDE {
-    return new WebKit::WebImageDecoder(WebKit::WebImageDecoder::TypeBMP);
+  virtual blink::WebImageDecoder* CreateWebKitImageDecoder() const OVERRIDE {
+    return new blink::WebImageDecoder(blink::WebImageDecoder::TypeBMP);
   }
 
   // The BMPImageDecoderTest tests are really slow under Valgrind.
@@ -25,6 +25,12 @@ TEST_F(BMPImageDecoderTest, DecodingFast) {
   TestDecoding(TEST_SMALLER, kThresholdSize);
 }
 
-TEST_F(BMPImageDecoderTest, DecodingSlow) {
+#if defined(THREAD_SANITIZER)
+// BMPImageDecoderTest.DecodingSlow als times out under ThreadSanitizer v2.
+#define MAYBE_DecodingSlow DISABLED_DecodingSlow
+#else
+#define MAYBE_DecodingSlow DecodingSlow
+#endif
+TEST_F(BMPImageDecoderTest, MAYBE_DecodingSlow) {
   TestDecoding(TEST_BIGGER, kThresholdSize);
 }

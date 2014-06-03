@@ -9,14 +9,14 @@
 #include "base/strings/stringprintf.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/extensions/command.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_file_util.h"
 #include "chrome/common/extensions/extension_test_util.h"
-#include "chrome/common/extensions/manifest.h"
 #include "chrome/common/extensions/manifest_handlers/content_scripts_handler.h"
-#include "chrome/common/extensions/permissions/permissions_data.h"
 #include "chrome/common/url_constants.h"
+#include "extensions/common/extension.h"
 #include "extensions/common/extension_resource.h"
+#include "extensions/common/manifest.h"
+#include "extensions/common/permissions/permissions_data.h"
 #include "net/base/mime_sniffer.h"
 #include "net/dns/mock_host_resolver.h"
 #include "skia/ext/image_operations.h"
@@ -27,6 +27,7 @@
 
 using extension_test_util::LoadManifest;
 using extension_test_util::LoadManifestStrict;
+using base::FilePath;
 
 namespace extensions {
 
@@ -42,6 +43,7 @@ TEST(ExtensionTest, LocationValuesTest) {
   ASSERT_EQ(6, Manifest::EXTERNAL_PREF_DOWNLOAD);
   ASSERT_EQ(7, Manifest::EXTERNAL_POLICY_DOWNLOAD);
   ASSERT_EQ(8, Manifest::COMMAND_LINE);
+  ASSERT_EQ(9, Manifest::EXTERNAL_POLICY);
 }
 
 TEST(ExtensionTest, LocationPriorityTest) {
@@ -99,6 +101,72 @@ TEST(ExtensionTest, GetResourceURLAndPath) {
             extension->GetResourceURL("/test.html").spec());
 }
 
+TEST(ExtensionTest, GetResource) {
+  const FilePath valid_path_test_cases[] = {
+    FilePath(FILE_PATH_LITERAL("manifest.json")),
+    FilePath(FILE_PATH_LITERAL("a/b/c/manifest.json")),
+    FilePath(FILE_PATH_LITERAL("com/manifest.json")),
+    FilePath(FILE_PATH_LITERAL("lpt/manifest.json")),
+  };
+  const FilePath invalid_path_test_cases[] = {
+    // Directory name
+    FilePath(FILE_PATH_LITERAL("src/")),
+    // Contains a drive letter specification.
+    FilePath(FILE_PATH_LITERAL("C:\\manifest.json")),
+    // Use backslash '\\' as separator.
+    FilePath(FILE_PATH_LITERAL("a\\b\\c\\manifest.json")),
+    // Reserved Characters with extension
+    FilePath(FILE_PATH_LITERAL("mani>fest.json")),
+    FilePath(FILE_PATH_LITERAL("mani<fest.json")),
+    FilePath(FILE_PATH_LITERAL("mani*fest.json")),
+    FilePath(FILE_PATH_LITERAL("mani:fest.json")),
+    FilePath(FILE_PATH_LITERAL("mani?fest.json")),
+    FilePath(FILE_PATH_LITERAL("mani|fest.json")),
+    // Reserved Characters without extension
+    FilePath(FILE_PATH_LITERAL("mani>fest")),
+    FilePath(FILE_PATH_LITERAL("mani<fest")),
+    FilePath(FILE_PATH_LITERAL("mani*fest")),
+    FilePath(FILE_PATH_LITERAL("mani:fest")),
+    FilePath(FILE_PATH_LITERAL("mani?fest")),
+    FilePath(FILE_PATH_LITERAL("mani|fest")),
+    // Reserved Names with extension.
+    FilePath(FILE_PATH_LITERAL("com1.json")),
+    FilePath(FILE_PATH_LITERAL("com9.json")),
+    FilePath(FILE_PATH_LITERAL("LPT1.json")),
+    FilePath(FILE_PATH_LITERAL("LPT9.json")),
+    FilePath(FILE_PATH_LITERAL("CON.json")),
+    FilePath(FILE_PATH_LITERAL("PRN.json")),
+    FilePath(FILE_PATH_LITERAL("AUX.json")),
+    FilePath(FILE_PATH_LITERAL("NUL.json")),
+    // Reserved Names without extension.
+    FilePath(FILE_PATH_LITERAL("com1")),
+    FilePath(FILE_PATH_LITERAL("com9")),
+    FilePath(FILE_PATH_LITERAL("LPT1")),
+    FilePath(FILE_PATH_LITERAL("LPT9")),
+    FilePath(FILE_PATH_LITERAL("CON")),
+    FilePath(FILE_PATH_LITERAL("PRN")),
+    FilePath(FILE_PATH_LITERAL("AUX")),
+    FilePath(FILE_PATH_LITERAL("NUL")),
+    // Reserved Names as directory.
+    FilePath(FILE_PATH_LITERAL("com1/manifest.json")),
+    FilePath(FILE_PATH_LITERAL("com9/manifest.json")),
+    FilePath(FILE_PATH_LITERAL("LPT1/manifest.json")),
+    FilePath(FILE_PATH_LITERAL("LPT9/manifest.json")),
+    FilePath(FILE_PATH_LITERAL("CON/manifest.json")),
+    FilePath(FILE_PATH_LITERAL("PRN/manifest.json")),
+    FilePath(FILE_PATH_LITERAL("AUX/manifest.json")),
+    FilePath(FILE_PATH_LITERAL("NUL/manifest.json")),
+  };
+
+  scoped_refptr<Extension> extension = LoadManifestStrict("empty_manifest",
+      "empty.json");
+  EXPECT_TRUE(extension.get());
+  for (size_t i = 0; i < arraysize(valid_path_test_cases); ++i)
+    EXPECT_TRUE(!extension->GetResource(valid_path_test_cases[i]).empty());
+  for (size_t i = 0; i < arraysize(invalid_path_test_cases); ++i)
+    EXPECT_TRUE(extension->GetResource(invalid_path_test_cases[i]).empty());
+}
+
 TEST(ExtensionTest, GetAbsolutePathNoError) {
   scoped_refptr<Extension> extension = LoadManifestStrict("absolute_path",
       "absolute.json");
@@ -137,7 +205,7 @@ TEST(ExtensionTest, MimeTypeSniffing) {
   path = path.AppendASCII("extensions").AppendASCII("good.crx");
 
   std::string data;
-  ASSERT_TRUE(file_util::ReadFileToString(path, &data));
+  ASSERT_TRUE(base::ReadFileToString(path, &data));
 
   std::string result;
   EXPECT_TRUE(net::SniffMimeType(data.c_str(),
@@ -150,7 +218,7 @@ TEST(ExtensionTest, MimeTypeSniffing) {
   data.clear();
   result.clear();
   path = path.DirName().AppendASCII("bad_magic.crx");
-  ASSERT_TRUE(file_util::ReadFileToString(path, &data));
+  ASSERT_TRUE(base::ReadFileToString(path, &data));
   EXPECT_TRUE(net::SniffMimeType(data.c_str(),
                                  data.size(),
                                  GURL("http://www.example.com/foo.crx"),

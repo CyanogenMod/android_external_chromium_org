@@ -13,15 +13,14 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/threading/sequenced_worker_pool.h"
-#include "chrome/browser/policy/cloud/cloud_policy_constants.h"
-#include "chrome/browser/policy/cloud/mock_cloud_policy_store.h"
-#include "chrome/browser/policy/cloud/policy_builder.h"
-#include "chrome/browser/policy/proto/cloud/device_management_local.pb.h"
 #include "chromeos/dbus/mock_cryptohome_client.h"
 #include "chromeos/dbus/mock_session_manager_client.h"
-#include "content/public/test/test_browser_thread.h"
+#include "components/policy/core/common/cloud/cloud_policy_constants.h"
+#include "components/policy/core/common/cloud/mock_cloud_policy_store.h"
+#include "components/policy/core/common/cloud/policy_builder.h"
 #include "policy/policy_constants.h"
 #include "policy/proto/cloud_policy.pb.h"
+#include "policy/proto/device_management_local.pb.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -53,9 +52,7 @@ ACTION_P2(SendSanitizedUsername, call_status, sanitized_username) {
 class UserCloudPolicyStoreChromeOSTest : public testing::Test {
  protected:
   UserCloudPolicyStoreChromeOSTest()
-      : loop_(base::MessageLoop::TYPE_UI),
-        ui_thread_(content::BrowserThread::UI, &loop_),
-        file_thread_(content::BrowserThread::FILE, &loop_) {}
+      : loop_(base::MessageLoop::TYPE_UI) {}
 
   virtual void SetUp() OVERRIDE {
     EXPECT_CALL(cryptohome_client_,
@@ -68,6 +65,7 @@ class UserCloudPolicyStoreChromeOSTest : public testing::Test {
     ASSERT_TRUE(tmp_dir_.CreateUniqueTempDir());
     store_.reset(new UserCloudPolicyStoreChromeOS(&cryptohome_client_,
                                                   &session_manager_client_,
+                                                  loop_.message_loop_proxy(),
                                                   PolicyBuilder::kFakeUsername,
                                                   user_policy_dir(),
                                                   token_file(),
@@ -127,7 +125,7 @@ class UserCloudPolicyStoreChromeOSTest : public testing::Test {
   }
 
   void StoreUserPolicyKey(const std::vector<uint8>& public_key) {
-    ASSERT_TRUE(file_util::CreateDirectory(user_policy_key_file().DirName()));
+    ASSERT_TRUE(base::CreateDirectory(user_policy_key_file().DirName()));
     ASSERT_TRUE(
         file_util::WriteFile(user_policy_key_file(),
                              reinterpret_cast<const char*>(public_key.data()),
@@ -202,7 +200,6 @@ class UserCloudPolicyStoreChromeOSTest : public testing::Test {
 
   void RunUntilIdle() {
     loop_.RunUntilIdle();
-    content::BrowserThread::GetBlockingPool()->FlushForTesting();
     loop_.RunUntilIdle();
   }
 
@@ -231,8 +228,6 @@ class UserCloudPolicyStoreChromeOSTest : public testing::Test {
   scoped_ptr<UserCloudPolicyStoreChromeOS> store_;
 
  private:
-  content::TestBrowserThread ui_thread_;
-  content::TestBrowserThread file_thread_;
   base::ScopedTempDir tmp_dir_;
 
   DISALLOW_COPY_AND_ASSIGN(UserCloudPolicyStoreChromeOSTest);

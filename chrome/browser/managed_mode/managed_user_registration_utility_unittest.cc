@@ -4,6 +4,7 @@
 
 #include "base/bind.h"
 #include "base/message_loop/message_loop.h"
+#include "base/prefs/scoped_user_pref_update.h"
 #include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/sequenced_worker_pool.h"
@@ -11,7 +12,6 @@
 #include "chrome/browser/managed_mode/managed_user_registration_utility.h"
 #include "chrome/browser/managed_mode/managed_user_sync_service.h"
 #include "chrome/browser/managed_mode/managed_user_sync_service_factory.h"
-#include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_pref_service_syncable.h"
 #include "chrome/test/base/testing_profile.h"
@@ -46,6 +46,11 @@ class MockChangeProcessor : public SyncChangeProcessor {
   virtual SyncError ProcessSyncChanges(
       const tracked_objects::Location& from_here,
       const SyncChangeList& change_list) OVERRIDE;
+
+  virtual SyncDataList GetAllSyncData(syncer::ModelType type) const
+      OVERRIDE {
+    return SyncDataList();
+  }
 
   const SyncChangeList& changes() const { return change_list_; }
 
@@ -94,6 +99,8 @@ class ManagedUserRegistrationUtilityTest : public ::testing::Test {
   ManagedUserRegistrationUtility::RegistrationCallback
       GetRegistrationCallback();
 
+  ManagedUserRegistrationUtility* GetRegistrationUtility();
+
   void Acknowledge();
 
   PrefService* prefs() { return profile_.GetTestingPrefService(); }
@@ -110,9 +117,9 @@ class ManagedUserRegistrationUtilityTest : public ::testing::Test {
 
   base::MessageLoop message_loop_;
   base::RunLoop run_loop_;
-  base::WeakPtrFactory<ManagedUserRegistrationUtilityTest> weak_ptr_factory_;
   TestingProfile profile_;
   ManagedUserSyncService* service_;
+  scoped_ptr<ManagedUserRegistrationUtility> registration_utility_;
 
   // Owned by the ManagedUserSyncService.
   MockChangeProcessor* change_processor_;
@@ -126,14 +133,16 @@ class ManagedUserRegistrationUtilityTest : public ::testing::Test {
   // Hold the registration result (either an error, or a token).
   GoogleServiceAuthError error_;
   std::string token_;
+
+  base::WeakPtrFactory<ManagedUserRegistrationUtilityTest> weak_ptr_factory_;
 };
 
 ManagedUserRegistrationUtilityTest::ManagedUserRegistrationUtilityTest()
-    : weak_ptr_factory_(this),
-      change_processor_(NULL),
+    : change_processor_(NULL),
       sync_data_id_(0),
       received_callback_(false),
-      error_(GoogleServiceAuthError::NUM_STATES) {
+      error_(GoogleServiceAuthError::NUM_STATES),
+      weak_ptr_factory_(this) {
   service_ = ManagedUserSyncServiceFactory::GetForProfile(&profile_);
 }
 
@@ -176,6 +185,20 @@ ManagedUserRegistrationUtilityTest::GetRegistrationCallback() {
       weak_ptr_factory_.GetWeakPtr());
 }
 
+ManagedUserRegistrationUtility*
+ManagedUserRegistrationUtilityTest::GetRegistrationUtility() {
+  if (registration_utility_.get())
+    return registration_utility_.get();
+
+  scoped_ptr<ManagedUserRefreshTokenFetcher> token_fetcher(
+      new MockManagedUserRefreshTokenFetcher);
+  registration_utility_.reset(
+      ManagedUserRegistrationUtility::CreateImpl(prefs(),
+                                                 token_fetcher.Pass(),
+                                                 service()));
+  return registration_utility_.get();
+}
+
 void ManagedUserRegistrationUtilityTest::Acknowledge() {
   SyncChangeList new_changes;
   const SyncChangeList& changes = change_processor()->changes();
@@ -207,14 +230,9 @@ void ManagedUserRegistrationUtilityTest::OnManagedUserRegistered(
 
 TEST_F(ManagedUserRegistrationUtilityTest, Register) {
   StartInitialSync();
-  scoped_ptr<ManagedUserRefreshTokenFetcher> token_fetcher(
-      new MockManagedUserRefreshTokenFetcher);
-  ManagedUserRegistrationUtility registration_utility(prefs(),
-                                                      token_fetcher.Pass(),
-                                                      service());
-  registration_utility.Register(
+  GetRegistrationUtility()->Register(
       ManagedUserRegistrationUtility::GenerateNewManagedUserId(),
-      ManagedUserRegistrationInfo(ASCIIToUTF16("Dug")),
+      ManagedUserRegistrationInfo(ASCIIToUTF16("Dug"), 0),
       GetRegistrationCallback());
   EXPECT_EQ(1u, prefs()->GetDictionary(prefs::kManagedUsers)->size());
   Acknowledge();
@@ -225,14 +243,9 @@ TEST_F(ManagedUserRegistrationUtilityTest, Register) {
 }
 
 TEST_F(ManagedUserRegistrationUtilityTest, RegisterBeforeInitialSync) {
-  scoped_ptr<ManagedUserRefreshTokenFetcher> token_fetcher(
-      new MockManagedUserRefreshTokenFetcher);
-  ManagedUserRegistrationUtility registration_utility(prefs(),
-                                                      token_fetcher.Pass(),
-                                                      service());
-  registration_utility.Register(
+  GetRegistrationUtility()->Register(
       ManagedUserRegistrationUtility::GenerateNewManagedUserId(),
-      ManagedUserRegistrationInfo(ASCIIToUTF16("Nemo")),
+      ManagedUserRegistrationInfo(ASCIIToUTF16("Nemo"), 5),
       GetRegistrationCallback());
   EXPECT_EQ(1u, prefs()->GetDictionary(prefs::kManagedUsers)->size());
   StartInitialSync();
@@ -245,14 +258,9 @@ TEST_F(ManagedUserRegistrationUtilityTest, RegisterBeforeInitialSync) {
 
 TEST_F(ManagedUserRegistrationUtilityTest, SyncServiceShutdownBeforeRegFinish) {
   StartInitialSync();
-  scoped_ptr<ManagedUserRefreshTokenFetcher> token_fetcher(
-      new MockManagedUserRefreshTokenFetcher);
-  ManagedUserRegistrationUtility registration_utility(prefs(),
-                                                      token_fetcher.Pass(),
-                                                      service());
-  registration_utility.Register(
+  GetRegistrationUtility()->Register(
       ManagedUserRegistrationUtility::GenerateNewManagedUserId(),
-      ManagedUserRegistrationInfo(ASCIIToUTF16("Remy")),
+      ManagedUserRegistrationInfo(ASCIIToUTF16("Remy"), 12),
       GetRegistrationCallback());
   EXPECT_EQ(1u, prefs()->GetDictionary(prefs::kManagedUsers)->size());
   service()->Shutdown();
@@ -264,14 +272,9 @@ TEST_F(ManagedUserRegistrationUtilityTest, SyncServiceShutdownBeforeRegFinish) {
 
 TEST_F(ManagedUserRegistrationUtilityTest, StopSyncingBeforeRegFinish) {
   StartInitialSync();
-  scoped_ptr<ManagedUserRefreshTokenFetcher> token_fetcher(
-      new MockManagedUserRefreshTokenFetcher);
-  ManagedUserRegistrationUtility registration_utility(prefs(),
-                                                      token_fetcher.Pass(),
-                                                      service());
-  registration_utility.Register(
+  GetRegistrationUtility()->Register(
       ManagedUserRegistrationUtility::GenerateNewManagedUserId(),
-      ManagedUserRegistrationInfo(ASCIIToUTF16("Mike")),
+      ManagedUserRegistrationInfo(ASCIIToUTF16("Mike"), 17),
       GetRegistrationCallback());
   EXPECT_EQ(1u, prefs()->GetDictionary(prefs::kManagedUsers)->size());
   service()->StopSyncing(MANAGED_USERS);

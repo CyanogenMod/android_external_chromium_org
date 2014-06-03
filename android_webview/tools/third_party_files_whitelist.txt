@@ -35,17 +35,13 @@ chrome/browser/importer/firefox_profile_lock_win.cc
 # Credits notice for ChromeOS.
 chrome/browser/resources/chromeos/about_os_credits.html
 # String 'copyright' used in code.
-chrome/browser/resources/file_manager/js/action_choice_scripts.js
+chrome/browser/resources/file_manager/foreground/js/photo/gallery_scripts.js
 # String 'copyright' used in code.
-chrome/browser/resources/file_manager/js/photo/gallery_scripts.js
+chrome/browser/resources/file_manager/foreground/js/main_scripts.js
 # String 'copyright' used in code.
-chrome/browser/resources/file_manager/js/main_scripts.js
+chrome/browser/resources/file_manager/foreground/js/media/mediaplayer_scripts.js
 # String 'copyright' used in code.
-chrome/browser/resources/file_manager/js/media/mediaplayer_scripts.js
-# String 'copyright' used in code.
-chrome/browser/resources/file_manager/js/media/video_player_scripts.js
-# String 'copyright' used in code.
-chrome/browser/resources/file_manager/js/photo/photo_import_scripts.js
+chrome/browser/resources/file_manager/foreground/js/media/video_player_scripts.js
 # String 'copyright' used in code.
 chrome/common/importer/firefox_importer_utils.cc
 # Copyright Netscape Communications Corporation; MPL, GPL v2 or LGPL v2
@@ -73,10 +69,6 @@ chrome_frame/CFInstance.js
 chrome/tools/test/generate_mime_tests.pl
 # Copyright Alf Watt; BSD license. Not used on Android.
 content/browser/geolocation/osx_wifi.h
-# Copyright The Chromium Authors and Apple Inc. Taken from Blink.
-content/browser/indexed_db/leveldb/avltree.h
-# Copyright The Chromium Authors and Apple Inc. Taken from Blink.
-content/browser/indexed_db/leveldb/fixed_array.h
 # Copyright The Chromium Authors, Apple Inc and Graham Dennis; BSD license. Not
 # used on Android.
 content/browser/renderer_host/render_widget_host_view_mac.mm
@@ -110,8 +102,6 @@ net/base/registry_controlled_domains/registry_controlled_domain.cc
 # v2) licenses. This third-party code is taken from Mozilla, the license for
 # which we already pick up from third_party/npapi/.
 net/base/registry_controlled_domains/registry_controlled_domain.h
-# Copyright John LoVerso; no license. Test code only.
-net/data/proxy_resolver_perftest/no-ads.pac
 # Copyright The Chromium Authors and IBM Corporation; BSD and (MPL, GPL v2 or
 # LGPL v2) licenses. This third-party code is taken from Mozilla, the license
 # for which we already pick up from third_party/npapi/.
@@ -143,6 +133,14 @@ net/proxy/proxy_resolver_script.h
 # Copyright The Chromium Authors and Netscape Communications Corporation; BSD
 # and (MPL, GPL v2 or LGPL v2) licenses. Not used on Android.
 net/socket/ssl_client_socket_nss.cc
+# Contains the word 'Copyright' in comments
+ppapi/generators/idl_c_proto.py
+ppapi/generators/idl_outfile.py
+# Copyright (c) 2007-2009 The Khronos Group Inc.  Not used on Android
+ppapi/lib/gl/include/EGL/egl.h
+ppapi/lib/gl/include/EGL/eglext.h
+ppapi/lib/gl/include/EGL/eglplatform.h
+ppapi/lib/gl/include/KHR/khrplatform.h
 # Copyright The Android Open Source Project; ASL v2 license.
 skia/config/SkUserConfig.h
 # Contains word 'copyright' in comments.
@@ -163,24 +161,20 @@ ui/base/clipboard/clipboard_util_win.cc
 ui/base/dragdrop/os_exchange_data_provider_win.cc
 # Copyright The Chromium Authors, Apple Inc, Michael Emmel, Holger Hans Peter
 # Freyther, Collabora Ltd, Google Inc; BSD license. Not used on Android.
-ui/base/keycodes/keyboard_code_conversion_gtk.cc
+ui/events/keycodes/keyboard_code_conversion_gtk.cc
 # Copyright The Chromium Authors, Apple Inc, Michael Emmel, Holger Hans Peter
 # Freyther, Collabora Ltd, Google Inc; BSD license. Not used on Android.
-ui/base/keycodes/keyboard_code_conversion_gtk.h
+ui/events/keycodes/keyboard_code_conversion_gtk.h
 # Copyright The Chromium Authors, Michael Emmel, Google Inc; BSD license. This
 # third-party code is taken from WebKit, the license for which we already pick
 # up from webkit/.
-ui/base/keycodes/keyboard_codes_posix.h
+ui/events/keycodes/keyboard_codes_posix.h
 # This third-party code is taken from Mozilla, but is copyright Google and has
 # been re-licensed under the Chromium license.
 ui/gfx/codec/jpeg_codec.cc
 # This third-party code is taken from Mozilla, but is copyright Google and has
 # been re-licensed under the Chromium license.
 ui/gfx/codec/png_codec.cc
-# Copyright Netscape Communications Corporation; MPL, GPL v2 or LGPL v2
-# license. This third-party code is taken from Mozilla, the license for which
-# we already pick up from third_party/npapi/.
-url/url_parse.cc
 # Copyright The Chromium Authors and Apple Inc; BSD license. This third-party
 # code is taken from WebKit, the license for which we already pick up from
 # webkit/.
@@ -196,7 +190,3 @@ webkit/child/multipart_response_delegate.h
 # Copyright Tim Copperfield and Christian Dywan; LGPL license. Not used on
 # Android.
 webkit/common/cursors/webcursor_gtk_data.h
-# Copyright Apple, Inc, Graham Dennis and Eric Seidel; BSD license. Tool only
-webkit/support/mac/DumpRenderTreePasteboard.h
-# Copyright Apple, Inc, Graham Dennis and Eric Seidel; BSD license. Tool only
-webkit/support/mac/DumpRenderTreePasteboard.m

@@ -16,6 +16,7 @@
 #include "net/http/http_status_code.h"
 #include "sync/engine/net/url_translator.h"
 #include "sync/engine/syncer.h"
+#include "sync/internal_api/public/base/cancelation_signal.h"
 #include "sync/protocol/sync.pb.h"
 #include "sync/syncable/directory.h"
 #include "url/gurl.h"
@@ -177,18 +178,29 @@ ServerConnectionManager::ServerConnectionManager(
     const string& server,
     int port,
     bool use_ssl,
-    bool use_oauth2_token)
+    CancelationSignal* cancelation_signal)
     : sync_server_(server),
       sync_server_port_(port),
       use_ssl_(use_ssl),
-      use_oauth2_token_(use_oauth2_token),
       proto_sync_path_(kSyncServerSyncPath),
       server_status_(HttpResponse::NONE),
       terminated_(false),
-      active_connection_(NULL) {
+      active_connection_(NULL),
+      cancelation_signal_(cancelation_signal),
+      signal_handler_registered_(false) {
+  signal_handler_registered_ = cancelation_signal_->TryRegisterHandler(this);
+  if (!signal_handler_registered_) {
+    // Calling a virtual function from a constructor.  We can get away with it
+    // here because ServerConnectionManager::OnSignalReceived() is the function
+    // we want to call.
+    OnSignalReceived();
+  }
 }
 
 ServerConnectionManager::~ServerConnectionManager() {
+  if (signal_handler_registered_) {
+    cancelation_signal_->UnregisterHandler(this);
+  }
 }
 
 ServerConnectionManager::Connection*
@@ -221,6 +233,14 @@ bool ServerConnectionManager::SetAuthToken(const std::string& auth_token) {
     previously_invalidated_token = std::string();
     return true;
   }
+
+  // This could happen in case like server outage/bug. E.g. token returned by
+  // first request is considered invalid by sync server and because
+  // of token server's caching policy, etc, same token is returned on second
+  // request. Need to notify sync frontend again to request new token,
+  // otherwise backend will stay in SYNC_AUTH_ERROR state while frontend thinks
+  // everything is fine and takes no actions.
+  SetServerStatus(HttpResponse::SYNC_AUTH_ERROR);
   return false;
 }
 
@@ -240,8 +260,12 @@ void ServerConnectionManager::InvalidateAndClearAuthToken() {
 
 void ServerConnectionManager::SetServerStatus(
     HttpResponse::ServerConnectionCode server_status) {
-  if (server_status_ == server_status)
+  // SYNC_AUTH_ERROR is permanent error. Need to notify observer to take
+  // action externally to resolve.
+  if (server_status != HttpResponse::SYNC_AUTH_ERROR &&
+      server_status_ == server_status) {
     return;
+  }
   server_status_ = server_status;
   NotifyStatusChanged();
 }
@@ -273,6 +297,8 @@ bool ServerConnectionManager::PostBufferToPath(PostBufferParams* params,
   // to clean it.
   if (auth_token.empty() || auth_token == "credentials_lost") {
     params->response.server_status = HttpResponse::SYNC_AUTH_ERROR;
+    // Print a log to distinguish this "known failure" from others.
+    LOG(WARNING) << "ServerConnectionManager forcing SYNC_AUTH_ERROR";
     return false;
   }
 
@@ -348,7 +374,7 @@ ServerConnectionManager::Connection* ServerConnectionManager::MakeConnection()
   return NULL;  // For testing.
 }
 
-void ServerConnectionManager::TerminateAllIO() {
+void ServerConnectionManager::OnSignalReceived() {
   base::AutoLock lock(terminate_connection_lock_);
   terminated_ = true;
   if (active_connection_)

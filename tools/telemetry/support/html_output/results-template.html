@@ -10,15 +10,67 @@ section {
     position: relative;
 }
 
-.time-plots {
+.collapsed:before {
+    content: '\25B8\00A0';
+}
+
+.expanded:before {
+    content: '\25BE\00A0';
+}
+
+.line-plots {
     padding-left: 25px;
 }
 
-.time-plots > div {
+.line-plots > div {
     display: inline-block;
     width: 90px;
     height: 40px;
     margin-right: 10px;
+}
+
+.lage-line-plots {
+    padding-left: 25px;
+}
+
+.large-line-plots > div, .histogram-plots > div {
+    display: inline-block;
+    width: 400px;
+    height: 200px;
+    margin-right: 10px;
+}
+
+.large-line-plot-labels > div, .histogram-plot-labels > div {
+    display: inline-block;
+    width: 400px;
+    height: 11px;
+    margin-right: 10px;
+    color: #545454;
+    text-align: center;
+    font-size: 11px;
+}
+
+.closeButton {
+    background: #fff;
+    border: 1px solid black;
+    border-radius: 2px;
+    display: inline-block;
+    float: right;
+    line-height: 11px;
+    margin-top: 3px;
+    width: 11px;
+}
+
+.closeButton:hover {
+    background: #F09C9C;
+}
+
+.label {
+    cursor: text;
+}
+
+.label:hover {
+    background: #ffcc66;
 }
 
 section h1 {
@@ -96,6 +148,7 @@ td.worse {
 }
 
 td.missing {
+    color: #aaa;
     text-align: center;
 }
 
@@ -133,7 +186,9 @@ td.missing {
 <div style="padding: 0 10px; white-space: nowrap;">
 Result <span id="time-memory" class="checkbox"><span class="checked">Time</span><span>Memory</span></span>
 Reference <span id="reference" class="checkbox"></span>
-Run Telemetry with --reset-html-results to clear all runs
+Style <span id="scatter-line" class="checkbox"><span class="checked">Scatter</span><span>Line</span></span>
+<span class="checkbox"><span class="checked" id="undelete">Undelete</span></span>
+Run Telemetry with --reset-results to clear all runs
 </div>
 <table id="container"></table>
 <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.6.4/jquery.min.js"></script>
@@ -147,6 +202,27 @@ function TestResult(metric, values, associatedRun) {
         for (var i = 0; i < values.length; i++)
             flattenedValues = flattenedValues.concat(values[i]);
         values = flattenedValues;
+    }
+
+    if (jQuery.type(values[0]) === 'string') {
+        try {
+            var current = JSON.parse(values[0]);
+            if (current.params.type === 'HISTOGRAM') {
+                this.histogramValues = current;
+                // Histogram results have no values (per se). Instead we calculate
+                // the values from the histogram bins.
+                var values = [];
+                var buckets = current.buckets
+                for (var i = 0; i < buckets.length; i++) {
+                    var bucket = buckets[i];
+                    var bucket_mean = (bucket.high + bucket.low) / 2;
+                    for (var b = 0; b < bucket.count; b++) {
+                        values.push(bucket_mean);
+                    }
+                }
+            }
+        }
+        catch (e) { /* ignore, assume not a JSON string */ }
     }
 
     this.test = function () { return metric; }
@@ -169,14 +245,30 @@ function TestResult(metric, values, associatedRun) {
 }
 
 function TestRun(entry) {
-    this.description = function () { return entry['description']; }
+    this.id = function() { return entry['buildTime']; }
     this.revision = function () { return entry['revision']; }
     this.label = function () {
-        var label = 'r' + this.revision();
-        if (this.description())
-            label += ' &dash; ' + this.description();
-        return label;
+        if (labelKey in localStorage)
+            return localStorage[labelKey];
+        if (entry['label'])
+            return entry['label'];
+        return 'r' + this.revision();
     }
+    this.setLabel = function(label) { localStorage[labelKey] = label; }
+    this.isHidden = function() { return localStorage[hiddenKey]; }
+    this.hide = function() { localStorage[hiddenKey] = true; }
+    this.show = function() { localStorage.removeItem(hiddenKey); }
+    this.description = function() {
+        var label = this.label();
+        if (label != 'r' + this.revision())
+            label = ' ' + label;
+        else
+            label = '';
+        return new Date(entry['buildTime']).toLocaleString() + '\n' + entry['platform'] + ' r' + entry['revision'] + label;
+    }
+
+    var labelKey = 'telemetry_label_' + this.id();
+    var hiddenKey = 'telemetry_hide_' + this.id();
 }
 
 function PerfTestMetric(name, metric, unit, isImportant) {
@@ -212,8 +304,8 @@ function PerfTestMetric(name, metric, unit, isImportant) {
                 unit == 'KB' ||
                 unit == 'MB' ||
                 unit == 'bytes' ||
-                !metric.indexOf('V8.') ||
-                metric == 'processes');
+                unit == 'count' ||
+                !metric.indexOf('V8.'));
     }
     this.addResult = function (newResult) {
         testResults.push(newResult);
@@ -243,6 +335,33 @@ function PerfTestMetric(name, metric, unit, isImportant) {
     }
 }
 
+function UndeleteManager() {
+    var key = 'telemetry_undeleteIds'
+    var undeleteIds = localStorage[key];
+    if (undeleteIds) {
+        undeleteIds = JSON.parse(undeleteIds);
+    } else {
+        undeleteIds = [];
+    }
+
+    this.ondelete = function(id) {
+        undeleteIds.push(id);
+        localStorage[key] = JSON.stringify(undeleteIds);
+    }
+    this.undeleteMostRecent = function() {
+        if (!this.mostRecentlyDeletedId())
+            return;
+        undeleteIds.pop();
+        localStorage[key] = JSON.stringify(undeleteIds);
+    }
+    this.mostRecentlyDeletedId = function() {
+        if (!undeleteIds.length)
+            return undefined;
+        return undeleteIds[undeleteIds.length-1];
+    }
+}
+var undeleteManager = new UndeleteManager();
+
 var plotColor = 'rgb(230,50,50)';
 var subpointsPlotOptions = {
     lines: {show:true, lineWidth: 0},
@@ -269,7 +388,7 @@ var mainPlotOptions = {
     }
 };
 
-var timePlotOptions = {
+var linePlotOptions = {
     yaxis: { show: false },
     xaxis: { show: false },
     lines: { show: true },
@@ -277,44 +396,86 @@ var timePlotOptions = {
     colors: [ plotColor ]
 };
 
-function createPlot(container, test) {
-    var section = $('<section><div class="plot"></div><div class="time-plots"></div>'
-        + '<span class="tooltip"></span></section>');
-    section.children('.plot').css({'width': (100 * test.results().length + 25) + 'px', 'height': '300px'});
-    $(container).append(section);
+var largeLinePlotOptions = {
+    xaxis: {
+        show: true,
+        tickDecimals: 0,
+    },
+    lines: { show: true },
+    grid: { borderWidth: 1, borderColor: '#ccc' },
+    colors: [ plotColor ]
+};
 
-    var plotContainer = section.children('.plot');
-    var minIsZero = true;
-    attachPlot(test, plotContainer, minIsZero);
+var histogramPlotOptions = {
+    bars: {show: true, fill: 1}
+};
 
-    attachTimePlots(test, section.children('.time-plots'));
+function createPlot(container, test, useLargeLinePlots) {
+    if (test.results()[0].histogramValues) {
+        var section = $('<section><div class="histogram-plots"></div>'
+            + '<div class="histogram-plot-labels"></div>'
+            + '<span class="tooltip"></span></section>');
+        $(container).append(section);
+        attachHistogramPlots(test, section.children('.histogram-plots'));
+    }
+    else if (useLargeLinePlots) {
+        var section = $('<section><div class="large-line-plots"></div>'
+            + '<div class="large-line-plot-labels"></div>'
+            + '<span class="tooltip"></span></section>');
+        $(container).append(section);
+        attachLinePlots(test, section.children('.large-line-plots'), useLargeLinePlots);
+        attachLinePlotLabels(test, section.children('.large-line-plot-labels'));
+    } else {
+        var section = $('<section><div class="plot"></div><div class="line-plots"></div>'
+            + '<span class="tooltip"></span></section>');
+        section.children('.plot').css({'width': (100 * test.results().length + 25) + 'px', 'height': '300px'});
+        $(container).append(section);
 
-    var tooltip = section.children('.tooltip');
-    plotContainer.bind('plothover', function (event, position, item) {
-        if (item) {
-            var postfix = item.series.id ? ' (' + item.series.id + ')' : '';
-            tooltip.html(item.datapoint[1].toPrecision(4) + postfix);
-            var sectionOffset = $(section).offset();
-            tooltip.css({left: item.pageX - sectionOffset.left - tooltip.outerWidth() / 2, top: item.pageY - sectionOffset.top + 10});
-            tooltip.fadeIn(200);
-        } else
-            tooltip.hide();
-    });
-    plotContainer.mouseout(function () {
-        tooltip.hide();
-    });
-    plotContainer.click(function (event) {
-        event.preventDefault();
-        minIsZero = !minIsZero;
+        var plotContainer = section.children('.plot');
+        var minIsZero = true;
         attachPlot(test, plotContainer, minIsZero);
-    });
 
+        attachLinePlots(test, section.children('.line-plots'), useLargeLinePlots);
+
+        var tooltip = section.children('.tooltip');
+        plotContainer.bind('plothover', function (event, position, item) {
+            if (item) {
+                var postfix = item.series.id ? ' (' + item.series.id + ')' : '';
+                tooltip.html(item.datapoint[1].toPrecision(4) + postfix);
+                var sectionOffset = $(section).offset();
+                tooltip.css({left: item.pageX - sectionOffset.left - tooltip.outerWidth() / 2, top: item.pageY - sectionOffset.top + 10});
+                tooltip.fadeIn(200);
+            } else
+                tooltip.hide();
+        });
+        plotContainer.mouseout(function () {
+            tooltip.hide();
+        });
+        plotContainer.click(function (event) {
+            event.preventDefault();
+            minIsZero = !minIsZero;
+            attachPlot(test, plotContainer, minIsZero);
+        });
+    }
     return section;
 }
 
-function attachTimePlots(test, container) {
+function attachLinePlots(test, container, useLargeLinePlots) {
     var results = test.results();
     var attachedPlot = false;
+
+    if (useLargeLinePlots) {
+        var maximum = 0;
+        for (var i = 0; i < results.length; i++) {
+            var values = results[i].values();
+            if (!values)
+                continue;
+            var local_max = Math.max.apply(Math, values);
+            if (local_max > maximum)
+                maximum = local_max;
+        }
+    }
+
     for (var i = 0; i < results.length; i++) {
         container.append('<div></div>');
         var values = results[i].values();
@@ -322,12 +483,72 @@ function attachTimePlots(test, container) {
             continue;
         attachedPlot = true;
 
-        $.plot(container.children().last(), [values.map(function (value, index) { return [index, value]; })],
-            $.extend(true, {}, timePlotOptions, {yaxis: {min: Math.min.apply(Math, values) * 0.9, max: Math.max.apply(Math, values) * 1.1},
-                xaxis: {min: -0.5, max: values.length - 0.5}}));
+        if (useLargeLinePlots) {
+            var options = $.extend(true, {}, largeLinePlotOptions,
+                               {yaxis: {min: 0.0, max: maximum},
+                                xaxis: {min: 0.0, max: values.length - 1},
+                                points: {show: (values.length < 2) ? true : false}});
+        } else {
+            var options = $.extend(true, {}, linePlotOptions,
+                               {yaxis: {min: Math.min.apply(Math, values) * 0.9, max: Math.max.apply(Math, values) * 1.1},
+                                xaxis: {min: -0.5, max: values.length - 0.5},
+                                points: {show: (values.length < 2) ? true : false}});
+        }
+        $.plot(container.children().last(), [values.map(function (value, index) { return [index, value]; })], options);
     }
     if (!attachedPlot)
         container.children().remove();
+}
+
+function attachHistogramPlots(test, container) {
+    var results = test.results();
+    var attachedPlot = false;
+
+    for (var i = 0; i < results.length; i++) {
+        container.append('<div></div>');
+        var histogram = results[i].histogramValues
+        if (!histogram)
+            continue;
+        attachedPlot = true;
+
+        var buckets = histogram.buckets
+        var bucket;
+        var max_count = 0;
+        for (var j = 0; j < buckets.length; j++) {
+            bucket = buckets[j];
+            max_count = Math.max(max_count, bucket.count);
+        }
+        var xmax = bucket.high * 1.1;
+        var ymax = max_count * 1.1;
+
+        var options = $.extend(true, {}, histogramPlotOptions,
+                           {yaxis: {min: 0.0, max: ymax},
+                            xaxis: {min: histogram.params.min, max: xmax}});
+        var plot = $.plot(container.children().last(), [[]], options);
+        // Flot only supports fixed with bars and our histogram's buckets are
+        // variable width, so we need to do our own bar drawing.
+        var ctx = plot.getCanvas().getContext("2d");
+        ctx.lineWidth="1";
+        ctx.fillStyle = "rgba(255, 0, 0, 0.2)";
+        ctx.strokeStyle="red";
+        for (var j = 0; j < buckets.length; j++) {
+            bucket = buckets[j];
+            var bl = plot.pointOffset({ x: bucket.low, y: 0});
+            var tr = plot.pointOffset({ x: bucket.high, y: bucket.count});
+            ctx.fillRect(bl.left, bl.top, tr.left - bl.left, tr.top - bl.top);
+            ctx.strokeRect(bl.left, bl.top, tr.left - bl.left, tr.top - bl.top);
+        }
+    }
+    if (!attachedPlot)
+        container.children().remove();
+}
+
+function attachLinePlotLabels(test, container) {
+    var results = test.results();
+    var attachedPlot = false;
+    for (var i = 0; i < results.length; i++) {
+        container.append('<div>' + results[i].run().label() + '</div>');
+    }
 }
 
 function attachPlot(test, plotContainer, minIsZero) {
@@ -364,19 +585,60 @@ function formatPercentage(fraction) {
     return (fraction * 100).toFixed(2) + '%';
 }
 
-function createTable(tests, runs, shouldIgnoreMemory, referenceIndex) {
-    $('#container').html('<thead><tr><th>Test</th><th>Unit</th>' + runs.map(function (run, index) {
-        return '<th colspan="' + (index == referenceIndex ? 2 : 3) + '" class="{sorter: \'comparison\'}">' + run.label() + '</th>';
+function createTable(tests, runs, shouldIgnoreMemory, referenceIndex, useLargeLinePlots) {
+    $('#container').html('<thead><tr><th class="headerSortDown">Test</th><th>Unit</th>' + runs.map(function (run, index) {
+         return '<th colspan="' + (index == referenceIndex ? 2 : 3) + '" class="{sorter: \'comparison\'}" id="' + run.id() + '" title="' + run.description() + '"><span class="label" title="Edit run label">' + run.label() + '</span><div class="closeButton" title="Delete run">x</div></th>';
     }).reduce(function (markup, cell) { return markup + cell; }, '') + '</tr></head><tbody></tbody>');
 
     var testNames = [];
     for (testName in tests)
         testNames.push(testName);
 
+    window.isFirstImportantRow = true;
+
     testNames.sort().map(function (testName) {
         var test = tests[testName];
         if (test.isMemoryTest() != shouldIgnoreMemory)
-            createTableRow(runs, test, referenceIndex);
+            createTableRow(runs, test, referenceIndex, useLargeLinePlots);
+    });
+
+    $('.closeButton').click(function(event) {
+        for (var i = 0; i < runs.length; i++) {
+            if (runs[i].id() == event.target.parentNode.id) {
+                runs[i].hide();
+                undeleteManager.ondelete(runs[i].id());
+                location.reload();
+                break;
+            }
+        }
+        event.stopPropagation();
+    });
+
+    $('.label').click(function(event) {
+        for (var i = 0; i < runs.length; i++) {
+            if (runs[i].id() == event.target.parentNode.id) {
+                $(event.target).replaceWith('<input id="labelEditor" type="text" value="' + runs[i].label()  + '">');
+                $('#labelEditor').focusout(function() {
+                    runs[i].setLabel(this.value);
+                    location.reload();
+                });
+                $('#labelEditor').keypress(function(event) {
+                    if (event.which == 13) {
+                        runs[i].setLabel(this.value);
+                        location.reload();
+                    }
+                });
+                $('#labelEditor').click(function (event) {
+                    event.stopPropagation();
+                });
+                $('#labelEditor').mousedown(function (event) {
+                    event.stopPropagation();
+                });
+                $('#labelEditor').select();
+                break;
+            }
+        }
+        event.stopPropagation();
     });
 
     $('#container').tablesorter({widgets: ['zebra']});
@@ -420,8 +682,8 @@ var warningSign = '<svg viewBox="0 0 100 100" style="width: 18px; height: 18px; 
     + '<circle cx="50" cy="73" r="6" fill="white" />'
     + '</svg>';
 
-function createTableRow(runs, test, referenceIndex) {
-    var tableRow = $('<tr><td class="test"' + (test.isImportant ? ' style="font-weight:bold"' : '') + '>' + test.name() + '</td><td class="unit">' + test.unit() + '</td></tr>');
+function createTableRow(runs, test, referenceIndex, useLargeLinePlots) {
+    var tableRow = $('<tr><td class="test collapsed"' + (test.isImportant ? ' style="font-weight:bold"' : '') + '>' + test.name() + '</td><td class="unit">' + test.unit() + '</td></tr>');
 
     function markupForRun(result, referenceResult) {
         var comparisonCell = '';
@@ -444,7 +706,10 @@ function createTableRow(runs, test, referenceIndex) {
         var values = result.values();
         var warning = '';
         var regressionAnalysis = '';
-        if (values && values.length > 3) {
+        if (result.histogramValues) {
+            // Don't calculate regression result for histograms.
+        }
+        else if (values && values.length > 3) {
             regressionResult = linearRegression(values);
             regressionAnalysis = 'slope=' + toFixedWidthPrecision(regressionResult.slope)
                 + ', R^2=' + toFixedWidthPrecision(regressionResult.rSquared);
@@ -492,14 +757,18 @@ function createTableRow(runs, test, referenceIndex) {
         if (firstCell.children('section').length) {
             firstCell.children('section').remove();
             tableRow.children('td').css({'padding-bottom': ''});
+            tableRow.children('td').first().addClass('collapsed');
+            tableRow.children('td').first().removeClass('expanded');
         } else {
-            var plot = createPlot(firstCell, test);
+            var plot = createPlot(firstCell, test, useLargeLinePlots);
             plot.css({'position': 'absolute', 'z-index': 2});
             var offset = tableRow.offset();
             offset.left += 1;
             offset.top += tableRow.outerHeight();
             plot.offset(offset);
             tableRow.children('td').css({'padding-bottom': plot.outerHeight() + 5});
+            tableRow.children('td').first().removeClass('collapsed');
+            tableRow.children('td').first().addClass('expanded');
         }
 
         return false;
@@ -514,7 +783,8 @@ function createTableRow(runs, test, referenceIndex) {
         toggle();
     });
 
-    if (test.isImportant) {
+    if (test.isImportant && window.isFirstImportantRow) {
+        window.isFirstImportantRow = false;
         toggle();
     }
 }
@@ -534,50 +804,58 @@ function init() {
 
     var runs = [];
     var metrics = {};
+    var deletedRunsById = {};
     $.each(JSON.parse(document.getElementById('results-json').textContent), function (index, entry) {
         var run = new TestRun(entry);
+        if (run.isHidden()) {
+            deletedRunsById[run.id()] = run;
+            return;
+        }
+
         runs.push(run);
 
-        function addTests(tests, parentFullName) {
+        function addTests(tests) {
             for (var testName in tests) {
-                var fullTestName = parentFullName + '/' + testName;
                 var rawMetrics = tests[testName].metrics;
 
                 for (var metricName in rawMetrics) {
-                    var fullMetricName = fullTestName + ':' + metricName;
+                    var fullMetricName = testName + ':' + metricName;
                     var metric = metrics[fullMetricName];
                     if (!metric) {
-                        metric = new PerfTestMetric(fullTestName, metricName, rawMetrics[metricName].units, rawMetrics[metricName].important);
+                        metric = new PerfTestMetric(testName, metricName, rawMetrics[metricName].units, rawMetrics[metricName].important);
                         metrics[fullMetricName] = metric;
                     }
                     metric.addResult(new TestResult(metric, rawMetrics[metricName].current, run));
                 }
-
-                if (tests[testName].tests)
-                    addTests(tests[testName].tests, fullTestName);
             }
         }
 
-        addTests(entry.tests, '');
+        addTests(entry.tests);
     });
 
+    var useLargeLinePlots = false;
     var shouldIgnoreMemory= true;
     var referenceIndex = 0;
 
-    createTable(metrics, runs, shouldIgnoreMemory, referenceIndex);
+    createTable(metrics, runs, shouldIgnoreMemory, referenceIndex, useLargeLinePlots);
 
     $('#time-memory').bind('change', function (event, checkedElement) {
         shouldIgnoreMemory = checkedElement.textContent == 'Time';
-        createTable(metrics, runs, shouldIgnoreMemory, referenceIndex);
+        createTable(metrics, runs, shouldIgnoreMemory, referenceIndex, useLargeLinePlots);
+    });
+
+    $('#scatter-line').bind('change', function (event, checkedElement) {
+        useLargeLinePlots = checkedElement.textContent == 'Line';
+        createTable(metrics, runs, shouldIgnoreMemory, referenceIndex, useLargeLinePlots);
     });
 
     runs.map(function (run, index) {
-        $('#reference').append('<span value="' + index + '"' + (index == referenceIndex ? ' class="checked"' : '') + '>' + run.label() + '</span>');
+        $('#reference').append('<span value="' + index + '"' + (index == referenceIndex ? ' class="checked"' : '') + ' title="' + run.description() + '">' + run.label() + '</span>');
     })
 
     $('#reference').bind('change', function (event, checkedElement) {
         referenceIndex = parseInt(checkedElement.getAttribute('value'));
-        createTable(metrics, runs, shouldIgnoreMemory, referenceIndex);
+        createTable(metrics, runs, shouldIgnoreMemory, referenceIndex, useLargeLinePlots);
     });
 
     $('.checkbox').each(function (index, checkbox) {
@@ -589,6 +867,18 @@ function init() {
             $(checkbox).trigger('change', $(this));
         });
     });
+
+    if (undeleteManager.mostRecentlyDeletedId()) {
+        $('#undelete').html('Undelete ' + deletedRunsById[undeleteManager.mostRecentlyDeletedId()].label());
+        $('#undelete').attr('title', deletedRunsById[undeleteManager.mostRecentlyDeletedId()].description());
+        $('#undelete').click(function (event) {
+            deletedRunsById[undeleteManager.mostRecentlyDeletedId()].show();
+            undeleteManager.undeleteMostRecent();
+            location.reload();
+        });
+    } else {
+        $('#undelete').hide();
+    }
 }
 
 </script>

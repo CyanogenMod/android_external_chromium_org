@@ -18,24 +18,24 @@
 #include "content/renderer/media/webmediaplayer_util.h"
 #include "media/base/media_log.h"
 #include "media/base/video_frame.h"
+#include "third_party/WebKit/public/platform/WebMediaPlayerClient.h"
 #include "third_party/WebKit/public/platform/WebRect.h"
 #include "third_party/WebKit/public/platform/WebSize.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
-#include "third_party/WebKit/public/web/WebMediaPlayerClient.h"
 #include "third_party/WebKit/public/web/WebView.h"
 #include "webkit/renderer/compositor_bindings/web_layer_impl.h"
 
-using WebKit::WebCanvas;
-using WebKit::WebMediaPlayer;
-using WebKit::WebRect;
-using WebKit::WebSize;
+using blink::WebCanvas;
+using blink::WebMediaPlayer;
+using blink::WebRect;
+using blink::WebSize;
 
 namespace content {
 
 WebMediaPlayerMS::WebMediaPlayerMS(
-    WebKit::WebFrame* frame,
-    WebKit::WebMediaPlayerClient* client,
+    blink::WebFrame* frame,
+    blink::WebMediaPlayerClient* client,
     base::WeakPtr<WebMediaPlayerDelegate> delegate,
     MediaStreamClient* media_stream_client,
     media::MediaLog* media_log)
@@ -68,21 +68,11 @@ WebMediaPlayerMS::~WebMediaPlayerMS() {
   SetVideoFrameProviderClient(NULL);
   GetClient()->setWebLayer(NULL);
 
-  if (video_frame_provider_.get()) {
+  if (video_frame_provider_.get())
     video_frame_provider_->Stop();
-  }
 
-  if (audio_renderer_.get()) {
-    if (audio_renderer_->IsLocalRenderer()) {
-      audio_renderer_->Stop();
-    } else if (!paused_) {
-      // The |audio_renderer_| can be shared by multiple remote streams, and
-      // it will be stopped when WebRtcAudioDeviceImpl goes away. So we simply
-      // pause the |audio_renderer_| here to avoid re-creating the
-      // |audio_renderer_|.
-      audio_renderer_->Pause();
-    }
-  }
+  if (audio_renderer_.get())
+    audio_renderer_->Stop();
 
   media_log_->AddEvent(
       media_log_->CreateEvent(media::MediaLogEvent::WEBMEDIAPLAYER_DESTROYED));
@@ -91,9 +81,15 @@ WebMediaPlayerMS::~WebMediaPlayerMS() {
     delegate_->PlayerGone(this);
 }
 
-void WebMediaPlayerMS::load(const WebKit::WebURL& url, CORSMode cors_mode) {
+void WebMediaPlayerMS::load(LoadType load_type,
+                            const blink::WebURL& url,
+                            CORSMode cors_mode) {
   DVLOG(1) << "WebMediaPlayerMS::load";
   DCHECK(thread_checker_.CalledOnValidThread());
+
+  // TODO(acolwell): Change this to DCHECK_EQ(load_type,
+  // LoadTypeMediaStream) once Blink-side changes land.
+  DCHECK_NE(load_type, LoadTypeMediaSource);
 
   GURL gurl(url);
 
@@ -126,12 +122,6 @@ void WebMediaPlayerMS::load(const WebKit::WebURL& url, CORSMode cors_mode) {
   } else {
     SetNetworkState(WebMediaPlayer::NetworkStateNetworkError);
   }
-}
-
-void WebMediaPlayerMS::load(const WebKit::WebURL& url,
-                            WebKit::WebMediaSource* media_source,
-                            CORSMode cors_mode) {
-  NOTIMPLEMENTED();
 }
 
 void WebMediaPlayerMS::play() {
@@ -214,14 +204,14 @@ bool WebMediaPlayerMS::hasAudio() const {
   return (audio_renderer_.get() != NULL);
 }
 
-WebKit::WebSize WebMediaPlayerMS::naturalSize() const {
+blink::WebSize WebMediaPlayerMS::naturalSize() const {
   DCHECK(thread_checker_.CalledOnValidThread());
 
   gfx::Size size;
   if (current_frame_.get())
     size = current_frame_->natural_size();
   DVLOG(3) << "WebMediaPlayerMS::naturalSize, " << size.ToString();
-  return WebKit::WebSize(size);
+  return blink::WebSize(size);
 }
 
 bool WebMediaPlayerMS::paused() const {
@@ -261,7 +251,7 @@ WebMediaPlayer::ReadyState WebMediaPlayerMS::readyState() const {
   return ready_state_;
 }
 
-const WebKit::WebTimeRanges& WebMediaPlayerMS::buffered() {
+const blink::WebTimeRanges& WebMediaPlayerMS::buffered() {
   DCHECK(thread_checker_.CalledOnValidThread());
   return buffered_;
 }
@@ -433,7 +423,7 @@ void WebMediaPlayerMS::SetReadyState(WebMediaPlayer::ReadyState state) {
   GetClient()->readyStateChanged();
 }
 
-WebKit::WebMediaPlayerClient* WebMediaPlayerMS::GetClient() {
+blink::WebMediaPlayerClient* WebMediaPlayerMS::GetClient() {
   DCHECK(thread_checker_.CalledOnValidThread());
   DCHECK(client_);
   return client_;

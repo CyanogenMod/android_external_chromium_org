@@ -18,6 +18,7 @@ class MockShillServiceClient : public ShillServiceClient {
   MockShillServiceClient();
   virtual ~MockShillServiceClient();
 
+  MOCK_METHOD1(Init, void(dbus::Bus* dbus));
   MOCK_METHOD2(AddPropertyChangedObserver,
                void(const dbus::ObjectPath& service_path,
                     ShillPropertyChangedObserver* observer));
@@ -61,9 +62,6 @@ class MockShillServiceClient : public ShillServiceClient {
                void(const dbus::ObjectPath& service_path,
                     const base::Closure& callback,
                     const ErrorCallback& error_callback));
-  MOCK_METHOD2(CallActivateCellularModemAndBlock,
-               bool(const dbus::ObjectPath& service_path,
-                    const std::string& carrier));
   MOCK_METHOD2(GetLoadableProfileEntries,
                void(const dbus::ObjectPath& service_path,
                     const DictionaryValueCallback& callback));

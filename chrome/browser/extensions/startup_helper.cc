@@ -19,9 +19,9 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/chrome_extensions_client.h"
-#include "chrome/common/extensions/extension.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/common/extension.h"
 #include "ipc/ipc_message.h"
 
 using content::BrowserThread;
@@ -89,7 +89,7 @@ class ValidateCrxHelper : public SandboxedUnpackerClient {
 
   bool finished() { return finished_; }
   bool success() { return success_; }
-  const string16& error() { return error_; }
+  const base::string16& error() { return error_; }
 
   void Start() {
     BrowserThread::PostTask(BrowserThread::FILE,
@@ -114,7 +114,7 @@ class ValidateCrxHelper : public SandboxedUnpackerClient {
                                        this));
   }
 
-  virtual void OnUnpackFailure(const string16& error) OVERRIDE {
+  virtual void OnUnpackFailure(const base::string16& error) OVERRIDE {
     finished_ = true;
     success_ = false;
     error_ = error;
@@ -161,7 +161,7 @@ class ValidateCrxHelper : public SandboxedUnpackerClient {
   bool success_;
 
   // If the unpacking wasn't successful, this contains an error message.
-  string16 error_;
+  base::string16 error_;
 };
 
 }  // namespace

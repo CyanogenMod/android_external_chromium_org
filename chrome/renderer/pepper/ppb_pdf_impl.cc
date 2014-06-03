@@ -38,13 +38,13 @@
 #include "ui/base/resource/resource_bundle.h"
 
 using ppapi::PpapiGlobals;
-using WebKit::WebElement;
-using WebKit::WebView;
+using blink::WebElement;
+using blink::WebView;
 using content::RenderThread;
 
 namespace {
 
-#if defined(OS_LINUX) || defined(OS_OPENBSD)
+#if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
 class PrivateFontFile : public ppapi::Resource {
  public:
   PrivateFontFile(PP_Instance instance, int fd)
@@ -132,25 +132,25 @@ static const ResourceImageInfo kResourceImageMap[] = {
 
 #if defined(ENABLE_FULL_PRINTING)
 
-WebKit::WebElement GetWebElement(PP_Instance instance_id) {
+blink::WebElement GetWebElement(PP_Instance instance_id) {
   content::PepperPluginInstance* instance =
       content::PepperPluginInstance::Get(instance_id);
   if (!instance)
-    return WebKit::WebElement();
+    return blink::WebElement();
   return instance->GetContainer()->element();
 }
 
 printing::PrintWebViewHelper* GetPrintWebViewHelper(
-    const WebKit::WebElement& element) {
+    const blink::WebElement& element) {
   if (element.isNull())
     return NULL;
-  WebKit::WebView* view = element.document().frame()->view();
+  blink::WebView* view = element.document().frame()->view();
   content::RenderView* render_view = content::RenderView::FromWebView(view);
   return printing::PrintWebViewHelper::Get(render_view);
 }
 
 bool IsPrintingEnabled(PP_Instance instance_id) {
-  WebKit::WebElement element = GetWebElement(instance_id);
+  blink::WebElement element = GetWebElement(instance_id);
   printing::PrintWebViewHelper* helper = GetPrintWebViewHelper(element);
   return helper && helper->IsPrintingEnabled();
 }
@@ -192,7 +192,7 @@ PP_Resource GetFontFileWithFallback(
     PP_Instance instance_id,
     const PP_BrowserFont_Trusted_Description* description,
     PP_PrivateFontCharset charset) {
-#if defined(OS_LINUX) || defined(OS_OPENBSD)
+#if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
   // Validate the instance before using it below.
   if (!content::PepperPluginInstance::Get(instance_id))
     return 0;
@@ -224,7 +224,7 @@ bool GetFontTableForPrivateFontFile(PP_Resource font_file,
                                     uint32_t table,
                                     void* output,
                                     uint32_t* output_length) {
-#if defined(OS_LINUX) || defined(OS_OPENBSD)
+#if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
   ppapi::Resource* resource =
       PpapiGlobals::Get()->GetResourceTracker()->GetResource(font_file);
   if (!resource)
@@ -321,7 +321,7 @@ void UserMetricsRecordAction(PP_Instance instance, PP_Var action) {
   scoped_refptr<ppapi::StringVar> action_str(
       ppapi::StringVar::FromPPVar(action));
   if (action_str.get())
-    RenderThread::Get()->RecordUserMetrics(action_str->value());
+    RenderThread::Get()->RecordComputedAction(action_str->value());
 }
 
 void HasUnsupportedFeature(PP_Instance instance_id) {
@@ -348,7 +348,7 @@ void SaveAs(PP_Instance instance_id) {
   GURL url = instance->GetPluginURL();
 
   content::RenderView* render_view = instance->GetRenderView();
-  WebKit::WebFrame* frame = render_view->GetWebView()->mainFrame();
+  blink::WebFrame* frame = render_view->GetWebView()->mainFrame();
   content::Referrer referrer(frame->document().url(),
                              frame->document().referrerPolicy());
   render_view->Send(new ChromeViewHostMsg_PDFSaveURLAs(
@@ -358,6 +358,10 @@ void SaveAs(PP_Instance instance_id) {
 PP_Bool IsFeatureEnabled(PP_Instance instance, PP_PDFFeature feature) {
   switch (feature) {
     case PP_PDFFEATURE_HIDPI:
+#if defined(OS_WIN)
+      // Disable this for Windows until scaled resources become available.
+      return PP_FALSE;
+#endif
       return PP_TRUE;
     case PP_PDFFEATURE_PRINTING:
       return IsPrintingEnabled(instance) ? PP_TRUE : PP_FALSE;
@@ -398,6 +402,31 @@ PP_Resource GetResourceImage(PP_Instance instance_id,
   return GetResourceImageForScale(instance_id, image_id, 1.0f);
 }
 
+PP_Var ModalPromptForPassword(PP_Instance instance_id,
+                              PP_Var message) {
+  content::PepperPluginInstance* instance =
+      content::PepperPluginInstance::Get(instance_id);
+  if (!instance)
+    return PP_MakeUndefined();
+
+  std::string actual_value;
+  scoped_refptr<ppapi::StringVar> message_string(
+      ppapi::StringVar::FromPPVar(message));
+
+  IPC::SyncMessage* msg = new ChromeViewHostMsg_PDFModalPromptForPassword(
+      instance->GetRenderView()->GetRoutingID(),
+      message_string->value(),
+      &actual_value);
+  msg->EnableMessagePumping();
+  instance->GetRenderView()->Send(msg);
+
+  return ppapi::StringVar::StringToPPVar(actual_value);
+}
+
+PP_Bool IsOutOfProcess(PP_Instance instance_id) {
+  return PP_FALSE;
+}
+
 const PPB_PDF ppb_pdf = {
   &GetLocalizedString,
   &GetResourceImage,
@@ -413,7 +442,9 @@ const PPB_PDF ppb_pdf = {
   &SaveAs,
   &PPB_PDF_Impl::InvokePrintingForInstance,
   &IsFeatureEnabled,
-  &GetResourceImageForScale
+  &GetResourceImageForScale,
+  &ModalPromptForPassword,
+  &IsOutOfProcess,
 };
 
 }  // namespace
@@ -426,7 +457,7 @@ const PPB_PDF* PPB_PDF_Impl::GetInterface() {
 // static
 void PPB_PDF_Impl::InvokePrintingForInstance(PP_Instance instance_id) {
 #if defined(ENABLE_FULL_PRINTING)
-  WebKit::WebElement element = GetWebElement(instance_id);
+  blink::WebElement element = GetWebElement(instance_id);
   printing::PrintWebViewHelper* helper = GetPrintWebViewHelper(element);
   if (helper)
     helper->PrintNode(element);

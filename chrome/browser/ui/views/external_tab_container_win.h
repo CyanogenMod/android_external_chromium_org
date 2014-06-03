@@ -17,11 +17,9 @@
 #include "chrome/browser/external_tab/external_tab_container.h"
 #include "chrome/browser/infobars/infobar_container.h"
 #include "chrome/browser/net/chrome_url_request_context.h"
-#include "chrome/browser/ui/blocked_content/blocked_content_tab_helper_delegate.h"
 #include "content/public/browser/navigation_type.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
-#include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "ui/base/accelerators/accelerator.h"
@@ -59,8 +57,7 @@ class ExternalTabContainerWin : public ExternalTabContainer,
                                 public content::NotificationObserver,
                                 public views::WidgetObserver,
                                 public ui::AcceleratorTarget,
-                                public InfoBarContainer::Delegate,
-                                public BlockedContentTabHelperDelegate {
+                                public InfoBarContainer::Delegate {
  public:
   typedef std::map<uintptr_t,
                    scoped_refptr<ExternalTabContainerWin> > PendingTabs;
@@ -120,7 +117,7 @@ class ExternalTabContainerWin : public ExternalTabContainer,
   virtual void ContentsZoomChange(bool zoom_in) OVERRIDE;
   virtual void WebContentsCreated(content::WebContents* source_contents,
                                   int64 source_frame_id,
-                                  const string16& frame_name,
+                                  const base::string16& frame_name,
                                   const GURL& target_url,
                                   content::WebContents* new_contents) OVERRIDE;
   virtual bool PreHandleKeyboardEvent(
@@ -147,25 +144,15 @@ class ExternalTabContainerWin : public ExternalTabContainer,
   virtual void ShowRepostFormWarningDialog(
       content::WebContents* source) OVERRIDE;
   virtual content::ColorChooser* OpenColorChooser(
-      content::WebContents* web_contents, SkColor color) OVERRIDE;
+      content::WebContents* web_contents,
+      SkColor color,
+      const std::vector<content::ColorSuggestion>& suggestions) OVERRIDE;
   virtual void RunFileChooser(
       content::WebContents* tab,
       const content::FileChooserParams& params) OVERRIDE;
   virtual void EnumerateDirectory(content::WebContents* tab,
                                   int request_id,
                                   const base::FilePath& path) OVERRIDE;
-  virtual void JSOutOfMemory(content::WebContents* tab);
-  virtual void RegisterProtocolHandler(content::WebContents* tab,
-                                       const std::string& protocol,
-                                       const GURL& url,
-                                       const string16& title,
-                                       bool user_gesture) OVERRIDE;
-  virtual void FindReply(content::WebContents* tab,
-                         int request_id,
-                         int number_of_matches,
-                         const gfx::Rect& selection_rect,
-                         int active_match_ordinal,
-                         bool final_update) OVERRIDE;
   virtual void RequestMediaAccessPermission(
       content::WebContents* web_contents,
       const content::MediaStreamRequest& request,
@@ -185,10 +172,11 @@ class ExternalTabContainerWin : public ExternalTabContainer,
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
   virtual void DidFailProvisionalLoad(
       int64 frame_id,
+      const base::string16& frame_unique_name,
       bool is_main_frame,
       const GURL& validated_url,
       int error_code,
-      const string16& error_description,
+      const base::string16& error_description,
       content::RenderViewHost* render_view_host) OVERRIDE;
 
   // Message handlers
@@ -216,10 +204,6 @@ class ExternalTabContainerWin : public ExternalTabContainer,
   virtual SkColor GetInfoBarSeparatorColor() const OVERRIDE;
   virtual void InfoBarContainerStateChanged(bool is_animating) OVERRIDE;
   virtual bool DrawInfoBarArrows(int* x) const OVERRIDE;
-
-  // Overridden from BlockedContentTabHelperDelegate:
-  virtual content::WebContents* GetConstrainingWebContents(
-      content::WebContents* source) OVERRIDE;
 
  protected:
   virtual ~ExternalTabContainerWin();
@@ -260,8 +244,6 @@ class ExternalTabContainerWin : public ExternalTabContainer,
   views::Widget* widget_;
   scoped_ptr<content::WebContents> web_contents_;
   scoped_refptr<AutomationProvider> automation_;
-
-  content::RenderViewHost::CreatedCallback rvh_callback_;
 
   content::NotificationRegistrar registrar_;
 

@@ -7,10 +7,11 @@
 #include "base/stl_util.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
+#include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/manifest_handlers/icons_handler.h"
+#include "extensions/common/extension.h"
 #include "ui/gfx/color_utils.h"
 #include "ui/gfx/image/image_skia_operations.h"
 
@@ -67,7 +68,7 @@ void AppIconLoaderImpl::FetchImage(const std::string& id) {
   // Triggers image loading now instead of depending on paint message. This
   // makes the temp blank image be shown for shorter time and improves user
   // experience. See http://crbug.com/146114.
-  image->image_skia().EnsureRepsForSupportedScaleFactors();
+  image->image_skia().EnsureRepsForSupportedScales();
 }
 
 void AppIconLoaderImpl::ClearImage(const std::string& id) {
@@ -106,8 +107,8 @@ void AppIconLoaderImpl::BuildImage(const std::string& id,
 
   const ExtensionService* service =
       extensions::ExtensionSystem::Get(profile_)->extension_service();
-  const bool enabled = service->IsExtensionEnabledForLauncher(id);
-  if (!enabled) {
+  const bool can_launch = extension_util::IsAppLaunchable(id, service);
+  if (!can_launch) {
     const color_utils::HSL shift = {-1, 0, 0.6};
     image = gfx::ImageSkiaOperations::CreateHSLShiftedImage(image, shift);
   }

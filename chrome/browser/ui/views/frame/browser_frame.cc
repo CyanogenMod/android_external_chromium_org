@@ -5,6 +5,7 @@
 #include "chrome/browser/ui/views/frame/browser_frame.h"
 
 #include "ash/shell.h"
+#include "base/command_line.h"
 #include "base/i18n/rtl.h"
 #include "chrome/browser/app_mode/app_mode_utils.h"
 #include "chrome/browser/themes/theme_service.h"
@@ -17,23 +18,35 @@
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/frame/immersive_mode_controller.h"
 #include "chrome/browser/ui/views/frame/native_browser_frame.h"
+#include "chrome/browser/ui/views/frame/native_browser_frame_factory.h"
 #include "chrome/browser/ui/views/frame/system_menu_model_builder.h"
 #include "chrome/browser/ui/views/frame/top_container_view.h"
+#include "chrome/browser/web_applications/web_app.h"
 #include "chrome/common/chrome_switches.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
 #include "ui/base/hit_test.h"
 #include "ui/base/theme_provider.h"
+#include "ui/gfx/font.h"
 #include "ui/gfx/screen.h"
 #include "ui/views/controls/menu/menu_runner.h"
 #include "ui/views/widget/native_widget.h"
 
 #if defined(OS_WIN) && !defined(USE_AURA)
 #include "chrome/browser/ui/views/frame/glass_browser_frame_view.h"
+#include "ui/views/widget/native_widget_win.h"
+#endif
+
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+#include "chrome/browser/shell_integration_linux.h"
 #endif
 
 #if defined(USE_ASH)
 #include "chrome/browser/ui/ash/ash_init.h"
+#endif
+
+#if defined(OS_CHROMEOS)
+#include "ash/session_state_delegate.h"
 #endif
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -55,9 +68,20 @@ BrowserFrame::BrowserFrame(BrowserView* browser_view)
 BrowserFrame::~BrowserFrame() {
 }
 
+// static
+const gfx::Font& BrowserFrame::GetTitleFont() {
+#if !defined(OS_WIN) || defined(USE_AURA)
+  static gfx::Font* title_font = new gfx::Font;
+#else
+  static gfx::Font* title_font =
+      new gfx::Font(views::NativeWidgetWin::GetWindowTitleFont());
+#endif
+  return *title_font;
+}
+
 void BrowserFrame::InitBrowserFrame() {
   native_browser_frame_ =
-      NativeBrowserFrame::CreateNativeBrowserFrame(this, browser_view_);
+      NativeBrowserFrameFactory::CreateNativeBrowserFrame(this, browser_view_);
   views::Widget::InitParams params;
   params.delegate = browser_view_;
   params.native_widget = native_browser_frame_->AsNativeWidget();
@@ -71,9 +95,41 @@ void BrowserFrame::InitBrowserFrame() {
 #if defined(USE_ASH)
   if (browser_view_->browser()->host_desktop_type() ==
       chrome::HOST_DESKTOP_TYPE_ASH || chrome::ShouldOpenAshOnStartup()) {
-    params.context = ash::Shell::GetAllRootWindows()[0];
+    params.context = ash::Shell::GetPrimaryRootWindow();
+#if defined(OS_WIN)
+   // If this window is under ASH on Windows, we need it to be translucent.
+   params.opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
+#endif
   }
 #endif
+
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+  // Set up a custom WM_CLASS for some sorts of window types. This allows
+  // task switchers in X11 environments to distinguish between main browser
+  // windows and e.g app windows.
+  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  const Browser& browser = *browser_view_->browser();
+  params.wm_class_class = ShellIntegrationLinux::GetProgramClassName();
+  params.wm_class_name = params.wm_class_class;
+  if (browser.is_app() && !browser.is_devtools()) {
+    // This window is a hosted app or v1 packaged app.
+    // NOTE: v2 packaged app windows are created by NativeAppWindowViews.
+    params.wm_class_name = web_app::GetWMClassFromAppName(browser.app_name());
+  } else if (command_line.HasSwitch(switches::kUserDataDir)) {
+    // Set the class name to e.g. "Chrome (/tmp/my-user-data)".  The
+    // class name will show up in the alt-tab list in gnome-shell if
+    // you're running a binary that doesn't have a matching .desktop
+    // file.
+    const std::string user_data_dir =
+        command_line.GetSwitchValueNative(switches::kUserDataDir);
+    params.wm_class_name += " (" + user_data_dir + ")";
+  }
+  const char kX11WindowRoleBrowser[] = "browser";
+  const char kX11WindowRolePopup[] = "pop-up";
+  params.wm_role_name = browser_view_->browser()->is_type_tabbed() ?
+      std::string(kX11WindowRoleBrowser) : std::string(kX11WindowRolePopup);
+#endif  // defined(OS_LINUX)
+
   Init(params);
 
   if (!native_browser_frame_->UsesNativeSystemMenu()) {
@@ -95,9 +151,8 @@ gfx::Rect BrowserFrame::GetBoundsForTabStrip(views::View* tabstrip) const {
   return browser_frame_view_->GetBoundsForTabStrip(tabstrip);
 }
 
-BrowserNonClientFrameView::TabStripInsets BrowserFrame::GetTabStripInsets(
-    bool force_restored) const {
-  return browser_frame_view_->GetTabStripInsets(force_restored);
+int BrowserFrame::GetTopInset() const {
+  return browser_frame_view_->GetTopInset();
 }
 
 int BrowserFrame::GetThemeBackgroundXInset() const {
@@ -110,15 +165,6 @@ void BrowserFrame::UpdateThrobber(bool running) {
 
 views::View* BrowserFrame::GetFrameView() const {
   return browser_frame_view_;
-}
-
-void BrowserFrame::TabStripDisplayModeChanged() {
-  if (GetRootView()->has_children()) {
-    // Make sure the child of the root view gets Layout again.
-    GetRootView()->child_at(0)->InvalidateLayout();
-  }
-  GetRootView()->Layout();
-  native_browser_frame_->TabStripDisplayModeChanged();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -196,6 +242,17 @@ void BrowserFrame::ShowContextMenuForView(views::View* source,
 }
 
 ui::MenuModel* BrowserFrame::GetSystemMenuModel() {
+#if defined(OS_CHROMEOS)
+  ash::SessionStateDelegate* delegate =
+      ash::Shell::GetInstance()->session_state_delegate();
+  if (delegate && delegate->NumberOfLoggedInUsers() > 1) {
+    // In Multi user mode, the number of users as well as the order of users
+    // can change. Coming here we have more then one user and since the menu
+    // model contains the user information, it must get updated to show any
+    // changes happened since the last invocation.
+    menu_model_builder_.reset();
+  }
+#endif
   if (!menu_model_builder_.get()) {
     menu_model_builder_.reset(
         new SystemMenuModelBuilder(browser_view_, browser_view_->browser()));
@@ -206,6 +263,10 @@ ui::MenuModel* BrowserFrame::GetSystemMenuModel() {
 
 AvatarMenuButton* BrowserFrame::GetAvatarMenuButton() {
   return browser_frame_view_->avatar_button();
+}
+
+NewAvatarButton* BrowserFrame::GetNewAvatarMenuButton() {
+  return browser_frame_view_->new_avatar_button();
 }
 
 #if !defined(OS_WIN) || defined(USE_AURA)

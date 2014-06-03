@@ -169,9 +169,13 @@ class GpuFeatureTest : public InProcessBrowserTest {
   std::string trace_events_json_;
 };
 
-#if defined(OS_WIN) || defined(ADDRESS_SANITIZER)
+#if defined(OS_WIN) || defined(ADDRESS_SANITIZER) || defined(USE_AURA) || \
+    defined(OS_MACOSX)
 // This test is flaky on Windows. http://crbug.com/177113
 // Also fails under AddressSanitizer. http://crbug.com/185178
+// It fundamentally doesn't test the right thing on Aura.
+// http://crbug.com/280675
+// This does not work with software compositing on Mac. http://crbug.com/286038
 #define MAYBE_AcceleratedCompositingAllowed DISABLED_AcceleratedCompositingAllowed
 #else
 #define MAYBE_AcceleratedCompositingAllowed AcceleratedCompositingAllowed
@@ -214,7 +218,7 @@ class AcceleratedCompositingBlockedTest : public GpuFeatureTest {
 #endif
 
 IN_PROC_BROWSER_TEST_F(AcceleratedCompositingBlockedTest,
-    MAYBE_AcceleratedCompositingBlocked) {
+                       MAYBE_AcceleratedCompositingBlocked) {
   EXPECT_TRUE(GpuDataManager::GetInstance()->IsFeatureBlacklisted(
       gpu::GPU_FEATURE_TYPE_ACCELERATED_COMPOSITING));
 
@@ -244,13 +248,8 @@ IN_PROC_BROWSER_TEST_F(AcceleratedCompositingTest,
   RunEventTest(url, kSwapBuffersEvent, false);
 }
 
-#if defined(OS_CHROMEOS)
-#define MAYBE_WebGLAllowed DISABLED_WebGLAllowed
-#else
-#define MAYBE_WebGLAllowed WebGLAllowed
-#endif
-// Times out on CrOS: http://crbug.com/166060
-IN_PROC_BROWSER_TEST_F(GpuFeatureTest, MAYBE_WebGLAllowed) {
+// Times out: http://crbug.com/166060
+IN_PROC_BROWSER_TEST_F(GpuFeatureTest, DISABLED_WebGLAllowed) {
   EXPECT_FALSE(GpuDataManager::GetInstance()->IsFeatureBlacklisted(
       gpu::GPU_FEATURE_TYPE_WEBGL));
 
@@ -296,9 +295,18 @@ IN_PROC_BROWSER_TEST_F(WebGLTest, WebGLDisabled) {
   RunEventTest(url, kWebGLCreationEvent, false);
 }
 
+#if defined(GOOGLE_CHROME_BUILD) && defined(OS_MACOSX)
+// http://crbug.com/314745
+#define MultisamplingAllowed DISABLED_MultisamplingAllowed
+#endif
 IN_PROC_BROWSER_TEST_F(GpuFeatureTest, MultisamplingAllowed) {
-  EXPECT_FALSE(GpuDataManager::GetInstance()->IsFeatureBlacklisted(
-      gpu::GPU_FEATURE_TYPE_MULTISAMPLING));
+  bool expect_blacklisted = false;
+  if (gpu::GPUTestBotConfig::GpuBlacklistedOnBot())
+    expect_blacklisted = true;
+
+  EXPECT_EQ(expect_blacklisted,
+            GpuDataManager::GetInstance()->IsFeatureBlacklisted(
+                gpu::GPU_FEATURE_TYPE_MULTISAMPLING));
 
   // Multisampling is not supported if running on top of osmesa.
   if (gfx::GetGLImplementation() != gfx::kGLImplementationOSMesaGL)
@@ -364,11 +372,39 @@ IN_PROC_BROWSER_TEST_F(GpuFeatureTest, Canvas2DAllowed) {
   if (gpu::GPUTestBotConfig::CurrentConfigMatches("XP"))
     return;
 
-  EXPECT_FALSE(GpuDataManager::GetInstance()->IsFeatureBlacklisted(
-      gpu::GPU_FEATURE_TYPE_ACCELERATED_2D_CANVAS));
+  enum Canvas2DState {
+    ENABLED,
+    BLACKLISTED,  // Disabled via the blacklist.
+    DISABLED,     // Not disabled via the blacklist, but expected to be disabled
+                  // by configuration.
+  } expected_state = ENABLED;
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+  // Blacklist rule #24 disables accelerated_2d_canvas on Linux.
+  expected_state = BLACKLISTED;
+#elif defined(OS_WIN)
+  // Blacklist rule #67 disables accelerated_2d_canvas on XP.
+  if (base::win::GetVersion() < base::win::VERSION_VISTA)
+    expected_state = BLACKLISTED;
+#endif
+
+  if (gpu::GPUTestBotConfig::GpuBlacklistedOnBot())
+    expected_state = BLACKLISTED;
+
+#if defined(USE_AURA)
+  // Canvas 2D is always disabled in software compositing mode, make sure it is
+  // marked as such if it wasn't blacklisted already.
+  if (expected_state == ENABLED &&
+      !content::GpuDataManager::GetInstance()->CanUseGpuBrowserCompositor()) {
+    expected_state = DISABLED;
+  }
+#endif
+
+  EXPECT_EQ(expected_state == BLACKLISTED,
+            GpuDataManager::GetInstance()->IsFeatureBlacklisted(
+                gpu::GPU_FEATURE_TYPE_ACCELERATED_2D_CANVAS));
 
   const base::FilePath url(FILE_PATH_LITERAL("feature_canvas2d.html"));
-  RunEventTest(url, kAcceleratedCanvasCreationEvent, true);
+  RunEventTest(url, kAcceleratedCanvasCreationEvent, expected_state == ENABLED);
 }
 
 IN_PROC_BROWSER_TEST_F(GpuFeatureTest, Canvas2DBlocked) {
@@ -408,6 +444,9 @@ IN_PROC_BROWSER_TEST_F(Canvas2DDisabledTest, Canvas2DDisabled) {
 
 IN_PROC_BROWSER_TEST_F(GpuFeatureTest,
                        CanOpenPopupAndRenderWithWebGLCanvas) {
+  if (gpu::GPUTestBotConfig::GpuBlacklistedOnBot())
+    return;
+
   const base::FilePath url(FILE_PATH_LITERAL("webgl_popup.html"));
   RunTest(url, "\"SUCCESS\"", false);
 }
@@ -480,6 +519,9 @@ IN_PROC_BROWSER_TEST_F(GpuFeatureTest, MAYBE_RafNoDamage) {
 #if defined(OS_MACOSX)
 IN_PROC_BROWSER_TEST_F(GpuFeatureTest, IOSurfaceReuse) {
   if (!IOSurfaceSupport::Initialize())
+    return;
+
+  if (gpu::GPUTestBotConfig::GpuBlacklistedOnBot())
     return;
 
   const base::FilePath url(

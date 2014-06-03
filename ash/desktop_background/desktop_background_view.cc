@@ -15,7 +15,6 @@
 #include "ash/session_state_delegate.h"
 #include "ash/shell.h"
 #include "ash/shell_window_ids.h"
-#include "ash/wm/property_util.h"
 #include "ash/wm/window_animations.h"
 #include "base/message_loop/message_loop.h"
 #include "base/strings/utf_string_conversions.h"
@@ -24,6 +23,8 @@
 #include "ui/compositor/layer.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/image/image.h"
+#include "ui/gfx/size_conversions.h"
+#include "ui/gfx/transform.h"
 #include "ui/views/widget/widget.h"
 
 namespace ash {
@@ -34,6 +35,41 @@ namespace {
 int RoundPositive(double x) {
   return static_cast<int>(floor(x + 0.5));
 }
+
+// A view that controls the child view's layer so that the layer
+// always has the same size as the display's original, un-scaled size
+// in DIP. The layer then transformed to fit to the virtual screen
+// size when laid-out.
+// This is to avoid scaling the image at painting time, then scaling
+// it back to the screen size in the compositor.
+class LayerControlView : public views::View {
+ public:
+  explicit LayerControlView(views::View* view) {
+    AddChildView(view);
+    view->SetPaintToLayer(true);
+  }
+
+  // Overrides views::View.
+  virtual void Layout() OVERRIDE {
+    gfx::Display display = Shell::GetScreen()->GetDisplayNearestWindow(
+        GetWidget()->GetNativeView());
+    DisplayManager* display_manager = Shell::GetInstance()->display_manager();
+    DisplayInfo info = display_manager->GetDisplayInfo(display.id());
+    float ui_scale = info.GetEffectiveUIScale();
+    gfx::SizeF pixel_size = display.size();
+    pixel_size.Scale(1.0f / ui_scale);
+    gfx::Size rounded_size = gfx::ToCeiledSize(pixel_size);
+    DCHECK_EQ(1, child_count());
+    views::View* child = child_at(0);
+    child->SetBounds(0, 0, rounded_size.width(), rounded_size.height());
+    gfx::Transform transform;
+    transform.Scale(ui_scale, ui_scale);
+    child->SetTransform(transform);
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(LayerControlView);
+};
 
 }  // namespace
 
@@ -67,7 +103,7 @@ void DesktopBackgroundView::OnPaint(gfx::Canvas* canvas) {
 
   DisplayManager* display_manager = Shell::GetInstance()->display_manager();
   DisplayInfo display_info = display_manager->GetDisplayInfo(display.id());
-  float scaling = display_info.ui_scale();
+  float scaling = display_info.GetEffectiveUIScale();
   if (scaling <= 1.0f)
     scaling = 1.0f;
   // Allow scaling up to the UI scaling.
@@ -138,7 +174,7 @@ void DesktopBackgroundView::ShowContextMenuForView(
   Shell::GetInstance()->ShowContextMenu(point, source_type);
 }
 
-views::Widget* CreateDesktopBackground(aura::RootWindow* root_window,
+views::Widget* CreateDesktopBackground(aura::Window* root_window,
                                        int container_id) {
   DesktopBackgroundController* controller =
       Shell::GetInstance()->desktop_background_controller();
@@ -152,7 +188,8 @@ views::Widget* CreateDesktopBackground(aura::RootWindow* root_window,
     params.opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
   params.parent = root_window->GetChildById(container_id);
   desktop_widget->Init(params);
-  desktop_widget->SetContentsView(new DesktopBackgroundView());
+  desktop_widget->SetContentsView(
+      new LayerControlView(new DesktopBackgroundView()));
   int animation_type = wallpaper_delegate->GetAnimationType();
   views::corewm::SetWindowVisibilityAnimationType(
       desktop_widget->GetNativeView(), animation_type);

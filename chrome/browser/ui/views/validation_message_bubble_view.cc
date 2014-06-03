@@ -4,6 +4,7 @@
 
 #include "chrome/browser/ui/validation_message_bubble.h"
 
+#include "chrome/browser/platform_util.h"
 #include "chrome/browser/ui/views/validation_message_bubble_delegate.h"
 #include "content/public/browser/render_widget_host.h"
 #include "content/public/browser/render_widget_host_view.h"
@@ -16,9 +17,10 @@ class ValidationMessageBubbleImpl
     : public chrome::ValidationMessageBubble,
       public ValidationMessageBubbleDelegate::Observer {
  public:
-  ValidationMessageBubbleImpl(const gfx::Rect& anchor_in_screen,
-                              const string16& main_text,
-                              const string16& sub_text);
+  ValidationMessageBubbleImpl(content::RenderWidgetHost* widget_host,
+                              const gfx::Rect& anchor_in_screen,
+                              const base::string16& main_text,
+                              const base::string16& sub_text);
 
   virtual ~ValidationMessageBubbleImpl() {
     if (delegate_ != NULL)
@@ -46,11 +48,14 @@ class ValidationMessageBubbleImpl
 };
 
 ValidationMessageBubbleImpl::ValidationMessageBubbleImpl(
+    content::RenderWidgetHost* widget_host,
     const gfx::Rect& anchor_in_screen,
-    const string16& main_text,
-    const string16& sub_text) {
+    const base::string16& main_text,
+    const base::string16& sub_text) {
   delegate_ = new ValidationMessageBubbleDelegate(
       anchor_in_screen, main_text, sub_text, this);
+  delegate_->set_parent_window(platform_util::GetTopLevel(
+      widget_host->GetView()->GetNativeView()));
   views::BubbleDelegateView::CreateBubble(delegate_);
   delegate_->GetWidget()->ShowInactive();
 }
@@ -62,12 +67,12 @@ namespace chrome {
 scoped_ptr<ValidationMessageBubble> ValidationMessageBubble::CreateAndShow(
     content::RenderWidgetHost* widget_host,
     const gfx::Rect& anchor_in_root_view,
-    const string16& main_text,
-    const string16& sub_text) {
+    const base::string16& main_text,
+    const base::string16& sub_text) {
   const gfx::Rect anchor_in_screen = anchor_in_root_view
       + widget_host->GetView()->GetViewBounds().origin().OffsetFromOrigin();
-  scoped_ptr<ValidationMessageBubble> bubble(
-      new ValidationMessageBubbleImpl(anchor_in_screen, main_text, sub_text));
+  scoped_ptr<ValidationMessageBubble> bubble(new ValidationMessageBubbleImpl(
+      widget_host, anchor_in_screen, main_text, sub_text));
   return bubble.Pass();
 }
 

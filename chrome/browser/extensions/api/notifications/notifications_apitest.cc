@@ -2,18 +2,22 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/api/notifications/notifications_api.h"
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/extensions/extension_function_test_utils.h"
-#include "chrome/common/extensions/features/feature.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/test/test_utils.h"
+#include "extensions/common/features/feature.h"
 #include "ui/message_center/message_center.h"
 #include "ui/message_center/message_center_switches.h"
 #include "ui/message_center/message_center_util.h"
+#include "ui/message_center/notification_list.h"
+#include "ui/message_center/notifier_settings.h"
 
 using extensions::Extension;
 
@@ -622,7 +626,13 @@ IN_PROC_BROWSER_TEST_F(NotificationsApiTest, MAYBE_TestProgressNotification) {
   }
 }
 
-IN_PROC_BROWSER_TEST_F(NotificationsApiTest, TestPartialUpdate) {
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+// Failing after disabling Linux Aura: http://crbug.com/319689
+#define MAYBE_TestPartialUpdate DISABLED_TestPartialUpdate
+#else
+#define MAYBE_TestPartialUpdate TestPartialUpdate
+#endif
+IN_PROC_BROWSER_TEST_F(NotificationsApiTest, MAYBE_TestPartialUpdate) {
   scoped_refptr<Extension> empty_extension(utils::CreateEmptyExtension());
 
   // Create a new notification.
@@ -641,7 +651,8 @@ IN_PROC_BROWSER_TEST_F(NotificationsApiTest, TestPartialUpdate) {
         "\"type\": \"basic\","
         "\"iconUrl\": \"an/image/that/does/not/exist.png\","
         "\"title\": \"Attention!\","
-        "\"message\": \"Check out Cirque du Soleil\""
+        "\"message\": \"Check out Cirque du Soleil\","
+        "\"buttons\": [{\"title\": \"Button\"}]"
         "}]",
         browser(),
         utils::NONE));
@@ -652,6 +663,8 @@ IN_PROC_BROWSER_TEST_F(NotificationsApiTest, TestPartialUpdate) {
   }
 
   // Update a few properties in the existing notification.
+  const char kNewTitle[] = "Changed!";
+  const char kNewMessage[] = "Too late! The show ended yesterday";
   {
     scoped_refptr<extensions::NotificationsUpdateFunction>
         notification_function(
@@ -664,8 +677,8 @@ IN_PROC_BROWSER_TEST_F(NotificationsApiTest, TestPartialUpdate) {
         "[\"" + notification_id +
             "\", "
             "{"
-            "\"title\": \"Changed!\","
-            "\"message\": \"Too late! The show ended yesterday\""
+            "\"title\": \"" + kNewTitle + "\","
+            "\"message\": \"" + kNewMessage + "\""
             "}]",
         browser(),
         utils::NONE));
@@ -676,7 +689,8 @@ IN_PROC_BROWSER_TEST_F(NotificationsApiTest, TestPartialUpdate) {
     ASSERT_TRUE(copy_bool_value);
   }
 
-  // Update another property in the existing notification.
+  // Update some other properties in the existing notification.
+  int kNewPriority = 2;
   {
     scoped_refptr<extensions::NotificationsUpdateFunction>
         notification_function(
@@ -689,7 +703,8 @@ IN_PROC_BROWSER_TEST_F(NotificationsApiTest, TestPartialUpdate) {
         "[\"" + notification_id +
             "\", "
             "{"
-            "\"priority\": 2"
+            "\"priority\": " + base::IntToString(kNewPriority) + ","
+            "\"buttons\": []"
             "}]",
         browser(),
         utils::NONE));
@@ -698,5 +713,117 @@ IN_PROC_BROWSER_TEST_F(NotificationsApiTest, TestPartialUpdate) {
     bool copy_bool_value = false;
     ASSERT_TRUE(result->GetAsBoolean(&copy_bool_value));
     ASSERT_TRUE(copy_bool_value);
+  }
+
+  // Get the updated notification and verify its data.
+  const message_center::NotificationList::Notifications& notifications =
+      g_browser_process->message_center()->GetVisibleNotifications();
+  ASSERT_EQ(1u, notifications.size());
+  message_center::Notification* notification = *(notifications.begin());
+  EXPECT_EQ(ASCIIToUTF16(kNewTitle), notification->title());
+  EXPECT_EQ(ASCIIToUTF16(kNewMessage), notification->message());
+  EXPECT_EQ(kNewPriority, notification->priority());
+  EXPECT_EQ(0u, notification->buttons().size());
+}
+
+// MessaceCenter-specific test.
+#if defined(RUN_MESSAGE_CENTER_TESTS)
+#define MAYBE_TestGetPermissionLevel TestGetPermissionLevel
+#else
+#define MAYBE_TestGetPermissionLevel DISABLED_TestGetPermissionLevel
+#endif
+
+IN_PROC_BROWSER_TEST_F(NotificationsApiTest, MAYBE_TestGetPermissionLevel) {
+  scoped_refptr<Extension> empty_extension(utils::CreateEmptyExtension());
+
+  // Get permission level for the extension whose notifications are enabled.
+  {
+    scoped_refptr<extensions::NotificationsGetPermissionLevelFunction>
+        notification_function(
+            new extensions::NotificationsGetPermissionLevelFunction());
+
+    notification_function->set_extension(empty_extension.get());
+    notification_function->set_has_callback(true);
+
+    scoped_ptr<base::Value> result(utils::RunFunctionAndReturnSingleResult(
+        notification_function.get(),
+        "[]",
+        browser(),
+        utils::NONE));
+
+    EXPECT_EQ(base::Value::TYPE_STRING, result->GetType());
+    std::string permission_level;
+    EXPECT_TRUE(result->GetAsString(&permission_level));
+    EXPECT_EQ("granted", permission_level);
+  }
+
+  // Get permission level for the extension whose notifications are disabled.
+  {
+    scoped_refptr<extensions::NotificationsGetPermissionLevelFunction>
+        notification_function(
+            new extensions::NotificationsGetPermissionLevelFunction());
+
+    notification_function->set_extension(empty_extension.get());
+    notification_function->set_has_callback(true);
+
+    message_center::NotifierId notifier_id(
+        message_center::NotifierId::APPLICATION,
+        empty_extension->id());
+    message_center::Notifier notifier(notifier_id, base::string16(), true);
+    g_browser_process->message_center()->GetNotifierSettingsProvider()->
+        SetNotifierEnabled(notifier, false);
+
+    scoped_ptr<base::Value> result(utils::RunFunctionAndReturnSingleResult(
+        notification_function.get(),
+        "[]",
+        browser(),
+        utils::NONE));
+
+    EXPECT_EQ(base::Value::TYPE_STRING, result->GetType());
+    std::string permission_level;
+    EXPECT_TRUE(result->GetAsString(&permission_level));
+    EXPECT_EQ("denied", permission_level);
+  }
+}
+
+// MessaceCenter-specific test.
+#if defined(RUN_MESSAGE_CENTER_TESTS)
+#define MAYBE_TestOnPermissionLevelChanged TestOnPermissionLevelChanged
+#else
+#define MAYBE_TestOnPermissionLevelChanged DISABLED_TestOnPermissionLevelChanged
+#endif
+
+IN_PROC_BROWSER_TEST_F(NotificationsApiTest,
+                       MAYBE_TestOnPermissionLevelChanged) {
+  const extensions::Extension* extension =
+      LoadExtensionAndWait("notifications/api/permission");
+  ASSERT_TRUE(extension) << message_;
+
+  // Test permission level changing from granted to denied.
+  {
+    ResultCatcher catcher;
+
+    message_center::NotifierId notifier_id(
+        message_center::NotifierId::APPLICATION,
+        extension->id());
+    message_center::Notifier notifier(notifier_id, base::string16(), true);
+    g_browser_process->message_center()->GetNotifierSettingsProvider()->
+        SetNotifierEnabled(notifier, false);
+
+    EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
+  }
+
+  // Test permission level changing from denied to granted.
+  {
+    ResultCatcher catcher;
+
+    message_center::NotifierId notifier_id(
+        message_center::NotifierId::APPLICATION,
+        extension->id());
+    message_center::Notifier notifier(notifier_id, base::string16(), false);
+    g_browser_process->message_center()->GetNotifierSettingsProvider()->
+        SetNotifierEnabled(notifier, true);
+
+    EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
   }
 }

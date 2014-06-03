@@ -14,7 +14,7 @@
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
-#include "chrome/browser/sync/profile_sync_service_harness.h"
+#include "chrome/browser/sync/test/integration/profile_sync_service_harness.h"
 #include "chrome/browser/sync/test/integration/sync_datatype_helper.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
 
@@ -107,7 +107,7 @@ bool ServicesMatch(int profile_a, int profile_b) {
 
 // Convenience helper for consistently generating the same keyword for a given
 // seed.
-string16 CreateKeyword(int seed) {
+base::string16 CreateKeyword(int seed) {
   return ASCIIToUTF16(base::StringPrintf("test%d", seed));
 }
 
@@ -182,7 +182,7 @@ TemplateURL* CreateTestTemplateURL(Profile* profile, int seed) {
 
 TemplateURL* CreateTestTemplateURL(Profile* profile,
                                    int seed,
-                                   const string16& keyword,
+                                   const base::string16& keyword,
                                    const std::string& sync_guid) {
   return CreateTestTemplateURL(profile, seed, keyword,
       base::StringPrintf("http://www.test%d.com/", seed), sync_guid);
@@ -190,7 +190,7 @@ TemplateURL* CreateTestTemplateURL(Profile* profile,
 
 TemplateURL* CreateTestTemplateURL(Profile* profile,
                                    int seed,
-                                   const string16& keyword,
+                                   const base::string16& keyword,
                                    const std::string& url,
                                    const std::string& sync_guid) {
   TemplateURLData data;
@@ -215,9 +215,9 @@ void AddSearchEngine(int profile_index, int seed) {
 }
 
 void EditSearchEngine(int profile_index,
-                      const string16& keyword,
-                      const string16& short_name,
-                      const string16& new_keyword,
+                      const base::string16& keyword,
+                      const base::string16& short_name,
+                      const base::string16& new_keyword,
                       const std::string& url) {
   DCHECK(!url.empty());
   TemplateURLService* service = GetServiceForBrowserContext(profile_index);
@@ -237,7 +237,7 @@ void EditSearchEngine(int profile_index,
 
 void DeleteSearchEngineBySeed(int profile_index, int seed) {
   TemplateURLService* service = GetServiceForBrowserContext(profile_index);
-  string16 keyword(CreateKeyword(seed));
+  base::string16 keyword(CreateKeyword(seed));
   TemplateURL* turl = service->GetTemplateURLForKeyword(keyword);
   EXPECT_TRUE(turl);
   service->Remove(turl);

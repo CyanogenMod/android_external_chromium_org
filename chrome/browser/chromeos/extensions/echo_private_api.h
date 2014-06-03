@@ -7,13 +7,25 @@
 
 #include "base/compiler_specific.h"
 #include "chrome/browser/chromeos/ui/echo_dialog_listener.h"
-#include "chrome/browser/extensions/extension_function.h"
+#include "chrome/browser/extensions/chrome_extension_function.h"
+
+class PrefRegistrySimple;
 
 namespace chromeos {
-class EchoDialogView;
-}
 
-class EchoPrivateGetRegistrationCodeFunction : public SyncExtensionFunction {
+class EchoDialogView;
+
+// Namespace to register the EchoCheckedOffers field in Local State.
+namespace echo_offer {
+
+void RegisterPrefs(PrefRegistrySimple* registry);
+
+}  // namespace echo_offer
+
+}  // namespace chromeos
+
+class EchoPrivateGetRegistrationCodeFunction
+    : public ChromeSyncExtensionFunction {
  public:
   EchoPrivateGetRegistrationCodeFunction();
 
@@ -27,7 +39,8 @@ class EchoPrivateGetRegistrationCodeFunction : public SyncExtensionFunction {
                              ECHOPRIVATE_GETREGISTRATIONCODE)
 };
 
-class EchoPrivateGetOobeTimestampFunction : public AsyncExtensionFunction {
+class EchoPrivateGetOobeTimestampFunction
+    : public ChromeAsyncExtensionFunction {
  public:
   EchoPrivateGetOobeTimestampFunction();
 
@@ -41,21 +54,30 @@ class EchoPrivateGetOobeTimestampFunction : public AsyncExtensionFunction {
                              ECHOPRIVATE_GETOOBETIMESTAMP)
 };
 
-// TODO(tbarzic): Remove this once echo.getUserConsent function is up and
-// running.
-class EchoPrivateCheckAllowRedeemOffersFunction
-    : public AsyncExtensionFunction {
+class EchoPrivateSetOfferInfoFunction : public ChromeSyncExtensionFunction {
  public:
-  EchoPrivateCheckAllowRedeemOffersFunction();
+  EchoPrivateSetOfferInfoFunction();
 
  protected:
-  virtual ~EchoPrivateCheckAllowRedeemOffersFunction();
+  virtual ~EchoPrivateSetOfferInfoFunction();
   virtual bool RunImpl() OVERRIDE;
 
  private:
-  void CheckAllowRedeemOffers();
-  DECLARE_EXTENSION_FUNCTION("echoPrivate.checkAllowRedeemOffers",
-                             ECHOPRIVATE_CHECKALLOWREDEEMOFFERS)
+  DECLARE_EXTENSION_FUNCTION("echoPrivate.setOfferInfo",
+                             ECHOPRIVATE_SETOFFERINFO)
+};
+
+class EchoPrivateGetOfferInfoFunction : public ChromeSyncExtensionFunction {
+ public:
+  EchoPrivateGetOfferInfoFunction();
+
+ protected:
+  virtual ~EchoPrivateGetOfferInfoFunction();
+  virtual bool RunImpl() OVERRIDE;
+
+ private:
+  DECLARE_EXTENSION_FUNCTION("echoPrivate.getOfferInfo",
+                             ECHOPRIVATE_GETOFFERINFO)
 };
 
 // The function first checks if offers redeeming is allowed by the device
@@ -63,9 +85,8 @@ class EchoPrivateCheckAllowRedeemOffersFunction
 // either asks user's consent to verify the device's eligibility for the offer,
 // or informs the user that the offers redeeming is disabled.
 // It returns whether the user consent was given.
-class EchoPrivateGetUserConsentFunction
-    : public AsyncExtensionFunction,
-      public chromeos::EchoDialogListener {
+class EchoPrivateGetUserConsentFunction : public ChromeAsyncExtensionFunction,
+                                          public chromeos::EchoDialogListener {
  public:
   // Type for the dialog shown callback used in tests.
   typedef base::Callback<void(chromeos::EchoDialogView* dialog)>

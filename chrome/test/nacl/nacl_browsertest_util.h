@@ -74,7 +74,9 @@ class NaClBrowserTestBase : public InProcessBrowserTest {
   // Where are the files for this class of test located on disk?
   virtual bool GetDocumentRoot(base::FilePath* document_root);
 
-  virtual bool IsPnacl();
+  virtual bool IsAPnaclTest();
+
+  virtual bool IsPnaclDisabled();
 
   // Map a file relative to the variant directory to a URL served by the test
   // web server.
@@ -116,18 +118,22 @@ class NaClBrowserTestGLibc : public NaClBrowserTestBase {
 
 class NaClBrowserTestPnacl : public NaClBrowserTestBase {
  public:
+  virtual base::FilePath::StringType Variant() OVERRIDE;
+
+  virtual bool IsAPnaclTest() OVERRIDE;
+};
+
+// Class used to test that when --disable-pnacl is specified the PNaCl mime
+// type is not available.
+class NaClBrowserTestPnaclDisabled : public NaClBrowserTestBase {
+ public:
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE;
 
   virtual base::FilePath::StringType Variant() OVERRIDE;
 
-  virtual bool IsPnacl() OVERRIDE;
-};
+  virtual bool IsAPnaclTest() OVERRIDE;
 
-// Temporary class for running tests with the old cache enabled. Once all the
-// pieces are stable and the old code is gone, this will go away.
-class NaClBrowserTestPnaclWithOldCache : public NaClBrowserTestPnacl {
- public:
-  NaClBrowserTestPnaclWithOldCache();
+  virtual bool IsPnaclDisabled() OVERRIDE;
 };
 
 // A NaCl browser test only using static files.
@@ -137,12 +143,10 @@ class NaClBrowserTestStatic : public NaClBrowserTestBase {
   virtual bool GetDocumentRoot(base::FilePath* document_root) OVERRIDE;
 };
 
-// PNaCl's cache and PPB_FileIO currently trip up under ASAN:
-// https://code.google.com/p/chromium/issues/detail?id=171810
 // PNaCl tests take a long time on windows debug builds
 // and sometimes time out.  Disable until it is made faster:
 // https://code.google.com/p/chromium/issues/detail?id=177555
-#if defined(ADDRESS_SANITIZER) || (defined(OS_WIN) && !defined(NDEBUG))
+#if (defined(OS_WIN) && !defined(NDEBUG))
 #define MAYBE_PNACL(test_name) DISABLED_##test_name
 #else
 #define MAYBE_PNACL(test_name) test_name
@@ -157,7 +161,7 @@ body
 
 #else
 
-// Otherwise, we have Glibc, Newlib and PNaCl tests
+// Otherwise, we have Glibc, Newlib and Pnacl tests
 #define NACL_BROWSER_TEST_F(suite, name, body) \
 IN_PROC_BROWSER_TEST_F(suite##Newlib, name) \
 body \

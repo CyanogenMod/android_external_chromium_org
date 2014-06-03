@@ -112,7 +112,7 @@ Browser* BrowserNavigatorTest::CreateEmptyBrowserForType(Browser::Type type,
                                                          Profile* profile) {
   Browser* browser = new Browser(
       Browser::CreateParams(type, profile, chrome::GetActiveDesktop()));
-  chrome::AddBlankTabAt(browser, -1, true);
+  chrome::AddTabAt(browser, GURL(), -1, true);
   return browser;
 }
 
@@ -122,7 +122,7 @@ Browser* BrowserNavigatorTest::CreateEmptyBrowserForApp(Browser::Type type,
       Browser::CreateParams::CreateForApp(
           Browser::TYPE_POPUP, "Test", gfx::Rect(), profile,
           chrome::GetActiveDesktop()));
-  chrome::AddBlankTabAt(browser, -1, true);
+  chrome::AddTabAt(browser, GURL(), -1, true);
   return browser;
 }
 
@@ -1331,9 +1331,9 @@ IN_PROC_BROWSER_TEST_F(BrowserNavigatorTest,
   ASSERT_TRUE(test_server()->Start());
 
   // Open a browser initiated POST request in new foreground tab.
-  string16 expected_title(base::ASCIIToUTF16(kExpectedTitle));
+  base::string16 expected_title(base::ASCIIToUTF16(kExpectedTitle));
   std::string post_data = kExpectedTitle;
-  string16 title;
+  base::string16 title;
   ASSERT_TRUE(OpenPOSTURLInNewForegroundTabAndGetTitle(
       test_server()->GetURL(kEchoTitleCommand), post_data, true, &title));
   EXPECT_EQ(expected_title, title);
@@ -1347,9 +1347,9 @@ IN_PROC_BROWSER_TEST_F(BrowserNavigatorTest,
   ASSERT_TRUE(test_server()->Start());
 
   // Open a renderer initiated POST request in new foreground tab.
-  string16 expected_title(base::ASCIIToUTF16(kExpectedTitle));
+  base::string16 expected_title(base::ASCIIToUTF16(kExpectedTitle));
   std::string post_data = kExpectedTitle;
-  string16 title;
+  base::string16 title;
   ASSERT_TRUE(OpenPOSTURLInNewForegroundTabAndGetTitle(
       test_server()->GetURL(kEchoTitleCommand), post_data, false, &title));
   EXPECT_NE(expected_title, title);

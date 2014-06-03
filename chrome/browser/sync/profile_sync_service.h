@@ -20,8 +20,6 @@
 #include "base/strings/string16.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
-#include "chrome/browser/signin/oauth2_token_service.h"
-#include "chrome/browser/signin/signin_global_error.h"
 #include "chrome/browser/sync/backend_unrecoverable_error_handler.h"
 #include "chrome/browser/sync/glue/data_type_controller.h"
 #include "chrome/browser/sync/glue/data_type_encryption_handler.h"
@@ -29,14 +27,18 @@
 #include "chrome/browser/sync/glue/data_type_manager_observer.h"
 #include "chrome/browser/sync/glue/failed_data_types_handler.h"
 #include "chrome/browser/sync/glue/sync_backend_host.h"
+#include "chrome/browser/sync/glue/sync_frontend.h"
+#include "chrome/browser/sync/glue/synced_device_tracker.h"
 #include "chrome/browser/sync/profile_sync_service_base.h"
 #include "chrome/browser/sync/profile_sync_service_observer.h"
+#include "chrome/browser/sync/sessions2/sessions_sync_manager.h"
 #include "chrome/browser/sync/sync_prefs.h"
 #include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_types.h"
 #include "google_apis/gaia/google_service_auth_error.h"
+#include "google_apis/gaia/oauth2_token_service.h"
 #include "net/base/backoff_entry.h"
 #include "sync/internal_api/public/base/model_type.h"
 #include "sync/internal_api/public/engine/model_safe_worker.h"
@@ -47,6 +49,7 @@
 #include "url/gurl.h"
 
 class Profile;
+class ProfileOAuth2TokenService;
 class ProfileSyncComponentsFactory;
 class SigninManagerBase;
 class SyncGlobalError;
@@ -54,23 +57,30 @@ class SyncGlobalError;
 namespace browser_sync {
 class BackendMigrator;
 class ChangeProcessor;
-class DeviceInfo;
 class DataTypeManager;
+class DeviceInfo;
+class FaviconCache;
 class JsController;
+class OpenTabsUIDelegate;
 class SessionModelAssociator;
 
-namespace sessions { class SyncSessionSnapshot; }
-}
+namespace sessions {
+class SyncSessionSnapshot;
+}  // namespace sessions
+}  // namespace browser_sync
 
 namespace syncer {
 class BaseTransaction;
+class NetworkResources;
 struct SyncCredentials;
 struct UserShare;
-}
+}  // namespace syncer
 
 namespace sync_pb {
 class EncryptedData;
 }  // namespace sync_pb
+
+using browser_sync::SessionsSyncManager;
 
 // ProfileSyncService is the layer between browser subsystems like bookmarks,
 // and the sync backend.  Each subsystem is logically thought of as being
@@ -155,19 +165,39 @@ class EncryptedData;
 //   tell the sync engine that setup is completed and it can begin downloading
 //   data from the sync server.
 //
-class ProfileSyncService : public ProfileSyncServiceBase,
-                           public browser_sync::SyncFrontend,
-                           public browser_sync::SyncPrefObserver,
-                           public browser_sync::DataTypeManagerObserver,
-                           public SigninGlobalError::AuthStatusProvider,
-                           public syncer::UnrecoverableErrorHandler,
-                           public content::NotificationObserver,
-                           public BrowserContextKeyedService,
-                           public browser_sync::DataTypeEncryptionHandler,
-                           public OAuth2TokenService::Consumer,
-                           public OAuth2TokenService::Observer {
+class ProfileSyncService
+    : public ProfileSyncServiceBase,
+      public browser_sync::SyncFrontend,
+      public browser_sync::SyncPrefObserver,
+      public browser_sync::DataTypeManagerObserver,
+      public syncer::UnrecoverableErrorHandler,
+      public content::NotificationObserver,
+      public BrowserContextKeyedService,
+      public browser_sync::DataTypeEncryptionHandler,
+      public OAuth2TokenService::Consumer,
+      public OAuth2TokenService::Observer,
+      public SessionsSyncManager::SyncInternalApiDelegate {
  public:
   typedef browser_sync::SyncBackendHost::Status Status;
+
+  // Status of sync server connection, sync token and token request.
+  struct SyncTokenStatus {
+    SyncTokenStatus();
+    ~SyncTokenStatus();
+
+    // Sync server connection status reported by sync backend.
+    base::Time connection_status_update_time;
+    syncer::ConnectionStatus connection_status;
+
+    // Times when OAuth2 access token is requested and received.
+    base::Time token_request_time;
+    base::Time token_receive_time;
+
+    // Error returned by OAuth2TokenService for token request and time when
+    // next request is scheduled.
+    GoogleServiceAuthError last_get_token_error;
+    base::Time next_token_request_time;
+  };
 
   enum SyncEventCodes  {
     MIN_SYNC_EVENT_CODE = 0,
@@ -215,6 +245,15 @@ class ProfileSyncService : public ProfileSyncServiceBase,
                // during sync setup and provided a passphrase.
   };
 
+  enum SyncStatusSummary {
+    UNRECOVERABLE_ERROR,
+    NOT_ENABLED,
+    SETUP_INCOMPLETE,
+    DATATYPES_NOT_INITIALIZED,
+    INITIALIZED,
+    UNKNOWN_ERROR,
+  };
+
   // Default sync server URL.
   static const char* kSyncServerUrl;
   // Sync server URL for dev channel users
@@ -224,6 +263,7 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   ProfileSyncService(ProfileSyncComponentsFactory* factory,
                      Profile* profile,
                      SigninManagerBase* signin,
+                     ProfileOAuth2TokenService* oauth2_token_service,
                      StartBehavior start_behavior);
   virtual ~ProfileSyncService();
 
@@ -267,13 +307,34 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   // Returns the session model associator associated with this type, but only if
   // the associator is running.  If it is doing anything else, it will return
   // null.
-  // TODO(zea): Figure out a better way to expose this to the UI elements that
-  // need it.
-  browser_sync::SessionModelAssociator* GetSessionModelAssociator();
+  //
+  // *** DONT USE THIS ANYMORE! ***
+  // If you think you want to use this, think again! Can you use
+  // GetOpenTabsUIDelegate instead?
+  // TODO(tim): Remove this method.
+  virtual browser_sync::SessionModelAssociator*
+      GetSessionModelAssociatorDeprecated();
 
+  // Return the active OpenTabsUIDelegate. If sessions is not enabled or not
+  // currently syncing, returns NULL.
+  virtual browser_sync::OpenTabsUIDelegate* GetOpenTabsUIDelegate();
+
+  // Returns the SyncableService for syncer::SESSIONS.
+  virtual syncer::SyncableService* GetSessionsSyncableService();
+
+  // SyncInternalApiDelegate implementation.
+  //
   // Returns sync's representation of the local device info.
   // Return value is an empty scoped_ptr if the device info is unavailable.
-  virtual scoped_ptr<browser_sync::DeviceInfo> GetLocalDeviceInfo() const;
+  virtual scoped_ptr<browser_sync::DeviceInfo> GetLocalDeviceInfo()
+      const OVERRIDE;
+
+  // Gets the guid for the local device. Can be used by other layers to
+  // to distinguish sync data that belongs to the local device vs data
+  // that belongs to remote devices. Returns empty string if sync is not
+  // initialized. The GUID is not persistent across Chrome signout/signin.
+  // If you sign out of Chrome and sign in, a new GUID is generated.
+  virtual std::string GetLocalSyncCacheGUID() const OVERRIDE;
 
   // Returns sync's representation of the device info for a client identified
   // by |client_id|. Return value is an empty scoped ptr if the device info
@@ -284,6 +345,14 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   // Gets the device info for all devices signed into the account associated
   // with this profile.
   virtual ScopedVector<browser_sync::DeviceInfo> GetAllSignedInDevices() const;
+
+  // Notifies the observer of any device info changes.
+  virtual void AddObserverForDeviceInfoChange(
+      browser_sync::SyncedDeviceTracker::Observer* observer);
+
+  // Removes the observer from device info notification.
+  virtual void RemoveObserverForDeviceInfoChange(
+      browser_sync::SyncedDeviceTracker::Observer* observer);
 
   // Fills state_map with a map of current data types that are possible to
   // sync, as well as their states.
@@ -329,9 +398,6 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   virtual bool IsPassphraseRequired() const OVERRIDE;
   virtual syncer::ModelTypeSet GetEncryptedDataTypes() const OVERRIDE;
 
-  // Update the last auth error and notify observers of error state.
-  void UpdateAuthErrorState(const GoogleServiceAuthError& error);
-
   // Called when a user chooses which data types to sync as part of the sync
   // setup wizard.  |sync_everything| represents whether they chose the
   // "keep everything synced" option; if true, |chosen_types| will be ignored
@@ -340,8 +406,11 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   virtual void OnUserChoseDatatypes(bool sync_everything,
       syncer::ModelTypeSet chosen_types);
 
-  // Get various information for displaying in the user interface.
-  std::string QuerySyncStatusSummary();
+  // Get the sync status code.
+  SyncStatusSummary QuerySyncStatusSummary();
+
+  // Get a description of the sync status for displaying in the user interface.
+  std::string QuerySyncStatusSummaryString();
 
   // Initializes a struct of status indicators with data from the backend.
   // Returns false if the backend was not available for querying; in that case
@@ -393,7 +462,7 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   }
 
   // Returns a user-friendly string form of last synced time (in minutes).
-  virtual string16 GetLastSyncedTimeString() const;
+  virtual base::string16 GetLastSyncedTimeString() const;
 
   // Returns a human readable string describing backend initialization state.
   std::string GetBackendInitializationStateString() const;
@@ -425,9 +494,6 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   // Returns whether sync is managed, i.e. controlled by configuration
   // management. If so, the user is not allowed to configure sync.
   virtual bool IsManaged() const;
-
-  // SigninGlobalError::AuthStatusProvider implementation.
-  virtual GoogleServiceAuthError GetAuthStatus() const OVERRIDE;
 
   // syncer::UnrecoverableErrorHandler implementation.
   virtual void OnUnrecoverableError(
@@ -464,6 +530,12 @@ class ProfileSyncService : public ProfileSyncServiceBase,
 
   // Used by ProfileSyncServiceHarness.  May return NULL.
   browser_sync::BackendMigrator* GetBackendMigratorForTest();
+
+  // Used by tests to inspect interaction with OAuth2TokenService.
+  bool IsRetryingAccessTokenFetchForTest() const;
+
+  // Used by tests to inspect the OAuth2 access tokens used by PSS.
+  std::string GetAccessTokenForTest() const;
 
   // TODO(sync): This is only used in tests.  Can we remove it?
   void GetModelSafeRoutingInfo(syncer::ModelSafeRoutingInfo* out) const;
@@ -610,11 +682,8 @@ class ProfileSyncService : public ProfileSyncServiceBase,
 
   // OAuth2TokenService::Observer implementation.
   virtual void OnRefreshTokenAvailable(const std::string& account_id) OVERRIDE;
-  virtual void OnRefreshTokenRevoked(
-      const std::string& account_id,
-      const GoogleServiceAuthError& error) OVERRIDE;
+  virtual void OnRefreshTokenRevoked(const std::string& account_id) OVERRIDE;
   virtual void OnRefreshTokensLoaded() OVERRIDE;
-  virtual void OnRefreshTokensCleared() OVERRIDE;
 
   // BrowserContextKeyedService implementation.  This must be called exactly
   // once (before this object is destroyed).
@@ -626,10 +695,17 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   // told to MergeDataAndStartSyncing yet.
   void OnDataTypeRequestsSyncStartup(syncer::ModelType type);
 
- protected:
-  // Used by test classes that derive from ProfileSyncService.
-  virtual browser_sync::SyncBackendHost* GetBackendForTest();
+  // Return sync token status.
+  SyncTokenStatus GetSyncTokenStatus() const;
 
+  browser_sync::FaviconCache* GetFaviconCache();
+
+  // Overrides the NetworkResources used for Sync connections.
+  // This function takes ownership of |network_resources|.
+  void OverrideNetworkResourcesForTest(
+      scoped_ptr<syncer::NetworkResources> network_resources);
+
+ protected:
   // Helper to configure the priority data types.
   void ConfigurePriorityDataTypes();
 
@@ -641,7 +717,7 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   // to claim ownership of sync thread from backend.
   void ShutdownImpl(browser_sync::SyncBackendHost::ShutdownOption option);
 
-  // Return SyncCredentials from the TokenService.
+  // Return SyncCredentials from the OAuth2TokenService.
   syncer::SyncCredentials GetCredentials();
 
   virtual syncer::WeakHandle<syncer::JsEventHandler> GetJsEventHandler();
@@ -693,10 +769,20 @@ class ProfileSyncService : public ProfileSyncServiceBase,
     ERROR_REASON_ACTIONABLE_ERROR,
     ERROR_REASON_LIMIT
   };
+
+  enum AuthErrorMetric {
+    AUTH_ERROR_ENCOUNTERED,
+    AUTH_ERROR_FIXED,
+    AUTH_ERROR_LIMIT
+  };
+
   friend class ProfileSyncServicePasswordTest;
   friend class SyncTest;
   friend class TestProfileSyncService;
   FRIEND_TEST_ALL_PREFIXES(ProfileSyncServiceTest, InitialState);
+
+  // Update the last auth error and notify observers of error state.
+  void UpdateAuthErrorState(const GoogleServiceAuthError& error);
 
   // Detects and attempts to recover from a previous improper datatype
   // configuration where Keep Everything Synced and the preferred types were
@@ -723,7 +809,7 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   void ConsumeCachedPassphraseIfPossible();
 
   // RequestAccessToken initiates RPC to request downscoped access token from
-  // refresh token. This happens when TokenService loads OAuth2 login token and
+  // refresh token. This happens when a new OAuth2 login token is loaded and
   // when sync server returns AUTH_ERROR which indicates it is time to refresh
   // token.
   virtual void RequestAccessToken();
@@ -789,9 +875,14 @@ class ProfileSyncService : public ProfileSyncServiceBase,
                                     bool delete_sync_database,
                                     UnrecoverableErrorReason reason);
 
+  bool IsSessionsDataTypeControllerRunning() const;
+
   // Returns the username (in form of an email address) that should be used in
   // the credentials.
   std::string GetEffectiveUsername();
+
+  // Returns the account ID to use to get tokens.
+  std::string GetAccountIdToUse();
 
  // Factory used to create various dependent objects.
   scoped_ptr<ProfileSyncComponentsFactory> factory_;
@@ -864,8 +955,6 @@ class ProfileSyncService : public ProfileSyncServiceBase,
 
   content::NotificationRegistrar registrar_;
 
-  base::WeakPtrFactory<ProfileSyncService> weak_factory_;
-
   // This allows us to gracefully handle an ABORTED return code from the
   // DataTypeManager in the event that the server informed us to cease and
   // desist syncing immediately.
@@ -928,10 +1017,8 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   //     * If sync is reenabled, PSS passes ownership to new backend.
   scoped_ptr<base::Thread> sync_thread_;
 
-  // Specifies whenever to use oauth2 access token or ClientLogin token in
-  // communications with sync and xmpp servers.
-  // TODO(pavely): Remove once android is converted to oauth2 tokens.
-  bool use_oauth2_token_;
+  // ProfileSyncService uses this service to get access tokens.
+  ProfileOAuth2TokenService* oauth2_token_service_;
 
   // ProfileSyncService needs to remember access token in order to invalidate it
   // with OAuth2TokenService.
@@ -945,6 +1032,20 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   // access token with exponential backoff.
   base::OneShotTimer<ProfileSyncService> request_access_token_retry_timer_;
   net::BackoffEntry request_access_token_backoff_;
+
+  base::WeakPtrFactory<ProfileSyncService> weak_factory_;
+
+  // States related to sync token and connection.
+  base::Time connection_status_update_time_;
+  syncer::ConnectionStatus connection_status_;
+  base::Time token_request_time_;
+  base::Time token_receive_time_;
+  GoogleServiceAuthError last_get_token_error_;
+  base::Time next_token_request_time_;
+
+  scoped_ptr<SessionsSyncManager> sessions_sync_manager_;
+
+  scoped_ptr<syncer::NetworkResources> network_resources_;
 
   DISALLOW_COPY_AND_ASSIGN(ProfileSyncService);
 };

@@ -66,8 +66,8 @@ class WebNotificationTrayTest : public InProcessBrowserTest {
                                 GURL(),
                                 ASCIIToUTF16("Test Web Notification"),
                                 ASCIIToUTF16("Notification message body."),
-                                WebKit::WebTextDirectionDefault,
-                                string16(),
+                                blink::WebTextDirectionDefault,
+                                base::string16(),
                                 ASCIIToUTF16(replace_id),
                                 new TestNotificationDelegate(id));
 
@@ -81,8 +81,8 @@ class WebNotificationTrayTest : public InProcessBrowserTest {
                                 GURL(""),
                                 ASCIIToUTF16("Updated Web Notification"),
                                 ASCIIToUTF16("Updated message body."),
-                                WebKit::WebTextDirectionDefault,
-                                string16(),
+                                blink::WebTextDirectionDefault,
+                                base::string16(),
                                 ASCIIToUTF16(replace_id),
                                 new TestNotificationDelegate(new_id));
 
@@ -100,8 +100,16 @@ class WebNotificationTrayTest : public InProcessBrowserTest {
 
 }  // namespace
 
+
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(USE_AURA)
+// TODO(erg): linux_aura bringup: http://crbug.com/163931
+#define MAYBE_WebNotifications DISABLED_WebNotifications
+#else
+#define MAYBE_WebNotifications WebNotifications
+#endif
+
 // TODO(dewittj): More exhaustive testing.
-IN_PROC_BROWSER_TEST_F(WebNotificationTrayTest, WebNotifications) {
+IN_PROC_BROWSER_TEST_F(WebNotificationTrayTest, MAYBE_WebNotifications) {
   message_center::MessageCenter* message_center =
       message_center::MessageCenter::Get();
 
@@ -179,7 +187,14 @@ IN_PROC_BROWSER_TEST_F(WebNotificationTrayTest,
             tray->message_center_delegate_->NumMessageViewsForTest());
 }
 
-IN_PROC_BROWSER_TEST_F(WebNotificationTrayTest, ManyPopupNotifications) {
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(USE_AURA)
+// TODO(erg): linux_aura bringup: http://crbug.com/163931
+#define MAYBE_ManyPopupNotifications DISABLED_ManyPopupNotifications
+#else
+#define MAYBE_ManyPopupNotifications ManyPopupNotifications
+#endif
+
+IN_PROC_BROWSER_TEST_F(WebNotificationTrayTest, MAYBE_ManyPopupNotifications) {
   scoped_ptr<WebNotificationTray> tray(new WebNotificationTray());
   message_center::MessageCenter* message_center = tray->message_center();
 

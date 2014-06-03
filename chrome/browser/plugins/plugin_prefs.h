@@ -55,7 +55,7 @@ class PluginPrefs : public RefcountedBrowserContextKeyedService {
   void SetPrefs(PrefService* prefs);
 
   // Enable or disable a plugin group.
-  void EnablePluginGroup(bool enable, const string16& group_name);
+  void EnablePluginGroup(bool enable, const base::string16& group_name);
 
   // Enables or disables a specific plug-in file, if possible.
   // If the plug-in state can't be changed (because of a policy for example)
@@ -67,7 +67,7 @@ class PluginPrefs : public RefcountedBrowserContextKeyedService {
 
   // Returns whether there is a policy enabling or disabling plug-ins of the
   // given name.
-  PolicyStatus PolicyStatusForPlugin(const string16& name) const;
+  PolicyStatus PolicyStatusForPlugin(const base::string16& name) const;
 
   // Returns whether the plugin is enabled or not.
   bool IsPluginEnabled(const content::WebPluginInfo& plugin) const;
@@ -104,19 +104,19 @@ class PluginPrefs : public RefcountedBrowserContextKeyedService {
 
   // Called to update one of the policy_xyz patterns below when a
   // preference changes.
-  void UpdatePatternsAndNotify(std::set<string16>* patterns,
+  void UpdatePatternsAndNotify(std::set<base::string16>* patterns,
                                const std::string& pref_name);
 
   // Allows unit tests to directly set enforced plug-in patterns.
   void SetPolicyEnforcedPluginPatterns(
-      const std::set<string16>& disabled_patterns,
-      const std::set<string16>& disabled_exception_patterns,
-      const std::set<string16>& enabled_patterns);
+      const std::set<base::string16>& disabled_patterns,
+      const std::set<base::string16>& disabled_exception_patterns,
+      const std::set<base::string16>& enabled_patterns);
 
   // Callback for after the plugin groups have been loaded.
   void EnablePluginGroupInternal(
       bool enabled,
-      const string16& group_name,
+      const base::string16& group_name,
       const std::vector<content::WebPluginInfo>& plugins);
   void EnablePluginInternal(
       bool enabled,
@@ -132,21 +132,21 @@ class PluginPrefs : public RefcountedBrowserContextKeyedService {
   void NotifyPluginStatusChanged();
 
   static void ListValueToStringSet(const base::ListValue* src,
-                                   std::set<string16>* dest);
+                                   std::set<base::string16>* dest);
 
   // Checks if |name| matches any of the patterns in |pattern_set|.
-  static bool IsStringMatchedInSet(const string16& name,
-                                   const std::set<string16>& pattern_set);
+  static bool IsStringMatchedInSet(const base::string16& name,
+                                   const std::set<base::string16>& pattern_set);
 
   // Guards access to the following data structures.
   mutable base::Lock lock_;
 
   PluginState plugin_state_;
-  std::map<string16, bool> plugin_group_state_;
+  std::map<base::string16, bool> plugin_group_state_;
 
-  std::set<string16> policy_disabled_plugin_patterns_;
-  std::set<string16> policy_disabled_plugin_exception_patterns_;
-  std::set<string16> policy_enabled_plugin_patterns_;
+  std::set<base::string16> policy_disabled_plugin_patterns_;
+  std::set<base::string16> policy_disabled_plugin_exception_patterns_;
+  std::set<base::string16> policy_enabled_plugin_patterns_;
 
   // Weak pointer, owns us. Only used as a notification source.
   Profile* profile_;

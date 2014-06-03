@@ -97,11 +97,15 @@ class FakeSafeBrowsingDatabaseManager :  public SafeBrowsingDatabaseManager {
   }
 
   void OnCheckBrowseURLDone(const GURL& gurl, Client* client) {
+    std::vector<SBThreatType> expected_threats;
+    expected_threats.push_back(SB_THREAT_TYPE_URL_MALWARE);
+    expected_threats.push_back(SB_THREAT_TYPE_URL_PHISHING);
     SafeBrowsingDatabaseManager::SafeBrowsingCheck sb_check(
         std::vector<GURL>(1, gurl),
         std::vector<SBFullHash>(),
         client,
-        safe_browsing_util::MALWARE);
+        safe_browsing_util::MALWARE,
+        expected_threats);
     sb_check.url_results[0] = badurls[gurl.spec()];
     client->OnSafeBrowsingResult(sb_check);
   }
@@ -154,7 +158,9 @@ class FakeSafeBrowsingUIManager :  public SafeBrowsingUIManager {
 
 class FakeSafeBrowsingService : public SafeBrowsingService {
  public:
-  FakeSafeBrowsingService() { }
+  FakeSafeBrowsingService()
+      : fake_database_manager_(),
+        fake_ui_manager_() { }
 
   // Returned pointer has the same lifespan as the database_manager_ refcounted
   // object.
@@ -261,7 +267,7 @@ class FakeMalwareDetails : public MalwareDetails {
 
 class TestMalwareDetailsFactory : public MalwareDetailsFactory {
  public:
-  TestMalwareDetailsFactory() { }
+  TestMalwareDetailsFactory() : details_() { }
   virtual ~TestMalwareDetailsFactory() { }
 
   virtual MalwareDetails* CreateMalwareDetails(
@@ -477,7 +483,7 @@ class SafeBrowsingBlockingPageTest : public InProcessBrowserTest {
     EXPECT_TRUE(report.complete());
   }
 
-  void MalwareRedirectCancelAndProceed(const std::string open_function) {
+  void MalwareRedirectCancelAndProceed(const std::string& open_function) {
     GURL load_url = test_server()->GetURL(
         "files/safe_browsing/interstitial_cancel.html");
     GURL malware_url("http://localhost/files/safe_browsing/malware.html");
@@ -561,7 +567,7 @@ class SafeBrowsingBlockingPageTest : public InProcessBrowserTest {
     // the button/link may navigate away before the injected javascript can
     // reply, hanging the test.
     rvh->ExecuteJavascriptInWebFrame(
-        string16(),
+        base::string16(),
         ASCIIToUTF16("document.getElementById('" + node_id + "').click();\n"));
     return true;
   }
@@ -707,8 +713,14 @@ IN_PROC_BROWSER_TEST_F(SafeBrowsingBlockingPageTest, MalwareIframeProceed) {
             browser()->tab_strip_model()->GetActiveWebContents()->GetURL());
 }
 
+// http://crbug.com/273302
+#if defined(OS_WIN)
+#define MAYBE_MalwareIframeReportDetails DISABLED_MalwareIframeReportDetails
+#else
+#define MAYBE_MalwareIframeReportDetails MalwareIframeReportDetails
+#endif
 IN_PROC_BROWSER_TEST_F(SafeBrowsingBlockingPageTest,
-                       MalwareIframeReportDetails) {
+                       MAYBE_MalwareIframeReportDetails) {
   GURL url = SetupMalwareIframeWarningAndNavigate();
 
   // If the DOM details from renderer did not already return, wait for them.

@@ -116,10 +116,13 @@ bool ExtensionPrefValueMap::DoesExtensionControlPref(
 void ExtensionPrefValueMap::RegisterExtension(const std::string& ext_id,
                                               const base::Time& install_time,
                                               bool is_enabled) {
-  if (entries_.find(ext_id) != entries_.end())
-    UnregisterExtension(ext_id);
-  entries_[ext_id] = new ExtensionEntry;
-  entries_[ext_id]->install_time = install_time;
+  if (entries_.find(ext_id) == entries_.end()) {
+    entries_[ext_id] = new ExtensionEntry;
+
+    // Only update the install time if the extension is newly installed.
+    entries_[ext_id]->install_time = install_time;
+  }
+
   entries_[ext_id]->enabled = is_enabled;
 }
 
@@ -339,6 +342,15 @@ void ExtensionPrefValueMap::AddObserver(
 void ExtensionPrefValueMap::RemoveObserver(
     ExtensionPrefValueMap::Observer* observer) {
   observers_.RemoveObserver(observer);
+}
+
+std::string ExtensionPrefValueMap::GetExtensionControllingPref(
+    const std::string& pref_key) const {
+  ExtensionEntryMap::const_iterator winner =
+      GetEffectivePrefValueController(pref_key, false, NULL);
+  if (winner == entries_.end())
+    return std::string();
+  return winner->first;
 }
 
 void ExtensionPrefValueMap::NotifyInitializationCompleted() {

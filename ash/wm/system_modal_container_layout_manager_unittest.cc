@@ -90,7 +90,7 @@ class EventTestWindow : public TestWindow {
                                          mouse_presses_(0) {}
   virtual ~EventTestWindow() {}
 
-  aura::Window* OpenTestWindowWithContext(aura::RootWindow* context) {
+  aura::Window* OpenTestWindowWithContext(aura::Window* context) {
     views::Widget* widget =
         views::Widget::CreateWindowWithContext(this, context);
     widget->Show();
@@ -250,17 +250,9 @@ TEST_F(SystemModalContainerLayoutManagerTest, ModalNonTransient) {
   EXPECT_TRUE(do2.destroyed());
 }
 
-// Fails on Mac only.  Needs to be implemented.  http://crbug.com/111279.
-#if defined(OS_MACOSX)
-#define MAYBE_CanActivateAfterEndModalSession \
-    DISABLED_CanActivateAfterEndModalSession
-#else
-#define MAYBE_CanActivateAfterEndModalSession CanActivateAfterEndModalSession
-#endif
 // Tests that we can activate an unrelated window after a modal window is closed
 // for a window.
-TEST_F(SystemModalContainerLayoutManagerTest,
-       MAYBE_CanActivateAfterEndModalSession) {
+TEST_F(SystemModalContainerLayoutManagerTest, CanActivateAfterEndModalSession) {
   scoped_ptr<aura::Window> unrelated(OpenToplevelTestWindow(false));
   unrelated->SetBounds(gfx::Rect(100, 100, 50, 50));
   scoped_ptr<aura::Window> parent(OpenToplevelTestWindow(false));
@@ -451,7 +443,7 @@ TEST_F(SystemModalContainerLayoutManagerTest, MultiDisplays) {
   scoped_ptr<aura::Window> normal(OpenToplevelTestWindow(false));
   normal->SetBounds(gfx::Rect(100, 100, 50, 50));
 
-  Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
+  aura::Window::Windows root_windows = Shell::GetAllRootWindows();
   EXPECT_EQ(2U, root_windows.size());
   aura::Window* container1 = Shell::GetContainer(
       root_windows[0], ash::internal::kShellWindowId_SystemModalContainer);

@@ -11,6 +11,7 @@
 #include "base/single_thread_task_runner.h"
 #include "cc/scheduler/delay_based_time_source.h"
 #include "cc/scheduler/time_source.h"
+#include "ui/gfx/frame_time.h"
 
 namespace cc {
 
@@ -43,8 +44,9 @@ FrameRateController::FrameRateController(scoped_refptr<TimeSource> timer)
       time_source_(timer),
       active_(false),
       is_time_source_throttling_(true),
-      weak_factory_(this),
-      task_runner_(NULL) {
+      manual_tick_pending_(false),
+      task_runner_(NULL),
+      weak_factory_(this) {
   time_source_client_adapter_ =
       FrameRateControllerTimeSourceAdapter::Create(this);
   time_source_->SetClient(time_source_client_adapter_.get());
@@ -58,8 +60,9 @@ FrameRateController::FrameRateController(
       interval_(BeginFrameArgs::DefaultInterval()),
       active_(false),
       is_time_source_throttling_(false),
-      weak_factory_(this),
-      task_runner_(task_runner) {}
+      manual_tick_pending_(false),
+      task_runner_(task_runner),
+      weak_factory_(this) {}
 
 FrameRateController::~FrameRateController() {
   if (is_time_source_throttling_)
@@ -70,24 +73,24 @@ BeginFrameArgs FrameRateController::SetActive(bool active) {
   if (active_ == active)
     return BeginFrameArgs();
   TRACE_EVENT1("cc", "FrameRateController::SetActive", "active", active);
-  bool just_activated = active && !active_;
   active_ = active;
 
   if (is_time_source_throttling_) {
-    time_source_->SetActive(active);
+    base::TimeTicks missed_tick_time = time_source_->SetActive(active);
+    if (!missed_tick_time.is_null()) {
+      base::TimeTicks deadline = NextTickTime();
+      return  BeginFrameArgs::Create(
+          missed_tick_time, deadline + deadline_adjustment_, interval_);
+    }
   } else {
-    if (active)
+    if (active) {
       PostManualTick();
-    else
+    } else {
       weak_factory_.InvalidateWeakPtrs();
+      manual_tick_pending_ = false;
+    }
   }
 
-  if (just_activated) {
-    // TODO(brianderson): Use an adaptive parent compositor deadline.
-    base::TimeTicks frame_time = NextTickTime() - interval_;
-    base::TimeTicks deadline = NextTickTime();
-    return BeginFrameArgs::Create(frame_time, deadline, interval_);
-  }
   return BeginFrameArgs();
 }
 
@@ -119,10 +122,10 @@ void FrameRateController::OnTimerTick() {
   if (client_) {
     // TODO(brianderson): Use an adaptive parent compositor deadline.
     base::TimeTicks frame_time = LastTickTime();
-    base::TimeTicks deadline = NextTickTime() + deadline_adjustment_;
-    client_->FrameRateControllerTick(
-        throttled,
-        BeginFrameArgs::Create(frame_time, deadline, interval_));
+    base::TimeTicks deadline = NextTickTime();
+    BeginFrameArgs args = BeginFrameArgs::Create(
+        frame_time, deadline + deadline_adjustment_, interval_);
+    client_->FrameRateControllerTick(throttled, args);
   }
 
   if (!is_time_source_throttling_ && !throttled)
@@ -130,7 +133,8 @@ void FrameRateController::OnTimerTick() {
 }
 
 void FrameRateController::PostManualTick() {
-  if (active_) {
+  if (active_ && !manual_tick_pending_) {
+    manual_tick_pending_ = true;
     task_runner_->PostTask(FROM_HERE,
                            base::Bind(&FrameRateController::ManualTick,
                                       weak_factory_.GetWeakPtr()));
@@ -138,6 +142,7 @@ void FrameRateController::PostManualTick() {
 }
 
 void FrameRateController::ManualTick() {
+  manual_tick_pending_ = false;
   OnTimerTick();
 }
 
@@ -167,7 +172,7 @@ base::TimeTicks FrameRateController::LastTickTime() {
   if (is_time_source_throttling_)
     return time_source_->LastTickTime();
 
-  return base::TimeTicks::Now();
+  return gfx::FrameTime::Now();
 }
 
 }  // namespace cc

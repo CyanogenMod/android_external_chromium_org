@@ -53,6 +53,7 @@
           'dependencies': [
             '../../base/base.gyp:base',
             '../../chrome/common_constants.gyp:common_constants',
+            '../../chrome/chrome.gyp:installer_util',
             '../../crypto/crypto.gyp:crypto',
             '../../google_update/google_update.gyp:google_update',
             '../../ipc/ipc.gyp:ipc',
@@ -63,6 +64,7 @@
             'metro_driver_version_resources',
           ],
           'sources': [
+            'display_properties.cc',
             'metro_driver.cc',
             'metro_driver.h',
             'stdafx.h',
@@ -73,7 +75,7 @@
           'conditions': [
             ['use_aura==1', {
               'dependencies': [
-                '../win8.gyp:metro_viewer',
+                '../win8.gyp:metro_viewer_constants',
               ],
               'sources': [
                 'chrome_app_view_ash.cc',
@@ -83,14 +85,15 @@
                 'file_picker_ash.cc',
                 'file_picker_ash.h',
               ],
+              'includes': [
+                'ime/ime.gypi',
+              ],
             }, {  # use_aura!=1
               'sources': [
                 'chrome_app_view.cc',
                 'chrome_app_view.h',
                 'chrome_url_launch_handler.cc',
                 'chrome_url_launch_handler.h',
-                '../delegate_execute/chrome_util.cc',
-                '../delegate_execute/chrome_util.h',
                 'devices_handler.cc',
                 'devices_handler.h',
                 'file_picker.cc',
@@ -128,6 +131,7 @@
           'type': 'executable',
           'dependencies': [
             '../../base/base.gyp:base',
+            '../../chrome/chrome.gyp:installer_util',
             '../../testing/gtest.gyp:gtest',
             'metro_driver',
           ],

@@ -5,6 +5,7 @@
 #include "chrome/browser/chromeos/drive/file_system/open_file_operation.h"
 
 #include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop_proxy.h"
@@ -46,6 +47,7 @@ OpenFileOperation::~OpenFileOperation() {
 
 void OpenFileOperation::OpenFile(const base::FilePath& file_path,
                                  OpenMode open_mode,
+                                 const std::string& mime_type,
                                  const OpenFileCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
@@ -60,14 +62,16 @@ void OpenFileOperation::OpenFile(const base::FilePath& file_path,
     case CREATE_FILE:
       create_file_operation_->CreateFile(
           file_path,
-          true /* exclusive */,
+          true,  // exclusive: fail if already exists
+          mime_type,
           base::Bind(&OpenFileOperation::OpenFileAfterCreateFile,
                      weak_ptr_factory_.GetWeakPtr(), file_path, callback));
       break;
     case OPEN_OR_CREATE_FILE:
       create_file_operation_->CreateFile(
           file_path,
-          false /* not-exclusive */,
+          false,  // not-exclusive
+          mime_type,
           base::Bind(&OpenFileOperation::OpenFileAfterCreateFile,
                      weak_ptr_factory_.GetWeakPtr(), file_path, callback));
       break;
@@ -122,17 +126,17 @@ void OpenFileOperation::OpenFileAfterFileDownloaded(
       FROM_HERE,
       base::Bind(&internal::FileCache::MarkDirty,
                  base::Unretained(cache_),
-                 entry->resource_id()),
+                 entry->local_id()),
       base::Bind(&OpenFileOperation::OpenFileAfterMarkDirty,
                  weak_ptr_factory_.GetWeakPtr(),
                  local_file_path,
-                 entry->resource_id(),
+                 entry->local_id(),
                  callback));
 }
 
 void OpenFileOperation::OpenFileAfterMarkDirty(
     const base::FilePath& local_file_path,
-    const std::string& resource_id,
+    const std::string& local_id,
     const OpenFileCallback& callback,
     FileError error) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -143,20 +147,29 @@ void OpenFileOperation::OpenFileAfterMarkDirty(
     return;
   }
 
-  ++open_files_[resource_id];
+  ++open_files_[local_id];
   callback.Run(error, local_file_path,
                base::Bind(&OpenFileOperation::CloseFile,
-                          weak_ptr_factory_.GetWeakPtr(), resource_id));
+                          weak_ptr_factory_.GetWeakPtr(), local_id));
 }
 
-void OpenFileOperation::CloseFile(const std::string& resource_id) {
+void OpenFileOperation::CloseFile(const std::string& local_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK_GT(open_files_[resource_id], 0);
+  DCHECK_GT(open_files_[local_id], 0);
 
-  if (--open_files_[resource_id] == 0) {
+  if (--open_files_[local_id] == 0) {
     // All clients closes this file, so notify to upload the file.
-    open_files_.erase(resource_id);
-    observer_->OnCacheFileUploadNeededByOperation(resource_id);
+    open_files_.erase(local_id);
+    observer_->OnCacheFileUploadNeededByOperation(local_id);
+
+    // Clients may have enlarged the file. By FreeDiskpSpaceIfNeededFor(0),
+    // we try to ensure (0 + the-minimum-safe-margin = 512MB as of now) space.
+    blocking_task_runner_->PostTask(
+        FROM_HERE,
+        base::Bind(base::IgnoreResult(
+            base::Bind(&internal::FileCache::FreeDiskSpaceIfNeededFor,
+                       base::Unretained(cache_),
+                       0))));
   }
 }
 

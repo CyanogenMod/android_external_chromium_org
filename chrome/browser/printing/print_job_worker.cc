@@ -13,13 +13,14 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/printing/print_job.h"
+#include "chrome/browser/printing/printing_ui_web_contents_observer.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "grit/generated_resources.h"
-#include "printing/backend/print_backend.h"
 #include "printing/print_job_constants.h"
 #include "printing/printed_document.h"
 #include "printing/printed_page.h"
+#include "printing/printing_utils.h"
 #include "ui/base/l10n/l10n_util.h"
 
 using content::BrowserThread;
@@ -77,11 +78,12 @@ void PrintJobWorker::SetPrintDestination(
   destination_ = destination;
 }
 
-void PrintJobWorker::GetSettings(bool ask_user_for_settings,
-                                 gfx::NativeView parent_view,
-                                 int document_page_count,
-                                 bool has_selection,
-                                 MarginType margin_type) {
+void PrintJobWorker::GetSettings(
+    bool ask_user_for_settings,
+    scoped_ptr<PrintingUIWebContentsObserver> web_contents_observer,
+    int document_page_count,
+    bool has_selection,
+    MarginType margin_type) {
   DCHECK_EQ(message_loop(), base::MessageLoop::current());
   DCHECK_EQ(page_number_, PageNumber::npos());
 
@@ -100,8 +102,10 @@ void PrintJobWorker::GetSettings(bool ask_user_for_settings,
         BrowserThread::UI, FROM_HERE,
         base::Bind(&HoldRefCallback, make_scoped_refptr(owner_),
                    base::Bind(&PrintJobWorker::GetSettingsWithUI,
-                              base::Unretained(this), parent_view,
-                              document_page_count, has_selection)));
+                              base::Unretained(this),
+                              base::Passed(&web_contents_observer),
+                              document_page_count,
+                              has_selection)));
   } else {
     BrowserThread::PostTask(
         BrowserThread::UI, FROM_HERE,
@@ -169,11 +173,17 @@ void PrintJobWorker::GetSettingsDone(PrintingContext::Result result) {
                  result));
 }
 
-void PrintJobWorker::GetSettingsWithUI(gfx::NativeView parent_view,
-                                       int document_page_count,
-                                       bool has_selection) {
+void PrintJobWorker::GetSettingsWithUI(
+    scoped_ptr<PrintingUIWebContentsObserver> web_contents_observer,
+    int document_page_count,
+    bool has_selection) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
+  gfx::NativeView parent_view = web_contents_observer->GetParentView();
+  if (!parent_view) {
+    GetSettingsWithUIDone(printing::PrintingContext::FAILED);
+    return;
+  }
   printing_context_->AskUserForSettings(
       parent_view, document_page_count, has_selection,
       base::Bind(&PrintJobWorker::GetSettingsWithUIDone,
@@ -198,17 +208,16 @@ void PrintJobWorker::StartPrinting(PrintedDocument* new_document) {
   DCHECK_EQ(page_number_, PageNumber::npos());
   DCHECK_EQ(document_, new_document);
   DCHECK(document_.get());
-  DCHECK(new_document->settings().Equals(printing_context_->settings()));
 
   if (!document_.get() || page_number_ != PageNumber::npos() ||
       document_.get() != new_document) {
     return;
   }
 
-  string16 document_name =
-      printing::PrintBackend::SimplifyDocumentTitle(document_->name());
+  base::string16 document_name =
+      printing::SimplifyDocumentTitle(document_->name());
   if (document_name.empty()) {
-    document_name = printing::PrintBackend::SimplifyDocumentTitle(
+    document_name = printing::SimplifyDocumentTitle(
         l10n_util::GetStringUTF16(IDS_DEFAULT_PRINT_DOCUMENT_TITLE));
   }
   PrintingContext::Result result =
@@ -230,8 +239,6 @@ void PrintJobWorker::StartPrinting(PrintedDocument* new_document) {
 void PrintJobWorker::OnDocumentChanged(PrintedDocument* new_document) {
   DCHECK_EQ(message_loop(), base::MessageLoop::current());
   DCHECK_EQ(page_number_, PageNumber::npos());
-  DCHECK(!new_document ||
-         new_document->settings().Equals(printing_context_->settings()));
 
   if (page_number_ != PageNumber::npos())
     return;

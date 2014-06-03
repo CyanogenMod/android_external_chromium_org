@@ -105,7 +105,7 @@ class CONTENT_EXPORT RenderWidgetHostView {
   virtual void SetShowingContextMenu(bool showing) = 0;
 
   // Returns the currently selected text.
-  virtual string16 GetSelectedText() const = 0;
+  virtual base::string16 GetSelectedText() const = 0;
 
   // Subclasses should override this method to do what is appropriate to set
   // the custom background for their platform.
@@ -162,11 +162,6 @@ class CONTENT_EXPORT RenderWidgetHostView {
 #if defined(OS_WIN) && !defined(USE_AURA)
   // The region specified will be transparent to mouse clicks.
   virtual void SetClickthroughRegion(SkRegion* region) = 0;
-#endif
-
-#if defined(OS_WIN) && defined(USE_AURA)
-  virtual gfx::NativeViewAccessible AccessibleObjectFromChildId(long child_id)
-      = 0;
 #endif
 };
 

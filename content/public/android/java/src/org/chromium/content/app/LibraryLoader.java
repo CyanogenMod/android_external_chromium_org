@@ -1,14 +1,14 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 package org.chromium.content.app;
 
-import android.text.TextUtils;
 import android.util.Log;
 
+import org.chromium.base.CommandLine;
 import org.chromium.base.JNINamespace;
-import org.chromium.content.common.CommandLine;
+import org.chromium.base.SysUtils;
 import org.chromium.content.common.ProcessInitException;
 import org.chromium.content.common.ResultCodes;
 import org.chromium.content.common.TraceEvent;
@@ -64,6 +64,14 @@ public class LibraryLoader {
         }
     }
 
+    /**
+     * Checks if library is fully loaded and initialized.
+     */
+    public static boolean isInitialized() {
+        synchronized (sLock) {
+            return sInitialized;
+        }
+    }
 
     /**
      * Loads the library and blocks until the load completes. The caller is responsible
@@ -100,16 +108,42 @@ public class LibraryLoader {
         try {
             if (!sLoaded) {
                 assert !sInitialized;
-                for (String sLibrary : NativeLibraries.libraries) {
-                    Log.i(TAG, "loading: " + sLibrary);
-                    System.loadLibrary(sLibrary);
-                    Log.i(TAG, "loaded: " + sLibrary);
+
+                long startTime = System.currentTimeMillis();
+                boolean useContentLinker = Linker.isUsed();
+
+                if (useContentLinker)
+                    Linker.prepareLibraryLoad();
+
+                for (String library : NativeLibraries.LIBRARIES) {
+                    Log.i(TAG, "Loading: " + library);
+                    if (useContentLinker)
+                        Linker.loadLibrary(library);
+                    else
+                        System.loadLibrary(library);
                 }
+                if (useContentLinker)
+                    Linker.finishLibraryLoad();
+                long stopTime = System.currentTimeMillis();
+                Log.i(TAG, String.format("Time to load native libraries: %d ms (timestamps %d-%d)",
+                                         stopTime - startTime,
+                                         startTime % 10000,
+                                         stopTime % 10000));
                 sLoaded = true;
             }
         } catch (UnsatisfiedLinkError e) {
             throw new ProcessInitException(ResultCodes.RESULT_CODE_NATIVE_LIBRARY_LOAD_FAILED, e);
         }
+        // Check that the version of the library we have loaded matches the version we expect
+        Log.i(TAG, String.format(
+                "Expected native library version number \"%s\"," +
+                        "actual native library version number \"%s\"",
+                NativeLibraries.VERSION_NUMBER,
+                nativeGetVersionNumber()));
+        if (!NativeLibraries.VERSION_NUMBER.equals(nativeGetVersionNumber())) {
+            throw new ProcessInitException(ResultCodes.RESULT_CODE_NATIVE_LIBRARY_WRONG_VERSION);
+        }
+
     }
 
 
@@ -130,14 +164,29 @@ public class LibraryLoader {
         sInitialized = true;
         CommandLine.enableNativeProxy();
         TraceEvent.setEnabledToMatchNative();
+        // Record histogram for the content linker.
+        if (Linker.isUsed())
+            nativeRecordContentAndroidLinkerHistogram(Linker.loadAtFixedAddressFailed(),
+                                                    SysUtils.isLowEndDevice());
     }
 
-    // This is the only method that is registered during System.loadLibrary. We then call it
-    // to register everything else. This process is called "initialization".
-    // This method will be mapped (by generated code) to the LibraryLoaded
+    // Only methods needed before or during normal JNI registration are during System.OnLoad.
+    // nativeLibraryLoaded is then called to register everything else.  This process is called
+    // "initialization".  This method will be mapped (by generated code) to the LibraryLoaded
     // definition in content/app/android/library_loader_hooks.cc.
     //
     // Return 0 on success, otherwise return the error code from
     // content/public/common/result_codes.h.
     private static native int nativeLibraryLoaded(String[] initCommandLine);
+
+    // Method called to record statistics about the content linker operation,
+    // i.e. whether the library failed to be loaded at a fixed address, and
+    // whether the device is 'low-memory'.
+    private static native void nativeRecordContentAndroidLinkerHistogram(
+         boolean loadedAtFixedAddressFailed,
+         boolean isLowMemoryDevice);
+
+    // Get the version of the native library. This is needed so that we can check we
+    // have the right version before initializing the (rest of the) JNI.
+    private static native String nativeGetVersionNumber();
 }

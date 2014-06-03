@@ -8,6 +8,7 @@
 #import <Cocoa/Cocoa.h>
 
 #include "base/basictypes.h"
+#import "chrome/browser/ui/cocoa/browser/zoom_bubble_controller.h"
 #include "chrome/browser/ui/cocoa/location_bar/image_decoration.h"
 
 class LocationBarViewMac;
@@ -17,7 +18,8 @@ class ZoomDecorationTest;
 
 // Zoom icon at the end of the omnibox (close to page actions) when at a
 // non-standard zoom level.
-class ZoomDecoration : public ImageDecoration {
+class ZoomDecoration : public ImageDecoration,
+                       public ZoomBubbleControllerDelegate {
  public:
   explicit ZoomDecoration(LocationBarViewMac* owner);
   virtual ~ZoomDecoration();
@@ -27,9 +29,11 @@ class ZoomDecoration : public ImageDecoration {
   void Update(ZoomController* zoom_controller);
 
   // Shows the zoom bubble for this decoration. If |auto_close| is YES, then
-  // the bubble will automatically close after a fixed period of time. Closes
-  // the bubble if it was already visible.
-  void ToggleBubble(BOOL auto_close);
+  // the bubble will automatically close after a fixed period of time.
+  void ShowBubble(BOOL auto_close);
+
+  // Closes the zoom bubble.
+  void CloseBubble();
 
  private:
   friend ZoomDecorationTest;
@@ -42,6 +46,10 @@ class ZoomDecoration : public ImageDecoration {
   virtual bool AcceptsMousePress() OVERRIDE;
   virtual bool OnMousePressed(NSRect frame) OVERRIDE;
   virtual NSString* GetToolTip() OVERRIDE;
+
+  // ZoomBubbleControllerDelegate implementation.
+  virtual content::WebContents* GetWebContents() OVERRIDE;
+  virtual void OnClose() OVERRIDE;
 
   // The control that owns this. Weak.
   LocationBarViewMac* owner_;

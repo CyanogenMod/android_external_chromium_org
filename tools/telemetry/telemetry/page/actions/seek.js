@@ -4,52 +4,46 @@
 
 // This file performs actions on media elements.
 (function() {
-  function seekMedia(selector, seekTime, logSeekTime) {
+  function seekMedia(selector, seekTime, logSeekTime, seekLabel) {
     // Performs the "Seek" action on media satisfying selector.
     var mediaElements = window.__findMediaElements(selector);
     for (var i = 0; i < mediaElements.length; i++) {
-      seek(mediaElements[i], seekTime, logSeekTime);
+      if (mediaElements[i] instanceof HTMLMediaElement)
+        seekHTML5Element(mediaElements[i], seekTime, logSeekTime, seekLabel);
+      else
+        throw new Error('Can not seek non HTML5 media elements.');
     }
   }
 
-  function seek(element, seekTime, logSeekTime) {
-    if (element instanceof HTMLMediaElement)
-      seekHTML5Element(element, seekTime, logSeekTime);
-    else
-      throw new Error('Can not seek non HTML5 media elements.');
-  }
-
-  function seekHTML5Element(element, seekTime, logSeekTime) {
+  function seekHTML5Element(element, seekTime, logSeekTime, seekLabel) {
+    function readyForSeek() {
+      seekHTML5ElementPostLoad(element, seekTime, logSeekTime, seekLabel);
+    }
     if (element.readyState == element.HAVE_NOTHING) {
       var onLoadedMetaData = function(e) {
         element.removeEventListener('loadedmetadata', onLoadedMetaData);
-        seekHTML5ElementPostLoad(element, seekTime, logSeekTime);
+        readyForSeek();
       };
       element.addEventListener('loadedmetadata', onLoadedMetaData);
       element.load();
     } else {
-      seekHTML5ElementPostLoad(element, seekTime, logSeekTime);
+      readyForSeek();
     }
   }
 
-  function seekHTML5ElementPostLoad(element, seekTime, logSeekTime) {
-    var onSeeked = function(e) {
-      element[e.type + '_completed'] = true;
-      element.removeEventListener('seeked', onSeeked);
-    };
-    function onError(e) {
-      throw new Error('Error playing media :' + e.type);
-    }
-
+  function seekHTML5ElementPostLoad(element, seekTime, logSeekTime, seekLabel) {
+    // Reset seek completion since multiple seeks can run on same media element.
     element['seeked_completed'] = false;
-    element.addEventListener('error', onError);
-    element.addEventListener('abort', onError);
-    element.addEventListener('seeked', onSeeked);
+    window.__registerHTML5ErrorEvents(element);
+    window.__registerHTML5EventCompleted(element, 'seeked');
 
     if (logSeekTime) {
       var willSeekEvent = document.createEvent('Event');
       willSeekEvent.initEvent('willSeek', false, false);
-      willSeekEvent.seekLabel = seekTime;
+      if (seekLabel)
+        willSeekEvent.seekLabel = seekLabel;
+      else
+        willSeekEvent.seekLabel = seekTime;
       element.dispatchEvent(willSeekEvent);
     }
     try {

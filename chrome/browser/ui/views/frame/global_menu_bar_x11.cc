@@ -7,6 +7,7 @@
 #include <dlfcn.h>
 #include <glib-object.h>
 
+#include "base/debug/leak_annotations.h"
 #include "base/logging.h"
 #include "base/prefs/pref_service.h"
 #include "base/stl_util.h"
@@ -29,9 +30,9 @@
 #include "content/public/browser/notification_source.h"
 #include "grit/generated_resources.h"
 #include "ui/base/accelerators/menu_label_accelerator_util_linux.h"
-#include "ui/base/keycodes/keyboard_code_conversion_x.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/text/text_elider.h"
+#include "ui/events/keycodes/keyboard_code_conversion_x.h"
+#include "ui/gfx/text_elider.h"
 
 // libdbusmenu-glib types
 typedef struct _DbusmenuMenuitem DbusmenuMenuitem;
@@ -127,8 +128,7 @@ const int MENU_SEPARATOR =-1;
 const int MENU_END = -2;
 const int MENU_DISABLED_ID = -3;
 
-// These tag values are used to refer to menu itesm.
-const int TAG_NORMAL = 0;
+// These tag values are used to refer to menu items.
 const int TAG_MOST_VISITED = 1;
 const int TAG_RECENTLY_CLOSED = 2;
 const int TAG_MOST_VISITED_HEADER = 3;
@@ -228,12 +228,15 @@ GlobalMenuBarCommand tools_menu[] = {
   { IDS_VIEW_SOURCE, IDC_VIEW_SOURCE },
   { IDS_DEV_TOOLS, IDC_DEV_TOOLS },
   { IDS_DEV_TOOLS_CONSOLE, IDC_DEV_TOOLS_CONSOLE },
+  { IDS_DEV_TOOLS_DEVICES, IDC_DEV_TOOLS_DEVICES },
 
   { MENU_END, MENU_END }
 };
 
 GlobalMenuBarCommand help_menu[] = {
+#if defined(GOOGLE_CHROME_BUILD)
   { IDS_FEEDBACK, IDC_FEEDBACK },
+#endif
   { IDS_HELP_PAGE , IDC_HELP_PAGE_VIA_MENU },
   { MENU_END, MENU_END }
 };
@@ -245,6 +248,8 @@ void EnsureMethodsLoaded() {
   attempted_load = true;
 
   void* dbusmenu_lib = dlopen("libdbusmenu-glib.so", RTLD_LAZY);
+  if (!dbusmenu_lib)
+    dbusmenu_lib = dlopen("libdbusmenu-glib.so.4", RTLD_LAZY);
   if (!dbusmenu_lib)
     return;
 
@@ -285,7 +290,7 @@ struct GlobalMenuBarX11::HistoryItem {
   HistoryItem() : session_id(0) {}
 
   // The title for the menu item.
-  string16 title;
+  base::string16 title;
   // The URL that will be navigated to if the user selects this item.
   GURL url;
 
@@ -363,7 +368,10 @@ DbusmenuMenuitem* GlobalMenuBarX11::BuildMenuItem(
 
 void GlobalMenuBarX11::InitServer(unsigned long xid) {
   std::string path = GetPathForWindow(xid);
-  server_ = server_new(path.c_str());
+  {
+    ANNOTATE_SCOPED_MEMORY_LEAK; // http://crbug.com/314087
+    server_ = server_new(path.c_str());
+  }
 
   root_item_ = menuitem_new();
   menuitem_property_set(root_item_, kPropertyLabel, "Root");
@@ -517,12 +525,12 @@ void GlobalMenuBarX11::AddHistoryItemToMenu(HistoryItem* item,
                                             DbusmenuMenuitem* menu,
                                             int tag,
                                             int index) {
-  string16 title = item->title;
+  base::string16 title = item->title;
   std::string url_string = item->url.possibly_invalid_spec();
 
   if (title.empty())
     title = UTF8ToUTF16(url_string);
-  ui::ElideString(title, kMaximumMenuWidthInChars, &title);
+  gfx::ElideString(title, kMaximumMenuWidthInChars, &title);
 
   DbusmenuMenuitem* menu_item = BuildMenuItem(UTF16ToUTF8(title), tag);
   g_signal_connect(menu_item, "item-activated",
@@ -539,7 +547,7 @@ void GlobalMenuBarX11::GetTopSitesData() {
 
   top_sites_->GetMostVisitedURLs(
       base::Bind(&GlobalMenuBarX11::OnTopSitesReceived,
-                 weak_ptr_factory_.GetWeakPtr()));
+                 weak_ptr_factory_.GetWeakPtr()), false);
 }
 
 void GlobalMenuBarX11::OnTopSitesReceived(

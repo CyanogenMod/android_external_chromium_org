@@ -7,6 +7,8 @@
 
 #include <set>
 
+#include "base/basictypes.h"
+
 namespace sync_file_system {
 namespace drive_backend {
 
@@ -33,6 +35,7 @@ class TrackerSet {
   void Inactivate(FileTracker* tracker);
 
   const FileTracker* active_tracker() const { return active_tracker_; }
+  FileTracker* active_tracker() { return active_tracker_; }
   const RawTrackerSet& tracker_set() const { return tracker_set_; }
 
   iterator begin() { return tracker_set_.begin(); }
@@ -40,6 +43,7 @@ class TrackerSet {
   const_iterator begin() const { return tracker_set_.begin(); }
   const_iterator end() const { return tracker_set_.end(); }
   bool empty() const { return tracker_set_.empty(); }
+  size_t size() const { return tracker_set_.size(); }
 
  private:
   FileTracker* active_tracker_;

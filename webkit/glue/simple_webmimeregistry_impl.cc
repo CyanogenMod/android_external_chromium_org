@@ -11,8 +11,8 @@
 #include "net/base/mime_util.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 
-using WebKit::WebString;
-using WebKit::WebMimeRegistry;
+using blink::WebString;
+using blink::WebMimeRegistry;
 
 namespace webkit_glue {
 
@@ -42,12 +42,6 @@ WebMimeRegistry::SupportsType
 
 // When debugging layout tests failures in the test shell,
 // see TestShellWebMimeRegistryImpl.
-WebMimeRegistry::SupportsType SimpleWebMimeRegistryImpl::supportsMediaMIMEType(
-    const WebString& mime_type, const WebString& codecs) {
-  // Media features are only supported at the content/ layer.
-  return IsNotSupported;
-}
-
 WebMimeRegistry::SupportsType SimpleWebMimeRegistryImpl::supportsMediaMIMEType(
     const WebString& mime_type,
     const WebString& codecs,
@@ -92,14 +86,6 @@ WebString SimpleWebMimeRegistryImpl::mimeTypeFromFile(
   net::GetMimeTypeFromFile(base::FilePath::FromUTF16Unsafe(file_path),
                            &mime_type);
   return WebString::fromUTF8(mime_type);
-}
-
-WebString SimpleWebMimeRegistryImpl::preferredExtensionForMIMEType(
-    const WebString& mime_type) {
-  base::FilePath::StringType file_extension;
-  net::GetPreferredExtensionForMimeType(ToASCIIOrEmpty(mime_type),
-                                        &file_extension);
-  return base::FilePath(file_extension).AsUTF16Unsafe();
 }
 
 }  // namespace webkit_glue

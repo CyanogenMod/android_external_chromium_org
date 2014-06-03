@@ -167,8 +167,6 @@ void DisplayOptionsHandler::SendAllDisplayInfo() {
 void DisplayOptionsHandler::SendDisplayInfo(
     const std::vector<gfx::Display>& displays) {
   DisplayManager* display_manager = GetDisplayManager();
-  ash::DisplayController* display_controller =
-      ash::Shell::GetInstance()->display_controller();
   base::FundamentalValue mirroring(display_manager->IsMirrored());
 
   int64 primary_id = ash::Shell::GetScreen()->GetPrimaryDisplay().id();
@@ -194,7 +192,7 @@ void DisplayOptionsHandler::SendDisplayInfo(
     std::vector<float> ui_scales;
     if (display.IsInternal()) {
       ui_scales = DisplayManager::GetScalesForDisplay(display_info);
-      gfx::SizeF base_size = display_info.bounds_in_pixel().size();
+      gfx::SizeF base_size = display_info.bounds_in_native().size();
       base_size.Scale(1.0f / display.device_scale_factor());
       if (display_info.rotation() == gfx::Display::ROTATE_90 ||
           display_info.rotation() == gfx::Display::ROTATE_270) {
@@ -215,26 +213,28 @@ void DisplayOptionsHandler::SendDisplayInfo(
     std::sort(resolutions.begin(), resolutions.end(), CompareResolution);
 
     base::ListValue* js_resolutions = new base::ListValue();
-    gfx::Size current_size(bounds.width() * display.device_scale_factor(),
-                           bounds.height() * display.device_scale_factor());
+    gfx::Size current_size = display_info.bounds_in_native().size();
+    gfx::Insets current_overscan = display_info.GetOverscanInsetsInPixel();
     for (size_t i = 0; i < resolutions.size(); ++i) {
       base::DictionaryValue* resolution_info = new base::DictionaryValue();
+      gfx::Size resolution = resolutions[i].size;
       if (!ui_scales.empty()) {
         resolution_info->SetDouble("scale", ui_scales[i]);
         if (ui_scales[i] == 1.0f)
           resolution_info->SetBoolean("isBest", true);
         resolution_info->SetBoolean(
-            "selected", display_info.ui_scale() == ui_scales[i]);
+            "selected", display_info.configured_ui_scale() == ui_scales[i]);
       } else {
         // Picks the largest one as the "best", which is the last element
         // because |resolutions| is sorted by its area.
         if (i == resolutions.size() - 1)
           resolution_info->SetBoolean("isBest", true);
-        resolution_info->SetBoolean(
-            "selected", (resolutions[i].size == current_size));
+        resolution_info->SetBoolean("selected", (resolution == current_size));
+        resolution.Enlarge(
+            -current_overscan.width(), -current_overscan.height());
       }
-      resolution_info->SetInteger("width", resolutions[i].size.width());
-      resolution_info->SetInteger("height",resolutions[i].size.height());
+      resolution_info->SetInteger("width", resolution.width());
+      resolution_info->SetInteger("height", resolution.height());
       js_resolutions->Append(resolution_info);
     }
     js_display->Set("resolutions", js_resolutions);
@@ -245,7 +245,7 @@ void DisplayOptionsHandler::SendDisplayInfo(
   scoped_ptr<base::Value> offset_value(base::Value::CreateNullValue());
   if (display_manager->GetNumDisplays() > 1) {
     const ash::DisplayLayout layout =
-        display_controller->GetCurrentDisplayLayout();
+        display_manager->GetCurrentDisplayLayout();
     layout_value.reset(new base::FundamentalValue(layout.position));
     offset_value.reset(new base::FundamentalValue(layout.offset));
   }
@@ -347,8 +347,10 @@ void DisplayOptionsHandler::HandleSetResolution(const base::ListValue* args) {
 
   const ash::internal::DisplayInfo& display_info =
       GetDisplayManager()->GetDisplayInfo(display_id);
+  gfx::Insets current_overscan = display_info.GetOverscanInsetsInPixel();
   gfx::Size new_resolution = gfx::ToFlooredSize(gfx::SizeF(width, height));
-  gfx::Size old_resolution = display_info.size_in_pixel();
+  new_resolution.Enlarge(current_overscan.width(), current_overscan.height());
+  gfx::Size old_resolution = display_info.bounds_in_native().size();
   bool has_new_resolution = false;
   bool has_old_resolution = false;
   for (size_t i = 0; i < display_info.resolutions().size(); ++i) {

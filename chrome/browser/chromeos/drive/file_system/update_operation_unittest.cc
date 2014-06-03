@@ -4,11 +4,13 @@
 
 #include "chrome/browser/chromeos/drive/file_system/update_operation.h"
 
+#include "base/task_runner_util.h"
+#include "chrome/browser/chromeos/drive/file_cache.h"
 #include "chrome/browser/chromeos/drive/file_system/operation_test_base.h"
 #include "chrome/browser/chromeos/drive/file_system_interface.h"
 #include "chrome/browser/drive/fake_drive_service.h"
-#include "chrome/browser/google_apis/gdata_wapi_parser.h"
-#include "chrome/browser/google_apis/test_util.h"
+#include "google_apis/drive/gdata_wapi_parser.h"
+#include "google_apis/drive/test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace drive {
@@ -28,7 +30,7 @@ class UpdateOperationTest : public OperationTestBase {
  scoped_ptr<UpdateOperation> operation_;
 };
 
-TEST_F(UpdateOperationTest, UpdateFileByResourceId_PersistentFile) {
+TEST_F(UpdateOperationTest, UpdateFileByLocalId_PersistentFile) {
   const base::FilePath kFilePath(FILE_PATH_LITERAL("drive/root/File 1.txt"));
   const std::string kResourceId("file:2_file_resource_id");
   const std::string kMd5("3b4382ebefec6e743578c76bbd0575ce");
@@ -37,38 +39,52 @@ TEST_F(UpdateOperationTest, UpdateFileByResourceId_PersistentFile) {
   const std::string kTestFileContent = "I'm being uploaded! Yay!";
   google_apis::test_util::WriteStringToFile(kTestFile, kTestFileContent);
 
+  const std::string local_id = GetLocalId(kFilePath);
+  EXPECT_FALSE(local_id.empty());
+
   // Pin the file so it'll be store in "persistent" directory.
   FileError error = FILE_ERROR_FAILED;
-  cache()->PinOnUIThread(
-      kResourceId,
+  base::PostTaskAndReplyWithResult(
+      blocking_task_runner(),
+      FROM_HERE,
+      base::Bind(&internal::FileCache::Pin,
+                 base::Unretained(cache()),
+                 local_id),
       google_apis::test_util::CreateCopyResultCallback(&error));
   test_util::RunBlockingPoolTask();
   EXPECT_EQ(FILE_ERROR_OK, error);
 
   // First store a file to cache.
   error = FILE_ERROR_FAILED;
-  cache()->StoreOnUIThread(
-      kResourceId, kMd5, kTestFile,
-      internal::FileCache::FILE_OPERATION_COPY,
+  base::PostTaskAndReplyWithResult(
+      blocking_task_runner(),
+      FROM_HERE,
+      base::Bind(&internal::FileCache::Store,
+                 base::Unretained(cache()),
+                 local_id, kMd5, kTestFile,
+                 internal::FileCache::FILE_OPERATION_COPY),
       google_apis::test_util::CreateCopyResultCallback(&error));
   test_util::RunBlockingPoolTask();
   EXPECT_EQ(FILE_ERROR_OK, error);
 
   // Add the dirty bit.
   error = FILE_ERROR_FAILED;
-  cache()->MarkDirtyOnUIThread(
-      kResourceId,
+  base::PostTaskAndReplyWithResult(
+      blocking_task_runner(),
+      FROM_HERE,
+      base::Bind(&internal::FileCache::MarkDirty,
+                 base::Unretained(cache()),
+                 local_id),
       google_apis::test_util::CreateCopyResultCallback(&error));
   test_util::RunBlockingPoolTask();
   EXPECT_EQ(FILE_ERROR_OK, error);
 
   int64 original_changestamp = fake_service()->largest_changestamp();
 
-  // The callback will be called upon completion of
-  // UpdateFileByResourceId().
+  // The callback will be called upon completion of UpdateFileByLocalId().
   error = FILE_ERROR_FAILED;
-  operation_->UpdateFileByResourceId(
-      kResourceId,
+  operation_->UpdateFileByLocalId(
+      local_id,
       ClientContext(USER_INITIATED),
       UpdateOperation::RUN_CONTENT_CHECK,
       google_apis::test_util::CreateCopyResultCallback(&error));
@@ -93,18 +109,23 @@ TEST_F(UpdateOperationTest, UpdateFileByResourceId_PersistentFile) {
   // Make sure that the cache is no longer dirty.
   bool success = false;
   FileCacheEntry cache_entry;
-  cache()->GetCacheEntryOnUIThread(
-      server_entry->resource_id(),
-      google_apis::test_util::CreateCopyResultCallback(&success, &cache_entry));
+  base::PostTaskAndReplyWithResult(
+      blocking_task_runner(),
+      FROM_HERE,
+      base::Bind(&internal::FileCache::GetCacheEntry,
+                 base::Unretained(cache()),
+                 local_id,
+                 &cache_entry),
+      google_apis::test_util::CreateCopyResultCallback(&success));
   test_util::RunBlockingPoolTask();
   ASSERT_TRUE(success);
   EXPECT_FALSE(cache_entry.is_dirty());
 }
 
-TEST_F(UpdateOperationTest, UpdateFileByResourceId_NonexistentFile) {
+TEST_F(UpdateOperationTest, UpdateFileByLocalId_NonexistentFile) {
   FileError error = FILE_ERROR_OK;
-  operation_->UpdateFileByResourceId(
-      "file:nonexistent_resource_id",
+  operation_->UpdateFileByLocalId(
+      "nonexistent_local_id",
       ClientContext(USER_INITIATED),
       UpdateOperation::RUN_CONTENT_CHECK,
       google_apis::test_util::CreateCopyResultCallback(&error));
@@ -112,7 +133,7 @@ TEST_F(UpdateOperationTest, UpdateFileByResourceId_NonexistentFile) {
   EXPECT_EQ(FILE_ERROR_NOT_FOUND, error);
 }
 
-TEST_F(UpdateOperationTest, UpdateFileByResourceId_Md5) {
+TEST_F(UpdateOperationTest, UpdateFileByLocalId_Md5) {
   const base::FilePath kFilePath(FILE_PATH_LITERAL("drive/root/File 1.txt"));
   const std::string kResourceId("file:2_file_resource_id");
   const std::string kMd5("3b4382ebefec6e743578c76bbd0575ce");
@@ -121,30 +142,40 @@ TEST_F(UpdateOperationTest, UpdateFileByResourceId_Md5) {
   const std::string kTestFileContent = "I'm being uploaded! Yay!";
   google_apis::test_util::WriteStringToFile(kTestFile, kTestFileContent);
 
+  const std::string local_id = GetLocalId(kFilePath);
+  EXPECT_FALSE(local_id.empty());
+
   // First store a file to cache.
   FileError error = FILE_ERROR_FAILED;
-  cache()->StoreOnUIThread(
-      kResourceId, kMd5, kTestFile,
-      internal::FileCache::FILE_OPERATION_COPY,
+  base::PostTaskAndReplyWithResult(
+      blocking_task_runner(),
+      FROM_HERE,
+      base::Bind(&internal::FileCache::Store,
+                 base::Unretained(cache()),
+                 local_id, kMd5, kTestFile,
+                 internal::FileCache::FILE_OPERATION_COPY),
       google_apis::test_util::CreateCopyResultCallback(&error));
   test_util::RunBlockingPoolTask();
   EXPECT_EQ(FILE_ERROR_OK, error);
 
   // Add the dirty bit.
   error = FILE_ERROR_FAILED;
-  cache()->MarkDirtyOnUIThread(
-      kResourceId,
+  base::PostTaskAndReplyWithResult(
+      blocking_task_runner(),
+      FROM_HERE,
+      base::Bind(&internal::FileCache::MarkDirty,
+                 base::Unretained(cache()),
+                 local_id),
       google_apis::test_util::CreateCopyResultCallback(&error));
   test_util::RunBlockingPoolTask();
   EXPECT_EQ(FILE_ERROR_OK, error);
 
   int64 original_changestamp = fake_service()->largest_changestamp();
 
-  // The callback will be called upon completion of
-  // UpdateFileByResourceId().
+  // The callback will be called upon completion of UpdateFileByLocalId().
   error = FILE_ERROR_FAILED;
-  operation_->UpdateFileByResourceId(
-      kResourceId,
+  operation_->UpdateFileByLocalId(
+      local_id,
       ClientContext(USER_INITIATED),
       UpdateOperation::RUN_CONTENT_CHECK,
       google_apis::test_util::CreateCopyResultCallback(&error));
@@ -169,28 +200,37 @@ TEST_F(UpdateOperationTest, UpdateFileByResourceId_Md5) {
   // Make sure that the cache is no longer dirty.
   bool success = false;
   FileCacheEntry cache_entry;
-  cache()->GetCacheEntryOnUIThread(
-      server_entry->resource_id(),
-      google_apis::test_util::CreateCopyResultCallback(&success, &cache_entry));
+  base::PostTaskAndReplyWithResult(
+      blocking_task_runner(),
+      FROM_HERE,
+      base::Bind(&internal::FileCache::GetCacheEntry,
+                 base::Unretained(cache()),
+                 local_id,
+                 &cache_entry),
+      google_apis::test_util::CreateCopyResultCallback(&success));
   test_util::RunBlockingPoolTask();
   ASSERT_TRUE(success);
   EXPECT_FALSE(cache_entry.is_dirty());
 
   // Again mark the cache file dirty.
   error = FILE_ERROR_FAILED;
-  cache()->MarkDirtyOnUIThread(
-      kResourceId,
+  base::PostTaskAndReplyWithResult(
+      blocking_task_runner(),
+      FROM_HERE,
+      base::Bind(&internal::FileCache::MarkDirty,
+                 base::Unretained(cache()),
+                 local_id),
       google_apis::test_util::CreateCopyResultCallback(&error));
   test_util::RunBlockingPoolTask();
   EXPECT_EQ(FILE_ERROR_OK, error);
 
-  // And call UpdateFileByResourceId again.
+  // And call UpdateFileByLocalId again.
   // In this case, although the file is marked as dirty, but the content
   // hasn't been changed. Thus, the actual uploading should be skipped.
   original_changestamp = fake_service()->largest_changestamp();
   error = FILE_ERROR_FAILED;
-  operation_->UpdateFileByResourceId(
-      kResourceId,
+  operation_->UpdateFileByLocalId(
+      local_id,
       ClientContext(USER_INITIATED),
       UpdateOperation::RUN_CONTENT_CHECK,
       google_apis::test_util::CreateCopyResultCallback(&error));
@@ -201,28 +241,37 @@ TEST_F(UpdateOperationTest, UpdateFileByResourceId_Md5) {
 
   // Make sure that the cache is no longer dirty.
   success = false;
-  cache()->GetCacheEntryOnUIThread(
-      server_entry->resource_id(),
-      google_apis::test_util::CreateCopyResultCallback(&success, &cache_entry));
+  base::PostTaskAndReplyWithResult(
+      blocking_task_runner(),
+      FROM_HERE,
+      base::Bind(&internal::FileCache::GetCacheEntry,
+                 base::Unretained(cache()),
+                 local_id,
+                 &cache_entry),
+      google_apis::test_util::CreateCopyResultCallback(&success));
   test_util::RunBlockingPoolTask();
   ASSERT_TRUE(success);
   EXPECT_FALSE(cache_entry.is_dirty());
 
   // Once again mark the cache file dirty.
   error = FILE_ERROR_FAILED;
-  cache()->MarkDirtyOnUIThread(
-      kResourceId,
+  base::PostTaskAndReplyWithResult(
+      blocking_task_runner(),
+      FROM_HERE,
+      base::Bind(&internal::FileCache::MarkDirty,
+                 base::Unretained(cache()),
+                 local_id),
       google_apis::test_util::CreateCopyResultCallback(&error));
   test_util::RunBlockingPoolTask();
   EXPECT_EQ(FILE_ERROR_OK, error);
 
-  // And call UpdateFileByResourceId again.
+  // And call UpdateFileByLocalId again.
   // In this case, NO_CONTENT_CHECK is set, so the actual uploading should run
   // no matter the content is changed or not.
   original_changestamp = fake_service()->largest_changestamp();
   error = FILE_ERROR_FAILED;
-  operation_->UpdateFileByResourceId(
-      kResourceId,
+  operation_->UpdateFileByLocalId(
+      local_id,
       ClientContext(USER_INITIATED),
       UpdateOperation::NO_CONTENT_CHECK,
       google_apis::test_util::CreateCopyResultCallback(&error));

@@ -10,16 +10,17 @@
 #include "base/strings/string16.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/ui/autofill/generated_credit_card_bubble_controller.h"
+#include "chrome/browser/ui/autofill/test_generated_credit_card_bubble_controller.h"
 #include "chrome/browser/ui/autofill/test_generated_credit_card_bubble_view.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_profile.h"
-#include "components/autofill/core/browser/autofill_common_test.h"
+#include "components/autofill/core/browser/autofill_test_utils.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/page_transition_types.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "content/public/test/web_contents_tester.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "ui/base/range/range.h"
+#include "ui/gfx/range/range.h"
 
 #if defined(OS_WIN)
 #include "ui/base/win/scoped_ole_initializer.h"
@@ -38,42 +39,9 @@ base::string16 FrontingCard() {
 }
 
 base::string16 RangeOfString(const base::string16& string,
-                             const ui::Range& range) {
+                             const gfx::Range& range) {
   return string.substr(range.start(), range.end() - range.start());
 }
-
-class TestGeneratedCreditCardBubbleController
-    : public GeneratedCreditCardBubbleController {
- public:
-  explicit TestGeneratedCreditCardBubbleController(
-      content::WebContents* contents)
-      : GeneratedCreditCardBubbleController(contents) {
-    contents->SetUserData(UserDataKey(), this);
-  }
-
-  virtual ~TestGeneratedCreditCardBubbleController() {}
-
-  bool IsInstalled() const {
-    return web_contents()->GetUserData(UserDataKey()) == this;
-  }
-
-  TestGeneratedCreditCardBubbleView* GetTestingBubble() {
-    return static_cast<TestGeneratedCreditCardBubbleView*>(
-        GeneratedCreditCardBubbleController::bubble().get());
-  }
-
- protected:
-  virtual base::WeakPtr<GeneratedCreditCardBubbleView> CreateBubble() OVERRIDE {
-    return TestGeneratedCreditCardBubbleView::Create(GetWeakPtr());
-  }
-
-  virtual bool CanShow() const OVERRIDE {
-    return true;
-  }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(TestGeneratedCreditCardBubbleController);
-};
 
 class GeneratedCreditCardBubbleControllerTest : public testing::Test {
  public:
@@ -104,24 +72,16 @@ class GeneratedCreditCardBubbleControllerTest : public testing::Test {
   void Show() {
     ASSERT_TRUE(controller()->IsInstalled());
     TestGeneratedCreditCardBubbleController::Show(test_web_contents_.get(),
-                                                  BackingCard(),
-                                                  FrontingCard());
+                                                  FrontingCard(),
+                                                  BackingCard());
   }
 
-  void Navigate() {
-    NavigateWithTransition(content::PAGE_TRANSITION_LINK);
-  }
-
-  void Redirect() {
-    NavigateWithTransition(content::PAGE_TRANSITION_CLIENT_REDIRECT);
-  }
-
- private:
   void NavigateWithTransition(content::PageTransition trans) {
     content::WebContentsTester::For(test_web_contents_.get())->TestDidNavigate(
         test_web_contents_->GetRenderViewHost(), 1, GURL("about:blank"), trans);
   }
 
+ private:
   content::TestBrowserThreadBundle thread_bundle_;
 #if defined(OS_WIN)
   // Without this there will be drag and drop failures. http://crbug.com/227221
@@ -173,10 +133,10 @@ TEST_F(GeneratedCreditCardBubbleControllerTest, ContentsTextRanges) {
 
   ASSERT_EQ(3U, ranges.size());
 
-  EXPECT_EQ(BackingCard(), RangeOfString(contents_text, ranges[0].range));
+  EXPECT_EQ(FrontingCard(), RangeOfString(contents_text, ranges[0].range));
   EXPECT_FALSE(ranges[0].is_link);
 
-  EXPECT_EQ(FrontingCard(), RangeOfString(contents_text, ranges[1].range));
+  EXPECT_EQ(BackingCard(), RangeOfString(contents_text, ranges[1].range));
   EXPECT_FALSE(ranges[1].is_link);
 
   EXPECT_TRUE(ranges[2].is_link);
@@ -190,24 +150,26 @@ TEST_F(GeneratedCreditCardBubbleControllerTest, AnchorIcon) {
   EXPECT_FALSE(controller()->AnchorIcon().IsEmpty());
 }
 
-TEST_F(GeneratedCreditCardBubbleControllerTest, HideOnNavigate) {
-  // When a user navigates away from a page (or refreshes) normally, the bubble
-  // should be hidden.
+TEST_F(GeneratedCreditCardBubbleControllerTest, HideOnLinkClick) {
   EXPECT_FALSE(controller()->GetTestingBubble());
   Show();
   EXPECT_TRUE(controller()->GetTestingBubble()->showing());
 
-  Navigate();
+  // However, if the user clicks a link the bubble should hide.
+  NavigateWithTransition(content::PAGE_TRANSITION_LINK);
   EXPECT_FALSE(controller());
 }
 
-TEST_F(GeneratedCreditCardBubbleControllerTest, StayOnRedirect) {
-  // If a page redirects right after submitting, the bubble should remain.
+TEST_F(GeneratedCreditCardBubbleControllerTest, StayOnSomeNavigations) {
   EXPECT_FALSE(controller()->GetTestingBubble());
   Show();
   EXPECT_TRUE(controller()->GetTestingBubble()->showing());
 
-  Redirect();
+  // If the user reloads or the page redirects or submits a form, the bubble
+  // should stay showing.
+  NavigateWithTransition(content::PAGE_TRANSITION_CLIENT_REDIRECT);
+  NavigateWithTransition(content::PAGE_TRANSITION_FORM_SUBMIT);
+  NavigateWithTransition(content::PAGE_TRANSITION_RELOAD);
   EXPECT_TRUE(controller()->GetTestingBubble()->showing());
 }
 

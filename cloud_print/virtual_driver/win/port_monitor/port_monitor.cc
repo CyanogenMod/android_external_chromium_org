@@ -62,7 +62,7 @@ struct PortData {
       printer_handle = NULL;
     }
     if (file) {
-      file_util::CloseFile(file);
+      base::CloseFile(file);
       file = NULL;
     }
   }
@@ -135,7 +135,7 @@ void DeleteLeakedFiles(const base::FilePath& dir) {
 // On failure returns FALSE and title is unmodified.
 bool GetJobTitle(HANDLE printer_handle,
                  DWORD job_id,
-                 string16 *title) {
+                 base::string16 *title) {
   DCHECK(printer_handle != NULL);
   DCHECK(title != NULL);
   DWORD bytes_needed = 0;
@@ -163,7 +163,7 @@ bool GetJobTitle(HANDLE printer_handle,
 // Verifies that a valid parent Window exists and then just displays an
 // error message to let the user know that there is no interactive
 // configuration.
-void HandlePortUi(HWND hwnd, const string16& caption) {
+void HandlePortUi(HWND hwnd, const base::string16& caption) {
   if (hwnd != NULL && IsWindow(hwnd)) {
     DisplayWindowsMessage(hwnd, CO_E_NOT_SUPPORTED, cloud_print::kPortName);
   }
@@ -196,7 +196,7 @@ bool GetUserToken(HANDLE* primary_token) {
 // xps_path references a file to print.
 // job_title is the title to be used for the resulting print job.
 bool LaunchPrintDialog(const base::FilePath& xps_path,
-                       const string16& job_title) {
+                       const base::string16& job_title) {
   HANDLE token = NULL;
   if (!GetUserToken(&token)) {
     LOG(ERROR) << "Unable to get user token.";
@@ -286,7 +286,7 @@ bool ValidateCurrentUser() {
 
 base::FilePath ReadPathFromRegistry(HKEY root, const wchar_t* path_name) {
   base::win::RegKey gcp_key(HKEY_CURRENT_USER, kCloudPrintRegKey, KEY_READ);
-  string16 data;
+  base::string16 data;
   if (SUCCEEDED(gcp_key.ReadValue(path_name, &data)) &&
       base::PathExists(base::FilePath(data))) {
     return base::FilePath(data);
@@ -384,18 +384,12 @@ BOOL WINAPI Monitor2EnumPorts(HANDLE,
 }
 
 BOOL WINAPI Monitor2OpenPort(HANDLE, wchar_t*, HANDLE* handle) {
-  PortData* port_data = new PortData();
-  if (port_data == NULL) {
-    LOG(ERROR) << "Unable to allocate memory for internal structures.";
-    SetLastError(E_OUTOFMEMORY);
-    return FALSE;
-  }
   if (handle == NULL) {
     LOG(ERROR) << "handle should not be NULL.";
     SetLastError(ERROR_INVALID_PARAMETER);
     return FALSE;
   }
-  *handle = (HANDLE)port_data;
+  *handle = new PortData();
   return TRUE;
 }
 
@@ -434,12 +428,12 @@ BOOL WINAPI Monitor2StartDocPort(HANDLE port_handle,
   if (app_data_dir.empty())
     return FALSE;
   DeleteLeakedFiles(app_data_dir);
-  if (!file_util::CreateDirectory(app_data_dir) ||
-      !file_util::CreateTemporaryFileInDir(app_data_dir, &file_path)) {
+  if (!base::CreateDirectory(app_data_dir) ||
+      !base::CreateTemporaryFileInDir(app_data_dir, &file_path)) {
     LOG(ERROR) << "Can't create temporary file in " << app_data_dir.value();
     return FALSE;
   }
-  port_data->file = file_util::OpenFile(file_path, "wb+");
+  port_data->file = base::OpenFile(file_path, "wb+");
   if (port_data->file == NULL) {
     LOG(ERROR) << "Error opening file " << file_path.value() << ".";
     return FALSE;
@@ -484,13 +478,13 @@ BOOL WINAPI Monitor2EndDocPort(HANDLE port_handle) {
   }
 
   if (port_data->file != NULL) {
-    file_util::CloseFile(port_data->file);
+    base::CloseFile(port_data->file);
     port_data->file = NULL;
     bool delete_file = true;
     int64 file_size = 0;
-    file_util::GetFileSize(port_data->file_path, &file_size);
+    base::GetFileSize(port_data->file_path, &file_size);
     if (file_size > 0) {
-      string16 job_title;
+      base::string16 job_title;
       if (port_data->printer_handle != NULL) {
         GetJobTitle(port_data->printer_handle,
                     port_data->job_id,
@@ -549,13 +543,8 @@ BOOL WINAPI Monitor2XcvOpenPort(HANDLE,
     return FALSE;
   }
   XcvUiData* xcv_data = new XcvUiData();
-  if (xcv_data == NULL) {
-    LOG(ERROR) << "Unable to allocate memory for internal structures.";
-    SetLastError(E_OUTOFMEMORY);
-    return FALSE;
-  }
   xcv_data->granted_access = granted_access;
-  *handle = (HANDLE)xcv_data;
+  *handle = xcv_data;
   return TRUE;
 }
 
@@ -621,21 +610,17 @@ BOOL WINAPI MonitorUiConfigureOrDeletePortUI(const wchar_t*,
 
 MONITOR2* WINAPI InitializePrintMonitor2(MONITORINIT*,
                                          HANDLE* handle) {
-  cloud_print::MonitorData* monitor_data = new cloud_print::MonitorData;
-  if (monitor_data == NULL) {
-    return NULL;
-  }
-  if (handle != NULL) {
-    *handle = (HANDLE)monitor_data;
-    if (!cloud_print::kIsUnittest) {
-      // Unit tests set up their own AtExitManager
-      monitor_data->at_exit_manager.reset(new base::AtExitManager());
-      // Single spooler.exe handles verbose users.
-      PathService::DisableCache();
-    }
-  } else {
+  if (handle == NULL) {
     SetLastError(ERROR_INVALID_PARAMETER);
     return NULL;
+  }
+  cloud_print::MonitorData* monitor_data = new cloud_print::MonitorData;
+  *handle = monitor_data;
+  if (!cloud_print::kIsUnittest) {
+    // Unit tests set up their own AtExitManager
+    monitor_data->at_exit_manager.reset(new base::AtExitManager());
+    // Single spooler.exe handles verbose users.
+    PathService::DisableCache();
   }
   return &cloud_print::g_monitor_2;
 }

@@ -7,11 +7,10 @@
 
 #include <string>
 
-#include "chrome/browser/extensions/external_provider_interface.h"
-
 #include "base/memory/ref_counted.h"
 #include "chrome/browser/extensions/external_loader.h"
-#include "chrome/common/extensions/manifest.h"
+#include "extensions/browser/external_provider_interface.h"
+#include "extensions/common/manifest.h"
 
 class Profile;
 
@@ -21,7 +20,6 @@ class Version;
 }
 
 namespace extensions {
-class ExternalLoader;
 
 // A specialization of the ExternalProvider that uses an instance of
 // ExternalLoader to provide external extensions. This class can be seen as a
@@ -37,7 +35,7 @@ class ExternalProviderImpl : public ExternalProviderInterface {
   // If either of the origins is not supported by this provider, then it should
   // be initialized as Manifest::INVALID_LOCATION.
   ExternalProviderImpl(VisitorInterface* service,
-                       ExternalLoader* loader,
+                       const scoped_refptr<ExternalLoader>& loader,
                        Profile* profile,
                        Manifest::Location crx_location,
                        Manifest::Location download_location,

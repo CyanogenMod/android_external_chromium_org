@@ -8,13 +8,17 @@
 #include "base/memory/scoped_ptr.h"
 #include "content/browser/aura/image_transport_factory.h"
 
+namespace cc {
+class ContextProvider;
+}
+
 namespace content {
 
 // An ImageTransportFactory that disables transport.
 class NoTransportImageTransportFactory : public ImageTransportFactory {
  public:
   explicit NoTransportImageTransportFactory(
-      ui::ContextFactory* context_factory);
+      scoped_ptr<ui::ContextFactory> context_factory);
   virtual ~NoTransportImageTransportFactory();
 
   // ImageTransportFactory implementation.
@@ -36,6 +40,8 @@ class NoTransportImageTransportFactory : public ImageTransportFactory {
 
  private:
   scoped_ptr<ui::ContextFactory> context_factory_;
+  scoped_refptr<cc::ContextProvider> context_provider_;
+  scoped_ptr<GLHelper> gl_helper_;
 
   DISALLOW_COPY_AND_ASSIGN(NoTransportImageTransportFactory);
 };

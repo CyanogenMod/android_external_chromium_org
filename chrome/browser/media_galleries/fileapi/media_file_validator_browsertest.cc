@@ -13,6 +13,8 @@
 #include "chrome/browser/media_galleries/fileapi/media_file_system_backend.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "content/public/test/browser_test.h"
+#include "content/public/test/test_file_system_backend.h"
+#include "content/public/test/test_file_system_context.h"
 #include "content/public/test/test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "webkit/browser/fileapi/copy_or_move_file_validator.h"
@@ -21,8 +23,6 @@
 #include "webkit/browser/fileapi/file_system_operation_runner.h"
 #include "webkit/browser/fileapi/file_system_url.h"
 #include "webkit/browser/fileapi/isolated_context.h"
-#include "webkit/browser/fileapi/mock_file_system_context.h"
-#include "webkit/browser/fileapi/test_file_system_backend.h"
 #include "webkit/common/fileapi/file_system_types.h"
 
 namespace {
@@ -65,8 +65,6 @@ base::FilePath GetMediaTestDir() {
 
 }  // namespace
 
-namespace chrome {
-
 class MediaFileValidatorTest : public InProcessBrowserTest {
  public:
   MediaFileValidatorTest() : test_file_size_(0) {}
@@ -107,7 +105,7 @@ class MediaFileValidatorTest : public InProcessBrowserTest {
     ASSERT_TRUE(base_dir_.CreateUniqueTempDir());
     base::FilePath base = base_dir_.path();
     base::FilePath src_path = base.AppendASCII("src_fs");
-    ASSERT_TRUE(file_util::CreateDirectory(src_path));
+    ASSERT_TRUE(base::CreateDirectory(src_path));
 
     ScopedVector<fileapi::FileSystemBackend> additional_providers;
     additional_providers.push_back(new fileapi::TestFileSystemBackend(
@@ -128,7 +126,7 @@ class MediaFileValidatorTest : public InProcessBrowserTest {
               file_util::WriteFile(test_file, content.data(), test_file_size_));
 
     base::FilePath dest_path = base.AppendASCII("dest_fs");
-    ASSERT_TRUE(file_util::CreateDirectory(dest_path));
+    ASSERT_TRUE(base::CreateDirectory(dest_path));
     std::string dest_fsid =
         fileapi::IsolatedContext::GetInstance()->RegisterFileSystemForPath(
             fileapi::kFileSystemTypeNativeMedia, dest_path, NULL);
@@ -154,7 +152,7 @@ class MediaFileValidatorTest : public InProcessBrowserTest {
                                  const base::FilePath& source,
                                  bool expected_result) {
     std::string content;
-    ASSERT_TRUE(file_util::ReadFileToString(source, &content));
+    ASSERT_TRUE(base::ReadFileToString(source, &content));
     SetupOnFileThread(filename, content, expected_result);
   }
 
@@ -198,7 +196,7 @@ class MediaFileValidatorTest : public InProcessBrowserTest {
   void OnTestFilesReady(bool expected_result, bool test_files_ready) {
     ASSERT_TRUE(test_files_ready);
     operation_runner()->Move(
-        move_src_, move_dest_,
+        move_src_, move_dest_, fileapi::FileSystemOperation::OPTION_NONE,
         base::Bind(&MediaFileValidatorTest::OnMoveResult,
                    base::Unretained(this), expected_result));
   }
@@ -279,5 +277,3 @@ IN_PROC_BROWSER_TEST_F(MediaFileValidatorTest, ValidVideo) {
   test_file = test_file.AppendASCII("bear-320x240-multitrack.webm");
   MoveTestFromFile("multitrack.webm", test_file, true);
 }
-
-}  // namespace chrome

@@ -51,26 +51,26 @@ void MockAsyncMethodCaller::SetUp(bool success, MountError return_code) {
   ON_CALL(*this, AsyncTpmAttestationEnroll(_, _))
       .WillByDefault(
           WithArgs<1>(Invoke(this, &MockAsyncMethodCaller::DoCallback)));
-  ON_CALL(*this, AsyncTpmAttestationCreateCertRequest(_, _))
-      .WillByDefault(
-          WithArgs<1>(Invoke(this,
-                             &MockAsyncMethodCaller::FakeCreateCertRequest)));
-  ON_CALL(*this, AsyncTpmAttestationFinishCertRequest(_, _, _, _))
+  ON_CALL(*this, AsyncTpmAttestationCreateCertRequest(_, _, _, _))
       .WillByDefault(
           WithArgs<3>(Invoke(this,
+                             &MockAsyncMethodCaller::FakeCreateCertRequest)));
+  ON_CALL(*this, AsyncTpmAttestationFinishCertRequest(_, _, _, _, _))
+      .WillByDefault(
+          WithArgs<4>(Invoke(this,
                              &MockAsyncMethodCaller::FakeFinishCertRequest)));
   ON_CALL(*this, AsyncGetSanitizedUsername(_, _))
       .WillByDefault(
           WithArgs<1>(Invoke(this,
                              &MockAsyncMethodCaller::
                                  FakeGetSanitizedUsername)));
-  ON_CALL(*this, TpmAttestationSignEnterpriseChallenge(_, _, _, _, _, _, _))
+  ON_CALL(*this, TpmAttestationSignEnterpriseChallenge(_, _, _, _, _, _, _, _))
       .WillByDefault(
-          WithArgs<6>(Invoke(this,
+          WithArgs<7>(Invoke(this,
                              &MockAsyncMethodCaller::FakeEnterpriseChallenge)));
-  ON_CALL(*this, TpmAttestationRegisterKey(_, _, _))
+  ON_CALL(*this, TpmAttestationRegisterKey(_, _, _, _))
       .WillByDefault(
-          WithArgs<2>(Invoke(this, &MockAsyncMethodCaller::DoCallback)));
+          WithArgs<3>(Invoke(this, &MockAsyncMethodCaller::DoCallback)));
 }
 
 void MockAsyncMethodCaller::DoCallback(Callback callback) {

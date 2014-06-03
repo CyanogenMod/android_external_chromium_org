@@ -6,26 +6,12 @@
  */
 
 podrow {
-  -webkit-box-align: center;
-  -webkit-box-pack: center;
   /* Temporarily disabled because animation interferes with updating screen's
    size. */
-  /* -webkit-transition: width 180ms ease; */
-  display: -webkit-box;
-  max-height: 650px;
+  height: 100%;
   overflow: visible;
-}
-
-podrow[ncolumns='4'] {
-  width: 880px;
-}
-
-podrow[ncolumns='5'] {
-  width: 1100px;
-}
-
-podrow[ncolumns='6'] {
-  width: 1152px;
+  position: absolute;
+  width: 100%;
 }
 
 /* Hide the pod row while images are loading. */
@@ -35,8 +21,9 @@ podrow.images-loading {
 
 .pod {
   -webkit-tap-highlight-color: transparent;
-  -webkit-transform: scale(0.9);
-  -webkit-transition: all 180ms ease;
+  -webkit-transform: scale3d(0.9, 0.9, 0.9);
+  -webkit-transition: -webkit-transform 180ms ease,
+                      opacity 180ms ease;
   background-color: white;
   border-radius: 2px;
   box-shadow: 0 4px 23px 5px rgba(0, 0, 0, 0.2),
@@ -44,10 +31,15 @@ podrow.images-loading {
               0 3px 0 rgba(0, 0, 0, 0.08);
   cursor: pointer;
   display: inline-block;
-  margin: 0 20px;
   padding: 10px 10px 3px;
+  position: absolute;
   vertical-align: middle;
   width: 160px;
+  z-index: 0;
+}
+
+.account-picker.flying-pods .pod {
+  -webkit-transition: all 180ms ease;
 }
 
 .pod .main-pane {
@@ -57,14 +49,14 @@ podrow.images-loading {
 }
 
 podrow[ncolumns='6'] .pod {
-  -webkit-transform: scale(0.8);
-  margin: 0 6px;
+  -webkit-transform: scale3d(0.8, 0.8, 0.8);
 }
 
 .pod.focused {
   /* Focused pod has the same size no matter how many pods. */
-  -webkit-transform: scale(1.0) !important;
+  -webkit-transform: scale3d(1, 1, 1) !important;
   cursor: default;
+  z-index: 1;
 }
 
 .pod .user-image {
@@ -82,7 +74,7 @@ podrow[ncolumns='6'] .pod {
 }
 
 .pod.init {
-  -webkit-transform: scale(2.4);
+  -webkit-transform: scale3d(2.4, 2.4, 2.4);
   opacity: 0;
 }
 
@@ -97,7 +89,7 @@ podrow[ncolumns='6'] .pod {
 }
 
 .pod.zoom {
-  -webkit-transform: scale(2.2);
+  -webkit-transform: scale3d(2.2, 2.2, 2.2);
   opacity: 0;
 }
 
@@ -123,20 +115,54 @@ podrow[ncolumns='6'] .pod {
   display: none;
 }
 
+.password-area {
+  display: none;
+}
+
+.password-input-container {
+  -webkit-box-flex: 1;
+  /* This relative position is so the capslock hint is positioned correctly. */
+  position: relative;
+}
+
+.custom-button {
+  -webkit-box-align: center;
+  background-color: rgba(0, 0, 0, 0);
+  background-image: none;
+  cursor: pointer;
+  display: -webkit-box;
+  height: 40px;
+  margin: 0;
+  max-width: 40px;
+  min-height: 0;
+  min-width: 0;
+  padding: 0;
+}
+
+button.custom-button:focus:active,
+button.custom-button:focus:hover {
+  border: 1px solid transparent !important;
+}
+
+.custom-button img {
+  max-height: 100%;
+  max-width: 100%;
+}
+
 .pod input[type='password'] {
   -webkit-transition: opacity linear 150ms;
   background: white;
   border: none;
   box-sizing: border-box;
-  display: none;
+  display: inline-block;
   height: 40px;
   outline: none;
   padding: 4px 6px;
   width: 100%;
 }
 
-.pod.need-password.focused input[type='password'] {
-  display: inline-block;
+.pod.need-password.focused .password-area {
+  display: -webkit-box;
 }
 
 .pod .signin-button {
@@ -346,12 +372,15 @@ html[oobe=old] .pod.focused .action-box-area {
 .pod.public-account .name,
 .side-pane-name {
   -webkit-padding-end: 16px;
+  max-height: 42px;
   outline: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .learn-more,
 .side-pane-learn-more {
-  background-image: url('chrome://theme/IDR_CONTROLLED_SETTING_MANDATORY_GRAY');
+  background-image: url('chrome://theme/IDR_CONTROLLED_SETTING_MANDATORY');
   height: 16px;
   position: absolute;
   width: 16px;

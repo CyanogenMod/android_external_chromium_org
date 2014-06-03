@@ -8,7 +8,7 @@
 #include "base/values.h"
 #include "chrome/browser/bookmarks/bookmark_node_data.h"
 #include "chrome/browser/extensions/api/bookmarks/bookmarks_api.h"
-#include "chrome/browser/extensions/extension_function.h"
+#include "chrome/browser/extensions/chrome_extension_function.h"
 #include "chrome/browser/ui/bookmarks/bookmark_tab_helper.h"
 
 struct BookmarkNodeData;
@@ -43,10 +43,11 @@ class BookmarkManagerPrivateEventRouter
 
  private:
   // Helper to actually dispatch an event to extension listeners.
-  void DispatchEvent(const char* event_name,
+  void DispatchEvent(const std::string& event_name,
                      scoped_ptr<base::ListValue> args);
 
-  void DispatchDragEvent(const BookmarkNodeData& data, const char* event_name);
+  void DispatchDragEvent(const BookmarkNodeData& data,
+                         const std::string& event_name);
 
   Profile* profile_;
   content::WebContents* web_contents_;
@@ -199,6 +200,32 @@ class BookmarkManagerPrivateRecordLaunchFunction
 
  protected:
   virtual ~BookmarkManagerPrivateRecordLaunchFunction() {}
+
+  // ExtensionFunction:
+  virtual bool RunImpl() OVERRIDE;
+};
+
+class BookmarkManagerPrivateGetMetaInfoFunction
+    : public extensions::BookmarksFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("bookmarkManagerPrivate.getMetaInfo",
+                             BOOKMARKMANAGERPRIVATE_GETMETAINFO)
+
+ protected:
+  virtual ~BookmarkManagerPrivateGetMetaInfoFunction() {}
+
+  // ExtensionFunction:
+  virtual bool RunImpl() OVERRIDE;
+};
+
+class BookmarkManagerPrivateSetMetaInfoFunction
+    : public extensions::BookmarksFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("bookmarkManagerPrivate.setMetaInfo",
+                             BOOKMARKMANAGERPRIVATE_SETMETAINFO)
+
+ protected:
+  virtual ~BookmarkManagerPrivateSetMetaInfoFunction() {}
 
   // ExtensionFunction:
   virtual bool RunImpl() OVERRIDE;

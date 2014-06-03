@@ -13,12 +13,15 @@ namespace url_canon {
 
 namespace {
 
+// Canonicalize the given |component| from |source| into |output| and
+// |new_component|. If |separator| is non-zero, it is pre-pended to |ouput|
+// prior to the canonicalized component; i.e. for the '?' or '#' characters.
 template<typename CHAR, typename UCHAR>
 bool DoCanonicalizePathComponent(const CHAR* source,
                                  const url_parse::Component& component,
                                  CHAR seperator,
                                  CanonOutput* output,
-                                 url_parse::Component* new_parsed) {
+                                 url_parse::Component* new_component) {
   bool success = true;
   if (component.is_valid()) {
     if (seperator)
@@ -26,7 +29,7 @@ bool DoCanonicalizePathComponent(const CHAR* source,
     // Copy the path using path URL's more lax escaping rules (think for
     // javascript:). We convert to UTF-8 and escape non-ASCII, but leave all
     // ASCII characters alone. This helps readability of JavaStript.
-    new_parsed->begin = output->length();
+    new_component->begin = output->length();
     int end = component.end();
     for (int i = component.begin; i < end; i++) {
       UCHAR uch = static_cast<UCHAR>(source[i]);
@@ -35,10 +38,10 @@ bool DoCanonicalizePathComponent(const CHAR* source,
       else
         output->push_back(static_cast<char>(uch));
     }
-    new_parsed->len = output->length() - new_parsed->begin;
+    new_component->len = output->length() - new_component->begin;
   } else {
     // Empty part.
-    new_parsed->reset();
+    new_component->reset();
   }
   return success;
 }
@@ -58,6 +61,8 @@ bool DoCanonicalizePathURL(const URLComponentSource<CHAR>& source,
   new_parsed->password.reset();
   new_parsed->host.reset();
   new_parsed->port.reset();
+  // We allow path URLs to have the path, query and fragment components, but we
+  // will canonicalize each of the via the weaker path URL rules.
   success &= DoCanonicalizePathComponent<CHAR, UCHAR>(
       source.path, parsed.path, 0, output, &new_parsed->path);
   success &= DoCanonicalizePathComponent<CHAR, UCHAR>(

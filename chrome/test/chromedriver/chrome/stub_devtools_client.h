@@ -20,12 +20,13 @@ class Status;
 
 class StubDevToolsClient : public DevToolsClient {
  public:
-  explicit StubDevToolsClient(const std::string id);
+  explicit StubDevToolsClient(const std::string& id);
   StubDevToolsClient();
   virtual ~StubDevToolsClient();
 
   // Overridden from DevToolsClient:
   virtual const std::string& GetId() OVERRIDE;
+  virtual bool WasCrashed() OVERRIDE;
   virtual Status ConnectIfNecessary() OVERRIDE;
   virtual Status SendCommand(const std::string& method,
                              const base::DictionaryValue& params) OVERRIDE;

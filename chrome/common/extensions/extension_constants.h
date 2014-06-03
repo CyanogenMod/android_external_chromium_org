@@ -54,6 +54,13 @@ namespace extension_urls {
   // The greatest common prefixes of the main extensions gallery's browse and
   // download URLs.
   extern const char kGalleryBrowsePrefix[];
+
+  // Field to use with webstore URL for tracking launch source.
+  extern const char kWebstoreSourceField[];
+
+  // Values to use with webstore URL launch source field.
+  extern const char kLaunchSourceAppList[];
+  extern const char kLaunchSourceAppListSearch[];
 }  // namespace extension_urls
 
 namespace extension_misc {
@@ -68,15 +75,6 @@ namespace extension_misc {
 
   // The extension id of the Chrome component application.
   extern const char kChromeAppId[];
-
-  // The extension id of the Citrix Receiver application.
-  extern const char kCitrixReceiverAppId[];
-
-  // The extension id of the beta Citrix Receiver application.
-  extern const char kCitrixReceiverAppBetaId[];
-
-  // The extension id of the dev Citrix Receiver application.
-  extern const char kCitrixReceiverAppDevId[];
 
   // The extension id of the Cloud Print component application.
   extern const char kCloudPrintAppId[];
@@ -111,6 +109,9 @@ namespace extension_misc {
   // The extension id of the Crosh component app for ChromeOS.
   extern const char kCroshBuiltinAppId[];
 
+  // The extension id of the PDF extension.
+  extern const char kPdfExtensionId[];
+
   // The extension id of the Office Viewer component extension.
   extern const char kQuickOfficeComponentExtensionId[];
 
@@ -138,23 +139,15 @@ namespace extension_misc {
   // The extension id of the in-app payments support application.
   extern const char kInAppPaymentsSupportAppId[];
 
+  // The extension id of the Tips & Tricks application.
+  extern const char kTipsAndTricksAppId[];
+
   // Note: this structure is an ASN.1 which encodes the algorithm used
   // with its parameters. This is defined in PKCS #1 v2.1 (RFC 3447).
   // It is encoding: { OID sha1WithRSAEncryption      PARAMETERS NULL }
   const uint8 kSignatureAlgorithm[15] = {
     0x30, 0x0d, 0x06, 0x09, 0x2a, 0x86, 0x48, 0x86,
     0xf7, 0x0d, 0x01, 0x01, 0x05, 0x05, 0x00
-  };
-
-  // Don't remove items or change the order of this enum.  It's used in
-  // histograms and preferences.
-  enum LaunchContainer {
-    LAUNCH_WINDOW,
-    LAUNCH_PANEL,
-    LAUNCH_TAB,
-    // For platform apps, which don't actually have a container (they just get a
-    // "onLaunched" event).
-    LAUNCH_NONE
   };
 
   // The name of the app launch histogram.
@@ -204,7 +197,8 @@ namespace extension_misc {
     // Launch via chrome.management.launchApp.
     APP_LAUNCH_EXTENSION_API,
 
-    // Launch using the --app or --app-id cmd line options.
+    // Launch an app via a shortcut. This includes using the --app or --app-id
+    // command line arguments, or via an app shim process on Mac.
     APP_LAUNCH_CMD_LINE_APP,
 
     // App launch by passing the URL on the cmd line (not using app switches).
@@ -253,7 +247,8 @@ namespace extension_misc {
   extern const char kChromeVoxExtensionId[];
 
 #if defined(OS_CHROMEOS)
-  // Path to preinstalled ChromeVox screen reader extension.
+  // Path to preinstalled ChromeVox screen reader extension (relative to
+  // |chrome::DIR_RESOURCES|).
   extern const char kChromeVoxExtensionPath[];
   // Path to preinstalled Connectivity Diagnostics extension.
   extern const char kConnectivityDiagnosticsPath[];
@@ -264,6 +259,8 @@ namespace extension_misc {
   extern const char kSpeechSynthesisExtensionId[];
   // The extension id of the wallpaper manager application.
   extern const char kWallpaperManagerId[];
+  // The extension id of the first run dialog application.
+  extern const char kFirstRunDialogId[];
 #endif
 
   // What causes an extension to be installed? Used in histograms, so don't
@@ -275,14 +272,6 @@ namespace extension_misc {
     INSTALL_CAUSE_EXTERNAL_FILE,
     INSTALL_CAUSE_AUTOMATION,
     NUM_INSTALL_CAUSES
-  };
-
-  enum UnloadedExtensionReason {
-    UNLOAD_REASON_DISABLE,    // Extension is being disabled.
-    UNLOAD_REASON_UPDATE,     // Extension is being updated to a newer version.
-    UNLOAD_REASON_UNINSTALL,  // Extension is being uninstalled.
-    UNLOAD_REASON_TERMINATE,  // Extension has terminated.
-    UNLOAD_REASON_BLACKLIST,  // Extension has been blacklisted.
   };
 
   // The states that an app can be in, as reported by chrome.app.installState
@@ -323,5 +312,34 @@ namespace extension_misc {
   extern const int kScriptBadgeIconSizes[];
   extern const size_t kNumScriptBadgeIconSizes;
 }  // namespace extension_misc
+
+namespace extensions {
+  // This enum is used for the launch type the user wants to use for an
+  // application.
+  // Do not remove items or re-order this enum as it is used in preferences
+  // and histograms.
+  enum LaunchType {
+    LAUNCH_TYPE_PINNED,
+    LAUNCH_TYPE_REGULAR,
+    LAUNCH_TYPE_FULLSCREEN,
+    LAUNCH_TYPE_WINDOW,
+
+    // Launch an app in the in the way a click on the NTP would,
+    // if no user pref were set.  Update this constant to change
+    // the default for the NTP and chrome.management.launchApp().
+    LAUNCH_TYPE_DEFAULT = LAUNCH_TYPE_REGULAR
+  };
+
+  // Don't remove items or change the order of this enum.  It's used in
+  // histograms and preferences.
+  enum LaunchContainer {
+    LAUNCH_CONTAINER_WINDOW,
+    LAUNCH_CONTAINER_PANEL,
+    LAUNCH_CONTAINER_TAB,
+    // For platform apps, which don't actually have a container (they just get a
+    // "onLaunched" event).
+    LAUNCH_CONTAINER_NONE
+  };
+}  // namespace extensions
 
 #endif  // CHROME_COMMON_EXTENSIONS_EXTENSION_CONSTANTS_H_

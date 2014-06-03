@@ -1,4 +1,4 @@
-// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -18,21 +18,16 @@ import android.widget.AdapterView;
 import android.widget.BaseAdapter;
 import android.widget.HeaderViewListAdapter;
 import android.widget.ListPopupWindow;
-import android.widget.ListView;
-import android.widget.ListView.FixedViewInfo;
 import android.widget.PopupWindow;
 import android.widget.TextView;
 
 import org.chromium.base.CalledByNative;
 import org.chromium.base.ThreadUtils;
-import org.chromium.ui.LocalizationUtils;
-import org.chromium.chrome.R;
-import org.chromium.content.browser.ContentViewCore;
 import org.chromium.content.browser.NavigationClient;
 import org.chromium.content.browser.NavigationEntry;
 import org.chromium.content.browser.NavigationHistory;
+import org.chromium.ui.base.LocalizationUtils;
 
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -53,7 +48,7 @@ public class NavigationPopup extends ListPopupWindow implements AdapterView.OnIt
 
     private final int mFaviconSize;
 
-    private int mNativeNavigationPopup;
+    private long mNativeNavigationPopup;
 
     /**
      * Constructs a new popup with the given history information.
@@ -175,8 +170,8 @@ public class NavigationPopup extends ListPopupWindow implements AdapterView.OnIt
             // Reaches 0% opacity at 75% length. (Simulated with extra padding)
             float density = mContext.getResources().getDisplayMetrics().density;
             float fadeLength = (FADE_LENGTH_DP * density);
-            mFadeEdgeLength = (int)(fadeLength * FADE_STOP);
-            mFadePadding = (int)(fadeLength * (1 - FADE_STOP));
+            mFadeEdgeLength = (int) (fadeLength * FADE_STOP);
+            mFadePadding = (int) (fadeLength * (1 - FADE_STOP));
             mListItemHeight = (int) (density * LIST_ITEM_HEIGHT_DP);
             mPadding = (int) (density * PADDING_DP);
             mIsLayoutDirectionRTL = LocalizationUtils.isSystemLayoutDirectionRtl();
@@ -193,8 +188,7 @@ public class NavigationPopup extends ListPopupWindow implements AdapterView.OnIt
             view.setCompoundDrawablePadding(mPadding);
             if (!mIsLayoutDirectionRTL) {
                 view.setPadding(mPadding, 0, mPadding + mFadePadding , 0);
-            }
-            else {
+            } else {
                 view.setPadding(mPadding + mFadePadding, 0, mPadding, 0);
             }
             return view;
@@ -239,7 +233,7 @@ public class NavigationPopup extends ListPopupWindow implements AdapterView.OnIt
 
     private static native String nativeGetHistoryUrl();
 
-    private native int nativeInit();
-    private native void nativeDestroy(int nativeNavigationPopup);
-    private native void nativeFetchFaviconForUrl(int nativeNavigationPopup, String url);
+    private native long nativeInit();
+    private native void nativeDestroy(long nativeNavigationPopup);
+    private native void nativeFetchFaviconForUrl(long nativeNavigationPopup, String url);
 }

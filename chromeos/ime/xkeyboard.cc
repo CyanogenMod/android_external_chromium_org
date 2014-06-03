@@ -10,14 +10,14 @@
 #include <set>
 #include <utility>
 
-#include "base/chromeos/chromeos_version.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
-#include "base/process/process_handle.h"
 #include "base/process/launch.h"
+#include "base/process/process_handle.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
+#include "base/sys_info.h"
 #include "base/threading/thread_checker.h"
 
 // These includes conflict with base/tracked_objects.h so must come last.
@@ -32,9 +32,6 @@ namespace {
 Display* GetXDisplay() {
   return base::MessagePumpForUI::GetDefaultXDisplay();
 }
-
-// The default keyboard layout name in the xorg config file.
-const char kDefaultLayoutName[] = "us";
 
 // The command we use to set the current XKB layout and modifier key mapping.
 // TODO(yusukes): Use libxkbfile.so instead of the command (crosbug.com/13105)
@@ -114,14 +111,21 @@ class XKeyboardImpl : public XKeyboard {
 };
 
 XKeyboardImpl::XKeyboardImpl()
-    : is_running_on_chrome_os_(base::chromeos::IsRunningOnChromeOS()) {
+    : is_running_on_chrome_os_(base::SysInfo::IsRunningOnChromeOS()) {
+  // X must be already initialized.
+  CHECK(GetXDisplay());
+
   num_lock_mask_ = GetNumLockMask();
 
-  // web_input_event_aurax11.cc seems to assume that Mod2Mask is always assigned
-  // to Num Lock.
-  // TODO(yusukes): Check the assumption is really okay. If not, modify the Aura
-  // code, and then remove the CHECK below.
-  CHECK(!is_running_on_chrome_os_ || (num_lock_mask_ == Mod2Mask));
+  if (is_running_on_chrome_os_) {
+    // Some code seems to assume that Mod2Mask is always assigned to
+    // Num Lock.
+    //
+    // TODO(yusukes): Check the assumption is really okay. If not,
+    // modify the Aura code, and then remove the CHECK below.
+    LOG_IF(ERROR, num_lock_mask_ != Mod2Mask)
+        << "NumLock is not assigned to Mod2Mask.  : " << num_lock_mask_;
+  }
   GetLockedModifiers(&current_caps_lock_status_, &current_num_lock_status_);
 }
 

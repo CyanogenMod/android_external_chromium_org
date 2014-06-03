@@ -34,6 +34,9 @@ class WebView {
   // Return the id for this WebView.
   virtual std::string GetId() = 0;
 
+  // Return true if the web view was crashed.
+  virtual bool WasCrashed() = 0;
+
   // Make DevToolsCient connect to DevTools if it is disconnected.
   virtual Status ConnectIfNecessary() = 0;
 
@@ -50,6 +53,7 @@ class WebView {
   // the result. |frame| is a frame ID or an empty string for the main frame.
   // If the expression evaluates to a element, it will be bound to a unique ID
   // (per frame) and the ID will be returned.
+  // |result| will never be NULL on success.
   virtual Status EvaluateScript(const std::string& frame,
                                 const std::string& expression,
                                 scoped_ptr<base::Value>* result) = 0;
@@ -59,6 +63,7 @@ class WebView {
   // frame. |args| may contain IDs that refer to previously returned elements.
   // These will be translated back to their referred objects before invoking the
   // function.
+  // |result| will never be NULL on success.
   virtual Status CallFunction(const std::string& frame,
                               const std::string& function,
                               const base::ListValue& args,
@@ -68,6 +73,7 @@ class WebView {
   // two callbacks. The first may be invoked with a value to return to the user.
   // The second may be used to report an error. This function waits until
   // one of the callbacks is invoked or the timeout occurs.
+  // |result| will never be NULL on success.
   virtual Status CallAsyncFunction(const std::string& frame,
                                    const std::string& function,
                                    const base::ListValue& args,
@@ -77,6 +83,7 @@ class WebView {
   // Same as |CallAsyncFunction|, except no additional error callback is passed
   // to the function. Also, |kJavaScriptError| or |kScriptTimeout| is used
   // as the error code instead of |kUnknownError| in appropriate cases.
+  // |result| will never be NULL on success.
   virtual Status CallUserAsyncFunction(const std::string& frame,
                                        const std::string& function,
                                        const base::ListValue& args,
@@ -112,10 +119,12 @@ class WebView {
   // If |frame_id| is "", waits for navigations on the main frame.
   // If a modal dialog appears while waiting, kUnexpectedAlertOpen will be
   // returned.
-  // If there are still pending navigations after |timeout|ms,
-  // page load is stopped, and kTimeout status is returned.
+  // If timeout is exceeded, will return a timeout status.
+  // If |stop_load_on_timeout| is true, will attempt to stop the page load on
+  // timeout before returning the timeout status.
   virtual Status WaitForPendingNavigations(const std::string& frame_id,
-                                           int timeout) = 0;
+                                           const base::TimeDelta& timeout,
+                                           bool stop_load_on_timeout) = 0;
 
   // Returns whether the frame is pending navigation.
   virtual Status IsPendingNavigation(
@@ -136,6 +145,12 @@ class WebView {
       const std::string& frame,
       const base::DictionaryValue& element,
       const std::vector<base::FilePath>& files) = 0;
+
+  // Take a heap snapshot which can build up a graph of Javascript objects.
+  // A raw heap snapshot is in JSON format:
+  //  1. A meta data element "snapshot" about how to parse data elements.
+  //  2. Data elements: "nodes", "edges", "strings".
+  virtual Status TakeHeapSnapshot(scoped_ptr<base::Value>* snapshot) = 0;
 };
 
 #endif  // CHROME_TEST_CHROMEDRIVER_CHROME_WEB_VIEW_H_

@@ -194,7 +194,7 @@ cr.define('cloudprint', function() {
         new HttpParam('contentType', 'dataUrl'),
         new HttpParam('title', documentInfo.title),
         new HttpParam('ticket',
-                      this.createPrintTicket_(destination, printTicketStore)),
+                      printTicketStore.createPrintTicket(destination)),
         new HttpParam('content', 'data:application/pdf;base64,' + data),
         new HttpParam('tag',
                       '__google__chrome_version=' + chromeVersion),
@@ -251,61 +251,6 @@ cr.define('cloudprint', function() {
           this.nativeLayer_,
           print_preview.NativeLayer.EventType.ACCESS_TOKEN_READY,
           this.onAccessTokenReady_.bind(this));
-    },
-
-    /**
-     * Creates an object that represents a Google Cloud Print print ticket.
-     * @param {!print_preview.Destination} destination Destination to print to.
-     * @param {!print_preview.PrintTicketStore} printTicketStore Used to create
-     *     the state of the print ticket.
-     * @return {!Object} Google Cloud Print print ticket.
-     * @private
-     */
-    createPrintTicket_: function(destination, printTicketStore) {
-      assert(!destination.isLocal,
-             'Trying to create a Google Cloud Print print ticket for a local ' +
-                 'destination');
-      assert(destination.capabilities,
-             'Trying to create a Google Cloud Print print ticket for a ' +
-                 'destination with no print capabilities');
-      var pts = printTicketStore; // For brevity.
-      var cjt = {
-        version: '1.0',
-        print: {}
-      };
-      if (pts.collate.isCapabilityAvailable() && pts.collate.isUserEdited()) {
-        cjt.print.collate = {collate: pts.collate.getValue() == 'true'};
-      }
-      if (pts.color.isCapabilityAvailable() && pts.color.isUserEdited()) {
-        var colorType = pts.color.getValue() ?
-            'STANDARD_COLOR' : 'STANDARD_MONOCHROME';
-        // Find option with this colorType to read its vendor_id.
-        var selectedOptions = destination.capabilities.printer.color.option.
-            filter(function(option) {
-              return option.type == colorType;
-            });
-        if (selectedOptions.length == 0) {
-          console.error('Could not find correct color option');
-        } else {
-          cjt.print.color = {type: colorType};
-          if (selectedOptions[0].hasOwnProperty('vendor_id')) {
-            cjt.print.color.vendor_id = selectedOptions[0].vendor_id;
-          }
-        }
-      }
-      if (pts.copies.isCapabilityAvailable() && pts.copies.isUserEdited()) {
-        cjt.print.copies = {copies: pts.copies.getValueAsNumber()};
-      }
-      if (pts.duplex.isCapabilityAvailable() && pts.duplex.isUserEdited()) {
-        cjt.print.duplex =
-            {type: pts.duplex.getValue() ? 'LONG_EDGE' : 'NO_DUPLEX'};
-      }
-      if (pts.landscape.isCapabilityAvailable() &&
-          pts.landscape.isUserEdited()) {
-        cjt.print.page_orientation =
-            {type: pts.landscape.getValue() ? 'LANDSCAPE' : 'PORTRAIT'};
-      }
-      return JSON.stringify(cjt);
     },
 
     /**
@@ -395,11 +340,11 @@ cr.define('cloudprint', function() {
      * Creates a Google Cloud Print interface error that is ready to dispatch.
      * @param {!CloudPrintInterface.EventType} type Type of the error.
      * @param {!CloudPrintRequest} request Request that has been completed.
-     * @return {!cr.Event} Google Cloud Print interface error event.
+     * @return {!Event} Google Cloud Print interface error event.
      * @private
      */
     createErrorEvent_: function(type, request) {
-      var errorEvent = new cr.Event(type);
+      var errorEvent = new Event(type);
       errorEvent.status = request.xhr.status;
       if (request.xhr.status == 200) {
         errorEvent.errorCode = request.result['errorCode'];
@@ -414,7 +359,7 @@ cr.define('cloudprint', function() {
 
     /**
      * Called when a native layer receives access token.
-     * @param {cr.Event} evt Contains the authetication type and access token.
+     * @param {Event} evt Contains the authetication type and access token.
      * @private
      */
     onAccessTokenReady_: function(event) {
@@ -480,7 +425,7 @@ cr.define('cloudprint', function() {
           }
         });
         var searchDoneEvent =
-            new cr.Event(CloudPrintInterface.EventType.SEARCH_DONE);
+            new Event(CloudPrintInterface.EventType.SEARCH_DONE);
         searchDoneEvent.printers = printerList;
         searchDoneEvent.origin = request.origin;
         searchDoneEvent.isRecent = isRecent;
@@ -500,7 +445,7 @@ cr.define('cloudprint', function() {
      */
     onSubmitDone_: function(request) {
       if (request.xhr.status == 200 && request.result['success']) {
-        var submitDoneEvent = new cr.Event(
+        var submitDoneEvent = new Event(
             CloudPrintInterface.EventType.SUBMIT_DONE);
         submitDoneEvent.jobId = request.result['job']['id'];
         this.dispatchEvent(submitDoneEvent);
@@ -530,7 +475,7 @@ cr.define('cloudprint', function() {
           return;
         }
         var printerDoneEvent =
-            new cr.Event(CloudPrintInterface.EventType.PRINTER_DONE);
+            new Event(CloudPrintInterface.EventType.PRINTER_DONE);
         printerDoneEvent.printer = printer;
         this.dispatchEvent(printerDoneEvent);
       } else {

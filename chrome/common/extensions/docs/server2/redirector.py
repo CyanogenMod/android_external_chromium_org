@@ -6,14 +6,12 @@ import posixpath
 from urlparse import urlsplit
 
 from file_system import FileNotFoundError
-from third_party.json_schema_compiler.json_parse import Parse
+from future import Gettable, Future
 
 class Redirector(object):
-  def __init__(self, compiled_fs_factory, file_system, root_path):
-    self._root_path = root_path
+  def __init__(self, compiled_fs_factory, file_system):
     self._file_system = file_system
-    self._cache = compiled_fs_factory.Create(
-        lambda _, rules: Parse(rules), Redirector)
+    self._cache = compiled_fs_factory.ForJson(file_system)
 
   def Redirect(self, host, path):
     ''' Check if a path should be redirected, first according to host
@@ -33,7 +31,7 @@ class Redirector(object):
 
     try:
       rules = self._cache.GetFromFile(
-          posixpath.join(self._root_path, dirname, 'redirects.json'))
+          posixpath.join(dirname, 'redirects.json')).Get()
     except FileNotFoundError:
       return None
 
@@ -44,7 +42,7 @@ class Redirector(object):
         urlsplit(redirect).scheme in ('http', 'https')):
       return redirect
 
-    return posixpath.normpath('/' + posixpath.join(dirname, redirect))
+    return posixpath.normpath(posixpath.join('/', dirname, redirect))
 
   def _RedirectOldHosts(self, host, path):
     ''' Redirect paths from the old code.google.com to the new
@@ -63,7 +61,9 @@ class Redirector(object):
   def Cron(self):
     ''' Load files during a cron run.
     '''
-    for root, dirs, files in self._file_system.Walk(self._root_path):
+    futures = []
+    for root, dirs, files in self._file_system.Walk(''):
       if 'redirects.json' in files:
-        self._cache.GetFromFile('%s/redirects.json' % posixpath.join(
-            self._root_path, root).rstrip('/'))
+        futures.append(
+            self._cache.GetFromFile(posixpath.join(root, 'redirects.json')))
+    return Future(delegate=Gettable(lambda: [f.Get() for f in futures]))

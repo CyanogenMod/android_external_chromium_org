@@ -24,15 +24,17 @@ void MockInputMethod::SetFocusedTextInputClient(TextInputClient* client) {
     OnTextInputTypeChanged(client);
 }
 
+void MockInputMethod::DetachTextInputClient(TextInputClient* client) {
+  if (text_input_client_ == client) {
+    text_input_client_ = NULL;
+  }
+}
+
 TextInputClient* MockInputMethod::GetTextInputClient() const {
   return text_input_client_;
 }
 
-bool MockInputMethod::DispatchKeyEvent(const base::NativeEvent& native_event) {
-  return false;
-}
-
-bool MockInputMethod::DispatchFabricatedKeyEvent(const ui::KeyEvent& event) {
+bool MockInputMethod::DispatchKeyEvent(const ui::KeyEvent& event) {
   return false;
 }
 
@@ -40,35 +42,39 @@ void MockInputMethod::Init(bool focused) {
 }
 
 void MockInputMethod::OnFocus() {
-  FOR_EACH_OBSERVER(Observer, observer_list_, OnFocus());
+  FOR_EACH_OBSERVER(InputMethodObserver, observer_list_, OnFocus());
 }
 
 void MockInputMethod::OnBlur() {
-  FOR_EACH_OBSERVER(Observer, observer_list_, OnBlur());
+  FOR_EACH_OBSERVER(InputMethodObserver, observer_list_, OnBlur());
 }
 
 bool MockInputMethod::OnUntranslatedIMEMessage(const base::NativeEvent& event,
                                                NativeEventResult* result) {
-  FOR_EACH_OBSERVER(Observer, observer_list_, OnUntranslatedIMEMessage(event));
   if (result)
     *result = NativeEventResult();
   return false;
 }
 
 void MockInputMethod::OnTextInputTypeChanged(const TextInputClient* client) {
-  FOR_EACH_OBSERVER(Observer, observer_list_, OnTextInputTypeChanged(client));
-  FOR_EACH_OBSERVER(Observer, observer_list_, OnTextInputStateChanged(client));
+  FOR_EACH_OBSERVER(InputMethodObserver,
+                    observer_list_,
+                    OnTextInputTypeChanged(client));
+  FOR_EACH_OBSERVER(InputMethodObserver,
+                    observer_list_,
+                    OnTextInputStateChanged(client));
 }
 
 void MockInputMethod::OnCaretBoundsChanged(const TextInputClient* client) {
-  FOR_EACH_OBSERVER(Observer, observer_list_, OnCaretBoundsChanged(client));
+  FOR_EACH_OBSERVER(InputMethodObserver,
+                    observer_list_,
+                    OnCaretBoundsChanged(client));
 }
 
 void MockInputMethod::CancelComposition(const TextInputClient* client) {
 }
 
 void MockInputMethod::OnInputLocaleChanged() {
-  FOR_EACH_OBSERVER(Observer, observer_list_, OnInputLocaleChanged());
 }
 
 std::string MockInputMethod::GetInputLocale() {
@@ -83,8 +89,12 @@ bool MockInputMethod::IsActive() {
   return true;
 }
 
-ui::TextInputType MockInputMethod::GetTextInputType() const {
-  return ui::TEXT_INPUT_TYPE_NONE;
+TextInputType MockInputMethod::GetTextInputType() const {
+  return TEXT_INPUT_TYPE_NONE;
+}
+
+TextInputMode MockInputMethod::GetTextInputMode() const {
+  return TEXT_INPUT_MODE_DEFAULT;
 }
 
 bool MockInputMethod::CanComposeInline() const {
@@ -96,11 +106,11 @@ bool MockInputMethod::IsCandidatePopupOpen() const {
 }
 
 void MockInputMethod::AddObserver(InputMethodObserver* observer) {
-  observer_list_.AddObserver(static_cast<Observer*>(observer));
+  observer_list_.AddObserver(observer);
 }
 
 void MockInputMethod::RemoveObserver(InputMethodObserver* observer) {
-  observer_list_.RemoveObserver(static_cast<Observer*>(observer));
+  observer_list_.RemoveObserver(observer);
 }
 
 }  // namespace ui

@@ -6,6 +6,7 @@
 #define CONTENT_PUBLIC_TEST_MOCK_RENDER_THREAD_H_
 
 #include "base/memory/shared_memory.h"
+#include "base/observer_list.h"
 #include "base/strings/string16.h"
 #include "content/public/renderer/render_thread.h"
 #include "ipc/ipc_test_sink.h"
@@ -34,7 +35,8 @@ class MockRenderThread : public RenderThread {
 
   // Helpers for embedders to know when content IPC messages are received, since
   // they don't have access to content IPC files.
-  void VerifyRunJavaScriptMessageSend(const string16& expected_alert_message);
+  void VerifyRunJavaScriptMessageSend(
+      const base::string16& expected_alert_message);
 
   // RenderThread implementation:
   virtual bool Send(IPC::Message* msg) OVERRIDE;
@@ -49,8 +51,6 @@ class MockRenderThread : public RenderThread {
   virtual int GenerateRoutingID() OVERRIDE;
   virtual void AddFilter(IPC::ChannelProxy::MessageFilter* filter) OVERRIDE;
   virtual void RemoveFilter(IPC::ChannelProxy::MessageFilter* filter) OVERRIDE;
-  virtual void SetOutgoingMessageFilter(
-      IPC::ChannelProxy::OutgoingMessageFilter* filter) OVERRIDE;
   virtual void AddObserver(RenderProcessObserver* observer) OVERRIDE;
   virtual void RemoveObserver(RenderProcessObserver* observer) OVERRIDE;
   virtual void SetResourceDispatcherDelegate(
@@ -58,7 +58,8 @@ class MockRenderThread : public RenderThread {
   virtual void WidgetHidden() OVERRIDE;
   virtual void WidgetRestored() OVERRIDE;
   virtual void EnsureWebKitInitialized() OVERRIDE;
-  virtual void RecordUserMetrics(const std::string& action) OVERRIDE;
+  virtual void RecordAction(const UserMetricsAction& action) OVERRIDE;
+  virtual void RecordComputedAction(const std::string& action) OVERRIDE;
   virtual scoped_ptr<base::SharedMemory> HostAllocateSharedMemoryBuffer(
       size_t buffer_size) OVERRIDE;
   virtual void RegisterExtension(v8::Extension* extension) OVERRIDE;
@@ -109,9 +110,12 @@ class MockRenderThread : public RenderThread {
   // overriding this should first delegate to this implementation.
   virtual bool OnMessageReceived(const IPC::Message& msg);
 
+  // Dispatches control messages to observers.
+  bool OnControlMessageReceived(const IPC::Message& msg);
+
   // The Widget expects to be returned valid route_id.
   void OnCreateWidget(int opener_id,
-                      WebKit::WebPopupType popup_type,
+                      blink::WebPopupType popup_type,
                       int* route_id,
                       int* surface_id);
 
@@ -155,6 +159,9 @@ class MockRenderThread : public RenderThread {
 
   // A list of message filters added to this thread.
   std::vector<scoped_refptr<IPC::ChannelProxy::MessageFilter> > filters_;
+
+  // Observers to notify.
+  ObserverList<RenderProcessObserver> observers_;
 };
 
 }  // namespace content

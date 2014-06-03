@@ -11,6 +11,7 @@
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/ui/cocoa/bookmarks/bookmark_menu_bridge.h"
 #include "chrome/browser/ui/cocoa/cocoa_profile_test.h"
+#include "chrome/test/base/testing_profile.h"
 #include "grit/generated_resources.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #import "testing/gtest_mac.h"
@@ -167,7 +168,7 @@ TEST_F(BookmarkMenuBridgeTest, TestInvalidation) {
 // Test that AddNodeToMenu() properly adds bookmark nodes as menus,
 // including the recursive case.
 TEST_F(BookmarkMenuBridgeTest, TestAddNodeToMenu) {
-  string16 empty;
+  base::string16 empty;
   NSMenu* menu = bridge_->menu_;
 
   BookmarkModel* model = bridge_->GetBookmarkModel();
@@ -310,7 +311,7 @@ TEST_F(BookmarkMenuBridgeTest, TestAddItemToMenu) {
 
 // Makes sure our internal map of BookmarkNode to NSMenuItem works.
 TEST_F(BookmarkMenuBridgeTest, TestGetMenuItemForNode) {
-  string16 empty;
+  base::string16 empty;
   NSMenu* menu = bridge_->menu_;
 
   BookmarkModel* model = bridge_->GetBookmarkModel();

@@ -6,12 +6,13 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/stringprintf.h"
 #include "chrome/browser/managed_mode/managed_user_refresh_token_fetcher.h"
-#include "chrome/browser/signin/oauth2_token_service.h"
+#include "chrome/browser/signin/fake_profile_oauth2_token_service.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "google_apis/gaia/gaia_oauth_client.h"
 #include "google_apis/gaia/gaia_urls.h"
 #include "google_apis/gaia/google_service_auth_error.h"
+#include "google_apis/gaia/oauth2_token_service.h"
 #include "net/base/net_errors.h"
 #include "net/base/url_util.h"
 #include "net/http/http_request_headers.h"
@@ -22,12 +23,14 @@
 
 namespace {
 
-const char kManagedUserId[] = "abcdef";
+const char kAccountId[] = "account_id";
 const char kDeviceName[] = "Compy";
+const char kManagedUserId[] = "abcdef";
 
 const char kAccessToken[] = "accesstoken";
 const char kAuthorizationCode[] = "authorizationcode";
 const char kManagedUserToken[] = "managedusertoken";
+const char kOAuth2RefreshToken[] = "refreshtoken";
 
 const char kIssueTokenResponseFormat[] =
     "{"
@@ -40,100 +43,6 @@ const char kGetRefreshTokenResponseFormat[] =
     "  \"expires_in\": 12345,"
     "  \"refresh_token\": \"%s\""
     "}";
-
-// MockOAuth2TokenService ---------------------------------------------
-
-class MockOAuth2TokenService : public OAuth2TokenService {
- public:
-  class Request : public OAuth2TokenService::Request {
-   public:
-    Request(const OAuth2TokenService::ScopeSet& scopes,
-            OAuth2TokenService::Consumer* consumer,
-            MockOAuth2TokenService* owner);
-    virtual ~Request();
-
-    void Succeed();
-    void Fail(GoogleServiceAuthError::State error);
-
-    const OAuth2TokenService::ScopeSet& scopes() const { return scopes_; }
-
-   private:
-    OAuth2TokenService::ScopeSet scopes_;
-
-    OAuth2TokenService::Consumer* consumer_;
-
-    MockOAuth2TokenService* owner_;
-  };
-
-  MockOAuth2TokenService();
-  virtual ~MockOAuth2TokenService();
-
-  Request* request() const { return request_; }
-
-  void ClearRequest(Request* request);
-
- private:
-  // OAuth2TokenService overrides:
-  virtual scoped_ptr<OAuth2TokenService::Request> StartRequest(
-     const OAuth2TokenService::ScopeSet& scopes,
-      OAuth2TokenService::Consumer* consumer) OVERRIDE;
-  virtual std::string GetRefreshToken() OVERRIDE;
-  virtual net::URLRequestContextGetter* GetRequestContext() OVERRIDE {
-    return NULL;
-  }
-
-  Request* request_;
-
-  DISALLOW_COPY_AND_ASSIGN(MockOAuth2TokenService);
-};
-
-MockOAuth2TokenService::Request::Request(
-    const OAuth2TokenService::ScopeSet& scopes,
-    OAuth2TokenService::Consumer* consumer,
-    MockOAuth2TokenService* owner)
-    : scopes_(scopes),
-      consumer_(consumer),
-      owner_(owner) {}
-
-MockOAuth2TokenService::Request::~Request() {
-  owner_->ClearRequest(this);
-}
-
-void MockOAuth2TokenService::Request::Succeed() {
-  base::Time expiration_date = base::Time::Now() +
-                               base::TimeDelta::FromHours(1);
-  consumer_->OnGetTokenSuccess(this, kAccessToken, expiration_date);
-}
-
-void MockOAuth2TokenService::Request::Fail(
-    GoogleServiceAuthError::State error) {
-  consumer_->OnGetTokenFailure(this, GoogleServiceAuthError(error));
-}
-
-MockOAuth2TokenService::MockOAuth2TokenService() : request_(NULL) {}
-
-MockOAuth2TokenService::~MockOAuth2TokenService() {
-  EXPECT_FALSE(request_);
-}
-
-void MockOAuth2TokenService::ClearRequest(
-    MockOAuth2TokenService::Request* request) {
-  if (request_ == request)
-    request_ = NULL;
-}
-
-scoped_ptr<OAuth2TokenService::Request> MockOAuth2TokenService::StartRequest(
-    const OAuth2TokenService::ScopeSet& scopes,
-    OAuth2TokenService::Consumer* consumer) {
-  scoped_ptr<Request> request(new Request(scopes, consumer, this));
-  request_ = request.get();
-  return request.PassAs<OAuth2TokenService::Request>();
-}
-
-std::string MockOAuth2TokenService::GetRefreshToken() {
-  NOTREACHED();
-  return std::string();
-}
 
 // Utility methods --------------------------------------------------
 
@@ -166,6 +75,14 @@ void SetHttpError(net::TestURLFetcher* url_fetcher, int error) {
   url_fetcher->delegate()->OnURLFetchComplete(url_fetcher);
 }
 
+void VerifyTokenRequest(
+    std::vector<FakeProfileOAuth2TokenService::PendingRequest> requests) {
+  ASSERT_EQ(1u, requests.size());
+  EXPECT_EQ(1u, requests[0].scopes.size());
+  EXPECT_EQ(1u, requests[0].scopes.count(
+      GaiaUrls::GetInstance()->oauth1_login_scope()));
+}
+
 }  // namespace
 
 class ManagedUserRefreshTokenFetcherTest : public testing::Test {
@@ -176,10 +93,11 @@ class ManagedUserRefreshTokenFetcherTest : public testing::Test {
  protected:
   void StartFetching();
 
-  MockOAuth2TokenService::Request* GetOAuth2TokenServiceRequest();
   net::TestURLFetcher* GetIssueTokenRequest();
   net::TestURLFetcher* GetRefreshTokenRequest();
 
+  void MakeOAuth2TokenServiceRequestSucceed();
+  void MakeOAuth2TokenServiceRequestFail(GoogleServiceAuthError::State error);
   void MakeIssueTokenRequestSucceed();
   void MakeRefreshTokenFetchSucceed();
 
@@ -194,7 +112,7 @@ class ManagedUserRefreshTokenFetcherTest : public testing::Test {
 
   content::TestBrowserThreadBundle thread_bundle_;
   TestingProfile profile_;
-  MockOAuth2TokenService oauth2_token_service_;
+  FakeProfileOAuth2TokenService oauth2_token_service_;
   net::TestURLFetcherFactory url_fetcher_factory_;
   scoped_ptr<ManagedUserRefreshTokenFetcher> token_fetcher_;
 
@@ -206,25 +124,17 @@ class ManagedUserRefreshTokenFetcherTest : public testing::Test {
 ManagedUserRefreshTokenFetcherTest::ManagedUserRefreshTokenFetcherTest()
     : token_fetcher_(
           ManagedUserRefreshTokenFetcher::Create(&oauth2_token_service_,
-                                          profile_.GetRequestContext())),
+                                                 kAccountId,
+                                                 profile_.GetRequestContext())),
       error_(GoogleServiceAuthError::NONE),
       weak_ptr_factory_(this) {}
 
 void ManagedUserRefreshTokenFetcherTest::StartFetching() {
+  oauth2_token_service_.IssueRefreshToken(kOAuth2RefreshToken);
   token_fetcher_->Start(kManagedUserId, kDeviceName,
                         base::Bind(
                             &ManagedUserRefreshTokenFetcherTest::OnTokenFetched,
                             weak_ptr_factory_.GetWeakPtr()));
-}
-
-MockOAuth2TokenService::Request*
-ManagedUserRefreshTokenFetcherTest::GetOAuth2TokenServiceRequest() {
-  MockOAuth2TokenService::Request* request = oauth2_token_service_.request();
-
-  OAuth2TokenService::ScopeSet scopes = request->scopes();
-  EXPECT_EQ(1u, scopes.size());
-  EXPECT_EQ(1u, scopes.count(GaiaUrls::GetInstance()->oauth1_login_scope()));
-  return request;
 }
 
 net::TestURLFetcher*
@@ -234,7 +144,7 @@ ManagedUserRefreshTokenFetcherTest::GetIssueTokenRequest() {
     return NULL;
 
   EXPECT_EQ(GaiaUrls::GetInstance()->oauth2_issue_token_url(),
-            url_fetcher->GetOriginalURL().spec());
+            url_fetcher->GetOriginalURL());
   std::string access_token;
   net::HttpRequestHeaders headers;
   url_fetcher->GetExtraRequestHeaders(&headers);
@@ -258,11 +168,33 @@ ManagedUserRefreshTokenFetcherTest::GetRefreshTokenRequest() {
     return NULL;
 
   EXPECT_EQ(GaiaUrls::GetInstance()->oauth2_token_url(),
-            url_fetcher->GetOriginalURL().spec());
+            url_fetcher->GetOriginalURL());
   std::string auth_code;
   EXPECT_TRUE(GetValueForKey(url_fetcher->upload_data(), "code", &auth_code));
   EXPECT_EQ(kAuthorizationCode, auth_code);
   return url_fetcher;
+}
+
+void
+ManagedUserRefreshTokenFetcherTest::MakeOAuth2TokenServiceRequestSucceed() {
+  std::vector<FakeProfileOAuth2TokenService::PendingRequest> requests =
+      oauth2_token_service_.GetPendingRequests();
+  VerifyTokenRequest(requests);
+  base::Time expiration_date = base::Time::Now() +
+                               base::TimeDelta::FromHours(1);
+  oauth2_token_service_.IssueTokenForScope(requests[0].scopes,
+                                           kAccessToken,
+                                           expiration_date);
+}
+
+void
+ManagedUserRefreshTokenFetcherTest::MakeOAuth2TokenServiceRequestFail(
+    GoogleServiceAuthError::State error) {
+  std::vector<FakeProfileOAuth2TokenService::PendingRequest> requests =
+      oauth2_token_service_.GetPendingRequests();
+  VerifyTokenRequest(requests);
+  oauth2_token_service_.IssueErrorForScope(requests[0].scopes,
+                                           GoogleServiceAuthError(error));
 }
 
 void ManagedUserRefreshTokenFetcherTest::MakeIssueTokenRequestSucceed() {
@@ -292,7 +224,7 @@ void ManagedUserRefreshTokenFetcherTest::OnTokenFetched(
 
 TEST_F(ManagedUserRefreshTokenFetcherTest, Success) {
   StartFetching();
-  GetOAuth2TokenServiceRequest()->Succeed();
+  MakeOAuth2TokenServiceRequestSucceed();
   MakeIssueTokenRequestSucceed();
   MakeRefreshTokenFetchSucceed();
 
@@ -302,9 +234,9 @@ TEST_F(ManagedUserRefreshTokenFetcherTest, Success) {
 
 TEST_F(ManagedUserRefreshTokenFetcherTest, ExpiredAccessToken) {
   StartFetching();
-  GetOAuth2TokenServiceRequest()->Succeed();
+  MakeOAuth2TokenServiceRequestSucceed();
   SetHttpError(GetIssueTokenRequest(), net::HTTP_UNAUTHORIZED);
-  GetOAuth2TokenServiceRequest()->Succeed();
+  MakeOAuth2TokenServiceRequestSucceed();
   MakeIssueTokenRequestSucceed();
   MakeRefreshTokenFetchSucceed();
 
@@ -316,9 +248,9 @@ TEST_F(ManagedUserRefreshTokenFetcherTest, ExpiredAccessTokenRetry) {
   // If we get a 401 error for the second time, we should give up instead of
   // retrying again.
   StartFetching();
-  GetOAuth2TokenServiceRequest()->Succeed();
+  MakeOAuth2TokenServiceRequestSucceed();
   SetHttpError(GetIssueTokenRequest(), net::HTTP_UNAUTHORIZED);
-  GetOAuth2TokenServiceRequest()->Succeed();
+  MakeOAuth2TokenServiceRequestSucceed();
   SetHttpError(GetIssueTokenRequest(), net::HTTP_UNAUTHORIZED);
 
   EXPECT_EQ(GoogleServiceAuthError::CONNECTION_FAILED, error().state());
@@ -328,7 +260,7 @@ TEST_F(ManagedUserRefreshTokenFetcherTest, ExpiredAccessTokenRetry) {
 
 TEST_F(ManagedUserRefreshTokenFetcherTest, MalformedIssueTokenResponse) {
   StartFetching();
-  GetOAuth2TokenServiceRequest()->Succeed();
+  MakeOAuth2TokenServiceRequestSucceed();
   SendResponse(GetIssueTokenRequest(), "choke");
 
   EXPECT_EQ(GoogleServiceAuthError::CONNECTION_FAILED, error().state());
@@ -338,7 +270,7 @@ TEST_F(ManagedUserRefreshTokenFetcherTest, MalformedIssueTokenResponse) {
 
 TEST_F(ManagedUserRefreshTokenFetcherTest, FetchAccessTokenFailure) {
   StartFetching();
-  GetOAuth2TokenServiceRequest()->Fail(
+  MakeOAuth2TokenServiceRequestFail(
       GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS);
 
   EXPECT_EQ(GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS, error().state());
@@ -347,7 +279,7 @@ TEST_F(ManagedUserRefreshTokenFetcherTest, FetchAccessTokenFailure) {
 
 TEST_F(ManagedUserRefreshTokenFetcherTest, IssueTokenNetworkError) {
   StartFetching();
-  GetOAuth2TokenServiceRequest()->Succeed();
+  MakeOAuth2TokenServiceRequestSucceed();
   SetNetworkError(GetIssueTokenRequest(), net::ERR_SSL_PROTOCOL_ERROR);
 
   EXPECT_EQ(GoogleServiceAuthError::CONNECTION_FAILED, error().state());
@@ -357,7 +289,7 @@ TEST_F(ManagedUserRefreshTokenFetcherTest, IssueTokenNetworkError) {
 
 TEST_F(ManagedUserRefreshTokenFetcherTest, FetchRefreshTokenNetworkError) {
   StartFetching();
-  GetOAuth2TokenServiceRequest()->Succeed();
+  MakeOAuth2TokenServiceRequestSucceed();
   MakeIssueTokenRequestSucceed();
   SetNetworkError(GetRefreshTokenRequest(), net::ERR_CONNECTION_REFUSED);
   EXPECT_EQ(GoogleServiceAuthError::NONE, error().state());
@@ -371,7 +303,7 @@ TEST_F(ManagedUserRefreshTokenFetcherTest, FetchRefreshTokenNetworkError) {
 TEST_F(ManagedUserRefreshTokenFetcherTest,
        FetchRefreshTokenTransientNetworkError) {
   StartFetching();
-  GetOAuth2TokenServiceRequest()->Succeed();
+  MakeOAuth2TokenServiceRequestSucceed();
   MakeIssueTokenRequestSucceed();
   SetNetworkError(GetRefreshTokenRequest(), net::ERR_CONNECTION_REFUSED);
 
@@ -384,7 +316,7 @@ TEST_F(ManagedUserRefreshTokenFetcherTest,
 
 TEST_F(ManagedUserRefreshTokenFetcherTest, FetchRefreshTokenBadRequest) {
   StartFetching();
-  GetOAuth2TokenServiceRequest()->Succeed();
+  MakeOAuth2TokenServiceRequestSucceed();
   MakeIssueTokenRequestSucceed();
   SetHttpError(GetRefreshTokenRequest(), net::HTTP_BAD_REQUEST);
 
@@ -403,7 +335,7 @@ TEST_F(ManagedUserRefreshTokenFetcherTest, CancelWhileFetchingAccessToken) {
 
 TEST_F(ManagedUserRefreshTokenFetcherTest, CancelWhileCallingIssueToken) {
   StartFetching();
-  GetOAuth2TokenServiceRequest()->Succeed();
+  MakeOAuth2TokenServiceRequestSucceed();
   Reset();
 
   EXPECT_EQ(GoogleServiceAuthError::NONE, error().state());
@@ -412,7 +344,7 @@ TEST_F(ManagedUserRefreshTokenFetcherTest, CancelWhileCallingIssueToken) {
 
 TEST_F(ManagedUserRefreshTokenFetcherTest, CancelWhileFetchingRefreshToken) {
   StartFetching();
-  GetOAuth2TokenServiceRequest()->Succeed();
+  MakeOAuth2TokenServiceRequestSucceed();
   MakeIssueTokenRequestSucceed();
   Reset();
 

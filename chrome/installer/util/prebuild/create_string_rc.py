@@ -35,9 +35,9 @@ from xml.dom import minidom
 from google import path_utils
 
 # Quick hack to fix the path.
-sys.path.append(os.path.abspath('../../tools/grit/grit/extern'))
-sys.path.append(os.path.abspath('../tools/grit/grit/extern'))
-import FP
+sys.path.append(os.path.abspath('../../tools/grit'))
+sys.path.append(os.path.abspath('../tools/grit'))
+from grit.extern import tclib
 
 # The IDs of strings we want to import from generated_resources.grd and include
 # in setup.exe's resources.
@@ -52,12 +52,9 @@ kStringIds = [
   'IDS_ABOUT_VERSION_COMPANY_NAME',
   'IDS_INSTALL_HIGHER_VERSION',
   'IDS_INSTALL_HIGHER_VERSION_APP_LAUNCHER',
-  'IDS_INSTALL_HIGHER_VERSION_CF',
-  'IDS_INSTALL_HIGHER_VERSION_CB_CF',
   'IDS_INSTALL_SYSTEM_LEVEL_EXISTS',
   'IDS_INSTALL_FAILED',
   'IDS_SAME_VERSION_REPAIR_FAILED',
-  'IDS_SAME_VERSION_REPAIR_FAILED_CF',
   'IDS_SETUP_PATCH_FAILED',
   'IDS_INSTALL_OS_NOT_SUPPORTED',
   'IDS_INSTALL_OS_ERROR',
@@ -78,6 +75,10 @@ kStringIds = [
   'IDS_APP_LAUNCHER_PRODUCT_DESCRIPTION',
   'IDS_APP_LAUNCHER_SHORTCUT_TOOLTIP',
   'IDS_UNINSTALL_APP_LAUNCHER',
+  'IDS_APP_LIST_SHORTCUT_NAME',
+  'IDS_APP_LIST_SHORTCUT_NAME_CANARY',
+  'IDS_APP_SHORTCUTS_SUBDIR_NAME',
+  'IDS_APP_SHORTCUTS_SUBDIR_NAME_CANARY',
 ]
 
 # The ID of the first resource string.
@@ -125,9 +126,9 @@ def CollectTranslatedStrings(branding):
                           x.getAttribute('name') == string_id][0])
   message_texts = [node.firstChild.nodeValue.strip() for node in message_nodes]
 
-  # The fingerprint of the string is the message ID in the translation files
-  # (xtb files).
-  translation_ids = [str(FP.FingerPrint(text)) for text in message_texts]
+  # Generate the message ID of the string to correlate it with its translations
+  # in the xtb files.
+  translation_ids = [tclib.GenerateMessageId(text) for text in message_texts]
 
   # Manually put _EN_US in the list of translated strings because it doesn't
   # have a .xtb file.

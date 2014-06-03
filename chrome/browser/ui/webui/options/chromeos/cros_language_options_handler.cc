@@ -17,15 +17,21 @@
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/input_method/input_method_util.h"
+#include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_system.h"
+#include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
+#include "chrome/common/extensions/manifest_url_handler.h"
 #include "chromeos/ime/component_extension_ime_manager.h"
+#include "chromeos/ime/extension_ime_util.h"
 #include "chromeos/ime/input_method_manager.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/common/extension.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -165,13 +171,6 @@ ListValue* CrosLanguageOptionsHandler::GetInputMethodList(
     for (size_t i = 0; i < descriptor.language_codes().size(); ++i) {
       languages->SetBoolean(descriptor.language_codes().at(i), true);
     }
-    // Check extra languages to see if there are languages associated with
-    // this input method. If these are present, add these.
-    const std::vector<std::string> extra_language_codes =
-        manager->GetInputMethodUtil()->GetExtraLanguageCodesFromId(
-            descriptor.id());
-    for (size_t j = 0; j < extra_language_codes.size(); ++j)
-      languages->SetBoolean(extra_language_codes[j], true);
     dictionary->Set("languageCodeSet", languages);
 
     input_method_list->Append(dictionary);
@@ -195,22 +194,16 @@ ListValue* CrosLanguageOptionsHandler::GetLanguageListInternal(
     for (size_t i = 0; i < languages.size(); ++i)
       language_codes.insert(languages[i]);
   }
-  // Collect the language codes from extra languages.
-  const std::vector<std::string> extra_language_codes =
-      input_method::InputMethodManager::Get()->GetInputMethodUtil()
-          ->GetExtraLanguageCodeList();
-  for (size_t i = 0; i < extra_language_codes.size(); ++i)
-    language_codes.insert(extra_language_codes[i]);
 
   // Map of display name -> {language code, native_display_name}.
   // In theory, we should be able to create a map that is sorted by
   // display names using ICU comparator, but doing it is hard, thus we'll
   // use an auxiliary vector to achieve the same result.
-  typedef std::pair<std::string, string16> LanguagePair;
-  typedef std::map<string16, LanguagePair> LanguageMap;
+  typedef std::pair<std::string, base::string16> LanguagePair;
+  typedef std::map<base::string16, LanguagePair> LanguageMap;
   LanguageMap language_map;
   // The auxiliary vector mentioned above.
-  std::vector<string16> display_names;
+  std::vector<base::string16> display_names;
 
   // Build the list of display names, and build the language map.
   for (std::set<std::string>::const_iterator iter = language_codes.begin();
@@ -223,9 +216,9 @@ ListValue* CrosLanguageOptionsHandler::GetLanguageListInternal(
       continue;
     }
 
-    const string16 display_name =
+    const base::string16 display_name =
         l10n_util::GetDisplayNameForLocale(*iter, app_locale, true);
-    const string16 native_display_name =
+    const base::string16 native_display_name =
         l10n_util::GetDisplayNameForLocale(*iter, *iter, true);
 
     display_names.push_back(display_name);
@@ -245,10 +238,10 @@ ListValue* CrosLanguageOptionsHandler::GetLanguageListInternal(
     if (IsBlacklisted(base_language_codes[i]))
       continue;
 
-    string16 display_name =
+    base::string16 display_name =
         l10n_util::GetDisplayNameForLocale(
             base_language_codes[i], app_locale, false);
-    string16 native_display_name =
+    base::string16 native_display_name =
         l10n_util::GetDisplayNameForLocale(
             base_language_codes[i], base_language_codes[i], false);
     display_names.push_back(display_name);
@@ -263,7 +256,7 @@ ListValue* CrosLanguageOptionsHandler::GetLanguageListInternal(
   ListValue* language_list = new ListValue();
   for (size_t i = 0; i < display_names.size(); ++i) {
     // Sets the directionality of the display language name.
-    string16 display_name(display_names[i]);
+    base::string16 display_name(display_names[i]);
     bool markup_removal =
         base::i18n::UnadjustStringForLocaleDirection(&display_name);
     DCHECK(markup_removal);
@@ -318,7 +311,7 @@ base::ListValue*
   return ime_ids_list.release();
 }
 
-string16 CrosLanguageOptionsHandler::GetProductName() {
+base::string16 CrosLanguageOptionsHandler::GetProductName() {
   return l10n_util::GetStringUTF16(IDS_SHORT_PRODUCT_OS_NAME);
 }
 
@@ -355,6 +348,21 @@ void CrosLanguageOptionsHandler::InputMethodOptionsOpenCallback(
   const std::string action = base::StringPrintf(
       "InputMethodOptions_Open_%s", input_method_id.c_str());
   content::RecordComputedAction(action);
+
+  const std::string extension_id =
+      extension_ime_util::GetExtensionIDFromInputMethodID(input_method_id);
+  if (extension_id.empty())
+    return;
+  const extensions::Extension* extension =
+      extensions::ExtensionSystem::Get(Profile::FromWebUI(web_ui()))->
+          extension_service()->extensions()->GetByID(extension_id);
+  if (!extension ||
+      extensions::ManifestURL::GetOptionsPage(extension).is_empty()) {
+    return;
+  }
+  extensions::ExtensionTabUtil::OpenOptionsPage(
+      extension,
+      chrome::FindBrowserWithWebContents(web_ui()->GetWebContents()));
 }
 
 void CrosLanguageOptionsHandler::OnInitialized() {

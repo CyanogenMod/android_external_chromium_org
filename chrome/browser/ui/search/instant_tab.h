@@ -22,21 +22,12 @@ class InstantTab : public InstantPage {
   // the page supports the Instant API.
   void Init(content::WebContents* contents);
 
-  // Used to log each time the user mouses over NTP tiles or titles.
-  static void CountMouseover(content::WebContents* contents);
-
-  // Used to log in UMA the total number of mouseovers over NTP tiles/titles.
-  static void EmitMouseoverCount(content::WebContents* contents);
+  // Logs a number of statistics regarding the NTP.
+  static void EmitNtpStatistics(content::WebContents* contents);
 
  private:
   // Overridden from InstantPage:
   virtual bool ShouldProcessAboutToNavigateMainFrame() OVERRIDE;
-  virtual bool ShouldProcessFocusOmnibox() OVERRIDE;
-  virtual bool ShouldProcessNavigateToURL() OVERRIDE;
-  virtual bool ShouldProcessPasteIntoOmnibox() OVERRIDE;
-  virtual bool ShouldProcessDeleteMostVisitedItem() OVERRIDE;
-  virtual bool ShouldProcessUndoMostVisitedDeletion() OVERRIDE;
-  virtual bool ShouldProcessUndoAllMostVisitedDeletions() OVERRIDE;
 
   DISALLOW_COPY_AND_ASSIGN(InstantTab);
 };

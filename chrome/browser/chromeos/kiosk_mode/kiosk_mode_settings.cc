@@ -13,11 +13,11 @@
 #include "chrome/browser/chromeos/kiosk_mode/kiosk_mode_screensaver.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
-#include "chrome/browser/chromeos/settings/cros_settings_names.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/policy/browser_policy_connector.h"
-#include "chrome/browser/policy/cloud/cloud_policy_constants.h"
 #include "chromeos/chromeos_switches.h"
+#include "chromeos/settings/cros_settings_names.h"
+#include "components/policy/core/common/cloud/cloud_policy_constants.h"
 #include "content/public/browser/browser_thread.h"
 
 namespace chromeos {
@@ -177,8 +177,7 @@ KioskModeSettings::~KioskModeSettings() {
 }
 
 void KioskModeSettings::VerifyModeIsKnown(
-    DeviceSettingsService::OwnershipStatus status,
-    bool is_owner) {
+    DeviceSettingsService::OwnershipStatus status) {
   if (status != DeviceSettingsService::OWNERSHIP_TAKEN)
     return;
 
@@ -192,7 +191,7 @@ void KioskModeSettings::VerifyModeIsKnown(
         content::BrowserThread::PostDelayedTask(
             content::BrowserThread::UI, FROM_HERE,
             base::Bind(&KioskModeSettings::VerifyModeIsKnown,
-                       base::Unretained(this), status, is_owner),
+                       base::Unretained(this), status),
             base::TimeDelta::FromMilliseconds(kDeviceModeFetchRetryDelayMs));
         break;
       case policy::DEVICE_MODE_RETAIL_KIOSK:

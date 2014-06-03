@@ -1,4 +1,4 @@
-// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,11 +13,6 @@ import android.view.View;
  * as well.
  */
 public interface PageInfo {
-    /**
-     * @return The URL of the page.
-     */
-    String getUrl();
-
     /**
      * @return The title of the page.
      */

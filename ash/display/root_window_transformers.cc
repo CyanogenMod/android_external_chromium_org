@@ -29,8 +29,10 @@ namespace ash {
 namespace internal {
 namespace {
 
+#if defined(OS_WIN)
 DEFINE_WINDOW_PROPERTY_KEY(gfx::Display::Rotation, kRotationPropertyKey,
                            gfx::Display::ROTATE_0);
+#endif
 
 // Round near zero value to zero.
 void RoundNearZero(gfx::Transform* transform) {
@@ -48,7 +50,7 @@ void RoundNearZero(gfx::Transform* transform) {
 // when the device scale factor is changed, instead of
 // precalculating the transform using fixed value.
 
-gfx::Transform CreateRotationTransform(aura::RootWindow* root_window,
+gfx::Transform CreateRotationTransform(aura::Window* root_window,
                                        const gfx::Display& display) {
   DisplayInfo info =
       Shell::GetInstance()->display_manager()->GetDisplayInfo(display.id());
@@ -90,7 +92,7 @@ gfx::Transform CreateRotationTransform(aura::RootWindow* root_window,
   return rotate;
 }
 
-gfx::Transform CreateMagnifierTransform(aura::RootWindow* root_window) {
+gfx::Transform CreateMagnifierTransform(aura::Window* root_window) {
   MagnificationController* magnifier =
       Shell::GetInstance()->magnification_controller();
   float magnifier_scale = 1.f;
@@ -121,32 +123,24 @@ gfx::Transform CreateInsetsAndScaleTransform(const gfx::Insets& insets,
   return transform;
 }
 
-gfx::Transform CreateOverscanAndUIScaleTransform(aura::RootWindow* root_window,
-                                                 const gfx::Display& display) {
-  DisplayInfo info =
-      Shell::GetInstance()->display_manager()->GetDisplayInfo(display.id());
-  return CreateInsetsAndScaleTransform(
-      info.GetOverscanInsetsInPixel(),
-      ui::GetDeviceScaleFactor(root_window->layer()),
-      info.ui_scale());
-}
-
 // RootWindowTransformer for ash environment.
 class AshRootWindowTransformer : public aura::RootWindowTransformer {
  public:
-  AshRootWindowTransformer(aura::RootWindow* root,
+  AshRootWindowTransformer(aura::Window* root,
                            const gfx::Display& display)
       : root_window_(root) {
+    DisplayInfo info = Shell::GetInstance()->display_manager()->
+        GetDisplayInfo(display.id());
+    host_insets_ = info.GetOverscanInsetsInPixel();
+    root_window_ui_scale_ = info.GetEffectiveUIScale();
     root_window_bounds_transform_ =
-        CreateOverscanAndUIScaleTransform(root, display) *
+        CreateInsetsAndScaleTransform(host_insets_,
+                                      display.device_scale_factor(),
+                                      root_window_ui_scale_) *
         CreateRotationTransform(root, display);
     transform_ = root_window_bounds_transform_ * CreateMagnifierTransform(root);
     CHECK(transform_.GetInverse(&invert_transform_));
 
-    DisplayInfo info = Shell::GetInstance()->display_manager()->
-        GetDisplayInfo(display.id());
-    root_window_ui_scale_ = info.ui_scale();
-    host_insets_ = info.GetOverscanInsetsInPixel();
   }
 
   // aura::RootWindowTransformer overrides:
@@ -183,7 +177,7 @@ class AshRootWindowTransformer : public aura::RootWindowTransformer {
  private:
   virtual ~AshRootWindowTransformer() {}
 
-  aura::RootWindow* root_window_;
+  aura::Window* root_window_;
   gfx::Transform transform_;
 
   // The accurate representation of the inverse of the |transform_|.
@@ -195,10 +189,8 @@ class AshRootWindowTransformer : public aura::RootWindowTransformer {
   // the size of root window.
   gfx::Transform root_window_bounds_transform_;
 
-  // The scale of the root window. This is used to expand the
-  // area of the root window (useful in HighDPI display).
-  // Note that this should not be confused with the device scale
-  // factor, which specfies the pixel density of the display.
+  // The scale of the root window. See |display_info::ui_scale_|
+  // for more info.
   float root_window_ui_scale_;
 
   gfx::Insets host_insets_;
@@ -214,9 +206,9 @@ class MirrorRootWindowTransformer : public aura::RootWindowTransformer {
  public:
   MirrorRootWindowTransformer(const DisplayInfo& source_display_info,
                               const DisplayInfo& mirror_display_info) {
-    root_bounds_ = gfx::Rect(source_display_info.bounds_in_pixel().size());
+    root_bounds_ = gfx::Rect(source_display_info.bounds_in_native().size());
     gfx::Rect mirror_display_rect =
-        gfx::Rect(mirror_display_info.bounds_in_pixel().size());
+        gfx::Rect(mirror_display_info.bounds_in_native().size());
 
     bool letterbox = root_bounds_.width() * mirror_display_rect.height() >
         root_bounds_.height() * mirror_display_rect.width();
@@ -277,7 +269,7 @@ class MirrorRootWindowTransformer : public aura::RootWindowTransformer {
 }  // namespace
 
 aura::RootWindowTransformer* CreateRootWindowTransformerForDisplay(
-    aura::RootWindow* root,
+    aura::Window* root,
     const gfx::Display& display) {
   return new AshRootWindowTransformer(root, display);
 }

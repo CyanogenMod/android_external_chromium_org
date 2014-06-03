@@ -23,10 +23,14 @@
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/installer/util/browser_distribution.h"
+#include "chrome/installer/util/install_util.h"
+#include "chrome/installer/util/shell_util.h"
 #include "chrome/installer/util/util_constants.h"
 #include "ui/base/clipboard/clipboard_util_win.h"
 #include "win8/delegate_execute/chrome_util.h"
 #include "win8/delegate_execute/delegate_execute_util.h"
+#include "win8/viewer/metro_viewer_constants.h"
 
 namespace {
 
@@ -297,7 +301,7 @@ STDMETHODIMP CommandExecuteImpl::GetValue(enum AHE_TYPE* pahe) {
   }
 
 #if defined(USE_AURA)
-  if (*pahe == AHE_IMMERSIVE)
+  if (*pahe == AHE_IMMERSIVE && verb_ != win8::kMetroViewerConnectVerb)
     LaunchChromeBrowserProcess();
 #endif
 
@@ -322,7 +326,11 @@ STDMETHODIMP CommandExecuteImpl::Execute() {
     return S_OK;
   }
 
-  string16 app_id = delegate_execute::GetAppId(chrome_exe_);
+  BrowserDistribution* distribution = BrowserDistribution::GetDistribution();
+  bool is_per_user_install = InstallUtil::IsPerUserInstall(
+      chrome_exe_.value().c_str());
+  string16 app_id = ShellUtil::GetBrowserModelId(
+      distribution, is_per_user_install);
 
   DWORD pid = 0;
   if (launch_scheme_ == INTERNET_SCHEME_FILE &&
@@ -480,12 +488,13 @@ HRESULT CommandExecuteImpl::LaunchDesktopChrome() {
 
   AtlTrace("Formatted command line is %ls\n", command_line.c_str());
 
-  base::win::ScopedProcessInformation proc_info;
+  PROCESS_INFORMATION temp_process_info = {};
   BOOL ret = CreateProcess(chrome_exe_.value().c_str(),
                            const_cast<LPWSTR>(command_line.c_str()),
                            NULL, NULL, FALSE, 0, NULL, NULL, &start_info_,
-                           proc_info.Receive());
+                           &temp_process_info);
   if (ret) {
+    base::win::ScopedProcessInformation proc_info(temp_process_info);
     AtlTrace("Process id is %d\n", proc_info.process_id());
     AllowSetForegroundWindow(proc_info.process_id());
   } else {
@@ -522,30 +531,6 @@ EC_HOST_UI_MODE CommandExecuteImpl::GetLaunchMode() {
     parameters_ = CommandLine(CommandLine::NO_PROGRAM);
   }
 
-#if defined(USE_AURA)
-  if (launch_mode_determined)
-    return launch_mode;
-
-  CComPtr<IExecuteCommandHost> host;
-  CComQIPtr<IServiceProvider> service_provider = m_spUnkSite;
-  if (service_provider) {
-    service_provider->QueryService(IID_IExecuteCommandHost, &host);
-    if (host) {
-      host->GetUIMode(&launch_mode);
-    }
-  }
-
-  if (launch_mode >= ECHUIM_SYSTEM_LAUNCHER) {
-    // At the end if launch mode is not proper apply heuristics.
-    launch_mode = base::win::IsTouchEnabledDevice() ?
-                          ECHUIM_IMMERSIVE : ECHUIM_DESKTOP;
-  }
-
-  AtlTrace("Launching mode is %d\n", launch_mode);
-  launch_mode_determined = true;
-  return launch_mode;
-#endif
-
   base::win::RegKey reg_key;
   LONG key_result = reg_key.Create(HKEY_CURRENT_USER,
                                    chrome::kMetroRegistryPath,
@@ -571,8 +556,7 @@ EC_HOST_UI_MODE CommandExecuteImpl::GetLaunchMode() {
   DWORD reg_value;
   if (reg_key.ReadValueDW(chrome::kLaunchModeValue,
                           &reg_value) != ERROR_SUCCESS) {
-    launch_mode = base::win::IsTouchEnabledDevice() ?
-                      ECHUIM_IMMERSIVE : ECHUIM_DESKTOP;
+    launch_mode = ECHUIM_DESKTOP;
     AtlTrace("Launch mode forced by heuristics to %s\n", modes[launch_mode]);
   } else if (reg_value >= ECHUIM_SYSTEM_LAUNCHER) {
     AtlTrace("Invalid registry launch mode value %u\n", reg_value);

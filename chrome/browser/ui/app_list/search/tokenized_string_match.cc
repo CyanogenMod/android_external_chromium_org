@@ -47,7 +47,7 @@ bool TokenizedStringMatch::Calculate(const TokenizedString& query,
   relevance_ = kNoMatchScore;
   hits_.clear();
 
-  ui::Range hit = ui::Range::InvalidRange();
+  gfx::Range hit = gfx::Range::InvalidRange();
 
   TokenizedStringCharIterator query_iter(query);
   TokenizedStringCharIterator text_iter(text);
@@ -70,7 +70,7 @@ bool TokenizedStringMatch::Calculate(const TokenizedString& query,
     } else {
       if (hit.IsValid()) {
         hits_.push_back(hit);
-        hit = ui::Range::InvalidRange();
+        hit = gfx::Range::InvalidRange();
       }
 
       text_iter.NextToken();
@@ -95,8 +95,8 @@ bool TokenizedStringMatch::Calculate(const TokenizedString& query,
   return relevance_ > kNoMatchScore;
 }
 
-bool TokenizedStringMatch::Calculate(const string16& query,
-                                     const string16& text) {
+bool TokenizedStringMatch::Calculate(const base::string16& query,
+                                     const base::string16& text) {
   const TokenizedString tokenized_query(query);
   const TokenizedString tokenized_text(text);
   return Calculate(tokenized_query, tokenized_text);

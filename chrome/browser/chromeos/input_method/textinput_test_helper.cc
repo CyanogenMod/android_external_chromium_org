@@ -33,7 +33,7 @@ void TextInputTestBase::SetUpInProcessBrowserTestFixture() {
 
 TextInputTestHelper::TextInputTestHelper()
   : waiting_type_(NO_WAIT),
-    selection_range_(ui::Range::InvalidRange()),
+    selection_range_(gfx::Range::InvalidRange()),
     focus_state_(false),
     latest_text_input_type_(ui::TEXT_INPUT_TYPE_NONE) {
   GetInputMethod()->AddObserver(this);
@@ -43,7 +43,7 @@ TextInputTestHelper::~TextInputTestHelper() {
   GetInputMethod()->RemoveObserver(this);
 }
 
-string16 TextInputTestHelper::GetSurroundingText() const {
+base::string16 TextInputTestHelper::GetSurroundingText() const {
   return surrounding_text_;
 }
 
@@ -55,7 +55,7 @@ gfx::Rect TextInputTestHelper::GetCompositionHead() const {
   return composition_head_;
 }
 
-ui::Range TextInputTestHelper::GetSelectionRange() const {
+gfx::Range TextInputTestHelper::GetSelectionRange() const {
   return selection_range_;
 }
 
@@ -94,22 +94,15 @@ void TextInputTestHelper::OnBlur() {
     base::MessageLoop::current()->Quit();
 }
 
-void TextInputTestHelper::OnUntranslatedIMEMessage(
-  const base::NativeEvent& event) {
-}
-
 void TextInputTestHelper::OnCaretBoundsChanged(
     const ui::TextInputClient* client) {
-  ui::Range text_range;
+  gfx::Range text_range;
   if (!GetTextInputClient()->GetTextRange(&text_range) ||
       !GetTextInputClient()->GetTextFromRange(text_range, &surrounding_text_) ||
       !GetTextInputClient()->GetSelectionRange(&selection_range_))
       return;
   if (waiting_type_ == WAIT_ON_CARET_BOUNDS_CHANGED)
     base::MessageLoop::current()->Quit();
-}
-
-void TextInputTestHelper::OnInputLocaleChanged() {
 }
 
 void TextInputTestHelper::OnTextInputStateChanged(
@@ -152,8 +145,8 @@ void TextInputTestHelper::WaitForCaretBoundsChanged(
 }
 
 void TextInputTestHelper::WaitForSurroundingTextChanged(
-    const string16& expected_text,
-    const ui::Range& expected_selection) {
+    const base::string16& expected_text,
+    const gfx::Range& expected_selection) {
   waiting_type_ = WAIT_ON_CARET_BOUNDS_CHANGED;
   while (expected_text != surrounding_text_ ||
          expected_selection != selection_range_)
@@ -194,15 +187,15 @@ bool TextInputTestHelper::ClickElement(const std::string& id,
   if (!ConvertRectFromString(coordinate, &rect))
     return false;
 
-  WebKit::WebMouseEvent mouse_event;
-  mouse_event.type = WebKit::WebInputEvent::MouseDown;
-  mouse_event.button = WebKit::WebMouseEvent::ButtonLeft;
+  blink::WebMouseEvent mouse_event;
+  mouse_event.type = blink::WebInputEvent::MouseDown;
+  mouse_event.button = blink::WebMouseEvent::ButtonLeft;
   mouse_event.x = rect.CenterPoint().x();
   mouse_event.y = rect.CenterPoint().y();
   mouse_event.clickCount = 1;
   tab->GetRenderViewHost()->ForwardMouseEvent(mouse_event);
 
-  mouse_event.type = WebKit::WebInputEvent::MouseUp;
+  mouse_event.type = blink::WebInputEvent::MouseUp;
   tab->GetRenderViewHost()->ForwardMouseEvent(mouse_event);
   return true;
 }

@@ -29,7 +29,6 @@ class DownloadHandler;
 class DriveAppRegistry;
 class DriveServiceInterface;
 class FileSystemInterface;
-class FileWriteHelper;
 class JobListInterface;
 
 namespace internal {
@@ -66,22 +65,29 @@ class DriveIntegrationService
     : public BrowserContextKeyedService,
       public DriveNotificationObserver {
  public:
+  class PreferenceWatcher;
+
   // test_drive_service, test_cache_root and test_file_system are used by tests
   // to inject customized instances.
   // Pass NULL or the empty value when not interested.
+  // |preference_watcher| observes the drive enable preference, and sets the
+  // enable state when changed. It can be NULL. The ownership is taken by
+  // the DriveIntegrationService.
   DriveIntegrationService(
       Profile* profile,
+      PreferenceWatcher* preference_watcher,
       DriveServiceInterface* test_drive_service,
       const base::FilePath& test_cache_root,
       FileSystemInterface* test_file_system);
   virtual ~DriveIntegrationService();
 
-  // Initializes the object. This function should be called before any
-  // other functions.
-  void Initialize();
-
   // BrowserContextKeyedService override:
   virtual void Shutdown() OVERRIDE;
+
+  void SetEnabled(bool enabled);
+  bool is_enabled() const { return enabled_; }
+
+  bool IsMounted() const;
 
   // Adds and removes the observer.
   void AddObserver(DriveIntegrationServiceObserver* observer);
@@ -99,7 +105,6 @@ class DriveIntegrationService
     return debug_info_collector_.get();
   }
   FileSystemInterface* file_system() { return file_system_.get(); }
-  FileWriteHelper* file_write_helper() { return file_write_helper_.get(); }
   DownloadHandler* download_handler() { return download_handler_.get(); }
   DriveAppRegistry* drive_app_registry() { return drive_app_registry_.get(); }
   JobListInterface* job_list() { return scheduler_.get(); }
@@ -112,6 +117,13 @@ class DriveIntegrationService
       const base::Callback<void(bool)>& callback);
 
  private:
+  enum State {
+    NOT_INITIALIZED,
+    INITIALIZING,
+    INITIALIZED,
+    REMOUNTING,
+  };
+
   // Returns true if Drive is enabled.
   // Must be called on UI thread.
   bool IsDriveEnabled();
@@ -124,22 +136,25 @@ class DriveIntegrationService
   // Adds back the drive mount point.
   // Used to implement ClearCacheAndRemountFileSystem().
   void AddBackDriveMountPoint(const base::Callback<void(bool)>& callback,
-                              bool success);
+                              FileError error);
+
+  // Initializes the object. This function should be called before any
+  // other functions.
+  void Initialize();
 
   // Called when metadata initialization is done. Continues initialization if
   // the metadata initialization is successful.
   void InitializeAfterMetadataInitialized(FileError error);
 
-  // Disables Drive. Used to disable Drive when needed (ex. initialization of
-  // the Drive cache failed).
-  // Must be called on UI thread.
-  void DisableDrive();
+  // Change the download directory to the local "Downloads" if the download
+  // destination is set under Drive. This must be called when disabling Drive.
+  void AvoidDriveAsDownloadDirecotryPreference();
 
   friend class DriveIntegrationServiceFactory;
 
   Profile* profile_;
-  // True if Drive is disabled due to initialization errors.
-  bool drive_disabled_;
+  State state_;
+  bool enabled_;
 
   base::FilePath cache_root_directory_;
   scoped_refptr<base::SequencedTaskRunner> blocking_task_runner_;
@@ -152,11 +167,11 @@ class DriveIntegrationService
   scoped_ptr<internal::ResourceMetadata,
              util::DestroyHelper> resource_metadata_;
   scoped_ptr<FileSystemInterface> file_system_;
-  scoped_ptr<FileWriteHelper> file_write_helper_;
   scoped_ptr<DownloadHandler> download_handler_;
   scoped_ptr<DebugInfoCollector> debug_info_collector_;
 
   ObserverList<DriveIntegrationServiceObserver> observers_;
+  scoped_ptr<PreferenceWatcher> preference_watcher_;
 
   // Note: This should remain the last member so it'll be destroyed and
   // invalidate its weak pointers before any other members are destroyed.
@@ -175,27 +190,17 @@ class DriveIntegrationServiceFactory
 
   // Returns the DriveIntegrationService for |profile|, creating it if it is
   // not yet created.
-  //
-  // This function starts returning NULL if Drive is disabled, even if this
-  // function previously returns a non-NULL object. In other words, clients
-  // can assume that Drive is enabled if this function returns a non-NULL
-  // object.
   static DriveIntegrationService* GetForProfile(Profile* profile);
 
-  // Similar to GetForProfile(), but returns the instance regardless of if
-  // Drive is enabled/disabled.
+  // Same as GetForProfile. TODO(hidehiko): Remove this.
   static DriveIntegrationService* GetForProfileRegardlessOfStates(
       Profile* profile);
 
   // Returns the DriveIntegrationService that is already associated with
   // |profile|, if it is not yet created it will return NULL.
-  //
-  // This function starts returning NULL if Drive is disabled. See also the
-  // comment at GetForProfile().
   static DriveIntegrationService* FindForProfile(Profile* profile);
 
-  // Similar to FindForProfile(), but returns the instance regardless of if
-  // Drive is enabled/disabled.
+  // Same as FindForProfile. TODO(hidehiko): Remove this.
   static DriveIntegrationService* FindForProfileRegardlessOfStates(
       Profile* profile);
 

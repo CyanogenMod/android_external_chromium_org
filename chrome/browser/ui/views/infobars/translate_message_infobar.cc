@@ -9,9 +9,8 @@
 #include "ui/views/controls/label.h"
 
 TranslateMessageInfoBar::TranslateMessageInfoBar(
-    InfoBarService* owner,
-    TranslateInfoBarDelegate* delegate)
-    : TranslateInfoBarBase(owner, delegate),
+    scoped_ptr<TranslateInfoBarDelegate> delegate)
+    : TranslateInfoBarBase(delegate.Pass()),
       label_(NULL),
       button_(NULL) {
 }
@@ -42,7 +41,7 @@ void TranslateMessageInfoBar::ViewHierarchyChanged(
     label_ = CreateLabel(delegate->GetMessageInfoBarText());
     AddChildView(label_);
 
-    string16 button_text(delegate->GetMessageInfoBarButtonText());
+    base::string16 button_text(delegate->GetMessageInfoBarButtonText());
     if (!button_text.empty()) {
       button_ = CreateLabelButton(this, button_text, false);
       AddChildView(button_);

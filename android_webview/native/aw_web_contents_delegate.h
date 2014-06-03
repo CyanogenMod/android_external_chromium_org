@@ -47,9 +47,12 @@ class AwWebContentsDelegate
                                   const GURL& target_url,
                                   content::WebContents* new_contents) OVERRIDE;
 
-
   virtual void CloseContents(content::WebContents* source) OVERRIDE;
   virtual void ActivateContents(content::WebContents* contents) OVERRIDE;
+  virtual void RequestProtectedMediaIdentifierPermission(
+      const content::WebContents* web_contents,
+      const GURL& frame_url,
+      const base::Callback<void(bool)>& callback) OVERRIDE;
 };
 
 bool RegisterAwWebContentsDelegate(JNIEnv* env);

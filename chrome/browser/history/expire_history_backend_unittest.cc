@@ -87,7 +87,7 @@ class ExpireHistoryTest : public testing::Test,
 
   void StarURL(const GURL& url) {
     bookmark_model_.AddURL(
-        bookmark_model_.bookmark_bar_node(), 0, string16(), url);
+        bookmark_model_.bookmark_bar_node(), 0, base::string16(), url);
   }
 
   static bool IsStringInFile(const base::FilePath& filename, const char* str);
@@ -138,7 +138,7 @@ class ExpireHistoryTest : public testing::Test,
 
     base::FilePath thumb_name = path().Append(kThumbnailFile);
     thumb_db_.reset(new ThumbnailDatabase);
-    if (thumb_db_->Init(thumb_name, NULL, main_db_.get()) != sql::INIT_OK)
+    if (thumb_db_->Init(thumb_name) != sql::INIT_OK)
       thumb_db_.reset();
 
     expirer_.SetDatabases(main_db_.get(), archived_db_.get(), thumb_db_.get());
@@ -311,7 +311,7 @@ bool ExpireHistoryTest::HasThumbnail(URLID url_id) {
     return false;
   GURL url = info.url();
   scoped_refptr<base::RefCountedMemory> data;
-  return top_sites_->GetPageThumbnail(url, &data);
+  return top_sites_->GetPageThumbnail(url, false, &data);
 }
 
 void ExpireHistoryTest::EnsureURLInfoGone(const URLRow& row) {
@@ -391,7 +391,7 @@ TEST_F(ExpireHistoryTest, DeleteFaviconsIfPossible) {
 bool ExpireHistoryTest::IsStringInFile(const base::FilePath& filename,
                                        const char* str) {
   std::string contents;
-  EXPECT_TRUE(file_util::ReadFileToString(filename, &contents));
+  EXPECT_TRUE(base::ReadFileToString(filename, &contents));
   return contents.find(str) != std::string::npos;
 }
 

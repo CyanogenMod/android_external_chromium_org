@@ -63,8 +63,7 @@ void EmulateDrawingOneFrame(LayerImpl* root) {
         target_surface->SurfacePropertyChangedOnlyFromDescendant(),
         target_surface->content_rect(),
         render_surface_layer_list[i]->mask_layer(),
-        render_surface_layer_list[i]->filters(),
-        render_surface_layer_list[i]->filter().get());
+        render_surface_layer_list[i]->filters());
   }
 
   root->ResetAllChangeTrackingForSubtree();
@@ -340,14 +339,12 @@ TEST_F(DamageTrackerTest, VerifyDamageForTransformedLayer) {
   // should increase the size of the expected rect by sqrt(2), centered around
   // (100, 100). The old exposed region should be fully contained in the new
   // region.
-  double expected_width = 30.0 * sqrt(2.0);
-  double expected_position = 100.0 - 0.5 * expected_width;
-  gfx::RectF expected_rect(expected_position,
-                           expected_position,
-                           expected_width,
-                           expected_width);
+  float expected_width = 30.f * sqrt(2.f);
+  float expected_position = 100.f - 0.5f * expected_width;
+  gfx::RectF expected_rect(
+      expected_position, expected_position, expected_width, expected_width);
   root_damage_rect =
-          root->render_surface()->damage_tracker()->current_damage_rect();
+      root->render_surface()->damage_tracker()->current_damage_rect();
   EXPECT_FLOAT_RECT_EQ(expected_rect, root_damage_rect);
 }
 
@@ -448,10 +445,12 @@ TEST_F(DamageTrackerTest, VerifyDamageForImageFilter) {
   skia::RefPtr<SkImageFilter> filter =
           skia::AdoptRef(new SkBlurImageFilter(SkIntToScalar(2),
                                                SkIntToScalar(2)));
+  FilterOperations filters;
+  filters.Append(FilterOperation::CreateReferenceFilter(filter));
 
   // Setting the filter will damage the whole surface.
   ClearDamageForAllSurfaces(root.get());
-  child->SetFilter(filter);
+  child->SetFilters(filters);
   EmulateDrawingOneFrame(root.get());
   root_damage_rect =
           root->render_surface()->damage_tracker()->current_damage_rect();
@@ -1299,8 +1298,7 @@ TEST_F(DamageTrackerTest, VerifyDamageForEmptyLayerList) {
       false,
       gfx::Rect(),
       NULL,
-      FilterOperations(),
-      NULL);
+      FilterOperations());
 
   gfx::RectF damage_rect =
           target_surface->damage_tracker()->current_damage_rect();

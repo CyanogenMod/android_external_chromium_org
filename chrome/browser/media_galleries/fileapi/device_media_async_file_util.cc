@@ -21,8 +21,6 @@ using fileapi::FileSystemOperationContext;
 using fileapi::FileSystemURL;
 using webkit_blob::ShareableFileReference;
 
-namespace chrome {
-
 namespace {
 
 const char kDeviceMediaAsyncFileUtilTempDir[] = "DeviceMediaFileSystem";
@@ -47,9 +45,9 @@ void CreateSnapshotFileOnBlockingPool(
   DCHECK(snapshot_file_path);
   base::FilePath isolated_media_file_system_dir_path =
       profile_path.AppendASCII(kDeviceMediaAsyncFileUtilTempDir);
-  if (!file_util::CreateDirectory(isolated_media_file_system_dir_path) ||
-      !file_util::CreateTemporaryFileInDir(isolated_media_file_system_dir_path,
-                                           snapshot_file_path)) {
+  if (!base::CreateDirectory(isolated_media_file_system_dir_path) ||
+      !base::CreateTemporaryFileInDir(isolated_media_file_system_dir_path,
+                                      snapshot_file_path)) {
     LOG(WARNING) << "Could not create media snapshot file "
                  << isolated_media_file_system_dir_path.value();
     *snapshot_file_path = base::FilePath();
@@ -166,6 +164,8 @@ void DeviceMediaAsyncFileUtil::CopyFileLocal(
     scoped_ptr<FileSystemOperationContext> context,
     const FileSystemURL& src_url,
     const FileSystemURL& dest_url,
+    CopyOrMoveOption option,
+    const CopyFileProgressCallback& progress_callback,
     const StatusCallback& callback) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
   NOTIMPLEMENTED();
@@ -176,6 +176,7 @@ void DeviceMediaAsyncFileUtil::MoveFileLocal(
     scoped_ptr<FileSystemOperationContext> context,
     const FileSystemURL& src_url,
     const FileSystemURL& dest_url,
+    CopyOrMoveOption option,
     const StatusCallback& callback) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
   NOTIMPLEMENTED();
@@ -339,5 +340,3 @@ void DeviceMediaAsyncFileUtil::OnSnapshotFileCreatedRunTask(
                  weak_ptr_factory_.GetWeakPtr(),
                  callback));
 }
-
-}  // namespace chrome

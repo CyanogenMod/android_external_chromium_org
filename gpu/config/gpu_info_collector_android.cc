@@ -114,12 +114,23 @@ bool CollectBasicGraphicsInfo(GPUInfo* gpu_info) {
 bool CollectDriverInfoGL(GPUInfo* gpu_info) {
   gpu_info->driver_version = GetDriverVersionFromString(
       gpu_info->gl_version_string);
+  gpu_info->gpu.vendor_string = gpu_info->gl_vendor;
+  gpu_info->gpu.device_string = gpu_info->gl_renderer;
   return true;
 }
 
 void MergeGPUInfo(GPUInfo* basic_gpu_info,
                   const GPUInfo& context_gpu_info) {
   MergeGPUInfoGL(basic_gpu_info, context_gpu_info);
+}
+
+bool DetermineActiveGPU(GPUInfo* gpu_info) {
+  DCHECK(gpu_info);
+  if (gpu_info->secondary_gpus.size() == 0)
+    return true;
+  // TODO(zmo): implement this when Android starts to support more
+  // than one GPUs.
+  return false;
 }
 
 }  // namespace gpu

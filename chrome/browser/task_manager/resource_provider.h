@@ -56,8 +56,8 @@ class Resource {
     TASKMANAGER_RESOURCE_TYPE_LIST(TASKMANAGER_RESOURCE_TYPE_LIST_ENUM)
   };
 
-  virtual string16 GetTitle() const = 0;
-  virtual string16 GetProfileName() const = 0;
+  virtual base::string16 GetTitle() const = 0;
+  virtual base::string16 GetProfileName() const = 0;
   virtual gfx::ImageSkia GetIcon() const = 0;
   virtual base::ProcessHandle GetProcess() const = 0;
   virtual int GetUniqueChildProcessId() const = 0;
@@ -65,7 +65,7 @@ class Resource {
   virtual int GetRoutingID() const;
 
   virtual bool ReportsCacheStats() const;
-  virtual WebKit::WebCache::ResourceTypeStats GetWebCoreCacheStats() const;
+  virtual blink::WebCache::ResourceTypeStats GetWebCoreCacheStats() const;
 
   virtual bool ReportsFPS() const;
   virtual float GetFPS() const;
@@ -107,7 +107,7 @@ class Resource {
   virtual void Refresh() {}
 
   virtual void NotifyResourceTypeStats(
-      const WebKit::WebCache::ResourceTypeStats& stats) {}
+      const blink::WebCache::ResourceTypeStats& stats) {}
   virtual void NotifyFPS(float fps) {}
   virtual void NotifyV8HeapStats(size_t v8_memory_allocated,
                                  size_t v8_memory_used) {}

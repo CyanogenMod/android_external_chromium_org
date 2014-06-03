@@ -4,25 +4,25 @@
 
 #include "chrome/browser/infobars/simple_alert_infobar_delegate.h"
 
+#include "chrome/browser/infobars/infobar.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 
 // static
 void SimpleAlertInfoBarDelegate::Create(InfoBarService* infobar_service,
                                         int icon_id,
-                                        const string16& message,
+                                        const base::string16& message,
                                         bool auto_expire) {
-  infobar_service->AddInfoBar(scoped_ptr<InfoBarDelegate>(
-      new SimpleAlertInfoBarDelegate(infobar_service, icon_id, message,
-                                     auto_expire)));
+  infobar_service->AddInfoBar(ConfirmInfoBarDelegate::CreateInfoBar(
+      scoped_ptr<ConfirmInfoBarDelegate>(
+          new SimpleAlertInfoBarDelegate(icon_id, message, auto_expire))));
 }
 
 SimpleAlertInfoBarDelegate::SimpleAlertInfoBarDelegate(
-    InfoBarService* infobar_service,
     int icon_id,
-    const string16& message,
+    const base::string16& message,
     bool auto_expire)
-    : ConfirmInfoBarDelegate(infobar_service),
+    : ConfirmInfoBarDelegate(),
       icon_id_(icon_id),
       message_(message),
       auto_expire_(auto_expire) {
@@ -35,7 +35,7 @@ int SimpleAlertInfoBarDelegate::GetIconID() const {
   return icon_id_;
 }
 
-string16 SimpleAlertInfoBarDelegate::GetMessageText() const {
+base::string16 SimpleAlertInfoBarDelegate::GetMessageText() const {
   return message_;
 }
 

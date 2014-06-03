@@ -26,18 +26,8 @@ class RecursiveOperationDelegate;
 
 // The default implementation of FileSystemOperation for file systems.
 class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemOperationImpl
-    : public NON_EXPORTED_BASE(FileSystemOperation),
-      public base::SupportsWeakPtr<FileSystemOperationImpl> {
+    : public NON_EXPORTED_BASE(FileSystemOperation) {
  public:
-  // NOTE: This constructor should not be called outside FileSystemBackends;
-  // instead please consider using
-  // file_system_context->CreateFileSystemOperation() to instantiate
-  // an appropriate FileSystemOperation.
-  FileSystemOperationImpl(
-      const FileSystemURL& url,
-      FileSystemContext* file_system_context,
-      scoped_ptr<FileSystemOperationContext> operation_context);
-
   virtual ~FileSystemOperationImpl();
 
   // FileSystemOperation overrides.
@@ -50,9 +40,12 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemOperationImpl
                                const StatusCallback& callback) OVERRIDE;
   virtual void Copy(const FileSystemURL& src_url,
                     const FileSystemURL& dest_url,
+                    CopyOrMoveOption option,
+                    const CopyProgressCallback& progress_callback,
                     const StatusCallback& callback) OVERRIDE;
   virtual void Move(const FileSystemURL& src_url,
                     const FileSystemURL& dest_url,
+                    CopyOrMoveOption option,
                     const StatusCallback& callback) OVERRIDE;
   virtual void DirectoryExists(const FileSystemURL& url,
                                const StatusCallback& callback) OVERRIDE;
@@ -76,93 +69,43 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemOperationImpl
                          const StatusCallback& callback) OVERRIDE;
   virtual void OpenFile(const FileSystemURL& url,
                         int file_flags,
-                        base::ProcessHandle peer_handle,
                         const OpenFileCallback& callback) OVERRIDE;
   virtual void Cancel(const StatusCallback& cancel_callback) OVERRIDE;
-  virtual FileSystemOperationImpl* AsFileSystemOperationImpl() OVERRIDE;
   virtual void CreateSnapshotFile(
       const FileSystemURL& path,
       const SnapshotFileCallback& callback) OVERRIDE;
-
-  // Copies in a single file from a different filesystem.
-  //
-  // This returns:
-  // - PLATFORM_FILE_ERROR_NOT_FOUND if |src_file_path|
-  //   or the parent directory of |dest_url| does not exist.
-  // - PLATFORM_FILE_ERROR_INVALID_OPERATION if |dest_url| exists and
-  //   is not a file.
-  // - PLATFORM_FILE_ERROR_FAILED if |dest_url| does not exist and
-  //   its parent path is a file.
-  //
   virtual void CopyInForeignFile(const base::FilePath& src_local_disk_path,
                                  const FileSystemURL& dest_url,
-                                 const StatusCallback& callback);
-
-  // Removes a single file.
-  //
-  // This returns:
-  // - PLATFORM_FILE_ERROR_NOT_FOUND if |url| does not exist.
-  // - PLATFORM_FILE_ERROR_NOT_A_FILE if |url| is not a file.
-  //
-  void RemoveFile(const FileSystemURL& url,
-                  const StatusCallback& callback);
-
-  // Removes a single empty directory.
-  //
-  // This returns:
-  // - PLATFORM_FILE_ERROR_NOT_FOUND if |url| does not exist.
-  // - PLATFORM_FILE_ERROR_NOT_A_DIRECTORY if |url| is not a directory.
-  // - PLATFORM_FILE_ERROR_NOT_EMPTY if |url| is not empty.
-  //
-  void RemoveDirectory(const FileSystemURL& url,
-                       const StatusCallback& callback);
-
-  // Copies a file from |src_url| to |dest_url|.
-  // This must be called for files that belong to the same filesystem
-  // (i.e. type() and origin() of the |src_url| and |dest_url| must match).
-  //
-  // This returns:
-  // - PLATFORM_FILE_ERROR_NOT_FOUND if |src_url|
-  //   or the parent directory of |dest_url| does not exist.
-  // - PLATFORM_FILE_ERROR_NOT_A_FILE if |src_url| exists but is not a file.
-  // - PLATFORM_FILE_ERROR_INVALID_OPERATION if |dest_url| exists and
-  //   is not a file.
-  // - PLATFORM_FILE_ERROR_FAILED if |dest_url| does not exist and
-  //   its parent path is a file.
-  //
-  void CopyFileLocal(const FileSystemURL& src_url,
-                     const FileSystemURL& dest_url,
-                     const StatusCallback& callback);
-
-  // Moves a local file from |src_url| to |dest_url|.
-  // This must be called for files that belong to the same filesystem
-  // (i.e. type() and origin() of the |src_url| and |dest_url| must match).
-  //
-  // This returns:
-  // - PLATFORM_FILE_ERROR_NOT_FOUND if |src_url|
-  //   or the parent directory of |dest_url| does not exist.
-  // - PLATFORM_FILE_ERROR_NOT_A_FILE if |src_url| exists but is not a file.
-  // - PLATFORM_FILE_ERROR_INVALID_OPERATION if |dest_url| exists and
-  //   is not a file.
-  // - PLATFORM_FILE_ERROR_FAILED if |dest_url| does not exist and
-  //   its parent path is a file.
-  //
-  void MoveFileLocal(const FileSystemURL& src_url,
-                     const FileSystemURL& dest_url,
-                     const StatusCallback& callback);
-
-  // Synchronously gets the platform path for the given |url|.
-  // This may fail if |file_system_context| returns NULL on GetFileUtil().
-  // In such a case, base::PLATFORM_FILE_ERROR_INVALID_OPERATION will be
-  // returned.
-  base::PlatformFileError SyncGetPlatformPath(const FileSystemURL& url,
-                                              base::FilePath* platform_path);
+                                 const StatusCallback& callback) OVERRIDE;
+  virtual void RemoveFile(const FileSystemURL& url,
+                          const StatusCallback& callback) OVERRIDE;
+  virtual void RemoveDirectory(const FileSystemURL& url,
+                               const StatusCallback& callback) OVERRIDE;
+  virtual void CopyFileLocal(const FileSystemURL& src_url,
+                             const FileSystemURL& dest_url,
+                             CopyOrMoveOption option,
+                             const CopyFileProgressCallback& progress_callback,
+                             const StatusCallback& callback) OVERRIDE;
+  virtual void MoveFileLocal(const FileSystemURL& src_url,
+                             const FileSystemURL& dest_url,
+                             CopyOrMoveOption option,
+                             const StatusCallback& callback) OVERRIDE;
+  virtual base::PlatformFileError SyncGetPlatformPath(
+      const FileSystemURL& url,
+      base::FilePath* platform_path) OVERRIDE;
 
   FileSystemContext* file_system_context() const {
     return file_system_context_.get();
   }
 
- protected:
+ private:
+  friend class FileSystemOperation;
+
+  FileSystemOperationImpl(
+      const FileSystemURL& url,
+      FileSystemContext* file_system_context,
+      scoped_ptr<FileSystemOperationContext> operation_context);
+
   // Queries the quota and usage and then runs the given |task|.
   // If an error occurs during the quota query it runs |error_callback| instead.
   void GetUsageAndQuotaThenRunTask(
@@ -191,9 +134,12 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemOperationImpl
                          bool recursive);
   void DoCopyFileLocal(const FileSystemURL& src,
                        const FileSystemURL& dest,
+                       CopyOrMoveOption option,
+                       const CopyFileProgressCallback& progress_callback,
                        const StatusCallback& callback);
   void DoMoveFileLocal(const FileSystemURL& src,
                        const FileSystemURL& dest,
+                       CopyOrMoveOption option,
                        const StatusCallback& callback);
   void DoCopyInForeignFile(const base::FilePath& src_local_disk_file_path,
                            const FileSystemURL& dest,
@@ -248,12 +194,10 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemOperationImpl
 
   StatusCallback cancel_callback_;
 
-  // Used only by OpenFile, in order to clone the file handle back to the
-  // requesting process.
-  base::ProcessHandle peer_handle_;
-
   // A flag to make sure we call operation only once per instance.
   OperationType pending_operation_;
+
+  base::WeakPtrFactory<FileSystemOperationImpl> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(FileSystemOperationImpl);
 };

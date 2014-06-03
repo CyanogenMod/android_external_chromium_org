@@ -54,16 +54,19 @@
     this.element.addEventListener('willSeek', function (e) {
         metric.onWillSeek(e);
       }, false);
+    this.element.addEventListener('willLoop', function (e) {
+        metric.onWillLoop(e);
+      }, false);
   }
 
   HTMLMediaMetric.prototype = new MediaMetricBase();
   HTMLMediaMetric.prototype.constructor = HTMLMediaMetric;
 
   HTMLMediaMetric.prototype.setID = function() {
-    if (this.element.src)
-      this.id = this.element.src.substring(this.element.src.lastIndexOf("/")+1);
-    else if (this.element.id)
+    if (this.element.id)
       this.id = this.element.id;
+    else if (this.element.src)
+      this.id = this.element.src.substring(this.element.src.lastIndexOf("/")+1);
     else
       this.id = 'media_' + window.__globalCounter++;
   };
@@ -85,6 +88,21 @@
     this.element.addEventListener('seeked', onSeeked);
   };
 
+  HTMLMediaMetric.prototype.onWillLoop = function(e) {
+    var loopTimer = new Timer();
+    var metric = this;
+    var loopCount = e.loopCount;
+    var onEndLoop = function(e) {
+        var actualDuration = loopTimer.stop();
+        var idealDuration = metric.element.duration * loopCount;
+        var avg_loop_time = (actualDuration - idealDuration) / loopCount;
+        metric.metrics['avg_loop_time'] =
+            Math.round(avg_loop_time * 1000) / 1000;
+        e.target.removeEventListener('endLoop', onEndLoop);
+      };
+    this.element.addEventListener('endLoop', onEndLoop);
+  };
+
   HTMLMediaMetric.prototype.appendMetric = function(metric, value) {
     if (!this.metrics[metric])
       this.metrics[metric] = [];
@@ -98,16 +116,25 @@
   };
 
   HTMLMediaMetric.prototype.onEnded = function(event) {
-    this.metrics['playback_time'] = this.playbackTimer.stop();
+    var time_to_end = this.playbackTimer.stop() - this.metrics['time_to_play'];
+    // TODO(shadi): Measure buffering time more accurately using events such as
+    // stalled, waiting, progress, etc. This works only when continuous playback
+    // is used.
+    this.metrics['buffering_time'] = time_to_end - this.element.duration * 1000;
   };
 
   HTMLMediaMetric.prototype.getMetrics = function() {
-    this.metrics['decoded_frame_count'] = this.element.webkitDecodedFrameCount;
-    this.metrics['dropped_frame_count'] = this.element.webkitDroppedFrameCount;
+    var decodedFrames = this.element.webkitDecodedFrameCount;
+    var droppedFrames = this.element.webkitDroppedFrameCount;
+    // Audio media does not report decoded/dropped frame count
+    if (decodedFrames != undefined)
+      this.metrics['decoded_frame_count'] = decodedFrames;
+    if (droppedFrames != undefined)
+      this.metrics['dropped_frame_count'] = droppedFrames;
     this.metrics['decoded_video_bytes'] =
-        this.element.webkitVideoDecodedByteCount;
+        this.element.webkitVideoDecodedByteCount || 0;
     this.metrics['decoded_audio_bytes'] =
-        this.element.webkitAudioDecodedByteCount;
+        this.element.webkitAudioDecodedByteCount || 0;
     return this.metrics;
   };
 
@@ -128,18 +155,24 @@
     },
 
     stop: function() {
-      // Return delta time since start in secs.
-      return ((getCurrentTime() - this.start_) / 1000).toFixed(3);
+      // Return delta time since start in millisecs.
+      return Math.round((getCurrentTime() - this.start_) * 1000) / 1000;
     }
   };
 
   function checkElementIsNotBound(element) {
     if (!element)
       return;
+    if (getMediaMetric(element))
+      throw new Error('Can not create MediaMetric for same element twice.');
+  }
+
+  function getMediaMetric(element) {
     for (var i = 0; i < window.__mediaMetrics.length; i++) {
       if (window.__mediaMetrics[i].element == element)
-        throw new Error('Can not create MediaMetric for same element twice.');
+        return window.__mediaMetrics[i];
     }
+    return null;
   }
 
   function createMediaMetricsForDocument() {
@@ -171,6 +204,7 @@
 
   window.__globalCounter = 0;
   window.__mediaMetrics = [];
+  window.__getMediaMetric = getMediaMetric;
   window.__getAllMetrics = getAllMetrics;
   window.__createMediaMetricsForDocument = createMediaMetricsForDocument;
 })();

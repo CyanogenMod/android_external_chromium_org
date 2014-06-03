@@ -5,11 +5,11 @@
 // TODO(akalin): Rename this file to migration_test.cc.
 
 #include "base/compiler_specific.h"
-#include "chrome/browser/prefs/scoped_user_pref_update.h"
+#include "base/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/sync/profile_sync_service_harness.h"
 #include "chrome/browser/sync/test/integration/bookmarks_helper.h"
 #include "chrome/browser/sync/test/integration/preferences_helper.h"
+#include "chrome/browser/sync/test/integration/profile_sync_service_harness.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
 #include "chrome/browser/translate/translate_prefs.h"
 #include "chrome/common/pref_names.h"
@@ -76,7 +76,7 @@ class MigrationTest : public SyncTest {
   syncer::ModelTypeSet GetPreferredDataTypes() {
     // ProfileSyncService must already have been created before we can call
     // GetPreferredDataTypes().
-    DCHECK(GetClient(0)->IsSyncAlreadySetup());
+    DCHECK(GetClient(0)->service());
     syncer::ModelTypeSet preferred_data_types =
         GetClient(0)->service()->GetPreferredDataTypes();
     preferred_data_types.RemoveAll(syncer::ProxyTypes());

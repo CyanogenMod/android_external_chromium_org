@@ -6,7 +6,6 @@
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
-#include "chrome/browser/search/search.h"
 #include "chrome/browser/sync/glue/session_model_associator.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/ui/cocoa/cocoa_profile_test.h"
@@ -17,6 +16,7 @@
 #include "chrome/browser/ui/toolbar/recent_tabs_builder_test_helper.h"
 #include "chrome/browser/ui/toolbar/recent_tabs_sub_menu_model.h"
 #include "chrome/browser/ui/toolbar/wrench_menu_model.h"
+#include "chrome/test/base/testing_profile.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -134,9 +134,9 @@ TEST_F(WrenchMenuControllerTest, RecentTabsElideTitle) {
   RecentTabsBuilderTestHelper recent_tabs_builder;
   recent_tabs_builder.AddSession();
   recent_tabs_builder.AddWindow(0);
-  string16 tab1_short_title = ASCIIToUTF16("Short");
+  base::string16 tab1_short_title = ASCIIToUTF16("Short");
   recent_tabs_builder.AddTabWithInfo(0, 0, base::Time::Now(), tab1_short_title);
-  string16 tab2_long_title = ASCIIToUTF16("Very very very very very very "
+  base::string16 tab2_long_title = ASCIIToUTF16("Very very very very very very "
                                           "very very very very very very long");
   recent_tabs_builder.AddTabWithInfo(0, 0,
       base::Time::Now() - base::TimeDelta::FromMinutes(10), tab2_long_title);
@@ -191,7 +191,6 @@ TEST_F(WrenchMenuControllerTest, RecentTabsElideTitle) {
 // Verify that |RecentTabsMenuModelDelegate| is deleted before the model
 // it's observing.
 TEST_F(WrenchMenuControllerTest, RecentTabDeleteOrder) {
-  chrome::EnableInstantExtendedAPIForTesting();
   [controller_ menuNeedsUpdate:[controller_ menu]];
   // If the delete order is wrong then the test will crash on exit.
 }

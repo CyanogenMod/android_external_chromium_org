@@ -29,6 +29,11 @@ bool GpuDataManagerImpl::IsFeatureBlacklisted(int feature) const {
   return private_->IsFeatureBlacklisted(feature);
 }
 
+bool GpuDataManagerImpl::IsDriverBugWorkaroundActive(int feature) const {
+  base::AutoLock auto_lock(lock_);
+  return private_->IsDriverBugWorkaroundActive(feature);
+}
+
 gpu::GPUInfo GpuDataManagerImpl::GetGPUInfo() const {
   base::AutoLock auto_lock(lock_);
   return private_->GetGPUInfo();
@@ -112,6 +117,11 @@ void GpuDataManagerImpl::DisableHardwareAcceleration() {
   private_->DisableHardwareAcceleration();
 }
 
+bool GpuDataManagerImpl::CanUseGpuBrowserCompositor() const {
+  base::AutoLock auto_lock(lock_);
+  return private_->CanUseGpuBrowserCompositor();
+}
+
 void GpuDataManagerImpl::Initialize() {
   base::AutoLock auto_lock(lock_);
   private_->Initialize();
@@ -150,11 +160,6 @@ void GpuDataManagerImpl::UpdateRendererWebPrefs(
     WebPreferences* prefs) const {
   base::AutoLock auto_lock(lock_);
   private_->UpdateRendererWebPrefs(prefs);
-}
-
-gpu::GpuSwitchingOption GpuDataManagerImpl::GetGpuSwitchingOption() const {
-  base::AutoLock auto_lock(lock_);
-  return private_->GetGpuSwitchingOption();
 }
 
 std::string GpuDataManagerImpl::GetBlacklistVersion() const {
@@ -207,11 +212,6 @@ bool GpuDataManagerImpl::IsUsingAcceleratedSurface() const {
   return private_->IsUsingAcceleratedSurface();
 }
 #endif
-
-bool GpuDataManagerImpl::CanUseGpuBrowserCompositor() const {
-  base::AutoLock auto_lock(lock_);
-  return private_->CanUseGpuBrowserCompositor();
-}
 
 void GpuDataManagerImpl::BlockDomainFrom3DAPIs(
     const GURL& url, DomainGuilt guilt) {

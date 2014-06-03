@@ -13,6 +13,7 @@
 #include "base/posix/eintr_wrapper.h"
 #include "base/threading/thread_restrictions.h"
 #include "content/common/gpu/client/command_buffer_proxy_impl.h"
+#include "content/common/gpu/client/gpu_video_encode_accelerator_host.h"
 #include "content/common/gpu/gpu_messages.h"
 #include "gpu/command_buffer/common/mailbox.h"
 #include "ipc/ipc_sync_message_filter.h"
@@ -35,25 +36,37 @@ GpuListenerInfo::~GpuListenerInfo() {}
 scoped_refptr<GpuChannelHost> GpuChannelHost::Create(
     GpuChannelHostFactory* factory,
     int gpu_host_id,
-    int client_id,
     const gpu::GPUInfo& gpu_info,
     const IPC::ChannelHandle& channel_handle) {
   DCHECK(factory->IsMainThread());
   scoped_refptr<GpuChannelHost> host = new GpuChannelHost(
-      factory, gpu_host_id, client_id, gpu_info);
+      factory, gpu_host_id, gpu_info);
   host->Connect(channel_handle);
   return host;
 }
 
+// static
+bool GpuChannelHost::IsValidGpuMemoryBuffer(
+    gfx::GpuMemoryBufferHandle handle) {
+  switch (handle.type) {
+    case gfx::SHARED_MEMORY_BUFFER:
+#if defined(OS_MACOSX)
+    case gfx::IO_SURFACE_BUFFER:
+#endif
+      return true;
+    default:
+      return false;
+  }
+}
+
 GpuChannelHost::GpuChannelHost(GpuChannelHostFactory* factory,
                                int gpu_host_id,
-                               int client_id,
                                const gpu::GPUInfo& gpu_info)
     : factory_(factory),
-      client_id_(client_id),
       gpu_host_id_(gpu_host_id),
       gpu_info_(gpu_info) {
   next_transfer_buffer_id_.GetNext();
+  next_gpu_memory_buffer_id_.GetNext();
 }
 
 void GpuChannelHost::Connect(const IPC::ChannelHandle& channel_handle) {
@@ -109,7 +122,6 @@ bool GpuChannelHost::Send(IPC::Message* msg) {
 CommandBufferProxyImpl* GpuChannelHost::CreateViewCommandBuffer(
     int32 surface_id,
     CommandBufferProxyImpl* share_group,
-    const std::string& allowed_extensions,
     const std::vector<int32>& attribs,
     const GURL& active_url,
     gfx::GpuPreference gpu_preference) {
@@ -121,7 +133,6 @@ CommandBufferProxyImpl* GpuChannelHost::CreateViewCommandBuffer(
   GPUCreateCommandBufferConfig init_params;
   init_params.share_group_id =
       share_group ? share_group->GetRouteID() : MSG_ROUTING_NONE;
-  init_params.allowed_extensions = allowed_extensions;
   init_params.attribs = attribs;
   init_params.active_url = active_url;
   init_params.gpu_preference = gpu_preference;
@@ -141,7 +152,6 @@ CommandBufferProxyImpl* GpuChannelHost::CreateViewCommandBuffer(
 CommandBufferProxyImpl* GpuChannelHost::CreateOffscreenCommandBuffer(
     const gfx::Size& size,
     CommandBufferProxyImpl* share_group,
-    const std::string& allowed_extensions,
     const std::vector<int32>& attribs,
     const GURL& active_url,
     gfx::GpuPreference gpu_preference) {
@@ -150,7 +160,6 @@ CommandBufferProxyImpl* GpuChannelHost::CreateOffscreenCommandBuffer(
   GPUCreateCommandBufferConfig init_params;
   init_params.share_group_id =
       share_group ? share_group->GetRouteID() : MSG_ROUTING_NONE;
-  init_params.allowed_extensions = allowed_extensions;
   init_params.attribs = attribs;
   init_params.active_url = active_url;
   init_params.gpu_preference = gpu_preference;
@@ -182,6 +191,21 @@ scoped_ptr<media::VideoDecodeAccelerator> GpuChannelHost::CreateVideoDecoder(
   DCHECK(it != proxies_.end());
   CommandBufferProxyImpl* proxy = it->second;
   return proxy->CreateVideoDecoder(profile, client).Pass();
+}
+
+scoped_ptr<media::VideoEncodeAccelerator> GpuChannelHost::CreateVideoEncoder(
+    media::VideoEncodeAccelerator::Client* client) {
+  TRACE_EVENT0("gpu", "GpuChannelHost::CreateVideoEncoder");
+
+  scoped_ptr<media::VideoEncodeAccelerator> vea;
+  int32 route_id = MSG_ROUTING_NONE;
+  if (!Send(new GpuChannelMsg_CreateVideoEncoder(&route_id)))
+    return vea.Pass();
+  if (route_id == MSG_ROUTING_NONE)
+    return vea.Pass();
+
+  vea.reset(new GpuVideoEncodeAcceleratorHost(client, this, route_id));
+  return vea.Pass();
 }
 
 void GpuChannelHost::DestroyCommandBuffer(
@@ -234,8 +258,8 @@ base::SharedMemoryHandle GpuChannelHost::ShareToGpuProcess(
   if (!BrokerDuplicateHandle(source_handle,
                              channel_->peer_pid(),
                              &target_handle,
-                             0,
-                             DUPLICATE_SAME_ACCESS)) {
+                             FILE_GENERIC_READ | FILE_GENERIC_WRITE,
+                             0)) {
     return base::SharedMemory::NULLHandle();
   }
 
@@ -271,6 +295,29 @@ bool GpuChannelHost::GenerateMailboxNames(unsigned num,
 
 int32 GpuChannelHost::ReserveTransferBufferId() {
   return next_transfer_buffer_id_.GetNext();
+}
+
+gfx::GpuMemoryBufferHandle GpuChannelHost::ShareGpuMemoryBufferToGpuProcess(
+    gfx::GpuMemoryBufferHandle source_handle) {
+  switch (source_handle.type) {
+    case gfx::SHARED_MEMORY_BUFFER: {
+      gfx::GpuMemoryBufferHandle handle;
+      handle.type = gfx::SHARED_MEMORY_BUFFER;
+      handle.handle = ShareToGpuProcess(source_handle.handle);
+      return handle;
+    }
+#if defined(OS_MACOSX)
+    case gfx::IO_SURFACE_BUFFER:
+      return source_handle;
+#endif
+    default:
+      NOTREACHED();
+      return gfx::GpuMemoryBufferHandle();
+  }
+}
+
+int32 GpuChannelHost::ReserveGpuMemoryBufferId() {
+  return next_gpu_memory_buffer_id_.GetNext();
 }
 
 GpuChannelHost::~GpuChannelHost() {

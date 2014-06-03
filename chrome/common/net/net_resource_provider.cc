@@ -6,6 +6,7 @@
 
 #include <string>
 
+#include "base/i18n/rtl.h"
 #include "base/strings/string_piece.h"
 #include "base/values.h"
 #include "grit/chromium_strings.h"
@@ -14,7 +15,7 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/layout.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/webui/jstemplate_builder.h"
+#include "ui/base/webui/jstemplate_builder.h"
 
 namespace {
 
@@ -39,6 +40,7 @@ struct LazyDirectoryListerCacher {
     value.SetString("listingParsingErrorBoxText",
         l10n_util::GetStringFUTF16(IDS_DIRECTORY_LISTING_PARSING_ERROR_BOX_TEXT,
             l10n_util::GetStringUTF16(IDS_PRODUCT_NAME)));
+    value.SetString("textdirection", base::i18n::IsRTL() ? "rtl" : "ltr");
     html_data = webui::GetI18nTemplateHtml(
         ResourceBundle::GetSharedInstance().GetRawDataResource(
             IDR_DIR_HEADER_HTML),

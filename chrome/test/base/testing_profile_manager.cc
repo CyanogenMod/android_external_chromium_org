@@ -11,15 +11,14 @@
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/test/base/testing_browser_process.h"
-#include "chrome/test/base/testing_profile.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace testing {
 
-class ProfileManager : public ::ProfileManager {
+class ProfileManager : public ::ProfileManagerWithoutInit {
  public:
   explicit ProfileManager(const base::FilePath& user_data_dir)
-      : ::ProfileManager(user_data_dir) {}
+      : ::ProfileManagerWithoutInit(user_data_dir) {}
 
  protected:
   virtual Profile* CreateProfileHelper(
@@ -49,7 +48,8 @@ TestingProfile* TestingProfileManager::CreateTestingProfile(
     scoped_ptr<PrefServiceSyncable> prefs,
     const string16& user_name,
     int avatar_id,
-    const std::string& managed_user_id) {
+    const std::string& managed_user_id,
+    const TestingProfile::TestingFactories& factories) {
   DCHECK(called_set_up_);
 
   // Create a path for the profile based on the name.
@@ -57,11 +57,18 @@ TestingProfile* TestingProfileManager::CreateTestingProfile(
   profile_path = profile_path.AppendASCII(profile_name);
 
   // Create the profile and register it.
-  TestingProfile* profile = new TestingProfile(
-      profile_path,
-      NULL,
-      scoped_refptr<ExtensionSpecialStoragePolicy>(),
-      prefs.Pass());
+  TestingProfile::Builder builder;
+  builder.SetPath(profile_path);
+  builder.SetPrefService(prefs.Pass());
+  builder.SetManagedUserId(managed_user_id);
+
+  for (TestingProfile::TestingFactories::const_iterator it = factories.begin();
+       it != factories.end(); ++it) {
+    builder.AddTestingFactory(it->first, it->second);
+  }
+
+  TestingProfile* profile = builder.Build().release();
+  profile->set_profile_name(profile_name);
   profile_manager_->AddProfile(profile);  // Takes ownership.
 
   // Update the user metadata.
@@ -82,7 +89,8 @@ TestingProfile* TestingProfileManager::CreateTestingProfile(
     const std::string& name) {
   DCHECK(called_set_up_);
   return CreateTestingProfile(name, scoped_ptr<PrefServiceSyncable>(),
-                              UTF8ToUTF16(name), 0, std::string());
+                              UTF8ToUTF16(name), 0, std::string(),
+                              TestingProfile::TestingFactories());
 }
 
 void TestingProfileManager::DeleteTestingProfile(const std::string& name) {

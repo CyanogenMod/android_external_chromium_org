@@ -4,6 +4,7 @@
 
 #include "chrome/browser/ui/cocoa/extensions/media_galleries_dialog_cocoa.h"
 
+#include "base/mac/scoped_nsobject.h"
 #include "base/strings/sys_string_conversions.h"
 #include "chrome/browser/ui/chrome_style.h"
 #import "chrome/browser/ui/cocoa/constrained_window/constrained_window_alert.h"
@@ -14,15 +15,18 @@
 #include "content/public/browser/web_contents.h"
 #include "grit/generated_resources.h"
 #import "ui/base/cocoa/flipped_view.h"
+#import "ui/base/cocoa/menu_controller.h"
+#import "ui/base/models/menu_model.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 
+// Controller for UI events on items in the media galleries dialog.
 @interface MediaGalleriesCocoaController : NSObject {
  @private
-  chrome::MediaGalleriesDialogCocoa* dialog_;
+  MediaGalleriesDialogCocoa* dialog_;
 }
 
-@property(nonatomic, assign) chrome::MediaGalleriesDialogCocoa* dialog;
+@property(nonatomic, assign) MediaGalleriesDialogCocoa* dialog;
 
 @end
 
@@ -50,7 +54,40 @@
 
 @end
 
-namespace chrome {
+@interface MediaGalleriesCheckbox : NSButton {
+ @private
+  MediaGalleriesDialogCocoa* dialog_;
+  MediaGalleryPrefId prefId_;
+  base::scoped_nsobject<MenuController> menu_controller_;
+}
+
+- (id)initWithFrame:(NSRect)frameRect
+             dialog:(MediaGalleriesDialogCocoa*)dialog
+             prefId:(MediaGalleryPrefId)prefId;
+- (NSMenu*)menuForEvent:(NSEvent*)theEvent;
+
+@end
+
+@implementation MediaGalleriesCheckbox
+
+- (id)initWithFrame:(NSRect)frameRect
+             dialog:(MediaGalleriesDialogCocoa*)dialog
+             prefId:(MediaGalleryPrefId)prefId {
+  if ((self = [super initWithFrame:frameRect])) {
+    dialog_ = dialog;
+    prefId_ = prefId;
+  }
+  return self;
+}
+
+- (NSMenu*)menuForEvent:(NSEvent*)theEvent {
+  menu_controller_.reset(
+    [[MenuController alloc] initWithModel:dialog_->GetContextMenuModel(prefId_)
+                   useWithPopUpButtonCell:NO]);
+  return [menu_controller_ menu];
+}
+
+@end
 
 namespace {
 
@@ -138,10 +175,12 @@ void MediaGalleriesDialogCocoa::InitDialogControls() {
 
   y_pos = CreateAttachedCheckboxes(y_pos, controller_->AttachedPermissions());
 
-  y_pos = CreateCheckboxSeparator(y_pos);
+  if (!controller_->UnattachedPermissions().empty()) {
+    y_pos = CreateCheckboxSeparator(y_pos);
 
-  y_pos = CreateUnattachedCheckboxes(
-      y_pos, controller_->UnattachedPermissions());
+    y_pos = CreateUnattachedCheckboxes(
+        y_pos, controller_->UnattachedPermissions());
+  }
 
   [checkbox_container_ setFrame:NSMakeRect(0, 0, kCheckboxMaxWidth, y_pos + 2)];
 
@@ -255,7 +294,7 @@ void MediaGalleriesDialogCocoa::OnCheckboxToggled(NSButton* checkbox) {
   [[[alert_ buttons] objectAtIndex:0] setEnabled:YES];
 
   const MediaGalleriesDialogController::GalleryPermissionsVector&
-  attached_permissions = controller_->AttachedPermissions();
+      attached_permissions = controller_->AttachedPermissions();
   for (MediaGalleriesDialogController::GalleryPermissionsVector::
        const_reverse_iterator iter = attached_permissions.rbegin();
        iter != attached_permissions.rend(); iter++) {
@@ -288,8 +327,10 @@ void MediaGalleriesDialogCocoa::UpdateGalleryCheckbox(
     const MediaGalleryPrefInfo& gallery,
     bool permitted,
     CGFloat y_pos) {
-  base::scoped_nsobject<NSButton> checkbox(
-      [[NSButton alloc] initWithFrame:NSZeroRect]);
+  base::scoped_nsobject<MediaGalleriesCheckbox> checkbox(
+      [[MediaGalleriesCheckbox alloc] initWithFrame:NSZeroRect
+                                             dialog:this
+                                             prefId:gallery.pref_id]);
   NSString* unique_id = GetUniqueIDForGallery(gallery);
   [[checkbox cell] setRepresentedObject:unique_id];
   [[checkbox cell] setLineBreakMode:NSLineBreakByTruncatingMiddle];
@@ -298,6 +339,7 @@ void MediaGalleriesDialogCocoa::UpdateGalleryCheckbox(
   [checkbox setAction:@selector(onCheckboxToggled:)];
   [checkboxes_ addObject:checkbox];
 
+  // TODO(gbillock): Would be nice to add middle text elide behavior here.
   [checkbox setTitle:base::SysUTF16ToNSString(
       gallery.GetGalleryDisplayName())];
   [checkbox setToolTip:base::SysUTF16ToNSString(gallery.GetGalleryTooltip())];
@@ -337,19 +379,18 @@ void MediaGalleriesDialogCocoa::UpdateGalleryCheckbox(
   [checkbox_container_ addSubview:details];
 }
 
-void MediaGalleriesDialogCocoa::UpdateGallery(
-    const MediaGalleryPrefInfo& gallery,
-    bool permitted) {
-  InitDialogControls();
-}
-
-void MediaGalleriesDialogCocoa::ForgetGallery(MediaGalleryPrefId gallery) {
+void MediaGalleriesDialogCocoa::UpdateGalleries() {
   InitDialogControls();
 }
 
 void MediaGalleriesDialogCocoa::OnConstrainedWindowClosed(
     ConstrainedWindowMac* window) {
   controller_->DialogFinished(accepted_);
+}
+
+ui::MenuModel* MediaGalleriesDialogCocoa::GetContextMenuModel(
+    MediaGalleryPrefId prefid) {
+  return controller_->GetContextMenuModel(prefid);
 }
 
 // static
@@ -359,5 +400,3 @@ MediaGalleriesDialog* MediaGalleriesDialog::Create(
       [[MediaGalleriesCocoaController alloc] init]);
   return new MediaGalleriesDialogCocoa(controller, cocoa_controller);
 }
-
-}  // namespace chrome

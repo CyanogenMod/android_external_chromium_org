@@ -4,25 +4,25 @@
 
 #include "chrome/renderer/chrome_content_renderer_client.h"
 
+#include <vector>
+
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_builder.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
+#include "chrome/renderer/searchbox/search_bouncer.h"
 #include "content/public/common/webplugininfo.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/extension_builder.h"
+#include "extensions/common/manifest_constants.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebVector.h"
 #include "third_party/WebKit/public/web/WebPluginParams.h"
 #include "url/gurl.h"
 
-using WebKit::WebPluginParams;
-using WebKit::WebString;
-using WebKit::WebVector;
-using chrome::ChromeContentRendererClient;
+using blink::WebPluginParams;
+using blink::WebString;
+using blink::WebVector;
 using content::WebPluginInfo;
 using content::WebPluginMimeType;
-
-namespace chrome {
 
 namespace {
 const bool kNaClRestricted = false;
@@ -34,13 +34,21 @@ const bool kExtensionFromWebStore = true;
 const bool kNotHostedApp = false;
 const bool kHostedApp = true;
 
-const char kNaClMimeType[] = "application/x-nacl";
 const char kExtensionUrl[] = "chrome-extension://extension_id/background.html";
 
-const char kAllowedNaClAppURL1[] = "https://plus.google.com";
-const char kAllowedNaClAppURL2[] = "https://plus.sandbox.google.com";
-const char kAllowedNaClManifestURL1[] = "https://ssl.gstatic.com/s2/oz/nacl/foo";
-const char kAllowedNaClManifestURL2[] = "https://ssl.gstatic.com/photos/nacl/foo";
+const char kPhotosAppURL1[] = "https://foo.plus.google.com";
+const char kPhotosAppURL2[] = "https://foo.plus.sandbox.google.com";
+const char kPhotosManifestURL1[] = "https://ssl.gstatic.com/s2/oz/nacl/foo";
+const char kPhotosManifestURL2[] = "https://ssl.gstatic.com/photos/nacl/foo";
+
+const char kChatAppURL1[] = "https://foo.talkgadget.google.com/hangouts/foo";
+const char kChatAppURL2[] = "https://foo.plus.google.com/hangouts/foo";
+const char kChatAppURL3[] = "https://foo.plus.sandbox.google.com/hangouts/foo";
+const char kChatManifestFS1[] =
+  "filesystem:https://foo.talkgadget.google.com/foo";
+const char kChatManifestFS2[] = "filesystem:https://foo.plus.google.com/foo";
+const char kChatManifestFS3[] =
+  "filesystem:https://foo.plus.sandbox.google.com/foo";
 
 bool AllowsDevInterfaces(const WebPluginParams& params) {
   for (size_t i = 0; i < params.attributeNames.size(); ++i) {
@@ -91,8 +99,8 @@ scoped_refptr<const extensions::Extension> CreateTestExtension(
   if (is_hosted_app) {
     base::ListValue* url_list = new base::ListValue();
     url_list->Append(base::Value::CreateStringValue(app_url));
-    manifest.Set(extension_manifest_keys::kWebURLs, url_list);
-    manifest.SetString(extension_manifest_keys::kLaunchWebURL, app_url);
+    manifest.Set(extensions::manifest_keys::kWebURLs, url_list);
+    manifest.SetString(extensions::manifest_keys::kLaunchWebURL, app_url);
   }
   std::string error;
   return extensions::Extension::Create(base::FilePath(), location, manifest,
@@ -203,46 +211,70 @@ TEST_F(ChromeContentRendererClientTest, NaClRestriction) {
   // interfaces. There is a whitelist for the app URL and the manifest URL.
   {
     WebPluginParams params;
-    // Whitelisted manifest URL #1, whitelisted app URL root #1 is allowed.
+    // Whitelisted Photos app is allowed (two app URLs, two manifest URLs)
     EXPECT_TRUE(ChromeContentRendererClient::IsNaClAllowed(
-        GURL(kAllowedNaClManifestURL1),
-        GURL(kAllowedNaClAppURL1),
+        GURL(kPhotosManifestURL1),
+        GURL(kPhotosAppURL1),
         kNaClRestricted,
         CreateExtension(kExtensionRestricted, kExtensionNotFromWebStore).get(),
         &params));
     EXPECT_FALSE(AllowsDevInterfaces(params));
-    // Whitelisted manifest URL #2, whitelisted app URL root #1 is allowed.
     EXPECT_TRUE(ChromeContentRendererClient::IsNaClAllowed(
-        GURL(kAllowedNaClManifestURL1),
-        GURL(kAllowedNaClAppURL1),
+        GURL(kPhotosManifestURL1),
+        GURL(kPhotosAppURL2),
         kNaClRestricted,
         CreateExtension(kExtensionRestricted, kExtensionNotFromWebStore).get(),
         &params));
     EXPECT_FALSE(AllowsDevInterfaces(params));
-    // Whitelisted manifest URL #1, whitelisted app URL root #2 is allowed.
     EXPECT_TRUE(ChromeContentRendererClient::IsNaClAllowed(
-        GURL(kAllowedNaClManifestURL1),
-        GURL(kAllowedNaClAppURL2),
+        GURL(kPhotosManifestURL2),
+        GURL(kPhotosAppURL1),
         kNaClRestricted,
         CreateExtension(kExtensionRestricted, kExtensionNotFromWebStore).get(),
         &params));
     EXPECT_FALSE(AllowsDevInterfaces(params));
+    EXPECT_TRUE(ChromeContentRendererClient::IsNaClAllowed(
+        GURL(kPhotosManifestURL2),
+        GURL(kPhotosAppURL2),
+        kNaClRestricted,
+        CreateExtension(kExtensionRestricted, kExtensionNotFromWebStore).get(),
+        &params));
+    EXPECT_FALSE(AllowsDevInterfaces(params));
+    // Whitelisted Chat app is allowed.
+    EXPECT_TRUE(ChromeContentRendererClient::IsNaClAllowed(
+        GURL(kChatManifestFS1),
+        GURL(kChatAppURL1),
+        kNaClRestricted,
+        CreateExtension(kExtensionRestricted, kExtensionNotFromWebStore).get(),
+        &params));
+    EXPECT_TRUE(ChromeContentRendererClient::IsNaClAllowed(
+        GURL(kChatManifestFS2),
+        GURL(kChatAppURL2),
+        kNaClRestricted,
+        CreateExtension(kExtensionRestricted, kExtensionNotFromWebStore).get(),
+        &params));
+    EXPECT_TRUE(ChromeContentRendererClient::IsNaClAllowed(
+        GURL(kChatManifestFS3),
+        GURL(kChatAppURL3),
+        kNaClRestricted,
+        CreateExtension(kExtensionRestricted, kExtensionNotFromWebStore).get(),
+        &params));
 
     // Whitelisted manifest URL, bad app URLs, NOT allowed.
     EXPECT_FALSE(ChromeContentRendererClient::IsNaClAllowed(
-        GURL(kAllowedNaClManifestURL1),
+        GURL(kPhotosManifestURL1),
         GURL("http://plus.google.com/foo"),  // http scheme
         kNaClRestricted,
         CreateExtension(kExtensionRestricted, kExtensionNotFromWebStore).get(),
         &params));
     EXPECT_FALSE(ChromeContentRendererClient::IsNaClAllowed(
-        GURL(kAllowedNaClManifestURL1),
+        GURL(kPhotosManifestURL1),
         GURL("http://plus.sandbox.google.com/foo"),  // http scheme
         kNaClRestricted,
         CreateExtension(kExtensionRestricted, kExtensionNotFromWebStore).get(),
         &params));
     EXPECT_FALSE(ChromeContentRendererClient::IsNaClAllowed(
-        GURL(kAllowedNaClManifestURL1),
+        GURL(kPhotosManifestURL1),
         GURL("https://plus.google.evil.com/foo"),  // bad host
         kNaClRestricted,
         CreateExtension(kExtensionRestricted, kExtensionNotFromWebStore).get(),
@@ -250,19 +282,19 @@ TEST_F(ChromeContentRendererClientTest, NaClRestriction) {
     // Whitelisted app URL, bad manifest URL, NOT allowed.
     EXPECT_FALSE(ChromeContentRendererClient::IsNaClAllowed(
         GURL("http://ssl.gstatic.com/s2/oz/nacl/foo"),  // http scheme
-        GURL(kAllowedNaClAppURL1),
+        GURL(kPhotosAppURL1),
         kNaClRestricted,
         CreateExtension(kExtensionRestricted, kExtensionNotFromWebStore).get(),
         &params));
     EXPECT_FALSE(ChromeContentRendererClient::IsNaClAllowed(
         GURL("https://ssl.gstatic.evil.com/s2/oz/nacl/foo"),  // bad host
-        GURL(kAllowedNaClAppURL1),
+        GURL(kPhotosAppURL1),
         kNaClRestricted,
         CreateExtension(kExtensionRestricted, kExtensionNotFromWebStore).get(),
         &params));
     EXPECT_FALSE(ChromeContentRendererClient::IsNaClAllowed(
         GURL("https://ssl.gstatic.com/wrong/s2/oz/nacl/foo"),  // bad path
-        GURL(kAllowedNaClAppURL1),
+        GURL(kPhotosAppURL1),
         kNaClRestricted,
         CreateExtension(kExtensionRestricted, kExtensionNotFromWebStore).get(),
         &params));
@@ -271,8 +303,8 @@ TEST_F(ChromeContentRendererClientTest, NaClRestriction) {
   {
     WebPluginParams params;
     EXPECT_TRUE(ChromeContentRendererClient::IsNaClAllowed(
-        GURL(kAllowedNaClManifestURL1),
-        GURL(kAllowedNaClAppURL1),
+        GURL(kPhotosManifestURL1),
+        GURL(kPhotosAppURL1),
         kNaClUnrestricted,
         CreateExtension(kExtensionRestricted, kExtensionNotFromWebStore).get(),
         &params));
@@ -284,8 +316,8 @@ TEST_F(ChromeContentRendererClientTest, NaClRestriction) {
     WebPluginParams params;
     AddFakeDevAttribute(&params);
     EXPECT_TRUE(ChromeContentRendererClient::IsNaClAllowed(
-        GURL(kAllowedNaClManifestURL1),
-        GURL(kAllowedNaClAppURL1),
+        GURL(kPhotosManifestURL1),
+        GURL(kPhotosAppURL1),
         kNaClRestricted,
         CreateExtension(kExtensionRestricted, kExtensionNotFromWebStore).get(),
         &params));
@@ -308,14 +340,14 @@ TEST_F(ChromeContentRendererClientTest, NaClRestriction) {
         &params));
     EXPECT_FALSE(ChromeContentRendererClient::IsNaClAllowed(
         GURL(),
-        GURL("https://plus.google.com.evil.com/foo3"),
+        GURL("https://talkgadget.google.com.evil.com/foo3"),
         kNaClRestricted,
         CreateExtension(kExtensionUnrestricted, kExtensionNotFromWebStore)
             .get(),
         &params));
     EXPECT_FALSE(ChromeContentRendererClient::IsNaClAllowed(
         GURL(),
-        GURL("https://plus.google.com.evil.com/foo4"),
+        GURL("https://talkgadget.google.com.evil.com/foo4"),
         kNaClRestricted,
         CreateExtension(kExtensionUnrestricted, kExtensionFromWebStore).get(),
         &params));
@@ -342,4 +374,28 @@ TEST_F(ChromeContentRendererClientTest, NaClRestriction) {
   }
 }
 
-}  // namespace chrome
+TEST_F(ChromeContentRendererClientTest, AllowPepperMediaStreamAPI) {
+  ChromeContentRendererClient test;
+#if !defined(OS_ANDROID)
+  EXPECT_TRUE(test.AllowPepperMediaStreamAPI(GURL(kChatAppURL1)));
+  EXPECT_TRUE(test.AllowPepperMediaStreamAPI(GURL(kChatAppURL2)));
+  EXPECT_TRUE(test.AllowPepperMediaStreamAPI(GURL(kChatAppURL3)));
+#else
+  EXPECT_FALSE(test.AllowPepperMediaStreamAPI(GURL(kChatAppURL1)));
+  EXPECT_FALSE(test.AllowPepperMediaStreamAPI(GURL(kChatAppURL2)));
+  EXPECT_FALSE(test.AllowPepperMediaStreamAPI(GURL(kChatAppURL3)));
+#endif
+  EXPECT_FALSE(test.AllowPepperMediaStreamAPI(
+      GURL("http://talkgadget.google.com/hangouts/foo")));
+  EXPECT_FALSE(test.AllowPepperMediaStreamAPI(
+      GURL("https://talkgadget.evil.com/hangouts/foo")));
+}
+
+TEST_F(ChromeContentRendererClientTest, ShouldSuppressErrorPage) {
+  ChromeContentRendererClient client;
+  client.search_bouncer_.reset(new SearchBouncer);
+  client.search_bouncer_->OnSetSearchURLs(
+      std::vector<GURL>(), GURL("http://example.com/n"));
+  EXPECT_FALSE(client.ShouldSuppressErrorPage(GURL("http://example.com")));
+  EXPECT_TRUE(client.ShouldSuppressErrorPage(GURL("http://example.com/n")));
+}

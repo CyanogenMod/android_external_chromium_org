@@ -59,19 +59,64 @@ class PageRunnerTests(unittest.TestCase):
     options.output_format = 'none'
     results = page_runner.Run(Test('RunTest'), ps, expectations, options)
     self.assertEquals(0, len(results.successes))
+    self.assertEquals(0, len(results.failures))
     self.assertEquals(1, len(results.errors))
+
+  def testHandlingOfTestThatRaisesWithNonFatalUnknownExceptions(self):
+    ps = page_set.PageSet()
+    expectations = test_expectations.TestExpectations()
+    ps.pages.append(page_module.Page(
+        'file://blank.html', ps, base_dir=util.GetUnittestDataDir()))
+    ps.pages.append(page_module.Page(
+        'file://blank.html', ps, base_dir=util.GetUnittestDataDir()))
+
+    class ExpectedException(Exception):
+      pass
+
+    class Test(page_test.PageTest):
+      def __init__(self, *args):
+        super(Test, self).__init__(*args)
+        self.run_count = 0
+      def RunTest(self, *_):
+        old_run_count = self.run_count
+        self.run_count += 1
+        if old_run_count == 0:
+          raise ExpectedException()
+
+    options = options_for_unittests.GetCopy()
+    options.output_format = 'none'
+    test = Test('RunTest')
+    results = page_runner.Run(test, ps, expectations, options)
+    self.assertEquals(2, test.run_count)
+    self.assertEquals(1, len(results.successes))
+    self.assertEquals(1, len(results.failures))
+
+  def testHandlingOfCrashedTabWithExpectedFailure(self):
+    ps = page_set.PageSet()
+    expectations = test_expectations.TestExpectations()
+    expectations.Fail('chrome://crash')
+    page1 = page_module.Page('chrome://crash', ps)
+    ps.pages.append(page1)
+
+    class Test(page_test.PageTest):
+      def RunTest(self, *_):
+        pass
+
+    options = options_for_unittests.GetCopy()
+    options.output_format = 'none'
+    results = page_runner.Run(
+        Test('RunTest'), ps, expectations, options)
+    self.assertEquals(1, len(results.successes))
+    self.assertEquals(0, len(results.failures))
+    self.assertEquals(0, len(results.errors))
 
   def testDiscardFirstResult(self):
     ps = page_set.PageSet()
     expectations = test_expectations.TestExpectations()
     ps.pages.append(page_module.Page(
-        'file:///' + os.path.join(util.GetUnittestDataDir(), 'blank.html'),
-        ps,
-        base_dir=os.path.dirname(__file__)))
+        'file://blank.html', ps, base_dir=util.GetUnittestDataDir()))
     ps.pages.append(page_module.Page(
-        'file:///' + os.path.join(util.GetUnittestDataDir(), 'blank.html'),
-        ps,
-        base_dir=os.path.dirname(__file__)))
+        'file://blank.html', ps, base_dir=util.GetUnittestDataDir()))
 
     class Measurement(page_measurement.PageMeasurement):
       @property
@@ -82,7 +127,9 @@ class PageRunnerTests(unittest.TestCase):
 
     options = options_for_unittests.GetCopy()
     options.output_format = 'none'
-    options.reset_html_results = None
+    options.reset_results = None
+    options.upload_results = None
+    options.results_label = None
 
     options.repeat_options.page_repeat_iters = 1
     options.repeat_options.pageset_repeat_iters = 1
@@ -128,9 +175,7 @@ class PageRunnerTests(unittest.TestCase):
     ps = page_set.PageSet()
     expectations = test_expectations.TestExpectations()
     page = page_module.Page(
-        'file:///' + os.path.join(util.GetUnittestDataDir(), 'blank.html'),
-        ps,
-        base_dir=os.path.dirname(__file__))
+        'file://blank.html', ps, base_dir=util.GetUnittestDataDir())
     page.credentials = "test"
     ps.pages.append(page)
 
@@ -165,9 +210,7 @@ class PageRunnerTests(unittest.TestCase):
     ps = page_set.PageSet()
     expectations = test_expectations.TestExpectations()
     page = page_module.Page(
-        'file:///' + os.path.join(util.GetUnittestDataDir(), 'blank.html'),
-        ps,
-        base_dir=os.path.dirname(__file__))
+        'file://blank.html', ps, base_dir=util.GetUnittestDataDir())
     ps.pages.append(page)
     ps.user_agent_type = 'tablet'
 
@@ -194,9 +237,7 @@ class PageRunnerTests(unittest.TestCase):
     ps = page_set.PageSet()
     expectations = test_expectations.TestExpectations()
     page = page_module.Page(
-        'file:///' + os.path.join(util.GetUnittestDataDir(), 'blank.html'),
-        ps,
-        base_dir=os.path.dirname(__file__))
+        'file://blank.html', ps, base_dir=util.GetUnittestDataDir())
     ps.pages.append(page)
 
     class TestOneTab(page_test.PageTest):
@@ -230,9 +271,7 @@ class PageRunnerTests(unittest.TestCase):
     ps = page_set.PageSet()
     expectations = test_expectations.TestExpectations()
     page = page_module.Page(
-        'file:///' + os.path.join(util.GetUnittestDataDir(), 'blank.html'),
-        ps,
-        base_dir=os.path.dirname(__file__))
+        'file://blank.html', ps, base_dir=util.GetUnittestDataDir())
     ps.pages.append(page)
 
     class TestBeforeLaunch(page_test.PageTest):

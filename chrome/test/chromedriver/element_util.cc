@@ -47,13 +47,6 @@ bool ParseFromValue(base::Value* value, WebSize* size) {
   return true;
 }
 
-base::Value* CreateValueFrom(const WebSize& size) {
-  base::DictionaryValue* dict = new base::DictionaryValue();
-  dict->SetInteger("width", size.width);
-  dict->SetInteger("height", size.height);
-  return dict;
-}
-
 bool ParseFromValue(base::Value* value, WebRect* rect) {
   base::DictionaryValue* dict_value;
   if (!value->GetAsDictionary(&dict_value))
@@ -247,7 +240,7 @@ Status FindElement(
   if (root_element_id)
     arguments.Append(CreateElement(*root_element_id));
 
-  base::Time start_time = base::Time::Now();
+  base::TimeTicks start_time = base::TimeTicks::Now();
   while (true) {
     scoped_ptr<base::Value> temp;
     Status status = web_view->CallFunction(
@@ -271,8 +264,7 @@ Status FindElement(
       }
     }
 
-    if ((base::Time::Now() - start_time).InMilliseconds() >=
-        session->implicit_wait) {
+    if (base::TimeTicks::Now() - start_time >= session->implicit_wait) {
       if (only_one) {
         return Status(kNoSuchElement);
       } else {
@@ -284,6 +276,32 @@ Status FindElement(
   }
 
   return Status(kUnknownError);
+}
+
+Status GetActiveElement(
+    Session* session,
+    WebView* web_view,
+    scoped_ptr<base::Value>* value) {
+  base::ListValue args;
+  return web_view->CallFunction(
+      session->GetCurrentFrameId(),
+      "function() { return document.activeElement || document.body }",
+      args,
+      value);
+}
+
+Status IsElementFocused(
+    Session* session,
+    WebView* web_view,
+    const std::string& element_id,
+    bool* is_focused) {
+  scoped_ptr<base::Value> result;
+  Status status = GetActiveElement(session, web_view, &result);
+  if (status.IsError())
+    return status;
+  scoped_ptr<base::Value> element_dict(CreateElement(element_id));
+  *is_focused = result->Equals(element_dict.get());
+  return Status(kOk);
 }
 
 Status GetElementAttribute(

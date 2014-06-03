@@ -15,10 +15,10 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/download/chrome_download_manager_delegate.h"
 #include "chrome/browser/download/download_item_model.h"
-#include "chrome/browser/download/download_util.h"
+#include "chrome/browser/download/download_stats.h"
 #include "chrome/browser/themes/theme_properties.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/gtk/custom_drag.h"
+#include "chrome/browser/ui/gtk/download/download_item_drag.h"
 #include "chrome/browser/ui/gtk/download/download_shelf_context_menu_gtk.h"
 #include "chrome/browser/ui/gtk/download/download_shelf_gtk.h"
 #include "chrome/browser/ui/gtk/gtk_theme_service.h"
@@ -29,15 +29,15 @@
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "third_party/skia/include/core/SkBitmap.h"
-#include "ui/base/animation/slide_animation.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/base/text/text_elider.h"
+#include "ui/gfx/animation/slide_animation.h"
 #include "ui/gfx/canvas_skia_paint.h"
 #include "ui/gfx/color_utils.h"
-#include "ui/gfx/font.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/skia_utils_gtk.h"
+#include "ui/gfx/text_elider.h"
+#include "ui/gfx/text_utils.h"
 
 namespace {
 
@@ -196,11 +196,13 @@ DownloadItemGtk::DownloadItemGtk(DownloadShelfGtk* parent_shelf,
 
   download()->AddObserver(this);
 
-  new_item_animation_.reset(new ui::SlideAnimation(this));
+  new_item_animation_.reset(new gfx::SlideAnimation(this));
   new_item_animation_->SetSlideDuration(kNewItemAnimationDurationMs);
   gtk_widget_show_all(hbox_.get());
 
   if (download_model_.IsDangerous()) {
+    RecordDangerousDownloadWarningShown(download()->GetDangerType());
+
     // Hide the download item components for now.
     gtk_widget_set_no_show_all(body_.get(), TRUE);
     gtk_widget_set_no_show_all(menu_button_, TRUE);
@@ -238,13 +240,15 @@ DownloadItemGtk::DownloadItemGtk(DownloadShelfGtk* parent_shelf,
     gtk_util::CenterWidgetInHBox(dangerous_hbox_.get(), dangerous_decline,
                                  false, 0);
 
-    // Create the ok button.
-    GtkWidget* dangerous_accept = gtk_button_new_with_label(
-        UTF16ToUTF8(download_model_.GetWarningConfirmButtonText()).c_str());
-    g_signal_connect(dangerous_accept, "clicked",
-                     G_CALLBACK(OnDangerousAcceptThunk), this);
-    gtk_util::CenterWidgetInHBox(dangerous_hbox_.get(), dangerous_accept, false,
-                                 0);
+    // Create the ok button, if this is the kind that can be bypassed.
+    if (!download_model_.IsMalicious()) {
+      GtkWidget* dangerous_accept = gtk_button_new_with_label(
+          UTF16ToUTF8(download_model_.GetWarningConfirmButtonText()).c_str());
+      g_signal_connect(dangerous_accept, "clicked",
+                       G_CALLBACK(OnDangerousAcceptThunk), this);
+      gtk_util::CenterWidgetInHBox(
+          dangerous_hbox_.get(), dangerous_accept, false, 0);
+    }
 
     // Put it in an alignment so that padding will be added on the left and
     // right.
@@ -275,7 +279,7 @@ DownloadItemGtk::DownloadItemGtk(DownloadShelfGtk* parent_shelf,
 
   new_item_animation_->Show();
 
-  complete_animation_.SetTweenType(ui::Tween::LINEAR);
+  complete_animation_.SetTweenType(gfx::Tween::LINEAR);
   complete_animation_.SetSlideDuration(kCompleteAnimationDurationMs);
 
   // Update the status text and animation state.
@@ -375,7 +379,7 @@ void DownloadItemGtk::OnDownloadDestroyed(DownloadItem* download_item) {
   // This will delete us!
 }
 
-void DownloadItemGtk::AnimationProgressed(const ui::Animation* animation) {
+void DownloadItemGtk::AnimationProgressed(const gfx::Animation* animation) {
   if (animation == &complete_animation_) {
     gtk_widget_queue_draw(progress_area_.get());
   } else {
@@ -479,29 +483,31 @@ void DownloadItemGtk::LoadIcon() {
 }
 
 void DownloadItemGtk::UpdateTooltip() {
-  string16 tooltip_text =
-      download_model_.GetTooltipText(gfx::Font(), kTooltipMaxWidth);
+  const gfx::FontList& font_list =
+      ui::ResourceBundle::GetSharedInstance().GetFontList(
+          ui::ResourceBundle::BaseFont);
+  base::string16 tooltip_text =
+      download_model_.GetTooltipText(font_list, kTooltipMaxWidth);
   gtk_widget_set_tooltip_text(body_.get(), UTF16ToUTF8(tooltip_text).c_str());
 }
 
 void DownloadItemGtk::UpdateNameLabel() {
-  // TODO(estade): This is at best an educated guess, since we don't actually
-  // use gfx::Font() to draw the text. This is why we need to add so
-  // much padding when we set the size request. We need to either use gfx::Font
-  // or somehow extend TextElider.
-  gfx::Font font = gfx::Font();
-  string16 filename;
+  const gfx::FontList& font_list =
+      ui::ResourceBundle::GetSharedInstance().GetFontList(
+          ui::ResourceBundle::BaseFont);
+  base::string16 filename;
   if (!disabled_while_opening_) {
-    filename = ui::ElideFilename(
-        download()->GetFileNameToReportUser(), font, kTextWidth);
+    filename = gfx::ElideFilename(
+        download()->GetFileNameToReportUser(), font_list, kTextWidth);
   } else {
     // First, Calculate the download status opening string width.
-    string16 status_string =
-        l10n_util::GetStringFUTF16(IDS_DOWNLOAD_STATUS_OPENING, string16());
-    int status_string_width = font.GetStringWidth(status_string);
+    base::string16 status_string =
+        l10n_util::GetStringFUTF16(IDS_DOWNLOAD_STATUS_OPENING,
+                                   base::string16());
+    int status_string_width = gfx::GetStringWidth(status_string, font_list);
     // Then, elide the file name.
-    string16 filename_string =
-        ui::ElideFilename(download()->GetFileNameToReportUser(), font,
+    base::string16 filename_string =
+        gfx::ElideFilename(download()->GetFileNameToReportUser(), font_list,
                           kTextWidth - status_string_width);
     // Last, concat the whole string.
     filename = l10n_util::GetStringFUTF16(IDS_DOWNLOAD_STATUS_OPENING,
@@ -579,8 +585,11 @@ void DownloadItemGtk::UpdateDangerWarning() {
 
     // We create |dangerous_warning| as a wide string so we can more easily
     // calculate its length in characters.
-    string16 dangerous_warning =
-        download_model_.GetWarningText(gfx::Font(), kTextWidth);
+    const gfx::FontList& font_list =
+        ui::ResourceBundle::GetSharedInstance().GetFontList(
+            ui::ResourceBundle::BaseFont);
+    base::string16 dangerous_warning =
+        download_model_.GetWarningText(font_list, kTextWidth);
     if (theme_service_->UsingNativeTheme()) {
       gtk_util::SetLabelColor(dangerous_label_, NULL);
     } else {
@@ -627,15 +636,16 @@ void DownloadItemGtk::UpdateDangerWarning() {
 
 void DownloadItemGtk::UpdateDangerIcon() {
   if (theme_service_->UsingNativeTheme()) {
-    const char* stock = download_model_.IsMalicious() ?
+    const char* stock = download_model_.MightBeMalicious() ?
         GTK_STOCK_DIALOG_ERROR : GTK_STOCK_DIALOG_WARNING;
     gtk_image_set_from_stock(
         GTK_IMAGE(dangerous_image_), stock, GTK_ICON_SIZE_SMALL_TOOLBAR);
   } else {
     // Set the warning icon.
     ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
-    int pixbuf_id = download_model_.IsMalicious() ? IDR_SAFEBROWSING_WARNING
-                                                  : IDR_WARNING;
+    int pixbuf_id =
+        download_model_.MightBeMalicious() ? IDR_SAFEBROWSING_WARNING
+                                           : IDR_WARNING;
     gtk_image_set_from_pixbuf(GTK_IMAGE(dangerous_image_),
                               rb.GetNativeImageNamed(pixbuf_id).ToGdkPixbuf());
   }

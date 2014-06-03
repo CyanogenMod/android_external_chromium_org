@@ -35,7 +35,7 @@ namespace {
 // Sanity check value that we are restoring from a valid pickle.
 // This can potentially used as an actual serialization version number in the
 // future if we ever decide to support restoring from older versions.
-const uint32 AW_STATE_VERSION = 20121126;
+const uint32 AW_STATE_VERSION = 20130814;
 
 }  // namespace
 
@@ -186,6 +186,9 @@ bool WriteNavigationEntryToPickle(const content::NavigationEntry& entry,
   if (!pickle->WriteInt64(entry.GetTimestamp().ToInternalValue()))
     return false;
 
+  if (!pickle->WriteInt(entry.GetHttpStatusCode()))
+    return false;
+
   // Please update AW_STATE_VERSION if serialization format is changed.
 
   return true;
@@ -218,7 +221,7 @@ bool RestoreNavigationEntryFromPickle(PickleIterator* iterator,
       return false;
 
     referrer.url = GURL(referrer_url);
-    referrer.policy = static_cast<WebKit::WebReferrerPolicy>(policy);
+    referrer.policy = static_cast<blink::WebReferrerPolicy>(policy);
     entry->SetReferrer(referrer);
   }
 
@@ -270,6 +273,13 @@ bool RestoreNavigationEntryFromPickle(PickleIterator* iterator,
     if (!iterator->ReadInt64(&timestamp))
       return false;
     entry->SetTimestamp(base::Time::FromInternalValue(timestamp));
+  }
+
+  {
+    int http_status_code;
+    if (!iterator->ReadInt(&http_status_code))
+      return false;
+    entry->SetHttpStatusCode(http_status_code);
   }
 
   return true;

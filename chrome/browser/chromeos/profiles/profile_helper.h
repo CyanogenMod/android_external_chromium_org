@@ -12,6 +12,7 @@
 #include "base/callback_forward.h"
 #include "base/files/file_path.h"
 #include "chrome/browser/browsing_data/browsing_data_remover.h"
+#include "chrome/browser/chromeos/login/oauth2_login_manager.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 
 class Profile;
@@ -30,7 +31,7 @@ namespace chromeos {
 //    GetActiveUserProfileDir()
 // 3. Get mapping from user_id_hash to Profile instance/profile path etc.
 class ProfileHelper : public BrowsingDataRemover::Observer,
-                      public UserManager::Observer,
+                      public OAuth2LoginManager::Observer,
                       public UserManager::UserSessionStateObserver {
  public:
   ProfileHelper();
@@ -38,6 +39,9 @@ class ProfileHelper : public BrowsingDataRemover::Observer,
 
   // Returns Profile instance that corresponds to |user_id_hash|.
   static Profile* GetProfileByUserIdHash(const std::string& user_id_hash);
+
+  // Returns profile dir that corresponds to a --login-profile cmd line switch.
+  static base::FilePath GetProfileDirByLegacyLoginProfileSwitch();
 
   // Returns profile path that corresponds to a given |user_id_hash|.
   static base::FilePath GetProfilePathByUserIdHash(
@@ -50,6 +54,9 @@ class ProfileHelper : public BrowsingDataRemover::Observer,
   // could not be extracted from |profile|.
   static std::string GetUserIdHashFromProfile(Profile* profile);
 
+  // Returns user profile dir in a format [u-user_id_hash].
+  static base::FilePath GetUserProfileDir(const std::string& user_id_hash);
+
   // Returns true if |profile| is the signin Profile. This can be used during
   // construction of the signin Profile to determine if that Profile is the
   // signin Profile.
@@ -57,7 +64,7 @@ class ProfileHelper : public BrowsingDataRemover::Observer,
 
   // Initialize a bunch of services that are tied to a browser profile.
   // TODO(dzhioev): Investigate whether or not this method is needed.
-  static void ProfileStartup(Profile* profile, bool process_startup);
+  void ProfileStartup(Profile* profile, bool process_startup);
 
   // Returns active user profile dir in a format [u-$hash].
   base::FilePath GetActiveUserProfileDir();
@@ -75,13 +82,15 @@ class ProfileHelper : public BrowsingDataRemover::Observer,
 
  private:
   friend class ProfileHelperTest;
+  friend class ProfileListChromeOSTest;
 
   // BrowsingDataRemover::Observer implementation:
   virtual void OnBrowsingDataRemoverDone() OVERRIDE;
 
   // UserManager::Observer overrides.
-  virtual void MergeSessionStateChanged(
-      UserManager::MergeSessionState state) OVERRIDE;
+  virtual void OnSessionRestoreStateChanged(
+      Profile* user_profile,
+      OAuth2LoginManager::SessionRestoreState state) OVERRIDE;
 
   // UserManager::UserSessionStateObserver implementation:
   virtual void ActiveUserHashChanged(const std::string& hash) OVERRIDE;

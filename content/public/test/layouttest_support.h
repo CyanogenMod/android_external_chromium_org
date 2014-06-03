@@ -7,8 +7,9 @@
 
 #include "base/callback_forward.h"
 
-namespace WebKit {
+namespace blink {
 class WebDeviceMotionData;
+class WebDeviceOrientationData;
 class WebGamepads;
 struct WebSize;
 }
@@ -38,11 +39,15 @@ void EnableWebTestProxyCreation(const base::Callback<
 
 // Sets the WebGamepads that should be returned by
 // WebKitPlatformSupport::sampleGamepads().
-void SetMockGamepads(const WebKit::WebGamepads& pads);
+void SetMockGamepads(const blink::WebGamepads& pads);
 
 // Sets WebDeviceMotionData that should be used when registering
 // a listener through WebKitPlatformSupport::setDeviceMotionListener().
-void SetMockDeviceMotionData(const WebKit::WebDeviceMotionData& data);
+void SetMockDeviceMotionData(const blink::WebDeviceMotionData& data);
+
+// Sets WebDeviceOrientationData that should be used when registering
+// a listener through WebKitPlatformSupport::setDeviceOrientationListener().
+void SetMockDeviceOrientationData(const blink::WebDeviceOrientationData& data);
 
 // Returns the length of the local session history of a render view.
 int GetLocalSessionHistoryLength(RenderView* render_view);
@@ -57,17 +62,24 @@ void SetFocusAndActivate(RenderView* render_view, bool enable);
 
 // Changes the window rect of the given render view.
 void ForceResizeRenderView(RenderView* render_view,
-                           const WebKit::WebSize& new_size);
+                           const blink::WebSize& new_size);
 
 // Set the device scale factor and force the compositor to resize.
 void SetDeviceScaleFactor(RenderView* render_view, float factor);
 
+// Enables or disables synchronous resize mode. When enabled, all window-sizing
+// machinery is short-circuited inside the renderer. This mode is necessary for
+// some tests that were written before browsers had multi-process architecture
+// and rely on window resizes to happen synchronously.
+// See http://crbug.com/309760 for details.
+void UseSynchronousResizeMode(RenderView* render_view, bool enable);
+
 // Control auto resize mode.
 void EnableAutoResizeMode(RenderView* render_view,
-                          const WebKit::WebSize& min_size,
-                          const WebKit::WebSize& max_size);
+                          const blink::WebSize& min_size,
+                          const blink::WebSize& max_size);
 void DisableAutoResizeMode(RenderView* render_view,
-                           const WebKit::WebSize& new_size);
+                           const blink::WebSize& new_size);
 
 // Forces the |render_view| to use mock media streams.
 void UseMockMediaStreams(RenderView* render_view);

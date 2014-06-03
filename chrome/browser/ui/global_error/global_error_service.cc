@@ -21,6 +21,7 @@ GlobalErrorService::~GlobalErrorService() {
 }
 
 void GlobalErrorService::AddGlobalError(GlobalError* error) {
+  DCHECK(error);
   errors_.push_back(error);
   NotifyErrorsChanged(error);
 }

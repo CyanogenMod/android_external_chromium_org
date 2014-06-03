@@ -20,20 +20,22 @@ var FactoryResetOverlay = options.FactoryResetOverlay;
 <if expr="pp_ifdef('enable_google_now')">
 var GeolocationOptions = options.GeolocationOptions;
 </if>
-var ManagedUserCreateConfirmOverlay = options.ManagedUserCreateConfirmOverlay;
-var ManagedUserLearnMoreOverlay = options.ManagedUserLearnMoreOverlay;
 var FontSettings = options.FontSettings;
 var HandlerOptions = options.HandlerOptions;
 var HomePageOverlay = options.HomePageOverlay;
 var ImportDataOverlay = options.ImportDataOverlay;
 var LanguageOptions = options.LanguageOptions;
 var ManageProfileOverlay = options.ManageProfileOverlay;
+var ManagedUserCreateConfirmOverlay = options.ManagedUserCreateConfirmOverlay;
+var ManagedUserImportOverlay = options.ManagedUserImportOverlay;
+var ManagedUserLearnMoreOverlay = options.ManagedUserLearnMoreOverlay;
 var MediaGalleriesManager = options.MediaGalleriesManager;
 var OptionsFocusManager = options.OptionsFocusManager;
 var OptionsPage = options.OptionsPage;
 var PasswordManager = options.PasswordManager;
 var Preferences = options.Preferences;
 var PreferredNetworks = options.PreferredNetworks;
+var ResetProfileSettingsBanner = options.ResetProfileSettingsBanner;
 var ResetProfileSettingsOverlay = options.ResetProfileSettingsOverlay;
 var SearchEngineManager = options.SearchEngineManager;
 var SearchPage = options.SearchPage;
@@ -99,8 +101,7 @@ function load() {
             $('spelling-confirm-ok'),
             $('spelling-confirm-cancel'),
             $('spelling-enabled-control').pref,
-            $('spelling-enabled-control').metric,
-            'spellcheck.confirm_dialog_shown'),
+            $('spelling-enabled-control').metric),
         BrowserOptions.getInstance());
   }
   OptionsPage.registerOverlay(ContentSettings.getInstance(),
@@ -138,9 +139,13 @@ function load() {
                                $('manage-languages')]);
   OptionsPage.registerOverlay(ManageProfileOverlay.getInstance(),
                               BrowserOptions.getInstance());
-  if (loadTimeData.getBoolean('managedUsersEnabled') && !cr.isChromeOS) {
+  if (!cr.isChromeOS) {
     OptionsPage.registerOverlay(ManagedUserCreateConfirmOverlay.getInstance(),
                                 BrowserOptions.getInstance());
+    if (loadTimeData.getBoolean('allowCreateExistingManagedUsers')) {
+      OptionsPage.registerOverlay(ManagedUserImportOverlay.getInstance(),
+                                  BrowserOptions.getInstance());
+    }
     OptionsPage.registerOverlay(ManagedUserLearnMoreOverlay.getInstance(),
                                 CreateProfileOverlay.getInstance());
   }
@@ -191,26 +196,6 @@ function load() {
                                 [$('pointer-settings-button')]);
     OptionsPage.registerOverlay(PreferredNetworks.getInstance(),
                                 BrowserOptions.getInstance());
-    OptionsPage.registerOverlay(
-        new OptionsPage('languageChewing',
-                        loadTimeData.getString('languageChewingPageTabTitle'),
-                        'languageChewingPage'),
-        LanguageOptions.getInstance());
-    OptionsPage.registerOverlay(
-        new OptionsPage('languageHangul',
-                        loadTimeData.getString('languageHangulPageTabTitle'),
-                        'languageHangulPage'),
-        LanguageOptions.getInstance());
-    OptionsPage.registerOverlay(
-        new OptionsPage('languageMozc',
-                        loadTimeData.getString('languageMozcPageTabTitle'),
-                        'languageMozcPage'),
-        LanguageOptions.getInstance());
-    OptionsPage.registerOverlay(
-        new OptionsPage('languagePinyin',
-                        loadTimeData.getString('languagePinyinPageTabTitle'),
-                        'languagePinyinPage'),
-        LanguageOptions.getInstance());
   }
 
   if (!cr.isWindows && !cr.isMac) {
@@ -230,6 +215,7 @@ function load() {
   cr.ui.FocusManager.disableMouseFocusOnButtons();
   OptionsFocusManager.getInstance().initialize();
   Preferences.getInstance().initialize();
+  ResetProfileSettingsBanner.getInstance().initialize();
   OptionsPage.initialize();
 
   var path = document.location.pathname;
@@ -248,9 +234,6 @@ function load() {
       OptionsPage.showTab(event.srcElement);
     };
   }
-
-  if (navigator.plugins['Shockwave Flash'])
-    document.documentElement.setAttribute('hasFlashPlugin', '');
 
   window.setTimeout(function() {
     document.documentElement.classList.remove('loading');

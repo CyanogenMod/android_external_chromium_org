@@ -190,6 +190,11 @@ void DevToolsProtocol::Handler::SendNotification(
   SendRawMessage(notification->Serialize());
 }
 
+void DevToolsProtocol::Handler::SendAsyncResponse(
+    scoped_refptr<DevToolsProtocol::Response> response) {
+  SendRawMessage(response->Serialize());
+}
+
 void DevToolsProtocol::Handler::SendRawMessage(const std::string& message) {
   if (!notifier_.is_null())
     notifier_.Run(message);
@@ -228,6 +233,15 @@ scoped_refptr<DevToolsProtocol::Command> DevToolsProtocol::ParseCommand(
   base::DictionaryValue* params = NULL;
   command_dict->GetDictionary(kParamsParam, &params);
   return new Command(id, method, params ? params->DeepCopy() : NULL);
+}
+
+// static
+scoped_refptr<DevToolsProtocol::Command>
+DevToolsProtocol::CreateCommand(
+    int id,
+    const std::string& method,
+    base::DictionaryValue* params) {
+  return new Command(id, method, params);
 }
 
 // static

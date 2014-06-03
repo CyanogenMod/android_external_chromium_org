@@ -6,7 +6,6 @@
 
 #include "base/compiler_specific.h"
 #include "base/threading/simple_thread.h"
-#include "media/audio/shared_memory_util.h"
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/c/ppb_audio.h"
 #include "ppapi/c/ppb_audio_config.h"
@@ -37,7 +36,7 @@ class Audio : public Resource, public PPB_Audio_Shared {
  public:
   Audio(const HostResource& audio_id,
         PP_Resource config_id,
-        PPB_Audio_Callback callback,
+        const AudioCallbackCombined& callback,
         void* user_data);
   virtual ~Audio();
 
@@ -64,7 +63,7 @@ class Audio : public Resource, public PPB_Audio_Shared {
 
 Audio::Audio(const HostResource& audio_id,
              PP_Resource config_id,
-             PPB_Audio_Callback callback,
+             const AudioCallbackCombined& callback,
              void* user_data)
     : Resource(OBJECT_IS_PROXY, audio_id),
       config_(config_id) {
@@ -138,7 +137,7 @@ PPB_Audio_Proxy::~PPB_Audio_Proxy() {
 PP_Resource PPB_Audio_Proxy::CreateProxyResource(
     PP_Instance instance_id,
     PP_Resource config_id,
-    PPB_Audio_Callback audio_callback,
+    const AudioCallbackCombined& audio_callback,
     void* user_data) {
   PluginDispatcher* dispatcher = PluginDispatcher::GetForInstance(instance_id);
   if (!dispatcher)
@@ -148,7 +147,7 @@ PP_Resource PPB_Audio_Proxy::CreateProxyResource(
   if (config.failed())
     return 0;
 
-  if (!audio_callback)
+  if (!audio_callback.IsValid())
     return 0;
 
   HostResource result;
@@ -262,15 +261,7 @@ void PPB_Audio_Proxy::AudioChannelConnected(
   // us, as long as the remote side always closes the handles it receives
   // (in OnMsgNotifyAudioStreamCreated), even in the failure case.
   SerializedHandle fd_wrapper(SerializedHandle::SOCKET, socket_handle);
-
-  // Note that we must call TotalSharedMemorySizeInBytes because
-  // Audio allocates extra space in shared memory for book-keeping, so the
-  // actual size of the shared memory buffer is larger than audio_buffer_length.
-  // When sending to NaCl, NaClIPCAdapter expects this size to match the size
-  // of the full shared memory buffer.
-  SerializedHandle handle_wrapper(
-      shared_memory,
-      media::TotalSharedMemorySizeInBytes(audio_buffer_length));
+  SerializedHandle handle_wrapper(shared_memory, audio_buffer_length);
   dispatcher()->Send(new PpapiMsg_PPBAudio_NotifyAudioStreamCreated(
       API_ID_PPB_AUDIO, resource, result_code, fd_wrapper, handle_wrapper));
 }
@@ -333,14 +324,10 @@ void PPB_Audio_Proxy::OnMsgNotifyAudioStreamCreated(
   } else {
     EnterResourceNoLock<PPB_AudioConfig_API> config(
         static_cast<Audio*>(enter.object())->GetCurrentConfig(), true);
-    // See the comment above about how we must call
-    // TotalSharedMemorySizeInBytes to get the actual size of the buffer. Here,
-    // we must call PacketSizeInBytes to get back the size of the audio buffer,
-    // excluding the bytes that audio uses for book-keeping.
     static_cast<Audio*>(enter.object())->SetStreamInfo(
-        enter.resource()->pp_instance(), handle.shmem(),
-        media::PacketSizeInBytes(handle.size()),
+        enter.resource()->pp_instance(), handle.shmem(), handle.size(),
         IPC::PlatformFileForTransitToPlatformFile(socket_handle.descriptor()),
+        config.object()->GetSampleRate(),
         config.object()->GetSampleFrameCount());
   }
 }

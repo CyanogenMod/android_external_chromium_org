@@ -6,6 +6,7 @@
 #define CHROME_BROWSER_CHROMEOS_DRIVE_CHANGE_LIST_LOADER_H_
 
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -16,7 +17,8 @@
 #include "base/observer_list.h"
 #include "base/time/time.h"
 #include "chrome/browser/chromeos/drive/file_errors.h"
-#include "chrome/browser/google_apis/gdata_errorcode.h"
+#include "google_apis/drive/drive_common_callbacks.h"
+#include "google_apis/drive/gdata_errorcode.h"
 
 class GURL;
 
@@ -31,7 +33,7 @@ class ResourceList;
 
 namespace drive {
 
-class DirectoryFetchInfo;
+class DriveServiceInterface;
 class JobScheduler;
 class ResourceEntry;
 
@@ -40,6 +42,7 @@ namespace internal {
 class ChangeList;
 class ChangeListLoaderObserver;
 class ChangeListProcessor;
+class DirectoryFetchInfo;
 class ResourceMetadata;
 
 // Callback run as a response to SearchFromServer.
@@ -58,9 +61,13 @@ typedef base::Callback<void(ScopedVector<ChangeList> change_lists,
 // refers to metadata from the server when fetching changes (delta).
 class ChangeListLoader {
  public:
+  // Resource feed fetcher from the server.
+  class FeedFetcher;
+
   ChangeListLoader(base::SequencedTaskRunner* blocking_task_runner,
                    ResourceMetadata* resource_metadata,
-                   JobScheduler* scheduler);
+                   JobScheduler* scheduler,
+                   DriveServiceInterface* drive_service);
   ~ChangeListLoader();
 
   // Indicates whether there is a request for full resource list or change
@@ -92,11 +99,10 @@ class ChangeListLoader {
   void LoadIfNeeded(const DirectoryFetchInfo& directory_fetch_info,
                     const FileOperationCallback& callback);
 
-  // Loads the directory content from the server, without comparing the
-  // changestamps. The purpose of this function is to update thumbnail URLs
-  // in the directory which can stale over time.
-  void LoadDirectoryFromServer(const std::string& directory_resource_id,
-                               const FileOperationCallback& callback);
+  // Gets the about resource from the cache or the server. If the cache is
+  // availlavle, just runs |callback| with the cached about resource. If not,
+  // calls |UpdateAboutResource| passing |callback|.
+  void GetAboutResource(const google_apis::AboutResourceCallback& callback);
 
  private:
   // Starts the resource metadata loading and calls |callback| when it's
@@ -169,22 +175,14 @@ class ChangeListLoader {
   void LoadChangeListFromServerAfterLoadChangeList(
       scoped_ptr<google_apis::AboutResource> about_resource,
       bool is_delta_update,
-      ScopedVector<ChangeList> change_lists,
-      FileError error);
+      FileError error,
+      ScopedVector<ChangeList> change_lists);
 
   // Part of LoadChangeListFromServer().
   // Called when the resource metadata is updated.
   void LoadChangeListFromServerAfterUpdate();
 
   // ================= Implementation for directory loading =================
-
-  // Part of LoadDirectoryFromServer(), called after the current remote
-  // changestamp is obtained as |about_resource|.
-  void LoadDirectoryFromServerAfterGetAbout(
-      const std::string& directory_resource_id,
-      const FileOperationCallback& callback,
-      google_apis::GDataErrorCode status,
-      scoped_ptr<google_apis::AboutResource> about_resource);
 
   // Compares the directory's changestamp and |last_known_remote_changestamp_|.
   // Starts DoLoadDirectoryFromServer() if the local data is old and runs
@@ -213,33 +211,29 @@ class ChangeListLoader {
       google_apis::GDataErrorCode status,
       scoped_ptr<google_apis::AboutResource> about_resource);
 
+  // Part of DoLoadDirectoryFromServer() for the grand root ("/drive").
+  void DoLoadDirectoryFromServerAfterAddMyDrive(
+      const DirectoryFetchInfo& directory_fetch_info,
+      const FileOperationCallback& callback,
+      std::string* local_id,
+      FileError error);
+
   // Part of DoLoadDirectoryFromServer() for a normal directory.
   void DoLoadDirectoryFromServerAfterLoad(
       const DirectoryFetchInfo& directory_fetch_info,
       const FileOperationCallback& callback,
-      ScopedVector<ChangeList> change_lists,
-      FileError error);
+      FeedFetcher* fetcher,
+      FileError error,
+      ScopedVector<ChangeList> change_lists);
 
   // Part of DoLoadDirectoryFromServer().
   void DoLoadDirectoryFromServerAfterRefresh(
       const DirectoryFetchInfo& directory_fetch_info,
       const FileOperationCallback& callback,
-      FileError error,
-      const base::FilePath& directory_path);
+      const base::FilePath* directory_path,
+      FileError error);
 
   // ================= Implementation for other stuff =================
-
-  // This function is used to handle pagenation for the result from
-  // JobScheduler::GetChangeList/GetAllResourceList/ContinueGetResourceList/
-  // GetResourceListInDirectory().
-  //
-  // After all the change lists are fetched, |callback| will be invoked with
-  // the collected change lists.
-  void OnGetChangeList(ScopedVector<ChangeList> change_lists,
-                       const LoadChangeListCallback& callback,
-                       base::TimeTicks start_time,
-                       google_apis::GDataErrorCode status,
-                       scoped_ptr<google_apis::ResourceList> resource_list);
 
   // Updates from the whole change list collected in |change_lists|.
   // Record file statistics as UMA histograms.
@@ -260,20 +254,41 @@ class ChangeListLoader {
       ChangeListProcessor* change_list_processor,
       bool should_notify,
       base::Time start_time,
-      const base::Closure& callback);
+      const base::Closure& callback,
+      FileError error);
+
+  // Gets the about resource from the server, and caches it if successful. This
+  // function calls JobScheduler::GetAboutResource internally. The cache will be
+  // used in |GetAboutResource|.
+  void UpdateAboutResource(
+      const google_apis::AboutResourceCallback& callback);
+  // Part of UpdateAboutResource().
+  // This function should be called when the latest about resource is being
+  // fetched from the server. The retrieved about resoure is cloned, and one is
+  // cached and the other is passed to |callback|.
+  void UpdateAboutResourceAfterGetAbout(
+      const google_apis::AboutResourceCallback& callback,
+      google_apis::GDataErrorCode status,
+      scoped_ptr<google_apis::AboutResource> about_resource);
 
   scoped_refptr<base::SequencedTaskRunner> blocking_task_runner_;
   ResourceMetadata* resource_metadata_;  // Not owned.
   JobScheduler* scheduler_;  // Not owned.
+  DriveServiceInterface* drive_service_;  // Not owned.
   ObserverList<ChangeListLoaderObserver> observers_;
   typedef std::map<std::string, std::vector<FileOperationCallback> >
       LoadCallbackMap;
   LoadCallbackMap pending_load_callback_;
   FileOperationCallback pending_update_check_callback_;
 
-  // The last known remote changestamp. Used to check if a directory
-  // changestamp is up-to-date for fast fetch.
-  int64 last_known_remote_changestamp_;
+  // Running feed fetcher.
+  scoped_ptr<FeedFetcher> change_feed_fetcher_;
+
+  // Set of the running feed fetcher for the fast fetch.
+  std::set<FeedFetcher*> fast_fetch_feed_fetcher_set_;
+
+  // The cache of the about resource.
+  scoped_ptr<google_apis::AboutResource> cached_about_resource_;
 
   // True if the full resource list is loaded (i.e. the resource metadata is
   // stored locally).

@@ -3,8 +3,10 @@
 <head>
 <meta charset="utf-8">
 
-<link rel="stylesheet" href="extension_commands_overlay.css">
 <link rel="stylesheet" href="extensions.css">
+<link rel="stylesheet" href="extension_commands_overlay.css">
+<link rel="stylesheet" href="extension_error.css">
+<link rel="stylesheet" href="extension_error_overlay.css">
 <link rel="stylesheet" href="pack_extension_overlay.css">
 <link rel="stylesheet" href="chrome://resources/css/alert_overlay.css">
 <link rel="stylesheet" href="chrome://resources/css/chrome_shared.css">
@@ -43,13 +45,14 @@
 
 <div id="overlay" class="overlay" hidden>
   <include src="extension_commands_overlay.html">
+  <include src="extension_error_overlay.html">
   <include src="pack_extension_overlay.html">
   <include src="../../../../ui/webui/resources/html/alert_overlay.html">
 <if expr="pp_ifdef('chromeos')">
     <include src="chromeos/kiosk_apps.html">
     <include src="chromeos/kiosk_app_disable_bailout_confirm.html">
 </if>
-  <div id="dropTargetOverlay" class="page">
+  <div id="drop-target-overlay" class="page">
     <div i18n-content="extensionSettingsInstallDropTarget"></div>
   </div>
 </div>
@@ -60,7 +63,7 @@
       <div id="dev-toggle" class="checkbox">
         <label>
           <input id="toggle-dev-on" type="checkbox">
-          <span i18n-content="extensionSettingsDeveloperMode">
+          <span i18n-content="extensionSettingsDeveloperMode"></span>
         </label>
       </div>
     </div>
@@ -135,6 +138,14 @@
             <span i18n-content="extensionSettingsWarningsTitle"></span>
             <ul></ul>
           </div>
+          <div class="suspicious-install-message" hidden>
+            <span i18n-content="extensionSettingsSuspiciousInstall"></span>
+            <a target="_blank" class="learn-more-link"
+                i18n-values="href:extensionSettingsSuspiciousInstallHelpUrl"
+                i18n-content="extensionSettingsSuspiciousInstallLearnMore"
+                href="#">
+            </a>
+          </div>
         </div>
         <div class="developer-extras">
           <div>
@@ -152,6 +163,8 @@
             <span i18n-content="extensionSettingsInspectViews"></span>
             <a href="#"></a>
           </div>
+          <div class="manifest-errors" hidden></div>
+          <div class="runtime-errors" hidden></div>
           <div class="install-warnings" hidden>
             <span i18n-content="extensionSettingsInstallWarnings"></span>
             <ul></ul>
@@ -173,8 +186,6 @@
                 i18n-content="extensionSettingsReloadUnpacked"
                 href="#" hidden></a>
             <a class="launch-link" i18n-content="extensionSettingsLaunch"
-                href="#" hidden></a>
-            <a class="restart-link" i18n-content="extensionSettingsRestart"
                 href="#" hidden></a>
           </span>
           <a class="options-link" i18n-content="extensionSettingsOptions"
@@ -203,6 +214,7 @@
   </div>
 
   <include src="../../../../ui/webui/resources/html/trash.html">
+  <include src="extension_error.html">
 
 </div>
 

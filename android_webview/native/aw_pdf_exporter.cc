@@ -11,8 +11,8 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/web_contents.h"
 #include "jni/AwPdfExporter_jni.h"
-#include "printing/units.h"
 #include "printing/print_settings.h"
+#include "printing/units.h"
 
 using base::android::AttachCurrentThread;
 using base::android::ScopedJavaGlobalRef;
@@ -31,7 +31,6 @@ AwPdfExporter::AwPdfExporter(JNIEnv* env,
     : java_ref_(env, obj),
       view_renderer_(view_renderer),
       web_contents_(web_contents) {
-
   DCHECK(obj);
   Java_AwPdfExporter_setNativeAwPdfExporter(
       env, obj, reinterpret_cast<jint>(this));
@@ -81,9 +80,11 @@ void AwPdfExporter::CreatePdfSettings(JNIEnv* env, jobject obj) {
   printable_area_device_units.SetRect(0, 0, width_in_dots, height_in_dots);
 
   print_settings_->set_dpi(dpi);
+  // TODO(sgurun) verify that the value for newly added parameter for
+  // (i.e. landscape_needs_flip) is correct.
   print_settings_->SetPrinterPrintableArea(physical_size_device_units,
                                            printable_area_device_units,
-                                           dpi);
+                                           true);
 
   PageMargins margins;
   margins.left =
@@ -95,7 +96,7 @@ void AwPdfExporter::CreatePdfSettings(JNIEnv* env, jobject obj) {
   margins.bottom =
       MilsToDots(Java_AwPdfExporter_getBottomMargin(env, obj), dpi);
   print_settings_->SetCustomMargins(margins);
-  print_settings_->should_print_backgrounds = true;
+  print_settings_->set_should_print_backgrounds(true);
 }
 
 void AwPdfExporter::DidExportPdf(bool success) {
@@ -107,7 +108,8 @@ void AwPdfExporter::DidExportPdf(bool success) {
 }
 
 bool AwPdfExporter::IsCancelled() {
-  // TODO(sgurun) implement
+  // TODO(sgurun) implement. Needs connecting with the |cancel_signal| passed
+  // in the constructor.
   return false;
 }
 

@@ -1,13 +1,9 @@
 # List of suppressions
 
 # crbug.com/159935
-ScrollingCoordinatorChromiumTest.nonFastScrollableRegion
 WebCompositorInputHandlerImplTest.gestureFlingAnimates
 WebCompositorInputHandlerImplTest.gestureFlingTransferResets
 WebPageSerializerTest.HTMLNodes
-
-# crbug.com/170787
-ScrollingCoordinatorChromiumTest.*
 
 # crbug.com/241730
 ScrollAnimatorNoneTest.CurveMathQuartic
@@ -19,3 +15,6 @@ WebViewTest.VisitedLinkCrash
 
 # Disabled until blink roll r151682
 DeferredImageDecoderTest.drawScaledIntoSkPicture
+
+# crbug.com/320005
+CoreAnimationCompositorAnimationsTest.ConvertTimingForCompositorIterationCount

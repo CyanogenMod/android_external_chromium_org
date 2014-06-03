@@ -4,6 +4,7 @@
 
 #include "chrome/browser/component_updater/pnacl/pnacl_component_installer.h"
 
+#include "base/atomicops.h"
 #include "base/base_paths.h"
 #include "base/bind.h"
 #include "base/callback.h"
@@ -25,8 +26,8 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/chrome_paths.h"
-#include "chrome/common/chrome_switches.h"
 #include "chrome/common/omaha_query_params/omaha_query_params.h"
+#include "components/nacl/common/nacl_switches.h"
 #include "content/public/browser/browser_thread.h"
 
 using chrome::OmahaQueryParams;
@@ -42,7 +43,7 @@ const char kPnaclManifestName[] = "PNaCl Translator";
 // Keep in sync with chrome/browser/nacl_host/nacl_file_host.
 std::string SanitizeForPath(const std::string& input) {
   std::string result;
-  ReplaceChars(input, "-", "_", &result);
+  base::ReplaceChars(input, "-", "_", &result);
   return result;
 }
 
@@ -60,6 +61,19 @@ void SetPnaclHash(CrxComponent* component) {
 
 // If we don't have Pnacl installed, this is the version we claim.
 const char kNullVersion[] = "0.0.0.0";
+const char kMinPnaclVersion[] = "0.1.0.12181";
+
+// Initially say that we do not need OnDemand updates. This should be
+// updated by CheckVersionCompatiblity(), before doing any URLRequests
+// that depend on PNaCl.
+volatile base::subtle::Atomic32 needs_on_demand_update = 0;
+
+void CheckVersionCompatiblity(const base::Version& current_version) {
+  // Using NoBarrier, since needs_on_demand_update is standalone and does
+  // not have other associated data.
+  base::subtle::NoBarrier_Store(&needs_on_demand_update,
+                                current_version.IsOlderThan(kMinPnaclVersion));
+}
 
 // PNaCl is packaged as a multi-CRX.  This returns the platform-specific
 // subdirectory that is part of that multi-CRX.
@@ -195,7 +209,6 @@ PnaclComponentInstaller::PnaclComponentInstaller()
 #if defined(OS_CHROMEOS)
   per_user_ = true;
 #endif
-  updater_observer_.reset(new PnaclUpdaterObserver(this));
 }
 
 PnaclComponentInstaller::~PnaclComponentInstaller() {
@@ -239,25 +252,21 @@ void PnaclComponentInstaller::OnProfileChange() {
 
 bool PnaclComponentInstaller::Install(const base::DictionaryValue& manifest,
                                       const base::FilePath& unpack_path) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
   scoped_ptr<base::DictionaryValue> pnacl_manifest(
       ReadPnaclManifest(unpack_path));
   if (pnacl_manifest == NULL) {
     LOG(WARNING) << "Failed to read pnacl manifest.";
-    NotifyInstallError();
     return false;
   }
 
   Version version;
   if (!CheckPnaclComponentManifest(manifest, *pnacl_manifest, &version)) {
     LOG(WARNING) << "CheckPnaclComponentManifest failed, not installing.";
-    NotifyInstallError();
     return false;
   }
 
   // Don't install if the current version is actually newer.
   if (current_version().CompareTo(version) > 0) {
-    NotifyInstallError();
     return false;
   }
 
@@ -265,13 +274,11 @@ bool PnaclComponentInstaller::Install(const base::DictionaryValue& manifest,
   base::FilePath path = GetPnaclBaseDirectory().AppendASCII(
       version.GetString());
   if (base::PathExists(path)) {
-    LOG(WARNING) << "Target path already exists, not installing.";
-    NotifyInstallError();
-    return false;
+    if (!base::DeleteFile(path, true))
+      return false;
   }
   if (!base::Move(unpack_path, path)) {
     LOG(WARNING) << "Move failed, not installing.";
-    NotifyInstallError();
     return false;
   }
 
@@ -279,7 +286,7 @@ bool PnaclComponentInstaller::Install(const base::DictionaryValue& manifest,
   // - The path service.
   // - Callbacks that requested an update.
   set_current_version(version);
-  NotifyInstallSuccess();
+  CheckVersionCompatiblity(version);
   OverrideDirPnaclComponent(path);
   return true;
 }
@@ -298,44 +305,12 @@ bool PnaclComponentInstaller::GetInstalledFile(
   return true;
 }
 
-void PnaclComponentInstaller::NotifyInstallError() {
-  if (!BrowserThread::CurrentlyOn(BrowserThread::UI)) {
-    BrowserThread::PostTask(
-        BrowserThread::UI, FROM_HERE,
-        base::Bind(&PnaclComponentInstaller::NotifyInstallError,
-                   // Unretained because installer lives until process shutdown.
-                   base::Unretained(this)));
-    return;
-  }
-  if (!install_callback_.is_null()) {
-    updater_observer_->StopObserving();
-    install_callback_.Run(false);
-    install_callback_.Reset();
-  }
-}
-
-void PnaclComponentInstaller::NotifyInstallSuccess() {
-  if (!BrowserThread::CurrentlyOn(BrowserThread::UI)) {
-    BrowserThread::PostTask(
-        BrowserThread::UI, FROM_HERE,
-        base::Bind(&PnaclComponentInstaller::NotifyInstallSuccess,
-                   // Unretained because installer lives until process shutdown.
-                   base::Unretained(this)));
-    return;
-  }
-  if (!install_callback_.is_null()) {
-    updater_observer_->StopObserving();
-    install_callback_.Run(true);
-    install_callback_.Reset();
-  }
-}
-
 CrxComponent PnaclComponentInstaller::GetCrxComponent() {
   CrxComponent pnacl_component;
   pnacl_component.version = current_version();
   pnacl_component.name = "pnacl";
   pnacl_component.installer = this;
-  pnacl_component.observer = updater_observer_.get();
+  pnacl_component.fingerprint = current_fingerprint();
   SetPnaclHash(&pnacl_component);
 
   return pnacl_component;
@@ -344,9 +319,12 @@ CrxComponent PnaclComponentInstaller::GetCrxComponent() {
 namespace {
 
 void FinishPnaclUpdateRegistration(const Version& current_version,
+                                   const std::string& current_fingerprint,
                                    PnaclComponentInstaller* pci) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   pci->set_current_version(current_version);
+  CheckVersionCompatiblity(current_version);
+  pci->set_current_fingerprint(current_fingerprint);
   CrxComponent pnacl_component = pci->GetCrxComponent();
 
   ComponentUpdateService::Status status =
@@ -363,15 +341,16 @@ void StartPnaclUpdateRegistration(PnaclComponentInstaller* pci) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
   base::FilePath path = pci->GetPnaclBaseDirectory();
   if (!base::PathExists(path)) {
-    if (!file_util::CreateDirectory(path)) {
+    if (!base::CreateDirectory(path)) {
       NOTREACHED() << "Could not create base Pnacl directory.";
       return;
     }
   }
 
-  Version version(kNullVersion);
+  Version current_version(kNullVersion);
+  std::string current_fingerprint;
   std::vector<base::FilePath> older_dirs;
-  if (GetLatestPnaclDirectory(pci, &path, &version, &older_dirs)) {
+  if (GetLatestPnaclDirectory(pci, &path, &current_version, &older_dirs)) {
     scoped_ptr<base::DictionaryValue> manifest(
         ReadComponentManifest(path));
     scoped_ptr<base::DictionaryValue> pnacl_manifest(
@@ -384,10 +363,12 @@ void StartPnaclUpdateRegistration(PnaclComponentInstaller* pci) {
         || !CheckPnaclComponentManifest(*manifest,
                                         *pnacl_manifest,
                                         &manifest_version)
-        || !version.Equals(manifest_version)) {
-      version = Version(kNullVersion);
+        || !current_version.Equals(manifest_version)) {
+      current_version = Version(kNullVersion);
     } else {
       OverrideDirPnaclComponent(path);
+      base::ReadFileToString(path.AppendASCII("manifest.fingerprint"),
+                             &current_fingerprint);
     }
   }
 
@@ -400,7 +381,10 @@ void StartPnaclUpdateRegistration(PnaclComponentInstaller* pci) {
 
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
-      base::Bind(&FinishPnaclUpdateRegistration, version, pci));
+      base::Bind(&FinishPnaclUpdateRegistration,
+                 current_version,
+                 current_fingerprint,
+                 pci));
 
   // Remove older versions of PNaCl.
   for (std::vector<base::FilePath>::iterator iter = older_dirs.begin();
@@ -471,21 +455,11 @@ void PnaclComponentInstaller::ReRegisterPnacl() {
       base::Bind(&GetProfileInformation, this));
 }
 
-void PnaclComponentInstaller::RequestFirstInstall(const InstallCallback& cb) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  // Only one request can happen at once.
-  if (!install_callback_.is_null()) {
-    cb.Run(false);
-    return;
-  }
-  set_current_version(Version(kNullVersion));
-  CrxComponent pnacl_component = GetCrxComponent();
-  ComponentUpdateService::Status status = cus_->CheckForUpdateSoon(
-      pnacl_component);
-  if (status != ComponentUpdateService::kOk) {
-    cb.Run(false);
-    return;
-  }
-  install_callback_ = cb;
-  updater_observer_->EnsureObserving();
+
+namespace pnacl {
+
+bool NeedsOnDemandUpdate() {
+  return base::subtle::NoBarrier_Load(&needs_on_demand_update) != 0;
 }
+
+}  // namespace pnacl

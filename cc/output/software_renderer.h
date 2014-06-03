@@ -29,13 +29,14 @@ class CC_EXPORT SoftwareRenderer : public DirectRenderer {
  public:
   static scoped_ptr<SoftwareRenderer> Create(
       RendererClient* client,
+      const LayerTreeSettings* settings,
       OutputSurface* output_surface,
       ResourceProvider* resource_provider);
 
   virtual ~SoftwareRenderer();
-  virtual const RendererCapabilities& Capabilities() const OVERRIDE;
+  virtual const RendererCapabilitiesImpl& Capabilities() const OVERRIDE;
   virtual void Finish() OVERRIDE;
-  virtual void SwapBuffers() OVERRIDE;
+  virtual void SwapBuffers(const CompositorFrameMetadata& metadata) OVERRIDE;
   virtual void GetFramebufferPixels(void* pixels, gfx::Rect rect) OVERRIDE;
   virtual void SetVisible(bool visible) OVERRIDE;
   virtual void SendManagedMemoryStats(
@@ -44,7 +45,8 @@ class CC_EXPORT SoftwareRenderer : public DirectRenderer {
       size_t bytes_allocated) OVERRIDE  {}
   virtual void ReceiveSwapBuffersAck(
       const CompositorFrameAck& ack) OVERRIDE;
-  virtual void SetDiscardBackBufferWhenNotVisible(bool discard) OVERRIDE;
+  virtual void DiscardBackbuffer() OVERRIDE;
+  virtual void EnsureBackbuffer() OVERRIDE;
 
  protected:
   virtual void BindFramebufferToOutputSurface(DrawingFrame* frame) OVERRIDE;
@@ -54,7 +56,10 @@ class CC_EXPORT SoftwareRenderer : public DirectRenderer {
       gfx::Rect target_rect) OVERRIDE;
   virtual void SetDrawViewport(gfx::Rect window_space_viewport) OVERRIDE;
   virtual void SetScissorTestRect(gfx::Rect scissor_rect) OVERRIDE;
-  virtual void ClearFramebuffer(DrawingFrame* frame) OVERRIDE;
+  virtual void DiscardPixels(bool has_external_stencil_test,
+                             bool draw_rect_covers_full_surface) OVERRIDE;
+  virtual void ClearFramebuffer(DrawingFrame* frame,
+                                bool has_external_stencil_test) OVERRIDE;
   virtual void DoDrawQuad(DrawingFrame* frame, const DrawQuad* quad) OVERRIDE;
   virtual void BeginDrawingFrame(DrawingFrame* frame) OVERRIDE;
   virtual void FinishDrawingFrame(DrawingFrame* frame) OVERRIDE;
@@ -65,10 +70,10 @@ class CC_EXPORT SoftwareRenderer : public DirectRenderer {
       DrawingFrame* frame,
       scoped_ptr<CopyOutputRequest> request) OVERRIDE;
 
-  SoftwareRenderer(
-      RendererClient* client,
-      OutputSurface* output_surface,
-      ResourceProvider* resource_provider);
+  SoftwareRenderer(RendererClient* client,
+                   const LayerTreeSettings* settings,
+                   OutputSurface* output_surface,
+                   ResourceProvider* resource_provider);
 
  private:
   void ClearCanvas(SkColor color);
@@ -92,9 +97,10 @@ class CC_EXPORT SoftwareRenderer : public DirectRenderer {
   void DrawUnsupportedQuad(const DrawingFrame* frame,
                            const DrawQuad* quad);
 
-  RendererCapabilities capabilities_;
+  RendererCapabilitiesImpl capabilities_;
   bool visible_;
   bool is_scissor_enabled_;
+  bool is_backbuffer_discarded_;
   gfx::Rect scissor_rect_;
 
   SoftwareOutputDevice* output_device_;

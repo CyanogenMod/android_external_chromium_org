@@ -17,6 +17,7 @@
 #include "base/strings/string16.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/threading/sequenced_worker_pool.h"
 #include "base/values.h"
 #include "chrome/browser/plugins/plugin_prefs.h"
 #include "chrome/browser/profiles/profile.h"
@@ -88,7 +89,7 @@ class NaClDomHandler : public WebUIMessageHandler {
   // A helper callback that receives the result of checking if PNaCl path
   // exists and checking the PNaCl |version|. |is_valid| is true if the PNaCl
   // path that was returned by PathService is valid, and false otherwise.
-  void DidCheckPathAndVersion(bool* is_valid, std::string* version);
+  void DidCheckPathAndVersion(const std::string* version, bool is_valid);
 
   // Called when enough information is gathered to return data back to the page.
   void MaybeRespondToPage();
@@ -96,9 +97,6 @@ class NaClDomHandler : public WebUIMessageHandler {
   // Helper for MaybeRespondToPage -- called after enough information
   // is gathered.
   void PopulatePageInformation(DictionaryValue* naclInfo);
-
-  // Factory for the creating refs in callbacks.
-  base::WeakPtrFactory<NaClDomHandler> weak_ptr_factory_;
 
   // Returns whether the specified plugin is enabled.
   bool isPluginEnabled(size_t plugin_index);
@@ -128,15 +126,18 @@ class NaClDomHandler : public WebUIMessageHandler {
   bool pnacl_path_exists_;
   std::string pnacl_version_string_;
 
+  // Factory for the creating refs in callbacks.
+  base::WeakPtrFactory<NaClDomHandler> weak_ptr_factory_;
+
   DISALLOW_COPY_AND_ASSIGN(NaClDomHandler);
 };
 
 NaClDomHandler::NaClDomHandler()
-    : weak_ptr_factory_(this),
-      page_has_requested_data_(false),
+    : page_has_requested_data_(false),
       has_plugin_info_(false),
       pnacl_path_validated_(false),
-      pnacl_path_exists_(false) {
+      pnacl_path_exists_(false),
+      weak_ptr_factory_(this) {
   PluginService::GetInstance()->GetPlugins(base::Bind(
       &NaClDomHandler::OnGotPlugins, weak_ptr_factory_.GetWeakPtr()));
 }
@@ -153,7 +154,9 @@ void NaClDomHandler::RegisterMessages() {
 
 // Helper functions for collecting a list of key-value pairs that will
 // be displayed.
-void AddPair(ListValue* list, const string16& key, const string16& value) {
+void AddPair(ListValue* list,
+             const base::string16& key,
+             const base::string16& value) {
   DictionaryValue* results = new DictionaryValue();
   results->SetString("key", key);
   results->SetString("value", value);
@@ -216,8 +219,8 @@ void NaClDomHandler::AddPluginList(ListValue* list) {
   std::vector<content::WebPluginInfo> info_array;
   PluginService::GetInstance()->GetPluginInfoArray(
       GURL(), "application/x-nacl", false, &info_array, NULL);
-  string16 nacl_version;
-  string16 nacl_key = ASCIIToUTF16("NaCl plugin");
+  base::string16 nacl_version;
+  base::string16 nacl_key = ASCIIToUTF16("NaCl plugin");
   if (info_array.empty()) {
     AddPair(list, nacl_key, ASCIIToUTF16("Disabled"));
   } else {
@@ -246,12 +249,12 @@ void NaClDomHandler::AddPluginList(ListValue* list) {
 
 void NaClDomHandler::AddPnaclInfo(ListValue* list) {
   // Display whether PNaCl is enabled.
-  string16 pnacl_enabled_string = ASCIIToUTF16("Enabled");
+  base::string16 pnacl_enabled_string = ASCIIToUTF16("Enabled");
   if (!isPluginEnabled(0)) {
     pnacl_enabled_string = ASCIIToUTF16("Disabled in profile prefs");
-  } else if (!CommandLine::ForCurrentProcess()->HasSwitch(
-                 switches::kEnablePnacl)) {
-    pnacl_enabled_string = ASCIIToUTF16("Not enabled by flag '--enable-pnacl'");
+  } else if (CommandLine::ForCurrentProcess()->HasSwitch(
+                 switches::kDisablePnacl)) {
+    pnacl_enabled_string = ASCIIToUTF16("Disabled by flag '--disable-pnacl'");
   }
   AddPair(list,
           ASCIIToUTF16("Portable Native Client (PNaCl)"),
@@ -276,7 +279,7 @@ void NaClDomHandler::AddPnaclInfo(ListValue* list) {
 }
 
 void NaClDomHandler::AddNaClInfo(ListValue* list) {
-  string16 nacl_enabled_string = ASCIIToUTF16("Disabled");
+  base::string16 nacl_enabled_string = ASCIIToUTF16("Disabled");
   if (isPluginEnabled(0) &&
       CommandLine::ForCurrentProcess()->HasSwitch(switches::kEnableNaCl)) {
     nacl_enabled_string = ASCIIToUTF16("Enabled by flag '--enable-nacl'");
@@ -318,17 +321,17 @@ void NaClDomHandler::PopulatePageInformation(DictionaryValue* naclInfo) {
   naclInfo->Set("naclInfo", list.release());
 }
 
-void NaClDomHandler::DidCheckPathAndVersion(bool* is_valid,
-                                            std::string* version) {
+void NaClDomHandler::DidCheckPathAndVersion(const std::string* version,
+                                            bool is_valid) {
   pnacl_path_validated_ = true;
-  pnacl_path_exists_ = *is_valid;
+  pnacl_path_exists_ = is_valid;
   pnacl_version_string_ = *version;
   MaybeRespondToPage();
 }
 
 void CheckVersion(const base::FilePath& pnacl_path, std::string* version) {
   base::FilePath pnacl_json_path =
-      pnacl_path.Append(FILE_PATH_LITERAL("pnacl_public_pnacl_json"));
+      pnacl_path.AppendASCII("pnacl_public_pnacl_json");
   JSONFileValueSerializer serializer(pnacl_json_path);
   std::string error;
   scoped_ptr<base::Value> root(serializer.Deserialize(NULL, &error));
@@ -337,16 +340,18 @@ void CheckVersion(const base::FilePath& pnacl_path, std::string* version) {
 
   // Now try to get the field. This may leave version empty if the
   // the "get" fails (no key, or wrong type).
-  static_cast<base::DictionaryValue*>(root.get())->
-      GetStringASCII("pnacl-version", version);
+  static_cast<base::DictionaryValue*>(root.get())->GetStringASCII(
+      "pnacl-version", version);
 }
 
-void CheckPathAndVersion(bool* is_valid, std::string* version) {
+bool CheckPathAndVersion(std::string* version) {
   base::FilePath pnacl_path;
   bool got_path = PathService::Get(chrome::DIR_PNACL_COMPONENT, &pnacl_path);
-  *is_valid = got_path && !pnacl_path.empty() && base::PathExists(pnacl_path);
-  if (*is_valid)
+  if (got_path && !pnacl_path.empty() && base::PathExists(pnacl_path)) {
     CheckVersion(pnacl_path, version);
+    return true;
+  }
+  return false;
 }
 
 void NaClDomHandler::MaybeRespondToPage() {
@@ -356,14 +361,13 @@ void NaClDomHandler::MaybeRespondToPage() {
     return;
 
   if (!pnacl_path_validated_) {
-    bool* is_valid = new bool;
     std::string* version_string = new std::string;
-    BrowserThread::PostBlockingPoolTaskAndReply(
+    base::PostTaskAndReplyWithResult(
+        BrowserThread::GetBlockingPool(),
         FROM_HERE,
-        base::Bind(&CheckPathAndVersion, is_valid, version_string),
+        base::Bind(&CheckPathAndVersion, version_string),
         base::Bind(&NaClDomHandler::DidCheckPathAndVersion,
                    weak_ptr_factory_.GetWeakPtr(),
-                   base::Owned(is_valid),
                    base::Owned(version_string)));
     return;
   }

@@ -155,7 +155,7 @@ void SpellingMenuObserver::InitMenu(const content::ContextMenuParams& params) {
     // |spellcheck_service| can be null when the suggested word is
     // provided by Web SpellCheck API.
     SpellcheckService* spellcheck_service =
-        SpellcheckServiceFactory::GetForProfile(profile);
+        SpellcheckServiceFactory::GetForContext(profile);
     if (spellcheck_service && spellcheck_service->GetMetrics())
       spellcheck_service->GetMetrics()->RecordSuggestionStats(1);
   }
@@ -260,7 +260,7 @@ void SpellingMenuObserver::ExecuteCommand(int command_id) {
     Profile* profile = proxy_->GetProfile();
     if (profile) {
       SpellcheckService* spellcheck =
-          SpellcheckServiceFactory::GetForProfile(profile);
+          SpellcheckServiceFactory::GetForContext(profile);
       if (spellcheck) {
         if (spellcheck->GetMetrics())
           spellcheck->GetMetrics()->RecordReplacedWordStats(1);
@@ -286,7 +286,7 @@ void SpellingMenuObserver::ExecuteCommand(int command_id) {
     Profile* profile = proxy_->GetProfile();
     if (profile) {
       SpellcheckService* spellcheck =
-          SpellcheckServiceFactory::GetForProfile(profile);
+          SpellcheckServiceFactory::GetForContext(profile);
       if (spellcheck) {
         spellcheck->GetCustomDictionary()->AddWord(UTF16ToUTF8(
             misspelled_word_));
@@ -359,7 +359,7 @@ void SpellingMenuObserver::OnMenuCancel() {
   if (!profile)
     return;
   SpellcheckService* spellcheck =
-      SpellcheckServiceFactory::GetForProfile(profile);
+      SpellcheckServiceFactory::GetForContext(profile);
   if (!spellcheck)
     return;
   spellcheck->GetFeedbackSender()->IgnoredSuggestions(misspelling_hash_);
@@ -368,7 +368,7 @@ void SpellingMenuObserver::OnMenuCancel() {
 void SpellingMenuObserver::OnTextCheckComplete(
     SpellingServiceClient::ServiceType type,
     bool success,
-    const string16& text,
+    const base::string16& text,
     const std::vector<SpellCheckResult>& results) {
   animation_timer_.Stop();
 
@@ -385,8 +385,8 @@ void SpellingMenuObserver::OnTextCheckComplete(
          it != results.end(); ++it) {
       result_.replace(it->location, it->length, it->replacement);
     }
-    string16 result = base::i18n::ToLower(result_);
-    for (std::vector<string16>::const_iterator it = suggestions_.begin();
+    base::string16 result = base::i18n::ToLower(result_);
+    for (std::vector<base::string16>::const_iterator it = suggestions_.begin();
          it != suggestions_.end(); ++it) {
       if (result == base::i18n::ToLower(*it)) {
         succeeded_ = false;
@@ -410,7 +410,8 @@ void SpellingMenuObserver::OnTextCheckComplete(
 void SpellingMenuObserver::OnAnimationTimerExpired() {
   // Append '.' characters to the end of "Checking".
   loading_frame_ = (loading_frame_ + 1) & 3;
-  string16 loading_message = loading_message_ + string16(loading_frame_,'.');
+  base::string16 loading_message =
+      loading_message_ + base::string16(loading_frame_,'.');
 
   // Update the menu item with the text. We disable this item to prevent users
   // from selecting it.

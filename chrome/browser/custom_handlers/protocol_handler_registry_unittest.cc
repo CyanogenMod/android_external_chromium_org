@@ -21,6 +21,7 @@
 #include "content/public/browser/notification_source.h"
 #include "content/public/test/test_browser_thread.h"
 #include "content/public/test/test_renderer_host.h"
+#include "net/base/request_priority.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -34,11 +35,10 @@ void AssertInterceptedIO(
     net::URLRequestJobFactory* interceptor) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   net::URLRequestContext context;
-  net::NetworkDelegate *network_delegate = NULL;
-  net::URLRequest request(url, NULL, &context);
+  net::URLRequest request(url, net::DEFAULT_PRIORITY, NULL, &context);
   scoped_refptr<net::URLRequestJob> job =
       interceptor->MaybeCreateJobWithProtocolHandler(
-          url.scheme(), &request, network_delegate);
+          url.scheme(), &request, context.network_delegate());
   ASSERT_TRUE(job.get() != NULL);
 }
 
@@ -286,6 +286,9 @@ class TestMessageLoop : public base::MessageLoop {
   virtual ~TestMessageLoop() {}
   virtual bool IsType(base::MessageLoop::Type type) const OVERRIDE {
     switch (type) {
+#if defined(TOOLKIT_GTK)
+      case base::MessageLoop::TYPE_GPU:
+#endif
       case base::MessageLoop::TYPE_UI:
         return BrowserThread::CurrentlyOn(BrowserThread::UI);
       case base::MessageLoop::TYPE_IO:
@@ -293,6 +296,7 @@ class TestMessageLoop : public base::MessageLoop {
 #if defined(OS_ANDROID)
       case base::MessageLoop::TYPE_JAVA: // fall-through
 #endif // defined(OS_ANDROID)
+      case base::MessageLoop::TYPE_CUSTOM:
       case base::MessageLoop::TYPE_DEFAULT:
         return !BrowserThread::CurrentlyOn(BrowserThread::UI) &&
                !BrowserThread::CurrentlyOn(BrowserThread::IO);

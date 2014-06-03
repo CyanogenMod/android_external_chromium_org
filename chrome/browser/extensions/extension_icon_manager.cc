@@ -8,10 +8,10 @@
 #include "base/logging.h"
 #include "base/stl_util.h"
 #include "chrome/browser/extensions/image_loader.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_icon_set.h"
 #include "chrome/common/extensions/manifest_handlers/icons_handler.h"
+#include "extensions/common/extension.h"
 #include "extensions/common/extension_resource.h"
 #include "grit/theme_resources.h"
 #include "skia/ext/image_operations.h"
@@ -32,7 +32,7 @@ static SkBitmap ApplyPadding(const SkBitmap& source,
   scoped_ptr<gfx::Canvas> result(
       new gfx::Canvas(gfx::Size(source.width() + padding.width(),
                                 source.height() + padding.height()),
-                      ui::SCALE_FACTOR_100P,
+                      1.0f,
                       false));
   result->DrawImageInt(
       gfx::ImageSkia::CreateFrom1xBitmap(source),
@@ -52,7 +52,7 @@ ExtensionIconManager::ExtensionIconManager()
 ExtensionIconManager::~ExtensionIconManager() {
 }
 
-void ExtensionIconManager::LoadIcon(Profile* profile,
+void ExtensionIconManager::LoadIcon(content::BrowserContext* context,
                                     const extensions::Extension* extension) {
   extensions::ExtensionResource icon_resource =
       extensions::IconsInfo::GetIconResource(
@@ -63,7 +63,7 @@ void ExtensionIconManager::LoadIcon(Profile* profile,
     // Insert into pending_icons_ first because LoadImage can call us back
     // synchronously if the image is already cached.
     pending_icons_.insert(extension->id());
-    extensions::ImageLoader* loader = extensions::ImageLoader::Get(profile);
+    extensions::ImageLoader* loader = extensions::ImageLoader::Get(context);
     loader->LoadImageAsync(extension, icon_resource,
                            gfx::Size(gfx::kFaviconSize, gfx::kFaviconSize),
                            base::Bind(

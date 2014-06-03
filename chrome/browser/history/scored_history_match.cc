@@ -18,6 +18,7 @@
 #include "chrome/browser/autocomplete/history_url_provider.h"
 #include "chrome/browser/autocomplete/url_prefix.h"
 #include "chrome/browser/bookmarks/bookmark_service.h"
+#include "chrome/browser/omnibox/omnibox_field_trial.h"
 #include "chrome/common/chrome_switches.h"
 #include "content/public/browser/browser_thread.h"
 
@@ -25,35 +26,38 @@ namespace history {
 
 // ScoredHistoryMatch ----------------------------------------------------------
 
-bool ScoredHistoryMatch::initialized_ = false;
+// static
 const size_t ScoredHistoryMatch::kMaxVisitsToScore = 10u;
-bool ScoredHistoryMatch::also_do_hup_like_scoring = false;
-int ScoredHistoryMatch::max_assigned_score_for_non_inlineable_matches = -1;
+const int ScoredHistoryMatch::kDaysToPrecomputeRecencyScoresFor = 366;
+const int ScoredHistoryMatch::kMaxRawTermScore = 30;
+float* ScoredHistoryMatch::raw_term_score_to_topicality_score_ = NULL;
+float* ScoredHistoryMatch::days_ago_to_recency_score_ = NULL;
+bool ScoredHistoryMatch::initialized_ = false;
+int ScoredHistoryMatch::bookmark_value_ = 1;
+bool ScoredHistoryMatch::discount_frecency_when_few_visits_ = false;
+bool ScoredHistoryMatch::allow_tld_matches_ = false;
+bool ScoredHistoryMatch::allow_scheme_matches_ = false;
+bool ScoredHistoryMatch::also_do_hup_like_scoring_ = false;
+int ScoredHistoryMatch::max_assigned_score_for_non_inlineable_matches_ = -1;
 
 ScoredHistoryMatch::ScoredHistoryMatch()
-    : raw_score(0),
-      can_inline(false) {
-  if (!initialized_) {
-    InitializeAlsoDoHUPLikeScoringFieldAndMaxScoreField();
-    initialized_ = true;
-  }
+    : raw_score_(0),
+      can_inline_(false) {
+  Init();
 }
 
 ScoredHistoryMatch::ScoredHistoryMatch(const URLRow& row,
                                        const VisitInfoVector& visits,
                                        const std::string& languages,
-                                       const string16& lower_string,
+                                       const base::string16& lower_string,
                                        const String16Vector& terms,
                                        const RowWordStarts& word_starts,
                                        const base::Time now,
                                        BookmarkService* bookmark_service)
     : HistoryMatch(row, 0, false, false),
-      raw_score(0),
-      can_inline(false) {
-  if (!initialized_) {
-    InitializeAlsoDoHUPLikeScoringFieldAndMaxScoreField();
-    initialized_ = true;
-  }
+      raw_score_(0),
+      can_inline_(false) {
+  Init();
 
   GURL gurl = row.url();
   if (!gurl.is_valid())
@@ -61,20 +65,20 @@ ScoredHistoryMatch::ScoredHistoryMatch(const URLRow& row,
 
   // Figure out where each search term appears in the URL and/or page title
   // so that we can score as well as provide autocomplete highlighting.
-  string16 url = CleanUpUrlForMatching(gurl, languages);
-  string16 title = CleanUpTitleForMatching(row.title());
+  base::string16 url = CleanUpUrlForMatching(gurl, languages);
+  base::string16 title = CleanUpTitleForMatching(row.title());
   int term_num = 0;
   for (String16Vector::const_iterator iter = terms.begin(); iter != terms.end();
        ++iter, ++term_num) {
-    string16 term = *iter;
+    base::string16 term = *iter;
     TermMatches url_term_matches = MatchTermInString(term, url, term_num);
     TermMatches title_term_matches = MatchTermInString(term, title, term_num);
     if (url_term_matches.empty() && title_term_matches.empty())
       return;  // A term was not found in either URL or title - reject.
-    url_matches.insert(url_matches.end(), url_term_matches.begin(),
-                       url_term_matches.end());
-    title_matches.insert(title_matches.end(), title_term_matches.begin(),
-                         title_term_matches.end());
+    url_matches_.insert(url_matches_.end(), url_term_matches.begin(),
+                        url_term_matches.end());
+    title_matches_.insert(title_matches_.end(), title_term_matches.begin(),
+                          title_term_matches.end());
   }
 
   // Sort matches by offset and eliminate any which overlap.
@@ -83,8 +87,8 @@ ScoredHistoryMatch::ScoredHistoryMatch(const URLRow& row,
   // overlaps and sorting is needed to decide what to highlight in the
   // suggestion string.  But this sort and de-overlap doesn't have to
   // be done before scoring.)
-  url_matches = SortAndDeoverlapMatches(url_matches);
-  title_matches = SortAndDeoverlapMatches(title_matches);
+  url_matches_ = SortAndDeoverlapMatches(url_matches_);
+  title_matches_ = SortAndDeoverlapMatches(title_matches_);
 
   // We can inline autocomplete a match if:
   //  1) there is only one search term
@@ -101,13 +105,12 @@ ScoredHistoryMatch::ScoredHistoryMatch(const URLRow& row,
   // For a URL like "http://www.washingtonmutual.com", this means
   // typing "w" will inline "ashington..." instead of "ww.washington...".
   const URLPrefix* best_inlineable_prefix =
-      (!url_matches.empty() && (terms.size() == 1)) ?
+      (!url_matches_.empty() && (terms.size() == 1)) ?
       URLPrefix::BestURLPrefix(UTF8ToUTF16(gurl.spec()), terms[0]) :
       NULL;
-  can_inline = (best_inlineable_prefix != NULL) &&
+  can_inline_ = (best_inlineable_prefix != NULL) &&
       !IsWhitespace(*(lower_string.rbegin()));
-  match_in_scheme = can_inline && best_inlineable_prefix->prefix.empty();
-  if (can_inline) {
+  if (can_inline_) {
     // Initialize innermost_match.
     // The idea here is that matches that occur in the scheme or
     // "www." are worse than matches which don't.  For the URLs
@@ -131,7 +134,7 @@ ScoredHistoryMatch::ScoredHistoryMatch(const URLRow& row,
     // Now, the code that implements this.
     // The deepest prefix for this URL regardless of where the match is.
     const URLPrefix* best_prefix =
-        URLPrefix::BestURLPrefix(UTF8ToUTF16(gurl.spec()), string16());
+        URLPrefix::BestURLPrefix(UTF8ToUTF16(gurl.spec()), base::string16());
     DCHECK(best_prefix != NULL);
     const int num_components_in_best_prefix = best_prefix->num_components;
     // If the URL is inlineable, we must have a match.  Note the prefix that
@@ -143,14 +146,15 @@ ScoredHistoryMatch::ScoredHistoryMatch(const URLRow& row,
         num_components_in_best_prefix);
   }
 
-  const float topicality_score = GetTopicalityScore(
-      terms.size(), url, url_matches, title_matches, word_starts);
-  const float frecency_score = GetFrecency(now, visits);
-  raw_score = GetFinalRelevancyScore(topicality_score, frecency_score);
-  raw_score =
-      (raw_score <= kint32max) ? static_cast<int>(raw_score) : kint32max;
+  const float topicality_score =
+      GetTopicalityScore(terms.size(), url, word_starts);
+  const float frecency_score = GetFrecency(
+      now, (bookmark_service && bookmark_service->IsBookmarked(gurl)), visits);
+  raw_score_ = GetFinalRelevancyScore(topicality_score, frecency_score);
+  raw_score_ =
+      (raw_score_ <= kint32max) ? static_cast<int>(raw_score_) : kint32max;
 
-  if (also_do_hup_like_scoring && can_inline) {
+  if (also_do_hup_like_scoring_ && can_inline_) {
     // HistoryURL-provider-like scoring gives any match that is
     // capable of being inlined a certain minimum score.  Some of these
     // are given a higher score that lets them be shown in inline.
@@ -191,14 +195,14 @@ ScoredHistoryMatch::ScoredHistoryMatch(const URLRow& row,
     // the tie-breaker case of MatchScoreGreater().
 
     // Incorporate hup_like_score into raw_score.
-    raw_score = std::max(raw_score, hup_like_score);
+    raw_score_ = std::max(raw_score_, hup_like_score);
   }
 
   // If this match is not inlineable and there's a cap on the maximum
   // score that can be given to non-inlineable matches, apply the cap.
-  if (!can_inline && (max_assigned_score_for_non_inlineable_matches != -1)) {
-    raw_score = std::min(max_assigned_score_for_non_inlineable_matches,
-                         raw_score);
+  if (!can_inline_ && (max_assigned_score_for_non_inlineable_matches_ != -1)) {
+    raw_score_ = std::min(max_assigned_score_for_non_inlineable_matches_,
+                          raw_score_);
   }
 }
 
@@ -208,8 +212,8 @@ ScoredHistoryMatch::~ScoredHistoryMatch() {}
 // intelligent tie-breaking.
 bool ScoredHistoryMatch::MatchScoreGreater(const ScoredHistoryMatch& m1,
                                            const ScoredHistoryMatch& m2) {
-  if (m1.raw_score != m2.raw_score)
-    return m1.raw_score > m2.raw_score;
+  if (m1.raw_score_ != m2.raw_score_)
+    return m1.raw_score_ > m2.raw_score_;
 
   // This tie-breaking logic is inspired by / largely copied from the
   // ordering logic in history_url_provider.cc CompareHistoryMatch().
@@ -244,11 +248,39 @@ bool ScoredHistoryMatch::MatchScoreGreater(const ScoredHistoryMatch& m1,
 }
 
 // static
+TermMatches ScoredHistoryMatch::FilterTermMatchesByWordStarts(
+    const TermMatches& term_matches,
+    const WordStarts& word_starts,
+    size_t start_pos,
+    size_t end_pos) {
+  // Return early if no filtering is needed.
+  if (start_pos == std::string::npos)
+    return term_matches;
+  TermMatches filtered_matches;
+  WordStarts::const_iterator next_word_starts = word_starts.begin();
+  WordStarts::const_iterator end_word_starts = word_starts.end();
+  for (TermMatches::const_iterator iter = term_matches.begin();
+       iter != term_matches.end(); ++iter) {
+    // Advance next_word_starts until it's >= the position of the term
+    // we're considering.
+    while ((next_word_starts != end_word_starts) &&
+           (*next_word_starts < iter->offset))
+      ++next_word_starts;
+    // Add the match if it's before the position we start filtering at or
+    // after the position we stop filtering at (assuming we have a position
+    // to stop filtering at) or if it's at a word boundary.
+    if ((iter->offset < start_pos) ||
+        ((end_pos != std::string::npos) && (iter->offset >= end_pos)) ||
+        ((next_word_starts != end_word_starts) &&
+         (*next_word_starts == iter->offset)))
+      filtered_matches.push_back(*iter);
+  }
+  return filtered_matches;
+}
+
 float ScoredHistoryMatch::GetTopicalityScore(
     const int num_terms,
-    const string16& url,
-    const TermMatches& url_matches,
-    const TermMatches& title_matches,
+    const base::string16& url,
     const RowWordStarts& word_starts) {
   // Because the below thread is not thread safe, we check that we're
   // only calling it from one thread: the UI thread.  Specifically,
@@ -259,8 +291,8 @@ float ScoredHistoryMatch::GetTopicalityScore(
   DCHECK(!content::BrowserThread::IsThreadInitialized(
              content::BrowserThread::UI) ||
          content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
-  if (raw_term_score_to_topicality_score == NULL) {
-    raw_term_score_to_topicality_score = new float[kMaxRawTermScore];
+  if (raw_term_score_to_topicality_score_ == NULL) {
+    raw_term_score_to_topicality_score_ = new float[kMaxRawTermScore];
     FillInTermScoreToTopicalityScoreArray();
   }
   // A vector that accumulates per-term scores.  The strongest match--a
@@ -270,9 +302,9 @@ float ScoredHistoryMatch::GetTopicalityScore(
   // in the same part of the URL/title.
   DCHECK_GT(num_terms, 0);
   std::vector<int> term_scores(num_terms, 0);
-  std::vector<size_t>::const_iterator next_word_starts =
+  WordStarts::const_iterator next_word_starts =
       word_starts.url_word_starts_.begin();
-  std::vector<size_t>::const_iterator end_word_starts =
+  WordStarts::const_iterator end_word_starts =
       word_starts.url_word_starts_.end();
   const size_t question_mark_pos = url.find('?');
   const size_t colon_pos = url.find(':');
@@ -290,8 +322,23 @@ float ScoredHistoryMatch::GetTopicalityScore(
       url.rfind('.', end_of_hostname_pos) :
       url.rfind('.');
   // Loop through all URL matches and score them appropriately.
-  for (TermMatches::const_iterator iter = url_matches.begin();
-       iter != url_matches.end(); ++iter) {
+  // First, filter all matches not at a word boundary and in the path (or
+  // later).
+  url_matches_ = FilterTermMatchesByWordStarts(
+      url_matches_,
+      word_starts.url_word_starts_,
+      end_of_hostname_pos,
+      std::string::npos);
+  if (colon_pos != std::string::npos) {
+    // Also filter matches not at a word boundary and in the scheme.
+    url_matches_ = FilterTermMatchesByWordStarts(
+        url_matches_,
+        word_starts.url_word_starts_,
+        0u,
+        colon_pos);
+  }
+  for (TermMatches::const_iterator iter = url_matches_.begin();
+       iter != url_matches_.end(); ++iter) {
     // Advance next_word_starts until it's >= the position of the term
     // we're considering.
     while ((next_word_starts != end_word_starts) &&
@@ -302,31 +349,45 @@ float ScoredHistoryMatch::GetTopicalityScore(
         (*next_word_starts == iter->offset);
     if ((question_mark_pos != std::string::npos) &&
         (iter->offset > question_mark_pos)) {
-      // match in CGI ?... fragment
-      term_scores[iter->term_num] += at_word_boundary ? 5 : 0;
+      // The match is in a CGI ?... fragment.
+      DCHECK(at_word_boundary);
+      term_scores[iter->term_num] += 5;
     } else if ((end_of_hostname_pos != std::string::npos) &&
         (iter->offset > end_of_hostname_pos)) {
-      // match in path
-      term_scores[iter->term_num] += at_word_boundary ? 8 : 0;
+      // The match is in the path.
+      DCHECK(at_word_boundary);
+      term_scores[iter->term_num] += 8;
     } else if ((colon_pos == std::string::npos) ||
          (iter->offset > colon_pos)) {
-      // match in hostname
+      // The match is in the hostname.
       if ((last_part_of_hostname_pos == std::string::npos) ||
           (iter->offset < last_part_of_hostname_pos)) {
         // Either there are no dots in the hostname or this match isn't
         // the last dotted component.
         term_scores[iter->term_num] += at_word_boundary ? 10 : 2;
-      } // else: match in the last part of a dotted hostname (usually
-        // this is the top-level domain .com, .net, etc.).  Do not
-        // count this match for scoring.
-    } // else: match in protocol.  Do not count this match for scoring.
+      } else {
+        // The match is in the last part of a dotted hostname (usually this
+        // is the top-level domain .com, .net, etc.).
+        if (allow_tld_matches_)
+          term_scores[iter->term_num] += at_word_boundary ? 10 : 0;
+      }
+    } else {
+      // The match is in the protocol (a.k.a. scheme).
+      // Matches not at a word boundary should have been filtered already.
+      DCHECK(at_word_boundary);
+      match_in_scheme = true;
+      if (allow_scheme_matches_)
+        term_scores[iter->term_num] += 10;
+    }
   }
   // Now do the analogous loop over all matches in the title.
   next_word_starts = word_starts.title_word_starts_.begin();
   end_word_starts = word_starts.title_word_starts_.end();
   int word_num = 0;
-  for (TermMatches::const_iterator iter = title_matches.begin();
-       iter != title_matches.end(); ++iter) {
+  title_matches_ = FilterTermMatchesByWordStarts(
+      title_matches_, word_starts.title_word_starts_, 0u, std::string::npos);
+  for (TermMatches::const_iterator iter = title_matches_.begin();
+       iter != title_matches_.end(); ++iter) {
     // Advance next_word_starts until it's >= the position of the term
     // we're considering.
     while ((next_word_starts != end_word_starts) &&
@@ -335,9 +396,9 @@ float ScoredHistoryMatch::GetTopicalityScore(
       ++word_num;
     }
     if (word_num >= 10) break;  // only count the first ten words
-    const bool at_word_boundary = (next_word_starts != end_word_starts) &&
-        (*next_word_starts == iter->offset);
-    term_scores[iter->term_num] += at_word_boundary ? 8 : 0;
+    DCHECK((next_word_starts != end_word_starts) &&
+        (*next_word_starts == iter->offset)) << "not at word boundary";
+    term_scores[iter->term_num] += 8;
   }
   // TODO(mpearson): Restore logic for penalizing out-of-order matches.
   // (Perhaps discount them by 0.8?)
@@ -356,7 +417,7 @@ float ScoredHistoryMatch::GetTopicalityScore(
     // due to this test would look stupid if shown to the user.
     if (term_scores[i] == 0)
       return 0;
-    topicality_score += raw_term_score_to_topicality_score[
+    topicality_score += raw_term_score_to_topicality_score_[
         (term_scores[i] >= kMaxRawTermScore) ? (kMaxRawTermScore - 1) :
         term_scores[i]];
   }
@@ -365,9 +426,6 @@ float ScoredHistoryMatch::GetTopicalityScore(
 
   return topicality_score / num_terms;
 }
-
-// static
-float* ScoredHistoryMatch::raw_term_score_to_topicality_score = NULL;
 
 // static
 void ScoredHistoryMatch::FillInTermScoreToTopicalityScoreArray() {
@@ -385,12 +443,9 @@ void ScoredHistoryMatch::FillInTermScoreToTopicalityScoreArray() {
       // maxing out at 30 points, with computes to a score around 2.1.
       topicality_score = (1.0 + 2.25 * log10(0.1 * term_score));
     }
-    raw_term_score_to_topicality_score[term_score] = topicality_score;
+    raw_term_score_to_topicality_score_[term_score] = topicality_score;
   }
 }
-
-// static
-float* ScoredHistoryMatch::days_ago_to_recency_score = NULL;
 
 // static
 float ScoredHistoryMatch::GetRecencyScore(int last_visit_days_ago) {
@@ -403,15 +458,15 @@ float ScoredHistoryMatch::GetRecencyScore(int last_visit_days_ago) {
   DCHECK(!content::BrowserThread::IsThreadInitialized(
              content::BrowserThread::UI) ||
          content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
-  if (days_ago_to_recency_score == NULL) {
-    days_ago_to_recency_score = new float[kDaysToPrecomputeRecencyScoresFor];
+  if (days_ago_to_recency_score_ == NULL) {
+    days_ago_to_recency_score_ = new float[kDaysToPrecomputeRecencyScoresFor];
     FillInDaysAgoToRecencyScoreArray();
   }
   // Lookup the score in days_ago_to_recency_score, treating
   // everything older than what we've precomputed as the oldest thing
   // we've precomputed.  The std::max is to protect against corruption
   // in the database (in case last_visit_days_ago is negative).
-  return days_ago_to_recency_score[
+  return days_ago_to_recency_score_[
       std::max(
       std::min(last_visit_days_ago, kDaysToPrecomputeRecencyScoresFor - 1),
       0)];
@@ -441,16 +496,17 @@ void ScoredHistoryMatch::FillInDaysAgoToRecencyScoreArray() {
       unnormalized_recency_score =
           10 + (365 - days_ago) * (20 - 10) / (365 - 90);
     }
-    days_ago_to_recency_score[days_ago] = unnormalized_recency_score / 100.0;
+    days_ago_to_recency_score_[days_ago] = unnormalized_recency_score / 100.0;
     if (days_ago > 0) {
-      DCHECK_LE(days_ago_to_recency_score[days_ago],
-                days_ago_to_recency_score[days_ago - 1]);
+      DCHECK_LE(days_ago_to_recency_score_[days_ago],
+                days_ago_to_recency_score_[days_ago - 1]);
     }
   }
 }
 
 // static
 float ScoredHistoryMatch::GetFrecency(const base::Time& now,
+                                      const bool bookmarked,
                                       const VisitInfoVector& visits) {
   // Compute the weighted average |value_of_transition| over the last at
   // most kMaxVisitsToScore visits, where each visit is weighted using
@@ -463,13 +519,17 @@ float ScoredHistoryMatch::GetFrecency(const base::Time& now,
     return 0.0f;
   float summed_visit_points = 0;
   for (int i = 0; i < total_sampled_visits; ++i) {
-    const int value_of_transition =
+    int value_of_transition =
         (visits[i].second == content::PAGE_TRANSITION_TYPED) ? 20 : 1;
+    if (bookmarked)
+      value_of_transition = std::max(value_of_transition, bookmark_value_);
     const float bucket_weight =
         GetRecencyScore((now - visits[i].first).InDays());
     summed_visit_points += (value_of_transition * bucket_weight);
   }
-  return visits.size() * summed_visit_points / total_sampled_visits;
+  return visits.size() * summed_visit_points /
+      (discount_frecency_when_few_visits_ ? kMaxVisitsToScore :
+       total_sampled_visits);
 }
 
 // static
@@ -513,8 +573,10 @@ float ScoredHistoryMatch::GetFinalRelevancyScore(float topicality_score,
   return std::min(1399.0, 1300 + slope * (intermediate_score - 12.0));
 }
 
-void ScoredHistoryMatch::InitializeAlsoDoHUPLikeScoringFieldAndMaxScoreField() {
-  also_do_hup_like_scoring = false;
+void ScoredHistoryMatch::Init() {
+  if (initialized_)
+    return;
+  also_do_hup_like_scoring_ = false;
   // When doing HUP-like scoring, don't allow a non-inlineable match
   // to beat the score of good inlineable matches.  This is a problem
   // because if a non-inlineable match ends up with the highest score
@@ -524,10 +586,16 @@ void ScoredHistoryMatch::InitializeAlsoDoHUPLikeScoringFieldAndMaxScoreField() {
   // and not be demoted, thus outscoring the demoted HQP results.
   // When the HQP provides these, we need to clamp the non-inlineable
   // results to preserve this behavior.
-  if (also_do_hup_like_scoring) {
-    max_assigned_score_for_non_inlineable_matches =
+  if (also_do_hup_like_scoring_) {
+    max_assigned_score_for_non_inlineable_matches_ =
         HistoryURLProvider::kScoreForBestInlineableResult - 1;
   }
+  bookmark_value_ = OmniboxFieldTrial::HQPBookmarkValue();
+  discount_frecency_when_few_visits_ =
+      OmniboxFieldTrial::HQPDiscountFrecencyWhenFewVisits();
+  allow_tld_matches_ = OmniboxFieldTrial::HQPAllowMatchInTLDValue();
+  allow_scheme_matches_ = OmniboxFieldTrial::HQPAllowMatchInSchemeValue();
+  initialized_ = true;
 }
 
 }  // namespace history

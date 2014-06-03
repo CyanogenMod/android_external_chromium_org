@@ -4,6 +4,8 @@
 
 import httplib
 import json
+import logging
+import pprint
 import re
 import socket
 import sys
@@ -16,10 +18,11 @@ from telemetry.core import web_contents
 from telemetry.core import wpr_modes
 from telemetry.core import wpr_server
 from telemetry.core.backends import browser_backend
-from telemetry.core.chrome import extension_dict_backend
-from telemetry.core.chrome import misc_web_contents_backend
-from telemetry.core.chrome import tab_list_backend
-from telemetry.core.chrome import tracing_backend
+from telemetry.core.backends.chrome import extension_dict_backend
+from telemetry.core.backends.chrome import misc_web_contents_backend
+from telemetry.core.backends.chrome import system_info_backend
+from telemetry.core.backends.chrome import tab_list_backend
+from telemetry.core.backends.chrome import tracing_backend
 from telemetry.unittest import options_for_unittests
 
 class ChromeBrowserBackend(browser_backend.BrowserBackend):
@@ -27,24 +30,32 @@ class ChromeBrowserBackend(browser_backend.BrowserBackend):
   once a remote-debugger port has been established."""
   # It is OK to have abstract methods. pylint: disable=W0223
 
-  def __init__(self, is_content_shell, supports_extensions, options):
+  def __init__(self, is_content_shell, supports_extensions, browser_options,
+               output_profile_path, extensions_to_load):
     super(ChromeBrowserBackend, self).__init__(
         is_content_shell=is_content_shell,
         supports_extensions=supports_extensions,
-        options=options,
+        browser_options=browser_options,
         tab_list_backend=tab_list_backend.TabListBackend)
     self._port = None
 
     self._inspector_protocol_version = 0
-    self._chrome_branch_number = 0
+    self._chrome_branch_number = None
     self._tracing_backend = None
+    self._system_info_backend = None
 
-    self.webpagereplay_local_http_port = util.GetAvailableLocalPort()
-    self.webpagereplay_local_https_port = util.GetAvailableLocalPort()
-    self.webpagereplay_remote_http_port = self.webpagereplay_local_http_port
-    self.webpagereplay_remote_https_port = self.webpagereplay_local_https_port
+    self._output_profile_path = output_profile_path
+    self._extensions_to_load = extensions_to_load
 
-    if options.dont_override_profile and not options_for_unittests.AreSet():
+    if browser_options.netsim:
+      self.wpr_http_port_pair = util.PortPair(80, 80)
+      self.wpr_https_port_pair = util.PortPair(443, 443)
+    else:
+      self.wpr_http_port_pair = util.PortPair(0, 0)
+      self.wpr_https_port_pair = util.PortPair(0, 0)
+
+    if (self.browser_options.dont_override_profile and
+        not options_for_unittests.AreSet()):
       sys.stderr.write('Warning: Not overriding profile. This can cause '
                        'unexpected effects due to profile-specific settings, '
                        'such as about:flags settings, cookies, and '
@@ -56,8 +67,11 @@ class ChromeBrowserBackend(browser_backend.BrowserBackend):
       self._extension_dict_backend = (
           extension_dict_backend.ExtensionDictBackend(self))
 
-  def AddReplayServerOptions(self, options):
-    options.append('--no-dns_forwarding')
+  def AddReplayServerOptions(self, extra_wpr_args):
+    if self.browser_options.netsim:
+      extra_wpr_args.append('--net=%s' % self.browser_options.netsim)
+    else:
+      extra_wpr_args.append('--no-dns_forwarding')
 
   @property
   def misc_web_contents_backend(self):
@@ -71,36 +85,45 @@ class ChromeBrowserBackend(browser_backend.BrowserBackend):
 
   def GetBrowserStartupArgs(self):
     args = []
-    args.extend(self.options.extra_browser_args)
+    args.extend(self.browser_options.extra_browser_args)
     args.append('--disable-background-networking')
     args.append('--metrics-recording-only')
     args.append('--no-first-run')
-    if self.options.wpr_mode != wpr_modes.WPR_OFF:
+    args.append('--no-default-browser-check')
+    args.append('--no-proxy-server')
+    if self.browser_options.netsim:
+      args.append('--ignore-certificate-errors')
+    elif self.browser_options.wpr_mode != wpr_modes.WPR_OFF:
       args.extend(wpr_server.GetChromeFlags(
           self.WEBPAGEREPLAY_HOST,
-          self.webpagereplay_remote_http_port,
-          self.webpagereplay_remote_https_port))
+          self.wpr_http_port_pair.remote_port,
+          self.wpr_https_port_pair.remote_port))
     args.extend(user_agent.GetChromeUserAgentArgumentFromType(
-        self.options.browser_user_agent_type))
+        self.browser_options.browser_user_agent_type))
 
-    extensions = [extension.local_path for extension in
-                  self.options.extensions_to_load if not extension.is_component]
+    extensions = [extension.local_path
+                  for extension in self._extensions_to_load
+                  if not extension.is_component]
     extension_str = ','.join(extensions)
     if len(extensions) > 0:
       args.append('--load-extension=%s' % extension_str)
 
-    component_extensions = [extension.local_path for extension in
-                  self.options.extensions_to_load if extension.is_component]
+    component_extensions = [extension.local_path
+                            for extension in self._extensions_to_load
+                            if extension.is_component]
     component_extension_str = ','.join(component_extensions)
     if len(component_extensions) > 0:
       args.append('--load-component-extension=%s' % component_extension_str)
 
-    if self.options.no_proxy_server:
+    if self.browser_options.no_proxy_server:
       args.append('--no-proxy-server')
+
+    if self.browser_options.disable_component_extensions_with_background_pages:
+      args.append('--disable-component-extensions-with-background-pages')
 
     return args
 
-  def _WaitForBrowserToComeUp(self, timeout=None):
+  def _WaitForBrowserToComeUp(self, wait_for_extensions=True, timeout=None):
     def IsBrowserUp():
       try:
         self.Request('', timeout=timeout)
@@ -123,17 +146,40 @@ class ChromeBrowserBackend(browser_backend.BrowserBackend):
           (document.readyState == 'complete' ||
            document.readyState == 'interactive')
       """
-      for e in self.options.extensions_to_load:
+      for e in self._extensions_to_load:
         if not e.extension_id in self._extension_dict_backend:
           return False
         extension_object = self._extension_dict_backend[e.extension_id]
-        res = extension_object.EvaluateJavaScript(
-            extension_ready_js % e.extension_id)
+        try:
+          res = extension_object.EvaluateJavaScript(
+              extension_ready_js % e.extension_id)
+        except exceptions.EvaluateException:
+          # If the inspected page is not ready, we will get an error
+          # when we evaluate a JS expression, but we can just keep polling
+          # until the page is ready (crbug.com/251913).
+          res = None
+
+        # TODO(tengs): We don't have full support for getting the Chrome
+        # version before launch, so for now we use a generic workaround to
+        # check for an extension binding bug in old versions of Chrome.
+        # See crbug.com/263162 for details.
+        if res and extension_object.EvaluateJavaScript(
+            'chrome.runtime == null'):
+          extension_object.Reload()
         if not res:
           return False
       return True
-    if self._supports_extensions:
-      util.WaitFor(AllExtensionsLoaded, timeout=30)
+    if wait_for_extensions and self._supports_extensions:
+      try:
+        util.WaitFor(AllExtensionsLoaded, timeout=60)
+      except util.TimeoutException:
+        logging.error('ExtensionsToLoad: ' +
+            repr([e.extension_id for e in self._extensions_to_load]))
+        logging.error('Extension list: ' +
+            pprint.pformat(self._extension_dict_backend.GetExtensionInfoList(),
+                           indent=4))
+        raise
+
 
   def _PostBrowserStartupInitialization(self):
     # Detect version information.
@@ -141,6 +187,9 @@ class ChromeBrowserBackend(browser_backend.BrowserBackend):
     resp = json.loads(data)
     if 'Protocol-Version' in resp:
       self._inspector_protocol_version = resp['Protocol-Version']
+
+      if self._chrome_branch_number:
+        return
 
       if 'Browser' in resp:
         branch_number_match = re.search('Chrome/\d+\.\d+\.(\d+)\.\d+',
@@ -152,9 +201,10 @@ class ChromeBrowserBackend(browser_backend.BrowserBackend):
 
       if branch_number_match:
         self._chrome_branch_number = int(branch_number_match.group(1))
-      else:
-        # Content Shell returns '' for Browser, for now we have to
-        # fall-back and assume branch 1025.
+
+      if not self._chrome_branch_number:
+        # Content Shell returns '' for Browser, WebViewShell returns '0'.
+        # For now we have to fall-back and assume branch 1025.
         self._chrome_branch_number = 1025
       return
 
@@ -163,18 +213,20 @@ class ChromeBrowserBackend(browser_backend.BrowserBackend):
     self._chrome_branch_number = 1025
 
   def Request(self, path, timeout=None, throw_network_exception=False):
-    url = 'http://localhost:%i/json' % self._port
+    url = 'http://127.0.0.1:%i/json' % self._port
     if path:
       url += '/' + path
     try:
-      req = urllib2.urlopen(url, timeout=timeout)
+      proxy_handler = urllib2.ProxyHandler({})  # Bypass any system proxy.
+      opener = urllib2.build_opener(proxy_handler)
+      req = opener.open(url, timeout=timeout)
       return req.read()
     except (socket.error, httplib.BadStatusLine, urllib2.URLError) as e:
       if throw_network_exception:
         raise e
       if not self.IsBrowserRunning():
-        raise exceptions.BrowserGoneException()
-      raise exceptions.BrowserConnectionGoneException()
+        raise exceptions.BrowserGoneException(e)
+      raise exceptions.BrowserConnectionGoneException(e)
 
   @property
   def browser_directory(self):
@@ -186,15 +238,16 @@ class ChromeBrowserBackend(browser_backend.BrowserBackend):
 
   @property
   def chrome_branch_number(self):
+    assert self._chrome_branch_number
     return self._chrome_branch_number
 
   @property
   def supports_tab_control(self):
-    return self._chrome_branch_number >= 1303
+    return self.chrome_branch_number >= 1303
 
   @property
   def supports_tracing(self):
-    return self.is_content_shell or self._chrome_branch_number >= 1385
+    return self.is_content_shell or self.chrome_branch_number >= 1385
 
   def StartTracing(self, custom_categories=None,
                    timeout=web_contents.DEFAULT_WEB_CONTENTS_TIMEOUT):
@@ -206,16 +259,28 @@ class ChromeBrowserBackend(browser_backend.BrowserBackend):
     """
     if self._tracing_backend is None:
       self._tracing_backend = tracing_backend.TracingBackend(self._port)
-    self._tracing_backend.BeginTracing(custom_categories, timeout)
+    return self._tracing_backend.StartTracing(custom_categories, timeout)
 
   def StopTracing(self):
-    self._tracing_backend.EndTracing()
-
-  def GetTraceResultAndReset(self):
-    return self._tracing_backend.GetTraceResultAndReset()
+    """ Stops tracing and returns the result as TraceResult object. """
+    for (i, debugger_url) in enumerate(self._browser.tabs):
+      tab = self.tab_list_backend.Get(i, None)
+      if tab:
+        success = tab.EvaluateJavaScript(
+            "console.time('" + debugger_url + "');" +
+            "console.timeEnd('" + debugger_url + "');" +
+            "console.time.toString().indexOf('[native code]') != -1;")
+        if not success:
+          raise Exception('Page stomped on console.time')
+        self._tracing_backend.AddTabToMarkerMapping(tab, debugger_url)
+    return self._tracing_backend.StopTracing()
 
   def GetProcessName(self, cmd_line):
     """Returns a user-friendly name for the process of the given |cmd_line|."""
+    if not cmd_line:
+      # TODO(tonyg): Eventually we should make all of these known and add an
+      # assertion.
+      return 'unknown'
     if 'nacl_helper_bootstrap' in cmd_line:
       return 'nacl_helper_bootstrap'
     if ':sandboxed_process' in cmd_line:
@@ -229,3 +294,18 @@ class ChromeBrowserBackend(browser_backend.BrowserBackend):
     if self._tracing_backend:
       self._tracing_backend.Close()
       self._tracing_backend = None
+
+  @property
+  def supports_system_info(self):
+    return self.GetSystemInfo() != None
+
+  def GetSystemInfo(self):
+    if self._system_info_backend is None:
+      self._system_info_backend = system_info_backend.SystemInfoBackend(
+          self._port)
+    return self._system_info_backend.GetSystemInfo()
+
+  def _SetBranchNumber(self, version):
+    assert version
+    self._chrome_branch_number = re.search(r'\d+\.\d+\.(\d+)\.\d+',
+                                           version).group(1)

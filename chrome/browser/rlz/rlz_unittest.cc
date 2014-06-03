@@ -4,32 +4,23 @@
 
 #include "chrome/browser/rlz/rlz.h"
 
-#include "base/files/scoped_temp_dir.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop/message_loop.h"
-#include "base/path_service.h"
-#include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/threading/thread.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/google/google_util.h"
 #include "chrome/browser/omnibox/omnibox_log.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/env_vars.h"
 #include "chrome/installer/util/browser_distribution.h"
 #include "chrome/installer/util/google_update_constants.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
+#include "rlz/test/rlz_test_helpers.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 #if defined(OS_WIN)
-#include "base/test/test_reg_util_win.h"
 #include "base/win/registry.h"
-#include "rlz/win/lib/rlz_lib.h"  // InitializeTempHivesForTesting
-#elif defined(OS_POSIX)
-#include "rlz/lib/rlz_value_store.h"  // SetRlzStoreDirectory
 #endif
 
 using content::NavigationEntry;
@@ -39,16 +30,9 @@ using testing::AssertionFailure;
 
 #if defined(OS_WIN)
 using base::win::RegKey;
-using registry_util::RegistryOverrideManager;
 #endif
 
 namespace {
-
-#if defined(OS_WIN)
-// Registry path to overridden hive.
-const wchar_t kRlzTempHkcu[] = L"rlz_hkcu";
-const wchar_t kRlzTempHklm[] = L"rlz_hklm";
-#endif
 
 // Dummy RLZ string for the access points.
 const char kOmniboxRlzString[] = "test_omnibox";
@@ -149,8 +133,8 @@ class TestRLZTracker : public RLZTracker {
 #endif
 
   virtual bool SendFinancialPing(const std::string& brand,
-                                 const string16& lang,
-                                 const string16& referral) OVERRIDE {
+                                 const base::string16& lang,
+                                 const base::string16& referral) OVERRIDE {
     // Don't ping the server during tests, just pretend as if we did.
     EXPECT_FALSE(brand.empty());
     pinged_brands_.insert(brand);
@@ -170,12 +154,10 @@ class TestRLZTracker : public RLZTracker {
   DISALLOW_COPY_AND_ASSIGN(TestRLZTracker);
 };
 
-class RlzLibTest : public testing::Test {
- public:
-  virtual void SetUp() OVERRIDE;
-  virtual void TearDown() OVERRIDE;
-
+class RlzLibTest : public RlzLibTestNoMachineState {
  protected:
+  virtual void SetUp() OVERRIDE;
+
   void SetMainBrand(const char* brand);
   void SetReactivationBrand(const char* brand);
 #if defined(OS_WIN)
@@ -191,64 +173,18 @@ class RlzLibTest : public testing::Test {
   void ExpectReactivationRlzPingSent(bool expected);
 
   TestRLZTracker tracker_;
-#if defined(OS_WIN)
-  RegistryOverrideManager override_manager_;
-#elif defined(OS_POSIX)
-  base::ScopedTempDir temp_dir_;
+#if defined(OS_POSIX)
   scoped_ptr<google_util::BrandForTesting> brand_override_;
 #endif
 };
 
 void RlzLibTest::SetUp() {
-  testing::Test::SetUp();
-
-#if defined(OS_WIN)
-  // Before overriding HKLM for the tests, we need to set it up correctly
-  // so that the rlz_lib calls work. This needs to be done before we do the
-  // override.
-
-  string16 temp_hklm_path = base::StringPrintf(
-      L"%ls\\%ls",
-      RegistryOverrideManager::kTempTestKeyPath,
-      kRlzTempHklm);
-
-  base::win::RegKey hklm;
-  ASSERT_EQ(ERROR_SUCCESS, hklm.Create(HKEY_CURRENT_USER,
-                                       temp_hklm_path.c_str(),
-                                       KEY_READ));
-
-  string16 temp_hkcu_path = base::StringPrintf(
-      L"%ls\\%ls",
-      RegistryOverrideManager::kTempTestKeyPath,
-      kRlzTempHkcu);
-
-  base::win::RegKey hkcu;
-  ASSERT_EQ(ERROR_SUCCESS, hkcu.Create(HKEY_CURRENT_USER,
-                                       temp_hkcu_path.c_str(),
-                                       KEY_READ));
-
-  rlz_lib::InitializeTempHivesForTesting(hklm, hkcu);
-
-  // Its important to override HKLM before HKCU because of the registry
-  // initialization performed above.
-  override_manager_.OverrideRegistry(HKEY_LOCAL_MACHINE, kRlzTempHklm);
-  override_manager_.OverrideRegistry(HKEY_CURRENT_USER, kRlzTempHkcu);
-#elif defined(OS_POSIX)
-  ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
-  rlz_lib::testing::SetRlzStoreDirectory(temp_dir_.path());
-#endif
+  RlzLibTestNoMachineState::SetUp();
 
   // Make sure a non-organic brand code is set in the registry or the RLZTracker
   // is pretty much a no-op.
   SetMainBrand("TEST");
   SetReactivationBrand("");
-}
-
-void RlzLibTest::TearDown() {
-#if defined(OS_POSIX)
-  rlz_lib::testing::SetRlzStoreDirectory(base::FilePath());
-#endif
-  testing::Test::TearDown();
 }
 
 void RlzLibTest::SetMainBrand(const char* brand) {
@@ -276,13 +212,13 @@ void RlzLibTest::SetReactivationBrand(const char* brand) {
 void RlzLibTest::SetRegistryBrandValue(const wchar_t* name,
                                        const char* brand) {
   BrowserDistribution* dist = BrowserDistribution::GetDistribution();
-  string16 reg_path = dist->GetStateKey();
+  base::string16 reg_path = dist->GetStateKey();
   RegKey key(HKEY_CURRENT_USER, reg_path.c_str(), KEY_SET_VALUE);
   if (*brand == 0) {
     LONG result = key.DeleteValue(name);
     ASSERT_TRUE(ERROR_SUCCESS == result || ERROR_FILE_NOT_FOUND == result);
   } else {
-    string16 brand16 = ASCIIToUTF16(brand);
+    base::string16 brand16 = ASCIIToUTF16(brand);
     ASSERT_EQ(ERROR_SUCCESS, key.WriteValue(name, brand16.c_str()));
   }
 }
@@ -647,7 +583,7 @@ TEST_F(RlzLibTest, GetAccessPointRlzOnIoThread) {
   // Set dummy RLZ string.
   rlz_lib::SetAccessPointRlz(RLZTracker::CHROME_OMNIBOX, kOmniboxRlzString);
 
-  string16 rlz;
+  base::string16 rlz;
 
   tracker_.set_assume_not_ui_thread(true);
   EXPECT_TRUE(RLZTracker::GetAccessPointRlz(RLZTracker::CHROME_OMNIBOX, &rlz));
@@ -658,7 +594,7 @@ TEST_F(RlzLibTest, GetAccessPointRlzNotOnIoThread) {
   // Set dummy RLZ string.
   rlz_lib::SetAccessPointRlz(RLZTracker::CHROME_OMNIBOX, kOmniboxRlzString);
 
-  string16 rlz;
+  base::string16 rlz;
 
   tracker_.set_assume_not_ui_thread(false);
   EXPECT_FALSE(RLZTracker::GetAccessPointRlz(RLZTracker::CHROME_OMNIBOX, &rlz));
@@ -668,7 +604,7 @@ TEST_F(RlzLibTest, GetAccessPointRlzIsCached) {
   // Set dummy RLZ string.
   rlz_lib::SetAccessPointRlz(RLZTracker::CHROME_OMNIBOX, kOmniboxRlzString);
 
-  string16 rlz;
+  base::string16 rlz;
 
   tracker_.set_assume_not_ui_thread(false);
   EXPECT_FALSE(RLZTracker::GetAccessPointRlz(RLZTracker::CHROME_OMNIBOX, &rlz));
@@ -687,7 +623,7 @@ TEST_F(RlzLibTest, PingUpdatesRlzCache) {
   rlz_lib::SetAccessPointRlz(RLZTracker::CHROME_OMNIBOX, kOmniboxRlzString);
   rlz_lib::SetAccessPointRlz(RLZTracker::CHROME_HOME_PAGE, kHomepageRlzString);
 
-  string16 rlz;
+  base::string16 rlz;
 
   // Prime the cache.
   tracker_.set_assume_not_ui_thread(true);

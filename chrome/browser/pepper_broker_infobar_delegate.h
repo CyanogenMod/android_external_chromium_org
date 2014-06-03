@@ -25,16 +25,15 @@ class PepperBrokerInfoBarDelegate : public ConfirmInfoBarDelegate {
  public:
   // Determines whether the broker setting is allow, deny, or ask.  In the first
   // two cases, runs the callback directly.  In the third, creates a pepper
-  // broker infobar delegate and adds it to the InfoBarService associated with
-  // |web_contents|.
+  // broker infobar and delegate and adds the infobar to the InfoBarService
+  // associated with |web_contents|.
   static void Create(content::WebContents* web_contents,
                      const GURL& url,
                      const base::FilePath& plugin_path,
                      const base::Callback<void(bool)>& callback);
 
  private:
-  PepperBrokerInfoBarDelegate(InfoBarService* infobar_service,
-                              const GURL& url,
+  PepperBrokerInfoBarDelegate(const GURL& url,
                               const base::FilePath& plugin_path,
                               const std::string& languages,
                               HostContentSettingsMap* content_settings,
@@ -44,11 +43,11 @@ class PepperBrokerInfoBarDelegate : public ConfirmInfoBarDelegate {
 
   // ConfirmInfoBarDelegate:
   virtual int GetIconID() const OVERRIDE;
-  virtual string16 GetMessageText() const OVERRIDE;
-  virtual string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
+  virtual base::string16 GetMessageText() const OVERRIDE;
+  virtual base::string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
   virtual bool Accept() OVERRIDE;
   virtual bool Cancel() OVERRIDE;
-  virtual string16 GetLinkText() const OVERRIDE;
+  virtual base::string16 GetLinkText() const OVERRIDE;
   virtual bool LinkClicked(WindowOpenDisposition disposition) OVERRIDE;
 
   void DispatchCallback(bool result);

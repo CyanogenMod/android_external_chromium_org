@@ -8,6 +8,7 @@
 #include <shellapi.h>
 
 #include "base/logging.h"
+#include "base/win/win_util.h"
 #include "base/win/windows_version.h"
 
 #if defined(USE_ASH)
@@ -61,7 +62,7 @@ static bool IsFullScreenWindowMode() {
   if (!monitor)
     return false;
   MONITORINFO monitor_info = { sizeof(monitor_info) };
-  if (!::GetMonitorInfo(monitor, &monitor_info))
+  if (!base::win::GetMonitorInfoWrapper(monitor, &monitor_info))
     return false;
 
   // It should be the main monitor.
@@ -104,8 +105,8 @@ bool IsFullScreenMode() {
 #if defined(USE_ASH)
   if (chrome::GetActiveDesktop() == chrome::HOST_DESKTOP_TYPE_ASH) {
     ash::internal::RootWindowController* controller =
-        ash::internal::RootWindowController::ForActiveRootWindow();
-    return controller && controller->GetFullscreenWindow();
+        ash::internal::RootWindowController::ForTargetRootWindow();
+    return controller && controller->GetWindowForFullscreenMode();
   }
 #endif
   return IsPlatformFullScreenMode() ||

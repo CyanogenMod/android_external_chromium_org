@@ -76,12 +76,17 @@ class NET_EXPORT_PRIVATE File : public base::RefCounted<File> {
  protected:
   virtual ~File();
 
+ private:
   // Performs the actual asynchronous write. If notify is set and there is no
   // callback, the call will be re-synchronized.
   bool AsyncWrite(const void* buffer, size_t buffer_len, size_t offset,
                   FileIOCallback* callback, bool* completed);
 
- private:
+  // Infrastructure for async IO.
+  int DoRead(void* buffer, size_t buffer_len, size_t offset);
+  int DoWrite(const void* buffer, size_t buffer_len, size_t offset);
+  void OnOperationComplete(FileIOCallback* callback, int result);
+
   bool init_;
   bool mixed_;
   base::PlatformFile platform_file_;  // Regular, asynchronous IO handle.

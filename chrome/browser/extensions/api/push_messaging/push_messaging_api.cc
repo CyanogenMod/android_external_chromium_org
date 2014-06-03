@@ -13,8 +13,6 @@
 #include "base/values.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/api/push_messaging/push_messaging_invalidation_handler.h"
-#include "chrome/browser/extensions/event_names.h"
-#include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_system_factory.h"
@@ -27,25 +25,23 @@
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service_factory.h"
 #include "chrome/common/extensions/api/push_messaging.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_set.h"
-#include "chrome/common/extensions/permissions/api_permission.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
+#include "extensions/browser/event_router.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/permissions/api_permission.h"
 #include "google_apis/gaia/gaia_constants.h"
 #include "url/gurl.h"
 
 using content::BrowserThread;
 
-namespace {
 const char kChannelIdSeparator[] = "/";
 const char kUserNotSignedIn[] = "The user is not signed in.";
 const char kUserAccessTokenFailure[] =
     "Cannot obtain access token for the user.";
-const char kTokenServiceNotAvailable[] = "Failed to get token service.";
 const int kObfuscatedGaiaIdTimeoutInDays = 30;
-}
 
 namespace extensions {
 
@@ -78,8 +74,8 @@ void PushMessagingEventRouter::OnMessage(const std::string& extension_id,
 
   scoped_ptr<base::ListValue> args(glue::OnMessage::Create(message));
   scoped_ptr<extensions::Event> event(new extensions::Event(
-      event_names::kOnPushMessage, args.Pass()));
-  event->restrict_to_profile = profile_;
+      glue::OnMessage::kEventName, args.Pass()));
+  event->restrict_to_browser_context = profile_;
   ExtensionSystem::Get(profile_)->event_router()->DispatchEventToExtension(
       extension_id, event.Pass());
 }
@@ -106,9 +102,9 @@ bool PushMessagingGetChannelIdFunction::RunImpl() {
 
   if (!IsUserLoggedIn()) {
     if (interactive_) {
-      ProfileOAuth2TokenServiceFactory::GetForProfile(profile())
+      ProfileOAuth2TokenServiceFactory::GetForProfile(GetProfile())
           ->AddObserver(this);
-      LoginUIServiceFactory::GetForProfile(profile())->ShowLoginPopup();
+      LoginUIServiceFactory::GetForProfile(GetProfile())->ShowLoginPopup();
       return true;
     } else {
       error_ = kUserNotSignedIn;
@@ -116,6 +112,8 @@ bool PushMessagingGetChannelIdFunction::RunImpl() {
       return false;
     }
   }
+
+  DVLOG(2) << "Logged in profile name: " << GetProfile()->GetProfileName();
 
   StartAccessTokenFetch();
   return true;
@@ -125,15 +123,17 @@ void PushMessagingGetChannelIdFunction::StartAccessTokenFetch() {
   std::vector<std::string> scope_vector =
       extensions::ObfuscatedGaiaIdFetcher::GetScopes();
   OAuth2TokenService::ScopeSet scopes(scope_vector.begin(), scope_vector.end());
-  fetcher_access_token_request_ =
-      ProfileOAuth2TokenServiceFactory::GetForProfile(profile())
-          ->StartRequest(scopes, this);
+  ProfileOAuth2TokenService* token_service =
+      ProfileOAuth2TokenServiceFactory::GetForProfile(GetProfile());
+  fetcher_access_token_request_ = token_service->StartRequest(
+      token_service->GetPrimaryAccountId(), scopes, this);
 }
 
 void PushMessagingGetChannelIdFunction::OnRefreshTokenAvailable(
     const std::string& account_id) {
-  ProfileOAuth2TokenServiceFactory::GetForProfile(profile())
+  ProfileOAuth2TokenServiceFactory::GetForProfile(GetProfile())
       ->RemoveObserver(this);
+  DVLOG(2) << "Newly logged in: " << GetProfile()->GetProfileName();
   StartAccessTokenFetch();
 }
 
@@ -156,6 +156,8 @@ void PushMessagingGetChannelIdFunction::OnGetTokenFailure(
   // TODO(fgorski): We are currently ignoring the error passed in upon failure.
   // It should be revisited when we are working on improving general error
   // handling for the identity related code.
+  DVLOG(1) << "Cannot obtain access token for this user "
+           << error.error_message() << " " << error.state();
   error_ = kUserAccessTokenFailure;
   ReportResult(std::string(), error_);
 }
@@ -164,12 +166,12 @@ void PushMessagingGetChannelIdFunction::StartGaiaIdFetch(
     const std::string& access_token) {
   // Start the async fetch of the Gaia Id.
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  net::URLRequestContextGetter* context = profile()->GetRequestContext();
+  net::URLRequestContextGetter* context = GetProfile()->GetRequestContext();
   fetcher_.reset(new ObfuscatedGaiaIdFetcher(context, this, access_token));
 
   // Get the token cache and see if we have already cached a Gaia Id.
   TokenCacheService* token_cache =
-      TokenCacheServiceFactory::GetForProfile(profile());
+      TokenCacheServiceFactory::GetForProfile(GetProfile());
 
   // Check the cache, if we already have a Gaia ID, use it instead of
   // fetching the ID over the network.
@@ -185,8 +187,10 @@ void PushMessagingGetChannelIdFunction::StartGaiaIdFetch(
 
 // Check if the user is logged in.
 bool PushMessagingGetChannelIdFunction::IsUserLoggedIn() const {
-  return ProfileOAuth2TokenServiceFactory::GetForProfile(profile())
-      ->RefreshTokenIsAvailable();
+  ProfileOAuth2TokenService* token_service =
+      ProfileOAuth2TokenServiceFactory::GetForProfile(GetProfile());
+  return token_service->RefreshTokenIsAvailable(
+      token_service->GetPrimaryAccountId());
 }
 
 void PushMessagingGetChannelIdFunction::ReportResult(
@@ -201,7 +205,7 @@ void PushMessagingGetChannelIdFunction::ReportResult(
     base::TimeDelta timeout =
         base::TimeDelta::FromDays(kObfuscatedGaiaIdTimeoutInDays);
     TokenCacheService* token_cache =
-        TokenCacheServiceFactory::GetForProfile(profile());
+        TokenCacheServiceFactory::GetForProfile(GetProfile());
     token_cache->StoreToken(GaiaConstants::kObfuscatedGaiaId, gaia_id,
                             timeout);
   }
@@ -256,7 +260,7 @@ void PushMessagingGetChannelIdFunction::OnObfuscatedGaiaIdFetchFailure(
     case GoogleServiceAuthError::ACCOUNT_DISABLED: {
       if (interactive_) {
         LoginUIService* login_ui_service =
-            LoginUIServiceFactory::GetForProfile(profile());
+            LoginUIServiceFactory::GetForProfile(GetProfile());
         // content::NotificationObserver will be called if token is issued.
         login_ui_service->ShowLoginPopup();
       } else {

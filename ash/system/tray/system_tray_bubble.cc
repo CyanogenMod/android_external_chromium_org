@@ -171,7 +171,7 @@ void SystemTrayBubble::UpdateView(
       settings.AddObserver(
           new AnimationObserverDeleteLayer(scoped_layer.release()));
       settings.SetTransitionDuration(swipe_duration);
-      settings.SetTweenType(ui::Tween::EASE_OUT);
+      settings.SetTweenType(gfx::Tween::EASE_OUT);
       gfx::Transform transform;
       transform.Translate(layer->bounds().width(), 0.0);
       layer->SetTransform(transform);
@@ -196,7 +196,7 @@ void SystemTrayBubble::UpdateView(
         settings.AddObserver(new AnimationObserverDeleteLayer(shadow));
         settings.SetTransitionDuration(swipe_duration +
                                        base::TimeDelta::FromMilliseconds(150));
-        settings.SetTweenType(ui::Tween::LINEAR);
+        settings.SetTweenType(gfx::Tween::LINEAR);
         shadow->SetOpacity(0.15f);
       }
     }
@@ -242,7 +242,7 @@ void SystemTrayBubble::UpdateView(
             new AnimationObserverDeleteLayer(scoped_layer.release()));
         settings.SetTransitionDuration(
             base::TimeDelta::FromMilliseconds(kSwipeDelayMS));
-        settings.SetTweenType(ui::Tween::EASE_OUT);
+        settings.SetTweenType(gfx::Tween::EASE_OUT);
         new_layer->SetTransform(gfx::Transform());
       }
     }
@@ -269,6 +269,16 @@ void SystemTrayBubble::InitView(views::View* anchor,
     bubble_view_->NotifyAccessibilityEvent(
         ui::AccessibilityTypes::EVENT_ALERT, true);
   }
+}
+
+void SystemTrayBubble::FocusDefaultIfNeeded() {
+  views::FocusManager* manager = bubble_view_->GetFocusManager();
+  if (!manager || manager->GetFocusedView())
+    return;
+
+  views::View* view = manager->GetNextFocusableView(NULL, NULL, false, false);
+  if (view)
+    view->RequestFocus();
 }
 
 void SystemTrayBubble::DestroyItemViews() {
@@ -342,11 +352,14 @@ bool SystemTrayBubble::ShouldShowLauncher() const {
 
 void SystemTrayBubble::CreateItemViews(user::LoginStatus login_status) {
   std::vector<views::View*> item_views;
+  views::View* focus_view = NULL;
   for (size_t i = 0; i < items_.size(); ++i) {
     views::View* view = NULL;
     switch (bubble_type_) {
       case BUBBLE_TYPE_DEFAULT:
         view = items_[i]->CreateDefaultView(login_status);
+        if (items_[i]->restore_focus())
+          focus_view = view;
         break;
       case BUBBLE_TYPE_DETAILED:
         view = items_[i]->CreateDetailedView(login_status);
@@ -367,6 +380,8 @@ void SystemTrayBubble::CreateItemViews(user::LoginStatus login_status) {
         item_views[i], is_default_bubble,
         is_default_bubble && (i < item_views.size() - 2)));
   }
+  if (focus_view)
+    focus_view->RequestFocus();
 }
 
 }  // namespace internal

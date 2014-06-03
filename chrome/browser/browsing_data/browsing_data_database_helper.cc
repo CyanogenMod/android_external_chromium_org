@@ -81,14 +81,14 @@ void BrowsingDataDatabaseHelper::FetchDatabaseInfoOnFileThread() {
         // Non-websafe state is not considered browsing data.
         continue;
       }
-      std::vector<string16> databases;
+      std::vector<base::string16> databases;
       ori->GetAllDatabaseNames(&databases);
-      for (std::vector<string16>::const_iterator db = databases.begin();
+      for (std::vector<base::string16>::const_iterator db = databases.begin();
            db != databases.end(); ++db) {
         base::FilePath file_path =
             tracker_->GetFullDBFilePath(ori->GetOriginIdentifier(), *db);
         base::PlatformFileInfo file_info;
-        if (file_util::GetFileInfo(file_path, &file_info)) {
+        if (base::GetFileInfo(file_path, &file_info)) {
           database_info_.push_back(DatabaseInfo(
                 identifier,
                 UTF16ToUTF8(*db),

@@ -9,7 +9,6 @@
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/download/download_request_infobar_delegate.h"
 #include "chrome/browser/infobars/infobar_service.h"
-#include "chrome/browser/ui/blocked_content/blocked_content_tab_helper.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/browser/navigation_controller.h"
@@ -28,7 +27,6 @@ class DownloadRequestLimiterTest : public ChromeRenderViewHostTestHarness {
 
   virtual void SetUp() {
     ChromeRenderViewHostTestHarness::SetUp();
-    BlockedContentTabHelper::CreateForWebContents(web_contents());
     InfoBarService::CreateForWebContents(web_contents());
     testing_action_ = ACCEPT;
     ask_allow_count_ = cancel_count_ = continue_count_ = 0;
@@ -119,6 +117,15 @@ class DownloadRequestLimiterTest : public ChromeRenderViewHostTestHarness {
     } else {
       cancel_count_++;
     }
+  }
+
+  void SetHostContentSetting(WebContents* contents, ContentSetting setting) {
+    content_settings_->SetContentSetting(
+        ContentSettingsPattern::FromURL(contents->GetURL()),
+        ContentSettingsPattern::Wildcard(),
+        CONTENT_SETTINGS_TYPE_AUTOMATIC_DOWNLOADS,
+        std::string(),
+        setting);
   }
 
   scoped_refptr<DownloadRequestLimiter> download_request_limiter_;
@@ -350,4 +357,32 @@ TEST_F(DownloadRequestLimiterTest,
   ExpectAndResetCounts(1, 0, 0, __LINE__);
   EXPECT_EQ(DownloadRequestLimiter::PROMPT_BEFORE_DOWNLOAD,
             download_request_limiter_->GetDownloadStatus(web_contents.get()));
+}
+
+TEST_F(DownloadRequestLimiterTest,
+       DownloadRequestLimiter_SetHostContentSetting) {
+  NavigateAndCommit(GURL("http://foo.com/bar"));
+  SetHostContentSetting(web_contents(), CONTENT_SETTING_ALLOW);
+
+  CanDownload();
+  ExpectAndResetCounts(1, 0, 0, __LINE__);
+  ASSERT_EQ(DownloadRequestLimiter::PROMPT_BEFORE_DOWNLOAD,
+            download_request_limiter_->GetDownloadStatus(web_contents()));
+
+  CanDownload();
+  ExpectAndResetCounts(1, 0, 0, __LINE__);
+  ASSERT_EQ(DownloadRequestLimiter::PROMPT_BEFORE_DOWNLOAD,
+            download_request_limiter_->GetDownloadStatus(web_contents()));
+
+  SetHostContentSetting(web_contents(), CONTENT_SETTING_BLOCK);
+
+  CanDownload();
+  ExpectAndResetCounts(0, 1, 0, __LINE__);
+  ASSERT_EQ(DownloadRequestLimiter::PROMPT_BEFORE_DOWNLOAD,
+            download_request_limiter_->GetDownloadStatus(web_contents()));
+
+  CanDownload();
+  ExpectAndResetCounts(0, 1, 0, __LINE__);
+  ASSERT_EQ(DownloadRequestLimiter::PROMPT_BEFORE_DOWNLOAD,
+            download_request_limiter_->GetDownloadStatus(web_contents()));
 }

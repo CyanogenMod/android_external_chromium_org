@@ -36,24 +36,23 @@ class ToolbarModelImpl : public ToolbarModel {
   static SecurityLevel GetSecurityLevelForWebContents(
       content::WebContents* web_contents);
 
-  // Overriden from ToolbarModel.
-  virtual string16 GetText(
-      bool display_search_urls_as_search_terms) const OVERRIDE;
-  virtual string16 GetCorpusNameForMobile() const OVERRIDE;
+  // Returns "<organization_name> [<country>]".
+  static base::string16 GetEVCertName(const net::X509Certificate& cert);
+
+ private:
+  // ToolbarModel:
+  virtual base::string16 GetText() const OVERRIDE;
+  virtual base::string16 GetCorpusNameForMobile() const OVERRIDE;
   virtual GURL GetURL() const OVERRIDE;
-  virtual bool WouldReplaceSearchURLWithSearchTerms(
+  virtual bool WouldOmitURLDueToOriginChip() const OVERRIDE;
+  virtual bool WouldPerformSearchTermReplacement(
       bool ignore_editing) const OVERRIDE;
   virtual SecurityLevel GetSecurityLevel(bool ignore_editing) const OVERRIDE;
   virtual int GetIcon() const OVERRIDE;
-  virtual string16 GetEVCertName() const OVERRIDE;
+  virtual int GetIconForSecurityLevel(SecurityLevel level) const OVERRIDE;
+  virtual base::string16 GetEVCertName() const OVERRIDE;
   virtual bool ShouldDisplayURL() const OVERRIDE;
-  virtual void SetInputInProgress(bool value) OVERRIDE;
-  virtual bool GetInputInProgress() const OVERRIDE;
 
-  // Returns "<organization_name> [<country>]".
-  static string16 GetEVCertName(const net::X509Certificate& cert);
-
- private:
   // Returns the navigation controller used to retrieve the navigation entry
   // from which the states are retrieved.
   // If this returns NULL, default values are used.
@@ -62,16 +61,13 @@ class ToolbarModelImpl : public ToolbarModel {
   // Helper method to extract the profile from the navigation controller.
   Profile* GetProfile() const;
 
-  // Returns search terms as in chrome::GetSearchTerms() unless the page is
-  // insufficiently secure.  If |ignore_editing| is true, the result reflects
-  // the underlying state of the page without regard to any user edits that
-  // may be in progress in the omnibox.
-  string16 GetSearchTerms(bool ignore_editing) const;
+  // Returns search terms as in chrome::GetSearchTerms() if such terms should
+  // appear in the omnibox (i.e. the page is sufficiently secure, search term
+  // replacement is enabled, editing is not in progress, etc.).  If
+  // |ignore_editing| is true, the "editing not in progress" check is skipped.
+  base::string16 GetSearchTerms(bool ignore_editing) const;
 
   ToolbarModelDelegate* delegate_;
-
-  // Whether the text in the location bar is currently being edited.
-  bool input_in_progress_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(ToolbarModelImpl);
 };

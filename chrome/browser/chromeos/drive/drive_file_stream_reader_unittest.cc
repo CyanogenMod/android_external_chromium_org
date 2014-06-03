@@ -16,8 +16,8 @@
 #include "chrome/browser/chromeos/drive/local_file_reader.h"
 #include "chrome/browser/chromeos/drive/test_util.h"
 #include "chrome/browser/drive/fake_drive_service.h"
-#include "chrome/browser/google_apis/test_util.h"
 #include "content/public/test/test_browser_thread_bundle.h"
+#include "google_apis/drive/test_util.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/base/test_completion_callback.h"
@@ -297,14 +297,6 @@ class DriveFileStreamReaderTest : public ::testing::Test {
     // Create a testee instance.
     fake_file_system_.reset(
         new test_util::FakeFileSystem(fake_drive_service_.get()));
-    fake_file_system_->Initialize();
-  }
-
-  virtual void TearDown() OVERRIDE {
-    fake_file_system_.reset();
-    fake_drive_service_.reset();
-
-    worker_thread_.reset();
   }
 
   FileSystemInterface* GetFileSystem() {

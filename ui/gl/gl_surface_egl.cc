@@ -24,6 +24,7 @@
 #include "ui/gl/gl_surface_stub.h"
 #include "ui/gl/gl_switches.h"
 #include "ui/gl/scoped_make_current.h"
+#include "ui/gl/sync_control_vsync_provider.h"
 
 #if defined(USE_X11)
 extern "C" {
@@ -32,7 +33,7 @@ extern "C" {
 #endif
 
 #if defined (USE_OZONE)
-#include "ui/base/ozone/surface_factory_ozone.h"
+#include "ui/gfx/ozone/surface_factory_ozone.h"
 #endif
 
 // From ANGLE's egl/eglext.h.
@@ -54,6 +55,7 @@ EGLNativeDisplayType g_native_display;
 const char* g_egl_extensions = NULL;
 bool g_egl_create_context_robustness_supported = false;
 bool g_egl_sync_control_supported = false;
+bool g_egl_surfaceless_context_supported = false;
 
 class EGLSyncControlVSyncProvider
     : public gfx::SyncControlVSyncProvider {
@@ -100,17 +102,24 @@ bool GLSurfaceEGL::InitializeOneOff() {
   if (initialized)
     return true;
 
-#if defined (USE_OZONE)
-  ui::SurfaceFactoryOzone::GetInstance()->InitializeHardware();
-#endif
-
 #if defined(USE_X11)
   g_native_display = base::MessagePumpForUI::GetDefaultXDisplay();
 #elif defined(OS_WIN)
   g_native_display = EGL_DEFAULT_DISPLAY;
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kDisableD3D11)) {
+  if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kDisableD3D11) &&
+      CommandLine::ForCurrentProcess()->HasSwitch(switches::kEnableD3D11)) {
     g_native_display = EGL_D3D11_ELSE_D3D9_DISPLAY_ANGLE;
   }
+#elif defined(USE_OZONE)
+  gfx::SurfaceFactoryOzone* surface_factory =
+      gfx::SurfaceFactoryOzone::GetInstance();
+  if (surface_factory->InitializeHardware() !=
+      gfx::SurfaceFactoryOzone::INITIALIZED) {
+    LOG(ERROR) << "OZONE failed to initialize hardware";
+    return false;
+  }
+  g_native_display = reinterpret_cast<EGLNativeDisplayType>(
+      surface_factory->GetNativeDisplay());
 #else
   g_native_display = EGL_DEFAULT_DISPLAY;
 #endif
@@ -138,9 +147,16 @@ bool GLSurfaceEGL::InitializeOneOff() {
     EGL_NONE
   };
 
+#if defined(USE_OZONE)
+  const EGLint* config_attribs =
+      surface_factory->GetEGLSurfaceProperties(kConfigAttribs);
+#else
+  const EGLint* config_attribs = kConfigAttribs;
+#endif
+
   EGLint num_configs;
   if (!eglChooseConfig(g_display,
-                       kConfigAttribs,
+                       config_attribs,
                        NULL,
                        0,
                        &num_configs)) {
@@ -155,7 +171,7 @@ bool GLSurfaceEGL::InitializeOneOff() {
   }
 
   if (!eglChooseConfig(g_display,
-                       kConfigAttribs,
+                       config_attribs,
                        &g_config,
                        1,
                        &num_configs)) {
@@ -169,6 +185,27 @@ bool GLSurfaceEGL::InitializeOneOff() {
       HasEGLExtension("EGL_EXT_create_context_robustness");
   g_egl_sync_control_supported =
       HasEGLExtension("EGL_CHROMIUM_sync_control");
+
+  // Check if SurfacelessEGL is supported.
+  g_egl_surfaceless_context_supported =
+      HasEGLExtension("EGL_KHR_surfaceless_context");
+  if (g_egl_surfaceless_context_supported) {
+    // EGL_KHR_surfaceless_context is supported but ensure
+    // GL_OES_surfaceless_context is also supported. We need a current context
+    // to query for supported GL extensions.
+    scoped_refptr<GLSurface> surface = new SurfacelessEGL(Size(1, 1));
+    scoped_refptr<GLContext> context = GLContext::CreateGLContext(
+      NULL, surface.get(), PreferIntegratedGpu);
+    if (!context->MakeCurrent(surface.get()))
+      g_egl_surfaceless_context_supported = false;
+
+    // Ensure context supports GL_OES_surfaceless_context.
+    if (g_egl_surfaceless_context_supported) {
+      g_egl_surfaceless_context_supported = context->HasExtension(
+          "GL_OES_surfaceless_context");
+      context->ReleaseCurrent(surface.get());
+    }
+  }
 
   initialized = true;
 
@@ -218,6 +255,7 @@ bool NativeViewGLSurfaceEGL::Initialize() {
 
 bool NativeViewGLSurfaceEGL::Initialize(VSyncProvider* sync_provider) {
   DCHECK(!surface_);
+  scoped_ptr<VSyncProvider> vsync_provider(sync_provider);
 
   if (window_ == kNullAcceleratedWidget) {
     LOG(ERROR) << "Trying to create surface without window.";
@@ -258,7 +296,7 @@ bool NativeViewGLSurfaceEGL::Initialize(VSyncProvider* sync_provider) {
   supports_post_sub_buffer_ = (surfaceVal && retVal) == EGL_TRUE;
 
   if (sync_provider)
-    vsync_provider_.reset(sync_provider);
+    vsync_provider_.swap(vsync_provider);
   else if (g_egl_sync_control_supported)
     vsync_provider_.reset(new EGLSyncControlVSyncProvider(surface_));
   return true;
@@ -578,6 +616,50 @@ PbufferGLSurfaceEGL::~PbufferGLSurfaceEGL() {
   Destroy();
 }
 
+SurfacelessEGL::SurfacelessEGL(const gfx::Size& size)
+    : size_(size) {
+}
+
+bool SurfacelessEGL::Initialize() {
+  return true;
+}
+
+void SurfacelessEGL::Destroy() {
+}
+
+EGLConfig SurfacelessEGL::GetConfig() {
+  return g_config;
+}
+
+bool SurfacelessEGL::IsOffscreen() {
+  return true;
+}
+
+bool SurfacelessEGL::SwapBuffers() {
+  LOG(ERROR) << "Attempted to call SwapBuffers with SurfacelessEGL.";
+  return false;
+}
+
+gfx::Size SurfacelessEGL::GetSize() {
+  return size_;
+}
+
+bool SurfacelessEGL::Resize(const gfx::Size& size) {
+  size_ = size;
+  return true;
+}
+
+EGLSurface SurfacelessEGL::GetHandle() {
+  return EGL_NO_SURFACE;
+}
+
+void* SurfacelessEGL::GetShareHandle() {
+  return NULL;
+}
+
+SurfacelessEGL::~SurfacelessEGL() {
+}
+
 #if defined(ANDROID) || defined(USE_OZONE)
 
 // A thin subclass of |GLSurfaceOSMesa| that can be used in place
@@ -638,10 +720,10 @@ GLSurface::CreateViewGLSurface(gfx::AcceleratedWidget window) {
     scoped_refptr<NativeViewGLSurfaceEGL> surface;
     VSyncProvider* sync_provider = NULL;
 #if defined(USE_OZONE)
-    window = ui::SurfaceFactoryOzone::GetInstance()->RealizeAcceleratedWidget(
+    window = gfx::SurfaceFactoryOzone::GetInstance()->RealizeAcceleratedWidget(
         window);
     sync_provider =
-        ui::SurfaceFactoryOzone::GetInstance()->GetVSyncProvider(window);
+        gfx::SurfaceFactoryOzone::GetInstance()->GetVSyncProvider(window);
 #endif
     surface = new NativeViewGLSurfaceEGL(window);
     if(surface->Initialize(sync_provider))
@@ -666,8 +748,13 @@ GLSurface::CreateOffscreenGLSurface(const gfx::Size& size) {
       return surface;
     }
     case kGLImplementationEGLGLES2: {
-      scoped_refptr<PbufferGLSurfaceEGL> surface(
-          new PbufferGLSurfaceEGL(size));
+      scoped_refptr<GLSurface> surface;
+      if (g_egl_surfaceless_context_supported &&
+         (size.width() == 0 && size.height() == 0)) {
+        surface = new SurfacelessEGL(size);
+      } else
+        surface = new PbufferGLSurfaceEGL(size);
+
       if (!surface->Initialize())
         return NULL;
       return surface;

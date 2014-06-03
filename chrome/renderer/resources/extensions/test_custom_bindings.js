@@ -12,6 +12,7 @@ var GetExtensionAPIDefinitionsForTest =
     requireNative('apiDefinitions').GetExtensionAPIDefinitionsForTest;
 var GetAvailability = requireNative('v8_context').GetAvailability;
 var GetAPIFeatures = requireNative('test_features').GetAPIFeatures;
+var userGestures = requireNative('user_gestures');
 
 binding.registerCustomHook(function(api) {
   var chromeTest = api.compiledApi;
@@ -230,13 +231,19 @@ binding.registerCustomHook(function(api) {
 
   apiFunctions.setHandleRequest('assertThrows',
                                 function(fn, self, args, message) {
-    assertTrue(typeof fn == 'function');
+    chromeTest.assertTrue(typeof fn == 'function');
     try {
       fn.apply(self, args);
       chromeTest.fail('Did not throw error: ' + fn);
     } catch (e) {
-      if (message !== undefined)
-        chromeTest.assertEq(message, e.message);
+      if (e != failureException && message !== undefined) {
+        if (message instanceof RegExp) {
+          chromeTest.assertTrue(message.test(e.message),
+                                e.message + ' should match ' + message)
+        } else {
+          chromeTest.assertEq(message, e.message);
+        }
+      }
     }
   });
 
@@ -319,6 +326,20 @@ binding.registerCustomHook(function(api) {
 
   apiFunctions.setHandleRequest('getApiFeatures', function() {
     return GetAPIFeatures();
+  });
+
+  apiFunctions.setHandleRequest('isProcessingUserGesture', function() {
+    return userGestures.IsProcessingUserGesture();
+  });
+
+  apiFunctions.setHandleRequest('runWithUserGesture', function(callback) {
+    chromeTest.assertEq(typeof(callback), 'function');
+    return userGestures.RunWithUserGesture(callback);
+  });
+
+  apiFunctions.setHandleRequest('runWithoutUserGesture', function(callback) {
+    chromeTest.assertEq(typeof(callback), 'function');
+    return userGestures.RunWithoutUserGesture(callback);
   });
 });
 

@@ -10,7 +10,7 @@
 #include "base/compiler_specific.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/aura/window_delegate.h"
-#include "ui/base/keycodes/keyboard_codes.h"
+#include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/rect.h"
 
 namespace aura {
@@ -60,7 +60,8 @@ class TestWindowDelegate : public WindowDelegate {
   virtual void OnWindowTargetVisibilityChanged(bool visible) OVERRIDE;
   virtual bool HasHitTestMask() const OVERRIDE;
   virtual void GetHitTestMask(gfx::Path* mask) const OVERRIDE;
-  virtual scoped_refptr<ui::Texture> CopyTexture() OVERRIDE;
+  virtual void DidRecreateLayer(ui::Layer* old_layer,
+                                ui::Layer* new_layer) OVERRIDE;
 
  private:
   int window_component_;

@@ -59,13 +59,13 @@ class SynchronousCompositorOutputSurface
   virtual bool ForcedDrawToSoftwareDevice() const OVERRIDE;
   virtual bool BindToClient(cc::OutputSurfaceClient* surface_client) OVERRIDE;
   virtual void Reshape(gfx::Size size, float scale_factor) OVERRIDE;
-  virtual void SetNeedsBeginFrame(bool enable) OVERRIDE;
+  virtual void SetNeedsBeginImplFrame(bool enable) OVERRIDE;
   virtual void SwapBuffers(cc::CompositorFrame* frame) OVERRIDE;
 
   // Partial SynchronousCompositor API implementation.
   bool InitializeHwDraw(
-      scoped_refptr<gfx::GLSurface> surface,
-      scoped_refptr<cc::ContextProvider> offscreen_context);
+      scoped_refptr<cc::ContextProvider> onscreen_context_provider,
+      scoped_refptr<cc::ContextProvider> offscreen_context_provider);
   void ReleaseHwDraw();
   bool DemandDrawHw(gfx::Size surface_size,
                     const gfx::Transform& transform,
@@ -80,17 +80,17 @@ class SynchronousCompositorOutputSurface
   friend class SoftwareDevice;
 
   // Private OutputSurface overrides.
-  virtual void PostCheckForRetroactiveBeginFrame() OVERRIDE;
+  virtual void PostCheckForRetroactiveBeginImplFrame() OVERRIDE;
 
   void InvokeComposite(const gfx::Transform& transform,
                        gfx::Rect viewport,
                        gfx::Rect clip,
-                       bool hardware);
+                       bool valid_for_tile_management);
   bool CalledOnValidThread() const;
   SynchronousCompositorOutputSurfaceDelegate* GetDelegate();
 
   int routing_id_;
-  bool needs_begin_frame_;
+  bool needs_begin_impl_frame_;
   bool invoking_composite_;
   bool did_swap_buffer_;
 

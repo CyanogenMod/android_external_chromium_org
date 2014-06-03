@@ -20,7 +20,7 @@
 #include "net/url_request/url_request.h"
 #include "ui/base/layout.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/webui/web_ui_util.h"
+#include "ui/base/webui/web_ui_util.h"
 #include "url/gurl.h"
 
 using content::BrowserThread;
@@ -43,8 +43,10 @@ static const char* kNewIncognitoTabCSSPath = "css/incognito_new_tab_theme.css";
 
 ThemeSource::ThemeSource(Profile* profile)
     : profile_(profile->GetOriginalProfile()) {
-  css_bytes_ = NTPResourceCacheFactory::GetForProfile(profile)->GetNewTabCSS(
-      profile->IsOffTheRecord());
+  NTPResourceCache::WindowType win_type = NTPResourceCache::GetWindowType(
+      profile_, NULL);
+  css_bytes_ =
+      NTPResourceCacheFactory::GetForProfile(profile)->GetNewTabCSS(win_type);
 }
 
 ThemeSource::~ThemeSource() {

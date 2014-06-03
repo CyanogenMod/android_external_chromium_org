@@ -48,7 +48,6 @@
 #include "content/public/test/test_browser_thread.h"
 #include "content/public/test/test_launcher.h"
 #include "content/public/test/test_navigation_observer.h"
-#include "net/dns/mock_host_resolver.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/test/spawned_test_server/spawned_test_server.h"
 
@@ -78,7 +77,7 @@ namespace {
 const char kBrowserTestType[] = "browser";
 
 // Used when running in single-process mode.
-base::LazyInstance<chrome::ChromeContentRendererClient>::Leaky
+base::LazyInstance<ChromeContentRendererClient>::Leaky
     g_chrome_content_renderer_client = LAZY_INSTANCE_INITIALIZER;
 
 // A BrowserListObserver that makes sure that all browsers created are on the
@@ -146,13 +145,8 @@ InProcessBrowserTest::~InProcessBrowserTest() {
 }
 
 void InProcessBrowserTest::SetUp() {
-  // Undo TestingBrowserProcess creation in ChromeTestSuite.
-  // TODO(phajdan.jr): Extract a smaller test suite so we don't need this.
-  DCHECK(g_browser_process);
-  BrowserProcess* old_browser_process = g_browser_process;
-  // g_browser_process must be NULL during its own destruction.
-  g_browser_process = NULL;
-  delete old_browser_process;
+  // Browser tests will create their own g_browser_process later.
+  DCHECK(!g_browser_process);
 
   CommandLine* command_line = CommandLine::ForCurrentProcess();
   // Allow subclasses to change the command line before running any tests.
@@ -179,17 +173,8 @@ void InProcessBrowserTest::SetUp() {
 #if defined(OS_CHROMEOS)
   // Make sure that the log directory exists.
   base::FilePath log_dir = logging::GetSessionLogFile(*command_line).DirName();
-  file_util::CreateDirectory(log_dir);
+  base::CreateDirectory(log_dir);
 #endif  // defined(OS_CHROMEOS)
-
-  host_resolver_ = new net::RuleBasedHostResolverProc(NULL);
-
-  // See http://en.wikipedia.org/wiki/Web_Proxy_Autodiscovery_Protocol
-  // We don't want the test code to use it.
-  host_resolver_->AddSimulatedFailure("wpad");
-
-  net::ScopedDefaultHostResolverProc scoped_host_resolver_proc(
-      host_resolver_.get());
 
 #if defined(OS_MACOSX)
   // On Mac, without the following autorelease pool, code which is directly
@@ -417,7 +402,7 @@ void InProcessBrowserTest::RunTestOnMainThreadLoop() {
 #if !defined(OS_ANDROID) && !defined(OS_IOS)
   // Do not use the real StorageMonitor for tests, which introduces another
   // source of variability and potential slowness.
-  ASSERT_TRUE(chrome::test::TestStorageMonitor::CreateForBrowserTests());
+  ASSERT_TRUE(TestStorageMonitor::CreateForBrowserTests());
 #endif
 
   // Pump any pending events that were created as a result of creating a
@@ -458,8 +443,10 @@ void InProcessBrowserTest::RunTestOnMainThreadLoop() {
 }
 
 void InProcessBrowserTest::QuitBrowsers() {
-  if (chrome::GetTotalBrowserCount() == 0)
+  if (chrome::GetTotalBrowserCount() == 0) {
+    chrome::NotifyAppTerminating();
     return;
+  }
 
   // Invoke AttemptExit on a running message loop.
   // AttemptExit exits the message loop after everything has been

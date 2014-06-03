@@ -12,6 +12,7 @@
 #include "base/run_loop.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/test/test_timeouts.h"
+#include "content/browser/media/media_internals.h"
 #include "content/browser/renderer_host/media/audio_input_renderer_host.h"
 #include "content/browser/renderer_host/media/audio_mirroring_manager.h"
 #include "content/browser/renderer_host/media/audio_renderer_host.h"
@@ -75,6 +76,61 @@ class WebRTCMockRenderProcess : public RenderProcess {
 
  private:
   DISALLOW_COPY_AND_ASSIGN(WebRTCMockRenderProcess);
+};
+
+class TestAudioRendererHost : public AudioRendererHost {
+ public:
+  TestAudioRendererHost(
+      int render_process_id,
+      media::AudioManager* audio_manager,
+      AudioMirroringManager* mirroring_manager,
+      MediaInternals* media_internals,
+      MediaStreamManager* media_stream_manager,
+      IPC::Channel* channel)
+      : AudioRendererHost(render_process_id, audio_manager, mirroring_manager,
+                          media_internals, media_stream_manager),
+        channel_(channel) {}
+  virtual bool Send(IPC::Message* message) OVERRIDE {
+    if (channel_)
+      return channel_->Send(message);
+    return false;
+  }
+  void ResetChannel() {
+    channel_ = NULL;
+  }
+
+ protected:
+  virtual ~TestAudioRendererHost() {}
+
+ private:
+  IPC::Channel* channel_;
+};
+
+class TestAudioInputRendererHost : public AudioInputRendererHost {
+ public:
+  TestAudioInputRendererHost(
+      media::AudioManager* audio_manager,
+      MediaStreamManager* media_stream_manager,
+      AudioMirroringManager* audio_mirroring_manager,
+      media::UserInputMonitor* user_input_monitor,
+      IPC::Channel* channel)
+      : AudioInputRendererHost(audio_manager, media_stream_manager,
+                               audio_mirroring_manager, user_input_monitor),
+        channel_(channel) {}
+  virtual bool Send(IPC::Message* message) OVERRIDE {
+    if (channel_)
+      return channel_->Send(message);
+    return false;
+  }
+  void ResetChannel() {
+    channel_ = NULL;
+  }
+
+ protected:
+  virtual ~TestAudioInputRendererHost() {}
+
+ private:
+  IPC::Channel* channel_;
 };
 
 // Utility scoped class to replace the global content client's renderer for the
@@ -201,6 +257,18 @@ void MAYBE_WebRTCAudioDeviceTest::SetAudioHardwareConfig(
   audio_hardware_config_ = hardware_config;
 }
 
+scoped_refptr<WebRtcAudioRenderer>
+MAYBE_WebRTCAudioDeviceTest::CreateDefaultWebRtcAudioRenderer(
+    int render_view_id) {
+  media::AudioHardwareConfig* hardware_config =
+      RenderThreadImpl::current()->GetAudioHardwareConfig();
+  int sample_rate = hardware_config->GetOutputSampleRate();
+  int frames_per_buffer = hardware_config->GetOutputBufferSize();
+
+  return new WebRtcAudioRenderer(render_view_id, 0, sample_rate,
+                                 frames_per_buffer);
+}
+
 void MAYBE_WebRTCAudioDeviceTest::InitializeIOThread(const char* thread_name) {
 #if defined(OS_WIN)
   // We initialize COM (STA) on our IO thread as is done in Chrome.
@@ -217,10 +285,9 @@ void MAYBE_WebRTCAudioDeviceTest::InitializeIOThread(const char* thread_name) {
   MockRTCResourceContext* resource_context =
       static_cast<MockRTCResourceContext*>(resource_context_.get());
   resource_context->set_request_context(test_request_context_.get());
-  media_internals_.reset(new MockMediaInternals());
 
   // Create our own AudioManager, AudioMirroringManager and MediaStreamManager.
-  audio_manager_.reset(media::AudioManager::Create());
+  audio_manager_.reset(media::AudioManager::CreateForTesting());
   mirroring_manager_.reset(new AudioMirroringManager());
   media_stream_manager_.reset(new MediaStreamManager(audio_manager_.get()));
 
@@ -246,22 +313,26 @@ void MAYBE_WebRTCAudioDeviceTest::UninitializeIOThread() {
 void MAYBE_WebRTCAudioDeviceTest::CreateChannel(const char* name) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
 
-  static const int kRenderProcessId = 1;
-  audio_render_host_ = new AudioRendererHost(
-      kRenderProcessId, audio_manager_.get(), mirroring_manager_.get(),
-      media_internals_.get(), media_stream_manager_.get());
-  audio_render_host_->OnChannelConnected(base::GetCurrentProcId());
-
-  audio_input_renderer_host_ = new AudioInputRendererHost(
-      audio_manager_.get(), media_stream_manager_.get(),
-      mirroring_manager_.get());
-  audio_input_renderer_host_->OnChannelConnected(base::GetCurrentProcId());
-
   channel_.reset(new IPC::Channel(name, IPC::Channel::MODE_SERVER, this));
   ASSERT_TRUE(channel_->Connect());
 
-  audio_render_host_->OnFilterAdded(channel_.get());
-  audio_input_renderer_host_->OnFilterAdded(channel_.get());
+  static const int kRenderProcessId = 1;
+  audio_render_host_ = new TestAudioRendererHost(kRenderProcessId,
+                                                 audio_manager_.get(),
+                                                 mirroring_manager_.get(),
+                                                 MediaInternals::GetInstance(),
+                                                 media_stream_manager_.get(),
+                                                 channel_.get());
+  audio_render_host_->set_peer_pid_for_testing(base::GetCurrentProcId());
+
+  audio_input_renderer_host_ =
+      new TestAudioInputRendererHost(audio_manager_.get(),
+                                     media_stream_manager_.get(),
+                                     mirroring_manager_.get(),
+                                     NULL,
+                                     channel_.get());
+  audio_input_renderer_host_->set_peer_pid_for_testing(
+      base::GetCurrentProcId());
 }
 
 void MAYBE_WebRTCAudioDeviceTest::DestroyChannel() {
@@ -270,6 +341,8 @@ void MAYBE_WebRTCAudioDeviceTest::DestroyChannel() {
   audio_render_host_->OnFilterRemoved();
   audio_input_renderer_host_->OnChannelClosing();
   audio_input_renderer_host_->OnFilterRemoved();
+  audio_render_host_->ResetChannel();
+  audio_input_renderer_host_->ResetChannel();
   channel_.reset();
   audio_render_host_ = NULL;
   audio_input_renderer_host_ = NULL;

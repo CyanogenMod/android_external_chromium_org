@@ -6,7 +6,7 @@
 
 #include "base/i18n/case_conversion.h"
 #include "ui/base/ime/text_input_type.h"
-#include "ui/base/range/range.h"
+#include "ui/gfx/range/range.h"
 #include "ui/views/controls/prefix_delegate.h"
 #include "ui/views/widget/widget.h"
 
@@ -71,7 +71,7 @@ bool PrefixSelector::CanComposeInline() const {
   return false;
 }
 
-gfx::Rect PrefixSelector::GetCaretBounds() {
+gfx::Rect PrefixSelector::GetCaretBounds() const {
   gfx::Rect rect(prefix_delegate_->GetVisibleBounds().origin(), gfx::Size());
   // TextInputClient::GetCaretBounds is expected to return a value in screen
   // coordinates.
@@ -80,42 +80,42 @@ gfx::Rect PrefixSelector::GetCaretBounds() {
 }
 
 bool PrefixSelector::GetCompositionCharacterBounds(uint32 index,
-                                                   gfx::Rect* rect) {
+                                                   gfx::Rect* rect) const {
   // TextInputClient::GetCompositionCharacterBounds is expected to fill |rect|
   // in screen coordinates and GetCaretBounds returns screen coordinates.
   *rect = GetCaretBounds();
   return false;
 }
 
-bool PrefixSelector::HasCompositionText() {
+bool PrefixSelector::HasCompositionText() const {
   return false;
 }
 
-bool PrefixSelector::GetTextRange(ui::Range* range) {
-  *range = ui::Range();
+bool PrefixSelector::GetTextRange(gfx::Range* range) const {
+  *range = gfx::Range();
   return false;
 }
 
-bool PrefixSelector::GetCompositionTextRange(ui::Range* range) {
-  *range = ui::Range();
+bool PrefixSelector::GetCompositionTextRange(gfx::Range* range) const {
+  *range = gfx::Range();
   return false;
 }
 
-bool PrefixSelector::GetSelectionRange(ui::Range* range) {
-  *range = ui::Range();
+bool PrefixSelector::GetSelectionRange(gfx::Range* range) const {
+  *range = gfx::Range();
   return false;
 }
 
-bool PrefixSelector::SetSelectionRange(const ui::Range& range) {
+bool PrefixSelector::SetSelectionRange(const gfx::Range& range) {
   return false;
 }
 
-bool PrefixSelector::DeleteRange(const ui::Range& range) {
+bool PrefixSelector::DeleteRange(const gfx::Range& range) {
   return false;
 }
 
-bool PrefixSelector::GetTextFromRange(const ui::Range& range,
-                                        string16* text) {
+bool PrefixSelector::GetTextFromRange(const gfx::Range& range,
+                                        string16* text) const {
   return false;
 }
 
@@ -134,10 +134,21 @@ void PrefixSelector::ExtendSelectionAndDelete(size_t before, size_t after) {
 void PrefixSelector::EnsureCaretInRect(const gfx::Rect& rect) {
 }
 
+void PrefixSelector::OnCandidateWindowShown() {
+}
+
+void PrefixSelector::OnCandidateWindowUpdated() {
+}
+
+void PrefixSelector::OnCandidateWindowHidden() {
+}
+
 void PrefixSelector::OnTextInput(const string16& text) {
-  // Small hack to filter out 'tab' input, as the expectation is that tabs
-  // should cycle input elements, not influence selection.
-  if (text.length() == 1 && text.at(0) == 0x09)
+  // Small hack to filter out 'tab' and 'enter' input, as the expectation is
+  // that they are control characters and will not affect the currently-active
+  // prefix.
+  if (text.length() == 1 &&
+      (text[0] == L'\t' || text[0] == L'\r' || text[0] == L'\n'))
     return;
 
   const int row_count = prefix_delegate_->GetRowCount();

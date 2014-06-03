@@ -22,6 +22,7 @@
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host.h"
+#include "content/public/browser/render_widget_host_iterator.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui_data_source.h"
 #include "content/public/common/url_constants.h"
@@ -71,10 +72,12 @@ base::DictionaryValue* BuildTargetDescriptor(RenderViewHost* rvh) {
   GURL url;
   GURL favicon_url;
   if (web_contents) {
+    // TODO(nasko): Fix the following code to use a consistent set of data
+    // across the URL, title, and favicon.
     url = web_contents->GetURL();
     title = UTF16ToUTF8(web_contents->GetTitle());
     NavigationController& controller = web_contents->GetController();
-    NavigationEntry* entry = controller.GetActiveEntry();
+    NavigationEntry* entry = controller.GetVisibleEntry();
     if (entry != NULL && entry->GetURL().is_valid())
       favicon_url = entry->GetFavicon().url;
   }
@@ -91,15 +94,16 @@ void SendTargetsData(
     const WebUIDataSource::GotDataCallback& callback) {
   scoped_ptr<base::ListValue> rvh_list(new base::ListValue());
 
-  RenderWidgetHost::List widgets = RenderWidgetHost::GetRenderWidgetHosts();
-  for (size_t i = 0; i < widgets.size(); ++i) {
+  scoped_ptr<RenderWidgetHostIterator> widgets(
+      RenderWidgetHost::GetRenderWidgetHosts());
+  while (RenderWidgetHost* widget = widgets->GetNextHost()) {
     // Ignore processes that don't have a connection, such as crashed tabs.
-    if (!widgets[i]->GetProcess()->HasConnection())
+    if (!widget->GetProcess()->HasConnection())
       continue;
-    if (!widgets[i]->IsRenderView())
+    if (!widget->IsRenderView())
         continue;
 
-    RenderViewHost* rvh = RenderViewHost::From(widgets[i]);
+    RenderViewHost* rvh = RenderViewHost::From(widget);
     rvh_list->Append(BuildTargetDescriptor(rvh));
   }
 
@@ -229,7 +233,7 @@ void AccessibilityUI::RequestAccessibilityTree(const base::ListValue* args) {
   }
   scoped_ptr<AccessibilityTreeFormatter> formatter(
       AccessibilityTreeFormatter::Create(rvh));
-  string16 accessibility_contents_utf16;
+  base::string16 accessibility_contents_utf16;
   BrowserAccessibilityManager* manager =
       host_view->GetBrowserAccessibilityManager();
   if (!manager) {

@@ -11,11 +11,11 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
-#include "chrome/browser/signin/oauth2_token_service.h"
 #include "chrome/browser/signin/profile_oauth2_token_service.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "google_apis/gaia/gaia_urls.h"
 #include "google_apis/gaia/google_service_auth_error.h"
+#include "google_apis/gaia/oauth2_token_service.h"
 #include "net/base/load_flags.h"
 #include "net/base/url_util.h"
 #include "net/http/http_status_code.h"
@@ -81,7 +81,8 @@ class RequestImpl : public WebHistoryService::Request,
 
     ProfileOAuth2TokenService* token_service =
         ProfileOAuth2TokenServiceFactory::GetForProfile(profile_);
-    token_request_ = token_service->StartRequest(oauth_scopes, this);
+    token_request_ = token_service->StartRequest(
+        token_service->GetPrimaryAccountId(), oauth_scopes, this);
     is_pending_ = true;
   }
 
@@ -99,10 +100,13 @@ class RequestImpl : public WebHistoryService::Request,
     if (response_code_ == net::HTTP_UNAUTHORIZED && ++auth_retry_count_ <= 1) {
       OAuth2TokenService::ScopeSet oauth_scopes;
       oauth_scopes.insert(kHistoryOAuthScope);
-      ProfileOAuth2TokenServiceFactory::GetForProfile(profile_)
-          ->InvalidateToken(oauth_scopes, access_token_);
+      ProfileOAuth2TokenService* token_service =
+          ProfileOAuth2TokenServiceFactory::GetForProfile(profile_);
+      token_service->InvalidateToken(token_service->GetPrimaryAccountId(),
+                                     oauth_scopes,
+                                     access_token_);
 
-      access_token_ = std::string();
+      access_token_.clear();
       Start();
       return;
     }
@@ -229,7 +233,7 @@ std::string ServerTimeString(base::Time time) {
 // |options|. |version_info|, if not empty, should be a token that was received
 // from the server in response to a write operation. It is used to help ensure
 // read consistency after a write.
-GURL GetQueryUrl(const string16& text_query,
+GURL GetQueryUrl(const base::string16& text_query,
                  const QueryOptions& options,
                  const std::string& version_info) {
   GURL url = GURL(kHistoryQueryHistoryUrl);
@@ -295,7 +299,7 @@ WebHistoryService::~WebHistoryService() {
 }
 
 scoped_ptr<WebHistoryService::Request> WebHistoryService::QueryHistory(
-    const string16& text_query,
+    const base::string16& text_query,
     const QueryOptions& options,
     const WebHistoryService::QueryWebHistoryCallback& callback) {
   // Wrap the original callback into a generic completion callback.

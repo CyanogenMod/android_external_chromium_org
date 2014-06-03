@@ -9,7 +9,7 @@
 const char MockConfirmInfoBarDelegate::kMessage[] = "MockConfirmInfoBarMessage";
 
 MockConfirmInfoBarDelegate::MockConfirmInfoBarDelegate(Owner* owner)
-    : ConfirmInfoBarDelegate(NULL),
+    : ConfirmInfoBarDelegate(),
       owner_(owner),
       closes_on_action_(true),
       icon_accessed_(false),
@@ -30,12 +30,12 @@ int MockConfirmInfoBarDelegate::GetIconID() const {
   return kNoIconID;
 }
 
-string16 MockConfirmInfoBarDelegate::GetMessageText() const {
+base::string16 MockConfirmInfoBarDelegate::GetMessageText() const {
   message_text_accessed_ = true;
   return ASCIIToUTF16(kMessage);
 }
 
-string16 MockConfirmInfoBarDelegate::GetButtonLabel(
+base::string16 MockConfirmInfoBarDelegate::GetButtonLabel(
     InfoBarButton button) const {
   return ASCIIToUTF16((button == BUTTON_OK) ? "OK" : "Cancel");
 }
@@ -50,9 +50,9 @@ bool MockConfirmInfoBarDelegate::Cancel() {
   return closes_on_action_;
 }
 
-string16 MockConfirmInfoBarDelegate::GetLinkText() const {
+base::string16 MockConfirmInfoBarDelegate::GetLinkText() const {
   link_text_accessed_ = true;
-  return string16();
+  return base::string16();
 }
 
 bool MockConfirmInfoBarDelegate::LinkClicked(

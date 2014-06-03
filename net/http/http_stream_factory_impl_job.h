@@ -74,6 +74,9 @@ class HttpStreamFactoryImpl::Job {
   // Used to detach the Job from |request|.
   void Orphan(const Request* request);
 
+  void SetPriority(RequestPriority priority);
+
+  RequestPriority priority() const { return priority_; }
   bool was_npn_negotiated() const;
   NextProto protocol_negotiated() const;
   bool using_spdy() const;
@@ -127,7 +130,7 @@ class HttpStreamFactoryImpl::Job {
   };
 
   void OnStreamReadyCallback();
-  void OnWebSocketStreamReadyCallback();
+  void OnWebSocketHandshakeStreamReadyCallback();
   // This callback function is called when a new SPDY session is created.
   void OnNewSpdySessionReadyCallback();
   void OnStreamFailedCallback(int result);
@@ -294,7 +297,7 @@ class HttpStreamFactoryImpl::Job {
   bool establishing_tunnel_;
 
   scoped_ptr<HttpStream> stream_;
-  scoped_ptr<WebSocketStreamBase> websocket_stream_;
+  scoped_ptr<WebSocketHandshakeStreamBase> websocket_stream_;
 
   // True if we negotiated NPN.
   bool was_npn_negotiated_;

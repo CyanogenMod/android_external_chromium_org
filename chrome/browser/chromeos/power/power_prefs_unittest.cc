@@ -23,8 +23,8 @@
 #include "chrome/test/base/testing_profile.h"
 #include "chrome/test/base/testing_profile_manager.h"
 #include "chromeos/chromeos_switches.h"
+#include "chromeos/dbus/fake_dbus_thread_manager.h"
 #include "chromeos/dbus/fake_power_manager_client.h"
-#include "chromeos/dbus/mock_dbus_thread_manager_without_gmock.h"
 #include "chromeos/dbus/power_manager/policy.pb.h"
 #include "chromeos/dbus/power_policy_controller.h"
 #include "components/user_prefs/pref_registry_syncable.h"
@@ -51,7 +51,7 @@ class PowerPrefsTest : public testing::Test {
   bool GetCurrentAllowScreenWakeLocks() const;
 
   TestingProfileManager profile_manager_;
-  MockDBusThreadManagerWithoutGMock mock_dbus_thread_manager_;
+  FakeDBusThreadManager fake_dbus_thread_manager_;
   PowerPolicyController* power_policy_controller_;     // Not owned.
   FakePowerManagerClient* fake_power_manager_client_;  // Not owned.
 
@@ -62,10 +62,13 @@ class PowerPrefsTest : public testing::Test {
 
 PowerPrefsTest::PowerPrefsTest()
     : profile_manager_(TestingBrowserProcess::GetGlobal()),
-      power_policy_controller_(
-          mock_dbus_thread_manager_.GetPowerPolicyController()),
-      fake_power_manager_client_(
-          mock_dbus_thread_manager_.fake_power_manager_client()) {
+      power_policy_controller_(new PowerPolicyController),
+      fake_power_manager_client_(new FakePowerManagerClient) {
+  fake_dbus_thread_manager_.SetPowerManagerClient(
+      scoped_ptr<PowerManagerClient>(fake_power_manager_client_));
+  fake_dbus_thread_manager_.SetPowerPolicyController(
+      scoped_ptr<PowerPolicyController>(power_policy_controller_));
+  power_policy_controller_->Init(&fake_dbus_thread_manager_);
 }
 
 void PowerPrefsTest::SetUp() {
@@ -129,6 +132,8 @@ std::string PowerPrefsTest::GetExpectedPowerPolicyForProfile(
       prefs->GetDouble(prefs::kPowerPresentationScreenDimDelayFactor));
   expected_policy.set_user_activity_screen_dim_delay_factor(
       prefs->GetDouble(prefs::kPowerUserActivityScreenDimDelayFactor));
+  expected_policy.set_wait_for_initial_user_activity(
+      prefs->GetBoolean(prefs::kPowerWaitForInitialUserActivity));
   expected_policy.set_reason("Prefs");
   return PowerPolicyController::GetPolicyDebugString(expected_policy);
 }
@@ -152,17 +157,19 @@ TEST_F(PowerPrefsTest, LoginScreen) {
   scoped_ptr<TestingPrefServiceSyncable> login_profile_prefs(
       new TestingPrefServiceSyncable);
   chrome::RegisterLoginProfilePrefs(login_profile_prefs->registry());
-  scoped_ptr<TestingProfile> login_profile_owner(new TestingProfile(
-      profile_manager_.profiles_dir().AppendASCII(chrome::kInitialProfile),
-      NULL,
-      scoped_refptr<ExtensionSpecialStoragePolicy>(),
-      scoped_ptr<PrefServiceSyncable>(login_profile_prefs.release())));
+  TestingProfile::Builder builder;
+  builder.SetPath(
+      profile_manager_.profiles_dir().AppendASCII(chrome::kInitialProfile));
+  builder.SetPrefService(login_profile_prefs.PassAs<PrefServiceSyncable>());
+  builder.SetIncognito();
+  scoped_ptr<TestingProfile> login_profile_owner(builder.Build());
+
   TestingProfile* login_profile = login_profile_owner.get();
   TestingProfile* login_profile_parent = profile_manager_.CreateTestingProfile(
       chrome::kInitialProfile);
-  login_profile_parent->SetOffTheRecordProfile(login_profile_owner.release());
+  login_profile_parent->SetOffTheRecordProfile(
+      login_profile_owner.PassAs<Profile>());
   login_profile->SetOriginalProfile(login_profile_parent);
-  login_profile->set_incognito(true);
 
   // Inform power_prefs_ that the login screen is being shown.
   power_prefs_->Observe(chrome::NOTIFICATION_LOGIN_OR_LOCK_WEBUI_VISIBLE,

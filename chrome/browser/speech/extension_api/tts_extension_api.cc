@@ -7,13 +7,14 @@
 #include <string>
 
 #include "base/lazy_instance.h"
+#include "base/memory/weak_ptr.h"
 #include "base/values.h"
-#include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_function_registry.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/speech/extension_api/tts_engine_extension_api.h"
 #include "chrome/browser/speech/extension_api/tts_extension_api_constants.h"
 #include "chrome/browser/speech/tts_controller.h"
+#include "extensions/browser/event_router.h"
 #include "ui/base/l10n/l10n_util.h"
 
 namespace constants = tts_extension_api_constants;
@@ -80,7 +81,9 @@ namespace extensions {
 
 // One of these is constructed for each utterance, and deleted
 // when the utterance gets any final event.
-class TtsExtensionEventHandler : public UtteranceEventDelegate {
+class TtsExtensionEventHandler
+    : public UtteranceEventDelegate,
+      public base::SupportsWeakPtr<TtsExtensionEventHandler> {
  public:
   virtual void OnTtsEvent(Utterance* utterance,
                           TtsEventType event_type,
@@ -92,13 +95,18 @@ void TtsExtensionEventHandler::OnTtsEvent(Utterance* utterance,
                                           TtsEventType event_type,
                                           int char_index,
                                           const std::string& error_message) {
-  if (utterance->src_id() < 0)
+  if (utterance->src_id() < 0) {
+    if (utterance->finished())
+      delete this;
     return;
+  }
 
   const std::set<TtsEventType>& desired_event_types =
       utterance->desired_event_types();
   if (desired_event_types.size() > 0 &&
       desired_event_types.find(event_type) == desired_event_types.end()) {
+    if (utterance->finished())
+      delete this;
     return;
   }
 
@@ -118,7 +126,7 @@ void TtsExtensionEventHandler::OnTtsEvent(Utterance* utterance,
 
   scoped_ptr<extensions::Event> event(
       new extensions::Event(events::kOnEvent, arguments.Pass()));
-  event->restrict_to_profile = utterance->profile();
+  event->restrict_to_browser_context = utterance->profile();
   event->event_url = utterance->src_url();
   extensions::ExtensionSystem::Get(utterance->profile())->event_router()->
       DispatchEventToExtension(utterance->src_extension_id(), event.Pass());
@@ -256,7 +264,7 @@ bool TtsSpeakFunction::RunImpl() {
   continuous_params.pitch = pitch;
   continuous_params.volume = volume;
 
-  Utterance* utterance = new Utterance(profile());
+  Utterance* utterance = new Utterance(GetProfile());
   utterance->set_text(text);
   utterance->set_voice_name(voice_name);
   utterance->set_src_extension_id(extension_id());
@@ -270,7 +278,8 @@ bool TtsSpeakFunction::RunImpl() {
   utterance->set_desired_event_types(desired_event_types);
   utterance->set_extension_id(voice_extension_id);
   utterance->set_options(options.get());
-  utterance->set_event_delegate(new TtsExtensionEventHandler());
+  utterance->set_event_delegate(
+      (new TtsExtensionEventHandler())->AsWeakPtr());
 
   TtsController* controller = TtsController::GetInstance();
   controller->SpeakOrEnqueue(utterance);
@@ -300,13 +309,14 @@ bool TtsIsSpeakingFunction::RunImpl() {
 
 bool TtsGetVoicesFunction::RunImpl() {
   std::vector<VoiceData> voices;
-  TtsController::GetInstance()->GetVoices(profile(), &voices);
+  TtsController::GetInstance()->GetVoices(GetProfile(), &voices);
 
   scoped_ptr<ListValue> result_voices(new ListValue());
   for (size_t i = 0; i < voices.size(); ++i) {
     const VoiceData& voice = voices[i];
     DictionaryValue* result_voice = new DictionaryValue();
     result_voice->SetString(constants::kVoiceNameKey, voice.name);
+    result_voice->SetBoolean(constants::kRemoteKey, voice.remote);
     if (!voice.lang.empty())
       result_voice->SetString(constants::kLangKey, voice.lang);
     if (voice.gender == TTS_GENDER_MALE)

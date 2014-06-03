@@ -15,7 +15,6 @@
 #include "base/strings/string_util.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_host.h"
-#include "chrome/browser/extensions/extension_process_manager.h"
 #include "chrome/browser/notifications/balloon.h"
 #include "chrome/browser/notifications/desktop_notification_service.h"
 #include "chrome/browser/notifications/notification.h"
@@ -30,17 +29,18 @@
 #include "chrome/browser/ui/gtk/menu_gtk.h"
 #include "chrome/browser/ui/gtk/notifications/balloon_view_host_gtk.h"
 #include "chrome/browser/ui/gtk/rounded_window.h"
-#include "chrome/common/extensions/extension.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/browser/process_manager.h"
+#include "extensions/common/extension.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
-#include "ui/base/animation/slide_animation.h"
 #include "ui/base/gtk/gtk_hig_constants.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/gfx/animation/slide_animation.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/insets.h"
 #include "ui/gfx/native_widget_types.h"
@@ -53,10 +53,6 @@ const int kTopMargin = 0;
 const int kBottomMargin = 1;
 const int kLeftMargin = 1;
 const int kRightMargin = 1;
-
-// How many pixels of overlap there is between the shelf top and the
-// balloon bottom.
-const int kShelfBorderTopOverlap = 0;
 
 // Properties of the origin label.
 const int kLeftLabelMargin = 8;
@@ -103,9 +99,9 @@ BalloonViewImpl::BalloonViewImpl(BalloonCollection* collection)
       shelf_(NULL),
       hbox_(NULL),
       html_container_(NULL),
-      weak_factory_(this),
       menu_showing_(false),
-      pending_close_(false) {}
+      pending_close_(false),
+      weak_factory_(this) {}
 
 BalloonViewImpl::~BalloonViewImpl() {
   if (frame_container_) {
@@ -177,11 +173,11 @@ void BalloonViewImpl::RepositionToBalloon() {
 
   anim_frame_start_ = gfx::Rect(start_x, start_y, start_w, start_h);
   anim_frame_end_ = gfx::Rect(end_x, end_y, end_w, end_h);
-  animation_.reset(new ui::SlideAnimation(this));
+  animation_.reset(new gfx::SlideAnimation(this));
   animation_->Show();
 }
 
-void BalloonViewImpl::AnimationProgressed(const ui::Animation* animation) {
+void BalloonViewImpl::AnimationProgressed(const gfx::Animation* animation) {
   DCHECK_EQ(animation, animation_.get());
 
   // Linear interpolation from start to end position.

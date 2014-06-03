@@ -26,13 +26,14 @@ class WebViewGuest : public GuestView,
                      public content::NotificationObserver,
                      public content::WebContentsObserver {
  public:
-  explicit WebViewGuest(content::WebContents* guest_web_contents);
+  WebViewGuest(content::WebContents* guest_web_contents,
+               const std::string& extension_id);
 
   static WebViewGuest* From(int embedder_process_id, int instance_id);
+  static WebViewGuest* FromWebContents(content::WebContents* contents);
 
   // GuestView implementation.
   virtual void Attach(content::WebContents* embedder_web_contents,
-                      const std::string& extension_id,
                       const base::DictionaryValue& args) OVERRIDE;
   virtual GuestView::Type GetViewType() const OVERRIDE;
   virtual WebViewGuest* AsWebView() OVERRIDE;
@@ -40,19 +41,31 @@ class WebViewGuest : public GuestView,
 
   // GuestDelegate implementation.
   virtual void AddMessageToConsole(int32 level,
-                                   const string16& message,
+                                   const base::string16& message,
                                    int32 line_no,
-                                   const string16& source_id) OVERRIDE;
+                                   const base::string16& source_id) OVERRIDE;
+  virtual void LoadProgressed(double progress) OVERRIDE;
   virtual void Close() OVERRIDE;
+  virtual void DidAttach() OVERRIDE;
+  virtual void EmbedderDestroyed() OVERRIDE;
   virtual void GuestProcessGone(base::TerminationStatus status) OVERRIDE;
   virtual bool HandleKeyboardEvent(
       const content::NativeWebKeyboardEvent& event) OVERRIDE;
+  virtual bool IsDragAndDropEnabled() OVERRIDE;
+  virtual bool IsOverridingUserAgent() const OVERRIDE;
+  virtual void LoadAbort(bool is_top_level,
+                         const GURL& url,
+                         const std::string& error_type) OVERRIDE;
   virtual void RendererResponsive() OVERRIDE;
   virtual void RendererUnresponsive() OVERRIDE;
   virtual bool RequestPermission(
       BrowserPluginPermissionType permission_type,
       const base::DictionaryValue& request_info,
-      const PermissionResponseCallback& callback) OVERRIDE;
+      const PermissionResponseCallback& callback,
+      bool allowed_by_default) OVERRIDE;
+  virtual GURL ResolveURL(const std::string& src) OVERRIDE;
+  virtual void SizeChanged(const gfx::Size& old_size, const gfx::Size& new_size)
+      OVERRIDE;
 
   // NotificationObserver implementation.
   virtual void Observe(int type,
@@ -66,18 +79,42 @@ class WebViewGuest : public GuestView,
   // Reload the guest.
   void Reload();
 
-  // Responds to the permission request |request_id| with |should_allow| and
+  enum PermissionResponseAction {
+    DENY,
+    ALLOW,
+    DEFAULT
+  };
+
+  enum SetPermissionResult {
+    SET_PERMISSION_INVALID,
+    SET_PERMISSION_ALLOWED,
+    SET_PERMISSION_DENIED
+  };
+
+  // Responds to the permission request |request_id| with |action| and
   // |user_input|. Returns whether there was a pending request for the provided
   // |request_id|.
-  bool SetPermission(int request_id,
-                     bool should_allow,
-                     const std::string& user_input);
+  SetPermissionResult SetPermission(int request_id,
+                                    PermissionResponseAction action,
+                                    const std::string& user_input);
+
+  // Overrides the user agent for this guest.
+  // This affects subsequent guest navigations.
+  void SetUserAgentOverride(const std::string& user_agent_override);
 
   // Stop loading the guest.
   void Stop();
 
   // Kill the guest process.
   void Terminate();
+
+  // Clears data in the storage partition of this guest.
+  //
+  // Partition data that are newer than |removal_since| will be removed.
+  // |removal_mask| corresponds to bitmask in StoragePartition::RemoveDataMask.
+  bool ClearData(const base::Time remove_since,
+                 uint32 removal_mask,
+                 const base::Closure& callback);
 
   extensions::ScriptExecutor* script_executor() {
     return script_executor_.get();
@@ -86,19 +123,35 @@ class WebViewGuest : public GuestView,
  private:
   virtual ~WebViewGuest();
 
+  // A map to store the callback for a request keyed by the request's id.
+  struct PermissionResponseInfo {
+    PermissionResponseCallback callback;
+    BrowserPluginPermissionType permission_type;
+    bool allowed_by_default;
+    PermissionResponseInfo();
+    PermissionResponseInfo(const PermissionResponseCallback& callback,
+                           BrowserPluginPermissionType permission_type,
+                           bool allowed_by_default);
+    ~PermissionResponseInfo();
+  };
+
+  static void RecordUserInitiatedUMA(const PermissionResponseInfo& info,
+                                     bool allow);
   // WebContentsObserver implementation.
   virtual void DidCommitProvisionalLoadForFrame(
       int64 frame_id,
+      const base::string16& frame_unique_name,
       bool is_main_frame,
       const GURL& url,
       content::PageTransition transition_type,
       content::RenderViewHost* render_view_host) OVERRIDE;
   virtual void DidFailProvisionalLoad(
       int64 frame_id,
+      const base::string16& frame_unique_name,
       bool is_main_frame,
       const GURL& validated_url,
       int error_code,
-      const string16& error_description,
+      const base::string16& error_description,
       content::RenderViewHost* render_view_host) OVERRIDE;
   virtual void DidStartProvisionalLoadForFrame(
       int64 frame_id,
@@ -112,6 +165,7 @@ class WebViewGuest : public GuestView,
       content::RenderViewHost* render_view_host) OVERRIDE;
   virtual void WebContentsDestroyed(
       content::WebContents* web_contents) OVERRIDE;
+  virtual void UserAgentOverrideSet(const std::string& user_agent) OVERRIDE;
 
   // Called after the load handler is called in the guest's main frame.
   void LoadHandlerCalled();
@@ -120,6 +174,8 @@ class WebViewGuest : public GuestView,
   void LoadRedirect(const GURL& old_url,
                     const GURL& new_url,
                     bool is_top_level);
+
+  static bool AllowChromeExtensionURLs();
 
   void AddWebViewToExtensionRendererState();
   static void RemoveWebViewFromExtensionRendererState(
@@ -135,9 +191,15 @@ class WebViewGuest : public GuestView,
   // We only need the ids to be unique for a given WebViewGuest.
   int next_permission_request_id_;
 
-  // A map to store the callback for a request keyed by the request's id.
-  typedef std::map<int, PermissionResponseCallback> RequestMap;
+  typedef std::map<int, PermissionResponseInfo> RequestMap;
   RequestMap pending_permission_requests_;
+
+  // True if the user agent is overridden.
+  bool is_overriding_user_agent_;
+
+  // Indicates that the page needs to be reloaded once it has been attached to
+  // an embedder.
+  bool pending_reload_on_attachment_;
 
   DISALLOW_COPY_AND_ASSIGN(WebViewGuest);
 };

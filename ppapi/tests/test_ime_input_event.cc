@@ -4,7 +4,6 @@
 
 #include "ppapi/tests/test_ime_input_event.h"
 
-#include "ppapi/c/dev/ppb_testing_dev.h"
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/c/ppb_input_event.h"
 #include "ppapi/cpp/input_event.h"
@@ -16,12 +15,14 @@ REGISTER_TEST_CASE(ImeInputEvent);
 
 namespace {
 
-// Japanese Kanji letters meaning "a string" ('mo' 'ji' 'retsu' in Kanji)
+// Japanese Kanji letters
 const char* kCompositionChar[] = {
-    "\xE6\x96\x87", "\xE5\xAD\x97", "\xE5\x88\x97"
+    "\xE6\x96\x87",  // An example character of normal unicode.
+    "\xF0\xA0\xAE\x9F", // An example character of surrogate pair.
+    "\xF0\x9F\x98\x81"  // An example character of surrogate pair(emoji).
 };
 
-const char kCompositionText[] = "\xE6\x96\x87\xE5\xAD\x97\xE5\x88\x97";
+const char kCompositionText[] = "\xE6\x96\x87\xF0\xA0\xAE\x9F\xF0\x9F\x98\x81";
 
 #define FINISHED_WAITING_MESSAGE "TEST_IME_INPUT_EVENT_FINISHED_WAITING"
 
@@ -318,10 +319,10 @@ std::string TestImeInputEvent::TestImeCommit() {
   std::vector<uint32_t> segments;
   segments.push_back(0U);
   segments.push_back(3U);
-  segments.push_back(6U);
-  segments.push_back(9U);
+  segments.push_back(7U);
+  segments.push_back(11U);
   pp::InputEvent update_event = CreateImeCompositionUpdateEvent(
-      kCompositionText, segments, 1, std::make_pair(3U, 6U));
+      kCompositionText, segments, 1, std::make_pair(3U, 7U));
 
   expected_events_.clear();
   expected_events_.push_back(CreateImeCompositionStartEvent());
@@ -347,10 +348,10 @@ std::string TestImeInputEvent::TestImeCancel() {
   std::vector<uint32_t> segments;
   segments.push_back(0U);
   segments.push_back(3U);
-  segments.push_back(6U);
-  segments.push_back(9U);
+  segments.push_back(7U);
+  segments.push_back(11U);
   pp::InputEvent update_event = CreateImeCompositionUpdateEvent(
-      kCompositionText, segments, 1, std::make_pair(3U, 6U));
+      kCompositionText, segments, 1, std::make_pair(3U, 7U));
 
   expected_events_.clear();
   expected_events_.push_back(CreateImeCompositionStartEvent());
@@ -376,10 +377,10 @@ std::string TestImeInputEvent::TestImeUnawareCommit() {
   std::vector<uint32_t> segments;
   segments.push_back(0U);
   segments.push_back(3U);
-  segments.push_back(6U);
-  segments.push_back(9U);
+  segments.push_back(7U);
+  segments.push_back(11U);
   pp::InputEvent update_event = CreateImeCompositionUpdateEvent(
-      kCompositionText, segments, 1, std::make_pair(3U, 6U));
+      kCompositionText, segments, 1, std::make_pair(3U, 7U));
 
   expected_events_.clear();
   expected_events_.push_back(CreateCharEvent(kCompositionChar[0]));
@@ -406,10 +407,10 @@ std::string TestImeInputEvent::TestImeUnawareCancel() {
   std::vector<uint32_t> segments;
   segments.push_back(0U);
   segments.push_back(3U);
-  segments.push_back(6U);
-  segments.push_back(9U);
+  segments.push_back(7U);
+  segments.push_back(11U);
   pp::InputEvent update_event = CreateImeCompositionUpdateEvent(
-      kCompositionText, segments, 1, std::make_pair(3U, 6U));
+      kCompositionText, segments, 1, std::make_pair(3U, 7U));
 
   expected_events_.clear();
 

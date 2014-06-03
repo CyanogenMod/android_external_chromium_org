@@ -12,12 +12,13 @@
 namespace chromeos {
 
 // A fake implemetation of ImageBurnerClient. This class does nothing.
-class FakeImageBurnerClient : public ImageBurnerClient {
+class CHROMEOS_EXPORT FakeImageBurnerClient : public ImageBurnerClient {
  public:
   FakeImageBurnerClient();
   virtual ~FakeImageBurnerClient();
 
-  // ImageBurnerClient overrides.
+  // ImageBurnerClient overrides
+  virtual void Init(dbus::Bus* bus) OVERRIDE;
   virtual void BurnImage(const std::string& from_path,
                          const std::string& to_path,
                          const ErrorCallback& error_callback) OVERRIDE;

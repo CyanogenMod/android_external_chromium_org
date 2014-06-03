@@ -4,11 +4,10 @@
 
 #include "chrome/browser/chromeos/drive/file_system/search_operation.h"
 
-#include "chrome/browser/chromeos/drive/change_list_loader.h"
 #include "chrome/browser/chromeos/drive/file_system/operation_test_base.h"
 #include "chrome/browser/drive/fake_drive_service.h"
-#include "chrome/browser/google_apis/gdata_wapi_parser.h"
-#include "chrome/browser/google_apis/test_util.h"
+#include "google_apis/drive/gdata_wapi_parser.h"
+#include "google_apis/drive/test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace drive {
@@ -38,21 +37,20 @@ TEST_F(SearchOperationTest, ContentSearch) {
   };
 
   FileError error = FILE_ERROR_FAILED;
-  GURL next_url;
+  GURL next_link;
   scoped_ptr<std::vector<SearchResultInfo> > results;
 
   operation.Search("Directory", GURL(),
                    google_apis::test_util::CreateCopyResultCallback(
-                       &error, &next_url, &results));
+                       &error, &next_link, &results));
   test_util::RunBlockingPoolTask();
 
   EXPECT_EQ(FILE_ERROR_OK, error);
-  EXPECT_EQ(GURL(), next_url);
+  EXPECT_TRUE(next_link.is_empty());
   EXPECT_EQ(ARRAYSIZE_UNSAFE(kExpectedResults), results->size());
   for (size_t i = 0; i < results->size(); i++) {
     EXPECT_EQ(kExpectedResults[i].path, results->at(i).path.AsUTF8Unsafe());
-    EXPECT_EQ(kExpectedResults[i].is_directory,
-              results->at(i).entry.file_info().is_directory());
+    EXPECT_EQ(kExpectedResults[i].is_directory, results->at(i).is_directory);
   }
 }
 
@@ -79,30 +77,26 @@ TEST_F(SearchOperationTest, ContentSearchWithNewEntry) {
   };
 
   FileError error = FILE_ERROR_FAILED;
-  GURL next_url;
+  GURL next_link;
   scoped_ptr<std::vector<SearchResultInfo> > results;
 
   operation.Search("\"Directory 1\"", GURL(),
                    google_apis::test_util::CreateCopyResultCallback(
-                       &error, &next_url, &results));
+                       &error, &next_link, &results));
   test_util::RunBlockingPoolTask();
 
   EXPECT_EQ(FILE_ERROR_OK, error);
-  EXPECT_EQ(GURL(), next_url);
+  EXPECT_TRUE(next_link.is_empty());
   ASSERT_EQ(ARRAYSIZE_UNSAFE(kExpectedResultsBeforeLoad), results->size());
   for (size_t i = 0; i < results->size(); i++) {
     EXPECT_EQ(kExpectedResultsBeforeLoad[i].path,
               results->at(i).path.AsUTF8Unsafe());
     EXPECT_EQ(kExpectedResultsBeforeLoad[i].is_directory,
-              results->at(i).entry.file_info().is_directory());
+              results->at(i).is_directory);
   }
 
   // Load the change from FakeDriveService.
-  internal::ChangeListLoader change_list_loader(
-      blocking_task_runner(), metadata(), scheduler());
-  change_list_loader.CheckForUpdates(
-      google_apis::test_util::CreateCopyResultCallback(&error));
-  test_util::RunBlockingPoolTask();
+  ASSERT_EQ(FILE_ERROR_OK, CheckForUpdates());
 
   // Now the new entry must be reported to be in the right directory.
   const SearchResultPair kExpectedResultsAfterLoad[] = {
@@ -112,17 +106,17 @@ TEST_F(SearchOperationTest, ContentSearchWithNewEntry) {
   error = FILE_ERROR_FAILED;
   operation.Search("\"Directory 1\"", GURL(),
                    google_apis::test_util::CreateCopyResultCallback(
-                       &error, &next_url, &results));
+                       &error, &next_link, &results));
   test_util::RunBlockingPoolTask();
 
   EXPECT_EQ(FILE_ERROR_OK, error);
-  EXPECT_EQ(GURL(), next_url);
+  EXPECT_TRUE(next_link.is_empty());
   ASSERT_EQ(ARRAYSIZE_UNSAFE(kExpectedResultsAfterLoad), results->size());
   for (size_t i = 0; i < results->size(); i++) {
     EXPECT_EQ(kExpectedResultsAfterLoad[i].path,
               results->at(i).path.AsUTF8Unsafe());
     EXPECT_EQ(kExpectedResultsAfterLoad[i].is_directory,
-              results->at(i).entry.file_info().is_directory());
+              results->at(i).is_directory);
   }
 }
 
@@ -130,16 +124,16 @@ TEST_F(SearchOperationTest, ContentSearchEmptyResult) {
   SearchOperation operation(blocking_task_runner(), scheduler(), metadata());
 
   FileError error = FILE_ERROR_FAILED;
-  GURL next_url;
+  GURL next_link;
   scoped_ptr<std::vector<SearchResultInfo> > results;
 
   operation.Search("\"no-match query\"", GURL(),
                    google_apis::test_util::CreateCopyResultCallback(
-                       &error, &next_url, &results));
+                       &error, &next_link, &results));
   test_util::RunBlockingPoolTask();
 
   EXPECT_EQ(FILE_ERROR_OK, error);
-  EXPECT_EQ(GURL(), next_url);
+  EXPECT_TRUE(next_link.is_empty());
   EXPECT_EQ(0U, results->size());
 }
 

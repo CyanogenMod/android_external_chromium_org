@@ -11,15 +11,19 @@
 #include "ash/display/display_controller.h"
 #include "ash/screen_ash.h"
 #include "ash/shell.h"
+#include "ash/shell/toplevel_window.h"
 #include "ash/test/ash_test_helper.h"
 #include "ash/test/display_manager_test_api.h"
 #include "ash/test/test_session_state_delegate.h"
 #include "ash/test/test_shell_delegate.h"
+#include "ash/test/test_system_tray_delegate.h"
 #include "ash/wm/coordinate_conversion.h"
+#include "ash/wm/window_positioner.h"
 #include "base/command_line.h"
 #include "content/public/test/web_contents_tester.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/screen_position_client.h"
+#include "ui/aura/client/window_tree_client.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/test/event_generator.h"
 #include "ui/aura/test/test_window_delegate.h"
@@ -59,7 +63,7 @@ class AshEventGeneratorDelegate : public aura::test::EventGeneratorDelegate {
     gfx::Screen* screen = Shell::GetScreen();
     gfx::Display display = screen->GetDisplayNearestPoint(point_in_screen);
     return Shell::GetInstance()->display_controller()->
-        GetRootWindowForDisplayId(display.id());
+        GetRootWindowForDisplayId(display.id())->GetDispatcher();
   }
 
   virtual aura::client::ScreenPositionClient* GetScreenPositionClient(
@@ -100,41 +104,47 @@ AshTestBase::~AshTestBase() {
 
 void AshTestBase::SetUp() {
   setup_called_ = true;
+
+  // Clears the saved state so that test doesn't use on the wrong
+  // default state.
+  shell::ToplevelWindow::ClearSavedStateForTest();
+
   // TODO(jamescook): Can we do this without changing command line?
   // Use the origin (1,1) so that it doesn't over
   // lap with the native mouse cursor.
-  CommandLine::ForCurrentProcess()->AppendSwitchASCII(
-      switches::kAshHostWindowBounds, "1+1-800x600");
+  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  if (!command_line->HasSwitch(switches::kAshHostWindowBounds)) {
+    command_line->AppendSwitchASCII(
+        switches::kAshHostWindowBounds, "1+1-800x600");
+  }
 #if defined(OS_WIN)
   aura::test::SetUsePopupAsRootWindowForTest(true);
 #endif
-  ui::InitializeInputMethodForTesting();
-
   ash_test_helper_->SetUp(start_session_);
 
   Shell::GetPrimaryRootWindow()->Show();
-  Shell::GetPrimaryRootWindow()->ShowRootWindow();
+  Shell::GetPrimaryRootWindow()->GetDispatcher()->host()->Show();
   // Move the mouse cursor to far away so that native events doesn't
   // interfere test expectations.
   Shell::GetPrimaryRootWindow()->MoveCursorTo(gfx::Point(-1000, -1000));
   ash::Shell::GetInstance()->cursor_manager()->EnableMouseEvents();
 
 #if defined(OS_WIN)
-  if (base::win::GetVersion() >= base::win::VERSION_WIN8 &&
-      !CommandLine::ForCurrentProcess()->HasSwitch(
-          ash::switches::kForceAshToDesktop)) {
-    ipc_thread_.reset(new base::Thread("test_metro_viewer_ipc_thread"));
-    base::Thread::Options options;
-    options.message_loop_type = base::MessageLoop::TYPE_IO;
-    ipc_thread_->StartWithOptions(options);
-
-    metro_viewer_host_.reset(
-        new TestMetroViewerProcessHost(ipc_thread_->message_loop_proxy()));
-    CHECK(metro_viewer_host_->LaunchViewerAndWaitForConnection(
-        win8::test::kDefaultTestAppUserModelId));
-    aura::RemoteRootWindowHostWin* root_window_host =
-        aura::RemoteRootWindowHostWin::Instance();
-    CHECK(root_window_host != NULL);
+  if (!command_line->HasSwitch(ash::switches::kForceAshToDesktop)) {
+    if (base::win::GetVersion() >= base::win::VERSION_WIN8) {
+      ipc_thread_.reset(new base::Thread("test_metro_viewer_ipc_thread"));
+      base::Thread::Options options;
+      options.message_loop_type = base::MessageLoop::TYPE_IO;
+      ipc_thread_->StartWithOptions(options);
+      metro_viewer_host_.reset(
+          new TestMetroViewerProcessHost(ipc_thread_->message_loop_proxy()));
+      CHECK(metro_viewer_host_->LaunchViewerAndWaitForConnection(
+          win8::test::kDefaultTestAppUserModelId));
+      aura::RemoteRootWindowHostWin* root_window_host =
+          aura::RemoteRootWindowHostWin::Instance();
+      CHECK(root_window_host != NULL);
+    }
+    ash::WindowPositioner::SetMaximizeFirstWindow(true);
   }
 #endif
 }
@@ -154,8 +164,6 @@ void AshTestBase::TearDown() {
 #endif
 
   ash_test_helper_->TearDown();
-
-  ui::ShutdownInputMethodForTesting();
 #if defined(OS_WIN)
   aura::test::SetUsePopupAsRootWindowForTest(false);
   // Kill the viewer process if we spun one up.
@@ -208,7 +216,7 @@ void AshTestBase::UpdateDisplay(const std::string& display_specs) {
   display_manager_test_api.UpdateDisplay(display_specs);
 }
 
-aura::RootWindow* AshTestBase::CurrentContext() {
+aura::Window* AshTestBase::CurrentContext() {
   return ash_test_helper_->CurrentContext();
 }
 
@@ -251,28 +259,37 @@ aura::Window* AshTestBase::CreateTestWindowInShellWithDelegateAndType(
   window->Show();
 
   if (bounds.IsEmpty()) {
-    SetDefaultParentByPrimaryRootWindow(window);
+    ParentWindowInPrimaryRootWindow(window);
   } else {
     gfx::Display display =
         Shell::GetScreen()->GetDisplayMatching(bounds);
-    aura::RootWindow* root = ash::Shell::GetInstance()->display_controller()->
+    aura::Window* root = ash::Shell::GetInstance()->display_controller()->
         GetRootWindowForDisplayId(display.id());
     gfx::Point origin = bounds.origin();
     wm::ConvertPointFromScreen(root, &origin);
     window->SetBounds(gfx::Rect(origin, bounds.size()));
-    window->SetDefaultParentByRootWindow(root, bounds);
+    aura::client::ParentWindowWithContext(window, root, bounds);
   }
   window->SetProperty(aura::client::kCanMaximizeKey, true);
   return window;
 }
 
-void AshTestBase::SetDefaultParentByPrimaryRootWindow(aura::Window* window) {
-  window->SetDefaultParentByRootWindow(
-      Shell::GetPrimaryRootWindow(), gfx::Rect());
+void AshTestBase::ParentWindowInPrimaryRootWindow(aura::Window* window) {
+  aura::client::ParentWindowWithContext(
+      window, Shell::GetPrimaryRootWindow(), gfx::Rect());
 }
 
 void AshTestBase::RunAllPendingInMessageLoop() {
   ash_test_helper_->RunAllPendingInMessageLoop();
+}
+
+TestScreenshotDelegate* AshTestBase::GetScreenshotDelegate() {
+  return ash_test_helper_->test_screenshot_delegate();
+}
+
+TestSystemTrayDelegate* AshTestBase::GetSystemTrayDelegate() {
+  return static_cast<TestSystemTrayDelegate*>(
+      Shell::GetInstance()->system_tray_delegate());
 }
 
 void AshTestBase::SetSessionStarted(bool session_started) {
@@ -288,6 +305,11 @@ void AshTestBase::SetUserLoggedIn(bool user_logged_in) {
 void AshTestBase::SetCanLockScreen(bool can_lock_screen) {
   ash_test_helper_->test_shell_delegate()->test_session_state_delegate()->
       SetCanLockScreen(can_lock_screen);
+}
+
+void AshTestBase::SetShouldLockScreenBeforeSuspending(bool should_lock) {
+  ash_test_helper_->test_shell_delegate()->test_session_state_delegate()->
+      SetShouldLockScreenBeforeSuspending(should_lock);
 }
 
 void AshTestBase::SetUserAddingScreenRunning(bool user_adding_screen_running) {

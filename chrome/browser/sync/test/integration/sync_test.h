@@ -14,6 +14,8 @@
 #include "base/memory/scoped_vector.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "net/dns/mock_host_resolver.h"
+#include "net/http/http_status_code.h"
+#include "net/url_request/url_request_status.h"
 #include "sync/internal_api/public/base/model_type.h"
 #include "sync/protocol/sync_protocol_error.h"
 #include "sync/test/local_sync_test_server.h"
@@ -80,6 +82,15 @@ class SyncTest : public InProcessBrowserTest {
     ERROR_FREQUENCY_TWO_THIRDS
   };
 
+  // Authentication state used by the python sync server.
+  enum PythonServerAuthState {
+    // Python server processes sync requests normally.
+    AUTHENTICATED_TRUE,
+
+    // Python server responds to sync requests with an authentication error.
+    AUTHENTICATED_FALSE
+  };
+
   // A SyncTest must be associated with a particular test type.
   explicit SyncTest(TestType test_type);
 
@@ -140,11 +151,11 @@ class SyncTest : public InProcessBrowserTest {
   // Disable outgoing network connections for the given profile.
   virtual void DisableNetwork(Profile* profile);
 
-  // Encrypts the datatype |type| for profile |index|.
-  bool EnableEncryption(int index, syncer::ModelType type);
+  // Kicks off encryption for profile |index|.
+  bool EnableEncryption(int index);
 
-  // Checks if the datatype |type| is encrypted for profile |index|.
-  bool IsEncrypted(int index, syncer::ModelType type);
+  // Checks if encryption is complete for profile |index|.
+  bool IsEncryptionComplete(int index);
 
   // Blocks until all sync clients have completed their mutual sync cycles.
   // Returns true if a quiescent state was successfully reached.
@@ -161,6 +172,12 @@ class SyncTest : public InProcessBrowserTest {
   // Enable notifications on the server.  This operation is available
   // only if ServerSupportsNotificationControl() returned true.
   void EnableNotifications();
+
+  // Sets the mock gaia response for when an OAuth2 token is requested.
+  // Each call to this method will overwrite responses that were previously set.
+  void SetOAuth2TokenResponse(const std::string& response_data,
+                              net::HttpStatusCode response_code,
+                              net::URLRequestStatus::Status status);
 
   // Trigger a notification to be sent to all clients.  This operation
   // is available only if ServerSupportsNotificationControl() returned
@@ -183,10 +200,11 @@ class SyncTest : public InProcessBrowserTest {
   // this state until shut down.
   void TriggerTransientError();
 
-  // Triggers an auth error on the server, simulating the case when the gaia
-  // password is changed at another location. Note the server will stay in
-  // this state until shut down.
-  void TriggerAuthError();
+  // Sets / unsets an auth error on the server. Can be used to simulate the case
+  // when the user's gaia password is changed at another location, or their
+  // OAuth2 tokens have expired. The server will stay in this state until
+  // this method is called with a different value.
+  void TriggerAuthState(PythonServerAuthState auth_state);
 
   // Triggers an XMPP auth error on the server.  Note the server will
   // stay in this state until shut down.

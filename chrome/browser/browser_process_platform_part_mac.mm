@@ -4,7 +4,6 @@
 
 #include "chrome/browser/browser_process_platform_part_mac.h"
 
-#include "apps/app_shim/app_shim_host_manager_mac.h"
 #include "chrome/browser/chrome_browser_application_mac.h"
 #include "chrome/browser/ui/app_list/app_list_service.h"
 
@@ -15,7 +14,7 @@ BrowserProcessPlatformPart::~BrowserProcessPlatformPart() {
 }
 
 void BrowserProcessPlatformPart::StartTearDown() {
-  app_shim_host_manager_.reset();
+  app_shim_host_manager_ = NULL;
 }
 
 void BrowserProcessPlatformPart::AttemptExit() {
@@ -26,7 +25,13 @@ void BrowserProcessPlatformPart::AttemptExit() {
 }
 
 void BrowserProcessPlatformPart::PreMainMessageLoopRun() {
-  app_shim_host_manager_.reset(new AppShimHostManager);
+  // AppShimHostManager can not simply be reset, otherwise destroying the old
+  // domain socket will cause the just-created socket to be unlinked.
+  DCHECK(!app_shim_host_manager_);
+  app_shim_host_manager_ = new AppShimHostManager;
+  // Init needs to be called after assigning to a scoped_refptr (i.e. after
+  // incrementing the refcount).
+  app_shim_host_manager_->Init();
   AppListService::InitAll(NULL);
 }
 

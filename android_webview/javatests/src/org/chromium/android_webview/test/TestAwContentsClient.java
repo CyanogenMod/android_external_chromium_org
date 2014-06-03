@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,6 +7,7 @@ package org.chromium.android_webview.test;
 import android.graphics.Picture;
 import android.webkit.ConsoleMessage;
 
+import org.chromium.base.ThreadUtils;
 import org.chromium.content.browser.test.util.CallbackHelper;
 import org.chromium.content.browser.test.util.TestCallbackHelperContainer.OnEvaluateJavaScriptResultHelper;
 import org.chromium.content.browser.test.util.TestCallbackHelperContainer.OnPageFinishedHelper;
@@ -22,8 +23,10 @@ class TestAwContentsClient extends NullContentsClient {
     private final AddMessageToConsoleHelper mAddMessageToConsoleHelper;
     private final OnScaleChangedHelper mOnScaleChangedHelper;
     private final PictureListenerHelper mPictureListenerHelper;
+    private final ShouldOverrideUrlLoadingHelper mShouldOverrideUrlLoadingHelper;
 
     public TestAwContentsClient() {
+        super(ThreadUtils.getUiThreadLooper());
         mOnPageStartedHelper = new OnPageStartedHelper();
         mOnPageFinishedHelper = new OnPageFinishedHelper();
         mOnReceivedErrorHelper = new OnReceivedErrorHelper();
@@ -31,6 +34,7 @@ class TestAwContentsClient extends NullContentsClient {
         mAddMessageToConsoleHelper = new AddMessageToConsoleHelper();
         mOnScaleChangedHelper = new OnScaleChangedHelper();
         mPictureListenerHelper = new PictureListenerHelper();
+        mShouldOverrideUrlLoadingHelper = new ShouldOverrideUrlLoadingHelper();
     }
 
     public OnPageStartedHelper getOnPageStartedHelper() {
@@ -47,6 +51,10 @@ class TestAwContentsClient extends NullContentsClient {
 
     public OnEvaluateJavaScriptResultHelper getOnEvaluateJavaScriptResultHelper() {
         return mOnEvaluateJavaScriptResultHelper;
+    }
+
+    public ShouldOverrideUrlLoadingHelper getShouldOverrideUrlLoadingHelper() {
+        return mShouldOverrideUrlLoadingHelper;
     }
 
     public AddMessageToConsoleHelper getAddMessageToConsoleHelper() {
@@ -164,5 +172,45 @@ class TestAwContentsClient extends NullContentsClient {
     @Override
     public void onNewPicture(Picture picture) {
         mPictureListenerHelper.notifyCalled(picture);
+    }
+
+    public static class ShouldOverrideUrlLoadingHelper extends CallbackHelper {
+        private String mShouldOverrideUrlLoadingUrl;
+        private String mPreviousShouldOverrideUrlLoadingUrl;
+        private boolean mShouldOverrideUrlLoadingReturnValue = false;
+        void setShouldOverrideUrlLoadingUrl(String url) {
+            mShouldOverrideUrlLoadingUrl = url;
+        }
+        void setPreviousShouldOverrideUrlLoadingUrl(String url) {
+            mPreviousShouldOverrideUrlLoadingUrl = url;
+        }
+        void setShouldOverrideUrlLoadingReturnValue(boolean value) {
+            mShouldOverrideUrlLoadingReturnValue = value;
+        }
+        public String getShouldOverrideUrlLoadingUrl() {
+            assert getCallCount() > 0;
+            return mShouldOverrideUrlLoadingUrl;
+        }
+        public String getPreviousShouldOverrideUrlLoadingUrl() {
+            assert getCallCount() > 1;
+            return mPreviousShouldOverrideUrlLoadingUrl;
+        }
+        public boolean getShouldOverrideUrlLoadingReturnValue() {
+            return mShouldOverrideUrlLoadingReturnValue;
+        }
+        public void notifyCalled(String url) {
+            mPreviousShouldOverrideUrlLoadingUrl = mShouldOverrideUrlLoadingUrl;
+            mShouldOverrideUrlLoadingUrl = url;
+            notifyCalled();
+        }
+    }
+
+    @Override
+    public boolean shouldOverrideUrlLoading(String url) {
+        super.shouldOverrideUrlLoading(url);
+        boolean returnValue =
+            mShouldOverrideUrlLoadingHelper.getShouldOverrideUrlLoadingReturnValue();
+        mShouldOverrideUrlLoadingHelper.notifyCalled(url);
+        return returnValue;
     }
 }

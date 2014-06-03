@@ -5,6 +5,8 @@
 #ifndef CHROME_BROWSER_DOWNLOAD_DOWNLOAD_STATS_H_
 #define CHROME_BROWSER_DOWNLOAD_DOWNLOAD_STATS_H_
 
+#include "content/public/browser/download_danger_type.h"
+
 // Record the total number of items and the number of in-progress items showing
 // in the shelf when it closes.  Set |autoclose| to true when the shelf is
 // closing itself, false when the user explicitly closed it.
@@ -54,10 +56,38 @@ enum ChromeDownloadSource {
   CHROME_DOWNLOAD_SOURCE_LAST_ENTRY,
 };
 
+// How a download was opened. Note that a download could be opened multiple
+// times.
+enum ChromeDownloadOpenMethod {
+  // The download was opened using the platform handler. There was no special
+  // handling for this download.
+  DOWNLOAD_OPEN_METHOD_DEFAULT_PLATFORM = 0,
+
+  // The download was opened using the browser bypassing the system handler.
+  DOWNLOAD_OPEN_METHOD_DEFAULT_BROWSER,
+
+  // The user chose to open the download using the system handler even though
+  // the preferred method was to open the download using the browser.
+  DOWNLOAD_OPEN_METHOD_USER_PLATFORM,
+
+  DOWNLOAD_OPEN_METHOD_LAST_ENTRY
+};
+
 // Increment one of the above counts.
 void RecordDownloadCount(ChromeDownloadCountTypes type);
 
 // Record initiation of a download from a specific source.
 void RecordDownloadSource(ChromeDownloadSource source);
+
+// Record that a download warning was shown.
+void RecordDangerousDownloadWarningShown(
+    content::DownloadDangerType danger_type);
+
+// Record that the user opened the confirmation dialog for a dangerous download.
+void RecordOpenedDangerousConfirmDialog(
+    content::DownloadDangerType danger_type);
+
+// Record how a download was opened.
+void RecordDownloadOpenMethod(ChromeDownloadOpenMethod open_method);
 
 #endif  // CHROME_BROWSER_DOWNLOAD_DOWNLOAD_STATS_H_

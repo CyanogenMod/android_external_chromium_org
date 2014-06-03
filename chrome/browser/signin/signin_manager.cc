@@ -18,13 +18,15 @@
 #include "chrome/browser/profiles/profile_io_data.h"
 #include "chrome/browser/signin/about_signin_internals.h"
 #include "chrome/browser/signin/about_signin_internals_factory.h"
+#include "chrome/browser/signin/local_auth.h"
+#include "chrome/browser/signin/profile_oauth2_token_service.h"
+#include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
+#include "chrome/browser/signin/signin_account_id_helper.h"
 #include "chrome/browser/signin/signin_global_error.h"
 #include "chrome/browser/signin/signin_internals_util.h"
 #include "chrome/browser/signin/signin_manager_cookie_helper.h"
 #include "chrome/browser/signin/signin_manager_delegate.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
-#include "chrome/browser/signin/token_service.h"
-#include "chrome/browser/signin/token_service_factory.h"
 #include "chrome/browser/ui/global_error/global_error_service.h"
 #include "chrome/browser/ui/global_error/global_error_service_factory.h"
 #include "chrome/common/chrome_switches.h"
@@ -119,10 +121,10 @@ SigninManager::~SigninManager() {
 }
 
 void SigninManager::InitTokenService() {
-  SigninManagerBase::InitTokenService();
-  TokenService* token_service = TokenServiceFactory::GetForProfile(profile_);
+  ProfileOAuth2TokenService* token_service =
+      ProfileOAuth2TokenServiceFactory::GetForProfile(profile_);
   if (token_service && !GetAuthenticatedUsername().empty())
-    token_service->LoadTokensFromDB();
+    token_service->LoadCredentials();
 }
 
 std::string SigninManager::SigninTypeToString(
@@ -130,10 +132,10 @@ std::string SigninManager::SigninTypeToString(
   switch (type) {
     case SIGNIN_TYPE_NONE:
       return "No Signin";
-    case SIGNIN_TYPE_CLIENT_LOGIN:
-      return "Client Login";
     case SIGNIN_TYPE_WITH_CREDENTIALS:
       return "Signin with credentials";
+    case SIGNIN_TYPE_WITH_OAUTH_CODE:
+      return "Signin with oauth code";
   }
 
   NOTREACHED();
@@ -159,7 +161,6 @@ bool SigninManager::PrepareForSignin(SigninType type,
   // need to try again, but take care to leave state around tracking that the
   // user has successfully signed in once before with this username, so that on
   // restart we don't think sync setup has never completed.
-  RevokeOAuthLoginToken();
   ClearTransientSigninData();
   type_ = type;
   possibly_invalid_username_.assign(username);
@@ -168,45 +169,8 @@ bool SigninManager::PrepareForSignin(SigninType type,
   client_login_.reset(new GaiaAuthFetcher(this,
                                           GaiaConstants::kChromeSource,
                                           profile_->GetRequestContext()));
-
   NotifyDiagnosticsObservers(SIGNIN_TYPE, SigninTypeToString(type));
   return true;
-}
-
-// Users must always sign out before they sign in again.
-void SigninManager::StartSignIn(const std::string& username,
-                                const std::string& password,
-                                const std::string& login_token,
-                                const std::string& login_captcha) {
-  DCHECK(GetAuthenticatedUsername().empty() ||
-         gaia::AreEmailsSame(username, GetAuthenticatedUsername()));
-
-  if (!PrepareForSignin(SIGNIN_TYPE_CLIENT_LOGIN, username, password))
-    return;
-
-  client_login_->StartClientLogin(username,
-                                  password,
-                                  "",
-                                  login_token,
-                                  login_captcha,
-                                  GaiaAuthFetcher::HostedAccountsNotAllowed);
-}
-
-void SigninManager::ProvideSecondFactorAccessCode(
-    const std::string& access_code) {
-  DCHECK(!possibly_invalid_username_.empty() && !password_.empty() &&
-      last_result_.data.empty());
-  DCHECK(type_ == SIGNIN_TYPE_CLIENT_LOGIN);
-
-  client_login_.reset(new GaiaAuthFetcher(this,
-                                          GaiaConstants::kChromeSource,
-                                          profile_->GetRequestContext()));
-  client_login_->StartClientLogin(possibly_invalid_username_,
-                                  access_code,
-                                  "",
-                                  std::string(),
-                                  std::string(),
-                                  GaiaAuthFetcher::HostedAccountsNotAllowed);
 }
 
 void SigninManager::StartSignInWithCredentials(
@@ -243,6 +207,23 @@ void SigninManager::StartSignInWithCredentials(
     // client_login_->StartClientLogin() had completed successfully.
     client_login_->StartCookieForOAuthLoginTokenExchange(session_index);
   }
+}
+
+void SigninManager::StartSignInWithOAuthCode(
+    const std::string& username,
+    const std::string& password,
+    const std::string& oauth_code,
+    const OAuthTokenFetchedCallback& callback) {
+  DCHECK(GetAuthenticatedUsername().empty() ||
+         gaia::AreEmailsSame(username, GetAuthenticatedUsername()));
+
+  if (!PrepareForSignin(SIGNIN_TYPE_WITH_OAUTH_CODE, username, password))
+    return;
+
+  DCHECK(oauth_token_fetched_callback_.is_null());
+  oauth_token_fetched_callback_ = callback;
+
+  client_login_->StartAuthCodeForOAuth2TokenExchange(oauth_code);
 }
 
 void SigninManager::VerifyGaiaCookiesBeforeSignIn(
@@ -342,7 +323,6 @@ void SigninManager::SignOut() {
   }
 
   ClearTransientSigninData();
-  RevokeOAuthLoginToken();
 
   GoogleServiceSignoutDetails details(GetAuthenticatedUsername());
   clear_authenticated_username();
@@ -350,21 +330,20 @@ void SigninManager::SignOut() {
 
   // Erase (now) stale information from AboutSigninInternals.
   NotifyDiagnosticsObservers(USERNAME, "");
-  NotifyDiagnosticsObservers(LSID, "");
-  NotifyDiagnosticsObservers(
-      signin_internals_util::SID, "");
 
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_GOOGLE_SIGNED_OUT,
       content::Source<Profile>(profile_),
       content::Details<const GoogleServiceSignoutDetails>(&details));
-  TokenService* token_service = TokenServiceFactory::GetForProfile(profile_);
-  token_service->ResetCredentialsInMemory();
-  token_service->EraseTokensFromDB();
+  ProfileOAuth2TokenService* token_service =
+      ProfileOAuth2TokenServiceFactory::GetForProfile(profile_);
+  token_service->RevokeAllCredentials();
 }
 
 void SigninManager::Initialize(Profile* profile, PrefService* local_state) {
   SigninManagerBase::Initialize(profile, local_state);
+
+  InitTokenService();
 
   // local_state can be null during unit tests.
   if (local_state) {
@@ -385,10 +364,13 @@ void SigninManager::Initialize(Profile* profile, PrefService* local_state) {
     // have changed the policy since the last signin, so sign out the user.
     SignOut();
   }
+
+  account_id_helper_.reset(new SigninAccountIdHelper(profile));
 }
 
 void SigninManager::Shutdown() {
   local_state_pref_registrar_.RemoveAll();
+  account_id_helper_.reset();
   SigninManagerBase::Shutdown();
 }
 
@@ -426,7 +408,7 @@ bool SigninManager::IsUsernameAllowedByPolicy(const std::string& username,
   // are not valid regular expressions - they should instead be ".*@foo.com").
   // For convenience, detect these patterns and insert a "." character at the
   // front.
-  string16 pattern = UTF8ToUTF16(policy);
+  base::string16 pattern = UTF8ToUTF16(policy);
   if (pattern[0] == L'*')
     pattern.insert(pattern.begin(), L'.');
 
@@ -440,7 +422,7 @@ bool SigninManager::IsUsernameAllowedByPolicy(const std::string& username,
     // break signin than to quietly allow users to sign in).
     return false;
   }
-  string16 username16 = UTF8ToUTF16(username);
+  base::string16 username16 = UTF8ToUTF16(username);
   icu::UnicodeString icu_input(username16.data(), username16.length());
   matcher.reset(icu_input);
   status = U_ZERO_ERROR;
@@ -457,22 +439,6 @@ bool SigninManager::IsAllowedUsername(const std::string& username) const {
   std::string pattern = local_state->GetString(
       prefs::kGoogleServicesUsernamePattern);
   return IsUsernameAllowedByPolicy(username, pattern);
-}
-
-void SigninManager::RevokeOAuthLoginToken() {
-  TokenService* token_service = TokenServiceFactory::GetForProfile(profile_);
-  if (token_service->HasOAuthLoginToken()) {
-    revoke_token_fetcher_.reset(
-        new GaiaAuthFetcher(this,
-                            GaiaConstants::kChromeSource,
-                            profile_->GetRequestContext()));
-    revoke_token_fetcher_->StartRevokeOAuth2Token(
-        token_service->GetOAuth2LoginRefreshToken());
-  }
-}
-
-void SigninManager::OnOAuth2RevokeTokenCompleted() {
-  revoke_token_fetcher_.reset(NULL);
 }
 
 bool SigninManager::AuthInProgress() const {
@@ -500,9 +466,6 @@ void SigninManager::OnClientLoginSuccess(const ClientLoginResult& result) {
   last_result_ = result;
   // Update signin_internals_
   NotifyDiagnosticsObservers(CLIENT_LOGIN_STATUS, "Successful");
-  NotifyDiagnosticsObservers(LSID, result.lsid);
-  NotifyDiagnosticsObservers(
-      signin_internals_util::SID, result.sid);
   // Make a request for the canonical email address and services.
   client_login_->StartGetUserInfo(result.lsid);
 }
@@ -534,6 +497,7 @@ void SigninManager::OnClientOAuthSuccess(const ClientOAuthResult& result) {
 
   switch (type_) {
     case SIGNIN_TYPE_WITH_CREDENTIALS:
+    case SIGNIN_TYPE_WITH_OAUTH_CODE:
       temp_oauth_login_tokens_ = result;
       client_login_->StartOAuthLogin(result.access_token,
                                      GaiaConstants::kGaiaService);
@@ -593,17 +557,13 @@ void SigninManager::CompletePendingSignin() {
   DCHECK(!possibly_invalid_username_.empty());
   OnSignedIn(possibly_invalid_username_);
 
-  TokenService* token_service = TokenServiceFactory::GetForProfile(profile_);
-  token_service->UpdateCredentials(last_result_);
-  DCHECK(token_service->AreCredentialsValid());
-  token_service->StartFetchingTokens();
-
-  // If we have oauth2 tokens, tell token service about them so it does not
-  // need to fetch them again.
-  if (!temp_oauth_login_tokens_.refresh_token.empty()) {
-    token_service->UpdateCredentialsWithOAuth2(temp_oauth_login_tokens_);
-    temp_oauth_login_tokens_ = ClientOAuthResult();
-  }
+  DCHECK(!temp_oauth_login_tokens_.refresh_token.empty());
+  DCHECK(!GetAuthenticatedUsername().empty());
+  ProfileOAuth2TokenService* token_service =
+    ProfileOAuth2TokenServiceFactory::GetForProfile(profile_);
+  token_service->UpdateCredentials(GetAuthenticatedUsername(),
+                                   temp_oauth_login_tokens_.refresh_token);
+  temp_oauth_login_tokens_ = ClientOAuthResult();
 }
 
 void SigninManager::OnExternalSigninCompleted(const std::string& username) {
@@ -622,6 +582,14 @@ void SigninManager::OnSignedIn(const std::string& username) {
       chrome::NOTIFICATION_GOOGLE_SIGNIN_SUCCESSFUL,
       content::Source<Profile>(profile_),
       content::Details<const GoogleServiceSigninSuccessDetails>(&details));
+
+#if !defined(OS_ANDROID)
+  // Don't store password hash except for users of new profile features.
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kNewProfileManagement)) {
+    chrome::SetLocalAuthCredentials(profile_, password_);
+  }
+#endif
 
   password_.clear();  // Don't need it anymore.
   DisableOneClickSignIn(profile_);  // Don't ever offer again.

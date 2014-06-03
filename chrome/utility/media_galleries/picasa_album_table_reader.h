@@ -12,14 +12,9 @@
 
 namespace picasa {
 
-const uint32 kAlbumCategoryAlbum     = 0;
-const uint32 kAlbumCategoryFolder    = 2;
-const uint32 kAlbumCategoryInvalid   = 0xffff;  // Sentinel value.
-
-const char kAlbumTokenPrefix[] = "]album:";
-
 class PicasaAlbumTableReader {
  public:
+  // This class takes ownership of |table_files| and will close them.
   explicit PicasaAlbumTableReader(const AlbumTableFiles& table_files);
   ~PicasaAlbumTableReader();
 
@@ -29,7 +24,7 @@ class PicasaAlbumTableReader {
   const std::vector<AlbumInfo>& folders() const;
 
  private:
-  const AlbumTableFiles table_files_;
+  AlbumTableFiles table_files_;
 
   bool initialized_;
 

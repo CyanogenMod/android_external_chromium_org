@@ -50,6 +50,8 @@ const char* SyncStatusCodeToString(SyncStatusCode status) {
       return "File not empty.";
     case SYNC_FILE_ERROR_INVALID_URL:
       return "Invalid URL.";
+    case SYNC_FILE_ERROR_IO:
+      return "OS or hardware error.";
 
     // Database related errors.
     case SYNC_DATABASE_ERROR_NOT_FOUND:
@@ -72,8 +74,8 @@ const char* SyncStatusCodeToString(SyncStatusCode status) {
       return "Sync: operation aborted.";
     case SYNC_STATUS_NO_CHANGE_TO_SYNC:
       return "Sync: no change to synchronize.";
-    case SYNC_STATUS_RETRY:
-      return "Sync: retry to synchronize.";
+    case SYNC_STATUS_SERVICE_TEMPORARILY_UNAVAILABLE:
+      return "Sync: service is temporarily unavailable.";
     case SYNC_STATUS_NETWORK_ERROR:
       return "Sync: network error.";
     case SYNC_STATUS_AUTHENTICATION_FAILED:
@@ -86,6 +88,8 @@ const char* SyncStatusCodeToString(SyncStatusCode status) {
       return "Sync: sync is disabled.";
     case SYNC_STATUS_ACCESS_FORBIDDEN:
       return "Sync: service access forbidden.";
+    case SYNC_STATUS_RETRY:
+      return "Sync: retry the operation.";
   }
   NOTREACHED();
   return "Unknown error.";
@@ -139,8 +143,58 @@ SyncStatusCode PlatformFileErrorToSyncStatusCode(
       return SYNC_FILE_ERROR_NOT_EMPTY;
     case base::PLATFORM_FILE_ERROR_INVALID_URL:
       return SYNC_FILE_ERROR_INVALID_URL;
-    default:
+    case base::PLATFORM_FILE_ERROR_IO:
+      return SYNC_FILE_ERROR_IO;
+    case base::PLATFORM_FILE_ERROR_MAX:
+      NOTREACHED();
       return SYNC_FILE_ERROR_FAILED;
+  }
+  // Return the value as is, so the value converted by
+  // SyncStatusCodeToPlatformFileError could be restored.
+  return static_cast<SyncStatusCode>(file_error);
+}
+
+base::PlatformFileError SyncStatusCodeToPlatformFileError(
+    SyncStatusCode status) {
+  switch (status) {
+    case SYNC_STATUS_OK:
+      return base::PLATFORM_FILE_OK;
+    case SYNC_FILE_ERROR_FAILED:
+      return base::PLATFORM_FILE_ERROR_FAILED;
+    case SYNC_FILE_ERROR_IN_USE:
+      return base::PLATFORM_FILE_ERROR_IN_USE;
+    case SYNC_FILE_ERROR_EXISTS:
+      return base::PLATFORM_FILE_ERROR_EXISTS;
+    case SYNC_FILE_ERROR_NOT_FOUND:
+      return base::PLATFORM_FILE_ERROR_NOT_FOUND;
+    case SYNC_FILE_ERROR_ACCESS_DENIED:
+      return base::PLATFORM_FILE_ERROR_ACCESS_DENIED;
+    case SYNC_FILE_ERROR_TOO_MANY_OPENED:
+      return base::PLATFORM_FILE_ERROR_TOO_MANY_OPENED;
+    case SYNC_FILE_ERROR_NO_MEMORY:
+      return base::PLATFORM_FILE_ERROR_NO_MEMORY;
+    case SYNC_FILE_ERROR_NO_SPACE:
+      return base::PLATFORM_FILE_ERROR_NO_SPACE;
+    case SYNC_FILE_ERROR_NOT_A_DIRECTORY:
+      return base::PLATFORM_FILE_ERROR_NOT_A_DIRECTORY;
+    case SYNC_FILE_ERROR_INVALID_OPERATION:
+      return base::PLATFORM_FILE_ERROR_INVALID_OPERATION;
+    case SYNC_FILE_ERROR_SECURITY:
+      return base::PLATFORM_FILE_ERROR_SECURITY;
+    case SYNC_FILE_ERROR_ABORT:
+      return base::PLATFORM_FILE_ERROR_ABORT;
+    case SYNC_FILE_ERROR_NOT_A_FILE:
+      return base::PLATFORM_FILE_ERROR_NOT_A_FILE;
+    case SYNC_FILE_ERROR_NOT_EMPTY:
+      return base::PLATFORM_FILE_ERROR_NOT_EMPTY;
+    case SYNC_FILE_ERROR_INVALID_URL:
+      return base::PLATFORM_FILE_ERROR_INVALID_URL;
+    case SYNC_FILE_ERROR_IO:
+      return base::PLATFORM_FILE_ERROR_IO;
+    default:
+      // Return the value as is, so that caller may be able to
+      // restore the information.
+      return static_cast<base::PlatformFileError>(status);
   }
 }
 

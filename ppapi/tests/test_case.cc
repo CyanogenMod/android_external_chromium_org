@@ -6,6 +6,7 @@
 
 #include <string.h>
 
+#include <algorithm>
 #include <sstream>
 
 #include "ppapi/cpp/core.h"
@@ -105,7 +106,6 @@ std::string TestCase::MakeFailureMessage(const char* file,
   // GYP_DEFINES='branding=Chrome buildtype=Official target_arch=x64'
   //     gclient runhooks
   // make -k -j4 BUILDTYPE=Release ppapi_tests
-  std::string s;
 
   std::ostringstream output;
   output << "Failure in " << file << "(" << line << "): " << cmd;
@@ -254,13 +254,14 @@ void TestCase::DoQuitMainMessageLoop(void* pp_instance, int32_t result) {
   delete instance;
 }
 
-void TestCase::RunOnThreadInternal(void (*thread_func)(void*),
-                                   void* thread_param,
-                                   const PPB_Testing_Dev* testing_interface) {
-    PP_ThreadType thread;
-    PP_CreateThread(&thread, thread_func, thread_param);
-    // Run a message loop so pepper calls can be dispatched. The background
-    // thread will set result_ and make us Quit when it's done.
-    testing_interface->RunMessageLoop(instance_->pp_instance());
-    PP_JoinThread(thread);
+void TestCase::RunOnThreadInternal(
+    void (*thread_func)(void*),
+    void* thread_param,
+    const PPB_Testing_Private* testing_interface) {
+  PP_ThreadType thread;
+  PP_CreateThread(&thread, thread_func, thread_param);
+  // Run a message loop so pepper calls can be dispatched. The background
+  // thread will set result_ and make us Quit when it's done.
+  testing_interface->RunMessageLoop(instance_->pp_instance());
+  PP_JoinThread(thread);
 }

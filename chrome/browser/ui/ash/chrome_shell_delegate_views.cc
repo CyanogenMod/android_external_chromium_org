@@ -4,26 +4,142 @@
 
 #include "chrome/browser/ui/ash/chrome_shell_delegate.h"
 
-#include "base/command_line.h"
+#include "ash/accessibility_delegate.h"
 #include "ash/magnifier/magnifier_constants.h"
+#include "ash/media_delegate.h"
+#include "ash/system/tray/default_system_tray_delegate.h"
+#include "ash/wm/window_util.h"
+#include "base/command_line.h"
+#include "chrome/browser/accessibility/accessibility_events.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/prefs/session_startup_pref.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/ash/caps_lock_delegate_views.h"
+#include "chrome/browser/ui/ash/chrome_new_window_delegate.h"
 #include "chrome/browser/ui/ash/session_state_delegate_views.h"
-#include "chrome/browser/ui/ash/window_positioner.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/host_desktop.h"
+#include "chrome/browser/ui/scoped_tabbed_browser_displayer.h"
 #include "chrome/browser/ui/startup/startup_browser_creator_impl.h"
 #include "chrome/common/chrome_switches.h"
 #include "content/public/browser/notification_service.h"
 
 #if defined(OS_WIN)
+#include "chrome/browser/ui/ash/system_tray_delegate_win.h"
 #include "chrome/browser/ui/ash/user_wallpaper_delegate_win.h"
 #endif
+
+namespace {
+
+class NewWindowDelegateImpl : public ChromeNewWindowDelegate {
+ public:
+  NewWindowDelegateImpl() {}
+  virtual ~NewWindowDelegateImpl() {}
+
+  // Overridden from ash::NewWindowDelegate:
+  virtual void OpenFileManager() OVERRIDE {}
+  virtual void OpenCrosh() OVERRIDE {}
+  virtual void ShowKeyboardOverlay() OVERRIDE {}
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(NewWindowDelegateImpl);
+};
+
+class MediaDelegateImpl : public ash::MediaDelegate {
+ public:
+  MediaDelegateImpl() {}
+  virtual ~MediaDelegateImpl() {}
+  virtual void HandleMediaNextTrack() OVERRIDE {}
+  virtual void HandleMediaPlayPause() OVERRIDE {}
+  virtual void HandleMediaPrevTrack() OVERRIDE {}
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(MediaDelegateImpl);
+};
+
+class EmptyAccessibilityDelegate : public ash::AccessibilityDelegate {
+ public:
+  EmptyAccessibilityDelegate() {}
+  virtual ~EmptyAccessibilityDelegate() {}
+
+  virtual void ToggleHighContrast() OVERRIDE {
+  }
+
+  virtual bool IsHighContrastEnabled() const OVERRIDE {
+    return false;
+  }
+
+  virtual bool IsSpokenFeedbackEnabled() const OVERRIDE {
+    return false;
+  }
+
+  virtual void ToggleSpokenFeedback(
+      ash::AccessibilityNotificationVisibility notify) OVERRIDE {
+  }
+
+  virtual void SetLargeCursorEnabled(bool enalbed) OVERRIDE {
+  }
+
+  virtual bool IsLargeCursorEnabled() const OVERRIDE {
+    return false;
+  }
+
+  virtual void SetMagnifierEnabled(bool enabled) OVERRIDE {
+  }
+
+  virtual void SetMagnifierType(ash::MagnifierType type) OVERRIDE {
+  }
+
+  virtual bool IsMagnifierEnabled() const OVERRIDE {
+    return false;
+  }
+
+  virtual void SetAutoclickEnabled(bool enabled) OVERRIDE {
+  }
+
+  virtual bool IsAutoclickEnabled() const OVERRIDE {
+    return false;
+  }
+
+  virtual ash::MagnifierType GetMagnifierType() const OVERRIDE {
+    return ash::kDefaultMagnifierType;
+  }
+
+  virtual void SaveScreenMagnifierScale(double scale) OVERRIDE {
+  }
+
+  virtual double GetSavedScreenMagnifierScale() OVERRIDE {
+    return std::numeric_limits<double>::min();
+  }
+
+  virtual bool ShouldShowAccessibilityMenu() const OVERRIDE {
+    return false;
+  }
+
+  virtual void SilenceSpokenFeedback() const OVERRIDE {
+  }
+
+  virtual void TriggerAccessibilityAlert(
+      ash::AccessibilityAlert alert) OVERRIDE {
+  }
+
+  virtual ash::AccessibilityAlert GetLastAccessibilityAlert() OVERRIDE {
+    return ash::A11Y_ALERT_NONE;
+  }
+
+  base::TimeDelta PlayShutdownSound() const OVERRIDE {
+    return base::TimeDelta();
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(EmptyAccessibilityDelegate);
+};
+
+}  // namespace
 
 bool ChromeShellDelegate::IsFirstRunAfterBoot() const {
   return false;
@@ -35,49 +151,12 @@ void ChromeShellDelegate::PreInit() {
 void ChromeShellDelegate::Shutdown() {
 }
 
-void ChromeShellDelegate::OpenFileManager(bool as_dialog) {
+ash::NewWindowDelegate* ChromeShellDelegate::CreateNewWindowDelegate() {
+  return new NewWindowDelegateImpl;
 }
 
-void ChromeShellDelegate::OpenCrosh() {
-}
-
-void ChromeShellDelegate::ShowKeyboardOverlay() {
-}
-
-void ChromeShellDelegate::ToggleHighContrast() {
-}
-
-bool ChromeShellDelegate::IsSpokenFeedbackEnabled() const {
-  return false;
-}
-
-void ChromeShellDelegate::ToggleSpokenFeedback(
-    ash::AccessibilityNotificationVisibility notify) {
-}
-
-void ChromeShellDelegate::SetLargeCursorEnabled(bool enalbed) {
-}
-
-bool ChromeShellDelegate::IsLargeCursorEnabled() const {
-  return false;
-}
-
-bool ChromeShellDelegate::IsHighContrastEnabled() const {
-  return false;
-}
-
-void ChromeShellDelegate::SetMagnifierEnabled(bool enabled) {
-}
-
-void ChromeShellDelegate::SetMagnifierType(ash::MagnifierType type) {
-}
-
-bool ChromeShellDelegate::IsMagnifierEnabled() const {
-  return false;
-}
-
-ash::MagnifierType ChromeShellDelegate::GetMagnifierType() const {
-  return ash::kDefaultMagnifierType;
+ash::MediaDelegate* ChromeShellDelegate::CreateMediaDelegate() {
+  return new MediaDelegateImpl;
 }
 
 ash::CapsLockDelegate* ChromeShellDelegate::CreateCapsLockDelegate() {
@@ -88,22 +167,16 @@ ash::SessionStateDelegate* ChromeShellDelegate::CreateSessionStateDelegate() {
   return new SessionStateDelegate;
 }
 
-void ChromeShellDelegate::SaveScreenMagnifierScale(double scale) {
-}
-
-double ChromeShellDelegate::GetSavedScreenMagnifierScale() {
-  return std::numeric_limits<double>::min();
-}
-
-bool ChromeShellDelegate::ShouldAlwaysShowAccessibilityMenu() const {
-  return false;
-}
-
-void ChromeShellDelegate::SilenceSpokenFeedback() const {
-}
-
 ash::SystemTrayDelegate* ChromeShellDelegate::CreateSystemTrayDelegate() {
-  return NULL;
+#if defined(OS_WIN)
+  return CreateWindowsSystemTrayDelegate();
+#else
+  return new ash::DefaultSystemTrayDelegate;
+#endif
+}
+
+ash::AccessibilityDelegate* ChromeShellDelegate::CreateAccessibilityDelegate() {
+  return new EmptyAccessibilityDelegate;
 }
 
 ash::UserWallpaperDelegate* ChromeShellDelegate::CreateUserWallpaperDelegate() {
@@ -112,15 +185,6 @@ ash::UserWallpaperDelegate* ChromeShellDelegate::CreateUserWallpaperDelegate() {
 #else
   return NULL;
 #endif
-}
-
-void ChromeShellDelegate::HandleMediaNextTrack() {
-}
-
-void ChromeShellDelegate::HandleMediaPlayPause() {
-}
-
-void ChromeShellDelegate::HandleMediaPrevTrack() {
 }
 
 void ChromeShellDelegate::Observe(int type,
@@ -150,14 +214,23 @@ void ChromeShellDelegate::Observe(int type,
             base::FilePath(),
             dummy,
             chrome::startup::IS_NOT_FIRST_RUN);
-        startup_impl.Launch(ProfileManager::GetDefaultProfileOrOffTheRecord(),
-                            std::vector<GURL>(),
-                            true,
-                            chrome::HOST_DESKTOP_TYPE_ASH);
+        startup_impl.Launch(
+            ProfileManager::GetActiveUserProfileOrOffTheRecord(),
+            std::vector<GURL>(),
+            true,
+            chrome::HOST_DESKTOP_TYPE_ASH);
       } else {
-        Browser* browser = GetTargetBrowser();
-        chrome::AddBlankTabAt(browser, -1, true);
-        browser->window()->Show();
+        Browser* browser =
+            chrome::FindBrowserWithWindow(ash::wm::GetActiveWindow());
+        if (browser && browser->is_type_tabbed()) {
+          chrome::AddTabAt(browser, GURL(), -1, true);
+          return;
+        }
+
+        chrome::ScopedTabbedBrowserDisplayer displayer(
+            ProfileManager::GetActiveUserProfileOrOffTheRecord(),
+            chrome::HOST_DESKTOP_TYPE_ASH);
+        chrome::AddTabAt(displayer.browser(), GURL(), -1, true);
       }
       break;
     }

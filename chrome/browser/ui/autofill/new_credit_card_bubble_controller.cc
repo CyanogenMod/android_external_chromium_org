@@ -18,6 +18,7 @@
 #include "chrome/common/url_constants.h"
 #include "components/autofill/core/browser/autofill_profile.h"
 #include "components/autofill/core/browser/credit_card.h"
+#include "content/public/browser/web_contents.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
@@ -25,14 +26,6 @@
 #include "ui/base/resource/resource_bundle.h"
 
 namespace autofill {
-
-namespace {
-
-static const int kMaxGeneratedCardTimesToShow = 5;
-static const char kWalletGeneratedCardLearnMoreLink[] =
-    "http://support.google.com/wallet/bin/answer.py?hl=en&answer=2740044";
-
-}  // namespace
 
 CreditCardDescription::CreditCardDescription() {}
 CreditCardDescription::~CreditCardDescription() {}
@@ -43,10 +36,10 @@ NewCreditCardBubbleController::~NewCreditCardBubbleController() {
 
 // static
 void NewCreditCardBubbleController::Show(
-    Profile* profile,
+    content::WebContents* web_contents,
     scoped_ptr<CreditCard> new_card,
     scoped_ptr<AutofillProfile> billing_profile) {
-  (new NewCreditCardBubbleController(profile))->SetupAndShow(
+  (new NewCreditCardBubbleController(web_contents))->SetupAndShow(
       new_card.Pass(),
       billing_profile.Pass());
 }
@@ -77,8 +70,10 @@ void NewCreditCardBubbleController::OnLinkClicked() {
   Hide();
 }
 
-NewCreditCardBubbleController::NewCreditCardBubbleController(Profile* profile)
-    : profile_(profile),
+NewCreditCardBubbleController::NewCreditCardBubbleController(
+    content::WebContents* web_contents)
+    : profile_(Profile::FromBrowserContext(web_contents->GetBrowserContext())),
+      web_contents_(web_contents),
       title_text_(l10n_util::GetStringUTF16(
           IDS_AUTOFILL_NEW_CREDIT_CARD_BUBBLE_TITLE)),
       link_text_(l10n_util::GetStringUTF16(
@@ -111,7 +106,7 @@ void NewCreditCardBubbleController::SetupAndShow(
       CreditCard::IconResourceId(CreditCard::GetCreditCardType(card_number)));
   card_desc_.name = new_card_->TypeAndLastFourDigits();
 
-  AutofillProfileWrapper wrapper(billing_profile_.get(), 0);
+  AutofillProfileWrapper wrapper(billing_profile_.get());
   base::string16 unused;
   wrapper.GetDisplayText(&card_desc_.description, &unused);
 

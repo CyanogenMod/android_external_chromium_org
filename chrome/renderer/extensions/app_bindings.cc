@@ -10,21 +10,22 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_messages.h"
 #include "chrome/common/extensions/extension_set.h"
-#include "chrome/common/extensions/manifest.h"
 #include "chrome/renderer/extensions/chrome_v8_context.h"
 #include "chrome/renderer/extensions/console.h"
 #include "chrome/renderer/extensions/dispatcher.h"
 #include "chrome/renderer/extensions/extension_helper.h"
 #include "content/public/renderer/render_view.h"
 #include "content/public/renderer/v8_value_converter.h"
+#include "extensions/common/manifest.h"
 #include "grit/renderer_resources.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
 #include "v8/include/v8.h"
 
-using WebKit::WebFrame;
+using blink::WebFrame;
 using content::V8ValueConverter;
 
 namespace extensions {
@@ -41,11 +42,11 @@ bool IsCheckoutURL(const std::string& url_spec) {
   return StartsWithASCII(url_spec, checkout_url_prefix, false);
 }
 
-bool CheckAccessToAppDetails(WebFrame* frame) {
+bool CheckAccessToAppDetails(WebFrame* frame, v8::Isolate* isolate) {
   if (!IsCheckoutURL(frame->document().url().spec())) {
     std::string error("Access denied for URL: ");
     error += frame->document().url().spec();
-    v8::ThrowException(v8::String::New(error.c_str()));
+    isolate->ThrowException(v8::String::NewFromUtf8(isolate, error.c_str()));
     return false;
   }
 
@@ -90,16 +91,18 @@ void AppBindings::GetDetails(
 void AppBindings::GetDetailsForFrame(
     const v8::FunctionCallbackInfo<v8::Value>& args) {
   CHECK(context()->web_frame());
-  if (!CheckAccessToAppDetails(context()->web_frame()))
+  if (!CheckAccessToAppDetails(context()->web_frame(), context()->isolate()))
     return;
 
   if (args.Length() < 0) {
-    v8::ThrowException(v8::String::New("Not enough arguments."));
+    context()->isolate()->ThrowException(
+        v8::String::NewFromUtf8(context()->isolate(), "Not enough arguments."));
     return;
   }
 
   if (!args[0]->IsObject()) {
-    v8::ThrowException(v8::String::New("Argument 0 must be an object."));
+    context()->isolate()->ThrowException(v8::String::NewFromUtf8(
+        context()->isolate(), "Argument 0 must be an object."));
     return;
   }
 
@@ -109,7 +112,7 @@ void AppBindings::GetDetailsForFrame(
 
   WebFrame* target_frame = WebFrame::frameForContext(context);
   if (!target_frame) {
-    console::Error(v8::Context::GetCalling(),
+    console::Error(args.GetIsolate()->GetCallingContext(),
                    "Could not find frame for specified object.");
     return;
   }
@@ -119,15 +122,16 @@ void AppBindings::GetDetailsForFrame(
 
 v8::Handle<v8::Value> AppBindings::GetDetailsForFrameImpl(
     WebFrame* frame) {
+  v8::Isolate* isolate = frame->mainWorldScriptContext()->GetIsolate();
   if (frame->document().securityOrigin().isUnique())
-    return v8::Null();
+    return v8::Null(isolate);
 
   const Extension* extension =
       dispatcher_->extensions()->GetExtensionOrAppByURL(
           frame->document().url());
 
   if (!extension)
-    return v8::Null();
+    return v8::Null(isolate);
 
   scoped_ptr<base::DictionaryValue> manifest_copy(
       extension->manifest()->value()->DeepCopy());
@@ -143,7 +147,8 @@ void AppBindings::GetInstallState(
   int callback_id = 0;
   if (args.Length() == 1) {
     if (!args[0]->IsInt32()) {
-      v8::ThrowException(v8::String::New(kInvalidCallbackIdError));
+      context()->isolate()->ThrowException(v8::String::NewFromUtf8(
+          context()->isolate(), kInvalidCallbackIdError));
       return;
     }
     callback_id = args[0]->Int32Value();
@@ -176,8 +181,8 @@ void AppBindings::GetRunningState(
       context()->web_frame()->document().url());
 
   if (!this_app || !parent_app) {
-    args.GetReturnValue().Set(
-        v8::String::New(extension_misc::kAppStateCannotRun));
+    args.GetReturnValue().Set(v8::String::NewFromUtf8(
+        context()->isolate(), extension_misc::kAppStateCannotRun));
     return;
   }
 
@@ -193,7 +198,8 @@ void AppBindings::GetRunningState(
     state = extension_misc::kAppStateCannotRun;
   }
 
-  args.GetReturnValue().Set(v8::String::New(state));
+  args.GetReturnValue()
+      .Set(v8::String::NewFromUtf8(context()->isolate(), state));
 }
 
 bool AppBindings::OnMessageReceived(const IPC::Message& message) {
@@ -207,10 +213,10 @@ bool AppBindings::OnMessageReceived(const IPC::Message& message) {
 
 void AppBindings::OnAppInstallStateResponse(
     const std::string& state, int callback_id) {
-  v8::HandleScope handle_scope;
+  v8::HandleScope handle_scope(context()->isolate());
   v8::Context::Scope context_scope(context()->v8_context());
   v8::Handle<v8::Value> argv[] = {
-    v8::String::New(state.c_str()),
+    v8::String::NewFromUtf8(context()->isolate(), state.c_str()),
     v8::Integer::New(callback_id)
   };
   context()->module_system()->CallModuleMethod(

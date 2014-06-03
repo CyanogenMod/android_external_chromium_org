@@ -9,7 +9,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/test/browser_test_utils.h"
-#include "content/shell/shell.h"
+#include "content/shell/browser/shell.h"
 #include "content/test/content_browser_test_utils.h"
 
 // TODO(wolenetz): Fix Media.YUV* tests on MSVS 2012 x64. crbug.com/180074
@@ -59,16 +59,20 @@ void MediaBrowserTest::RunMediaTestPage(
 }
 
 void MediaBrowserTest::RunTest(const GURL& gurl, const char* expected) {
-  const string16 kExpected = ASCIIToUTF16(expected);
+  const base::string16 expected_title = ASCIIToUTF16(expected);
   DVLOG(1) << "Running test URL: " << gurl;
-  TitleWatcher title_watcher(shell()->web_contents(), kExpected);
-  title_watcher.AlsoWaitForTitle(ASCIIToUTF16(kEnded));
-  title_watcher.AlsoWaitForTitle(ASCIIToUTF16(kError));
-  title_watcher.AlsoWaitForTitle(ASCIIToUTF16(kFailed));
+  TitleWatcher title_watcher(shell()->web_contents(), expected_title);
+  AddWaitForTitles(&title_watcher);
   NavigateToURL(shell(), gurl);
 
-  string16 final_title = title_watcher.WaitAndGetTitle();
-  EXPECT_EQ(kExpected, final_title);
+  base::string16 final_title = title_watcher.WaitAndGetTitle();
+  EXPECT_EQ(expected_title, final_title);
+}
+
+void MediaBrowserTest::AddWaitForTitles(content::TitleWatcher* title_watcher) {
+  title_watcher->AlsoWaitForTitle(ASCIIToUTF16(kEnded));
+  title_watcher->AlsoWaitForTitle(ASCIIToUTF16(kError));
+  title_watcher->AlsoWaitForTitle(ASCIIToUTF16(kFailed));
 }
 
 // Tests playback and seeking of an audio or video file over file or http based
@@ -117,7 +121,7 @@ IN_PROC_BROWSER_TEST_P(MediaTest, VideoBearSilentWebm) {
   PlayVideo("bear_silent.webm", GetParam());
 }
 
-#if defined(GOOGLE_CHROME_BUILD) || defined(USE_PROPRIETARY_CODECS)
+#if defined(USE_PROPRIETARY_CODECS)
 IN_PROC_BROWSER_TEST_P(MediaTest, VideoBearMp4) {
   PlayVideo("bear.mp4", GetParam());
 }
@@ -139,7 +143,7 @@ IN_PROC_BROWSER_TEST_P(MediaTest, VideoBearMovPcmS24be) {
 #endif
 
 #if defined(OS_CHROMEOS)
-#if defined(GOOGLE_CHROME_BUILD) || defined(USE_PROPRIETARY_CODECS)
+#if defined(USE_PROPRIETARY_CODECS)
 IN_PROC_BROWSER_TEST_P(MediaTest, VideoBearAviMp3Mpeg4) {
   PlayVideo("bear_mpeg4_mp3.avi", GetParam());
 }
@@ -164,15 +168,19 @@ IN_PROC_BROWSER_TEST_P(MediaTest, VideoBearWavGsmms) {
   PlayAudio("bear_gsm_ms.wav", GetParam());
 }
 
-IN_PROC_BROWSER_TEST_P(MediaTest, VideoBearWavMulaw) {
-  PlayAudio("bear_mulaw.wav", GetParam());
-}
-
 IN_PROC_BROWSER_TEST_P(MediaTest, VideoBearFlac) {
   PlayAudio("bear.flac", GetParam());
 }
 #endif
 #endif
+
+IN_PROC_BROWSER_TEST_P(MediaTest, VideoBearWavAlaw) {
+  PlayAudio("bear_alaw.wav", GetParam());
+}
+
+IN_PROC_BROWSER_TEST_P(MediaTest, VideoBearWavMulaw) {
+  PlayAudio("bear_mulaw.wav", GetParam());
+}
 
 IN_PROC_BROWSER_TEST_P(MediaTest, VideoBearWavPcm) {
   PlayAudio("bear_pcm.wav", GetParam());
@@ -217,13 +225,14 @@ IN_PROC_BROWSER_TEST_F(MediaTest, MAYBE(Yuv420pVp8)) {
   RunColorFormatTest("yuv420p.webm", "ENDED");
 }
 
-#if defined(GOOGLE_CHROME_BUILD) || defined(USE_PROPRIETARY_CODECS)
+#if defined(USE_PROPRIETARY_CODECS)
 IN_PROC_BROWSER_TEST_F(MediaTest, MAYBE(Yuv420pH264)) {
   RunColorFormatTest("yuv420p.mp4", "ENDED");
 }
 
 IN_PROC_BROWSER_TEST_F(MediaTest, MAYBE(Yuvj420pH264)) {
-  RunColorFormatTest("yuvj420p.mp4", "ENDED");
+  // TODO(rileya): Support YUVJ420P properly http://crbug.com/310273
+  RunColorFormatTest("yuvj420p.mp4", "FAILED");
 }
 
 IN_PROC_BROWSER_TEST_F(MediaTest, MAYBE(Yuv422pH264)) {
@@ -239,7 +248,7 @@ IN_PROC_BROWSER_TEST_F(MediaTest, MAYBE(Yuv444pH264)) {
 IN_PROC_BROWSER_TEST_F(MediaTest, Yuv420pMpeg4) {
   RunColorFormatTest("yuv420p.avi", "ENDED");
 }
-#endif
-#endif
+#endif  // defined(OS_CHROMEOS)
+#endif  // defined(USE_PROPRIETARY_CODECS)
 
 }  // namespace content

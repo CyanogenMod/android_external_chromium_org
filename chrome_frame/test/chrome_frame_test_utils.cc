@@ -531,7 +531,7 @@ std::wstring GetPathAndQueryFromUrl(const std::wstring& url) {
 std::wstring GetClipboardText() {
   string16 text16;
   ui::Clipboard::GetForCurrentThread()->ReadText(
-      ui::Clipboard::BUFFER_STANDARD, &text16);
+      ui::CLIPBOARD_TYPE_COPY_PASTE, &text16);
   return UTF16ToWide(text16);
 }
 
@@ -542,7 +542,7 @@ void DestroyClipboard() {
 void SetClipboardText(const std::wstring& text) {
   ui::ScopedClipboardWriter clipboard_writer(
       ui::Clipboard::GetForCurrentThread(),
-      ui::Clipboard::BUFFER_STANDARD);
+      ui::CLIPBOARD_TYPE_COPY_PASTE);
   clipboard_writer.WriteText(WideToUTF16(text));
 }
 
@@ -640,7 +640,7 @@ base::ProcessHandle StartCrashService() {
     return NULL;
   }
 
-  base::ProcessHandle crash_service = NULL;
+  base::win::ScopedHandle crash_service;
 
   VLOG(1) << "Starting crash_service.exe so you know if a test crashes!";
 
@@ -656,7 +656,7 @@ base::ProcessHandle StartCrashService() {
   if (DetectRunningCrashService(kCrashServiceStartupTimeoutMs)) {
     VLOG(1) << "crash_service.exe is ready for clients in "
             << (base::Time::Now() - start).InMilliseconds() << " ms.";
-    return crash_service;
+    return crash_service.Take();
   } else {
     LOG(ERROR) << "crash_service.exe failed to accept client connections "
                   "within " << kCrashServiceStartupTimeoutMs << " ms. "
@@ -664,8 +664,8 @@ base::ProcessHandle StartCrashService() {
 
     // First check to see if it's even still running just to minimize the
     // likelihood of spurious error messages from KillProcess.
-    if (WAIT_OBJECT_0 != ::WaitForSingleObject(crash_service, 0)) {
-      base::KillProcess(crash_service, 0, false);
+    if (WAIT_OBJECT_0 != ::WaitForSingleObject(crash_service.Get(), 0)) {
+      base::KillProcess(crash_service.Get(), 0, false);
     }
     return NULL;
   }
@@ -677,10 +677,6 @@ ScopedVirtualizeHklmAndHkcu::ScopedVirtualizeHklmAndHkcu() {
 }
 
 ScopedVirtualizeHklmAndHkcu::~ScopedVirtualizeHklmAndHkcu() {
-}
-
-void ScopedVirtualizeHklmAndHkcu::RemoveAllOverrides() {
-  override_manager_.RemoveAllOverrides();
 }
 
 bool KillProcesses(const std::wstring& executable_name, int exit_code,

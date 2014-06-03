@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/file_util.h"
 #include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/message_loop/message_loop.h"
@@ -9,6 +10,7 @@
 #include "base/run_loop.h"
 #include "chrome/browser/download/chrome_download_manager_delegate.h"
 #include "chrome/browser/download/download_prefs.h"
+#include "chrome/browser/download/download_target_info.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "chrome/test/base/testing_pref_service_syncable.h"
@@ -65,13 +67,6 @@ ACTION_P2(ScheduleCallback2, result0, result1) {
       FROM_HERE, base::Bind(arg0, result0, result1));
 }
 
-struct DownloadTarget {
-  base::FilePath target_path;
-  base::FilePath intermediate_path;
-  DownloadItem::TargetDisposition target_disposition;
-  content::DownloadDangerType danger_type;
-};
-
 // Subclass of the ChromeDownloadManagerDelegate that uses a mock
 // DownloadProtectionService.
 class TestChromeDownloadManagerDelegate : public ChromeDownloadManagerDelegate {
@@ -79,6 +74,8 @@ class TestChromeDownloadManagerDelegate : public ChromeDownloadManagerDelegate {
   explicit TestChromeDownloadManagerDelegate(Profile* profile)
       : ChromeDownloadManagerDelegate(profile) {
   }
+
+  virtual ~TestChromeDownloadManagerDelegate() {}
 
   virtual safe_browsing::DownloadProtectionService*
       GetDownloadProtectionService() OVERRIDE {
@@ -123,9 +120,6 @@ class TestChromeDownloadManagerDelegate : public ChromeDownloadManagerDelegate {
           content::DownloadItem*,
           const base::FilePath&,
           const DownloadTargetDeterminerDelegate::FileSelectedCallback&));
-
- private:
-  ~TestChromeDownloadManagerDelegate() {}
 };
 
 class ChromeDownloadManagerDelegateTest :
@@ -152,7 +146,13 @@ class ChromeDownloadManagerDelegateTest :
   void SetDefaultDownloadPath(const base::FilePath& path);
 
   void DetermineDownloadTarget(DownloadItem* download,
-                               DownloadTarget* result);
+                               DownloadTargetInfo* result);
+
+  // Invokes ChromeDownloadManagerDelegate::CheckForFileExistence and waits for
+  // the asynchronous callback. The result passed into
+  // content::CheckForFileExistenceCallback is the return value from this
+  // method.
+  bool CheckForFileExistence(DownloadItem* download);
 
   const base::FilePath& default_download_path() const;
   TestChromeDownloadManagerDelegate* delegate();
@@ -160,16 +160,10 @@ class ChromeDownloadManagerDelegateTest :
   DownloadPrefs* download_prefs();
 
  private:
-  void OnDownloadTargetDone(DownloadTarget* result,
-                            const base::FilePath& target_path,
-                            DownloadItem::TargetDisposition disposition,
-                            content::DownloadDangerType danger_type,
-                            const base::FilePath& intermediate_path);
-
   TestingPrefServiceSyncable* pref_service_;
   base::ScopedTempDir test_download_dir_;
   scoped_ptr<content::MockDownloadManager> download_manager_;
-  scoped_refptr<TestChromeDownloadManagerDelegate> delegate_;
+  scoped_ptr<TestChromeDownloadManagerDelegate> delegate_;
   MockWebContentsDelegate web_contents_delegate_;
 };
 
@@ -181,7 +175,7 @@ void ChromeDownloadManagerDelegateTest::SetUp() {
   ChromeRenderViewHostTestHarness::SetUp();
 
   CHECK(profile());
-  delegate_ = new TestChromeDownloadManagerDelegate(profile());
+  delegate_.reset(new TestChromeDownloadManagerDelegate(profile()));
   delegate_->SetDownloadManager(download_manager_.get());
   pref_service_ = profile()->GetTestingPrefService();
   web_contents()->SetDelegate(&web_contents_delegate_);
@@ -252,28 +246,45 @@ void ChromeDownloadManagerDelegateTest::SetDefaultDownloadPath(
   pref_service_->SetFilePath(prefs::kSaveFileDefaultDirectory, path);
 }
 
-void ChromeDownloadManagerDelegateTest::DetermineDownloadTarget(
-    DownloadItem* download_item,
-    DownloadTarget* result) {
-  base::WeakPtrFactory<ChromeDownloadManagerDelegateTest> factory(this);
-  delegate()->DetermineDownloadTarget(
-      download_item,
-      base::Bind(&ChromeDownloadManagerDelegateTest::OnDownloadTargetDone,
-                 factory.GetWeakPtr(), base::Unretained(result)));
-  base::RunLoop loop_runner;
-  loop_runner.RunUntilIdle();
+void StoreDownloadTargetInfo(const base::Closure& closure,
+                         DownloadTargetInfo* target_info,
+                         const base::FilePath& target_path,
+                         DownloadItem::TargetDisposition target_disposition,
+                         content::DownloadDangerType danger_type,
+                         const base::FilePath& intermediate_path) {
+  target_info->target_path = target_path;
+  target_info->target_disposition = target_disposition;
+  target_info->danger_type = danger_type;
+  target_info->intermediate_path = intermediate_path;
+  closure.Run();
 }
 
-void ChromeDownloadManagerDelegateTest::OnDownloadTargetDone(
-    DownloadTarget* result,
-    const base::FilePath& target_path,
-    DownloadItem::TargetDisposition target_disposition,
-    content::DownloadDangerType danger_type,
-    const base::FilePath& intermediate_path) {
-  result->target_path = target_path;
-  result->intermediate_path = intermediate_path;
-  result->target_disposition = target_disposition;
-  result->danger_type = danger_type;
+void ChromeDownloadManagerDelegateTest::DetermineDownloadTarget(
+    DownloadItem* download_item,
+    DownloadTargetInfo* result) {
+  base::RunLoop loop_runner;
+  delegate()->DetermineDownloadTarget(
+      download_item,
+      base::Bind(&StoreDownloadTargetInfo, loop_runner.QuitClosure(), result));
+  loop_runner.Run();
+}
+
+void StoreBoolAndRunClosure(const base::Closure& closure,
+                            bool* result_storage,
+                            bool result) {
+  *result_storage = result;
+  closure.Run();
+}
+
+bool ChromeDownloadManagerDelegateTest::CheckForFileExistence(
+    DownloadItem* download_item) {
+  base::RunLoop loop_runner;
+  bool result = false;
+  delegate()->CheckForFileExistence(
+      download_item,
+      base::Bind(&StoreBoolAndRunClosure, loop_runner.QuitClosure(), &result));
+  loop_runner.Run();
+  return result;
 }
 
 const base::FilePath& ChromeDownloadManagerDelegateTest::default_download_path()
@@ -321,7 +332,7 @@ TEST_F(ChromeDownloadManagerDelegateTest, StartDownload_LastSavePath) {
   {
     // When the prompt is displayed for the first download, the user selects a
     // path in a different directory.
-    DownloadTarget result;
+    DownloadTargetInfo result;
     base::FilePath expected_prompt_path(GetPathInDownloadDir("foo.txt"));
     base::FilePath user_selected_path(GetPathInDownloadDir("bar/baz.txt"));
     EXPECT_CALL(*delegate(),
@@ -336,7 +347,7 @@ TEST_F(ChromeDownloadManagerDelegateTest, StartDownload_LastSavePath) {
   {
     // The prompt path for the second download is the user selected directroy
     // from the previous download.
-    DownloadTarget result;
+    DownloadTargetInfo result;
     base::FilePath expected_prompt_path(GetPathInDownloadDir("bar/foo.txt"));
     EXPECT_CALL(*delegate(),
                 MockPromptUserForDownloadPath(save_as_download.get(),
@@ -349,7 +360,7 @@ TEST_F(ChromeDownloadManagerDelegateTest, StartDownload_LastSavePath) {
   {
     // Start an automatic download. This one should get the default download
     // path since the last download path only affects Save As downloads.
-    DownloadTarget result;
+    DownloadTargetInfo result;
     base::FilePath expected_path(GetPathInDownloadDir("foo.txt"));
     DetermineDownloadTarget(automatic_download.get(), &result);
     EXPECT_EQ(expected_path, result.target_path);
@@ -359,7 +370,7 @@ TEST_F(ChromeDownloadManagerDelegateTest, StartDownload_LastSavePath) {
   {
     // The prompt path for the next download should be the default.
     download_prefs()->SetSaveFilePath(download_prefs()->DownloadPath());
-    DownloadTarget result;
+    DownloadTargetInfo result;
     base::FilePath expected_prompt_path(GetPathInDownloadDir("foo.txt"));
     EXPECT_CALL(*delegate(),
                 MockPromptUserForDownloadPath(save_as_download.get(),
@@ -368,4 +379,24 @@ TEST_F(ChromeDownloadManagerDelegateTest, StartDownload_LastSavePath) {
     DetermineDownloadTarget(save_as_download.get(), &result);
     VerifyAndClearExpectations();
   }
+}
+
+TEST_F(ChromeDownloadManagerDelegateTest, CheckForFileExistence) {
+  const char kData[] = "helloworld";
+  const size_t kDataLength = sizeof(kData) - 1;
+  base::FilePath existing_path = default_download_path().AppendASCII("foo");
+  base::FilePath non_existent_path =
+      default_download_path().AppendASCII("bar");
+  file_util::WriteFile(existing_path, kData, kDataLength);
+
+  scoped_ptr<content::MockDownloadItem> download_item(
+      CreateActiveDownloadItem(1));
+  EXPECT_CALL(*download_item, GetTargetFilePath())
+      .WillRepeatedly(ReturnRef(existing_path));
+  EXPECT_TRUE(CheckForFileExistence(download_item.get()));
+
+  download_item.reset(CreateActiveDownloadItem(1));
+  EXPECT_CALL(*download_item, GetTargetFilePath())
+      .WillRepeatedly(ReturnRef(non_existent_path));
+  EXPECT_FALSE(CheckForFileExistence(download_item.get()));
 }

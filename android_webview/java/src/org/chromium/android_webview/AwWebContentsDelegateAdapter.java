@@ -4,9 +4,7 @@
 
 package org.chromium.android_webview;
 
-import android.graphics.Rect;
 import android.os.Handler;
-import android.os.Looper;
 import android.os.Message;
 import android.util.Log;
 import android.view.KeyEvent;
@@ -115,13 +113,6 @@ class AwWebContentsDelegateAdapter extends AwWebContentsDelegate {
     public void openNewTab(String url, String extraHeaders, byte[] postData, int disposition) {
         // This is only called in chrome layers.
         assert false;
-    }
-
-    @Override
-    public boolean addNewContents(int nativeSourceWebContents, int nativeWebContents,
-            int disposition, Rect initialPosition, boolean userGesture) {
-        // This is overridden native side; see the other addNewContents overload.
-        throw new RuntimeException("Impossible");
     }
 
     @Override

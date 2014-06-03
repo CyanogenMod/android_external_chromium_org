@@ -34,11 +34,44 @@ namespace content {
 
 AccessibilityNodeData::AccessibilityNodeData()
     : id(-1),
-      role(ROLE_UNKNOWN),
+      role(blink::WebAXRoleUnknown),
       state(-1) {
 }
 
 AccessibilityNodeData::~AccessibilityNodeData() {
+}
+
+void AccessibilityNodeData::AddStringAttribute(
+    StringAttribute attribute, const std::string& value) {
+  string_attributes.push_back(std::make_pair(attribute, value));
+}
+
+void AccessibilityNodeData::AddIntAttribute(
+    IntAttribute attribute, int value) {
+  int_attributes.push_back(std::make_pair(attribute, value));
+}
+
+void AccessibilityNodeData::AddFloatAttribute(
+    FloatAttribute attribute, float value) {
+  float_attributes.push_back(std::make_pair(attribute, value));
+}
+
+void AccessibilityNodeData::AddBoolAttribute(
+    BoolAttribute attribute, bool value) {
+  bool_attributes.push_back(std::make_pair(attribute, value));
+}
+
+void AccessibilityNodeData::AddIntListAttribute(
+    IntListAttribute attribute, const std::vector<int32>& value) {
+  intlist_attributes.push_back(std::make_pair(attribute, value));
+}
+
+void AccessibilityNodeData::SetName(std::string name) {
+  string_attributes.push_back(std::make_pair(ATTR_NAME, name));
+}
+
+void AccessibilityNodeData::SetValue(std::string value) {
+  string_attributes.push_back(std::make_pair(ATTR_VALUE, value));
 }
 
 AccessibilityNodeDataTreeNode::AccessibilityNodeDataTreeNode()
@@ -109,188 +142,171 @@ std::string AccessibilityNodeData::DebugString(bool recursive) const {
   result += "id=" + IntToString(id);
 
   switch (role) {
-    case ROLE_ALERT: result += " ALERT"; break;
-    case ROLE_ALERT_DIALOG: result += " ALERT_DIALOG"; break;
-    case ROLE_ANNOTATION: result += " ANNOTATION"; break;
-    case ROLE_APPLICATION: result += " APPLICATION"; break;
-    case ROLE_ARTICLE: result += " ARTICLE"; break;
-    case ROLE_BROWSER: result += " BROWSER"; break;
-    case ROLE_BUSY_INDICATOR: result += " BUSY_INDICATOR"; break;
-    case ROLE_BUTTON: result += " BUTTON"; break;
-    case ROLE_CANVAS: result += " CANVAS"; break;
-    case ROLE_CANVAS_WITH_FALLBACK_CONTENT: result += " CANVAS_FALLBACK"; break;
-    case ROLE_CELL: result += " CELL"; break;
-    case ROLE_CHECKBOX: result += " CHECKBOX"; break;
-    case ROLE_COLOR_WELL: result += " COLOR_WELL"; break;
-    case ROLE_COLUMN: result += " COLUMN"; break;
-    case ROLE_COLUMN_HEADER: result += " COLUMN_HEADER"; break;
-    case ROLE_COMBO_BOX: result += " COMBO_BOX"; break;
-    case ROLE_DEFINITION: result += " DEFINITION"; break;
-    case ROLE_DESCRIPTION_LIST_DETAIL: result += " DD"; break;
-    case ROLE_DESCRIPTION_LIST_TERM: result += " DT"; break;
-    case ROLE_DIALOG: result += " DIALOG"; break;
-    case ROLE_DIRECTORY: result += " DIRECTORY"; break;
-    case ROLE_DISCLOSURE_TRIANGLE: result += " DISCLOSURE_TRIANGLE"; break;
-    case ROLE_DIV: result += " DIV"; break;
-    case ROLE_DOCUMENT: result += " DOCUMENT"; break;
-    case ROLE_DRAWER: result += " DRAWER"; break;
-    case ROLE_EDITABLE_TEXT: result += " EDITABLE_TEXT"; break;
-    case ROLE_FOOTER: result += " FOOTER"; break;
-    case ROLE_FORM: result += " FORM"; break;
-    case ROLE_GRID: result += " GRID"; break;
-    case ROLE_GROUP: result += " GROUP"; break;
-    case ROLE_GROW_AREA: result += " GROW_AREA"; break;
-    case ROLE_HEADING: result += " HEADING"; break;
-    case ROLE_HELP_TAG: result += " HELP_TAG"; break;
-    case ROLE_HORIZONTAL_RULE: result += " HORIZONTAL_RULE"; break;
-    case ROLE_IGNORED: result += " IGNORED"; break;
-    case ROLE_IMAGE: result += " IMAGE"; break;
-    case ROLE_IMAGE_MAP: result += " IMAGE_MAP"; break;
-    case ROLE_IMAGE_MAP_LINK: result += " IMAGE_MAP_LINK"; break;
-    case ROLE_INCREMENTOR: result += " INCREMENTOR"; break;
-    case ROLE_LABEL: result += " LABEL"; break;
-    case ROLE_LANDMARK_APPLICATION: result += " L_APPLICATION"; break;
-    case ROLE_LANDMARK_BANNER: result += " L_BANNER"; break;
-    case ROLE_LANDMARK_COMPLEMENTARY: result += " L_COMPLEMENTARY"; break;
-    case ROLE_LANDMARK_CONTENTINFO: result += " L_CONTENTINFO"; break;
-    case ROLE_LANDMARK_MAIN: result += " L_MAIN"; break;
-    case ROLE_LANDMARK_NAVIGATION: result += " L_NAVIGATION"; break;
-    case ROLE_LANDMARK_SEARCH: result += " L_SEARCH"; break;
-    case ROLE_LINK: result += " LINK"; break;
-    case ROLE_LIST: result += " LIST"; break;
-    case ROLE_LISTBOX: result += " LISTBOX"; break;
-    case ROLE_LISTBOX_OPTION: result += " LISTBOX_OPTION"; break;
-    case ROLE_LIST_ITEM: result += " LIST_ITEM"; break;
-    case ROLE_LIST_MARKER: result += " LIST_MARKER"; break;
-    case ROLE_LOG: result += " LOG"; break;
-    case ROLE_MARQUEE: result += " MARQUEE"; break;
-    case ROLE_MATH: result += " MATH"; break;
-    case ROLE_MATTE: result += " MATTE"; break;
-    case ROLE_MENU: result += " MENU"; break;
-    case ROLE_MENU_BAR: result += " MENU_BAR"; break;
-    case ROLE_MENU_BUTTON: result += " MENU_BUTTON"; break;
-    case ROLE_MENU_ITEM: result += " MENU_ITEM"; break;
-    case ROLE_MENU_LIST_OPTION: result += " MENU_LIST_OPTION"; break;
-    case ROLE_MENU_LIST_POPUP: result += " MENU_LIST_POPUP"; break;
-    case ROLE_NOTE: result += " NOTE"; break;
-    case ROLE_OUTLINE: result += " OUTLINE"; break;
-    case ROLE_PARAGRAPH: result += " PARAGRAPH"; break;
-    case ROLE_POPUP_BUTTON: result += " POPUP_BUTTON"; break;
-    case ROLE_PRESENTATIONAL: result += " PRESENTATIONAL"; break;
-    case ROLE_PROGRESS_INDICATOR: result += " PROGRESS_INDICATOR"; break;
-    case ROLE_RADIO_BUTTON: result += " RADIO_BUTTON"; break;
-    case ROLE_RADIO_GROUP: result += " RADIO_GROUP"; break;
-    case ROLE_REGION: result += " REGION"; break;
-    case ROLE_ROOT_WEB_AREA: result += " ROOT_WEB_AREA"; break;
-    case ROLE_ROW: result += " ROW"; break;
-    case ROLE_ROW_HEADER: result += " ROW_HEADER"; break;
-    case ROLE_RULER: result += " RULER"; break;
-    case ROLE_RULER_MARKER: result += " RULER_MARKER"; break;
-    case ROLE_SCROLLAREA: result += " SCROLLAREA"; break;
-    case ROLE_SCROLLBAR: result += " SCROLLBAR"; break;
-    case ROLE_SHEET: result += " SHEET"; break;
-    case ROLE_SLIDER: result += " SLIDER"; break;
-    case ROLE_SLIDER_THUMB: result += " SLIDER_THUMB"; break;
-    case ROLE_SPIN_BUTTON: result += " SPIN_BUTTON"; break;
-    case ROLE_SPIN_BUTTON_PART: result += " SPIN_BUTTON_PART"; break;
-    case ROLE_SPLITTER: result += " SPLITTER"; break;
-    case ROLE_SPLIT_GROUP: result += " SPLIT_GROUP"; break;
-    case ROLE_STATIC_TEXT: result += " STATIC_TEXT"; break;
-    case ROLE_STATUS: result += " STATUS"; break;
-    case ROLE_SVG_ROOT: result += " SVG_ROOT"; break;
-    case ROLE_SYSTEM_WIDE: result += " SYSTEM_WIDE"; break;
-    case ROLE_TAB: result += " TAB"; break;
-    case ROLE_TABLE: result += " TABLE"; break;
-    case ROLE_TABLE_HEADER_CONTAINER: result += " TABLE_HDR_CONTAINER"; break;
-    case ROLE_TAB_GROUP_UNUSED: result += " TAB_GROUP_UNUSED"; break;
-    case ROLE_TAB_LIST: result += " TAB_LIST"; break;
-    case ROLE_TAB_PANEL: result += " TAB_PANEL"; break;
-    case ROLE_TEXTAREA: result += " TEXTAREA"; break;
-    case ROLE_TEXT_FIELD: result += " TEXT_FIELD"; break;
-    case ROLE_TIMER: result += " TIMER"; break;
-    case ROLE_TOGGLE_BUTTON: result += " TOGGLE_BUTTON"; break;
-    case ROLE_TOOLBAR: result += " TOOLBAR"; break;
-    case ROLE_TOOLTIP: result += " TOOLTIP"; break;
-    case ROLE_TREE: result += " TREE"; break;
-    case ROLE_TREE_GRID: result += " TREE_GRID"; break;
-    case ROLE_TREE_ITEM: result += " TREE_ITEM"; break;
-    case ROLE_UNKNOWN: result += " UNKNOWN"; break;
-    case ROLE_VALUE_INDICATOR: result += " VALUE_INDICATOR"; break;
-    case ROLE_WEBCORE_LINK: result += " WEBCORE_LINK"; break;
-    case ROLE_WEB_AREA: result += " WEB_AREA"; break;
-    case ROLE_WINDOW: result += " WINDOW"; break;
+    case blink::WebAXRoleAlert: result += " ALERT"; break;
+    case blink::WebAXRoleAlertDialog: result += " ALERT_DIALOG"; break;
+    case blink::WebAXRoleAnnotation: result += " ANNOTATION"; break;
+    case blink::WebAXRoleApplication: result += " APPLICATION"; break;
+    case blink::WebAXRoleArticle: result += " ARTICLE"; break;
+    case blink::WebAXRoleBanner: result += " L_BANNER"; break;
+    case blink::WebAXRoleBrowser: result += " BROWSER"; break;
+    case blink::WebAXRoleBusyIndicator: result += " BUSY_INDICATOR"; break;
+    case blink::WebAXRoleButton: result += " BUTTON"; break;
+    case blink::WebAXRoleCanvas: result += " CANVAS"; break;
+    case blink::WebAXRoleCell: result += " CELL"; break;
+    case blink::WebAXRoleCheckBox: result += " CHECKBOX"; break;
+    case blink::WebAXRoleColorWell: result += " COLOR_WELL"; break;
+    case blink::WebAXRoleColumn: result += " COLUMN"; break;
+    case blink::WebAXRoleColumnHeader: result += " COLUMN_HEADER"; break;
+    case blink::WebAXRoleComboBox: result += " COMBO_BOX"; break;
+    case blink::WebAXRoleComplementary: result += " L_COMPLEMENTARY"; break;
+    case blink::WebAXRoleContentInfo: result += " L_CONTENTINFO"; break;
+    case blink::WebAXRoleDefinition: result += " DEFINITION"; break;
+    case blink::WebAXRoleDescriptionListDetail: result += " DD"; break;
+    case blink::WebAXRoleDescriptionListTerm: result += " DT"; break;
+    case blink::WebAXRoleDialog: result += " DIALOG"; break;
+    case blink::WebAXRoleDirectory: result += " DIRECTORY"; break;
+    case blink::WebAXRoleDisclosureTriangle:
+        result += " DISCLOSURE_TRIANGLE"; break;
+    case blink::WebAXRoleDiv: result += " DIV"; break;
+    case blink::WebAXRoleDocument: result += " DOCUMENT"; break;
+    case blink::WebAXRoleDrawer: result += " DRAWER"; break;
+    case blink::WebAXRoleEditableText: result += " EDITABLE_TEXT"; break;
+    case blink::WebAXRoleFooter: result += " FOOTER"; break;
+    case blink::WebAXRoleForm: result += " FORM"; break;
+    case blink::WebAXRoleGrid: result += " GRID"; break;
+    case blink::WebAXRoleGroup: result += " GROUP"; break;
+    case blink::WebAXRoleGrowArea: result += " GROW_AREA"; break;
+    case blink::WebAXRoleHeading: result += " HEADING"; break;
+    case blink::WebAXRoleHelpTag: result += " HELP_TAG"; break;
+    case blink::WebAXRoleHorizontalRule: result += " HORIZONTAL_RULE"; break;
+    case blink::WebAXRoleIgnored: result += " IGNORED"; break;
+    case blink::WebAXRoleImage: result += " IMAGE"; break;
+    case blink::WebAXRoleImageMap: result += " IMAGE_MAP"; break;
+    case blink::WebAXRoleImageMapLink: result += " IMAGE_MAP_LINK"; break;
+    case blink::WebAXRoleIncrementor: result += " INCREMENTOR"; break;
+    case blink::WebAXRoleInlineTextBox: result += " INLINE_TEXT_BOX"; break;
+    case blink::WebAXRoleLabel: result += " LABEL"; break;
+    case blink::WebAXRoleLink: result += " LINK"; break;
+    case blink::WebAXRoleList: result += " LIST"; break;
+    case blink::WebAXRoleListBox: result += " LISTBOX"; break;
+    case blink::WebAXRoleListBoxOption: result += " LISTBOX_OPTION"; break;
+    case blink::WebAXRoleListItem: result += " LIST_ITEM"; break;
+    case blink::WebAXRoleListMarker: result += " LIST_MARKER"; break;
+    case blink::WebAXRoleLog: result += " LOG"; break;
+    case blink::WebAXRoleMain: result += " L_MAIN"; break;
+    case blink::WebAXRoleMarquee: result += " MARQUEE"; break;
+    case blink::WebAXRoleMath: result += " MATH"; break;
+    case blink::WebAXRoleMatte: result += " MATTE"; break;
+    case blink::WebAXRoleMenu: result += " MENU"; break;
+    case blink::WebAXRoleMenuBar: result += " MENU_BAR"; break;
+    case blink::WebAXRoleMenuButton: result += " MENU_BUTTON"; break;
+    case blink::WebAXRoleMenuItem: result += " MENU_ITEM"; break;
+    case blink::WebAXRoleMenuListOption: result += " MENU_LIST_OPTION"; break;
+    case blink::WebAXRoleMenuListPopup: result += " MENU_LIST_POPUP"; break;
+    case blink::WebAXRoleNavigation: result += " L_NAVIGATION"; break;
+    case blink::WebAXRoleNote: result += " NOTE"; break;
+    case blink::WebAXRoleOutline: result += " OUTLINE"; break;
+    case blink::WebAXRoleParagraph: result += " PARAGRAPH"; break;
+    case blink::WebAXRolePopUpButton: result += " POPUP_BUTTON"; break;
+    case blink::WebAXRolePresentational: result += " PRESENTATIONAL"; break;
+    case blink::WebAXRoleProgressIndicator:
+        result += " PROGRESS_INDICATOR"; break;
+    case blink::WebAXRoleRadioButton: result += " RADIO_BUTTON"; break;
+    case blink::WebAXRoleRadioGroup: result += " RADIO_GROUP"; break;
+    case blink::WebAXRoleRegion: result += " REGION"; break;
+    case blink::WebAXRoleRootWebArea: result += " ROOT_WEB_AREA"; break;
+    case blink::WebAXRoleRow: result += " ROW"; break;
+    case blink::WebAXRoleRowHeader: result += " ROW_HEADER"; break;
+    case blink::WebAXRoleRuler: result += " RULER"; break;
+    case blink::WebAXRoleRulerMarker: result += " RULER_MARKER"; break;
+    case blink::WebAXRoleSVGRoot: result += " SVG_ROOT"; break;
+    case blink::WebAXRoleScrollArea: result += " SCROLLAREA"; break;
+    case blink::WebAXRoleScrollBar: result += " SCROLLBAR"; break;
+    case blink::WebAXRoleSearch: result += " L_SEARCH"; break;
+    case blink::WebAXRoleSheet: result += " SHEET"; break;
+    case blink::WebAXRoleSlider: result += " SLIDER"; break;
+    case blink::WebAXRoleSliderThumb: result += " SLIDER_THUMB"; break;
+    case blink::WebAXRoleSpinButton: result += " SPIN_BUTTON"; break;
+    case blink::WebAXRoleSpinButtonPart: result += " SPIN_BUTTON_PART"; break;
+    case blink::WebAXRoleSplitGroup: result += " SPLIT_GROUP"; break;
+    case blink::WebAXRoleSplitter: result += " SPLITTER"; break;
+    case blink::WebAXRoleStaticText: result += " STATIC_TEXT"; break;
+    case blink::WebAXRoleStatus: result += " STATUS"; break;
+    case blink::WebAXRoleSystemWide: result += " SYSTEM_WIDE"; break;
+    case blink::WebAXRoleTab: result += " TAB"; break;
+    case blink::WebAXRoleTabList: result += " TAB_LIST"; break;
+    case blink::WebAXRoleTabPanel: result += " TAB_PANEL"; break;
+    case blink::WebAXRoleTable: result += " TABLE"; break;
+    case blink::WebAXRoleTableHeaderContainer:
+        result += " TABLE_HDR_CONTAINER"; break;
+    case blink::WebAXRoleTextArea: result += " TEXTAREA"; break;
+    case blink::WebAXRoleTextField: result += " TEXT_FIELD"; break;
+    case blink::WebAXRoleTimer: result += " TIMER"; break;
+    case blink::WebAXRoleToggleButton: result += " TOGGLE_BUTTON"; break;
+    case blink::WebAXRoleToolbar: result += " TOOLBAR"; break;
+    case blink::WebAXRoleTree: result += " TREE"; break;
+    case blink::WebAXRoleTreeGrid: result += " TREE_GRID"; break;
+    case blink::WebAXRoleTreeItem: result += " TREE_ITEM"; break;
+    case blink::WebAXRoleUnknown: result += " UNKNOWN"; break;
+    case blink::WebAXRoleUserInterfaceTooltip: result += " TOOLTIP"; break;
+    case blink::WebAXRoleValueIndicator: result += " VALUE_INDICATOR"; break;
+    case blink::WebAXRoleWebArea: result += " WEB_AREA"; break;
+    case blink::WebAXRoleWindow: result += " WINDOW"; break;
     default:
       assert(false);
   }
 
-  if (state & (1 << STATE_BUSY))
+  if (state & (1 << blink::WebAXStateBusy))
     result += " BUSY";
-  if (state & (1 << STATE_CHECKED))
+  if (state & (1 << blink::WebAXStateChecked))
     result += " CHECKED";
-  if (state & (1 << STATE_COLLAPSED))
+  if (state & (1 << blink::WebAXStateCollapsed))
     result += " COLLAPSED";
-  if (state & (1 << STATE_EXPANDED))
+  if (state & (1 << blink::WebAXStateExpanded))
     result += " EXPANDED";
-  if (state & (1 << STATE_FOCUSABLE))
+  if (state & (1 << blink::WebAXStateFocusable))
     result += " FOCUSABLE";
-  if (state & (1 << STATE_FOCUSED))
+  if (state & (1 << blink::WebAXStateFocused))
     result += " FOCUSED";
-  if (state & (1 << STATE_HASPOPUP))
+  if (state & (1 << blink::WebAXStateHaspopup))
     result += " HASPOPUP";
-  if (state & (1 << STATE_HOTTRACKED))
+  if (state & (1 << blink::WebAXStateHovered))
     result += " HOTTRACKED";
-  if (state & (1 << STATE_INDETERMINATE))
+  if (state & (1 << blink::WebAXStateIndeterminate))
     result += " INDETERMINATE";
-  if (state & (1 << STATE_INVISIBLE))
+  if (state & (1 << blink::WebAXStateInvisible))
     result += " INVISIBLE";
-  if (state & (1 << STATE_LINKED))
+  if (state & (1 << blink::WebAXStateLinked))
     result += " LINKED";
-  if (state & (1 << STATE_MULTISELECTABLE))
+  if (state & (1 << blink::WebAXStateMultiselectable))
     result += " MULTISELECTABLE";
-  if (state & (1 << STATE_OFFSCREEN))
+  if (state & (1 << blink::WebAXStateOffscreen))
     result += " OFFSCREEN";
-  if (state & (1 << STATE_PRESSED))
+  if (state & (1 << blink::WebAXStatePressed))
     result += " PRESSED";
-  if (state & (1 << STATE_PROTECTED))
+  if (state & (1 << blink::WebAXStateProtected))
     result += " PROTECTED";
-  if (state & (1 << STATE_READONLY))
+  if (state & (1 << blink::WebAXStateReadonly))
     result += " READONLY";
-  if (state & (1 << STATE_REQUIRED))
+  if (state & (1 << blink::WebAXStateRequired))
     result += " REQUIRED";
-  if (state & (1 << STATE_SELECTABLE))
+  if (state & (1 << blink::WebAXStateSelectable))
     result += " SELECTABLE";
-  if (state & (1 << STATE_SELECTED))
+  if (state & (1 << blink::WebAXStateSelected))
     result += " SELECTED";
-  if (state & (1 << STATE_TRAVERSED))
-    result += " TRAVERSED";
-  if (state & (1 << STATE_UNAVAILABLE))
-    result += " UNAVAILABLE";
-  if (state & (1 << STATE_VERTICAL))
+  if (state & (1 << blink::WebAXStateVertical))
     result += " VERTICAL";
-  if (state & (1 << STATE_VISITED))
+  if (state & (1 << blink::WebAXStateVisited))
     result += " VISITED";
-
-  std::string tmp = UTF16ToUTF8(name);
-  RemoveChars(tmp, "\n", &tmp);
-  if (!tmp.empty())
-    result += " name=" + tmp;
-
-  tmp = UTF16ToUTF8(value);
-  RemoveChars(tmp, "\n", &tmp);
-  if (!tmp.empty())
-    result += " value=" + tmp;
 
   result += " (" + IntToString(location.x()) + ", " +
                    IntToString(location.y()) + ")-(" +
                    IntToString(location.width()) + ", " +
                    IntToString(location.height()) + ")";
 
-  for (std::map<IntAttribute, int32>::const_iterator iter =
-           int_attributes.begin();
-       iter != int_attributes.end();
-       ++iter) {
-    std::string value = IntToString(iter->second);
-    switch (iter->first) {
+  for (size_t i = 0; i < int_attributes.size(); ++i) {
+    std::string value = IntToString(int_attributes[i].second);
+    switch (int_attributes[i].first) {
       case ATTR_SCROLL_X:
         result += " scroll_x=" + value;
         break;
@@ -363,15 +379,29 @@ std::string AccessibilityNodeData::DebugString(bool recursive) const {
       case ATTR_COLOR_VALUE_BLUE:
         result += " color_value_blue=" + value;
         break;
+      case ATTR_TEXT_DIRECTION:
+        switch (int_attributes[i].second) {
+          case blink::WebAXTextDirectionLR:
+          default:
+            result += " text_direction=lr";
+            break;
+          case blink::WebAXTextDirectionRL:
+            result += " text_direction=rl";
+            break;
+          case blink::WebAXTextDirectionTB:
+            result += " text_direction=tb";
+            break;
+          case blink::WebAXTextDirectionBT:
+            result += " text_direction=bt";
+            break;
+        }
+        break;
     }
   }
 
-  for (std::map<StringAttribute, string16>::const_iterator iter =
-           string_attributes.begin();
-       iter != string_attributes.end();
-       ++iter) {
-    std::string value = UTF16ToUTF8(iter->second);
-    switch (iter->first) {
+  for (size_t i = 0; i < string_attributes.size(); ++i) {
+    std::string value = string_attributes[i].second;
+    switch (string_attributes[i].first) {
       case ATTR_DOC_URL:
         result += " doc_url=" + value;
         break;
@@ -423,15 +453,18 @@ std::string AccessibilityNodeData::DebugString(bool recursive) const {
       case ATTR_URL:
         result += " url=" + value;
         break;
+      case ATTR_NAME:
+        result += " name=" + value;
+        break;
+      case ATTR_VALUE:
+        result += " value=" + value;
+        break;
     }
   }
 
-  for (std::map<FloatAttribute, float>::const_iterator iter =
-           float_attributes.begin();
-       iter != float_attributes.end();
-       ++iter) {
-    std::string value = DoubleToString(iter->second);
-    switch (iter->first) {
+  for (size_t i = 0; i < float_attributes.size(); ++i) {
+    std::string value = DoubleToString(float_attributes[i].second);
+    switch (float_attributes[i].first) {
       case ATTR_DOC_LOADING_PROGRESS:
         result += " doc_progress=" + value;
         break;
@@ -447,12 +480,9 @@ std::string AccessibilityNodeData::DebugString(bool recursive) const {
     }
   }
 
-  for (std::map<BoolAttribute, bool>::const_iterator iter =
-           bool_attributes.begin();
-       iter != bool_attributes.end();
-       ++iter) {
-    std::string value = iter->second ? "true" : "false";
-    switch (iter->first) {
+  for (size_t i = 0; i < bool_attributes.size(); ++i) {
+    std::string value = bool_attributes[i].second ? "true" : "false";
+    switch (bool_attributes[i].first) {
       case ATTR_DOC_LOADED:
         result += " doc_loaded=" + value;
         break;
@@ -480,20 +510,41 @@ std::string AccessibilityNodeData::DebugString(bool recursive) const {
       case ATTR_UPDATE_LOCATION_ONLY:
         result += " update_location_only=" + value;
         break;
+      case ATTR_CANVAS_HAS_FALLBACK:
+        result += " has_fallback=" + value;
+        break;
+    }
+  }
+
+  for (size_t i = 0; i < intlist_attributes.size(); ++i) {
+    const std::vector<int32>& values = intlist_attributes[i].second;
+    switch (intlist_attributes[i].first) {
+      case ATTR_INDIRECT_CHILD_IDS:
+        result += " indirect_child_ids=" + IntVectorToString(values);
+        break;
+      case ATTR_LINE_BREAKS:
+        result += " line_breaks=" + IntVectorToString(values);
+        break;
+      case ATTR_CELL_IDS:
+        result += " cell_ids=" + IntVectorToString(values);
+        break;
+      case ATTR_UNIQUE_CELL_IDS:
+        result += " unique_cell_ids=" + IntVectorToString(values);
+        break;
+      case ATTR_CHARACTER_OFFSETS:
+        result += " character_offsets=" + IntVectorToString(values);
+        break;
+      case ATTR_WORD_STARTS:
+        result += " word_starts=" + IntVectorToString(values);
+        break;
+      case ATTR_WORD_ENDS:
+        result += " word_ends=" + IntVectorToString(values);
+        break;
     }
   }
 
   if (!child_ids.empty())
     result += " child_ids=" + IntVectorToString(child_ids);
-
-  if (!indirect_child_ids.empty())
-    result += " indirect_child_ids=" + IntVectorToString(indirect_child_ids);
-
-  if (!line_breaks.empty())
-    result += " line_breaks=" + IntVectorToString(line_breaks);
-
-  if (!cell_ids.empty())
-    result += " cell_ids=" + IntVectorToString(cell_ids);
 
   return result;
 }

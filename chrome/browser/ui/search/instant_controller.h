@@ -18,13 +18,11 @@
 #include "chrome/common/instant_types.h"
 #include "chrome/common/omnibox_focus_state.h"
 #include "chrome/common/search_types.h"
-#include "content/public/common/page_transition_types.h"
-#include "ui/base/window_open_disposition.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/rect.h"
-#include "url/gurl.h"
 
 class BrowserInstantController;
+class GURL;
 class InstantService;
 class InstantTab;
 class Profile;
@@ -58,13 +56,13 @@ class InstantController : public InstantPage::Delegate {
   // Sets the stored start-edge margin and width of the omnibox.
   void SetOmniboxBounds(const gfx::Rect& bounds);
 
-  // Notifies |instant_Tab_| to toggle voice search.
-  void ToggleVoiceSearch();
+  // Sends the current SearchProvider suggestion to the Instant page if any.
+  void SetSuggestionToPrefetch(const InstantSuggestion& suggestion);
 
   // Called if the browser is navigating to a search URL for |search_terms| with
   // search-term-replacement enabled. If |instant_tab_| can be used to process
   // the search, this does so and returns true. Else, returns false.
-  bool SubmitQuery(const string16& search_terms);
+  bool SubmitQuery(const base::string16& search_terms);
 
   // Called to indicate that the omnibox focus state changed with the given
   // |reason|. If |focus_state| is FOCUS_NONE, |view_gaining_focus| is set to
@@ -156,29 +154,7 @@ class InstantController : public InstantPage::Delegate {
   virtual void InstantPageAboutToNavigateMainFrame(
       const content::WebContents* contents,
       const GURL& url) OVERRIDE;
-  virtual void FocusOmnibox(const content::WebContents* contents,
-                            OmniboxFocusState state) OVERRIDE;
-  virtual void NavigateToURL(
-      const content::WebContents* contents,
-      const GURL& url,
-      content::PageTransition transition,
-      WindowOpenDisposition disposition,
-      bool is_search_type) OVERRIDE;
-  virtual void PasteIntoOmnibox(const content::WebContents* contents,
-                                const string16& text) OVERRIDE;
   virtual void InstantPageLoadFailed(content::WebContents* contents) OVERRIDE;
-
-  // Invoked by the InstantLoader when the Instant page wants to delete a
-  // Most Visited item.
-  virtual void DeleteMostVisitedItem(const GURL& url) OVERRIDE;
-
-  // Invoked by the InstantLoader when the Instant page wants to undo a
-  // Most Visited deletion.
-  virtual void UndoMostVisitedDeletion(const GURL& url) OVERRIDE;
-
-  // Invoked by the InstantLoader when the Instant page wants to undo all
-  // Most Visited deletions.
-  virtual void UndoAllMostVisitedDeletions() OVERRIDE;
 
   // Helper function to navigate the given contents to the local fallback
   // Instant URL and trim the history correctly.
@@ -191,15 +167,12 @@ class InstantController : public InstantPage::Delegate {
   // point to it. Else, deletes any existing |instant_tab_|.
   void ResetInstantTab();
 
-  // Sends theme info, omnibox bounds, font info, etc. down to the Instant tab.
+  // Sends theme info, omnibox bounds, etc. down to the Instant tab.
   void UpdateInfoForInstantTab();
 
   // Returns whether input is in progress, i.e. if the omnibox has focus and the
   // active tab is in mode SEARCH_SUGGESTIONS.
   bool IsInputInProgress() const;
-
-  // Returns true if the local page is being used.
-  bool UsingLocalPage() const;
 
   // Returns the InstantService for the browser profile.
   InstantService* GetInstantService() const;

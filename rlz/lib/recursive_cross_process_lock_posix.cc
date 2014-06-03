@@ -4,6 +4,7 @@
 
 #include "rlz/lib/recursive_cross_process_lock_posix.h"
 
+#include <errno.h>
 #include <fcntl.h>
 #include <sys/file.h>
 #include <sys/stat.h>
@@ -58,7 +59,7 @@ bool RecursiveCrossProcessLock::TryGetCrossProcessLock(
 
     if (flock_result == -1) {
       perror("flock");
-      ignore_result(HANDLE_EINTR(close(file_lock_)));
+      close(file_lock_);
       file_lock_ = -1;
       return false;
     }
@@ -71,7 +72,7 @@ bool RecursiveCrossProcessLock::TryGetCrossProcessLock(
 void RecursiveCrossProcessLock::ReleaseLock() {
   if (file_lock_ != -1) {
     ignore_result(HANDLE_EINTR(flock(file_lock_, LOCK_UN)));
-    ignore_result(HANDLE_EINTR(close(file_lock_)));
+    close(file_lock_);
     file_lock_ = -1;
   }
 

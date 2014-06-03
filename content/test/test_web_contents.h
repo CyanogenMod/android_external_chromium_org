@@ -48,7 +48,7 @@ class TestWebContents : public WebContentsImpl, public WebContentsTester {
 
   // State accessor.
   bool cross_navigation_pending() {
-    return render_manager_.cross_navigation_pending_;
+    return GetRenderManager()->cross_navigation_pending_;
   }
 
   // Overrides WebContentsImpl::ShouldTransitionCrossSite so that we can test
@@ -97,7 +97,7 @@ class TestWebContents : public WebContentsImpl, public WebContentsTester {
                                 const GURL& url,
                                 bool is_main_frame,
                                 int error_code,
-                                const string16& error_description);
+                                const base::string16& error_description);
 
  protected:
   // The deprecated WebContentsTester still needs to subclass this.
@@ -106,13 +106,16 @@ class TestWebContents : public WebContentsImpl, public WebContentsTester {
  private:
   // WebContentsImpl overrides
   virtual void CreateNewWindow(
+      int render_process_id,
       int route_id,
       int main_frame_route_id,
       const ViewHostMsg_CreateWindow_Params& params,
       SessionStorageNamespace* session_storage_namespace) OVERRIDE;
-  virtual void CreateNewWidget(int route_id,
-                               WebKit::WebPopupType popup_type) OVERRIDE;
-  virtual void CreateNewFullscreenWidget(int route_id) OVERRIDE;
+  virtual void CreateNewWidget(int render_process_id,
+                               int route_id,
+                               blink::WebPopupType popup_type) OVERRIDE;
+  virtual void CreateNewFullscreenWidget(int render_process_id,
+                                         int route_id) OVERRIDE;
   virtual void ShowCreatedWindow(int route_id,
                                  WindowOpenDisposition disposition,
                                  const gfx::Rect& initial_pos,

@@ -74,16 +74,16 @@ uint32 BuildHash(const base::Time& session_start, size_t suggestion_index) {
 // Returns a pending feedback data structure for the spellcheck |result| and
 // |text|.
 Misspelling BuildFeedback(const SpellCheckResult& result,
-                          const string16& text) {
+                          const base::string16& text) {
   size_t start = result.location;
-  string16 context = TrimWords(&start,
+  base::string16 context = TrimWords(&start,
                                result.length,
                                text,
                                chrome::spellcheck_common::kContextWordCount);
   return Misspelling(context,
                      start,
                      result.length,
-                     std::vector<string16>(1, result.replacement),
+                     std::vector<base::string16>(1, result.replacement),
                      result.hash);
 }
 
@@ -120,11 +120,12 @@ base::DictionaryValue* BuildParams(base::ListValue* suggestion_info,
 
 // Builds feedback data from |params|. Takes ownership of |params|. The caller
 // owns the result.
-base::Value* BuildFeedbackValue(base::DictionaryValue* params) {
+base::Value* BuildFeedbackValue(base::DictionaryValue* params,
+                                const std::string& api_version) {
   base::DictionaryValue* result = new base::DictionaryValue;
   result->Set("params", params);
   result->SetString("method", "spelling.feedback");
-  result->SetString("apiVersion", "v2");
+  result->SetString("apiVersion", api_version);
   return result;
 }
 
@@ -138,26 +139,31 @@ bool IsInBounds(int misspelling_location,
              text_length;
 }
 
+// Returns the feedback API version.
+std::string GetApiVersion() {
+  // This guard is temporary.
+  // TODO(rouslan): Remove the guard. http://crbug.com/247726
+  if (base::FieldTrialList::FindFullName(kFeedbackFieldTrialName) ==
+          kFeedbackFieldTrialEnabledGroupName &&
+      CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableSpellingFeedbackFieldTrial)) {
+    return "v2-internal";
+  }
+  return "v2";
+}
+
 }  // namespace
 
 FeedbackSender::FeedbackSender(net::URLRequestContextGetter* request_context,
                                const std::string& language,
                                const std::string& country)
     : request_context_(request_context),
+      api_version_(GetApiVersion()),
       language_(language),
       country_(country),
       misspelling_counter_(0),
       session_start_(base::Time::Now()),
       feedback_service_url_(kFeedbackServiceURL) {
-  // This guard is temporary.
-  // TODO(rouslan): Remove the guard. http://crbug.com/247726
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableSpellingServiceFeedback) ||
-      base::FieldTrialList::FindFullName(kFeedbackFieldTrialName) !=
-          kFeedbackFieldTrialEnabledGroupName) {
-    return;
-  }
-
   // The command-line switch is for testing and temporary.
   // TODO(rouslan): Remove the command-line switch when testing is complete.
   // http://crbug.com/247726
@@ -167,24 +173,6 @@ FeedbackSender::FeedbackSender(net::URLRequestContextGetter* request_context,
         GURL(CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
             switches::kSpellingServiceFeedbackUrl));
   }
-
-  int interval_seconds = chrome::spellcheck_common::kFeedbackIntervalSeconds;
-  // This command-line switch is for testing and temporary.
-  // TODO(rouslan): Remove the command-line switch when testing is complete.
-  // http://crbug.com/247726
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kSpellingServiceFeedbackIntervalSeconds)) {
-    base::StringToInt(CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
-                          switches::kSpellingServiceFeedbackIntervalSeconds),
-                      &interval_seconds);
-    if (interval_seconds < kMinIntervalSeconds)
-      interval_seconds = kMinIntervalSeconds;
-  }
-
-  timer_.Start(FROM_HERE,
-               base::TimeDelta::FromSeconds(interval_seconds),
-               this,
-               &FeedbackSender::RequestDocumentMarkers);
 }
 
 FeedbackSender::~FeedbackSender() {
@@ -242,7 +230,7 @@ void FeedbackSender::IgnoredSuggestions(uint32 hash) {
 }
 
 void FeedbackSender::ManuallyCorrected(uint32 hash,
-                                       const string16& correction) {
+                                       const base::string16& correction) {
   Misspelling* misspelling = feedback_.GetMisspelling(hash);
   // GetMisspelling() returns null for flushed feedback. Feedback is flushed
   // when the session expires every |kSessionHours| hours.
@@ -274,7 +262,7 @@ void FeedbackSender::OnReceiveDocumentMarkers(
 
 void FeedbackSender::OnSpellcheckResults(
     int renderer_process_id,
-    const string16& text,
+    const base::string16& text,
     const std::vector<SpellCheckMarker>& markers,
     std::vector<SpellCheckResult>* results) {
   // Don't collect feedback if not going to send it.
@@ -318,6 +306,40 @@ void FeedbackSender::OnLanguageCountryChange(const std::string& language,
   country_ = country;
 }
 
+void FeedbackSender::StartFeedbackCollection() {
+  if (timer_.IsRunning())
+    return;
+
+  int interval_seconds = chrome::spellcheck_common::kFeedbackIntervalSeconds;
+  // This command-line switch is for testing and temporary.
+  // TODO(rouslan): Remove the command-line switch when testing is complete.
+  // http://crbug.com/247726
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kSpellingServiceFeedbackIntervalSeconds)) {
+    base::StringToInt(CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+                          switches::kSpellingServiceFeedbackIntervalSeconds),
+                      &interval_seconds);
+    if (interval_seconds < kMinIntervalSeconds)
+      interval_seconds = kMinIntervalSeconds;
+    static const int kSessionSeconds =
+        chrome::spellcheck_common::kSessionHours * 60 * 60;
+    if (interval_seconds >  kSessionSeconds)
+      interval_seconds = kSessionSeconds;
+  }
+  timer_.Start(FROM_HERE,
+               base::TimeDelta::FromSeconds(interval_seconds),
+               this,
+               &FeedbackSender::RequestDocumentMarkers);
+}
+
+void FeedbackSender::StopFeedbackCollection() {
+  if (!timer_.IsRunning())
+    return;
+
+  FlushFeedback();
+  timer_.Stop();
+}
+
 void FeedbackSender::OnURLFetchComplete(const net::URLFetcher* source) {
   for (ScopedVector<net::URLFetcher>::iterator sender_it = senders_.begin();
        sender_it != senders_.end();
@@ -345,12 +367,9 @@ void FeedbackSender::RequestDocumentMarkers() {
   // longer alive.
   std::vector<int> known_renderers = feedback_.GetRendersWithMisspellings();
   std::sort(known_renderers.begin(), known_renderers.end());
-  std::vector<int> dead_renderers;
-  std::set_difference(known_renderers.begin(),
-                      known_renderers.end(),
-                      alive_renderers.begin(),
-                      alive_renderers.end(),
-                      std::back_inserter(dead_renderers));
+  std::vector<int> dead_renderers =
+      base::STLSetDifference<std::vector<int> >(known_renderers,
+                                                alive_renderers);
   for (std::vector<int>::const_iterator it = dead_renderers.begin();
        it != dead_renderers.end();
        ++it) {
@@ -380,7 +399,8 @@ void FeedbackSender::SendFeedback(const std::vector<Misspelling>& feedback_data,
   scoped_ptr<base::Value> feedback_value(BuildFeedbackValue(
       BuildParams(BuildSuggestionInfo(feedback_data, is_first_feedback_batch),
                   language_,
-                  country_)));
+                  country_),
+      api_version_));
   std::string feedback;
   base::JSONWriter::Write(feedback_value.get(), &feedback);
 

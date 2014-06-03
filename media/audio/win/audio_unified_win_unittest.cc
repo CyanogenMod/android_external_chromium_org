@@ -12,7 +12,6 @@
 #include "base/win/scoped_com_initializer.h"
 #include "media/audio/audio_io.h"
 #include "media/audio/audio_manager.h"
-#include "media/audio/audio_util.h"
 #include "media/audio/win/audio_unified_win.h"
 #include "media/audio/win/core_audio_util_win.h"
 #include "media/base/channel_mixer.h"
@@ -75,9 +74,9 @@ class UnifiedSourceCallback : public AudioOutputStream::AudioSourceCallback {
     file_name = file_name.AppendASCII(kDeltaTimeMsFileName);
 
     EXPECT_TRUE(!text_file_);
-    text_file_ = file_util::OpenFile(file_name, "wt");
+    text_file_ = base::OpenFile(file_name, "wt");
     DLOG_IF(ERROR, !text_file_) << "Failed to open log file.";
-    LOG(INFO) << ">> Output file " << file_name.value() << " has been created.";
+    VLOG(0) << ">> Output file " << file_name.value() << " has been created.";
 
     // Write the array which contains delta times to a text file.
     size_t elements_written = 0;
@@ -85,7 +84,7 @@ class UnifiedSourceCallback : public AudioOutputStream::AudioSourceCallback {
       fprintf(text_file_, "%d\n", delta_times_[elements_written]);
       ++elements_written;
     }
-    file_util::CloseFile(text_file_);
+    base::CloseFile(text_file_);
   }
 
   virtual int OnMoreData(AudioBus* dest,
@@ -196,13 +195,13 @@ class AudioUnifiedStreamWrapper {
 
   // Creates an AudioOutputStream object using default parameters.
   WASAPIUnifiedStream* Create() {
-    return static_cast<WASAPIUnifiedStream*> (CreateOutputStream());
+    return static_cast<WASAPIUnifiedStream*>(CreateOutputStream());
   }
 
   // Creates an AudioOutputStream object using default parameters but a
   // specified input device.
   WASAPIUnifiedStream* Create(const std::string device_id) {
-    return static_cast<WASAPIUnifiedStream*> (CreateOutputStream(device_id));
+    return static_cast<WASAPIUnifiedStream*>(CreateOutputStream(device_id));
   }
 
   AudioParameters::Format format() const { return params_.format(); }
@@ -223,20 +222,21 @@ class AudioUnifiedStreamWrapper {
       CoreAudioUtil::CreateDefaultDevice(eCapture, eConsole);
     AudioDeviceName name;
     EXPECT_TRUE(SUCCEEDED(CoreAudioUtil::GetDeviceName(audio_device, &name)));
-    const std::string& device_id = name.unique_id;
-    EXPECT_TRUE(CoreAudioUtil::DeviceIsDefault(eCapture, eConsole, device_id));
+    const std::string& input_device_id = name.unique_id;
+    EXPECT_TRUE(CoreAudioUtil::DeviceIsDefault(eCapture, eConsole,
+        input_device_id));
 
     // Create the unified audio I/O stream using the default input device.
     AudioOutputStream* aos = audio_man_->MakeAudioOutputStream(params_,
-                                                               device_id);
+        "", input_device_id);
     EXPECT_TRUE(aos);
     return aos;
   }
 
-  AudioOutputStream* CreateOutputStream(const std::string& device_id) {
+  AudioOutputStream* CreateOutputStream(const std::string& input_device_id) {
     // Create the unified audio I/O stream using the specified input device.
     AudioOutputStream* aos = audio_man_->MakeAudioOutputStream(params_,
-                                                               device_id);
+        "", input_device_id);
     EXPECT_TRUE(aos);
     return aos;
   }
@@ -263,7 +263,7 @@ static WASAPIUnifiedStream* CreateDefaultUnifiedStream(
 
 // Test Open(), Close() calling sequence.
 TEST(WASAPIUnifiedStreamTest, OpenAndClose) {
-  scoped_ptr<AudioManager> audio_manager(AudioManager::Create());
+  scoped_ptr<AudioManager> audio_manager(AudioManager::CreateForTesting());
   if (!CanRunUnifiedAudioTests(audio_manager.get()))
     return;
 
@@ -274,7 +274,7 @@ TEST(WASAPIUnifiedStreamTest, OpenAndClose) {
 
 // Test Open(), Close() calling sequence for all available capture devices.
 TEST(WASAPIUnifiedStreamTest, OpenAndCloseForAllInputDevices) {
-  scoped_ptr<AudioManager> audio_manager(AudioManager::Create());
+  scoped_ptr<AudioManager> audio_manager(AudioManager::CreateForTesting());
   if (!CanRunUnifiedAudioTests(audio_manager.get()))
     return;
 
@@ -291,7 +291,7 @@ TEST(WASAPIUnifiedStreamTest, OpenAndCloseForAllInputDevices) {
 
 // Test Open(), Start(), Close() calling sequence.
 TEST(WASAPIUnifiedStreamTest, OpenStartAndClose) {
-  scoped_ptr<AudioManager> audio_manager(AudioManager::Create());
+  scoped_ptr<AudioManager> audio_manager(AudioManager::CreateForTesting());
   if (!CanRunUnifiedAudioTests(audio_manager.get()))
     return;
 
@@ -311,7 +311,7 @@ TEST(WASAPIUnifiedStreamTest, OpenStartAndClose) {
 
 // Verify that IO callbacks starts as they should.
 TEST(WASAPIUnifiedStreamTest, StartLoopbackAudio) {
-  scoped_ptr<AudioManager> audio_manager(AudioManager::Create());
+  scoped_ptr<AudioManager> audio_manager(AudioManager::CreateForTesting());
   if (!CanRunUnifiedAudioTests(audio_manager.get()))
     return;
 
@@ -347,7 +347,7 @@ TEST(WASAPIUnifiedStreamTest, StartLoopbackAudio) {
 // back to the speaker. This test allows the user to verify that the audio
 // sounds OK. A text file with name |kDeltaTimeMsFileName| is also generated.
 TEST(WASAPIUnifiedStreamTest, DISABLED_RealTimePlayThrough) {
-  scoped_ptr<AudioManager> audio_manager(AudioManager::Create());
+  scoped_ptr<AudioManager> audio_manager(AudioManager::CreateForTesting());
   if (!CanRunUnifiedAudioTests(audio_manager.get()))
     return;
 

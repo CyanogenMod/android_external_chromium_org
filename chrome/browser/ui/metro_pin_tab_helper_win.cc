@@ -43,7 +43,7 @@ const char kMetroPinMetric[] = "Metro.SecondaryTilePin";
 
 // Generate an ID for the tile based on |url_str|. The ID is simply a hash of
 // the URL.
-string16 GenerateTileId(const string16& url_str) {
+base::string16 GenerateTileId(const base::string16& url_str) {
   uint8 hash[crypto::kSHA256Length];
   crypto::SHA256HashString(UTF16ToUTF8(url_str), hash, sizeof(hash));
   std::string hash_str = base::HexEncode(hash, sizeof(hash));
@@ -58,7 +58,7 @@ base::FilePath GetTileImagesDir() {
 
   tile_images_dir = tile_images_dir.Append(L"TileImages");
   if (!base::DirectoryExists(tile_images_dir) &&
-      !file_util::CreateDirectory(tile_images_dir))
+      !base::CreateDirectory(tile_images_dir))
     return base::FilePath();
 
   return tile_images_dir;
@@ -68,7 +68,7 @@ base::FilePath GetTileImagesDir() {
 // |logo_dir|. The path of any created logo is returned in |logo_path|. Return
 // value indicates whether a site specific logo was created.
 bool CreateSiteSpecificLogo(const SkBitmap& bitmap,
-                            const string16& tile_id,
+                            const base::string16& tile_id,
                             const base::FilePath& logo_dir,
                             base::FilePath* logo_path) {
   const int kLogoWidth = 120;
@@ -85,7 +85,7 @@ bool CreateSiteSpecificLogo(const SkBitmap& bitmap,
   SkColor dominant_color = color_utils::CalculateKMeanColorOfBitmap(bitmap);
   SkPaint paint;
   paint.setColor(dominant_color);
-  gfx::Canvas canvas(gfx::Size(kLogoWidth, kLogoHeight), ui::SCALE_FACTOR_100P,
+  gfx::Canvas canvas(gfx::Size(kLogoWidth, kLogoHeight), 1.0f,
                      true);
   canvas.DrawRect(gfx::Rect(0, 0, kLogoWidth, kLogoHeight), paint);
 
@@ -152,8 +152,8 @@ class PinPageTaskRunner : public base::RefCountedThreadSafe<PinPageTaskRunner> {
   // Creates a task runner for the pinning operation with the given details.
   // |favicon| can be a null image (i.e. favicon.isNull() can be true), in
   // which case the backup tile image will be used.
-  PinPageTaskRunner(const string16& title,
-                    const string16& url,
+  PinPageTaskRunner(const base::string16& title,
+                    const base::string16& url,
                     const SkBitmap& favicon);
 
   void Run();
@@ -163,16 +163,16 @@ class PinPageTaskRunner : public base::RefCountedThreadSafe<PinPageTaskRunner> {
   ~PinPageTaskRunner() {}
 
   // Details of the page being pinned.
-  const string16 title_;
-  const string16 url_;
+  const base::string16 title_;
+  const base::string16 url_;
   SkBitmap favicon_;
 
   friend class base::RefCountedThreadSafe<PinPageTaskRunner>;
   DISALLOW_COPY_AND_ASSIGN(PinPageTaskRunner);
 };
 
-PinPageTaskRunner::PinPageTaskRunner(const string16& title,
-                                     const string16& url,
+PinPageTaskRunner::PinPageTaskRunner(const base::string16& title,
+                                     const base::string16& url,
                                      const SkBitmap& favicon)
     : title_(title),
       url_(url),
@@ -190,7 +190,7 @@ void PinPageTaskRunner::Run() {
 void PinPageTaskRunner::RunOnFileThread() {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::FILE));
 
-  string16 tile_id = GenerateTileId(url_);
+  base::string16 tile_id = GenerateTileId(url_);
   base::FilePath logo_dir = GetTileImagesDir();
   if (logo_dir.empty()) {
     LOG(ERROR) << "Could not create directory to store tile image.";
@@ -232,8 +232,8 @@ void PinPageTaskRunner::RunOnFileThread() {
 class MetroPinTabHelper::FaviconChooser {
  public:
   FaviconChooser(MetroPinTabHelper* helper,
-                 const string16& title,
-                 const string16& url,
+                 const base::string16& title,
+                 const base::string16& url,
                  const SkBitmap& history_bitmap);
 
   ~FaviconChooser() {}
@@ -245,7 +245,6 @@ class MetroPinTabHelper::FaviconChooser {
   // Update the |best_candidate_| with the newly downloaded favicons provided.
   void UpdateCandidate(int id,
                        const GURL& image_url,
-                       int requested_size,
                        const std::vector<SkBitmap>& bitmaps);
 
   void AddPendingRequest(int request_id);
@@ -255,8 +254,8 @@ class MetroPinTabHelper::FaviconChooser {
   MetroPinTabHelper* helper_;
 
   // Title and URL of the page being pinned.
-  const string16 title_;
-  const string16 url_;
+  const base::string16 title_;
+  const base::string16 url_;
 
   // The best candidate we have so far for the current pin operation.
   SkBitmap best_candidate_;
@@ -269,8 +268,8 @@ class MetroPinTabHelper::FaviconChooser {
 
 MetroPinTabHelper::FaviconChooser::FaviconChooser(
     MetroPinTabHelper* helper,
-    const string16& title,
-    const string16& url,
+    const base::string16& title,
+    const base::string16& url,
     const SkBitmap& history_bitmap)
         : helper_(helper),
           title_(title),
@@ -288,7 +287,6 @@ void MetroPinTabHelper::FaviconChooser::UseChosenCandidate() {
 void MetroPinTabHelper::FaviconChooser::UpdateCandidate(
     int id,
     const GURL& image_url,
-    int requested_size,
     const std::vector<SkBitmap>& bitmaps) {
   const int kMaxIconSize = 32;
 
@@ -347,7 +345,7 @@ bool MetroPinTabHelper::IsPinned() const {
   if (!metro_module)
     return false;
 
-  typedef BOOL (*MetroIsPinnedToStartScreen)(const string16&);
+  typedef BOOL (*MetroIsPinnedToStartScreen)(const base::string16&);
   MetroIsPinnedToStartScreen metro_is_pinned_to_start_screen =
       reinterpret_cast<MetroIsPinnedToStartScreen>(
           ::GetProcAddress(metro_module, "MetroIsPinnedToStartScreen"));
@@ -357,7 +355,7 @@ bool MetroPinTabHelper::IsPinned() const {
   }
 
   GURL url = web_contents()->GetURL();
-  string16 tile_id = GenerateTileId(UTF8ToUTF16(url.spec()));
+  base::string16 tile_id = GenerateTileId(UTF8ToUTF16(url.spec()));
   return metro_is_pinned_to_start_screen(tile_id) != 0;
 }
 
@@ -374,8 +372,8 @@ void MetroPinTabHelper::TogglePinnedToStartScreen() {
                             base::win::METRO_PIN_INITIATED,
                             base::win::METRO_PIN_STATE_LIMIT);
   GURL url = web_contents()->GetURL();
-  string16 url_str = UTF8ToUTF16(url.spec());
-  string16 title = web_contents()->GetTitle();
+  base::string16 url_str = UTF8ToUTF16(url.spec());
+  base::string16 title = web_contents()->GetTitle();
   // TODO(oshima): Use scoped_ptr::Pass to pass it to other thread.
   SkBitmap favicon;
   FaviconTabHelper* favicon_tab_helper = FaviconTabHelper::FromWebContents(
@@ -383,7 +381,7 @@ void MetroPinTabHelper::TogglePinnedToStartScreen() {
   if (favicon_tab_helper->FaviconIsValid()) {
     // Only the 1x bitmap data is needed.
     favicon = favicon_tab_helper->GetFavicon().AsImageSkia().GetRepresentation(
-        ui::SCALE_FACTOR_100P).sk_bitmap();
+        1.0f).sk_bitmap();
   }
 
   favicon_chooser_.reset(new FaviconChooser(this, title, url_str, favicon));
@@ -394,7 +392,6 @@ void MetroPinTabHelper::TogglePinnedToStartScreen() {
   }
 
   // Request all the candidates.
-  int preferred_image_size = 0;  // Request the first image.
   int max_image_size = 0;  // Do not resize images.
   for (std::vector<content::FaviconURL>::const_iterator iter =
            favicon_url_candidates_.begin();
@@ -403,7 +400,6 @@ void MetroPinTabHelper::TogglePinnedToStartScreen() {
     favicon_chooser_->AddPendingRequest(
         web_contents()->DownloadImage(iter->icon_url,
             true,
-            preferred_image_size,
             max_image_size,
             base::Bind(&MetroPinTabHelper::DidDownloadFavicon,
                        base::Unretained(this))));
@@ -432,10 +428,10 @@ void MetroPinTabHelper::DidDownloadFavicon(
     int id,
     int http_status_code,
     const GURL& image_url,
-    int requested_size,
-    const std::vector<SkBitmap>& bitmaps) {
+    const std::vector<SkBitmap>& bitmaps,
+    const std::vector<gfx::Size>& original_bitmap_sizes) {
   if (favicon_chooser_.get()) {
-    favicon_chooser_->UpdateCandidate(id, image_url, requested_size, bitmaps);
+    favicon_chooser_->UpdateCandidate(id, image_url, bitmaps);
   }
 }
 
@@ -453,7 +449,7 @@ void MetroPinTabHelper::UnPinPageFromStartScreen() {
   }
 
   GURL url = web_contents()->GetURL();
-  string16 tile_id = GenerateTileId(UTF8ToUTF16(url.spec()));
+  base::string16 tile_id = GenerateTileId(UTF8ToUTF16(url.spec()));
   metro_un_pin_from_start_screen(tile_id,
                                  base::Bind(&PinPageReportUmaCallback));
 }

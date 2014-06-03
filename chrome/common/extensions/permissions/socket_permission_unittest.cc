@@ -6,9 +6,9 @@
 
 #include "base/pickle.h"
 #include "base/values.h"
-#include "chrome/common/extensions/permissions/permissions_info.h"
 #include "chrome/common/extensions/permissions/socket_permission.h"
 #include "chrome/common/extensions/permissions/socket_permission_data.h"
+#include "extensions/common/permissions/permissions_info.h"
 #include "ipc/ipc_message.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -242,6 +242,17 @@ TEST(SocketPermissionTest, Match) {
   EXPECT_TRUE(data.Check(param.get()));
   param.reset(new SocketPermission::CheckParam(
       SocketPermissionRequest::RESOLVE_PROXY, "www.example.com", 8080));
+  EXPECT_TRUE(data.Check(param.get()));
+  param.reset(new SocketPermission::CheckParam(
+      SocketPermissionRequest::UDP_BIND, "127.0.0.1", 8800));
+  EXPECT_FALSE(data.Check(param.get()));
+  param.reset(new SocketPermission::CheckParam(
+      SocketPermissionRequest::TCP_CONNECT, "127.0.0.1", 8800));
+  EXPECT_FALSE(data.Check(param.get()));
+
+  ASSERT_TRUE(data.ParseForTest("network-state"));
+  param.reset(new SocketPermission::CheckParam(
+      SocketPermissionRequest::NETWORK_STATE, std::string(), 0));
   EXPECT_TRUE(data.Check(param.get()));
   param.reset(new SocketPermission::CheckParam(
       SocketPermissionRequest::UDP_BIND, "127.0.0.1", 8800));

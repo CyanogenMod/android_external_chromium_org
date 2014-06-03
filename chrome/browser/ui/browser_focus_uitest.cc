@@ -52,6 +52,10 @@ using content::WebContents;
 // TODO(suzhe): http://crbug.com/60973
 #define MAYBE_FocusTraversal DISABLED_FocusTraversal
 #define MAYBE_FocusTraversalOnInterstitial DISABLED_FocusTraversalOnInterstitial
+#elif defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(USE_AURA)
+// TODO(erg): http://crbug.com/163931
+#define MAYBE_FocusTraversal DISABLED_FocusTraversal
+#define MAYBE_FocusTraversalOnInterstitial DISABLED_FocusTraversalOnInterstitial
 #elif defined(OS_WIN) || defined(OS_CHROMEOS)
 // http://crbug.com/109770 and http://crbug.com/62544
 #define MAYBE_FocusTraversal FocusTraversal
@@ -172,7 +176,7 @@ class TestInterstitialPage : public content::InterstitialPageDelegate {
     EXPECT_TRUE(r);
     file_path = file_path.AppendASCII("focus");
     file_path = file_path.AppendASCII(kTypicalPageName);
-    r = file_util::ReadFileToString(file_path, &html_contents_);
+    r = base::ReadFileToString(file_path, &html_contents_);
     EXPECT_TRUE(r);
     interstitial_page_ = InterstitialPage::Create(
         tab, new_navigation, url , this);
@@ -374,7 +378,7 @@ IN_PROC_BROWSER_TEST_F(BrowserFocusTest,
       new Browser(Browser::CreateParams(browser()->profile(),
                                         browser()->host_desktop_type()));
   ASSERT_TRUE(browser2);
-  chrome::AddBlankTabAt(browser2, -1, true);
+  chrome::AddTabAt(browser2, GURL(), -1, true);
   browser2->window()->Show();
 
   Browser* focused_browser = NULL;
@@ -414,8 +418,15 @@ IN_PROC_BROWSER_TEST_F(BrowserFocusTest,
   EXPECT_TRUE(focused_browser->window()->IsActive());
 }
 
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(USE_AURA)
+// TODO(erg): http://crbug.com/163931
+#define MAYBE_LocationBarLockFocus DISABLED_LocationBarLockFocus
+#else
+#define MAYBE_LocationBarLockFocus LocationBarLockFocus
+#endif
+
 // Page cannot steal focus when focus is on location bar.
-IN_PROC_BROWSER_TEST_F(BrowserFocusTest, LocationBarLockFocus) {
+IN_PROC_BROWSER_TEST_F(BrowserFocusTest, MAYBE_LocationBarLockFocus) {
   ASSERT_TRUE(ui_test_utils::BringBrowserWindowToFront(browser()));
   ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
 
@@ -800,8 +811,15 @@ IN_PROC_BROWSER_TEST_F(BrowserFocusTest, DISABLED_TabInitialFocus) {
   EXPECT_TRUE(IsViewFocused(VIEW_ID_OMNIBOX));
 }
 
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(USE_AURA)
+// TODO(erg): http://crbug.com/163931
+#define MAYBE_FocusOnReload DISABLED_FocusOnReload
+#else
+#define MAYBE_FocusOnReload FocusOnReload
+#endif
+
 // Tests that focus goes where expected when using reload.
-IN_PROC_BROWSER_TEST_F(BrowserFocusTest, FocusOnReload) {
+IN_PROC_BROWSER_TEST_F(BrowserFocusTest, MAYBE_FocusOnReload) {
   ASSERT_TRUE(ui_test_utils::BringBrowserWindowToFront(browser()));
   ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
 
@@ -871,6 +889,19 @@ IN_PROC_BROWSER_TEST_F(BrowserFocusTest, DISABLED_FocusOnReloadCrashedTab) {
   ASSERT_TRUE(IsViewFocused(VIEW_ID_TAB_CONTAINER));
 }
 
+// Tests that focus goes to frame after crashed tab.
+// TODO(shrikant): Find out where the focus should be deterministically.
+// Currently focused_view after crash seem to be non null in debug mode
+// (invalidated pointer 0xcccccc).
+IN_PROC_BROWSER_TEST_F(BrowserFocusTest, DISABLED_FocusAfterCrashedTab) {
+  ASSERT_TRUE(ui_test_utils::BringBrowserWindowToFront(browser()));
+  ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
+
+  content::CrashTab(browser()->tab_strip_model()->GetActiveWebContents());
+
+  ASSERT_TRUE(IsViewFocused(VIEW_ID_TAB_CONTAINER));
+}
+
 // Tests that when a new tab is opened from the omnibox, the focus is moved from
 // the omnibox for the current tab.
 IN_PROC_BROWSER_TEST_F(BrowserFocusTest,
@@ -888,12 +919,12 @@ IN_PROC_BROWSER_TEST_F(BrowserFocusTest,
   chrome::FocusLocationBar(browser());
 
   OmniboxEditController* controller =
-      browser()->window()->GetLocationBar()->GetLocationEntry()->model()->
+      browser()->window()->GetLocationBar()->GetOmniboxView()->model()->
           controller();
 
   // Simulate an alt-enter.
   controller->OnAutocompleteAccept(url2, NEW_FOREGROUND_TAB,
-                                   content::PAGE_TRANSITION_TYPED, GURL());
+                                   content::PAGE_TRANSITION_TYPED);
 
   // Make sure the second tab is selected.
   EXPECT_EQ(1, browser()->tab_strip_model()->active_index());
@@ -907,7 +938,16 @@ IN_PROC_BROWSER_TEST_F(BrowserFocusTest,
   EXPECT_FALSE(ui_test_utils::IsViewFocused(browser(), VIEW_ID_OMNIBOX));
 }
 
-IN_PROC_BROWSER_TEST_F(BrowserFocusTest, FocusOnNavigate) {
+// This functionality is currently broken. http://crbug.com/304865.
+//
+//#if defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(USE_AURA)
+//// TODO(erg): http://crbug.com/163931
+//#define MAYBE_FocusOnNavigate DISABLED_FocusOnNavigate
+//#else
+//#define MAYBE_FocusOnNavigate FocusOnNavigate
+//#endif
+
+IN_PROC_BROWSER_TEST_F(BrowserFocusTest, DISABLED_FocusOnNavigate) {
   // Needed on Mac.
   ASSERT_TRUE(ui_test_utils::BringBrowserWindowToFront(browser()));
   // Load the NTP.

@@ -10,8 +10,8 @@
 #include "tools/gn/commands.h"
 #include "tools/gn/config.h"
 #include "tools/gn/config_values_extractors.h"
+#include "tools/gn/filesystem_utils.h"
 #include "tools/gn/item.h"
-#include "tools/gn/item_node.h"
 #include "tools/gn/label.h"
 #include "tools/gn/setup.h"
 #include "tools/gn/standard_out.h"
@@ -21,41 +21,58 @@ namespace commands {
 
 namespace {
 
-struct CompareTargetLabel {
-  bool operator()(const Target* a, const Target* b) const {
-    return a->label() < b->label();
+// Prints the given directory in a nice way for the user to view.
+std::string FormatSourceDir(const SourceDir& dir) {
+#if defined(OS_WIN)
+  // On Windows we fix up system absolute paths to look like native ones.
+  // Internally, they'll look like "/C:\foo\bar/"
+  if (dir.is_system_absolute()) {
+    std::string buf = dir.value();
+    if (buf.size() > 3 && buf[2] == ':') {
+      buf.erase(buf.begin());  // Erase beginning slash.
+      ConvertPathToSystem(&buf);  // Convert to backslashes.
+      return buf;
+    }
   }
-};
+#endif
+  return dir.value();
+}
+
+void RecursiveCollectChildDeps(const Target* target, std::set<Label>* result);
 
 void RecursiveCollectDeps(const Target* target, std::set<Label>* result) {
   if (result->find(target->label()) != result->end())
     return;  // Already did this target.
   result->insert(target->label());
 
-  const std::vector<const Target*>& deps = target->deps();
-  for (size_t i = 0; i < deps.size(); i++)
-    RecursiveCollectDeps(deps[i], result);
+  RecursiveCollectChildDeps(target, result);
+}
 
-  const std::vector<const Target*>& datadeps = target->datadeps();
+void RecursiveCollectChildDeps(const Target* target, std::set<Label>* result) {
+  const LabelTargetVector& deps = target->deps();
+  for (size_t i = 0; i < deps.size(); i++)
+    RecursiveCollectDeps(deps[i].ptr, result);
+
+  const LabelTargetVector& datadeps = target->datadeps();
   for (size_t i = 0; i < datadeps.size(); i++)
-    RecursiveCollectDeps(datadeps[i], result);
+    RecursiveCollectDeps(datadeps[i].ptr, result);
 }
 
 // Prints dependencies of the given target (not the target itself).
 void RecursivePrintDeps(const Target* target,
                         const Label& default_toolchain,
                         int indent_level) {
-  std::vector<const Target*> sorted_deps = target->deps();
-  const std::vector<const Target*> datadeps = target->datadeps();
-  for (size_t i = 0; i < datadeps.size(); i++)
-    sorted_deps.push_back(datadeps[i]);
-  std::sort(sorted_deps.begin(), sorted_deps.end(), CompareTargetLabel());
+  LabelTargetVector sorted_deps = target->deps();
+  const LabelTargetVector& datadeps = target->datadeps();
+  sorted_deps.insert(sorted_deps.end(), datadeps.begin(), datadeps.end());
+  std::sort(sorted_deps.begin(), sorted_deps.end(),
+            LabelPtrLabelLess<Target>());
 
   std::string indent(indent_level * 2, ' ');
   for (size_t i = 0; i < sorted_deps.size(); i++) {
     OutputString(indent +
-        sorted_deps[i]->label().GetUserVisibleName(default_toolchain) + "\n");
-    RecursivePrintDeps(sorted_deps[i], default_toolchain, indent_level + 1);
+        sorted_deps[i].label.GetUserVisibleName(default_toolchain) + "\n");
+    RecursivePrintDeps(sorted_deps[i].ptr, default_toolchain, indent_level + 1);
   }
 }
 
@@ -78,7 +95,7 @@ void PrintDeps(const Target* target, bool display_header) {
       OutputString("\nAll recursive dependencies:\n");
 
     std::set<Label> all_deps;
-    RecursiveCollectDeps(target, &all_deps);
+    RecursiveCollectChildDeps(target, &all_deps);
     for (std::set<Label>::iterator i = all_deps.begin();
          i != all_deps.end(); ++i)
       deps.push_back(*i);
@@ -88,18 +105,45 @@ void PrintDeps(const Target* target, bool display_header) {
                    "(try also \"--all\" and \"--tree\"):\n");
     }
 
-    const std::vector<const Target*>& target_deps = target->deps();
+    const LabelTargetVector& target_deps = target->deps();
     for (size_t i = 0; i < target_deps.size(); i++)
-      deps.push_back(target_deps[i]->label());
+      deps.push_back(target_deps[i].label);
 
-    const std::vector<const Target*>& target_datadeps = target->datadeps();
+    const LabelTargetVector& target_datadeps = target->datadeps();
     for (size_t i = 0; i < target_datadeps.size(); i++)
-      deps.push_back(target_datadeps[i]->label());
+      deps.push_back(target_datadeps[i].label);
   }
 
   std::sort(deps.begin(), deps.end());
   for (size_t i = 0; i < deps.size(); i++)
     OutputString("  " + deps[i].GetUserVisibleName(toolchain_label) + "\n");
+}
+
+// libs and lib_dirs are special in that they're inherited. We don't currently
+// implement a blame feature for this since the bottom-up inheritance makes
+// this difficult.
+void PrintLibDirs(const Target* target, bool display_header) {
+  const OrderedSet<SourceDir>& lib_dirs = target->all_lib_dirs();
+  if (lib_dirs.empty())
+    return;
+
+  if (display_header)
+    OutputString("\nlib_dirs\n");
+
+  for (size_t i = 0; i < lib_dirs.size(); i++)
+    OutputString("    " + FormatSourceDir(lib_dirs[i]) + "\n");
+}
+
+void PrintLibs(const Target* target, bool display_header) {
+  const OrderedSet<std::string>& libs = target->all_libs();
+  if (libs.empty())
+    return;
+
+  if (display_header)
+    OutputString("\nlibs\n");
+
+  for (size_t i = 0; i < libs.size(); i++)
+    OutputString("    " + libs[i] + "\n");
 }
 
 void PrintConfigs(const Target* target, bool display_header) {
@@ -108,10 +152,10 @@ void PrintConfigs(const Target* target, bool display_header) {
     OutputString("\nConfigs (in order applying):\n");
 
   Label toolchain_label = target->label().GetToolchainLabel();
-  const std::vector<const Config*>& configs = target->configs();
+  const LabelConfigVector& configs = target->configs();
   for (size_t i = 0; i < configs.size(); i++) {
     OutputString("  " +
-        configs[i]->label().GetUserVisibleName(toolchain_label) + "\n");
+        configs[i].label.GetUserVisibleName(toolchain_label) + "\n");
   }
 }
 
@@ -125,29 +169,12 @@ void PrintSources(const Target* target, bool display_header) {
     OutputString("  " + sources[i].value() + "\n");
 }
 
-// Attempts to attribute the gen dependency of the given target to some source
-// code and outputs the string to the output stream.
-//
-// The attribution of the source of the dependencies is stored in the ItemNode
-// which is the parallel structure to the target dependency map, so we have
-// to jump through a few loops to find everything.
-void OutputSourceOfDep(const Target* target,
-                       const Label& dep_label,
-                       std::ostream& out) {
-  ItemTree& item_tree = target->settings()->build_settings()->item_tree();
-  base::AutoLock lock(item_tree.lock());
-
-  ItemNode* target_node = item_tree.GetExistingNodeLocked(target->label());
-  CHECK(target_node);
-  ItemNode* dep_node = item_tree.GetExistingNodeLocked(dep_label);
-  CHECK(dep_node);
-
-  const ItemNode::ItemNodeMap& direct_deps = target_node->direct_dependencies();
-  ItemNode::ItemNodeMap::const_iterator found = direct_deps.find(dep_node);
-  if (found == direct_deps.end())
+// Attribute the origin for attributing from where a target came from. Does
+// nothing if the input is null or it does not have a location.
+void OutputSourceOfDep(const ParseNode* origin, std::ostream& out) {
+  if (!origin)
     return;
-
-  const Location& location = found->second.begin();
+  Location location = origin->GetRange().begin();
   out << "       (Added by " + location.file()->name().value() << ":"
       << location.line_number() << ")\n";
 }
@@ -166,7 +193,7 @@ template<> struct DescValueWriter<SourceFile> {
 };
 template<> struct DescValueWriter<SourceDir> {
   void operator()(const SourceDir& dir, std::ostream& out) const {
-    out << "    " << dir.value() << "\n";
+    out << "    " << FormatSourceDir(dir) << "\n";
   }
 };
 
@@ -181,32 +208,30 @@ template<typename T> void OutputRecursiveTargetConfig(
   DescValueWriter<T> writer;
   std::ostringstream out;
 
-  // First write the values from the config itself.
-  if (!(target->config_values().*getter)().empty()) {
-    if (display_blame)
-      out << "  From " << target->label().GetUserVisibleName(false) << "\n";
-    ConfigValuesToStream(target->config_values(), getter, writer, out);
-  }
+  for (ConfigValuesIterator iter(target); !iter.done(); iter.Next()) {
+    if ((iter.cur().*getter)().empty())
+      continue;
 
-  // TODO(brettw) annotate where forced config includes came from!
-
-  // Then write the configs in order.
-  for (size_t i = 0; i < target->configs().size(); i++) {
-    const Config* config = target->configs()[i];
-    const ConfigValues& values = config->config_values();
-
-    if (!(values.*getter)().empty()) {
-      if (display_blame) {
+    // Optional blame sub-head.
+    if (display_blame) {
+      const Config* config = iter.GetCurrentConfig();
+      if (config) {
+        // Source of this value is a config.
         out << "  From " << config->label().GetUserVisibleName(false) << "\n";
-        OutputSourceOfDep(target, config->label(), out);
+        OutputSourceOfDep(iter.origin(), out);
+      } else {
+        // Source of this value is the target itself.
+        out << "  From " << target->label().GetUserVisibleName(false) << "\n";
       }
-      ConfigValuesToStream(values, getter, writer, out);
     }
+
+    // Actual values.
+    ConfigValuesToStream(iter.cur(), getter, writer, out);
   }
 
   std::string out_str = out.str();
   if (!out_str.empty()) {
-    OutputString(std::string(header_name) + "\n");
+    OutputString("\n" + std::string(header_name) + "\n");
     OutputString(out_str);
   }
 }
@@ -241,18 +266,22 @@ const char kDesc_Help[] =
     "      in a tree format.  Otherwise, they will be sorted alphabetically.\n"
     "      Both \"deps\" and \"datadeps\" will be included.\n"
     "\n"
-    "  defines    [--blame]\n"
-    "  includes   [--blame]\n"
-    "  cflags     [--blame]\n"
-    "  cflags_cc  [--blame]\n"
-    "  cflags_cxx [--blame]\n"
-    "  ldflags    [--blame]\n"
+    "  defines       [--blame]\n"
+    "  include_dirs  [--blame]\n"
+    "  cflags        [--blame]\n"
+    "  cflags_cc     [--blame]\n"
+    "  cflags_cxx    [--blame]\n"
+    "  ldflags       [--blame]\n"
+    "  lib_dirs\n"
+    "  libs\n"
     "      Shows the given values taken from the target and all configs\n"
     "      applying. See \"--blame\" below.\n"
     "\n"
     "  --blame\n"
     "      Used with any value specified by a config, this will name\n"
-    "      the config that specified the value.\n"
+    "      the config that specified the value. This doesn't currently work\n"
+    "      for libs and lib_dirs because those are inherited and are more\n"
+    "      complicated to figure out the blame (patches welcome).\n"
     "\n"
     "Note:\n"
     "  This command will show the full name of directories and source files,\n"
@@ -273,6 +302,9 @@ const char kDesc_Help[] =
     "      Shows defines set for the //base:base target, annotated by where\n"
     "      each one was set from.\n";
 
+#define OUTPUT_CONFIG_VALUE(name, type) \
+    OutputRecursiveTargetConfig<type>(target, #name, &ConfigValues::name);
+
 int RunDesc(const std::vector<std::string>& args) {
   if (args.size() != 1 && args.size() != 2) {
     Err(Location(), "You're holding it wrong.",
@@ -284,9 +316,8 @@ int RunDesc(const std::vector<std::string>& args) {
   if (!target)
     return 1;
 
-#define CONFIG_VALUE_HANDLER(name) \
-    } else if (what == #name) { \
-      OutputRecursiveTargetConfig(target, #name, &ConfigValues::name);
+#define CONFIG_VALUE_HANDLER(name, type) \
+    } else if (what == #name) { OUTPUT_CONFIG_VALUE(name, type)
 
   if (args.size() == 2) {
     // User specified one thing to display.
@@ -297,13 +328,19 @@ int RunDesc(const std::vector<std::string>& args) {
       PrintSources(target, false);
     } else if (what == "deps") {
       PrintDeps(target, false);
+    } else if (what == "lib_dirs") {
+      PrintLibDirs(target, false);
+    } else if (what == "libs") {
+      PrintLibs(target, false);
 
-    CONFIG_VALUE_HANDLER(defines)
-    CONFIG_VALUE_HANDLER(includes)
-    CONFIG_VALUE_HANDLER(cflags)
-    CONFIG_VALUE_HANDLER(cflags_c)
-    CONFIG_VALUE_HANDLER(cflags_cc)
-    CONFIG_VALUE_HANDLER(ldflags)
+    CONFIG_VALUE_HANDLER(defines, std::string)
+    CONFIG_VALUE_HANDLER(include_dirs, SourceDir)
+    CONFIG_VALUE_HANDLER(cflags, std::string)
+    CONFIG_VALUE_HANDLER(cflags_c, std::string)
+    CONFIG_VALUE_HANDLER(cflags_cc, std::string)
+    CONFIG_VALUE_HANDLER(cflags_objc, std::string)
+    CONFIG_VALUE_HANDLER(cflags_objcc, std::string)
+    CONFIG_VALUE_HANDLER(ldflags, std::string)
 
     } else {
       OutputString("Don't know how to display \"" + what + "\".\n");
@@ -322,20 +359,28 @@ int RunDesc(const std::vector<std::string>& args) {
   Label target_toolchain = target->label().GetToolchainLabel();
 
   // Header.
-  std::string title_target =
-      "Target: " + target->label().GetUserVisibleName(false);
-  std::string title_toolchain =
-      "Toolchain: " + target_toolchain.GetUserVisibleName(false);
-  OutputString(title_target + "\n", DECORATION_YELLOW);
-  OutputString(title_toolchain + "\n", DECORATION_YELLOW);
+  OutputString("Target: ", DECORATION_YELLOW);
+  OutputString(target->label().GetUserVisibleName(false) + "\n");
+  OutputString("Type: ", DECORATION_YELLOW);
   OutputString(std::string(
-      std::max(title_target.size(), title_toolchain.size()), '=') + "\n");
+      Target::GetStringForOutputType(target->output_type())) + "\n");
+  OutputString("Toolchain: ", DECORATION_YELLOW);
+  OutputString(target_toolchain.GetUserVisibleName(false) + "\n");
 
   PrintSources(target, true);
   PrintConfigs(target, true);
-  OutputString("\n  (Use \"gn desc <label> <thing you want to see>\" to show "
-               "the actual values\n   applied by the different configs. "
-               "See \"gn help desc\" for more.)\n");
+
+  OUTPUT_CONFIG_VALUE(defines, std::string)
+  OUTPUT_CONFIG_VALUE(include_dirs, SourceDir)
+  OUTPUT_CONFIG_VALUE(cflags, std::string)
+  OUTPUT_CONFIG_VALUE(cflags_c, std::string)
+  OUTPUT_CONFIG_VALUE(cflags_cc, std::string)
+  OUTPUT_CONFIG_VALUE(cflags_objc, std::string)
+  OUTPUT_CONFIG_VALUE(cflags_objcc, std::string)
+  OUTPUT_CONFIG_VALUE(ldflags, std::string)
+  PrintLibs(target, true);
+  PrintLibDirs(target, true);
+
   PrintDeps(target, true);
 
   return 0;

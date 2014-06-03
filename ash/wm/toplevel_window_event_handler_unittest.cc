@@ -4,15 +4,14 @@
 
 #include "ash/wm/toplevel_window_event_handler.h"
 
-#include "ash/ash_constants.h"
 #include "ash/root_window_controller.h"
 #include "ash/shell.h"
 #include "ash/shell_window_ids.h"
 #include "ash/test/ash_test_base.h"
-#include "ash/wm/lock_state_controller_impl2.h"
-#include "ash/wm/property_util.h"
+#include "ash/wm/lock_state_controller.h"
 #include "ash/wm/resize_shadow.h"
 #include "ash/wm/resize_shadow_controller.h"
+#include "ash/wm/window_state.h"
 #include "ash/wm/window_util.h"
 #include "ash/wm/workspace/snap_sizer.h"
 #include "ash/wm/workspace_controller.h"
@@ -23,10 +22,9 @@
 #include "ui/aura/root_window.h"
 #include "ui/aura/test/aura_test_base.h"
 #include "ui/aura/test/event_generator.h"
-#include "ui/aura/test/test_activation_client.h"
 #include "ui/aura/test/test_window_delegate.h"
-#include "ui/base/events/event.h"
 #include "ui/base/hit_test.h"
+#include "ui/events/event.h"
 #include "ui/gfx/screen.h"
 
 #if defined(OS_WIN)
@@ -379,6 +377,7 @@ TEST_F(ToplevelWindowEventHandlerTest, GestureDrag) {
           new TestWindowDelegate(HTCAPTION),
           0,
           gfx::Rect(0, 0, 100, 100)));
+  wm::WindowState* window_state = wm::GetWindowState(target.get());
   aura::test::EventGenerator generator(Shell::GetPrimaryRootWindow(),
                                        target.get());
   gfx::Rect old_bounds = target->bounds();
@@ -390,7 +389,7 @@ TEST_F(ToplevelWindowEventHandlerTest, GestureDrag) {
   // Snap right;
   {
     // Get the expected snapped bounds before snapping.
-    internal::SnapSizer sizer(target.get(), location,
+    internal::SnapSizer sizer(window_state, location,
         internal::SnapSizer::RIGHT_EDGE,
         internal::SnapSizer::OTHER_INPUT);
     gfx::Rect snapped_bounds = sizer.GetSnapBounds(target->bounds());
@@ -411,7 +410,7 @@ TEST_F(ToplevelWindowEventHandlerTest, GestureDrag) {
   // Snap left.
   {
     // Get the expected snapped bounds before snapping.
-    internal::SnapSizer sizer(target.get(), location,
+    internal::SnapSizer sizer(window_state, location,
         internal::SnapSizer::LEFT_EDGE,
         internal::SnapSizer::OTHER_INPUT);
     gfx::Rect snapped_bounds = sizer.GetSnapBounds(target->bounds());
@@ -438,12 +437,13 @@ TEST_F(ToplevelWindowEventHandlerTest, GestureDrag) {
       base::TimeDelta::FromMilliseconds(5),
       10);
   RunAllPendingInMessageLoop();
-  EXPECT_NE(old_bounds.ToString(), target->bounds().ToString());
-  EXPECT_TRUE(wm::IsWindowMaximized(target.get()));
-  EXPECT_EQ(old_bounds.ToString(),
-            GetRestoreBoundsInScreen(target.get())->ToString());
 
-  wm::RestoreWindow(target.get());
+  EXPECT_NE(old_bounds.ToString(), target->bounds().ToString());
+  EXPECT_TRUE(window_state->IsMaximized());
+  EXPECT_EQ(old_bounds.ToString(),
+            window_state->GetRestoreBoundsInScreen().ToString());
+
+  window_state->Restore();
   target->SetBounds(old_bounds);
 
   // Minimize.
@@ -454,17 +454,16 @@ TEST_F(ToplevelWindowEventHandlerTest, GestureDrag) {
       10);
   RunAllPendingInMessageLoop();
   EXPECT_NE(old_bounds.ToString(), target->bounds().ToString());
-  EXPECT_TRUE(wm::IsWindowMinimized(target.get()));
-  EXPECT_TRUE(GetWindowAlwaysRestoresToRestoreBounds(target.get()));
+  EXPECT_TRUE(window_state->IsMinimized());
+  EXPECT_TRUE(window_state->always_restores_to_restore_bounds());
   EXPECT_EQ(old_bounds.ToString(),
-            GetRestoreBoundsInScreen(target.get())->ToString());
+            window_state->GetRestoreBoundsInScreen().ToString());
 }
 
 // Tests that a gesture cannot minimize a window in login/lock screen.
 TEST_F(ToplevelWindowEventHandlerTest, GestureDragMinimizeLoginScreen) {
-  LockStateControllerImpl2* state_controller =
-      static_cast<LockStateControllerImpl2*>
-          (Shell::GetInstance()->lock_state_controller());
+  LockStateController* state_controller =
+      Shell::GetInstance()->lock_state_controller();
   state_controller->OnLoginStateChanged(user::LOGGED_IN_NONE);
   state_controller->OnLockStateChanged(false);
   SetUserLoggedIn(false);
@@ -485,7 +484,7 @@ TEST_F(ToplevelWindowEventHandlerTest, GestureDragMinimizeLoginScreen) {
       base::TimeDelta::FromMilliseconds(5),
       10);
   RunAllPendingInMessageLoop();
-  EXPECT_FALSE(wm::IsWindowMinimized(target.get()));
+  EXPECT_FALSE(wm::GetWindowState(target.get())->IsMinimized());
 }
 
 TEST_F(ToplevelWindowEventHandlerTest, GestureDragToRestore) {
@@ -495,7 +494,8 @@ TEST_F(ToplevelWindowEventHandlerTest, GestureDragToRestore) {
           0,
           gfx::Rect(10, 20, 30, 40)));
   window->Show();
-  ash::wm::ActivateWindow(window.get());
+  wm::WindowState* window_state = wm::GetWindowState(window.get());
+  window_state->Activate();
 
   aura::test::EventGenerator generator(Shell::GetPrimaryRootWindow(),
                                        window.get());
@@ -508,15 +508,16 @@ TEST_F(ToplevelWindowEventHandlerTest, GestureDragToRestore) {
       10);
   RunAllPendingInMessageLoop();
   EXPECT_NE(old_bounds.ToString(), window->bounds().ToString());
-  EXPECT_TRUE(wm::IsWindowMinimized(window.get()));
-  EXPECT_TRUE(GetWindowAlwaysRestoresToRestoreBounds(window.get()));
+  EXPECT_TRUE(window_state->IsMinimized());
+  EXPECT_TRUE(window_state->always_restores_to_restore_bounds());
   EXPECT_EQ(old_bounds.ToString(),
-            GetRestoreBoundsInScreen(window.get())->ToString());
+            window_state->GetRestoreBoundsInScreen().ToString());
 }
 
 // Tests that an unresizable window cannot be dragged or snapped using gestures.
 TEST_F(ToplevelWindowEventHandlerTest, GestureDragForUnresizableWindow) {
   scoped_ptr<aura::Window> target(CreateWindow(HTCAPTION));
+  wm::WindowState* window_state = wm::GetWindowState(target.get());
 
   aura::test::EventGenerator generator(Shell::GetPrimaryRootWindow(),
                                        target.get());
@@ -530,7 +531,7 @@ TEST_F(ToplevelWindowEventHandlerTest, GestureDragForUnresizableWindow) {
   // Try to snap right. The window is not resizable. So it should not snap.
   {
     // Get the expected snapped bounds before the gesture.
-    internal::SnapSizer sizer(target.get(), location,
+    internal::SnapSizer sizer(window_state, location,
         internal::SnapSizer::RIGHT_EDGE,
         internal::SnapSizer::OTHER_INPUT);
     gfx::Rect snapped_bounds = sizer.GetSnapBounds(target->bounds());
@@ -555,7 +556,7 @@ TEST_F(ToplevelWindowEventHandlerTest, GestureDragForUnresizableWindow) {
   // Try to snap left. It should not snap.
   {
     // Get the expected snapped bounds before the gesture.
-    internal::SnapSizer sizer(target.get(), location,
+    internal::SnapSizer sizer(window_state, location,
         internal::SnapSizer::LEFT_EDGE,
         internal::SnapSizer::OTHER_INPUT);
     gfx::Rect snapped_bounds = sizer.GetSnapBounds(target->bounds());
@@ -616,7 +617,7 @@ TEST_F(ToplevelWindowEventHandlerTest, GestureDragMultipleWindows) {
 
 // Verifies pressing escape resets the bounds to the original bounds.
 // Disabled crbug.com/166219.
-#if defined(OS_MACOSX) || defined(OS_WIN)
+#if defined(OS_WIN)
 #define MAYBE_EscapeReverts DISABLED_EscapeReverts
 #else
 #define MAYBE_EscapeReverts EscapeReverts
@@ -655,9 +656,9 @@ TEST_F(ToplevelWindowEventHandlerTest, MAYBE_MinimizeMaximizeCompletes) {
     generator.MoveMouseBy(10, 11);
     RunAllPendingInMessageLoop();
     EXPECT_EQ("10,11 100x100", target->bounds().ToString());
-
-    wm::MinimizeWindow(target.get());
-    wm::RestoreWindow(target.get());
+    wm::WindowState* window_state = wm::GetWindowState(target.get());
+    window_state->Minimize();
+    window_state->Restore();
 
     generator.PressLeftButton();
     generator.MoveMouseBy(10, 11);
@@ -675,9 +676,9 @@ TEST_F(ToplevelWindowEventHandlerTest, MAYBE_MinimizeMaximizeCompletes) {
     generator.MoveMouseBy(10, 11);
     RunAllPendingInMessageLoop();
     EXPECT_EQ("10,11 100x100", target->bounds().ToString());
-
-    wm::MaximizeWindow(target.get());
-    wm::RestoreWindow(target.get());
+    wm::WindowState* window_state = wm::GetWindowState(target.get());
+    window_state->Maximize();
+    window_state->Restore();
 
     generator.PressLeftButton();
     generator.MoveMouseBy(10, 11);
@@ -686,131 +687,8 @@ TEST_F(ToplevelWindowEventHandlerTest, MAYBE_MinimizeMaximizeCompletes) {
   }
 }
 
-// Test class for mouse and touch resize shadow tests.
-class ToplevelWindowEventHandlerResizeTest
-    : public ToplevelWindowEventHandlerTest {
- public:
-  ToplevelWindowEventHandlerResizeTest() : delegate_(NULL) {}
-  virtual ~ToplevelWindowEventHandlerResizeTest() {}
-
-  virtual void SetUp() OVERRIDE {
-    ToplevelWindowEventHandlerTest::SetUp();
-
-    delegate_ = new TestWindowDelegate(HTNOWHERE);
-    target_.reset(CreateTestWindowInShellWithDelegate(
-        delegate_, 0, gfx::Rect(0, 0, 100, 100)));
-
-    gfx::Insets mouse_insets = gfx::Insets(-ash::kResizeOutsideBoundsSize,
-                                           -ash::kResizeOutsideBoundsSize,
-                                           -ash::kResizeOutsideBoundsSize,
-                                           -ash::kResizeOutsideBoundsSize);
-    gfx::Insets touch_insets =
-        mouse_insets.Scale(ash::kResizeOutsideBoundsScaleForTouch);
-    target_->SetHitTestBoundsOverrideOuter(mouse_insets, touch_insets);
-    target_->set_hit_test_bounds_override_inner(mouse_insets);
-  }
-
-  virtual void TearDown() OVERRIDE {
-    target_.reset();
-    ToplevelWindowEventHandlerTest::TearDown();
-  }
-
-  // Called on each scroll event. Checks if the correct resize shadow is shown.
-  void ProcessEvent(ui::EventType type, const gfx::Vector2dF& delta) {
-    if (type == ui::ET_GESTURE_SCROLL_END) {
-      // After gesture scroll ends, there should be no resize shadow.
-      EXPECT_FALSE(HasResizeShadow());
-    } else {
-      // Check if there is a resize shadow under the correct border.
-      ASSERT_TRUE(HasResizeShadow());
-      EXPECT_EQ(HTBOTTOMRIGHT, ResizeShadowLastHitTest());
-    }
-  }
-
- protected:
-  void SetHittestCode(int hittest_code) {
-    delegate_->set_window_component(hittest_code);
-  }
-
-  aura::Window* target() { return target_.get(); }
-
-  bool HasResizeShadow() const {
-    // There is no shadow if no ResizeShadow object is associated with the
-    // window or there is one but its hit test is set to HTNOWHERE. Since we
-    // don't want to tie tests to that implementation detail, both cases are
-    // considered here.
-    return ResizeShadow() && ResizeShadowLastHitTest() != HTNOWHERE;
-  }
-
-  int ResizeShadowLastHitTest() const {
-    return ResizeShadow()->GetLastHitTestForTest();
-  }
-
- private:
-  internal::ResizeShadow* ResizeShadow() const {
-    return Shell::GetInstance()->resize_shadow_controller()->
-        GetShadowForWindowForTest(target_.get());
-  }
-
-  TestWindowDelegate* delegate_;
-  scoped_ptr<aura::Window> target_;
-
-  DISALLOW_COPY_AND_ASSIGN(ToplevelWindowEventHandlerResizeTest);
-};
-
-// Tests resize shadows for touch resizing.
-TEST_F(ToplevelWindowEventHandlerResizeTest, TouchResizeShadows) {
-  aura::test::EventGenerator generator(Shell::GetPrimaryRootWindow(), target());
-
-  // Drag bottom right border of the window and check for the resize shadows.
-  // Shadows are checked in the callback function.
-  SetHittestCode(HTBOTTOMRIGHT);
-  generator.GestureScrollSequenceWithCallback(
-      gfx::Point(105, 105),
-      gfx::Point(150, 150),
-      base::TimeDelta::FromMilliseconds(100),
-      3,
-      base::Bind(&ToplevelWindowEventHandlerResizeTest::ProcessEvent,
-                 base::Unretained(this)));
-  RunAllPendingInMessageLoop();
-}
-
-// Tests resize shadows for mouse resizing.
-TEST_F(ToplevelWindowEventHandlerResizeTest, MouseResizeShadows) {
-  aura::test::EventGenerator generator(Shell::GetPrimaryRootWindow(), target());
-
-  // There should be no shadow at the beginning.
-  EXPECT_FALSE(HasResizeShadow());
-
-  // Move mouse over the right border. Shadows should appear.
-  SetHittestCode(HTRIGHT);
-  generator.MoveMouseTo(gfx::Point(100, 50));
-  ASSERT_TRUE(HasResizeShadow());
-  EXPECT_EQ(HTRIGHT, ResizeShadowLastHitTest());
-
-  // Move mouse over the bottom right border. Shadows should stay.
-  SetHittestCode(HTBOTTOMRIGHT);
-  generator.MoveMouseTo(100, 100);
-  ASSERT_TRUE(HasResizeShadow());
-  EXPECT_EQ(HTBOTTOMRIGHT, ResizeShadowLastHitTest());
-
-  // Move mouse into the window. Shadows should disappear.
-  SetHittestCode(HTCLIENT);
-  generator.MoveMouseTo(50, 50);
-  EXPECT_FALSE(HasResizeShadow());
-
-  // Move mouse over the bottom order. Shadows should reappear.
-  SetHittestCode(HTBOTTOM);
-  generator.MoveMouseTo(50, 100);
-  ASSERT_TRUE(HasResizeShadow());
-  EXPECT_EQ(HTBOTTOM, ResizeShadowLastHitTest());
-
-  // Move mouse out of the window. Shadows should disappear.
-  generator.MoveMouseTo(150, 150);
-  EXPECT_FALSE(HasResizeShadow());
-
-  RunAllPendingInMessageLoop();
-}
+// Showing the resize shadows when the mouse is over the window edges is tested
+// in resize_shadow_and_cursor_test.cc
 
 }  // namespace test
 }  // namespace ash

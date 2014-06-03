@@ -8,7 +8,7 @@
 #include "base/message_loop/message_loop.h"
 #include "base/strings/utf_string_conversions.h"
 #include "content/public/browser/browser_thread.h"
-#include "content/shell/shell_browser_context.h"
+#include "content/shell/browser/shell_browser_context.h"
 
 namespace content {
 
@@ -49,7 +49,7 @@ void ShellAccessTokenStore::RespondOnOriginatingThread(
 }
 
 void ShellAccessTokenStore::SaveAccessToken(
-    const GURL& server_url, const string16& access_token) {
+    const GURL& server_url, const base::string16& access_token) {
 }
 
 }  // namespace content

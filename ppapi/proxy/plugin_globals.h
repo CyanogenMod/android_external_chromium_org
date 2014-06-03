@@ -9,7 +9,6 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/synchronization/lock.h"
 #include "base/threading/thread_local_storage.h"
 #include "ppapi/proxy/connection.h"
 #include "ppapi/proxy/plugin_resource_tracker.h"
@@ -35,6 +34,7 @@ namespace proxy {
 
 class MessageLoopResource;
 class PluginProxyDelegate;
+class ResourceReplyThreadRegistrar;
 
 class PPAPI_PROXY_EXPORT PluginGlobals : public PpapiGlobals {
  public:
@@ -64,7 +64,6 @@ class PPAPI_PROXY_EXPORT PluginGlobals : public PpapiGlobals {
   virtual PP_Module GetModuleForInstance(PP_Instance instance) OVERRIDE;
   virtual std::string GetCmdLine() OVERRIDE;
   virtual void PreCacheFontForFlash(const void* logfontw) OVERRIDE;
-  virtual base::Lock* GetProxyLock() OVERRIDE;
   virtual void LogWithSource(PP_Instance instance,
                              PP_LogLevel level,
                              const std::string& source,
@@ -74,7 +73,7 @@ class PPAPI_PROXY_EXPORT PluginGlobals : public PpapiGlobals {
                                       const std::string& source,
                                       const std::string& value) OVERRIDE;
   virtual MessageLoopShared* GetCurrentMessageLoop() OVERRIDE;
-  base::TaskRunner* GetFileTaskRunner(PP_Instance instance) OVERRIDE;
+  base::TaskRunner* GetFileTaskRunner() OVERRIDE;
 
   // Returns the channel for sending to the browser.
   IPC::Sender* GetBrowserSender();
@@ -130,6 +129,10 @@ class PPAPI_PROXY_EXPORT PluginGlobals : public PpapiGlobals {
   // The embedder should call this function when the command line is known.
   void set_command_line(const std::string& c) { command_line_ = c; }
 
+  ResourceReplyThreadRegistrar* resource_reply_thread_registrar() {
+    return resource_reply_thread_registrar_.get();
+  }
+
  private:
   class BrowserSender;
 
@@ -142,8 +145,6 @@ class PPAPI_PROXY_EXPORT PluginGlobals : public PpapiGlobals {
   PluginResourceTracker plugin_resource_tracker_;
   PluginVarTracker plugin_var_tracker_;
   scoped_refptr<CallbackTracker> callback_tracker_;
-
-  base::Lock proxy_lock_;
 
   scoped_ptr<base::ThreadLocalStorage::Slot> msg_loop_slot_;
   // Note that loop_for_main_thread's constructor sets msg_loop_slot_, so it
@@ -163,6 +164,8 @@ class PPAPI_PROXY_EXPORT PluginGlobals : public PpapiGlobals {
   // Thread for performing potentially blocking file operations. It's created
   // lazily, since it might not be needed.
   scoped_ptr<base::Thread> file_thread_;
+
+  scoped_refptr<ResourceReplyThreadRegistrar> resource_reply_thread_registrar_;
 
   DISALLOW_COPY_AND_ASSIGN(PluginGlobals);
 };

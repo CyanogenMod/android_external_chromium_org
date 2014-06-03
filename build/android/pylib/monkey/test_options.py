@@ -7,10 +7,8 @@
 import collections
 
 MonkeyOptions = collections.namedtuple('MonkeyOptions', [
-    'build_type',
     'verbose_count',
-    'package_name',
-    'activity_name',
+    'package',
     'event_count',
     'category',
     'throttle',

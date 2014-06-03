@@ -2,7 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import logging
 import posixpath
 import traceback
 import xml.dom.minidom as xml
@@ -10,10 +9,11 @@ from xml.parsers.expat import ExpatError
 
 from appengine_url_fetcher import AppEngineUrlFetcher
 from docs_server_utils import StringIdentity
-from file_system import FileSystem, FileNotFoundError, StatInfo, ToUnicode
+from file_system import (
+    FileNotFoundError, FileSystem, FileSystemError, StatInfo)
 from future import Future
-import svn_constants
 import url_constants
+
 
 def _ParseHTML(html):
   '''Unfortunately, the viewvc page has a stray </div> tag, so this takes care
@@ -64,15 +64,15 @@ def _CreateStatInfo(html):
       if len(cells) == 2 and _InnerText(cells[0]) == 'Directory revision:':
         links = cells[1].getElementsByTagName('a')
         if len(links) != 2:
-          raise ValueError('ViewVC assumption invalid: directory revision ' +
-                           'content did not have 2 <a> elements, instead %s' %
-                           _InnerText(cells[1]))
+          raise FileSystemError('ViewVC assumption invalid: directory ' +
+                                'revision content did not have 2 <a> ' +
+                                ' elements, instead %s' % _InnerText(cells[1]))
         this_parent_version = _InnerText(links[0])
         int(this_parent_version)  # sanity check
         if parent_version is not None:
-          raise ValueError('There was already a parent version %s, and we ' +
-                           'just found a second at %s' % (parent_version,
-                                                          this_parent_version))
+          raise FileSystemError('There was already a parent version %s, and ' +
+                                ' we just found a second at %s' %
+                                (parent_version, this_parent_version))
         parent_version = this_parent_version
 
       # The version of each file is a list of rows with 5 cells: name, version,
@@ -95,7 +95,7 @@ def _CreateStatInfo(html):
   return StatInfo(parent_version, child_versions)
 
 class _AsyncFetchFuture(object):
-  def __init__(self, paths, fetcher, binary, args=None):
+  def __init__(self, paths, fetcher, args=None):
     def apply_args(path):
       return path if args is None else '%s?%s' % (path, args)
     # A list of tuples of the form (path, Future).
@@ -103,7 +103,6 @@ class _AsyncFetchFuture(object):
                      for path in paths]
     self._value = {}
     self._error = None
-    self._binary = binary
 
   def _ListDir(self, directory):
     dom = xml.parseString(directory)
@@ -117,14 +116,18 @@ class _AsyncFetchFuture(object):
       try:
         result = future.Get()
       except Exception as e:
-        raise FileNotFoundError(
-            '%s fetching %s for Get: %s' % (e.__class__.__name__, path, e))
+        raise FileSystemError('Error fetching %s for Get: %s' %
+            (path, traceback.format_exc()))
+
       if result.status_code == 404:
-        raise FileNotFoundError('Got 404 when fetching %s for Get' % path)
-      elif path.endswith('/'):
+        raise FileNotFoundError('Got 404 when fetching %s for Get, content %s' %
+            (path, result.content))
+      if result.status_code != 200:
+        raise FileSystemError('Got %s when fetching %s for Get, content %s' %
+            (result.status_code, path, result.content))
+
+      if path.endswith('/'):
         self._value[path] = self._ListDir(result.content)
-      elif not self._binary:
-        self._value[path] = ToUnicode(result.content)
       else:
         self._value[path] = result.content
     if self._error is not None:
@@ -137,9 +140,9 @@ class SubversionFileSystem(FileSystem):
   @staticmethod
   def Create(branch='trunk', revision=None):
     if branch == 'trunk':
-      svn_path = 'trunk/src/%s' % svn_constants.EXTENSIONS_PATH
+      svn_path = 'trunk/src'
     else:
-      svn_path = 'branches/%s/src/%s' % (branch, svn_constants.EXTENSIONS_PATH)
+      svn_path = 'branches/%s/src' % branch
     return SubversionFileSystem(
         AppEngineUrlFetcher('%s/%s' % (url_constants.SVN_URL, svn_path)),
         AppEngineUrlFetcher('%s/%s' % (url_constants.VIEWVC_URL, svn_path)),
@@ -152,19 +155,20 @@ class SubversionFileSystem(FileSystem):
     self._svn_path = svn_path
     self._revision = revision
 
-  def Read(self, paths, binary=False):
+  def Read(self, paths):
     args = None
     if self._revision is not None:
       # |fetcher| gets from svn.chromium.org which uses p= for version.
       args = 'p=%s' % self._revision
     return Future(delegate=_AsyncFetchFuture(paths,
                                              self._file_fetcher,
-                                             binary,
                                              args=args))
+
+  def Refresh(self):
+    return Future(value=())
 
   def Stat(self, path):
     directory, filename = posixpath.split(path)
-    directory += '/'
     if self._revision is not None:
       # |stat_fetch| uses viewvc which uses pathrev= for version.
       directory += '?pathrev=%s' % self._revision
@@ -172,20 +176,20 @@ class SubversionFileSystem(FileSystem):
     try:
       result = self._stat_fetcher.Fetch(directory)
     except Exception as e:
-      # Convert all errors (typically some sort of DeadlineExceededError but
-      # explicitly catching that seems not to work) to a FileNotFoundError to
-      # reduce the exception-catching surface area of this class.
-      raise FileNotFoundError(
-          '%s fetching %s for Stat: %s' % (e.__class__.__name__, path, e))
+      raise FileSystemError('Error fetching %s for Stat: %s' %
+          (path, traceback.format_exc()))
 
+    if result.status_code == 404:
+      raise FileNotFoundError('Got 404 when fetching %s for Stat, content %s' %
+          (path, result.content))
     if result.status_code != 200:
-      raise FileNotFoundError('Got %s when fetching %s for Stat' % (
-          result.status_code, path))
+      raise FileNotFoundError('Got %s when fetching %s for Stat, content %s' %
+          (result.status_code, path, result.content))
 
     stat_info = _CreateStatInfo(result.content)
     if stat_info.version is None:
-      raise ValueError('Failed to find version of dir %s' % directory)
-    if path.endswith('/'):
+      raise FileSystemError('Failed to find version of dir %s' % directory)
+    if path == '' or path.endswith('/'):
       return stat_info
     if filename not in stat_info.child_versions:
       raise FileNotFoundError(

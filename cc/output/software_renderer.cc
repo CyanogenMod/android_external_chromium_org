@@ -11,6 +11,7 @@
 #include "cc/output/compositor_frame_metadata.h"
 #include "cc/output/copy_output_request.h"
 #include "cc/output/output_surface.h"
+#include "cc/output/render_surface_filters.h"
 #include "cc/output/software_output_device.h"
 #include "cc/quads/checkerboard_draw_quad.h"
 #include "cc/quads/debug_border_draw_quad.h"
@@ -22,7 +23,7 @@
 #include "skia/ext/opacity_draw_filter.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkColor.h"
-#include "third_party/skia/include/core/SkDevice.h"
+#include "third_party/skia/include/core/SkImageFilter.h"
 #include "third_party/skia/include/core/SkMatrix.h"
 #include "third_party/skia/include/core/SkShader.h"
 #include "third_party/skia/include/effects/SkLayerRasterizer.h"
@@ -48,41 +49,54 @@ bool IsScaleAndIntegerTranslate(const SkMatrix& matrix) {
          SkScalarNearlyZero(matrix[SkMatrix::kMPersp2] - 1.0f);
 }
 
+static SkShader::TileMode WrapModeToTileMode(GLint wrap_mode) {
+  switch (wrap_mode) {
+    case GL_REPEAT:
+      return SkShader::kRepeat_TileMode;
+    case GL_CLAMP_TO_EDGE:
+      return SkShader::kClamp_TileMode;
+  }
+  NOTREACHED();
+  return SkShader::kClamp_TileMode;
+}
+
 }  // anonymous namespace
 
 scoped_ptr<SoftwareRenderer> SoftwareRenderer::Create(
     RendererClient* client,
+    const LayerTreeSettings* settings,
     OutputSurface* output_surface,
     ResourceProvider* resource_provider) {
-  return make_scoped_ptr(
-      new SoftwareRenderer(client, output_surface, resource_provider));
+  return make_scoped_ptr(new SoftwareRenderer(
+      client, settings, output_surface, resource_provider));
 }
 
 SoftwareRenderer::SoftwareRenderer(RendererClient* client,
+                                   const LayerTreeSettings* settings,
                                    OutputSurface* output_surface,
                                    ResourceProvider* resource_provider)
-  : DirectRenderer(client, output_surface, resource_provider),
-    visible_(true),
-    is_scissor_enabled_(false),
-    output_device_(output_surface->software_device()),
-    current_canvas_(NULL) {
+    : DirectRenderer(client, settings, output_surface, resource_provider),
+      visible_(true),
+      is_scissor_enabled_(false),
+      is_backbuffer_discarded_(false),
+      output_device_(output_surface->software_device()),
+      current_canvas_(NULL) {
   if (resource_provider_) {
     capabilities_.max_texture_size = resource_provider_->max_texture_size();
     capabilities_.best_texture_format =
         resource_provider_->best_texture_format();
   }
-  capabilities_.using_set_visibility = true;
   // The updater can access bitmaps while the SoftwareRenderer is using them.
   capabilities_.allow_partial_texture_updates = true;
   capabilities_.using_partial_swap = true;
 
-  capabilities_.using_map_image = Settings().use_map_image;
+  capabilities_.using_map_image = settings_->use_map_image;
   capabilities_.using_shared_memory_resources = true;
 }
 
 SoftwareRenderer::~SoftwareRenderer() {}
 
-const RendererCapabilities& SoftwareRenderer::Capabilities() const {
+const RendererCapabilitiesImpl& SoftwareRenderer::Capabilities() const {
   return capabilities_;
 }
 
@@ -102,9 +116,9 @@ void SoftwareRenderer::FinishDrawingFrame(DrawingFrame* frame) {
   output_device_->EndPaint(current_frame_data_.get());
 }
 
-void SoftwareRenderer::SwapBuffers() {
+void SoftwareRenderer::SwapBuffers(const CompositorFrameMetadata& metadata) {
   CompositorFrame compositor_frame;
-  compositor_frame.metadata = client_->MakeCompositorFrameMetadata();
+  compositor_frame.metadata = metadata;
   compositor_frame.software_frame_data = current_frame_data_.Pass();
   output_surface_->SwapBuffers(&compositor_frame);
 }
@@ -128,14 +142,14 @@ void SoftwareRenderer::EnsureScissorTestDisabled() {
   // clipRect on the current SkCanvas. This is done by setting clipRect to
   // the viewport's dimensions.
   is_scissor_enabled_ = false;
-  SkDevice* device = current_canvas_->getDevice();
+  SkBaseDevice* device = current_canvas_->getDevice();
   SetClipRect(gfx::Rect(device->width(), device->height()));
 }
 
 void SoftwareRenderer::Finish() {}
 
 void SoftwareRenderer::BindFramebufferToOutputSurface(DrawingFrame* frame) {
-  DCHECK(!client_->ExternalStencilTestEnabled());
+  DCHECK(!output_surface_->HasExternalStencilTest());
   current_framebuffer_lock_.reset();
   current_canvas_ = root_canvas_;
 }
@@ -179,7 +193,11 @@ void SoftwareRenderer::ClearCanvas(SkColor color) {
     current_canvas_->clear(color);
 }
 
-void SoftwareRenderer::ClearFramebuffer(DrawingFrame* frame) {
+void SoftwareRenderer::DiscardPixels(bool has_external_stencil_test,
+                                     bool draw_rect_covers_full_surface) {}
+
+void SoftwareRenderer::ClearFramebuffer(DrawingFrame* frame,
+                                        bool has_external_stencil_test) {
   if (frame->current_render_pass->has_transparent_background) {
     ClearCanvas(SkColorSetARGB(0, 0, 0, 0));
   } else {
@@ -228,8 +246,7 @@ void SoftwareRenderer::DoDrawQuad(DrawingFrame* frame, const DrawQuad* quad) {
                                        quad->IsLeftEdge() &&
                                        quad->IsBottomEdge() &&
                                        quad->IsRightEdge();
-    if (Settings().allow_antialiasing &&
-        all_four_edges_are_exterior)
+    if (settings_->allow_antialiasing && all_four_edges_are_exterior)
       current_paint_.setAntiAlias(true);
     current_paint_.setFilterBitmap(true);
   }
@@ -277,9 +294,11 @@ void SoftwareRenderer::DoDrawQuad(DrawingFrame* frame, const DrawQuad* quad) {
 
 void SoftwareRenderer::DrawCheckerboardQuad(const DrawingFrame* frame,
                                             const CheckerboardDrawQuad* quad) {
+  gfx::RectF visible_quad_vertex_rect = MathUtil::ScaleRectProportional(
+      QuadVertexRect(), quad->rect, quad->visible_rect);
   current_paint_.setColor(quad->color);
   current_paint_.setAlpha(quad->opacity() * SkColorGetA(quad->color));
-  current_canvas_->drawRect(gfx::RectFToSkRect(QuadVertexRect()),
+  current_canvas_->drawRect(gfx::RectFToSkRect(visible_quad_vertex_rect),
                             current_paint_);
 }
 
@@ -330,9 +349,11 @@ void SoftwareRenderer::DrawPictureQuad(const DrawingFrame* frame,
 
 void SoftwareRenderer::DrawSolidColorQuad(const DrawingFrame* frame,
                                           const SolidColorDrawQuad* quad) {
+  gfx::RectF visible_quad_vertex_rect = MathUtil::ScaleRectProportional(
+      QuadVertexRect(), quad->rect, quad->visible_rect);
   current_paint_.setColor(quad->color);
   current_paint_.setAlpha(quad->opacity() * SkColorGetA(quad->color));
-  current_canvas_->drawRect(gfx::RectFToSkRect(QuadVertexRect()),
+  current_canvas_->drawRect(gfx::RectFToSkRect(visible_quad_vertex_rect),
                             current_paint_);
 }
 
@@ -351,8 +372,12 @@ void SoftwareRenderer::DrawTextureQuad(const DrawingFrame* frame,
                                                         quad->uv_bottom_right),
                                       bitmap->width(),
                                       bitmap->height());
-  SkRect sk_uv_rect = gfx::RectFToSkRect(uv_rect);
-  SkRect quad_rect = gfx::RectFToSkRect(QuadVertexRect());
+  gfx::RectF visible_uv_rect =
+      MathUtil::ScaleRectProportional(uv_rect, quad->rect, quad->visible_rect);
+  SkRect sk_uv_rect = gfx::RectFToSkRect(visible_uv_rect);
+  gfx::RectF visible_quad_vertex_rect = MathUtil::ScaleRectProportional(
+      QuadVertexRect(), quad->rect, quad->visible_rect);
+  SkRect quad_rect = gfx::RectFToSkRect(visible_quad_vertex_rect);
 
   if (quad->flipped)
     current_canvas_->scale(1, -1);
@@ -369,11 +394,23 @@ void SoftwareRenderer::DrawTextureQuad(const DrawingFrame* frame,
     background_paint.setColor(quad->background_color);
     current_canvas_->drawRect(quad_rect, background_paint);
   }
-
-  current_canvas_->drawBitmapRectToRect(*bitmap,
-                                        &sk_uv_rect,
-                                        quad_rect,
-                                        &current_paint_);
+  SkShader::TileMode tile_mode = WrapModeToTileMode(lock.wrap_mode());
+  if (tile_mode != SkShader::kClamp_TileMode) {
+    SkMatrix matrix;
+    matrix.setRectToRect(sk_uv_rect, quad_rect, SkMatrix::kFill_ScaleToFit);
+    skia::RefPtr<SkShader> shader = skia::AdoptRef(
+        SkShader::CreateBitmapShader(*bitmap, tile_mode, tile_mode));
+    shader->setLocalMatrix(matrix);
+    SkPaint paint;
+    paint.setStyle(SkPaint::kFill_Style);
+    paint.setShader(shader.get());
+    current_canvas_->drawRect(quad_rect, paint);
+  } else {
+    current_canvas_->drawBitmapRectToRect(*bitmap,
+                                          &sk_uv_rect,
+                                          quad_rect,
+                                          &current_paint_);
+  }
 
   if (needs_layer)
     current_canvas_->restore();
@@ -383,19 +420,28 @@ void SoftwareRenderer::DrawTileQuad(const DrawingFrame* frame,
                                     const TileDrawQuad* quad) {
   DCHECK(!output_surface_->ForcedDrawToSoftwareDevice());
   DCHECK(IsSoftwareResource(quad->resource_id));
+
   ResourceProvider::ScopedReadLockSoftware lock(resource_provider_,
                                                 quad->resource_id);
+  DCHECK_EQ(GL_CLAMP_TO_EDGE, lock.wrap_mode());
 
-  SkRect uv_rect = gfx::RectFToSkRect(quad->tex_coord_rect);
+  gfx::RectF visible_tex_coord_rect = MathUtil::ScaleRectProportional(
+      quad->tex_coord_rect, quad->rect, quad->visible_rect);
+  gfx::RectF visible_quad_vertex_rect = MathUtil::ScaleRectProportional(
+      QuadVertexRect(), quad->rect, quad->visible_rect);
+
+  SkRect uv_rect = gfx::RectFToSkRect(visible_tex_coord_rect);
   current_paint_.setFilterBitmap(true);
-  current_canvas_->drawBitmapRectToRect(*lock.sk_bitmap(), &uv_rect,
-                                        gfx::RectFToSkRect(QuadVertexRect()),
-                                        &current_paint_);
+  current_canvas_->drawBitmapRectToRect(
+      *lock.sk_bitmap(),
+      &uv_rect,
+      gfx::RectFToSkRect(visible_quad_vertex_rect),
+      &current_paint_);
 }
 
 void SoftwareRenderer::DrawRenderPassQuad(const DrawingFrame* frame,
                                           const RenderPassDrawQuad* quad) {
-  CachedResource* content_texture =
+  ScopedResource* content_texture =
       render_pass_textures_.get(quad->render_pass_id);
   if (!content_texture || !content_texture->id())
     return;
@@ -403,8 +449,11 @@ void SoftwareRenderer::DrawRenderPassQuad(const DrawingFrame* frame,
   DCHECK(IsSoftwareResource(content_texture->id()));
   ResourceProvider::ScopedReadLockSoftware lock(resource_provider_,
                                                 content_texture->id());
+  SkShader::TileMode content_tile_mode = WrapModeToTileMode(lock.wrap_mode());
 
   SkRect dest_rect = gfx::RectFToSkRect(QuadVertexRect());
+  SkRect dest_visible_rect = gfx::RectFToSkRect(MathUtil::ScaleRectProportional(
+      QuadVertexRect(), quad->rect, quad->visible_rect));
   SkRect content_rect = SkRect::MakeWH(quad->rect.width(), quad->rect.height());
 
   SkMatrix content_mat;
@@ -412,20 +461,51 @@ void SoftwareRenderer::DrawRenderPassQuad(const DrawingFrame* frame,
                             SkMatrix::kFill_ScaleToFit);
 
   const SkBitmap* content = lock.sk_bitmap();
-  skia::RefPtr<SkShader> shader = skia::AdoptRef(
-      SkShader::CreateBitmapShader(*content,
-                                   SkShader::kClamp_TileMode,
-                                   SkShader::kClamp_TileMode));
+
+  SkBitmap filter_bitmap;
+  if (!quad->filters.IsEmpty()) {
+    skia::RefPtr<SkImageFilter> filter = RenderSurfaceFilters::BuildImageFilter(
+        quad->filters, content_texture->size());
+    // TODO(ajuma): In addition origin translation, the canvas should also be
+    // scaled to accomodate device pixel ratio and pinch zoom. See
+    // crbug.com/281516 and crbug.com/281518.
+    // TODO(ajuma): Apply the filter in the same pass as the content where
+    // possible (e.g. when there's no origin offset). See crbug.com/308201.
+    if (filter) {
+      bool is_opaque = false;
+      skia::RefPtr<SkBaseDevice> device =
+          skia::AdoptRef(new SkBitmapDevice(SkBitmap::kARGB_8888_Config,
+                                            content_texture->size().width(),
+                                            content_texture->size().height(),
+                                            is_opaque));
+      SkCanvas canvas(device.get());
+      SkPaint paint;
+      paint.setImageFilter(filter.get());
+      canvas.clear(SK_ColorTRANSPARENT);
+      canvas.translate(SkIntToScalar(-quad->rect.origin().x()),
+                       SkIntToScalar(-quad->rect.origin().y()));
+      canvas.drawSprite(*content, 0, 0, &paint);
+      bool will_change_pixels = false;
+      filter_bitmap = device->accessBitmap(will_change_pixels);
+    }
+  }
+
+  skia::RefPtr<SkShader> shader;
+  if (filter_bitmap.isNull()) {
+    shader = skia::AdoptRef(SkShader::CreateBitmapShader(
+        *content, content_tile_mode, content_tile_mode));
+  } else {
+    shader = skia::AdoptRef(SkShader::CreateBitmapShader(
+        filter_bitmap, content_tile_mode, content_tile_mode));
+  }
   shader->setLocalMatrix(content_mat);
   current_paint_.setShader(shader.get());
-
-  SkImageFilter* filter = quad->filter.get();
-  if (filter)
-    current_paint_.setImageFilter(filter);
 
   if (quad->mask_resource_id) {
     ResourceProvider::ScopedReadLockSoftware mask_lock(resource_provider_,
                                                        quad->mask_resource_id);
+    SkShader::TileMode mask_tile_mode = WrapModeToTileMode(
+        mask_lock.wrap_mode());
 
     const SkBitmap* mask = mask_lock.sk_bitmap();
 
@@ -439,9 +519,7 @@ void SoftwareRenderer::DrawRenderPassQuad(const DrawingFrame* frame,
     mask_mat.setRectToRect(mask_rect, dest_rect, SkMatrix::kFill_ScaleToFit);
 
     skia::RefPtr<SkShader> mask_shader = skia::AdoptRef(
-        SkShader::CreateBitmapShader(*mask,
-                                     SkShader::kClamp_TileMode,
-                                     SkShader::kClamp_TileMode));
+        SkShader::CreateBitmapShader(*mask, mask_tile_mode, mask_tile_mode));
     mask_shader->setLocalMatrix(mask_mat);
 
     SkPaint mask_paint;
@@ -452,10 +530,10 @@ void SoftwareRenderer::DrawRenderPassQuad(const DrawingFrame* frame,
     mask_rasterizer->addLayer(mask_paint);
 
     current_paint_.setRasterizer(mask_rasterizer.get());
-    current_canvas_->drawRect(dest_rect, current_paint_);
+    current_canvas_->drawRect(dest_visible_rect, current_paint_);
   } else {
     // TODO(skaslev): Apply background filters and blend with content
-    current_canvas_->drawRect(dest_rect, current_paint_);
+    current_canvas_->drawRect(dest_visible_rect, current_paint_);
   }
 }
 
@@ -475,11 +553,8 @@ void SoftwareRenderer::CopyCurrentRenderPassToBitmap(
     DrawingFrame* frame,
     scoped_ptr<CopyOutputRequest> request) {
   gfx::Rect copy_rect = frame->current_render_pass->output_rect;
-  if (request->has_area()) {
-    // Intersect with the request's area, positioned with its origin at the
-    // origin of the full copy_rect.
-    copy_rect.Intersect(request->area() - copy_rect.OffsetFromOrigin());
-  }
+  if (request->has_area())
+    copy_rect.Intersect(request->area());
   gfx::Rect window_copy_rect = MoveFromDrawToWindowSpace(copy_rect);
 
   scoped_ptr<SkBitmap> bitmap(new SkBitmap);
@@ -490,6 +565,26 @@ void SoftwareRenderer::CopyCurrentRenderPassToBitmap(
       bitmap.get(), window_copy_rect.x(), window_copy_rect.y());
 
   request->SendBitmapResult(bitmap.Pass());
+}
+
+void SoftwareRenderer::DiscardBackbuffer() {
+  if (is_backbuffer_discarded_)
+    return;
+
+  output_surface_->DiscardBackbuffer();
+
+  is_backbuffer_discarded_ = true;
+
+  // Damage tracker needs a full reset every time framebuffer is discarded.
+  client_->SetFullRootLayerDamage();
+}
+
+void SoftwareRenderer::EnsureBackbuffer() {
+  if (!is_backbuffer_discarded_)
+    return;
+
+  output_surface_->EnsureBackbuffer();
+  is_backbuffer_discarded_ = false;
 }
 
 void SoftwareRenderer::GetFramebufferPixels(void* pixels, gfx::Rect rect) {
@@ -506,12 +601,11 @@ void SoftwareRenderer::SetVisible(bool visible) {
   if (visible_ == visible)
     return;
   visible_ = visible;
-}
 
-void SoftwareRenderer::SetDiscardBackBufferWhenNotVisible(bool discard) {
-  // TODO(piman, skaslev): Can we release the backbuffer? We don't currently
-  // receive memory policy yet anyway.
-  NOTIMPLEMENTED();
+  if (visible_)
+    EnsureBackbuffer();
+  else
+    DiscardBackbuffer();
 }
 
 }  // namespace cc

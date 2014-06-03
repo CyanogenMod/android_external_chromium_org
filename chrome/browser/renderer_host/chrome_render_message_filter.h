@@ -21,8 +21,11 @@ struct ExtensionHostMsg_APIActionOrEvent_Params;
 struct ExtensionHostMsg_DOMAction_Params;
 struct ExtensionHostMsg_Request_Params;
 struct ExtensionMsg_ExternalConnectionInfo;
-class ExtensionInfoMap;
 class GURL;
+
+namespace extensions {
+class InfoMap;
+}
 
 namespace net {
 class HostResolver;
@@ -82,19 +85,22 @@ class ChromeRenderMessageFilter : public content::BrowserMessageFilter {
 
   void OnDnsPrefetch(const std::vector<std::string>& hostnames);
   void OnPreconnect(const GURL& url);
-  void OnResourceTypeStats(const WebKit::WebCache::ResourceTypeStats& stats);
-  void OnUpdatedCacheStats(const WebKit::WebCache::UsageStats& stats);
+  void OnResourceTypeStats(const blink::WebCache::ResourceTypeStats& stats);
+  void OnUpdatedCacheStats(const blink::WebCache::UsageStats& stats);
   void OnFPS(int routing_id, float fps);
   void OnV8HeapStats(int v8_memory_allocated, int v8_memory_used);
   void OnOpenChannelToExtension(int routing_id,
                                 const ExtensionMsg_ExternalConnectionInfo& info,
-                                const std::string& channel_name, int* port_id);
+                                const std::string& channel_name,
+                                bool include_tls_channel_id,
+                                int* port_id);
   void OpenChannelToExtensionOnUIThread(
       int source_process_id,
       int source_routing_id,
       int receiver_port_id,
       const ExtensionMsg_ExternalConnectionInfo& info,
-      const std::string& channel_name);
+      const std::string& channel_name,
+      bool include_tls_channel_id);
   void OnOpenChannelToNativeApp(int routing_id,
                                 const std::string& source_extension_id,
                                 const std::string& native_app_name,
@@ -157,8 +163,8 @@ class ChromeRenderMessageFilter : public content::BrowserMessageFilter {
   void OnAllowDatabase(int render_view_id,
                        const GURL& origin_url,
                        const GURL& top_origin_url,
-                       const string16& name,
-                       const string16& display_name,
+                       const base::string16& name,
+                       const base::string16& display_name,
                        bool* allowed);
   void OnAllowDOMStorage(int render_view_id,
                          const GURL& origin_url,
@@ -172,17 +178,11 @@ class ChromeRenderMessageFilter : public content::BrowserMessageFilter {
   void OnAllowIndexedDB(int render_view_id,
                         const GURL& origin_url,
                         const GURL& top_origin_url,
-                        const string16& name,
+                        const base::string16& name,
                         bool* allowed);
   void OnCanTriggerClipboardRead(const GURL& origin, bool* allowed);
   void OnCanTriggerClipboardWrite(const GURL& origin, bool* allowed);
-  void OnGetCookies(const GURL& url,
-                    const GURL& first_party_for_cookies,
-                    IPC::Message* reply_msg);
-  void OnSetCookie(const IPC::Message& message,
-                   const GURL& url,
-                   const GURL& first_party_for_cookies,
-                   const std::string& cookie);
+  void OnIsWebGLDebugRendererInfoAllowed(const GURL& origin, bool* allowed);
 
   int render_process_id_;
 
@@ -191,8 +191,11 @@ class ChromeRenderMessageFilter : public content::BrowserMessageFilter {
   Profile* profile_;
   // Copied from the profile so that it can be read on the IO thread.
   bool off_the_record_;
+  // The Predictor for the associated Profile. It is stored so that it can be
+  // used on the IO thread.
+  chrome_browser_net::Predictor* predictor_;
   scoped_refptr<net::URLRequestContextGetter> request_context_;
-  scoped_refptr<ExtensionInfoMap> extension_info_map_;
+  scoped_refptr<extensions::InfoMap> extension_info_map_;
   // Used to look up permissions at database creation time.
   scoped_refptr<CookieSettings> cookie_settings_;
 

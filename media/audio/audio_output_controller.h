@@ -9,6 +9,7 @@
 #include "base/callback.h"
 #include "base/cancelable_callback.h"
 #include "base/memory/ref_counted.h"
+#include "base/timer/timer.h"
 #include "media/audio/audio_io.h"
 #include "media/audio/audio_manager.h"
 #include "media/audio/audio_power_monitor.h"
@@ -52,6 +53,11 @@
 
 namespace media {
 
+// Only do power monitoring for non-mobile platforms that need it for the UI.
+#if !defined(OS_ANDROID) && !defined(OS_IOS)
+#define AUDIO_POWER_MONITORING
+#endif
+
 class MEDIA_EXPORT AudioOutputController
     : public base::RefCountedThreadSafe<AudioOutputController>,
       public AudioOutputStream::AudioSourceCallback,
@@ -86,11 +92,10 @@ class MEDIA_EXPORT AudioOutputController
     // prepare more data and perform synchronization.
     virtual void UpdatePendingBytes(uint32 bytes) = 0;
 
-    // Attempt to completely fill |dest|, return the actual number of frames
-    // that could be read.  |source| may optionally be provided for input data.
-    // If |block| is specified, the Read() will block until data is available
-    // or a timeout is reached.
-    virtual int Read(bool block, const AudioBus* source, AudioBus* dest) = 0;
+    // Attempts to completely fill |dest|, zeroing |dest| if the request can not
+    // be fulfilled (due to timeout).  |source| may optionally be provided for
+    // input data.
+    virtual void Read(const AudioBus* source, AudioBus* dest) = 0;
 
     // Close this synchronous reader.
     virtual void Close() = 0;
@@ -101,10 +106,14 @@ class MEDIA_EXPORT AudioOutputController
   // thread, and if this is successful, the |event_handler| will receive an
   // OnCreated() call from the same audio manager thread.  |audio_manager| must
   // outlive AudioOutputController.
+  // The |output_device_id| can be either empty (default device) or specify a
+  // specific hardware device for audio output.  The |input_device_id| is
+  // used only for unified audio when opening up input and output at the same
+  // time (controlled by |params.input_channel_count()|).
   static scoped_refptr<AudioOutputController> Create(
       AudioManager* audio_manager, EventHandler* event_handler,
-      const AudioParameters& params, const std::string& input_device_id,
-      SyncReader* sync_reader);
+      const AudioParameters& params, const std::string& output_device_id,
+      const std::string& input_device_id, SyncReader* sync_reader);
 
   // Methods to control playback of the stream.
 
@@ -125,6 +134,23 @@ class MEDIA_EXPORT AudioOutputController
 
   // Sets the volume of the audio output stream.
   void SetVolume(double volume);
+
+  // Calls |callback| (on the caller's thread) with the current output
+  // device ID.
+  void GetOutputDeviceId(
+      base::Callback<void(const std::string&)> callback) const;
+
+  // Changes which output device to use. If desired, you can provide a
+  // callback that will be notified (on the thread you called from)
+  // when the function has completed execution.
+  //
+  // Changing the output device causes the controller to go through
+  // the same state transition back to the current state as a call to
+  // OnDeviceChange (unless it is currently diverting, see
+  // Start/StopDiverting below, in which case the state transition
+  // will happen when StopDiverting is called).
+  void SwitchOutputDevice(const std::string& output_device_id,
+                          const base::Closure& callback);
 
   // AudioSourceCallback implementation.
   virtual int OnMoreData(AudioBus* dest,
@@ -166,6 +192,7 @@ class MEDIA_EXPORT AudioOutputController
 
   AudioOutputController(AudioManager* audio_manager, EventHandler* handler,
                         const AudioParameters& params,
+                        const std::string& output_device_id,
                         const std::string& input_device_id,
                         SyncReader* sync_reader);
 
@@ -175,6 +202,8 @@ class MEDIA_EXPORT AudioOutputController
   void DoPause();
   void DoClose();
   void DoSetVolume(double volume);
+  std::string DoGetOutputDeviceId() const;
+  void DoSwitchOutputDevice(const std::string& output_device_id);
   void DoReportError();
   void DoStartDiverting(AudioOutputStream* to_stream);
   void DoStopDiverting();
@@ -194,12 +223,19 @@ class MEDIA_EXPORT AudioOutputController
   void AllowEntryToOnMoreIOData();
   void DisallowEntryToOnMoreIOData();
 
+  // Checks if a stream was started successfully but never calls OnMoreIOData().
+  void WedgeCheck();
+
   AudioManager* const audio_manager_;
   const AudioParameters params_;
   EventHandler* const handler_;
 
+  // Specifies the device id of the output device to open or empty for the
+  // default output device.
+  std::string output_device_id_;
+
   // Used by the unified IO to open the correct input device.
-  std::string input_device_id_;
+  const std::string input_device_id_;
 
   AudioOutputStream* stream_;
 
@@ -227,15 +263,17 @@ class MEDIA_EXPORT AudioOutputController
   // The message loop of audio manager thread that this object runs on.
   const scoped_refptr<base::MessageLoopProxy> message_loop_;
 
-  // When starting stream we wait for data to become available.
-  // Number of times left.
-  int number_polling_attempts_left_;
-
+#if defined(AUDIO_POWER_MONITORING)
   // Scans audio samples from OnMoreIOData() as input to compute power levels.
   AudioPowerMonitor power_monitor_;
 
   // Periodic callback to report power levels during playback.
   base::CancelableClosure power_poll_callback_;
+#endif
+
+  // Flags when we've asked for a stream to start but it never did.
+  base::AtomicRefCount on_more_io_data_called_;
+  scoped_ptr<base::OneShotTimer<AudioOutputController> > wedge_timer_;
 
   DISALLOW_COPY_AND_ASSIGN(AudioOutputController);
 };

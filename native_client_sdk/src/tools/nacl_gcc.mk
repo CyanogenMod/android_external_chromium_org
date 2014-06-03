@@ -7,20 +7,11 @@
 #   http://www.gnu.org/software/make/manual/make.html
 #
 
-
-#
-# Default library paths
-#
-LD_X86_32 := -L$(NACL_SDK_ROOT)/lib/$(TOOLCHAIN)_x86_32/$(CONFIG)
-LD_X86_64 := -L$(NACL_SDK_ROOT)/lib/$(TOOLCHAIN)_x86_64/$(CONFIG)
-LD_ARM := -L$(NACL_SDK_ROOT)/lib/$(TOOLCHAIN)_arm/$(CONFIG)
-
-
 #
 # Macros for TOOLS
 #
 # We always link with the C++ compiler but include -Wl,-as-needed flag
-# in LD_FLAGS so the linker should drop libc++ unless it's actually needed.
+# in LDFLAGS so the linker should drop libc++ unless it's actually needed.
 #
 X86_TC_BIN ?= $(TC_PATH)/$(OSNAME)_x86_$(TOOLCHAIN)/bin
 ARM_TC_BIN ?= $(TC_PATH)/$(OSNAME)_arm_$(TOOLCHAIN)/bin
@@ -46,6 +37,8 @@ ARM_LIB ?= $(ARM_TC_BIN)/arm-nacl-ar
 ARM_STRIP ?= $(ARM_TC_BIN)/arm-nacl-strip
 ARM_NM ?= $(ARM_TC_BIN)/arm-nacl-nm
 
+NCVAL ?= python $(NACL_SDK_ROOT)/tools/ncval.py
+
 # Architecture-specific flags
 X86_32_CFLAGS ?=
 X86_64_CFLAGS ?=
@@ -58,6 +51,8 @@ ARM_CXXFLAGS ?=
 X86_32_LDFLAGS ?= -Wl,-Map,$(OUTDIR)/$(TARGET)_x86_32.map
 X86_64_LDFLAGS ?= -Wl,-Map,$(OUTDIR)/$(TARGET)_x86_64.map
 ARM_LDFLAGS ?= -Wl,-Map,$(OUTDIR)/$(TARGET)_arm.map
+
+LDFLAGS_SHARED = -shared
 
 #
 # Compile Macro
@@ -176,20 +171,22 @@ GLIBC_REMAP :=
 # $2 = List of Sources
 # $3 = List of LIBS
 # $4 = List of DEPS
-# $5 = 1 => Don't add to NMF.
+# $5 = Library Paths
+# $6 = 1 => Don't add to NMF.
 #
-define SO_RULE
+define SO_LINKER_RULE
 ifneq (,$(findstring x86_32,$(ARCHES)))
 all: $(OUTDIR)/lib$(1)_x86_32.so
-$(OUTDIR)/lib$(1)_x86_32.so: $(foreach src,$(2),$(call SRC_TO_OBJ,$(src),_x86_32_pic)) $(4)
-	$(call LOG,LINK,$$@,$(X86_32_LINK) -o $$@ $$(filter-out $(4),$$^) -shared -m32 $(LD_X86_32) $$(LD_FLAGS) $(foreach lib,$(3),-l$(lib)))
+$(OUTDIR)/lib$(1)_x86_32.so: $(foreach src,$(2),$(call SRC_TO_OBJ,$(src),_x86_32_pic)) $(foreach dep,$(4),$(STAMPDIR)/$(dep).stamp)
+	$(call LOG,LINK,$$@,$(X86_32_LINK) -o $$@ $$(filter %.o,$$^) $(LDFLAGS_SHARED) -m32 $(NACL_LDFLAGS) $(X86_32_LDFLAGS) $(LDFLAGS) $(foreach path,$(5),-L$(path)/$(TOOLCHAIN)_x86_32/$(CONFIG)) $(foreach lib,$(3),-l$(lib)))
+	$(call LOG,VALIDATE,$$@,$(NCVAL) $$@)
 
 $(STAMPDIR)/$(1).stamp: $(LIBDIR)/$(TOOLCHAIN)_x86_32/$(CONFIG)/lib$(1).so
 install: $(LIBDIR)/$(TOOLCHAIN)_x86_32/$(CONFIG)/lib$(1).so
 $(LIBDIR)/$(TOOLCHAIN)_x86_32/$(CONFIG)/lib$(1).so: $(OUTDIR)/lib$(1)_x86_32.so
 	$(MKDIR) -p $$(dir $$@)
 	$(call LOG,CP  ,$$@,$(OSHELPERS) cp $$^ $$@)
-ifneq ($(5),1)
+ifneq ($(6),1)
 GLIBC_SO_LIST += $(OUTDIR)/lib$(1)_x86_32.so
 GLIBC_REMAP += -n lib$(1)_x86_32.so,lib$(1).so
 endif
@@ -197,19 +194,31 @@ endif
 
 ifneq (,$(findstring x86_64,$(ARCHES)))
 all: $(OUTDIR)/lib$(1)_x86_64.so
-$(OUTDIR)/lib$(1)_x86_64.so: $(foreach src,$(2),$(call SRC_TO_OBJ,$(src),_x86_64_pic)) $(4)
-	$(call LOG,LINK,$$@,$(X86_32_LINK) -o $$@ $$(filter-out $(4),$$^) -shared -m64 $(LD_X86_64) $$(LD_FLAGS) $(foreach lib,$(3),-l$(lib)))
+$(OUTDIR)/lib$(1)_x86_64.so: $(foreach src,$(2),$(call SRC_TO_OBJ,$(src),_x86_64_pic)) $(foreach dep,$(4),$(STAMPDIR)/$(dep).stamp)
+	$(call LOG,LINK,$$@,$(X86_32_LINK) -o $$@ $$(filter %.o,$$^) $(LDFLAGS_SHARED) -m64 $(NACL_LDFLAGS) $(X86_64_LDFLAGS) $(LDFLAGS) $(foreach path,$(5),-L$(path)/$(TOOLCHAIN)_x86_64/$(CONFIG)) $(foreach lib,$(3),-l$(lib)))
+	$(call LOG,VALIDATE,$$@,$(NCVAL) $$@)
 
 $(STAMPDIR)/$(1).stamp: $(LIBDIR)/$(TOOLCHAIN)_x86_64/$(CONFIG)/lib$(1).so
 install: $(LIBDIR)/$(TOOLCHAIN)_x86_64/$(CONFIG)/lib$(1).so
 $(LIBDIR)/$(TOOLCHAIN)_x86_64/$(CONFIG)/lib$(1).so: $(OUTDIR)/lib$(1)_x86_64.so
 	$(MKDIR) -p $$(dir $$@)
 	$(call LOG,CP  ,$$@,$(OSHELPERS) cp $$^ $$@)
-ifneq ($(5),1)
+ifneq ($(6),1)
 GLIBC_SO_LIST += $(OUTDIR)/lib$(1)_x86_64.so
 GLIBC_REMAP += -n lib$(1)_x86_64.so,lib$(1).so
 endif
 endif
+endef
+
+#
+# $1 = Target Name
+# $2 = List of Sources
+# $3 = List of LIBS
+# $4 = List of DEPS
+# $5 = 1 => Don't add to NMF.
+#
+define SO_RULE
+$(call SO_LINKER_RULE,$(1),$(2),$(filter-out pthread,$(3)),$(4),$(LIB_PATHS),$(5))
 endef
 
 #
@@ -229,12 +238,14 @@ ifneq (,$(findstring x86_32,$(ARCHES)))
 all: $(OUTDIR)/lib$(1)_x86_32.a
 $(OUTDIR)/lib$(1)_x86_32.a: $(foreach src,$(2),$(call SRC_TO_OBJ,$(src),_x86_32))
 	$(MKDIR) -p $$(dir $$@)
+	$(RM) -f $$@
 	$(call LOG,LIB ,$$@,$(X86_32_LIB) -cr $$@ $$^)
 
 $(STAMPDIR)/$(1).stamp: $(LIBDIR)/$(TOOLCHAIN)_x86_32/$(CONFIG)/lib$(1).a
 install: $(LIBDIR)/$(TOOLCHAIN)_x86_32/$(CONFIG)/lib$(1).a
 $(LIBDIR)/$(TOOLCHAIN)_x86_32/$(CONFIG)/lib$(1).a: $(OUTDIR)/lib$(1)_x86_32.a
 	$(MKDIR) -p $$(dir $$@)
+	$(RM) -f $$@
 	$(call LOG,CP  ,$$@,$(OSHELPERS) cp $$^ $$@)
 endif
 
@@ -242,6 +253,7 @@ ifneq (,$(findstring x86_64,$(ARCHES)))
 all: $(OUTDIR)/lib$(1)_x86_64.a
 $(OUTDIR)/lib$(1)_x86_64.a: $(foreach src,$(2),$(call SRC_TO_OBJ,$(src),_x86_64))
 	$(MKDIR) -p $$(dir $$@)
+	$(RM) -f $$@
 	$(call LOG,LIB ,$$@,$(X86_64_LIB) -cr $$@ $$^)
 
 $(STAMPDIR)/$(1).stamp: $(LIBDIR)/$(TOOLCHAIN)_x86_64/$(CONFIG)/lib$(1).a
@@ -256,6 +268,7 @@ ifneq ($(TOOLCHAIN),glibc)
 all: $(OUTDIR)/lib$(1)_arm.a
 $(OUTDIR)/lib$(1)_arm.a: $(foreach src,$(2),$(call SRC_TO_OBJ,$(src),_arm))
 	$(MKDIR) -p $$(dir $$@)
+	$(RM) -f $$@
 	$(call LOG,LIB ,$$@,$(ARM_LIB) -cr $$@ $$^)
 
 $(STAMPDIR)/$(1).stamp: $(LIBDIR)/$(TOOLCHAIN)_arm/$(CONFIG)/lib$(1).a
@@ -275,7 +288,7 @@ endef
 # $2 = List of Sources
 # $3 = List of LIBS
 # $4 = List of DEPS
-# $5 = POSIX Link Flags
+# $5 = Link Flags
 # $6 = Library Paths
 #
 define LINKER_RULE
@@ -283,18 +296,21 @@ ifneq (,$(findstring x86_32,$(ARCHES)))
 all: $(OUTDIR)/$(1)_x86_32.nexe
 $(OUTDIR)/$(1)_x86_32.nexe: $(foreach src,$(2),$(call SRC_TO_OBJ,$(src),_x86_32)) $(foreach dep,$(4),$(STAMPDIR)/$(dep).stamp)
 	$(call LOG,LINK,$$@,$(X86_32_LINK) -o $$@ $$(filter %.o,$$^) $(NACL_LDFLAGS) $(X86_32_LDFLAGS) $(foreach path,$(6),-L$(path)/$(TOOLCHAIN)_x86_32/$(CONFIG)) $(foreach lib,$(3),-l$(lib)) $(5))
+	$(call LOG,VALIDATE,$$@,$(NCVAL) $$@)
 endif
 
 ifneq (,$(findstring x86_64,$(ARCHES)))
 all: $(OUTDIR)/$(1)_x86_64.nexe
 $(OUTDIR)/$(1)_x86_64.nexe: $(foreach src,$(2),$(call SRC_TO_OBJ,$(src),_x86_64)) $(foreach dep,$(4),$(STAMPDIR)/$(dep).stamp)
 	$(call LOG,LINK,$$@,$(X86_64_LINK) -o $$@ $$(filter %.o,$$^) $(NACL_LDFLAGS) $(X86_64_LDFLAGS) $(foreach path,$(6),-L$(path)/$(TOOLCHAIN)_x86_64/$(CONFIG)) $(foreach lib,$(3),-l$(lib)) $(5))
+	$(call LOG,VALIDATE,$$@,$(NCVAL) $$@)
 endif
 
 ifneq (,$(findstring arm,$(ARCHES)))
 all: $(OUTDIR)/$(1)_arm.nexe
 $(OUTDIR)/$(1)_arm.nexe: $(foreach src,$(2),$(call SRC_TO_OBJ,$(src),_arm)) $(foreach dep,$(4),$(STAMPDIR)/$(dep).stamp)
 	$(call LOG,LINK,$$@,$(ARM_LINK) -o $$@ $$(filter %.o,$$^) $(NACL_LDFLAGS) $(ARM_LDFLAGS) $(foreach path,$(6),-L$(path)/$(TOOLCHAIN)_arm/$(CONFIG)) $(foreach lib,$(3),-l$(lib)) $(5))
+	$(call LOG,VALIDATE,$$@,$(NCVAL) $$@)
 endif
 endef
 
@@ -447,4 +463,18 @@ ifeq (newlib,$(TOOLCHAIN))
 GDB_DEBUG_TARGET = $(abspath $(OUTDIR))/$(TARGET)_$(SYSARCH).nexe
 else
 GDB_DEBUG_TARGET = $(abspath $(OUTDIR))/$(LIB_NAME)/runnable-ld.so
+endif
+
+ifdef STANDALONE
+run: all
+ifndef NACL_ARCH
+	$(error Cannot run in sel_ldr unless $$NACL_ARCH is set)
+endif
+	$(SEL_LDR_PATH) $(SEL_LDR_ARGS) $(OUTDIR)/$(TARGET)_$(NACL_ARCH).nexe -- $(EXE_ARGS)
+
+debug: all
+ifndef NACL_ARCH
+	$(error Cannot run in sel_ldr unless $$NACL_ARCH is set)
+endif
+	$(SEL_LDR_PATH) -d $(SEL_LDR_ARGS) $(OUTDIR)/$(TARGET)_$(NACL_ARCH).nexe -- $(EXE_ARGS)
 endif

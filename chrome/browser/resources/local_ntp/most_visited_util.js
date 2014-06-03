@@ -9,6 +9,46 @@
 
 <include src="instant_iframe_validation.js">
 
+/**
+ * Enum for the different types of events that are logged from the NTP.
+ * @enum {number}
+ * @const
+ */
+var NTP_LOGGING_EVENT_TYPE = {
+  // The user moused over an NTP tile or title.
+  NTP_MOUSEOVER: 0,
+  // The page attempted to load a thumbnail image.
+  NTP_THUMBNAIL_ATTEMPT: 1,
+  // There was an error in loading both the thumbnail image and the fallback
+  // (if it was provided), resulting in a grey tile.
+  NTP_THUMBNAIL_ERROR: 2,
+  // The page attempted to load a thumbnail URL while a fallback thumbnail was
+  // provided.
+  NTP_FALLBACK_THUMBNAIL_REQUESTED: 3,
+  // The primary thumbnail image failed to load and caused us to use the
+  // secondary thumbnail as a fallback.
+  NTP_FALLBACK_THUMBNAIL_USED: 4,
+  // The suggestion is coming from the server.
+  NTP_SERVER_SIDE_SUGGESTION: 5,
+  // The suggestion is coming from the client.
+  NTP_CLIENT_SIDE_SUGGESTION: 6,
+  // The visuals of that tile are handled externally by the page itself.
+  NTP_EXTERNAL_TILE: 7
+};
+
+/**
+ * Type of the impression provider for a generic client-provided suggestion.
+ * @type {string}
+ * @const
+ */
+var CLIENT_PROVIDER_NAME = 'client';
+
+/**
+ * Type of the impression provider for a generic server-provided suggestion.
+ * @type {string}
+ * @const
+ */
+var SERVER_PROVIDER_NAME = 'server';
 
 /**
  * Parses query parameters from Location.
@@ -41,9 +81,15 @@ function parseQueryParams(location) {
  * @param {string} href The destination for the link.
  * @param {string} title The title for the link.
  * @param {string|undefined} text The text for the link or none.
+ * @param {string|undefined} ping If specified, a location relative to the
+ *     referrer of this iframe, to ping when the link is clicked. Only works if
+ *     the referrer is HTTPS.
+ * @param {string|undefined} provider A provider name (max 8 alphanumeric
+ *     characters) used for logging. Undefined if suggestion is not coming from
+ *     the server.
  * @return {HTMLAnchorElement} A new link element.
  */
-function createMostVisitedLink(params, href, title, text) {
+function createMostVisitedLink(params, href, title, text, ping, provider) {
   var styles = getMostVisitedStyles(params, !!text);
   var link = document.createElement('a');
   link.style.color = styles.color;
@@ -51,8 +97,20 @@ function createMostVisitedLink(params, href, title, text) {
   if (styles.fontFamily)
     link.style.fontFamily = styles.fontFamily;
   link.href = href;
-  if ('pos' in params && isFinite(params.pos))
+  if ('pos' in params && isFinite(params.pos)) {
     link.ping = '/log.html?pos=' + params.pos;
+    if (provider)
+      link.ping += '&pr=' + provider;
+    // If a ping parameter was specified, add it to the list of pings, relative
+    // to the referrer of this iframe, which is the default search provider.
+    if (ping) {
+      var parentUrl = document.createElement('a');
+      parentUrl.href = document.referrer;
+      if (parentUrl.protocol == 'https:') {
+        link.ping += ' ' + parentUrl.origin + '/' + ping;
+      }
+    }
+  }
   link.title = title;
   link.target = '_top';
   // Exclude links from the tab order.  The tabIndex is added to the thumbnail
@@ -62,7 +120,7 @@ function createMostVisitedLink(params, href, title, text) {
     link.textContent = text;
   link.addEventListener('mouseover', function() {
     var ntpApiHandle = chrome.embeddedSearch.newTabPage;
-    ntpApiHandle.logEvent('NewTabPage.NumberOfMouseOvers');
+    ntpApiHandle.logEvent(NTP_LOGGING_EVENT_TYPE.NTP_MOUSEOVER);
   });
   return link;
 }
@@ -109,21 +167,37 @@ function fillMostVisited(location, fill) {
   params.rid = parseInt(params.rid, 10);
   if (!isFinite(params.rid) && !params.url)
     return;
+  // Log whether the suggestion was obtained from the server or the client.
+  chrome.embeddedSearch.newTabPage.logEvent(params.url ?
+      NTP_LOGGING_EVENT_TYPE.NTP_SERVER_SIDE_SUGGESTION :
+      NTP_LOGGING_EVENT_TYPE.NTP_CLIENT_SIDE_SUGGESTION);
   var data = {};
   if (params.url) {
-    // Means that we get suggestion data from the server. Create data object.
+    // Means that the suggestion data comes from the server. Create data object.
     data.url = params.url;
     data.thumbnailUrl = params.tu || '';
+    data.thumbnailUrl2 = params.tu2 || '';
     data.title = params.ti || '';
     data.direction = params.di || '';
+    data.domain = params.dom || '';
+    data.ping = params.ping || '';
+    data.provider = params.pr || SERVER_PROVIDER_NAME;
+
+    // Log the fact that suggestion was obtained from the server.
+    var ntpApiHandle = chrome.embeddedSearch.newTabPage;
+    ntpApiHandle.logEvent(NTP_LOGGING_EVENT_TYPE.NTP_SERVER_SIDE_SUGGESTION);
   } else {
     var apiHandle = chrome.embeddedSearch.searchBox;
     data = apiHandle.getMostVisitedItemData(params.rid);
     if (!data)
       return;
+    data.provider = CLIENT_PROVIDER_NAME;
+    delete data.ping;
   }
   if (/^javascript:/i.test(data.url) ||
-      /^javascript:/i.test(data.thumbnailUrl))
+      /^javascript:/i.test(data.thumbnailUrl) ||
+      /^javascript:/i.test(data.thumbnailUrl2) ||
+      !/^[a-z0-9]{0,8}$/i.test(data.provider))
     return;
   if (data.direction)
     document.body.dir = data.direction;

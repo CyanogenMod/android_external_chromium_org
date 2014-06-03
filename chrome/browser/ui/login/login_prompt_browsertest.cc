@@ -6,6 +6,7 @@
 #include <list>
 #include <map>
 
+#include "base/metrics/field_trial.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/prerender/prerender_manager.h"
@@ -48,8 +49,8 @@ class LoginPromptBrowserTest : public InProcessBrowserTest {
 
     AuthInfo() {}
 
-    AuthInfo(const std::string username,
-             const std::string password)
+    AuthInfo(const std::string& username,
+             const std::string& password)
         : username_(username), password_(password) {}
   };
 
@@ -203,20 +204,18 @@ typedef WindowedNavigationObserver<chrome::NOTIFICATION_AUTH_CANCELLED>
 typedef WindowedNavigationObserver<chrome::NOTIFICATION_AUTH_SUPPLIED>
     WindowedAuthSuppliedObserver;
 
-const char* kPrefetchAuthPage = "files/login/prefetch.html";
+const char kPrefetchAuthPage[] = "files/login/prefetch.html";
 
-const char* kMultiRealmTestPage = "files/login/multi_realm.html";
-const int   kMultiRealmTestRealmCount = 2;
-const int   kMultiRealmTestResourceCount = 4;
+const char kMultiRealmTestPage[] = "files/login/multi_realm.html";
+const int  kMultiRealmTestRealmCount = 2;
 
-const char* kSingleRealmTestPage = "files/login/single_realm.html";
-const int   kSingleRealmTestResourceCount = 6;
+const char kSingleRealmTestPage[] = "files/login/single_realm.html";
 
 const char* kAuthBasicPage = "auth-basic";
 const char* kAuthDigestPage = "auth-digest";
 
-string16 ExpectedTitleFromAuth(const string16& username,
-                               const string16& password) {
+base::string16 ExpectedTitleFromAuth(const base::string16& username,
+                                     const base::string16& password) {
   // The TestServer sets the title to username/password on successful login.
   return username + UTF8ToUTF16("/") + password;
 }
@@ -237,21 +236,20 @@ IN_PROC_BROWSER_TEST_F(LoginPromptBrowserTest, PrefetchAuthCancels) {
   class SetPrefetchForTest {
    public:
     explicit SetPrefetchForTest(bool prefetch)
-        : old_prefetch_state_(prerender::PrerenderManager::IsPrefetchEnabled()),
-          old_mode_(prerender::PrerenderManager::GetMode()) {
-      prerender::PrerenderManager::SetIsPrefetchEnabled(prefetch);
+        : old_prerender_mode_(prerender::PrerenderManager::GetMode()) {
+      std::string exp_group = prefetch ? "ExperimentYes" : "ExperimentNo";
+      base::FieldTrialList::CreateFieldTrial("Prefetch", exp_group);
       // Disable prerender so this is just a prefetch of the top-level page.
       prerender::PrerenderManager::SetMode(
           prerender::PrerenderManager::PRERENDER_MODE_DISABLED);
     }
 
     ~SetPrefetchForTest() {
-      prerender::PrerenderManager::SetIsPrefetchEnabled(old_prefetch_state_);
-      prerender::PrerenderManager::SetMode(old_mode_);
+      prerender::PrerenderManager::SetMode(old_prerender_mode_);
     }
+
    private:
-    bool old_prefetch_state_;
-    prerender::PrerenderManager::PrerenderManagerMode old_mode_;
+    prerender::PrerenderManager::PrerenderManagerMode old_prerender_mode_;
   } set_prefetch_for_test(true);
 
   content::WebContents* contents =
@@ -313,7 +311,7 @@ IN_PROC_BROWSER_TEST_F(LoginPromptBrowserTest, TestBasicAuth) {
   SetAuthFor(handler);
   auth_supplied_waiter.Wait();
 
-  string16 expected_title =
+  base::string16 expected_title =
       ExpectedTitleFromAuth(ASCIIToUTF16("basicuser"), ASCIIToUTF16("secret"));
   content::TitleWatcher title_watcher(contents, expected_title);
   EXPECT_EQ(expected_title, title_watcher.WaitAndGetTitle());
@@ -359,12 +357,12 @@ IN_PROC_BROWSER_TEST_F(LoginPromptBrowserTest, TestDigestAuth) {
   WindowedAuthSuppliedObserver auth_supplied_waiter(controller);
   LoginHandler* handler = *observer.handlers_.begin();
 
-  string16 username(UTF8ToUTF16(username_digest_));
-  string16 password(UTF8ToUTF16(password_));
+  base::string16 username(UTF8ToUTF16(username_digest_));
+  base::string16 password(UTF8ToUTF16(password_));
   handler->SetAuth(username, password);
   auth_supplied_waiter.Wait();
 
-  string16 expected_title = ExpectedTitleFromAuth(username, password);
+  base::string16 expected_title = ExpectedTitleFromAuth(username, password);
   content::TitleWatcher title_watcher(contents, expected_title);
   EXPECT_EQ(expected_title, title_watcher.WaitAndGetTitle());
 }
@@ -413,9 +411,9 @@ IN_PROC_BROWSER_TEST_F(LoginPromptBrowserTest, TestTwoAuths) {
   LoginHandler* handler1 = *observer.handlers_.begin();
   LoginHandler* handler2 = *(++(observer.handlers_.begin()));
 
-  string16 expected_title1 = ExpectedTitleFromAuth(
+  base::string16 expected_title1 = ExpectedTitleFromAuth(
       UTF8ToUTF16(username_basic_), UTF8ToUTF16(password_));
-  string16 expected_title2 = ExpectedTitleFromAuth(
+  base::string16 expected_title2 = ExpectedTitleFromAuth(
       UTF8ToUTF16(username_digest_), UTF8ToUTF16(password_));
   content::TitleWatcher title_watcher1(contents1, expected_title1);
   content::TitleWatcher title_watcher2(contents2, expected_title2);

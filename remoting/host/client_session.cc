@@ -8,13 +8,13 @@
 
 #include "base/message_loop/message_loop_proxy.h"
 #include "remoting/base/capabilities.h"
+#include "remoting/base/logging.h"
 #include "remoting/codec/audio_encoder.h"
 #include "remoting/codec/audio_encoder_opus.h"
-#include "remoting/codec/audio_encoder_speex.h"
 #include "remoting/codec/audio_encoder_verbatim.h"
 #include "remoting/codec/video_encoder.h"
 #include "remoting/codec/video_encoder_verbatim.h"
-#include "remoting/codec/video_encoder_vp8.h"
+#include "remoting/codec/video_encoder_vpx.h"
 #include "remoting/host/audio_capturer.h"
 #include "remoting/host/audio_scheduler.h"
 #include "remoting/host/desktop_environment.h"
@@ -189,8 +189,18 @@ void ClientSession::RequestPairing(
 
 void ClientSession::DeliverClientMessage(
     const protocol::ExtensionMessage& message) {
+  if (message.has_type()) {
+    if (message.type() == "test-echo") {
+      protocol::ExtensionMessage reply;
+      reply.set_type("test-echo-reply");
+      if (message.has_data())
+        reply.set_data(message.data().substr(0, 16));
+      connection_->client_stub()->DeliverHostMessage(reply);
+      return;
+    }
+  }
   // No messages are currently supported.
-  LOG(INFO) << "Unexpected message received: "
+  HOST_LOG << "Unexpected message received: "
             << message.type() << ": " << message.data();
 }
 
@@ -387,7 +397,7 @@ void ClientSession::DisconnectSession() {
   connection_->Disconnect();
 }
 
-void ClientSession::OnLocalMouseMoved(const SkIPoint& position) {
+void ClientSession::OnLocalMouseMoved(const webrtc::DesktopVector& position) {
   DCHECK(CalledOnValidThread());
   remote_input_filter_.LocalMouseMoved(position);
 }
@@ -417,13 +427,11 @@ scoped_ptr<VideoEncoder> ClientSession::CreateVideoEncoder(
     const protocol::SessionConfig& config) {
   const protocol::ChannelConfig& video_config = config.video_config();
 
-  if (video_config.codec == protocol::ChannelConfig::CODEC_VERBATIM) {
-    return scoped_ptr<VideoEncoder>(new remoting::VideoEncoderVerbatim());
-  } else if (video_config.codec == protocol::ChannelConfig::CODEC_VP8) {
-    return scoped_ptr<VideoEncoder>(new remoting::VideoEncoderVp8());
+  if (video_config.codec == protocol::ChannelConfig::CODEC_VP8) {
+    return remoting::VideoEncoderVpx::CreateForVP8().PassAs<VideoEncoder>();
   }
 
-  NOTIMPLEMENTED();
+  NOTREACHED();
   return scoped_ptr<VideoEncoder>();
 }
 
@@ -434,13 +442,11 @@ scoped_ptr<AudioEncoder> ClientSession::CreateAudioEncoder(
 
   if (audio_config.codec == protocol::ChannelConfig::CODEC_VERBATIM) {
     return scoped_ptr<AudioEncoder>(new AudioEncoderVerbatim());
-  } else if (audio_config.codec == protocol::ChannelConfig::CODEC_SPEEX) {
-    return scoped_ptr<AudioEncoder>(new AudioEncoderSpeex());
   } else if (audio_config.codec == protocol::ChannelConfig::CODEC_OPUS) {
     return scoped_ptr<AudioEncoder>(new AudioEncoderOpus());
   }
 
-  NOTIMPLEMENTED();
+  NOTREACHED();
   return scoped_ptr<AudioEncoder>();
 }
 

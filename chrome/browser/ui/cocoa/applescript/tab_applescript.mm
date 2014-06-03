@@ -143,7 +143,7 @@ void ResumeAppleEventAndSendReply(NSAppleEventManagerSuspensionID suspension_id,
   const GURL& previousURL = entry->GetVirtualURL();
   webContents_->OpenURL(OpenURLParams(
       url,
-      content::Referrer(previousURL, WebKit::WebReferrerPolicyDefault),
+      content::Referrer(previousURL, blink::WebReferrerPolicyDefault),
       CURRENT_TAB,
       content::PAGE_TRANSITION_TYPED,
       false));
@@ -154,7 +154,7 @@ void ResumeAppleEventAndSendReply(NSAppleEventManagerSuspensionID suspension_id,
   if (!entry)
     return nil;
 
-  string16 title = entry ? entry->GetTitle() : string16();
+  base::string16 title = entry ? entry->GetTitle() : base::string16();
   return base::SysUTF16ToNSString(title);
 }
 
@@ -327,11 +327,12 @@ void ResumeAppleEventAndSendReply(NSAppleEventManagerSuspensionID suspension_id,
   content::RenderViewHost::JavascriptResultCallback callback =
       base::Bind(&ResumeAppleEventAndSendReply, suspensionID);
 
-  string16 script = base::SysNSStringToUTF16(
+  base::string16 script = base::SysNSStringToUTF16(
       [[command evaluatedArguments] objectForKey:@"javascript"]);
-  view->ExecuteJavascriptInWebFrameCallbackResult(string16(),  // frame_xpath
-                                                  script,
-                                                  callback);
+  view->ExecuteJavascriptInWebFrameCallbackResult(
+      base::string16(),  // frame_xpath
+      script,
+      callback);
 
   return nil;
 }

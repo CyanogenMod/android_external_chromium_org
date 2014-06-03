@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,32 +17,40 @@ import java.util.concurrent.FutureTask;
  */
 public class ThreadUtils {
 
+    private static final Object sLock = new Object();
+
     private static boolean sWillOverride = false;
 
     private static Handler sUiThreadHandler = null;
 
-    public static synchronized void setWillOverrideUiThread() {
-        sWillOverride = true;
-    }
-
-    public static synchronized void setUiThread(Looper looper) {
-        if (sUiThreadHandler != null && sUiThreadHandler.getLooper() != looper) {
-            throw new RuntimeException("UI thread looper is already set to " +
-                    sUiThreadHandler.getLooper() + " (Main thread looper is " +
-                    Looper.getMainLooper() + "), cannot set to new looper " + looper);
-        } else {
-            sUiThreadHandler = new Handler(looper);
+    public static void setWillOverrideUiThread() {
+        synchronized (sLock) {
+            sWillOverride = true;
         }
     }
 
-    private static synchronized Handler getUiThreadHandler() {
-        if (sUiThreadHandler == null) {
-            if (sWillOverride) {
-                throw new RuntimeException("Did not yet override the UI thread");
+    public static void setUiThread(Looper looper) {
+        synchronized (sLock) {
+            if (sUiThreadHandler != null && sUiThreadHandler.getLooper() != looper) {
+                throw new RuntimeException("UI thread looper is already set to " +
+                        sUiThreadHandler.getLooper() + " (Main thread looper is " +
+                        Looper.getMainLooper() + "), cannot set to new looper " + looper);
+            } else {
+                sUiThreadHandler = new Handler(looper);
             }
-            sUiThreadHandler = new Handler(Looper.getMainLooper());
         }
-        return sUiThreadHandler;
+    }
+
+    private static Handler getUiThreadHandler() {
+        synchronized (sLock) {
+            if (sUiThreadHandler == null) {
+                if (sWillOverride) {
+                    throw new RuntimeException("Did not yet override the UI thread");
+                }
+                sUiThreadHandler = new Handler(Looper.getMainLooper());
+            }
+            return sUiThreadHandler;
+        }
     }
 
     /**
@@ -157,8 +165,8 @@ public class ThreadUtils {
      *
      * @param task The Runnable to run
      */
-    public static void postOnUiThread(Runnable r) {
-        getUiThreadHandler().post(r);
+    public static void postOnUiThread(Runnable task) {
+        getUiThreadHandler().post(task);
     }
 
     /**
@@ -168,8 +176,8 @@ public class ThreadUtils {
      * @param task The Runnable to run
      * @param delayMillis The delay in milliseconds until the Runnable will be run
      */
-    public static void postOnUiThreadDelayed(Runnable r, long delayMillis) {
-        getUiThreadHandler().postDelayed(r, delayMillis);
+    public static void postOnUiThreadDelayed(Runnable task, long delayMillis) {
+        getUiThreadHandler().postDelayed(task, delayMillis);
     }
 
     /**
@@ -195,6 +203,6 @@ public class ThreadUtils {
      */
     @CalledByNative
     public static void setThreadPriorityAudio(int tid) {
-      Process.setThreadPriority(tid, Process.THREAD_PRIORITY_AUDIO);
+        Process.setThreadPriority(tid, Process.THREAD_PRIORITY_AUDIO);
     }
 }

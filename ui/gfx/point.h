@@ -5,7 +5,7 @@
 #ifndef UI_GFX_POINT_H_
 #define UI_GFX_POINT_H_
 
-#include "ui/base/ui_export.h"
+#include "ui/gfx/gfx_export.h"
 #include "ui/gfx/point_base.h"
 #include "ui/gfx/point_f.h"
 #include "ui/gfx/vector2d.h"
@@ -22,7 +22,7 @@ typedef struct tagPOINT POINT;
 namespace gfx {
 
 // A point has an x and y coordinate.
-class UI_EXPORT Point : public PointBase<Point, int, Vector2d> {
+class GFX_EXPORT Point : public PointBase<Point, int, Vector2d> {
  public:
   Point() : PointBase<Point, int, Vector2d>(0, 0) {}
   Point(int x, int y) : PointBase<Point, int, Vector2d>(x, y) {}

@@ -13,7 +13,7 @@ FakeSyncScheduler::~FakeSyncScheduler() {}
 void FakeSyncScheduler::Start(Mode mode) {
 }
 
-void FakeSyncScheduler::RequestStop() {
+void FakeSyncScheduler::Stop() {
 }
 
 void FakeSyncScheduler::ScheduleLocalNudge(
@@ -30,14 +30,13 @@ void FakeSyncScheduler::ScheduleLocalRefreshRequest(
 
 void FakeSyncScheduler::ScheduleInvalidationNudge(
     const base::TimeDelta& desired_delay,
-    const ModelTypeInvalidationMap& invalidation_map,
+    const ObjectIdInvalidationMap& invalidation_map,
     const tracked_objects::Location& nudge_location) {
 }
 
-bool FakeSyncScheduler::ScheduleConfiguration(
+void FakeSyncScheduler::ScheduleConfiguration(
      const ConfigurationParams& params) {
   params.ready_task.Run();
-  return true;
 }
 
 void FakeSyncScheduler::SetNotificationsEnabled(bool notifications_enabled) {
@@ -81,9 +80,6 @@ void FakeSyncScheduler::OnReceivedSessionsCommitDelay(
 }
 
 void FakeSyncScheduler::OnReceivedClientInvalidationHintBufferSize(int size) {
-}
-
-void FakeSyncScheduler::OnShouldStopSyncingPermanently() {
 }
 
 void FakeSyncScheduler::OnSyncProtocolError(

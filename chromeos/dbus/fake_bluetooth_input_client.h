@@ -9,7 +9,6 @@
 #include "base/observer_list.h"
 #include "chromeos/chromeos_export.h"
 #include "chromeos/dbus/bluetooth_input_client.h"
-#include "chromeos/dbus/dbus_client_implementation_type.h"
 #include "dbus/object_path.h"
 #include "dbus/property.h"
 
@@ -36,7 +35,8 @@ class CHROMEOS_EXPORT FakeBluetoothInputClient
   FakeBluetoothInputClient();
   virtual ~FakeBluetoothInputClient();
 
-  // BluetoothInputClient override
+  // BluetoothInputClient overrides
+  virtual void Init(dbus::Bus* bus) OVERRIDE;
   virtual void AddObserver(Observer* observer) OVERRIDE;
   virtual void RemoveObserver(Observer* observer) OVERRIDE;
   virtual Properties* GetProperties(const dbus::ObjectPath& object_path)

@@ -5,14 +5,14 @@
 #ifndef UI_GFX_INSETS_BASE_H_
 #define UI_GFX_INSETS_BASE_H_
 
-#include "ui/base/ui_export.h"
+#include "ui/gfx/gfx_export.h"
 
 namespace gfx {
 
 // An insets represents the borders of a container (the space the container must
 // leave at each of its edges).
 template<typename Class, typename Type>
-class UI_EXPORT InsetsBase {
+class GFX_EXPORT InsetsBase {
  public:
   Type top() const { return top_; }
   Type left() const { return left_; }

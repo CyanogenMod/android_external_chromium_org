@@ -7,6 +7,7 @@
 
 #include "ash/ash_export.h"
 #include "ash/shelf/background_animator.h"
+#include "ash/shelf/shelf_layout_manager_observer.h"
 #include "ash/shelf/shelf_types.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_observer.h"
@@ -26,7 +27,8 @@ class WorkspaceController;
 }
 
 class ASH_EXPORT ShelfWidget : public views::Widget,
-                               public views::WidgetObserver {
+                               public views::WidgetObserver,
+                               public ShelfLayoutManagerObserver {
  public:
   ShelfWidget(
       aura::Window* shelf_container,
@@ -34,16 +36,20 @@ class ASH_EXPORT ShelfWidget : public views::Widget,
       internal::WorkspaceController* workspace_controller);
   virtual ~ShelfWidget();
 
+  // Returns if shelf alignment option is enabled, and the user is able
+  // to adjust the alignment (guest and supervised mode users cannot for
+  // example).
+  static bool ShelfAlignmentAllowed();
+
   void SetAlignment(ShelfAlignment alignmnet);
   ShelfAlignment GetAlignment() const;
 
   // Sets the shelf's background type.
-  void SetPaintsBackground(
-      ShelfBackgroundType background_type,
-      internal::BackgroundAnimator::ChangeType change_type);
+  void SetPaintsBackground(ShelfBackgroundType background_type,
+                           BackgroundAnimatorChangeType change_type);
   ShelfBackgroundType GetBackgroundType() const;
 
-  // Causes shelf items to be slightly dimmed (eg when a window is maximized).
+  // Causes shelf items to be slightly dimmed (e.g. when a window is maximized).
   void SetDimsShelf(bool dimming);
   bool GetDimsShelf() const;
 
@@ -74,9 +80,6 @@ class ASH_EXPORT ShelfWidget : public views::Widget,
   // TODO(harrym): Remove when Status Area Widget is a child view.
   void ShutdownStatusAreaWidget();
 
-  // Set the bounds of the widget and the dim shelf overlay.
-  void SetWidgetBounds(const gfx::Rect& rect);
-
   // Force the shelf to be presented in an undimmed state.
   void ForceUndimming(bool force);
 
@@ -94,6 +97,9 @@ class ASH_EXPORT ShelfWidget : public views::Widget,
 
   // Disable dimming animations for running tests.
   void DisableDimmingAnimationsForTest();
+
+  // ShelfLayoutManagerObserver overrides:
+  virtual void WillDeleteShelf() OVERRIDE;
 
  private:
   class DelegateView;

@@ -8,6 +8,7 @@
 #include "ash/system/tray/tray_constants.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
+#include "ui/views/painter.h"
 
 namespace ash {
 namespace internal {
@@ -35,8 +36,12 @@ TrayPopupHeaderButton::TrayPopupHeaderButton(views::ButtonListener* listener,
   SetImageAlignment(views::ImageButton::ALIGN_CENTER,
                     views::ImageButton::ALIGN_MIDDLE);
   SetAccessibleName(bundle.GetLocalizedString(accessible_name_id));
-  set_focusable(true);
+  SetFocusable(true);
   set_request_focus_on_press(false);
+
+  SetFocusPainter(views::Painter::CreateSolidFocusPainter(
+                      kFocusBorderColor,
+                      gfx::Insets(1, 2, 2, 3)));
 }
 
 TrayPopupHeaderButton::~TrayPopupHeaderButton() {}
@@ -55,13 +60,6 @@ void TrayPopupHeaderButton::OnPaintBorder(gfx::Canvas* canvas) {
   int padding = (height() - kBorderHeight) / 2;
   canvas->FillRect(gfx::Rect(0, padding, 1, height() - padding * 2),
       ash::kBorderDarkColor);
-}
-
-void TrayPopupHeaderButton::OnPaintFocusBorder(gfx::Canvas* canvas) {
-  if (HasFocus() && (focusable() || IsAccessibilityFocusable())) {
-    canvas->DrawRect(gfx::Rect(2, 1, width() - 4, height() - 3),
-                     kFocusBorderColor);
-  }
 }
 
 void TrayPopupHeaderButton::StateChanged() {

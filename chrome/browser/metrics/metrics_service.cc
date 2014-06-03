@@ -22,14 +22,14 @@
 // before being persisted.
 //
 // Logs fall into one of two categories: "initial logs," and "ongoing logs."
-// There is at most one initial log sent for each complete run of the chromium
-// product (from startup, to browser shutdown).  An initial log is generally
-// transmitted some short time (1 minute?) after startup, and includes stats
-// such as recent crash info, the number and types of plugins, etc.  The
-// external server's response to the initial log conceptually tells this MS if
-// it should continue transmitting logs (during this session). The server
-// response can actually be much more detailed, and always includes (at a
-// minimum) how often additional ongoing logs should be sent.
+// There is at most one initial log sent for each complete run of Chrome (from
+// startup, to browser shutdown).  An initial log is generally transmitted some
+// short time (1 minute?) after startup, and includes stats such as recent crash
+// info, the number and types of plugins, etc.  The external server's response
+// to the initial log conceptually tells this MS if it should continue
+// transmitting logs (during this session). The server response can actually be
+// much more detailed, and always includes (at a minimum) how often additional
+// ongoing logs should be sent.
 //
 // After the above initial log, a series of ongoing logs will be transmitted.
 // The first ongoing log actually begins to accumulate information stating when
@@ -45,13 +45,13 @@
 // memory statistics are deposited into a histogram, and the log finalization
 // code is then called.  In the finalization, a call to a Histogram server
 // acquires a list of all local histograms that have been flagged for upload
-// to the UMA server.  The finalization also acquires a the most recent number
+// to the UMA server.  The finalization also acquires the most recent number
 // of page loads, along with any counts of renderer or plugin crashes.
 //
 // When the browser shuts down, there will typically be a fragment of an ongoing
-// log that has not yet been transmitted.  At shutdown time, that fragment
-// is closed (including snapshotting histograms), and persisted, for
-// potential transmission during a future run of the product.
+// log that has not yet been transmitted.  At shutdown time, that fragment is
+// closed (including snapshotting histograms), and persisted, for potential
+// transmission during a future run of the product.
 //
 // There are two slightly abnormal shutdown conditions.  There is a
 // "disconnected scenario," and a "really fast startup and shutdown" scenario.
@@ -73,15 +73,16 @@
 // in a future run's initial log.  (i.e., we don't lose crash stats).
 //
 // With the above overview, we can now describe the state machine's various
-// stats, based on the State enum specified in the state_ member.  Those states
+// states, based on the State enum specified in the state_ member.  Those states
 // are:
 //
-//    INITIALIZED,            // Constructor was called.
-//    INIT_TASK_SCHEDULED,    // Waiting for deferred init tasks to complete.
-//    INIT_TASK_DONE,         // Waiting for timer to send initial log.
-//    INITIAL_LOG_READY,      // Initial log generated, and waiting for reply.
-//    SENDING_OLD_LOGS,       // Sending unsent logs from previous session.
-//    SENDING_CURRENT_LOGS,   // Sending standard current logs as they accrue.
+//  INITIALIZED,                   // Constructor was called.
+//  INIT_TASK_SCHEDULED,           // Waiting for deferred init tasks to finish.
+//  INIT_TASK_DONE,                // Waiting for timer to send initial log.
+//  SENDING_INITIAL_STABILITY_LOG, // Initial stability log being sent.
+//  SENDING_INITIAL_METRICS_LOG,   // Initial metrics log being sent.
+//  SENDING_OLD_LOGS,              // Sending unsent logs from previous session.
+//  SENDING_CURRENT_LOGS,          // Sending ongoing logs as they acrue.
 //
 // In more detail, we have:
 //
@@ -89,7 +90,7 @@
 // The MS has been constructed, but has taken no actions to compose the
 // initial log.
 //
-//    INIT_TASK_SCHEDULED,    // Waiting for deferred init tasks to complete.
+//    INIT_TASK_SCHEDULED,    // Waiting for deferred init tasks to finish.
 // Typically about 30 seconds after startup, a task is sent to a second thread
 // (the file thread) to perform deferred (lower priority and slower)
 // initialization steps such as getting the list of plugins.  That task will
@@ -101,10 +102,22 @@
 // created.  This callback typically arrives back less than one second after
 // the deferred init task is dispatched.
 //
-//    INITIAL_LOG_READY,      // Initial log generated, and waiting for reply.
-// This state is entered only after an initial log has been composed, and
-// prepared for transmission.  It is also the case that any previously unsent
-// logs have been loaded into instance variables for possible transmission.
+//    SENDING_INITIAL_STABILITY_LOG,  // Initial stability log being sent.
+// During initialization, if a crash occurred during the previous session, an
+// initial stability log will be generated and registered with the log manager.
+// This state will be entered if a stability log was prepared during metrics
+// service initialization (in InitializeMetricsRecordingState()) and is waiting
+// to be transmitted when it's time to send up the first log (per the reporting
+// scheduler).  If there is no initial stability log (e.g. there was no previous
+// crash), then this state will be skipped and the state will advance to
+// SENDING_INITIAL_METRICS_LOG.
+//
+//    SENDING_INITIAL_METRICS_LOG,  // Initial metrics log being sent.
+// This state is entered after the initial metrics log has been composed, and
+// prepared for transmission.  This happens after SENDING_INITIAL_STABILITY_LOG
+// if there was an initial stability log (see above).  It is also the case that
+// any previously unsent logs have been loaded into instance variables for
+// possible transmission.
 //
 //    SENDING_OLD_LOGS,       // Sending unsent logs from previous session.
 // This state indicates that the initial log for this session has been
@@ -162,6 +175,7 @@
 #include "base/metrics/statistics_recorder.h"
 #include "base/prefs/pref_registry_simple.h"
 #include "base/prefs/pref_service.h"
+#include "base/prefs/scoped_user_pref_update.h"
 #include "base/rand_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
@@ -173,33 +187,33 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/process_map.h"
 #include "chrome/browser/io_thread.h"
 #include "chrome/browser/memory_details.h"
 #include "chrome/browser/metrics/compression_utils.h"
-#include "chrome/browser/metrics/gzipped_protobufs_field_trial.h"
 #include "chrome/browser/metrics/metrics_log.h"
 #include "chrome/browser/metrics/metrics_log_serializer.h"
 #include "chrome/browser/metrics/metrics_reporting_scheduler.h"
 #include "chrome/browser/metrics/time_ticks_experiment_win.h"
 #include "chrome/browser/metrics/tracking_synchronizer.h"
+#include "chrome/common/metrics/variations/variations_util.h"
 #include "chrome/browser/net/http_pipelining_compatibility_client.h"
 #include "chrome/browser/net/network_stats.h"
 #include "chrome/browser/omnibox/omnibox_log.h"
-#include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_otr_state.h"
 #include "chrome/browser/ui/search/search_tab_helper.h"
-#include "chrome/common/child_process_logging.h"
+#include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_result_codes.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/crash_keys.h"
 #include "chrome/common/metrics/caching_permuted_entropy_provider.h"
-#include "chrome/common/metrics/entropy_provider.h"
 #include "chrome/common/metrics/metrics_log_manager.h"
 #include "chrome/common/net/test_server_locations.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/render_messages.h"
+#include "components/variations/entropy_provider.h"
+#include "components/variations/metrics_util.h"
 #include "content/public/browser/child_process_data.h"
 #include "content/public/browser/histogram_fetcher.h"
 #include "content/public/browser/load_notification_details.h"
@@ -210,6 +224,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/process_type.h"
 #include "content/public/common/webplugininfo.h"
+#include "extensions/browser/process_map.h"
 #include "net/base/load_flags.h"
 #include "net/url_request/url_fetcher.h"
 
@@ -220,11 +235,16 @@
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/external_metrics.h"
-#include "chrome/browser/chromeos/system/statistics_provider.h"
+#include "chromeos/system/statistics_provider.h"
 #endif
 
 #if defined(OS_WIN)
 #include <windows.h>  // Needed for STATUS_* codes
+#include "base/win/registry.h"
+#endif
+
+#if !defined(OS_ANDROID)
+#include "chrome/browser/service_process/service_process_control.h"
 #endif
 
 using base::Time;
@@ -324,15 +344,37 @@ int MapCrashExitCodeForHistogram(int exit_code) {
 void MarkAppCleanShutdownAndCommit() {
   PrefService* pref = g_browser_process->local_state();
   pref->SetBoolean(prefs::kStabilityExitedCleanly, true);
+  pref->SetInteger(prefs::kStabilityExecutionPhase,
+                   MetricsService::SHUTDOWN_COMPLETE);
   // Start writing right away (write happens on a different thread).
   pref->CommitPendingWrite();
 }
 
+// Returns whether initial stability metrics should be sent in a separate log.
+bool SendSeparateInitialStabilityLog() {
+  return base::FieldTrialList::FindFullName("UMAStability") == "SeparateLog";
+}
+
 }  // namespace
+
+
+SyntheticTrialGroup::SyntheticTrialGroup(uint32 trial,
+                                         uint32 group,
+                                         base::TimeTicks start)
+    : start_time(start) {
+  id.name = trial;
+  id.group = group;
+}
+
+SyntheticTrialGroup::~SyntheticTrialGroup() {
+}
 
 // static
 MetricsService::ShutdownCleanliness MetricsService::clean_shutdown_status_ =
     MetricsService::CLEANLY_SHUTDOWN;
+
+MetricsService::ExecutionPhase MetricsService::execution_phase_ =
+    MetricsService::UNINITIALIZED_PHASE;
 
 // This is used to quickly log stats from child process related notifications in
 // MetricsService::child_stats_buffer_.  The buffer's contents are transferred
@@ -404,6 +446,8 @@ void MetricsService::RegisterPrefs(PrefRegistrySimple* registry) {
   registry->RegisterStringPref(prefs::kStabilityStatsVersion, std::string());
   registry->RegisterInt64Pref(prefs::kStabilityStatsBuildTime, 0);
   registry->RegisterBooleanPref(prefs::kStabilityExitedCleanly, true);
+  registry->RegisterIntegerPref(prefs::kStabilityExecutionPhase,
+                                UNINITIALIZED_PHASE);
   registry->RegisterBooleanPref(prefs::kStabilitySessionEndCompleted, true);
   registry->RegisterIntegerPref(prefs::kMetricsSessionID, -1);
   registry->RegisterIntegerPref(prefs::kStabilityLaunchCount, 0);
@@ -426,6 +470,11 @@ void MetricsService::RegisterPrefs(PrefRegistrySimple* registry) {
   registry->RegisterIntegerPref(prefs::kStabilitySystemUncleanShutdownCount, 0);
 #endif  // OS_CHROMEOS
 
+  registry->RegisterStringPref(prefs::kStabilitySavedSystemProfile,
+                               std::string());
+  registry->RegisterStringPref(prefs::kStabilitySavedSystemProfileHash,
+                               std::string());
+
   registry->RegisterListPref(prefs::kMetricsInitialLogs);
   registry->RegisterListPref(prefs::kMetricsOngoingLogs);
 
@@ -440,6 +489,7 @@ void MetricsService::RegisterPrefs(PrefRegistrySimple* registry) {
 // static
 void MetricsService::DiscardOldStabilityStats(PrefService* local_state) {
   local_state->SetBoolean(prefs::kStabilityExitedCleanly, true);
+  local_state->SetInteger(prefs::kStabilityExecutionPhase, UNINITIALIZED_PHASE);
   local_state->SetBoolean(prefs::kStabilitySessionEndCompleted, true);
 
   local_state->SetInteger(prefs::kStabilityIncompleteSessionEndCount, 0);
@@ -469,20 +519,19 @@ MetricsService::MetricsService()
       reporting_active_(false),
       test_mode_active_(false),
       state_(INITIALIZED),
+      has_initial_stability_log_(false),
       low_entropy_source_(kLowEntropySourceNotSet),
       idle_since_last_transmission_(false),
+      session_id_(-1),
       next_window_id_(0),
       self_ptr_factory_(this),
       state_saver_factory_(this),
       waiting_for_asynchronous_reporting_step_(false),
+      num_async_histogram_fetches_in_progress_(0),
       entropy_source_returned_(LAST_ENTROPY_NONE) {
   DCHECK(IsSingleThreaded());
-  InitializeMetricsState();
 
-  base::Closure callback = base::Bind(&MetricsService::StartScheduledUpload,
-                                      self_ptr_factory_.GetWeakPtr());
-  scheduler_.reset(new MetricsReportingScheduler(callback));
-  log_manager_.set_log_serializer(new MetricsLogSerializer());
+  log_manager_.set_log_serializer(new MetricsLogSerializer);
   log_manager_.set_max_ongoing_log_store_size(kUploadLogAvoidRetransmitSize);
 
   BrowserChildProcessObserver::Add(this);
@@ -492,6 +541,15 @@ MetricsService::~MetricsService() {
   DisableRecording();
 
   BrowserChildProcessObserver::Remove(this);
+}
+
+void MetricsService::InitializeMetricsRecordingState(
+    ReportingState reporting_state) {
+  InitializeMetricsState(reporting_state);
+
+  base::Closure callback = base::Bind(&MetricsService::StartScheduledUpload,
+                                      self_ptr_factory_.GetWeakPtr());
+  scheduler_.reset(new MetricsReportingScheduler(callback));
 }
 
 void MetricsService::Start() {
@@ -528,7 +586,7 @@ std::string MetricsService::GetClientId() {
 }
 
 scoped_ptr<const base::FieldTrial::EntropyProvider>
-    MetricsService::CreateEntropyProvider(bool reporting_will_be_enabled) {
+MetricsService::CreateEntropyProvider(ReportingState reporting_state) {
   // For metrics reporting-enabled users, we combine the client ID and low
   // entropy source to get the final entropy source. Otherwise, only use the low
   // entropy source.
@@ -539,7 +597,7 @@ scoped_ptr<const base::FieldTrial::EntropyProvider>
   const int low_entropy_source_value = GetLowEntropySource();
   UMA_HISTOGRAM_SPARSE_SLOWLY("UMA.LowEntropySourceValue",
                               low_entropy_source_value);
-  if (reporting_will_be_enabled) {
+  if (reporting_state == REPORTING_ENABLED) {
     if (entropy_source_returned_ == LAST_ENTROPY_NONE)
       entropy_source_returned_ = LAST_ENTROPY_HIGH;
     DCHECK_EQ(LAST_ENTROPY_HIGH, entropy_source_returned_);
@@ -590,7 +648,7 @@ void MetricsService::EnableRecording() {
   recording_active_ = true;
 
   ForceClientIdCreation();
-  child_process_logging::SetClientId(client_id_);
+  crash_keys::SetClientID(client_id_);
   if (!log_manager_.current_log())
     OpenNewLog();
 
@@ -642,7 +700,7 @@ void MetricsService::SetUpNotifications(
                  content::NotificationService::AllSources());
   registrar->Add(observer, content::NOTIFICATION_RENDERER_PROCESS_CLOSED,
                  content::NotificationService::AllSources());
-  registrar->Add(observer, content::NOTIFICATION_RENDERER_PROCESS_HANG,
+  registrar->Add(observer, content::NOTIFICATION_RENDER_WIDGET_HOST_HANG,
                  content::NotificationService::AllSources());
   registrar->Add(observer, chrome::NOTIFICATION_OMNIBOX_OPENED_URL,
                  content::NotificationService::AllSources());
@@ -705,7 +763,7 @@ void MetricsService::Observe(int type,
       }
       break;
 
-    case content::NOTIFICATION_RENDERER_PROCESS_HANG:
+    case content::NOTIFICATION_RENDER_WIDGET_HOST_HANG:
       LogRendererHang();
       break;
 
@@ -755,7 +813,7 @@ void MetricsService::OnAppEnterBackground() {
   // killed, so this has to be treated similar to a shutdown, closing and
   // persisting all logs. Unlinke a shutdown, the state is primed to be ready
   // to continue logging and uploading if the process does return.
-  if (recording_active() && state_ >= INITIAL_LOG_READY) {
+  if (recording_active() && state_ >= SENDING_INITIAL_STABILITY_LOG) {
     PushPendingLogsToPersistentStorage();
     // Persisting logs closes the current log, so start recording a new log
     // immediately to capture any background work that might be done before the
@@ -779,6 +837,13 @@ void MetricsService::LogNeedForCleanShutdown() {
 }
 #endif  // defined(OS_ANDROID) || defined(OS_IOS)
 
+// static
+void MetricsService::SetExecutionPhase(ExecutionPhase execution_phase) {
+  execution_phase_ = execution_phase;
+  PrefService* pref = g_browser_process->local_state();
+  pref->SetInteger(prefs::kStabilityExecutionPhase, execution_phase_);
+}
+
 void MetricsService::RecordBreakpadRegistration(bool success) {
   if (!success)
     IncrementPrefValue(prefs::kStabilityBreakpadRegistrationFail);
@@ -793,6 +858,58 @@ void MetricsService::RecordBreakpadHasDebugger(bool has_debugger) {
     IncrementPrefValue(prefs::kStabilityDebuggerPresent);
 }
 
+#if defined(OS_WIN)
+void MetricsService::CountBrowserCrashDumpAttempts() {
+  // Open the registry key for iteration.
+  base::win::RegKey regkey;
+  if (regkey.Open(HKEY_CURRENT_USER,
+                  chrome::kBrowserCrashDumpAttemptsRegistryPath,
+                  KEY_ALL_ACCESS) != ERROR_SUCCESS) {
+    return;
+  }
+
+  // The values we're interested in counting are all prefixed with the version.
+  base::string16 chrome_version(base::ASCIIToUTF16(chrome::kChromeVersion));
+
+  // Track a list of values to delete. We don't modify the registry key while
+  // we're iterating over its values.
+  typedef std::vector<base::string16> StringVector;
+  StringVector to_delete;
+
+  // Iterate over the values in the key counting dumps with and without crashes.
+  // We directly walk the values instead of using RegistryValueIterator in order
+  // to read all of the values as DWORDS instead of strings.
+  base::string16 name;
+  DWORD value = 0;
+  int dumps_with_crash = 0;
+  int dumps_with_no_crash = 0;
+  for (int i = regkey.GetValueCount() - 1; i >= 0; --i) {
+    if (regkey.GetValueNameAt(i, &name) == ERROR_SUCCESS &&
+        StartsWith(name, chrome_version, false) &&
+        regkey.ReadValueDW(name.c_str(), &value) == ERROR_SUCCESS) {
+      to_delete.push_back(name);
+      if (value == 0)
+        ++dumps_with_no_crash;
+      else
+        ++dumps_with_crash;
+    }
+  }
+
+  // Delete the registry keys we've just counted.
+  for (StringVector::iterator i = to_delete.begin(); i != to_delete.end(); ++i)
+    regkey.DeleteValue(i->c_str());
+
+  // Capture the histogram samples.
+  if (dumps_with_crash != 0)
+    UMA_HISTOGRAM_COUNTS("Chrome.BrowserDumpsWithCrash", dumps_with_crash);
+  if (dumps_with_no_crash != 0)
+    UMA_HISTOGRAM_COUNTS("Chrome.BrowserDumpsWithNoCrash", dumps_with_no_crash);
+  int total_dumps = dumps_with_crash + dumps_with_no_crash;
+  if (total_dumps != 0)
+    UMA_HISTOGRAM_COUNTS("Chrome.BrowserCrashDumpAttempts", total_dumps);
+}
+#endif  // defined(OS_WIN)
+
 //------------------------------------------------------------------------------
 // private methods
 //------------------------------------------------------------------------------
@@ -801,7 +918,7 @@ void MetricsService::RecordBreakpadHasDebugger(bool has_debugger) {
 //------------------------------------------------------------------------------
 // Initialization methods
 
-void MetricsService::InitializeMetricsState() {
+void MetricsService::InitializeMetricsState(ReportingState reporting_state) {
 #if defined(OS_POSIX)
   network_stats_server_ = chrome_common_net::kEchoTestServerLocation;
   http_pipelining_test_server_ = chrome_common_net::kPipelineTestServerBaseUrl;
@@ -814,6 +931,8 @@ void MetricsService::InitializeMetricsState() {
   PrefService* pref = g_browser_process->local_state();
   DCHECK(pref);
 
+  // TODO(asvitkine): Kill this logic when SendSeparateInitialStabilityLog() is
+  // is made the default behavior.
   if ((pref->GetInt64(prefs::kStabilityStatsBuildTime)
        != MetricsLog::GetBuildTime()) ||
       (pref->GetString(prefs::kStabilityStatsVersion)
@@ -827,20 +946,40 @@ void MetricsService::InitializeMetricsState() {
                    MetricsLog::GetBuildTime());
   }
 
-  // Update session ID
   session_id_ = pref->GetInteger(prefs::kMetricsSessionID);
-  ++session_id_;
-  pref->SetInteger(prefs::kMetricsSessionID, session_id_);
-
-  // Stability bookkeeping
-  IncrementPrefValue(prefs::kStabilityLaunchCount);
 
   if (!pref->GetBoolean(prefs::kStabilityExitedCleanly)) {
     IncrementPrefValue(prefs::kStabilityCrashCount);
     // Reset flag, and wait until we call LogNeedForCleanShutdown() before
     // monitoring.
     pref->SetBoolean(prefs::kStabilityExitedCleanly, true);
+
+    // TODO(rtenneti): On windows, consider saving/getting execution_phase from
+    // the registry.
+    int execution_phase = pref->GetInteger(prefs::kStabilityExecutionPhase);
+    UMA_HISTOGRAM_SPARSE_SLOWLY("Chrome.Browser.CrashedExecutionPhase",
+                                execution_phase);
+
+    // If the previous session didn't exit cleanly, then prepare an initial
+    // stability log if UMA is enabled.
+    bool reporting_will_be_enabled = (reporting_state == REPORTING_ENABLED);
+    if (reporting_will_be_enabled && SendSeparateInitialStabilityLog())
+      PrepareInitialStabilityLog();
   }
+
+  // Update session ID.
+  ++session_id_;
+  pref->SetInteger(prefs::kMetricsSessionID, session_id_);
+
+  // Stability bookkeeping
+  IncrementPrefValue(prefs::kStabilityLaunchCount);
+
+  DCHECK_EQ(UNINITIALIZED_PHASE, execution_phase_);
+  SetExecutionPhase(START_METRICS_RECORDING);
+
+#if defined(OS_WIN)
+  CountBrowserCrashDumpAttempts();
+#endif  // defined(OS_WIN)
 
   if (!pref->GetBoolean(prefs::kStabilitySessionEndCompleted)) {
     IncrementPrefValue(prefs::kStabilityIncompleteSessionEndCount);
@@ -849,8 +988,8 @@ void MetricsService::InitializeMetricsState() {
   }
 
   // Initialize uptime counters.
-  int64 startup_uptime = MetricsLog::GetIncrementalUptime(pref);
-  DCHECK_EQ(0, startup_uptime);
+  const base::TimeDelta startup_uptime = GetIncrementalUptime(pref);
+  DCHECK_EQ(0, startup_uptime.InMicroseconds());
   // For backwards compatibility, leave this intact in case Omaha is checking
   // them.  prefs::kStabilityLastTimestampSec may also be useless now.
   // TODO(jar): Delete these if they have no uses.
@@ -983,15 +1122,34 @@ void MetricsService::ReceivedProfilerData(
 
   // Upon the first callback, create the initial log so that we can immediately
   // save the profiler data.
-  if (!initial_log_.get())
-    initial_log_.reset(new MetricsLog(client_id_, session_id_));
+  if (!initial_metrics_log_.get())
+    initial_metrics_log_.reset(new MetricsLog(client_id_, session_id_));
 
-  initial_log_->RecordProfilerData(process_data, process_type);
+  initial_metrics_log_->RecordProfilerData(process_data, process_type);
 }
 
 void MetricsService::FinishedReceivingProfilerData() {
   DCHECK_EQ(INIT_TASK_SCHEDULED, state_);
-    state_ = INIT_TASK_DONE;
+  state_ = INIT_TASK_DONE;
+  scheduler_->InitTaskComplete();
+}
+
+base::TimeDelta MetricsService::GetIncrementalUptime(PrefService* pref) {
+  base::TimeTicks now = base::TimeTicks::Now();
+  // If this is the first call, init |last_updated_time_|.
+  if (last_updated_time_.is_null())
+    last_updated_time_ = now;
+  const base::TimeDelta incremental_time = now - last_updated_time_;
+  last_updated_time_ = now;
+
+  const int64 incremental_time_secs = incremental_time.InSeconds();
+  if (incremental_time_secs > 0) {
+    int64 metrics_uptime = pref->GetInt64(prefs::kUninstallMetricsUptimeSec);
+    metrics_uptime += incremental_time_secs;
+    pref->SetInt64(prefs::kUninstallMetricsUptimeSec, metrics_uptime);
+  }
+
+  return incremental_time;
 }
 
 int MetricsService::GetLowEntropySource() {
@@ -1068,7 +1226,7 @@ void MetricsService::OpenNewLog() {
   DCHECK(!log_manager_.current_log());
 
   log_manager_.BeginLoggingWithLog(new MetricsLog(client_id_, session_id_),
-                                   MetricsLogManager::ONGOING_LOG);
+                                   MetricsLog::ONGOING_LOG);
   if (state_ == INITIALIZED) {
     // We only need to schedule that run once.
     state_ = INIT_TASK_SCHEDULED;
@@ -1110,15 +1268,21 @@ void MetricsService::CloseCurrentLog() {
   MetricsLog* current_log =
       static_cast<MetricsLog*>(log_manager_.current_log());
   DCHECK(current_log);
-  current_log->RecordEnvironmentProto(plugins_, google_update_metrics_);
-  current_log->RecordIncrementalStabilityElements(plugins_);
+  std::vector<chrome_variations::ActiveGroupId> synthetic_trials;
+  GetCurrentSyntheticFieldTrials(&synthetic_trials);
+  current_log->RecordEnvironment(plugins_, google_update_metrics_,
+                                 synthetic_trials);
+  PrefService* pref = g_browser_process->local_state();
+  current_log->RecordStabilityMetrics(GetIncrementalUptime(pref),
+                                      MetricsLog::ONGOING_LOG);
+
   RecordCurrentHistograms();
 
   log_manager_.FinishCurrentLog();
 }
 
 void MetricsService::PushPendingLogsToPersistentStorage() {
-  if (state_ < INITIAL_LOG_READY)
+  if (state_ < SENDING_INITIAL_STABILITY_LOG)
     return;  // We didn't and still don't have time to get plugin list etc.
 
   if (log_manager_.has_staged_log()) {
@@ -1132,7 +1296,7 @@ void MetricsService::PushPendingLogsToPersistentStorage() {
   }
   DCHECK(!log_manager_.has_staged_log());
   CloseCurrentLog();
-  StoreUnsentLogs();
+  log_manager_.PersistUnsentLogs();
 
   // If there was a staged and/or current log, then there is now at least one
   // log waiting to be uploaded.
@@ -1151,8 +1315,10 @@ void MetricsService::StartSchedulerIfNecessary() {
   // Even if reporting is disabled, the scheduler is needed to trigger the
   // creation of the initial log, which must be done in order for any logs to be
   // persisted on shutdown or backgrounding.
-  if (recording_active() && (reporting_active() || state_ < INITIAL_LOG_READY))
+  if (recording_active() &&
+      (reporting_active() || state_ < SENDING_INITIAL_STABILITY_LOG)) {
     scheduler_->Start();
+  }
 }
 
 void MetricsService::StartScheduledUpload() {
@@ -1166,7 +1332,7 @@ void MetricsService::StartScheduledUpload() {
   // recording are turned off instead of letting it fire and then aborting.
   if (idle_since_last_transmission_ ||
       !recording_active() ||
-      (!reporting_active() && state_ >= INITIAL_LOG_READY)) {
+      (!reporting_active() && state_ >= SENDING_INITIAL_STABILITY_LOG)) {
     scheduler_->Stop();
     scheduler_->UploadCancelled();
     return;
@@ -1229,12 +1395,32 @@ void MetricsService::OnMemoryDetailCollectionDone() {
       &MetricsService::OnHistogramSynchronizationDone,
       self_ptr_factory_.GetWeakPtr());
 
+  base::TimeDelta timeout =
+      base::TimeDelta::FromMilliseconds(kMaxHistogramGatheringWaitDuration);
+
+  DCHECK_EQ(num_async_histogram_fetches_in_progress_, 0);
+
+#if defined(OS_ANDROID)
+  // Android has no service process.
+  num_async_histogram_fetches_in_progress_ = 1;
+#else  // OS_ANDROID
+  num_async_histogram_fetches_in_progress_ = 2;
+  // Run requests to service and content in parallel.
+  if (!ServiceProcessControl::GetInstance()->GetHistograms(callback, timeout)) {
+    // Assume |num_async_histogram_fetches_in_progress_| is not changed by
+    // |GetHistograms()|.
+    DCHECK_EQ(num_async_histogram_fetches_in_progress_, 2);
+    // Assign |num_async_histogram_fetches_in_progress_| above and decrement it
+    // here to make code work even if |GetHistograms()| fired |callback|.
+    --num_async_histogram_fetches_in_progress_;
+  }
+#endif  // OS_ANDROID
+
   // Set up the callback to task to call after we receive histograms from all
   // child processes. Wait time specifies how long to wait before absolutely
   // calling us back on the task.
-  content::FetchHistogramsAsynchronously(
-      base::MessageLoop::current(), callback,
-      base::TimeDelta::FromMilliseconds(kMaxHistogramGatheringWaitDuration));
+  content::FetchHistogramsAsynchronously(base::MessageLoop::current(), callback,
+                                         timeout);
 }
 
 void MetricsService::OnHistogramSynchronizationDone() {
@@ -1242,6 +1428,11 @@ void MetricsService::OnHistogramSynchronizationDone() {
   // This function should only be called as the callback from an ansynchronous
   // step.
   DCHECK(waiting_for_asynchronous_reporting_step_);
+  DCHECK_GT(num_async_histogram_fetches_in_progress_, 0);
+
+  // Check if all expected requests finished.
+  if (--num_async_histogram_fetches_in_progress_ > 0)
+    return;
 
   waiting_for_asynchronous_reporting_step_ = false;
   OnFinalLogInfoCollectionDone();
@@ -1290,10 +1481,25 @@ void MetricsService::StageNewLog() {
       return;
 
     case INIT_TASK_DONE:
-      PrepareInitialLog();
-      DCHECK_EQ(INIT_TASK_DONE, state_);
-      log_manager_.LoadPersistedUnsentLogs();
-      state_ = INITIAL_LOG_READY;
+      if (has_initial_stability_log_) {
+        // There's an initial stability log, ready to send.
+        log_manager_.StageNextLogForUpload();
+        has_initial_stability_log_ = false;
+        // Note: No need to call LoadPersistedUnsentLogs() here because unsent
+        // logs have already been loaded by PrepareInitialStabilityLog().
+        state_ = SENDING_INITIAL_STABILITY_LOG;
+      } else {
+        // TODO(asvitkine): When the field trial is removed, the |log_type|
+        // arg should be removed and PrepareInitialMetricsLog() should always
+        // use ONGOING_LOG. Use INITIAL_LOG only to match to the old behavior
+        // when the field trial is off.
+        MetricsLog::LogType log_type = SendSeparateInitialStabilityLog() ?
+            MetricsLog::ONGOING_LOG : MetricsLog::INITIAL_LOG;
+        PrepareInitialMetricsLog(log_type);
+        // Load unsent logs (if any) from local state.
+        log_manager_.LoadPersistedUnsentLogs();
+        state_ = SENDING_INITIAL_METRICS_LOG;
+      }
       break;
 
     case SENDING_OLD_LOGS:
@@ -1314,31 +1520,54 @@ void MetricsService::StageNewLog() {
   DCHECK(log_manager_.has_staged_log());
 }
 
-void MetricsService::PrepareInitialLog() {
-  DCHECK_EQ(INIT_TASK_DONE, state_);
+void MetricsService::PrepareInitialStabilityLog() {
+  DCHECK_EQ(INITIALIZED, state_);
+  PrefService* pref = g_browser_process->local_state();
+  DCHECK_NE(0, pref->GetInteger(prefs::kStabilityCrashCount));
 
-  DCHECK(initial_log_.get());
-  initial_log_->set_hardware_class(hardware_class_);
-  initial_log_->RecordEnvironment(plugins_, google_update_metrics_);
+  scoped_ptr<MetricsLog> initial_stability_log(
+      new MetricsLog(client_id_, session_id_));
+  if (!initial_stability_log->LoadSavedEnvironmentFromPrefs())
+    return;
+  initial_stability_log->RecordStabilityMetrics(base::TimeDelta(),
+                                                MetricsLog::INITIAL_LOG);
+  log_manager_.LoadPersistedUnsentLogs();
+
+  log_manager_.PauseCurrentLog();
+  log_manager_.BeginLoggingWithLog(initial_stability_log.release(),
+                                   MetricsLog::INITIAL_LOG);
+  log_manager_.FinishCurrentLog();
+  log_manager_.ResumePausedLog();
+
+  // Store unsent logs, including the stability log that was just saved, so
+  // that they're not lost in case of a crash before upload time.
+  log_manager_.PersistUnsentLogs();
+
+  has_initial_stability_log_ = true;
+}
+
+void MetricsService::PrepareInitialMetricsLog(MetricsLog::LogType log_type) {
+  DCHECK(state_ == INIT_TASK_DONE || state_ == SENDING_INITIAL_STABILITY_LOG);
+  initial_metrics_log_->set_hardware_class(hardware_class_);
+
+  std::vector<chrome_variations::ActiveGroupId> synthetic_trials;
+  GetCurrentSyntheticFieldTrials(&synthetic_trials);
+  initial_metrics_log_->RecordEnvironment(plugins_, google_update_metrics_,
+                                          synthetic_trials);
+  PrefService* pref = g_browser_process->local_state();
+  initial_metrics_log_->RecordStabilityMetrics(GetIncrementalUptime(pref),
+                                               log_type);
 
   // Histograms only get written to the current log, so make the new log current
   // before writing them.
   log_manager_.PauseCurrentLog();
-  log_manager_.BeginLoggingWithLog(initial_log_.release(),
-                                   MetricsLogManager::INITIAL_LOG);
+  log_manager_.BeginLoggingWithLog(initial_metrics_log_.release(), log_type);
   RecordCurrentHistograms();
   log_manager_.FinishCurrentLog();
   log_manager_.ResumePausedLog();
 
   DCHECK(!log_manager_.has_staged_log());
   log_manager_.StageNextLogForUpload();
-}
-
-void MetricsService::StoreUnsentLogs() {
-  if (state_ < INITIAL_LOG_READY)
-    return;  // We never Recalled the prior unsent logs.
-
-  log_manager_.PersistUnsentLogs();
 }
 
 void MetricsService::SendStagedLog() {
@@ -1375,34 +1604,28 @@ void MetricsService::PrepareFetchWithStagedLog() {
     current_fetch_->SetRequestContext(
         g_browser_process->system_request_context());
 
-    // Compress the protobufs 50% of the time. This can be used to see if
-    // compressed protobufs are being mishandled by machines between the
-    // client/server or monitoring programs/firewalls on the client.
-    bool gzip_protobuf_before_uploading =
-        metrics::ShouldGzipProtobufsBeforeUploading();
-    if (gzip_protobuf_before_uploading) {
-      std::string log_text = log_manager_.staged_log_text();
-      std::string compressed_log_text;
-      bool compression_successful = chrome::GzipCompress(log_text,
-                                                         &compressed_log_text);
-      DCHECK(compression_successful);
-      if (compression_successful) {
-        current_fetch_->SetUploadData(kMimeType, compressed_log_text);
-        // Tell the server that we're uploading gzipped protobufs.
-        current_fetch_->SetExtraRequestHeaders("content-encoding: gzip");
-        UMA_HISTOGRAM_PERCENTAGE(
-            "UMA.ProtoCompressionRatio",
-            100 * compressed_log_text.size() / log_text.size());
-        UMA_HISTOGRAM_CUSTOM_COUNTS(
-            "UMA.ProtoGzippedKBSaved",
-            (log_text.size() - compressed_log_text.size()) / 1024,
-            1, 2000, 50);
-      }
-    } else {
-      current_fetch_->SetUploadData(kMimeType, log_manager_.staged_log_text());
+    std::string log_text = log_manager_.staged_log_text();
+    std::string compressed_log_text;
+    bool compression_successful = chrome::GzipCompress(log_text,
+                                                       &compressed_log_text);
+    DCHECK(compression_successful);
+    if (compression_successful) {
+      current_fetch_->SetUploadData(kMimeType, compressed_log_text);
+      // Tell the server that we're uploading gzipped protobufs.
+      current_fetch_->SetExtraRequestHeaders("content-encoding: gzip");
+      const std::string hash =
+          base::HexEncode(log_manager_.staged_log_hash().data(),
+                          log_manager_.staged_log_hash().size());
+      DCHECK(!hash.empty());
+      current_fetch_->AddExtraRequestHeader("X-Chrome-UMA-Log-SHA1: " + hash);
+      UMA_HISTOGRAM_PERCENTAGE(
+          "UMA.ProtoCompressionRatio",
+          100 * compressed_log_text.size() / log_text.size());
+      UMA_HISTOGRAM_CUSTOM_COUNTS(
+          "UMA.ProtoGzippedKBSaved",
+          (log_text.size() - compressed_log_text.size()) / 1024,
+          1, 2000, 50);
     }
-    UMA_HISTOGRAM_BOOLEAN("UMA.ProtoGzipped",
-                          gzip_protobuf_before_uploading);
 
     // We already drop cookies server-side, but we might as well strip them out
     // client-side as well.
@@ -1452,14 +1675,26 @@ void MetricsService::OnURLFetchComplete(const net::URLFetcher* source) {
 
   if (!log_manager_.has_staged_log()) {
     switch (state_) {
-      case INITIAL_LOG_READY:
+      case SENDING_INITIAL_STABILITY_LOG:
+        // Store the updated list to disk now that the removed log is uploaded.
+        log_manager_.PersistUnsentLogs();
+        PrepareInitialMetricsLog(MetricsLog::ONGOING_LOG);
+        SendStagedLog();
+        state_ = SENDING_INITIAL_METRICS_LOG;
+        break;
+
+      case SENDING_INITIAL_METRICS_LOG:
+        // The initial metrics log never gets persisted to local state, so it's
+        // not necessary to call log_manager_.PersistUnsentLogs() here.
+        // TODO(asvitkine): It should be persisted like the initial stability
+        // log and old unsent logs. http://crbug.com/328417
         state_ = log_manager_.has_unsent_logs() ? SENDING_OLD_LOGS
                                                 : SENDING_CURRENT_LOGS;
         break;
 
       case SENDING_OLD_LOGS:
         // Store the updated list to disk now that the removed log is uploaded.
-        StoreUnsentLogs();
+        log_manager_.PersistUnsentLogs();
         if (!log_manager_.has_unsent_logs())
           state_ = SENDING_CURRENT_LOGS;
         break;
@@ -1479,7 +1714,13 @@ void MetricsService::OnURLFetchComplete(const net::URLFetcher* source) {
   // Error 400 indicates a problem with the log, not with the server, so
   // don't consider that a sign that the server is in trouble.
   bool server_is_healthy = upload_succeeded || response_code == 400;
-  scheduler_->UploadFinished(server_is_healthy, log_manager_.has_unsent_logs());
+  // Don't notify the scheduler that the upload is finished if we've only sent
+  // the initial stability log, but not yet the initial metrics log (treat the
+  // two as a single unit of work as far as the scheduler is concerned).
+  if (state_ != SENDING_INITIAL_METRICS_LOG) {
+    scheduler_->UploadFinished(server_is_healthy,
+                               log_manager_.has_unsent_logs());
+  }
 
   // Collect network stats if UMA upload succeeded.
   IOThread* io_thread = g_browser_process->io_thread();
@@ -1545,8 +1786,8 @@ void MetricsService::LogRendererCrash(content::RenderProcessHost* host,
   } else if (status == base::TERMINATION_STATUS_STILL_RUNNING) {
     UMA_HISTOGRAM_PERCENTAGE("BrowserRenderProcessHost.DisconnectedAlive",
                                was_extension_process ? 2 : 1);
-    }
   }
+}
 
 void MetricsService::LogRendererHang() {
   IncrementPrefValue(prefs::kStabilityRendererHangCount);
@@ -1558,6 +1799,35 @@ bool MetricsService::UmaMetricsProperlyShutdown() {
   return clean_shutdown_status_ == CLEANLY_SHUTDOWN;
 }
 
+void MetricsService::RegisterSyntheticFieldTrial(
+    const SyntheticTrialGroup& trial) {
+  for (size_t i = 0; i < synthetic_trial_groups_.size(); ++i) {
+    if (synthetic_trial_groups_[i].id.name == trial.id.name) {
+      if (synthetic_trial_groups_[i].id.group != trial.id.group) {
+        synthetic_trial_groups_[i].id.group = trial.id.group;
+        synthetic_trial_groups_[i].start_time = trial.start_time;
+      }
+      return;
+    }
+  }
+
+  SyntheticTrialGroup trial_group(
+      trial.id.name, trial.id.group, base::TimeTicks::Now());
+  synthetic_trial_groups_.push_back(trial_group);
+}
+
+void MetricsService::GetCurrentSyntheticFieldTrials(
+    std::vector<chrome_variations::ActiveGroupId>* synthetic_trials) {
+  DCHECK(synthetic_trials);
+  synthetic_trials->clear();
+  const MetricsLog* current_log =
+      static_cast<const MetricsLog*>(log_manager_.current_log());
+  for (size_t i = 0; i < synthetic_trial_groups_.size(); ++i) {
+    if (synthetic_trial_groups_[i].start_time <= current_log->creation_time())
+      synthetic_trials->push_back(synthetic_trial_groups_[i].id);
+  }
+}
+
 void MetricsService::LogCleanShutdown() {
   // Redundant hack to write pref ASAP.
   MarkAppCleanShutdownAndCommit();
@@ -1567,6 +1837,9 @@ void MetricsService::LogCleanShutdown() {
   clean_shutdown_status_ = CLEANLY_SHUTDOWN;
 
   RecordBooleanPrefValue(prefs::kStabilityExitedCleanly, true);
+  PrefService* pref = g_browser_process->local_state();
+  pref->SetInteger(prefs::kStabilityExecutionPhase,
+                   MetricsService::SHUTDOWN_COMPLETE);
 }
 
 #if defined(OS_CHROMEOS)
@@ -1605,7 +1878,7 @@ void MetricsService::LogPluginLoadingError(const base::FilePath& plugin_path) {
 
 MetricsService::ChildProcessStats& MetricsService::GetChildProcessStats(
     const content::ChildProcessData& data) {
-  const string16& child_name = data.name;
+  const base::string16& child_name = data.name;
   if (!ContainsKey(child_process_stats_buffer_, child_name)) {
     child_process_stats_buffer_[child_name] =
         ChildProcessStats(data.process_type);
@@ -1634,7 +1907,7 @@ void MetricsService::RecordPluginChanges(PrefService* pref) {
     }
 
     // TODO(viettrungluu): remove conversions
-    string16 name16 = UTF8ToUTF16(plugin_name);
+    base::string16 name16 = UTF8ToUTF16(plugin_name);
     if (child_process_stats_buffer_.find(name16) ==
         child_process_stats_buffer_.end()) {
       continue;
@@ -1673,7 +1946,7 @@ void MetricsService::RecordPluginChanges(PrefService* pref) {
 
   // Now go through and add dictionaries for plugins that didn't already have
   // reports in Local State.
-  for (std::map<string16, ChildProcessStats>::iterator cache_iter =
+  for (std::map<base::string16, ChildProcessStats>::iterator cache_iter =
            child_process_stats_buffer_.begin();
        cache_iter != child_process_stats_buffer_.end(); ++cache_iter) {
     ChildProcessStats stats = cache_iter->second;

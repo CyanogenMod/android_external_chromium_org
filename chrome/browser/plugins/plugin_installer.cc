@@ -24,6 +24,7 @@
 #include "content/public/browser/resource_dispatcher_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/referrer.h"
+#include "net/base/request_priority.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context.h"
 
@@ -44,7 +45,8 @@ void BeginDownload(
 
   ResourceDispatcherHost* rdh = ResourceDispatcherHost::Get();
   scoped_ptr<net::URLRequest> request(
-      resource_context->GetRequestContext()->CreateRequest(url, NULL));
+      resource_context->GetRequestContext()->CreateRequest(
+          url, net::DEFAULT_PRIORITY, NULL));
   net::Error error = rdh->BeginDownload(
       request.Pass(),
       content::Referrer(),
@@ -67,7 +69,8 @@ void BeginDownload(
 }  // namespace
 
 PluginInstaller::PluginInstaller()
-    : state_(INSTALLER_STATE_IDLE) {
+    : state_(INSTALLER_STATE_IDLE),
+      strong_observer_count_(0) {
 }
 
 PluginInstaller::~PluginInstaller() {
@@ -109,12 +112,14 @@ void PluginInstaller::OnDownloadDestroyed(DownloadItem* download) {
 }
 
 void PluginInstaller::AddObserver(PluginInstallerObserver* observer) {
+  strong_observer_count_++;
   observers_.AddObserver(observer);
 }
 
 void PluginInstaller::RemoveObserver(PluginInstallerObserver* observer) {
+  strong_observer_count_--;
   observers_.RemoveObserver(observer);
-  if (observers_.size() == weak_observers_.size()) {
+  if (strong_observer_count_ == 0) {
     FOR_EACH_OBSERVER(WeakPluginInstallerObserver, weak_observers_,
                       OnlyWeakObserversLeft());
   }
@@ -168,7 +173,7 @@ void PluginInstaller::OpenDownloadURL(const GURL& plugin_url,
   web_contents->OpenURL(content::OpenURLParams(
       plugin_url,
       content::Referrer(web_contents->GetURL(),
-                        WebKit::WebReferrerPolicyDefault),
+                        blink::WebReferrerPolicyDefault),
       NEW_FOREGROUND_TAB, content::PAGE_TRANSITION_TYPED, false));
   FOR_EACH_OBSERVER(PluginInstallerObserver, observers_, DownloadFinished());
 }

@@ -33,13 +33,6 @@
 #include "net/url_request/url_request_context.h"
 #include "ui/base/l10n/l10n_util.h"
 
-// Default URL for the sync web interface.
-//
-// TODO(idana): when we figure out how we are going to allow third parties to
-// plug in their own sync engine, we should allow this value to be
-// configurable.
-static const char kSyncDefaultViewOnlineUrl[] = "http://docs.google.com";
-
 NewTabPageSyncHandler::NewTabPageSyncHandler() : sync_service_(NULL),
   waiting_for_initial_page_load_(true) {
 }
@@ -118,8 +111,8 @@ void NewTabPageSyncHandler::BuildAndSendSyncStatus() {
   // "Sync error", when we can't authenticate or establish a connection with
   //               the sync server (appropriate information appended to
   //               message).
-  string16 status_msg;
-  string16 link_text;
+  base::string16 status_msg;
+  base::string16 link_text;
 
   sync_ui_util::MessageType type =
       sync_ui_util::GetStatusLabelsForNewTabPage(sync_service_,
@@ -141,7 +134,7 @@ void NewTabPageSyncHandler::HandleSyncLinkClicked(const ListValue* args) {
   chrome::ShowBrowserSignin(browser, signin::SOURCE_NTP_LINK);
 
   if (sync_service_->HasSyncSetupCompleted()) {
-    string16 user = UTF8ToUTF16(SigninManagerFactory::GetForProfile(
+    base::string16 user = UTF8ToUTF16(SigninManagerFactory::GetForProfile(
         Profile::FromWebUI(web_ui()))->GetAuthenticatedUsername());
     DictionaryValue value;
     value.SetString("syncEnabledMessage",

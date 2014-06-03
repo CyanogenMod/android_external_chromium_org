@@ -15,10 +15,10 @@
 #include "chrome/browser/extensions/extension_function_test_utils.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/browser_context.h"
+#include "extensions/common/extension.h"
 #include "webkit/browser/fileapi/external_mount_points.h"
 #include "webkit/common/fileapi/file_system_types.h"
 
@@ -59,7 +59,7 @@ struct TestCase {
 void ExpectFileContentEquals(const base::FilePath& selected_path,
                              const std::string& expected_contents) {
   std::string test_file_contents;
-  ASSERT_TRUE(file_util::ReadFileToString(selected_path, &test_file_contents));
+  ASSERT_TRUE(base::ReadFileToString(selected_path, &test_file_contents));
   EXPECT_EQ(expected_contents, test_file_contents);
 }
 
@@ -164,7 +164,7 @@ class FileBrowserHandlerExtensionTest : public ExtensionApiTest {
     // directory with an unique name.
     ASSERT_TRUE(scoped_tmp_dir_.CreateUniqueTempDir());
     tmp_mount_point_ = scoped_tmp_dir_.path().Append("tmp");
-    file_util::CreateDirectory(tmp_mount_point_);
+    base::CreateDirectory(tmp_mount_point_);
 
     ExtensionApiTest::SetUp();
   }
@@ -174,6 +174,7 @@ class FileBrowserHandlerExtensionTest : public ExtensionApiTest {
     BrowserContext::GetMountPoints(browser()->profile())->RegisterFileSystem(
         "tmp",
         fileapi::kFileSystemTypeNativeLocal,
+        fileapi::FileSystemMountOption(),
         tmp_mount_point_);
   }
 

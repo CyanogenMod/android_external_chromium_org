@@ -10,49 +10,126 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/testing_profile.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "ui/gfx/display.h"
+#include "ui/gfx/screen.h"
 
-TestMonitorInfoProvider::TestMonitorInfoProvider() {};
+#if defined(USE_AURA)
+#include "ui/aura/window.h"
+#endif
 
-TestMonitorInfoProvider::~TestMonitorInfoProvider() {};
+namespace {
 
-void TestMonitorInfoProvider::AddMonitor(const gfx::Rect& bounds,
-                                         const gfx::Rect& work_area) {
-  DCHECK(bounds.Contains(work_area));
-  monitor_bounds_.push_back(bounds);
-  work_areas_.push_back(work_area);
-}
+class TestScreen : public gfx::Screen {
+ public:
+  TestScreen() {}
+  virtual ~TestScreen() {}
 
-// Overridden from WindowSizer::MonitorInfoProvider:
-gfx::Rect TestMonitorInfoProvider::GetPrimaryDisplayWorkArea() const {
-  return work_areas_[0];
-}
-
-gfx::Rect TestMonitorInfoProvider::GetPrimaryDisplayBounds() const {
-  return monitor_bounds_[0];
-}
-
-gfx::Rect TestMonitorInfoProvider::GetMonitorWorkAreaMatching(
-    const gfx::Rect& match_rect) const {
-  return work_areas_[GetMonitorIndexMatchingBounds(match_rect)];
-}
-
-size_t TestMonitorInfoProvider::GetMonitorIndexMatchingBounds(
-    const gfx::Rect& match_rect) const {
-  int max_area = 0;
-  size_t max_area_index = 0;
-  // Loop through all the monitors, finding the one that intersects the
-  // largest area of the supplied match rect.
-  for (size_t i = 0; i < work_areas_.size(); ++i) {
-    gfx::Rect overlap = work_areas_[i];
-    overlap.Intersect(match_rect);
-    int area = overlap.width() * overlap.height();
-    if (area > max_area) {
-      max_area = area;
-      max_area_index = i;
-    }
+  // Overridden from gfx::Screen:
+  virtual bool IsDIPEnabled() OVERRIDE {
+    NOTREACHED();
+    return false;
   }
-  return max_area_index;
-}
+
+  virtual gfx::Point GetCursorScreenPoint() OVERRIDE {
+    NOTREACHED();
+    return gfx::Point();
+  }
+
+  virtual gfx::NativeWindow GetWindowUnderCursor() OVERRIDE {
+    NOTREACHED();
+    return NULL;
+  }
+
+  virtual gfx::NativeWindow GetWindowAtScreenPoint(const gfx::Point& point)
+      OVERRIDE {
+    NOTREACHED();
+    return NULL;
+  }
+
+  virtual int GetNumDisplays() const OVERRIDE {
+    return displays_.size();
+  }
+
+  virtual std::vector<gfx::Display> GetAllDisplays() const OVERRIDE {
+    return displays_;
+  }
+
+  virtual gfx::Display GetDisplayNearestWindow(
+      gfx::NativeView view) const OVERRIDE {
+#if defined(USE_AURA)
+    return GetDisplayMatching(view->GetBoundsInScreen());
+#else
+    NOTREACHED();
+    return gfx::Display();
+#endif
+  }
+
+  virtual gfx::Display GetDisplayNearestPoint(
+      const gfx::Point& point) const OVERRIDE {
+    NOTREACHED();
+    return gfx::Display();
+  }
+
+  virtual gfx::Display GetDisplayMatching(
+      const gfx::Rect& match_rect) const OVERRIDE {
+    int max_area = 0;
+    size_t max_area_index = 0;
+
+    for (size_t i = 0; i < displays_.size(); ++i) {
+      gfx::Rect overlap = displays_[i].bounds();
+      overlap.Intersect(match_rect);
+      int area = overlap.width() * overlap.height();
+      if (area > max_area) {
+        max_area = area;
+        max_area_index = i;
+      }
+    }
+    return displays_[max_area_index];
+  }
+
+  virtual gfx::Display GetPrimaryDisplay() const OVERRIDE {
+    return displays_[0];
+  }
+
+  virtual void AddObserver(gfx::DisplayObserver* observer) OVERRIDE {
+    NOTREACHED();
+  }
+
+  virtual void RemoveObserver(gfx::DisplayObserver* observer) OVERRIDE {
+    NOTREACHED();
+  }
+
+  void AddDisplay(const gfx::Rect& bounds,
+                  const gfx::Rect& work_area) {
+    gfx::Display display(displays_.size(), bounds);
+    display.set_work_area(work_area);
+    displays_.push_back(display);
+  }
+
+ private:
+  std::vector<gfx::Display> displays_;
+
+  DISALLOW_COPY_AND_ASSIGN(TestScreen);
+};
+
+class TestTargetDisplayProvider : public WindowSizer::TargetDisplayProvider {
+public:
+  TestTargetDisplayProvider() {}
+  virtual ~TestTargetDisplayProvider() {}
+
+  virtual gfx::Display GetTargetDisplay(
+      const gfx::Screen* screen,
+      const gfx::Rect& bounds) const OVERRIDE {
+    // On ash, the bounds is used as a indicator to specify
+    // the target display.
+    return screen->GetDisplayMatching(bounds);
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(TestTargetDisplayProvider);
+};
+
+}  // namespace
 
 TestStateProvider::TestStateProvider():
     has_persistent_data_(false),
@@ -118,17 +195,20 @@ void GetWindowBoundsAndShowState(
     gfx::Rect* out_bounds,
     ui::WindowShowState* out_show_state) {
   DCHECK(out_show_state);
-  TestMonitorInfoProvider* mip = new TestMonitorInfoProvider;
-  mip->AddMonitor(monitor1_bounds, monitor1_work_area);
+  TestScreen test_screen;
+  test_screen.AddDisplay(monitor1_bounds, monitor1_work_area);
   if (!monitor2_bounds.IsEmpty())
-    mip->AddMonitor(monitor2_bounds, monitor2_bounds);
-  TestStateProvider* sp = new TestStateProvider;
+    test_screen.AddDisplay(monitor2_bounds, monitor2_bounds);
+  scoped_ptr<TestStateProvider> sp(new TestStateProvider);
   if (source == PERSISTED || source == BOTH)
     sp->SetPersistentState(bounds, work_area, show_state_persisted, true);
   if (source == LAST_ACTIVE || source == BOTH)
     sp->SetLastActiveState(bounds, show_state_last, true);
+  scoped_ptr<WindowSizer::TargetDisplayProvider> tdp(
+      new TestTargetDisplayProvider);
 
-  WindowSizer sizer(sp, mip, browser);
+  WindowSizer sizer(sp.PassAs<WindowSizer::StateProvider>(),
+                    tdp.Pass(), &test_screen, browser);
   sizer.DetermineWindowBoundsAndShowState(passed_in,
                                           out_bounds,
                                           out_show_state);
@@ -158,15 +238,18 @@ ui::WindowShowState GetWindowShowState(
     const gfx::Rect& display_config) {
   gfx::Rect bounds = display_config;
   gfx::Rect work_area = display_config;
-  TestMonitorInfoProvider* mip = new TestMonitorInfoProvider;
-  mip->AddMonitor(display_config, display_config);
-  TestStateProvider* sp = new TestStateProvider;
+  TestScreen test_screen;
+  test_screen.AddDisplay(display_config, display_config);
+  scoped_ptr<TestStateProvider> sp(new TestStateProvider);
   if (source == PERSISTED || source == BOTH)
     sp->SetPersistentState(bounds, work_area, show_state_persisted, true);
   if (source == LAST_ACTIVE || source == BOTH)
     sp->SetLastActiveState(bounds, show_state_last, true);
+  scoped_ptr<WindowSizer::TargetDisplayProvider> tdp(
+      new TestTargetDisplayProvider);
 
-  WindowSizer sizer(sp, mip, browser);
+  WindowSizer sizer(sp.PassAs<WindowSizer::StateProvider>(),
+                    tdp.Pass(), &test_screen, browser);
 
   ui::WindowShowState out_show_state = ui::SHOW_STATE_DEFAULT;
   gfx::Rect out_bounds;
@@ -178,7 +261,8 @@ ui::WindowShowState GetWindowShowState(
 }
 
 #if !defined(OS_MACOSX)
-TEST(WindowSizerTestCommon, PersistedWindowOffscreenWithNonAggressiveRepositioning) {
+TEST(WindowSizerTestCommon,
+     PersistedWindowOffscreenWithNonAggressiveRepositioning) {
   { // off the left but the minimum visibility condition is barely satisfied
     // without relocaiton.
     gfx::Rect initial_bounds(-470, 50, 500, 400);

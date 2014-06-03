@@ -56,9 +56,8 @@ void ImageLayer::CreateUpdaterIfNeeded() {
     return;
 
   updater_ = ImageLayerUpdater::Create();
-  GLenum texture_format =
-      layer_tree_host()->GetRendererCapabilities().best_texture_format;
-  SetTextureFormat(texture_format);
+  SetTextureFormat(
+      layer_tree_host()->GetRendererCapabilities().best_texture_format);
 }
 
 LayerUpdater* ImageLayer::Updater() const {
@@ -79,6 +78,12 @@ void ImageLayer::CalculateContentsScale(float ideal_contents_scale,
 
 bool ImageLayer::DrawsContent() const {
   return !bitmap_.isNull() && TiledLayer::DrawsContent();
+}
+
+void ImageLayer::OnOutputSurfaceCreated() {
+  SetTextureFormat(
+      layer_tree_host()->GetRendererCapabilities().best_texture_format);
+  TiledLayer::OnOutputSurfaceCreated();
 }
 
 float ImageLayer::ImageContentsScaleX() const {

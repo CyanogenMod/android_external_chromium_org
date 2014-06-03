@@ -47,12 +47,11 @@ class FakeSpeechRecognitionManager : public SpeechRecognitionManager {
   virtual void StartSession(int session_id) OVERRIDE;
   virtual void AbortSession(int session_id) OVERRIDE;
   virtual void StopAudioCaptureForSession(int session_id) OVERRIDE;
-  virtual void AbortAllSessionsForListener(
-      SpeechRecognitionEventListener* listener) OVERRIDE;
+  virtual void AbortAllSessionsForRenderProcess(int render_process_id) OVERRIDE;
   virtual void AbortAllSessionsForRenderView(int render_process_id,
                                              int render_view_id) OVERRIDE;
   virtual bool HasAudioInputDevices() OVERRIDE;
-  virtual string16 GetAudioInputDeviceModel() OVERRIDE;
+  virtual base::string16 GetAudioInputDeviceModel() OVERRIDE;
   virtual void ShowAudioInputSettings() OVERRIDE {}
   virtual int GetSession(int render_process_id,
                          int render_view_id,

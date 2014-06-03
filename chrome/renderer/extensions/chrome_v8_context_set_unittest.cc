@@ -3,10 +3,10 @@
 // found in the LICENSE file.
 
 #include "base/message_loop/message_loop.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/features/feature.h"
 #include "chrome/renderer/extensions/chrome_v8_context.h"
 #include "chrome/renderer/extensions/chrome_v8_context_set.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/features/feature.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
 #include "v8/include/v8.h"
@@ -18,13 +18,13 @@ TEST(ChromeV8ContextSet, Lifecycle) {
 
   ChromeV8ContextSet context_set;
 
-  v8::HandleScope handle_scope;
-  v8::Handle<v8::Context> v8_context(
-      v8::Context::New(v8::Isolate::GetCurrent()));
+  v8::Isolate* isolate = v8::Isolate::GetCurrent();
+  v8::HandleScope handle_scope(isolate);
+  v8::Handle<v8::Context> v8_context(v8::Context::New(isolate));
 
   // Dirty hack, but we don't actually need the frame, and this is easier than
   // creating a whole webview.
-  WebKit::WebFrame* frame = reinterpret_cast<WebKit::WebFrame*>(1);
+  blink::WebFrame* frame = reinterpret_cast<blink::WebFrame*>(1);
   const Extension* extension = NULL;
   ChromeV8Context* context = new ChromeV8Context(
       v8_context,

@@ -38,6 +38,8 @@ class DisplayManager;
 namespace test {
 
 class AshTestHelper;
+class TestScreenshotDelegate;
+class TestSystemTrayDelegate;
 #if defined(OS_WIN)
 class TestMetroViewerProcessHost;
 #endif
@@ -63,10 +65,10 @@ class AshTestBase : public testing::Test {
   // See ash::test::DisplayManagerTestApi::UpdateDisplay for more details.
   void UpdateDisplay(const std::string& display_specs);
 
-  // Returns a RootWindow. Usually this is the active RootWindow, but that
+  // Returns a root Window. Usually this is the active root Window, but that
   // method can return NULL sometimes, and in those cases, we fall back on the
-  // primary RootWindow.
-  aura::RootWindow* CurrentContext();
+  // primary root Window.
+  aura::Window* CurrentContext();
 
   // Versions of the functions in aura::test:: that go through our shell
   // StackingController instead of taking a parent.
@@ -86,7 +88,7 @@ class AshTestBase : public testing::Test {
       const gfx::Rect& bounds);
 
   // Attach |window| to the current shell's root window.
-  void SetDefaultParentByPrimaryRootWindow(aura::Window* window);
+  void ParentWindowInPrimaryRootWindow(aura::Window* window);
 
   // Returns the EventGenerator that uses screen coordinates and works
   // across multiple displays. It createse a new generator if it
@@ -114,11 +116,15 @@ class AshTestBase : public testing::Test {
 
   void RunAllPendingInMessageLoop();
 
+  TestScreenshotDelegate* GetScreenshotDelegate();
+  TestSystemTrayDelegate* GetSystemTrayDelegate();
+
   // Utility methods to emulate user logged in or not, session started or not
   // and user able to lock screen or not cases.
   void SetSessionStarted(bool session_started);
   void SetUserLoggedIn(bool user_logged_in);
   void SetCanLockScreen(bool can_lock_screen);
+  void SetShouldLockScreenBeforeSuspending(bool should_lock);
   void SetUserAddingScreenRunning(bool user_adding_screen_running);
 
   // Methods to emulate blocking and unblocking user session with given

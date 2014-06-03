@@ -33,7 +33,6 @@ class GtkThemeService;
 class LocationBar;
 class LocationBarViewGtk;
 class ReloadButtonGtk;
-class ToolbarModel;
 
 namespace content {
 class WebContents;
@@ -109,8 +108,7 @@ class BrowserToolbarGtk : public CommandObserver,
   bool IsWrenchMenuShowing() const;
 
   // Message that we should react to a state change.
-  void UpdateWebContents(content::WebContents* contents,
-                         bool should_restore_state);
+  void UpdateWebContents(content::WebContents* contents);
 
  private:
   void OnZoomLevelChanged(const content::HostZoomMap::ZoomLevelChange& host);
@@ -192,9 +190,6 @@ class BrowserToolbarGtk : public CommandObserver,
   // The image shown in GTK+ mode in the wrench button.
   GtkWidget* wrench_menu_image_;
 
-  // The model that contains the security level, text, icon to display...
-  ToolbarModel* model_;
-
   GtkThemeService* theme_service_;
 
   scoped_ptr<MenuGtk> wrench_menu_;
@@ -214,7 +209,7 @@ class BrowserToolbarGtk : public CommandObserver,
   StringPrefMember home_page_;
   BooleanPrefMember home_page_is_new_tab_page_;
 
-  content::HostZoomMap::ZoomLevelChangedCallback zoom_callback_;
+  scoped_ptr<content::HostZoomMap::Subscription> zoom_subscription_;
   content::NotificationRegistrar registrar_;
 
   // A GtkEntry that isn't part of the hierarchy. We keep this for native

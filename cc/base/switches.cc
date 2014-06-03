@@ -14,6 +14,9 @@ namespace switches {
 const char kBackgroundColorInsteadOfCheckerboard[] =
     "background-color-instead-of-checkerboard";
 
+// Disables LCD text.
+const char kDisableLCDText[] = "disable-lcd-text";
+
 const char kDisableThreadedAnimation[] = "disable-threaded-animation";
 
 // Disables layer-edge anti-aliasing in the compositor.
@@ -24,16 +27,19 @@ const char kDisableCompositedAntialiasing[] =
 // Overrides the kEnableImplSidePainting flag.
 const char kDisableImplSidePainting[] = "disable-impl-side-painting";
 
+// Enables LCD text.
+const char kEnableLCDText[] = "enable-lcd-text";
+
 // Paint content on the compositor thread instead of the main thread.
 const char kEnableImplSidePainting[] = "enable-impl-side-painting";
 
 const char kEnableTopControlsPositionCalculation[] =
     "enable-top-controls-position-calculation";
 
-// For any layers that can get drawn directly to screen, draw them with the Skia
-// GPU backend.  Only valid with gl rendering + threaded compositing + impl-side
-// painting.
-const char kForceDirectLayerDrawing[] = "force-direct-layer-drawing";
+// Allow heuristics to determine when a layer tile should be drawn with
+// the Skia GPU backend.  Only valid with GPU accelerated compositing +
+// impl-side painting.
+const char kEnableGPURasterization[] = "enable-gpu-rasterization";
 
 // The height of the movable top controls.
 const char kTopControlsHeight[] = "top-controls-height";
@@ -55,10 +61,6 @@ const char kTraceOverdraw[] = "trace-overdraw";
 // Give a scale factor to cause raster to take that many times longer to
 // complete, such as --slow-down-raster-scale-factor=25.
 const char kSlowDownRasterScaleFactor[] = "slow-down-raster-scale-factor";
-
-// The scale factor for low resolution tile contents.
-const char kLowResolutionContentsScaleFactor[] =
-    "low-resolution-contents-scale-factor";
 
 // Max tiles allowed for each tilings interest area.
 const char kMaxTilesForInterestArea[] = "max-tiles-for-interest-area";
@@ -95,6 +97,10 @@ const char kUIShowCompositedLayerBorders[] = "ui-show-layer-borders";
 const char kShowFPSCounter[] = "show-fps-counter";
 const char kUIShowFPSCounter[] = "ui-show-fps-counter";
 
+// Renders a border that represents the bounding box for the layer's animation.
+const char kShowLayerAnimationBounds[] = "show-layer-animation-bounds";
+const char kUIShowLayerAnimationBounds[] = "ui-show-layer-animation-bounds";
+
 // Show rects in the HUD around layers whose properties have changed.
 const char kShowPropertyChangedRects[] = "show-property-changed-rects";
 const char kUIShowPropertyChangedRects[] = "ui-show-property-changed-rects";
@@ -125,22 +131,47 @@ const char kUIShowOccludingRects[] = "ui-show-occluding-rects";
 const char kShowNonOccludingRects[] = "show-nonoccluding-rects";
 const char kUIShowNonOccludingRects[] = "ui-show-nonoccluding-rects";
 
-// Enable the codepath that uses images within TileManager.
-const char kUseMapImage[] = "use-map-image";
+// Enable rasterizer that writes directly to GPU memory.
+const char kEnableMapImage[] = "enable-map-image";
+
+// Disable rasterizer that writes directly to GPU memory.
+// Overrides the kEnableMapImage flag.
+const char kDisableMapImage[] = "disable-map-image";
 
 // Prevents the layer tree unit tests from timing out.
 const char kCCLayerTreeTestNoTimeout[] = "cc-layer-tree-test-no-timeout";
+
+// Makes pixel tests write their output instead of read it.
+const char kCCRebaselinePixeltests[] = "cc-rebaseline-pixeltests";
+
+// Disable textures using RGBA_4444 layout.
+const char kDisable4444Textures[] = "disable-4444-textures";
 
 // Disable touch hit testing in the compositor.
 const char kDisableCompositorTouchHitTesting[] =
     "disable-compositor-touch-hit-testing";
 
-bool IsImplSidePaintingEnabled() {
+bool IsLCDTextEnabled() {
+  const CommandLine* command_line = CommandLine::ForCurrentProcess();
+  if (command_line->HasSwitch(switches::kDisableLCDText))
+    return false;
+  else if (command_line->HasSwitch(switches::kEnableLCDText))
+    return true;
+
+#if defined(OS_ANDROID)
+  return false;
+#else
+  return true;
+#endif
+}
+
+namespace {
+bool CheckImplSidePaintingStatus() {
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
 
-  if (command_line.HasSwitch(cc::switches::kDisableImplSidePainting))
+  if (command_line.HasSwitch(switches::kDisableImplSidePainting))
     return false;
-  else if (command_line.HasSwitch(cc::switches::kEnableImplSidePainting))
+  else if (command_line.HasSwitch(switches::kEnableImplSidePainting))
     return true;
 
 #if defined(OS_ANDROID)
@@ -148,6 +179,34 @@ bool IsImplSidePaintingEnabled() {
 #else
   return false;
 #endif
+}
+
+bool CheckGPURasterizationStatus() {
+  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  return command_line.HasSwitch(switches::kEnableGPURasterization);
+}
+
+}  // namespace
+
+bool IsImplSidePaintingEnabled() {
+  static bool enabled = CheckImplSidePaintingStatus();
+  return enabled;
+}
+
+bool IsGPURasterizationEnabled() {
+  static bool enabled = CheckGPURasterizationStatus();
+  return enabled;
+}
+
+bool IsMapImageEnabled() {
+  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+
+  if (command_line.HasSwitch(switches::kDisableMapImage))
+    return false;
+  else if (command_line.HasSwitch(switches::kEnableMapImage))
+    return true;
+
+  return false;
 }
 
 }  // namespace switches

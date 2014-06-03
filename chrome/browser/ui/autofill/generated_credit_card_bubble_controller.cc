@@ -86,13 +86,22 @@ void GeneratedCreditCardBubbleController::Show(
 void GeneratedCreditCardBubbleController::DidNavigateMainFrame(
     const content::LoadCommittedDetails& details,
     const content::FrameNavigateParams& params) {
-  if (details.entry &&
-      !content::PageTransitionIsRedirect(details.entry->GetTransitionType())) {
-    should_show_anchor_ = false;
-    UpdateAnchor();
-    web_contents()->RemoveUserData(UserDataKey());
-    // |this| is now deleted.
+  if (!details.entry)
+    return;
+
+  // Don't destory the bubble due to reloads, form submits, or redirects right
+  // after the dialog succeeds. Merchants often navigate to a confirmation page.
+  content::PageTransition transition = details.entry->GetTransitionType();
+  if (transition == content::PAGE_TRANSITION_FORM_SUBMIT ||
+      transition == content::PAGE_TRANSITION_RELOAD ||
+      content::PageTransitionIsRedirect(transition)) {
+    return;
   }
+
+  should_show_anchor_ = false;
+  UpdateAnchor();
+  web_contents()->RemoveUserData(UserDataKey());
+  // |this| is now deleted.
 }
 
 bool GeneratedCreditCardBubbleController::IsHiding() const {
@@ -196,7 +205,7 @@ void GeneratedCreditCardBubbleController::SetupAndShow(
     if (!piece.empty() && pieces.size() % 2 == 0) {
       const size_t start = contents_text_.size();
       TextRange bold_text;
-      bold_text.range = ui::Range(start, start + piece.size());
+      bold_text.range = gfx::Range(start, start + piece.size());
       bold_text.is_link = false;
       contents_text_ranges_.push_back(bold_text);
     }
@@ -212,7 +221,7 @@ void GeneratedCreditCardBubbleController::SetupAndShow(
   contents_text_.append(ASCIIToUTF16(" ") + learn_more);
   const size_t header_size = contents_text_.size();
   TextRange end_link;
-  end_link.range = ui::Range(header_size - learn_more.size(), header_size);
+  end_link.range = gfx::Range(header_size - learn_more.size(), header_size);
   end_link.is_link = true;
   contents_text_ranges_.push_back(end_link);
 
@@ -223,6 +232,8 @@ void GeneratedCreditCardBubbleController::SetupAndShow(
 }
 
 void GeneratedCreditCardBubbleController::Show(bool was_anchor_click) {
+  Hide();
+
   if (!CanShow())
     return;
 

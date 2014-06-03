@@ -5,11 +5,8 @@
 #include "chrome/browser/sync_file_system/sync_file_system_service_factory.h"
 
 #include "base/command_line.h"
-#include "chrome/browser/drive/drive_notification_manager_factory.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
-#include "chrome/browser/sync/profile_sync_service.h"
-#include "chrome/browser/sync_file_system/drive_backend/drive_file_sync_service.h"
+#include "chrome/browser/sync_file_system/local/local_file_sync_service.h"
 #include "chrome/browser/sync_file_system/sync_file_system_service.h"
 #include "chrome/browser/sync_file_system/syncable_file_system_util.h"
 #include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
@@ -41,8 +38,17 @@ SyncFileSystemServiceFactory::SyncFileSystemServiceFactory()
     : BrowserContextKeyedServiceFactory(
         "SyncFileSystemService",
         BrowserContextDependencyManager::GetInstance()) {
-  DependsOn(drive::DriveNotificationManagerFactory::GetInstance());
-  DependsOn(ProfileOAuth2TokenServiceFactory::GetInstance());
+  typedef std::set<BrowserContextKeyedServiceFactory*> FactorySet;
+  FactorySet factories;
+  RemoteFileSyncService::AppendDependsOnFactories(
+      RemoteFileSyncService::V1, &factories);
+  RemoteFileSyncService::AppendDependsOnFactories(
+      RemoteFileSyncService::V2, &factories);
+  for (FactorySet::iterator iter = factories.begin();
+       iter != factories.end();
+       ++iter) {
+    DependsOn(*iter);
+  }
 }
 
 SyncFileSystemServiceFactory::~SyncFileSystemServiceFactory() {}
@@ -50,7 +56,7 @@ SyncFileSystemServiceFactory::~SyncFileSystemServiceFactory() {}
 BrowserContextKeyedService*
 SyncFileSystemServiceFactory::BuildServiceInstanceFor(
     content::BrowserContext* context) const {
-  Profile* profile = static_cast<Profile*>(context);
+  Profile* profile = Profile::FromBrowserContext(context);
 
   SyncFileSystemService* service = new SyncFileSystemService(profile);
 
@@ -60,12 +66,12 @@ SyncFileSystemServiceFactory::BuildServiceInstanceFor(
   scoped_ptr<RemoteFileSyncService> remote_file_service;
   if (mock_remote_file_service_) {
     remote_file_service = mock_remote_file_service_.Pass();
+  } else if (IsV2Enabled()) {
+    remote_file_service = RemoteFileSyncService::CreateForBrowserContext(
+        RemoteFileSyncService::V2, context);
   } else {
-    // FileSystem needs to be registered before DriveFileSyncService runs
-    // its initialization code.
-    RegisterSyncableFileSystem();
-    remote_file_service =
-        DriveFileSyncService::Create(profile).PassAs<RemoteFileSyncService>();
+    remote_file_service = RemoteFileSyncService::CreateForBrowserContext(
+        RemoteFileSyncService::V1, context);
   }
 
   if (CommandLine::ForCurrentProcess()->HasSwitch(kDisableLastWriteWin)) {

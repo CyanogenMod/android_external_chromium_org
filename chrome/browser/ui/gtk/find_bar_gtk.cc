@@ -355,7 +355,7 @@ void FindBarGtk::SetFocusAndSelection() {
 }
 
 void FindBarGtk::ClearResults(const FindNotificationDetails& results) {
-  UpdateUIForFindResult(results, string16());
+  UpdateUIForFindResult(results, base::string16());
 }
 
 void FindBarGtk::StopAnimation() {
@@ -367,18 +367,34 @@ void FindBarGtk::MoveWindowIfNecessary(const gfx::Rect& selection_rect,
   // Not moving the window on demand, so do nothing.
 }
 
-void FindBarGtk::SetFindText(const string16& find_text) {
+void FindBarGtk::SetFindTextAndSelectedRange(const base::string16& find_text,
+                                             const gfx::Range& selected_range) {
   std::string find_text_utf8 = UTF16ToUTF8(find_text);
 
   // Ignore the "changed" signal handler because programatically setting the
   // text should not fire a "changed" event.
   ignore_changed_signal_ = true;
   gtk_entry_set_text(GTK_ENTRY(text_entry_), find_text_utf8.c_str());
+  if (selected_range.IsValid()) {
+    gtk_editable_select_region(GTK_EDITABLE(text_entry_),
+                               selected_range.start(), selected_range.end());
+  }
   ignore_changed_signal_ = false;
 }
 
+base::string16 FindBarGtk::GetFindText() {
+  std::string contents(gtk_entry_get_text(GTK_ENTRY(text_entry_)));
+  return UTF8ToUTF16(contents);
+}
+
+gfx::Range FindBarGtk::GetSelectedRange() {
+  gint start, end;
+  gtk_editable_get_selection_bounds(GTK_EDITABLE(text_entry_), &start, &end);
+  return gfx::Range(start, end);
+}
+
 void FindBarGtk::UpdateUIForFindResult(const FindNotificationDetails& result,
-                                       const string16& find_text) {
+                                       const base::string16& find_text) {
   selection_rect_ = result.selection_rect();
   int xposition = GetDialogPosition(result.selection_rect()).x();
   GtkAllocation allocation;
@@ -396,10 +412,8 @@ void FindBarGtk::UpdateUIForFindResult(const FindNotificationDetails& result,
       result.number_of_matches() != -1 && result.active_match_ordinal() != -1;
 
   std::string entry_text(gtk_entry_get_text(GTK_ENTRY(text_entry_)));
-  if (entry_text != find_text_utf8) {
-    SetFindText(find_text);
-    gtk_editable_select_region(GTK_EDITABLE(text_entry_), 0, -1);
-  }
+  if (entry_text != find_text_utf8)
+    SetFindTextAndSelectedRange(find_text, gfx::Range(0, find_text.length()));
 
   if (!find_text.empty() && have_valid_range) {
     gtk_label_set_text(GTK_LABEL(match_count_label_),
@@ -572,12 +586,7 @@ bool FindBarGtk::GetFindBarWindowInfo(gfx::Point* position,
   return true;
 }
 
-string16 FindBarGtk::GetFindText() {
-  std::string contents(gtk_entry_get_text(GTK_ENTRY(text_entry_)));
-  return UTF8ToUTF16(contents);
-}
-
-string16 FindBarGtk::GetFindSelectedText() {
+base::string16 FindBarGtk::GetFindSelectedText() {
   gint cursor_pos;
   gint selection_bound;
   g_object_get(G_OBJECT(text_entry_), "cursor-position", &cursor_pos,
@@ -588,7 +597,7 @@ string16 FindBarGtk::GetFindSelectedText() {
   return UTF8ToUTF16(contents.substr(cursor_pos, selection_bound));
 }
 
-string16 FindBarGtk::GetMatchCountText() {
+base::string16 FindBarGtk::GetMatchCountText() {
   std::string contents(gtk_label_get_text(GTK_LABEL(match_count_label_)));
   return UTF8ToUTF16(contents);
 }
@@ -613,14 +622,14 @@ void FindBarGtk::FindEntryTextInContents(bool forward_search) {
   } else {
     // The textbox is empty so we reset.
     find_tab_helper->StopFinding(FindBarController::kClearSelectionOnPage);
-    UpdateUIForFindResult(find_tab_helper->find_result(), string16());
+    UpdateUIForFindResult(find_tab_helper->find_result(), base::string16());
 
     // Clearing the text box should also clear the prepopulate state so that
     // when we close and reopen the Find box it doesn't show the search we
     // just deleted.
     FindBarState* find_bar_state = FindBarStateFactory::GetForProfile(
         browser_->profile());
-    find_bar_state->set_last_prepopulate_text(string16());
+    find_bar_state->set_last_prepopulate_text(base::string16());
   }
 }
 

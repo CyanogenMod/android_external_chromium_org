@@ -16,6 +16,7 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/infobars/confirm_infobar_delegate.h"
+#include "chrome/browser/infobars/infobar.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/notifications/balloon.h"
 #include "chrome/browser/notifications/balloon_collection.h"
@@ -320,7 +321,7 @@ void NotificationsTest::VerifyInfoBar(const Browser* browser, int index) {
 
   ASSERT_EQ(1U, infobar_service->infobar_count());
   ConfirmInfoBarDelegate* confirm_infobar =
-      infobar_service->infobar_at(0)->AsConfirmInfoBarDelegate();
+      infobar_service->infobar_at(0)->delegate()->AsConfirmInfoBarDelegate();
   ASSERT_TRUE(confirm_infobar);
   int buttons = confirm_infobar->GetButtons();
   EXPECT_TRUE(buttons & ConfirmInfoBarDelegate::BUTTON_OK);
@@ -406,12 +407,12 @@ bool NotificationsTest::PerformActionOnInfoBar(
     return false;
   }
 
-  InfoBarDelegate* infobar_delegate =
-      infobar_service->infobar_at(infobar_index);
+  InfoBar* infobar = infobar_service->infobar_at(infobar_index);
+  InfoBarDelegate* infobar_delegate = infobar->delegate();
   switch (action) {
     case DISMISS:
       infobar_delegate->InfoBarDismissed();
-      infobar_service->RemoveInfoBar(infobar_delegate);
+      infobar_service->RemoveInfoBar(infobar);
       return true;
 
     case ALLOW: {
@@ -420,7 +421,7 @@ bool NotificationsTest::PerformActionOnInfoBar(
       if (!confirm_infobar_delegate) {
         ADD_FAILURE();
       } else if (confirm_infobar_delegate->Accept()) {
-        infobar_service->RemoveInfoBar(infobar_delegate);
+        infobar_service->RemoveInfoBar(infobar);
         return true;
       }
     }
@@ -431,7 +432,7 @@ bool NotificationsTest::PerformActionOnInfoBar(
       if (!confirm_infobar_delegate) {
         ADD_FAILURE();
       } else if (confirm_infobar_delegate->Cancel()) {
-        infobar_service->RemoveInfoBar(infobar_delegate);
+        infobar_service->RemoveInfoBar(infobar);
         return true;
       }
     }
@@ -528,7 +529,7 @@ IN_PROC_BROWSER_TEST_F(NotificationsTest, TestCreateSimpleNotification) {
   ASSERT_EQ(1, GetNotificationCount());
   if (message_center::IsRichNotificationEnabled()) {
     message_center::NotificationList::Notifications notifications =
-        message_center::MessageCenter::Get()->GetNotifications();
+        message_center::MessageCenter::Get()->GetVisibleNotifications();
     EXPECT_EQ(ASCIIToUTF16("My Title"), (*notifications.rbegin())->title());
     EXPECT_EQ(ASCIIToUTF16("My Body"), (*notifications.rbegin())->message());
   } else {
@@ -555,7 +556,7 @@ IN_PROC_BROWSER_TEST_F(NotificationsTest, TestCloseNotification) {
 
   if (message_center::IsRichNotificationEnabled()) {
     message_center::NotificationList::Notifications notifications =
-        message_center::MessageCenter::Get()->GetNotifications();
+        message_center::MessageCenter::Get()->GetVisibleNotifications();
     message_center::MessageCenter::Get()->RemoveNotification(
         (*notifications.rbegin())->id(),
         true);  // by_user
@@ -737,7 +738,7 @@ IN_PROC_BROWSER_TEST_F(NotificationsTest, TestCreateDenyCloseNotifications) {
   EXPECT_EQ(1, GetNotificationCount());
   if (message_center::IsRichNotificationEnabled()) {
     message_center::NotificationList::Notifications notifications =
-        message_center::MessageCenter::Get()->GetNotifications();
+        message_center::MessageCenter::Get()->GetVisibleNotifications();
     message_center::MessageCenter::Get()->RemoveNotification(
         (*notifications.rbegin())->id(),
         true);  // by_user
@@ -856,12 +857,11 @@ IN_PROC_BROWSER_TEST_F(NotificationsTest, TestCloseTabWithPermissionInfobar) {
   browser()->tab_strip_model()->ActivateTabAt(0, true);
   ui_test_utils::NavigateToURL(browser(), GetTestPageURL());
   ASSERT_TRUE(RequestPermissionAndWait(browser()));
-  content::WindowedNotificationObserver observer(
-      content::NOTIFICATION_WEB_CONTENTS_DESTROYED,
-      content::NotificationService::AllSources());
+  content::WebContentsDestroyedWatcher destroyed_watcher(
+      browser()->tab_strip_model()->GetWebContentsAt(0));
   browser()->tab_strip_model()->CloseWebContentsAt(0,
                                                    TabStripModel::CLOSE_NONE);
-  observer.Wait();
+  destroyed_watcher.Wait();
 }
 
 IN_PROC_BROWSER_TEST_F(
@@ -935,7 +935,7 @@ IN_PROC_BROWSER_TEST_F(NotificationsTest, TestNotificationReplacement) {
   if (message_center::IsRichNotificationEnabled()) {
     ASSERT_EQ(1, GetNotificationCount());
     message_center::NotificationList::Notifications notifications =
-        message_center::MessageCenter::Get()->GetNotifications();
+        message_center::MessageCenter::Get()->GetVisibleNotifications();
     EXPECT_EQ(ASCIIToUTF16("Title2"), (*notifications.rbegin())->title());
     EXPECT_EQ(ASCIIToUTF16("Body2"), (*notifications.rbegin())->message());
   } else {

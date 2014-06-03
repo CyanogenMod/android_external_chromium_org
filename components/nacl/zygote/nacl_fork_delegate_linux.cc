@@ -17,13 +17,17 @@
 #include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/path_service.h"
+#include "base/pickle.h"
 #include "base/posix/eintr_wrapper.h"
+#include "base/posix/global_descriptors.h"
 #include "base/posix/unix_domain_socket_linux.h"
+#include "base/process/kill.h"
 #include "base/process/launch.h"
 #include "base/third_party/dynamic_annotations/dynamic_annotations.h"
-#include "components/nacl/common/nacl_helper_linux.h"
 #include "components/nacl/common/nacl_paths.h"
 #include "components/nacl/common/nacl_switches.h"
+#include "components/nacl/loader/nacl_helper_linux.h"
+#include "content/public/common/content_descriptors.h"
 #include "content/public/common/content_switches.h"
 
 namespace {
@@ -63,6 +67,41 @@ bool NonZeroSegmentBaseIsSlow() {
 }
 #endif
 
+// Send an IPC request on |ipc_channel|. The request is contained in
+// |request_pickle| and can have file descriptors attached in |attached_fds|.
+// |reply_data_buffer| must be allocated by the caller and will contain the
+// reply. The size of the reply will be written to |reply_size|.
+// This code assumes that only one thread can write to |ipc_channel| to make
+// requests.
+bool SendIPCRequestAndReadReply(int ipc_channel,
+                                const std::vector<int>& attached_fds,
+                                const Pickle& request_pickle,
+                                char* reply_data_buffer,
+                                size_t reply_data_buffer_size,
+                                ssize_t* reply_size) {
+  DCHECK_LE(static_cast<size_t>(kNaClMaxIPCMessageLength),
+            reply_data_buffer_size);
+  DCHECK(reply_size);
+
+  if (!UnixDomainSocket::SendMsg(ipc_channel, request_pickle.data(),
+                                 request_pickle.size(), attached_fds)) {
+    LOG(ERROR) << "SendIPCRequestAndReadReply: SendMsg failed";
+    return false;
+  }
+
+  // Then read the remote reply.
+  std::vector<int> received_fds;
+  const ssize_t msg_len =
+      UnixDomainSocket::RecvMsg(ipc_channel, reply_data_buffer,
+                                reply_data_buffer_size, &received_fds);
+  if (msg_len <= 0) {
+    LOG(ERROR) << "SendIPCRequestAndReadReply: RecvMsg failed";
+    return false;
+  }
+  *reply_size = msg_len;
+  return true;
+}
+
 }  // namespace.
 
 NaClForkDelegate::NaClForkDelegate()
@@ -73,14 +112,17 @@ void NaClForkDelegate::Init(const int sandboxdesc) {
   VLOG(1) << "NaClForkDelegate::Init()";
   int fds[2];
 
+  // For communications between the NaCl loader process and
+  // the SUID sandbox.
+  int nacl_sandbox_descriptor =
+      base::GlobalDescriptors::kBaseDescriptor + kSandboxIPCChannel;
   // Confirm a hard-wired assumption.
-  // The NaCl constant is from chrome/nacl/nacl_linux_helper.h
-  DCHECK(kNaClSandboxDescriptor == sandboxdesc);
+  DCHECK_EQ(sandboxdesc, nacl_sandbox_descriptor);
 
   CHECK(socketpair(PF_UNIX, SOCK_SEQPACKET, 0, fds) == 0);
   base::FileHandleMappingVector fds_to_map;
   fds_to_map.push_back(std::make_pair(fds[1], kNaClZygoteDescriptor));
-  fds_to_map.push_back(std::make_pair(sandboxdesc, kNaClSandboxDescriptor));
+  fds_to_map.push_back(std::make_pair(sandboxdesc, nacl_sandbox_descriptor));
 
   // Using nacl_helper_bootstrap is not necessary on x86-64 because
   // NaCl's x86-64 sandbox is not zero-address-based.  Starting
@@ -164,7 +206,7 @@ void NaClForkDelegate::Init(const int sandboxdesc) {
       status_ = kNaClHelperLaunchFailed;
     // parent and error cases are handled below
   }
-  if (HANDLE_EINTR(close(fds[1])) != 0)
+  if (IGNORE_EINTR(close(fds[1])) != 0)
     LOG(ERROR) << "close(fds[1]) failed";
   if (status_ == kNaClHelperUnused) {
     const ssize_t kExpectedLength = strlen(kNaClHelperStartupAck);
@@ -186,7 +228,7 @@ void NaClForkDelegate::Init(const int sandboxdesc) {
   // TODO(bradchen): Make this LOG(ERROR) when the NaCl helper
   // becomes the default.
   fd_ = -1;
-  if (HANDLE_EINTR(close(fds[0])) != 0)
+  if (IGNORE_EINTR(close(fds[0])) != 0)
     LOG(ERROR) << "close(fds[0]) failed";
 }
 
@@ -201,7 +243,7 @@ void NaClForkDelegate::InitialUMA(std::string* uma_name,
 NaClForkDelegate::~NaClForkDelegate() {
   // side effect of close: delegate process will terminate
   if (status_ == kNaClHelperSuccess) {
-    if (HANDLE_EINTR(close(fd_)) != 0)
+    if (IGNORE_EINTR(close(fd_)) != 0)
       LOG(ERROR) << "close(fd_) failed";
   }
 }
@@ -215,26 +257,43 @@ bool NaClForkDelegate::CanHelp(const std::string& process_type,
   *uma_name = "NaCl.Client.Helper.StateOnFork";
   *uma_sample = status_;
   *uma_boundary_value = kNaClHelperStatusBoundary;
-  return status_ == kNaClHelperSuccess;
+  return true;
 }
 
 pid_t NaClForkDelegate::Fork(const std::vector<int>& fds) {
-  base::ProcessId naclchild;
   VLOG(1) << "NaClForkDelegate::Fork";
 
-  DCHECK(fds.size() == kNaClParentFDIndex + 1);
-  if (!UnixDomainSocket::SendMsg(fd_, kNaClForkRequest,
-                                 strlen(kNaClForkRequest), fds)) {
-    LOG(ERROR) << "NaClForkDelegate::Fork: SendMsg failed";
+  DCHECK(fds.size() == kNumPassedFDs);
+
+  if (status_ != kNaClHelperSuccess) {
+    LOG(ERROR) << "Cannot launch NaCl process: nacl_helper failed to start";
     return -1;
   }
-  int nread = HANDLE_EINTR(read(fd_, &naclchild, sizeof(naclchild)));
-  if (nread != sizeof(naclchild)) {
-    LOG(ERROR) << "NaClForkDelegate::Fork: read failed";
+
+  // First, send a remote fork request.
+  Pickle write_pickle;
+  write_pickle.WriteInt(nacl::kNaClForkRequest);
+
+  char reply_buf[kNaClMaxIPCMessageLength];
+  ssize_t reply_size = 0;
+  bool got_reply =
+      SendIPCRequestAndReadReply(fd_, fds, write_pickle,
+                                 reply_buf, sizeof(reply_buf), &reply_size);
+  if (!got_reply) {
+    LOG(ERROR) << "Could not perform remote fork.";
     return -1;
   }
-  VLOG(1) << "nacl_child is " << naclchild << " (" << nread << " bytes)";
-  return naclchild;
+
+  // Now see if the other end managed to fork.
+  Pickle reply_pickle(reply_buf, reply_size);
+  PickleIterator iter(reply_pickle);
+  pid_t nacl_child;
+  if (!iter.ReadInt(&nacl_child)) {
+    LOG(ERROR) << "NaClForkDelegate::Fork: pickle failed";
+    return -1;
+  }
+  VLOG(1) << "nacl_child is " << nacl_child;
+  return nacl_child;
 }
 
 bool NaClForkDelegate::AckChild(const int fd,
@@ -244,5 +303,49 @@ bool NaClForkDelegate::AckChild(const int fd,
   if (nwritten != static_cast<int>(channel_switch.length())) {
     return false;
   }
+  return true;
+}
+
+bool NaClForkDelegate::GetTerminationStatus(pid_t pid, bool known_dead,
+                                            base::TerminationStatus* status,
+                                            int* exit_code) {
+  VLOG(1) << "NaClForkDelegate::GetTerminationStatus";
+  DCHECK(status);
+  DCHECK(exit_code);
+
+  Pickle write_pickle;
+  write_pickle.WriteInt(nacl::kNaClGetTerminationStatusRequest);
+  write_pickle.WriteInt(pid);
+  write_pickle.WriteBool(known_dead);
+
+  const std::vector<int> empty_fds;
+  char reply_buf[kNaClMaxIPCMessageLength];
+  ssize_t reply_size = 0;
+  bool got_reply =
+      SendIPCRequestAndReadReply(fd_, empty_fds, write_pickle,
+                                 reply_buf, sizeof(reply_buf), &reply_size);
+  if (!got_reply) {
+    LOG(ERROR) << "Could not perform remote GetTerminationStatus.";
+    return false;
+  }
+
+  Pickle reply_pickle(reply_buf, reply_size);
+  PickleIterator iter(reply_pickle);
+  int termination_status;
+  if (!iter.ReadInt(&termination_status) ||
+      termination_status < 0 ||
+      termination_status >= base::TERMINATION_STATUS_MAX_ENUM) {
+    LOG(ERROR) << "GetTerminationStatus: pickle failed";
+    return false;
+  }
+
+  int remote_exit_code;
+  if (!iter.ReadInt(&remote_exit_code)) {
+    LOG(ERROR) << "GetTerminationStatus: pickle failed";
+    return false;
+  }
+
+  *status = static_cast<base::TerminationStatus>(termination_status);
+  *exit_code = remote_exit_code;
   return true;
 }

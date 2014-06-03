@@ -3,76 +3,10 @@
 // found in the LICENSE file.
 
 // Determines whether a certain driver bug exists in the current system.
-// A valid gpu_driver_bug_list.json file are in the format of
-// {
-//   "version": "x.y",
-//   "entries": [
-//     { // entry 1
-//     },
-//     ...
-//     { // entry n
-//     }
-//   ]
-// }
-//
-// Each entry contains the following fields (fields are optional unless
-// specifically described as mandatory below):
-// 1. "id" is an integer.  0 is reserved.  This field is mandatory.
-// 2. "os" contains "type" and an optional "version". "type" could be "macosx",
-//    "linux", "win", "chromeos", or "any".  "any" is the same as not specifying
-//    "os".
-//    "version" is a VERSION structure (defined below).
-// 3. "vendor_id" is a string.  0 is reserved.
-// 4. "device_id" is an array of strings.  0 is reserved.
-// 5. "multi_gpu_style" is a string, valid values include "optimus", and
-//    "amd_switchable".
-// 6. "multi_gpu_category" is a string, valid values include "any", "primary",
-//    and "secondary".  If unspecified, the default value is "primary".
-// 7. "driver_vendor" is a STRING structure (defined below).
-// 8. "driver_version" is a VERSION structure (defined below).
-// 9. "driver_date" is a VERSION structure (defined below).
-//    The version is interpreted as "year.month.day".
-// 10. "gl_vendor" is a STRING structure (defined below).
-// 11. "gl_renderer" is a STRING structure (defined below).
-// 12. "gl_extensions" is a STRING structure (defined below).
-// 13. "perf_graphics" is a FLOAT structure (defined below).
-// 14. "perf_gaming" is a FLOAT structure (defined below).
-// 15. "perf_overall" is a FLOAT structure (defined below).
-// 16. "machine_model" contains "name" and an optional "version".  "name" is a
-//     STRING structure and "version" is a VERSION structure (defined below).
-// 17. "gpu_count" is a INT structure (defined below).
-// 18  "cpu_info" is a STRING structure (defined below).
-// 19. "exceptions" is a list of entries.
-// 20. "features" is a list of driver bug types. For a list of supported types,
-//     see src/gpu/command_buffer/service/gpu_driver_bug_workaround_type.h
-//     This field is mandatory.
-// 21. "description" has the description of the entry.
-// 22. "webkit_bugs" is an array of associated webkit bug numbers.
-// 23. "cr_bugs" is an array of associated chromium bug numbers.
-// 24. "browser_version" is a VERSION structure (defined below).  If this
-//     condition is not satisfied, the entry will be ignored.  If it is not
-//     present, then the entry applies to all versions of the browser.
-// 25. "disabled" is a boolean. If it is present, the entry will be skipped.
-//     This can not be used in exceptions.
-//
-// VERSION includes "op", "style", "number", and "number2".  "op" can be any of
-// the following values: "=", "<", "<=", ">", ">=", "any", "between".  "style"
-// is optional and can be "lexical" or "numerical"; if it's not specified, it
-// defaults to "numerical".  "number2" is only used if "op" is "between".
-// "between" is "number <= * <= number2".
-// "number" is used for all "op" values except "any". "number" and "number2"
-// are in the format of x, x.x, x.x.x, etc.
-// Only "driver_version" supports lexical style if the format is major.minor;
-// in that case, major is still numerical, but minor is lexical. 
-//
-// STRING includes "op" and "value".  "op" can be any of the following values:
-// "contains", "beginwith", "endwith", "=".  "value" is a string.
-//
-// FLOAT includes "op" "value", and "value2".  "op" can be any of the
-// following values: "=", "<", "<=", ">", ">=", "any", "between".  "value2" is
-// only used if "op" is "between".  "value" is used for all "op" values except
-// "any". "value" and "value2" are valid float numbers.
-// INT is very much like FLOAT, except that the values need to be integers.
+// The format of a valid gpu_driver_bug_list.json file is defined in
+// <gpu/config/gpu_control_list_format.txt>.
+// The supported "features" can be found in
+// <gpu/config/gpu_driver_bug_workaround_type.h>.
 
 #include "gpu/config/gpu_control_list_jsons.h"
 
@@ -85,7 +19,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
 {
   "name": "gpu driver bug list",
   // Please update the version number whenever you change this file.
-  "version": "2.6",
+  "version": "3.10",
   "entries": [
     {
       "id": 1,
@@ -137,16 +71,20 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
     },
     {
       "id": 6,
+      "cr_bugs": [165493, 222018],
       "os": {
-        "type": "android"
+        "type": "android",
+        "version": {
+          "op": "<",
+          "value": "4.3"
+        }
       },
       "gl_vendor": {
         "op": "beginwith",
         "value": "Qualcomm"
       },
       "features": [
-        "restore_scissor_on_fbo_change",
-        "delete_instead_of_resize_fbo"  // Only need this on the ICS driver.
+        "restore_scissor_on_fbo_change"
       ]
     },
     {
@@ -178,7 +116,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
         "type": "macosx",
         "version": {
           "op": "<",
-          "number": "10.9"
+          "value": "10.9"
         }
       },
       "vendor_id": "0x1002",
@@ -194,7 +132,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
         "type": "macosx",
         "version": {
           "op": "<",
-          "number": "10.9"
+          "value": "10.9"
         }
       },
       "vendor_id": "0x8086",
@@ -228,7 +166,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
         "type": "macosx",
         "version": {
           "op": "<",
-          "number": "10.7.3"
+          "value": "10.7.3"
         }
       },
       "vendor_id": "0x8086",
@@ -245,21 +183,6 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       "features": [
         "max_texture_size_limit_4096",
         "max_cube_map_texture_size_limit_4096"
-      ]
-    },
-    {
-      "id": 15,
-      "description": "Some Android Qualcomm drivers falsely report GL_ANGLE_framebuffer_multisample",
-      "cr_bugs": [165736],
-      "os": {
-        "type": "android"
-      },
-      "gl_vendor": {
-        "op": "beginwith",
-        "value": "Qualcomm"
-      },
-      "features": [
-        "disable_angle_framebuffer_multisample"
       ]
     },
     {
@@ -394,7 +317,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
         "type": "macosx",
         "version": {
           "op": "<",
-          "number": "10.8"
+          "value": "10.8"
         }
       },
       "vendor_id": "0x8086",
@@ -404,9 +327,13 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
     },
     {
       "id": 26,
-      "description": "Disable use of Direct3D 11 on Windows",
+      "description": "Disable use of Direct3D 11 on Windows Vista and lower.",
       "os": {
-        "type": "win"
+        "type": "win",
+        "version": {
+          "op": "<=",
+          "value": "6.0"
+        }
       },
       "features": [
         "disable_d3d11"
@@ -427,14 +354,396 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       ]
     },
     {
-      "id": 28,
-      "cr_bugs": [277817],
-      "description": "Disable use of ANGLE_instanced_arrays on Windows",
+      "id": 29,
+      "cr_bugs": [278606],
+      "description": "Testing fences is broken on QualComm.",
+      "os": {
+        "type": "android",
+        "version": {
+          "op": "<",
+          "value": "4.4"
+        }
+      },
+      "gl_vendor": {
+        "op": "beginwith",
+        "value": "Qualcomm"
+      },
+      "features": [
+        "disable_async_readpixels"
+      ]
+    },
+    {
+      "id": 30,
+      "cr_bugs": [237931],
+      "description": "Multisampling is buggy on OSX when multiple monitors are connected",
+      "os": {
+        "type": "macosx"
+      },
+      "features": [
+        "disable_multimonitor_multisampling"
+      ]
+    },
+    {
+      "id": 31,
+      "cr_bugs": [154715, 10068, 269829, 294779, 285292],
+      "description": "The Mali T-6xx driver does not guarantee flush ordering.",
+      "gl_vendor": {
+        "op": "beginwith",
+        "value": "ARM"
+      },
+      "gl_renderer": {
+        "op": "beginwith",
+        "value": "Mali-T6"
+      },
+      "features": [
+        "use_virtualized_gl_contexts"
+      ]
+    },
+    {
+      "id": 32,
+      "cr_bugs": [179815],
+      "description": "Share groups are not working on (older?) Broadcom drivers.",
+      "os": {
+        "type": "android"
+      },
+      "gl_vendor": {
+        "op": "beginwith",
+        "value": "Broadcom"
+      },
+      "features": [
+        "use_virtualized_gl_contexts"
+      ]
+    },
+    {
+      "id": 33,
+      "description": "Share group-related crashes and poor context switching perf on Galaxy Nexus.",
+      "os": {
+        "type": "android"
+      },
+      "gl_vendor": {
+        "op": "beginwith",
+        "value": "Imagination"
+      },
+      "features": [
+        "use_virtualized_gl_contexts"
+      ]
+    },
+    {
+      "id": 34,
+      "cr_bugs": [179250, 229643, 230896],
+      "description": "Share groups are not working on (older?) Vivante drivers.",
+      "os": {
+        "type": "android"
+      },
+      "gl_extensions": {
+        "op": "contains",
+        "value": "GL_VIV_shader_binary"
+      },
+      "features": [
+        "use_virtualized_gl_contexts"
+      ]
+    },
+    {
+      "id": 35,
+      "cr_bugs": [163464],
+      "description": "Share-group related crashes on older NVIDIA drivers.",
+      "os": {
+        "type": "android",
+        "version": {
+          "op": "<",
+          "value": "4.3"
+        }
+      },
+      "gl_vendor": {
+        "op": "beginwith",
+        "value": "NVIDIA"
+      },
+      "features": [
+        "use_virtualized_gl_contexts"
+      ]
+    },
+    {
+      "id": 36,
+      "cr_bugs": [163464, 233612],
+      "description": "Share-group related crashes on Qualcomm drivers.",
+      "os": {
+        "type": "android",
+        "version": {
+          "op": "<",
+          "value": "4.3"
+        }
+      },
+      "gl_vendor": {
+        "op": "beginwith",
+        "value": "Qualcomm"
+      },
+      "features": [
+        "use_virtualized_gl_contexts"
+      ]
+    },
+    {
+      "id": 37,
+      "cr_bugs": [286468],
+      "description": "Program link fails in NVIDIA Linux if gl_Position is not set",
+      "os": {
+        "type": "linux"
+      },
+      "vendor_id": "0x10de",
+      "features": [
+        "init_gl_position_in_vertex_shader"
+      ]
+    },
+    {
+      "id": 38,
+      "cr_bugs": [289461],
+      "description": "Non-virtual contexts on Qualcomm sometimes cause out-of-order frames",
+      "os": {
+        "type": "android"
+      },
+      "gl_vendor": {
+        "op": "beginwith",
+        "value": "Qualcomm"
+      },
+      "features": [
+        "use_virtualized_gl_contexts"
+      ]
+    },
+    {
+      "id": 39,
+      "cr_bugs": [290391],
+      "description": "Multisampled renderbuffer allocation must be validated on some Macs",
+      "os": {
+        "type": "macosx"
+      },
+      "features": [
+        "validate_multisample_buffer_allocation"
+      ]
+    },
+    {
+      "id": 40,
+      "cr_bugs": [290876],
+      "description": "Framebuffer discarding causes flickering on old ARM drivers",
+      "os": {
+        "type": "android",
+        "version": {
+          "op": "<",
+          "value": "4.4"
+        }
+      },
+      "gl_vendor": {
+        "op": "beginwith",
+        "value": "ARM"
+      },
+      "features": [
+        "disable_ext_discard_framebuffer"
+      ]
+    },
+    {
+      "id": 42,
+      "cr_bugs": [290876],
+      "description": "Framebuffer discarding causes flickering on older IMG drivers.",
+      "os": {
+        "type": "android"
+      },
+      "gl_vendor": {
+        "op": "beginwith",
+        "value": "Imagination"
+      },
+      "gl_renderer": {
+        "op": "=",
+        "value": "PowerVR SGX 540"
+      },
+      "features": [
+        "disable_ext_discard_framebuffer"
+      ]
+    },
+    {
+      "id": 43,
+      "cr_bugs": [299494],
+      "description": "Framebuffer discarding doesn't accept trivial attachments on Vivante.",
+      "os": {
+        "type": "android"
+      },
+      "gl_extensions": {
+        "op": "contains",
+        "value": "GL_VIV_shader_binary"
+      },
+      "features": [
+        "disable_ext_discard_framebuffer"
+      ]
+    },
+    {
+      "id": 44,
+      "cr_bugs": [301988],
+      "description": "Framebuffer discarding causes jumpy scrolling on Mali drivers",
+      "os": {
+        "type": "chromeos"
+      },
+      "features": [
+        "disable_ext_discard_framebuffer"
+      ]
+    },
+    {
+      "id": 45,
+      "cr_bugs": [307751],
+      "description": "Unfold short circuit on MacOSX.",
+      "os": {
+        "type": "macosx"
+      },
+      "features": [
+        "unfold_short_circuit_as_ternary_operation"
+      ]
+    },
+    {
+      "id": 46,
+      "description": "Using D3D11 causes browser crashes on certain Intel GPUs.",
+      "cr_bugs": [310808],
       "os": {
         "type": "win"
       },
+      "vendor_id": "0x8086",
       "features": [
-        "disable_angle_instanced_arrays"
+        "disable_d3d11"
+      ]
+    },
+    {
+      "id": 48,
+      "description": "Force to use discrete GPU on older MacBookPro models.",
+      "cr_bugs": [113703],
+      "os": {
+        "type": "macosx",
+        "version": {
+          "op": ">=",
+          "value": "10.7"
+        }
+      },
+      "machine_model": {
+        "name": {
+          "op": "=",
+          "value": "MacBookPro"
+        },
+        "version": {
+          "op": "<",
+          "value": "8"
+        }
+      },
+      "gpu_count": {
+        "op": "=",
+        "value": "2"
+      },
+      "features": [
+        "force_discrete_gpu"
+      ]
+    },
+    {
+      "id": 49,
+      "cr_bugs": [309734],
+      "description": "The first draw operation from an idle state is slow.",
+      "os": {
+        "type": "android"
+      },
+      "gl_vendor": {
+        "op": "beginwith",
+        "value": "Qualcomm"
+      },
+      "features": [
+        "wake_up_gpu_before_drawing"
+      ]
+    },
+    {
+      "id": 50,
+      "description": "NVIDIA driver requires unbinding a GpuMemoryBuffer from the texture before mapping it to main memory",
+      "os": {
+        "type": "android"
+      },
+      "gl_vendor": {
+        "op": "beginwith",
+        "value": "NVIDIA"
+      },
+      "features": [
+        "release_image_after_use"
+      ]
+    },
+    {
+      "id": 51,
+      "description": "TexSubImage2D() is faster for full uploads on ANGLE.",
+      "os": {
+        "type": "win"
+      },
+      "gl_renderer": {
+        "op": "beginwith",
+        "value": "ANGLE"
+      },
+      "features": [
+        "texsubimage2d_faster_than_teximage2d"
+      ]
+    },
+    {
+      "id": 52,
+      "description": "ES3 MSAA is broken on Qualcomm.",
+      "os": {
+        "type": "android"
+      },
+      "gl_vendor": {
+        "op": "beginwith",
+        "value": "Qualcomm"
+      },
+      "features": [
+        "disable_framebuffer_multisample"
+      ]
+    },
+    {
+      "id": 53,
+      "cr_bugs": [321701],
+      "description": "ES3 multisampling is too slow to be usable on Mali.",
+      "gl_vendor": {
+        "op": "beginwith",
+        "value": "ARM"
+      },
+      "gl_renderer": {
+        "op": "beginwith",
+        "value": "Mali"
+      },
+      "features": [
+        "disable_framebuffer_multisample"
+      ]
+    },
+    {
+      "id": 54,
+      "cr_bugs": [124764],
+      "description": "Clear uniforms before first program use on all platforms",
+      "features": [
+        "clear_uniforms_before_first_program_use"
+      ]
+    },
+    {
+      "id": 55,
+      "cr_bugs": [333885],
+      "description": "Mesa drivers in Linux handle varyings without static use incorrectly",
+      "os": {
+        "type": "linux"
+      },
+      "driver_vendor": {
+        "op": "=",
+        "value": "Mesa"
+      },
+      "features": [
+        "count_all_in_varyings_packing"
+      ]
+    },
+    {
+      "id": 56,
+      "cr_bugs": [333885],
+      "description": "Mesa drivers in ChromeOS handle varyings without static use incorrectly",
+      "os": {
+        "type": "chromeos"
+      },
+      "driver_vendor": {
+        "op": "=",
+        "value": "Mesa"
+      },
+      "features": [
+        "count_all_in_varyings_packing"
       ]
     }
   ]

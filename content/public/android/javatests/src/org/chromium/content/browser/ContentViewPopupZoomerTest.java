@@ -1,28 +1,22 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 package org.chromium.content.browser;
 
-import android.test.suitebuilder.annotation.MediumTest;
 import android.view.View;
 
 import org.chromium.base.test.util.DisabledTest;
-import org.chromium.base.test.util.Feature;
 import org.chromium.base.test.util.UrlUtils;
 import org.chromium.content.browser.test.util.Criteria;
 import org.chromium.content.browser.test.util.CriteriaHelper;
 import org.chromium.content.browser.test.util.DOMUtils;
 import org.chromium.content.browser.test.util.TestCallbackHelperContainer;
-import org.chromium.content.browser.test.util.TestCallbackHelperContainer.OnPageFinishedHelper;
 import org.chromium.content_shell_apk.ContentShellTestBase;
 
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 public class ContentViewPopupZoomerTest extends ContentShellTestBase {
-    private static final int WAIT_TIMEOUT_SECONDS = 2;
-
     private static PopupZoomer findPopupZoomer(ContentView view) {
         assert view != null;
         for (int i = 0; i < view.getChildCount(); i++) {

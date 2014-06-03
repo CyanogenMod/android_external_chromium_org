@@ -14,12 +14,12 @@
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/common/importer/imported_bookmark_entry.h"
 #include "chrome/common/importer/imported_favicon_usage.h"
+#include "components/autofill/core/common/password_form.h"
 #include "content/public/browser/browser_thread.h"
-#include "content/public/common/password_form.h"
 #include "ui/base/l10n/l10n_util.h"
 
 #if defined(OS_WIN)
-#include "components/webdata/encryptor/ie7_password.h"
+#include "components/webdata/encryptor/ie7_password_win.h"
 #endif
 
 #include <iterator>
@@ -90,8 +90,8 @@ class FirefoxURLParameterFilter : public TemplateURLParser::ParameterFilter {
 
 // Creates a TemplateURL with the |keyword| and |url|. |title| may be empty.
 // This function transfers ownership of the created TemplateURL to the caller.
-TemplateURL* CreateTemplateURL(const string16& title,
-                               const string16& keyword,
+TemplateURL* CreateTemplateURL(const base::string16& title,
+                               const base::string16& keyword,
                                const GURL& url) {
   // Skip if the url is invalid.
   if (!url.is_valid())
@@ -165,7 +165,7 @@ InProcessImporterBridge::InProcessImporterBridge(
 
 void InProcessImporterBridge::AddBookmarks(
     const std::vector<ImportedBookmarkEntry>& bookmarks,
-    const string16& first_folder_name) {
+    const base::string16& first_folder_name) {
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
       base::Bind(&ProfileWriter::AddBookmarks, writer_, bookmarks,
@@ -245,7 +245,7 @@ void InProcessImporterBridge::SetFirefoxSearchEnginesXMLData(
 }
 
 void InProcessImporterBridge::SetPasswordForm(
-    const content::PasswordForm& form) {
+    const autofill::PasswordForm& form) {
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
       base::Bind(&ProfileWriter::AddPasswordForm, writer_, form));
@@ -277,7 +277,7 @@ void InProcessImporterBridge::NotifyEnded() {
       base::Bind(&ExternalProcessImporterHost::NotifyImportEnded, host_));
 }
 
-string16 InProcessImporterBridge::GetLocalizedString(int message_id) {
+base::string16 InProcessImporterBridge::GetLocalizedString(int message_id) {
   return l10n_util::GetStringUTF16(message_id);
 }
 

@@ -11,38 +11,35 @@
 #include "base/observer_list.h"
 #include "chrome/browser/chromeos/input_method/candidate_window_view.h"
 #include "chrome/browser/chromeos/input_method/infolist_window_view.h"
-#include "chromeos/dbus/ibus/ibus_panel_service.h"
-#include "chromeos/ime/ibus_daemon_controller.h"
+#include "ui/base/ime/chromeos/ibus_bridge.h"
 
 namespace views {
 class Widget;
 }  // namespace views
 
 namespace chromeos {
-class IBusLookupTable;
-
 namespace input_method {
 
+class CandidateWindow;
 class DelayableWidget;
+class ModeIndicatorController;
 
 // The implementation of CandidateWindowController.
 // CandidateWindowController controls the CandidateWindow.
 class CandidateWindowControllerImpl
     : public CandidateWindowController,
       public CandidateWindowView::Observer,
-      public IBusPanelCandidateWindowHandlerInterface,
-      public IBusDaemonController::Observer {
+      public IBusPanelCandidateWindowHandlerInterface {
  public:
   CandidateWindowControllerImpl();
   virtual ~CandidateWindowControllerImpl();
 
   // CandidateWindowController overrides:
-  virtual bool Init() OVERRIDE;
-  virtual void Shutdown() OVERRIDE;
   virtual void AddObserver(
       CandidateWindowController::Observer* observer) OVERRIDE;
   virtual void RemoveObserver(
       CandidateWindowController::Observer* observer) OVERRIDE;
+  virtual void Hide() OVERRIDE;
 
  protected:
   // Returns infolist window position. This function handles right or bottom
@@ -57,10 +54,10 @@ class CandidateWindowControllerImpl
       const gfx::Rect& screen_rect,
       const gfx::Size& infolist_winodw_size);
 
-  // Converts |lookup_table| to infolist entries. |focused_index| become
+  // Converts |candidate_window| to infolist entries. |focused_index| become
   // InfolistWindowView::InvalidFocusIndex if there is no selected entries.
   static void ConvertLookupTableToInfolistEntry(
-      const IBusLookupTable& lookup_table,
+      const CandidateWindow& candidate_window,
       std::vector<InfolistWindowView::Entry>* infolist_entries,
       size_t* focused_index);
 
@@ -74,7 +71,7 @@ class CandidateWindowControllerImpl
 
  private:
   // CandidateWindowView::Observer implementation.
-  virtual void OnCandidateCommitted(int index, int button, int flags) OVERRIDE;
+  virtual void OnCandidateCommitted(int index) OVERRIDE;
   virtual void OnCandidateWindowOpened() OVERRIDE;
   virtual void OnCandidateWindowClosed() OVERRIDE;
 
@@ -82,28 +79,22 @@ class CandidateWindowControllerImpl
   void CreateView();
 
   // IBusPanelCandidateWindowHandlerInterface overrides.
-  virtual void HideAuxiliaryText() OVERRIDE;
-  virtual void HideLookupTable() OVERRIDE;
-  virtual void HidePreeditText() OVERRIDE;
-  virtual void SetCursorLocation(const ibus::Rect& cursor_position,
-                                 const ibus::Rect& composition_head) OVERRIDE;
+  virtual void SetCursorBounds(const gfx::Rect& cursor_bounds,
+                               const gfx::Rect& composition_head) OVERRIDE;
   virtual void UpdateAuxiliaryText(const std::string& utf8_text,
                                    bool visible) OVERRIDE;
-  virtual void UpdateLookupTable(const IBusLookupTable& lookup_table,
+  virtual void UpdateLookupTable(const CandidateWindow& candidate_window,
                                  bool visible) OVERRIDE;
   virtual void UpdatePreeditText(const std::string& utf8_text,
                                  unsigned int cursor, bool visible) OVERRIDE;
-
-  // IBusDaemonController::Observer override
-  virtual void OnConnected() OVERRIDE;
-  virtual void OnDisconnected() OVERRIDE;
+  virtual void FocusStateChanged(bool is_focused) OVERRIDE;
 
   // Updates infolist bounds, if current bounds is up-to-date, this function
   // does nothing.
   void UpdateInfolistBounds();
 
   // The candidate window view.
-  CandidateWindowView* candidate_window_;
+  CandidateWindowView* candidate_window_view_;
 
   // This is the outer frame of the candidate window view. The frame will
   // own |candidate_window_|.
@@ -112,6 +103,9 @@ class CandidateWindowControllerImpl
   // This is the outer frame of the infolist window view. The frame will
   // own |infolist_window_|.
   scoped_ptr<DelayableWidget> infolist_window_;
+
+  // This is the controller of the IME mode indicator.
+  scoped_ptr<ModeIndicatorController> mode_indicator_controller_;
 
   // The infolist entries and its focused index which currently shown in
   // Infolist window.

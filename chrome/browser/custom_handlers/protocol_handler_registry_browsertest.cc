@@ -50,7 +50,7 @@ class RegisterProtocolHandlerBrowserTest : public InProcessBrowserTest {
 
   TestRenderViewContextMenu* CreateContextMenu(GURL url) {
     content::ContextMenuParams params;
-    params.media_type = WebKit::WebContextMenuData::MediaTypeNone;
+    params.media_type = blink::WebContextMenuData::MediaTypeNone;
     params.link_url = url;
     params.unfiltered_link_url = url;
     WebContents* web_contents =
@@ -69,7 +69,7 @@ class RegisterProtocolHandlerBrowserTest : public InProcessBrowserTest {
 
   void AddProtocolHandler(const std::string& protocol,
                           const GURL& url,
-                          const string16& title) {
+                          const base::string16& title) {
     ProtocolHandler handler = ProtocolHandler::CreateProtocolHandler(
           protocol, url, title);
     ProtocolHandlerRegistry* registry =

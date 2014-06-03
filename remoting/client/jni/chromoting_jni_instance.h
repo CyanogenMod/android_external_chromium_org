@@ -17,16 +17,16 @@
 #include "remoting/client/client_user_interface.h"
 #include "remoting/client/frame_consumer_proxy.h"
 #include "remoting/client/jni/jni_frame_consumer.h"
-#include "remoting/jingle_glue/network_settings.h"
 #include "remoting/jingle_glue/xmpp_signal_strategy.h"
 #include "remoting/protocol/clipboard_stub.h"
 #include "remoting/protocol/connection_to_host.h"
 #include "remoting/protocol/cursor_shape_stub.h"
 
 namespace remoting {
+
 namespace protocol {
-  class ClipboardEvent;
-  class CursorShapeInfo;
+class ClipboardEvent;
+class CursorShapeInfo;
 }  // namespace protocol
 
 // ClientUserInterface that indirectly makes and receives JNI calls.
@@ -62,13 +62,18 @@ class ChromotingJniInstance
 
   // Moves the host's cursor to the specified coordinates, optionally with some
   // mouse button depressed. If |button| is BUTTON_UNDEFINED, no click is made.
-  void PerformMouseAction(int x,
-                          int y,
+  void PerformMouseAction(int x, int y,
                           protocol::MouseEvent_MouseButton button,
                           bool button_down);
 
+  void PerformMouseWheelDeltaAction(int delta_x, int delta_y);
+
   // Sends the provided keyboard scan code to the host.
   void PerformKeyboardAction(int key_code, bool key_down);
+
+  // Records paint time for statistics logging, if enabled. May be called from
+  // any thread.
+  void RecordPaintTime(int64 paint_time_ms);
 
   // ClientUserInterface implementation.
   virtual void OnConnectionState(
@@ -106,8 +111,20 @@ class ChromotingJniInstance
   void FetchSecret(bool pairable,
                    const protocol::SecretFetchedCallback& callback);
 
+  // Enables or disables periodic logging of performance statistics. Called on
+  // the network thread.
+  void EnableStatsLogging(bool enabled);
+
+  // If logging is enabled, logs the current connection statistics, and
+  // triggers another call to this function after the logging time interval.
+  // Called on the network thread.
+  void LogPerfStats();
+
   // Used to obtain task runner references and make calls to Java methods.
   ChromotingJniRuntime* jni_runtime_;
+
+  // ID of the host we are connecting to.
+  std::string host_id_;
 
   // This group of variables is to be used on the display thread.
   scoped_refptr<FrameConsumerProxy> frame_consumer_;
@@ -115,35 +132,26 @@ class ChromotingJniInstance
   scoped_ptr<base::WeakPtrFactory<JniFrameConsumer> > view_weak_factory_;
 
   // This group of variables is to be used on the network thread.
-  scoped_ptr<ClientConfig> client_config_;
+  ClientConfig client_config_;
   scoped_ptr<ClientContext> client_context_;
   scoped_ptr<protocol::ConnectionToHost> connection_;
   scoped_ptr<ChromotingClient> client_;
-  scoped_ptr<XmppSignalStrategy::XmppServerConfig> signaling_config_;
+  XmppSignalStrategy::XmppServerConfig xmpp_config_;
   scoped_ptr<XmppSignalStrategy> signaling_;  // Must outlive client_
-  scoped_ptr<NetworkSettings> network_settings_;
 
   // Pass this the user's PIN once we have it. To be assigned and accessed on
   // the UI thread, but must be posted to the network thread to call it.
   protocol::SecretFetchedCallback pin_callback_;
-
-  // These strings describe the current connection, and are not reused. They
-  // are initialized in ConnectionToHost(), but thereafter are only to be used
-  // on the network thread. (This is safe because ConnectionToHost()'s finishes
-  // using them on the UI thread before they are ever touched from network.)
-  std::string username_;
-  std::string auth_token_;
-  std::string host_jid_;
-  std::string host_id_;
-  std::string host_pubkey_;
-  std::string pairing_id_;
-  std::string pairing_secret_;
 
   // Indicates whether to establish a new pairing with this host. This is
   // modified in ProvideSecret(), but thereafter to be used only from the
   // network thread. (This is safe because ProvideSecret() is invoked at most
   // once per run, and always before any reference to this flag.)
   bool create_pairing_;
+
+  // If this is true, performance statistics will be periodically written to
+  // the Android log. Used on the network thread.
+  bool stats_logging_enabled_;
 
   friend class base::RefCountedThreadSafe<ChromotingJniInstance>;
 

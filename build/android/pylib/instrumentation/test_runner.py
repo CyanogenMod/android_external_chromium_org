@@ -7,15 +7,22 @@
 import logging
 import os
 import re
+import sys
 import time
+
+
+sys.path.append(os.path.join(sys.path[0],
+                             os.pardir, os.pardir, 'build', 'util', 'lib',
+                             'common'))
+import perf_tests_results_helper
 
 from pylib import android_commands
 from pylib import constants
-from pylib import json_perf_parser
-from pylib import perf_tests_helper
+from pylib import flag_changer
 from pylib import valgrind_tools
 from pylib.base import base_test_result
 from pylib.base import base_test_runner
+from pylib.instrumentation import json_perf_parser
 
 import test_result
 
@@ -44,13 +51,14 @@ class TestRunner(base_test_runner.BaseTestRunner):
   """Responsible for running a series of tests connected to a single device."""
 
   _DEVICE_DATA_DIR = 'chrome/test/data'
+  _DEVICE_COVERAGE_DIR = 'chrome/test/coverage'
   _HOSTMACHINE_PERF_OUTPUT_FILE = '/tmp/chrome-profile'
   _DEVICE_PERF_OUTPUT_SEARCH_PREFIX = (constants.DEVICE_PERF_OUTPUT_DIR +
                                        '/chrome-profile*')
   _DEVICE_HAS_TEST_FILES = {}
 
   def __init__(self, test_options, device, shard_index, test_pkg,
-               ports_to_forward):
+               additional_flags=None):
     """Create a new TestRunner.
 
     Args:
@@ -58,18 +66,26 @@ class TestRunner(base_test_runner.BaseTestRunner):
       device: Attached android device.
       shard_index: Shard index.
       test_pkg: A TestPackage object.
-      ports_to_forward: A list of port numbers for which to set up forwarders.
-          Can be optionally requested by a test case.
+      additional_flags: A list of additional flags to add to the command line.
     """
     super(TestRunner, self).__init__(device, test_options.tool,
-                                     test_options.build_type,
                                      test_options.push_deps,
                                      test_options.cleanup_test_files)
     self._lighttp_port = constants.LIGHTTPD_RANDOM_PORT_FIRST + shard_index
 
     self.options = test_options
     self.test_pkg = test_pkg
-    self.ports_to_forward = ports_to_forward
+    self.coverage_dir = test_options.coverage_dir
+    # Use the correct command line file for the package under test.
+    cmdline_file = [a.cmdline_file for a in constants.PACKAGE_INFO.itervalues()
+                    if a.test_package == self.test_pkg.GetPackageName()]
+    assert len(cmdline_file) < 2, 'Multiple packages have the same test package'
+    if len(cmdline_file) and cmdline_file[0]:
+      self.flags = flag_changer.FlagChanger(self.adb, cmdline_file[0])
+    else:
+      self.flags = flag_changer.FlagChanger(self.adb)
+    if additional_flags:
+      self.flags.AddFlags(additional_flags)
 
   #override
   def InstallTestPackage(self):
@@ -99,11 +115,11 @@ class TestRunner(base_test_runner.BaseTestRunner):
       dst_src = dest_host_pair.split(':',1)
       dst_layer = dst_src[0]
       host_src = dst_src[1]
-      host_test_files_path = constants.DIR_SOURCE_ROOT + '/' + host_src
+      host_test_files_path = '%s/%s' % (constants.DIR_SOURCE_ROOT, host_src)
       if os.path.exists(host_test_files_path):
-        self.adb.PushIfNeeded(host_test_files_path,
-                              self.adb.GetExternalStorage() + '/' +
-                              TestRunner._DEVICE_DATA_DIR + '/' + dst_layer)
+        self.adb.PushIfNeeded(host_test_files_path, '%s/%s/%s' % (
+            self.adb.GetExternalStorage(), TestRunner._DEVICE_DATA_DIR,
+            dst_layer))
     self.tool.CopyFiles()
     TestRunner._DEVICE_HAS_TEST_FILES[self.device] = True
 
@@ -111,11 +127,15 @@ class TestRunner(base_test_runner.BaseTestRunner):
     ret = {}
     if self.options.wait_for_debugger:
       ret['debug'] = 'true'
+    if self.coverage_dir:
+      ret['coverage'] = 'true'
+      ret['coverageFile'] = self.coverage_device_file
+
     return ret
 
   def _TakeScreenshot(self, test):
     """Takes a screenshot from the device."""
-    screenshot_name = os.path.join(constants.SCREENSHOTS_DIR, test + '.png')
+    screenshot_name = os.path.join(constants.SCREENSHOTS_DIR, '%s.png' % test)
     logging.info('Taking screenshot named %s', screenshot_name)
     self.adb.TakeScreenshot(screenshot_name)
 
@@ -134,14 +154,11 @@ class TestRunner(base_test_runner.BaseTestRunner):
     # launch lighttpd with same port at same time.
     http_server_ports = self.LaunchTestHttpServer(
         os.path.join(constants.DIR_SOURCE_ROOT), self._lighttp_port)
-    if self.ports_to_forward:
-      self._ForwardPorts([(port, port) for port in self.ports_to_forward])
-    self.flags.AddFlags(['--enable-test-intents'])
+    self.flags.AddFlags(['--disable-fre', '--enable-test-intents'])
 
   def TearDown(self):
     """Cleans up the test harness and saves outstanding data from test run."""
-    if self.ports_to_forward:
-      self._UnmapPorts([(port, port) for port in self.ports_to_forward])
+    self.flags.Restore()
     super(TestRunner, self).TearDown()
 
   def TestSetup(self, test):
@@ -156,6 +173,14 @@ class TestRunner(base_test_runner.BaseTestRunner):
 
     # Make sure the forwarder is still running.
     self._RestartHttpServerForwarderIfNecessary()
+
+    if self.coverage_dir:
+      coverage_basename = '%s.ec' % test
+      self.coverage_device_file = '%s/%s/%s' % (self.adb.GetExternalStorage(),
+                                                TestRunner._DEVICE_COVERAGE_DIR,
+                                                coverage_basename)
+      self.coverage_host_file = os.path.join(
+          self.coverage_dir, coverage_basename)
 
   def _IsPerfTest(self, test):
     """Determines whether a test is a performance test.
@@ -198,6 +223,10 @@ class TestRunner(base_test_runner.BaseTestRunner):
       return
 
     self.TearDownPerfMonitoring(test)
+
+    if self.coverage_dir:
+      self.adb.Adb().Pull(self.coverage_device_file, self.coverage_host_file)
+      self.adb.RunShellCommand('rm -f %s' % self.coverage_device_file)
 
   def TearDownPerfMonitoring(self, test):
     """Cleans up performance monitoring if the specified test required it.
@@ -253,9 +282,9 @@ class TestRunner(base_test_runner.BaseTestRunner):
           # Process the performance data
           result = json_perf_parser.GetAverageRunInfoFromJSONString(json_string,
                                                                     perf_set[0])
-          perf_tests_helper.PrintPerfResult(perf_set[1], perf_set[2],
-                                            [result['average']],
-                                            result['units'])
+          perf_tests_results_helper.PrintPerfResult(perf_set[1], perf_set[2],
+                                                    [result['average']],
+                                                    result['units'])
 
   def _SetupIndividualTestTimeoutScale(self, test):
     timeout_scale = self._GetIndividualTestTimeoutScale(test)
@@ -311,15 +340,18 @@ class TestRunner(base_test_runner.BaseTestRunner):
       duration_ms = int(time.time()) * 1000 - start_date_ms
       status_code = raw_result.GetStatusCode()
       if status_code:
+        if self.options.screenshot_failures:
+          self._TakeScreenshot(test)
         log = raw_result.GetFailureReason()
         if not log:
           log = 'No information.'
-        if (self.options.screenshot_failures or
-            log.find('INJECT_EVENTS perm') >= 0):
-          self._TakeScreenshot(test)
+        result_type = base_test_result.ResultType.FAIL
+        package = self.adb.DismissCrashDialogIfNeeded()
+        # Assume test package convention of ".test" suffix
+        if package and package in self.test_pkg.GetPackageName():
+          result_type = base_test_result.ResultType.CRASH
         result = test_result.InstrumentationTestResult(
-            test, base_test_result.ResultType.FAIL, start_date_ms, duration_ms,
-            log=log)
+            test, result_type, start_date_ms, duration_ms, log=log)
       else:
         result = test_result.InstrumentationTestResult(
             test, base_test_result.ResultType.PASS, start_date_ms, duration_ms)

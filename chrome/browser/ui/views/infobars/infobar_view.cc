@@ -14,8 +14,6 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/infobars/infobar_delegate.h"
 #include "chrome/browser/ui/views/infobars/infobar_background.h"
-#include "chrome/browser/ui/views/infobars/infobar_button_border.h"
-#include "chrome/browser/ui/views/infobars/infobar_label_button_border.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "grit/ui_resources.h"
@@ -27,6 +25,7 @@
 #include "ui/gfx/image/image.h"
 #include "ui/views/controls/button/image_button.h"
 #include "ui/views/controls/button/label_button.h"
+#include "ui/views/controls/button/label_button_border.h"
 #include "ui/views/controls/button/menu_button.h"
 #include "ui/views/controls/image_view.h"
 #include "ui/views/controls/label.h"
@@ -38,9 +37,12 @@
 #if defined(OS_WIN)
 #include "base/win/win_util.h"
 #include "base/win/windows_version.h"
-#include "ui/base/win/hwnd_util.h"
 #include "ui/gfx/icon_util.h"
+#include "ui/gfx/win/hwnd_util.h"
 #endif
+
+
+// InfoBar --------------------------------------------------------------------
 
 // static
 const int InfoBar::kSeparatorLineHeight =
@@ -51,12 +53,17 @@ const int InfoBar::kDefaultArrowTargetHalfWidth = kDefaultArrowTargetHeight;
 const int InfoBar::kMaximumArrowTargetHalfWidth = 14;
 const int InfoBar::kDefaultBarTargetHeight = 36;
 
+
+// InfoBarView ----------------------------------------------------------------
+
+// static
 const int InfoBarView::kButtonButtonSpacing = 10;
 const int InfoBarView::kEndOfLabelSpacing = 16;
 const int InfoBarView::kHorizontalPadding = 6;
+const int InfoBarView::kCloseButtonSpacing = kEndOfLabelSpacing;
 
-InfoBarView::InfoBarView(InfoBarService* owner, InfoBarDelegate* delegate)
-    : InfoBar(owner, delegate),
+InfoBarView::InfoBarView(scoped_ptr<InfoBarDelegate> delegate)
+    : InfoBar(delegate.Pass()),
       views::ExternalFocusTracker(this, NULL),
       icon_(NULL),
       close_button_(NULL) {
@@ -71,7 +78,7 @@ InfoBarView::~InfoBarView() {
   DCHECK(!menu_runner_.get());
 }
 
-views::Label* InfoBarView::CreateLabel(const string16& text) const {
+views::Label* InfoBarView::CreateLabel(const base::string16& text) const {
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
   views::Label* label = new views::Label(text,
       rb.GetFont(ui::ResourceBundle::MediumFont));
@@ -81,7 +88,7 @@ views::Label* InfoBarView::CreateLabel(const string16& text) const {
   return label;
 }
 
-views::Link* InfoBarView::CreateLink(const string16& text,
+views::Link* InfoBarView::CreateLink(const base::string16& text,
                                      views::LinkListener* listener) const {
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
   views::Link* link = new views::Link;
@@ -90,17 +97,29 @@ views::Link* InfoBarView::CreateLink(const string16& text,
   link->SetHorizontalAlignment(gfx::ALIGN_LEFT);
   link->set_listener(listener);
   link->SetBackgroundColor(background()->get_color());
-  link->set_focusable(true);
+  link->SetFocusable(true);
   return link;
 }
 
 // static
 views::MenuButton* InfoBarView::CreateMenuButton(
-    const string16& text,
+    const base::string16& text,
     views::MenuButtonListener* menu_button_listener) {
+  scoped_ptr<views::TextButtonDefaultBorder> menu_button_border(
+      new views::TextButtonDefaultBorder());
+  const int kNormalImageSet[] = IMAGE_GRID(IDR_INFOBARBUTTON_NORMAL);
+  menu_button_border->set_normal_painter(
+      views::Painter::CreateImageGridPainter(kNormalImageSet));
+  const int kHotImageSet[] = IMAGE_GRID(IDR_INFOBARBUTTON_HOVER);
+  menu_button_border->set_hot_painter(
+      views::Painter::CreateImageGridPainter(kHotImageSet));
+  const int kPushedImageSet[] = IMAGE_GRID(IDR_INFOBARBUTTON_PRESSED);
+  menu_button_border->set_pushed_painter(
+      views::Painter::CreateImageGridPainter(kPushedImageSet));
+
   views::MenuButton* menu_button = new views::MenuButton(
       NULL, text, menu_button_listener, true);
-  menu_button->set_border(new InfoBarButtonBorder);
+  menu_button->set_border(menu_button_border.release());
   menu_button->set_animate_on_state_change(false);
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
   menu_button->set_menu_marker(
@@ -108,17 +127,32 @@ views::MenuButton* InfoBarView::CreateMenuButton(
   menu_button->SetEnabledColor(SK_ColorBLACK);
   menu_button->SetHoverColor(SK_ColorBLACK);
   menu_button->SetFont(rb.GetFont(ui::ResourceBundle::MediumFont));
-  menu_button->set_focusable(true);
+  menu_button->SetFocusable(true);
   return menu_button;
 }
 
 // static
 views::LabelButton* InfoBarView::CreateLabelButton(
     views::ButtonListener* listener,
-    const string16& text,
+    const base::string16& text,
     bool needs_elevation) {
+  scoped_ptr<views::LabelButtonBorder> label_button_border(
+      new views::LabelButtonBorder(views::Button::STYLE_TEXTBUTTON));
+  const int kNormalImageSet[] = IMAGE_GRID(IDR_INFOBARBUTTON_NORMAL);
+  label_button_border->SetPainter(
+      false, views::Button::STATE_NORMAL,
+      views::Painter::CreateImageGridPainter(kNormalImageSet));
+  const int kHoveredImageSet[] = IMAGE_GRID(IDR_INFOBARBUTTON_HOVER);
+  label_button_border->SetPainter(
+      false, views::Button::STATE_HOVERED,
+      views::Painter::CreateImageGridPainter(kHoveredImageSet));
+  const int kPressedImageSet[] = IMAGE_GRID(IDR_INFOBARBUTTON_PRESSED);
+  label_button_border->SetPainter(
+      false, views::Button::STATE_PRESSED,
+      views::Painter::CreateImageGridPainter(kPressedImageSet));
+
   views::LabelButton* label_button = new views::LabelButton(listener, text);
-  label_button->set_border(new InfoBarLabelButtonBorder);
+  label_button->set_border(label_button_border.release());
   label_button->set_animate_on_state_change(false);
   label_button->SetTextColor(views::Button::STATE_NORMAL, SK_ColorBLACK);
   label_button->SetTextColor(views::Button::STATE_HOVERED, SK_ColorBLACK);
@@ -149,7 +183,7 @@ views::LabelButton* InfoBarView::CreateLabelButton(
     }
   }
 #endif
-  label_button->set_focusable(true);
+  label_button->SetFocusable(true);
   return label_button;
 }
 
@@ -205,10 +239,14 @@ void InfoBarView::Layout() {
                      icon_size.height());
   }
 
+  int content_minimum_width = ContentMinimumWidth();
   gfx::Size button_size = close_button_->GetPreferredSize();
-  close_button_->SetBounds(std::max(start_x + ContentMinimumWidth(),
-      width() - kHorizontalPadding - button_size.width()), OffsetY(button_size),
-      button_size.width(), button_size.height());
+  close_button_->SetBounds(
+      std::max(
+          start_x + content_minimum_width +
+              ((content_minimum_width > 0) ? kCloseButtonSpacing : 0),
+          width() - kHorizontalPadding - button_size.width()),
+      OffsetY(button_size), button_size.width(), button_size.height());
 }
 
 void InfoBarView::ViewHierarchyChanged(
@@ -233,7 +271,7 @@ void InfoBarView::ViewHierarchyChanged(
                             rb.GetImageNamed(IDR_CLOSE_1_P).ToImageSkia());
     close_button_->SetAccessibleName(
         l10n_util::GetStringUTF16(IDS_ACCNAME_CLOSE));
-    close_button_->set_focusable(true);
+    close_button_->SetFocusable(true);
     AddChildView(close_button_);
   } else if ((close_button_ != NULL) && (details.parent == this) &&
       (details.child != close_button_) && (close_button_->parent() == this) &&
@@ -291,8 +329,13 @@ int InfoBarView::StartX() const {
 }
 
 int InfoBarView::EndX() const {
-  const int kCloseButtonSpacing = 12;
   return close_button_->x() - kCloseButtonSpacing;
+}
+
+int InfoBarView::OffsetY(const gfx::Size& prefsize) const {
+  return arrow_height() +
+      std::max((bar_target_height() - prefsize.height()) / 2, 0) -
+      (bar_target_height() - bar_height());
 }
 
 const InfoBarContainer::Delegate* InfoBarView::container_delegate() const {
@@ -333,16 +376,14 @@ void InfoBarView::PlatformSpecificHide(bool animate) {
   // false); in this case the second SetFocusManager() call will silently no-op.
   SetFocusManager(NULL);
 
-#if defined(OS_WIN) && !defined(USE_AURA)
   if (!animate)
     return;
 
   // Do not restore focus (and active state with it) if some other top-level
   // window became active.
   views::Widget* widget = GetWidget();
-  if (!widget || ui::DoesWindowBelongToActiveWindow(widget->GetNativeView()))
+  if (!widget || widget->IsActive())
     FocusLastFocusedExternalView();
-#endif
 }
 
 void InfoBarView::PlatformSpecificOnHeightsRecalculated() {
@@ -352,16 +393,20 @@ void InfoBarView::PlatformSpecificOnHeightsRecalculated() {
 }
 
 void InfoBarView::GetAccessibleState(ui::AccessibleViewState* state) {
-  if (delegate()) {
-    state->name = l10n_util::GetStringUTF16(
-        (delegate()->GetInfoBarType() == InfoBarDelegate::WARNING_TYPE) ?
-            IDS_ACCNAME_INFOBAR_WARNING : IDS_ACCNAME_INFOBAR_PAGE_ACTION);
-  }
+  state->name = l10n_util::GetStringUTF16(
+      (delegate()->GetInfoBarType() == InfoBarDelegate::WARNING_TYPE) ?
+          IDS_ACCNAME_INFOBAR_WARNING : IDS_ACCNAME_INFOBAR_PAGE_ACTION);
   state->role = ui::AccessibilityTypes::ROLE_ALERT;
 }
 
 gfx::Size InfoBarView::GetPreferredSize() {
-  return gfx::Size(0, total_height());
+  return gfx::Size(
+      kHorizontalPadding +
+          ((icon_ == NULL) ?
+              0 : (icon_->GetPreferredSize().width() + kHorizontalPadding)) +
+          ContentMinimumWidth() + kCloseButtonSpacing +
+          close_button_->GetPreferredSize().width() + kHorizontalPadding,
+      total_height());
 }
 
 void InfoBarView::OnWillChangeFocus(View* focused_before, View* focused_now) {

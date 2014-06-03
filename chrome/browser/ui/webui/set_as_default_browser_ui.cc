@@ -224,7 +224,7 @@ class SetAsDefaultBrowserDialogImpl : public ui::WebDialogDelegate,
  protected:
   // Overridden from WebDialogDelegate:
   virtual ui::ModalType GetDialogModalType() const OVERRIDE;
-  virtual string16 GetDialogTitle() const OVERRIDE;
+  virtual base::string16 GetDialogTitle() const OVERRIDE;
   virtual GURL GetDialogContentURL() const OVERRIDE;
   virtual void GetWebUIMessageHandlers(
       std::vector<WebUIMessageHandler*>* handlers) const OVERRIDE;
@@ -293,7 +293,7 @@ ui::ModalType SetAsDefaultBrowserDialogImpl::GetDialogModalType() const {
   return ui::MODAL_TYPE_SYSTEM;
 }
 
-string16 SetAsDefaultBrowserDialogImpl::GetDialogTitle() const {
+base::string16 SetAsDefaultBrowserDialogImpl::GetDialogTitle() const {
   return l10n_util::GetStringUTF16(IDS_METRO_FLOW_TAB_TITLE);
 }
 

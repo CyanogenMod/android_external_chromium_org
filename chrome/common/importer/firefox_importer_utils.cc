@@ -25,7 +25,7 @@ namespace {
 // Retrieves the file system path of the profile name.
 base::FilePath GetProfilePath(const DictionaryValue& root,
                               const std::string& profile_name) {
-  string16 path16;
+  base::string16 path16;
   std::string is_relative;
   if (!root.GetStringASCII(profile_name + ".IsRelative", &is_relative) ||
       !root.GetString(profile_name + ".Path", &path16))
@@ -35,7 +35,7 @@ base::FilePath GetProfilePath(const DictionaryValue& root,
   ReplaceSubstringsAfterOffset(
       &path16, 0, ASCIIToUTF16("/"), ASCIIToUTF16("\\"));
 #endif
-  base::FilePath path = base::FilePath::FromWStringHack(UTF16ToWide(path16));
+  base::FilePath path = base::FilePath::FromUTF16Unsafe(path16);
 
   // IsRelative=1 means the folder path would be relative to the
   // path of profiles.ini. IsRelative=0 refers to a custom profile
@@ -59,7 +59,7 @@ bool IsDefaultProfile(const DictionaryValue& root,
 base::FilePath GetFirefoxProfilePath() {
   base::FilePath ini_file = GetProfilesINI();
   std::string content;
-  file_util::ReadFileToString(ini_file, &content);
+  base::ReadFileToString(ini_file, &content);
   base::DictionaryValueINIParser ini_parser;
   ini_parser.Parse(content);
   return GetFirefoxProfilePathFromDictionary(ini_parser.root());
@@ -100,7 +100,7 @@ bool GetFirefoxVersionAndPathFromProfile(const base::FilePath& profile_path,
   base::FilePath compatibility_file =
       profile_path.AppendASCII("compatibility.ini");
   std::string content;
-  file_util::ReadFileToString(compatibility_file, &content);
+  base::ReadFileToString(compatibility_file, &content);
   ReplaceSubstringsAfterOffset(&content, 0, "\r\n", "\n");
   std::vector<std::string> lines;
   base::SplitString(content, '\n', &lines);
@@ -120,8 +120,7 @@ bool GetFirefoxVersionAndPathFromProfile(const base::FilePath& profile_path,
         // UTF-8, what does Firefox do?  If it puts raw bytes in the
         // file, we could go straight from bytes -> filepath;
         // otherwise, we're out of luck here.
-        *app_path = base::FilePath::FromWStringHack(
-            UTF8ToWide(line.substr(equal + 1)));
+        *app_path = base::FilePath::FromUTF8Unsafe(line.substr(equal + 1));
       }
     }
   }
@@ -132,7 +131,7 @@ bool ReadPrefFile(const base::FilePath& path, std::string* content) {
   if (content == NULL)
     return false;
 
-  file_util::ReadFileToString(path, content);
+  base::ReadFileToString(path, content);
 
   if (content->empty()) {
     LOG(WARNING) << "Firefox preference file " << path.value() << " is empty.";
@@ -254,12 +253,12 @@ std::string GetPrefsJsValue(const std::string& content,
 //   ID={ec8030f7-c20a-464f-9b0e-13a3a9e97384}
 //   .........................................
 // In this example the function returns "Iceweasel" (or a localized equivalent).
-string16 GetFirefoxImporterName(const base::FilePath& app_path) {
+base::string16 GetFirefoxImporterName(const base::FilePath& app_path) {
   const base::FilePath app_ini_file = app_path.AppendASCII("application.ini");
   std::string branding_name;
   if (base::PathExists(app_ini_file)) {
     std::string content;
-    file_util::ReadFileToString(app_ini_file, &content);
+    base::ReadFileToString(app_ini_file, &content);
     std::vector<std::string> lines;
     base::SplitString(content, '\n', &lines);
     const std::string name_attr("Name=");

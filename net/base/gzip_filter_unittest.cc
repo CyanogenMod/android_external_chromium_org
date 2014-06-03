@@ -20,11 +20,6 @@ namespace {
 const int kDefaultBufferSize = 4096;
 const int kSmallBufferSize = 128;
 
-const char kApplicationOctetStream[] = "application/octet-stream";
-const char kApplicationXGzip[] = "application/x-gzip";
-const char kApplicationGzip[] = "application/gzip";
-const char kApplicationXGunzip[] = "application/x-gunzip";
-
 // The GZIP header (see RFC 1952):
 //   +---+---+---+---+---+---+---+---+---+---+
 //   |ID1|ID2|CM |FLG|     MTIME     |XFL|OS |
@@ -69,7 +64,7 @@ class GZipUnitTest : public PlatformTest {
     file_path = file_path.AppendASCII("google.txt");
 
     // Read data from the file into buffer.
-    ASSERT_TRUE(file_util::ReadFileToString(file_path, &source_buffer_));
+    ASSERT_TRUE(base::ReadFileToString(file_path, &source_buffer_));
 
     // Encode the data with deflate
     deflate_encode_buffer_ = new char[kDefaultBufferSize];

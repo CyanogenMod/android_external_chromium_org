@@ -4,6 +4,7 @@
 
 #include "ash/accelerators/exit_warning_handler.h"
 
+#include "ash/metrics/user_metrics_recorder.h"
 #include "ash/shell.h"
 #include "ash/shell_delegate.h"
 #include "ash/shell_window_ids.h"
@@ -11,7 +12,7 @@
 #include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "grit/ash_strings.h"
-#include "ui/aura/root_window.h"
+#include "ui/aura/window.h"
 #include "ui/base/accessibility/accessible_view_state.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -27,8 +28,12 @@ namespace ash {
 namespace {
 
 const int64 kTimeOutMilliseconds = 2000;
-const SkColor kForegroundColor = 0xFFFFFFFF;
-const SkColor kBackgroundColor = 0xE0808080;
+// Color of the text of the warning message.
+const SkColor kTextColor = SK_ColorWHITE;
+// Color of the window background.
+const SkColor kWindowBackgroundColor = SkColorSetARGB(0xC0, 0x0, 0x0, 0x0);
+// Radius of the rounded corners of the window.
+const int kWindowCornerRadius = 2;
 const int kHorizontalMarginAroundText = 100;
 const int kVerticalMarginAroundText = 100;
 
@@ -68,8 +73,8 @@ class ExitWarningWidgetDelegateView : public views::WidgetDelegateView {
     label->SetText(text_);
     label->SetHorizontalAlignment(gfx::ALIGN_CENTER);
     label->SetFont(font_);
-    label->SetEnabledColor(kForegroundColor);
-    label->SetDisabledColor(kForegroundColor);
+    label->SetEnabledColor(kTextColor);
+    label->SetDisabledColor(kTextColor);
     label->SetAutoColorReadabilityEnabled(false);
     AddChildView(label);
     SetLayoutManager(new views::FillLayout);
@@ -80,7 +85,10 @@ class ExitWarningWidgetDelegateView : public views::WidgetDelegateView {
   }
 
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE {
-    canvas->FillRect(GetLocalBounds(), kBackgroundColor);
+    SkPaint paint;
+    paint.setStyle(SkPaint::kFill_Style);
+    paint.setColor(kWindowBackgroundColor);
+    canvas->DrawRoundRect(GetLocalBounds(), kWindowCornerRadius, paint);
     views::WidgetDelegateView::OnPaint(canvas);
   }
 
@@ -119,13 +127,15 @@ void ExitWarningHandler::HandleAccelerator() {
       state_ = WAIT_FOR_DOUBLE_PRESS;
       Show();
       StartTimer();
-      shell_delegate->RecordUserMetricsAction(UMA_ACCEL_EXIT_FIRST_Q);
+      Shell::GetInstance()->
+          metrics()->RecordUserMetricsAction(UMA_ACCEL_EXIT_FIRST_Q);
       break;
     case WAIT_FOR_DOUBLE_PRESS:
       state_ = EXITING;
       CancelTimer();
       Hide();
-      shell_delegate->RecordUserMetricsAction(UMA_ACCEL_EXIT_SECOND_Q);
+      Shell::GetInstance()->
+          metrics()->RecordUserMetricsAction(UMA_ACCEL_EXIT_SECOND_Q);
       shell_delegate->Exit();
       break;
     case EXITING:
@@ -158,7 +168,7 @@ void ExitWarningHandler::CancelTimer() {
 void ExitWarningHandler::Show() {
   if (widget_)
     return;
-  aura::RootWindow* root_window = Shell::GetActiveRootWindow();
+  aura::Window* root_window = Shell::GetTargetRootWindow();
   ExitWarningWidgetDelegateView* delegate = new ExitWarningWidgetDelegateView;
   gfx::Size rs = root_window->bounds().size();
   gfx::Size ps = delegate->GetPreferredSize();

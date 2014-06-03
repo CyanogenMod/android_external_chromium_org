@@ -138,19 +138,6 @@ class URLDatabase {
     DISALLOW_COPY_AND_ASSIGN(URLEnumerator);
   };
 
-  // A basic enumerator to enumerate icon mapping, it is only used for icon
-  // mapping migration.
-  class IconMappingEnumerator : public URLEnumeratorBase {
-   public:
-    IconMappingEnumerator();
-
-    // Retreives the next url. Returns false if no more urls are available
-    bool GetNextIconMapping(IconMapping* r);
-
-   private:
-    DISALLOW_COPY_AND_ASSIGN(IconMappingEnumerator);
-  };
-
   // Initializes the given enumerator to enumerator all URLs in the database.
   bool InitURLEnumeratorForEverything(URLEnumerator* enumerator);
 
@@ -194,14 +181,14 @@ class URLDatabase {
 
   // Performs a brute force search over the database to find any URLs or titles
   // which match the |query| string.  Returns any matches in |results|.
-  bool GetTextMatches(const string16& query, URLRows* results);
+  bool GetTextMatches(const base::string16& query, URLRows* results);
 
   // Keyword Search Terms ------------------------------------------------------
 
   // Sets the search terms for the specified url/keyword pair.
   bool SetKeywordSearchTermsForURL(URLID url_id,
                                    TemplateURLID keyword_id,
-                                   const string16& term);
+                                   const base::string16& term);
 
   // Looks up a keyword search term given a url id. Returns all the search terms
   // in |rows|. Returns true on success.
@@ -209,7 +196,7 @@ class URLDatabase {
 
   // Looks up all keyword search terms given a term, Fills the rows with data.
   // Returns true on success and false otherwise.
-  bool GetKeywordSearchTermRows(const string16& term,
+  bool GetKeywordSearchTermRows(const base::string16& term,
                                 std::vector<KeywordSearchTermRow>* rows);
 
   // Deletes all search terms for the specified keyword that have been added by
@@ -220,12 +207,15 @@ class URLDatabase {
   // keyword.
   void GetMostRecentKeywordSearchTerms(
       TemplateURLID keyword_id,
-      const string16& prefix,
+      const base::string16& prefix,
       int max_count,
       std::vector<KeywordSearchTermVisit>* matches);
 
   // Deletes all searches matching |term|.
-  bool DeleteKeywordSearchTerm(const string16& term);
+  bool DeleteKeywordSearchTerm(const base::string16& term);
+
+  // Deletes any search corresponding to |url_id|.
+  bool DeleteKeywordSearchTermForURL(URLID url_id);
 
   // Migration -----------------------------------------------------------------
 
@@ -233,11 +223,6 @@ class URLDatabase {
   // about:blank to have no icon or title. Returns true on success, false if
   // the favicon couldn't be updated.
   bool MigrateFromVersion11ToVersion12();
-
-  // Initializes the given enumerator to enumerator all URL and icon mappings
-  // in the database. Only used for icon mapping migration.
-  bool InitIconMappingEnumeratorForEverything(
-      IconMappingEnumerator* enumerator);
 
  protected:
   friend class VisitDatabase;

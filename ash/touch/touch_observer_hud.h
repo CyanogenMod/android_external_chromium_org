@@ -7,7 +7,7 @@
 
 #include "ash/ash_export.h"
 #include "ash/display/display_controller.h"
-#include "ui/base/events/event_handler.h"
+#include "ui/events/event_handler.h"
 #include "ui/gfx/display_observer.h"
 #include "ui/views/widget/widget_observer.h"
 
@@ -43,7 +43,7 @@ class ASH_EXPORT TouchObserverHUD
   int64 display_id() const { return display_id_; }
 
  protected:
-  explicit TouchObserverHUD(aura::RootWindow* initial_root);
+  explicit TouchObserverHUD(aura::Window* initial_root);
 
   virtual ~TouchObserverHUD();
 
@@ -67,7 +67,9 @@ class ASH_EXPORT TouchObserverHUD
 
 #if defined(OS_CHROMEOS)
   // Overriden from chromeos::OutputConfigurator::Observer.
-  virtual void OnDisplayModeChanged() OVERRIDE;
+  virtual void OnDisplayModeChanged(
+      const std::vector<chromeos::OutputConfigurator::OutputSnapshot>& outputs)
+      OVERRIDE;
 #endif  // defined(OS_CHROMEOS)
 
   // Overriden form DisplayController::Observer.
@@ -75,10 +77,10 @@ class ASH_EXPORT TouchObserverHUD
   virtual void OnDisplayConfigurationChanged() OVERRIDE;
 
  private:
-  friend class TouchHudTest;
+  friend class TouchHudTestBase;
 
   const int64 display_id_;
-  aura::RootWindow* root_window_;
+  aura::Window* root_window_;
 
   views::Widget* widget_;
 

@@ -4,6 +4,7 @@
 
 #include "chrome/browser/ui/cocoa/apps/native_app_window_cocoa.h"
 
+#include "apps/app_shim/extension_app_shim_handler_mac.h"
 #include "base/command_line.h"
 #include "base/mac/mac_util.h"
 #include "base/strings/sys_string_conversions.h"
@@ -13,14 +14,30 @@
 #include "chrome/browser/ui/cocoa/extensions/extension_keybinding_registry_cocoa.h"
 #include "chrome/browser/ui/cocoa/extensions/extension_view_mac.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/extension.h"
 #include "content/public/browser/native_web_keyboard_event.h"
-#include "content/public/browser/notification_source.h"
-#include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
+#include "extensions/common/extension.h"
 #include "third_party/skia/include/core/SkRegion.h"
+
+// NOTE: State Before Update.
+//
+// Internal state, such as |is_maximized_|, must be set before the window
+// state is changed so that it is accurate when e.g. a resize results in a call
+// to |OnNativeWindowChanged|.
+
+// NOTE: Maximize and Zoom.
+//
+// Zooming is implemented manually in order to implement maximize functionality
+// and to support non resizable windows. The window will be resized explicitly
+// in the |WindowWillZoom| call.
+//
+// Attempting maximize and restore functionality with non resizable windows
+// using the native zoom method did not work, even with
+// windowWillUseStandardFrame, as the window would not restore back to the
+// desired size.
+
 
 using apps::ShellWindow;
 
@@ -37,10 +54,41 @@ using apps::ShellWindow;
 @end
 
 enum {
-  NSWindowCollectionBehaviorFullScreenPrimary = 1 << 7
+  NSWindowCollectionBehaviorFullScreenPrimary = 1 << 7,
+  NSFullScreenWindowMask = 1 << 14
 };
 
 #endif  // MAC_OS_X_VERSION_10_7
+
+namespace {
+
+void SetFullScreenCollectionBehavior(NSWindow* window, bool allow_fullscreen) {
+  NSWindowCollectionBehavior behavior = [window collectionBehavior];
+  if (allow_fullscreen)
+    behavior |= NSWindowCollectionBehaviorFullScreenPrimary;
+  else
+    behavior &= ~NSWindowCollectionBehaviorFullScreenPrimary;
+  [window setCollectionBehavior:behavior];
+}
+
+void InitCollectionBehavior(NSWindow* window) {
+  // Since always-on-top windows have a higher window level
+  // than NSNormalWindowLevel, they will default to
+  // NSWindowCollectionBehaviorTransient. Set the value
+  // explicitly here to match normal windows.
+  NSWindowCollectionBehavior behavior = [window collectionBehavior];
+  behavior |= NSWindowCollectionBehaviorManaged;
+  [window setCollectionBehavior:behavior];
+}
+
+// Returns the level for windows that are configured to be always on top.
+// This is not a constant because NSFloatingWindowLevel is a macro defined
+// as a function call.
+NSInteger AlwaysOnTopWindowLevel() {
+  return NSFloatingWindowLevel;
+}
+
+}  // namespace
 
 @implementation NativeAppWindowController
 
@@ -66,6 +114,21 @@ enum {
     appWindow_->WindowDidResize();
 }
 
+- (void)windowDidEndLiveResize:(NSNotification*)notification {
+  if (appWindow_)
+    appWindow_->WindowDidFinishResize();
+}
+
+- (void)windowDidEnterFullScreen:(NSNotification*)notification {
+  if (appWindow_)
+    appWindow_->WindowDidFinishResize();
+}
+
+- (void)windowDidExitFullScreen:(NSNotification*)notification {
+  if (appWindow_)
+    appWindow_->WindowDidFinishResize();
+}
+
 - (void)windowDidMove:(NSNotification*)notification {
   if (appWindow_)
     appWindow_->WindowDidMove();
@@ -85,7 +148,7 @@ enum {
                  toFrame:(NSRect)newFrame {
   if (appWindow_)
     appWindow_->WindowWillZoom();
-  return YES;
+  return NO;  // See top of file NOTE: Maximize and Zoom.
 }
 
 // Allow non resizable windows (without NSResizableWindowMask) to enter
@@ -216,17 +279,21 @@ NativeAppWindowCocoa::NativeAppWindowCocoa(
     const ShellWindow::CreateParams& params)
     : shell_window_(shell_window),
       has_frame_(params.frame == ShellWindow::FRAME_CHROME),
+      is_hidden_(false),
+      is_hidden_with_app_(false),
       is_maximized_(false),
       is_fullscreen_(false),
       attention_request_id_(0),
       use_system_drag_(true) {
+  Observe(web_contents());
+
   // Flip coordinates based on the primary screen.
   NSRect main_screen_rect = [[[NSScreen screens] objectAtIndex:0] frame];
   NSRect cocoa_bounds = NSMakeRect(params.bounds.x(),
       NSHeight(main_screen_rect) - params.bounds.y() - params.bounds.height(),
       params.bounds.width(), params.bounds.height());
 
-  // If coordinates are < 0, center window on primary screen
+  // If coordinates are < 0, center window on primary screen.
   if (params.bounds.x() == INT_MIN) {
     cocoa_bounds.origin.x =
         floor((NSWidth(main_screen_rect) - NSWidth(cocoa_bounds)) / 2);
@@ -236,7 +303,9 @@ NativeAppWindowCocoa::NativeAppWindowCocoa(
         floor((NSHeight(main_screen_rect) - NSHeight(cocoa_bounds)) / 2);
   }
 
-  resizable_ = params.resizable;
+  // Initialize |restored_bounds_| after |cocoa_bounds| have been sanitized.
+  restored_bounds_ = cocoa_bounds;
+
   base::scoped_nsobject<NSWindow> window;
   Class window_class;
   if (has_frame_) {
@@ -248,34 +317,33 @@ NativeAppWindowCocoa::NativeAppWindowCocoa(
   } else {
     window_class = [ShellFramelessNSWindow class];
   }
+
+  ShellWindow::SizeConstraints size_constraints =
+      shell_window_->size_constraints();
+  shows_resize_controls_ =
+      params.resizable && !size_constraints.HasFixedSize();
+  shows_fullscreen_controls_ =
+      params.resizable && !size_constraints.HasMaximumSize();
   window.reset([[window_class alloc]
       initWithContentRect:cocoa_bounds
                 styleMask:GetWindowStyleMask()
                   backing:NSBackingStoreBuffered
                     defer:NO]);
   [window setTitle:base::SysUTF8ToNSString(extension()->name())];
-  min_size_ = params.minimum_size;
-  if (min_size_.width() || min_size_.height()) {
-    [window setContentMinSize:
-        NSMakeSize(min_size_.width(), min_size_.height())];
-  }
-  max_size_ = params.maximum_size;
-  if (max_size_.width() || max_size_.height()) {
-    CGFloat max_width = max_size_.width() ? max_size_.width() : CGFLOAT_MAX;
-    CGFloat max_height = max_size_.height() ? max_size_.height() : CGFLOAT_MAX;
-    [window setContentMaxSize:NSMakeSize(max_width, max_height)];
-  }
 
   if (base::mac::IsOSSnowLeopard() &&
       [window respondsToSelector:@selector(setBottomCornerRounded:)])
     [window setBottomCornerRounded:NO];
 
+  if (params.always_on_top)
+    [window setLevel:AlwaysOnTopWindowLevel()];
+  InitCollectionBehavior(window);
+
   // Set the window to participate in Lion Fullscreen mode. Setting this flag
-  // has no effect on Snow Leopard or earlier. Packaged apps don't show the
-  // fullscreen button on their window decorations.
-  NSWindowCollectionBehavior behavior = [window collectionBehavior];
-  behavior |= NSWindowCollectionBehaviorFullScreenPrimary;
-  [window setCollectionBehavior:behavior];
+  // has no effect on Snow Leopard or earlier. UI controls for fullscreen are
+  // only shown for apps that have unbounded size.
+  if (shows_fullscreen_controls_)
+    SetFullScreenCollectionBehavior(window, true);
 
   window_controller_.reset(
       [[NativeAppWindowController alloc] initWithWindow:window.release()]);
@@ -294,6 +362,7 @@ NativeAppWindowCocoa::NativeAppWindowCocoa(
 
   [[window_controller_ window] setDelegate:window_controller_];
   [window_controller_ setAppWindow:this];
+  UpdateWindowMinMaxSize();
 
   extension_keybinding_registry_.reset(new ExtensionKeybindingRegistryCocoa(
       shell_window_->profile(),
@@ -305,7 +374,7 @@ NativeAppWindowCocoa::NativeAppWindowCocoa(
 NSUInteger NativeAppWindowCocoa::GetWindowStyleMask() const {
   NSUInteger style_mask = NSTitledWindowMask | NSClosableWindowMask |
                           NSMiniaturizableWindowMask;
-  if (resizable_)
+  if (shows_resize_controls_)
     style_mask |= NSResizableWindowMask;
   if (!has_frame_ ||
       !CommandLine::ForCurrentProcess()->HasSwitch(
@@ -320,10 +389,10 @@ void NativeAppWindowCocoa::InstallView() {
   if (has_frame_) {
     [view setFrame:[[window() contentView] bounds]];
     [[window() contentView] addSubview:view];
-    if (!max_size_.IsEmpty() && min_size_ == max_size_) {
+    if (!shows_fullscreen_controls_)
       [[window() standardWindowButton:NSWindowZoomButton] setEnabled:NO];
+    if (!shows_resize_controls_)
       [window() setShowsResizeIndicator:NO];
-    }
   } else {
     // TODO(jeremya): find a cleaner way to send this information to the
     // WebContentsViewCocoa view.
@@ -369,12 +438,18 @@ bool NativeAppWindowCocoa::IsFullscreen() const {
   return is_fullscreen_;
 }
 
-void NativeAppWindowCocoa::SetFullscreen(bool fullscreen) {
+void NativeAppWindowCocoa::SetFullscreen(int fullscreen_types) {
+  bool fullscreen = (fullscreen_types != ShellWindow::FULLSCREEN_TYPE_NONE);
   if (fullscreen == is_fullscreen_)
     return;
   is_fullscreen_ = fullscreen;
 
   if (base::mac::IsOSLionOrLater()) {
+    // If going fullscreen, but the window is constrained (fullscreen UI control
+    // is disabled), temporarily enable it. It will be disabled again on leaving
+    // fullscreen.
+    if (fullscreen && !shows_fullscreen_controls_)
+      SetFullScreenCollectionBehavior(window(), true);
     [window() toggleFullScreen:nil];
     return;
   }
@@ -399,7 +474,7 @@ void NativeAppWindowCocoa::SetFullscreen(bool fullscreen) {
   // add it back afterwards.
   UninstallView();
   if (fullscreen) {
-    restored_bounds_ = [window() frame];
+    UpdateRestoredBounds();
     [window() setStyleMask:NSBorderlessWindowMask];
     [window() setFrame:[window()
         frameRectForContentRect:[[window() screen] frame]]
@@ -435,7 +510,7 @@ gfx::NativeWindow NativeAppWindowCocoa::GetNativeWindow() {
 gfx::Rect NativeAppWindowCocoa::GetRestoredBounds() const {
   // Flip coordinates based on the primary screen.
   NSScreen* screen = [[NSScreen screens] objectAtIndex:0];
-  NSRect frame = [window() frame];
+  NSRect frame = restored_bounds_;
   gfx::Rect bounds(frame.origin.x, 0, NSWidth(frame), NSHeight(frame));
   bounds.set_y(NSHeight([screen frame]) - NSMaxY(frame));
   return bounds;
@@ -444,24 +519,44 @@ gfx::Rect NativeAppWindowCocoa::GetRestoredBounds() const {
 ui::WindowShowState NativeAppWindowCocoa::GetRestoredState() const {
   if (IsMaximized())
     return ui::SHOW_STATE_MAXIMIZED;
+  if (IsFullscreen())
+    return ui::SHOW_STATE_FULLSCREEN;
   return ui::SHOW_STATE_NORMAL;
 }
 
 gfx::Rect NativeAppWindowCocoa::GetBounds() const {
-  return GetRestoredBounds();
+  // Flip coordinates based on the primary screen.
+  NSScreen* screen = [[NSScreen screens] objectAtIndex:0];
+  NSRect frame = [window() frame];
+  gfx::Rect bounds(frame.origin.x, 0, NSWidth(frame), NSHeight(frame));
+  bounds.set_y(NSHeight([screen frame]) - NSMaxY(frame));
+  return bounds;
 }
 
 void NativeAppWindowCocoa::Show() {
+  is_hidden_ = false;
+
+  if (is_hidden_with_app_) {
+    // If there is a shim to gently request attention, return here. Otherwise
+    // show the window as usual.
+    if (apps::ExtensionAppShimHandler::RequestUserAttentionForWindow(
+            shell_window_)) {
+      return;
+    }
+  }
+
   [window_controller_ showWindow:nil];
   [window() makeKeyAndOrderFront:window_controller_];
 }
 
 void NativeAppWindowCocoa::ShowInactive() {
+  is_hidden_ = false;
   [window() orderFront:window_controller_];
 }
 
 void NativeAppWindowCocoa::Hide() {
-  [window() orderOut:window_controller_];
+  is_hidden_ = true;
+  HideWithoutMarkingHidden();
 }
 
 void NativeAppWindowCocoa::Close() {
@@ -478,10 +573,9 @@ void NativeAppWindowCocoa::Deactivate() {
 }
 
 void NativeAppWindowCocoa::Maximize() {
-  // Zoom toggles so only call if not already maximized.
-  if (![window() isZoomed])
-    [window() zoom:window_controller_];
-  is_maximized_ = true;
+  UpdateRestoredBounds();
+  is_maximized_ = true;  // See top of file NOTE: State Before Update.
+  [window() setFrame:[[window() screen] visibleFrame] display:YES animate:YES];
 }
 
 void NativeAppWindowCocoa::Minimize() {
@@ -489,11 +583,15 @@ void NativeAppWindowCocoa::Minimize() {
 }
 
 void NativeAppWindowCocoa::Restore() {
-  if ([window() isZoomed])
-    [window() zoom:window_controller_];  // Toggles zoom mode.
-  else if (IsMinimized())
+  DCHECK(!IsFullscreenOrPending());   // SetFullscreen, not Restore, expected.
+
+  if (IsMaximized()) {
+    is_maximized_ = false;  // See top of file NOTE: State Before Update.
+    [window() setFrame:restored_bounds() display:YES animate:YES];
+  } else if (IsMinimized()) {
+    is_maximized_ = false;  // See top of file NOTE: State Before Update.
     [window() deminiaturize:window_controller_];
-  is_maximized_ = false;
+  }
 }
 
 void NativeAppWindowCocoa::SetBounds(const gfx::Rect& bounds) {
@@ -519,6 +617,9 @@ void NativeAppWindowCocoa::SetBounds(const gfx::Rect& bounds) {
   cocoa_bounds.origin.y = NSHeight([screen frame]) - checked_bounds.bottom();
 
   [window() setFrame:cocoa_bounds display:YES];
+  // setFrame: without animate: does not trigger a windowDidEndLiveResize: so
+  // call it here.
+  WindowDidFinishResize();
 }
 
 void NativeAppWindowCocoa::UpdateWindowIcon() {
@@ -526,8 +627,12 @@ void NativeAppWindowCocoa::UpdateWindowIcon() {
 }
 
 void NativeAppWindowCocoa::UpdateWindowTitle() {
-  string16 title = shell_window_->GetTitle();
+  base::string16 title = shell_window_->GetTitle();
   [window() setTitle:base::SysUTF16ToNSString(title)];
+}
+
+void NativeAppWindowCocoa::UpdateShape(scoped_ptr<SkRegion> region) {
+  NOTIMPLEMENTED();
 }
 
 void NativeAppWindowCocoa::UpdateDraggableRegions(
@@ -569,6 +674,10 @@ void NativeAppWindowCocoa::UpdateDraggableRegions(
     UpdateDraggableRegionsForCustomDrag(regions);
 
   InstallDraggableRegionViews();
+}
+
+SkRegion* NativeAppWindowCocoa::GetDraggableRegion() {
+  return draggable_region_.get();
 }
 
 void NativeAppWindowCocoa::UpdateDraggableRegionsForSystemDrag(
@@ -709,11 +818,17 @@ void NativeAppWindowCocoa::FlashFrame(bool flash) {
 }
 
 bool NativeAppWindowCocoa::IsAlwaysOnTop() const {
-  return false;
+  return [window() level] == AlwaysOnTopWindowLevel();
 }
 
-void NativeAppWindowCocoa::RenderViewHostChanged() {
+void NativeAppWindowCocoa::RenderViewHostChanged(
+    content::RenderViewHost* old_host,
+    content::RenderViewHost* new_host) {
   web_contents()->GetView()->Focus();
+}
+
+bool NativeAppWindowCocoa::IsFrameless() const {
+  return !has_frame_;
 }
 
 gfx::Insets NativeAppWindowCocoa::GetFrameInsets() const {
@@ -745,13 +860,18 @@ gfx::Point NativeAppWindowCocoa::GetDialogPosition(const gfx::Size& size) {
   return gfx::Point();
 }
 
+gfx::Size NativeAppWindowCocoa::GetMaximumDialogSize() {
+  NOTIMPLEMENTED();
+  return gfx::Size();
+}
+
 void NativeAppWindowCocoa::AddObserver(
-    web_modal::WebContentsModalDialogHostObserver* observer) {
+    web_modal::ModalDialogHostObserver* observer) {
   NOTIMPLEMENTED();
 }
 
 void NativeAppWindowCocoa::RemoveObserver(
-    web_modal::WebContentsModalDialogHostObserver* observer) {
+    web_modal::ModalDialogHostObserver* observer) {
   NOTIMPLEMENTED();
 }
 
@@ -783,11 +903,34 @@ void NativeAppWindowCocoa::WindowDidResignKey() {
     rwhv->SetActive(false);
 }
 
+void NativeAppWindowCocoa::WindowDidFinishResize() {
+  // Update |is_maximized_| if needed:
+  // - Exit maximized state if resized.
+  // - Consider us maximized if resize places us back to maximized location.
+  //   This happens when returning from fullscreen.
+  NSRect frame = [window() frame];
+  NSRect screen = [[window() screen] visibleFrame];
+  if (!NSEqualSizes(frame.size, screen.size))
+    is_maximized_ = false;
+  else if (NSEqualPoints(frame.origin, screen.origin))
+    is_maximized_ = true;
+
+  // Update |is_fullscreen_| if needed.
+  is_fullscreen_ = ([window() styleMask] & NSFullScreenWindowMask) != 0;
+  // If not fullscreen but the window is constrained, disable the fullscreen UI
+  // control.
+  if (!is_fullscreen_ && !shows_fullscreen_controls_)
+    SetFullScreenCollectionBehavior(window(), false);
+
+  UpdateRestoredBounds();
+}
+
 void NativeAppWindowCocoa::WindowDidResize() {
   shell_window_->OnNativeWindowChanged();
 }
 
 void NativeAppWindowCocoa::WindowDidMove() {
+  UpdateRestoredBounds();
   shell_window_->OnNativeWindowChanged();
 }
 
@@ -800,7 +943,11 @@ void NativeAppWindowCocoa::WindowDidDeminiaturize() {
 }
 
 void NativeAppWindowCocoa::WindowWillZoom() {
-  is_maximized_ = ![window() isZoomed];
+  // See top of file NOTE: Maximize and Zoom.
+  if (IsMaximized())
+    Restore();
+  else
+    Maximize();
 }
 
 bool NativeAppWindowCocoa::HandledByExtensionCommand(NSEvent* event) {
@@ -834,6 +981,26 @@ bool NativeAppWindowCocoa::IsWithinDraggableRegion(NSPoint point) const {
   return draggable_region_->contains(point.x, webViewHeight - point.y);
 }
 
+void NativeAppWindowCocoa::HideWithApp() {
+  is_hidden_with_app_ = true;
+  HideWithoutMarkingHidden();
+}
+
+void NativeAppWindowCocoa::ShowWithApp() {
+  is_hidden_with_app_ = false;
+  if (!is_hidden_)
+    ShowInactive();
+}
+
+void NativeAppWindowCocoa::SetAlwaysOnTop(bool always_on_top) {
+  [window() setLevel:(always_on_top ? AlwaysOnTopWindowLevel() :
+                                      NSNormalWindowLevel)];
+}
+
+void NativeAppWindowCocoa::HideWithoutMarkingHidden() {
+  [window() orderOut:window_controller_];
+}
+
 NativeAppWindowCocoa::~NativeAppWindowCocoa() {
 }
 
@@ -841,4 +1008,22 @@ ShellNSWindow* NativeAppWindowCocoa::window() const {
   NSWindow* window = [window_controller_ window];
   CHECK(!window || [window isKindOfClass:[ShellNSWindow class]]);
   return static_cast<ShellNSWindow*>(window);
+}
+
+void NativeAppWindowCocoa::UpdateRestoredBounds() {
+  if (IsRestored(*this))
+    restored_bounds_ = [window() frame];
+}
+
+void NativeAppWindowCocoa::UpdateWindowMinMaxSize() {
+  gfx::Size min_size = shell_window_->size_constraints().GetMinimumSize();
+  [window() setContentMinSize:NSMakeSize(min_size.width(), min_size.height())];
+
+  gfx::Size max_size = shell_window_->size_constraints().GetMaximumSize();
+  const int kUnboundedSize = ShellWindow::SizeConstraints::kUnboundedSize;
+  CGFloat max_width = max_size.width() == kUnboundedSize ?
+      CGFLOAT_MAX : max_size.width();
+  CGFloat max_height = max_size.height() == kUnboundedSize ?
+      CGFLOAT_MAX : max_size.height();
+  [window() setContentMaxSize:NSMakeSize(max_width, max_height)];
 }

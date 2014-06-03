@@ -7,21 +7,23 @@
 
 #include <string>
 
-#include "base/gtest_prod_util.h"
+#include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "build/build_config.h"
 #include "chrome/browser/printing/print_view_manager_observer.h"
 #include "content/public/browser/web_ui_message_handler.h"
-#include "printing/print_job_constants.h"
 #include "ui/shell_dialogs/select_file_dialog.h"
+
+#if defined(ENABLE_MDNS)
+#include "chrome/browser/local_discovery/privet_local_printer_lister.h"
+#include "chrome/browser/local_discovery/service_discovery_shared_client.h"
+#endif  // ENABLE_MDNS
 
 class PrintSystemTaskProxy;
 
 namespace base {
 class DictionaryValue;
-class FilePath;
 class RefCountedBytes;
 }
 
@@ -29,17 +31,25 @@ namespace content {
 class WebContents;
 }
 
+namespace gfx {
+class Size;
+}
+
 namespace printing {
 struct PageSizeMargins;
 class PrintBackend;
-class StickySettings;
 }
 
 // The handler for Javascript messages related to the print preview dialog.
-class PrintPreviewHandler : public content::WebUIMessageHandler,
-                            public base::SupportsWeakPtr<PrintPreviewHandler>,
-                            public ui::SelectFileDialog::Listener,
-                            public printing::PrintViewManagerObserver {
+class PrintPreviewHandler
+    : public content::WebUIMessageHandler,
+#if defined(ENABLE_MDNS)
+      public local_discovery::PrivetLocalPrinterLister::Delegate,
+      public local_discovery::PrivetCapabilitiesOperation::Delegate,
+      public local_discovery::PrivetLocalPrintOperation::Delegate,
+#endif
+      public ui::SelectFileDialog::Listener,
+      public printing::PrintViewManagerObserver {
  public:
   PrintPreviewHandler();
   virtual ~PrintPreviewHandler();
@@ -71,15 +81,47 @@ class PrintPreviewHandler : public content::WebUIMessageHandler,
   // dialog.
   void ShowSystemDialog();
 
+#if defined(ENABLE_MDNS)
+  // PrivetLocalPrinterLister::Delegate implementation.
+  virtual void LocalPrinterChanged(
+      bool added,
+      const std::string& name,
+      bool has_local_printing,
+      const local_discovery::DeviceDescription& description) OVERRIDE;
+  virtual void LocalPrinterRemoved(const std::string& name) OVERRIDE;
+  virtual void LocalPrinterCacheFlushed() OVERRIDE;
+
+  // PrivetCapabilitiesOperation::Delegate implementation.
+  virtual void OnPrivetCapabilities(
+      local_discovery::PrivetCapabilitiesOperation* capabilities_operation,
+      int http_error,
+      const base::DictionaryValue* capabilities) OVERRIDE;
+
+  // PrivetLocalPrintOperation::Delegate implementation.
+  virtual void OnPrivetPrintingDone(
+      const local_discovery::PrivetLocalPrintOperation*
+      print_operation) OVERRIDE;
+  virtual void OnPrivetPrintingError(
+      const local_discovery::PrivetLocalPrintOperation* print_operation,
+        int http_code) OVERRIDE;
+#endif  // ENABLE_MDNS
+  int regenerate_preview_request_count() const {
+    return regenerate_preview_request_count_;
+  }
+
  private:
-  // TODO(abodenha@chromium.org) See http://crbug.com/136843
-  // PrintSystemTaskProxy should not need to be a friend.
-  friend class PrintSystemTaskProxy;
+  class AccessTokenService;
+  struct CUPSPrinterColorModels;
+
+  static bool PrivetPrintingEnabled();
 
   content::WebContents* preview_web_contents() const;
 
   // Gets the list of printers. |args| is unused.
   void HandleGetPrinters(const base::ListValue* args);
+
+  // Starts getting all local privet printers. |arg| is unused.
+  void HandleGetPrivetPrinters(const base::ListValue* args);
 
   // Asks the initiator renderer to generate a preview.  First element of |args|
   // is a job settings JSON string.
@@ -108,8 +150,7 @@ class PrintPreviewHandler : public content::WebUIMessageHandler,
   void HandleShowSystemDialog(const base::ListValue* args);
 
   // Callback for the signin dialog to call once signin is complete.
-  static void OnSigninComplete(
-      const base::WeakPtr<PrintPreviewHandler>& handler);
+  void OnSigninComplete();
 
   // Brings up a dialog to allow the user to sign into cloud print.
   // |args| is unused.
@@ -151,9 +192,9 @@ class PrintPreviewHandler : public content::WebUIMessageHandler,
   // window opens behind the initiator window.
   void HandleForceOpenNewTab(const base::ListValue* args);
 
-  void SendInitialSettings(
-      const std::string& default_printer,
-      const std::string& cloud_print_data);
+  void HandleGetPrivetPrinterCapabilities(const base::ListValue* arg);
+
+  void SendInitialSettings(const std::string& default_printer);
 
   // Send OAuth2 access token.
   void SendAccessToken(const std::string& type,
@@ -161,14 +202,14 @@ class PrintPreviewHandler : public content::WebUIMessageHandler,
 
   // Sends the printer capabilities to the Web UI. |settings_info| contains
   // printer capabilities information.
-  void SendPrinterCapabilities(const base::DictionaryValue& settings_info);
+  void SendPrinterCapabilities(const base::DictionaryValue* settings_info);
 
   // Sends error notification to the Web UI when unable to return the printer
   // capabilities.
   void SendFailedToGetPrinterCapabilities(const std::string& printer_name);
 
   // Send the list of printers to the Web UI.
-  void SetupPrinterList(const base::ListValue& printers);
+  void SetupPrinterList(const base::ListValue* printers);
 
   // Send whether cloud print integration should be enabled.
   void SendCloudPrintEnabled();
@@ -200,10 +241,42 @@ class PrintPreviewHandler : public content::WebUIMessageHandler,
   // Populates |settings| according to the current locale.
   void GetNumberFormatAndMeasurementSystem(base::DictionaryValue* settings);
 
-  static printing::StickySettings* GetStickySettings();
-
   bool GetPreviewDataAndTitle(scoped_refptr<base::RefCountedBytes>* data,
-                              string16* title) const;
+                              base::string16* title) const;
+
+#if defined(USE_CUPS)
+  void SaveCUPSColorSetting(const base::DictionaryValue* settings);
+
+  void ConvertColorSettingToCUPSColorModel(
+      base::DictionaryValue* settings) const;
+#endif
+
+#if defined(ENABLE_MDNS)
+  void StopPrivetPrinterSearch();
+  void PrivetCapabilitiesUpdateClient(
+      scoped_ptr<local_discovery::PrivetHTTPClient> http_client);
+  void PrivetLocalPrintUpdateClient(
+      std::string print_ticket,
+      gfx::Size page_size,
+      scoped_ptr<local_discovery::PrivetHTTPClient> http_client);
+  bool PrivetUpdateClient(
+      scoped_ptr<local_discovery::PrivetHTTPClient> http_client);
+  void StartPrivetLocalPrint(const std::string& print_ticket,
+                             const gfx::Size& page_size);
+  void SendPrivetCapabilitiesError(const std::string& id);
+  void PrintToPrivetPrinter(const std::string& printer_name,
+                            const std::string& print_ticket,
+                            const gfx::Size& page_size);
+  bool CreatePrivetHTTP(
+      const std::string& name,
+      const local_discovery::PrivetHTTPAsynchronousFactory::ResultCallback&
+      callback);
+  void FillPrinterDescription(
+      const std::string& name,
+      const local_discovery::DeviceDescription& description,
+      bool has_local_printing,
+      base::DictionaryValue* printer_value);
+#endif
 
   // Pointer to current print system.
   scoped_refptr<printing::PrintBackend> print_backend_;
@@ -227,11 +300,32 @@ class PrintPreviewHandler : public content::WebUIMessageHandler,
 
   // Holds the path to the print to pdf request. It is empty if no such request
   // exists.
-  scoped_ptr<base::FilePath> print_to_pdf_path_;
+  base::FilePath print_to_pdf_path_;
 
   // Holds token service to get OAuth2 access tokens.
-  class AccessTokenService;
   scoped_ptr<AccessTokenService> token_service_;
+
+#if defined(USE_CUPS)
+  // The color capabilities from the last printer queried.
+  scoped_ptr<CUPSPrinterColorModels> cups_printer_color_models_;
+#endif
+
+#if defined(ENABLE_MDNS)
+  scoped_refptr<local_discovery::ServiceDiscoverySharedClient>
+      service_discovery_client_;
+  scoped_ptr<local_discovery::PrivetLocalPrinterLister> printer_lister_;
+
+  scoped_ptr<local_discovery::PrivetHTTPAsynchronousFactory>
+      privet_http_factory_;
+  scoped_ptr<local_discovery::PrivetHTTPResolution> privet_http_resolution_;
+  scoped_ptr<local_discovery::PrivetHTTPClient> privet_http_client_;
+  scoped_ptr<local_discovery::PrivetCapabilitiesOperation>
+      privet_capabilities_operation_;
+  scoped_ptr<local_discovery::PrivetLocalPrintOperation>
+      privet_local_print_operation_;
+#endif
+
+  base::WeakPtrFactory<PrintPreviewHandler> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(PrintPreviewHandler);
 };

@@ -29,11 +29,18 @@ class FakeContentLayer : public ContentLayer {
       ResourceUpdateQueue* queue,
       const OcclusionTracker* occlusion) OVERRIDE;
 
+  gfx::Rect LastPaintRect() const;
+
   void set_always_update_resources(bool always_update_resources) {
     always_update_resources_ = always_update_resources;
   }
 
   virtual void PushPropertiesTo(LayerImpl* layer) OVERRIDE;
+
+  virtual void OnOutputSurfaceCreated() OVERRIDE;
+  size_t output_surface_created_count() const {
+    return output_surface_created_count_;
+  }
 
   bool HaveBackingAt(int i, int j);
 
@@ -43,6 +50,7 @@ class FakeContentLayer : public ContentLayer {
 
   size_t update_count_;
   size_t push_properties_count_;
+  size_t output_surface_created_count_;
   bool always_update_resources_;
 };
 

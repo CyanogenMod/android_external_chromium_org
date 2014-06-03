@@ -2,179 +2,88 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "chrome/common/extensions/extension_messages.h"
-#include "chrome/renderer/extensions/chrome_v8_context.h"
-#include "chrome/renderer/extensions/chrome_v8_extension.h"
 #include "chrome/renderer/extensions/content_watcher.h"
-#include "chrome/renderer/extensions/dispatcher.h"
+
+#include "chrome/common/extensions/extension_messages.h"
 #include "content/public/renderer/render_view.h"
 #include "content/public/renderer/render_view_visitor.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
+#include "third_party/WebKit/public/web/WebElement.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebScriptBindings.h"
 #include "third_party/WebKit/public/web/WebView.h"
 
 namespace extensions {
 
-namespace {
+using blink::WebString;
+using blink::WebVector;
+using blink::WebView;
 
-class MutationHandler : public ChromeV8Extension {
- public:
-  explicit MutationHandler(Dispatcher* dispatcher,
-                           ChromeV8Context* context,
-                           base::WeakPtr<ContentWatcher> content_watcher)
-      : ChromeV8Extension(dispatcher, context),
-        content_watcher_(content_watcher) {
-    RouteFunction("FrameMutated",
-                  base::Bind(&MutationHandler::FrameMutated,
-                             base::Unretained(this)));
-  }
-
- private:
-  void FrameMutated(const v8::FunctionCallbackInfo<v8::Value>& args) {
-    if (content_watcher_.get()) {
-      content_watcher_->ScanAndNotify(
-          WebKit::WebFrame::frameForContext(context()->v8_context()));
-    }
-  }
-
-  base::WeakPtr<ContentWatcher> content_watcher_;
-};
-
-}  // namespace
-
-ContentWatcher::ContentWatcher(Dispatcher* dispatcher)
-    : weak_ptr_factory_(this),
-      dispatcher_(dispatcher) {}
+ContentWatcher::ContentWatcher() {}
 ContentWatcher::~ContentWatcher() {}
 
-scoped_ptr<NativeHandler> ContentWatcher::MakeNatives(
-    ChromeV8Context* context) {
-  return scoped_ptr<NativeHandler>(new MutationHandler(
-      dispatcher_, context, weak_ptr_factory_.GetWeakPtr()));
-}
-
 void ContentWatcher::OnWatchPages(
-    const std::vector<std::string>& new_css_selectors) {
-  if (new_css_selectors == css_selectors_)
-    return;
-
-  css_selectors_ = new_css_selectors;
-
-  for (std::map<WebKit::WebFrame*,
-                std::vector<base::StringPiece> >::iterator
-           it = matching_selectors_.begin();
-       it != matching_selectors_.end(); ++it) {
-    WebKit::WebFrame* frame = it->first;
-    if (!css_selectors_.empty())
-      EnsureWatchingMutations(frame);
-
-    // Make sure to replace the contents of it->second because it contains
-    // dangling StringPieces that referred into the old css_selectors_ content.
-    it->second = FindMatchingSelectors(frame);
+    const std::vector<std::string>& new_css_selectors_utf8) {
+  blink::WebVector<blink::WebString> new_css_selectors(
+      new_css_selectors_utf8.size());
+  bool changed = new_css_selectors.size() != css_selectors_.size();
+  for (size_t i = 0; i < new_css_selectors.size(); ++i) {
+    new_css_selectors[i] =
+        blink::WebString::fromUTF8(new_css_selectors_utf8[i]);
+    if (!changed && new_css_selectors[i] != css_selectors_[i])
+      changed = true;
   }
 
-  // For each top-level frame, inform the browser about its new matching set of
-  // selectors.
-  struct NotifyVisitor : public content::RenderViewVisitor {
-    explicit NotifyVisitor(ContentWatcher* watcher) : watcher_(watcher) {}
+  if (!changed)
+    return;
+
+  css_selectors_.swap(new_css_selectors);
+
+  // Tell each frame's document about the new set of watched selectors. These
+  // will trigger calls to DidMatchCSS after Blink has a chance to apply the new
+  // style, which will in turn notify the browser about the changes.
+  struct WatchSelectors : public content::RenderViewVisitor {
+    explicit WatchSelectors(const WebVector<WebString>& css_selectors)
+        : css_selectors_(css_selectors) {}
+
     virtual bool Visit(content::RenderView* view) OVERRIDE {
-      watcher_->NotifyBrowserOfChange(view->GetWebView()->mainFrame());
+      for (blink::WebFrame* frame = view->GetWebView()->mainFrame(); frame;
+           frame = frame->traverseNext(/*wrap=*/false))
+        frame->document().watchCSSSelectors(css_selectors_);
+
       return true;  // Continue visiting.
     }
-    ContentWatcher* watcher_;
+
+    const WebVector<WebString>& css_selectors_;
   };
-  NotifyVisitor visitor(this);
+  WatchSelectors visitor(css_selectors_);
   content::RenderView::ForEach(&visitor);
 }
 
-void ContentWatcher::DidCreateDocumentElement(WebKit::WebFrame* frame) {
-  // Make sure the frame is represented in the matching_selectors_ map.
-  matching_selectors_[frame];
-
-  if (!css_selectors_.empty()) {
-    EnsureWatchingMutations(frame);
-  }
+void ContentWatcher::DidCreateDocumentElement(blink::WebFrame* frame) {
+  frame->document().watchCSSSelectors(css_selectors_);
 }
 
-void ContentWatcher::EnsureWatchingMutations(WebKit::WebFrame* frame) {
-  v8::HandleScope scope;
-  v8::Context::Scope context_scope(frame->mainWorldScriptContext());
-  if (ModuleSystem* module_system = GetModuleSystem(frame)) {
-    ModuleSystem::NativesEnabledScope scope(module_system);
-    module_system->Require("contentWatcher");
-  }
-}
+void ContentWatcher::DidMatchCSS(
+    blink::WebFrame* frame,
+    const WebVector<WebString>& newly_matching_selectors,
+    const WebVector<WebString>& stopped_matching_selectors) {
+  std::set<std::string>& frame_selectors = matching_selectors_[frame];
+  for (size_t i = 0; i < stopped_matching_selectors.size(); ++i)
+    frame_selectors.erase(stopped_matching_selectors[i].utf8());
+  for (size_t i = 0; i < newly_matching_selectors.size(); ++i)
+    frame_selectors.insert(newly_matching_selectors[i].utf8());
 
-ModuleSystem* ContentWatcher::GetModuleSystem(WebKit::WebFrame* frame) const {
-  ChromeV8Context* v8_context =
-      dispatcher_->v8_context_set().GetByV8Context(
-          frame->mainWorldScriptContext());
+  if (frame_selectors.empty())
+    matching_selectors_.erase(frame);
 
-  if (!v8_context)
-    return NULL;
-  return v8_context->module_system();
-}
-
-void ContentWatcher::ScanAndNotify(WebKit::WebFrame* frame) {
-  std::vector<base::StringPiece> new_matches = FindMatchingSelectors(frame);
-  std::vector<base::StringPiece>& old_matches = matching_selectors_[frame];
-  if (new_matches == old_matches)
-    return;
-
-  using std::swap;
-  swap(old_matches, new_matches);
   NotifyBrowserOfChange(frame);
 }
 
-std::vector<base::StringPiece> ContentWatcher::FindMatchingSelectors(
-    WebKit::WebFrame* frame) const {
-  std::vector<base::StringPiece> result;
-  v8::HandleScope scope;
-
-  // Get the indices within |css_selectors_| that match elements in
-  // |frame|, as a JS Array.
-  v8::Local<v8::Value> selector_indices;
-  if (ModuleSystem* module_system = GetModuleSystem(frame)) {
-    v8::Context::Scope context_scope(frame->mainWorldScriptContext());
-    v8::Local<v8::Array> js_css_selectors =
-        v8::Array::New(css_selectors_.size());
-    for (size_t i = 0; i < css_selectors_.size(); ++i) {
-      js_css_selectors->Set(i, v8::String::New(css_selectors_[i].data(),
-                                               css_selectors_[i].size()));
-    }
-    std::vector<v8::Handle<v8::Value> > find_selectors_args;
-    find_selectors_args.push_back(js_css_selectors);
-    selector_indices = module_system->CallModuleMethod("contentWatcher",
-                                                       "FindMatchingSelectors",
-                                                       &find_selectors_args);
-  }
-  if (selector_indices.IsEmpty() || !selector_indices->IsArray())
-    return result;
-
-  // Iterate over the array, and extract the indices, laboriously
-  // converting them back to integers.
-  v8::Local<v8::Array> index_array = selector_indices.As<v8::Array>();
-  const size_t length = index_array->Length();
-  result.reserve(length);
-  for (size_t i = 0; i < length; ++i) {
-    v8::Local<v8::Value> index_value = index_array->Get(i);
-    if (!index_value->IsNumber())
-      continue;
-    double index = index_value->NumberValue();
-    // Make sure the index is within bounds.
-    if (index < 0 || css_selectors_.size() <= index)
-      continue;
-    // Push a StringPiece referring to the CSS selector onto the result.
-    result.push_back(
-        base::StringPiece(css_selectors_[static_cast<size_t>(index)]));
-  }
-  return result;
-}
-
 void ContentWatcher::NotifyBrowserOfChange(
-    WebKit::WebFrame* changed_frame) const {
-  WebKit::WebFrame* const top_frame = changed_frame->top();
-  const WebKit::WebSecurityOrigin top_origin =
+    blink::WebFrame* changed_frame) const {
+  blink::WebFrame* const top_frame = changed_frame->top();
+  const blink::WebSecurityOrigin top_origin =
       top_frame->document().securityOrigin();
   // Want to aggregate matched selectors from all frames where an
   // extension with access to top_origin could run on the frame.
@@ -185,11 +94,10 @@ void ContentWatcher::NotifyBrowserOfChange(
   }
 
   std::set<base::StringPiece> transitive_selectors;
-  for (WebKit::WebFrame* frame = top_frame; frame;
+  for (blink::WebFrame* frame = top_frame; frame;
        frame = frame->traverseNext(/*wrap=*/false)) {
     if (top_origin.canAccess(frame->document().securityOrigin())) {
-      std::map<WebKit::WebFrame*,
-               std::vector<base::StringPiece> >::const_iterator
+      std::map<blink::WebFrame*, std::set<std::string> >::const_iterator
           frame_selectors = matching_selectors_.find(frame);
       if (frame_selectors != matching_selectors_.end()) {
         transitive_selectors.insert(frame_selectors->second.begin(),

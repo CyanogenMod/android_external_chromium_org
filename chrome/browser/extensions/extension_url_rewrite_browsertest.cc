@@ -6,6 +6,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/extensions/component_loader.h"
 #include "chrome/browser/extensions/extension_browsertest.h"
+#include "chrome/browser/search/search.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/omnibox/location_bar.h"
@@ -33,7 +34,7 @@ class ExtensionURLRewriteBrowserTest : public ExtensionBrowserTest {
  protected:
   std::string GetLocationBarText() const {
     return UTF16ToUTF8(
-        browser()->window()->GetLocationBar()->GetLocationEntry()->GetText());
+        browser()->window()->GetLocationBar()->GetOmniboxView()->GetText());
   }
 
   GURL GetLocationBarTextAsURL() const {
@@ -46,7 +47,7 @@ class ExtensionURLRewriteBrowserTest : public ExtensionBrowserTest {
   }
 
   NavigationEntry* GetNavigationEntry() const {
-    return GetNavigationController()->GetActiveEntry();
+    return GetNavigationController()->GetVisibleEntry();
   }
 
   base::FilePath GetTestExtensionPath(const char* extension_name) const {
@@ -78,8 +79,8 @@ IN_PROC_BROWSER_TEST_F(ExtensionURLRewriteBrowserTest, NewTabPageURL) {
   // Navigate to chrome://newtab and check that the location bar text is blank.
   GURL url(chrome::kChromeUINewTabURL);
   TestURLNotShown(url);
-  // Check that the actual URL corresponds to chrome://newtab.
-  EXPECT_EQ(url, GetNavigationEntry()->GetURL());
+  // Check that the actual URL corresponds to the new tab URL.
+  EXPECT_TRUE(chrome::IsNTPURL(GetNavigationEntry()->GetURL(), profile()));
 }
 
 IN_PROC_BROWSER_TEST_F(ExtensionURLRewriteBrowserTest, NewTabPageURLOverride) {
@@ -110,14 +111,6 @@ IN_PROC_BROWSER_TEST_F(ExtensionURLRewriteBrowserTest, MAYBE_BookmarksURL) {
   EXPECT_EQ(bookmarks_url, navigation->GetVirtualURL().GetWithEmptyPath());
   EXPECT_TRUE(navigation->GetURL().SchemeIs(extensions::kExtensionScheme));
 }
-
-#if defined(FILE_MANAGER_EXTENSION)
-IN_PROC_BROWSER_TEST_F(ExtensionURLRewriteBrowserTest, FileManagerURL) {
-  // Navigate to chrome://files and check that the location bar URL is
-  // what was entered and the internal URL uses the chrome-extension:// scheme.
-  TestExtensionURLOverride(GURL(chrome::kChromeUIFileManagerURL));
-}
-#endif
 
 IN_PROC_BROWSER_TEST_F(ExtensionURLRewriteBrowserTest, BookmarksURLWithRef) {
   // Navigate to chrome://bookmarks/#1 and check that the location bar URL is

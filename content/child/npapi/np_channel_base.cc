@@ -4,13 +4,11 @@
 
 #include "content/child/npapi/np_channel_base.h"
 
-#include <stack>
-
 #include "base/auto_reset.h"
 #include "base/containers/hash_tables.h"
 #include "base/lazy_instance.h"
-#include "base/threading/thread_local.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/threading/thread_local.h"
 #include "ipc/ipc_sync_message.h"
 
 #if defined(OS_POSIX)
@@ -20,31 +18,47 @@
 
 namespace content {
 
+namespace {
+
 typedef base::hash_map<std::string, scoped_refptr<NPChannelBase> > ChannelMap;
-static base::LazyInstance<base::ThreadLocalPointer<ChannelMap> >::Leaky
-     g_channels_tls_ptr = LAZY_INSTANCE_INITIALIZER;
 
-typedef std::stack<scoped_refptr<NPChannelBase> > NPChannelRefStack;
-static base::LazyInstance<base::ThreadLocalPointer<NPChannelRefStack> >::Leaky
-    g_lazy_channel_stack_tls_ptr = LAZY_INSTANCE_INITIALIZER;
+struct ChannelGlobals {
+  ChannelMap channel_map;
+  scoped_refptr<NPChannelBase> current_channel;
+};
 
-static ChannelMap* GetChannelMap() {
-  ChannelMap* channel_map = g_channels_tls_ptr.Get().Get();
-  if (!channel_map) {
-    channel_map = new ChannelMap();
-    g_channels_tls_ptr.Get().Set(channel_map);
+#if defined(OS_ANDROID)
+// Workaround for http://crbug.com/298179 - NPChannelBase is only intended
+// for use on one thread per process. Using TLS to store the globals removes the
+// worst thread hostility in this class, especially needed for webview which
+// runs in single-process mode. TODO(joth): Make a complete fix, most likely
+// as part of addressing http://crbug.com/258510.
+base::LazyInstance<base::ThreadLocalPointer<ChannelGlobals> >::Leaky
+    g_channels_tls_ptr = LAZY_INSTANCE_INITIALIZER;
+
+ChannelGlobals* GetChannelGlobals() {
+  ChannelGlobals* globals = g_channels_tls_ptr.Get().Get();
+  if (!globals) {
+    globals = new ChannelGlobals;
+    g_channels_tls_ptr.Get().Set(globals);
   }
-  return channel_map;
+  return globals;
 }
 
-static NPChannelRefStack* GetChannelRefStack() {
-  NPChannelRefStack* ref_stack = g_lazy_channel_stack_tls_ptr.Get().Get();
-  if (!ref_stack) {
-    ref_stack = new NPChannelRefStack();
-    g_lazy_channel_stack_tls_ptr.Get().Set(ref_stack);
-  }
-  return ref_stack;
+#else
+
+base::LazyInstance<ChannelGlobals>::Leaky g_channels_globals =
+    LAZY_INSTANCE_INITIALIZER;
+
+ChannelGlobals* GetChannelGlobals() { return g_channels_globals.Pointer(); }
+
+#endif  // OS_ANDROID
+
+ChannelMap* GetChannelMap() {
+  return &GetChannelGlobals()->channel_map;
 }
+
+}  // namespace
 
 NPChannelBase* NPChannelBase::GetChannel(
     const IPC::ChannelHandle& channel_handle, IPC::Channel::Mode mode,
@@ -119,7 +133,7 @@ NPChannelBase::~NPChannelBase() {
 }
 
 NPChannelBase* NPChannelBase::GetCurrentChannel() {
-  return GetChannelRefStack()->top().get();
+  return GetChannelGlobals()->current_channel.get();
 }
 
 void NPChannelBase::CleanupChannels() {
@@ -199,10 +213,11 @@ int NPChannelBase::Count() {
 }
 
 bool NPChannelBase::OnMessageReceived(const IPC::Message& message) {
-  // This call might cause us to be deleted, so keep an extra reference to
-  // ourself so that we can send the reply and decrement back in_dispatch_.
-  GetChannelRefStack()->push(
-      scoped_refptr<NPChannelBase>(this));
+  // Push this channel as the current channel being processed. This also forms
+  // a stack of scoped_refptr avoiding ourselves (or any instance higher
+  // up the callstack) from being deleted while processing a message.
+  base::AutoReset<scoped_refptr<NPChannelBase> > keep_alive(
+      &GetChannelGlobals()->current_channel, this);
 
   bool handled;
   if (message.should_unblock())
@@ -222,7 +237,6 @@ bool NPChannelBase::OnMessageReceived(const IPC::Message& message) {
   if (message.should_unblock())
     in_unblock_dispatch_--;
 
-  GetChannelRefStack()->pop();
   return handled;
 }
 

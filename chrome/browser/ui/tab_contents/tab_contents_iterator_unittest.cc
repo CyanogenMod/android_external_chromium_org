@@ -8,6 +8,7 @@
 #include "base/prefs/testing_pref_service.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browser_shutdown.h"
+#include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
@@ -192,6 +193,8 @@ TEST_F(BrowserListTest, MAYBE_AttemptRestart) {
   testing_pref_service.registry()->RegisterBooleanPref(
       prefs::kRestartLastSessionOnShutdown,
       false);
+  testing_pref_service.registry()->RegisterListPref(
+      prefs::kProfilesLastActive);
 
   TestingBrowserProcess* testing_browser_process =
       TestingBrowserProcess::GetGlobal();

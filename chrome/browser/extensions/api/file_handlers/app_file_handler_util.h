@@ -11,7 +11,8 @@
 #include <vector>
 
 #include "chrome/common/extensions/api/file_handlers/file_handlers_parser.h"
-#include "chrome/common/extensions/extension.h"
+#include "content/public/browser/render_view_host.h"
+#include "extensions/common/extension.h"
 
 class Profile;
 
@@ -20,6 +21,9 @@ class ExtensionPrefs;
 
 // TODO(benwells): move this to platform_apps namespace.
 namespace app_file_handler_util {
+
+extern const char kInvalidParameters[];
+extern const char kSecurityError[];
 
 // A set of pairs of path and its corresponding MIME type.
 typedef std::set<std::pair<base::FilePath, std::string> > PathAndMimeTypeSet;
@@ -49,6 +53,8 @@ bool FileHandlerCanHandleFile(
 
 // Refers to a file entry that a renderer has been given access to.
 struct GrantedFileEntry {
+  GrantedFileEntry();
+
   std::string id;
   std::string filesystem_id;
   std::string registered_name;
@@ -58,10 +64,29 @@ struct GrantedFileEntry {
 // registers a new file system for |path|.
 GrantedFileEntry CreateFileEntry(
     Profile* profile,
-    const std::string& extension_id,
+    const Extension* extension,
     int renderer_id,
     const base::FilePath& path,
-    bool writable);
+    bool is_directory);
+
+void CheckWritableFiles(
+    const std::vector<base::FilePath>& paths,
+    Profile* profile,
+    bool is_directory,
+    const base::Closure& on_success,
+    const base::Callback<void(const base::FilePath&)>& on_failure);
+
+// Returns whether |extension| has the fileSystem.write permission.
+bool HasFileSystemWritePermission(const Extension* extension);
+
+// Validates a file entry and populates |file_path| with the absolute path if it
+// is valid.
+bool ValidateFileEntryAndGetPath(
+    const std::string& filesystem_name,
+    const std::string& filesystem_path,
+    const content::RenderViewHost* render_view_host,
+    base::FilePath* file_path,
+    std::string* error);
 
 }  // namespace app_file_handler_util
 

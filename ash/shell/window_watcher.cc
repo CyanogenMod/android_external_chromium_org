@@ -6,9 +6,12 @@
 
 #include "ash/display/display_controller.h"
 #include "ash/launcher/launcher.h"
-#include "ash/launcher/launcher_model.h"
+#include "ash/shelf/shelf_item_delegate_manager.h"
+#include "ash/shelf/shelf_model.h"
+#include "ash/shelf/shelf_util.h"
 #include "ash/shelf/shelf_widget.h"
 #include "ash/shell.h"
+#include "ash/shell/window_watcher_shelf_item_delegate.h"
 #include "ash/shell_window_ids.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
@@ -34,7 +37,7 @@ class WindowWatcher::WorkspaceWindowWatcher : public aura::WindowObserver {
     window->RemoveObserver(watcher_);
   }
 
-  void RootWindowAdded(aura::RootWindow* root) {
+  void RootWindowAdded(aura::Window* root) {
     aura::Window* panel_container = ash::Shell::GetContainer(
         root,
         internal::kShellWindowId_PanelContainer);
@@ -47,7 +50,7 @@ class WindowWatcher::WorkspaceWindowWatcher : public aura::WindowObserver {
       container->children()[i]->AddObserver(watcher_);
   }
 
-  void RootWindowRemoved(aura::RootWindow* root) {
+  void RootWindowRemoved(aura::Window* root) {
     aura::Window* panel_container = ash::Shell::GetContainer(
         root,
         internal::kShellWindowId_PanelContainer);
@@ -68,16 +71,16 @@ class WindowWatcher::WorkspaceWindowWatcher : public aura::WindowObserver {
 
 WindowWatcher::WindowWatcher() {
   workspace_window_watcher_.reset(new WorkspaceWindowWatcher(this));
-  Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
-  for (Shell::RootWindowList::iterator iter = root_windows.begin();
+  aura::Window::Windows root_windows = Shell::GetAllRootWindows();
+  for (aura::Window::Windows::iterator iter = root_windows.begin();
        iter != root_windows.end(); ++ iter) {
     workspace_window_watcher_->RootWindowAdded(*iter);
   }
 }
 
 WindowWatcher::~WindowWatcher() {
-  Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
-  for (Shell::RootWindowList::iterator iter = root_windows.begin();
+  aura::Window::Windows root_windows = Shell::GetAllRootWindows();
+  for (aura::Window::Windows::iterator iter = root_windows.begin();
        iter != root_windows.end(); ++ iter) {
     workspace_window_watcher_->RootWindowRemoved(*iter);
   }
@@ -88,15 +91,6 @@ aura::Window* WindowWatcher::GetWindowByID(ash::LauncherID id) {
   return i != id_to_window_.end() ? i->second : NULL;
 }
 
-ash::LauncherID WindowWatcher::GetIDByWindow(aura::Window* window) const {
-  for (IDToWindow::const_iterator i = id_to_window_.begin();
-       i != id_to_window_.end(); ++i) {
-    if (i->second == window)
-      return i->first;
-  }
-  return 0;  // TODO: add a constant for this.
-}
-
 // aura::WindowObserver overrides:
 void WindowWatcher::OnWindowAdded(aura::Window* new_window) {
   if (new_window->type() != aura::client::WINDOW_TYPE_NORMAL &&
@@ -104,11 +98,12 @@ void WindowWatcher::OnWindowAdded(aura::Window* new_window) {
     return;
 
   static int image_count = 0;
-  ash::LauncherModel* model = Shell::GetInstance()->launcher_model();
-  ash::LauncherItem item;
+  ShelfModel* model = Shell::GetInstance()->shelf_model();
+  LauncherItem item;
   item.type = new_window->type() == aura::client::WINDOW_TYPE_PANEL ?
-                                    ash::TYPE_APP_PANEL : ash::TYPE_TABBED;
-  id_to_window_[model->next_id()] = new_window;
+      ash::TYPE_APP_PANEL : ash::TYPE_PLATFORM_APP;
+  ash::LauncherID id = model->next_id();
+  id_to_window_[id] = new_window;
 
   SkBitmap icon_bitmap;
   icon_bitmap.setConfig(SkBitmap::kARGB_8888_Config, 16, 16);
@@ -118,17 +113,23 @@ void WindowWatcher::OnWindowAdded(aura::Window* new_window) {
                         image_count == 1 ? 255 : 0,
                         image_count == 2 ? 255 : 0);
   image_count = (image_count + 1) % 3;
-  item.image = gfx::ImageSkia(gfx::ImageSkiaRep(icon_bitmap,
-                                                ui::SCALE_FACTOR_100P));
+  item.image = gfx::ImageSkia(gfx::ImageSkiaRep(icon_bitmap, 1.0f));
 
   model->Add(item);
+
+  ShelfItemDelegateManager* manager =
+      Shell::GetInstance()->shelf_item_delegate_manager();
+  scoped_ptr<ShelfItemDelegate> delegate(
+      new WindowWatcherShelfItemDelegate(id, this));
+  manager->SetShelfItemDelegate(id, delegate.Pass());
+  SetLauncherIDForWindow(id, new_window);
 }
 
 void WindowWatcher::OnWillRemoveWindow(aura::Window* window) {
   for (IDToWindow::iterator i = id_to_window_.begin();
        i != id_to_window_.end(); ++i) {
     if (i->second == window) {
-      ash::LauncherModel* model = Shell::GetInstance()->launcher_model();
+      ShelfModel* model = Shell::GetInstance()->shelf_model();
       int index = model->ItemIndexByID(i->first);
       DCHECK_NE(-1, index);
       model->RemoveItemAt(index);
@@ -142,7 +143,7 @@ void WindowWatcher::OnDisplayBoundsChanged(const gfx::Display& display) {
 }
 
 void WindowWatcher::OnDisplayAdded(const gfx::Display& new_display) {
-  aura::RootWindow* root = Shell::GetInstance()->display_controller()->
+  aura::Window* root = Shell::GetInstance()->display_controller()->
       GetRootWindowForDisplayId(new_display.id());
   workspace_window_watcher_->RootWindowAdded(root);
 }

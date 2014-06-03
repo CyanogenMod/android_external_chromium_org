@@ -1,4 +1,4 @@
-// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,24 +6,21 @@ package org.chromium.net;
 
 import android.util.Log;
 
-import java.lang.reflect.InvocationTargetException;
+import org.chromium.base.CalledByNative;
+import org.chromium.base.JNINamespace;
+
 import java.lang.reflect.Method;
-import java.math.BigInteger;
+import java.security.NoSuchAlgorithmException;
+import java.security.PrivateKey;
+import java.security.Signature;
 import java.security.interfaces.DSAKey;
-import java.security.interfaces.DSAPrivateKey;
 import java.security.interfaces.DSAParams;
+import java.security.interfaces.DSAPrivateKey;
 import java.security.interfaces.ECKey;
 import java.security.interfaces.ECPrivateKey;
 import java.security.interfaces.RSAKey;
 import java.security.interfaces.RSAPrivateKey;
-import java.security.NoSuchAlgorithmException;
-import java.security.PrivateKey;
-import java.security.Signature;
 import java.security.spec.ECParameterSpec;
-
-import org.chromium.base.CalledByNative;
-import org.chromium.base.JNINamespace;
-import org.chromium.net.PrivateKeyType;;
 
 @JNINamespace("net::android")
 public class AndroidKeyStore {

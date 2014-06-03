@@ -8,8 +8,8 @@
 #include <string>
 
 #include "chrome/common/extensions/api/extension_action/action_info.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/manifest_handler.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/manifest_handler.h"
 
 namespace extensions {
 
@@ -19,7 +19,7 @@ class ScriptBadgeHandler : public ManifestHandler {
   ScriptBadgeHandler();
   virtual ~ScriptBadgeHandler();
 
-  virtual bool Parse(Extension* extension, string16* error) OVERRIDE;
+  virtual bool Parse(Extension* extension, base::string16* error) OVERRIDE;
   virtual const std::vector<std::string> PrerequisiteKeys() const OVERRIDE;
   virtual bool AlwaysParseForType(Manifest::Type type) const OVERRIDE;
 

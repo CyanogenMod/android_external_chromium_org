@@ -15,6 +15,7 @@
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/first_run/first_run.h"
 #include "chrome/browser/infobars/confirm_infobar_delegate.h"
+#include "chrome/browser/infobars/infobar.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #import "chrome/browser/mac/keystone_glue.h"
 #include "chrome/browser/profiles/profile.h"
@@ -43,8 +44,7 @@ class KeystonePromotionInfoBarDelegate : public ConfirmInfoBarDelegate {
   static void Create();
 
  private:
-  KeystonePromotionInfoBarDelegate(InfoBarService* infobar_service,
-                                   PrefService* prefs);
+  explicit KeystonePromotionInfoBarDelegate(PrefService* prefs);
   virtual ~KeystonePromotionInfoBarDelegate();
 
   // Sets this info bar to be able to expire.  Called a predetermined amount
@@ -53,8 +53,8 @@ class KeystonePromotionInfoBarDelegate : public ConfirmInfoBarDelegate {
 
   // ConfirmInfoBarDelegate
   virtual int GetIconID() const OVERRIDE;
-  virtual string16 GetMessageText() const OVERRIDE;
-  virtual string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
+  virtual base::string16 GetMessageText() const OVERRIDE;
+  virtual base::string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
   virtual bool Accept() OVERRIDE;
   virtual bool Cancel() OVERRIDE;
   virtual bool ShouldExpireInternal(
@@ -83,17 +83,15 @@ void KeystonePromotionInfoBarDelegate::Create() {
     return;
   InfoBarService* infobar_service =
       InfoBarService::FromWebContents(webContents);
-  infobar_service->AddInfoBar(scoped_ptr<InfoBarDelegate>(
-      new KeystonePromotionInfoBarDelegate(
-          infobar_service,
+  infobar_service->AddInfoBar(ConfirmInfoBarDelegate::CreateInfoBar(
+      scoped_ptr<ConfirmInfoBarDelegate>(new KeystonePromotionInfoBarDelegate(
           Profile::FromBrowserContext(
-              webContents->GetBrowserContext())->GetPrefs())));
+              webContents->GetBrowserContext())->GetPrefs()))));
 }
 
 KeystonePromotionInfoBarDelegate::KeystonePromotionInfoBarDelegate(
-    InfoBarService* infobar_service,
     PrefService* prefs)
-    : ConfirmInfoBarDelegate(infobar_service),
+    : ConfirmInfoBarDelegate(),
       prefs_(prefs),
       can_expire_(false),
       weak_ptr_factory_(this) {
@@ -112,12 +110,12 @@ int KeystonePromotionInfoBarDelegate::GetIconID() const {
   return IDR_PRODUCT_LOGO_32;
 }
 
-string16 KeystonePromotionInfoBarDelegate::GetMessageText() const {
+base::string16 KeystonePromotionInfoBarDelegate::GetMessageText() const {
   return l10n_util::GetStringFUTF16(IDS_PROMOTE_INFOBAR_TEXT,
       l10n_util::GetStringUTF16(IDS_PRODUCT_NAME));
 }
 
-string16 KeystonePromotionInfoBarDelegate::GetButtonLabel(
+base::string16 KeystonePromotionInfoBarDelegate::GetButtonLabel(
     InfoBarButton button) const {
   return l10n_util::GetStringUTF16((button == BUTTON_OK) ?
       IDS_PROMOTE_INFOBAR_PROMOTE_BUTTON : IDS_PROMOTE_INFOBAR_DONT_ASK_BUTTON);

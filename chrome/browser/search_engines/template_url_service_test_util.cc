@@ -14,7 +14,6 @@
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/webdata/web_data_service_factory.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/test/automation/value_conversion_util.h"
 #include "chrome/test/base/testing_pref_service_syncable.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/browser/notification_service.h"
@@ -36,21 +35,22 @@ class TestingTemplateURLService : public TemplateURLService {
       : TemplateURLService(profile) {
   }
 
-  string16 GetAndClearSearchTerm() {
-    string16 search_term;
+  base::string16 GetAndClearSearchTerm() {
+    base::string16 search_term;
     search_term.swap(search_term_);
     return search_term;
   }
 
  protected:
-  virtual void SetKeywordSearchTermsForURL(const TemplateURL* t_url,
-                                           const GURL& url,
-                                           const string16& term) OVERRIDE {
+  virtual void SetKeywordSearchTermsForURL(
+      const TemplateURL* t_url,
+      const GURL& url,
+      const base::string16& term) OVERRIDE {
     search_term_ = term;
   }
 
  private:
-  string16 search_term_;
+  base::string16 search_term_;
 
   DISALLOW_COPY_AND_ASSIGN(TestingTemplateURLService);
 };
@@ -116,7 +116,7 @@ void TemplateURLServiceTestUtilBase::ResetModel(bool verify_load) {
     VerifyLoad();
 }
 
-string16 TemplateURLServiceTestUtilBase::GetAndClearSearchTerm() {
+base::string16 TemplateURLServiceTestUtilBase::GetAndClearSearchTerm() {
   return
       static_cast<TestingTemplateURLService*>(model())->GetAndClearSearchTerm();
 }
@@ -159,9 +159,11 @@ void TemplateURLServiceTestUtilBase::SetManagedDefaultSearchPreferences(
                                Value::CreateStringValue(icon_url));
   pref_service->SetManagedPref(prefs::kDefaultSearchProviderEncodings,
                                Value::CreateStringValue(encodings));
+  scoped_ptr<base::ListValue> alternate_url_list(new base::ListValue());
+  if (!alternate_url.empty())
+    alternate_url_list->Append(Value::CreateStringValue(alternate_url));
   pref_service->SetManagedPref(prefs::kDefaultSearchProviderAlternateURLs,
-      alternate_url.empty() ? new base::ListValue() :
-          CreateListValueFrom(alternate_url));
+                               alternate_url_list.release());
   pref_service->SetManagedPref(
       prefs::kDefaultSearchProviderSearchTermsReplacementKey,
       Value::CreateStringValue(search_terms_replacement_key));

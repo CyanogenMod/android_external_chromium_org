@@ -8,12 +8,14 @@
 #include "ash/wm/window_resizer.h"
 #include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
+#include "base/memory/weak_ptr.h"
 #include "ui/gfx/point.h"
 
 namespace ash {
 namespace internal {
 
 class DragWindowController;
+class TrayUser;
 
 // DragWindowResizer is a decorator of WindowResizer and adds the ability to
 // drag windows across displays.
@@ -53,6 +55,14 @@ class ASH_EXPORT DragWindowResizer : public WindowResizer {
   // Returns true if we should allow the mouse pointer to warp.
   bool ShouldAllowMouseWarp();
 
+  // Get the user drop target underneath the given |point_in_screen| or NULL.
+  TrayUser* GetTrayUserItemAtPoint(const gfx::Point& point_in_screen);
+
+  // Check if a completed drag might cause the window to change active desktops.
+  // If the call was causing a "transfer of ownership to another desktop" and it
+  // will return false indicating that no further processing is needed.
+  bool TryDraggingToNewUser();
+
   scoped_ptr<WindowResizer> next_window_resizer_;
 
   // Shows a semi-transparent image of the window being dragged.
@@ -62,17 +72,15 @@ class ASH_EXPORT DragWindowResizer : public WindowResizer {
 
   gfx::Point last_mouse_location_;
 
-  // If non-NULL the destructor sets this to true. Used to determine if this has
-  // been deleted.
-  bool* destroyed_;
-
   // Current instance for use by the DragWindowResizerTest.
   static DragWindowResizer* instance_;
+
+  base::WeakPtrFactory<DragWindowResizer> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(DragWindowResizer);
 };
 
 }  // namespace internal
-}  // namespace aura
+}  // namespace ash
 
 #endif  // ASH_WM_DRAG_WINDOW_RESIZER_H_

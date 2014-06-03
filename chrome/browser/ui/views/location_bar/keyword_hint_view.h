@@ -14,7 +14,7 @@
 class Profile;
 
 namespace gfx {
-class Font;
+class FontList;
 }
 
 namespace views {
@@ -33,14 +33,13 @@ class Label;
 class KeywordHintView : public views::View {
  public:
   KeywordHintView(Profile* profile,
-                  const gfx::Font& font,
-                  int font_y_offset,
+                  const gfx::FontList& font_list,
                   SkColor text_color,
                   SkColor background_color);
   virtual ~KeywordHintView();
 
-  void SetKeyword(const string16& keyword);
-  string16 keyword() const { return keyword_; }
+  void SetKeyword(const base::string16& keyword);
+  base::string16 keyword() const { return keyword_; }
 
   virtual gfx::Size GetPreferredSize() OVERRIDE;
   // The minimum size is just big enough to show the tab.
@@ -48,8 +47,7 @@ class KeywordHintView : public views::View {
   virtual void Layout() OVERRIDE;
 
  private:
-  views::Label* CreateLabel(const gfx::Font& font,
-                            int font_y_offset,
+  views::Label* CreateLabel(const gfx::FontList& font_list,
                             SkColor text_color,
                             SkColor background_color);
 
@@ -57,7 +55,7 @@ class KeywordHintView : public views::View {
   views::Label* leading_label_;
   views::ImageView* tab_image_;
   views::Label* trailing_label_;
-  string16 keyword_;
+  base::string16 keyword_;
 
   DISALLOW_COPY_AND_ASSIGN(KeywordHintView);
 };

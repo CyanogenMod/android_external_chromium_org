@@ -17,15 +17,16 @@
 #include "chrome/browser/prerender/prerender_final_status.h"
 #include "chrome/browser/prerender/prerender_handle.h"
 #include "chrome/browser/prerender/prerender_manager.h"
-#include "chrome/browser/prerender/prerender_render_view_host_observer.h"
 #include "chrome/browser/prerender/prerender_tracker.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_tab_contents.h"
 #include "chrome/common/prerender_messages.h"
+#include "chrome/common/render_messages.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/browser_child_process_host.h"
 #include "content/public/browser/notification_service.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/resource_request_details.h"
@@ -34,6 +35,7 @@
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/browser/web_contents_view.h"
 #include "content/public/common/favicon_url.h"
+#include "content/public/common/frame_navigate_params.h"
 #include "ui/gfx/rect.h"
 
 using content::DownloadItem;
@@ -44,6 +46,26 @@ using content::SessionStorageNamespace;
 using content::WebContents;
 
 namespace prerender {
+
+namespace {
+
+// Internal cookie event.
+// Whenever a prerender interacts with the cookie store, either sending
+// existing cookies that existed before the prerender started, or when a cookie
+// is changed, we record these events for histogramming purposes.
+enum InternalCookieEvent {
+  INTERNAL_COOKIE_EVENT_MAIN_FRAME_SEND = 0,
+  INTERNAL_COOKIE_EVENT_MAIN_FRAME_CHANGE = 1,
+  INTERNAL_COOKIE_EVENT_OTHER_SEND = 2,
+  INTERNAL_COOKIE_EVENT_OTHER_CHANGE = 3,
+  INTERNAL_COOKIE_EVENT_MAX
+};
+
+}  // namespace
+
+// static
+const int PrerenderContents::kNumCookieStatuses =
+    (1 << INTERNAL_COOKIE_EVENT_MAX);
 
 class PrerenderContentsFactoryImpl : public PrerenderContents::Factory {
  public:
@@ -89,24 +111,6 @@ class PrerenderContents::WebContentsDelegateImpl
     callback.Run(false);
   }
 
-  virtual bool ShouldCreateWebContents(
-      WebContents* web_contents,
-      int route_id,
-      WindowContainerType window_container_type,
-      const string16& frame_name,
-      const GURL& target_url,
-      const content::Referrer& referrer,
-      WindowOpenDisposition disposition,
-      const WebKit::WebWindowFeatures& features,
-      bool user_gesture,
-      bool opener_suppressed) OVERRIDE {
-    // Since we don't want to permit child windows that would have a
-    // window.opener property, terminate prerendering.
-    prerender_contents_->Destroy(FINAL_STATUS_CREATE_NEW_WINDOW);
-    // Cancel the popup.
-    return false;
-  }
-
   virtual bool OnGoToEntryOffset(int offset) OVERRIDE {
     // This isn't allowed because the history merge operation
     // does not work if there are renderer issued challenges.
@@ -132,11 +136,18 @@ class PrerenderContents::WebContentsDelegateImpl
   virtual void RegisterProtocolHandler(WebContents* web_contents,
                                        const std::string& protocol,
                                        const GURL& url,
-                                       const string16& title,
+                                       const base::string16& title,
                                        bool user_gesture) OVERRIDE {
     // TODO(mmenke): Consider supporting this if it is a common case during
     // prerenders.
     prerender_contents_->Destroy(FINAL_STATUS_REGISTER_PROTOCOL_HANDLER);
+  }
+
+  virtual gfx::Size GetSizeForNewRenderView(
+      const WebContents* web_contents) const OVERRIDE {
+    // Have to set the size of the RenderView on initialization to be sure it is
+    // set before the RenderView is hidden on all platforms (esp. Android).
+    return prerender_contents_->size_;
   }
 
  private:
@@ -179,6 +190,12 @@ void PrerenderContents::AddPendingPrerender(
 }
 
 void PrerenderContents::PrepareForUse() {
+  for (std::set<content::RenderFrameHost*>::iterator i =
+           render_frame_hosts_.begin(); i != render_frame_hosts_.end(); ++i) {
+    (*i)->Send(new PrerenderMsg_SetIsPrerendering((*i)->GetRoutingID(), false));
+  }
+  render_frame_hosts_.clear();
+
   NotifyPrerenderStop();
 
   SessionStorageNamespace* session_storage_namespace = NULL;
@@ -200,12 +217,12 @@ PrerenderContents::PrerenderContents(
     Origin origin,
     uint8 experiment_id)
     : prerendering_has_started_(false),
+      session_storage_namespace_id_(-1),
       prerender_manager_(prerender_manager),
       prerender_url_(url),
       referrer_(referrer),
       profile_(profile),
       page_id_(0),
-      session_storage_namespace_id_(-1),
       has_stopped_loading_(false),
       has_finished_loading_(false),
       final_status_(FINAL_STATUS_MAX),
@@ -215,7 +232,8 @@ PrerenderContents::PrerenderContents(
       route_id_(-1),
       origin_(origin),
       experiment_id_(experiment_id),
-      creator_child_id_(-1) {
+      creator_child_id_(-1),
+      cookie_status_(0) {
   DCHECK(prerender_manager != NULL);
 }
 
@@ -266,6 +284,7 @@ void PrerenderContents::StartPrerendering(
 
   DCHECK(load_start_time_.is_null());
   load_start_time_ = base::TimeTicks::Now();
+  start_time_ = base::Time::Now();
 
   // Everything after this point sets up the WebContents object and associated
   // RenderView for the prerender page. Don't do this for members of the
@@ -280,7 +299,9 @@ void PrerenderContents::StartPrerendering(
 
   prerendering_has_started_ = true;
 
-  prerender_contents_.reset(CreateWebContents(session_storage_namespace));
+  alias_session_storage_namespace = session_storage_namespace->CreateAlias();
+  prerender_contents_.reset(
+      CreateWebContents(alias_session_storage_namespace.get()));
   BrowserTabContents::AttachTabHelpers(prerender_contents_.get());
 #if defined(OS_ANDROID)
   // Delay icon fetching until the contents are getting swapped in
@@ -295,12 +316,12 @@ void PrerenderContents::StartPrerendering(
   // Set the size of the prerender WebContents.
   prerender_contents_->GetView()->SizeContents(size_);
 
-  // Register as an observer of the RenderViewHost so we get messages.
-  render_view_host_observer_.reset(
-      new PrerenderRenderViewHostObserver(this, GetRenderViewHostMutable()));
-
   child_id_ = GetRenderViewHost()->GetProcess()->GetID();
   route_id_ = GetRenderViewHost()->GetRoutingID();
+
+  // Log transactions to see if we could merge session storage namespaces in
+  // the event of a mismatch.
+  alias_session_storage_namespace->AddTransactionLogProcessId(child_id_);
 
   // Register this with the ResourceDispatcherHost as a prerender
   // RenderViewHost. This must be done before the Navigate message to catch all
@@ -325,11 +346,6 @@ void PrerenderContents::StartPrerendering(
       this, content::NOTIFICATION_WEB_CONTENTS_RENDER_VIEW_HOST_CREATED,
       content::Source<WebContents>(prerender_contents_.get()));
 
-  // Register for redirect notifications sourced from |this|.
-  notification_registrar_.Add(
-      this, content::NOTIFICATION_RESOURCE_RECEIVED_REDIRECT,
-      content::Source<WebContents>(prerender_contents_.get()));
-
   // Transfer over the user agent override.
   prerender_contents_.get()->SetUserAgentOverride(
       prerender_manager_->config().user_agent_override);
@@ -337,8 +353,9 @@ void PrerenderContents::StartPrerendering(
   content::NavigationController::LoadURLParams load_url_params(
       prerender_url_);
   load_url_params.referrer = referrer_;
-  load_url_params.transition_type = (origin_ == ORIGIN_OMNIBOX ?
-      content::PAGE_TRANSITION_TYPED : content::PAGE_TRANSITION_LINK);
+  load_url_params.transition_type =
+      ((origin_ == ORIGIN_OMNIBOX || origin_ == ORIGIN_INSTANT) ?
+          content::PAGE_TRANSITION_TYPED : content::PAGE_TRANSITION_LINK);
   load_url_params.override_user_agent =
       prerender_manager_->config().is_overriding_user_agent ?
       content::NavigationController::UA_OVERRIDE_TRUE :
@@ -372,7 +389,16 @@ PrerenderContents::~PrerenderContents() {
   DCHECK(
       prerendering_has_been_cancelled() || final_status() == FINAL_STATUS_USED);
   DCHECK_NE(ORIGIN_MAX, origin());
-
+  // Since a lot of prerenders terminate before any meaningful cookie action
+  // would have happened, only record the cookie status for prerenders who
+  // were used, cancelled, or timed out.
+  if (prerendering_has_started_ &&
+      (final_status() == FINAL_STATUS_USED ||
+       final_status() == FINAL_STATUS_TIMED_OUT ||
+       final_status() == FINAL_STATUS_CANCELLED)) {
+    prerender_manager_->RecordCookieStatus(origin(), experiment_id(),
+                                           cookie_status_);
+  }
   prerender_manager_->RecordFinalStatusWithMatchCompleteStatus(
       origin(), experiment_id(), match_complete_status(), final_status());
 
@@ -412,25 +438,6 @@ void PrerenderContents::Observe(int type,
       Destroy(FINAL_STATUS_APP_TERMINATING);
       return;
 
-    case content::NOTIFICATION_RESOURCE_RECEIVED_REDIRECT: {
-      // RESOURCE_RECEIVED_REDIRECT can come for any resource on a page.
-      // If it's a redirect on the top-level resource, the name needs
-      // to be remembered for future matching, and if it redirects to
-      // an https resource, it needs to be canceled. If a subresource
-      // is redirected, nothing changes.
-      DCHECK_EQ(content::Source<WebContents>(source).ptr(),
-                prerender_contents_.get());
-      ResourceRedirectDetails* resource_redirect_details =
-          content::Details<ResourceRedirectDetails>(details).ptr();
-      CHECK(resource_redirect_details);
-      if (resource_redirect_details->resource_type ==
-          ResourceType::MAIN_FRAME) {
-        if (!AddAliasURL(resource_redirect_details->new_url))
-          return;
-      }
-      break;
-    }
-
     case content::NOTIFICATION_WEB_CONTENTS_RENDER_VIEW_HOST_CREATED: {
       if (prerender_contents_.get()) {
         DCHECK_EQ(content::Source<WebContents>(source).ptr(),
@@ -438,16 +445,6 @@ void PrerenderContents::Observe(int type,
 
         content::Details<RenderViewHost> new_render_view_host(details);
         OnRenderViewHostCreated(new_render_view_host.ptr());
-
-        // When a new RenderView is created for a prerendering WebContents,
-        // tell the new RenderView it's being used for prerendering before any
-        // navigations occur.  Note that this is always triggered before the
-        // first navigation, so there's no need to send the message just after
-        // the WebContents is created.
-        new_render_view_host->Send(
-            new PrerenderMsg_SetIsPrerendering(
-                new_render_view_host->GetRoutingID(),
-                true));
 
         // Make sure the size of the RenderViewHost has been passed to the new
         // RenderView.  Otherwise, the size may not be sent until the
@@ -521,9 +518,21 @@ void PrerenderContents::DidUpdateFaviconURL(
   }
 }
 
-bool PrerenderContents::AddAliasURL(const GURL& url) {
-  const bool http = url.SchemeIs(chrome::kHttpScheme);
-  const bool https = url.SchemeIs(chrome::kHttpsScheme);
+bool PrerenderContents::OnMessageReceived(const IPC::Message& message) {
+  bool handled = true;
+  // The following messages we do want to consume.
+  IPC_BEGIN_MESSAGE_MAP(PrerenderContents, message)
+    IPC_MESSAGE_HANDLER(ChromeViewHostMsg_CancelPrerenderForPrinting,
+                        OnCancelPrerenderForPrinting)
+    IPC_MESSAGE_UNHANDLED(handled = false)
+  IPC_END_MESSAGE_MAP()
+
+  return handled;
+}
+
+bool PrerenderContents::CheckURL(const GURL& url) {
+  const bool http = url.SchemeIs(content::kHttpScheme);
+  const bool https = url.SchemeIs(content::kHttpsScheme);
   if (!http && !https) {
     DCHECK_NE(MATCH_COMPLETE_REPLACEMENT_PENDING, match_complete_status_);
     Destroy(FINAL_STATUS_UNSUPPORTED_SCHEME);
@@ -539,6 +548,12 @@ bool PrerenderContents::AddAliasURL(const GURL& url) {
     Destroy(FINAL_STATUS_RECENTLY_VISITED);
     return false;
   }
+  return true;
+}
+
+bool PrerenderContents::AddAliasURL(const GURL& url) {
+  if (!CheckURL(url))
+    return false;
 
   alias_urls_.push_back(url);
 
@@ -568,6 +583,22 @@ void PrerenderContents::RenderProcessGone(base::TerminationStatus status) {
   Destroy(FINAL_STATUS_RENDERER_CRASHED);
 }
 
+void PrerenderContents::RenderFrameCreated(
+    content::RenderFrameHost* render_frame_host) {
+  render_frame_hosts_.insert(render_frame_host);
+  // When a new RenderFrame is created for a prerendering WebContents, tell the
+  // new RenderFrame it's being used for prerendering before any navigations
+  // occur.  Note that this is always triggered before the first navigation, so
+  // there's no need to send the message just after the WebContents is created.
+  render_frame_host->Send(new PrerenderMsg_SetIsPrerendering(
+      render_frame_host->GetRoutingID(), true));
+}
+
+void PrerenderContents::RenderFrameDeleted(
+    content::RenderFrameHost* render_frame_host) {
+  render_frame_hosts_.erase(render_frame_host);
+}
+
 void PrerenderContents::DidStopLoading(
     content::RenderViewHost* render_view_host) {
   has_stopped_loading_ = true;
@@ -583,7 +614,7 @@ void PrerenderContents::DidStartProvisionalLoadForFrame(
     bool is_iframe_srcdoc,
     RenderViewHost* render_view_host) {
   if (is_main_frame) {
-    if (!AddAliasURL(validated_url))
+    if (!CheckURL(validated_url))
       return;
 
     // Usually, this event fires if the user clicks or enters a new URL.
@@ -602,6 +633,44 @@ void PrerenderContents::DidFinishLoad(int64 frame_id,
                                       RenderViewHost* render_view_host) {
   if (is_main_frame)
     has_finished_loading_ = true;
+}
+
+void PrerenderContents::DidNavigateMainFrame(
+    const content::LoadCommittedDetails& details,
+    const content::FrameNavigateParams& params) {
+  // If the prerender made a second navigation entry, abort the prerender. This
+  // avoids having to correctly implement a complex history merging case (this
+  // interacts with location.replace) and correctly synchronize with the
+  // renderer. The final status may be monitored to see we need to revisit this
+  // decision. This does not affect client redirects as those do not push new
+  // history entries. (Calls to location.replace, navigations before onload, and
+  // <meta http-equiv=refresh> with timeouts under 1 second do not create
+  // entries in Blink.)
+  if (prerender_contents_->GetController().GetEntryCount() > 1) {
+    Destroy(FINAL_STATUS_NEW_NAVIGATION_ENTRY);
+    return;
+  }
+
+  // Add each redirect as an alias. |params.url| is included in
+  // |params.redirects|.
+  //
+  // TODO(davidben): We do not correctly patch up history for renderer-initated
+  // navigations which add history entries. http://crbug.com/305660.
+  for (size_t i = 0; i < params.redirects.size(); i++) {
+    if (!AddAliasURL(params.redirects[i]))
+      return;
+  }
+}
+
+void PrerenderContents::DidGetRedirectForResourceRequest(
+    const content::ResourceRedirectDetails& details) {
+  // DidGetRedirectForResourceRequest can come for any resource on a page.  If
+  // it's a redirect on the top-level resource, the name needs to be remembered
+  // for future matching, and if it redirects to an https resource, it needs to
+  // be canceled. If a subresource is redirected, nothing changes.
+  if (details.resource_type != ResourceType::MAIN_FRAME)
+    return;
+  CheckURL(details.new_url);
 }
 
 void PrerenderContents::Destroy(FinalStatus final_status) {
@@ -632,17 +701,16 @@ void PrerenderContents::Destroy(FinalStatus final_status) {
   prerender_manager_->AddToHistory(this);
   prerender_manager_->MoveEntryToPendingDelete(this, final_status);
 
+  // Note that if this PrerenderContents was made into a MatchComplete
+  // replacement by MoveEntryToPendingDelete, NotifyPrerenderStop will
+  // not reach the PrerenderHandle. Rather
+  // OnPrerenderCreatedMatchCompleteReplacement will propogate that
+  // information to the referer.
   if (!prerender_manager_->IsControlGroup(experiment_id()) &&
       (prerendering_has_started() ||
        match_complete_status() == MATCH_COMPLETE_REPLACEMENT)) {
     NotifyPrerenderStop();
   }
-
-  // We may destroy the PrerenderContents before we have initialized the
-  // RenderViewHost. Otherwise set the Observer's PrerenderContents to NULL to
-  // avoid any more messages being sent.
-  if (render_view_host_observer_)
-    render_view_host_observer_->set_prerender_contents(NULL);
 }
 
 base::ProcessMetrics* PrerenderContents::MaybeGetProcessMetrics() {
@@ -679,8 +747,9 @@ void PrerenderContents::DestroyWhenUsingTooManyResources() {
 
 WebContents* PrerenderContents::ReleasePrerenderContents() {
   prerender_contents_->SetDelegate(NULL);
-  render_view_host_observer_.reset();
   content::WebContentsObserver::Observe(NULL);
+  if (alias_session_storage_namespace)
+    alias_session_storage_namespace->RemoveTransactionLogProcessId(child_id_);
   return prerender_contents_.release();
 }
 
@@ -725,5 +794,56 @@ bool PrerenderContents::IsCrossSiteNavigationPending() const {
           prerender_contents_->GetPendingSiteInstance());
 }
 
+SessionStorageNamespace* PrerenderContents::GetSessionStorageNamespace() const {
+  if (!prerender_contents())
+    return NULL;
+  return prerender_contents()->GetController().
+      GetDefaultSessionStorageNamespace();
+}
+
+void PrerenderContents::OnCancelPrerenderForPrinting() {
+  Destroy(FINAL_STATUS_WINDOW_PRINT);
+}
+
+void PrerenderContents::RecordCookieEvent(CookieEvent event,
+                                          bool is_main_frame_http_request,
+                                          base::Time earliest_create_date) {
+  // We don't care about sent cookies that were created after this prerender
+  // started.
+  // The reason is that for the purpose of the histograms emitted, we only care
+  // about cookies that existed before the prerender was started, but not
+  // about cookies that were created as part of the prerender. Using the
+  // earliest creation timestamp of all cookies provided by the cookie monster
+  // is a heuristic that yields the desired result pretty closely.
+  // In particular, we pretend no other WebContents make changes to the cookies
+  // relevant to the prerender, which may not actually always be the case, but
+  // hopefully most of the times.
+  if (event == COOKIE_EVENT_SEND && earliest_create_date > start_time_)
+    return;
+
+  InternalCookieEvent internal_event = INTERNAL_COOKIE_EVENT_MAX;
+
+  if (is_main_frame_http_request) {
+    if (event == COOKIE_EVENT_SEND) {
+      internal_event = INTERNAL_COOKIE_EVENT_MAIN_FRAME_SEND;
+    } else {
+      internal_event = INTERNAL_COOKIE_EVENT_MAIN_FRAME_CHANGE;
+    }
+  } else {
+    if (event == COOKIE_EVENT_SEND) {
+      internal_event = INTERNAL_COOKIE_EVENT_OTHER_SEND;
+    } else {
+      internal_event = INTERNAL_COOKIE_EVENT_OTHER_CHANGE;
+    }
+  }
+
+  DCHECK_GE(internal_event, 0);
+  DCHECK_LT(internal_event, INTERNAL_COOKIE_EVENT_MAX);
+
+  cookie_status_ |= (1 << internal_event);
+
+  DCHECK_GE(cookie_status_, 0);
+  DCHECK_LT(cookie_status_, kNumCookieStatuses);
+}
 
 }  // namespace prerender

@@ -1,4 +1,4 @@
-// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -19,7 +19,6 @@ import org.chromium.content.browser.test.util.CriteriaHelper;
 import org.chromium.net.test.util.TestWebServer;
 
 import java.util.ArrayList;
-import java.util.concurrent.Callable;
 import java.util.List;
 
 public class AwQuotaManagerBridgeTest extends AwTestBase {
@@ -162,15 +161,14 @@ public class AwQuotaManagerBridgeTest extends AwTestBase {
     @LargeTest
     @Feature({"AndroidWebView", "WebStore"})
     public void testDeleteAllWithAppCache() throws Exception {
-        long currentUsage = getUsageForOrigin(mOrigin);
-        assertEquals(0, currentUsage);
+        final long initialUsage = getUsageForOrigin(mOrigin);
 
         useAppCache();
         assertTrue(CriteriaHelper.pollForCriteria(new Criteria() {
             @Override
             public boolean isSatisfied() {
                 try {
-                    return getUsageForOrigin(mOrigin) > 0;
+                    return getUsageForOrigin(mOrigin) > initialUsage;
                 } catch (Exception e) {
                     return false;
                 }
@@ -193,15 +191,14 @@ public class AwQuotaManagerBridgeTest extends AwTestBase {
     @LargeTest
     @Feature({"AndroidWebView", "WebStore"})
     public void testDeleteOriginWithAppCache() throws Exception {
-        long currentUsage = getUsageForOrigin(mOrigin);
-        assertEquals(0, currentUsage);
+        final long initialUsage = getUsageForOrigin(mOrigin);
 
         useAppCache();
         assertTrue(CriteriaHelper.pollForCriteria(new Criteria() {
             @Override
             public boolean isSatisfied() {
                 try {
-                    return getUsageForOrigin(mOrigin) > 0;
+                    return getUsageForOrigin(mOrigin) > initialUsage;
                 } catch (Exception e) {
                     return false;
                 }

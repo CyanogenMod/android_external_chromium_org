@@ -9,7 +9,7 @@
 #include "chrome/browser/ui/global_error/global_error_service.h"
 #include "chrome/browser/ui/global_error/global_error_service_factory.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
-#include "chrome/browser/ui/views/toolbar_view.h"
+#include "chrome/browser/ui/views/toolbar/toolbar_view.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/image/image.h"
 #include "ui/views/controls/button/label_button.h"
@@ -40,9 +40,9 @@ const int kBubblePadding = 6;
 // GlobalErrorBubbleViewBase ---------------------------------------------------
 
 // static
-GlobalErrorBubbleViewBase* GlobalErrorBubbleViewBase::ShowBubbleView(
+GlobalErrorBubbleViewBase* GlobalErrorBubbleViewBase::ShowStandardBubbleView(
     Browser* browser,
-    const base::WeakPtr<GlobalError>& error) {
+    const base::WeakPtr<GlobalErrorWithStandardBubble>& error) {
   BrowserView* browser_view = BrowserView::GetBrowserViewForBrowser(browser);
   views::View* wrench_button = browser_view->toolbar()->app_menu();
   GlobalErrorBubbleView* bubble_view =
@@ -61,7 +61,7 @@ GlobalErrorBubbleView::GlobalErrorBubbleView(
     views::View* anchor_view,
     views::BubbleBorder::Arrow arrow,
     Browser* browser,
-    const base::WeakPtr<GlobalError>& error)
+    const base::WeakPtr<GlobalErrorWithStandardBubble>& error)
     : BubbleDelegateView(anchor_view, arrow),
       browser_(browser),
       error_(error) {
@@ -75,13 +75,13 @@ GlobalErrorBubbleView::GlobalErrorBubbleView(
   scoped_ptr<views::ImageView> image_view(new views::ImageView());
   image_view->SetImage(image.ToImageSkia());
 
-  string16 title_string(error_->GetBubbleViewTitle());
+  base::string16 title_string(error_->GetBubbleViewTitle());
   scoped_ptr<views::Label> title_label(new views::Label(title_string));
   title_label->SetMultiLine(true);
   title_label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
   title_label->SetFont(rb.GetFont(ui::ResourceBundle::MediumFont));
 
-  std::vector<string16> message_strings(error_->GetBubbleViewMessages());
+  std::vector<base::string16> message_strings(error_->GetBubbleViewMessages());
   std::vector<views::Label*> message_labels;
   for (size_t i = 0; i < message_strings.size(); ++i) {
     views::Label* message_label = new views::Label(message_strings[i]);
@@ -91,14 +91,14 @@ GlobalErrorBubbleView::GlobalErrorBubbleView(
     message_labels.push_back(message_label);
   }
 
-  string16 accept_string(error_->GetBubbleViewAcceptButtonLabel());
+  base::string16 accept_string(error_->GetBubbleViewAcceptButtonLabel());
   scoped_ptr<views::LabelButton> accept_button(
       new views::LabelButton(this, accept_string));
   accept_button->SetStyle(views::Button::STYLE_NATIVE_TEXTBUTTON);
   accept_button->SetIsDefault(true);
   accept_button->set_tag(TAG_ACCEPT_BUTTON);
 
-  string16 cancel_string(error_->GetBubbleViewCancelButtonLabel());
+  base::string16 cancel_string(error_->GetBubbleViewCancelButtonLabel());
   scoped_ptr<views::LabelButton> cancel_button;
   if (!cancel_string.empty()) {
     cancel_button.reset(new views::LabelButton(this, cancel_string));

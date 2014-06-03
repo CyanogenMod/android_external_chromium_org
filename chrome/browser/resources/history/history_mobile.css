@@ -4,10 +4,26 @@
 
 /* This file contains styles specific to Android and iOS. */
 
+html {
+  height: 100%;
+}
+
 body {
   color: rgb(76, 76, 76);
+  height: 100%;
   margin: 0;
-  margin-bottom: 46px;
+}
+
+.page {
+  -webkit-flex-flow: column;
+  display: -webkit-flex;
+  height: 100%;
+}
+
+#scrolling-container {
+  -webkit-flex: auto;  /* Container should take up extra vertical space. */
+  -webkit-overflow-scrolling: touch;
+  overflow-y: auto;
 }
 
 h1 {
@@ -86,8 +102,7 @@ html[dir='rtl'] #search-field {
 
 #remove-selected,
 #search-button,
-.gap,
-.snippet {
+.gap {
   display: none;
 }
 
@@ -148,13 +163,12 @@ input {
   border: 0;
   border-radius: 0;
   border-top: 1px solid rgb(198, 198, 198);
-  bottom: 0;
   box-shadow: none;
   font-size: 75%;
   font-weight: bold;
   height: 46px;
   margin: 0;
-  position: fixed;
+  min-height: 46px;
   text-shadow: none;
   text-transform: uppercase;
   width: 100%;
@@ -164,13 +178,6 @@ input {
 .search-results {
   margin: 0;
 }
-
-<if expr="pp_ifdef('ios')">
-/* Add extra spacing caused by the missing search bar on iOS. */
-h3:first-of-type {
-  margin-top: 16px;
-}
-</if>
 
 /* Fade out the entry-box, rather than its parent node, so that the dividing
    line between entries doesn't fade out. */
@@ -216,7 +223,7 @@ h3:first-of-type {
   margin-top: 16px;
 }
 
-<if expr="pp_ifdef('ios')">
+<if expr="is_ios">
 /* iOS does not support the latest flexbox syntax, only the 2009 working draft
    syntax (http://www.w3.org/TR/2009/WD-css3-flexbox-20090723/). */
 .entry-box,
@@ -230,6 +237,19 @@ h3:first-of-type {
   -webkit-box-orient: vertical;
   -webkit-box-pack: center;
   display: -webkit-box;
+}
+
+#scrolling-container {
+  bottom: 46px;
+  left: 0;
+  position: fixed;
+  right: 0;
+  top: 0;
+}
+
+#clear-browsing-data {
+  bottom: 0;
+  position: fixed;
 }
 </if>
 
@@ -246,40 +266,52 @@ h3:first-of-type {
 
 @media only screen and (max-width:600px) {
 
-/* Omit the time on very small screens. */
-.entry .time {
-  display: none;
-}
+  /* Omit the time on very small screens. */
+  .entry .time {
+    display: none;
+  }
 
 } /* @media only screen and (max-width:600px) */
 
 @media only screen and (min-width:720px) {
 
-body {
-  margin-bottom: 76px;
-}
+  h3,
+  .entry,
+  #search-field {
+    border: 1px solid rgb(220, 220, 220);
+  }
 
-h3,
-.entry,
-#search-field {
-  border: 1px solid rgb(220, 220, 220);
-}
+  h3 {
+    margin-top: 30px;
+  }
 
-h3 {
-  margin-top: 30px;
-}
+  #scrolling-container {
+    padding-bottom: 30px;
+  }
 
-.page {
-  margin: 0 auto;
-  max-width: 718px;
-}
+  #scrolling-container > * {
+    margin-left: auto;
+    margin-right: auto;
+    max-width: 718px;
+  }
 
-h1,
-#notification-bar,
-#loading-spinner,
-.no-results-message {
-  padding-left: 0;
-  padding-right: 0;
-}
+  h1,
+  #notification-bar,
+  #loading-spinner,
+  .no-results-message {
+    padding-left: 0;
+    padding-right: 0;
+  }
 
 } /* @media only screen and (max-width:720px) */
+
+<if expr="is_ios">
+.ios-keyboard-visible #clear-browsing-data {
+  display: none;
+}
+
+.ios-keyboard-visible #scrolling-container {
+  /* Should be 0, but that breaks scrolling -- see crbug.com/292715. */
+  bottom: -1px;
+}
+</if> /* is_ios */

@@ -6,6 +6,7 @@
 
 #include "chrome/browser/background/background_contents_service.h"
 #include "chrome/browser/chrome_notification_types.h"
+#include "chrome/browser/extensions/extension_web_contents_observer.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/renderer_preferences_util.h"
 #include "chrome/browser/ui/webui/chrome_web_ui_controller_factory.h"
@@ -13,6 +14,7 @@
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_view_host.h"
+#include "content/public/browser/session_storage_namespace.h"
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/view_type_utils.h"
@@ -21,21 +23,33 @@
 using content::SiteInstance;
 using content::WebContents;
 
-BackgroundContents::BackgroundContents(SiteInstance* site_instance,
-                                       int routing_id,
-                                       Delegate* delegate)
+BackgroundContents::BackgroundContents(
+    SiteInstance* site_instance,
+    int routing_id,
+    Delegate* delegate,
+    const std::string& partition_id,
+    content::SessionStorageNamespace* session_storage_namespace)
     : delegate_(delegate) {
   profile_ = Profile::FromBrowserContext(
       site_instance->GetBrowserContext());
 
-  // TODO(rafaelw): Implement correct session storage.
   WebContents::CreateParams create_params(profile_, site_instance);
   create_params.routing_id = routing_id;
-  web_contents_.reset(WebContents::Create(create_params));
+  if (session_storage_namespace) {
+    content::SessionStorageNamespaceMap session_storage_namespace_map;
+    session_storage_namespace_map.insert(
+        std::make_pair(partition_id, session_storage_namespace));
+    web_contents_.reset(WebContents::CreateWithSessionStorage(
+        create_params, session_storage_namespace_map));
+  } else {
+    web_contents_.reset(WebContents::Create(create_params));
+  }
   extensions::SetViewType(
       web_contents_.get(), extensions::VIEW_TYPE_BACKGROUND_CONTENTS);
   web_contents_->SetDelegate(this);
   content::WebContentsObserver::Observe(web_contents_.get());
+  extensions::ExtensionWebContentsObserver::CreateForWebContents(
+      web_contents_.get());
 
   // Close ourselves when the application is shutting down.
   registrar_.Add(this, chrome::NOTIFICATION_APP_TERMINATING,

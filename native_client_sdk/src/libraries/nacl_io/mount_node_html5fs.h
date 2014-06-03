@@ -23,30 +23,31 @@ class MountNodeHtml5Fs : public MountNode {
                          size_t count,
                          int* out_bytes);
   virtual Error GetStat(struct stat* stat);
-  virtual Error Read(size_t offs, void* buf, size_t count, int* out_bytes);
+  virtual Error Read(const HandleAttr& attr,
+                     void* buf,
+                     size_t count,
+                     int* out_bytes);
   virtual Error FTruncate(off_t size);
-  virtual Error Write(size_t offs,
+  virtual Error Write(const HandleAttr& attr,
                       const void* buf,
                       size_t count,
                       int* out_bytes);
 
+  virtual int GetType();
   virtual Error GetSize(size_t *out_size);
+  virtual bool IsaDir();
+  virtual bool IsaFile();
 
  protected:
   MountNodeHtml5Fs(Mount* mount, PP_Resource fileref);
 
   // Init with standard open flags
-  virtual Error Init(int o_mode);
+  virtual Error Init(int open_flags);
   virtual void Destroy();
 
  private:
   PP_Resource fileref_resource_;
   PP_Resource fileio_resource_;  // 0 if the file is a directory.
-
-  // Returns true if this node is a directory.
-  bool IsDirectory() const {
-    return !fileio_resource_;
-  }
 
   friend class MountHtml5Fs;
 };

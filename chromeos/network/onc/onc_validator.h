@@ -10,8 +10,8 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "chromeos/chromeos_export.h"
-#include "chromeos/network/onc/onc_constants.h"
 #include "chromeos/network/onc/onc_mapper.h"
+#include "components/onc/onc_constants.h"
 
 namespace base {
 class DictionaryValue;
@@ -73,7 +73,7 @@ class CHROMEOS_EXPORT Validator : public Mapper {
   // checks:
   // - only the network types Wifi and Ethernet are allowed
   // - client certificate patterns are disallowed
-  void SetOncSource(ONCSource source) {
+  void SetOncSource(::onc::ONCSource source) {
     onc_source_ = source;
   }
 
@@ -99,10 +99,9 @@ class CHROMEOS_EXPORT Validator : public Mapper {
   // Overridden from Mapper:
   // Compare |onc_value|s type with |onc_type| and validate/repair according to
   // |signature|. On error returns NULL.
-  virtual scoped_ptr<base::Value> MapValue(
-    const OncValueSignature& signature,
-    const base::Value& onc_value,
-    bool* error) OVERRIDE;
+  virtual scoped_ptr<base::Value> MapValue(const OncValueSignature& signature,
+                                           const base::Value& onc_value,
+                                           bool* error) OVERRIDE;
 
   // Dispatch to the right validation function according to
   // |signature|. Iterates over all fields and recursively validates/repairs
@@ -129,77 +128,37 @@ class CHROMEOS_EXPORT Validator : public Mapper {
       bool* nested_error) OVERRIDE;
 
   // Pushes/pops the index to |path_|, otherwise like |Mapper::MapEntry|.
-  virtual scoped_ptr<base::Value> MapEntry(
-      int index,
-      const OncValueSignature& signature,
-      const base::Value& onc_value,
-      bool* error) OVERRIDE;
+  virtual scoped_ptr<base::Value> MapEntry(int index,
+                                           const OncValueSignature& signature,
+                                           const base::Value& onc_value,
+                                           bool* error) OVERRIDE;
 
   // This is the default validation of objects/dictionaries. Validates
   // |onc_object| according to |object_signature|. |result| must point to a
   // dictionary into which the repaired fields are written.
-  bool ValidateObjectDefault(
-      const OncValueSignature& object_signature,
-      const base::DictionaryValue& onc_object,
-      base::DictionaryValue* result);
+  bool ValidateObjectDefault(const OncValueSignature& object_signature,
+                             const base::DictionaryValue& onc_object,
+                             base::DictionaryValue* result);
 
   // Validates/repairs the kRecommended array in |result| according to
   // |object_signature| of the enclosing object.
-  bool ValidateRecommendedField(
-      const OncValueSignature& object_signature,
-      base::DictionaryValue* result);
+  bool ValidateRecommendedField(const OncValueSignature& object_signature,
+                                base::DictionaryValue* result);
 
-  bool ValidateToplevelConfiguration(
-      const base::DictionaryValue& onc_object,
-      base::DictionaryValue* result);
-
-  bool ValidateNetworkConfiguration(
-      const base::DictionaryValue& onc_object,
-      base::DictionaryValue* result);
-
-  bool ValidateEthernet(
-      const base::DictionaryValue& onc_object,
-      base::DictionaryValue* result);
-
-  bool ValidateIPConfig(
-      const base::DictionaryValue& onc_object,
-      base::DictionaryValue* result);
-
-  bool ValidateWiFi(
-      const base::DictionaryValue& onc_object,
-      base::DictionaryValue* result);
-
-  bool ValidateVPN(
-      const base::DictionaryValue& onc_object,
-      base::DictionaryValue* result);
-
-  bool ValidateIPsec(
-      const base::DictionaryValue& onc_object,
-      base::DictionaryValue* result);
-
-  bool ValidateOpenVPN(
-      const base::DictionaryValue& onc_object,
-      base::DictionaryValue* result);
-
-  bool ValidateCertificatePattern(
-      const base::DictionaryValue& onc_object,
-      base::DictionaryValue* result);
-
-  bool ValidateProxySettings(
-      const base::DictionaryValue& onc_object,
-      base::DictionaryValue* result);
-
-  bool ValidateProxyLocation(
-      const base::DictionaryValue& onc_object,
-      base::DictionaryValue* result);
-
-  bool ValidateEAP(
-      const base::DictionaryValue& onc_object,
-      base::DictionaryValue* result);
-
-  bool ValidateCertificate(
-      const base::DictionaryValue& onc_object,
-      base::DictionaryValue* result);
+  bool ValidateToplevelConfiguration(base::DictionaryValue* result);
+  bool ValidateNetworkConfiguration(base::DictionaryValue* result);
+  bool ValidateEthernet(base::DictionaryValue* result);
+  bool ValidateIPConfig(base::DictionaryValue* result);
+  bool ValidateWiFi(base::DictionaryValue* result);
+  bool ValidateVPN(base::DictionaryValue* result);
+  bool ValidateIPsec(base::DictionaryValue* result);
+  bool ValidateOpenVPN(base::DictionaryValue* result);
+  bool ValidateVerifyX509(base::DictionaryValue* result);
+  bool ValidateCertificatePattern(base::DictionaryValue* result);
+  bool ValidateProxySettings(base::DictionaryValue* result);
+  bool ValidateProxyLocation(base::DictionaryValue* result);
+  bool ValidateEAP(base::DictionaryValue* result);
+  bool ValidateCertificate(base::DictionaryValue* result);
 
   bool FieldExistsAndHasNoValidValue(const base::DictionaryValue& object,
                                      const std::string &field_name,
@@ -215,7 +174,13 @@ class CHROMEOS_EXPORT Validator : public Mapper {
 
   bool RequireField(const base::DictionaryValue& dict, const std::string& key);
 
-  bool CertPatternInDevicePolicy(const std::string& cert_type);
+  // Prohibit certificate patterns for device policy ONC so that an unmanaged
+  // user won't have a certificate presented for them involuntarily.
+  bool IsCertPatternInDevicePolicy(const std::string& cert_type);
+
+  // Prohibit global network configuration in user ONC imports.
+  bool IsGlobalNetworkConfigInUserImport(
+      const base::DictionaryValue& onc_object);
 
   std::string MessageHeader();
 
@@ -224,7 +189,7 @@ class CHROMEOS_EXPORT Validator : public Mapper {
   const bool error_on_missing_field_;
   const bool managed_onc_;
 
-  ONCSource onc_source_;
+  ::onc::ONCSource onc_source_;
 
   // The path of field names and indices to the current value. Indices
   // are stored as strings in decimal notation.

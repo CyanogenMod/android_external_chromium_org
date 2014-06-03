@@ -33,9 +33,9 @@
 #include "chrome/test/base/testing_browser_process.h"
 #include "chromeos/chromeos_paths.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
+#include "chromeos/dbus/fake_dbus_thread_manager.h"
 #include "chromeos/dbus/fake_power_manager_client.h"
 #include "chromeos/dbus/fake_update_engine_client.h"
-#include "chromeos/dbus/mock_dbus_thread_manager_without_gmock.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
@@ -309,7 +309,7 @@ void MockTimeSingleThreadTaskRunner::RunUntilIdle() {
 bool MockTimeSingleThreadTaskRunner::TemporalOrder::operator()(
     const std::pair<base::TimeTicks, base::Closure>& first_task,
     const std::pair<base::TimeTicks, base::Closure>& second_task) const {
-  return first_task.first >= second_task.first;
+  return first_task.first > second_task.first;
 }
 
 MockTimeSingleThreadTaskRunner::~MockTimeSingleThreadTaskRunner() {
@@ -358,11 +358,15 @@ void AutomaticRebootManagerBasicTest::SetUp() {
 
   TestingBrowserProcess::GetGlobal()->SetLocalState(&local_state_);
   AutomaticRebootManager::RegisterPrefs(local_state_.registry());
-  MockDBusThreadManagerWithoutGMock* dbus_manager =
-      new MockDBusThreadManagerWithoutGMock;
+
+  FakeDBusThreadManager* dbus_manager = new FakeDBusThreadManager;
+  power_manager_client_ = new FakePowerManagerClient;
+  dbus_manager->SetPowerManagerClient(
+      scoped_ptr<PowerManagerClient>(power_manager_client_));
+  update_engine_client_ = new FakeUpdateEngineClient;
+  dbus_manager->SetUpdateEngineClient(
+      scoped_ptr<UpdateEngineClient>(update_engine_client_));
   DBusThreadManager::InitializeForTesting(dbus_manager);
-  power_manager_client_ = dbus_manager->fake_power_manager_client();
-  update_engine_client_ = dbus_manager->fake_update_engine_client();
 
   EXPECT_CALL(*mock_user_manager_, IsUserLoggedIn())
      .WillRepeatedly(ReturnPointee(&is_user_logged_in_));
@@ -478,8 +482,7 @@ void AutomaticRebootManagerBasicTest::CreateAutomaticRebootManager(
 bool AutomaticRebootManagerBasicTest::ReadUpdateRebootNeededUptimeFromFile(
     base::TimeDelta* uptime) {
   std::string contents;
-  if (!file_util::ReadFileToString(update_reboot_needed_uptime_file_,
-                                   &contents)) {
+  if (!base::ReadFileToString(update_reboot_needed_uptime_file_, &contents)) {
     return false;
   }
   double seconds;

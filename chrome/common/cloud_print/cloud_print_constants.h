@@ -28,6 +28,7 @@ extern const char kPrinterDefaultsValue[];
 extern const char kPrinterStatusValue[];
 extern const char kPrinterTagValue[];
 extern const char kPrinterRemoveTagValue[];
+extern const char kPrinterLocalSettingsValue[];
 extern const char kMessageTextValue[];
 
 // Value of "code" parameter in cloud print "/message" requests.
@@ -39,6 +40,7 @@ extern const char kZombiePrinterMessageId[];
 // Values in the respone JSON from the cloud print server.
 extern const char kSuccessValue[];
 extern const char kNameValue[];
+extern const char kDisplayNameValue[];
 extern const char kIdValue[];
 extern const char kTicketUrlValue[];
 extern const char kFileUrlValue[];
@@ -51,6 +53,12 @@ extern const char kXMPPJidValue[];
 extern const char kOAuthCodeValue[];
 extern const char kCreateTimeValue[];
 extern const char kPrinterTypeValue[];
+extern const char kUserValue[];
+extern const char kUsersValue[];
+extern const char kLocalSettingsPendingXmppValue[];
+
+// Value in XMPP notification.
+extern const char kNotificationUpdateSettings[];
 
 // Printer tag names. Don't need prefixes. They will be added on submit.
 extern const char kChromeVersionTagName[];
@@ -76,6 +84,10 @@ extern const char kJobFetchReasonFailure[];
 // Job fetch due to scheduled retry.
 extern const char kJobFetchReasonRetry[];
 
+// Format of the local settings containing only XMPP ping.
+extern const char kCreateLocalSettingsXmppPingFormat[];
+extern const char kUpdateLocalSettingsXmppPingFormat[];
+
 // Max retry count for job data fetch requests.
 const int kJobDataMaxRetryCount = 1;
 // Max retry count (infinity) for API fetch requests.
@@ -92,8 +104,8 @@ const int kMaxJobPollIntervalSecs = 8*60;  // 8 minutes in seconds
 
 // When we have XMPP notifications available, we ping server to keep connection
 // alive or check connection status.
-const int kDefaultXmppPingTimeoutSecs = 5*60;  // 5 minutes in seconds
-const int kMinimumXmppPingTimeoutSecs = 2*60;  // 2 minutes in seconds
+const int kDefaultXmppPingTimeoutSecs = 5*60;
+const int kMinXmppPingTimeoutSecs = 1*60;
 const int kXmppPingCheckIntervalSecs = 60;
 
 // Number of failed pings before we try to reinstablish XMPP connection.

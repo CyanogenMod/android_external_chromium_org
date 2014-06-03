@@ -4,7 +4,6 @@
 
 package org.chromium.base;
 
-import java.lang.Iterable;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
@@ -26,9 +25,24 @@ import javax.annotation.concurrent.NotThreadSafe;
  * <p/>
  * This class is not threadsafe. Observers MUST be added, removed and will be notified on the same
  * thread this is created.
+ *
+ * @param <E> The type of observers that this list should hold.
  */
 @NotThreadSafe
 public class ObserverList<E> implements Iterable<E> {
+    /**
+     * Extended iterator interface that provides rewind functionality.
+     */
+    public interface RewindableIterator<E> extends Iterator<E> {
+        /**
+         * Rewind the iterator back to the beginning.
+         *
+         * If we need to iterate multiple times, we can avoid iterator object reallocation by using
+         * this method.
+         */
+        public void rewind();
+    }
+
     public final List<E> mObservers = new ArrayList<E>();
     private int mIterationDepth = 0;
 
@@ -80,12 +94,22 @@ public class ObserverList<E> implements Iterable<E> {
         }
 
         int size = mObservers.size();
-        for (int i = 0; i < size; i++)
+        for (int i = 0; i < size; i++) {
             mObservers.set(i, null);
+        }
     }
 
     @Override
     public Iterator<E> iterator() {
+        return new ObserverListIterator();
+    }
+
+    /**
+     * It's the same as {@link ObserverList#iterator()} but the return type is
+     * {@link RewindableIterator}. Use this iterator type if you need to use
+     * {@link RewindableIterator#rewind()}.
+     */
+    public RewindableIterator<E> rewindableIterator() {
         return new ObserverListIterator();
     }
 
@@ -96,13 +120,10 @@ public class ObserverList<E> implements Iterable<E> {
      */
     private void compact() {
         assert mIterationDepth == 0;
-        // Safe to use the underlying list's iterator, as we know that no-one else
-        // is iterating over the list.
-        Iterator<E> it = mObservers.iterator();
-        while (it.hasNext()) {
-            E el = it.next();
-            if (el == null)
-                it.remove();
+        for (int i = mObservers.size() - 1; i >= 0; i--) {
+            if (mObservers.get(i) == null) {
+                mObservers.remove(i);
+            }
         }
     }
 
@@ -125,8 +146,8 @@ public class ObserverList<E> implements Iterable<E> {
         return mObservers.get(index);
     }
 
-    private class ObserverListIterator implements Iterator<E> {
-        private final int mListEndMarker;
+    private class ObserverListIterator implements RewindableIterator<E> {
+        private int mListEndMarker;
         private int mIndex = 0;
         private boolean mIsExhausted = false;
 
@@ -136,13 +157,22 @@ public class ObserverList<E> implements Iterable<E> {
         }
 
         @Override
+        public void rewind() {
+            compactListIfNeeded();
+            ObserverList.this.incrementIterationDepth();
+            mListEndMarker = ObserverList.this.getSize();
+            mIsExhausted = false;
+            mIndex = 0;
+        }
+
+        @Override
         public boolean hasNext() {
             int lookupIndex = mIndex;
             while (lookupIndex < mListEndMarker &&
-                    ObserverList.this.getObserverAt(lookupIndex) == null)
+                    ObserverList.this.getObserverAt(lookupIndex) == null) {
                 lookupIndex++;
-            if (lookupIndex < mListEndMarker)
-                return true;
+            }
+            if (lookupIndex < mListEndMarker) return true;
 
             // We have reached the end of the list, allow for compaction.
             compactListIfNeeded();
@@ -152,10 +182,10 @@ public class ObserverList<E> implements Iterable<E> {
         @Override
         public E next() {
             // Advance if the current element is null.
-            while (mIndex < mListEndMarker && ObserverList.this.getObserverAt(mIndex) == null)
+            while (mIndex < mListEndMarker && ObserverList.this.getObserverAt(mIndex) == null) {
                 mIndex++;
-            if (mIndex < mListEndMarker)
-                return ObserverList.this.getObserverAt(mIndex++);
+            }
+            if (mIndex < mListEndMarker) return ObserverList.this.getObserverAt(mIndex++);
 
             // We have reached the end of the list, allow for compaction.
             compactListIfNeeded();

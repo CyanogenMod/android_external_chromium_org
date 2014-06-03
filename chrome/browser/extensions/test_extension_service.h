@@ -10,10 +10,6 @@
 
 #include "chrome/browser/extensions/extension_service.h"
 
-namespace syncer {
-class SyncErrorFactory;
-}
-
 namespace extensions {
 class CrxInstaller;
 class Extension;
@@ -53,18 +49,6 @@ class TestExtensionService : public ExtensionServiceInterface {
   virtual void CheckManagementPolicy() OVERRIDE;
   virtual void CheckForUpdatesSoon() OVERRIDE;
 
-  virtual syncer::SyncMergeResult MergeDataAndStartSyncing(
-      syncer::ModelType type,
-      const syncer::SyncDataList& initial_sync_data,
-      scoped_ptr<syncer::SyncChangeProcessor> sync_processor,
-      scoped_ptr<syncer::SyncErrorFactory> sync_error_factory) OVERRIDE;
-  virtual void StopSyncing(syncer::ModelType type) OVERRIDE;
-  virtual syncer::SyncDataList GetAllSyncData(
-      syncer::ModelType type) const OVERRIDE;
-  virtual syncer::SyncError ProcessSyncChanges(
-      const tracked_objects::Location& from_here,
-      const syncer::SyncChangeList& change_list) OVERRIDE;
-
   virtual bool is_ready() OVERRIDE;
 
   virtual base::SequencedTaskRunner* GetFileTaskRunner() OVERRIDE;
@@ -75,10 +59,9 @@ class TestExtensionService : public ExtensionServiceInterface {
 
   virtual void UnloadExtension(
       const std::string& extension_id,
-      extension_misc::UnloadedExtensionReason reason) OVERRIDE;
-
-  virtual void SyncExtensionChangeIfNeeded(
-      const extensions::Extension& extension) OVERRIDE;
+      extensions::UnloadedExtensionInfo::Reason reason) OVERRIDE;
+  virtual void RemoveComponentExtension(const std::string & extension_id)
+      OVERRIDE;
 };
 
 #endif  // CHROME_BROWSER_EXTENSIONS_TEST_EXTENSION_SERVICE_H_

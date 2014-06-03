@@ -32,13 +32,14 @@
 #include "chrome/browser/printing/print_error_dialog.h"
 #include "chrome/browser/printing/print_job_manager.h"
 #include "chrome/browser/printing/print_preview_dialog_controller.h"
-#include "chrome/browser/printing/print_system_task_proxy.h"
 #include "chrome/browser/printing/print_view_manager.h"
 #include "chrome/browser/printing/printer_manager_dialog.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/signin/oauth2_token_service.h"
 #include "chrome/browser/signin/profile_oauth2_token_service.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
+#include "chrome/browser/signin/signin_manager.h"
+#include "chrome/browser/signin/signin_manager_base.h"
+#include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/chrome_select_file_policy.h"
@@ -46,6 +47,8 @@
 #include "chrome/browser/ui/webui/print_preview/sticky_settings.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/cloud_print/cloud_print_constants.h"
+#include "chrome/common/crash_keys.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/print_messages.h"
 #include "content/public/browser/browser_context.h"
@@ -56,34 +59,29 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
 #include "content/public/browser/web_ui.h"
+#include "google_apis/gaia/oauth2_token_service.h"
 #include "printing/backend/print_backend.h"
 #include "printing/metafile.h"
 #include "printing/metafile_impl.h"
-#include "printing/page_range.h"
-#include "printing/page_size_margins.h"
+#include "printing/pdf_render_settings.h"
 #include "printing/print_settings.h"
+#include "printing/units.h"
 #include "third_party/icu/source/i18n/unicode/ulocdata.h"
 
 #if defined(OS_CHROMEOS)
-// TODO(kinaba): provide more non-intrusive way for handling local/remote
-// distinction and remove these ugly #ifdef's. http://crbug.com/140425
-#include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/settings/device_oauth2_token_service.h"
 #include "chrome/browser/chromeos/settings/device_oauth2_token_service_factory.h"
 #endif
 
+#if defined(ENABLE_MDNS)
+#include "chrome/browser/local_discovery/privet_constants.h"
+#endif
+
 using content::BrowserThread;
-using content::NavigationEntry;
-using content::OpenURLParams;
 using content::RenderViewHost;
-using content::Referrer;
 using content::WebContents;
-using printing::Metafile;
 
 namespace {
-
-// The cloud print OAuth2 scope.
-const char kCloudPrintAuth[] = "https://www.googleapis.com/auth/cloudprint";
 
 enum UserActionBuckets {
   PRINT_TO_PRINTER,
@@ -95,6 +93,7 @@ enum UserActionBuckets {
   INITIATOR_CRASHED,  // UNUSED
   INITIATOR_CLOSED,
   PRINT_WITH_CLOUD_PRINT,
+  PRINT_WITH_PRIVET,
   USERACTION_BUCKET_BOUNDARY
 };
 
@@ -125,6 +124,8 @@ enum PrintDestinationBuckets {
   DESTINATION_CLOSED_UNCHANGED,
   SIGNIN_PROMPT,
   SIGNIN_TRIGGERED,
+  PRIVET_DUPLICATE_SELECTED,
+  CLOUD_DUPLICATE_SELECTED,
   PRINT_DESTINATION_BUCKET_BOUNDARY
 };
 
@@ -167,9 +168,25 @@ const char kNumberFormat[] = "numberFormat";
 // Name of a dictionary field specifying whether to print automatically in
 // kiosk mode. See http://crbug.com/31395.
 const char kPrintAutomaticallyInKioskMode[] = "printAutomaticallyInKioskMode";
+#if defined(OS_WIN)
+const char kHidePrintWithSystemDialogLink[] = "hidePrintWithSystemDialogLink";
+#endif
 // Name of a dictionary field holding the state of selection for document.
 const char kDocumentHasSelection[] = "documentHasSelection";
 
+// Additional printer capability setting keys.
+const char kPrinterId[] = "printerId";
+const char kDisableColorOption[] = "disableColorOption";
+const char kSetDuplexAsDefault[] = "setDuplexAsDefault";
+const char kPrinterDefaultDuplexValue[] = "printerDefaultDuplexValue";
+#if defined(USE_CUPS)
+const char kCUPSsColorModel[] = "cupsColorModel";
+const char kCUPSsBWModel[] = "cupsBWModel";
+#endif
+
+#if defined(ENABLE_MDNS)
+const int kPrivetPrinterSearchDurationSeconds = 3;
+#endif
 
 // Get the print job settings dictionary from |args|. The caller takes
 // ownership of the returned DictionaryValue. Returns NULL on failure.
@@ -217,7 +234,7 @@ void ReportPrintSettingsStats(const DictionaryValue& settings) {
   int color_mode = 0;
   if (settings.GetInteger(printing::kSettingColor, &color_mode)) {
     ReportPrintSettingHistogram(
-        printing::isColorModelSelected(color_mode) ? COLOR : BLACK_AND_WHITE);
+        printing::IsColorModelSelected(color_mode) ? COLOR : BLACK_AND_WHITE);
   }
 
   bool headers = false;
@@ -240,40 +257,134 @@ void ReportPrintSettingsStats(const DictionaryValue& settings) {
 }
 
 // Callback that stores a PDF file on disk.
-void PrintToPdfCallback(Metafile* metafile, const base::FilePath& path) {
+void PrintToPdfCallback(printing::Metafile* metafile,
+                        const base::FilePath& path) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
   metafile->SaveTo(path);
   // |metafile| must be deleted on the UI thread.
-  BrowserThread::PostTask(
-      BrowserThread::UI, FROM_HERE,
-      base::Bind(&base::DeletePointer<Metafile>, metafile));
+  BrowserThread::DeleteSoon(BrowserThread::UI, FROM_HERE, metafile);
 }
 
-#if defined(OS_CHROMEOS)
-void PrintToPdfCallbackWithCheck(Metafile* metafile,
-                                 drive::FileError error,
-                                 const base::FilePath& path) {
-  if (error != drive::FILE_ERROR_OK) {
-    LOG(ERROR) << "Save to pdf failed to write: " << error;
-  } else {
-    metafile->SaveTo(path);
-  }
-  // |metafile| must be deleted on the UI thread.
-  BrowserThread::PostTask(
-      BrowserThread::UI, FROM_HERE,
-      base::Bind(&base::DeletePointer<Metafile>, metafile));
+std::string GetDefaultPrinterOnFileThread(
+    scoped_refptr<printing::PrintBackend> print_backend) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+
+  std::string default_printer = print_backend->GetDefaultPrinterName();
+  VLOG(1) << "Default Printer: " << default_printer;
+  return default_printer;
 }
+
+void EnumeratePrintersOnFileThread(
+    scoped_refptr<printing::PrintBackend> print_backend,
+    base::ListValue* printers) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+
+  VLOG(1) << "Enumerate printers start";
+  printing::PrinterList printer_list;
+  print_backend->EnumeratePrinters(&printer_list);
+
+  for (printing::PrinterList::iterator it = printer_list.begin();
+       it != printer_list.end(); ++it) {
+    base::DictionaryValue* printer_info = new base::DictionaryValue;
+    std::string printer_name;
+#if defined(OS_MACOSX)
+    // On Mac, |it->printer_description| specifies the printer name and
+    // |it->printer_name| specifies the device name / printer queue name.
+    printer_name = it->printer_description;
+#else
+    printer_name = it->printer_name;
+#endif
+    printer_info->SetString(printing::kSettingPrinterName, printer_name);
+    printer_info->SetString(printing::kSettingDeviceName, it->printer_name);
+    VLOG(1) << "Found printer " << printer_name
+            << " with device name " << it->printer_name;
+    printers->Append(printer_info);
+  }
+  VLOG(1) << "Enumerate printers finished, found " << printers->GetSize()
+          << " printers";
+}
+
+typedef base::Callback<void(const base::DictionaryValue*)>
+    GetPrinterCapabilitiesSuccessCallback;
+typedef base::Callback<void(const std::string&)>
+    GetPrinterCapabilitiesFailureCallback;
+
+void GetPrinterCapabilitiesOnFileThread(
+    scoped_refptr<printing::PrintBackend> print_backend,
+    const std::string& printer_name,
+    const GetPrinterCapabilitiesSuccessCallback& success_cb,
+    const GetPrinterCapabilitiesFailureCallback& failure_cb) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+  DCHECK(!printer_name.empty());
+
+  VLOG(1) << "Get printer capabilities start for " << printer_name;
+  crash_keys::ScopedPrinterInfo crash_key(
+      print_backend->GetPrinterDriverInfo(printer_name));
+
+  if (!print_backend->IsValidPrinter(printer_name)) {
+    // TODO(gene): Notify explicitly if printer is not valid, instead of
+    // failed to get capabilities.
+    BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
+                            base::Bind(failure_cb, printer_name));
+    return;
+  }
+
+  printing::PrinterSemanticCapsAndDefaults info;
+  if (!print_backend->GetPrinterSemanticCapsAndDefaults(printer_name, &info)) {
+    LOG(WARNING) << "Failed to get capabilities for " << printer_name;
+    BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
+                            base::Bind(failure_cb, printer_name));
+    return;
+  }
+
+  scoped_ptr<base::DictionaryValue> settings_info(new base::DictionaryValue);
+  settings_info->SetString(kPrinterId, printer_name);
+  settings_info->SetBoolean(kDisableColorOption, !info.color_changeable);
+  settings_info->SetBoolean(printing::kSettingSetColorAsDefault,
+                            info.color_default);
+#if defined(USE_CUPS)
+  settings_info->SetInteger(kCUPSsColorModel, info.color_model);
+  settings_info->SetInteger(kCUPSsBWModel, info.bw_model);
 #endif
 
-static base::LazyInstance<printing::StickySettings> sticky_settings =
+  // TODO(gene): Make new capabilities format for Print Preview
+  // that will suit semantic capabiltities better.
+  // Refactor pld API code below
+  bool default_duplex = info.duplex_capable ?
+      (info.duplex_default != printing::SIMPLEX) : false;
+  int duplex_value = info.duplex_capable ?
+      printing::LONG_EDGE : printing::UNKNOWN_DUPLEX_MODE;
+  settings_info->SetBoolean(kSetDuplexAsDefault, default_duplex);
+  settings_info->SetInteger(kPrinterDefaultDuplexValue, duplex_value);
+
+  BrowserThread::PostTask(
+      BrowserThread::UI, FROM_HERE,
+      base::Bind(success_cb, base::Owned(settings_info.release())));
+}
+
+base::LazyInstance<printing::StickySettings> g_sticky_settings =
     LAZY_INSTANCE_INITIALIZER;
 
+printing::StickySettings* GetStickySettings() {
+  return g_sticky_settings.Pointer();
+}
+
 }  // namespace
+
+#if defined(USE_CUPS)
+struct PrintPreviewHandler::CUPSPrinterColorModels {
+  std::string printer_name;
+  printing::ColorModel color_model;
+  printing::ColorModel bw_model;
+};
+#endif
 
 class PrintPreviewHandler::AccessTokenService
     : public OAuth2TokenService::Consumer {
  public:
   explicit AccessTokenService(PrintPreviewHandler* handler)
-      : handler_(handler) {
+      : handler_(handler),
+        weak_factory_(this) {
   }
 
   void RequestToken(const std::string& type) {
@@ -281,21 +392,51 @@ class PrintPreviewHandler::AccessTokenService
       return;  // Already in progress.
 
     OAuth2TokenService* service = NULL;
+    std::string account_id;
     if (type == "profile") {
       Profile* profile = Profile::FromWebUI(handler_->web_ui());
-      if (profile)
-        service = ProfileOAuth2TokenServiceFactory::GetForProfile(profile);
+      if (profile) {
+        ProfileOAuth2TokenService* token_service =
+            ProfileOAuth2TokenServiceFactory::GetForProfile(profile);
+        account_id = token_service->GetPrimaryAccountId();
+        service = token_service;
+      }
     } else if (type == "device") {
 #if defined(OS_CHROMEOS)
-      service = chromeos::DeviceOAuth2TokenServiceFactory::Get();
+      chromeos::DeviceOAuth2TokenServiceFactory::Get(
+          base::Bind(
+              &AccessTokenService::DidGetTokenService,
+              weak_factory_.GetWeakPtr(),
+              type));
+      return;
 #endif
     }
 
+    ContinueRequestToken(type, service, account_id);
+  }
+
+#if defined(OS_CHROMEOS)
+  // Continuation of RequestToken().
+  void DidGetTokenService(const std::string& type,
+                          chromeos::DeviceOAuth2TokenService* token_service) {
+    std::string account_id;
+    if (token_service)
+      account_id = token_service->GetRobotAccountId();
+    ContinueRequestToken(type,
+                         token_service,
+                         account_id);
+  }
+#endif
+
+  // Continuation of RequestToken().
+  void ContinueRequestToken(const std::string& type,
+                            OAuth2TokenService* service,
+                            const std::string& account_id) {
     if (service) {
       OAuth2TokenService::ScopeSet oauth_scopes;
-      oauth_scopes.insert(kCloudPrintAuth);
+      oauth_scopes.insert(cloud_print::kCloudPrintAuth);
       scoped_ptr<OAuth2TokenService::Request> request(
-          service->StartRequest(oauth_scopes, this));
+          service->StartRequest(account_id, oauth_scopes, this));
       requests_[type].reset(request.release());
     } else {
       handler_->SendAccessToken(type, std::string());  // Unknown type.
@@ -330,14 +471,10 @@ class PrintPreviewHandler::AccessTokenService
                    linked_ptr<OAuth2TokenService::Request> > Requests;
   Requests requests_;
   PrintPreviewHandler* handler_;
+  base::WeakPtrFactory<AccessTokenService> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(AccessTokenService);
 };
-
-// static
-printing::StickySettings* PrintPreviewHandler::GetStickySettings() {
-  return sticky_settings.Pointer();
-}
 
 PrintPreviewHandler::PrintPreviewHandler()
     : print_backend_(printing::PrintBackend::CreateInstance(NULL)),
@@ -345,7 +482,8 @@ PrintPreviewHandler::PrintPreviewHandler()
       manage_printers_dialog_request_count_(0),
       manage_cloud_printers_dialog_request_count_(0),
       reported_failed_preview_(false),
-      has_logged_printers_count_(false) {
+      has_logged_printers_count_(false),
+      weak_factory_(this) {
   ReportUserActionHistogram(PREVIEW_STARTED);
 }
 
@@ -404,8 +542,24 @@ void PrintPreviewHandler::RegisterMessages() {
       base::Bind(&PrintPreviewHandler::HandlePrintWithCloudPrintDialog,
                  base::Unretained(this)));
   web_ui()->RegisterMessageCallback("forceOpenNewTab",
-        base::Bind(&PrintPreviewHandler::HandleForceOpenNewTab,
-                   base::Unretained(this)));
+      base::Bind(&PrintPreviewHandler::HandleForceOpenNewTab,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("getPrivetPrinters",
+      base::Bind(&PrintPreviewHandler::HandleGetPrivetPrinters,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("getPrivetPrinterCapabilities",
+      base::Bind(&PrintPreviewHandler::HandleGetPrivetPrinterCapabilities,
+                 base::Unretained(this)));
+}
+
+bool PrintPreviewHandler::PrivetPrintingEnabled() {
+#if defined(ENABLE_MDNS)
+  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  return !command_line->HasSwitch(switches::kDisableDeviceDiscovery) &&
+      !command_line->HasSwitch(switches::kDisablePrivetLocalPrinting);
+#else
+  return false;
+#endif
 }
 
 WebContents* PrintPreviewHandler::preview_web_contents() const {
@@ -413,15 +567,53 @@ WebContents* PrintPreviewHandler::preview_web_contents() const {
 }
 
 void PrintPreviewHandler::HandleGetPrinters(const ListValue* /*args*/) {
-  scoped_refptr<PrintSystemTaskProxy> task =
-      new PrintSystemTaskProxy(AsWeakPtr(),
-                               print_backend_.get(),
-                               has_logged_printers_count_);
-  has_logged_printers_count_ = true;
-
-  BrowserThread::PostTask(
+  base::ListValue* results = new base::ListValue;
+  BrowserThread::PostTaskAndReply(
       BrowserThread::FILE, FROM_HERE,
-      base::Bind(&PrintSystemTaskProxy::EnumeratePrinters, task.get()));
+      base::Bind(&EnumeratePrintersOnFileThread, print_backend_,
+                 base::Unretained(results)),
+      base::Bind(&PrintPreviewHandler::SetupPrinterList,
+                 weak_factory_.GetWeakPtr(),
+                 base::Owned(results)));
+}
+
+void PrintPreviewHandler::HandleGetPrivetPrinters(const base::ListValue* args) {
+#if defined(ENABLE_MDNS)
+  if (PrivetPrintingEnabled()) {
+    Profile* profile = Profile::FromWebUI(web_ui());
+    service_discovery_client_ =
+        local_discovery::ServiceDiscoverySharedClient::GetInstance();
+    printer_lister_.reset(new local_discovery::PrivetLocalPrinterLister(
+        service_discovery_client_.get(),
+        profile->GetRequestContext(),
+        this));
+    printer_lister_->Start();
+
+    base::MessageLoop::current()->PostDelayedTask(
+        FROM_HERE,
+        base::Bind(&PrintPreviewHandler::StopPrivetPrinterSearch,
+                   weak_factory_.GetWeakPtr()),
+        base::TimeDelta::FromSeconds(kPrivetPrinterSearchDurationSeconds));
+  }
+#endif
+
+  if (!PrivetPrintingEnabled()) {
+    web_ui()->CallJavascriptFunction("onPrivetPrinterSearchDone");
+  }
+}
+
+void PrintPreviewHandler::HandleGetPrivetPrinterCapabilities(
+    const base::ListValue* args) {
+#if defined(ENABLE_MDNS)
+  std::string name;
+  bool success = args->GetString(0, &name);
+  DCHECK(success);
+
+  CreatePrivetHTTP(
+      name,
+      base::Bind(&PrintPreviewHandler::PrivetCapabilitiesUpdateClient,
+                 base::Unretained(this)));
+#endif
 }
 
 void PrintPreviewHandler::HandleGetPreview(const ListValue* args) {
@@ -463,7 +655,8 @@ void PrintPreviewHandler::HandleGetPreview(const ListValue* args) {
     settings->SetString(printing::kSettingHeaderFooterTitle,
                         initiator->GetTitle());
     std::string url;
-    NavigationEntry* entry = initiator->GetController().GetActiveEntry();
+    content::NavigationEntry* entry =
+        initiator->GetController().GetLastCommittedEntry();
     if (entry)
       url = entry->GetVirtualURL().spec();
     settings->SetString(printing::kSettingHeaderFooterURL, url);
@@ -518,6 +711,7 @@ void PrintPreviewHandler::HandlePrint(const ListValue* args) {
 
   bool print_to_pdf = false;
   bool is_cloud_printer = false;
+  bool print_with_privet = false;
 
   bool open_pdf_in_preview = false;
 #if defined(OS_MACOSX)
@@ -526,6 +720,7 @@ void PrintPreviewHandler::HandlePrint(const ListValue* args) {
 
   if (!open_pdf_in_preview) {
     settings->GetBoolean(printing::kSettingPrintToPDF, &print_to_pdf);
+    settings->GetBoolean(printing::kSettingPrintWithPrivet, &print_with_privet);
     is_cloud_printer = settings->HasKey(printing::kSettingCloudPrintId);
   }
 
@@ -539,8 +734,33 @@ void PrintPreviewHandler::HandlePrint(const ListValue* args) {
     return;
   }
 
+#if defined(ENABLE_MDNS)
+  if (print_with_privet && PrivetPrintingEnabled()) {
+    std::string printer_name;
+    std::string print_ticket;
+    UMA_HISTOGRAM_COUNTS("PrintPreview.PageCount.PrintWithPrivet", page_count);
+    ReportUserActionHistogram(PRINT_WITH_PRIVET);
+
+    int width = 0;
+    int height = 0;
+    if (!settings->GetString(printing::kSettingDeviceName, &printer_name) ||
+        !settings->GetString(printing::kSettingTicket, &print_ticket) ||
+        !settings->GetInteger(printing::kSettingPageWidth, &width) ||
+        !settings->GetInteger(printing::kSettingPageHeight, &height) ||
+        width <= 0 || height <=0) {
+      NOTREACHED();
+      base::FundamentalValue http_code_value(-1);
+      web_ui()->CallJavascriptFunction("onPrivetPrintFailed", http_code_value);
+      return;
+    }
+
+    PrintToPrivetPrinter(printer_name, print_ticket, gfx::Size(width, height));
+    return;
+  }
+#endif
+
   scoped_refptr<base::RefCountedBytes> data;
-  string16 title;
+  base::string16 title;
   if (!GetPreviewDataAndTitle(&data, &title)) {
     // Nothing to print, no preview available.
     return;
@@ -569,8 +789,13 @@ void PrintPreviewHandler::HandlePrint(const ListValue* args) {
     // The PDF being printed contains only the pages that the user selected,
     // so ignore the page range and print all pages.
     settings->Remove(printing::kSettingPageRange, NULL);
-    // Remove selection only flag for the same reason.
-    settings->Remove(printing::kSettingShouldPrintSelectionOnly, NULL);
+    // Reset selection only flag for the same reason.
+    settings->SetBoolean(printing::kSettingShouldPrintSelectionOnly, false);
+
+#if defined(USE_CUPS)
+    if (!open_pdf_in_preview)  // We can get here even for cloud printers.
+      ConvertColorSettingToCUPSColorModel(settings.get());
+#endif
 
     // Set ID to know whether printing is for preview.
     settings->SetInteger(printing::kPreviewUIID,
@@ -592,7 +817,7 @@ void PrintPreviewHandler::HandlePrint(const ListValue* args) {
 }
 
 void PrintPreviewHandler::PrintToPdf() {
-  if (print_to_pdf_path_.get()) {
+  if (!print_to_pdf_path_.empty()) {
     // User has already selected a path, no need to show the dialog again.
     PostPrintToPdfTask();
   } else if (!select_file_dialog_.get() ||
@@ -601,7 +826,7 @@ void PrintPreviewHandler::PrintToPdf() {
     PrintPreviewUI* print_preview_ui = static_cast<PrintPreviewUI*>(
         web_ui()->GetController());
     // Pre-populating select file dialog with print job title.
-    string16 print_job_title_utf16 = print_preview_ui->initiator_title();
+    base::string16 print_job_title_utf16 = print_preview_ui->initiator_title();
 
 #if defined(OS_WIN)
     base::FilePath::StringType print_job_title(print_job_title_utf16);
@@ -651,26 +876,23 @@ void PrintPreviewHandler::HandleGetPrinterCapabilities(const ListValue* args) {
   if (!ret || printer_name.empty())
     return;
 
-  scoped_refptr<PrintSystemTaskProxy> task =
-      new PrintSystemTaskProxy(AsWeakPtr(),
-                               print_backend_.get(),
-                               has_logged_printers_count_);
-
+  GetPrinterCapabilitiesSuccessCallback success_cb =
+      base::Bind(&PrintPreviewHandler::SendPrinterCapabilities,
+                 weak_factory_.GetWeakPtr());
+  GetPrinterCapabilitiesFailureCallback failure_cb =
+      base::Bind(&PrintPreviewHandler::SendFailedToGetPrinterCapabilities,
+                 weak_factory_.GetWeakPtr());
   BrowserThread::PostTask(
       BrowserThread::FILE, FROM_HERE,
-      base::Bind(&PrintSystemTaskProxy::GetPrinterCapabilities, task.get(),
-                 printer_name));
+      base::Bind(&GetPrinterCapabilitiesOnFileThread,
+                 print_backend_, printer_name, success_cb, failure_cb));
 }
 
-// static
-void PrintPreviewHandler::OnSigninComplete(
-    const base::WeakPtr<PrintPreviewHandler>& handler) {
-  if (handler.get()) {
-    PrintPreviewUI* print_preview_ui =
-        static_cast<PrintPreviewUI*>(handler->web_ui()->GetController());
-    if (print_preview_ui)
-      print_preview_ui->OnReloadPrintersList();
-  }
+void PrintPreviewHandler::OnSigninComplete() {
+  PrintPreviewUI* print_preview_ui =
+      static_cast<PrintPreviewUI*>(web_ui()->GetController());
+  if (print_preview_ui)
+    print_preview_ui->OnReloadPrintersList();
 }
 
 void PrintPreviewHandler::HandleSignin(const ListValue* /*args*/) {
@@ -679,7 +901,8 @@ void PrintPreviewHandler::HandleSignin(const ListValue* /*args*/) {
   print_dialog_cloud::CreateCloudPrintSigninDialog(
       preview_web_contents()->GetBrowserContext(),
       modal_parent,
-      base::Bind(&PrintPreviewHandler::OnSigninComplete, AsWeakPtr()));
+      base::Bind(&PrintPreviewHandler::OnSigninComplete,
+                 weak_factory_.GetWeakPtr()));
 }
 
 void PrintPreviewHandler::HandleGetAccessToken(const base::ListValue* args) {
@@ -697,7 +920,7 @@ void PrintPreviewHandler::PrintWithCloudPrintDialog() {
   ReportStats();
 
   scoped_refptr<base::RefCountedBytes> data;
-  string16 title;
+  base::string16 title;
   if (!GetPreviewDataAndTitle(&data, &title)) {
     // Nothing to print, no preview available.
     return;
@@ -710,7 +933,7 @@ void PrintPreviewHandler::PrintWithCloudPrintDialog() {
       modal_parent,
       data.get(),
       title,
-      string16(),
+      base::string16(),
       std::string("application/pdf"));
 
   // Once the cloud print dialog comes up we're no longer in a background
@@ -725,9 +948,9 @@ void PrintPreviewHandler::HandleManageCloudPrint(const ListValue* /*args*/) {
   Profile* profile = Profile::FromBrowserContext(
       preview_web_contents()->GetBrowserContext());
   preview_web_contents()->OpenURL(
-      OpenURLParams(
+      content::OpenURLParams(
           CloudPrintURL(profile).GetCloudPrintServiceManageURL(),
-          Referrer(),
+          content::Referrer(),
           NEW_FOREGROUND_TAB,
           content::PAGE_TRANSITION_LINK,
           false));
@@ -802,14 +1025,13 @@ void PrintPreviewHandler::GetNumberFormatAndMeasurementSystem(
 }
 
 void PrintPreviewHandler::HandleGetInitialSettings(const ListValue* /*args*/) {
-  scoped_refptr<PrintSystemTaskProxy> task =
-      new PrintSystemTaskProxy(AsWeakPtr(),
-                                print_backend_.get(),
-                                has_logged_printers_count_);
-  BrowserThread::PostTask(
-      BrowserThread::FILE, FROM_HERE,
-      base::Bind(&PrintSystemTaskProxy::GetDefaultPrinter, task.get()));
+  // Send before SendInitialSettings to allow cloud printer auto select.
   SendCloudPrintEnabled();
+  BrowserThread::PostTaskAndReplyWithResult(
+      BrowserThread::FILE, FROM_HERE,
+      base::Bind(&GetDefaultPrinterOnFileThread, print_backend_),
+      base::Bind(&PrintPreviewHandler::SendInitialSettings,
+                 weak_factory_.GetWeakPtr()));
 }
 
 void PrintPreviewHandler::HandleReportUiEvent(const ListValue* args) {
@@ -857,10 +1079,9 @@ void PrintPreviewHandler::HandleForceOpenNewTab(const ListValue* args) {
 }
 
 void PrintPreviewHandler::SendInitialSettings(
-    const std::string& default_printer,
-    const std::string& cloud_print_data) {
-  PrintPreviewUI* print_preview_ui = static_cast<PrintPreviewUI*>(
-      web_ui()->GetController());
+    const std::string& default_printer) {
+  PrintPreviewUI* print_preview_ui =
+      static_cast<PrintPreviewUI*>(web_ui()->GetController());
 
   base::DictionaryValue initial_settings;
   initial_settings.SetString(kInitiatorTitle,
@@ -882,6 +1103,13 @@ void PrintPreviewHandler::SendInitialSettings(
   CommandLine* cmdline = CommandLine::ForCurrentProcess();
   initial_settings.SetBoolean(kPrintAutomaticallyInKioskMode,
                               cmdline->HasSwitch(switches::kKioskModePrinting));
+#if defined(OS_WIN)
+  // In Win8 metro, the system print dialog can only open on the desktop.  Doing
+  // so will cause the browser to appear hung, so we don't show the link in
+  // metro.
+  bool is_ash = (chrome::GetActiveDesktop() == chrome::HOST_DESKTOP_TYPE_ASH);
+  initial_settings.SetBoolean(kHidePrintWithSystemDialogLink, is_ash);
+#endif
 
   if (print_preview_ui->source_is_modifiable())
     GetNumberFormatAndMeasurementSystem(&initial_settings);
@@ -902,10 +1130,15 @@ void PrintPreviewHandler::SendAccessToken(const std::string& type,
 }
 
 void PrintPreviewHandler::SendPrinterCapabilities(
-    const DictionaryValue& settings_info) {
+    const DictionaryValue* settings_info) {
   VLOG(1) << "Get printer capabilities finished";
+
+#if defined(USE_CUPS)
+  SaveCUPSColorSetting(settings_info);
+#endif
+
   web_ui()->CallJavascriptFunction("updateWithPrinterCapabilities",
-                                   settings_info);
+                                   *settings_info);
 }
 
 void PrintPreviewHandler::SendFailedToGetPrinterCapabilities(
@@ -916,8 +1149,13 @@ void PrintPreviewHandler::SendFailedToGetPrinterCapabilities(
                                    printer_name_value);
 }
 
-void PrintPreviewHandler::SetupPrinterList(const ListValue& printers) {
-  web_ui()->CallJavascriptFunction("setPrinters", printers);
+void PrintPreviewHandler::SetupPrinterList(const base::ListValue* printers) {
+  if (!has_logged_printers_count_) {
+    UMA_HISTOGRAM_COUNTS("PrintPreview.NumberOfPrinters", printers->GetSize());
+    has_logged_printers_count_ = true;
+  }
+
+  web_ui()->CallJavascriptFunction("setPrinters", *printers);
 }
 
 void PrintPreviewHandler::SendCloudPrintEnabled() {
@@ -936,9 +1174,7 @@ void PrintPreviewHandler::SendCloudPrintJob(const base::RefCountedBytes* data) {
   std::string raw_data(reinterpret_cast<const char*>(data->front()),
                        data->size());
   std::string base64_data;
-  if (!base::Base64Encode(raw_data, &base64_data)) {
-    NOTREACHED() << "Base64 encoding PDF data.";
-  }
+  base::Base64Encode(raw_data, &base64_data);
   StringValue data_value(base64_data);
 
   web_ui()->CallJavascriptFunction("printToCloud", data_value);
@@ -960,9 +1196,8 @@ void PrintPreviewHandler::SelectFile(const base::FilePath& default_filename) {
   ui::SelectFileDialog::FileTypeInfo file_type_info;
   file_type_info.extensions.resize(1);
   file_type_info.extensions[0].push_back(FILE_PATH_LITERAL("pdf"));
-  file_type_info.support_drive = true;
 
-  // Initializing save_path_ if it is not already initialized.
+  // Initializing |save_path_| if it is not already initialized.
   printing::StickySettings* sticky_settings = GetStickySettings();
   if (!sticky_settings->save_path()) {
     // Allowing IO operation temporarily. It is ok to do so here because
@@ -980,7 +1215,7 @@ void PrintPreviewHandler::SelectFile(const base::FilePath& default_filename) {
       this, new ChromeSelectFilePolicy(preview_web_contents())),
   select_file_dialog_->SelectFile(
       ui::SelectFileDialog::SELECT_SAVEAS_FILE,
-      string16(),
+      base::string16(),
       sticky_settings->save_path()->Append(default_filename),
       &file_type_info,
       0,
@@ -1019,33 +1254,23 @@ void PrintPreviewHandler::FileSelected(const base::FilePath& path,
   sticky_settings->SaveInPrefs(Profile::FromBrowserContext(
       preview_web_contents()->GetBrowserContext())->GetPrefs());
   web_ui()->CallJavascriptFunction("fileSelectionCompleted");
-  print_to_pdf_path_.reset(new base::FilePath(path));
+  print_to_pdf_path_ = path;
   PostPrintToPdfTask();
 }
 
 void PrintPreviewHandler::PostPrintToPdfTask() {
   scoped_refptr<base::RefCountedBytes> data;
-  string16 title;
+  base::string16 title;
   if (!GetPreviewDataAndTitle(&data, &title)) {
     NOTREACHED() << "Preview data was checked before file dialog.";
     return;
   }
-  printing::PreviewMetafile* metafile = new printing::PreviewMetafile;
+  scoped_ptr<printing::PreviewMetafile> metafile(new printing::PreviewMetafile);
   metafile->InitFromData(static_cast<const void*>(data->front()), data->size());
-  // PrintToPdfCallback takes ownership of |metafile|.
-#if defined(OS_CHROMEOS)
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  drive::util::PrepareWritableFileAndRun(
-      Profile::FromBrowserContext(preview_web_contents()->GetBrowserContext()),
-      *print_to_pdf_path_,
-      base::Bind(&PrintToPdfCallbackWithCheck, metafile));
-#else
-  BrowserThread::PostTask(BrowserThread::FILE, FROM_HERE,
-                          base::Bind(&PrintToPdfCallback, metafile,
-                                     *print_to_pdf_path_));
-#endif
-
-  print_to_pdf_path_.reset();
+  BrowserThread::PostTask(
+      BrowserThread::FILE, FROM_HERE,
+      base::Bind(&PrintToPdfCallback, metafile.release(), print_to_pdf_path_));
+  print_to_pdf_path_ = base::FilePath();
   ClosePreviewDialog();
 }
 
@@ -1071,7 +1296,7 @@ void PrintPreviewHandler::ClearInitiatorDetails() {
 
 bool PrintPreviewHandler::GetPreviewDataAndTitle(
     scoped_refptr<base::RefCountedBytes>* data,
-    string16* title) const {
+    base::string16* title) const {
   PrintPreviewUI* print_preview_ui = static_cast<PrintPreviewUI*>(
       web_ui()->GetController());
   scoped_refptr<base::RefCountedBytes> tmp_data;
@@ -1089,3 +1314,259 @@ bool PrintPreviewHandler::GetPreviewDataAndTitle(
   return true;
 }
 
+#if defined(USE_CUPS)
+void PrintPreviewHandler::SaveCUPSColorSetting(
+    const base::DictionaryValue* settings) {
+  cups_printer_color_models_.reset(new CUPSPrinterColorModels);
+  settings->GetString(kPrinterId, &cups_printer_color_models_->printer_name);
+  settings->GetInteger(
+      kCUPSsColorModel,
+      reinterpret_cast<int*>(&cups_printer_color_models_->color_model));
+  settings->GetInteger(
+      kCUPSsBWModel,
+      reinterpret_cast<int*>(&cups_printer_color_models_->bw_model));
+}
+
+void PrintPreviewHandler::ConvertColorSettingToCUPSColorModel(
+    base::DictionaryValue* settings) const {
+  if (!cups_printer_color_models_)
+    return;
+
+  // Sanity check the printer name.
+  std::string printer_name;
+  if (!settings->GetString(printing::kSettingDeviceName, &printer_name) ||
+      printer_name != cups_printer_color_models_->printer_name) {
+    NOTREACHED();
+    return;
+  }
+
+  int color;
+  if (!settings->GetInteger(printing::kSettingColor, &color)) {
+    NOTREACHED();
+    return;
+  }
+
+  if (color == printing::GRAY) {
+    if (cups_printer_color_models_->bw_model != printing::UNKNOWN_COLOR_MODEL) {
+      settings->SetInteger(printing::kSettingColor,
+                           cups_printer_color_models_->bw_model);
+    }
+    return;
+  }
+
+  printing::ColorModel color_model = cups_printer_color_models_->color_model;
+  if (color_model != printing::UNKNOWN_COLOR_MODEL)
+    settings->SetInteger(printing::kSettingColor, color_model);
+}
+
+#endif
+
+
+#if defined(ENABLE_MDNS)
+void PrintPreviewHandler::LocalPrinterChanged(
+    bool added,
+    const std::string& name,
+    bool has_local_printing,
+    const local_discovery::DeviceDescription& description) {
+  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  if (has_local_printing ||
+      (command_line->HasSwitch(switches::kEnablePrintPreviewRegisterPromos) &&
+       description.id.empty())) {
+    base::DictionaryValue info;
+    FillPrinterDescription(name, description, has_local_printing, &info);
+    web_ui()->CallJavascriptFunction("onPrivetPrinterChanged", info);
+  }
+}
+
+void PrintPreviewHandler::LocalPrinterRemoved(const std::string& name) {
+}
+
+void PrintPreviewHandler::LocalPrinterCacheFlushed() {
+}
+
+void PrintPreviewHandler::StopPrivetPrinterSearch() {
+  printer_lister_->Stop();
+  web_ui()->CallJavascriptFunction("onPrivetPrinterSearchDone");
+}
+
+void PrintPreviewHandler::PrivetCapabilitiesUpdateClient(
+    scoped_ptr<local_discovery::PrivetHTTPClient> http_client) {
+  if (!PrivetUpdateClient(http_client.Pass()))
+    return;
+
+  privet_capabilities_operation_ =
+      privet_http_client_->CreateCapabilitiesOperation(
+          this);
+  privet_capabilities_operation_->Start();
+}
+
+bool PrintPreviewHandler::PrivetUpdateClient(
+    scoped_ptr<local_discovery::PrivetHTTPClient> http_client) {
+  if (!http_client) {
+    SendPrivetCapabilitiesError(privet_http_resolution_->GetName());
+    privet_http_resolution_.reset();
+    return false;
+  }
+
+  privet_local_print_operation_.reset();
+  privet_capabilities_operation_.reset();
+  privet_http_client_ = http_client.Pass();
+
+  privet_http_resolution_.reset();
+
+  return true;
+}
+
+void PrintPreviewHandler::PrivetLocalPrintUpdateClient(
+    std::string print_ticket,
+    gfx::Size page_size,
+    scoped_ptr<local_discovery::PrivetHTTPClient> http_client) {
+  if (!PrivetUpdateClient(http_client.Pass()))
+    return;
+
+  StartPrivetLocalPrint(print_ticket, page_size);
+}
+
+void PrintPreviewHandler::StartPrivetLocalPrint(
+    const std::string& print_ticket,
+    const gfx::Size& page_size) {
+  privet_local_print_operation_ =
+      privet_http_client_->CreateLocalPrintOperation(this);
+
+  privet_local_print_operation_->SetTicket(print_ticket);
+
+  scoped_refptr<base::RefCountedBytes> data;
+  base::string16 title;
+
+  if (!GetPreviewDataAndTitle(&data, &title)) {
+    base::FundamentalValue http_code_value(-1);
+    web_ui()->CallJavascriptFunction("onPrivetPrintFailed", http_code_value);
+    return;
+  }
+
+  privet_local_print_operation_->SetJobname(
+      base::UTF16ToUTF8(title));
+
+  const int dpi = printing::kDefaultPdfDpi;
+  double scale = dpi;
+  scale /= printing::kPointsPerInch;
+  // Make vertical rectangle to optimize streaming to printer. Fix orientation
+  // by autorotate.
+  gfx::Rect area(std::min(page_size.width(), page_size.height()) * scale,
+                 std::max(page_size.width(), page_size.height()) * scale);
+  privet_local_print_operation_->SetConversionSettings(
+      printing::PdfRenderSettings(area, dpi, true));
+
+  privet_local_print_operation_->SetData(data);
+
+  Profile* profile = Profile::FromWebUI(web_ui());
+  SigninManagerBase* signin_manager =
+      SigninManagerFactory::GetForProfileIfExists(profile);
+
+  if (signin_manager) {
+    privet_local_print_operation_->SetUsername(
+        signin_manager->GetAuthenticatedUsername());
+  }
+
+  privet_local_print_operation_->Start();
+}
+
+
+void PrintPreviewHandler::OnPrivetCapabilities(
+    local_discovery::PrivetCapabilitiesOperation* capabilities_operation,
+    int http_error,
+    const base::DictionaryValue* capabilities) {
+  std::string name = capabilities_operation->GetHTTPClient()->GetName();
+
+  if (!capabilities || capabilities->HasKey(local_discovery::kPrivetKeyError)) {
+    SendPrivetCapabilitiesError(name);
+    return;
+  }
+
+  base::DictionaryValue printer_info;
+  const local_discovery::DeviceDescription* description =
+      printer_lister_->GetDeviceDescription(name);
+
+  if (!description) {
+    SendPrivetCapabilitiesError(name);
+    return;
+  }
+
+  FillPrinterDescription(name, *description, true, &printer_info);
+
+  web_ui()->CallJavascriptFunction(
+      "onPrivetCapabilitiesSet",
+      printer_info,
+      *capabilities);
+
+  privet_capabilities_operation_.reset();
+}
+
+void PrintPreviewHandler::SendPrivetCapabilitiesError(
+    const std::string& device_name) {
+  base::StringValue name_value(device_name);
+  web_ui()->CallJavascriptFunction(
+      "failedToGetPrivetPrinterCapabilities",
+      name_value);
+}
+
+void PrintPreviewHandler::PrintToPrivetPrinter(
+    const std::string& device_name,
+    const std::string& ticket,
+    const gfx::Size& page_size) {
+  CreatePrivetHTTP(
+      device_name,
+      base::Bind(&PrintPreviewHandler::PrivetLocalPrintUpdateClient,
+                 base::Unretained(this), ticket, page_size));
+}
+
+bool PrintPreviewHandler::CreatePrivetHTTP(
+    const std::string& name,
+    const local_discovery::PrivetHTTPAsynchronousFactory::ResultCallback&
+    callback) {
+  const local_discovery::DeviceDescription* device_description =
+      printer_lister_->GetDeviceDescription(name);
+
+  if (!device_description) {
+    SendPrivetCapabilitiesError(name);
+    return false;
+  }
+
+  privet_http_factory_ =
+      local_discovery::PrivetHTTPAsynchronousFactory::CreateInstance(
+      service_discovery_client_,
+      Profile::FromWebUI(web_ui())->GetRequestContext());
+  privet_http_resolution_ = privet_http_factory_->CreatePrivetHTTP(
+      name,
+      device_description->address,
+      callback);
+  privet_http_resolution_->Start();
+
+  return true;
+}
+
+void PrintPreviewHandler::OnPrivetPrintingDone(
+    const local_discovery::PrivetLocalPrintOperation* print_operation) {
+  ClosePreviewDialog();
+}
+
+void PrintPreviewHandler::OnPrivetPrintingError(
+    const local_discovery::PrivetLocalPrintOperation* print_operation,
+    int http_code) {
+  base::FundamentalValue http_code_value(http_code);
+  web_ui()->CallJavascriptFunction("onPrivetPrintFailed", http_code_value);
+}
+
+void PrintPreviewHandler::FillPrinterDescription(
+    const std::string& name,
+    const local_discovery::DeviceDescription& description,
+    bool has_local_printing,
+    base::DictionaryValue* printer_value) {
+  printer_value->SetString("serviceName", name);
+  printer_value->SetString("name", description.name);
+  printer_value->SetBoolean("hasLocalPrinting", has_local_printing);
+  printer_value->SetBoolean("isUnregistered", description.id.empty());
+  printer_value->SetString("cloudID", description.id);
+}
+
+#endif

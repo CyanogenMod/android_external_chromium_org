@@ -9,7 +9,7 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/renderer/render_view.h"
 #include "content/renderer/savable_resources.h"
-#include "content/shell/shell.h"
+#include "content/shell/browser/shell.h"
 #include "content/test/content_browser_test.h"
 #include "content/test/content_browser_test_utils.h"
 #include "net/base/net_util.h"
@@ -53,7 +53,7 @@ class SavableResourcesTest : public ContentBrowserTest {
     // Get all savable resource links for the page.
     std::vector<GURL> resources_list;
     std::vector<GURL> referrer_urls_list;
-    std::vector<WebKit::WebReferrerPolicy> referrer_policies_list;
+    std::vector<blink::WebReferrerPolicy> referrer_policies_list;
     std::vector<GURL> frames_list;
     SavableResourcesResult result(&resources_list,
                                   &referrer_urls_list,

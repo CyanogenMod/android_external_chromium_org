@@ -35,19 +35,6 @@ void InstallationValidator::ChromeRules::AddUninstallSwitchExpectations(
   // --chrome should be present for uninstall iff --multi-install.  This wasn't
   // the case in Chrome 10 (between r68996 and r72497), though, so consider it
   // optional.
-
-  // --chrome-frame --ready-mode should be present for uninstall iff CF in ready
-  // mode.
-  const ProductState* cf_state =
-      ctx.machine_state.GetProductState(ctx.system_install,
-                                        BrowserDistribution::CHROME_FRAME);
-  const bool ready_mode =
-      cf_state != NULL &&
-      cf_state->uninstall_command().HasSwitch(switches::kChromeFrameReadyMode);
-  expectations->push_back(std::make_pair(std::string(switches::kChromeFrame),
-                                         ready_mode));
-  expectations->push_back(
-      std::make_pair(std::string(switches::kChromeFrameReadyMode), ready_mode));
 }
 
 void InstallationValidator::ChromeRules::AddRenameSwitchExpectations(
@@ -59,11 +46,9 @@ void InstallationValidator::ChromeRules::AddRenameSwitchExpectations(
   // --chrome should not be present for rename.  It was for a time, so we'll be
   // lenient so that mini_installer tests pass.
 
-  // --chrome-frame --ready-mode should never be present.
+  // --chrome-frame should never be present.
   expectations->push_back(
       std::make_pair(std::string(switches::kChromeFrame), false));
-  expectations->push_back(
-      std::make_pair(std::string(switches::kChromeFrameReadyMode), false));
 }
 
 bool InstallationValidator::ChromeRules::UsageStatsAllowed(
@@ -173,14 +158,12 @@ const InstallationValidator::InstallationType
   CHROME_FRAME_SINGLE_CHROME_MULTI,
   CHROME_FRAME_MULTI,
   CHROME_FRAME_MULTI_CHROME_MULTI,
-  CHROME_FRAME_READY_MODE_CHROME_MULTI,
   CHROME_APP_HOST,
   CHROME_APP_HOST_CHROME_FRAME_SINGLE,
   CHROME_APP_HOST_CHROME_FRAME_SINGLE_CHROME_MULTI,
   CHROME_APP_HOST_CHROME_FRAME_MULTI,
   CHROME_APP_HOST_CHROME_FRAME_MULTI_CHROME_MULTI,
   CHROME_APP_HOST_CHROME_MULTI,
-  CHROME_APP_HOST_CHROME_MULTI_CHROME_FRAME_READY_MODE,
 };
 
 void InstallationValidator::ValidateAppCommandFlags(
@@ -211,7 +194,7 @@ void InstallationValidator::ValidateAppCommandFlags(
     bool expected = flags_exp.find(check_list[i].exp_key) != flags_exp.end();
     if (check_list[i].val != expected) {
       *is_valid = false;
-      LOG(ERROR) << ctx.dist->GetAppShortCutName() << ": "
+      LOG(ERROR) << ctx.dist->GetDisplayName() << ": "
                  << name << " command should " << (expected ? "" : "not ")
                  << check_list[i].msg << ".";
     }
@@ -331,35 +314,6 @@ void InstallationValidator::ValidateQueryEULAAcceptanceCommand(
   ValidateAppCommandFlags(ctx, app_cmd, flags_exp, name, is_valid);
 }
 
-// Validates the "quick-enable-cf" Google Update product command.
-void InstallationValidator::ValidateQuickEnableCfCommand(
-    const ProductContext& ctx,
-    const AppCommand& app_cmd,
-    bool* is_valid) {
-  DCHECK(is_valid);
-
-  CommandLine cmd_line(CommandLine::FromString(app_cmd.command_line()));
-  string16 name(kCmdQuickEnableCf);
-
-  ValidateSetupPath(ctx, cmd_line.GetProgram(), name, is_valid);
-
-  SwitchExpectations expected;
-
-  expected.push_back(
-      std::make_pair(std::string(switches::kChromeFrameQuickEnable), true));
-  expected.push_back(std::make_pair(std::string(switches::kSystemLevel),
-                                    ctx.system_install));
-  expected.push_back(std::make_pair(std::string(switches::kMultiInstall),
-                                    ctx.state.is_multi_install()));
-
-  ValidateCommandExpectations(ctx, cmd_line, expected, name, is_valid);
-
-  std::set<string16> flags_exp;
-  flags_exp.insert(google_update::kRegSendsPingsField);
-  flags_exp.insert(google_update::kRegWebAccessibleField);
-  ValidateAppCommandFlags(ctx, app_cmd, flags_exp, name, is_valid);
-}
-
 // Validates the "quick-enable-application-host" Google Update product command.
 void InstallationValidator::ValidateQuickEnableApplicationHostCommand(
     const ProductContext& ctx,
@@ -415,7 +369,7 @@ void InstallationValidator::ValidateAppCommandExpectations(
       the_expectations.erase(expectation);
     } else {
       *is_valid = false;
-      LOG(ERROR) << ctx.dist->GetAppShortCutName()
+      LOG(ERROR) << ctx.dist->GetDisplayName()
                  << " has an unexpected Google Update product command named \""
                  << cmd_id << "\".";
     }
@@ -426,7 +380,7 @@ void InstallationValidator::ValidateAppCommandExpectations(
   CommandExpectations::const_iterator end(the_expectations.end());
   for (; scan != end; ++scan) {
     *is_valid = false;
-    LOG(ERROR) << ctx.dist->GetAppShortCutName()
+    LOG(ERROR) << ctx.dist->GetDisplayName()
                << " is missing the Google Update product command named \""
                << scan->first << "\".";
   }
@@ -438,20 +392,12 @@ void InstallationValidator::ValidateBinariesCommands(
     bool* is_valid) {
   DCHECK(is_valid);
 
-  // The quick-enable-cf command must be present if Chrome Binaries are
-  // installed and Chrome Frame is not installed (or installed in ready mode).
-  const ChannelInfo& channel = ctx.state.channel();
   const ProductState* binaries_state = ctx.machine_state.GetProductState(
       ctx.system_install, BrowserDistribution::CHROME_BINARIES);
-  const ProductState* cf_state = ctx.machine_state.GetProductState(
-      ctx.system_install, BrowserDistribution::CHROME_FRAME);
 
   CommandExpectations expectations;
 
   if (binaries_state != NULL) {
-    if (cf_state == NULL || channel.IsReadyMode())
-      expectations[kCmdQuickEnableCf] = &ValidateQuickEnableCfCommand;
-
     expectations[kCmdQuickEnableApplicationHost] =
         &ValidateQuickEnableApplicationHostCommand;
 
@@ -504,22 +450,6 @@ void InstallationValidator::ValidateBinaries(
     *is_valid = false;
     LOG(ERROR) << "Chrome Binaries have \"-chromeframe\" in channel name, yet "
                   "Chrome Frame is not installed multi: \"" << channel.value()
-               << "\"";
-  }
-
-  // ap must have -readymode iff Chrome Frame is installed in ready-mode
-  if (cf_state != NULL &&
-      cf_state->uninstall_command().HasSwitch(
-          installer::switches::kChromeFrameReadyMode)) {
-    if (!channel.IsReadyMode()) {
-      *is_valid = false;
-      LOG(ERROR) << "Chrome Binaries are missing \"-readymode\" in channel"
-                    " name: \"" << channel.value() << "\"";
-    }
-  } else if (channel.IsReadyMode()) {
-    *is_valid = false;
-    LOG(ERROR) << "Chrome Binaries have \"-readymode\" in channel name, yet "
-                  "Chrome Frame is not in ready mode: \"" << channel.value()
                << "\"";
   }
 
@@ -595,7 +525,7 @@ void InstallationValidator::ValidateSetupPath(const ProductContext& ctx,
   if (!base::FilePath::CompareEqualIgnoreCase(expected_path.value(),
                                               setup_exe.value())) {
     *is_valid = false;
-    LOG(ERROR) << ctx.dist->GetAppShortCutName() << " path to " << purpose
+    LOG(ERROR) << ctx.dist->GetDisplayName() << " path to " << purpose
                << " is not " << expected_path.value() << ": "
                << setup_exe.value();
   }
@@ -613,7 +543,7 @@ void InstallationValidator::ValidateCommandExpectations(
     const SwitchExpectations::value_type& expectation = expected[i];
     if (command.HasSwitch(expectation.first) != expectation.second) {
       *is_valid = false;
-      LOG(ERROR) << ctx.dist->GetAppShortCutName() << " " << source
+      LOG(ERROR) << ctx.dist->GetDisplayName() << " " << source
                  << (expectation.second ? " is missing" : " has") << " \""
                  << expectation.first << "\""
                  << (expectation.second ? "" : " but shouldn't") << ": "
@@ -680,14 +610,14 @@ void InstallationValidator::ValidateOldVersionValues(
   if (ctx.state.old_version() == NULL) {
     if (!ctx.state.rename_cmd().empty()) {
       *is_valid = false;
-      LOG(ERROR) << ctx.dist->GetAppShortCutName()
+      LOG(ERROR) << ctx.dist->GetDisplayName()
                  << " has a rename command but no opv: "
                  << ctx.state.rename_cmd();
     }
   } else {
     if (ctx.state.rename_cmd().empty()) {
       *is_valid = false;
-      LOG(ERROR) << ctx.dist->GetAppShortCutName()
+      LOG(ERROR) << ctx.dist->GetDisplayName()
                  << " has an opv but no rename command: "
                  << ctx.state.old_version()->GetString();
     } else {
@@ -714,14 +644,14 @@ void InstallationValidator::ValidateMultiInstallProduct(
               true,  // system-level
               BrowserDistribution::CHROME_BROWSER)) {
         *is_valid = false;
-        LOG(ERROR) << ctx.dist->GetAppShortCutName()
+        LOG(ERROR) << ctx.dist->GetDisplayName()
                    << " (" << ctx.state.version().GetString() << ") is "
                    << "installed without Chrome Binaries or a system-level "
                    << "Chrome.";
       }
     } else {
       *is_valid = false;
-      LOG(ERROR) << ctx.dist->GetAppShortCutName()
+      LOG(ERROR) << ctx.dist->GetDisplayName()
                  << " (" << ctx.state.version().GetString() << ") is installed "
                  << "without Chrome Binaries.";
     }
@@ -729,7 +659,7 @@ void InstallationValidator::ValidateMultiInstallProduct(
     // Version must match that of binaries.
     if (ctx.state.version().CompareTo(binaries->version()) != 0) {
       *is_valid = false;
-      LOG(ERROR) << "Version of " << ctx.dist->GetAppShortCutName()
+      LOG(ERROR) << "Version of " << ctx.dist->GetDisplayName()
                  << " (" << ctx.state.version().GetString() << ") does not "
                     "match that of Chrome Binaries ("
                  << binaries->version().GetString() << ").";
@@ -738,7 +668,7 @@ void InstallationValidator::ValidateMultiInstallProduct(
     // Channel value must match that of binaries.
     if (!ctx.state.channel().Equals(binaries->channel())) {
       *is_valid = false;
-      LOG(ERROR) << "Channel name of " << ctx.dist->GetAppShortCutName()
+      LOG(ERROR) << "Channel name of " << ctx.dist->GetDisplayName()
                  << " (" << ctx.state.channel().value()
                  << ") does not match that of Chrome Binaries ("
                  << binaries->channel().value() << ").";
@@ -772,12 +702,12 @@ void InstallationValidator::ValidateUsageStats(const ProductContext& ctx,
   if (ctx.state.GetUsageStats(&usagestats)) {
     if (!ctx.rules.UsageStatsAllowed(ctx)) {
       *is_valid = false;
-      LOG(ERROR) << ctx.dist->GetAppShortCutName()
+      LOG(ERROR) << ctx.dist->GetDisplayName()
                  << " has a usagestats value (" << usagestats
                  << "), yet should not.";
     } else if (usagestats != 0 && usagestats != 1) {
       *is_valid = false;
-      LOG(ERROR) << ctx.dist->GetAppShortCutName()
+      LOG(ERROR) << ctx.dist->GetDisplayName()
                  << " has an unsupported usagestats value (" << usagestats
                  << ").";
     }
@@ -849,10 +779,7 @@ bool InstallationValidator::ValidateInstallationTypeForState(
                     chrome_frame_rules, &rock_on);
     int cf_bit = !product_state->is_multi_install() ?
         ProductBits::CHROME_FRAME_SINGLE :
-        (product_state->uninstall_command().HasSwitch(
-             switches::kChromeFrameReadyMode) ?
-                 ProductBits::CHROME_FRAME_READY_MODE :
-                 ProductBits::CHROME_FRAME_MULTI);
+        ProductBits::CHROME_FRAME_MULTI;
     *type = static_cast<InstallationType>(*type | cf_bit);
   }
 

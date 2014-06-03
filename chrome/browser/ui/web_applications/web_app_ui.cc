@@ -15,10 +15,9 @@
 #include "chrome/browser/extensions/image_loader.h"
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/favicon/favicon_tab_helper.h"
-#include "chrome/browser/favicon/favicon_util.h"
+#include "chrome/browser/history/select_favicon_frames.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/web_applications/web_app.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "chrome/common/extensions/manifest_handlers/icons_handler.h"
 #include "chrome/common/pref_names.h"
@@ -27,6 +26,7 @@
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/common/extension.h"
 #include "grit/theme_resources.h"
 #include "skia/ext/image_operations.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -92,11 +92,12 @@ class UpdateShortcutWorker : public content::NotificationObserver {
 
   // Favicon download callback.
   void DidDownloadFavicon(
+      int requested_size,
       int id,
       int http_status_code,
       const GURL& image_url,
-      int requested_size,
-      const std::vector<SkBitmap>& bitmaps);
+      const std::vector<SkBitmap>& bitmaps,
+      const std::vector<gfx::Size>& original_bitmap_sizes);
 
   // Checks if shortcuts exists on desktop, start menu and quick launch.
   void CheckExistingShortcuts();
@@ -190,26 +191,30 @@ void UpdateShortcutWorker::DownloadIcon() {
   web_contents_->DownloadImage(
       unprocessed_icons_.back().url,
       true,  // favicon
-      preferred_size,
       0,  // no maximum size
       base::Bind(&UpdateShortcutWorker::DidDownloadFavicon,
-                 base::Unretained(this)));
+                 base::Unretained(this),
+                 preferred_size));
   unprocessed_icons_.pop_back();
 }
 
 void UpdateShortcutWorker::DidDownloadFavicon(
+    int requested_size,
     int id,
     int http_status_code,
     const GURL& image_url,
-    int requested_size,
-    const std::vector<SkBitmap>& bitmaps) {
+    const std::vector<SkBitmap>& bitmaps,
+    const std::vector<gfx::Size>& original_sizes) {
   std::vector<ui::ScaleFactor> scale_factors;
   scale_factors.push_back(ui::SCALE_FACTOR_100P);
 
-  size_t closest_index =
-      FaviconUtil::SelectBestFaviconFromBitmaps(bitmaps,
-                                                scale_factors,
-                                                requested_size);
+  std::vector<size_t> closest_indices;
+  SelectFaviconFrameIndices(original_sizes,
+                            scale_factors,
+                            requested_size,
+                            &closest_indices,
+                            NULL);
+  size_t closest_index = closest_indices[0];
 
   if (!bitmaps.empty() && !bitmaps[closest_index].isNull()) {
     // Update icon with download image and update shortcut.
@@ -281,7 +286,7 @@ void UpdateShortcutWorker::UpdateShortcutsOnFileThread() {
   // Ensure web_app_path exists. web_app_path could be missing for a legacy
   // shortcut created by Gears.
   if (!base::PathExists(web_app_path) &&
-      !file_util::CreateDirectory(web_app_path)) {
+      !base::CreateDirectory(web_app_path)) {
     NOTREACHED();
     return;
   }
@@ -294,7 +299,7 @@ void UpdateShortcutWorker::UpdateShortcutsOnFileThread() {
   CheckExistingShortcuts();
   if (!shortcut_files_.empty()) {
     // Generates app id from web app url and profile path.
-    string16 app_id = ShellIntegration::GetAppModelIdForProfile(
+    base::string16 app_id = ShellIntegration::GetAppModelIdForProfile(
         UTF8ToWide(web_app::GenerateApplicationNameFromURL(shortcut_info_.url)),
         profile_path_);
 
@@ -359,7 +364,7 @@ void OnImageLoaded(ShellIntegration::ShortcutInfo shortcut_info,
     // the icons, hackily put into a single ImageSkia. Separate them out into
     // individual ImageSkias and insert them into the icon family.
     const gfx::ImageSkia& multires_image_skia = image.AsImageSkia();
-    // NOTE: We do not call ImageSkia::EnsureRepsForSupportedScaleFactors here.
+    // NOTE: We do not call ImageSkia::EnsureRepsForSupportedScales here.
     // The image reps here are not really for different scale factors (ImageSkia
     // is just being used as a handy container for multiple images).
     std::vector<gfx::ImageSkiaRep> image_reps =

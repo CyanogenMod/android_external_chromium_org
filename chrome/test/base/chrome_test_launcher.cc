@@ -19,7 +19,6 @@
 #include "chrome/app/chrome_main_delegate.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/chrome_test_suite.h"
 #include "content/public/app/content_main.h"
 #include "content/public/browser/browser_thread.h"
@@ -42,6 +41,9 @@
 #if defined(USE_AURA)
 #include "ui/aura/test/ui_controls_factory_aura.h"
 #include "ui/base/test/ui_controls_aura.h"
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+#include "ui/views/test/ui_controls_factory_desktop_aurax11.h"
+#endif
 #endif
 
 #if defined(OS_CHROMEOS)
@@ -51,6 +53,8 @@
 #if defined(OS_LINUX) || defined(OS_ANDROID)
 #include "chrome/app/chrome_breakpad_client.h"
 #endif
+
+namespace {
 
 class ChromeTestLauncherDelegate : public content::TestLauncherDelegate {
  public:
@@ -123,37 +127,11 @@ class ChromeTestLauncherDelegate : public content::TestLauncherDelegate {
   DISALLOW_COPY_AND_ASSIGN(ChromeTestLauncherDelegate);
 };
 
-int main(int argc, char** argv) {
-// http://crbug.com/163931 Disabled until interactive_ui_tests ready on Linux
-// Aura.
-#if defined(OS_LINUX) && defined(USE_AURA) && !defined(OS_CHROMEOS)
-  base::FilePath bin_dir;
-  CHECK(file_util::ReadSymbolicLink(
-      base::FilePath(base::kProcSelfExe), &bin_dir));
-  std::string filename = bin_dir.value();
-  // http://crbug.com/154081: early exit until interactive_ui_tests are green.
-  if (EndsWith(filename, "interactive_ui_tests", false)) {
-    LOG(INFO) << "interactive_ui_tests on Linux Aura are not ready yet.";
-    return 0;
-  }
-#endif
+}  // namespace
 
+int LaunchChromeTests(int default_jobs, int argc, char** argv) {
 #if defined(OS_MACOSX)
   chrome_browser_application_mac::RegisterBrowserCrApp();
-#endif
-
-// Only allow ui_controls to be used in interactive_ui_tests, since they depend
-// on focus and can't be sharded.
-#if defined(INTERACTIVE_TESTS)
-  ui_controls::EnableUIControls();
-
-#if defined(OS_CHROMEOS)
-  ui_controls::InstallUIControlsAura(ash::test::CreateAshUIControls());
-#elif defined(USE_AURA)
-  // TODO(win_ash): when running interactive_ui_tests for Win Ash, use above.
-  ui_controls::InstallUIControlsAura(aura::test::CreateUIControlsAura(NULL));
-#endif
-
 #endif
 
 #if defined(OS_LINUX) || defined(OS_ANDROID)
@@ -166,5 +144,5 @@ int main(int argc, char** argv) {
 #endif
 
   ChromeTestLauncherDelegate launcher_delegate;
-  return content::LaunchTests(&launcher_delegate, argc, argv);
+  return content::LaunchTests(&launcher_delegate, default_jobs, argc, argv);
 }

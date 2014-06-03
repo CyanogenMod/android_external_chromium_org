@@ -13,6 +13,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/chromeos/drive/drive.pb.h"
+#include "chrome/browser/drive/drive_service_interface.h"
 
 namespace base {
 class SequencedTaskRunner;
@@ -36,10 +37,7 @@ class ResourceMetadataStorage {
  public:
   // This should be incremented when incompatibility change is made to DB
   // format.
-  //
-  // Note: Skip '7' when incrementing this value next time. '7' has been used
-  // in the period between r208686 and r213797.
-  static const int kDBVersion = 6;
+  static const int kDBVersion = 12;
 
   // Object to iterate over entries stored in this storage.
   class Iterator {
@@ -51,8 +49,11 @@ class ResourceMetadataStorage {
     // to a valid entry. Get() and Advance() should not be called in such cases.
     bool IsAtEnd() const;
 
+    // Returns the ID of the entry currently pointed by this object.
+    std::string GetID() const;
+
     // Returns the entry currently pointed by this object.
-    const ResourceEntry& Get() const;
+    const ResourceEntry& GetValue() const;
 
     // Gets the cache entry which corresponds to |entry_| if available.
     bool GetCacheEntry(FileCacheEntry* cache_entry);
@@ -98,26 +99,44 @@ class ResourceMetadataStorage {
     void AdvanceInternal();
 
     scoped_ptr<leveldb::Iterator> it_;
-    std::string resource_id_;
+    std::string id_;
     FileCacheEntry entry_;
 
     DISALLOW_COPY_AND_ASSIGN(CacheEntryIterator);
   };
+
+  // Cache information recovered from trashed DB.
+  struct RecoveredCacheInfo {
+    RecoveredCacheInfo();
+    ~RecoveredCacheInfo();
+
+    bool is_dirty;
+    std::string md5;
+    std::string title;
+  };
+  typedef std::map<std::string, RecoveredCacheInfo> RecoveredCacheInfoMap;
+
+  // Returns true if the DB was successfully upgraded to the newest version.
+  static bool UpgradeOldDB(const base::FilePath& directory_path,
+                           const ResourceIdCanonicalizer& id_canonicalizer);
 
   ResourceMetadataStorage(const base::FilePath& directory_path,
                           base::SequencedTaskRunner* blocking_task_runner);
 
   const base::FilePath& directory_path() const { return directory_path_; }
 
-  // Returns true if the DB used by this storage was opened, not created, during
-  // Initialize().
-  bool opened_existing_db() const { return opened_existing_db_; }
+  // Returns true when cache entries were not loaded to the DB during
+  // initialization.
+  bool cache_file_scan_is_needed() const { return cache_file_scan_is_needed_; }
 
   // Destroys this object.
   void Destroy();
 
   // Initializes this object.
   bool Initialize();
+
+  // Collects cache info from trashed resource map DB.
+  void RecoverCacheInfoFromTrashedResourceMap(RecoveredCacheInfoMap* out_info);
 
   // Sets the largest changestamp.
   bool SetLargestChangestamp(int64 largest_changestamp);
@@ -129,34 +148,36 @@ class ResourceMetadataStorage {
   bool PutEntry(const ResourceEntry& entry);
 
   // Gets an entry stored in this storage.
-  bool GetEntry(const std::string& resource_id, ResourceEntry* out_entry);
+  bool GetEntry(const std::string& id, ResourceEntry* out_entry);
 
   // Removes an entry from this storage.
-  bool RemoveEntry(const std::string& resource_id);
+  bool RemoveEntry(const std::string& id);
 
   // Returns an object to iterate over entries stored in this storage.
   scoped_ptr<Iterator> GetIterator();
 
-  // Returns resource ID of the parent's child.
-  std::string GetChild(const std::string& parent_resource_id,
+  // Returns the ID of the parent's child.
+  std::string GetChild(const std::string& parent_id,
                        const std::string& child_name);
 
-  // Returns resource IDs of the parent's children.
-  void GetChildren(const std::string& parent_resource_id,
+  // Returns the IDs of the parent's children.
+  void GetChildren(const std::string& parent_id,
                    std::vector<std::string>* children);
 
   // Puts the cache entry to this storage.
-  bool PutCacheEntry(const std::string& resource_id,
-                     const FileCacheEntry& entry);
+  bool PutCacheEntry(const std::string& id, const FileCacheEntry& entry);
 
   // Gets a cache entry stored in this storage.
-  bool GetCacheEntry(const std::string& resource_id, FileCacheEntry* out_entry);
+  bool GetCacheEntry(const std::string& id, FileCacheEntry* out_entry);
 
   // Removes a cache entry from this storage.
-  bool RemoveCacheEntry(const std::string& resource_id);
+  bool RemoveCacheEntry(const std::string& id);
 
   // Returns an object to iterate over cache entries stored in this storage.
   scoped_ptr<CacheEntryIterator> GetCacheEntryIterator();
+
+  // Returns the local ID associated with the given resource ID.
+  bool GetIdByResourceId(const std::string& resource_id, std::string* out_id);
 
  private:
   friend class ResourceMetadataStorageTest;
@@ -168,7 +189,7 @@ class ResourceMetadataStorage {
   void DestroyOnBlockingPool();
 
   // Returns a string to be used as a key for child entry.
-  static std::string GetChildEntryKey(const std::string& parent_resource_id,
+  static std::string GetChildEntryKey(const std::string& parent_id,
                                       const std::string& child_name);
 
   // Puts header.
@@ -183,7 +204,7 @@ class ResourceMetadataStorage {
   // Path to the directory where the data is stored.
   base::FilePath directory_path_;
 
-  bool opened_existing_db_;
+  bool cache_file_scan_is_needed_;
 
   // Entries stored in this storage.
   scoped_ptr<leveldb::DB> resource_map_;

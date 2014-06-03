@@ -24,17 +24,17 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/webdata/common/web_database_service.h"
-#include "components/webdata/encryptor/ie7_password.h"
+#include "components/webdata/encryptor/ie7_password_win.h"
 #include "content/public/test/test_browser_thread.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+using autofill::PasswordForm;
 using base::WaitableEvent;
 using content::BrowserThread;
 using testing::_;
 using testing::DoAll;
 using testing::WithArg;
-using content::PasswordForm;
 
 namespace {
 
@@ -42,9 +42,9 @@ class MockPasswordStoreConsumer : public PasswordStoreConsumer {
  public:
   MOCK_METHOD2(OnPasswordStoreRequestDone,
                void(CancelableRequestProvider::Handle,
-                    const std::vector<content::PasswordForm*>&));
+                    const std::vector<autofill::PasswordForm*>&));
   MOCK_METHOD1(OnGetPasswordStoreResults,
-               void(const std::vector<content::PasswordForm*>&));
+               void(const std::vector<autofill::PasswordForm*>&));
 };
 
 class MockWebDataServiceConsumer : public WebDataServiceConsumer {
@@ -150,12 +150,12 @@ class PasswordStoreWinTest : public testing::Test {
   // PasswordStore, WDS schedule work on this thread.
   content::TestBrowserThread db_thread_;
 
-  scoped_ptr<LoginDatabase> login_db_;
+  base::ScopedTempDir temp_dir_;
   scoped_ptr<TestingProfile> profile_;
+  scoped_ptr<LoginDatabase> login_db_;
   scoped_refptr<WebDataService> wds_;
   scoped_refptr<WebDatabaseService> wdbs_;
   scoped_refptr<PasswordStore> store_;
-  base::ScopedTempDir temp_dir_;
 };
 
 ACTION(STLDeleteElements0) {
@@ -236,7 +236,7 @@ TEST_F(PasswordStoreWinTest, DISABLED_ConvertIE7Login) {
               OnGetPasswordStoreResults(ContainsAllPasswordForms(forms)))
       .WillOnce(QuitUIMessageLoop());
 
-  store_->GetLogins(*form, &consumer);
+  store_->GetLogins(*form, PasswordStore::DISALLOW_PROMPT, &consumer);
   base::MessageLoop::current()->Run();
 
   STLDeleteElements(&forms);
@@ -263,7 +263,7 @@ TEST_F(PasswordStoreWinTest, DISABLED_OutstandingWDSQueries) {
   scoped_ptr<PasswordForm> form(CreatePasswordFormFromData(form_data));
 
   MockPasswordStoreConsumer consumer;
-  store_->GetLogins(*form, &consumer);
+  store_->GetLogins(*form, PasswordStore::DISALLOW_PROMPT, &consumer);
 
   // Release the PSW and the WDS before the query can return.
   store_->ShutdownOnUIThread();
@@ -331,7 +331,7 @@ TEST_F(PasswordStoreWinTest, DISABLED_MultipleWDSQueriesOnDifferentThreads) {
               OnGetPasswordStoreResults(ContainsAllPasswordForms(forms)))
       .WillOnce(QuitUIMessageLoop());
 
-  store_->GetLogins(*form, &password_consumer);
+  store_->GetLogins(*form, PasswordStore::DISALLOW_PROMPT, &password_consumer);
 
   MockWebDataServiceConsumer wds_consumer;
 
@@ -381,7 +381,7 @@ TEST_F(PasswordStoreWinTest, EmptyLogins) {
               OnGetPasswordStoreResults(ContainsAllPasswordForms(expect_none)))
       .WillOnce(DoAll(WithArg<0>(STLDeleteElements0()), QuitUIMessageLoop()));
 
-  store_->GetLogins(*form, &consumer);
+  store_->GetLogins(*form, PasswordStore::DISALLOW_PROMPT, &consumer);
   base::MessageLoop::current()->Run();
 }
 

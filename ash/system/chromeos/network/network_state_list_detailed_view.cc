@@ -5,8 +5,10 @@
 #include "ash/system/chromeos/network/network_state_list_detailed_view.h"
 
 #include "ash/ash_switches.h"
+#include "ash/metrics/user_metrics_recorder.h"
 #include "ash/root_window_controller.h"
 #include "ash/shell.h"
+#include "ash/shell_delegate.h"
 #include "ash/shell_window_ids.h"
 #include "ash/system/chromeos/network/network_connect.h"
 #include "ash/system/chromeos/network/network_icon.h"
@@ -30,6 +32,7 @@
 #include "chromeos/network/network_configuration_handler.h"
 #include "chromeos/network/network_state.h"
 #include "chromeos/network/network_state_handler.h"
+#include "chromeos/network/shill_property_util.h"
 #include "grit/ash_resources.h"
 #include "grit/ash_strings.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
@@ -47,15 +50,13 @@ using chromeos::FavoriteState;
 using chromeos::NetworkHandler;
 using chromeos::NetworkState;
 using chromeos::NetworkStateHandler;
+using chromeos::NetworkTypePattern;
 
 namespace ash {
 namespace internal {
 namespace tray {
 
 namespace {
-
-// Height of the list of networks in the popup.
-const int kNetworkListHeight = 203;
 
 // Delay between scan requests.
 const int kRequestScanDelaySeconds = 10;
@@ -93,27 +94,6 @@ views::View* CreateInfoBubbleLine(const base::string16& text_label,
   return view;
 }
 
-// A bubble that cannot be activated.
-class NonActivatableSettingsBubble : public views::BubbleDelegateView {
- public:
-  NonActivatableSettingsBubble(views::View* anchor, views::View* content)
-      : views::BubbleDelegateView(anchor, views::BubbleBorder::TOP_RIGHT) {
-    set_use_focusless(true);
-    set_parent_window(ash::Shell::GetContainer(
-        anchor->GetWidget()->GetNativeWindow()->GetRootWindow(),
-        ash::internal::kShellWindowId_SettingBubbleContainer));
-    SetLayoutManager(new views::FillLayout());
-    AddChildView(content);
-  }
-
-  virtual ~NonActivatableSettingsBubble() {}
-
-  virtual bool CanActivate() const OVERRIDE { return false; }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(NonActivatableSettingsBubble);
-};
-
 }  // namespace
 
 
@@ -131,6 +111,38 @@ struct NetworkInfo {
   gfx::ImageSkia image;
   bool disable;
   bool highlight;
+};
+
+//------------------------------------------------------------------------------
+
+// A bubble which displays network info.
+class NetworkStateListDetailedView::InfoBubble
+    : public views::BubbleDelegateView {
+ public:
+  InfoBubble(views::View* anchor,
+             views::View* content,
+             NetworkStateListDetailedView* detailed_view)
+      : views::BubbleDelegateView(anchor, views::BubbleBorder::TOP_RIGHT),
+        detailed_view_(detailed_view) {
+    set_use_focusless(true);
+    set_parent_window(ash::Shell::GetContainer(
+        anchor->GetWidget()->GetNativeWindow()->GetRootWindow(),
+        ash::internal::kShellWindowId_SettingBubbleContainer));
+    SetLayoutManager(new views::FillLayout());
+    AddChildView(content);
+  }
+
+  virtual ~InfoBubble() {
+    detailed_view_->OnInfoBubbleDestroyed();
+  }
+
+  virtual bool CanActivate() const OVERRIDE { return false; }
+
+ private:
+  // Not owned.
+  NetworkStateListDetailedView* detailed_view_;
+
+  DISALLOW_COPY_AND_ASSIGN(InfoBubble);
 };
 
 //------------------------------------------------------------------------------
@@ -251,22 +263,27 @@ void NetworkStateListDetailedView::ButtonPressed(views::Button* sender,
   ash::SystemTrayDelegate* delegate =
       ash::Shell::GetInstance()->system_tray_delegate();
   if (sender == button_wifi_) {
-    bool enabled = handler->IsTechnologyEnabled(flimflam::kTypeWifi);
-    handler->SetTechnologyEnabled(
-        flimflam::kTypeWifi, !enabled,
-        chromeos::network_handler::ErrorCallback());
+    bool enabled = handler->IsTechnologyEnabled(
+        NetworkTypePattern::WiFi());
+    handler->SetTechnologyEnabled(NetworkTypePattern::WiFi(),
+                                  !enabled,
+                                  chromeos::network_handler::ErrorCallback());
   } else if (sender == turn_on_wifi_) {
-    handler->SetTechnologyEnabled(
-        flimflam::kTypeWifi, true,
-        chromeos::network_handler::ErrorCallback());
+    handler->SetTechnologyEnabled(NetworkTypePattern::WiFi(),
+                                  true,
+                                  chromeos::network_handler::ErrorCallback());
   } else if (sender == button_mobile_) {
     ToggleMobile();
   } else if (sender == settings_) {
+    Shell::GetInstance()->metrics()->RecordUserMetricsAction(
+        list_type_ == LIST_TYPE_VPN ?
+        ash::UMA_STATUS_AREA_VPN_SETTINGS_CLICKED :
+        ash::UMA_STATUS_AREA_NETWORK_SETTINGS_CLICKED);
     delegate->ShowNetworkSettings("");
   } else if (sender == proxy_settings_) {
     delegate->ChangeProxySettings();
   } else if (sender == other_mobile_) {
-    delegate->ShowOtherCellular();
+    delegate->ShowOtherNetworkDialog(shill::kTypeCellular);
   } else if (sender == toggle_debug_preferred_networks_) {
     list_type_ = (list_type_ == LIST_TYPE_NETWORK)
         ? LIST_TYPE_DEBUG_PREFERRED : LIST_TYPE_NETWORK;
@@ -275,9 +292,13 @@ void NetworkStateListDetailedView::ButtonPressed(views::Button* sender,
         FROM_HERE,
         base::Bind(&NetworkStateListDetailedView::Init, AsWeakPtr()));
   } else if (sender == other_wifi_) {
-    delegate->ShowOtherWifi();
+    Shell::GetInstance()->metrics()->RecordUserMetricsAction(
+        ash::UMA_STATUS_AREA_NETWORK_JOIN_OTHER_CLICKED);
+    delegate->ShowOtherNetworkDialog(shill::kTypeWifi);
   } else if (sender == other_vpn_) {
-    delegate->ShowOtherVPN();
+    Shell::GetInstance()->metrics()->RecordUserMetricsAction(
+        ash::UMA_STATUS_AREA_VPN_JOIN_OTHER_CLICKED);
+    delegate->ShowOtherNetworkDialog(shill::kTypeVPN);
   } else {
     NOTREACHED();
   }
@@ -288,8 +309,7 @@ void NetworkStateListDetailedView::OnViewClicked(views::View* sender) {
   ResetInfoBubble();
 
   if (sender == footer()->content()) {
-    RootWindowController::ForWindow(GetWidget()->GetNativeView())->
-        GetSystemTray()->ShowDefaultView(BUBBLE_USE_EXISTING);
+    TransitionToDefaultView();
     return;
   }
 
@@ -313,9 +333,17 @@ void NetworkStateListDetailedView::OnViewClicked(views::View* sender) {
   const NetworkState* network = NetworkHandler::Get()->network_state_handler()->
       GetNetworkState(service_path);
   if (!network || network->IsConnectedState() || network->IsConnectingState()) {
+    Shell::GetInstance()->metrics()->RecordUserMetricsAction(
+        list_type_ == LIST_TYPE_VPN ?
+        ash::UMA_STATUS_AREA_SHOW_NETWORK_CONNECTION_DETAILS :
+        ash::UMA_STATUS_AREA_SHOW_VPN_CONNECTION_DETAILS);
     Shell::GetInstance()->system_tray_delegate()->ShowNetworkSettings(
         service_path);
   } else {
+    Shell::GetInstance()->metrics()->RecordUserMetricsAction(
+        list_type_ == LIST_TYPE_VPN ?
+        ash::UMA_STATUS_AREA_CONNECT_TO_VPN :
+        ash::UMA_STATUS_AREA_CONNECT_TO_CONFIGURED_NETWORK);
     ash::network_connect::ConnectToNetwork(service_path, NULL);
   }
 }
@@ -424,10 +452,9 @@ void NetworkStateListDetailedView::CreateNetworkExtra() {
 void NetworkStateListDetailedView::UpdateHeaderButtons() {
   NetworkStateHandler* handler = NetworkHandler::Get()->network_state_handler();
   if (button_wifi_)
-    UpdateTechnologyButton(button_wifi_, flimflam::kTypeWifi);
+    UpdateTechnologyButton(button_wifi_, NetworkTypePattern::WiFi());
   if (button_mobile_) {
-    UpdateTechnologyButton(
-        button_mobile_, NetworkStateHandler::kMatchTypeMobile);
+    UpdateTechnologyButton(button_mobile_, NetworkTypePattern::Mobile());
   }
   if (proxy_settings_)
     proxy_settings_->SetEnabled(handler->DefaultNetwork() != NULL);
@@ -437,10 +464,10 @@ void NetworkStateListDetailedView::UpdateHeaderButtons() {
 
 void NetworkStateListDetailedView::UpdateTechnologyButton(
     TrayPopupHeaderButton* button,
-    const std::string& technology) {
+    const NetworkTypePattern& technology) {
   NetworkStateHandler::TechnologyState state =
-      NetworkHandler::Get()->network_state_handler()->
-      GetTechnologyState(technology);
+      NetworkHandler::Get()->network_state_handler()->GetTechnologyState(
+          technology);
   if (state == NetworkStateHandler::TECHNOLOGY_UNAVAILABLE) {
     button->SetVisible(false);
     return;
@@ -469,9 +496,9 @@ void NetworkStateListDetailedView::UpdateNetworks(
            networks.begin(); iter != networks.end(); ++iter) {
     const NetworkState* network = *iter;
     if ((list_type_ == LIST_TYPE_NETWORK &&
-        network->type() != flimflam::kTypeVPN) ||
+         network->type() != shill::kTypeVPN) ||
         (list_type_ == LIST_TYPE_VPN &&
-         network->type() == flimflam::kTypeVPN)) {
+         network->type() == shill::kTypeVPN)) {
       NetworkInfo* info = new NetworkInfo(network->path());
       network_list_.push_back(info);
     }
@@ -507,7 +534,7 @@ void NetworkStateListDetailedView::UpdateNetworkList() {
       info->highlight =
           network->IsConnectedState() || network->IsConnectingState();
       info->disable =
-          network->activation_state() == flimflam::kActivationStateActivating;
+          network->activation_state() == shill::kActivationStateActivating;
       if (!animating && network->IsConnectingState())
         animating = true;
     } else if (list_type_ == LIST_TYPE_DEBUG_PREFERRED) {
@@ -640,8 +667,8 @@ bool NetworkStateListDetailedView::UpdateNetworkListEntries(
     // Cellular initializing
     int status_message_id = network_icon::GetCellularUninitializedMsg();
     if (!status_message_id &&
-        handler->IsTechnologyEnabled(NetworkStateHandler::kMatchTypeMobile) &&
-        !handler->FirstNetworkByType(NetworkStateHandler::kMatchTypeMobile)) {
+        handler->IsTechnologyEnabled(NetworkTypePattern::Mobile()) &&
+        !handler->FirstNetworkByType(NetworkTypePattern::Mobile())) {
       status_message_id = IDS_ASH_STATUS_TRAY_NO_CELLULAR_NETWORKS;
     }
     if (status_message_id) {
@@ -656,9 +683,9 @@ bool NetworkStateListDetailedView::UpdateNetworkListEntries(
 
     // "Wifi Enabled / Disabled"
     if (network_list_.empty()) {
-      int message_id = handler->IsTechnologyEnabled(flimflam::kTypeWifi) ?
-          IDS_ASH_STATUS_TRAY_NETWORK_WIFI_ENABLED :
-          IDS_ASH_STATUS_TRAY_NETWORK_WIFI_DISABLED;
+      int message_id = handler->IsTechnologyEnabled(NetworkTypePattern::WiFi())
+                           ? IDS_ASH_STATUS_TRAY_NETWORK_WIFI_ENABLED
+                           : IDS_ASH_STATUS_TRAY_NETWORK_WIFI_DISABLED;
       base::string16 text = rb.GetLocalizedString(message_id);
       if (CreateOrUpdateInfoLabel(index++, text, &no_wifi_networks_view_))
         needs_relayout = true;
@@ -669,7 +696,7 @@ bool NetworkStateListDetailedView::UpdateNetworkListEntries(
     }
 
     // "Wifi Scanning"
-    if (handler->GetScanningByType(flimflam::kTypeWifi)) {
+    if (handler->GetScanningByType(NetworkTypePattern::WiFi())) {
       base::string16 text =
           rb.GetLocalizedString(IDS_ASH_STATUS_TRAY_WIFI_SCANNING_MESSAGE);
       if (CreateOrUpdateInfoLabel(index++, text, &scanning_view_))
@@ -714,7 +741,7 @@ void NetworkStateListDetailedView::UpdateNetworkExtra() {
   if (other_wifi_) {
     DCHECK(turn_on_wifi_);
     NetworkStateHandler::TechnologyState state =
-        handler->GetTechnologyState(flimflam::kTypeWifi);
+        handler->GetTechnologyState(NetworkTypePattern::WiFi());
     if (state == NetworkStateHandler::TECHNOLOGY_UNAVAILABLE) {
       turn_on_wifi_->SetVisible(false);
       other_wifi_->SetVisible(false);
@@ -739,10 +766,10 @@ void NetworkStateListDetailedView::UpdateNetworkExtra() {
   if (other_mobile_) {
     bool show_other_mobile = false;
     NetworkStateHandler::TechnologyState state =
-        handler->GetTechnologyState(NetworkStateHandler::kMatchTypeMobile);
+        handler->GetTechnologyState(NetworkTypePattern::Mobile());
     if (state != NetworkStateHandler::TECHNOLOGY_UNAVAILABLE) {
       const chromeos::DeviceState* device =
-          handler->GetDeviceStateByType(NetworkStateHandler::kMatchTypeMobile);
+          handler->GetDeviceStateByType(NetworkTypePattern::Mobile());
       show_other_mobile = (device && device->support_network_scan());
     }
     if (show_other_mobile) {
@@ -777,8 +804,8 @@ void NetworkStateListDetailedView::ToggleInfoBubble() {
   if (ResetInfoBubble())
     return;
 
-  info_bubble_ = new NonActivatableSettingsBubble(
-      info_icon_, CreateNetworkInfoView());
+  info_bubble_ = new InfoBubble(
+      info_icon_, CreateNetworkInfoView(), this);
   views::BubbleDelegateView::CreateBubble(info_bubble_)->Show();
 }
 
@@ -788,6 +815,10 @@ bool NetworkStateListDetailedView::ResetInfoBubble() {
   info_bubble_->GetWidget()->Close();
   info_bubble_ = NULL;
   return true;
+}
+
+void NetworkStateListDetailedView::OnInfoBubbleDestroyed() {
+  info_bubble_ = NULL;
 }
 
 views::View* NetworkStateListDetailedView::CreateNetworkInfoView() {
@@ -806,13 +837,13 @@ views::View* NetworkStateListDetailedView::CreateNetworkInfoView() {
 
   std::string ethernet_address, wifi_address, vpn_address;
   if (list_type_ != LIST_TYPE_VPN) {
-    ethernet_address =
-        handler->FormattedHardwareAddressForType(flimflam::kTypeEthernet);
+    ethernet_address = handler->FormattedHardwareAddressForType(
+        NetworkTypePattern::Ethernet());
     wifi_address =
-        handler->FormattedHardwareAddressForType(flimflam::kTypeWifi);
+        handler->FormattedHardwareAddressForType(NetworkTypePattern::WiFi());
   } else {
     vpn_address =
-        handler->FormattedHardwareAddressForType(flimflam::kTypeVPN);
+        handler->FormattedHardwareAddressForType(NetworkTypePattern::VPN());
   }
 
   if (!ip_address.empty()) {
@@ -855,26 +886,9 @@ void NetworkStateListDetailedView::CallRequestScan() {
 void NetworkStateListDetailedView::ToggleMobile() {
   NetworkStateHandler* handler = NetworkHandler::Get()->network_state_handler();
   bool enabled =
-      handler->IsTechnologyEnabled(NetworkStateHandler::kMatchTypeMobile);
-  if (enabled) {
-    handler->SetTechnologyEnabled(
-        NetworkStateHandler::kMatchTypeMobile, false,
-        chromeos::network_handler::ErrorCallback());
-  } else {
-    const DeviceState* mobile =
-        handler->GetDeviceStateByType(NetworkStateHandler::kMatchTypeMobile);
-    if (!mobile) {
-      LOG(ERROR) << "Mobile device not found.";
-      return;
-    }
-    if (!mobile->sim_lock_type().empty() || mobile->IsSimAbsent()) {
-      ash::Shell::GetInstance()->system_tray_delegate()->ShowMobileSimDialog();
-    } else {
-      handler->SetTechnologyEnabled(
-          NetworkStateHandler::kMatchTypeMobile, true,
-          chromeos::network_handler::ErrorCallback());
-    }
-  }
+      handler->IsTechnologyEnabled(NetworkTypePattern::Mobile());
+  ash::network_connect::SetTechnologyEnabled(NetworkTypePattern::Mobile(),
+                                             !enabled);
 }
 
 }  // namespace tray

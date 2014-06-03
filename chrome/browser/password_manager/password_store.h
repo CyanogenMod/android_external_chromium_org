@@ -18,7 +18,12 @@
 
 class PasswordStore;
 class PasswordStoreConsumer;
+class PasswordSyncableService;
 class Task;
+
+namespace autofill {
+struct PasswordForm;
+}
 
 namespace browser_sync {
 class PasswordChangeProcessor;
@@ -27,14 +32,10 @@ class PasswordModelAssociator;
 class PasswordModelWorker;
 }
 
-namespace content {
-struct PasswordForm;
-}
-
 namespace passwords_helper {
-void AddLogin(PasswordStore* store, const content::PasswordForm& form);
-void RemoveLogin(PasswordStore* store, const content::PasswordForm& form);
-void UpdateLogin(PasswordStore* store, const content::PasswordForm& form);
+void AddLogin(PasswordStore* store, const autofill::PasswordForm& form);
+void RemoveLogin(PasswordStore* store, const autofill::PasswordForm& form);
+void UpdateLogin(PasswordStore* store, const autofill::PasswordForm& form);
 }
 
 // Interface for storing form passwords in a platform-specific secure way.
@@ -45,15 +46,22 @@ class PasswordStore
       public CancelableRequestProvider {
  public:
   typedef base::Callback<
-      void(Handle, const std::vector<content::PasswordForm*>&)>
+      void(Handle, const std::vector<autofill::PasswordForm*>&)>
       GetLoginsCallback;
+
+  // Whether or not it's acceptable for Chrome to request access to locked
+  // passwords, which requires prompting the user for permission.
+  enum AuthorizationPromptPolicy {
+    ALLOW_PROMPT,
+    DISALLOW_PROMPT
+  };
 
   // PasswordForm vector elements are meant to be owned by the
   // PasswordStoreConsumer. However, if the request is canceled after the
   // allocation, then the request must take care of the deletion.
   class GetLoginsRequest
       : public CancelableRequest1<GetLoginsCallback,
-                                  std::vector<content::PasswordForm*> > {
+                                  std::vector<autofill::PasswordForm*> > {
    public:
     explicit GetLoginsRequest(const GetLoginsCallback& callback);
 
@@ -92,13 +100,13 @@ class PasswordStore
   virtual bool Init();
 
   // Adds the given PasswordForm to the secure password store asynchronously.
-  virtual void AddLogin(const content::PasswordForm& form);
+  virtual void AddLogin(const autofill::PasswordForm& form);
 
   // Updates the matching PasswordForm in the secure password store (async).
-  void UpdateLogin(const content::PasswordForm& form);
+  void UpdateLogin(const autofill::PasswordForm& form);
 
   // Removes the matching PasswordForm from the secure password store (async).
-  void RemoveLogin(const content::PasswordForm& form);
+  void RemoveLogin(const autofill::PasswordForm& form);
 
   // Removes all logins created in the given date range.
   void RemoveLoginsCreatedBetween(const base::Time& delete_begin,
@@ -106,9 +114,14 @@ class PasswordStore
 
   // Searches for a matching PasswordForm and returns a ID so the async request
   // can be tracked. Implement the PasswordStoreConsumer interface to be
-  // notified on completion.
+  // notified on completion. |prompt_policy| indicates whether it's permissible
+  // to prompt the user to authorize access to locked passwords. This argument
+  // is only used on platforms that support prompting the user for access (such
+  // as Mac OS). NOTE: This means that this method can return different results
+  // depending on the value of |prompt_policy|.
   virtual CancelableTaskTracker::TaskId GetLogins(
-      const content::PasswordForm& form,
+      const autofill::PasswordForm& form,
+      AuthorizationPromptPolicy prompt_policy,
       PasswordStoreConsumer* consumer);
 
   // Gets the complete list of PasswordForms that are not blacklist entries--and
@@ -133,16 +146,21 @@ class PasswordStore
 
  protected:
   friend class base::RefCountedThreadSafe<PasswordStore>;
+  // Sync's interaction with password store needs to be syncrhonous.
+  // Since the synchronous methods are private these classes are made
+  // as friends. This can be fixed by moving the private impl to a new
+  // class. See http://crbug.com/307750
   friend class browser_sync::PasswordChangeProcessor;
   friend class browser_sync::PasswordDataTypeController;
   friend class browser_sync::PasswordModelAssociator;
   friend class browser_sync::PasswordModelWorker;
+  friend class PasswordSyncableService;
   friend void passwords_helper::AddLogin(PasswordStore*,
-                                         const content::PasswordForm&);
+                                         const autofill::PasswordForm&);
   friend void passwords_helper::RemoveLogin(PasswordStore*,
-                                            const content::PasswordForm&);
+                                            const autofill::PasswordForm&);
   friend void passwords_helper::UpdateLogin(PasswordStore*,
-                                            const content::PasswordForm&);
+                                            const autofill::PasswordForm&);
 
   virtual ~PasswordStore();
 
@@ -160,23 +178,24 @@ class PasswordStore
   // Synchronous implementation that reports usage metrics.
   virtual void ReportMetricsImpl() = 0;
   // Synchronous implementation to add the given login.
-  virtual void AddLoginImpl(const content::PasswordForm& form) = 0;
+  virtual void AddLoginImpl(const autofill::PasswordForm& form) = 0;
   // Synchronous implementation to update the given login.
-  virtual void UpdateLoginImpl(const content::PasswordForm& form) = 0;
+  virtual void UpdateLoginImpl(const autofill::PasswordForm& form) = 0;
   // Synchronous implementation to remove the given login.
-  virtual void RemoveLoginImpl(const content::PasswordForm& form) = 0;
+  virtual void RemoveLoginImpl(const autofill::PasswordForm& form) = 0;
   // Synchronous implementation to remove the given logins.
   virtual void RemoveLoginsCreatedBetweenImpl(const base::Time& delete_begin,
                                               const base::Time& delete_end) = 0;
 
-  typedef base::Callback<void(const std::vector<content::PasswordForm*>&)>
+  typedef base::Callback<void(const std::vector<autofill::PasswordForm*>&)>
       ConsumerCallbackRunner;  // Owns all PasswordForms in the vector.
 
   // Should find all PasswordForms with the same signon_realm. The results
   // will then be scored by the PasswordFormManager. Once they are found
   // (or not), the consumer should be notified.
   virtual void GetLoginsImpl(
-      const content::PasswordForm& form,
+      const autofill::PasswordForm& form,
+      AuthorizationPromptPolicy prompt_policy,
       const ConsumerCallbackRunner& callback_runner) = 0;
 
   // Finds all non-blacklist PasswordForms, and notifies the consumer.
@@ -186,14 +205,17 @@ class PasswordStore
 
   // Finds all non-blacklist PasswordForms, and fills the vector.
   virtual bool FillAutofillableLogins(
-      std::vector<content::PasswordForm*>* forms) = 0;
+      std::vector<autofill::PasswordForm*>* forms) = 0;
   // Finds all blacklist PasswordForms, and fills the vector.
   virtual bool FillBlacklistLogins(
-      std::vector<content::PasswordForm*>* forms) = 0;
+      std::vector<autofill::PasswordForm*>* forms) = 0;
 
   // Dispatches the result to the PasswordStoreConsumer on the original caller's
   // thread so the callback can be executed there. This should be the UI thread.
   virtual void ForwardLoginsResult(GetLoginsRequest* request);
+
+  // Log UMA stats for number of bulk deletions.
+  void LogStatsForBulkDeletion(int num_deletions);
 
  private:
   // Schedule the given |func| to be run in the PasswordStore's own thread with
@@ -207,7 +229,7 @@ class PasswordStore
   template<typename BackendFunc>
   Handle Schedule(BackendFunc func,
                   PasswordStoreConsumer* consumer,
-                  const content::PasswordForm& form,
+                  const autofill::PasswordForm& form,
                   const base::Time& ignore_logins_cutoff);
 
   // Wrapper method called on the destination thread (DB for non-mac) that

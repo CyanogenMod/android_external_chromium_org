@@ -58,11 +58,11 @@ class SslHmacChannelAuthenticatorTest : public testing::Test {
     base::FilePath certs_dir(net::GetTestCertsDirectory());
 
     base::FilePath cert_path = certs_dir.AppendASCII("unittest.selfsigned.der");
-    ASSERT_TRUE(file_util::ReadFileToString(cert_path, &host_cert_));
+    ASSERT_TRUE(base::ReadFileToString(cert_path, &host_cert_));
 
     base::FilePath key_path = certs_dir.AppendASCII("unittest.key.bin");
     std::string key_string;
-    ASSERT_TRUE(file_util::ReadFileToString(key_path, &key_string));
+    ASSERT_TRUE(base::ReadFileToString(key_path, &key_string));
     std::string key_base64;
     base::Base64Encode(key_string, &key_base64);
     key_pair_ = RsaKeyPair::FromString(key_base64);
@@ -137,8 +137,15 @@ class SslHmacChannelAuthenticatorTest : public testing::Test {
   DISALLOW_COPY_AND_ASSIGN(SslHmacChannelAuthenticatorTest);
 };
 
+// These tests use net::SSLServerSocket which is not implemented for OpenSSL.
+#if defined(USE_OPENSSL)
+#define MAYBE(x) DISABLED_##x
+#else
+#define MAYBE(x) x
+#endif
+
 // Verify that a channel can be connected using a valid shared secret.
-TEST_F(SslHmacChannelAuthenticatorTest, SuccessfulAuth) {
+TEST_F(SslHmacChannelAuthenticatorTest, MAYBE(SuccessfulAuth)) {
   client_auth_ = SslHmacChannelAuthenticator::CreateForClient(
       host_cert_, kTestSharedSecret);
   host_auth_ = SslHmacChannelAuthenticator::CreateForHost(
@@ -158,7 +165,7 @@ TEST_F(SslHmacChannelAuthenticatorTest, SuccessfulAuth) {
 }
 
 // Verify that channels cannot be using invalid shared secret.
-TEST_F(SslHmacChannelAuthenticatorTest, InvalidChannelSecret) {
+TEST_F(SslHmacChannelAuthenticatorTest, MAYBE(InvalidChannelSecret)) {
   client_auth_ = SslHmacChannelAuthenticator::CreateForClient(
       host_cert_, kTestSharedSecretBad);
   host_auth_ = SslHmacChannelAuthenticator::CreateForHost(

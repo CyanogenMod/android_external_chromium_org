@@ -13,7 +13,7 @@
 #include "chrome/browser/ui/tabs/tab_strip_layout_type.h"
 #include "chrome/browser/ui/views/tabs/tab.h"
 #include "chrome/browser/ui/views/tabs/tab_controller.h"
-#include "ui/base/animation/animation_container.h"
+#include "ui/gfx/animation/animation_container.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/rect.h"
 #include "ui/views/animation/bounds_animator.h"
@@ -161,6 +161,10 @@ class TabStrip : public views::View,
   // window caption area of the browser window.
   bool IsPositionInWindowCaption(const gfx::Point& point);
 
+  // Returns true if the specified rect (in TabStrip coordinates) intersects
+  // the window caption area of the browser window.
+  bool IsRectInWindowCaption(const gfx::Rect& rect);
+
   // Set the background offset used by inactive tabs to match the frame image.
   void SetBackgroundOffset(const gfx::Point& offset);
 
@@ -177,6 +181,9 @@ class TabStrip : public views::View,
   // Stops any ongoing animations. If |layout| is true and an animation is
   // ongoing this does a layout.
   void StopAnimating(bool layout);
+
+  // Called to indicate whether the given URL is a supported file.
+  void FileSupported(const GURL& url, bool supported);
 
   // TabController overrides:
   virtual const ui::ListSelectionModel& GetSelectionModel() OVERRIDE;
@@ -200,7 +207,7 @@ class TabStrip : public views::View,
                             const ui::LocatedEvent& event) OVERRIDE;
   virtual bool EndDrag(EndDragReason reason) OVERRIDE;
   virtual Tab* GetTabAt(Tab* tab,
-                            const gfx::Point& tab_in_tab_coordinates) OVERRIDE;
+                        const gfx::Point& tab_in_tab_coordinates) OVERRIDE;
   virtual void OnMouseEventInTab(views::View* source,
                                  const ui::MouseEvent& event) OVERRIDE;
   virtual bool ShouldPaintTab(const Tab* tab, gfx::Rect* clip) OVERRIDE;
@@ -221,8 +228,7 @@ class TabStrip : public views::View,
   virtual void OnDragExited() OVERRIDE;
   virtual int OnPerformDrop(const ui::DropTargetEvent& event) OVERRIDE;
   virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
-  virtual views::View* GetEventHandlerForPoint(
-      const gfx::Point& point) OVERRIDE;
+  virtual views::View* GetEventHandlerForRect(const gfx::Rect& rect) OVERRIDE;
   virtual views::View* GetTooltipHandlerForPoint(
       const gfx::Point& point) OVERRIDE;
 
@@ -263,6 +269,10 @@ class TabStrip : public views::View,
 
   friend class TabDragController;
   friend class TabDragControllerTest;
+  FRIEND_TEST_ALL_PREFIXES(TabDragControllerTest, GestureEndShouldEndDragTest);
+  friend class TabStripTest;
+  FRIEND_TEST_ALL_PREFIXES(TabStripTest, TabHitTestMaskWhenStacked);
+  FRIEND_TEST_ALL_PREFIXES(TabStripTest, ClippedTabCloseButton);
 
   // Used during a drop session of a url. Tracks the position of the drop as
   // well as a window used to highlight where the drop occurs.
@@ -288,6 +298,12 @@ class TabStrip : public views::View,
     // Renders the drop indicator.
     views::Widget* arrow_window;
     views::ImageView* arrow_view;
+
+    // The URL for the drop event.
+    GURL url;
+
+    // Whether the MIME type of the file pointed to by |url| is supported.
+    bool file_supported;
 
    private:
     DISALLOW_COPY_AND_ASSIGN(DropInfo);
@@ -576,7 +592,7 @@ class TabStrip : public views::View,
 
   // To ensure all tabs pulse at the same time they share the same animation
   // container. This is that animation container.
-  scoped_refptr<ui::AnimationContainer> animation_container_;
+  scoped_refptr<gfx::AnimationContainer> animation_container_;
 
   // MouseWatcher is used for two things:
   // . When a tab is closed to reset the layout.

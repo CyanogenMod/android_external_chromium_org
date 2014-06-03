@@ -8,6 +8,8 @@
 #include <InputScope.h>
 #include <OleCtl.h>
 
+#include <algorithm>
+
 #include "base/win/scoped_variant.h"
 #include "ui/base/ime/text_input_client.h"
 #include "ui/base/ime/win/tsf_input_scope.h"
@@ -432,15 +434,14 @@ STDMETHODIMP TSFTextStore::QueryInsert(
     ULONG text_size,
     LONG* acp_result_start,
     LONG* acp_result_end) {
-  if (!acp_result_start || !acp_result_end)
+  if (!acp_result_start || !acp_result_end || acp_test_start > acp_test_end)
     return E_INVALIDARG;
-  if (!((static_cast<LONG>(committed_size_) <= acp_test_start) &&
-        (acp_test_start <= acp_test_end) &&
-        (acp_test_end <= static_cast<LONG>(string_buffer_.size())))) {
-    return E_INVALIDARG;
-  }
-  *acp_result_start = acp_test_start;
-  *acp_result_end = acp_test_start + text_size;
+  const LONG committed_size = static_cast<LONG>(committed_size_);
+  const LONG buffer_size = static_cast<LONG>(string_buffer_.size());
+  *acp_result_start = std::min(std::max(committed_size, acp_test_start),
+                               buffer_size);
+  *acp_result_end = std::min(std::max(committed_size, acp_test_end),
+                             buffer_size);
   return S_OK;
 }
 
@@ -585,6 +586,8 @@ STDMETHODIMP TSFTextStore::RequestSupportedAttrs(
     const TS_ATTRID* attribute_buffer) {
   if (!attribute_buffer)
     return E_INVALIDARG;
+  if (!text_input_client_)
+    return E_FAIL;
   // We support only input scope attribute.
   for (size_t i = 0; i < attribute_buffer_size; ++i) {
     if (IsEqualGUID(GUID_PROP_INPUTSCOPE, attribute_buffer[i]))
@@ -601,6 +604,8 @@ STDMETHODIMP TSFTextStore::RetrieveRequestedAttrs(
     return E_INVALIDARG;
   if (!attribute_buffer)
     return E_INVALIDARG;
+  if (!text_input_client_)
+    return E_UNEXPECTED;
   // We support only input scope attribute.
   *attribute_buffer_copied = 0;
   if (attribute_buffer_size == 0)
@@ -610,7 +615,8 @@ STDMETHODIMP TSFTextStore::RetrieveRequestedAttrs(
   attribute_buffer[0].idAttr = GUID_PROP_INPUTSCOPE;
   attribute_buffer[0].varValue.vt = VT_UNKNOWN;
   attribute_buffer[0].varValue.punkVal = tsf_inputscope::CreateInputScope(
-      text_input_client_->GetTextInputType());
+      text_input_client_->GetTextInputType(),
+      text_input_client_->GetTextInputMode());
   attribute_buffer[0].varValue.punkVal->AddRef();
   *attribute_buffer_copied = 1;
   return S_OK;

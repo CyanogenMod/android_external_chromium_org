@@ -12,10 +12,10 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/values.h"
 #include "chrome/common/chrome_version_info.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_file_util.h"
 #include "chrome/common/extensions/features/feature_channel.h"
-#include "chrome/common/extensions/manifest.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/manifest.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace extensions {
@@ -91,6 +91,7 @@ TEST_F(StorageSchemaManifestHandlerTest, Validate) {
   permissions.AppendString("storage");
   manifest_.Set("permissions", permissions.DeepCopy());
 
+#if defined(ENABLE_CONFIGURATION_POLICY)
   // Absolute path.
   manifest_.SetString("storage.managed_schema", "/etc/passwd");
   EXPECT_FALSE(Validates(""));
@@ -136,6 +137,7 @@ TEST_F(StorageSchemaManifestHandlerTest, Validate) {
       "  \"type\": \"object\","
       "  \"additionalProperties\": {}"
       "}"));
+#endif
 
   // All good now.
   EXPECT_TRUE(Validates(

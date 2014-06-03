@@ -47,7 +47,6 @@ struct InspectorCommandResponse {
 }  // namespace internal
 
 class DevToolsEventListener;
-class Log;
 class Status;
 class SyncWebSocket;
 
@@ -57,8 +56,7 @@ class DevToolsClientImpl : public DevToolsClient {
   DevToolsClientImpl(const SyncWebSocketFactory& factory,
                      const std::string& url,
                      const std::string& id,
-                     const FrontendCloserFunc& frontend_closer_func,
-                     Log* log);
+                     const FrontendCloserFunc& frontend_closer_func);
 
   typedef base::Callback<bool(
       const std::string&,
@@ -70,7 +68,6 @@ class DevToolsClientImpl : public DevToolsClient {
                      const std::string& url,
                      const std::string& id,
                      const FrontendCloserFunc& frontend_closer_func,
-                     Log* log,
                      const ParserFunc& parser_func);
 
   virtual ~DevToolsClientImpl();
@@ -79,6 +76,7 @@ class DevToolsClientImpl : public DevToolsClient {
 
   // Overridden from DevToolsClient:
   virtual const std::string& GetId() OVERRIDE;
+  virtual bool WasCrashed() OVERRIDE;
   virtual Status ConnectIfNecessary() OVERRIDE;
   virtual Status SendCommand(const std::string& method,
                              const base::DictionaryValue& params) OVERRIDE;
@@ -118,7 +116,7 @@ class DevToolsClientImpl : public DevToolsClient {
       const std::string& method,
       const base::DictionaryValue& params,
       scoped_ptr<base::DictionaryValue>* result);
-  Status ProcessNextMessage(int expected_id);
+  Status ProcessNextMessage(int expected_id, const base::TimeDelta& timeout);
   Status ProcessEvent(const internal::InspectorEvent& event);
   Status ProcessCommandResponse(
       const internal::InspectorCommandResponse& response);
@@ -128,9 +126,9 @@ class DevToolsClientImpl : public DevToolsClient {
 
   scoped_ptr<SyncWebSocket> socket_;
   GURL url_;
+  bool crashed_;
   const std::string id_;
   FrontendCloserFunc frontend_closer_func_;
-  Log* log_;
   ParserFunc parser_func_;
   std::list<DevToolsEventListener*> listeners_;
   std::list<DevToolsEventListener*> unnotified_connect_listeners_;

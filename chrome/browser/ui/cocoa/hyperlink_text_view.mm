@@ -31,6 +31,10 @@ const float kTextBaselineShift = -1.0;
   return self;
 }
 
+- (BOOL)acceptsFirstResponder {
+  return acceptsFirstResponder_;
+}
+
 // Never draw the insertion point (otherwise, it shows up without any user
 // action if full keyboard accessibility is enabled).
 - (BOOL)shouldDrawInsertionPoint {
@@ -76,6 +80,9 @@ const float kTextBaselineShift = -1.0;
   // addAttributes for text that has NSLinkAttributeName. Set to nil to allow
   // custom attributes to take precendence.
   [self setLinkTextAttributes:nil];
+  [self setDisplaysLinkToolTips:NO];
+
+  acceptsFirstResponder_ = YES;
 }
 
 - (void)fixupCursor {
@@ -131,6 +138,10 @@ const float kTextBaselineShift = -1.0;
   };
 
   [[self textStorage] addAttributes:attributes range:range];
+}
+
+- (void)setAcceptsFirstResponder:(BOOL)acceptsFirstResponder {
+  acceptsFirstResponder_ = acceptsFirstResponder;
 }
 
 @end

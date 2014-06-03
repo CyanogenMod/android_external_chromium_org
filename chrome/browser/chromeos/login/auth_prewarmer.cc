@@ -11,6 +11,7 @@
 #include "chromeos/network/network_handler.h"
 #include "chromeos/network/network_state.h"
 #include "chromeos/network/network_state_handler.h"
+#include "chromeos/network/shill_property_util.h"
 #include "content/public/browser/browser_thread.h"
 #include "google_apis/gaia/gaia_urls.h"
 #include "url/gurl.h"
@@ -47,9 +48,11 @@ void AuthPrewarmer::PrewarmAuthentication(
     DoPrewarm();
     return;
   }
-  if (!IsNetworkConnected())
-    NetworkHandler::Get()->network_state_handler()->AddObserver(this,
-                                                                FROM_HERE);
+  if (!IsNetworkConnected()) {
+    // DefaultNetworkChanged will get called when a network becomes connected.
+    NetworkHandler::Get()->network_state_handler()
+        ->AddObserver(this, FROM_HERE);
+  }
   if (!GetRequestContext()) {
     registrar_.Add(
         this,
@@ -58,17 +61,14 @@ void AuthPrewarmer::PrewarmAuthentication(
   }
 }
 
-void AuthPrewarmer::NetworkManagerChanged() {
-  if (IsNetworkConnected()) {
-    NetworkHandler::Get()->network_state_handler()->RemoveObserver(this,
-                                                                   FROM_HERE);
-    if (GetRequestContext())
-      DoPrewarm();
-  }
-}
-
 void AuthPrewarmer::DefaultNetworkChanged(const NetworkState* network) {
-  NetworkManagerChanged();
+  if (!network)
+    return;  // Still no default (connected) network.
+
+  NetworkHandler::Get()->network_state_handler()
+      ->RemoveObserver(this, FROM_HERE);
+  if (GetRequestContext())
+    DoPrewarm();
 }
 
 void AuthPrewarmer::Observe(int type,
@@ -92,8 +92,8 @@ void AuthPrewarmer::DoPrewarm() {
   const int kConnectionsNeeded = 1;
 
   std::vector<GURL> urls;
-  urls.push_back(GURL(GaiaUrls::GetInstance()->client_login_url()));
-  urls.push_back(GURL(GaiaUrls::GetInstance()->service_login_url()));
+  urls.push_back(GaiaUrls::GetInstance()->client_login_url());
+  urls.push_back(GaiaUrls::GetInstance()->service_login_url());
 
   for (size_t i = 0; i < urls.size(); ++i) {
     chrome_browser_net::PreconnectOnUIThread(
@@ -112,8 +112,7 @@ void AuthPrewarmer::DoPrewarm() {
 
 bool AuthPrewarmer::IsNetworkConnected() const {
   NetworkStateHandler* nsh = NetworkHandler::Get()->network_state_handler();
-  return (nsh->ConnectedNetworkByType(NetworkStateHandler::kMatchTypeDefault) !=
-          NULL);
+  return (nsh->ConnectedNetworkByType(NetworkTypePattern::Default()) != NULL);
 }
 
 net::URLRequestContextGetter* AuthPrewarmer::GetRequestContext() const {
@@ -121,4 +120,3 @@ net::URLRequestContextGetter* AuthPrewarmer::GetRequestContext() const {
 }
 
 }  // namespace chromeos
-

@@ -83,7 +83,7 @@ class AutocompleteController : public AutocompleteProviderListener {
   void StartZeroSuggest(
       const GURL& url,
       AutocompleteInput::PageClassification page_classification,
-      const string16& permanent_text);
+      const base::string16& permanent_text);
 
   // Cancels any pending zero-suggest fetch.
   void StopZeroSuggest();
@@ -117,8 +117,8 @@ class AutocompleteController : public AutocompleteProviderListener {
   // parameters otherwise not available at initial construction time.  This
   // method should be called from OmniboxEditModel::OpenMatch() before the user
   // navigates to the selected match.
-  GURL GetDestinationURL(const AutocompleteMatch& match,
-                         base::TimeDelta query_formulation_time) const;
+  void UpdateMatchDestinationURL(base::TimeDelta query_formulation_time,
+                                 AutocompleteMatch* match) const;
 
   HistoryURLProvider* history_url_provider() const {
     return history_url_provider_;

@@ -36,11 +36,6 @@ bool IsCreditCardType(ServerFieldType type);
 // Constructs |inputs| from template data for a given |dialog_section|.
 void BuildInputsForSection(DialogSection dialog_section, DetailInputs* inputs);
 
-// Returns the AutofillMetrics::DIALOG_UI_*_EDIT_UI_SHOWN metric corresponding
-// to the |section|.
-AutofillMetrics::DialogUiEvent DialogSectionToUiEditEvent(
-    DialogSection section);
-
 // Returns the AutofillMetrics::DIALOG_UI_*_ITEM_ADDED metric corresponding
 // to the |section|.
 AutofillMetrics::DialogUiEvent DialogSectionToUiItemAddedEvent(
@@ -50,6 +45,10 @@ AutofillMetrics::DialogUiEvent DialogSectionToUiItemAddedEvent(
 // to the |section|.
 AutofillMetrics::DialogUiEvent DialogSectionToUiSelectionChangedEvent(
     DialogSection section);
+
+// We hardcode some values. In particular, we don't yet allow the user to change
+// the country: http://crbug.com/247518
+base::string16 GetHardcodedValueForType(ServerFieldType type);
 
 }  // namespace common
 }  // namespace autofill

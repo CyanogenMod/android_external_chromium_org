@@ -13,9 +13,26 @@ namespace sync_file_system {
 
 namespace {
 
-void IncrementAndAssign(int* counter,
+void DumbTask(SyncStatusCode status,
+              const SyncStatusCallback& callback) {
+  base::MessageLoop::current()->PostTask(
+      FROM_HERE, base::Bind(callback, status));
+}
+
+void IncrementAndAssign(int expected_before_counter,
+                        int* counter,
                         SyncStatusCode* status_out,
                         SyncStatusCode status) {
+  EXPECT_EQ(expected_before_counter, *counter);
+  ++(*counter);
+  *status_out = status;
+}
+
+template <typename T>
+void IncrementAndAssignWithOwnedPointer(T* object,
+                                        int* counter,
+                                        SyncStatusCode* status_out,
+                                        SyncStatusCode status) {
   ++(*counter);
   *status_out = status;
 }
@@ -40,7 +57,8 @@ class TaskManagerClient
     ++maybe_schedule_next_task_count_;
   }
   virtual void NotifyLastOperationStatus(
-      SyncStatusCode last_operation_status) OVERRIDE {
+      SyncStatusCode last_operation_status,
+      bool last_operation_used_network) OVERRIDE {
     last_operation_status_ = last_operation_status;
   }
 
@@ -55,7 +73,8 @@ class TaskManagerClient
   void ScheduleTaskIfIdle(SyncStatusCode status_to_return) {
     task_manager_->ScheduleTaskIfIdle(
         base::Bind(&TaskManagerClient::DoTask, AsWeakPtr(),
-                   status_to_return, true /* idle */));
+                   status_to_return, true /* idle */),
+        SyncStatusCallback());
   }
 
   int maybe_schedule_next_task_count() const {
@@ -85,11 +104,52 @@ class TaskManagerClient
   int idle_task_scheduled_count_;
 
   SyncStatusCode last_operation_status_;
+
+  DISALLOW_COPY_AND_ASSIGN(TaskManagerClient);
+};
+
+class MultihopSyncTask : public SyncTask {
+ public:
+  MultihopSyncTask(bool* task_started,
+                   bool* task_completed)
+      : task_started_(task_started),
+        task_completed_(task_completed),
+        weak_ptr_factory_(this) {
+    DCHECK(task_started_);
+    DCHECK(task_completed_);
+  }
+
+  virtual ~MultihopSyncTask() {}
+
+  virtual void Run(const SyncStatusCallback& callback) OVERRIDE {
+    DCHECK(!*task_started_);
+    *task_started_ = true;
+    base::MessageLoop::current()->PostTask(
+        FROM_HERE, base::Bind(&MultihopSyncTask::CompleteTask,
+                              weak_ptr_factory_.GetWeakPtr(), callback));
+  }
+
+ private:
+  void CompleteTask(const SyncStatusCallback& callback) {
+    DCHECK(*task_started_);
+    DCHECK(!*task_completed_);
+    *task_completed_ = true;
+    callback.Run(SYNC_STATUS_OK);
+  }
+
+  bool* task_started_;
+  bool* task_completed_;
+  base::WeakPtrFactory<MultihopSyncTask> weak_ptr_factory_;
+
+  DISALLOW_COPY_AND_ASSIGN(MultihopSyncTask);
 };
 
 // Arbitrary non-default status values for testing.
-const SyncStatusCode kStatus1 = SYNC_FILE_ERROR_NO_MEMORY;
-const SyncStatusCode kStatus2 = SYNC_DATABASE_ERROR_NOT_FOUND;
+const SyncStatusCode kStatus1 = static_cast<SyncStatusCode>(-1);
+const SyncStatusCode kStatus2 = static_cast<SyncStatusCode>(-2);
+const SyncStatusCode kStatus3 = static_cast<SyncStatusCode>(-3);
+const SyncStatusCode kStatus4 = static_cast<SyncStatusCode>(-4);
+const SyncStatusCode kStatus5 = static_cast<SyncStatusCode>(-5);
 
 }  // namespace
 
@@ -99,7 +159,7 @@ TEST(SyncTaskManagerTest, ScheduleTask) {
   int callback_count = 0;
   SyncStatusCode callback_status = SYNC_STATUS_OK;
 
-  client.ScheduleTask(kStatus1, base::Bind(&IncrementAndAssign,
+  client.ScheduleTask(kStatus1, base::Bind(&IncrementAndAssign, 0,
                                            &callback_count,
                                            &callback_status));
   message_loop.RunUntilIdle();
@@ -119,10 +179,10 @@ TEST(SyncTaskManagerTest, ScheduleTwoTasks) {
   int callback_count = 0;
   SyncStatusCode callback_status = SYNC_STATUS_OK;
 
-  client.ScheduleTask(kStatus1, base::Bind(&IncrementAndAssign,
+  client.ScheduleTask(kStatus1, base::Bind(&IncrementAndAssign, 0,
                                            &callback_count,
                                            &callback_status));
-  client.ScheduleTask(kStatus2, base::Bind(&IncrementAndAssign,
+  client.ScheduleTask(kStatus2, base::Bind(&IncrementAndAssign, 1,
                                            &callback_count,
                                            &callback_status));
   message_loop.RunUntilIdle();
@@ -156,7 +216,7 @@ TEST(SyncTaskManagerTest, ScheduleIdleTaskWhileNotIdle) {
   int callback_count = 0;
   SyncStatusCode callback_status = SYNC_STATUS_OK;
 
-  client.ScheduleTask(kStatus1, base::Bind(&IncrementAndAssign,
+  client.ScheduleTask(kStatus1, base::Bind(&IncrementAndAssign, 0,
                                            &callback_count,
                                            &callback_status));
   client.ScheduleTaskIfIdle(kStatus2);
@@ -170,6 +230,111 @@ TEST(SyncTaskManagerTest, ScheduleIdleTaskWhileNotIdle) {
   EXPECT_EQ(1, client.maybe_schedule_next_task_count());
   EXPECT_EQ(1, client.task_scheduled_count());
   EXPECT_EQ(0, client.idle_task_scheduled_count());
+}
+
+TEST(SyncTaskManagerTest, ScheduleAndCancelSyncTask) {
+  base::MessageLoop message_loop;
+
+  int callback_count = 0;
+  SyncStatusCode status = SYNC_STATUS_UNKNOWN;
+
+  bool task_started = false;
+  bool task_completed = false;
+
+  {
+    SyncTaskManager task_manager((base::WeakPtr<SyncTaskManager::Client>()));
+    task_manager.Initialize(SYNC_STATUS_OK);
+    task_manager.ScheduleSyncTask(
+        scoped_ptr<SyncTask>(new MultihopSyncTask(
+            &task_started, &task_completed)),
+        base::Bind(&IncrementAndAssign, 0, &callback_count, &status));
+  }
+
+  message_loop.RunUntilIdle();
+  EXPECT_EQ(0, callback_count);
+  EXPECT_EQ(SYNC_STATUS_UNKNOWN, status);
+  EXPECT_TRUE(task_started);
+  EXPECT_FALSE(task_completed);
+}
+
+TEST(SyncTaskManagerTest, ScheduleAndCancelTask) {
+  base::MessageLoop message_loop;
+
+  int callback_count = 0;
+  SyncStatusCode status = SYNC_STATUS_UNKNOWN;
+
+  bool task_started = false;
+  bool task_completed = false;
+
+  {
+    SyncTaskManager task_manager((base::WeakPtr<SyncTaskManager::Client>()));
+    task_manager.Initialize(SYNC_STATUS_OK);
+    MultihopSyncTask* task = new MultihopSyncTask(
+        &task_started, &task_completed);
+    task_manager.ScheduleTask(
+        base::Bind(&MultihopSyncTask::Run, base::Unretained(task)),
+        base::Bind(&IncrementAndAssignWithOwnedPointer<MultihopSyncTask>,
+                   base::Owned(task), &callback_count, &status));
+  }
+
+  message_loop.RunUntilIdle();
+  EXPECT_EQ(0, callback_count);
+  EXPECT_EQ(SYNC_STATUS_UNKNOWN, status);
+  EXPECT_TRUE(task_started);
+  EXPECT_FALSE(task_completed);
+}
+
+TEST(SyncTaskManagerTest, ScheduleTaskAtPriority) {
+  base::MessageLoop message_loop;
+  SyncTaskManager task_manager((base::WeakPtr<SyncTaskManager::Client>()));
+  task_manager.Initialize(SYNC_STATUS_OK);
+
+  int callback_count = 0;
+  SyncStatusCode callback_status1 = SYNC_STATUS_OK;
+  SyncStatusCode callback_status2 = SYNC_STATUS_OK;
+  SyncStatusCode callback_status3 = SYNC_STATUS_OK;
+  SyncStatusCode callback_status4 = SYNC_STATUS_OK;
+  SyncStatusCode callback_status5 = SYNC_STATUS_OK;
+
+  // This will run first even if its priority is low, since there're no
+  // pending tasks.
+  task_manager.ScheduleTaskAtPriority(
+      base::Bind(&DumbTask, kStatus1),
+      SyncTaskManager::PRIORITY_LOW,
+      base::Bind(&IncrementAndAssign, 0, &callback_count, &callback_status1));
+
+  // This runs last (expected counter == 4).
+  task_manager.ScheduleTaskAtPriority(
+      base::Bind(&DumbTask, kStatus2),
+      SyncTaskManager::PRIORITY_LOW,
+      base::Bind(&IncrementAndAssign, 4, &callback_count, &callback_status2));
+
+  // This runs second (expected counter == 1).
+  task_manager.ScheduleTaskAtPriority(
+      base::Bind(&DumbTask, kStatus3),
+      SyncTaskManager::PRIORITY_HIGH,
+      base::Bind(&IncrementAndAssign, 1, &callback_count, &callback_status3));
+
+  // This runs fourth (expected counter == 3).
+  task_manager.ScheduleTaskAtPriority(
+      base::Bind(&DumbTask, kStatus4),
+      SyncTaskManager::PRIORITY_MED,
+      base::Bind(&IncrementAndAssign, 3, &callback_count, &callback_status4));
+
+  // This runs third (expected counter == 2).
+  task_manager.ScheduleTaskAtPriority(
+      base::Bind(&DumbTask, kStatus5),
+      SyncTaskManager::PRIORITY_HIGH,
+      base::Bind(&IncrementAndAssign, 2, &callback_count, &callback_status5));
+
+  message_loop.RunUntilIdle();
+
+  EXPECT_EQ(kStatus1, callback_status1);
+  EXPECT_EQ(kStatus2, callback_status2);
+  EXPECT_EQ(kStatus3, callback_status3);
+  EXPECT_EQ(kStatus4, callback_status4);
+  EXPECT_EQ(kStatus5, callback_status5);
+  EXPECT_EQ(5, callback_count);
 }
 
 }  // namespace sync_file_system

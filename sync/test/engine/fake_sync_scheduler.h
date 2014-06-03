@@ -20,7 +20,7 @@ class FakeSyncScheduler : public SyncScheduler {
   virtual ~FakeSyncScheduler();
 
   virtual void Start(Mode mode) OVERRIDE;
-  virtual void RequestStop() OVERRIDE;
+  virtual void Stop() OVERRIDE;
   virtual void ScheduleLocalNudge(
       const base::TimeDelta& desired_delay,
       ModelTypeSet types,
@@ -31,9 +31,9 @@ class FakeSyncScheduler : public SyncScheduler {
       const tracked_objects::Location& nudge_location) OVERRIDE;
   virtual void ScheduleInvalidationNudge(
       const base::TimeDelta& desired_delay,
-      const ModelTypeInvalidationMap& invalidation_map,
+      const ObjectIdInvalidationMap& invalidation_map,
       const tracked_objects::Location& nudge_location) OVERRIDE;
-  virtual bool ScheduleConfiguration(
+  virtual void ScheduleConfiguration(
       const ConfigurationParams& params) OVERRIDE;
   virtual void SetNotificationsEnabled(bool notifications_enabled) OVERRIDE;
 
@@ -55,7 +55,6 @@ class FakeSyncScheduler : public SyncScheduler {
   virtual void OnReceivedSessionsCommitDelay(
       const base::TimeDelta& new_delay) OVERRIDE;
   virtual void OnReceivedClientInvalidationHintBufferSize(int size) OVERRIDE;
-  virtual void OnShouldStopSyncingPermanently() OVERRIDE;
   virtual void OnSyncProtocolError(
       const sessions::SyncSessionSnapshot& snapshot) OVERRIDE;
 };

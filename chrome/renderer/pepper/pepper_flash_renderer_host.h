@@ -29,8 +29,6 @@ namespace content {
 class RendererPpapiHost;
 }
 
-namespace chrome {
-
 class PepperFlashRendererHost : public ppapi::host::ResourceHost {
  public:
   PepperFlashRendererHost(content::RendererPpapiHost* host,
@@ -59,16 +57,14 @@ class PepperFlashRendererHost : public ppapi::host::ResourceHost {
                           const PP_Rect& rect);
   int32_t OnInvokePrinting(ppapi::host::HostMessageContext* host_context);
 
-  base::WeakPtrFactory<PepperFlashRendererHost> weak_factory_;
   // A stack of ReplyMessageContexts to track Navigate() calls which have not
   // yet been replied to.
   std::vector<ppapi::host::ReplyMessageContext> navigate_replies_;
 
   content::RendererPpapiHost* host_;
+  base::WeakPtrFactory<PepperFlashRendererHost> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(PepperFlashRendererHost);
 };
-
-}  // namespace chrome
 
 #endif  // CHROME_RENDERER_PEPPER_PEPPER_FLASH_RENDERER_HOST_H_

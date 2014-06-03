@@ -2,8 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import json
-
+from metrics import startup_metric
 from telemetry.page import page_measurement
 
 class Startup(page_measurement.PageMeasurement):
@@ -15,15 +14,8 @@ class Startup(page_measurement.PageMeasurement):
   tests, you should repeat the page set to ensure it's cached.
   """
 
-  HISTOGRAMS_TO_RECORD = {
-    'messageloop_start_time' :
-        'Startup.BrowserMessageLoopStartTimeFromMainEntry',
-    'window_display_time' : 'Startup.BrowserWindowDisplay',
-    'open_tabs_time' : 'Startup.BrowserOpenTabs'}
-
   def __init__(self):
     super(Startup, self).__init__(needs_browser_restart_after_each_run=True)
-    self._cold = False
 
   def AddCommandLineOptions(self, parser):
     parser.add_option('--cold', action='store_true',
@@ -36,39 +28,19 @@ class Startup(page_measurement.PageMeasurement):
     # or --cold is explicitly specified.
     # assert options.warm != options.cold, \
     #     "You must specify either --warm or --cold"
-    self._cold = options.cold
-
-    if self._cold:
-      options.clear_sytem_cache_for_browser_and_profile_on_start = True
+    if options.cold:
+      browser_options = options.browser_options
+      browser_options.clear_sytem_cache_for_browser_and_profile_on_start = True
     else:
       self.discard_first_result = True
 
-    options.AppendExtraBrowserArg('--enable-stats-collection-bindings')
+    options.AppendExtraBrowserArgs([
+        '--enable-stats-collection-bindings'
+    ])
 
-    # Old commandline flags used for reference builds.
-    options.AppendExtraBrowserArg('--dom-automation')
-    options.AppendExtraBrowserArg(
-          '--reduce-security-for-dom-automation-tests')
+  def RunNavigateSteps(self, page, tab):
+    # Overriden so that no page navigation occurs - startup to the NTP.
+    pass
 
   def MeasurePage(self, page, tab, results):
-    # TODO(jeremy): Remove references to
-    # domAutomationController.getBrowserHistogram when we update the reference
-    # builds.
-    get_histogram_js = ('(window.statsCollectionController ?'
-        'statsCollectionController :'
-        'domAutomationController).getBrowserHistogram("%s")')
-
-    for display_name, histogram_name in self.HISTOGRAMS_TO_RECORD.iteritems():
-      result = tab.EvaluateJavaScript(get_histogram_js % histogram_name)
-      result = json.loads(result)
-      measured_time = 0
-
-      if 'sum' in result:
-        # For all the histograms logged here, there's a single entry so sum
-        # is the exact value for that entry.
-        measured_time = result['sum']
-      elif 'buckets' in result:
-        measured_time = \
-            (result['buckets'][0]['high'] + result['buckets'][0]['low']) / 2
-
-      results.Add(display_name, 'ms', measured_time)
+    startup_metric.StartupMetric().AddResults(tab, results)

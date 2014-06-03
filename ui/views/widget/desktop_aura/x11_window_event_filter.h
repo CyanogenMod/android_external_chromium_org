@@ -11,8 +11,9 @@
 
 #include "base/compiler_specific.h"
 #include "base/message_loop/message_loop.h"
-#include "ui/base/events/event_handler.h"
-#include "ui/base/x/x11_atom_cache.h"
+#include "ui/events/event_handler.h"
+#include "ui/gfx/x/x11_atom_cache.h"
+#include "ui/gfx/x/x11_types.h"
 #include "ui/views/views_export.h"
 
 namespace aura {
@@ -25,14 +26,14 @@ class Point;
 }
 
 namespace views {
-class DesktopActivationClient;
+class DesktopRootWindowHost;
 class NativeWidgetAura;
 
 // An EventFilter that sets properties on X11 windows.
 class VIEWS_EXPORT X11WindowEventFilter : public ui::EventHandler {
  public:
-  explicit X11WindowEventFilter(aura::RootWindow* root_window,
-                                DesktopActivationClient* activation_client);
+  X11WindowEventFilter(aura::RootWindow* root_window,
+                       DesktopRootWindowHost* root_window_host);
   virtual ~X11WindowEventFilter();
 
   // Changes whether borders are shown on this |root_window|.
@@ -47,16 +48,16 @@ class VIEWS_EXPORT X11WindowEventFilter : public ui::EventHandler {
   bool DispatchHostWindowDragMovement(int hittest,
                                       const gfx::Point& screen_location);
 
-  DesktopActivationClient* activation_client_;
-
   // The display and the native X window hosting the root window.
-  Display* xdisplay_;
+  XDisplay* xdisplay_;
   ::Window xwindow_;
 
   // The native root window.
   ::Window x_root_window_;
 
   ui::X11AtomCache atom_cache_;
+
+  DesktopRootWindowHost* root_window_host_;
 
   // True if |xwindow_| is the current _NET_ACTIVE_WINDOW.
   bool is_active_;

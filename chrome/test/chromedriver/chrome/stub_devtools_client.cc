@@ -9,12 +9,16 @@
 
 StubDevToolsClient::StubDevToolsClient() : id_("stub-id") {}
 
-StubDevToolsClient::StubDevToolsClient(const std::string id) : id_(id) {}
+StubDevToolsClient::StubDevToolsClient(const std::string& id) : id_(id) {}
 
 StubDevToolsClient::~StubDevToolsClient() {}
 
 const std::string& StubDevToolsClient::GetId() {
   return id_;
+}
+
+bool StubDevToolsClient::WasCrashed() {
+  return false;
 }
 
 Status StubDevToolsClient::ConnectIfNecessary() {

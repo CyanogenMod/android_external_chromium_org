@@ -66,7 +66,7 @@
 #include "content/public/browser/download_item.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/render_view_host.h"
-#include "content/public/browser/trace_controller.h"
+#include "content/public/browser/tracing_controller.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
 #include "net/proxy/proxy_config_service_fixed.h"
@@ -80,13 +80,13 @@
 #include "chromeos/login/login_state.h"
 #endif  // defined(OS_CHROMEOS)
 
-using WebKit::WebFindOptions;
+using blink::WebFindOptions;
 using base::Time;
 using content::BrowserThread;
 using content::DownloadItem;
 using content::NavigationController;
 using content::RenderViewHost;
-using content::TraceController;
+using content::TracingController;
 using content::WebContents;
 
 namespace {
@@ -158,7 +158,6 @@ AutomationProvider::AutomationProvider(Profile* profile)
       use_initial_load_observers_(true),
       is_connected_(false),
       initial_tab_loads_complete_(false),
-      network_library_initialized_(true),
       login_webui_ready_(true) {
   TRACE_EVENT_BEGIN_ETW("AutomationProvider::AutomationProvider", 0, "");
 
@@ -222,13 +221,6 @@ bool AutomationProvider::InitializeChannel(const std::string& channel_id) {
       login_webui_ready_ = false;
       new OOBEWebuiReadyObserver(this);
     }
-
-    // Wait for the network manager to initialize.
-    // The observer will delete itself when done.
-    network_library_initialized_ = false;
-    NetworkManagerInitObserver* observer = new NetworkManagerInitObserver(this);
-    if (!observer->Init())
-      delete observer;
   }
 #endif
 
@@ -264,12 +256,6 @@ void AutomationProvider::OnInitialTabLoadsComplete() {
   SendInitialLoadMessage();
 }
 
-void AutomationProvider::OnNetworkLibraryInit() {
-  network_library_initialized_ = true;
-  VLOG(2) << "OnNetworkLibraryInit";
-  SendInitialLoadMessage();
-}
-
 void AutomationProvider::OnOOBEWebuiReady() {
   login_webui_ready_ = true;
   VLOG(2) << "OnOOBEWebuiReady";
@@ -277,8 +263,7 @@ void AutomationProvider::OnOOBEWebuiReady() {
 }
 
 void AutomationProvider::SendInitialLoadMessage() {
-  if (is_connected_ && initial_tab_loads_complete_ &&
-      network_library_initialized_ && login_webui_ready_) {
+  if (is_connected_ && initial_tab_loads_complete_ && login_webui_ready_) {
     VLOG(2) << "Initial loads complete; sending initial loads message.";
     Send(new AutomationMsg_InitialLoadsComplete());
   }
@@ -287,7 +272,6 @@ void AutomationProvider::SendInitialLoadMessage() {
 void AutomationProvider::DisableInitialLoadObservers() {
   use_initial_load_observers_ = false;
   OnInitialTabLoadsComplete();
-  OnNetworkLibraryInit();
   OnOOBEWebuiReady();
 }
 
@@ -392,20 +376,6 @@ void AutomationProvider::OnChannelConnected(int pid) {
   SendInitialLoadMessage();
 }
 
-void AutomationProvider::OnEndTracingComplete() {
-  IPC::Message* reply_message = tracing_data_.reply_message.release();
-  if (reply_message) {
-    AutomationMsg_EndTracing::WriteReplyParams(
-        reply_message, tracing_data_.trace_output.size(), true);
-    Send(reply_message);
-  }
-}
-
-void AutomationProvider::OnTraceDataCollected(
-    const scoped_refptr<base::RefCountedString>& trace_fragment) {
-  tracing_data_.trace_output.push_back(trace_fragment->data());
-}
-
 bool AutomationProvider::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
   bool deserialize_success = true;
@@ -428,7 +398,6 @@ bool AutomationProvider::OnMessageReceived(const IPC::Message& message) {
                         JavaScriptStressTestControl)
     IPC_MESSAGE_HANDLER(AutomationMsg_BeginTracing, BeginTracing)
     IPC_MESSAGE_HANDLER_DELAY_REPLY(AutomationMsg_EndTracing, EndTracing)
-    IPC_MESSAGE_HANDLER(AutomationMsg_GetTracingOutput, GetTracingOutput)
 #if defined(OS_WIN)
     // These are for use with external tabs.
     IPC_MESSAGE_HANDLER(AutomationMsg_CreateExternalTab, CreateExternalTab)
@@ -543,7 +512,7 @@ void AutomationProvider::HandleFindRequest(
 void AutomationProvider::SendFindRequest(
     WebContents* web_contents,
     bool with_json,
-    const string16& search_string,
+    const base::string16& search_string,
     bool forward,
     bool match_case,
     bool find_next,
@@ -614,7 +583,7 @@ void AutomationProvider::OverrideEncoding(int tab_handle,
       }
     } else {
       // There is no UI, Chrome probably runs as Chrome-Frame mode.
-      // Try to get WebContents and call its override_encoding method.
+      // Try to get WebContents and call its SetOverrideEncoding method.
       WebContents* contents = nav->GetWebContents();
       if (!contents)
         return;
@@ -738,39 +707,28 @@ void AutomationProvider::JavaScriptStressTestControl(int tab_handle,
 
 void AutomationProvider::BeginTracing(const std::string& category_patterns,
                                       bool* success) {
-  tracing_data_.trace_output.clear();
-  *success = TraceController::GetInstance()->BeginTracing(
-      this,
-      category_patterns,
-      base::debug::TraceLog::RECORD_UNTIL_FULL);
+  *success = TracingController::GetInstance()->EnableRecording(
+      category_patterns, TracingController::DEFAULT_OPTIONS,
+      TracingController::EnableRecordingDoneCallback());
 }
 
 void AutomationProvider::EndTracing(IPC::Message* reply_message) {
-  bool success = false;
-  if (!tracing_data_.reply_message.get())
-    success = TraceController::GetInstance()->EndTracingAsync(this);
-  if (success) {
-    // Defer EndTracing reply until TraceController calls us back with all the
-    // events.
-    tracing_data_.reply_message.reset(reply_message);
-  } else {
+  base::FilePath path;
+  if (!TracingController::GetInstance()->DisableRecording(
+      path, base::Bind(&AutomationProvider::OnTraceDataCollected, this,
+                       reply_message))) {
     // If failed to call EndTracingAsync, need to reply with failure now.
-    AutomationMsg_EndTracing::WriteReplyParams(reply_message, size_t(0), false);
+    AutomationMsg_EndTracing::WriteReplyParams(reply_message, path, false);
     Send(reply_message);
   }
+  // Otherwise defer EndTracing reply until TraceController calls us back.
 }
 
-void AutomationProvider::GetTracingOutput(std::string* chunk,
-                                          bool* success) {
-  // The JSON data is sent back to the test in chunks, because IPC sends will
-  // fail if they are too large.
-  if (tracing_data_.trace_output.empty()) {
-    *chunk = "";
-    *success = false;
-  } else {
-    *chunk = tracing_data_.trace_output.front();
-    tracing_data_.trace_output.pop_front();
-    *success = true;
+void AutomationProvider::OnTraceDataCollected(IPC::Message* reply_message,
+                                              const base::FilePath& path) {
+  if (reply_message) {
+    AutomationMsg_EndTracing::WriteReplyParams(reply_message, path, true);
+    Send(reply_message);
   }
 }
 

@@ -9,8 +9,8 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/common/url_constants.h"
+#include "components/autofill/content/common/autofill_messages.h"
 #include "components/autofill/core/browser/password_generator.h"
-#include "components/autofill/core/common/autofill_messages.h"
 #include "components/autofill/core/common/password_generation_util.h"
 #include "content/public/browser/page_navigator.h"
 #include "content/public/browser/render_view_host.h"
@@ -119,7 +119,7 @@ gfx::Size TextfieldWrapper::GetImageSize() const {
 }  // namespace
 
 PasswordGenerationBubbleView::PasswordGenerationBubbleView(
-    const content::PasswordForm& form,
+    const autofill::PasswordForm& form,
     const gfx::Rect& anchor_rect,
     views::View* anchor_view,
     content::RenderViewHost* render_view_host,
@@ -231,8 +231,9 @@ void PasswordGenerationBubbleView::ButtonPressed(views::Button* sender,
   }
 }
 
-void PasswordGenerationBubbleView::ContentsChanged(views::Textfield* sender,
-                                                   const string16& contents) {
+void PasswordGenerationBubbleView::ContentsChanged(
+    views::Textfield* sender,
+    const base::string16& contents) {
   actions_.password_edited = true;
 }
 

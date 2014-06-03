@@ -21,31 +21,14 @@
 
 namespace ash {
 
-class AccessibilityObserver;
-class AudioObserver;
-class BluetoothObserver;
-class BrightnessObserver;
-class CapsLockObserver;
-class ClockObserver;
-class DriveObserver;
-class IMEObserver;
-class LocaleObserver;
-class LogoutButtonObserver;
 class SystemTrayDelegate;
-class UpdateObserver;
-class UserObserver;
-#if defined(OS_CHROMEOS)
-class NetworkObserver;
-class SmsObserver;
-#endif
-
 class SystemTrayItem;
 
 namespace internal {
 class SystemBubbleWrapper;
-class SystemTrayContainer;
 class TrayAccessibility;
-class TrayGestureHandler;
+class TrayDate;
+class TrayUser;
 }
 
 // There are different methods for creating bubble views.
@@ -73,8 +56,14 @@ class ASH_EXPORT SystemTray : public internal::TrayBackgroundView,
   // Returns all tray items that has been added to system tray.
   const std::vector<SystemTrayItem*>& GetTrayItems() const;
 
+  // Returns all tray user items that were added to the system tray.
+  const std::vector<internal::TrayUser*>& GetTrayUserItems() const;
+
   // Shows the default view of all items.
   void ShowDefaultView(BubbleCreationType creation_type);
+
+  // Shows default view that ingnores outside clicks and activation loss.
+  void ShowPersistentDefaultView();
 
   // Shows details of a particular item. If |close_delay_in_seconds| is
   // non-zero, then the view is automatically closed after the specified time.
@@ -130,6 +119,10 @@ class ASH_EXPORT SystemTray : public internal::TrayBackgroundView,
   // Closes system bubble and returns true if it did exist.
   bool CloseSystemBubble() const;
 
+  // Returns view for help button if default view is shown. Returns NULL
+  // otherwise.
+  views::View* GetHelpButtonView() const;
+
   // Accessors for testing.
 
   // Returns true if the bubble exists.
@@ -139,6 +132,7 @@ class ASH_EXPORT SystemTray : public internal::TrayBackgroundView,
   virtual void SetShelfAlignment(ShelfAlignment alignment) OVERRIDE;
   virtual void AnchorUpdated() OVERRIDE;
   virtual base::string16 GetAccessibleNameForTray() OVERRIDE;
+  virtual void BubbleResized(const views::TrayBubbleView* bubble_view) OVERRIDE;
   virtual void HideBubbleWithView(
       const views::TrayBubbleView* bubble_view) OVERRIDE;
   virtual bool ClickedOutsideBubble() OVERRIDE;
@@ -157,8 +151,12 @@ class ASH_EXPORT SystemTray : public internal::TrayBackgroundView,
     return tray_accessibility_;
   }
 
-  // Overridden from TrayBackgroundView.
-  virtual bool IsPressed() OVERRIDE;
+  // Get the tray item view (or NULL) for a given |tray_item| in a unit test.
+  views::View* GetTrayItemViewForTest(SystemTrayItem* tray_item);
+
+  // Add a tray user item for testing purposes. Note: The passed |tray_user|
+  // will be owned by the SystemTray after the call.
+  void AddTrayUserItemForTest(internal::TrayUser* tray_user);
 
  private:
   // Creates the default set of items for the sytem tray.
@@ -176,7 +174,8 @@ class ASH_EXPORT SystemTray : public internal::TrayBackgroundView,
 
   // Shows the default view and its arrow position is shifted by |x_offset|.
   void ShowDefaultViewWithOffset(BubbleCreationType creation_type,
-                                 int x_offset);
+                                 int x_offset,
+                                 bool persistent);
 
   // Constructs or re-constructs |system_bubble_| and populates it with |items|.
   // Specify |change_tray_status| to true if want to change the tray background
@@ -185,7 +184,8 @@ class ASH_EXPORT SystemTray : public internal::TrayBackgroundView,
                  bool details,
                  bool activate,
                  BubbleCreationType creation_type,
-                 int x_offset);
+                 int x_offset,
+                 bool persistent);
 
   // Constructs or re-constructs |notification_bubble_| and populates it with
   // |notification_items_|, or destroys it if there are no notification items.
@@ -195,6 +195,9 @@ class ASH_EXPORT SystemTray : public internal::TrayBackgroundView,
   // notification tray according to the current status.
   void UpdateWebNotifications();
 
+  // Deactivate the system tray in the shelf if it was active before.
+  void CloseSystemBubbleAndDeactivateSystemTray();
+
   const ScopedVector<SystemTrayItem>& items() const { return items_; }
 
   // Overridden from internal::ActionableView.
@@ -202,6 +205,10 @@ class ASH_EXPORT SystemTray : public internal::TrayBackgroundView,
 
   // Owned items.
   ScopedVector<SystemTrayItem> items_;
+
+  // User items - note, this is a subset of the |items_| list. Note that no
+  // item in this list needs to be deleted.
+  std::vector<internal::TrayUser*> user_items_;
 
   // Pointers to members of |items_|.
   SystemTrayItem* detailed_item_;
@@ -230,6 +237,7 @@ class ASH_EXPORT SystemTray : public internal::TrayBackgroundView,
   bool full_system_tray_menu_;
 
   internal::TrayAccessibility* tray_accessibility_;  // not owned
+  internal::TrayDate* tray_date_;
 
   DISALLOW_COPY_AND_ASSIGN(SystemTray);
 };

@@ -7,11 +7,10 @@
 
 #include "base/memory/shared_memory.h"
 #include "build/build_config.h"
-#include "ui/base/ui_export.h"
+#include "ui/gfx/gfx_export.h"
 
 #if defined(OS_ANDROID)
-#include "base/memory/ref_counted.h"
-#include "ui/gfx/gpu_memory_handle.h"
+#include <third_party/khronos/EGL/egl.h>
 #endif
 
 namespace gfx {
@@ -19,7 +18,8 @@ namespace gfx {
 enum GpuMemoryBufferType {
   EMPTY_BUFFER,
   SHARED_MEMORY_BUFFER,
-  EGL_CLIENT_BUFFER
+  EGL_CLIENT_BUFFER,
+  IO_SURFACE_BUFFER
 };
 
 struct GpuMemoryBufferHandle {
@@ -27,7 +27,10 @@ struct GpuMemoryBufferHandle {
       : type(EMPTY_BUFFER),
         handle(base::SharedMemory::NULLHandle())
 #if defined(OS_ANDROID)
-        , native_buffer_handle()
+        , native_buffer(NULL)
+#endif
+#if defined(OS_MACOSX)
+        , io_surface_id(0)
 #endif
   {
   }
@@ -35,8 +38,12 @@ struct GpuMemoryBufferHandle {
   GpuMemoryBufferType type;
   base::SharedMemoryHandle handle;
 #if defined(OS_ANDROID)
-  scoped_refptr<GpuMemoryHandle> native_buffer_handle;
+  EGLClientBuffer native_buffer;
 #endif
+#if defined(OS_MACOSX)
+  uint32 io_surface_id;
+#endif
+
 };
 
 // Interface for creating and accessing a zero-copy GPU memory buffer.
@@ -48,7 +55,7 @@ struct GpuMemoryBufferHandle {
 // This interface is thread-safe. However, multiple threads mapping
 // a buffer for Write or ReadOrWrite simultaneously may result in undefined
 // behavior and is not allowed.
-class UI_EXPORT GpuMemoryBuffer {
+class GFX_EXPORT GpuMemoryBuffer {
  public:
   enum AccessMode {
     READ_ONLY,

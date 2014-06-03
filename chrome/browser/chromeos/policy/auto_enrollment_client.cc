@@ -18,10 +18,17 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/policy/device_cloud_policy_manager_chromeos.h"
 #include "chrome/browser/policy/browser_policy_connector.h"
-#include "chrome/browser/policy/cloud/device_management_service.h"
 #include "chrome/common/pref_names.h"
 #include "chromeos/chromeos_switches.h"
+#include "components/policy/core/common/cloud/device_management_service.h"
+#include "components/policy/core/common/cloud/system_policy_request_context.h"
+#include "content/public/browser/browser_thread.h"
+#include "content/public/common/content_client.h"
 #include "crypto/sha2.h"
+#include "net/url_request/url_request_context_getter.h"
+#include "url/gurl.h"
+
+using content::BrowserThread;
 
 namespace em = enterprise_management;
 
@@ -79,12 +86,14 @@ int NextPowerOf2(int64 value) {
 
 namespace policy {
 
-AutoEnrollmentClient::AutoEnrollmentClient(const base::Closure& callback,
-                                           DeviceManagementService* service,
-                                           PrefService* local_state,
-                                           const std::string& serial_number,
-                                           int power_initial,
-                                           int power_limit)
+AutoEnrollmentClient::AutoEnrollmentClient(
+    const base::Closure& callback,
+    DeviceManagementService* service,
+    PrefService* local_state,
+    scoped_refptr<net::URLRequestContextGetter> system_request_context,
+    const std::string& serial_number,
+    int power_initial,
+    int power_limit)
     : completion_callback_(callback),
       should_auto_enroll_(false),
       device_id_(base::GenerateGUID()),
@@ -93,6 +102,11 @@ AutoEnrollmentClient::AutoEnrollmentClient(const base::Closure& callback,
       requests_sent_(0),
       device_management_service_(service),
       local_state_(local_state) {
+  request_context_ = new SystemPolicyRequestContext(
+      system_request_context,
+      content::GetUserAgent(
+          GURL(device_management_service_->GetServerUrl())));
+
   DCHECK_LE(power_initial_, power_limit_);
   DCHECK(!completion_callback_.is_null());
   if (!serial_number.empty())
@@ -127,11 +141,10 @@ AutoEnrollmentClient* AutoEnrollmentClient::Create(
   if (IsDisabled()) {
     VLOG(1) << "Auto-enrollment is disabled";
   } else {
-    std::string url = BrowserPolicyConnector::GetDeviceManagementUrl();
-    if (!url.empty()) {
-      service = new DeviceManagementService(url);
-      service->ScheduleInitialization(0);
-    }
+    BrowserPolicyConnector* connector =
+        g_browser_process->browser_policy_connector();
+    service = connector->device_management_service();
+    service->ScheduleInitialization(0);
   }
 
   int power_initial = GetSanitizedArg(
@@ -148,6 +161,7 @@ AutoEnrollmentClient* AutoEnrollmentClient::Create(
       completion_callback,
       service,
       g_browser_process->local_state(),
+      g_browser_process->system_request_context(),
       DeviceCloudPolicyManagerChromeOS::GetMachineID(),
       power_initial,
       power_limit);
@@ -259,7 +273,8 @@ void AutoEnrollmentClient::SendRequest(int power) {
 
   request_job_.reset(
       device_management_service_->CreateJob(
-          DeviceManagementRequestJob::TYPE_AUTO_ENROLLMENT));
+          DeviceManagementRequestJob::TYPE_AUTO_ENROLLMENT,
+          request_context_.get()));
   request_job_->SetClientID(device_id_);
   em::DeviceAutoEnrollmentRequest* request =
       request_job_->GetRequest()->mutable_auto_enrollment_request();
@@ -323,8 +338,8 @@ void AutoEnrollmentClient::OnRequestCompletion(
     local_state_->SetBoolean(prefs::kShouldAutoEnroll, should_auto_enroll_);
     local_state_->SetInteger(prefs::kAutoEnrollmentPowerLimit, power_limit_);
     local_state_->CommitPendingWrite();
-    LOG(INFO) << "Auto enrollment complete, should_auto_enroll = "
-              << should_auto_enroll_;
+    VLOG(1) << "Auto enrollment complete, should_auto_enroll = "
+            << should_auto_enroll_;
   }
 
   // Auto-enrollment done.

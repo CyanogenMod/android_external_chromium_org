@@ -6,9 +6,9 @@
 #define CONTENT_BROWSER_RENDERER_HOST_P2P_SOCKET_HOST_H_
 
 #include "content/common/content_export.h"
-#include "content/common/p2p_sockets.h"
-
+#include "content/public/common/p2p_socket_type.h"
 #include "net/base/ip_endpoint.h"
+#include "net/udp/datagram_socket.h"
 
 namespace IPC {
 class Sender;
@@ -19,6 +19,7 @@ class URLRequestContextGetter;
 }
 
 namespace content {
+class P2PMessageThrottler;
 
 // Base class for P2P sockets.
 class CONTENT_EXPORT P2PSocketHost {
@@ -27,7 +28,8 @@ class CONTENT_EXPORT P2PSocketHost {
   // Creates P2PSocketHost of the specific type.
   static P2PSocketHost* Create(IPC::Sender* message_sender,
                                int id, P2PSocketType type,
-                               net::URLRequestContextGetter* url_context);
+                               net::URLRequestContextGetter* url_context,
+                               P2PMessageThrottler* throttler);
 
   virtual ~P2PSocketHost();
 
@@ -37,7 +39,9 @@ class CONTENT_EXPORT P2PSocketHost {
 
   // Sends |data| on the socket to |to|.
   virtual void Send(const net::IPEndPoint& to,
-                    const std::vector<char>& data) = 0;
+                    const std::vector<char>& data,
+                    net::DiffServCodePoint dscp,
+                    uint64 packet_id) = 0;
 
   virtual P2PSocketHost* AcceptIncomingTcpConnection(
       const net::IPEndPoint& remote_address, int id) = 0;
@@ -45,6 +49,8 @@ class CONTENT_EXPORT P2PSocketHost {
  protected:
   friend class P2PSocketHostTcpTestBase;
 
+  // TODO(mallinath) - Remove this below enum and use one defined in
+  // libjingle/souce/talk/p2p/base/stun.h
   enum StunMessageType {
     STUN_BINDING_REQUEST = 0x0001,
     STUN_BINDING_RESPONSE = 0x0101,
@@ -58,7 +64,15 @@ class CONTENT_EXPORT P2PSocketHost {
     STUN_SEND_REQUEST = 0x0004,
     STUN_SEND_RESPONSE = 0x0104,
     STUN_SEND_ERROR_RESPONSE = 0x0114,
-    STUN_DATA_INDICATION = 0x0115
+    STUN_DATA_INDICATION = 0x0115,
+    TURN_SEND_INDICATION = 0x0016,
+    TURN_DATA_INDICATION = 0x0017,
+    TURN_CREATE_PERMISSION_REQUEST = 0x0008,
+    TURN_CREATE_PERMISSION_RESPONSE = 0x0108,
+    TURN_CREATE_PERMISSION_ERROR_RESPONSE = 0x0118,
+    TURN_CHANNEL_BIND_REQUEST = 0x0009,
+    TURN_CHANNEL_BIND_RESPONSE = 0x0109,
+    TURN_CHANNEL_BIND_ERROR_RESPONSE = 0x0119,
   };
 
   enum State {

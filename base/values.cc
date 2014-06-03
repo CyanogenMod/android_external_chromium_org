@@ -4,12 +4,15 @@
 
 #include "base/values.h"
 
+#include <string.h>
+
 #include <algorithm>
 #include <ostream>
 
 #include "base/float_util.h"
 #include "base/json/json_writer.h"
 #include "base/logging.h"
+#include "base/move.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 
@@ -459,13 +462,11 @@ void DictionaryValue::SetStringWithoutPathExpansion(
   SetWithoutPathExpansion(path, CreateStringValue(in_value));
 }
 
-bool DictionaryValue::Get(
-    const std::string& path, const Value** out_value) const {
+bool DictionaryValue::Get(const std::string& path,
+                          const Value** out_value) const {
   DCHECK(IsStringUTF8(path));
-//  LOG(WARNING) << "\n1\n";
   std::string current_path(path);
   const DictionaryValue* current_dictionary = this;
-//  LOG(WARNING) << "\n2\n";
   for (size_t delimiter_position = current_path.find('.');
        delimiter_position != std::string::npos;
        delimiter_position = current_path.find('.')) {
@@ -477,7 +478,6 @@ bool DictionaryValue::Get(
     current_dictionary = child_dictionary;
     current_path.erase(0, delimiter_position + 1);
   }
-//  LOG(WARNING) << "\n3\n";
 
   return current_dictionary->GetWithoutPathExpansion(current_path, out_value);
 }
@@ -752,6 +752,26 @@ bool DictionaryValue::RemoveWithoutPathExpansion(const std::string& key,
   return true;
 }
 
+bool DictionaryValue::RemovePath(const std::string& path,
+                                 scoped_ptr<Value>* out_value) {
+  bool result = false;
+  size_t delimiter_position = path.find('.');
+
+  if (delimiter_position == std::string::npos)
+    return RemoveWithoutPathExpansion(path, out_value);
+
+  const std::string subdict_path = path.substr(0, delimiter_position);
+  DictionaryValue* subdict = NULL;
+  if (!GetDictionary(subdict_path, &subdict))
+    return false;
+  result = subdict->RemovePath(path.substr(delimiter_position + 1),
+                               out_value);
+  if (result && subdict->empty())
+    RemoveWithoutPathExpansion(subdict_path, NULL);
+
+  return result;
+}
+
 DictionaryValue* DictionaryValue::DeepCopyWithoutEmptyChildren() const {
   Value* copy = CopyWithoutEmptyChildren(this);
   return copy ? static_cast<DictionaryValue*>(copy) : new DictionaryValue;
@@ -781,6 +801,8 @@ void DictionaryValue::Swap(DictionaryValue* other) {
 DictionaryValue::Iterator::Iterator(const DictionaryValue& target)
     : target_(target),
       it_(target.dictionary_.begin()) {}
+
+DictionaryValue::Iterator::~Iterator() {}
 
 DictionaryValue* DictionaryValue::DeepCopy() const {
   DictionaryValue* result = new DictionaryValue;

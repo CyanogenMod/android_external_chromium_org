@@ -5,7 +5,6 @@
 #include "chromeos/dbus/system_clock_client.h"
 
 #include "base/bind.h"
-#include "chromeos/dbus/fake_system_clock_client.h"
 #include "dbus/bus.h"
 #include "dbus/message.h"
 #include "dbus/object_path.h"
@@ -17,9 +16,26 @@ namespace chromeos {
 // The SystemClockClient implementation used in production.
 class SystemClockClientImpl : public SystemClockClient {
  public:
-  explicit SystemClockClientImpl(dbus::Bus* bus)
-      : system_clock_proxy_(NULL),
-        weak_ptr_factory_(this) {
+  SystemClockClientImpl()
+      : system_clock_proxy_(NULL), weak_ptr_factory_(this) {}
+
+  virtual ~SystemClockClientImpl() {
+  }
+
+  virtual void AddObserver(Observer* observer) OVERRIDE {
+    observers_.AddObserver(observer);
+  }
+
+  virtual void RemoveObserver(Observer* observer) OVERRIDE {
+    observers_.RemoveObserver(observer);
+  }
+
+  virtual bool HasObserver(Observer* observer) OVERRIDE {
+    return observers_.HasObserver(observer);
+  }
+
+ protected:
+  virtual void Init(dbus::Bus* bus) OVERRIDE {
     system_clock_proxy_ = bus->GetObjectProxy(
         system_clock::kSystemClockServiceName,
         dbus::ObjectPath(system_clock::kSystemClockServicePath));
@@ -32,22 +48,6 @@ class SystemClockClientImpl : public SystemClockClient {
                    weak_ptr_factory_.GetWeakPtr()),
         base::Bind(&SystemClockClientImpl::TimeUpdatedConnected,
                    weak_ptr_factory_.GetWeakPtr()));
-  }
-
-  virtual ~SystemClockClientImpl() {
-  }
-
-  // SystemClockClient overrides:
-  virtual void AddObserver(Observer* observer) OVERRIDE {
-    observers_.AddObserver(observer);
-  }
-
-  virtual void RemoveObserver(Observer* observer) OVERRIDE {
-    observers_.RemoveObserver(observer);
-  }
-
-  virtual bool HasObserver(Observer* observer) OVERRIDE {
-    return observers_.HasObserver(observer);
   }
 
  private:
@@ -83,14 +83,8 @@ SystemClockClient::~SystemClockClient() {
 }
 
 // static
-SystemClockClient* SystemClockClient::Create(
-    DBusClientImplementationType type,
-    dbus::Bus* bus) {
-  if (type == REAL_DBUS_CLIENT_IMPLEMENTATION) {
-    return new SystemClockClientImpl(bus);
-  }
-  DCHECK_EQ(STUB_DBUS_CLIENT_IMPLEMENTATION, type);
-  return new FakeSystemClockClient();
+SystemClockClient* SystemClockClient::Create() {
+  return new SystemClockClientImpl();
 }
 
 }  // namespace chromeos

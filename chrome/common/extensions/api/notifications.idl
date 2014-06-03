@@ -19,6 +19,15 @@ namespace notifications {
     progress
   };
 
+  enum PermissionLevel {
+    // User has elected to show notifications from the app or extension.
+    // This is the default at install time.
+    granted,
+
+    // User has elected not to show notifications from the app or extension.
+    denied
+  };
+
   dictionary NotificationItem {
     // Title of one item of a list notification.
     DOMString title;
@@ -41,17 +50,24 @@ namespace notifications {
 
   dictionary NotificationOptions {
     // Which type of notification to display.
+    // <em>Required for $ref:notifications.create</em> method.
     TemplateType? type;
 
     // Sender's avatar, app icon, or a thumbnail for image notifications.
+    // <em>Required for $ref:notifications.create</em> method.
     DOMString? iconUrl;
     [nodoc] NotificationBitmap? iconBitmap;
 
     // Title of the notification (e.g. sender name for email).
+    // <em>Required for $ref:notifications.create</em> method.
     DOMString? title;
 
     // Main notification content.
+    // <em>Required for $ref:notifications.create</em> method.
     DOMString? message;
+
+    // Alternate notification content with a lower-weight font.
+    DOMString? contextMessage;
 
     // Priority ranges from -2 to 2. -2 is lowest priority. 2 is highest. Zero
     // is default.
@@ -76,6 +92,10 @@ namespace notifications {
 
     // Current progress ranges from 0 to 100.
     long? progress;
+
+    // Whether to show UI indicating that the app will visibly respond to
+    // clicks on the body of a notification.
+    boolean? isClickable;
   };
 
   callback CreateCallback = void (DOMString notificationId);
@@ -86,32 +106,44 @@ namespace notifications {
 
   callback GetAllCallback = void (object notifications);
 
+  callback PermissionLevelCallback = void (PermissionLevel level);
+
   interface Functions {
-    // Creates and displays a notification having the contents in |options|,
-    // identified by the id |notificationId|. If |notificationId| is empty,
-    // |create| generates an id. If |notificationId| matches an existing
-    // notification, |create| first clears that notification before proceeding
-    // with the create operation. |callback| returns the notification id
-    // (either supplied or generated) that represents the created notification.
+    // Creates and displays a notification.
+    // |notificationId|: Identifier of the notification. If it is empty, this
+    // method generates an id. If it matches an existing notification, this
+    // method first clears that notification before proceeding with the create
+    // operation.
+    // |options|: Contents of the notification.
+    // |callback|: Returns the notification id (either supplied or generated)
+    // that represents the created notification.
     static void create(DOMString notificationId,
                        NotificationOptions options,
                        CreateCallback callback);
 
-    // Updates an existing notification having the id |notificationId| and the
-    // options |options|. |callback| indicates whether a matching notification
-    // existed.
+    // Updates an existing notification.
+    // |notificationId|: The id of the notification to be updated. This is
+    // returned by $ref:notifications.create method.
+    // |options|: Contents of the notification to update to.
+    // |callback|: Called to indicate whether a matching notification existed.
     static void update(DOMString notificationId,
                        NotificationOptions options,
                        UpdateCallback callback);
 
-    // Given a |notificationId| returned by the |create| method, clears the
-    // corresponding notification. |callback| indicates whether a matching
-    // notification existed.
+    // Clears the specified notification.
+    // |notificationId|: The id of the notification to be cleared. This is
+    // returned by $ref:notifications.create method.
+    // |callback|: Called to indicate whether a matching notification existed.
     static void clear(DOMString notificationId, ClearCallback callback);
 
-    // |callback| is executed with the set of notification_ids currently in
-    // the system.
+    // Retrieves all the notifications.
+    // |callback|: Returns the set of notification_ids currently in the system.
     static void getAll(GetAllCallback callback);
+
+    // Retrieves whether the user has enabled notifications from this app
+    // or extension.
+    // |callback|: Returns the current permission level.
+    static void getPermissionLevel(PermissionLevelCallback callback);
   };
 
   interface Events {
@@ -123,6 +155,12 @@ namespace notifications {
 
     // The user pressed a button in the notification.
     static void onButtonClicked(DOMString notificationId, long buttonIndex);
+
+    // The user changes the permission level.
+    static void onPermissionLevelChanged(PermissionLevel level);
+
+    // The user clicked on a link for the app's notification settings.
+    static void onShowSettings();
   };
 
 };

@@ -98,12 +98,9 @@ void SetWidgetHeightRequest(GtkWidget* widget, gpointer user_data) {
 BrowserToolbarGtk::BrowserToolbarGtk(Browser* browser, BrowserWindowGtk* window)
     : toolbar_(NULL),
       location_bar_(new LocationBarViewGtk(browser)),
-      model_(browser->toolbar_model()),
       is_wrench_menu_model_valid_(true),
       browser_(browser),
-      window_(window),
-      zoom_callback_(base::Bind(&BrowserToolbarGtk::OnZoomLevelChanged,
-                                base::Unretained(this))) {
+      window_(window) {
   wrench_menu_model_.reset(new WrenchMenuModel(this, browser_, false));
 
   chrome::AddCommandObserver(browser_, IDC_BACK, this);
@@ -128,9 +125,6 @@ BrowserToolbarGtk::~BrowserToolbarGtk() {
   offscreen_entry_.Destroy();
 
   wrench_menu_.reset();
-
-  HostZoomMap::GetForBrowserContext(
-      browser()->profile())->RemoveZoomLevelChangedCallback(zoom_callback_);
 }
 
 void BrowserToolbarGtk::Init(GtkWindow* top_level_window) {
@@ -247,8 +241,10 @@ void BrowserToolbarGtk::Init(GtkWindow* top_level_window) {
   // The bookmark menu model needs to be able to force the wrench menu to close.
   wrench_menu_model_->bookmark_sub_menu_model()->SetMenuGtk(wrench_menu_.get());
 
-  HostZoomMap::GetForBrowserContext(
-      browser()->profile())->AddZoomLevelChangedCallback(zoom_callback_);
+  zoom_subscription_ = HostZoomMap::GetForBrowserContext(
+      browser()->profile())->AddZoomLevelChangedCallback(
+          base::Bind(&BrowserToolbarGtk::OnZoomLevelChanged,
+                     base::Unretained(this)));
 
   if (ShouldOnlyShowLocation()) {
     gtk_widget_show(event_box_);
@@ -428,9 +424,8 @@ void BrowserToolbarGtk::Observe(int type,
 
 // BrowserToolbarGtk, public ---------------------------------------------------
 
-void BrowserToolbarGtk::UpdateWebContents(WebContents* contents,
-                                          bool should_restore_state) {
-  location_bar_->Update(should_restore_state ? contents : NULL);
+void BrowserToolbarGtk::UpdateWebContents(WebContents* contents) {
+  location_bar_->Update(contents);
 
   if (actions_toolbar_.get())
     actions_toolbar_->Update();

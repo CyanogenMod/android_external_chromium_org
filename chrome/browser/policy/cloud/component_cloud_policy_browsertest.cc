@@ -4,27 +4,33 @@
 
 #include <string>
 
+#include "base/base64.h"
 #include "base/command_line.h"
+#include "base/file_util.h"
 #include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "base/path_service.h"
 #include "base/run_loop.h"
+#include "base/strings/string_util.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/extension_browsertest.h"
 #include "chrome/browser/extensions/extension_test_message_listener.h"
 #include "chrome/browser/policy/browser_policy_connector.h"
-#include "chrome/browser/policy/cloud/cloud_policy_constants.h"
-#include "chrome/browser/policy/cloud/mock_cloud_policy_client.h"
-#include "chrome/browser/policy/policy_service.h"
 #include "chrome/browser/policy/profile_policy_connector.h"
 #include "chrome/browser/policy/profile_policy_connector_factory.h"
-#include "chrome/browser/policy/proto/cloud/chrome_extension_policy.pb.h"
 #include "chrome/browser/policy/test/local_policy_test_server.h"
-#include "chrome/browser/policy/test_utils.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/browser.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/extension.h"
+#include "components/policy/core/common/cloud/cloud_policy_constants.h"
+#include "components/policy/core/common/cloud/mock_cloud_policy_client.h"
+#include "components/policy/core/common/policy_service.h"
+#include "components/policy/core/common/policy_switches.h"
+#include "components/policy/core/common/policy_test_utils.h"
+#include "extensions/common/extension.h"
+#include "net/url_request/url_request_context_getter.h"
+#include "policy/proto/chrome_extension_policy.pb.h"
 #include "policy/proto/cloud_policy.pb.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -32,13 +38,12 @@
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/policy/user_cloud_policy_manager_chromeos.h"
 #include "chrome/browser/chromeos/policy/user_cloud_policy_manager_factory_chromeos.h"
-#include "chrome/common/chrome_paths.h"
 #include "chromeos/chromeos_switches.h"
 #else
-#include "chrome/browser/policy/cloud/user_cloud_policy_manager.h"
 #include "chrome/browser/policy/cloud/user_cloud_policy_manager_factory.h"
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
+#include "components/policy/core/common/cloud/user_cloud_policy_manager.h"
 #endif
 
 using testing::InvokeWithoutArgs;
@@ -50,18 +55,13 @@ namespace em = enterprise_management;
 
 namespace policy {
 
-namespace {
-
 const char kDMToken[] = "dmtoken";
 const char kDeviceID[] = "deviceid";
 
 const char kTestExtension[] = "kjmkgkdkpedkejedfhmfcenooemhbpbo";
-const char kTestExtension2[] = "behllobkkfkfnphdnhnkndlbkcpglgmj";
 
 const base::FilePath::CharType kTestExtensionPath[] =
     FILE_PATH_LITERAL("extensions/managed_extension");
-const base::FilePath::CharType kTestExtension2Path[] =
-    FILE_PATH_LITERAL("extensions/managed_extension2");
 
 const char kTestPolicy[] =
     "{"
@@ -69,6 +69,10 @@ const char kTestPolicy[] =
     "    \"Value\": \"disable_all_the_things\""
     "  }"
     "}";
+
+const char kTestExtension2[] = "behllobkkfkfnphdnhnkndlbkcpglgmj";
+const base::FilePath::CharType kTestExtension2Path[] =
+    FILE_PATH_LITERAL("extensions/managed_extension2");
 
 const char kTestPolicyJSON[] = "{\"Name\":\"disable_all_the_things\"}";
 
@@ -81,7 +85,15 @@ const char kTestPolicy2[] =
 
 const char kTestPolicy2JSON[] = "{\"Another\":\"turn_it_off\"}";
 
-}  // namespace
+// Same encoding as ResourceCache does for its keys.
+bool Base64Encode(const std::string& value, std::string* encoded) {
+  if (value.empty())
+    return false;
+  base::Base64Encode(value, encoded);
+  base::ReplaceChars(*encoded, "+", "-", encoded);
+  base::ReplaceChars(*encoded, "/", "_", encoded);
+  return true;
+}
 
 class ComponentCloudPolicyTest : public ExtensionBrowserTest {
  protected:
@@ -95,7 +107,7 @@ class ComponentCloudPolicyTest : public ExtensionBrowserTest {
     // replace it. This is the default username sent in policy blobs from the
     // testserver.
     command_line->AppendSwitchASCII(
-        chromeos::switches::kLoginUser, "user@example.com");
+        ::chromeos::switches::kLoginUser, "user@example.com");
 #endif
   }
 
@@ -107,7 +119,7 @@ class ComponentCloudPolicyTest : public ExtensionBrowserTest {
 
     std::string url = test_server_.GetServiceURL().spec();
     CommandLine* command_line = CommandLine::ForCurrentProcess();
-    command_line->AppendSwitchASCII(switches::kDeviceManagementUrl, url);
+    command_line->AppendSwitchASCII(::switches::kDeviceManagementUrl, url);
     command_line->AppendSwitch(switches::kEnableComponentCloudPolicy);
 
     ExtensionBrowserTest::SetUpInProcessBrowserTestFixture();
@@ -125,42 +137,8 @@ class ComponentCloudPolicyTest : public ExtensionBrowserTest {
     ASSERT_EQ(kTestExtension, extension_->id());
     EXPECT_TRUE(ready_listener.WaitUntilSatisfied());
 
-    BrowserPolicyConnector* connector =
-        g_browser_process->browser_policy_connector();
-    connector->ScheduleServiceInitialization(0);
-
-#if defined(OS_CHROMEOS)
-    UserCloudPolicyManagerChromeOS* policy_manager =
-        UserCloudPolicyManagerFactoryChromeOS::GetForProfile(
-            browser()->profile());
-    ASSERT_TRUE(policy_manager);
-#else
-    // Mock a signed-in user. This is used by the UserCloudPolicyStore to pass
-    // the username to the UserCloudPolicyValidator.
-    SigninManager* signin_manager =
-        SigninManagerFactory::GetForProfile(browser()->profile());
-    ASSERT_TRUE(signin_manager);
-    signin_manager->SetAuthenticatedUsername("user@example.com");
-
-    UserCloudPolicyManager* policy_manager =
-        UserCloudPolicyManagerFactory::GetForProfile(browser()->profile());
-    ASSERT_TRUE(policy_manager);
-    policy_manager->Connect(g_browser_process->local_state(),
-                            UserCloudPolicyManager::CreateCloudPolicyClient(
-                                connector->device_management_service()).Pass());
-#endif  // defined(OS_CHROMEOS)
-
-    // Register the cloud policy client.
-    ASSERT_TRUE(policy_manager->core()->client());
-    base::RunLoop run_loop;
-    MockCloudPolicyClientObserver observer;
-    EXPECT_CALL(observer, OnRegistrationStateChanged(_))
-        .WillOnce(InvokeWithoutArgs(&run_loop, &base::RunLoop::Quit));
-    policy_manager->core()->client()->AddObserver(&observer);
-    policy_manager->core()->client()->SetupRegistration(kDMToken, kDeviceID);
-    run_loop.Run();
-    Mock::VerifyAndClearExpectations(&observer);
-    policy_manager->core()->client()->RemoveObserver(&observer);
+    // And start with a signed-in user.
+    SignInAndRegister();
 
     // The extension will receive an update event.
     EXPECT_TRUE(event_listener_->WaitUntilSatisfied());
@@ -184,6 +162,58 @@ class ComponentCloudPolicyTest : public ExtensionBrowserTest {
     return extension;
   }
 
+  void SignInAndRegister() {
+    BrowserPolicyConnector* connector =
+        g_browser_process->browser_policy_connector();
+    connector->ScheduleServiceInitialization(0);
+
+#if defined(OS_CHROMEOS)
+    UserCloudPolicyManagerChromeOS* policy_manager =
+        UserCloudPolicyManagerFactoryChromeOS::GetForProfile(
+            browser()->profile());
+    ASSERT_TRUE(policy_manager);
+#else
+    // Mock a signed-in user. This is used by the UserCloudPolicyStore to pass
+    // the username to the UserCloudPolicyValidator.
+    SigninManager* signin_manager =
+        SigninManagerFactory::GetForProfile(browser()->profile());
+    ASSERT_TRUE(signin_manager);
+    signin_manager->SetAuthenticatedUsername("user@example.com");
+
+    UserCloudPolicyManager* policy_manager =
+        UserCloudPolicyManagerFactory::GetForBrowserContext(
+            browser()->profile());
+    ASSERT_TRUE(policy_manager);
+    policy_manager->Connect(
+        g_browser_process->local_state(),
+        g_browser_process->system_request_context(),
+        UserCloudPolicyManager::CreateCloudPolicyClient(
+            connector->device_management_service(),
+            g_browser_process->system_request_context()).Pass());
+#endif  // defined(OS_CHROMEOS)
+
+    // Register the cloud policy client.
+    ASSERT_TRUE(policy_manager->core()->client());
+    base::RunLoop run_loop;
+    MockCloudPolicyClientObserver observer;
+    EXPECT_CALL(observer, OnRegistrationStateChanged(_))
+        .WillOnce(InvokeWithoutArgs(&run_loop, &base::RunLoop::Quit));
+    policy_manager->core()->client()->AddObserver(&observer);
+    policy_manager->core()->client()->SetupRegistration(kDMToken, kDeviceID);
+    run_loop.Run();
+    Mock::VerifyAndClearExpectations(&observer);
+    policy_manager->core()->client()->RemoveObserver(&observer);
+  }
+
+#if !defined(OS_CHROMEOS)
+  void SignOut() {
+    SigninManager* signin_manager =
+        SigninManagerFactory::GetForProfile(browser()->profile());
+    ASSERT_TRUE(signin_manager);
+    signin_manager->SignOut();
+  }
+#endif
+
   void RefreshPolicies() {
     ProfilePolicyConnector* profile_connector =
         ProfilePolicyConnectorFactory::GetForProfile(browser()->profile());
@@ -197,9 +227,6 @@ class ComponentCloudPolicyTest : public ExtensionBrowserTest {
   scoped_refptr<const extensions::Extension> extension_;
   scoped_ptr<ExtensionTestMessageListener> event_listener_;
 };
-
-// TODO(joaodasilva): enable these for other platforms once ready.
-#if defined(OS_CHROMEOS)
 
 IN_PROC_BROWSER_TEST_F(ComponentCloudPolicyTest, FetchExtensionPolicy) {
   // Read the initial policy.
@@ -251,6 +278,61 @@ IN_PROC_BROWSER_TEST_F(ComponentCloudPolicyTest, InstallNewExtension) {
   EXPECT_TRUE(result_listener.WaitUntilSatisfied());
 }
 
-#endif  // OS_CHROMEOS
+// Signing out on Chrome OS is a different process from signing out on the
+// Desktop platforms. On Chrome OS the session is ended, and the user goes back
+// to the sign-in screen; the Profile data is not affected. On the Desktop the
+// session goes on though, and all the signed-in services are disconnected;
+// in particular, the policy caches are dropped if the user signs out.
+// This test verifies that when the user signs out then any existing component
+// policy caches are dropped, and that it's still possible to sign back in and
+// get policy for components working again.
+#if !defined(OS_CHROMEOS)
+IN_PROC_BROWSER_TEST_F(ComponentCloudPolicyTest, SignOutAndBackIn) {
+  // Read the initial policy.
+  ExtensionTestMessageListener initial_policy_listener(kTestPolicyJSON, true);
+  event_listener_->Reply("get-policy-Name");
+  EXPECT_TRUE(initial_policy_listener.WaitUntilSatisfied());
+
+  // Verify that the policy cache exists.
+  std::string cache_key;
+  ASSERT_TRUE(Base64Encode("extension-policy", &cache_key));
+  std::string cache_subkey;
+  ASSERT_TRUE(Base64Encode(kTestExtension, &cache_subkey));
+  base::FilePath cache_path = browser()->profile()->GetPath()
+      .Append(FILE_PATH_LITERAL("Policy"))
+      .Append(FILE_PATH_LITERAL("Components"))
+      .AppendASCII(cache_key)
+      .AppendASCII(cache_subkey);
+  EXPECT_TRUE(base::PathExists(cache_path));
+
+  // Now sign-out. The policy cache should be removed, and the extension should
+  // get an empty policy update.
+  ExtensionTestMessageListener event_listener("event", true);
+  initial_policy_listener.Reply("idle");
+  SignOut();
+  EXPECT_TRUE(event_listener.WaitUntilSatisfied());
+
+  // The extension got an update event; verify that the policy was empty.
+  ExtensionTestMessageListener signout_policy_listener("{}", true);
+  event_listener.Reply("get-policy-Name");
+  EXPECT_TRUE(signout_policy_listener.WaitUntilSatisfied());
+
+  // Verify that the cache is gone.
+  EXPECT_FALSE(base::PathExists(cache_path));
+
+  // Verify that the policy is fetched again if the user signs back in.
+  ExtensionTestMessageListener event_listener2("event", true);
+  SignInAndRegister();
+  EXPECT_TRUE(event_listener2.WaitUntilSatisfied());
+
+  // The extension got updated policy; verify it.
+  ExtensionTestMessageListener signin_policy_listener(kTestPolicyJSON, true);
+  event_listener2.Reply("get-policy-Name");
+  EXPECT_TRUE(signin_policy_listener.WaitUntilSatisfied());
+
+  // And the cache is back.
+  EXPECT_TRUE(base::PathExists(cache_path));
+}
+#endif
 
 }  // namespace policy

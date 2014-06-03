@@ -12,8 +12,13 @@
 #include "base/memory/scoped_ptr.h"
 #include "content/browser/devtools/ipc_devtools_agent_host.h"
 #include "content/common/content_export.h"
-#include "content/public/browser/render_view_host_observer.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_contents_observer.h"
+
+namespace cc {
+class CompositorFrameMetadata;
+}
 
 namespace content {
 
@@ -21,9 +26,14 @@ class DevToolsTracingHandler;
 class RendererOverridesHandler;
 class RenderViewHost;
 
+#if defined(OS_ANDROID)
+class PowerSaveBlockerImpl;
+#endif
+
 class CONTENT_EXPORT RenderViewDevToolsAgentHost
     : public IPCDevToolsAgentHost,
-      private WebContentsObserver {
+      private WebContentsObserver,
+      public NotificationObserver {
  public:
   static void OnCancelPendingNavigation(RenderViewHost* pending,
                                         RenderViewHost* current);
@@ -32,9 +42,11 @@ class CONTENT_EXPORT RenderViewDevToolsAgentHost
 
   RenderViewHost* render_view_host() { return render_view_host_; }
 
+  void SynchronousSwapCompositorFrame(
+      const cc::CompositorFrameMetadata& frame_metadata);
+
  private:
   friend class DevToolsAgentHost;
-  class DevToolsAgentHostRvhObserver;
 
   virtual ~RenderViewDevToolsAgentHost();
 
@@ -51,25 +63,39 @@ class CONTENT_EXPORT RenderViewDevToolsAgentHost
 
   // WebContentsObserver overrides.
   virtual void AboutToNavigateRenderView(RenderViewHost* dest_rvh) OVERRIDE;
+  virtual void RenderViewHostChanged(RenderViewHost* old_host,
+                                     RenderViewHost* new_host) OVERRIDE;
+  virtual void RenderViewDeleted(RenderViewHost* rvh) OVERRIDE;
   virtual void RenderProcessGone(base::TerminationStatus status) OVERRIDE;
   virtual void DidAttachInterstitialPage() OVERRIDE;
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+
+  // NotificationObserver overrides:
+  virtual void Observe(int type,
+                       const NotificationSource& source,
+                       const NotificationDetails& details) OVERRIDE;
 
   void SetRenderViewHost(RenderViewHost* rvh);
+  void ClearRenderViewHost();
 
-  void RenderViewHostDestroyed(RenderViewHost* rvh);
   void RenderViewCrashed();
-  bool OnRvhMessageReceived(const IPC::Message& message);
+  void OnSwapCompositorFrame(const IPC::Message& message);
 
   void OnDispatchOnInspectorFrontend(const std::string& message);
   void OnSaveAgentRuntimeState(const std::string& state);
   void OnClearBrowserCache();
   void OnClearBrowserCookies();
 
+  void ClientDetachedFromRenderer();
+
   RenderViewHost* render_view_host_;
-  scoped_ptr<DevToolsAgentHostRvhObserver> rvh_observer_;
   scoped_ptr<RendererOverridesHandler> overrides_handler_;
   scoped_ptr<DevToolsTracingHandler> tracing_handler_;
+#if defined(OS_ANDROID)
+  scoped_ptr<PowerSaveBlockerImpl> power_save_blocker_;
+#endif
   std::string state_;
+  NotificationRegistrar registrar_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderViewDevToolsAgentHost);
 };

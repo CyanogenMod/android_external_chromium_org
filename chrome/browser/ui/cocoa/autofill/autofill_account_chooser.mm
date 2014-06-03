@@ -96,6 +96,8 @@ void AddMenuItem(NSMenu *menu, id target, SEL selector, NSString* title,
 }
 
 - (void)update {
+  [self setHidden:!delegate_->ShouldShowAccountChooser()];
+
   NSImage* iconImage = delegate_->AccountChooserImage().AsNSImage();
   [icon_ setImage:iconImage];
 
@@ -120,7 +122,7 @@ void AddMenuItem(NSMenu *menu, id target, SEL selector, NSString* title,
                   self,
                   @selector(optionsMenuChanged:),
                   base::SysUTF16ToNSString(model->GetLabelAt(i)),
-                  model->GetCommandIdAt(i),
+                  i,
                   model->IsEnabledAt(i),
                   model->IsItemCheckedAt(i));
     }
@@ -143,7 +145,7 @@ void AddMenuItem(NSMenu *menu, id target, SEL selector, NSString* title,
   [activeControl setFrame:frame];
 
   [icon_ setFrameSize:[[icon_ image] size]];
-  frame.origin.x -= NSWidth([icon_ frame]) + kAroundTextPadding;
+  frame.origin.x -= NSWidth([icon_ frame]) + autofill::kAroundTextPadding;
   [icon_ setFrameOrigin:frame.origin];
 }
 

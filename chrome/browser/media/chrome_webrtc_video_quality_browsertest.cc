@@ -23,12 +23,13 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
-#include "chrome/test/perf/perf_test.h"
 #include "chrome/test/ui/ui_test.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/test/browser_test_utils.h"
+#include "media/base/media_switches.h"
+#include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/test/python_utils.h"
-#include "net/test/spawned_test_server/spawned_test_server.h"
+#include "testing/perf/perf_test.h"
 
 static const base::FilePath::CharType kFrameAnalyzerExecutable[] =
 #if defined(OS_WIN)
@@ -61,9 +62,9 @@ static const base::FilePath::CharType kCapturedYuvFileName[] =
 static const base::FilePath::CharType kStatsFileName[] =
     FILE_PATH_LITERAL("stats.txt");
 static const char kMainWebrtcTestHtmlPage[] =
-    "files/webrtc/webrtc_jsep01_test.html";
+    "/webrtc/webrtc_jsep01_test.html";
 static const char kCapturingWebrtcHtmlPage[] =
-    "files/webrtc/webrtc_video_quality_test.html";
+    "/webrtc/webrtc_video_quality_test.html";
 static const int kVgaWidth = 640;
 static const int kVgaHeight = 480;
 
@@ -99,36 +100,38 @@ class WebrtcVideoQualityBrowserTest : public WebRtcTestBase {
         environment_(base::Environment::Create()) {}
 
   virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
-    peerconnection_server_.Start();
-
-    // Ensure we have the stuff we need.
-    EXPECT_TRUE(base::PathExists(GetWorkingDir()))
-        << "Cannot find the working directory for the reference video and "
-           "the temporary files:" << GetWorkingDir().value();
-    base::FilePath reference_file =
-        GetWorkingDir().Append(kReferenceYuvFileName);
-    EXPECT_TRUE(base::PathExists(reference_file))
-        << "Cannot find the reference file to be used for video quality "
-        << "comparison: " << reference_file.value();
-  }
-
-  virtual void TearDownInProcessBrowserTestFixture() OVERRIDE {
-    peerconnection_server_.Stop();
-    ShutdownPyWebSocketServer();
+    PeerConnectionServerRunner::KillAllPeerConnectionServersOnCurrentSystem();
+    DetectErrorsInJavaScript();  // Look for errors in our rather complex js.
   }
 
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
-    // TODO(phoglund): check that user actually has the requisite devices and
-    // print a nice message if not; otherwise the test just times out which can
-    // be confusing.
     // This test expects real device handling and requires a real webcam / audio
     // device; it will not work with fake devices.
     EXPECT_FALSE(
         command_line->HasSwitch(switches::kUseFakeDeviceForMediaStream))
         << "You cannot run this test with fake devices.";
+
+    // The video playback will not work without a GPU, so force its use here.
+    command_line->AppendSwitch(switches::kUseGpuInTests);
   }
 
-  void StartPyWebSocketServer() {
+  bool HasAllRequiredResources() {
+    if (!base::PathExists(GetWorkingDir())) {
+      LOG(ERROR) << "Cannot find the working directory for the reference video "
+          "and the temporary files:" << GetWorkingDir().value();
+      return false;
+    }
+    base::FilePath reference_file =
+        GetWorkingDir().Append(kReferenceYuvFileName);
+    if (!base::PathExists(reference_file)) {
+      LOG(ERROR) << "Cannot find the reference file to be used for video "
+          << "quality comparison: " << reference_file.value();
+      return false;
+    }
+    return true;
+  }
+
+  bool StartPyWebSocketServer() {
     base::FilePath path_pywebsocket_dir =
         GetSourceDir().Append(FILE_PATH_LITERAL("third_party/pywebsocket/src"));
     base::FilePath pywebsocket_server = path_pywebsocket_dir.Append(
@@ -136,57 +139,35 @@ class WebrtcVideoQualityBrowserTest : public WebRtcTestBase {
     base::FilePath path_to_data_handler =
         GetSourceDir().Append(FILE_PATH_LITERAL("chrome/test/functional"));
 
-    EXPECT_TRUE(base::PathExists(pywebsocket_server))
-        << "Fatal: missing pywebsocket server.";
-    EXPECT_TRUE(base::PathExists(path_to_data_handler))
-        << "Fatal: missing data handler for pywebsocket server.";
+    if (!base::PathExists(pywebsocket_server)) {
+      LOG(ERROR) << "Missing pywebsocket server.";
+      return false;
+    }
+    if (!base::PathExists(path_to_data_handler)) {
+      LOG(ERROR) << "Missing data handler for pywebsocket server.";
+      return false;
+    }
 
     AppendToPythonPath(path_pywebsocket_dir);
-    CommandLine pywebsocket_command = MakePythonCommand(pywebsocket_server);
 
-    // Construct the command line manually, the server doesn't support -arg=val.
+    // Note: don't append switches to this command since it will mess up the
+    // -u in the python invocation!
+    CommandLine pywebsocket_command(CommandLine::NO_PROGRAM);
+    EXPECT_TRUE(GetPythonCommand(&pywebsocket_command));
+
+    pywebsocket_command.AppendArgPath(pywebsocket_server);
     pywebsocket_command.AppendArg("-p");
     pywebsocket_command.AppendArg(kPyWebSocketPortNumber);
     pywebsocket_command.AppendArg("-d");
     pywebsocket_command.AppendArgPath(path_to_data_handler);
 
-    LOG(INFO) << "Running " << pywebsocket_command.GetCommandLineString();
-    EXPECT_TRUE(base::LaunchProcess(
-        pywebsocket_command, base::LaunchOptions(), &pywebsocket_server_))
-        << "Failed to launch pywebsocket server.";
+    VLOG(0) << "Running " << pywebsocket_command.GetCommandLineString();
+    return base::LaunchProcess(pywebsocket_command, base::LaunchOptions(),
+                               &pywebsocket_server_);
   }
 
-  void ShutdownPyWebSocketServer() {
-    EXPECT_TRUE(base::KillProcess(pywebsocket_server_, 0, false))
-        << "Failed to shut down pywebsocket server!";
-  }
-
-  // Convenience method which executes the provided javascript in the context
-  // of the provided web contents and returns what it evaluated to.
-  std::string ExecuteJavascript(const std::string& javascript,
-                                content::WebContents* tab_contents) {
-    std::string result;
-    EXPECT_TRUE(content::ExecuteScriptAndExtractString(
-        tab_contents, javascript, &result));
-    return result;
-  }
-
-  // Ensures we didn't get any errors asynchronously (e.g. while no javascript
-  // call from this test was outstanding).
-  // TODO(phoglund): this becomes obsolete when we switch to communicating with
-  // the DOM message queue.
-  void AssertNoAsynchronousErrors(content::WebContents* tab_contents) {
-    EXPECT_EQ("ok-no-errors",
-              ExecuteJavascript("getAnyTestFailures()", tab_contents));
-  }
-
-  // The peer connection server lets our two tabs find each other and talk to
-  // each other (e.g. it is the application-specific "signaling solution").
-  void ConnectToPeerConnectionServer(const std::string peer_name,
-                                     content::WebContents* tab_contents) {
-    std::string javascript = base::StringPrintf(
-        "connect('http://localhost:8888', '%s');", peer_name.c_str());
-    EXPECT_EQ("ok-connected", ExecuteJavascript(javascript, tab_contents));
+  bool ShutdownPyWebSocketServer() {
+    return base::KillProcess(pywebsocket_server_, 0, false);
   }
 
   void EstablishCall(content::WebContents* from_tab,
@@ -218,14 +199,17 @@ class WebrtcVideoQualityBrowserTest : public WebRtcTestBase {
   // The rgba_to_i420_converter is part of the webrtc_test_tools target which
   // should be build prior to running this test. The resulting binary should
   // live next to Chrome.
-  void RunARGBtoI420Converter(int width,
+  bool RunARGBtoI420Converter(int width,
                               int height,
                               const base::FilePath& captured_video_filename) {
     base::FilePath path_to_converter = base::MakeAbsoluteFilePath(
         GetBrowserDir().Append(kArgbToI420ConverterExecutable));
-    EXPECT_TRUE(base::PathExists(path_to_converter))
-        << "Missing ARGB->I420 converter: should be in "
-        << path_to_converter.value();
+
+    if (!base::PathExists(path_to_converter)) {
+      LOG(ERROR) << "Missing ARGB->I420 converter: should be in "
+          << path_to_converter.value();
+      return false;
+    }
 
     CommandLine converter_command(path_to_converter);
     converter_command.AppendSwitchPath("--frames_dir", GetWorkingDir());
@@ -238,10 +222,11 @@ class WebrtcVideoQualityBrowserTest : public WebRtcTestBase {
 
     // We produce an output file that will later be used as an input to the
     // barcode decoder and frame analyzer tools.
-    LOG(INFO) << "Running " << converter_command.GetCommandLineString();
+    VLOG(0) << "Running " << converter_command.GetCommandLineString();
     std::string result;
-    EXPECT_TRUE(base::GetAppOutput(converter_command, &result));
-    LOG(INFO) << "Output was:\n\n" << result;
+    bool ok = base::GetAppOutput(converter_command, &result);
+    VLOG(0) << "Output was:\n\n" << result;
+    return ok;
   }
 
   // Compares the |captured_video_filename| with the |reference_video_filename|.
@@ -250,113 +235,58 @@ class WebrtcVideoQualityBrowserTest : public WebRtcTestBase {
   // into every frame of the video (produced by rgba_to_i420_converter). It
   // produces a set of PNG images and a |stats_file| that maps each captured
   // frame to a frame in the reference video. The frames should be of size
-  // |width| x |height|. The output of compare_videos.py is returned.
-  std::string CompareVideos(int width,
-                            int height,
-                            const base::FilePath& captured_video_filename,
-                            const base::FilePath& reference_video_filename,
-                            const base::FilePath& stats_file) {
+  // |width| x |height|.
+  // All measurements calculated are printed as perf parsable numbers to stdout.
+  bool CompareVideosAndPrintResult(
+      int width,
+      int height,
+      const base::FilePath& captured_video_filename,
+      const base::FilePath& reference_video_filename,
+      const base::FilePath& stats_file) {
+
     base::FilePath path_to_analyzer = base::MakeAbsoluteFilePath(
         GetBrowserDir().Append(kFrameAnalyzerExecutable));
     base::FilePath path_to_compare_script = GetSourceDir().Append(
         FILE_PATH_LITERAL("third_party/webrtc/tools/compare_videos.py"));
 
-    EXPECT_TRUE(base::PathExists(path_to_analyzer))
-        << "Missing frame analyzer: should be in " << path_to_analyzer.value();
-    EXPECT_TRUE(base::PathExists(path_to_compare_script))
-        << "Missing video compare script: should be in "
-        << path_to_compare_script.value();
-
-    CommandLine compare_command = MakePythonCommand(path_to_compare_script);
-    compare_command.AppendSwitchPath("--ref_video", reference_video_filename);
-    compare_command.AppendSwitchPath("--test_video", captured_video_filename);
-    compare_command.AppendSwitchPath("--frame_analyzer", path_to_analyzer);
-    compare_command.AppendSwitchASCII("--yuv_frame_width",
-                                      base::StringPrintf("%d", width));
-    compare_command.AppendSwitchASCII("--yuv_frame_height",
-                                      base::StringPrintf("%d", height));
-    compare_command.AppendSwitchPath("--stats_file", stats_file);
-
-    LOG(INFO) << "Running " << compare_command.GetCommandLineString();
-    std::string result;
-    EXPECT_TRUE(base::GetAppOutput(compare_command, &result));
-    LOG(INFO) << "Output was:\n\n" << result;
-    return result;
-  }
-
-  // Processes the |frame_analyzer_output| for the different frame counts.
-  //
-  // The frame analyzer outputs additional information about the number of
-  // unique frames captured, The max number of repeated frames in a sequence and
-  // the max number of skipped frames. These values are then written to the Perf
-  // Graph. (Note: Some of the repeated or skipped frames will probably be due
-  // to the imperfection of JavaScript timers).
-  void PrintFramesCountPerfResults(std::string frame_analyzer_output) {
-    size_t unique_frames_pos =
-        frame_analyzer_output.rfind("Unique_frames_count");
-    EXPECT_NE(unique_frames_pos, std::string::npos)
-        << "Missing Unique_frames_count in frame analyzer output:\n"
-        << frame_analyzer_output;
-
-    std::string unique_frame_counts =
-        frame_analyzer_output.substr(unique_frames_pos);
-    // TODO(phoglund): Fix ESTATS result to not have this silly newline.
-    std::replace(
-        unique_frame_counts.begin(), unique_frame_counts.end(), '\n', ' ');
-
-    std::vector<std::pair<std::string, std::string> > key_values;
-    base::SplitStringIntoKeyValuePairs(
-        unique_frame_counts, ':', ' ', &key_values);
-    std::vector<std::pair<std::string, std::string> >::const_iterator iter;
-    for (iter = key_values.begin(); iter != key_values.end(); ++iter) {
-      const std::pair<std::string, std::string>& key_value = *iter;
-      perf_test::PrintResult(
-          key_value.first, "", "VGA", key_value.second, "", false);
+    if (!base::PathExists(path_to_analyzer)) {
+      LOG(ERROR) << "Missing frame analyzer: should be in "
+          << path_to_analyzer.value();
+      return false;
     }
-  }
-
-  // Processes the |frame_analyzer_output| to extract the PSNR and SSIM values.
-  //
-  // The frame analyzer produces PSNR and SSIM results for every unique frame
-  // that has been captured. This method forms a list of all the psnr and ssim
-  // values and passes it to PrintResultList() for printing on the Perf Graph.
-  void PrintPsnrAndSsimPerfResults(std::string frame_analyzer_output) {
-    size_t stats_start = frame_analyzer_output.find("BSTATS");
-    EXPECT_NE(stats_start, std::string::npos)
-        << "Missing BSTATS in frame analyzer output:\n"
-        << frame_analyzer_output;
-    size_t stats_end = frame_analyzer_output.find("ESTATS");
-    EXPECT_NE(stats_end, std::string::npos)
-        << "Missing ESTATS in frame analyzer output:\n"
-        << frame_analyzer_output;
-
-    stats_start += std::string("BSTATS").size();
-    std::string psnr_ssim_stats =
-        frame_analyzer_output.substr(stats_start, stats_end - stats_start);
-
-    // PSNR and SSIM values aren't really key-value pairs but it is convenient
-    // to parse them as such.
-    // TODO(phoglund): make the format more convenient so we need less
-    // processing here.
-    std::vector<std::pair<std::string, std::string> > psnr_ssim_entries;
-    base::SplitStringIntoKeyValuePairs(
-        psnr_ssim_stats, ' ', ';', &psnr_ssim_entries);
-
-    std::string psnr_value_list;
-    std::string ssim_value_list;
-    std::vector<std::pair<std::string, std::string> >::const_iterator iter;
-    for (iter = psnr_ssim_entries.begin(); iter != psnr_ssim_entries.end();
-         ++iter) {
-      const std::pair<std::string, std::string>& psnr_and_ssim = *iter;
-      psnr_value_list.append(psnr_and_ssim.first).append(",");
-      ssim_value_list.append(psnr_and_ssim.second).append(",");
+    if (!base::PathExists(path_to_compare_script)) {
+      LOG(ERROR) << "Missing video compare script: should be in "
+          << path_to_compare_script.value();
+      return false;
     }
-    // Nuke last comma.
-    psnr_value_list.erase(psnr_value_list.size() - 1);
-    ssim_value_list.erase(ssim_value_list.size() - 1);
 
-    perf_test::PrintResultList("PSNR", "", "VGA", psnr_value_list, "dB", false);
-    perf_test::PrintResultList("SSIM", "", "VGA", ssim_value_list, "", false);
+    // Note: don't append switches to this command since it will mess up the
+    // -u in the python invocation!
+    CommandLine compare_command(CommandLine::NO_PROGRAM);
+    EXPECT_TRUE(GetPythonCommand(&compare_command));
+
+    compare_command.AppendArgPath(path_to_compare_script);
+    compare_command.AppendArg("--label=VGA");
+    compare_command.AppendArg("--ref_video");
+    compare_command.AppendArgPath(reference_video_filename);
+    compare_command.AppendArg("--test_video");
+    compare_command.AppendArgPath(captured_video_filename);
+    compare_command.AppendArg("--frame_analyzer");
+    compare_command.AppendArgPath(path_to_analyzer);
+    compare_command.AppendArg("--yuv_frame_width");
+    compare_command.AppendArg(base::StringPrintf("%d", width));
+    compare_command.AppendArg("--yuv_frame_height");
+    compare_command.AppendArg(base::StringPrintf("%d", height));
+    compare_command.AppendArg("--stats_file");
+    compare_command.AppendArgPath(stats_file);
+
+    VLOG(0) << "Running " << compare_command.GetCommandLineString();
+    std::string output;
+    bool ok = base::GetAppOutput(compare_command, &output);
+    // Print to stdout to ensure the perf numbers are parsed properly by the
+    // buildbot step.
+    printf("Output was:\n\n%s\n", output.c_str());
+    return ok;
   }
 
   base::FilePath GetWorkingDir() {
@@ -366,6 +296,8 @@ class WebrtcVideoQualityBrowserTest : public WebRtcTestBase {
                                                home_dir.end());
     return base::FilePath(native_home_dir).Append(kWorkingDirName);
   }
+
+  PeerConnectionServerRunner peerconnection_server_;
 
  private:
   base::FilePath GetSourceDir() {
@@ -380,52 +312,32 @@ class WebrtcVideoQualityBrowserTest : public WebRtcTestBase {
     return browser_dir;
   }
 
-  CommandLine MakePythonCommand(base::FilePath python_script) {
-    CommandLine python_command(CommandLine::NO_PROGRAM);
-    EXPECT_TRUE(GetPythonCommand(&python_command));
-    CommandLine complete_command(python_script);
-    complete_command.PrependWrapper(python_command.GetCommandLineString());
-    return complete_command;
-  }
-
-  PeerConnectionServerRunner peerconnection_server_;
   base::ProcessHandle pywebsocket_server_;
   scoped_ptr<base::Environment> environment_;
 };
 
-#if defined(OS_WIN)
-// Broken on Win: failing to start pywebsocket_server. http://crbug.com/255499.
-#define MAYBE_MANUAL_TestVGAVideoQuality DISABLED_MANUAL_TestVGAVideoQuality
-#else
-#define MAYBE_MANUAL_TestVGAVideoQuality MANUAL_TestVGAVideoQuality
-#endif
-
 IN_PROC_BROWSER_TEST_F(WebrtcVideoQualityBrowserTest,
-                       MAYBE_MANUAL_TestVGAVideoQuality) {
-  StartPyWebSocketServer();
+                       MANUAL_TestVGAVideoQuality) {
+  ASSERT_GE(TestTimeouts::action_max_timeout().InSeconds(), 150) <<
+      "This is a long-running test; you must specify "
+      "--ui-test-action-max-timeout to have a value of at least 150000.";
 
-  EXPECT_TRUE(test_server()->Start());
+  ASSERT_TRUE(HasAllRequiredResources());
+  ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
+  ASSERT_TRUE(StartPyWebSocketServer());
+  ASSERT_TRUE(peerconnection_server_.Start());
 
-  ui_test_utils::NavigateToURL(browser(),
-                               test_server()->GetURL(kMainWebrtcTestHtmlPage));
   content::WebContents* left_tab =
-      browser()->tab_strip_model()->GetActiveWebContents();
-  GetUserMediaAndAccept(left_tab);
-
-  chrome::AddBlankTabAt(browser(), -1, true);
+      OpenPageAndGetUserMediaInNewTab(
+          embedded_test_server()->GetURL(kMainWebrtcTestHtmlPage));
   content::WebContents* right_tab =
-      browser()->tab_strip_model()->GetActiveWebContents();
-  ui_test_utils::NavigateToURL(browser(),
-                               test_server()->GetURL(kCapturingWebrtcHtmlPage));
-  GetUserMediaAndAccept(right_tab);
+      OpenPageAndGetUserMediaInNewTab(
+          embedded_test_server()->GetURL(kCapturingWebrtcHtmlPage));
 
   ConnectToPeerConnectionServer("peer 1", left_tab);
   ConnectToPeerConnectionServer("peer 2", right_tab);
 
   EstablishCall(left_tab, right_tab);
-
-  AssertNoAsynchronousErrors(left_tab);
-  AssertNoAsynchronousErrors(right_tab);
 
   // Poll slower here to avoid flooding the log with messages: capturing and
   // sending frames take quite a bit of time.
@@ -439,22 +351,25 @@ IN_PROC_BROWSER_TEST_F(WebrtcVideoQualityBrowserTest,
   WaitUntilHangupVerified(left_tab);
   WaitUntilHangupVerified(right_tab);
 
-  AssertNoAsynchronousErrors(left_tab);
-  AssertNoAsynchronousErrors(right_tab);
-
   EXPECT_TRUE(PollingWaitUntil(
       "haveMoreFramesToSend()", "no-more-frames", right_tab,
       polling_interval_msec));
 
+  // Shut everything down to avoid having the javascript race with the analysis
+  // tools. For instance, dont have console log printouts interleave with the
+  // RESULT lines from the analysis tools (crbug.com/323200).
+  ASSERT_TRUE(peerconnection_server_.Stop());
+  ASSERT_TRUE(ShutdownPyWebSocketServer());
+
+  chrome::CloseWebContents(browser(), left_tab, false);
+  chrome::CloseWebContents(browser(), right_tab, false);
+
   RunARGBtoI420Converter(
       kVgaWidth, kVgaHeight, GetWorkingDir().Append(kCapturedYuvFileName));
-  std::string output =
-      CompareVideos(kVgaWidth,
-                    kVgaHeight,
-                    GetWorkingDir().Append(kCapturedYuvFileName),
-                    GetWorkingDir().Append(kReferenceYuvFileName),
-                    GetWorkingDir().Append(kStatsFileName));
-
-  PrintFramesCountPerfResults(output);
-  PrintPsnrAndSsimPerfResults(output);
+  ASSERT_TRUE(
+      CompareVideosAndPrintResult(kVgaWidth,
+                                  kVgaHeight,
+                                  GetWorkingDir().Append(kCapturedYuvFileName),
+                                  GetWorkingDir().Append(kReferenceYuvFileName),
+                                  GetWorkingDir().Append(kStatsFileName)));
 }

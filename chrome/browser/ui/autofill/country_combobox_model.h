@@ -15,16 +15,17 @@
 namespace autofill {
 
 class AutofillCountry;
+class PersonalDataManager;
 
 // A model for countries to be used to enter addresses.
 class CountryComboboxModel : public ui::ComboboxModel {
  public:
-  CountryComboboxModel();
+  explicit CountryComboboxModel(const PersonalDataManager& manager);
   virtual ~CountryComboboxModel();
 
   // ui::Combobox implementation:
   virtual int GetItemCount() const OVERRIDE;
-  virtual string16 GetItemAt(int index) OVERRIDE;
+  virtual base::string16 GetItemAt(int index) OVERRIDE;
   virtual bool IsItemSeparatorAt(int index) OVERRIDE;
 
   const std::vector<AutofillCountry*>& countries() const {

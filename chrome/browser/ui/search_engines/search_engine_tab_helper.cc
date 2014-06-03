@@ -33,11 +33,12 @@ bool IsFormSubmit(const NavigationEntry* entry) {
           content::PAGE_TRANSITION_FORM_SUBMIT);
 }
 
-string16 GenerateKeywordFromNavigationEntry(const NavigationEntry* entry) {
+base::string16 GenerateKeywordFromNavigationEntry(
+    const NavigationEntry* entry) {
   // Don't autogenerate keywords for pages that are the result of form
   // submissions.
   if (IsFormSubmit(entry))
-    return string16();
+    return base::string16();
 
   // We want to use the user typed URL if available since that represents what
   // the user typed to get here, and fall back on the regular URL if not.
@@ -45,7 +46,7 @@ string16 GenerateKeywordFromNavigationEntry(const NavigationEntry* entry) {
   if (!url.is_valid()) {
     url = entry->GetURL();
     if (!url.is_valid())
-      return string16();
+      return base::string16();
   }
 
   // Don't autogenerate keywords for referrers that are anything other than HTTP
@@ -54,8 +55,8 @@ string16 GenerateKeywordFromNavigationEntry(const NavigationEntry* entry) {
   // If we relax the path constraint, we need to be sure to sanitize the path
   // elements and update AutocompletePopup to look for keywords using the path.
   // See http://b/issue?id=863583.
-  if (!url.SchemeIs(chrome::kHttpScheme) || (url.path().length() > 1))
-    return string16();
+  if (!url.SchemeIs(content::kHttpScheme) || (url.path().length() > 1))
+    return base::string16();
 
   return TemplateURLService::GenerateKeyword(url);
 }
@@ -122,7 +123,7 @@ void SearchEngineTabHelper::OnPageHasOSDD(
 
   // Autogenerate a keyword for the autodetected case; in the other cases we'll
   // generate a keyword later after fetching the OSDD.
-  string16 keyword;
+  base::string16 keyword;
   if (provider_type == TemplateURLFetcher::AUTODETECTED_PROVIDER) {
     keyword = GenerateKeywordFromNavigationEntry(entry);
     if (keyword.empty())
@@ -155,7 +156,7 @@ void SearchEngineTabHelper::GenerateKeywordIfNecessary(
   if (last_index <= 0)
     return;
 
-  string16 keyword(GenerateKeywordFromNavigationEntry(
+  base::string16 keyword(GenerateKeywordFromNavigationEntry(
       controller.GetEntryAtIndex(last_index - 1)));
   if (keyword.empty())
     return;

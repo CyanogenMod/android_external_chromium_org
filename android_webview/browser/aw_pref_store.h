@@ -26,7 +26,7 @@ class AwPrefStore : public PersistentPrefStore {
                         const base::Value** result) const OVERRIDE;
   virtual void AddObserver(PrefStore::Observer* observer) OVERRIDE;
   virtual void RemoveObserver(PrefStore::Observer* observer) OVERRIDE;
-  virtual size_t NumberOfObservers() const OVERRIDE;
+  virtual bool HasObservers() const OVERRIDE;
   virtual bool IsInitializationComplete() const OVERRIDE;
 
   // PersistentPrefStore overrides:
@@ -37,7 +37,6 @@ class AwPrefStore : public PersistentPrefStore {
   virtual void SetValueSilently(const std::string& key,
                                 base::Value* value) OVERRIDE;
   virtual void RemoveValue(const std::string& key) OVERRIDE;
-  virtual void MarkNeedsEmptyValue(const std::string& key) OVERRIDE;
   virtual bool ReadOnly() const OVERRIDE;
   virtual PrefReadError GetReadError() const OVERRIDE;
   virtual PersistentPrefStore::PrefReadError ReadPrefs() OVERRIDE;

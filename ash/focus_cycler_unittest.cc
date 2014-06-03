@@ -295,13 +295,13 @@ TEST_F(FocusCyclerTest, CycleFocusThroughWindowWithPanes) {
 
   InstallFocusCycleOnShelf();
 
+  scoped_ptr<PanedWidgetDelegate> test_widget_delegate;
   scoped_ptr<views::Widget> browser_widget(new views::Widget);
-  PanedWidgetDelegate* test_widget_delegate =
-      new PanedWidgetDelegate(browser_widget.get());
+  test_widget_delegate.reset(new PanedWidgetDelegate(browser_widget.get()));
   views::Widget::InitParams widget_params(
       views::Widget::InitParams::TYPE_WINDOW);
   widget_params.context = CurrentContext();
-  widget_params.delegate = test_widget_delegate;
+  widget_params.delegate = test_widget_delegate.get();
   widget_params.ownership =
       views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
   browser_widget->Init(widget_params);
@@ -315,22 +315,22 @@ TEST_F(FocusCyclerTest, CycleFocusThroughWindowWithPanes) {
   root_view->AddChildView(pane1);
 
   views::View* view1 = new views::View;
-  view1->set_focusable(true);
+  view1->SetFocusable(true);
   pane1->AddChildView(view1);
 
   views::View* view2 = new views::View;
-  view2->set_focusable(true);
+  view2->SetFocusable(true);
   pane1->AddChildView(view2);
 
   views::AccessiblePaneView* pane2 = new views::AccessiblePaneView();
   root_view->AddChildView(pane2);
 
   views::View* view3 = new views::View;
-  view3->set_focusable(true);
+  view3->SetFocusable(true);
   pane2->AddChildView(view3);
 
   views::View* view4 = new views::View;
-  view4->set_focusable(true);
+  view4->SetFocusable(true);
   pane2->AddChildView(view4);
 
   std::vector<views::View*> panes;
@@ -383,7 +383,7 @@ TEST_F(FocusCyclerTest, CycleFocusThroughWindowWithPanes) {
 
   // Pressing "Escape" while on the status area should
   // deactivate it, and activate the browser window.
-  aura::RootWindow* root = Shell::GetPrimaryRootWindow();
+  aura::Window* root = Shell::GetPrimaryRootWindow();
   aura::test::EventGenerator event_generator(root, root);
   event_generator.PressKey(ui::VKEY_ESCAPE, 0);
   EXPECT_TRUE(wm::IsActiveWindow(browser_window));

@@ -12,15 +12,16 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system_factory.h"
+#include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history/url_database.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/extensions/application_launch.h"
 #include "chrome/browser/ui/webui/ntp/core_app_launcher_handler.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "content/public/browser/notification_source.h"
+#include "extensions/common/extension.h"
 #include "ui/base/l10n/l10n_util.h"
 
 ExtensionAppProvider::ExtensionAppProvider(
@@ -58,8 +59,7 @@ void ExtensionAppProvider::LaunchAppFromOmnibox(
       extension_misc::APP_LAUNCH_OMNIBOX_APP,
       extension->GetType());
 
-  chrome::OpenApplication(chrome::AppLaunchParams(
-      profile, extension, disposition));
+  OpenApplication(AppLaunchParams(profile, extension, disposition));
 }
 
 void ExtensionAppProvider::AddExtensionAppForTesting(
@@ -93,7 +93,7 @@ AutocompleteMatch ExtensionAppProvider::CreateAutocompleteMatch(
   match.relevance = CalculateRelevance(
       input.type(),
       input.text().length(),
-      name_match_index != string16::npos ?
+      name_match_index != base::string16::npos ?
           app.name.length() : app.launch_url.length(),
       match.destination_url);
   return match;
@@ -113,25 +113,27 @@ void ExtensionAppProvider::Start(const AutocompleteInput& input,
   for (ExtensionApps::const_iterator app = extension_apps_.begin();
        app != extension_apps_.end(); ++app) {
     // See if the input matches this extension application.
-    const string16& name = app->name;
-    string16::const_iterator name_iter = std::search(name.begin(), name.end(),
-        input.text().begin(), input.text().end(),
-        base::CaseInsensitiveCompare<char16>());
+    const base::string16& name = app->name;
+    base::string16::const_iterator name_iter =
+        std::search(name.begin(), name.end(),
+                    input.text().begin(), input.text().end(),
+                    base::CaseInsensitiveCompare<char16>());
     bool matches_name = name_iter != name.end();
     size_t name_match_index = matches_name ?
-        static_cast<size_t>(name_iter - name.begin()) : string16::npos;
+        static_cast<size_t>(name_iter - name.begin()) : base::string16::npos;
 
     bool matches_url = false;
-    size_t url_match_index = string16::npos;
+    size_t url_match_index = base::string16::npos;
     if (app->should_match_against_launch_url) {
-      const string16& url = app->launch_url;
-      string16::const_iterator url_iter = std::search(url.begin(), url.end(),
-          input.text().begin(), input.text().end(),
-          base::CaseInsensitiveCompare<char16>());
+      const base::string16& url = app->launch_url;
+      base::string16::const_iterator url_iter =
+          std::search(url.begin(), url.end(),
+                      input.text().begin(), input.text().end(),
+                      base::CaseInsensitiveCompare<char16>());
       matches_url = url_iter != url.end() &&
           input.type() != AutocompleteInput::FORCED_QUERY;
       url_match_index = matches_url ?
-          static_cast<size_t>(url_iter - url.begin()) : string16::npos;
+          static_cast<size_t>(url_iter - url.begin()) : base::string16::npos;
     }
 
     if (matches_name || matches_url) {
@@ -162,7 +164,7 @@ void ExtensionAppProvider::RefreshAppList() {
     // provider is currently only used in the app launcher.
 
     if (profile_->IsOffTheRecord() &&
-        !extension_service->CanLoadInIncognito(app))
+        !extension_util::CanLoadInIncognito(app, extension_service))
       continue;
 
     GURL launch_url = app->is_platform_app() ?

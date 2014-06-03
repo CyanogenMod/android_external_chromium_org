@@ -15,7 +15,6 @@
 #include "chrome/browser/media_galleries/fileapi/media_path_filter.h"
 #include "chrome/browser/media_galleries/imported_media_gallery_registry.h"
 #include "content/public/browser/browser_thread.h"
-#include "webkit/browser/fileapi/file_system_file_util.h"
 #include "webkit/browser/fileapi/file_system_operation_context.h"
 #include "webkit/browser/fileapi/file_system_url.h"
 #include "webkit/browser/fileapi/native_file_util.h"
@@ -43,8 +42,8 @@ const char kITunesMediaDir[] = "iTunes Media";
 const char kITunesMusicDir[] = "Music";
 const char kITunesAutoAddDir[] = "Automatically Add to iTunes";
 
-ITunesFileUtil::ITunesFileUtil(chrome::MediaPathFilter* media_path_filter)
-    : chrome::NativeMediaFileUtil(media_path_filter),
+ITunesFileUtil::ITunesFileUtil(MediaPathFilter* media_path_filter)
+    : NativeMediaFileUtil(media_path_filter),
       weak_factory_(this),
       imported_registry_(NULL) {
 }
@@ -160,7 +159,7 @@ base::PlatformFileError ITunesFileUtil::ReadDirectorySync(
 
   if (components.size() == 0) {
     base::PlatformFileInfo xml_info;
-    if (!file_util::GetFileInfo(GetDataProvider()->library_path(), &xml_info))
+    if (!base::GetFileInfo(GetDataProvider()->library_path(), &xml_info))
       return base::PLATFORM_FILE_ERROR_IO;
     file_list->push_back(DirectoryEntry(kITunesLibraryXML,
                                         DirectoryEntry::FILE,
@@ -228,7 +227,7 @@ base::PlatformFileError ITunesFileUtil::ReadDirectorySync(
     for (it = album.begin(); it != album.end(); ++it) {
       base::PlatformFileInfo file_info;
       if (media_path_filter()->Match(it->second) &&
-          file_util::GetFileInfo(it->second, &file_info)) {
+          base::GetFileInfo(it->second, &file_info)) {
         file_list->push_back(DirectoryEntry(it->first, DirectoryEntry::FILE,
                                             file_info.size,
                                             file_info.last_modified));
@@ -246,6 +245,18 @@ base::PlatformFileError ITunesFileUtil::ReadDirectorySync(
   if (!location.empty())
     return base::PLATFORM_FILE_ERROR_NOT_A_DIRECTORY;
   return base::PLATFORM_FILE_ERROR_NOT_FOUND;
+}
+
+base::PlatformFileError ITunesFileUtil::DeleteDirectorySync(
+    fileapi::FileSystemOperationContext* context,
+    const fileapi::FileSystemURL& url) {
+  return base::PLATFORM_FILE_ERROR_SECURITY;
+}
+
+base::PlatformFileError ITunesFileUtil::DeleteFileSync(
+    fileapi::FileSystemOperationContext* context,
+    const fileapi::FileSystemURL& url) {
+  return base::PLATFORM_FILE_ERROR_SECURITY;
 }
 
 base::PlatformFileError ITunesFileUtil::CreateSnapshotFileSync(
@@ -372,7 +383,7 @@ void ITunesFileUtil::CreateSnapshotFileWithFreshDataProvider(
 
 ITunesDataProvider* ITunesFileUtil::GetDataProvider() {
   if (!imported_registry_)
-    imported_registry_ = chrome::ImportedMediaGalleryRegistry::GetInstance();
+    imported_registry_ = ImportedMediaGalleryRegistry::GetInstance();
   return imported_registry_->ITunesDataProvider();
 }
 

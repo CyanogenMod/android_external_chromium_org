@@ -50,11 +50,27 @@ void AutocompleteMatchToAssistedQuery(
   // This type indicates a native chrome suggestion.
   *type = 69;
   // Default value, indicating no subtype.
-  *subtype = string16::npos;
+  *subtype = base::string16::npos;
 
   switch (match) {
     case AutocompleteMatchType::SEARCH_SUGGEST: {
       *type = 0;
+      return;
+    }
+    case AutocompleteMatchType::SEARCH_SUGGEST_ENTITY: {
+      *subtype = 46;
+      return;
+    }
+    case AutocompleteMatchType::SEARCH_SUGGEST_INFINITE: {
+      *subtype = 33;
+      return;
+    }
+    case AutocompleteMatchType::SEARCH_SUGGEST_PERSONALIZED: {
+      *subtype = 35;
+      return;
+    }
+    case AutocompleteMatchType::SEARCH_SUGGEST_PROFILE: {
+      *subtype = 44;
       return;
     }
     case AutocompleteMatchType::NAVSUGGEST: {
@@ -111,8 +127,8 @@ void AppendAvailableAutocompletion(size_t type,
   if (!autocompletions->empty())
     autocompletions->append("j");
   base::StringAppendF(autocompletions, "%" PRIuS, type);
-  // Subtype is optional - string16::npos indicates no subtype.
-  if (subtype != string16::npos)
+  // Subtype is optional - base::string16::npos indicates no subtype.
+  if (subtype != base::string16::npos)
     base::StringAppendF(autocompletions, "i%" PRIuS, subtype);
   if (count > 1)
     base::StringAppendF(autocompletions, "l%d", count);
@@ -125,6 +141,12 @@ bool IsTrivialAutocompletion(const AutocompleteMatch& match) {
   return match.type == AutocompleteMatchType::SEARCH_WHAT_YOU_TYPED ||
       match.type == AutocompleteMatchType::URL_WHAT_YOU_TYPED ||
       match.type == AutocompleteMatchType::SEARCH_OTHER_ENGINE;
+}
+
+// Whether this autocomplete match type supports custom descriptions.
+bool AutocompleteMatchHasCustomDescription(const AutocompleteMatch& match) {
+  return match.type == AutocompleteMatchType::SEARCH_SUGGEST_ENTITY ||
+      match.type == AutocompleteMatchType::SEARCH_SUGGEST_PROFILE;
 }
 
 }  // namespace
@@ -215,7 +237,7 @@ AutocompleteController::~AutocompleteController() {
 }
 
 void AutocompleteController::Start(const AutocompleteInput& input) {
-  const string16 old_input_text(input_.text());
+  const base::string16 old_input_text(input_.text());
   const AutocompleteInput::MatchesRequested old_matches_requested =
       input_.matches_requested();
   input_ = input;
@@ -306,7 +328,7 @@ void AutocompleteController::Stop(bool clear_result) {
 void AutocompleteController::StartZeroSuggest(
     const GURL& url,
     AutocompleteInput::PageClassification page_classification,
-    const string16& permanent_text) {
+    const base::string16& permanent_text) {
   if (zero_suggest_provider_ != NULL) {
     DCHECK(!in_start_);  // We should not be already running a query.
     in_zero_suggest_ = true;
@@ -377,13 +399,37 @@ void AutocompleteController::ResetSession() {
   in_zero_suggest_ = false;
 }
 
+void AutocompleteController::UpdateMatchDestinationURL(
+    base::TimeDelta query_formulation_time,
+    AutocompleteMatch* match) const {
+  TemplateURL* template_url = match->GetTemplateURL(profile_, false);
+  if (!template_url || !match->search_terms_args.get() ||
+      match->search_terms_args->assisted_query_stats.empty())
+    return;
+
+  // Append the query formulation time (time from when the user first typed a
+  // character into the omnibox to when the user selected a query) and whether
+  // a field trial has triggered to the AQS parameter.
+  TemplateURLRef::SearchTermsArgs search_terms_args(*match->search_terms_args);
+  search_terms_args.assisted_query_stats += base::StringPrintf(
+      ".%" PRId64 "j%dj%d",
+      query_formulation_time.InMilliseconds(),
+      (search_provider_ &&
+       search_provider_->field_trial_triggered_in_session()) ||
+      (zero_suggest_provider_ &&
+       zero_suggest_provider_->field_trial_triggered_in_session()),
+      input_.current_page_classification());
+  match->destination_url =
+      GURL(template_url->url_ref().ReplaceSearchTerms(search_terms_args));
+}
+
 void AutocompleteController::UpdateResult(
     bool regenerate_result,
     bool force_notify_default_match_changed) {
   const bool last_default_was_valid = result_.default_match() != result_.end();
   // The following three variables are only set and used if
   // |last_default_was_valid|.
-  string16 last_default_fill_into_edit, last_default_keyword,
+  base::string16 last_default_fill_into_edit, last_default_keyword,
       last_default_associated_keyword;
   if (last_default_was_valid) {
     last_default_fill_into_edit = result_.default_match()->fill_into_edit;
@@ -423,7 +469,7 @@ void AutocompleteController::UpdateResult(
   UpdateAssistedQueryStats(&result_);
 
   const bool default_is_valid = result_.default_match() != result_.end();
-  string16 default_associated_keyword;
+  base::string16 default_associated_keyword;
   if (default_is_valid &&
       (result_.default_match()->associated_keyword != NULL)) {
     default_associated_keyword =
@@ -456,10 +502,11 @@ void AutocompleteController::UpdateAssociatedKeywords(
   if (!keyword_provider_)
     return;
 
-  std::set<string16> keywords;
+  std::set<base::string16> keywords;
   for (ACMatches::iterator match(result->begin()); match != result->end();
        ++match) {
-    string16 keyword(match->GetSubstitutingExplicitlyInvokedKeyword(profile_));
+    base::string16 keyword(
+        match->GetSubstitutingExplicitlyInvokedKeyword(profile_));
     if (!keyword.empty()) {
       keywords.insert(keyword);
       continue;
@@ -483,6 +530,42 @@ void AutocompleteController::UpdateAssociatedKeywords(
   }
 }
 
+void AutocompleteController::UpdateKeywordDescriptions(
+    AutocompleteResult* result) {
+  base::string16 last_keyword;
+  for (AutocompleteResult::iterator i(result->begin()); i != result->end();
+       ++i) {
+    if ((i->provider->type() == AutocompleteProvider::TYPE_KEYWORD &&
+         !i->keyword.empty()) ||
+        (i->provider->type() == AutocompleteProvider::TYPE_SEARCH &&
+         AutocompleteMatch::IsSearchType(i->type))) {
+      if (AutocompleteMatchHasCustomDescription(*i))
+        continue;
+      i->description.clear();
+      i->description_class.clear();
+      DCHECK(!i->keyword.empty());
+      if (i->keyword != last_keyword) {
+        const TemplateURL* template_url = i->GetTemplateURL(profile_, false);
+        if (template_url) {
+          // For extension keywords, just make the description the extension
+          // name -- don't assume that the normal search keyword description is
+          // applicable.
+          i->description = template_url->AdjustedShortNameForLocaleDirection();
+          if (template_url->GetType() != TemplateURL::OMNIBOX_API_EXTENSION) {
+            i->description = l10n_util::GetStringFUTF16(
+                IDS_AUTOCOMPLETE_SEARCH_DESCRIPTION, i->description);
+          }
+          i->description_class.push_back(
+              ACMatchClassification(0, ACMatchClassification::DIM));
+        }
+        last_keyword = i->keyword;
+      }
+    } else {
+      last_keyword.clear();
+    }
+  }
+}
+
 void AutocompleteController::UpdateAssistedQueryStats(
     AutocompleteResult* result) {
   if (result->empty())
@@ -491,14 +574,14 @@ void AutocompleteController::UpdateAssistedQueryStats(
   // Build the impressions string (the AQS part after ".").
   std::string autocompletions;
   int count = 0;
-  size_t last_type = string16::npos;
-  size_t last_subtype = string16::npos;
+  size_t last_type = base::string16::npos;
+  size_t last_subtype = base::string16::npos;
   for (ACMatches::iterator match(result->begin()); match != result->end();
        ++match) {
-    size_t type = string16::npos;
-    size_t subtype = string16::npos;
+    size_t type = base::string16::npos;
+    size_t subtype = base::string16::npos;
     AutocompleteMatchToAssistedQuery(match->type, &type, &subtype);
-    if (last_type != string16::npos &&
+    if (last_type != base::string16::npos &&
         (type != last_type || subtype != last_subtype)) {
       AppendAvailableAutocompletion(
           last_type, last_subtype, count, &autocompletions);
@@ -527,67 +610,6 @@ void AutocompleteController::UpdateAssistedQueryStats(
                            autocompletions.c_str());
     match->destination_url = GURL(template_url->url_ref().ReplaceSearchTerms(
         *match->search_terms_args));
-  }
-}
-
-GURL AutocompleteController::GetDestinationURL(
-    const AutocompleteMatch& match,
-    base::TimeDelta query_formulation_time) const {
-  GURL destination_url(match.destination_url);
-  TemplateURL* template_url = match.GetTemplateURL(profile_, false);
-
-  // Append the query formulation time (time from when the user first typed a
-  // character into the omnibox to when the user selected a query) and whether
-  // a field trial has triggered to the AQS parameter, if other AQS parameters
-  // were already populated.
-  if (template_url && match.search_terms_args.get() &&
-      !match.search_terms_args->assisted_query_stats.empty()) {
-    TemplateURLRef::SearchTermsArgs search_terms_args(*match.search_terms_args);
-    search_terms_args.assisted_query_stats += base::StringPrintf(
-        ".%" PRId64 "j%dj%d",
-        query_formulation_time.InMilliseconds(),
-        (search_provider_ &&
-         search_provider_->field_trial_triggered_in_session()) ||
-        (zero_suggest_provider_ &&
-         zero_suggest_provider_->field_trial_triggered_in_session()),
-        input_.current_page_classification());
-    destination_url = GURL(template_url->url_ref().
-                           ReplaceSearchTerms(search_terms_args));
-  }
-  return destination_url;
-}
-
-void AutocompleteController::UpdateKeywordDescriptions(
-    AutocompleteResult* result) {
-  string16 last_keyword;
-  for (AutocompleteResult::iterator i(result->begin()); i != result->end();
-       ++i) {
-    if ((i->provider->type() == AutocompleteProvider::TYPE_KEYWORD &&
-         !i->keyword.empty()) ||
-        (i->provider->type() == AutocompleteProvider::TYPE_SEARCH &&
-         AutocompleteMatch::IsSearchType(i->type))) {
-      i->description.clear();
-      i->description_class.clear();
-      DCHECK(!i->keyword.empty());
-      if (i->keyword != last_keyword) {
-        const TemplateURL* template_url = i->GetTemplateURL(profile_, false);
-        if (template_url) {
-          // For extension keywords, just make the description the extension
-          // name -- don't assume that the normal search keyword description is
-          // applicable.
-          i->description = template_url->AdjustedShortNameForLocaleDirection();
-          if (!template_url->IsExtensionKeyword()) {
-            i->description = l10n_util::GetStringFUTF16(
-                IDS_AUTOCOMPLETE_SEARCH_DESCRIPTION, i->description);
-          }
-          i->description_class.push_back(
-              ACMatchClassification(0, ACMatchClassification::DIM));
-        }
-        last_keyword = i->keyword;
-      }
-    } else {
-      last_keyword.clear();
-    }
   }
 }
 

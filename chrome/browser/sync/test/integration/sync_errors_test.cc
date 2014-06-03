@@ -5,9 +5,9 @@
 #include "base/prefs/pref_member.h"
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/sync/profile_sync_service.h"
-#include "chrome/browser/sync/profile_sync_service_harness.h"
 #include "chrome/browser/sync/test/integration/bookmarks_helper.h"
 #include "chrome/browser/sync/test/integration/passwords_helper.h"
+#include "chrome/browser/sync/test/integration/profile_sync_service_harness.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
 #include "chrome/common/pref_names.h"
 #include "google_apis/gaia/google_service_auth_error.h"
@@ -28,23 +28,25 @@ class SyncErrorTest : public SyncTest {
 IN_PROC_BROWSER_TEST_F(SyncErrorTest, BirthdayErrorTest) {
   ASSERT_TRUE(SetupSync()) << "SetupSync() failed.";
 
+  // Add an item, wait for sync, and trigger a birthday error on the server.
   const BookmarkNode* node1 = AddFolder(0, 0, L"title1");
   SetTitle(0, node1, L"new_title1");
-  ASSERT_TRUE(GetClient(0)->AwaitFullSyncCompletion("Offline state change."));
+  ASSERT_TRUE(GetClient(0)->AwaitFullSyncCompletion());
   TriggerBirthdayError();
 
   // Now make one more change so we will do another sync.
   const BookmarkNode* node2 = AddFolder(0, 0, L"title2");
   SetTitle(0, node2, L"new_title2");
-  ASSERT_TRUE(GetClient(0)->AwaitSyncDisabled("Birthday error."));
+  ASSERT_TRUE(GetClient(0)->AwaitSyncDisabled());
 }
 
 IN_PROC_BROWSER_TEST_F(SyncErrorTest, TransientErrorTest) {
   ASSERT_TRUE(SetupSync()) << "SetupSync() failed.";
 
+  // Add an item, wait for sync, and trigger a transient error on the server.
   const BookmarkNode* node1 = AddFolder(0, 0, L"title1");
   SetTitle(0, node1, L"new_title1");
-  ASSERT_TRUE(GetClient(0)->AwaitFullSyncCompletion("Offline state change."));
+  ASSERT_TRUE(GetClient(0)->AwaitFullSyncCompletion());
   TriggerTransientError();
 
   // Now make one more change so we will do another sync.
@@ -59,7 +61,7 @@ IN_PROC_BROWSER_TEST_F(SyncErrorTest, ActionableErrorTest) {
 
   const BookmarkNode* node1 = AddFolder(0, 0, L"title1");
   SetTitle(0, node1, L"new_title1");
-  ASSERT_TRUE(GetClient(0)->AwaitFullSyncCompletion("Sync."));
+  ASSERT_TRUE(GetClient(0)->AwaitFullSyncCompletion());
 
   syncer::SyncProtocolError protocol_error;
   protocol_error.error_type = syncer::TRANSIENT_ERROR;
@@ -118,7 +120,7 @@ IN_PROC_BROWSER_TEST_F(SyncErrorTest,
 
   const BookmarkNode* node1 = AddFolder(0, 0, L"title1");
   SetTitle(0, node1, L"new_title1");
-  ASSERT_TRUE(GetClient(0)->AwaitFullSyncCompletion("Sync."));
+  ASSERT_TRUE(GetClient(0)->AwaitFullSyncCompletion());
 
   syncer::SyncProtocolError protocol_error;
   protocol_error.error_type = syncer::NOT_MY_BIRTHDAY;
@@ -130,50 +132,13 @@ IN_PROC_BROWSER_TEST_F(SyncErrorTest,
   // Now make one more change so we will do another sync.
   const BookmarkNode* node2 = AddFolder(0, 0, L"title2");
   SetTitle(0, node2, L"new_title2");
-  ASSERT_TRUE(
-      GetClient(0)->AwaitSyncDisabled("Birthday Error."));
+  ASSERT_TRUE(GetClient(0)->AwaitSyncDisabled());
   ProfileSyncService::Status status = GetClient(0)->GetStatus();
   ASSERT_EQ(status.sync_protocol_error.error_type, protocol_error.error_type);
   ASSERT_EQ(status.sync_protocol_error.action, protocol_error.action);
   ASSERT_EQ(status.sync_protocol_error.url, protocol_error.url);
   ASSERT_EQ(status.sync_protocol_error.error_description,
       protocol_error.error_description);
-}
-
-// TODO(pavely): Fix this test. Test needs to successfully setup sync. Then
-// setup server to trigger auth error and setup FakeURLFetcher to return
-// INVALID_CREDENTIALS failure for access token request. Then it should
-// trigger sync and verify that error surfaced through
-// ProfileSyncService::GetAuthError()
-//
-// Trigger an auth error and make sure the sync client displays a warning in the
-// UI.
-IN_PROC_BROWSER_TEST_F(SyncErrorTest, DISABLED_AuthErrorTest) {
-  ASSERT_TRUE(SetupClients());
-  TriggerAuthError();
-
-  ASSERT_FALSE(GetClient(0)->SetupSync());
-  ASSERT_EQ(GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS,
-            GetClient(0)->service()->GetAuthError().state());
-}
-
-// TODO(pavely): Fix this test. Test needs to successfully setup sync. Then
-// setup server to trigger xmpp auth error and setup FakeURLFetcher to return
-// INVALID_CREDENTIALS failure for access token request. Then it should
-// trigger sync and verify that error surfaced through
-// ProfileSyncService::GetAuthError()
-//
-// Trigger an XMPP auth error, and make sure sync treats it like any
-// other auth error.
-IN_PROC_BROWSER_TEST_F(SyncErrorTest, DISABLED_XmppAuthErrorTest) {
-  ASSERT_TRUE(SetupClients()) << "SetupClients() failed.";
-
-  TriggerXmppAuthError();
-
-  ASSERT_FALSE(GetClient(0)->SetupSync());
-
-  ASSERT_EQ(GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS,
-            GetClient(0)->service()->GetAuthError().state());
 }
 
 // TODO(lipalani): Fix the typed_url dtc so this test case can pass.
@@ -190,7 +155,7 @@ IN_PROC_BROWSER_TEST_F(SyncErrorTest, DISABLED_DisableDatatypeWhileRunning) {
 
   const BookmarkNode* node1 = AddFolder(0, 0, L"title1");
   SetTitle(0, node1, L"new_title1");
-  ASSERT_TRUE(GetClient(0)->AwaitFullSyncCompletion("Sync."));
+  ASSERT_TRUE(GetClient(0)->AwaitFullSyncCompletion());
   // TODO(lipalani)" Verify initial sync ended for typed url is false.
 }
 

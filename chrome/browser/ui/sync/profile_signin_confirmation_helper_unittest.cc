@@ -21,21 +21,21 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
+#include "chrome/browser/bookmarks/bookmark_test_helpers.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/test_extension_system.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/prefs/browser_prefs.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
-#include "chrome/common/extensions/permissions/permission_set.h"
 #include "chrome/test/base/testing_pref_service_syncable.h"
 #include "chrome/test/base/testing_profile.h"
-#include "chrome/test/base/ui_test_utils.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "content/public/test/test_utils.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/manifest_constants.h"
+#include "extensions/common/permissions/permission_set.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -97,8 +97,8 @@ static scoped_refptr<extensions::Extension> CreateExtension(
     const std::string& name,
     const std::string& id) {
   DictionaryValue manifest;
-  manifest.SetString(extension_manifest_keys::kVersion, "1.0.0.0");
-  manifest.SetString(extension_manifest_keys::kName, name);
+  manifest.SetString(extensions::manifest_keys::kVersion, "1.0.0.0");
+  manifest.SetString(extensions::manifest_keys::kName, name);
   std::string error;
   scoped_refptr<extensions::Extension> extension =
     extensions::Extension::Create(
@@ -137,7 +137,7 @@ class ProfileSigninConfirmationHelperTest : public testing::Test {
     // Initialize the services we check.
     profile_->CreateBookmarkModel(true);
     model_ = BookmarkModelFactory::GetForProfile(profile_.get());
-    ui_test_utils::WaitForBookmarkModelToLoad(model_);
+    test::WaitForBookmarkModelToLoad(model_);
     ASSERT_TRUE(profile_->CreateHistoryService(true, false));
     extensions::TestExtensionSystem* system =
         static_cast<extensions::TestExtensionSystem*>(
@@ -181,8 +181,8 @@ TEST_F(ProfileSigninConfirmationHelperTest, PromptForNewProfile_Bookmarks) {
   ASSERT_TRUE(model_);
 
   // Profile is new but has bookmarks.
-  model_->AddURL(model_->bookmark_bar_node(), 0, string16(ASCIIToUTF16("foo")),
-                 GURL("http://foo.com"));
+  model_->AddURL(model_->bookmark_bar_node(), 0,
+                 base::string16(ASCIIToUTF16("foo")), GURL("http://foo.com"));
   EXPECT_TRUE(
       GetCallbackResult(
           base::Bind(

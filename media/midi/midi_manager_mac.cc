@@ -4,12 +4,13 @@
 
 #include "media/midi/midi_manager_mac.h"
 
-#include <iostream>
 #include <string>
 
 #include "base/debug/trace_event.h"
+#include "base/message_loop/message_loop.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/sys_string_conversions.h"
+
 #include <CoreAudio/HostTime.h>
 
 using base::IntToString;
@@ -31,7 +32,8 @@ MIDIManagerMac::MIDIManagerMac()
       coremidi_input_(0),
       coremidi_output_(0),
       packet_list_(NULL),
-      midi_packet_(NULL) {
+      midi_packet_(NULL),
+      send_thread_("MIDISendThread") {
 }
 
 bool MIDIManagerMac::Initialize() {
@@ -54,7 +56,7 @@ bool MIDIManagerMac::Initialize() {
   result = MIDIInputPortCreate(
       midi_client_,
       CFSTR("MIDI Input"),
-      ReadMidiDispatch,
+      ReadMIDIDispatch,
       this,
       &coremidi_input_);
   if (result != noErr)
@@ -67,10 +69,10 @@ bool MIDIManagerMac::Initialize() {
   if (result != noErr)
     return false;
 
-  int destination_count = MIDIGetNumberOfDestinations();
-  destinations_.reserve(destination_count);
+  uint32 destination_count = MIDIGetNumberOfDestinations();
+  destinations_.resize(destination_count);
 
-  for (int i = 0; i < destination_count ; i++) {
+  for (uint32 i = 0; i < destination_count ; i++) {
     MIDIEndpointRef destination = MIDIGetDestination(i);
 
     // Keep track of all destinations (known as outputs by the Web MIDI API).
@@ -82,9 +84,9 @@ bool MIDIManagerMac::Initialize() {
   }
 
   // Open connections from all sources.
-  int source_count = MIDIGetNumberOfSources();
+  uint32 source_count = MIDIGetNumberOfSources();
 
-  for (int i = 0; i < source_count; ++i)  {
+  for (uint32 i = 0; i < source_count; ++i)  {
     // Receive from all sources.
     MIDIEndpointRef src = MIDIGetSource(i);
     MIDIPortConnectSource(coremidi_input_, src, reinterpret_cast<void*>(src));
@@ -103,14 +105,32 @@ bool MIDIManagerMac::Initialize() {
   return true;
 }
 
+void MIDIManagerMac::DispatchSendMIDIData(MIDIManagerClient* client,
+                                          uint32 port_index,
+                                          const std::vector<uint8>& data,
+                                          double timestamp) {
+  if (!send_thread_.IsRunning())
+    send_thread_.Start();
+
+  // OK to use base::Unretained(this) since we join to thread in dtor().
+  send_thread_.message_loop()->PostTask(
+      FROM_HERE,
+      base::Bind(&MIDIManagerMac::SendMIDIData, base::Unretained(this),
+                 client, port_index, data, timestamp));
+}
+
 MIDIManagerMac::~MIDIManagerMac() {
+  // Wait for the termination of |send_thread_| before disposing MIDI ports.
+  send_thread_.Stop();
+
   if (coremidi_input_)
     MIDIPortDispose(coremidi_input_);
   if (coremidi_output_)
     MIDIPortDispose(coremidi_output_);
 }
 
-void MIDIManagerMac::ReadMidiDispatch(const MIDIPacketList* packet_list,
+// static
+void MIDIManagerMac::ReadMIDIDispatch(const MIDIPacketList* packet_list,
                                       void* read_proc_refcon,
                                       void* src_conn_refcon) {
   MIDIManagerMac* manager = static_cast<MIDIManagerMac*>(read_proc_refcon);
@@ -121,19 +141,19 @@ void MIDIManagerMac::ReadMidiDispatch(const MIDIPacketList* packet_list,
 #endif
 
   // Dispatch to class method.
-  manager->ReadMidi(source, packet_list);
+  manager->ReadMIDI(source, packet_list);
 }
 
-void MIDIManagerMac::ReadMidi(MIDIEndpointRef source,
+void MIDIManagerMac::ReadMIDI(MIDIEndpointRef source,
                               const MIDIPacketList* packet_list) {
   // Lookup the port index based on the source.
   SourceMap::iterator j = source_map_.find(source);
   if (j == source_map_.end())
     return;
-  int port_index = source_map_[source];
+  uint32 port_index = source_map_[source];
 
   // Go through each packet and process separately.
-  for(size_t i = 0; i < packet_list->numPackets; i++) {
+  for (size_t i = 0; i < packet_list->numPackets; i++) {
     // Each packet contains MIDI data for one or more messages (like note-on).
     const MIDIPacket &packet = packet_list->packet[i];
     double timestamp_seconds = MIDITimeStampToSeconds(packet.timeStamp);
@@ -147,10 +167,11 @@ void MIDIManagerMac::ReadMidi(MIDIEndpointRef source,
 }
 
 void MIDIManagerMac::SendMIDIData(MIDIManagerClient* client,
-                                  int port_index,
-                                  const uint8* data,
-                                  size_t length,
+                                  uint32 port_index,
+                                  const std::vector<uint8>& data,
                                   double timestamp) {
+  DCHECK(send_thread_.message_loop_proxy()->BelongsToCurrentThread());
+
   // System Exclusive has already been filtered.
   MIDITimeStamp coremidi_timestamp = SecondsToMIDITimeStamp(timestamp);
 
@@ -159,14 +180,11 @@ void MIDIManagerMac::SendMIDIData(MIDIManagerClient* client,
       kMaxPacketListSize,
       midi_packet_,
       coremidi_timestamp,
-      length,
-      data);
+      data.size(),
+      &data[0]);
 
   // Lookup the destination based on the port index.
-  // TODO(crogers): re-factor |port_index| to use unsigned
-  // to avoid the need for this check.
-  if (port_index < 0 ||
-      static_cast<size_t>(port_index) >= destinations_.size())
+  if (static_cast<size_t>(port_index) >= destinations_.size())
     return;
 
   MIDIEndpointRef destination = destinations_[port_index];
@@ -176,37 +194,60 @@ void MIDIManagerMac::SendMIDIData(MIDIManagerClient* client,
   // Re-initialize for next time.
   midi_packet_ = MIDIPacketListInit(packet_list_);
 
-  client->AccumulateMIDIBytesSent(length);
+  client->AccumulateMIDIBytesSent(data.size());
 }
 
+// static
 MIDIPortInfo MIDIManagerMac::GetPortInfoFromEndpoint(
     MIDIEndpointRef endpoint) {
   SInt32 id_number = 0;
   MIDIObjectGetIntegerProperty(endpoint, kMIDIPropertyUniqueID, &id_number);
   string id = IntToString(id_number);
 
+  string manufacturer;
   CFStringRef manufacturer_ref = NULL;
-  MIDIObjectGetStringProperty(
+  OSStatus result = MIDIObjectGetStringProperty(
       endpoint, kMIDIPropertyManufacturer, &manufacturer_ref);
-  string manufacturer = SysCFStringRefToUTF8(manufacturer_ref);
+  if (result == noErr) {
+    manufacturer = SysCFStringRefToUTF8(manufacturer_ref);
+  } else {
+    // kMIDIPropertyManufacturer is not supported in IAC driver providing
+    // endpoints, and the result will be kMIDIUnknownProperty (-10835).
+    DLOG(WARNING) << "Failed to get kMIDIPropertyManufacturer with status "
+                  << result;
+  }
 
+  string name;
   CFStringRef name_ref = NULL;
-  MIDIObjectGetStringProperty(endpoint, kMIDIPropertyName, &name_ref);
-  string name = SysCFStringRefToUTF8(name_ref);
+  result = MIDIObjectGetStringProperty(endpoint, kMIDIPropertyName, &name_ref);
+  if (result == noErr)
+    name = SysCFStringRefToUTF8(name_ref);
+  else
+    DLOG(WARNING) << "Failed to get kMIDIPropertyName with status " << result;
 
+  string version;
   SInt32 version_number = 0;
-  MIDIObjectGetIntegerProperty(
+  result = MIDIObjectGetIntegerProperty(
       endpoint, kMIDIPropertyDriverVersion, &version_number);
-  string version = IntToString(version_number);
+  if (result == noErr) {
+    version = IntToString(version_number);
+  } else {
+    // kMIDIPropertyDriverVersion is not supported in IAC driver providing
+    // endpoints, and the result will be kMIDIUnknownProperty (-10835).
+    DLOG(WARNING) << "Failed to get kMIDIPropertyDriverVersion with status "
+                  << result;
+  }
 
   return MIDIPortInfo(id, manufacturer, name, version);
 }
 
+// static
 double MIDIManagerMac::MIDITimeStampToSeconds(MIDITimeStamp timestamp) {
   UInt64 nanoseconds = AudioConvertHostTimeToNanos(timestamp);
   return static_cast<double>(nanoseconds) / 1.0e9;
 }
 
+// static
 MIDITimeStamp MIDIManagerMac::SecondsToMIDITimeStamp(double seconds) {
   UInt64 nanos = UInt64(seconds * 1.0e9);
   return AudioConvertNanosToHostTime(nanos);

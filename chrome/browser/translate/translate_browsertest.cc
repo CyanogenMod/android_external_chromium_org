@@ -7,15 +7,16 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/chrome_notification_types.h"
+#include "chrome/browser/infobars/infobar.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/translate/translate_infobar_delegate.h"
 #include "chrome/browser/translate/translate_script.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/test_switches.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "components/translate/common/translate_switches.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/test/browser_test_utils.h"
 #include "net/http/http_status_code.h"
@@ -56,8 +57,9 @@ class TranslateBrowserTest : public InProcessBrowserTest {
     // Setup alternate security origin for testing in order to allow XHR against
     // local test server. Note that this flag shows a confirm infobar in tests.
     GURL base_url = GetSecureURL("");
-    command_line->AppendSwitchASCII(switches::kTranslateSecurityOrigin,
-                                    base_url.GetOrigin().spec());
+    command_line->AppendSwitchASCII(
+        translate::switches::kTranslateSecurityOrigin,
+        base_url.GetOrigin().spec());
   }
 
  protected:
@@ -79,7 +81,7 @@ class TranslateBrowserTest : public InProcessBrowserTest {
         infobar_service_ = InfoBarService::FromWebContents(web_contents);
     }
     if (!infobar_service_) {
-      EXPECT_TRUE(false) << "infobar service is not available";
+      ADD_FAILURE() << "infobar service is not available";
       return NULL;
     }
 
@@ -89,13 +91,13 @@ class TranslateBrowserTest : public InProcessBrowserTest {
       // |kTranslateSecurityOrigin| flag specified in SetUpCommandLine().
       // This infobar appears in all tests of TranslateBrowserTest and can be
       // ignored here.
-      ConfirmInfoBarDelegate* confirm =
-          infobar_service_->infobar_at(i)->AsConfirmInfoBarDelegate();
+      ConfirmInfoBarDelegate* confirm = infobar_service_->infobar_at(i)->
+          delegate()->AsConfirmInfoBarDelegate();
       if (confirm)
         continue;
 
-      TranslateInfoBarDelegate* translate =
-        infobar_service_->infobar_at(i)->AsTranslateInfoBarDelegate();
+      TranslateInfoBarDelegate* translate = infobar_service_->infobar_at(i)->
+          delegate()->AsTranslateInfoBarDelegate();
       if (translate) {
         EXPECT_FALSE(delegate) << "multiple infobars are shown unexpectedly";
         delegate = translate;
@@ -162,9 +164,7 @@ IN_PROC_BROWSER_TEST_F(TranslateBrowserTest, TranslateInIsolatedWorld) {
   element_js +=
     "google = { 'translate' : { 'TranslateService' : function() { return {\n"
     "  isAvailable: function() {\n"
-    "    var script = document.createElement('script');\n"
-    "    script.src = main_script_url;\n"
-    "    document.getElementsByTagName('head')[0].appendChild(script);\n"
+    "    cr.googleTranslate.onLoadJavascript(main_script_url);\n"
     "    return true;\n"
     "  },\n"
     "  translatePage: function(sl, tl, cb) {\n"
@@ -184,7 +184,7 @@ IN_PROC_BROWSER_TEST_F(TranslateBrowserTest, TranslateInIsolatedWorld) {
   fetcher->delegate()->OnURLFetchComplete(fetcher);
 
   // Wait for the page title is changed after the test finished.
-  const string16 result = watcher.WaitAndGetTitle();
+  const base::string16 result = watcher.WaitAndGetTitle();
   EXPECT_EQ("PASS", UTF16ToASCII(result));
 }
 
@@ -214,7 +214,7 @@ IN_PROC_BROWSER_TEST_F(TranslateBrowserTest, IgnoreRefreshMetaTag) {
       GetNonSecureURL(kRefreshMetaTagTestPath));
 
   // Wait for the page title is changed after the test finished.
-  const string16 result = watcher.WaitAndGetTitle();
+  const base::string16 result = watcher.WaitAndGetTitle();
   EXPECT_EQ("PASS", UTF16ToASCII(result));
 
   // Check if there is no Translate infobar.
@@ -249,7 +249,7 @@ IN_PROC_BROWSER_TEST_F(TranslateBrowserTest,
       GetNonSecureURL(kRefreshMetaTagCaseInsensitiveTestPath));
 
   // Wait for the page title is changed after the test finished.
-  const string16 result = watcher.WaitAndGetTitle();
+  const base::string16 result = watcher.WaitAndGetTitle();
   EXPECT_EQ("PASS", UTF16ToASCII(result));
 
   // Check if there is no Translate infobar.
@@ -283,7 +283,7 @@ IN_PROC_BROWSER_TEST_F(TranslateBrowserTest, IgnoreRefreshMetaTagAtOnload) {
       GetNonSecureURL(kRefreshMetaTagAtOnloadTestPath));
 
   // Wait for the page title is changed after the test finished.
-  const string16 result = watcher.WaitAndGetTitle();
+  const base::string16 result = watcher.WaitAndGetTitle();
   EXPECT_EQ("PASS", UTF16ToASCII(result));
 
   // Check if there is no Translate infobar.
@@ -317,7 +317,7 @@ IN_PROC_BROWSER_TEST_F(TranslateBrowserTest, UpdateLocation) {
       GetNonSecureURL(kUpdateLocationTestPath));
 
   // Wait for the page title is changed after the test finished.
-  const string16 result = watcher.WaitAndGetTitle();
+  const base::string16 result = watcher.WaitAndGetTitle();
   EXPECT_EQ("PASS", UTF16ToASCII(result));
 
   // Check if there is no Translate infobar.
@@ -351,7 +351,7 @@ IN_PROC_BROWSER_TEST_F(TranslateBrowserTest, UpdateLocationAtOnload) {
       GetNonSecureURL(kUpdateLocationAtOnloadTestPath));
 
   // Wait for the page title is changed after the test finished.
-  const string16 result = watcher.WaitAndGetTitle();
+  const base::string16 result = watcher.WaitAndGetTitle();
   EXPECT_EQ("PASS", UTF16ToASCII(result));
 
   // Check if there is no Translate infobar.

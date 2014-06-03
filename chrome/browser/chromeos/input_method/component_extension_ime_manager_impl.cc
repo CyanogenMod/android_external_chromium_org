@@ -11,11 +11,11 @@
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_file_util.h"
 #include "chrome/common/extensions/extension_l10n_util.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
 #include "content/public/browser/browser_thread.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/manifest_constants.h"
 #include "ui/base/l10n/l10n_util.h"
 
 namespace chromeos {
@@ -177,18 +177,18 @@ bool ComponentExtensionIMEManagerImpl::ReadEngineComponent(
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::FILE));
   DCHECK(out);
   std::string type;
-  if (!dict.GetString(extension_manifest_keys::kType, &type))
+  if (!dict.GetString(extensions::manifest_keys::kType, &type))
     return false;
   if (type != "ime")
     return false;
-  if (!dict.GetString(extension_manifest_keys::kId, &out->engine_id))
+  if (!dict.GetString(extensions::manifest_keys::kId, &out->engine_id))
     return false;
-  if (!dict.GetString(extension_manifest_keys::kName, &out->display_name))
+  if (!dict.GetString(extensions::manifest_keys::kName, &out->display_name))
     return false;
 
   std::set<std::string> languages;
   const base::Value* language_value = NULL;
-  if (dict.Get(extension_manifest_keys::kLanguage, &language_value)) {
+  if (dict.Get(extensions::manifest_keys::kLanguage, &language_value)) {
     if (language_value->GetType() == base::Value::TYPE_STRING) {
       std::string language_str;
       language_value->GetAsString(&language_str);
@@ -207,7 +207,7 @@ bool ComponentExtensionIMEManagerImpl::ReadEngineComponent(
   out->language_codes.assign(languages.begin(), languages.end());
 
   const ListValue* layouts = NULL;
-  if (!dict.GetList(extension_manifest_keys::kLayouts, &layouts))
+  if (!dict.GetList(extensions::manifest_keys::kLayouts, &layouts))
     return false;
 
   for (size_t i = 0; i < layouts->GetSize(); ++i) {
@@ -224,19 +224,29 @@ bool ComponentExtensionIMEManagerImpl::ReadExtensionInfo(
     const std::string& extension_id,
     ComponentExtensionIME* out) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::FILE));
-  if (!manifest.GetString(extension_manifest_keys::kDescription,
+  if (!manifest.GetString(extensions::manifest_keys::kDescription,
                           &out->description))
     return false;
   std::string url_string;
-  if (!manifest.GetString(extension_manifest_keys::kOptionsPage, &url_string))
-    return true;  // It's okay to return true on no option page case.
-
-  GURL url = extensions::Extension::GetResourceURL(
-      extensions::Extension::GetBaseURLFromExtensionId(extension_id),
-      url_string);
-  if (!url.is_valid())
-    return false;
-  out->options_page_url = url;
+  if (manifest.GetString(extensions::manifest_keys::kOptionsPage,
+                         &url_string)) {
+    GURL url = extensions::Extension::GetResourceURL(
+        extensions::Extension::GetBaseURLFromExtensionId(extension_id),
+        url_string);
+    if (!url.is_valid())
+      return false;
+    out->options_page_url = url;
+  }
+  if (manifest.GetString(extensions::manifest_keys::kInputView,
+                         &url_string)) {
+    GURL url = extensions::Extension::GetResourceURL(
+        extensions::Extension::GetBaseURLFromExtensionId(extension_id),
+        url_string);
+    if (!url.is_valid())
+      return false;
+    out->input_view_url = url;
+  }
+  // It's okay to return true on no option page and/or input view page case.
   return true;
 }
 
@@ -257,7 +267,7 @@ void ComponentExtensionIMEManagerImpl::ReadComponentExtensionsInfo(
         !base::PathExists(manifest_path))
       continue;
 
-    if (!file_util::ReadFileToString(manifest_path, &component_ime.manifest))
+    if (!base::ReadFileToString(manifest_path, &component_ime.manifest))
       continue;
 
     scoped_ptr<DictionaryValue> manifest = GetManifest(component_ime.path);
@@ -271,7 +281,7 @@ void ComponentExtensionIMEManagerImpl::ReadComponentExtensionsInfo(
     component_ime.id = whitelisted_component_extension[i].id;
 
     const ListValue* component_list;
-    if (!manifest->GetList(extension_manifest_keys::kInputComponents,
+    if (!manifest->GetList(extensions::manifest_keys::kInputComponents,
                            &component_list))
       continue;
 

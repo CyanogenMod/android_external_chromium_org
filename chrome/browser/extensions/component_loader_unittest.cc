@@ -11,13 +11,13 @@
 #include "base/prefs/pref_registry_simple.h"
 #include "chrome/browser/extensions/test_extension_service.h"
 #include "chrome/common/chrome_paths.h"
-#include "chrome/common/extensions/background_info.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_set.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_pref_service_syncable.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "extensions/common/constants.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/manifest_handlers/background_info.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace extensions {
@@ -42,11 +42,16 @@ class MockExtensionService : public TestExtensionService {
 
   virtual void UnloadExtension(
       const std::string& extension_id,
-      extension_misc::UnloadedExtensionReason reason) OVERRIDE {
+      UnloadedExtensionInfo::Reason reason) OVERRIDE {
     ASSERT_TRUE(extension_set_.Contains(extension_id));
     // Remove the extension with the matching id.
     extension_set_.Remove(extension_id);
     unloaded_count_++;
+  }
+
+  virtual void RemoveComponentExtension(const std::string & extension_id)
+      OVERRIDE {
+    UnloadExtension(extension_id, UnloadedExtensionInfo::REASON_DISABLE);
   }
 
   virtual bool is_ready() OVERRIDE {
@@ -88,7 +93,7 @@ class ComponentLoaderTest : public testing::Test {
                      .AppendASCII("1.0.0.0");
 
     // Read in the extension manifest.
-    ASSERT_TRUE(file_util::ReadFileToString(
+    ASSERT_TRUE(base::ReadFileToString(
         extension_path_.Append(kManifestFilename),
         &manifest_contents_));
 
@@ -230,24 +235,6 @@ TEST_F(ComponentLoaderTest, LoadAll) {
   component_loader_.LoadAll();
 
   EXPECT_EQ(default_count + 1, extension_service_.extensions()->size());
-}
-
-TEST_F(ComponentLoaderTest, RemoveAll) {
-  extension_service_.set_ready(true);
-  EXPECT_EQ(0u, extension_service_.extensions()->size());
-  // Add all the default extensions. Since the extension service is ready, they
-  // will be loaded immediately.
-  component_loader_.AddDefaultComponentExtensions(false);
-  unsigned int default_count = extension_service_.extensions()->size();
-
-  // And add one more just to make sure there is anything in there in case
-  // there are no defaults for this platform.
-  component_loader_.Add(manifest_contents_, extension_path_);
-  EXPECT_EQ(default_count + 1, extension_service_.extensions()->size());
-
-  // Remove all default extensions.
-  component_loader_.RemoveAll();
-  EXPECT_EQ(0u, extension_service_.extensions()->size());
 }
 
 TEST_F(ComponentLoaderTest, AddOrReplace) {

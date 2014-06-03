@@ -6,6 +6,7 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
+#include "base/json/string_escape.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/message_loop/message_loop.h"
@@ -16,7 +17,6 @@
 #include "base/strings/stringprintf.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/time/time.h"
-#include "chrome/test/chromedriver/chrome/log.h"
 #include "chrome/test/chromedriver/chrome/status.h"
 #include "chrome/test/chromedriver/net/adb_client_socket.h"
 
@@ -62,9 +62,10 @@ class ResponseBuffer : public base::RefCountedThreadSafe<ResponseBuffer> {
 };
 
 void ExecuteCommandOnIOThread(
-    const std::string& command, scoped_refptr<ResponseBuffer> response_buffer) {
+    const std::string& command, scoped_refptr<ResponseBuffer> response_buffer,
+    int port) {
   CHECK(base::MessageLoop::current()->IsType(base::MessageLoop::TYPE_IO));
-  AdbClientSocket::AdbQuery(5037, command,
+  AdbClientSocket::AdbQuery(port, command,
       base::Bind(&ResponseBuffer::OnResponse, response_buffer));
 }
 
@@ -72,8 +73,8 @@ void ExecuteCommandOnIOThread(
 
 AdbImpl::AdbImpl(
     const scoped_refptr<base::SingleThreadTaskRunner>& io_task_runner,
-    Log* log)
-    : io_task_runner_(io_task_runner), log_(log) {
+    int port)
+    : io_task_runner_(io_task_runner), port_(port) {
   CHECK(io_task_runner_.get());
 }
 
@@ -117,13 +118,13 @@ Status AdbImpl::SetCommandLineFile(const std::string& device_serial,
                                    const std::string& exec_name,
                                    const std::string& args) {
   std::string response;
-  if (args.find("'") != std::string::npos)
-    return Status(kUnknownError,
-        "Chrome command line arguments must not contain single quotes");
+  std::string quoted_command =
+      base::GetQuotedJSONString(exec_name + " " + args);
   Status status = ExecuteHostShellCommand(
       device_serial,
-      "echo '" + exec_name +
-      " " + args + "'> " + command_line_file + "; echo $?",
+      base::StringPrintf("echo %s > %s; echo $?",
+                         quoted_command.c_str(),
+                         command_line_file.c_str()),
       &response);
   if (!status.IsOk())
     return status;
@@ -165,8 +166,7 @@ Status AdbImpl::Launch(
   std::string response;
   Status status = ExecuteHostShellCommand(
       device_serial,
-      "am start -W -n " + package + "/" + activity +
-      " -d \"data:text/html;charset=utf-8,\"",
+      "am start -W -n " + package + "/" + activity + " -d data:,",
       &response);
   if (!status.IsOk())
     return status;
@@ -218,14 +218,15 @@ Status AdbImpl::GetPidByName(const std::string& device_serial,
 Status AdbImpl::ExecuteCommand(
     const std::string& command, std::string* response) {
   scoped_refptr<ResponseBuffer> response_buffer = new ResponseBuffer;
-  log_->AddEntry(Log::kDebug, "Sending adb command: " + command);
+  VLOG(1) << "Sending adb command: " << command;
   io_task_runner_->PostTask(
       FROM_HERE,
-      base::Bind(&ExecuteCommandOnIOThread, command, response_buffer));
+      base::Bind(&ExecuteCommandOnIOThread, command, response_buffer, port_));
   Status status = response_buffer->GetResponse(
       response, base::TimeDelta::FromSeconds(30));
-  if (status.IsOk())
-    log_->AddEntry(Log::kDebug, "Received adb response: " + *response);
+  if (status.IsOk()) {
+    VLOG(1) << "Received adb response: " << *response;
+  }
   return status;
 }
 

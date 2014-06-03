@@ -7,8 +7,9 @@
 #include "ash/screen_ash.h"
 #include "ash/shell.h"
 #include "ash/shell_window_ids.h"
+#include "ash/wm/coordinate_conversion.h"
 #include "ash/wm/dock/docked_window_layout_manager.h"
-#include "ash/wm/property_util.h"
+#include "ash/wm/window_state.h"
 #include "ash/wm/window_util.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/root_window.h"
@@ -105,6 +106,7 @@ const int WindowResizer::kBoundsChangeDirection_Vertical = 2;
 
 WindowResizer::Details::Details()
     : window(NULL),
+      window_state(NULL),
       window_component(HTNOWHERE),
       bounds_change(0),
       position_change_direction(0),
@@ -118,6 +120,7 @@ WindowResizer::Details::Details(aura::Window* window,
                                 int window_component,
                                 aura::client::WindowMoveSource source)
     : window(window),
+      window_state(wm::GetWindowState(window)),
       initial_bounds_in_parent(window->bounds()),
       restore_bounds(gfx::Rect()),
       initial_location_in_parent(location),
@@ -130,10 +133,10 @@ WindowResizer::Details::Details(aura::Window* window,
           GetSizeChangeDirectionForWindowComponent(window_component)),
       is_resizable(bounds_change != kBoundsChangeDirection_None),
       source(source) {
-  if (wm::IsWindowNormal(window) &&
-      GetRestoreBoundsInScreen(window) &&
+  if (window_state->IsNormalShowState() &&
+      window_state->HasRestoreBounds() &&
       window_component == HTCAPTION)
-    restore_bounds = *GetRestoreBoundsInScreen(window);
+    restore_bounds = window_state->GetRestoreBoundsInScreen();
 }
 
 WindowResizer::Details::~Details() {
@@ -180,14 +183,6 @@ gfx::Rect WindowResizer::CalculateBoundsForDrag(
     return details.initial_bounds_in_parent;
 
   gfx::Point location = passed_location;
-  aura::Window* dock_container = Shell::GetContainer(
-      details.window->GetRootWindow(),
-      internal::kShellWindowId_DockedContainer);
-  DCHECK_EQ(dock_container->id(), internal::kShellWindowId_DockedContainer);
-  internal::DockedWindowLayoutManager* dock_layout =
-      static_cast<internal::DockedWindowLayoutManager*>(
-          dock_container->layout_manager());
-
   int delta_x = location.x() - details.initial_location_in_parent.x();
   int delta_y = location.y() - details.initial_location_in_parent.y();
 
@@ -206,6 +201,13 @@ gfx::Rect WindowResizer::CalculateBoundsForDrag(
   if (details.bounds_change & kBoundsChange_Resizes) {
     gfx::Rect work_area =
         Shell::GetScreen()->GetDisplayNearestWindow(details.window).work_area();
+    aura::Window* dock_container = Shell::GetContainer(
+        details.window->GetRootWindow(),
+        internal::kShellWindowId_DockedContainer);
+    internal::DockedWindowLayoutManager* dock_layout =
+        static_cast<internal::DockedWindowLayoutManager*>(
+            dock_container->layout_manager());
+
     work_area.Union(dock_layout->docked_bounds());
     work_area = ScreenAsh::ConvertRectFromScreen(details.window->parent(),
                                                  work_area);
@@ -261,13 +263,25 @@ gfx::Rect WindowResizer::CalculateBoundsForDrag(
     // the |work_area| above isn't good for this check since it is the work area
     // for the current display but the window can move to a different one.
     aura::Window* parent = details.window->parent();
-    gfx::Rect new_bounds_in_screen =
-        ScreenAsh::ConvertRectToScreen(parent, new_bounds);
+    gfx::Point passed_location_in_screen(passed_location);
+    wm::ConvertPointToScreen(parent, &passed_location_in_screen);
+    gfx::Rect near_passed_location(passed_location_in_screen, gfx::Size());
+    // Use a pointer location (matching the logic in DragWindowResizer) to
+    // calculate the target display after the drag.
     const gfx::Display& display =
-        Shell::GetScreen()->GetDisplayMatching(new_bounds_in_screen);
+        Shell::GetScreen()->GetDisplayMatching(near_passed_location);
+    aura::Window* dock_container = Shell::GetContainer(
+        wm::GetRootWindowMatching(near_passed_location),
+        internal::kShellWindowId_DockedContainer);
+    internal::DockedWindowLayoutManager* dock_layout =
+        static_cast<internal::DockedWindowLayoutManager*>(
+            dock_container->layout_manager());
+
     gfx::Rect screen_work_area = display.work_area();
     screen_work_area.Union(dock_layout->docked_bounds());
     screen_work_area.Inset(kMinimumOnScreenArea, 0);
+    gfx::Rect new_bounds_in_screen =
+        ScreenAsh::ConvertRectToScreen(parent, new_bounds);
     if (!screen_work_area.Intersects(new_bounds_in_screen)) {
       // Make sure that the x origin does not leave the current display.
       new_bounds_in_screen.set_x(

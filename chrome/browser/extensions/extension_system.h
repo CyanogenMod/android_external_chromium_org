@@ -9,14 +9,22 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "chrome/common/extensions/extension_constants.h"
 #include "components/browser_context_keyed_service/browser_context_keyed_service.h"
+#include "extensions/common/extension.h"
 #include "extensions/common/one_shot_event.h"
 
-class ExtensionInfoMap;
-class ExtensionProcessManager;
 class ExtensionService;
 class Profile;
+
+#if defined(OS_CHROMEOS)
+namespace chromeos {
+class DeviceLocalAccountManagementPolicyProvider;
+}
+#endif  // defined(OS_CHROMEOS)
+
+namespace content {
+class BrowserContext;
+}
 
 namespace extensions {
 class Blacklist;
@@ -26,9 +34,12 @@ class Extension;
 class ExtensionSystemSharedFactory;
 class ExtensionWarningBadgeService;
 class ExtensionWarningService;
+class InfoMap;
+class InstallVerifier;
 class LazyBackgroundTaskQueue;
 class ManagementPolicy;
 class NavigationObserver;
+class ProcessManager;
 class StandardManagementPolicyProvider;
 class StateStore;
 class UserScriptMaster;
@@ -47,12 +58,16 @@ class ExtensionSystem : public BrowserContextKeyedService {
   // a convenience wrapper around ExtensionSystemFactory::GetForProfile.
   static ExtensionSystem* Get(Profile* profile);
 
+  // Returns the same instance as Get() above.
+  static ExtensionSystem* GetForBrowserContext(
+      content::BrowserContext* profile);
+
   // BrowserContextKeyedService implementation.
   virtual void Shutdown() OVERRIDE {}
 
   // Initializes extensions machinery.
-  // Component extensions are always enabled, external and user extensions
-  // are controlled by |extensions_enabled|.
+  // Component extensions are always enabled, external and user extensions are
+  // controlled by |extensions_enabled|.
   virtual void InitForRegularProfile(bool extensions_enabled) = 0;
 
   // The ExtensionService is created at startup.
@@ -66,8 +81,8 @@ class ExtensionSystem : public BrowserContextKeyedService {
   // The UserScriptMaster is created at startup.
   virtual UserScriptMaster* user_script_master() = 0;
 
-  // The ExtensionProcessManager is created at startup.
-  virtual ExtensionProcessManager* process_manager() = 0;
+  // The ProcessManager is created at startup.
+  virtual ProcessManager* process_manager() = 0;
 
   // The StateStore is created at startup.
   virtual StateStore* state_store() = 0;
@@ -76,7 +91,7 @@ class ExtensionSystem : public BrowserContextKeyedService {
   virtual StateStore* rules_store() = 0;
 
   // Returns the IO-thread-accessible extension data.
-  virtual ExtensionInfoMap* info_map() = 0;
+  virtual InfoMap* info_map() = 0;
 
   // The LazyBackgroundTaskQueue is created at startup.
   virtual LazyBackgroundTaskQueue* lazy_background_task_queue() = 0;
@@ -93,6 +108,9 @@ class ExtensionSystem : public BrowserContextKeyedService {
   // The ErrorConsole is created at startup.
   virtual ErrorConsole* error_console() = 0;
 
+  // The InstallVerifier is created at startup.
+  virtual InstallVerifier* install_verifier() = 0;
+
   // Called by the ExtensionService that lives in this system. Gives the
   // info map a chance to react to the load event before the EXTENSION_LOADED
   // notification has fired. The purpose for handling this event first is to
@@ -106,7 +124,7 @@ class ExtensionSystem : public BrowserContextKeyedService {
   // EXTENSION_UNLOADED notification have finished running.
   virtual void UnregisterExtensionWithRequestContexts(
       const std::string& extension_id,
-      const extension_misc::UnloadedExtensionReason reason) {}
+      const UnloadedExtensionInfo::Reason reason) {}
 
   // Signaled when the extension system has completed its startup tasks.
   virtual const OneShotEvent& ready() const = 0;
@@ -130,23 +148,24 @@ class ExtensionSystemImpl : public ExtensionSystem {
   virtual ExtensionService* extension_service() OVERRIDE;  // shared
   virtual ManagementPolicy* management_policy() OVERRIDE;  // shared
   virtual UserScriptMaster* user_script_master() OVERRIDE;  // shared
-  virtual ExtensionProcessManager* process_manager() OVERRIDE;
+  virtual ProcessManager* process_manager() OVERRIDE;
   virtual StateStore* state_store() OVERRIDE;  // shared
   virtual StateStore* rules_store() OVERRIDE;  // shared
   virtual LazyBackgroundTaskQueue* lazy_background_task_queue()
       OVERRIDE;  // shared
-  virtual ExtensionInfoMap* info_map() OVERRIDE;  // shared
+  virtual InfoMap* info_map() OVERRIDE; // shared
   virtual EventRouter* event_router() OVERRIDE;  // shared
   virtual ExtensionWarningService* warning_service() OVERRIDE;
   virtual Blacklist* blacklist() OVERRIDE;  // shared
   virtual ErrorConsole* error_console() OVERRIDE;
+  virtual InstallVerifier* install_verifier() OVERRIDE;
 
   virtual void RegisterExtensionWithRequestContexts(
       const Extension* extension) OVERRIDE;
 
   virtual void UnregisterExtensionWithRequestContexts(
       const std::string& extension_id,
-      const extension_misc::UnloadedExtensionReason reason) OVERRIDE;
+      const UnloadedExtensionInfo::Reason reason) OVERRIDE;
 
   virtual const OneShotEvent& ready() const OVERRIDE;
 
@@ -175,11 +194,12 @@ class ExtensionSystemImpl : public ExtensionSystem {
     ManagementPolicy* management_policy();
     UserScriptMaster* user_script_master();
     Blacklist* blacklist();
-    ExtensionInfoMap* info_map();
+    InfoMap* info_map();
     LazyBackgroundTaskQueue* lazy_background_task_queue();
     EventRouter* event_router();
     ExtensionWarningService* warning_service();
     ErrorConsole* error_console();
+    InstallVerifier* install_verifier();
     const OneShotEvent& ready() const { return ready_; }
 
    private:
@@ -202,11 +222,17 @@ class ExtensionSystemImpl : public ExtensionSystem {
     // ExtensionService depends on StateStore and Blacklist.
     scoped_ptr<ExtensionService> extension_service_;
     scoped_ptr<ManagementPolicy> management_policy_;
-    // extension_info_map_ needs to outlive extension_process_manager_.
-    scoped_refptr<ExtensionInfoMap> extension_info_map_;
+    // extension_info_map_ needs to outlive process_manager_.
+    scoped_refptr<InfoMap> extension_info_map_;
     scoped_ptr<ExtensionWarningService> extension_warning_service_;
     scoped_ptr<ExtensionWarningBadgeService> extension_warning_badge_service_;
     scoped_ptr<ErrorConsole> error_console_;
+    scoped_ptr<InstallVerifier> install_verifier_;
+
+#if defined(OS_CHROMEOS)
+    scoped_ptr<chromeos::DeviceLocalAccountManagementPolicyProvider>
+        device_local_account_management_policy_provider_;
+#endif
 
     OneShotEvent ready_;
   };
@@ -215,11 +241,11 @@ class ExtensionSystemImpl : public ExtensionSystem {
 
   Shared* shared_;
 
-  // |extension_process_manager_| must be destroyed before the Profile's
-  // |io_data_|. While |extension_process_manager_| still lives, we handle
-  // incoming resource requests from extension processes and those require
-  // access to the ResourceContext owned by |io_data_|.
-  scoped_ptr<ExtensionProcessManager> extension_process_manager_;
+  // |process_manager_| must be destroyed before the Profile's |io_data_|. While
+  // |process_manager_| still lives, we handle incoming resource requests from
+  // extension processes and those require access to the ResourceContext owned
+  // by |io_data_|.
+  scoped_ptr<ProcessManager> process_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(ExtensionSystemImpl);
 };

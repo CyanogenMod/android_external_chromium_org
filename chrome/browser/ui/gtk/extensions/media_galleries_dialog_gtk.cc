@@ -15,8 +15,6 @@
 
 using web_modal::WebContentsModalDialogManager;
 
-namespace chrome {
-
 namespace {
 
 // Color used for additional attachment detail text for galleries.
@@ -62,6 +60,7 @@ MediaGalleriesDialogGtk::~MediaGalleriesDialogGtk() {
 void MediaGalleriesDialogGtk::InitWidgets() {
   gtk_util::RemoveAllChildren(contents_.get());
   checkbox_map_.clear();
+  new_checkbox_map_.clear();
   confirm_ = NULL;
 
   GtkWidget* header = gtk_util::LeftAlignMisc(gtk_label_new(
@@ -104,27 +103,29 @@ void MediaGalleriesDialogGtk::InitWidgets() {
                              checkbox_container);
   }
 
-  // Separator line and unattached volumes header text.
-  GtkWidget* separator = gtk_hseparator_new();
-  gtk_box_pack_start(GTK_BOX(checkbox_container), separator, FALSE, FALSE, 0);
-
-  GtkWidget* unattached_hbox = gtk_hbox_new(FALSE, ui::kLabelSpacing);
-  GtkWidget* unattached_text = gtk_label_new(UTF16ToUTF8(
-      controller_->GetUnattachedLocationsHeader()).c_str());
-  gtk_label_set_line_wrap(GTK_LABEL(unattached_text), FALSE);
-  gtk_box_pack_start(GTK_BOX(unattached_hbox), unattached_text,
-                     FALSE, FALSE, 0);
-  gtk_box_pack_start(GTK_BOX(checkbox_container), unattached_hbox,
-                     FALSE, FALSE, 0);
-
-  // Unattached galleries checkboxes
   const GalleryPermissionsVector unattached_permissions =
       controller_->UnattachedPermissions();
-  for (GalleryPermissionsVector::const_iterator iter =
-           unattached_permissions.begin();
-       iter != unattached_permissions.end(); ++iter) {
-    UpdateGalleryInContainer(iter->pref_info, iter->allowed,
-                             checkbox_container);
+  if (!unattached_permissions.empty()) {
+    // Separator line and unattached volumes header text.
+    GtkWidget* separator = gtk_hseparator_new();
+    gtk_box_pack_start(GTK_BOX(checkbox_container), separator, FALSE, FALSE, 0);
+
+    GtkWidget* unattached_hbox = gtk_hbox_new(FALSE, ui::kLabelSpacing);
+    GtkWidget* unattached_text = gtk_label_new(UTF16ToUTF8(
+        controller_->GetUnattachedLocationsHeader()).c_str());
+    gtk_label_set_line_wrap(GTK_LABEL(unattached_text), FALSE);
+    gtk_box_pack_start(GTK_BOX(unattached_hbox), unattached_text,
+                       FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(checkbox_container), unattached_hbox,
+                       FALSE, FALSE, 0);
+
+    // Unattached galleries checkboxes
+    for (GalleryPermissionsVector::const_iterator iter =
+             unattached_permissions.begin();
+         iter != unattached_permissions.end(); ++iter) {
+      UpdateGalleryInContainer(iter->pref_info, iter->allowed,
+                               checkbox_container);
+    }
   }
 
   GtkWidget* bottom_area = gtk_hbox_new(FALSE, ui::kControlSpacing);
@@ -161,9 +162,7 @@ void MediaGalleriesDialogGtk::InitWidgets() {
   gtk_widget_show_all(contents_.get());
 }
 
-void MediaGalleriesDialogGtk::UpdateGallery(
-    const MediaGalleryPrefInfo& gallery,
-    bool permitted) {
+void MediaGalleriesDialogGtk::UpdateGalleries() {
   InitWidgets();
 }
 
@@ -183,26 +182,18 @@ void MediaGalleriesDialogGtk::UpdateGalleryInContainer(
   gtk_box_pack_start(GTK_BOX(hbox), details_label, FALSE, FALSE, 0);
 
   gtk_widget_show(hbox);
-  checkbox_map_[gallery.pref_id] = widget;
+  if (gallery.pref_id != kInvalidMediaGalleryPrefId)
+    checkbox_map_[gallery.pref_id] = widget;
+  else
+    new_checkbox_map_[widget] = gallery;
 
   std::string tooltip_text = UTF16ToUTF8(gallery.GetGalleryTooltip());
   gtk_widget_set_tooltip_text(widget, tooltip_text.c_str());
 
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(widget), permitted);
   std::string label = UTF16ToUTF8(gallery.GetGalleryDisplayName());
+  // TODO(gbillock): Would be nice to add middle elide behavior here.
   gtk_button_set_label(GTK_BUTTON(widget), label.c_str());
-}
-
-void MediaGalleriesDialogGtk::ForgetGallery(MediaGalleryPrefId gallery) {
-  for (CheckboxMap::iterator iter = checkbox_map_.begin();
-       iter != checkbox_map_.end(); ++iter) {
-    if (iter->first == gallery) {
-      GtkWidget* checkbox = iter->second;
-      checkbox_map_.erase(iter);
-      gtk_widget_destroy(gtk_widget_get_parent(checkbox));
-      return;
-    }
-  }
 }
 
 void MediaGalleriesDialogGtk::OnToggled(GtkWidget* widget) {
@@ -215,6 +206,16 @@ void MediaGalleriesDialogGtk::OnToggled(GtkWidget* widget) {
       controller_->DidToggleGalleryId(
           iter->first,
           gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget)));
+      return;
+    }
+  }
+  for (NewCheckboxMap::const_iterator iter = new_checkbox_map_.begin();
+       iter != new_checkbox_map_.end(); ++iter) {
+    if (iter->first == widget) {
+      controller_->DidToggleNewGallery(
+          iter->second,
+          gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget)));
+      return;
     }
   }
 }
@@ -246,5 +247,3 @@ MediaGalleriesDialog* MediaGalleriesDialog::Create(
     MediaGalleriesDialogController* controller) {
   return new MediaGalleriesDialogGtk(controller);
 }
-
-}  // namespace chrome

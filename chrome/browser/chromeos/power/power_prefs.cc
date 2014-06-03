@@ -145,6 +145,8 @@ void PowerPrefs::UpdatePowerPolicyFromPrefs() {
       prefs->GetDouble(prefs::kPowerPresentationScreenDimDelayFactor);
   values.user_activity_screen_dim_delay_factor =
       prefs->GetDouble(prefs::kPowerUserActivityScreenDimDelayFactor);
+  values.wait_for_initial_user_activity =
+      prefs->GetBoolean(prefs::kPowerWaitForInitialUserActivity);
 
   power_policy_controller_->ApplyPrefs(values);
 }
@@ -220,6 +222,10 @@ void PowerPrefs::RegisterProfilePrefs(
       prefs::kPowerUserActivityScreenDimDelayFactor,
       2.0,
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      prefs::kPowerWaitForInitialUserActivity,
+      false,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 }
 
 void PowerPrefs::SetProfile(Profile* profile) {
@@ -263,6 +269,8 @@ void PowerPrefs::SetProfile(Profile* profile) {
   pref_change_registrar_->Add(prefs::kPowerPresentationScreenDimDelayFactor,
                               update_callback);
   pref_change_registrar_->Add(prefs::kPowerUserActivityScreenDimDelayFactor,
+                              update_callback);
+  pref_change_registrar_->Add(prefs::kPowerWaitForInitialUserActivity,
                               update_callback);
 
   UpdatePowerPolicyFromPrefs();

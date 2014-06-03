@@ -6,18 +6,54 @@
 
 #include <gtk/gtk.h>
 
+#include "base/memory/scoped_ptr.h"
+#include "base/metrics/field_trial.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
+#include "chrome/browser/autocomplete/autocomplete_result.h"
+#include "components/variations/entropy_provider.h"
 #include "testing/platform_test.h"
 #include "ui/base/gtk/gtk_hig_constants.h"
+#include "ui/gfx/font.h"
+#include "ui/gfx/rect.h"
 
 namespace {
-
-const float kLargeWidth = 10000;
 
 const GdkColor kContentTextColor = GDK_COLOR_RGB(0x00, 0x00, 0x00);
 const GdkColor kDimContentTextColor = GDK_COLOR_RGB(0x80, 0x80, 0x80);
 const GdkColor kURLTextColor = GDK_COLOR_RGB(0x00, 0x88, 0x00);
+
+class TestableOmniboxPopupViewGtk : public OmniboxPopupViewGtk {
+ public:
+  TestableOmniboxPopupViewGtk()
+      : OmniboxPopupViewGtk(gfx::Font(), NULL, NULL, NULL),
+        show_called_(false),
+        hide_called_(false) {
+  }
+
+  virtual ~TestableOmniboxPopupViewGtk() {
+  }
+
+  virtual void Show(size_t num_results) OVERRIDE {
+    show_called_ = true;
+  }
+
+  virtual void Hide() OVERRIDE {
+    hide_called_ = true;
+  }
+
+  virtual const AutocompleteResult& GetResult() const OVERRIDE {
+    return result_;
+  }
+
+  using OmniboxPopupViewGtk::GetRectForLine;
+  using OmniboxPopupViewGtk::LineFromY;
+  using OmniboxPopupViewGtk::GetHiddenMatchCount;
+
+  AutocompleteResult result_;
+  bool show_called_;
+  bool hide_called_;
+};
 
 }  // namespace
 
@@ -30,6 +66,9 @@ class OmniboxPopupViewGtkTest : public PlatformTest {
 
     window_ = gtk_window_new(GTK_WINDOW_POPUP);
     layout_ = gtk_widget_create_pango_layout(window_, NULL);
+    view_.reset(new TestableOmniboxPopupViewGtk);
+    field_trial_list_.reset(new base::FieldTrialList(
+        new metrics::SHA1EntropyProvider("42")));
   }
 
   virtual void TearDown() {
@@ -44,7 +83,7 @@ class OmniboxPopupViewGtkTest : public PlatformTest {
   // friend of the class being tested.  This method just proxies the
   // call through after adding the fixture's layout_.
   void SetupLayoutForMatch(
-      const string16& text,
+      const base::string16& text,
       const AutocompleteMatch::ACMatchClassifications& classifications,
       const GdkColor* base_color,
       const GdkColor* dim_color,
@@ -180,6 +219,9 @@ class OmniboxPopupViewGtkTest : public PlatformTest {
   GtkWidget* window_;
   PangoLayout* layout_;
 
+  scoped_ptr<TestableOmniboxPopupViewGtk> view_;
+  scoped_ptr<base::FieldTrialList> field_trial_list_;
+
  private:
   DISALLOW_COPY_AND_ASSIGN(OmniboxPopupViewGtkTest);
 };
@@ -188,7 +230,7 @@ class OmniboxPopupViewGtkTest : public PlatformTest {
 // text matches the input string, with the passed-in color, and
 // nothing bolded.
 TEST_F(OmniboxPopupViewGtkTest, DecorateMatchedStringNoMatch) {
-  const string16 kContents = ASCIIToUTF16("This is a test");
+  const base::string16 kContents = ASCIIToUTF16("This is a test");
 
   AutocompleteMatch::ACMatchClassifications classifications;
 
@@ -217,7 +259,7 @@ TEST_F(OmniboxPopupViewGtkTest, DecorateMatchedStringNoMatch) {
 // Identical to DecorateMatchedStringNoMatch, except test that URL
 // style gets a different color than we passed in.
 TEST_F(OmniboxPopupViewGtkTest, DecorateMatchedStringURLNoMatch) {
-  const string16 kContents = ASCIIToUTF16("This is a test");
+  const base::string16 kContents = ASCIIToUTF16("This is a test");
   AutocompleteMatch::ACMatchClassifications classifications;
 
   classifications.push_back(
@@ -246,7 +288,7 @@ TEST_F(OmniboxPopupViewGtkTest, DecorateMatchedStringURLNoMatch) {
 
 // Test that DIM works as expected.
 TEST_F(OmniboxPopupViewGtkTest, DecorateMatchedStringDimNoMatch) {
-  const string16 kContents = ASCIIToUTF16("This is a test");
+  const base::string16 kContents = ASCIIToUTF16("This is a test");
   // Dim "is".
   const guint kRunLength1 = 5, kRunLength2 = 2, kRunLength3 = 7;
   // Make sure nobody messed up the inputs.
@@ -296,7 +338,7 @@ TEST_F(OmniboxPopupViewGtkTest, DecorateMatchedStringDimNoMatch) {
 // Test that the matched run gets bold-faced, but keeps the same
 // color.
 TEST_F(OmniboxPopupViewGtkTest, DecorateMatchedStringMatch) {
-  const string16 kContents = ASCIIToUTF16("This is a test");
+  const base::string16 kContents = ASCIIToUTF16("This is a test");
   // Match "is".
   const guint kRunLength1 = 5, kRunLength2 = 2, kRunLength3 = 7;
   // Make sure nobody messed up the inputs.
@@ -340,7 +382,7 @@ TEST_F(OmniboxPopupViewGtkTest, DecorateMatchedStringMatch) {
 
 // Just like DecorateMatchedStringURLMatch, this time with URL style.
 TEST_F(OmniboxPopupViewGtkTest, DecorateMatchedStringURLMatch) {
-  const string16 kContents = ASCIIToUTF16("http://hello.world/");
+  const base::string16 kContents = ASCIIToUTF16("http://hello.world/");
   // Match "hello".
   const guint kRunLength1 = 7, kRunLength2 = 5, kRunLength3 = 7;
   // Make sure nobody messed up the inputs.
@@ -370,4 +412,71 @@ TEST_F(OmniboxPopupViewGtkTest, DecorateMatchedStringURLMatch) {
   EXPECT_EQ(kContents.length(), RunLengthForAttrType(0U, kContents.length(),
                                                      PANGO_ATTR_FOREGROUND));
   EXPECT_TRUE(RunHasColor(0U, kContents.length(), kURLTextColor));
+}
+
+// Test that the popup is not shown if there is only one hidden match.
+TEST_F(OmniboxPopupViewGtkTest, HidesIfOnlyOneHiddenMatch) {
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
+      "InstantExtended", "Group1 hide_verbatim:1"));
+  ACMatches matches;
+  AutocompleteMatch match;
+  match.destination_url = GURL("http://verbatim/");
+  match.type = AutocompleteMatchType::SEARCH_WHAT_YOU_TYPED;
+  matches.push_back(match);
+  view_->result_.AppendMatches(matches);
+  ASSERT_TRUE(view_->result_.ShouldHideTopMatch());
+
+  // Since there is only one match which is hidden, the popup should close.
+  view_->UpdatePopupAppearance();
+  EXPECT_TRUE(view_->hide_called_);
+}
+
+// Test that the top match is skipped if the model indicates it should be
+// hidden.
+TEST_F(OmniboxPopupViewGtkTest, SkipsTopMatchIfHidden) {
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
+      "InstantExtended", "Group1 hide_verbatim:1"));
+  ACMatches matches;
+  {
+    AutocompleteMatch match;
+    match.destination_url = GURL("http://verbatim/");
+    match.type = AutocompleteMatchType::SEARCH_WHAT_YOU_TYPED;
+    matches.push_back(match);
+  }
+  {
+    AutocompleteMatch match;
+    match.destination_url = GURL("http://not-verbatim/");
+    match.type = AutocompleteMatchType::SEARCH_OTHER_ENGINE;
+    matches.push_back(match);
+  }
+  view_->result_.AppendMatches(matches);
+  ASSERT_TRUE(view_->result_.ShouldHideTopMatch());
+
+  EXPECT_EQ(1U, view_->GetHiddenMatchCount());
+  EXPECT_EQ(1U, view_->LineFromY(0));
+  gfx::Rect rect = view_->GetRectForLine(1, 100);
+  EXPECT_EQ(1, rect.y());
+}
+
+// Test that the top match is not skipped if the model does not indicate it
+// should be hidden.
+TEST_F(OmniboxPopupViewGtkTest, DoesNotSkipTopMatchIfVisible) {
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
+      "InstantExtended", "Group1 hide_verbatim:1"));
+  ACMatches matches;
+  AutocompleteMatch match;
+  match.destination_url = GURL("http://not-verbatim/");
+  match.type = AutocompleteMatchType::SEARCH_OTHER_ENGINE;
+  matches.push_back(match);
+  view_->result_.AppendMatches(matches);
+  ASSERT_FALSE(view_->result_.ShouldHideTopMatch());
+
+  EXPECT_EQ(0U, view_->GetHiddenMatchCount());
+  EXPECT_EQ(0U, view_->LineFromY(0));
+  gfx::Rect rect = view_->GetRectForLine(1, 100);
+  EXPECT_EQ(25, rect.y());
+
+  // The single match is visible so the popup should be open.
+  view_->UpdatePopupAppearance();
+  EXPECT_TRUE(view_->show_called_);
 }

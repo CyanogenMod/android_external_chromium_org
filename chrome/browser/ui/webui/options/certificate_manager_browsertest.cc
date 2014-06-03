@@ -6,13 +6,13 @@
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/policy/browser_policy_connector.h"
-#include "chrome/browser/policy/external_data_fetcher.h"
-#include "chrome/browser/policy/mock_configuration_policy_provider.h"
-#include "chrome/browser/policy/policy_map.h"
-#include "chrome/browser/policy/policy_types.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/webui/options/options_ui_browsertest.h"
+#include "components/policy/core/common/external_data_fetcher.h"
+#include "components/policy/core/common/mock_configuration_policy_provider.h"
+#include "components/policy/core/common/policy_map.h"
+#include "components/policy/core/common/policy_types.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/test_utils.h"
@@ -21,14 +21,12 @@
 #include "testing/gtest/include/gtest/gtest.h"
 
 #if defined(OS_CHROMEOS)
+#include "chrome/browser/chromeos/policy/device_policy_cros_browser_test.h"
 #include "chrome/browser/chromeos/policy/network_configuration_updater.h"
-#include "chrome/browser/policy/profile_policy_connector.h"
-#include "chrome/browser/policy/profile_policy_connector_factory.h"
 #include "chromeos/network/onc/onc_test_utils.h"
 #include "crypto/nss_util.h"
 #endif
 
-using testing::AnyNumber;
 using testing::Return;
 using testing::_;
 
@@ -39,25 +37,43 @@ class CertificateManagerBrowserTest : public options::OptionsUIBrowserTest {
 
  protected:
   virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
+#if defined(OS_CHROMEOS)
+    device_policy_test_helper_.MarkAsEnterpriseOwned();
+#endif
     // Setup the policy provider for injecting certs through ONC policy.
     EXPECT_CALL(provider_, IsInitializationComplete(_))
         .WillRepeatedly(Return(true));
-    EXPECT_CALL(provider_, RegisterPolicyDomain(_)).Times(AnyNumber());
     policy::BrowserPolicyConnector::SetPolicyProviderForTesting(&provider_);
   }
 
-  virtual void SetUpOnMainThread() OVERRIDE {
+  void SetUpOnIOThread() {
 #if defined(OS_CHROMEOS)
-    Profile* profile = browser()->profile();
-    policy::ProfilePolicyConnector* connector =
-        policy::ProfilePolicyConnectorFactory::GetForProfile(profile);
-
-    // Enable web trust certs from policy.
-    g_browser_process->browser_policy_connector()->
-        network_configuration_updater()->SetUserPolicyService(
-            true, "", connector->policy_service());
+    test_nssdb_.reset(new crypto::ScopedTestNSSDB());
 #endif
+  }
+
+  void TearDownOnIOThread() {
+#if defined(OS_CHROMEOS)
+    test_nssdb_.reset();
+#endif
+  }
+
+  virtual void SetUpOnMainThread() OVERRIDE {
+    content::BrowserThread::PostTask(
+        content::BrowserThread::IO,
+        FROM_HERE,
+        base::Bind(&CertificateManagerBrowserTest::SetUpOnIOThread, this));
+    content::RunAllPendingInMessageLoop(content::BrowserThread::IO);
+
     content::RunAllPendingInMessageLoop();
+  }
+
+  virtual void CleanUpOnMainThread() OVERRIDE {
+    content::BrowserThread::PostTask(
+        content::BrowserThread::IO,
+        FROM_HERE,
+        base::Bind(&CertificateManagerBrowserTest::TearDownOnIOThread, this));
+    content::RunAllPendingInMessageLoop(content::BrowserThread::IO);
   }
 
 #if defined(OS_CHROMEOS)
@@ -95,7 +111,8 @@ class CertificateManagerBrowserTest : public options::OptionsUIBrowserTest {
 
   policy::MockConfigurationPolicyProvider provider_;
 #if defined(OS_CHROMEOS)
-  crypto::ScopedTestNSSDB test_nssdb_;
+  policy::DevicePolicyCrosTestHelper device_policy_test_helper_;
+  scoped_ptr<crypto::ScopedTestNSSDB> test_nssdb_;
 #endif
 };
 

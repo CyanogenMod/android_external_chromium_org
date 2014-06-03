@@ -19,7 +19,7 @@ $(gyp_shared_intermediate_dir)/shim_headers/ashmem/target/third_party/ashmem/ash
 $(gyp_shared_intermediate_dir)/shim_headers/ashmem/target/third_party/ashmem/ashmem.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/shim_headers/ashmem/target/third_party/ashmem/ashmem.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/shim_headers/ashmem/target/third_party/ashmem/ashmem.h: $(LOCAL_PATH)/tools/generate_shim_headers/generate_shim_headers.py $(GYP_TARGET_DEPENDENCIES)
-	@echo "Gyp action: Generating ashmem shim headers. ($@)"
+	@echo "Gyp action: Generating ashmem shim headers ($@)"
 	$(hide)cd $(gyp_local_path)/third_party/ashmem; mkdir -p $(gyp_shared_intermediate_dir)/shim_headers/ashmem/target/third_party/ashmem; python ../../tools/generate_shim_headers/generate_shim_headers.py --headers-root . --output-directory "$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target" --prefix cutils/ ashmem.h --generate
 
 

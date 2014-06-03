@@ -27,3 +27,18 @@ def StringIdentity(string):
   '''Creates a small hash of a string.
   '''
   return b64encode(sha1(string).digest())[:8]
+
+def MarkLast(dicts):
+  '''Adds a property 'last' == True to the last element in a list of dicts.
+  '''
+  if len(dicts) > 0:
+    dicts[-1]['last'] = True
+
+def ToUnicode(data):
+  '''Returns the str |data| as a unicode object. It's expected to be utf8, but
+  there are also latin-1 encodings in there for some reason. Fall back to that.
+  '''
+  try:
+    return unicode(data, 'utf-8')
+  except:
+    return unicode(data, 'latin-1')

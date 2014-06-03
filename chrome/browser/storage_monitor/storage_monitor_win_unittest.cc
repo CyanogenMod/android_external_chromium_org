@@ -10,7 +10,7 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop/message_loop.h"
+#include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/waitable_event.h"
 #include "chrome/browser/storage_monitor/mock_removable_storage_observer.h"
@@ -24,11 +24,9 @@
 #include "chrome/browser/storage_monitor/test_volume_mount_watcher_win.h"
 #include "chrome/browser/storage_monitor/volume_mount_watcher_win.h"
 #include "chrome/test/base/testing_browser_process.h"
-#include "content/public/test/test_browser_thread.h"
+#include "content/public/browser/browser_thread.h"
+#include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gtest/include/gtest/gtest.h"
-
-namespace chrome {
-namespace test {
 
 using content::BrowserThread;
 
@@ -73,22 +71,19 @@ class StorageMonitorWinTest : public testing::Test {
   MockRemovableStorageObserver observer_;
 
  private:
-  base::MessageLoopForUI message_loop_;
-  content::TestBrowserThread ui_thread_;
-  content::TestBrowserThread file_thread_;
+  content::TestBrowserThreadBundle thread_bundle_;
+
+  DISALLOW_COPY_AND_ASSIGN(StorageMonitorWinTest);
 };
 
-StorageMonitorWinTest::StorageMonitorWinTest()
-    : ui_thread_(BrowserThread::UI, &message_loop_),
-      file_thread_(BrowserThread::FILE, &message_loop_) {
+StorageMonitorWinTest::StorageMonitorWinTest() {
 }
 
 StorageMonitorWinTest::~StorageMonitorWinTest() {
 }
 
 void StorageMonitorWinTest::SetUp() {
-  ASSERT_TRUE(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  test::TestStorageMonitor::RemoveSingleton();
+  TestStorageMonitor::RemoveSingleton();
   volume_mount_watcher_ = new TestVolumeMountWatcherWin;
   monitor_ = new TestStorageMonitorWin(volume_mount_watcher_,
                                        new TestPortableDeviceWatcherWin);
@@ -110,11 +105,11 @@ void StorageMonitorWinTest::TearDown() {
 
   // Windows storage monitor must be destroyed on the same thread
   // as construction.
-  test::TestStorageMonitor::RemoveSingleton();
+  TestStorageMonitor::RemoveSingleton();
 }
 
 void StorageMonitorWinTest::PreAttachDevices() {
-  test::TestStorageMonitor::RemoveSingleton();
+  TestStorageMonitor::RemoveSingleton();
   monitor_ = NULL;
   volume_mount_watcher_ = new TestVolumeMountWatcherWin;
   volume_mount_watcher_->SetAttachedDevicesFake();
@@ -158,7 +153,7 @@ void StorageMonitorWinTest::PreAttachDevices() {
 
 void StorageMonitorWinTest::RunUntilIdle() {
   volume_mount_watcher_->FlushWorkerPoolForTesting();
-  message_loop_.RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
 }
 
 void StorageMonitorWinTest::DoMassStorageDeviceAttachedTest(
@@ -559,6 +554,3 @@ TEST_F(StorageMonitorWinTest, GetMTPStorageInfoFromDeviceId) {
   }
   DoMTPDeviceTest(TestPortableDeviceWatcherWin::kMTPDeviceWithValidInfo, false);
 }
-
-}  // namespace test
-}  // namespace chrome

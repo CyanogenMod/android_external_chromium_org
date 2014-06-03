@@ -11,7 +11,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "chromeos/chromeos_export.h"
 #include "chromeos/network/certificate_pattern.h"
-#include "chromeos/network/onc/onc_constants.h"
+#include "components/onc/onc_constants.h"
 
 namespace base {
 class DictionaryValue;
@@ -42,8 +42,8 @@ class CHROMEOS_EXPORT NetworkUIData {
   explicit NetworkUIData(const base::DictionaryValue& dict);
   ~NetworkUIData();
 
-  void set_onc_source(onc::ONCSource onc_source) { onc_source_ = onc_source; }
-  onc::ONCSource onc_source() const { return onc_source_; }
+  void set_onc_source(::onc::ONCSource onc_source) { onc_source_ = onc_source; }
+  ::onc::ONCSource onc_source() const { return onc_source_; }
 
   void set_certificate_pattern(const CertificatePattern& pattern) {
     certificate_pattern_ = pattern;
@@ -58,15 +58,13 @@ class CHROMEOS_EXPORT NetworkUIData {
     return certificate_type_;
   }
   bool is_managed() const {
-    return onc_source_ == onc::ONC_SOURCE_DEVICE_POLICY ||
-        onc_source_ == onc::ONC_SOURCE_USER_POLICY;
+    return onc_source_ == ::onc::ONC_SOURCE_DEVICE_POLICY ||
+        onc_source_ == ::onc::ONC_SOURCE_USER_POLICY;
   }
   const base::DictionaryValue* user_settings() const {
     return user_settings_.get();
   }
-  void set_user_settings(scoped_ptr<base::DictionaryValue> dict) {
-    user_settings_ = dict.Pass();
-  }
+  void set_user_settings(scoped_ptr<base::DictionaryValue> dict);
   const std::string& policy_guid() const {
     return policy_guid_;
   }
@@ -83,7 +81,7 @@ class CHROMEOS_EXPORT NetworkUIData {
   // This function is used to create the "UIData" field of the Shill
   // configuration.
   static scoped_ptr<NetworkUIData> CreateFromONC(
-      onc::ONCSource onc_source,
+      ::onc::ONCSource onc_source,
       const base::DictionaryValue& onc_network);
 
   // Key for storing source of the ONC network.
@@ -100,7 +98,7 @@ class CHROMEOS_EXPORT NetworkUIData {
 
  private:
   CertificatePattern certificate_pattern_;
-  onc::ONCSource onc_source_;
+  ::onc::ONCSource onc_source_;
   ClientCertType certificate_type_;
   scoped_ptr<base::DictionaryValue> user_settings_;
   std::string policy_guid_;

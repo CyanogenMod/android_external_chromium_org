@@ -26,16 +26,15 @@ bool NavigationConstraintsImpl::IsSchemeAllowed(const GURL& url) {
   if (!url.is_valid())
     return false;
 
-  if (url.SchemeIs(chrome::kHttpScheme) ||
-      url.SchemeIs(chrome::kHttpsScheme))
+  if (url.SchemeIs(content::kHttpScheme) || url.SchemeIs(content::kHttpsScheme))
     return true;
 
   // Additional checking for view-source. Allow only http and https
   // URLs in view source.
   if (url.SchemeIs(content::kViewSourceScheme)) {
     GURL sub_url(url.GetContent());
-    if (sub_url.SchemeIs(chrome::kHttpScheme) ||
-        sub_url.SchemeIs(chrome::kHttpsScheme))
+    if (sub_url.SchemeIs(content::kHttpScheme) ||
+        sub_url.SchemeIs(content::kHttpsScheme))
       return true;
   }
 

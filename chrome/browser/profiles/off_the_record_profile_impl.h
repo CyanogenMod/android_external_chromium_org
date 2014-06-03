@@ -67,12 +67,10 @@ class OffTheRecordProfileImpl : public Profile {
   virtual ExitType GetLastSessionExitType() OVERRIDE;
 
 #if defined(OS_CHROMEOS)
-  virtual void SetupChromeOSEnterpriseExtensionObserver() OVERRIDE;
-  virtual void InitChromeOSPreferences() OVERRIDE;
-
   virtual void ChangeAppLocale(const std::string& locale,
                                AppLocaleChangedVia) OVERRIDE;
   virtual void OnLogin() OVERRIDE;
+  virtual void InitChromeOSPreferences() OVERRIDE;
 #endif  // defined(OS_CHROMEOS)
 
   virtual PrefProxyConfigTracker* GetProxyConfigTracker() OVERRIDE;
@@ -102,8 +100,14 @@ class OffTheRecordProfileImpl : public Profile {
   virtual void RequestMIDISysExPermission(
       int render_process_id,
       int render_view_id,
+      int bridge_id,
       const GURL& requesting_frame,
       const MIDISysExPermissionCallback& callback) OVERRIDE;
+  virtual void CancelMIDISysExPermissionRequest(
+      int render_process_id,
+      int render_view_id,
+      int bridge_id,
+      const GURL& requesting_frame) OVERRIDE;
   virtual content::ResourceContext* GetResourceContext() OVERRIDE;
   virtual content::GeolocationPermissionContext*
       GetGeolocationPermissionContext() OVERRIDE;
@@ -138,7 +142,7 @@ class OffTheRecordProfileImpl : public Profile {
 
   scoped_ptr<PrefProxyConfigTracker> pref_proxy_config_tracker_;
 
-  content::HostZoomMap::ZoomLevelChangedCallback zoom_callback_;
+  scoped_ptr<content::HostZoomMap::Subscription> zoom_subscription_;
 
   DISALLOW_COPY_AND_ASSIGN(OffTheRecordProfileImpl);
 };

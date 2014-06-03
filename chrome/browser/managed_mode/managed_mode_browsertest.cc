@@ -14,11 +14,11 @@
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/managed_mode/managed_mode_interstitial.h"
 #include "chrome/browser/managed_mode/managed_mode_navigation_observer.h"
+#include "chrome/browser/managed_mode/managed_user_constants.h"
 #include "chrome/browser/managed_mode/managed_user_service.h"
 #include "chrome/browser/managed_mode/managed_user_service_factory.h"
-#include "chrome/browser/policy/managed_mode_policy_provider.h"
-#include "chrome/browser/policy/profile_policy_connector.h"
-#include "chrome/browser/policy/profile_policy_connector_factory.h"
+#include "chrome/browser/managed_mode/managed_user_settings_service.h"
+#include "chrome/browser/managed_mode/managed_user_settings_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_navigator.h"
@@ -36,7 +36,6 @@
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/test/browser_test_utils.h"
 #include "grit/generated_resources.h"
-#include "policy/policy_constants.h"
 #include "ui/base/l10n/l10n_util.h"
 
 using content::InterstitialPage;
@@ -108,16 +107,12 @@ class ManagedModeBlockModeTest : public InProcessBrowserTest {
 
     Profile* profile = browser()->profile();
     managed_user_service_ = ManagedUserServiceFactory::GetForProfile(profile);
-    managed_user_service_->InitForTesting();
-    policy::ProfilePolicyConnector* connector =
-        policy::ProfilePolicyConnectorFactory::GetForProfile(profile);
-    policy::ManagedModePolicyProvider* policy_provider =
-        connector->managed_mode_policy_provider();
-    policy_provider->SetLocalPolicyForTesting(
-        policy::key::kContentPackDefaultFilteringBehavior,
+    ManagedUserSettingsService* managed_user_settings_service =
+        ManagedUserSettingsServiceFactory::GetForProfile(profile);
+    managed_user_settings_service->SetLocalSettingForTesting(
+        managed_users::kContentPackDefaultFilteringBehavior,
         scoped_ptr<base::Value>(
             new base::FundamentalValue(ManagedModeURLFilter::BLOCK)));
-    base::RunLoop().RunUntilIdle();
   }
 
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
@@ -128,6 +123,8 @@ class ManagedModeBlockModeTest : public InProcessBrowserTest {
         "MAP *.example.com " + host_port + "," +
         "MAP *.new-example.com " + host_port + "," +
         "MAP *.a.com " + host_port);
+
+    command_line->AppendSwitchASCII(switches::kManagedUserId, "asdf");
   }
 
   // Acts like a synchronous call to history's QueryHistory. Modified from
@@ -187,14 +184,11 @@ IN_PROC_BROWSER_TEST_F(ManagedModeBlockModeTest,
   // Set the host as allowed.
   scoped_ptr<DictionaryValue> dict(new DictionaryValue);
   dict->SetBooleanWithoutPathExpansion(allowed_url.host(), true);
-  policy::ProfilePolicyConnector* connector =
-      policy::ProfilePolicyConnectorFactory::GetForProfile(
+  ManagedUserSettingsService* managed_user_settings_service =
+      ManagedUserSettingsServiceFactory::GetForProfile(
           browser()->profile());
-  policy::ManagedModePolicyProvider* policy_provider =
-      connector->managed_mode_policy_provider();
-  policy_provider->SetLocalPolicyForTesting(
-      policy::key::kContentPackManualBehaviorHosts, dict.PassAs<Value>());
-  base::RunLoop().RunUntilIdle();
+  managed_user_settings_service->SetLocalSettingForTesting(
+      managed_users::kContentPackManualBehaviorHosts, dict.PassAs<Value>());
   EXPECT_EQ(
       ManagedUserService::MANUAL_ALLOW,
       managed_user_service_->GetManualBehaviorForHost(allowed_url.host()));
@@ -231,11 +225,40 @@ IN_PROC_BROWSER_TEST_F(ManagedModeBlockModeTest,
   QueryHistory(history_service, "", options, &results);
 
   // Check that the entries have the correct blocked_visit value.
-  EXPECT_EQ(2u, results.size());
+  ASSERT_EQ(2u, results.size());
   EXPECT_EQ(blocked_url.spec(), results[0].url().spec());
   EXPECT_TRUE(results[0].blocked_visit());
   EXPECT_EQ(allowed_url.spec(), results[1].url().spec());
   EXPECT_FALSE(results[1].blocked_visit());
+}
+
+IN_PROC_BROWSER_TEST_F(ManagedModeBlockModeTest, Unblock) {
+  GURL test_url("http://www.example.com/files/simple.html");
+  ui_test_utils::NavigateToURL(browser(), test_url);
+
+  WebContents* web_contents =
+      browser()->tab_strip_model()->GetActiveWebContents();
+
+  CheckShownPageIsInterstitial(web_contents);
+
+  content::WindowedNotificationObserver observer(
+      content::NOTIFICATION_LOAD_STOP,
+      content::NotificationService::AllSources());
+
+  // Set the host as allowed.
+  scoped_ptr<DictionaryValue> dict(new DictionaryValue);
+  dict->SetBooleanWithoutPathExpansion(test_url.host(), true);
+  ManagedUserSettingsService* managed_user_settings_service =
+      ManagedUserSettingsServiceFactory::GetForProfile(
+          browser()->profile());
+  managed_user_settings_service->SetLocalSettingForTesting(
+      managed_users::kContentPackManualBehaviorHosts, dict.PassAs<Value>());
+  EXPECT_EQ(
+      ManagedUserService::MANUAL_ALLOW,
+      managed_user_service_->GetManualBehaviorForHost(test_url.host()));
+
+  observer.Wait();
+  EXPECT_EQ(test_url, web_contents->GetURL());
 }
 
 }  // namespace

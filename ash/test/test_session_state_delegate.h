@@ -27,6 +27,7 @@ class TestSessionStateDelegate : public SessionStateDelegate {
   virtual bool IsActiveUserSessionStarted() const OVERRIDE;
   virtual bool CanLockScreen() const OVERRIDE;
   virtual bool IsScreenLocked() const OVERRIDE;
+  virtual bool ShouldLockScreenBeforeSuspending() const OVERRIDE;
   virtual void LockScreen() OVERRIDE;
   virtual void UnlockScreen() OVERRIDE;
   virtual bool IsUserSessionBlocked() const OVERRIDE;
@@ -34,14 +35,20 @@ class TestSessionStateDelegate : public SessionStateDelegate {
       ash::MultiProfileIndex index) const OVERRIDE;
   virtual const std::string GetUserEmail(
       ash::MultiProfileIndex index) const OVERRIDE;
+  virtual const std::string GetUserID(
+      ash::MultiProfileIndex index) const OVERRIDE;
   virtual const gfx::ImageSkia& GetUserImage(
       ash::MultiProfileIndex index) const OVERRIDE;
   virtual void GetLoggedInUsers(UserIdList* users) OVERRIDE;
-  virtual void SwitchActiveUser(const std::string& email) OVERRIDE;
+  virtual void SwitchActiveUser(const std::string& user_id) OVERRIDE;
+  virtual void CycleActiveUser(CycleUser cycle_user) OVERRIDE;
   virtual void AddSessionStateObserver(
       ash::SessionStateObserver* observer) OVERRIDE;
   virtual void RemoveSessionStateObserver(
       ash::SessionStateObserver* observer) OVERRIDE;
+  virtual bool TransferWindowToDesktopOfUser(
+      aura::Window* window,
+      ash::MultiProfileIndex index) OVERRIDE;
 
   // TODO(oshima): Use state machine instead of using boolean variables.
 
@@ -62,9 +69,17 @@ class TestSessionStateDelegate : public SessionStateDelegate {
   // is an active user.
   void SetCanLockScreen(bool can_lock_screen);
 
+  // Updates |should_lock_screen_before_suspending_|.
+  void SetShouldLockScreenBeforeSuspending(bool should_lock);
+
   // Updates the internal state that indicates whether user adding screen is
   // running now.
   void SetUserAddingScreenRunning(bool user_adding_screen_running);
+
+  // Returns the number of calls to TransferWindowToDesktopOfUser.
+  int num_transfer_to_desktop_of_user_calls() {
+    return num_transfer_to_desktop_of_user_calls_;
+  }
 
  private:
   // Whether a session is in progress and there is an active user.
@@ -78,6 +93,9 @@ class TestSessionStateDelegate : public SessionStateDelegate {
   // Whether the screen can be locked. Locking will only actually be allowed
   // when this is |true| and there is an active user.
   bool can_lock_screen_;
+
+  // Return value for ShouldLockScreenBeforeSuspending().
+  bool should_lock_screen_before_suspending_;
 
   // Whether the screen is currently locked.
   bool screen_locked_;
@@ -93,6 +111,9 @@ class TestSessionStateDelegate : public SessionStateDelegate {
 
   // A test user image.
   gfx::ImageSkia null_image_;
+
+  // The number of calls which happened to TransferWindowToDesktopOfUser.
+  int num_transfer_to_desktop_of_user_calls_;
 
   DISALLOW_COPY_AND_ASSIGN(TestSessionStateDelegate);
 };

@@ -6,17 +6,18 @@
 #include "base/json/json_file_value_serializer.h"
 #include "base/memory/linked_ptr.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/csp_handler.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
-#include "chrome/common/extensions/incognito_handler.h"
 #include "chrome/common/extensions/manifest_handlers/app_isolation_info.h"
 #include "chrome/common/extensions/manifest_tests/extension_manifest_test.h"
+#include "extensions/common/error_utils.h"
+#include "extensions/common/manifest_constants.h"
+#include "extensions/common/manifest_handlers/csp_info.h"
+#include "extensions/common/manifest_handlers/incognito_info.h"
 #include "extensions/common/switches.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace errors = extension_manifest_errors;
-
 namespace extensions {
+
+namespace errors = manifest_errors;
 
 class PlatformAppsManifestTest : public ExtensionManifestTest {
 };
@@ -25,20 +26,21 @@ TEST_F(PlatformAppsManifestTest, PlatformApps) {
   scoped_refptr<Extension> extension =
       LoadAndExpectSuccess("init_valid_platform_app.json");
   EXPECT_TRUE(AppIsolationInfo::HasIsolatedStorage(extension.get()));
-  EXPECT_TRUE(IncognitoInfo::IsSplitMode(extension.get()));
+  EXPECT_FALSE(IncognitoInfo::IsSplitMode(extension.get()));
 
   extension =
       LoadAndExpectSuccess("init_valid_platform_app_no_manifest_version.json");
   EXPECT_EQ(2, extension->manifest_version());
 
   extension = LoadAndExpectSuccess("incognito_valid_platform_app.json");
-  EXPECT_TRUE(IncognitoInfo::IsSplitMode(extension.get()));
+  EXPECT_FALSE(IncognitoInfo::IsSplitMode(extension.get()));
 
   Testcase error_testcases[] = {
     Testcase("init_invalid_platform_app_2.json",
-        errors::kBackgroundRequiredForPlatformApps),
+             errors::kBackgroundRequiredForPlatformApps),
     Testcase("init_invalid_platform_app_3.json",
-        errors::kPlatformAppNeedsManifestVersion2),
+             ErrorUtils::FormatErrorMessage(
+                 errors::kInvalidManifestVersionOld, "2", "apps")),
   };
   RunTestcases(error_testcases, arraysize(error_testcases), EXPECT_TYPE_ERROR);
 
@@ -46,18 +48,18 @@ TEST_F(PlatformAppsManifestTest, PlatformApps) {
     Testcase(
         "init_invalid_platform_app_1.json",
         "'app.launch' is only allowed for hosted apps and legacy packaged "
-            "apps, and this is a packaged app."),
+            "apps, but this is a packaged app."),
     Testcase(
         "init_invalid_platform_app_4.json",
-        "'background' is only allowed for extensions, hosted apps and legacy "
-            "packaged apps, and this is a packaged app."),
+        "'background' is only allowed for extensions, hosted apps, and legacy "
+            "packaged apps, but this is a packaged app."),
     Testcase(
         "init_invalid_platform_app_5.json",
-        "'background' is only allowed for extensions, hosted apps and legacy "
-            "packaged apps, and this is a packaged app."),
+        "'background' is only allowed for extensions, hosted apps, and legacy "
+            "packaged apps, but this is a packaged app."),
     Testcase("incognito_invalid_platform_app.json",
         "'incognito' is only allowed for extensions and legacy packaged apps, "
-            "and this is a packaged app."),
+            "but this is a packaged app."),
   };
   RunTestcases(
       warning_testcases, arraysize(warning_testcases), EXPECT_TYPE_WARNING);
@@ -69,7 +71,7 @@ TEST_F(PlatformAppsManifestTest, PlatformAppContentSecurityPolicy) {
     Testcase(
         "init_platform_app_csp_warning_1.json",
         "'content_security_policy' is only allowed for extensions and legacy "
-            "packaged apps, and this is a packaged app."),
+            "packaged apps, but this is a packaged app."),
     Testcase(
         "init_platform_app_csp_warning_2.json",
         "'app.content_security_policy' is not allowed for specified extension "

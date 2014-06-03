@@ -14,8 +14,6 @@
 #include "chrome/browser/ui/search/search_model.h"
 #include "chrome/browser/ui/views/bookmarks/bookmark_bar_view.h"
 #include "chrome/browser/ui/views/download/download_shelf_view.h"
-#include "chrome/browser/ui/views/frame/browser_frame.h"
-#include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/frame/browser_view_layout_delegate.h"
 #include "chrome/browser/ui/views/frame/contents_container.h"
 #include "chrome/browser/ui/views/frame/immersive_mode_controller.h"
@@ -29,19 +27,18 @@
 #include "ui/gfx/scrollbar_size.h"
 #include "ui/gfx/size.h"
 #include "ui/views/controls/webview/webview.h"
+#include "ui/views/widget/widget.h"
+#include "ui/views/window/client_view.h"
 
 using views::View;
 using web_modal::WebContentsModalDialogHost;
-using web_modal::WebContentsModalDialogHostObserver;
+using web_modal::ModalDialogHostObserver;
 
 namespace {
 
 // The visible height of the shadow above the tabs. Clicks in this area are
 // treated as clicks to the frame, rather than clicks to the tab.
 const int kTabShadowSize = 2;
-// The number of pixels the bookmark bar should overlap the spacer by if the
-// spacer is visible.
-const int kSpacerBookmarkBarOverlap = 1;
 // The number of pixels the metro switcher is offset from the right edge.
 const int kWindowSwitcherOffsetX = 7;
 // The number of pixels the constrained window should overlap the bottom
@@ -69,10 +66,30 @@ class BrowserViewLayout::WebContentsModalDialogHostViews
           : browser_view_layout_(browser_view_layout) {
   }
 
+  virtual ~WebContentsModalDialogHostViews() {
+    FOR_EACH_OBSERVER(web_modal::ModalDialogHostObserver,
+                      observer_list_,
+                      OnHostDestroying());
+  }
+
   void NotifyPositionRequiresUpdate() {
-    FOR_EACH_OBSERVER(WebContentsModalDialogHostObserver,
+    FOR_EACH_OBSERVER(ModalDialogHostObserver,
                       observer_list_,
                       OnPositionRequiresUpdate());
+  }
+
+  // Center horizontally over the content area, with the top overlapping the
+  // browser chrome.
+  virtual gfx::Point GetDialogPosition(const gfx::Size& size) OVERRIDE {
+    int top_y = browser_view_layout_->web_contents_modal_dialog_top_y_;
+    ContentsContainer* contents_container =
+        browser_view_layout_->contents_container_;
+    gfx::Rect contents_container_bounds_in_widget =
+        contents_container->ConvertRectToWidget(
+            contents_container->GetLocalBounds());
+    int middle_x = contents_container_bounds_in_widget.x() +
+        contents_container_bounds_in_widget.width() / 2;
+    return gfx::Point(middle_x - size.width() / 2, top_y);
   }
 
  private:
@@ -83,29 +100,33 @@ class BrowserViewLayout::WebContentsModalDialogHostViews
         GetNativeView();
   }
 
-  // Center horizontally over the content area, with the top overlapping the
-  // browser chrome.
-  virtual gfx::Point GetDialogPosition(const gfx::Size& size) OVERRIDE {
-    int top_y = browser_view_layout_->web_contents_modal_dialog_top_y_;
+  virtual gfx::Size GetMaximumDialogSize() OVERRIDE {
     gfx::Rect content_area =
-        browser_view_layout_->browser_view_->GetClientAreaBounds();
-    int middle_x = content_area.x() + content_area.width() / 2;
-    return gfx::Point(middle_x - size.width() / 2, top_y);
+        browser_view_layout_->contents_container_->ConvertRectToWidget(
+            browser_view_layout_->contents_container_->GetLocalBounds());
+
+    gfx::Size max_dialog_size = content_area.size();
+    // Adjust for difference in alignment between the dialog top and the top of
+    // the content area.
+    int height_offset = content_area.y() -
+        browser_view_layout_->web_contents_modal_dialog_top_y_;
+    max_dialog_size.Enlarge(0, height_offset);
+    return max_dialog_size;
   }
 
   // Add/remove observer.
   virtual void AddObserver(
-      WebContentsModalDialogHostObserver* observer) OVERRIDE {
+      ModalDialogHostObserver* observer) OVERRIDE {
     observer_list_.AddObserver(observer);
   }
   virtual void RemoveObserver(
-      WebContentsModalDialogHostObserver* observer) OVERRIDE {
+      ModalDialogHostObserver* observer) OVERRIDE {
     observer_list_.RemoveObserver(observer);
   }
 
   BrowserViewLayout* const browser_view_layout_;
 
-  ObserverList<WebContentsModalDialogHostObserver> observer_list_;
+  ObserverList<ModalDialogHostObserver> observer_list_;
 
   DISALLOW_COPY_AND_ASSIGN(WebContentsModalDialogHostViews);
 };
@@ -137,7 +158,7 @@ BrowserViewLayout::~BrowserViewLayout() {
 void BrowserViewLayout::Init(
     BrowserViewLayoutDelegate* delegate,
     Browser* browser,
-    BrowserView* browser_view,
+    views::ClientView* browser_view,
     views::View* top_container,
     TabStrip* tab_strip,
     views::View* toolbar,
@@ -166,8 +187,6 @@ gfx::Size BrowserViewLayout::GetMinimumSize() {
   gfx::Size tabstrip_size(
       browser()->SupportsWindowFeature(Browser::FEATURE_TABSTRIP) ?
       tab_strip_->GetMinimumSize() : gfx::Size());
-  BrowserNonClientFrameView::TabStripInsets tab_strip_insets(
-      browser_view_->frame()->GetTabStripInsets(false));
   gfx::Size toolbar_size(
       (browser()->SupportsWindowFeature(Browser::FEATURE_TOOLBAR) ||
        browser()->SupportsWindowFeature(Browser::FEATURE_LOCATIONBAR)) ?
@@ -181,16 +200,20 @@ gfx::Size BrowserViewLayout::GetMinimumSize() {
     bookmark_bar_size = bookmark_bar_->GetMinimumSize();
     bookmark_bar_size.Enlarge(0, -bookmark_bar_->GetToolbarOverlap());
   }
+  gfx::Size infobar_container_size(infobar_container_->GetMinimumSize());
   // TODO: Adjust the minimum height for the find bar.
 
   gfx::Size contents_size(contents_split_->GetMinimumSize());
 
-  int min_height = tabstrip_size.height() + toolbar_size.height() +
-      bookmark_bar_size.height() + contents_size.height();
+  int min_height = delegate_->GetTopInsetInBrowserView() +
+      tabstrip_size.height() + toolbar_size.height() +
+      bookmark_bar_size.height() + infobar_container_size.height() +
+      contents_size.height();
   int widths[] = {
-        tabstrip_size.width() + tab_strip_insets.left + tab_strip_insets.right,
+        tabstrip_size.width(),
         toolbar_size.width(),
         bookmark_bar_size.width(),
+        infobar_container_size.width(),
         contents_size.width() };
   int min_width = *std::max_element(&widths[0], &widths[arraysize(widths)]);
   return gfx::Size(min_width, min_height);
@@ -258,7 +281,7 @@ int BrowserViewLayout::NonClientHitTest(const gfx::Point& point) {
 
   // Determine if the TabStrip exists and is capable of being clicked on. We
   // might be a popup window without a TabStrip.
-  if (browser_view_->IsTabStripVisible()) {
+  if (delegate_->IsTabStripVisible()) {
     // See if the mouse pointer is within the bounds of the TabStrip.
     if (ConvertedHitTest(parent, tab_strip_, &test_point)) {
       if (tab_strip_->IsPositionInWindowCaption(test_point))
@@ -269,7 +292,8 @@ int BrowserViewLayout::NonClientHitTest(const gfx::Point& point) {
     // The top few pixels of the TabStrip are a drop-shadow - as we're pretty
     // starved of dragable area, let's give it to window dragging (this also
     // makes sense visually).
-    if (!(browser_view_->IsMaximized() || browser_view_->IsFullscreen()) &&
+    views::Widget* widget = browser_view_->GetWidget();
+    if (!(widget->IsMaximized() || widget->IsFullscreen()) &&
         (point_in_browser_view_coords.y() <
             (tab_strip_->y() + kTabShadowSize))) {
       // We return HTNOWHERE as this is a signal to our containing
@@ -323,13 +347,14 @@ int BrowserViewLayout::NonClientHitTest(const gfx::Point& point) {
 
 void BrowserViewLayout::Layout(views::View* browser_view) {
   vertical_layout_rect_ = browser_view->GetLocalBounds();
-  int top = LayoutTabStripRegion(browser_view);
+  int top = delegate_->GetTopInsetInBrowserView();
+  top = LayoutTabStripRegion(top);
   if (delegate_->IsTabStripVisible()) {
     int x = tab_strip_->GetMirroredX() +
         browser_view_->GetMirroredX() +
-        browser_view_->frame()->GetThemeBackgroundXInset();
-    tab_strip_->SetBackgroundOffset(
-        gfx::Point(x, browser_view_->frame()->GetTabStripInsets(false).top));
+        delegate_->GetThemeBackgroundXInset();
+    int y = browser_view_->y() + delegate_->GetTopInsetInBrowserView();
+    tab_strip_->SetBackgroundOffset(gfx::Point(x, y));
   }
   top = LayoutToolbar(top);
 
@@ -363,8 +388,11 @@ void BrowserViewLayout::Layout(views::View* browser_view) {
   if (fullscreen_exit_bubble)
     fullscreen_exit_bubble->RepositionIfVisible();
 
-  // Adjust any web contents modal dialogs.
-  dialog_host_->NotifyPositionRequiresUpdate();
+  // Adjust any hosted dialogs if the browser's dialog positioning has changed.
+  if (dialog_host_->GetDialogPosition(gfx::Size()) != latest_dialog_position_) {
+    latest_dialog_position_ = dialog_host_->GetDialogPosition(gfx::Size());
+    dialog_host_->NotifyPositionRequiresUpdate();
+  }
 }
 
 // Return the preferred size which is the size required to give each
@@ -376,19 +404,15 @@ gfx::Size BrowserViewLayout::GetPreferredSize(views::View* host) {
 //////////////////////////////////////////////////////////////////////////////
 // BrowserViewLayout, private:
 
-int BrowserViewLayout::LayoutTabStripRegion(views::View* browser_view) {
+int BrowserViewLayout::LayoutTabStripRegion(int top) {
   if (!delegate_->IsTabStripVisible()) {
     tab_strip_->SetVisible(false);
     tab_strip_->SetBounds(0, 0, 0, 0);
-    return 0;
+    return top;
   }
   // This retrieves the bounds for the tab strip based on whether or not we show
   // anything to the left of it, like the incognito avatar.
-  gfx::Rect tabstrip_bounds(delegate_->GetBoundsForTabStrip(tab_strip_));
-  gfx::Point tabstrip_origin(tabstrip_bounds.origin());
-  views::View::ConvertPointToTarget(
-      browser_view->parent(), browser_view, &tabstrip_origin);
-  tabstrip_bounds.set_origin(tabstrip_origin);
+  gfx::Rect tabstrip_bounds(delegate_->GetBoundsForTabStripInBrowserView());
 
   tab_strip_->SetVisible(true);
   tab_strip_->SetBoundsRect(tabstrip_bounds);
@@ -406,7 +430,7 @@ int BrowserViewLayout::LayoutTabStripRegion(views::View* browser_view) {
             browser()->profile()->GetOriginalProfile(),
             browser()->host_desktop_type()) != NULL) {
       switcher_button->SetVisible(true);
-      int width = browser_view->width();
+      int width = browser_view_->width();
       gfx::Size ps = switcher_button->GetPreferredSize();
       if (width > ps.width()) {
         switcher_button->SetBounds(width - ps.width() - kWindowSwitcherOffsetX,
@@ -441,6 +465,9 @@ int BrowserViewLayout::LayoutToolbar(int top) {
 }
 
 int BrowserViewLayout::LayoutBookmarkAndInfoBars(int top, int browser_view_y) {
+  web_contents_modal_dialog_top_y_ =
+      top + browser_view_y - kConstrainedWindowOverlap;
+
   if (bookmark_bar_) {
     // If we're showing the Bookmark bar in detached style, then we
     // need to show any Info bar _above_ the Bookmark bar, since the
@@ -453,9 +480,6 @@ int BrowserViewLayout::LayoutBookmarkAndInfoBars(int top, int browser_view_y) {
     // Otherwise, Bookmark bar first, Info bar second.
     top = std::max(toolbar_->bounds().bottom(), LayoutBookmarkBar(top));
   }
-
-  web_contents_modal_dialog_top_y_ =
-      top + browser_view_y - kConstrainedWindowOverlap;
 
   return LayoutInfoBar(top);
 }
@@ -515,8 +539,11 @@ void BrowserViewLayout::LayoutContentsSplitView(int top, int bottom) {
 void BrowserViewLayout::UpdateTopContainerBounds() {
   gfx::Rect top_container_bounds(top_container_->GetPreferredSize());
 
-  // If the immersive mode controller is animating the top-of-window views,
-  // part of the top container may be offscreen.
+  // If the immersive mode controller is animating the top container, it may be
+  // partly offscreen. The top container is positioned relative to the top of
+  // the client view instead of relative to GetTopInsetInBrowserView() because
+  // the top container paints parts of the frame (title, window controls) during
+  // an immersive reveal.
   top_container_bounds.set_y(
       immersive_mode_controller_->GetTopContainerVerticalOffset(
           top_container_bounds.size()));
@@ -527,7 +554,7 @@ int BrowserViewLayout::GetContentsOffsetForBookmarkBar() {
   // If the bookmark bar is hidden or attached to the omnibox the web contents
   // will appear directly underneath it and does not need an offset.
   if (!bookmark_bar_ ||
-      !browser_view_->IsBookmarkBarVisible() ||
+      !delegate_->IsBookmarkBarVisible() ||
       !bookmark_bar_->IsDetached()) {
     return 0;
   }

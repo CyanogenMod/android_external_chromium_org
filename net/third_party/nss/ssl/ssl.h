@@ -121,14 +121,17 @@ SSL_IMPORT PRFileDesc *DTLS_ImportFD(PRFileDesc *model, PRFileDesc *fd);
 #define SSL_ENABLE_FALSE_START         22 /* Enable SSL false start (off by */
                                           /* default, applies only to       */
                                           /* clients). False start is a     */
-/* mode where an SSL client will start sending application data before      */
-/* verifying the server's Finished message. This means that we could end up */
-/* sending data to an imposter. However, the data will be encrypted and     */
-/* only the true server can derive the session key. Thus, so long as the    */
-/* cipher isn't broken this is safe. Because of this, False Start will only */
-/* occur on RSA or DH ciphersuites where the cipher's key length is >= 80   */
-/* bits. The advantage of False Start is that it saves a round trip for     */
-/* client-speaks-first protocols when performing a full handshake.          */
+/* mode where an SSL client will start sending application data before
+ * verifying the server's Finished message. This means that we could end up
+ * sending data to an imposter. However, the data will be encrypted and
+ * only the true server can derive the session key. Thus, so long as the
+ * cipher isn't broken this is safe. The advantage of false start is that
+ * it saves a round trip for client-speaks-first protocols when performing a
+ * full handshake.
+ *
+ * In addition to enabling this option, the application must register a
+ * callback using the SSL_SetCanFalseStartCallback function.
+ */
 
 /* For SSL 3.0 and TLS 1.0, by default we prevent chosen plaintext attacks
  * on SSL CBC mode cipher suites (see RFC 4346 Section F.3) by splitting
@@ -158,6 +161,10 @@ SSL_IMPORT PRFileDesc *DTLS_ImportFD(PRFileDesc *model, PRFileDesc *fd);
  */
 #define SSL_CBC_RANDOM_IV 23
 #define SSL_ENABLE_OCSP_STAPLING       24 /* Request OCSP stapling (client) */
+/* Request Signed Certificate Timestamps via TLS extension (client) */
+#define SSL_ENABLE_SIGNED_CERT_TIMESTAMPS 25
+#define SSL_ENABLE_FALLBACK_SCSV       26 /* Send fallback SCSV in
+                                           * handshakes. */
 
 #ifdef SSL_DEPRECATED_FUNCTION 
 /* Old deprecated function names */
@@ -259,6 +266,13 @@ SSL_IMPORT SECStatus SSL_CipherPrefSetDefault(PRInt32 cipher, PRBool enabled);
 SSL_IMPORT SECStatus SSL_CipherPrefGetDefault(PRInt32 cipher, PRBool *enabled);
 SSL_IMPORT SECStatus SSL_CipherPolicySet(PRInt32 cipher, PRInt32 policy);
 SSL_IMPORT SECStatus SSL_CipherPolicyGet(PRInt32 cipher, PRInt32 *policy);
+
+/* SSL_CipherOrderSet sets the cipher suite preference order from |ciphers|,
+ * which must be an array of cipher suite ids of length |len|. All the given
+ * cipher suite ids must appear in the array that is returned by
+ * |SSL_GetImplementedCiphers| and may only appear once, at most. */
+SSL_IMPORT SECStatus SSL_CipherOrderSet(PRFileDesc *fd, const PRUint16 *ciphers,
+                                        unsigned int len);
 
 /* SSLChannelBindingType enumerates the types of supported channel binding
  * values. See RFC 5929. */
@@ -434,6 +448,15 @@ SSL_IMPORT SECStatus SSL_SecurityStatus(PRFileDesc *fd, int *on, char **cipher,
 */
 SSL_IMPORT CERTCertificate *SSL_PeerCertificate(PRFileDesc *fd);
 
+/*
+** Return the certificates presented by the SSL peer. If the SSL peer
+** did not present certificates, return NULL with the
+** SSL_ERROR_NO_CERTIFICATE error. On failure, return NULL with an error
+** code other than SSL_ERROR_NO_CERTIFICATE.
+**	"fd" the socket "file" descriptor
+*/
+SSL_IMPORT CERTCertList *SSL_PeerCertificateChain(PRFileDesc *fd);
+
 /* SSL_PeerStapledOCSPResponses returns the OCSP responses that were provided
  * by the TLS server. The return value is a pointer to an internal SECItemArray
  * that contains the returned OCSP responses; it is only valid until the
@@ -452,6 +475,23 @@ SSL_IMPORT CERTCertificate *SSL_PeerCertificate(PRFileDesc *fd);
  */
 SSL_IMPORT const SECItemArray * SSL_PeerStapledOCSPResponses(PRFileDesc *fd);
 
+/* SSL_PeerSignedCertTimestamps returns the signed_certificate_timestamp
+ * extension data provided by the TLS server. The return value is a pointer
+ * to an internal SECItem that contains the returned response (as a serialized
+ * SignedCertificateTimestampList, see RFC 6962). The returned pointer is only
+ * valid until the callback function that calls SSL_PeerSignedCertTimestamps
+ * (e.g. the authenticate certificate hook, or the handshake callback) returns.
+ *
+ * If no Signed Certificate Timestamps were given by the server then the result
+ * will be empty. If there was an error, then the result will be NULL.
+ *
+ * You must set the SSL_ENABLE_SIGNED_CERT_TIMESTAMPS option to indicate support
+ * for Signed Certificate Timestamps to a server.
+ *
+ * libssl does not do any parsing or validation of the response itself.
+ */
+SSL_IMPORT const SECItem * SSL_PeerSignedCertTimestamps(PRFileDesc *fd);
+
 /* SSL_SetStapledOCSPResponses stores an array of one or multiple OCSP responses
  * in the fd's data, which may be sent as part of a server side cert_status
  * handshake message. Parameter |responses| is for the server certificate of
@@ -461,18 +501,6 @@ SSL_IMPORT const SECItemArray * SSL_PeerStapledOCSPResponses(PRFileDesc *fd);
 SSL_IMPORT SECStatus
 SSL_SetStapledOCSPResponses(PRFileDesc *fd, const SECItemArray *responses,
 			    SSLKEAType kea);
-
-/*
-** Return references to the certificates presented by the SSL peer.
-** |maxNumCerts| must contain the size of the |certs| array. On successful
-** return, |*numCerts| contains the number of certificates available and
-** |certs| will contain references to as many certificates as would fit.
-** Therefore if |*numCerts| contains a value less than or equal to
-** |maxNumCerts|, then all certificates were returned.
-*/
-SSL_IMPORT SECStatus SSL_PeerCertificateChain(
-	PRFileDesc *fd, CERTCertificate **certs,
-	unsigned int *numCerts, unsigned int maxNumCerts);
 
 /*
 ** Authenticate certificate hook. Called when a certificate comes in
@@ -744,13 +772,44 @@ SSL_IMPORT SECStatus SSL_SetMaxServerCacheLocks(PRUint32 maxLocks);
 SSL_IMPORT SECStatus SSL_InheritMPServerSIDCache(const char * envString);
 
 /*
-** Set the callback on a particular socket that gets called when we finish
-** performing a handshake.
+** Set the callback that gets called when a TLS handshake is complete. The
+** handshake callback is called after verifying the peer's Finished message and
+** before processing incoming application data.
+**
+** For the initial handshake: If the handshake false started (see
+** SSL_ENABLE_FALSE_START), then application data may already have been sent
+** before the handshake callback is called. If we did not false start then the
+** callback will get called before any application data is sent.
 */
 typedef void (PR_CALLBACK *SSLHandshakeCallback)(PRFileDesc *fd,
                                                  void *client_data);
 SSL_IMPORT SECStatus SSL_HandshakeCallback(PRFileDesc *fd, 
 			          SSLHandshakeCallback cb, void *client_data);
+
+/* Applications that wish to enable TLS false start must set this callback
+** function. NSS will invoke the functon to determine if a particular
+** connection should use false start or not. SECSuccess indicates that the
+** callback completed successfully, and if so *canFalseStart indicates if false
+** start can be used. If the callback does not return SECSuccess then the
+** handshake will be canceled. NSS's recommended criteria can be evaluated by
+** calling SSL_RecommendedCanFalseStart.
+**
+** If no false start callback is registered then false start will never be
+** done, even if the SSL_ENABLE_FALSE_START option is enabled.
+**/
+typedef SECStatus (PR_CALLBACK *SSLCanFalseStartCallback)(
+    PRFileDesc *fd, void *arg, PRBool *canFalseStart);
+
+SSL_IMPORT SECStatus SSL_SetCanFalseStartCallback(
+    PRFileDesc *fd, SSLCanFalseStartCallback callback, void *arg);
+
+/* This function sets *canFalseStart according to the recommended criteria for
+** false start. These criteria may change from release to release and may depend
+** on which handshake features have been negotiated and/or properties of the
+** certifciates/keys used on the connection.
+*/
+SSL_IMPORT SECStatus SSL_RecommendedCanFalseStart(PRFileDesc *fd,
+                                                  PRBool *canFalseStart);
 
 /*
 ** For the server, request a new handshake.  For the client, begin a new
@@ -811,6 +870,18 @@ SSL_IMPORT int SSL_DataPending(PRFileDesc *fd);
 ** Invalidate the SSL session associated with fd.
 */
 SSL_IMPORT SECStatus SSL_InvalidateSession(PRFileDesc *fd);
+
+/*
+** Cache the SSL session associated with fd, if it has not already been cached.
+*/
+SSL_IMPORT SECStatus SSL_CacheSession(PRFileDesc *fd);
+
+/*
+** Cache the SSL session associated with fd, if it has not already been cached.
+** This function may only be called when processing within a callback assigned
+** via SSL_HandshakeCallback
+*/
+SSL_IMPORT SECStatus SSL_CacheSessionUnlocked(PRFileDesc *fd);
 
 /*
 ** Return a SECItem containing the SSL session ID associated with the fd.

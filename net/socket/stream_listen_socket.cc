@@ -27,6 +27,7 @@
 #include "net/base/ip_endpoint.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
+#include "net/socket/socket_descriptor.h"
 
 using std::string;
 
@@ -43,10 +44,8 @@ const int kReadBufSize = 4096;
 }  // namespace
 
 #if defined(OS_WIN)
-const SocketDescriptor StreamListenSocket::kInvalidSocket = INVALID_SOCKET;
 const int StreamListenSocket::kSocketError = SOCKET_ERROR;
 #elif defined(OS_POSIX)
-const SocketDescriptor StreamListenSocket::kInvalidSocket = -1;
 const int StreamListenSocket::kSocketError = -1;
 #endif
 
@@ -66,13 +65,13 @@ StreamListenSocket::StreamListenSocket(SocketDescriptor s,
 }
 
 StreamListenSocket::~StreamListenSocket() {
+  CloseSocket();
 #if defined(OS_WIN)
   if (socket_event_) {
     WSACloseEvent(socket_event_);
     socket_event_ = WSA_INVALID_EVENT;
   }
 #endif
-  CloseSocket(socket_);
 }
 
 void StreamListenSocket::Send(const char* bytes, int len,
@@ -195,13 +194,13 @@ void StreamListenSocket::Close() {
   socket_delegate_->DidClose(this);
 }
 
-void StreamListenSocket::CloseSocket(SocketDescriptor s) {
-  if (s && s != kInvalidSocket) {
+void StreamListenSocket::CloseSocket() {
+  if (socket_ != kInvalidSocket) {
     UnwatchSocket();
 #if defined(OS_WIN)
-    closesocket(s);
+    closesocket(socket_);
 #elif defined(OS_POSIX)
-    close(s);
+    close(socket_);
 #endif
   }
 }

@@ -40,7 +40,7 @@ void UpdateMargins(int margins_type, int dpi, PrintMsg_Print_Params* params) {
   }
 }
 
-} // end
+}  // namespace
 
 MockPrinterPage::MockPrinterPage(const void* source_data,
                                  uint32 source_size,
@@ -70,9 +70,8 @@ MockPrinter::MockPrinter()
     is_first_request_(true),
     print_to_pdf_(false),
     preview_request_id_(0),
-    print_scaling_option_(WebKit::WebPrintScalingOptionSourceSize),
+    print_scaling_option_(blink::WebPrintScalingOptionSourceSize),
     display_header_footer_(false),
-    date_(ASCIIToUTF16("date")),
     title_(ASCIIToUTF16("title")),
     url_(ASCIIToUTF16("url")),
     use_invalid_settings_(false) {
@@ -119,7 +118,6 @@ void MockPrinter::SetDefaultPrintSettings(const PrintMsg_Print_Params& params) {
   margin_left_ = params.margin_left;
   margin_top_ = params.margin_top;
   display_header_footer_ = params.display_header_footer;
-  date_ = params.date;
   title_ = params.title;
   url_ = params.url;
 }
@@ -162,7 +160,6 @@ void MockPrinter::ScriptedPrint(int cookie,
   settings->params.print_to_pdf = print_to_pdf_;
   settings->params.preview_request_id = preview_request_id_;
   settings->params.display_header_footer = display_header_footer_;
-  settings->params.date = date_;
   settings->params.title = title_;
   settings->params.url = url_;
   printer_status_ = PRINTER_PRINTING;
@@ -226,11 +223,6 @@ void MockPrinter::PrintPage(const PrintHostMsg_DidPrintPage_Params& params) {
   MockPrinterPage* page_data = new MockPrinterPage(metafile_data.memory(),
                                                    params.data_size,
                                                    image);
-  if (!page_data) {
-    printer_status_ = PRINTER_ERROR;
-    return;
-  }
-
   scoped_refptr<MockPrinterPage> page(page_data);
   pages_.push_back(page);
 #endif
@@ -317,7 +309,6 @@ void MockPrinter::SetPrintParams(PrintMsg_Print_Params* params) {
   params->print_to_pdf = print_to_pdf_;
   params->preview_request_id = preview_request_id_;
   params->display_header_footer = display_header_footer_;
-  params->date = date_;
   params->title = title_;
   params->url = url_;
 }

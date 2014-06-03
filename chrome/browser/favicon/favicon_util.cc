@@ -8,6 +8,7 @@
 #include "chrome/common/favicon/favicon_types.h"
 #include "skia/ext/image_operations.h"
 #include "third_party/skia/include/core/SkBitmap.h"
+#include "third_party/skia/include/core/SkCanvas.h"
 #include "ui/gfx/codec/png_codec.h"
 #include "ui/gfx/favicon_size.h"
 #include "ui/gfx/image/image_png_rep.h"
@@ -32,7 +33,7 @@ std::vector<gfx::ImagePNGRep> SelectFaviconFramesFromPNGsWithoutResizing(
     return png_reps;
 
   // A |favicon_size| of 0 indicates that the largest frame is desired.
-  if (favicon_size == 0 && scale_factors.size() == 1) {
+  if (favicon_size == 0) {
     int maximum_area = 0;
     scoped_refptr<base::RefCountedMemory> best_candidate;
     for (size_t i = 0; i < png_data.size(); ++i) {
@@ -42,18 +43,17 @@ std::vector<gfx::ImagePNGRep> SelectFaviconFramesFromPNGsWithoutResizing(
         best_candidate = png_data[i].bitmap_data;
       }
     }
-    png_reps.push_back(gfx::ImagePNGRep(best_candidate,
-                                        scale_factors[0]));
+    png_reps.push_back(gfx::ImagePNGRep(best_candidate, 1.0f));
     return png_reps;
   }
 
   // Cache the scale factor for each pixel size as |scale_factors| may contain
   // any of GetFaviconScaleFactors() which may include scale factors not
-  // supported by the platform. (ui::GetScaleFactorFromScale() cannot be used.)
+  // supported by the platform. (ui::GetSupportedScaleFactor() cannot be used.)
   std::map<int, ui::ScaleFactor> desired_pixel_sizes;
   for (size_t i = 0; i < scale_factors.size(); ++i) {
     int pixel_size = floor(favicon_size *
-        ui::GetScaleFactorScale(scale_factors[i]));
+        ui::GetImageScale(scale_factors[i]));
     desired_pixel_sizes[pixel_size] = scale_factors[i];
   }
 
@@ -70,17 +70,75 @@ std::vector<gfx::ImagePNGRep> SelectFaviconFramesFromPNGsWithoutResizing(
     if (it == desired_pixel_sizes.end())
       continue;
 
-    png_reps.push_back(gfx::ImagePNGRep(png_data[i].bitmap_data, it->second));
+    png_reps.push_back(
+        gfx::ImagePNGRep(png_data[i].bitmap_data,
+                         ui::GetImageScale(it->second)));
   }
 
   return png_reps;
+}
+
+// Returns a resampled bitmap of
+// |desired_size_in_pixel| x |desired_size_in_pixel| by resampling the best
+// bitmap out of |input_bitmaps|. ResizeBitmapByDownsamplingIfPossible() is
+// similar to SelectFaviconFrames() but it operates on bitmaps which have
+// already been resampled via SelectFaviconFrames().
+SkBitmap ResizeBitmapByDownsamplingIfPossible(
+    const std::vector<SkBitmap>& input_bitmaps,
+    int desired_size_in_pixel) {
+  DCHECK(!input_bitmaps.empty());
+  DCHECK_NE(desired_size_in_pixel, 0);
+
+  SkBitmap best_bitmap;
+  for (size_t i = 0; i < input_bitmaps.size(); ++i) {
+    const SkBitmap& input_bitmap = input_bitmaps[i];
+    if (input_bitmap.width() == desired_size_in_pixel &&
+        input_bitmap.height() == desired_size_in_pixel) {
+      return input_bitmap;
+    } else if (best_bitmap.isNull()) {
+      best_bitmap = input_bitmap;
+    } else if (input_bitmap.width() >= best_bitmap.width() &&
+               input_bitmap.height() >= best_bitmap.height()) {
+      if (best_bitmap.width() < desired_size_in_pixel ||
+          best_bitmap.height() < desired_size_in_pixel) {
+        best_bitmap = input_bitmap;
+      }
+    } else {
+      if (input_bitmap.width() >= desired_size_in_pixel &&
+          input_bitmap.height() >= desired_size_in_pixel) {
+        best_bitmap = input_bitmap;
+      }
+    }
+  }
+
+  if (desired_size_in_pixel % best_bitmap.width() == 0 &&
+      desired_size_in_pixel % best_bitmap.height() == 0) {
+    // Use nearest neighbour resampling if upsampling by an integer. This
+    // makes the result look similar to the result of SelectFaviconFrames().
+    SkBitmap bitmap;
+    bitmap.setConfig(SkBitmap::kARGB_8888_Config,
+                     desired_size_in_pixel,
+                     desired_size_in_pixel);
+    bitmap.allocPixels();
+    if (!best_bitmap.isOpaque())
+      bitmap.eraseARGB(0, 0, 0, 0);
+
+    SkCanvas canvas(bitmap);
+    SkRect dest(SkRect::MakeWH(desired_size_in_pixel, desired_size_in_pixel));
+    canvas.drawBitmapRect(best_bitmap, NULL, dest);
+    return bitmap;
+  }
+  return skia::ImageOperations::Resize(best_bitmap,
+                                       skia::ImageOperations::RESIZE_LANCZOS3,
+                                       desired_size_in_pixel,
+                                       desired_size_in_pixel);
 }
 
 }  // namespace
 
 // static
 std::vector<ui::ScaleFactor> FaviconUtil::GetFaviconScaleFactors() {
-  const float kScale1x = ui::GetScaleFactorScale(ui::SCALE_FACTOR_100P);
+  const float kScale1x = ui::GetImageScale(ui::SCALE_FACTOR_100P);
   std::vector<ui::ScaleFactor> favicon_scale_factors =
       ui::GetSupportedScaleFactors();
 
@@ -89,7 +147,7 @@ std::vector<ui::ScaleFactor> FaviconUtil::GetFaviconScaleFactors() {
   // well.
   size_t insert_index = favicon_scale_factors.size();
   for (size_t i = 0; i < favicon_scale_factors.size(); ++i) {
-    float scale = ui::GetScaleFactorScale(favicon_scale_factors[i]);
+    float scale = ui::GetImageScale(favicon_scale_factors[i]);
     if (scale == kScale1x) {
       return favicon_scale_factors;
     } else if (scale > kScale1x) {
@@ -134,12 +192,17 @@ gfx::Image FaviconUtil::SelectFaviconFramesFromPNGs(
       SelectFaviconFramesFromPNGsWithoutResizing(png_data, scale_factors,
           favicon_size);
 
+  // SelectFaviconFramesFromPNGsWithoutResizing() should have selected the
+  // largest favicon if |favicon_size| == 0.
+  if (favicon_size == 0)
+    return gfx::Image(png_reps);
+
   std::vector<ui::ScaleFactor> scale_factors_to_generate = scale_factors;
   for (size_t i = 0; i < png_reps.size(); ++i) {
     std::vector<ui::ScaleFactor>::iterator it = std::find(
         scale_factors_to_generate.begin(),
         scale_factors_to_generate.end(),
-        png_reps[i].scale_factor);
+        ui::GetSupportedScaleFactor(png_reps[i].scale));
     CHECK(it != scale_factors_to_generate.end());
     scale_factors_to_generate.erase(it);
   }
@@ -163,8 +226,16 @@ gfx::Image FaviconUtil::SelectFaviconFramesFromPNGs(
   if (bitmaps.empty())
     return gfx::Image();
 
-  gfx::ImageSkia resized_image_skia = SelectFaviconFrames(bitmaps,
-      scale_factors_to_generate, favicon_size, NULL);
+  gfx::ImageSkia resized_image_skia;
+  for (size_t i = 0; i < scale_factors_to_generate.size(); ++i) {
+    ui::ScaleFactor scale_factor = scale_factors_to_generate[i];
+    int desired_size_in_pixel =
+        ceil(favicon_size * ui::GetImageScale(scale_factor));
+    SkBitmap bitmap = ResizeBitmapByDownsamplingIfPossible(
+        bitmaps, desired_size_in_pixel);
+    resized_image_skia.AddRepresentation(
+        gfx::ImageSkiaRep(bitmap, scale_factor));
+  }
 
   if (png_reps.empty())
     return gfx::Image(resized_image_skia);
@@ -176,24 +247,9 @@ gfx::Image FaviconUtil::SelectFaviconFramesFromPNGs(
     if (gfx::PNGCodec::EncodeBGRASkBitmap(
         resized_image_skia_reps[i].sk_bitmap(), false, &png_bytes->data())) {
       png_reps.push_back(gfx::ImagePNGRep(png_bytes,
-          resized_image_skia_reps[i].scale_factor()));
+          resized_image_skia_reps[i].scale()));
     }
   }
 
   return gfx::Image(png_reps);
-}
-
-// static
-size_t FaviconUtil::SelectBestFaviconFromBitmaps(
-    const std::vector<SkBitmap>& bitmaps,
-    const std::vector<ui::ScaleFactor>& scale_factors,
-    int desired_size) {
-  std::vector<gfx::Size> sizes;
-  for (size_t i = 0; i < bitmaps.size(); ++i)
-    sizes.push_back(gfx::Size(bitmaps[i].width(), bitmaps[i].height()));
-  std::vector<size_t> selected_bitmap_indices;
-  SelectFaviconFrameIndices(sizes, scale_factors, desired_size,
-                            &selected_bitmap_indices, NULL);
-  DCHECK_EQ(1u, selected_bitmap_indices.size());
-  return selected_bitmap_indices[0];
 }

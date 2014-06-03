@@ -20,7 +20,7 @@
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/profiles/avatar_menu_model.h"
+#include "chrome/browser/profiles/avatar_menu.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_manager.h"
@@ -77,11 +77,6 @@ const int kAvatarBottomSpacing = 1;
 // There are 2 px on each side of the avatar (between the frame border and
 // it on the left, and between it and the tabstrip on the right).
 const int kAvatarSideSpacing = 2;
-
-// The thickness of the custom frame border; we need it here to enlarge the
-// close button whent the custom frame border isn't showing but the custom
-// titlebar is showing.
-const int kFrameBorderThickness = 4;
 
 // There is a 4px gap between the icon and the title text.
 const int kIconTitleSpacing = 4;
@@ -609,7 +604,8 @@ void BrowserTitlebar::UpdateTitleAndIcon() {
     return;
 
   // Get the page title and elide it to the available space.
-  string16 title = browser_window_->browser()->GetWindowTitleForCurrentTab();
+  base::string16 title =
+      browser_window_->browser()->GetWindowTitleForCurrentTab();
   gtk_label_set_text(GTK_LABEL(app_mode_title_), UTF16ToUTF8(title).c_str());
 
   if (browser_window_->browser()->is_app()) {
@@ -647,7 +643,8 @@ void BrowserTitlebar::UpdateThrobber(WebContents* web_contents) {
 
     // Note: we want to exclude the application popup/panel window.
     if ((browser_window_->browser()->is_app() &&
-        !browser_window_->browser()->is_type_tabbed())) {
+        !browser_window_->browser()->is_type_tabbed()) ||
+        browser_window_->browser()->is_type_popup()) {
       gfx::Image icon = browser_window_->browser()->GetCurrentPageIcon();
       if (icon.IsEmpty()) {
         // Fallback to the Chromium icon if the page has no icon.
@@ -1089,7 +1086,7 @@ bool BrowserTitlebar::ShouldDisplayAvatar() {
   if (!browser_window_->browser()->is_type_tabbed())
     return false;
 
-  return AvatarMenuModel::ShouldShowAvatarMenu();
+  return AvatarMenu::ShouldShowAvatarMenu();
 }
 
 bool BrowserTitlebar::IsOffTheRecord() {

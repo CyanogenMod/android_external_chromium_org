@@ -27,20 +27,21 @@ class RenderTextMac : public RenderText {
 
   // Overridden from RenderText:
   virtual Size GetStringSize() OVERRIDE;
-  virtual int GetBaseline() OVERRIDE;
+  virtual SizeF GetStringSizeF() OVERRIDE;
   virtual SelectionModel FindCursorPosition(const Point& point) OVERRIDE;
   virtual std::vector<FontSpan> GetFontSpansForTesting() OVERRIDE;
 
  protected:
   // Overridden from RenderText:
+  virtual int GetLayoutTextBaseline() OVERRIDE;
   virtual SelectionModel AdjacentCharSelectionModel(
       const SelectionModel& selection,
       VisualCursorDirection direction) OVERRIDE;
   virtual SelectionModel AdjacentWordSelectionModel(
       const SelectionModel& selection,
       VisualCursorDirection direction) OVERRIDE;
-  virtual ui::Range GetGlyphBounds(size_t index) OVERRIDE;
-  virtual std::vector<Rect> GetSubstringBounds(const ui::Range& range) OVERRIDE;
+  virtual Range GetGlyphBounds(size_t index) OVERRIDE;
+  virtual std::vector<Rect> GetSubstringBounds(const Range& range) OVERRIDE;
   virtual size_t TextIndexToLayoutIndex(size_t index) const OVERRIDE;
   virtual size_t LayoutIndexToTextIndex(size_t index) const OVERRIDE;
   virtual bool IsCursorablePosition(size_t position) OVERRIDE;
@@ -81,7 +82,7 @@ class RenderTextMac : public RenderText {
   base::ScopedCFTypeRef<CFMutableArrayRef> attributes_;
 
   // Visual dimensions of the text. Computed by |EnsureLayout()|.
-  Size string_size_;
+  SizeF string_size_;
 
   // Common baseline for this line of text. Computed by |EnsureLayout()|.
   SkScalar common_baseline_;

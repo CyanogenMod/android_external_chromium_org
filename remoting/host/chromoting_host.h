@@ -22,7 +22,6 @@
 #include "remoting/protocol/connection_to_client.h"
 #include "remoting/protocol/pairing_registry.h"
 #include "remoting/protocol/session_manager.h"
-#include "third_party/skia/include/core/SkSize.h"
 
 namespace base {
 class SingleThreadTaskRunner;
@@ -86,7 +85,7 @@ class ChromotingHost : public base::NonThreadSafe,
   // network and start listening for incoming connections.
   //
   // This method can only be called once during the lifetime of this object.
-  void Start(const std::string& xmpp_login);
+  void Start(const std::string& host_owner);
 
   // HostStatusMonitor interface.
   virtual void AddStatusObserver(HostStatusObserver* observer) OVERRIDE;

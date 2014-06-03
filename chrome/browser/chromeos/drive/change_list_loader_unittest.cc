@@ -9,14 +9,15 @@
 #include "base/prefs/testing_pref_service.h"
 #include "base/run_loop.h"
 #include "chrome/browser/chromeos/drive/change_list_loader_observer.h"
+#include "chrome/browser/chromeos/drive/change_list_processor.h"
 #include "chrome/browser/chromeos/drive/file_cache.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/drive/job_scheduler.h"
 #include "chrome/browser/chromeos/drive/resource_metadata.h"
 #include "chrome/browser/chromeos/drive/test_util.h"
 #include "chrome/browser/drive/fake_drive_service.h"
-#include "chrome/browser/google_apis/test_util.h"
 #include "content/public/test/test_browser_thread_bundle.h"
+#include "google_apis/drive/test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace drive {
@@ -68,35 +69,6 @@ class TestChangeListLoaderObserver : public ChangeListLoaderObserver {
   DISALLOW_COPY_AND_ASSIGN(TestChangeListLoaderObserver);
 };
 
-class TestDriveService : public FakeDriveService {
- public:
-  TestDriveService() : never_return_all_resource_list_(false),
-                       blocked_call_count_(0) {}
-
-  void set_never_return_all_resource_list(bool value) {
-    never_return_all_resource_list_ = value;
-  }
-
-  int blocked_call_count() const { return blocked_call_count_; }
-
-  // FakeDriveService override.
-  virtual google_apis::CancelCallback GetAllResourceList(
-      const google_apis::GetResourceListCallback& callback) OVERRIDE {
-    if (never_return_all_resource_list_) {
-      ++blocked_call_count_;
-      return google_apis::CancelCallback();
-    }
-    return FakeDriveService::GetAllResourceList(callback);
-  }
-
- private:
-  // GetAllResourceList never returns result when this is set to true.
-  // Used to emulate the real server's slowness.
-  bool never_return_all_resource_list_;
-
-  int blocked_call_count_;  // Number of blocked method calls.
-};
-
 class ChangeListLoaderTest : public testing::Test {
  protected:
   virtual void SetUp() OVERRIDE {
@@ -104,7 +76,7 @@ class ChangeListLoaderTest : public testing::Test {
     pref_service_.reset(new TestingPrefServiceSimple);
     test_util::RegisterDrivePrefs(pref_service_->registry());
 
-    drive_service_.reset(new TestDriveService);
+    drive_service_.reset(new FakeDriveService);
     ASSERT_TRUE(drive_service_->LoadResourceListForWapi(
         "gdata/root_feed.json"));
     ASSERT_TRUE(drive_service_->LoadAccountMetadataForWapi(
@@ -130,7 +102,8 @@ class ChangeListLoaderTest : public testing::Test {
     change_list_loader_.reset(
         new ChangeListLoader(base::MessageLoopProxy::current().get(),
                              metadata_.get(),
-                             scheduler_.get()));
+                             scheduler_.get(),
+                             drive_service_.get()));
   }
 
   // Adds a new file to the root directory of the service.
@@ -152,7 +125,7 @@ class ChangeListLoaderTest : public testing::Test {
   content::TestBrowserThreadBundle thread_bundle_;
   base::ScopedTempDir temp_dir_;
   scoped_ptr<TestingPrefServiceSimple> pref_service_;
-  scoped_ptr<TestDriveService> drive_service_;
+  scoped_ptr<FakeDriveService> drive_service_;
   scoped_ptr<JobScheduler> scheduler_;
   scoped_ptr<ResourceMetadataStorage,
              test_util::DestroyHelperForTests> metadata_storage_;
@@ -167,6 +140,8 @@ TEST_F(ChangeListLoaderTest, LoadIfNeeded) {
   // Start initial load.
   TestChangeListLoaderObserver observer(change_list_loader_.get());
 
+  EXPECT_EQ(0, drive_service_->about_resource_load_count());
+
   FileError error = FILE_ERROR_FAILED;
   change_list_loader_->LoadIfNeeded(
       DirectoryFetchInfo(),
@@ -178,6 +153,7 @@ TEST_F(ChangeListLoaderTest, LoadIfNeeded) {
   EXPECT_FALSE(change_list_loader_->IsRefreshing());
   EXPECT_LT(0, metadata_->GetLargestChangestamp());
   EXPECT_EQ(1, drive_service_->resource_list_load_count());
+  EXPECT_EQ(1, drive_service_->about_resource_load_count());
   EXPECT_EQ(1, observer.initial_load_complete_count());
   EXPECT_EQ(1, observer.load_from_server_complete_count());
   EXPECT_TRUE(observer.changed_directories().empty());
@@ -200,6 +176,8 @@ TEST_F(ChangeListLoaderTest, LoadIfNeeded) {
   EXPECT_EQ(FILE_ERROR_OK, error);
 
   EXPECT_FALSE(change_list_loader_->IsRefreshing());
+  // Cached value is used.
+  EXPECT_EQ(1, drive_service_->about_resource_load_count());
   EXPECT_EQ(previous_changestamp, metadata_->GetLargestChangestamp());
   EXPECT_EQ(previous_resource_list_load_count,
             drive_service_->resource_list_load_count());
@@ -218,7 +196,8 @@ TEST_F(ChangeListLoaderTest, LoadIfNeeded_LocalMetadataAvailable) {
   change_list_loader_.reset(
       new ChangeListLoader(base::MessageLoopProxy::current().get(),
                            metadata_.get(),
-                           scheduler_.get()));
+                           scheduler_.get(),
+                           drive_service_.get()));
 
   // Add a file to the service.
   scoped_ptr<google_apis::ResourceEntry> gdata_entry = AddNewFile("New File");
@@ -264,7 +243,7 @@ TEST_F(ChangeListLoaderTest, LoadIfNeeded_MyDrive) {
   // Load grand root.
   FileError error = FILE_ERROR_FAILED;
   change_list_loader_->LoadIfNeeded(
-      DirectoryFetchInfo(util::kDriveGrandRootSpecialResourceId, 0),
+      DirectoryFetchInfo(util::kDriveGrandRootLocalId, 0),
       google_apis::test_util::CreateCopyResultCallback(&error));
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(FILE_ERROR_OK, error);
@@ -273,7 +252,7 @@ TEST_F(ChangeListLoaderTest, LoadIfNeeded_MyDrive) {
   observer.clear_changed_directories();
 
   // GetAllResourceList() was called.
-  EXPECT_EQ(1, drive_service_->blocked_call_count());
+  EXPECT_EQ(1, drive_service_->blocked_resource_list_load_count());
 
   // My Drive is present in the local metadata, but its child is not.
   ResourceEntry entry;
@@ -351,13 +330,13 @@ TEST_F(ChangeListLoaderTest, LoadIfNeeded_MultipleCalls) {
   // Load grand root.
   FileError error = FILE_ERROR_FAILED;
   change_list_loader_->LoadIfNeeded(
-      DirectoryFetchInfo(util::kDriveGrandRootSpecialResourceId, 0),
+      DirectoryFetchInfo(util::kDriveGrandRootLocalId, 0),
       google_apis::test_util::CreateCopyResultCallback(&error));
 
   // Load grand root again without waiting for the result.
   FileError error2 = FILE_ERROR_FAILED;
   change_list_loader_->LoadIfNeeded(
-      DirectoryFetchInfo(util::kDriveGrandRootSpecialResourceId, 0),
+      DirectoryFetchInfo(util::kDriveGrandRootLocalId, 0),
       google_apis::test_util::CreateCopyResultCallback(&error2));
   base::RunLoop().RunUntilIdle();
 
@@ -383,6 +362,7 @@ TEST_F(ChangeListLoaderTest, CheckForUpdates) {
             check_for_updates_error);  // Callback was not run.
   EXPECT_EQ(0, metadata_->GetLargestChangestamp());
   EXPECT_EQ(0, drive_service_->resource_list_load_count());
+  EXPECT_EQ(0, drive_service_->about_resource_load_count());
 
   // Start initial load.
   FileError load_error = FILE_ERROR_FAILED;

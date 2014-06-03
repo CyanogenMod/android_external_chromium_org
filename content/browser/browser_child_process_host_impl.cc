@@ -100,9 +100,9 @@ BrowserChildProcessHostImpl::BrowserChildProcessHostImpl(
   data_.id = ChildProcessHostImpl::GenerateChildProcessUniqueId();
 
   child_process_host_.reset(ChildProcessHost::Create(this));
-  child_process_host_->AddFilter(new TraceMessageFilter);
-  child_process_host_->AddFilter(new ProfilerMessageFilter(process_type));
-  child_process_host_->AddFilter(new HistogramMessageFilter());
+  AddFilter(new TraceMessageFilter);
+  AddFilter(new ProfilerMessageFilter(process_type));
+  AddFilter(new HistogramMessageFilter);
 
   g_child_process_list.Get().push_back(this);
   GetContentClient()->browser()->BrowserChildProcessHostCreated(this);
@@ -133,7 +133,7 @@ void BrowserChildProcessHostImpl::Launch(
     SandboxedProcessLauncherDelegate* delegate,
 #elif defined(OS_POSIX)
     bool use_zygote,
-    const base::EnvironmentVector& environ,
+    const base::EnvironmentMap& environ,
 #endif
     CommandLine* cmd_line) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
@@ -152,6 +152,9 @@ void BrowserChildProcessHostImpl::Launch(
     switches::kVModule,
 #if defined(OS_POSIX)
     switches::kChildCleanExit,
+#endif
+#if defined(OS_WIN)
+    switches::kEnableHighResolutionTime,
 #endif
   };
   cmd_line->CopySwitchesFrom(browser_command_line, kForwardSwitches,
@@ -189,7 +192,7 @@ base::ProcessHandle BrowserChildProcessHostImpl::GetHandle() const {
   return child_process_->GetHandle();
 }
 
-void BrowserChildProcessHostImpl::SetName(const string16& name) {
+void BrowserChildProcessHostImpl::SetName(const base::string16& name) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   data_.name = name;
 }
@@ -215,6 +218,10 @@ void BrowserChildProcessHostImpl::SetTerminateChildOnShutdown(
   child_process_->SetTerminateChildOnShutdown(terminate_on_shutdown);
 }
 
+void BrowserChildProcessHostImpl::AddFilter(BrowserMessageFilter* filter) {
+  child_process_host_->AddFilter(filter->GetFilter());
+}
+
 void BrowserChildProcessHostImpl::NotifyProcessInstanceCreated(
     const ChildProcessData& data) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -223,11 +230,11 @@ void BrowserChildProcessHostImpl::NotifyProcessInstanceCreated(
 }
 
 base::TerminationStatus BrowserChildProcessHostImpl::GetTerminationStatus(
-    int* exit_code) {
+    bool known_dead, int* exit_code) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   if (!child_process_)  // If the delegate doesn't use Launch() helper.
     return base::GetTerminationStatus(data_.handle, exit_code);
-  return child_process_->GetChildTerminationStatus(false /* known_dead */,
+  return child_process_->GetChildTerminationStatus(known_dead,
                                                    exit_code);
 }
 
@@ -264,7 +271,8 @@ void BrowserChildProcessHostImpl::OnChildDisconnected() {
   if (child_process_.get() || data_.handle) {
     DCHECK(data_.handle != base::kNullProcessHandle);
     int exit_code;
-    base::TerminationStatus status = GetTerminationStatus(&exit_code);
+    base::TerminationStatus status = GetTerminationStatus(
+        true /* known_dead */, &exit_code);
     switch (status) {
       case base::TERMINATION_STATUS_PROCESS_CRASHED:
       case base::TERMINATION_STATUS_ABNORMAL_TERMINATION: {

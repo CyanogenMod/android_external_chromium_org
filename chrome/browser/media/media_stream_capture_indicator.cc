@@ -17,7 +17,6 @@
 #include "chrome/browser/status_icons/status_icon.h"
 #include "chrome/browser/status_icons/status_tray.h"
 #include "chrome/browser/tab_contents/tab_util.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
@@ -25,6 +24,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/browser/web_contents_observer.h"
+#include "extensions/common/extension.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
@@ -59,11 +59,11 @@ const extensions::Extension* GetExtension(WebContents* web_contents) {
 
 // Gets the security originator of the tab. It returns a string with no '/'
 // at the end to display in the UI.
-string16 GetSecurityOrigin(WebContents* web_contents) {
+base::string16 GetSecurityOrigin(WebContents* web_contents) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   if (!web_contents)
-    return string16();
+    return base::string16();
 
   std::string security_origin = web_contents->GetURL().GetOrigin().spec();
 
@@ -77,17 +77,17 @@ string16 GetSecurityOrigin(WebContents* web_contents) {
   return UTF8ToUTF16(security_origin);
 }
 
-string16 GetTitle(WebContents* web_contents) {
+base::string16 GetTitle(WebContents* web_contents) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   if (!web_contents)
-    return string16();
+    return base::string16();
 
   const extensions::Extension* const extension = GetExtension(web_contents);
   if (extension)
     return UTF8ToUTF16(extension->name());
 
-  string16 tab_title = web_contents->GetTitle();
+  base::string16 tab_title = web_contents->GetTitle();
 
   if (tab_title.empty()) {
     // If the page's title is empty use its security originator.
@@ -279,23 +279,6 @@ MediaStreamCaptureIndicator::RegisterMediaStream(
   return usage->RegisterMediaStream(devices);
 }
 
-bool MediaStreamCaptureIndicator::IsCommandIdChecked(
-    int command_id) const {
-  NOTIMPLEMENTED() << "There are no checked items in the MediaStream menu.";
-  return false;
-}
-
-bool MediaStreamCaptureIndicator::IsCommandIdEnabled(
-    int command_id) const {
-  return command_id != IDC_MinimumLabelValue;
-}
-
-bool MediaStreamCaptureIndicator::GetAcceleratorForCommandId(
-    int command_id, ui::Accelerator* accelerator) {
-  // No accelerators for status icon context menu.
-  return false;
-}
-
 void MediaStreamCaptureIndicator::ExecuteCommand(int command_id,
                                                  int event_flags) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -367,7 +350,7 @@ void MediaStreamCaptureIndicator::MaybeCreateStatusTrayIcon(bool audio,
   EnsureStatusTrayIconResources();
 
   gfx::ImageSkia image;
-  string16 tool_tip;
+  base::string16 tool_tip;
   GetStatusTrayIconInfo(audio, video, &image, &tool_tip);
   DCHECK(!image.isNull());
   DCHECK(!tool_tip.empty());
@@ -409,7 +392,7 @@ void MediaStreamCaptureIndicator::MaybeDestroyStatusTrayIcon() {
 
 void MediaStreamCaptureIndicator::UpdateNotificationUserInterface() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  scoped_ptr<ui::SimpleMenuModel> menu(new ui::SimpleMenuModel(this));
+  scoped_ptr<StatusIconMenuModel> menu(new StatusIconMenuModel(this));
 
   bool audio = false;
   bool video = false;
@@ -435,6 +418,10 @@ void MediaStreamCaptureIndicator::UpdateNotificationUserInterface() {
       command_targets_.push_back(web_contents);
       menu->AddItem(command_id, GetTitle(web_contents));
 
+      // If the menu item is not a label, enable it.
+      menu->SetCommandIdEnabled(command_id,
+                                command_id != IDC_MinimumLabelValue);
+
       // If reaching the maximum number, no more item will be added to the menu.
       if (command_id == IDC_MEDIA_CONTEXT_MEDIA_STREAM_CAPTURE_LIST_LAST)
         break;
@@ -450,14 +437,15 @@ void MediaStreamCaptureIndicator::UpdateNotificationUserInterface() {
   // The icon will take the ownership of the passed context menu.
   MaybeCreateStatusTrayIcon(audio, video);
   if (status_icon_) {
-    status_icon_->SetContextMenu(menu.release());
+    status_icon_->SetContextMenu(menu.Pass());
   }
 }
 
-void MediaStreamCaptureIndicator::GetStatusTrayIconInfo(bool audio,
-                                                        bool video,
-                                                        gfx::ImageSkia* image,
-                                                        string16* tool_tip) {
+void MediaStreamCaptureIndicator::GetStatusTrayIconInfo(
+    bool audio,
+    bool video,
+    gfx::ImageSkia* image,
+    base::string16* tool_tip) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(audio || video);
 

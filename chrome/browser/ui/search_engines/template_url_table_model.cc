@@ -153,7 +153,7 @@ void TemplateURLTableModel::Reload() {
     // the lists while editing.
     if (template_url->show_in_default_list())
       default_entries.push_back(new ModelEntry(this, template_url));
-    else if (template_url->IsExtensionKeyword())
+    else if (template_url->GetType() == TemplateURL::OMNIBOX_API_EXTENSION)
       extension_entries.push_back(new ModelEntry(this, template_url));
     else
       other_entries.push_back(new ModelEntry(this, template_url));
@@ -183,11 +183,11 @@ int TemplateURLTableModel::RowCount() {
   return static_cast<int>(entries_.size());
 }
 
-string16 TemplateURLTableModel::GetText(int row, int col_id) {
+base::string16 TemplateURLTableModel::GetText(int row, int col_id) {
   DCHECK(row >= 0 && row < RowCount());
   const TemplateURL* url = entries_[row]->template_url();
   if (col_id == IDS_SEARCH_ENGINES_EDITOR_DESCRIPTION_COLUMN) {
-    string16 url_short_name = url->short_name();
+    base::string16 url_short_name = url->short_name();
     // TODO(xji): Consider adding a special case if the short name is a URL,
     // since those should always be displayed LTR. Please refer to
     // http://crbug.com/6726 for more information.
@@ -261,8 +261,8 @@ void TemplateURLTableModel::Remove(int index) {
 }
 
 void TemplateURLTableModel::Add(int index,
-                                const string16& short_name,
-                                const string16& keyword,
+                                const base::string16& short_name,
+                                const base::string16& keyword,
                                 const std::string& url) {
   DCHECK(index >= 0 && index <= RowCount());
   DCHECK(!url.empty());
@@ -279,8 +279,8 @@ void TemplateURLTableModel::Add(int index,
 }
 
 void TemplateURLTableModel::ModifyTemplateURL(int index,
-                                              const string16& title,
-                                              const string16& keyword,
+                                              const base::string16& title,
+                                              const base::string16& keyword,
                                               const std::string& url) {
   DCHECK(index >= 0 && index <= RowCount());
   DCHECK(!url.empty());

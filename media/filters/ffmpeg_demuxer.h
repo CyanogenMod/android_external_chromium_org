@@ -34,6 +34,7 @@
 #include "media/base/decoder_buffer_queue.h"
 #include "media/base/demuxer.h"
 #include "media/base/pipeline.h"
+#include "media/base/text_track_config.h"
 #include "media/base/video_decoder_config.h"
 #include "media/filters/blocking_url_protocol.h"
 
@@ -43,14 +44,6 @@ struct AVRational;
 struct AVStream;
 
 namespace media {
-
-// A new potentially encrypted stream has been parsed.
-// First parameter - The type of initialization data.
-// Second parameter - The initialization data associated with the stream.
-// Third parameter - Number of bytes of the initialization data.
-typedef base::Callback<void(const std::string& type,
-                            scoped_ptr<uint8[]> init_data,
-                            int init_data_size)> FFmpegNeedKeyCB;
 
 class MediaLog;
 class FFmpegDemuxer;
@@ -101,6 +94,12 @@ class FFmpegDemuxerStream : public DemuxerStream {
   // Returns true if this stream has capacity for additional data.
   bool HasAvailableCapacity();
 
+  TextKind GetTextKind() const;
+
+  // Returns the value associated with |key| in the metadata for the avstream.
+  // Returns an empty string if the key is not present.
+  std::string GetMetadata(const char* key) const;
+
  private:
   friend class FFmpegDemuxerTest;
 
@@ -138,17 +137,17 @@ class MEDIA_EXPORT FFmpegDemuxer : public Demuxer {
  public:
   FFmpegDemuxer(const scoped_refptr<base::MessageLoopProxy>& message_loop,
                 DataSource* data_source,
-                const FFmpegNeedKeyCB& need_key_cb,
+                const NeedKeyCB& need_key_cb,
                 const scoped_refptr<MediaLog>& media_log);
   virtual ~FFmpegDemuxer();
 
   // Demuxer implementation.
   virtual void Initialize(DemuxerHost* host,
-                          const PipelineStatusCB& status_cb) OVERRIDE;
+                          const PipelineStatusCB& status_cb,
+                          bool enable_text_tracks) OVERRIDE;
   virtual void Stop(const base::Closure& callback) OVERRIDE;
   virtual void Seek(base::TimeDelta time, const PipelineStatusCB& cb) OVERRIDE;
   virtual void OnAudioRendererDisabled() OVERRIDE;
-  virtual void SetPlaybackRate(float playback_rate) OVERRIDE;
   virtual DemuxerStream* GetStream(DemuxerStream::Type type) OVERRIDE;
   virtual base::TimeDelta GetStartTime() const OVERRIDE;
 
@@ -192,6 +191,10 @@ class MEDIA_EXPORT FFmpegDemuxer : public Demuxer {
   // Returns the stream from |streams_| that matches |type| as an
   // FFmpegDemuxerStream.
   FFmpegDemuxerStream* GetFFmpegStream(DemuxerStream::Type type) const;
+
+  // Called after the streams have been collected from the media, to allow
+  // the text renderer to bind each text stream to the cue rendering engine.
+  void AddTextStreams();
 
   DemuxerHost* host_;
 
@@ -242,6 +245,9 @@ class MEDIA_EXPORT FFmpegDemuxer : public Demuxer {
   // drops packets destined for AUDIO demuxer streams on the floor).
   bool audio_disabled_;
 
+  // Whether text streams have been enabled for this demuxer.
+  bool text_enabled_;
+
   // Set if we know duration of the audio stream. Used when processing end of
   // stream -- at this moment we definitely know duration.
   bool duration_known_;
@@ -250,7 +256,7 @@ class MEDIA_EXPORT FFmpegDemuxer : public Demuxer {
   BlockingUrlProtocol url_protocol_;
   scoped_ptr<FFmpegGlue> glue_;
 
-  const FFmpegNeedKeyCB need_key_cb_;
+  const NeedKeyCB need_key_cb_;
 
   DISALLOW_COPY_AND_ASSIGN(FFmpegDemuxer);
 };

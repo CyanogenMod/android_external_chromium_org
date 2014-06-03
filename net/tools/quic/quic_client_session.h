@@ -12,7 +12,7 @@
 #include "net/quic/quic_crypto_client_stream.h"
 #include "net/quic/quic_protocol.h"
 #include "net/quic/quic_session.h"
-#include "net/tools/quic/quic_reliable_client_stream.h"
+#include "net/tools/quic/quic_spdy_client_stream.h"
 
 namespace net {
 
@@ -20,8 +20,6 @@ class QuicConnection;
 class ReliableQuicStream;
 
 namespace tools {
-
-class QuicReliableClientStream;
 
 class QuicClientSession : public QuicSession {
  public:
@@ -32,17 +30,21 @@ class QuicClientSession : public QuicSession {
   virtual ~QuicClientSession();
 
   // QuicSession methods:
-  virtual QuicReliableClientStream* CreateOutgoingReliableStream() OVERRIDE;
+  virtual QuicSpdyClientStream* CreateOutgoingDataStream() OVERRIDE;
   virtual QuicCryptoClientStream* GetCryptoStream() OVERRIDE;
 
   // Performs a crypto handshake with the server. Returns true if the crypto
   // handshake is started successfully.
   bool CryptoConnect();
 
+  // Returns the number of client hello messages that have been sent on the
+  // crypto stream. If the handshake has completed then this is one greater
+  // than the number of round-trips needed for the handshake.
+  int GetNumSentClientHellos() const;
+
  protected:
   // QuicSession methods:
-  virtual ReliableQuicStream* CreateIncomingReliableStream(
-      QuicStreamId id) OVERRIDE;
+  virtual QuicDataStream* CreateIncomingDataStream(QuicStreamId id) OVERRIDE;
 
  private:
   QuicCryptoClientStream crypto_stream_;

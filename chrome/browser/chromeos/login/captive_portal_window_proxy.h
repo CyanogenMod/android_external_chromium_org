@@ -7,8 +7,11 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "ui/gfx/native_widget_types.h"
 #include "ui/views/widget/widget_observer.h"
+
+namespace content {
+class WebContents;
+}
 
 namespace views {
 class Widget;
@@ -33,7 +36,8 @@ class CaptivePortalWindowProxy : public views::WidgetObserver {
  public:
   typedef CaptivePortalWindowProxyDelegate Delegate;
 
-  CaptivePortalWindowProxy(Delegate* delegate, gfx::NativeWindow parent);
+  CaptivePortalWindowProxy(Delegate* delegate,
+                           content::WebContents* web_contents);
   virtual ~CaptivePortalWindowProxy();
 
   // Shows captive portal window only after a redirection has happened. So it is
@@ -59,6 +63,8 @@ class CaptivePortalWindowProxy : public views::WidgetObserver {
 
   // Overridden from views::WidgetObserver:
   virtual void OnWidgetClosing(views::Widget* widget) OVERRIDE;
+  virtual void OnWidgetDestroying(views::Widget* widget) OVERRIDE;
+  virtual void OnWidgetDestroyed(views::Widget* widget) OVERRIDE;
 
  private:
   friend class CaptivePortalWindowTest;
@@ -87,10 +93,18 @@ class CaptivePortalWindowProxy : public views::WidgetObserver {
   // Returns symbolic state name based on internal state.
   State GetState() const;
 
+  // When |widget| is not NULL and the same as |widget_| stops to observe
+  // notifications from |widget_| and resets it.
+  void DetachFromWidget(views::Widget* widget);
+
+  // Not owned by this class.
   Delegate* delegate_;
+  // Not owned by this class.
   views::Widget* widget_;
   scoped_ptr<CaptivePortalView> captive_portal_view_;
-  gfx::NativeWindow parent_;
+
+  // Not owned by this class.
+  content::WebContents* web_contents_;
 
   DISALLOW_COPY_AND_ASSIGN(CaptivePortalWindowProxy);
 };

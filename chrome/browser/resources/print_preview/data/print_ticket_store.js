@@ -270,15 +270,6 @@ cr.define('print_preview', function() {
       this.selectionOnly_.updateValue(selectionOnly);
 
       // Initialize ticket with user's previous values.
-      if (this.appState_.hasField(print_preview.AppState.Field.MARGINS_TYPE)) {
-        this.marginsType_.updateValue(
-            this.appState_.getField(print_preview.AppState.Field.MARGINS_TYPE));
-      }
-      if (this.appState_.hasField(
-          print_preview.AppState.Field.CUSTOM_MARGINS)) {
-        this.customMargins_.updateValue(this.appState_.getField(
-            print_preview.AppState.Field.CUSTOM_MARGINS));
-      }
       if (this.appState_.hasField(
           print_preview.AppState.Field.IS_COLOR_ENABLED)) {
         this.color_.updateValue(this.appState_.getField(
@@ -290,14 +281,24 @@ cr.define('print_preview', function() {
             print_preview.AppState.Field.IS_DUPLEX_ENABLED));
       }
       if (this.appState_.hasField(
-          print_preview.AppState.Field.IS_HEADER_FOOTER_ENABLED)) {
-        this.headerFooter_.updateValue(this.appState_.getField(
-            print_preview.AppState.Field.IS_HEADER_FOOTER_ENABLED));
-      }
-      if (this.appState_.hasField(
           print_preview.AppState.Field.IS_LANDSCAPE_ENABLED)) {
         this.landscape_.updateValue(this.appState_.getField(
             print_preview.AppState.Field.IS_LANDSCAPE_ENABLED));
+      }
+      // Initialize margins after landscape because landscape may reset margins.
+      if (this.appState_.hasField(print_preview.AppState.Field.MARGINS_TYPE)) {
+        this.marginsType_.updateValue(
+            this.appState_.getField(print_preview.AppState.Field.MARGINS_TYPE));
+      }
+      if (this.appState_.hasField(
+          print_preview.AppState.Field.CUSTOM_MARGINS)) {
+        this.customMargins_.updateValue(this.appState_.getField(
+            print_preview.AppState.Field.CUSTOM_MARGINS));
+      }
+      if (this.appState_.hasField(
+          print_preview.AppState.Field.IS_HEADER_FOOTER_ENABLED)) {
+        this.headerFooter_.updateValue(this.appState_.getField(
+            print_preview.AppState.Field.IS_HEADER_FOOTER_ENABLED));
       }
       if (this.appState_.hasField(
           print_preview.AppState.Field.IS_COLLATE_ENABLED)) {
@@ -331,15 +332,79 @@ cr.define('print_preview', function() {
     },
 
     /**
+     * Creates an object that represents a Google Cloud Print print ticket.
+     * @param {!print_preview.Destination} destination Destination to print to.
+     * @return {!Object} Google Cloud Print print ticket.
+     */
+    createPrintTicket: function(destination) {
+      assert(!destination.isLocal || destination.isPrivet,
+             'Trying to create a Google Cloud Print print ticket for a local ' +
+                 ' non-privet destination');
+
+      assert(destination.capabilities,
+             'Trying to create a Google Cloud Print print ticket for a ' +
+                 'destination with no print capabilities');
+      var cjt = {
+        version: '1.0',
+        print: {}
+      };
+      if (this.collate.isCapabilityAvailable() && this.collate.isUserEdited()) {
+        cjt.print.collate = {collate: this.collate.getValue() == 'true'};
+      }
+      if (this.color.isCapabilityAvailable() && this.color.isUserEdited()) {
+        var colorType = this.color.getValue() ?
+            'STANDARD_COLOR' : 'STANDARD_MONOCHROME';
+        // Find option with this colorType to read its vendor_id.
+        var selectedOptions = destination.capabilities.printer.color.option.
+            filter(function(option) {
+              return option.type == colorType;
+            });
+        if (selectedOptions.length == 0) {
+          console.error('Could not find correct color option');
+        } else {
+          cjt.print.color = {type: colorType};
+          if (selectedOptions[0].hasOwnProperty('vendor_id')) {
+            cjt.print.color.vendor_id = selectedOptions[0].vendor_id;
+          }
+        }
+      }
+      if (this.copies.isCapabilityAvailable() && this.copies.isUserEdited()) {
+        cjt.print.copies = {copies: this.copies.getValueAsNumber()};
+      }
+      if (this.duplex.isCapabilityAvailable() && this.duplex.isUserEdited()) {
+        cjt.print.duplex =
+            {type: this.duplex.getValue() ? 'LONG_EDGE' : 'NO_DUPLEX'};
+      }
+      if (this.landscape.isCapabilityAvailable() &&
+          this.landscape.isUserEdited()) {
+        cjt.print.page_orientation =
+            {type: this.landscape.getValue() ? 'LANDSCAPE' : 'PORTRAIT'};
+      }
+      return JSON.stringify(cjt);
+    },
+
+    /**
      * Adds event listeners for the print ticket store.
      * @private
      */
     addEventListeners_: function() {
       this.tracker_.add(
           this.destinationStore_,
+          print_preview.DestinationStore.EventType.DESTINATION_SELECT,
+          this.onDestinationSelect_.bind(this));
+
+      this.tracker_.add(
+          this.destinationStore_,
           print_preview.DestinationStore.EventType.
               SELECTED_DESTINATION_CAPABILITIES_READY,
           this.onSelectedDestinationCapabilitiesReady_.bind(this));
+
+      this.tracker_.add(
+          this.destinationStore_,
+          print_preview.DestinationStore.EventType.
+              CACHED_SELECTED_DESTINATION_INFO_READY,
+          this.onSelectedDestinationCapabilitiesReady_.bind(this));
+
       // TODO(rltoscano): Print ticket store shouldn't be re-dispatching these
       // events, the consumers of the print ticket store events should listen
       // for the events from document info instead. Will move this when
@@ -348,6 +413,22 @@ cr.define('print_preview', function() {
           this.documentInfo_,
           print_preview.DocumentInfo.EventType.CHANGE,
           this.onDocumentInfoChange_.bind(this));
+    },
+
+    /**
+     * Called when the destination selected.
+     * @private
+     */
+    onDestinationSelect_: function() {
+      // Reset user selection for certain ticket items.
+      if (this.capabilitiesHolder_.get() != null) {
+        this.customMargins_.updateValue(null);
+        if (this.marginsType_.getValue() ==
+            print_preview.ticket_items.MarginsType.Value.CUSTOM) {
+          this.marginsType_.updateValue(
+              print_preview.ticket_items.MarginsType.Value.DEFAULT);
+        }
+      }
     },
 
     /**
@@ -362,14 +443,6 @@ cr.define('print_preview', function() {
         this.isInitialized_ = true;
         cr.dispatchSimpleEvent(this, PrintTicketStore.EventType.INITIALIZE);
       } else {
-        // Reset user selection for certain ticket items.
-        this.customMargins_.updateValue(null);
-
-        if (this.marginsType_.getValue() ==
-            print_preview.ticket_items.MarginsType.Value.CUSTOM) {
-          this.marginsType_.updateValue(
-              print_preview.ticket_items.MarginsType.Value.DEFAULT);
-        }
         cr.dispatchSimpleEvent(
             this, PrintTicketStore.EventType.CAPABILITIES_CHANGE);
       }

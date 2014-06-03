@@ -125,6 +125,7 @@ ${ANDROID_SDK_BUILD_TOOLS_VERSION}
       ;;
     "mips")
       DEFINES+=" target_arch=mipsel"
+      DEFINES+=" mips_arch_variant=mips32r1"
       ;;
     *)
       echo "TARGET_ARCH: ${TARGET_ARCH} is not supported." >& 2
@@ -222,19 +223,24 @@ sdk_build_init() {
   # Allow the caller to override a few environment variables. If any of them is
   # unset, we default to a sane value that's known to work. This allows for
   # experimentation with a custom SDK.
+  local sdk_defines=""
   if [[ -z "${ANDROID_NDK_ROOT}" || ! -d "${ANDROID_NDK_ROOT}" ]]; then
     export ANDROID_NDK_ROOT="${CHROME_SRC}/third_party/android_tools/ndk/"
   fi
   if [[ -z "${ANDROID_SDK_VERSION}" ]]; then
-    export ANDROID_SDK_VERSION=18
+    export ANDROID_SDK_VERSION=19
+  else
+    sdk_defines+=" android_sdk_version=${ANDROID_SDK_VERSION}"
   fi
   local sdk_suffix=platforms/android-${ANDROID_SDK_VERSION}
   if [[ -z "${ANDROID_SDK_ROOT}" || \
        ! -d "${ANDROID_SDK_ROOT}/${sdk_suffix}" ]]; then
     export ANDROID_SDK_ROOT="${CHROME_SRC}/third_party/android_tools/sdk/"
+  else
+    sdk_defines+=" android_sdk_root=${ANDROID_SDK_ROOT}"
   fi
   if [[ -z "${ANDROID_SDK_BUILD_TOOLS_VERSION}" ]]; then
-    export ANDROID_SDK_BUILD_TOOLS_VERSION=18.0.1
+    export ANDROID_SDK_BUILD_TOOLS_VERSION=19.0.0
   fi
 
   unset ANDROID_BUILD_TOP
@@ -247,6 +253,9 @@ sdk_build_init() {
   unset ANDROID_TOOLCHAIN
 
   common_vars_defines
+
+  DEFINES+="${sdk_defines}"
+
   common_gyp_vars
 
   if [[ -n "$CHROME_ANDROID_BUILD_WEBVIEW" ]]; then
@@ -270,7 +279,7 @@ ${ANDROID_SDK_BUILD_TOOLS_VERSION}"
 #############################################################################
 webview_build_init() {
   # Use the latest API in the AOSP prebuilts directory (change with AOSP roll).
-  export ANDROID_SDK_VERSION=17
+  export ANDROID_SDK_VERSION=18
 
   # For the WebView build we always use the NDK and SDK in the Android tree,
   # and we don't touch ANDROID_TOOLCHAIN which is already set by Android.
@@ -301,8 +310,6 @@ ${ANDROID_SDK_VERSION}
       ;;
   esac
   DEFINES+=" android_webview_build=1"
-  # temporary until all uses of android_build_type are gone (crbug.com/184431)
-  DEFINES+=" android_build_type=1"
   DEFINES+=" android_src=\$(PWD)"
   DEFINES+=" android_sdk=\$(PWD)/${ANDROID_SDK}"
   DEFINES+=" android_sdk_root=\$(PWD)/${ANDROID_SDK}"

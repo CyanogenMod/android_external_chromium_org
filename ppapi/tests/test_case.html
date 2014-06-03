@@ -13,7 +13,7 @@ function AdjustHeight(frameWin) {
 // passed, or information about the failure if the test(s) did not pass.
 function DidExecuteTests(result) {
   var plugin = document.getElementById("plugin");
-  if (plugin.removePlugin) {
+  if (plugin.parentNode.removePlugin) {
     plugin.parentNode.removeChild(plugin);
     plugin = undefined;
   }
@@ -127,7 +127,7 @@ function LogHTML(html) {
 }
 
 function RemovePluginWhenFinished() {
-  window.document.getElementById("plugin").removePlugin = true;
+  window.document.getElementById("container").removePlugin = true;
 }
 
 function sendAutomationMessage(msg) {
@@ -135,6 +135,10 @@ function sendAutomationMessage(msg) {
     window.domAutomationController.setAutomationId(0);
     window.domAutomationController.send(msg);
   }
+}
+
+function LogTestTime(test_time) {
+  console.log(test_time);
 }
 
 // If something goes really wrong, the test running inside the plugin may not
@@ -209,6 +213,8 @@ function handleTestingMessage(message_event) {
       RemovePluginWhenFinished();
     else if (type === "ReportProgress")
       sendAutomationMessage(contents);
+    else if (type === "LogTestTime")
+      LogTestTime(contents);
   }
 }
 
@@ -291,14 +297,7 @@ onload = function() {
     // below.
     var original = obj.dispatchEvent;
     obj.dispatchEvent = function() {
-      // TODO(dmichael): NaCl triggers this; take out the special case for NaCl
-      //                 when crbug.com/109775 is fixed.
-      if (mode.indexOf("nacl") !== 0)
-        InternalError("Bad dispatchEvent called!");
-
-      // Pass it on anyways, we need the event to detect load progress and
-      // errors.
-      return original.apply(obj, arguments);
+      InternalError("Bad dispatchEvent called!");
     }
     container.appendChild(obj);
   }
@@ -308,10 +307,9 @@ onload = function() {
 // This part of the script does some nefarious things to make sure that it
 // doesn't affect the behavior of PostMessage (on which all the tests rely). In
 // particular, we replace document.createEvent, MessageEvent.initMessageEvent,
-// and the MessageEvent constructor. Previous versions of the PostMessage
-// implementation made use of these and would fail (http://crbug.com/82604).
-// The NaCl plugin uses dispatchEvent for progress events, hence we are careful
-// to make that still pass for NaCl (see above, and see crbug.com/109775).
+// and the MessageEvent constructor. Previously, the NaCl integration
+// implementation made use of these and would fail (http://crbug.com/82604
+// and http://crbug.com/109775).
 document.createEvent = function() {
   InternalError("Bad document.createEvent called!");
 }

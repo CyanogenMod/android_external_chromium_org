@@ -189,7 +189,7 @@ cr.define('options', function() {
 
       this.updatePreview_();
 
-      var e = new cr.Event('select', false, false);
+      var e = new Event('select');
       e.oldSelectionType = oldSelectionType;
       this.dispatchEvent(e);
     },
@@ -358,6 +358,16 @@ cr.define('options', function() {
       previewClassList[value == 'default' ? 'add' : 'remove']('default-image');
       previewClassList[value == 'profile' ? 'add' : 'remove']('profile-image');
       previewClassList[value == 'camera' ? 'add' : 'remove']('camera');
+
+      var setFocusIfLost = function() {
+        // Set focus to the grid, if focus is not on UI.
+        if (!document.activeElement ||
+            document.activeElement.tagName == 'BODY') {
+          $('user-image-grid').focus();
+        }
+      }
+      // Timeout guarantees processing AFTER style changes display attribute.
+      setTimeout(setFocusIfLost, 0);
     },
 
     /**
@@ -380,12 +390,6 @@ cr.define('options', function() {
       } else {
         this.removeItem(this.cameraImage_);
         this.cameraImage_ = null;
-      }
-
-      // Set focus to the grid, unless focus is on the OK button.
-      if ((!document.activeElement ||
-           document.activeElement.tagName != 'BUTTON') && imageUrl) {
-        this.focus();
       }
     },
 
@@ -496,10 +500,12 @@ cr.define('options', function() {
       if (this.flipPhoto_ == value)
         return;
       this.flipPhoto_ = value;
-      this.previewElement.classList.toggle('flip-x');
+      this.previewElement.classList.toggle('flip-x', value);
+      /* TODO(merkulova): remove when webkit crbug.com/126479 is fixed. */
+      this.flipPhotoElement.classList.toggle('flip-trick', value);
       if (!this.cameraLive) {
         // Flip current still photo.
-        var e = new cr.Event('photoupdated');
+        var e = new Event('photoupdated');
         e.dataURL = this.flipPhoto ?
             this.flipFrame_(this.previewImage_) : this.previewImage_.src;
         this.dispatchEvent(e);
@@ -527,7 +533,7 @@ cr.define('options', function() {
         this.cameraImage = previewImg.src;
       }.bind(this));
       previewImg.src = canvas.toDataURL('image/png');
-      var e = new cr.Event('phototaken');
+      var e = new Event('phototaken');
       e.dataURL = this.flipPhoto ? this.flipFrame_(canvas) : previewImg.src;
       this.dispatchEvent(e);
       return true;

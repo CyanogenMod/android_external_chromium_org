@@ -60,7 +60,7 @@ bool DnsSdServer::Start(const ServiceParameters& serv_params, uint32 full_ttl,
   full_ttl_ = full_ttl;
   metadata_ = metadata;
 
-  LOG(INFO) << "DNS server started";
+  VLOG(0) << "DNS server started";
   LOG(WARNING) << "DNS server does not support probing";
 
   SendAnnouncement(full_ttl_);
@@ -85,7 +85,7 @@ void DnsSdServer::Shutdown() {
   SendAnnouncement(0);  // TTL is 0
   socket_->Close();
   socket_.reset(NULL);
-  LOG(INFO) << "DNS server stopped";
+  VLOG(0) << "DNS server stopped";
 }
 
 void DnsSdServer::UpdateMetadata(const std::vector<std::string>& metadata) {
@@ -172,7 +172,7 @@ void DnsSdServer::ProcessMessage(int len, net::IOBufferWithSize* buf) {
     if (success) {
       ProccessQuery(current_ttl, query, &builder);
     } else {  // if (success)
-      LOG(INFO) << "Broken package";
+      VLOG(0) << "Broken package";
       break;
     }
   }
@@ -200,11 +200,13 @@ void DnsSdServer::ProccessQuery(uint32 current_ttl, const DnsQueryRecord& query,
     // TODO(maksymb): Add IPv6 support.
     case net::dns_protocol::kTypePTR:
       log = "Processing PTR query";
-      if (query.qname == serv_params_.service_type_) {
-        builder->AppendPtr(serv_params_.service_type_, current_ttl,
+      if (query.qname == serv_params_.service_type_ ||
+          query.qname == serv_params_.secondary_service_type_) {
+        builder->AppendPtr(query.qname, current_ttl,
                            serv_params_.service_name_);
         responded = true;
       }
+
       break;
     case net::dns_protocol::kTypeSRV:
       log = "Processing SRV query";
@@ -260,6 +262,8 @@ void DnsSdServer::SendAnnouncement(uint32 ttl) {
 
     builder.AppendPtr(serv_params_.service_type_, ttl,
                       serv_params_.service_name_);
+    builder.AppendPtr(serv_params_.secondary_service_type_, ttl,
+                      serv_params_.service_name_);
     builder.AppendSrv(serv_params_.service_name_, ttl, kSrvPriority, kSrvWeight,
                       serv_params_.http_port_,
                       serv_params_.service_domain_name_);
@@ -296,4 +300,3 @@ uint32 DnsSdServer::GetCurrentTLL() const {
   }
   return current_ttl;
 }
-

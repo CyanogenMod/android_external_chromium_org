@@ -9,18 +9,6 @@ cr.define('options', function() {
   /** @const */ var OptionsPage = options.OptionsPage;
   /** @const */ var LanguageList = options.LanguageList;
 
-  // Some input methods like Chinese Pinyin have config pages.
-  // This is the map of the input method names to their config page names.
-  /** @const */ var INPUT_METHOD_ID_TO_CONFIG_PAGE_NAME = {
-    'mozc': 'languageMozc',
-    'mozc-chewing': 'languageChewing',
-    'mozc-dv': 'languageMozc',
-    'mozc-hangul': 'languageHangul',
-    'mozc-jp': 'languageMozc',
-    'pinyin': 'languagePinyin',
-    'pinyin-dv': 'languagePinyin',
-  };
-
   /**
    * Spell check dictionary download status.
    * @type {Enum}
@@ -67,6 +55,13 @@ cr.define('options', function() {
    * @const
    */
   var SPELL_CHECK_DICTIONARY_PREF = 'spellcheck.dictionary';
+
+  /**
+   * The preference that indicates if the Translate feature is enabled.
+   * @type {string}
+   * @const
+   */
+  var ENABLE_TRANSLATE = 'translate.enabled';
 
   /////////////////////////////////////////////////////////////////////////////
   // LanguageOptions class:
@@ -153,6 +148,13 @@ cr.define('options', function() {
     languageCodeToInputMethodIdsMap_: {},
 
     /**
+     * The value that indicates if Translate feature is enabled or not.
+     * @type {boolean}
+     * @private
+     */
+    enableTranslate_: false,
+
+    /**
      * Initializes LanguageOptions page.
      * Calls base class implementation to start preference initialization.
      */
@@ -173,23 +175,21 @@ cr.define('options', function() {
                             this.handleVisibleChange_.bind(this));
 
       if (cr.isChromeOS) {
-        $('chewing-confirm').onclick = $('hangul-confirm').onclick =
-            $('mozc-confirm').onclick = $('pinyin-confirm').onclick =
-                OptionsPage.closeOverlay.bind(OptionsPage);
-
         this.initializeInputMethodList_();
         this.initializeLanguageCodeToInputMethodIdsMap_();
       }
 
-      var checkbox = $('dont-translate-in-this-language');
+      var checkbox = $('offer-to-translate-in-this-language');
       checkbox.addEventListener('click',
-          this.handleDontTranslateCheckboxClick_.bind(this));
+          this.handleOfferToTranslateCheckboxClick_.bind(this));
 
       Preferences.getInstance().addEventListener(
           TRANSLATE_BLOCKED_LANGUAGES_PREF,
           this.handleTranslateBlockedLanguagesPrefChange_.bind(this));
       Preferences.getInstance().addEventListener(SPELL_CHECK_DICTIONARY_PREF,
           this.handleSpellCheckDictionaryPrefChange_.bind(this));
+      Preferences.getInstance().addEventListener(ENABLE_TRANSLATE,
+          this.handleEnableTranslatePrefChange_.bind(this));
       this.translateSupportedLanguages_ =
           loadTimeData.getValue('translateSupportedLanguages');
 
@@ -321,22 +321,13 @@ cr.define('options', function() {
         var span = element.querySelector('span');
         span.textContent = inputMethod.displayName;
 
-        // Add the configure button if the config page is present for this
-        // input method.
-        if (inputMethod.id in INPUT_METHOD_ID_TO_CONFIG_PAGE_NAME) {
-          var pageName = INPUT_METHOD_ID_TO_CONFIG_PAGE_NAME[inputMethod.id];
-          var button = this.createConfigureInputMethodButton_(inputMethod.id,
-                                                              pageName);
-          element.appendChild(button);
-        }
-
         if (inputMethod.optionsPage) {
           var button = document.createElement('button');
           button.textContent = loadTimeData.getString('configure');
           button.inputMethodId = inputMethod.id;
-          button.onclick = function(optionsPage, e) {
-            window.open(optionsPage);
-          }.bind(this, inputMethod.optionsPage);
+          button.onclick = function(inputMethodId, e) {
+            chrome.send('inputMethodOptionsOpen', [inputMethodId]);
+          }.bind(this, inputMethod.id);
           element.appendChild(button);
         }
 
@@ -345,26 +336,6 @@ cr.define('options', function() {
                                this.handleCheckboxClick_.bind(this));
         inputMethodList.appendChild(element);
       }
-    },
-
-    /**
-     * Creates a configure button for the given input method ID.
-     * @param {string} inputMethodId Input method ID (ex. "pinyin").
-     * @param {string} pageName Name of the config page (ex. "languagePinyin").
-     * @private
-     */
-    createConfigureInputMethodButton_: function(inputMethodId, pageName) {
-      var button = document.createElement('button');
-      button.textContent = loadTimeData.getString('configure');
-      button.onclick = function(e) {
-        // Prevent the default action (i.e. changing the checked property
-        // of the checkbox). The button click here should not be handled
-        // as checkbox click.
-        e.preventDefault();
-        chrome.send('inputMethodOptionsOpen', [inputMethodId]);
-        OptionsPage.navigateToPage(pageName);
-      };
-      return button;
     },
 
     /**
@@ -438,15 +409,15 @@ cr.define('options', function() {
         }
       }
 
-      this.updateDontTranslateCheckbox_(languageCode);
+      this.updateOfferToTranslateCheckbox_(languageCode);
 
       if (cr.isWindows || cr.isChromeOS)
         this.updateUiLanguageButton_(languageCode);
 
-      if (!cr.isMac) {
-        this.updateSelectedLanguageName_(languageCode);
+      this.updateSelectedLanguageName_(languageCode);
+
+      if (!cr.isMac)
         this.updateSpellCheckLanguageButton_(languageCode);
-      }
 
       if (cr.isChromeOS)
         this.updateInputMethodList_(languageCode);
@@ -677,13 +648,8 @@ cr.define('options', function() {
      * @param {string} languageCode Language code (ex. "fr").
      * @private
      */
-    updateDontTranslateCheckbox_: function(languageCode) {
-      var div = $('language-options-dont-translate');
-
-      if (!loadTimeData.getBoolean('enableTranslateSettings')) {
-        div.hidden = true;
-        return;
-      }
+    updateOfferToTranslateCheckbox_: function(languageCode) {
+      var div = $('language-options-offer-to-translate');
 
       // Translation server supports Chinese (Transitional) and Chinese
       // (Simplified) but not 'general' Chinese. To avoid ambiguity, we don't
@@ -695,9 +661,9 @@ cr.define('options', function() {
         return;
       }
 
-      var dontTranslate = div.querySelector('div');
+      var offerToTranslate = div.querySelector('div');
       var cannotTranslate = $('cannot-translate-in-this-language');
-      var nodes = [dontTranslate, cannotTranslate];
+      var nodes = [offerToTranslate, cannotTranslate];
 
       var convertedLangCode = this.convertLangCodeForTranslation_(languageCode);
       if (this.translateSupportedLanguages_.indexOf(convertedLangCode) != -1) {
@@ -707,23 +673,29 @@ cr.define('options', function() {
         return;
       }
 
-      var checkbox = $('dont-translate-in-this-language');
+      var checkbox = $('offer-to-translate-in-this-language');
+
+      if (!this.enableTranslate_) {
+        checkbox.disabled = true;
+        checkbox.checked = false;
+        return;
+      }
 
       // If the language corresponds to the default target language (in most
-      // cases, the user's locale language), "Don't Translate" checkbox should
-      // be always checked.
+      // cases, the user's locale language), "Offer to translate" checkbox
+      // should be always unchecked.
       var defaultTargetLanguage =
           loadTimeData.getString('defaultTargetLanguage');
       if (convertedLangCode == defaultTargetLanguage) {
         checkbox.disabled = true;
-        checkbox.checked = true;
+        checkbox.checked = false;
         return;
       }
 
       checkbox.disabled = false;
 
       var blockedLanguages = this.translateBlockedLanguages_;
-      var checked = blockedLanguages.indexOf(convertedLangCode) != -1;
+      var checked = blockedLanguages.indexOf(convertedLangCode) == -1;
       checkbox.checked = checked;
     },
 
@@ -822,11 +794,11 @@ cr.define('options', function() {
     },
 
     /**
-     * Handles don't-translate checkbox's click event.
+     * Handles offer-to-translate checkbox's click event.
      * @param {Event} e Click event.
      * @private
      */
-    handleDontTranslateCheckboxClick_: function(e) {
+    handleOfferToTranslateCheckboxClick_: function(e) {
       var checkbox = e.target;
       var checked = checkbox.checked;
 
@@ -834,9 +806,9 @@ cr.define('options', function() {
       var selectedLanguageCode = languageOptionsList.getSelectedLanguageCode();
 
       if (checked)
-        this.addBlockedLanguage_(selectedLanguageCode);
-      else
         this.removeBlockedLanguage_(selectedLanguageCode);
+      else
+        this.addBlockedLanguage_(selectedLanguageCode);
     },
 
     /**
@@ -912,10 +884,9 @@ cr.define('options', function() {
      * @private
      */
     handleTranslateBlockedLanguagesPrefChange_: function(e) {
-      var languageOptionsList = $('language-options-list');
-      var selectedLanguageCode = languageOptionsList.getSelectedLanguageCode();
       this.translateBlockedLanguages_ = e.value.value;
-      this.updateDontTranslateCheckbox_(selectedLanguageCode);
+      this.updateOfferToTranslateCheckbox_(
+          $('language-options-list').getSelectedLanguageCode());
     },
 
     /**
@@ -926,10 +897,22 @@ cr.define('options', function() {
     handleSpellCheckDictionaryPrefChange_: function(e) {
       var languageCode = e.value.value;
       this.spellCheckDictionary_ = languageCode;
-      var languageOptionsList = $('language-options-list');
-      var selectedLanguageCode = languageOptionsList.getSelectedLanguageCode();
-      if (!cr.isMac)
-        this.updateSpellCheckLanguageButton_(selectedLanguageCode);
+      if (!cr.isMac) {
+        this.updateSpellCheckLanguageButton_(
+            $('language-options-list').getSelectedLanguageCode());
+      }
+    },
+
+    /**
+     * Handles translate.enabled change.
+     * @param {Event} e Change event.
+     * @private
+     */
+    handleEnableTranslatePrefChange_: function(e) {
+      var enabled = e.value.value;
+      this.enableTranslate_ = enabled;
+      this.updateOfferToTranslateCheckbox_(
+          $('language-options-list').getSelectedLanguageCode());
     },
 
     /**
@@ -1030,6 +1013,13 @@ cr.define('options', function() {
         if (checkboxes[i].inputMethodId.match(/^_ext_ime_/))
           checkboxes[i].checked = (checkboxes[i].inputMethodId in dictionary);
       }
+      var configureButtons = inputMethodList.querySelectorAll('button');
+      for (var i = 0; i < configureButtons.length; i++) {
+        if (configureButtons[i].inputMethodId.match(/^_ext_ime_/)) {
+          configureButtons[i].hidden =
+              !(configureButtons[i].inputMethodId in dictionary);
+        }
+      }
     },
 
     /**
@@ -1078,8 +1068,10 @@ cr.define('options', function() {
       }
       var configureButtons = inputMethodList.querySelectorAll('button');
       for (var i = 0; i < configureButtons.length; i++) {
-        configureButtons[i].hidden =
-            !(configureButtons[i].inputMethodId in dictionary);
+        if (!configureButtons[i].inputMethodId.match(/^_ext_ime_/)) {
+          configureButtons[i].hidden =
+              !(configureButtons[i].inputMethodId in dictionary);
+        }
       }
     },
 

@@ -7,52 +7,42 @@
 
 #include "ash/ash_export.h"
 #include "base/memory/scoped_ptr.h"
-#include "ui/views/controls/button/button.h"  // ButtonListener
 #include "ui/views/window/non_client_view.h"
 
 namespace ash {
-class FramePainter;
-class FrameMaximizeButton;
+class FrameBorderHitTestController;
+class HeaderPainter;
+class ImmersiveFullscreenController;
 }
 namespace gfx {
 class Font;
 }
 namespace views {
-class ImageButton;
 class Widget;
 }
 
 namespace ash {
 
-// A NonClientFrameView used for dialogs and other non-browser windows.
-// See also views::CustomFrameView and BrowserNonClientFrameViewAsh.
-class ASH_EXPORT CustomFrameViewAsh : public views::NonClientFrameView,
-                                      public views::ButtonListener {
+// A NonClientFrameView used for packaged apps, dialogs and other non-browser
+// windows. It supports immersive fullscreen. When in immersive fullscreen, the
+// client view takes up the entire widget and the window header is an overlay.
+// The window header overlay slides onscreen when the user hovers the mouse at
+// the top of the screen. See also views::CustomFrameView and
+// BrowserNonClientFrameViewAsh.
+class ASH_EXPORT CustomFrameViewAsh : public views::NonClientFrameView {
  public:
   // Internal class name.
   static const char kViewClassName[];
 
-  CustomFrameViewAsh();
+  explicit CustomFrameViewAsh(views::Widget* frame);
   virtual ~CustomFrameViewAsh();
 
-  // For testing.
-  class TestApi {
-    public:
-     explicit TestApi(CustomFrameViewAsh* frame) : frame_(frame) {
-     }
-
-     ash::FrameMaximizeButton* maximize_button() const {
-       return frame_->maximize_button_;
-     }
-
-    private:
-     TestApi();
-     CustomFrameViewAsh* frame_;
-  };
-
-  void Init(views::Widget* frame);
-
-  views::ImageButton* close_button() { return close_button_; }
+  // Inits |immersive_fullscreen_controller| so that the controller reveals
+  // and hides |header_view_| in immersive fullscreen.
+  // CustomFrameViewAsh does not take ownership of
+  // |immersive_fullscreen_controller|.
+  void InitImmersiveFullscreenControllerForView(
+      ImmersiveFullscreenController* immersive_fullscreen_controller);
 
   // views::NonClientFrameView overrides:
   virtual gfx::Rect GetBoundsForClientView() const OVERRIDE;
@@ -67,28 +57,30 @@ class ASH_EXPORT CustomFrameViewAsh : public views::NonClientFrameView,
 
   // views::View overrides:
   virtual gfx::Size GetPreferredSize() OVERRIDE;
-  virtual void Layout() OVERRIDE;
   virtual const char* GetClassName() const OVERRIDE;
-  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
   virtual gfx::Size GetMinimumSize() OVERRIDE;
   virtual gfx::Size GetMaximumSize() OVERRIDE;
+  virtual void SchedulePaintInRect(const gfx::Rect& r) OVERRIDE;
+  virtual bool HitTestRect(const gfx::Rect& rect) const OVERRIDE;
 
-  // views::ButtonListener overrides:
-  virtual void ButtonPressed(views::Button* sender,
-                             const ui::Event& event) OVERRIDE;
+  // Get the view of the header.
+  views::View* GetHeaderView();
 
  private:
+  class OverlayView;
+
   // Height from top of window to top of client area.
   int NonClientTopBorderHeight() const;
 
   // Not owned.
   views::Widget* frame_;
 
-  ash::FrameMaximizeButton* maximize_button_;
-  views::ImageButton* close_button_;
-  views::ImageButton* window_icon_;
+  // View which contains the title and window controls.
+  class HeaderView;
+  HeaderView* header_view_;
 
-  scoped_ptr<FramePainter> frame_painter_;
+  // Updates the hittest bounds overrides based on the window show type.
+  scoped_ptr<FrameBorderHitTestController> frame_border_hit_test_controller_;
 
   DISALLOW_COPY_AND_ASSIGN(CustomFrameViewAsh);
 };

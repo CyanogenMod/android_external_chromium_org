@@ -14,6 +14,7 @@
 #include "base/memory/singleton.h"
 #include "base/metrics/histogram.h"
 #include "base/prefs/pref_service.h"
+#include "base/prefs/scoped_user_pref_update.h"
 #include "base/strings/string16.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
@@ -23,7 +24,6 @@
 #include "chrome/browser/history/most_visited_tiles_experiment.h"
 #include "chrome/browser/history/page_usage_data.h"
 #include "chrome/browser/history/top_sites.h"
-#include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
@@ -32,6 +32,7 @@
 #include "chrome/browser/ui/webui/favicon_source.h"
 #include "chrome/browser/ui/webui/ntp/new_tab_ui.h"
 #include "chrome/browser/ui/webui/ntp/ntp_stats.h"
+#include "chrome/browser/ui/webui/ntp/thumbnail_list_source.h"
 #include "chrome/browser/ui/webui/ntp/thumbnail_source.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
@@ -52,10 +53,10 @@
 using content::UserMetricsAction;
 
 MostVisitedHandler::MostVisitedHandler()
-    : weak_ptr_factory_(this),
-      got_first_most_visited_request_(false),
+    : got_first_most_visited_request_(false),
       most_visited_viewed_(false),
-      user_action_logged_(false) {
+      user_action_logged_(false),
+      weak_ptr_factory_(this) {
 }
 
 MostVisitedHandler::~MostVisitedHandler() {
@@ -63,7 +64,7 @@ MostVisitedHandler::~MostVisitedHandler() {
     const GURL ntp_url = GURL(chrome::kChromeUINewTabURL);
     int action_id = NTP_FOLLOW_ACTION_OTHER;
     content::NavigationEntry* entry =
-        web_ui()->GetWebContents()->GetController().GetActiveEntry();
+        web_ui()->GetWebContents()->GetController().GetLastCommittedEntry();
     if (entry && (entry->GetURL() != ntp_url)) {
       action_id =
           content::PageTransitionStripQualifier(entry->GetTransitionType());
@@ -77,8 +78,11 @@ MostVisitedHandler::~MostVisitedHandler() {
 void MostVisitedHandler::RegisterMessages() {
   Profile* profile = Profile::FromWebUI(web_ui());
   // Set up our sources for thumbnail and favicon data.
-  ThumbnailSource* thumbnail_src = new ThumbnailSource(profile);
-  content::URLDataSource::Add(profile, thumbnail_src);
+  content::URLDataSource::Add(profile, new ThumbnailSource(profile, false));
+  content::URLDataSource::Add(profile, new ThumbnailSource(profile, true));
+
+  // Set up our sources for top-sites data.
+  content::URLDataSource::Add(profile, new ThumbnailListSource(profile));
 
 #if defined(OS_ANDROID)
   // Register chrome://touch-icon as a data source for touch icons or favicons.
@@ -164,7 +168,7 @@ void MostVisitedHandler::StartQueryForMostVisited() {
   if (ts) {
     ts->GetMostVisitedURLs(
         base::Bind(&MostVisitedHandler::OnMostVisitedUrlsAvailable,
-                   weak_ptr_factory_.GetWeakPtr()));
+                   weak_ptr_factory_.GetWeakPtr()), false);
   }
 }
 

@@ -23,7 +23,7 @@ class WrenchIconPainterTest : public testing::Test,
   virtual void ScheduleWrenchIconPaint() OVERRIDE { ++schedule_paint_count_; }
 
  protected:
-  base::MessageLoopForUI message_loop_;  // Needed for ui::Animation.
+  base::MessageLoopForUI message_loop_;  // Needed for gfx::Animation.
   TestingProfile profile_;
   int schedule_paint_count_;
   ui::ThemeProvider* theme_provider_;
@@ -37,7 +37,7 @@ class WrenchIconPainterTest : public testing::Test,
 // leaks or crashes.
 TEST_F(WrenchIconPainterTest, Paint) {
   gfx::Rect rect(0, 0, 29, 29);
-  gfx::Canvas canvas(rect.size(), ui::SCALE_FACTOR_100P, true);
+  gfx::Canvas canvas(rect.size(), 1.0f, true);
 
   painter_.Paint(&canvas, theme_provider_, rect, WrenchIconPainter::BEZEL_NONE);
   painter_.Paint(

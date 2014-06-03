@@ -69,6 +69,8 @@ class HttpPipelinedStream : public HttpStream {
 
   virtual bool IsConnectionReusable() const OVERRIDE;
 
+  virtual int64 GetTotalReceivedBytes() const OVERRIDE;
+
   virtual bool GetLoadTimingInfo(
       LoadTimingInfo* load_timing_info) const OVERRIDE;
 
@@ -80,6 +82,8 @@ class HttpPipelinedStream : public HttpStream {
   virtual bool IsSpdyHttpStream() const OVERRIDE;
 
   virtual void Drain(HttpNetworkSession* session) OVERRIDE;
+
+  virtual void SetPriority(RequestPriority priority) OVERRIDE;
 
   // The SSLConfig used to establish this stream's pipeline.
   const SSLConfig& used_ssl_config() const;

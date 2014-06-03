@@ -18,6 +18,7 @@
 #include "chrome/browser/chromeos/login/proxy_settings_dialog.h"
 #include "chrome/browser/chromeos/login/webui_login_display.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
+#include "chrome/browser/extensions/extension_web_contents_observer.h"
 #include "chrome/browser/media/media_stream_infobar_delegate.h"
 #include "chrome/browser/password_manager/password_manager.h"
 #include "chrome/browser/password_manager/password_manager_delegate_impl.h"
@@ -31,7 +32,6 @@
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_view_host.h"
-#include "content/public/browser/render_view_host_observer.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
@@ -48,69 +48,18 @@ using web_modal::WebContentsModalDialogManager;
 
 namespace {
 
-// These strings must be kept in sync with handleAccelerator() in oobe.js.
+// These strings must be kept in sync with handleAccelerator()
+// in display_manager.js.
 const char kAccelNameCancel[] = "cancel";
 const char kAccelNameEnrollment[] = "enrollment";
 const char kAccelNameKioskEnable[] = "kiosk_enable";
 const char kAccelNameVersion[] = "version";
 const char kAccelNameReset[] = "reset";
-const char kAccelNameLeft[] = "left";
-const char kAccelNameRight[] = "right";
+const char kAccelFocusPrev[] = "focus_prev";
+const char kAccelFocusNext[] = "focus_next";
 const char kAccelNameDeviceRequisition[] = "device_requisition";
 const char kAccelNameDeviceRequisitionRemora[] = "device_requisition_remora";
-
-// Observes IPC messages from the FrameSniffer and notifies JS if error
-// appears.
-class SnifferObserver : public content::RenderViewHostObserver {
- public:
-  SnifferObserver(RenderViewHost* host, content::WebUI* webui)
-      : content::RenderViewHostObserver(host), webui_(webui) {
-    DCHECK(webui_);
-    Send(new ChromeViewMsg_StartFrameSniffer(routing_id(),
-                                             UTF8ToUTF16("gaia-frame")));
-  }
-
-  virtual ~SnifferObserver() {}
-
-  // IPC::Listener implementation.
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE {
-    bool handled = true;
-    IPC_BEGIN_MESSAGE_MAP(SnifferObserver, message)
-      IPC_MESSAGE_HANDLER(ChromeViewHostMsg_FrameLoadingError, OnError)
-      IPC_MESSAGE_UNHANDLED(handled = false)
-    IPC_END_MESSAGE_MAP()
-    return handled;
-  }
-
- private:
-  void OnError(int error) {
-    base::FundamentalValue error_value(error);
-    webui_->CallJavascriptFunction("login.GaiaSigninScreen.onFrameError",
-                                   error_value);
-  }
-
-  content::WebUI* webui_;
-};
-
-// A View class which places its first child at the right most position.
-class RightAlignedView : public views::View {
- public:
-  virtual void Layout() OVERRIDE;
-  virtual void ChildPreferredSizeChanged(View* child) OVERRIDE;
-};
-
-void RightAlignedView::Layout() {
-  if (has_children()) {
-    views::View* child = child_at(0);
-    gfx::Size preferred_size = child->GetPreferredSize();
-    child->SetBounds(width() - preferred_size.width(),
-                     0, preferred_size.width(), preferred_size.height());
-  }
-}
-
-void RightAlignedView::ChildPreferredSizeChanged(View* child) {
-  Layout();
-}
+const char kAccelNameAppLaunchBailout[] = "app_launch_bailout";
 
 // A class to change arrow key traversal behavior when it's alive.
 class ScopedArrowKeyTraversal {
@@ -143,10 +92,8 @@ const char WebUILoginView::kViewClassName[] =
 
 WebUILoginView::WebUILoginView()
     : webui_login_(NULL),
-      login_window_(NULL),
-      host_window_frozen_(false),
       is_hidden_(false),
-      login_prompt_visible_handled_(false),
+      webui_visible_(false),
       should_emit_login_prompt_visible_(true),
       forward_keyboard_event_(true) {
   registrar_.Add(this,
@@ -171,10 +118,17 @@ WebUILoginView::WebUILoginView()
       kAccelNameReset;
 
   accel_map_[ui::Accelerator(ui::VKEY_LEFT, ui::EF_NONE)] =
-      kAccelNameLeft;
-
+      kAccelFocusPrev;
   accel_map_[ui::Accelerator(ui::VKEY_RIGHT, ui::EF_NONE)] =
-      kAccelNameRight;
+      kAccelFocusNext;
+
+  // Use KEY_RELEASED because Gaia consumes KEY_PRESSED for up/down key.
+  ui::Accelerator key_up(ui::VKEY_UP, ui::EF_NONE);
+  key_up.set_type(ui::ET_KEY_RELEASED);
+  ui::Accelerator key_down(ui::VKEY_DOWN, ui::EF_NONE);
+  key_down.set_type(ui::ET_KEY_RELEASED);
+  accel_map_[key_up] = kAccelFocusPrev;
+  accel_map_[key_down] = kAccelFocusNext;
 
   accel_map_[ui::Accelerator(
       ui::VKEY_D, ui::EF_CONTROL_DOWN | ui::EF_ALT_DOWN | ui::EF_SHIFT_DOWN)] =
@@ -183,23 +137,30 @@ WebUILoginView::WebUILoginView()
       ui::Accelerator(ui::VKEY_H, ui::EF_CONTROL_DOWN | ui::EF_ALT_DOWN)] =
       kAccelNameDeviceRequisitionRemora;
 
+  accel_map_[ui::Accelerator(ui::VKEY_S,
+                             ui::EF_CONTROL_DOWN | ui::EF_ALT_DOWN)] =
+      kAccelNameAppLaunchBailout;
+
   for (AccelMap::iterator i(accel_map_.begin()); i != accel_map_.end(); ++i)
     AddAccelerator(i->first);
 }
 
 WebUILoginView::~WebUILoginView() {
+  FOR_EACH_OBSERVER(web_modal::ModalDialogHostObserver,
+                    observer_list_,
+                    OnHostDestroying());
+
   if (ash::Shell::GetInstance()->HasPrimaryStatusArea()) {
     ash::Shell::GetInstance()->GetPrimarySystemTray()->
         SetNextFocusableView(NULL);
   }
 }
 
-void WebUILoginView::Init(views::Widget* login_window) {
-  login_window_ = login_window;
-
+void WebUILoginView::Init() {
   Profile* signin_profile = ProfileHelper::GetSigninProfile();
   auth_extension_.reset(new ScopedGaiaAuthExtension(signin_profile));
   webui_login_ = new views::WebView(signin_profile);
+  webui_login_->set_allow_accelerators(true);
   AddChildView(webui_login_);
 
   WebContents* web_contents = webui_login_->GetWebContents();
@@ -212,16 +173,14 @@ void WebUILoginView::Init(views::Widget* login_window) {
   // LoginHandlerViews uses a constrained window for the password manager view.
   WebContentsModalDialogManager::CreateForWebContents(web_contents);
   WebContentsModalDialogManager::FromWebContents(web_contents)->
-      set_delegate(this);
+      SetDelegate(this);
 
   web_contents->SetDelegate(this);
+  extensions::ExtensionWebContentsObserver::CreateForWebContents(web_contents);
+  WebContentsObserver::Observe(web_contents);
   renderer_preferences_util::UpdateFromSystemSettings(
       web_contents->GetMutableRendererPrefs(),
       signin_profile);
-
-  registrar_.Add(this,
-                 content::NOTIFICATION_WEB_CONTENTS_RENDER_VIEW_HOST_CREATED,
-                 content::Source<WebContents>(web_contents));
 }
 
 const char* WebUILoginView::GetClassName() const {
@@ -244,14 +203,18 @@ gfx::Point WebUILoginView::GetDialogPosition(const gfx::Size& size) {
                     widget_size.height() / 2 - size.height() / 2);
 }
 
+gfx::Size WebUILoginView::GetMaximumDialogSize() {
+  return GetWidget()->GetWindowBoundsInScreen().size();
+}
+
 void WebUILoginView::AddObserver(
-    web_modal::WebContentsModalDialogHostObserver* observer) {
+    web_modal::ModalDialogHostObserver* observer) {
   if (observer && !observer_list_.HasObserver(observer))
     observer_list_.AddObserver(observer);
 }
 
 void WebUILoginView::RemoveObserver(
-    web_modal::WebContentsModalDialogHostObserver* observer) {
+    web_modal::ModalDialogHostObserver* observer) {
   observer_list_.RemoveObserver(observer);
 }
 
@@ -276,12 +239,6 @@ bool WebUILoginView::AcceleratorPressed(
 
 gfx::NativeWindow WebUILoginView::GetNativeWindow() const {
   return GetWidget()->GetNativeWindow();
-}
-
-void WebUILoginView::OnWindowCreated() {
-}
-
-void WebUILoginView::UpdateWindowType() {
 }
 
 void WebUILoginView::LoadURL(const GURL & url) {
@@ -348,7 +305,7 @@ void WebUILoginView::Layout() {
   DCHECK(webui_login_);
   webui_login_->SetBoundsRect(bounds());
 
-  FOR_EACH_OBSERVER(web_modal::WebContentsModalDialogHostObserver,
+  FOR_EACH_OBSERVER(web_modal::ModalDialogHostObserver,
                     observer_list_,
                     OnPositionRequiresUpdate());
 }
@@ -376,12 +333,6 @@ void WebUILoginView::Observe(int type,
     case chrome::NOTIFICATION_LOGIN_NETWORK_ERROR_SHOWN: {
       OnLoginPromptVisible();
       registrar_.RemoveAll();
-      break;
-    }
-    case content::NOTIFICATION_WEB_CONTENTS_RENDER_VIEW_HOST_CREATED: {
-      RenderViewHost* render_view_host =
-          content::Details<RenderViewHost>(details).ptr();
-      new SnifferObserver(render_view_host, GetWebUI());
       break;
     }
     default:
@@ -415,7 +366,7 @@ void WebUILoginView::HandleKeyboardEvent(content::WebContents* source,
   // Make sure error bubble is cleared on keyboard event. This is needed
   // when the focus is inside an iframe. Only clear on KeyDown to prevent hiding
   // an immediate authentication error (See crbug.com/103643).
-  if (event.type == WebKit::WebInputEvent::KeyDown) {
+  if (event.type == blink::WebInputEvent::KeyDown) {
     content::WebUI* web_ui = GetWebUI();
     if (web_ui)
       web_ui->CallJavascriptFunction("cr.ui.Oobe.clearErrors");
@@ -450,9 +401,25 @@ void WebUILoginView::RequestMediaAccessPermission(
     NOTREACHED() << "Media stream not allowed for WebUI";
 }
 
+void WebUILoginView::DidFailProvisionalLoad(
+    int64 frame_id,
+    const base::string16& frame_unique_name,
+    bool is_main_frame,
+    const GURL& validated_url,
+    int error_code,
+    const base::string16& error_description,
+    content::RenderViewHost* render_view_host) {
+  if (frame_unique_name != UTF8ToUTF16("gaia-frame"))
+    return;
+
+  base::FundamentalValue error_value(-error_code);
+  GetWebUI()->CallJavascriptFunction("login.GaiaSigninScreen.onFrameError",
+                                     error_value);
+}
+
 void WebUILoginView::OnLoginPromptVisible() {
   // If we're hidden than will generate this signal once we're shown.
-  if (is_hidden_ || login_prompt_visible_handled_) {
+  if (is_hidden_ || webui_visible_) {
     LOG(WARNING) << "Login WebUI >> not emitting signal, hidden: "
                  << is_hidden_;
     return;
@@ -464,7 +431,7 @@ void WebUILoginView::OnLoginPromptVisible() {
         EmitLoginPromptVisible();
   }
 
-  login_prompt_visible_handled_ = true;
+  webui_visible_ = true;
 }
 
 void WebUILoginView::ReturnFocus(bool reverse) {

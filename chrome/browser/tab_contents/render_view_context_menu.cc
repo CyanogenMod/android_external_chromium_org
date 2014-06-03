@@ -31,6 +31,7 @@
 #include "chrome/browser/download/download_service.h"
 #include "chrome/browser/download/download_service_factory.h"
 #include "chrome/browser/download/download_stats.h"
+#include "chrome/browser/extensions/devtools_util.h"
 #include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
@@ -60,7 +61,6 @@
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/content_restriction.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/net/url_util.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/render_messages.h"
@@ -82,6 +82,7 @@
 #include "content/public/common/ssl_status.h"
 #include "content/public/common/url_utils.h"
 #include "extensions/browser/view_type_utils.h"
+#include "extensions/common/extension.h"
 #include "grit/generated_resources.h"
 #include "net/base/escape.h"
 #include "third_party/WebKit/public/web/WebContextMenuData.h"
@@ -89,10 +90,10 @@
 #include "third_party/WebKit/public/web/WebPluginAction.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/text/text_elider.h"
 #include "ui/gfx/favicon_size.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/size.h"
+#include "ui/gfx/text_elider.h"
 
 #if defined(ENABLE_PRINTING)
 #include "chrome/common/print_messages.h"
@@ -106,11 +107,11 @@
 #endif  // defined(ENABLE_FULL_PRINTING)
 #endif  // defined(ENABLE_PRINTING)
 
-using WebKit::WebContextMenuData;
-using WebKit::WebMediaPlayerAction;
-using WebKit::WebPluginAction;
-using WebKit::WebString;
-using WebKit::WebURL;
+using blink::WebContextMenuData;
+using blink::WebMediaPlayerAction;
+using blink::WebPluginAction;
+using blink::WebString;
+using blink::WebURL;
 using content::BrowserContext;
 using content::ChildProcessSecurityPolicy;
 using content::DownloadManager;
@@ -369,9 +370,9 @@ void DevToolsInspectElementAt(RenderViewHost* rvh, int x, int y) {
 }
 
 // Helper function to escape "&" as "&&".
-void EscapeAmpersands(string16* text) {
+void EscapeAmpersands(base::string16* text) {
   const char16 ampersand[] = {'&', 0};
-  ReplaceChars(*text, ampersand, ASCIIToUTF16("&&"), text);
+  base::ReplaceChars(*text, ampersand, ASCIIToUTF16("&&"), text);
 }
 
 }  // namespace
@@ -512,9 +513,12 @@ void RenderViewContextMenu::AppendAllExtensionItems() {
       extensions::ExtensionSystem::Get(profile_)->extension_service();
   if (!service)
     return;  // In unit-tests, we may not have an ExtensionService.
-  MenuManager* menu_manager = service->menu_manager();
 
-  string16 printable_selection_text = PrintableSelectionText();
+  MenuManager* menu_manager = MenuManager::Get(profile_);
+  if (!menu_manager)
+    return;
+
+  base::string16 printable_selection_text = PrintableSelectionText();
   EscapeAmpersands(&printable_selection_text);
 
   // Get a list of extension id's that have context menu items, and sort by the
@@ -651,7 +655,7 @@ void RenderViewContextMenu::InitMenu() {
       AppendPrintItem();
   }
 
-  if (!IsDevToolsURL(params_.page_url))
+  if (!IsDevToolsURL(params_.page_url) && !is_guest_)
     AppendAllExtensionItems();
 
   AppendDeveloperItems();
@@ -742,8 +746,6 @@ void RenderViewContextMenu::AppendPopupExtensionItems() {
 }
 
 void RenderViewContextMenu::AppendPanelItems() {
-  const Extension* extension = GetExtension();
-
   bool has_selection = !params_.selection_text.empty();
 
   // Checking link should take precedence before checking selection since on Mac
@@ -756,19 +758,25 @@ void RenderViewContextMenu::AppendPanelItems() {
   else if (has_selection)
     AppendCopyItem();
 
-  // Only add extension items from this extension.
-  int index = 0;
-  extension_items_.AppendExtensionItems(extension->id(),
-                                        PrintableSelectionText(), &index);
+  // Avoid appending extension related items when |extension| is null. This
+  // happens when the panel is navigated to a url outside of the extension's
+  // package.
+  const Extension* extension = GetExtension();
+  if (extension) {
+    // Only add extension items from this extension.
+    int index = 0;
+    extension_items_.AppendExtensionItems(extension->id(),
+                                          PrintableSelectionText(), &index);
+  }
 }
 
 void RenderViewContextMenu::AddMenuItem(int command_id,
-                                        const string16& title) {
+                                        const base::string16& title) {
   menu_model_.AddItem(command_id, title);
 }
 
 void RenderViewContextMenu::AddCheckItem(int command_id,
-                                         const string16& title) {
+                                         const base::string16& title) {
   menu_model_.AddCheckItem(command_id, title);
 }
 
@@ -777,7 +785,7 @@ void RenderViewContextMenu::AddSeparator() {
 }
 
 void RenderViewContextMenu::AddSubMenu(int command_id,
-                                       const string16& label,
+                                       const base::string16& label,
                                        ui::MenuModel* model) {
   menu_model_.AddSubMenu(command_id, label, model);
 }
@@ -785,7 +793,7 @@ void RenderViewContextMenu::AddSubMenu(int command_id,
 void RenderViewContextMenu::UpdateMenuItem(int command_id,
                                            bool enabled,
                                            bool hidden,
-                                           const string16& label) {
+                                           const base::string16& label) {
   // This function needs platform-specific implementation.
   NOTIMPLEMENTED();
 }
@@ -865,7 +873,8 @@ void RenderViewContextMenu::AppendImageItems() {
   const TemplateURL* const default_provider =
       TemplateURLServiceFactory::GetForProfile(profile_)->
           GetDefaultSearchProvider();
-  if (default_provider && !default_provider->image_url().empty() &&
+  if (params_.has_image_contents && default_provider &&
+      !default_provider->image_url().empty() &&
       default_provider->image_url_ref().IsValid()) {
     menu_model_.AddItem(
         IDC_CONTENT_CONTEXT_SEARCHWEBFORIMAGE,
@@ -950,8 +959,8 @@ void RenderViewContextMenu::AppendPageItems() {
   if (TranslateManager::IsTranslatableURL(params_.page_url)) {
     std::string locale = g_browser_process->GetApplicationLocale();
     locale = TranslateManager::GetLanguageCode(locale);
-    string16 language = l10n_util::GetDisplayNameForLocale(locale, locale,
-                                                           true);
+    base::string16 language =
+        l10n_util::GetDisplayNameForLocale(locale, locale, true);
     menu_model_.AddItem(
         IDC_CONTENT_CONTEXT_TRANSLATE,
         l10n_util::GetStringFUTF16(IDS_CONTENT_CONTEXT_TRANSLATE, language));
@@ -1006,8 +1015,8 @@ void RenderViewContextMenu::AppendSearchProvider() {
   if (params_.selection_text.empty())
     return;
 
-  ReplaceChars(params_.selection_text, AutocompleteMatch::kInvalidChars,
-               ASCIIToUTF16(" "), &params_.selection_text);
+  base::ReplaceChars(params_.selection_text, AutocompleteMatch::kInvalidChars,
+                     ASCIIToUTF16(" "), &params_.selection_text);
 
   AutocompleteMatch match;
   AutocompleteClassifierFactory::GetForProfile(profile_)->Classify(
@@ -1016,7 +1025,7 @@ void RenderViewContextMenu::AppendSearchProvider() {
   if (!selection_navigation_url_.is_valid())
     return;
 
-  string16 printable_selection_text = PrintableSelectionText();
+  base::string16 printable_selection_text = PrintableSelectionText();
   EscapeAmpersands(&printable_selection_text);
 
   if (AutocompleteMatch::IsSearchType(match.type)) {
@@ -1288,7 +1297,7 @@ bool RenderViewContextMenu::IsCommandIdEnabled(int id) const {
           (params_.src_url.scheme() != chrome::kChromeUIScheme);
 
     case IDC_CONTENT_CONTEXT_COPYIMAGE:
-      return !params_.is_image_blocked;
+      return params_.has_image_contents;
 
     // Media control commands should all be disabled if the player is in an
     // error state.
@@ -1790,8 +1799,7 @@ void RenderViewContextMenu::ExecuteCommand(int id, int event_flags) {
       DCHECK(platform_app);
       DCHECK(platform_app->is_platform_app());
 
-      extensions::ExtensionSystem::Get(profile_)->extension_service()->
-          InspectBackgroundPage(platform_app);
+      extensions::devtools_util::InspectBackgroundPage(platform_app, profile_);
       break;
     }
 
@@ -1923,7 +1931,8 @@ void RenderViewContextMenu::ExecuteCommand(int id, int event_flags) {
           SearchEngineTabHelper::FromWebContents(source_web_contents_);
       if (search_engine_tab_helper &&
           search_engine_tab_helper->delegate()) {
-        string16 keyword(TemplateURLService::GenerateKeyword(params_.page_url));
+        base::string16 keyword(
+            TemplateURLService::GenerateKeyword(params_.page_url));
         TemplateURLData data;
         data.short_name = keyword;
         data.SetKeyword(keyword);
@@ -2030,8 +2039,8 @@ bool RenderViewContextMenu::IsDevCommandEnabled(int id) const {
   return true;
 }
 
-string16 RenderViewContextMenu::PrintableSelectionText() {
-  return ui::TruncateString(params_.selection_text,
+base::string16 RenderViewContextMenu::PrintableSelectionText() {
+  return gfx::TruncateString(params_.selection_text,
                             kMaxSelectionTextLength);
 }
 

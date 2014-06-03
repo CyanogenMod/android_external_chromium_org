@@ -1,4 +1,4 @@
-// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,17 +11,16 @@ import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
 import android.os.Handler;
 import android.os.HandlerThread;
-import android.os.Looper;
 import android.util.Log;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Sets;
 
 import org.chromium.base.CalledByNative;
+import org.chromium.base.CollectionUtil;
 import org.chromium.base.JNINamespace;
 import org.chromium.base.WeakContext;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -38,20 +37,17 @@ class DeviceMotionAndOrientation implements SensorEventListener {
     private Handler mHandler;
 
     // The lock to access the mHandler.
-    private Object mHandlerLock = new Object();
+    private final Object mHandlerLock = new Object();
 
     // Non-zero if and only if we're listening for events.
     // To avoid race conditions on the C++ side, access must be synchronized.
-    private int mNativePtr;
+    private long mNativePtr;
 
     // The lock to access the mNativePtr.
-    private Object mNativePtrLock = new Object();
+    private final Object mNativePtrLock = new Object();
 
-    // The acceleration vector including gravity expressed in the body frame.
-    private float[] mAccelerationIncludingGravityVector;
-
-    // The geomagnetic vector expressed in the body frame.
-    private float[] mMagneticFieldVector;
+    // Holds a shortened version of the rotation vector for compatibility purposes.
+    private float[] mTruncatedRotationVector;
 
     // Lazily initialized when registering for notifications.
     private SensorManagerProxy mSensorManagerProxy;
@@ -67,17 +63,16 @@ class DeviceMotionAndOrientation implements SensorEventListener {
     static final int DEVICE_ORIENTATION = 0;
     static final int DEVICE_MOTION = 1;
 
-    static final ImmutableSet<Integer> DEVICE_ORIENTATION_SENSORS = ImmutableSet.of(
-            Sensor.TYPE_ACCELEROMETER,
-            Sensor.TYPE_MAGNETIC_FIELD);
+    static final Set<Integer> DEVICE_ORIENTATION_SENSORS = CollectionUtil.newHashSet(
+            Sensor.TYPE_ROTATION_VECTOR);
 
-    static final ImmutableSet<Integer> DEVICE_MOTION_SENSORS = ImmutableSet.of(
+    static final Set<Integer> DEVICE_MOTION_SENSORS = CollectionUtil.newHashSet(
             Sensor.TYPE_ACCELEROMETER,
             Sensor.TYPE_LINEAR_ACCELERATION,
             Sensor.TYPE_GYROSCOPE);
 
     @VisibleForTesting
-    final Set<Integer> mActiveSensors = Sets.newHashSet();
+    final Set<Integer> mActiveSensors = new HashSet<Integer>();
     boolean mDeviceMotionIsActive = false;
     boolean mDeviceOrientationIsActive = false;
 
@@ -96,7 +91,7 @@ class DeviceMotionAndOrientation implements SensorEventListener {
      * @return True on success.
      */
     @CalledByNative
-    public boolean start(int nativePtr, int eventType, int rateInMilliseconds) {
+    public boolean start(long nativePtr, int eventType, int rateInMilliseconds) {
         boolean success = false;
         synchronized (mNativePtrLock) {
             switch (eventType) {
@@ -122,7 +117,7 @@ class DeviceMotionAndOrientation implements SensorEventListener {
 
     @CalledByNative
     public int getNumberActiveDeviceMotionSensors() {
-        Set<Integer> deviceMotionSensors = Sets.newHashSet(DEVICE_MOTION_SENSORS);
+        Set<Integer> deviceMotionSensors = new HashSet<Integer>(DEVICE_MOTION_SENSORS);
         deviceMotionSensors.removeAll(mActiveSensors);
         return DEVICE_MOTION_SENSORS.size() - deviceMotionSensors.size();
     }
@@ -138,7 +133,7 @@ class DeviceMotionAndOrientation implements SensorEventListener {
      */
     @CalledByNative
     public void stop(int eventType) {
-        Set<Integer> sensorsToRemainActive = Sets.newHashSet();
+        Set<Integer> sensorsToRemainActive = new HashSet<Integer>();
         synchronized (mNativePtrLock) {
             switch (eventType) {
                 case DEVICE_ORIENTATION:
@@ -156,7 +151,7 @@ class DeviceMotionAndOrientation implements SensorEventListener {
                     return;
             }
 
-            Set<Integer> sensorsToDeactivate = Sets.newHashSet(mActiveSensors);
+            Set<Integer> sensorsToDeactivate = new HashSet<Integer>(mActiveSensors);
             sensorsToDeactivate.removeAll(sensorsToRemainActive);
             unregisterSensors(sensorsToDeactivate);
             setEventTypeActive(eventType, false);
@@ -178,22 +173,10 @@ class DeviceMotionAndOrientation implements SensorEventListener {
 
     @VisibleForTesting
     void sensorChanged(int type, float[] values) {
-
         switch (type) {
             case Sensor.TYPE_ACCELEROMETER:
-                if (mAccelerationIncludingGravityVector == null) {
-                    mAccelerationIncludingGravityVector = new float[3];
-                }
-                System.arraycopy(values, 0, mAccelerationIncludingGravityVector,
-                        0, mAccelerationIncludingGravityVector.length);
                 if (mDeviceMotionIsActive) {
-                    gotAccelerationIncludingGravity(
-                            mAccelerationIncludingGravityVector[0],
-                            mAccelerationIncludingGravityVector[1],
-                            mAccelerationIncludingGravityVector[2]);
-                }
-                if (mDeviceOrientationIsActive) {
-                    getOrientationUsingGetRotationMatrix();
+                    gotAccelerationIncludingGravity(values[0], values[1], values[2]);
                 }
                 break;
             case Sensor.TYPE_LINEAR_ACCELERATION:
@@ -206,14 +189,21 @@ class DeviceMotionAndOrientation implements SensorEventListener {
                     gotRotationRate(values[0], values[1], values[2]);
                 }
                 break;
-            case Sensor.TYPE_MAGNETIC_FIELD:
-                if (mMagneticFieldVector == null) {
-                    mMagneticFieldVector = new float[3];
-                }
-                System.arraycopy(values, 0, mMagneticFieldVector, 0,
-                        mMagneticFieldVector.length);
+            case Sensor.TYPE_ROTATION_VECTOR:
                 if (mDeviceOrientationIsActive) {
-                    getOrientationUsingGetRotationMatrix();
+                    if (values.length > 4) {
+                        // On some Samsung devices SensorManager.getRotationMatrixFromVector
+                        // appears to throw an exception if rotation vector has length > 4.
+                        // For the purposes of this class the first 4 values of the
+                        // rotation vector are sufficient (see crbug.com/335298 for details).
+                        if (mTruncatedRotationVector == null) {
+                            mTruncatedRotationVector = new float[4];
+                        }
+                        System.arraycopy(values, 0, mTruncatedRotationVector, 0, 4);
+                        getOrientationFromRotationVector(mTruncatedRotationVector);
+                    } else {
+                        getOrientationFromRotationVector(values);
+                    }
                 }
                 break;
             default:
@@ -222,52 +212,106 @@ class DeviceMotionAndOrientation implements SensorEventListener {
         }
     }
 
-    private void getOrientationUsingGetRotationMatrix() {
-        if (mAccelerationIncludingGravityVector == null || mMagneticFieldVector == null) {
-            return;
+    /**
+     * Returns orientation angles from a rotation matrix, such that the angles are according
+     * to spec {@link http://dev.w3.org/geo/api/spec-source-orientation.html}.
+     * <p>
+     * It is assumed the rotation matrix transforms a 3D column vector from device coordinate system
+     * to the world's coordinate system, as e.g. computed by {@see SensorManager.getRotationMatrix}.
+     * <p>
+     * In particular we compute the decomposition of a given rotation matrix R such that <br>
+     * R = Rz(alpha) * Rx(beta) * Ry(gamma), <br>
+     * where Rz, Rx and Ry are rotation matrices around Z, X and Y axes in the world coordinate
+     * reference frame respectively. The reference frame consists of three orthogonal axes X, Y, Z
+     * where X points East, Y points north and Z points upwards perpendicular to the ground plane.
+     * The computed angles alpha, beta and gamma are in radians and clockwise-positive when viewed
+     * along the positive direction of the corresponding axis. Except for the special case when the
+     * beta angle is +-pi/2 these angles uniquely define the orientation of a mobile device in 3D
+     * space. The alpha-beta-gamma representation resembles the yaw-pitch-roll convention used in
+     * vehicle dynamics, however it does not exactly match it. One of the differences is that the
+     * 'pitch' angle beta is allowed to be within [-pi, pi). A mobile device with pitch angle
+     * greater than pi/2 could correspond to a user lying down and looking upward at the screen.
+     *
+     * <p>
+     * Upon return the array values is filled with the result,
+     * <ul>
+     * <li>values[0]: rotation around the Z axis, alpha in [0, 2*pi)</li>
+     * <li>values[1]: rotation around the X axis, beta in [-pi, pi)</li>
+     * <li>values[2]: rotation around the Y axis, gamma in [-pi/2, pi/2)</li>
+     * </ul>
+     * <p>
+     *
+     * @param R
+     *        a 3x3 rotation matrix {@see SensorManager.getRotationMatrix}.
+     *
+     * @param values
+     *        an array of 3 doubles to hold the result.
+     *
+     * @return the array values passed as argument.
+     */
+    @VisibleForTesting
+    public static double[] computeDeviceOrientationFromRotationMatrix(float[] R, double[] values) {
+        /*
+         * 3x3 (length=9) case:
+         *   /  R[ 0]   R[ 1]   R[ 2]  \
+         *   |  R[ 3]   R[ 4]   R[ 5]  |
+         *   \  R[ 6]   R[ 7]   R[ 8]  /
+         *
+         */
+        if (R.length != 9)
+            return values;
+
+        if (R[8] > 0) {  // cos(beta) > 0
+            values[0] = Math.atan2(-R[1], R[4]);
+            values[1] = Math.asin(R[7]);           // beta (-pi/2, pi/2)
+            values[2] = Math.atan2(-R[6], R[8]);   // gamma (-pi/2, pi/2)
+        } else if (R[8] < 0) {  // cos(beta) < 0
+            values[0] = Math.atan2(R[1], -R[4]);
+            values[1] = -Math.asin(R[7]);
+            values[1] += (values[1] >= 0) ? -Math.PI : Math.PI; // beta [-pi,-pi/2) U (pi/2,pi)
+            values[2] = Math.atan2(R[6], -R[8]);   // gamma (-pi/2, pi/2)
+        } else { // R[8] == 0
+            if (R[6] > 0) {  // cos(gamma) == 0, cos(beta) > 0
+                values[0] = Math.atan2(-R[1], R[4]);
+                values[1] = Math.asin(R[7]);       // beta [-pi/2, pi/2]
+                values[2] = -Math.PI / 2;          // gamma = -pi/2
+            } else if (R[6] < 0) { // cos(gamma) == 0, cos(beta) < 0
+                values[0] = Math.atan2(R[1], -R[4]);
+                values[1] = -Math.asin(R[7]);
+                values[1] += (values[1] >= 0) ? -Math.PI : Math.PI; // beta [-pi,-pi/2) U (pi/2,pi)
+                values[2] = -Math.PI / 2;          // gamma = -pi/2
+            } else { // R[6] == 0, cos(beta) == 0
+                // gimbal lock discontinuity
+                values[0] = Math.atan2(R[3], R[0]);
+                values[1] = (R[7] > 0) ? Math.PI / 2 : -Math.PI / 2;  // beta = +-pi/2
+                values[2] = 0;                                        // gamma = 0
+            }
         }
 
-        // Get the rotation matrix.
-        // The rotation matrix that transforms from the body frame to the earth
-        // frame.
+        // alpha is in [-pi, pi], make sure it is in [0, 2*pi).
+        if (values[0] < 0)
+            values[0] += 2 * Math.PI; // alpha [0, 2*pi)
+
+        return values;
+    }
+
+    private void getOrientationFromRotationVector(float[] rotationVector) {
         float[] deviceRotationMatrix = new float[9];
-        if (!SensorManager.getRotationMatrix(deviceRotationMatrix, null,
-                mAccelerationIncludingGravityVector, mMagneticFieldVector)) {
-            return;
-        }
+        SensorManager.getRotationMatrixFromVector(deviceRotationMatrix, rotationVector);
 
-        // Convert rotation matrix to rotation angles.
-        // Assuming that the rotations are appied in the order listed at
-        // http://developer.android.com/reference/android/hardware/SensorEvent.html#values
-        // the rotations are applied about the same axes and in the same order as required by the
-        // API. The only conversions are sign changes as follows.  The angles are in radians
+        double[] rotationAngles = new double[3];
+        computeDeviceOrientationFromRotationMatrix(deviceRotationMatrix, rotationAngles);
 
-        float[] rotationAngles = new float[3];
-        SensorManager.getOrientation(deviceRotationMatrix, rotationAngles);
-
-        double alpha = Math.toDegrees(-rotationAngles[0]);
-        while (alpha < 0.0) {
-            alpha += 360.0; // [0, 360)
-        }
-
-        double beta = Math.toDegrees(-rotationAngles[1]);
-        while (beta < -180.0) {
-            beta += 360.0; // [-180, 180)
-        }
-
-        double gamma = Math.toDegrees(rotationAngles[2]);
-        while (gamma < -90.0) {
-            gamma += 360.0; // [-90, 90)
-        }
-
-        gotOrientation(alpha, beta, gamma);
+        gotOrientation(Math.toDegrees(rotationAngles[0]),
+                       Math.toDegrees(rotationAngles[1]),
+                       Math.toDegrees(rotationAngles[2]));
     }
 
     private SensorManagerProxy getSensorManagerProxy() {
         if (mSensorManagerProxy != null) {
             return mSensorManagerProxy;
         }
-        SensorManager sensorManager = (SensorManager)WeakContext.getSystemService(
+        SensorManager sensorManager = (SensorManager) WeakContext.getSystemService(
                 Context.SENSOR_SERVICE);
         if (sensorManager != null) {
             mSensorManagerProxy = new SensorManagerProxyImpl(sensorManager);
@@ -298,9 +342,9 @@ class DeviceMotionAndOrientation implements SensorEventListener {
      *                            activated. When false the method return true if at least one
      *                            sensor in sensorTypes could be activated.
      */
-    private boolean registerSensors(Iterable<Integer> sensorTypes, int rateInMilliseconds,
+    private boolean registerSensors(Set<Integer> sensorTypes, int rateInMilliseconds,
             boolean failOnMissingSensor) {
-        Set<Integer> sensorsToActivate = Sets.newHashSet(sensorTypes);
+        Set<Integer> sensorsToActivate = new HashSet<Integer>(sensorTypes);
         sensorsToActivate.removeAll(mActiveSensors);
         boolean success = false;
 
@@ -340,7 +384,7 @@ class DeviceMotionAndOrientation implements SensorEventListener {
     protected void gotOrientation(double alpha, double beta, double gamma) {
         synchronized (mNativePtrLock) {
             if (mNativePtr != 0) {
-              nativeGotOrientation(mNativePtr, alpha, beta, gamma);
+                nativeGotOrientation(mNativePtr, alpha, beta, gamma);
             }
         }
     }
@@ -348,7 +392,7 @@ class DeviceMotionAndOrientation implements SensorEventListener {
     protected void gotAcceleration(double x, double y, double z) {
         synchronized (mNativePtrLock) {
             if (mNativePtr != 0) {
-              nativeGotAcceleration(mNativePtr, x, y, z);
+                nativeGotAcceleration(mNativePtr, x, y, z);
             }
         }
     }
@@ -356,7 +400,7 @@ class DeviceMotionAndOrientation implements SensorEventListener {
     protected void gotAccelerationIncludingGravity(double x, double y, double z) {
         synchronized (mNativePtrLock) {
             if (mNativePtr != 0) {
-              nativeGotAccelerationIncludingGravity(mNativePtr, x, y, z);
+                nativeGotAccelerationIncludingGravity(mNativePtr, x, y, z);
             }
         }
     }
@@ -364,7 +408,7 @@ class DeviceMotionAndOrientation implements SensorEventListener {
     protected void gotRotationRate(double alpha, double beta, double gamma) {
         synchronized (mNativePtrLock) {
             if (mNativePtr != 0) {
-              nativeGotRotationRate(mNativePtr, alpha, beta, gamma);
+                nativeGotRotationRate(mNativePtr, alpha, beta, gamma);
             }
         }
     }
@@ -402,28 +446,28 @@ class DeviceMotionAndOrientation implements SensorEventListener {
      * Orientation of the device with respect to its reference frame.
      */
     private native void nativeGotOrientation(
-            int nativeDataFetcherImplAndroid,
+            long nativeDataFetcherImplAndroid,
             double alpha, double beta, double gamma);
 
     /**
      * Linear acceleration without gravity of the device with respect to its body frame.
      */
     private native void nativeGotAcceleration(
-            int nativeDataFetcherImplAndroid,
+            long nativeDataFetcherImplAndroid,
             double x, double y, double z);
 
     /**
      * Acceleration including gravity of the device with respect to its body frame.
      */
     private native void nativeGotAccelerationIncludingGravity(
-            int nativeDataFetcherImplAndroid,
+            long nativeDataFetcherImplAndroid,
             double x, double y, double z);
 
     /**
      * Rotation rate of the device with respect to its body frame.
      */
     private native void nativeGotRotationRate(
-            int nativeDataFetcherImplAndroid,
+            long nativeDataFetcherImplAndroid,
             double alpha, double beta, double gamma);
 
     /**
@@ -442,6 +486,7 @@ class DeviceMotionAndOrientation implements SensorEventListener {
             mSensorManager = sensorManager;
         }
 
+        @Override
         public boolean registerListener(SensorEventListener listener, int sensorType, int rate,
                 Handler handler) {
             List<Sensor> sensors = mSensorManager.getSensorList(sensorType);
@@ -451,6 +496,7 @@ class DeviceMotionAndOrientation implements SensorEventListener {
             return mSensorManager.registerListener(listener, sensors.get(0), rate, handler);
         }
 
+        @Override
         public void unregisterListener(SensorEventListener listener, int sensorType) {
             List<Sensor> sensors = mSensorManager.getSensorList(sensorType);
             if (!sensors.isEmpty()) {

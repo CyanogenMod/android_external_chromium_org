@@ -11,6 +11,8 @@
 #include "ash/desktop_background/desktop_background_controller.h"
 #include "ash/shell.h"
 #include "ash/wm/lock_state_controller.h"
+#include "ash/wm/window_state.h"
+#include "ash/wm/window_util.h"
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/lazy_instance.h"
@@ -20,6 +22,7 @@
 #include "base/strings/string_util.h"
 #include "base/timer/timer.h"
 #include "chrome/browser/chrome_notification_types.h"
+#include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
 #include "chrome/browser/chromeos/login/authenticator.h"
 #include "chrome/browser/chromeos/login/login_performer.h"
 #include "chrome/browser/chromeos/login/login_utils.h"
@@ -33,18 +36,22 @@
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
-#include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_commands.h"
-#include "chrome/browser/ui/browser_finder.h"
-#include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/webui/chromeos/login/screenlock_icon_provider.h"
+#include "chrome/browser/ui/webui/chromeos/login/screenlock_icon_source.h"
 #include "chrome/common/chrome_switches.h"
+#include "chromeos/audio/chromeos_sounds.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/session_manager_client.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
+#include "content/public/browser/url_data_source.h"
 #include "content/public/browser/user_metrics.h"
+#include "grit/browser_resources.h"
 #include "grit/generated_resources.h"
+#include "media/audio/sounds/sounds_manager.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/base/resource/resource_bundle.h"
+#include "ui/gfx/image/image.h"
 #include "url/gurl.h"
 
 using content::BrowserThread;
@@ -118,11 +125,6 @@ class ScreenLockObserver : public chromeos::SessionManagerClient::Observer,
     }
   }
 
-  virtual void UnlockScreen() OVERRIDE {
-    VLOG(1) << "Received UnlockScreen D-Bus signal from session manager";
-    chromeos::ScreenLocker::Hide();
-  }
-
   virtual void OnUserAddingFinished() OVERRIDE {
     chromeos::UserAddingScreen::Get()->RemoveObserver(this);
     LockScreen();
@@ -137,6 +139,11 @@ class ScreenLockObserver : public chromeos::SessionManagerClient::Observer,
 
   DISALLOW_COPY_AND_ASSIGN(ScreenLockObserver);
 };
+
+void PlaySound(int sound_key) {
+  if (chromeos::AccessibilityManager::Get()->IsSpokenFeedbackEnabled())
+    media::SoundsManager::Get()->Play(sound_key);
+}
 
 static base::LazyInstance<ScreenLockObserver> g_screen_lock_observer =
     LAZY_INSTANCE_INITIALIZER;
@@ -160,12 +167,32 @@ ScreenLocker::ScreenLocker(const UserList& users)
       weak_factory_(this) {
   DCHECK(!screen_locker_);
   screen_locker_ = this;
+
+  ui::ResourceBundle& bundle = ui::ResourceBundle::GetSharedInstance();
+  media::SoundsManager* manager = media::SoundsManager::Get();
+  manager->Initialize(SOUND_LOCK,
+                      bundle.GetRawDataResource(IDR_SOUND_LOCK_WAV));
+  manager->Initialize(SOUND_UNLOCK,
+                      bundle.GetRawDataResource(IDR_SOUND_UNLOCK_WAV));
+
+  ash::Shell::GetInstance()->
+      lock_state_controller()->
+      SetLockScreenDisplayedCallback(
+          base::Bind(&PlaySound, static_cast<int>(chromeos::SOUND_LOCK)));
 }
 
 void ScreenLocker::Init() {
   authenticator_ = LoginUtils::Get()->CreateAuthenticator(this);
   delegate_.reset(new WebUIScreenLocker(this));
   delegate_->LockScreen();
+
+  // Ownership of |icon_image_source| is passed.
+  screenlock_icon_provider_.reset(new ScreenlockIconProvider);
+  ScreenlockIconSource* screenlock_icon_source =
+      new ScreenlockIconSource(screenlock_icon_provider_->AsWeakPtr());
+  content::URLDataSource::Add(
+      Profile::FromWebUI(GetAssociatedWebUI()),
+      screenlock_icon_source);
 }
 
 void ScreenLocker::OnLoginFailure(const LoginFailure& error) {
@@ -191,10 +218,7 @@ void ScreenLocker::OnLoginFailure(const LoginFailure& error) {
     login_status_consumer_->OnLoginFailure(error);
 }
 
-void ScreenLocker::OnLoginSuccess(
-    const UserContext& user_context,
-    bool pending_requests,
-    bool using_oauth) {
+void ScreenLocker::OnLoginSuccess(const UserContext& user_context) {
   incorrect_passwords_count_ = 0;
   if (authentication_start_time_.is_null()) {
     if (!user_context.username.empty())
@@ -205,25 +229,6 @@ void ScreenLocker::OnLoginSuccess(
     UMA_HISTOGRAM_TIMES("ScreenLocker.AuthenticationSuccessTime", delta);
   }
 
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kMultiProfiles)) {
-    // TODO(dzhioev): It seems like this branch never executed and should be
-    // removed before multi-profile enabling.
-    Profile* profile = ProfileManager::GetDefaultProfile();
-    if (profile && !user_context.password.empty()) {
-      // We have a non-empty password, so notify listeners (such as the sync
-      // engine).
-      SigninManagerBase* signin = SigninManagerFactory::GetForProfile(profile);
-      DCHECK(signin);
-      GoogleServiceSigninSuccessDetails details(
-          signin->GetAuthenticatedUsername(),
-          user_context.password);
-      content::NotificationService::current()->Notify(
-          chrome::NOTIFICATION_GOOGLE_SIGNIN_SUCCESSFUL,
-          content::Source<Profile>(profile),
-          content::Details<const GoogleServiceSigninSuccessDetails>(&details));
-    }
-  }
-
   if (const User* user = UserManager::Get()->FindUser(user_context.username)) {
     if (!user->is_active())
       UserManager::Get()->SwitchActiveUser(user_context.username);
@@ -232,23 +237,16 @@ void ScreenLocker::OnLoginSuccess(
   }
 
   authentication_capture_.reset(new AuthenticationParametersCapture());
-  authentication_capture_->username = user_context.username;
-  authentication_capture_->pending_requests = pending_requests;
-  authentication_capture_->using_oauth = using_oauth;
+  authentication_capture_->user_context = user_context;
 
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
-  if (command_line->HasSwitch(ash::switches::kAshDisableNewLockAnimations)) {
-    UnlockOnLoginSuccess();
-  } else {
-    // Add guard for case when something get broken in call chain to unlock
-    // for sure.
-    base::MessageLoop::current()->PostDelayedTask(
-        FROM_HERE,
-        base::Bind(&ScreenLocker::UnlockOnLoginSuccess,
-            weak_factory_.GetWeakPtr()),
-        base::TimeDelta::FromMilliseconds(kUnlockGuardTimeoutMs));
-    delegate_->AnimateAuthenticationSuccess();
-  }
+  // Add guard for case when something get broken in call chain to unlock
+  // for sure.
+  base::MessageLoop::current()->PostDelayedTask(
+      FROM_HERE,
+      base::Bind(&ScreenLocker::UnlockOnLoginSuccess,
+          weak_factory_.GetWeakPtr()),
+      base::TimeDelta::FromMilliseconds(kUnlockGuardTimeoutMs));
+  delegate_->AnimateAuthenticationSuccess();
 }
 
 void ScreenLocker::UnlockOnLoginSuccess() {
@@ -259,19 +257,19 @@ void ScreenLocker::UnlockOnLoginSuccess() {
     return;
   }
 
-  VLOG(1) << "Calling session manager's UnlockScreen D-Bus method";
-  DBusThreadManager::Get()->GetSessionManagerClient()->RequestUnlockScreen();
-
   if (login_status_consumer_) {
     login_status_consumer_->OnLoginSuccess(
-        UserContext(authentication_capture_->username,
-                    std::string(),   // password
-                    std::string()),  // auth_code
-        authentication_capture_->pending_requests,
-        authentication_capture_->using_oauth);
+        UserContext(authentication_capture_->user_context.username,
+                    authentication_capture_->user_context.password,
+                    authentication_capture_->user_context.auth_code,
+                    authentication_capture_->user_context.username_hash,
+                    authentication_capture_->user_context.using_oauth));
   }
   authentication_capture_.reset();
   weak_factory_.InvalidateWeakPtrs();
+
+  VLOG(1) << "Hiding the lock screen.";
+  chromeos::ScreenLocker::Hide();
 }
 
 void ScreenLocker::Authenticate(const UserContext& user_context) {
@@ -312,6 +310,23 @@ void ScreenLocker::Signout() {
   // briefly.
 }
 
+void ScreenLocker::ShowBannerMessage(const std::string& message) {
+  delegate_->ShowBannerMessage(message);
+}
+
+void ScreenLocker::ShowUserPodButton(const std::string& username,
+                                     const gfx::Image& icon,
+                                     const base::Closure& click_callback) {
+  if (!locked_)
+    return;
+
+  screenlock_icon_provider_->AddIcon(username, icon);
+  delegate_->ShowUserPodButton(
+      username,
+      ScreenlockIconSource::GetIconURLForUser(username),
+      click_callback);
+}
+
 void ScreenLocker::ShowErrorMessage(int error_msg_id,
                                     HelpAppLauncher::HelpTopic help_topic_id,
                                     bool sign_out_only) {
@@ -338,18 +353,20 @@ void ScreenLocker::Show() {
     return;
   }
 
-  // Exit fullscreen.
-  Browser* browser = chrome::FindLastActiveWithHostDesktopType(
-      chrome::HOST_DESKTOP_TYPE_ASH);
-  // browser can be NULL if we receive a lock request before the first browser
-  // window is shown.
-  if (browser && browser->window()->IsFullscreen()) {
-    chrome::ToggleFullscreenMode(browser);
+  // If the active window is fullscreen, exit fullscreen to avoid the web page
+  // or app mimicking the lock screen. Do not exit fullscreen if the shelf is
+  // visible while in fullscreen because the shelf makes it harder for a web
+  // page or app to mimick the lock screen.
+  ash::wm::WindowState* active_window_state = ash::wm::GetActiveWindowState();
+  if (active_window_state &&
+      active_window_state->IsFullscreen() &&
+      active_window_state->hide_shelf_when_fullscreen()) {
+    active_window_state->ToggleFullscreen();
   }
 
   if (!screen_locker_) {
     ScreenLocker* locker =
-        new ScreenLocker(UserManager::Get()->GetLRULoggedInUsers());
+        new ScreenLocker(UserManager::Get()->GetUnlockUsers());
     VLOG(1) << "Created ScreenLocker " << locker;
     locker->Init();
   } else {
@@ -381,10 +398,12 @@ void ScreenLocker::ScheduleDeletion() {
   // Avoid possible multiple calls.
   if (screen_locker_ == NULL)
     return;
-  VLOG(1) << "Posting task to delete ScreenLocker " << screen_locker_;
-  ScreenLocker* screen_locker = screen_locker_;
+  VLOG(1) << "Deleting ScreenLocker " << screen_locker_;
+
+  PlaySound(SOUND_UNLOCK);
+
+  delete screen_locker_;
   screen_locker_ = NULL;
-  base::MessageLoopForUI::current()->DeleteSoon(FROM_HERE, screen_locker);
 }
 
 // static
@@ -457,4 +476,3 @@ bool ScreenLocker::IsUserLoggedIn(const std::string& username) {
 }
 
 }  // namespace chromeos
-

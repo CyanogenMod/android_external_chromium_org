@@ -42,7 +42,7 @@ const CanonicalEncodingData kCanonicalEncodingNames[] = {
   { IDC_ENCODING_GB18030, "gb18030", IDS_ENCODING_SIMP_CHINESE },
   { IDC_ENCODING_BIG5, "Big5", IDS_ENCODING_TRAD_CHINESE },
   { IDC_ENCODING_BIG5HKSCS, "Big5-HKSCS", IDS_ENCODING_TRAD_CHINESE },
-  { IDC_ENCODING_KOREAN, "windows-949", IDS_ENCODING_KOREAN },
+  { IDC_ENCODING_KOREAN, "EUC-KR", IDS_ENCODING_KOREAN },
   { IDC_ENCODING_SHIFTJIS, "Shift_JIS", IDS_ENCODING_JAPANESE },
   { IDC_ENCODING_EUCJP, "EUC-JP", IDS_ENCODING_JAPANESE },
   { IDC_ENCODING_ISO2022JP, "ISO-2022-JP", IDS_ENCODING_JAPANESE },
@@ -88,7 +88,6 @@ const CanonicalEncodingDisplayNamePair kCanonicalDisplayNameOverrides[] = {
   // Only lists the canonical names where we want a different form for display.
   { "macintosh", "Macintosh" },
   { "windows-874", "Windows-874" },
-  { "windows-949", "Windows-949" },
   { "windows-1250", "Windows-1250" },
   { "windows-1251", "Windows-1251" },
   { "windows-1252", "Windows-1252" },
@@ -251,9 +250,9 @@ void ParseEncodingListSeparatedWithComma(
   }
 }
 
-string16 GetEncodingDisplayName(const std::string& encoding_name,
-                                int category_string_id) {
-  string16 category_name = l10n_util::GetStringUTF16(category_string_id);
+base::string16 GetEncodingDisplayName(const std::string& encoding_name,
+                                      int category_string_id) {
+  base::string16 category_name = l10n_util::GetStringUTF16(category_string_id);
   if (category_string_id != IDS_ENCODING_KOREAN &&
       category_string_id != IDS_ENCODING_THAI &&
       category_string_id != IDS_ENCODING_TURKISH) {
@@ -325,7 +324,7 @@ std::string CharacterEncoding::GetCanonicalEncodingNameByCommandId(int id) {
 }
 
 // Static.
-string16 CharacterEncoding::GetCanonicalEncodingDisplayNameByCommandId(
+base::string16 CharacterEncoding::GetCanonicalEncodingDisplayNameByCommandId(
     int id) {
   const IdToCanonicalEncodingNameMapType* map =
       CanonicalEncodingMapSingleton()->GetIdToCanonicalEncodingNameMapData();
@@ -335,7 +334,7 @@ string16 CharacterEncoding::GetCanonicalEncodingDisplayNameByCommandId(
   if (found_name != map->end())
     return GetEncodingDisplayName(found_name->second.first,
                                   found_name->second.second);
-  return string16();
+  return base::string16();
 }
 
 // Static.
@@ -352,12 +351,12 @@ std::string CharacterEncoding::GetCanonicalEncodingNameByIndex(int index) {
 }
 
 // Static.
-string16 CharacterEncoding::GetCanonicalEncodingDisplayNameByIndex(
+base::string16 CharacterEncoding::GetCanonicalEncodingDisplayNameByIndex(
     int index) {
   if (index < kCanonicalEncodingNamesLength)
     return GetEncodingDisplayName(kCanonicalEncodingNames[index].name,
         kCanonicalEncodingNames[index].category_string_id);
-  return string16();
+  return base::string16();
 }
 
 // Static.

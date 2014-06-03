@@ -19,6 +19,10 @@
     "channel": "stable",
     "version": 21
   },
+  "mediaGalleries": {
+    "channel": "stable",
+    "version": 23
+  },
   "notifications": {
     "channel": "stable",
     "version": 28
@@ -35,5 +39,9 @@
     // Only 'webstorePrivate' is present before version 19.
     "channel": "stable",
     "version": 15
+  },
+  "webviewTag": {
+    "channel": "stable",
+    "version": 25
   }
 }

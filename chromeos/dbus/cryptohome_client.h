@@ -12,19 +12,15 @@
 #include "base/callback.h"
 #include "chromeos/attestation/attestation_constants.h"
 #include "chromeos/chromeos_export.h"
-#include "chromeos/dbus/dbus_client_implementation_type.h"
+#include "chromeos/dbus/dbus_client.h"
 #include "chromeos/dbus/dbus_method_call_status.h"
-
-namespace dbus {
-class Bus;
-}
 
 namespace chromeos {
 
 // CryptohomeClient is used to communicate with the Cryptohome service.
 // All method should be called from the origin thread (UI thread) which
 // initializes the DBusThreadManager instance.
-class CHROMEOS_EXPORT CryptohomeClient {
+class CHROMEOS_EXPORT CryptohomeClient : public DBusClient {
  public:
   // A callback to handle AsyncCallStatus signals.
   typedef base::Callback<void(int async_id,
@@ -38,11 +34,26 @@ class CHROMEOS_EXPORT CryptohomeClient {
       AsyncCallStatusWithDataHandler;
   // A callback to handle responses of AsyncXXX methods.
   typedef base::Callback<void(int async_id)> AsyncMethodCallback;
-  // A callback to handle responses of Pkcs11GetTpmTokenInfo method.
+  // A callback for GetSystemSalt().
+  typedef base::Callback<void(
+      DBusMethodCallStatus call_status,
+      const std::vector<uint8>& system_salt)> GetSystemSaltCallback;
+  // A callback for WaitForServiceToBeAvailable().
+  typedef base::Callback<void(bool service_is_ready)>
+      WaitForServiceToBeAvailableCallback;
+  // A callback to handle responses of Pkcs11GetTpmTokenInfo method.  The result
+  // of the D-Bus call is in |call_status|.  On success, |label| holds the
+  // PKCS #11 token label.  This is not useful in practice to identify a token
+  // but may be meaningful to a user.  The |user_pin| can be used with the
+  // C_Login PKCS #11 function but is not necessary because tokens are logged in
+  // for the duration of a signed-in session.  The |slot| corresponds to a
+  // CK_SLOT_ID for the PKCS #11 API and reliably identifies the token for the
+  // duration of the signed-in session.
   typedef base::Callback<void(
       DBusMethodCallStatus call_status,
       const std::string& label,
-      const std::string& user_pin)> Pkcs11GetTpmTokenInfoCallback;
+      const std::string& user_pin,
+      int slot)> Pkcs11GetTpmTokenInfoCallback;
   // A callback for methods which return both a bool result and data.
   typedef base::Callback<void(DBusMethodCallStatus call_status,
                               bool result,
@@ -52,8 +63,7 @@ class CHROMEOS_EXPORT CryptohomeClient {
 
   // Factory function, creates a new instance and returns ownership.
   // For normal usage, access the singleton via DBusThreadManager::Get().
-  static CryptohomeClient* Create(DBusClientImplementationType type,
-                                  dbus::Bus* bus);
+  static CryptohomeClient* Create();
 
   // Returns the sanitized |username| that the stub implementation would return.
   static std::string GetStubSanitizedUsername(const std::string& username);
@@ -68,6 +78,10 @@ class CHROMEOS_EXPORT CryptohomeClient {
 
   // Resets AsyncCallStatus signal handlers.
   virtual void ResetAsyncCallStatusHandlers() = 0;
+
+  // Runs the callback as soon as the service becomes available.
+  virtual void WaitForServiceToBeAvailable(
+      const WaitForServiceToBeAvailableCallback& callback) = 0;
 
   // Calls IsMounted method and returns true when the call succeeds.
   virtual void IsMounted(const BoolDBusMethodCallback& callback) = 0;
@@ -94,9 +108,9 @@ class CHROMEOS_EXPORT CryptohomeClient {
   virtual void AsyncRemove(const std::string& username,
                            const AsyncMethodCallback& callback) = 0;
 
-  // Calls GetSystemSalt method.  This method blocks until the call returns.
-  // The original content of |salt| is lost.
-  virtual bool GetSystemSalt(std::vector<uint8>* salt) = 0;
+  // Calls GetSystemSalt method.  |callback| is called after the method call
+  // succeeds.
+  virtual void GetSystemSalt(const GetSystemSaltCallback& callback) = 0;
 
   // Calls GetSanitizedUsername method.  |callback| is called after the method
   // call succeeds.
@@ -190,8 +204,19 @@ class CHROMEOS_EXPORT CryptohomeClient {
   virtual void Pkcs11IsTpmTokenReady(
       const BoolDBusMethodCallback& callback) = 0;
 
-  // Calls Pkcs11GetTpmTokenInfo method.
+  // Calls Pkcs11GetTpmTokenInfo method.  This method is deprecated, you should
+  // use Pkcs11GetTpmTokenInfoForUser instead.  On success |callback| will
+  // receive PKCS #11 token information for the token associated with the user
+  // who originally signed in (i.e. PKCS #11 slot 0).
   virtual void Pkcs11GetTpmTokenInfo(
+      const Pkcs11GetTpmTokenInfoCallback& callback) = 0;
+
+  // Calls Pkcs11GetTpmTokenInfoForUser method.  On success |callback| will
+  // receive PKCS #11 token information for the user identified by |user_email|.
+  // The |user_email| must be a canonical email address as returned by
+  // chromeos::User::email().
+  virtual void Pkcs11GetTpmTokenInfoForUser(
+      const std::string& user_email,
       const Pkcs11GetTpmTokenInfoCallback& callback) = 0;
 
   // Calls InstallAttributesGet method and returns true when the call succeeds.
@@ -250,14 +275,18 @@ class CHROMEOS_EXPORT CryptohomeClient {
       const AsyncMethodCallback& callback) = 0;
 
   // Asynchronously creates an attestation certificate request according to
-  // |options|, which is a combination of AttestationCertificateOptions.
-  // |callback| will be called when the dbus call completes.  When the operation
-  // completes, the AsyncCallStatusWithDataHandler signal handler is called.
-  // The data that is sent with the signal is a certificate request to be sent
-  // to the Privacy CA.  The certificate request is completed by calling
-  // AsyncTpmAttestationFinishCertRequest.
+  // |certificate_profile|.  Some profiles require that the |user_id| of the
+  // currently active user and an identifier of the |request_origin| be
+  // provided.  |callback| will be called when the dbus call completes.  When
+  // the operation completes, the AsyncCallStatusWithDataHandler signal handler
+  // is called.  The data that is sent with the signal is a certificate request
+  // to be sent to the Privacy CA.  The certificate request is completed by
+  // calling AsyncTpmAttestationFinishCertRequest.  The |user_id| will not
+  // be included in the certificate request for the Privacy CA.
   virtual void AsyncTpmAttestationCreateCertRequest(
-      int options,
+      attestation::AttestationCertificateProfile certificate_profile,
+      const std::string& user_id,
+      const std::string& request_origin,
       const AsyncMethodCallback& callback) = 0;
 
   // Asynchronously finishes a certificate request operation.  The callback will
@@ -266,34 +295,47 @@ class CHROMEOS_EXPORT CryptohomeClient {
   // sent with the signal is a certificate chain in PEM format.  |pca_response|
   // is the response to the certificate request emitted by the Privacy CA.
   // |key_type| determines whether the certified key is to be associated with
-  // the current user.  |key_name| is a name for the key.
+  // the current user.  |key_name| is a name for the key.  If |key_type| is
+  // KEY_USER, a |user_id| must be provided.  Otherwise |user_id| is ignored.
+  // For normal GAIA users the |user_id| is a canonical email address.
   virtual void AsyncTpmAttestationFinishCertRequest(
       const std::string& pca_response,
       attestation::AttestationKeyType key_type,
+      const std::string& user_id,
       const std::string& key_name,
       const AsyncMethodCallback& callback) = 0;
 
   // Checks if an attestation key already exists.  If the key specified by
   // |key_type| and |key_name| exists, then the result sent to the callback will
-  // be true.
+  // be true.  If |key_type| is KEY_USER, a |user_id| must be provided.
+  // Otherwise |user_id| is ignored.  For normal GAIA users the |user_id| is a
+  // canonical email address.
   virtual void TpmAttestationDoesKeyExist(
       attestation::AttestationKeyType key_type,
+      const std::string& user_id,
       const std::string& key_name,
       const BoolDBusMethodCallback& callback) = 0;
 
   // Gets the attestation certificate for the key specified by |key_type| and
   // |key_name|.  |callback| will be called when the operation completes.  If
-  // the key does not exist the callback |result| parameter will be false.
+  // the key does not exist the callback |result| parameter will be false.  If
+  // |key_type| is KEY_USER, a |user_id| must be provided.  Otherwise |user_id|
+  // is ignored.  For normal GAIA users the |user_id| is a canonical email
+  // address.
   virtual void TpmAttestationGetCertificate(
       attestation::AttestationKeyType key_type,
+      const std::string& user_id,
       const std::string& key_name,
       const DataMethodCallback& callback) = 0;
 
   // Gets the public key for the key specified by |key_type| and |key_name|.
   // |callback| will be called when the operation completes.  If the key does
-  // not exist the callback |result| parameter will be false.
+  // not exist the callback |result| parameter will be false.  If |key_type| is
+  // KEY_USER, a |user_id| must be provided.  Otherwise |user_id| is ignored.
+  // For normal GAIA users the |user_id| is a canonical email address.
   virtual void TpmAttestationGetPublicKey(
       attestation::AttestationKeyType key_type,
+      const std::string& user_id,
       const std::string& key_name,
       const DataMethodCallback& callback) = 0;
 
@@ -301,8 +343,12 @@ class CHROMEOS_EXPORT CryptohomeClient {
   // PKCS #11 token.  The |callback| will be called when the dbus call
   // completes.  When the operation completes, the AsyncCallStatusHandler signal
   // handler is called.  |key_type| and |key_name| specify the key to register.
+  // If |key_type| is KEY_USER, a |user_id| must be provided.  Otherwise
+  // |user_id| is ignored.  For normal GAIA users the |user_id| is a canonical
+  // email address.
   virtual void TpmAttestationRegisterKey(
       attestation::AttestationKeyType key_type,
+      const std::string& user_id,
       const std::string& key_name,
       const AsyncMethodCallback& callback) = 0;
 
@@ -312,9 +358,12 @@ class CHROMEOS_EXPORT CryptohomeClient {
   // generated.  |challenge| must be a valid enterprise attestation challenge.
   // The |callback| will be called when the dbus call completes.  When the
   // operation completes, the AsyncCallStatusWithDataHandler signal handler is
-  // called.
+  // called.  If |key_type| is KEY_USER, a |user_id| must be provided.
+  // Otherwise |user_id| is ignored.  For normal GAIA users the |user_id| is a
+  // canonical email address.
   virtual void TpmAttestationSignEnterpriseChallenge(
       attestation::AttestationKeyType key_type,
+      const std::string& user_id,
       const std::string& key_name,
       const std::string& domain,
       const std::string& device_id,
@@ -327,9 +376,12 @@ class CHROMEOS_EXPORT CryptohomeClient {
   // A nonce will be appended to the challenge before signing; this method
   // cannot be used to sign arbitrary data.  The |callback| will be called when
   // the dbus call completes.  When the operation completes, the
-  // AsyncCallStatusWithDataHandler signal handler is called.
+  // AsyncCallStatusWithDataHandler signal handler is called.  If |key_type| is
+  // KEY_USER, a |user_id| must be provided.  Otherwise |user_id| is ignored.
+  // For normal GAIA users the |user_id| is a canonical email address.
   virtual void TpmAttestationSignSimpleChallenge(
       attestation::AttestationKeyType key_type,
+      const std::string& user_id,
       const std::string& key_name,
       const std::string& challenge,
       const AsyncMethodCallback& callback) = 0;
@@ -338,19 +390,40 @@ class CHROMEOS_EXPORT CryptohomeClient {
   // |key_name|.  The |callback| will be called when the operation completes.
   // If the key does not exist the callback |result| parameter will be false.
   // If no payload has been set for the key the callback |result| parameter will
-  // be true and the |data| parameter will be empty.
+  // be true and the |data| parameter will be empty.  If |key_type| is
+  // KEY_USER, a |user_id| must be provided.  Otherwise |user_id| is ignored.
+  // For normal GAIA users the |user_id| is a canonical email address.
   virtual void TpmAttestationGetKeyPayload(
       attestation::AttestationKeyType key_type,
+      const std::string& user_id,
       const std::string& key_name,
       const DataMethodCallback& callback) = 0;
 
   // Sets the |payload| associated with the key specified by |key_type| and
   // |key_name|.  The |callback| will be called when the operation completes.
   // If the operation succeeds, the callback |result| parameter will be true.
+  // If |key_type| is KEY_USER, a |user_id| must be provided.  Otherwise
+  // |user_id| is ignored.  For normal GAIA users the |user_id| is a canonical
+  // email address.
   virtual void TpmAttestationSetKeyPayload(
       attestation::AttestationKeyType key_type,
+      const std::string& user_id,
       const std::string& key_name,
       const std::string& payload,
+      const BoolDBusMethodCallback& callback) = 0;
+
+  // Deletes certified keys as specified by |key_type| and |key_prefix|.  The
+  // |callback| will be called when the operation completes.  If the operation
+  // succeeds, the callback |result| parameter will be true.  If |key_type| is
+  // KEY_USER, a |user_id| must be provided.  Otherwise |user_id| is ignored.
+  // For normal GAIA users the |user_id| is a canonical email address.  All keys
+  // where the key name has a prefix matching |key_prefix| will be deleted.  All
+  // meta-data associated with the key, including certificates, will also be
+  // deleted.
+  virtual void TpmAttestationDeleteKeys(
+      attestation::AttestationKeyType key_type,
+      const std::string& user_id,
+      const std::string& key_prefix,
       const BoolDBusMethodCallback& callback) = 0;
 
  protected:

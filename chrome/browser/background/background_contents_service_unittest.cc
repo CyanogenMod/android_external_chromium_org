@@ -8,11 +8,11 @@
 #include "base/command_line.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/prefs/pref_service.h"
+#include "base/prefs/scoped_user_pref_update.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/background/background_contents_service.h"
 #include "chrome/browser/background/background_contents_service_factory.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/tab_contents/background_contents.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/common/pref_names.h"
@@ -37,7 +37,7 @@ class BackgroundContentsServiceTest : public testing::Test {
   }
 
   // Returns the stored pref URL for the passed app id.
-  std::string GetPrefURLForApp(Profile* profile, const string16& appid) {
+  std::string GetPrefURLForApp(Profile* profile, const base::string16& appid) {
     const DictionaryValue* pref = GetPrefs(profile);
     EXPECT_TRUE(pref->HasKey(UTF16ToUTF8(appid)));
     const DictionaryValue* value;
@@ -62,7 +62,7 @@ class MockBackgroundContents : public BackgroundContents {
   }
 
   void SendOpenedNotification(BackgroundContentsService* service) {
-    string16 frame_name = ASCIIToUTF16("background");
+    base::string16 frame_name = ASCIIToUTF16("background");
     BackgroundContentsOpenedDetails details = {
         this, frame_name, appid_ };
     service->BackgroundContentsOpened(&details);
@@ -92,13 +92,13 @@ class MockBackgroundContents : public BackgroundContents {
         content::Details<BackgroundContents>(this));
   }
 
-  const string16& appid() { return appid_; }
+  const base::string16& appid() { return appid_; }
 
  private:
   GURL url_;
 
   // The ID of our parent application
-  string16 appid_;
+  base::string16 appid_;
 
   // Parent profile
   Profile* profile_;
@@ -125,7 +125,7 @@ TEST_F(BackgroundContentsServiceTest, BackgroundContentsUrlAdded) {
   TestingProfile profile;
   BackgroundContentsService service(&profile, command_line_.get());
   BackgroundContentsServiceFactory::GetInstance()->
-      RegisterUserPrefsOnBrowserContext(&profile);
+      RegisterUserPrefsOnBrowserContextForTest(&profile);
   GURL orig_url;
   GURL url("http://a/");
   GURL url2("http://a/");
@@ -152,7 +152,7 @@ TEST_F(BackgroundContentsServiceTest, BackgroundContentsUrlAddedAndClosed) {
   TestingProfile profile;
   BackgroundContentsService service(&profile, command_line_.get());
   BackgroundContentsServiceFactory::GetInstance()->
-      RegisterUserPrefsOnBrowserContext(&profile);
+      RegisterUserPrefsOnBrowserContextForTest(&profile);
 
   GURL url("http://a/");
   MockBackgroundContents* contents = new MockBackgroundContents(&profile);
@@ -173,7 +173,7 @@ TEST_F(BackgroundContentsServiceTest, RestartBackgroundContents) {
   TestingProfile profile;
   BackgroundContentsService service(&profile, command_line_.get());
   BackgroundContentsServiceFactory::GetInstance()->
-      RegisterUserPrefsOnBrowserContext(&profile);
+      RegisterUserPrefsOnBrowserContextForTest(&profile);
 
   GURL url("http://a/");
   {
@@ -205,7 +205,7 @@ TEST_F(BackgroundContentsServiceTest, TestApplicationIDLinkage) {
   TestingProfile profile;
   BackgroundContentsService service(&profile, command_line_.get());
   BackgroundContentsServiceFactory::GetInstance()->
-      RegisterUserPrefsOnBrowserContext(&profile);
+      RegisterUserPrefsOnBrowserContextForTest(&profile);
 
   EXPECT_EQ(NULL, service.GetAppBackgroundContents(ASCIIToUTF16("appid")));
   MockBackgroundContents* contents = new MockBackgroundContents(&profile,

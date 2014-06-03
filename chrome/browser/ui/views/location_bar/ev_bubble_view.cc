@@ -12,14 +12,12 @@ const int kBackgroundImages[] = IMAGE_GRID(IDR_OMNIBOX_EV_BUBBLE);
 }
 
 
-EVBubbleView::EVBubbleView(const gfx::Font& font,
-                           int font_y_offset,
+EVBubbleView::EVBubbleView(const gfx::FontList& font_list,
                            SkColor text_color,
                            SkColor parent_background_color,
                            LocationBarView* location_bar)
     : IconLabelBubbleView(kBackgroundImages, NULL, IDR_OMNIBOX_HTTPS_VALID,
-                          font, font_y_offset, text_color,
-                          parent_background_color, true),
+                          font_list, text_color, parent_background_color, true),
       page_info_helper_(this, location_bar) {
 }
 

@@ -17,13 +17,13 @@
 #include "base/threading/sequenced_worker_pool.h"
 #include "base/threading/thread.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/chromeos/cros/network_library.h"
 #include "chrome/browser/chromeos/input_method/input_method_configuration.h"
 #include "chrome/browser/chromeos/input_method/mock_input_method_manager.h"
 #include "chrome/browser/chromeos/login/authenticator.h"
 #include "chrome/browser/chromeos/login/login_status_consumer.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/policy/enterprise_install_attributes.h"
+#include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
 #include "chrome/browser/chromeos/settings/device_settings_test_helper.h"
@@ -31,9 +31,6 @@
 #include "chrome/browser/io_thread.h"
 #include "chrome/browser/net/predictor.h"
 #include "chrome/browser/policy/browser_policy_connector.h"
-#include "chrome/browser/policy/cloud/device_management_service.h"
-#include "chrome/browser/policy/policy_service.h"
-#include "chrome/browser/policy/proto/cloud/device_management_backend.pb.h"
 #include "chrome/browser/profiles/chrome_browser_main_extra_parts_profiles.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/rlz/rlz.h"
@@ -44,12 +41,16 @@
 #include "chrome/test/base/testing_browser_process.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/cryptohome/mock_async_method_caller.h"
-#include "chromeos/cryptohome/mock_cryptohome_library.h"
-#include "chromeos/dbus/mock_dbus_thread_manager_without_gmock.h"
+#include "chromeos/cryptohome/system_salt_getter.h"
+#include "chromeos/dbus/fake_dbus_thread_manager.h"
 #include "chromeos/disks/disk_mount_manager.h"
 #include "chromeos/disks/mock_disk_mount_manager.h"
 #include "chromeos/login/login_state.h"
 #include "chromeos/network/network_handler.h"
+#include "chromeos/system/mock_statistics_provider.h"
+#include "chromeos/system/statistics_provider.h"
+#include "components/policy/core/common/cloud/device_management_service.h"
+#include "components/policy/core/common/policy_service.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/test/test_browser_thread.h"
 #include "content/public/test/test_utils.h"
@@ -60,6 +61,8 @@
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "net/url_request/url_request_status.h"
+#include "net/url_request/url_request_test_util.h"
+#include "policy/proto/device_management_backend.pb.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -82,19 +85,10 @@ using ::testing::SetArgPointee;
 using ::testing::_;
 using content::BrowserThread;
 
-const char kTrue[] = "true";
-const char kFalse[] = "false";
 const char kDomain[] = "domain.com";
 const char kUsername[] = "user@domain.com";
-const char kMode[] = "enterprise";
 const char kDeviceId[] = "100200300";
 const char kUsernameOtherDomain[] = "user@other.com";
-const char kAttributeOwned[] = "enterprise.owned";
-const char kAttributeOwner[] = "enterprise.user";
-const char kAttributeConsumerKiosk[] = "consumer.app_kiosk_enabled";
-const char kAttrEnterpriseDomain[] = "enterprise.domain";
-const char kAttrEnterpriseMode[] = "enterprise.mode";
-const char kAttrEnterpriseDeviceId[] = "enterprise.device_id";
 
 const char kOAuthTokenCookie[] = "oauth_token=1234";
 
@@ -120,12 +114,6 @@ const char kDMPolicyRequest[] =
     "http://server/device_management?request=policy";
 
 const char kDMToken[] = "1234";
-
-// Used to mark |flag|, indicating that RefreshPolicies() has executed its
-// callback.
-void SetFlag(bool* flag) {
-  *flag = true;
-}
 
 // Single task of the fake IO loop used in the test, that just waits until
 // it is signaled to quit or perform some work.
@@ -211,10 +199,15 @@ class LoginUtilsTest : public testing::Test,
     // DBusThreadManager should be initialized before io_thread_state_, as
     // DBusThreadManager is used from chromeos::ProxyConfigServiceImpl,
     // which is part of io_thread_state_.
-    DBusThreadManager::InitializeForTesting(&mock_dbus_thread_manager_);
+    DBusThreadManager::InitializeWithStub();
 
-    CryptohomeLibrary::Initialize();
+    SystemSaltGetter::Initialize();
     LoginState::Initialize();
+
+    EXPECT_CALL(mock_statistics_provider_, GetMachineStatistic(_, _))
+        .WillRepeatedly(Return(false));
+    chromeos::system::StatisticsProvider::SetTestProvider(
+        &mock_statistics_provider_);
 
     mock_input_method_manager_ = new input_method::MockInputMethodManager();
     input_method::InitializeForTesting(mock_input_method_manager_);
@@ -225,62 +218,24 @@ class LoginUtilsTest : public testing::Test,
     cryptohome::AsyncMethodCaller::InitializeForTesting(
         mock_async_method_caller_);
 
-    cryptohome_.reset(new MockCryptohomeLibrary());
-    EXPECT_CALL(*cryptohome_, InstallAttributesIsInvalid())
-        .WillRepeatedly(Return(false));
-    EXPECT_CALL(*cryptohome_, InstallAttributesIsFirstInstall())
-        .WillRepeatedly(Return(true));
-    EXPECT_CALL(*cryptohome_, TpmIsEnabled())
-        .WillRepeatedly(Return(false));
-    EXPECT_CALL(*cryptohome_, InstallAttributesSet(kAttributeOwned, kTrue))
-        .WillRepeatedly(Return(true));
-    EXPECT_CALL(*cryptohome_, InstallAttributesSet(kAttributeOwner,
-                                                   kUsername))
-        .WillRepeatedly(Return(true));
-    EXPECT_CALL(*cryptohome_, InstallAttributesSet(kAttrEnterpriseDomain,
-                                                   kDomain))
-        .WillRepeatedly(Return(true));
-    EXPECT_CALL(*cryptohome_, InstallAttributesSet(kAttrEnterpriseMode,
-                                                   kMode))
-        .WillRepeatedly(Return(true));
-    EXPECT_CALL(*cryptohome_, InstallAttributesSet(kAttrEnterpriseDeviceId,
-                                                   kDeviceId))
-        .WillRepeatedly(Return(true));
-    EXPECT_CALL(*cryptohome_, InstallAttributesFinalize())
-        .WillRepeatedly(Return(true));
-    EXPECT_CALL(*cryptohome_, InstallAttributesGet(kAttributeOwned, _))
-        .WillRepeatedly(DoAll(SetArgPointee<1>(kTrue),
-                              Return(true)));
-    EXPECT_CALL(*cryptohome_, InstallAttributesGet(kAttributeConsumerKiosk, _))
-        .WillRepeatedly(DoAll(SetArgPointee<1>(kFalse),
-                              Return(true)));
-    EXPECT_CALL(*cryptohome_, InstallAttributesGet(kAttributeOwner, _))
-        .WillRepeatedly(DoAll(SetArgPointee<1>(kUsername),
-                              Return(true)));
-    EXPECT_CALL(*cryptohome_, InstallAttributesGet(kAttrEnterpriseDomain, _))
-        .WillRepeatedly(DoAll(SetArgPointee<1>(kDomain),
-                              Return(true)));
-    EXPECT_CALL(*cryptohome_, InstallAttributesGet(kAttrEnterpriseMode, _))
-        .WillRepeatedly(DoAll(SetArgPointee<1>(kMode),
-                              Return(true)));
-    EXPECT_CALL(*cryptohome_, InstallAttributesGet(kAttrEnterpriseDeviceId, _))
-        .WillRepeatedly(DoAll(SetArgPointee<1>(kDeviceId),
-                              Return(true)));
-    CryptohomeLibrary::SetForTest(cryptohome_.get());
-
     test_device_settings_service_.reset(new ScopedTestDeviceSettingsService);
     test_cros_settings_.reset(new ScopedTestCrosSettings);
     test_user_manager_.reset(new ScopedTestUserManager);
 
+    // IOThread creates ProxyConfigServiceImpl and
+    // BrowserPolicyConnector::Init() creates a NetworkConfigurationUpdater,
+    // which both access NetworkHandler. Thus initialize it here before creating
+    // IOThread and before calling BrowserPolicyConnector::Init().
+    NetworkHandler::Initialize();
+
     browser_process_->SetProfileManager(
         new ProfileManagerWithoutInit(scoped_temp_dir_.path()));
+    browser_process_->SetSystemRequestContext(
+        new net::TestURLRequestContextGetter(
+            base::MessageLoopProxy::current()));
     connector_ = browser_process_->browser_policy_connector();
     connector_->Init(local_state_.Get(),
                      browser_process_->system_request_context());
-
-    // IOThread creates ProxyConfigServiceImpl which in turn needs
-    // NetworkHandler. Thus initialize it here before creating IOThread.
-    NetworkHandler::Initialize();
 
     io_thread_state_.reset(new IOThread(local_state_.Get(),
                                         browser_process_->policy_service(),
@@ -310,7 +265,7 @@ class LoginUtilsTest : public testing::Test,
 
     input_method::Shutdown();
     LoginState::Shutdown();
-    CryptohomeLibrary::Shutdown();
+    SystemSaltGetter::Shutdown();
 
     // These trigger some tasks that have to run while BrowserThread::UI
     // exists. Delete all the profiles before deleting the connector.
@@ -319,8 +274,6 @@ class LoginUtilsTest : public testing::Test,
     browser_process_->SetBrowserPolicyConnector(NULL);
     QuitIOLoop();
     RunUntilIdle();
-
-    CryptohomeLibrary::SetForTest(NULL);
   }
 
   void TearDownOnIO() {
@@ -389,17 +342,11 @@ class LoginUtilsTest : public testing::Test,
     FAIL() << "OnLoginFailure not expected";
   }
 
-  virtual void OnLoginSuccess(const UserContext& user_context,
-                              bool pending_requests,
-                              bool using_oauth) OVERRIDE {
+  virtual void OnLoginSuccess(const UserContext& user_context) OVERRIDE {
     FAIL() << "OnLoginSuccess not expected";
   }
 
   void EnrollDevice(const std::string& username) {
-    EXPECT_CALL(*cryptohome_, InstallAttributesIsFirstInstall())
-        .WillOnce(Return(true))
-        .WillRepeatedly(Return(false));
-
     base::RunLoop loop;
     policy::EnterpriseInstallAttributes::LockResult result;
     connector_->GetInstallAttributes()->LockDevice(
@@ -415,14 +362,11 @@ class LoginUtilsTest : public testing::Test,
     // we need to trigger creation of Profile-related services.
     ChromeBrowserMainExtraPartsProfiles::
         EnsureBrowserContextKeyedServiceFactoriesBuilt();
-    ProfileManager::AllowGetDefaultProfile();
 
     DeviceSettingsTestHelper device_settings_test_helper;
     DeviceSettingsService::Get()->SetSessionManager(
         &device_settings_test_helper, new MockOwnerKeyUtil());
 
-    EXPECT_CALL(*cryptohome_, GetSystemSalt())
-        .WillRepeatedly(Return(std::string("stub_system_salt")));
     EXPECT_CALL(*mock_async_method_caller_, AsyncMount(_, _, _, _))
         .WillRepeatedly(Return());
     EXPECT_CALL(*mock_async_method_caller_, AsyncGetSanitizedUsername(_, _))
@@ -430,7 +374,7 @@ class LoginUtilsTest : public testing::Test,
 
     scoped_refptr<Authenticator> authenticator =
         LoginUtils::Get()->CreateAuthenticator(this);
-    authenticator->CompleteLogin(ProfileManager::GetDefaultProfile(),
+    authenticator->CompleteLogin(ProfileHelper::GetSigninProfile(),
                                  UserContext(username,
                                              "password",
                                              std::string(),
@@ -442,22 +386,22 @@ class LoginUtilsTest : public testing::Test,
     const bool kHasCookies = false;
     const bool kHasActiveSession = false;
     LoginUtils::Get()->PrepareProfile(
-        UserContext(username, "password", std::string(), username),
-        std::string(), kUsingOAuth, kHasCookies, kHasActiveSession, this);
+        UserContext(username, "password", std::string(), username, kUsingOAuth),
+        std::string(), kHasCookies, kHasActiveSession, this);
     device_settings_test_helper.Flush();
     RunUntilIdle();
 
     DeviceSettingsService::Get()->UnsetSessionManager();
   }
 
-  net::TestURLFetcher* PrepareOAuthFetcher(const std::string& expected_url) {
+  net::TestURLFetcher* PrepareOAuthFetcher(const GURL& expected_url) {
     net::TestURLFetcher* fetcher = test_url_fetcher_factory_.GetFetcherByID(0);
     EXPECT_TRUE(fetcher);
     if (!fetcher)
       return NULL;
     EXPECT_TRUE(fetcher->delegate());
     EXPECT_TRUE(StartsWithASCII(fetcher->GetOriginalURL().spec(),
-                                expected_url,
+                                expected_url.spec(),
                                 true));
     fetcher->set_url(fetcher->GetOriginalURL());
     fetcher->set_response_code(200);
@@ -503,7 +447,9 @@ class LoginUtilsTest : public testing::Test,
   }
 
  protected:
-  ScopedStubNetworkLibraryEnabler stub_network_library_enabler_;
+  // Must be the first member variable as browser_process_ and local_state_
+  // rely on this being set up.
+  TestingBrowserProcessInitializer initializer_;
 
   base::Closure fake_io_thread_work_;
   base::WaitableEvent fake_io_thread_completion_;
@@ -519,17 +465,16 @@ class LoginUtilsTest : public testing::Test,
   scoped_ptr<content::TestBrowserThread> io_thread_;
   scoped_ptr<IOThread> io_thread_state_;
 
-  MockDBusThreadManagerWithoutGMock mock_dbus_thread_manager_;
   input_method::MockInputMethodManager* mock_input_method_manager_;
   disks::MockDiskMountManager mock_disk_mount_manager_;
   net::TestURLFetcherFactory test_url_fetcher_factory_;
 
   cryptohome::MockAsyncMethodCaller* mock_async_method_caller_;
 
-  policy::BrowserPolicyConnector* connector_;
-  scoped_ptr<MockCryptohomeLibrary> cryptohome_;
+  chromeos::system::MockStatisticsProvider mock_statistics_provider_;
 
-  // Initialized after |mock_dbus_thread_manager_| and |cryptohome_| are set up.
+  policy::BrowserPolicyConnector* connector_;
+
   scoped_ptr<ScopedTestDeviceSettingsService> test_device_settings_service_;
   scoped_ptr<ScopedTestCrosSettings> test_cros_settings_;
   scoped_ptr<ScopedTestUserManager> test_user_manager_;
@@ -610,10 +555,10 @@ TEST_F(LoginUtilsTest, RlzInitialized) {
   EXPECT_EQ(std::string(), local_state_.Get()->GetString(prefs::kRLZBrand));
 
   // RLZ value for homepage access point should have been initialized.
-  string16 rlz_string;
+  base::string16 rlz_string;
   EXPECT_TRUE(RLZTracker::GetAccessPointRlz(
       RLZTracker::CHROME_HOME_PAGE, &rlz_string));
-  EXPECT_EQ(string16(), rlz_string);
+  EXPECT_EQ(base::string16(), rlz_string);
 }
 #endif
 

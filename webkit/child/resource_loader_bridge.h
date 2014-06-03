@@ -59,7 +59,7 @@ class ResourceLoaderBridge {
     GURL referrer;
 
     // The referrer policy that applies to the referrer.
-    WebKit::WebReferrerPolicy referrer_policy;
+    blink::WebReferrerPolicy referrer_policy;
 
     // For HTTP(S) requests, the headers parameter can be a \r\n-delimited and
     // \r\n-terminated list of MIME headers.  They should be ASCII-encoded using
@@ -97,7 +97,7 @@ class ResourceLoaderBridge {
     bool has_user_gesture;
 
     // Extra data associated with this request.  We do not own this pointer.
-    WebKit::WebURLRequest::ExtraData* extra_data;
+    blink::WebURLRequest::ExtraData* extra_data;
 
    private:
     DISALLOW_COPY_AND_ASSIGN(RequestInfo);
@@ -127,7 +127,7 @@ class ResourceLoaderBridge {
   // These callbacks mirror net::URLRequest::Delegate and the order and
   // conditions in which they will be called are identical. See url_request.h
   // for more information.
-  class Peer {
+  class WEBKIT_CHILD_EXPORT Peer {
    public:
     // Called as upload progress is made.
     // note: only for requests with LOAD_ENABLE_UPLOAD_PROGRESS set
@@ -153,13 +153,18 @@ class ResourceLoaderBridge {
     // called multiple times or not at all if an error occurs.  This method is
     // only called if RequestInfo::download_to_file was set to true, and in
     // that case, OnReceivedData will not be called.
-    virtual void OnDownloadedData(int len) = 0;
+    // The encoded_data_length is the length of the encoded data transferred
+    // over the network, which could be different from data length (e.g. for
+    // gzipped content), or -1 if unknown. It is only valid while devtools are
+    // attached. Otherwise it becomes -1.
+    virtual void OnDownloadedData(int len, int encoded_data_length) = 0;
 
     // Called when a chunk of response data is available. This method may
     // be called multiple times or not at all if an error occurs.
     // The encoded_data_length is the length of the encoded data transferred
     // over the network, which could be different from data length (e.g. for
-    // gzipped content), or -1 if if unknown.
+    // gzipped content), or -1 if unknown. It is only valid while devtools are
+    // attached. Otherwise it becomes -1.
     virtual void OnReceivedData(const char* data,
                                 int data_length,
                                 int encoded_data_length) = 0;

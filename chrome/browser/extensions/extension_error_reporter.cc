@@ -35,7 +35,7 @@ ExtensionErrorReporter::ExtensionErrorReporter(bool enable_noisy_errors)
 
 ExtensionErrorReporter::~ExtensionErrorReporter() {}
 
-void ExtensionErrorReporter::ReportError(const string16& message,
+void ExtensionErrorReporter::ReportError(const base::string16& message,
                                          bool be_noisy) {
   // NOTE: There won't be a ui_loop_ in the unit test environment.
   if (ui_loop_ && base::MessageLoop::current() != ui_loop_) {
@@ -53,7 +53,7 @@ void ExtensionErrorReporter::ReportError(const string16& message,
 
   // TODO(aa): Print the error message out somewhere better. I think we are
   // going to need some sort of 'extension inspector'.
-  LOG(ERROR) << "Extension error: " << message;
+  LOG(WARNING) << "Extension error: " << message;
 
   if (enable_noisy_errors_ && be_noisy) {
     chrome::ShowMessageBox(NULL, ASCIIToUTF16("Extension error"), message,
@@ -61,7 +61,7 @@ void ExtensionErrorReporter::ReportError(const string16& message,
   }
 }
 
-const std::vector<string16>* ExtensionErrorReporter::GetErrors() {
+const std::vector<base::string16>* ExtensionErrorReporter::GetErrors() {
   return &errors_;
 }
 

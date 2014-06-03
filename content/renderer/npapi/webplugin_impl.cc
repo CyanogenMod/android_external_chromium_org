@@ -5,6 +5,7 @@
 #include "content/renderer/npapi/webplugin_impl.h"
 
 #include "base/bind.h"
+#include "base/command_line.h"
 #include "base/debug/crash_logging.h"
 #include "base/logging.h"
 #include "base/memory/linked_ptr.h"
@@ -17,11 +18,15 @@
 #include "content/child/npapi/plugin_host.h"
 #include "content/child/npapi/plugin_instance.h"
 #include "content/child/npapi/webplugin_delegate_impl.h"
+#include "content/child/npapi/webplugin_resource_client.h"
 #include "content/common/view_messages.h"
 #include "content/public/common/content_constants.h"
+#include "content/public/common/content_switches.h"
 #include "content/public/renderer/content_renderer_client.h"
 #include "content/renderer/npapi/webplugin_delegate_proxy.h"
+#include "content/renderer/render_frame_impl.h"
 #include "content/renderer/render_process.h"
+#include "content/renderer/render_thread_impl.h"
 #include "content/renderer/render_view_impl.h"
 #include "net/base/escape.h"
 #include "net/base/net_errors.h"
@@ -29,6 +34,7 @@
 #include "skia/ext/platform_canvas.h"
 #include "third_party/WebKit/public/platform/WebCString.h"
 #include "third_party/WebKit/public/platform/WebCookieJar.h"
+#include "third_party/WebKit/public/platform/WebCursorInfo.h"
 #include "third_party/WebKit/public/platform/WebData.h"
 #include "third_party/WebKit/public/platform/WebHTTPBody.h"
 #include "third_party/WebKit/public/platform/WebHTTPHeaderVisitor.h"
@@ -38,7 +44,6 @@
 #include "third_party/WebKit/public/platform/WebURLLoaderClient.h"
 #include "third_party/WebKit/public/platform/WebURLResponse.h"
 #include "third_party/WebKit/public/web/WebConsoleMessage.h"
-#include "third_party/WebKit/public/web/WebCursorInfo.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
@@ -53,32 +58,32 @@
 #include "webkit/child/multipart_response_delegate.h"
 #include "webkit/renderer/compositor_bindings/web_layer_impl.h"
 
-using WebKit::WebCanvas;
-using WebKit::WebConsoleMessage;
-using WebKit::WebCookieJar;
-using WebKit::WebCString;
-using WebKit::WebCursorInfo;
-using WebKit::WebData;
-using WebKit::WebDataSource;
-using WebKit::WebFrame;
-using WebKit::WebHTTPBody;
-using WebKit::WebHTTPHeaderVisitor;
-using WebKit::WebInputEvent;
-using WebKit::WebKeyboardEvent;
-using WebKit::WebMouseEvent;
-using WebKit::WebPluginContainer;
-using WebKit::WebPluginParams;
-using WebKit::WebRect;
-using WebKit::WebString;
-using WebKit::WebURL;
-using WebKit::WebURLError;
-using WebKit::WebURLLoader;
-using WebKit::WebURLLoaderClient;
-using WebKit::WebURLLoaderOptions;
-using WebKit::WebURLRequest;
-using WebKit::WebURLResponse;
-using WebKit::WebVector;
-using WebKit::WebView;
+using blink::WebCanvas;
+using blink::WebConsoleMessage;
+using blink::WebCookieJar;
+using blink::WebCString;
+using blink::WebCursorInfo;
+using blink::WebData;
+using blink::WebDataSource;
+using blink::WebFrame;
+using blink::WebHTTPBody;
+using blink::WebHTTPHeaderVisitor;
+using blink::WebInputEvent;
+using blink::WebKeyboardEvent;
+using blink::WebMouseEvent;
+using blink::WebPluginContainer;
+using blink::WebPluginParams;
+using blink::WebRect;
+using blink::WebString;
+using blink::WebURL;
+using blink::WebURLError;
+using blink::WebURLLoader;
+using blink::WebURLLoaderClient;
+using blink::WebURLLoaderOptions;
+using blink::WebURLRequest;
+using blink::WebURLResponse;
+using blink::WebVector;
+using blink::WebView;
 using webkit_glue::MultipartResponseDelegate;
 
 namespace content {
@@ -92,9 +97,7 @@ namespace {
 class MultiPartResponseClient : public WebURLLoaderClient {
  public:
   explicit MultiPartResponseClient(WebPluginResourceClient* resource_client)
-      : resource_client_(resource_client) {
-    Clear();
-  }
+      : byte_range_lower_bound_(0), resource_client_(resource_client) {}
 
   virtual void willSendRequest(
       WebURLLoader*, WebURLRequest&, const WebURLResponse&) {}
@@ -105,17 +108,14 @@ class MultiPartResponseClient : public WebURLLoaderClient {
   // response.
   virtual void didReceiveResponse(
       WebURLLoader*, const WebURLResponse& response) {
-    int64 instance_size;
+    int64 byte_range_upper_bound, instance_size;
     if (!MultipartResponseDelegate::ReadContentRanges(
             response,
             &byte_range_lower_bound_,
-            &byte_range_upper_bound_,
+            &byte_range_upper_bound,
             &instance_size)) {
       NOTREACHED();
-      return;
     }
-
-    resource_response_ = response;
   }
 
   // Receives individual part data from a multipart response.
@@ -134,18 +134,9 @@ class MultiPartResponseClient : public WebURLLoaderClient {
   virtual void didFinishLoading(WebURLLoader*, double finishTime) {}
   virtual void didFail(WebURLLoader*, const WebURLError&) {}
 
-  void Clear() {
-    resource_response_.reset();
-    byte_range_lower_bound_ = 0;
-    byte_range_upper_bound_ = 0;
-  }
-
  private:
-  WebURLResponse resource_response_;
   // The lower bound of the byte range.
   int64 byte_range_lower_bound_;
-  // The upper bound of the byte range.
-  int64 byte_range_upper_bound_;
   // The handler for the data.
   WebPluginResourceClient* resource_client_;
 };
@@ -222,14 +213,14 @@ void GetResponseInfo(const WebURLResponse& response,
 
 }  // namespace
 
-// WebKit::WebPlugin ----------------------------------------------------------
+// blink::WebPlugin ----------------------------------------------------------
 
 struct WebPluginImpl::ClientInfo {
   unsigned long id;
   WebPluginResourceClient* client;
-  WebKit::WebURLRequest request;
+  blink::WebURLRequest request;
   bool pending_failure_notification;
-  linked_ptr<WebKit::WebURLLoader> loader;
+  linked_ptr<blink::WebURLLoader> loader;
   bool notify_redirects;
   bool is_plugin_src_load;
   int64 data_offset;
@@ -255,14 +246,13 @@ bool WebPluginImpl::initialize(WebPluginContainer* container) {
   SetContainer(container);
 
   bool ok = plugin_delegate->Initialize(
-      plugin_url_, arg_names_, arg_values_, this, load_manually_);
+      plugin_url_, arg_names_, arg_values_, load_manually_);
   if (!ok) {
-    LOG(ERROR) << "Couldn't initialize plug-in";
     plugin_delegate->PluginDestroyed();
 
-    WebKit::WebPlugin* replacement_plugin =
+    blink::WebPlugin* replacement_plugin =
         GetContentClient()->renderer()->CreatePluginReplacement(
-            render_view_.get(), file_path_);
+            render_frame_, file_path_);
     if (!replacement_plugin)
       return false;
 
@@ -297,7 +287,7 @@ NPP WebPluginImpl::pluginNPP() {
   return npp_;
 }
 
-bool WebPluginImpl::getFormValue(WebKit::WebString& value) {
+bool WebPluginImpl::getFormValue(blink::WebString& value) {
   if (!delegate_)
     return false;
   base::string16 form_value;
@@ -492,10 +482,12 @@ WebPluginImpl::WebPluginImpl(
     WebFrame* webframe,
     const WebPluginParams& params,
     const base::FilePath& file_path,
-    const base::WeakPtr<RenderViewImpl>& render_view)
+    const base::WeakPtr<RenderViewImpl>& render_view,
+    RenderFrameImpl* render_frame)
     : windowless_(false),
       window_(gfx::kNullPluginWindow),
       accepts_input_events_(false),
+      render_frame_(render_frame),
       render_view_(render_view),
       webframe_(webframe),
       delegate_(NULL),
@@ -624,10 +616,6 @@ bool WebPluginImpl::SetPostData(WebURLRequest* request,
   return rv;
 }
 
-WebPluginDelegate* WebPluginImpl::delegate() {
-  return delegate_;
-}
-
 bool WebPluginImpl::IsValidUrl(const GURL& url, Referrer referrer_flag) {
   if (referrer_flag == PLUGIN_SRC &&
       mime_type_ == kFlashPluginSwfMimeType &&
@@ -655,7 +643,7 @@ WebPluginDelegate* WebPluginImpl::CreatePluginDelegate() {
   bool in_process_plugin = RenderProcess::current()->UseInProcessPlugins();
   if (in_process_plugin) {
 #if defined(OS_WIN) && !defined(USE_AURA)
-    return WebPluginDelegateImpl::Create(file_path_, mime_type_);
+    return WebPluginDelegateImpl::Create(this, file_path_, mime_type_);
 #else
     // In-proc plugins aren't supported on non-Windows.
     NOTIMPLEMENTED();
@@ -663,7 +651,8 @@ WebPluginDelegate* WebPluginImpl::CreatePluginDelegate() {
 #endif
   }
 
-  return new WebPluginDelegateProxy(mime_type_, render_view_);
+  return new WebPluginDelegateProxy(
+      this, mime_type_, render_view_, render_frame_);
 }
 
 WebPluginImpl::RoutingStatus WebPluginImpl::RouteToFrame(
@@ -716,7 +705,7 @@ WebPluginImpl::RoutingStatus WebPluginImpl::RouteToFrame(
 
   if (strcmp(method, "GET") != 0) {
     // We're only going to route HTTP/HTTPS requests
-    if (!(complete_url.SchemeIs("http") || complete_url.SchemeIs("https")))
+    if (!complete_url.SchemeIsHTTPOrHTTPS())
       return INVALID_URL;
   }
 
@@ -803,6 +792,13 @@ void WebPluginImpl::URLRedirectResponse(bool allow, int resource_id) {
       break;
     }
   }
+}
+
+bool WebPluginImpl::CheckIfRunInsecureContent(const GURL& url) {
+  if (!webframe_)
+    return true;
+
+  return webframe_->checkIfRunInsecureContent(url);
 }
 
 #if defined(OS_MACOSX)
@@ -894,6 +890,8 @@ WebPluginImpl::ClientInfo* WebPluginImpl::GetClientInfoFromLoader(
 void WebPluginImpl::willSendRequest(WebURLLoader* loader,
                                     WebURLRequest& request,
                                     const WebURLResponse& response) {
+  // TODO(jam): THIS LOGIC IS COPIED IN PluginURLFetcher::OnReceivedRedirect
+  // until kDirectNPAPIRequests is the default and we can remove this old path.
   WebPluginImpl::ClientInfo* client_info = GetClientInfoFromLoader(loader);
   if (client_info) {
     // Currently this check is just to catch an https -> http redirect when
@@ -939,6 +937,8 @@ void WebPluginImpl::didSendData(WebURLLoader* loader,
 
 void WebPluginImpl::didReceiveResponse(WebURLLoader* loader,
                                        const WebURLResponse& response) {
+  // TODO(jam): THIS LOGIC IS COPIED IN PluginURLFetcher::OnReceivedResponse
+  // until kDirectNPAPIRequests is the default and we can remove this old path.
   static const int kHttpPartialResponseStatusCode = 206;
   static const int kHttpResponseSuccessStatusCode = 200;
 
@@ -972,6 +972,8 @@ void WebPluginImpl::didReceiveResponse(WebURLLoader* loader,
                                                    &upper_bound,
                                                    &instance_size);
     } else if (response.httpStatusCode() == kHttpResponseSuccessStatusCode) {
+      RenderThreadImpl::current()->RecordAction(
+          UserMetricsAction("Plugin_200ForByteRange"));
       // If the client issued a byte range request and the server responds with
       // HTTP 200 OK, it indicates that the server does not support byte range
       // requests.
@@ -1072,10 +1074,7 @@ void WebPluginImpl::didFinishLoading(WebURLLoader* loader, double finishTime) {
     if (index != multi_part_response_map_.end()) {
       delete (*index).second;
       multi_part_response_map_.erase(index);
-      if (render_view_.get()) {
-        // TODO(darin): Make is_loading_ be a counter!
-        render_view_->didStopLoading();
-      }
+      DidStopLoading();
     }
     loader->setDefersLoading(true);
     WebPluginResourceClient* resource_client = client_info->client;
@@ -1183,16 +1182,14 @@ void WebPluginImpl::HandleURLRequestInternal(const char* url,
   if (!WebPluginImpl::IsValidUrl(complete_url, referrer_flag))
     return;
 
-  WebPluginResourceClient* resource_client = delegate_->CreateResourceClient(
-      resource_id, complete_url, notify_id);
-  if (!resource_client)
-    return;
-
   // If the RouteToFrame call returned a failure then inform the result
   // back to the plugin asynchronously.
   if ((routing_status == INVALID_URL) ||
       (routing_status == GENERAL_FAILURE)) {
-    resource_client->DidFail(resource_id);
+    WebPluginResourceClient* resource_client = delegate_->CreateResourceClient(
+        resource_id, complete_url, notify_id);
+    if (resource_client)
+      resource_client->DidFail(resource_id);
     return;
   }
 
@@ -1202,9 +1199,37 @@ void WebPluginImpl::HandleURLRequestInternal(const char* url,
   if (!delegate_)
     return;
 
-  InitiateHTTPRequest(resource_id, resource_client, complete_url, method, buf,
-                      len, NULL, referrer_flag, notify_redirects,
-                      is_plugin_src_load);
+  if (!CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisableDirectNPAPIRequests)) {
+    // We got here either because the plugin called GetURL/PostURL, or because
+    // we're fetching the data for an embed tag. If we're in multi-process mode,
+    // we want to fetch the data in the plugin process as the renderer won't be
+    // able to request any origin when site isolation is in place. So bounce
+    // this request back to the plugin process which will use ResourceDispatcher
+    // to fetch the url.
+
+    // TODO(jam): any better way of getting this? Can't find a way to get
+    // frame()->loader()->outgoingReferrer() which
+    // WebFrameImpl::setReferrerForRequest does.
+    WebURLRequest request(complete_url);
+    SetReferrer(&request, referrer_flag);
+    GURL referrer(
+        request.httpHeaderField(WebString::fromUTF8("Referer")).utf8());
+
+    GURL first_party_for_cookies = webframe_->document().firstPartyForCookies();
+    delegate_->FetchURL(resource_id, notify_id, complete_url,
+                        first_party_for_cookies, method, buf, len, referrer,
+                        notify_redirects, is_plugin_src_load, 0,
+                        render_view_->routing_id());
+  } else {
+    WebPluginResourceClient* resource_client = delegate_->CreateResourceClient(
+        resource_id, complete_url, notify_id);
+    if (!resource_client)
+      return;
+    InitiateHTTPRequest(resource_id, resource_client, complete_url, method, buf,
+                        len, NULL, referrer_flag, notify_redirects,
+                        is_plugin_src_load);
+  }
 }
 
 unsigned long WebPluginImpl::GetNextResourceId() {
@@ -1298,6 +1323,20 @@ void WebPluginImpl::InitiateHTTPRangeRequest(
       load_manually_ ? NO_REFERRER : PLUGIN_SRC, false, false);
 }
 
+void WebPluginImpl::DidStartLoading() {
+  if (render_view_.get()) {
+    // TODO(darin): Make is_loading_ be a counter!
+    render_view_->didStartLoading();
+  }
+}
+
+void WebPluginImpl::DidStopLoading() {
+  if (render_view_.get()) {
+    // TODO(darin): Make is_loading_ be a counter!
+    render_view_->didStopLoading();
+  }
+}
+
 void WebPluginImpl::SetDeferResourceLoading(unsigned long resource_id,
                                             bool defer) {
   std::vector<ClientInfo>::iterator client_index = clients_.begin();
@@ -1338,10 +1377,7 @@ bool WebPluginImpl::HandleHttpMultipartResponse(
     return false;
   }
 
-  if (render_view_.get()) {
-    // TODO(darin): Make is_loading_ be a counter!
-    render_view_->didStartLoading();
-  }
+  DidStartLoading();
 
   MultiPartResponseClient* multi_part_response_client =
       new MultiPartResponseClient(client);
@@ -1381,7 +1417,7 @@ bool WebPluginImpl::ReinitializePluginForResponse(
   container_->allowScriptObjects();
 
   bool ok = plugin_delegate && plugin_delegate->Initialize(
-      plugin_url_, arg_names_, arg_values_, this, load_manually_);
+      plugin_url_, arg_names_, arg_values_, load_manually_);
 
   if (!ok) {
     container_->clearScriptObjects();
@@ -1456,7 +1492,7 @@ void WebPluginImpl::TearDownPluginInstance(
   weak_factory_.InvalidateWeakPtrs();
 }
 
-void WebPluginImpl::SetReferrer(WebKit::WebURLRequest* request,
+void WebPluginImpl::SetReferrer(blink::WebURLRequest* request,
                                 Referrer referrer_flag) {
   switch (referrer_flag) {
     case DOCUMENT_URL:

@@ -11,7 +11,8 @@
 #include "base/strings/sys_string_conversions.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
-#include "chrome/browser/bookmarks/bookmark_utils.h"
+#include "chrome/browser/bookmarks/bookmark_node_data.h"
+#include "chrome/browser/bookmarks/bookmark_stats.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/profiles/profile.h"
@@ -250,7 +251,9 @@ void RecordAppLaunch(Profile* profile, GURL url) {
     buttons_.reset([[NSMutableArray alloc] init]);
     delegate_ = delegate;
     resizeDelegate_ = resizeDelegate;
-    folderTarget_.reset([[BookmarkFolderTarget alloc] initWithController:self]);
+    folderTarget_.reset(
+        [[BookmarkFolderTarget alloc] initWithController:self
+                                                 profile:browser_->profile()]);
 
     ResourceBundle& rb = ResourceBundle::GetSharedInstance();
     folderImage_.reset(
@@ -484,7 +487,7 @@ void RecordAppLaunch(Profile* profile, GURL url) {
 }
 
 // We don't change a preference; we only change visibility. Preference changing
-// (global state) is handled in |BrowserWindowCocoa::ToggleBookmarkBar()|. We
+// (global state) is handled in |chrome::ToggleBookmarkBarWhenVisible()|. We
 // simply update based on what we're told.
 - (void)updateVisibility {
   [self showBookmarkBarWithAnimation:NO];
@@ -672,7 +675,7 @@ void RecordAppLaunch(Profile* profile, GURL url) {
 
   if (!animate)
     [self closeFolderAndStopTrackingMenus];
-  bookmark_utils::RecordBookmarkLaunch([self bookmarkLaunchLocation]);
+  RecordBookmarkLaunch(node, [self bookmarkLaunchLocation]);
 }
 
 // Common function to open a bookmark folder of any type.
@@ -682,7 +685,7 @@ void RecordAppLaunch(Profile* profile, GURL url) {
 
   // Only record the action if it's the initial folder being opened.
   if (!showFolderMenus_)
-    bookmark_utils::RecordBookmarkFolderOpen([self bookmarkLaunchLocation]);
+    RecordBookmarkFolderOpen([self bookmarkLaunchLocation]);
   showFolderMenus_ = !showFolderMenus_;
 
   if (sender == offTheSideButton_)
@@ -726,10 +729,10 @@ void RecordAppLaunch(Profile* profile, GURL url) {
   return (AnimatableView*)[self view];
 }
 
-- (bookmark_utils::BookmarkLaunchLocation)bookmarkLaunchLocation {
+- (BookmarkLaunchLocation)bookmarkLaunchLocation {
   return currentState_ == BookmarkBar::DETACHED ?
-      bookmark_utils::LAUNCH_DETACHED_BAR :
-      bookmark_utils::LAUNCH_ATTACHED_BAR;
+      BOOKMARK_LAUNCH_LOCATION_DETACHED_BAR :
+      BOOKMARK_LAUNCH_LOCATION_ATTACHED_BAR;
 }
 
 // Position the right-side buttons including the off-the-side chevron.
@@ -886,7 +889,7 @@ void RecordAppLaunch(Profile* profile, GURL url) {
     AnimatableView* view = [self animatableView];
     // Height takes into account the extra height we have since the toolbar
     // only compresses when we're done.
-    [view animateToNewHeight:(bookmarks::kBookmarkBarHeight -
+    [view animateToNewHeight:(chrome::kBookmarkBarHeight -
                               bookmarks::kBookmarkBarOverlap)
                     duration:kBookmarkBarAnimationDuration];
   } else if ([self isAnimatingFromState:BookmarkBar::SHOW
@@ -910,7 +913,7 @@ void RecordAppLaunch(Profile* profile, GURL url) {
     AnimatableView* view = [self animatableView];
     // Height takes into account the extra height we have since the toolbar
     // only compresses when we're done.
-    [view animateToNewHeight:(bookmarks::kBookmarkBarHeight -
+    [view animateToNewHeight:(chrome::kBookmarkBarHeight -
                               bookmarks::kBookmarkBarOverlap)
                     duration:kBookmarkBarAnimationDuration];
   } else {
@@ -943,7 +946,7 @@ void RecordAppLaunch(Profile* profile, GURL url) {
 
   switch (currentState_) {
     case BookmarkBar::SHOW:
-      return bookmarks::kBookmarkBarHeight;
+      return chrome::kBookmarkBarHeight;
     case BookmarkBar::DETACHED:
       return chrome::kNTPBookmarkBarHeight;
     case BookmarkBar::HIDDEN:
@@ -1155,7 +1158,8 @@ void RecordAppLaunch(Profile* profile, GURL url) {
     return NO;
 
   BOOL visible = bookmarkModel_->loaded() &&
-      chrome::ShouldShowAppsShortcutInBookmarkBar(browser_->profile());
+      chrome::ShouldShowAppsShortcutInBookmarkBar(
+          browser_->profile(), browser_->host_desktop_type());
   [appsPageShortcutButton_ setHidden:!visible];
   return visible;
 }
@@ -1225,7 +1229,7 @@ void RecordAppLaunch(Profile* profile, GURL url) {
   WindowOpenDisposition disposition =
       ui::WindowOpenDispositionFromNSEvent([NSApp currentEvent]);
   [self openURL:GURL(chrome::kChromeUIAppsURL) disposition:disposition];
-  bookmark_utils::RecordAppsPageOpen([self bookmarkLaunchLocation]);
+  RecordBookmarkAppsPageOpen([self bookmarkLaunchLocation]);
 }
 
 // To avoid problems with sync, changes that may impact the current
@@ -2406,7 +2410,7 @@ static BOOL ValueInRangeInclusive(CGFloat low, CGFloat value, CGFloat high) {
 - (std::vector<const BookmarkNode*>)retrieveBookmarkNodeData {
   std::vector<const BookmarkNode*> dragDataNodes;
   BookmarkNodeData dragData;
-  if (dragData.ReadFromDragClipboard()) {
+  if (dragData.ReadFromClipboard(ui::CLIPBOARD_TYPE_DRAG)) {
     std::vector<const BookmarkNode*> nodes(
         dragData.GetNodes(browser_->profile()));
     dragDataNodes.assign(nodes.begin(), nodes.end());

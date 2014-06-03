@@ -12,9 +12,9 @@
 #include "base/strings/string_util.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "ui/aura/root_window.h"
-#include "ui/base/events/event.h"
-#include "ui/base/events/event_utils.h"
-#include "ui/base/keycodes/keyboard_code_conversion.h"
+#include "ui/events/event.h"
+#include "ui/events/event_utils.h"
+#include "ui/events/keycodes/keyboard_code_conversion.h"
 
 #if defined(OS_CHROMEOS)
 #include <X11/extensions/XInput2.h>
@@ -25,8 +25,9 @@
 // Get rid of a macro from Xlib.h that conflicts with OwnershipService class.
 #undef Status
 
-#include "base/chromeos/chromeos_version.h"
+#include "ash/wm/window_state.h"
 #include "base/command_line.h"
+#include "base/sys_info.h"
 #include "chrome/browser/chromeos/keyboard_driven_event_rewriter.h"
 #include "chrome/browser/chromeos/login/login_display_host_impl.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
@@ -35,8 +36,9 @@
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/ime/input_method_manager.h"
 #include "chromeos/ime/xkeyboard.h"
-#include "ui/base/keycodes/keyboard_code_conversion_x.h"
 #include "ui/base/x/x11_util.h"
+#include "ui/events/keycodes/keyboard_code_conversion_x.h"
+#include "ui/views/corewm/window_util.h"
 #endif
 
 namespace {
@@ -66,6 +68,8 @@ const struct ModifierRemapping {
     { XK_VoidSymbol, XK_VoidSymbol, XK_VoidSymbol, XK_VoidSymbol }},
   { chromeos::input_method::kCapsLockKey, 0, 0U, ui::VKEY_CAPITAL,
     { XK_Caps_Lock, XK_Caps_Lock, XK_Caps_Lock, XK_Caps_Lock }},
+  { chromeos::input_method::kEscapeKey, 0, 0U, ui::VKEY_ESCAPE,
+    { XK_Escape, XK_Escape, XK_Escape, XK_Escape }},
 };
 
 const ModifierRemapping* kModifierRemappingCtrl = &kModifierRemappings[1];
@@ -131,30 +135,26 @@ bool IsMod3UsedByCurrentInputMethod() {
   return manager->GetCurrentInputMethod().id() == kNeo2LayoutId ||
       manager->GetCurrentInputMethod().id() == kCaMultixLayoutId;
 }
-#endif
 
-const PrefService* GetPrefService() {
-  Profile* profile = ProfileManager::GetDefaultProfile();
-  if (profile)
-    return profile->GetPrefs();
-  return NULL;
-}
+#endif  // defined(OS_CHROMEOS)
 
 }  // namespace
 
 EventRewriter::EventRewriter()
     : last_device_id_(kBadDeviceId),
 #if defined(OS_CHROMEOS)
-      xkeyboard_(NULL),
-      keyboard_driven_event_rewritter_(
+      xkeyboard_for_testing_(NULL),
+      keyboard_driven_event_rewriter_(
           new chromeos::KeyboardDrivenEventRewriter),
 #endif
-      pref_service_(NULL) {
+      pref_service_for_testing_(NULL) {
   // The ash shell isn't instantiated for our unit tests.
-  if (ash::Shell::HasInstance())
-    ash::Shell::GetPrimaryRootWindow()->AddRootWindowObserver(this);
+  if (ash::Shell::HasInstance()) {
+    ash::Shell::GetPrimaryRootWindow()->GetDispatcher()->
+        AddRootWindowObserver(this);
+  }
 #if defined(OS_CHROMEOS)
-  if (base::chromeos::IsRunningOnChromeOS()) {
+  if (base::SysInfo::IsRunningOnChromeOS()) {
     chromeos::XInputHierarchyChangedEventListener::GetInstance()
         ->AddObserver(this);
   }
@@ -163,10 +163,12 @@ EventRewriter::EventRewriter()
 }
 
 EventRewriter::~EventRewriter() {
-  if (ash::Shell::HasInstance())
-    ash::Shell::GetPrimaryRootWindow()->RemoveRootWindowObserver(this);
+  if (ash::Shell::HasInstance()) {
+    ash::Shell::GetPrimaryRootWindow()->GetDispatcher()->
+        RemoveRootWindowObserver(this);
+  }
 #if defined(OS_CHROMEOS)
-  if (base::chromeos::IsRunningOnChromeOS()) {
+  if (base::SysInfo::IsRunningOnChromeOS()) {
     chromeos::XInputHierarchyChangedEventListener::GetInstance()
         ->RemoveObserver(this);
   }
@@ -235,7 +237,7 @@ void EventRewriter::DeviceAdded(int device_id) {
   }
 
   int ndevices_return = 0;
-  XIDeviceInfo* device_info = XIQueryDevice(ui::GetXDisplay(),
+  XIDeviceInfo* device_info = XIQueryDevice(gfx::GetXDisplay(),
                                             device_id,
                                             &ndevices_return);
 
@@ -280,10 +282,25 @@ KeyCode EventRewriter::NativeKeySymToNativeKeycode(KeySym keysym) {
   if (keysym_to_keycode_map_.count(keysym))
     return keysym_to_keycode_map_[keysym];
 
-  Display* display = ui::GetXDisplay();
+  XDisplay* display = gfx::GetXDisplay();
   KeyCode keycode = XKeysymToKeycode(display, keysym);
   keysym_to_keycode_map_[keysym] = keycode;
   return keycode;
+}
+
+bool EventRewriter::TopRowKeysAreFunctionKeys(ui::KeyEvent* event) const {
+  const PrefService* prefs = GetPrefService();
+  if (prefs &&
+      prefs->FindPreference(prefs::kLanguageSendFunctionKeys) &&
+      prefs->GetBoolean(prefs::kLanguageSendFunctionKeys))
+    return true;
+
+  aura::Window* target = static_cast<aura::Window*>(event->target());
+  if (!target)
+    return false;
+  aura::Window* top_level = views::corewm::GetToplevelWindow(target);
+  return top_level &&
+      ash::wm::GetWindowState(top_level)->top_row_keys_are_function_keys();
 }
 
 bool EventRewriter::RewriteWithKeyboardRemappingsByKeySym(
@@ -346,7 +363,14 @@ bool EventRewriter::RewriteWithKeyboardRemappingsByKeyCode(
 
   return false;
 }
-#endif
+#endif  // defined(OS_CHROMEOS)
+
+const PrefService* EventRewriter::GetPrefService() const {
+  if (pref_service_for_testing_)
+    return pref_service_for_testing_;
+  Profile* profile = ProfileManager::GetActiveUserProfile();
+  return profile ? profile->GetPrefs() : NULL;
+}
 
 void EventRewriter::Rewrite(ui::KeyEvent* event) {
 #if defined(OS_CHROMEOS)
@@ -355,10 +379,12 @@ void EventRewriter::Rewrite(ui::KeyEvent* event) {
   if (event->native_event()->xkey.send_event)
     return;
 
-  // Keyboard driven rewriting needs to happen before RewriteExtendedKeys
-  // to handle Ctrl+Alt+Shift+(Up | Down) so that they are not translated
-  // to Home/End.
-  keyboard_driven_event_rewritter_->RewriteIfKeyboardDrivenOnLoginScreen(event);
+  // Keyboard driven rewriting happen first. Skip further processing if event is
+  // changed.
+  if (keyboard_driven_event_rewriter_->RewriteIfKeyboardDrivenOnLoginScreen(
+          event)) {
+    return;
+  }
 #endif
   RewriteModifiers(event);
   RewriteNumPadKeys(event);
@@ -395,8 +421,7 @@ void EventRewriter::GetRemappedModifierMasks(
     return;
   }
 
-  const PrefService* pref_service =
-      pref_service_ ? pref_service_ : GetPrefService();
+  const PrefService* pref_service = GetPrefService();
   if (!pref_service)
     return;
 
@@ -449,6 +474,7 @@ void EventRewriter::GetRemappedModifierMasks(
 }
 
 bool EventRewriter::RewriteModifiers(ui::KeyEvent* event) {
+#if defined(OS_CHROMEOS)
   // Do nothing if we have just logged in as guest but have not restarted chrome
   // process yet (so we are still on the login screen). In this situations we
   // have no user profile so can not do anything useful.
@@ -456,17 +482,14 @@ bool EventRewriter::RewriteModifiers(ui::KeyEvent* event) {
   // restart chrome process. In future this is to be changed.
   // TODO(glotov): remove the following condition when we do not restart chrome
   // when user logs in as guest.
-#if defined(OS_CHROMEOS)
   if (chromeos::UserManager::Get()->IsLoggedInAsGuest() &&
       chromeos::LoginDisplayHostImpl::default_host())
     return false;
-#endif  // defined(OS_CHROMEOS)
-  const PrefService* pref_service =
-      pref_service_ ? pref_service_ : GetPrefService();
+
+  const PrefService* pref_service = GetPrefService();
   if (!pref_service)
     return false;
 
-#if defined(OS_CHROMEOS)
   DCHECK_EQ(chromeos::input_method::kControlKey,
             kModifierRemappingCtrl->remap_to);
 
@@ -548,8 +571,8 @@ bool EventRewriter::RewriteModifiers(ui::KeyEvent* event) {
   if ((event->type() == ui::ET_KEY_PRESSED) &&
       (event->key_code() != ui::VKEY_CAPITAL) &&
       (remapped_keycode == ui::VKEY_CAPITAL)) {
-    chromeos::input_method::XKeyboard* xkeyboard = xkeyboard_ ?
-        xkeyboard_ :
+    chromeos::input_method::XKeyboard* xkeyboard = xkeyboard_for_testing_ ?
+        xkeyboard_for_testing_ :
         chromeos::input_method::InputMethodManager::Get()->GetXKeyboard();
     xkeyboard->SetCapsLockEnabled(!xkeyboard->CapsLockIsEnabled());
   }
@@ -838,7 +861,12 @@ bool EventRewriter::RewriteFunctionKeys(ui::KeyEvent* event) {
   ui::KeyboardCode remapped_keycode = ui::VKEY_UNKNOWN;
   unsigned int remapped_mods = 0;
 
-  if (xkey->state & Mod4Mask) {
+  // By default the top row (F1-F12) keys are special keys for back, forward,
+  // brightness, volume, etc. However, windows for v2 apps can optionally
+  // request raw function keys for these keys.
+  bool top_row_keys_are_special_keys = !TopRowKeysAreFunctionKeys(event);
+
+  if ((xkey->state & Mod4Mask) && top_row_keys_are_special_keys) {
     // Allow Search to avoid rewriting F1-F12.
     static const KeyboardRemapping kFkeysToFkeys[] = {
       { XK_F1, 0, Mod4Mask, XK_F1, ui::VKEY_F1, },
@@ -867,7 +895,6 @@ bool EventRewriter::RewriteFunctionKeys(ui::KeyEvent* event) {
   }
 
   if (remapped_keycode == ui::VKEY_UNKNOWN) {
-    // Rewrite the actual F1-F12 keys on a Chromebook keyboard to special keys.
     static const KeyboardRemapping kFkeysToSpecialKeys[] = {
       { XK_F1, 0, 0, XF86XK_Back, ui::VKEY_BROWSER_BACK, 0, 0 },
       { XK_F2, 0, 0, XF86XK_Forward, ui::VKEY_BROWSER_FORWARD, 0, 0 },
@@ -881,15 +908,29 @@ bool EventRewriter::RewriteFunctionKeys(ui::KeyEvent* event) {
       { XK_F10, 0, 0, XF86XK_AudioRaiseVolume, ui::VKEY_VOLUME_UP, 0, 0 },
     };
 
-    RewriteWithKeyboardRemappingsByKeySym(kFkeysToSpecialKeys,
-                                          arraysize(kFkeysToSpecialKeys),
-                                          keysym,
-                                          xkey->state,
-                                          event->flags(),
-                                          &remapped_native_keysym,
-                                          &remapped_native_mods,
-                                          &remapped_keycode,
-                                          &remapped_mods);
+    if (top_row_keys_are_special_keys) {
+      // Rewrite the F1-F12 keys on a Chromebook keyboard to special keys.
+      RewriteWithKeyboardRemappingsByKeySym(kFkeysToSpecialKeys,
+                                            arraysize(kFkeysToSpecialKeys),
+                                            keysym,
+                                            xkey->state,
+                                            event->flags(),
+                                            &remapped_native_keysym,
+                                            &remapped_native_mods,
+                                            &remapped_keycode,
+                                            &remapped_mods);
+    } else if (xkey->state & Mod4Mask) {
+      // Use Search + F1-F12 for the special keys.
+      RewriteWithKeyboardRemappingsByKeySym(kFkeysToSpecialKeys,
+                                            arraysize(kFkeysToSpecialKeys),
+                                            keysym,
+                                            xkey->state & !Mod4Mask,
+                                            event->flags(),
+                                            &remapped_native_keysym,
+                                            &remapped_native_mods,
+                                            &remapped_keycode,
+                                            &remapped_mods);
+    }
   }
 
   if (remapped_keycode == ui::VKEY_UNKNOWN && xkey->state & Mod4Mask) {

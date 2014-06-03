@@ -6,12 +6,16 @@
 
 #include "base/logging.h"
 #include "grit/ui_resources.h"
-#include "ui/base/animation/animation.h"
+#include "third_party/skia/include/core/SkPaint.h"
+#include "third_party/skia/include/effects/SkLerpXfermode.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/gfx/animation/animation.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/rect.h"
+#include "ui/gfx/skia_util.h"
 #include "ui/gfx/sys_color_change_listener.h"
 #include "ui/native_theme/native_theme.h"
+#include "ui/views/border.h"
 #include "ui/views/controls/button/label_button.h"
 #include "ui/views/native_theme_delegate.h"
 
@@ -55,7 +59,7 @@ void PaintHelper(LabelButtonBorder* border,
     if (!painter && extra.button.is_focused)
       painter = border->GetPainter(false, GetButtonState(state));
     if (painter)
-      painter->Paint(canvas, rect.size());
+      Painter::PaintPainterAt(canvas, painter, rect);
   }
 }
 
@@ -115,21 +119,26 @@ void LabelButtonBorder::Paint(const View& view, gfx::Canvas* canvas) {
   gfx::Rect rect(native_theme_delegate->GetThemePaintRect());
   ui::NativeTheme::ExtraParams extra;
   const ui::NativeTheme* theme = view.GetNativeTheme();
-  const ui::Animation* animation = native_theme_delegate->GetThemeAnimation();
+  const gfx::Animation* animation = native_theme_delegate->GetThemeAnimation();
   ui::NativeTheme::State state = native_theme_delegate->GetThemeState(&extra);
 
   if (animation && animation->is_animating()) {
-    // Composite the background and foreground painters during state animations.
-    int alpha = animation->CurrentValueBetween(0, 0xff);
+    // Linearly interpolate background and foreground painters during animation.
+    const SkRect sk_rect = gfx::RectToSkRect(rect);
+    canvas->sk_canvas()->saveLayer(&sk_rect, NULL);
     state = native_theme_delegate->GetBackgroundThemeState(&extra);
-    canvas->SaveLayerAlpha(static_cast<uint8>(0xff - alpha));
     PaintHelper(this, canvas, theme, part, state, rect, extra);
-    canvas->Restore();
 
+    SkPaint paint;
+    skia::RefPtr<SkXfermode> sk_lerp_xfer =
+        skia::AdoptRef(SkLerpXfermode::Create(animation->GetCurrentValue()));
+    paint.setXfermode(sk_lerp_xfer.get());
+    canvas->sk_canvas()->saveLayer(&sk_rect, &paint);
     state = native_theme_delegate->GetForegroundThemeState(&extra);
-    canvas->SaveLayerAlpha(static_cast<uint8>(alpha));
     PaintHelper(this, canvas, theme, part, state, rect, extra);
-    canvas->Restore();
+    canvas->sk_canvas()->restore();
+
+    canvas->sk_canvas()->restore();
   } else {
     PaintHelper(this, canvas, theme, part, state, rect, extra);
   }
@@ -139,15 +148,21 @@ void LabelButtonBorder::Paint(const View& view, gfx::Canvas* canvas) {
     rect.Inset(insets_);
     canvas->FillRect(rect, extra.button.background_color);
   }
-
-  // Draw the Views focus border for the native theme style.
-  if (style() == Button::STYLE_NATIVE_TEXTBUTTON &&
-      view.focus_border() && extra.button.is_focused)
-    view.focus_border()->Paint(view, canvas);
 }
 
 gfx::Insets LabelButtonBorder::GetInsets() const {
   return insets_;
+}
+
+gfx::Size LabelButtonBorder::GetMinimumSize() const {
+  gfx::Size minimum_size;
+  for (int i = 0; i < 2; ++i) {
+    for (int j = 0; j < Button::STATE_COUNT; ++j) {
+      if (painters_[i][j])
+        minimum_size.SetToMax(painters_[i][j]->GetMinimumSize());
+    }
+  }
+  return minimum_size;
 }
 
 Painter* LabelButtonBorder::GetPainter(bool focused,

@@ -9,7 +9,7 @@
 #include "base/memory/scoped_ptr.h"
 
 namespace aura {
-class RootWindow;
+class Window;
 }  // namespace aura
 
 namespace base {
@@ -23,6 +23,7 @@ class ScopedAnimationDurationScaleMode;
 namespace ash {
 namespace test {
 
+class TestScreenshotDelegate;
 class TestShellDelegate;
 
 // A helper class that does common initialization required for Ash. Creates a
@@ -40,20 +41,26 @@ class AshTestHelper {
   // Destroys the ash::Shell and performs associated cleanup.
   void TearDown();
 
-  // Returns a RootWindow. Usually this is the active RootWindow, but that
+  // Returns a root Window. Usually this is the active root Window, but that
   // method can return NULL sometimes, and in those cases, we fall back on the
-  // primary RootWindow.
-  aura::RootWindow* CurrentContext();
+  // primary root Window.
+  aura::Window* CurrentContext();
 
   void RunAllPendingInMessageLoop();
 
   base::MessageLoopForUI* message_loop() { return message_loop_; }
   TestShellDelegate* test_shell_delegate() { return test_shell_delegate_; }
+  TestScreenshotDelegate* test_screenshot_delegate() {
+    return test_screenshot_delegate_;
+  }
 
  private:
   base::MessageLoopForUI* message_loop_;  // Not owned.
   TestShellDelegate* test_shell_delegate_;  // Owned by ash::Shell.
   scoped_ptr<ui::ScopedAnimationDurationScaleMode> zero_duration_mode_;
+
+  // Owned by ash::AcceleratorController
+  TestScreenshotDelegate* test_screenshot_delegate_;
 
   DISALLOW_COPY_AND_ASSIGN(AshTestHelper);
 };

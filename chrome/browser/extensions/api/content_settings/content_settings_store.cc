@@ -105,7 +105,7 @@ void ContentSettingsStore::SetExtensionContentSetting(
       map->DeleteValue(primary_pattern, secondary_pattern, type, identifier);
     } else {
       map->SetValue(primary_pattern, secondary_pattern, type, identifier,
-                    base::Value::CreateIntegerValue(setting));
+                    new base::FundamentalValue(setting));
     }
   }
 
@@ -123,15 +123,16 @@ void ContentSettingsStore::RegisterExtension(
     bool is_enabled) {
   base::AutoLock lock(lock_);
   ExtensionEntryMap::iterator i = FindEntry(ext_id);
+  ExtensionEntry* entry;
   if (i != entries_.end()) {
-    delete i->second;
-    entries_.erase(i);
+    entry = i->second;
+  } else {
+    entry = new ExtensionEntry;
+    entries_.insert(std::make_pair(install_time, entry));
   }
 
-  ExtensionEntry* entry = new ExtensionEntry;
   entry->id = ext_id;
   entry->enabled = is_enabled;
-  entries_.insert(std::make_pair(install_time, entry));
 }
 
 void ContentSettingsStore::UnregisterExtension(

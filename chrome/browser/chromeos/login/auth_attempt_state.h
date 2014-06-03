@@ -16,13 +16,12 @@
 namespace chromeos {
 
 // Tracks the state associated with a single attempt to log in to chromium os.
-// Enforces that methods are only called on the IO thread.
+// Enforces that methods are only called on the UI thread.
 
 class AuthAttemptState {
  public:
   // Used to initialize for a login attempt.
   AuthAttemptState(const UserContext& user_context,
-                   const std::string& ascii_hash,
                    const std::string& login_token,
                    const std::string& login_captcha,
                    const User::UserType user_type,
@@ -30,24 +29,26 @@ class AuthAttemptState {
 
   // Used to initialize for a externally authenticated login.
   AuthAttemptState(const UserContext& user_context,
-                   const std::string& ascii_hash,
                    const bool user_is_new);
 
   // Used to initialize for a screen unlock attempt.
-  AuthAttemptState(const std::string& username, const std::string& ascii_hash);
+  AuthAttemptState(const std::string& username, const std::string& password);
 
   virtual ~AuthAttemptState();
 
   // Copy |user_context| and copy |outcome| into this object, so we can have
-  // a copy we're sure to own, and can make available on the IO thread.
-  // Must be called from the IO thread.
+  // a copy we're sure to own, and can make available on the UI thread.
+  // Must be called from the UI thread.
   void RecordOnlineLoginStatus(
       const LoginFailure& outcome);
 
   // Copy |username_hash| into this object, so we can have
-  // a copy we're sure to own, and can make available on the IO thread.
-  // Must be called from the IO thread.
+  // a copy we're sure to own, and can make available on the UI thread.
+  // Must be called from the UI thread.
   void RecordUsernameHash(const std::string& username_hash);
+
+  // Marks that the username hash request attempt has failed.
+  void RecordUsernameHashFailed();
 
   // Marks username hash as being requested so that flow will block till both
   // requests (Mount/GetUsernameHash) are completed.
@@ -58,12 +59,12 @@ class AuthAttemptState {
 
   // Copy |cryptohome_code| and |cryptohome_outcome| into this object,
   // so we can have a copy we're sure to own, and can make available
-  // on the IO thread.  Must be called from the IO thread.
+  // on the UI thread.  Must be called from the UI thread.
   void RecordCryptohomeStatus(bool cryptohome_outcome,
                               cryptohome::MountError cryptohome_code);
 
   // Blow away locally stored cryptohome login status.
-  // Must be called from the IO thread.
+  // Must be called from the UI thread.
   void ResetCryptohomeStatus();
 
   virtual bool online_complete();
@@ -76,13 +77,13 @@ class AuthAttemptState {
   virtual cryptohome::MountError cryptohome_code();
 
   virtual bool username_hash_obtained();
+  virtual bool username_hash_valid();
 
   // Saved so we can retry client login, and also so we know for whom login
   // has succeeded, in the event of successful completion.
   UserContext user_context;
 
   // These fields are saved so we can retry client login.
-  const std::string ascii_hash;
   const std::string login_token;
   const std::string login_captcha;
 
@@ -111,6 +112,10 @@ class AuthAttemptState {
   // This gets initialized as being completed and those callers
   // that would explicitly request username hash would have to reset this.
   bool username_hash_obtained_;
+
+  // After the username hash request is completed, this marks whether
+  // the request was successful.
+  bool username_hash_valid_;
 
   DISALLOW_COPY_AND_ASSIGN(AuthAttemptState);
 };

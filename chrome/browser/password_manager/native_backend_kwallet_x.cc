@@ -13,6 +13,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/threading/thread_restrictions.h"
+#include "components/autofill/core/common/password_form.h"
 #include "content/public/browser/browser_thread.h"
 #include "dbus/bus.h"
 #include "dbus/message.h"
@@ -21,8 +22,8 @@
 #include "grit/chromium_strings.h"
 #include "ui/base/l10n/l10n_util.h"
 
+using autofill::PasswordForm;
 using content::BrowserThread;
-using content::PasswordForm;
 
 namespace {
 
@@ -43,8 +44,8 @@ const char kKLauncherInterface[] = "org.kde.KLauncher";
 // If |update_check| is false, we only check the fields that are checked by
 // LoginDatabase::UpdateLogin() when updating logins; otherwise, we check the
 // fields that are checked by LoginDatabase::RemoveLogin() for removing them.
-bool CompareForms(const content::PasswordForm& a,
-                  const content::PasswordForm& b,
+bool CompareForms(const autofill::PasswordForm& a,
+                  const autofill::PasswordForm& b,
                   bool update_check) {
   // An update check doesn't care about the submit element.
   if (!update_check && a.submit_element != b.submit_element)

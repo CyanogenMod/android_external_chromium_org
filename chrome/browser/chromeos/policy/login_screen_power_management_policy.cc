@@ -7,10 +7,10 @@
 #include "base/json/json_reader.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/values.h"
-#include "chrome/browser/policy/configuration_policy_handler.h"
-#include "chrome/browser/policy/policy_error_map.h"
 #include "chromeos/dbus/power_policy_controller.h"
-#include "grit/generated_resources.h"
+#include "components/policy/core/browser/configuration_policy_handler.h"
+#include "components/policy/core/browser/policy_error_map.h"
+#include "grit/component_strings.h"
 #include "policy/policy_constants.h"
 
 namespace policy {

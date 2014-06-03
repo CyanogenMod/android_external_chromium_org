@@ -8,6 +8,7 @@
 #include "base/bind_helpers.h"
 #include "base/callback.h"
 #include "base/compiler_specific.h"
+#include "base/json/json_writer.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
@@ -17,23 +18,28 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/policy/browser_policy_connector.h"
-#include "chrome/browser/policy/cloud/cloud_policy_client.h"
-#include "chrome/browser/policy/cloud/cloud_policy_constants.h"
-#include "chrome/browser/policy/cloud/cloud_policy_core.h"
-#include "chrome/browser/policy/cloud/cloud_policy_refresh_scheduler.h"
-#include "chrome/browser/policy/cloud/cloud_policy_store.h"
-#include "chrome/browser/policy/cloud/cloud_policy_validator.h"
-#include "chrome/browser/policy/cloud/message_util.h"
-#include "chrome/browser/policy/configuration_policy_handler_list.h"
-#include "chrome/browser/policy/policy_error_map.h"
-#include "chrome/browser/policy/policy_map.h"
-#include "chrome/browser/policy/policy_service.h"
-#include "chrome/browser/policy/policy_types.h"
 #include "chrome/browser/policy/profile_policy_connector.h"
 #include "chrome/browser/policy/profile_policy_connector_factory.h"
-#include "chrome/browser/policy/proto/cloud/device_management_backend.pb.h"
+#include "chrome/browser/policy/schema_registry_service.h"
+#include "chrome/browser/policy/schema_registry_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/url_constants.h"
+#include "components/policy/core/browser/cloud/message_util.h"
+#include "components/policy/core/browser/configuration_policy_handler_list.h"
+#include "components/policy/core/browser/policy_error_map.h"
+#include "components/policy/core/common/cloud/cloud_policy_client.h"
+#include "components/policy/core/common/cloud/cloud_policy_constants.h"
+#include "components/policy/core/common/cloud/cloud_policy_core.h"
+#include "components/policy/core/common/cloud/cloud_policy_refresh_scheduler.h"
+#include "components/policy/core/common/cloud/cloud_policy_store.h"
+#include "components/policy/core/common/cloud/cloud_policy_validator.h"
+#include "components/policy/core/common/policy_map.h"
+#include "components/policy/core/common/policy_namespace.h"
+#include "components/policy/core/common/policy_service.h"
+#include "components/policy/core/common/policy_types.h"
+#include "components/policy/core/common/schema.h"
+#include "components/policy/core/common/schema_map.h"
+#include "components/policy/core/common/schema_registry.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_service.h"
@@ -42,8 +48,9 @@
 #include "content/public/browser/web_ui_message_handler.h"
 #include "google_apis/gaia/gaia_auth_util.h"
 #include "grit/browser_resources.h"
-#include "grit/generated_resources.h"
+#include "grit/component_strings.h"
 #include "policy/policy_constants.h"
+#include "policy/proto/device_management_backend.pb.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/l10n/time_format.h"
 
@@ -54,19 +61,18 @@
 #include "chrome/browser/chromeos/policy/user_cloud_policy_manager_chromeos.h"
 #include "chrome/browser/chromeos/policy/user_cloud_policy_manager_factory_chromeos.h"
 #else
-#include "chrome/browser/policy/cloud/user_cloud_policy_manager.h"
 #include "chrome/browser/policy/cloud/user_cloud_policy_manager_factory.h"
+#include "components/policy/core/common/cloud/user_cloud_policy_manager.h"
+#include "content/public/browser/web_contents.h"
 #endif
 
 #if !defined(OS_ANDROID) && !defined(OS_IOS)
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
-#include "chrome/browser/policy/policy_domain_descriptor.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/common/extensions/extension_set.h"
-#include "chrome/common/extensions/manifest.h"
-#include "chrome/common/policy/policy_schema.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/manifest.h"
+#include "extensions/common/manifest_constants.h"
 #endif
 
 namespace em = enterprise_management;
@@ -133,11 +139,12 @@ void GetStatusFromCore(const policy::CloudPolicyCore* core,
 
   bool no_error = store->status() == policy::CloudPolicyStore::STATUS_OK &&
                   client && client->status() == policy::DM_STATUS_SUCCESS;
-  string16 status = store->status() == policy::CloudPolicyStore::STATUS_OK &&
-                    client && client->status() != policy::DM_STATUS_SUCCESS ?
-                        policy::FormatDeviceManagementStatus(client->status()) :
-                        policy::FormatStoreStatus(store->status(),
-                                                  store->validation_status());
+  base::string16 status =
+      store->status() == policy::CloudPolicyStore::STATUS_OK &&
+      client && client->status() != policy::DM_STATUS_SUCCESS ?
+                policy::FormatDeviceManagementStatus(client->status()) :
+                policy::FormatStoreStatus(store->status(),
+                                          store->validation_status());
   const em::PolicyData* policy = store->policy();
   std::string client_id = policy ? policy->device_id() : std::string();
   std::string username = policy ? policy->username() : std::string();
@@ -165,6 +172,35 @@ void ExtractDomainFromUsername(base::DictionaryValue* dict) {
   dict->GetString("username", &username);
   if (!username.empty())
     dict->SetString("domain", gaia::ExtractDomainName(username));
+}
+
+// Utility function that returns a JSON serialization of the given |dict|.
+scoped_ptr<base::StringValue> DictionaryToJSONString(
+    const base::DictionaryValue* dict) {
+  std::string json_string;
+  base::JSONWriter::WriteWithOptions(dict,
+                                     base::JSONWriter::OPTIONS_PRETTY_PRINT,
+                                     &json_string);
+  return make_scoped_ptr(new base::StringValue(json_string));
+}
+
+// Returns a copy of |value| with some values converted to a representation that
+// i18n_template.js will display in a nicer way.
+scoped_ptr<base::Value> CopyAndConvert(const base::Value* value) {
+  const base::DictionaryValue* dict = NULL;
+  if (value->GetAsDictionary(&dict))
+    return DictionaryToJSONString(dict).PassAs<base::Value>();
+
+  scoped_ptr<base::Value> copy(value->DeepCopy());
+  base::ListValue* list = NULL;
+  if (copy->GetAsList(&list)) {
+    for (size_t i = 0; i < list->GetSize(); ++i) {
+      if (list->GetDictionary(i, &dict))
+        list->Set(i, DictionaryToJSONString(dict).release());
+    }
+  }
+
+  return copy.Pass();
 }
 
 }  // namespace
@@ -324,7 +360,6 @@ class PolicyUIHandler : public content::NotificationObserver,
 
   bool initialized_;
   std::string device_domain_;
-  base::WeakPtrFactory<PolicyUIHandler> weak_factory_;
 
   // Providers that supply status dictionaries for user and device policy,
   // respectively. These are created on initialization time as appropriate for
@@ -333,6 +368,8 @@ class PolicyUIHandler : public content::NotificationObserver,
   scoped_ptr<CloudPolicyStatusProvider> device_status_provider_;
 
   content::NotificationRegistrar registrar_;
+
+  base::WeakPtrFactory<PolicyUIHandler> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(PolicyUIHandler);
 };
@@ -451,7 +488,8 @@ void DeviceLocalAccountPolicyStatusProvider::OnDeviceLocalAccountsChanged() {
 #endif
 
 PolicyUIHandler::PolicyUIHandler()
-    : weak_factory_(this) {
+    : initialized_(false),
+      weak_factory_(this) {
 }
 
 PolicyUIHandler::~PolicyUIHandler() {
@@ -486,8 +524,8 @@ void PolicyUIHandler::RegisterMessages() {
   }
 #else
   policy::UserCloudPolicyManager* user_cloud_policy_manager =
-      policy::UserCloudPolicyManagerFactory::GetForProfile(
-          Profile::FromWebUI(web_ui()));
+      policy::UserCloudPolicyManagerFactory::GetForBrowserContext(
+          web_ui()->GetWebContents()->GetBrowserContext());
   if (user_cloud_policy_manager) {
     user_status_provider_.reset(
         new UserPolicyStatusProvider(user_cloud_policy_manager->core()));
@@ -540,49 +578,50 @@ void PolicyUIHandler::OnPolicyUpdated(const policy::PolicyNamespace& ns,
 void PolicyUIHandler::SendPolicyNames() const {
   base::DictionaryValue names;
 
+  Profile* profile = Profile::FromWebUI(web_ui());
+  policy::SchemaRegistry* registry =
+      policy::SchemaRegistryServiceFactory::GetForContext(
+          profile->GetOriginalProfile());
+  scoped_refptr<policy::SchemaMap> schema_map = registry->schema_map();
+
   // Add Chrome policy names.
   base::DictionaryValue* chrome_policy_names = new base::DictionaryValue;
-  const policy::PolicyDefinitionList* list =
-      policy::GetChromePolicyDefinitionList();
-  for (const policy::PolicyDefinitionList::Entry* entry = list->begin;
-       entry != list->end; ++entry) {
-    chrome_policy_names->SetBoolean(entry->name, true);
+  policy::PolicyNamespace chrome_ns(policy::POLICY_DOMAIN_CHROME, "");
+  const policy::Schema* chrome_schema = schema_map->GetSchema(chrome_ns);
+  for (policy::Schema::Iterator it = chrome_schema->GetPropertiesIterator();
+       !it.IsAtEnd(); it.Advance()) {
+    chrome_policy_names->SetBoolean(it.key(), true);
   }
   names.Set("chromePolicyNames", chrome_policy_names);
 
 #if !defined(OS_ANDROID) && !defined(OS_IOS)
   // Add extension policy names.
   base::DictionaryValue* extension_policy_names = new base::DictionaryValue;
+
   extensions::ExtensionSystem* extension_system =
-      extensions::ExtensionSystem::Get(Profile::FromWebUI(web_ui()));
+      extensions::ExtensionSystem::Get(profile);
   const ExtensionSet* extensions =
       extension_system->extension_service()->extensions();
-  scoped_refptr<const policy::PolicyDomainDescriptor> policy_domain_descriptor;
-  policy_domain_descriptor = GetPolicyService()->
-      GetPolicyDomainDescriptor(policy::POLICY_DOMAIN_EXTENSIONS);
-  const policy::PolicyDomainDescriptor::SchemaMap& schema_map =
-      policy_domain_descriptor->components();
 
   for (ExtensionSet::const_iterator it = extensions->begin();
        it != extensions->end(); ++it) {
     const extensions::Extension* extension = it->get();
     // Skip this extension if it's not an enterprise extension.
     if (!extension->manifest()->HasPath(
-        extension_manifest_keys::kStorageManagedSchema))
+        extensions::manifest_keys::kStorageManagedSchema))
       continue;
     base::DictionaryValue* extension_value = new base::DictionaryValue;
     extension_value->SetString("name", extension->name());
-    policy::PolicyDomainDescriptor::SchemaMap::const_iterator schema =
-        schema_map.find(extension->id());
+    const policy::Schema* schema =
+        schema_map->GetSchema(policy::PolicyNamespace(
+            policy::POLICY_DOMAIN_EXTENSIONS, extension->id()));
     base::DictionaryValue* policy_names = new base::DictionaryValue;
-    if (schema != schema_map.end()) {
+    if (schema && schema->valid()) {
       // Get policy names from the extension's policy schema.
       // Store in a map, not an array, for faster lookup on JS side.
-      const policy::PolicySchemaMap* policies = schema->second->GetProperties();
-      policy::PolicySchemaMap::const_iterator it_policies;
-      for (it_policies = policies->begin(); it_policies != policies->end();
-           it_policies++) {
-        policy_names->SetBoolean(it_policies->first, true);
+      for (policy::Schema::Iterator prop = schema->GetPropertiesIterator();
+           !prop.IsAtEnd(); prop.Advance()) {
+        policy_names->SetBoolean(prop.key(), true);
       }
     }
     extension_value->Set("policyNames", policy_names);
@@ -615,7 +654,7 @@ void PolicyUIHandler::SendPolicyValues() const {
     const extensions::Extension* extension = it->get();
     // Skip this extension if it's not an enterprise extension.
     if (!extension->manifest()->HasPath(
-        extension_manifest_keys::kStorageManagedSchema))
+        extensions::manifest_keys::kStorageManagedSchema))
       continue;
     base::DictionaryValue* extension_policies = new base::DictionaryValue;
     policy::PolicyNamespace policy_namespace = policy::PolicyNamespace(
@@ -636,7 +675,7 @@ void PolicyUIHandler::GetPolicyValues(const policy::PolicyMap& map,
   for (policy::PolicyMap::const_iterator entry = map.begin();
        entry != map.end(); ++entry) {
     base::DictionaryValue* value = new base::DictionaryValue;
-    value->Set("value", entry->second.value->DeepCopy());
+    value->Set("value", CopyAndConvert(entry->second.value).release());
     if (entry->second.scope == policy::POLICY_SCOPE_USER)
       value->SetString("scope", "user");
     else
@@ -645,7 +684,7 @@ void PolicyUIHandler::GetPolicyValues(const policy::PolicyMap& map,
       value->SetString("level", "recommended");
     else
       value->SetString("level", "mandatory");
-    string16 error = errors->GetErrors(entry->first);
+    base::string16 error = errors->GetErrors(entry->first);
     if (!error.empty())
       value->SetString("error", error);
     values->Set(entry->first, value);

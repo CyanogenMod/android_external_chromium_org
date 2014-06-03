@@ -111,6 +111,54 @@ class Platform(object):
     return self._platform_backend.FlushSystemCacheForDirectory(
         directory, ignoring=ignoring)
 
+  def LaunchApplication(self, application, parameters=None):
+    """"Launchs a given application on the OS."""
+    return self._platform_backend.LaunchApplication(application,
+                                                    parameters)
+
+  def IsApplicationRunning(self, application):
+    """Returns whether an application is currently running."""
+    return self._platform_backend.IsApplicationLaunchning(application)
+
+  def CanLaunchApplication(self, application):
+    """Returns whether the platform can launch the given application."""
+    return self._platform_backend.CanLaunchApplication(application)
+
+  def InstallApplication(self, application):
+    """Installs the given application."""
+    return self._platform_backend.InstallApplication(application)
+
+  def CanCaptureVideo(self):
+    """Returns a bool indicating whether the platform supports video capture."""
+    return self._platform_backend.CanCaptureVideo()
+
+  def StartVideoCapture(self, min_bitrate_mbps):
+    """Starts capturing video.
+
+    Outer framing may be included (from the OS, browser window, and webcam).
+
+    Args:
+      min_bitrate_mbps: The minimum capture bitrate in MegaBits Per Second.
+          The platform is free to deliver a higher bitrate if it can do so
+          without increasing overhead.
+
+    Raises:
+      ValueError if the required |min_bitrate_mbps| can't be achieved.
+    """
+    return self._platform_backend.StartVideoCapture(min_bitrate_mbps)
+
+  def StopVideoCapture(self):
+    """Stops capturing video.
+
+    Yields:
+      (time_ms, bitmap) tuples representing each video keyframe. Only the first
+      frame in a run of sequential duplicate bitmaps is included.
+        time_ms is milliseconds relative to the first frame.
+        bitmap is a telemetry.core.Bitmap.
+    """
+    for t in self._platform_backend.StopVideoCapture():
+      yield t
+
 
 def CreatePlatformBackendForCurrentOS():
   if sys.platform.startswith('linux'):

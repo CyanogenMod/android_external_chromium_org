@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "input_conversion.h"
+#include "tools/gn/input_conversion.h"
 
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
@@ -18,34 +18,6 @@
 #include "tools/gn/value.h"
 
 namespace {
-
-// Returns the "first bit" of some script output for writing to error messages.
-std::string GetExampleOfBadInput(const std::string& input) {
-  std::string result(input);
-
-  // Maybe the result starts with a blank line or something, which we don't
-  // want.
-  TrimWhitespaceASCII(result, TRIM_ALL, &result);
-
-  // Now take the first line, or the first set of chars, whichever is shorter.
-  bool trimmed = false;
-  size_t newline_offset = result.find('\n');
-  if (newline_offset != std::string::npos) {
-    trimmed = true;
-    result.resize(newline_offset);
-  }
-  TrimWhitespaceASCII(result, TRIM_ALL, &result);
-
-  const int kMaxSize = 50;
-  if (result.size() > kMaxSize) {
-    trimmed = true;
-    result.resize(kMaxSize);
-  }
-
-  if (trimmed)
-    result.append("...");
-  return result;
-}
 
 // When parsing the result as a value, we may get various types of errors.
 // This creates an error message for this case with an optional nested error
@@ -76,15 +48,6 @@ Err MakeParseErr(const std::string& input,
 }
 
 // Sets the origin of the value and any nested values with the given node.
-void RecursivelySetOrigin(Value* value, const ParseNode* origin) {
-  value->set_origin(origin);
-  if (value->type() == Value::LIST) {
-    std::vector<Value>& list_value = value->list_value();
-    for (size_t i = 0; i < list_value.size(); i++)
-      RecursivelySetOrigin(&list_value[i], origin);
-  }
-}
-
 Value ParseString(const std::string& input,
                   const ParseNode* origin,
                   Err* err) {
@@ -117,9 +80,7 @@ Value ParseString(const std::string& input,
   }
 
   BuildSettings build_settings;
-  Label empty_label;
-  Toolchain toolchain(empty_label);
-  Settings settings(&build_settings, &toolchain, std::string());
+  Settings settings(&build_settings, std::string());
   Scope scope(&settings);
 
   Err nested_err;
@@ -133,7 +94,7 @@ Value ParseString(const std::string& input,
   // made on the stack. If the values are used in an error message in the
   // future, this will crash. Reset the origin of all values to be our
   // containing origin.
-  RecursivelySetOrigin(&result, origin);
+  result.RecursivelySetOrigin(origin);
   return result;
 }
 

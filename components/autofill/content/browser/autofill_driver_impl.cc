@@ -5,17 +5,17 @@
 #include "components/autofill/content/browser/autofill_driver_impl.h"
 
 #include "base/command_line.h"
+#include "base/threading/sequenced_worker_pool.h"
+#include "components/autofill/content/common/autofill_messages.h"
 #include "components/autofill/core/browser/autofill_external_delegate.h"
 #include "components/autofill/core/browser/autofill_manager.h"
 #include "components/autofill/core/browser/autofill_manager_delegate.h"
-#include "components/autofill/core/common/autofill_messages.h"
 #include "components/autofill/core/browser/form_structure.h"
 #include "components/autofill/core/common/autofill_switches.h"
+#include "content/public/browser/browser_context.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_details.h"
-#include "content/public/browser/notification_service.h"
-#include "content/public/browser/notification_source.h"
-#include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/frame_navigate_params.h"
@@ -44,11 +44,6 @@ void AutofillDriverImpl::CreateForWebContentsAndDelegate(
                                                delegate,
                                                app_locale,
                                                enable_download_manager));
-  // Trigger the lazy creation of AutocheckoutWhitelistManagerService, and
-  // schedule a fetch of the Autocheckout whitelist file if it's not already
-  // loaded. This helps ensure that the whitelist will be available by the time
-  // the user navigates to a form on which Autocheckout should be enabled.
-  delegate->GetAutocheckoutWhitelistManager();
 }
 
 // static
@@ -65,25 +60,28 @@ AutofillDriverImpl::AutofillDriverImpl(
     AutofillManager::AutofillDownloadManagerState enable_download_manager)
     : content::WebContentsObserver(web_contents),
       autofill_manager_(new AutofillManager(
-          this, delegate, app_locale, enable_download_manager)) {
-  SetAutofillExternalDelegate(scoped_ptr<AutofillExternalDelegate>(
-      new AutofillExternalDelegate(web_contents, autofill_manager_.get(),
-                                   this)));
-
-  registrar_.Add(this,
-                 content::NOTIFICATION_WEB_CONTENTS_VISIBILITY_CHANGED,
-                 content::Source<content::WebContents>(web_contents));
-  registrar_.Add(
-      this,
-      content::NOTIFICATION_NAV_ENTRY_COMMITTED,
-      content::Source<content::NavigationController>(
-          &(web_contents->GetController())));
+          this, delegate, app_locale, enable_download_manager)),
+      autofill_external_delegate_(autofill_manager_.get(), this),
+      request_autocomplete_manager_(this) {
+  autofill_manager_->SetExternalDelegate(&autofill_external_delegate_);
 }
 
 AutofillDriverImpl::~AutofillDriverImpl() {}
 
+bool AutofillDriverImpl::IsOffTheRecord() const {
+  return web_contents()->GetBrowserContext()->IsOffTheRecord();
+}
+
+net::URLRequestContextGetter* AutofillDriverImpl::GetURLRequestContext() {
+  return web_contents()->GetBrowserContext()->GetRequestContext();
+}
+
 content::WebContents* AutofillDriverImpl::GetWebContents() {
   return web_contents();
+}
+
+base::SequencedWorkerPool* AutofillDriverImpl::GetBlockingPool() {
+  return content::BrowserThread::GetBlockingPool();
 }
 
 bool AutofillDriverImpl::RendererIsAvailable() {
@@ -122,7 +120,7 @@ void AutofillDriverImpl::SendAutofillTypePredictionsToRenderer(
       switches::kShowAutofillTypePredictions))
     return;
 
-  content::RenderViewHost* host = GetWebContents()->GetRenderViewHost();
+  content::RenderViewHost* host = web_contents()->GetRenderViewHost();
   if (!host)
     return;
 
@@ -131,6 +129,25 @@ void AutofillDriverImpl::SendAutofillTypePredictionsToRenderer(
   host->Send(
       new AutofillMsg_FieldTypePredictionsAvailable(host->GetRoutingID(),
                                                     type_predictions));
+}
+
+void AutofillDriverImpl::RendererShouldAcceptDataListSuggestion(
+    const base::string16& value) {
+  if (!RendererIsAvailable())
+    return;
+  content::RenderViewHost* host = web_contents()->GetRenderViewHost();
+  host->Send(new AutofillMsg_AcceptDataListSuggestion(host->GetRoutingID(),
+                                                      value));
+}
+
+void AutofillDriverImpl::RendererShouldAcceptPasswordAutofillSuggestion(
+    const base::string16& username) {
+  if (!RendererIsAvailable())
+    return;
+  content::RenderViewHost* host = web_contents()->GetRenderViewHost();
+  host->Send(
+      new AutofillMsg_AcceptPasswordAutofillSuggestion(host->GetRoutingID(),
+                                                       username));
 }
 
 void AutofillDriverImpl::RendererShouldClearFilledForm() {
@@ -145,6 +162,14 @@ void AutofillDriverImpl::RendererShouldClearPreviewedForm() {
     return;
   content::RenderViewHost* host = web_contents()->GetRenderViewHost();
   host->Send(new AutofillMsg_ClearPreviewedForm(host->GetRoutingID()));
+}
+
+void AutofillDriverImpl::RendererShouldSetNodeText(
+    const base::string16& value) {
+  if (!RendererIsAvailable())
+    return;
+  content::RenderViewHost* host = web_contents()->GetRenderViewHost();
+  host->Send(new AutofillMsg_SetNodeText(host->GetRoutingID(), value));
 }
 
 bool AutofillDriverImpl::OnMessageReceived(const IPC::Message& message) {
@@ -186,14 +211,8 @@ bool AutofillDriverImpl::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_FORWARD(AutofillHostMsg_SetDataList, autofill_manager_.get(),
                         AutofillManager::OnSetDataList)
     IPC_MESSAGE_FORWARD(AutofillHostMsg_RequestAutocomplete,
-                        autofill_manager_.get(),
-                        AutofillManager::OnRequestAutocomplete)
-    IPC_MESSAGE_FORWARD(AutofillHostMsg_AutocheckoutPageCompleted,
-                        autofill_manager_.get(),
-                        AutofillManager::OnAutocheckoutPageCompleted)
-    IPC_MESSAGE_FORWARD(AutofillHostMsg_MaybeShowAutocheckoutBubble,
-                        autofill_manager_.get(),
-                        AutofillManager::OnMaybeShowAutocheckoutBubble)
+                        &request_autocomplete_manager_,
+                        RequestAutocompleteManager::OnRequestAutocomplete)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -206,30 +225,19 @@ void AutofillDriverImpl::DidNavigateMainFrame(
     autofill_manager_->Reset();
 }
 
-void AutofillDriverImpl::SetAutofillExternalDelegate(
-    scoped_ptr<AutofillExternalDelegate> delegate) {
-  autofill_external_delegate_ = delegate.Pass();
-  autofill_manager_->SetExternalDelegate(autofill_external_delegate_.get());
-}
-
 void AutofillDriverImpl::SetAutofillManager(
     scoped_ptr<AutofillManager> manager) {
   autofill_manager_ = manager.Pass();
-  autofill_manager_->SetExternalDelegate(autofill_external_delegate_.get());
+  autofill_manager_->SetExternalDelegate(&autofill_external_delegate_);
 }
 
-void AutofillDriverImpl::Observe(
-    int type,
-    const content::NotificationSource& source,
-    const content::NotificationDetails& details) {
-  if (type == content::NOTIFICATION_WEB_CONTENTS_VISIBILITY_CHANGED) {
-    if (!*content::Details<bool>(details).ptr())
-      autofill_manager_->delegate()->HideAutofillPopup();
-  } else if (type == content::NOTIFICATION_NAV_ENTRY_COMMITTED) {
-    autofill_manager_->delegate()->HideAutofillPopup();
-  } else {
-    NOTREACHED();
-  }
+void AutofillDriverImpl::NavigationEntryCommitted(
+    const content::LoadCommittedDetails& load_details) {
+  autofill_manager_->delegate()->HideAutofillPopup();
+}
+
+void AutofillDriverImpl::WasHidden() {
+  autofill_manager_->delegate()->HideAutofillPopup();
 }
 
 }  // namespace autofill

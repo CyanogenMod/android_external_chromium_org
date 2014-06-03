@@ -12,8 +12,6 @@
 #include "chrome/browser/media_galleries/linux/snapshot_file_details.h"
 #include "content/public/browser/browser_thread.h"
 
-namespace chrome {
-
 namespace {
 
 // File path separator constant.
@@ -180,7 +178,7 @@ MTPDeviceDelegateImplLinux::MTPDeviceDelegateImplLinux(
       weak_ptr_factory_(this) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
   DCHECK(!device_path_.empty());
-  RemoveChars(device_location, kRootPath, &storage_name_);
+  base::RemoveChars(device_location, kRootPath, &storage_name_);
   DCHECK(!storage_name_.empty());
 }
 
@@ -456,5 +454,3 @@ void CreateMTPDeviceAsyncDelegate(
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
   callback.Run(new MTPDeviceDelegateImplLinux(device_location));
 }
-
-}  // namespace chrome

@@ -59,7 +59,7 @@ base::LazyInstance<base::ThreadLocalPointer<RdpClientWindow::WindowHook> >
 // FindWindowEx() this function walks the tree of windows recursively. The walk
 // is done in breadth-first order. The function returns NULL if the child window
 // could not be found.
-HWND FindWindowRecursively(HWND parent, const string16& class_name) {
+HWND FindWindowRecursively(HWND parent, const base::string16& class_name) {
   std::list<HWND> windows;
   windows.push_back(parent);
 
@@ -69,7 +69,7 @@ HWND FindWindowRecursively(HWND parent, const string16& class_name) {
       // See if the window class name matches |class_name|.
       WCHAR name[kMaxWindowClassLength];
       int length = GetClassName(child, name, arraysize(name));
-      if (string16(name, length)  == class_name)
+      if (base::string16(name, length)  == class_name)
         return child;
 
       // Remember the window to look through its children.
@@ -114,7 +114,6 @@ RdpClientWindow::RdpClientWindow(const net::IPEndPoint& server_endpoint,
                                  const std::string& terminal_id,
                                  EventHandler* event_handler)
     : event_handler_(event_handler),
-      screen_size_(SkISize::Make(0, 0)),
       server_endpoint_(server_endpoint),
       terminal_id_(terminal_id) {
 }
@@ -127,7 +126,7 @@ RdpClientWindow::~RdpClientWindow() {
   DCHECK(!client_settings_);
 }
 
-bool RdpClientWindow::Connect(const SkISize& screen_size) {
+bool RdpClientWindow::Connect(const webrtc::DesktopSize& screen_size) {
   DCHECK(!m_hWnd);
 
   screen_size_ = screen_size;

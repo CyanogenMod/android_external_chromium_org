@@ -9,7 +9,6 @@
 namespace activity_log_constants {
 
 // Keys that may be used in the "other" attribute of an Action.
-const char kActionBlockedReason[] = "blocked_reason";
 const char kActionDomVerb[] = "dom_verb";
 const char kActionExtra[] = "extra";
 const char kActionPrerender[] = "prerender";
@@ -20,5 +19,9 @@ const char kActionWebRequest[] = "web_request";
 // let the user know that an extension is manipulating incognito tabs without
 // recording specific data about the pages.
 const char kIncognitoUrl[] = "<incognito>";
+
+// A string used as a placeholder for URLs which have been removed from the
+// argument list and stored to the arg_url field.
+const char kArgUrlPlaceholder[] = "<arg_url>";
 
 }  // namespace activity_log_constants

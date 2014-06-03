@@ -20,6 +20,7 @@
 #include "content/public/browser/browser_thread.h"
 #include "grit/generated_resources.h"
 #include "grit/ui_strings.h"
+#include "ui/aura/root_window.h"
 #include "ui/base/l10n/l10n_util.h"
 
 // These conflict with base/tracked_objects.h, so need to come last.
@@ -55,7 +56,7 @@ class SelectFileDialogImplKDE : public SelectFileDialogImpl {
   // |params| is user data we pass back via the Listener interface.
   virtual void SelectFileImpl(
       Type type,
-      const string16& title,
+      const base::string16& title,
       const base::FilePath& default_path,
       const FileTypeInfo* file_types,
       int file_type_index,
@@ -186,7 +187,7 @@ SelectFileDialogImplKDE::~SelectFileDialogImplKDE() {
 // We ignore |default_extension|.
 void SelectFileDialogImplKDE::SelectFileImpl(
     Type type,
-    const string16& title,
+    const base::string16& title,
     const base::FilePath& default_path,
     const FileTypeInfo* file_types,
     int file_type_index,
@@ -298,8 +299,7 @@ void SelectFileDialogImplKDE::GetKDialogCommandLine(const std::string& type,
   CHECK(command_line);
 
   // Attach to the current Chrome window.
-  GdkWindow* gdk_window = gtk_widget_get_window(GTK_WIDGET((parent)));
-  int window_id = GDK_DRAWABLE_XID(gdk_window);
+  int window_id = parent->GetDispatcher()->host()->GetAcceleratedWidget();
   command_line->AppendSwitchNative(
       desktop_ == base::nix::DESKTOP_ENVIRONMENT_KDE3 ? "--embed" : "--attach",
       base::IntToString(window_id));

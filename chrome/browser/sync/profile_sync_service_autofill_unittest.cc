@@ -21,10 +21,11 @@
 #include "base/synchronization/waitable_event.h"
 #include "base/time/time.h"
 #include "chrome/browser/autofill/personal_data_manager_factory.h"
+#include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
-#include "chrome/browser/signin/token_service_factory.h"
 #include "chrome/browser/sync/abstract_profile_sync_service_test.h"
+#include "chrome/browser/sync/fake_oauth2_token_service.h"
 #include "chrome/browser/sync/glue/autofill_data_type_controller.h"
 #include "chrome/browser/sync/glue/autofill_profile_data_type_controller.h"
 #include "chrome/browser/sync/glue/data_type_controller.h"
@@ -38,7 +39,8 @@
 #include "chrome/browser/webdata/autocomplete_syncable_service.h"
 #include "chrome/browser/webdata/autofill_profile_syncable_service.h"
 #include "chrome/browser/webdata/web_data_service_factory.h"
-#include "components/autofill/core/browser/autofill_common_test.h"
+#include "chrome/test/base/testing_profile.h"
+#include "components/autofill/core/browser/autofill_test_utils.h"
 #include "components/autofill/core/browser/personal_data_manager.h"
 #include "components/autofill/core/browser/webdata/autofill_change.h"
 #include "components/autofill/core/browser/webdata/autofill_entry.h"
@@ -115,12 +117,13 @@ class AutofillTableMock : public AutofillTable {
  public:
   AutofillTableMock() : AutofillTable("en-US") {}
   MOCK_METHOD2(RemoveFormElement,
-               bool(const string16& name, const string16& value));  // NOLINT
+               bool(const base::string16& name,
+                    const base::string16& value));  // NOLINT
   MOCK_METHOD1(GetAllAutofillEntries,
                bool(std::vector<AutofillEntry>* entries));  // NOLINT
   MOCK_METHOD3(GetAutofillTimestamps,
-               bool(const string16& name,  // NOLINT
-                    const string16& value,
+               bool(const base::string16& name,  // NOLINT
+                    const base::string16& value,
                     std::vector<base::Time>* timestamps));
   MOCK_METHOD1(UpdateAutofillEntries,
                bool(const std::vector<AutofillEntry>&));  // NOLINT
@@ -201,12 +204,12 @@ class TokenWebDataServiceFake : public TokenWebData {
   virtual WebDataService::Handle GetAllTokens(
       WebDataServiceConsumer* consumer) OVERRIDE {
     // TODO(tim): It would be nice if WebDataService was injected on
-    // construction of TokenService rather than fetched by Initialize so that
-    // this isn't necessary (we could pass a NULL service). We currently do
-    // return it via EXPECT_CALLs, but without depending on order-of-
-    // initialization (which seems way more fragile) we can't tell which
-    // component is asking at what time, and some components in these Autofill
-    // tests require a WebDataService.
+    // construction of ProfileOAuth2TokenService rather than fetched by
+    // Initialize so that this isn't necessary (we could pass a NULL service).
+    // We currently do return it via EXPECT_CALLs, but without depending on
+    // order-of-initialization (which seems way more fragile) we can't tell
+    // which component is asking at what time, and some components in these
+    // Autofill tests require a WebDataService.
     return 0;
   }
 
@@ -219,7 +222,9 @@ class TokenWebDataServiceFake : public TokenWebData {
 class WebDataServiceFake : public AutofillWebDataService {
  public:
   WebDataServiceFake()
-      : AutofillWebDataService(),
+      : AutofillWebDataService(
+            BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI),
+            BrowserThread::GetMessageLoopProxyForThread(BrowserThread::DB)),
         web_database_(NULL),
         autocomplete_syncable_service_(NULL),
         autofill_profile_syncable_service_(NULL),
@@ -377,7 +382,7 @@ class AbstractAutofillFactory {
  public:
   virtual DataTypeController* CreateDataTypeController(
       ProfileSyncComponentsFactory* factory,
-      ProfileMock* profile,
+      TestingProfile* profile,
       ProfileSyncService* service) = 0;
   virtual void SetExpectation(ProfileSyncComponentsFactoryMock* factory,
                               ProfileSyncService* service,
@@ -390,7 +395,7 @@ class AutofillEntryFactory : public AbstractAutofillFactory {
  public:
   virtual browser_sync::DataTypeController* CreateDataTypeController(
       ProfileSyncComponentsFactory* factory,
-      ProfileMock* profile,
+      TestingProfile* profile,
       ProfileSyncService* service) OVERRIDE {
     return new AutofillDataTypeController(factory, profile, service);
   }
@@ -412,7 +417,7 @@ class AutofillProfileFactory : public AbstractAutofillFactory {
  public:
   virtual browser_sync::DataTypeController* CreateDataTypeController(
       ProfileSyncComponentsFactory* factory,
-      ProfileMock* profile,
+      TestingProfile* profile,
       ProfileSyncService* service) OVERRIDE {
     return new AutofillProfileDataTypeController(factory, profile, service);
   }
@@ -472,12 +477,11 @@ class ProfileSyncServiceAutofillTest
      public syncer::DataTypeDebugInfoListener {
  public:
   // DataTypeDebugInfoListener implementation.
-  virtual void OnSingleDataTypeConfigureComplete(
-      const syncer::DataTypeConfigurationStats& configuration_stats) OVERRIDE {
-    association_stats_ = configuration_stats.association_stats;
-  }
-  virtual void OnConfigureComplete() OVERRIDE {
-    // Do nothing.
+  virtual void OnDataTypeConfigureComplete(
+      const std::vector<syncer::DataTypeConfigurationStats>&
+          configuration_stats) OVERRIDE {
+    ASSERT_EQ(1u, configuration_stats.size());
+    association_stats_ = configuration_stats[0].association_stats;
   }
 
  protected:
@@ -503,7 +507,10 @@ class ProfileSyncServiceAutofillTest
 
   virtual void SetUp() OVERRIDE {
     AbstractProfileSyncServiceTest::SetUp();
-    profile_.reset(new ProfileMock());
+    TestingProfile::Builder builder;
+    builder.AddTestingFactory(ProfileOAuth2TokenServiceFactory::GetInstance(),
+                              FakeOAuth2TokenService::BuildTokenService);
+    profile_ = builder.Build().Pass();
     web_database_.reset(new WebDatabaseFake(&autofill_table_));
     MockWebDataServiceWrapper* wrapper =
         static_cast<MockWebDataServiceWrapper*>(
@@ -521,15 +528,14 @@ class ProfileSyncServiceAutofillTest
     personal_data_manager_ =
         personal_data_manager_service->GetPersonalDataManager();
 
-    token_service_ = static_cast<TokenService*>(
-        TokenServiceFactory::GetInstance()->SetTestingFactoryAndUse(
-            profile_.get(), BuildTokenService));
-    ProfileOAuth2TokenServiceFactory::GetInstance()->SetTestingFactory(
-        profile_.get(), FakeOAuth2TokenService::BuildTokenService);
     EXPECT_CALL(*personal_data_manager_, LoadProfiles()).Times(1);
     EXPECT_CALL(*personal_data_manager_, LoadCreditCards()).Times(1);
 
-    personal_data_manager_->Init(profile_.get());
+    personal_data_manager_->Init(
+        WebDataServiceFactory::GetAutofillWebDataForProfile(
+            profile_.get(), Profile::EXPLICIT_ACCESS),
+        profile_->GetPrefs(),
+        profile_->IsOffTheRecord());
 
     web_data_service_->StartSyncableService();
   }
@@ -587,11 +593,9 @@ class ProfileSyncServiceAutofillTest
     EXPECT_CALL(*personal_data_manager_, IsDataLoaded()).
         WillRepeatedly(Return(true));
 
-     // We need tokens to get the tests going
-    token_service_->IssueAuthTokenForTest(
-        GaiaConstants::kGaiaOAuth2LoginRefreshToken, "oauth2_login_token");
-    token_service_->IssueAuthTokenForTest(
-        GaiaConstants::kSyncService, "token");
+    // We need tokens to get the tests going
+    ProfileOAuth2TokenServiceFactory::GetForProfile(profile_.get())
+        ->UpdateCredentials("test_user@gmail.com", "oauth2_login_token");
 
     sync_service_->RegisterDataTypeController(data_type_controller);
     sync_service_->Initialize();
@@ -757,7 +761,7 @@ class ProfileSyncServiceAutofillTest
   friend class AddAutofillHelper<AutofillProfile>;
   friend class FakeServerUpdater;
 
-  scoped_ptr<ProfileMock> profile_;
+  scoped_ptr<TestingProfile> profile_;
   AutofillTableMock autofill_table_;
   scoped_ptr<WebDatabaseFake> web_database_;
   scoped_refptr<WebDataServiceFake> web_data_service_;
@@ -866,15 +870,14 @@ class FakeServerUpdater : public base::RefCountedThreadSafe<FakeServerUpdater> {
       // Simulates effects of UpdateLocalDataFromServerData
       MutableEntry parent(&trans, GET_BY_SERVER_TAG,
                           syncer::ModelTypeToRootTag(syncer::AUTOFILL));
-      MutableEntry item(&trans, CREATE, syncer::AUTOFILL,
-                        parent.Get(syncer::syncable::ID), tag);
+      MutableEntry item(&trans, CREATE, syncer::AUTOFILL, parent.GetId(), tag);
       ASSERT_TRUE(item.good());
-      item.Put(SPECIFICS, entity_specifics);
-      item.Put(SERVER_SPECIFICS, entity_specifics);
-      item.Put(BASE_VERSION, 1);
+      item.PutSpecifics(entity_specifics);
+      item.PutServerSpecifics(entity_specifics);
+      item.PutBaseVersion(1);
       syncer::syncable::Id server_item_id =
           service_->id_factory()->NewServerId();
-      item.Put(syncer::syncable::ID, server_item_id);
+      item.PutId(server_item_id);
       syncer::syncable::Id new_predecessor;
       ASSERT_TRUE(item.PutPredecessor(new_predecessor));
     }
@@ -924,12 +927,12 @@ namespace {
 bool IncludesField(const AutofillProfile& profile1,
                    const AutofillProfile& profile2,
                    ServerFieldType field_type) {
-  std::vector<string16> values1;
+  std::vector<base::string16> values1;
   profile1.GetRawMultiInfo(field_type, &values1);
-  std::vector<string16> values2;
+  std::vector<base::string16> values2;
   profile2.GetRawMultiInfo(field_type, &values2);
 
-  std::set<string16> values_set;
+  std::set<base::string16> values_set;
   for (size_t i = 0; i < values1.size(); ++i)
     values_set.insert(values1[i]);
   for (size_t i = 0; i < values2.size(); ++i)

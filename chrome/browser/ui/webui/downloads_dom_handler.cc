@@ -30,7 +30,7 @@
 #include "chrome/browser/download/download_query.h"
 #include "chrome/browser/download/download_service.h"
 #include "chrome/browser/download/download_service_factory.h"
-#include "chrome/browser/download/download_util.h"
+#include "chrome/browser/download/drag_download_item.h"
 #include "chrome/browser/extensions/api/downloads/downloads_api.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
@@ -151,7 +151,7 @@ DictionaryValue* CreateDownloadItemValue(
   }
 
   // Keep file names as LTR.
-  string16 file_name =
+  base::string16 file_name =
     download_item->GetFileNameToReportUser().LossyDisplayName();
   file_name = base::i18n::GetDisplayStringInLTRDirectionality(file_name);
   file_value->SetString("file_name", file_name);
@@ -181,31 +181,16 @@ DictionaryValue* CreateDownloadItemValue(
                    content::DOWNLOAD_DANGER_TYPE_DANGEROUS_HOST ||
                download_item->GetDangerType() ==
                    content::DOWNLOAD_DANGER_TYPE_POTENTIALLY_UNWANTED);
-        std::string trial_condition =
-            base::FieldTrialList::FindFullName(download_util::kFinchTrialName);
         const char* danger_type_value =
             GetDangerTypeString(download_item->GetDangerType());
         file_value->SetString("danger_type", danger_type_value);
-        if (!trial_condition.empty()) {
-          base::string16 finch_string;
-          content::DownloadDangerType danger_type =
-              download_item->GetDangerType();
-          if (danger_type == content::DOWNLOAD_DANGER_TYPE_DANGEROUS_URL ||
-              danger_type == content::DOWNLOAD_DANGER_TYPE_DANGEROUS_CONTENT ||
-              danger_type == content::DOWNLOAD_DANGER_TYPE_DANGEROUS_HOST) {
-            finch_string = download_util::AssembleMalwareFinchString(
-                trial_condition, file_name);
-          }
-          file_value->SetString("finch_string", finch_string);
-        }
       } else if (download_item->IsPaused()) {
         file_value->SetString("state", "PAUSED");
       } else {
         file_value->SetString("state", "IN_PROGRESS");
       }
-
       file_value->SetString("progress_status_text",
-          download_util::GetProgressStatusText(download_item));
+                            download_model.GetTabProgressStatusText());
 
       file_value->SetInteger("percent",
           static_cast<int>(download_item->PercentComplete()));
@@ -217,7 +202,7 @@ DictionaryValue* CreateDownloadItemValue(
       file_value->SetString("state", "INTERRUPTED");
 
       file_value->SetString("progress_status_text",
-          download_util::GetProgressStatusText(download_item));
+                            download_model.GetTabProgressStatusText());
 
       file_value->SetInteger("percent",
           static_cast<int>(download_item->PercentComplete()));
@@ -404,7 +389,7 @@ void DownloadsDOMHandler::HandleDrag(const base::ListValue* args) {
     // Enable nested tasks during DnD, while |DragDownload()| blocks.
     base::MessageLoop::ScopedNestableTaskAllower allow(
         base::MessageLoop::current());
-    download_util::DragDownload(file, icon, view);
+    DragDownloadItem(file, icon, view);
   }
 }
 
@@ -483,9 +468,11 @@ void DownloadsDOMHandler::HandleClearAll(const base::ListValue* args) {
 void DownloadsDOMHandler::HandleOpenDownloadsFolder(
     const base::ListValue* args) {
   CountDownloadsDOMEvents(DOWNLOADS_DOM_EVENT_OPEN_FOLDER);
-  if (main_notifier_.GetManager()) {
-    platform_util::OpenItem(DownloadPrefs::FromDownloadManager(
-        main_notifier_.GetManager())->DownloadPath());
+  content::DownloadManager* manager = main_notifier_.GetManager();
+  if (manager) {
+    platform_util::OpenItem(
+        Profile::FromBrowserContext(manager->GetBrowserContext()),
+        DownloadPrefs::FromDownloadManager(manager)->DownloadPath());
   }
 }
 

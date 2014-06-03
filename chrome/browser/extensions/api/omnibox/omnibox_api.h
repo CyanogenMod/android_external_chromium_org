@@ -13,8 +13,9 @@
 #include "base/strings/string16.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/extensions/api/profile_keyed_api_factory.h"
-#include "chrome/browser/extensions/extension_function.h"
+#include "chrome/browser/extensions/chrome_extension_function.h"
 #include "chrome/browser/extensions/extension_icon_manager.h"
+#include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/common/extensions/api/omnibox.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
@@ -70,7 +71,7 @@ class ExtensionOmniboxEventRouter {
   DISALLOW_COPY_AND_ASSIGN(ExtensionOmniboxEventRouter);
 };
 
-class OmniboxSendSuggestionsFunction : public SyncExtensionFunction {
+class OmniboxSendSuggestionsFunction : public ChromeSyncExtensionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("omnibox.sendSuggestions", OMNIBOX_SENDSUGGESTIONS)
 
@@ -98,6 +99,9 @@ class OmniboxAPI : public ProfileKeyedAPI,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
+  // BrowserContextKeyedService implementation.
+  virtual void Shutdown() OVERRIDE;
+
   // Returns the icon to display in the omnibox for the given extension.
   gfx::Image GetOmniboxIcon(const std::string& extension_id);
 
@@ -109,6 +113,8 @@ class OmniboxAPI : public ProfileKeyedAPI,
   friend class ProfileKeyedAPIFactory<OmniboxAPI>;
 
   typedef std::set<const Extension*> PendingExtensions;
+
+  void OnTemplateURLsLoaded();
 
   // ProfileKeyedAPI implementation.
   static const char* service_name() {
@@ -130,13 +136,15 @@ class OmniboxAPI : public ProfileKeyedAPI,
   ExtensionIconManager omnibox_icon_manager_;
   ExtensionIconManager omnibox_popup_icon_manager_;
 
+  scoped_ptr<TemplateURLService::Subscription> template_url_sub_;
+
   DISALLOW_COPY_AND_ASSIGN(OmniboxAPI);
 };
 
 template <>
 void ProfileKeyedAPIFactory<OmniboxAPI>::DeclareFactoryDependencies();
 
-class OmniboxSetDefaultSuggestionFunction : public SyncExtensionFunction {
+class OmniboxSetDefaultSuggestionFunction : public ChromeSyncExtensionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("omnibox.setDefaultSuggestion",
                              OMNIBOX_SETDEFAULTSUGGESTION)
@@ -153,7 +161,7 @@ class OmniboxSetDefaultSuggestionFunction : public SyncExtensionFunction {
 void ApplyDefaultSuggestionForExtensionKeyword(
     Profile* profile,
     const TemplateURL* keyword,
-    const string16& remaining_input,
+    const base::string16& remaining_input,
     AutocompleteMatch* match);
 
 // This function converts style information populated by the JSON schema

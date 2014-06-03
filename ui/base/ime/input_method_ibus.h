@@ -12,9 +12,8 @@
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "chromeos/dbus/ibus/ibus_input_context_client.h"
-#include "chromeos/ime/ibus_daemon_controller.h"
-#include "ui/base/ime/character_composer.h"
+#include "ui/base/ime/chromeos/character_composer.h"
+#include "ui/base/ime/chromeos/ibus_bridge.h"
 #include "ui/base/ime/composition_text.h"
 #include "ui/base/ime/input_method_base.h"
 
@@ -32,8 +31,7 @@ namespace ui {
 // A ui::InputMethod implementation based on IBus.
 class UI_EXPORT InputMethodIBus
     : public InputMethodBase,
-      public chromeos::IBusInputContextHandlerInterface,
-      public chromeos::IBusDaemonController::Observer {
+      public chromeos::IBusInputContextHandlerInterface {
  public:
   explicit InputMethodIBus(internal::InputMethodDelegate* delegate);
   virtual ~InputMethodIBus();
@@ -43,10 +41,7 @@ class UI_EXPORT InputMethodIBus
   virtual void OnBlur() OVERRIDE;
   virtual bool OnUntranslatedIMEMessage(const base::NativeEvent& event,
                                         NativeEventResult* result) OVERRIDE;
-  virtual void Init(bool focused) OVERRIDE;
-  virtual bool DispatchKeyEvent(
-      const base::NativeEvent& native_key_event) OVERRIDE;
-  virtual bool DispatchFabricatedKeyEvent(const ui::KeyEvent& event) OVERRIDE;
+  virtual bool DispatchKeyEvent(const ui::KeyEvent& event) OVERRIDE;
   virtual void OnTextInputTypeChanged(const TextInputClient* client) OVERRIDE;
   virtual void OnCaretBoundsChanged(const TextInputClient* client) OVERRIDE;
   virtual void CancelComposition(const TextInputClient* client) OVERRIDE;
@@ -57,40 +52,19 @@ class UI_EXPORT InputMethodIBus
   virtual bool IsCandidatePopupOpen() const OVERRIDE;
 
  protected:
-  // chromeos::IBusDaemonController::Observer overrides.
-  virtual void OnConnected() OVERRIDE;
-  virtual void OnDisconnected() OVERRIDE;
-
   // Converts |text| into CompositionText.
   void ExtractCompositionText(const chromeos::IBusText& text,
                               uint32 cursor_position,
                               CompositionText* out_composition) const;
 
   // Process a key returned from the input method.
-  virtual void ProcessKeyEventPostIME(const base::NativeEvent& native_key_event,
-                                      uint32 ibus_state,
+  virtual void ProcessKeyEventPostIME(const ui::KeyEvent& event,
                                       bool handled);
-
-  // Converts |native_event| to ibus representation.
-  virtual void IBusKeyEventFromNativeKeyEvent(
-      const base::NativeEvent& native_event,
-      uint32* ibus_keyval,
-      uint32* ibus_keycode,
-      uint32* ibus_state);
 
   // Resets context and abandon all pending results and key events.
   void ResetContext();
 
  private:
-  enum InputContextState {
-    // The input context is not working.
-    INPUT_CONTEXT_STOP,
-    // The input context is waiting for CreateInputContext reply from
-    // ibus-daemon.
-    INPUT_CONTEXT_WAIT_CREATE_INPUT_CONTEXT_RESPONSE,
-    // The input context is working and ready to communicate with ibus-daemon.
-    INPUT_CONTEXT_RUNNING,
-  };
   class PendingKeyEvent;
 
   // Overridden from InputMethodBase:
@@ -98,15 +72,6 @@ class UI_EXPORT InputMethodIBus
                                          TextInputClient* focused) OVERRIDE;
   virtual void OnDidChangeFocusedClient(TextInputClient* focused_before,
                                         TextInputClient* focused) OVERRIDE;
-
-  // Creates context asynchronously.
-  void CreateContext();
-
-  // Sets necessary signal handlers.
-  void SetUpSignalHandlers();
-
-  // Destroys context.
-  void DestroyContext();
 
   // Asks the client to confirm current composition text.
   void ConfirmCompositionText();
@@ -117,19 +82,14 @@ class UI_EXPORT InputMethodIBus
 
   // Processes a key event that was already filtered by the input method.
   // A VKEY_PROCESSKEY may be dispatched to the focused View.
-  void ProcessFilteredKeyPressEvent(const base::NativeEvent& native_key_event);
+  void ProcessFilteredKeyPressEvent(const ui::KeyEvent& event);
 
   // Processes a key event that was not filtered by the input method.
-  void ProcessUnfilteredKeyPressEvent(const base::NativeEvent& native_key_event,
-                                      uint32 ibus_state);
-  void ProcessUnfilteredFabricatedKeyPressEvent(EventType type,
-                                                KeyboardCode key_code,
-                                                int event_flags);
+  void ProcessUnfilteredKeyPressEvent(const ui::KeyEvent& event);
 
   // Sends input method result caused by the given key event to the focused text
   // input client.
-  void ProcessInputMethodResult(const base::NativeEvent& native_key_event,
-                                bool filtered);
+  void ProcessInputMethodResult(const ui::KeyEvent& event, bool filtered);
 
   // Checks if the pending input method result needs inserting into the focused
   // text input client as a single character.
@@ -142,50 +102,27 @@ class UI_EXPORT InputMethodIBus
   // focus, the text input type is changed or we are destroyed.
   void AbandonAllPendingKeyEvents();
 
-  // Releases context focus and confirms the composition text. Then destroy
-  // object proxy.
-  void ResetInputContext();
-
-  // Returns true if the connection to ibus-daemon is established.
-  bool IsConnected();
-
-  // Returns true if the input context is ready to use.
-  bool IsContextReady();
-
   // Passes keyevent and executes character composition if necessary. Returns
   // true if character composer comsumes key event.
-  bool ExecuteCharacterComposer(uint32 ibus_keyval,
-                                uint32 ibus_keycode,
-                                uint32 ibus_state);
+  bool ExecuteCharacterComposer(const ui::KeyEvent& event);
 
   // chromeos::IBusInputContextHandlerInterface overrides:
-  virtual void CommitText(const chromeos::IBusText& text) OVERRIDE;
-  virtual void ForwardKeyEvent(uint32 keyval,
-                               uint32 keycode,
-                               uint32 state) OVERRIDE;
-  virtual void ShowPreeditText() OVERRIDE;
-  virtual void HidePreeditText() OVERRIDE;
+  virtual void CommitText(const std::string& text) OVERRIDE;
   virtual void UpdatePreeditText(const chromeos::IBusText& text,
                                  uint32 cursor_pos,
                                  bool visible) OVERRIDE;
   virtual void DeleteSurroundingText(int32 offset, uint32 length) OVERRIDE;
 
-  void CreateInputContextDone(const dbus::ObjectPath& object_path);
-  void CreateInputContextFail();
-  void ProcessKeyEventDone(uint32 id, XEvent* xevent,
-                           uint32 ibus_keyval, uint32 ibus_keycode,
-                           uint32 ibus_state, bool is_handled);
+  // Hides the composition text.
+  void HidePreeditText();
+
+  // Callback function for IBusEngineHandlerInterface::ProcessKeyEvent.
+  void ProcessKeyEventDone(uint32 id, ui::KeyEvent* event, bool is_handled);
 
   // All pending key events. Note: we do not own these object, we just save
   // pointers to these object so that we can abandon them when necessary.
   // They will be deleted in ProcessKeyEventDone().
   std::set<uint32> pending_key_events_;
-
-  // Represents input context's state.
-  InputContextState input_context_state_;
-
-  // The count of CreateInputContext message failure.
-  int create_input_context_fail_count_;
 
   // Pending composition text generated by the current pending key event.
   // It'll be sent to the focused text input client as soon as we receive the
@@ -198,7 +135,7 @@ class UI_EXPORT InputMethodIBus
   string16 result_text_;
 
   string16 previous_surrounding_text_;
-  ui::Range previous_selection_range_;
+  gfx::Range previous_selection_range_;
 
   // Indicates if input context is focused or not.
   bool context_focused_;
@@ -219,6 +156,8 @@ class UI_EXPORT InputMethodIBus
   // An object to compose a character from a sequence of key presses
   // including dead key etc.
   CharacterComposer character_composer_;
+
+  TextInputType previous_textinput_type_;
 
   // Used for making callbacks.
   base::WeakPtrFactory<InputMethodIBus> weak_ptr_factory_;

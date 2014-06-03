@@ -14,7 +14,6 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/translate_internals/translate_internals_handler.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/translate/language_detection_util.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
@@ -38,7 +37,7 @@ void GetLanguages(base::DictionaryValue* dict) {
   for (std::vector<std::string>::iterator it = language_codes.begin();
        it != language_codes.end(); ++it) {
     const std::string& lang_code = *it;
-    string16 lang_name =
+    base::string16 lang_name =
         l10n_util::GetDisplayNameForLocale(lang_code, app_locale, false);
     dict->SetString(lang_code, lang_name);
   }
@@ -61,12 +60,16 @@ content::WebUIDataSource* CreateTranslateInternalsHTMLSource() {
     source->AddString(key, value);
   }
 
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  bool enable_translate_settings =
-      command_line.HasSwitch(switches::kEnableTranslateSettings);
-  source->AddBoolean("enable-translate-settings", enable_translate_settings);
-
-  std::string cld_version = LanguageDetectionUtil::GetCLDVersion();
+  std::string cld_version = "";
+  // The version strings are hardcoded here to avoid linking with the CLD
+  // library, see http://crbug.com/297777.
+#if CLD_VERSION==1
+  cld_version = "1.6";
+#elif CLD_VERSION==2
+  cld_version = "2";
+#else
+  NOTREACHED();
+#endif
   source->AddString("cld-version", cld_version);
 
   return source;

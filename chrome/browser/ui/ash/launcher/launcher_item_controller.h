@@ -6,10 +6,13 @@
 #define CHROME_BROWSER_UI_ASH_LAUNCHER_LAUNCHER_ITEM_CONTROLLER_H_
 
 #include "ash/launcher/launcher_types.h"
+#include "ash/shelf/shelf_item_delegate.h"
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_vector.h"
 #include "base/strings/string16.h"
+#include "chrome/browser/ui/ash/launcher/chrome_launcher_types.h"
+#include "ui/events/event.h"
 
 class ChromeLauncherController;
 class ChromeLauncherAppMenuItem;
@@ -25,14 +28,13 @@ class WebContents;
 }
 
 // LauncherItemController is used by ChromeLauncherController to track one
-// or more windows associated with a launcher item.
-class LauncherItemController {
+// or more windows associated with a shelf item.
+class LauncherItemController : public ash::ShelfItemDelegate {
  public:
   enum Type {
     TYPE_APP,
     TYPE_APP_PANEL,
     TYPE_SHORTCUT,
-    TYPE_TABBED,
     TYPE_WINDOWED_APP
   };
 
@@ -45,7 +47,7 @@ class LauncherItemController {
   ash::LauncherID launcher_id() const { return launcher_id_; }
   void set_launcher_id(ash::LauncherID id) { launcher_id_ = id; }
   virtual const std::string& app_id() const;
-  ChromeLauncherController* launcher_controller() {
+  ChromeLauncherController* launcher_controller() const {
     return launcher_controller_;
   }
 
@@ -62,12 +64,6 @@ class LauncherItemController {
     image_set_by_controller_ = image_set_by_controller;
   }
 
-  // Returns the title for this item.
-  virtual string16 GetTitle() = 0;
-
-  // Returns true if this item controls |window|.
-  virtual bool HasWindow(aura::Window* window) const = 0;
-
   // Returns true if this item is open.
   virtual bool IsOpen() const = 0;
 
@@ -75,29 +71,15 @@ class LauncherItemController {
   virtual bool IsVisible() const = 0;
 
   // Launches a new instance of the app associated with this item.
-  virtual void Launch(int event_flags) = 0;
+  virtual void Launch(ash::LaunchSource source, int event_flags) = 0;
 
   // Shows and activates the most-recently-active window associated with the
   // item, or launches the item if it is not currently open.
-  virtual void Activate() = 0;
+  // Returns true when a new item got created.
+  virtual bool Activate(ash::LaunchSource source) = 0;
 
   // Closes all windows associated with this item.
   virtual void Close() = 0;
-
-  // Indicates that the item at |index| has changed from its previous value.
-  virtual void LauncherItemChanged(int model_index,
-                                   const ash::LauncherItem& old_item) = 0;
-
-  // Called when the item is clicked. The behavior varies by the number of
-  // windows associated with the item:
-  // * One window: toggles the minimize state.
-  // * Multiple windows: cycles the active window.
-  // The |event| is dispatched by a view, therefore the type of the
-  // event's target is |views::View|.
-  virtual void Clicked(const ui::Event& event) = 0;
-
-  // Called when the controlled item is removed from the launcher.
-  virtual void OnRemoved() = 0;
 
   // Called to retrieve the list of running applications.
   virtual ChromeLauncherAppMenuItems GetApplicationList(int event_flags) = 0;
@@ -108,7 +90,7 @@ class LauncherItemController {
  protected:
   // Helper function to return the title associated with |app_id_|.
   // Returns an empty title if no matching extension can be found.
-  string16 GetAppTitle() const;
+  base::string16 GetAppTitle() const;
 
  private:
   const Type type_;

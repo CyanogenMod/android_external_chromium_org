@@ -6,6 +6,7 @@
 #include "base/format_macros.h"
 #include "base/memory/scoped_vector.h"
 #include "base/message_loop/message_loop.h"
+#include "base/metrics/field_trial.h"
 #include "base/strings/stringprintf.h"
 #include "base/time/time.h"
 #include "chrome/browser/prerender/prerender_contents.h"
@@ -282,7 +283,8 @@ class PrerenderTest : public testing::Test {
                         &profile_, prerender_tracker())),
                     prerender_link_manager_(
                         new PrerenderLinkManager(prerender_manager_.get())),
-                    last_prerender_id_(0) {
+                    last_prerender_id_(0),
+                    field_trial_list_(NULL) {
     // Enable omnibox prerendering.
     CommandLine::ForCurrentProcess()->AppendSwitchASCII(
         switches::kPrerenderFromOmnibox,
@@ -353,6 +355,7 @@ class PrerenderTest : public testing::Test {
   scoped_ptr<UnitTestPrerenderManager> prerender_manager_;
   scoped_ptr<PrerenderLinkManager> prerender_link_manager_;
   int last_prerender_id_;
+  base::FieldTrialList field_trial_list_;
 };
 
 TEST_F(PrerenderTest, FoundTest) {
@@ -497,6 +500,38 @@ TEST_F(PrerenderTest, LinkManagerNavigateAwayNearExpiry) {
   prerender_manager()->AdvanceTimeTicks(second_advance);
   EXPECT_EQ(null, prerender_manager()->FindEntry(url));
 }
+
+// When the user navigates away from a page, and then launches a new prerender,
+// the new prerender should preempt the abandoned prerender even if the
+// abandoned prerender hasn't expired.
+TEST_F(PrerenderTest, LinkManagerNavigateAwayLaunchAnother) {
+  const TimeDelta time_to_live = TimeDelta::FromSeconds(300);
+  const TimeDelta abandon_time_to_live = TimeDelta::FromSeconds(20);
+  const TimeDelta test_advance = TimeDelta::FromSeconds(5);
+  ASSERT_LT(test_advance, time_to_live);
+  ASSERT_GT(abandon_time_to_live, test_advance);
+
+  prerender_manager()->mutable_config().time_to_live = time_to_live;
+  prerender_manager()->mutable_config().abandon_time_to_live =
+      abandon_time_to_live;
+
+  GURL url("http://example.com");
+  prerender_manager()->CreateNextPrerenderContents(url, FINAL_STATUS_CANCELLED);
+  EXPECT_TRUE(AddSimplePrerender(url));
+  prerender_link_manager()->OnAbandonPrerender(kDefaultChildId,
+                                               last_prerender_id());
+
+  prerender_manager()->AdvanceTimeTicks(test_advance);
+
+  GURL second_url("http://example2.com");
+  DummyPrerenderContents* second_prerender_contents =
+      prerender_manager()->CreateNextPrerenderContents(
+          second_url, FINAL_STATUS_MANAGER_SHUTDOWN);
+  EXPECT_TRUE(AddSimplePrerender(second_url));
+  EXPECT_EQ(second_prerender_contents,
+            prerender_manager()->FindEntry(second_url));
+}
+
 
 // Make sure that if we prerender more requests than we support, that we launch
 // them in the order given up until we reach MaxConcurrency, at which point we
@@ -650,7 +685,7 @@ TEST_F(PrerenderTest, PendingPrerenderTest) {
   scoped_ptr<PrerenderHandle> pending_prerender_handle(
       prerender_manager()->AddPrerenderFromLinkRelPrerender(
           child_id, route_id, pending_url,
-          Referrer(url, WebKit::WebReferrerPolicyDefault), kSize));
+          Referrer(url, blink::WebReferrerPolicyDefault), kSize));
   CHECK(pending_prerender_handle.get());
   EXPECT_FALSE(pending_prerender_handle->IsPrerendering());
 
@@ -687,7 +722,7 @@ TEST_F(PrerenderTest, InvalidPendingPrerenderTest) {
   scoped_ptr<PrerenderHandle> pending_prerender_handle(
       prerender_manager()->AddPrerenderFromLinkRelPrerender(
           child_id, route_id, pending_url,
-          Referrer(url, WebKit::WebReferrerPolicyDefault), kSize));
+          Referrer(url, blink::WebReferrerPolicyDefault), kSize));
   DCHECK(pending_prerender_handle.get());
   EXPECT_FALSE(pending_prerender_handle->IsPrerendering());
 
@@ -715,7 +750,7 @@ TEST_F(PrerenderTest, CancelPendingPrerenderTest) {
   scoped_ptr<PrerenderHandle> pending_prerender_handle(
       prerender_manager()->AddPrerenderFromLinkRelPrerender(
           child_id, route_id, pending_url,
-          Referrer(url, WebKit::WebReferrerPolicyDefault), kSize));
+          Referrer(url, blink::WebReferrerPolicyDefault), kSize));
   CHECK(pending_prerender_handle.get());
   EXPECT_FALSE(pending_prerender_handle->IsPrerendering());
 
@@ -1418,6 +1453,34 @@ TEST_F(PrerenderTest, LinkManagerExpireRevealingLaunch) {
   EXPECT_EQ(null, prerender_manager()->FindEntry(first_url));
   EXPECT_EQ(second_prerender_contents,
             prerender_manager()->FindAndUseEntry(second_url));
+}
+
+TEST_F(PrerenderTest, InstantSearchNotAllowedWhenDisabled) {
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
+      "EmbeddedSearch",
+      "Group82 espv:8 use_cacheable_ntp:1 prefetch_results:1"));
+  prerender_manager()->set_enabled(false);
+  EXPECT_FALSE(prerender_manager()->AddPrerenderForInstant(
+      GURL("http://www.example.com/instant_search"), NULL, gfx::Size()));
+}
+
+TEST_F(PrerenderTest, PrerenderContentsForInstantSearch) {
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
+      "EmbeddedSearch",
+      "Group82 espv:8 use_cacheable_ntp:1 prefetch_results:1"));
+  GURL url("http://www.example.com/instant_search");
+  DummyPrerenderContents* prerender_contents =
+      prerender_manager()->CreateNextPrerenderContents(url, ORIGIN_INSTANT,
+                                                       FINAL_STATUS_USED);
+  scoped_ptr<PrerenderHandle> prerender_handle(
+      prerender_manager()->AddPrerenderForInstant(url, NULL, kSize));
+  CHECK(prerender_handle.get());
+  EXPECT_TRUE(prerender_handle->IsPrerendering());
+  EXPECT_TRUE(prerender_contents->prerendering_has_started());
+  EXPECT_EQ(prerender_contents, prerender_handle->contents());
+  EXPECT_EQ(ORIGIN_INSTANT, prerender_handle->contents()->origin());
+  ASSERT_EQ(prerender_contents, prerender_manager()->FindAndUseEntry(url));
+  EXPECT_FALSE(prerender_handle->IsPrerendering());
 }
 
 }  // namespace prerender

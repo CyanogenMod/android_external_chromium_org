@@ -5,7 +5,6 @@
 #include "ash/shell.h"
 #include "ash/shell_window_ids.h"
 #include "ash/test/ash_test_base.h"
-#include "ash/wm/property_util.h"
 #include "ash/wm/window_properties.h"
 #include "ash/wm/window_util.h"
 #include "ui/aura/client/aura_constants.h"
@@ -51,7 +50,7 @@ TEST_F(StackingControllerTest, TransientParent) {
   scoped_ptr<Window> w1(CreateTestWindow());
   w2->AddTransientChild(w1.get());
   w1->SetBounds(gfx::Rect(10, 11, 250, 251));
-  SetDefaultParentByPrimaryRootWindow(w1.get());
+  ParentWindowInPrimaryRootWindow(w1.get());
   w1->Show();
   wm::ActivateWindow(w1.get());
 

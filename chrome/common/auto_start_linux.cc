@@ -33,7 +33,7 @@ bool AutoStart::AddApplication(const std::string& autostart_filename,
   scoped_ptr<base::Environment> environment(base::Environment::Create());
   base::FilePath autostart_directory = GetAutostartDirectory(environment.get());
   if (!base::DirectoryExists(autostart_directory) &&
-      !file_util::CreateDirectory(autostart_directory)) {
+      !base::CreateDirectory(autostart_directory)) {
     return false;
   }
 
@@ -70,7 +70,7 @@ bool AutoStart::GetAutostartFileContents(
   base::FilePath autostart_directory = GetAutostartDirectory(environment.get());
   base::FilePath autostart_file =
       autostart_directory.Append(autostart_filename);
-  return file_util::ReadFileToString(autostart_file, contents);
+  return base::ReadFileToString(autostart_file, contents);
 }
 
 bool AutoStart::GetAutostartFileValue(const std::string& autostart_filename,

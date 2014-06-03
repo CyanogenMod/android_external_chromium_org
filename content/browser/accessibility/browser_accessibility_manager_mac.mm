@@ -31,87 +31,108 @@ BrowserAccessibilityManagerMac::BrowserAccessibilityManagerMac(
 AccessibilityNodeData BrowserAccessibilityManagerMac::GetEmptyDocument() {
   AccessibilityNodeData empty_document;
   empty_document.id = 0;
-  empty_document.role = AccessibilityNodeData::ROLE_ROOT_WEB_AREA;
+  empty_document.role = blink::WebAXRoleRootWebArea;
   empty_document.state =
-      1 << AccessibilityNodeData::STATE_READONLY;
+      1 << blink::WebAXStateReadonly;
   return empty_document;
 }
 
 void BrowserAccessibilityManagerMac::NotifyAccessibilityEvent(
-    int type,
+    blink::WebAXEvent event_type,
     BrowserAccessibility* node) {
   if (!node->IsNative())
     return;
 
   // Refer to AXObjectCache.mm (webkit).
   NSString* event_id = @"";
-  switch (type) {
-    case AccessibilityNotificationActiveDescendantChanged:
-      if (node->role() == AccessibilityNodeData::ROLE_TREE)
+  switch (event_type) {
+    case blink::WebAXEventActiveDescendantChanged:
+      if (node->role() == blink::WebAXRoleTree)
         event_id = NSAccessibilitySelectedRowsChangedNotification;
       else
         event_id = NSAccessibilityFocusedUIElementChangedNotification;
       break;
-    case AccessibilityNotificationAlert:
+    case blink::WebAXEventAlert:
       // Not used on Mac.
       return;
-    case AccessibilityNotificationBlur:
+    case blink::WebAXEventBlur:
       // A no-op on Mac.
       return;
-    case AccessibilityNotificationCheckStateChanged:
+    case blink::WebAXEventCheckedStateChanged:
       // Not used on Mac.
       return;
-    case AccessibilityNotificationChildrenChanged:
+    case blink::WebAXEventChildrenChanged:
       // TODO(dtseng): no clear equivalent on Mac.
       return;
-    case AccessibilityNotificationFocusChanged:
+    case blink::WebAXEventFocus:
       event_id = NSAccessibilityFocusedUIElementChangedNotification;
       break;
-    case AccessibilityNotificationLayoutComplete:
+    case blink::WebAXEventLayoutComplete:
       event_id = @"AXLayoutComplete";
       break;
-    case AccessibilityNotificationLiveRegionChanged:
+    case blink::WebAXEventLiveRegionChanged:
       event_id = @"AXLiveRegionChanged";
       break;
-    case AccessibilityNotificationLoadComplete:
+    case blink::WebAXEventLoadComplete:
       event_id = @"AXLoadComplete";
       break;
-    case AccessibilityNotificationMenuListValueChanged:
+    case blink::WebAXEventMenuListValueChanged:
       // Not used on Mac.
       return;
-    case AccessibilityNotificationObjectShow:
+    case blink::WebAXEventShow:
       // Not used on Mac.
       return;
-    case AccessibilityNotificationObjectHide:
+    case blink::WebAXEventHide:
       // Not used on Mac.
       return;
-    case AccessibilityNotificationRowCountChanged:
+    case blink::WebAXEventRowCountChanged:
       event_id = NSAccessibilityRowCountChangedNotification;
       break;
-    case AccessibilityNotificationRowCollapsed:
+    case blink::WebAXEventRowCollapsed:
       event_id = @"AXRowCollapsed";
       break;
-    case AccessibilityNotificationRowExpanded:
+    case blink::WebAXEventRowExpanded:
       event_id = @"AXRowExpanded";
       break;
-    case AccessibilityNotificationScrolledToAnchor:
+    case blink::WebAXEventScrolledToAnchor:
       // Not used on Mac.
       return;
-    case AccessibilityNotificationSelectedChildrenChanged:
+    case blink::WebAXEventSelectedChildrenChanged:
       event_id = NSAccessibilitySelectedChildrenChangedNotification;
       break;
-    case AccessibilityNotificationSelectedTextChanged:
+    case blink::WebAXEventSelectedTextChanged:
       event_id = NSAccessibilitySelectedTextChangedNotification;
       break;
-    case AccessibilityNotificationTextInserted:
+    case blink::WebAXEventTextInserted:
       // Not used on Mac.
       return;
-    case AccessibilityNotificationTextRemoved:
+    case blink::WebAXEventTextRemoved:
       // Not used on Mac.
       return;
-    case AccessibilityNotificationValueChanged:
+    case blink::WebAXEventValueChanged:
       event_id = NSAccessibilityValueChangedNotification;
       break;
+    case blink::WebAXEventAriaAttributeChanged:
+      // Not used on Mac.
+      return;
+    case blink::WebAXEventAutocorrectionOccured:
+      // Not used on Mac.
+      return;
+    case blink::WebAXEventInvalidStatusChanged:
+      // Not used on Mac.
+      return;
+    case blink::WebAXEventLocationChanged:
+      // Not used on Mac.
+      return;
+    case blink::WebAXEventMenuListItemSelected:
+      // Not used on Mac.
+      return;
+    case blink::WebAXEventTextChanged:
+      // Not used on Mac.
+      return;
+    default:
+      LOG(WARNING) << "Unknown accessibility event: " << event_type;
+      return;
   }
   BrowserAccessibilityCocoa* native_node = node->ToBrowserAccessibilityCocoa();
   DCHECK(native_node);

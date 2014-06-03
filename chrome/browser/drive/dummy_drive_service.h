@@ -6,7 +6,7 @@
 #define CHROME_BROWSER_DRIVE_DUMMY_DRIVE_SERVICE_H_
 
 #include "chrome/browser/drive/drive_service_interface.h"
-#include "chrome/browser/google_apis/auth_service_interface.h"
+#include "google_apis/drive/auth_service_interface.h"
 
 namespace drive {
 
@@ -18,12 +18,11 @@ class DummyDriveService : public DriveServiceInterface {
   virtual ~DummyDriveService();
 
   // DriveServiceInterface Overrides
-  virtual void Initialize() OVERRIDE;
+  virtual void Initialize(const std::string& account_id) OVERRIDE;
   virtual void AddObserver(DriveServiceObserver* observer) OVERRIDE;
   virtual void RemoveObserver(DriveServiceObserver* observer) OVERRIDE;
   virtual bool CanSendRequest() const OVERRIDE;
-  virtual std::string CanonicalizeResourceId(
-      const std::string& resource_id) const OVERRIDE;
+  virtual ResourceIdCanonicalizer GetResourceIdCanonicalizer() const OVERRIDE;
   virtual bool HasAccessToken() const OVERRIDE;
   virtual void RequestAccessToken(
       const google_apis::AuthStatusCallback& callback) OVERRIDE;
@@ -46,8 +45,11 @@ class DummyDriveService : public DriveServiceInterface {
   virtual google_apis::CancelCallback GetChangeList(
       int64 start_changestamp,
       const google_apis::GetResourceListCallback& callback) OVERRIDE;
-  virtual google_apis::CancelCallback ContinueGetResourceList(
-      const GURL& override_url,
+  virtual google_apis::CancelCallback GetRemainingChangeList(
+      const GURL& next_link,
+      const google_apis::GetResourceListCallback& callback) OVERRIDE;
+  virtual google_apis::CancelCallback GetRemainingFileList(
+      const GURL& next_link,
       const google_apis::GetResourceListCallback& callback) OVERRIDE;
   virtual google_apis::CancelCallback GetResourceEntry(
       const std::string& resource_id,
@@ -57,12 +59,15 @@ class DummyDriveService : public DriveServiceInterface {
       const GURL& embed_origin,
       const google_apis::GetShareUrlCallback& callback) OVERRIDE;
   virtual google_apis::CancelCallback GetAboutResource(
-      const google_apis::GetAboutResourceCallback& callback) OVERRIDE;
+      const google_apis::AboutResourceCallback& callback) OVERRIDE;
   virtual google_apis::CancelCallback GetAppList(
-      const google_apis::GetAppListCallback& callback) OVERRIDE;
+      const google_apis::AppListCallback& callback) OVERRIDE;
   virtual google_apis::CancelCallback DeleteResource(
       const std::string& resource_id,
       const std::string& etag,
+      const google_apis::EntryActionCallback& callback) OVERRIDE;
+  virtual google_apis::CancelCallback TrashResource(
+      const std::string& resource_id,
       const google_apis::EntryActionCallback& callback) OVERRIDE;
   virtual google_apis::CancelCallback DownloadFile(
       const base::FilePath& local_cache_path,
@@ -74,20 +79,19 @@ class DummyDriveService : public DriveServiceInterface {
       const std::string& resource_id,
       const std::string& parent_resource_id,
       const std::string& new_title,
+      const base::Time& last_modified,
       const google_apis::GetResourceEntryCallback& callback) OVERRIDE;
-  virtual google_apis::CancelCallback CopyHostedDocument(
+  virtual google_apis::CancelCallback UpdateResource(
       const std::string& resource_id,
+      const std::string& parent_resource_id,
       const std::string& new_title,
+      const base::Time& last_modified,
+      const base::Time& last_viewed_by_me,
       const google_apis::GetResourceEntryCallback& callback) OVERRIDE;
   virtual google_apis::CancelCallback RenameResource(
       const std::string& resource_id,
       const std::string& new_title,
       const google_apis::EntryActionCallback& callback) OVERRIDE;
-  virtual google_apis::CancelCallback TouchResource(
-      const std::string& resource_id,
-      const base::Time& modified_date,
-      const base::Time& last_viewed_by_me_date,
-      const google_apis::GetResourceEntryCallback& callback) OVERRIDE;
   virtual google_apis::CancelCallback AddResourceToDirectory(
       const std::string& parent_resource_id,
       const std::string& resource_id,
@@ -129,6 +133,12 @@ class DummyDriveService : public DriveServiceInterface {
       const std::string& resource_id,
       const std::string& app_id,
       const google_apis::AuthorizeAppCallback& callback) OVERRIDE;
+  virtual google_apis::CancelCallback GetResourceListInDirectoryByWapi(
+      const std::string& directory_resource_id,
+      const google_apis::GetResourceListCallback& callback) OVERRIDE;
+  virtual google_apis::CancelCallback GetRemainingResourceList(
+      const GURL& next_link,
+      const google_apis::GetResourceListCallback& callback) OVERRIDE;
 };
 
 }  // namespace drive

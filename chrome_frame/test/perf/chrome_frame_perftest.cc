@@ -1,6 +1,7 @@
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+
 #include "chrome_frame/test/perf/chrome_frame_perftest.h"
 
 #include <atlhost.h>
@@ -21,6 +22,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/test/perf_time_logger.h"
 #include "base/test/test_file_util.h"
 #include "base/threading/platform_thread.h"
 #include "base/time/time.h"
@@ -35,11 +37,11 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_paths_internal.h"
 #include "chrome/test/base/chrome_process_util.h"
-#include "chrome/test/perf/perf_test.h"
 #include "chrome/test/ui/ui_perf_test.h"
 #include "chrome_frame/chrome_tab.h"
 #include "chrome_frame/test_utils.h"
 #include "chrome_frame/utils.h"
+#include "testing/perf/perf_test.h"
 
 const wchar_t kSilverlightControlKey[] =
     L"CLSID\\{DFEAF541-F3E1-4c24-ACAC-99C30715084A}\\InprocServer32";
@@ -230,8 +232,8 @@ class ChromeFrameActiveXContainerPerf : public ChromeFrameActiveXContainer {
   ChromeFrameActiveXContainerPerf() {}
 
   void CreateControl(bool setup_event_sinks) {
-    perf_initialize_.reset(new PerfTimeLogger("Fully initialized"));
-    PerfTimeLogger perf_create("Create Control");
+    perf_initialize_.reset(new base::PerfTimeLogger("Fully initialized"));
+    base::PerfTimeLogger perf_create("Create Control");
 
     HRESULT hr = chromeview_.CreateControl(L"ChromeTab.ChromeFrame");
     EXPECT_HRESULT_SUCCEEDED(hr);
@@ -272,11 +274,11 @@ class ChromeFrameActiveXContainerPerf : public ChromeFrameActiveXContainer {
   virtual void BeforeNavigateImpl(const char* url ) {
     std::string test_name = "Navigate ";
     test_name += url;
-    perf_navigate_.reset(new PerfTimeLogger(test_name.c_str()));
+    perf_navigate_.reset(new base::PerfTimeLogger(test_name.c_str()));
   }
 
-  scoped_ptr<PerfTimeLogger> perf_initialize_;
-  scoped_ptr<PerfTimeLogger> perf_navigate_;
+  scoped_ptr<base::PerfTimeLogger> perf_initialize_;
+  scoped_ptr<base::PerfTimeLogger> perf_navigate_;
 };
 
 // This class provides common functionality which can be used for most of the
@@ -957,7 +959,7 @@ TEST(ImagePreReader, PreReadImage) {
   ASSERT_TRUE(PathService::Get(base::FILE_EXE, &current_exe));
 
   int64 file_size_64 = 0;
-  ASSERT_TRUE(file_util::GetFileSize(current_exe, &file_size_64));
+  ASSERT_TRUE(base::GetFileSize(current_exe, &file_size_64));
   ASSERT_TRUE(file_size_64 < std::numeric_limits<std::size_t>::max());
   size_t file_size = static_cast<size_t>(file_size_64);
 
@@ -1338,7 +1340,7 @@ class EtwPerfSession {
     // To ensure there is no session leftover from crashes, previous runs, etc.
     base::win::EtwTraceProperties ignore;
     base::win::EtwTraceController::Stop(L"cf_perf", &ignore);
-    ASSERT_TRUE(file_util::CreateTemporaryFile(&etl_log_file_));
+    ASSERT_TRUE(base::CreateTemporaryFile(&etl_log_file_));
     ASSERT_HRESULT_SUCCEEDED(controller_.StartFileSession(L"cf_perf",
         etl_log_file_.value().c_str(), false));
     ASSERT_HRESULT_SUCCEEDED(controller_.EnableProvider(

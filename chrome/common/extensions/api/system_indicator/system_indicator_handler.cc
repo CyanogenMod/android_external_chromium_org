@@ -8,10 +8,10 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/common/extensions/api/extension_action/action_info.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
-#include "chrome/common/extensions/permissions/api_permission_set.h"
-#include "chrome/common/extensions/permissions/permissions_data.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/manifest_constants.h"
+#include "extensions/common/permissions/api_permission_set.h"
+#include "extensions/common/permissions/permissions_data.h"
 
 namespace extensions {
 
@@ -21,11 +21,12 @@ SystemIndicatorHandler::SystemIndicatorHandler() {
 SystemIndicatorHandler::~SystemIndicatorHandler() {
 }
 
-bool SystemIndicatorHandler::Parse(Extension* extension, string16* error) {
+bool SystemIndicatorHandler::Parse(Extension* extension,
+                                   base::string16* error) {
   const base::DictionaryValue* system_indicator_value = NULL;
   if (!extension->manifest()->GetDictionary(
-          extension_manifest_keys::kSystemIndicator, &system_indicator_value)) {
-    *error = ASCIIToUTF16(extension_manifest_errors::kInvalidSystemIndicator);
+          manifest_keys::kSystemIndicator, &system_indicator_value)) {
+    *error = ASCIIToUTF16(manifest_errors::kInvalidSystemIndicator);
     return false;
   }
 
@@ -45,7 +46,7 @@ bool SystemIndicatorHandler::Parse(Extension* extension, string16* error) {
 }
 
 const std::vector<std::string> SystemIndicatorHandler::Keys() const {
-  return SingleKey(extension_manifest_keys::kSystemIndicator);
+  return SingleKey(manifest_keys::kSystemIndicator);
 }
 
 }  // namespace extensions

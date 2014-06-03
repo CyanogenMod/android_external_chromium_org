@@ -18,11 +18,9 @@ void SetLatch(bool* called) {
 
 }  // namespace
 
-namespace chrome {
-
 TEST(StorageMonitorTest, TestInitialize) {
-  test::TestStorageMonitor::RemoveSingleton();
-  test::TestStorageMonitor monitor;
+  TestStorageMonitor::RemoveSingleton();
+  TestStorageMonitor monitor;
   EXPECT_FALSE(monitor.init_called());
 
   bool initialized = false;
@@ -34,19 +32,19 @@ TEST(StorageMonitorTest, TestInitialize) {
 }
 
 TEST(StorageMonitorTest, DeviceAttachDetachNotifications) {
-  test::TestStorageMonitor::RemoveSingleton();
+  TestStorageMonitor::RemoveSingleton();
   base::MessageLoop message_loop;
-  const string16 kDeviceName = ASCIIToUTF16("media device");
+  const base::string16 kDeviceName = ASCIIToUTF16("media device");
   const std::string kDeviceId1 = "dcim:UUID:FFF0-0001";
   const std::string kDeviceId2 = "dcim:UUID:FFF0-0002";
   MockRemovableStorageObserver observer1;
   MockRemovableStorageObserver observer2;
-  test::TestStorageMonitor monitor;
+  TestStorageMonitor monitor;
   monitor.AddObserver(&observer1);
   monitor.AddObserver(&observer2);
 
   StorageInfo info(kDeviceId1, kDeviceName, FILE_PATH_LITERAL("path"),
-                   string16(), string16(), string16(), 0);
+                   base::string16(), base::string16(), base::string16(), 0);
   monitor.receiver()->ProcessAttach(info);
   message_loop.RunUntilIdle();
 
@@ -82,22 +80,22 @@ TEST(StorageMonitorTest, DeviceAttachDetachNotifications) {
 }
 
 TEST(StorageMonitorTest, GetAllAvailableStoragesEmpty) {
-  test::TestStorageMonitor::RemoveSingleton();
+  TestStorageMonitor::RemoveSingleton();
   base::MessageLoop message_loop;
-  test::TestStorageMonitor monitor;
+  TestStorageMonitor monitor;
   std::vector<StorageInfo> devices = monitor.GetAllAvailableStorages();
   EXPECT_EQ(0U, devices.size());
 }
 
 TEST(StorageMonitorTest, GetAllAvailableStorageAttachDetach) {
-  test::TestStorageMonitor::RemoveSingleton();
+  TestStorageMonitor::RemoveSingleton();
   base::MessageLoop message_loop;
-  test::TestStorageMonitor monitor;
+  TestStorageMonitor monitor;
   const std::string kDeviceId1 = "dcim:UUID:FFF0-0042";
-  const string16 kDeviceName1 = ASCIIToUTF16("test");
+  const base::string16 kDeviceName1 = ASCIIToUTF16("test");
   const base::FilePath kDevicePath1(FILE_PATH_LITERAL("/testfoo"));
   StorageInfo info1(kDeviceId1, kDeviceName1, kDevicePath1.value(),
-                    string16(), string16(), string16(), 0);
+                    base::string16(), base::string16(), base::string16(), 0);
   monitor.receiver()->ProcessAttach(info1);
   message_loop.RunUntilIdle();
   std::vector<StorageInfo> devices = monitor.GetAllAvailableStorages();
@@ -107,10 +105,10 @@ TEST(StorageMonitorTest, GetAllAvailableStorageAttachDetach) {
   EXPECT_EQ(kDevicePath1.value(), devices[0].location());
 
   const std::string kDeviceId2 = "dcim:UUID:FFF0-0044";
-  const string16 kDeviceName2 = ASCIIToUTF16("test2");
+  const base::string16 kDeviceName2 = ASCIIToUTF16("test2");
   const base::FilePath kDevicePath2(FILE_PATH_LITERAL("/testbar"));
   StorageInfo info2(kDeviceId2, kDeviceName2, kDevicePath2.value(),
-                    string16(), string16(), string16(), 0);
+                    base::string16(), base::string16(), base::string16(), 0);
   monitor.receiver()->ProcessAttach(info2);
   message_loop.RunUntilIdle();
   devices = monitor.GetAllAvailableStorages();
@@ -135,5 +133,3 @@ TEST(StorageMonitorTest, GetAllAvailableStorageAttachDetach) {
   devices = monitor.GetAllAvailableStorages();
   EXPECT_EQ(0U, devices.size());
 }
-
-}  // namespace chrome

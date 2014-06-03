@@ -31,8 +31,8 @@ namespace {
 // signal.  (Like views Textfield::STYLE_LOWERCASE.)
 void LowercaseInsertTextHandler(GtkEditable *editable, const gchar *text,
                                 gint length, gint *position, gpointer data) {
-  string16 original_text = UTF8ToUTF16(text);
-  string16 lower_text = base::i18n::ToLower(original_text);
+  base::string16 original_text = UTF8ToUTF16(text);
+  base::string16 lower_text = base::i18n::ToLower(original_text);
   if (lower_text != original_text) {
     std::string result = UTF16ToUTF8(lower_text);
     // Prevent ourselves getting called recursively about our own edit.
@@ -215,11 +215,11 @@ void EditSearchEngineDialog::Init(GtkWindow* parent_window, Profile* profile) {
   g_signal_connect(dialog_, "destroy", G_CALLBACK(OnWindowDestroyThunk), this);
 }
 
-string16 EditSearchEngineDialog::GetTitleInput() const {
+base::string16 EditSearchEngineDialog::GetTitleInput() const {
   return UTF8ToUTF16(gtk_entry_get_text(GTK_ENTRY(title_entry_)));
 }
 
-string16 EditSearchEngineDialog::GetKeywordInput() const {
+base::string16 EditSearchEngineDialog::GetKeywordInput() const {
   return UTF8ToUTF16(gtk_entry_get_text(GTK_ENTRY(keyword_entry_)));
 }
 

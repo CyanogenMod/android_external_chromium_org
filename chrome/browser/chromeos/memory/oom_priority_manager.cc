@@ -8,6 +8,9 @@
 #include <set>
 #include <vector>
 
+#include "ash/multi_profile_uma.h"
+#include "ash/session_state_delegate.h"
+#include "ash/shell.h"
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
@@ -169,13 +172,9 @@ OomPriorityManager::TabStats::~TabStats() {
 
 OomPriorityManager::OomPriorityManager()
     : focused_tab_pid_(0),
+      low_memory_listener_(new LowMemoryListener(this)),
       discard_count_(0),
       recent_tab_discard_(false) {
-  // We only need the low memory observer if we want to discard tabs.
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(
-          chromeos::switches::kNoDiscardTabs))
-    low_memory_listener_.reset(new LowMemoryListener(this));
-
   registrar_.Add(this,
       content::NOTIFICATION_RENDERER_PROCESS_CLOSED,
       content::NotificationService::AllBrowserContextsAndSources());
@@ -217,14 +216,14 @@ void OomPriorityManager::Stop() {
     low_memory_listener_->Stop();
 }
 
-std::vector<string16> OomPriorityManager::GetTabTitles() {
+std::vector<base::string16> OomPriorityManager::GetTabTitles() {
   TabStatsList stats = GetTabStatsOnUIThread();
   base::AutoLock pid_to_oom_score_autolock(pid_to_oom_score_lock_);
-  std::vector<string16> titles;
+  std::vector<base::string16> titles;
   titles.reserve(stats.size());
   TabStatsList::iterator it = stats.begin();
   for ( ; it != stats.end(); ++it) {
-    string16 str;
+    base::string16 str;
     str.reserve(4096);
     int score = pid_to_oom_score_[it->renderer_handle];
     str += base::IntToString16(score);
@@ -324,6 +323,12 @@ void OomPriorityManager::RecordDiscardStatistics() {
   // TODO(jamescook): Maybe incorporate extension count?
   UMA_HISTOGRAM_CUSTOM_COUNTS(
       "Tabs.Discard.TabCount", GetTabCount(), 1, 100, 50);
+
+  // Record the discarded tab in relation to the amount of simultaneously
+  // logged in users.
+  ash::MultiProfileUMA::RecordDiscardedTab(
+      ash::Shell::GetInstance()->session_state_delegate()->
+          NumberOfLoggedInUsers());
 
   // TODO(jamescook): If the time stats prove too noisy, then divide up users
   // based on how heavily they use Chrome using tab count as a proxy.

@@ -69,10 +69,12 @@ class BrowserTabStripController : public TabStripController,
                            const GURL& url) OVERRIDE;
   virtual bool IsCompatibleWith(TabStrip* other) const OVERRIDE;
   virtual void CreateNewTab() OVERRIDE;
+  virtual void CreateNewTabWithLocation(const base::string16& loc) OVERRIDE;
   virtual bool IsIncognito() OVERRIDE;
   virtual void LayoutTypeMaybeChanged() OVERRIDE;
   virtual void OnStartedDraggingTabs() OVERRIDE;
   virtual void OnStoppedDraggingTabs() OVERRIDE;
+  virtual void CheckFileSupported(const GURL& url) OVERRIDE;
 
   // TabStripModelObserver implementation:
   virtual void TabInsertedAt(content::WebContents* contents,
@@ -138,6 +140,11 @@ class BrowserTabStripController : public TabStripController,
   // Resets the tabstrips layout type from prefs.
   void UpdateLayoutType();
 
+  // Notifies the tabstrip whether |url| is supported once a MIME type request
+  // has completed.
+  void OnFindURLMimeTypeCompleted(const GURL& url,
+                                  const std::string& mime_type);
+
   TabStripModel* model_;
 
   TabStrip* tabstrip_;
@@ -157,6 +164,8 @@ class BrowserTabStripController : public TabStripController,
   scoped_ptr<ImmersiveRevealedLock> immersive_reveal_lock_;
 
   PrefChangeRegistrar local_pref_registrar_;
+
+  base::WeakPtrFactory<BrowserTabStripController> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserTabStripController);
 };

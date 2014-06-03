@@ -8,12 +8,13 @@
 #include "base/prefs/pref_service.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/api/preference/preference_api.h"
-#include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_prefs.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
+#include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/extensions/incognito_handler.h"
+#include "extensions/browser/event_router.h"
+#include "extensions/common/manifest_handlers/incognito_info.h"
 
 namespace extensions {
 namespace preference_helpers {
@@ -102,7 +103,7 @@ void DispatchEventToExtensions(
     if (router->ExtensionHasEventListener(extension_id, event_name) &&
         (*it)->HasAPIPermission(permission) &&
         (!incognito || IncognitoInfo::IsSplitMode(it->get()) ||
-         extension_service->CanCrossIncognito(it->get()))) {
+         extension_util::CanCrossIncognito(it->get(), extension_service))) {
       // Inject level of control key-value.
       base::DictionaryValue* dict;
       bool rv = args->GetDictionary(0, &dict);
@@ -118,7 +119,9 @@ void DispatchEventToExtensions(
       Profile* restrict_to_profile = NULL;
       bool from_incognito = false;
       if (IncognitoInfo::IsSplitMode(it->get())) {
-        if (incognito && extension_service->IsIncognitoEnabled(extension_id)) {
+        if (incognito &&
+            extension_util::IsIncognitoEnabled(extension_id,
+                                               extension_service)) {
           restrict_to_profile = profile->GetOffTheRecordProfile();
         } else if (!incognito &&
                    PreferenceAPI::Get(profile)->DoesExtensionControlPref(
@@ -132,7 +135,7 @@ void DispatchEventToExtensions(
 
       scoped_ptr<base::ListValue> args_copy(args->DeepCopy());
       scoped_ptr<Event> event(new Event(event_name, args_copy.Pass()));
-      event->restrict_to_profile = restrict_to_profile;
+      event->restrict_to_browser_context = restrict_to_profile;
       router->DispatchEventToExtension(extension_id, event.Pass());
     }
   }

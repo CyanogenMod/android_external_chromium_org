@@ -7,9 +7,13 @@
 
 #include <iomanip>
 #include <iostream>
+#include <iterator>
+#include <string>
+#include <vector>
 
 #include "base/at_exit.h"
 #include "base/bind.h"
+#include "base/callback_helpers.h"
 #include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/guid.h"
@@ -76,12 +80,12 @@ void InvalidUsage() {
   std::cout << "\n";
 }
 
-string16 GetOption(int string_id, const string16& default,
+base::string16 GetOption(int string_id, const base::string16& default,
                    bool secure) {
-  string16 prompt_format = cloud_print::LoadLocalString(string_id) ;
-  std::vector<string16> substitutions(1, default);
+  base::string16 prompt_format = cloud_print::LoadLocalString(string_id);
+  std::vector<base::string16> substitutions(1, default);
   std::cout << ReplaceStringPlaceholders(prompt_format, substitutions, NULL);
-  string16 tmp;
+  base::string16 tmp;
   if (secure) {
     DWORD saved_mode = 0;
     // Don't close.
@@ -106,7 +110,7 @@ HRESULT ReportError(HRESULT hr, int string_id) {
   return hr;
 }
 
-string16 StateAsString(ServiceController::State state) {
+base::string16 StateAsString(ServiceController::State state) {
   DWORD string_id = 0;
   switch(state) {
   case ServiceController::STATE_NOT_FOUND:
@@ -119,7 +123,7 @@ string16 StateAsString(ServiceController::State state) {
     string_id = IDS_SERVICE_RUNNING;
     break;
   }
-  return string_id ? cloud_print::LoadLocalString(string_id) : string16();
+  return string_id ? cloud_print::LoadLocalString(string_id) : base::string16();
 }
 
 }  // namespace
@@ -210,8 +214,8 @@ class CloudPrintServiceModule
       return controller_->UninstallService();
 
     if (command_line.HasSwitch(kInstallSwitch)) {
-      string16 run_as_user;
-      string16 run_as_password;
+      base::string16 run_as_user;
+      base::string16 run_as_password;
       base::FilePath user_data_dir;
       std::vector<std::string> printers;
       HRESULT hr = SelectWindowsAccount(&run_as_user, &run_as_password,
@@ -258,7 +262,8 @@ class CloudPrintServiceModule
     return S_FALSE;
   }
 
-  HRESULT SelectWindowsAccount(string16* run_as_user, string16* run_as_password,
+  HRESULT SelectWindowsAccount(base::string16* run_as_user,
+                               base::string16* run_as_password,
                                base::FilePath* user_data_dir,
                                std::vector<std::string>* printers) {
     *run_as_user = GetCurrentUserName();
@@ -329,13 +334,13 @@ class CloudPrintServiceModule
     std::string contents;
     ServiceState service_state;
 
-    bool is_valid = file_util::ReadFileToString(file, &contents) &&
+    bool is_valid = base::ReadFileToString(file, &contents) &&
                     service_state.FromString(contents);
     std::string proxy_id = service_state.proxy_id();
 
     LOG(INFO) << file.value() << ": " << contents;
 
-    string16 message =
+    base::string16 message =
         cloud_print::LoadLocalString(IDS_ADD_PRINTERS_USING_CHROME);
     std::cout << "\n" << message.c_str() << "\n" ;
     std::string new_contents =

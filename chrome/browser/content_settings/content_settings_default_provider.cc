@@ -12,10 +12,10 @@
 #include "base/command_line.h"
 #include "base/metrics/histogram.h"
 #include "base/prefs/pref_service.h"
+#include "base/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/content_settings/content_settings_rule.h"
 #include "chrome/browser/content_settings/content_settings_utils.h"
-#include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/common/content_settings.h"
 #include "chrome/common/content_settings_pattern.h"
 #include "chrome/common/pref_names.h"
@@ -53,6 +53,8 @@ const ContentSetting kDefaultSettings[] = {
   CONTENT_SETTING_ASK,      // CONTENT_SETTINGS_TYPE_MIDI_SYSEX
 #if defined(OS_WIN)
   CONTENT_SETTING_ASK,      // CONTENT_SETTINGS_TYPE_METRO_SWITCH_TO_DESKTOP
+#elif defined(OS_ANDROID) || defined(OS_CHROMEOS)
+  CONTENT_SETTING_ASK,      // CONTENT_SETTINGS_TYPE_PROTECTED_MEDIA_IDENTIFIER
 #endif
 };
 COMPILE_ASSERT(arraysize(kDefaultSettings) == CONTENT_SETTINGS_NUM_TYPES,

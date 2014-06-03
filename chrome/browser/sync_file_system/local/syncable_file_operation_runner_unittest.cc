@@ -17,6 +17,7 @@
 #include "chrome/browser/sync_file_system/local/syncable_file_operation_runner.h"
 #include "chrome/browser/sync_file_system/local/syncable_file_system_operation.h"
 #include "chrome/browser/sync_file_system/syncable_file_system_util.h"
+#include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "webkit/browser/blob/mock_blob_url_request_context.h"
 #include "webkit/browser/fileapi/file_system_context.h"
@@ -45,7 +46,7 @@ class SyncableFileOperationRunnerTest : public testing::Test {
   // Use the current thread as IO thread so that we can directly call
   // operations in the tests.
   SyncableFileOperationRunnerTest()
-      : message_loop_(base::MessageLoop::TYPE_IO),
+      : thread_bundle_(content::TestBrowserThreadBundle::IO_MAINLOOP),
         file_system_(GURL("http://example.com"),
                      base::MessageLoopProxy::current().get(),
                      base::MessageLoopProxy::current().get()),
@@ -59,9 +60,10 @@ class SyncableFileOperationRunnerTest : public testing::Test {
   virtual void SetUp() OVERRIDE {
     ASSERT_TRUE(dir_.CreateUniqueTempDir());
     file_system_.SetUp();
-    sync_context_ =
-        new LocalFileSyncContext(base::MessageLoopProxy::current().get(),
-                                 base::MessageLoopProxy::current().get());
+    sync_context_ = new LocalFileSyncContext(
+        dir_.path(),
+        base::MessageLoopProxy::current().get(),
+        base::MessageLoopProxy::current().get());
     ASSERT_EQ(
         SYNC_STATUS_OK,
         file_system_.MaybeInitializeFileSystemContext(sync_context_.get()));
@@ -77,7 +79,6 @@ class SyncableFileOperationRunnerTest : public testing::Test {
     sync_context_ = NULL;
 
     file_system_.TearDown();
-    message_loop_.RunUntilIdle();
     RevokeSyncableFileSystem();
   }
 
@@ -125,13 +126,13 @@ class SyncableFileOperationRunnerTest : public testing::Test {
   }
 
   bool CreateTempFile(base::FilePath* path) {
-    return file_util::CreateTemporaryFileInDir(dir_.path(), path);
+    return base::CreateTemporaryFileInDir(dir_.path(), path);
   }
 
   ScopedEnableSyncFSDirectoryOperation enable_directory_operation_;
   base::ScopedTempDir dir_;
 
-  base::MessageLoop message_loop_;
+  content::TestBrowserThreadBundle thread_bundle_;
   CannedSyncableFileSystem file_system_;
   scoped_refptr<LocalFileSyncContext> sync_context_;
 
@@ -142,6 +143,7 @@ class SyncableFileOperationRunnerTest : public testing::Test {
 
   MockBlobURLRequestContext url_request_context_;
 
+ private:
   base::WeakPtrFactory<SyncableFileOperationRunnerTest> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(SyncableFileOperationRunnerTest);
@@ -239,9 +241,12 @@ TEST_F(SyncableFileOperationRunnerTest, CopyAndMove) {
   ResetCallbackStatus();
   file_system_.operation_runner()->Copy(
       URL(kDir), URL("dest-copy"),
+      fileapi::FileSystemOperation::OPTION_NONE,
+      fileapi::FileSystemOperationRunner::CopyProgressCallback(),
       ExpectStatus(FROM_HERE, base::PLATFORM_FILE_OK));
   file_system_.operation_runner()->Move(
       URL(kDir), URL("dest-move"),
+      fileapi::FileSystemOperation::OPTION_NONE,
       ExpectStatus(FROM_HERE, base::PLATFORM_FILE_OK));
   base::MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(1, callback_count_);
@@ -259,6 +264,8 @@ TEST_F(SyncableFileOperationRunnerTest, CopyAndMove) {
   ResetCallbackStatus();
   file_system_.operation_runner()->Copy(
       URL(kDir), URL("dest-copy2"),
+      fileapi::FileSystemOperation::OPTION_NONE,
+      fileapi::FileSystemOperationRunner::CopyProgressCallback(),
       ExpectStatus(FROM_HERE, base::PLATFORM_FILE_OK));
   base::MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(0, callback_count_);
@@ -286,16 +293,15 @@ TEST_F(SyncableFileOperationRunnerTest, CopyAndMove) {
 
 TEST_F(SyncableFileOperationRunnerTest, Write) {
   EXPECT_EQ(base::PLATFORM_FILE_OK, file_system_.CreateFile(URL(kFile)));
-  const GURL kBlobURL("blob:foo");
   const std::string kData("Lorem ipsum.");
-  ScopedTextBlob blob(url_request_context_, kBlobURL, kData);
+  ScopedTextBlob blob(url_request_context_, "blob:foo", kData);
 
   sync_status()->StartSyncing(URL(kFile));
 
   ResetCallbackStatus();
   file_system_.operation_runner()->Write(
       &url_request_context_,
-      URL(kFile), kBlobURL, 0, GetWriteCallback(FROM_HERE));
+      URL(kFile), blob.GetBlobDataHandle(), 0, GetWriteCallback(FROM_HERE));
   base::MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(0, callback_count_);
 
@@ -333,8 +339,7 @@ TEST_F(SyncableFileOperationRunnerTest, QueueAndCancel) {
   EXPECT_EQ(2, callback_count_);
 }
 
-// Test if CopyInForeignFile runs cooperatively with other Sync operations
-// when it is called directly via AsFileSystemOperationImpl.
+// Test if CopyInForeignFile runs cooperatively with other Sync operations.
 TEST_F(SyncableFileOperationRunnerTest, CopyInForeignFile) {
   const std::string kTestData("test data");
 
@@ -385,9 +390,9 @@ TEST_F(SyncableFileOperationRunnerTest, Cancel) {
   fileapi::FileSystemOperationRunner::OperationID id =
       file_system_.operation_runner()->Truncate(
           URL(kFile), 10,
-          ExpectStatus(FROM_HERE, base::PLATFORM_FILE_ERROR_ABORT));
+          ExpectStatus(FROM_HERE, base::PLATFORM_FILE_OK));
   file_system_.operation_runner()->Cancel(
-      id, ExpectStatus(FROM_HERE, base::PLATFORM_FILE_OK));
+      id, ExpectStatus(FROM_HERE, base::PLATFORM_FILE_ERROR_INVALID_OPERATION));
   base::MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(2, callback_count_);
 }

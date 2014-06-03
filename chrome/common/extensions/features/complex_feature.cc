@@ -66,19 +66,20 @@ std::set<Feature::Context>* ComplexFeature::GetContexts() {
 }
 
 bool ComplexFeature::IsInternal() const {
-  NOTREACHED();
-  return false;
+  // TODO(justinlin): Same as the above TODO.
+  return features_[0]->IsInternal();
 }
 
 std::string ComplexFeature::GetAvailabilityMessage(AvailabilityResult result,
                                                    Manifest::Type type,
-                                                   const GURL& url) const {
+                                                   const GURL& url,
+                                                   Context context) const {
   if (result == IS_AVAILABLE)
     return std::string();
 
   // TODO(justinlin): Form some kind of combined availabilities/messages from
   // SimpleFeatures.
-  return features_[0]->GetAvailabilityMessage(result, type, url);
+  return features_[0]->GetAvailabilityMessage(result, type, url, context);
 }
 
 bool ComplexFeature::IsIdInWhitelist(const std::string& extension_id) const {

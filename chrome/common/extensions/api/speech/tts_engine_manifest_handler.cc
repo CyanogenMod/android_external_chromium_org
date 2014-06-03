@@ -8,17 +8,19 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
-#include "chrome/common/extensions/manifest.h"
 #include "extensions/common/error_utils.h"
+#include "extensions/common/manifest.h"
+#include "extensions/common/manifest_constants.h"
 #include "ui/base/l10n/l10n_util.h"
 
-namespace keys = extension_manifest_keys;
-namespace errors = extension_manifest_errors;
+namespace extensions {
+
+namespace keys = manifest_keys;
+namespace errors = manifest_errors;
 
 namespace {
 
-struct TtsVoices : public extensions::Extension::ManifestData {
+struct TtsVoices : public Extension::ManifestData {
   TtsVoices() {}
   virtual ~TtsVoices() {}
 
@@ -27,9 +29,8 @@ struct TtsVoices : public extensions::Extension::ManifestData {
 
 }  // namespace
 
-namespace extensions {
+TtsVoice::TtsVoice() : remote(false) {}
 
-TtsVoice::TtsVoice() {}
 TtsVoice::~TtsVoice() {}
 
 // static
@@ -46,7 +47,8 @@ TtsEngineManifestHandler::TtsEngineManifestHandler() {
 TtsEngineManifestHandler::~TtsEngineManifestHandler() {
 }
 
-bool TtsEngineManifestHandler::Parse(Extension* extension, string16* error) {
+bool TtsEngineManifestHandler::Parse(Extension* extension,
+                                     base::string16* error) {
   scoped_ptr<TtsVoices> info(new TtsVoices);
   const base::DictionaryValue* tts_dict = NULL;
   if (!extension->manifest()->GetDictionary(keys::kTtsEngine, &tts_dict)) {
@@ -92,6 +94,13 @@ bool TtsEngineManifestHandler::Parse(Extension* extension, string16* error) {
           (voice_data.gender != keys::kTtsGenderMale &&
            voice_data.gender != keys::kTtsGenderFemale)) {
         *error = ASCIIToUTF16(errors::kInvalidTtsVoicesGender);
+        return false;
+      }
+    }
+    if (one_tts_voice->HasKey(keys::kTtsVoicesRemote)) {
+      if (!one_tts_voice->GetBoolean(
+              keys::kTtsVoicesRemote, &voice_data.remote)) {
+        *error = ASCIIToUTF16(errors::kInvalidTtsVoicesRemote);
         return false;
       }
     }

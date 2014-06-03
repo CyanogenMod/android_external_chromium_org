@@ -11,11 +11,13 @@
 #include "chrome/browser/ui/autofill/autofill_dialog_types.h"
 #include "components/autofill/content/browser/wallet/required_action.h"
 #include "components/autofill/core/browser/field_types.h"
-#include "ui/base/range/range.h"
 #include "ui/base/ui_base_types.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/native_widget_types.h"
+#include "ui/gfx/range/range.h"
 
+class FieldValueMap;
+class GURL;
 class Profile;
 
 namespace content {
@@ -34,32 +36,44 @@ class MenuModel;
 
 namespace autofill {
 
+typedef std::map<ServerFieldType, gfx::Image> FieldIconMap;
+
 // This class defines the interface to the controller that the dialog view sees.
 class AutofillDialogViewDelegate {
  public:
   // Strings -------------------------------------------------------------------
 
-  virtual string16 DialogTitle() const = 0;
-  virtual string16 AccountChooserText() const = 0;
-  virtual string16 SignInLinkText() const = 0;
-  virtual string16 EditSuggestionText() const = 0;
-  virtual string16 CancelButtonText() const = 0;
-  virtual string16 ConfirmButtonText() const = 0;
-  virtual string16 SaveLocallyText() const = 0;
-  virtual string16 SaveLocallyTooltip() const = 0;
-  virtual string16 LegalDocumentsText() = 0;
+  virtual base::string16 DialogTitle() const = 0;
+  virtual base::string16 AccountChooserText() const = 0;
+  virtual base::string16 SignInLinkText() const = 0;
+  virtual base::string16 SpinnerText() const = 0;
+  virtual base::string16 EditSuggestionText() const = 0;
+  virtual base::string16 CancelButtonText() const = 0;
+  virtual base::string16 ConfirmButtonText() const = 0;
+  virtual base::string16 SaveLocallyText() const = 0;
+  virtual base::string16 SaveLocallyTooltip() const = 0;
+  virtual base::string16 LegalDocumentsText() = 0;
 
   // State ---------------------------------------------------------------------
 
-  // Whether the user is known to be signed in.
-  virtual DialogSignedInState SignedInState() const = 0;
-
-  // Whether the dialog is in a not exactly well-defined state
-  // (while attempting to sign-in or retrieving the wallet data etc).
+  // Whether a loading animation should be shown (e.g. while signing in,
+  // retreiving Wallet data, etc.).
   virtual bool ShouldShowSpinner() const = 0;
+
+  // Whether the account chooser/sign in link control should be visible.
+  virtual bool ShouldShowAccountChooser() const = 0;
+
+  // Whether the sign in web view should be displayed.
+  virtual bool ShouldShowSignInWebView() const = 0;
+
+  // The URL to sign in to Google.
+  virtual GURL SignInUrl() const = 0;
 
   // Whether to show the checkbox to save data locally (in Autofill).
   virtual bool ShouldOfferToSaveInChrome() const = 0;
+
+  // Whether the checkbox to save data locally should be checked initially.
+  virtual bool ShouldSaveInChrome() const = 0;
 
   // Returns the model for the account chooser. It will return NULL if the
   // account chooser should not show a menu. In this case, clicking on the
@@ -68,12 +82,6 @@ class AutofillDialogViewDelegate {
 
   // Returns the icon that should be shown in the account chooser.
   virtual gfx::Image AccountChooserImage() = 0;
-
-  // Whether or not the details container should be showing currently.
-  virtual bool ShouldShowDetailArea() const = 0;
-
-  // Whether or not the progress bar in the button strip should be showing.
-  virtual bool ShouldShowProgressBar() const = 0;
 
   // Returns the image that should be shown on the left of the button strip
   // or an empty image if none should be shown.
@@ -87,10 +95,10 @@ class AutofillDialogViewDelegate {
 
   // Returns a struct full of data concerning what overlay, if any, should be
   // displayed on top of the dialog.
-  virtual DialogOverlayState GetDialogOverlay() const = 0;
+  virtual DialogOverlayState GetDialogOverlay() = 0;
 
   // Returns ranges to linkify in the text returned by |LegalDocumentsText()|.
-  virtual const std::vector<ui::Range>& LegalDocumentLinks() = 0;
+  virtual const std::vector<gfx::Range>& LegalDocumentLinks() = 0;
 
   // Detail inputs -------------------------------------------------------------
 
@@ -113,45 +121,48 @@ class AutofillDialogViewDelegate {
   virtual ui::MenuModel* MenuModelForSection(DialogSection section) = 0;
 
   // Returns the label text used to describe the section (i.e. Billing).
-  virtual string16 LabelForSection(DialogSection section) const = 0;
+  virtual base::string16 LabelForSection(DialogSection section) const = 0;
 
   // Returns the current state of suggestions for |section|.
   virtual SuggestionState SuggestionStateForSection(DialogSection section) = 0;
 
-  // Should be called when the user starts editing of the section.
-  virtual void EditClickedForSection(DialogSection section) = 0;
+  // Returns the icons to be displayed along with the given |user_inputs| in a
+  // section.
+  virtual FieldIconMap IconsForFields(
+      const FieldValueMap& user_inputs) const = 0;
 
-  // Should be called when the user cancels editing of the section.
-  virtual void EditCancelledForSection(DialogSection section) = 0;
+  // Returns true if the value of this field |type| controls the icons for the
+  // rest of the fields in a section.
+  virtual bool FieldControlsIcons(ServerFieldType type) const = 0;
 
-  // Returns an icon to be displayed along with the input for the given type.
-  // |user_input| is the current text in the textfield.
-  virtual gfx::Image IconForField(ServerFieldType type,
-                                  const string16& user_input) const = 0;
+  // Returns a tooltip for the given field, or an empty string if none exists.
+  virtual base::string16 TooltipForField(ServerFieldType type) const = 0;
+
+  // Whether a particular DetailInput in |section| should be edited or not.
+  virtual bool InputIsEditable(const DetailInput& input,
+                               DialogSection section) = 0;
 
   // Decides whether input of |value| is valid for a field of type |type|. If
   // valid, the returned string will be empty. Otherwise it will contain an
   // error message.
-  virtual string16 InputValidityMessage(DialogSection section,
+  virtual base::string16 InputValidityMessage(DialogSection section,
                                         ServerFieldType type,
-                                        const string16& value) = 0;
+                                        const base::string16& value) = 0;
 
 
   // Decides whether the combination of all |inputs| is valid, returns a
-  // map of field types to error strings.
-  virtual ValidityData InputsAreValid(
-      DialogSection section,
-      const DetailOutputMap& inputs,
-      ValidationType validation_type) = 0;
+  // map of field types to validity messages.
+  virtual ValidityMessages InputsAreValid(DialogSection section,
+                                          const FieldValueMap& inputs) = 0;
 
   // Called when the user changes the contents of a text field or activates it
   // (by focusing and then clicking it). |was_edit| is true when the function
   // was called in response to the user editing the text field.
   virtual void UserEditedOrActivatedInput(DialogSection section,
-                                          const DetailInput* input,
+                                          ServerFieldType type,
                                           gfx::NativeView parent_view,
                                           const gfx::Rect& content_bounds,
-                                          const string16& field_contents,
+                                          const base::string16& field_contents,
                                           bool was_edit) = 0;
 
   // The view forwards keypresses in text inputs. Returns true if there should
@@ -162,11 +173,10 @@ class AutofillDialogViewDelegate {
   // Called when focus has changed position within the view.
   virtual void FocusMoved() = 0;
 
-  // Miscellany ----------------------------------------------------------------
+  // Whether the view should show a validation error bubble.
+  virtual bool ShouldShowErrorBubble() const = 0;
 
-  // The image to show in the splash screen when the dialog is first shown. If
-  // no splash screen should be shown, this image will be empty.
-  virtual gfx::Image SplashPageImage() const = 0;
+  // Miscellany ----------------------------------------------------------------
 
   // Called when the view has been closed.
   virtual void ViewClosed() = 0;
@@ -175,10 +185,9 @@ class AutofillDialogViewDelegate {
   // order from top to bottom.
   virtual std::vector<DialogNotification> CurrentNotifications() = 0;
 
-  // Returns Autocheckout steps that the view should currently be showing in
-  // order from first to last.
-  virtual std::vector<DialogAutocheckoutStep> CurrentAutocheckoutSteps()
-      const = 0;
+  // Called when a generic link has been clicked in the dialog. Opens the URL
+  // out-of-line.
+  virtual void LinkClicked(const GURL& url) = 0;
 
   // Begins or aborts the flow to sign into Wallet.
   virtual void SignInLinkClicked() = 0;
@@ -188,10 +197,7 @@ class AutofillDialogViewDelegate {
                                                 bool checked) = 0;
 
   // A legal document link has been clicked.
-  virtual void LegalDocumentLinkClicked(const ui::Range& range) = 0;
-
-  // A button in the dialog's overlay has been pressed.
-  virtual void OverlayButtonPressed() = 0;
+  virtual void LegalDocumentLinkClicked(const gfx::Range& range) = 0;
 
   // Called when the view has been cancelled. Returns true if the dialog should
   // now close, or false to keep it open.

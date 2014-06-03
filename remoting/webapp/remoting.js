@@ -74,7 +74,8 @@ remoting.init = function() {
       document.getElementById('host-list'),
       document.getElementById('host-list-empty'),
       document.getElementById('host-list-error-message'),
-      document.getElementById('host-list-refresh-failed-button'));
+      document.getElementById('host-list-refresh-failed-button'),
+      document.getElementById('host-list-loading-indicator'));
   remoting.toolbar = new remoting.Toolbar(
       document.getElementById('session-toolbar'));
   remoting.clipboard = new remoting.Clipboard();
@@ -125,16 +126,18 @@ remoting.init = function() {
   }
   remoting.hostList.load(onLoad);
 
-  // Show the tab-type warnings if necessary.
-  /** @param {boolean} isWindowed */
-  var onIsWindowed = function(isWindowed) {
-    if (!isWindowed &&
-        navigator.platform.indexOf('Mac') == -1) {
-      document.getElementById('startup-mode-box-me2me').hidden = false;
-      document.getElementById('startup-mode-box-it2me').hidden = false;
-    }
-  };
-  isWindowed_(onIsWindowed);
+  // For Apps v1, check the tab type to warn the user if they are not getting
+  // the best keyboard experience.
+  if (!remoting.isAppsV2 && navigator.platform.indexOf('Mac') == -1) {
+    /** @param {boolean} isWindowed */
+    var onIsWindowed = function(isWindowed) {
+      if (!isWindowed) {
+        document.getElementById('startup-mode-box-me2me').hidden = false;
+        document.getElementById('startup-mode-box-it2me').hidden = false;
+      }
+    };
+    isWindowed_(onIsWindowed);
+  }
 };
 
 /**
@@ -262,7 +265,7 @@ remoting.logExtensionInfo_ = function() {
  */
 remoting.promptClose = function() {
   if (!remoting.clientSession ||
-      remoting.clientSession.mode == remoting.ClientSession.Mode.ME2ME) {
+      remoting.clientSession.getMode() == remoting.ClientSession.Mode.ME2ME) {
     return null;
   }
   switch (remoting.currentMode) {

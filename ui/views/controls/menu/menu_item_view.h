@@ -27,11 +27,6 @@ namespace gfx {
 class Font;
 }
 
-namespace ui {
-class MenuModel;
-class NativeTheme;
-}
-
 namespace views {
 
 namespace internal {
@@ -164,6 +159,7 @@ class VIEWS_EXPORT MenuItemView : public View {
                               int item_id,
                               const string16& label,
                               const string16& sublabel,
+                              const string16& minor_text,
                               const gfx::ImageSkia& icon,
                               Type type,
                               ui::MenuSeparatorType separator_style);
@@ -214,16 +210,11 @@ class VIEWS_EXPORT MenuItemView : public View {
                                        const string16& label,
                                        const gfx::ImageSkia& icon);
 
-  // Creates a menu item for the specified entry in the model and appends it as
-  // a child.
-  MenuItemView* AppendMenuItemFromModel(ui::MenuModel* model,
-                                        int index,
-                                        int id);
-
   // All the AppendXXX methods funnel into this.
   MenuItemView* AppendMenuItemImpl(int item_id,
                                    const string16& label,
                                    const string16& sublabel,
+                                   const string16& minor_text,
                                    const gfx::ImageSkia& icon,
                                    Type type,
                                    ui::MenuSeparatorType separator_style);
@@ -248,6 +239,9 @@ class VIEWS_EXPORT MenuItemView : public View {
 
   // Sets the subtitle.
   void SetSubtitle(const string16& subtitle);
+
+  // Sets the minor text.
+  void SetMinorText(const string16& minor_text);
 
   // Returns the type of this menu.
   const Type& GetType() const { return type_; }
@@ -474,6 +468,9 @@ class VIEWS_EXPORT MenuItemView : public View {
 
   // Subtitle/sublabel.
   string16 subtitle_;
+
+  // Minor text.
+  string16 minor_text_;
 
   // Does the title have a mnemonic? Only useful on the root menu item.
   bool has_mnemonics_;

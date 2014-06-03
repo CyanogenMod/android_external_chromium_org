@@ -23,10 +23,11 @@
 #include "webkit/browser/fileapi/isolated_context.h"
 #include "webkit/browser/fileapi/isolated_file_system_backend.h"
 #include "webkit/browser/fileapi/mount_points.h"
+#include "webkit/browser/fileapi/quota/quota_reservation.h"
 #include "webkit/browser/fileapi/sandbox_file_system_backend.h"
-#include "webkit/browser/fileapi/test_file_system_backend.h"
 #include "webkit/browser/quota/quota_manager.h"
 #include "webkit/browser/quota/special_storage_policy.h"
+#include "webkit/common/fileapi/file_system_info.h"
 #include "webkit/common/fileapi/file_system_util.h"
 
 using quota::QuotaClient;
@@ -41,12 +42,18 @@ QuotaClient* CreateQuotaClient(
   return new FileSystemQuotaClient(context, is_incognito);
 }
 
-void DidOpenFileSystem(
-    const FileSystemContext::OpenFileSystemCallback& callback,
-    const GURL& filesystem_root,
-    const std::string& filesystem_name,
-    base::PlatformFileError error) {
-  callback.Run(error, filesystem_name, filesystem_root);
+
+void DidGetMetadataForResolveURL(
+    const base::FilePath& path,
+    const FileSystemContext::ResolveURLCallback& callback,
+    const FileSystemInfo& info,
+    base::PlatformFileError error,
+    const base::PlatformFileInfo& file_info) {
+  if (error != base::PLATFORM_FILE_OK) {
+    callback.Run(error, FileSystemInfo(), base::FilePath(), false);
+    return;
+  }
+  callback.Run(error, info, path, file_info.is_directory);
 }
 
 }  // namespace
@@ -73,9 +80,11 @@ int FileSystemContext::GetPermissionPolicy(FileSystemType type) {
     case kFileSystemTypeDeviceMedia:
     case kFileSystemTypeDragged:
     case kFileSystemTypeForTransientFile:
+    case kFileSystemTypeIphoto:
     case kFileSystemTypeItunes:
     case kFileSystemTypeNativeMedia:
     case kFileSystemTypePicasa:
+    case kFileSystemTypePluginPrivate:
       return FILE_PERMISSION_ALWAYS_DENY;
 
     // Following types only appear as mount_type, and will not be
@@ -108,26 +117,28 @@ FileSystemContext::FileSystemContext(
     : io_task_runner_(io_task_runner),
       default_file_task_runner_(file_task_runner),
       quota_manager_proxy_(quota_manager_proxy),
-      sandbox_context_(new SandboxContext(
+      sandbox_delegate_(new SandboxFileSystemBackendDelegate(
           quota_manager_proxy,
           file_task_runner,
           partition_path,
           special_storage_policy,
           options)),
       sandbox_backend_(new SandboxFileSystemBackend(
-          sandbox_context_.get())),
+          sandbox_delegate_.get())),
       isolated_backend_(new IsolatedFileSystemBackend()),
+      plugin_private_backend_(new PluginPrivateFileSystemBackend(
+          file_task_runner,
+          partition_path,
+          special_storage_policy,
+          options)),
       additional_backends_(additional_backends.Pass()),
       external_mount_points_(external_mount_points),
       partition_path_(partition_path),
+      is_incognito_(options.is_incognito()),
       operation_runner_(new FileSystemOperationRunner(this)) {
-  if (quota_manager_proxy) {
-    quota_manager_proxy->RegisterClient(CreateQuotaClient(
-            this, options.is_incognito()));
-  }
-
   RegisterBackend(sandbox_backend_.get());
   RegisterBackend(isolated_backend_.get());
+  RegisterBackend(plugin_private_backend_.get());
 
   for (ScopedVector<FileSystemBackend>::const_iterator iter =
           additional_backends_.begin();
@@ -135,8 +146,15 @@ FileSystemContext::FileSystemContext(
     RegisterBackend(*iter);
   }
 
+  if (quota_manager_proxy) {
+    // Quota client assumes all backends have registered.
+    quota_manager_proxy->RegisterClient(CreateQuotaClient(
+            this, options.is_incognito()));
+  }
+
   sandbox_backend_->Initialize(this);
   isolated_backend_->Initialize(this);
+  plugin_private_backend_->Initialize(this);
   for (ScopedVector<FileSystemBackend>::const_iterator iter =
           additional_backends_.begin();
        iter != additional_backends_.end(); ++iter) {
@@ -174,6 +192,18 @@ bool FileSystemContext::DeleteDataForOriginOnFileThread(
   return success;
 }
 
+scoped_refptr<QuotaReservation>
+FileSystemContext::CreateQuotaReservationOnFileTaskRunner(
+    const GURL& origin_url,
+    FileSystemType type) {
+  DCHECK(default_file_task_runner()->RunsTasksOnCurrentThread());
+  FileSystemBackend* backend = GetFileSystemBackend(type);
+  if (!backend || !backend->GetQuotaUtil())
+    return scoped_refptr<QuotaReservation>();
+  return backend->GetQuotaUtil()->CreateQuotaReservationOnFileTaskRunner(
+      origin_url, type);
+}
+
 void FileSystemContext::Shutdown() {
   if (!io_task_runner_->RunsTasksOnCurrentThread()) {
     io_task_runner_->PostTask(
@@ -200,14 +230,6 @@ AsyncFileUtil* FileSystemContext::GetAsyncFileUtil(
   return backend->GetAsyncFileUtil(type);
 }
 
-FileSystemFileUtil* FileSystemContext::GetFileUtil(
-    FileSystemType type) const {
-  FileSystemBackend* backend = GetFileSystemBackend(type);
-  if (!backend)
-    return NULL;
-  return backend->GetFileUtil(type);
-}
-
 CopyOrMoveFileValidatorFactory*
 FileSystemContext::GetCopyOrMoveFileValidatorFactory(
     FileSystemType type, base::PlatformFileError* error_code) const {
@@ -230,7 +252,8 @@ FileSystemBackend* FileSystemContext::GetFileSystemBackend(
 }
 
 bool FileSystemContext::IsSandboxFileSystem(FileSystemType type) const {
-  return GetQuotaUtil(type) != NULL;
+  FileSystemBackendMap::const_iterator found = backend_map_.find(type);
+  return found != backend_map_.end() && found->second->GetQuotaUtil();
 }
 
 const UpdateObserverList* FileSystemContext::GetUpdateObservers(
@@ -268,23 +291,68 @@ void FileSystemContext::OpenFileSystem(
     FileSystemType type,
     OpenFileSystemMode mode,
     const OpenFileSystemCallback& callback) {
+  DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
   DCHECK(!callback.is_null());
 
-  FileSystemBackend* backend = GetFileSystemBackend(type);
-  if (!backend) {
-    callback.Run(base::PLATFORM_FILE_ERROR_SECURITY, std::string(), GURL());
+  if (!FileSystemContext::IsSandboxFileSystem(type)) {
+    // Disallow opening a non-sandboxed filesystem.
+    callback.Run(GURL(), std::string(), base::PLATFORM_FILE_ERROR_SECURITY);
     return;
   }
 
-  backend->OpenFileSystem(origin_url, type, mode,
-                          base::Bind(&DidOpenFileSystem, callback));
+  FileSystemBackend* backend = GetFileSystemBackend(type);
+  if (!backend) {
+    callback.Run(GURL(), std::string(), base::PLATFORM_FILE_ERROR_SECURITY);
+    return;
+  }
+
+  backend->OpenFileSystem(origin_url, type, mode, callback);
+}
+
+void FileSystemContext::ResolveURL(
+    const FileSystemURL& url,
+    const ResolveURLCallback& callback) {
+  DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
+  DCHECK(!callback.is_null());
+
+  if (!FileSystemContext::IsSandboxFileSystem(url.type())) {
+#ifdef OS_CHROMEOS
+    // Do not have to open a non-sandboxed filesystem.
+    // TODO(nhiroki): For now we assume this path is called only on ChromeOS,
+    // but this assumption may be broken in the future and we should handle
+    // more generally. http://crbug.com/304062.
+    FileSystemInfo info = GetFileSystemInfoForChromeOS(url.origin());
+    DidOpenFileSystemForResolveURL(
+        url, callback, info.root_url, info.name, base::PLATFORM_FILE_OK);
+    return;
+#endif
+    callback.Run(base::PLATFORM_FILE_ERROR_SECURITY,
+                 FileSystemInfo(), base::FilePath(), false);
+    return;
+  }
+
+  FileSystemBackend* backend = GetFileSystemBackend(url.type());
+  if (!backend) {
+    callback.Run(base::PLATFORM_FILE_ERROR_SECURITY,
+                 FileSystemInfo(), base::FilePath(), false);
+    return;
+  }
+
+  backend->OpenFileSystem(
+      url.origin(), url.type(),
+      OPEN_FILE_SYSTEM_FAIL_IF_NONEXISTENT,
+      base::Bind(&FileSystemContext::DidOpenFileSystemForResolveURL,
+                 this, url, callback));
 }
 
 void FileSystemContext::DeleteFileSystem(
     const GURL& origin_url,
     FileSystemType type,
-    const DeleteFileSystemCallback& callback) {
+    const StatusCallback& callback) {
+  DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
   DCHECK(origin_url == origin_url.GetOrigin());
+  DCHECK(!callback.is_null());
+
   FileSystemBackend* backend = GetFileSystemBackend(type);
   if (!backend) {
     callback.Run(base::PLATFORM_FILE_ERROR_SECURITY);
@@ -349,11 +417,36 @@ FileSystemURL FileSystemContext::CreateCrackedFileSystemURL(
   return CrackFileSystemURL(FileSystemURL(origin, type, path));
 }
 
-#if defined(OS_CHROMEOS) && defined(GOOGLE_CHROME_BUILD)
+#if defined(OS_CHROMEOS)
 void FileSystemContext::EnableTemporaryFileSystemInIncognito() {
   sandbox_backend_->set_enable_temporary_file_system_in_incognito(true);
 }
 #endif
+
+bool FileSystemContext::CanServeURLRequest(const FileSystemURL& url) const {
+  // We never support accessing files in isolated filesystems via an URL.
+  if (url.mount_type() == kFileSystemTypeIsolated)
+    return false;
+#if defined(OS_CHROMEOS)
+  if (url.type() == kFileSystemTypeTemporary &&
+      sandbox_backend_->enable_temporary_file_system_in_incognito()) {
+    return true;
+  }
+#endif
+  return !is_incognito_ || !FileSystemContext::IsSandboxFileSystem(url.type());
+}
+
+void FileSystemContext::OpenPluginPrivateFileSystem(
+    const GURL& origin_url,
+    FileSystemType type,
+    const std::string& filesystem_id,
+    const std::string& plugin_id,
+    OpenFileSystemMode mode,
+    const StatusCallback& callback) {
+  DCHECK(plugin_private_backend_);
+  plugin_private_backend_->OpenPrivateFileSystem(
+      origin_url, type, filesystem_id, plugin_id, mode, callback);
+}
 
 FileSystemContext::~FileSystemContext() {
 }
@@ -417,8 +510,7 @@ FileSystemURL FileSystemContext::CrackFileSystemURL(
   return current;
 }
 
-void FileSystemContext::RegisterBackend(
-    FileSystemBackend* backend) {
+void FileSystemContext::RegisterBackend(FileSystemBackend* backend) {
   const FileSystemType mount_types[] = {
     kFileSystemTypeTemporary,
     kFileSystemTypePersistent,
@@ -443,6 +535,38 @@ void FileSystemContext::RegisterBackend(
       DCHECK(inserted);
     }
   }
+}
+
+void FileSystemContext::DidOpenFileSystemForResolveURL(
+    const FileSystemURL& url,
+    const FileSystemContext::ResolveURLCallback& callback,
+    const GURL& filesystem_root,
+    const std::string& filesystem_name,
+    base::PlatformFileError error) {
+  DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
+
+  if (error != base::PLATFORM_FILE_OK) {
+    callback.Run(error, FileSystemInfo(), base::FilePath(), false);
+    return;
+  }
+
+  fileapi::FileSystemInfo info(
+      filesystem_name, filesystem_root, url.mount_type());
+
+  // Extract the virtual path not containing a filesystem type part from |url|.
+  base::FilePath parent = CrackURL(filesystem_root).virtual_path();
+  base::FilePath child = url.virtual_path();
+  base::FilePath path;
+
+  if (parent.empty()) {
+    path = child;
+  } else if (parent != child) {
+    bool result = parent.AppendRelativePath(child, &path);
+    DCHECK(result);
+  }
+
+  operation_runner()->GetMetadata(
+      url, base::Bind(&DidGetMetadataForResolveURL, path, callback, info));
 }
 
 }  // namespace fileapi

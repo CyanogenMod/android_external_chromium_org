@@ -25,8 +25,8 @@ void OverlayUserPrefStore::RemoveObserver(PrefStore::Observer* observer) {
   observers_.RemoveObserver(observer);
 }
 
-size_t OverlayUserPrefStore::NumberOfObservers() const {
-  return observers_.size();
+bool OverlayUserPrefStore::HasObservers() const {
+  return observers_.might_have_observers();
 }
 
 bool OverlayUserPrefStore::IsInitializationComplete() const {
@@ -91,11 +91,6 @@ void OverlayUserPrefStore::RemoveValue(const std::string& key) {
 
   if (overlay_.RemoveValue(key))
     ReportValueChanged(key);
-}
-
-void OverlayUserPrefStore::MarkNeedsEmptyValue(const std::string& key) {
-  if (!ShallBeStoredInOverlay(key))
-    underlay_->MarkNeedsEmptyValue(key);
 }
 
 bool OverlayUserPrefStore::ReadOnly() const {

@@ -9,16 +9,16 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/api/dns/host_resolver_wrapper.h"
 #include "chrome/browser/io_thread.h"
-#include "chrome/common/extensions/api/experimental_dns.h"
+#include "chrome/common/extensions/api/dns.h"
 #include "content/public/browser/browser_thread.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_log.h"
 
 using content::BrowserThread;
-using extensions::api::experimental_dns::ResolveCallbackResolveInfo;
+using extensions::api::dns::ResolveCallbackResolveInfo;
 
-namespace Resolve = extensions::api::experimental_dns::Resolve;
+namespace Resolve = extensions::api::dns::Resolve;
 
 namespace extensions {
 
@@ -60,9 +60,12 @@ void DnsResolveFunction::WorkOnIOThread() {
 
   net::HostResolver::RequestInfo request_info(host_port_pair);
   int resolve_result = host_resolver->Resolve(
-      request_info, addresses_.get(),
+      request_info,
+      net::DEFAULT_PRIORITY,
+      addresses_.get(),
       base::Bind(&DnsResolveFunction::OnLookupFinished, this),
-      request_handle_.get(), net::BoundNetLog());
+      request_handle_.get(),
+      net::BoundNetLog());
 
   // Balanced in OnLookupFinished.
   AddRef();

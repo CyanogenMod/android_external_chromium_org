@@ -16,39 +16,56 @@
 namespace cc {
 class CopyOutputResult;
 class DirectRenderer;
-class SoftwareRenderer;
+class FakeOutputSurfaceClient;
 class OutputSurface;
 class ResourceProvider;
+class SoftwareRenderer;
 
-class PixelTest : public testing::Test {
+class PixelTest : public testing::Test, RendererClient {
  protected:
   PixelTest();
   virtual ~PixelTest();
 
+  enum OffscreenContextOption {
+    NoOffscreenContext,
+    WithOffscreenContext
+  };
+
   bool RunPixelTest(RenderPassList* pass_list,
+                    OffscreenContextOption provide_offscreen_context,
                     const base::FilePath& ref_file,
                     const PixelComparator& comparator);
 
-  bool RunPixelTestWithReadbackTarget(RenderPassList* pass_list,
-                                      RenderPass* target,
-                                      const base::FilePath& ref_file,
-                                      const PixelComparator& comparator);
+  bool RunPixelTestWithReadbackTarget(
+      RenderPassList* pass_list,
+      RenderPass* target,
+      OffscreenContextOption provide_offscreen_context,
+      const base::FilePath& ref_file,
+      const PixelComparator& comparator);
 
+  LayerTreeSettings settings_;
   gfx::Size device_viewport_size_;
   bool disable_picture_quad_image_filtering_;
   class PixelTestRendererClient;
+  scoped_ptr<FakeOutputSurfaceClient> output_surface_client_;
   scoped_ptr<OutputSurface> output_surface_;
   scoped_ptr<ResourceProvider> resource_provider_;
-  scoped_ptr<PixelTestRendererClient> fake_client_;
+  scoped_ptr<TextureMailboxDeleter> texture_mailbox_deleter_;
   scoped_ptr<DirectRenderer> renderer_;
   scoped_ptr<SkBitmap> result_bitmap_;
+  gfx::Vector2d external_device_viewport_offset_;
+  gfx::Rect external_device_clip_rect_;
 
   void SetUpGLRenderer(bool use_skia_gpu_backend);
   void SetUpSoftwareRenderer();
 
-  void ForceExpandedViewport(gfx::Size surface_expansion,
-                             gfx::Vector2d viewport_offset);
+  void ForceExpandedViewport(gfx::Size surface_expansion);
+  void ForceViewportOffset(gfx::Vector2d viewport_offset);
+  void ForceDeviceClip(gfx::Rect clip);
   void EnableExternalStencilTest();
+
+  // RendererClient implementation.
+  virtual void SetFullRootLayerDamage() OVERRIDE {}
 
  private:
   void ReadbackResult(base::Closure quit_run_loop,
@@ -72,49 +89,36 @@ class RendererPixelTest : public PixelTest {
   virtual void SetUp() OVERRIDE;
 };
 
-// A simple wrapper to differentiate a renderer that should use ganesh
-// and one that shouldn't in templates.
-class GLRendererWithSkiaGPUBackend : public GLRenderer {
- public:
-  GLRendererWithSkiaGPUBackend(RendererClient* client,
-                       OutputSurface* output_surface,
-                       ResourceProvider* resource_provider,
-                       int highp_threshold_min)
-      : GLRenderer(client,
-                   output_surface,
-                   resource_provider,
-                   highp_threshold_min) {}
-};
-
 // Wrappers to differentiate renderers where the the output surface and viewport
 // have an externally determined size and offset.
 class GLRendererWithExpandedViewport : public GLRenderer {
  public:
   GLRendererWithExpandedViewport(RendererClient* client,
-                       OutputSurface* output_surface,
-                       ResourceProvider* resource_provider,
-                       int highp_threshold_min)
+                                 const LayerTreeSettings* settings,
+                                 OutputSurface* output_surface,
+                                 ResourceProvider* resource_provider,
+                                 TextureMailboxDeleter* texture_mailbox_deleter,
+                                 int highp_threshold_min)
       : GLRenderer(client,
+                   settings,
                    output_surface,
                    resource_provider,
+                   texture_mailbox_deleter,
                    highp_threshold_min) {}
 };
 
 class SoftwareRendererWithExpandedViewport : public SoftwareRenderer {
  public:
   SoftwareRendererWithExpandedViewport(RendererClient* client,
-                       OutputSurface* output_surface,
-                       ResourceProvider* resource_provider)
-      : SoftwareRenderer(client,
-                   output_surface,
-                   resource_provider) {}
+                                       const LayerTreeSettings* settings,
+                                       OutputSurface* output_surface,
+                                       ResourceProvider* resource_provider)
+      : SoftwareRenderer(client, settings, output_surface, resource_provider) {}
 };
-
 
 template<>
 inline void RendererPixelTest<GLRenderer>::SetUp() {
   SetUpGLRenderer(false);
-  DCHECK(!renderer()->CanUseSkiaGPUBackend());
 }
 
 template<>
@@ -128,27 +132,10 @@ inline bool RendererPixelTest<GLRenderer>::ExpandedViewport() const {
 }
 
 template<>
-inline void RendererPixelTest<GLRendererWithSkiaGPUBackend>::SetUp() {
-  SetUpGLRenderer(true);
-  DCHECK(renderer()->CanUseSkiaGPUBackend());
-}
-
-template <>
-inline bool
-RendererPixelTest<GLRendererWithSkiaGPUBackend>::UseSkiaGPUBackend() const {
-  return true;
-}
-
-template <>
-inline bool RendererPixelTest<GLRendererWithSkiaGPUBackend>::ExpandedViewport()
-    const {
-  return false;
-}
-
-template<>
 inline void RendererPixelTest<GLRendererWithExpandedViewport>::SetUp() {
   SetUpGLRenderer(false);
-  ForceExpandedViewport(gfx::Size(50, 50), gfx::Vector2d(10, 20));
+  ForceExpandedViewport(gfx::Size(50, 50));
+  ForceViewportOffset(gfx::Vector2d(10, 20));
 }
 
 template <>
@@ -181,7 +168,8 @@ inline bool RendererPixelTest<SoftwareRenderer>::ExpandedViewport() const {
 template<>
 inline void RendererPixelTest<SoftwareRendererWithExpandedViewport>::SetUp() {
   SetUpSoftwareRenderer();
-  ForceExpandedViewport(gfx::Size(50, 50), gfx::Vector2d(10, 20));
+  ForceExpandedViewport(gfx::Size(50, 50));
+  ForceViewportOffset(gfx::Vector2d(10, 20));
 }
 
 template <>
@@ -197,8 +185,6 @@ inline bool RendererPixelTest<
 }
 
 typedef RendererPixelTest<GLRenderer> GLRendererPixelTest;
-typedef RendererPixelTest<GLRendererWithSkiaGPUBackend>
-    GLRendererSkiaGPUBackendPixelTest;
 typedef RendererPixelTest<SoftwareRenderer> SoftwareRendererPixelTest;
 
 }  // namespace cc

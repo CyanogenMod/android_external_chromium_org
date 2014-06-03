@@ -29,6 +29,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "content/browser/renderer_host/render_sandbox_host_linux.h"
+#include "content/common/child_process_sandbox_support_impl_linux.h"
 #include "content/common/zygote_commands_linux.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/common/content_switches.h"
@@ -36,6 +37,7 @@
 #include "sandbox/linux/suid/client/setuid_sandbox_client.h"
 #include "sandbox/linux/suid/common/sandbox.h"
 #include "ui/base/ui_base_switches.h"
+#include "ui/gfx/switches.h"
 
 #if defined(USE_TCMALLOC)
 #include "third_party/tcmalloc/chromium/src/gperftools/heap-profiler.h"
@@ -50,16 +52,18 @@ ZygoteHost* ZygoteHost::GetInstance() {
 
 ZygoteHostImpl::ZygoteHostImpl()
     : control_fd_(-1),
+      control_lock_(),
       pid_(-1),
       init_(false),
       using_suid_sandbox_(false),
+      sandbox_binary_(),
       have_read_sandbox_status_word_(false),
-      sandbox_status_(0) {}
+      sandbox_status_(0),
+      child_tracking_lock_(),
+      list_of_running_zygote_children_(),
+      should_teardown_after_last_child_exits_(false) {}
 
-ZygoteHostImpl::~ZygoteHostImpl() {
-  if (init_)
-    close(control_fd_);
-}
+ZygoteHostImpl::~ZygoteHostImpl() { TearDown(); }
 
 // static
 ZygoteHostImpl* ZygoteHostImpl::GetInstance() {
@@ -149,7 +153,7 @@ void ZygoteHostImpl::Init(const std::string& sandbox_cmd) {
   // Start up the sandbox host process and get the file descriptor for the
   // renderers to talk to it.
   const int sfd = RenderSandboxHostLinux::GetInstance()->GetRendererSocket();
-  fds_to_map.push_back(std::make_pair(sfd, kZygoteRendererSocketFd));
+  fds_to_map.push_back(std::make_pair(sfd, GetSandboxFD()));
 
   int dummy_fd = -1;
   if (using_suid_sandbox_) {
@@ -215,8 +219,56 @@ void ZygoteHostImpl::Init(const std::string& sandbox_cmd) {
   // We don't wait for the reply. We'll read it in ReadReply.
 }
 
+void ZygoteHostImpl::TearDownAfterLastChild() {
+  bool do_teardown = false;
+  {
+    base::AutoLock lock(child_tracking_lock_);
+    should_teardown_after_last_child_exits_ = true;
+    do_teardown = list_of_running_zygote_children_.empty();
+  }
+  if (do_teardown) {
+    TearDown();
+  }
+}
+
+// Note: this is also called from the destructor.
+void ZygoteHostImpl::TearDown() {
+  base::AutoLock lock(control_lock_);
+  if (control_fd_ > -1) {
+    // Closing the IPC channel will act as a notification to exit
+    // to the Zygote.
+    if (IGNORE_EINTR(close(control_fd_))) {
+      PLOG(ERROR) << "Could not close Zygote control channel.";
+      NOTREACHED();
+    }
+    control_fd_ = -1;
+  }
+}
+
+void ZygoteHostImpl::ZygoteChildBorn(pid_t process) {
+  base::AutoLock lock(child_tracking_lock_);
+  bool new_element_inserted =
+      list_of_running_zygote_children_.insert(process).second;
+  DCHECK(new_element_inserted);
+}
+
+void ZygoteHostImpl::ZygoteChildDied(pid_t process) {
+  bool do_teardown = false;
+  {
+    base::AutoLock lock(child_tracking_lock_);
+    size_t num_erased = list_of_running_zygote_children_.erase(process);
+    DCHECK_EQ(1U, num_erased);
+    do_teardown = should_teardown_after_last_child_exits_ &&
+                  list_of_running_zygote_children_.empty();
+  }
+  if (do_teardown) {
+    TearDown();
+  }
+}
+
 bool ZygoteHostImpl::SendMessage(const Pickle& data,
                                  const std::vector<int>* fds) {
+  DCHECK_NE(-1, control_fd_);
   CHECK(data.size() <= kZygoteMaxMessageLength)
       << "Trying to send too-large message to zygote (sending " << data.size()
       << " bytes, max is " << kZygoteMaxMessageLength << ")";
@@ -231,6 +283,7 @@ bool ZygoteHostImpl::SendMessage(const Pickle& data,
 }
 
 ssize_t ZygoteHostImpl::ReadReply(void* buf, size_t buf_len) {
+  DCHECK_NE(-1, control_fd_);
   // At startup we send a kZygoteCommandGetSandboxStatus request to the zygote,
   // but don't wait for the reply. Thus, the first time that we read from the
   // zygote, we get the reply to that request.
@@ -334,6 +387,7 @@ pid_t ZygoteHostImpl::ForkRequest(
   AdjustRendererOOMScore(pid, kLowestRendererOomScore);
 #endif
 
+  ZygoteChildBorn(pid);
   return pid;
 }
 
@@ -405,41 +459,6 @@ void ZygoteHostImpl::AdjustRendererOOMScore(base::ProcessHandle pid,
 }
 #endif
 
-void ZygoteHostImpl::AdjustLowMemoryMargin(int64 margin_mb) {
-#if defined(OS_CHROMEOS)
-  // You can't change the low memory margin unless you're root. Because of this,
-  // we can't set the low memory margin from the browser process.
-  // So, we use the SUID binary to change it for us.
-  if (using_suid_sandbox_) {
-#if defined(USE_TCMALLOC)
-    // If heap profiling is running, these processes are not exiting, at least
-    // on ChromeOS. The easiest thing to do is not launch them when profiling.
-    // TODO(stevenjb): Investigate further and fix.
-    if (IsHeapProfilerRunning())
-      return;
-#endif
-    std::vector<std::string> adj_low_mem_commandline;
-    adj_low_mem_commandline.push_back(sandbox_binary_);
-    adj_low_mem_commandline.push_back(sandbox::kAdjustLowMemMarginSwitch);
-    adj_low_mem_commandline.push_back(base::Int64ToString(margin_mb));
-
-    base::ProcessHandle sandbox_helper_process;
-    if (base::LaunchProcess(adj_low_mem_commandline, base::LaunchOptions(),
-                            &sandbox_helper_process)) {
-      base::EnsureProcessGetsReaped(sandbox_helper_process);
-    } else {
-      LOG(ERROR) << "Unable to run suid sandbox to set low memory margin.";
-    }
-  }
-  // Don't adjust memory margin if we're not running with the sandbox: this
-  // isn't very common, and not doing it has little impact.
-#else
-  // Low memory notification is currently only implemented on ChromeOS.
-  NOTREACHED() << "AdjustLowMemoryMargin not implemented";
-#endif  // defined(OS_CHROMEOS)
-}
-
-
 void ZygoteHostImpl::EnsureProcessTerminated(pid_t process) {
   DCHECK(init_);
   Pickle pickle;
@@ -448,6 +467,7 @@ void ZygoteHostImpl::EnsureProcessTerminated(pid_t process) {
   pickle.WriteInt(process);
   if (!SendMessage(pickle, NULL))
     LOG(ERROR) << "Failed to send Reap message to zygote";
+  ZygoteChildDied(process);
 }
 
 base::TerminationStatus ZygoteHostImpl::GetTerminationStatus(
@@ -460,10 +480,6 @@ base::TerminationStatus ZygoteHostImpl::GetTerminationStatus(
   pickle.WriteBool(known_dead);
   pickle.WriteInt(handle);
 
-  // Set this now to handle the early termination cases.
-  if (exit_code)
-    *exit_code = RESULT_CODE_NORMAL_EXIT;
-
   static const unsigned kMaxMessageLength = 128;
   char buf[kMaxMessageLength];
   ssize_t len;
@@ -474,26 +490,33 @@ base::TerminationStatus ZygoteHostImpl::GetTerminationStatus(
     len = ReadReply(buf, sizeof(buf));
   }
 
+  // Set this now to handle the error cases.
+  if (exit_code)
+    *exit_code = RESULT_CODE_NORMAL_EXIT;
+  int status = base::TERMINATION_STATUS_NORMAL_TERMINATION;
+
   if (len == -1) {
     LOG(WARNING) << "Error reading message from zygote: " << errno;
-    return base::TERMINATION_STATUS_NORMAL_TERMINATION;
   } else if (len == 0) {
     LOG(WARNING) << "Socket closed prematurely.";
-    return base::TERMINATION_STATUS_NORMAL_TERMINATION;
+  } else {
+    Pickle read_pickle(buf, len);
+    int tmp_status, tmp_exit_code;
+    PickleIterator iter(read_pickle);
+    if (!read_pickle.ReadInt(&iter, &tmp_status) ||
+        !read_pickle.ReadInt(&iter, &tmp_exit_code)) {
+      LOG(WARNING)
+          << "Error parsing GetTerminationStatus response from zygote.";
+    } else {
+      if (exit_code)
+        *exit_code = tmp_exit_code;
+      status = tmp_status;
+    }
   }
 
-  Pickle read_pickle(buf, len);
-  int status, tmp_exit_code;
-  PickleIterator iter(read_pickle);
-  if (!read_pickle.ReadInt(&iter, &status) ||
-      !read_pickle.ReadInt(&iter, &tmp_exit_code)) {
-    LOG(WARNING) << "Error parsing GetTerminationStatus response from zygote.";
-    return base::TERMINATION_STATUS_NORMAL_TERMINATION;
+  if (status != base::TERMINATION_STATUS_STILL_RUNNING) {
+    ZygoteChildDied(handle);
   }
-
-  if (exit_code)
-    *exit_code = tmp_exit_code;
-
   return static_cast<base::TerminationStatus>(status);
 }
 

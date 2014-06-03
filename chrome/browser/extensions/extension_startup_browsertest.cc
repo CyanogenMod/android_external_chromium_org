@@ -12,13 +12,13 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
+#include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/extensions/user_script_master.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/feature_switch.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/testing_profile.h"
 #include "chrome/test/base/ui_test_utils.h"
@@ -26,6 +26,7 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test_utils.h"
+#include "extensions/common/feature_switch.h"
 #include "net/base/net_util.h"
 
 using extensions::FeatureSwitch;
@@ -59,7 +60,7 @@ class ExtensionStartupTestBase : public InProcessBrowserTest {
     base::FilePath profile_dir;
     PathService::Get(chrome::DIR_USER_DATA, &profile_dir);
     profile_dir = profile_dir.AppendASCII(TestingProfile::kTestUserProfileDir);
-    file_util::CreateDirectory(profile_dir);
+    base::CreateDirectory(profile_dir);
 
     preferences_file_ = profile_dir.AppendASCII("Preferences");
     user_scripts_dir_ = profile_dir.AppendASCII("User Scripts");
@@ -188,7 +189,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionsStartupTest, MAYBE_NoFileAccess) {
        it != service->extensions()->end(); ++it) {
     if ((*it)->location() == extensions::Manifest::COMPONENT)
       continue;
-    if (service->AllowFileAccess(it->get()))
+    if (extension_util::AllowFileAccess(it->get(), service))
       extension_list.push_back(it->get());
   }
 
@@ -196,7 +197,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionsStartupTest, MAYBE_NoFileAccess) {
     content::WindowedNotificationObserver user_scripts_observer(
         chrome::NOTIFICATION_USER_SCRIPTS_UPDATED,
         content::NotificationService::AllSources());
-    service->SetAllowFileAccess(extension_list[i], false);
+    extension_util::SetAllowFileAccess(extension_list[i], service, false);
     user_scripts_observer.Wait();
   }
 

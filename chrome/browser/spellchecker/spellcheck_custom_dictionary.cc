@@ -60,7 +60,7 @@ ChecksumStatus LoadFile(const base::FilePath& file_path, WordList& words) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
   words.clear();
   std::string contents;
-  file_util::ReadFileToString(file_path, &contents);
+  base::ReadFileToString(file_path, &contents);
   size_t pos = contents.rfind(CHECKSUM_PREFIX);
   if (pos != std::string::npos) {
     std::string checksum = contents.substr(pos + strlen(CHECKSUM_PREFIX));
@@ -129,12 +129,7 @@ void SaveDictionaryFileReliably(
 int SanitizeWordsToAdd(const WordSet& existing, WordList& to_add) {
   // Do not add duplicate words.
   std::sort(to_add.begin(), to_add.end());
-  WordList new_words;
-  std::set_difference(to_add.begin(),
-                      to_add.end(),
-                      existing.begin(),
-                      existing.end(),
-                      std::back_inserter(new_words));
+  WordList new_words = base::STLSetDifference<WordList>(to_add, existing);
   new_words.erase(std::unique(new_words.begin(), new_words.end()),
                   new_words.end());
   int result = VALID_CHANGE;
@@ -223,8 +218,8 @@ bool SpellcheckCustomDictionary::Change::empty() const {
 SpellcheckCustomDictionary::SpellcheckCustomDictionary(
     const base::FilePath& path)
     : custom_dictionary_path_(),
-      weak_ptr_factory_(this),
-      is_loaded_(false) {
+      is_loaded_(false),
+      weak_ptr_factory_(this) {
   custom_dictionary_path_ =
       path.Append(chrome::kCustomDictionaryFileName);
 }
@@ -328,12 +323,8 @@ syncer::SyncMergeResult SpellcheckCustomDictionary::MergeDataAndStartSyncing(
 
   // Add as many as possible local words remotely.
   std::sort(to_add_locally.begin(), to_add_locally.end());
-  WordList to_add_remotely;
-  std::set_difference(words_.begin(),
-                      words_.end(),
-                      to_add_locally.begin(),
-                      to_add_locally.end(),
-                      std::back_inserter(to_add_remotely));
+  WordList to_add_remotely = base::STLSetDifference<WordList>(words_,
+                                                              to_add_locally);
 
   // Send local changes to the sync server.
   Change to_change_remotely(to_add_remotely);
@@ -431,12 +422,9 @@ void SpellcheckCustomDictionary::UpdateDictionaryFile(
 
   // Remove words.
   std::sort(custom_words.begin(), custom_words.end());
-  WordList remaining;
-  std::set_difference(custom_words.begin(),
-                      custom_words.end(),
-                      dictionary_change.to_remove().begin(),
-                      dictionary_change.to_remove().end(),
-                      std::back_inserter(remaining));
+  WordList remaining =
+      base::STLSetDifference<WordList>(custom_words,
+                                       dictionary_change.to_remove());
   std::swap(custom_words, remaining);
 
   SaveDictionaryFileReliably(custom_words, path);
@@ -460,12 +448,9 @@ void SpellcheckCustomDictionary::Apply(
                   dictionary_change.to_add().end());
   }
   if (!dictionary_change.to_remove().empty()) {
-    WordSet updated_words;
-    std::set_difference(words_.begin(),
-                        words_.end(),
-                        dictionary_change.to_remove().begin(),
-                        dictionary_change.to_remove().end(),
-                        std::inserter(updated_words, updated_words.end()));
+    WordSet updated_words =
+        base::STLSetDifference<WordSet>(words_,
+                                        dictionary_change.to_remove());
     std::swap(words_, updated_words);
   }
 }

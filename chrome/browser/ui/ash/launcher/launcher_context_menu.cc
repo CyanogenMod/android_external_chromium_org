@@ -7,21 +7,21 @@
 #include <string>
 
 #include "ash/desktop_background/user_wallpaper_delegate.h"
+#include "ash/metrics/user_metrics_recorder.h"
 #include "ash/root_window_controller.h"
+#include "ash/shelf/shelf_widget.h"
 #include "ash/shell.h"
-#include "ash/shell_delegate.h"
-#include "ash/wm/property_util.h"
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/extensions/context_menu_matcher.h"
-#include "chrome/browser/extensions/extension_prefs.h"
 #include "chrome/browser/fullscreen.h"
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/ash/chrome_shell_delegate.h"
 #include "chrome/browser/ui/ash/launcher/chrome_launcher_controller.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/extensions/extension_constants.h"
 #include "content/public/common/context_menu_params.h"
 #include "grit/ash_strings.h"
 #include "grit/generated_resources.h"
@@ -37,11 +37,11 @@ bool MenuItemHasLauncherContext(const extensions::MenuItem* item) {
 
 LauncherContextMenu::LauncherContextMenu(ChromeLauncherController* controller,
                                          const ash::LauncherItem* item,
-                                         aura::RootWindow* root)
+                                         aura::Window* root)
     : ui::SimpleMenuModel(NULL),
       controller_(controller),
       item_(*item),
-      launcher_alignment_menu_(root),
+      shelf_alignment_menu_(root),
       root_window_(root) {
   DCHECK(item);
   DCHECK(root_window_);
@@ -49,11 +49,11 @@ LauncherContextMenu::LauncherContextMenu(ChromeLauncherController* controller,
 }
 
 LauncherContextMenu::LauncherContextMenu(ChromeLauncherController* controller,
-                                         aura::RootWindow* root)
+                                         aura::Window* root)
     : ui::SimpleMenuModel(NULL),
       controller_(controller),
       item_(ash::LauncherItem()),
-      launcher_alignment_menu_(root),
+      shelf_alignment_menu_(root),
       extension_items_(new extensions::ContextMenuMatcher(
           controller->profile(), this, this,
           base::Bind(MenuItemHasLauncherContext))),
@@ -73,7 +73,7 @@ void LauncherContextMenu::Init() {
         item_.type == ash::TYPE_WINDOWED_APP) {
       // V1 apps can be started from the menu - but V2 apps should not.
       if  (!controller_->IsPlatformApp(item_.id)) {
-        AddItem(MENU_OPEN_NEW, string16());
+        AddItem(MENU_OPEN_NEW, base::string16());
         AddSeparator(ui::NORMAL_SEPARATOR);
       }
       AddItem(
@@ -88,13 +88,21 @@ void LauncherContextMenu::Init() {
       if (!controller_->IsPlatformApp(item_.id) &&
           item_.type != ash::TYPE_WINDOWED_APP) {
         AddSeparator(ui::NORMAL_SEPARATOR);
-        AddCheckItemWithStringId(
-            LAUNCH_TYPE_REGULAR_TAB,
-            IDS_APP_CONTEXT_MENU_OPEN_REGULAR);
-        AddCheckItemWithStringId(
-            LAUNCH_TYPE_PINNED_TAB,
-            IDS_APP_CONTEXT_MENU_OPEN_PINNED);
-        if (!ash::Shell::IsForcedMaximizeMode()) {
+        if (CommandLine::ForCurrentProcess()->HasSwitch(
+            switches::kEnableStreamlinedHostedApps)) {
+          // Streamlined hosted apps launch in a window by default. This menu
+          // item is re-interpreted as a single, toggle-able option to launch
+          // the hosted app as a tab.
+          AddCheckItemWithStringId(
+              LAUNCH_TYPE_REGULAR_TAB,
+              IDS_APP_CONTEXT_MENU_OPEN_TAB);
+        } else {
+          AddCheckItemWithStringId(
+              LAUNCH_TYPE_REGULAR_TAB,
+              IDS_APP_CONTEXT_MENU_OPEN_REGULAR);
+          AddCheckItemWithStringId(
+              LAUNCH_TYPE_PINNED_TAB,
+              IDS_APP_CONTEXT_MENU_OPEN_PINNED);
           AddCheckItemWithStringId(
               LAUNCH_TYPE_WINDOW,
               IDS_APP_CONTEXT_MENU_OPEN_WINDOW);
@@ -131,7 +139,7 @@ void LauncherContextMenu::Init() {
       if (!app_id.empty()) {
         int index = 0;
         extension_items_->AppendExtensionItems(
-            app_id, string16(), &index);
+            app_id, base::string16(), &index);
         AddSeparator(ui::NORMAL_SEPARATOR);
       }
     }
@@ -144,11 +152,10 @@ void LauncherContextMenu::Init() {
     AddCheckItemWithStringId(MENU_AUTO_HIDE,
                              IDS_ASH_SHELF_CONTEXT_MENU_AUTO_HIDE);
   }
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kShowShelfAlignmentMenu)) {
+  if (ash::ShelfWidget::ShelfAlignmentAllowed()) {
     AddSubMenuWithStringId(MENU_ALIGNMENT_MENU,
                            IDS_ASH_SHELF_CONTEXT_MENU_POSITION,
-                           &launcher_alignment_menu_);
+                           &shelf_alignment_menu_);
   }
 #if defined(OS_CHROMEOS)
   AddItem(MENU_CHANGE_WALLPAPER,
@@ -163,38 +170,38 @@ bool LauncherContextMenu::IsItemForCommandIdDynamic(int command_id) const {
   return command_id == MENU_OPEN_NEW;
 }
 
-string16 LauncherContextMenu::GetLabelForCommandId(int command_id) const {
+base::string16 LauncherContextMenu::GetLabelForCommandId(int command_id) const {
   if (command_id == MENU_OPEN_NEW) {
     if (item_.type == ash::TYPE_PLATFORM_APP) {
       return l10n_util::GetStringUTF16(IDS_LAUNCHER_CONTEXT_MENU_NEW_WINDOW);
     }
     switch (controller_->GetLaunchType(item_.id)) {
-      case extensions::ExtensionPrefs::LAUNCH_PINNED:
-      case extensions::ExtensionPrefs::LAUNCH_REGULAR:
+      case extensions::LAUNCH_TYPE_PINNED:
+      case extensions::LAUNCH_TYPE_REGULAR:
         return l10n_util::GetStringUTF16(IDS_LAUNCHER_CONTEXT_MENU_NEW_TAB);
-      case extensions::ExtensionPrefs::LAUNCH_FULLSCREEN:
-      case extensions::ExtensionPrefs::LAUNCH_WINDOW:
+      case extensions::LAUNCH_TYPE_FULLSCREEN:
+      case extensions::LAUNCH_TYPE_WINDOW:
         return l10n_util::GetStringUTF16(IDS_LAUNCHER_CONTEXT_MENU_NEW_WINDOW);
     }
   }
   NOTREACHED();
-  return string16();
+  return base::string16();
 }
 
 bool LauncherContextMenu::IsCommandIdChecked(int command_id) const {
   switch (command_id) {
     case LAUNCH_TYPE_PINNED_TAB:
       return controller_->GetLaunchType(item_.id) ==
-          extensions::ExtensionPrefs::LAUNCH_PINNED;
+          extensions::LAUNCH_TYPE_PINNED;
     case LAUNCH_TYPE_REGULAR_TAB:
       return controller_->GetLaunchType(item_.id) ==
-          extensions::ExtensionPrefs::LAUNCH_REGULAR;
+          extensions::LAUNCH_TYPE_REGULAR;
     case LAUNCH_TYPE_WINDOW:
       return controller_->GetLaunchType(item_.id) ==
-          extensions::ExtensionPrefs::LAUNCH_WINDOW;
+          extensions::LAUNCH_TYPE_WINDOW;
     case LAUNCH_TYPE_FULLSCREEN:
       return controller_->GetLaunchType(item_.id) ==
-          extensions::ExtensionPrefs::LAUNCH_FULLSCREEN;
+          extensions::LAUNCH_TYPE_FULLSCREEN;
     case MENU_AUTO_HIDE:
       return controller_->GetShelfAutoHideBehavior(root_window_) ==
           ash::SHELF_AUTO_HIDE_BEHAVIOR_ALWAYS;
@@ -206,8 +213,7 @@ bool LauncherContextMenu::IsCommandIdChecked(int command_id) const {
 bool LauncherContextMenu::IsCommandIdEnabled(int command_id) const {
   switch (command_id) {
     case MENU_PIN:
-      return item_.type == ash::TYPE_PLATFORM_APP ||
-          controller_->IsPinnable(item_.id);
+      return controller_->IsPinnable(item_.id);
 #if defined(OS_CHROMEOS)
     case MENU_CHANGE_WALLPAPER:
       return ash::Shell::GetInstance()->user_wallpaper_delegate()->
@@ -241,27 +247,35 @@ void LauncherContextMenu::ExecuteCommand(int command_id, int event_flags) {
       break;
     case MENU_CLOSE:
       controller_->Close(item_.id);
-      ChromeShellDelegate::instance()->RecordUserMetricsAction(
+      ash::Shell::GetInstance()->metrics()->RecordUserMetricsAction(
           ash::UMA_CLOSE_THROUGH_CONTEXT_MENU);
       break;
     case MENU_PIN:
       controller_->TogglePinned(item_.id);
       break;
     case LAUNCH_TYPE_PINNED_TAB:
-      controller_->SetLaunchType(item_.id,
-                                 extensions::ExtensionPrefs::LAUNCH_PINNED);
+      controller_->SetLaunchType(item_.id, extensions::LAUNCH_TYPE_PINNED);
       break;
-    case LAUNCH_TYPE_REGULAR_TAB:
-      controller_->SetLaunchType(item_.id,
-                                 extensions::ExtensionPrefs::LAUNCH_REGULAR);
+    case LAUNCH_TYPE_REGULAR_TAB: {
+      extensions::LaunchType launch_type =
+          extensions::LAUNCH_TYPE_REGULAR;
+      // Streamlined hosted apps can only toggle between LAUNCH_WINDOW and
+      // LAUNCH_REGULAR.
+      if (CommandLine::ForCurrentProcess()->HasSwitch(
+              switches::kEnableStreamlinedHostedApps)) {
+        launch_type = controller_->GetLaunchType(item_.id) ==
+                    extensions::LAUNCH_TYPE_REGULAR
+                ? extensions::LAUNCH_TYPE_WINDOW
+                : extensions::LAUNCH_TYPE_REGULAR;
+      }
+      controller_->SetLaunchType(item_.id, launch_type);
       break;
+    }
     case LAUNCH_TYPE_WINDOW:
-      controller_->SetLaunchType(item_.id,
-                                 extensions::ExtensionPrefs::LAUNCH_WINDOW);
+      controller_->SetLaunchType(item_.id, extensions::LAUNCH_TYPE_WINDOW);
       break;
     case LAUNCH_TYPE_FULLSCREEN:
-      controller_->SetLaunchType(item_.id,
-                                 extensions::ExtensionPrefs::LAUNCH_FULLSCREEN);
+      controller_->SetLaunchType(item_.id, extensions::LAUNCH_TYPE_FULLSCREEN);
       break;
     case MENU_AUTO_HIDE:
       controller_->ToggleShelfAutoHideBehavior(root_window_);

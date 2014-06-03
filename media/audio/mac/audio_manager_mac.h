@@ -22,26 +22,32 @@ namespace media {
 // the AudioManager class.
 class MEDIA_EXPORT AudioManagerMac : public AudioManagerBase {
  public:
-  AudioManagerMac();
+  AudioManagerMac(AudioLogFactory* audio_log_factory);
 
   // Implementation of AudioManager.
   virtual bool HasAudioOutputDevices() OVERRIDE;
   virtual bool HasAudioInputDevices() OVERRIDE;
-  virtual void GetAudioInputDeviceNames(media::AudioDeviceNames* device_names)
-      OVERRIDE;
+  virtual void GetAudioInputDeviceNames(
+      AudioDeviceNames* device_names) OVERRIDE;
+  virtual void GetAudioOutputDeviceNames(
+      AudioDeviceNames* device_names) OVERRIDE;
   virtual AudioParameters GetInputStreamParameters(
       const std::string& device_id) OVERRIDE;
+  virtual std::string GetAssociatedOutputDeviceID(
+      const std::string& input_device_id) OVERRIDE;
 
   // Implementation of AudioManagerBase.
   virtual AudioOutputStream* MakeLinearOutputStream(
       const AudioParameters& params) OVERRIDE;
   virtual AudioOutputStream* MakeLowLatencyOutputStream(
       const AudioParameters& params,
+      const std::string& device_id,
       const std::string& input_device_id) OVERRIDE;
   virtual AudioInputStream* MakeLinearInputStream(
       const AudioParameters& params, const std::string& device_id) OVERRIDE;
   virtual AudioInputStream* MakeLowLatencyInputStream(
       const AudioParameters& params, const std::string& device_id) OVERRIDE;
+  virtual std::string GetDefaultOutputDeviceID() OVERRIDE;
 
   static bool GetDefaultInputDevice(AudioDeviceID* device);
   static bool GetDefaultOutputDevice(AudioDeviceID* device);
@@ -56,14 +62,11 @@ class MEDIA_EXPORT AudioManagerMac : public AudioManagerBase {
   static int HardwareSampleRateForDevice(AudioDeviceID device_id);
   static int HardwareSampleRate();
 
-  // Notify streams of a device change if the default output device or its
-  // sample rate has changed, otherwise does nothing.
-  void HandleDeviceChanges();
-
  protected:
   virtual ~AudioManagerMac();
 
   virtual AudioParameters GetPreferredOutputStreamParameters(
+      const std::string& output_device_id,
       const AudioParameters& input_params) OVERRIDE;
 
  private:
@@ -72,6 +75,12 @@ class MEDIA_EXPORT AudioManagerMac : public AudioManagerBase {
   // Helper methods for constructing AudioDeviceListenerMac on the audio thread.
   void CreateDeviceListener();
   void DestroyDeviceListener();
+
+  int ChooseBufferSize(int output_sample_rate);
+
+  // Notify streams of a device change if the default output device or its
+  // sample rate has changed, otherwise does nothing.
+  void HandleDeviceChanges();
 
   scoped_ptr<AudioDeviceListenerMac> output_device_listener_;
 

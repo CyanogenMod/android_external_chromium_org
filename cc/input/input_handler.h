@@ -8,6 +8,7 @@
 #include "base/basictypes.h"
 #include "base/time/time.h"
 #include "cc/base/cc_export.h"
+#include "cc/base/swap_promise_monitor.h"
 #include "cc/input/scrollbar.h"
 
 namespace gfx {
@@ -96,6 +97,8 @@ class CC_EXPORT InputHandler {
 
   virtual void NotifyCurrentFlingVelocity(gfx::Vector2dF velocity) = 0;
 
+  virtual void MouseMoveAt(gfx::Point mouse_position) = 0;
+
   // Stop scrolling the selected layer. Should only be called if ScrollBegin()
   // returned ScrollStarted.
   virtual void ScrollEnd() = 0;
@@ -117,7 +120,6 @@ class CC_EXPORT InputHandler {
   virtual void StartPageScaleAnimation(gfx::Vector2d target_offset,
                                        bool anchor_point,
                                        float page_scale,
-                                       base::TimeTicks start_time,
                                        base::TimeDelta duration) = 0;
 
   // Request another callback to InputHandlerClient::Animate().
@@ -125,8 +127,13 @@ class CC_EXPORT InputHandler {
 
   virtual bool HaveTouchEventHandlersAt(gfx::Point viewport_point) = 0;
 
-  virtual void SetLatencyInfoForInputEvent(
-      const ui::LatencyInfo& latency_info) = 0;
+  // Calling CreateLatencyInfoSwapPromiseMonitor() to get a scoped
+  // LatencyInfoSwapPromiseMonitor. During the life time of the
+  // LatencyInfoSwapPromiseMonitor, if SetNeedsRedraw() or SetNeedsRedrawRect()
+  // is called on LayerTreeHostImpl, the original latency info will be turned
+  // into a LatencyInfoSwapPromise.
+  virtual scoped_ptr<SwapPromiseMonitor> CreateLatencyInfoSwapPromiseMonitor(
+      ui::LatencyInfo* latency) = 0;
 
  protected:
   InputHandler() {}

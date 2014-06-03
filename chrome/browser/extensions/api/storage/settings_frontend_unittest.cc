@@ -35,7 +35,7 @@ scoped_ptr<Value> CreateKilobyte() {
   for (int i = 0; i < 1024; ++i) {
     kilobyte_string += "a";
   }
-  return scoped_ptr<Value>(Value::CreateStringValue(kilobyte_string));
+  return scoped_ptr<Value>(new base::StringValue(kilobyte_string));
 }
 
 // Creates a megabyte of data.
@@ -47,7 +47,7 @@ scoped_ptr<Value> CreateMegabyte() {
   return scoped_ptr<Value>(megabyte);
 }
 
-}
+}  // namespace
 
 class ExtensionSettingsFrontendTest : public testing::Test {
  public:
@@ -111,7 +111,7 @@ TEST_F(ExtensionSettingsFrontendTest, SettingsPreservedAcrossReconstruction) {
   {
     ValueStore::ReadResult result = storage->Get();
     ASSERT_FALSE(result->HasError());
-    EXPECT_FALSE(result->settings()->empty());
+    EXPECT_FALSE(result->settings().empty());
   }
 
   ResetFrontend();
@@ -120,7 +120,7 @@ TEST_F(ExtensionSettingsFrontendTest, SettingsPreservedAcrossReconstruction) {
   {
     ValueStore::ReadResult result = storage->Get();
     ASSERT_FALSE(result->HasError());
-    EXPECT_FALSE(result->settings()->empty());
+    EXPECT_FALSE(result->settings().empty());
   }
 }
 
@@ -148,7 +148,7 @@ TEST_F(ExtensionSettingsFrontendTest, SettingsClearedOnUninstall) {
   {
     ValueStore::ReadResult result = storage->Get();
     ASSERT_FALSE(result->HasError());
-    EXPECT_TRUE(result->settings()->empty());
+    EXPECT_TRUE(result->settings().empty());
   }
 }
 
@@ -184,8 +184,9 @@ TEST_F(ExtensionSettingsFrontendTest, LeveldbDatabaseDeletedFromDiskOnClear) {
   //EXPECT_FALSE(base::PathExists(temp_dir_.path()));
 }
 
+// Disabled (slow), http://crbug.com/322751 .
 TEST_F(ExtensionSettingsFrontendTest,
-       QuotaLimitsEnforcedCorrectlyForSyncAndLocal) {
+       DISABLED_QuotaLimitsEnforcedCorrectlyForSyncAndLocal) {
   const std::string id = "ext";
   ExtensionServiceInterface* esi =
       extensions::ExtensionSystem::Get(profile_.get())->extension_service();

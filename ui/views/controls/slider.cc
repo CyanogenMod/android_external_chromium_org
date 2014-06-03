@@ -13,9 +13,9 @@
 #include "third_party/skia/include/core/SkColor.h"
 #include "third_party/skia/include/core/SkPaint.h"
 #include "ui/base/accessibility/accessible_view_state.h"
-#include "ui/base/animation/slide_animation.h"
-#include "ui/base/events/event.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/events/event.h"
+#include "ui/gfx/animation/slide_animation.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/rect.h"
@@ -61,7 +61,7 @@ Slider::Slider(SliderListener* listener, Orientation orientation)
       bar_active_images_(kBarImagesActive),
       bar_disabled_images_(kBarImagesDisabled) {
   EnableCanvasFlippingForRTLUI(true);
-  set_focusable(true);
+  SetFocusable(true);
   UpdateState(true);
 }
 
@@ -95,7 +95,7 @@ void Slider::SetValueInternal(float value, SliderChangeReason reason) {
     // Do not animate when setting the value of the slider for the first time.
     // There is no message-loop when running tests. So we cannot animate then.
     animating_value_ = old_value;
-    move_animation_.reset(new ui::SlideAnimation(this));
+    move_animation_.reset(new gfx::SlideAnimation(this));
     move_animation_->SetSlideDuration(kSlideValueChangeDurationMS);
     move_animation_->Show();
     AnimationProgressed(move_animation_.get());
@@ -169,6 +169,19 @@ void Slider::UpdateState(bool control_on) {
 
 void Slider::SetAccessibleName(const string16& name) {
   accessible_name_ = name;
+}
+
+void Slider::OnPaintFocus(gfx::Canvas* canvas) {
+  if (!HasFocus())
+    return;
+
+  if (!focus_border_color_) {
+    canvas->DrawFocusRect(GetLocalBounds());
+  } else if (HasFocus()) {
+    canvas->DrawSolidFocusRect(
+        gfx::Rect(1, 1, width() - 3, height() - 3),
+        focus_border_color_);
+  }
 }
 
 gfx::Size Slider::GetPreferredSize() {
@@ -248,6 +261,7 @@ void Slider::OnPaint(gfx::Canvas* canvas) {
     canvas->DrawImageInt(*thumb_, thumb_x, button_cy);
   }
   View::OnPaint(canvas);
+  OnPaintFocus(canvas);
 }
 
 bool Slider::OnMousePressed(const ui::MouseEvent& event) {
@@ -304,7 +318,7 @@ void Slider::OnGestureEvent(ui::GestureEvent* event) {
   }
 }
 
-void Slider::AnimationProgressed(const ui::Animation* animation) {
+void Slider::AnimationProgressed(const gfx::Animation* animation) {
   animating_value_ = animation->CurrentValueBetween(animating_value_, value_);
   SchedulePaint();
 }
@@ -314,15 +328,6 @@ void Slider::GetAccessibleState(ui::AccessibleViewState* state) {
   state->name = accessible_name_;
   state->value = UTF8ToUTF16(
       base::StringPrintf("%d%%", (int)(value_ * 100 + 0.5)));
-}
-
-void Slider::OnPaintFocusBorder(gfx::Canvas* canvas) {
-  if (!focus_border_color_) {
-    View::OnPaintFocusBorder(canvas);
-  } else if (HasFocus() && (focusable() || IsAccessibilityFocusable())) {
-    canvas->DrawRect(gfx::Rect(1, 1, width() - 3, height() - 3),
-                     focus_border_color_);
-  }
 }
 
 }  // namespace views

@@ -13,6 +13,7 @@
 #include "content/public/browser/web_contents.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/views/window/dialog_delegate.h"
 #include "url/gurl.h"
 
 namespace {
@@ -47,8 +48,8 @@ ui::ModalType CaptivePortalView::GetModalType() const {
   return ui::MODAL_TYPE_SYSTEM;
 }
 
-string16 CaptivePortalView::GetWindowTitle() const {
-  string16 network_name;
+base::string16 CaptivePortalView::GetWindowTitle() const {
+  base::string16 network_name;
   const NetworkState* default_network =
       NetworkHandler::Get()->network_state_handler()->DefaultNetwork();
   std::string default_network_name =
@@ -66,6 +67,11 @@ string16 CaptivePortalView::GetWindowTitle() const {
 
 bool CaptivePortalView::ShouldShowWindowTitle() const {
   return true;
+}
+
+views::NonClientFrameView* CaptivePortalView::CreateNonClientFrameView(
+    views::Widget* widget) {
+  return views::DialogDelegate::CreateDialogFrameView(widget);
 }
 
 void CaptivePortalView::NavigationStateChanged(

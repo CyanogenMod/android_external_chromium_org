@@ -51,12 +51,13 @@ void SetTrayLabelItemBorder(TrayItemView* tray_view,
         0, kTrayLabelItemHorizontalPaddingBottomAlignment));
   } else {
     // Center the label for vertical launcher alignment.
-    int horizontal_padding = (tray_view->GetPreferredSize().width() -
-        tray_view->label()->GetPreferredSize().width()) / 2;
+    int horizontal_padding = std::max(0,
+        (tray_view->GetPreferredSize().width() -
+        tray_view->label()->GetPreferredSize().width()) / 2);
     tray_view->set_border(views::Border::CreateEmptyBorder(
-        kTrayLabelItemVerticalPaddingVeriticalAlignment,
+        kTrayLabelItemVerticalPaddingVerticalAlignment,
         horizontal_padding,
-        kTrayLabelItemVerticalPaddingVeriticalAlignment,
+        kTrayLabelItemVerticalPaddingVerticalAlignment,
         horizontal_padding));
   }
 }

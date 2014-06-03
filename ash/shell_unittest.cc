@@ -16,6 +16,7 @@
 #include "ash/session_state_delegate.h"
 #include "ash/shelf/shelf_layout_manager.h"
 #include "ash/shelf/shelf_widget.h"
+#include "ash/shell_delegate.h"
 #include "ash/shell_window_ids.h"
 #include "ash/test/ash_test_base.h"
 #include "ash/test/shell_test_api.h"
@@ -23,9 +24,16 @@
 #include "ash/wm/window_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "ui/aura/client/aura_constants.h"
+#include "ui/aura/env.h"
 #include "ui/aura/root_window.h"
+#include "ui/aura/test/event_generator.h"
+#include "ui/aura/test/test_event_handler.h"
 #include "ui/aura/window.h"
+#include "ui/base/models/simple_menu_model.h"
+#include "ui/events/test/events_test_utils.h"
 #include "ui/gfx/size.h"
+#include "ui/views/controls/menu/menu_controller.h"
+#include "ui/views/controls/menu/menu_runner.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_delegate.h"
 #include "ui/views/window/dialog_delegate.h"
@@ -50,7 +58,7 @@ aura::Window* GetAlwaysOnTopContainer() {
 
 // Expect ALL the containers!
 void ExpectAllContainers() {
-  aura::RootWindow* root_window = Shell::GetPrimaryRootWindow();
+  aura::Window* root_window = Shell::GetPrimaryRootWindow();
   EXPECT_TRUE(Shell::GetContainer(
       root_window, internal::kShellWindowId_DesktopBackgroundContainer));
   EXPECT_TRUE(Shell::GetContainer(
@@ -104,6 +112,32 @@ class ModalWindow : public views::WidgetDelegateView {
   DISALLOW_COPY_AND_ASSIGN(ModalWindow);
 };
 
+class SimpleMenuDelegate : public ui::SimpleMenuModel::Delegate {
+ public:
+  SimpleMenuDelegate() {}
+  virtual ~SimpleMenuDelegate() {}
+
+  virtual bool IsCommandIdChecked(int command_id) const OVERRIDE {
+    return false;
+  }
+
+  virtual bool IsCommandIdEnabled(int command_id) const OVERRIDE {
+    return true;
+  }
+
+  virtual bool GetAcceleratorForCommandId(
+      int command_id,
+      ui::Accelerator* accelerator) OVERRIDE {
+    return false;
+  }
+
+  virtual void ExecuteCommand(int command_id, int event_flags) OVERRIDE {
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(SimpleMenuDelegate);
+};
+
 }  // namespace
 
 class ShellTest : public test::AshTestBase {
@@ -130,8 +164,39 @@ class ShellTest : public test::AshTestBase {
         always_on_top;
 
     widget->Close();
-}
+  }
 
+  void LockScreenAndVerifyMenuClosed() {
+    // Verify a menu is open before locking.
+    views::MenuController* menu_controller =
+        views::MenuController::GetActiveInstance();
+    DCHECK(menu_controller);
+    EXPECT_EQ(views::MenuController::EXIT_NONE, menu_controller->exit_type());
+
+    // Create a LockScreen window.
+    views::Widget::InitParams widget_params(
+        views::Widget::InitParams::TYPE_WINDOW);
+    SessionStateDelegate* delegate =
+        Shell::GetInstance()->session_state_delegate();
+    delegate->LockScreen();
+    views::Widget* lock_widget = CreateTestWindow(widget_params);
+    ash::Shell::GetContainer(
+        Shell::GetPrimaryRootWindow(),
+        ash::internal::kShellWindowId_LockScreenContainer)->
+        AddChild(lock_widget->GetNativeView());
+    lock_widget->Show();
+    EXPECT_TRUE(delegate->IsScreenLocked());
+    EXPECT_TRUE(lock_widget->GetNativeView()->HasFocus());
+
+    // Verify menu is closed.
+    EXPECT_NE(views::MenuController::EXIT_NONE, menu_controller->exit_type());
+    lock_widget->Close();
+    delegate->UnlockScreen();
+
+    // In case the menu wasn't closed, cancel the menu to exit the nested menu
+    // run loop so that the test will not time out.
+    menu_controller->CancelAll();
+  }
 };
 
 TEST_F(ShellTest, CreateWindow) {
@@ -302,25 +367,40 @@ TEST_F(ShellTest, IsScreenLocked) {
   EXPECT_FALSE(delegate->IsScreenLocked());
 }
 
-// Fails on Mac, see http://crbug.com/115662
-#if defined(OS_MACOSX)
-#define MAYBE_ManagedWindowModeBasics DISABLED_ManagedWindowModeBasics
-#else
-#define MAYBE_ManagedWindowModeBasics ManagedWindowModeBasics
-#endif
-TEST_F(ShellTest, MAYBE_ManagedWindowModeBasics) {
-  Shell* shell = Shell::GetInstance();
-  Shell::TestApi test_api(shell);
+TEST_F(ShellTest, LockScreenClosesActiveMenu) {
+  SimpleMenuDelegate menu_delegate;
+  scoped_ptr<ui::SimpleMenuModel> menu_model(
+      new ui::SimpleMenuModel(&menu_delegate));
+  menu_model->AddItem(0, ASCIIToUTF16("Menu item"));
+  views::Widget* widget = ash::Shell::GetPrimaryRootWindowController()->
+      wallpaper_controller()->widget();
+  scoped_ptr<views::MenuRunner> menu_runner(
+      new views::MenuRunner(menu_model.get()));
 
+  // When MenuRunner runs a nested loop the LockScreenAndVerifyMenuClosed
+  // command will fire, check the menu state and ensure the nested menu loop
+  // is exited so that the test will terminate.
+  base::MessageLoopForUI::current()->PostTask(FROM_HERE,
+      base::Bind(&ShellTest::LockScreenAndVerifyMenuClosed,
+                 base::Unretained(this)));
+
+  EXPECT_EQ(views::MenuRunner::NORMAL_EXIT,
+      menu_runner->RunMenuAt(widget, NULL, gfx::Rect(),
+        views::MenuItemView::TOPLEFT, ui::MENU_SOURCE_MOUSE,
+        views::MenuRunner::CONTEXT_MENU));
+}
+
+TEST_F(ShellTest, ManagedWindowModeBasics) {
   // We start with the usual window containers.
   ExpectAllContainers();
-  // Launcher is visible.
+  // Shelf is visible.
   ShelfWidget* launcher_widget = Launcher::ForPrimaryDisplay()->shelf_widget();
   EXPECT_TRUE(launcher_widget->IsVisible());
-  // Launcher is at bottom-left of screen.
+  // Shelf is at bottom-left of screen.
   EXPECT_EQ(0, launcher_widget->GetWindowBoundsInScreen().x());
-  EXPECT_EQ(Shell::GetPrimaryRootWindow()->GetHostSize().height(),
-            launcher_widget->GetWindowBoundsInScreen().bottom());
+  EXPECT_EQ(Shell::GetPrimaryRootWindow()->GetDispatcher()->host()->
+      GetBounds().height(),
+      launcher_widget->GetWindowBoundsInScreen().bottom());
   // We have a desktop background but not a bare layer.
   // TODO (antrim): enable once we find out why it fails component build.
   //  internal::DesktopBackgroundWidgetController* background =
@@ -377,21 +457,6 @@ TEST_F(ShellTest, FullscreenWindowHidesShelf) {
   widget->Close();
 }
 
-namespace {
-
-// Builds the list of parents from |window| to the root. The returned vector is
-// in reverse order (|window| is first).
-std::vector<aura::Window*> BuildPathToRoot(aura::Window* window) {
-  std::vector<aura::Window*> results;
-  while (window) {
-    results.push_back(window);
-    window = window->parent();
-  }
-  return results;
-}
-
-}  // namespace
-
 // Various assertions around SetShelfAutoHideBehavior() and
 // GetShelfAutoHideBehavior().
 TEST_F(ShellTest, ToggleAutoHide) {
@@ -399,12 +464,12 @@ TEST_F(ShellTest, ToggleAutoHide) {
   window->SetProperty(aura::client::kShowStateKey, ui::SHOW_STATE_NORMAL);
   window->SetType(aura::client::WINDOW_TYPE_NORMAL);
   window->Init(ui::LAYER_TEXTURED);
-  SetDefaultParentByPrimaryRootWindow(window.get());
+  ParentWindowInPrimaryRootWindow(window.get());
   window->Show();
   wm::ActivateWindow(window.get());
 
   Shell* shell = Shell::GetInstance();
-  aura::RootWindow* root_window = Shell::GetPrimaryRootWindow();
+  aura::Window* root_window = Shell::GetPrimaryRootWindow();
   shell->SetShelfAutoHideBehavior(ash::SHELF_AUTO_HIDE_BEHAVIOR_ALWAYS,
                                   root_window);
   EXPECT_EQ(ash::SHELF_AUTO_HIDE_BEHAVIOR_ALWAYS,
@@ -428,12 +493,22 @@ TEST_F(ShellTest, ToggleAutoHide) {
 
 TEST_F(ShellTest, TestPreTargetHandlerOrder) {
   Shell* shell = Shell::GetInstance();
-  Shell::TestApi test_api(shell);
+  ui::EventTargetTestApi test_api(shell);
   test::ShellTestApi shell_test_api(shell);
 
   const ui::EventHandlerList& handlers = test_api.pre_target_handlers();
   EXPECT_EQ(handlers[0], shell->mouse_cursor_filter());
   EXPECT_EQ(handlers[1], shell_test_api.drag_drop_controller());
+}
+
+// Verifies an EventHandler added to Env gets notified from EventGenerator.
+TEST_F(ShellTest, EnvPreTargetHandler) {
+  aura::test::TestEventHandler event_handler;
+  aura::Env::GetInstance()->AddPreTargetHandler(&event_handler);
+  aura::test::EventGenerator generator(Shell::GetPrimaryRootWindow());
+  generator.MoveMouseBy(1, 1);
+  EXPECT_NE(0, event_handler.num_mouse_events());
+  aura::Env::GetInstance()->RemovePreTargetHandler(&event_handler);
 }
 
 // This verifies WindowObservers are removed when a window is destroyed after

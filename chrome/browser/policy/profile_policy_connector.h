@@ -9,35 +9,33 @@
 
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/memory/weak_ptr.h"
 #include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 
-#if defined(OS_CHROMEOS)
-#include "chromeos/dbus/dbus_method_call_status.h"
-#endif
-
-class Profile;
-
-namespace base {
-class SequencedTaskRunner;
+namespace chromeos {
+class User;
 }
 
 namespace policy {
 
+class CloudPolicyManager;
 class ConfigurationPolicyProvider;
-class ManagedModePolicyProvider;
 class PolicyService;
+class SchemaRegistry;
 
 // A BrowserContextKeyedService that creates and manages the per-Profile policy
 // components.
 class ProfilePolicyConnector : public BrowserContextKeyedService {
  public:
-  explicit ProfilePolicyConnector(Profile* profile);
+  ProfilePolicyConnector();
   virtual ~ProfilePolicyConnector();
 
   // If |force_immediate_load| then disk caches will be loaded synchronously.
   void Init(bool force_immediate_load,
-            base::SequencedTaskRunner* sequenced_task_runner);
+#if defined(OS_CHROMEOS)
+            const chromeos::User* user,
+#endif
+            SchemaRegistry* schema_registry,
+            CloudPolicyManager* user_cloud_policy_manager);
 
   void InitForTesting(scoped_ptr<PolicyService> service);
 
@@ -47,34 +45,13 @@ class ProfilePolicyConnector : public BrowserContextKeyedService {
   // This is never NULL.
   PolicyService* policy_service() const { return policy_service_.get(); }
 
-#if defined(ENABLE_MANAGED_USERS) && defined(ENABLE_CONFIGURATION_POLICY)
-  ManagedModePolicyProvider* managed_mode_policy_provider() const {
-    return managed_mode_policy_provider_.get();
-  }
-#endif
-
-  // Returns true if |profile()| has used certificates installed via policy
-  // to establish a secure connection before. This means that it may have
-  // cached content from an untrusted source.
-  bool UsedPolicyCertificates();
-
  private:
 #if defined(ENABLE_CONFIGURATION_POLICY)
-
 #if defined(OS_CHROMEOS)
-  void InitializeDeviceLocalAccountPolicyProvider(const std::string& username);
+  void InitializeDeviceLocalAccountPolicyProvider(
+      const std::string& username,
+      SchemaRegistry* schema_registry);
 
-  // Callback for CryptohomeClient::GetSanitizedUsername() that initializes the
-  // NetworkConfigurationUpdater after receiving the hashed username.
-  void InitializeNetworkConfigurationUpdater(
-      bool is_managed,
-      chromeos::DBusMethodCallStatus status,
-      const std::string& hashed_username);
-#endif
-
-  Profile* profile_;
-
-#if defined(OS_CHROMEOS)
   // Some of the user policy configuration affects browser global state, and
   // can only come from one Profile. |is_primary_user_| is true if this
   // connector belongs to the first signed-in Profile, and in that case that
@@ -83,14 +60,10 @@ class ProfilePolicyConnector : public BrowserContextKeyedService {
   bool is_primary_user_;
 
   scoped_ptr<ConfigurationPolicyProvider> special_user_policy_provider_;
-#endif
+#endif  // defined(OS_CHROMEOS)
 
-#if defined(ENABLE_MANAGED_USERS) && defined(ENABLE_CONFIGURATION_POLICY)
-  scoped_ptr<ManagedModePolicyProvider> managed_mode_policy_provider_;
-#endif
-
-  base::WeakPtrFactory<ProfilePolicyConnector> weak_ptr_factory_;
-#endif  // ENABLE_CONFIGURATION_POLICY
+  scoped_ptr<ConfigurationPolicyProvider> forwarding_policy_provider_;
+#endif  // defined(ENABLE_CONFIGURATION_POLICY)
 
   scoped_ptr<PolicyService> policy_service_;
 

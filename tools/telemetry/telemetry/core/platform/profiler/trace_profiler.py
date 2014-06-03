@@ -9,26 +9,24 @@ from telemetry.core.platform import profiler
 
 class TraceProfiler(profiler.Profiler):
 
-  def __init__(self, browser_backend, platform_backend, output_path):
+  def __init__(self, browser_backend, platform_backend, output_path, state):
     super(TraceProfiler, self).__init__(
-        browser_backend, platform_backend, output_path)
+        browser_backend, platform_backend, output_path, state)
     assert self._browser_backend.supports_tracing
-    self._browser_backend.StartTracing(None, 10)
+    self._browser_backend.StartTracing(None, timeout=10)
 
   @classmethod
   def name(cls):
     return 'trace'
 
   @classmethod
-  def is_supported(cls, options):
+  def is_supported(cls, browser_type):
     return True
 
   def CollectProfile(self):
-    self._browser_backend.StopTracing()
-
     print 'Processing trace...'
 
-    trace_result = self._browser_backend.GetTraceResultAndReset()
+    trace_result = self._browser_backend.StopTracing()
 
     trace_file = '%s.json' % self._output_path
 

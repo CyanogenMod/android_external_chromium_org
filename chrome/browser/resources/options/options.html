@@ -22,6 +22,7 @@
 </if>
 <link rel="stylesheet" href="clear_browser_data_overlay.css">
 <link rel="stylesheet" href="content_settings.css">
+<link rel="stylesheet" href="controlled_setting.css">
 <link rel="stylesheet" href="cookies_view.css">
 <link rel="stylesheet" href="do_not_track_confirm_overlay.css">
 <link rel="stylesheet" href="font_settings.css">
@@ -34,9 +35,11 @@
 <link rel="stylesheet" href="language_options.css">
 <link rel="stylesheet" href="manage_profile_overlay.css">
 <link rel="stylesheet" href="managed_user_create_confirm.css">
+<link rel="stylesheet" href="managed_user_import.css">
 <link rel="stylesheet" href="managed_user_learn_more.css">
 <link rel="stylesheet" href="password_manager.css">
 <link rel="stylesheet" href="password_manager_list.css">
+<link rel="stylesheet" href="reset_profile_settings_banner.css">
 <link rel="stylesheet" href="reset_profile_settings_overlay.css">
 <link rel="stylesheet" href="search_engine_manager.css">
 <link rel="stylesheet" href="search_page.css">
@@ -51,6 +54,7 @@
 <link rel="stylesheet" href="chromeos/display_options.css">
 <link rel="stylesheet" href="chromeos/display_overscan.css">
 <link rel="stylesheet" href="chromeos/internet_detail.css">
+<link rel="stylesheet" href="chromeos/keyboard_overlay.css">
 <link rel="stylesheet" href="chromeos/pointer_overlay.css">
 <link rel="stylesheet" href="factory_reset_overlay.css">
 </if>
@@ -107,6 +111,7 @@
   <include src="language_options.html">
   <include src="manage_profile_overlay.html">
   <include src="managed_user_create_confirm.html">
+  <include src="managed_user_import.html">
   <include src="password_manager.html">
   <include src="reset_profile_settings_overlay.html">
   <include src="search_engine_manager.html">
@@ -144,10 +149,6 @@
   <include src="chromeos/display_overscan.html">
   <include src="chromeos/internet_detail.html">
   <include src="chromeos/preferred_networks.html">
-  <include src="chromeos/language_chewing_options.html">
-  <include src="chromeos/language_hangul_options.html">
-  <include src="chromeos/language_mozc_options.html">
-  <include src="chromeos/language_pinyin_options.html">
 </if>
 <if expr="not is_win and not is_macosx">
   <include src="certificate_restore_overlay.html">
@@ -157,6 +158,17 @@
 </if>
 </div>
 <div id="overlay-container-3" class="overlay transparent" hidden>
+</div>
+<div id="extension-controlled-settings-bubble-template" hidden>
+  <div class="controlled-setting-bubble-content-row">
+    <div class="controlled-setting-bubble-extension-name"></div>
+  </div>
+  <div class="controlled-setting-bubble-content-row">
+    <div class="controlled-setting-bubble-extension-manage-link link-button"
+        i18n-content="controlledSettingManageExtensions"></div>
+    <button class='controlled-setting-bubble-extension-disable-button'
+        i18n-content="controlledSettingDisableExtension"></button>
+  </div>
 </div>
 
 <div id="main-content">

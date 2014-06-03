@@ -6,13 +6,16 @@
 #define CHROME_BROWSER_UI_LIBGTK2UI_GTK2_UI_H_
 
 #include <map>
+#include <vector>
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/observer_list.h"
 #include "chrome/browser/ui/libgtk2ui/libgtk2ui_export.h"
 #include "chrome/browser/ui/libgtk2ui/owned_widget_gtk2.h"
 #include "ui/gfx/color_utils.h"
-#include "ui/linux_ui/linux_ui.h"
+#include "ui/views/linux_ui/linux_ui.h"
+#include "ui/views/window/frame_buttons.h"
 
 typedef struct _GdkColor GdkColor;
 typedef struct _GtkStyle GtkStyle;
@@ -25,13 +28,22 @@ class Image;
 }
 
 namespace libgtk2ui {
+class GConfTitlebarListener;
 
 // Interface to GTK2 desktop features.
 //
-class Gtk2UI : public ui::LinuxUI {
+class Gtk2UI : public views::LinuxUI {
  public:
   Gtk2UI();
   virtual ~Gtk2UI();
+
+  void SetWindowButtonOrdering(
+    const std::vector<views::FrameButton>& leading_buttons,
+    const std::vector<views::FrameButton>& trailing_buttons);
+
+  // ui::LinuxInputMethodContextFactory:
+  virtual scoped_ptr<ui::LinuxInputMethodContext> CreateInputMethodContext(
+      ui::LinuxInputMethodContextDelegate* delegate) const OVERRIDE;
 
   // ui::LinuxShellDialog:
   virtual ui::SelectFileDialog* CreateSelectFileDialog(
@@ -39,18 +51,35 @@ class Gtk2UI : public ui::LinuxUI {
       ui::SelectFilePolicy* policy) const OVERRIDE;
 
   // ui::LinuxUI:
-  virtual bool UseNativeTheme() const OVERRIDE;
+  virtual void Initialize() OVERRIDE;
   virtual gfx::Image GetThemeImageNamed(int id) const OVERRIDE;
   virtual bool GetColor(int id, SkColor* color) const OVERRIDE;
   virtual bool HasCustomImage(int id) const OVERRIDE;
+  virtual SkColor GetFocusRingColor() const OVERRIDE;
+  virtual SkColor GetThumbActiveColor() const OVERRIDE;
+  virtual SkColor GetThumbInactiveColor() const OVERRIDE;
+  virtual SkColor GetTrackColor() const OVERRIDE;
+  virtual SkColor GetActiveSelectionBgColor() const OVERRIDE;
+  virtual SkColor GetActiveSelectionFgColor() const OVERRIDE;
+  virtual SkColor GetInactiveSelectionBgColor() const OVERRIDE;
+  virtual SkColor GetInactiveSelectionFgColor() const OVERRIDE;
+  virtual double GetCursorBlinkInterval() const OVERRIDE;
   virtual ui::NativeTheme* GetNativeTheme() const OVERRIDE;
+  virtual void SetUseSystemTheme(bool use_system_theme) OVERRIDE;
   virtual bool GetDefaultUsesSystemTheme() const OVERRIDE;
   virtual void SetDownloadCount(int count) const OVERRIDE;
   virtual void SetProgressFraction(float percentage) const OVERRIDE;
   virtual bool IsStatusIconSupported() const OVERRIDE;
-  virtual scoped_ptr<StatusIconLinux> CreateLinuxStatusIcon(
+  virtual scoped_ptr<views::StatusIconLinux> CreateLinuxStatusIcon(
       const gfx::ImageSkia& image,
-      const string16& tool_tip) const OVERRIDE;
+      const base::string16& tool_tip) const OVERRIDE;
+  virtual gfx::Image GetIconForContentType(
+      const std::string& content_type, int size) const OVERRIDE;
+  virtual void AddWindowButtonOrderObserver(
+      views::WindowButtonOrderObserver* observer) OVERRIDE;
+  virtual void RemoveWindowButtonOrderObserver(
+      views::WindowButtonOrderObserver* observer) OVERRIDE;
+  virtual bool UnityIsRunning() OVERRIDE;
 
  private:
   typedef std::map<int, SkColor> ColorMap;
@@ -157,8 +186,25 @@ class Gtk2UI : public ui::LinuxUI {
   SkColor inactive_selection_bg_color_;
   SkColor inactive_selection_fg_color_;
 
+#if defined(USE_GCONF)
+  // Currently, the only source of window button configuration. This will
+  // change if we ever have to support XFCE's configuration system or KDE's.
+  scoped_ptr<GConfTitlebarListener> titlebar_listener_;
+#endif  // defined(USE_GCONF)
+
+  // If either of these vectors are non-empty, they represent the current
+  // window button configuration.
+  std::vector<views::FrameButton> leading_buttons_;
+  std::vector<views::FrameButton> trailing_buttons_;
+
+  // Objects to notify when the window frame button order changes.
+  ObserverList<views::WindowButtonOrderObserver> observer_list_;
+
   // Image cache of lazily created images.
   mutable ImageCache gtk_images_;
+
+  // Whether to use the Gtk2 version of the native theme.
+  bool use_gtk_;
 
   DISALLOW_COPY_AND_ASSIGN(Gtk2UI);
 };
@@ -170,6 +216,6 @@ class Gtk2UI : public ui::LinuxUI {
 // interface, because eventually this .so will be loaded through dlopen at
 // runtime so our main binary can conditionally load GTK2 or GTK3 or EFL or
 // QT or whatever.
-LIBGTK2UI_EXPORT ui::LinuxUI* BuildGtk2UI();
+LIBGTK2UI_EXPORT views::LinuxUI* BuildGtk2UI();
 
 #endif  // CHROME_BROWSER_UI_LIBGTK2UI_GTK2_UI_H_

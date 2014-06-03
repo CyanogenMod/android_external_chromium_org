@@ -6,6 +6,8 @@
 
 #include "base/basictypes.h"
 #include "sync/internal_api/public/base/invalidation.h"
+#include "sync/notifier/invalidation_util.h"
+#include "sync/notifier/object_id_invalidation_map.h"
 #include "sync/protocol/sync.pb.h"
 
 namespace syncer {
@@ -38,6 +40,8 @@ bool NudgeTracker::IsSyncRequired() const {
 }
 
 bool NudgeTracker::IsGetUpdatesRequired() const {
+  if (invalidations_out_of_sync_)
+    return true;
   for (TypeTrackerMap::const_iterator it = type_trackers_.begin();
        it != type_trackers_.end(); ++it) {
     if (it->second.IsGetUpdatesRequired()) {
@@ -91,15 +95,20 @@ void NudgeTracker::RecordLocalRefreshRequest(ModelTypeSet types) {
 }
 
 void NudgeTracker::RecordRemoteInvalidation(
-    const ModelTypeInvalidationMap& invalidation_map) {
+    const ObjectIdInvalidationMap& invalidation_map) {
   updates_source_ = sync_pb::GetUpdatesCallerInfo::NOTIFICATION;
 
-  for (ModelTypeInvalidationMap::const_iterator i = invalidation_map.begin();
-       i != invalidation_map.end(); ++i) {
-    const ModelType type = i->first;
-    const std::string& payload = i->second.payload;
+  ObjectIdSet ids = invalidation_map.GetObjectIds();
+  for (ObjectIdSet::const_iterator it = ids.begin(); it != ids.end(); ++it) {
+    ModelType type;
+    if (!ObjectIdToRealModelType(*it, &type)) {
+      NOTREACHED()
+          << "Object ID " << ObjectIdToString(*it)
+          << " does not map to valid model type";
+    }
     DCHECK(type_trackers_.find(type) != type_trackers_.end());
-    type_trackers_[type].RecordRemoteInvalidation(payload);
+    type_trackers_[type].RecordRemoteInvalidations(
+        invalidation_map.ForObject(*it));
   }
 }
 

@@ -7,6 +7,9 @@ include_rules = [
   "+chrome/browser/common",
   "+chrome/browser/favicon",
   "+chrome/browser/history",
+  "+chrome/browser/network_time",
+  "+chrome/tools/profiles",  # For history unit tests.
+  "+components/visitedlink/browser",
 
   # TODO(erikwright): Bring this list to zero.
   #
@@ -58,6 +61,7 @@ specific_include_rules = {
   # Do not add to the list of temporarily-allowed dependencies below,
   # and please do not introduce more #includes of these files.
   '.*_[a-z]*test\.cc': [
+    "!chrome/browser/bookmarks/bookmark_test_helpers.h",
     "!chrome/browser/bookmarks/bookmark_utils.h",
   ]
 }

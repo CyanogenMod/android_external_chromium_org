@@ -11,7 +11,7 @@
 #include "base/memory/scoped_vector.h"
 #include "base/win/scoped_comptr.h"
 #include "base/win/win_util.h"
-#include "ui/base/win/window_impl.h"
+#include "ui/gfx/win/window_impl.h"
 #include "ui/views/widget/native_widget_private.h"
 #include "ui/views/win/hwnd_message_handler_delegate.h"
 
@@ -94,7 +94,7 @@ class VIEWS_EXPORT NativeWidgetWin : public internal::NativeWidgetPrivate,
   virtual void GetWindowPlacement(
      gfx::Rect* bounds,
      ui::WindowShowState* show_state) const OVERRIDE;
-  virtual void SetWindowTitle(const string16& title) OVERRIDE;
+  virtual bool SetWindowTitle(const string16& title) OVERRIDE;
   virtual void SetWindowIcons(const gfx::ImageSkia& window_icon,
                               const gfx::ImageSkia& app_icon) OVERRIDE;
   virtual void InitModalType(ui::ModalType modal_type) OVERRIDE;
@@ -119,6 +119,7 @@ class VIEWS_EXPORT NativeWidgetWin : public internal::NativeWidgetPrivate,
   virtual void Deactivate() OVERRIDE;
   virtual bool IsActive() const OVERRIDE;
   virtual void SetAlwaysOnTop(bool always_on_top) OVERRIDE;
+  virtual bool IsAlwaysOnTop() const OVERRIDE;
   virtual void Maximize() OVERRIDE;
   virtual void Minimize() OVERRIDE;
   virtual bool IsMaximized() const OVERRIDE;
@@ -139,13 +140,14 @@ class VIEWS_EXPORT NativeWidgetWin : public internal::NativeWidgetPrivate,
   virtual bool IsMouseEventsEnabled() const OVERRIDE;
   virtual void ClearNativeFocus() OVERRIDE;
   virtual gfx::Rect GetWorkAreaBoundsInScreen() const OVERRIDE;
-  virtual void SetInactiveRenderingDisabled(bool value) OVERRIDE;
   virtual Widget::MoveLoopResult RunMoveLoop(
       const gfx::Vector2d& drag_offset,
-      Widget::MoveLoopSource source) OVERRIDE;
+      Widget::MoveLoopSource source,
+      Widget::MoveLoopEscapeBehavior escape_behavior) OVERRIDE;
   virtual void EndMoveLoop() OVERRIDE;
   virtual void SetVisibilityChangedAnimationsEnabled(bool value) OVERRIDE;
   virtual ui::NativeTheme* GetNativeTheme() const OVERRIDE;
+  virtual void OnRootViewLayout() const OVERRIDE;
 
   // Overridden from NativeWidget:
   virtual ui::EventHandler* GetEventHandler() OVERRIDE;
@@ -202,6 +204,7 @@ class VIEWS_EXPORT NativeWidgetWin : public internal::NativeWidgetPrivate,
   virtual void HandleEndWMSizeMove() OVERRIDE;
   virtual void HandleMove() OVERRIDE;
   virtual void HandleWorkAreaChanged() OVERRIDE;
+  virtual void HandleVisibilityChanging(bool visible) OVERRIDE;
   virtual void HandleVisibilityChanged(bool visible) OVERRIDE;
   virtual void HandleClientSizeChanged(const gfx::Size& new_size) OVERRIDE;
   virtual void HandleFrameChanged() OVERRIDE;
@@ -210,7 +213,7 @@ class VIEWS_EXPORT NativeWidgetWin : public internal::NativeWidgetPrivate,
   virtual bool HandleMouseEvent(const ui::MouseEvent& event) OVERRIDE;
   virtual bool HandleKeyEvent(const ui::KeyEvent& event) OVERRIDE;
   virtual bool HandleUntranslatedKeyEvent(const ui::KeyEvent& event) OVERRIDE;
-  virtual bool HandleTouchEvent(const ui::TouchEvent& event) OVERRIDE;
+  virtual void HandleTouchEvent(const ui::TouchEvent& event) OVERRIDE;
   virtual bool HandleIMEMessage(UINT message,
                                 WPARAM w_param,
                                 LPARAM l_param,
@@ -232,6 +235,7 @@ class VIEWS_EXPORT NativeWidgetWin : public internal::NativeWidgetPrivate,
   virtual void PostHandleMSG(UINT message,
                              WPARAM w_param,
                              LPARAM l_param) OVERRIDE;
+  virtual bool HandleScrollEvent(const ui::ScrollEvent& event) OVERRIDE;
 
   // The TooltipManager. This is NULL if there is a problem creating the
   // underlying tooltip window.

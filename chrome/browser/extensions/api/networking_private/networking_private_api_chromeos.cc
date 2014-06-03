@@ -20,17 +20,19 @@
 #include "chromeos/network/network_connection_handler.h"
 #include "chromeos/network/network_state.h"
 #include "chromeos/network/network_state_handler.h"
-#include "chromeos/network/onc/onc_constants.h"
 #include "chromeos/network/onc/onc_signature.h"
 #include "chromeos/network/onc/onc_translator.h"
+#include "chromeos/network/shill_property_util.h"
+#include "components/onc/onc_constants.h"
 
 namespace api = extensions::api::networking_private;
-namespace onc = chromeos::onc;
+
 using chromeos::DBusThreadManager;
 using chromeos::ManagedNetworkConfigurationHandler;
 using chromeos::NetworkHandler;
 using chromeos::NetworkState;
 using chromeos::NetworkStateHandler;
+using chromeos::NetworkTypePattern;
 using chromeos::ShillManagerClient;
 
 namespace {
@@ -53,6 +55,16 @@ ShillManagerClient::VerificationProperties ConvertVerificationProperties(
   output.device_ssid = input.device_ssid;
   output.device_bssid = input.device_bssid;
   return output;
+}
+
+std::string GetUserIdHash(Profile* profile) {
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kMultiProfiles)) {
+    return g_browser_process->platform_part()->
+        profile_helper()->GetUserIdHashFromProfile(profile);
+  } else {
+    return g_browser_process->platform_part()->
+        profile_helper()->active_user_id_hash();
+  }
 }
 
 }  // namespace
@@ -107,16 +119,8 @@ bool NetworkingPrivateGetManagedPropertiesFunction::RunImpl() {
       api::GetManagedProperties::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(params);
 
-  // User ID hash presence is only enforced when multi-profiles are turned on.
   std::string user_id_hash;
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kMultiProfiles)) {
-    user_id_hash = g_browser_process->platform_part()->
-        profile_helper()->GetUserIdHashFromProfile(profile());
-  } else {
-    user_id_hash = g_browser_process->platform_part()->
-        profile_helper()->active_user_id_hash();
-  }
-
+  GetUserIdHash(GetProfile());
   NetworkHandler::Get()->managed_network_configuration_handler()->
       GetManagedProperties(
           user_id_hash,
@@ -169,8 +173,8 @@ bool NetworkingPrivateGetStateFunction::RunImpl() {
   scoped_ptr<base::DictionaryValue> result_dict(new base::DictionaryValue);
   state->GetProperties(result_dict.get());
   scoped_ptr<base::DictionaryValue> onc_network_part =
-      onc::TranslateShillServiceToONCPart(*result_dict,
-                                          &onc::kNetworkWithStateSignature);
+      chromeos::onc::TranslateShillServiceToONCPart(*result_dict,
+          &chromeos::onc::kNetworkWithStateSignature);
   SetResult(onc_network_part.release());
   SendResponse(true);
 
@@ -214,6 +218,49 @@ void NetworkingPrivateSetPropertiesFunction::ResultCallback() {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// NetworkingPrivateCreateNetworkFunction
+
+NetworkingPrivateCreateNetworkFunction::
+~NetworkingPrivateCreateNetworkFunction() {
+}
+
+bool NetworkingPrivateCreateNetworkFunction::RunImpl() {
+  scoped_ptr<api::CreateNetwork::Params> params =
+      api::CreateNetwork::Params::Create(*args_);
+  EXTENSION_FUNCTION_VALIDATE(params);
+
+  std::string user_id_hash;
+  if (!params->shared)
+    user_id_hash = GetUserIdHash(GetProfile());
+
+  scoped_ptr<base::DictionaryValue> properties_dict(
+      params->properties.ToValue());
+
+  NetworkHandler::Get()->managed_network_configuration_handler()->
+      CreateConfiguration(
+          user_id_hash,
+          *properties_dict,
+          base::Bind(&NetworkingPrivateCreateNetworkFunction::ResultCallback,
+                     this),
+          base::Bind(&NetworkingPrivateCreateNetworkFunction::ErrorCallback,
+                     this));
+  return true;
+}
+
+void NetworkingPrivateCreateNetworkFunction::ErrorCallback(
+    const std::string& error_name,
+    const scoped_ptr<base::DictionaryValue> error_data) {
+  error_ = error_name;
+  SendResponse(false);
+}
+
+void NetworkingPrivateCreateNetworkFunction::ResultCallback(
+    const std::string& guid) {
+  results_ = api::CreateNetwork::Results::Create(guid);
+  SendResponse(true);
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // NetworkingPrivateGetVisibleNetworksFunction
 
 NetworkingPrivateGetVisibleNetworksFunction::
@@ -240,8 +287,8 @@ bool NetworkingPrivateGetVisibleNetworksFunction::RunImpl() {
     (*it)->GetProperties(&shill_dictionary);
 
     scoped_ptr<base::DictionaryValue> onc_network_part =
-        onc::TranslateShillServiceToONCPart(shill_dictionary,
-                                            &onc::kNetworkWithStateSignature);
+        chromeos::onc::TranslateShillServiceToONCPart(shill_dictionary,
+            &chromeos::onc::kNetworkWithStateSignature);
 
     std::string onc_type;
     onc_network_part->GetStringWithoutPathExpansion(onc::network_config::kType,
@@ -256,6 +303,109 @@ bool NetworkingPrivateGetVisibleNetworksFunction::RunImpl() {
   }
 
   SetResult(network_properties_list);
+  SendResponse(true);
+  return true;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// NetworkingPrivateGetEnabledNetworkTypesFunction
+
+NetworkingPrivateGetEnabledNetworkTypesFunction::
+~NetworkingPrivateGetEnabledNetworkTypesFunction() {
+}
+
+bool NetworkingPrivateGetEnabledNetworkTypesFunction::RunImpl() {
+  NetworkStateHandler* state_handler =
+      NetworkHandler::Get()->network_state_handler();
+
+  base::ListValue* network_list = new base::ListValue;
+
+  if (state_handler->IsTechnologyEnabled(NetworkTypePattern::Ethernet()))
+    network_list->AppendString("Ethernet");
+  if (state_handler->IsTechnologyEnabled(NetworkTypePattern::WiFi()))
+    network_list->AppendString("WiFi");
+  if (state_handler->IsTechnologyEnabled(NetworkTypePattern::Cellular()))
+    network_list->AppendString("Cellular");
+
+  SetResult(network_list);
+  return true;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// NetworkingPrivateEnableNetworkTypeFunction
+
+NetworkingPrivateEnableNetworkTypeFunction::
+~NetworkingPrivateEnableNetworkTypeFunction() {
+}
+
+bool NetworkingPrivateEnableNetworkTypeFunction::RunImpl() {
+  scoped_ptr<api::EnableNetworkType::Params> params =
+      api::EnableNetworkType::Params::Create(*args_);
+  EXTENSION_FUNCTION_VALIDATE(params);
+  NetworkStateHandler* state_handler =
+      NetworkHandler::Get()->network_state_handler();
+
+  switch (params->network_type) {
+    case api::NETWORK_TYPE_ETHERNET:
+      state_handler->SetTechnologyEnabled(
+          NetworkTypePattern::Ethernet(), true,
+          chromeos::network_handler::ErrorCallback());
+      break;
+
+    case api::NETWORK_TYPE_WIFI:
+      state_handler->SetTechnologyEnabled(
+          NetworkTypePattern::WiFi(), true,
+          chromeos::network_handler::ErrorCallback());
+      break;
+
+    case api::NETWORK_TYPE_CELLULAR:
+      state_handler->SetTechnologyEnabled(
+          NetworkTypePattern::Cellular(), true,
+          chromeos::network_handler::ErrorCallback());
+      break;
+
+    default:
+      break;
+  }
+  return true;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// NetworkingPrivateDisableNetworkTypeFunction
+
+NetworkingPrivateDisableNetworkTypeFunction::
+~NetworkingPrivateDisableNetworkTypeFunction() {
+}
+
+bool NetworkingPrivateDisableNetworkTypeFunction::RunImpl() {
+  scoped_ptr<api::DisableNetworkType::Params> params =
+      api::DisableNetworkType::Params::Create(*args_);
+  NetworkStateHandler* state_handler =
+      NetworkHandler::Get()->network_state_handler();
+
+  switch (params->network_type) {
+    case api::NETWORK_TYPE_ETHERNET:
+      state_handler->SetTechnologyEnabled(
+          NetworkTypePattern::Ethernet(), false,
+          chromeos::network_handler::ErrorCallback());
+      break;
+
+    case api::NETWORK_TYPE_WIFI:
+      state_handler->SetTechnologyEnabled(
+          NetworkTypePattern::WiFi(), false,
+          chromeos::network_handler::ErrorCallback());
+      break;
+
+    case api::NETWORK_TYPE_CELLULAR:
+      state_handler->SetTechnologyEnabled(
+          NetworkTypePattern::Cellular(), false,
+          chromeos::network_handler::ErrorCallback());
+      break;
+
+    default:
+      break;
+  }
+
   return true;
 }
 

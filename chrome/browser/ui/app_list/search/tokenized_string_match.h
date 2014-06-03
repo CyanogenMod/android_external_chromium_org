@@ -9,7 +9,7 @@
 
 #include "base/basictypes.h"
 #include "base/strings/string16.h"
-#include "ui/base/range/range.h"
+#include "ui/gfx/range/range.h"
 
 namespace app_list {
 
@@ -23,7 +23,7 @@ class TokenizedString;
 // matched. Matched portions of text are stored as index ranges.
 class TokenizedStringMatch {
  public:
-  typedef std::vector<ui::Range> Hits;
+  typedef std::vector<gfx::Range> Hits;
 
   TokenizedStringMatch();
   ~TokenizedStringMatch();
@@ -33,7 +33,7 @@ class TokenizedStringMatch {
   bool Calculate(const TokenizedString& query, const TokenizedString& text);
 
   // Convenience wrapper to calculate match from raw string input.
-  bool Calculate(const string16& query, const string16& text);
+  bool Calculate(const base::string16& query, const base::string16& text);
 
   double relevance() const { return relevance_; }
   const Hits& hits() const { return hits_; }

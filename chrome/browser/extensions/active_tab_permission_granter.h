@@ -38,10 +38,6 @@ class ActiveTabPermissionGranter : public content::WebContentsObserver,
   // tab-specific permissions to it until the next page navigation or refresh.
   void GrantIfRequested(const Extension* extension);
 
-  // Returns true if |extension| has been granted tab-specific permissions
-  // for this tab.
-  bool IsGranted(const Extension* extension);
-
  private:
   // content::WebContentsObserver implementation.
   virtual void DidNavigateMainFrame(
@@ -58,9 +54,6 @@ class ActiveTabPermissionGranter : public content::WebContentsObserver,
   // Clears any tab-specific permissions for all extensions on |tab_id_| and
   // notifies renderers.
   void ClearActiveExtensionsAndNotify();
-
-  // Gets the current page id.
-  int32 GetPageID();
 
   // The tab ID for this tab.
   int tab_id_;

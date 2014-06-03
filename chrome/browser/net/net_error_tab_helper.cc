@@ -5,7 +5,6 @@
 #include "chrome/browser/net/net_error_tab_helper.h"
 
 #include "base/bind.h"
-#include "base/metrics/field_trial.h"
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/io_thread.h"
@@ -17,7 +16,6 @@
 #include "content/public/browser/browser_thread.h"
 #include "net/base/net_errors.h"
 
-using base::FieldTrialList;
 using chrome_common_net::DnsProbeStatus;
 using chrome_common_net::DnsProbeStatusToString;
 using content::BrowserContext;
@@ -95,6 +93,7 @@ void NetErrorTabHelper::DidStartProvisionalLoadForFrame(
 
 void NetErrorTabHelper::DidCommitProvisionalLoadForFrame(
     int64 frame_id,
+    const base::string16& frame_unique_name,
     bool is_main_frame,
     const GURL& url,
     PageTransition transition_type,
@@ -120,10 +119,11 @@ void NetErrorTabHelper::DidCommitProvisionalLoadForFrame(
 
 void NetErrorTabHelper::DidFailProvisionalLoad(
     int64 frame_id,
+    const base::string16& frame_unique_name,
     bool is_main_frame,
     const GURL& validated_url,
     int error_code,
-    const string16& error_description,
+    const base::string16& error_description,
     RenderViewHost* render_view_host) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
@@ -142,8 +142,7 @@ NetErrorTabHelper::NetErrorTabHelper(WebContents* contents)
       is_error_page_(false),
       dns_error_active_(false),
       dns_error_page_committed_(false),
-      dns_probe_status_(chrome_common_net::DNS_PROBE_POSSIBLE),
-      probes_enabled_(chrome_common_net::DnsProbesEnabled()) {
+      dns_probe_status_(chrome_common_net::DNS_PROBE_POSSIBLE) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   // If this helper is under test, it won't have a WebContents.
@@ -208,7 +207,7 @@ bool NetErrorTabHelper::ProbesAllowed() const {
     return testing_state_ == TESTING_FORCE_ENABLED;
 
   // TODO(ttuttle): Disable on mobile?
-  return probes_enabled_ && *resolve_errors_with_web_service_;
+  return *resolve_errors_with_web_service_;
 }
 
 void NetErrorTabHelper::SendInfo() {

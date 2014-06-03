@@ -30,7 +30,7 @@ class NaClGdbTest : public PPAPINaClNewlibTest {
     EXPECT_TRUE(PathService::Get(base::DIR_EXE, &mock_nacl_gdb));
     mock_nacl_gdb = mock_nacl_gdb.Append(kMockNaClGdb);
     command_line->AppendSwitchPath(switches::kNaClGdb, mock_nacl_gdb);
-    EXPECT_TRUE(file_util::CreateTemporaryFile(&script_));
+    EXPECT_TRUE(base::CreateTemporaryFile(&script_));
     command_line->AppendSwitchPath(switches::kNaClGdbScript, script_);
   }
 
@@ -50,17 +50,17 @@ class NaClGdbTest : public PPAPINaClNewlibTest {
         return;
     }
 #endif
-    EXPECT_TRUE(file_util::CreateTemporaryFile(&mock_nacl_gdb_file));
+    EXPECT_TRUE(base::CreateTemporaryFile(&mock_nacl_gdb_file));
     env->SetVar("MOCK_NACL_GDB", mock_nacl_gdb_file.AsUTF8Unsafe());
     RunTestViaHTTP(test_name);
     env->UnSetVar("MOCK_NACL_GDB");
 
-    EXPECT_TRUE(file_util::ReadFileToString(mock_nacl_gdb_file, &content));
+    EXPECT_TRUE(base::ReadFileToString(mock_nacl_gdb_file, &content));
     EXPECT_STREQ("PASS", content.c_str());
     EXPECT_TRUE(base::DeleteFile(mock_nacl_gdb_file, false));
 
     content.clear();
-    EXPECT_TRUE(file_util::ReadFileToString(script_, &content));
+    EXPECT_TRUE(base::ReadFileToString(script_, &content));
     EXPECT_STREQ("PASS", content.c_str());
     EXPECT_TRUE(base::DeleteFile(script_, false));
   }

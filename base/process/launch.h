@@ -1,4 +1,4 @@
-// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,49 +14,32 @@
 
 #include "base/base_export.h"
 #include "base/basictypes.h"
+#include "base/environment.h"
 #include "base/process/process_handle.h"
+#include "base/strings/string_piece.h"
 
 #if defined(OS_POSIX)
 #include "base/posix/file_descriptor_shuffle.h"
 #elif defined(OS_WIN)
 #include <windows.h>
+#include "base/win/scoped_handle.h"
 #endif
 
 class CommandLine;
 
 namespace base {
 
-typedef std::vector<std::pair<std::string, std::string> > EnvironmentVector;
+#if defined(OS_WIN)
+typedef std::vector<HANDLE> HandlesToInheritVector;
+#endif
+// TODO(viettrungluu): Only define this on POSIX?
 typedef std::vector<std::pair<int, int> > FileHandleMappingVector;
 
 // Options for launching a subprocess that are passed to LaunchProcess().
 // The default constructor constructs the object with default options.
-struct LaunchOptions {
-  LaunchOptions()
-      : wait(false),
-#if defined(OS_WIN)
-        start_hidden(false),
-        inherit_handles(false),
-        as_user(NULL),
-        empty_desktop_name(false),
-        job_handle(NULL),
-        stdin_handle(NULL),
-        stdout_handle(NULL),
-        stderr_handle(NULL),
-        force_breakaway_from_job_(false)
-#else
-        environ(NULL),
-        fds_to_remap(NULL),
-        maximize_rlimits(NULL),
-        new_process_group(false)
-#if defined(OS_LINUX)
-        , clone_flags(0)
-#endif  // OS_LINUX
-#if defined(OS_CHROMEOS)
-        , ctrl_terminal_fd(-1)
-#endif  // OS_CHROMEOS
-#endif  // !defined(OS_WIN)
-        {}
+struct BASE_EXPORT LaunchOptions {
+  LaunchOptions();
+  ~LaunchOptions();
 
   // If true, wait for the process to complete.
   bool wait;
@@ -64,13 +47,19 @@ struct LaunchOptions {
 #if defined(OS_WIN)
   bool start_hidden;
 
+  // If non-null, inherit exactly the list of handles in this vector (these
+  // handles must be inheritable). This is only supported on Vista and higher.
+  HandlesToInheritVector* handles_to_inherit;
+
   // If true, the new process inherits handles from the parent. In production
   // code this flag should be used only when running short-lived, trusted
   // binaries, because open handles from other libraries and subsystems will
   // leak to the child process, causing errors such as open socket hangs.
+  // Note: If |handles_to_inherit| is non-null, this flag is ignored and only
+  // those handles will be inherited (on Vista and higher).
   bool inherit_handles;
 
-  // If non-NULL, runs as if the user represented by the token had launched it.
+  // If non-null, runs as if the user represented by the token had launched it.
   // Whether the application is visible on the interactive desktop depends on
   // the token belonging to an interactive logon session.
   //
@@ -82,7 +71,7 @@ struct LaunchOptions {
   // If true, use an empty string for the desktop name.
   bool empty_desktop_name;
 
-  // If non-NULL, launches the application in that job object. The process will
+  // If non-null, launches the application in that job object. The process will
   // be terminated immediately and LaunchProcess() will fail if assignment to
   // the job object fails.
   HANDLE job_handle;
@@ -100,13 +89,11 @@ struct LaunchOptions {
   // job if any.
   bool force_breakaway_from_job_;
 #else
-  // If non-NULL, set/unset environment variables.
-  // See documentation of AlterEnvironment().
-  // This pointer is owned by the caller and must live through the
-  // call to LaunchProcess().
-  const EnvironmentVector* environ;
+  // Set/unset environment variables. Empty (the default) means to inherit
+  // the same environment. See AlterEnvironment().
+  EnvironmentMap environ;
 
-  // If non-NULL, remap file descriptors according to the mapping of
+  // If non-null, remap file descriptors according to the mapping of
   // src fd->dest fd to propagate FDs into the child process.
   // This pointer is owned by the caller and must live through the
   // call to LaunchProcess().
@@ -141,7 +128,7 @@ struct LaunchOptions {
 //
 // Returns true upon success.
 //
-// Upon success, if |process_handle| is non-NULL, it will be filled in with the
+// Upon success, if |process_handle| is non-null, it will be filled in with the
 // handle of the launched process.  NOTE: In this case, the caller is
 // responsible for closing the handle so that it doesn't leak!
 // Otherwise, the process handle will be implicitly closed.
@@ -171,7 +158,7 @@ BASE_EXPORT bool LaunchProcess(const CommandLine& cmdline,
 //  cmdline = "c:\windows\explorer.exe" -foo "c:\bar\"
 BASE_EXPORT bool LaunchProcess(const string16& cmdline,
                                const LaunchOptions& options,
-                               ProcessHandle* process_handle);
+                               win::ScopedHandle* process_handle);
 
 #elif defined(OS_POSIX)
 // A POSIX-specific version of LaunchProcess that takes an argv array
@@ -182,16 +169,6 @@ BASE_EXPORT bool LaunchProcess(const std::vector<std::string>& argv,
                                const LaunchOptions& options,
                                ProcessHandle* process_handle);
 
-// AlterEnvironment returns a modified environment vector, constructed from the
-// given environment and the list of changes given in |changes|. Each key in
-// the environment is matched against the first element of the pairs. In the
-// event of a match, the value is replaced by the second of the pair, unless
-// the second is empty, in which case the key-value is removed.
-//
-// The returned array is allocated using new[] and must be freed by the caller.
-BASE_EXPORT char** AlterEnvironment(const EnvironmentVector& changes,
-                                    const char* const* const env);
-
 // Close all file descriptors, except those which are a destination in the
 // given multimap. Only call this function in a child process where you know
 // that there aren't any other threads.
@@ -199,12 +176,9 @@ BASE_EXPORT void CloseSuperfluousFds(const InjectiveMultimap& saved_map);
 #endif  // defined(OS_POSIX)
 
 #if defined(OS_WIN)
-// Set JOBOBJECT_EXTENDED_LIMIT_INFORMATION to JobObject |job_object|.
-// As its limit_info.BasicLimitInformation.LimitFlags has
-// JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE.
-// When the provide JobObject |job_object| is closed, the binded process will
-// be terminated.
-BASE_EXPORT bool SetJobObjectAsKillOnJobClose(HANDLE job_object);
+// Set |job_object|'s JOBOBJECT_EXTENDED_LIMIT_INFORMATION
+// BasicLimitInformation.LimitFlags to |limit_flags|.
+BASE_EXPORT bool SetJobObjectLimitFlags(HANDLE job_object, DWORD limit_flags);
 
 // Output multi-process printf, cout, cerr, etc to the cmd.exe console that ran
 // chrome. This is not thread-safe: only call from main thread.
@@ -216,6 +190,13 @@ BASE_EXPORT void RouteStdioToConsole();
 // on success (application launched and exited cleanly, with exit code
 // indicating success).
 BASE_EXPORT bool GetAppOutput(const CommandLine& cl, std::string* output);
+
+#if defined(OS_WIN)
+// A Windows-specific version of GetAppOutput that takes a command line string
+// instead of a CommandLine object. Useful for situations where you need to
+// control the command line arguments directly.
+BASE_EXPORT bool GetAppOutput(const StringPiece16& cl, std::string* output);
+#endif
 
 #if defined(OS_POSIX)
 // A POSIX-specific version of GetAppOutput that takes an argv array

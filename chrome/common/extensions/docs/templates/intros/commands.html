@@ -11,11 +11,15 @@ have many commands but only 4 suggested keys can be specified. The user can
 manually add more shortcuts from the chrome://extensions page.</p>
 
 <p>Supported keys: A-Z, 0-9, Comma, Period, Home, End, PageUp, PageDown, Insert,
-Delete, Tab and the arrow keys (Up, Down, Left, Right).</p>
+Delete, Arrow keys (Up, Down, Left, Right) and the Media Keys
+(MediaNextTrack, MediaPlayPause, MediaPrevTrack, MediaStop).</p>
 
 <p>Note: All key combinations must include either Ctrl* or Alt. Combinations
 that involve Ctrl+Alt are not permitted in order to avoid conflicts with the
-AltGr key. Shift can be used in addition to Alt or Ctrl, but is not required.<p>
+AltGr key. Shift can be used in addition to Alt or Ctrl, but is not required.
+Modifiers (such as Ctrl) can not be used in combination with the Media Keys.
+Tab key was removed from list of supported keys in Chrome version 33 and above
+for accessibility reasons.<p>
 
 <p>* Also note that on Mac 'Ctrl' is automatically converted to 'Command'. If
 you want 'Ctrl' instead, please specify 'MacCtrl'.</p>
@@ -23,7 +27,8 @@ you want 'Ctrl' instead, please specify 'MacCtrl'.</p>
 <p>Certain Chrome shortcuts (e.g. window management) always take priority over
 Extension Command shortcuts and can not be overwritten.</p>
 
-<pre>{
+<pre data-filename="manifest.json">
+{
   "name": "My extension",
   ...
 <b>  "commands": {
@@ -44,9 +49,9 @@ Extension Command shortcuts and can not be overwritten.</p>
     },
     "_execute_page_action": {
       "suggested_key": {
-        "default": "Ctrl+E"
+        "default": "Ctrl+E",
         "windows": "Alt+P",
-        "mac": "Option+P",
+        "mac": "Option+P"
       }
     }
   }</b>,

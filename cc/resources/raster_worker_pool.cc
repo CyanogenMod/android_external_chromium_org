@@ -7,16 +7,29 @@
 #include "base/json/json_writer.h"
 #include "base/metrics/histogram.h"
 #include "base/values.h"
-#include "cc/debug/benchmark_instrumentation.h"
 #include "cc/debug/devtools_instrumentation.h"
 #include "cc/debug/traced_value.h"
 #include "cc/resources/picture_pile_impl.h"
 #include "skia/ext/lazy_pixel_ref.h"
 #include "skia/ext/paint_simplifier.h"
+#include "third_party/skia/include/core/SkBitmap.h"
 
 namespace cc {
 
 namespace {
+
+// Subclass of Allocator that takes a suitably allocated pointer and uses
+// it as the pixel memory for the bitmap.
+class IdentityAllocator : public SkBitmap::Allocator {
+ public:
+  explicit IdentityAllocator(void* buffer) : buffer_(buffer) {}
+  virtual bool allocPixelRef(SkBitmap* dst, SkColorTable*) OVERRIDE {
+    dst->setPixels(buffer_);
+    return true;
+  }
+ private:
+  void* buffer_;
+};
 
 // Flag to indicate whether we should try and detect that
 // a tile is of solid color.
@@ -41,7 +54,6 @@ class RasterWorkerPoolTaskImpl : public internal::RasterWorkerPoolTask {
                            gfx::Rect content_rect,
                            float contents_scale,
                            RasterMode raster_mode,
-                           bool is_tile_in_pending_tree_now_bin,
                            TileResolution tile_resolution,
                            int layer_id,
                            const void* tile_id,
@@ -54,7 +66,6 @@ class RasterWorkerPoolTaskImpl : public internal::RasterWorkerPoolTask {
         content_rect_(content_rect),
         contents_scale_(contents_scale),
         raster_mode_(raster_mode),
-        is_tile_in_pending_tree_now_bin_(is_tile_in_pending_tree_now_bin),
         tile_resolution_(tile_resolution),
         layer_id_(layer_id),
         tile_id_(tile_id),
@@ -76,24 +87,24 @@ class RasterWorkerPoolTaskImpl : public internal::RasterWorkerPoolTask {
 
     DCHECK(picture_clone);
 
-    base::TimeTicks start_time = rendering_stats_->StartRecording();
-    picture_clone->AnalyzeInRect(content_rect_, contents_scale_, &analysis_);
-    base::TimeDelta duration = rendering_stats_->EndRecording(start_time);
+    picture_clone->AnalyzeInRect(
+        content_rect_, contents_scale_, &analysis_, rendering_stats_);
 
     // Record the solid color prediction.
     UMA_HISTOGRAM_BOOLEAN("Renderer4.SolidColorTilesAnalyzed",
                           analysis_.is_solid_color);
-    rendering_stats_->AddAnalysisResult(duration, analysis_.is_solid_color);
 
     // Clear the flag if we're not using the estimator.
     analysis_.is_solid_color &= kUseColorEstimator;
   }
 
-  bool RunRasterOnThread(SkDevice* device, unsigned thread_index) {
+  bool RunRasterOnThread(unsigned thread_index,
+                         void* buffer,
+                         gfx::Size size,
+                         int stride) {
     TRACE_EVENT2(
-        benchmark_instrumentation::kCategory,
-        benchmark_instrumentation::kRunRasterOnThread,
-        benchmark_instrumentation::kData,
+        "cc", "RasterWorkerPoolTaskImpl::RunRasterOnThread",
+        "data",
         TracedValue::FromValue(DataAsValue().release()),
         "raster_mode",
         TracedValue::FromValue(RasterModeAsValue(raster_mode_).release()));
@@ -102,7 +113,7 @@ class RasterWorkerPoolTaskImpl : public internal::RasterWorkerPoolTask {
         devtools_instrumentation::kRasterTask, layer_id_);
 
     DCHECK(picture_pile_.get());
-    DCHECK(device);
+    DCHECK(buffer);
 
     if (analysis_.is_solid_color)
       return false;
@@ -110,8 +121,33 @@ class RasterWorkerPoolTaskImpl : public internal::RasterWorkerPoolTask {
     PicturePileImpl* picture_clone =
         picture_pile_->GetCloneForDrawingOnThread(thread_index);
 
-    SkCanvas canvas(device);
+    SkBitmap bitmap;
+    switch (resource()->format()) {
+      case RGBA_4444:
+        // Use the default stride if we will eventually convert this
+        // bitmap to 4444.
+        bitmap.setConfig(SkBitmap::kARGB_8888_Config,
+                         size.width(),
+                         size.height());
+        bitmap.allocPixels();
+        break;
+      case RGBA_8888:
+      case BGRA_8888:
+        bitmap.setConfig(SkBitmap::kARGB_8888_Config,
+                         size.width(),
+                         size.height(),
+                         stride);
+        bitmap.setPixels(buffer);
+        break;
+      case LUMINANCE_8:
+      case RGB_565:
+      case ETC1:
+        NOTREACHED();
+        break;
+    }
 
+    SkBitmapDevice device(bitmap);
+    SkCanvas canvas(&device);
     skia::RefPtr<SkDrawFilter> draw_filter;
     switch (raster_mode_) {
       case LOW_QUALITY_RASTER_MODE:
@@ -129,34 +165,45 @@ class RasterWorkerPoolTaskImpl : public internal::RasterWorkerPoolTask {
 
     canvas.setDrawFilter(draw_filter.get());
 
-    if (rendering_stats_->record_rendering_stats()) {
-      PicturePileImpl::RasterStats raster_stats;
-      picture_clone->RasterToBitmap(
-          &canvas, content_rect_, contents_scale_, &raster_stats);
-      rendering_stats_->AddRaster(
-          raster_stats.total_rasterize_time,
-          raster_stats.best_rasterize_time,
-          raster_stats.total_pixels_rasterized,
-          is_tile_in_pending_tree_now_bin_);
+    base::TimeDelta prev_rasterize_time =
+        rendering_stats_->impl_thread_rendering_stats().rasterize_time;
 
-      HISTOGRAM_CUSTOM_COUNTS(
-          "Renderer4.PictureRasterTimeUS",
-          raster_stats.total_rasterize_time.InMicroseconds(),
-          0,
-          100000,
-          100);
+    // Only record rasterization time for highres tiles, because
+    // lowres tiles are not required for activation and therefore
+    // introduce noise in the measurement (sometimes they get rasterized
+    // before we draw and sometimes they aren't)
+    if (tile_resolution_ == HIGH_RESOLUTION) {
+      picture_clone->RasterToBitmap(
+          &canvas, content_rect_, contents_scale_, rendering_stats_);
     } else {
       picture_clone->RasterToBitmap(
           &canvas, content_rect_, contents_scale_, NULL);
     }
+
+    if (rendering_stats_->record_rendering_stats()) {
+      base::TimeDelta current_rasterize_time =
+          rendering_stats_->impl_thread_rendering_stats().rasterize_time;
+      HISTOGRAM_CUSTOM_COUNTS(
+          "Renderer4.PictureRasterTimeUS",
+          (current_rasterize_time - prev_rasterize_time).InMicroseconds(),
+          0,
+          100000,
+          100);
+    }
+
+    ChangeBitmapConfigIfNeeded(bitmap, buffer);
+
     return true;
   }
 
   // Overridden from internal::RasterWorkerPoolTask:
-  virtual bool RunOnWorkerThread(SkDevice* device, unsigned thread_index)
+  virtual bool RunOnWorkerThread(unsigned thread_index,
+                                 void* buffer,
+                                 gfx::Size size,
+                                 int stride)
       OVERRIDE {
     RunAnalysisOnThread(thread_index);
-    return RunRasterOnThread(device, thread_index);
+    return RunRasterOnThread(thread_index, buffer, size, stride);
   }
   virtual void CompleteOnOriginThread() OVERRIDE {
     reply_.Run(analysis_, !HasFinishedRunning() || WasCanceled());
@@ -169,12 +216,24 @@ class RasterWorkerPoolTaskImpl : public internal::RasterWorkerPoolTask {
   scoped_ptr<base::Value> DataAsValue() const {
     scoped_ptr<base::DictionaryValue> res(new base::DictionaryValue());
     res->Set("tile_id", TracedValue::CreateIDRef(tile_id_).release());
-    res->SetBoolean("is_tile_in_pending_tree_now_bin",
-                    is_tile_in_pending_tree_now_bin_);
     res->Set("resolution", TileResolutionAsValue(tile_resolution_).release());
     res->SetInteger("source_frame_number", source_frame_number_);
     res->SetInteger("layer_id", layer_id_);
     return res.PassAs<base::Value>();
+  }
+
+  void ChangeBitmapConfigIfNeeded(const SkBitmap& bitmap,
+                                  void* buffer) {
+    TRACE_EVENT0("cc", "RasterWorkerPoolTaskImpl::ChangeBitmapConfigIfNeeded");
+    SkBitmap::Config config = SkBitmapConfig(resource()->format());
+    if (bitmap.getConfig() != config) {
+      SkBitmap bitmap_dest;
+      IdentityAllocator allocator(buffer);
+      bitmap.copyTo(&bitmap_dest, config, &allocator);
+      // TODO(kaanb): The GL pipeline assumes a 4-byte alignment for the
+      // bitmap data. This check will be removed once crbug.com/293728 is fixed.
+      CHECK_EQ(0u, bitmap_dest.rowBytes() % 4);
+    }
   }
 
   PicturePileImpl::Analysis analysis_;
@@ -182,7 +241,6 @@ class RasterWorkerPoolTaskImpl : public internal::RasterWorkerPoolTask {
   gfx::Rect content_rect_;
   float contents_scale_;
   RasterMode raster_mode_;
-  bool is_tile_in_pending_tree_now_bin_;
   TileResolution tile_resolution_;
   int layer_id_;
   const void* tile_id_;
@@ -199,7 +257,7 @@ class ImageDecodeWorkerPoolTaskImpl : public internal::WorkerPoolTask {
                                 int layer_id,
                                 RenderingStatsInstrumentation* rendering_stats,
                                 const RasterWorkerPool::Task::Reply& reply)
-      : pixel_ref_(pixel_ref),
+      : pixel_ref_(skia::SharePtr(pixel_ref)),
         layer_id_(layer_id),
         rendering_stats_(rendering_stats),
         reply_(reply) {}
@@ -207,12 +265,9 @@ class ImageDecodeWorkerPoolTaskImpl : public internal::WorkerPoolTask {
   // Overridden from internal::WorkerPoolTask:
   virtual void RunOnWorkerThread(unsigned thread_index) OVERRIDE {
     TRACE_EVENT0("cc", "ImageDecodeWorkerPoolTaskImpl::RunOnWorkerThread");
-    devtools_instrumentation::ScopedLayerTask image_decode_task(
-        devtools_instrumentation::kImageDecodeTask, layer_id_);
-    base::TimeTicks start_time = rendering_stats_->StartRecording();
+    devtools_instrumentation::ScopedImageDecodeTask image_decode_task(
+        pixel_ref_.get());
     pixel_ref_->Decode();
-    base::TimeDelta duration = rendering_stats_->EndRecording(start_time);
-    rendering_stats_->AddDeferredImageDecode(duration);
   }
   virtual void CompleteOnOriginThread() OVERRIDE {
     reply_.Run(!HasFinishedRunning());
@@ -222,7 +277,7 @@ class ImageDecodeWorkerPoolTaskImpl : public internal::WorkerPoolTask {
   virtual ~ImageDecodeWorkerPoolTaskImpl() {}
 
  private:
-  skia::LazyPixelRef* pixel_ref_;
+  skia::RefPtr<skia::LazyPixelRef> pixel_ref_;
   int layer_id_;
   RenderingStatsInstrumentation* rendering_stats_;
   const RasterWorkerPool::Task::Reply reply_;
@@ -372,7 +427,6 @@ RasterWorkerPool::RasterTask RasterWorkerPool::CreateRasterTask(
     gfx::Rect content_rect,
     float contents_scale,
     RasterMode raster_mode,
-    bool is_tile_in_pending_tree_now_bin,
     TileResolution tile_resolution,
     int layer_id,
     const void* tile_id,
@@ -386,7 +440,6 @@ RasterWorkerPool::RasterTask RasterWorkerPool::CreateRasterTask(
                                    content_rect,
                                    contents_scale,
                                    raster_mode,
-                                   is_tile_in_pending_tree_now_bin,
                                    tile_resolution,
                                    layer_id,
                                    tile_id,

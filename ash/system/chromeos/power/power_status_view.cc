@@ -24,15 +24,8 @@
 namespace ash {
 namespace internal {
 
-namespace {
-
-// Top/bottom padding of the text items.
-const int kPaddingVertical = 10;
-// Specify min width of status label for layout.
-const int kLabelMinWidth = 120;
 // Padding between battery status text and battery icon on default view.
 const int kPaddingBetweenBatteryStatusAndIcon = 3;
-}  // namespace
 
 PowerStatusView::PowerStatusView(ViewType view_type,
                                  bool default_view_right_align)
@@ -193,9 +186,8 @@ void PowerStatusView::UpdateTextForNotificationView() {
               base::IntToString16(min)));
     } else {
       // This is a low battery warning prompting the user in minutes.
-      min = hour * 60 + min;
       time_label_->SetText(ui::TimeFormat::TimeRemaining(
-          base::TimeDelta::FromMinutes(min)));
+          base::TimeDelta::FromMinutes(hour * 60 + min)));
     }
   } else {
     time_label_->SetText(base::string16());

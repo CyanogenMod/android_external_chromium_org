@@ -236,10 +236,10 @@ void PanelStackWindowGtk::EnsureWindowCreated() {
   gtk_window_set_skip_taskbar_hint(window_, false);
 
   // Set the window icon and title.
-  string16 title = delegate_->GetTitle();
+  base::string16 title = delegate_->GetTitle();
   gtk_window_set_title(window_, UTF16ToUTF8(title).c_str());
 
-  gfx::Image app_icon = panel->app_icon();
+  gfx::Image app_icon = delegate_->GetIcon();
   if (!app_icon.IsEmpty())
     gtk_window_set_icon(window_, app_icon.ToGdkPixbuf());
 }

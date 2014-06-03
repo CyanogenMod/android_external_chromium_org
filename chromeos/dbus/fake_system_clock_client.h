@@ -10,12 +10,13 @@
 namespace chromeos {
 
 // A fake implementation of SystemClockClient. This class does nothing.
-class FakeSystemClockClient : public SystemClockClient {
+class CHROMEOS_EXPORT FakeSystemClockClient : public SystemClockClient {
  public:
   FakeSystemClockClient();
   virtual ~FakeSystemClockClient();
 
-  // SystemClockClient overrides.
+  // SystemClockClient overrides
+  virtual void Init(dbus::Bus* bus) OVERRIDE;
   virtual void AddObserver(Observer* observer) OVERRIDE;
   virtual void RemoveObserver(Observer* observer) OVERRIDE;
   virtual bool HasObserver(Observer* observer) OVERRIDE;

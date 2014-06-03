@@ -6,11 +6,11 @@
 
 var binding = require('binding').Binding.create('runtime');
 
-var extensionNatives = requireNative('extension');
 var messaging = require('messaging');
 var runtimeNatives = requireNative('runtime');
 var unloadEvent = require('unload_event');
 var process = requireNative('process');
+var forEach = require('utils').forEach;
 
 var backgroundPage = window;
 var backgroundRequire = require;
@@ -21,7 +21,7 @@ if (contextType == 'BLESSED_EXTENSION' ||
   if (manifest.app && manifest.app.background) {
     // Get the background page if one exists. Otherwise, default to the current
     // window.
-    backgroundPage = extensionNatives.GetExtensionViews(-1, 'BACKGROUND')[0];
+    backgroundPage = runtimeNatives.GetExtensionViews(-1, 'BACKGROUND')[0];
     if (backgroundPage) {
       var GetModuleSystem = requireNative('v8_context').GetModuleSystem;
       backgroundRequire = GetModuleSystem(backgroundPage).require;
@@ -98,14 +98,19 @@ binding.registerCustomHook(function(binding, id, contextType) {
 
   var sendMessageUpdateArguments = messaging.sendMessageUpdateArguments;
   apiFunctions.setUpdateArgumentsPreValidate('sendMessage',
-      $Function.bind(sendMessageUpdateArguments, null, 'sendMessage'));
+      $Function.bind(sendMessageUpdateArguments, null, 'sendMessage',
+                     true /* hasOptionsArgument */));
   apiFunctions.setUpdateArgumentsPreValidate('sendNativeMessage',
-      $Function.bind(sendMessageUpdateArguments, null, 'sendNativeMessage'));
+      $Function.bind(sendMessageUpdateArguments, null, 'sendNativeMessage',
+                     false /* hasOptionsArgument */));
 
   apiFunctions.setHandleRequest('sendMessage',
-                                function(targetId, message, responseCallback) {
-    var port = runtime.connect(targetId || runtime.id,
-        {name: messaging.kMessageChannel});
+      function(targetId, message, options, responseCallback) {
+    var connectOptions = {name: messaging.kMessageChannel};
+    forEach(options, function(k, v) {
+      connectOptions[k] = v;
+    });
+    var port = runtime.connect(targetId || runtime.id, connectOptions);
     messaging.sendMessageImpl(port, message, responseCallback);
   });
 
@@ -158,7 +163,11 @@ binding.registerCustomHook(function(binding, id, contextType) {
     if (connectInfo && connectInfo.name)
       name = connectInfo.name;
 
-    var portId = runtimeNatives.OpenChannelToExtension(targetId, name);
+    var includeTlsChannelId =
+      !!(connectInfo && connectInfo.includeTlsChannelId);
+
+    var portId = runtimeNatives.OpenChannelToExtension(targetId, name,
+                                                       includeTlsChannelId);
     if (portId >= 0)
       return messaging.createPort(portId, name);
   });
@@ -183,7 +192,7 @@ binding.registerCustomHook(function(binding, id, contextType) {
   apiFunctions.setCustomCallback('getBackgroundPage',
                                  function(name, request, response) {
     if (request.callback) {
-      var bg = extensionNatives.GetExtensionViews(-1, 'BACKGROUND')[0] || null;
+      var bg = runtimeNatives.GetExtensionViews(-1, 'BACKGROUND')[0] || null;
       request.callback(bg);
     }
     request.callback = null;

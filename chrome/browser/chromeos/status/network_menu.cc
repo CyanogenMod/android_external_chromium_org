@@ -18,12 +18,14 @@
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/mobile_config.h"
 #include "chrome/browser/chromeos/options/network_config_view.h"
+#include "chrome/browser/chromeos/sim_dialog_delegate.h"
 #include "chrome/browser/defaults.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/url_constants.h"
 #include "chromeos/network/device_state.h"
 #include "chromeos/network/network_state.h"
 #include "chromeos/network/network_state_handler.h"
+#include "chromeos/network/shill_property_util.h"
 #include "grit/ash_resources.h"
 #include "grit/ash_strings.h"
 #include "grit/generated_resources.h"
@@ -58,11 +60,10 @@ bool ShouldHighlightNetwork(const NetworkState* network) {
   return network->IsConnectedState() || network->IsConnectingState();
 }
 
-void ToggleTechnology(const std::string& technology) {
+void ToggleTechnology(const NetworkTypePattern& technology) {
   NetworkStateHandler* handler = NetworkHandler::Get()->network_state_handler();
   bool is_enabled = handler->IsTechnologyEnabled(technology);
-  handler->SetTechnologyEnabled(technology, !is_enabled,
-                                network_handler::ErrorCallback());
+  ash::network_connect::SetTechnologyEnabled(technology, !is_enabled);
 }
 
 }  // namespace
@@ -75,7 +76,7 @@ class NetworkMenuModel : public ui::MenuModel {
           sub_menu_model(NULL),
           flags(0) {
     }
-    MenuItem(ui::MenuModel::ItemType type, string16 label, gfx::ImageSkia icon,
+    MenuItem(ui::MenuModel::ItemType type, base::string16 label, gfx::ImageSkia icon,
              const std::string& service_path, int flags)
         : type(type),
           label(label),
@@ -84,7 +85,7 @@ class NetworkMenuModel : public ui::MenuModel {
           sub_menu_model(NULL),
           flags(flags) {
     }
-    MenuItem(ui::MenuModel::ItemType type, string16 label, gfx::ImageSkia icon,
+    MenuItem(ui::MenuModel::ItemType type, base::string16 label, gfx::ImageSkia icon,
              NetworkMenuModel* sub_menu_model, int flags)
         : type(type),
           label(label),
@@ -94,7 +95,7 @@ class NetworkMenuModel : public ui::MenuModel {
     }
 
     ui::MenuModel::ItemType type;
-    string16 label;
+    base::string16 label;
     gfx::ImageSkia icon;
     std::string service_path;
     NetworkMenuModel* sub_menu_model;  // Weak ptr.
@@ -121,7 +122,7 @@ class NetworkMenuModel : public ui::MenuModel {
   virtual int GetItemCount() const OVERRIDE;
   virtual ui::MenuModel::ItemType GetTypeAt(int index) const OVERRIDE;
   virtual ui::MenuSeparatorType GetSeparatorTypeAt(int index) const OVERRIDE;
-  virtual string16 GetLabelAt(int index) const OVERRIDE;
+  virtual base::string16 GetLabelAt(int index) const OVERRIDE;
   virtual bool IsItemDynamicAt(int index) const OVERRIDE;
   virtual const gfx::Font* GetLabelFontAt(int index) const OVERRIDE;
   virtual bool GetAcceleratorAt(int index,
@@ -160,13 +161,6 @@ class NetworkMenuModel : public ui::MenuModel {
 
   // Weak pointer to NetworkMenu that owns this MenuModel.
   base::WeakPtr<NetworkMenu> owner_;
-
-  // Top up URL of the current carrier on empty string if there's none.
-  std::string top_up_url_;
-
-  // Carrier ID which top up URL is initialized for.
-  // Used to update top up URL only when cellular carrier has changed.
-  std::string carrier_id_;
 
  private:
   // Open a dialog to set up and connect to a network.
@@ -207,7 +201,7 @@ class MainMenuModel : public NetworkMenuModel {
 
  private:
   void AddWirelessNetworkMenuItem(const NetworkState* wifi_network, int flag);
-  void AddMessageItem(const string16& msg);
+  void AddMessageItem(const base::string16& msg);
 
   scoped_ptr<MoreMenuModel> more_menu_model_;
 
@@ -221,7 +215,6 @@ void NetworkMenuModel::ConnectToNetworkAt(int index) {
   const std::string& service_path = menu_items_[index].service_path;
   gfx::NativeWindow native_window = owner_->delegate()->GetNativeWindow();
   ash::network_connect::ConnectToNetwork(service_path, native_window);
-  owner_->delegate()->OnConnectToNetworkRequested(service_path);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -243,7 +236,7 @@ ui::MenuSeparatorType NetworkMenuModel::GetSeparatorTypeAt(int index) const {
   return ui::NORMAL_SEPARATOR;
 }
 
-string16 NetworkMenuModel::GetLabelAt(int index) const {
+base::string16 NetworkMenuModel::GetLabelAt(int index) const {
   return menu_items_[index].label;
 }
 
@@ -313,17 +306,20 @@ void NetworkMenuModel::ActivatedAt(int index) {
   if (flags & FLAG_OPTIONS) {
     owner_->delegate()->OpenButtonOptions();
   } else if (flags & FLAG_TOGGLE_WIFI) {
-    ToggleTechnology(flimflam::kTypeWifi);
+    ToggleTechnology(NetworkTypePattern::WiFi());
   } else if (flags & FLAG_TOGGLE_MOBILE) {
-    ToggleTechnology(NetworkStateHandler::kMatchTypeMobile);
+    ToggleTechnology(NetworkTypePattern::Mobile());
   } else if (flags & FLAG_ETHERNET) {
-    // Do nothing (used in login screen only)
+    owner_->delegate()->OnConnectToNetworkRequested(
+        menu_items_[index].service_path);
   } else if (flags & (FLAG_WIFI | FLAG_WIMAX | FLAG_CELLULAR)) {
     ConnectToNetworkAt(index);
+    owner_->delegate()->OnConnectToNetworkRequested(
+        menu_items_[index].service_path);
   } else if (flags & FLAG_ADD_WIFI) {
-    ShowOther(flimflam::kTypeWifi);
+    ShowOther(shill::kTypeWifi);
   } else if (flags & FLAG_ADD_CELLULAR) {
-    ShowOther(flimflam::kTypeCellular);
+    ShowOther(shill::kTypeCellular);
   }
 }
 
@@ -339,10 +335,10 @@ ui::MenuModelDelegate* NetworkMenuModel::GetMenuModelDelegate() const {
 
 void NetworkMenuModel::ShowOther(const std::string& type) const {
   gfx::NativeWindow native_window = owner_->delegate()->GetNativeWindow();
-  if (type == flimflam::kTypeCellular)
+  if (type == shill::kTypeCellular)
     ChooseMobileNetworkDialog::ShowDialog(native_window);
   else
-    NetworkConfigView::ShowForType(flimflam::kTypeWifi, native_window);
+    NetworkConfigView::ShowForType(shill::kTypeWifi, native_window);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -350,7 +346,7 @@ void NetworkMenuModel::ShowOther(const std::string& type) const {
 
 void MainMenuModel::AddWirelessNetworkMenuItem(const NetworkState* network,
                                                int flag) {
-  string16 label;
+  base::string16 label;
   // Ampersand is a valid character in an SSID, but menu2 uses it to mark
   // "mnemonics" for keyboard shortcuts.
   std::string wifi_name = EscapeAmpersands(network->name());
@@ -376,7 +372,7 @@ void MainMenuModel::AddWirelessNetworkMenuItem(const NetworkState* network,
                label, icon, network->path(), flag));
 }
 
-void MainMenuModel::AddMessageItem(const string16& msg) {
+void MainMenuModel::AddMessageItem(const base::string16& msg) {
   menu_items_.push_back(MenuItem(
       ui::MenuModel::TYPE_COMMAND, msg,
       gfx::ImageSkia(), std::string(), FLAG_DISABLED));
@@ -388,14 +384,14 @@ void MainMenuModel::InitMenuItems(bool should_open_button_options) {
   NetworkStateHandler* handler = NetworkHandler::Get()->network_state_handler();
 
   // Populate our MenuItems with the current list of networks.
-  ResourceBundle& rb = ResourceBundle::GetSharedInstance();
-  string16 label;
+  base::string16 label;
 
   // Ethernet
   // Only display an ethernet icon if enabled, and an ethernet network exists.
-  bool ethernet_enabled = handler->IsTechnologyEnabled(flimflam::kTypeEthernet);
+  bool ethernet_enabled =
+      handler->IsTechnologyEnabled(NetworkTypePattern::Ethernet());
   const NetworkState* ethernet_network =
-      handler->FirstNetworkByType(flimflam::kTypeEthernet);
+      handler->FirstNetworkByType(NetworkTypePattern::Ethernet());
   if (ethernet_enabled && ethernet_network) {
     bool ethernet_connecting = ethernet_network->IsConnectingState();
     if (ethernet_connecting) {
@@ -420,18 +416,18 @@ void MainMenuModel::InitMenuItems(bool should_open_button_options) {
   handler->GetNetworkList(&network_list);
 
   // Cellular Networks
-  if (handler->IsTechnologyEnabled(flimflam::kTypeCellular)) {
+  if (handler->IsTechnologyEnabled(NetworkTypePattern::Cellular())) {
     // List Cellular networks.
     for (NetworkStateHandler::NetworkStateList::const_iterator iter =
              network_list.begin(); iter != network_list.end(); ++iter) {
       const NetworkState* network = *iter;
-      if (network->type() != flimflam::kTypeCellular)
+      if (network->type() != shill::kTypeCellular)
         continue;
       std::string activation_state = network->activation_state();
 
       // This is only used in the login screen; do not show unactivated
       // networks.
-      if (activation_state != flimflam::kActivationStateActivated)
+      if (activation_state != shill::kActivationStateActivated)
         continue;
 
       // Ampersand is a valid character in a network name, but menu2 uses it
@@ -459,11 +455,11 @@ void MainMenuModel::InitMenuItems(bool should_open_button_options) {
 
     // For GSM add cellular network scan.
     const DeviceState* cellular_device =
-        handler->GetDeviceStateByType(flimflam::kTypeCellular);
+        handler->GetDeviceStateByType(NetworkTypePattern::Cellular());
     if (cellular_device && cellular_device->support_network_scan()) {
       const gfx::ImageSkia icon =
           ash::network_icon::GetImageForDisconnectedNetwork(
-              ash::network_icon::ICON_TYPE_LIST, flimflam::kTypeCellular);
+              ash::network_icon::ICON_TYPE_LIST, shill::kTypeCellular);
       menu_items_.push_back(MenuItem(
           ui::MenuModel::TYPE_COMMAND,
           l10n_util::GetStringUTF16(
@@ -480,26 +476,27 @@ void MainMenuModel::InitMenuItems(bool should_open_button_options) {
   }
 
   // Wimax Networks
-  if (handler->IsTechnologyEnabled(flimflam::kTypeWimax)) {
+  if (handler->IsTechnologyEnabled(NetworkTypePattern::Wimax())) {
     // List Wimax networks.
     for (NetworkStateHandler::NetworkStateList::const_iterator iter =
              network_list.begin(); iter != network_list.end(); ++iter) {
       const NetworkState* network = *iter;
-      if (network->type() != flimflam::kTypeWimax)
+      if (network->type() != shill::kTypeWimax)
         continue;
       AddWirelessNetworkMenuItem(network, FLAG_WIMAX);
     }
   }
 
   // Wifi Networks
-  if (handler->IsTechnologyEnabled(flimflam::kTypeWifi)) {
+  if (handler->IsTechnologyEnabled(NetworkTypePattern::WiFi())) {
     // List Wifi networks.
-    int scanning_msg = handler->GetScanningByType(flimflam::kTypeWifi) ?
-        IDS_ASH_STATUS_TRAY_WIFI_SCANNING_MESSAGE : 0;
+    int scanning_msg = handler->GetScanningByType(NetworkTypePattern::WiFi())
+                           ? IDS_ASH_STATUS_TRAY_WIFI_SCANNING_MESSAGE
+                           : 0;
     for (NetworkStateHandler::NetworkStateList::const_iterator iter =
              network_list.begin(); iter != network_list.end(); ++iter) {
       const NetworkState* network = *iter;
-      if (network->type() != flimflam::kTypeWifi)
+      if (network->type() != shill::kTypeWifi)
         continue;
       // Add 'Searching for Wi-Fi networks...' after connected networks.
       if (scanning_msg && !network->IsConnectedState()) {
@@ -512,7 +509,7 @@ void MainMenuModel::InitMenuItems(bool should_open_button_options) {
       AddMessageItem(l10n_util::GetStringUTF16(scanning_msg));
     const gfx::ImageSkia icon =
         ash::network_icon::GetImageForConnectedNetwork(
-            ash::network_icon::ICON_TYPE_LIST, flimflam::kTypeWifi);
+            ash::network_icon::ICON_TYPE_LIST, shill::kTypeWifi);
     menu_items_.push_back(MenuItem(
         ui::MenuModel::TYPE_COMMAND,
         l10n_util::GetStringUTF16(IDS_OPTIONS_SETTINGS_OTHER_WIFI_NETWORKS),
@@ -528,13 +525,13 @@ void MainMenuModel::InitMenuItems(bool should_open_button_options) {
 
   // Enable / Disable Technology
   NetworkStateHandler::TechnologyState wifi_state =
-      handler->GetTechnologyState(flimflam::kTypeWifi);
+      handler->GetTechnologyState(NetworkTypePattern::WiFi());
   bool wifi_available =
       wifi_state != NetworkStateHandler::TECHNOLOGY_UNAVAILABLE;
   bool wifi_enabled = wifi_state == NetworkStateHandler::TECHNOLOGY_ENABLED;
 
   NetworkStateHandler::TechnologyState mobile_state =
-      handler->GetTechnologyState(NetworkStateHandler::kMatchTypeMobile);
+      handler->GetTechnologyState(NetworkTypePattern::Mobile());
   bool mobile_available =
       mobile_state != NetworkStateHandler::TECHNOLOGY_UNAVAILABLE;
   bool mobile_enabled = mobile_state == NetworkStateHandler::TECHNOLOGY_ENABLED;
@@ -562,7 +559,7 @@ void MainMenuModel::InitMenuItems(bool should_open_button_options) {
 
     if (show_toggle_mobile) {
       const DeviceState* mobile_device =
-          handler->GetDeviceStateByType(NetworkStateHandler::kMatchTypeMobile);
+          handler->GetDeviceStateByType(NetworkTypePattern::Mobile());
       bool is_locked = mobile_device && !mobile_device->sim_lock_type().empty();
       int id = (mobile_enabled && !is_locked)
           ? IDS_STATUSBAR_NETWORK_DEVICE_DISABLE
@@ -570,8 +567,6 @@ void MainMenuModel::InitMenuItems(bool should_open_button_options) {
       label = l10n_util::GetStringFUTF16(id,
           l10n_util::GetStringUTF16(IDS_STATUSBAR_NETWORK_DEVICE_CELLULAR));
       gfx::ImageSkia icon;
-      if (is_locked)
-        icon = *rb.GetImageSkiaNamed(IDR_AURA_UBER_TRAY_NETWORK_SECURE_DARK);
       int flag = FLAG_TOGGLE_MOBILE;
       if (mobile_state == NetworkStateHandler::TECHNOLOGY_ENABLING)
         flag |= FLAG_DISABLED;
@@ -629,7 +624,7 @@ void MoreMenuModel::InitMenuItems(bool should_open_button_options) {
   }
 
   std::string ethernet_address =
-      handler->FormattedHardwareAddressForType(flimflam::kTypeEthernet);
+      handler->FormattedHardwareAddressForType(NetworkTypePattern::Ethernet());
   if (!ethernet_address.empty()) {
     std::string label = l10n_util::GetStringUTF8(
         IDS_STATUSBAR_NETWORK_DEVICE_ETHERNET) + " " + ethernet_address;
@@ -639,7 +634,7 @@ void MoreMenuModel::InitMenuItems(bool should_open_button_options) {
   }
 
   std::string wifi_address =
-      handler->FormattedHardwareAddressForType(flimflam::kTypeWifi);
+      handler->FormattedHardwareAddressForType(NetworkTypePattern::WiFi());
   if (!wifi_address.empty()) {
     std::string label = l10n_util::GetStringUTF8(
         IDS_STATUSBAR_NETWORK_DEVICE_WIFI) + " " + wifi_address;

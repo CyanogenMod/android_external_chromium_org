@@ -13,12 +13,16 @@
 namespace chromeos {
 
 FakeSessionManagerClient::FakeSessionManagerClient()
-  : emit_login_prompt_ready_call_count_(0) ,
-    notify_lock_screen_shown_call_count_(0),
-    notify_lock_screen_dismissed_call_count_(0){
+    : emit_login_prompt_ready_call_count_(0),
+      start_device_wipe_call_count_(0),
+      notify_lock_screen_shown_call_count_(0),
+      notify_lock_screen_dismissed_call_count_(0) {
 }
 
 FakeSessionManagerClient::~FakeSessionManagerClient() {
+}
+
+void FakeSessionManagerClient::Init(dbus::Bus* bus) {
 }
 
 void FakeSessionManagerClient::AddObserver(Observer* observer) {
@@ -44,9 +48,6 @@ void FakeSessionManagerClient::RestartJob(int pid,
                                           const std::string& command_line) {
 }
 
-void FakeSessionManagerClient::RestartEntd() {
-}
-
 void FakeSessionManagerClient::StartSession(const std::string& user_email) {
   DCHECK_EQ(0UL, user_sessions_.count(user_email));
   std::string user_id_hash =
@@ -58,6 +59,7 @@ void FakeSessionManagerClient::StopSession() {
 }
 
 void FakeSessionManagerClient::StartDeviceWipe() {
+  start_device_wipe_call_count_++;
 }
 
 void FakeSessionManagerClient::RequestLockScreen() {
@@ -65,9 +67,6 @@ void FakeSessionManagerClient::RequestLockScreen() {
 
 void FakeSessionManagerClient::NotifyLockScreenShown() {
   notify_lock_screen_shown_call_count_++;
-}
-
-void FakeSessionManagerClient::RequestUnlockScreen() {
 }
 
 void FakeSessionManagerClient::NotifyLockScreenDismissed() {
@@ -149,7 +148,7 @@ const std::string& FakeSessionManagerClient::user_policy(
     const std::string& username) const {
   std::map<std::string, std::string>::const_iterator it =
       user_policies_.find(username);
-  return it == user_policies_.end() ? EmptyString() : it->second;
+  return it == user_policies_.end() ? base::EmptyString() : it->second;
 }
 
 void FakeSessionManagerClient::set_user_policy(const std::string& username,
@@ -162,7 +161,7 @@ const std::string& FakeSessionManagerClient::device_local_account_policy(
   std::map<std::string, std::string>::const_iterator entry =
       device_local_account_policy_.find(account_id);
   return entry != device_local_account_policy_.end() ? entry->second
-                                                     : EmptyString();
+                                                     : base::EmptyString();
 }
 
 void FakeSessionManagerClient::set_device_local_account_policy(

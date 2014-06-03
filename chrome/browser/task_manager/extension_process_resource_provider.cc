@@ -10,21 +10,21 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/extensions/extension_host.h"
-#include "chrome/browser/extensions/extension_process_manager.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/task_manager/resource_provider.h"
 #include "chrome/browser/task_manager/task_manager.h"
 #include "chrome/browser/task_manager/task_manager_util.h"
-#include "chrome/common/extensions/extension.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/browser/process_manager.h"
 #include "extensions/browser/view_type_utils.h"
+#include "extensions/common/extension.h"
 #include "grit/theme_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -42,8 +42,8 @@ class ExtensionProcessResource : public Resource {
   virtual ~ExtensionProcessResource();
 
   // Resource methods:
-  virtual string16 GetTitle() const OVERRIDE;
-  virtual string16 GetProfileName() const OVERRIDE;
+  virtual base::string16 GetTitle() const OVERRIDE;
+  virtual base::string16 GetProfileName() const OVERRIDE;
   virtual gfx::ImageSkia GetIcon() const OVERRIDE;
   virtual base::ProcessHandle GetProcess() const OVERRIDE;
   virtual int GetUniqueChildProcessId() const OVERRIDE;
@@ -70,7 +70,7 @@ class ExtensionProcessResource : public Resource {
   base::ProcessHandle process_handle_;
   int pid_;
   int unique_process_id_;
-  string16 title_;
+  base::string16 title_;
 
   DISALLOW_COPY_AND_ASSIGN(ExtensionProcessResource);
 };
@@ -87,7 +87,7 @@ ExtensionProcessResource::ExtensionProcessResource(
   process_handle_ = render_view_host_->GetProcess()->GetHandle();
   unique_process_id_ = render_view_host->GetProcess()->GetID();
   pid_ = base::GetProcId(process_handle_);
-  string16 extension_name = UTF8ToUTF16(GetExtension()->name());
+  base::string16 extension_name = UTF8ToUTF16(GetExtension()->name());
   DCHECK(!extension_name.empty());
 
   Profile* profile = Profile::FromBrowserContext(
@@ -105,11 +105,11 @@ ExtensionProcessResource::ExtensionProcessResource(
 ExtensionProcessResource::~ExtensionProcessResource() {
 }
 
-string16 ExtensionProcessResource::GetTitle() const {
+base::string16 ExtensionProcessResource::GetTitle() const {
   return title_;
 }
 
-string16 ExtensionProcessResource::GetProfileName() const {
+base::string16 ExtensionProcessResource::GetProfileName() const {
   return util::GetProfileNameFromInfoCache(
       Profile::FromBrowserContext(
           render_view_host_->GetProcess()->GetBrowserContext()));
@@ -150,7 +150,7 @@ void ExtensionProcessResource::SetSupportNetworkUsage() {
 const Extension* ExtensionProcessResource::GetExtension() const {
   Profile* profile = Profile::FromBrowserContext(
       render_view_host_->GetProcess()->GetBrowserContext());
-  ExtensionProcessManager* process_manager =
+  extensions::ProcessManager* process_manager =
       extensions::ExtensionSystem::Get(profile)->process_manager();
   return process_manager->GetExtensionForRenderViewHost(render_view_host_);
 }
@@ -213,12 +213,13 @@ void ExtensionProcessResourceProvider::StartUpdating() {
   }
 
   for (size_t i = 0; i < profiles.size(); ++i) {
-    ExtensionProcessManager* process_manager =
+    extensions::ProcessManager* process_manager =
         extensions::ExtensionSystem::Get(profiles[i])->process_manager();
     if (process_manager) {
-      const ExtensionProcessManager::ViewSet all_views =
+      const extensions::ProcessManager::ViewSet all_views =
           process_manager->GetAllViews();
-      ExtensionProcessManager::ViewSet::const_iterator jt = all_views.begin();
+      extensions::ProcessManager::ViewSet::const_iterator jt =
+          all_views.begin();
       for (; jt != all_views.end(); ++jt) {
         content::RenderViewHost* rvh = *jt;
         // Don't add dead extension processes.
@@ -314,7 +315,8 @@ void ExtensionProcessResourceProvider::AddToTaskManager(
 
   ExtensionProcessResource* resource =
       new ExtensionProcessResource(render_view_host);
-  DCHECK(resources_.find(render_view_host) == resources_.end());
+  if (resources_.find(render_view_host) != resources_.end())
+    return;
   resources_[render_view_host] = resource;
   task_manager_->AddResource(resource);
 }

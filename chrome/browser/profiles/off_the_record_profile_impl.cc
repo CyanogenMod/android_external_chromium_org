@@ -21,7 +21,6 @@
 #include "chrome/browser/download/download_service.h"
 #include "chrome/browser/download/download_service_factory.h"
 #include "chrome/browser/extensions/api/web_request/web_request_api.h"
-#include "chrome/browser/extensions/extension_info_map.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_special_storage_policy.h"
 #include "chrome/browser/extensions/extension_system.h"
@@ -41,7 +40,6 @@
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/render_messages.h"
 #include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
@@ -52,18 +50,23 @@
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/url_data_source.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/common/extension.h"
 #include "net/http/http_server_properties.h"
 #include "net/http/transport_security_state.h"
 #include "webkit/browser/database/database_tracker.h"
 
 #if defined(OS_ANDROID) || defined(OS_IOS)
+#include "base/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/prefs/proxy_prefs.h"
-#include "chrome/browser/prefs/scoped_user_pref_update.h"
 #endif  // defined(OS_ANDROID) || defined(OS_IOS)
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/preferences.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
+#endif
+
+#if defined(ENABLE_CONFIGURATION_POLICY) && !defined(OS_CHROMEOS)
+#include "chrome/browser/policy/cloud/user_cloud_policy_manager_factory.h"
 #endif
 
 using content::BrowserThread;
@@ -90,16 +93,21 @@ OffTheRecordProfileImpl::OffTheRecordProfileImpl(Profile* real_profile)
     : profile_(real_profile),
       prefs_(PrefServiceSyncable::IncognitoFromProfile(real_profile)),
       io_data_(this),
-      start_time_(Time::Now()),
-      zoom_callback_(base::Bind(&OffTheRecordProfileImpl::OnZoomLevelChanged,
-                                base::Unretained(this))) {
+      start_time_(Time::Now()) {
   // Register on BrowserContext.
   user_prefs::UserPrefs::Set(this, prefs_);
 }
 
 void OffTheRecordProfileImpl::Init() {
+#if defined(ENABLE_CONFIGURATION_POLICY) && !defined(OS_CHROMEOS)
+  // Because UserCloudPolicyManager is in a component, it cannot access
+  // GetOriginalProfile. Instead, we have to inject this relation here.
+  policy::UserCloudPolicyManagerFactory::RegisterForOffTheRecordBrowserContext(
+      this->GetOriginalProfile(), this);
+#endif
+
   BrowserContextDependencyManager::GetInstance()->CreateBrowserContextServices(
-      this, false);
+      this);
 
   DCHECK_NE(IncognitoModePrefs::DISABLED,
             IncognitoModePrefs::GetAvailability(profile_->GetPrefs()));
@@ -137,9 +145,6 @@ void OffTheRecordProfileImpl::Init() {
 OffTheRecordProfileImpl::~OffTheRecordProfileImpl() {
   MaybeSendDestroyedNotification();
 
-  HostZoomMap::GetForBrowserContext(profile_)->RemoveZoomLevelChangedCallback(
-      zoom_callback_);
-
 #if defined(ENABLE_PLUGINS)
   ChromePluginServiceFilter::GetInstance()->UnregisterResourceContext(
     io_data_.GetResourceContextNoInit());
@@ -170,7 +175,9 @@ void OffTheRecordProfileImpl::InitHostZoomMap() {
   host_zoom_map->CopyFrom(parent_host_zoom_map);
   // Observe parent's HZM change for propagating change of parent's
   // change to this HZM.
-  parent_host_zoom_map->AddZoomLevelChangedCallback(zoom_callback_);
+  zoom_subscription_ = parent_host_zoom_map->AddZoomLevelChangedCallback(
+      base::Bind(&OffTheRecordProfileImpl::OnZoomLevelChanged,
+                 base::Unretained(this)));
 }
 
 #if defined(OS_ANDROID) || defined(OS_IOS)
@@ -291,14 +298,27 @@ OffTheRecordProfileImpl::GetMediaRequestContextForStoragePartition(
 void OffTheRecordProfileImpl::RequestMIDISysExPermission(
       int render_process_id,
       int render_view_id,
+      int bridge_id,
       const GURL& requesting_frame,
       const MIDISysExPermissionCallback& callback) {
   ChromeMIDIPermissionContext* context =
       ChromeMIDIPermissionContextFactory::GetForProfile(this);
   context->RequestMIDISysExPermission(render_process_id,
                                       render_view_id,
+                                      bridge_id,
                                       requesting_frame,
                                       callback);
+}
+
+void OffTheRecordProfileImpl::CancelMIDISysExPermissionRequest(
+    int render_process_id,
+    int render_view_id,
+    int bridge_id,
+    const GURL& requesting_frame) {
+  ChromeMIDIPermissionContext* context =
+      ChromeMIDIPermissionContextFactory::GetForProfile(this);
+  context->CancelMIDISysExPermissionRequest(
+      render_process_id, render_view_id, bridge_id, requesting_frame);
 }
 
 net::URLRequestContextGetter*
@@ -390,22 +410,16 @@ Profile::ExitType OffTheRecordProfileImpl::GetLastSessionExitType() {
 }
 
 #if defined(OS_CHROMEOS)
-void OffTheRecordProfileImpl::SetupChromeOSEnterpriseExtensionObserver() {
-  profile_->SetupChromeOSEnterpriseExtensionObserver();
-}
-
-void OffTheRecordProfileImpl::InitChromeOSPreferences() {
-  // The incognito profile shouldn't have Chrome OS's preferences.
-  // The preferences are associated with the regular user profile.
-}
-#endif  // defined(OS_CHROMEOS)
-
-#if defined(OS_CHROMEOS)
 void OffTheRecordProfileImpl::ChangeAppLocale(const std::string& locale,
                                               AppLocaleChangedVia) {
 }
 
 void OffTheRecordProfileImpl::OnLogin() {
+}
+
+void OffTheRecordProfileImpl::InitChromeOSPreferences() {
+  // The incognito profile shouldn't have Chrome OS's preferences.
+  // The preferences are associated with the regular user profile.
 }
 #endif  // defined(OS_CHROMEOS)
 
@@ -448,7 +462,8 @@ class GuestSessionProfile : public OffTheRecordProfileImpl {
 
   virtual void InitChromeOSPreferences() OVERRIDE {
     chromeos_preferences_.reset(new chromeos::Preferences());
-    chromeos_preferences_->Init(static_cast<PrefServiceSyncable*>(GetPrefs()));
+    chromeos_preferences_->Init(static_cast<PrefServiceSyncable*>(GetPrefs()),
+                                true /* is_primary_profile */);
   }
 
  private:
@@ -496,4 +511,3 @@ PrefProxyConfigTracker* OffTheRecordProfileImpl::CreateProxyConfigTracker() {
   return ProxyServiceFactory::CreatePrefProxyConfigTrackerOfProfile(
       GetPrefs(), g_browser_process->local_state());
 }
-

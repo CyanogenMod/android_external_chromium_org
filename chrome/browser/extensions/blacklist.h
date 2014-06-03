@@ -5,6 +5,7 @@
 #ifndef CHROME_BROWSER_EXTENSIONS_BLACKLIST_H_
 #define CHROME_BROWSER_EXTENSIONS_BLACKLIST_H_
 
+#include <map>
 #include <set>
 #include <string>
 #include <vector>
@@ -21,7 +22,7 @@ namespace extensions {
 class Extension;
 class ExtensionPrefs;
 
-// A blacklist of extensions.
+// The blacklist of extensions backed by safe browsing.
 class Blacklist : public content::NotificationObserver,
                   public base::SupportsWeakPtr<Blacklist> {
  public:
@@ -52,37 +53,51 @@ class Blacklist : public content::NotificationObserver,
     DISALLOW_COPY_AND_ASSIGN(ScopedDatabaseManagerForTest);
   };
 
+  // The numeric values here match the values of the respective enum in proto
+  // received from SafeBrowsing server.
   enum BlacklistState {
-    NOT_BLACKLISTED,
-    BLACKLISTED,
+    NOT_BLACKLISTED = 0,
+    BLACKLISTED_MALWARE = 1,
+    BLACKLISTED_SECURITY_VULNERABILITY = 2,
+    BLACKLISTED_CWS_POLICY_VIOLATION = 3,
+    BLACKLISTED_POTENTIALLY_UNWANTED = 4
   };
 
-  typedef base::Callback<void(const std::set<std::string>&)>
+  typedef std::map<std::string, BlacklistState> BlacklistStateMap;
+
+  typedef base::Callback<void(const BlacklistStateMap&)>
       GetBlacklistedIDsCallback;
+
+  typedef base::Callback<void(const std::set<std::string>&)>
+      GetMalwareIDsCallback;
 
   typedef base::Callback<void(BlacklistState)> IsBlacklistedCallback;
 
-  // |prefs_| must outlive this.
   explicit Blacklist(ExtensionPrefs* prefs);
 
   virtual ~Blacklist();
 
   // From the set of extension IDs passed in via |ids|, asynchronously checks
-  // which are blacklisted and includes them in the resulting set passed
-  // via |callback|, which will be sent on the caller's message loop.
+  // which are blacklisted and includes them in the resulting map passed
+  // via |callback|, which will be sent on the caller's message loop. The values
+  // of the map are the blacklist state for each extension. Extensions with
+  // a BlacklistState of NOT_BLACKLISTED are not included in the result.
   //
   // For a synchronous version which ONLY CHECKS CURRENTLY INSTALLED EXTENSIONS
   // see ExtensionPrefs::IsExtensionBlacklisted.
   void GetBlacklistedIDs(const std::set<std::string>& ids,
                          const GetBlacklistedIDsCallback& callback);
 
+  // From the subset of extension IDs passed in via |ids|, select the ones
+  // marked in the blacklist as BLACKLISTED_MALWARE and asynchronously pass
+  // to |callback|. Basically, will call GetBlacklistedIDs and filter its
+  // results.
+  void GetMalwareIDs(const std::set<std::string>& ids,
+                     const GetMalwareIDsCallback& callback);
+
   // More convenient form of GetBlacklistedIDs for checking a single extension.
   void IsBlacklisted(const std::string& extension_id,
                      const IsBlacklistedCallback& callback);
-
-  // Sets the blacklist from the updater to contain the extension IDs in |ids|
-  void SetFromUpdater(const std::vector<std::string>& ids,
-                      const std::string& version);
 
   // Adds/removes an observer to the blacklist.
   void AddObserver(Observer* observer);
@@ -94,26 +109,25 @@ class Blacklist : public content::NotificationObserver,
       scoped_refptr<SafeBrowsingDatabaseManager> database_manager);
   static scoped_refptr<SafeBrowsingDatabaseManager> GetDatabaseManager();
 
-  // Handles the |safebrowsing_blacklisted_ids| response from querying the
-  // safebrowsing blacklist, given that we know |pref_blacklisted_ids| are
-  // already blacklisted. Responds to |callback| with the union.
-  void OnSafeBrowsingResponse(
-      const std::set<std::string>& pref_blacklisted_ids,
-      const GetBlacklistedIDsCallback& callback,
-      const std::set<std::string>& safebrowsing_blacklisted_ids);
-
   // content::NotificationObserver
   virtual void Observe(int type,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
+  void GetBlacklistStateForIDs(const GetBlacklistedIDsCallback& callback,
+                               const std::set<std::string>& blacklisted_ids);
+
+  void RequestExtensionsBlacklistState(const std::set<std::string> ids,
+                                       base::Callback<void()> callback);
+
+  void ReturnBlacklistStateMap(const GetBlacklistedIDsCallback& callback,
+                               const std::set<std::string>& blacklisted_ids);
+
   ObserverList<Observer> observers_;
 
-  ExtensionPrefs* const prefs_;
-
-  std::set<std::string> prefs_blacklist_;
-
   content::NotificationRegistrar registrar_;
+
+  BlacklistStateMap blacklist_state_cache_;
 
   DISALLOW_COPY_AND_ASSIGN(Blacklist);
 };

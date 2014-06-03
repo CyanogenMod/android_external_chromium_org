@@ -18,12 +18,14 @@ class TouchPointView;
 // of TouchObserverHUD, objects of this class manage their own lifetime.
 class TouchHudProjection : public TouchObserverHUD {
  public:
-  explicit TouchHudProjection(aura::RootWindow* initial_root);
+  explicit TouchHudProjection(aura::Window* initial_root);
 
   // Overriden from TouchObserverHUD.
   virtual void Clear() OVERRIDE;
 
  private:
+  friend class TouchHudProjectionTest;
+
   virtual ~TouchHudProjection();
 
   // Overriden from TouchObserverHUD.

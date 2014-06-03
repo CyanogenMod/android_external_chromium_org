@@ -43,20 +43,22 @@ class FindBarView : public DropdownBarView,
   explicit FindBarView(FindBarHost* host);
   virtual ~FindBarView();
 
-  // Gets/sets the text displayed in the text box.
-  string16 GetFindText() const;
-  void SetFindText(const string16& find_text);
+  // Accessors for the text and selection displayed in the text box.
+  void SetFindTextAndSelectedRange(const base::string16& find_text,
+                                   const gfx::Range& selected_range);
+  base::string16 GetFindText() const;
+  gfx::Range GetSelectedRange() const;
 
   // Gets the selected text in the text box.
-  string16 GetFindSelectedText() const;
+  base::string16 GetFindSelectedText() const;
 
   // Gets the match count text displayed in the text box.
-  string16 GetMatchCountText() const;
+  base::string16 GetMatchCountText() const;
 
   // Updates the label inside the Find text box that shows the ordinal of the
   // active item and how many matches were found.
   void UpdateForResult(const FindNotificationDetails& result,
-                       const string16& find_text);
+                       const base::string16& find_text);
 
   // Clears the current Match Count value in the Find text box.
   void ClearMatchCount();
@@ -76,8 +78,6 @@ class FindBarView : public DropdownBarView,
                              const ui::Event& event) OVERRIDE;
 
   // views::TextfieldController:
-  virtual void ContentsChanged(views::Textfield* sender,
-                               const string16& new_contents) OVERRIDE;
   virtual bool HandleKeyEvent(views::Textfield* sender,
                               const ui::KeyEvent& key_event) OVERRIDE;
   virtual void OnAfterUserAction(views::Textfield* sender) OVERRIDE;
@@ -85,7 +85,7 @@ class FindBarView : public DropdownBarView,
 
  private:
   // Starts finding |search_text|.  If the text is empty, stops finding.
-  void Find(const string16& search_text);
+  void Find(const base::string16& search_text);
 
   // Updates the appearance for the match count label.
   void UpdateMatchCountAppearance(bool no_match);
@@ -113,36 +113,16 @@ class FindBarView : public DropdownBarView,
     DISALLOW_COPY_AND_ASSIGN(FocusForwarderView);
   };
 
-  // A wrapper of views::TextField that allows us to select all text when we
-  // get focus. Represents the text field where the user enters a search term.
-  class SearchTextfieldView : public views::Textfield {
-   public:
-    SearchTextfieldView();
-    virtual ~SearchTextfieldView();
-
-    // views::View:
-    virtual bool OnMousePressed(const ui::MouseEvent& event) OVERRIDE;
-    virtual void OnMouseReleased(const ui::MouseEvent& event) OVERRIDE;
-
-    // views::Textfield:
-    virtual void OnFocus() OVERRIDE;
-
-   private:
-    bool select_all_on_focus_;
-
-    DISALLOW_COPY_AND_ASSIGN(SearchTextfieldView);
-  };
-
   // Returns the OS-specific view for the find bar that acts as an intermediary
   // between us and the WebContentsView.
   FindBarHost* find_bar_host() const;
 
   // Used to detect if the input text, not including the IME composition text,
   // has changed or not.
-  string16 last_searched_text_;
+  base::string16 last_searched_text_;
 
   // The controls in the window.
-  SearchTextfieldView* find_text_;
+  views::Textfield* find_text_;
   views::Label* match_count_text_;
   FocusForwarderView* focus_forwarder_view_;
   views::ImageButton* find_previous_button_;

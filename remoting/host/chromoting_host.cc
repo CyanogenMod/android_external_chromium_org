@@ -8,10 +8,10 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
-#include "base/logging.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "build/build_config.h"
 #include "remoting/base/constants.h"
+#include "remoting/base/logging.h"
 #include "remoting/host/chromoting_host_context.h"
 #include "remoting/host/desktop_environment.h"
 #include "remoting/host/host_config.h"
@@ -86,6 +86,10 @@ ChromotingHost::ChromotingHost(
   DCHECK(network_task_runner_->BelongsToCurrentThread());
   DCHECK(signal_strategy);
 
+  // VP9 encode is not yet supported.
+  protocol::CandidateSessionConfig::DisableVideoCodec(
+      protocol_config_.get(), protocol::ChannelConfig::CODEC_VP9);
+
   if (!desktop_environment_factory_->SupportsAudioCapture()) {
     protocol::CandidateSessionConfig::DisableAudioChannel(
         protocol_config_.get());
@@ -109,13 +113,13 @@ ChromotingHost::~ChromotingHost() {
     FOR_EACH_OBSERVER(HostStatusObserver, status_observers_, OnShutdown());
 }
 
-void ChromotingHost::Start(const std::string& xmpp_login) {
+void ChromotingHost::Start(const std::string& host_owner) {
   DCHECK(CalledOnValidThread());
   DCHECK(!started_);
 
-  LOG(INFO) << "Starting host";
+  HOST_LOG << "Starting host";
   started_ = true;
-  FOR_EACH_OBSERVER(HostStatusObserver, status_observers_, OnStart(xmpp_login));
+  FOR_EACH_OBSERVER(HostStatusObserver, status_observers_, OnStart(host_owner));
 
   // Start the SessionManager, supplying this ChromotingHost as the listener.
   session_manager_->Init(signal_strategy_, this);
@@ -283,7 +287,7 @@ void ChromotingHost::OnIncomingSession(
 
   *response = protocol::SessionManager::ACCEPT;
 
-  LOG(INFO) << "Client connected: " << session->jid();
+  HOST_LOG << "Client connected: " << session->jid();
 
   // Create a client object.
   scoped_ptr<protocol::ConnectionToClient> connection(

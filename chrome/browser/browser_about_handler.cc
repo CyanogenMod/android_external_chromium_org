@@ -4,16 +4,12 @@
 
 #include "chrome/browser/browser_about_handler.h"
 
-#include <algorithm>
 #include <string>
 
-#include "base/command_line.h"
 #include "base/logging.h"
-#include "base/memory/singleton.h"
 #include "base/strings/string_util.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/ui/browser_dialogs.h"
-#include "chrome/common/chrome_switches.h"
 #include "chrome/common/net/url_fixer_upper.h"
 #include "chrome/common/url_constants.h"
 
@@ -69,12 +65,8 @@ bool WillHandleBrowserAboutURL(GURL* url,
   } else if (host == chrome::kChromeUIHelpHost) {
     host = chrome::kChromeUIUberHost;
     path = chrome::kChromeUIHelpHost + url->path();
-  } else if (host == chrome::kChromeUIRestartHost) {
-    // Call AttemptRestart after chrome::Navigate() completes to avoid access of
-    // gtk objects after they are destoyed by BrowserWindowGtk::Close().
-    base::MessageLoop::current()->PostTask(FROM_HERE,
-        base::Bind(&chrome::AttemptRestart));
   }
+
   GURL::Replacements replacements;
   replacements.SetHostStr(host);
   if (!path.empty())
@@ -86,6 +78,20 @@ bool WillHandleBrowserAboutURL(GURL* url,
 }
 
 bool HandleNonNavigationAboutURL(const GURL& url) {
+  const std::string host(url.host());
+
+  if (host == chrome::kChromeUIRestartHost) {
+    // Call AttemptRestart after chrome::Navigate() completes to avoid access of
+    // gtk objects after they are destroyed by BrowserWindowGtk::Close().
+    base::MessageLoop::current()->PostTask(FROM_HERE,
+        base::Bind(&chrome::AttemptRestart));
+    return true;
+  } else if (host == chrome::kChromeUIQuitHost) {
+    base::MessageLoop::current()->PostTask(FROM_HERE,
+        base::Bind(&chrome::AttemptExit));
+    return true;
+  }
+
   // chrome://ipc/ is currently buggy, so we disable it for official builds.
 #if !defined(OFFICIAL_BUILD)
 
@@ -101,4 +107,3 @@ bool HandleNonNavigationAboutURL(const GURL& url) {
 
   return false;
 }
-

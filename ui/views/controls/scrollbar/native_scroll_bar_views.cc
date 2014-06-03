@@ -5,7 +5,7 @@
 #include "ui/views/controls/scrollbar/native_scroll_bar_views.h"
 
 #include "base/logging.h"
-#include "ui/base/keycodes/keyboard_codes.h"
+#include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/path.h"
 #include "ui/views/controls/button/custom_button.h"
@@ -76,8 +76,8 @@ class ScrollBarThumb : public BaseScrollBarThumb {
 ScrollBarButton::ScrollBarButton(ButtonListener* listener, Type type)
     : BaseScrollBarButton(listener),
       type_(type) {
-  set_focusable(false);
-  set_accessibility_focusable(false);
+  SetFocusable(false);
+  SetAccessibilityFocusable(false);
 }
 
 ScrollBarButton::~ScrollBarButton() {
@@ -157,8 +157,8 @@ ui::NativeTheme::State
 ScrollBarThumb::ScrollBarThumb(BaseScrollBar* scroll_bar)
     : BaseScrollBarThumb(scroll_bar),
       scroll_bar_(scroll_bar) {
-  set_focusable(false);
-  set_accessibility_focusable(false);
+  SetFocusable(false);
+  SetAccessibilityFocusable(false);
 }
 
 ScrollBarThumb::~ScrollBarThumb() {

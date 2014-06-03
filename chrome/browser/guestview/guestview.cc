@@ -5,11 +5,16 @@
 #include "chrome/browser/guestview/guestview.h"
 
 #include "base/lazy_instance.h"
-#include "chrome/browser/extensions/event_router.h"
+#include "chrome/browser/guestview/adview/adview_guest.h"
 #include "chrome/browser/guestview/guestview_constants.h"
+#include "chrome/browser/guestview/webview/webview_guest.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/common/content_settings.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/common/url_constants.h"
+#include "extensions/browser/event_router.h"
+#include "net/base/escape.h"
 
 using content::WebContents;
 
@@ -26,9 +31,9 @@ static base::LazyInstance<WebContentsGuestViewMap> webcontents_guestview_map =
 
 }  // namespace
 
-GuestView::Event::Event(const std::string& event_name,
+GuestView::Event::Event(const std::string& name,
                         scoped_ptr<DictionaryValue> args)
-    : event_name_(event_name),
+    : name_(name),
       args_(args.Pass()) {
 }
 
@@ -39,15 +44,42 @@ scoped_ptr<DictionaryValue> GuestView::Event::GetArguments() {
   return args_.Pass();
 }
 
-GuestView::GuestView(WebContents* guest_web_contents)
+GuestView::GuestView(WebContents* guest_web_contents,
+                     const std::string& extension_id)
     : guest_web_contents_(guest_web_contents),
       embedder_web_contents_(NULL),
+      extension_id_(extension_id),
       embedder_render_process_id_(0),
       browser_context_(guest_web_contents->GetBrowserContext()),
       guest_instance_id_(guest_web_contents->GetEmbeddedInstanceID()),
       view_instance_id_(guestview::kInstanceIDNone) {
   webcontents_guestview_map.Get().insert(
       std::make_pair(guest_web_contents, this));
+}
+
+// static
+GuestView::Type GuestView::GetViewTypeFromString(const std::string& api_type) {
+  if (api_type == "adview") {
+    return GuestView::ADVIEW;
+  } else if (api_type == "webview") {
+    return GuestView::WEBVIEW;
+  }
+  return GuestView::UNKNOWN;
+}
+
+// static
+GuestView* GuestView::Create(WebContents* guest_web_contents,
+                             const std::string& extension_id,
+                             GuestView::Type view_type) {
+  switch (view_type) {
+    case GuestView::WEBVIEW:
+      return new WebViewGuest(guest_web_contents, extension_id);
+    case GuestView::ADVIEW:
+      return new AdViewGuest(guest_web_contents, extension_id);
+    default:
+      NOTREACHED();
+      return NULL;
+  }
 }
 
 // static
@@ -65,13 +97,51 @@ GuestView* GuestView::From(int embedder_process_id, int guest_instance_id) {
   return it == guest_map->end() ? NULL : it->second;
 }
 
+// static
+bool GuestView::GetGuestPartitionConfigForSite(const GURL& site,
+                                               std::string* partition_domain,
+                                               std::string* partition_name,
+                                               bool* in_memory) {
+  if (!site.SchemeIs(content::kGuestScheme))
+    return false;
+
+  // Since guest URLs are only used for packaged apps, there must be an app
+  // id in the URL.
+  CHECK(site.has_host());
+  *partition_domain = site.host();
+  // Since persistence is optional, the path must either be empty or the
+  // literal string.
+  *in_memory = (site.path() != "/persist");
+  // The partition name is user supplied value, which we have encoded when the
+  // URL was created, so it needs to be decoded.
+  *partition_name = net::UnescapeURLComponent(site.query(),
+                                              net::UnescapeRule::NORMAL);
+  return true;
+}
+
+// static
+void GuestView::GetDefaultContentSettingRules(
+    RendererContentSettingRules* rules, bool incognito) {
+  rules->image_rules.push_back(ContentSettingPatternSource(
+    ContentSettingsPattern::Wildcard(),
+    ContentSettingsPattern::Wildcard(),
+    CONTENT_SETTING_ALLOW,
+    std::string(),
+    incognito));
+
+  rules->script_rules.push_back(ContentSettingPatternSource(
+    ContentSettingsPattern::Wildcard(),
+    ContentSettingsPattern::Wildcard(),
+    CONTENT_SETTING_ALLOW,
+    std::string(),
+    incognito));
+}
+
 void GuestView::Attach(content::WebContents* embedder_web_contents,
-                       const std::string& extension_id,
                        const base::DictionaryValue& args) {
   embedder_web_contents_ = embedder_web_contents;
   embedder_render_process_id_ =
       embedder_web_contents->GetRenderProcessHost()->GetID();
-  extension_id_ = extension_id;
   args.GetInteger(guestview::kParameterInstanceId, &view_instance_id_);
 
   std::pair<int, int> key(embedder_render_process_id_, guest_instance_id_);
@@ -130,7 +200,7 @@ void GuestView::DispatchEvent(Event* event) {
 
   extensions::EventRouter::DispatchEvent(
       embedder_web_contents_, profile, extension_id_,
-      event->event_name(), args.Pass(),
+      event->name(), args.Pass(),
       extensions::EventRouter::USER_GESTURE_UNKNOWN, info);
 
   delete event;

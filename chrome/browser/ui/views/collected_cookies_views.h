@@ -45,9 +45,10 @@ class CollectedCookiesViews : public views::DialogDelegateView,
   explicit CollectedCookiesViews(content::WebContents* web_contents);
 
   // views::DialogDelegate:
-  virtual string16 GetWindowTitle() const OVERRIDE;
+  virtual base::string16 GetWindowTitle() const OVERRIDE;
   virtual int GetDialogButtons() const OVERRIDE;
-  virtual string16 GetDialogButtonLabel(ui::DialogButton button) const OVERRIDE;
+  virtual base::string16 GetDialogButtonLabel(
+      ui::DialogButton button) const OVERRIDE;
   virtual void DeleteDelegate() OVERRIDE;
   virtual bool Cancel() OVERRIDE;
   virtual views::NonClientFrameView* CreateNonClientFrameView(
@@ -65,6 +66,7 @@ class CollectedCookiesViews : public views::DialogDelegateView,
   virtual void OnTreeViewSelectionChanged(views::TreeView* tree_view) OVERRIDE;
 
   // views::View:
+  virtual gfx::Size GetMinimumSize() OVERRIDE;
   virtual void ViewHierarchyChanged(
       const ViewHierarchyChangedDetails& details) OVERRIDE;
 

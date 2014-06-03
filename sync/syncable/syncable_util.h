@@ -20,13 +20,14 @@ namespace syncer {
 namespace syncable {
 
 class BaseTransaction;
-class WriteTransaction;
-class MutableEntry;
+class BaseWriteTransaction;
+class ModelNeutralMutableEntry;
 class Id;
 
-SYNC_EXPORT_PRIVATE void ChangeEntryIDAndUpdateChildren(WriteTransaction* trans,
-                                                        MutableEntry* entry,
-                                                        const Id& new_id);
+SYNC_EXPORT_PRIVATE void ChangeEntryIDAndUpdateChildren(
+    BaseWriteTransaction* trans,
+    ModelNeutralMutableEntry* entry,
+    const Id& new_id);
 
 SYNC_EXPORT_PRIVATE bool IsLegalNewParent(BaseTransaction* trans,
                                           const Id& id,
@@ -48,8 +49,8 @@ SYNC_EXPORT_PRIVATE std::string GenerateSyncableHash(
 // than one place, so we define the algorithm here to make sure the
 // implementation is consistent.
 SYNC_EXPORT_PRIVATE std::string GenerateSyncableBookmarkHash(
-    const std::string originator_cache_guid,
-    const std::string originator_client_item_id);
+    const std::string& originator_cache_guid,
+    const std::string& originator_client_item_id);
 
 }  // namespace syncable
 }  // namespace syncer

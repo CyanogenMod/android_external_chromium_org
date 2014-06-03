@@ -72,9 +72,6 @@ class NativePanel {
   virtual bool IsPanelAlwaysOnTop() const = 0;
   virtual void SetPanelAlwaysOnTop(bool on_top) = 0;
 
-  // Enables resizing by dragging edges/corners.
-  virtual void EnableResizeByMouse(bool enable) = 0;
-
   // Updates the visibility of the minimize and restore buttons.
   virtual void UpdatePanelMinimizeRestoreButtonVisibility() = 0;
 
@@ -135,6 +132,7 @@ class NativePanelTesting {
   // minimized by the system.
   virtual bool VerifySystemMinimizeState() const = 0;
 
+  virtual bool IsWindowVisible() const = 0;
   virtual bool IsWindowSizeKnown() const = 0;
   virtual bool IsAnimatingBounds() const = 0;
   virtual bool IsButtonVisible(panel::TitlebarButtonType button_type) const = 0;

@@ -10,7 +10,6 @@
 #include "base/bind.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/spellchecker/spellcheck_factory.h"
 #include "chrome/browser/spellchecker/spellcheck_host_metrics.h"
 #include "chrome/browser/spellchecker/spellcheck_service.h"
@@ -69,13 +68,12 @@ void SpellCheckMessageFilter::OnSpellCheckerRequestDictionary() {
       content::RenderProcessHost::FromID(render_process_id_);
   if (!host)
     return;  // Teardown.
-  Profile* profile = Profile::FromBrowserContext(host->GetBrowserContext());
   // The renderer has requested that we initialize its spellchecker. This should
   // generally only be called once per session, as after the first call, all
   // future renderers will be passed the initialization information on startup
   // (or when the dictionary changes in some way).
   SpellcheckService* spellcheck_service =
-      SpellcheckServiceFactory::GetForProfile(profile);
+      SpellcheckServiceFactory::GetForContext(host->GetBrowserContext());
 
   DCHECK(spellcheck_service);
   // The spellchecker initialization already started and finished; just send
@@ -86,7 +84,7 @@ void SpellCheckMessageFilter::OnSpellCheckerRequestDictionary() {
   // than once if we get requests from different renderers.
 }
 
-void SpellCheckMessageFilter::OnNotifyChecked(const string16& word,
+void SpellCheckMessageFilter::OnNotifyChecked(const base::string16& word,
                                               bool misspelled) {
   SpellcheckService* spellcheck = GetSpellcheckService();
   // Spellcheck service may not be available for a renderer process that is
@@ -112,7 +110,7 @@ void SpellCheckMessageFilter::OnRespondDocumentMarkers(
 void SpellCheckMessageFilter::OnCallSpellingService(
     int route_id,
     int identifier,
-    const string16& text,
+    const base::string16& text,
     std::vector<SpellCheckMarker> markers) {
   DCHECK(!text.empty());
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
@@ -131,7 +129,7 @@ void SpellCheckMessageFilter::OnTextCheckComplete(
     int identifier,
     const std::vector<SpellCheckMarker>& markers,
     bool success,
-    const string16& text,
+    const base::string16& text,
     const std::vector<SpellCheckResult>& results) {
   SpellcheckService* spellcheck = GetSpellcheckService();
   // Spellcheck service may not be available for a renderer process that is
@@ -168,18 +166,15 @@ void SpellCheckMessageFilter::OnTextCheckComplete(
 // CallSpellingService always executes the callback OnTextCheckComplete.
 // (Which, in turn, sends a SpellCheckMsg_RespondSpellingService)
 void SpellCheckMessageFilter::CallSpellingService(
-    const string16& text,
+    const base::string16& text,
     int route_id,
     int identifier,
     const std::vector<SpellCheckMarker>& markers) {
-  Profile* profile = NULL;
   content::RenderProcessHost* host =
       content::RenderProcessHost::FromID(render_process_id_);
-  if (host)
-    profile = Profile::FromBrowserContext(host->GetBrowserContext());
 
   client_->RequestTextCheck(
-    profile,
+    host ? host->GetBrowserContext() : NULL,
     SpellingServiceClient::SPELLCHECK,
     text,
     base::Bind(&SpellCheckMessageFilter::OnTextCheckComplete,

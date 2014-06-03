@@ -5,20 +5,22 @@
 #include "chrome/browser/chromeos/drive/file_system/download_operation.h"
 
 #include "base/file_util.h"
+#include "base/task_runner_util.h"
 #include "chrome/browser/chromeos/drive/fake_free_disk_space_getter.h"
 #include "chrome/browser/chromeos/drive/file_cache.h"
 #include "chrome/browser/chromeos/drive/file_system/operation_test_base.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/drive/fake_drive_service.h"
-#include "chrome/browser/google_apis/test_util.h"
+#include "google_apis/drive/test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/cros_system_api/constants/cryptohome.h"
 
 namespace drive {
 namespace file_system {
 
 class DownloadOperationTest : public OperationTestBase {
  protected:
-  virtual void SetUp() {
+  virtual void SetUp() OVERRIDE {
     OperationTestBase::SetUp();
 
     operation_.reset(new DownloadOperation(
@@ -38,7 +40,7 @@ TEST_F(DownloadOperationTest,
 
   // Pretend we have enough space.
   fake_free_disk_space_getter()->set_default_value(
-      file_size + internal::kMinFreeSpace);
+      file_size + cryptohome::kMinFreeSpaceInBytes);
 
   FileError error = FILE_ERROR_FAILED;
   base::FilePath file_path;
@@ -63,11 +65,11 @@ TEST_F(DownloadOperationTest,
 
   // Verify that readable permission is set.
   int permission = 0;
-  EXPECT_TRUE(file_util::GetPosixFilePermissions(file_path, &permission));
-  EXPECT_EQ(file_util::FILE_PERMISSION_READ_BY_USER |
-            file_util::FILE_PERMISSION_WRITE_BY_USER |
-            file_util::FILE_PERMISSION_READ_BY_GROUP |
-            file_util::FILE_PERMISSION_READ_BY_OTHERS, permission);
+  EXPECT_TRUE(base::GetPosixFilePermissions(file_path, &permission));
+  EXPECT_EQ(base::FILE_PERMISSION_READ_BY_USER |
+            base::FILE_PERMISSION_WRITE_BY_USER |
+            base::FILE_PERMISSION_READ_BY_GROUP |
+            base::FILE_PERMISSION_READ_BY_OTHERS, permission);
 }
 
 TEST_F(DownloadOperationTest,
@@ -103,10 +105,10 @@ TEST_F(DownloadOperationTest,
   // but then start reporting we have space. This is to emulate that
   // the disk space was freed up by removing temporary files.
   fake_free_disk_space_getter()->PushFakeValue(
-      file_size + internal::kMinFreeSpace);
+      file_size + cryptohome::kMinFreeSpaceInBytes);
   fake_free_disk_space_getter()->PushFakeValue(0);
   fake_free_disk_space_getter()->set_default_value(
-      file_size + internal::kMinFreeSpace);
+      file_size + cryptohome::kMinFreeSpaceInBytes);
 
   // Store something of the file size in the temporary cache directory.
   const std::string content(file_size, 'x');
@@ -117,9 +119,13 @@ TEST_F(DownloadOperationTest,
   ASSERT_TRUE(google_apis::test_util::WriteStringToFile(tmp_file, content));
 
   FileError error = FILE_ERROR_FAILED;
-  cache()->StoreOnUIThread(
-      "<resource_id>", "<md5>", tmp_file,
-      internal::FileCache::FILE_OPERATION_COPY,
+  base::PostTaskAndReplyWithResult(
+      blocking_task_runner(),
+      FROM_HERE,
+      base::Bind(&internal::FileCache::Store,
+                 base::Unretained(cache()),
+                 "<id>", "<md5>", tmp_file,
+                 internal::FileCache::FILE_OPERATION_COPY),
       google_apis::test_util::CreateCopyResultCallback(&error));
   test_util::RunBlockingPoolTask();
   EXPECT_EQ(FILE_ERROR_OK, error);
@@ -147,10 +153,14 @@ TEST_F(DownloadOperationTest,
   // The cache entry should be removed in order to free up space.
   FileCacheEntry cache_entry;
   bool result = true;
-  cache()->GetCacheEntryOnUIThread(
-      "<resource_id>",
-      google_apis::test_util::CreateCopyResultCallback(&result,
-                                                       &cache_entry));
+  base::PostTaskAndReplyWithResult(
+      blocking_task_runner(),
+      FROM_HERE,
+      base::Bind(&internal::FileCache::GetCacheEntry,
+                 base::Unretained(cache()),
+                 "<id>",
+                 &cache_entry),
+      google_apis::test_util::CreateCopyResultCallback(&result));
   test_util::RunBlockingPoolTask();
   ASSERT_FALSE(result);
 }
@@ -167,9 +177,9 @@ TEST_F(DownloadOperationTest,
   // the disk space becomes full after the file is downloaded for some reason
   // (ex. the actual file was larger than the expected size).
   fake_free_disk_space_getter()->PushFakeValue(
-      file_size + internal::kMinFreeSpace);
+      file_size + cryptohome::kMinFreeSpaceInBytes);
   fake_free_disk_space_getter()->set_default_value(
-      internal::kMinFreeSpace - 1);
+      cryptohome::kMinFreeSpaceInBytes - 1);
 
   FileError error = FILE_ERROR_OK;
   base::FilePath file_path;
@@ -188,7 +198,7 @@ TEST_F(DownloadOperationTest,
 
 TEST_F(DownloadOperationTest, EnsureFileDownloadedByPath_FromCache) {
   base::FilePath temp_file;
-  ASSERT_TRUE(file_util::CreateTemporaryFileInDir(temp_dir(), &temp_file));
+  ASSERT_TRUE(base::CreateTemporaryFileInDir(temp_dir(), &temp_file));
 
   base::FilePath file_in_root(FILE_PATH_LITERAL("drive/root/File 1.txt"));
   ResourceEntry src_entry;
@@ -196,11 +206,15 @@ TEST_F(DownloadOperationTest, EnsureFileDownloadedByPath_FromCache) {
 
   // Store something as cached version of this file.
   FileError error = FILE_ERROR_OK;
-  cache()->StoreOnUIThread(
-      src_entry.resource_id(),
-      src_entry.file_specific_info().md5(),
-      temp_file,
-      internal::FileCache::FILE_OPERATION_COPY,
+  base::PostTaskAndReplyWithResult(
+      blocking_task_runner(),
+      FROM_HERE,
+      base::Bind(&internal::FileCache::Store,
+                 base::Unretained(cache()),
+                 GetLocalId(file_in_root),
+                 src_entry.file_specific_info().md5(),
+                 temp_file,
+                 internal::FileCache::FILE_OPERATION_COPY),
       google_apis::test_util::CreateCopyResultCallback(&error));
   test_util::RunBlockingPoolTask();
   EXPECT_EQ(FILE_ERROR_OK, error);
@@ -247,17 +261,16 @@ TEST_F(DownloadOperationTest, EnsureFileDownloadedByPath_HostedDocument) {
   EXPECT_EQ(entry->resource_id(), util::ReadResourceIdFromGDocFile(file_path));
 }
 
-TEST_F(DownloadOperationTest, EnsureFileDownloadedByResourceId) {
+TEST_F(DownloadOperationTest, EnsureFileDownloadedByLocalId) {
   base::FilePath file_in_root(FILE_PATH_LITERAL("drive/root/File 1.txt"));
   ResourceEntry src_entry;
   ASSERT_EQ(FILE_ERROR_OK, GetLocalResourceEntry(file_in_root, &src_entry));
-  std::string resource_id = src_entry.resource_id();
 
   FileError error = FILE_ERROR_OK;
   base::FilePath file_path;
   scoped_ptr<ResourceEntry> entry;
-  operation_->EnsureFileDownloadedByResourceId(
-      resource_id,
+  operation_->EnsureFileDownloadedByLocalId(
+      GetLocalId(file_in_root),
       ClientContext(USER_INITIATED),
       GetFileContentInitializedCallback(),
       google_apis::GetContentCallback(),
@@ -344,15 +357,15 @@ TEST_F(DownloadOperationTest,
     // The content is available from the cache file.
     EXPECT_TRUE(get_content_callback.data().empty());
     int64 local_file_size = 0;
-    file_util::GetFileSize(local_path, &local_file_size);
+    base::GetFileSize(local_path, &local_file_size);
     EXPECT_EQ(entry->file_info().size(), local_file_size);
     EXPECT_EQ(FILE_ERROR_OK, completion_error);
   }
 }
 
-TEST_F(DownloadOperationTest, EnsureFileDownloadedByResourceId_FromCache) {
+TEST_F(DownloadOperationTest, EnsureFileDownloadedByLocalId_FromCache) {
   base::FilePath temp_file;
-  ASSERT_TRUE(file_util::CreateTemporaryFileInDir(temp_dir(), &temp_file));
+  ASSERT_TRUE(base::CreateTemporaryFileInDir(temp_dir(), &temp_file));
 
   base::FilePath file_in_root(FILE_PATH_LITERAL("drive/root/File 1.txt"));
   ResourceEntry src_entry;
@@ -360,11 +373,15 @@ TEST_F(DownloadOperationTest, EnsureFileDownloadedByResourceId_FromCache) {
 
   // Store something as cached version of this file.
   FileError error = FILE_ERROR_FAILED;
-  cache()->StoreOnUIThread(
-      src_entry.resource_id(),
-      src_entry.file_specific_info().md5(),
-      temp_file,
-      internal::FileCache::FILE_OPERATION_COPY,
+  base::PostTaskAndReplyWithResult(
+      blocking_task_runner(),
+      FROM_HERE,
+      base::Bind(&internal::FileCache::Store,
+                 base::Unretained(cache()),
+                 GetLocalId(file_in_root),
+                 src_entry.file_specific_info().md5(),
+                 temp_file,
+                 internal::FileCache::FILE_OPERATION_COPY),
       google_apis::test_util::CreateCopyResultCallback(&error));
   test_util::RunBlockingPoolTask();
   EXPECT_EQ(FILE_ERROR_OK, error);
@@ -373,11 +390,10 @@ TEST_F(DownloadOperationTest, EnsureFileDownloadedByResourceId_FromCache) {
   // Hence the downloading should work even if the drive service is offline.
   fake_service()->set_offline(true);
 
-  std::string resource_id = src_entry.resource_id();
   base::FilePath file_path;
   scoped_ptr<ResourceEntry> entry;
-  operation_->EnsureFileDownloadedByResourceId(
-      resource_id,
+  operation_->EnsureFileDownloadedByLocalId(
+      GetLocalId(file_in_root),
       ClientContext(USER_INITIATED),
       GetFileContentInitializedCallback(),
       google_apis::GetContentCallback(),
@@ -404,16 +420,24 @@ TEST_F(DownloadOperationTest, EnsureFileDownloadedByPath_DirtyCache) {
 
   // Store the file as a cache, marking it to be dirty.
   FileError error = FILE_ERROR_FAILED;
-  cache()->StoreOnUIThread(
-      src_entry.resource_id(),
-      src_entry.file_specific_info().md5(),
-      dirty_file,
-      internal::FileCache::FILE_OPERATION_COPY,
+  base::PostTaskAndReplyWithResult(
+      blocking_task_runner(),
+      FROM_HERE,
+      base::Bind(&internal::FileCache::Store,
+                 base::Unretained(cache()),
+                 GetLocalId(file_in_root),
+                 src_entry.file_specific_info().md5(),
+                 dirty_file,
+                 internal::FileCache::FILE_OPERATION_COPY),
       google_apis::test_util::CreateCopyResultCallback(&error));
   test_util::RunBlockingPoolTask();
   EXPECT_EQ(FILE_ERROR_OK, error);
-  cache()->MarkDirtyOnUIThread(
-      src_entry.resource_id(),
+  base::PostTaskAndReplyWithResult(
+      blocking_task_runner(),
+      FROM_HERE,
+      base::Bind(&internal::FileCache::MarkDirty,
+                 base::Unretained(cache()),
+                 GetLocalId(file_in_root)),
       google_apis::test_util::CreateCopyResultCallback(&error));
   test_util::RunBlockingPoolTask();
   EXPECT_EQ(FILE_ERROR_OK, error);

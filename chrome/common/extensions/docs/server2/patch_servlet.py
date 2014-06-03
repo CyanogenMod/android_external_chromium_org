@@ -7,12 +7,10 @@ import logging
 from urlparse import urlparse
 
 from appengine_url_fetcher import AppEngineUrlFetcher
-from appengine_wrappers import IsDevServer
-from caching_file_system import CachingFileSystem
 from caching_rietveld_patcher import CachingRietveldPatcher
 from chained_compiled_file_system import ChainedCompiledFileSystem
-from compiled_file_system import  CompiledFileSystem
-from host_file_system_creator import HostFileSystemCreator
+from environment import IsDevServer
+from extensions_paths import CONTENT_PROVIDERS
 from instance_servlet import InstanceServlet
 from render_servlet import RenderServlet
 from rietveld_patcher import RietveldPatcher, RietveldPatcherError
@@ -20,8 +18,8 @@ from object_store_creator import ObjectStoreCreator
 from patched_file_system import PatchedFileSystem
 from server_instance import ServerInstance
 from servlet import Request, Response, Servlet
-import svn_constants
 import url_constants
+
 
 class _PatchServletDelegate(RenderServlet.Delegate):
   def __init__(self, issue, delegate):
@@ -29,41 +27,51 @@ class _PatchServletDelegate(RenderServlet.Delegate):
     self._delegate = delegate
 
   def CreateServerInstance(self):
-    object_store_creator = ObjectStoreCreator(start_empty=False)
-    branch_utility = self._delegate.CreateBranchUtility(object_store_creator)
-    host_file_system_creator = self._delegate.CreateHostFileSystemCreator(
-        object_store_creator)
-    # offline=False because a patch can rely on files that are already in SVN
-    # repository but not yet pulled into data store by cron jobs (a typical
+    # start_empty=False because a patch can rely on files that are already in
+    # SVN repository but not yet pulled into data store by cron jobs (a typical
     # example is to add documentation for an existing API).
-    base_file_system = CachingFileSystem(
-        host_file_system_creator.Create(offline=False),
-        object_store_creator)
-    base_compiled_fs_factory = CompiledFileSystem.Factory(base_file_system,
-                                                          object_store_creator)
+    object_store_creator = ObjectStoreCreator(start_empty=False)
+
+    unpatched_file_system = self._delegate.CreateHostFileSystemProvider(
+        object_store_creator).GetTrunk()
 
     rietveld_patcher = CachingRietveldPatcher(
-        RietveldPatcher(svn_constants.EXTENSIONS_PATH,
-                        self._issue,
+        RietveldPatcher(self._issue,
                         AppEngineUrlFetcher(url_constants.CODEREVIEW_SERVER)),
         object_store_creator)
-    patched_file_system = PatchedFileSystem(base_file_system,
+
+    patched_file_system = PatchedFileSystem(unpatched_file_system,
                                             rietveld_patcher)
-    patched_compiled_fs_factory = CompiledFileSystem.Factory(
-        patched_file_system, object_store_creator)
 
-    compiled_fs_factory = ChainedCompiledFileSystem.Factory(
-        [(patched_compiled_fs_factory, patched_file_system),
-         (base_compiled_fs_factory, base_file_system)])
+    patched_host_file_system_provider = (
+        self._delegate.CreateHostFileSystemProvider(
+            object_store_creator,
+            # The patched file system needs to be online otherwise it'd be
+            # impossible to add files in the patches.
+            offline=False,
+            # The trunk file system for this creator should be the patched one.
+            default_trunk_instance=patched_file_system))
 
-    return ServerInstance(object_store_creator,
-                          patched_file_system,
-                          self._delegate.CreateAppSamplesFileSystem(
-                              object_store_creator),
-                          '/_patch/%s' % self._issue,
-                          compiled_fs_factory,
-                          branch_utility,
-                          host_file_system_creator)
+    combined_compiled_fs_factory = ChainedCompiledFileSystem.Factory(
+        [unpatched_file_system], object_store_creator)
+
+    branch_utility = self._delegate.CreateBranchUtility(object_store_creator)
+
+    server_instance = ServerInstance(
+        object_store_creator,
+        combined_compiled_fs_factory,
+        branch_utility,
+        patched_host_file_system_provider,
+        self._delegate.CreateGithubFileSystemProvider(object_store_creator),
+        base_path='/_patch/%s/' % self._issue)
+
+    # HACK: if content_providers.json changes in this patch then the cron needs
+    # to be re-run to pull in the new configuration.
+    _, _, modified = rietveld_patcher.GetPatchedFiles()
+    if CONTENT_PROVIDERS in modified:
+      server_instance.content_providers.Cron().Get()
+
+    return server_instance
 
 class PatchServlet(Servlet):
   '''Servlet which renders patched docs.

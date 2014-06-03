@@ -24,6 +24,7 @@
 #include "ui/aura/env.h"
 #include "ui/aura/root_window.h"
 #include "ui/compositor/scoped_animation_duration_scale_mode.h"
+#include "ui/compositor/test/context_factories_for_test.h"
 #endif
 
 
@@ -93,7 +94,8 @@ int MockBalloonCollection::UppermostVerticalPosition() {
 }
 
 DesktopNotificationsTest::DesktopNotificationsTest()
-    : ui_thread_(BrowserThread::UI, &message_loop_) {
+    : ui_thread_(BrowserThread::UI, &message_loop_),
+      balloon_collection_(NULL) {
 }
 
 DesktopNotificationsTest::~DesktopNotificationsTest() {
@@ -107,6 +109,9 @@ void DesktopNotificationsTest::SetUp() {
   // The message center is notmally initialized on |g_browser_process| which
   // is not created for these tests.
   message_center::MessageCenter::Initialize();
+  // The ContextFactory must exist before any Compositors are created.
+  bool allow_test_contexts = true;
+  ui::InitializeContextFactoryForTests(allow_test_contexts);
   // MockBalloonCollection retrieves information about the screen on creation.
   // So it is necessary to make sure the desktop gets created first.
   ash::Shell::CreateInstance(new ash::test::TestShellDelegate);
@@ -131,6 +136,7 @@ void DesktopNotificationsTest::TearDown() {
   // is not created for these tests.
   message_center::MessageCenter::Shutdown();
   aura::Env::DeleteInstance();
+  ui::TerminateContextFactoryForTests();
 #endif
   ui::ShutdownInputMethodForTesting();
 }
@@ -140,11 +146,10 @@ DesktopNotificationsTest::StandardTestNotification() {
   content::ShowDesktopNotificationHostMsgParams params;
   params.notification_id = 0;
   params.origin = GURL("http://www.google.com");
-  params.is_html = false;
   params.icon_url = GURL("/icon.png");
   params.title = ASCIIToUTF16("Title");
   params.body = ASCIIToUTF16("Text");
-  params.direction = WebKit::WebTextDirectionDefault;
+  params.direction = blink::WebTextDirectionDefault;
   return params;
 }
 
@@ -158,11 +163,11 @@ TEST_F(DesktopNotificationsTest, TestShow) {
   base::MessageLoopForUI::current()->RunUntilIdle();
   EXPECT_EQ(1, balloon_collection_->count());
 
-  content::ShowDesktopNotificationHostMsgParams params2;
-  params2.origin = GURL("http://www.google.com");
-  params2.is_html = true;
-  params2.contents_url = GURL("http://www.google.com/notification.html");
+  content::ShowDesktopNotificationHostMsgParams params2 =
+      StandardTestNotification();
   params2.notification_id = 2;
+  params2.origin = GURL("http://www.google.com");
+  params2.body = ASCIIToUTF16("Text");
 
   EXPECT_TRUE(service_->ShowDesktopNotification(
       params2, 0, 0, DesktopNotificationService::PageNotification));
@@ -249,7 +254,6 @@ TEST_F(DesktopNotificationsTest, TestPositioning) {
 TEST_F(DesktopNotificationsTest, TestVariableSize) {
   content::ShowDesktopNotificationHostMsgParams params;
   params.origin = GURL("http://long.google.com");
-  params.is_html = false;
   params.icon_url = GURL("/icon.png");
   params.title = ASCIIToUTF16("Really Really Really Really Really Really "
                               "Really Really Really Really Really Really "

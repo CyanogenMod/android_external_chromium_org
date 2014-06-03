@@ -30,8 +30,8 @@ void TestingPrefStore::RemoveObserver(PrefStore::Observer* observer) {
   observers_.RemoveObserver(observer);
 }
 
-size_t TestingPrefStore::NumberOfObservers() const {
-  return observers_.size();
+bool TestingPrefStore::HasObservers() const {
+  return observers_.might_have_observers();
 }
 
 bool TestingPrefStore::IsInitializationComplete() const {
@@ -51,9 +51,6 @@ void TestingPrefStore::SetValueSilently(const std::string& key,
 void TestingPrefStore::RemoveValue(const std::string& key) {
   if (prefs_.RemoveValue(key))
     NotifyPrefValueChanged(key);
-}
-
-void TestingPrefStore::MarkNeedsEmptyValue(const std::string& key) {
 }
 
 bool TestingPrefStore::ReadOnly() const {

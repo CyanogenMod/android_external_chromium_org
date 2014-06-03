@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,11 +10,18 @@ import android.content.Intent;
 import android.net.Uri;
 import android.test.ActivityInstrumentationTestCase2;
 import android.text.TextUtils;
+import android.util.Log;
 
+import static org.chromium.base.test.util.ScalableTimeout.ScaleTimeout;
+
+import org.chromium.base.CommandLine;
+import org.chromium.base.ThreadUtils;
+import org.chromium.chrome.test.util.ApplicationData;
+import org.chromium.content.browser.BrowserStartupController;
 import org.chromium.content.browser.test.util.Criteria;
 import org.chromium.content.browser.test.util.CriteriaHelper;
+import org.chromium.content.common.ProcessInitException;
 
-import java.io.File;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -23,10 +30,27 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class ChromiumTestShellTestBase extends
         ActivityInstrumentationTestCase2<ChromiumTestShellActivity> {
     /** The maximum time the waitForActiveShellToBeDoneLoading method will wait. */
-    private static final long WAIT_FOR_ACTIVE_SHELL_LOADING_TIMEOUT = 10000;
+    private static final long WAIT_FOR_ACTIVE_SHELL_LOADING_TIMEOUT = ScaleTimeout(10000);
+    private static final String TAG = "ChromiumTestShellTestBase";
 
     public ChromiumTestShellTestBase() {
         super(ChromiumTestShellActivity.class);
+    }
+
+    protected static void startChromeBrowserProcessSync(final Context targetContext) {
+        ThreadUtils.runOnUiThreadBlocking(new Runnable() {
+            @Override
+            public void run() {
+                CommandLine.initFromFile("/data/local/tmp/chromium-testshell-command-line");
+                try {
+                    BrowserStartupController.get(targetContext).startBrowserProcessesSync(
+                            BrowserStartupController.MAX_RENDERERS_LIMIT);
+                } catch (ProcessInitException e) {
+                    Log.e(TAG, "Unable to load native library.", e);
+                    fail("Unable to load native library");
+                }
+            }
+        });
     }
 
     /**
@@ -56,7 +80,7 @@ public class ChromiumTestShellTestBase extends
      * loading pages. Instead it should be used more for test initialization. The proper way
      * to wait is to use a TestCallbackHelperContainer after the initial load is completed.
      * @return Whether or not the Shell was actually finished loading.
-     * @throws Exception
+     * @throws InterruptedException
      */
     protected boolean waitForActiveShellToBeDoneLoading() throws InterruptedException {
         final ChromiumTestShellActivity activity = getActivity();
@@ -89,82 +113,15 @@ public class ChromiumTestShellTestBase extends
     }
 
     /**
-     * Clear all files in the testshell's directory except 'lib'.
+     * Clear all files and folders in the Chromium testshell's application directory except 'lib'.
+     *
+     * The 'cache' directory is recreated as an empty directory.
      *
      * @return Whether clearing the application data was successful.
      */
-    protected boolean clearAppData() throws Exception {
-        final int MAX_TIMEOUT_MS = 3000;
-        final String appDir = getAppDir();
-        return CriteriaHelper.pollForCriteria(
-                new Criteria() {
-                    private boolean mDataRemoved = false;
-                    @Override
-                    public boolean isSatisfied() {
-                        if (!mDataRemoved && !removeAppData(appDir)) {
-                            return false;
-                        }
-                        mDataRemoved = true;
-                        // We have to make sure the cache directory still exists, as the framework
-                        // will try to create it otherwise and will fail for sandbox processes with
-                        // an NPE.
-                        File cacheDir = new File(appDir, "cache");
-                        if (cacheDir.exists()) {
-                            return true;
-                        }
-                        return cacheDir.mkdir();
-                    }
-                },
-                MAX_TIMEOUT_MS, MAX_TIMEOUT_MS / 10);
+    protected boolean clearAppData() throws InterruptedException {
+        return ApplicationData.clearAppData(getInstrumentation().getTargetContext());
     }
-
-    /**
-     * Remove all files and directories under the given appDir except 'lib'
-     *
-     * @param appDir the app directory to remove.
-     *
-     * @return true if succeeded.
-     */
-    private boolean removeAppData(String appDir) {
-        File[] files = new File(appDir).listFiles();
-        if (files == null) {
-            return true;
-        }
-        for (File file : files) {
-            if (!file.getAbsolutePath().endsWith("/lib") && !removeFile(file)) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private String getAppDir() {
-        Context target_ctx = getInstrumentation().getTargetContext();
-        String cacheDir = target_ctx.getCacheDir().getAbsolutePath();
-        return cacheDir.substring(0, cacheDir.lastIndexOf('/'));
-    }
-
-    /**
-     * Remove the given file or directory.
-     *
-     * @param file the file or directory to remove.
-     *
-     * @return true if succeeded.
-     */
-    private static boolean removeFile(File file) {
-        if (file.isDirectory()) {
-            File[] files = file.listFiles();
-            if (files == null) {
-                return true;
-            }
-            for (File sub_file : files) {
-                if (!removeFile(sub_file))
-                    return false;
-            }
-        }
-        return file.delete();
-    }
-
 
     /**
      * Navigates the currently active tab to a sanitized version of {@code url}.
@@ -178,5 +135,22 @@ public class ChromiumTestShellTestBase extends
             }
         });
         waitForActiveShellToBeDoneLoading();
+    }
+
+    // TODO(aelias): This method needs to be removed once http://crbug.com/179511 is fixed.
+    // Meanwhile, we have to wait if the page has the <meta viewport> tag.
+    /**
+     * Waits till the ContentViewCore receives the expected page scale factor
+     * from the compositor and asserts that this happens.
+     */
+    protected void assertWaitForPageScaleFactorMatch(final float expectedScale)
+            throws InterruptedException {
+        assertTrue(CriteriaHelper.pollForCriteria(new Criteria() {
+            @Override
+            public boolean isSatisfied() {
+                return getActivity().getActiveTab().getContentViewCore().getScale() ==
+                        expectedScale;
+            }
+        }));
     }
 }

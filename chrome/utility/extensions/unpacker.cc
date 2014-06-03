@@ -12,20 +12,21 @@
 #include "base/i18n/rtl.h"
 #include "base/json/json_file_value_serializer.h"
 #include "base/memory/scoped_handle.h"
+#include "base/safe_numerics.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread.h"
 #include "base/values.h"
 #include "chrome/common/chrome_utility_messages.h"
 #include "chrome/common/extensions/api/i18n/default_locale_handler.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_file_util.h"
 #include "chrome/common/extensions/extension_l10n_util.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
-#include "chrome/common/extensions/manifest.h"
 #include "content/public/child/image_decoder_utils.h"
 #include "content/public/common/common_param_traits.h"
 #include "extensions/common/constants.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/manifest.h"
+#include "extensions/common/manifest_constants.h"
 #include "grit/generated_resources.h"
 #include "ipc/ipc_message_utils.h"
 #include "net/base/file_stream.h"
@@ -34,10 +35,12 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/size.h"
 
-namespace errors = extension_manifest_errors;
-namespace keys = extension_manifest_keys;
+namespace extensions {
 
 namespace {
+
+namespace errors = manifest_errors;
+namespace keys = manifest_keys;
 
 // A limit to stop us passing dangerously large canvases to the browser.
 const int kMaxImageCanvas = 4096 * 4096;
@@ -46,7 +49,7 @@ SkBitmap DecodeImage(const base::FilePath& path) {
   // Read the file from disk.
   std::string file_contents;
   if (!base::PathExists(path) ||
-      !file_util::ReadFileToString(path, &file_contents)) {
+      !base::ReadFileToString(path, &file_contents)) {
     return SkBitmap();
   }
 
@@ -83,9 +86,14 @@ bool PathContainsParentDirectory(const base::FilePath& path) {
   return false;
 }
 
-}  // namespace
+bool WritePickle(const IPC::Message& pickle, const base::FilePath& dest_path) {
+  int size = base::checked_numeric_cast<int>(pickle.size());
+  const char* data = static_cast<const char*>(pickle.data());
+  int bytes_written = file_util::WriteFile(dest_path, data, size);
+  return (bytes_written == size);
+}
 
-namespace extensions {
+}  // namespace
 
 struct Unpacker::InternalData {
   DecodedImages decoded_images;
@@ -162,7 +170,7 @@ bool Unpacker::Run() {
   temp_install_dir_ =
       extension_path_.DirName().AppendASCII(kTempExtensionName);
 
-  if (!file_util::CreateDirectory(temp_install_dir_)) {
+  if (!base::CreateDirectory(temp_install_dir_)) {
     SetUTF16Error(
         l10n_util::GetStringFUTF16(
             IDS_EXTENSION_PACKAGE_DIRECTORY_ERROR,
@@ -228,8 +236,7 @@ bool Unpacker::DumpImagesToFile() {
 
   base::FilePath path = extension_path_.DirName().AppendASCII(
       kDecodedImagesFilename);
-  if (!file_util::WriteFile(path, static_cast<const char*>(pickle.data()),
-                            pickle.size())) {
+  if (!WritePickle(pickle, path)) {
     SetError("Could not write image data to disk.");
     return false;
   }
@@ -243,8 +250,7 @@ bool Unpacker::DumpMessageCatalogsToFile() {
 
   base::FilePath path = extension_path_.DirName().AppendASCII(
       kDecodedMessageCatalogsFilename);
-  if (!file_util::WriteFile(path, static_cast<const char*>(pickle.data()),
-                            pickle.size())) {
+  if (!WritePickle(pickle, path)) {
     SetError("Could not write message catalogs to disk.");
     return false;
   }

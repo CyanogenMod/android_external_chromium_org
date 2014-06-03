@@ -80,8 +80,8 @@
           },
           'dependencies': [
             '<@(chromium_browser_dependencies)',
+            '../components/components.gyp:policy',
             '../content/content.gyp:content_app_browser',
-            'app/policy/cloud_policy_codegen.gyp:policy',
           ],
           'conditions': [
             ['use_aura==1', {
@@ -89,7 +89,12 @@
                 '../ui/compositor/compositor.gyp:compositor',
               ],
             }],
-            ['OS=="win" and target_arch=="ia32"', {
+            ['OS=="win" and target_arch=="ia32" and MSVS_VERSION!="2013"', {
+              # TODO(scottmg): The assembler is very broken in VS2013 and
+              # crashes on the generated .asm file, so disable this for now.
+              # This should be revisited after a VS2013 update. See
+              # http://crbug.com/288948.
+              #
               # Add a dependency to custom import library for user32 delay
               # imports only in x86 builds.
               'dependencies': [
@@ -102,13 +107,10 @@
                 # On Windows, link the dependencies (libraries) that make
                 # up actual Chromium functionality into this .dll.
                 'chrome_dll_pdb_workaround',
-                'chrome_resources.gyp:chrome_resources',
                 'chrome_version_resources',
                 '../chrome/chrome_resources.gyp:chrome_unscaled_resources',
                 '../crypto/crypto.gyp:crypto',
-                '../printing/printing.gyp:printing',
                 '../net/net.gyp:net_resources',
-                '../third_party/cld/cld.gyp:cld',
                 '../ui/views/views.gyp:views',
                 '../webkit/webkit_resources.gyp:webkit_resources',
               ],
@@ -125,30 +127,8 @@
                 '<(SHARED_INTERMEDIATE_DIR)/chrome_version/chrome_dll_version.rc',
                 '../base/win/dllmain.cc',
 
-                '../ui/resources/cursors/aliasb.cur',
-                '../ui/resources/cursors/cell.cur',
-                '../ui/resources/cursors/col_resize.cur',
-                '../ui/resources/cursors/copy.cur',
-                '../ui/resources/cursors/none.cur',
-                '../ui/resources/cursors/row_resize.cur',
-                '../ui/resources/cursors/vertical_text.cur',
-                '../ui/resources/cursors/zoom_in.cur',
-                '../ui/resources/cursors/zoom_out.cur',
-
-                # TODO:  It would be nice to have these pulled in
-                # automatically from direct_dependent_settings in
-                # their various targets (net.gyp:net_resources, etc.),
-                # but that causes errors in other targets when
-                # resulting .res files get referenced multiple times.
-                '<(SHARED_INTERMEDIATE_DIR)/chrome/browser_resources.rc',
-                '<(SHARED_INTERMEDIATE_DIR)/chrome/chrome_unscaled_resources.rc',
-                '<(SHARED_INTERMEDIATE_DIR)/chrome/common_resources.rc',
-                '<(SHARED_INTERMEDIATE_DIR)/chrome/extensions_api_resources.rc',
-                '<(SHARED_INTERMEDIATE_DIR)/content/content_resources.rc',
-                '<(SHARED_INTERMEDIATE_DIR)/content/browser/tracing/tracing_resources.rc',
-                '<(SHARED_INTERMEDIATE_DIR)/net/net_resources.rc',
+                # Cursors.
                 '<(SHARED_INTERMEDIATE_DIR)/ui/ui_resources/ui_unscaled_resources.rc',
-                '<(SHARED_INTERMEDIATE_DIR)/webkit/blink_resources.rc',
               ],
               'include_dirs': [
                 '<(DEPTH)/third_party/wtl/include',
@@ -173,7 +153,7 @@
                       'OutputFile': '$(OutDir)\\initial\\chrome.dll',
                       'UseLibraryDependencyInputs': "true",
                     }],
-                    ['target_arch=="ia32"', {
+                    ['target_arch=="ia32" and MSVS_VERSION!="2013"', {
                       # Link against the XP-constrained user32 import library
                       # instead of the platform-SDK provided one to avoid
                       # inadvertently taking dependencies on post-XP user32
@@ -233,6 +213,11 @@
                     '<(allocator_target)',
                   ],
                 }],
+                ['enable_printing!=0', {
+                  'dependencies': [
+                    '../printing/printing.gyp:printing',
+                  ],
+                }],
               ]
             }],
             ['chrome_multiple_dll==1', {
@@ -247,6 +232,16 @@
               ],
               'dependencies!': [
                 '../content/content.gyp:content_app_browser',
+              ],
+            }],
+            ['cld_version==0 or cld_version==1', {
+              'dependencies': [
+                '../third_party/cld/cld.gyp:cld',
+              ],
+            }],
+            ['cld_version==0 or cld_version==2', {
+              'dependencies': [
+                '../third_party/cld_2/cld_2.gyp:cld_2',
               ],
             }],
             ['OS=="mac" and component!="shared_library"', {
@@ -294,11 +289,9 @@
                   'dependencies': [
                     '../breakpad/breakpad.gyp:breakpad',
                     '../components/components.gyp:breakpad_component',
-                    'app/policy/cloud_policy_codegen.gyp:policy',
+                    '../components/components.gyp:policy',
                   ],
                   'sources': [
-                    'app/breakpad_mac.mm',
-                    'app/breakpad_mac.h',
                     'app/chrome_breakpad_client.cc',
                     'app/chrome_breakpad_client.h',
                     'app/chrome_breakpad_client_mac.mm',
@@ -307,10 +300,6 @@
                   # No Breakpad, put in the stubs.
                   'dependencies': [
                     '../components/components.gyp:breakpad_stubs',
-                  ],
-                  'sources': [
-                    'app/breakpad_mac_stubs.mm',
-                    'app/breakpad_mac.h',
                   ],
                 }],  # mac_breakpad_compiled_in
                 ['internal_pdf', {

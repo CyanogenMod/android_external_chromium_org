@@ -27,11 +27,18 @@ class GPU_EXPORT FeatureInfo : public base::RefCounted<FeatureInfo> {
     FeatureFlags();
 
     bool chromium_framebuffer_multisample;
+    // Use glBlitFramebuffer() and glRenderbufferStorageMultisample() with
+    // GL_EXT_framebuffer_multisample-style semantics, since they are exposed
+    // as core GL functions on this implementation.
+    bool use_core_framebuffer_multisample;
     bool multisampled_render_to_texture;
     // Use the IMG GLenum values and functions rather than EXT.
     bool use_img_for_multisampled_render_to_texture;
     bool oes_standard_derivatives;
     bool oes_egl_image_external;
+    bool oes_depth24;
+    bool oes_compressed_etc1_rgb8_texture;
+    bool packed_depth24_stencil8;
     bool npot_ok;
     bool enable_texture_float_linear;
     bool enable_texture_half_float_linear;
@@ -44,11 +51,19 @@ class GPU_EXPORT FeatureInfo : public base::RefCounted<FeatureInfo> {
     bool use_arb_occlusion_query2_for_occlusion_query_boolean;
     bool use_arb_occlusion_query_for_occlusion_query_boolean;
     bool native_vertex_array_object;
+    bool ext_texture_format_bgra8888;
     bool enable_shader_name_hashing;
     bool enable_samplers;
     bool ext_draw_buffers;
     bool ext_frag_depth;
     bool use_async_readpixels;
+    bool map_buffer_range;
+    bool ext_discard_framebuffer;
+    bool angle_depth_texture;
+    bool is_angle;
+    bool is_swiftshader;
+    bool angle_texture_usage;
+    bool ext_texture_storage;
   };
 
   struct Workarounds {
@@ -63,16 +78,15 @@ class GPU_EXPORT FeatureInfo : public base::RefCounted<FeatureInfo> {
     GLint max_cube_map_texture_size;
   };
 
+  // Constructor with workarounds taken from the current process's CommandLine
   FeatureInfo();
 
-  // If allowed features = NULL or "*", all features are allowed. Otherwise
-  // only features that match the strings in allowed_features are allowed.
-  bool Initialize(const char* allowed_features);
-  bool Initialize(const DisallowedFeatures& disallowed_features,
-                  const char* allowed_features);
+  // Constructor with workarounds taken from |command_line|
+  FeatureInfo(const CommandLine& command_line);
 
-  // Turns on certain features if they can be turned on.
-  void AddFeatures(const CommandLine& command_line);
+  // Initializes the feature information. Needs a current GL context.
+  bool Initialize();
+  bool Initialize(const DisallowedFeatures& disallowed_features);
 
   const Validators* validators() const {
     return &validators_;
@@ -105,6 +119,8 @@ class GPU_EXPORT FeatureInfo : public base::RefCounted<FeatureInfo> {
   ~FeatureInfo();
 
   void AddExtensionString(const std::string& str);
+  void InitializeBasicState(const CommandLine& command_line);
+  void InitializeFeatures();
 
   Validators validators_;
 

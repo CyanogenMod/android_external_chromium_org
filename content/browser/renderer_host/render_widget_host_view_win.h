@@ -23,11 +23,10 @@
 #include "content/common/content_export.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
-#include "ui/base/gestures/gesture_recognizer.h"
-#include "ui/base/gestures/gesture_types.h"
 #include "ui/base/ime/text_input_client.h"
 #include "ui/base/ime/win/tsf_bridge.h"
-#include "ui/base/win/extra_sdk_defines.h"
+#include "ui/events/gestures/gesture_recognizer.h"
+#include "ui/events/gestures/gesture_types.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/point.h"
 #include "ui/surface/accelerated_surface_win.h"
@@ -49,7 +48,7 @@ class IMM32Manager;
 class ViewProp;
 }
 
-namespace WebKit {
+namespace blink {
 struct WebScreenInfo;
 }
 
@@ -182,14 +181,14 @@ class RenderWidgetHostViewWin
   virtual void UpdateCursor(const WebCursor& cursor) OVERRIDE;
   virtual void SetIsLoading(bool is_loading) OVERRIDE;
   virtual void TextInputTypeChanged(ui::TextInputType type,
-                                    bool can_compose_inline,
-                                    ui::TextInputMode input_mode) OVERRIDE;
+                                    ui::TextInputMode input_mode,
+                                    bool can_compose_inline) OVERRIDE;
   virtual void SelectionBoundsChanged(
       const ViewHostMsg_SelectionBounds_Params& params) OVERRIDE;
   virtual void ScrollOffsetChanged() OVERRIDE;
   virtual void ImeCancelComposition() OVERRIDE;
   virtual void ImeCompositionRangeChanged(
-      const ui::Range& range,
+      const gfx::Range& range,
       const std::vector<gfx::Rect>& character_bounds) OVERRIDE;
   virtual void DidUpdateBackingStore(
       const gfx::Rect& scroll_rect,
@@ -203,7 +202,7 @@ class RenderWidgetHostViewWin
   // called by WebContentsImpl before DestroyWindow
   virtual void WillWmDestroy() OVERRIDE;
   virtual void Destroy() OVERRIDE;
-  virtual void SetTooltipText(const string16& tooltip_text) OVERRIDE;
+  virtual void SetTooltipText(const base::string16& tooltip_text) OVERRIDE;
   virtual BackingStore* AllocBackingStore(const gfx::Size& size) OVERRIDE;
   virtual void CopyFromCompositingSurface(
       const gfx::Rect& src_subrect,
@@ -215,15 +214,18 @@ class RenderWidgetHostViewWin
       const base::Callback<void(bool)>& callback) OVERRIDE;
   virtual bool CanCopyToVideoFrame() const OVERRIDE;
   virtual void OnAcceleratedCompositingStateChange() OVERRIDE;
+  virtual void AcceleratedSurfaceInitialized(int host_id,
+                                             int route_id) OVERRIDE;
   virtual void ProcessAckedTouchEvent(const TouchEventWithLatencyInfo& touch,
                                       InputEventAckState ack_result) OVERRIDE;
   virtual void SetHasHorizontalScrollbar(
       bool has_horizontal_scrollbar) OVERRIDE;
   virtual void SetScrollOffsetPinning(
       bool is_pinned_to_left, bool is_pinned_to_right) OVERRIDE;
-  virtual void GetScreenInfo(WebKit::WebScreenInfo* results) OVERRIDE;
+  virtual void GetScreenInfo(blink::WebScreenInfo* results) OVERRIDE;
   virtual gfx::Rect GetBoundsInRootWindow() OVERRIDE;
   virtual gfx::GLSurfaceHandle GetCompositingSurface() OVERRIDE;
+  virtual void ResizeCompositingSurface(const gfx::Size&) OVERRIDE;
   virtual void AcceleratedSurfaceBuffersSwapped(
       const GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params& params,
       int gpu_host_id) OVERRIDE;
@@ -233,8 +235,8 @@ class RenderWidgetHostViewWin
   virtual void AcceleratedSurfaceSuspend() OVERRIDE;
   virtual void AcceleratedSurfaceRelease() OVERRIDE;
   virtual bool HasAcceleratedSurface(const gfx::Size& desired_size) OVERRIDE;
-  virtual void OnAccessibilityNotifications(
-      const std::vector<AccessibilityHostMsg_NotificationParams>& params
+  virtual void OnAccessibilityEvents(
+      const std::vector<AccessibilityHostMsg_EventParams>& params
       ) OVERRIDE;
   virtual bool LockMouse() OVERRIDE;
   virtual void UnlockMouse() OVERRIDE;
@@ -258,37 +260,41 @@ class RenderWidgetHostViewWin
   virtual void FatalAccessibilityTreeError() OVERRIDE;
 
   // Overridden from ui::GestureEventHelper.
-  virtual bool DispatchLongPressGestureEvent(ui::GestureEvent* event) OVERRIDE;
-  virtual bool DispatchCancelTouchEvent(ui::TouchEvent* event) OVERRIDE;
+  virtual bool CanDispatchToConsumer(ui::GestureConsumer* consumer) OVERRIDE;
+  virtual void DispatchPostponedGestureEvent(ui::GestureEvent* event) OVERRIDE;
+  virtual void DispatchCancelTouchEvent(ui::TouchEvent* event) OVERRIDE;
 
   // Overridden from ui::TextInputClient for Win8/metro TSF support.
   // Following methods are not used in existing IMM32 related implementation.
   virtual void SetCompositionText(
       const ui::CompositionText& composition) OVERRIDE;
-  virtual void ConfirmCompositionText()  OVERRIDE;
+  virtual void ConfirmCompositionText() OVERRIDE;
   virtual void ClearCompositionText() OVERRIDE;
-  virtual void InsertText(const string16& text) OVERRIDE;
+  virtual void InsertText(const base::string16& text) OVERRIDE;
   virtual void InsertChar(char16 ch, int flags) OVERRIDE;
   virtual gfx::NativeWindow GetAttachedWindow() const OVERRIDE;
   virtual ui::TextInputType GetTextInputType() const OVERRIDE;
   virtual ui::TextInputMode GetTextInputMode() const OVERRIDE;
   virtual bool CanComposeInline() const OVERRIDE;
-  virtual gfx::Rect GetCaretBounds() OVERRIDE;
+  virtual gfx::Rect GetCaretBounds() const OVERRIDE;
   virtual bool GetCompositionCharacterBounds(uint32 index,
-                                             gfx::Rect* rect) OVERRIDE;
-  virtual bool HasCompositionText() OVERRIDE;
-  virtual bool GetTextRange(ui::Range* range) OVERRIDE;
-  virtual bool GetCompositionTextRange(ui::Range* range) OVERRIDE;
-  virtual bool GetSelectionRange(ui::Range* range) OVERRIDE;
-  virtual bool SetSelectionRange(const ui::Range& range) OVERRIDE;
-  virtual bool DeleteRange(const ui::Range& range) OVERRIDE;
-  virtual bool GetTextFromRange(const ui::Range& range,
-                                string16* text) OVERRIDE;
+                                             gfx::Rect* rect) const OVERRIDE;
+  virtual bool HasCompositionText() const OVERRIDE;
+  virtual bool GetTextRange(gfx::Range* range) const OVERRIDE;
+  virtual bool GetCompositionTextRange(gfx::Range* range) const OVERRIDE;
+  virtual bool GetSelectionRange(gfx::Range* range) const OVERRIDE;
+  virtual bool SetSelectionRange(const gfx::Range& range) OVERRIDE;
+  virtual bool DeleteRange(const gfx::Range& range) OVERRIDE;
+  virtual bool GetTextFromRange(const gfx::Range& range,
+                                base::string16* text) const OVERRIDE;
   virtual void OnInputMethodChanged() OVERRIDE;
   virtual bool ChangeTextDirectionAndLayoutAlignment(
       base::i18n::TextDirection direction) OVERRIDE;
   virtual void ExtendSelectionAndDelete(size_t before, size_t after) OVERRIDE;
   virtual void EnsureCaretInRect(const gfx::Rect& rect) OVERRIDE;
+  virtual void OnCandidateWindowShown() OVERRIDE;
+  virtual void OnCandidateWindowUpdated() OVERRIDE;
+  virtual void OnCandidateWindowHidden() OVERRIDE;
 
  protected:
   friend class RenderWidgetHostView;
@@ -489,9 +495,6 @@ class RenderWidgetHostViewWin
   // true if Enter was hit when render widget host was in focus.
   bool capture_enter_key_;
 
-  // true if the View is not visible.
-  bool is_hidden_;
-
   // The touch-state. Its touch-points are updated as necessary. A new
   // touch-point is added from an TOUCHEVENTF_DOWN message, and a touch-point
   // is removed from the list on an TOUCHEVENTF_UP message.
@@ -513,7 +516,7 @@ class RenderWidgetHostViewWin
 
   // Tooltips
   // The text to be shown in the tooltip, supplied by the renderer.
-  string16 tooltip_text_;
+  base::string16 tooltip_text_;
   // The tooltip control hwnd
   HWND tooltip_hwnd_;
   // Whether or not a tooltip is currently visible. We use this to track
@@ -572,7 +575,7 @@ class RenderWidgetHostViewWin
   // back, we regard the mouse movement as (0, 0).
   bool ignore_mouse_movement_;
 
-  ui::Range composition_range_;
+  gfx::Range composition_range_;
 
   // The current composition character bounds.
   std::vector<gfx::Rect> composition_character_bounds_;
@@ -580,12 +583,11 @@ class RenderWidgetHostViewWin
   // A cached latest caret rectangle sent from renderer.
   gfx::Rect caret_rect_;
 
-  // TODO(ananta)
-  // The WM_POINTERDOWN and touch related members should be moved to an
+  // TODO(ananta): The pointer and touch related members should be moved to an
   // independent class to reduce the clutter. This includes members
-  // pointer_down_context_ and last_touch_location_;
+  // pointer_down_context_ and last_touch_location_.
 
-  // Set to true if we are in the context of a WM_POINTERDOWN message
+  // Set to true if we are in the context of a pointer down message.
   bool pointer_down_context_;
 
   // The global x, y coordinates of the last point a touch event was

@@ -10,16 +10,15 @@
 #include <vector>
 
 #include "base/memory/weak_ptr.h"
-#include "chrome/browser/extensions/extension_function.h"
+#include "extensions/browser/extension_function.h"
 #include "ipc/ipc_sender.h"
 #include "url/gurl.h"
 
 class ChromeRenderMessageFilter;
-class ExtensionInfoMap;
-class Profile;
 struct ExtensionHostMsg_Request_Params;
 
 namespace content {
+class BrowserContext;
 class RenderViewHost;
 class WebContents;
 }
@@ -27,6 +26,7 @@ class WebContents;
 namespace extensions {
 class Extension;
 class ExtensionAPI;
+class InfoMap;
 class ProcessMap;
 class WindowController;
 }
@@ -85,7 +85,7 @@ class ExtensionFunctionDispatcher
   // Dispatches an IO-thread extension function. Only used for specific
   // functions that must be handled on the IO-thread.
   static void DispatchOnIOThread(
-      ExtensionInfoMap* extension_info_map,
+      extensions::InfoMap* extension_info_map,
       void* profile,
       int render_process_id,
       base::WeakPtr<ChromeRenderMessageFilter> ipc_sender,
@@ -96,7 +96,8 @@ class ExtensionFunctionDispatcher
   // - |delegate| outlives this object.
   // - This object outlives any RenderViewHost's passed to created
   //   ExtensionFunctions.
-  ExtensionFunctionDispatcher(Profile* profile, Delegate* delegate);
+  ExtensionFunctionDispatcher(content::BrowserContext* browser_context,
+                              Delegate* delegate);
 
   ~ExtensionFunctionDispatcher();
 
@@ -117,8 +118,8 @@ class ExtensionFunctionDispatcher
   // a response (if any) to the extension.
   void OnExtensionFunctionCompleted(const extensions::Extension* extension);
 
-  // The profile that this dispatcher is associated with.
-  Profile* profile() { return profile_; }
+  // The BrowserContext that this dispatcher is associated with.
+  content::BrowserContext* browser_context() { return browser_context_; }
 
  private:
   // For a given RenderViewHost instance, UIThreadResponseCallbackWrapper
@@ -155,7 +156,7 @@ class ExtensionFunctionDispatcher
   static void SendAccessDenied(
       const ExtensionFunction::ResponseCallback& callback);
 
-  Profile* profile_;
+  content::BrowserContext* browser_context_;
 
   Delegate* delegate_;
 

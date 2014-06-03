@@ -11,10 +11,10 @@
 #include "base/bind.h"
 #include "base/logging.h"
 #include "base/prefs/pref_service.h"
+#include "base/prefs/scoped_user_pref_update.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/autofill/personal_data_manager_factory.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/android/autofill/autofill_dialog_result.h"
@@ -37,7 +37,7 @@
 #include "content/public/browser/web_contents.h"
 #include "grit/generated_resources.h"
 #include "jni/AutofillDialogControllerAndroid_jni.h"
-#include "ui/android/window_android.h"
+#include "ui/base/android/window_android.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/models/combobox_model.h"
 #include "ui/base/models/menu_model.h"
@@ -81,16 +81,6 @@ void FillOutputForSectionWithComparator(
     const InputFieldComparator& compare,
     FormStructure& form_structure, wallet::FullWallet* full_wallet,
     const base::string16& email_address) {
-
-  // Email is hidden while using Wallet, special case it.
-  if (section == SECTION_EMAIL) {
-    AutofillProfile profile;
-    profile.SetRawInfo(EMAIL_ADDRESS, email_address);
-    AutofillProfileWrapper profile_wrapper(&profile, 0);
-    profile_wrapper.FillFormStructure(inputs, compare, &form_structure);
-    return;
-  }
-
   scoped_ptr<DataModelWrapper> wrapper = CreateWrapper(section, full_wallet);
   if (wrapper)
     wrapper->FillFormStructure(inputs, compare, &form_structure);
@@ -108,6 +98,42 @@ void FillOutputForSection(
       section, inputs,
       base::Bind(common::DetailInputMatchesField, section),
       form_structure, full_wallet, email_address);
+
+  if (section == SECTION_CC_BILLING) {
+    // Email is hidden while using Wallet, special case it.
+    for (size_t i = 0; i < form_structure.field_count(); ++i) {
+      AutofillField* field = form_structure.field(i);
+      if (field->Type().GetStorableType() == EMAIL_ADDRESS)
+        field->value = email_address;
+    }
+  }
+}
+
+// Returns true if |input_type| in |section| is needed for |form_structure|.
+bool IsSectionInputUsedInFormStructure(DialogSection section,
+                                       ServerFieldType input_type,
+                                       const FormStructure& form_structure) {
+  const DetailInput input = { DetailInput::LONG, input_type };
+  for (size_t i = 0; i < form_structure.field_count(); ++i) {
+    const AutofillField* field = form_structure.field(i);
+    if (field && common::DetailInputMatchesField(section, input, *field))
+      return true;
+  }
+  return false;
+}
+
+// Returns true if one of |inputs| in |section| is needed for |form_structure|.
+bool IsSectionInputsUsedInFormStructure(DialogSection section,
+                                        const ServerFieldType* input_types,
+                                        const size_t input_types_size,
+                                        const FormStructure& form_structure) {
+  for (size_t i = 0; i < input_types_size; ++i) {
+    if (IsSectionInputUsedInFormStructure(
+        section, input_types[i], form_structure)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 }  // namespace
@@ -118,79 +144,57 @@ base::WeakPtr<AutofillDialogController> AutofillDialogControllerAndroid::Create(
     content::WebContents* contents,
     const FormData& form_structure,
     const GURL& source_url,
-    const DialogType dialog_type,
-    const base::Callback<void(const FormStructure*,
-                              const std::string&)>& callback) {
+    const base::Callback<void(const FormStructure*)>& callback) {
   // AutofillDialogControllerAndroid owns itself.
   AutofillDialogControllerAndroid* autofill_dialog_controller =
       new AutofillDialogControllerAndroid(contents,
                                           form_structure,
                                           source_url,
-                                          dialog_type,
                                           callback);
   return autofill_dialog_controller->weak_ptr_factory_.GetWeakPtr();
 }
 
-// static
-void AutofillDialogControllerAndroid::RegisterProfilePrefs(
-    user_prefs::PrefRegistrySyncable* registry) {
-  registry->RegisterDictionaryPref(
-      ::prefs::kAutofillDialogDefaults,
-      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
-}
-
+#if defined(ENABLE_AUTOFILL_DIALOG)
 // static
 base::WeakPtr<AutofillDialogController>
 AutofillDialogController::Create(
     content::WebContents* contents,
     const FormData& form_structure,
     const GURL& source_url,
-    const DialogType dialog_type,
-    const base::Callback<void(const FormStructure*,
-                              const std::string&)>& callback) {
+    const base::Callback<void(const FormStructure*)>& callback) {
   return AutofillDialogControllerAndroid::Create(contents,
                                                  form_structure,
                                                  source_url,
-                                                 dialog_type,
                                                  callback);
 }
 
 // static
+void AutofillDialogController::RegisterPrefs(PrefRegistrySimple* registry) {}
+
+// static
 void AutofillDialogController::RegisterProfilePrefs(
     user_prefs::PrefRegistrySyncable* registry) {
-  AutofillDialogControllerAndroid::RegisterProfilePrefs(registry);
+  registry->RegisterDictionaryPref(
+      ::prefs::kAutofillDialogDefaults,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
 }
+#endif  // defined(ENABLE_AUTOFILL_DIALOG)
 
 AutofillDialogControllerAndroid::~AutofillDialogControllerAndroid() {
+  if (java_object_.is_null())
+    return;
+
   JNIEnv* env = base::android::AttachCurrentThread();
   Java_AutofillDialogControllerAndroid_onDestroy(env, java_object_.obj());
 }
 
 void AutofillDialogControllerAndroid::Show() {
+  JNIEnv* env = base::android::AttachCurrentThread();
   dialog_shown_timestamp_ = base::Time::Now();
 
-  content::NavigationEntry* entry = contents_->GetController().GetActiveEntry();
-  const GURL& active_url = entry ? entry->GetURL() : contents_->GetURL();
-  invoked_from_same_origin_ = active_url.GetOrigin() == source_url_.GetOrigin();
-
-  // Log any relevant UI metrics and security exceptions.
-  GetMetricLogger().LogDialogUiEvent(
-      GetDialogType(), AutofillMetrics::DIALOG_UI_SHOWN);
-
-  GetMetricLogger().LogDialogSecurityMetric(
-      GetDialogType(), AutofillMetrics::SECURITY_METRIC_DIALOG_SHOWN);
-
-  if (RequestingCreditCardInfo() && !TransmissionWillBeSecure()) {
-    GetMetricLogger().LogDialogSecurityMetric(
-        GetDialogType(),
-        AutofillMetrics::SECURITY_METRIC_CREDIT_CARD_OVER_HTTP);
-  }
-
-  if (!invoked_from_same_origin_) {
-    GetMetricLogger().LogDialogSecurityMetric(
-        GetDialogType(),
-        AutofillMetrics::SECURITY_METRIC_CROSS_ORIGIN_FRAME);
-  }
+  const GURL& current_url = contents_->GetLastCommittedURL();
+  invoked_from_same_origin_ =
+      current_url.GetOrigin() == source_url_.GetOrigin();
 
   // Determine what field types should be included in the dialog.
   bool has_types = false;
@@ -198,39 +202,68 @@ void AutofillDialogControllerAndroid::Show() {
   form_structure_.ParseFieldTypesFromAutocompleteAttributes(
       &has_types, &has_sections);
 
-  // Fail if the author didn't specify autocomplete types.
-  if (!has_types) {
-    callback_.Run(NULL, std::string());
+  // Fail if the author didn't specify autocomplete types, or
+  // if the dialog shouldn't be shown in a given circumstances.
+  if (!has_types ||
+      !Java_AutofillDialogControllerAndroid_isDialogAllowed(
+          env,
+          RequestingCreditCardInfo(),
+          TransmissionWillBeSecure(),
+          invoked_from_same_origin_)) {
+    callback_.Run(NULL);
     delete this;
     return;
   }
 
-  bool request_full_billing_address = true;
-  bool request_shipping_address = false;
-  bool request_phone_numbers = false;
+  // Log any relevant UI metrics and security exceptions.
+  GetMetricLogger().LogDialogUiEvent(AutofillMetrics::DIALOG_UI_SHOWN);
 
-  for (size_t i = 0; i < form_structure_.field_count(); ++i) {
-    const ServerFieldType type =
-        form_structure_.field(i)->Type().GetStorableType();
-    if (type == PHONE_HOME_WHOLE_NUMBER || type == PHONE_BILLING_WHOLE_NUMBER) {
-      request_phone_numbers = true;
-    }
-    if (type == NAME_FULL ||
-        type == ADDRESS_HOME_LINE1 || type == ADDRESS_HOME_LINE2 ||
-        type == ADDRESS_HOME_CITY || type == ADDRESS_HOME_STATE ||
-        type == ADDRESS_HOME_ZIP || type == ADDRESS_HOME_COUNTRY ||
-        type == PHONE_HOME_WHOLE_NUMBER) {
-      request_shipping_address = true;
-    }
-    if (type == ADDRESS_BILLING_LINE1 || type == ADDRESS_BILLING_LINE2 ||
-        type == ADDRESS_BILLING_CITY || type == ADDRESS_BILLING_STATE ||
-        type == PHONE_BILLING_WHOLE_NUMBER) {
-      request_full_billing_address = true;
-    }
+  GetMetricLogger().LogDialogSecurityMetric(
+      AutofillMetrics::SECURITY_METRIC_DIALOG_SHOWN);
+
+  if (RequestingCreditCardInfo() && !TransmissionWillBeSecure()) {
+    GetMetricLogger().LogDialogSecurityMetric(
+        AutofillMetrics::SECURITY_METRIC_CREDIT_CARD_OVER_HTTP);
   }
 
-  if (request_shipping_address)
-    request_full_billing_address = true;
+  if (!invoked_from_same_origin_) {
+    GetMetricLogger().LogDialogSecurityMetric(
+        AutofillMetrics::SECURITY_METRIC_CROSS_ORIGIN_FRAME);
+  }
+
+  const ServerFieldType full_billing_is_necessary_if[] = {
+      ADDRESS_BILLING_LINE1,
+      ADDRESS_BILLING_LINE2,
+      ADDRESS_BILLING_CITY,
+      ADDRESS_BILLING_STATE,
+      PHONE_BILLING_WHOLE_NUMBER
+  };
+  const bool request_full_billing_address =
+      IsSectionInputsUsedInFormStructure(
+          SECTION_BILLING,
+          full_billing_is_necessary_if,
+          arraysize(full_billing_is_necessary_if),
+          form_structure_);
+  const bool request_phone_numbers =
+      IsSectionInputUsedInFormStructure(
+          SECTION_BILLING,
+          PHONE_BILLING_WHOLE_NUMBER,
+          form_structure_) ||
+      IsSectionInputUsedInFormStructure(
+          SECTION_SHIPPING,
+          PHONE_HOME_WHOLE_NUMBER,
+          form_structure_);
+
+  bool request_shipping_address = false;
+  {
+    DetailInputs inputs;
+    common::BuildInputsForSection(SECTION_SHIPPING, &inputs);
+    EmptyDataModelWrapper empty_wrapper;
+    request_shipping_address = empty_wrapper.FillFormStructure(
+        inputs,
+        base::Bind(common::DetailInputMatchesField, SECTION_SHIPPING),
+        &form_structure_);
+  }
 
   const bool incognito_mode = profile_->IsOffTheRecord();
 
@@ -257,7 +290,6 @@ void AutofillDialogControllerAndroid::Show() {
   if (contents_->GetBrowserContext()->IsOffTheRecord())
     last_used_choice_is_autofill = true;
 
-  JNIEnv* env = base::android::AttachCurrentThread();
   ScopedJavaLocalRef<jstring> jlast_used_account_name =
       base::android::ConvertUTF16ToJavaString(
           env, last_used_account_name);
@@ -275,7 +307,7 @@ void AutofillDialogControllerAndroid::Show() {
           env, source_url_.GetOrigin().spec());
   java_object_.Reset(Java_AutofillDialogControllerAndroid_create(
       env,
-      reinterpret_cast<jint>(this),
+      reinterpret_cast<intptr_t>(this),
       WindowAndroidHelper::FromWebContents(contents_)->
           GetWindowAndroid()->GetJavaObject().obj(),
       request_full_billing_address, request_shipping_address,
@@ -287,51 +319,10 @@ void AutofillDialogControllerAndroid::Show() {
 }
 
 void AutofillDialogControllerAndroid::Hide() {
-  // TODO(aruslan): http://crbug.com/177373 Autocheckout.
-  NOTIMPLEMENTED();
+  delete this;
 }
 
 void AutofillDialogControllerAndroid::TabActivated() {}
-
-void AutofillDialogControllerAndroid::AddAutocheckoutStep(
-    AutocheckoutStepType step_type) {
-  // TODO(aruslan): http://crbug.com/177373 Autocheckout.
-  NOTIMPLEMENTED() << " step_type = " << step_type;
-}
-
-void AutofillDialogControllerAndroid::UpdateAutocheckoutStep(
-    AutocheckoutStepType step_type,
-    AutocheckoutStepStatus step_status) {
-  // TODO(aruslan): http://crbug.com/177373 Autocheckout.
-  NOTIMPLEMENTED() << " step_type=" << step_type
-                   << " step_status=" << step_status;
-}
-
-void AutofillDialogControllerAndroid::OnAutocheckoutError() {
-  // TODO(aruslan): http://crbug.com/177373 Autocheckout.
-  NOTIMPLEMENTED();
-  DCHECK_EQ(AUTOCHECKOUT_IN_PROGRESS, autocheckout_state_);
-  GetMetricLogger().LogAutocheckoutDuration(
-      base::Time::Now() - autocheckout_started_timestamp_,
-      AutofillMetrics::AUTOCHECKOUT_FAILED);
-  SetAutocheckoutState(AUTOCHECKOUT_ERROR);
-  autocheckout_started_timestamp_ = base::Time();
-}
-
-void AutofillDialogControllerAndroid::OnAutocheckoutSuccess() {
-  // TODO(aruslan): http://crbug.com/177373 Autocheckout.
-  NOTIMPLEMENTED();
-  DCHECK_EQ(AUTOCHECKOUT_IN_PROGRESS, autocheckout_state_);
-  GetMetricLogger().LogAutocheckoutDuration(
-      base::Time::Now() - autocheckout_started_timestamp_,
-      AutofillMetrics::AUTOCHECKOUT_SUCCEEDED);
-  SetAutocheckoutState(AUTOCHECKOUT_SUCCESS);
-  autocheckout_started_timestamp_ = base::Time();
-}
-
-DialogType AutofillDialogControllerAndroid::GetDialogType() const {
-  return dialog_type_;
-}
 
 // static
 bool AutofillDialogControllerAndroid::
@@ -341,16 +332,8 @@ bool AutofillDialogControllerAndroid::
 
 void AutofillDialogControllerAndroid::DialogCancel(JNIEnv* env,
                                                    jobject obj) {
-  if (autocheckout_state_ == AUTOCHECKOUT_NOT_STARTED)
-    LogOnCancelMetrics();
-
-  if (autocheckout_state_ == AUTOCHECKOUT_IN_PROGRESS) {
-    GetMetricLogger().LogAutocheckoutDuration(
-        base::Time::Now() - autocheckout_started_timestamp_,
-        AutofillMetrics::AUTOCHECKOUT_CANCELLED);
-  }
-
-  callback_.Run(NULL, std::string());
+  LogOnCancelMetrics();
+  callback_.Run(NULL);
 }
 
 void AutofillDialogControllerAndroid::DialogContinue(
@@ -362,11 +345,12 @@ void AutofillDialogControllerAndroid::DialogContinue(
     jstring jlast_used_billing,
     jstring jlast_used_shipping,
     jstring jlast_used_card) {
-  const string16 email = AutofillDialogResult::GetWalletEmail(env, wallet);
+  const base::string16 email =
+      AutofillDialogResult::GetWalletEmail(env, wallet);
   const std::string google_transaction_id =
       AutofillDialogResult::GetWalletGoogleTransactionId(env, wallet);
 
-  const string16 last_used_account_name =
+  const base::string16 last_used_account_name =
       base::android::ConvertJavaStringToUTF16(env, jlast_used_account_name);
   const std::string last_used_billing =
       base::android::ConvertJavaStringToUTF8(env, jlast_used_billing);
@@ -377,8 +361,6 @@ void AutofillDialogControllerAndroid::DialogContinue(
 
   scoped_ptr<wallet::FullWallet> full_wallet =
       AutofillDialogResult::ConvertFromJava(env, wallet);
-  FillOutputForSection(
-      SECTION_EMAIL, form_structure_, full_wallet.get(), email);
   FillOutputForSection(
       SECTION_CC_BILLING, form_structure_, full_wallet.get(), email);
   FillOutputForSection(
@@ -404,39 +386,29 @@ void AutofillDialogControllerAndroid::DialogContinue(
     }
   }
 
-  if (GetDialogType() == DIALOG_TYPE_AUTOCHECKOUT) {
-    autocheckout_started_timestamp_ = base::Time::Now();
-    SetAutocheckoutState(AUTOCHECKOUT_IN_PROGRESS);
-  }
-
   LogOnFinishSubmitMetrics();
 
   // Callback should be called as late as possible.
-  callback_.Run(&form_structure_, google_transaction_id);
+  callback_.Run(&form_structure_);
 
   // This might delete us.
-  if (GetDialogType() == DIALOG_TYPE_REQUEST_AUTOCOMPLETE)
-    Hide();
+  Hide();
 }
 
 AutofillDialogControllerAndroid::AutofillDialogControllerAndroid(
     content::WebContents* contents,
     const FormData& form_structure,
     const GURL& source_url,
-    const DialogType dialog_type,
-    const base::Callback<void(const FormStructure*,
-                              const std::string&)>& callback)
+    const base::Callback<void(const FormStructure*)>& callback)
     : profile_(Profile::FromBrowserContext(contents->GetBrowserContext())),
       contents_(contents),
       initial_user_state_(AutofillMetrics::DIALOG_USER_STATE_UNKNOWN),
-      dialog_type_(dialog_type),
-      form_structure_(form_structure, std::string()),
+      form_structure_(form_structure),
       invoked_from_same_origin_(true),
       source_url_(source_url),
       callback_(callback),
       cares_about_shipping_(true),
       weak_ptr_factory_(this),
-      autocheckout_state_(AUTOCHECKOUT_NOT_STARTED),
       was_ui_latency_logged_(false) {
   DCHECK(!callback_.is_null());
 }
@@ -454,35 +426,23 @@ bool AutofillDialogControllerAndroid::RequestingCreditCardInfo() const {
 }
 
 bool AutofillDialogControllerAndroid::TransmissionWillBeSecure() const {
-  return source_url_.SchemeIs(chrome::kHttpsScheme);
-}
-
-void AutofillDialogControllerAndroid::SetAutocheckoutState(
-    AutocheckoutState autocheckout_state) {
-  if (autocheckout_state_ == autocheckout_state)
-    return;
-
-  autocheckout_state_ = autocheckout_state;
+  return source_url_.SchemeIs(content::kHttpsScheme);
 }
 
 void AutofillDialogControllerAndroid::LogOnFinishSubmitMetrics() {
   GetMetricLogger().LogDialogUiDuration(
       base::Time::Now() - dialog_shown_timestamp_,
-      GetDialogType(),
       AutofillMetrics::DIALOG_ACCEPTED);
 
-  GetMetricLogger().LogDialogUiEvent(
-      GetDialogType(), AutofillMetrics::DIALOG_UI_ACCEPTED);
+  GetMetricLogger().LogDialogUiEvent(AutofillMetrics::DIALOG_UI_ACCEPTED);
 }
 
 void AutofillDialogControllerAndroid::LogOnCancelMetrics() {
   GetMetricLogger().LogDialogUiDuration(
       base::Time::Now() - dialog_shown_timestamp_,
-      GetDialogType(),
       AutofillMetrics::DIALOG_CANCELED);
 
-  GetMetricLogger().LogDialogUiEvent(
-      GetDialogType(), AutofillMetrics::DIALOG_UI_CANCELED);
+  GetMetricLogger().LogDialogUiEvent(AutofillMetrics::DIALOG_UI_CANCELED);
 }
 
 }  // namespace autofill

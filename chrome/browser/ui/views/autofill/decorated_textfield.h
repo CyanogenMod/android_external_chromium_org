@@ -5,8 +5,10 @@
 #ifndef CHROME_BROWSER_UI_VIEWS_AUTOFILL_DECORATED_TEXTFIELD_H_
 #define CHROME_BROWSER_UI_VIEWS_AUTOFILL_DECORATED_TEXTFIELD_H_
 
+#include "base/memory/scoped_ptr.h"
 #include "base/strings/string16.h"
 #include "ui/gfx/image/image.h"
+#include "ui/views/controls/textfield/textfield.h"
 #include "ui/views/controls/textfield/textfield.h"
 
 namespace views {
@@ -31,18 +33,39 @@ class DecoratedTextfield : public views::Textfield {
   void SetInvalid(bool invalid);
   bool invalid() const { return invalid_; }
 
+  // See docs for |editable_|.
+  void SetEditable(bool editable);
+  bool editable() const { return editable_; }
+
   // Sets the icon to be displayed inside the textfield at the end of the
   // text.
   void SetIcon(const gfx::Image& icon);
 
+  // Sets a tooltip for this field. This will override the icon set with
+  // SetIcon(), if any, and will be overridden by future calls to SetIcon().
+  void SetTooltipIcon(const base::string16& text);
+
+  // views::Textfield implementation.
+  virtual base::string16 GetPlaceholderText() const OVERRIDE;
+
   // views::View implementation.
   virtual const char* GetClassName() const OVERRIDE;
   virtual gfx::Size GetPreferredSize() OVERRIDE;
-  virtual void PaintChildren(gfx::Canvas* canvas) OVERRIDE;
-  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
+  virtual void Layout() OVERRIDE;
+  virtual views::View* GetEventHandlerForRect(const gfx::Rect& rect) OVERRIDE;
+  virtual void OnFocus() OVERRIDE;
+  virtual void OnBlur() OVERRIDE;
 
  private:
   FRIEND_TEST_ALL_PREFIXES(DecoratedTextfieldTest, HeightMatchesButton);
+
+  // Updates the background of |this| after it may have changed. This is
+  // necessary for the sake of the padding around the native textfield.
+  void UpdateBackground();
+
+  // Called to update the layout after SetIcon or SetTooltipIcon has been
+  // called.
+  void IconChanged();
 
   // This number corresponds to the number of pixels in the images that
   // are used to draw a views button which are above or below the actual border.
@@ -53,12 +76,17 @@ class DecoratedTextfield : public views::Textfield {
   // We draw the border.
   views::FocusableBorder* border_;  // Weak.
 
-  // The icon that goes at the right side of the textfield.
-  gfx::Image icon_;
+  // The view that holds the icon at the end of the textfield.
+  scoped_ptr<views::ImageView> icon_view_;
 
   // Whether the text contents are "invalid" (i.e. should special markers be
   // shown to indicate invalidness).
   bool invalid_;
+
+  // Whether the user can edit the field. When not editable, many of the
+  // pieces of the textfield disappear (border, background, icon, placeholder
+  // text) and it can't receive focus.
+  bool editable_;
 
   DISALLOW_COPY_AND_ASSIGN(DecoratedTextfield);
 };

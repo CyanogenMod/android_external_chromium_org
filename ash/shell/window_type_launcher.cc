@@ -12,6 +12,7 @@
 #include "ash/shell/example_factory.h"
 #include "ash/shell/panel_window.h"
 #include "ash/shell/toplevel_window.h"
+#include "ash/shell_delegate.h"
 #include "ash/shell_window_ids.h"
 #include "ash/system/status_area_widget.h"
 #include "ash/system/web_notification/web_notification_tray.h"
@@ -266,9 +267,7 @@ WindowTypeLauncher::WindowTypeLauncher()
   AddViewToLayout(layout, show_hide_window_button_);
   AddViewToLayout(layout, show_screensaver_);
   AddViewToLayout(layout, show_web_notification_);
-#if !defined(OS_MACOSX)
   set_context_menu_controller(this);
-#endif
 }
 
 WindowTypeLauncher::~WindowTypeLauncher() {
@@ -345,24 +344,22 @@ void WindowTypeLauncher::ButtonPressed(views::Button* sender,
         ASCIIToUTF16("Notification message body."),
         gfx::Image(),
         ASCIIToUTF16("www.testshell.org"),
-        "" /* extension id */,
+        message_center::NotifierId(
+            message_center::NotifierId::APPLICATION, "test-id"),
         message_center::RichNotificationData(),
         NULL /* delegate */));
 
     ash::Shell::GetPrimaryRootWindowController()->shelf()->status_area_widget()
         ->web_notification_tray()->message_center()
         ->AddNotification(notification.Pass());
-  }
-#if !defined(OS_MACOSX)
-      else if (sender == examples_button_) {
+  } else if (sender == examples_button_) {
     views::examples::ShowExamplesWindowWithContent(
         views::examples::DO_NOTHING_ON_CLOSE,
-        ash::Shell::GetInstance()->browser_context());
+        Shell::GetInstance()->delegate()->GetActiveBrowserContext(),
+        NULL);
   }
-#endif  // !defined(OS_MACOSX)
 }
 
-#if !defined(OS_MACOSX)
 void WindowTypeLauncher::ExecuteCommand(int id, int event_flags) {
   switch (id) {
     case COMMAND_NEW_WINDOW:
@@ -375,9 +372,7 @@ void WindowTypeLauncher::ExecuteCommand(int id, int event_flags) {
       break;
   }
 }
-#endif  // !defined(OS_MACOSX)
 
-#if !defined(OS_MACOSX)
 void WindowTypeLauncher::ShowContextMenuForView(
     views::View* source,
     const gfx::Point& point,
@@ -399,7 +394,6 @@ void WindowTypeLauncher::ShowContextMenuForView(
         MenuRunner::MENU_DELETED)
     return;
 }
-#endif  // !defined(OS_MACOSX)
 
 }  // namespace shell
 }  // namespace ash

@@ -1,4 +1,6 @@
 {
+  // NOTE: Keep two json files in this directory in sync. The only difference
+  // should be incognito:split in Guest mode version.
   "name": "Chrome OS built-in text-to-speech extension",
   "version": "0.0.2",
   "description": "Text-to-speech (TTS) voice extension using Native Client technology.",

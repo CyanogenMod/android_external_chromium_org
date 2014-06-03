@@ -6,7 +6,7 @@
 #define CHROME_BROWSER_UI_COCOA_AUTOFILL_AUTOFILL_DIALOG_CONSTANTS__H_
 
 // Constants governing layout of autofill dialog.
-namespace {
+namespace autofill {
 
 // Horizontal padding between text and other elements (in pixels).
 const CGFloat kAroundTextPadding = 4;
@@ -20,17 +20,21 @@ const CGFloat kButtonGap = 6;
 
 // The space between the edges of a notification bar and the text within (in
 // pixels).
-const int kNotificationPadding = 14;
+const int kNotificationPadding = 17;
 
 // Vertical spacing between legal text and details section.
 const int kVerticalSpacing = 8;
 
-// Padding between top bar and details section.
-const int kDetailTopPadding = 20;
+// Padding between top bar and details section, as well as between the bottom of
+// the details section and the button strip.
+const int kDetailVerticalPadding = 10;
 
-// Padding between the bottom of the details section and the button strip.
-const int kDetailBottomPadding = 30;
+// Fixed width for a single input field.
+const CGFloat kFieldWidth = 104;
 
-}  // namespace
+// Horizontal padding between fields
+const CGFloat kHorizontalFieldPadding = 8;
+
+}  // autofill
 
 #endif  // CHROME_BROWSER_UI_COCOA_AUTOFILL_AUTOFILL_DIALOG_CONSTANTS__H_

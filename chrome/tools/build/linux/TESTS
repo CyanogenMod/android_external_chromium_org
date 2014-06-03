@@ -1,6 +1,2 @@
-reliability_tests
-automated_ui_tests
 interactive_ui_tests
-_pyautolib.so
-pyautolib.py
-chromedriver
+browser_tests

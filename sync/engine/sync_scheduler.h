@@ -13,7 +13,6 @@
 #include "base/time/time.h"
 #include "sync/base/sync_export.h"
 #include "sync/engine/nudge_source.h"
-#include "sync/internal_api/public/base/model_type_invalidation_map.h"
 #include "sync/sessions/sync_session.h"
 
 namespace tracked_objects {
@@ -22,6 +21,7 @@ class Location;
 
 namespace syncer {
 
+class ObjectIdInvalidationMap;
 struct ServerConnectionEvent;
 
 struct SYNC_EXPORT_PRIVATE ConfigurationParams {
@@ -30,7 +30,8 @@ struct SYNC_EXPORT_PRIVATE ConfigurationParams {
       const sync_pb::GetUpdatesCallerInfo::GetUpdatesSource& source,
       ModelTypeSet types_to_download,
       const ModelSafeRoutingInfo& routing_info,
-      const base::Closure& ready_task);
+      const base::Closure& ready_task,
+      const base::Closure& retry_task);
   ~ConfigurationParams();
 
   // Source for the configuration.
@@ -41,6 +42,8 @@ struct SYNC_EXPORT_PRIVATE ConfigurationParams {
   ModelSafeRoutingInfo routing_info;
   // Callback to invoke on configuration completion.
   base::Closure ready_task;
+  // Callback to invoke on configuration failure.
+  base::Closure retry_task;
 };
 
 class SYNC_EXPORT_PRIVATE SyncScheduler
@@ -71,15 +74,15 @@ class SYNC_EXPORT_PRIVATE SyncScheduler
   // Schedules the configuration task specified by |params|. Returns true if
   // the configuration task executed immediately, false if it had to be
   // scheduled for a later attempt. |params.ready_task| is invoked whenever the
-  // configuration task executes.
+  // configuration task executes. |params.retry_task| is invoked once if the
+  // configuration task could not execute. |params.ready_task| will still be
+  // called when configuration finishes.
   // Note: must already be in CONFIGURATION mode.
-  virtual bool ScheduleConfiguration(const ConfigurationParams& params) = 0;
+  virtual void ScheduleConfiguration(const ConfigurationParams& params) = 0;
 
-  // Request that any running syncer task stop as soon as possible and
-  // cancel all scheduled tasks. This function can be called from any thread,
-  // and should in fact be called from a thread that isn't the sync loop to
-  // allow preempting ongoing sync cycles.
-  virtual void RequestStop() = 0;
+  // Request that the syncer avoid starting any new tasks and prepare for
+  // shutdown.
+  virtual void Stop() = 0;
 
   // The meat and potatoes. All three of the following methods will post a
   // delayed task to attempt the actual nudge (see ScheduleNudgeImpl).
@@ -112,7 +115,7 @@ class SYNC_EXPORT_PRIVATE SyncScheduler
   // order to fetch the update.
   virtual void ScheduleInvalidationNudge(
       const base::TimeDelta& desired_delay,
-      const ModelTypeInvalidationMap& invalidation_map,
+      const ObjectIdInvalidationMap& invalidations,
       const tracked_objects::Location& nudge_location) = 0;
 
   // Change status of notifications in the SyncSessionContext.

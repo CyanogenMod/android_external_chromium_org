@@ -32,8 +32,8 @@ void KeywordEditorController::RegisterPrefs(PrefRegistrySimple* registry) {
   registry->RegisterDictionaryPref(prefs::kKeywordEditorWindowPlacement);
 }
 
-int KeywordEditorController::AddTemplateURL(const string16& title,
-                                            const string16& keyword,
+int KeywordEditorController::AddTemplateURL(const base::string16& title,
+                                            const base::string16& keyword,
                                             const std::string& url) {
   DCHECK(!url.empty());
 
@@ -46,8 +46,8 @@ int KeywordEditorController::AddTemplateURL(const string16& title,
 }
 
 void KeywordEditorController::ModifyTemplateURL(TemplateURL* template_url,
-                                                const string16& title,
-                                                const string16& keyword,
+                                                const base::string16& title,
+                                                const base::string16& keyword,
                                                 const std::string& url) {
   DCHECK(!url.empty());
   const int index = table_model_->IndexOfTemplateURL(template_url);
@@ -68,8 +68,9 @@ void KeywordEditorController::ModifyTemplateURL(TemplateURL* template_url,
 }
 
 bool KeywordEditorController::CanEdit(const TemplateURL* url) const {
-  return !url_model()->is_default_search_managed() ||
-      url != url_model()->GetDefaultSearchProvider();
+  return (url->GetType() != TemplateURL::NORMAL_CONTROLLED_BY_EXTENSION) &&
+      (!url_model()->is_default_search_managed() ||
+       (url != url_model()->GetDefaultSearchProvider()));
 }
 
 bool KeywordEditorController::CanMakeDefault(const TemplateURL* url) const {

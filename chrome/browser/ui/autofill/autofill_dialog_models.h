@@ -22,6 +22,9 @@ class SuggestionsMenuModelDelegate {
  public:
   virtual ~SuggestionsMenuModelDelegate();
 
+  // Called when a suggestions menu is about to show.
+  virtual void SuggestionsMenuWillShow() = 0;
+
   // Called when a menu item has been activated.
   virtual void SuggestionItemSelected(SuggestionsMenuModel* model,
                                       size_t index) = 0;
@@ -37,26 +40,28 @@ class SuggestionsMenuModel : public ui::SimpleMenuModel,
   virtual ~SuggestionsMenuModel();
 
   // Adds an item and its identifying key to the model. Keys needn't be unique.
-  void AddKeyedItem(const std::string& key, const string16& display_label);
+  void AddKeyedItem(const std::string& key,
+                    const base::string16& display_label);
 
   // As above, but also accepts an image which will be displayed alongside the
   // text.
   void AddKeyedItemWithIcon(const std::string& key,
-                            const string16& display_label,
+                            const base::string16& display_label,
                             const gfx::Image& icon);
 
-  // Adds a label with a sublabel and its identifying key to the model.
+  // Adds a label with a minor text and its identifying key to the model.
   // Keys needn't be unique.
-  void AddKeyedItemWithSublabel(const std::string& key,
-                                const string16& display_label,
-                                const string16& display_sublabel);
+  void AddKeyedItemWithMinorText(const std::string& key,
+                                const base::string16& display_label,
+                                const base::string16& display_minor_text);
 
   // As above, but also accepts an image which will be displayed alongside the
   // text.
-  void AddKeyedItemWithSublabelAndIcon(const std::string& key,
-                                       const string16& display_label,
-                                       const string16& display_sublabel,
-                                       const gfx::Image& icon);
+  void AddKeyedItemWithMinorTextAndIcon(
+      const std::string& key,
+      const base::string16& display_label,
+      const base::string16& display_minor_text,
+      const gfx::Image& icon);
 
   // Resets the model to empty.
   void Reset();
@@ -72,16 +77,13 @@ class SuggestionsMenuModel : public ui::SimpleMenuModel,
   void SetCheckedItem(const std::string& item_key);
   void SetCheckedIndex(size_t index);
 
-  // Sets the item to be checked to the |n|th item that has key |item_key|.
-  // If there are fewer than |n| items that share |item_key|, the last one
-  // becomes checked. If there is no item with |item_key|, nothing happens.
-  // |n| is 1-indexed.
-  void SetCheckedItemNthWithKey(const std::string& item_key, size_t n);
-
   int checked_item() const { return checked_item_; }
 
   // Enable/disable an item by key.
   void SetEnabled(const std::string& item_key, bool enabled);
+
+  // ui::SimpleMenuModel implementation.
+  virtual void MenuWillShow() OVERRIDE;
 
   // ui::SimpleMenuModel::Delegate implementation.
   virtual bool IsCommandIdChecked(int command_id) const OVERRIDE;
@@ -90,6 +92,7 @@ class SuggestionsMenuModel : public ui::SimpleMenuModel,
       int command_id,
       ui::Accelerator* accelerator) OVERRIDE;
   virtual void ExecuteCommand(int command_id, int event_flags) OVERRIDE;
+  virtual void MenuWillShow(ui::SimpleMenuModel* source) OVERRIDE;
 
  private:
   // Represents an item in this model.
@@ -119,11 +122,11 @@ class MonthComboboxModel : public ui::ComboboxModel {
   MonthComboboxModel();
   virtual ~MonthComboboxModel();
 
-  static string16 FormatMonth(int index);
+  static base::string16 FormatMonth(int index);
 
   // ui::Combobox implementation:
   virtual int GetItemCount() const OVERRIDE;
-  virtual string16 GetItemAt(int index) OVERRIDE;
+  virtual base::string16 GetItemAt(int index) OVERRIDE;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MonthComboboxModel);
@@ -137,7 +140,7 @@ class YearComboboxModel : public ui::ComboboxModel {
 
   // ui::Combobox implementation:
   virtual int GetItemCount() const OVERRIDE;
-  virtual string16 GetItemAt(int index) OVERRIDE;
+  virtual base::string16 GetItemAt(int index) OVERRIDE;
 
  private:
   // The current year (e.g., 2012).
@@ -146,6 +149,6 @@ class YearComboboxModel : public ui::ComboboxModel {
   DISALLOW_COPY_AND_ASSIGN(YearComboboxModel);
 };
 
-}  // autofill
+}  // namespace autofill
 
 #endif  // CHROME_BROWSER_UI_AUTOFILL_AUTOFILL_DIALOG_MODELS_H_

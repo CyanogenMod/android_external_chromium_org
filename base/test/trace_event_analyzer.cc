@@ -19,6 +19,7 @@ namespace trace_analyzer {
 TraceEvent::TraceEvent()
     : thread(0, 0),
       timestamp(0),
+      duration(0),
       phase(TRACE_EVENT_PHASE_BEGIN),
       other_event(NULL) {
 }
@@ -44,9 +45,11 @@ bool TraceEvent::SetFromJSON(const base::Value* event_value) {
 
   phase = *phase_str.data();
 
+  bool may_have_duration = (phase == TRACE_EVENT_PHASE_COMPLETE);
   bool require_origin = (phase != TRACE_EVENT_PHASE_METADATA);
   bool require_id = (phase == TRACE_EVENT_PHASE_ASYNC_BEGIN ||
-                     phase == TRACE_EVENT_PHASE_ASYNC_STEP ||
+                     phase == TRACE_EVENT_PHASE_ASYNC_STEP_INTO ||
+                     phase == TRACE_EVENT_PHASE_ASYNC_STEP_PAST ||
                      phase == TRACE_EVENT_PHASE_ASYNC_END);
 
   if (require_origin && !dictionary->GetInteger("pid", &thread.process_id)) {
@@ -60,6 +63,9 @@ bool TraceEvent::SetFromJSON(const base::Value* event_value) {
   if (require_origin && !dictionary->GetDouble("ts", &timestamp)) {
     LOG(ERROR) << "ts is missing from TraceEvent JSON";
     return false;
+  }
+  if (may_have_duration) {
+    dictionary->GetDouble("dur", &duration);
   }
   if (!dictionary->GetString("cat", &category)) {
     LOG(ERROR) << "cat is missing from TraceEvent JSON";
@@ -94,9 +100,9 @@ bool TraceEvent::SetFromJSON(const base::Value* event_value) {
     else if (it.value().GetAsDouble(&double_num))
       arg_numbers[it.key()] = double_num;
     else {
-      LOG(ERROR) << "Value type of argument is not supported: " <<
+      LOG(WARNING) << "Value type of argument is not supported: " <<
           static_cast<int>(it.value().GetType());
-      return false;  // Invalid trace event JSON format.
+      continue;  // Skip non-supported arguments.
     }
   }
 
@@ -449,6 +455,12 @@ bool Query::GetMemberValueAsDouble(const TraceEvent& event,
         return true;
       }
       return false;
+    case EVENT_COMPLETE_DURATION:
+      if (the_event->phase == TRACE_EVENT_PHASE_COMPLETE) {
+        *num = the_event->duration;
+        return true;
+      }
+      return false;
     case EVENT_PHASE:
     case OTHER_PHASE:
       *num = static_cast<double>(the_event->phase);
@@ -706,9 +718,11 @@ void TraceAnalyzer::AssociateAsyncBeginEndEvents() {
 
   Query begin(
       Query::EventPhaseIs(TRACE_EVENT_PHASE_ASYNC_BEGIN) ||
-      Query::EventPhaseIs(TRACE_EVENT_PHASE_ASYNC_STEP));
+      Query::EventPhaseIs(TRACE_EVENT_PHASE_ASYNC_STEP_INTO) ||
+      Query::EventPhaseIs(TRACE_EVENT_PHASE_ASYNC_STEP_PAST));
   Query end(Query::EventPhaseIs(TRACE_EVENT_PHASE_ASYNC_END) ||
-            Query::EventPhaseIs(TRACE_EVENT_PHASE_ASYNC_STEP));
+            Query::EventPhaseIs(TRACE_EVENT_PHASE_ASYNC_STEP_INTO) ||
+            Query::EventPhaseIs(TRACE_EVENT_PHASE_ASYNC_STEP_PAST));
   Query match(Query::EventName() == Query::OtherName() &&
               Query::EventCategory() == Query::OtherCategory() &&
               Query::EventId() == Query::OtherId());
@@ -869,7 +883,7 @@ bool GetRateStats(const TraceEventVector& events,
     sum_mean_offsets_squared += offset * offset;
   }
   stats->standard_deviation_us =
-      sum_mean_offsets_squared / static_cast<double>(num_deltas - 1);
+      sqrt(sum_mean_offsets_squared / static_cast<double>(num_deltas - 1));
 
   return true;
 }

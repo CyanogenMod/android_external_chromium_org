@@ -6,14 +6,17 @@
 
 #include "base/files/file_path.h"
 #include "chrome/browser/chromeos/drive/drive.pb.h"
-#include "chrome/browser/chromeos/drive/drive_integration_service.h"
 #include "chrome/browser/chromeos/drive/file_errors.h"
+#include "chrome/browser/chromeos/drive/file_system_interface.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
-#include "chrome/browser/chromeos/extensions/file_manager/fileapi_util.h"
+#include "chrome/browser/chromeos/file_manager/app_id.h"
+#include "chrome/browser/chromeos/file_manager/fileapi_util.h"
+#include "chrome/browser/chromeos/file_manager/volume_manager.h"
 #include "chrome/browser/chromeos/fileapi/file_system_backend.h"
 #include "chrome/browser/extensions/extension_function_dispatcher.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/common/extensions/api/file_browser_private.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_view_host.h"
@@ -24,7 +27,7 @@
 #include "webkit/browser/fileapi/file_system_url.h"
 
 using content::BrowserThread;
-using google_apis::InstalledApp;
+namespace file_browser_private = extensions::api::file_browser_private;
 
 namespace file_manager {
 namespace util {
@@ -49,8 +52,8 @@ void ContinueGetSelectedFileInfo(Profile* profile,
 void GetSelectedFileInfoInternal(Profile* profile,
                                  scoped_ptr<GetSelectedFileInfoParams> params) {
   DCHECK(profile);
-  drive::DriveIntegrationService* integration_service =
-      drive::DriveIntegrationServiceFactory::GetForProfile(profile);
+  drive::FileSystemInterface* file_system =
+      drive::util::GetFileSystemByProfile(profile);
 
   for (size_t i = params->selected_files.size();
        i < params->file_paths.size(); ++i) {
@@ -60,8 +63,8 @@ void GetSelectedFileInfoInternal(Profile* profile,
       params->selected_files.push_back(
           ui::SelectedFileInfo(file_path, base::FilePath()));
     } else {
-      // |integration_service| is NULL if Drive is disabled.
-      if (!integration_service) {
+      // |file_system| is NULL if Drive is disabled.
+      if (!file_system) {
         ContinueGetSelectedFileInfo(profile,
                                     params.Pass(),
                                     drive::FILE_ERROR_FAILED,
@@ -77,14 +80,14 @@ void GetSelectedFileInfoInternal(Profile* profile,
               ui::SelectedFileInfo(file_path, base::FilePath()));
           break;
         case NEED_LOCAL_PATH_FOR_OPENING:
-          integration_service->file_system()->GetFileByPath(
+          file_system->GetFile(
               drive::util::ExtractDrivePath(file_path),
               base::Bind(&ContinueGetSelectedFileInfo,
                          profile,
                          base::Passed(&params)));
           return;  // Remaining work is done in ContinueGetSelectedFileInfo.
         case NEED_LOCAL_PATH_FOR_SAVING:
-          integration_service->file_system()->GetFileByPathForSaving(
+          file_system->GetFileForSaving(
               drive::util::ExtractDrivePath(file_path),
               base::Bind(&ContinueGetSelectedFileInfo,
                          profile,
@@ -119,35 +122,113 @@ void ContinueGetSelectedFileInfo(Profile* profile,
 
 }  // namespace
 
-int32 GetTabId(ExtensionFunctionDispatcher* dispatcher) {
+void VolumeInfoToVolumeMetadata(
+    Profile* profile,
+    const VolumeInfo& volume_info,
+    file_browser_private::VolumeMetadata* volume_metadata) {
+  DCHECK(volume_metadata);
+  DCHECK(!volume_info.mount_path.empty());
+
+  // Convert mount point path to relative path with the external file system
+  // exposed within File API.
+  base::FilePath relative_mount_path;
+  if (ConvertAbsoluteFilePathToRelativeFileSystemPath(
+          profile, kFileManagerAppId, base::FilePath(volume_info.mount_path),
+          &relative_mount_path)) {
+    volume_metadata->mount_path = "/" + relative_mount_path.AsUTF8Unsafe();
+  }
+
+  volume_metadata->volume_id = volume_info.volume_id;
+
+  // TODO(kinaba): fill appropriate information once multi-profile support is
+  // implemented.
+  volume_metadata->profile.display_name = profile->GetProfileName();
+  volume_metadata->profile.is_current_profile = true;
+
+  if (!volume_info.source_path.empty()) {
+    volume_metadata->source_path.reset(
+        new std::string(volume_info.source_path.AsUTF8Unsafe()));
+  }
+
+  switch (volume_info.type) {
+    case VOLUME_TYPE_GOOGLE_DRIVE:
+      volume_metadata->volume_type =
+          file_browser_private::VOLUME_TYPE_DRIVE;
+      break;
+    case VOLUME_TYPE_DOWNLOADS_DIRECTORY:
+      volume_metadata->volume_type =
+          file_browser_private::VOLUME_TYPE_DOWNLOADS;
+      break;
+    case VOLUME_TYPE_REMOVABLE_DISK_PARTITION:
+      volume_metadata->volume_type =
+          file_browser_private::VOLUME_TYPE_REMOVABLE;
+      break;
+    case VOLUME_TYPE_MOUNTED_ARCHIVE_FILE:
+      volume_metadata->volume_type = file_browser_private::VOLUME_TYPE_ARCHIVE;
+      break;
+  }
+
+  // Fill device_type iff the volume is removable partition.
+  if (volume_info.type == VOLUME_TYPE_REMOVABLE_DISK_PARTITION) {
+    switch (volume_info.device_type) {
+      case chromeos::DEVICE_TYPE_UNKNOWN:
+        volume_metadata->device_type =
+            file_browser_private::DEVICE_TYPE_UNKNOWN;
+        break;
+      case chromeos::DEVICE_TYPE_USB:
+        volume_metadata->device_type = file_browser_private::DEVICE_TYPE_USB;
+        break;
+      case chromeos::DEVICE_TYPE_SD:
+        volume_metadata->device_type = file_browser_private::DEVICE_TYPE_SD;
+        break;
+      case chromeos::DEVICE_TYPE_OPTICAL_DISC:
+      case chromeos::DEVICE_TYPE_DVD:
+        volume_metadata->device_type =
+            file_browser_private::DEVICE_TYPE_OPTICAL;
+        break;
+      case chromeos::DEVICE_TYPE_MOBILE:
+        volume_metadata->device_type = file_browser_private::DEVICE_TYPE_MOBILE;
+        break;
+    }
+  } else {
+    volume_metadata->device_type =
+        file_browser_private::DEVICE_TYPE_NONE;
+  }
+
+  volume_metadata->is_read_only = volume_info.is_read_only;
+
+  switch (volume_info.mount_condition) {
+    case chromeos::disks::MOUNT_CONDITION_NONE:
+      volume_metadata->mount_condition =
+          file_browser_private::MOUNT_CONDITION_NONE;
+      break;
+    case chromeos::disks::MOUNT_CONDITION_UNKNOWN_FILESYSTEM:
+      volume_metadata->mount_condition =
+          file_browser_private::MOUNT_CONDITION_UNKNOWN;
+      break;
+    case chromeos::disks::MOUNT_CONDITION_UNSUPPORTED_FILESYSTEM:
+      volume_metadata->mount_condition =
+          file_browser_private::MOUNT_CONDITION_UNSUPPORTED;
+      break;
+  }
+}
+
+content::WebContents* GetWebContents(ExtensionFunctionDispatcher* dispatcher) {
   if (!dispatcher) {
     LOG(WARNING) << "No dispatcher";
-    return 0;
+    return NULL;
   }
   if (!dispatcher->delegate()) {
     LOG(WARNING) << "No delegate";
-    return 0;
+    return NULL;
   }
   content::WebContents* web_contents =
       dispatcher->delegate()->GetAssociatedWebContents();
   if (!web_contents) {
     LOG(WARNING) << "No associated tab contents";
-    return 0;
+    return NULL;
   }
-  return ExtensionTabUtil::GetTabId(web_contents);
-}
-
-GURL FindPreferredIcon(const InstalledApp::IconList& icons,
-                       int preferred_size) {
-  GURL result;
-  if (icons.empty())
-    return result;
-  result = icons.rbegin()->second;
-  for (InstalledApp::IconList::const_reverse_iterator iter = icons.rbegin();
-       iter != icons.rend() && iter->first >= preferred_size; ++iter) {
-    result = iter->second;
-  }
-  return result;
+  return web_contents;
 }
 
 base::FilePath GetLocalPathFromURL(
@@ -158,7 +239,7 @@ base::FilePath GetLocalPathFromURL(
   DCHECK(profile);
 
   scoped_refptr<fileapi::FileSystemContext> file_system_context =
-      fileapi_util::GetFileSystemContextForRenderViewHost(
+      util::GetFileSystemContextForRenderViewHost(
           profile, render_view_host);
 
   const fileapi::FileSystemURL filesystem_url(

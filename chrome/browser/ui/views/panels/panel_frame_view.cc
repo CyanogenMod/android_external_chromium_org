@@ -58,17 +58,17 @@ const SkColor kAttentionBackgroundDefaultColor =
 
 // Color used to draw the minimized panel.
 const SkColor kMinimizeBackgroundDefaultColor = SkColorSetRGB(0xf5, 0xf4, 0xf0);
-const SkColor kMinimizeBorderDefaultColor = SkColorSetRGB(0xc9, 0xc9, 0xc9);
 
 // Color used to draw the title text under default theme.
 const SkColor kTitleTextDefaultColor = SkColorSetRGB(0xf9, 0xf9, 0xf9);
 
 gfx::ImageSkia* CreateImageForColor(SkColor color) {
-  gfx::Canvas canvas(gfx::Size(1, 1), ui::SCALE_FACTOR_100P, true);
+  gfx::Canvas canvas(gfx::Size(1, 1), 1.0f, true);
   canvas.DrawColor(color);
   return new gfx::ImageSkia(canvas.ExtractImageRep());
 }
 
+#if defined(OS_WIN)
 const gfx::ImageSkia& GetTopLeftCornerImage(panel::CornerStyle corner_style) {
   static gfx::ImageSkia* rounded_image = NULL;
   static gfx::ImageSkia* non_rounded_image = NULL;
@@ -154,6 +154,7 @@ const gfx::ImageSkia& GetRightEdgeImage() {
   }
   return *image;
 }
+#endif  // defined(OS_WIN)
 
 const gfx::Font& GetTitleFont() {
   static gfx::Font* font = NULL;
@@ -276,7 +277,8 @@ void PanelFrameView::Init() {
                           rb.GetImageSkiaNamed(IDR_PANEL_CLOSE_C));
   close_button_->SetImageAlignment(views::ImageButton::ALIGN_CENTER,
                                    views::ImageButton::ALIGN_MIDDLE);
-  string16 tooltip_text = l10n_util::GetStringUTF16(IDS_PANEL_CLOSE_TOOLTIP);
+  base::string16 tooltip_text =
+      l10n_util::GetStringUTF16(IDS_PANEL_CLOSE_TOOLTIP);
   close_button_->SetTooltipText(tooltip_text);
   AddChildView(close_button_);
 

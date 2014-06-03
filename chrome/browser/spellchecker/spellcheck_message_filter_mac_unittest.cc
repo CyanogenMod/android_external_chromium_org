@@ -16,8 +16,8 @@ namespace {
 TEST(SpellcheckMessageFilterMacTest, CombineResults) {
   std::vector<SpellCheckResult> local_results;
   std::vector<SpellCheckResult> remote_results;
-  string16 remote_suggestion = ASCIIToUTF16("remote");
-  string16 local_suggestion = ASCIIToUTF16("local");
+  base::string16 remote_suggestion = ASCIIToUTF16("remote");
+  base::string16 local_suggestion = ASCIIToUTF16("local");
 
   // Remote-only result - must be flagged as GRAMMAR after combine
   remote_results.push_back(
@@ -36,9 +36,9 @@ TEST(SpellcheckMessageFilterMacTest, CombineResults) {
   SpellCheckMessageFilterMac::CombineResults(&remote_results, local_results);
 
   ASSERT_EQ(2U, remote_results.size());
-  EXPECT_EQ(SpellCheckResult::GRAMMAR, remote_results[0].type);
+  EXPECT_EQ(SpellCheckResult::GRAMMAR, remote_results[0].decoration);
   EXPECT_EQ(0, remote_results[0].location);
-  EXPECT_EQ(SpellCheckResult::SPELLING, remote_results[1].type);
+  EXPECT_EQ(SpellCheckResult::SPELLING, remote_results[1].decoration);
   EXPECT_EQ(20, remote_results[1].location);
   EXPECT_EQ(remote_suggestion, remote_results[1].replacement);
 }

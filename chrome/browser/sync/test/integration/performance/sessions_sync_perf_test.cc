@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 #include "base/strings/stringprintf.h"
-#include "chrome/browser/sync/profile_sync_service_harness.h"
 #include "chrome/browser/sync/test/integration/performance/sync_timing_helper.h"
+#include "chrome/browser/sync/test/integration/profile_sync_service_harness.h"
 #include "chrome/browser/sync/test/integration/sessions_helper.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
 #include "chrome/browser/ui/browser.h"
@@ -67,7 +67,7 @@ void SessionsSyncPerfTest::UpdateTabs(int profile) {
     browser->OpenURL(
         OpenURLParams(url,
         content::Referrer(GURL("http://localhost"),
-                          WebKit::WebReferrerPolicyDefault),
+                          blink::WebReferrerPolicyDefault),
         CURRENT_TAB,
         content::PageTransitionFromInt(0), false));
     urls.push_back(url);

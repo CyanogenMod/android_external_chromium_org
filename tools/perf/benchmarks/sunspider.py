@@ -6,18 +6,18 @@ import json
 import os
 
 from telemetry import test
-from telemetry.core import util
 from telemetry.page import page_measurement
 from telemetry.page import page_set
 
 
-class SunspiderMeasurement(page_measurement.PageMeasurement):
+_URL = 'http://www.webkit.org/perf/sunspider-1.0.2/sunspider-1.0.2/driver.html'
+
+
+class _SunspiderMeasurement(page_measurement.PageMeasurement):
   def MeasurePage(self, _, tab, results):
-    js_is_done = ('window.location.pathname.indexOf("results.html") >= 0'
-                  '&& typeof(output) != "undefined"')
-    def _IsDone():
-      return tab.EvaluateJavaScript(js_is_done)
-    util.WaitFor(_IsDone, 300, poll_interval=1)
+    tab.WaitForJavaScriptExpression(
+        'window.location.pathname.indexOf("results.html") >= 0'
+        '&& typeof(output) != "undefined"', 300)
 
     js_get_results = 'JSON.stringify(output);'
     js_results = json.loads(tab.EvaluateJavaScript(js_get_results))
@@ -39,14 +39,12 @@ class SunspiderMeasurement(page_measurement.PageMeasurement):
 
 class Sunspider(test.Test):
   """Apple's SunSpider JavaScript benchmark."""
-  test = SunspiderMeasurement
+  test = _SunspiderMeasurement
 
   def CreatePageSet(self, options):
-    sunspider_dir = os.path.join(util.GetChromiumSrcDir(),
-                                 'chrome', 'test', 'data', 'sunspider')
     return page_set.PageSet.FromDict(
         {
-          'serving_dirs': [''],
-          'pages': [{ 'url': 'file:///sunspider-1.0/driver.html' }],
-        },
-        sunspider_dir)
+          'archive_data_file': '../page_sets/data/sunspider.json',
+          'make_javascript_deterministic': False,
+          'pages': [{ 'url': _URL }],
+        }, os.path.abspath(__file__))

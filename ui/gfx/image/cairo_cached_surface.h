@@ -7,7 +7,7 @@
 
 #include <vector>
 
-#include "ui/base/ui_export.h"
+#include "ui/gfx/gfx_export.h"
 
 typedef struct _GdkDisplay GdkDisplay;
 typedef struct _GdkPixbuf GdkPixbuf;
@@ -27,7 +27,7 @@ namespace gfx {
 // them with a certain XDisplay. Some users of surfaces (CustomDrawButtonBase,
 // for example) own their surfaces instead since they interact with the
 // ResourceBundle instead of the GtkThemeService.
-class UI_EXPORT CairoCachedSurface {
+class GFX_EXPORT CairoCachedSurface {
  public:
   CairoCachedSurface();
   ~CairoCachedSurface();

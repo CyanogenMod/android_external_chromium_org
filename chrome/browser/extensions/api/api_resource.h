@@ -7,8 +7,8 @@
 
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
-#include "chrome/common/extensions/extension.h"
 #include "content/public/browser/browser_thread.h"
+#include "extensions/common/extension.h"
 
 namespace extensions {
 
@@ -23,6 +23,10 @@ class ApiResource {
     return owner_extension_id_;
   }
 
+  // If this method returns |true|, the resource remains open when the
+  // owning extension is suspended due to inactivity.
+  virtual bool IsPersistent() const;
+
   static const content::BrowserThread::ID kThreadId =
       content::BrowserThread::IO;
 
@@ -31,7 +35,7 @@ class ApiResource {
 
  private:
   // The extension that owns this resource.
-  const std::string& owner_extension_id_;
+  const std::string owner_extension_id_;
 
   DISALLOW_COPY_AND_ASSIGN(ApiResource);
 };

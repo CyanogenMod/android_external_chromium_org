@@ -13,18 +13,18 @@
 #include "base/memory/ref_counted.h"
 #include "base/observer_list.h"
 #include "base/time/time.h"
-#include "ui/base/animation/animation_container_element.h"
-#include "ui/base/animation/tween.h"
 #include "ui/compositor/compositor_export.h"
 #include "ui/compositor/layer_animation_element.h"
+#include "ui/gfx/animation/animation_container_element.h"
+#include "ui/gfx/animation/tween.h"
 
 namespace gfx {
+class Animation;
 class Rect;
 class Transform;
 }
 
 namespace ui {
-class Animation;
 class Layer;
 class LayerAnimationSequence;
 class LayerAnimationDelegate;
@@ -41,7 +41,8 @@ class ScopedLayerAnimationSettings;
 // by holding a reference to itself for the duration of methods for which it
 // must guarantee that |this| is valid.
 class COMPOSITOR_EXPORT LayerAnimator
-    : public AnimationContainerElement, public base::RefCounted<LayerAnimator> {
+    : public gfx::AnimationContainerElement,
+      public base::RefCounted<LayerAnimator> {
  public:
   enum PreemptionStrategy {
     IMMEDIATELY_SET_NEW_TARGET,
@@ -86,6 +87,10 @@ class COMPOSITOR_EXPORT LayerAnimator
   // Sets the color on the delegate. May cause an implicit animation.
   virtual void SetColor(SkColor color);
   SkColor GetTargetColor() const;
+
+  // Returns the default length of animations, including adjustment for slow
+  // animation mode if set.
+  base::TimeDelta GetTransitionDuration() const;
 
   // Sets the layer animation delegate the animator is associated with. The
   // animator does not own the delegate. The layer animator expects a non-NULL
@@ -171,8 +176,8 @@ class COMPOSITOR_EXPORT LayerAnimator
   // This determines how implicit animations will be tweened. This has no
   // effect on animations that are explicitly started or scheduled. The default
   // is Tween::LINEAR.
-  void set_tween_type(Tween::Type tween_type) { tween_type_ = tween_type; }
-  Tween::Type tween_type() const { return tween_type_; }
+  void set_tween_type(gfx::Tween::Type tween_type) { tween_type_ = tween_type; }
+  gfx::Tween::Type tween_type() const { return tween_type_; }
 
   // For testing purposes only.
   void set_disable_timer_for_test(bool disable_timer) {
@@ -293,9 +298,8 @@ class COMPOSITOR_EXPORT LayerAnimator
   // starting the animation or adding to the queue.
   void OnScheduled(LayerAnimationSequence* sequence);
 
-  // Returns the default length of animations, including adjustment for slow
-  // animation mode if set.
-  base::TimeDelta GetTransitionDuration() const;
+  // Sets |transition_duration_| unless |is_transition_duration_locked_| is set.
+  void SetTransitionDuration(base::TimeDelta duration);
 
   // Clears the animation queues and notifies any running animations that they
   // have been aborted.
@@ -316,11 +320,15 @@ class COMPOSITOR_EXPORT LayerAnimator
   // Determines how animations are replaced.
   PreemptionStrategy preemption_strategy_;
 
+  // Whether the length of animations is locked. While it is locked
+  // SetTransitionDuration does not set |transition_duration_|.
+  bool is_transition_duration_locked_;
+
   // The default length of animations.
   base::TimeDelta transition_duration_;
 
   // The default tween type for implicit transitions
-  Tween::Type tween_type_;
+  gfx::Tween::Type tween_type_;
 
   // Used for coordinating the starting of animations.
   base::TimeTicks last_step_time_;

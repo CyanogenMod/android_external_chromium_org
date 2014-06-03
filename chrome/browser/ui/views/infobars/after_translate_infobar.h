@@ -5,12 +5,13 @@
 #ifndef CHROME_BROWSER_UI_VIEWS_INFOBARS_AFTER_TRANSLATE_INFOBAR_H_
 #define CHROME_BROWSER_UI_VIEWS_INFOBARS_AFTER_TRANSLATE_INFOBAR_H_
 
-#include "chrome/browser/translate/options_menu_model.h"
 #include "chrome/browser/ui/views/infobars/translate_infobar_base.h"
-#include "chrome/browser/ui/views/infobars/translate_language_menu_model.h"
 #include "ui/views/controls/button/menu_button_listener.h"
 
+class OptionsMenuModel;
 class TranslateInfoBarDelegate;
+class TranslateLanguageMenuModel;
+
 namespace views {
 class MenuButton;
 }
@@ -18,8 +19,7 @@ class MenuButton;
 class AfterTranslateInfoBar : public TranslateInfoBarBase,
                               public views::MenuButtonListener {
  public:
-  AfterTranslateInfoBar(InfoBarService* owner,
-                        TranslateInfoBarDelegate* delegate);
+  explicit AfterTranslateInfoBar(scoped_ptr<TranslateInfoBarDelegate> delegate);
 
  private:
   virtual ~AfterTranslateInfoBar();
@@ -36,6 +36,12 @@ class AfterTranslateInfoBar : public TranslateInfoBarBase,
   virtual void OnMenuButtonClicked(views::View* source,
                                    const gfx::Point& point) OVERRIDE;
 
+  // The original and target language buttons can appear in either order, so
+  // this function provides a convenient way to just obtain the two in the
+  // correct visual order, as opposed to adding conditionals in multiple places.
+  void GetButtons(views::MenuButton** first_button,
+                  views::MenuButton** second_button) const;
+
   // The text displayed in the infobar is something like:
   // "Translated from <lang1> to <lang2> [more text in some languages]"
   // ...where <lang1> and <lang2> are comboboxes.  So the text is split in 3
@@ -51,7 +57,7 @@ class AfterTranslateInfoBar : public TranslateInfoBarBase,
 
   scoped_ptr<TranslateLanguageMenuModel> original_language_menu_model_;
   scoped_ptr<TranslateLanguageMenuModel> target_language_menu_model_;
-  OptionsMenuModel options_menu_model_;
+  scoped_ptr<OptionsMenuModel> options_menu_model_;
 
   // True if the target language comes before the original one.
   bool swapped_language_buttons_;

@@ -13,13 +13,6 @@
 #include "dbus/object_path.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
 
-namespace {
-
-// Amount of time to wait after a command before performing it.
-const int kCommandEffectsTimeMs = 500;
-
-}
-
 namespace chromeos {
 
 const char FakeBluetoothAdapterClient::kAdapterPath[] =
@@ -70,14 +63,12 @@ void FakeBluetoothAdapterClient::Properties::Set(
   }
 }
 
-
 FakeBluetoothAdapterClient::FakeBluetoothAdapterClient()
     : visible_(true),
       second_visible_(false),
       discovering_count_(0) {
   properties_.reset(new Properties(base::Bind(
-      &FakeBluetoothAdapterClient::OnPropertyChanged,
-      base::Unretained(this))));
+      &FakeBluetoothAdapterClient::OnPropertyChanged, base::Unretained(this))));
 
   properties_->address.ReplaceValue(kAdapterAddress);
   properties_->name.ReplaceValue("Fake Adapter (Name)");
@@ -85,8 +76,7 @@ FakeBluetoothAdapterClient::FakeBluetoothAdapterClient()
   properties_->pairable.ReplaceValue(true);
 
   second_properties_.reset(new Properties(base::Bind(
-      &FakeBluetoothAdapterClient::OnPropertyChanged,
-      base::Unretained(this))));
+      &FakeBluetoothAdapterClient::OnPropertyChanged, base::Unretained(this))));
 
   second_properties_->address.ReplaceValue(kSecondAdapterAddress);
   second_properties_->name.ReplaceValue("Second Fake Adapter (Name)");
@@ -95,6 +85,9 @@ FakeBluetoothAdapterClient::FakeBluetoothAdapterClient()
 }
 
 FakeBluetoothAdapterClient::~FakeBluetoothAdapterClient() {
+}
+
+void FakeBluetoothAdapterClient::Init(dbus::Bus* bus) {
 }
 
 void FakeBluetoothAdapterClient::AddObserver(Observer* observer) {

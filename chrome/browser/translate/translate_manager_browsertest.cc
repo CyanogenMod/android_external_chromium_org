@@ -6,6 +6,7 @@
 #include <set>
 #include <vector>
 
+#include "base/command_line.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/prefs/pref_change_registrar.h"
 #include "base/prefs/pref_service.h"
@@ -25,6 +26,10 @@
 #include "chrome/browser/translate/translate_tab_helper.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
+#include "chrome/browser/ui/translate/translate_bubble_factory.h"
+#include "chrome/browser/ui/translate/translate_bubble_model.h"
+#include "chrome/browser/ui/translate/translate_bubble_model_impl.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/render_messages.h"
 #include "chrome/common/translate/language_detection_details.h"
@@ -46,7 +51,6 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "third_party/WebKit/public/web/WebContextMenuData.h"
 
-using content::RenderViewHostTester;
 
 // An observer that keeps track of whether a navigation entry was committed.
 class NavEntryCommittedObserver : public content::NotificationObserver {
@@ -98,7 +102,7 @@ class TranslateManagerBrowserTest : public ChromeRenderViewHostTestHarness,
                                              bool page_translatable) {
     LanguageDetectionDetails details;
     details.adopted_language = lang;
-    RenderViewHostTester::TestOnMessageReceived(
+    content::RenderViewHostTester::TestOnMessageReceived(
         rvh(),
         ChromeViewHostMsg_TranslateLanguageDetermined(
             0, details, page_translatable));
@@ -108,7 +112,7 @@ class TranslateManagerBrowserTest : public ChromeRenderViewHostTestHarness,
                                 const std::string& source_lang,
                                 const std::string& target_lang,
                                 TranslateErrors::Type error) {
-    RenderViewHostTester::TestOnMessageReceived(
+    content::RenderViewHostTester::TestOnMessageReceived(
         rvh(),
         ChromeViewHostMsg_PageTranslated(
             routing_id, 0, source_lang, target_lang, error));
@@ -148,7 +152,8 @@ class TranslateManagerBrowserTest : public ChromeRenderViewHostTestHarness,
   // infobar.
   TranslateInfoBarDelegate* GetTranslateInfoBar() {
     return (infobar_service()->infobar_count() == 1) ?
-        infobar_service()->infobar_at(0)->AsTranslateInfoBarDelegate() : NULL;
+        infobar_service()->infobar_at(0)->delegate()->
+            AsTranslateInfoBarDelegate() : NULL;
   }
 
   // If there is 1 infobar and it is a translate infobar, closes it and returns
@@ -158,7 +163,7 @@ class TranslateManagerBrowserTest : public ChromeRenderViewHostTestHarness,
     if (!infobar)
       return false;
     infobar->InfoBarDismissed();  // Simulates closing the infobar.
-    infobar_service()->RemoveInfoBar(infobar);
+    infobar_service()->RemoveInfoBar(infobar_service()->infobar_at(0));
     return true;
   }
 
@@ -181,7 +186,7 @@ class TranslateManagerBrowserTest : public ChromeRenderViewHostTestHarness,
     if (!infobar)
       return false;
     infobar->TranslationDeclined();
-    infobar_service()->RemoveInfoBar(infobar);
+    infobar_service()->RemoveInfoBar(infobar_service()->infobar_at(0));
     return true;
   }
 
@@ -208,13 +213,18 @@ class TranslateManagerBrowserTest : public ChromeRenderViewHostTestHarness,
                        const content::NotificationDetails& details) {
     DCHECK_EQ(chrome::NOTIFICATION_TAB_CONTENTS_INFOBAR_REMOVED, type);
     removed_infobars_.insert(
-        content::Details<InfoBarRemovedDetails>(details)->first);
+        content::Details<InfoBar::RemovedDetails>(details)->first->delegate());
   }
 
   MOCK_METHOD1(OnPreferenceChanged, void(const std::string&));
 
  protected:
   virtual void SetUp() {
+    // This test is a unit test but runs in the browser_tests suite. Therefore
+    // it needs to manage its own TestingBrowserProcess.
+    // TODO(jamescook): Figure out how to move this suite back to unit_tests.
+    // Right now it fails to get the translate infobar if you run it there.
+    TestingBrowserProcess::CreateInstance();
     // Access the TranslateManager singleton so it is created before we call
     // ChromeRenderViewHostTestHarness::SetUp() to match what's done in Chrome,
     // where the TranslateManager is created before the WebContents.  This
@@ -245,6 +255,7 @@ class TranslateManagerBrowserTest : public ChromeRenderViewHostTestHarness,
         content::Source<InfoBarService>(infobar_service()));
 
     ChromeRenderViewHostTestHarness::TearDown();
+    TestingBrowserProcess::DeleteInstance();
   }
 
   void SimulateTranslateScriptURLFetch(bool success) {
@@ -324,6 +335,43 @@ class TranslateManagerBrowserTest : public ChromeRenderViewHostTestHarness,
   DISALLOW_COPY_AND_ASSIGN(TranslateManagerBrowserTest);
 };
 
+class MockTranslateBubbleFactory : public TranslateBubbleFactory {
+ public:
+  MockTranslateBubbleFactory() {
+  }
+
+  virtual void ShowImplementation(
+      BrowserWindow* window,
+      content::WebContents* web_contents,
+      TranslateBubbleModel::ViewState view_state,
+      TranslateErrors::Type error_type) OVERRIDE {
+    if (model_) {
+      model_->SetViewState(view_state);
+      return;
+    }
+
+    TranslateTabHelper* translate_tab_helper =
+        TranslateTabHelper::FromWebContents(web_contents);
+    std::string source_language =
+        translate_tab_helper->language_state().original_language();
+    std::string target_language = TranslateManager::GetLanguageCode(
+        g_browser_process->GetApplicationLocale());
+    scoped_ptr<TranslateUIDelegate> ui_delegate(
+        new TranslateUIDelegate(web_contents,
+                                source_language,
+                                target_language));
+    model_.reset(
+        new TranslateBubbleModelImpl(view_state, ui_delegate.Pass()));
+  }
+
+  TranslateBubbleModel* model() { return model_.get(); }
+
+ private:
+  scoped_ptr<TranslateBubbleModel> model_;
+
+  DISALLOW_COPY_AND_ASSIGN(MockTranslateBubbleFactory);
+};
+
 namespace {
 
 class TestRenderViewContextMenu : public RenderViewContextMenu {
@@ -331,10 +379,10 @@ class TestRenderViewContextMenu : public RenderViewContextMenu {
   static TestRenderViewContextMenu* CreateContextMenu(
       content::WebContents* web_contents) {
     content::ContextMenuParams params;
-    params.media_type = WebKit::WebContextMenuData::MediaTypeNone;
+    params.media_type = blink::WebContextMenuData::MediaTypeNone;
     params.x = 0;
     params.y = 0;
-    params.is_image_blocked = false;
+    params.has_image_contents = true;
     params.media_flags = 0;
     params.spellcheck_enabled = false;
     params.is_editable = false;
@@ -344,7 +392,7 @@ class TestRenderViewContextMenu : public RenderViewContextMenu {
     params.writing_direction_left_to_right = 0;
     params.writing_direction_right_to_left = 0;
 #endif  // OS_MACOSX
-    params.edit_flags = WebKit::WebContextMenuData::CanTranslate;
+    params.edit_flags = blink::WebContextMenuData::CanTranslate;
     return new TestRenderViewContextMenu(web_contents, params);
   }
 
@@ -409,37 +457,43 @@ TEST_F(TranslateManagerBrowserTest, NormalTranslate) {
   // Simulate changing the original language and translating.
   process()->sink().ClearMessages();
   std::string new_original_lang = infobar->language_code_at(0);
-  infobar->set_original_language_index(0);
+  infobar->UpdateOriginalLanguageIndex(0);
   infobar->Translate();
   EXPECT_TRUE(GetTranslateMessage(&page_id, &original_lang, &target_lang));
   EXPECT_EQ(new_original_lang, original_lang);
   EXPECT_EQ("en", target_lang);
   // Simulate the render notifying the translation has been done.
   SimulateOnPageTranslated(new_original_lang, "en");
-  // infobar is now invalid.
-  TranslateInfoBarDelegate* new_infobar = GetTranslateInfoBar();
-  ASSERT_TRUE(new_infobar != NULL);
-  infobar = new_infobar;
+  infobar = GetTranslateInfoBar();
+  ASSERT_TRUE(infobar != NULL);
 
   // Simulate changing the target language and translating.
   process()->sink().ClearMessages();
   std::string new_target_lang = infobar->language_code_at(1);
-  infobar->set_target_language_index(1);
+  infobar->UpdateTargetLanguageIndex(1);
   infobar->Translate();
   EXPECT_TRUE(GetTranslateMessage(&page_id, &original_lang, &target_lang));
   EXPECT_EQ(new_original_lang, original_lang);
   EXPECT_EQ(new_target_lang, target_lang);
   // Simulate the render notifying the translation has been done.
   SimulateOnPageTranslated(new_original_lang, new_target_lang);
-  // infobar is now invalid.
-  new_infobar = GetTranslateInfoBar();
-  ASSERT_TRUE(new_infobar != NULL);
+  infobar = GetTranslateInfoBar();
+  ASSERT_TRUE(infobar != NULL);
+  EXPECT_EQ(new_target_lang, infobar->target_language_code());
 
-  // Verify reload keeps the same settings.
+  // Reloading should trigger translation iff Always Translate is on.
   ReloadAndWait(true);
-  new_infobar = GetTranslateInfoBar();
-  ASSERT_TRUE(new_infobar != NULL);
-  ASSERT_EQ(new_target_lang, infobar->target_language_code());
+  infobar = GetTranslateInfoBar();
+  ASSERT_TRUE(infobar != NULL);
+  EXPECT_EQ(TranslateInfoBarDelegate::BEFORE_TRANSLATE,
+            infobar->infobar_type());
+  infobar->UpdateTargetLanguageIndex(1);
+  infobar->ToggleAlwaysTranslate();
+  ReloadAndWait(true);
+  infobar = GetTranslateInfoBar();
+  ASSERT_TRUE(infobar != NULL);
+  EXPECT_EQ(TranslateInfoBarDelegate::TRANSLATING, infobar->infobar_type());
+  EXPECT_EQ(new_target_lang, infobar->target_language_code());
 }
 
 TEST_F(TranslateManagerBrowserTest, TranslateScriptNotAvailable) {
@@ -728,18 +782,17 @@ TEST_F(TranslateManagerBrowserTest, Reload) {
 
   EXPECT_TRUE(CloseTranslateInfoBar());
 
-  // Reload should bring back the infobar if the page succeds
+  // Reload should bring back the infobar if the reload succeeds.
   ReloadAndWait(true);
   EXPECT_TRUE(GetTranslateInfoBar() != NULL);
-
   EXPECT_TRUE(CloseTranslateInfoBar());
 
-  // And not show it if the reload fails
+  // ...But not show it if the reload fails.
   ReloadAndWait(false);
-  EXPECT_EQ(NULL, GetTranslateInfoBar());
+  EXPECT_TRUE(GetTranslateInfoBar() == NULL);
 
-  // Set reload attempts to a high value, we will not see the infobar
-  // immediatly.
+  // If we set reload attempts to a high value, we will not see the infobar
+  // immediately.
   TranslateManager::GetInstance()->set_translate_max_reload_attemps(100);
   ReloadAndWait(true);
   EXPECT_TRUE(GetTranslateInfoBar() == NULL);
@@ -1028,12 +1081,12 @@ TEST_F(TranslateManagerBrowserTest, NeverTranslateLanguagePref) {
   PrefService* prefs = profile->GetPrefs();
   PrefChangeRegistrar registrar;
   registrar.Init(prefs);
-  registrar.Add(TranslatePrefs::kPrefTranslateLanguageBlacklist,
+  registrar.Add(TranslatePrefs::kPrefTranslateBlockedLanguages,
                 pref_callback_);
   TranslatePrefs translate_prefs(prefs);
   EXPECT_FALSE(translate_prefs.IsBlockedLanguage("fr"));
   EXPECT_TRUE(translate_prefs.CanTranslateLanguage(profile, "fr"));
-  SetPrefObserverExpectation(TranslatePrefs::kPrefTranslateLanguageBlacklist);
+  SetPrefObserverExpectation(TranslatePrefs::kPrefTranslateBlockedLanguages);
   translate_prefs.BlockLanguage("fr");
   EXPECT_TRUE(translate_prefs.IsBlockedLanguage("fr"));
   EXPECT_FALSE(translate_prefs.IsSiteBlacklisted(url.host()));
@@ -1048,7 +1101,7 @@ TEST_F(TranslateManagerBrowserTest, NeverTranslateLanguagePref) {
   EXPECT_TRUE(GetTranslateInfoBar() == NULL);
 
   // Remove the language from the blacklist.
-  SetPrefObserverExpectation(TranslatePrefs::kPrefTranslateLanguageBlacklist);
+  SetPrefObserverExpectation(TranslatePrefs::kPrefTranslateBlockedLanguages);
   translate_prefs.UnblockLanguage("fr");
   EXPECT_FALSE(translate_prefs.IsBlockedLanguage("fr"));
   EXPECT_FALSE(translate_prefs.IsSiteBlacklisted(url.host()));
@@ -1146,12 +1199,12 @@ TEST_F(TranslateManagerBrowserTest, AlwaysTranslateLanguagePref) {
   // case either.
   TestingProfile* test_profile =
       static_cast<TestingProfile*>(web_contents()->GetBrowserContext());
-  test_profile->set_incognito(true);
+  test_profile->ForceIncognito(true);
   SimulateNavigation(GURL("http://www.youtube.fr"), "fr", true);
   EXPECT_FALSE(GetTranslateMessage(&page_id, &original_lang, &target_lang));
   EXPECT_TRUE(GetTranslateInfoBar() != NULL);
   EXPECT_TRUE(CloseTranslateInfoBar());
-  test_profile->set_incognito(false);  // Get back to non incognito.
+  test_profile->ForceIncognito(false);  // Get back to non incognito.
 
   // Now revert the always translate pref and make sure we go back to expected
   // behavior, which is show a "before translate" infobar.
@@ -1290,8 +1343,8 @@ TEST_F(TranslateManagerBrowserTest, BeforeTranslateExtraButtons) {
       static_cast<TestingProfile*>(web_contents()->GetBrowserContext());
   static_cast<extensions::TestExtensionSystem*>(
       extensions::ExtensionSystem::Get(test_profile))->
-      CreateExtensionProcessManager();
-  test_profile->set_incognito(true);
+      CreateProcessManager();
+  test_profile->ForceIncognito(true);
   for (int i = 0; i < 8; ++i) {
     SCOPED_TRACE(::testing::Message() << "Iteration " << i <<
         " incognito mode=" << test_profile->IsOffTheRecord());
@@ -1308,7 +1361,7 @@ TEST_F(TranslateManagerBrowserTest, BeforeTranslateExtraButtons) {
       EXPECT_TRUE(infobar->ShouldShowAlwaysTranslateShortcut());
     }
     if (i == 3)
-      test_profile->set_incognito(false);
+      test_profile->ForceIncognito(false);
   }
   // Simulate the user pressing "Always translate French".
   infobar->AlwaysTranslatePageLanguage();
@@ -1324,7 +1377,7 @@ TEST_F(TranslateManagerBrowserTest, BeforeTranslateExtraButtons) {
 
   // Now test that declining the translation causes a "never translate" button
   // to be shown (in non incognito mode only).
-  test_profile->set_incognito(true);
+  test_profile->ForceIncognito(true);
   for (int i = 0; i < 8; ++i) {
     SCOPED_TRACE(::testing::Message() << "Iteration " << i <<
         " incognito mode=" << test_profile->IsOffTheRecord());
@@ -1340,7 +1393,7 @@ TEST_F(TranslateManagerBrowserTest, BeforeTranslateExtraButtons) {
       EXPECT_TRUE(infobar->ShouldShowNeverTranslateShortcut());
     }
     if (i == 3)
-      test_profile->set_incognito(false);
+      test_profile->ForceIncognito(false);
   }
   // Simulate the user pressing "Never translate French".
   infobar->NeverTranslatePageLanguage();
@@ -1409,6 +1462,115 @@ TEST_F(TranslateManagerBrowserTest, DownloadsAndHistoryNotTranslated) {
   ASSERT_FALSE(TranslateManager::IsTranslatableURL(
       GURL(chrome::kChromeUIHistoryURL)));
 }
+
+#if !defined(OS_ANDROID) && !defined(OS_IOS)
+
+TEST_F(TranslateManagerBrowserTest, BubbleNormalTranslate) {
+  // Prepare for the bubble
+  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  command_line->AppendSwitch(switches::kEnableTranslateNewUX);
+  MockTranslateBubbleFactory* factory = new MockTranslateBubbleFactory;
+  scoped_ptr<TranslateBubbleFactory> factory_ptr(factory);
+  TranslateBubbleFactory::SetFactory(factory);
+
+  SimulateNavigation(GURL("http://www.google.fr"), "fr", true);
+
+  // Check the bubble exists instead of the infobar.
+  TranslateInfoBarDelegate* infobar = GetTranslateInfoBar();
+  ASSERT_TRUE(infobar == NULL);
+  TranslateBubbleModel* bubble = factory->model();
+  ASSERT_TRUE(bubble != NULL);
+  EXPECT_EQ(TranslateBubbleModel::VIEW_STATE_BEFORE_TRANSLATE,
+            bubble->GetViewState());
+
+  // Simulate clicking translate.
+  process()->sink().ClearMessages();
+  bubble->Translate();
+
+  // Check the bubble shows "Translating...".
+  bubble = factory->model();
+  ASSERT_TRUE(bubble != NULL);
+  EXPECT_EQ(TranslateBubbleModel::VIEW_STATE_TRANSLATING,
+            bubble->GetViewState());
+
+  // Simulate the translate script being retrieved (it only needs to be done
+  // once in the test as it is cached).
+  SimulateTranslateScriptURLFetch(true);
+
+  // Simulate the render notifying the translation has been done.
+  SimulateOnPageTranslated("fr", "en");
+
+  // Check the bubble shows "Translated."
+  bubble = factory->model();
+  ASSERT_TRUE(bubble != NULL);
+  EXPECT_EQ(TranslateBubbleModel::VIEW_STATE_AFTER_TRANSLATE,
+            bubble->GetViewState());
+}
+
+TEST_F(TranslateManagerBrowserTest, BubbleTranslateScriptNotAvailable) {
+  // Prepare for the bubble
+  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  command_line->AppendSwitch(switches::kEnableTranslateNewUX);
+  MockTranslateBubbleFactory* factory = new MockTranslateBubbleFactory;
+  scoped_ptr<TranslateBubbleFactory> factory_ptr(factory);
+  TranslateBubbleFactory::SetFactory(factory);
+
+  SimulateNavigation(GURL("http://www.google.fr"), "fr", true);
+
+  // Check the bubble exists instead of the infobar.
+  TranslateInfoBarDelegate* infobar = GetTranslateInfoBar();
+  ASSERT_TRUE(infobar == NULL);
+  TranslateBubbleModel* bubble = factory->model();
+  ASSERT_TRUE(bubble != NULL);
+  EXPECT_EQ(TranslateBubbleModel::VIEW_STATE_BEFORE_TRANSLATE,
+            bubble->GetViewState());
+
+  // Simulate clicking translate.
+  process()->sink().ClearMessages();
+  bubble->Translate();
+  SimulateTranslateScriptURLFetch(false);
+
+  // We should not have sent any message to translate to the renderer.
+  EXPECT_FALSE(GetTranslateMessage(NULL, NULL, NULL));
+
+  // And we should have an error infobar showing.
+  bubble = factory->model();
+  ASSERT_TRUE(bubble != NULL);
+  EXPECT_EQ(TranslateBubbleModel::VIEW_STATE_ERROR,
+            bubble->GetViewState());
+}
+
+TEST_F(TranslateManagerBrowserTest, BubbleUnknownLanguage) {
+  // Prepare for the bubble
+  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  command_line->AppendSwitch(switches::kEnableTranslateNewUX);
+  MockTranslateBubbleFactory* factory = new MockTranslateBubbleFactory;
+  scoped_ptr<TranslateBubbleFactory> factory_ptr(factory);
+  TranslateBubbleFactory::SetFactory(factory);
+
+  // Simulate navigating to a page ("und" is the string returned by the CLD for
+  // languages it does not recognize).
+  SimulateNavigation(GURL("http://www.google.mys"), "und", true);
+
+  // We should not have a bubble as we don't know the language.
+  ASSERT_TRUE(factory->model() == NULL);
+
+  // Translate the page anyway throught the context menu.
+  scoped_ptr<TestRenderViewContextMenu> menu(
+      TestRenderViewContextMenu::CreateContextMenu(web_contents()));
+  menu->Init();
+  menu->ExecuteCommand(IDC_CONTENT_CONTEXT_TRANSLATE, 0);
+
+  // Check the bubble exists instead of the infobar.
+  TranslateInfoBarDelegate* infobar = GetTranslateInfoBar();
+  ASSERT_TRUE(infobar == NULL);
+  TranslateBubbleModel* bubble = factory->model();
+  ASSERT_TRUE(bubble != NULL);
+  EXPECT_EQ(TranslateBubbleModel::VIEW_STATE_TRANSLATING,
+            bubble->GetViewState());
+}
+
+#endif  // !defined(OS_ANDROID) && !defined(OS_IOS)
 
 // Test is flaky on Win http://crbug.com/166334
 #if defined(OS_WIN)

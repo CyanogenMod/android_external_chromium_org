@@ -184,8 +184,14 @@ cr.define('options.search_engines', function() {
         indicator.setAttribute('setting', 'search-engine');
         // Create a synthetic pref change event decorated as
         // CoreOptionsHandler::CreateValueForPref() does.
-        var event = new cr.Event(this.contentType);
-        event.value = { controlledBy: 'policy' };
+        var event = new Event(this.contentType);
+        if (engine.extension) {
+          event.value = { controlledBy: 'extension' };
+          // TODO(mad): add id, name, and icon once we solved the issue with the
+          // search engine manager in http://crbug.com/314507.
+        } else {
+          event.value = { controlledBy: 'policy' };
+        }
         indicator.handlePrefChange(event);
         this.appendChild(indicator);
       }

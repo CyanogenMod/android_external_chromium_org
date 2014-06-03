@@ -13,19 +13,27 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
+#include "chrome/browser/extensions/api/identity/account_tracker.h"
+#include "chrome/browser/extensions/api/identity/extension_token_key.h"
 #include "chrome/browser/extensions/api/identity/gaia_web_auth_flow.h"
 #include "chrome/browser/extensions/api/identity/identity_mint_queue.h"
 #include "chrome/browser/extensions/api/identity/identity_signin_flow.h"
 #include "chrome/browser/extensions/api/identity/web_auth_flow.h"
 #include "chrome/browser/extensions/api/profile_keyed_api_factory.h"
-#include "chrome/browser/extensions/extension_function.h"
-#include "chrome/browser/signin/oauth2_token_service.h"
+#include "chrome/browser/extensions/chrome_extension_function.h"
 #include "chrome/browser/signin/signin_global_error.h"
 #include "google_apis/gaia/oauth2_mint_token_flow.h"
+#include "google_apis/gaia/oauth2_token_service.h"
 
 class GoogleServiceAuthError;
 class MockGetAuthTokenFunction;
 class Profile;
+
+#if defined(OS_CHROMEOS)
+namespace chromeos {
+class DeviceOAuth2TokenService;
+}
+#endif
 
 namespace extensions {
 
@@ -62,7 +70,7 @@ extern const char kPageLoadFailure[];
 // profile will be signed in already, but if it turns out we need a
 // new login token, there is a sign-in flow. If that flow completes
 // successfully, getAuthToken proceeds to the non-interactive flow.
-class IdentityGetAuthTokenFunction : public AsyncExtensionFunction,
+class IdentityGetAuthTokenFunction : public ChromeAsyncExtensionFunction,
                                      public GaiaWebAuthFlow::Delegate,
                                      public IdentityMintRequestQueue::Request,
                                      public OAuth2MintTokenFlow::Delegate,
@@ -128,6 +136,15 @@ class IdentityGetAuthTokenFunction : public AsyncExtensionFunction,
   // Starts a login access token request.
   virtual void StartLoginAccessTokenRequest();
 
+#if defined(OS_CHROMEOS)
+  // Starts a login access token request for device robot account. This method
+  // will be called only in enterprise kiosk mode in ChromeOS.
+  virtual void StartDeviceLoginAccessTokenRequest();
+
+  // Continuation of StartDeviceLoginAccessTokenRequest().
+  virtual void DidGetTokenService(chromeos::DeviceOAuth2TokenService* service);
+#endif
+
   // Starts a mint token request to GAIA.
   void StartGaiaRequest(const std::string& login_access_token);
 
@@ -153,17 +170,18 @@ class IdentityGetAuthTokenFunction : public AsyncExtensionFunction,
   OAuth2MintTokenFlow::Mode gaia_mint_token_mode_;
   bool should_prompt_for_signin_;
 
+  scoped_ptr<ExtensionTokenKey> token_key_;
   std::string oauth2_client_id_;
   // When launched in interactive mode, and if there is no existing grant,
   // a permissions prompt will be popped up to the user.
   IssueAdviceInfo issue_advice_;
   scoped_ptr<GaiaWebAuthFlow> gaia_web_auth_flow_;
   scoped_ptr<IdentitySigninFlow> signin_flow_;
-  scoped_ptr<OAuth2TokenService::Request> device_token_request_;
   scoped_ptr<OAuth2TokenService::Request> login_token_request_;
 };
 
-class IdentityRemoveCachedAuthTokenFunction : public SyncExtensionFunction {
+class IdentityRemoveCachedAuthTokenFunction
+    : public ChromeSyncExtensionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("identity.removeCachedAuthToken",
                              EXPERIMENTAL_IDENTITY_REMOVECACHEDAUTHTOKEN)
@@ -176,7 +194,7 @@ class IdentityRemoveCachedAuthTokenFunction : public SyncExtensionFunction {
   virtual bool RunImpl() OVERRIDE;
 };
 
-class IdentityLaunchWebAuthFlowFunction : public AsyncExtensionFunction,
+class IdentityLaunchWebAuthFlowFunction : public ChromeAsyncExtensionFunction,
                                           public WebAuthFlow::Delegate {
  public:
   DECLARE_EXTENSION_FUNCTION("identity.launchWebAuthFlow",
@@ -234,36 +252,23 @@ class IdentityTokenCacheValue {
 };
 
 class IdentityAPI : public ProfileKeyedAPI,
-                    public SigninGlobalError::AuthStatusProvider,
-                    public OAuth2TokenService::Observer {
+                    public AccountTracker::Observer {
  public:
-  struct TokenCacheKey {
-    TokenCacheKey(const std::string& extension_id,
-                  const std::set<std::string> scopes);
-    ~TokenCacheKey();
-    bool operator<(const TokenCacheKey& rhs) const;
-    std::string extension_id;
-    std::set<std::string> scopes;
-  };
-
-  typedef std::map<TokenCacheKey, IdentityTokenCacheValue> CachedTokens;
+  typedef std::map<ExtensionTokenKey, IdentityTokenCacheValue> CachedTokens;
 
   explicit IdentityAPI(Profile* profile);
   virtual ~IdentityAPI();
-  void Initialize();
 
   // Request serialization queue for getAuthToken.
   IdentityMintRequestQueue* mint_queue();
 
   // Token cache
-  void SetCachedToken(const std::string& extension_id,
-                      const std::vector<std::string> scopes,
+  void SetCachedToken(const ExtensionTokenKey& key,
                       const IdentityTokenCacheValue& token_data);
   void EraseCachedToken(const std::string& extension_id,
                         const std::string& token);
   void EraseAllCachedTokens();
-  const IdentityTokenCacheValue& GetCachedToken(
-      const std::string& extension_id, const std::vector<std::string> scopes);
+  const IdentityTokenCacheValue& GetCachedToken(const ExtensionTokenKey& key);
 
   const CachedTokens& GetAllCachedTokens();
 
@@ -273,11 +278,11 @@ class IdentityAPI : public ProfileKeyedAPI,
   virtual void Shutdown() OVERRIDE;
   static ProfileKeyedAPIFactory<IdentityAPI>* GetFactoryInstance();
 
-  // AuthStatusProvider implementation.
-  virtual GoogleServiceAuthError GetAuthStatus() const OVERRIDE;
-
-  // OAuth2TokenService::Observer implementation:
-  virtual void OnRefreshTokenAvailable(const std::string& account_id) OVERRIDE;
+  // AccountTracker::Observer implementation:
+  virtual void OnAccountAdded(const AccountIds& ids) OVERRIDE;
+  virtual void OnAccountRemoved(const AccountIds& ids) OVERRIDE;
+  virtual void OnAccountSignInChanged(const AccountIds& ids, bool is_signed_in)
+      OVERRIDE;
 
  private:
   friend class ProfileKeyedAPIFactory<IdentityAPI>;
@@ -289,10 +294,9 @@ class IdentityAPI : public ProfileKeyedAPI,
   static const bool kServiceIsNULLWhileTesting = true;
 
   Profile* profile_;
-  GoogleServiceAuthError error_;
-  bool initialized_;
   IdentityMintRequestQueue mint_queue_;
   CachedTokens token_cache_;
+  AccountTracker account_tracker_;
 };
 
 template <>

@@ -5,6 +5,29 @@
 from file_system import FileSystem, FileNotFoundError, StatInfo
 from future import Future
 
+
+def MoveTo(base, obj):
+  '''Returns an object as |obj| moved to |base|. That is,
+  MoveTo('foo/bar', {'a': 'b'}) -> {'foo': {'bar': {'a': 'b'}}}
+  '''
+  result = {}
+  leaf = result
+  for k in base.split('/'):
+    leaf[k] = {}
+    leaf = leaf[k]
+  leaf.update(obj)
+  return result
+
+
+def MoveAllTo(base, obj):
+  '''Moves every value in |obj| to |base|. See MoveTo.
+  '''
+  result = {}
+  for key, value in obj.iteritems():
+    result[key] = MoveTo(base, value)
+  return result
+
+
 class TestFileSystem(FileSystem):
   '''A FileSystem backed by an object. Create with an object representing file
   paths such that {'a': {'b': 'hello'}} will resolve Read('a/b') as 'hello',
@@ -12,24 +35,10 @@ class TestFileSystem(FileSystem):
   IncrementStat.
   '''
 
-  # TODO(kalman): this method would be unnecessary if we injected paths properly
-  # in ServerInstance.
-  @staticmethod
-  def MoveTo(base, obj):
-    '''Returns an object as |obj| moved to |base|. That is,
-    MoveTo('foo/bar', {'a': 'b'}) -> {'foo': {'bar': {'a': 'b'}}}
-    '''
-    result = {}
-    leaf = result
-    for k in base.split('/'):
-      leaf[k] = {}
-      leaf = leaf[k]
-    leaf.update(obj)
-    return result
-
-  def __init__(self, obj):
+  def __init__(self, obj, relative_to=None, identity=None):
     assert obj is not None
-    self._obj = obj
+    self._obj = obj if relative_to is None else MoveTo(relative_to, obj)
+    self._identity = identity or type(self).__name__
     self._path_stats = {}
     self._global_stat = 0
 
@@ -37,12 +46,15 @@ class TestFileSystem(FileSystem):
   # FileSystem implementation.
   #
 
-  def Read(self, paths, binary=False):
+  def Read(self, paths):
     test_fs = self
     class Delegate(object):
       def Get(self):
         return dict((path, test_fs._ResolvePath(path)) for path in paths)
     return Future(delegate=Delegate())
+
+  def Refresh(self):
+    return Future(value=())
 
   def _ResolvePath(self, path):
     def Resolve(parts):
@@ -107,11 +119,11 @@ class TestFileSystem(FileSystem):
   # Testing methods.
   #
 
-  def IncrementStat(self, path=None):
+  def IncrementStat(self, path=None, by=1):
     if path is not None:
-      self._path_stats[path] = self._path_stats.get(path, 0) + 1
+      self._path_stats[path] = self._path_stats.get(path, 0) + by
     else:
-      self._global_stat += 1
+      self._global_stat += by
 
   def GetIdentity(self):
-    return self.__class__.__name__
+    return self._identity

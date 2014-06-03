@@ -12,23 +12,14 @@
 #include "base/values.h"
 #include "chrome/browser/extensions/api/storage/settings_frontend.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extensions_quota_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/api/storage.h"
 #include "content/public/browser/browser_thread.h"
+#include "extensions/browser/quota_service.h"
 
 namespace extensions {
 
 using content::BrowserThread;
-
-namespace {
-const char kUnsupportedArgumentType[] = "Unsupported argument type";
-const char kInvalidNamespaceErrorMessage[] =
-    "\"%s\" is not available in this instance of Chrome";
-const char kManagedNamespaceDisabledErrorMessage[] =
-    "\"managed\" is disabled. Use \"--%s\" to enable it.";
-const char kStorageErrorMessage[] = "Storage error";
-}  // namespace
 
 // SettingsFunction
 
@@ -41,8 +32,8 @@ bool SettingsFunction::ShouldSkipQuotaLimiting() const {
   // Only apply quota if this is for sync storage.
   std::string settings_namespace_string;
   if (!args_->GetString(0, &settings_namespace_string)) {
-    // This is an error but it will be caught in RunImpl(), there is no
-    // mechanism to signify an error from this function.
+    // This should be EXTENSION_FUNCTION_VALIDATE(false) but there is no way
+    // to signify that from this function. It will be caught in RunImpl().
     return false;
   }
   return settings_namespace_string != "sync";
@@ -58,10 +49,11 @@ bool SettingsFunction::RunImpl() {
       settings_namespace_ != settings_namespace::INVALID);
 
   SettingsFrontend* frontend =
-      profile()->GetExtensionService()->settings_frontend();
+      GetProfile()->GetExtensionService()->settings_frontend();
   if (!frontend->IsStorageEnabled(settings_namespace_)) {
-    error_ = base::StringPrintf(kInvalidNamespaceErrorMessage,
-                                settings_namespace_string.c_str());
+    error_ = base::StringPrintf(
+        "\"%s\" is not available in this instance of Chrome",
+        settings_namespace_string.c_str());
     return false;
   }
 
@@ -81,19 +73,21 @@ void SettingsFunction::AsyncRunWithStorage(ValueStore* storage) {
       base::Bind(&SettingsFunction::SendResponse, this, success));
 }
 
-bool SettingsFunction::UseReadResult(ValueStore::ReadResult result) {
-  if (result->HasError()) {
-    error_ = result->error();
+bool SettingsFunction::UseReadResult(ValueStore::ReadResult read_result) {
+  if (read_result->HasError()) {
+    error_ = read_result->error().message;
     return false;
   }
 
-  SetResult(result->settings().release());
+  base::DictionaryValue* result = new base::DictionaryValue();
+  result->Swap(&read_result->settings());
+  SetResult(result);
   return true;
 }
 
 bool SettingsFunction::UseWriteResult(ValueStore::WriteResult result) {
   if (result->HasError()) {
-    error_ = result->error();
+    error_ = result->error().message;
     return false;
   }
 
@@ -141,11 +135,10 @@ void GetModificationQuotaLimitHeuristics(QuotaLimitHeuristics* heuristics) {
     api::storage::sync::MAX_WRITE_OPERATIONS_PER_HOUR,
     base::TimeDelta::FromHours(1)
   };
-  heuristics->push_back(
-      new ExtensionsQuotaService::TimedLimit(
-          longLimitConfig,
-          new QuotaLimitHeuristic::SingletonBucketMapper(),
-          "MAX_WRITE_OPERATIONS_PER_HOUR"));
+  heuristics->push_back(new QuotaService::TimedLimit(
+      longLimitConfig,
+      new QuotaLimitHeuristic::SingletonBucketMapper(),
+      "MAX_WRITE_OPERATIONS_PER_HOUR"));
 
   // A max of 10 operations per minute, sustained over 10 minutes.
   QuotaLimitHeuristic::Config shortLimitConfig = {
@@ -153,12 +146,11 @@ void GetModificationQuotaLimitHeuristics(QuotaLimitHeuristics* heuristics) {
     api::storage::sync::MAX_SUSTAINED_WRITE_OPERATIONS_PER_MINUTE,
     base::TimeDelta::FromMinutes(1)
   };
-  heuristics->push_back(
-      new ExtensionsQuotaService::SustainedLimit(
-          base::TimeDelta::FromMinutes(10),
-          shortLimitConfig,
-          new QuotaLimitHeuristic::SingletonBucketMapper(),
-          "MAX_SUSTAINED_WRITE_OPERATIONS_PER_MINUTE"));
+  heuristics->push_back(new QuotaService::SustainedLimit(
+      base::TimeDelta::FromMinutes(10),
+      shortLimitConfig,
+      new QuotaLimitHeuristic::SingletonBucketMapper(),
+      "MAX_SUSTAINED_WRITE_OPERATIONS_PER_MINUTE"));
 };
 
 }  // namespace
@@ -192,14 +184,14 @@ bool StorageStorageAreaGetFunction::RunWithStorage(ValueStore* storage) {
       }
 
       base::DictionaryValue* with_default_values = as_dict->DeepCopy();
-      with_default_values->MergeDictionary(result->settings().get());
+      with_default_values->MergeDictionary(&result->settings());
       return UseReadResult(
-          ValueStore::MakeReadResult(with_default_values));
+          ValueStore::MakeReadResult(make_scoped_ptr(with_default_values)));
     }
 
     default:
-      return UseReadResult(
-          ValueStore::MakeReadResult(kUnsupportedArgumentType));
+      EXTENSION_FUNCTION_VALIDATE(false);
+      return false;
   }
 }
 
@@ -231,11 +223,11 @@ bool StorageStorageAreaGetBytesInUseFunction::RunWithStorage(
     }
 
     default:
-      error_ = kUnsupportedArgumentType;
+      EXTENSION_FUNCTION_VALIDATE(false);
       return false;
   }
 
-  SetResult(base::Value::CreateIntegerValue(bytes_in_use));
+  SetResult(new base::FundamentalValue(static_cast<int>(bytes_in_use)));
   return true;
 }
 
@@ -269,8 +261,8 @@ bool StorageStorageAreaRemoveFunction::RunWithStorage(ValueStore* storage) {
     }
 
     default:
-      return UseWriteResult(
-          ValueStore::MakeWriteResult(kUnsupportedArgumentType));
+      EXTENSION_FUNCTION_VALIDATE(false);
+      return false;
   };
 }
 

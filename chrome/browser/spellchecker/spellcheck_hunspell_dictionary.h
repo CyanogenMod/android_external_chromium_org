@@ -15,7 +15,6 @@
 #include "net/url_request/url_fetcher_delegate.h"
 
 class GURL;
-class Profile;
 class SpellcheckService;
 struct DictionaryFile;
 
@@ -124,8 +123,6 @@ class SpellcheckHunspellDictionary
   // Used for downloading the dictionary file.
   scoped_ptr<net::URLFetcher> fetcher_;
 
-  base::WeakPtrFactory<SpellcheckHunspellDictionary> weak_ptr_factory_;
-
   SpellcheckService* spellcheck_service_;
 
   // Observers of Hunspell dictionary events.
@@ -136,6 +133,8 @@ class SpellcheckHunspellDictionary
 
   // Dictionary file path and descriptor.
   scoped_ptr<DictionaryFile> dictionary_file_;
+
+  base::WeakPtrFactory<SpellcheckHunspellDictionary> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(SpellcheckHunspellDictionary);
 };

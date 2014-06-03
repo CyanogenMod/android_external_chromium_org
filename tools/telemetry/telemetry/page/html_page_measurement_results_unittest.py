@@ -38,7 +38,7 @@ class StringIOFile(StringIO.StringIO):
 class HtmlPageMeasurementResultsTest(unittest.TestCase):
 
   # TODO(tonyg): Remove this backfill when we can assume python 2.7 everywhere.
-  def assertIn(self, first, second, msg=None):
+  def assertIn(self, first, second, _=None):
     self.assertTrue(first in second,
                     msg="'%s' not found in '%s'" % (first, second))
 
@@ -48,156 +48,202 @@ class HtmlPageMeasurementResultsTest(unittest.TestCase):
 
     # Run the first time and verify the results are written to the HTML file.
     results = DeterministicHtmlPageMeasurementResults(
-        output_file, 'test_name', False, 'browser_type')
+        output_file, 'test_name', False, False, 'browser_type')
     results.WillMeasurePage(test_page_set.pages[0])
     results.Add('a', 'seconds', 3)
     results.DidMeasurePage()
+    results.AddSuccess(test_page_set.pages[0])
+
     results.WillMeasurePage(test_page_set.pages[1])
     results.Add('a', 'seconds', 7)
     results.DidMeasurePage()
+    results.AddSuccess(test_page_set.pages[1])
 
     results.PrintSummary()
-    expected = (
-        '<script id="results-json" type="application/json">'
-          '[{'
-            '"platform": "browser_type", '
-            '"buildTime": "build_time", '
-            '"tests": {'
-              '"test_name": {'
-                '"metrics": {'
-                  '"a": {'
-                    '"current": [3, 7], '
-                    '"units": "seconds", '
-                    '"important": true'
-                  '}, '
-                  '"a_by_url.http://www.bar.com/": {'
-                    '"current": [7], '
-                    '"units": "seconds", '
-                    '"important": false'
-                  '}, '
-                  '"a_by_url.http://www.foo.com/": {'
-                    '"current": [3], '
-                    '"units": "seconds", '
-                    '"important": false'
-                  '}'
-                '}'
-              '}'
-            '}, '
-            '"revision": "revision"'
-          '}]'
-        '</script>')
-    self.assertIn(expected, output_file.getvalue())
+    results.GetResults()
+    expected = {
+      "platform": "browser_type",
+      "buildTime": "build_time",
+      "label": None,
+      "tests": {
+        "test_name": {
+          "metrics": {
+            "a": {
+              "current": [3, 7],
+              "units": "seconds",
+              "important": True
+            },
+            "telemetry_page_measurement_results.num_failed": {
+              "current": [0],
+              "units": "count",
+              "important": False
+            },
+            "a_by_url.http://www.bar.com/": {
+              "current": [7],
+              "units": "seconds",
+              "important": False
+            },
+            "telemetry_page_measurement_results.num_errored": {
+              "current": [0],
+              "units": "count",
+              "important": False
+            },
+            "a_by_url.http://www.foo.com/": {
+              "current": [3],
+              "units": "seconds",
+              "important": False
+            }
+          }
+        }
+      },
+      "revision": "revision"
+    }
+    self.assertEquals(expected, results.GetResults())
 
     # Run the second time and verify the results are appended to the HTML file.
     output_file.seek(0)
     results = DeterministicHtmlPageMeasurementResults(
-        output_file, 'test_name', False, 'browser_type')
+        output_file, 'test_name', False, False, 'browser_type')
     results.WillMeasurePage(test_page_set.pages[0])
     results.Add('a', 'seconds', 4)
     results.DidMeasurePage()
+    results.AddSuccess(test_page_set.pages[0])
+
     results.WillMeasurePage(test_page_set.pages[1])
     results.Add('a', 'seconds', 8)
     results.DidMeasurePage()
+    results.AddSuccess(test_page_set.pages[1])
 
     results.PrintSummary()
-    expected = (
-        '<script id="results-json" type="application/json">'
-          '[{'
-            '"platform": "browser_type", '
-            '"buildTime": "build_time", '
-            '"tests": {'
-              '"test_name": {'
-                '"metrics": {'
-                  '"a": {'
-                    '"current": [3, 7], '
-                    '"units": "seconds", '
-                    '"important": true'
-                  '}, '
-                  '"a_by_url.http://www.bar.com/": {'
-                    '"current": [7], '
-                    '"units": "seconds", '
-                    '"important": false'
-                  '}, '
-                  '"a_by_url.http://www.foo.com/": {'
-                    '"current": [3], '
-                    '"units": "seconds", '
-                    '"important": false'
-                  '}'
-                '}'
-              '}'
-            '}, '
-            '"revision": "revision"'
-          '}, '
-          '{'
-            '"platform": "browser_type", '
-            '"buildTime": "build_time", '
-            '"tests": {'
-              '"test_name": {'
-                '"metrics": {'
-                  '"a": {'
-                    '"current": [4, 8], '
-                    '"units": "seconds", '
-                    '"important": true'
-                  '}, '
-                  '"a_by_url.http://www.bar.com/": {'
-                    '"current": [8], '
-                    '"units": "seconds", '
-                    '"important": false'
-                  '}, '
-                  '"a_by_url.http://www.foo.com/": {'
-                    '"current": [4], '
-                    '"units": "seconds", '
-                    '"important": false'
-                  '}'
-                '}'
-              '}'
-            '}, '
-            '"revision": "revision"'
-          '}]'
-        '</script>')
-    self.assertIn(expected, output_file.getvalue())
+    expected = [
+      {
+        "platform": "browser_type",
+        "buildTime": "build_time",
+        "label": None,
+        "tests": {
+          "test_name": {
+            "metrics": {
+              "a": {
+                "current": [3, 7],
+                "units": "seconds",
+                "important": True
+              },
+              "telemetry_page_measurement_results.num_failed": {
+                "current": [0],
+                "units": "count",
+                "important": False
+              },
+              "a_by_url.http://www.bar.com/": {
+                "current": [7],
+                "units": "seconds",
+                "important": False
+              },
+              "telemetry_page_measurement_results.num_errored": {
+                "current": [0],
+                "units": "count",
+                "important": False
+              },
+              "a_by_url.http://www.foo.com/": {
+                "current": [3],
+                "units": "seconds",
+                "important": False
+              }
+            }
+          }
+        },
+        "revision": "revision"
+      },
+      {
+        "platform": "browser_type",
+        "buildTime": "build_time",
+        "label": None,
+        "tests": {
+          "test_name": {
+            "metrics": {
+              "a": {
+                "current": [4, 8],
+                "units": "seconds",
+                "important": True
+              },
+              "telemetry_page_measurement_results.num_failed": {
+                "current": [0],
+                "units": "count",
+                "important": False,
+              },
+              "a_by_url.http://www.bar.com/": {
+                "current": [8],
+                "units": "seconds",
+                "important": False
+              },
+              "telemetry_page_measurement_results.num_errored": {
+                "current": [0],
+                "units": "count",
+                "important": False
+              },
+              "a_by_url.http://www.foo.com/": {
+                "current": [4],
+                "units": "seconds",
+                "important": False
+              }
+            }
+          }
+        },
+        "revision": "revision"
+      }]
+    self.assertEquals(expected, results.GetCombinedResults())
     last_output_len = len(output_file.getvalue())
 
     # Now reset the results and verify the old ones are gone.
     output_file.seek(0)
     results = DeterministicHtmlPageMeasurementResults(
-        output_file, 'test_name', True, 'browser_type')
+       output_file, 'test_name', True, False, 'browser_type')
     results.WillMeasurePage(test_page_set.pages[0])
     results.Add('a', 'seconds', 5)
     results.DidMeasurePage()
+    results.AddSuccess(test_page_set.pages[0])
+
     results.WillMeasurePage(test_page_set.pages[1])
     results.Add('a', 'seconds', 9)
     results.DidMeasurePage()
+    results.AddSuccess(test_page_set.pages[1])
 
     results.PrintSummary()
-    expected = (
-        '<script id="results-json" type="application/json">'
-          '[{'
-            '"platform": "browser_type", '
-            '"buildTime": "build_time", '
-            '"tests": {'
-              '"test_name": {'
-                '"metrics": {'
-                  '"a": {'
-                    '"current": [5, 9], '
-                    '"units": "seconds", '
-                    '"important": true'
-                  '}, '
-                  '"a_by_url.http://www.bar.com/": {'
-                    '"current": [9], '
-                    '"units": "seconds", '
-                    '"important": false'
-                  '}, '
-                  '"a_by_url.http://www.foo.com/": {'
-                    '"current": [5], '
-                    '"units": "seconds", '
-                    '"important": false'
-                  '}'
-                '}'
-              '}'
-            '}, '
-            '"revision": "revision"'
-          '}]'
-        '</script>')
-    self.assertIn(expected, output_file.getvalue())
+    expected = [{
+      "platform": "browser_type",
+      "buildTime": "build_time",
+      "label": None,
+      "tests": {
+        "test_name": {
+          "metrics": {
+            "a": {
+              "current": [5, 9],
+              "units": "seconds",
+              "important": True
+            },
+            "telemetry_page_measurement_results.num_failed": {
+              "current": [0],
+              "units": "count",
+              "important": False
+            },
+            "a_by_url.http://www.bar.com/": {
+              "current": [9],
+              "units": "seconds",
+              "important": False
+            },
+            "telemetry_page_measurement_results.num_errored": {
+              "current": [0],
+              "units": "count",
+              "important": False
+            },
+            "a_by_url.http://www.foo.com/": {
+              "current": [5],
+              "units": "seconds",
+              "important": False
+            }
+          }
+        }
+      },
+      "revision": "revision"
+    }]
+    self.assertEquals(expected, results.GetCombinedResults())
     self.assertTrue(len(output_file.getvalue()) < last_output_len)

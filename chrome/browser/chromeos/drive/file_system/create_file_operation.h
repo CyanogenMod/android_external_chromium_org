@@ -10,7 +10,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/chromeos/drive/file_errors.h"
-#include "chrome/browser/google_apis/gdata_errorcode.h"
+#include "google_apis/drive/gdata_errorcode.h"
 
 namespace base {
 class FilePath;
@@ -51,10 +51,13 @@ class CreateFileOperation {
   // Creates an empty file at |file_path| in the remote server. When the file
   // already exists at that path, the operation fails if |is_exclusive| is true,
   // and it succeeds without doing anything if the flag is false.
+  // If |mime_type| is non-empty, it is used as the mime type of the entry. If
+  // the parameter is empty, the type is guessed from |file_path|.
   //
   // |callback| must not be null.
   void CreateFile(const base::FilePath& file_path,
                   bool is_exclusive,
+                  const std::string& mime_type,
                   const FileOperationCallback& callback);
 
  private:

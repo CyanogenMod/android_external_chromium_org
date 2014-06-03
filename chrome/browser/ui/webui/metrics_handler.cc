@@ -14,6 +14,7 @@
 #include "chrome/browser/metrics/metric_event_duration_details.h"
 #include "chrome/browser/ui/tab_contents/core_tab_helper.h"
 #include "chrome/browser/ui/webui/ntp/ntp_user_data_logger.h"
+#include "chrome/common/ntp_logging_events.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
@@ -115,8 +116,6 @@ void MetricsHandler::HandleLogEventTime(const ListValue* args) {
 }
 
 void MetricsHandler::HandleLogMouseover(const ListValue* args) {
-  NTPUserDataLogger* data = NTPUserDataLogger::FromWebContents(
-      web_ui()->GetWebContents());
-  if (data)
-    data->increment_number_of_mouseovers();
+  NTPUserDataLogger::GetOrCreateFromWebContents(
+      web_ui()->GetWebContents())->LogEvent(NTP_MOUSEOVER);
 }

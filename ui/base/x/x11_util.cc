@@ -22,6 +22,7 @@
 
 #include "base/bind.h"
 #include "base/command_line.h"
+#include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/singleton.h"
@@ -32,11 +33,18 @@
 #include "base/strings/stringprintf.h"
 #include "base/sys_byteorder.h"
 #include "base/threading/thread.h"
-#include "ui/base/events/event_utils.h"
-#include "ui/base/keycodes/keyboard_code_conversion_x.h"
-#include "ui/base/touch/touch_factory_x11.h"
-#include "ui/base/x/device_data_manager.h"
+#include "base/x11/x11_error_tracker.h"
+#include "third_party/skia/include/core/SkBitmap.h"
+#include "third_party/skia/include/core/SkPostConfig.h"
 #include "ui/base/x/x11_util_internal.h"
+#include "ui/events/event_utils.h"
+#include "ui/events/keycodes/keyboard_code_conversion_x.h"
+#include "ui/events/x/device_data_manager.h"
+#include "ui/events/x/touch_factory_x11.h"
+#include "ui/gfx/canvas.h"
+#include "ui/gfx/image/image_skia.h"
+#include "ui/gfx/image/image_skia_rep.h"
+#include "ui/gfx/point.h"
 #include "ui/gfx/point_conversions.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/size.h"
@@ -49,22 +57,14 @@
 #if defined(USE_AURA)
 #include <X11/Xcursor/Xcursor.h>
 #include "skia/ext/image_operations.h"
-#include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/skia_util.h"
 #endif
 
 #if defined(TOOLKIT_GTK)
 #include <gdk/gdk.h>
-#include <gdk/gdkx.h>
 #include <gtk/gtk.h>
-#include "ui/base/gtk/gdk_x_compat.h"
-#include "ui/base/gtk/gtk_compat.h"
-#else
-// TODO(sad): Use the new way of handling X errors when
-// http://codereview.chromium.org/7889040/ lands.
-#define gdk_error_trap_push()
-#define gdk_error_trap_pop() false
-#define gdk_flush()
+#include "ui/gfx/gdk_compat.h"
+#include "ui/gfx/gtk_compat.h"
 #endif
 
 namespace ui {
@@ -73,11 +73,11 @@ namespace {
 
 // Used to cache the XRenderPictFormat for a visual/display pair.
 struct CachedPictFormat {
-  bool equals(Display* display, Visual* visual) const {
+  bool equals(XDisplay* display, Visual* visual) const {
     return display == this->display && visual == this->visual;
   }
 
-  Display* display;
+  XDisplay* display;
   Visual* visual;
   XRenderPictFormat* format;
 };
@@ -95,7 +95,7 @@ CachedPictFormats* get_cached_pict_formats() {
 // Maximum number of CachedPictFormats we keep around.
 const size_t kMaxCacheSize = 5;
 
-int DefaultX11ErrorHandler(Display* d, XErrorEvent* e) {
+int DefaultX11ErrorHandler(XDisplay* d, XErrorEvent* e) {
   if (base::MessageLoop::current()) {
     base::MessageLoop::current()->PostTask(
         FROM_HERE, base::Bind(&LogErrorEventDescription, d, *e));
@@ -110,7 +110,7 @@ int DefaultX11ErrorHandler(Display* d, XErrorEvent* e) {
   return 0;
 }
 
-int DefaultX11IOErrorHandler(Display* d) {
+int DefaultX11IOErrorHandler(XDisplay* d) {
   // If there's an IO error it likely means the X server has gone away
   LOG(ERROR) << "X IO error received (X server probably went away)";
   _exit(1);
@@ -122,7 +122,7 @@ bool GetProperty(XID window, const std::string& property_name, long max_length,
                  unsigned char** property) {
   Atom property_atom = GetAtom(property_name.c_str());
   unsigned long remaining_bytes = 0;
-  return XGetWindowProperty(GetXDisplay(),
+  return XGetWindowProperty(gfx::GetXDisplay(),
                             window,
                             property_atom,
                             0,          // offset into property data to read
@@ -134,39 +134,6 @@ bool GetProperty(XID window, const std::string& property_name, long max_length,
                             num_items,
                             &remaining_bytes,
                             property);
-}
-
-// Converts ui::EventType to XKeyEvent state.
-unsigned int XKeyEventState(int flags) {
-  return
-      ((flags & ui::EF_SHIFT_DOWN) ? ShiftMask : 0) |
-      ((flags & ui::EF_CONTROL_DOWN) ? ControlMask : 0) |
-      ((flags & ui::EF_ALT_DOWN) ? Mod1Mask : 0) |
-      ((flags & ui::EF_CAPS_LOCK_DOWN) ? LockMask : 0);
-}
-
-// Converts EventType to XKeyEvent type.
-int XKeyEventType(ui::EventType type) {
-  switch (type) {
-    case ui::ET_KEY_PRESSED:
-      return KeyPress;
-    case ui::ET_KEY_RELEASED:
-      return KeyRelease;
-    default:
-      return 0;
-  }
-}
-
-// Converts KeyboardCode to XKeyEvent keycode.
-unsigned int XKeyEventKeyCode(ui::KeyboardCode key_code,
-                              int flags,
-                              Display* display) {
-  const int keysym = XKeysymForWindowsKeyCode(key_code,
-                                              flags & ui::EF_SHIFT_DOWN);
-  // Tests assume the keycode for XK_less is equal to the one of XK_comma,
-  // but XKeysymToKeycode returns 94 for XK_less while it returns 59 for
-  // XK_comma. Here we convert the value for XK_less to the value for XK_comma.
-  return (keysym == XK_less) ? 59 : XKeysymToKeycode(display, keysym);
 }
 
 // A process wide singleton that manages the usage of X cursors.
@@ -183,14 +150,14 @@ class XCursorCache {
     std::pair<std::map<int, ::Cursor>::iterator, bool> it = cache_.insert(
         std::make_pair(cursor_shape, 0));
     if (it.second) {
-      Display* display = base::MessagePumpForUI::GetDefaultXDisplay();
+      XDisplay* display = base::MessagePumpForUI::GetDefaultXDisplay();
       it.first->second = XCreateFontCursor(display, cursor_shape);
     }
     return it.first->second;
   }
 
   void Clear() {
-    Display* display = base::MessagePumpForUI::GetDefaultXDisplay();
+    XDisplay* display = base::MessagePumpForUI::GetDefaultXDisplay();
     for (std::map<int, ::Cursor>::iterator it =
         cache_.begin(); it != cache_.end(); ++it) {
       XFreeCursor(display, it->second);
@@ -244,12 +211,12 @@ class XCustomCursorCache {
     XCustomCursor(XcursorImage* image)
         : image_(image),
           ref_(1) {
-      cursor_ = XcursorImageLoadCursor(GetXDisplay(), image);
+      cursor_ = XcursorImageLoadCursor(gfx::GetXDisplay(), image);
     }
 
     ~XCustomCursor() {
       XcursorImageDestroy(image_);
-      XFreeCursor(GetXDisplay(), cursor_);
+      XFreeCursor(gfx::GetXDisplay(), cursor_);
     }
 
     ::Cursor cursor() const { return cursor_; }
@@ -285,55 +252,35 @@ class XCustomCursorCache {
 };
 #endif  // defined(USE_AURA)
 
-// A singleton object that remembers remappings of mouse buttons.
-class XButtonMap {
- public:
-  static XButtonMap* GetInstance() {
-    return Singleton<XButtonMap>::get();
-  }
-
-  void UpdateMapping() {
-    count_ = XGetPointerMapping(ui::GetXDisplay(), map_, arraysize(map_));
-  }
-
-  int GetMappedButton(int button) {
-    return button > 0 && button <= count_ ? map_[button - 1] : button;
-  }
-
- private:
-  friend struct DefaultSingletonTraits<XButtonMap>;
-
-  XButtonMap() {
-    UpdateMapping();
-  }
-
-  ~XButtonMap() {}
-
-  unsigned char map_[256];
-  int count_;
-
-  DISALLOW_COPY_AND_ASSIGN(XButtonMap);
-};
-
 bool IsShapeAvailable() {
   int dummy;
   static bool is_shape_available =
-    XShapeQueryExtension(ui::GetXDisplay(), &dummy, &dummy);
+    XShapeQueryExtension(gfx::GetXDisplay(), &dummy, &dummy);
   return is_shape_available;
 
 }
 
+// A list of bogus sizes in mm that X detects that should be ignored.
+// See crbug.com/136533. The first element maintains the minimum
+// size required to be valid size.
+const unsigned long kInvalidDisplaySizeList[][2] = {
+  {40, 30},
+  {50, 40},
+  {160, 90},
+  {160, 100},
+};
+
 }  // namespace
 
 bool XDisplayExists() {
-  return (GetXDisplay() != NULL);
+  return (gfx::GetXDisplay() != NULL);
 }
 
-Display* GetXDisplay() {
-  return base::MessagePumpForUI::GetDefaultXDisplay();
+bool IsXInput2Available() {
+  return DeviceDataManager::GetInstance()->IsXInput2Available();
 }
 
-static SharedMemorySupport DoQuerySharedMemorySupport(Display* dpy) {
+static SharedMemorySupport DoQuerySharedMemorySupport(XDisplay* dpy) {
   int dummy;
   Bool pixmaps_supported;
   // Query the server's support for XSHM.
@@ -370,14 +317,13 @@ static SharedMemorySupport DoQuerySharedMemorySupport(Display* dpy) {
   memset(&shminfo, 0, sizeof(shminfo));
   shminfo.shmid = shmkey;
 
-  gdk_error_trap_push();
+  base::X11ErrorTracker err_tracker;
   bool result = XShmAttach(dpy, &shminfo);
   if (result)
     VLOG(1) << "X got shared memory segment " << shmkey;
   else
     LOG(WARNING) << "X failed to attach to shared memory segment " << shmkey;
-  XSync(dpy, False);
-  if (gdk_error_trap_pop())
+  if (err_tracker.FoundNewError())
     result = false;
   shmdt(address);
   if (!result) {
@@ -391,7 +337,7 @@ static SharedMemorySupport DoQuerySharedMemorySupport(Display* dpy) {
   return pixmaps_supported ? SHARED_MEMORY_PIXMAP : SHARED_MEMORY_PUTIMAGE;
 }
 
-SharedMemorySupport QuerySharedMemorySupport(Display* dpy) {
+SharedMemorySupport QuerySharedMemorySupport(XDisplay* dpy) {
   static SharedMemorySupport shared_memory_support = SHARED_MEMORY_NONE;
   static bool shared_memory_support_cached = false;
 
@@ -404,7 +350,7 @@ SharedMemorySupport QuerySharedMemorySupport(Display* dpy) {
   return shared_memory_support;
 }
 
-bool QueryRenderSupport(Display* dpy) {
+bool QueryRenderSupport(XDisplay* dpy) {
   static bool render_supported = false;
   static bool render_supported_cached = false;
 
@@ -420,7 +366,7 @@ bool QueryRenderSupport(Display* dpy) {
   return render_supported;
 }
 
-int GetDefaultScreen(Display* display) {
+int GetDefaultScreen(XDisplay* display) {
   return XDefaultScreen(display);
 }
 
@@ -495,10 +441,10 @@ int CoalescePendingMotionEvents(const XEvent* xev,
                                 XEvent* last_event) {
   XIDeviceEvent* xievent = static_cast<XIDeviceEvent*>(xev->xcookie.data);
   int num_coalesced = 0;
-  Display* display = xev->xany.display;
+  XDisplay* display = xev->xany.display;
   int event_type = xev->xgeneric.evtype;
 
-  DCHECK_EQ(event_type, XI_Motion);
+  DCHECK(event_type == XI_Motion || event_type == XI_TouchUpdate);
 
   while (XPending(display)) {
     XEvent next_event;
@@ -528,6 +474,7 @@ int CoalescePendingMotionEvents(const XEvent* xev,
       // and that no buttons or modifiers have changed.
       if (xievent->event == next_xievent->event &&
           xievent->child == next_xievent->child &&
+          xievent->detail == next_xievent->detail &&
           xievent->buttons.mask_len == next_xievent->buttons.mask_len &&
           (memcmp(xievent->buttons.mask,
                   next_xievent->buttons.mask,
@@ -545,15 +492,14 @@ int CoalescePendingMotionEvents(const XEvent* xev,
         XGetEventData(display, &last_event->xcookie);
         ++num_coalesced;
         continue;
-      } else {
-        // This isn't an event we want so free its cookie data.
-        XFreeEventData(display, &next_event.xcookie);
       }
     }
+    // This isn't an event we want so free its cookie data.
+    XFreeEventData(display, &next_event.xcookie);
     break;
   }
 
-  if (num_coalesced > 0) {
+  if (event_type == XI_Motion && num_coalesced > 0) {
     base::TimeDelta delta = ui::EventTimeFromNative(last_event) -
         ui::EventTimeFromNative(const_cast<XEvent*>(xev));
     UMA_HISTOGRAM_COUNTS_10000("Event.CoalescedCount.Mouse", num_coalesced);
@@ -565,13 +511,13 @@ int CoalescePendingMotionEvents(const XEvent* xev,
 
 void HideHostCursor() {
   CR_DEFINE_STATIC_LOCAL(XScopedCursor, invisible_cursor,
-                         (CreateInvisibleCursor(), ui::GetXDisplay()));
-  XDefineCursor(ui::GetXDisplay(), DefaultRootWindow(ui::GetXDisplay()),
+                         (CreateInvisibleCursor(), gfx::GetXDisplay()));
+  XDefineCursor(gfx::GetXDisplay(), DefaultRootWindow(gfx::GetXDisplay()),
                 invisible_cursor.get());
 }
 
 ::Cursor CreateInvisibleCursor() {
-  Display* xdisplay = ui::GetXDisplay();
+  XDisplay* xdisplay = gfx::GetXDisplay();
   ::Cursor invisible_cursor;
   char nodata[] = { 0, 0, 0, 0, 0, 0, 0, 0 };
   XColor black;
@@ -586,7 +532,7 @@ void HideHostCursor() {
 }
 
 XID GetX11RootWindow() {
-  return DefaultRootWindow(GetXDisplay());
+  return DefaultRootWindow(gfx::GetXDisplay());
 }
 
 bool GetCurrentDesktop(int* desktop) {
@@ -622,8 +568,9 @@ void* GetVisualFromGtkWidget(GtkWidget* widget) {
 
 void SetHideTitlebarWhenMaximizedProperty(XID window,
                                           HideTitlebarWhenMaximized property) {
-  uint32 hide = property;
-  XChangeProperty(GetXDisplay(),
+  // XChangeProperty() expects "hide" to be long.
+  unsigned long hide = property;
+  XChangeProperty(gfx::GetXDisplay(),
       window,
       GetAtom("_GTK_HIDE_TITLEBAR_WHEN_MAXIMIZED"),
       XA_CARDINAL,
@@ -634,7 +581,7 @@ void SetHideTitlebarWhenMaximizedProperty(XID window,
 }
 
 void ClearX11DefaultRootWindow() {
-  Display* display = GetXDisplay();
+  XDisplay* display = gfx::GetXDisplay();
   XID root_window = GetX11RootWindow();
   gfx::Rect root_bounds;
   if (!GetWindowRect(root_window, &root_bounds)) {
@@ -653,27 +600,11 @@ void ClearX11DefaultRootWindow() {
   XFreeGC(display, gc);
 }
 
-int BitsPerPixelForPixmapDepth(Display* dpy, int depth) {
-  int count;
-  XPixmapFormatValues* formats = XListPixmapFormats(dpy, &count);
-  if (!formats)
-    return -1;
-
-  int bits_per_pixel = -1;
-  for (int i = 0; i < count; ++i) {
-    if (formats[i].depth == depth) {
-      bits_per_pixel = formats[i].bits_per_pixel;
-      break;
-    }
-  }
-
-  XFree(formats);
-  return bits_per_pixel;
-}
-
 bool IsWindowVisible(XID window) {
+  TRACE_EVENT0("ui", "IsWindowVisible");
+
   XWindowAttributes win_attributes;
-  if (!XGetWindowAttributes(GetXDisplay(), window, &win_attributes))
+  if (!XGetWindowAttributes(gfx::GetXDisplay(), window, &win_attributes))
     return false;
   if (win_attributes.map_state != IsViewable)
     return false;
@@ -692,11 +623,11 @@ bool GetWindowRect(XID window, gfx::Rect* rect) {
   unsigned int width, height;
   unsigned int border_width, depth;
 
-  if (!XGetGeometry(GetXDisplay(), window, &root, &x, &y,
+  if (!XGetGeometry(gfx::GetXDisplay(), window, &root, &x, &y,
                     &width, &height, &border_width, &depth))
     return false;
 
-  if (!XTranslateCoordinates(GetXDisplay(), window, root,
+  if (!XTranslateCoordinates(gfx::GetXDisplay(), window, root,
                              0, 0, &x, &y, &child))
     return false;
 
@@ -706,6 +637,8 @@ bool GetWindowRect(XID window, gfx::Rect* rect) {
 
 
 bool WindowContainsPoint(XID window, gfx::Point screen_loc) {
+  TRACE_EVENT0("ui", "WindowContainsPoint");
+
   gfx::Rect window_rect;
   if (!GetWindowRect(window, &window_rect))
     return false;
@@ -725,7 +658,7 @@ bool WindowContainsPoint(XID window, gfx::Point screen_loc) {
   int dummy;
   int input_rects_size = 0;
   XRectangle* input_rects = XShapeGetRectangles(
-      ui::GetXDisplay(), window, ShapeInput, &input_rects_size, &dummy);
+      gfx::GetXDisplay(), window, ShapeInput, &input_rects_size, &dummy);
   if (!input_rects)
     return true;
   bool is_in_input_rects = false;
@@ -773,7 +706,7 @@ bool GetRawBytesOfProperty(XID window,
   Atom prop_type = None;
   int prop_format = 0;
   unsigned char* property_data = NULL;
-  if (XGetWindowProperty(GetXDisplay(), window, property,
+  if (XGetWindowProperty(gfx::GetXDisplay(), window, property,
                          0, 0x1FFFFFFF /* MAXINT32 / 4 */, False,
                          AnyPropertyType, &prop_type, &prop_format,
                          &nitems, &nbytes, &property_data) != Success) {
@@ -958,8 +891,8 @@ bool SetIntArrayProperty(XID window,
   for (size_t i = 0; i < value.size(); ++i)
     data[i] = value[i];
 
-  gdk_error_trap_push();
-  XChangeProperty(ui::GetXDisplay(),
+  base::X11ErrorTracker err_tracker;
+  XChangeProperty(gfx::GetXDisplay(),
                   window,
                   name_atom,
                   type_atom,
@@ -967,8 +900,7 @@ bool SetIntArrayProperty(XID window,
                   PropModeReplace,
                   reinterpret_cast<const unsigned char*>(data.get()),
                   value.size());  // num items
-  XSync(ui::GetXDisplay(), False);
-  return gdk_error_trap_pop() == 0;
+  return !err_tracker.FoundNewError();
 }
 
 bool SetAtomArrayProperty(XID window,
@@ -984,8 +916,8 @@ bool SetAtomArrayProperty(XID window,
   for (size_t i = 0; i < value.size(); ++i)
     data[i] = value[i];
 
-  gdk_error_trap_push();
-  XChangeProperty(ui::GetXDisplay(),
+  base::X11ErrorTracker err_tracker;
+  XChangeProperty(gfx::GetXDisplay(),
                   window,
                   name_atom,
                   type_atom,
@@ -993,8 +925,7 @@ bool SetAtomArrayProperty(XID window,
                   PropModeReplace,
                   reinterpret_cast<const unsigned char*>(data.get()),
                   value.size());  // num items
-  XSync(ui::GetXDisplay(), False);
-  return gdk_error_trap_pop() == 0;
+  return !err_tracker.FoundNewError();
 }
 
 Atom GetAtom(const char* name) {
@@ -1003,8 +934,33 @@ Atom GetAtom(const char* name) {
       gdk_display_get_default(), name);
 #else
   // TODO(derat): Cache atoms to avoid round-trips to the server.
-  return XInternAtom(GetXDisplay(), name, false);
+  return XInternAtom(gfx::GetXDisplay(), name, false);
 #endif
+}
+
+void SetWindowClassHint(XDisplay* display,
+                        XID window,
+                        const std::string& res_name,
+                        const std::string& res_class) {
+  XClassHint class_hints;
+  // const_cast is safe because XSetClassHint does not modify the strings.
+  // Just to be safe, the res_name and res_class parameters are local copies,
+  // not const references.
+  class_hints.res_name = const_cast<char*>(res_name.c_str());
+  class_hints.res_class = const_cast<char*>(res_class.c_str());
+  XSetClassHint(display, window, &class_hints);
+}
+
+void SetWindowRole(XDisplay* display, XID window, const std::string& role) {
+  if (role.empty()) {
+    XDeleteProperty(display, window, GetAtom("WM_WINDOW_ROLE"));
+  } else {
+    char* role_c = const_cast<char*>(role.c_str());
+    XChangeProperty(display, window, GetAtom("WM_WINDOW_ROLE"), XA_STRING, 8,
+                    PropModeReplace,
+                    reinterpret_cast<unsigned char*>(role_c),
+                    role.size());
+  }
 }
 
 XID GetParentWindow(XID window) {
@@ -1012,7 +968,7 @@ XID GetParentWindow(XID window) {
   XID parent = None;
   XID* children = NULL;
   unsigned int num_children = 0;
-  XQueryTree(GetXDisplay(), window, &root, &parent, &children, &num_children);
+  XQueryTree(gfx::GetXDisplay(), window, &root, &parent, &children, &num_children);
   if (children)
     XFree(children);
   return parent;
@@ -1033,7 +989,7 @@ bool GetWindowDesktop(XID window, int* desktop) {
   return GetIntProperty(window, "_NET_WM_DESKTOP", desktop);
 }
 
-std::string GetX11ErrorString(Display* display, int err) {
+std::string GetX11ErrorString(XDisplay* display, int err) {
   char buffer[256];
   XGetErrorText(display, err, buffer, arraysize(buffer));
   return buffer;
@@ -1042,7 +998,7 @@ std::string GetX11ErrorString(Display* display, int err) {
 // Returns true if |window| is a named window.
 bool IsWindowNamed(XID window) {
   XTextProperty prop;
-  if (!XGetWMName(GetXDisplay(), window, &prop) || !prop.value)
+  if (!XGetWMName(gfx::GetXDisplay(), window, &prop) || !prop.value)
     return false;
 
   XFree(prop.value);
@@ -1056,7 +1012,7 @@ bool EnumerateChildren(EnumerateWindowsDelegate* delegate, XID window,
 
   XID root, parent, *children;
   unsigned int num_children;
-  int status = XQueryTree(GetXDisplay(), window, &root, &parent, &children,
+  int status = XQueryTree(gfx::GetXDisplay(), window, &root, &parent, &children,
                           &num_children);
   if (status == 0)
     return false;
@@ -1148,10 +1104,10 @@ void RestackWindow(XID window, XID sibling, bool above) {
   XWindowChanges changes;
   changes.sibling = sibling;
   changes.stack_mode = above ? Above : Below;
-  XConfigureWindow(GetXDisplay(), window, CWSibling | CWStackMode, &changes);
+  XConfigureWindow(gfx::GetXDisplay(), window, CWSibling | CWStackMode, &changes);
 }
 
-XSharedMemoryId AttachSharedMemory(Display* display, int shared_memory_key) {
+XSharedMemoryId AttachSharedMemory(XDisplay* display, int shared_memory_key) {
   DCHECK(QuerySharedMemorySupport(display));
 
   XShmSegmentInfo shminfo;
@@ -1172,7 +1128,7 @@ XSharedMemoryId AttachSharedMemory(Display* display, int shared_memory_key) {
   return shminfo.shmseg;
 }
 
-void DetachSharedMemory(Display* display, XSharedMemoryId shmseg) {
+void DetachSharedMemory(XDisplay* display, XSharedMemoryId shmseg) {
   DCHECK(QuerySharedMemorySupport(display));
 
   XShmSegmentInfo shminfo;
@@ -1183,137 +1139,67 @@ void DetachSharedMemory(Display* display, XSharedMemoryId shmseg) {
     NOTREACHED();
 }
 
-XID CreatePictureFromSkiaPixmap(Display* display, XID pixmap) {
+bool CopyAreaToCanvas(XID drawable,
+                      gfx::Rect source_bounds,
+                      gfx::Point dest_offset,
+                      gfx::Canvas* canvas) {
+  ui::XScopedImage scoped_image(
+      XGetImage(gfx::GetXDisplay(), drawable,
+                source_bounds.x(), source_bounds.y(),
+                source_bounds.width(), source_bounds.height(),
+                AllPlanes, ZPixmap));
+  XImage* image = scoped_image.get();
+  if (!image) {
+    LOG(ERROR) << "XGetImage failed";
+    return false;
+  }
+
+  if (image->bits_per_pixel == 32) {
+    if ((0xff << SK_R32_SHIFT) != image->red_mask ||
+        (0xff << SK_G32_SHIFT) != image->green_mask ||
+        (0xff << SK_B32_SHIFT) != image->blue_mask) {
+      LOG(WARNING) << "XImage and Skia byte orders differ";
+      return false;
+    }
+
+    // Set the alpha channel before copying to the canvas.  Otherwise, areas of
+    // the framebuffer that were cleared by ply-image rather than being obscured
+    // by an image during boot may end up transparent.
+    // TODO(derat|marcheu): Remove this if/when ply-image has been updated to
+    // set the framebuffer's alpha channel regardless of whether the device
+    // claims to support alpha or not.
+    for (int i = 0; i < image->width * image->height * 4; i += 4)
+      image->data[i + 3] = 0xff;
+
+    SkBitmap bitmap;
+    bitmap.setConfig(SkBitmap::kARGB_8888_Config,
+                     image->width, image->height,
+                     image->bytes_per_line);
+    bitmap.setPixels(image->data);
+    gfx::ImageSkia image_skia;
+    gfx::ImageSkiaRep image_rep(bitmap, canvas->image_scale());
+    image_skia.AddRepresentation(image_rep);
+    canvas->DrawImageInt(image_skia, dest_offset.x(), dest_offset.y());
+  } else {
+    NOTIMPLEMENTED() << "Unsupported bits-per-pixel " << image->bits_per_pixel;
+    return false;
+  }
+
+  return true;
+}
+
+XID CreatePictureFromSkiaPixmap(XDisplay* display, XID pixmap) {
   XID picture = XRenderCreatePicture(
       display, pixmap, GetRenderARGB32Format(display), 0, NULL);
 
   return picture;
 }
 
-void PutARGBImage(Display* display,
-                  void* visual, int depth,
-                  XID pixmap, void* pixmap_gc,
-                  const uint8* data,
-                  int width, int height) {
-  PutARGBImage(display,
-               visual, depth,
-               pixmap, pixmap_gc,
-               data, width, height,
-               0, 0, // src_x, src_y
-               0, 0, // dst_x, dst_y
-               width, height);
-}
-
-void PutARGBImage(Display* display,
-                  void* visual, int depth,
-                  XID pixmap, void* pixmap_gc,
-                  const uint8* data,
-                  int data_width, int data_height,
-                  int src_x, int src_y,
-                  int dst_x, int dst_y,
-                  int copy_width, int copy_height) {
-  // TODO(scherkus): potential performance impact... consider passing in as a
-  // parameter.
-  int pixmap_bpp = BitsPerPixelForPixmapDepth(display, depth);
-
-  XImage image;
-  memset(&image, 0, sizeof(image));
-
-  image.width = data_width;
-  image.height = data_height;
-  image.format = ZPixmap;
-  image.byte_order = LSBFirst;
-  image.bitmap_unit = 8;
-  image.bitmap_bit_order = LSBFirst;
-  image.depth = depth;
-  image.bits_per_pixel = pixmap_bpp;
-  image.bytes_per_line = data_width * pixmap_bpp / 8;
-
-  if (pixmap_bpp == 32) {
-    image.red_mask = 0xff0000;
-    image.green_mask = 0xff00;
-    image.blue_mask = 0xff;
-
-    // If the X server depth is already 32-bits and the color masks match,
-    // then our job is easy.
-    Visual* vis = static_cast<Visual*>(visual);
-    if (image.red_mask == vis->red_mask &&
-        image.green_mask == vis->green_mask &&
-        image.blue_mask == vis->blue_mask) {
-      image.data = const_cast<char*>(reinterpret_cast<const char*>(data));
-      XPutImage(display, pixmap, static_cast<GC>(pixmap_gc), &image,
-                src_x, src_y, dst_x, dst_y,
-                copy_width, copy_height);
-    } else {
-      // Otherwise, we need to shuffle the colors around. Assume red and blue
-      // need to be swapped.
-      //
-      // It's possible to use some fancy SSE tricks here, but since this is the
-      // slow path anyway, we do it slowly.
-
-      uint8_t* bitmap32 =
-          static_cast<uint8_t*>(malloc(4 * data_width * data_height));
-      if (!bitmap32)
-        return;
-      uint8_t* const orig_bitmap32 = bitmap32;
-      const uint32_t* bitmap_in = reinterpret_cast<const uint32_t*>(data);
-      for (int y = 0; y < data_height; ++y) {
-        for (int x = 0; x < data_width; ++x) {
-          const uint32_t pixel = *(bitmap_in++);
-          bitmap32[0] = (pixel >> 16) & 0xff;  // Red
-          bitmap32[1] = (pixel >> 8) & 0xff;   // Green
-          bitmap32[2] = pixel & 0xff;          // Blue
-          bitmap32[3] = (pixel >> 24) & 0xff;  // Alpha
-          bitmap32 += 4;
-        }
-      }
-      image.data = reinterpret_cast<char*>(orig_bitmap32);
-      XPutImage(display, pixmap, static_cast<GC>(pixmap_gc), &image,
-                src_x, src_y, dst_x, dst_y,
-                copy_width, copy_height);
-      free(orig_bitmap32);
-    }
-  } else if (pixmap_bpp == 16) {
-    // Some folks have VNC setups which still use 16-bit visuals and VNC
-    // doesn't include Xrender.
-
-    uint16_t* bitmap16 =
-        static_cast<uint16_t*>(malloc(2 * data_width * data_height));
-    if (!bitmap16)
-      return;
-    uint16_t* const orig_bitmap16 = bitmap16;
-    const uint32_t* bitmap_in = reinterpret_cast<const uint32_t*>(data);
-    for (int y = 0; y < data_height; ++y) {
-      for (int x = 0; x < data_width; ++x) {
-        const uint32_t pixel = *(bitmap_in++);
-        uint16_t out_pixel = ((pixel >> 8) & 0xf800) |
-                             ((pixel >> 5) & 0x07e0) |
-                             ((pixel >> 3) & 0x001f);
-        *(bitmap16++) = out_pixel;
-      }
-    }
-
-    image.data = reinterpret_cast<char*>(orig_bitmap16);
-    image.red_mask = 0xf800;
-    image.green_mask = 0x07e0;
-    image.blue_mask = 0x001f;
-
-    XPutImage(display, pixmap, static_cast<GC>(pixmap_gc), &image,
-              src_x, src_y, dst_x, dst_y,
-              copy_width, copy_height);
-    free(orig_bitmap16);
-  } else {
-    LOG(FATAL) << "Sorry, we don't support your visual depth without "
-                  "Xrender support (depth:" << depth
-               << " bpp:" << pixmap_bpp << ")";
-  }
-}
-
-void FreePicture(Display* display, XID picture) {
+void FreePicture(XDisplay* display, XID picture) {
   XRenderFreePicture(display, picture);
 }
 
-void FreePixmap(Display* display, XID pixmap) {
+void FreePixmap(XDisplay* display, XID pixmap) {
   XFreePixmap(display, pixmap);
 }
 
@@ -1335,21 +1221,18 @@ bool GetWindowManagerName(std::string* wm_name) {
   // _NET_SUPPORTING_WM_CHECK property pointing to itself (to avoid a stale
   // property referencing an ID that's been recycled for another window), so we
   // check that too.
-  gdk_error_trap_push();
+  base::X11ErrorTracker err_tracker;
   int wm_window_property = 0;
   bool result = GetIntProperty(
       wm_window, "_NET_SUPPORTING_WM_CHECK", &wm_window_property);
-  gdk_flush();
-  bool got_error = gdk_error_trap_pop();
-  if (got_error || !result || wm_window_property != wm_window)
+  if (err_tracker.FoundNewError() || !result ||
+      wm_window_property != wm_window) {
     return false;
+  }
 
-  gdk_error_trap_push();
   result = GetStringProperty(
       static_cast<XID>(wm_window), "_NET_WM_NAME", wm_name);
-  gdk_flush();
-  got_error = gdk_error_trap_pop();
-  return !got_error && result;
+  return !err_tracker.FoundNewError() && result;
 }
 
 WindowManagerName GuessWindowManager() {
@@ -1402,7 +1285,7 @@ bool ChangeWindowDesktop(XID window, XID destination) {
   event.xclient.data.l[0] = desktop;
   event.xclient.data.l[1] = 1;  // source indication
 
-  int result = XSendEvent(GetXDisplay(), GetX11RootWindow(), False,
+  int result = XSendEvent(gfx::GetXDisplay(), GetX11RootWindow(), False,
                           SubstructureNotifyMask, &event);
   return result == Success;
 }
@@ -1453,7 +1336,7 @@ bool IsX11WindowFullScreen(XID window) {
   //
   // TODO(erg): Actually doing this correctly would require pulling out xrandr,
   // which we don't even do in the desktop screen yet.
-  ::Display* display = ui::GetXDisplay();
+  ::XDisplay* display = gfx::GetXDisplay();
   ::Screen* screen = DefaultScreenOfDisplay(display);
   int width = WidthOfScreen(screen);
   int height = HeightOfScreen(screen);
@@ -1461,46 +1344,23 @@ bool IsX11WindowFullScreen(XID window) {
 #endif
 }
 
-bool IsMotionEvent(XEvent* event) {
-  int type = event->type;
-  if (type == GenericEvent)
-    type = event->xgeneric.evtype;
-  return type == MotionNotify;
-}
-
-int GetMappedButton(int button) {
-  return XButtonMap::GetInstance()->GetMappedButton(button);
-}
-
-void UpdateButtonMap() {
-  XButtonMap::GetInstance()->UpdateMapping();
-}
-
-void InitXKeyEventForTesting(EventType type,
-                             KeyboardCode key_code,
-                             int flags,
-                             XEvent* event) {
-  CHECK(event);
-  Display* display = GetXDisplay();
-  XKeyEvent key_event;
-  key_event.type = XKeyEventType(type);
-  CHECK_NE(0, key_event.type);
-  key_event.serial = 0;
-  key_event.send_event = 0;
-  key_event.display = display;
-  key_event.time = 0;
-  key_event.window = 0;
-  key_event.root = 0;
-  key_event.subwindow = 0;
-  key_event.x = 0;
-  key_event.y = 0;
-  key_event.x_root = 0;
-  key_event.y_root = 0;
-  key_event.state = XKeyEventState(flags);
-  key_event.keycode = XKeyEventKeyCode(key_code, flags, display);
-  key_event.same_screen = 1;
-  event->type = key_event.type;
-  event->xkey = key_event;
+bool IsXDisplaySizeBlackListed(unsigned long mm_width,
+                               unsigned long mm_height) {
+  // Ignore if the reported display is smaller than minimum size.
+  if (mm_width <= kInvalidDisplaySizeList[0][0] ||
+      mm_height <= kInvalidDisplaySizeList[0][1]) {
+    LOG(WARNING) << "Smaller than minimum display size";
+    return true;
+  }
+  for (unsigned long i = 1 ; i < arraysize(kInvalidDisplaySizeList); ++i) {
+    const unsigned long* size = kInvalidDisplaySizeList[i];
+    if (mm_width == size[0] && mm_height == size[1]) {
+      LOG(WARNING) << "Black listed display size detected:"
+                   << size[0] << "x" << size[1];
+      return true;
+    }
+  }
+  return false;
 }
 
 const unsigned char* XRefcountedMemory::front() const {
@@ -1531,7 +1391,7 @@ void XScopedImage::reset(XImage* image) {
   image_ = image;
 }
 
-XScopedCursor::XScopedCursor(::Cursor cursor, Display* display)
+XScopedCursor::XScopedCursor(::Cursor cursor, XDisplay* display)
     : cursor_(cursor),
       display_(display) {
 }
@@ -1553,7 +1413,7 @@ void XScopedCursor::reset(::Cursor cursor) {
 // ----------------------------------------------------------------------------
 // These functions are declared in x11_util_internal.h because they require
 // XLib.h to be included, and it conflicts with many other headers.
-XRenderPictFormat* GetRenderARGB32Format(Display* dpy) {
+XRenderPictFormat* GetRenderARGB32Format(XDisplay* dpy) {
   static XRenderPictFormat* pictformat = NULL;
   if (pictformat)
     return pictformat;
@@ -1589,7 +1449,7 @@ XRenderPictFormat* GetRenderARGB32Format(Display* dpy) {
   return pictformat;
 }
 
-XRenderPictFormat* GetRenderVisualFormat(Display* dpy, Visual* visual) {
+XRenderPictFormat* GetRenderVisualFormat(XDisplay* dpy, Visual* visual) {
   DCHECK(QueryRenderSupport(dpy));
 
   CachedPictFormats* formats = get_cached_pict_formats();
@@ -1633,7 +1493,7 @@ void SetX11ErrorHandlers(XErrorHandler error_handler,
       io_error_handler ? io_error_handler : DefaultX11IOErrorHandler);
 }
 
-void LogErrorEventDescription(Display* dpy,
+void LogErrorEventDescription(XDisplay* dpy,
                               const XErrorEvent& error_event) {
   char error_str[256];
   char request_str[256];
@@ -1665,7 +1525,7 @@ void LogErrorEventDescription(Display* dpy,
     XFreeExtensionList(ext_list);
   }
 
-  LOG(ERROR)
+  LOG(WARNING)
       << "X error received: "
       << "serial " << error_event.serial << ", "
       << "error_code " << static_cast<int>(error_event.error_code)

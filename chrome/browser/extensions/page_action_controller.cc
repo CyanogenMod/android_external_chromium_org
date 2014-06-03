@@ -5,7 +5,7 @@
 #include "chrome/browser/extensions/page_action_controller.h"
 
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/extensions/browser_event_router.h"
+#include "chrome/browser/extensions/api/extension_action/extension_action_api.h"
 #include "chrome/browser/extensions/component_loader.h"
 #include "chrome/browser/extensions/extension_action.h"
 #include "chrome/browser/extensions/extension_action_manager.h"
@@ -72,7 +72,7 @@ LocationBarController::Action PageActionController::OnClicked(
       if (page_action->HasPopup(tab_id))
         return ACTION_SHOW_POPUP;
 
-      GetExtensionService()->browser_event_router()->PageActionExecuted(
+      ExtensionActionAPI::PageActionExecuted(
           profile(), *page_action, tab_id,
           web_contents()->GetURL().spec(), mouse_button);
       return ACTION_NONE;
@@ -110,11 +110,19 @@ void PageActionController::DidNavigateMainFrame(
 }
 
 Profile* PageActionController::profile() const {
-  return Profile::FromBrowserContext(web_contents()->GetBrowserContext());
+  content::WebContents* web_contents = this->web_contents();
+  if (web_contents)
+    return Profile::FromBrowserContext(web_contents->GetBrowserContext());
+
+  return NULL;
 }
 
 ExtensionService* PageActionController::GetExtensionService() const {
-  return ExtensionSystem::Get(profile())->extension_service();
+  Profile* profile = this->profile();
+  if (profile)
+    return ExtensionSystem::Get(profile)->extension_service();
+
+  return NULL;
 }
 
 }  // namespace extensions

@@ -15,15 +15,15 @@
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/extensions/script_bubble_controller.h"
 #include "chrome/browser/extensions/test_extension_system.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_builder.h"
-#include "chrome/common/extensions/feature_switch.h"
-#include "chrome/common/extensions/value_builder.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/test/test_browser_thread.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/extension_builder.h"
+#include "extensions/common/feature_switch.h"
+#include "extensions/common/value_builder.h"
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/login/user_manager.h"
@@ -136,8 +136,8 @@ TEST_F(ScriptBubbleControllerTest, Basics) {
   script_bubble_controller_->OnScriptsExecuted(
       web_contents(),
       executing_scripts,
-      web_contents()->GetController().GetActiveEntry()->GetPageID(),
-      web_contents()->GetController().GetActiveEntry()->GetURL());
+      web_contents()->GetController().GetVisibleEntry()->GetPageID(),
+      web_contents()->GetController().GetVisibleEntry()->GetURL());
   EXPECT_EQ(1u, script_bubble_controller_->extensions_running_scripts().size());
   std::set<std::string> extension_ids;
   extension_ids.insert(extension1->id());
@@ -151,8 +151,8 @@ TEST_F(ScriptBubbleControllerTest, Basics) {
   script_bubble_controller_->OnScriptsExecuted(
       web_contents(),
       executing_scripts,
-      web_contents()->GetController().GetActiveEntry()->GetPageID(),
-      web_contents()->GetController().GetActiveEntry()->GetURL());
+      web_contents()->GetController().GetVisibleEntry()->GetPageID(),
+      web_contents()->GetController().GetVisibleEntry()->GetURL());
   EXPECT_EQ(2u, script_bubble_controller_->extensions_running_scripts().size());
   extension_ids.insert(extension2->id());
   EXPECT_TRUE(extension_ids ==
@@ -165,8 +165,8 @@ TEST_F(ScriptBubbleControllerTest, Basics) {
   script_bubble_controller_->OnScriptsExecuted(
       web_contents(),
       executing_scripts,
-      web_contents()->GetController().GetActiveEntry()->GetPageID(),
-      web_contents()->GetController().GetActiveEntry()->GetURL());
+      web_contents()->GetController().GetVisibleEntry()->GetPageID(),
+      web_contents()->GetController().GetVisibleEntry()->GetURL());
   EXPECT_EQ(2u, script_bubble_controller_->extensions_running_scripts().size());
 
   // Running tabs.executeScript from an already-seen extension does not affect

@@ -4,22 +4,30 @@
 
 #include "chrome/browser/metro_viewer/chrome_metro_viewer_process_host_aurawin.h"
 
+#include "ash/display/display_info.h"
+#include "ash/display/display_manager.h"
 #include "ash/shell.h"
+#include "ash/wm/window_positioner.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
+#include "base/strings/stringprintf.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browser_process_platform_part_aurawin.h"
+#include "chrome/browser/browser_shutdown.h"
 #include "chrome/browser/chrome_notification_types.h"
+#include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/search_engines/util.h"
 #include "chrome/browser/ui/ash/ash_init.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_list.h"
+#include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
+#include "chrome/common/env_vars.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/gpu_data_manager.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/page_navigator.h"
 #include "content/public/browser/web_contents.h"
@@ -46,12 +54,13 @@ void CloseOpenAshBrowsers() {
 }
 
 void OpenURL(const GURL& url) {
-  Browser* browser = chrome::FindOrCreateTabbedBrowser(
-      ProfileManager::GetDefaultProfileOrOffTheRecord(),
-      chrome::HOST_DESKTOP_TYPE_ASH);
-  browser->OpenURL(content::OpenURLParams(
-    GURL(url), content::Referrer(), NEW_FOREGROUND_TAB,
-    content::PAGE_TRANSITION_TYPED, false));
+  chrome::NavigateParams params(
+      ProfileManager::GetActiveUserProfileOrOffTheRecord(),
+      GURL(url),
+      content::PAGE_TRANSITION_TYPED);
+  params.disposition = NEW_FOREGROUND_TAB;
+  params.host_desktop_type = chrome::HOST_DESKTOP_TYPE_ASH;
+  chrome::Navigate(&params);
 }
 
 }  // namespace
@@ -63,14 +72,25 @@ ChromeMetroViewerProcessHost::ChromeMetroViewerProcessHost()
   g_browser_process->AddRefModule();
 }
 
-void  ChromeMetroViewerProcessHost::OnChannelError() {
+void ChromeMetroViewerProcessHost::OnChannelError() {
   // TODO(cpu): At some point we only close the browser. Right now this
   // is very convenient for developing.
-  DLOG(INFO) << "viewer channel error : Quitting browser";
+  DVLOG(1) << "viewer channel error : Quitting browser";
+
+  // Unset environment variable to let breakpad know that metro process wasn't
+  // connected.
+  ::SetEnvironmentVariableA(env_vars::kMetroConnected, NULL);
+
   aura::RemoteRootWindowHostWin::Instance()->Disconnected();
   g_browser_process->ReleaseModule();
-  CloseOpenAshBrowsers();
-  chrome::CloseAsh();
+
+  // If browser is trying to quit, we shouldn't reenter the process.
+  // TODO(shrikant): In general there seem to be issues with how AttemptExit
+  // reentry works. In future release please clean up related code.
+  if (!browser_shutdown::IsTryingToQuit()) {
+    CloseOpenAshBrowsers();
+    chrome::CloseAsh();
+  }
   // Tell the rest of Chrome about it.
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_ASH_SESSION_ENDED,
@@ -82,17 +102,30 @@ void  ChromeMetroViewerProcessHost::OnChannelError() {
   g_browser_process->platform_part()->OnMetroViewerProcessTerminated();
 }
 
+void ChromeMetroViewerProcessHost::OnChannelConnected(int32 /*peer_pid*/) {
+  DVLOG(1) << "ChromeMetroViewerProcessHost::OnChannelConnected: ";
+  // Set environment variable to let breakpad know that metro process was
+  // connected.
+  ::SetEnvironmentVariableA(env_vars::kMetroConnected, "1");
+
+  if (!content::GpuDataManager::GetInstance()->GpuAccessAllowed(NULL)) {
+    DVLOG(1) << "No GPU access, attempting to restart in Desktop\n";
+    chrome::AttemptRestartToDesktopMode();
+  }
+}
+
 void ChromeMetroViewerProcessHost::OnSetTargetSurface(
     gfx::NativeViewId target_surface) {
-  DLOG(INFO) << __FUNCTION__ << ", target_surface = " << target_surface;
   HWND hwnd = reinterpret_cast<HWND>(target_surface);
+  // Tell our root window host that the viewer has connected.
+  aura::RemoteRootWindowHostWin::Instance()->Connected(this, hwnd);
+  // Now start the Ash shell environment.
   chrome::OpenAsh();
-  scoped_refptr<AcceleratedPresenter> any_window =
-      AcceleratedPresenter::GetForWindow(NULL);
-  any_window->SetNewTargetWindow(hwnd);
-  aura::RemoteRootWindowHostWin::Instance()->Connected(this);
   ash::Shell::GetInstance()->CreateLauncher();
   ash::Shell::GetInstance()->ShowLauncher();
+  // On Windows 8 ASH we default to SHOW_STATE_MAXIMIZED for the browser
+  // window. This is to ensure that we honor metro app conventions by default.
+  ash::WindowPositioner::SetMaximizeFirstWindow(true);
   // Tell the rest of Chrome that Ash is running.
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_ASH_SESSION_STARTED,
@@ -100,14 +133,25 @@ void ChromeMetroViewerProcessHost::OnSetTargetSurface(
       content::NotificationService::NoDetails());
 }
 
-void ChromeMetroViewerProcessHost::OnOpenURL(const string16& url) {
+void ChromeMetroViewerProcessHost::OnOpenURL(const base::string16& url) {
   OpenURL(GURL(url));
 }
 
 void ChromeMetroViewerProcessHost::OnHandleSearchRequest(
-    const string16& search_string) {
+    const base::string16& search_string) {
   GURL url(GetDefaultSearchURLForSearchTerms(
-      ProfileManager::GetDefaultProfileOrOffTheRecord(), search_string));
+      ProfileManager::GetActiveUserProfileOrOffTheRecord(), search_string));
   if (url.is_valid())
     OpenURL(url);
+}
+
+void ChromeMetroViewerProcessHost::OnWindowSizeChanged(uint32 width,
+                                                       uint32 height) {
+  std::vector<ash::internal::DisplayInfo> info_list;
+  info_list.push_back(ash::internal::DisplayInfo::CreateFromSpec(
+      base::StringPrintf("%dx%d", width, height)));
+  ash::Shell::GetInstance()->display_manager()->OnNativeDisplaysChanged(
+      info_list);
+  aura::RemoteRootWindowHostWin::Instance()->HandleWindowSizeChanged(width,
+                                                                     height);
 }

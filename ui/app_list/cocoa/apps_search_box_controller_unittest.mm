@@ -9,16 +9,18 @@
 #include "base/strings/utf_string_conversions.h"
 #import "testing/gtest_mac.h"
 #include "ui/app_list/app_list_menu.h"
-#import "ui/app_list/cocoa/current_user_menu_item_view.h"
+#include "ui/app_list/app_list_model_observer.h"
 #include "ui/app_list/search_box_model.h"
 #include "ui/app_list/test/app_list_test_model.h"
 #include "ui/app_list/test/app_list_test_view_delegate.h"
+#import "ui/base/cocoa/menu_controller.h"
 #import "ui/base/test/ui_cocoa_test_helper.h"
 
 @interface TestAppsSearchBoxDelegate : NSObject<AppsSearchBoxDelegate> {
  @private
   app_list::SearchBoxModel searchBoxModel_;
   app_list::test::AppListTestViewDelegate appListDelegate_;
+  app_list::test::AppListTestModel appListModel_;
   int textChangeCount_;
 }
 
@@ -30,6 +32,18 @@
 
 @synthesize textChangeCount = textChangeCount_;
 
+- (id)init {
+  if ((self = [super init])) {
+    app_list::AppListViewDelegate::Users users(2);
+    users[0].name = ASCIIToUTF16("user1");
+    users[1].name = ASCIIToUTF16("user2");
+    users[1].email = ASCIIToUTF16("user2@chromium.org");
+    users[1].active = true;
+    appListDelegate_.SetUsers(users);
+  }
+  return self;
+}
+
 - (app_list::SearchBoxModel*)searchBoxModel {
   return &searchBoxModel_;
 }
@@ -37,6 +51,11 @@
 - (app_list::AppListViewDelegate*)appListDelegate {
   return &appListDelegate_;
 }
+
+- (app_list::test::AppListTestViewDelegate*)appListTestViewDelegate {
+  return &appListDelegate_;
+}
+
 
 - (BOOL)control:(NSControl*)control
                textView:(NSTextView*)textView
@@ -50,6 +69,10 @@
 
 - (CGFloat)bubbleCornerRadius {
   return 3;
+}
+
+- (app_list::AppListModel*)appListModel {
+  return &appListModel_;
 }
 
 @end
@@ -109,28 +132,36 @@ TEST_F(AppsSearchBoxControllerTest, SearchBoxModel) {
   model->SetText(search_text);
   EXPECT_NSEQ(base::SysUTF16ToNSString(search_text),
               [[apps_search_box_controller_ searchTextField] stringValue]);
-  // Updates coming via the model should not notify the delegate.
-  EXPECT_EQ(0, [delegate_ textChangeCount]);
+  // Updates coming via the model should notify the delegate.
+  EXPECT_EQ(1, [delegate_ textChangeCount]);
 
   // Updates from the view should update the model and notify the delegate.
   [apps_search_box_controller_ clearSearch];
   EXPECT_EQ(base::string16(), model->text());
   EXPECT_NSEQ([NSString string],
               [[apps_search_box_controller_ searchTextField] stringValue]);
-  EXPECT_EQ(1, [delegate_ textChangeCount]);
+  EXPECT_EQ(2, [delegate_ textChangeCount]);
 
-  // Test pressing escape clears the search.
+  // Test pressing escape clears the search. First add some text.
   model->SetText(search_text);
+  EXPECT_EQ(3, [delegate_ textChangeCount]);
+
   EXPECT_NSEQ(base::SysUTF16ToNSString(search_text),
               [[apps_search_box_controller_ searchTextField] stringValue]);
   SimulateKeyAction(@selector(complete:));
   EXPECT_NSEQ([NSString string],
               [[apps_search_box_controller_ searchTextField] stringValue]);
-  EXPECT_EQ(2, [delegate_ textChangeCount]);
+  EXPECT_EQ(4, [delegate_ textChangeCount]);
 }
 
-// Test the popup menu items.
-TEST_F(AppsSearchBoxControllerTest, SearchBoxMenu) {
+// Test the popup menu items when there is only one user..
+TEST_F(AppsSearchBoxControllerTest, SearchBoxMenuSingleUser) {
+  // Set a single user. We need to set the delegate again because the
+  // AppListModel observer isn't hooked up in these tests.
+  [delegate_ appListTestViewDelegate]->SetUsers(
+      app_list::AppListViewDelegate::Users(1));
+  [apps_search_box_controller_ setDelegate:delegate_];
+
   NSPopUpButton* menu_control = [apps_search_box_controller_ menuControl];
   EXPECT_TRUE([apps_search_box_controller_ appListMenu]);
   ui::MenuModel* menu_model
@@ -140,14 +171,53 @@ TEST_F(AppsSearchBoxControllerTest, SearchBoxMenu) {
   EXPECT_EQ(menu_model->GetItemCount() + 1,
             [[menu_control menu] numberOfItems]);
 
-  // The CURRENT_USER item should contain our custom view.
+  // All command ids should be less than |SELECT_PROFILE| as no user menu items
+  // are being shown.
+  for (int i = 0; i < menu_model->GetItemCount(); ++i)
+    EXPECT_LT(menu_model->GetCommandIdAt(i), AppListMenu::SELECT_PROFILE);
+
+  // The number of items should match the index that starts profile items.
+  EXPECT_EQ(AppListMenu::SELECT_PROFILE, menu_model->GetItemCount());
+}
+
+// Test the popup menu items for the multi-profile case.
+TEST_F(AppsSearchBoxControllerTest, SearchBoxMenu) {
+  const app_list::AppListViewDelegate::Users& users =
+      [delegate_ appListDelegate]->GetUsers();
+  NSPopUpButton* menu_control = [apps_search_box_controller_ menuControl];
+  EXPECT_TRUE([apps_search_box_controller_ appListMenu]);
+  ui::MenuModel* menu_model
+      = [apps_search_box_controller_ appListMenu]->menu_model();
+  // Add one to the item count to account for the blank, first item that Cocoa
+  // has in its popup menus.
+  EXPECT_EQ(menu_model->GetItemCount() + 1,
+            [[menu_control menu] numberOfItems]);
+
   ui::MenuModel* found_menu_model = menu_model;
   int index;
+  MenuController* controller = [[menu_control menu] delegate];
+
+  // The first user item is an unchecked label.
   EXPECT_TRUE(ui::MenuModel::GetModelAndIndexForCommandId(
-      AppListMenu::CURRENT_USER, &menu_model, &index));
+      AppListMenu::SELECT_PROFILE, &menu_model, &index));
   EXPECT_EQ(found_menu_model, menu_model);
-  NSMenuItem* current_user_item = [[menu_control menu] itemAtIndex:index + 1];
-  EXPECT_TRUE([current_user_item view]);
+  NSMenuItem* unchecked_user_item = [[menu_control menu] itemAtIndex:index + 1];
+  [controller validateUserInterfaceItem:unchecked_user_item];
+  // The profile name should be shown if there is no email available.
+  EXPECT_NSEQ(base::SysUTF16ToNSString(users[0].name),
+              [unchecked_user_item title]);
+  EXPECT_EQ(NSOffState, [unchecked_user_item state]);
+
+  // The second user item is a checked label because it is the active profile.
+  EXPECT_TRUE(ui::MenuModel::GetModelAndIndexForCommandId(
+      AppListMenu::SELECT_PROFILE + 1, &menu_model, &index));
+  EXPECT_EQ(found_menu_model, menu_model);
+  NSMenuItem* checked_user_item = [[menu_control menu] itemAtIndex:index + 1];
+  [controller validateUserInterfaceItem:checked_user_item];
+  // The email is shown when available.
+  EXPECT_NSEQ(base::SysUTF16ToNSString(users[1].email),
+              [checked_user_item title]);
+  EXPECT_EQ(NSOnState, [checked_user_item state]);
 
   // A regular item should have just the label.
   EXPECT_TRUE(ui::MenuModel::GetModelAndIndexForCommandId(
@@ -159,30 +229,37 @@ TEST_F(AppsSearchBoxControllerTest, SearchBoxMenu) {
               [settings_item title]);
 }
 
-// Test initialization and display of the custom menu item that shows the
-// currently signed-in user. This is a non-interactive view.
-class AppsSearchBoxCustomMenuItemTest : public ui::CocoaTest {
- public:
-  AppsSearchBoxCustomMenuItemTest() {
-    Init();
-  }
+// Test adding another user, and changing an existing one.
+TEST_F(AppsSearchBoxControllerTest, SearchBoxMenuChangingUsers) {
+  app_list::AppListViewDelegate::Users users =
+      [delegate_ appListDelegate]->GetUsers();
+  EXPECT_EQ(2u, users.size());
+  ui::MenuModel* menu_model
+      = [apps_search_box_controller_ appListMenu]->menu_model();
+  // Adding one to account for the empty item at index 0 in Cocoa popup menus.
+  int non_user_items = menu_model->GetItemCount() - users.size() + 1;
 
-  virtual void SetUp() OVERRIDE {
-    scoped_ptr<AppListViewDelegate> delegate(new AppListTestViewDelegate);
-    current_user_menu_item_.reset([[[CurrentUserMenuItemView alloc]
-        initWithDelegate:delegate.get()] retain]);
-    ui::CocoaTest::SetUp();
-    [[test_window() contentView] addSubview:current_user_menu_item_];
-  }
+  NSPopUpButton* menu_control = [apps_search_box_controller_ menuControl];
+  EXPECT_EQ(2, [[menu_control menu] numberOfItems] - non_user_items);
+  EXPECT_NSEQ(base::SysUTF16ToNSString(users[0].name),
+              [[[menu_control menu] itemAtIndex:1] title]);
 
- protected:
-  base::scoped_nsobject<NSView> current_user_menu_item_;
+  users[0].name = ASCIIToUTF16("renamed user");
+  app_list::AppListViewDelegate::User new_user;
+  new_user.name = ASCIIToUTF16("user3");
+  users.push_back(new_user);
+  [delegate_ appListTestViewDelegate]->SetUsers(users);
+  // Note: menu does not automatically get rebuilt. Force a rebuild (which
+  // would normally occur when the UI is closed / re-opend).
+  [apps_search_box_controller_ rebuildMenu];
 
- private:
-  DISALLOW_COPY_AND_ASSIGN(AppsSearchBoxCustomMenuItemTest);
-};
-
-TEST_VIEW(AppsSearchBoxCustomMenuItemTest, current_user_menu_item_);
+  // Should now be an extra item, and it should have correct titles.
+  EXPECT_EQ(3, [[menu_control menu] numberOfItems] - non_user_items);
+  EXPECT_NSEQ(base::SysUTF16ToNSString(users[0].name),
+              [[[menu_control menu] itemAtIndex:1] title]);
+  EXPECT_NSEQ(base::SysUTF16ToNSString(new_user.name),
+              [[[menu_control menu] itemAtIndex:3] title]);
+}
 
 }  // namespace test
 }  // namespace app_list

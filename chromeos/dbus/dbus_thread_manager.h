@@ -34,27 +34,27 @@ class BluetoothProfileManagerClient;
 class CrasAudioClient;
 class CrosDisksClient;
 class CryptohomeClient;
+class DBusClient;
 class DebugDaemonClient;
 class GsmSMSClient;
-class IBusClient;
-class IBusConfigClient;
-class IBusEngineFactoryService;
-class IBusEngineService;
-class IBusInputContextClient;
-class IBusPanelService;
 class ImageBurnerClient;
 class IntrospectableClient;
 class ModemMessagingClient;
+class NfcAdapterClient;
+class NfcDeviceClient;
+class NfcManagerClient;
+class NfcRecordClient;
+class NfcTagClient;
 class PermissionBrokerClient;
 class PowerManagerClient;
 class PowerPolicyController;
-class SMSClient;
 class SessionManagerClient;
 class ShillDeviceClient;
 class ShillIPConfigClient;
 class ShillManagerClient;
 class ShillProfileClient;
 class ShillServiceClient;
+class SMSClient;
 class SystemClockClient;
 class UpdateEngineClient;
 
@@ -83,10 +83,18 @@ class CHROMEOS_EXPORT DBusThreadManager {
   // making it a Singleton, to ensure clean startup and shutdown.
   static void Initialize();
 
-  // Similar to Initialize(), but can inject an alternative
-  // DBusThreadManager such as MockDBusThreadManager for testing.
-  // The injected object will be owned by the internal pointer and deleted
-  // by Shutdown().
+  // Sets an alternative DBusThreadManager such as MockDBusThreadManager
+  // to be used in |Initialize()| for testing. Tests that call
+  // DBusThreadManager::Initialize() (such as browser_tests and
+  // interactive_ui_tests) should use this instead of calling
+  // |InitiailzeForTesting|.  The injected object will be owned by the
+  // internal pointer and deleted by Shutdown().
+  static void SetInstanceForTesting(DBusThreadManager* dbus_thread_manager);
+
+  // Similar to Initialize(), but injects an alternative
+  // DBusThreadManager using SetInstanceForTest first.  The injected
+  // object will be owned by the internal pointer and deleted by
+  // Shutdown().
   static void InitializeForTesting(DBusThreadManager* dbus_thread_manager);
 
   // Initialize with stub implementations for tests based on stubs.
@@ -106,17 +114,8 @@ class CHROMEOS_EXPORT DBusThreadManager {
   virtual void AddObserver(DBusThreadManagerObserver* observer) = 0;
   virtual void RemoveObserver(DBusThreadManagerObserver* observer) = 0;
 
-  // Creates new IBusBus instance to communicate with ibus-daemon with specified
-  // ibus address. |on_disconnected_callback| will be called when the connection
-  // with ibus-daemon is disconnected. Must be called before using ibus related
-  // clients.
-  // TODO(nona): Support shutdown to enable dynamical ibus-daemon shutdown.
-  virtual void InitIBusBus(const std::string& ibus_address,
-                           const base::Closure& on_disconnected_callback) = 0;
-
   // Returns various D-Bus bus instances, owned by DBusThreadManager.
   virtual dbus::Bus* GetSystemBus() = 0;
-  virtual dbus::Bus* GetIBusBus() = 0;
 
   // All returned objects are owned by DBusThreadManager.  Do not cache these
   // pointers and use them after DBusThreadManager has been shut down.
@@ -130,16 +129,14 @@ class CHROMEOS_EXPORT DBusThreadManager {
   virtual CryptohomeClient* GetCryptohomeClient() = 0;
   virtual DebugDaemonClient* GetDebugDaemonClient() = 0;
   virtual GsmSMSClient* GetGsmSMSClient() = 0;
-  virtual IBusClient* GetIBusClient() = 0;
-  virtual IBusConfigClient* GetIBusConfigClient() = 0;
-  virtual IBusEngineFactoryService* GetIBusEngineFactoryService() = 0;
-  virtual IBusEngineService* GetIBusEngineService(
-      const dbus::ObjectPath& object_path) = 0;
-  virtual IBusInputContextClient* GetIBusInputContextClient() = 0;
-  virtual IBusPanelService* GetIBusPanelService() = 0;
   virtual ImageBurnerClient* GetImageBurnerClient() = 0;
   virtual IntrospectableClient* GetIntrospectableClient() = 0;
   virtual ModemMessagingClient* GetModemMessagingClient() = 0;
+  virtual NfcAdapterClient* GetNfcAdapterClient() = 0;
+  virtual NfcDeviceClient* GetNfcDeviceClient() = 0;
+  virtual NfcManagerClient* GetNfcManagerClient() = 0;
+  virtual NfcRecordClient* GetNfcRecordClient() = 0;
+  virtual NfcTagClient* GetNfcTagClient() = 0;
   virtual PermissionBrokerClient* GetPermissionBrokerClient() = 0;
   virtual PowerManagerClient* GetPowerManagerClient() = 0;
   virtual PowerPolicyController* GetPowerPolicyController() = 0;
@@ -153,13 +150,19 @@ class CHROMEOS_EXPORT DBusThreadManager {
   virtual SystemClockClient* GetSystemClockClient() = 0;
   virtual UpdateEngineClient* GetUpdateEngineClient() = 0;
 
-  // Removes the ibus engine services for |object_path|.
-  virtual void RemoveIBusEngineService(const dbus::ObjectPath& object_path) = 0;
-
   virtual ~DBusThreadManager();
 
  protected:
   DBusThreadManager();
+
+ private:
+  // InitializeClients is called after g_dbus_thread_manager is set.
+  // NOTE: Clients that access other clients in their Init() must be
+  // initialized in the correct order.
+  static void InitializeClients();
+
+  // Initializes |client| with the |system_bus_|.
+  static void InitClient(DBusClient* client);
 
   DISALLOW_COPY_AND_ASSIGN(DBusThreadManager);
 };

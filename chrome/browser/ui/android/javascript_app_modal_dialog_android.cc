@@ -15,7 +15,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/javascript_message_type.h"
 #include "jni/JavascriptAppModalDialog_jni.h"
-#include "ui/android/window_android.h"
+#include "ui/base/android/window_android.h"
 
 using base::android::AttachCurrentThread;
 using base::android::ConvertUTF16ToJavaString;
@@ -98,7 +98,7 @@ void JavascriptAppModalDialogAndroid::ShowAppModalDialog() {
 
   Java_JavascriptAppModalDialog_showJavascriptAppModalDialog(env,
       dialog_object.obj(), parent_jobj.obj(),
-      reinterpret_cast<jint>(this));
+      reinterpret_cast<intptr_t>(this));
 }
 
 void JavascriptAppModalDialogAndroid::ActivateAppModalDialog() {
@@ -110,14 +110,15 @@ void JavascriptAppModalDialogAndroid::CloseAppModalDialog() {
 }
 
 void JavascriptAppModalDialogAndroid::AcceptAppModalDialog() {
-  string16 prompt_text;
+  base::string16 prompt_text;
   dialog_->OnAccept(prompt_text, false);
   delete this;
 }
 
 void JavascriptAppModalDialogAndroid::DidAcceptAppModalDialog(
     JNIEnv* env, jobject, jstring prompt, bool should_suppress_js_dialogs) {
-  string16 prompt_text = base::android::ConvertJavaStringToUTF16(env, prompt);
+  base::string16 prompt_text =
+      base::android::ConvertJavaStringToUTF16(env, prompt);
   dialog_->OnAccept(prompt_text, should_suppress_js_dialogs);
   delete this;
 }

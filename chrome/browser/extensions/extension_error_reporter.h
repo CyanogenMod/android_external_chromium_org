@@ -33,10 +33,10 @@ class ExtensionErrorReporter {
 
   // Report an error. Errors always go to VLOG(1). Optionally, they can also
   // cause a noisy alert box. This method can be called from any thread.
-  void ReportError(const string16& message, bool be_noisy);
+  void ReportError(const base::string16& message, bool be_noisy);
 
   // Get the errors that have been reported so far.
-  const std::vector<string16>* GetErrors();
+  const std::vector<base::string16>* GetErrors();
 
   // Clear the list of errors reported so far.
   void ClearErrors();
@@ -48,7 +48,7 @@ class ExtensionErrorReporter {
   ~ExtensionErrorReporter();
 
   base::MessageLoop* ui_loop_;
-  std::vector<string16> errors_;
+  std::vector<base::string16> errors_;
   bool enable_noisy_errors_;
 };
 

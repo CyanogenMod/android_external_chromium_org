@@ -8,11 +8,11 @@
 #include "base/json/json_writer.h"
 #include "base/values.h"
 #include "chrome/common/extensions/api/permissions.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/permissions/permission_set.h"
-#include "chrome/common/extensions/permissions/permissions_info.h"
 #include "chrome/common/extensions/permissions/usb_device_permission.h"
 #include "extensions/common/error_utils.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/permissions/permission_set.h"
+#include "extensions/common/permissions/permissions_info.h"
 #include "extensions/common/url_pattern_set.h"
 
 using extensions::APIPermission;
@@ -55,6 +55,9 @@ scoped_ptr<Permissions> PackPermissionSet(const PermissionSet* set) {
       permissions->permissions->push_back(name + kDelimiter + json);
     }
   }
+
+  // TODO(rpaquay): We currently don't expose manifest permissions
+  // to apps/extensions via the permissions API.
 
   permissions->origins.reset(new std::vector<std::string>());
   URLPatternSet hosts = set->explicit_hosts();
@@ -121,6 +124,10 @@ scoped_refptr<PermissionSet> UnpackPermissionSet(
     }
   }
 
+  // TODO(rpaquay): We currently don't expose manifest permissions
+  // to apps/extensions via the permissions API.
+  ManifestPermissionSet manifest_permissions;
+
   URLPatternSet origins;
   if (permissions.origins.get()) {
     for (std::vector<std::string>::iterator it = permissions.origins->begin();
@@ -142,8 +149,8 @@ scoped_refptr<PermissionSet> UnpackPermissionSet(
   }
 
   return scoped_refptr<PermissionSet>(
-      new PermissionSet(apis, origins, URLPatternSet()));
+      new PermissionSet(apis, manifest_permissions, origins, URLPatternSet()));
 }
 
-}  // namespace permissions_api
+}  // namespace permissions_api_helpers
 }  // namespace extensions

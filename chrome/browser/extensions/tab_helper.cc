@@ -4,11 +4,14 @@
 
 #include "chrome/browser/extensions/tab_helper.h"
 
+#include "base/logging.h"
+#include "base/strings/string_util.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/activity_log/activity_log.h"
 #include "chrome/browser/extensions/api/declarative/rules_registry_service.h"
 #include "chrome/browser/extensions/api/declarative_content/content_rules_registry.h"
 #include "chrome/browser/extensions/crx_installer.h"
+#include "chrome/browser/extensions/error_console/error_console.h"
 #include "chrome/browser/extensions/extension_action.h"
 #include "chrome/browser/extensions/extension_action_manager.h"
 #include "chrome/browser/extensions/extension_service.h"
@@ -20,19 +23,26 @@
 #include "chrome/browser/extensions/script_bubble_controller.h"
 #include "chrome/browser/extensions/script_executor.h"
 #include "chrome/browser/extensions/webstore_inline_installer.h"
+#include "chrome/browser/extensions/webstore_inline_installer_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sessions/session_id.h"
 #include "chrome/browser/sessions/session_tab_helper.h"
+#include "chrome/browser/shell_integration.h"
+#include "chrome/browser/ui/app_list/app_list_service.h"
+#include "chrome/browser/ui/app_list/app_list_util.h"
+#include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_dialogs.h"
+#include "chrome/browser/ui/browser_finder.h"
+#include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/web_applications/web_app_ui.h"
 #include "chrome/browser/web_applications/web_app.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_icon_set.h"
 #include "chrome/common/extensions/extension_messages.h"
-#include "chrome/common/extensions/feature_switch.h"
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "chrome/common/extensions/manifest_handlers/icons_handler.h"
+#include "chrome/common/render_messages.h"
+#include "chrome/common/url_constants.h"
 #include "content/public/browser/invalidate_type.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_details.h"
@@ -45,7 +55,12 @@
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
+#include "content/public/common/frame_navigate_params.h"
+#include "extensions/browser/extension_error.h"
+#include "extensions/common/extension.h"
 #include "extensions/common/extension_resource.h"
+#include "extensions/common/extension_urls.h"
+#include "extensions/common/feature_switch.h"
 #include "ui/gfx/image/image.h"
 
 using content::NavigationController;
@@ -54,12 +69,6 @@ using content::RenderViewHost;
 using content::WebContents;
 
 DEFINE_WEB_CONTENTS_USER_DATA_KEY(extensions::TabHelper);
-
-namespace {
-
-const char kPermissionError[] = "permission_error";
-
-}  // namespace
 
 namespace extensions {
 
@@ -86,7 +95,8 @@ TabHelper::TabHelper(content::WebContents* web_contents)
       pending_web_app_action_(NONE),
       script_executor_(new ScriptExecutor(web_contents,
                                           &script_execution_observers_)),
-      image_loader_ptr_factory_(this) {
+      image_loader_ptr_factory_(this),
+      webstore_inline_installer_factory_(new WebstoreInlineInstallerFactory()) {
   // The ActiveTabPermissionManager requires a session ID; ensure this
   // WebContents has one.
   SessionTabHelper::CreateForWebContents(web_contents);
@@ -109,11 +119,13 @@ TabHelper::TabHelper(content::WebContents* web_contents)
         new ScriptBubbleController(web_contents, this));
   }
 
-
   // If more classes need to listen to global content script activity, then
   // a separate routing class with an observer interface should be written.
   profile_ = Profile::FromBrowserContext(web_contents->GetBrowserContext());
+
+#if defined(ENABLE_EXTENSIONS)
   AddScriptExecutionObserver(ActivityLog::GetInstance(profile_));
+#endif
 
   registrar_.Add(this,
                  content::NOTIFICATION_LOAD_STOP,
@@ -121,12 +133,22 @@ TabHelper::TabHelper(content::WebContents* web_contents)
                      &web_contents->GetController()));
 
   registrar_.Add(this,
+                 chrome::NOTIFICATION_CRX_INSTALLER_DONE,
+                 content::Source<CrxInstaller>(NULL));
+
+  registrar_.Add(this,
+                 chrome::NOTIFICATION_EXTENSION_INSTALL_ERROR,
+                 content::NotificationService::AllSources());
+
+  registrar_.Add(this,
                  chrome::NOTIFICATION_EXTENSION_UNLOADED,
                  content::NotificationService::AllSources());
 }
 
 TabHelper::~TabHelper() {
+#if defined(ENABLE_EXTENSIONS)
   RemoveScriptExecutionObserver(ActivityLog::GetInstance(profile_));
+#endif
 }
 
 void TabHelper::CreateApplicationShortcuts() {
@@ -137,6 +159,20 @@ void TabHelper::CreateApplicationShortcuts() {
     return;
 
   pending_web_app_action_ = CREATE_SHORTCUT;
+
+  // Start fetching web app info for CreateApplicationShortcut dialog and show
+  // the dialog when the data is available in OnDidGetApplicationInfo.
+  GetApplicationInfo(entry->GetPageID());
+}
+
+void TabHelper::CreateHostedAppFromWebContents() {
+  DCHECK(CanCreateApplicationShortcuts());
+  NavigationEntry* entry =
+      web_contents()->GetController().GetLastCommittedEntry();
+  if (!entry)
+    return;
+
+  pending_web_app_action_ = CREATE_HOSTED_APP;
 
   // Start fetching web app info for CreateApplicationShortcut dialog and show
   // the dialog when the data is available in OnDidGetApplicationInfo.
@@ -198,13 +234,15 @@ void TabHelper::DidNavigateMainFrame(
   }
 #endif  // defined(ENABLE_EXTENSIONS)
 
-  if (details.is_in_page)
-    return;
-
   Profile* profile =
       Profile::FromBrowserContext(web_contents()->GetBrowserContext());
   ExtensionService* service = profile->GetExtensionService();
   if (!service)
+    return;
+
+  UpdateExtensionAppIcon(service->GetInstalledExtensionByUrl(params.url));
+
+  if (details.is_in_page)
     return;
 
   ExtensionActionManager* extension_action_manager =
@@ -237,6 +275,8 @@ bool TabHelper::OnMessageReceived(const IPC::Message& message) {
                         OnContentScriptsExecuting)
     IPC_MESSAGE_HANDLER(ExtensionHostMsg_OnWatchedPageChange,
                         OnWatchedPageChange)
+    IPC_MESSAGE_HANDLER(ChromeViewHostMsg_DetailedConsoleMessageAdded,
+                        OnDetailedConsoleMessageAdded)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -252,7 +292,6 @@ void TabHelper::DidCloneToNewWebContents(WebContents* old_web_contents,
   new_helper->SetExtensionApp(extension_app());
   new_helper->extension_app_icon_ = extension_app_icon_;
 }
-
 
 void TabHelper::OnDidGetApplicationInfo(int32 page_id,
                                         const WebApplicationInfo& info) {
@@ -272,6 +311,10 @@ void TabHelper::OnDidGetApplicationInfo(int32 page_id,
           web_contents());
       break;
     }
+    case CREATE_HOSTED_APP: {
+      CreateHostedApp(info);
+      break;
+    }
     case UPDATE_SHORTCUT: {
       web_app::UpdateShortcutForTabContents(web_contents());
       break;
@@ -281,8 +324,44 @@ void TabHelper::OnDidGetApplicationInfo(int32 page_id,
       break;
   }
 
-  pending_web_app_action_ = NONE;
+  // The hosted app action will be cleared once the installation completes or
+  // fails.
+  if (pending_web_app_action_ != CREATE_HOSTED_APP)
+    pending_web_app_action_ = NONE;
 #endif
+}
+
+void TabHelper::CreateHostedApp(const WebApplicationInfo& info) {
+  ShellIntegration::ShortcutInfo shortcut_info;
+  web_app::GetShortcutInfoForTab(web_contents(), &shortcut_info);
+  WebApplicationInfo web_app_info;
+
+  web_app_info.is_bookmark_app = true;
+  web_app_info.app_url = shortcut_info.url;
+  web_app_info.title = shortcut_info.title;
+  web_app_info.urls.push_back(web_app_info.app_url);
+
+  // TODO(calamity): this should attempt to download the best icon that it can
+  // from |info.icons| rather than just using the favicon as it scales up badly.
+  // Fix this once |info.icons| gets populated commonly.
+
+  // Get the smallest icon in the icon family (should have only 1).
+  const gfx::Image* icon = shortcut_info.favicon.GetBest(0, 0);
+  SkBitmap bitmap = icon ? icon->AsBitmap() : SkBitmap();
+
+  if (!icon->IsEmpty()) {
+    WebApplicationInfo::IconInfo icon_info;
+    icon_info.data = bitmap;
+    icon_info.width = icon_info.data.width();
+    icon_info.height = icon_info.data.height();
+    web_app_info.icons.push_back(icon_info);
+  }
+
+  ExtensionService* service = profile_->GetExtensionService();
+  scoped_refptr<extensions::CrxInstaller> installer(
+      extensions::CrxInstaller::CreateSilent(service));
+  installer->set_error_on_unsupported_requirements(true);
+  installer->InstallWebApp(web_app_info);
 }
 
 void TabHelper::OnInlineWebstoreInstall(
@@ -294,7 +373,7 @@ void TabHelper::OnInlineWebstoreInstall(
       base::Bind(&TabHelper::OnInlineInstallComplete, base::Unretained(this),
                  install_id, return_route_id);
   scoped_refptr<WebstoreInlineInstaller> installer(
-      new WebstoreInlineInstaller(
+      webstore_inline_installer_factory_->CreateInstaller(
           web_contents(),
           webstore_item_id,
           requestor_url,
@@ -350,6 +429,28 @@ void TabHelper::OnWatchedPageChange(
 #endif  // defined(ENABLE_EXTENSIONS)
 }
 
+void TabHelper::OnDetailedConsoleMessageAdded(
+    const base::string16& message,
+    const base::string16& source,
+    const StackTrace& stack_trace,
+    int32 severity_level) {
+  if (IsSourceFromAnExtension(source)) {
+    content::RenderViewHost* rvh = web_contents()->GetRenderViewHost();
+    ErrorConsole::Get(profile_)->ReportError(
+        scoped_ptr<ExtensionError>(new RuntimeError(
+            extension_app_ ? extension_app_->id() : std::string(),
+            profile_->IsOffTheRecord(),
+            source,
+            message,
+            stack_trace,
+            web_contents() ?
+                web_contents()->GetLastCommittedURL() : GURL::EmptyGURL(),
+            static_cast<logging::LogSeverity>(severity_level),
+            rvh->GetRoutingID(),
+            rvh->GetProcess()->GetID())));
+  }
+}
+
 const Extension* TabHelper::GetExtension(const std::string& extension_app_id) {
   if (extension_app_id.empty())
     return NULL;
@@ -378,10 +479,10 @@ void TabHelper::UpdateExtensionAppIcon(const Extension* extension) {
     loader->LoadImageAsync(
         extension,
         IconsInfo::GetIconResource(extension,
-                                   extension_misc::EXTENSION_ICON_SMALLISH,
-                                   ExtensionIconSet::MATCH_EXACTLY),
-        gfx::Size(extension_misc::EXTENSION_ICON_SMALLISH,
-                  extension_misc::EXTENSION_ICON_SMALLISH),
+                                   extension_misc::EXTENSION_ICON_SMALL,
+                                   ExtensionIconSet::MATCH_BIGGER),
+        gfx::Size(extension_misc::EXTENSION_ICON_SMALL,
+                  extension_misc::EXTENSION_ICON_SMALL),
         base::Bind(&TabHelper::OnImageLoaded,
                    image_loader_ptr_factory_.GetWeakPtr()));
   }
@@ -390,6 +491,11 @@ void TabHelper::UpdateExtensionAppIcon(const Extension* extension) {
 void TabHelper::SetAppIcon(const SkBitmap& app_icon) {
   extension_app_icon_ = app_icon;
   web_contents()->NotifyNavigationStateChanged(content::INVALIDATE_TYPE_TITLE);
+}
+
+void TabHelper::SetWebstoreInlineInstallerFactoryForTests(
+    WebstoreInlineInstallerFactory* factory) {
+  webstore_inline_installer_factory_.reset(factory);
 }
 
 void TabHelper::OnImageLoaded(const gfx::Image& image) {
@@ -441,7 +547,50 @@ void TabHelper::Observe(int type,
       }
       break;
     }
+    case chrome::NOTIFICATION_CRX_INSTALLER_DONE: {
+      if (pending_web_app_action_ != CREATE_HOSTED_APP)
+        return;
 
+      pending_web_app_action_ = NONE;
+
+      const Extension* extension =
+          content::Details<const Extension>(details).ptr();
+      if (!extension || !extension->from_bookmark())
+        return;
+
+      // If enabled, launch the app launcher and highlight the new app.
+      // Otherwise, open the chrome://apps page in a new foreground tab.
+      if (IsAppLauncherEnabled()) {
+        AppListService::Get(chrome::GetHostDesktopTypeForNativeView(
+            web_contents()->GetView()->GetNativeView()))->
+            ShowForProfile(profile_);
+
+        content::NotificationService::current()->Notify(
+            chrome::NOTIFICATION_APP_INSTALLED_TO_APPLIST,
+            content::Source<Profile>(profile_),
+            content::Details<const std::string>(&extension->id()));
+        return;
+      }
+
+      // Android does not implement browser_finder.cc.
+#if !defined(OS_ANDROID)
+      Browser* browser =
+          chrome::FindBrowserWithWebContents(web_contents());
+      if (browser) {
+        browser->OpenURL(
+            content::OpenURLParams(GURL(chrome::kChromeUIAppsURL),
+                                   content::Referrer(),
+                                   NEW_FOREGROUND_TAB,
+                                   content::PAGE_TRANSITION_LINK,
+                                   false));
+      }
+#endif
+    }
+    case chrome::NOTIFICATION_EXTENSION_INSTALL_ERROR: {
+      if (pending_web_app_action_ == CREATE_HOSTED_APP)
+        pending_web_app_action_ = NONE;
+      break;
+    }
     case chrome::NOTIFICATION_EXTENSION_UNLOADED: {
       if (script_bubble_controller_) {
         script_bubble_controller_->OnExtensionUnloaded(

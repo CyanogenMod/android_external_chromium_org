@@ -11,8 +11,9 @@
 #include "chrome/browser/sync/profile_sync_test_util.h"
 #include "chrome/browser/sync/test/integration/sync_datatype_helper.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
-#include "components/autofill/core/browser/autofill_common_test.h"
+#include "chrome/browser/webdata/web_data_service_factory.h"
 #include "components/autofill/core/browser/autofill_profile.h"
+#include "components/autofill/core/browser/autofill_test_utils.h"
 #include "components/autofill/core/browser/autofill_type.h"
 #include "components/autofill/core/browser/personal_data_manager.h"
 #include "components/autofill/core/browser/personal_data_manager_observer.h"
@@ -164,7 +165,8 @@ AutofillProfile CreateAutofillProfile(ProfileType type) {
 }
 
 scoped_refptr<AutofillWebDataService> GetWebDataService(int index) {
-  return AutofillWebDataService::FromBrowserContext(test()->GetProfile(index));
+  return WebDataServiceFactory::GetAutofillWebDataForProfile(
+      test()->GetProfile(index), Profile::EXPLICIT_ACCESS);
 }
 
 PersonalDataManager* GetPersonalDataManager(int index) {
@@ -278,7 +280,7 @@ void RemoveProfile(int profile, const std::string& guid) {
 void UpdateProfile(int profile,
                    const std::string& guid,
                    const AutofillType& type,
-                   const string16& value) {
+                   const base::string16& value) {
   const std::vector<AutofillProfile*>& all_profiles = GetAllProfiles(profile);
   std::vector<AutofillProfile> profiles;
   for (size_t i = 0; i < all_profiles.size(); ++i) {

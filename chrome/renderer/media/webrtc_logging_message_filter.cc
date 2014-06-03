@@ -12,13 +12,16 @@
 
 WebRtcLoggingMessageFilter::WebRtcLoggingMessageFilter(
     const scoped_refptr<base::MessageLoopProxy>& io_message_loop)
-    : log_message_delegate_(NULL),
-      io_message_loop_(io_message_loop),
+    : io_message_loop_(io_message_loop),
+      log_message_delegate_(NULL),
       channel_(NULL) {
-  io_message_loop_->PostTask(
-      FROM_HERE, base::Bind(
-          &WebRtcLoggingMessageFilter::CreateLoggingHandler,
-          base::Unretained(this)));
+  // May be null in a browsertest using MockRenderThread.
+  if (io_message_loop_) {
+    io_message_loop_->PostTask(
+        FROM_HERE, base::Bind(
+            &WebRtcLoggingMessageFilter::CreateLoggingHandler,
+            base::Unretained(this)));
+  }
 }
 
 WebRtcLoggingMessageFilter::~WebRtcLoggingMessageFilter() {
@@ -29,57 +32,58 @@ bool WebRtcLoggingMessageFilter::OnMessageReceived(
   DCHECK(io_message_loop_->BelongsToCurrentThread());
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(WebRtcLoggingMessageFilter, message)
-    IPC_MESSAGE_HANDLER(WebRtcLoggingMsg_LogOpened, OnLogOpened)
-    IPC_MESSAGE_HANDLER(WebRtcLoggingMsg_OpenLogFailed, OnOpenLogFailed)
+    IPC_MESSAGE_HANDLER(WebRtcLoggingMsg_StartLogging, OnStartLogging)
+    IPC_MESSAGE_HANDLER(WebRtcLoggingMsg_StopLogging, OnStopLogging)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
 }
 
 void WebRtcLoggingMessageFilter::OnFilterAdded(IPC::Channel* channel) {
-  DCHECK(io_message_loop_->BelongsToCurrentThread());
+  DCHECK(!io_message_loop_ || io_message_loop_->BelongsToCurrentThread());
   channel_ = channel;
 }
 
 void WebRtcLoggingMessageFilter::OnFilterRemoved() {
-  DCHECK(io_message_loop_->BelongsToCurrentThread());
+  DCHECK(!io_message_loop_ || io_message_loop_->BelongsToCurrentThread());
   channel_ = NULL;
   log_message_delegate_->OnFilterRemoved();
 }
 
 void WebRtcLoggingMessageFilter::OnChannelClosing() {
-  DCHECK(io_message_loop_->BelongsToCurrentThread());
+  DCHECK(!io_message_loop_ || io_message_loop_->BelongsToCurrentThread());
   channel_ = NULL;
   log_message_delegate_->OnFilterRemoved();
 }
 
-void WebRtcLoggingMessageFilter::InitLogging(
-    const std::string& app_session_id,
-    const std::string& app_url) {
+void WebRtcLoggingMessageFilter::AddLogMessage(const std::string& message) {
   DCHECK(io_message_loop_->BelongsToCurrentThread());
-  Send(new WebRtcLoggingMsg_OpenLog(app_session_id, app_url));
+  Send(new WebRtcLoggingMsg_AddLogMessage(message));
+}
+
+void WebRtcLoggingMessageFilter::LoggingStopped() {
+  DCHECK(io_message_loop_->BelongsToCurrentThread());
+  Send(new WebRtcLoggingMsg_LoggingStopped());
 }
 
 void WebRtcLoggingMessageFilter::CreateLoggingHandler() {
-  DCHECK(io_message_loop_->BelongsToCurrentThread());
+  DCHECK(!io_message_loop_ || io_message_loop_->BelongsToCurrentThread());
   log_message_delegate_ =
       new ChromeWebRtcLogMessageDelegate(io_message_loop_, this);
 }
 
-void WebRtcLoggingMessageFilter::OnLogOpened(
-    base::SharedMemoryHandle handle,
-    uint32 length) {
-  DCHECK(io_message_loop_->BelongsToCurrentThread());
-  log_message_delegate_->OnLogOpened(handle, length);
+void WebRtcLoggingMessageFilter::OnStartLogging() {
+  DCHECK(!io_message_loop_ || io_message_loop_->BelongsToCurrentThread());
+  log_message_delegate_->OnStartLogging();
 }
 
-void WebRtcLoggingMessageFilter::OnOpenLogFailed() {
+void WebRtcLoggingMessageFilter::OnStopLogging() {
   DCHECK(io_message_loop_->BelongsToCurrentThread());
-  log_message_delegate_->OnOpenLogFailed();
+  log_message_delegate_->OnStopLogging();
 }
 
 void WebRtcLoggingMessageFilter::Send(IPC::Message* message) {
-  DCHECK(io_message_loop_->BelongsToCurrentThread());
+  DCHECK(!io_message_loop_ || io_message_loop_->BelongsToCurrentThread());
   if (!channel_) {
     DLOG(ERROR) << "IPC channel not available.";
     delete message;

@@ -8,21 +8,25 @@
 #include "base/basictypes.h"
 #include "chrome/browser/prefs/session_startup_pref.h"
 
+namespace base {
+class ListValue;
+}
+
 // ResettableSettingsSnapshot captures some settings values at constructor. It
 // can calculate the difference between two snapshots. That is, modified fields.
 class ResettableSettingsSnapshot {
  public:
+  // ExtensionList is a vector of pairs. The first component is the extension
+  // id, the second is the name.
+  typedef std::vector<std::pair<std::string, std::string> > ExtensionList;
   // All types of settings handled by this class.
   enum Field {
-    STARTUP_URLS = 1 << 0,
-    STARTUP_TYPE = 1 << 1,
-    HOMEPAGE = 1 << 2,
-    HOMEPAGE_IS_NTP = 1 << 3,
-    DSE_URL = 1 << 4,
-    EXTENSIONS = 1 << 5,
+    STARTUP_MODE = 1 << 0,
+    HOMEPAGE = 1 << 1,
+    DSE_URL = 1 << 2,
+    EXTENSIONS = 1 << 3,
 
-    ALL_FIELDS = STARTUP_URLS | STARTUP_TYPE | HOMEPAGE |
-                 HOMEPAGE_IS_NTP | DSE_URL | EXTENSIONS,
+    ALL_FIELDS = STARTUP_MODE | HOMEPAGE | DSE_URL | EXTENSIONS,
   };
 
   explicit ResettableSettingsSnapshot(Profile* profile);
@@ -39,11 +43,10 @@ class ResettableSettingsSnapshot {
 
   const std::string& dse_url() const { return dse_url_; }
 
-  const std::vector<std::string>& enabled_extensions() const {
+  const ExtensionList& enabled_extensions() const {
     return enabled_extensions_;
   }
 
-  // Substitutes |startup_.urls| with |startup_.urls|\|snapshot.startup_.urls|.
   // Substitutes |enabled_extensions_| with
   // |enabled_extensions_|\|snapshot.enabled_extensions_|.
   void Subtract(const ResettableSettingsSnapshot& snapshot);
@@ -65,10 +68,16 @@ class ResettableSettingsSnapshot {
   // Default search engine.
   std::string dse_url_;
 
-  // Enabled extension ids. Always sorted.
-  std::vector<std::string> enabled_extensions_;
+  // List of pairs [id, name] for enabled extensions. Always sorted.
+  ExtensionList enabled_extensions_;
 
   DISALLOW_COPY_AND_ASSIGN(ResettableSettingsSnapshot);
+};
+
+// The caller of ResettableSettingsSnapshot.
+enum SnapshotCaller {
+  PROFILE_RESET_WEBUI = 0,
+  PROFILE_RESET_PROMPT,
 };
 
 // Serializes specified |snapshot| members to JSON format. |field_mask| is a bit
@@ -78,6 +87,12 @@ std::string SerializeSettingsReport(const ResettableSettingsSnapshot& snapshot,
 
 // Sends |report| as a feedback. |report| is supposed to be result of
 // SerializeSettingsReport().
-void SendSettingsFeedback(const std::string& report, Profile* profile);
+void SendSettingsFeedback(const std::string& report,
+                          Profile* profile,
+                          SnapshotCaller caller);
+
+// Returns list of key/value pairs for all reported information from the
+// |profile| and some additional fields.
+base::ListValue* GetReadableFeedback(Profile* profile);
 
 #endif  // CHROME_BROWSER_PROFILE_RESETTER_RESETTABLE_SETTINGS_SNAPSHOT_H_

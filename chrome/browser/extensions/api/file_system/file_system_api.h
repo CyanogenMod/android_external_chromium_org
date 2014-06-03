@@ -5,7 +5,7 @@
 #ifndef CHROME_BROWSER_EXTENSIONS_API_FILE_SYSTEM_FILE_SYSTEM_API_H_
 #define CHROME_BROWSER_EXTENSIONS_API_FILE_SYSTEM_FILE_SYSTEM_API_H_
 
-#include "chrome/browser/extensions/extension_function.h"
+#include "chrome/browser/extensions/chrome_extension_function.h"
 #include "chrome/common/extensions/api/file_system.h"
 #include "ui/shell_dialogs/select_file_dialog.h"
 
@@ -22,10 +22,9 @@ namespace file_system_api {
 // chosen by the user in response to a chrome.fileSystem.chooseEntry() call for
 // the given extension.
 
-// Returns true and populates result on success; false on failure.
-bool GetLastChooseEntryDirectory(const ExtensionPrefs* prefs,
-                                 const std::string& extension_id,
-                                 base::FilePath* path);
+// Returns an empty path on failure.
+base::FilePath GetLastChooseEntryDirectory(const ExtensionPrefs* prefs,
+                                           const std::string& extension_id);
 
 void SetLastChooseEntryDirectory(ExtensionPrefs* prefs,
                                  const std::string& extension_id,
@@ -33,7 +32,7 @@ void SetLastChooseEntryDirectory(ExtensionPrefs* prefs,
 
 }  // namespace file_system_api
 
-class FileSystemGetDisplayPathFunction : public SyncExtensionFunction {
+class FileSystemGetDisplayPathFunction : public ChromeSyncExtensionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("fileSystem.getDisplayPath",
                              FILESYSTEM_GETDISPLAYPATH)
@@ -43,18 +42,11 @@ class FileSystemGetDisplayPathFunction : public SyncExtensionFunction {
   virtual bool RunImpl() OVERRIDE;
 };
 
-class FileSystemEntryFunction : public AsyncExtensionFunction {
+class FileSystemEntryFunction : public ChromeAsyncExtensionFunction {
  protected:
-  enum EntryType {
-    READ_ONLY,
-    WRITABLE
-  };
-
   FileSystemEntryFunction();
 
   virtual ~FileSystemEntryFunction() {}
-
-  bool HasFileSystemWritePermission();
 
   // This is called when writable file entries are being returned. The function
   // will ensure the files exist, creating them if necessary, and also check
@@ -76,13 +68,13 @@ class FileSystemEntryFunction : public AsyncExtensionFunction {
                           const std::string& id_override);
 
   // called on the UI thread if there is a problem checking a writable file.
-  void HandleWritableFileError(const std::string& error);
+  void HandleWritableFileError(const base::FilePath& error_path);
 
   // Whether multiple entries have been requested.
   bool multiple_;
 
-  // The type of the entry or entries to return.
-  EntryType entry_type_;
+  // Whether a directory has been requested.
+  bool is_directory_;
 
   // The dictionary to send as the response.
   base::DictionaryValue* response_;
@@ -96,9 +88,16 @@ class FileSystemGetWritableEntryFunction : public FileSystemEntryFunction {
  protected:
   virtual ~FileSystemGetWritableEntryFunction() {}
   virtual bool RunImpl() OVERRIDE;
+
+ private:
+  void CheckPermissionAndSendResponse();
+  void SetIsDirectoryOnFileThread();
+
+  // The path to the file for which a writable entry has been requested.
+  base::FilePath path_;
 };
 
-class FileSystemIsWritableEntryFunction : public SyncExtensionFunction {
+class FileSystemIsWritableEntryFunction : public ChromeSyncExtensionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("fileSystem.isWritableEntry",
                              FILESYSTEM_ISWRITABLEENTRY)
@@ -117,6 +116,10 @@ class FileSystemChooseEntryFunction : public FileSystemEntryFunction {
   static void SkipPickerAndSelectSuggestedPathForTest();
   static void SkipPickerAndAlwaysCancelForTest();
   static void StopSkippingPickerForTest();
+  // Allow directory access confirmation UI to be skipped in testing.
+  static void SkipDirectoryConfirmationForTest();
+  static void AutoCancelDirectoryConfirmationForTest();
+  static void StopSkippingDirectoryConfirmationForTest();
   // Call this with the directory for test file paths. On Chrome OS, accessed
   // path needs to be explicitly registered for smooth integration with Google
   // Drive support.
@@ -153,10 +156,20 @@ class FileSystemChooseEntryFunction : public FileSystemEntryFunction {
   void FilesSelected(const std::vector<base::FilePath>& path);
   void FileSelectionCanceled();
 
+  // Check if the chosen directory is or is an ancestor of a sensitive
+  // directory. If so, show a dialog to confirm that the user wants to open the
+  // directory. Calls OnDirectoryAccessConfirmed if the directory isn't
+  // sensitive or the user chooses to open it. Otherwise, calls
+  // FileSelectionCanceled.
+  void ConfirmDirectoryAccessOnFileThread(
+      const std::vector<base::FilePath>& paths,
+      content::WebContents* web_contents);
+  void OnDirectoryAccessConfirmed(const std::vector<base::FilePath>& paths);
+
   base::FilePath initial_path_;
 };
 
-class FileSystemRetainEntryFunction : public SyncExtensionFunction {
+class FileSystemRetainEntryFunction : public ChromeAsyncExtensionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("fileSystem.retainEntry", FILESYSTEM_RETAINENTRY)
 
@@ -167,10 +180,18 @@ class FileSystemRetainEntryFunction : public SyncExtensionFunction {
  private:
   // Retains the file entry referenced by |entry_id| in apps::SavedFilesService.
   // |entry_id| must refer to an entry in an isolated file system.
-  bool RetainFileEntry(const std::string& entry_id);
+  void RetainFileEntry(const std::string& entry_id);
+
+  void SetIsDirectoryOnFileThread();
+
+  // Whether the file being retained is a directory.
+  bool is_directory_;
+
+  // The path to the file to retain.
+  base::FilePath path_;
 };
 
-class FileSystemIsRestorableFunction : public SyncExtensionFunction {
+class FileSystemIsRestorableFunction : public ChromeSyncExtensionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("fileSystem.isRestorable", FILESYSTEM_ISRESTORABLE)
 

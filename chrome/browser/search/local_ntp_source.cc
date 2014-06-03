@@ -23,7 +23,7 @@
 #include "net/url_request/url_request.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/webui/jstemplate_builder.h"
+#include "ui/base/webui/jstemplate_builder.h"
 #include "url/gurl.h"
 
 namespace {
@@ -84,9 +84,6 @@ void AddString(base::DictionaryValue* dictionary,
 scoped_ptr<DictionaryValue> GetTranslatedStrings() {
   scoped_ptr<base::DictionaryValue> translated_strings(
       new base::DictionaryValue());
-
-  if (chrome::ShouldShowRecentTabsOnNTP())
-    AddString(translated_strings.get(), "recentTabs", IDS_RECENT_TABS_MENU);
 
   AddString(translated_strings.get(), "thumbnailRemovedNotification",
             IDS_NEW_TAB_THUMBNAIL_REMOVED_NOTIFICATION);

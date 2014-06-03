@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "components/autofill/core/browser/test_autofill_manager_delegate.h"
+#include "components/autofill/core/browser/webdata/autofill_webdata_service.h"
 
 namespace autofill {
 
@@ -13,9 +14,9 @@ PersonalDataManager* TestAutofillManagerDelegate::GetPersonalDataManager() {
   return NULL;
 }
 
-autocheckout::WhitelistManager*
-TestAutofillManagerDelegate::GetAutocheckoutWhitelistManager() const {
-  return NULL;
+scoped_refptr<AutofillWebDataService>
+TestAutofillManagerDelegate::GetDatabase() {
+  return scoped_refptr<AutofillWebDataService>(NULL);
 }
 
 PrefService* TestAutofillManagerDelegate::GetPrefs() {
@@ -24,32 +25,16 @@ PrefService* TestAutofillManagerDelegate::GetPrefs() {
 
 void TestAutofillManagerDelegate::HideRequestAutocompleteDialog() {}
 
-void TestAutofillManagerDelegate::OnAutocheckoutError() {}
-
-void TestAutofillManagerDelegate::OnAutocheckoutSuccess() {}
-
 void TestAutofillManagerDelegate::ShowAutofillSettings() {}
 
 void TestAutofillManagerDelegate::ConfirmSaveCreditCard(
     const AutofillMetrics& metric_logger,
-    const CreditCard& credit_card,
     const base::Closure& save_card_callback) {}
-
-bool TestAutofillManagerDelegate::ShowAutocheckoutBubble(
-    const gfx::RectF& bounding_box,
-    bool is_google_user,
-    const base::Callback<void(AutocheckoutBubbleState)>& callback) {
-  return true;
-}
-
-void TestAutofillManagerDelegate::HideAutocheckoutBubble() {}
 
 void TestAutofillManagerDelegate::ShowRequestAutocompleteDialog(
     const FormData& form,
     const GURL& source_url,
-    DialogType dialog_type,
-    const base::Callback<void(const FormStructure*,
-                              const std::string&)>& callback) {}
+    const base::Callback<void(const FormStructure*)>& callback) {}
 
 void TestAutofillManagerDelegate::ShowAutofillPopup(
     const gfx::RectF& element_bounds,
@@ -66,15 +51,11 @@ void TestAutofillManagerDelegate::UpdateAutofillPopupDataListValues(
 
 void TestAutofillManagerDelegate::HideAutofillPopup() {}
 
-void TestAutofillManagerDelegate::AddAutocheckoutStep(
-    AutocheckoutStepType step_type) {}
-
-void TestAutofillManagerDelegate::UpdateAutocheckoutStep(
-    AutocheckoutStepType step_type,
-    AutocheckoutStepStatus step_status) {}
-
 bool TestAutofillManagerDelegate::IsAutocompleteEnabled() {
   return true;
 }
+
+void TestAutofillManagerDelegate::DetectAccountCreationForms(
+    const std::vector<autofill::FormStructure*>& forms) {}
 
 }  // namespace autofill

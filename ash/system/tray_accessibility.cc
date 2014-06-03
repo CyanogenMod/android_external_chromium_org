@@ -4,8 +4,9 @@
 
 #include "ash/system/tray_accessibility.h"
 
+#include "ash/accessibility_delegate.h"
+#include "ash/metrics/user_metrics_recorder.h"
 #include "ash/shell.h"
-#include "ash/shell_delegate.h"
 #include "ash/system/tray/hover_highlight_view.h"
 #include "ash/system/tray/system_tray.h"
 #include "ash/system/tray/system_tray_delegate.h"
@@ -29,7 +30,6 @@ namespace ash {
 namespace internal {
 
 namespace {
-const int kPaddingAroundBottomRow = 5;
 
 enum AccessibilityState {
   A11Y_NONE             = 0,
@@ -37,19 +37,23 @@ enum AccessibilityState {
   A11Y_HIGH_CONTRAST    = 1 << 1,
   A11Y_SCREEN_MAGNIFIER = 1 << 2,
   A11Y_LARGE_CURSOR     = 1 << 3,
+  A11Y_AUTOCLICK        = 1 << 4,
 };
 
 uint32 GetAccessibilityState() {
-  ShellDelegate* shell_delegate = Shell::GetInstance()->delegate();
+  AccessibilityDelegate* delegate =
+      Shell::GetInstance()->accessibility_delegate();
   uint32 state = A11Y_NONE;
-  if (shell_delegate->IsSpokenFeedbackEnabled())
+  if (delegate->IsSpokenFeedbackEnabled())
     state |= A11Y_SPOKEN_FEEDBACK;
-  if (shell_delegate->IsHighContrastEnabled())
+  if (delegate->IsHighContrastEnabled())
     state |= A11Y_HIGH_CONTRAST;
-  if (shell_delegate->IsMagnifierEnabled())
+  if (delegate->IsMagnifierEnabled())
     state |= A11Y_SCREEN_MAGNIFIER;
-  if (shell_delegate->IsLargeCursorEnabled())
+  if (delegate->IsLargeCursorEnabled())
     state |= A11Y_LARGE_CURSOR;
+  if (delegate->IsAutoclickEnabled())
+    state |= A11Y_AUTOCLICK;
   return state;
 }
 
@@ -113,10 +117,12 @@ AccessibilityDetailedView::AccessibilityDetailedView(
         large_cursor_view_(NULL),
         help_view_(NULL),
         settings_view_(NULL),
+        autoclick_view_(NULL),
         spoken_feedback_enabled_(false),
         high_contrast_enabled_(false),
         screen_magnifier_enabled_(false),
         large_cursor_enabled_(false),
+        autoclick_enabled_(false),
         login_(login) {
 
   Reset();
@@ -132,8 +138,9 @@ void AccessibilityDetailedView::AppendAccessibilityList() {
   CreateScrollableList();
   ui::ResourceBundle& bundle = ui::ResourceBundle::GetSharedInstance();
 
-  ShellDelegate* shell_delegate = Shell::GetInstance()->delegate();
-  spoken_feedback_enabled_ = shell_delegate->IsSpokenFeedbackEnabled();
+  AccessibilityDelegate* delegate =
+      Shell::GetInstance()->accessibility_delegate();
+  spoken_feedback_enabled_ = delegate->IsSpokenFeedbackEnabled();
   spoken_feedback_view_ = AddScrollListItem(
       bundle.GetLocalizedString(
           IDS_ASH_STATUS_TRAY_ACCESSIBILITY_SPOKEN_FEEDBACK),
@@ -142,7 +149,7 @@ void AccessibilityDetailedView::AppendAccessibilityList() {
 
   // Large Cursor item is shown only in Login screen.
   if (login_ == user::LOGGED_IN_NONE) {
-    large_cursor_enabled_ = shell_delegate->IsLargeCursorEnabled();
+    large_cursor_enabled_ = delegate->IsLargeCursorEnabled();
     large_cursor_view_ = AddScrollListItem(
         bundle.GetLocalizedString(
             IDS_ASH_STATUS_TRAY_ACCESSIBILITY_LARGE_CURSOR),
@@ -150,18 +157,28 @@ void AccessibilityDetailedView::AppendAccessibilityList() {
         large_cursor_enabled_);
   }
 
-  high_contrast_enabled_ = shell_delegate->IsHighContrastEnabled();
+  high_contrast_enabled_ = delegate->IsHighContrastEnabled();
   high_contrast_view_ = AddScrollListItem(
       bundle.GetLocalizedString(
           IDS_ASH_STATUS_TRAY_ACCESSIBILITY_HIGH_CONTRAST_MODE),
       high_contrast_enabled_ ? gfx::Font::BOLD : gfx::Font::NORMAL,
       high_contrast_enabled_);
-  screen_magnifier_enabled_ = shell_delegate->IsMagnifierEnabled();
+  screen_magnifier_enabled_ = delegate->IsMagnifierEnabled();
   screen_magnifier_view_ = AddScrollListItem(
       bundle.GetLocalizedString(
           IDS_ASH_STATUS_TRAY_ACCESSIBILITY_SCREEN_MAGNIFIER),
       screen_magnifier_enabled_ ? gfx::Font::BOLD : gfx::Font::NORMAL,
       screen_magnifier_enabled_);
+
+  // Don't show autoclick option at login screen.
+  if (login_ != user::LOGGED_IN_NONE) {
+    autoclick_enabled_ = delegate->IsAutoclickEnabled();
+    autoclick_view_ = AddScrollListItem(
+        bundle.GetLocalizedString(
+            IDS_ASH_STATUS_TRAY_ACCESSIBILITY_AUTOCLICK),
+        autoclick_enabled_ ? gfx::Font::BOLD : gfx::Font::NORMAL,
+        autoclick_enabled_);
+  }
 }
 
 void AccessibilityDetailedView::AppendHelpEntries() {
@@ -210,18 +227,40 @@ HoverHighlightView* AccessibilityDetailedView::AddScrollListItem(
 }
 
 void AccessibilityDetailedView::OnViewClicked(views::View* sender) {
-  ShellDelegate* shell_delegate = Shell::GetInstance()->delegate();
+  AccessibilityDelegate* delegate =
+      Shell::GetInstance()->accessibility_delegate();
   if (sender == footer()->content()) {
-    owner()->system_tray()->ShowDefaultView(BUBBLE_USE_EXISTING);
+    TransitionToDefaultView();
   } else if (sender == spoken_feedback_view_) {
-    shell_delegate->ToggleSpokenFeedback(ash::A11Y_NOTIFICATION_NONE);
+    Shell::GetInstance()->metrics()->RecordUserMetricsAction(
+        delegate->IsSpokenFeedbackEnabled() ?
+            ash::UMA_STATUS_AREA_DISABLE_SPOKEN_FEEDBACK :
+            ash::UMA_STATUS_AREA_ENABLE_SPOKEN_FEEDBACK);
+    delegate->ToggleSpokenFeedback(ash::A11Y_NOTIFICATION_NONE);
   } else if (sender == high_contrast_view_) {
-    shell_delegate->ToggleHighContrast();
+    Shell::GetInstance()->metrics()->RecordUserMetricsAction(
+        delegate->IsHighContrastEnabled() ?
+            ash::UMA_STATUS_AREA_DISABLE_HIGH_CONTRAST :
+            ash::UMA_STATUS_AREA_ENABLE_HIGH_CONTRAST);
+    delegate->ToggleHighContrast();
   } else if (sender == screen_magnifier_view_) {
-    shell_delegate->SetMagnifierEnabled(!shell_delegate->IsMagnifierEnabled());
+    Shell::GetInstance()->metrics()->RecordUserMetricsAction(
+        delegate->IsMagnifierEnabled() ?
+            ash::UMA_STATUS_AREA_DISABLE_MAGNIFIER :
+            ash::UMA_STATUS_AREA_ENABLE_MAGNIFIER);
+    delegate->SetMagnifierEnabled(!delegate->IsMagnifierEnabled());
   } else if (large_cursor_view_ && sender == large_cursor_view_) {
-    shell_delegate->
-        SetLargeCursorEnabled(!shell_delegate->IsLargeCursorEnabled());
+    Shell::GetInstance()->metrics()->RecordUserMetricsAction(
+        delegate->IsLargeCursorEnabled() ?
+            ash::UMA_STATUS_AREA_DISABLE_LARGE_CURSOR :
+            ash::UMA_STATUS_AREA_ENABLE_LARGE_CURSOR);
+    delegate->SetLargeCursorEnabled(!delegate->IsLargeCursorEnabled());
+  } else if (autoclick_view_ && sender == autoclick_view_) {
+    Shell::GetInstance()->metrics()->RecordUserMetricsAction(
+        delegate->IsAutoclickEnabled() ?
+            ash::UMA_STATUS_AREA_DISABLE_AUTO_CLICK :
+            ash::UMA_STATUS_AREA_ENABLE_AUTO_CLICK);
+    delegate->SetAutoclickEnabled(!delegate->IsAutoclickEnabled());
   }
 }
 
@@ -284,12 +323,12 @@ views::View* TrayAccessibility::CreateDefaultView(user::LoginStatus status) {
   // - "Enable accessibility menu" on chrome://settings is checked;
   // - or any of accessibility features is enabled
   // Otherwise, not shows it.
-  ShellDelegate* delegate = Shell::GetInstance()->delegate();
+  AccessibilityDelegate* delegate =
+      Shell::GetInstance()->accessibility_delegate();
   if (login_ != user::LOGGED_IN_NONE &&
-      !delegate->ShouldAlwaysShowAccessibilityMenu() &&
-      // On login screen, keeps the initial visivility of the menu.
-      (status != user::LOGGED_IN_LOCKED || !show_a11y_menu_on_lock_screen_) &&
-      GetAccessibilityState() == A11Y_NONE)
+      !delegate->ShouldShowAccessibilityMenu() &&
+      // On login screen, keeps the initial visibility of the menu.
+      (status != user::LOGGED_IN_LOCKED || !show_a11y_menu_on_lock_screen_))
     return NULL;
 
   CHECK(default_ == NULL);
@@ -307,6 +346,8 @@ views::View* TrayAccessibility::CreateDetailedView(user::LoginStatus status) {
     request_popup_view_ = false;
     return detailed_popup_;
   } else {
+    Shell::GetInstance()->metrics()->RecordUserMetricsAction(
+        ash::UMA_STATUS_AREA_DETAILED_ACCESSABILITY);
     detailed_menu_ = CreateDetailedMenu();
     return detailed_menu_;
   }
@@ -335,7 +376,7 @@ void TrayAccessibility::OnAccessibilityModeChanged(
   SetTrayIconVisible(GetInitialVisibility());
 
   uint32 accessibility_state = GetAccessibilityState();
-  if ((notify == ash::A11Y_NOTIFICATION_SHOW)&&
+  if ((notify == ash::A11Y_NOTIFICATION_SHOW) &&
       !(previous_accessibility_state_ & A11Y_SPOKEN_FEEDBACK) &&
       (accessibility_state & A11Y_SPOKEN_FEEDBACK)) {
     // Shows popup if |notify| is true and the spoken feedback is being enabled.

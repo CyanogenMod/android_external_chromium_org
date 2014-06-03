@@ -10,6 +10,7 @@
 
 namespace aura {
 class RootWindow;
+class Window;
 }
 
 namespace ash {
@@ -24,11 +25,11 @@ class ASH_EXPORT HighContrastController {
   void SetEnabled(bool enabled);
 
   // Update high contrast mode on the just added display.
-  void OnRootWindowAdded(aura::RootWindow* root_window);
+  void OnRootWindowAdded(aura::Window* root_window);
 
  private:
   // Update high contrast mode on the passed display.
-  void UpdateDisplay(aura::RootWindow* root_window);
+  void UpdateDisplay(aura::Window* root_window);
 
   // Indicates if the high contrast mode is enabled or disabled.
   bool enabled_;

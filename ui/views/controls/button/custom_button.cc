@@ -5,10 +5,17 @@
 #include "ui/views/controls/button/custom_button.h"
 
 #include "ui/base/accessibility/accessible_view_state.h"
-#include "ui/base/animation/throb_animation.h"
-#include "ui/base/events/event.h"
-#include "ui/base/keycodes/keyboard_codes.h"
+#include "ui/events/event.h"
+#include "ui/events/keycodes/keyboard_codes.h"
+#include "ui/gfx/animation/throb_animation.h"
 #include "ui/gfx/screen.h"
+#include "ui/views/controls/button/blue_button.h"
+#include "ui/views/controls/button/checkbox.h"
+#include "ui/views/controls/button/image_button.h"
+#include "ui/views/controls/button/label_button.h"
+#include "ui/views/controls/button/menu_button.h"
+#include "ui/views/controls/button/radio_button.h"
+#include "ui/views/controls/button/text_button.h"
 #include "ui/views/widget/widget.h"
 
 namespace views {
@@ -21,6 +28,27 @@ const char CustomButton::kViewClassName[] = "CustomButton";
 
 ////////////////////////////////////////////////////////////////////////////////
 // CustomButton, public:
+
+// static
+const CustomButton* CustomButton::AsCustomButton(const views::View* view) {
+  return AsCustomButton(const_cast<views::View*>(view));
+}
+
+CustomButton* CustomButton::AsCustomButton(views::View* view) {
+  if (view) {
+    const char* classname = view->GetClassName();
+    if (!strcmp(classname, Checkbox::kViewClassName) ||
+        !strcmp(classname, CustomButton::kViewClassName) ||
+        !strcmp(classname, ImageButton::kViewClassName) ||
+        !strcmp(classname, LabelButton::kViewClassName) ||
+        !strcmp(classname, RadioButton::kViewClassName) ||
+        !strcmp(classname, MenuButton::kViewClassName) ||
+        !strcmp(classname, TextButton::kViewClassName)) {
+      return static_cast<CustomButton*>(view);
+    }
+  }
+  return NULL;
+}
 
 CustomButton::~CustomButton() {
 }
@@ -201,8 +229,9 @@ void CustomButton::OnGestureEvent(ui::GestureEvent* event) {
 
   if (event->type() == ui::ET_GESTURE_TAP && IsTriggerableEvent(*event)) {
     // Set the button state to hot and start the animation fully faded in. The
-    // TAP_UP event issued immediately after will set the state to STATE_NORMAL
-    // beginning the fade out animation. See http://crbug.com/131184.
+    // GESTURE_END event issued immediately after will set the state to
+    // STATE_NORMAL beginning the fade out animation. See
+    // http://crbug.com/131184.
     SetState(STATE_HOVERED);
     hover_animation_->Reset(1.0);
     NotifyClick(*event);
@@ -213,7 +242,8 @@ void CustomButton::OnGestureEvent(ui::GestureEvent* event) {
     if (request_focus_on_press_)
       RequestFocus();
     event->StopPropagation();
-  } else {
+  } else if (event->type() == ui::ET_GESTURE_TAP_CANCEL ||
+             event->type() == ui::ET_GESTURE_END) {
     SetState(STATE_NORMAL);
   }
   if (!event->handled())
@@ -277,9 +307,9 @@ void CustomButton::VisibilityChanged(View* starting_from, bool visible) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// CustomButton, ui::AnimationDelegate implementation:
+// CustomButton, gfx::AnimationDelegate implementation:
 
-void CustomButton::AnimationProgressed(const ui::Animation* animation) {
+void CustomButton::AnimationProgressed(const gfx::Animation* animation) {
   SchedulePaint();
 }
 
@@ -293,7 +323,7 @@ CustomButton::CustomButton(ButtonListener* listener)
       is_throbbing_(false),
       triggerable_event_flags_(ui::EF_LEFT_MOUSE_BUTTON),
       request_focus_on_press_(true) {
-  hover_animation_.reset(new ui::ThrobAnimation(this));
+  hover_animation_.reset(new gfx::ThrobAnimation(this));
   hover_animation_->SetSlideDuration(kHoverFadeDurationMs);
 }
 

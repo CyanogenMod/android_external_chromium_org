@@ -19,7 +19,7 @@ class Browser;
 class GURL;
 
 namespace extensions {
-class ExtensionHost;
+class ExtensionViewHost;
 }
 
 namespace content {
@@ -76,7 +76,7 @@ class ExtensionPopupGtk : public content::NotificationObserver,
 
  private:
   ExtensionPopupGtk(Browser* browser,
-                    extensions::ExtensionHost* host,
+                    extensions::ExtensionViewHost* host,
                     GtkWidget* anchor,
                     ShowAction show_action);
   virtual ~ExtensionPopupGtk();
@@ -95,8 +95,8 @@ class ExtensionPopupGtk : public content::NotificationObserver,
 
   BubbleGtk* bubble_;
 
-  // We take ownership of the popup ExtensionHost.
-  scoped_ptr<extensions::ExtensionHost> host_;
+  // We take ownership of the popup ExtensionViewHost.
+  scoped_ptr<extensions::ExtensionViewHost> host_;
 
   // The widget for anchoring the position of the bubble.
   GtkWidget* anchor_;
@@ -108,9 +108,9 @@ class ExtensionPopupGtk : public content::NotificationObserver,
   // Whether a devtools window is attached to this bubble.
   bool being_inspected_;
 
-  base::WeakPtrFactory<ExtensionPopupGtk> weak_factory_;
-
   base::Callback<void(content::DevToolsAgentHost*, bool)> devtools_callback_;
+
+  base::WeakPtrFactory<ExtensionPopupGtk> weak_factory_;
 
   // Used for testing. ---------------------------------------------------------
   gfx::Rect GetViewBounds();

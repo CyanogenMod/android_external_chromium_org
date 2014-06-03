@@ -9,14 +9,17 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/extensions/api/declarative/initializing_rules_registry.h"
+#include "chrome/browser/extensions/api/declarative/rules_cache_delegate.h"
 #include "chrome/browser/extensions/api/declarative_content/content_rules_registry.h"
+#include "chrome/browser/extensions/api/declarative_webrequest/webrequest_constants.h"
 #include "chrome/browser/extensions/api/declarative_webrequest/webrequest_rules_registry.h"
 #include "chrome/browser/extensions/api/web_request/web_request_api.h"
-#include "chrome/common/extensions/extension.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
+#include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
+#include "content/public/browser/render_process_host.h"
+#include "extensions/common/extension.h"
 
 namespace extensions {
 
@@ -25,9 +28,14 @@ namespace {
 // Registers |web_request_rules_registry| on the IO thread.
 void RegisterToExtensionWebRequestEventRouterOnIO(
     void* profile,
+    const RulesRegistryService::WebViewKey& webview_key,
     scoped_refptr<WebRequestRulesRegistry> web_request_rules_registry) {
   ExtensionWebRequestEventRouter::GetInstance()->RegisterRulesRegistry(
-      profile, web_request_rules_registry);
+      profile, webview_key, web_request_rules_registry);
+}
+
+bool IsWebView(const RulesRegistryService::WebViewKey& webview_key) {
+  return webview_key.embedder_process_id && webview_key.webview_instance_id;
 }
 
 }  // namespace
@@ -38,31 +46,61 @@ RulesRegistryService::RulesRegistryService(Profile* profile)
   if (profile) {
     registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED,
         content::Source<Profile>(profile->GetOriginalProfile()));
-    RegisterDefaultRulesRegistries();
+    registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNINSTALLED,
+        content::Source<Profile>(profile->GetOriginalProfile()));
+    registrar_.Add(this,
+                   chrome::NOTIFICATION_EXTENSION_LOADED,
+                   content::Source<Profile>(profile_->GetOriginalProfile()));
+    registrar_.Add(
+        this, content::NOTIFICATION_RENDERER_PROCESS_TERMINATED,
+        content::NotificationService::AllBrowserContextsAndSources());
+    EnsureDefaultRulesRegistriesRegistered(WebViewKey(0, 0));
   }
 }
 
 RulesRegistryService::~RulesRegistryService() {}
 
-void RulesRegistryService::RegisterDefaultRulesRegistries() {
-  scoped_ptr<RulesRegistryWithCache::RuleStorageOnUI> ui_part;
+void RulesRegistryService::EnsureDefaultRulesRegistriesRegistered(
+    const WebViewKey& webview_key) {
+  if (!profile_)
+    return;
+
+  RulesRegistryKey key(declarative_webrequest_constants::kOnRequest,
+                       webview_key);
+  // If we can find the key in the |rule_registries_| then we have already
+  // installed the default registries.
+  if (ContainsKey(rule_registries_, key))
+    return;
+
+
+  RulesCacheDelegate* web_request_cache_delegate = NULL;
+  if (!IsWebView(webview_key)) {
+    web_request_cache_delegate =
+        new RulesCacheDelegate(true /*log_storage_init_delay*/);
+    cache_delegates_.push_back(web_request_cache_delegate);
+  }
   scoped_refptr<WebRequestRulesRegistry> web_request_rules_registry(
-      new WebRequestRulesRegistry(profile_, &ui_part));
-  ui_parts_of_registries_.push_back(ui_part.release());
+      new WebRequestRulesRegistry(profile_,
+                                  web_request_cache_delegate,
+                                  webview_key));
 
   RegisterRulesRegistry(web_request_rules_registry);
   content::BrowserThread::PostTask(
       content::BrowserThread::IO, FROM_HERE,
       base::Bind(&RegisterToExtensionWebRequestEventRouterOnIO,
-          profile_, web_request_rules_registry));
+          profile_, webview_key, web_request_rules_registry));
 
 #if defined(ENABLE_EXTENSIONS)
-  scoped_refptr<ContentRulesRegistry> content_rules_registry(
-      new ContentRulesRegistry(profile_, &ui_part));
-  ui_parts_of_registries_.push_back(ui_part.release());
-
-  RegisterRulesRegistry(content_rules_registry);
-  content_rules_registry_ = content_rules_registry.get();
+  // Only create a ContentRulesRegistry for regular pages and not webviews.
+  if (!IsWebView(webview_key)) {
+    RulesCacheDelegate* content_rules_cache_delegate =
+        new RulesCacheDelegate(false /*log_storage_init_delay*/);
+    cache_delegates_.push_back(content_rules_cache_delegate);
+    scoped_refptr<ContentRulesRegistry> content_rules_registry(
+        new ContentRulesRegistry(profile_, content_rules_cache_delegate));
+    RegisterRulesRegistry(content_rules_registry);
+    content_rules_registry_ = content_rules_registry.get();
+  }
 #endif  // defined(ENABLE_EXTENSIONS)
 }
 
@@ -77,7 +115,8 @@ void RulesRegistryService::Shutdown() {
   content::BrowserThread::PostTask(
       content::BrowserThread::IO, FROM_HERE,
       base::Bind(&RegisterToExtensionWebRequestEventRouterOnIO,
-          profile_, scoped_refptr<WebRequestRulesRegistry>(NULL)));
+          profile_, WebViewKey(0, 0),
+          scoped_refptr<WebRequestRulesRegistry>(NULL)));
 }
 
 static base::LazyInstance<ProfileKeyedAPIFactory<RulesRegistryService> >
@@ -97,37 +136,68 @@ RulesRegistryService* RulesRegistryService::Get(Profile* profile) {
 void RulesRegistryService::RegisterRulesRegistry(
     scoped_refptr<RulesRegistry> rule_registry) {
   const std::string event_name(rule_registry->event_name());
-  DCHECK(rule_registries_.find(event_name) == rule_registries_.end());
-  rule_registries_[event_name] =
-      make_scoped_refptr(new InitializingRulesRegistry(rule_registry));
+  RulesRegistryKey key(event_name, rule_registry->webview_key());
+  DCHECK(rule_registries_.find(key) == rule_registries_.end());
+  rule_registries_[key] = rule_registry;
 }
 
 scoped_refptr<RulesRegistry> RulesRegistryService::GetRulesRegistry(
-    const std::string& event_name) const {
-  RulesRegistryMap::const_iterator i = rule_registries_.find(event_name);
+    const WebViewKey& webview_key,
+    const std::string& event_name) {
+  EnsureDefaultRulesRegistriesRegistered(webview_key);
+
+  RulesRegistryKey key(event_name, webview_key);
+  RulesRegistryMap::const_iterator i = rule_registries_.find(key);
   if (i == rule_registries_.end())
     return scoped_refptr<RulesRegistry>();
   return i->second;
 }
 
-void RulesRegistryService::SimulateExtensionUnloaded(
-    const std::string& extension_id) {
-  OnExtensionUnloaded(extension_id);
+void RulesRegistryService::RemoveWebViewRulesRegistries(int process_id) {
+  DCHECK_NE(0, process_id);
+
+  std::set<RulesRegistryKey> registries_to_delete;
+  for (RulesRegistryMap::iterator it = rule_registries_.begin();
+       it != rule_registries_.end(); ++it) {
+    const RulesRegistryKey& key = it->first;
+    const WebViewKey& webview_key = key.webview_key;
+    int embedder_process_id = webview_key.embedder_process_id;
+    // |process_id| will always be non-zero.
+    // |embedder_process_id| will only be non-zero if the key corresponds to a
+    // webview registry.
+    // Thus, |embedder_process_id| == |process_id| ==> the process ID is a
+    // webview embedder.
+    if (embedder_process_id != process_id)
+      continue;
+
+    // Modifying the container while iterating is bad so we'll save the keys we
+    // wish to delete in another container, and delete them in another loop.
+    registries_to_delete.insert(key);
+  }
+  for (std::set<RulesRegistryKey>::iterator it = registries_to_delete.begin();
+       it != registries_to_delete.end(); ++it) {
+    rule_registries_.erase(*it);
+  }
 }
 
-void RulesRegistryService::OnExtensionUnloaded(
+void RulesRegistryService::SimulateExtensionUninstalled(
+    const std::string& extension_id) {
+  NotifyRegistriesHelper(&RulesRegistry::OnExtensionUninstalled, extension_id);
+}
+
+void RulesRegistryService::NotifyRegistriesHelper(
+    void (RulesRegistry::*notification_callback)(const std::string&),
     const std::string& extension_id) {
   RulesRegistryMap::iterator i;
   for (i = rule_registries_.begin(); i != rule_registries_.end(); ++i) {
     scoped_refptr<RulesRegistry> registry = i->second;
     if (content::BrowserThread::CurrentlyOn(registry->owner_thread())) {
-      registry->OnExtensionUnloaded(extension_id);
+      (registry->*notification_callback)(extension_id);
     } else {
       content::BrowserThread::PostTask(
           registry->owner_thread(),
           FROM_HERE,
-          base::Bind(
-              &RulesRegistry::OnExtensionUnloaded, registry, extension_id));
+          base::Bind(notification_callback, registry, extension_id));
     }
   }
 }
@@ -140,7 +210,28 @@ void RulesRegistryService::Observe(
     case chrome::NOTIFICATION_EXTENSION_UNLOADED: {
       const Extension* extension =
           content::Details<UnloadedExtensionInfo>(details)->extension;
-      OnExtensionUnloaded(extension->id());
+      NotifyRegistriesHelper(&RulesRegistry::OnExtensionUnloaded,
+                             extension->id());
+      break;
+    }
+    case chrome::NOTIFICATION_EXTENSION_UNINSTALLED: {
+      const Extension* extension =
+          content::Details<const Extension>(details).ptr();
+      NotifyRegistriesHelper(&RulesRegistry::OnExtensionUninstalled,
+                             extension->id());
+      break;
+    }
+    case chrome::NOTIFICATION_EXTENSION_LOADED: {
+      const Extension* extension =
+          content::Details<const Extension>(details).ptr();
+      NotifyRegistriesHelper(&RulesRegistry::OnExtensionLoaded,
+                             extension->id());
+      break;
+    }
+    case content::NOTIFICATION_RENDERER_PROCESS_TERMINATED: {
+      content::RenderProcessHost* process =
+          content::Source<content::RenderProcessHost>(source).ptr();
+      RemoveWebViewRulesRegistries(process->GetID());
       break;
     }
     default:

@@ -4,7 +4,9 @@
 
 #include "cc/test/layer_tree_pixel_test.h"
 
+#include "base/command_line.h"
 #include "base/path_service.h"
+#include "cc/base/switches.h"
 #include "cc/layers/solid_color_layer.h"
 #include "cc/layers/texture_layer.h"
 #include "cc/output/copy_output_request.h"
@@ -25,13 +27,13 @@ namespace cc {
 LayerTreePixelTest::LayerTreePixelTest()
     : pixel_comparator_(new ExactPixelComparator(true)),
       test_type_(GL_WITH_DEFAULT),
-      pending_texture_mailbox_callbacks_(0) {}
+      pending_texture_mailbox_callbacks_(0),
+      impl_side_painting_(true) {}
 
 LayerTreePixelTest::~LayerTreePixelTest() {}
 
 scoped_ptr<OutputSurface> LayerTreePixelTest::CreateOutputSurface(
     bool fallback) {
-  gfx::Vector2d viewport_offset(20, 10);
   gfx::Size surface_expansion_size(40, 60);
   scoped_ptr<PixelTestOutputSurface> output_surface;
 
@@ -52,35 +54,37 @@ scoped_ptr<OutputSurface> LayerTreePixelTest::CreateOutputSurface(
     case GL_WITH_BITMAP: {
       CHECK(gfx::InitializeGLBindings(gfx::kGLImplementationOSMesaGL));
 
-      using WebKit::WebGraphicsContext3D;
-      using webkit::gpu::WebGraphicsContext3DInProcessCommandBufferImpl;
-      scoped_ptr<WebGraphicsContext3D> context(
-          WebGraphicsContext3DInProcessCommandBufferImpl::
-              CreateOffscreenContext(WebGraphicsContext3D::Attributes()));
-      output_surface.reset(new PixelTestOutputSurface(context.Pass()));
+      using webkit::gpu::ContextProviderInProcess;
+      output_surface = make_scoped_ptr(new PixelTestOutputSurface(
+          ContextProviderInProcess::CreateOffscreen()));
       break;
     }
   }
 
-  output_surface->set_viewport_offset(viewport_offset);
   output_surface->set_surface_expansion_size(surface_expansion_size);
   return output_surface.PassAs<OutputSurface>();
 }
 
-scoped_refptr<cc::ContextProvider>
-LayerTreePixelTest::OffscreenContextProviderForMainThread() {
-  scoped_refptr<webkit::gpu::ContextProviderInProcess> provider =
-      webkit::gpu::ContextProviderInProcess::CreateOffscreen();
-  CHECK(provider->BindToCurrentThread());
-  return provider;
-}
-
-scoped_refptr<cc::ContextProvider>
-LayerTreePixelTest::OffscreenContextProviderForCompositorThread() {
+scoped_refptr<ContextProvider> LayerTreePixelTest::OffscreenContextProvider() {
   scoped_refptr<webkit::gpu::ContextProviderInProcess> provider =
       webkit::gpu::ContextProviderInProcess::CreateOffscreen();
   CHECK(provider.get());
   return provider;
+}
+
+void LayerTreePixelTest::CommitCompleteOnThread(LayerTreeHostImpl* impl) {
+  LayerTreeImpl* commit_tree =
+      impl->pending_tree() ? impl->pending_tree() : impl->active_tree();
+  if (commit_tree->source_frame_number() != 0)
+    return;
+
+  gfx::Rect viewport = impl->DeviceViewport();
+  // The viewport has a 0,0 origin without external influence.
+  EXPECT_EQ(gfx::Point().ToString(), viewport.origin().ToString());
+  // Be that influence!
+  viewport += gfx::Vector2d(20, 10);
+  impl->SetExternalDrawConstraints(gfx::Transform(), viewport, viewport, true);
+  EXPECT_EQ(viewport.ToString(), impl->DeviceViewport().ToString());
 }
 
 scoped_ptr<CopyOutputRequest> LayerTreePixelTest::CreateCopyOutputRequest() {
@@ -103,11 +107,12 @@ void LayerTreePixelTest::BeginTest() {
 
 void LayerTreePixelTest::AfterTest() {
   base::FilePath test_data_dir;
-  EXPECT_TRUE(PathService::Get(cc::DIR_TEST_DATA, &test_data_dir));
+  EXPECT_TRUE(PathService::Get(CCPaths::DIR_TEST_DATA, &test_data_dir));
   base::FilePath ref_file_path = test_data_dir.Append(ref_file_);
 
-  // To rebaseline:
-  // EXPECT_TRUE(WritePNGFile(*result_bitmap_, ref_file_path, true));
+  CommandLine* cmd = CommandLine::ForCurrentProcess();
+  if (cmd->HasSwitch(switches::kCCRebaselinePixeltests))
+    EXPECT_TRUE(WritePNGFile(*result_bitmap_, ref_file_path, true));
 
   EXPECT_TRUE(MatchesPNGFile(*result_bitmap_,
                              ref_file_path,
@@ -128,8 +133,10 @@ scoped_refptr<SolidColorLayer> LayerTreePixelTest::CreateSolidColorLayer(
 void LayerTreePixelTest::EndTest() {
   // Drop TextureMailboxes on the main thread so that they can be cleaned up and
   // the pending callbacks will fire.
-  for (size_t i = 0; i < texture_layers_.size(); ++i)
-    texture_layers_[i]->SetTextureMailbox(TextureMailbox());
+  for (size_t i = 0; i < texture_layers_.size(); ++i) {
+    texture_layers_[i]->SetTextureMailbox(TextureMailbox(),
+                                          scoped_ptr<SingleReleaseCallback>());
+  }
 
   TryEndTest();
 }
@@ -154,12 +161,12 @@ scoped_refptr<SolidColorLayer> LayerTreePixelTest::
                 border_width,
                 rect.height() - border_width * 2),
       border_color);
-  scoped_refptr<SolidColorLayer> border_right = CreateSolidColorLayer(
-      gfx::Rect(rect.width() - border_width,
-                border_width,
-                border_width,
-                rect.height() - border_width * 2),
-      border_color);
+  scoped_refptr<SolidColorLayer> border_right =
+      CreateSolidColorLayer(gfx::Rect(rect.width() - border_width,
+                                      border_width,
+                                      border_width,
+                                      rect.height() - border_width * 2),
+                            border_color);
   scoped_refptr<SolidColorLayer> border_bottom = CreateSolidColorLayer(
       gfx::Rect(0, rect.height() - border_width, rect.width(), border_width),
       border_color);
@@ -177,7 +184,12 @@ scoped_refptr<TextureLayer> LayerTreePixelTest::CreateTextureLayer(
   layer->SetAnchorPoint(gfx::PointF());
   layer->SetBounds(rect.size());
   layer->SetPosition(rect.origin());
-  layer->SetTextureMailbox(CopyBitmapToTextureMailboxAsTexture(bitmap));
+
+  TextureMailbox texture_mailbox;
+  scoped_ptr<SingleReleaseCallback> release_callback;
+  CopyBitmapToTextureMailboxAsTexture(
+      bitmap, &texture_mailbox, &release_callback);
+  layer->SetTextureMailbox(texture_mailbox, release_callback.Pass());
 
   texture_layers_.push_back(layer);
   pending_texture_mailbox_callbacks_++;
@@ -192,7 +204,7 @@ void LayerTreePixelTest::RunPixelTest(
   content_root_ = content_root;
   readback_target_ = NULL;
   ref_file_ = file_name;
-  RunTest(true, false, true);
+  RunTest(true, false, impl_side_painting_);
 }
 
 void LayerTreePixelTest::RunPixelTestWithReadbackTarget(
@@ -204,7 +216,7 @@ void LayerTreePixelTest::RunPixelTestWithReadbackTarget(
   content_root_ = content_root;
   readback_target_ = target;
   ref_file_ = file_name;
-  RunTest(true, false, true);
+  RunTest(true, false, impl_side_painting_);
 }
 
 void LayerTreePixelTest::SetupTree() {
@@ -223,9 +235,9 @@ scoped_ptr<SkBitmap> LayerTreePixelTest::CopyTextureMailboxToBitmap(
     return scoped_ptr<SkBitmap>();
 
   using webkit::gpu::WebGraphicsContext3DInProcessCommandBufferImpl;
-  scoped_ptr<WebKit::WebGraphicsContext3D> context3d(
+  scoped_ptr<blink::WebGraphicsContext3D> context3d(
       WebGraphicsContext3DInProcessCommandBufferImpl::CreateOffscreenContext(
-          WebKit::WebGraphicsContext3D::Attributes()));
+          blink::WebGraphicsContext3D::Attributes()));
 
   EXPECT_TRUE(context3d->makeContextCurrent());
 
@@ -293,7 +305,7 @@ scoped_ptr<SkBitmap> LayerTreePixelTest::CopyTextureMailboxToBitmap(
 }
 
 void LayerTreePixelTest::ReleaseTextureMailbox(
-    scoped_ptr<WebKit::WebGraphicsContext3D> context3d,
+    scoped_ptr<blink::WebGraphicsContext3D> context3d,
     uint32 texture,
     uint32 sync_point,
     bool lost_resource) {
@@ -304,17 +316,19 @@ void LayerTreePixelTest::ReleaseTextureMailbox(
   TryEndTest();
 }
 
-TextureMailbox LayerTreePixelTest::CopyBitmapToTextureMailboxAsTexture(
-    const SkBitmap& bitmap) {
+void LayerTreePixelTest::CopyBitmapToTextureMailboxAsTexture(
+    const SkBitmap& bitmap,
+    TextureMailbox* texture_mailbox,
+    scoped_ptr<SingleReleaseCallback>* release_callback) {
   DCHECK_GT(bitmap.width(), 0);
   DCHECK_GT(bitmap.height(), 0);
 
   CHECK(gfx::InitializeGLBindings(gfx::kGLImplementationOSMesaGL));
 
   using webkit::gpu::WebGraphicsContext3DInProcessCommandBufferImpl;
-  scoped_ptr<WebKit::WebGraphicsContext3D> context3d(
+  scoped_ptr<blink::WebGraphicsContext3D> context3d(
       WebGraphicsContext3DInProcessCommandBufferImpl::CreateOffscreenContext(
-          WebKit::WebGraphicsContext3D::Attributes()));
+          blink::WebGraphicsContext3D::Attributes()));
 
   EXPECT_TRUE(context3d->makeContextCurrent());
 
@@ -367,13 +381,12 @@ TextureMailbox LayerTreePixelTest::CopyBitmapToTextureMailboxAsTexture(
   context3d->bindTexture(GL_TEXTURE_2D, 0);
   uint32 sync_point = context3d->insertSyncPoint();
 
-  return TextureMailbox(
-      mailbox,
+  *texture_mailbox = TextureMailbox(mailbox, sync_point);
+  *release_callback = SingleReleaseCallback::Create(
       base::Bind(&LayerTreePixelTest::ReleaseTextureMailbox,
                  base::Unretained(this),
                  base::Passed(&context3d),
-                 texture_id),
-      sync_point);
+                 texture_id));
 }
 
 }  // namespace cc

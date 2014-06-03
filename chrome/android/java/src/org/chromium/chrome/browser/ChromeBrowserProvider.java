@@ -1,10 +1,9 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 package org.chromium.chrome.browser;
 
-import android.app.Activity;
 import android.app.SearchManager;
 import android.content.ContentProvider;
 import android.content.ContentUris;
@@ -140,9 +139,10 @@ public class ChromeBrowserProvider extends ContentProvider {
     // TODO : Using Android.provider.Browser.HISTORY_PROJECTION once THUMBNAIL,
     // TOUCH_ICON, and USER_ENTERED fields are supported.
     private static final String[] BOOKMARK_DEFAULT_PROJECTION = new String[] {
-            BookmarkColumns._ID, BookmarkColumns.URL, BookmarkColumns.VISITS,
-            BookmarkColumns.DATE, BookmarkColumns.BOOKMARK, BookmarkColumns.TITLE,
-            BookmarkColumns.FAVICON, BookmarkColumns.CREATED};
+        BookmarkColumns._ID, BookmarkColumns.URL, BookmarkColumns.VISITS,
+        BookmarkColumns.DATE, BookmarkColumns.BOOKMARK, BookmarkColumns.TITLE,
+        BookmarkColumns.FAVICON, BookmarkColumns.CREATED
+    };
 
     private static final String[] SUGGEST_PROJECTION = new String[] {
         BookmarkColumns._ID,
@@ -156,7 +156,7 @@ public class ChromeBrowserProvider extends ContentProvider {
     private final Object mLoadNativeLock = new Object();
     private UriMatcher mUriMatcher;
     private long mLastModifiedBookmarkFolderId = INVALID_BOOKMARK_ID;
-    private int mNativeChromeBrowserProvider;
+    private long mNativeChromeBrowserProvider;
     private BookmarkNode mMobileBookmarksFolder;
 
     /**
@@ -722,7 +722,7 @@ public class ChromeBrowserProvider extends ContentProvider {
         } else if (CLIENT_API_IS_BOOKMARK_IN_MOBILE_BOOKMARKS_BRANCH.equals(method)) {
             result.putBoolean(CLIENT_API_RESULT_KEY,
                     isBookmarkInMobileBookmarksBranch(extras.getLong(argKey(0))));
-        } else if(CLIENT_API_DELETE_ALL_BOOKMARKS.equals(method)) {
+        } else if (CLIENT_API_DELETE_ALL_BOOKMARKS.equals(method)) {
             nativeRemoveAllBookmarks(mNativeChromeBrowserProvider);
         } else {
             Log.w(TAG, "Received invalid method " + method);
@@ -1131,10 +1131,10 @@ public class ChromeBrowserProvider extends ContentProvider {
     /**
      * @return a SQL where class which is inserted the bookmark condition.
      */
-    private static String buildBookmarkWhereClause(String selection, boolean is_bookmark) {
+    private static String buildBookmarkWhereClause(String selection, boolean isBookmark) {
         StringBuffer sb = new StringBuffer();
         sb.append(BookmarkColumns.BOOKMARK);
-        sb.append(is_bookmark ? " = 1 " : " = 0");
+        sb.append(isBookmark ? " = 1 " : " = 0");
         if (!TextUtils.isEmpty(selection)) {
             sb.append(" AND (");
             sb.append(selection);
@@ -1228,7 +1228,7 @@ public class ChromeBrowserProvider extends ContentProvider {
     private boolean ensureNativeChromeLoaded() {
         ensureUriMatcherInitialized();
 
-        synchronized(mLoadNativeLock) {
+        synchronized (mLoadNativeLock) {
             if (mNativeChromeBrowserProvider != 0) return true;
 
             final AtomicBoolean retVal = new AtomicBoolean(true);
@@ -1280,71 +1280,71 @@ public class ChromeBrowserProvider extends ContentProvider {
      * Call to get the intent to create a bookmark shortcut on homescreen.
      */
     public static Intent getShortcutToBookmark(String url, String title, Bitmap favicon, int rValue,
-            int gValue, int bValue, Activity activity) {
-        return BookmarkUtils.createAddToHomeIntent(activity, url, title, favicon, rValue, gValue,
-                bValue);
+            int gValue, int bValue, Context context) {
+        return BookmarkUtils.createAddToHomeIntent(
+                context, url, title, favicon, rValue, gValue, bValue);
     }
 
-    private native int nativeInit();
-    private native void nativeDestroy(int nativeChromeBrowserProvider);
+    private native long nativeInit();
+    private native void nativeDestroy(long nativeChromeBrowserProvider);
 
     // Public API native methods.
-    private native long nativeAddBookmark(int nativeChromeBrowserProvider,
+    private native long nativeAddBookmark(long nativeChromeBrowserProvider,
             String url, String title, boolean isFolder, long parentId);
 
-    private native int nativeRemoveBookmark(int nativeChromeBrowserProvider, long id);
+    private native int nativeRemoveBookmark(long nativeChromeBrowserProvider, long id);
 
-    private native int nativeUpdateBookmark(int nativeChromeBrowserProvider,
+    private native int nativeUpdateBookmark(long nativeChromeBrowserProvider,
             long id, String url, String title, long parentId);
 
-    private native long nativeAddBookmarkFromAPI(int nativeChromeBrowserProvider,
+    private native long nativeAddBookmarkFromAPI(long nativeChromeBrowserProvider,
             String url, Long created, Boolean isBookmark, Long date, byte[] favicon,
             String title, Integer visits, long parentId);
 
-    private native SQLiteCursor nativeQueryBookmarkFromAPI(int nativeChromeBrowserProvider,
+    private native SQLiteCursor nativeQueryBookmarkFromAPI(long nativeChromeBrowserProvider,
             String[] projection, String selection, String[] selectionArgs, String sortOrder);
 
-    private native int nativeUpdateBookmarkFromAPI(int nativeChromeBrowserProvider,
+    private native int nativeUpdateBookmarkFromAPI(long nativeChromeBrowserProvider,
             String url, Long created, Boolean isBookmark, Long date, byte[] favicon,
             String title, Integer visits, long parentId, String selection, String[] selectionArgs);
 
-    private native int nativeRemoveBookmarkFromAPI(int nativeChromeBrowserProvider,
+    private native int nativeRemoveBookmarkFromAPI(long nativeChromeBrowserProvider,
             String selection, String[] selectionArgs);
 
-    private native int nativeRemoveHistoryFromAPI(int nativeChromeBrowserProvider,
+    private native int nativeRemoveHistoryFromAPI(long nativeChromeBrowserProvider,
             String selection, String[] selectionArgs);
 
-    private native long nativeAddSearchTermFromAPI(int nativeChromeBrowserProvider,
+    private native long nativeAddSearchTermFromAPI(long nativeChromeBrowserProvider,
             String term, Long date);
 
-    private native SQLiteCursor nativeQuerySearchTermFromAPI(int nativeChromeBrowserProvider,
+    private native SQLiteCursor nativeQuerySearchTermFromAPI(long nativeChromeBrowserProvider,
             String[] projection, String selection, String[] selectionArgs, String sortOrder);
 
-    private native int nativeUpdateSearchTermFromAPI(int nativeChromeBrowserProvider,
+    private native int nativeUpdateSearchTermFromAPI(long nativeChromeBrowserProvider,
             String search, Long date, String selection, String[] selectionArgs);
 
-    private native int nativeRemoveSearchTermFromAPI(int nativeChromeBrowserProvider,
+    private native int nativeRemoveSearchTermFromAPI(long nativeChromeBrowserProvider,
             String selection, String[] selectionArgs);
 
     // Client API native methods.
-    private native boolean nativeBookmarkNodeExists(int nativeChromeBrowserProvider, long id);
+    private native boolean nativeBookmarkNodeExists(long nativeChromeBrowserProvider, long id);
 
-    private native long nativeCreateBookmarksFolderOnce(int nativeChromeBrowserProvider,
+    private native long nativeCreateBookmarksFolderOnce(long nativeChromeBrowserProvider,
             String title, long parentId);
 
-    private native BookmarkNode nativeGetAllBookmarkFolders(int nativeChromeBrowserProvider);
+    private native BookmarkNode nativeGetAllBookmarkFolders(long nativeChromeBrowserProvider);
 
-    private native void nativeRemoveAllBookmarks(int nativeChromeBrowserProvider);
+    private native void nativeRemoveAllBookmarks(long nativeChromeBrowserProvider);
 
-    private native BookmarkNode nativeGetBookmarkNode(int nativeChromeBrowserProvider,
+    private native BookmarkNode nativeGetBookmarkNode(long nativeChromeBrowserProvider,
             long id, boolean getParent, boolean getChildren);
 
-    private native BookmarkNode nativeGetMobileBookmarksFolder(int nativeChromeBrowserProvider);
+    private native BookmarkNode nativeGetMobileBookmarksFolder(long nativeChromeBrowserProvider);
 
-    private native boolean nativeIsBookmarkInMobileBookmarksBranch(int nativeChromeBrowserProvider,
+    private native boolean nativeIsBookmarkInMobileBookmarksBranch(long nativeChromeBrowserProvider,
             long id);
 
-    private native byte[] nativeGetFaviconOrTouchIcon(int nativeChromeBrowserProvider, String url);
+    private native byte[] nativeGetFaviconOrTouchIcon(long nativeChromeBrowserProvider, String url);
 
-    private native byte[] nativeGetThumbnail(int nativeChromeBrowserProvider, String url);
+    private native byte[] nativeGetThumbnail(long nativeChromeBrowserProvider, String url);
 }

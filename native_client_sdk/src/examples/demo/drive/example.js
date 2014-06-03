@@ -7,7 +7,7 @@
 var authToken = '';
 
 function getAuthToken(interactive) {
-  chrome.experimental.identity.getAuthToken(
+  chrome.identity.getAuthToken(
       {'interactive': interactive}, onGetAuthToken);
 }
 
@@ -15,7 +15,7 @@ function onGetAuthToken(authToken) {
   var signInEl = document.getElementById('signIn');
   var getFileEl = document.getElementById('getFile');
   if (authToken) {
-    signInEl.setAttribute('hidden');
+    signInEl.setAttribute('hidden', '');
     getFileEl.removeAttribute('hidden');
     window.authToken =  authToken;
 
@@ -26,7 +26,7 @@ function onGetAuthToken(authToken) {
     // this app. Display a button to let the user sign in and authorize this
     // application.
     signInEl.removeAttribute('hidden');
-    getFileEl.setAttribute('hidden');
+    getFileEl.setAttribute('hidden', '');
   }
 };
 
@@ -38,7 +38,7 @@ function moduleDidLoad() {
 
   // Make sure this example is running as a packaged app. If not, display a
   // warning.
-  if (!chrome.experimental) {
+  if (!chrome.identity) {
     common.updateStatus('Error: must be run as a packged app.');
     return;
   }

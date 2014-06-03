@@ -18,7 +18,8 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/prefs/command_line_pref_store.h"
 #include "chrome/browser/prefs/pref_model_associator.h"
-#include "chrome/browser/prefs/pref_service_syncable_builder.h"
+#include "chrome/browser/prefs/pref_service_syncable.h"
+#include "chrome/browser/prefs/pref_service_syncable_factory.h"
 #include "chrome/browser/ui/profile_error_dialog.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/browser_context.h"
@@ -28,8 +29,12 @@
 
 #if defined(ENABLE_CONFIGURATION_POLICY)
 #include "chrome/browser/policy/browser_policy_connector.h"
-#include "chrome/browser/policy/configuration_policy_pref_store.h"
-#include "chrome/browser/policy/policy_types.h"
+#include "components/policy/core/browser/configuration_policy_pref_store.h"
+#include "components/policy/core/common/policy_types.h"
+#endif
+
+#if defined(ENABLE_MANAGED_USERS)
+#include "chrome/browser/managed_mode/supervised_user_pref_store.h"
 #endif
 
 using content::BrowserContext;
@@ -39,7 +44,13 @@ namespace {
 
 // Shows notifications which correspond to PersistentPrefStore's reading errors.
 void HandleReadError(PersistentPrefStore::PrefReadError error) {
+  // Sample the histogram also for the successful case in order to get a
+  // baseline on the success rate in addition to the error distribution.
+  UMA_HISTOGRAM_ENUMERATION("PrefService.ReadError", error,
+                            PersistentPrefStore::PREF_READ_ERROR_MAX_ENUM);
+
   if (error != PersistentPrefStore::PREF_READ_ERROR_NONE) {
+#if !defined(OS_CHROMEOS)
     // Failing to load prefs on startup is a bad thing(TM). See bug 38352 for
     // an example problem that this can cause.
     // Do some diagnosis and try to avoid losing data.
@@ -52,18 +63,23 @@ void HandleReadError(PersistentPrefStore::PrefReadError error) {
 
     if (message_id) {
       BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-                              base::Bind(&ShowProfileErrorDialog, message_id));
+                              base::Bind(&ShowProfileErrorDialog,
+                                         PROFILE_ERROR_PREFERENCES,
+                                         message_id));
     }
-    UMA_HISTOGRAM_ENUMERATION("PrefService.ReadError", error,
-                              PersistentPrefStore::PREF_READ_ERROR_MAX_ENUM);
+#else
+    // On ChromeOS error screen with message about broken local state
+    // will be displayed.
+#endif
   }
 }
 
 void PrepareBuilder(
-    PrefServiceSyncableBuilder* builder,
+    PrefServiceSyncableFactory* factory,
     const base::FilePath& pref_filename,
     base::SequencedTaskRunner* pref_io_task_runner,
     policy::PolicyService* policy_service,
+    ManagedUserSettingsService* managed_user_settings,
     const scoped_refptr<PrefStore>& extension_prefs,
     bool async) {
 #if defined(OS_LINUX)
@@ -81,61 +97,74 @@ void PrepareBuilder(
 
 #if defined(ENABLE_CONFIGURATION_POLICY)
   using policy::ConfigurationPolicyPrefStore;
-  builder->WithManagedPrefs(new ConfigurationPolicyPrefStore(
-      policy_service,
-      g_browser_process->browser_policy_connector()->GetHandlerList(),
-      policy::POLICY_LEVEL_MANDATORY));
-  builder->WithRecommendedPrefs(new ConfigurationPolicyPrefStore(
-      policy_service,
-      g_browser_process->browser_policy_connector()->GetHandlerList(),
-      policy::POLICY_LEVEL_RECOMMENDED));
+  factory->set_managed_prefs(
+      make_scoped_refptr(new ConfigurationPolicyPrefStore(
+          policy_service,
+          g_browser_process->browser_policy_connector()->GetHandlerList(),
+          policy::POLICY_LEVEL_MANDATORY)));
+  factory->set_recommended_prefs(
+      make_scoped_refptr(new ConfigurationPolicyPrefStore(
+          policy_service,
+          g_browser_process->browser_policy_connector()->GetHandlerList(),
+          policy::POLICY_LEVEL_RECOMMENDED)));
 #endif  // ENABLE_CONFIGURATION_POLICY
 
-  builder->WithAsync(async);
-  builder->WithExtensionPrefs(extension_prefs.get());
-  builder->WithCommandLinePrefs(
-      new CommandLinePrefStore(CommandLine::ForCurrentProcess()));
-  builder->WithReadErrorCallback(base::Bind(&HandleReadError));
-  builder->WithUserPrefs(new JsonPrefStore(pref_filename, pref_io_task_runner));
+#if defined(ENABLE_MANAGED_USERS)
+  if (managed_user_settings) {
+    factory->set_supervised_user_prefs(
+        make_scoped_refptr(new SupervisedUserPrefStore(managed_user_settings)));
+  }
+#endif
+
+  factory->set_async(async);
+  factory->set_extension_prefs(extension_prefs);
+  factory->set_command_line_prefs(
+      make_scoped_refptr(
+          new CommandLinePrefStore(CommandLine::ForCurrentProcess())));
+  factory->set_read_error_callback(base::Bind(&HandleReadError));
+  factory->set_user_prefs(
+      new JsonPrefStore(pref_filename, pref_io_task_runner));
 }
 
 }  // namespace
 
 namespace chrome_prefs {
 
-PrefService* CreateLocalState(
+scoped_ptr<PrefService> CreateLocalState(
     const base::FilePath& pref_filename,
     base::SequencedTaskRunner* pref_io_task_runner,
     policy::PolicyService* policy_service,
-    const scoped_refptr<PrefStore>& extension_prefs,
     const scoped_refptr<PrefRegistry>& pref_registry,
     bool async) {
-  PrefServiceSyncableBuilder builder;
-  PrepareBuilder(&builder,
+  PrefServiceSyncableFactory factory;
+  PrepareBuilder(&factory,
                  pref_filename,
                  pref_io_task_runner,
                  policy_service,
-                 extension_prefs,
+                 NULL,
+                 NULL,
                  async);
-  return builder.Create(pref_registry.get());
+  return factory.Create(pref_registry.get());
 }
 
-PrefServiceSyncable* CreateProfilePrefs(
+scoped_ptr<PrefServiceSyncable> CreateProfilePrefs(
     const base::FilePath& pref_filename,
     base::SequencedTaskRunner* pref_io_task_runner,
     policy::PolicyService* policy_service,
+    ManagedUserSettingsService* managed_user_settings,
     const scoped_refptr<PrefStore>& extension_prefs,
     const scoped_refptr<user_prefs::PrefRegistrySyncable>& pref_registry,
     bool async) {
   TRACE_EVENT0("browser", "chrome_prefs::CreateProfilePrefs");
-  PrefServiceSyncableBuilder builder;
-  PrepareBuilder(&builder,
+  PrefServiceSyncableFactory factory;
+  PrepareBuilder(&factory,
                  pref_filename,
                  pref_io_task_runner,
                  policy_service,
+                 managed_user_settings,
                  extension_prefs,
                  async);
-  return builder.CreateSyncable(pref_registry.get());
+  return factory.CreateSyncable(pref_registry.get());
 }
 
 }  // namespace chrome_prefs

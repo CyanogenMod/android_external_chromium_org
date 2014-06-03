@@ -31,6 +31,7 @@ void CanEnablePluginCallback(const base::Closure& quit_closure,
   quit_closure.Run();
 }
 
+#if !(defined(OS_LINUX) && defined(USE_AURA))
 base::FilePath GetComponentUpdatedPepperFlashPath(
     const base::FilePath::StringType& version) {
   base::FilePath path;
@@ -46,6 +47,7 @@ base::FilePath GetBundledPepperFlashPath() {
   EXPECT_TRUE(PathService::Get(chrome::FILE_PEPPER_FLASH_PLUGIN, &path));
   return path;
 }
+#endif  // !(defined(OS_LINUX) && defined(USE_AURA))
 
 void GotPlugins(const base::Closure& quit_closure,
                 const std::vector<content::WebPluginInfo>& plugins) {
@@ -61,9 +63,9 @@ class PluginPrefsTest : public ::testing::Test {
   }
 
   void SetPolicyEnforcedPluginPatterns(
-      const std::set<string16>& disabled,
-      const std::set<string16>& disabled_exceptions,
-      const std::set<string16>& enabled) {
+      const std::set<base::string16>& disabled,
+      const std::set<base::string16>& disabled_exceptions,
+      const std::set<base::string16>& enabled) {
     plugin_prefs_->SetPolicyEnforcedPluginPatterns(
         disabled, disabled_exceptions, enabled);
   }
@@ -80,16 +82,32 @@ class PluginPrefsTest : public ::testing::Test {
     run_loop.Run();
   }
 
+  void RefreshPluginsSynchronously() {
+    PluginService::GetInstance()->RefreshPlugins();
+#if !defined(OS_WIN)
+    // Can't go out of process in unit tests.
+    content::RenderProcessHost::SetRunRendererInProcess(true);
+#endif
+    scoped_refptr<content::MessageLoopRunner> runner =
+        new content::MessageLoopRunner;
+    PluginService::GetInstance()->GetPlugins(
+        base::Bind(&GotPlugins, runner->QuitClosure()));
+    runner->Run();
+#if !defined(OS_WIN)
+    content::RenderProcessHost::SetRunRendererInProcess(false);
+#endif
+  }
+
   scoped_refptr<PluginPrefs> plugin_prefs_;
 };
 
 TEST_F(PluginPrefsTest, DisabledByPolicy) {
-  std::set<string16> disabled_plugins;
+  std::set<base::string16> disabled_plugins;
   disabled_plugins.insert(ASCIIToUTF16("Disable this!"));
   disabled_plugins.insert(ASCIIToUTF16("*Google*"));
   SetPolicyEnforcedPluginPatterns(disabled_plugins,
-                                  std::set<string16>(),
-                                  std::set<string16>());
+                                  std::set<base::string16>(),
+                                  std::set<base::string16>());
 
   EXPECT_EQ(PluginPrefs::NO_POLICY,
             plugin_prefs_->PolicyStatusForPlugin(ASCIIToUTF16("42")));
@@ -101,11 +119,11 @@ TEST_F(PluginPrefsTest, DisabledByPolicy) {
 }
 
 TEST_F(PluginPrefsTest, EnabledByPolicy) {
-  std::set<string16> enabled_plugins;
+  std::set<base::string16> enabled_plugins;
   enabled_plugins.insert(ASCIIToUTF16("Enable that!"));
   enabled_plugins.insert(ASCIIToUTF16("PDF*"));
-  SetPolicyEnforcedPluginPatterns(std::set<string16>(),
-                                  std::set<string16>(),
+  SetPolicyEnforcedPluginPatterns(std::set<base::string16>(),
+                                  std::set<base::string16>(),
                                   enabled_plugins);
 
   EXPECT_EQ(PluginPrefs::NO_POLICY,
@@ -117,18 +135,18 @@ TEST_F(PluginPrefsTest, EnabledByPolicy) {
 }
 
 TEST_F(PluginPrefsTest, EnabledAndDisabledByPolicy) {
-  const string16 k42(ASCIIToUTF16("42"));
-  const string16 kEnabled(ASCIIToUTF16("Enabled"));
-  const string16 kEnabled2(ASCIIToUTF16("Enabled 2"));
-  const string16 kEnabled3(ASCIIToUTF16("Enabled 3"));
-  const string16 kException(ASCIIToUTF16("Exception"));
-  const string16 kException2(ASCIIToUTF16("Exception 2"));
-  const string16 kGoogleMars(ASCIIToUTF16("Google Mars"));
-  const string16 kGoogleEarth(ASCIIToUTF16("Google Earth"));
+  const base::string16 k42(ASCIIToUTF16("42"));
+  const base::string16 kEnabled(ASCIIToUTF16("Enabled"));
+  const base::string16 kEnabled2(ASCIIToUTF16("Enabled 2"));
+  const base::string16 kEnabled3(ASCIIToUTF16("Enabled 3"));
+  const base::string16 kException(ASCIIToUTF16("Exception"));
+  const base::string16 kException2(ASCIIToUTF16("Exception 2"));
+  const base::string16 kGoogleMars(ASCIIToUTF16("Google Mars"));
+  const base::string16 kGoogleEarth(ASCIIToUTF16("Google Earth"));
 
-  std::set<string16> disabled_plugins;
-  std::set<string16> disabled_plugins_exceptions;
-  std::set<string16> enabled_plugins;
+  std::set<base::string16> disabled_plugins;
+  std::set<base::string16> disabled_plugins_exceptions;
+  std::set<base::string16> enabled_plugins;
 
   disabled_plugins.insert(kEnabled);
   disabled_plugins_exceptions.insert(kEnabled);
@@ -194,7 +212,7 @@ TEST_F(PluginPrefsTest, UnifiedPepperFlashState) {
   PluginService::GetInstance()->Init();
   PluginService::GetInstance()->DisablePluginsDiscoveryForTesting();
 
-  string16 component_updated_plugin_name(
+  base::string16 component_updated_plugin_name(
       ASCIIToUTF16("Component-updated Pepper Flash"));
   content::WebPluginInfo component_updated_plugin_1(
       component_updated_plugin_name,
@@ -217,18 +235,7 @@ TEST_F(PluginPrefsTest, UnifiedPepperFlashState) {
       component_updated_plugin_2, false);
   PluginService::GetInstance()->RegisterInternalPlugin(bundled_plugin, false);
 
-#if !defined(OS_WIN)
-    // Can't go out of process in unit tests.
-    content::RenderProcessHost::SetRunRendererInProcess(true);
-#endif
-  scoped_refptr<content::MessageLoopRunner> runner =
-      new content::MessageLoopRunner;
-  PluginService::GetInstance()->GetPlugins(
-      base::Bind(&GotPlugins, runner->QuitClosure()));
-  runner->Run();
-#if !defined(OS_WIN)
-    content::RenderProcessHost::SetRunRendererInProcess(false);
-#endif
+  RefreshPluginsSynchronously();
 
   // Set the state of any of the three plugins will affect the others.
   EnablePluginSynchronously(true, component_updated_plugin_1.path, true);
@@ -246,11 +253,11 @@ TEST_F(PluginPrefsTest, UnifiedPepperFlashState) {
   EXPECT_TRUE(plugin_prefs_->IsPluginEnabled(component_updated_plugin_2));
   EXPECT_TRUE(plugin_prefs_->IsPluginEnabled(bundled_plugin));
 
-  std::set<string16> disabled_plugins;
+  std::set<base::string16> disabled_plugins;
   disabled_plugins.insert(component_updated_plugin_name);
   SetPolicyEnforcedPluginPatterns(disabled_plugins,
-                                  std::set<string16>(),
-                                  std::set<string16>());
+                                  std::set<base::string16>(),
+                                  std::set<base::string16>());
 
   // Policy settings should be respected.
   EXPECT_FALSE(plugin_prefs_->IsPluginEnabled(component_updated_plugin_1));

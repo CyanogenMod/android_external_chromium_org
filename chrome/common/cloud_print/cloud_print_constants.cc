@@ -20,6 +20,7 @@ const char kPrinterDefaultsValue[] = "defaults";
 const char kPrinterStatusValue[] = "status";
 const char kPrinterTagValue[] = "tag";
 const char kPrinterRemoveTagValue[] = "remove_tag";
+const char kPrinterLocalSettingsValue[] = "local_settings";
 const char kMessageTextValue[] = "message";
 
 const char kPrintSystemFailedMessageId[] = "printsystemfail";
@@ -29,6 +30,7 @@ const char kZombiePrinterMessageId[] = "zombieprinter";
 
 const char kSuccessValue[] = "success";
 const char kNameValue[] = "name";
+const char kDisplayNameValue[] = "displayName";
 const char kIdValue[] = "id";
 const char kTicketUrlValue[] = "ticketUrl";
 const char kFileUrlValue[] = "fileUrl";
@@ -41,6 +43,12 @@ const char kXMPPJidValue[] = "xmpp_jid";
 const char kOAuthCodeValue[] = "authorization_code";
 const char kCreateTimeValue[] = "createTime";
 const char kPrinterTypeValue[] = "type";
+const char kUserValue[] = "request.user";
+const char kUsersValue[] = "request.users";
+const char kLocalSettingsPendingXmppValue[] =
+    "local_settings.pending.xmpp_timeout_value";
+
+const char kNotificationUpdateSettings[] = "/update_settings";
 
 const char kChromeVersionTagName[] = "chrome_version";
 const char kSystemNameTagName[] = "system_name";
@@ -56,5 +64,10 @@ const char kJobFetchReasonNotified[] = "notified";
 const char kJobFetchReasonQueryMore[] = "querymore";
 const char kJobFetchReasonFailure[] = "failure";
 const char kJobFetchReasonRetry[] = "retry";
+
+const char kCreateLocalSettingsXmppPingFormat[] =
+    "{\"current\":{\"xmpp_timeout_value\": %d}}";
+const char kUpdateLocalSettingsXmppPingFormat[] =
+    "{\"current\":{\"xmpp_timeout_value\": %d},\"pending\":{}}";
 
 }  // namespace cloud_print

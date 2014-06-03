@@ -37,7 +37,18 @@ DesktopBrowserFrameAura::DesktopBrowserFrameAura(
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// DesktopBrowserFrameAura, protected:
+
+DesktopBrowserFrameAura::~DesktopBrowserFrameAura() {
+}
+
+///////////////////////////////////////////////////////////////////////////////
 // DesktopBrowserFrameAura, views::DesktopNativeWidgetAura overrides:
+
+void DesktopBrowserFrameAura::OnHostClosed() {
+  aura::client::SetVisibilityClient(GetNativeView()->GetRootWindow(), NULL);
+  DesktopNativeWidgetAura::OnHostClosed();
+}
 
 void DesktopBrowserFrameAura::InitNativeWidget(
     const views::Widget::InitParams& params) {
@@ -45,7 +56,6 @@ void DesktopBrowserFrameAura::InitNativeWidget(
       BrowserDesktopRootWindowHost::CreateBrowserDesktopRootWindowHost(
           browser_frame_,
           this,
-          params.bounds,
           browser_view_,
           browser_frame_);
   views::Widget::InitParams modified_params = params;
@@ -65,11 +75,6 @@ void DesktopBrowserFrameAura::InitNativeWidget(
       GetNativeView()->GetRootWindow());
 }
 
-void DesktopBrowserFrameAura::OnWindowDestroying() {
-  aura::client::SetVisibilityClient(GetNativeView()->GetRootWindow(), NULL);
-  DesktopNativeWidgetAura::OnWindowDestroying();
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 // DesktopBrowserFrameAura, NativeBrowserFrame implementation:
 
@@ -87,13 +92,4 @@ bool DesktopBrowserFrameAura::UsesNativeSystemMenu() const {
 
 int DesktopBrowserFrameAura::GetMinimizeButtonOffset() const {
   return browser_desktop_root_window_host_->GetMinimizeButtonOffset();
-}
-
-void DesktopBrowserFrameAura::TabStripDisplayModeChanged() {
-}
-
-///////////////////////////////////////////////////////////////////////////////
-// DesktopBrowserFrameAura, private:
-
-DesktopBrowserFrameAura::~DesktopBrowserFrameAura() {
 }

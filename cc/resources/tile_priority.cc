@@ -18,14 +18,6 @@ struct Range {
   float end_;
 };
 
-inline bool Intersects(const Range& a, const Range& b) {
-  return a.start_ < b.end_ && b.start_ < a.end_;
-}
-
-inline Range Intersect(const Range& a, const Range& b) {
-  return Range(std::max(a.start_, b.start_), std::min(a.end_, b.end_));
-}
-
 bool Range::IsEmpty() {
   return start_ >= end_;
 }
@@ -87,11 +79,10 @@ scoped_ptr<base::Value> TileResolutionAsValue(
   case NON_IDEAL_RESOLUTION:
       return scoped_ptr<base::Value>(base::Value::CreateStringValue(
         "NON_IDEAL_RESOLUTION"));
-  default:
-    DCHECK(false) << "Unrecognized TileResolution value " << resolution;
-    return scoped_ptr<base::Value>(base::Value::CreateStringValue(
-        "<unknown TileResolution value>"));
   }
+  DCHECK(false) << "Unrecognized TileResolution value " << resolution;
+  return scoped_ptr<base::Value>(base::Value::CreateStringValue(
+      "<unknown TileResolution value>"));
 }
 
 scoped_ptr<base::Value> TilePriority::AsValue() const {
@@ -176,11 +167,10 @@ scoped_ptr<base::Value> TreePriorityAsValue(TreePriority prio) {
   case NEW_CONTENT_TAKES_PRIORITY:
       return scoped_ptr<base::Value>(base::Value::CreateStringValue(
           "NEW_CONTENT_TAKES_PRIORITY"));
-  default:
-      DCHECK(false) << "Unrecognized priority value " << prio;
-      return scoped_ptr<base::Value>(base::Value::CreateStringValue(
-          "<unknown>"));
   }
+  DCHECK(false) << "Unrecognized priority value " << prio;
+  return scoped_ptr<base::Value>(base::Value::CreateStringValue(
+      "<unknown>"));
 }
 
 scoped_ptr<base::Value> GlobalStateThatImpactsTilePriority::AsValue() const {

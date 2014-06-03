@@ -7,16 +7,15 @@
 #include "base/command_line.h"
 #include "content/public/common/content_switches.h"
 #include "content/renderer/render_view_impl.h"
-#include "third_party/WebKit/public/web/WebAccessibilityObject.h"
+#include "third_party/WebKit/public/web/WebAXObject.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebView.h"
 
-using WebKit::WebAccessibilityNotification;
-using WebKit::WebAccessibilityObject;
-using WebKit::WebDocument;
-using WebKit::WebFrame;
-using WebKit::WebView;
+using blink::WebAXObject;
+using blink::WebDocument;
+using blink::WebFrame;
+using blink::WebView;
 
 namespace content {
 
@@ -44,60 +43,60 @@ WebDocument RendererAccessibility::GetMainDocument() {
 }
 
 #ifndef NDEBUG
-const std::string RendererAccessibility::AccessibilityNotificationToString(
-    AccessibilityNotification notification) {
-  switch (notification) {
-    case AccessibilityNotificationActiveDescendantChanged:
+const std::string RendererAccessibility::AccessibilityEventToString(
+    blink::WebAXEvent event) {
+  switch (event) {
+    case blink::WebAXEventActiveDescendantChanged:
       return "active descendant changed";
-    case AccessibilityNotificationAriaAttributeChanged:
+    case blink::WebAXEventAriaAttributeChanged:
       return "aria attribute changed";
-    case AccessibilityNotificationAutocorrectionOccurred:
+    case blink::WebAXEventAutocorrectionOccured:
       return "autocorrection occurred";
-    case AccessibilityNotificationBlur:
+    case blink::WebAXEventBlur:
       return "blur";
-    case AccessibilityNotificationAlert:
+    case blink::WebAXEventAlert:
       return "alert";
-    case AccessibilityNotificationCheckStateChanged:
+    case blink::WebAXEventCheckedStateChanged:
       return "check state changed";
-    case AccessibilityNotificationChildrenChanged:
+    case blink::WebAXEventChildrenChanged:
       return "children changed";
-    case AccessibilityNotificationFocusChanged:
+    case blink::WebAXEventFocus:
       return "focus changed";
-    case AccessibilityNotificationInvalidStatusChanged:
+    case blink::WebAXEventInvalidStatusChanged:
       return "invalid status changed";
-    case AccessibilityNotificationLayoutComplete:
+    case blink::WebAXEventLayoutComplete:
       return "layout complete";
-    case AccessibilityNotificationLiveRegionChanged:
+    case blink::WebAXEventLiveRegionChanged:
       return "live region changed";
-    case AccessibilityNotificationLoadComplete:
+    case blink::WebAXEventLoadComplete:
       return "load complete";
-    case AccessibilityNotificationMenuListItemSelected:
+    case blink::WebAXEventMenuListItemSelected:
       return "menu list item selected";
-    case AccessibilityNotificationMenuListValueChanged:
+    case blink::WebAXEventMenuListValueChanged:
       return "menu list changed";
-    case AccessibilityNotificationObjectShow:
+    case blink::WebAXEventShow:
       return "object show";
-    case AccessibilityNotificationObjectHide:
+    case blink::WebAXEventHide:
       return "object hide";
-    case AccessibilityNotificationRowCountChanged:
+    case blink::WebAXEventRowCountChanged:
       return "row count changed";
-    case AccessibilityNotificationRowCollapsed:
+    case blink::WebAXEventRowCollapsed:
       return "row collapsed";
-    case AccessibilityNotificationRowExpanded:
+    case blink::WebAXEventRowExpanded:
       return "row expanded";
-    case AccessibilityNotificationScrolledToAnchor:
+    case blink::WebAXEventScrolledToAnchor:
       return "scrolled to anchor";
-    case AccessibilityNotificationSelectedChildrenChanged:
+    case blink::WebAXEventSelectedChildrenChanged:
       return "selected children changed";
-    case AccessibilityNotificationSelectedTextChanged:
+    case blink::WebAXEventSelectedTextChanged:
       return "selected text changed";
-    case AccessibilityNotificationTextChanged:
+    case blink::WebAXEventTextChanged:
       return "text changed";
-    case AccessibilityNotificationTextInserted:
+    case blink::WebAXEventTextInserted:
       return "text inserted";
-    case AccessibilityNotificationTextRemoved:
+    case blink::WebAXEventTextRemoved:
       return "text removed";
-    case AccessibilityNotificationValueChanged:
+    case blink::WebAXEventValueChanged:
       return "value changed";
     default:
       NOTREACHED();

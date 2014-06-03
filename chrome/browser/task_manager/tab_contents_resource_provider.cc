@@ -6,6 +6,7 @@
 
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
+#include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/favicon/favicon_tab_helper.h"
 #include "chrome/browser/prerender/prerender_manager.h"
@@ -74,8 +75,8 @@ class TabContentsResource : public RendererResource {
 
   // Resource methods:
   virtual Type GetType() const OVERRIDE;
-  virtual string16 GetTitle() const OVERRIDE;
-  virtual string16 GetProfileName() const OVERRIDE;
+  virtual base::string16 GetTitle() const OVERRIDE;
+  virtual base::string16 GetProfileName() const OVERRIDE;
   virtual gfx::ImageSkia GetIcon() const OVERRIDE;
   virtual content::WebContents* GetWebContents() const OVERRIDE;
   virtual const extensions::Extension* GetExtension() const OVERRIDE;
@@ -118,10 +119,10 @@ Resource::Type TabContentsResource::GetType() const {
   return HostsExtension() ? EXTENSION : RENDERER;
 }
 
-string16 TabContentsResource::GetTitle() const {
+base::string16 TabContentsResource::GetTitle() const {
   // Fall back on the URL if there's no title.
   GURL url = web_contents_->GetURL();
-  string16 tab_title = util::GetTitleFromWebContents(web_contents_);
+  base::string16 tab_title = util::GetTitleFromWebContents(web_contents_);
 
   // Only classify as an app if the URL is an app and the tab is hosting an
   // extension process.  (It's possible to be showing the URL from before it
@@ -141,13 +142,14 @@ string16 TabContentsResource::GetTitle() const {
   return l10n_util::GetStringFUTF16(message_id, tab_title);
 }
 
-string16 TabContentsResource::GetProfileName() const {
+base::string16 TabContentsResource::GetProfileName() const {
   return util::GetProfileNameFromInfoCache(profile_);
 }
 
 gfx::ImageSkia TabContentsResource::GetIcon() const {
   if (IsContentsPrerendering(web_contents_))
     return *prerender_icon_;
+  FaviconTabHelper::CreateForWebContents(web_contents_);
   return FaviconTabHelper::FromWebContents(web_contents_)->
       GetFavicon().AsImageSkia();
 }
@@ -212,8 +214,13 @@ void TabContentsResourceProvider::StartUpdating() {
   // pages, prerender pages, and background printed pages.
 
   // Add all the existing WebContentses.
-  for (TabContentsIterator iterator; !iterator.done(); iterator.Next())
+  for (TabContentsIterator iterator; !iterator.done(); iterator.Next()) {
     Add(*iterator);
+    DevToolsWindow* docked =
+        DevToolsWindow::GetDockedInstanceForInspectedTab(*iterator);
+    if (docked)
+      Add(docked->web_contents());
+  }
 
   // Add all the prerender pages.
   std::vector<Profile*> profiles(
@@ -251,7 +258,7 @@ void TabContentsResourceProvider::StartUpdating() {
   // Then we register for notifications to get new web contents.
   registrar_.Add(this, content::NOTIFICATION_WEB_CONTENTS_CONNECTED,
                  content::NotificationService::AllBrowserContextsAndSources());
-  registrar_.Add(this, content::NOTIFICATION_WEB_CONTENTS_SWAPPED,
+  registrar_.Add(this, content::NOTIFICATION_RENDER_VIEW_HOST_CHANGED,
                  content::NotificationService::AllBrowserContextsAndSources());
   registrar_.Add(this, content::NOTIFICATION_WEB_CONTENTS_DISCONNECTED,
                  content::NotificationService::AllBrowserContextsAndSources());
@@ -264,7 +271,7 @@ void TabContentsResourceProvider::StopUpdating() {
   // Then we unregister for notifications to get new web contents.
   registrar_.Remove(this, content::NOTIFICATION_WEB_CONTENTS_CONNECTED,
       content::NotificationService::AllBrowserContextsAndSources());
-  registrar_.Remove(this, content::NOTIFICATION_WEB_CONTENTS_SWAPPED,
+  registrar_.Remove(this, content::NOTIFICATION_RENDER_VIEW_HOST_CHANGED,
       content::NotificationService::AllBrowserContextsAndSources());
   registrar_.Remove(this, content::NOTIFICATION_WEB_CONTENTS_DISCONNECTED,
       content::NotificationService::AllBrowserContextsAndSources());
@@ -291,7 +298,8 @@ void TabContentsResourceProvider::Add(WebContents* web_contents) {
   if (!chrome::FindBrowserWithWebContents(web_contents) &&
       !IsContentsPrerendering(web_contents) &&
       !chrome::IsPreloadedInstantExtendedNTP(web_contents) &&
-      !IsContentsBackgroundPrinted(web_contents)) {
+      !IsContentsBackgroundPrinted(web_contents) &&
+      !DevToolsWindow::IsDevToolsWindow(web_contents->GetRenderViewHost())) {
     return;
   }
 
@@ -343,7 +351,7 @@ void TabContentsResourceProvider::Observe(
     case content::NOTIFICATION_WEB_CONTENTS_CONNECTED:
       Add(web_contents);
       break;
-    case content::NOTIFICATION_WEB_CONTENTS_SWAPPED:
+    case content::NOTIFICATION_RENDER_VIEW_HOST_CHANGED:
       Remove(web_contents);
       Add(web_contents);
       break;

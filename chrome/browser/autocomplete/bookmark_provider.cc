@@ -111,8 +111,9 @@ void BookmarkProvider::DoAutocomplete(const AutocompleteInput& input,
   // Sort and clip the resulting matches.
   size_t max_matches = best_match ? 1 : AutocompleteProvider::kMaxMatches;
   if (matches_.size() > max_matches) {
-    std::partial_sort(matches_.begin(), matches_.end(),
+    std::partial_sort(matches_.begin(),
                       matches_.begin() + max_matches,
+                      matches_.end(),
                       AutocompleteMatch::MoreRelevant);
     matches_.resize(max_matches);
   } else {
@@ -163,7 +164,7 @@ AutocompleteMatch BookmarkProvider::TitleMatchToACMatch(
   // unlikely to be what the user intends.
   AutocompleteMatch match(this, 0, false,
                           AutocompleteMatchType::BOOKMARK_TITLE);
-  const string16& title(title_match.node->GetTitle());
+  const base::string16& title(title_match.node->GetTitle());
   DCHECK(!title.empty());
   const GURL& url(title_match.node->url());
   match.destination_url = url;

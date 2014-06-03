@@ -10,26 +10,39 @@
 #include "base/memory/scoped_ptr.h"
 
 namespace autofill {
-  class AutofillDialogViewDelegate;
+class AutofillDialogCocoa;
+class AutofillDialogSignInDelegate;
 }
 
 namespace content {
-  class WebContents;
-  class NavigationController;
+class WebContents;
+class NavigationController;
 }
 
 // Controls the sign-in dialog of the AutofillDialog.
 @interface AutofillSignInContainer : NSViewController {
  @private
-  autofill::AutofillDialogViewDelegate* delegate_;  // Not owned.
+  autofill::AutofillDialogCocoa* dialog_;  // Not owned.
   scoped_ptr<content::WebContents> webContents_;
+  scoped_ptr<autofill::AutofillDialogSignInDelegate> signInDelegate_;
+
+  // The minimum and maximum sizes for the web view.
+  NSSize maxSize_;
+  NSSize minSize_;
+
+  // The preferred size for this view, including both the web view and the
+  // bottom padding.
+  NSSize preferredSize_;
 }
 
-- (id)initWithDelegate:(autofill::AutofillDialogViewDelegate*)delegate;
+@property(assign, nonatomic) NSSize preferredSize;
+
+- (id)initWithDialog:(autofill::AutofillDialogCocoa*)dialog;
 - (void)loadSignInPage;
 - (content::NavigationController*)navigationController;
+- (void)constrainSizeToMinimum:(NSSize)minSize maximum:(NSSize)maximum;
+- (content::WebContents*)webContents;
 
 @end
 
 #endif  // CHROME_BROWSER_UI_COCOA_AUTOFILL_AUTOFILL_SIGN_IN_CONTAINER_H_
-

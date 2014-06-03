@@ -6,11 +6,11 @@
 
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/ui/views/constrained_window_views.h"
+#include "components/web_modal/web_contents_modal_dialog_host.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "components/web_modal/web_contents_modal_dialog_manager_delegate.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "ui/gfx/size.h"
 #include "ui/views/controls/webview/unhandled_keyboard_event_handler.h"
 #include "ui/views/controls/webview/webview.h"
@@ -26,6 +26,7 @@ using ui::WebDialogDelegate;
 using ui::WebDialogWebContentsDelegate;
 using web_modal::NativeWebContentsModalDialog;
 using web_modal::WebContentsModalDialogManager;
+using web_modal::WebContentsModalDialogManagerDelegate;
 
 namespace {
 
@@ -89,8 +90,7 @@ class ConstrainedWebDialogDelegateViewViews
   virtual ~ConstrainedWebDialogDelegateViewViews();
 
   // ConstrainedWebDialogDelegate interface
-  virtual const WebDialogDelegate*
-      GetWebDialogDelegate() const OVERRIDE {
+  virtual const WebDialogDelegate* GetWebDialogDelegate() const OVERRIDE {
     return impl_->GetWebDialogDelegate();
   }
   virtual WebDialogDelegate* GetWebDialogDelegate() OVERRIDE {
@@ -123,8 +123,8 @@ class ConstrainedWebDialogDelegateViewViews
   virtual const views::Widget* GetWidget() const OVERRIDE {
     return View::GetWidget();
   }
-  virtual string16 GetWindowTitle() const OVERRIDE {
-    return impl_->closed_via_webui() ? string16() :
+  virtual base::string16 GetWindowTitle() const OVERRIDE {
+    return impl_->closed_via_webui() ? base::string16() :
         GetWebDialogDelegate()->GetDialogTitle();
   }
   virtual views::View* GetContentsView() OVERRIDE {
@@ -149,19 +149,6 @@ class ConstrainedWebDialogDelegateViewViews
 #else
     return views::WidgetDelegate::GetModalType();
 #endif
-  }
-
-  virtual void OnWidgetMove() OVERRIDE {
-    // We need to check the existence of the widget because when running on
-    // WinXP this could get executed before the widget is entirely created.
-    if (!GetWidget())
-      return;
-
-    if (!views::DialogDelegate::UseNewStyle()) {
-      GetWidget()->CenterWindow(
-          GetWidget()->non_client_view()->GetPreferredSize());
-    }
-    views::WidgetDelegate::OnWidgetMove();
   }
 
   // views::WebView overrides.
@@ -225,11 +212,12 @@ ConstrainedWebDialogDelegate* CreateConstrainedWebDialog(
           browser_context, delegate, tab_delegate);
   WebContentsModalDialogManager* web_contents_modal_dialog_manager =
       WebContentsModalDialogManager::FromWebContents(web_contents);
-  views::Widget* window = CreateWebContentsModalDialogViews(
+  WebContentsModalDialogManagerDelegate* modal_delegate =
+      web_contents_modal_dialog_manager->delegate();
+  DCHECK(modal_delegate);
+  views::Widget* window = views::Widget::CreateWindowAsFramelessChild(
       constrained_delegate,
-      web_contents->GetView()->GetNativeView(),
-      web_contents_modal_dialog_manager->delegate()->
-          GetWebContentsModalDialogHost());
+      modal_delegate->GetWebContentsModalDialogHost()->GetHostView());
   web_contents_modal_dialog_manager->ShowDialog(window->GetNativeView());
   constrained_delegate->SetWindow(window);
   return constrained_delegate;

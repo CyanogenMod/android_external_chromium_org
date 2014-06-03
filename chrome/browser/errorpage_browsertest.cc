@@ -3,20 +3,28 @@
 // found in the LICENSE file.
 
 #include "base/bind.h"
+#include "base/prefs/pref_service.h"
+#include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/google/google_util.h"
 #include "chrome/browser/net/url_request_mock_util.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
+#include "chrome/common/pref_names.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "content/public/browser/notification_service.h"
+#include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_observer.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/test_navigation_observer.h"
 #include "content/test/net/url_request_failed_job.h"
 #include "content/test/net/url_request_mock_http_job.h"
 #include "net/base/net_errors.h"
+#include "net/base/net_util.h"
 #include "net/url_request/url_request_filter.h"
 #include "net/url_request/url_request_job_factory.h"
 
@@ -105,13 +113,37 @@ class ErrorPageTest : public InProcessBrowserTest {
     } else {
       FAIL();
     }
-    test_navigation_observer.WaitForObservation(
-        base::Bind(&content::RunMessageLoop),
-        base::Bind(&base::MessageLoop::Quit,
-                   base::Unretained(base::MessageLoopForUI::current())));
+    test_navigation_observer.Wait();
 
     EXPECT_EQ(title_watcher.WaitAndGetTitle(), ASCIIToUTF16(expected_title));
   }
+};
+
+
+class TestFailProvisionalLoadObserver : public content::WebContentsObserver {
+ public:
+  explicit TestFailProvisionalLoadObserver(content::WebContents* contents)
+      : content::WebContentsObserver(contents) {}
+  virtual ~TestFailProvisionalLoadObserver() {}
+
+  // This method is invoked when the provisional load failed.
+  virtual void DidFailProvisionalLoad(
+      int64 frame_id,
+      const base::string16& frame_unique_name,
+      bool is_main_frame,
+      const GURL& validated_url,
+      int error_code,
+      const base::string16& error_description,
+      content::RenderViewHost* render_view_host) OVERRIDE {
+    fail_url_ = validated_url;
+  }
+
+  const GURL& fail_url() const { return fail_url_; }
+
+ private:
+  GURL fail_url_;
+
+  DISALLOW_COPY_AND_ASSIGN(TestFailProvisionalLoadObserver);
 };
 
 // See crbug.com/109669
@@ -208,6 +240,11 @@ IN_PROC_BROWSER_TEST_F(ErrorPageTest, IFrameDNSError_Basic) {
           base::FilePath(FILE_PATH_LITERAL("iframe_dns_error.html"))),
       "Blah",
       1);
+  // We expect to have two history entries, since we started off with navigation
+  // to "about:blank" and then navigated to "iframe_dns_error.html".
+  EXPECT_EQ(2,
+      browser()->tab_strip_model()->GetActiveWebContents()->
+          GetController().GetEntryCount());
 }
 
 // This test fails regularly on win_rel trybots. See crbug.com/121540
@@ -225,7 +262,9 @@ IN_PROC_BROWSER_TEST_F(ErrorPageTest, MAYBE_IFrameDNSError_GoBack) {
 }
 
 // This test fails regularly on win_rel trybots. See crbug.com/121540
-#if defined(OS_WIN)
+//
+// This fails on linux_aura bringup: http://crbug.com/163931
+#if defined(OS_WIN) || (defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(USE_AURA))
 #define MAYBE_IFrameDNSError_GoBackAndForward DISABLED_IFrameDNSError_GoBackAndForward
 #else
 #define MAYBE_IFrameDNSError_GoBackAndForward IFrameDNSError_GoBackAndForward
@@ -239,6 +278,73 @@ IN_PROC_BROWSER_TEST_F(ErrorPageTest, MAYBE_IFrameDNSError_GoBackAndForward) {
   GoForwardAndWaitForTitle("Blah", 1);
 }
 
+// Test that a DNS error occuring in an iframe, once the main document is
+// completed loading, does not result in an additional session history entry.
+// To ensure that the main document has completed loading, JavaScript is used to
+// inject an iframe after loading is done.
+IN_PROC_BROWSER_TEST_F(ErrorPageTest, IFrameDNSError_JavaScript) {
+  content::WebContents* wc =
+      browser()->tab_strip_model()->GetActiveWebContents();
+  GURL fail_url =
+      URLRequestFailedJob::GetMockHttpUrl(net::ERR_NAME_NOT_RESOLVED);
+
+  // Load a regular web page, in which we will inject an iframe.
+  NavigateToFileURL(FILE_PATH_LITERAL("title2.html"));
+
+  // We expect to have two history entries, since we started off with navigation
+  // to "about:blank" and then navigated to "title2.html".
+  EXPECT_EQ(2, wc->GetController().GetEntryCount());
+
+  std::string script = "var frame = document.createElement('iframe');"
+                       "frame.src = '" + fail_url.spec() + "';"
+                       "document.body.appendChild(frame);";
+  {
+    TestFailProvisionalLoadObserver fail_observer(wc);
+    content::WindowedNotificationObserver load_observer(
+        content::NOTIFICATION_LOAD_STOP,
+        content::Source<NavigationController>(&wc->GetController()));
+    wc->GetRenderViewHost()->ExecuteJavascriptInWebFrame(
+        base::string16(), ASCIIToUTF16(script));
+    load_observer.Wait();
+
+    // Ensure we saw the expected failure.
+    EXPECT_EQ(fail_url, fail_observer.fail_url());
+
+    // Failed initial navigation of an iframe shouldn't be adding any history
+    // entries.
+    EXPECT_EQ(2, wc->GetController().GetEntryCount());
+  }
+
+  // Do the same test, but with an iframe that doesn't have initial URL
+  // assigned.
+  script = "var frame = document.createElement('iframe');"
+           "frame.id = 'target_frame';"
+           "document.body.appendChild(frame);";
+  {
+    content::WindowedNotificationObserver load_observer(
+        content::NOTIFICATION_LOAD_STOP,
+        content::Source<NavigationController>(&wc->GetController()));
+    wc->GetRenderViewHost()->ExecuteJavascriptInWebFrame(
+        base::string16(), ASCIIToUTF16(script));
+    load_observer.Wait();
+  }
+
+  script = "var f = document.getElementById('target_frame');"
+           "f.src = '" + fail_url.spec() + "';";
+  {
+    TestFailProvisionalLoadObserver fail_observer(wc);
+    content::WindowedNotificationObserver load_observer(
+        content::NOTIFICATION_LOAD_STOP,
+        content::Source<NavigationController>(&wc->GetController()));
+    wc->GetRenderViewHost()->ExecuteJavascriptInWebFrame(
+        base::string16(), ASCIIToUTF16(script));
+    load_observer.Wait();
+
+    EXPECT_EQ(fail_url, fail_observer.fail_url());
+    EXPECT_EQ(2, wc->GetController().GetEntryCount());
+  }
+}
+
 // Checks that the Link Doctor is not loaded when we receive an actual 404 page.
 IN_PROC_BROWSER_TEST_F(ErrorPageTest, Page404) {
   NavigateToURLAndWaitForTitle(
@@ -246,6 +352,17 @@ IN_PROC_BROWSER_TEST_F(ErrorPageTest, Page404) {
           base::FilePath(FILE_PATH_LITERAL("page404.html"))),
       "SUCCESS",
       1);
+}
+
+// Returns Javascript code that executes plain text search for the page.
+// Pass into content::ExecuteScriptAndExtractBool as |script| parameter.
+std::string GetTextContentContainsStringScript(
+    const std::string& value_to_search) {
+  return base::StringPrintf(
+      "var textContent = document.body.textContent;"
+      "var hasError = textContent.indexOf('%s') >= 0;"
+      "domAutomationController.send(hasError);",
+      value_to_search.c_str());
 }
 
 // Protocol handler that fails all requests with net::ERR_ADDRESS_UNREACHABLE.
@@ -323,9 +440,65 @@ IN_PROC_BROWSER_TEST_F(ErrorPageLinkDoctorFailTest, LinkDoctorFail) {
   bool result = false;
   EXPECT_TRUE(content::ExecuteScriptAndExtractBool(
       browser()->tab_strip_model()->GetActiveWebContents(),
-      "var textContent = document.body.textContent;"
-      "var hasError = textContent.indexOf('ERR_NAME_NOT_RESOLVED') >= 0;"
-      "domAutomationController.send(hasError);",
+      GetTextContentContainsStringScript("ERR_NAME_NOT_RESOLVED"),
+      &result));
+  EXPECT_TRUE(result);
+}
+
+// A test fixture that simulates failing requests for an IDN domain name.
+class ErrorPageForIDNTest : public InProcessBrowserTest {
+ public:
+  // Target hostname in different forms.
+  static const char kHostname[];
+  static const char kHostnameJSUnicode[];
+
+  // InProcessBrowserTest:
+  virtual void SetUpOnMainThread() OVERRIDE {
+    // Clear AcceptLanguages to force punycode decoding.
+    browser()->profile()->GetPrefs()->SetString(prefs::kAcceptLanguages,
+                                                std::string());
+    BrowserThread::PostTask(
+        BrowserThread::IO, FROM_HERE,
+        base::Bind(&ErrorPageForIDNTest::AddFilters));
+  }
+
+  virtual void CleanUpOnMainThread() OVERRIDE {
+    BrowserThread::PostTask(
+        BrowserThread::IO, FROM_HERE,
+        base::Bind(&ErrorPageForIDNTest::RemoveFilters));
+  }
+
+ private:
+  static void AddFilters() {
+    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+    content::URLRequestFailedJob::AddUrlHandlerForHostname(kHostname);
+  }
+
+  static void RemoveFilters() {
+    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+    net::URLRequestFilter::GetInstance()->ClearHandlers();
+  }
+};
+
+const char ErrorPageForIDNTest::kHostname[] =
+    "xn--d1abbgf6aiiy.xn--p1ai";
+const char ErrorPageForIDNTest::kHostnameJSUnicode[] =
+    "\\u043f\\u0440\\u0435\\u0437\\u0438\\u0434\\u0435\\u043d\\u0442."
+    "\\u0440\\u0444";
+
+// Make sure error page shows correct unicode for IDN.
+IN_PROC_BROWSER_TEST_F(ErrorPageForIDNTest, IDN) {
+  // ERR_UNSAFE_PORT will not trigger the link doctor.
+  ui_test_utils::NavigateToURLBlockUntilNavigationsComplete(
+      browser(),
+      URLRequestFailedJob::GetMockHttpUrlForHostname(net::ERR_UNSAFE_PORT,
+                                                     kHostname),
+      1);
+
+  bool result = false;
+  EXPECT_TRUE(content::ExecuteScriptAndExtractBool(
+      browser()->tab_strip_model()->GetActiveWebContents(),
+      GetTextContentContainsStringScript(kHostnameJSUnicode),
       &result));
   EXPECT_TRUE(result);
 }

@@ -42,8 +42,8 @@ TEST_P(FtpDirectoryListingParserTest, Parse) {
   SCOPED_TRACE(base::StringPrintf("Test case: %s", GetParam()));
 
   std::string test_listing;
-  EXPECT_TRUE(file_util::ReadFileToString(test_dir.AppendASCII(GetParam()),
-                                          &test_listing));
+  EXPECT_TRUE(base::ReadFileToString(test_dir.AppendASCII(GetParam()),
+                                     &test_listing));
 
   std::vector<FtpDirectoryListingEntry> entries;
   EXPECT_EQ(OK, ParseFtpDirectoryListing(test_listing,
@@ -51,7 +51,7 @@ TEST_P(FtpDirectoryListingParserTest, Parse) {
                                          &entries));
 
   std::string expected_listing;
-  ASSERT_TRUE(file_util::ReadFileToString(
+  ASSERT_TRUE(base::ReadFileToString(
                   test_dir.AppendASCII(std::string(GetParam()) + ".expected"),
                   &expected_listing));
 
@@ -141,6 +141,7 @@ const char* kTestFiles[] = {
   "dir-listing-ls-29",
   "dir-listing-ls-30",
   "dir-listing-ls-31",
+  "dir-listing-ls-32",  // busybox
 
   "dir-listing-netware-1",
   "dir-listing-netware-2",

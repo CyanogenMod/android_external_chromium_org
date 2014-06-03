@@ -8,7 +8,7 @@
 
 #include "base/logging.h"
 #include "base/strings/stringprintf.h"
-#include "chrome/common/extensions/extension.h"
+#include "extensions/common/extension.h"
 
 namespace extensions {
 
@@ -116,7 +116,7 @@ void ExtensionNotificationObserver::Observe(
         notifications_.push_back(static_cast<chrome::NotificationType>(type));
         // The only way that extensions are unloaded in these tests is
         // by blacklisting.
-        EXPECT_EQ(extension_misc::UNLOAD_REASON_BLACKLIST,
+        EXPECT_EQ(UnloadedExtensionInfo::REASON_BLACKLIST,
                   reason->reason);
       }
       break;

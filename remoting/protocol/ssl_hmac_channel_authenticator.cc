@@ -14,6 +14,7 @@
 #include "net/cert/x509_certificate.h"
 #include "net/http/transport_security_state.h"
 #include "net/socket/client_socket_factory.h"
+#include "net/socket/client_socket_handle.h"
 #include "net/socket/ssl_client_socket.h"
 #include "net/socket/ssl_server_socket.h"
 #include "net/ssl/ssl_config_service.h"
@@ -73,15 +74,18 @@ void SslHmacChannelAuthenticator::SecureAndAuthenticate(
     }
 
     net::SSLConfig ssl_config;
-    net::SSLServerSocket* server_socket =
-        net::CreateSSLServerSocket(socket.release(),
+    ssl_config.require_forward_secrecy = true;
+
+    scoped_ptr<net::SSLServerSocket> server_socket =
+        net::CreateSSLServerSocket(socket.Pass(),
                                    cert.get(),
                                    local_key_pair_->private_key(),
                                    ssl_config);
-    socket_.reset(server_socket);
-
-    result = server_socket->Handshake(base::Bind(
-        &SslHmacChannelAuthenticator::OnConnected, base::Unretained(this)));
+    net::SSLServerSocket* raw_server_socket = server_socket.get();
+    socket_ = server_socket.Pass();
+    result = raw_server_socket->Handshake(
+        base::Bind(&SslHmacChannelAuthenticator::OnConnected,
+                   base::Unretained(this)));
   } else {
     cert_verifier_.reset(net::CertVerifier::CreateDefault());
     transport_security_state_.reset(new net::TransportSecurityState);
@@ -103,9 +107,11 @@ void SslHmacChannelAuthenticator::SecureAndAuthenticate(
     net::SSLClientSocketContext context;
     context.cert_verifier = cert_verifier_.get();
     context.transport_security_state = transport_security_state_.get();
-    socket_.reset(
+    scoped_ptr<net::ClientSocketHandle> connection(new net::ClientSocketHandle);
+    connection->SetSocket(socket.Pass());
+    socket_ =
         net::ClientSocketFactory::GetDefaultFactory()->CreateSSLClientSocket(
-            socket.release(), host_and_port, ssl_config, context));
+            connection.Pass(), host_and_port, ssl_config, context);
 
     result = socket_->Connect(
         base::Bind(&SslHmacChannelAuthenticator::OnConnected,

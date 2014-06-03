@@ -13,7 +13,7 @@ cr.define('help', function() {
   cr.addSingletonGetter(HelpPage);
 
   HelpPage.prototype = {
-    __proto__: HTMLDivElement.prototype,
+    __proto__: help.HelpBasePage.prototype,
 
     /**
      * True if after update powerwash button should be displayed.
@@ -49,6 +49,8 @@ cr.define('help', function() {
      * Perform initial setup.
      */
     initialize: function() {
+      help.HelpBasePage.prototype.initialize.call(this, 'help-page');
+
       var self = this;
 
       uber.onContentFrameLoaded();
@@ -70,9 +72,11 @@ cr.define('help', function() {
       $('get-help').onclick = function() {
         chrome.send('openHelpPage');
       };
+<if expr="pp_ifdef('_google_chrome')">
       $('report-issue').onclick = function() {
         chrome.send('openFeedbackDialog');
       };
+</if>
 
       this.maybeSetOnClick_($('more-info-expander'),
           this.toggleMoreInfo_.bind(this));
@@ -112,13 +116,16 @@ cr.define('help', function() {
       }
 
       if (cr.isChromeOS) {
+        help.ChannelChangePage.getInstance().initialize();
+        this.registerOverlay(help.ChannelChangePage.getInstance());
+
         cr.ui.overlay.setupOverlay($('overlay-container'));
         cr.ui.overlay.globalInitialization();
         $('overlay-container').addEventListener('cancelOverlay', function() {
-          self.showOverlay_(null);
+          self.closeOverlay();
         });
         $('change-channel').onclick = function() {
-          self.showOverlay_($('channel-change-page'));
+          self.showOverlay('channel-change-page');
         };
 
         var channelChangeDisallowedError = document.createElement('div');
@@ -144,6 +151,7 @@ cr.define('help', function() {
       }
 
       cr.ui.FocusManager.disableMouseFocusOnButtons();
+      help.HelpFocusManager.getInstance().initialize();
 
       // Attempt to update.
       chrome.send('onPageLoaded');
@@ -215,15 +223,6 @@ cr.define('help', function() {
     },
 
     /**
-     * Returns current overlay.
-     * @return {HTMLElement} Current overlay
-     * @private
-     */
-    getCurrentOverlay_: function() {
-      return document.querySelector('#overlay .page.showing');
-    },
-
-    /**
      * @return {boolean} True, if new channel switcher UI is used,
      *    false otherwise.
      * @private
@@ -280,21 +279,26 @@ cr.define('help', function() {
         $('update-status-message').innerHTML = message;
       }
 
-      var container = $('update-status-container');
-      if (container) {
-        container.hidden = status == 'disabled';
-        $('relaunch').hidden = status != 'nearly_updated';
-
-        if (!cr.isMac)
-          $('update-percentage').hidden = status != 'updating';
-      }
-
+      // Following invariant must be established at the end of this function:
+      // { ~$('relaunch_and_powerwash').hidden -> $('relaunch').hidden }
+      var relaunchAndPowerwashHidden = true;
       if ($('relaunch-and-powerwash')) {
         // It's allowed to do powerwash only for customer devices,
         // when user explicitly decides to update to a more stable
         // channel.
-        $('relaunch-and-powerwash').hidden =
+        relaunchAndPowerwashHidden =
             !this.powerwashAfterUpdate_ || status != 'nearly_updated';
+        $('relaunch-and-powerwash').hidden = relaunchAndPowerwashHidden;
+      }
+
+      var container = $('update-status-container');
+      if (container) {
+        container.hidden = status == 'disabled';
+        $('relaunch').hidden =
+            (status != 'nearly_updated') || !relaunchAndPowerwashHidden;
+
+        if (!cr.isMac)
+          $('update-percentage').hidden = status != 'updating';
       }
     },
 
@@ -354,21 +358,6 @@ cr.define('help', function() {
 
       $('firmware').parentNode.hidden = (firmware == '');
       $('firmware').textContent = firmware;
-    },
-
-    /**
-     * Sets the given overlay to show. This hides whatever overlay is currently
-     * showing, if any.
-     * @param {HTMLElement} node The overlay page to show. If null, all
-     *     overlays are hidden.
-     */
-    showOverlay_: function(node) {
-      var currentlyShowingOverlay = this.getCurrentOverlay_();
-      if (currentlyShowingOverlay)
-        currentlyShowingOverlay.classList.remove('showing');
-      if (node)
-        node.classList.add('showing');
-      $('overlay-container').hidden = !node;
     },
 
     /**
@@ -484,12 +473,16 @@ cr.define('help', function() {
     HelpPage.getInstance().setOSFirmware_(firmware);
   };
 
-  HelpPage.showOverlay = function(node) {
-    HelpPage.getInstance().showOverlay_(node);
+  HelpPage.showOverlay = function(name) {
+    HelpPage.getInstance().showOverlay(name);
   };
 
   HelpPage.cancelOverlay = function() {
-    HelpPage.getInstance().showOverlay_(null);
+    HelpPage.getInstance().closeOverlay();
+  };
+
+  HelpPage.getTopmostVisiblePage = function() {
+    return HelpPage.getInstance().getTopmostVisiblePage();
   };
 
   HelpPage.updateIsEnterpriseManaged = function(isEnterpriseManaged) {
@@ -537,6 +530,4 @@ cr.define('help', function() {
  */
 window.onload = function() {
   help.HelpPage.getInstance().initialize();
-  if (cr.isChromeOS)
-    help.ChannelChangePage.getInstance().initialize();
 };

@@ -4,16 +4,21 @@
 
 #include "base/time/time.h"
 
+#include <stdint.h>
 #include <sys/time.h>
 #include <time.h>
 #if defined(OS_ANDROID)
 #include <time64.h>
 #endif
+#include <unistd.h>
 
 #include <limits>
+#include <ostream>
 
 #include "base/basictypes.h"
 #include "base/logging.h"
+#include "base/port.h"
+#include "build/build_config.h"
 
 #if defined(OS_ANDROID)
 #include "base/os_compat_android.h"
@@ -23,6 +28,7 @@
 
 namespace {
 
+#if !defined(OS_MACOSX)
 // Define a system-specific SysTime that wraps either to a time_t or
 // a time64_t depending on the host system, and associated convertion.
 // See crbug.com/162007
@@ -61,7 +67,6 @@ void SysTimeToTimeStruct(SysTime t, struct tm* timestruct, bool is_local) {
 }
 #endif  // OS_ANDROID
 
-#if !defined(OS_MACOSX)
 // Helper function to get results from clock_gettime() as TimeTicks object.
 // Minimum requirement is MONOTONIC_CLOCK to be supported on the system.
 // FreeBSD 6 has CLOCK_MONOTONIC but defines _POSIX_MONOTONIC_CLOCK to -1.
@@ -119,8 +124,6 @@ struct timespec TimeDelta::ToTimeSpec() const {
 //   irb(main):011:0> Time.at(-11644473600).getutc()
 //   => Mon Jan 01 00:00:00 UTC 1601
 static const int64 kWindowsEpochDeltaSeconds = GG_INT64_C(11644473600);
-static const int64 kWindowsEpochDeltaMilliseconds =
-    kWindowsEpochDeltaSeconds * Time::kMillisecondsPerSecond;
 
 // static
 const int64 Time::kWindowsEpochDeltaMicroseconds =
@@ -302,8 +305,14 @@ TimeTicks TimeTicks::HighResNow() {
 }
 
 // static
+bool TimeTicks::IsHighResNowFastAndReliable() {
+  return true;
+}
+
+// static
 TimeTicks TimeTicks::ThreadNow() {
-#if defined(_POSIX_THREAD_CPUTIME) && (_POSIX_THREAD_CPUTIME >= 0)
+#if (defined(_POSIX_THREAD_CPUTIME) && (_POSIX_THREAD_CPUTIME >= 0)) || \
+    defined(OS_ANDROID)
   return ClockNow(CLOCK_THREAD_CPUTIME_ID);
 #else
   NOTREACHED();

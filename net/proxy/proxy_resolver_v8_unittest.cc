@@ -102,6 +102,10 @@ class ProxyResolverV8WithMockBindings : public ProxyResolverV8 {
     set_js_bindings(&mock_js_bindings_);
   }
 
+  virtual ~ProxyResolverV8WithMockBindings() {
+    PurgeMemory();
+  }
+
   MockJSBindings* mock_js_bindings() {
     return &mock_js_bindings_;
   }
@@ -117,7 +121,7 @@ class ProxyResolverV8WithMockBindings : public ProxyResolverV8 {
 
     // Try to read the file from disk.
     std::string file_contents;
-    bool ok = file_util::ReadFileToString(path, &file_contents);
+    bool ok = base::ReadFileToString(path, &file_contents);
 
     // If we can't load the file from disk, something is misconfigured.
     if (!ok) {
@@ -206,13 +210,6 @@ TEST(ProxyResolverV8Test, Basic) {
     EXPECT_EQ(0U, resolver.mock_js_bindings()->alerts.size());
     EXPECT_EQ(0U, resolver.mock_js_bindings()->errors.size());
   }
-
-  // We call this so we'll have code coverage of the function and valgrind will
-  // make sure nothing bad happens.
-  //
-  // NOTE: This is here instead of in its own test so that we'll be calling it
-  // after having done something, in hopes it won't be a no-op.
-  resolver.PurgeMemory();
 }
 
 TEST(ProxyResolverV8Test, BadReturnType) {

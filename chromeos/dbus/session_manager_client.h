@@ -11,16 +11,13 @@
 #include "base/callback.h"
 #include "base/observer_list.h"
 #include "chromeos/chromeos_export.h"
+#include "chromeos/dbus/dbus_client.h"
 #include "chromeos/dbus/dbus_client_implementation_type.h"
-
-namespace dbus {
-class Bus;
-}  // namespace dbus
 
 namespace chromeos {
 
 // SessionManagerClient is used to communicate with the session manager.
-class CHROMEOS_EXPORT SessionManagerClient {
+class CHROMEOS_EXPORT SessionManagerClient : public DBusClient {
  public:
   // Interface for observing changes from the session manager.
   class Observer {
@@ -37,10 +34,6 @@ class CHROMEOS_EXPORT SessionManagerClient {
     // session manager).
     virtual void LockScreen() {}
 
-    // Called when the session manager requests that the lock screen be
-    // dismissed.  NotifyLockScreenDismissed() is called afterward.
-    virtual void UnlockScreen() {}
-
     // Called when the session manager announces that the screen has been locked
     // successfully (i.e. after NotifyLockScreenShown() has been called).
     virtual void ScreenIsLocked() {}
@@ -49,6 +42,9 @@ class CHROMEOS_EXPORT SessionManagerClient {
     // unlocked successfully (i.e. after NotifyLockScreenDismissed() has
     // been called).
     virtual void ScreenIsUnlocked() {}
+
+    // Called after EmitLoginPromptVisible is called.
+    virtual void EmitLoginPromptVisibleCalled() {}
   };
 
   // Adds and removes the observer.
@@ -65,10 +61,6 @@ class CHROMEOS_EXPORT SessionManagerClient {
   // Restarts a job referenced by |pid| with the provided command line.
   virtual void RestartJob(int pid, const std::string& command_line) = 0;
 
-  // Restarts entd (the enterprise daemon).
-  // DEPRECATED: will be deleted soon.
-  virtual void RestartEntd() = 0;
-
   // Starts the session for the user.
   virtual void StartSession(const std::string& user_email) = 0;
 
@@ -83,9 +75,6 @@ class CHROMEOS_EXPORT SessionManagerClient {
 
   // Notifies that the lock screen is shown.
   virtual void NotifyLockScreenShown() = 0;
-
-  // Unlocks the screen.
-  virtual void RequestUnlockScreen() = 0;
 
   // Notifies that the lock screen is dismissed.
   virtual void NotifyLockScreenDismissed() = 0;
@@ -173,8 +162,7 @@ class CHROMEOS_EXPORT SessionManagerClient {
                                const std::vector<std::string>& flags) = 0;
 
   // Creates the instance.
-  static SessionManagerClient* Create(DBusClientImplementationType type,
-                                      dbus::Bus* bus);
+  static SessionManagerClient* Create(DBusClientImplementationType type);
 
   virtual ~SessionManagerClient();
 

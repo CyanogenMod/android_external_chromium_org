@@ -5,11 +5,11 @@
 #include <string>
 
 #include "base/bind.h"
+#include "base/prefs/scoped_user_pref_update.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "chrome/browser/managed_mode/managed_user_sync_service.h"
 #include "chrome/browser/managed_mode/managed_user_sync_service_factory.h"
-#include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/browser/browser_thread.h"
@@ -41,6 +41,11 @@ class MockChangeProcessor : public SyncChangeProcessor {
       const tracked_objects::Location& from_here,
       const SyncChangeList& change_list) OVERRIDE;
 
+  virtual SyncDataList GetAllSyncData(syncer::ModelType type) const
+      OVERRIDE {
+    return SyncDataList();
+  }
+
   const SyncChangeList& changes() const { return change_list_; }
   SyncChange GetChange(const std::string& id) const;
 
@@ -64,6 +69,12 @@ SyncChange MockChangeProcessor::GetChange(const std::string& id) const {
   return SyncChange();
 }
 
+// Callback for ManagedUserSyncService::GetManagedUsersAsync().
+void GetManagedUsersCallback(const base::DictionaryValue** dict,
+                             const base::DictionaryValue* managed_users) {
+  *dict = managed_users;
+}
+
 }  // namespace
 
 class ManagedUserSyncServiceTest : public ::testing::Test {
@@ -74,12 +85,9 @@ class ManagedUserSyncServiceTest : public ::testing::Test {
  protected:
   scoped_ptr<SyncChangeProcessor> CreateChangeProcessor();
   scoped_ptr<SyncErrorFactory> CreateErrorFactory();
-  SyncData CreateRemoteData(const std::string& id, const std::string& name);
-
-  SyncMergeResult StartInitialSync();
-
-  void Acknowledge();
-  void ResetService();
+  SyncData CreateRemoteData(const std::string& id,
+                            const std::string& name,
+                            const std::string& avatar);
 
   PrefService* prefs() { return profile_.GetPrefs(); }
   ManagedUserSyncService* service() { return service_; }
@@ -118,46 +126,41 @@ ManagedUserSyncServiceTest::CreateErrorFactory() {
 
 SyncData ManagedUserSyncServiceTest::CreateRemoteData(
     const std::string& id,
-    const std::string& name) {
+    const std::string& name,
+    const std::string& chrome_avatar) {
   ::sync_pb::EntitySpecifics specifics;
   specifics.mutable_managed_user()->set_id(id);
   specifics.mutable_managed_user()->set_name(name);
   specifics.mutable_managed_user()->set_acknowledged(true);
+  if (!chrome_avatar.empty())
+    specifics.mutable_managed_user()->set_chrome_avatar(chrome_avatar);
+
   return SyncData::CreateRemoteData(++sync_data_id_, specifics, base::Time());
 }
 
-SyncMergeResult ManagedUserSyncServiceTest::StartInitialSync() {
-  SyncDataList initial_sync_data;
+TEST_F(ManagedUserSyncServiceTest, MergeEmpty) {
   SyncMergeResult result =
       service()->MergeDataAndStartSyncing(MANAGED_USERS,
-                                          initial_sync_data,
+                                          SyncDataList(),
                                           CreateChangeProcessor(),
                                           CreateErrorFactory());
   EXPECT_FALSE(result.error().IsSet());
-  return result;
-}
-
-void ManagedUserSyncServiceTest::ResetService() {
-  service_->StopSyncing(MANAGED_USERS);
-  service_->Shutdown();
-}
-
-TEST_F(ManagedUserSyncServiceTest, MergeEmpty) {
-  SyncMergeResult result = StartInitialSync();
   EXPECT_EQ(0, result.num_items_added());
   EXPECT_EQ(0, result.num_items_modified());
   EXPECT_EQ(0, result.num_items_deleted());
   EXPECT_EQ(0, result.num_items_before_association());
   EXPECT_EQ(0, result.num_items_after_association());
-  EXPECT_EQ(0u, prefs()->GetDictionary(prefs::kManagedUsers)->size());
+  EXPECT_EQ(0u, service()->GetManagedUsers()->size());
   EXPECT_EQ(0u, change_processor()->changes().size());
 
-  ResetService();
+  service()->StopSyncing(MANAGED_USERS);
+  service()->Shutdown();
 }
 
 TEST_F(ManagedUserSyncServiceTest, MergeExisting) {
   const char kNameKey[] = "name";
   const char kAcknowledgedKey[] = "acknowledged";
+  const char kChromeAvatarKey[] = "chromeAvatar";
 
   const char kUserId1[] = "aaaaa";
   const char kUserId2[] = "bbbbb";
@@ -167,6 +170,15 @@ TEST_F(ManagedUserSyncServiceTest, MergeExisting) {
   const char kName2[] = "Buzz";
   const char kName3[] = "Crush";
   const char kName4[] = "Dory";
+  const char kAvatar1[] = "";
+#if defined(OS_CHROMEOS)
+  const char kAvatar2[] = "chromeos-avatar-index:0";
+  const char kAvatar3[] = "chromeos-avatar-index:20";
+#else
+  const char kAvatar2[] = "chrome-avatar-index:0";
+  const char kAvatar3[] = "chrome-avatar-index:20";
+#endif
+  const char kAvatar4[] = "";
   {
     DictionaryPrefUpdate update(prefs(), prefs::kManagedUsers);
     DictionaryValue* managed_users = update.Get();
@@ -179,10 +191,14 @@ TEST_F(ManagedUserSyncServiceTest, MergeExisting) {
     managed_users->Set(kUserId2, dict);
   }
 
+  const base::DictionaryValue* async_managed_users = NULL;
+  service()->GetManagedUsersAsync(
+      base::Bind(&GetManagedUsersCallback, &async_managed_users));
+
   SyncDataList initial_sync_data;
-  initial_sync_data.push_back(CreateRemoteData(kUserId2, kName2));
-  initial_sync_data.push_back(CreateRemoteData(kUserId3, kName3));
-  initial_sync_data.push_back(CreateRemoteData(kUserId4, kName4));
+  initial_sync_data.push_back(CreateRemoteData(kUserId2, kName2, kAvatar2));
+  initial_sync_data.push_back(CreateRemoteData(kUserId3, kName3, kAvatar3));
+  initial_sync_data.push_back(CreateRemoteData(kUserId4, kName4, kAvatar4));
 
   SyncMergeResult result =
       service()->MergeDataAndStartSyncing(MANAGED_USERS,
@@ -196,9 +212,11 @@ TEST_F(ManagedUserSyncServiceTest, MergeExisting) {
   EXPECT_EQ(2, result.num_items_before_association());
   EXPECT_EQ(4, result.num_items_after_association());
 
-  const DictionaryValue* managed_users =
-      prefs()->GetDictionary(prefs::kManagedUsers);
+  const DictionaryValue* managed_users = service()->GetManagedUsers();
   EXPECT_EQ(4u, managed_users->size());
+  EXPECT_TRUE(async_managed_users);
+  EXPECT_TRUE(managed_users->Equals(async_managed_users));
+
   {
     const DictionaryValue* managed_user = NULL;
     ASSERT_TRUE(managed_users->GetDictionary(kUserId2, &managed_user));
@@ -209,6 +227,9 @@ TEST_F(ManagedUserSyncServiceTest, MergeExisting) {
     bool acknowledged = false;
     EXPECT_TRUE(managed_user->GetBoolean(kAcknowledgedKey, &acknowledged));
     EXPECT_TRUE(acknowledged);
+    std::string avatar;
+    EXPECT_TRUE(managed_user->GetString(kChromeAvatarKey, &avatar));
+    EXPECT_EQ(kAvatar2, avatar);
   }
   {
     const DictionaryValue* managed_user = NULL;
@@ -220,6 +241,9 @@ TEST_F(ManagedUserSyncServiceTest, MergeExisting) {
     bool acknowledged = false;
     EXPECT_TRUE(managed_user->GetBoolean(kAcknowledgedKey, &acknowledged));
     EXPECT_TRUE(acknowledged);
+    std::string avatar;
+    EXPECT_TRUE(managed_user->GetString(kChromeAvatarKey, &avatar));
+    EXPECT_EQ(kAvatar3, avatar);
   }
   {
     const DictionaryValue* managed_user = NULL;
@@ -231,6 +255,9 @@ TEST_F(ManagedUserSyncServiceTest, MergeExisting) {
     bool acknowledged = false;
     EXPECT_TRUE(managed_user->GetBoolean(kAcknowledgedKey, &acknowledged));
     EXPECT_TRUE(acknowledged);
+    std::string avatar;
+    EXPECT_TRUE(managed_user->GetString(kChromeAvatarKey, &avatar));
+    EXPECT_EQ(kAvatar4, avatar);
   }
 
   EXPECT_EQ(1u, change_processor()->changes().size());
@@ -242,5 +269,65 @@ TEST_F(ManagedUserSyncServiceTest, MergeExisting) {
         change.sync_data().GetSpecifics().managed_user();
     EXPECT_EQ(kName1, managed_user.name());
     EXPECT_FALSE(managed_user.acknowledged());
+    EXPECT_EQ(kAvatar1, managed_user.chrome_avatar());
   }
+}
+
+TEST_F(ManagedUserSyncServiceTest, GetAvatarIndex) {
+  int avatar = 100;
+  EXPECT_TRUE(ManagedUserSyncService::GetAvatarIndex(std::string(), &avatar));
+  EXPECT_EQ(ManagedUserSyncService::kNoAvatar, avatar);
+
+  std::string avatar_str = ManagedUserSyncService::BuildAvatarString(24);
+#if defined(OS_CHROMEOS)
+  EXPECT_EQ("chromeos-avatar-index:24", avatar_str);
+#else
+  EXPECT_EQ("chrome-avatar-index:24", avatar_str);
+#endif
+  EXPECT_TRUE(ManagedUserSyncService::GetAvatarIndex(avatar_str, &avatar));
+  EXPECT_EQ(24, avatar);
+
+  avatar_str = ManagedUserSyncService::BuildAvatarString(0);
+#if defined(OS_CHROMEOS)
+  EXPECT_EQ("chromeos-avatar-index:0", avatar_str);
+#else
+  EXPECT_EQ("chrome-avatar-index:0", avatar_str);
+#endif
+  EXPECT_TRUE(ManagedUserSyncService::GetAvatarIndex(avatar_str, &avatar));
+  EXPECT_EQ(0, avatar);
+
+  EXPECT_FALSE(ManagedUserSyncService::GetAvatarIndex("wrong-prefix:5",
+                                                      &avatar));
+#if defined(OS_CHROMEOS)
+  EXPECT_FALSE(ManagedUserSyncService::GetAvatarIndex("chromeos-avatar-indes:2",
+                                                      &avatar));
+
+  EXPECT_FALSE(
+      ManagedUserSyncService::GetAvatarIndex("chromeos-avatar-indexxx:2",
+                                             &avatar));
+
+  EXPECT_FALSE(ManagedUserSyncService::GetAvatarIndex("chromeos-avatar-index:",
+                                                      &avatar));
+
+  EXPECT_FALSE(ManagedUserSyncService::GetAvatarIndex("chromeos-avatar-index:x",
+                                                      &avatar));
+
+  EXPECT_FALSE(ManagedUserSyncService::GetAvatarIndex("chrome-avatar-index:5",
+                                                      &avatar));
+#else
+  EXPECT_FALSE(ManagedUserSyncService::GetAvatarIndex("chrome-avatar-indes:2",
+                                                      &avatar));
+
+  EXPECT_FALSE(ManagedUserSyncService::GetAvatarIndex("chrome-avatar-indexxx:2",
+                                                      &avatar));
+
+  EXPECT_FALSE(ManagedUserSyncService::GetAvatarIndex("chrome-avatar-index:",
+                                                      &avatar));
+
+  EXPECT_FALSE(ManagedUserSyncService::GetAvatarIndex("chrome-avatar-index:x",
+                                                      &avatar));
+
+  EXPECT_FALSE(ManagedUserSyncService::GetAvatarIndex("chromeos-avatar-index:5",
+                                                      &avatar));
+#endif
 }

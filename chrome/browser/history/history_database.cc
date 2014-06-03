@@ -31,10 +31,6 @@ const int kCurrentVersionNumber = 28;
 const int kCompatibleVersionNumber = 16;
 const char kEarlyExpirationThresholdKey[] = "early_expiration_threshold";
 
-// Key in the meta table used to determine if we need to migrate thumbnails out
-// of history.
-const char kNeedsThumbnailMigrationKey[] = "needs_thumbnail_migration";
-
 }  // namespace
 
 HistoryDatabase::HistoryDatabase()
@@ -110,7 +106,7 @@ void HistoryDatabase::ComputeDatabaseMetrics(
     const base::FilePath& history_name) {
     base::TimeTicks start_time = base::TimeTicks::Now();
   int64 file_size = 0;
-  if (!file_util::GetFileSize(history_name, &file_size))
+  if (!base::GetFileSize(history_name, &file_size))
     return;
   int file_mb = static_cast<int>(file_size / (1024 * 1024));
   UMA_HISTOGRAM_MEMORY_MB("History.DatabaseFileMB", file_mb);
@@ -245,16 +241,6 @@ bool HistoryDatabase::Raze() {
   return db_.Raze();
 }
 
-void HistoryDatabase::ThumbnailMigrationDone() {
-  meta_table_.SetValue(kNeedsThumbnailMigrationKey, 0);
-}
-
-bool HistoryDatabase::GetNeedsThumbnailMigration() {
-  int value = 0;
-  return (meta_table_.GetValue(kNeedsThumbnailMigrationKey, &value) &&
-          value != 0);
-}
-
 bool HistoryDatabase::SetSegmentID(VisitID visit_id, SegmentID segment_id) {
   sql::Statement s(db_.GetCachedStatement(SQL_FROM_HERE,
       "UPDATE visits SET segment_id = ? WHERE id = ?"));
@@ -365,9 +351,7 @@ sql::InitStatus HistoryDatabase::EnsureCurrentVersion() {
   if (cur_version == 19) {
     cur_version++;
     meta_table_.SetVersionNumber(cur_version);
-    // Set a key indicating we need to migrate thumbnails. When successfull the
-    // key is removed (ThumbnailMigrationDone).
-    meta_table_.SetValue(kNeedsThumbnailMigrationKey, 1);
+    // This was the thumbnail migration.  Obsolete.
   }
 
   if (cur_version == 20) {

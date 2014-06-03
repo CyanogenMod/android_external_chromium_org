@@ -9,17 +9,13 @@
 #include "base/observer_list.h"
 #include "chromeos/chromeos_export.h"
 #include "chromeos/dbus/audio_node.h"
-#include "chromeos/dbus/dbus_client_implementation_type.h"
+#include "chromeos/dbus/dbus_client.h"
 #include "chromeos/dbus/volume_state.h"
-
-namespace dbus {
-class Bus;
-}
 
 namespace chromeos {
 
 // CrasAudioClient is used to communicate with the cras audio dbus interface.
-class CHROMEOS_EXPORT CrasAudioClient {
+class CHROMEOS_EXPORT CrasAudioClient : public DBusClient {
  public:
   // Interface for observing changes from the cras audio changes.
   class Observer {
@@ -66,11 +62,18 @@ class CHROMEOS_EXPORT CrasAudioClient {
   // |success| which indicates whether or not the request succeeded.
   typedef base::Callback<void(const AudioNodeList&, bool)> GetNodesCallback;
 
+  // ErrorCallback is used for cras dbus method error response. It receives 2
+  // arguments, |error_name| indicates the dbus error name, and |error_message|
+  // contains the detailed dbus error message.
+  typedef base::Callback<void(const std::string&,
+                              const std::string&)> ErrorCallback;
+
   // Gets the volume state, asynchronously.
   virtual void GetVolumeState(const GetVolumeStateCallback& callback) = 0;
 
   // Gets an array of audio input and output nodes.
-  virtual void GetNodes(const GetNodesCallback& callback) = 0;
+  virtual void GetNodes(const GetNodesCallback& callback,
+                        const ErrorCallback& error_callback) = 0;
 
   // Sets output volume of the given |node_id| to |volume|, in the rage of
   // [0, 100].
@@ -93,8 +96,7 @@ class CHROMEOS_EXPORT CrasAudioClient {
   virtual void SetActiveInputNode(uint64 node_id) = 0;
 
   // Creates the instance.
-  static CrasAudioClient* Create(DBusClientImplementationType type,
-                                 dbus::Bus* bus);
+  static CrasAudioClient* Create();
 
  protected:
   // Create() should be used instead.

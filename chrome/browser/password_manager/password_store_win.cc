@@ -14,10 +14,10 @@
 #include "chrome/browser/password_manager/password_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/webdata/web_data_service.h"
-#include "components/webdata/encryptor/ie7_password.h"
+#include "components/webdata/encryptor/ie7_password_win.h"
 
+using autofill::PasswordForm;
 using content::BrowserThread;
-using content::PasswordForm;
 
 // Handles requests to WebDataService.
 class PasswordStoreWin::DBHandler : public WebDataServiceConsumer {
@@ -54,8 +54,9 @@ class PasswordStoreWin::DBHandler : public WebDataServiceConsumer {
 
   // Gets logins from IE7 if no others are found. Also copies them into
   // Chrome's WebDatabase so we don't need to look next time.
-  PasswordForm* GetIE7Result(const WDTypedResult* result,
-                             const PasswordForm& form);
+  std::vector<autofill::PasswordForm*> GetIE7Results(
+      const WDTypedResult* result,
+      const PasswordForm& form);
 
   // WebDataServiceConsumer implementation.
   virtual void OnWebDataServiceRequestDone(
@@ -94,10 +95,11 @@ void PasswordStoreWin::DBHandler::GetIE7Login(
       RequestInfo(new PasswordForm(form), callback_runner);
 }
 
-PasswordForm* PasswordStoreWin::DBHandler::GetIE7Result(
+std::vector<PasswordForm*> PasswordStoreWin::DBHandler::GetIE7Results(
     const WDTypedResult *result,
     const PasswordForm& form) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::DB));
+  std::vector<PasswordForm*> matching_forms;
 
   const WDResult<IE7PasswordInfo>* r =
       static_cast<const WDResult<IE7PasswordInfo>*>(result);
@@ -108,26 +110,26 @@ PasswordForm* PasswordStoreWin::DBHandler::GetIE7Result(
     // Delete the entry. If it's good we will add it to the real saved password
     // table.
     web_data_service_->RemoveIE7Login(info);
-    std::wstring username;
-    std::wstring password;
+    std::vector<ie7_password::DecryptedCredentials> credentials;
     std::wstring url = ASCIIToWide(form.origin.spec());
-    if (!ie7_password::DecryptPassword(url, info.encrypted_data,
-                                       &username, &password)) {
-      return NULL;
+    if (ie7_password::DecryptPasswords(url,
+                                       info.encrypted_data,
+                                       &credentials)) {
+      for (size_t i = 0; i < credentials.size(); ++i) {
+        PasswordForm* autofill = new PasswordForm(form);
+        autofill->username_value = credentials[i].username;
+        autofill->password_value = credentials[i].password;
+        autofill->preferred = true;
+        autofill->ssl_valid = form.origin.SchemeIsSecure();
+        autofill->date_created = info.date_created;
+        matching_forms.push_back(autofill);
+        // Add this PasswordForm to the saved password table. We're on the DB
+        // thread already, so we use AddLoginImpl.
+        password_store_->AddLoginImpl(*autofill);
+      }
     }
-
-    PasswordForm* autofill = new PasswordForm(form);
-    autofill->username_value = username;
-    autofill->password_value = password;
-    autofill->preferred = true;
-    autofill->ssl_valid = form.origin.SchemeIsSecure();
-    autofill->date_created = info.date_created;
-    // Add this PasswordForm to the saved password table. We're on the DB thread
-    // already, so we use AddLoginImpl.
-    password_store_->AddLoginImpl(*autofill);
-    return autofill;
   }
-  return NULL;
+  return matching_forms;
 }
 
 void PasswordStoreWin::DBHandler::OnWebDataServiceRequestDone(
@@ -143,20 +145,16 @@ void PasswordStoreWin::DBHandler::OnWebDataServiceRequestDone(
       i->second.callback_runner);
   pending_requests_.erase(i);
 
-  std::vector<content::PasswordForm*> matched_forms;
-
   if (!result) {
     // The WDS returns NULL if it is shutting down. Run callback with empty
     // result.
-    callback_runner.Run(matched_forms);
+    callback_runner.Run(std::vector<autofill::PasswordForm*>());
     return;
   }
 
   DCHECK_EQ(PASSWORD_IE7_RESULT, result->GetType());
-  PasswordForm* ie7_form = GetIE7Result(result, *form);
-
-  if (ie7_form)
-    matched_forms.push_back(ie7_form);
+  std::vector<autofill::PasswordForm*> matched_forms =
+      GetIE7Results(result, *form);
 
   callback_runner.Run(matched_forms);
 }
@@ -186,7 +184,7 @@ void PasswordStoreWin::ShutdownOnUIThread() {
 void PasswordStoreWin::GetIE7LoginIfNecessary(
     const PasswordForm& form,
     const ConsumerCallbackRunner& callback_runner,
-    const std::vector<content::PasswordForm*>& matched_forms) {
+    const std::vector<autofill::PasswordForm*>& matched_forms) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::DB));
   if (matched_forms.empty() && db_handler_.get()) {
     db_handler_->GetIE7Login(form, callback_runner);
@@ -198,9 +196,10 @@ void PasswordStoreWin::GetIE7LoginIfNecessary(
 
 void PasswordStoreWin::GetLoginsImpl(
     const PasswordForm& form,
+    AuthorizationPromptPolicy prompt_policy,
     const ConsumerCallbackRunner& callback_runner) {
   ConsumerCallbackRunner get_ie7_login =
       base::Bind(&PasswordStoreWin::GetIE7LoginIfNecessary,
                  this, form, callback_runner);
-  PasswordStoreDefault::GetLoginsImpl(form, get_ie7_login);
+  PasswordStoreDefault::GetLoginsImpl(form, prompt_policy, get_ie7_login);
 }

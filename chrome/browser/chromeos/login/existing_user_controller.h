@@ -21,6 +21,7 @@
 #include "chrome/browser/chromeos/login/login_performer.h"
 #include "chrome/browser/chromeos/login/login_utils.h"
 #include "chrome/browser/chromeos/login/user.h"
+#include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
@@ -67,9 +68,6 @@ class ExistingUserController : public LoginDisplay::Delegate,
   // Tells the controller to resume a pending login.
   void ResumeLogin();
 
-  // Invoked to prepare for a kiosk app launch attempt.
-  void PrepareKioskAppLaunch();
-
   // Start the public session auto-login timer.
   void StartPublicSessionAutoLoginTimer();
 
@@ -80,13 +78,14 @@ class ExistingUserController : public LoginDisplay::Delegate,
   virtual void CancelPasswordChangedFlow() OVERRIDE;
   virtual void CreateAccount() OVERRIDE;
   virtual void CompleteLogin(const UserContext& user_context) OVERRIDE;
-  virtual string16 GetConnectedNetworkName() OVERRIDE;
+  virtual base::string16 GetConnectedNetworkName() OVERRIDE;
   virtual bool IsSigninInProgress() const OVERRIDE;
   virtual void Login(const UserContext& user_context) OVERRIDE;
   virtual void MigrateUserData(const std::string& old_password) OVERRIDE;
   virtual void LoginAsRetailModeUser() OVERRIDE;
   virtual void LoginAsGuest() OVERRIDE;
   virtual void LoginAsPublicAccount(const std::string& username) OVERRIDE;
+  virtual void LoginAsKioskApp(const std::string& app_id) OVERRIDE;
   virtual void OnSigninScreenReady() OVERRIDE;
   virtual void OnUserSelected(const std::string& username) OVERRIDE;
   virtual void OnStartEnterpriseEnrollment() OVERRIDE;
@@ -135,10 +134,7 @@ class ExistingUserController : public LoginDisplay::Delegate,
 
   // LoginPerformer::Delegate implementation:
   virtual void OnLoginFailure(const LoginFailure& error) OVERRIDE;
-  virtual void OnLoginSuccess(
-      const UserContext& user_context,
-      bool pending_requests,
-      bool using_oauth) OVERRIDE;
+  virtual void OnLoginSuccess(const UserContext& user_context) OVERRIDE;
   virtual void OnOffTheRecordLoginSuccess() OVERRIDE;
   virtual void OnPasswordChangeDetected() OVERRIDE;
   virtual void WhiteListCheckFailed(const std::string& email) OVERRIDE;
@@ -148,6 +144,9 @@ class ExistingUserController : public LoginDisplay::Delegate,
 
   // LoginUtils::Delegate implementation:
   virtual void OnProfilePrepared(Profile* profile) OVERRIDE;
+
+  // Called when device settings change.
+  void DeviceSettingsChanged();
 
   // Starts WizardController with the specified screen.
   void ActivateWizard(const std::string& screen_name);
@@ -169,8 +168,7 @@ class ExistingUserController : public LoginDisplay::Delegate,
   // Handles result of ownership check and starts enterprise or kiosk enrollment
   // if applicable.
   void OnEnrollmentOwnershipCheckCompleted(
-      DeviceSettingsService::OwnershipStatus status,
-      bool current_user_is_owner);
+      DeviceSettingsService::OwnershipStatus status);
 
   // Handles result of consumer kiosk configurability check and starts
   // enable kiosk screen if applicable.
@@ -199,8 +197,7 @@ class ExistingUserController : public LoginDisplay::Delegate,
   // has to be performed, and will resume once auto-enrollment completes.
   void CompleteLoginInternal(
       const UserContext& user_context,
-      DeviceSettingsService::OwnershipStatus ownership_status,
-      bool is_owner);
+      DeviceSettingsService::OwnershipStatus ownership_status);
 
   // Creates |login_performer_| if necessary and calls login() on it.
   // The string arguments aren't passed by const reference because this is
@@ -214,6 +211,9 @@ class ExistingUserController : public LoginDisplay::Delegate,
 
   // Updates the |login_display_| attached to this controller.
   void UpdateLoginDisplay(const UserList& users);
+
+  // Sends an accessibility alert event to extension listeners.
+  void SendAccessibilityAlert(const std::string& alert_text);
 
   // Public session auto-login timer.
   scoped_ptr<base::OneShotTimer<ExistingUserController> > auto_login_timer_;
@@ -301,6 +301,15 @@ class ExistingUserController : public LoginDisplay::Delegate,
   base::OneShotTimer<ExistingUserController> reboot_timer_;
 
   scoped_ptr<login::NetworkStateHelper> network_state_helper_;
+
+  scoped_ptr<CrosSettings::ObserverSubscription> show_user_names_subscription_;
+  scoped_ptr<CrosSettings::ObserverSubscription> allow_new_user_subscription_;
+  scoped_ptr<CrosSettings::ObserverSubscription> allow_guest_subscription_;
+  scoped_ptr<CrosSettings::ObserverSubscription> users_subscription_;
+  scoped_ptr<CrosSettings::ObserverSubscription>
+      local_account_auto_login_id_subscription_;
+  scoped_ptr<CrosSettings::ObserverSubscription>
+      local_account_auto_login_delay_subscription_;
 
   FRIEND_TEST_ALL_PREFIXES(ExistingUserControllerTest, ExistingUserLogin);
 

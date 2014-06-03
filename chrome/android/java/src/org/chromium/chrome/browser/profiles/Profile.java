@@ -1,4 +1,4 @@
-// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,14 +11,18 @@ import org.chromium.base.CalledByNative;
  */
 public class Profile {
 
-    private int mNativeProfileAndroid;
+    private long mNativeProfileAndroid;
 
-    private Profile(int nativeProfileAndroid) {
+    private Profile(long nativeProfileAndroid) {
         mNativeProfileAndroid = nativeProfileAndroid;
     }
 
+    public static Profile getLastUsedProfile() {
+        return (Profile) nativeGetLastUsedProfile();
+    }
+
     @CalledByNative
-    private static Profile create(int nativeProfileAndroid) {
+    private static Profile create(long nativeProfileAndroid) {
         return new Profile(nativeProfileAndroid);
     }
 
@@ -28,7 +32,9 @@ public class Profile {
     }
 
     @CalledByNative
-    private int getNativePointer() {
+    private long getNativePointer() {
         return mNativeProfileAndroid;
     }
+
+    private static native Object nativeGetLastUsedProfile();
 }

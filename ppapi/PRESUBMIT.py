@@ -43,7 +43,8 @@ def RunUnittests(input_api, output_api):
 # Verify that the files do not contain a 'TODO' in them.
 RE_TODO = re.compile(r'\WTODO\W', flags=re.I)
 def CheckTODO(input_api, output_api):
-  files = input_api.LocalPaths()
+  live_files = input_api.AffectedFiles(include_deletes=False)
+  files = [f.LocalPath() for f in live_files]
   todo = []
 
   for filename in files:
@@ -81,7 +82,8 @@ def CheckTODO(input_api, output_api):
 # Verify that no CPP wrappers use un-versioned PPB interface name macros.
 RE_UNVERSIONED_PPB = re.compile(r'\bPPB_\w+_INTERFACE\b')
 def CheckUnversionedPPB(input_api, output_api):
-  files = input_api.LocalPaths()
+  live_files = input_api.AffectedFiles(include_deletes=False)
+  files = [f.LocalPath() for f in live_files]
   todo = []
 
   for filename in files:
@@ -159,6 +161,7 @@ def CheckChange(input_api, output_api):
   files = input_api.LocalPaths()
   h_files = []
   idl_files = []
+  generators_changed = False
 
   # Find all relevant .h and .idl files.
   for filename in files:
@@ -166,8 +169,10 @@ def CheckChange(input_api, output_api):
     name_parts = name.split(os.sep)
     if name_parts[0:2] == ['ppapi', 'c'] and ext == '.h':
       h_files.append('/'.join(name_parts[2:]))
-    if name_parts[0:2] == ['ppapi', 'api'] and ext == '.idl':
+    elif name_parts[0:2] == ['ppapi', 'api'] and ext == '.idl':
       idl_files.append('/'.join(name_parts[2:]))
+    elif name_parts[0:2] == ['ppapi', 'generators']:
+      generators_changed = True
 
   # Generate a list of all appropriate *.h and *.idl changes in this CL.
   both = h_files + idl_files
@@ -247,10 +252,20 @@ def CheckChange(input_api, output_api):
             long_text='\n'.join(missing_dev)))
 
   if missing_stable:
-    results.append(
-        output_api.PresubmitError(
-            'Missing PPAPI IDL for stable interface:',
-            long_text='\n'.join(missing_stable)))
+    # It might be okay that the header changed without a corresponding IDL
+    # change. E.g., comment indenting may have been changed. Treat this as a
+    # warning.
+    if generators_changed:
+      results.append(
+          output_api.PresubmitPromptWarning(
+              'Missing PPAPI IDL for stable interface (due to change in ' +
+              'generators?):',
+              long_text='\n'.join(missing_stable)))
+    else:
+      results.append(
+          output_api.PresubmitError(
+              'Missing PPAPI IDL for stable interface:',
+              long_text='\n'.join(missing_stable)))
 
   # Verify all *.h files match *.idl definitions, use:
   #   --test to prevent output to disk

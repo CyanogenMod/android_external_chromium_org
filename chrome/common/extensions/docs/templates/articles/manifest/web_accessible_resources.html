@@ -9,16 +9,18 @@ any resources that interface requires (images, icons, stylesheets, scripts,
 etc.) as follows:
 </p>
 
-<pre class="prettyprint"><span class="pun">{</span><span class="pln">
-  </span><span class="pun">...</span><span class="pln">
-  </span><span class="str">"web_accessible_resources"</span><span class="pun">:</span><span class="pln"> </span><span class="pun">[</span><span class="pln">
-    </span><span class="str">"images/my-awesome-image1.png"</span><span class="pun">,</span><span class="pln">
-    </span><span class="str">"images/my-amazing-icon1.png"</span><span class="pun">,</span><span class="pln">
-    </span><span class="str">"style/double-rainbow.css"</span><span class="pun">,</span><span class="pln">
-    </span><span class="str">"script/double-rainbow.js"</span><span class="pln">
-  </span><span class="pun">],</span><span class="pln">
-  </span><span class="pun">...</span><span class="pln">
-</span><span class="pun">}</span></pre>
+<pre data-filename="manifest.json">
+{
+  ...
+  "web_accessible_resources": [
+    "images/my-awesome-image1.png",
+    "images/my-amazing-icon1.png",
+    "style/double-rainbow.css",
+    "script/double-rainbow.js"
+  ],
+  ...
+}
+</pre>
 
 <p>
 These resources would then be available in a webpage via the URL
@@ -27,6 +29,18 @@ the <a href="http://developer.chrome.com/extensions/extension.html#method-getURL
 <a href="http://www.w3.org/TR/cors/">CORS</a> headers, so they're available via
 mechanisms like XHR.
 </p>
+
+<p>
+A navigation from a web origin to an extension resource will be blocked unless
+the resource is listed as web accessible. Note these corner cases:
+</p>
+<ul>
+<li>When an extension uses the $ref:webRequest or $ref:declarativeWebRequest
+APIs to redirect a public resource request to a resource that is not web
+accessible, such request is also blocked.</li>
+<li>The above holds true even if the resource that is not web accessible is
+owned by the redirecting extension.</li>
+</ul>
 
 <p>
 Injected content scripts themselves do not need to be whitelisted.

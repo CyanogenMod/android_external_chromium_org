@@ -10,6 +10,7 @@
 
 #include "tools/gn/filesystem_utils.h"
 #include "tools/gn/output_file.h"
+#include "tools/gn/target.h"
 
 class BuildSettings;
 class SourceDir;
@@ -39,8 +40,8 @@ class NinjaHelper {
   // Given a source file relative to the source root, returns the output
   // filename.
   OutputFile GetOutputFileForSource(const Target* target,
-                                   const SourceFile& source,
-                                   SourceFileType type) const;
+                                    const SourceFile& source,
+                                    SourceFileType type) const;
 
   // Returns the filename produced by the given output.
   //
@@ -48,6 +49,15 @@ class NinjaHelper {
   // function returns the name of the file other targets should depend on and
   // link to (so in this example, the import library).
   OutputFile GetTargetOutputFile(const Target* target) const;
+
+  // Returns the prefix for rules on the given toolchain. We need this to
+  // disambiguate a given rule for each toolchain.
+  std::string GetRulePrefix(const Settings* settings) const;
+
+  // Returns the name of the rule name for the given toolchain and file/target
+  // type.  Returns the empty string for source files with no command.
+  std::string GetRuleForSourceType(const Settings* settings,
+                                   SourceFileType type) const;
 
   // Returns the relative directory in either slashes or the system separator
   // from the ninja directory (e.g. "out/Debug") to the source root (e.g.

@@ -60,7 +60,7 @@ cr.define('print_preview', function() {
      * @private
      */
     this.destinationStore_ = new print_preview.DestinationStore(
-        this.nativeLayer_, this.appState_);
+        this.nativeLayer_, this.appState_, this.metrics_);
 
     /**
      * Storage of the print ticket used to create the print job.
@@ -226,7 +226,6 @@ cr.define('print_preview', function() {
         this.setIsEnabled_(false);
       }
       this.nativeLayer_.startGetInitialSettings();
-      this.destinationStore_.startLoadLocalDestinations();
       cr.ui.FocusOutlineManager.forDocument(document);
     },
 
@@ -261,6 +260,11 @@ cr.define('print_preview', function() {
           this.nativeLayer_,
           print_preview.NativeLayer.EventType.DISABLE_SCALING,
           this.onDisableScaling_.bind(this));
+      this.tracker.add(
+          this.nativeLayer_,
+          print_preview.NativeLayer.EventType.PRIVET_PRINT_FAILED,
+          this.onPrivetPrintFailed_.bind(this));
+
 
       this.tracker.add(
           $('system-dialog-link'),
@@ -334,6 +338,10 @@ cr.define('print_preview', function() {
           this.destinationSearch_,
           print_preview.DestinationSearch.EventType.SIGN_IN,
           this.onCloudPrintSignInActivated_.bind(this));
+      this.tracker.add(
+          this.destinationSearch_,
+          print_preview.DestinationListItem.EventType.REGISTER_PROMO_CLICKED,
+          this.onCloudPrintRegisterPromoClick_.bind(this));
 
       // TODO(rltoscano): Move no-destinations-promo into its own component
       // instead being part of PrintPreview.
@@ -363,14 +371,6 @@ cr.define('print_preview', function() {
       this.marginSettings_.decorate($('margin-settings'));
       this.otherOptionsSettings_.decorate($('other-options-settings'));
       this.previewArea_.decorate($('preview-area'));
-
-      // Set some of the parameterized text in the no-destinations promotion.
-      var noDestsPromoGcpDescription =
-          this.getChildElement('#no-destinations-promo .gcp-description');
-      noDestsPromoGcpDescription.innerHTML = localStrings.getStringF(
-          'noDestsPromoGcpDesc',
-          '<a target="_blank" href="http://www.google.com/cloudprint/learn/">',
-          '</a>');
 
       setIsVisible($('open-pdf-in-preview-link'), cr.isMac);
     },
@@ -413,8 +413,10 @@ cr.define('print_preview', function() {
         this.uiState_ = PrintPreview.UiState_.PRINTING;
       }
       this.setIsEnabled_(false);
+      this.printHeader_.isCancelButtonEnabled = true;
       if (this.printIfReady_() &&
           ((this.destinationStore_.selectedDestination.isLocal &&
+            !this.destinationStore_.selectedDestination.isPrivet &&
             this.destinationStore_.selectedDestination.id !=
                 print_preview.Destination.GooglePromotedId.SAVE_AS_PDF) ||
            this.uiState_ == PrintPreview.UiState_.OPENING_PDF_PREVIEW)) {
@@ -476,7 +478,7 @@ cr.define('print_preview', function() {
      * Called when the native layer has initial settings to set. Sets the
      * initial settings of the print preview and begins fetching print
      * destinations.
-     * @param {cr.Event} event Contains the initial print preview settings
+     * @param {Event} event Contains the initial print preview settings
      *     persisted through the session.
      * @private
      */
@@ -501,12 +503,17 @@ cr.define('print_preview', function() {
           settings.unitType,
           settings.selectionOnly);
       this.destinationStore_.init(settings.systemDefaultDestinationId);
+      this.appState_.setInitialized();
+
+      $('document-title').innerText = settings.documentTitle;
+      setIsVisible($('system-dialog-link'),
+                   !settings.hidePrintWithSystemDialogLink);
     },
 
     /**
      * Calls when the native layer enables Google Cloud Print integration.
      * Fetches the user's cloud printers.
-     * @param {cr.Event} event Contains the base URL of the Google Cloud Print
+     * @param {Event} event Contains the base URL of the Google Cloud Print
      *     service.
      * @private
      */
@@ -538,15 +545,14 @@ cr.define('print_preview', function() {
 
       this.userInfo_.setCloudPrintInterface(this.cloudPrintInterface_);
       this.destinationStore_.setCloudPrintInterface(this.cloudPrintInterface_);
-      this.destinationStore_.startLoadCloudDestinations(true);
       if (this.destinationSearch_.getIsVisible()) {
-        this.destinationStore_.startLoadCloudDestinations(false);
+        this.destinationStore_.startLoadCloudDestinations();
       }
     },
 
     /**
      * Called from the native layer when ready to print to Google Cloud Print.
-     * @param {cr.Event} event Contains the body to send in the HTTP request.
+     * @param {Event} event Contains the body to send in the HTTP request.
      * @private
      */
     onPrintToCloud_: function(event) {
@@ -590,7 +596,7 @@ cr.define('print_preview', function() {
 
     /**
      * Called after successfully submitting a job to Google Cloud Print.
-     * @param {!cr.Event} event Contains the ID of the submitted print job.
+     * @param {!Event} event Contains the ID of the submitted print job.
      * @private
      */
     onCloudPrintSubmitDone_: function(event) {
@@ -609,7 +615,7 @@ cr.define('print_preview', function() {
     /**
      * Called when there was an error communicating with Google Cloud print.
      * Displays an error message in the print header.
-     * @param {!cr.Event} event Contains the error message.
+     * @param {!Event} event Contains the error message.
      * @private
      */
     onCloudPrintError_: function(event) {
@@ -694,6 +700,15 @@ cr.define('print_preview', function() {
     },
 
     /**
+     * Called when the register promo for Cloud Print is clicked.
+     * @private
+     */
+     onCloudPrintRegisterPromoClick_: function(e) {
+       var devicesUrl = 'chrome://devices/register?id=' + e.destination.id;
+       this.nativeLayer_.startForceOpenNewTab(devicesUrl);
+     },
+
+    /**
      * Consume escape key presses and ctrl + shift + p. Delegate everything else
      * to the preview area.
      * @param {KeyboardEvent} e The keyboard event.
@@ -764,7 +779,9 @@ cr.define('print_preview', function() {
      */
     onDestinationChangeButtonActivate_: function() {
       this.destinationSearch_.setIsVisible(true);
-      this.destinationStore_.startLoadCloudDestinations(false);
+      this.destinationStore_.startLoadCloudDestinations();
+      this.destinationStore_.startLoadLocalDestinations();
+      this.destinationStore_.startLoadPrivetDestinations();
       this.metrics_.incrementDestinationSearchBucket(
           print_preview.Metrics.DestinationSearchBucket.SHOWN);
     },
@@ -804,6 +821,18 @@ cr.define('print_preview', function() {
     onDisableScaling_: function() {
       this.printTicketStore_.fitToPage.updateValue(null);
       this.documentInfo_.updateIsScalingDisabled(true);
+    },
+
+    /**
+     * Called when privet printing fails.
+     * @param {Event} event Event object representing the failure.
+     * @private
+     */
+    onPrivetPrintFailed_: function(event) {
+      console.error('Privet printing failed with error code ' +
+                    event.httpError);
+      this.printHeader_.setErrorMessage(
+        localStrings.getString('couldNotPrint'));
     },
 
     /**

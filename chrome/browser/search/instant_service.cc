@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "base/logging.h"
+#include "base/prefs/pref_service.h"
 #include "base/strings/string_number_conversions.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/history/history_notifications.h"
@@ -19,18 +20,27 @@
 #include "chrome/browser/search/local_ntp_source.h"
 #include "chrome/browser/search/most_visited_iframe_source.h"
 #include "chrome/browser/search/search.h"
+#include "chrome/browser/search_engines/template_url.h"
+#include "chrome/browser/search_engines/template_url_service.h"
+#include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/themes/theme_properties.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/themes/theme_service_factory.h"
 #include "chrome/browser/ui/webui/favicon_source.h"
+#include "chrome/browser/ui/webui/ntp/thumbnail_list_source.h"
 #include "chrome/browser/ui/webui/ntp/thumbnail_source.h"
 #include "chrome/browser/ui/webui/theme_source.h"
+#include "chrome/common/pref_names.h"
+#include "chrome/common/render_messages.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
+#include "content/public/browser/notification_source.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/url_data_source.h"
 #include "grit/theme_resources.h"
+#include "net/base/net_util.h"
 #include "net/url_request/url_request.h"
 #include "ui/gfx/color_utils.h"
 #include "ui/gfx/image/image_skia.h"
@@ -57,13 +67,18 @@ RGBAColor SkColorToRGBAColor(const SkColor& sKColor) {
 
 InstantService::InstantService(Profile* profile)
     : profile_(profile),
-      ntp_prerenderer_(profile, profile->GetPrefs()),
+      ntp_prerenderer_(profile, this, profile->GetPrefs()),
       browser_instant_controller_object_count_(0),
       weak_ptr_factory_(this) {
   // Stub for unit tests.
   if (!BrowserThread::CurrentlyOn(BrowserThread::UI))
     return;
 
+  ResetInstantSearchPrerenderer();
+
+  registrar_.Add(this,
+                 content::NOTIFICATION_RENDERER_PROCESS_CREATED,
+                 content::NotificationService::AllSources());
   registrar_.Add(this,
                  content::NOTIFICATION_RENDERER_PROCESS_TERMINATED,
                  content::NotificationService::AllSources());
@@ -90,14 +105,25 @@ InstantService::InstantService(Profile* profile)
                  content::Source<ThemeService>(
                      ThemeServiceFactory::GetForProfile(profile_)));
 
-  content::URLDataSource::Add(profile, new ThemeSource(profile));
+  content::URLDataSource::Add(profile_, new ThemeSource(profile_));
 #endif  // defined(ENABLE_THEMES)
 
-  content::URLDataSource::Add(profile, new ThumbnailSource(profile));
-  content::URLDataSource::Add(profile, new FaviconSource(
-      profile, FaviconSource::FAVICON));
-  content::URLDataSource::Add(profile, new LocalNtpSource(profile));
-  content::URLDataSource::Add(profile, new MostVisitedIframeSource());
+  content::URLDataSource::Add(profile_, new ThumbnailSource(profile_, false));
+  content::URLDataSource::Add(profile_, new ThumbnailSource(profile_, true));
+  content::URLDataSource::Add(profile_, new ThumbnailListSource(profile_));
+  content::URLDataSource::Add(
+      profile_, new FaviconSource(profile_, FaviconSource::FAVICON));
+  content::URLDataSource::Add(profile_, new LocalNtpSource(profile_));
+  content::URLDataSource::Add(profile_, new MostVisitedIframeSource());
+
+  profile_pref_registrar_.Init(profile_->GetPrefs());
+  profile_pref_registrar_.Add(
+      prefs::kDefaultSearchProviderID,
+      base::Bind(&InstantService::OnDefaultSearchProviderChanged,
+                 base::Unretained(this)));
+
+  registrar_.Add(this, chrome::NOTIFICATION_GOOGLE_URL_UPDATED,
+                 content::Source<Profile>(profile_->GetOriginalProfile()));
   registrar_.Add(this, chrome::NOTIFICATION_PROFILE_DESTROYED,
                  content::Source<Profile>(profile_));
 }
@@ -194,7 +220,7 @@ void InstantService::OnBrowserInstantControllerCreated() {
   ++browser_instant_controller_object_count_;
 
   if (browser_instant_controller_object_count_ == 1)
-    ntp_prerenderer_.PreloadInstantNTP();
+    ntp_prerenderer_.ReloadInstantNTP();
 }
 
 void InstantService::OnBrowserInstantControllerDestroyed() {
@@ -214,27 +240,20 @@ void InstantService::Observe(int type,
                              const content::NotificationSource& source,
                              const content::NotificationDetails& details) {
   switch (type) {
-    case content::NOTIFICATION_RENDERER_PROCESS_TERMINATED: {
-      int process_id =
-          content::Source<content::RenderProcessHost>(source)->GetID();
-      process_ids_.erase(process_id);
-
-      if (instant_io_context_.get()) {
-        BrowserThread::PostTask(
-            BrowserThread::IO,
-            FROM_HERE,
-            base::Bind(&InstantIOContext::RemoveInstantProcessOnIO,
-                       instant_io_context_,
-                       process_id));
-      }
+    case content::NOTIFICATION_RENDERER_PROCESS_CREATED:
+      SendSearchURLsToRenderer(
+          content::Source<content::RenderProcessHost>(source).ptr());
       break;
-    }
+    case content::NOTIFICATION_RENDERER_PROCESS_TERMINATED:
+      OnRendererProcessTerminated(
+          content::Source<content::RenderProcessHost>(source)->GetID());
+      break;
     case chrome::NOTIFICATION_TOP_SITES_CHANGED: {
       history::TopSites* top_sites = profile_->GetTopSites();
       if (top_sites) {
         top_sites->GetMostVisitedURLs(
             base::Bind(&InstantService::OnMostVisitedItemsReceived,
-                       weak_ptr_factory_.GetWeakPtr()));
+                       weak_ptr_factory_.GetWeakPtr()), false);
       }
       break;
     }
@@ -254,8 +273,32 @@ void InstantService::Observe(int type,
         ntp_prerenderer_.DeleteNTPContents();
       break;
     }
+    case chrome::NOTIFICATION_GOOGLE_URL_UPDATED: {
+      OnGoogleURLUpdated(
+          content::Source<Profile>(source).ptr(),
+          content::Details<GoogleURLTracker::UpdatedDetails>(details).ptr());
+      break;
+    }
     default:
       NOTREACHED() << "Unexpected notification type in InstantService.";
+  }
+}
+
+void InstantService::SendSearchURLsToRenderer(content::RenderProcessHost* rph) {
+  rph->Send(new ChromeViewMsg_SetSearchURLs(
+      chrome::GetSearchURLs(profile_), chrome::GetNewTabPageURL(profile_)));
+}
+
+void InstantService::OnRendererProcessTerminated(int process_id) {
+  process_ids_.erase(process_id);
+
+  if (instant_io_context_.get()) {
+    BrowserThread::PostTask(
+        BrowserThread::IO,
+        FROM_HERE,
+        base::Bind(&InstantIOContext::RemoveInstantProcessOnIO,
+                   instant_io_context_,
+                   process_id));
   }
 }
 
@@ -332,21 +375,17 @@ void InstantService::OnThemeChanged(ThemeService* theme_service) {
   theme_info_->header_color = SkColorToRGBAColor(header_color);
   theme_info_->section_border_color = SkColorToRGBAColor(section_border_color);
 
-  // Set logo for the theme. By default, use alternate logo.
-  theme_info_->logo_alternate = true;
-  int logo_alternate = 0;
-  if (theme_service->GetDisplayProperty(
-      ThemeProperties::NTP_LOGO_ALTERNATE, &logo_alternate))
-    theme_info_->logo_alternate = logo_alternate == 1;
+  int logo_alternate = theme_service->GetDisplayProperty(
+      ThemeProperties::NTP_LOGO_ALTERNATE);
+  theme_info_->logo_alternate = logo_alternate == 1;
 
   if (theme_service->HasCustomImage(IDR_THEME_NTP_BACKGROUND)) {
     // Set theme id for theme background image url.
     theme_info_->theme_id = theme_service->GetThemeID();
 
     // Set theme background image horizontal alignment.
-    int alignment = 0;
-    theme_service->GetDisplayProperty(
-        ThemeProperties::NTP_BACKGROUND_ALIGNMENT, &alignment);
+    int alignment = theme_service->GetDisplayProperty(
+        ThemeProperties::NTP_BACKGROUND_ALIGNMENT);
     if (alignment & ThemeProperties::ALIGN_LEFT)
       theme_info_->image_horizontal_alignment = THEME_BKGRND_IMAGE_ALIGN_LEFT;
     else if (alignment & ThemeProperties::ALIGN_RIGHT)
@@ -363,9 +402,8 @@ void InstantService::OnThemeChanged(ThemeService* theme_service) {
       theme_info_->image_vertical_alignment = THEME_BKGRND_IMAGE_ALIGN_CENTER;
 
     // Set theme backgorund image tiling.
-    int tiling = 0;
-    theme_service->GetDisplayProperty(ThemeProperties::NTP_BACKGROUND_TILING,
-                                      &tiling);
+    int tiling = theme_service->GetDisplayProperty(
+        ThemeProperties::NTP_BACKGROUND_TILING);
     switch (tiling) {
       case ThemeProperties::NO_REPEAT:
         theme_info_->image_tiling = THEME_BKGRND_IMAGE_NO_REPEAT;
@@ -395,6 +433,60 @@ void InstantService::OnThemeChanged(ThemeService* theme_service) {
                     ThemeInfoChanged(*theme_info_));
 }
 
+void InstantService::OnGoogleURLUpdated(
+    Profile* profile,
+    GoogleURLTracker::UpdatedDetails* details) {
+  GURL last_prompted_url(
+      profile->GetPrefs()->GetString(prefs::kLastPromptedGoogleURL));
+
+  // See GoogleURLTracker::OnURLFetchComplete().
+  // last_prompted_url.is_empty() indicates very first run of Chrome. So there
+  // is no need to notify, as there won't be any old state.
+  if (last_prompted_url.is_empty())
+    return;
+
+  ResetInstantSearchPrerenderer();
+
+  // Only the scheme changed. Ignore it since we do not prompt the user in this
+  // case.
+  if (net::StripWWWFromHost(details->first) ==
+      net::StripWWWFromHost(details->second))
+    return;
+
+  FOR_EACH_OBSERVER(InstantServiceObserver, observers_, GoogleURLUpdated());
+}
+
+void InstantService::OnDefaultSearchProviderChanged(
+    const std::string& pref_name) {
+  DCHECK_EQ(pref_name, std::string(prefs::kDefaultSearchProviderID));
+  const TemplateURL* template_url = TemplateURLServiceFactory::GetForProfile(
+      profile_)->GetDefaultSearchProvider();
+  if (!template_url) {
+    // A NULL |template_url| could mean either this notification is sent during
+    // the browser start up operation or the user now has no default search
+    // provider. There is no way for the user to reach this state using the
+    // Chrome settings. Only explicitly poking at the DB or bugs in the Sync
+    // could cause that, neither of which we support.
+    return;
+  }
+
+  ResetInstantSearchPrerenderer();
+
+  FOR_EACH_OBSERVER(
+      InstantServiceObserver, observers_, DefaultSearchProviderChanged());
+}
+
 InstantNTPPrerenderer* InstantService::ntp_prerenderer() {
   return &ntp_prerenderer_;
+}
+
+void InstantService::ResetInstantSearchPrerenderer() {
+  if (!chrome::ShouldPrefetchSearchResults())
+    return;
+
+  GURL url(chrome::GetSearchResultPrefetchBaseURL(profile_));
+  if (url.is_valid())
+    instant_prerenderer_.reset(new InstantSearchPrerenderer(profile_, url));
+  else
+    instant_prerenderer_.reset();
 }

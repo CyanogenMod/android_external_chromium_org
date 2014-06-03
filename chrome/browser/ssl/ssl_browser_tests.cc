@@ -75,10 +75,11 @@ class ProvisionalLoadWaiter : public content::WebContentsObserver {
 
   virtual void DidFailProvisionalLoad(
       int64 frame_id,
+      const base::string16& frame_unique_name,
       bool is_main_frame,
       const GURL& validated_url,
       int error_code,
-      const string16& error_description,
+      const base::string16& error_description,
       content::RenderViewHost* render_view_host) OVERRIDE {
     seen_ = true;
     if (waiting_)
@@ -221,7 +222,7 @@ class SSLUITest : public InProcessBrowserTest {
   bool IsShowingWebContentsModalDialog() const {
     return WebContentsModalDialogManager::FromWebContents(
         browser()->tab_strip_model()->GetActiveWebContents())->
-            IsShowingDialog();
+            IsDialogActive();
   }
 
   static bool GetFilePathWithHostAndPortReplacement(
@@ -398,8 +399,8 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, TestHTTPSExpiredCertAndProceed) {
                                  false);  // No interstitial showing
 }
 
-#if defined(OS_WIN)
-// Flaky on Windows (http://crbug.com/267653).
+#ifndef NEDBUG
+// Flaky on Windows debug (http://crbug.com/280537).
 #define MAYBE_TestHTTPSExpiredCertAndDontProceed \
         DISABLED_TestHTTPSExpiredCertAndDontProceed
 #else
@@ -409,7 +410,7 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, TestHTTPSExpiredCertAndProceed) {
 
 // Visits a page with https error and don't proceed (and ensure we can still
 // navigate at that point):
-IN_PROC_BROWSER_TEST_F(SSLUITest, TestHTTPSExpiredCertAndDontProceed) {
+IN_PROC_BROWSER_TEST_F(SSLUITest, MAYBE_TestHTTPSExpiredCertAndDontProceed) {
   ASSERT_TRUE(test_server()->Start());
   ASSERT_TRUE(https_server_.Start());
   ASSERT_TRUE(https_server_expired_.Start());
@@ -609,7 +610,7 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, MAYBE_TestWSSInvalidCertAndClose) {
   // Visit a page which waits for one TLS handshake failure.
   // The title will be changed to 'PASS'.
   ui_test_utils::NavigateToURL(browser(), master_url);
-  const string16 result = watcher.WaitAndGetTitle();
+  const base::string16 result = watcher.WaitAndGetTitle();
   EXPECT_TRUE(LowerCaseEqualsASCII(result, "pass"));
 
   // Close tabs which contains the test page.
@@ -646,7 +647,7 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, TestWSSInvalidCertAndGoForward) {
 
   // Test page run a WebSocket wss connection test. The result will be shown
   // as page title.
-  const string16 result = watcher.WaitAndGetTitle();
+  const base::string16 result = watcher.WaitAndGetTitle();
   EXPECT_TRUE(LowerCaseEqualsASCII(result, "pass"));
 }
 
@@ -669,10 +670,10 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, DISABLED_TestWSSClientCert) {
   std::string pkcs12_data;
   base::FilePath cert_path = net::GetTestCertsDirectory().Append(
       FILE_PATH_LITERAL("websocket_client_cert.p12"));
-  EXPECT_TRUE(file_util::ReadFileToString(cert_path, &pkcs12_data));
+  EXPECT_TRUE(base::ReadFileToString(cert_path, &pkcs12_data));
   EXPECT_EQ(net::OK,
             cert_db->ImportFromPKCS12(
-                crypt_module.get(), pkcs12_data, string16(), true, NULL));
+                crypt_module.get(), pkcs12_data, base::string16(), true, NULL));
 
   // Start WebSocket test server with TLS and client cert authentication.
   net::SpawnedTestServer::SSLOptions options(
@@ -715,7 +716,7 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, DISABLED_TestWSSClientCert) {
 
   // Test page runs a WebSocket wss connection test. The result will be shown
   // as page title.
-  const string16 result = watcher.WaitAndGetTitle();
+  const base::string16 result = watcher.WaitAndGetTitle();
   EXPECT_TRUE(LowerCaseEqualsASCII(result, "pass"));
 }
 #endif  // defined(USE_NSS)
@@ -1522,15 +1523,6 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, TestUnsafeContentsInWorkerFiltered) {
   CheckAuthenticatedState(tab, false);
 }
 
-#if defined(OS_WIN)
-// Flaky on Windows (http://crbug.com/267653).
-#define MAYBE_TestUnsafeContentsInWorker \
-        DISABLED_TestUnsafeContentsInWorker
-#else
-#define MAYBE_TestUnsafeContentsInWorker \
-        TestUnsafeContentsInWorker
-#endif
-
 IN_PROC_BROWSER_TEST_F(SSLUITest, TestUnsafeContentsInWorker) {
   ASSERT_TRUE(https_server_.Start());
   ASSERT_TRUE(https_server_expired_.Start());
@@ -1577,15 +1569,6 @@ IN_PROC_BROWSER_TEST_F(SSLUITestBlock, TestBlockDisplayingInsecureImage) {
   CheckAuthenticatedState(
       browser()->tab_strip_model()->GetActiveWebContents(), false);
 }
-
-#if defined(OS_WIN)
-// Flaky on Windows (http://crbug.com/267653).
-#define MAYBE_TestBlockDisplayingInsecureIframe \
-        DISABLED_TestBlockDisplayingInsecureIframe
-#else
-#define MAYBE_TestBlockDisplayingInsecureIframe \
-        TestBlockDisplayingInsecureIframe
-#endif
 
 // Test that when the browser blocks displaying insecure content (iframes), the
 // indicator shows a secure page, because the blocking made the otherwise
@@ -1653,8 +1636,33 @@ IN_PROC_BROWSER_TEST_F(SSLUITestIgnoreCertErrors, TestWSS) {
 
   // Test page run a WebSocket wss connection test. The result will be shown
   // as page title.
-  const string16 result = watcher.WaitAndGetTitle();
+  const base::string16 result = watcher.WaitAndGetTitle();
   EXPECT_TRUE(LowerCaseEqualsASCII(result, "pass"));
+}
+
+// Verifies that if JavaScript is disabled interstitials aren't affected.
+// http://crbug.com/322948
+IN_PROC_BROWSER_TEST_F(SSLUITest, InterstitialNotAffectedByContentSettings) {
+  browser()->profile()->GetHostContentSettingsMap()->SetDefaultContentSetting(
+      CONTENT_SETTINGS_TYPE_JAVASCRIPT, CONTENT_SETTING_BLOCK);
+
+  ASSERT_TRUE(https_server_expired_.Start());
+  WebContents* tab = browser()->tab_strip_model()->GetActiveWebContents();
+  ui_test_utils::NavigateToURL(browser(),
+      https_server_expired_.GetURL("files/ssl/google.html"));
+  CheckAuthenticationBrokenState(tab, net::CERT_STATUS_DATE_INVALID, false,
+                                 true);  // Interstitial showing
+
+  InterstitialPage* interstitial_page = tab->GetInterstitialPage();
+  content::RenderViewHost* interstitial_rvh =
+      interstitial_page->GetRenderViewHostForTesting();
+  bool result = false;
+  ASSERT_TRUE(content::ExecuteScriptAndExtractBool(
+              interstitial_rvh,
+              "window.domAutomationController.send(true);",
+              &result));
+  // The above will hang without the fix.
+  ASSERT_TRUE(result);
 }
 
 // TODO(jcampan): more tests to do below.

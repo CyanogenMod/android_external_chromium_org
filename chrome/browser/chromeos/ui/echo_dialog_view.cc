@@ -8,6 +8,7 @@
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/font.h"
+#include "ui/views/border.h"
 #include "ui/views/controls/styled_label.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/window/dialog_client_view.h"
@@ -35,16 +36,16 @@ EchoDialogView::EchoDialogView(EchoDialogListener* listener)
 
 EchoDialogView::~EchoDialogView() {}
 
-void EchoDialogView::InitForEnabledEcho(const string16& service_name,
-                                        const string16& origin) {
+void EchoDialogView::InitForEnabledEcho(const base::string16& service_name,
+                                        const base::string16& origin) {
   ok_button_label_id_ = IDS_OFFERS_CONSENT_INFOBAR_ENABLE_BUTTON;
   cancel_button_label_id_ = IDS_OFFERS_CONSENT_INFOBAR_DISABLE_BUTTON;
 
-  string16 link =
+  base::string16 link =
       l10n_util::GetStringUTF16(IDS_OFFERS_CONSENT_INFOBAR_LABEL_LEARN_MORE);
 
   std::vector<size_t> offsets;
-  string16 text = l10n_util::GetStringFUTF16(IDS_ECHO_CONSENT_DIALOG_TEXT,
+  base::string16 text = l10n_util::GetStringFUTF16(IDS_ECHO_CONSENT_DIALOG_TEXT,
                                              service_name,
                                              link,
                                              &offsets);
@@ -55,13 +56,13 @@ void EchoDialogView::InitForEnabledEcho(const string16& service_name,
   service_name_style.font_style = gfx::Font::UNDERLINE;
   service_name_style.tooltip = origin;
   label_->AddStyleRange(
-      ui::Range(offsets[0], offsets[0] + service_name.length()),
+      gfx::Range(offsets[0], offsets[0] + service_name.length()),
       service_name_style);
 
   views::StyledLabel::RangeStyleInfo link_style =
       views::StyledLabel::RangeStyleInfo::CreateForLink();
   link_style.font_style = gfx::Font::NORMAL;
-  label_->AddStyleRange(ui::Range(offsets[1], offsets[1] + link.length()),
+  label_->AddStyleRange(gfx::Range(offsets[1], offsets[1] + link.length()),
                         link_style);
 
   SetLabelBorderAndBounds();
@@ -73,11 +74,11 @@ void EchoDialogView::InitForDisabledEcho() {
   ok_button_label_id_ = 0;
   cancel_button_label_id_ = IDS_ECHO_CONSENT_DISMISS_BUTTON;
 
-  string16 link =
+  base::string16 link =
       l10n_util::GetStringUTF16(IDS_OFFERS_CONSENT_INFOBAR_LABEL_LEARN_MORE);
 
   size_t offset;
-  string16 text = l10n_util::GetStringFUTF16(
+  base::string16 text = l10n_util::GetStringFUTF16(
       IDS_ECHO_DISABLED_CONSENT_DIALOG_TEXT, link, &offset);
 
   label_ = new views::StyledLabel(text, this);
@@ -85,7 +86,7 @@ void EchoDialogView::InitForDisabledEcho() {
   views::StyledLabel::RangeStyleInfo link_style =
       views::StyledLabel::RangeStyleInfo::CreateForLink();
   link_style.font_style = gfx::Font::NORMAL;
-  label_->AddStyleRange(ui::Range(offset, offset + link.length()), link_style);
+  label_->AddStyleRange(gfx::Range(offset, offset + link.length()), link_style);
 
   SetLabelBorderAndBounds();
 
@@ -129,12 +130,13 @@ bool EchoDialogView::Cancel() {
   return true;
 }
 
-string16 EchoDialogView::GetDialogButtonLabel(ui::DialogButton button) const {
+base::string16 EchoDialogView::GetDialogButtonLabel(
+    ui::DialogButton button) const {
   if (button == ui::DIALOG_BUTTON_OK && ok_button_label_id_)
     return l10n_util::GetStringUTF16(ok_button_label_id_);
   if (button == ui::DIALOG_BUTTON_CANCEL && cancel_button_label_id_)
     return l10n_util::GetStringUTF16(cancel_button_label_id_);
-  return string16();
+  return base::string16();
 }
 
 ui::ModalType EchoDialogView::GetModalType() const {
@@ -149,7 +151,7 @@ bool EchoDialogView::ShouldShowWindowIcon() const {
   return false;
 }
 
-void EchoDialogView::StyledLabelLinkClicked(const ui::Range& range,
+void EchoDialogView::StyledLabelLinkClicked(const gfx::Range& range,
                                             int event_flags) {
   if (!listener_)
     return;

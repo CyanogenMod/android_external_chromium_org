@@ -158,7 +158,6 @@ int InitSocketPoolHelper(const GURL& request_url,
   bool ignore_limits = (request_load_flags & LOAD_IGNORE_LIMITS) != 0;
   if (proxy_info.is_direct()) {
     tcp_params = new TransportSocketParams(origin_host_port,
-                                           request_priority,
                                            disable_resolver_cache,
                                            ignore_limits,
                                            resolution_callback);
@@ -167,7 +166,6 @@ int InitSocketPoolHelper(const GURL& request_url,
     proxy_host_port.reset(new HostPortPair(proxy_server.host_port_pair()));
     scoped_refptr<TransportSocketParams> proxy_tcp_params(
         new TransportSocketParams(*proxy_host_port,
-                                  request_priority,
                                   disable_resolver_cache,
                                   ignore_limits,
                                   resolution_callback));
@@ -182,7 +180,6 @@ int InitSocketPoolHelper(const GURL& request_url,
         ssl_params = new SSLSocketParams(proxy_tcp_params,
                                          NULL,
                                          NULL,
-                                         ProxyServer::SCHEME_DIRECT,
                                          *proxy_host_port.get(),
                                          ssl_config_for_proxy,
                                          kPrivacyModeDisabled,
@@ -214,8 +211,7 @@ int InitSocketPoolHelper(const GURL& request_url,
 
       socks_params = new SOCKSSocketParams(proxy_tcp_params,
                                            socks_version == '5',
-                                           origin_host_port,
-                                           request_priority);
+                                           origin_host_port);
     }
   }
 
@@ -229,7 +225,6 @@ int InitSocketPoolHelper(const GURL& request_url,
         new SSLSocketParams(tcp_params,
                             socks_params,
                             http_proxy_params,
-                            proxy_info.proxy_server().scheme(),
                             origin_host_port,
                             ssl_config_for_origin,
                             privacy_mode,
@@ -430,6 +425,31 @@ int InitSocketHandleForRawConnect(
   DCHECK(socket_handle);
   // Synthesize an HttpRequestInfo.
   GURL request_url = GURL("http://" + host_port_pair.ToString());
+  HttpRequestHeaders request_extra_headers;
+  int request_load_flags = 0;
+  RequestPriority request_priority = MEDIUM;
+
+  return InitSocketPoolHelper(
+      request_url, request_extra_headers, request_load_flags, request_priority,
+      session, proxy_info, false, false, ssl_config_for_origin,
+      ssl_config_for_proxy, true, privacy_mode, net_log, 0, socket_handle,
+      HttpNetworkSession::NORMAL_SOCKET_POOL, OnHostResolutionCallback(),
+      callback);
+}
+
+int InitSocketHandleForTlsConnect(
+    const HostPortPair& host_port_pair,
+    HttpNetworkSession* session,
+    const ProxyInfo& proxy_info,
+    const SSLConfig& ssl_config_for_origin,
+    const SSLConfig& ssl_config_for_proxy,
+    PrivacyMode privacy_mode,
+    const BoundNetLog& net_log,
+    ClientSocketHandle* socket_handle,
+    const CompletionCallback& callback) {
+  DCHECK(socket_handle);
+  // Synthesize an HttpRequestInfo.
+  GURL request_url = GURL("https://" + host_port_pair.ToString());
   HttpRequestHeaders request_extra_headers;
   int request_load_flags = 0;
   RequestPriority request_priority = MEDIUM;

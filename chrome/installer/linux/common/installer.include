@@ -76,6 +76,8 @@ process_template() (
     -e "s#@@SHORTDESC@@#${SHORTDESC}#g" \
     -e "s#@@FULLDESC@@#${FULLDESC}#g" \
     -e "s#@@DEFAULT_FLAGS@@#${DEFAULT_FLAGS:-}#g" \
+    -e "s#@@SXS_USER_DATA_DIR@@#${SXS_USER_DATA_DIR:-}#g" \
+    -e "s#@@USR_BIN_SYMLINK_NAME@@#${USR_BIN_SYMLINK_NAME:-}#g" \
     > "$TMPLOUT" <<< "$TMPLINCL"
 )
 
@@ -118,7 +120,6 @@ stage_install_common() {
   rm "${DEBUGFILE}" "${STRIPPEDFILE}"
 
   # resources
-  install -m 644 "${BUILDDIR}/${PROGNAME}.pak" "${STAGEDIR}/${INSTALLDIR}/"
   install -m 644 "${BUILDDIR}/resources.pak" "${STAGEDIR}/${INSTALLDIR}/"
   # TODO(mmoss): This has broken a couple times on adding new .pak files. Maybe
   # we should flag all installer files in FILES.cfg and get them from there, so
@@ -212,9 +213,8 @@ stage_install_common() {
   process_template "${BUILDDIR}/installer/common/wrapper" \
     "${STAGEDIR}/${INSTALLDIR}/${PACKAGE}"
   chmod 755 "${STAGEDIR}/${INSTALLDIR}/${PACKAGE}"
-  pushd "${STAGEDIR}/usr/bin/"
-  ln -snf "${INSTALLDIR}/${PACKAGE}" "${PACKAGE}"
-  popd
+  ln -snf "${INSTALLDIR}/${PACKAGE}" \
+    "${STAGEDIR}/usr/bin/${USR_BIN_SYMLINK_NAME}"
 
   # app icons
   install -m 644 \
@@ -226,8 +226,8 @@ stage_install_common() {
   install -m 755 "${BUILDDIR}/xdg-mime" "${STAGEDIR}${INSTALLDIR}/"
   install -m 755 "${BUILDDIR}/xdg-settings" "${STAGEDIR}${INSTALLDIR}/"
   process_template "${BUILDDIR}/installer/common/desktop.template" \
-    "${STAGEDIR}/${INSTALLDIR}/${PACKAGE}.desktop"
-  chmod 644 "${STAGEDIR}/${INSTALLDIR}/${PACKAGE}.desktop"
+    "${STAGEDIR}/usr/share/applications/${PACKAGE}.desktop"
+  chmod 644 "${STAGEDIR}/usr/share/applications/${PACKAGE}.desktop"
   process_template "${BUILDDIR}/installer/common/default-app.template" \
     "${STAGEDIR}/usr/share/gnome-control-center/default-apps/${PACKAGE}.xml"
   chmod 644 "${STAGEDIR}/usr/share/gnome-control-center/default-apps/${PACKAGE}.xml"

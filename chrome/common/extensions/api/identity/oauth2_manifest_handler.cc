@@ -8,11 +8,8 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
 #include "extensions/common/error_utils.h"
-
-namespace keys = extension_manifest_keys;
-namespace errors = extension_manifest_errors;
+#include "extensions/common/manifest_constants.h"
 
 namespace {
 
@@ -24,6 +21,9 @@ const char kAutoApprove[] = "auto_approve";
 }  // namespace
 
 namespace extensions {
+
+namespace keys = manifest_keys;
+namespace errors = manifest_errors;
 
 OAuth2Info::OAuth2Info() : auto_approve(false) {}
 OAuth2Info::~OAuth2Info() {}
@@ -45,7 +45,7 @@ OAuth2ManifestHandler::~OAuth2ManifestHandler() {
 }
 
 bool OAuth2ManifestHandler::Parse(Extension* extension,
-                                  string16* error) {
+                                  base::string16* error) {
   scoped_ptr<OAuth2Info> info(new OAuth2Info);
   const base::DictionaryValue* dict = NULL;
   if (!extension->manifest()->GetDictionary(keys::kOAuth2, &dict)) {

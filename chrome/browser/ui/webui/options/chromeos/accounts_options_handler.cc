@@ -16,9 +16,9 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
-#include "chrome/browser/chromeos/settings/cros_settings_names.h"
 #include "chrome/browser/policy/browser_policy_connector.h"
 #include "chrome/browser/ui/webui/chromeos/ui_account_tweaks.h"
+#include "chromeos/settings/cros_settings_names.h"
 #include "content/public/browser/web_ui.h"
 #include "google_apis/gaia/gaia_auth_util.h"
 #include "grit/generated_resources.h"
@@ -32,7 +32,7 @@ namespace {
 // in the whitelist.
 bool WhitelistUser(const std::string& username) {
   CrosSettings* cros_settings = CrosSettings::Get();
-  if (cros_settings->FindEmailInList(kAccountsPrefUsers, username))
+  if (cros_settings->FindEmailInList(kAccountsPrefUsers, username, NULL))
     return false;
   base::StringValue username_value(username);
   cros_settings->AppendToList(kAccountsPrefUsers, &username_value);

@@ -6,11 +6,11 @@
 #define UI_VIEWS_CONTROLS_BUTTON_CUSTOM_BUTTON_H_
 
 #include "base/memory/scoped_ptr.h"
-#include "ui/base/animation/animation_delegate.h"
-#include "ui/base/events/event_constants.h"
+#include "ui/events/event_constants.h"
+#include "ui/gfx/animation/animation_delegate.h"
 #include "ui/views/controls/button/button.h"
 
-namespace ui {
+namespace gfx {
 class ThrobAnimation;
 }
 
@@ -21,13 +21,16 @@ class CustomButtonStateChangedDelegate;
 // A button with custom rendering. The common base class of ImageButton and
 // TextButton.
 // Note that this type of button is not focusable by default and will not be
-// part of the focus chain.  Call set_focusable(true) to make it part of the
+// part of the focus chain.  Call SetFocusable(true) to make it part of the
 // focus chain.
 class VIEWS_EXPORT CustomButton : public Button,
-                                  public ui::AnimationDelegate {
+                                  public gfx::AnimationDelegate {
  public:
   // The menu button's class name.
   static const char kViewClassName[];
+
+  static const CustomButton* AsCustomButton(const views::View* view);
+  static CustomButton* AsCustomButton(views::View* view);
 
   virtual ~CustomButton();
 
@@ -84,8 +87,8 @@ class VIEWS_EXPORT CustomButton : public Button,
   virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
   virtual void VisibilityChanged(View* starting_from, bool is_visible) OVERRIDE;
 
-  // Overridden from ui::AnimationDelegate:
-  virtual void AnimationProgressed(const ui::Animation* animation) OVERRIDE;
+  // Overridden from gfx::AnimationDelegate:
+  virtual void AnimationProgressed(const gfx::Animation* animation) OVERRIDE;
 
   // Takes ownership of the delegate.
   void set_state_changed_delegate(CustomButtonStateChangedDelegate* delegate) {
@@ -120,7 +123,7 @@ class VIEWS_EXPORT CustomButton : public Button,
   ButtonState state_;
 
   // Hover animation.
-  scoped_ptr<ui::ThrobAnimation> hover_animation_;
+  scoped_ptr<gfx::ThrobAnimation> hover_animation_;
 
  private:
   // Should we animate when the state changes? Defaults to true.

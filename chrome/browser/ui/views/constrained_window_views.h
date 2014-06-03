@@ -7,25 +7,31 @@
 
 #include "ui/gfx/native_widget_types.h"
 
-namespace web_modal {
-class WebContentsModalDialogHost;
-}
-
 namespace content {
-class WebContents;
 class BrowserContext;
 }
+
 namespace views {
 class DialogDelegate;
 class NonClientFrameView;
-class WidgetDelegate;
 class Widget;
+class WidgetDelegate;
 }
 
-views::Widget* CreateWebContentsModalDialogViews(
-    views::WidgetDelegate* widget_delegate,
-    gfx::NativeView parent,
+namespace web_modal {
+class ModalDialogHost;
+class WebContentsModalDialogHost;
+}
+
+// Update the position of dialog |widget| against |dialog_host|. This is used to
+// reposition widgets e.g. when the host dimensions change.
+void UpdateWebContentsModalDialogPosition(
+    views::Widget* widget,
     web_modal::WebContentsModalDialogHost* dialog_host);
+
+void UpdateBrowserModalDialogPosition(
+    views::Widget* widget,
+    web_modal::ModalDialogHost* dialog_host);
 
 // Create a widget for |dialog| that is modal to the browser window |parent|.
 // This places the dialog appropriately if |parent| is a valid browser window.

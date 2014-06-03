@@ -53,7 +53,7 @@ Status ConsoleLogger::OnEvent(
   if (params.GetDictionary("message", &message_dict)) {
     std::string text;
     std::string level_name;
-    Log::Level level = Log::kLog;
+    Log::Level level = Log::kInfo;
     if (message_dict->GetString("text", &text) && !text.empty() &&
         message_dict->GetString("level", &level_name) &&
         ConsoleLevelToLogLevel(level_name, &level)) {
@@ -80,11 +80,13 @@ Status ConsoleLogger::OnEvent(
         line_column = "-";
       }
 
-      log_->AddEntry(level,
-                     base::StringPrintf("%s %s %s",
-                                        origin_cstr,
-                                        line_column.c_str(),
-                                        text.c_str()));
+      std::string source;
+      message_dict->GetString("source", &source);
+      log_->AddEntry(level, source, base::StringPrintf("%s %s %s",
+                                                       origin_cstr,
+                                                       line_column.c_str(),
+                                                       text.c_str()));
+
       return Status(kOk);
     }
   }

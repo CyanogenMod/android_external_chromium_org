@@ -5,7 +5,9 @@
 #include "chrome/browser/ui/views/infobars/before_translate_infobar.h"
 
 #include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/translate/options_menu_model.h"
 #include "chrome/browser/translate/translate_infobar_delegate.h"
+#include "chrome/browser/ui/views/infobars/translate_language_menu_model.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/views/controls/button/label_button.h"
@@ -14,9 +16,8 @@
 #include "ui/views/controls/menu/menu_item_view.h"
 
 BeforeTranslateInfoBar::BeforeTranslateInfoBar(
-    InfoBarService* owner,
-    TranslateInfoBarDelegate* delegate)
-    : TranslateInfoBarBase(owner, delegate),
+    scoped_ptr<TranslateInfoBarDelegate> delegate)
+    : TranslateInfoBarBase(delegate.Pass()),
       label_1_(NULL),
       label_2_(NULL),
       language_menu_button_(NULL),
@@ -24,8 +25,7 @@ BeforeTranslateInfoBar::BeforeTranslateInfoBar(
       deny_button_(NULL),
       never_translate_button_(NULL),
       always_translate_button_(NULL),
-      options_menu_button_(NULL),
-      options_menu_model_(delegate) {
+      options_menu_button_(NULL) {
 }
 
 BeforeTranslateInfoBar::~BeforeTranslateInfoBar() {
@@ -92,13 +92,14 @@ void BeforeTranslateInfoBar::ViewHierarchyChanged(
   }
 
   size_t offset = 0;
-  string16 text(l10n_util::GetStringFUTF16(IDS_TRANSLATE_INFOBAR_BEFORE_MESSAGE,
-                                           string16(), &offset));
+  base::string16 text(
+      l10n_util::GetStringFUTF16(IDS_TRANSLATE_INFOBAR_BEFORE_MESSAGE,
+                                 base::string16(), &offset));
 
   label_1_ = CreateLabel(text.substr(0, offset));
   AddChildView(label_1_);
 
-  language_menu_button_ = CreateMenuButton(string16(), this);
+  language_menu_button_ = CreateMenuButton(base::string16(), this);
   TranslateInfoBarDelegate* delegate = GetDelegate();
   language_menu_model_.reset(new TranslateLanguageMenuModel(
       TranslateLanguageMenuModel::ORIGINAL, delegate, this,
@@ -116,7 +117,7 @@ void BeforeTranslateInfoBar::ViewHierarchyChanged(
       l10n_util::GetStringUTF16(IDS_TRANSLATE_INFOBAR_DENY), false);
   AddChildView(deny_button_);
 
-  const string16& language(
+  const base::string16& language(
       delegate->language_name_at(delegate->original_language_index()));
   if (delegate->ShouldShowNeverTranslateShortcut()) {
     DCHECK(!delegate->ShouldShowAlwaysTranslateShortcut());
@@ -133,6 +134,7 @@ void BeforeTranslateInfoBar::ViewHierarchyChanged(
 
   options_menu_button_ = CreateMenuButton(
       l10n_util::GetStringUTF16(IDS_TRANSLATE_INFOBAR_OPTIONS), this);
+  options_menu_model_.reset(new OptionsMenuModel(delegate));
   AddChildView(options_menu_button_);
 
   // This must happen after adding all other children so InfoBarView can ensure
@@ -190,7 +192,7 @@ void BeforeTranslateInfoBar::OnMenuButtonClicked(views::View* source,
               views::MenuItemView::TOPLEFT);
   } else {
     DCHECK_EQ(options_menu_button_, source);
-    RunMenuAt(&options_menu_model_, options_menu_button_,
+    RunMenuAt(options_menu_model_.get(), options_menu_button_,
               views::MenuItemView::TOPRIGHT);
   }
 }

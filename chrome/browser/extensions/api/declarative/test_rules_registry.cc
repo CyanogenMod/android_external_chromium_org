@@ -9,23 +9,25 @@
 namespace extensions {
 
 TestRulesRegistry::TestRulesRegistry(content::BrowserThread::ID owner_thread,
-                                     const char* event_name)
-    : RulesRegistryWithCache(NULL /*profile*/,
-                             event_name,
-                             owner_thread,
-                             false /*log_storage_init_delay, this is ignored*/,
-                             NULL /*ui_part*/) {}
+                                     const std::string& event_name,
+                                     const WebViewKey& webview_key)
+    : RulesRegistry(NULL /*profile*/,
+                    event_name,
+                    owner_thread,
+                    NULL,
+                    webview_key) {}
 
 TestRulesRegistry::TestRulesRegistry(
     Profile* profile,
-    const char* event_name,
+    const std::string& event_name,
     content::BrowserThread::ID owner_thread,
-    scoped_ptr<RulesRegistryWithCache::RuleStorageOnUI>* ui_part)
-    : RulesRegistryWithCache(profile,
-                             event_name,
-                             owner_thread,
-                             false /*log_storage_init_delay*/,
-                             ui_part) {}
+    RulesCacheDelegate* cache_delegate,
+    const WebViewKey& webview_key)
+    : RulesRegistry(profile,
+                    event_name,
+                    owner_thread,
+                    cache_delegate,
+                    webview_key) {}
 
 std::string TestRulesRegistry::AddRulesImpl(
     const std::string& extension_id,

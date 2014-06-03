@@ -7,8 +7,8 @@
 #include "base/files/file_path.h"
 #include "chrome/browser/extensions/api/storage/settings_frontend.h"
 #include "chrome/browser/extensions/extension_system_factory.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/permissions/permissions_data.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/permissions/permissions_data.h"
 
 namespace extensions {
 
@@ -68,7 +68,7 @@ void MockExtensionService::AddExtensionWithIdAndPermissions(
   scoped_ptr<base::ListValue> permissions(new base::ListValue());
   for (std::set<std::string>::const_iterator it = permissions_set.begin();
       it != permissions_set.end(); ++it) {
-    permissions->Append(Value::CreateStringValue(*it));
+    permissions->Append(new base::StringValue(*it));
   }
   manifest.Set("permissions", permissions.release());
 

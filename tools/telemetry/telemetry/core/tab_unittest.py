@@ -1,9 +1,8 @@
 # Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
+
 import logging
-import os
-import time
 
 from telemetry.core import util
 from telemetry.core import exceptions
@@ -11,24 +10,20 @@ from telemetry.unittest import tab_test_case
 
 
 def _IsDocumentVisible(tab):
-  state = tab.EvaluateJavaScript('document.webkitVisibilityState')
+  hidden = tab.EvaluateJavaScript('document.hidden || document.webkitHidden')
   # TODO(dtu): Remove when crbug.com/166243 is fixed.
   tab.Disconnect()
-  return state == 'visible'
+  return not hidden
 
 
 class TabTest(tab_test_case.TabTestCase):
   def testNavigateAndWaitToForCompleteState(self):
-    unittest_data_dir = os.path.join(os.path.dirname(__file__),
-                                     '..', '..', 'unittest_data')
-    self._browser.SetHTTPServerDirectories(unittest_data_dir)
+    self._browser.SetHTTPServerDirectories(util.GetUnittestDataDir())
     self._tab.Navigate(self._browser.http_server.UrlOf('blank.html'))
     self._tab.WaitForDocumentReadyStateToBeComplete()
 
   def testNavigateAndWaitToForInteractiveState(self):
-    unittest_data_dir = os.path.join(os.path.dirname(__file__),
-                                     '..', '..', 'unittest_data')
-    self._browser.SetHTTPServerDirectories(unittest_data_dir)
+    self._browser.SetHTTPServerDirectories(util.GetUnittestDataDir())
     self._tab.Navigate(self._browser.http_server.UrlOf('blank.html'))
     self._tab.WaitForDocumentReadyStateToBeInteractiveOrBetter()
 
@@ -47,6 +42,7 @@ class TabTest(tab_test_case.TabTestCase):
 
     self.assertTrue(_IsDocumentVisible(self._tab))
     new_tab = self._browser.tabs.New()
+    new_tab.Navigate('about:blank')
     util.WaitFor(lambda: _IsDocumentVisible(new_tab), timeout=5)
     self.assertFalse(_IsDocumentVisible(self._tab))
     self._tab.Activate()
@@ -64,16 +60,12 @@ class GpuTabTest(tab_test_case.TabTestCase):
       logging.warning('Browser does not support screenshots, skipping test.')
       return
 
-    unittest_data_dir = os.path.join(os.path.dirname(__file__),
-                                     '..', '..', 'unittest_data')
-    self._browser.SetHTTPServerDirectories(unittest_data_dir)
+    self._browser.SetHTTPServerDirectories(util.GetUnittestDataDir())
     self._tab.Navigate(
       self._browser.http_server.UrlOf('green_rect.html'))
     self._tab.WaitForDocumentReadyStateToBeComplete()
     pixel_ratio = self._tab.EvaluateJavaScript('window.devicePixelRatio || 1')
 
-    # TODO(bajones): Sleep for a bit to counter BUG 260878.
-    time.sleep(0.5)
     screenshot = self._tab.Screenshot(5)
     assert screenshot
     screenshot.GetPixelColor(0 * pixel_ratio, 0 * pixel_ratio).AssertIsRGB(
@@ -82,3 +74,22 @@ class GpuTabTest(tab_test_case.TabTestCase):
         0, 255, 0, tolerance=2)
     screenshot.GetPixelColor(32 * pixel_ratio, 32 * pixel_ratio).AssertIsRGB(
         255, 255, 255, tolerance=2)
+
+  def testScreenshotSync(self):
+    if not self._tab.screenshot_supported:
+      logging.warning('Browser does not support screenshots, skipping test.')
+      return
+
+    self._browser.SetHTTPServerDirectories(util.GetUnittestDataDir())
+    self._tab.Navigate(
+      self._browser.http_server.UrlOf('screenshot_sync.html'))
+    self._tab.WaitForDocumentReadyStateToBeComplete()
+
+    def IsTestComplete():
+      return self._tab.EvaluateJavaScript('window.__testComplete')
+    util.WaitFor(IsTestComplete, 120)
+
+    message = self._tab.EvaluateJavaScript('window.__testMessage')
+    if message:
+      logging.error(message)
+    assert self._tab.EvaluateJavaScript('window.__testSuccess')

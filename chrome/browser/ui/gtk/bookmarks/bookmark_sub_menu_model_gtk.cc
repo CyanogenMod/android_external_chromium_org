@@ -10,6 +10,7 @@
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
+#include "chrome/browser/bookmarks/bookmark_stats.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/gtk/bookmarks/bookmark_utils_gtk.h"
@@ -81,11 +82,13 @@ void BookmarkNodeMenuModel::PopulateMenu() {
       // Ironically the label will end up getting converted back to UTF8 later.
       // We need to escape any Windows-style "&" characters since they will be
       // converted in MenuGtk outside of our control here.
-      const string16 label = UTF8ToUTF16(ui::EscapeWindowsStyleAccelerators(
-          bookmark_utils::BuildMenuLabelFor(child)));
+      const base::string16 label = UTF8ToUTF16(
+          ui::EscapeWindowsStyleAccelerators(BuildMenuLabelFor(child)));
       // No command id. We override ActivatedAt below to handle activations.
       AddItem(kBookmarkItemCommandId, label);
-      GdkPixbuf* node_icon = bookmark_utils::GetPixbufForNode(child, model_,
+      GdkPixbuf* node_icon = GetPixbufForNode(
+          child,
+          model_,
           GtkThemeService::GetFrom(profile_)->UsingNativeTheme());
       SetIcon(GetItemCount() - 1, gfx::Image(node_icon));
       // TODO(mdm): set up an observer to watch for icon load events and set
@@ -99,8 +102,8 @@ void BookmarkNodeMenuModel::AddSubMenuForNode(const BookmarkNode* node) {
   // Ironically the label will end up getting converted back to UTF8 later.
   // We need to escape any Windows-style "&" characters since they will be
   // converted in MenuGtk outside of our control here.
-  const string16 label = UTF8ToUTF16(ui::EscapeWindowsStyleAccelerators(
-      bookmark_utils::BuildMenuLabelFor(node)));
+  const base::string16 label =
+      UTF8ToUTF16(ui::EscapeWindowsStyleAccelerators(BuildMenuLabelFor(node)));
   // Don't pass in the delegate, if any. Bookmark submenus don't need one.
   BookmarkNodeMenuModel* submenu =
       new BookmarkNodeMenuModel(NULL, model_, node, page_navigator_, profile_);
@@ -117,6 +120,7 @@ void BookmarkNodeMenuModel::NavigateToMenuItem(
     WindowOpenDisposition disposition) {
   const BookmarkNode* node = node_->GetChild(index);
   DCHECK(node);
+  RecordBookmarkLaunch(node, BOOKMARK_LAUNCH_LOCATION_WRENCH_MENU);
   page_navigator_->OpenURL(OpenURLParams(
       node->url(), content::Referrer(), disposition,
       content::PAGE_TRANSITION_AUTO_BOOKMARK,

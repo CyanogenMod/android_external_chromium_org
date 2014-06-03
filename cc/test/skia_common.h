@@ -21,10 +21,10 @@ class Picture;
 
 class TestPixelRef : public SkPixelRef {
  public:
-  TestPixelRef(int width, int height);
+  explicit TestPixelRef(const SkImageInfo& info);
   virtual ~TestPixelRef();
 
-  virtual SkFlattenable::Factory getFactory() OVERRIDE;
+  virtual SkFlattenable::Factory getFactory() const OVERRIDE;
   virtual void* onLockPixels(SkColorTable** color_table) OVERRIDE;
   virtual void onUnlockPixels() OVERRIDE {}
   virtual SkPixelRef* deepCopy(
@@ -36,10 +36,10 @@ class TestPixelRef : public SkPixelRef {
 
 class TestLazyPixelRef : public skia::LazyPixelRef {
  public:
-  TestLazyPixelRef(int width, int height);
+  explicit TestLazyPixelRef(const SkImageInfo& info);
   virtual ~TestLazyPixelRef();
 
-  virtual SkFlattenable::Factory getFactory() OVERRIDE;
+  virtual SkFlattenable::Factory getFactory() const OVERRIDE;
   virtual void* onLockPixels(SkColorTable** color_table) OVERRIDE;
   virtual void onUnlockPixels() OVERRIDE {}
   virtual bool PrepareToDecode(const PrepareParams& params) OVERRIDE;

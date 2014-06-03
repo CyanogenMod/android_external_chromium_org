@@ -25,12 +25,12 @@ const ValueStore::WriteOptions IGNORE_QUOTA =
 class ExtensionSettingsQuotaTest : public testing::Test {
  public:
   ExtensionSettingsQuotaTest()
-      : byte_value_1_(Value::CreateIntegerValue(1)),
-        byte_value_16_(Value::CreateStringValue("sixteen bytes.")),
+      : byte_value_1_(new base::FundamentalValue(1)),
+        byte_value_16_(new base::StringValue("sixteen bytes.")),
         byte_value_256_(new ListValue()),
         delegate_(new TestingValueStore()) {
     for (int i = 1; i < 89; ++i) {
-      byte_value_256_->Append(Value::CreateIntegerValue(i));
+      byte_value_256_->Append(new base::FundamentalValue(i));
     }
     ValidateByteValues();
   }
@@ -62,8 +62,8 @@ class ExtensionSettingsQuotaTest : public testing::Test {
   // Returns whether the settings in |storage_| and |delegate_| are the same as
   // |settings|.
   bool SettingsEqual(const DictionaryValue& settings) {
-    return settings.Equals(storage_->Get()->settings().get()) &&
-           settings.Equals(delegate_->Get()->settings().get());
+    return settings.Equals(&storage_->Get()->settings()) &&
+           settings.Equals(&delegate_->Get()->settings());
   }
 
   // Values with different serialized sizes.

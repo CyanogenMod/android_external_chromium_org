@@ -22,10 +22,6 @@ _DEFAULT_SYZYGY_DIR = os.path.abspath(os.path.join(
 # Basenames of various tools.
 _INSTRUMENT_EXE = 'instrument.exe'
 _GENFILTER_EXE = 'genfilter.exe'
-_ASAN_AGENT_DLL = 'asan_rtl.dll'
-
-# Default agents for known modes.
-_DEFAULT_AGENT_DLLS = { 'asan': _ASAN_AGENT_DLL }
 
 _LOGGER = logging.getLogger()
 
@@ -42,12 +38,11 @@ def _Shell(*cmd, **kw):
   return stdout, stderr
 
 
-def _CompileFilter(syzygy_dir, executable, symbol, dst_dir, filter_file):
+def _CompileFilter(syzygy_dir, executable, symbol, filter_file,
+                   output_filter_file):
   """Compiles the provided filter writing the compiled filter file to
-  dst_dir. Returns the absolute path of the compiled filter.
+  output_filter_file.
   """
-  output_filter_file = os.path.abspath(os.path.join(
-      dst_dir, os.path.basename(filter_file) + '.json'))
   cmd = [os.path.abspath(os.path.join(syzygy_dir, _GENFILTER_EXE)),
          '--action=compile',
          '--input-image=%s' % executable,
@@ -59,7 +54,7 @@ def _CompileFilter(syzygy_dir, executable, symbol, dst_dir, filter_file):
   _Shell(*cmd)
   if not os.path.exists(output_filter_file):
     raise RuntimeError('Compiled filter file missing: %s' % output_filter_file)
-  return output_filter_file
+  return
 
 
 def _InstrumentBinary(syzygy_dir, mode, executable, symbol, dst_dir,
@@ -78,29 +73,14 @@ def _InstrumentBinary(syzygy_dir, mode, executable, symbol, dst_dir,
          '--output-pdb=%s' % os.path.abspath(
              os.path.join(dst_dir, os.path.basename(symbol)))]
 
+  if mode == "asan":
+    cmd.append('--no-augment-pdb')
+
   # If a filter was specified then pass it on to the instrumenter.
   if filter_file:
     cmd.append('--filter=%s' % os.path.abspath(filter_file))
 
   return _Shell(*cmd)
-
-
-def _CopyAgentDLL(agent_dll, destination_dir):
-  """Copy the agent DLL and PDB to the destination directory."""
-  dirname, agent_name = os.path.split(agent_dll);
-  agent_dst_name = os.path.join(destination_dir, agent_name);
-  shutil.copyfile(agent_dll, agent_dst_name)
-
-  # Search for the corresponding PDB file. We use this approach because
-  # the naming convention for PDBs has changed recently (from 'foo.pdb'
-  # to 'foo.dll.pdb') and we want to support both conventions during the
-  # transition.
-  agent_pdbs = glob.glob(os.path.splitext(agent_dll)[0] + '*.pdb')
-  if len(agent_pdbs) != 1:
-    raise RuntimeError('Failed to locate PDB file for %s' % agent_name)
-  agent_pdb = agent_pdbs[0]
-  agent_dst_pdb = os.path.join(destination_dir, os.path.split(agent_pdb)[1])
-  shutil.copyfile(agent_pdb, agent_dst_pdb)
 
 
 def main(options):
@@ -111,13 +91,12 @@ def main(options):
     os.makedirs(options.destination_dir)
 
   # Compile the filter if one was provided.
-  filter_file = None
   if options.filter:
-    filter_file = _CompileFilter(options.syzygy_dir,
-                                 options.input_executable,
-                                 options.input_symbol,
-                                 options.destination_dir,
-                                 options.filter)
+    _CompileFilter(options.syzygy_dir,
+                   options.input_executable,
+                   options.input_symbol,
+                   options.filter,
+                   options.output_filter_file)
 
   # Instruments the binaries into the destination directory.
   _InstrumentBinary(options.syzygy_dir,
@@ -125,10 +104,7 @@ def main(options):
                     options.input_executable,
                     options.input_symbol,
                     options.destination_dir,
-                    filter_file)
-
-  # Copy the agent DLL and PDB to the destination directory.
-  _CopyAgentDLL(options.agent_dll, options.destination_dir);
+                    options.output_filter_file)
 
 
 def _ParseOptions():
@@ -139,9 +115,6 @@ def _ParseOptions():
       help='The path to the input symbol file.')
   option_parser.add_option('--mode',
       help='Specifies which instrumentation mode is to be used.')
-  option_parser.add_option('--agent_dll',
-      help='The agent DLL used by this instrumentation. If not specified a '
-           'default will be searched for.')
   option_parser.add_option('--syzygy-dir', default=_DEFAULT_SYZYGY_DIR,
       help='Instrumenter executable to use, defaults to "%default".')
   option_parser.add_option('-d', '--destination_dir',
@@ -149,6 +122,9 @@ def _ParseOptions():
   option_parser.add_option('--filter',
       help='An optional filter. This will be compiled and passed to the '
            'instrumentation executable.')
+  option_parser.add_option('--output-filter-file',
+      help='The path where the compiled filter will be written. This is '
+           'required if --filter is specified.')
   options, args = option_parser.parse_args()
 
   if not options.mode:
@@ -159,14 +135,8 @@ def _ParseOptions():
     option_parser.error('You must provide an input symbol file.')
   if not options.destination_dir:
     option_parser.error('You must provide a destination directory.')
-
-  if not options.agent_dll:
-    if not options.mode in _DEFAULT_AGENT_DLLS:
-      option_parser.error('No known default agent DLL for mode "%s".' %
-          options.mode)
-    options.agent_dll = os.path.abspath(os.path.join(options.syzygy_dir,
-        _DEFAULT_AGENT_DLLS[options.mode]))
-    _LOGGER.info('Using default agent DLL: %s' % options.agent_dll)
+  if options.filter and not options.output_filter_file:
+    option_parser.error('You must provide a filter output file.')
 
   return options
 

@@ -10,6 +10,7 @@
 #include "net/base/net_export.h"
 #include "net/base/request_priority.h"
 #include "net/base/upload_progress.h"
+#include "net/websockets/websocket_handshake_stream_base.h"
 
 namespace net {
 
@@ -109,6 +110,9 @@ class NET_EXPORT_PRIVATE HttpTransaction {
   // of the stream. This is equivalent to performing an extra Read() at the end
   // that should return 0 bytes. This method should not be called if the
   // transaction is busy processing a previous operation (like a pending Read).
+  //
+  // DoneReading may also be called before the first Read() to notify that the
+  // entire response body is to be ignored (e.g., in a redirect).
   virtual void DoneReading() = 0;
 
   // Returns the response info for this transaction or NULL if the response
@@ -131,6 +135,12 @@ class NET_EXPORT_PRIVATE HttpTransaction {
 
   // Called when the priority of the parent job changes.
   virtual void SetPriority(RequestPriority priority) = 0;
+
+  // Set the WebSocketHandshakeStreamBase::CreateHelper to be used for the
+  // request.  Only relevant to WebSocket transactions. Must be called before
+  // Start(). Ownership of |create_helper| remains with the caller.
+  virtual void SetWebSocketHandshakeStreamCreateHelper(
+      WebSocketHandshakeStreamBase::CreateHelper* create_helper) = 0;
 };
 
 }  // namespace net

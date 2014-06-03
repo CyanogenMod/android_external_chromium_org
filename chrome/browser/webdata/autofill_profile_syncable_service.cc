@@ -344,7 +344,7 @@ bool AutofillProfileSyncableService::OverwriteProfileWithServerData(
                      specifics.address_home_city(), profile) || diff;
   diff = UpdateField(autofill::ADDRESS_HOME_STATE,
                      specifics.address_home_state(), profile) || diff;
-  string16 country_name_or_code =
+  base::string16 country_name_or_code =
       ASCIIToUTF16(specifics.address_home_country());
   std::string country_code = AutofillCountry::GetCountryCode(
       country_name_or_code, app_locale);
@@ -381,7 +381,7 @@ void AutofillProfileSyncableService::WriteAutofillProfile(
   specifics->set_guid(profile.guid());
   specifics->set_origin(profile.origin());
 
-  std::vector<string16> values;
+  std::vector<base::string16> values;
   profile.GetRawMultiInfo(autofill::NAME_FIRST, &values);
   for (size_t i = 0; i < values.size(); ++i) {
     specifics->add_name_first(LimitData(UTF16ToUTF8(values[i])));
@@ -579,7 +579,7 @@ bool AutofillProfileSyncableService::UpdateMultivaluedField(
     ServerFieldType field_type,
     const ::google::protobuf::RepeatedPtrField<std::string>& new_values,
     AutofillProfile* autofill_profile) {
-  std::vector<string16> values;
+  std::vector<base::string16> values;
   autofill_profile->GetRawMultiInfo(field_type, &values);
   bool changed = false;
   if (static_cast<size_t>(new_values.size()) != values.size()) {
@@ -588,7 +588,7 @@ bool AutofillProfileSyncableService::UpdateMultivaluedField(
     changed = true;
   }
   for (size_t i = 0; i < values.size(); ++i) {
-    string16 synced_value(
+    base::string16 synced_value(
         UTF8ToUTF16(new_values.Get(static_cast<int>(i))));
     if (values[i] != synced_value) {
       values[i] = synced_value;

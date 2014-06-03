@@ -27,6 +27,8 @@ const struct ModifierKeysSelectItem {
     chromeos::input_method::kVoidKey },
   { IDS_OPTIONS_SETTINGS_LANGUAGES_KEY_CAPS_LOCK,
     chromeos::input_method::kCapsLockKey },
+  { IDS_OPTIONS_SETTINGS_LANGUAGES_KEY_ESCAPE,
+    chromeos::input_method::kEscapeKey },
 };
 
 const char* kDataValuesNames[] = {
@@ -67,6 +69,12 @@ void KeyboardHandler::GetLocalizedValues(DictionaryValue* localized_strings) {
   localized_strings->SetString("remapDiamondKeyToContent",
       l10n_util::GetStringUTF16(
           IDS_OPTIONS_SETTINGS_LANGUAGES_KEY_DIAMOND_KEY_LABEL));
+  localized_strings->SetString("sendFunctionKeys",
+      l10n_util::GetStringUTF16(
+          IDS_OPTIONS_SETTINGS_LANGUAGES_SEND_FUNCTION_KEYS));
+  localized_strings->SetString("sendFunctionKeysDescription",
+      l10n_util::GetStringUTF16(
+          IDS_OPTIONS_SETTINGS_LANGUAGES_SEND_FUNCTION_KEYS_DESCRIPTION));
   localized_strings->SetString("changeLanguageAndInputSettings",
       l10n_util::GetStringUTF16(
           IDS_OPTIONS_SETTINGS_CHANGE_LANGUAGE_AND_INPUT_SETTINGS));

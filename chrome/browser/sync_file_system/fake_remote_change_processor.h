@@ -29,6 +29,10 @@ class FakeRemoteChangeProcessor : public RemoteChangeProcessor {
  public:
   typedef std::map<fileapi::FileSystemURL, std::vector<FileChange>,
                    fileapi::FileSystemURL::Comparator> URLToFileChangesMap;
+  typedef std::map<fileapi::FileSystemURL, FileChangeList,
+                   fileapi::FileSystemURL::Comparator> URLToFileChangeList;
+  typedef std::map<fileapi::FileSystemURL, SyncFileMetadata,
+                   fileapi::FileSystemURL::Comparator> URLToFileMetadata;
 
   FakeRemoteChangeProcessor();
   virtual ~FakeRemoteChangeProcessor();
@@ -42,21 +46,38 @@ class FakeRemoteChangeProcessor : public RemoteChangeProcessor {
       const base::FilePath& local_path,
       const fileapi::FileSystemURL& url,
       const SyncStatusCallback& callback) OVERRIDE;
-  virtual void ClearLocalChanges(
+  virtual void FinalizeRemoteSync(
       const fileapi::FileSystemURL& url,
+      bool clear_local_changes,
       const base::Closure& completion_callback) OVERRIDE;
   virtual void RecordFakeLocalChange(
       const fileapi::FileSystemURL& url,
       const FileChange& change,
       const SyncStatusCallback& callback) OVERRIDE;
 
+  void UpdateLocalFileMetadata(
+    const fileapi::FileSystemURL& url,
+    const FileChange& change);
+  void ClearLocalChanges(const fileapi::FileSystemURL& url);
+
   const URLToFileChangesMap& GetAppliedRemoteChanges() const;
+
+  // Compare |applied_changes_| with |expected_changes|.
+  // This internally calls EXPECT_FOO, ASSERT_FOO methods in the
+  // verification.
+  void VerifyConsistency(const URLToFileChangesMap& expected_changes);
 
  private:
   // History of file changes given by ApplyRemoteChange(). Changes are arranged
   // in chronological order, that is, the end of the vector represents the last
   // change.
   URLToFileChangesMap applied_changes_;
+
+  // History of local file changes.
+  URLToFileChangeList local_changes_;
+
+  // Initial local file metadata. These are overridden by applied changes.
+  URLToFileMetadata local_file_metadata_;
 
   DISALLOW_COPY_AND_ASSIGN(FakeRemoteChangeProcessor);
 };

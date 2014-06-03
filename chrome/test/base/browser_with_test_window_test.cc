@@ -59,15 +59,13 @@ void BrowserWithTestWindowTest::SetUp() {
 #endif  // USE_AURA
 
   // Subclasses can provide their own Profile.
-  profile_.reset(CreateProfile());
+  profile_ = CreateProfile();
   // Subclasses can provide their own test BrowserWindow. If they return NULL
   // then Browser will create the a production BrowserWindow and the subclass
   // is responsible for cleaning it up (usually by NativeWidget destruction).
   window_.reset(CreateBrowserWindow());
 
-  Browser::CreateParams params(profile(), host_desktop_type_);
-  params.window = window_.get();
-  browser_.reset(new Browser(params));
+  browser_.reset(CreateBrowser(profile(), host_desktop_type_, window_.get()));
 }
 
 void BrowserWithTestWindowTest::TearDown() {
@@ -179,13 +177,28 @@ void BrowserWithTestWindowTest::DestroyBrowserAndProfile() {
   // destructor, and a test subclass owns a resource that the profile depends
   // on (such as g_browser_process()->local_state()) there's no way for the
   // subclass to free it after the profile.
-  profile_.reset(NULL);
+  if (profile_)
+    DestroyProfile(profile_);
+  profile_ = NULL;
 }
 
 TestingProfile* BrowserWithTestWindowTest::CreateProfile() {
   return new TestingProfile();
 }
 
+void BrowserWithTestWindowTest::DestroyProfile(TestingProfile* profile) {
+  delete profile;
+}
+
 BrowserWindow* BrowserWithTestWindowTest::CreateBrowserWindow() {
   return new TestBrowserWindow();
+}
+
+Browser* BrowserWithTestWindowTest::CreateBrowser(
+    Profile* profile,
+    chrome::HostDesktopType host_desktop_type,
+    BrowserWindow* browser_window) {
+  Browser::CreateParams params(profile, host_desktop_type);
+  params.window = browser_window;
+  return new Browser(params);
 }

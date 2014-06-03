@@ -277,6 +277,14 @@ html[dir='rtl'] #display-filter-controls label span.first-button-component,
   padding: 0;
 }
 
+.site-results.grouped {
+  -webkit-padding-start: 18px;
+}
+
+.no-checkboxes .site-results.grouped {
+  -webkit-padding-start: 21px;
+}
+
 .month-results {
   -webkit-padding-start: 0;
 }
@@ -287,19 +295,6 @@ html[dir='rtl'] .site-results {
 
 h2.timeframe {
   font-size: 1.5em;
-}
-
-.snippet {
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  -webkit-margin-start: 136px;
-  clear: both;
-  color: rgb(34, 34, 34);
-  display: -webkit-box;
-  line-height: 1.6em;
-  margin-bottom: 1em;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .entry .domain {
@@ -331,7 +326,6 @@ html[dir='rtl'] .number-visits {
 }
 
 .drop-down {
-  -webkit-margin-end: 5px;
   margin-top: 1px;
 }
 
@@ -341,37 +335,17 @@ html[dir='rtl'] .site-domain {
   background-position-x: right;
 }
 
-.no-checkboxes .entry .time {
-  min-width: 73px;
-}
-
 .entry .time {
   color: rgb(151, 156, 160);
-  min-width: 60px;
+  max-width: 90px;
+  min-width: -webkit-min-content;
   overflow: hidden;
-  text-align: right;
   text-overflow: ellipsis;
   white-space: nowrap;
-  width: 60px;
-}
-
-html[dir='rtl'] .entry .time {
-  text-align: left;
-}
-
-.search-results .time,
-.month-results .time {
-  min-width: 85px;
-}
-
-.no-checkboxes.search-results .time,
-.no-checkboxes.month-results .time {
-  min-width: 90px;
 }
 
 .entry input[type='checkbox'] {
   -webkit-margin-end: 6px;
-  -webkit-margin-start: 4px;
   line-height: 1em;
   margin-top: 2px;
   min-width: 13px;
@@ -403,7 +377,7 @@ html[dir='rtl'] .entry .time {
 
 .filter-status > div {
   -webkit-flex: 0 0 auto;
-  -webkit-transition: background-color 500ms ease-in-out;
+  -webkit-transition: background-color 150ms;
   border-radius: 3px;
   display: none;
   font-size: 11px;
@@ -444,7 +418,7 @@ html[dir='rtl'] .entry .time {
 /* TODO(sergiu): If this is the final icon replace it with a separate resource.
  */
 .blocked-indicator {
-  background: url(../ssl/roadblock_icon.png) no-repeat;
+  background: url('../ssl/images/roadblock.png');
   background-size: 30%;
 }
 

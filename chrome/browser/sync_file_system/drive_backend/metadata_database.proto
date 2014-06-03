@@ -16,6 +16,12 @@ enum FileKind {
   FILE_KIND_FOLDER = 2;
 }
 
+enum TrackerKind {
+  TRACKER_KIND_REGULAR = 0;
+  TRACKER_KIND_APP_ROOT = 1;
+  TRACKER_KIND_DISABLED_APP_ROOT = 2;
+}
+
 message ServiceMetadata {
   optional int64 largest_change_id = 1;
   optional int64 sync_root_tracker_id = 2;
@@ -38,7 +44,7 @@ message FileDetails {
   optional int64 creation_time = 6;
   optional int64 modification_time = 7;
 
-  optional bool deleted = 8;
+  optional bool missing = 8;
   optional int64 change_id = 9;
 }
 
@@ -61,8 +67,10 @@ message FileTracker {
   required string file_id = 3;
 
   optional string app_id = 4;
-  optional bool is_app_root = 5;
+  optional TrackerKind tracker_kind = 5;
 
+  // Available on an active tracker.
+  // Represents detailed file information on last remote-to-local sync.
   optional FileDetails synced_details = 6;
 
   // True if the file is changed since the last update for this file.

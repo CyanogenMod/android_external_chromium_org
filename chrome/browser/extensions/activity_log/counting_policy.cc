@@ -46,6 +46,8 @@ using content::BrowserThread;
 
 namespace {
 
+using extensions::Action;
+
 // Delay between cleaning passes (to delete old action records) through the
 // database.
 const int kCleaningDelayInHours = 12;
@@ -56,8 +58,29 @@ const int kCleaningDelayInHours = 12;
 //
 // TODO(mvrable): The contents of this whitelist should be reviewed and
 // expanded as needed.
-const char* kAlwaysLog[] = {"extension.connect", "extension.sendMessage",
-                            "tabs.executeScript", "tabs.insertCSS"};
+struct ApiList {
+  Action::ActionType type;
+  const char* name;
+};
+
+const ApiList kAlwaysLog[] = {
+    {Action::ACTION_API_CALL, "bookmarks.create"},
+    {Action::ACTION_API_CALL, "bookmarks.update"},
+    {Action::ACTION_API_CALL, "cookies.get"},
+    {Action::ACTION_API_CALL, "cookies.getAll"},
+    {Action::ACTION_API_CALL, "extension.connect"},
+    {Action::ACTION_API_CALL, "extension.sendMessage"},
+    {Action::ACTION_API_CALL, "fileSystem.chooseEntry"},
+    {Action::ACTION_API_CALL, "socket.bind"},
+    {Action::ACTION_API_CALL, "socket.connect"},
+    {Action::ACTION_API_CALL, "socket.create"},
+    {Action::ACTION_API_CALL, "socket.listen"},
+    {Action::ACTION_API_CALL, "tabs.executeScript"},
+    {Action::ACTION_API_CALL, "tabs.insertCSS"},
+    {Action::ACTION_CONTENT_SCRIPT, ""},
+    {Action::ACTION_DOM_ACCESS, "Document.createElement"},
+    {Action::ACTION_DOM_ACCESS, "Document.createElementNS"},
+};
 
 // Columns in the main database table.  See the file-level comment for a
 // discussion of how data is stored and the meanings of the _x columns.
@@ -107,46 +130,25 @@ static const char kPolicyMiscSetup[] =
 static const char kStringTableCleanup[] =
     "DELETE FROM string_ids WHERE id NOT IN\n"
     "(SELECT extension_id_x FROM activitylog_compressed\n"
+    "    WHERE extension_id_x IS NOT NULL\n"
     " UNION SELECT api_name_x FROM activitylog_compressed\n"
+    "    WHERE api_name_x IS NOT NULL\n"
     " UNION SELECT args_x FROM activitylog_compressed\n"
+    "    WHERE args_x IS NOT NULL\n"
     " UNION SELECT page_title_x FROM activitylog_compressed\n"
-    " UNION SELECT other_x FROM activitylog_compressed)";
+    "    WHERE page_title_x IS NOT NULL\n"
+    " UNION SELECT other_x FROM activitylog_compressed\n"
+    "    WHERE other_x IS NOT NULL)";
 static const char kUrlTableCleanup[] =
     "DELETE FROM url_ids WHERE id NOT IN\n"
     "(SELECT page_url_x FROM activitylog_compressed\n"
-    " UNION SELECT arg_url_x FROM activitylog_compressed)";
+    "    WHERE page_url_x IS NOT NULL\n"
+    " UNION SELECT arg_url_x FROM activitylog_compressed\n"
+    "    WHERE arg_url_x IS NOT NULL)";
 
 }  // namespace
 
 namespace extensions {
-
-// A specialized Action subclass which is used to represent an action read from
-// the database with a corresponding count.
-class CountedAction : public Action {
- public:
-  CountedAction(const std::string& extension_id,
-                const base::Time& time,
-                const ActionType action_type,
-                const std::string& api_name)
-      : Action(extension_id, time, action_type, api_name) {}
-
-  // Number of merged records for this action.
-  int count() const { return count_; }
-  void set_count(int count) { count_ = count; }
-
-  virtual std::string PrintForDebug() const OVERRIDE;
-
- protected:
-  virtual ~CountedAction() {}
-
- private:
-  int count_;
-};
-
-std::string CountedAction::PrintForDebug() const {
-  return base::StringPrintf(
-      "%s COUNT=%d", Action::PrintForDebug().c_str(), count());
-}
 
 const char* CountingPolicy::kTableName = "activitylog_compressed";
 const char* CountingPolicy::kReadViewName = "activitylog_uncompressed";
@@ -159,7 +161,8 @@ CountingPolicy::CountingPolicy(Profile* profile)
       url_table_("url_ids"),
       retention_time_(base::TimeDelta::FromHours(60)) {
   for (size_t i = 0; i < arraysize(kAlwaysLog); i++) {
-    api_arg_whitelist_.insert(kAlwaysLog[i]);
+    api_arg_whitelist_.insert(
+        std::make_pair(kAlwaysLog[i].type, kAlwaysLog[i].name));
   }
 }
 
@@ -196,7 +199,27 @@ void CountingPolicy::QueueAction(scoped_refptr<Action> action) {
     action = action->Clone();
     Util::StripPrivacySensitiveFields(action);
     Util::StripArguments(api_arg_whitelist_, action);
-    queued_actions_.push_back(action);
+
+    // If the current action falls on a different date than the ones in the
+    // queue, flush the queue out now to prevent any false merging (actions
+    // from different days being merged).
+    base::Time new_date = action->time().LocalMidnight();
+    if (new_date != queued_actions_date_)
+      activity_database()->AdviseFlush(ActivityDatabase::kFlushImmediately);
+    queued_actions_date_ = new_date;
+
+    ActionQueue::iterator queued_entry = queued_actions_.find(action);
+    if (queued_entry == queued_actions_.end()) {
+      queued_actions_[action] = 1;
+    } else {
+      // Update the timestamp in the key to be the latest time seen.  Modifying
+      // the time is safe since that field is not involved in key comparisons
+      // in the map.
+      using std::max;
+      queued_entry->first->set_time(
+          max(queued_entry->first->time(), action->time()));
+      queued_entry->second++;
+    }
     activity_database()->AdviseFlush(queued_actions_.size());
   }
 }
@@ -206,7 +229,7 @@ bool CountingPolicy::FlushDatabase(sql::Connection* db) {
   static const char* matched_columns[] = {
       "extension_id_x", "action_type", "api_name_x", "args_x", "page_url_x",
       "page_title_x", "arg_url_x", "other_x"};
-  Action::ActionVector queue;
+  ActionQueue queue;
   queue.swap(queued_actions_);
 
   // Whether to clean old records out of the activity log database.  Do this
@@ -224,28 +247,40 @@ bool CountingPolicy::FlushDatabase(sql::Connection* db) {
   if (!transaction.Begin())
     return false;
 
+  // Adding an Action to the database is a two step process that depends on
+  // whether the count on an existing row can be incremented or a new row needs
+  // to be inserted.
+  //   1. Run the query in locate_str to search for a row which matches and can
+  //      have the count incremented.
+  //  2a. If found, increment the count using update_str and the rowid found in
+  //      step 1, or
+  //  2b. If not found, insert a new row using insert_str.
+  std::string locate_str =
+      "SELECT rowid FROM " + std::string(kTableName) +
+      " WHERE time >= ? AND time < ?";
   std::string insert_str =
       "INSERT INTO " + std::string(kTableName) + "(count, time";
   std::string update_str =
       "UPDATE " + std::string(kTableName) +
-      " SET count = count + 1, time = max(?, time)"
-      " WHERE time >= ? AND time < ?";
+      " SET count = count + ?, time = max(?, time)"
+      " WHERE rowid = ?";
 
   for (size_t i = 0; i < arraysize(matched_columns); i++) {
+    locate_str = base::StringPrintf(
+        "%s AND %s IS ?", locate_str.c_str(), matched_columns[i]);
     insert_str =
         base::StringPrintf("%s, %s", insert_str.c_str(), matched_columns[i]);
-    update_str = base::StringPrintf(
-        "%s AND %s IS ?", update_str.c_str(), matched_columns[i]);
   }
-  insert_str += ") VALUES (1, ?";
+  insert_str += ") VALUES (?, ?";
   for (size_t i = 0; i < arraysize(matched_columns); i++) {
     insert_str += ", ?";
   }
+  locate_str += " ORDER BY time DESC LIMIT 1";
   insert_str += ")";
 
-  Action::ActionVector::size_type i;
-  for (i = 0; i != queue.size(); ++i) {
-    const Action& action = *queue[i];
+  for (ActionQueue::iterator i = queue.begin(); i != queue.end(); ++i) {
+    const Action& action = *i->first;
+    int count = i->second;
 
     base::Time day_start = action.time().LocalMidnight();
     base::Time next_day = Util::AddDays(day_start, 1);
@@ -316,13 +351,12 @@ bool CountingPolicy::FlushDatabase(sql::Connection* db) {
       matched_values.push_back(-1);
     }
 
-    // Assume there is an existing row for this action, and try to update the
-    // count.
-    sql::Statement update_statement(db->GetCachedStatement(
-        sql::StatementID(SQL_FROM_HERE), update_str.c_str()));
-    update_statement.BindInt64(0, action.time().ToInternalValue());
-    update_statement.BindInt64(1, day_start.ToInternalValue());
-    update_statement.BindInt64(2, next_day.ToInternalValue());
+    // Search for a matching row for this action whose count can be
+    // incremented.
+    sql::Statement locate_statement(db->GetCachedStatement(
+        sql::StatementID(SQL_FROM_HERE), locate_str.c_str()));
+    locate_statement.BindInt64(0, day_start.ToInternalValue());
+    locate_statement.BindInt64(1, next_day.ToInternalValue());
     for (size_t j = 0; j < matched_values.size(); j++) {
       // A call to BindNull when matched_values contains -1 is likely not
       // necessary as parameters default to null before they are explicitly
@@ -330,34 +364,39 @@ bool CountingPolicy::FlushDatabase(sql::Connection* db) {
       // ever comes with some values already bound, we bind all parameters
       // (even null ones) explicitly.
       if (matched_values[j] == -1)
-        update_statement.BindNull(j + 3);
+        locate_statement.BindNull(j + 2);
       else
-        update_statement.BindInt64(j + 3, matched_values[j]);
+        locate_statement.BindInt64(j + 2, matched_values[j]);
     }
-    if (!update_statement.Run())
-      return false;
 
-    // Check if the update succeeded (was the count of updated rows non-zero)?
-    // If it failed because no matching row existed, fall back to inserting a
-    // new record.
-    if (db->GetLastChangeCount() > 0) {
-      if (db->GetLastChangeCount() > 1) {
-        LOG(WARNING) << "Found and updated multiple rows in the activity log "
-                     << "database; counts may be off!";
+    if (locate_statement.Step()) {
+      // A matching row was found.  Update the count and time.
+      int64 rowid = locate_statement.ColumnInt64(0);
+      sql::Statement update_statement(db->GetCachedStatement(
+          sql::StatementID(SQL_FROM_HERE), update_str.c_str()));
+      update_statement.BindInt(0, count);
+      update_statement.BindInt64(1, action.time().ToInternalValue());
+      update_statement.BindInt64(2, rowid);
+      if (!update_statement.Run())
+        return false;
+    } else if (locate_statement.Succeeded()) {
+      // No matching row was found, so we need to insert one.
+      sql::Statement insert_statement(db->GetCachedStatement(
+          sql::StatementID(SQL_FROM_HERE), insert_str.c_str()));
+      insert_statement.BindInt(0, count);
+      insert_statement.BindInt64(1, action.time().ToInternalValue());
+      for (size_t j = 0; j < matched_values.size(); j++) {
+        if (matched_values[j] == -1)
+          insert_statement.BindNull(j + 2);
+        else
+          insert_statement.BindInt64(j + 2, matched_values[j]);
       }
-      continue;
-    }
-    sql::Statement insert_statement(db->GetCachedStatement(
-        sql::StatementID(SQL_FROM_HERE), insert_str.c_str()));
-    insert_statement.BindInt64(0, action.time().ToInternalValue());
-    for (size_t j = 0; j < matched_values.size(); j++) {
-      if (matched_values[j] == -1)
-        insert_statement.BindNull(j + 1);
-      else
-        insert_statement.BindInt64(j + 1, matched_values[j]);
-    }
-    if (!insert_statement.Run())
+      if (!insert_statement.Run())
+        return false;
+    } else {
+      // Database error.
       return false;
+    }
   }
 
   if (clean_database) {
@@ -373,91 +412,295 @@ bool CountingPolicy::FlushDatabase(sql::Connection* db) {
   return true;
 }
 
-scoped_ptr<Action::ActionVector> CountingPolicy::DoReadData(
+scoped_ptr<Action::ActionVector> CountingPolicy::DoReadFilteredData(
     const std::string& extension_id,
+    const Action::ActionType type,
+    const std::string& api_name,
+    const std::string& page_url,
+    const std::string& arg_url,
     const int days_ago) {
   // Ensure data is flushed to the database first so that we query over all
   // data.
   activity_database()->AdviseFlush(ActivityDatabase::kFlushImmediately);
-
-  DCHECK_GE(days_ago, 0);
   scoped_ptr<Action::ActionVector> actions(new Action::ActionVector());
 
   sql::Connection* db = GetDatabaseConnection();
-  if (!db) {
+  if (!db)
     return actions.Pass();
+
+  // Build up the query based on which parameters were specified.
+  std::string where_str = "";
+  std::string where_next = "";
+  if (!extension_id.empty()) {
+    where_str += "extension_id=?";
+    where_next = " AND ";
+  }
+  if (!api_name.empty()) {
+    where_str += where_next + "api_name=?";
+    where_next = " AND ";
+  }
+  if (type != Action::ACTION_ANY) {
+    where_str += where_next + "action_type=?";
+    where_next = " AND ";
+  }
+  if (!page_url.empty()) {
+    where_str += where_next + "page_url LIKE ?";
+    where_next = " AND ";
+  }
+  if (!arg_url.empty()) {
+    where_str += where_next + "arg_url LIKE ?";
+    where_next = " AND ";
+  }
+  if (days_ago >= 0)
+    where_str += where_next + "time BETWEEN ? AND ?";
+
+  std::string query_str = base::StringPrintf(
+      "SELECT extension_id,time, action_type, api_name, args, page_url,"
+      "page_title, arg_url, other, count FROM %s %s %s ORDER BY count DESC,"
+      " time DESC LIMIT 300",
+      kReadViewName,
+      where_str.empty() ? "" : "WHERE",
+      where_str.c_str());
+  sql::Statement query(db->GetUniqueStatement(query_str.c_str()));
+  int i = -1;
+  if (!extension_id.empty())
+    query.BindString(++i, extension_id);
+  if (!api_name.empty())
+    query.BindString(++i, api_name);
+  if (type != Action::ACTION_ANY)
+    query.BindInt(++i, static_cast<int>(type));
+  if (!page_url.empty())
+    query.BindString(++i, page_url + "%");
+  if (!arg_url.empty())
+    query.BindString(++i, arg_url + "%");
+  if (days_ago >= 0) {
+    int64 early_bound;
+    int64 late_bound;
+    Util::ComputeDatabaseTimeBounds(Now(), days_ago, &early_bound, &late_bound);
+    query.BindInt64(++i, early_bound);
+    query.BindInt64(++i, late_bound);
   }
 
-  int64 early_bound;
-  int64 late_bound;
-  Util::ComputeDatabaseTimeBounds(Now(), days_ago, &early_bound, &late_bound);
-  std::string query_str = base::StringPrintf(
-      "SELECT time, action_type, api_name, args, page_url, page_title, "
-      "arg_url, other, count "
-      "FROM %s WHERE extension_id=? AND time>? AND time<=? "
-      "ORDER BY time DESC",
-      kReadViewName);
-  sql::Statement query(db->GetCachedStatement(SQL_FROM_HERE,
-                                              query_str.c_str()));
-  query.BindString(0, extension_id);
-  query.BindInt64(1, early_bound);
-  query.BindInt64(2, late_bound);
-
+  // Execute the query and get results.
   while (query.is_valid() && query.Step()) {
-    scoped_refptr<CountedAction> action =
-        new CountedAction(extension_id,
-                          base::Time::FromInternalValue(query.ColumnInt64(0)),
-                          static_cast<Action::ActionType>(query.ColumnInt(1)),
-                          query.ColumnString(2));
+    scoped_refptr<Action> action =
+        new Action(query.ColumnString(0),
+                   base::Time::FromInternalValue(query.ColumnInt64(1)),
+                   static_cast<Action::ActionType>(query.ColumnInt(2)),
+                   query.ColumnString(3));
 
-    if (query.ColumnType(3) != sql::COLUMN_TYPE_NULL) {
+    if (query.ColumnType(4) != sql::COLUMN_TYPE_NULL) {
       scoped_ptr<Value> parsed_value(
-          base::JSONReader::Read(query.ColumnString(3)));
+          base::JSONReader::Read(query.ColumnString(4)));
       if (parsed_value && parsed_value->IsType(Value::TYPE_LIST)) {
         action->set_args(
             make_scoped_ptr(static_cast<ListValue*>(parsed_value.release())));
-      } else {
-        LOG(WARNING) << "Unable to parse args: '" << query.ColumnString(3)
-                     << "'";
       }
     }
 
-    action->ParsePageUrl(query.ColumnString(4));
-    action->set_page_title(query.ColumnString(5));
-    action->ParseArgUrl(query.ColumnString(6));
+    action->ParsePageUrl(query.ColumnString(5));
+    action->set_page_title(query.ColumnString(6));
+    action->ParseArgUrl(query.ColumnString(7));
 
-    if (query.ColumnType(7) != sql::COLUMN_TYPE_NULL) {
+    if (query.ColumnType(8) != sql::COLUMN_TYPE_NULL) {
       scoped_ptr<Value> parsed_value(
-          base::JSONReader::Read(query.ColumnString(7)));
+          base::JSONReader::Read(query.ColumnString(8)));
       if (parsed_value && parsed_value->IsType(Value::TYPE_DICTIONARY)) {
         action->set_other(make_scoped_ptr(
             static_cast<DictionaryValue*>(parsed_value.release())));
-      } else {
-        LOG(WARNING) << "Unable to parse other: '" << query.ColumnString(7)
-                     << "'";
       }
     }
-
-    action->set_count(query.ColumnInt(8));
-
+    action->set_count(query.ColumnInt(9));
     actions->push_back(action);
   }
 
   return actions.Pass();
 }
 
-void CountingPolicy::ReadData(
+void CountingPolicy::DoRemoveURLs(const std::vector<GURL>& restrict_urls) {
+  sql::Connection* db = GetDatabaseConnection();
+  if (!db) {
+    LOG(ERROR) << "Unable to connect to database";
+    return;
+  }
+
+  // Flush data first so the URL clearing affects queued-up data as well.
+  activity_database()->AdviseFlush(ActivityDatabase::kFlushImmediately);
+
+  // If no restrictions then then all URLs need to be removed.
+  if (restrict_urls.empty()) {
+    std::string sql_str = base::StringPrintf(
+      "UPDATE %s SET page_url_x=NULL,page_title_x=NULL,arg_url_x=NULL",
+      kTableName);
+
+    sql::Statement statement;
+    statement.Assign(db->GetCachedStatement(
+        sql::StatementID(SQL_FROM_HERE), sql_str.c_str()));
+
+    if (!statement.Run()) {
+      LOG(ERROR) << "Removing all URLs from database failed: "
+                 << statement.GetSQLStatement();
+      return;
+    }
+  }
+
+  // If URLs are specified then restrict to only those URLs.
+  for (size_t i = 0; i < restrict_urls.size(); ++i) {
+    int64 url_id;
+    if (!restrict_urls[i].is_valid() ||
+        !url_table_.StringToInt(db, restrict_urls[i].spec(), &url_id)) {
+      continue;
+    }
+
+    // Remove any that match the page_url.
+    std::string sql_str = base::StringPrintf(
+      "UPDATE %s SET page_url_x=NULL,page_title_x=NULL WHERE page_url_x IS ?",
+      kTableName);
+
+    sql::Statement statement;
+    statement.Assign(db->GetCachedStatement(
+        sql::StatementID(SQL_FROM_HERE), sql_str.c_str()));
+    statement.BindInt64(0, url_id);
+
+    if (!statement.Run()) {
+      LOG(ERROR) << "Removing page URL from database failed: "
+                 << statement.GetSQLStatement();
+      return;
+    }
+
+    // Remove any that match the arg_url.
+    sql_str = base::StringPrintf(
+      "UPDATE %s SET arg_url_x=NULL WHERE arg_url_x IS ?", kTableName);
+
+    statement.Assign(db->GetCachedStatement(
+        sql::StatementID(SQL_FROM_HERE), sql_str.c_str()));
+    statement.BindInt64(0, url_id);
+
+    if (!statement.Run()) {
+      LOG(ERROR) << "Removing arg URL from database failed: "
+                 << statement.GetSQLStatement();
+      return;
+    }
+  }
+
+  // Clean up unused strings from the strings and urls table to really delete
+  // the urls and page titles. Should be called even if an error occured when
+  // removing a URL as there may some things to clean up.
+  CleanStringTables(db);
+}
+
+void CountingPolicy::DoRemoveExtensionData(const std::string& extension_id) {
+  if (extension_id.empty())
+    return;
+
+  sql::Connection* db = GetDatabaseConnection();
+  if (!db) {
+    LOG(ERROR) << "Unable to connect to database";
+    return;
+  }
+
+  // Make sure any queued in memory are sent to the database before cleaning.
+  activity_database()->AdviseFlush(ActivityDatabase::kFlushImmediately);
+
+  std::string sql_str = base::StringPrintf(
+      "DELETE FROM %s WHERE extension_id_x=?", kTableName);
+  sql::Statement statement(
+      db->GetCachedStatement(sql::StatementID(SQL_FROM_HERE), sql_str.c_str()));
+  int64 id;
+  if (string_table_.StringToInt(db, extension_id, &id)) {
+    statement.BindInt64(0, id);
+  } else {
+    // If the string isn't listed, that means we never recorded anything about
+    // the extension so there's no deletion to do.
+    statement.Clear();
+    return;
+  }
+  if (!statement.Run()) {
+    LOG(ERROR) << "Removing URLs for extension "
+               << extension_id << "from database failed: "
+               << statement.GetSQLStatement();
+  }
+  CleanStringTables(db);
+}
+
+void CountingPolicy::DoDeleteDatabase() {
+  sql::Connection* db = GetDatabaseConnection();
+  if (!db) {
+    LOG(ERROR) << "Unable to connect to database";
+    return;
+  }
+
+  queued_actions_.clear();
+
+  // Not wrapped in a transaction because a late failure shouldn't undo a
+  // previous deletion.
+  std::string sql_str = base::StringPrintf("DELETE FROM %s", kTableName);
+  sql::Statement statement(db->GetCachedStatement(
+      sql::StatementID(SQL_FROM_HERE),
+      sql_str.c_str()));
+  if (!statement.Run()) {
+    LOG(ERROR) << "Deleting the database failed: "
+               << statement.GetSQLStatement();
+    return;
+  }
+  statement.Clear();
+  statement.Assign(db->GetCachedStatement(sql::StatementID(SQL_FROM_HERE),
+                                          "DELETE FROM string_ids"));
+  if (!statement.Run()) {
+    LOG(ERROR) << "Deleting the database failed: "
+               << statement.GetSQLStatement();
+    return;
+  }
+  statement.Clear();
+  statement.Assign(db->GetCachedStatement(sql::StatementID(SQL_FROM_HERE),
+                                          "DELETE FROM url_ids"));
+  if (!statement.Run()) {
+    LOG(ERROR) << "Deleting the database failed: "
+               << statement.GetSQLStatement();
+    return;
+  }
+  statement.Clear();
+  statement.Assign(db->GetCachedStatement(sql::StatementID(SQL_FROM_HERE),
+                                          "VACUUM"));
+  if (!statement.Run()) {
+    LOG(ERROR) << "Vacuuming the database failed: "
+               << statement.GetSQLStatement();
+  }
+}
+
+void CountingPolicy::ReadFilteredData(
     const std::string& extension_id,
-    const int day,
-    const base::Callback<void(scoped_ptr<Action::ActionVector>)>& callback) {
+    const Action::ActionType type,
+    const std::string& api_name,
+    const std::string& page_url,
+    const std::string& arg_url,
+    const int days_ago,
+    const base::Callback
+        <void(scoped_ptr<Action::ActionVector>)>& callback) {
   BrowserThread::PostTaskAndReplyWithResult(
       BrowserThread::DB,
       FROM_HERE,
-      base::Bind(&CountingPolicy::DoReadData,
+      base::Bind(&CountingPolicy::DoReadFilteredData,
                  base::Unretained(this),
                  extension_id,
-                 day),
+                 type,
+                 api_name,
+                 page_url,
+                 arg_url,
+                 days_ago),
       callback);
+}
+
+void CountingPolicy::RemoveURLs(const std::vector<GURL>& restrict_urls) {
+  ScheduleAndForget(this, &CountingPolicy::DoRemoveURLs, restrict_urls);
+}
+
+void CountingPolicy::RemoveExtensionData(const std::string& extension_id) {
+  ScheduleAndForget(this, &CountingPolicy::DoRemoveExtensionData, extension_id);
+}
+
+void CountingPolicy::DeleteDatabase() {
+  ScheduleAndForget(this, &CountingPolicy::DoDeleteDatabase);
 }
 
 void CountingPolicy::OnDatabaseFailure() {

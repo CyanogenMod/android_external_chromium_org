@@ -1,61 +1,77 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "ui/views/widget/desktop_aura/desktop_capture_client.h"
 
 #include "ui/aura/root_window.h"
+#include "ui/aura/window.h"
 
 namespace views {
 
-std::set<DesktopCaptureClient*> DesktopCaptureClient::live_capture_clients_;
+// static
+DesktopCaptureClient::CaptureClients*
+DesktopCaptureClient::capture_clients_ = NULL;
 
-DesktopCaptureClient::DesktopCaptureClient(aura::RootWindow* root_window)
-    : root_window_(root_window),
+DesktopCaptureClient::DesktopCaptureClient(aura::Window* root)
+    : root_(root),
       capture_window_(NULL) {
-  aura::client::SetCaptureClient(root_window_, this);
-  live_capture_clients_.insert(this);
+  if (!capture_clients_)
+    capture_clients_ = new CaptureClients;
+  capture_clients_->insert(this);
+  aura::client::SetCaptureClient(root, this);
 }
 
 DesktopCaptureClient::~DesktopCaptureClient() {
-  live_capture_clients_.erase(this);
-  aura::client::SetCaptureClient(root_window_, NULL);
+  aura::client::SetCaptureClient(root_, NULL);
+  capture_clients_->erase(this);
 }
 
-void DesktopCaptureClient::SetCapture(aura::Window* window) {
-  if (capture_window_ == window)
+void DesktopCaptureClient::SetCapture(aura::Window* new_capture_window) {
+  if (capture_window_ == new_capture_window)
     return;
-  if (window) {
-    // If we're actually starting capture, then cancel any touches/gestures
-    // that aren't already locked to the new window, and transfer any on the
-    // old capture window to the new one.  When capture is released we have no
-    // distinction between the touches/gestures that were in the window all
-    // along (and so shouldn't be canceled) and those that got moved, so
-    // just leave them all where they are.
-    for (std::set<DesktopCaptureClient*>::iterator it =
-             live_capture_clients_.begin(); it != live_capture_clients_.end();
-         ++it) {
-      (*it)->root_window_->gesture_recognizer()->TransferEventsTo(
-          capture_window_, window);
-    }
-  }
-  aura::Window* old_capture_window = GetCaptureWindow();
-  capture_window_ = window;
 
-  if (capture_window_) {
-    root_window_->SetNativeCapture();
+  // We should only ever be told to capture a child of |root_|. Otherwise
+  // things are going to be really confused.
+  DCHECK(!new_capture_window ||
+         (new_capture_window->GetRootWindow() == root_));
+  DCHECK(!capture_window_ || capture_window_->GetRootWindow());
 
-    for (std::set<DesktopCaptureClient*>::iterator it =
-             live_capture_clients_.begin(); it != live_capture_clients_.end();
-         ++it) {
-      if (*it != this)
-        (*it)->OnOtherCaptureClientTookCapture();
-    }
-  } else {
-    root_window_->ReleaseNativeCapture();
+  aura::Window* old_capture_window = capture_window_;
+
+  // If we're actually starting capture, then cancel any touches/gestures
+  // that aren't already locked to the new window, and transfer any on the
+  // old capture window to the new one.  When capture is released we have no
+  // distinction between the touches/gestures that were in the window all
+  // along (and so shouldn't be canceled) and those that got moved, so
+  // just leave them all where they are.
+  if (new_capture_window) {
+    ui::GestureRecognizer::Get()->TransferEventsTo(old_capture_window,
+        new_capture_window);
   }
 
-  root_window_->UpdateCapture(old_capture_window, capture_window_);
+  capture_window_ = new_capture_window;
+
+  aura::client::CaptureDelegate* delegate = root_->GetDispatcher();
+  delegate->UpdateCapture(old_capture_window, new_capture_window);
+
+  // Initiate native capture updating.
+  if (!capture_window_) {
+    delegate->ReleaseNativeCapture();
+  } else if (!old_capture_window) {
+    delegate->SetNativeCapture();
+
+    // Notify the other roots that we got capture. This is important so that
+    // they reset state.
+    CaptureClients capture_clients(*capture_clients_);
+    for (CaptureClients::iterator i = capture_clients.begin();
+         i != capture_clients.end(); ++i) {
+      if (*i != this) {
+        aura::client::CaptureDelegate* delegate = (*i)->root_->GetDispatcher();
+        delegate->OnOtherRootGotCapture();
+      }
+    }
+  }  // else case is capture is remaining in our root, nothing to do.
 }
 
 void DesktopCaptureClient::ReleaseCapture(aura::Window* window) {
@@ -65,24 +81,16 @@ void DesktopCaptureClient::ReleaseCapture(aura::Window* window) {
 }
 
 aura::Window* DesktopCaptureClient::GetCaptureWindow() {
-  for (std::set<DesktopCaptureClient*>::iterator it =
-            live_capture_clients_.begin(); it != live_capture_clients_.end();
-        ++it) {
-    if ((*it)->capture_window_)
-      return (*it)->capture_window_;
-  }
-  return NULL;
+  return capture_window_;
 }
 
-void DesktopCaptureClient::OnOtherCaptureClientTookCapture() {
-  if (capture_window_ == NULL) {
-    // While RootWindow may not technically have capture, it will store state
-    // that needs to be cleared on capture changed regarding mouse up/down.
-    root_window_->ClearMouseHandlers();
+aura::Window* DesktopCaptureClient::GetGlobalCaptureWindow() {
+  for (CaptureClients::iterator i = capture_clients_->begin();
+       i != capture_clients_->end(); ++i) {
+    if ((*i)->capture_window_)
+      return (*i)->capture_window_;
   }
-  else {
-    SetCapture(NULL);
-  }
+  return NULL;
 }
 
 }  // namespace views

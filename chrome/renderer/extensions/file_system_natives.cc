@@ -16,6 +16,7 @@
 #include "third_party/WebKit/public/platform/WebFileSystem.h"
 #include "third_party/WebKit/public/platform/WebFileSystemType.h"
 #include "third_party/WebKit/public/platform/WebString.h"
+#include "third_party/WebKit/public/web/WebDOMError.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
 #include "webkit/common/fileapi/file_system_types.h"
 #include "webkit/common/fileapi/file_system_util.h"
@@ -32,6 +33,9 @@ FileSystemNatives::FileSystemNatives(ChromeV8Context* context)
   RouteFunction("CrackIsolatedFileSystemName",
       base::Bind(&FileSystemNatives::CrackIsolatedFileSystemName,
                  base::Unretained(this)));
+  RouteFunction("GetDOMError",
+      base::Bind(&FileSystemNatives::GetDOMError,
+                 base::Unretained(this)));
 }
 
 void FileSystemNatives::GetIsolatedFileSystem(
@@ -39,8 +43,8 @@ void FileSystemNatives::GetIsolatedFileSystem(
   DCHECK(args.Length() == 1 || args.Length() == 2);
   DCHECK(args[0]->IsString());
   std::string file_system_id(*v8::String::Utf8Value(args[0]));
-  WebKit::WebFrame* webframe =
-      WebKit::WebFrame::frameForContext(context()->v8_context());
+  blink::WebFrame* webframe =
+      blink::WebFrame::frameForContext(context()->v8_context());
   DCHECK(webframe);
 
   GURL context_url =
@@ -64,9 +68,9 @@ void FileSystemNatives::GetIsolatedFileSystem(
       optional_root_name));
 
   args.GetReturnValue().Set(webframe->createFileSystem(
-      WebKit::WebFileSystemTypeIsolated,
-      WebKit::WebString::fromUTF8(name),
-      WebKit::WebString::fromUTF8(root)));
+      blink::WebFileSystemTypeIsolated,
+      blink::WebString::fromUTF8(name),
+      blink::WebString::fromUTF8(root)));
 }
 
 void FileSystemNatives::GetFileEntry(
@@ -74,7 +78,7 @@ void FileSystemNatives::GetFileEntry(
   DCHECK(args.Length() == 5);
   DCHECK(args[0]->IsString());
   std::string type_string = *v8::String::Utf8Value(args[0]->ToString());
-  WebKit::WebFileSystemType type;
+  blink::WebFileSystemType type;
   bool is_valid_type = fileapi::GetFileSystemPublicType(type_string, &type);
   DCHECK(is_valid_type);
   if (is_valid_type == false) {
@@ -93,14 +97,14 @@ void FileSystemNatives::GetFileEntry(
   DCHECK(args[4]->IsBoolean());
   bool is_directory = args[4]->BooleanValue();
 
-  WebKit::WebFrame* webframe =
-      WebKit::WebFrame::frameForContext(context()->v8_context());
+  blink::WebFrame* webframe =
+      blink::WebFrame::frameForContext(context()->v8_context());
   DCHECK(webframe);
   args.GetReturnValue().Set(webframe->createFileEntry(
       type,
-      WebKit::WebString::fromUTF8(file_system_name),
-      WebKit::WebString::fromUTF8(file_system_root_url),
-      WebKit::WebString::fromUTF8(file_path_string),
+      blink::WebString::fromUTF8(file_system_name),
+      blink::WebString::fromUTF8(file_system_root_url),
+      blink::WebString::fromUTF8(file_path_string),
       is_directory));
 }
 
@@ -113,8 +117,39 @@ void FileSystemNatives::CrackIsolatedFileSystemName(
   if (!fileapi::CrackIsolatedFileSystemName(filesystem_name, &filesystem_id))
     return;
 
-  args.GetReturnValue().Set(
-      v8::String::New(filesystem_id.c_str(), filesystem_id.size()));
+  args.GetReturnValue().Set(v8::String::NewFromUtf8(args.GetIsolate(),
+                                                    filesystem_id.c_str(),
+                                                    v8::String::kNormalString,
+                                                    filesystem_id.size()));
+}
+
+void FileSystemNatives::GetDOMError(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
+  if (args.Length() != 2) {
+    NOTREACHED();
+    return;
+  }
+  if (!args[0]->IsString()) {
+    NOTREACHED();
+    return;
+  }
+  if (!args[1]->IsString()) {
+    NOTREACHED();
+    return;
+  }
+
+  std::string name(*v8::String::Utf8Value(args[0]));
+  if (name.empty()) {
+    NOTREACHED();
+    return;
+  }
+  std::string message(*v8::String::Utf8Value(args[1]));
+  // message is optional hence empty is fine.
+
+  blink::WebDOMError dom_error = blink::WebDOMError::create(
+      blink::WebString::fromUTF8(name),
+      blink::WebString::fromUTF8(message));
+  args.GetReturnValue().Set(dom_error.toV8Value());
 }
 
 }  // namespace extensions

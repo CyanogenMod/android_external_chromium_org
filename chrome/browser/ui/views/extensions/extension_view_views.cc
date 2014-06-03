@@ -12,8 +12,12 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
 #include "extensions/common/view_type.h"
-#include "ui/base/events/event.h"
+#include "ui/events/event.h"
 #include "ui/views/widget/widget.h"
+
+#if defined(USE_AURA)
+#include "ui/base/cursor/cursor.h"
+#endif
 
 ExtensionViewViews::ExtensionViewViews(extensions::ExtensionHost* host,
                                        Browser* browser)
@@ -25,7 +29,7 @@ ExtensionViewViews::ExtensionViewViews(extensions::ExtensionHost* host,
   // This view needs to be focusable so it can act as the focused view for the
   // focus manager. This is required to have SkipDefaultKeyEventProcessing
   // called so the tab key events are forwarded to the renderer.
-  set_focusable(true);
+  SetFocusable(true);
 }
 
 ExtensionViewViews::~ExtensionViewViews() {
@@ -92,6 +96,16 @@ void ExtensionViewViews::ShowIfCompletelyLoaded() {
     SetVisible(true);
     ResizeDueToAutoResize(pending_preferred_size_);
   }
+}
+
+void ExtensionViewViews::SetMinimumSize(const gfx::Size& size) {
+  minimum_size_ = size;
+}
+
+gfx::Size ExtensionViewViews::GetMinimumSize() {
+  // If the minimum size has never been set, returns the preferred size (same
+  // behavior as views::View).
+  return (minimum_size_ == gfx::Size()) ? GetPreferredSize() : minimum_size_;
 }
 
 void ExtensionViewViews::CleanUp() {

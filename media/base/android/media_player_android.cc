@@ -19,66 +19,8 @@ MediaPlayerAndroid::MediaPlayerAndroid(
 
 MediaPlayerAndroid::~MediaPlayerAndroid() {}
 
-void MediaPlayerAndroid::OnMediaError(int error_type) {
-  manager_->OnError(player_id_, error_type);
-}
-
-void MediaPlayerAndroid::OnVideoSizeChanged(int width, int height) {
-  manager_->OnVideoSizeChanged(player_id_, width, height);
-}
-
-void MediaPlayerAndroid::OnBufferingUpdate(int percent) {
-  manager_->OnBufferingUpdate(player_id_, percent);
-}
-
-void MediaPlayerAndroid::OnPlaybackComplete() {
-  manager_->OnPlaybackComplete(player_id_);
-}
-
-void MediaPlayerAndroid::OnMediaInterrupted() {
-  manager_->OnMediaInterrupted(player_id_);
-}
-
-void MediaPlayerAndroid::OnSeekComplete() {
-  manager_->OnSeekComplete(player_id_, GetCurrentTime());
-}
-
-void MediaPlayerAndroid::OnTimeUpdated() {
-  manager_->OnTimeUpdate(player_id_, GetCurrentTime());
-}
-
-void MediaPlayerAndroid::OnMediaMetadataChanged(
-    base::TimeDelta duration, int width, int height, bool success) {
-  manager_->OnMediaMetadataChanged(
-      player_id_, duration, width, height, success);
-}
-
-void MediaPlayerAndroid::RequestMediaResourcesFromManager() {
-  if (manager_)
-    manager_->RequestMediaResources(player_id_);
-}
-
-void MediaPlayerAndroid::ReleaseMediaResourcesFromManager() {
-  if (manager_)
-    manager_->ReleaseMediaResources(player_id_);
-}
-
-void MediaPlayerAndroid::DemuxerReady(
-    const MediaPlayerHostMsg_DemuxerReady_Params& params) {
-  NOTREACHED() << "Unexpected ipc received";
-}
-
-void MediaPlayerAndroid::ReadFromDemuxerAck(
-    const MediaPlayerHostMsg_ReadFromDemuxerAck_Params& params) {
-  NOTREACHED() << "Unexpected ipc received";
-}
-
-void MediaPlayerAndroid::OnSeekRequestAck(unsigned seek_request_id) {
-  NOTREACHED() << "Unexpected ipc received";
-}
-
-void MediaPlayerAndroid::DurationChanged(const base::TimeDelta& duration) {
-  NOTREACHED() << "Unexpected ipc received";
+bool MediaPlayerAndroid::IsRemote() const {
+  return false;
 }
 
 GURL MediaPlayerAndroid::GetUrl() {
@@ -91,6 +33,11 @@ GURL MediaPlayerAndroid::GetFirstPartyForCookies() {
 
 void MediaPlayerAndroid::SetDrmBridge(MediaDrmBridge* drm_bridge) {
   // Not all players support DrmBridge. Do nothing by default.
+  return;
+}
+
+void MediaPlayerAndroid::OnKeyAdded() {
+  // Not all players care about the decryption key. Do nothing by default.
   return;
 }
 

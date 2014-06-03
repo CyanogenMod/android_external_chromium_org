@@ -61,7 +61,7 @@ struct CustomHomePagesTableModel::Entry {
   GURL url;
 
   // Page title.  If this is empty, we'll display the URL as the entry.
-  string16 title;
+  base::string16 title;
 
   // If non-zero, indicates we're loading the title for the page.
   HistoryService::Handle title_handle;
@@ -96,7 +96,7 @@ void CustomHomePagesTableModel::SetURLs(const std::vector<GURL>& urls) {
  */
 void CustomHomePagesTableModel::MoveURLs(int insert_before,
                                          const std::vector<int>& index_list) {
-  DCHECK(!index_list.empty());
+  if (index_list.empty()) return;
   DCHECK(insert_before >= 0 && insert_before <= RowCount());
 
   // The range of elements that needs to be reshuffled is [ |first|, |last| ).
@@ -204,14 +204,14 @@ int CustomHomePagesTableModel::RowCount() {
   return static_cast<int>(entries_.size());
 }
 
-string16 CustomHomePagesTableModel::GetText(int row, int column_id) {
+base::string16 CustomHomePagesTableModel::GetText(int row, int column_id) {
   DCHECK(column_id == 0);
   DCHECK(row >= 0 && row < RowCount());
   return entries_[row].title.empty() ? FormattedURL(row) : entries_[row].title;
 }
 
-string16 CustomHomePagesTableModel::GetTooltip(int row) {
-  return entries_[row].title.empty() ? string16() :
+base::string16 CustomHomePagesTableModel::GetTooltip(int row) {
+  return entries_[row].title.empty() ? base::string16() :
       l10n_util::GetStringFUTF16(IDS_OPTIONS_STARTUP_PAGE_TOOLTIP,
                                  entries_[row].title, FormattedURL(row));
 }
@@ -264,10 +264,10 @@ CustomHomePagesTableModel::Entry*
   return NULL;
 }
 
-string16 CustomHomePagesTableModel::FormattedURL(int row) const {
+base::string16 CustomHomePagesTableModel::FormattedURL(int row) const {
   std::string languages =
       profile_->GetPrefs()->GetString(prefs::kAcceptLanguages);
-  string16 url = net::FormatUrl(entries_[row].url, languages);
+  base::string16 url = net::FormatUrl(entries_[row].url, languages);
   url = base::i18n::GetDisplayStringInLTRDirectionality(url);
   return url;
 }

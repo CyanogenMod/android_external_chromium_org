@@ -12,14 +12,17 @@
 #include "base/files/file_path.h"
 #include "base/lazy_instance.h"
 #include "chrome/app/chrome_breakpad_client.h"
-#include "chrome/app/breakpad_win.h"
 #include "chrome/app/client_util.h"
 #include "chrome/app/metro_driver_win.h"
 #include "chrome/browser/chrome_process_finder_win.h"
 #include "chrome/browser/policy/policy_path_parser.h"
+#include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths_internal.h"
 #include "chrome/common/chrome_switches.h"
-#include "components/breakpad/breakpad_client.h"
+#include "chrome_elf/chrome_elf_main.h"
+#include "components/breakpad/app/breakpad_client.h"
+#include "components/breakpad/app/breakpad_win.h"
+#include "components/startup_metric_utils/startup_metric_utils.h"
 #include "content/public/app/startup_helper_win.h"
 #include "content/public/common/result_codes.h"
 #include "sandbox/win/src/sandbox_factory.h"
@@ -29,14 +32,30 @@ namespace {
 base::LazyInstance<chrome::ChromeBreakpadClient>::Leaky
     g_chrome_breakpad_client = LAZY_INSTANCE_INITIALIZER;
 
+void CheckSafeModeLaunch() {
+  unsigned short k1 = ::GetAsyncKeyState(VK_CONTROL);
+  unsigned short k2 = ::GetAsyncKeyState(VK_MENU);
+  const unsigned short kPressedMask = 0x8000;
+  if ((k1 & kPressedMask) && (k2 & kPressedMask))
+    ::SetEnvironmentVariableA(chrome::kSafeModeEnvVar, "1");
+}
+
 int RunChrome(HINSTANCE instance) {
   breakpad::SetBreakpadClient(g_chrome_breakpad_client.Pointer());
 
+  CheckSafeModeLaunch();
+
   bool exit_now = true;
   // We restarted because of a previous crash. Ask user if we should relaunch.
-  if (ShowRestartDialogIfCrashed(&exit_now)) {
-    if (exit_now)
-      return content::RESULT_CODE_NORMAL_EXIT;
+  // Only show this for the browser process. See crbug.com/132119.
+  const std::string process_type =
+      CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+          switches::kProcessType);
+  if (process_type.empty()) {
+    if (breakpad::ShowRestartDialogIfCrashed(&exit_now)) {
+      if (exit_now)
+        return content::RESULT_CODE_NORMAL_EXIT;
+    }
   }
 
   // Initialize the sandbox services.
@@ -100,6 +119,7 @@ bool AttemptFastNotify(const CommandLine& command_line) {
 }  // namespace
 
 int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE prev, wchar_t*, int) {
+  startup_metric_utils::RecordExeMainEntryTime();
   // Initialize the commandline singleton from the environment.
   CommandLine::Init(0, NULL);
   // The exit manager is in charge of calling the dtors of singletons.
@@ -107,6 +127,10 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE prev, wchar_t*, int) {
 
   if (AttemptFastNotify(*CommandLine::ForCurrentProcess()))
     return 0;
+
+  // The purpose of this call is to force the addition of an entry in the IAT
+  // for chrome_elf.dll to force a load time dependency.
+  InitChromeElf();
 
   MetroDriver metro_driver;
   if (metro_driver.in_metro_mode())

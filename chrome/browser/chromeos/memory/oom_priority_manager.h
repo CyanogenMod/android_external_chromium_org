@@ -52,7 +52,7 @@ class OomPriorityManager : public content::NotificationObserver,
 
   // Returns list of tab titles sorted from most interesting (don't kill)
   // to least interesting (OK to kill).
-  std::vector<string16> GetTabTitles();
+  std::vector<base::string16> GetTabTitles();
 
   // Discards a tab to free the memory occupied by its renderer.
   // Tab still exists in the tab-strip; clicking on it will reload it.
@@ -80,7 +80,7 @@ class OomPriorityManager : public content::NotificationObserver,
     bool is_discarded;
     base::TimeTicks last_selected;
     base::ProcessHandle renderer_handle;
-    string16 title;
+    base::string16 title;
     int64 tab_contents_id;  // unique ID per WebContents
   };
   typedef std::vector<TabStats> TabStatsList;
@@ -143,8 +143,7 @@ class OomPriorityManager : public content::NotificationObserver,
   ProcessScoreMap pid_to_oom_score_;
   base::ProcessHandle focused_tab_pid_;
 
-  // Observer for the kernel low memory signal.  NULL if tab discarding is
-  // disabled.
+  // Observer for the kernel low memory signal.
   scoped_ptr<LowMemoryListener> low_memory_listener_;
 
   // Wall-clock time when the priority manager started running.
@@ -168,6 +167,6 @@ class OomPriorityManager : public content::NotificationObserver,
   DISALLOW_COPY_AND_ASSIGN(OomPriorityManager);
 };
 
-}  // namespace chrome
+}  // namespace chromeos
 
 #endif  // CHROME_BROWSER_CHROMEOS_MEMORY_OOM_PRIORITY_MANAGER_H_

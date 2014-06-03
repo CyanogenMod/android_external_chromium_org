@@ -4,39 +4,21 @@
 
 #include "chrome/browser/chromeos/login/managed/locally_managed_user_login_flow.h"
 
-#include "base/file_util.h"
-#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/prefs/pref_registry_simple.h"
 #include "base/prefs/pref_service.h"
-#include "base/threading/sequenced_worker_pool.h"
 #include "base/values.h"
 #include "chrome/browser/chromeos/login/login_display_host_impl.h"
 #include "chrome/browser/chromeos/login/login_utils.h"
 #include "chrome/browser/chromeos/login/managed/locally_managed_user_constants.h"
 #include "chrome/browser/chromeos/login/managed/locally_managed_user_creation_screen.h"
+#include "chrome/browser/chromeos/login/supervised_user_manager.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
-#include "chrome/browser/managed_mode/managed_user_service.h"
-#include "chrome/browser/managed_mode/managed_user_service_factory.h"
 #include "content/public/browser/browser_thread.h"
 
 using content::BrowserThread;
 
 namespace chromeos {
-
-namespace {
-
-std::string LoadSyncToken() {
-  std::string token;
-  base::FilePath token_file =
-      file_util::GetHomeDir().Append(kManagedUserTokenFilename);
-  if (!file_util::ReadFileToString(token_file, &token)) {
-    return std::string();
-  }
-  return token;
-}
-
-} // namespace
 
 LocallyManagedUserLoginFlow::LocallyManagedUserLoginFlow(
     const std::string& user_id)
@@ -71,13 +53,17 @@ void LocallyManagedUserLoginFlow::HandleOAuthTokenStatusChange(
 void LocallyManagedUserLoginFlow::OnSyncSetupDataLoaded(
     const std::string& token) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  // TODO(antrim): add error handling (no token loaded).
   ConfigureSync(token);
 }
 
 void LocallyManagedUserLoginFlow::ConfigureSync(const std::string& token) {
   data_loaded_ = true;
-  ManagedUserServiceFactory::GetForProfile(profile_)->InitSync(token);
+
+  // TODO(antrim): add error handling (no token loaded).
+  // See also: http://crbug.com/312751
+  UserManager::Get()->GetSupervisedUserManager()->ConfigureSyncWithToken(
+      profile_, token);
+
   LoginUtils::Get()->DoBrowserLaunch(profile_, host());
   profile_ = NULL;
   UnregisterFlowSoon();
@@ -86,18 +72,11 @@ void LocallyManagedUserLoginFlow::ConfigureSync(const std::string& token) {
 void LocallyManagedUserLoginFlow::LaunchExtraSteps(
     Profile* profile) {
   profile_ = profile;
-  const std::string token;
-  if (token.empty()) {
-    PostTaskAndReplyWithResult(
-        content::BrowserThread::GetBlockingPool(),
-        FROM_HERE,
-        base::Bind(&LoadSyncToken),
-        base::Bind(
-             &LocallyManagedUserLoginFlow::OnSyncSetupDataLoaded,
-             weak_factory_.GetWeakPtr()));
-  } else {
-    ConfigureSync(token);
-  }
+  UserManager::Get()->GetSupervisedUserManager()->LoadSupervisedUserToken(
+      profile,
+      base::Bind(
+           &LocallyManagedUserLoginFlow::OnSyncSetupDataLoaded,
+           weak_factory_.GetWeakPtr()));
 }
 
 }  // namespace chromeos

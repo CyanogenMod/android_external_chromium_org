@@ -87,14 +87,15 @@ class InternetOptionsHandler
   void UpdateCarrier();
 
   // NetworkStateHandlerObserver
-  virtual void NetworkManagerChanged() OVERRIDE;
+  virtual void DeviceListChanged() OVERRIDE;
   virtual void NetworkListChanged() OVERRIDE;
+  virtual void NetworkConnectionStateChanged(
+      const chromeos::NetworkState* network) OVERRIDE;
   virtual void NetworkPropertiesUpdated(
       const chromeos::NetworkState* network) OVERRIDE;
 
   // chromeos::LoginState::Observer
-  virtual void LoggedInStateChanged(
-      chromeos::LoginState::LoggedInState) OVERRIDE;
+  virtual void LoggedInStateChanged() OVERRIDE;
 
   // Updates the logged in user type.
   void UpdateLoggedInUserType();
@@ -122,10 +123,6 @@ class InternetOptionsHandler
   // Gets the native window for hosting dialogs, etc.
   gfx::NativeWindow GetNativeWindow() const;
 
-  // Returns the last active browser. If there is no such browser, creates a new
-  // browser window with an empty tab and returns it.
-  Browser* GetAppropriateBrowser();
-
   // Handle various network commands and clicks on a network item
   // in the network list.
   // |args| must be { network_type, service_path, command } with 'command'
@@ -151,6 +148,9 @@ class InternetOptionsHandler
   void FillNetworkInfo(base::DictionaryValue* dictionary);
 
   content::NotificationRegistrar registrar_;
+
+  // Keep track of the service path for the network shown in the Details view.
+  std::string details_path_;
 
   // Weak pointer factory so we can start connections at a later time
   // without worrying that they will actually try to happen after the lifetime

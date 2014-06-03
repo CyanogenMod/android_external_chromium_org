@@ -20,19 +20,31 @@ cr.define('cr.login', function() {
    * Base URL of gaia auth extension.
    * @const
    */
-  var AUTH_URL_BASE = 'chrome-extension://mfffpogegjflfpflabcdkioaeobkgjik/';
+  var AUTH_URL_BASE = 'chrome-extension://mfffpogegjflfpflabcdkioaeobkgjik';
 
   /**
    * Auth URL to use for online flow.
    * @const
    */
-  var AUTH_URL = AUTH_URL_BASE + 'main.html';
+  var AUTH_URL = AUTH_URL_BASE + '/main.html';
 
   /**
    * Auth URL to use for offline flow.
    * @const
    */
-  var OFFLINE_AUTH_URL = AUTH_URL_BASE + 'offline.html';
+  var OFFLINE_AUTH_URL = AUTH_URL_BASE + '/offline.html';
+
+  /**
+   * Auth URL to use for inline flow.
+   * @const
+   */
+  var INLINE_AUTH_URL = AUTH_URL_BASE + '/inline_main.html';
+
+  /**
+   * Origin of the gaia sign in page.
+   * @const
+   */
+  var GAIA_ORIGIN = 'https://accounts.google.com';
 
   /**
    * Supported params of auth extension. For a complete list, check out the
@@ -42,8 +54,14 @@ cr.define('cr.login', function() {
    */
   var SUPPORTED_PARAMS = [
     'gaiaUrl',       // Gaia url to use;
+    'gaiaPath',      // Gaia path to use without a leading slash;
     'hl',            // Language code for the user interface;
-    'email'          // Pre-fill the email field in Gaia UI;
+    'email',         // Pre-fill the email field in Gaia UI;
+    'service',       // Name of Gaia service;
+    'continueUrl',   // Continue url to use;
+    'partitionId',   // Partition ID for the embedded Gaia webview;
+    'frameUrl',      // Initial frame URL to use. If empty defaults to gaiaUrl.
+    'constrained'    // Whether the extension is loaded in a constrained window;
   ];
 
   /**
@@ -62,6 +80,17 @@ cr.define('cr.login', function() {
   ];
 
   /**
+   * Enum for the authorization mode, must match AuthMode defined in
+   * chrome/browser/ui/webui/inline_login_ui.cc.
+   * @enum {number}
+   */
+  var AuthMode = {
+    DEFAULT: 0,
+    OFFLINE: 1,
+    INLINE: 2
+  };
+
+  /**
    * Creates a new gaia auth extension host.
    * @param {HTMLIFrameElement|string} container The iframe element or its id
    *     to host the auth extension.
@@ -73,6 +102,8 @@ cr.define('cr.login', function() {
     assert(this.frame_);
     window.addEventListener('message',
                             this.onMessage_.bind(this), false);
+    window.addEventListener('popstate',
+                            this.onPopState_.bind(this), false);
   }
 
   GaiaAuthHost.prototype = {
@@ -94,7 +125,7 @@ cr.define('cr.login', function() {
      *   email: 'xx@gmail.com',
      *   password: 'xxxx',  // May not present
      *   authCode: 'x/xx',  // May not present
-     *   useOffline: false  // Whether the authentication uses the offline flow.
+     *   authMode: 'x',     // Authorization mode, default/inline/offline.
      * }
      * }
      * </pre>
@@ -102,6 +133,34 @@ cr.define('cr.login', function() {
      * @private
      */
     successCallback_: null,
+
+    /**
+     * Invoked when the auth flow needs a user to confirm his/her passwords.
+     * This could happen when there are more than one passwords scraped during
+     * SAML flow. The embedder of GaiaAuthHost should show an UI to collect a
+     * password from user then call GaiaAuthHost.verifyConfirmedPassword to
+     * verify. If the password is good, the auth flow continues with success
+     * path. Otherwise, confirmPasswordCallback_ is invoked again.
+     * @type {function()}
+     */
+    confirmPasswordCallback_: null,
+
+    /**
+     * Similar to confirmPasswordCallback_ but is used when there is no
+     * password scraped after a success authentication. The authenticated user
+     * account is passed to the callback. The embedder should take over the
+     * flow and decide what to do next.
+     * @type {function(string)}
+     */
+    noPasswordCallback_: null,
+
+    /**
+     * Invoked when the auth page hosted inside the extension is loaded.
+     * Param {@code saml} is true when the auth page is a SAML page (out of
+     * Gaia domain.
+     * @type {function{boolean)}
+     */
+    authPageLoadedCallback_: null,
 
     /**
      * The iframe container.
@@ -112,15 +171,39 @@ cr.define('cr.login', function() {
     },
 
     /**
+     * Sets confirmPasswordCallback_.
+     * @type {function()}
+     */
+    set confirmPasswordCallback(callback) {
+      this.confirmPasswordCallback_ = callback;
+    },
+
+    /**
+     * Sets noPasswordCallback_.
+     * @type {function()}
+     */
+    set noPasswordCallback(callback) {
+      this.noPasswordCallback_ = callback;
+    },
+
+    /**
+     * Sets authPageLoadedCallback_.
+     * @type {function(boolean)}
+     */
+    set authPageLoadedCallback(callback) {
+      this.authPageLoadedCallback_ = callback;
+    },
+
+    /**
      * Loads the auth extension.
-     * @param {boolean} useOffline Whether to use offline url or not.
+     * @param {AuthMode} authMode Authorization mode.
      * @param {Object} data Parameters for the auth extension. See the auth
      *     extension's main.js for all supported params and their defaults.
      * @param {function(Object)} successCallback A function to be called when
      *     the authentication is completed successfully. The callback is
      *     invoked with a credential object.
      */
-    load: function(useOffline, data, successCallback) {
+    load: function(authMode, data, successCallback) {
       var params = [];
 
       var populateParams = function(nameList, values) {
@@ -138,7 +221,18 @@ cr.define('cr.login', function() {
       populateParams(LOCALIZED_STRING_PARAMS, data.localizedStrings);
       params.push('parentPage=' + encodeURIComponent(window.location.origin));
 
-      var url = useOffline ? OFFLINE_AUTH_URL : AUTH_URL;
+      var url;
+      switch (authMode) {
+        case AuthMode.OFFLINE:
+          url = OFFLINE_AUTH_URL;
+          break;
+        case AuthMode.INLINE:
+          url = INLINE_AUTH_URL;
+          params.push('inlineMode=1');
+          break;
+        default:
+          url = AUTH_URL;
+      }
       url += '?' + params.join('&');
 
       this.frame_.src = url;
@@ -151,6 +245,19 @@ cr.define('cr.login', function() {
      */
     reload: function() {
       this.frame_.src = this.reloadUrl_;
+    },
+
+    /**
+     * Verifies the supplied password by sending it to the auth extension,
+     * which will then check if it matches the scraped passwords.
+     * @param {string} password The confirmed password that needs verification.
+     */
+    verifyConfirmedPassword: function(password) {
+      var msg = {
+        method: 'verifyConfirmedPassword',
+        password: password
+      };
+      this.frame_.contentWindow.postMessage(msg, AUTH_URL_BASE);
     },
 
     /**
@@ -181,28 +288,97 @@ cr.define('cr.login', function() {
      * @param {object} e Payload of the received HTML5 message.
      */
     onMessage_: function(e) {
+      var msg = e.data;
+
+      // In the inline sign in flow, the embedded gaia webview posts credential
+      // directly to the inline sign in page, because its parent JavaScript
+      // reference points to the top frame of the embedder instead of the sub
+      // frame of the gaia auth extension.
+      if (e.origin == GAIA_ORIGIN && msg.method == 'attemptLogin') {
+        this.email_ = msg.email;
+        this.password_ = msg.password;
+        this.chooseWhatToSync_ = msg.chooseWhatToSync;
+        return;
+      }
+
       if (!this.isAuthExtMessage_(e))
         return;
-
-      var msg = e.data;
 
       if (msg.method == 'loginUILoaded') {
         cr.dispatchSimpleEvent(this, 'ready');
         return;
       }
 
-      if (!/^complete(Login|Authentication)$|^offlineLogin$/.test(msg.method))
+      if (/^complete(Login|Authentication)$|^offlineLogin$/.test(msg.method)) {
+        this.onAuthSuccess_({email: msg.email || this.email_,
+                             password: msg.password || this.password_,
+                             authCode: msg.authCode,
+                             useOffline: msg.method == 'offlineLogin',
+                             chooseWhatToSync: this.chooseWhatToSync_});
         return;
+      }
 
-      this.onAuthSuccess_({email: msg.email,
-                           password: msg.password,
-                           authCode: msg.authCode,
-                           useOffline: msg.method == 'offlineLogin'});
+      if (msg.method == 'confirmPassword') {
+        if (this.confirmPasswordCallback_)
+          this.confirmPasswordCallback_();
+        else
+          console.error('GaiaAuthHost: Invalid confirmPasswordCallback_.');
+        return;
+      }
+
+      if (msg.method == 'noPassword') {
+        if (this.noPasswordCallback_)
+          this.noPasswordCallback_(msg.email);
+        else
+          console.error('GaiaAuthHost: Invalid noPasswordCallback_.');
+        return;
+      }
+
+      if (msg.method == 'authPageLoaded') {
+        if (this.authPageLoadedCallback_)
+          this.authPageLoadedCallback_(msg.isSAML);
+        return;
+      }
+
+      if (msg.method == 'reportState') {
+        var newUrl = setQueryParam(location, 'frameUrl', msg.src);
+        if (history.state) {
+          if (history.state.src != msg.src) {
+            history.pushState({src: msg.src}, '', newUrl);
+          }
+        } else {
+          history.replaceState({src: msg.src}, '', newUrl);
+        }
+        return;
+      }
+
+      if (msg.method == 'switchToFullTab') {
+        chrome.send('switchToFullTab', [msg.url]);
+        return;
+      }
+
+      console.error('Unknown message method=' + msg.method);
+    },
+
+    /**
+     * Event handler that is invoked when the history state is changed.
+     * @param {object} e The popstate event being triggered.
+     */
+    onPopState_: function(e) {
+      var state = e.state;
+      if (state) {
+        var msg = {
+          method: 'navigate',
+          src: state.src
+        };
+        this.frame_.contentWindow.postMessage(msg, AUTH_URL_BASE);
+      }
     }
   };
 
   GaiaAuthHost.SUPPORTED_PARAMS = SUPPORTED_PARAMS;
   GaiaAuthHost.LOCALIZED_STRING_PARAMS = LOCALIZED_STRING_PARAMS;
+  GaiaAuthHost.AuthMode = AuthMode;
 
   return {
     GaiaAuthHost: GaiaAuthHost

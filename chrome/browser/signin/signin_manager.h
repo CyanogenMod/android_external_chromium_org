@@ -44,6 +44,7 @@ class CookieSettings;
 class GaiaAuthFetcher;
 class ProfileIOData;
 class PrefService;
+class SigninAccountIdHelper;
 class SigninGlobalError;
 class SigninManagerDelegate;
 
@@ -75,20 +76,6 @@ class SigninManager : public SigninManagerBase,
   static bool IsUsernameAllowedByPolicy(const std::string& username,
                                         const std::string& policy);
 
-  // Attempt to sign in this user with ClientLogin. If successful, set a
-  // preference indicating the signed in user and send out a notification,
-  // then start fetching tokens for the user.
-  // This is overridden for test subclasses that don't want to issue auth
-  // requests.
-  virtual void StartSignIn(const std::string& username,
-                           const std::string& password,
-                           const std::string& login_token,
-                           const std::string& login_captcha);
-
-  // Used when a second factor access code was required to complete a signin
-  // attempt.
-  void ProvideSecondFactorAccessCode(const std::string& access_code);
-
   // Attempt to sign in this user with existing credentials from the cookie jar.
   // |session_index| indicates which user account to use if the cookie jar
   // contains a multi-login session. Otherwise the end result of this call is
@@ -104,6 +91,15 @@ class SigninManager : public SigninManagerBase,
       const std::string& username,
       const std::string& password,
       const OAuthTokenFetchedCallback& oauth_fetched_callback);
+
+  // Attempt to sign in this user with the given oauth code. The cookie jar
+  // may not be set up properly for the same user, thus will call the
+  // mergeSession endpoint to populate the cookie jar.
+  virtual void StartSignInWithOAuthCode(
+      const std::string& username,
+      const std::string& password,
+      const std::string& oauth_code,
+      const OAuthTokenFetchedCallback& callback);
 
   // Copies auth credentials from one SigninManager to this one. This is used
   // when creating a new profile during the signin process to transfer the
@@ -155,7 +151,6 @@ class SigninManager : public SigninManagerBase,
   virtual void OnClientOAuthSuccess(const ClientOAuthResult& result) OVERRIDE;
   virtual void OnClientOAuthFailure(
       const GoogleServiceAuthError& error) OVERRIDE;
-  virtual void OnOAuth2RevokeTokenCompleted() OVERRIDE;
   virtual void OnGetUserInfoSuccess(const UserInfoMap& data) OVERRIDE;
   virtual void OnGetUserInfoFailure(
       const GoogleServiceAuthError& error) OVERRIDE;
@@ -164,7 +159,6 @@ class SigninManager : public SigninManagerBase,
   virtual void Observe(int type,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
-
 
   // Tells the SigninManager whether to prohibit signout for this profile.
   // If |prohibit_signout| is true, then signout will be prohibited.
@@ -190,25 +184,24 @@ class SigninManager : public SigninManagerBase,
   bool HasSigninProcess() const;
 
  protected:
-  // If user was signed in, load tokens from DB if available.
-  virtual void InitTokenService() OVERRIDE;
-
   // Flag saying whether signing out is allowed.
   bool prohibit_signout_;
 
  private:
   enum SigninType {
     SIGNIN_TYPE_NONE,
-    SIGNIN_TYPE_CLIENT_LOGIN,
     SIGNIN_TYPE_WITH_CREDENTIALS,
+    SIGNIN_TYPE_WITH_OAUTH_CODE
   };
 
   std::string SigninTypeToString(SigninType type);
-
   friend class FakeSigninManager;
   FRIEND_TEST_ALL_PREFIXES(SigninManagerTest, ClearTransientSigninData);
   FRIEND_TEST_ALL_PREFIXES(SigninManagerTest, ProvideSecondFactorSuccess);
   FRIEND_TEST_ALL_PREFIXES(SigninManagerTest, ProvideSecondFactorFailure);
+
+  // If user was signed in, load tokens from DB if available.
+  void InitTokenService();
 
   // Called to setup the transient signin data during one of the
   // StartSigninXXX methods.  |type| indicates which of the methods is being
@@ -243,10 +236,6 @@ class SigninManager : public SigninManagerBase,
   void HandleAuthError(const GoogleServiceAuthError& error,
                        bool clear_transient_data);
 
-  // Called to tell GAIA that we will no longer be using the current refresh
-  // token.
-  void RevokeOAuthLoginToken();
-
   void OnSigninAllowedPrefChanged();
   void OnGoogleServicesUsernamePatternChanged();
 
@@ -267,6 +256,9 @@ class SigninManager : public SigninManagerBase,
 
   // OAuth revocation fetcher for sign outs.
   scoped_ptr<GaiaAuthFetcher> revoke_token_fetcher_;
+
+  // Fetcher for the obfuscated user id.
+  scoped_ptr<SigninAccountIdHelper> account_id_helper_;
 
   // The type of sign being performed.  This value is valid only between a call
   // to one of the StartSigninXXX methods and when the sign in is either

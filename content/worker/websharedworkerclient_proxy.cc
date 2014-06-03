@@ -7,13 +7,11 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/message_loop/message_loop.h"
-#include "content/child/fileapi/file_system_dispatcher.h"
-#include "content/child/fileapi/webfilesystem_callback_adapters.h"
-#include "content/child/quota_dispatcher.h"
 #include "content/child/webmessageportchannel_impl.h"
 #include "content/common/worker_messages.h"
 #include "content/public/common/content_switches.h"
 #include "content/worker/shared_worker_devtools_agent.h"
+#include "content/worker/shared_worker_permission_client_proxy.h"
 #include "content/worker/websharedworker_stub.h"
 #include "content/worker/worker_thread.h"
 #include "content/worker/worker_webapplicationcachehost_impl.h"
@@ -21,18 +19,17 @@
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
-#include "third_party/WebKit/public/web/WebFileSystemCallbacks.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebSecurityOrigin.h"
 
-using WebKit::WebApplicationCacheHost;
-using WebKit::WebFrame;
-using WebKit::WebMessagePortChannel;
-using WebKit::WebMessagePortChannelArray;
-using WebKit::WebSecurityOrigin;
-using WebKit::WebString;
-using WebKit::WebWorker;
-using WebKit::WebSharedWorkerClient;
+using blink::WebApplicationCacheHost;
+using blink::WebFrame;
+using blink::WebMessagePortChannel;
+using blink::WebMessagePortChannelArray;
+using blink::WebSecurityOrigin;
+using blink::WebString;
+using blink::WebWorker;
+using blink::WebSharedWorkerClient;
 
 namespace content {
 
@@ -51,61 +48,6 @@ WebSharedWorkerClientProxy::WebSharedWorkerClientProxy(
 WebSharedWorkerClientProxy::~WebSharedWorkerClientProxy() {
 }
 
-void WebSharedWorkerClientProxy::postMessageToWorkerObject(
-    const WebString& message,
-    const WebMessagePortChannelArray& channels) {
-  std::vector<int> message_port_ids(channels.size());
-  std::vector<int> routing_ids(channels.size());
-  for (size_t i = 0; i < channels.size(); ++i) {
-    WebMessagePortChannelImpl* webchannel =
-        static_cast<WebMessagePortChannelImpl*>(channels[i]);
-    message_port_ids[i] = webchannel->message_port_id();
-    webchannel->QueueMessages();
-    DCHECK(message_port_ids[i] != MSG_ROUTING_NONE);
-    routing_ids[i] = MSG_ROUTING_NONE;
-  }
-
-  Send(new WorkerMsg_PostMessage(
-      route_id_, message, message_port_ids, routing_ids));
-}
-
-void WebSharedWorkerClientProxy::postExceptionToWorkerObject(
-    const WebString& error_message,
-    int line_number,
-    const WebString& source_url) {
-  Send(new WorkerHostMsg_PostExceptionToWorkerObject(
-      route_id_, error_message, line_number, source_url));
-}
-
-void WebSharedWorkerClientProxy::postConsoleMessageToWorkerObject(
-    int source,
-    int type,
-    int level,
-    const WebString& message,
-    int line_number,
-    const WebString& source_url) {
-  WorkerHostMsg_PostConsoleMessageToWorkerObject_Params params;
-  params.source_identifier = source;
-  params.message_type = type;
-  params.message_level = level;
-  params.message = message;
-  params.line_number = line_number;
-  params.source_url = source_url;
-  Send(new WorkerHostMsg_PostConsoleMessageToWorkerObject(route_id_, params));
-}
-
-void WebSharedWorkerClientProxy::confirmMessageFromWorkerObject(
-    bool has_pending_activity) {
-  Send(new WorkerHostMsg_ConfirmMessageFromWorkerObject(
-      route_id_, has_pending_activity));
-}
-
-void WebSharedWorkerClientProxy::reportPendingActivity(
-    bool has_pending_activity) {
-  Send(new WorkerHostMsg_ReportPendingActivity(
-      route_id_, has_pending_activity));
-}
-
 void WebSharedWorkerClientProxy::workerContextClosed() {
   Send(new WorkerHostMsg_WorkerContextClosed(route_id_));
 }
@@ -117,7 +59,7 @@ void WebSharedWorkerClientProxy::workerContextDestroyed() {
     stub_->Shutdown();
 }
 
-WebKit::WebNotificationPresenter*
+blink::WebNotificationPresenter*
 WebSharedWorkerClientProxy::notificationPresenter() {
   // TODO(johnnyg): Notifications are not yet hooked up to workers.
   // Coming soon.
@@ -126,7 +68,7 @@ WebSharedWorkerClientProxy::notificationPresenter() {
 }
 
 WebApplicationCacheHost* WebSharedWorkerClientProxy::createApplicationCacheHost(
-    WebKit::WebApplicationCacheHostClient* client) {
+    blink::WebApplicationCacheHostClient* client) {
   WorkerWebApplicationCacheHostImpl* host =
       new WorkerWebApplicationCacheHostImpl(stub_->appcache_init_info(),
                                             client);
@@ -136,56 +78,28 @@ WebApplicationCacheHost* WebSharedWorkerClientProxy::createApplicationCacheHost(
   return host;
 }
 
-// TODO(abarth): Security checks should use WebDocument or WebSecurityOrigin,
-// not WebFrame as the context object because WebFrames can contain different
-// WebDocuments at different times.
+blink::WebWorkerPermissionClientProxy*
+WebSharedWorkerClientProxy::createWorkerPermissionClientProxy(
+    const blink::WebSecurityOrigin& origin) {
+  return new SharedWorkerPermissionClientProxy(
+      GURL(origin.toString()), origin.isUnique(), route_id_,
+      ChildThread::current()->thread_safe_sender());
+}
+
+// TODO(kinuko): Deprecate these methods.
 bool WebSharedWorkerClientProxy::allowDatabase(WebFrame* frame,
                                          const WebString& name,
                                          const WebString& display_name,
                                          unsigned long estimated_size) {
-  WebSecurityOrigin origin = frame->document().securityOrigin();
-  if (origin.isUnique())
-    return false;
-
-  bool result = false;
-  Send(new WorkerProcessHostMsg_AllowDatabase(
-      route_id_, GURL(origin.toString().utf8()), name, display_name,
-      estimated_size, &result));
-  return result;
+  return false;
 }
 
 bool WebSharedWorkerClientProxy::allowFileSystem() {
-  bool result = false;
-  Send(new WorkerProcessHostMsg_AllowFileSystem(
-      route_id_, stub_->url().GetOrigin(), &result));
-  return result;
+  return false;
 }
 
-void WebSharedWorkerClientProxy::openFileSystem(
-    WebKit::WebFileSystemType type,
-    long long size,
-    bool create,
-    WebKit::WebFileSystemCallbacks* callbacks) {
-  ChildThread::current()->file_system_dispatcher()->OpenFileSystem(
-      stub_->url().GetOrigin(), static_cast<fileapi::FileSystemType>(type),
-      size, create,
-      base::Bind(&OpenFileSystemCallbackAdapter, callbacks),
-      base::Bind(&FileStatusCallbackAdapter, callbacks));
-}
-
-bool WebSharedWorkerClientProxy::allowIndexedDB(const WebKit::WebString& name) {
-  bool result = false;
-  Send(new WorkerProcessHostMsg_AllowIndexedDB(
-      route_id_, stub_->url().GetOrigin(), name, &result));
-  return result;
-}
-
-void WebSharedWorkerClientProxy::queryUsageAndQuota(
-    WebKit::WebStorageQuotaType type,
-    WebKit::WebStorageQuotaCallbacks* callbacks) {
-  ChildThread::current()->quota_dispatcher()->QueryStorageUsageAndQuota(
-      stub_->url().GetOrigin(), static_cast<quota::StorageType>(type),
-      QuotaDispatcher::CreateWebStorageQuotaCallbacksWrapper(callbacks));
+bool WebSharedWorkerClientProxy::allowIndexedDB(const blink::WebString& name) {
+  return false;
 }
 
 void WebSharedWorkerClientProxy::dispatchDevToolsMessage(
@@ -195,7 +109,7 @@ void WebSharedWorkerClientProxy::dispatchDevToolsMessage(
 }
 
 void WebSharedWorkerClientProxy::saveDevToolsAgentState(
-    const WebKit::WebString& state) {
+    const blink::WebString& state) {
   if (devtools_agent_)
     devtools_agent_->SaveDevToolsAgentState(state);
 }

@@ -21,6 +21,8 @@
 #include "cc/quads/texture_draw_quad.h"
 #include "cc/quads/tile_draw_quad.h"
 #include "cc/quads/yuv_video_draw_quad.h"
+#include "cc/resources/resource_format.h"
+#include "cc/resources/returned_resource.h"
 #include "cc/resources/transferable_resource.h"
 #include "content/common/content_export.h"
 #include "gpu/ipc/gpu_command_buffer_traits.h"
@@ -116,6 +118,8 @@ struct CONTENT_EXPORT ParamTraits<cc::DelegatedFrameData> {
 IPC_ENUM_TRAITS(cc::DrawQuad::Material)
 IPC_ENUM_TRAITS(cc::IOSurfaceDrawQuad::Orientation)
 IPC_ENUM_TRAITS(cc::FilterOperation::FilterType)
+IPC_ENUM_TRAITS_MAX_VALUE(cc::ResourceFormat, cc::RESOURCE_FORMAT_MAX)
+IPC_ENUM_TRAITS_MAX_VALUE(SkXfermode::Mode, SkXfermode::kLastMode)
 
 IPC_STRUCT_TRAITS_BEGIN(cc::RenderPass::Id)
   IPC_STRUCT_TRAITS_MEMBER(layer_id)
@@ -156,7 +160,6 @@ IPC_STRUCT_TRAITS_BEGIN(cc::RenderPassDrawQuad)
   IPC_STRUCT_TRAITS_MEMBER(contents_changed_since_last_frame)
   IPC_STRUCT_TRAITS_MEMBER(mask_uv_rect)
   IPC_STRUCT_TRAITS_MEMBER(filters)
-  IPC_STRUCT_TRAITS_MEMBER(filter)
   IPC_STRUCT_TRAITS_MEMBER(background_filters)
 IPC_STRUCT_TRAITS_END()
 
@@ -210,15 +213,25 @@ IPC_STRUCT_TRAITS_BEGIN(cc::SharedQuadState)
   IPC_STRUCT_TRAITS_MEMBER(clip_rect)
   IPC_STRUCT_TRAITS_MEMBER(is_clipped)
   IPC_STRUCT_TRAITS_MEMBER(opacity)
+  IPC_STRUCT_TRAITS_MEMBER(blend_mode)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(cc::TransferableResource)
   IPC_STRUCT_TRAITS_MEMBER(id)
   IPC_STRUCT_TRAITS_MEMBER(sync_point)
   IPC_STRUCT_TRAITS_MEMBER(format)
+  IPC_STRUCT_TRAITS_MEMBER(target)
   IPC_STRUCT_TRAITS_MEMBER(filter)
   IPC_STRUCT_TRAITS_MEMBER(size)
   IPC_STRUCT_TRAITS_MEMBER(mailbox)
+  IPC_STRUCT_TRAITS_MEMBER(is_software)
+IPC_STRUCT_TRAITS_END()
+
+IPC_STRUCT_TRAITS_BEGIN(cc::ReturnedResource)
+  IPC_STRUCT_TRAITS_MEMBER(id)
+  IPC_STRUCT_TRAITS_MEMBER(sync_point)
+  IPC_STRUCT_TRAITS_MEMBER(count)
+  IPC_STRUCT_TRAITS_MEMBER(lost)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(cc::BeginFrameArgs)

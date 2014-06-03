@@ -9,6 +9,7 @@
 #include "base/callback.h"
 #include "base/command_line.h"
 #include "base/location.h"
+#include "base/memory/ref_counted.h"
 #include "base/run_loop.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/login/authenticator.h"
@@ -25,20 +26,21 @@
 #include "chrome/browser/chromeos/policy/device_local_account.h"
 #include "chrome/browser/chromeos/policy/device_local_account_policy_service.h"
 #include "chrome/browser/chromeos/policy/device_policy_cros_browser_test.h"
+#include "chrome/browser/chromeos/policy/proto/chrome_device_policy.pb.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
-#include "chrome/browser/chromeos/settings/cros_settings_names.h"
 #include "chrome/browser/policy/browser_policy_connector.h"
-#include "chrome/browser/policy/cloud/cloud_policy_constants.h"
-#include "chrome/browser/policy/cloud/cloud_policy_core.h"
-#include "chrome/browser/policy/cloud/cloud_policy_store.h"
-#include "chrome/browser/policy/cloud/mock_cloud_policy_store.h"
-#include "chrome/browser/policy/cloud/policy_builder.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/fake_session_manager_client.h"
+#include "chromeos/settings/cros_settings_names.h"
+#include "components/policy/core/common/cloud/cloud_policy_constants.h"
+#include "components/policy/core/common/cloud/cloud_policy_core.h"
+#include "components/policy/core/common/cloud/cloud_policy_store.h"
+#include "components/policy/core/common/cloud/mock_cloud_policy_store.h"
+#include "components/policy/core/common/cloud/policy_builder.h"
 #include "content/public/test/mock_notification_observer.h"
 #include "content/public/test/test_utils.h"
 #include "google_apis/gaia/mock_url_fetcher_factory.h"
@@ -99,8 +101,6 @@ class ExistingUserControllerTest : public policy::DevicePolicyCrosBrowserTest,
 
     mock_login_utils_ = new MockLoginUtils();
     LoginUtils::Set(mock_login_utils_);
-    EXPECT_CALL(*mock_login_utils_, StopBackgroundFetchers())
-        .Times(AnyNumber());
     EXPECT_CALL(*mock_login_utils_, DelegateDeleted(_))
         .Times(1);
 
@@ -162,11 +162,14 @@ class ExistingUserControllerTest : public policy::DevicePolicyCrosBrowserTest,
         .WillRepeatedly(Return(false));
     EXPECT_CALL(*mock_user_manager_, Shutdown())
         .Times(1);
+    EXPECT_CALL(*mock_user_manager_, GetProfileByUser(_))
+        .Times(AnyNumber())
+        .WillRepeatedly(Return(testing_profile_.get()));
   }
 
   virtual void SetUpOnMainThread() OVERRIDE {
-    SetUpUserManager();
     testing_profile_.reset(new TestingProfile());
+    SetUpUserManager();
     existing_user_controller_.reset(
         new ExistingUserController(mock_login_display_host_.get()));
     ASSERT_EQ(existing_user_controller(), existing_user_controller_.get());
@@ -184,7 +187,7 @@ class ExistingUserControllerTest : public policy::DevicePolicyCrosBrowserTest,
     // deletes its OnlineAttemptHost instance.  However, OnlineAttemptHost must
     // be deleted on the UI thread.
     existing_user_controller_.reset();
-    CrosInProcessBrowserTest::CleanUpOnMainThread();
+    DevicePolicyCrosBrowserTest::InProcessBrowserTest::CleanUpOnMainThread();
     testing_profile_.reset(NULL);
     user_manager_enabler_.reset();
   }
@@ -240,7 +243,7 @@ IN_PROC_BROWSER_TEST_P(ExistingUserControllerTest, ExistingUserLogin) {
       .WillOnce(WithArg<0>(CreateAuthenticator(kUsername, kPassword)));
   EXPECT_CALL(*mock_login_utils_,
               PrepareProfile(UserContext(kUsername, kPassword, "", kUsername),
-                             _, _, _, _, _))
+                             _, _, _, _))
       .Times(1)
       .WillOnce(InvokeWithoutArgs(&profile_prepared_cb_,
                                   &base::Callback<void(void)>::Run));
@@ -309,7 +312,7 @@ IN_PROC_BROWSER_TEST_P(ExistingUserControllerTest,
                                          kPassword,
                                          std::string(),
                                          kNewUsername),
-                             _, _, _, _, _))
+                             _, _, _, _))
       .Times(1)
       .WillOnce(InvokeWithoutArgs(&profile_prepared_cb_,
                                   &base::Callback<void(void)>::Run));
@@ -433,7 +436,7 @@ class ExistingUserControllerPublicSessionTest
         .WillOnce(WithArg<0>(CreateAuthenticator(username, password)));
     EXPECT_CALL(*mock_login_utils_,
                 PrepareProfile(UserContext(username, password, "", username),
-                               _, _, _, _, _))
+                               _, _, _, _))
         .Times(1)
         .WillOnce(InvokeWithoutArgs(&profile_prepared_cb_,
                                     &base::Callback<void(void)>::Run));
@@ -453,40 +456,34 @@ class ExistingUserControllerPublicSessionTest
         .Times(0);
   }
 
-  scoped_ptr<base::RunLoop> CreateSettingsObserverRunLoop(
-      content::MockNotificationObserver& observer, const char* setting) {
-    base::RunLoop* loop = new base::RunLoop;
-    EXPECT_CALL(observer, Observe(chrome::NOTIFICATION_SYSTEM_SETTING_CHANGED,
-                                  _, HasDetails(setting)))
-        .Times(1)
-        .WillOnce(InvokeWithoutArgs(loop, &base::RunLoop::Quit));
-    CrosSettings::Get()->AddSettingsObserver(setting, &observer);
-    return make_scoped_ptr(loop);
-  }
-
   void SetAutoLoginPolicy(const std::string& username, int delay) {
     // Wait until ExistingUserController has finished auto-login
     // configuration by observing the same settings that trigger
     // ConfigurePublicSessionAutoLogin.
-    content::MockNotificationObserver observer;
 
     em::ChromeDeviceSettingsProto& proto(device_policy()->payload());
 
     // If both settings have changed we need to wait for both to
     // propagate, so check the new values against the old ones.
-    scoped_ptr<base::RunLoop> runner1;
+    scoped_refptr<content::MessageLoopRunner> runner1;
+    scoped_ptr<CrosSettings::ObserverSubscription> subscription1;
     if (!proto.has_device_local_accounts() ||
         !proto.device_local_accounts().has_auto_login_id() ||
         proto.device_local_accounts().auto_login_id() != username) {
-      runner1 = CreateSettingsObserverRunLoop(
-          observer, kAccountsPrefDeviceLocalAccountAutoLoginId);
+      runner1 = new content::MessageLoopRunner;
+      subscription1 = chromeos::CrosSettings::Get()->AddSettingsObserver(
+          chromeos::kAccountsPrefDeviceLocalAccountAutoLoginId,
+          runner1->QuitClosure());
     }
-    scoped_ptr<base::RunLoop> runner2;
+    scoped_refptr<content::MessageLoopRunner> runner2;
+    scoped_ptr<CrosSettings::ObserverSubscription> subscription2;
     if (!proto.has_device_local_accounts() ||
         !proto.device_local_accounts().has_auto_login_delay() ||
         proto.device_local_accounts().auto_login_delay() != delay) {
-      runner2 = CreateSettingsObserverRunLoop(
-          observer, kAccountsPrefDeviceLocalAccountAutoLoginDelay);
+      runner1 = new content::MessageLoopRunner;
+      subscription1 = chromeos::CrosSettings::Get()->AddSettingsObserver(
+          chromeos::kAccountsPrefDeviceLocalAccountAutoLoginDelay,
+          runner1->QuitClosure());
     }
 
     // Update the policy.
@@ -495,18 +492,10 @@ class ExistingUserControllerPublicSessionTest
     RefreshDevicePolicy();
 
     // Wait for ExistingUserController to read the updated settings.
-    if (runner1)
+    if (runner1.get())
       runner1->Run();
-    if (runner2)
+    if (runner2.get())
       runner2->Run();
-
-    // Clean up.
-    CrosSettings::Get()->RemoveSettingsObserver(
-        kAccountsPrefDeviceLocalAccountAutoLoginId,
-        &observer);
-    CrosSettings::Get()->RemoveSettingsObserver(
-        kAccountsPrefDeviceLocalAccountAutoLoginDelay,
-        &observer);
   }
 
   void ConfigureAutoLogin() {
@@ -675,6 +664,16 @@ IN_PROC_BROWSER_TEST_P(ExistingUserControllerPublicSessionTest,
   // Timer should still be stopped after login completes.
   ASSERT_TRUE(auto_login_timer());
   EXPECT_FALSE(auto_login_timer()->IsRunning());
+}
+
+IN_PROC_BROWSER_TEST_P(ExistingUserControllerPublicSessionTest,
+                       PRE_TestLoadingPublicUsersFromLocalState) {
+  // First run propagates public accounts and stores them in Local State.
+}
+
+IN_PROC_BROWSER_TEST_P(ExistingUserControllerPublicSessionTest,
+                       TestLoadingPublicUsersFromLocalState) {
+  // Second run loads list of public accounts from Local State.
 }
 
 INSTANTIATE_TEST_CASE_P(ExistingUserControllerTestInstantiation,

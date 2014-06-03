@@ -18,12 +18,13 @@ typedef test::AshTestBase WindowWatcherTest;
 // This test verifies that shell can be torn down without causing failures
 // bug http://code.google.com/p/chromium/issues/detail?id=130332
 TEST_F(WindowWatcherTest, ShellDeleteInstance) {
+  RunAllPendingInMessageLoop();
   scoped_ptr<ash::shell::WindowWatcher> window_watcher;
   Shell::DeleteInstance();
 
   shell::ShellDelegateImpl* delegate = new ash::shell::ShellDelegateImpl;
   Shell::CreateInstance(delegate);
-  Shell::GetPrimaryRootWindow()->ShowRootWindow();
+  Shell::GetPrimaryRootWindow()->GetDispatcher()->host()->Show();
   Shell::GetInstance()->CreateLauncher();
   Shell::GetInstance()->UpdateAfterLoginStatusChange(
       user::LOGGED_IN_USER);

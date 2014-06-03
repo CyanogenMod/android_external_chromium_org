@@ -4,7 +4,6 @@
 
 #include "chrome/browser/chromeos/display/display_preferences.h"
 
-#include "ash/display/display_controller.h"
 #include "ash/display/display_layout_store.h"
 #include "ash/display/display_manager.h"
 #include "ash/display/display_pref_util.h"
@@ -12,6 +11,7 @@
 #include "ash/shell.h"
 #include "base/prefs/pref_registry_simple.h"
 #include "base/prefs/pref_service.h"
+#include "base/prefs/scoped_user_pref_update.h"
 #include "base/strings/string16.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
@@ -19,7 +19,6 @@
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
-#include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/common/pref_names.h"
 #include "chromeos/display/output_configurator.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
@@ -70,16 +69,12 @@ ash::internal::DisplayManager* GetDisplayManager() {
 
 // Returns true id the current user can write display preferences to
 // Local State.
-bool IsValidUser() {
+bool UserCanSaveDisplayPreference() {
   UserManager* user_manager = UserManager::Get();
-  return (user_manager->IsUserLoggedIn() &&
-          !user_manager->IsLoggedInAsDemoUser() &&
-          !user_manager->IsLoggedInAsGuest() &&
-          !user_manager->IsLoggedInAsStub());
-}
-
-ash::DisplayController* GetDisplayController() {
-  return ash::Shell::GetInstance()->display_controller();
+  return user_manager->IsUserLoggedIn() &&
+      (user_manager->IsLoggedInAsRegularUser() ||
+       user_manager->IsLoggedInAsLocallyManagedUser() ||
+       user_manager->IsLoggedInAsKioskApp());
 }
 
 void LoadDisplayLayouts() {
@@ -172,10 +167,12 @@ void StoreDisplayLayoutPref(const ash::DisplayIdPair& pair,
 }
 
 void StoreCurrentDisplayLayoutPrefs() {
-  if (!IsValidUser() || GetDisplayManager()->num_connected_displays() < 2)
+  if (!UserCanSaveDisplayPreference() ||
+      GetDisplayManager()->num_connected_displays() < 2) {
     return;
+  }
 
-  ash::DisplayIdPair pair = GetDisplayController()->GetCurrentDisplayIdPair();
+  ash::DisplayIdPair pair = GetDisplayManager()->GetCurrentDisplayIdPair();
   ash::DisplayLayout display_layout =
       GetDisplayManager()->layout_store()->GetRegisteredDisplayLayout(pair);
   StoreDisplayLayoutPref(pair, display_layout);
@@ -197,8 +194,9 @@ void StoreCurrentDisplayProperties() {
     scoped_ptr<base::DictionaryValue> property_value(
         new base::DictionaryValue());
     property_value->SetInteger("rotation", static_cast<int>(info.rotation()));
-    property_value->SetInteger("ui-scale",
-                               static_cast<int>(info.ui_scale() * 1000));
+    property_value->SetInteger(
+        "ui-scale",
+        static_cast<int>(info.configured_ui_scale() * 1000));
     gfx::Size resolution;
     if (!display.IsInternal() &&
         display_manager->GetSelectedResolutionForDisplayId(id, &resolution)) {
@@ -216,9 +214,9 @@ typedef std::map<chromeos::DisplayPowerState, std::string>
     DisplayPowerStateToStringMap;
 
 const DisplayPowerStateToStringMap* GetDisplayPowerStateToStringMap() {
+  // Don't save or retore ALL_OFF state. crbug.com/318456.
   static const DisplayPowerStateToStringMap* map = ash::CreateToStringMap(
       chromeos::DISPLAY_POWER_ALL_ON, "all_on",
-      chromeos::DISPLAY_POWER_ALL_OFF, "all_off",
       chromeos::DISPLAY_POWER_INTERNAL_OFF_EXTERNAL_ON,
       "internal_off_external_on",
       chromeos::DISPLAY_POWER_INTERNAL_ON_EXTERNAL_OFF,
@@ -237,9 +235,10 @@ bool GetDisplayPowerStateFromString(const base::StringPiece& state,
 void StoreDisplayPowerState(DisplayPowerState power_state) {
   const DisplayPowerStateToStringMap* map = GetDisplayPowerStateToStringMap();
   DisplayPowerStateToStringMap::const_iterator iter = map->find(power_state);
-  std::string value = iter != map->end() ? iter->second : std::string();
-  PrefService* local_state = g_browser_process->local_state();
-  local_state->SetString(prefs::kDisplayPowerState, value);
+  if (iter != map->end()) {
+    PrefService* local_state = g_browser_process->local_state();
+    local_state->SetString(prefs::kDisplayPowerState, iter->second);
+  }
 }
 
 void StoreCurrentDisplayPowerState() {
@@ -259,20 +258,23 @@ void RegisterDisplayLocalStatePrefs(PrefRegistrySimple* registry) {
 }
 
 void StoreDisplayPrefs() {
+  // Stores the power state regardless of the login status, because the power
+  // state respects to the current status (close/open) of the lid which can be
+  // changed in any situation. See crbug.com/285360
+  StoreCurrentDisplayPowerState();
+
   // Do not store prefs when the confirmation dialog is shown.
-  if (!IsValidUser() ||
+  if (!UserCanSaveDisplayPreference() ||
       ash::Shell::GetInstance()->resolution_notification_controller()->
           DoesNotificationTimeout()) {
     return;
   }
   StoreCurrentDisplayLayoutPrefs();
   StoreCurrentDisplayProperties();
-  StoreCurrentDisplayPowerState();
 }
 
 void SetCurrentDisplayLayout(const ash::DisplayLayout& layout) {
-  ash::DisplayController* display_controller = GetDisplayController();
-  display_controller->SetLayoutForCurrentDisplays(layout);
+  GetDisplayManager()->SetLayoutForCurrentDisplays(layout);
 }
 
 void LoadDisplayPreferences(bool first_run_after_boot) {

@@ -30,10 +30,8 @@ namespace android_webview {
 
 class AwContentsContainer;
 class AwContentsClientBridge;
-class AwWebContentsDelegate;
-// START: Printing fork b/10190508
 class AwPdfExporter;
-// END: Printing fork b/10190508
+class AwWebContentsDelegate;
 
 // Native side of java-class of same name.
 // Provides the ownership of and access to browser components required for
@@ -82,17 +80,11 @@ class AwContents : public FindHelper::Listener,
                     jobject io_thread_client,
                     jobject intercept_navigation_delegate);
   jint GetWebContents(JNIEnv* env, jobject obj);
-  jint GetAwContentsClientBridge(JNIEnv* env, jobject obj);
 
   void Destroy(JNIEnv* env, jobject obj);
   void DocumentHasImages(JNIEnv* env, jobject obj, jobject message);
   void GenerateMHTML(JNIEnv* env, jobject obj, jstring jpath, jobject callback);
-// START: Printing fork b/10190508
   void CreatePdfExporter(JNIEnv* env, jobject obj, jobject pdfExporter);
- private:
-  scoped_ptr<AwPdfExporter> pdf_exporter_;
- public:
-// END: Printing fork b/10190508
   void AddVisitedLinks(JNIEnv* env, jobject obj, jobjectArray jvisited_links);
   base::android::ScopedJavaLocalRef<jbyteArray> GetCertificate(
       JNIEnv* env, jobject obj);
@@ -126,8 +118,10 @@ class AwContents : public FindHelper::Listener,
                             jint visible_right,
                             jint visible_bottom);
   jint GetAwDrawGLViewContext(JNIEnv* env, jobject obj);
-  jint CapturePicture(JNIEnv* env, jobject obj, int width, int height);
+  jlong CapturePicture(JNIEnv* env, jobject obj, int width, int height);
   void EnableOnNewPicture(JNIEnv* env, jobject obj, jboolean enabled);
+  void SetExtraHeadersForUrl(JNIEnv* env, jobject obj,
+                             jstring url, jstring extra_headers);
 
   // Geolocation API support
   void ShowGeolocationPrompt(const GURL& origin, base::Callback<void(bool)>);
@@ -205,6 +199,7 @@ class AwContents : public FindHelper::Listener,
   scoped_ptr<IconHelper> icon_helper_;
   scoped_ptr<AwContents> pending_contents_;
   scoped_ptr<BrowserViewRenderer> browser_view_renderer_;
+  scoped_ptr<AwPdfExporter> pdf_exporter_;
 
   // GURL is supplied by the content layer as requesting frame.
   // Callback is supplied by the content layer, and is invoked with the result

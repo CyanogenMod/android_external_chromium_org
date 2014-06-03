@@ -32,15 +32,15 @@ class ProfileNameVerifierObserver : public ProfileInfoCacheObserver {
       const base::FilePath& profile_path) OVERRIDE;
   virtual void OnProfileWasRemoved(
       const base::FilePath& profile_path,
-      const string16& profile_name) OVERRIDE;
+      const base::string16& profile_name) OVERRIDE;
   virtual void OnProfileNameChanged(
       const base::FilePath& profile_path,
-      const string16& old_profile_name) OVERRIDE;
+      const base::string16& old_profile_name) OVERRIDE;
   virtual void OnProfileAvatarChanged(const base::FilePath& profile_path) OVERRIDE;
 
  private:
   ProfileInfoCache* GetCache();
-  std::set<string16> profile_names_;
+  std::set<base::string16> profile_names_;
   TestingProfileManager* testing_profile_manager_;
   DISALLOW_COPY_AND_ASSIGN(ProfileNameVerifierObserver);
 };

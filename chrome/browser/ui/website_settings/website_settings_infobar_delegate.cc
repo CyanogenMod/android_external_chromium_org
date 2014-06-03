@@ -6,6 +6,7 @@
 
 #include "base/logging.h"
 #include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/infobars/infobar.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "content/public/browser/web_contents.h"
 #include "grit/generated_resources.h"
@@ -15,13 +16,13 @@
 
 // static
 void WebsiteSettingsInfoBarDelegate::Create(InfoBarService* infobar_service) {
-  infobar_service->AddInfoBar(scoped_ptr<InfoBarDelegate>(
-      new WebsiteSettingsInfoBarDelegate(infobar_service)));
+  infobar_service->AddInfoBar(ConfirmInfoBarDelegate::CreateInfoBar(
+      scoped_ptr<ConfirmInfoBarDelegate>(
+          new WebsiteSettingsInfoBarDelegate())));
 }
 
-WebsiteSettingsInfoBarDelegate::WebsiteSettingsInfoBarDelegate(
-    InfoBarService* infobar_service)
-    : ConfirmInfoBarDelegate(infobar_service) {
+WebsiteSettingsInfoBarDelegate::WebsiteSettingsInfoBarDelegate()
+    : ConfirmInfoBarDelegate() {
 }
 
 WebsiteSettingsInfoBarDelegate::~WebsiteSettingsInfoBarDelegate() {
@@ -35,7 +36,7 @@ InfoBarDelegate::Type WebsiteSettingsInfoBarDelegate::GetInfoBarType() const {
   return PAGE_ACTION_TYPE;
 }
 
-string16 WebsiteSettingsInfoBarDelegate::GetMessageText() const {
+base::string16 WebsiteSettingsInfoBarDelegate::GetMessageText() const {
   return l10n_util::GetStringUTF16(IDS_WEBSITE_SETTINGS_INFOBAR_TEXT);
 }
 
@@ -43,7 +44,7 @@ int WebsiteSettingsInfoBarDelegate::GetButtons() const {
   return BUTTON_OK;
 }
 
-string16 WebsiteSettingsInfoBarDelegate::GetButtonLabel(
+base::string16 WebsiteSettingsInfoBarDelegate::GetButtonLabel(
     InfoBarButton button) const {
   DCHECK_EQ(BUTTON_OK, button);
   return l10n_util::GetStringUTF16(IDS_WEBSITE_SETTINGS_INFOBAR_BUTTON);

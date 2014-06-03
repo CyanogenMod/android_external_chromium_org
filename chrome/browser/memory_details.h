@@ -48,9 +48,9 @@ struct ProcessMemoryInformation {
   // The committed bytes.
   base::CommittedKBytes committed;
   // The process version
-  string16 version;
+  base::string16 version;
   // The process product name.
-  string16 product_name;
+  base::string16 product_name;
   // The number of processes which this memory represents.
   int num_processes;
   // A process is a diagnostics process if it is rendering about:memory.
@@ -62,7 +62,7 @@ struct ProcessMemoryInformation {
   // If this is a renderer process, what type it is.
   RendererProcessType renderer_type;
   // A collection of titles used, i.e. for a tab it'll show all the page titles.
-  std::vector<string16> titles;
+  std::vector<base::string16> titles;
 };
 
 typedef std::vector<ProcessMemoryInformation> ProcessMemoryInformationList;
@@ -74,8 +74,8 @@ struct ProcessData {
   ~ProcessData();
   ProcessData& operator=(const ProcessData& rhs);
 
-  string16 name;
-  string16 process_name;
+  base::string16 name;
+  base::string16 process_name;
   ProcessMemoryInformationList processes;
 
   // Track site data for predicting process counts with out-of-process iframes.
@@ -85,24 +85,6 @@ struct ProcessData {
 
 #if defined(OS_MACOSX)
 class ProcessInfoSnapshot;
-#endif
-
-#if defined(OS_CHROMEOS)
-struct SwapData {
-  SwapData()
-      : num_reads(0),
-        num_writes(0),
-        compr_data_size(0),
-        orig_data_size(0),
-        mem_used_total(0) {
-  }
-
-  uint64 num_reads;
-  uint64 num_writes;
-  uint64 compr_data_size;
-  uint64 orig_data_size;
-  uint64 mem_used_total;
-};
 #endif
 
 // MemoryDetails fetches memory details about current running browsers.
@@ -206,7 +188,7 @@ class MemoryDetails : public base::RefCountedThreadSafe<MemoryDetails> {
   UserMetricsMode user_metrics_mode_;
 
 #if defined(OS_CHROMEOS)
-  SwapData swap_data_;
+  base::SwapInfo swap_info_;
 #endif
 
   DISALLOW_COPY_AND_ASSIGN(MemoryDetails);

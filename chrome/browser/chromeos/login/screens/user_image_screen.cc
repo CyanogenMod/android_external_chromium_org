@@ -4,8 +4,17 @@
 
 #include "chrome/browser/chromeos/login/screens/user_image_screen.h"
 
+#include <string>
+
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/compiler_specific.h"
+#include "base/location.h"
+#include "base/logging.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/metrics/histogram.h"
+#include "base/timer/timer.h"
+#include "base/values.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
 #include "chrome/browser/chromeos/camera_detector.h"
@@ -16,16 +25,23 @@
 #include "chrome/browser/chromeos/login/user_image_manager.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
+#include "chrome/browser/policy/profile_policy_connector.h"
+#include "chrome/browser/policy/profile_policy_connector_factory.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/common/url_constants.h"
+#include "components/policy/core/common/policy_map.h"
+#include "components/policy/core/common/policy_namespace.h"
+#include "components/policy/core/common/policy_service.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
+#include "policy/policy_constants.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/base/webui/web_ui_util.h"
 #include "ui/gfx/image/image_skia.h"
-#include "ui/webui/web_ui_util.h"
 
 using content::BrowserThread;
 
@@ -35,6 +51,10 @@ namespace {
 
 // Time histogram suffix for profile image download.
 const char kProfileDownloadReason[] = "OOBE";
+
+// Maximum ammount of time to wait for the user image to sync.
+// The screen is shown iff sync failed or time limit exceeded.
+const int kSyncTimeoutSeconds = 10;
 
 }  // namespace
 
@@ -47,9 +67,15 @@ UserImageScreen::UserImageScreen(ScreenObserver* screen_observer,
       selected_image_(User::kInvalidImageIndex),
       profile_picture_enabled_(false),
       profile_picture_data_url_(content::kAboutBlankURL),
-      profile_picture_absent_(false) {
+      profile_picture_absent_(false),
+      is_screen_ready_(false),
+      user_has_selected_image_(false),
+      was_camera_present_(false) {
   actor_->SetDelegate(this);
   SetProfilePictureEnabled(true);
+  notification_registrar_.Add(this,
+                              chrome::NOTIFICATION_LOGIN_USER_IMAGE_CHANGED,
+                              content::NotificationService::AllSources());
 }
 
 UserImageScreen::~UserImageScreen() {
@@ -59,17 +85,10 @@ UserImageScreen::~UserImageScreen() {
     image_decoder_->set_delegate(NULL);
 }
 
-void UserImageScreen::CheckCameraPresence() {
-  CameraDetector::StartPresenceCheck(
-      base::Bind(&UserImageScreen::OnCameraPresenceCheckDone,
-                 weak_factory_.GetWeakPtr()));
-}
-
-void UserImageScreen::OnCameraPresenceCheckDone() {
-  if (actor_) {
-    actor_->SetCameraPresent(
-        CameraDetector::camera_presence() == CameraDetector::kCameraPresent);
-  }
+void UserImageScreen::OnScreenReady() {
+  is_screen_ready_ = true;
+  if (!IsWaitingForSync())
+    HideCurtain();
 }
 
 void UserImageScreen::OnPhotoTaken(const std::string& raw_data) {
@@ -84,6 +103,28 @@ void UserImageScreen::OnPhotoTaken(const std::string& raw_data) {
   image_decoder_->Start(task_runner);
 }
 
+void UserImageScreen::CheckCameraPresence() {
+  CameraDetector::StartPresenceCheck(
+      base::Bind(&UserImageScreen::OnCameraPresenceCheckDone,
+                 weak_factory_.GetWeakPtr()));
+}
+
+void UserImageScreen::OnCameraPresenceCheckDone() {
+  bool is_camera_present = CameraDetector::camera_presence() ==
+                           CameraDetector::kCameraPresent;
+  if (actor_) {
+    if (is_camera_present != was_camera_present_) {
+      actor_->SetCameraPresent(is_camera_present);
+      was_camera_present_ = is_camera_present;
+    }
+  }
+}
+
+void UserImageScreen::HideCurtain() {
+  if (actor_)
+    actor_->HideCurtain();
+}
+
 void UserImageScreen::OnImageDecoded(const ImageDecoder* decoder,
                                      const SkBitmap& decoded_image) {
   DCHECK_EQ(image_decoder_.get(), decoder);
@@ -96,8 +137,46 @@ void UserImageScreen::OnDecodeImageFailed(const ImageDecoder* decoder) {
   NOTREACHED() << "Failed to decode PNG image from WebUI";
 }
 
+void UserImageScreen::OnInitialSync(bool local_image_updated) {
+  DCHECK(sync_timer_);
+  if (!local_image_updated) {
+    sync_timer_.reset();
+    UserManager::Get()->GetUserImageManager()->GetSyncObserver()->
+        RemoveObserver(this);
+    if (is_screen_ready_)
+      HideCurtain();
+    return;
+  }
+  ExitScreen();
+}
+
+void UserImageScreen::OnSyncTimeout() {
+  sync_timer_.reset();
+  UserManager::Get()->GetUserImageManager()->GetSyncObserver()->
+      RemoveObserver(this);
+  if (is_screen_ready_)
+    HideCurtain();
+}
+
+bool UserImageScreen::IsWaitingForSync() const {
+  return sync_timer_.get() && sync_timer_->IsRunning();
+}
+
+void UserImageScreen::OnUserImagePolicyChanged(const base::Value* previous,
+                                               const base::Value* current) {
+  if (current) {
+    base::MessageLoopProxy::current()->DeleteSoon(FROM_HERE,
+                                                  policy_registrar_.release());
+    ExitScreen();
+  }
+}
+
 void UserImageScreen::OnImageSelected(const std::string& image_type,
-                                      const std::string& image_url) {
+                                      const std::string& image_url,
+                                      bool is_user_selection) {
+  if (is_user_selection) {
+    user_has_selected_image_ = true;
+  }
   if (image_url.empty())
     return;
   int user_image_index = User::kInvalidImageIndex;
@@ -139,10 +218,12 @@ void UserImageScreen::OnImageAccepted() {
       uma_index = GetDefaultImageHistogramValue(selected_image_);
       break;
   }
-  UMA_HISTOGRAM_ENUMERATION("UserImage.FirstTimeChoice",
-                            uma_index,
-                            kHistogramImagesCount);
-  get_screen_observer()->OnExit(ScreenObserver::USER_IMAGE_SELECTED);
+  if (user_has_selected_image_) {
+    UMA_HISTOGRAM_ENUMERATION("UserImage.FirstTimeChoice",
+                              uma_index,
+                              kHistogramImagesCount);
+  }
+  ExitScreen();
 }
 
 
@@ -151,14 +232,20 @@ void UserImageScreen::SetProfilePictureEnabled(bool profile_picture_enabled) {
     return;
   profile_picture_enabled_ = profile_picture_enabled;
   if (profile_picture_enabled) {
-    registrar_.Add(this, chrome::NOTIFICATION_PROFILE_IMAGE_UPDATED,
-        content::NotificationService::AllSources());
-    registrar_.Add(this, chrome::NOTIFICATION_PROFILE_IMAGE_UPDATE_FAILED,
+    notification_registrar_.Add(this,
+                                chrome::NOTIFICATION_PROFILE_IMAGE_UPDATED,
+                                content::NotificationService::AllSources());
+    notification_registrar_.Add(
+        this,
+        chrome::NOTIFICATION_PROFILE_IMAGE_UPDATE_FAILED,
         content::NotificationService::AllSources());
   } else {
-    registrar_.Remove(this, chrome::NOTIFICATION_PROFILE_IMAGE_UPDATED,
+    notification_registrar_.Remove(this,
+                                   chrome::NOTIFICATION_PROFILE_IMAGE_UPDATED,
         content::NotificationService::AllSources());
-    registrar_.Remove(this, chrome::NOTIFICATION_PROFILE_IMAGE_UPDATE_FAILED,
+    notification_registrar_.Remove(
+        this,
+        chrome::NOTIFICATION_PROFILE_IMAGE_UPDATE_FAILED,
         content::NotificationService::AllSources());
   }
   if (actor_)
@@ -187,6 +274,52 @@ void UserImageScreen::Show() {
   if (!actor_)
     return;
 
+  DCHECK(!policy_registrar_);
+  Profile* profile = UserManager::Get()->GetProfileByUser(GetUser());
+  if (profile) {
+    policy::PolicyService* policy_service =
+        policy::ProfilePolicyConnectorFactory::GetForProfile(profile)->
+            policy_service();
+    if (policy_service->GetPolicies(
+            policy::PolicyNamespace(policy::POLICY_DOMAIN_CHROME,
+                                    std::string()))
+            .Get(policy::key::kUserAvatarImage)) {
+      // If the user image is managed by policy, skip the screen because the
+      // user is not allowed to override a policy-set image.
+      ExitScreen();
+      return;
+    }
+
+    // Listen for policy changes. If at any point, the user image becomes
+    // managed by policy, the screen will close.
+    policy_registrar_.reset(new policy::PolicyChangeRegistrar(
+        policy_service,
+        policy::PolicyNamespace(policy::POLICY_DOMAIN_CHROME, std::string())));
+    policy_registrar_->Observe(
+        policy::key::kUserAvatarImage,
+        base::Bind(&UserImageScreen::OnUserImagePolicyChanged,
+                   base::Unretained(this)));
+  } else {
+    NOTREACHED();
+  }
+
+  if (GetUser()->CanSyncImage()) {
+    if (UserImageSyncObserver* sync_observer =
+          UserManager::Get()->GetUserImageManager()->GetSyncObserver()) {
+      // We have synced image already.
+      if (sync_observer->is_synced()) {
+        ExitScreen();
+        return;
+      }
+      sync_observer->AddObserver(this);
+      sync_timer_.reset(new base::Timer(
+            FROM_HERE,
+            base::TimeDelta::FromSeconds(kSyncTimeoutSeconds),
+            base::Bind(&UserImageScreen::OnSyncTimeout, base::Unretained(this)),
+            false));
+      sync_timer_->Reset();
+    }
+  }
   actor_->Show();
   actor_->SetProfilePictureEnabled(profile_picture_enabled_);
 
@@ -198,9 +331,6 @@ void UserImageScreen::Show() {
     UserManager::Get()->GetUserImageManager()->
         DownloadProfileImage(kProfileDownloadReason);
   }
-
-  AccessibilityManager::Get()->MaybeSpeak(
-      l10n_util::GetStringUTF8(IDS_OPTIONS_CHANGE_PICTURE_DIALOG_TEXT));
 }
 
 void UserImageScreen::Hide() {
@@ -237,6 +367,11 @@ void UserImageScreen::Observe(int type,
         actor_->OnProfileImageAbsent();
       break;
     }
+    case chrome::NOTIFICATION_LOGIN_USER_IMAGE_CHANGED: {
+      if (actor_)
+        actor_->SelectImage(GetUser()->image_index());
+      break;
+    }
     default:
       NOTREACHED();
   }
@@ -252,6 +387,16 @@ int UserImageScreen::selected_image() {
 
 std::string UserImageScreen::profile_picture_data_url() {
   return profile_picture_data_url_;
+}
+
+void UserImageScreen::ExitScreen() {
+  policy_registrar_.reset();
+  sync_timer_.reset();
+  UserImageSyncObserver* sync_observer =
+      UserManager::Get()->GetUserImageManager()->GetSyncObserver();
+  if (sync_observer)
+    sync_observer->RemoveObserver(this);
+  get_screen_observer()->OnExit(ScreenObserver::USER_IMAGE_SELECTED);
 }
 
 }  // namespace chromeos

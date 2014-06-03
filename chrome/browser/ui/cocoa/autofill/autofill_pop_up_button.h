@@ -12,7 +12,7 @@
 
 @interface AutofillPopUpButton : NSPopUpButton<AutofillInputField> {
  @private
-  id<AutofillInputDelegate> delegate_;
+  id<AutofillInputDelegate> inputDelegate_;
   base::scoped_nsobject<NSString> validityMessage_;
 }
 
@@ -21,6 +21,7 @@
 @interface AutofillPopUpCell : NSPopUpButtonCell<AutofillInputCell> {
  @private
   BOOL invalid_;
+  NSString* defaultValue_;
 }
 
 @end

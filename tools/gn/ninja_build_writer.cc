@@ -17,6 +17,7 @@
 #include "tools/gn/input_file_manager.h"
 #include "tools/gn/scheduler.h"
 #include "tools/gn/target.h"
+#include "tools/gn/trace.h"
 
 #if defined(OS_WIN)
 #include <windows.h>
@@ -46,8 +47,27 @@ std::string GetSelfInvocationCommand(const BuildSettings* build_settings) {
 
   CommandLine cmdline(executable);
   cmdline.AppendSwitchPath("--root", build_settings->root_path());
+  cmdline.AppendSwitch("-q");  // Don't write output.
 
-  // TODO(brettw) append other parameters.
+  EscapeOptions escape_shell;
+  escape_shell.mode = ESCAPE_SHELL;
+#if defined(OS_WIN)
+  // The command line code quoting varies by platform. We have one string,
+  // possibly with spaces, that we want to quote. The Windows command line
+  // quotes again, so we don't want quoting. The Posix one doesn't.
+  escape_shell.inhibit_quoting = true;
+#endif
+
+  const CommandLine& our_cmdline = *CommandLine::ForCurrentProcess();
+  const CommandLine::SwitchMap& switches = our_cmdline.GetSwitches();
+  for (CommandLine::SwitchMap::const_iterator i = switches.begin();
+       i != switches.end(); ++i) {
+    if (i->first != "q" && i->first != "root") {
+      std::string escaped_value =
+          EscapeString(FilePathToUTF8(i->second), escape_shell, NULL);
+      cmdline.AppendSwitchASCII(i->first, escaped_value);
+    }
+  }
 
 #if defined(OS_WIN)
   return WideToUTF8(cmdline.GetCommandLineString());
@@ -62,11 +82,13 @@ NinjaBuildWriter::NinjaBuildWriter(
     const BuildSettings* build_settings,
     const std::vector<const Settings*>& all_settings,
     const std::vector<const Target*>& default_toolchain_targets,
-    std::ostream& out)
+    std::ostream& out,
+    std::ostream& dep_out)
     : build_settings_(build_settings),
       all_settings_(all_settings),
       default_toolchain_targets_(default_toolchain_targets),
       out_(out),
+      dep_out_(dep_out),
       path_output_(build_settings->build_dir(), ESCAPE_NINJA, true),
       helper_(build_settings) {
 }
@@ -85,9 +107,11 @@ bool NinjaBuildWriter::RunAndWriteFile(
     const BuildSettings* build_settings,
     const std::vector<const Settings*>& all_settings,
     const std::vector<const Target*>& default_toolchain_targets) {
+  ScopedTrace trace(TraceItem::TRACE_FILE_WRITE, "build.ninja");
+
   base::FilePath ninja_file(build_settings->GetFullPath(
       SourceFile(build_settings->build_dir().value() + "build.ninja")));
-  file_util::CreateDirectory(ninja_file.DirName());
+  base::CreateDirectory(ninja_file.DirName());
 
   std::ofstream file;
   file.open(FilePathToUTF8(ninja_file).c_str(),
@@ -95,8 +119,14 @@ bool NinjaBuildWriter::RunAndWriteFile(
   if (file.fail())
     return false;
 
+  std::ofstream depfile;
+  depfile.open((FilePathToUTF8(ninja_file) + ".d").c_str(),
+               std::ios_base::out | std::ios_base::binary);
+  if (depfile.fail())
+    return false;
+
   NinjaBuildWriter gen(build_settings, all_settings,
-                       default_toolchain_targets, file);
+                       default_toolchain_targets, file, depfile);
   gen.Run();
   return true;
 }
@@ -104,26 +134,45 @@ bool NinjaBuildWriter::RunAndWriteFile(
 void NinjaBuildWriter::WriteNinjaRules() {
   out_ << "rule gn\n";
   out_ << "  command = " << GetSelfInvocationCommand(build_settings_) << "\n";
-  out_ << "  description = GN the world\n\n";
+  out_ << "  description = Regenerating ninja files\n\n";
 
-  out_ << "build build.ninja: gn";
+  // This rule will regenerate the ninja files when any input file has changed.
+  out_ << "build build.ninja: gn\n"
+       << "  depfile = build.ninja.d\n";
 
-  // Input build files.
+  // Provide a way to force regenerating ninja files if the user is suspicious
+  // something is out-of-date. This will be "ninja refresh".
+  out_ << "\nbuild refresh: gn\n";
+
+  // Provide a way to see what flags are associated with this build:
+  // This will be "ninja show".
+  const CommandLine& our_cmdline = *CommandLine::ForCurrentProcess();
+  std::string args = our_cmdline.GetSwitchValueASCII("args");
+  out_ << "rule echo\n";
+  out_ << "  command = echo $text\n";
+  out_ << "  description = ECHO $desc\n";
+  out_ << "build show: echo\n";
+  out_ << "  desc = build arguments:\n";
+  out_ << "  text = "
+       << (args.empty() ? std::string("No build args, using defaults.") : args)
+       << "\n";
+
+  // Input build files. These go in the ".d" file. If we write them as
+  // dependencies in the .ninja file itself, ninja will expect the files to
+  // exist and will error if they don't. When files are listed in a depfile,
+  // missing files are ignored.
+  dep_out_ << "build.ninja:";
   std::vector<base::FilePath> input_files;
   g_scheduler->input_file_manager()->GetAllPhysicalInputFileNames(&input_files);
-  EscapeOptions ninja_options;
-  ninja_options.mode = ESCAPE_NINJA;
   for (size_t i = 0; i < input_files.size(); i++)
-    out_ << " " << EscapeString(FilePathToUTF8(input_files[i]), ninja_options);
+    dep_out_ << " " << FilePathToUTF8(input_files[i]);
 
   // Other files read by the build.
-  std::vector<SourceFile> other_files = g_scheduler->GetGenDependencies();
-  for (size_t i = 0; i < other_files.size(); i++) {
-    out_ << " ";
-    path_output_.WriteFile(out_, other_files[i]);
-  }
+  std::vector<base::FilePath> other_files = g_scheduler->GetGenDependencies();
+  for (size_t i = 0; i < other_files.size(); i++)
+    dep_out_ << " " << FilePathToUTF8(other_files[i]);
 
-  out_ << std::endl << std::endl;
+  out_ << std::endl;
 }
 
 void NinjaBuildWriter::WriteSubninjas() {
@@ -143,8 +192,6 @@ void NinjaBuildWriter::WritePhonyAndAllRules() {
   // we'll get naming conflicts).
   for (size_t i = 0; i < default_toolchain_targets_.size(); i++) {
     const Target* target = default_toolchain_targets_[i];
-    if (target->output_type() == Target::NONE)
-      continue;  // Nothing to generate.
 
     OutputFile target_file = helper_.GetTargetOutputFile(target);
     if (target_file.value() != target->label().name()) {

@@ -8,14 +8,32 @@
 #include <string>
 
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/google_apis/drive_common_callbacks.h"
-#include "chrome/browser/google_apis/gdata_errorcode.h"
+#include "chrome/browser/drive/drive_service_interface.h"
+#include "google_apis/drive/drive_common_callbacks.h"
+#include "google_apis/drive/drive_entry_kinds.h"
+#include "google_apis/drive/gdata_errorcode.h"
 
 class GURL;
 
 namespace base {
+class FilePath;
 class Value;
 }  // namespace base
+
+namespace google_apis {
+class AccountMetadata;
+class AppIcon;
+class AppList;
+class AppResource;
+class ChangeList;
+class ChangeResource;
+class DriveAppIcon;
+class FileList;
+class FileResource;
+class InstalledApp;
+class ResourceEntry;
+class ResourceList;
+}  // namespace google_apis
 
 namespace drive {
 namespace util {
@@ -45,6 +63,9 @@ std::string ExtractResourceIdFromUrl(const GURL& url);
 // into the new format.
 std::string CanonicalizeResourceId(const std::string& resource_id);
 
+// Returns a ResourceIdCanonicalizer which returns the argument.
+ResourceIdCanonicalizer GetIdentityResourceIdCanonicalizer();
+
 // Note: Following constants and a function are used to support GetShareUrl on
 // Drive API v2. Unfortunately, there is no support on Drive API v2, so we need
 // to fall back to GData WAPI for the GetShareUrl. Thus, these are shared by
@@ -61,6 +82,53 @@ extern const char kDriveAppsScope[];
 void ParseShareUrlAndRun(const google_apis::GetShareUrlCallback& callback,
                          google_apis::GDataErrorCode error,
                          scoped_ptr<base::Value> value);
+
+// Converts AccountMetadata to AboutResource.
+// Here, |root_resource_id| is also needed, as it is contained by AboutResource
+// but not by AccountMetadata.
+scoped_ptr<google_apis::AboutResource>
+ConvertAccountMetadataToAboutResource(
+    const google_apis::AccountMetadata& account_metadata,
+    const std::string& root_resource_id);
+
+// Converts AccountMetadata to AppList.
+scoped_ptr<google_apis::AppList>
+ConvertAccountMetadataToAppList(
+    const google_apis::AccountMetadata& account_metadata);
+
+// Converts ResourceEntry to FileResource.
+scoped_ptr<google_apis::FileResource>
+ConvertResourceEntryToFileResource(const google_apis::ResourceEntry& entry);
+
+// Returns the GData WAPI's Kind of the FileResource.
+google_apis::DriveEntryKind GetKind(
+    const google_apis::FileResource& file_resource);
+
+// Converts FileResource to ResourceEntry.
+scoped_ptr<google_apis::ResourceEntry>
+ConvertFileResourceToResourceEntry(
+    const google_apis::FileResource& file_resource);
+
+// Converts ChangeResource to ResourceEntry.
+scoped_ptr<google_apis::ResourceEntry>
+ConvertChangeResourceToResourceEntry(
+    const google_apis::ChangeResource& change_resource);
+
+// Converts FileList to ResourceList.
+scoped_ptr<google_apis::ResourceList>
+ConvertFileListToResourceList(const google_apis::FileList& file_list);
+
+// Converts ChangeList to ResourceList.
+scoped_ptr<google_apis::ResourceList>
+ConvertChangeListToResourceList(const google_apis::ChangeList& change_list);
+
+// Returns the (base-16 encoded) MD5 digest of the file content at |file_path|,
+// or an empty string if an error is found.
+std::string GetMd5Digest(const base::FilePath& file_path);
+
+// The resource ID for the root directory for WAPI is defined in the spec:
+// https://developers.google.com/google-apps/documents-list/
+extern const char kWapiRootDirectoryResourceId[];
 
 }  // namespace util
 }  // namespace drive

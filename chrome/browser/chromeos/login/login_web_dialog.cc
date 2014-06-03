@@ -27,6 +27,10 @@ namespace {
 const double kDefaultWidthRatio = 0.6;
 const double kDefaultHeightRatio = 0.6;
 
+// Default width/height ratio of minimal dialog size.
+const double kMinimumWidthRatio = 0.25;
+const double kMinimumHeightRatio = 0.25;
+
 }  // namespace
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -37,7 +41,7 @@ void LoginWebDialog::Delegate::OnDialogClosed() {
 
 LoginWebDialog::LoginWebDialog(Delegate* delegate,
                                gfx::NativeWindow parent_window,
-                               const string16& title,
+                               const base::string16& title,
                                const GURL& url,
                                Style style)
     : delegate_(delegate),
@@ -68,7 +72,7 @@ void LoginWebDialog::SetDialogSize(int width, int height) {
   height_ = height;
 }
 
-void LoginWebDialog::SetDialogTitle(const string16& title) {
+void LoginWebDialog::SetDialogTitle(const base::string16& title) {
   title_ = title;
 }
 
@@ -79,7 +83,7 @@ ui::ModalType LoginWebDialog::GetDialogModalType() const {
   return ui::MODAL_TYPE_SYSTEM;
 }
 
-string16 LoginWebDialog::GetDialogTitle() const {
+base::string16 LoginWebDialog::GetDialogTitle() const {
   return title_;
 }
 
@@ -93,6 +97,12 @@ void LoginWebDialog::GetWebUIMessageHandlers(
 
 void LoginWebDialog::GetDialogSize(gfx::Size* size) const {
   size->SetSize(width_, height_);
+}
+
+void LoginWebDialog::GetMinimumDialogSize(gfx::Size* size) const {
+  gfx::Rect screen_bounds(chromeos::CalculateScreenBounds(gfx::Size()));
+  size->SetSize(kMinimumWidthRatio * screen_bounds.width(),
+                kMinimumHeightRatio * screen_bounds.height());
 }
 
 std::string LoginWebDialog::GetDialogArgs() const {

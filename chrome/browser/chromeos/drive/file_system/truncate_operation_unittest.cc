@@ -6,10 +6,11 @@
 
 #include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/task_runner_util.h"
 #include "chrome/browser/chromeos/drive/drive.pb.h"
 #include "chrome/browser/chromeos/drive/fake_free_disk_space_getter.h"
 #include "chrome/browser/chromeos/drive/file_system/operation_test_base.h"
-#include "chrome/browser/google_apis/test_util.h"
+#include "google_apis/drive/test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace drive {
@@ -17,7 +18,7 @@ namespace file_system {
 
 class TruncateOperationTest : public OperationTestBase {
  protected:
-  virtual void SetUp() {
+  virtual void SetUp() OVERRIDE {
     OperationTestBase::SetUp();
 
     operation_.reset(new TruncateOperation(
@@ -47,15 +48,19 @@ TEST_F(TruncateOperationTest, Truncate) {
 
   base::FilePath local_path;
   error = FILE_ERROR_FAILED;
-  cache()->GetFileOnUIThread(
-      src_entry.resource_id(),
-      google_apis::test_util::CreateCopyResultCallback(&error, &local_path));
+  base::PostTaskAndReplyWithResult(
+      blocking_task_runner(),
+      FROM_HERE,
+      base::Bind(&internal::FileCache::GetFile,
+                 base::Unretained(cache()),
+                 GetLocalId(file_in_root), &local_path),
+      google_apis::test_util::CreateCopyResultCallback(&error));
   test_util::RunBlockingPoolTask();
   ASSERT_EQ(FILE_ERROR_OK, error);
 
   // The local file should be truncated.
   int64 local_file_size = 0;
-  file_util::GetFileSize(local_path, &local_file_size);
+  base::GetFileSize(local_path, &local_file_size);
   EXPECT_EQ(1, local_file_size);
 }
 
@@ -106,15 +111,19 @@ TEST_F(TruncateOperationTest, Extend) {
 
   base::FilePath local_path;
   error = FILE_ERROR_FAILED;
-  cache()->GetFileOnUIThread(
-      src_entry.resource_id(),
-      google_apis::test_util::CreateCopyResultCallback(&error, &local_path));
+  base::PostTaskAndReplyWithResult(
+      blocking_task_runner(),
+      FROM_HERE,
+      base::Bind(&internal::FileCache::GetFile,
+                 base::Unretained(cache()),
+                 GetLocalId(file_in_root), &local_path),
+      google_apis::test_util::CreateCopyResultCallback(&error));
   test_util::RunBlockingPoolTask();
   ASSERT_EQ(FILE_ERROR_OK, error);
 
   // The local file should be truncated.
   std::string content;
-  ASSERT_TRUE(file_util::ReadFileToString(local_path, &content));
+  ASSERT_TRUE(base::ReadFileToString(local_path, &content));
 
   EXPECT_EQ(file_size + 10, static_cast<int64>(content.size()));
   // All trailing 10 bytes should be '\0'.

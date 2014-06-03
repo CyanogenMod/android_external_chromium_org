@@ -9,8 +9,8 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/spellchecker/spellcheck_factory.h"
 #include "chrome/browser/spellchecker/spellcheck_service.h"
-#include "chrome/browser/sync/profile_sync_service_harness.h"
 #include "chrome/browser/sync/test/integration/dictionary_load_observer.h"
+#include "chrome/browser/sync/test/integration/profile_sync_service_harness.h"
 #include "chrome/browser/sync/test/integration/sync_datatype_helper.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
 #include "chrome/common/chrome_switches.h"
@@ -39,12 +39,12 @@ namespace dictionary_helper {
 namespace {
 
 SpellcheckCustomDictionary* GetDictionary(int index) {
-  return SpellcheckServiceFactory::GetForProfile(
+  return SpellcheckServiceFactory::GetForContext(
       sync_datatype_helper::test()->GetProfile(index))->GetCustomDictionary();
 }
 
 SpellcheckCustomDictionary* GetVerifierDictionary() {
-  return SpellcheckServiceFactory::GetForProfile(
+  return SpellcheckServiceFactory::GetForContext(
       sync_datatype_helper::test()->verifier())->GetCustomDictionary();
 }
 

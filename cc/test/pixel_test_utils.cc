@@ -20,7 +20,7 @@ bool WritePNGFile(const SkBitmap& bitmap, const base::FilePath& file_path,
   if (gfx::PNGCodec::EncodeBGRASkBitmap(bitmap,
                                         discard_transparency,
                                         &png_data) &&
-      file_util::CreateDirectory(file_path.DirName())) {
+      base::CreateDirectory(file_path.DirName())) {
     char* data = reinterpret_cast<char*>(&png_data[0]);
     int size = static_cast<int>(png_data.size());
     return file_util::WriteFile(file_path, data, size) == size;
@@ -31,7 +31,7 @@ bool WritePNGFile(const SkBitmap& bitmap, const base::FilePath& file_path,
 bool ReadPNGFile(const base::FilePath& file_path, SkBitmap* bitmap) {
   DCHECK(bitmap);
   std::string png_data;
-  return file_util::ReadFileToString(file_path, &png_data) &&
+  return base::ReadFileToString(file_path, &png_data) &&
          gfx::PNGCodec::Decode(reinterpret_cast<unsigned char*>(&png_data[0]),
                                png_data.length(),
                                bitmap);

@@ -9,7 +9,7 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_test_message_listener.h"
-#include "chrome/browser/extensions/test_management_policy.h"
+#include "chrome/browser/extensions/launch_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
@@ -17,8 +17,10 @@
 #include "chrome/browser/ui/browser_iterator.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/manifest.h"
+#include "chrome/common/extensions/extension_constants.h"
 #include "content/public/test/test_utils.h"
+#include "extensions/browser/test_management_policy.h"
+#include "extensions/common/manifest.h"
 
 using extensions::Extension;
 using extensions::Manifest;
@@ -48,11 +50,12 @@ class ExtensionManagementApiTest : public ExtensionApiTest {
   virtual void LoadExtensions() {
     base::FilePath basedir = test_data_dir_.AppendASCII("management");
 
-    // Load 4 enabled items.
+    // Load 5 enabled items.
     LoadNamedExtension(basedir, "enabled_extension");
     LoadNamedExtension(basedir, "enabled_app");
     LoadNamedExtension(basedir, "description");
     LoadNamedExtension(basedir, "permissions");
+    LoadNamedExtension(basedir, "short_name");
 
     // Load 2 disabled items.
     LoadNamedExtension(basedir, "disabled_extension");
@@ -69,7 +72,7 @@ class ExtensionManagementApiTest : public ExtensionApiTest {
     ASSERT_TRUE(LoadExtension(test_data_dir_.AppendASCII(app_path)));
 
     if (out_app_id)
-      *out_app_id = last_loaded_extension_id_;
+      *out_app_id = last_loaded_extension_id();
 
     ASSERT_TRUE(launched_app.WaitUntilSatisfied());
   }
@@ -217,8 +220,8 @@ IN_PROC_BROWSER_TEST_F(ExtensionManagementApiTest, DISABLED_LaunchPanelApp) {
 
   // Set a pref indicating that the user wants to launch in a regular tab.
   // This should be ignored, because panel apps always load in a popup.
-  service->extension_prefs()->SetLaunchType(
-      app_id, extensions::ExtensionPrefs::LAUNCH_REGULAR);
+  extensions::SetLaunchType(service->extension_prefs(),
+      app_id, extensions::LAUNCH_TYPE_REGULAR);
 
   // Load the extension again.
   std::string app_id_new;
@@ -277,8 +280,8 @@ IN_PROC_BROWSER_TEST_F(ExtensionManagementApiTest, MAYBE_LaunchTabApp) {
   ASSERT_FALSE(service->GetExtensionById(app_id, true));
 
   // Set a pref indicating that the user wants to launch in a window.
-  service->extension_prefs()->SetLaunchType(
-      app_id, extensions::ExtensionPrefs::LAUNCH_WINDOW);
+  extensions::SetLaunchType(service->extension_prefs(),
+      app_id, extensions::LAUNCH_TYPE_WINDOW);
 
   std::string app_id_new;
   LoadAndWaitForLaunch("management/launch_app_tab", &app_id_new);

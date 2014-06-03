@@ -5,13 +5,9 @@
 #include "ppapi/shared_impl/ppb_audio_shared.h"
 
 #include "base/logging.h"
-#include "media/audio/shared_memory_util.h"
 #include "ppapi/shared_impl/ppapi_globals.h"
+#include "ppapi/shared_impl/ppb_audio_config_shared.h"
 #include "ppapi/shared_impl/proxy_lock.h"
-
-// Hard coded values from PepperPlatformAudioOutputImpl.
-// TODO(dalecurtis): PPAPI shouldn't hard code these values for all clients.
-enum { kChannels = 2, kBytesPerSample = 2 };
 
 namespace ppapi {
 
@@ -22,6 +18,41 @@ PP_ThreadFunctions thread_functions;
 }
 #endif  // defined(OS_NACL)
 
+AudioCallbackCombined::AudioCallbackCombined() : callback_1_0_(NULL),
+                                                 callback_(NULL) {
+}
+
+AudioCallbackCombined::AudioCallbackCombined(
+    PPB_Audio_Callback_1_0 callback_1_0)
+    : callback_1_0_(callback_1_0),
+      callback_(NULL) {
+}
+
+AudioCallbackCombined::AudioCallbackCombined(PPB_Audio_Callback callback)
+    : callback_1_0_(NULL),
+      callback_(callback) {
+}
+
+AudioCallbackCombined::~AudioCallbackCombined() {
+}
+
+bool AudioCallbackCombined::IsValid() const {
+  return callback_1_0_ || callback_;
+}
+
+void AudioCallbackCombined::Run(void* sample_buffer,
+                                uint32_t buffer_size_in_bytes,
+                                PP_TimeDelta latency,
+                                void* user_data) const {
+  if (callback_) {
+    callback_(sample_buffer, buffer_size_in_bytes, latency, user_data);
+  } else if (callback_1_0_) {
+    callback_1_0_(sample_buffer, buffer_size_in_bytes, user_data);
+  } else {
+    NOTREACHED();
+  }
+}
+
 PPB_Audio_Shared::PPB_Audio_Shared()
     : playing_(false),
       shared_memory_size_(0),
@@ -29,9 +60,10 @@ PPB_Audio_Shared::PPB_Audio_Shared()
       thread_id_(0),
       thread_active_(false),
 #endif
-      callback_(NULL),
       user_data_(NULL),
-      client_buffer_size_bytes_(0) {
+      client_buffer_size_bytes_(0),
+      bytes_per_second_(0),
+      buffer_index_(0) {
 }
 
 PPB_Audio_Shared::~PPB_Audio_Shared() {
@@ -41,7 +73,7 @@ PPB_Audio_Shared::~PPB_Audio_Shared() {
   StopThread();
 }
 
-void PPB_Audio_Shared::SetCallback(PPB_Audio_Callback callback,
+void PPB_Audio_Shared::SetCallback(const AudioCallbackCombined& callback,
                                    void* user_data) {
   callback_ = callback;
   user_data_ = user_data;
@@ -74,13 +106,16 @@ void PPB_Audio_Shared::SetStreamInfo(
     base::SharedMemoryHandle shared_memory_handle,
     size_t shared_memory_size,
     base::SyncSocket::Handle socket_handle,
+    PP_AudioSampleRate sample_rate,
     int sample_frame_count) {
   socket_.reset(new base::CancelableSyncSocket(socket_handle));
   shared_memory_.reset(new base::SharedMemory(shared_memory_handle, false));
   shared_memory_size_ = shared_memory_size;
+  bytes_per_second_ = kAudioOutputChannels * (kBitsPerAudioOutputSample / 8) *
+                      sample_rate;
+  buffer_index_ = 0;
 
-  if (!shared_memory_->Map(
-          media::TotalSharedMemorySizeInBytes(shared_memory_size_))) {
+  if (!shared_memory_->Map(shared_memory_size_)) {
     PpapiGlobals::Get()->LogWithSource(
         instance,
         PP_LOGLEVEL_WARNING,
@@ -88,10 +123,11 @@ void PPB_Audio_Shared::SetStreamInfo(
         "Failed to map shared memory for PPB_Audio_Shared.");
   } else {
     audio_bus_ = media::AudioBus::WrapMemory(
-        kChannels, sample_frame_count, shared_memory_->memory());
+        kAudioOutputChannels, sample_frame_count, shared_memory_->memory());
     // Setup integer audio buffer for user audio data.
     client_buffer_size_bytes_ =
-        audio_bus_->frames() * audio_bus_->channels() * kBytesPerSample;
+        audio_bus_->frames() * audio_bus_->channels() *
+        kBitsPerAudioOutputSample / 8;
     client_buffer_.reset(new uint8_t[client_buffer_size_bytes_]);
   }
 
@@ -100,8 +136,9 @@ void PPB_Audio_Shared::SetStreamInfo(
 
 void PPB_Audio_Shared::StartThread() {
   // Don't start the thread unless all our state is set up correctly.
-  if (!playing_ || !callback_ || !socket_.get() || !shared_memory_->memory() ||
-      !audio_bus_.get() || !client_buffer_.get())
+  if (!playing_ || !callback_.IsValid() || !socket_.get() ||
+      !shared_memory_->memory() || !audio_bus_.get() || !client_buffer_.get() ||
+      bytes_per_second_ == 0)
     return;
   // Clear contents of shm buffer before starting audio thread. This will
   // prevent a burst of static if for some reason the audio thread doesn't
@@ -166,27 +203,31 @@ void PPB_Audio_Shared::CallRun(void* self) {
 #endif
 
 void PPB_Audio_Shared::Run() {
-  int pending_data;
-  const int bytes_per_frame =
-      sizeof(*audio_bus_->channel(0)) * audio_bus_->channels();
-
+  int pending_data = 0;
   while (sizeof(pending_data) ==
-      socket_->Receive(&pending_data, sizeof(pending_data)) &&
-      pending_data != media::kPauseMark) {
-    callback_(client_buffer_.get(), client_buffer_size_bytes_, user_data_);
+         socket_->Receive(&pending_data, sizeof(pending_data))) {
+    // |buffer_index_| must track the number of Receive() calls.  See the Send()
+    // call below for why this is important.
+    ++buffer_index_;
+    if (pending_data < 0)
+      break;
 
-    // Deinterleave the audio data into the shared memory as float.
+    PP_TimeDelta latency =
+        static_cast<double>(pending_data) / bytes_per_second_;
+    callback_.Run(client_buffer_.get(), client_buffer_size_bytes_, latency,
+                  user_data_);
+
+    // Deinterleave the audio data into the shared memory as floats.
     audio_bus_->FromInterleaved(
-        client_buffer_.get(), audio_bus_->frames(), kBytesPerSample);
+        client_buffer_.get(), audio_bus_->frames(),
+        kBitsPerAudioOutputSample / 8);
 
-    // Let the host know we are done.
-    // TODO(dalecurtis): Technically this is not the exact size.  Due to channel
-    // padding for alignment, there may be more data available than this.  We're
-    // relying on AudioSyncReader::Read() to parse this with that in mind.
-    // Rename these methods to Set/GetActualFrameCount().
-    media::SetActualDataSizeInBytes(
-        shared_memory_.get(), shared_memory_size_,
-        audio_bus_->frames() * bytes_per_frame);
+    // Let the other end know which buffer we just filled.  The buffer index is
+    // used to ensure the other end is getting the buffer it expects.  For more
+    // details on how this works see AudioSyncReader::WaitUntilDataIsReady().
+    size_t bytes_sent = socket_->Send(&buffer_index_, sizeof(buffer_index_));
+    if (bytes_sent != sizeof(buffer_index_))
+      break;
   }
 }
 

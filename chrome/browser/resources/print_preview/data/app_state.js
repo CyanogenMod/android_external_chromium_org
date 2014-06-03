@@ -36,6 +36,8 @@ cr.define('print_preview', function() {
     VERSION: 'version',
     SELECTED_DESTINATION_ID: 'selectedDestinationId',
     SELECTED_DESTINATION_ORIGIN: 'selectedDestinationOrigin',
+    SELECTED_DESTINATION_CAPABILITIES: 'selectedDestinationCapabilities',
+    SELECTED_DESTINATION_NAME: 'selectedDestinationName',
     IS_SELECTED_DESTINATION_LOCAL: 'isSelectedDestinationLocal',  // Deprecated
     IS_GCP_PROMO_DISMISSED: 'isGcpPromoDismissed',
     MARGINS_TYPE: 'marginsType',
@@ -74,6 +76,16 @@ cr.define('print_preview', function() {
     /** @return {?string} Origin of the selected destination. */
     get selectedDestinationOrigin() {
       return this.state_[AppState.Field.SELECTED_DESTINATION_ORIGIN];
+    },
+
+    /** @return {?print_preview.Cdd} CDD of the selected destination. */
+    get selectedDestinationCapabilities() {
+      return this.state_[AppState.Field.SELECTED_DESTINATION_CAPBILITIES];
+    },
+
+    /** @return {?string} Name of the selected destination. */
+    get selectedDestinationName() {
+      return this.state_[AppState.Field.SELECTED_DESTINATION_NAME];
     },
 
     /** @return {boolean} Whether the GCP promotion has been dismissed. */
@@ -127,6 +139,12 @@ cr.define('print_preview', function() {
         // Set some state defaults.
         this.state_[AppState.Field.IS_GCP_PROMO_DISMISSED] = false;
       }
+    },
+
+    /**
+     * Sets to initialized state. Now object will accept persist requests.
+     */
+    setInitialized: function() {
       this.isInitialized_ = true;
     },
 
@@ -136,6 +154,8 @@ cr.define('print_preview', function() {
      * @param {Object} value Value of field to persist.
      */
     persistField: function(field, value) {
+      if (!this.isInitialized_)
+        return;
       if (field == AppState.Field.CUSTOM_MARGINS) {
         this.state_[field] = value ? value.serialize() : null;
       } else {
@@ -149,8 +169,13 @@ cr.define('print_preview', function() {
      * @param {!print_preview.Destination} dest Destination to persist.
      */
     persistSelectedDestination: function(dest) {
+      if (!this.isInitialized_)
+        return;
       this.state_[AppState.Field.SELECTED_DESTINATION_ID] = dest.id;
       this.state_[AppState.Field.SELECTED_DESTINATION_ORIGIN] = dest.origin;
+      this.state_[AppState.Field.SELECTED_DESTINATION_CAPBILITIES] =
+          dest.capabilities;
+      this.state_[AppState.Field.SELECTED_DESTINATION_NAME] = dest.displayName;
       this.persist_();
     },
 
@@ -160,6 +185,8 @@ cr.define('print_preview', function() {
      *     dismissed.
      */
     persistIsGcpPromoDismissed: function(isGcpPromoDismissed) {
+      if (!this.isInitialized_)
+        return;
       this.state_[AppState.Field.IS_GCP_PROMO_DISMISSED] = isGcpPromoDismissed;
       this.persist_();
     },
@@ -169,10 +196,8 @@ cr.define('print_preview', function() {
      * @private
      */
     persist_: function() {
-      if (this.isInitialized_) {
-        chrome.send(AppState.NATIVE_FUNCTION_NAME_,
-                    [JSON.stringify(this.state_)]);
-      }
+      chrome.send(AppState.NATIVE_FUNCTION_NAME_,
+                  [JSON.stringify(this.state_)]);
     }
   };
 

@@ -27,7 +27,6 @@ class SSLConfigServiceManager;
 
 #if defined(OS_CHROMEOS)
 namespace chromeos {
-class EnterpriseExtensionObserver;
 class LocaleChangeGuard;
 class Preferences;
 }
@@ -44,6 +43,7 @@ class ExtensionSystem;
 namespace policy {
 class CloudPolicyManager;
 class ProfilePolicyConnector;
+class SchemaRegistryService;
 }
 
 namespace user_prefs {
@@ -77,8 +77,14 @@ class ProfileImpl : public Profile {
   virtual void RequestMIDISysExPermission(
       int render_process_id,
       int render_view_id,
+      int bridge_id,
       const GURL& requesting_frame,
       const MIDISysExPermissionCallback& callback) OVERRIDE;
+  virtual void CancelMIDISysExPermissionRequest(
+      int render_process_id,
+      int render_view_id,
+      int bridge_id,
+      const GURL& requesting_frame) OVERRIDE;
   virtual content::ResourceContext* GetResourceContext() OVERRIDE;
   virtual content::GeolocationPermissionContext*
       GetGeolocationPermissionContext() OVERRIDE;
@@ -129,7 +135,6 @@ class ProfileImpl : public Profile {
   virtual void ChangeAppLocale(const std::string& locale,
                                AppLocaleChangedVia) OVERRIDE;
   virtual void OnLogin() OVERRIDE;
-  virtual void SetupChromeOSEnterpriseExtensionObserver() OVERRIDE;
   virtual void InitChromeOSPreferences() OVERRIDE;
 #endif  // defined(OS_CHROMEOS)
 
@@ -162,9 +167,6 @@ class ProfileImpl : public Profile {
   void OnZoomLevelChanged(
       const content::HostZoomMap::ZoomLevelChange& change);
 
-  void OnInitializationCompleted(PrefService* pref_service,
-                                 bool succeeded);
-
   // Does final prefs initialization and calls Init().
   void OnPrefsLoaded(bool success);
 
@@ -186,6 +188,7 @@ class ProfileImpl : public Profile {
   // Updates the ProfileInfoCache with data from this profile.
   void UpdateProfileNameCache();
   void UpdateProfileAvatarCache();
+  void UpdateProfileIsEphemeralCache();
 
   void GetCacheParameters(bool is_media_context,
                           base::FilePath* cache_path,
@@ -193,7 +196,7 @@ class ProfileImpl : public Profile {
 
   PrefProxyConfigTracker* CreateProxyConfigTracker();
 
-  content::HostZoomMap::ZoomLevelChangedCallback zoom_callback_;
+  scoped_ptr<content::HostZoomMap::Subscription> zoom_subscription_;
   PrefChangeRegistrar pref_change_registrar_;
 
   base::FilePath path_;
@@ -208,8 +211,10 @@ class ProfileImpl : public Profile {
   // TODO(mnissler, joaodasilva): The |profile_policy_connector_| provides the
   // PolicyService that the |prefs_| depend on, and must outlive |prefs_|.
   // This can be removed once |prefs_| becomes a BrowserContextKeyedService too.
-  // |profile_policy_connector_| in turn depends on |cloud_policy_manager_|.
+  // |profile_policy_connector_| in turn depends on |cloud_policy_manager_|,
+  // which depends on |schema_registry_service_|.
 #if defined(ENABLE_CONFIGURATION_POLICY)
+  scoped_ptr<policy::SchemaRegistryService> schema_registry_service_;
   scoped_ptr<policy::CloudPolicyManager> cloud_policy_manager_;
 #endif
   scoped_ptr<policy::ProfilePolicyConnector> profile_policy_connector_;
@@ -246,10 +251,9 @@ class ProfileImpl : public Profile {
 #if defined(OS_CHROMEOS)
   scoped_ptr<chromeos::Preferences> chromeos_preferences_;
 
-  scoped_ptr<chromeos::EnterpriseExtensionObserver>
-      chromeos_enterprise_extension_observer_;
-
   scoped_ptr<chromeos::LocaleChangeGuard> locale_change_guard_;
+
+  bool is_login_profile_;
 #endif
 
   scoped_ptr<PrefProxyConfigTracker> pref_proxy_config_tracker_;

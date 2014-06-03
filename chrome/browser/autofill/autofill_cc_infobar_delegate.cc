@@ -5,6 +5,7 @@
 #include "chrome/browser/autofill/autofill_cc_infobar_delegate.h"
 
 #include "base/logging.h"
+#include "chrome/browser/infobars/infobar.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "components/autofill/core/browser/credit_card.h"
 #include "components/autofill/core/browser/personal_data_manager.h"
@@ -13,9 +14,9 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "grit/generated_resources.h"
+#include "grit/google_chrome_strings.h"
 #include "grit/theme_resources.h"
 #include "ui/base/l10n/l10n_util.h"
-
 
 namespace autofill {
 
@@ -24,16 +25,15 @@ void AutofillCCInfoBarDelegate::Create(
     InfoBarService* infobar_service,
     const AutofillMetrics* metric_logger,
     const base::Closure& save_card_callback) {
-  infobar_service->AddInfoBar(scoped_ptr<InfoBarDelegate>(
-      new AutofillCCInfoBarDelegate(
-          infobar_service, metric_logger, save_card_callback)));
+  infobar_service->AddInfoBar(ConfirmInfoBarDelegate::CreateInfoBar(
+      scoped_ptr<ConfirmInfoBarDelegate>(new AutofillCCInfoBarDelegate(
+          metric_logger, save_card_callback))));
 }
 
 AutofillCCInfoBarDelegate::AutofillCCInfoBarDelegate(
-    InfoBarService* infobar_service,
     const AutofillMetrics* metric_logger,
     const base::Closure& save_card_callback)
-    : ConfirmInfoBarDelegate(infobar_service),
+    : ConfirmInfoBarDelegate(),
       metric_logger_(metric_logger),
       save_card_callback_(save_card_callback),
       had_user_interaction_(false) {
@@ -73,11 +73,12 @@ bool AutofillCCInfoBarDelegate::ShouldExpireInternal(
   return false;
 }
 
-string16 AutofillCCInfoBarDelegate::GetMessageText() const {
+base::string16 AutofillCCInfoBarDelegate::GetMessageText() const {
   return l10n_util::GetStringUTF16(IDS_AUTOFILL_CC_INFOBAR_TEXT);
 }
 
-string16 AutofillCCInfoBarDelegate::GetButtonLabel(InfoBarButton button) const {
+base::string16 AutofillCCInfoBarDelegate::GetButtonLabel(
+    InfoBarButton button) const {
   return l10n_util::GetStringUTF16((button == BUTTON_OK) ?
       IDS_AUTOFILL_CC_INFOBAR_ACCEPT : IDS_AUTOFILL_CC_INFOBAR_DENY);
 }
@@ -94,7 +95,7 @@ bool AutofillCCInfoBarDelegate::Cancel() {
   return true;
 }
 
-string16 AutofillCCInfoBarDelegate::GetLinkText() const {
+base::string16 AutofillCCInfoBarDelegate::GetLinkText() const {
   return l10n_util::GetStringUTF16(IDS_LEARN_MORE);
 }
 

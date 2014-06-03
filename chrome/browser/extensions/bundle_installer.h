@@ -16,7 +16,7 @@
 #include "chrome/browser/extensions/webstore_installer.h"
 #include "chrome/browser/ui/browser_list_observer.h"
 #include "chrome/browser/ui/host_desktop.h"
-#include "chrome/common/extensions/extension.h"
+#include "extensions/common/extension.h"
 
 namespace base {
 class DictionaryValue;
@@ -69,7 +69,7 @@ class BundleInstaller : public WebstoreInstallHelper::Delegate,
     Item();
 
     // Gets the localized name, formatted for display in the prompt or bubble.
-    string16 GetNameForDisplay();
+    base::string16 GetNameForDisplay();
 
     std::string id;
     std::string manifest;
@@ -109,7 +109,7 @@ class BundleInstaller : public WebstoreInstallHelper::Delegate,
   //   STATE_PENDING   - install prompt
   //   STATE_INSTALLED - installed bubble successful installs list
   //   STATE_FAILED    - installed bubble failed installs list
-  string16 GetHeadingTextFor(Item::State state) const;
+  base::string16 GetHeadingTextFor(Item::State state) const;
 
  private:
   friend class base::RefCountedThreadSafe<BundleInstaller>;

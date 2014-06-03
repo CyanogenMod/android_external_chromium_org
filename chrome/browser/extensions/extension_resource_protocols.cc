@@ -7,10 +7,11 @@
 #include "base/files/file_path.h"
 #include "base/memory/weak_ptr.h"
 #include "base/path_service.h"
+#include "base/threading/sequenced_worker_pool.h"
 #include "base/threading/thread_checker.h"
 #include "chrome/common/chrome_paths.h"
-#include "chrome/common/extensions/extension_file_util.h"
 #include "content/public/browser/browser_thread.h"
+#include "extensions/common/file_util.h"
 #include "net/url_request/url_request_file_job.h"
 
 namespace {
@@ -18,16 +19,19 @@ namespace {
 base::FilePath ResolvePath(const GURL& url) {
   base::FilePath root_path;
   PathService::Get(chrome::DIR_RESOURCES_EXTENSION, &root_path);
-  return extension_file_util::ExtensionResourceURLToFilePath(url, root_path);
+  return extensions::file_util::ExtensionResourceURLToFilePath(url, root_path);
 }
 
 class ExtensionResourcesJob : public net::URLRequestFileJob {
  public:
   ExtensionResourcesJob(net::URLRequest* request,
                         net::NetworkDelegate* network_delegate)
-    : net::URLRequestFileJob(request, network_delegate, base::FilePath()),
-      weak_ptr_factory_(this) {
-  }
+      : net::URLRequestFileJob(
+            request, network_delegate, base::FilePath(),
+            content::BrowserThread::GetBlockingPool()->
+                GetTaskRunnerWithShutdownBehavior(
+                    base::SequencedWorkerPool::SKIP_ON_SHUTDOWN)),
+        weak_ptr_factory_(this) {}
 
   virtual void Start() OVERRIDE;
 

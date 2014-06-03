@@ -78,7 +78,7 @@ bool PhishingClassifier::is_ready() const {
 }
 
 void PhishingClassifier::BeginClassification(
-    const string16* page_text,
+    const base::string16* page_text,
     const DoneCallback& done_callback) {
   DCHECK(is_ready());
 
@@ -103,13 +103,13 @@ void PhishingClassifier::BeginClassification(
 }
 
 void PhishingClassifier::BeginFeatureExtraction() {
-  WebKit::WebView* web_view = render_view_->GetWebView();
+  blink::WebView* web_view = render_view_->GetWebView();
   if (!web_view) {
     RunFailureCallback();
     return;
   }
 
-  WebKit::WebFrame* frame = web_view->mainFrame();
+  blink::WebFrame* frame = web_view->mainFrame();
   if (!frame) {
     RunFailureCallback();
     return;
@@ -118,12 +118,12 @@ void PhishingClassifier::BeginFeatureExtraction() {
   // Check whether the URL is one that we should classify.
   // Currently, we only classify http: URLs that are GET requests.
   GURL url(frame->document().url());
-  if (!url.SchemeIs(chrome::kHttpScheme)) {
+  if (!url.SchemeIs(content::kHttpScheme)) {
     RunFailureCallback();
     return;
   }
 
-  WebKit::WebDataSource* ds = frame->dataSource();
+  blink::WebDataSource* ds = frame->dataSource();
   if (!ds || !EqualsASCII(ds->request().httpMethod(), "GET")) {
     RunFailureCallback();
     return;
@@ -169,12 +169,12 @@ void PhishingClassifier::DOMExtractionFinished(bool success) {
 
 void PhishingClassifier::TermExtractionFinished(bool success) {
   if (success) {
-    WebKit::WebView* web_view = render_view_->GetWebView();
+    blink::WebView* web_view = render_view_->GetWebView();
     if (!web_view) {
       RunFailureCallback();
       return;
     }
-    WebKit::WebFrame* main_frame = web_view->mainFrame();
+    blink::WebFrame* main_frame = web_view->mainFrame();
     if (!main_frame) {
       RunFailureCallback();
       return;

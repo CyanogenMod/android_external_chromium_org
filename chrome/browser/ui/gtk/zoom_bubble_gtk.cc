@@ -178,7 +178,7 @@ void ZoomBubbleGtk::Refresh() {
   ZoomController* zoom_controller =
       ZoomController::FromWebContents(web_contents_);
   int zoom_percent = zoom_controller->zoom_percent();
-  string16 text =
+  base::string16 text =
       l10n_util::GetStringFUTF16Int(IDS_TOOLTIP_ZOOM, zoom_percent);
   gtk_label_set_text(GTK_LABEL(g_bubble->label_), UTF16ToUTF8(text).c_str());
   StartTimerIfNecessary();
@@ -218,7 +218,7 @@ void ZoomBubbleGtk::OnSetDefaultLinkClick(GtkWidget* widget) {
   double default_zoom_level = Profile::FromBrowserContext(
       web_contents_->GetBrowserContext())->GetPrefs()->GetDouble(
           prefs::kDefaultZoomLevel);
-  web_contents_->GetRenderViewHost()->SetZoomLevel(default_zoom_level);
+  web_contents_->SetZoomLevel(default_zoom_level);
 }
 
 gboolean ZoomBubbleGtk::OnMouseEnter(GtkWidget* widget,

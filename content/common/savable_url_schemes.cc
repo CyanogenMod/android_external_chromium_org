@@ -8,14 +8,16 @@
 
 #include "content/public/common/url_constants.h"
 
+namespace content {
+
 namespace {
 
 const char* const kDefaultSavableSchemes[] = {
-  chrome::kHttpScheme,
-  chrome::kHttpsScheme,
+  kHttpScheme,
+  kHttpsScheme,
   chrome::kFileScheme,
   chrome::kFileSystemScheme,
-  chrome::kFtpScheme,
+  kFtpScheme,
   chrome::kChromeDevToolsScheme,
   chrome::kChromeUIScheme,
   chrome::kDataScheme,
@@ -25,8 +27,6 @@ const char* const kDefaultSavableSchemes[] = {
 const char* const* g_savable_schemes = kDefaultSavableSchemes;
 
 }  // namespace
-
-namespace content {
 
 const char* const* GetSavableSchemesInternal() {
   return g_savable_schemes;

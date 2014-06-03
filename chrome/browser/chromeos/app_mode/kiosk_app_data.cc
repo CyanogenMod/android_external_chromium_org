@@ -8,22 +8,29 @@
 
 #include "base/bind.h"
 #include "base/file_util.h"
+#include "base/json/json_writer.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/prefs/pref_service.h"
+#include "base/prefs/scoped_user_pref_update.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/app_mode/kiosk_app_data_delegate.h"
 #include "chrome/browser/chromeos/app_mode/kiosk_app_manager.h"
+#include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_system.h"
+#include "chrome/browser/extensions/image_loader.h"
 #include "chrome/browser/extensions/webstore_data_fetcher.h"
 #include "chrome/browser/extensions/webstore_install_helper.h"
 #include "chrome/browser/image_decoder.h"
-#include "chrome/browser/prefs/scoped_user_pref_update.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/extension_constants.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
-#include "chrome/common/extensions/manifest.h"
+#include "chrome/common/extensions/manifest_handlers/icons_handler.h"
 #include "content/public/browser/browser_thread.h"
+#include "extensions/common/manifest.h"
+#include "extensions/common/manifest_constants.h"
 #include "ui/gfx/codec/png_codec.h"
+#include "ui/gfx/image/image.h"
 
 using content::BrowserThread;
 
@@ -53,7 +60,7 @@ void SaveIconToLocalOnBlockingPool(
 
   base::FilePath dir = icon_path.DirName();
   if (!base::PathExists(dir))
-    CHECK(file_util::CreateDirectory(dir));
+    CHECK(base::CreateDirectory(dir));
 
   CHECK_EQ(static_cast<int>(raw_icon->size()),
            file_util::WriteFile(icon_path,
@@ -63,12 +70,18 @@ void SaveIconToLocalOnBlockingPool(
 // Returns true for valid kiosk app manifest.
 bool IsValidKioskAppManifest(const extensions::Manifest& manifest) {
   bool kiosk_enabled;
-  if (manifest.GetBoolean(extension_manifest_keys::kKioskEnabled,
+  if (manifest.GetBoolean(extensions::manifest_keys::kKioskEnabled,
                           &kiosk_enabled)) {
     return kiosk_enabled;
   }
 
   return false;
+}
+
+std::string ValueToString(const base::Value* value) {
+  std::string json;
+  base::JSONWriter::Write(value, &json);
+  return json;
 }
 
 }  // namespace
@@ -112,7 +125,7 @@ class KioskAppData::IconLoader : public ImageDecoder::Delegate {
     DCHECK(task_runner_->RunsTasksOnCurrentThread());
 
     std::string data;
-    if (!file_util::ReadFileToString(base::FilePath(icon_path_), &data)) {
+    if (!base::ReadFileToString(base::FilePath(icon_path_), &data)) {
       ReportResultOnBlockingPool(FAILED_TO_LOAD);
       return;
     }
@@ -281,6 +294,28 @@ void KioskAppData::ClearCache() {
   }
 }
 
+void KioskAppData::LoadFromInstalledApp(Profile* profile,
+                                        const extensions::Extension* app) {
+  SetStatus(STATUS_LOADING);
+
+  if (!app) {
+    app = extensions::ExtensionSystem::Get(profile)
+              ->extension_service()
+              ->GetInstalledExtension(app_id_);
+  }
+
+  DCHECK_EQ(app_id_, app->id());
+
+  name_ = app->name();
+
+  const int kIconSize = extension_misc::EXTENSION_ICON_LARGE;
+  extensions::ExtensionResource image = extensions::IconsInfo::GetIconResource(
+      app, kIconSize, ExtensionIconSet::MATCH_BIGGER);
+  extensions::ImageLoader::Get(profile)->LoadImageAsync(
+      app, image, gfx::Size(kIconSize, kIconSize),
+      base::Bind(&KioskAppData::OnExtensionIconLoaded, AsWeakPtr()));
+}
+
 bool KioskAppData::IsLoading() const {
   return status_ == STATUS_LOADING;
 }
@@ -347,21 +382,7 @@ void KioskAppData::SetCache(const std::string& name,
   icon_path_ = icon_path;
 }
 
-void KioskAppData::OnIconLoadSuccess(
-    const scoped_refptr<base::RefCountedString>& raw_icon,
-    const gfx::ImageSkia& icon) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  raw_icon_ = raw_icon;
-  icon_ = icon;
-  SetStatus(STATUS_LOADED);
-}
-
-void KioskAppData::OnIconLoadFailure() {
-  // Re-fetch data from web store when failed to load cached data.
-  StartFetch();
-}
-
-void KioskAppData::OnWebstoreParseSuccess(const SkBitmap& icon) {
+void KioskAppData::SetCache(const std::string& name, const SkBitmap& icon) {
   icon_ = gfx::ImageSkia::CreateFrom1xBitmap(icon);
   icon_.MakeThreadSafe();
 
@@ -380,7 +401,37 @@ void KioskAppData::OnWebstoreParseSuccess(const SkBitmap& icon) {
       FROM_HERE,
       base::Bind(&SaveIconToLocalOnBlockingPool, icon_path, raw_icon_));
 
-  SetCache(name_, icon_path);
+  SetCache(name, icon_path);
+}
+
+void KioskAppData::OnExtensionIconLoaded(const gfx::Image& icon) {
+  if (icon.IsEmpty()) {
+    LOG(WARNING) << "Failed to load icon from installed app"
+                 << ", id=" << app_id_;
+    SetCache(name_, *extensions::IconsInfo::GetDefaultAppIcon().bitmap());
+  } else {
+    SetCache(name_, icon.AsBitmap());
+  }
+
+  SetStatus(STATUS_LOADED);
+}
+
+void KioskAppData::OnIconLoadSuccess(
+    const scoped_refptr<base::RefCountedString>& raw_icon,
+    const gfx::ImageSkia& icon) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  raw_icon_ = raw_icon;
+  icon_ = icon;
+  SetStatus(STATUS_LOADED);
+}
+
+void KioskAppData::OnIconLoadFailure() {
+  // Re-fetch data from web store when failed to load cached data.
+  StartFetch();
+}
+
+void KioskAppData::OnWebstoreParseSuccess(const SkBitmap& icon) {
+  SetCache(name_, icon);
   SetStatus(STATUS_LOADED);
 }
 
@@ -402,31 +453,27 @@ void KioskAppData::OnWebstoreRequestFailure() {
 }
 
 void KioskAppData::OnWebstoreResponseParseSuccess(
-      base::DictionaryValue* webstore_data) {
+      scoped_ptr<base::DictionaryValue> webstore_data) {
   // Takes ownership of |webstore_data|.
-  scoped_ptr<base::DictionaryValue> data(webstore_data);
-
   webstore_fetcher_.reset();
 
   std::string manifest;
-  if (!webstore_data->GetString(kManifestKey, &manifest)) {
-    OnWebstoreResponseParseFailure(kInvalidWebstoreResponseError);
+  if (!CheckResponseKeyValue(webstore_data.get(), kManifestKey, &manifest))
     return;
-  }
 
-  if (!webstore_data->GetString(kLocalizedNameKey, &name_)) {
-    OnWebstoreResponseParseFailure(kInvalidWebstoreResponseError);
+  if (!CheckResponseKeyValue(webstore_data.get(), kLocalizedNameKey, &name_))
     return;
-  }
 
   std::string icon_url_string;
-  if (!webstore_data->GetString(kIconUrlKey, &icon_url_string)) {
-    OnWebstoreResponseParseFailure(kInvalidWebstoreResponseError);
+  if (!CheckResponseKeyValue(webstore_data.get(), kIconUrlKey,
+                             &icon_url_string))
     return;
-  }
+
   GURL icon_url = GURL(extension_urls::GetWebstoreLaunchURL()).Resolve(
       icon_url_string);
   if (!icon_url.is_valid()) {
+    LOG(ERROR) << "Webstore response error (icon url): "
+               << ValueToString(webstore_data.get());
     OnWebstoreResponseParseFailure(kInvalidWebstoreResponseError);
     return;
   }
@@ -439,8 +486,22 @@ void KioskAppData::OnWebstoreResponseParseSuccess(
 }
 
 void KioskAppData::OnWebstoreResponseParseFailure(const std::string& error) {
+  LOG(ERROR) << "Webstore failed for kiosk app " << app_id_
+             << ", " << error;
   webstore_fetcher_.reset();
   SetStatus(STATUS_ERROR);
+}
+
+bool KioskAppData::CheckResponseKeyValue(const base::DictionaryValue* response,
+                                         const char* key,
+                                         std::string* value) {
+  if (!response->GetString(key, value)) {
+    LOG(ERROR) << "Webstore response error (" << key
+               << "): " << ValueToString(response);
+    OnWebstoreResponseParseFailure(kInvalidWebstoreResponseError);
+    return false;
+  }
+  return true;
 }
 
 }  // namespace chromeos

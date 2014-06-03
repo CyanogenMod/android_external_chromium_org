@@ -93,7 +93,7 @@ int main(int argc, char* argv[]) {
     return PrintHelp();
 
   base::AtExitManager exit_manager;
-  icu_util::Initialize();
+  base::i18n::InitializeICU();
 
   base::FilePath file_base = base::FilePath(argv[1]);
 
@@ -136,14 +136,14 @@ int main(int argc, char* argv[]) {
   base::FilePath out_path =
       file_base.ReplaceExtension(FILE_PATH_LITERAL(".bdic"));
   printf("Writing %" PRFilePath " ...\n", out_path.value().c_str());
-  FILE* out_file = file_util::OpenFile(out_path, "wb");
+  FILE* out_file = base::OpenFile(out_path, "wb");
   if (!out_file) {
     printf("ERROR writing file\n");
     return 1;
   }
   size_t written = fwrite(&serialized[0], 1, serialized.size(), out_file);
   CHECK(written == serialized.size());
-  file_util::CloseFile(out_file);
+  base::CloseFile(out_file);
 
   return 0;
 }

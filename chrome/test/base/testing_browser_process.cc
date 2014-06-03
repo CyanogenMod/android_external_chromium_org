@@ -10,6 +10,8 @@
 #include "chrome/browser/background/background_mode_manager.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browser_process_impl.h"
+#include "chrome/browser/extensions/chrome_extensions_browser_client.h"
+#include "chrome/browser/printing/print_job_manager.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/bookmarks/bookmark_prompt_controller.h"
 #include "chrome/test/base/testing_browser_process_platform_part.h"
@@ -34,7 +36,7 @@
 #if defined(ENABLE_CONFIGURATION_POLICY)
 #include "chrome/browser/policy/browser_policy_connector.h"
 #else
-#include "chrome/browser/policy/policy_service_stub.h"
+#include "components/policy/core/common/policy_service_stub.h"
 #endif  // defined(ENABLE_CONFIGURATION_POLICY)
 
 #if defined(ENABLE_FULL_PRINTING)
@@ -47,6 +49,20 @@ TestingBrowserProcess* TestingBrowserProcess::GetGlobal() {
   return static_cast<TestingBrowserProcess*>(g_browser_process);
 }
 
+// static
+void TestingBrowserProcess::CreateInstance() {
+  DCHECK(!g_browser_process);
+  g_browser_process = new TestingBrowserProcess;
+}
+
+// static
+void TestingBrowserProcess::DeleteInstance() {
+  // g_browser_process must be NULL during its own destruction.
+  BrowserProcess* browser_process = g_browser_process;
+  g_browser_process = NULL;
+  delete browser_process;
+}
+
 TestingBrowserProcess::TestingBrowserProcess()
     : notification_service_(content::NotificationService::Create()),
       module_ref_count_(0),
@@ -57,7 +73,10 @@ TestingBrowserProcess::TestingBrowserProcess()
       local_state_(NULL),
       io_thread_(NULL),
       system_request_context_(NULL),
-      platform_part_(new TestingBrowserProcessPlatformPart()) {
+      platform_part_(new TestingBrowserProcessPlatformPart()),
+      extensions_browser_client_(
+          new extensions::ChromeExtensionsBrowserClient) {
+  extensions::ExtensionsBrowserClient::Set(extensions_browser_client_.get());
 }
 
 TestingBrowserProcess::~TestingBrowserProcess() {
@@ -65,6 +84,7 @@ TestingBrowserProcess::~TestingBrowserProcess() {
 #if defined(ENABLE_CONFIGURATION_POLICY)
   SetBrowserPolicyConnector(NULL);
 #endif
+  extensions::ExtensionsBrowserClient::Set(NULL);
 
   // Destructors for some objects owned by TestingBrowserProcess will use
   // g_browser_process if it is not NULL, so it must be NULL before proceeding.
@@ -244,7 +264,14 @@ bool TestingBrowserProcess::IsShuttingDown() {
 }
 
 printing::PrintJobManager* TestingBrowserProcess::print_job_manager() {
+#if defined(ENABLE_FULL_PRINTING)
+  if (!print_job_manager_.get())
+    print_job_manager_.reset(new printing::PrintJobManager());
+  return print_job_manager_.get();
+#else
+  NOTIMPLEMENTED();
   return NULL;
+#endif
 }
 
 printing::PrintPreviewDialogController*
@@ -327,7 +354,7 @@ BookmarkPromptController* TestingBrowserProcess::bookmark_prompt_controller() {
 #endif
 }
 
-chrome::StorageMonitor* TestingBrowserProcess::storage_monitor() {
+StorageMonitor* TestingBrowserProcess::storage_monitor() {
 #if defined(OS_IOS) || defined(OS_ANDROID)
   NOTIMPLEMENTED();
   return NULL;
@@ -336,14 +363,13 @@ chrome::StorageMonitor* TestingBrowserProcess::storage_monitor() {
 #endif
 }
 
-chrome::MediaFileSystemRegistry*
-TestingBrowserProcess::media_file_system_registry() {
+MediaFileSystemRegistry* TestingBrowserProcess::media_file_system_registry() {
 #if defined(OS_IOS) || defined(OS_ANDROID)
   NOTIMPLEMENTED();
   return NULL;
 #else
   if (!media_file_system_registry_)
-    media_file_system_registry_.reset(new chrome::MediaFileSystemRegistry());
+    media_file_system_registry_.reset(new MediaFileSystemRegistry());
   return media_file_system_registry_.get();
 #endif
 }
@@ -416,8 +442,18 @@ void TestingBrowserProcess::SetSafeBrowsingService(
 }
 
 void TestingBrowserProcess::SetStorageMonitor(
-    scoped_ptr<chrome::StorageMonitor> storage_monitor) {
+    scoped_ptr<StorageMonitor> storage_monitor) {
 #if !defined(OS_IOS) && !defined(OS_ANDROID)
   storage_monitor_ = storage_monitor.Pass();
 #endif
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+TestingBrowserProcessInitializer::TestingBrowserProcessInitializer() {
+  TestingBrowserProcess::CreateInstance();
+}
+
+TestingBrowserProcessInitializer::~TestingBrowserProcessInitializer() {
+  TestingBrowserProcess::DeleteInstance();
 }

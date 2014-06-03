@@ -133,6 +133,7 @@ class Panel : public ui::BaseWindow,
   virtual void SetBounds(const gfx::Rect& bounds) OVERRIDE;
   virtual void FlashFrame(bool flash) OVERRIDE;
   virtual bool IsAlwaysOnTop() const OVERRIDE;
+  virtual void SetAlwaysOnTop(bool on_top) OVERRIDE;
 
   // Overridden from CommandUpdaterDelegate:
   virtual void ExecuteCommandWithDisposition(
@@ -245,16 +246,9 @@ class Panel : public ui::BaseWindow,
   // Handles keyboard events coming back from the renderer.
   void HandleKeyboardEvent(const content::NativeWebKeyboardEvent& event);
 
-  // Whether the panel window is always on top.
-  void SetAlwaysOnTop(bool on_top);
-
   // Sets whether the panel is shown in preview mode. When the panel is
   // being dragged, it is in preview mode.
   void SetPreviewMode(bool in_preview_mode);
-
-  // Sets up the panel for being resizable by the user - for example,
-  // enables the resize mouse cursors when mouse is hovering over the edges.
-  void EnableResizeByMouse(bool enable);
 
   // Sets whether the minimize or restore button, if any, are visible.
   void UpdateMinimizeRestoreButtonVisibility();
@@ -282,7 +276,7 @@ class Panel : public ui::BaseWindow,
   bool ExecuteCommandIfEnabled(int id);
 
   // Gets the title of the window from the web contents.
-  string16 GetWindowTitle() const;
+  base::string16 GetWindowTitle() const;
 
   // Gets the Favicon of the web contents.
   gfx::Image GetCurrentPageIcon() const;
@@ -345,7 +339,7 @@ class Panel : public ui::BaseWindow,
   void UpdateAppIcon();
 
   // Prepares a title string for display (removes embedded newlines, etc).
-  static void FormatTitleForDisplay(string16* title);
+  static void FormatTitleForDisplay(base::string16* title);
 
   // The application name that is also the name of the window when the
   // page content does not provide a title.

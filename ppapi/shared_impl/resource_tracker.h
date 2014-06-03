@@ -36,7 +36,14 @@ class PPAPI_SHARED_EXPORT ResourceTracker {
   // count of the resource is unaffected.
   Resource* GetResource(PP_Resource res) const;
 
+  // Takes a reference on the given resource.
+  // Do not call this method on on the host side for resources backed by a
+  // ResourceHost.
   void AddRefResource(PP_Resource res);
+
+  // Releases a reference on the given resource.
+  // Do not call this method on on the host side for resources backed by a
+  // ResourceHost.
   void ReleaseResource(PP_Resource res);
 
   // Releases a reference on the given resource once the message loop returns.
@@ -63,6 +70,14 @@ class PPAPI_SHARED_EXPORT ResourceTracker {
   // plugin side, make sure we have the proxy lock.
   void CheckThreadingPreconditions() const;
 
+  // This method is called by PluginResourceTracker's constructor so that in
+  // debug mode PP_Resources from the plugin process always have odd values
+  // (ignoring the type bits), while PP_Resources from the renderer process have
+  // even values.
+  // This allows us to check that resource refs aren't added or released on the
+  // wrong side.
+  void UseOddResourceValueInDebugMode();
+
   // Adds the given resource to the tracker, associating it with the instance
   // stored in the resource object. The new resource ID is returned, and the
   // resource will have 0 plugin refcount. This is called by the resource
@@ -79,6 +94,11 @@ class PPAPI_SHARED_EXPORT ResourceTracker {
   // Calls NotifyLastPluginRefWasDeleted on the given resource object and
   // cancels pending callbacks for the resource.
   void LastPluginRefWasDeleted(Resource* object);
+
+  int32 GetNextResourceValue();
+
+  // In debug mode, checks whether |res| comes from the same resource tracker.
+  bool CanOperateOnResource(PP_Resource res);
 
   typedef std::set<PP_Resource> ResourceSet;
 
@@ -106,13 +126,13 @@ class PPAPI_SHARED_EXPORT ResourceTracker {
 
   int32 last_resource_value_;
 
-  base::WeakPtrFactory<ResourceTracker> weak_ptr_factory_;
-
   // On the host side, we want to check that we are only called on the main
   // thread. This is to protect us from accidentally using the tracker from
   // other threads (especially the IO thread). On the plugin side, the tracker
   // is protected by the proxy lock and is thread-safe, so this will be NULL.
   scoped_ptr<base::ThreadChecker> thread_checker_;
+
+  base::WeakPtrFactory<ResourceTracker> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ResourceTracker);
 };

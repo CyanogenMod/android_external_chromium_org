@@ -9,6 +9,7 @@
 #include "base/command_line.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/extension_system.h"
@@ -18,10 +19,10 @@
 #include "chrome/browser/storage_monitor/media_storage_util.h"
 #include "chrome/browser/storage_monitor/storage_monitor.h"
 #include "chrome/browser/storage_monitor/test_storage_monitor.h"
-#include "chrome/common/extensions/background_info.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/test/test_browser_thread_bundle.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/manifest_handlers/background_info.h"
 #include "grit/generated_resources.h"
 #include "sync/api/string_ordinal.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -32,8 +33,6 @@
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
 #endif
-
-namespace chrome {
 
 namespace {
 
@@ -49,10 +48,34 @@ class MockGalleryChangeObserver
 
  private:
   // MediaGalleriesPreferences::GalleryChangeObserver implementation.
-  virtual void OnGalleryChanged(MediaGalleriesPreferences* pref,
-                                const std::string& /*extension_id*/,
-                                MediaGalleryPrefId /* pref_id */,
-                                bool /* has_permission */) OVERRIDE {
+  virtual void OnPermissionAdded(MediaGalleriesPreferences* pref,
+                                 const std::string& extension_id,
+                                 MediaGalleryPrefId pref_id) OVERRIDE {
+    EXPECT_EQ(pref_, pref);
+    ++notifications_;
+  }
+
+  virtual void OnPermissionRemoved(MediaGalleriesPreferences* pref,
+                                   const std::string& extension_id,
+                                   MediaGalleryPrefId pref_id) OVERRIDE {
+    EXPECT_EQ(pref_, pref);
+    ++notifications_;
+  }
+
+  virtual void OnGalleryAdded(MediaGalleriesPreferences* pref,
+                              MediaGalleryPrefId pref_id) OVERRIDE {
+    EXPECT_EQ(pref_, pref);
+    ++notifications_;
+  }
+
+  virtual void OnGalleryRemoved(MediaGalleriesPreferences* pref,
+                                MediaGalleryPrefId pref_id) OVERRIDE {
+    EXPECT_EQ(pref_, pref);
+    ++notifications_;
+  }
+
+  virtual void OnGalleryInfoUpdated(MediaGalleriesPreferences* pref,
+                                    MediaGalleryPrefId pref_id) OVERRIDE {
     EXPECT_EQ(pref_, pref);
     ++notifications_;
   }
@@ -79,7 +102,7 @@ class MediaGalleriesPreferencesTest : public testing::Test {
   }
 
   virtual void SetUp() OVERRIDE {
-    ASSERT_TRUE(test::TestStorageMonitor::CreateAndInstall());
+    ASSERT_TRUE(TestStorageMonitor::CreateAndInstall());
 
     extensions::TestExtensionSystem* extension_system(
         static_cast<extensions::TestExtensionSystem*>(
@@ -88,6 +111,9 @@ class MediaGalleriesPreferencesTest : public testing::Test {
         CommandLine::ForCurrentProcess(), base::FilePath(), false);
 
     gallery_prefs_.reset(new MediaGalleriesPreferences(profile_.get()));
+    base::RunLoop loop;
+    gallery_prefs_->EnsureInitialized(loop.QuitClosure());
+    loop.Run();
 
     // Load the default galleries into the expectations.
     const MediaGalleriesPrefInfoMap& known_galleries =
@@ -119,6 +145,7 @@ class MediaGalleriesPreferencesTest : public testing::Test {
 
   virtual void TearDown() OVERRIDE {
     Verify();
+    TestStorageMonitor::RemoveSingleton();
   }
 
   void Verify() {
@@ -173,7 +200,7 @@ class MediaGalleriesPreferencesTest : public testing::Test {
     return default_galleries_count_;
   }
 
-  void AddGalleryExpectation(MediaGalleryPrefId id, string16 display_name,
+  void AddGalleryExpectation(MediaGalleryPrefId id, base::string16 display_name,
                              std::string device_id,
                              base::FilePath relative_path,
                              MediaGalleryPrefInfo::Type type) {
@@ -190,30 +217,33 @@ class MediaGalleriesPreferencesTest : public testing::Test {
   }
 
   MediaGalleryPrefId AddGalleryWithNameV0(const std::string& device_id,
-                                          const string16& display_name,
+                                          const base::string16& display_name,
                                           const base::FilePath& relative_path,
                                           bool user_added) {
     return gallery_prefs()->AddGalleryInternal(
         device_id, display_name, relative_path, user_added,
-        string16(), string16(), string16(), 0, base::Time(), false, 0);
+        base::string16(), base::string16(), base::string16(), 0, base::Time(),
+        false, 0);
   }
 
   MediaGalleryPrefId AddGalleryWithNameV1(const std::string& device_id,
-                                          const string16& display_name,
+                                          const base::string16& display_name,
                                           const base::FilePath& relative_path,
                                           bool user_added) {
     return gallery_prefs()->AddGalleryInternal(
         device_id, display_name, relative_path, user_added,
-        string16(), string16(), string16(), 0, base::Time(), false, 1);
+        base::string16(), base::string16(), base::string16(), 0, base::Time(),
+        false, 1);
   }
 
   MediaGalleryPrefId AddGalleryWithNameV2(const std::string& device_id,
-                                          const string16& display_name,
+                                          const base::string16& display_name,
                                           const base::FilePath& relative_path,
                                           bool user_added) {
     return gallery_prefs()->AddGalleryInternal(
         device_id, display_name, relative_path, user_added,
-        string16(), string16(), string16(), 0, base::Time(), false, 2);
+        base::string16(), base::string16(), base::string16(), 0, base::Time(),
+        false, 2);
   }
 
   bool UpdateDeviceIDForSingletonType(const std::string& device_id) {
@@ -235,13 +265,15 @@ class MediaGalleriesPreferencesTest : public testing::Test {
   // Needed for extension service & friends to work.
   content::TestBrowserThreadBundle thread_bundle_;
 
+  EnsureMediaDirectoriesExists mock_gallery_locations_;
+
 #if defined OS_CHROMEOS
   chromeos::ScopedTestDeviceSettingsService test_device_settings_service_;
   chromeos::ScopedTestCrosSettings test_cros_settings_;
   chromeos::ScopedTestUserManager test_user_manager_;
 #endif
 
-  test::TestStorageMonitor monitor_;
+  TestStorageMonitor monitor_;
   scoped_ptr<TestingProfile> profile_;
   scoped_ptr<MediaGalleriesPreferences> gallery_prefs_;
 
@@ -353,7 +385,7 @@ TEST_F(MediaGalleriesPreferencesTest, AddGalleryWithVolumeMetadata) {
                                    ASCIIToUTF16("model name"),
                                    1000000ULL, now);
   EXPECT_EQ(default_galleries_count() + 1UL, id);
-  AddGalleryExpectation(id, string16(), info.device_id(), relative_path,
+  AddGalleryExpectation(id, base::string16(), info.device_id(), relative_path,
                         MediaGalleryPrefInfo::kAutoDetected);
   Verify();
 
@@ -399,7 +431,7 @@ TEST_F(MediaGalleriesPreferencesTest, ReplaceGalleryWithVolumeMetadata) {
                                             ASCIIToUTF16("model name"),
                                             1000000ULL, now);
   EXPECT_EQ(id, metadata_id);
-  AddGalleryExpectation(id, string16(), info.device_id(), relative_path,
+  AddGalleryExpectation(id, base::string16(), info.device_id(), relative_path,
                         MediaGalleryPrefInfo::kAutoDetected);
 
   // Make sure the display_name is set to empty now, as the metadata
@@ -473,7 +505,7 @@ TEST_F(MediaGalleriesPreferencesTest, UpdateGalleryNameV2) {
   Verify();
 
   // Won't override the name -- don't change any expectation.
-  info.set_name(string16());
+  info.set_name(base::string16());
   AddGalleryWithNameV2(info.device_id(), info.name(), relative_path, false);
   Verify();
 
@@ -805,7 +837,7 @@ TEST_F(MediaGalleriesPreferencesTest, UpdateSingletonDeviceIdType) {
 }
 
 TEST(MediaGalleryPrefInfoTest, NameGeneration) {
-  ASSERT_TRUE(test::TestStorageMonitor::CreateAndInstall());
+  ASSERT_TRUE(TestStorageMonitor::CreateAndInstall());
 
   MediaGalleryPrefInfo info;
   info.pref_id = 1;
@@ -835,15 +867,15 @@ TEST(MediaGalleryPrefInfoTest, NameGeneration) {
   info.model_name = ASCIIToUTF16("model");
   EXPECT_EQ(ASCIIToUTF16("o2"), info.GetGalleryDisplayName());
 
-  info.display_name = string16();
+  info.display_name = base::string16();
   EXPECT_EQ(ASCIIToUTF16("vol"), info.GetGalleryDisplayName());
-  info.volume_label = string16();
+  info.volume_label = base::string16();
   EXPECT_EQ(ASCIIToUTF16("vendor, model"), info.GetGalleryDisplayName());
 
   info.device_id = StorageInfo::MakeDeviceId(
       StorageInfo::FIXED_MASS_STORAGE, "unique");
   EXPECT_EQ(base::FilePath(FILE_PATH_LITERAL("unique")).AsUTF8Unsafe(),
             UTF16ToUTF8(info.GetGalleryTooltip()));
-}
 
-}  // namespace chrome
+  TestStorageMonitor::RemoveSingleton();
+}

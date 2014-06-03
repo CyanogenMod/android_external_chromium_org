@@ -25,6 +25,7 @@
 #include "content/common/content_export.h"
 #include "content/common/gpu/media/vaapi_h264_decoder.h"
 #include "content/common/gpu/media/vaapi_wrapper.h"
+#include "content/common/gpu/media/video_decode_accelerator_impl.h"
 #include "media/base/bitstream_buffer.h"
 #include "media/video/picture.h"
 #include "media/video/video_decode_accelerator.h"
@@ -40,8 +41,8 @@ namespace content {
 // ChildThread.  A few methods on it are called on the decoder thread which is
 // stopped during |this->Destroy()|, so any tasks posted to the decoder thread
 // can assume |*this| is still alive.  See |weak_this_| below for more details.
-class CONTENT_EXPORT VaapiVideoDecodeAccelerator :
-    public media::VideoDecodeAccelerator {
+class CONTENT_EXPORT VaapiVideoDecodeAccelerator
+    : public VideoDecodeAcceleratorImpl {
  public:
   VaapiVideoDecodeAccelerator(
       Display* x_display, GLXContext glx_context,
@@ -248,6 +249,10 @@ private:
   // vaapi_wrapper_ is destroyed.
   scoped_ptr<VaapiH264Decoder> decoder_;
   base::Thread decoder_thread_;
+  // Use this to post tasks to |decoder_thread_| instead of
+  // |decoder_thread_.message_loop()| because the latter will be NULL once
+  // |decoder_thread_.Stop()| returns.
+  scoped_refptr<base::MessageLoopProxy> decoder_thread_proxy_;
 
   int num_frames_at_client_;
   int num_stream_bufs_at_decoder_;

@@ -5,6 +5,7 @@
 #ifndef CHROME_BROWSER_CHROMEOS_LOGIN_SCREEN_LOCKER_DELEGATE_H_
 #define CHROME_BROWSER_CHROMEOS_LOGIN_SCREEN_LOCKER_DELEGATE_H_
 
+#include "base/callback_forward.h"
 #include "base/strings/string16.h"
 #include "chrome/browser/chromeos/login/help_app_launcher.h"
 #include "ui/gfx/native_widget_types.h"
@@ -13,6 +14,10 @@ class GURL;
 
 namespace content {
 class WebUI;
+}
+
+namespace gfx {
+class Image;
 }
 
 namespace chromeos {
@@ -39,6 +44,14 @@ class ScreenLockerDelegate {
   // Enable/disable password input.
   virtual void SetInputEnabled(bool enabled) = 0;
 
+  // Displays a banner containing |message| on the lock screen.
+  virtual void ShowBannerMessage(const std::string& message) = 0;
+
+  // Shows a button inside the user pod on the lock screen with an icon.
+  virtual void ShowUserPodButton(const std::string& username,
+                                 const std::string& iconURL,
+                                 const base::Closure& click_callback) = 0;
+
   // Disables all UI needed and shows error bubble with |message|.
   // If |sign_out_only| is true then all other input except "Sign Out"
   // button is blocked.
@@ -59,6 +72,12 @@ class ScreenLockerDelegate {
   // Returns WebUI associated with screen locker implementation or NULL if
   // there isn't one.
   virtual content::WebUI* GetAssociatedWebUI();
+
+  // Called when webui lock screen is ready.
+  virtual void OnLockWebUIReady() = 0;
+
+  // Called when webui lock screen wallpaper is loaded and displayed.
+  virtual void OnLockBackgroundDisplayed() = 0;
 
   // Returns screen locker associated with delegate.
   ScreenLocker* screen_locker() { return screen_locker_; }

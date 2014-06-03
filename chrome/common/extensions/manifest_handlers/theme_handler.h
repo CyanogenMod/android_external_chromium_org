@@ -5,8 +5,8 @@
 #ifndef CHROME_COMMON_EXTENSIONS_MANIFEST_HANDLERS_THEME_HANDLER_H_
 #define CHROME_COMMON_EXTENSIONS_MANIFEST_HANDLERS_THEME_HANDLER_H_
 
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/manifest_handler.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/manifest_handler.h"
 
 namespace base {
 class DictionaryValue;
@@ -45,7 +45,7 @@ class ThemeHandler : public ManifestHandler {
   ThemeHandler();
   virtual ~ThemeHandler();
 
-  virtual bool Parse(Extension* extension, string16* error) OVERRIDE;
+  virtual bool Parse(Extension* extension, base::string16* error) OVERRIDE;
   virtual bool Validate(const Extension* extension,
                         std::string* error,
                         std::vector<InstallWarning>* warnings) const OVERRIDE;

@@ -19,16 +19,15 @@
 #include "chrome/browser/media_galleries/fileapi/media_path_filter.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/test/test_browser_thread.h"
+#include "content/public/test/test_file_system_options.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/browser/fileapi/async_file_util_adapter.h"
+#include "webkit/browser/fileapi/async_file_util.h"
 #include "webkit/browser/fileapi/external_mount_points.h"
 #include "webkit/browser/fileapi/file_system_context.h"
 #include "webkit/browser/fileapi/file_system_operation_context.h"
 #include "webkit/browser/fileapi/file_system_operation_runner.h"
-#include "webkit/browser/fileapi/mock_file_system_options.h"
 #include "webkit/browser/quota/mock_special_storage_policy.h"
 
-using fileapi::FileSystemFileUtil;
 using fileapi::FileSystemOperationContext;
 using fileapi::FileSystemOperation;
 using fileapi::FileSystemURL;
@@ -96,7 +95,7 @@ class TestITunesDataProvider : public ITunesDataProvider {
 
 class TestITunesFileUtil : public ITunesFileUtil {
  public:
-  explicit TestITunesFileUtil(chrome::MediaPathFilter* media_path_filter,
+  explicit TestITunesFileUtil(MediaPathFilter* media_path_filter,
                               ITunesDataProvider* data_provider)
       : ITunesFileUtil(media_path_filter),
         data_provider_(data_provider) {
@@ -111,14 +110,13 @@ class TestITunesFileUtil : public ITunesFileUtil {
   ITunesDataProvider* data_provider_;
 };
 
-class TestMediaFileSystemBackend
-    : public chrome::MediaFileSystemBackend {
+class TestMediaFileSystemBackend : public MediaFileSystemBackend {
  public:
   TestMediaFileSystemBackend(const base::FilePath& profile_path,
                              ITunesFileUtil* itunes_file_util)
-      : chrome::MediaFileSystemBackend(
+      : MediaFileSystemBackend(
             profile_path,
-            chrome::MediaFileSystemBackend::MediaTaskRunner().get()),
+            MediaFileSystemBackend::MediaTaskRunner().get()),
         test_file_util_(itunes_file_util) {}
 
   virtual fileapi::AsyncFileUtil*
@@ -160,17 +158,17 @@ class ItunesFileUtilTest : public testing::Test {
         new quota::MockSpecialStoragePolicy();
 
     // Initialize fake ItunesDataProvider on media task runner thread.
-    chrome::MediaFileSystemBackend::MediaTaskRunner()->PostTask(
+    MediaFileSystemBackend::MediaTaskRunner()->PostTask(
         FROM_HERE,
         base::Bind(&ItunesFileUtilTest::SetUpDataProvider,
                    base::Unretained(this)));
     base::WaitableEvent event(true, false /* initially_signalled */);
-    chrome::MediaFileSystemBackend::MediaTaskRunner()->PostTask(
+    MediaFileSystemBackend::MediaTaskRunner()->PostTask(
         FROM_HERE,
         base::Bind(&base::WaitableEvent::Signal, base::Unretained(&event)));
     event.Wait();
 
-    media_path_filter_.reset(new chrome::MediaPathFilter());
+    media_path_filter_.reset(new MediaPathFilter());
     ScopedVector<fileapi::FileSystemBackend> additional_providers;
     additional_providers.push_back(new TestMediaFileSystemBackend(
         profile_dir_.path(),
@@ -224,7 +222,7 @@ class ItunesFileUtilTest : public testing::Test {
   base::ScopedTempDir fake_library_dir_;
 
   scoped_refptr<fileapi::FileSystemContext> file_system_context_;
-  scoped_ptr<chrome::MediaPathFilter> media_path_filter_;
+  scoped_ptr<MediaPathFilter> media_path_filter_;
   scoped_ptr<TestITunesDataProvider> itunes_data_provider_;
 
   DISALLOW_COPY_AND_ASSIGN(ItunesFileUtilTest);
@@ -306,7 +304,7 @@ TEST_F(ItunesFileUtilTest, ItunesAutoAddDirEnumerateNested) {
   data_provider()->SetProvideAutoAddDir(true);
   base::FilePath nested_dir =
       data_provider()->auto_add_path().AppendASCII("foo").AppendASCII("bar");
-  ASSERT_TRUE(file_util::CreateDirectory(nested_dir));
+  ASSERT_TRUE(base::CreateDirectory(nested_dir));
   ASSERT_EQ(0,
             file_util::WriteFile(nested_dir.AppendASCII("baz.ogg"), NULL, 0));
 

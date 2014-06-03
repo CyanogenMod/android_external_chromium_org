@@ -6,9 +6,11 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
+#include "base/strings/string_util.h"
 #include "google_apis/google_api_keys.h"
 #include "net/url_request/url_fetcher.h"
 #include "net/url_request/url_request_context_getter.h"
+#include "remoting/base/logging.h"
 #include "remoting/host/dns_blackhole_checker.h"
 
 namespace remoting {
@@ -26,9 +28,11 @@ const int kTokenUpdateTimeBeforeExpirySeconds = 60;
 
 SignalingConnector::OAuthCredentials::OAuthCredentials(
     const std::string& login_value,
-    const std::string& refresh_token_value)
+    const std::string& refresh_token_value,
+    bool is_service_account)
     : login(login_value),
-      refresh_token(refresh_token_value) {
+      refresh_token(refresh_token_value),
+      is_service_account(is_service_account) {
 }
 
 SignalingConnector::SignalingConnector(
@@ -68,10 +72,10 @@ void SignalingConnector::OnSignalStrategyStateChange(
   DCHECK(CalledOnValidThread());
 
   if (state == SignalStrategy::CONNECTED) {
-    LOG(INFO) << "Signaling connected.";
+    HOST_LOG << "Signaling connected.";
     reconnect_attempts_ = 0;
   } else if (state == SignalStrategy::DISCONNECTED) {
-    LOG(INFO) << "Signaling disconnected.";
+    HOST_LOG << "Signaling disconnected.";
     reconnect_attempts_++;
 
     // If authentication failed then we have an invalid OAuth token,
@@ -94,7 +98,7 @@ void SignalingConnector::OnConnectionTypeChanged(
   DCHECK(CalledOnValidThread());
   if (type != net::NetworkChangeNotifier::CONNECTION_NONE &&
       signal_strategy_->GetState() == SignalStrategy::DISCONNECTED) {
-    LOG(INFO) << "Network state changed to online.";
+    HOST_LOG << "Network state changed to online.";
     ResetAndTryReconnect();
   }
 }
@@ -102,7 +106,7 @@ void SignalingConnector::OnConnectionTypeChanged(
 void SignalingConnector::OnIPAddressChanged() {
   DCHECK(CalledOnValidThread());
   if (signal_strategy_->GetState() == SignalStrategy::DISCONNECTED) {
-    LOG(INFO) << "IP address has changed.";
+    HOST_LOG << "IP address has changed.";
     ResetAndTryReconnect();
   }
 }
@@ -118,7 +122,7 @@ void SignalingConnector::OnRefreshTokenResponse(
     int expires_seconds) {
   DCHECK(CalledOnValidThread());
   DCHECK(oauth_credentials_.get());
-  LOG(INFO) << "Received OAuth token.";
+  HOST_LOG << "Received OAuth token.";
 
   oauth_access_token_ = access_token;
   auth_token_expiry_time_ = base::Time::Now() +
@@ -131,7 +135,7 @@ void SignalingConnector::OnRefreshTokenResponse(
 void SignalingConnector::OnGetUserEmailResponse(const std::string& user_email) {
   DCHECK(CalledOnValidThread());
   DCHECK(oauth_credentials_.get());
-  LOG(INFO) << "Received user info.";
+  HOST_LOG << "Received user info.";
 
   if (user_email != oauth_credentials_->login) {
     LOG(ERROR) << "OAuth token and email address do not refer to "
@@ -204,7 +208,7 @@ void SignalingConnector::OnDnsBlackholeCheckerDone(bool allow) {
   // an outright block.
   if (!allow) {
     reconnect_attempts_++;
-    LOG(INFO) << "Talkgadget check failed. Scheduling reconnect. Attempt "
+    HOST_LOG << "Talkgadget check failed. Scheduling reconnect. Attempt "
               << reconnect_attempts_;
     ScheduleTryReconnect();
     return;
@@ -217,7 +221,7 @@ void SignalingConnector::OnDnsBlackholeCheckerDone(bool allow) {
     if (need_new_auth_token) {
       RefreshOAuthToken();
     } else {
-      LOG(INFO) << "Attempting to connect signaling.";
+      HOST_LOG << "Attempting to connect signaling.";
       signal_strategy_->Connect();
     }
   }
@@ -225,15 +229,23 @@ void SignalingConnector::OnDnsBlackholeCheckerDone(bool allow) {
 
 void SignalingConnector::RefreshOAuthToken() {
   DCHECK(CalledOnValidThread());
-  LOG(INFO) << "Refreshing OAuth token.";
+  HOST_LOG << "Refreshing OAuth token.";
   DCHECK(!refreshing_oauth_token_);
 
+  // Service accounts use different API keys, as they use the client app flow.
+  google_apis::OAuth2Client oauth2_client;
+  if (oauth_credentials_->is_service_account) {
+    oauth2_client = google_apis::CLIENT_REMOTING_HOST;
+  } else {
+    oauth2_client = google_apis::CLIENT_REMOTING;
+  }
+
   gaia::OAuthClientInfo client_info = {
-      google_apis::GetOAuth2ClientID(google_apis::CLIENT_REMOTING),
-      google_apis::GetOAuth2ClientSecret(google_apis::CLIENT_REMOTING),
-      // Redirect URL is only used when getting tokens from auth code. It
-      // is not required when getting access tokens.
-      ""
+    google_apis::GetOAuth2ClientID(oauth2_client),
+    google_apis::GetOAuth2ClientSecret(oauth2_client),
+    // Redirect URL is only used when getting tokens from auth code. It
+    // is not required when getting access tokens.
+    ""
   };
 
   refreshing_oauth_token_ = true;

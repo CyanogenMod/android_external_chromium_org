@@ -15,6 +15,7 @@
 #include "base/platform_file.h"
 #include "chrome/browser/sync_file_system/local/local_file_sync_status.h"
 #include "chrome/browser/sync_file_system/sync_status_code.h"
+#include "webkit/browser/blob/blob_data_handle.h"
 #include "webkit/browser/fileapi/file_system_operation.h"
 #include "webkit/browser/fileapi/file_system_url.h"
 #include "webkit/browser/quota/quota_callbacks.h"
@@ -44,6 +45,7 @@ class QuotaManager;
 
 namespace sync_file_system {
 
+class FileChangeList;
 class LocalFileSyncContext;
 class SyncFileSystemBackend;
 
@@ -53,6 +55,10 @@ class SyncFileSystemBackend;
 class CannedSyncableFileSystem
     : public LocalFileSyncStatus::Observer {
  public:
+  typedef base::Callback<void(const GURL& root,
+                              const std::string& name,
+                              base::PlatformFileError result)>
+      OpenFileSystemCallback;
   typedef base::Callback<void(base::PlatformFileError)> StatusCallback;
   typedef base::Callback<void(int64)> WriteCallback;
   typedef fileapi::FileSystemOperation::FileEntryList FileEntryList;
@@ -126,7 +132,8 @@ class CannedSyncableFileSystem
 
   // Returns the # of bytes written (>=0) or an error code (<0).
   int64 Write(net::URLRequestContext* url_request_context,
-              const fileapi::FileSystemURL& url, const GURL& blob_url);
+              const fileapi::FileSystemURL& url,
+              scoped_ptr<webkit_blob::BlobDataHandle> blob_data_handle);
   int64 WriteString(const fileapi::FileSystemURL& url, const std::string& data);
 
   // Purges the file system local storage.
@@ -138,6 +145,8 @@ class CannedSyncableFileSystem
   // ChangeTracker related methods. They run on file task runner.
   void GetChangedURLsInTracker(fileapi::FileSystemURLSet* urls);
   void ClearChangeForURLInTracker(const fileapi::FileSystemURL& url);
+  void GetChangesForURLInTracker(const fileapi::FileSystemURL& url,
+                                 FileChangeList* changes);
 
   SyncFileSystemBackend* backend();
   fileapi::FileSystemOperationRunner* operation_runner();
@@ -148,6 +157,7 @@ class CannedSyncableFileSystem
 
   // Operation methods body.
   // They can be also called directly if the caller is already on IO thread.
+  void DoOpenFileSystem(const OpenFileSystemCallback& callback);
   void DoCreateDirectory(const fileapi::FileSystemURL& url,
                          const StatusCallback& callback);
   void DoCreateFile(const fileapi::FileSystemURL& url,
@@ -184,7 +194,7 @@ class CannedSyncableFileSystem
                        const StatusCallback& callback);
   void DoWrite(net::URLRequestContext* url_request_context,
                const fileapi::FileSystemURL& url,
-               const GURL& blob_url,
+               scoped_ptr<webkit_blob::BlobDataHandle> blob_data_handle,
                const WriteCallback& callback);
   void DoWriteString(const fileapi::FileSystemURL& url,
                      const std::string& data,
@@ -197,9 +207,10 @@ class CannedSyncableFileSystem
   typedef ObserverListThreadSafe<LocalFileSyncStatus::Observer> ObserverList;
 
   // Callbacks.
-  void DidOpenFileSystem(base::PlatformFileError result,
+  void DidOpenFileSystem(base::SingleThreadTaskRunner* original_task_runner,
+                         const GURL& root,
                          const std::string& name,
-                         const GURL& root);
+                         base::PlatformFileError result);
   void DidInitializeFileSystemContext(sync_file_system::SyncStatusCode status);
 
   void InitializeSyncStatusObserver();
@@ -220,7 +231,7 @@ class CannedSyncableFileSystem
 
   // Boolean flags mainly for helping debug.
   bool is_filesystem_set_up_;
-  bool is_filesystem_opened_;
+  bool is_filesystem_opened_;  // Should be accessed only on the IO thread.
 
   scoped_refptr<ObserverList> sync_status_observers_;
 

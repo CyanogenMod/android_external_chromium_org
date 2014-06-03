@@ -7,6 +7,7 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/synchronization/lock.h"
+#include "base/threading/thread_checker.h"
 #include "media/audio/audio_parameters.h"
 #include "media/base/audio_capturer_source.h"
 #include "media/base/audio_fifo.h"
@@ -16,49 +17,60 @@
 namespace content {
 
 class WebRtcAudioCapturer;
+class WebRtcLocalAudioTrack;
 
 // WebAudioCapturerSource is the missing link between
-// WebAudio's MediaStreamAudioDestinationNode and WebRtcAudioCapturer.
+// WebAudio's MediaStreamAudioDestinationNode and WebRtcLocalAudioTrack.
 //
 // 1. WebKit calls the setFormat() method setting up the basic stream format
-//    (channels, and sample-rate).  At this time, it dispatches this information
-//    to the WebRtcAudioCapturer by calling its SetCapturerSource() method.
-// 2. Initialize() is called, where we should get back the same
-//    stream format information as (1).  We also get the CaptureCallback here.
-// 3. consumeAudio() is called periodically by WebKit which dispatches the
-//    audio stream to the CaptureCallback::Capture() method.
+//    (channels, and sample-rate).
+// 2. consumeAudio() is called periodically by WebKit which dispatches the
+//    audio stream to the WebRtcLocalAudioTrack::Capture() method.
 class WebAudioCapturerSource
-    : public media::AudioCapturerSource,
-      public WebKit::WebAudioDestinationConsumer {
+    :  public base::RefCountedThreadSafe<WebAudioCapturerSource>,
+       public blink::WebAudioDestinationConsumer {
  public:
-  explicit WebAudioCapturerSource(WebRtcAudioCapturer* capturer);
+  WebAudioCapturerSource();
 
   // WebAudioDestinationConsumer implementation.
-  // setFormat() is called early on, so that we can configure the capturer.
+  // setFormat() is called early on, so that we can configure the audio track.
   virtual void setFormat(size_t number_of_channels, float sample_rate) OVERRIDE;
   // MediaStreamAudioDestinationNode periodically calls consumeAudio().
-  virtual void consumeAudio(const WebKit::WebVector<const float*>& audio_data,
+  // Called on the WebAudio audio thread.
+  virtual void consumeAudio(const blink::WebVector<const float*>& audio_data,
       size_t number_of_frames) OVERRIDE;
 
-  // AudioCapturerSource implementation.
-  virtual void Initialize(
-      const media::AudioParameters& params,
-      media::AudioCapturerSource::CaptureCallback* callback,
-      int session_id) OVERRIDE;
+  // Called when the WebAudioCapturerSource is hooking to a media audio track.
+  // |track| is the sink of the data flow. |source_provider| is the source of
+  // the data flow where stream information like delay, volume, key_pressed,
+  // is stored.
+  void Start(WebRtcLocalAudioTrack* track, WebRtcAudioCapturer* capturer);
 
-  virtual void Start() OVERRIDE;
-  virtual void Stop() OVERRIDE;
-  virtual void SetVolume(double volume) OVERRIDE { }
-  virtual void SetAutomaticGainControl(bool enable) OVERRIDE { }
+  // Called when the media audio track is stopping.
+  void Stop();
 
- private:
+ protected:
+  friend class base::RefCountedThreadSafe<WebAudioCapturerSource>;
   virtual ~WebAudioCapturerSource();
 
+ private:
+  // Used to DCHECK that some methods are called on the correct thread.
+  base::ThreadChecker thread_checker_;
+
+  // The audio track this WebAudioCapturerSource is feeding data to.
+  // WebRtcLocalAudioTrack is reference counted, and owning this object.
+  // To avoid circular reference, a raw pointer is kept here.
+  WebRtcLocalAudioTrack* track_;
+
+  // A raw pointer to the capturer to get audio processing params like
+  // delay, volume, key_pressed information.
+  // This |capturer_| is guaranteed to outlive this object.
   WebRtcAudioCapturer* capturer_;
 
-  int set_format_channels_;
   media::AudioParameters params_;
-  media::AudioCapturerSource::CaptureCallback* callback_;
+
+  // Flag to help notify the |track_| when the audio format has changed.
+  bool audio_format_changed_;
 
   // Wraps data coming from HandleCapture().
   scoped_ptr<media::AudioBus> wrapper_bus_;

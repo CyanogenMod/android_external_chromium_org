@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-#
 # Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
@@ -124,7 +122,7 @@ def _Run(exclude, known_bugs, classes_to_analyze, auxiliary_classes,
     cmd = '%s -exclude %s ' % (cmd, os.path.abspath(exclude))
 
   if findbug_args:
-    cmd = '%s %s ' % (cmd, fingbug_args)
+    cmd = '%s %s ' % (cmd, findbug_args)
 
 
   chrome_classes = _GetChromeClasses(release_version)

@@ -15,7 +15,7 @@
 class Profile;
 
 // A dialog to host the inline sign-in WebUI. Currently, it loads
-// chrome:://inline-login and dismisses itself when the sign-in is finished
+// chrome:://chrome-signin and dismisses itself when the sign-in is finished
 // successfully.
 class InlineLoginDialog : public ui::WebDialogDelegate {
  public:
@@ -26,7 +26,7 @@ class InlineLoginDialog : public ui::WebDialogDelegate {
 
   // ui::WebDialogDelegate overrides:
   virtual ui::ModalType GetDialogModalType() const OVERRIDE;
-  virtual string16 GetDialogTitle() const OVERRIDE;
+  virtual base::string16 GetDialogTitle() const OVERRIDE;
   virtual GURL GetDialogContentURL() const OVERRIDE;
   virtual void GetWebUIMessageHandlers(
       std::vector<content::WebUIMessageHandler*>* handlers) const OVERRIDE;

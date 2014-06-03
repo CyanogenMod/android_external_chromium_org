@@ -9,13 +9,18 @@ from appengine_wrappers import GetAppVersion
 from app_yaml_helper import AppYamlHelper
 from cron_servlet import CronServlet
 from empty_dir_file_system import EmptyDirFileSystem
-from host_file_system_creator import HostFileSystemCreator
+from extensions_paths import (
+    APP_YAML, CONTENT_PROVIDERS, EXTENSIONS, PUBLIC_TEMPLATES, SERVER2,
+    STATIC_DOCS)
+from github_file_system_provider import GithubFileSystemProvider
+from host_file_system_provider import HostFileSystemProvider
 from local_file_system import LocalFileSystem
 from mock_file_system import MockFileSystem
 from servlet import Request
 from test_branch_utility import TestBranchUtility
-from test_file_system import TestFileSystem
-from test_util import EnableLogging
+from test_file_system import MoveTo, TestFileSystem
+from test_util import EnableLogging, ReadFile
+
 
 # NOTE(kalman): The ObjectStore created by the CronServlet is backed onto our
 # fake AppEngine memcache/datastore, so the tests aren't isolated. Of course,
@@ -30,16 +35,19 @@ class _TestDelegate(CronServlet.Delegate):
   def CreateBranchUtility(self, object_store_creator):
     return TestBranchUtility.CreateWithCannedData()
 
-  def CreateHostFileSystemCreator(self, object_store_creator):
+  def CreateHostFileSystemProvider(self,
+                                  object_store_creator,
+                                  max_trunk_revision=None):
     def constructor(branch=None, revision=None):
       file_system = self._create_file_system(revision)
       self.file_systems.append(file_system)
       return file_system
-    return HostFileSystemCreator(object_store_creator,
-                                 constructor_for_test=constructor)
+    return HostFileSystemProvider(object_store_creator,
+                                  max_trunk_revision=max_trunk_revision,
+                                  constructor_for_test=constructor)
 
-  def CreateAppSamplesFileSystem(self, object_store_creator):
-    return EmptyDirFileSystem()
+  def CreateGithubFileSystemProvider(self, object_store_creator):
+    return GithubFileSystemProvider.ForEmpty()
 
   def GetAppVersion(self):
     return self._app_version
@@ -79,6 +87,11 @@ class CronServletTest(unittest.TestCase):
 
   def testSafeRevision(self):
     test_data = {
+      'api': {
+        '_api_features.json': '{}',
+        '_manifest_features.json': '{}',
+        '_permission_features.json': '{}',
+      },
       'docs': {
         'examples': {
           'examples.txt': 'examples.txt contents'
@@ -90,14 +103,25 @@ class CronServletTest(unittest.TestCase):
           'static.txt': 'static.txt contents'
         },
         'templates': {
+          'private': {
+            'table_of_contents.html': 'table_of_contents.html contents',
+          },
           'public': {
             'apps': {
-              'storage.html': 'storage.html contents'
+              'storage.html': '<h1>storage.html</h1> contents'
             },
             'extensions': {
-              'storage.html': 'storage.html contents'
+              'storage.html': '<h1>storage.html</h1> contents'
             },
-          }
+          },
+          'json': {
+            'content_providers.json': ReadFile(CONTENT_PROVIDERS),
+            'manifest.json': '{}',
+            'permissions.json': '{}',
+            'strings.json': '{}',
+            'apps_sidenav.json': '{}',
+            'extensions_sidenav.json': '{}',
+          },
         }
       }
     }
@@ -105,28 +129,30 @@ class CronServletTest(unittest.TestCase):
     updates = []
 
     def app_yaml_update(version):
-      return {'docs': {'server2': {
+      return MoveTo(SERVER2, {
         'app.yaml': AppYamlHelper.GenerateAppYaml(version)
-      }}}
+      })
     def storage_html_update(update):
-      return {'docs': {'templates': {'public': {'apps': {
-        'storage.html': update
-      }}}}}
+      return MoveTo(PUBLIC_TEMPLATES, {
+        'apps': {'storage.html': update}
+      })
     def static_txt_update(update):
-      return {'docs': {'static': {
+      return MoveTo(STATIC_DOCS, {
         'static.txt': update
-      }}}
+      })
 
-    app_yaml_path = 'docs/server2/app.yaml'
-    storage_html_path = 'docs/templates/public/apps/storage.html'
-    static_txt_path = 'docs/static/static.txt'
+    storage_html_path = '%s/apps/storage.html' % PUBLIC_TEMPLATES
+    static_txt_path = '%s/static.txt' % STATIC_DOCS
 
     def create_file_system(revision=None):
       '''Creates a MockFileSystem at |revision| by applying that many |updates|
       to it.
       '''
-      mock_file_system = MockFileSystem(TestFileSystem(test_data))
-      for update in updates[:revision]:
+      mock_file_system = MockFileSystem(
+          TestFileSystem(test_data, relative_to=EXTENSIONS))
+      updates_for_revision = (
+          updates if revision is None else updates[:int(revision)])
+      for update in updates_for_revision:
         mock_file_system.Update(update)
       return mock_file_system
 
@@ -138,25 +164,25 @@ class CronServletTest(unittest.TestCase):
     # No updates applied yet.
     CronServlet(Request.ForTest('trunk'), delegate_for_test=delegate).Get()
     self.assertEqual(AppYamlHelper.GenerateAppYaml('2-0-8'),
-                     file_systems[-1].ReadSingle(app_yaml_path))
-    self.assertEqual('storage.html contents',
-                     file_systems[-1].ReadSingle(storage_html_path))
+                     file_systems[-1].ReadSingle(APP_YAML).Get())
+    self.assertEqual('<h1>storage.html</h1> contents',
+                     file_systems[-1].ReadSingle(storage_html_path).Get())
 
     # Apply updates to storage.html.
     updates.append(storage_html_update('interim contents'))
-    updates.append(storage_html_update('new contents'))
+    updates.append(storage_html_update('<h1>new</h1> contents'))
 
     CronServlet(Request.ForTest('trunk'), delegate_for_test=delegate).Get()
     self.assertEqual(AppYamlHelper.GenerateAppYaml('2-0-8'),
-                     file_systems[-1].ReadSingle(app_yaml_path))
-    self.assertEqual('new contents',
-                     file_systems[-1].ReadSingle(storage_html_path))
+                     file_systems[-1].ReadSingle(APP_YAML).Get())
+    self.assertEqual('<h1>new</h1> contents',
+                     file_systems[-1].ReadSingle(storage_html_path).Get())
 
     # Apply several updates to storage.html and app.yaml. The file system
     # should be pinned at the version before app.yaml changed.
-    updates.append(storage_html_update('stuck here contents'))
+    updates.append(storage_html_update('<h1>stuck here</h1> contents'))
 
-    double_update = storage_html_update('newer contents')
+    double_update = storage_html_update('<h1>newer</h1> contents')
     double_update.update(app_yaml_update('2-0-10'))
     updates.append(double_update)
 
@@ -164,49 +190,49 @@ class CronServletTest(unittest.TestCase):
 
     CronServlet(Request.ForTest('trunk'), delegate_for_test=delegate).Get()
     self.assertEqual(AppYamlHelper.GenerateAppYaml('2-0-8'),
-                     file_systems[-1].ReadSingle(app_yaml_path))
-    self.assertEqual('stuck here contents',
-                     file_systems[-1].ReadSingle(storage_html_path))
+                     file_systems[-1].ReadSingle(APP_YAML).Get())
+    self.assertEqual('<h1>stuck here</h1> contents',
+                     file_systems[-1].ReadSingle(storage_html_path).Get())
 
     # Further pushes to storage.html will keep it pinned.
-    updates.append(storage_html_update('y u not update!'))
+    updates.append(storage_html_update('<h1>y</h1> u not update!'))
 
     CronServlet(Request.ForTest('trunk'), delegate_for_test=delegate).Get()
     self.assertEqual(AppYamlHelper.GenerateAppYaml('2-0-8'),
-                     file_systems[-1].ReadSingle(app_yaml_path))
-    self.assertEqual('stuck here contents',
-                     file_systems[-1].ReadSingle(storage_html_path))
+                     file_systems[-1].ReadSingle(APP_YAML).Get())
+    self.assertEqual('<h1>stuck here</h1> contents',
+                     file_systems[-1].ReadSingle(storage_html_path).Get())
 
     # Likewise app.yaml.
     updates.append(app_yaml_update('2-1-0'))
 
     CronServlet(Request.ForTest('trunk'), delegate_for_test=delegate).Get()
     self.assertEqual(AppYamlHelper.GenerateAppYaml('2-0-8'),
-                     file_systems[-1].ReadSingle(app_yaml_path))
-    self.assertEqual('stuck here contents',
-                     file_systems[-1].ReadSingle(storage_html_path))
+                     file_systems[-1].ReadSingle(APP_YAML).Get())
+    self.assertEqual('<h1>stuck here</h1> contents',
+                     file_systems[-1].ReadSingle(storage_html_path).Get())
 
     # And updates to other content won't happen either.
     updates.append(static_txt_update('important content!'))
 
     CronServlet(Request.ForTest('trunk'), delegate_for_test=delegate).Get()
     self.assertEqual(AppYamlHelper.GenerateAppYaml('2-0-8'),
-                     file_systems[-1].ReadSingle(app_yaml_path))
-    self.assertEqual('stuck here contents',
-                     file_systems[-1].ReadSingle(storage_html_path))
+                     file_systems[-1].ReadSingle(APP_YAML).Get())
+    self.assertEqual('<h1>stuck here</h1> contents',
+                     file_systems[-1].ReadSingle(storage_html_path).Get())
     self.assertEqual('static.txt contents',
-                     file_systems[-1].ReadSingle(static_txt_path))
+                     file_systems[-1].ReadSingle(static_txt_path).Get())
 
     # Lastly - when the app version changes, everything should no longer be
     # pinned.
     delegate.SetAppVersion('2-1-0')
     CronServlet(Request.ForTest('trunk'), delegate_for_test=delegate).Get()
     self.assertEqual(AppYamlHelper.GenerateAppYaml('2-1-0'),
-                     file_systems[-1].ReadSingle(app_yaml_path))
-    self.assertEqual('y u not update!',
-                     file_systems[-1].ReadSingle(storage_html_path))
+                     file_systems[-1].ReadSingle(APP_YAML).Get())
+    self.assertEqual('<h1>y</h1> u not update!',
+                     file_systems[-1].ReadSingle(storage_html_path).Get())
     self.assertEqual('important content!',
-                     file_systems[-1].ReadSingle(static_txt_path))
+                     file_systems[-1].ReadSingle(static_txt_path).Get())
 
 if __name__ == '__main__':
   unittest.main()

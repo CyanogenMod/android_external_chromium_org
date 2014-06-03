@@ -91,8 +91,8 @@ function Visit(result, continued, model) {
   this.model_ = model;
   this.title_ = result.title;
   this.url_ = result.url;
+  this.domain_ = result.domain;
   this.starred_ = result.starred;
-  this.snippet_ = result.snippet || '';
 
   // These identify the name and type of the device on which this visit
   // occurred. They will be empty if the visit occurred on the current device.
@@ -180,7 +180,7 @@ Visit.prototype.getResultDOM = function(propertyBag) {
     menu.dataset.devicename = self.deviceName;
     menu.dataset.devicetype = self.deviceType;
   };
-  domain.textContent = this.getDomainFromURL_(this.url_);
+  domain.textContent = this.domain_;
 
   entryBox.appendChild(time);
 
@@ -212,6 +212,8 @@ Visit.prototype.getResultDOM = function(propertyBag) {
 
   if (isMobileVersion()) {
     var removeButton = createElementWithClassName('button', 'remove-entry');
+    removeButton.setAttribute('aria-label',
+                              loadTimeData.getString('removeFromHistory'));
     removeButton.classList.add('custom-appearance');
     removeButton.addEventListener('click', function(e) {
       self.removeFromHistory();
@@ -252,14 +254,7 @@ Visit.prototype.getResultDOM = function(propertyBag) {
   node.appendChild(entryBoxContainer);
   entryBoxContainer.appendChild(entryBox);
 
-  if (isSearchResult) {
-    time.appendChild(document.createTextNode(this.dateShort));
-    var snippet = createElementWithClassName('div', 'snippet');
-    this.addHighlightedText_(snippet,
-                             this.snippet_,
-                             this.model_.getSearchText());
-    node.appendChild(snippet);
-  } else if (useMonthDate) {
+  if (isSearchResult || useMonthDate) {
     // Show the day instead of the time.
     time.appendChild(document.createTextNode(this.dateShort));
   } else {
@@ -284,19 +279,6 @@ Visit.prototype.removeFromHistory = function() {
 };
 
 // Visit, private: ------------------------------------------------------------
-
-/**
- * Extracts and returns the domain (and subdomains) from a URL.
- * @param {string} url The url.
- * @return {string} The domain. An empty string is returned if no domain can
- *     be found.
- * @private
- */
-Visit.prototype.getDomainFromURL_ = function(url) {
-  // TODO(sergiu): Extract the domain from the C++ side and send it here.
-  var domain = url.replace(/^.+?:\/\//, '').match(/[^/]+/);
-  return domain ? domain[0] : '';
-};
 
 /**
  * Add child text nodes to a node such that occurrences of the specified text is
@@ -386,7 +368,7 @@ Visit.prototype.getVisitAttemptDOM_ = function() {
   node.innerHTML = loadTimeData.getStringF('blockedVisitText',
                                            this.url_,
                                            this.id_,
-                                           this.getDomainFromURL_(this.url_));
+                                           this.domain_);
   return node;
 };
 
@@ -408,7 +390,7 @@ Visit.prototype.addFaviconToElement_ = function(el) {
  */
 Visit.prototype.showMoreFromSite_ = function() {
   recordUmaAction('HistoryPage_EntryMenuShowMoreFromSite');
-  historyView.setSearch(this.getDomainFromURL_(this.url_));
+  historyView.setSearch(this.domain_);
 };
 
 // Visit, private, static: ----------------------------------------------------
@@ -1084,6 +1066,7 @@ HistoryView.prototype.getGroupedVisitsDOM_ = function(
   siteResults.appendChild(siteDomainWrapper);
   var resultsList = siteResults.appendChild(
       createElementWithClassName('ol', 'site-results'));
+  resultsList.classList.add('grouped');
 
   // Collapse until it gets toggled.
   resultsList.style.height = 0;
@@ -1142,7 +1125,7 @@ HistoryView.prototype.groupVisitsByDomain_ = function(visits, results) {
 
   // Group the visits into a dictionary and generate a list of domains.
   for (var i = 0, visit; visit = visits[i]; i++) {
-    var domain = visit.getDomainFromURL_(visit.url_);
+    var domain = visit.domain_;
     if (!visitsByDomain[domain]) {
       visitsByDomain[domain] = [];
       domains.push(domain);
@@ -1154,8 +1137,10 @@ HistoryView.prototype.groupVisitsByDomain_ = function(visits, results) {
   };
   domains.sort(sortByVisits);
 
-  for (var i = 0, domain; domain = domains[i]; i++)
+  for (var i = 0; i < domains.length; ++i) {
+    var domain = domains[i];
     this.getGroupedVisitsDOM_(results, domain, visitsByDomain[domain]);
+  }
 };
 
 /**
@@ -1332,6 +1317,9 @@ HistoryView.prototype.displayResults_ = function(doneLoading) {
     // Add all the days and their visits to the page.
     this.resultDiv_.appendChild(resultsFragment);
   }
+  // After the results have been added to the DOM, determine the size of the
+  // time column.
+  this.setTimeColumnWidth_(this.resultDiv_);
 };
 
 /**
@@ -1363,6 +1351,36 @@ HistoryView.prototype.updateClearBrowsingDataButton_ = function() {
   // button whenever the search field has focus.
   $('clear-browsing-data').hidden =
       (document.activeElement === $('search-field'));
+};
+
+/**
+ * Dynamically sets the min-width of the time column for history entries.
+ * This ensures that all entry times will have the same width, without
+ * imposing a fixed width that may not be appropriate for some locales.
+ * @private
+ */
+HistoryView.prototype.setTimeColumnWidth_ = function() {
+  // Find the maximum width of all the time elements on the page.
+  var times = this.resultDiv_.querySelectorAll('.entry .time');
+  var widths = Array.prototype.map.call(times, function(el) {
+    el.style.minWidth = '-webkit-min-content';
+    var width = el.clientWidth;
+    el.style.minWidth = '';
+
+    // Add an extra pixel to prevent rounding errors from causing the text to
+    // be ellipsized at certain zoom levels (see crbug.com/329779).
+    return width + 1;
+  });
+  var maxWidth = widths.length ? Math.max.apply(null, widths) : 0;
+
+  // Add a dynamic stylesheet to the page (or replace the existing one), to
+  // ensure that all entry times have the same width.
+  var styleEl = $('timeColumnStyle');
+  if (!styleEl) {
+    styleEl = document.head.appendChild(document.createElement('style'));
+    styleEl.id = 'timeColumnStyle';
+  }
+  styleEl.textContent = '.entry .time { min-width: ' + maxWidth + 'px; }';
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1556,24 +1574,22 @@ function load() {
   cr.ui.FocusManager.disableMouseFocusOnButtons();
 
   if (isMobileVersion()) {
-    if (searchField) {
-      // Move the search box out of the header.
-      var resultsDisplay = $('results-display');
-      resultsDisplay.parentNode.insertBefore($('search-field'), resultsDisplay);
+    // Move the search box out of the header.
+    var resultsDisplay = $('results-display');
+    resultsDisplay.parentNode.insertBefore($('search-field'), resultsDisplay);
 
-      window.addEventListener(
-          'resize', historyView.updateClearBrowsingDataButton_);
+    window.addEventListener(
+        'resize', historyView.updateClearBrowsingDataButton_);
 
-      // When the search field loses focus, add a delay before updating the
-      // visibility, otherwise the button will flash on the screen before the
-      // keyboard animates away.
-      searchField.addEventListener('blur', function() {
-        setTimeout(historyView.updateClearBrowsingDataButton_, 250);
-      });
-    }
+    // When the search field loses focus, add a delay before updating the
+    // visibility, otherwise the button will flash on the screen before the
+    // keyboard animates away.
+    searchField.addEventListener('blur', function() {
+      setTimeout(historyView.updateClearBrowsingDataButton_, 250);
+    });
 
-    // Move the button to the bottom of the body.
-    document.body.appendChild($('clear-browsing-data'));
+    // Move the button to the bottom of the page.
+    $('history-page').appendChild($('clear-browsing-data'));
   } else {
     window.addEventListener('message', function(e) {
       if (e.data.method == 'frameSelected')
@@ -1581,6 +1597,22 @@ function load() {
     });
     searchField.focus();
   }
+
+<if expr="is_ios">
+  function checkKeyboardVisibility() {
+    // Figure out the real height based on the orientation, becauase
+    // screen.width and screen.height don't update after rotation.
+    var screenHeight = window.orientation % 180 ? screen.width : screen.height;
+
+    // Assume that the keyboard is visible if more than 30% of the screen is
+    // taken up by window chrome.
+    var isKeyboardVisible = (window.innerHeight / screenHeight) < 0.7;
+
+    document.body.classList.toggle('ios-keyboard-visible', isKeyboardVisible);
+  }
+  window.addEventListener('orientationchange', checkKeyboardVisibility);
+  window.addEventListener('resize', checkKeyboardVisibility);
+</if> /* is_ios */
 }
 
 /**
@@ -1821,9 +1853,13 @@ function entryBoxClick(event) {
   event.preventDefault();
 }
 
-// This is pulled out so we can wait for it in tests.
-function removeNodeWithoutTransition(node) {
-  node.parentNode.removeChild(node);
+/**
+ * Called when an individual history entry has been removed from the page.
+ * This will only be called when all the elements affected by the deletion
+ * have been removed from the DOM and the animations have completed.
+ */
+function onEntryRemoved() {
+  historyView.updateSelectionEditButtons();
 }
 
 /**
@@ -1836,8 +1872,13 @@ function removeNode(node, onRemove) {
   node.classList.add('fade-out'); // Trigger CSS fade out animation.
 
   // Delete the node when the animation is complete.
-  node.addEventListener('webkitTransitionEnd', function() {
-    removeNodeWithoutTransition(node);
+  node.addEventListener('webkitTransitionEnd', function(e) {
+    node.parentNode.removeChild(node);
+
+    // In case there is nested deletion happening, prevent this event from
+    // being handled by listeners on ancestor nodes.
+    e.stopPropagation();
+
     if (onRemove)
       onRemove();
   });
@@ -1851,23 +1892,43 @@ function removeNode(node, onRemove) {
 function removeEntryFromView(entry) {
   var nextEntry = entry.nextSibling;
   var previousEntry = entry.previousSibling;
+  var dayResults = findAncestorByClass(entry, 'day-results');
 
-  removeNode(entry, function() {
-    historyView.updateSelectionEditButtons();
-  });
+  var toRemove = [entry];
 
   // if there is no previous entry, and the next entry is a gap, remove it
   if (!previousEntry && nextEntry && nextEntry.className == 'gap')
-    removeNode(nextEntry);
+    toRemove.push(nextEntry);
 
   // if there is no next entry, and the previous entry is a gap, remove it
   if (!nextEntry && previousEntry && previousEntry.className == 'gap')
-    removeNode(previousEntry);
+    toRemove.push(previousEntry);
 
   // if both the next and previous entries are gaps, remove one
   if (nextEntry && nextEntry.className == 'gap' &&
       previousEntry && previousEntry.className == 'gap') {
-    removeNode(nextEntry);
+    toRemove.push(nextEntry);
+  }
+
+  // If removing the last entry on a day, remove the entire day.
+  if (dayResults && dayResults.querySelectorAll('.entry').length == 1) {
+    toRemove.push(dayResults.previousSibling);  // Remove the 'h3'.
+    toRemove.push(dayResults);
+  }
+
+  // Callback to be called when each node has finished animating. It detects
+  // when all the animations have completed, and then calls |onEntryRemoved|.
+  function onRemove() {
+    for (var i = 0; i < toRemove.length; ++i) {
+      if (toRemove[i].parentNode)
+        return;
+    }
+    onEntryRemoved();
+  }
+
+  // Kick off the removal process.
+  for (var i = 0; i < toRemove.length; ++i) {
+    removeNode(toRemove[i], onRemove);
   }
 }
 
@@ -1886,7 +1947,10 @@ function toggleHandler(e) {
     // the height to auto so that it is computed and then set it to the
     // computed value in pixels so the transition works properly.
     var height = innerResultList.clientHeight;
-    innerResultList.style.height = height + 'px';
+    innerResultList.style.height = 0;
+    setTimeout(function() {
+      innerResultList.style.height = height + 'px';
+    }, 0);
     innerArrow.classList.remove('collapse');
     innerArrow.classList.add('expand');
   } else {

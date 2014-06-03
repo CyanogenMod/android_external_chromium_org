@@ -29,7 +29,7 @@ class OmniboxApiTest : public ExtensionApiTest {
   }
 
   AutocompleteController* GetAutocompleteController(Browser* browser) const {
-    return GetLocationBar(browser)->GetLocationEntry()->model()->popup_model()->
+    return GetLocationBar(browser)->GetOmniboxView()->model()->popup_model()->
         autocomplete_controller();
   }
 
@@ -43,7 +43,8 @@ class OmniboxApiTest : public ExtensionApiTest {
     }
   }
 
-  static string16 AutocompleteResultAsString(const AutocompleteResult& result) {
+  static base::string16 AutocompleteResultAsString(
+      const AutocompleteResult& result) {
     std::string output(base::StringPrintf("{%" PRIuS "} ", result.size()));
     for (size_t i = 0; i < result.size(); ++i) {
       AutocompleteMatch match = result.match_at(i);

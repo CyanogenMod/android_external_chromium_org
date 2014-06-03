@@ -7,7 +7,6 @@
 import os
 
 from telemetry import test
-from telemetry.core import util
 from telemetry.page import page_measurement
 from telemetry.page import page_set
 
@@ -16,14 +15,11 @@ def _Mean(l):
   return float(sum(l)) / len(l) if len(l) > 0 else 0.0
 
 
-class KrakenMeasurement(page_measurement.PageMeasurement):
+class _KrakenMeasurement(page_measurement.PageMeasurement):
   def MeasurePage(self, _, tab, results):
-    js_is_done = """
-document.title.indexOf("Results") != -1 && document.readyState == "complete"
-"""
-    def _IsDone():
-      return bool(tab.EvaluateJavaScript(js_is_done))
-    util.WaitFor(_IsDone, 500, poll_interval=5)
+    tab.WaitForDocumentReadyStateToBeComplete()
+    tab.WaitForJavaScriptExpression(
+        'document.title.indexOf("Results") != -1', 500)
 
     js_get_results = """
 var formElement = document.getElementsByTagName("input")[0];
@@ -41,11 +37,11 @@ decodeURIComponent(formElement.value.split("?")[1]);
 
 class Kraken(test.Test):
   """Mozilla's Kraken JavaScript benchmark."""
-  test = KrakenMeasurement
+  test = _KrakenMeasurement
 
   def CreatePageSet(self, options):
     return page_set.PageSet.FromDict({
-        'archive_data_file': '../data/kraken.json',
+        'archive_data_file': '../page_sets/data/kraken.json',
         'pages': [
           { 'url': 'http://krakenbenchmark.mozilla.org/kraken-1.1/driver.html' }
           ]

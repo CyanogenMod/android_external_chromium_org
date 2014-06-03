@@ -94,8 +94,8 @@ SkPaint* GetBadgeTextPaintSingleton() {
 
 SkBitmap DrawBadgeIconOverlay(const SkBitmap& icon,
                               float font_size,
-                              const string16& text,
-                              const string16& fallback) {
+                              const base::string16& text,
+                              const base::string16& fallback) {
   const int kMinPadding = 1;
 
   // Calculate the proper style/text overlay to render on the badge.
@@ -124,7 +124,7 @@ SkBitmap DrawBadgeIconOverlay(const SkBitmap& icon,
 
   // Render the badge bitmap and overlay into a canvas.
   scoped_ptr<gfx::Canvas> canvas(new gfx::Canvas(
-      gfx::Size(badge_width, icon.height()), ui::SCALE_FACTOR_100P, false));
+      gfx::Size(badge_width, icon.height()), 1.0f, false));
   canvas->DrawImageInt(gfx::ImageSkia::CreateFrom1xBitmap(icon), 0, 0);
 
   // Draw the text overlay centered horizontally and vertically. Skia expects

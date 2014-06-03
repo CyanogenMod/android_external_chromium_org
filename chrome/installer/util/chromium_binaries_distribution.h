@@ -15,11 +15,17 @@ class ChromiumBinariesDistribution : public BrowserDistribution {
  public:
   virtual string16 GetAppGuid() OVERRIDE;
 
+  virtual string16 GetBrowserProgIdPrefix() OVERRIDE;
+
+  virtual string16 GetBrowserProgIdDesc() OVERRIDE;
+
+  virtual string16 GetDisplayName() OVERRIDE;
+
+  virtual string16 GetShortcutName(ShortcutType shortcut_type) OVERRIDE;
+
+  virtual int GetIconIndex(ShortcutType shortcut_type) OVERRIDE;
+
   virtual string16 GetBaseAppName() OVERRIDE;
-
-  virtual string16 GetAppShortCutName() OVERRIDE;
-
-  virtual string16 GetAlternateApplicationName() OVERRIDE;
 
   virtual string16 GetBaseAppId() OVERRIDE;
 
@@ -43,9 +49,7 @@ class ChromiumBinariesDistribution : public BrowserDistribution {
 
   virtual string16 GetVersionKey() OVERRIDE;
 
-  virtual bool CanSetAsDefault() OVERRIDE;
-
-  virtual int GetIconIndex() OVERRIDE;
+  virtual DefaultBrowserControlPolicy GetDefaultBrowserControlPolicy() OVERRIDE;
 
   virtual bool GetChromeChannel(string16* channel) OVERRIDE;
 

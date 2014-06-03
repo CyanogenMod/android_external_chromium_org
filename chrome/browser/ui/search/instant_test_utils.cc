@@ -20,6 +20,7 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/interactive_test_utils.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "components/variations/entropy_provider.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/web_contents.h"
@@ -36,8 +37,23 @@ std::string WrapScript(const std::string& script) {
 
 // InstantTestBase -----------------------------------------------------------
 
+InstantTestBase::InstantTestBase()
+    : https_test_server_(
+          net::SpawnedTestServer::TYPE_HTTPS,
+          net::BaseTestServer::SSLOptions(),
+          base::FilePath(FILE_PATH_LITERAL("chrome/test/data"))),
+      init_suggestions_url_(false) {
+}
+
+InstantTestBase::~InstantTestBase() {}
+
 void InstantTestBase::SetupInstant(Browser* browser) {
   browser_ = browser;
+
+  // TODO(samarth): update tests to work with cacheable NTP and remove this.
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
+      "InstantExtended", "Group1 use_cacheable_ntp:0"));
+
   TemplateURLService* service =
       TemplateURLServiceFactory::GetForProfile(browser_->profile());
   ui_test_utils::WaitForTemplateURLServiceToLoad(service);
@@ -45,9 +61,12 @@ void InstantTestBase::SetupInstant(Browser* browser) {
   TemplateURLData data;
   // Necessary to use exact URL for both the main URL and the alternate URL for
   // search term extraction to work in InstantExtended.
+  data.short_name = ASCIIToUTF16("name");
   data.SetURL(instant_url_.spec() +
               "q={searchTerms}&is_search&{google:omniboxStartMarginParameter}");
   data.instant_url = instant_url_.spec();
+  if (init_suggestions_url_)
+    data.suggestions_url = instant_url_.spec() + "#q={searchTerms}";
   data.alternate_urls.push_back(instant_url_.spec() + "#q={searchTerms}");
   data.search_terms_replacement_key = "strk";
 
@@ -58,7 +77,7 @@ void InstantTestBase::SetupInstant(Browser* browser) {
   InstantService* instant_service =
       InstantServiceFactory::GetForProfile(browser_->profile());
   ASSERT_NE(static_cast<InstantService*>(NULL), instant_service);
-  instant_service->ntp_prerenderer()->ReloadStaleNTP();
+  instant_service->ntp_prerenderer()->ReloadInstantNTP();
 }
 
 void InstantTestBase::SetInstantURL(const std::string& url) {
@@ -67,6 +86,7 @@ void InstantTestBase::SetInstantURL(const std::string& url) {
   ui_test_utils::WaitForTemplateURLServiceToLoad(service);
 
   TemplateURLData data;
+  data.short_name = ASCIIToUTF16("name");
   data.SetURL(url);
   data.instant_url = url;
 
@@ -75,8 +95,9 @@ void InstantTestBase::SetInstantURL(const std::string& url) {
   service->SetDefaultSearchProvider(template_url);
 }
 
-void InstantTestBase::Init(const GURL& instant_url) {
+void InstantTestBase::Init(const GURL& instant_url, bool init_suggestions_url) {
   instant_url_ = instant_url;
+  init_suggestions_url_ = init_suggestions_url;
 }
 
 void InstantTestBase::FocusOmnibox() {
@@ -150,7 +171,7 @@ bool InstantTestBase::CheckVisibilityIs(content::WebContents* contents,
   bool actual = !expected;  // Purposely start with a mis-match.
   // We can only use ASSERT_*() in a method that returns void, hence this
   // convoluted check.
-  return GetBoolFromJS(contents, "!document.webkitHidden", &actual) &&
+  return GetBoolFromJS(contents, "!document.hidden", &actual) &&
       actual == expected;
 }
 
@@ -169,7 +190,7 @@ bool InstantTestBase::LoadImage(content::RenderViewHost* rvh,
   return content::ExecuteScriptAndExtractBool(rvh, js_chrome, loaded);
 }
 
-string16 InstantTestBase::GetBlueText() {
+base::string16 InstantTestBase::GetBlueText() {
   size_t start = 0, end = 0;
   omnibox()->GetSelectionBounds(&start, &end);
   if (start > end)

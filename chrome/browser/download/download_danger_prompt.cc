@@ -5,10 +5,10 @@
 #include "chrome/browser/download/download_danger_prompt.h"
 
 #include "base/bind.h"
-#include "base/metrics/field_trial.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/download/chrome_download_manager_delegate.h"
-#include "chrome/browser/download/download_util.h"
+#include "chrome/browser/download/download_stats.h"
 #include "chrome/browser/ui/tab_modal_confirm_dialog.h"
 #include "chrome/browser/ui/tab_modal_confirm_dialog_delegate.h"
 #include "content/public/browser/download_danger_type.h"
@@ -19,11 +19,14 @@
 
 namespace {
 
+// TODO(wittman): Create a native web contents modal dialog implementation of
+// this dialog for non-Views platforms, to support bold formatting of the
+// message lead.
+
 // Implements DownloadDangerPrompt using a TabModalConfirmDialog.
-class DownloadDangerPromptImpl
-  : public DownloadDangerPrompt,
-    public content::DownloadItem::Observer,
-    public TabModalConfirmDialogDelegate {
+class DownloadDangerPromptImpl : public DownloadDangerPrompt,
+                                 public content::DownloadItem::Observer,
+                                 public TabModalConfirmDialogDelegate {
  public:
   DownloadDangerPromptImpl(content::DownloadItem* item,
                            content::WebContents* web_contents,
@@ -31,17 +34,18 @@ class DownloadDangerPromptImpl
                            const OnDone& done);
   virtual ~DownloadDangerPromptImpl();
 
-  // DownloadDangerPrompt
+  // DownloadDangerPrompt:
   virtual void InvokeActionForTesting(Action action) OVERRIDE;
 
  private:
-  // content::DownloadItem::Observer
+  // content::DownloadItem::Observer:
   virtual void OnDownloadUpdated(content::DownloadItem* download) OVERRIDE;
 
-  // TabModalConfirmDialogDelegate
-  virtual string16 GetTitle() OVERRIDE;
-  virtual string16 GetMessage() OVERRIDE;
-  virtual string16 GetAcceptButtonTitle() OVERRIDE;
+  // TabModalConfirmDialogDelegate:
+  virtual base::string16 GetTitle() OVERRIDE;
+  virtual base::string16 GetMessage() OVERRIDE;
+  virtual base::string16 GetAcceptButtonTitle() OVERRIDE;
+  virtual base::string16 GetCancelButtonTitle() OVERRIDE;
   virtual void OnAccepted() OVERRIDE;
   virtual void OnCanceled() OVERRIDE;
   virtual void OnClosed() OVERRIDE;
@@ -66,6 +70,7 @@ DownloadDangerPromptImpl::DownloadDangerPromptImpl(
       done_(done) {
   DCHECK(!done_.is_null());
   download_->AddObserver(this);
+  RecordOpenedDangerousConfirmDialog(download_->GetDangerType());
 }
 
 DownloadDangerPromptImpl::~DownloadDangerPromptImpl() {
@@ -96,58 +101,105 @@ void DownloadDangerPromptImpl::OnDownloadUpdated(
   }
 }
 
-string16 DownloadDangerPromptImpl::GetTitle() {
-  return l10n_util::GetStringUTF16(IDS_CONFIRM_KEEP_DANGEROUS_DOWNLOAD_TITLE);
+base::string16 DownloadDangerPromptImpl::GetTitle() {
+  if (show_context_)
+    return l10n_util::GetStringUTF16(IDS_CONFIRM_KEEP_DANGEROUS_DOWNLOAD_TITLE);
+  switch (download_->GetDangerType()) {
+    case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_URL:
+    case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_CONTENT:
+    case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_HOST:
+    case content::DOWNLOAD_DANGER_TYPE_POTENTIALLY_UNWANTED: {
+      return l10n_util::GetStringUTF16(
+          IDS_RESTORE_KEEP_DANGEROUS_DOWNLOAD_TITLE);
+    }
+    default: {
+      return l10n_util::GetStringUTF16(
+          IDS_CONFIRM_KEEP_DANGEROUS_DOWNLOAD_TITLE);
+    }
+  }
 }
 
-string16 DownloadDangerPromptImpl::GetMessage() {
-  if (!show_context_)
-    return l10n_util::GetStringUTF16(
-        IDS_PROMPT_CONFIRM_KEEP_DANGEROUS_DOWNLOAD);
-  switch (download_->GetDangerType()) {
-    case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_FILE: {
-      return l10n_util::GetStringFUTF16(
-          IDS_PROMPT_DANGEROUS_DOWNLOAD,
-          download_->GetFileNameToReportUser().LossyDisplayName());
-    }
-    case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_URL: // Fall through
-    case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_CONTENT:
-    case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_HOST: {
-      std::string trial_condition =
-          base::FieldTrialList::FindFullName(download_util::kFinchTrialName);
-      if (trial_condition.empty()) {
+base::string16 DownloadDangerPromptImpl::GetMessage() {
+  if (show_context_) {
+    switch (download_->GetDangerType()) {
+      case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_FILE: {
+        return l10n_util::GetStringFUTF16(
+            IDS_PROMPT_DANGEROUS_DOWNLOAD,
+            download_->GetFileNameToReportUser().LossyDisplayName());
+      }
+      case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_URL: // Fall through
+      case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_CONTENT:
+      case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_HOST: {
         return l10n_util::GetStringFUTF16(
             IDS_PROMPT_MALICIOUS_DOWNLOAD_CONTENT,
             download_->GetFileNameToReportUser().LossyDisplayName());
       }
-      return download_util::AssembleMalwareFinchString(
-          trial_condition,
-          download_->GetFileNameToReportUser().LossyDisplayName());
+      case content::DOWNLOAD_DANGER_TYPE_UNCOMMON_CONTENT: {
+        return l10n_util::GetStringFUTF16(
+            IDS_PROMPT_UNCOMMON_DOWNLOAD_CONTENT,
+            download_->GetFileNameToReportUser().LossyDisplayName());
+      }
+      case content::DOWNLOAD_DANGER_TYPE_POTENTIALLY_UNWANTED: {
+        return l10n_util::GetStringFUTF16(
+            IDS_PROMPT_DOWNLOAD_CHANGES_SETTINGS,
+            download_->GetFileNameToReportUser().LossyDisplayName());
+      }
+      case content::DOWNLOAD_DANGER_TYPE_NOT_DANGEROUS:
+      case content::DOWNLOAD_DANGER_TYPE_MAYBE_DANGEROUS_CONTENT:
+      case content::DOWNLOAD_DANGER_TYPE_USER_VALIDATED:
+      case content::DOWNLOAD_DANGER_TYPE_MAX: {
+        break;
+      }
     }
-    case content::DOWNLOAD_DANGER_TYPE_UNCOMMON_CONTENT: {
-      return l10n_util::GetStringFUTF16(
-          IDS_PROMPT_UNCOMMON_DOWNLOAD_CONTENT,
-          download_->GetFileNameToReportUser().LossyDisplayName());
-    }
-    case content::DOWNLOAD_DANGER_TYPE_POTENTIALLY_UNWANTED: {
-      return l10n_util::GetStringFUTF16(
-          IDS_PROMPT_DOWNLOAD_CHANGES_SEARCH_SETTINGS,
-          download_->GetFileNameToReportUser().LossyDisplayName());
-    }
-    case content::DOWNLOAD_DANGER_TYPE_NOT_DANGEROUS:
-    case content::DOWNLOAD_DANGER_TYPE_MAYBE_DANGEROUS_CONTENT:
-    case content::DOWNLOAD_DANGER_TYPE_USER_VALIDATED:
-    case content::DOWNLOAD_DANGER_TYPE_MAX: {
-      break;
+  } else {
+    switch (download_->GetDangerType()) {
+      case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_URL:
+      case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_CONTENT:
+      case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_HOST: {
+        return l10n_util::GetStringUTF16(
+            IDS_PROMPT_CONFIRM_KEEP_MALICIOUS_DOWNLOAD_LEAD) +
+            ASCIIToUTF16("\n\n") +
+            l10n_util::GetStringUTF16(
+                IDS_PROMPT_CONFIRM_KEEP_MALICIOUS_DOWNLOAD_BODY);
+      }
+      default: {
+        return l10n_util::GetStringUTF16(
+            IDS_PROMPT_CONFIRM_KEEP_DANGEROUS_DOWNLOAD);
+      }
     }
   }
   NOTREACHED();
-  return string16();
+  return base::string16();
 }
 
-string16 DownloadDangerPromptImpl::GetAcceptButtonTitle() {
-  return l10n_util::GetStringUTF16(
-      show_context_ ? IDS_CONFIRM_DOWNLOAD : IDS_CONFIRM_DOWNLOAD_AGAIN);
+base::string16 DownloadDangerPromptImpl::GetAcceptButtonTitle() {
+  if (show_context_)
+    return l10n_util::GetStringUTF16(IDS_CONFIRM_DOWNLOAD);
+  switch (download_->GetDangerType()) {
+    case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_URL:
+    case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_CONTENT:
+    case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_HOST:
+    case content::DOWNLOAD_DANGER_TYPE_POTENTIALLY_UNWANTED: {
+      return l10n_util::GetStringUTF16(IDS_CONFIRM_DOWNLOAD_AGAIN_MALICIOUS);
+    }
+    default:
+      return l10n_util::GetStringUTF16(IDS_CONFIRM_DOWNLOAD_AGAIN);
+  }
+}
+
+base::string16 DownloadDangerPromptImpl::GetCancelButtonTitle() {
+  if (show_context_)
+    return l10n_util::GetStringUTF16(IDS_CANCEL);
+  switch (download_->GetDangerType()) {
+    case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_URL:
+    case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_CONTENT:
+    case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_HOST:
+    case content::DOWNLOAD_DANGER_TYPE_POTENTIALLY_UNWANTED: {
+      return l10n_util::GetStringUTF16(IDS_CONFIRM_CANCEL_AGAIN_MALICIOUS);
+    }
+    default:
+      return l10n_util::GetStringUTF16(IDS_CANCEL);
+  }
 }
 
 void DownloadDangerPromptImpl::OnAccepted() {
@@ -159,7 +211,7 @@ void DownloadDangerPromptImpl::OnCanceled() {
 }
 
 void DownloadDangerPromptImpl::OnClosed() {
-  RunDone(CANCEL);
+  RunDone(DISMISS);
 }
 
 void DownloadDangerPromptImpl::RunDone(Action action) {
@@ -178,6 +230,7 @@ void DownloadDangerPromptImpl::RunDone(Action action) {
 
 }  // namespace
 
+#if !(defined(OS_WIN) || defined(USE_AURA))
 // static
 DownloadDangerPrompt* DownloadDangerPrompt::Create(
     content::DownloadItem* item,
@@ -190,3 +243,4 @@ DownloadDangerPrompt* DownloadDangerPrompt::Create(
   TabModalConfirmDialog::Create(prompt, web_contents);
   return prompt;
 }
+#endif

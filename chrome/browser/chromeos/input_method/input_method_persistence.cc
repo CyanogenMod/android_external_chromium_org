@@ -4,13 +4,13 @@
 
 #include "chrome/browser/chromeos/input_method/input_method_persistence.h"
 
-#include "base/chromeos/chromeos_version.h"
 #include "base/logging.h"
 #include "base/prefs/pref_service.h"
+#include "base/prefs/scoped_user_pref_update.h"
+#include "base/sys_info.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/input_method/input_method_util.h"
 #include "chrome/browser/chromeos/language_preferences.h"
-#include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/pref_names.h"
@@ -33,7 +33,7 @@ static void SetUserLRUInputMethod(
     const chromeos::input_method::InputMethodManager* const manager) {
   // Skip if it's not a keyboard layout. Drop input methods including
   // extension ones.
-  if (!InputMethodUtil::IsKeyboardLayout(input_method))
+  if (!manager->IsLoginKeyboard(input_method))
     return;
 
   PrefService* const local_state = g_browser_process->local_state();
@@ -43,11 +43,11 @@ static void SetUserLRUInputMethod(
   if (profile == NULL)
     return;
 
-  if (!manager->IsFullLatinKeyboard(input_method))
+  if (!manager->IsLoginKeyboard(input_method))
     return;
 
   const std::string username = profile->GetProfileName();
-  if (base::chromeos::IsRunningOnChromeOS() && !username.empty() &&
+  if (base::SysInfo::IsRunningOnChromeOS() && !username.empty() &&
       !local_state->ReadOnly()) {
     bool update_succeed = false;
     {
@@ -124,7 +124,7 @@ void InputMethodPersistence::InputMethodChanged(
   // Save the new input method id depending on the current browser state.
   switch (state_) {
     case InputMethodManager::STATE_LOGIN_SCREEN:
-      if (!InputMethodUtil::IsKeyboardLayout(current_input_method)) {
+      if (!manager->IsLoginKeyboard(current_input_method)) {
         DVLOG(1) << "Only keyboard layouts are supported: "
                  << current_input_method;
         return;

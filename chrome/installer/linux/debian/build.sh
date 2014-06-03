@@ -23,13 +23,7 @@ gen_changelog() {
   process_template "${SCRIPTDIR}/changelog.template" "${DEB_CHANGELOG}"
   debchange -a --nomultimaint -m --changelog "${DEB_CHANGELOG}" \
     "Release Notes: ${RELEASENOTES}"
-  # Trunk packages need to install to a custom path and with custom filenames
-  # (e.g. not /usr/bin/google-chrome) so they don't conflict with release
-  # channel packages.
-  if [ "$CHANNEL" = "trunk" ] || [ "$CHANNEL" = "asan" ]; then
-    local PACKAGE="${PACKAGE}-${CHANNEL}"
-  fi
-  GZLOG="${STAGEDIR}/usr/share/doc/${PACKAGE}/changelog.gz"
+  GZLOG="${STAGEDIR}/usr/share/doc/${PACKAGE}-${CHANNEL}/changelog.gz"
   mkdir -p "$(dirname "${GZLOG}")"
   gzip -9 -c "${DEB_CHANGELOG}" > "${GZLOG}"
   chmod 644 "${GZLOG}"
@@ -54,18 +48,31 @@ prep_staging_debian() {
 
 # Put the package contents in the staging area.
 stage_install_debian() {
-  # Trunk packages need to install to a custom path and with custom filenames
-  # (e.g. not /usr/bin/google-chrome) so they don't conflict with release
-  # channel packages.
-  if [ "$CHANNEL" = "trunk" ] || [ "$CHANNEL" = "asan" ]; then
-    local PACKAGE="${PACKAGE}-${CHANNEL}"
-    local INSTALLDIR="${INSTALLDIR}-${CHANNEL}"
+  # Always use a different name for /usr/bin symlink depending on channel.
+  # First, to avoid file collisions. Second, to make it possible to
+  # use update-alternatives for /usr/bin/google-chrome.
+  local USR_BIN_SYMLINK_NAME="${PACKAGE}-${CHANNEL}"
+
+  if [ "$CHANNEL" != "stable" ]; then
     # This would ideally be compiled into the app, but that's a bit too
     # intrusive of a change for these limited use channels, so we'll just hack
     # it into the wrapper script. The user can still override since it seems to
     # work to specify --user-data-dir multiple times on the command line, with
     # the last occurrence winning.
-    local DEFAULT_FLAGS="--user-data-dir=\"\${HOME}/.config/${PACKAGE}\""
+    local SXS_USER_DATA_DIR="\${XDG_CONFIG_HOME:-\${HOME}/.config}/${PACKAGE}-${CHANNEL}"
+    local DEFAULT_FLAGS="--user-data-dir=\"${SXS_USER_DATA_DIR}\""
+
+    # Avoid file collisions between channels.
+    local INSTALLDIR="${INSTALLDIR}-${CHANNEL}"
+
+    # TODO(phajdan.jr): Do that for all packages for SxS,
+    # http://crbug.com/38598 .
+    if [ "$CHANNEL" = "trunk" ] || [ "$CHANNEL" = "asan" ]; then
+      local PACKAGE="${PACKAGE}-${CHANNEL}"
+    fi
+
+    # Make it possible to distinguish between menu entries
+    # for different channels.
     local MENUNAME="${MENUNAME} (${CHANNEL})"
   fi
   prep_staging_debian
@@ -90,6 +97,24 @@ stage_install_debian() {
   process_template "${BUILDDIR}/installer/debian/postrm" \
     "${STAGEDIR}/DEBIAN/postrm"
   chmod 755 "${STAGEDIR}/DEBIAN/postrm"
+
+  # Compatibility symlinks to avoid breaking Chrome on update.
+  # TODO(phajdan.jr): Remove before enabling SxS (obvious file collisions).
+  # See http://crbug.com/295103 , and ultimately http://crbug.com/22703 .
+  # Also see https://groups.google.com/a/chromium.org/d/msg/chromium-dev/DBEqOORaRiw/pE0bNI6h0kcJ .
+  if [ "${CHANNEL}" != "stable" ] && \
+     [ "${CHANNEL}" != "trunk" ] && \
+     [ "${CHANNEL}" != "asan" ]; then
+    mkdir -p "${STAGEDIR}/opt/google/chrome"
+    for x in chrome chrome-sandbox locales; do
+      ln -s "${INSTALLDIR}/${x}" "${STAGEDIR}/opt/google/chrome/${x}"
+    done
+    pushd "${STAGEDIR}/${INSTALLDIR}"
+    for x in *.pak; do
+      ln -s "${INSTALLDIR}/${x}" "${STAGEDIR}/opt/google/chrome/${x}"
+    done
+    popd
+  fi
 }
 
 # Actually generate the package file.
@@ -234,7 +259,7 @@ fi
 eval $(sed -e "s/^\([^=]\+\)=\(.*\)$/export \1='\2'/" \
   "${BUILDDIR}/installer/theme/BRANDING")
 
-REPOCONFIG="deb http://dl.google.com/linux/${PACKAGE#google-}/deb/ stable main"
+REPOCONFIG="deb http://dl.google.com/linux/chrome/deb/ stable main"
 verify_channel
 
 # Some Debian packaging tools want these set.

@@ -14,6 +14,7 @@
 #include "ppapi/shared_impl/dictionary_var.h"
 #include "ppapi/shared_impl/ppapi_globals.h"
 #include "ppapi/shared_impl/proxy_lock.h"
+#include "ppapi/shared_impl/resource_var.h"
 #include "ppapi/shared_impl/scoped_pp_var.h"
 #include "ppapi/shared_impl/test_globals.h"
 #include "ppapi/shared_impl/unittest_utils.h"
@@ -37,6 +38,7 @@ class RawVarDataTest : public testing::Test {
 
   // testing::Test implementation.
   virtual void SetUp() {
+    ProxyLock::EnableLockingOnThreadForTest();
     ProxyLock::Acquire();
   }
   virtual void TearDown() {
@@ -183,6 +185,18 @@ TEST_F(RawVarDataTest, DictionaryArrayTest) {
   ASSERT_FALSE(WriteAndRead(release_array.get(), &result));
   // Break the self reference.
   array->Set(index, PP_MakeUndefined());
+}
+
+TEST_F(RawVarDataTest, ResourceTest) {
+  // TODO(mgiuca): This test passes trivially, since GetVarTracker() returns a
+  // TestVarTracker which returns a null PP_Var.
+  ScopedPPVar resource(
+      ScopedPPVar::PassRef(),
+      PpapiGlobals::Get()->GetVarTracker()->MakeResourcePPVar(34));
+  EXPECT_TRUE(WriteReadAndCompare(resource.get()));
+
+  // TODO(mgiuca): Test a host resource with an IPC::Message. It is currently a
+  // checkfail to deserialize such a resource.
 }
 
 }  // namespace proxy

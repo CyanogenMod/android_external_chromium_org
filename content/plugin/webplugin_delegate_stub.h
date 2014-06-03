@@ -19,10 +19,11 @@
 
 struct PluginMsg_Init_Params;
 struct PluginMsg_DidReceiveResponseParams;
+struct PluginMsg_FetchURL_Params;
 struct PluginMsg_UpdateGeometry_Param;
 class WebCursor;
 
-namespace WebKit {
+namespace blink {
 class WebInputEvent;
 }
 
@@ -47,6 +48,7 @@ class WebPluginDelegateStub : public IPC::Listener,
   virtual bool Send(IPC::Message* msg) OVERRIDE;
 
   int instance_id() { return instance_id_; }
+  WebPluginDelegateImpl* delegate() { return delegate_; }
   WebPluginProxy* webplugin() { return webplugin_; }
 
  private:
@@ -67,7 +69,7 @@ class WebPluginDelegateStub : public IPC::Listener,
   void OnDidFail(int id);
   void OnDidFinishLoadWithReason(const GURL& url, int reason, int notify_id);
   void OnSetFocus(bool focused);
-  void OnHandleInputEvent(const WebKit::WebInputEvent* event,
+  void OnHandleInputEvent(const blink::WebInputEvent* event,
                           bool* handled, WebCursor* cursor);
   void OnPaint(const gfx::Rect& damaged_rect);
   void OnDidPaint();
@@ -77,15 +79,15 @@ class WebPluginDelegateStub : public IPC::Listener,
                               const std::string& result,
                               bool success,
                               int notify_id);
-  void OnGetFormValue(string16* value, bool* success);
+  void OnGetFormValue(base::string16* value, bool* success);
 
   void OnSetContentAreaFocus(bool has_focus);
 #if defined(OS_WIN) && !defined(USE_AURA)
-  void OnImeCompositionUpdated(const string16& text,
+  void OnImeCompositionUpdated(const base::string16& text,
                                const std::vector<int>& clauses,
                                const std::vector<int>& target,
                                int cursor_position);
-  void OnImeCompositionCompleted(const string16& text);
+  void OnImeCompositionCompleted(const base::string16& text);
 #endif
 #if defined(OS_MACOSX)
   void OnSetWindowFocus(bool has_focus);
@@ -94,7 +96,7 @@ class WebPluginDelegateStub : public IPC::Listener,
                         bool has_focus);
   void OnWindowFrameChanged(const gfx::Rect& window_frame,
                             const gfx::Rect& view_frame);
-  void OnImeCompositionCompleted(const string16& text);
+  void OnImeCompositionCompleted(const base::string16& text);
 #endif
 
   void OnDidReceiveManualResponse(
@@ -107,6 +109,7 @@ class WebPluginDelegateStub : public IPC::Listener,
                                const GURL& url,
                                int notify_id);
   void OnHTTPRangeRequestReply(unsigned long resource_id, int range_request_id);
+  void OnFetchURL(const PluginMsg_FetchURL_Params& params);
 
   std::string mime_type_;
   int instance_id_;

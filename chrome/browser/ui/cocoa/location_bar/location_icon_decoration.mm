@@ -5,6 +5,7 @@
 #import "chrome/browser/ui/cocoa/location_bar/location_icon_decoration.h"
 
 #include "base/strings/sys_string_conversions.h"
+#include "chrome/browser/favicon/favicon_tab_helper.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_finder.h"
@@ -41,7 +42,7 @@ bool LocationIconDecoration::IsDraggable() {
 
   // Do not drag if the user has been editing the location bar, or the
   // location bar is at the NTP.
-  return (!owner_->GetLocationEntry()->IsEditingOrEmpty());
+  return (!owner_->GetOmniboxView()->IsEditingOrEmpty());
 }
 
 NSPasteboard* LocationIconDecoration::GetDragPasteboard() {
@@ -64,10 +65,13 @@ NSPasteboard* LocationIconDecoration::GetDragPasteboard() {
 }
 
 NSImage* LocationIconDecoration::GetDragImage() {
-  NSImage* favicon = owner_->GetFavicon().AsNSImage();
+  content::WebContents* web_contents = owner_->GetWebContents();
+  NSImage* favicon =
+      FaviconTabHelper::FromWebContents(web_contents)->GetFavicon().AsNSImage();
   NSImage* iconImage = favicon ? favicon : GetImage();
 
-  NSImage* image = chrome::DragImageForBookmark(iconImage, owner_->GetTitle());
+  NSImage* image =
+      chrome::DragImageForBookmark(iconImage, web_contents->GetTitle());
   NSSize imageSize = [image size];
   drag_frame_ = NSMakeRect(0, 0, imageSize.width, imageSize.height);
   return image;
@@ -93,7 +97,7 @@ bool LocationIconDecoration::AcceptsMousePress() {
 bool LocationIconDecoration::OnMousePressed(NSRect frame) {
   // Do not show page info if the user has been editing the location
   // bar, or the location bar is at the NTP.
-  if (owner_->GetLocationEntry()->IsEditingOrEmpty())
+  if (owner_->GetOmniboxView()->IsEditingOrEmpty())
     return true;
 
   WebContents* tab = owner_->GetWebContents();
@@ -111,8 +115,6 @@ bool LocationIconDecoration::OnMousePressed(NSRect frame) {
 }
 
 NSString* LocationIconDecoration::GetToolTip() {
-  if (owner_->GetLocationEntry()->IsEditingOrEmpty())
-    return nil;
-  else
-    return l10n_util::GetNSStringWithFixup(IDS_TOOLTIP_LOCATION_ICON);
+  return owner_->GetOmniboxView()->IsEditingOrEmpty() ?
+      nil : l10n_util::GetNSStringWithFixup(IDS_TOOLTIP_LOCATION_ICON);
 }

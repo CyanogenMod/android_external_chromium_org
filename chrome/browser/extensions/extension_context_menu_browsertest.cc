@@ -9,14 +9,14 @@
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_test_message_listener.h"
 #include "chrome/browser/extensions/lazy_background_page_test_util.h"
-#include "chrome/browser/extensions/test_management_policy.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/tab_contents/render_view_context_menu.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/common/context_menu_params.h"
+#include "extensions/browser/test_management_policy.h"
+#include "extensions/common/switches.h"
 #include "net/dns/mock_host_resolver.h"
 #include "ui/base/models/menu_model.h"
 
@@ -127,7 +127,7 @@ class ExtensionContextMenuBrowserTest : public ExtensionBrowserTest {
 
   // Shortcut to return the current MenuManager.
   extensions::MenuManager* menu_manager() {
-    return browser()->profile()->GetExtensionService()->menu_manager();
+    return extensions::MenuManager::Get(browser()->profile());
   }
 
   // Returns a pointer to the currently loaded extension with |name|, or null
@@ -205,12 +205,12 @@ class ExtensionContextMenuBrowserTest : public ExtensionBrowserTest {
 
  bool MenuHasExtensionItemWithLabel(TestRenderViewContextMenu* menu,
                                      const std::string& label) {
-    string16 label16 = UTF8ToUTF16(label);
+    base::string16 label16 = UTF8ToUTF16(label);
     std::map<int, MenuItem::Id>::iterator i;
     for (i = menu->extension_items().extension_item_map_.begin();
          i != menu->extension_items().extension_item_map_.end(); ++i) {
       const MenuItem::Id& id = i->second;
-      string16 tmp_label;
+      base::string16 tmp_label;
       EXPECT_TRUE(GetItemLabel(menu, id, &tmp_label));
       if (tmp_label == label16)
         return true;
@@ -223,7 +223,7 @@ class ExtensionContextMenuBrowserTest : public ExtensionBrowserTest {
   // false.
   bool GetItemLabel(TestRenderViewContextMenu* menu,
                     const MenuItem::Id& id,
-                    string16* result) {
+                    base::string16* result) {
     int command_id = 0;
     if (!FindCommandId(menu, id, &command_id))
       return false;
@@ -333,7 +333,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionContextMenuBrowserTest, LongTitle) {
   scoped_ptr<TestRenderViewContextMenu> menu(
       CreateMenu(browser(), url, GURL(), GURL()));
 
-  string16 label;
+  base::string16 label;
   ASSERT_TRUE(GetItemLabel(menu.get(), item->id(), &label));
   ASSERT_TRUE(label.size() <= limit);
 }
@@ -472,7 +472,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionContextMenuBrowserTest, Separators) {
   // name.
   MenuModel* model = NULL;
   int index = 0;
-  string16 label;
+  base::string16 label;
   ASSERT_TRUE(menu->GetMenuModelAndItemIndex(
       IDC_EXTENSIONS_CONTEXT_CUSTOM_FIRST, &model, &index));
   EXPECT_EQ(UTF8ToUTF16(extension->name()), model->GetLabelAt(index));
@@ -608,8 +608,10 @@ class ExtensionContextMenuBrowserLazyTest :
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     ExtensionContextMenuBrowserTest::SetUpCommandLine(command_line);
     // Set shorter delays to prevent test timeouts.
-    command_line->AppendSwitchASCII(switches::kEventPageIdleTime, "0");
-    command_line->AppendSwitchASCII(switches::kEventPageSuspendingTime, "0");
+    command_line->AppendSwitchASCII(
+        extensions::switches::kEventPageIdleTime, "1");
+    command_line->AppendSwitchASCII(
+        extensions::switches::kEventPageSuspendingTime, "0");
   }
 };
 

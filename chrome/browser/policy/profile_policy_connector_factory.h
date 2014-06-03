@@ -9,8 +9,10 @@
 
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/memory/singleton.h"
 #include "components/browser_context_keyed_service/browser_context_keyed_base_factory.h"
+
+template <typename T>
+struct DefaultSingletonTraits;
 
 class Profile;
 
@@ -46,8 +48,7 @@ class ProfilePolicyConnectorFactory : public BrowserContextKeyedBaseFactory {
   // startup.
   static scoped_ptr<ProfilePolicyConnector> CreateForProfile(
       Profile* profile,
-      bool force_immediate_load,
-      base::SequencedTaskRunner* sequenced_task_runner);
+      bool force_immediate_load);
 
   // Overrides the |connector| for the given |profile|; use only in tests.
   // Once this class becomes a proper PKS then it can reuse the testing
@@ -65,8 +66,7 @@ class ProfilePolicyConnectorFactory : public BrowserContextKeyedBaseFactory {
 
   scoped_ptr<ProfilePolicyConnector> CreateForProfileInternal(
       Profile* profile,
-      bool force_immediate_load,
-      base::SequencedTaskRunner* sequenced_task_runner);
+      bool force_immediate_load);
 
   // BrowserContextKeyedBaseFactory:
   virtual void BrowserContextShutdown(

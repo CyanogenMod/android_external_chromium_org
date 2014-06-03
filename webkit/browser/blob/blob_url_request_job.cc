@@ -24,7 +24,7 @@
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_error_job.h"
 #include "net/url_request/url_request_status.h"
-#include "webkit/browser/blob/local_file_stream_reader.h"
+#include "webkit/browser/blob/file_stream_reader.h"
 #include "webkit/browser/fileapi/file_system_context.h"
 #include "webkit/browser/fileapi/file_system_url.h"
 
@@ -51,7 +51,6 @@ BlobURLRequestJob::BlobURLRequestJob(
     fileapi::FileSystemContext* file_system_context,
     base::MessageLoopProxy* file_thread_proxy)
     : net::URLRequestJob(request, network_delegate),
-      weak_factory_(this),
       blob_data_(blob_data),
       file_system_context_(file_system_context),
       file_thread_proxy_(file_thread_proxy),
@@ -61,7 +60,8 @@ BlobURLRequestJob::BlobURLRequestJob(
       current_item_index_(0),
       current_item_offset_(0),
       error_(false),
-      byte_range_set_(false) {
+      byte_range_set_(false),
+      weak_factory_(this) {
   DCHECK(file_thread_proxy_.get());
 }
 
@@ -551,14 +551,16 @@ void BlobURLRequestJob::CreateFileStreamReader(size_t index,
   FileStreamReader* reader = NULL;
   switch (item.type()) {
     case BlobData::Item::TYPE_FILE:
-      reader = new LocalFileStreamReader(file_thread_proxy_.get(),
-                                         item.path(),
-                                         item.offset() + additional_offset,
-                                         item.expected_modification_time());
+      reader = FileStreamReader::CreateForLocalFile(
+          file_thread_proxy_.get(),
+          item.path(),
+          item.offset() + additional_offset,
+          item.expected_modification_time());
       break;
     case BlobData::Item::TYPE_FILE_FILESYSTEM:
       reader = file_system_context_->CreateFileStreamReader(
-          fileapi::FileSystemURL(file_system_context_->CrackURL(item.url())),
+          fileapi::FileSystemURL(
+              file_system_context_->CrackURL(item.filesystem_url())),
           item.offset() + additional_offset,
           item.expected_modification_time()).release();
       break;

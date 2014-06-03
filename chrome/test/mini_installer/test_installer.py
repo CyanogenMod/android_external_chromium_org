@@ -9,13 +9,15 @@ each command match the expected machine states. For more details, take a look at
 the design documentation at http://goo.gl/Q0rGM6
 """
 
-import argparse
 import json
+import optparse
 import os
 import subprocess
+import sys
 import unittest
 
-import verifier
+from variable_expander import VariableExpander
+import verifier_runner
 
 
 class Config:
@@ -37,17 +39,21 @@ class Config:
 class InstallerTest(unittest.TestCase):
   """Tests a test case in the config file."""
 
-  def __init__(self, test, config):
+  def __init__(self, test, config, variable_expander):
     """Constructor.
 
     Args:
       test: An array of alternating state names and action names, starting and
           ending with state names.
       config: The Config object.
+      variable_expander: A VariableExpander object.
     """
     super(InstallerTest, self).__init__()
     self._test = test
     self._config = config
+    self._variable_expander = variable_expander
+    self._verifier_runner = verifier_runner.VerifierRunner()
+    self._clean_on_teardown = True
 
   def __str__(self):
     """Returns a string representing the test case.
@@ -56,7 +62,7 @@ class InstallerTest(unittest.TestCase):
       A string created by joining state names and action names together with
       ' -> ', for example, 'Test: clean -> install chrome -> chrome_installed'.
     """
-    return 'Test: %s' % (' -> '.join(self._test))
+    return 'Test: %s\n' % (' -> '.join(self._test))
 
   def runTest(self):
     """Run the test case."""
@@ -65,18 +71,25 @@ class InstallerTest(unittest.TestCase):
     self.assertEqual(1, len(self._test) % 2,
                      'The length of test array must be odd')
 
-    # TODO(sukolsak): run a reset command that puts the machine in clean state.
-
     state = self._test[0]
     self._VerifyState(state)
 
     # Starting at index 1, we loop through pairs of (action, state).
     for i in range(1, len(self._test), 2):
       action = self._test[i]
-      self._RunCommand(self._config.actions[action])
+      RunCommand(self._config.actions[action], self._variable_expander)
 
       state = self._test[i + 1]
       self._VerifyState(state)
+
+    # If the test makes it here, it means it was successful, because RunCommand
+    # and _VerifyState throw an exception on failure.
+    self._clean_on_teardown = False
+
+  def tearDown(self):
+    """Cleans up the machine if the test case fails."""
+    if self._clean_on_teardown:
+      RunCleanCommand(True, self._variable_expander)
 
   def shortDescription(self):
     """Overridden from unittest.TestCase.
@@ -95,14 +108,51 @@ class InstallerTest(unittest.TestCase):
       state: A state name.
     """
     try:
-      verifier.Verify(self._config.states[state])
+      self._verifier_runner.VerifyAll(self._config.states[state],
+                                      self._variable_expander)
     except AssertionError as e:
       # If an AssertionError occurs, we intercept it and add the state name
       # to the error message so that we know where the test fails.
       raise AssertionError("In state '%s', %s" % (state, e))
 
-  def _RunCommand(self, command):
-    subprocess.call(command, shell=True)
+
+def RunCommand(command, variable_expander):
+  """Runs the given command from the current file's directory.
+
+  This function throws an Exception if the command returns with non-zero exit
+  status.
+
+  Args:
+    command: A command to run. It is expanded using Expand.
+    variable_expander: A VariableExpander object.
+  """
+  expanded_command = variable_expander.Expand(command)
+  script_dir = os.path.dirname(os.path.abspath(__file__))
+  exit_status = subprocess.call(expanded_command, shell=True, cwd=script_dir)
+  if exit_status != 0:
+    raise Exception('Command %s returned non-zero exit status %s' % (
+        expanded_command, exit_status))
+
+
+def RunCleanCommand(force_clean, variable_expander):
+  """Puts the machine in the clean state (i.e. Chrome not installed).
+
+  Args:
+    force_clean: A boolean indicating whether to force cleaning existing
+        installations.
+    variable_expander: A VariableExpander object.
+  """
+  # TODO(sukolsak): Read the clean state from the config file and clean
+  # the machine according to it.
+  # TODO(sukolsak): Handle Chrome SxS installs.
+  commands = []
+  interactive_option = '--interactive' if not force_clean else ''
+  for level_option in ('', '--system-level'):
+    commands.append('python uninstall_chrome.py '
+                    '--chrome-long-name="$CHROME_LONG_NAME" '
+                    '--no-error-if-absent %s %s' %
+                    (level_option, interactive_option))
+  RunCommand(' && '.join(commands), variable_expander)
 
 
 def MergePropertyDictionaries(current_property, new_property):
@@ -171,27 +221,51 @@ def ParseConfigFile(filename):
   return config
 
 
-def RunTests(config):
+def RunTests(mini_installer_path, config, force_clean):
   """Tests the installer using the given Config object.
 
   Args:
+    mini_installer_path: The path to mini_installer.exe.
     config: A Config object.
+    force_clean: A boolean indicating whether to force cleaning existing
+        installations.
+
+  Returns:
+    True if all the tests passed, or False otherwise.
   """
   suite = unittest.TestSuite()
+  variable_expander = VariableExpander(mini_installer_path)
+  RunCleanCommand(force_clean, variable_expander)
   for test in config.tests:
-    suite.addTest(InstallerTest(test, config))
-  unittest.TextTestRunner(verbosity=2).run(suite)
+    suite.addTest(InstallerTest(test, config, variable_expander))
+  result = unittest.TextTestRunner(verbosity=2).run(suite)
+  return result.wasSuccessful()
 
 
 def main():
-  parser = argparse.ArgumentParser(description='Test the installer.')
-  parser.add_argument('config_filename',
-                      help='The relative/absolute path to the config file.')
-  args = parser.parse_args()
+  usage = 'usage: %prog [options] config_filename'
+  parser = optparse.OptionParser(usage, description='Test the installer.')
+  parser.add_option('--build-dir', default='out',
+                    help='Path to main build directory (the parent of the '
+                         'Release or Debug directory)')
+  parser.add_option('--target', default='Release',
+                    help='Build target (Release or Debug)')
+  parser.add_option('--force-clean', action='store_true', dest='force_clean',
+                    default=False, help='Force cleaning existing installations')
+  options, args = parser.parse_args()
+  if len(args) != 1:
+    parser.error('Incorrect number of arguments.')
+  config_filename = args[0]
 
-  config = ParseConfigFile(args.config_filename)
-  RunTests(config)
+  mini_installer_path = os.path.join(options.build_dir, options.target,
+                                     'mini_installer.exe')
+  assert os.path.exists(mini_installer_path), ('Could not find file %s' %
+                                               mini_installer_path)
+  config = ParseConfigFile(config_filename)
+  if not RunTests(mini_installer_path, config, options.force_clean):
+    return 1
+  return 0
 
 
 if __name__ == '__main__':
-  main()
+  sys.exit(main())

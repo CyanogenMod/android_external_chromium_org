@@ -14,7 +14,6 @@
 #include "base/mac/scoped_nsobject.h"
 #include "base/metrics/histogram.h"
 #include "base/path_service.h"
-#include "chrome/app/breakpad_mac.h"
 #import "chrome/browser/app_controller_mac.h"
 #include "chrome/browser/browser_process.h"
 #import "chrome/browser/chrome_browser_application_mac.h"
@@ -24,6 +23,7 @@
 #include "chrome/browser/metrics/metrics_service.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
+#include "components/breakpad/app/breakpad_mac.h"
 #include "content/public/common/main_function_params.h"
 #include "content/public/common/result_codes.h"
 #include "ui/base/l10n/l10n_util_mac.h"
@@ -31,13 +31,6 @@
 #include "ui/base/resource/resource_handle.h"
 
 namespace {
-
-// This preference is used to track whether the KeychainReauthorize operation
-// has occurred at launch. This operation only makes sense while the
-// application continues to be signed by the old certificate.
-NSString* const kKeychainReauthorizeAtLaunchPref =
-    @"KeychainReauthorizeInAppMay2012";
-const int kKeychainReauthorizeAtLaunchMaxTries = 2;
 
 // Some users rarely restart Chrome, so they might never get a chance to run
 // the at-launch KeychainReauthorize. To account for them, there's also an
@@ -64,22 +57,27 @@ enum CatSixtyFour {
   LION_64,
   MOUNTAIN_LION_32,  // Unexpected, Mountain Lion requires a 64-bit CPU.
   MOUNTAIN_LION_64,
+  MAVERICKS_32,  // Unexpected, Mavericks requires a 64-bit CPU.
+  MAVERICKS_64,
 
   // DON'T add new constants here. It's important to keep the constant values,
   // um, constant. Add new constants at the bottom.
-
-  // Newer than any known cat.
-  FUTURE_CAT_32,  // Unexpected, it's unlikely Apple will un-obsolete old CPUs.
-  FUTURE_CAT_64,
 
   // What if the bitsiness of the CPU can't be determined?
   SABER_TOOTHED_CAT_DUNNO,
   SNOW_LEOPARD_DUNNO,
   LION_DUNNO,
   MOUNTAIN_LION_DUNNO,
+  MAVERICKS_DUNNO,
+
+  // Newer than any known cat.
+  FUTURE_CAT_32,  // Unexpected, it's unlikely Apple will un-obsolete old CPUs.
+  FUTURE_CAT_64,
   FUTURE_CAT_DUNNO,
 
-  // Add new constants here.
+  // As new versions of Mac OS X are released with sillier and sillier names,
+  // rename the FUTURE_CAT enum values to match those names, and re-create
+  // FUTURE_CAT_[32|64|DUNNO] here.
 
   CAT_SIXTY_FOUR_MAX
 };
@@ -121,7 +119,11 @@ CatSixtyFour CatSixtyFourValue() {
     return cpu64_known ? (cpu64 ? MOUNTAIN_LION_64 : MOUNTAIN_LION_32) :
                          MOUNTAIN_LION_DUNNO;
   }
-  if (base::mac::IsOSLaterThanMountainLion_DontCallThis()) {
+  if (base::mac::IsOSMavericks()) {
+    return cpu64_known ? (cpu64 ? MAVERICKS_64 : MAVERICKS_32) :
+                         MAVERICKS_DUNNO;
+  }
+  if (base::mac::IsOSLaterThanMavericks_DontCallThis()) {
     return cpu64_known ? (cpu64 ? FUTURE_CAT_64 : FUTURE_CAT_32) :
                          FUTURE_CAT_DUNNO;
   }
@@ -267,7 +269,7 @@ void ChromeBrowserMainPartsMac::PreMainMessageLoopStart() {
 void ChromeBrowserMainPartsMac::PostProfileInit() {
   ChromeBrowserMainPartsPosix::PostProfileInit();
   g_browser_process->metrics_service()->RecordBreakpadRegistration(
-      IsCrashReporterEnabled());
+      breakpad::IsCrashReporterEnabled());
 }
 
 void ChromeBrowserMainPartsMac::DidEndMainMessageLoop() {

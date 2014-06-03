@@ -6,6 +6,8 @@
 #include "cc/layers/solid_color_layer.h"
 #include "cc/test/layer_tree_pixel_test.h"
 #include "cc/test/pixel_comparator.h"
+#include "third_party/skia/include/effects/SkColorFilterImageFilter.h"
+#include "third_party/skia/include/effects/SkColorMatrixFilter.h"
 
 #if !defined(OS_ANDROID)
 
@@ -52,7 +54,7 @@ TEST_F(LayerTreeHostFiltersPixelTest, BackgroundFilterBlur) {
                base::FilePath(FILE_PATH_LITERAL("background_filter_blur.png")));
 }
 
-TEST_F(LayerTreeHostFiltersPixelTest, DISABLED_BackgroundFilterBlurOutsets) {
+TEST_F(LayerTreeHostFiltersPixelTest, BackgroundFilterBlurOutsets) {
   scoped_refptr<SolidColorLayer> background = CreateSolidColorLayer(
       gfx::Rect(200, 200), SK_ColorWHITE);
 
@@ -73,8 +75,8 @@ TEST_F(LayerTreeHostFiltersPixelTest, DISABLED_BackgroundFilterBlurOutsets) {
   blur->SetBackgroundFilters(filters);
 
 #if defined(OS_WIN)
-  // Windows has 2250 pixels off by at most 2: crbug.com/259922
-  float percentage_pixels_large_error = 5.625f;  // 2250px / (200*200)
+  // Windows has 2596 pixels off by at most 2: crbug.com/259922
+  float percentage_pixels_large_error = 6.5f;  // 2596px / (200*200), rounded up
   float percentage_pixels_small_error = 0.0f;
   float average_error_allowed_in_bad_pixels = 1.f;
   int large_error_allowed = 2;
@@ -127,8 +129,8 @@ TEST_F(LayerTreeHostFiltersPixelTest, BackgroundFilterBlurOffAxis) {
   blur->SetBackgroundFilters(filters);
 
 #if defined(OS_WIN)
-  // Windows has 151 pixels off by at most 2: crbug.com/225027
-  float percentage_pixels_large_error = 0.3775f;  // 151px / (200*200)
+  // Windows has 153 pixels off by at most 2: crbug.com/225027
+  float percentage_pixels_large_error = 0.3825f;  // 153px / (200*200)
   float percentage_pixels_small_error = 0.0f;
   float average_error_allowed_in_bad_pixels = 1.f;
   int large_error_allowed = 2;
@@ -146,6 +148,60 @@ TEST_F(LayerTreeHostFiltersPixelTest, BackgroundFilterBlurOffAxis) {
                background,
                base::FilePath(FILE_PATH_LITERAL(
                    "background_filter_blur_off_axis.png")));
+}
+
+class ImageFilterClippedPixelTest : public LayerTreeHostFiltersPixelTest {
+ protected:
+  void RunPixelTestType(PixelTestType test_type) {
+    scoped_refptr<SolidColorLayer> root =
+        CreateSolidColorLayer(gfx::Rect(200, 200), SK_ColorBLACK);
+
+    scoped_refptr<SolidColorLayer> background =
+        CreateSolidColorLayer(gfx::Rect(200, 200), SK_ColorYELLOW);
+    root->AddChild(background);
+
+    scoped_refptr<SolidColorLayer> foreground =
+        CreateSolidColorLayer(gfx::Rect(200, 200), SK_ColorRED);
+    background->AddChild(foreground);
+
+    SkScalar matrix[20];
+    memset(matrix, 0, 20 * sizeof(matrix[0]));
+    // This filter does a red-blue swap, so the foreground becomes blue.
+    matrix[2] = matrix[6] = matrix[10] = matrix[18] = SK_Scalar1;
+    skia::RefPtr<SkColorFilter> colorFilter(
+        skia::AdoptRef(new SkColorMatrixFilter(matrix)));
+    // We filter only the bottom 200x100 pixels of the foreground.
+    SkImageFilter::CropRect crop_rect(SkRect::MakeXYWH(0, 100, 200, 100));
+    skia::RefPtr<SkImageFilter> filter = skia::AdoptRef(
+        SkColorFilterImageFilter::Create(colorFilter.get(), NULL, &crop_rect));
+    FilterOperations filters;
+    filters.Append(FilterOperation::CreateReferenceFilter(filter));
+
+    // Make the foreground layer's render surface be clipped by the background
+    // layer.
+    background->SetMasksToBounds(true);
+    foreground->SetFilters(filters);
+
+    // Then we translate the foreground up by 100 pixels in Y, so the cropped
+    // region is moved to to the top. This ensures that the crop rect is being
+    // correctly transformed in skia by the amount of clipping that the
+    // compositor performs.
+    gfx::Transform transform;
+    transform.Translate(0.0, -100.0);
+    foreground->SetTransform(transform);
+
+    RunPixelTest(test_type,
+                 background,
+                 base::FilePath(FILE_PATH_LITERAL("blue_yellow.png")));
+  }
+};
+
+TEST_F(ImageFilterClippedPixelTest, ImageFilterClipped_GL) {
+  RunPixelTestType(GL_WITH_BITMAP);
+}
+
+TEST_F(ImageFilterClippedPixelTest, ImageFilterClipped_Software) {
+  RunPixelTestType(SOFTWARE_WITH_BITMAP);
 }
 
 }  // namespace

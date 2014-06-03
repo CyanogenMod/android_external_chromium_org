@@ -22,12 +22,9 @@
 #include "content/public/browser/browser_thread.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/views/win/hwnd_util.h"
 #include "url/gurl.h"
 #include "win8/util/win8_util.h"
-
-// This code doesn't compile with Aura on. TODO(avi): hook it up so that
-// win_aura can do platform integration.
-#if !defined(USE_AURA)
 
 namespace {
 
@@ -61,7 +58,7 @@ void UpdateTaskbarProgressBar(int download_count,
     BrowserWindow* window = browser->window();
     if (!window)
       continue;
-    HWND frame = window->GetNativeWindow();
+    HWND frame = views::HWNDForNativeWindow(window->GetNativeWindow());
     if (download_count == 0 || progress == 1.0f)
       taskbar->SetProgressState(frame, TBPF_NOPROGRESS);
     else if (!progress_known)
@@ -79,6 +76,7 @@ void MetroDownloadNotificationClickedHandler(const wchar_t* download_path) {
   // UI thread.
   content::BrowserThread::PostTask(content::BrowserThread::UI, FROM_HERE,
                                    base::Bind(platform_util::ShowItemInFolder,
+                                              static_cast<Profile*>(NULL),
                                               base::FilePath(download_path)));
 }
 
@@ -129,9 +127,9 @@ void DownloadStatusUpdater::UpdateAppIconDownloadProgress(
           ::GetProcAddress(metro, "DisplayNotification"));
   DCHECK(display_notification);
   if (display_notification) {
-    string16 title = l10n_util::GetStringUTF16(
+    base::string16 title = l10n_util::GetStringUTF16(
         IDS_METRO_DOWNLOAD_COMPLETE_NOTIFICATION_TITLE);
-    string16 body = l10n_util::GetStringUTF16(
+    base::string16 body = l10n_util::GetStringUTF16(
         IDS_METRO_DOWNLOAD_COMPLETE_NOTIFICATION);
 
     // Dummy notification id. Every metro style notification needs a
@@ -149,5 +147,3 @@ void DownloadStatusUpdater::UpdateAppIconDownloadProgress(
                          download->GetTargetFilePath().value().c_str());
   }
 }
-
-#endif  // !USE_AURA

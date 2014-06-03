@@ -31,7 +31,7 @@
 #include "base/mac/mac_util.h"
 #endif
 
-using WebKit::WebBindings;
+using blink::WebBindings;
 
 // Declarations for stub implementations of deprecated functions, which are no
 // longer listed in npapi.h.
@@ -331,7 +331,7 @@ uint32_t NPN_MemFlush(uint32_t size) {
 // This is for dynamic discovery of new plugins.
 // Should force a re-scan of the plugins directory to load new ones.
 void NPN_ReloadPlugins(NPBool reload_pages) {
-  WebKit::resetPluginCache(reload_pages ? true : false);
+  blink::resetPluginCache(reload_pages ? true : false);
 }
 
 // Requests a range of bytes for a seekable stream.
@@ -466,16 +466,15 @@ static NPError PostURLNotify(NPP id,
       DCHECK(file_url.SchemeIsFile());
       net::FileURLToFilePath(file_url, &file_path);
     } else {
-      file_path = base::FilePath::FromWStringHack(
-          base::SysNativeMBToWide(file_path_ascii));
+      file_path = base::FilePath::FromUTF8Unsafe(file_path_ascii);
     }
 
     base::PlatformFileInfo post_file_info;
-    if (!file_util::GetFileInfo(file_path, &post_file_info) ||
+    if (!base::GetFileInfo(file_path, &post_file_info) ||
         post_file_info.is_directory)
       return NPERR_FILE_NOT_FOUND;
 
-    if (!file_util::ReadFileToString(file_path, &post_file_contents))
+    if (!base::ReadFileToString(file_path, &post_file_contents))
       return NPERR_FILE_NOT_FOUND;
 
     buf = post_file_contents.c_str();

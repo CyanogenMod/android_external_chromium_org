@@ -10,6 +10,7 @@
 #include "base/strings/string_piece.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
+#include "base/sys_info.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -73,7 +74,7 @@ const int kDefaultImageDescriptions[] = {
 // image if its valid.
 std::string GetDefaultImageString(int index, const std::string& prefix) {
   if (index < 0 || index >= kDefaultImagesCount) {
-    NOTREACHED();
+    DCHECK(!base::SysInfo::IsRunningOnChromeOS());
     return std::string();
   }
   return base::StringPrintf("%s%d", prefix.c_str(), index);
@@ -141,13 +142,13 @@ const gfx::ImageSkia& GetDefaultImage(int index) {
       GetImageSkiaNamed(kDefaultImageResourceIDs[index]);
 }
 
-string16 GetDefaultImageDescription(int index) {
+base::string16 GetDefaultImageDescription(int index) {
   DCHECK(index >= 0 && index < kDefaultImagesCount);
   int string_id = kDefaultImageDescriptions[index];
   if (string_id)
     return l10n_util::GetStringUTF16(string_id);
   else
-    return string16();
+    return base::string16();
 }
 
 // Resource IDs of default user images.

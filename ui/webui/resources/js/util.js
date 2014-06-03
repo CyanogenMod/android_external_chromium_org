@@ -120,6 +120,26 @@ function parseQueryParams(location) {
   return params;
 }
 
+/**
+ * Creates a new URL by appending or replacing the given query key and value.
+ * Not supporting URL with username and password.
+ * @param {object} location The original URL.
+ * @param {string} key The query parameter name.
+ * @param {string} value The query parameter value.
+ * @return {string} The constructed new URL.
+ */
+function setQueryParam(location, key, value) {
+  var query = parseQueryParams(location);
+  query[encodeURIComponent(key)] = encodeURIComponent(value);
+
+  var newQuery = '';
+  for (var q in query) {
+    newQuery += (newQuery ? '&' : '?') + q + '=' + query[q];
+  }
+
+  return location.origin + location.pathname + newQuery + location.hash;
+}
+
 function findAncestorByClass(el, className) {
   return findAncestor(el, function(el) {
     if (el.classList)
@@ -215,8 +235,7 @@ function getRequiredElement(id) {
 // Handle click on a link. If the link points to a chrome: or file: url, then
 // call into the browser to do the navigation.
 document.addEventListener('click', function(e) {
-  // Allow preventDefault to work.
-  if (!e.returnValue)
+  if (e.defaultPrevented)
     return;
 
   var el = e.target;
@@ -301,4 +320,64 @@ function createElementWithClassName(type, className) {
   var elm = document.createElement(type);
   elm.className = className;
   return elm;
+}
+
+/**
+ * webkitTransitionEnd does not always fire (e.g. when animation is aborted
+ * or when no paint happens during the animation). This function sets up
+ * a timer and emulate the event if it is not fired when the timer expires.
+ * @param {!HTMLElement} el The element to watch for webkitTransitionEnd.
+ * @param {number} timeOut The maximum wait time in milliseconds for the
+ *     webkitTransitionEnd to happen.
+ */
+function ensureTransitionEndEvent(el, timeOut) {
+  var fired = false;
+  el.addEventListener('webkitTransitionEnd', function f(e) {
+    el.removeEventListener('webkitTransitionEnd', f);
+    fired = true;
+  });
+  window.setTimeout(function() {
+    if (!fired)
+      cr.dispatchSimpleEvent(el, 'webkitTransitionEnd');
+  }, timeOut);
+}
+
+/**
+ * Alias for document.scrollTop getter.
+ * @param {!HTMLDocument} doc The document node where information will be
+ *     queried from.
+ * @return {number} The Y document scroll offset.
+ */
+function scrollTopForDocument(doc) {
+  return doc.documentElement.scrollTop || doc.body.scrollTop;
+}
+
+/**
+ * Alias for document.scrollTop setter.
+ * @param {!HTMLDocument} doc The document node where information will be
+ *     queried from.
+ * @param {number} value The target Y scroll offset.
+ */
+function setScrollTopForDocument(doc, value) {
+  doc.documentElement.scrollTop = doc.body.scrollTop = value;
+}
+
+/**
+ * Alias for document.scrollLeft getter.
+ * @param {!HTMLDocument} doc The document node where information will be
+ *     queried from.
+ * @return {number} The X document scroll offset.
+ */
+function scrollLeftForDocument(doc) {
+  return doc.documentElement.scrollLeft || doc.body.scrollLeft;
+}
+
+/**
+ * Alias for document.scrollLeft setter.
+ * @param {!HTMLDocument} doc The document node where information will be
+ *     queried from.
+ * @param {number} value The target X scroll offset.
+ */
+function setScrollLeftForDocument(doc, value) {
+  doc.documentElement.scrollLeft = doc.body.scrollLeft = value;
 }

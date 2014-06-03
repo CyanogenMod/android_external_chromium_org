@@ -36,6 +36,10 @@ namespace base {
 class SequencedTaskRunner;
 }
 
+namespace extensions {
+class ExtensionsBrowserClient;
+}
+
 namespace policy {
 class BrowserPolicyConnector;
 class PolicyService;
@@ -123,10 +127,9 @@ class BrowserProcessImpl : public BrowserProcess,
   virtual CRLSetFetcher* crl_set_fetcher() OVERRIDE;
   virtual PnaclComponentInstaller* pnacl_component_installer() OVERRIDE;
   virtual BookmarkPromptController* bookmark_prompt_controller() OVERRIDE;
-  virtual chrome::StorageMonitor* storage_monitor() OVERRIDE;
-  void set_storage_monitor_for_test(scoped_ptr<chrome::StorageMonitor> monitor);
-  virtual chrome::MediaFileSystemRegistry*
-      media_file_system_registry() OVERRIDE;
+  virtual StorageMonitor* storage_monitor() OVERRIDE;
+  void set_storage_monitor_for_test(scoped_ptr<StorageMonitor> monitor);
+  virtual MediaFileSystemRegistry* media_file_system_registry() OVERRIDE;
   virtual bool created_local_state() const OVERRIDE;
 #if defined(ENABLE_WEBRTC)
   virtual WebRtcLogUploader* webrtc_log_uploader() OVERRIDE;
@@ -153,6 +156,7 @@ class BrowserProcessImpl : public BrowserProcess,
 
   void ApplyAllowCrossOriginAuthPromptPolicy();
   void ApplyDefaultBrowserPolicy();
+  void ApplyMetricsReportingPolicy();
 
   bool created_metrics_service_;
   scoped_ptr<MetricsService> metrics_service_;
@@ -186,6 +190,7 @@ class BrowserProcessImpl : public BrowserProcess,
 
   scoped_ptr<GpuModeManager> gpu_mode_manager_;
 
+  scoped_ptr<extensions::ExtensionsBrowserClient> extensions_browser_client_;
   scoped_refptr<extensions::EventRouterForwarder>
       extension_event_router_forwarder_;
 
@@ -197,9 +202,9 @@ class BrowserProcessImpl : public BrowserProcess,
 #endif
 
 #if !defined(OS_ANDROID) && !defined(OS_IOS)
-  scoped_ptr<chrome::StorageMonitor> storage_monitor_;
+  scoped_ptr<StorageMonitor> storage_monitor_;
 
-  scoped_ptr<chrome::MediaFileSystemRegistry> media_file_system_registry_;
+  scoped_ptr<MediaFileSystemRegistry> media_file_system_registry_;
 #endif
 
   scoped_refptr<printing::PrintPreviewDialogController>

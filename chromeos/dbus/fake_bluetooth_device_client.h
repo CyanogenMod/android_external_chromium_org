@@ -15,7 +15,6 @@
 #include "chromeos/dbus/bluetooth_agent_service_provider.h"
 #include "chromeos/dbus/bluetooth_device_client.h"
 #include "chromeos/dbus/bluetooth_profile_service_provider.h"
-#include "chromeos/dbus/dbus_client_implementation_type.h"
 #include "dbus/object_path.h"
 #include "dbus/property.h"
 
@@ -42,7 +41,8 @@ class CHROMEOS_EXPORT FakeBluetoothDeviceClient
   FakeBluetoothDeviceClient();
   virtual ~FakeBluetoothDeviceClient();
 
-  // BluetoothDeviceClient override
+  // BluetoothDeviceClient overrides
+  virtual void Init(dbus::Bus* bus) OVERRIDE;
   virtual void AddObserver(Observer* observer) OVERRIDE;
   virtual void RemoveObserver(Observer* observer) OVERRIDE;
   virtual std::vector<dbus::ObjectPath> GetDevicesForAdapter(

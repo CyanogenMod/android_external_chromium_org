@@ -27,7 +27,6 @@
 #include "chrome/browser/ui/panels/test_panel_active_state_observer.h"
 #include "chrome/browser/web_applications/web_app.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/interactive_test_utils.h"
@@ -41,7 +40,7 @@
 #include "extensions/common/constants.h"
 #include "net/base/net_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "ui/base/events/event_utils.h"
+#include "ui/events/event_utils.h"
 #include "ui/gfx/screen.h"
 
 using content::WebContents;
@@ -1422,7 +1421,7 @@ IN_PROC_BROWSER_TEST_F(PanelBrowserTest,
 
   // Send unload notification on the first extension.
   extensions::UnloadedExtensionInfo details(
-      extension.get(), extension_misc::UNLOAD_REASON_UNINSTALL);
+      extension.get(), extensions::UnloadedExtensionInfo::REASON_UNINSTALL);
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_EXTENSION_UNLOADED,
       content::Source<Profile>(browser()->profile()),
@@ -1441,8 +1440,8 @@ IN_PROC_BROWSER_TEST_F(PanelBrowserTest, OnBeforeUnloadOnClose) {
   PanelManager* panel_manager = PanelManager::GetInstance();
   EXPECT_EQ(0, panel_manager->num_panels()); // No panels initially.
 
-  const string16 title_first_close = UTF8ToUTF16("TitleFirstClose");
-  const string16 title_second_close = UTF8ToUTF16("TitleSecondClose");
+  const base::string16 title_first_close = UTF8ToUTF16("TitleFirstClose");
+  const base::string16 title_second_close = UTF8ToUTF16("TitleSecondClose");
 
   // Create a test panel with web contents loaded.
   CreatePanelParams params("PanelTest1", gfx::Rect(0, 0, 300, 300),
@@ -1714,6 +1713,55 @@ IN_PROC_BROWSER_TEST_F(PanelBrowserTest, MAYBE_Accelerator) {
   panel->HandleKeyboardEvent(key_event);
   signal.Wait();
   EXPECT_EQ(0, panel_manager->num_panels());
+}
+
+IN_PROC_BROWSER_TEST_F(PanelBrowserTest,
+                       HideDockedPanelCreatedBeforeFullScreenMode) {
+  // Create a docked panel.
+  Panel* panel = CreatePanel("PanelTest");
+  scoped_ptr<NativePanelTesting> panel_testing(CreateNativePanelTesting(panel));
+
+  // Panel should be visible at first.
+  EXPECT_TRUE(panel_testing->IsWindowVisible());
+
+  // Panel should become hidden when entering full-screen mode.
+  // Note that this is not needed on Linux because the full-screen window will
+  // be always placed above any other windows.
+  mock_display_settings_provider()->EnableFullScreenMode(true);
+#if defined(OS_LINUX)
+  EXPECT_TRUE(panel_testing->IsWindowVisible());
+#else
+  EXPECT_FALSE(panel_testing->IsWindowVisible());
+#endif
+
+  // Panel should become visible when leaving full-screen mode.
+  mock_display_settings_provider()->EnableFullScreenMode(false);
+  EXPECT_TRUE(panel_testing->IsWindowVisible());
+
+  PanelManager::GetInstance()->CloseAll();
+}
+
+IN_PROC_BROWSER_TEST_F(PanelBrowserTest,
+                       HideDockedPanelCreatedOnFullScreenMode) {
+  // Enable full-screen mode first.
+  mock_display_settings_provider()->EnableFullScreenMode(true);
+
+  // Create a docked panel without waiting for it to be shown since it is not
+  // supposed to be shown on full-screen mode.
+  CreatePanelParams params("1", gfx::Rect(0, 0, 250, 200), SHOW_AS_ACTIVE);
+  params.wait_for_fully_created = false;
+  Panel* panel = CreatePanelWithParams(params);
+  scoped_ptr<NativePanelTesting> panel_testing(
+      CreateNativePanelTesting(panel));
+
+  // Panel should not be shown on full-screen mode.
+  EXPECT_FALSE(panel_testing->IsWindowVisible());
+
+  // Panel should become visible when leaving full-screen mode.
+  mock_display_settings_provider()->EnableFullScreenMode(false);
+  EXPECT_TRUE(panel_testing->IsWindowVisible());
+
+  PanelManager::GetInstance()->CloseAll();
 }
 
 class PanelExtensionApiTest : public ExtensionApiTest {

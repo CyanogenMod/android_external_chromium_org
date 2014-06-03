@@ -16,9 +16,6 @@ const char kUrlKey[] = "url";
 const char kTitleKey[] = "title";
 const char kChildrenKey[] = "children";
 const char kChildIdsKey[] = "childIds";
-const char kRecursiveKey[] = "recursive";
-const char kDateAddedKey[] = "dateAdded";
-const char kDateFolderModifiedKey[] = "dateGroupModified";
 
 const char kNoNodeError[] = "Can't find bookmark for id.";
 const char kNoParentError[] = "Can't find parent bookmark for id.";
@@ -29,14 +26,6 @@ const char kInvalidIndexError[] = "Index out of bounds.";
 const char kInvalidUrlError[] = "Invalid URL.";
 const char kModifySpecialError[] = "Can't modify the root bookmark folders.";
 const char kEditBookmarksDisabled[] = "Bookmark editing is disabled.";
-
-const char kOnBookmarkCreated[] = "bookmarks.onCreated";
-const char kOnBookmarkRemoved[] = "bookmarks.onRemoved";
-const char kOnBookmarkChanged[] = "bookmarks.onChanged";
-const char kOnBookmarkMoved[] = "bookmarks.onMoved";
-const char kOnBookmarkChildrenReordered[] = "bookmarks.onChildrenReordered";
-const char kOnBookmarkImportBegan[] = "bookmarks.onImportBegan";
-const char kOnBookmarkImportEnded[] = "bookmarks.onImportEnded";
 
 }  // namespace bookmark_api_constants
 }  // namespace extensions

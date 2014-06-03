@@ -3,11 +3,12 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+from HTMLParser import HTMLParser
 import unittest
 
-from empty_dir_file_system import EmptyDirFileSystem
 from fake_fetchers import ConfigureFakeFetchers
-from host_file_system_creator import HostFileSystemCreator
+from github_file_system_provider import GithubFileSystemProvider
+from host_file_system_provider import HostFileSystemProvider
 from patch_servlet import PatchServlet
 from render_servlet import RenderServlet
 from server_instance import ServerInstance
@@ -15,21 +16,42 @@ from servlet import Request
 from test_branch_utility import TestBranchUtility
 from test_util import DisableLogging
 
+
+
 _ALLOWED_HOST = 'https://chrome-apps-doc.appspot.com'
+
+
+def _CheckURLsArePatched(content, patch_servlet_path):
+  errors = []
+  class LinkChecker(HTMLParser):
+    def handle_starttag(self, tag, attrs):
+      if tag != 'a':
+        return
+      tag_description = '<a %s .../>' % ' '.join('%s="%s"' % (key, val)
+                                                 for key, val in attrs)
+      attrs = dict(attrs)
+      if ('href' in attrs and
+           attrs['href'].startswith('/') and
+           not attrs['href'].startswith('/%s/' % patch_servlet_path)):
+        errors.append('%s has an unqualified href' % tag_description)
+  LinkChecker().feed(content)
+  return errors
+
 
 class _RenderServletDelegate(RenderServlet.Delegate):
   def CreateServerInstance(self):
     return ServerInstance.ForLocal()
 
 class _PatchServletDelegate(RenderServlet.Delegate):
-  def CreateAppSamplesFileSystem(self, object_store_creator):
-    return EmptyDirFileSystem()
-
   def CreateBranchUtility(self, object_store_creator):
     return TestBranchUtility.CreateWithCannedData()
 
-  def CreateHostFileSystemCreator(self, object_store_creator):
-    return HostFileSystemCreator.ForLocal(object_store_creator)
+  def CreateHostFileSystemProvider(self, object_store_creator, **optargs):
+    return HostFileSystemProvider.ForLocal(object_store_creator, **optargs)
+
+  def CreateGithubFileSystemProvider(self, object_store_creator):
+    return GithubFileSystemProvider.ForEmpty()
+
 
 class PatchServletTest(unittest.TestCase):
   def setUp(self):
@@ -45,13 +67,24 @@ class PatchServletTest(unittest.TestCase):
                          _RenderServletDelegate()).Get()
 
   def _RenderAndCheck(self, path, issue, expected_equal):
+    '''Renders |path| with |issue| patched in and asserts that the result is
+    the same as |expected_equal| modulo any links that get rewritten to
+    "_patch/issue".
+    '''
     patched_response = self._RenderWithPatch(path, issue)
     unpatched_response = self._RenderWithoutPatch(path)
     patched_response.headers.pop('cache-control', None)
     unpatched_response.headers.pop('cache-control', None)
-    patched_content = patched_response.content.ToString().replace(
-        '/_patch/%s/' % issue, '/')
     unpatched_content = unpatched_response.content.ToString()
+
+    # Check that all links in the patched content are qualified with
+    # the patch URL, then strip them out for checking (in)equality.
+    patched_content = patched_response.content.ToString()
+    patch_servlet_path = '_patch/%s' % issue
+    errors = _CheckURLsArePatched(patched_content, patch_servlet_path)
+    self.assertFalse(errors,
+        '%s\nFound errors:\n * %s' % (patched_content, '\n * '.join(errors)))
+    patched_content = patched_content.replace('/%s' % patch_servlet_path, '')
 
     self.assertEqual(patched_response.status, unpatched_response.status)
     self.assertEqual(patched_response.headers, unpatched_response.headers)

@@ -3,19 +3,20 @@
 // found in the LICENSE file.
 
 #include "chrome/common/extensions/api/extension_action/action_info.h"
-#include "chrome/common/extensions/extension_builder.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_icon_set.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
-#include "chrome/common/extensions/feature_switch.h"
 #include "chrome/common/extensions/manifest_tests/extension_manifest_test.h"
+#include "extensions/common/extension_builder.h"
+#include "extensions/common/feature_switch.h"
 #include "extensions/common/install_warning.h"
+#include "extensions/common/manifest_constants.h"
+#include "extensions/common/manifest_constants.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace errors = extension_manifest_errors;
-
 namespace extensions {
+
+namespace errors = manifest_errors;
 
 namespace {
 
@@ -98,10 +99,10 @@ TEST_F(ScriptBadgeManifestTest, ScriptBadgeExplicitTitleAndIconsIgnored) {
 
   EXPECT_THAT(StripMissingFlagWarning(extension->install_warnings()),
               testing::ElementsAre(
-                  InstallWarning(InstallWarning::FORMAT_TEXT,
-                                 errors::kScriptBadgeTitleIgnored),
-                  InstallWarning(InstallWarning::FORMAT_TEXT,
-                                 errors::kScriptBadgeIconIgnored)));
+                  InstallWarning(errors::kScriptBadgeTitleIgnored,
+                                 manifest_keys::kScriptBadge),
+                  InstallWarning(errors::kScriptBadgeIconIgnored,
+                                 manifest_keys::kScriptBadge)));
 
   const ExtensionIconSet& default_icon =
       script_badge_info->default_icon;

@@ -56,6 +56,7 @@ void RemoveMatchesFromList(const BinaryOpNode* op_node,
                            Err* err) {
   std::vector<Value>& v = list->list_value();
   switch (to_remove.type()) {
+    case Value::BOOLEAN:
     case Value::INTEGER:  // Filter out the individual int/string.
     case Value::STRING: {
       bool found_match = false;
@@ -69,8 +70,8 @@ void RemoveMatchesFromList(const BinaryOpNode* op_node,
       }
       if (!found_match) {
         *err = Err(to_remove.origin()->GetRange(), "Item not found",
-            "You were trying to remove \"" + to_remove.ToString() +
-            "\"\nfrom the list but it wasn't there.");
+            "You were trying to remove " + to_remove.ToString(true) +
+            "\nfrom the list but it wasn't there.");
       }
       break;
     }
@@ -126,11 +127,13 @@ Value ExecuteEquals(Scope* scope,
           !right.list_value().empty()) {
         *err = Err(op_node->left()->GetRange(), "Replacing nonempty list.",
             std::string("This overwrites a previously-defined nonempty list ") +
-            "(length " + base::IntToString(old_value->list_value().size()) +
-            ").");
+            "(length " +
+            base::IntToString(static_cast<int>(old_value->list_value().size()))
+            + ").");
         err->AppendSubErr(Err(*old_value, "for previous definition",
             "with another one (length " +
-            base::IntToString(right.list_value().size()) + "). Did you mean " +
+            base::IntToString(static_cast<int>(right.list_value().size())) +
+            "). Did you mean " +
             "\"+=\" to append instead? If you\nreally want to do this, do\n  " +
             left.value().as_string() + " = []\nbefore reassigning."));
         return Value();
@@ -342,8 +345,8 @@ Value ExecuteEqualsEquals(Scope* scope,
                           const Value& right,
                           Err* err) {
   if (left == right)
-    return Value(op_node, 1);
-  return Value(op_node, 0);
+    return Value(op_node, true);
+  return Value(op_node, false);
 }
 
 Value ExecuteNotEquals(Scope* scope,
@@ -353,14 +356,14 @@ Value ExecuteNotEquals(Scope* scope,
                        Err* err) {
   // Evaluate in terms of ==.
   Value result = ExecuteEqualsEquals(scope, op_node, left, right, err);
-  result.int_value() = static_cast<int64>(!result.int_value());
+  result.boolean_value() = !result.boolean_value();
   return result;
 }
 
-Value FillNeedsToIntegersError(const BinaryOpNode* op_node,
-                               const Value& left,
-                               const Value& right,
-                               Err* err) {
+Value FillNeedsTwoIntegersError(const BinaryOpNode* op_node,
+                                const Value& left,
+                                const Value& right,
+                                Err* err) {
   *err = Err(op_node, "Comparison requires two integers.",
              "This operator can only compare two integers.");
   err->AppendRange(left.origin()->GetRange());
@@ -374,7 +377,7 @@ Value ExecuteLessEquals(Scope* scope,
                         const Value& right,
                         Err* err) {
   if (left.type() != Value::INTEGER || right.type() != Value::INTEGER)
-    return FillNeedsToIntegersError(op_node, left, right, err);
+    return FillNeedsTwoIntegersError(op_node, left, right, err);
   return Value(op_node, left.int_value() <= right.int_value());
 }
 
@@ -384,7 +387,7 @@ Value ExecuteGreaterEquals(Scope* scope,
                            const Value& right,
                            Err* err) {
   if (left.type() != Value::INTEGER || right.type() != Value::INTEGER)
-    return FillNeedsToIntegersError(op_node, left, right, err);
+    return FillNeedsTwoIntegersError(op_node, left, right, err);
   return Value(op_node, left.int_value() >= right.int_value());
 }
 
@@ -394,7 +397,7 @@ Value ExecuteGreater(Scope* scope,
                      const Value& right,
                      Err* err) {
   if (left.type() != Value::INTEGER || right.type() != Value::INTEGER)
-    return FillNeedsToIntegersError(op_node, left, right, err);
+    return FillNeedsTwoIntegersError(op_node, left, right, err);
   return Value(op_node, left.int_value() > right.int_value());
 }
 
@@ -404,7 +407,7 @@ Value ExecuteLess(Scope* scope,
                   const Value& right,
                   Err* err) {
   if (left.type() != Value::INTEGER || right.type() != Value::INTEGER)
-    return FillNeedsToIntegersError(op_node, left, right, err);
+    return FillNeedsTwoIntegersError(op_node, left, right, err);
   return Value(op_node, left.int_value() < right.int_value());
 }
 
@@ -415,8 +418,14 @@ Value ExecuteOr(Scope* scope,
                 const Value& left,
                 const Value& right,
                 Err* err) {
-  return Value(op_node,
-      static_cast<int64>(left.InterpretAsInt() || right.InterpretAsInt()));
+  if (left.type() != Value::BOOLEAN) {
+    *err = Err(left, "Left side of || operator is not a boolean.");
+    err->AppendRange(op_node->GetRange());
+  } else if (right.type() != Value::BOOLEAN) {
+    *err = Err(right, "Right side of || operator is not a boolean.");
+    err->AppendRange(op_node->GetRange());
+  }
+  return Value(op_node, left.boolean_value() || right.boolean_value());
 }
 
 Value ExecuteAnd(Scope* scope,
@@ -424,8 +433,14 @@ Value ExecuteAnd(Scope* scope,
                  const Value& left,
                  const Value& right,
                  Err* err) {
-  return Value(op_node,
-      static_cast<int64>(left.InterpretAsInt() && right.InterpretAsInt()));
+  if (left.type() != Value::BOOLEAN) {
+    *err = Err(left, "Left side of && operator is not a boolean.");
+    err->AppendRange(op_node->GetRange());
+  } else if (right.type() != Value::BOOLEAN) {
+    *err = Err(right, "Right side of && operator is not a boolean.");
+    err->AppendRange(op_node->GetRange());
+  }
+  return Value(op_node, left.boolean_value() && right.boolean_value());
 }
 
 }  // namespace
@@ -433,51 +448,54 @@ Value ExecuteAnd(Scope* scope,
 // ----------------------------------------------------------------------------
 
 bool IsUnaryOperator(const Token& token) {
-  if (token.type() != Token::OPERATOR)
-    return false;
-  return token.value() == "!";
+  return token.type() == Token::BANG;
 }
 
 bool IsBinaryOperator(const Token& token) {
-  if (token.type() != Token::OPERATOR)
-    return false;
-  return token.value() == "=" ||
-         token.value() == "+=" ||
-         token.value() == "-=" ||
-         token.value() == "+" ||
-         token.value() == "-" ||
-         token.value() == "==" ||
-         token.value() == "!=" ||
-         token.value() == "<=" ||
-         token.value() == ">=" ||
-         token.value() == "<" ||
-         token.value() == ">" ||
-         token.value() == "&&" ||
-         token.value() == "||";
+  return token.type() == Token::EQUAL ||
+         token.type() == Token::PLUS ||
+         token.type() == Token::MINUS ||
+         token.type() == Token::PLUS_EQUALS ||
+         token.type() == Token::MINUS_EQUALS ||
+         token.type() == Token::EQUAL_EQUAL ||
+         token.type() == Token::NOT_EQUAL ||
+         token.type() == Token::LESS_EQUAL ||
+         token.type() == Token::GREATER_EQUAL ||
+         token.type() == Token::LESS_THAN ||
+         token.type() == Token::GREATER_THAN ||
+         token.type() == Token::BOOLEAN_AND ||
+         token.type() == Token::BOOLEAN_OR;
 }
 
 bool IsFunctionCallArgBeginScoper(const Token& token) {
-  return token.IsScoperEqualTo("(");
+  return token.type() == Token::LEFT_PAREN;
 }
 
 bool IsFunctionCallArgEndScoper(const Token& token) {
-  return token.IsScoperEqualTo(")");
+  return token.type() == Token::RIGHT_PAREN;
 }
 
 bool IsScopeBeginScoper(const Token& token) {
-  return token.IsScoperEqualTo("{");
+  return token.type() == Token::LEFT_BRACE;
 }
 
 bool IsScopeEndScoper(const Token& token) {
-  return token.IsScoperEqualTo("}");
+  return token.type() == Token::RIGHT_BRACE;
 }
 
 Value ExecuteUnaryOperator(Scope* scope,
                            const UnaryOpNode* op_node,
                            const Value& expr,
                            Err* err) {
-  DCHECK(op_node->op().IsOperatorEqualTo("!"));
-  return Value(op_node, !expr.InterpretAsInt());
+  DCHECK(op_node->op().type() == Token::BANG);
+
+  if (expr.type() != Value::BOOLEAN) {
+    *err = Err(expr, "Operand of ! operator is not a boolean.");
+    err->AppendRange(op_node->GetRange());
+    return Value();
+  }
+  // TODO(scottmg): Why no unary minus?
+  return Value(op_node, !expr.boolean_value());
 }
 
 Value ExecuteBinaryOperator(Scope* scope,
@@ -488,9 +506,9 @@ Value ExecuteBinaryOperator(Scope* scope,
   const Token& op = op_node->op();
 
   // First handle the ones that take an lvalue.
-  if (op.IsOperatorEqualTo("=") ||
-      op.IsOperatorEqualTo("+=") ||
-      op.IsOperatorEqualTo("-=")) {
+  if (op.type() == Token::EQUAL ||
+      op.type() == Token::PLUS_EQUALS ||
+      op.type() == Token::MINUS_EQUALS) {
     const IdentifierNode* left_id = left->AsIdentifier();
     if (!left_id) {
       *err = Err(op, "Operator requires an lvalue.",
@@ -510,11 +528,11 @@ Value ExecuteBinaryOperator(Scope* scope,
       return Value();
     }
 
-    if (op.IsOperatorEqualTo("="))
+    if (op.type() == Token::EQUAL)
       return ExecuteEquals(scope, op_node, dest, right_value, err);
-    if (op.IsOperatorEqualTo("+="))
+    if (op.type() == Token::PLUS_EQUALS)
       return ExecutePlusEquals(scope, op_node, dest, right_value, err);
-    if (op.IsOperatorEqualTo("-="))
+    if (op.type() == Token::MINUS_EQUALS)
       return ExecuteMinusEquals(scope, op_node, dest, right_value, err);
     NOTREACHED();
     return Value();
@@ -544,29 +562,29 @@ Value ExecuteBinaryOperator(Scope* scope,
   }
 
   // +, -.
-  if (op.IsOperatorEqualTo("-"))
+  if (op.type() == Token::MINUS)
     return ExecuteMinus(scope, op_node, left_value, right_value, err);
-  if (op.IsOperatorEqualTo("+"))
+  if (op.type() == Token::PLUS)
     return ExecutePlus(scope, op_node, left_value, right_value, err);
 
   // Comparisons.
-  if (op.IsOperatorEqualTo("=="))
+  if (op.type() == Token::EQUAL_EQUAL)
     return ExecuteEqualsEquals(scope, op_node, left_value, right_value, err);
-  if (op.IsOperatorEqualTo("!="))
+  if (op.type() == Token::NOT_EQUAL)
     return ExecuteNotEquals(scope, op_node, left_value, right_value, err);
-  if (op.IsOperatorEqualTo(">="))
+  if (op.type() == Token::GREATER_EQUAL)
     return ExecuteGreaterEquals(scope, op_node, left_value, right_value, err);
-  if (op.IsOperatorEqualTo("<="))
+  if (op.type() == Token::LESS_EQUAL)
     return ExecuteLessEquals(scope, op_node, left_value, right_value, err);
-  if (op.IsOperatorEqualTo(">"))
+  if (op.type() == Token::GREATER_THAN)
     return ExecuteGreater(scope, op_node, left_value, right_value, err);
-  if (op.IsOperatorEqualTo("<"))
+  if (op.type() == Token::LESS_THAN)
     return ExecuteLess(scope, op_node, left_value, right_value, err);
 
   // ||, &&.
-  if (op.IsOperatorEqualTo("||"))
+  if (op.type() == Token::BOOLEAN_OR)
     return ExecuteOr(scope, op_node, left_value, right_value, err);
-  if (op.IsOperatorEqualTo("&&"))
+  if (op.type() == Token::BOOLEAN_AND)
     return ExecuteAnd(scope, op_node, left_value, right_value, err);
 
   return Value();

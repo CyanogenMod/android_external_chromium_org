@@ -11,7 +11,9 @@
 #include "base/platform_file.h"
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
+#include "content/browser/plugin_process_host.h"
 #include "content/browser/site_instance_impl.h"
+#include "content/public/browser/child_process_data.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/common/bindings_policy.h"
@@ -29,43 +31,38 @@ namespace content {
 
 namespace {
 
-const int kReadFilePermissions =
-    base::PLATFORM_FILE_OPEN |
-    base::PLATFORM_FILE_READ |
-    base::PLATFORM_FILE_EXCLUSIVE_READ |
-    base::PLATFORM_FILE_ASYNC;
+// Used internally only. These bit positions have no relationship to any
+// underlying OS and can be changed to accommodate finer-grained permissions.
+enum ChildProcessSecurityPermissions {
+  READ_FILE_PERMISSION             = 1 << 0,
+  WRITE_FILE_PERMISSION            = 1 << 1,
+  CREATE_NEW_FILE_PERMISSION       = 1 << 2,
+  CREATE_OVERWRITE_FILE_PERMISSION = 1 << 3,
+  DELETE_FILE_PERMISSION           = 1 << 4,
 
-const int kWriteFilePermissions =
-    base::PLATFORM_FILE_OPEN |
-    base::PLATFORM_FILE_WRITE |
-    base::PLATFORM_FILE_APPEND |
-    base::PLATFORM_FILE_EXCLUSIVE_WRITE |
-    base::PLATFORM_FILE_ASYNC |
-    base::PLATFORM_FILE_WRITE_ATTRIBUTES;
+  // Used by Media Galleries API
+  COPY_INTO_FILE_PERMISSION        = 1 << 5,
+};
 
-const int kCreateFilePermissions =
-    base::PLATFORM_FILE_CREATE;
+// Used internally only. Bitmasks that are actually used by the Grant* and Can*
+// methods. These contain one or more ChildProcessSecurityPermissions.
+enum ChildProcessSecurityGrants {
+  READ_FILE_GRANT              = READ_FILE_PERMISSION,
+  WRITE_FILE_GRANT             = WRITE_FILE_PERMISSION,
 
-const int kEnumerateDirectoryPermissions =
-    kReadFilePermissions |
-    base::PLATFORM_FILE_ENUMERATE;
+  CREATE_NEW_FILE_GRANT        = CREATE_NEW_FILE_PERMISSION |
+                                 COPY_INTO_FILE_PERMISSION,
 
-// TODO(tommycli): These flag sets need some work to make more obvious.
-// Why for instance, does Create|Write != Create|Write? http://crbug.com/263150
-const int kCreateReadWriteFilePermissions =
-    kReadFilePermissions |
-    kWriteFilePermissions |
-    kCreateFilePermissions |
-    base::PLATFORM_FILE_OPEN_ALWAYS |
-    base::PLATFORM_FILE_CREATE_ALWAYS |
-    base::PLATFORM_FILE_OPEN_TRUNCATED;
+  CREATE_READ_WRITE_FILE_GRANT = CREATE_NEW_FILE_PERMISSION |
+                                 CREATE_OVERWRITE_FILE_PERMISSION |
+                                 READ_FILE_PERMISSION |
+                                 WRITE_FILE_PERMISSION |
+                                 COPY_INTO_FILE_PERMISSION |
+                                 DELETE_FILE_PERMISSION,
 
-const int kCreateWriteFilePermissions =
-    kWriteFilePermissions |
-    kCreateFilePermissions |
-    base::PLATFORM_FILE_OPEN_ALWAYS |
-    base::PLATFORM_FILE_CREATE_ALWAYS |
-    base::PLATFORM_FILE_OPEN_TRUNCATED;
+  COPY_INTO_FILE_GRANT         = COPY_INTO_FILE_PERMISSION,
+  DELETE_FILE_GRANT            = DELETE_FILE_PERMISSION,
+};
 
 }  // namespace
 
@@ -75,7 +72,8 @@ class ChildProcessSecurityPolicyImpl::SecurityState {
  public:
   SecurityState()
     : enabled_bindings_(0),
-      can_read_raw_cookies_(false) { }
+      can_read_raw_cookies_(false),
+      can_send_midi_sysex_(false) { }
 
   ~SecurityState() {
     scheme_policy_.clear();
@@ -123,20 +121,35 @@ class ChildProcessSecurityPolicyImpl::SecurityState {
   // Grant certain permissions to a file.
   void GrantPermissionsForFileSystem(const std::string& filesystem_id,
                                      int permissions) {
-    if (filesystem_permissions_.find(filesystem_id) ==
-        filesystem_permissions_.end())
+    if (!ContainsKey(filesystem_permissions_, filesystem_id))
       fileapi::IsolatedContext::GetInstance()->AddReference(filesystem_id);
     filesystem_permissions_[filesystem_id] |= permissions;
   }
 
   bool HasPermissionsForFileSystem(const std::string& filesystem_id,
                                    int permissions) {
-    if (filesystem_permissions_.find(filesystem_id) ==
-        filesystem_permissions_.end())
+    FileSystemMap::const_iterator it =
+        filesystem_permissions_.find(filesystem_id);
+    if (it == filesystem_permissions_.end())
       return false;
-    return (filesystem_permissions_[filesystem_id] & permissions) ==
-        permissions;
+    return (it->second & permissions) == permissions;
   }
+
+#if defined(OS_ANDROID)
+  // Determine if the certain permissions have been granted to a content URI.
+  bool HasPermissionsForContentUri(const base::FilePath& file,
+                                   int permissions) {
+    DCHECK(!file.empty());
+    DCHECK(file.IsContentUri());
+    if (!permissions)
+      return false;
+    base::FilePath file_path = file.StripTrailingSeparators();
+    FileMap::const_iterator it = file_permissions_.find(file_path);
+    if (it != file_permissions_.end())
+      return (it->second & permissions) == permissions;
+    return false;
+  }
+#endif
 
   void GrantBindings(int bindings) {
     enabled_bindings_ |= bindings;
@@ -148,6 +161,10 @@ class ChildProcessSecurityPolicyImpl::SecurityState {
 
   void RevokeReadRawCookies() {
     can_read_raw_cookies_ = false;
+  }
+
+  void GrantPermissionForMIDISysEx() {
+    can_send_midi_sysex_ = true;
   }
 
   // Determine whether permission has been granted to request |url|.
@@ -162,7 +179,7 @@ class ChildProcessSecurityPolicyImpl::SecurityState {
     if (url.SchemeIs(chrome::kFileScheme)) {
       base::FilePath path;
       if (net::FileURLToFilePath(url, &path))
-        return request_file_set_.find(path) != request_file_set_.end();
+        return ContainsKey(request_file_set_, path);
     }
 
     return false;  // Unmentioned schemes are disallowed.
@@ -170,21 +187,26 @@ class ChildProcessSecurityPolicyImpl::SecurityState {
 
   // Determine if the certain permissions have been granted to a file.
   bool HasPermissionsForFile(const base::FilePath& file, int permissions) {
+#if defined(OS_ANDROID)
+    if (file.IsContentUri())
+      return HasPermissionsForContentUri(file, permissions);
+#endif
     if (!permissions || file.empty() || !file.IsAbsolute())
       return false;
     base::FilePath current_path = file.StripTrailingSeparators();
     base::FilePath last_path;
     int skip = 0;
     while (current_path != last_path) {
-      base::FilePath base_name =  current_path.BaseName();
+      base::FilePath base_name = current_path.BaseName();
       if (base_name.value() == base::FilePath::kParentDirectory) {
         ++skip;
       } else if (skip > 0) {
         if (base_name.value() != base::FilePath::kCurrentDirectory)
           --skip;
       } else {
-        if (file_permissions_.find(current_path) != file_permissions_.end())
-          return (file_permissions_[current_path] & permissions) == permissions;
+        FileMap::const_iterator it = file_permissions_.find(current_path);
+        if (it != file_permissions_.end())
+          return (it->second & permissions) == permissions;
       }
       last_path = current_path;
       current_path = current_path.DirName();
@@ -245,6 +267,10 @@ class ChildProcessSecurityPolicyImpl::SecurityState {
     return can_read_raw_cookies_;
   }
 
+  bool can_send_midi_sysex() const {
+    return can_send_midi_sysex_;
+  }
+
  private:
   typedef std::map<std::string, bool> SchemeMap;
 
@@ -270,6 +296,8 @@ class ChildProcessSecurityPolicyImpl::SecurityState {
 
   bool can_read_raw_cookies_;
 
+  bool can_send_midi_sysex_;
+
   GURL origin_lock_;
 
   // The set of isolated filesystems the child process is permitted to access.
@@ -280,9 +308,9 @@ class ChildProcessSecurityPolicyImpl::SecurityState {
 
 ChildProcessSecurityPolicyImpl::ChildProcessSecurityPolicyImpl() {
   // We know about these schemes and believe them to be safe.
-  RegisterWebSafeScheme(chrome::kHttpScheme);
-  RegisterWebSafeScheme(chrome::kHttpsScheme);
-  RegisterWebSafeScheme(chrome::kFtpScheme);
+  RegisterWebSafeScheme(kHttpScheme);
+  RegisterWebSafeScheme(kHttpsScheme);
+  RegisterWebSafeScheme(kFtpScheme);
   RegisterWebSafeScheme(chrome::kDataScheme);
   RegisterWebSafeScheme("feed");
   RegisterWebSafeScheme(chrome::kBlobScheme);
@@ -290,7 +318,7 @@ ChildProcessSecurityPolicyImpl::ChildProcessSecurityPolicyImpl() {
 
   // We know about the following pseudo schemes and treat them specially.
   RegisterPseudoScheme(chrome::kAboutScheme);
-  RegisterPseudoScheme(chrome::kJavaScriptScheme);
+  RegisterPseudoScheme(kJavaScriptScheme);
   RegisterPseudoScheme(kViewSourceScheme);
 }
 
@@ -325,19 +353,21 @@ void ChildProcessSecurityPolicyImpl::AddWorker(int child_id,
 
 void ChildProcessSecurityPolicyImpl::Remove(int child_id) {
   base::AutoLock lock(lock_);
-  if (!security_state_.count(child_id))
+  SecurityStateMap::iterator it = security_state_.find(child_id);
+  if (it == security_state_.end())
     return;  // May be called multiple times.
 
-  delete security_state_[child_id];
-  security_state_.erase(child_id);
+  delete it->second;
+  security_state_.erase(it);
   worker_map_.erase(child_id);
 }
 
 void ChildProcessSecurityPolicyImpl::RegisterWebSafeScheme(
     const std::string& scheme) {
   base::AutoLock lock(lock_);
-  DCHECK(web_safe_schemes_.count(scheme) == 0) << "Add schemes at most once.";
-  DCHECK(pseudo_schemes_.count(scheme) == 0) << "Web-safe implies not pseudo.";
+  DCHECK_EQ(0U, web_safe_schemes_.count(scheme)) << "Add schemes at most once.";
+  DCHECK_EQ(0U, pseudo_schemes_.count(scheme))
+      << "Web-safe implies not pseudo.";
 
   web_safe_schemes_.insert(scheme);
 }
@@ -346,15 +376,15 @@ bool ChildProcessSecurityPolicyImpl::IsWebSafeScheme(
     const std::string& scheme) {
   base::AutoLock lock(lock_);
 
-  return (web_safe_schemes_.find(scheme) != web_safe_schemes_.end());
+  return ContainsKey(web_safe_schemes_, scheme);
 }
 
 void ChildProcessSecurityPolicyImpl::RegisterPseudoScheme(
     const std::string& scheme) {
   base::AutoLock lock(lock_);
-  DCHECK(pseudo_schemes_.count(scheme) == 0) << "Add schemes at most once.";
-  DCHECK(web_safe_schemes_.count(scheme) == 0) <<
-      "Pseudo implies not web-safe.";
+  DCHECK_EQ(0U, pseudo_schemes_.count(scheme)) << "Add schemes at most once.";
+  DCHECK_EQ(0U, web_safe_schemes_.count(scheme))
+      << "Pseudo implies not web-safe.";
 
   pseudo_schemes_.insert(scheme);
 }
@@ -363,7 +393,7 @@ bool ChildProcessSecurityPolicyImpl::IsPseudoScheme(
     const std::string& scheme) {
   base::AutoLock lock(lock_);
 
-  return (pseudo_schemes_.find(scheme) != pseudo_schemes_.end());
+  return ContainsKey(pseudo_schemes_, scheme);
 }
 
 void ChildProcessSecurityPolicyImpl::GrantRequestURL(
@@ -423,22 +453,12 @@ void ChildProcessSecurityPolicyImpl::GrantRequestSpecificFileURL(
 
 void ChildProcessSecurityPolicyImpl::GrantReadFile(int child_id,
                                                    const base::FilePath& file) {
-  GrantPermissionsForFile(child_id, file, kReadFilePermissions);
+  GrantPermissionsForFile(child_id, file, READ_FILE_GRANT);
 }
 
 void ChildProcessSecurityPolicyImpl::GrantCreateReadWriteFile(
     int child_id, const base::FilePath& file) {
-  GrantPermissionsForFile(child_id, file, kCreateReadWriteFilePermissions);
-}
-
-void ChildProcessSecurityPolicyImpl::GrantCreateWriteFile(
-    int child_id, const base::FilePath& file) {
-  GrantPermissionsForFile(child_id, file, kCreateWriteFilePermissions);
-}
-
-void ChildProcessSecurityPolicyImpl::GrantReadDirectory(
-    int child_id, const base::FilePath& directory) {
-  GrantPermissionsForFile(child_id, directory, kEnumerateDirectoryPermissions);
+  GrantPermissionsForFile(child_id, file, CREATE_READ_WRITE_FILE_GRANT);
 }
 
 void ChildProcessSecurityPolicyImpl::GrantPermissionsForFile(
@@ -465,26 +485,43 @@ void ChildProcessSecurityPolicyImpl::RevokeAllPermissionsForFile(
 
 void ChildProcessSecurityPolicyImpl::GrantReadFileSystem(
     int child_id, const std::string& filesystem_id) {
-  GrantPermissionsForFileSystem(child_id, filesystem_id, kReadFilePermissions);
+  GrantPermissionsForFileSystem(child_id, filesystem_id, READ_FILE_GRANT);
 }
 
 void ChildProcessSecurityPolicyImpl::GrantWriteFileSystem(
     int child_id, const std::string& filesystem_id) {
-  GrantPermissionsForFileSystem(child_id, filesystem_id, kWriteFilePermissions);
+  GrantPermissionsForFileSystem(child_id, filesystem_id, WRITE_FILE_GRANT);
 }
 
 void ChildProcessSecurityPolicyImpl::GrantCreateFileForFileSystem(
     int child_id, const std::string& filesystem_id) {
-  GrantPermissionsForFileSystem(child_id, filesystem_id,
-                                kCreateFilePermissions);
+  GrantPermissionsForFileSystem(child_id, filesystem_id, CREATE_NEW_FILE_GRANT);
+}
+
+void ChildProcessSecurityPolicyImpl::GrantCreateReadWriteFileSystem(
+    int child_id, const std::string& filesystem_id) {
+  GrantPermissionsForFileSystem(
+      child_id, filesystem_id, CREATE_READ_WRITE_FILE_GRANT);
 }
 
 void ChildProcessSecurityPolicyImpl::GrantCopyIntoFileSystem(
     int child_id, const std::string& filesystem_id) {
-  // TODO(tommycli): These granted permissions a bit too broad, but not abused.
-  // We are fixing in http://crbug.com/262142 and associated CL.
-  GrantPermissionsForFileSystem(child_id, filesystem_id,
-                                kCreateFilePermissions);
+  GrantPermissionsForFileSystem(child_id, filesystem_id, COPY_INTO_FILE_GRANT);
+}
+
+void ChildProcessSecurityPolicyImpl::GrantDeleteFromFileSystem(
+    int child_id, const std::string& filesystem_id) {
+  GrantPermissionsForFileSystem(child_id, filesystem_id, DELETE_FILE_GRANT);
+}
+
+void ChildProcessSecurityPolicyImpl::GrantSendMIDISysExMessage(int child_id) {
+  base::AutoLock lock(lock_);
+
+  SecurityStateMap::iterator state = security_state_.find(child_id);
+  if (state == security_state_.end())
+    return;
+
+  state->second->GrantPermissionForMIDISysEx();
 }
 
 void ChildProcessSecurityPolicyImpl::GrantScheme(int child_id,
@@ -600,54 +637,36 @@ bool ChildProcessSecurityPolicyImpl::CanRequestURL(
 
 bool ChildProcessSecurityPolicyImpl::CanReadFile(int child_id,
                                                  const base::FilePath& file) {
-  return HasPermissionsForFile(child_id, file, kReadFilePermissions);
+  return HasPermissionsForFile(child_id, file, READ_FILE_GRANT);
 }
 
-bool ChildProcessSecurityPolicyImpl::CanWriteFile(int child_id,
-                                                  const base::FilePath& file) {
-  return HasPermissionsForFile(child_id, file, kWriteFilePermissions);
-}
-
-bool ChildProcessSecurityPolicyImpl::CanCreateFile(int child_id,
-                                                   const base::FilePath& file) {
-  return HasPermissionsForFile(child_id, file, kCreateFilePermissions);
-}
-
-bool ChildProcessSecurityPolicyImpl::CanCreateWriteFile(
+bool ChildProcessSecurityPolicyImpl::CanCreateReadWriteFile(
     int child_id,
     const base::FilePath& file) {
-  return HasPermissionsForFile(child_id, file, kCreateWriteFilePermissions);
-}
-
-bool ChildProcessSecurityPolicyImpl::CanReadDirectory(
-    int child_id, const base::FilePath& directory) {
-  return HasPermissionsForFile(child_id,
-                               directory,
-                               kEnumerateDirectoryPermissions);
+  return HasPermissionsForFile(child_id, file, CREATE_READ_WRITE_FILE_GRANT);
 }
 
 bool ChildProcessSecurityPolicyImpl::CanReadFileSystem(
     int child_id, const std::string& filesystem_id) {
-  return HasPermissionsForFileSystem(child_id,
-                                     filesystem_id,
-                                     kReadFilePermissions);
+  return HasPermissionsForFileSystem(child_id, filesystem_id, READ_FILE_GRANT);
 }
 
 bool ChildProcessSecurityPolicyImpl::CanReadWriteFileSystem(
     int child_id, const std::string& filesystem_id) {
-  return HasPermissionsForFileSystem(child_id,
-                                     filesystem_id,
-                                     kReadFilePermissions |
-                                     kWriteFilePermissions);
+  return HasPermissionsForFileSystem(child_id, filesystem_id,
+                                     READ_FILE_GRANT | WRITE_FILE_GRANT);
 }
 
 bool ChildProcessSecurityPolicyImpl::CanCopyIntoFileSystem(
     int child_id, const std::string& filesystem_id) {
-  // TODO(tommycli): These granted permissions a bit too broad, but not abused.
-  // We are fixing in http://crbug.com/262142 and associated CL.
-  return HasPermissionsForFileSystem(child_id,
-                                     filesystem_id,
-                                     kCreateFilePermissions);
+  return HasPermissionsForFileSystem(child_id, filesystem_id,
+                                     COPY_INTO_FILE_GRANT);
+}
+
+bool ChildProcessSecurityPolicyImpl::CanDeleteFromFileSystem(
+    int child_id, const std::string& filesystem_id) {
+  return HasPermissionsForFileSystem(child_id, filesystem_id,
+                                     DELETE_FILE_GRANT);
 }
 
 bool ChildProcessSecurityPolicyImpl::HasPermissionsForFile(
@@ -677,7 +696,7 @@ bool ChildProcessSecurityPolicyImpl::HasPermissionsForFileSystemFile(
 
   // Any write access is disallowed on the root path.
   if (fileapi::VirtualPath::IsRootPath(url.path()) &&
-      (permissions & ~kReadFilePermissions)) {
+      (permissions & ~READ_FILE_GRANT)) {
     return false;
   }
 
@@ -695,7 +714,7 @@ bool ChildProcessSecurityPolicyImpl::HasPermissionsForFileSystemFile(
     return false;
 
   if ((found->second & fileapi::FILE_PERMISSION_READ_ONLY) &&
-      permissions & ~kReadFilePermissions) {
+      permissions & ~READ_FILE_GRANT) {
     return false;
   }
 
@@ -711,26 +730,38 @@ bool ChildProcessSecurityPolicyImpl::HasPermissionsForFileSystemFile(
 bool ChildProcessSecurityPolicyImpl::CanReadFileSystemFile(
     int child_id,
     const fileapi::FileSystemURL& url) {
-  return HasPermissionsForFileSystemFile(child_id, url, kReadFilePermissions);
+  return HasPermissionsForFileSystemFile(child_id, url, READ_FILE_GRANT);
 }
 
 bool ChildProcessSecurityPolicyImpl::CanWriteFileSystemFile(
     int child_id,
     const fileapi::FileSystemURL& url) {
-  return HasPermissionsForFileSystemFile(child_id, url, kWriteFilePermissions);
+  return HasPermissionsForFileSystemFile(child_id, url, WRITE_FILE_GRANT);
 }
 
 bool ChildProcessSecurityPolicyImpl::CanCreateFileSystemFile(
     int child_id,
     const fileapi::FileSystemURL& url) {
-  return HasPermissionsForFileSystemFile(child_id, url, kCreateFilePermissions);
+  return HasPermissionsForFileSystemFile(child_id, url, CREATE_NEW_FILE_GRANT);
 }
 
-bool ChildProcessSecurityPolicyImpl::CanCreateWriteFileSystemFile(
+bool ChildProcessSecurityPolicyImpl::CanCreateReadWriteFileSystemFile(
     int child_id,
     const fileapi::FileSystemURL& url) {
   return HasPermissionsForFileSystemFile(child_id, url,
-                                         kCreateWriteFilePermissions);
+                                         CREATE_READ_WRITE_FILE_GRANT);
+}
+
+bool ChildProcessSecurityPolicyImpl::CanCopyIntoFileSystemFile(
+    int child_id,
+    const fileapi::FileSystemURL& url) {
+  return HasPermissionsForFileSystemFile(child_id, url, COPY_INTO_FILE_GRANT);
+}
+
+bool ChildProcessSecurityPolicyImpl::CanDeleteFileSystemFile(
+    int child_id,
+    const fileapi::FileSystemURL& url) {
+  return HasPermissionsForFileSystemFile(child_id, url, DELETE_FILE_GRANT);
 }
 
 bool ChildProcessSecurityPolicyImpl::HasWebUIBindings(int child_id) {
@@ -781,6 +812,17 @@ bool ChildProcessSecurityPolicyImpl::CanAccessCookiesForOrigin(
 
 bool ChildProcessSecurityPolicyImpl::CanSendCookiesForOrigin(int child_id,
                                                              const GURL& gurl) {
+  for (PluginProcessHostIterator iter; !iter.Done(); ++iter) {
+    if (iter.GetData().id == child_id) {
+      if (iter.GetData().process_type == PROCESS_TYPE_PLUGIN) {
+        // NPAPI plugin processes are unsandboxed and so are trusted. Plugins
+        // can make request to any origin.
+        return true;
+      }
+      break;
+    }
+  }
+
   base::AutoLock lock(lock_);
   SecurityStateMap::iterator state = security_state_.find(child_id);
   if (state == security_state_.end())
@@ -827,6 +869,16 @@ void ChildProcessSecurityPolicyImpl::RegisterFileSystemPermissionPolicy(
     int policy) {
   base::AutoLock lock(lock_);
   file_system_policy_map_[type] = policy;
+}
+
+bool ChildProcessSecurityPolicyImpl::CanSendMIDISysExMessage(int child_id) {
+  base::AutoLock lock(lock_);
+
+  SecurityStateMap::iterator state = security_state_.find(child_id);
+  if (state == security_state_.end())
+    return false;
+
+  return state->second->can_send_midi_sysex();
 }
 
 }  // namespace content

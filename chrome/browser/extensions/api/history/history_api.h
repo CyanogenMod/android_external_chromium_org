@@ -9,15 +9,14 @@
 #include <vector>
 
 #include "base/compiler_specific.h"
-#include "base/memory/linked_ptr.h"
 #include "chrome/browser/extensions/api/profile_keyed_api_factory.h"
-#include "chrome/browser/extensions/event_router.h"
-#include "chrome/browser/extensions/extension_function.h"
+#include "chrome/browser/extensions/chrome_extension_function.h"
 #include "chrome/browser/history/history_notifications.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/common/cancelable_task_tracker.h"
 #include "chrome/common/extensions/api/history.h"
 #include "content/public/browser/notification_registrar.h"
+#include "extensions/browser/event_router.h"
 
 namespace base {
 class ListValue;
@@ -45,7 +44,7 @@ class HistoryEventRouter : public content::NotificationObserver {
                           const history::URLsDeletedDetails* details);
 
   void DispatchEvent(Profile* profile,
-                     const char* event_name,
+                     const std::string& event_name,
                      scoped_ptr<base::ListValue> event_args);
 
   // Used for tracking registrations to history service notifications.
@@ -84,8 +83,11 @@ class HistoryAPI : public ProfileKeyedAPI,
   scoped_ptr<HistoryEventRouter> history_event_router_;
 };
 
+template<>
+void ProfileKeyedAPIFactory<HistoryAPI>::DeclareFactoryDependencies();
+
 // Base class for history function APIs.
-class HistoryFunction : public AsyncExtensionFunction {
+class HistoryFunction : public ChromeAsyncExtensionFunction {
  protected:
   virtual ~HistoryFunction() {}
   virtual void Run() OVERRIDE;
@@ -122,22 +124,6 @@ class HistoryFunctionWithCallback : public HistoryFunction {
   // The actual call to SendResponse.  This is required since the semantics for
   // CancelableRequestConsumerT require it to be accessed after the call.
   void SendResponseToCallback();
-};
-
-class HistoryGetMostVisitedFunction : public HistoryFunctionWithCallback {
- public:
-  DECLARE_EXTENSION_FUNCTION("experimental.history.getMostVisited",
-                             EXPERIMENTAL_HISTORY_GETMOSTVISITED)
-
- protected:
-  virtual ~HistoryGetMostVisitedFunction() {}
-
-  // HistoryFunctionWithCallback:
-  virtual bool RunAsyncImpl() OVERRIDE;
-
-  // Callback for the history function to provide results.
-  void QueryComplete(CancelableRequestProvider::Handle handle,
-                     const history::FilteredURLList& data);
 };
 
 class HistoryGetVisitsFunction : public HistoryFunctionWithCallback {

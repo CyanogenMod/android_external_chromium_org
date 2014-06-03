@@ -18,7 +18,7 @@
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/text/text_elider.h"
+#include "ui/gfx/text_elider.h"
 #include "ui/views/controls/message_box_view.h"
 #include "ui/views/widget/widget.h"
 
@@ -42,11 +42,8 @@ void ExternalProtocolHandler::RunExternalProtocolDialog(
     // ShellExecute won't do anything. Don't bother warning the user.
     return;
   }
-  WebContents* web_contents = tab_util::GetWebContentsByID(
-      render_process_host_id, routing_id);
-  DCHECK(web_contents);
   // Windowing system takes ownership.
-  new ExternalProtocolDialog(web_contents, url, command);
+  new ExternalProtocolDialog(url, render_process_host_id, routing_id, command);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -62,7 +59,7 @@ int ExternalProtocolDialog::GetDefaultDialogButton() const {
   return ui::DIALOG_BUTTON_CANCEL;
 }
 
-string16 ExternalProtocolDialog::GetDialogButtonLabel(
+base::string16 ExternalProtocolDialog::GetDialogButtonLabel(
     ui::DialogButton button) const {
   if (button == ui::DIALOG_BUTTON_OK)
     return l10n_util::GetStringUTF16(IDS_EXTERNAL_PROTOCOL_OK_BUTTON_TEXT);
@@ -70,7 +67,7 @@ string16 ExternalProtocolDialog::GetDialogButtonLabel(
     return l10n_util::GetStringUTF16(IDS_EXTERNAL_PROTOCOL_CANCEL_BUTTON_TEXT);
 }
 
-string16 ExternalProtocolDialog::GetWindowTitle() const {
+base::string16 ExternalProtocolDialog::GetWindowTitle() const {
   return l10n_util::GetStringUTF16(IDS_EXTERNAL_PROTOCOL_TITLE);
 }
 
@@ -104,7 +101,8 @@ bool ExternalProtocolDialog::Accept() {
         url_.scheme(), ExternalProtocolHandler::DONT_BLOCK);
   }
 
-  ExternalProtocolHandler::LaunchUrlWithoutSecurityCheck(url_);
+  ExternalProtocolHandler::LaunchUrlWithoutSecurityCheck(
+      url_, render_process_host_id_, routing_id_);
   // Returning true closes the dialog.
   return true;
 }
@@ -124,21 +122,23 @@ const views::Widget* ExternalProtocolDialog::GetWidget() const {
 ///////////////////////////////////////////////////////////////////////////////
 // ExternalProtocolDialog, private:
 
-ExternalProtocolDialog::ExternalProtocolDialog(WebContents* web_contents,
-                                               const GURL& url,
+ExternalProtocolDialog::ExternalProtocolDialog(const GURL& url,
+                                               int render_process_host_id,
+                                               int routing_id,
                                                const std::wstring& command)
-    : web_contents_(web_contents),
-      url_(url),
+    : url_(url),
+      render_process_host_id_(render_process_host_id),
+      routing_id_(routing_id),
       creation_time_(base::TimeTicks::Now()) {
   const int kMaxUrlWithoutSchemeSize = 256;
   const int kMaxCommandSize = 256;
-  string16 elided_url_without_scheme;
-  string16 elided_command;
-  ui::ElideString(ASCIIToUTF16(url.possibly_invalid_spec()),
+  base::string16 elided_url_without_scheme;
+  base::string16 elided_command;
+  gfx::ElideString(ASCIIToUTF16(url.possibly_invalid_spec()),
                   kMaxUrlWithoutSchemeSize, &elided_url_without_scheme);
-  ui::ElideString(WideToUTF16Hack(command), kMaxCommandSize, &elided_command);
+  gfx::ElideString(WideToUTF16Hack(command), kMaxCommandSize, &elided_command);
 
-  string16 message_text = l10n_util::GetStringFUTF16(
+  base::string16 message_text = l10n_util::GetStringFUTF16(
       IDS_EXTERNAL_PROTOCOL_INFORMATION,
       ASCIIToUTF16(url.scheme() + ":"),
       elided_url_without_scheme) + ASCIIToUTF16("\n\n");
@@ -156,13 +156,12 @@ ExternalProtocolDialog::ExternalProtocolDialog(WebContents* web_contents,
       l10n_util::GetStringUTF16(IDS_EXTERNAL_PROTOCOL_CHECKBOX_TEXT));
 
   // Dialog is top level if we don't have a web_contents associated with us.
-  HWND root_hwnd = NULL;
-  if (web_contents_) {
-    root_hwnd = GetAncestor(web_contents_->GetView()->GetContentNativeView(),
-                            GA_ROOT);
-  }
-
-  CreateBrowserModalDialogViews(this, root_hwnd)->Show();
+  WebContents* web_contents = tab_util::GetWebContentsByID(
+      render_process_host_id_, routing_id_);
+  gfx::NativeWindow parent_window = NULL;
+  if (web_contents)
+    parent_window = web_contents->GetView()->GetTopLevelNativeWindow();
+  CreateBrowserModalDialogViews(this, parent_window)->Show();
 }
 
 // static

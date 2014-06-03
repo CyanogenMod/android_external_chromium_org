@@ -10,15 +10,20 @@
 #include "base/message_loop/message_loop.h"
 #include "ui/base/accessibility/accessible_view_state.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
-#include "ui/base/events/event.h"
-#include "ui/base/keycodes/keyboard_codes.h"
 #include "ui/compositor/layer.h"
+#include "ui/events/event.h"
+#include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/canvas.h"
 #include "ui/views/focus/view_storage.h"
 #include "ui/views/layout/fill_layout.h"
+#include "ui/views/views_switches.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_delegate.h"
 #include "ui/views/widget/widget_deletion_observer.h"
+
+#if defined(USE_AURA)
+#include "ui/base/cursor/cursor.h"
+#endif
 
 namespace views {
 namespace internal {
@@ -102,9 +107,8 @@ View* RootView::GetContentsView() {
   return child_count() > 0 ? child_at(0) : NULL;
 }
 
-void RootView::NotifyNativeViewHierarchyChanged(bool attached,
-                                                gfx::NativeView native_view) {
-  PropagateNativeViewHierarchyChanged(attached, native_view, this);
+void RootView::NotifyNativeViewHierarchyChanged() {
+  PropagateNativeViewHierarchyChanged();
 }
 
 // Input -----------------------------------------------------------------------
@@ -117,14 +121,21 @@ void RootView::DispatchKeyEvent(ui::KeyEvent* event) {
   // keyboard.
   if (v && v->enabled() && ((event->key_code() == ui::VKEY_APPS) ||
      (event->key_code() == ui::VKEY_F10 && event->IsShiftDown()))) {
-    v->ShowContextMenu(v->GetKeyboardContextMenuLocation(),
-                       ui::MENU_SOURCE_KEYBOARD);
+    // Showing the context menu outside the visible bounds may result in a
+    // context menu appearing over a completely different window. Constrain
+    // location to visible bounds so this doesn't happen.
+    gfx::Rect visible_bounds(v->ConvertRectToWidget(v->GetVisibleBounds()));
+    visible_bounds.Offset(
+        widget_->GetClientAreaBoundsInScreen().OffsetFromOrigin());
+    gfx::Rect keyboard_loc(v->GetKeyboardContextMenuLocation(),
+                           gfx::Size(1, 1));
+    keyboard_loc.AdjustToFit(visible_bounds);
+    v->ShowContextMenu(keyboard_loc.origin(), ui::MENU_SOURCE_KEYBOARD);
     event->StopPropagation();
     return;
   }
 
-  for (; v && v != this && !event->handled(); v = v->parent())
-    DispatchEventToTarget(v, event);
+  DispatchKeyEventStartAt(v, event);
 }
 
 void RootView::DispatchScrollEvent(ui::ScrollEvent* event) {
@@ -276,10 +287,23 @@ void RootView::DispatchGestureEvent(ui::GestureEvent* event) {
       break;
   }
 
+  View* gesture_handler = NULL;
+  if (views::switches::IsRectBasedTargetingEnabled() &&
+      !event->details().bounding_box().IsEmpty()) {
+    // TODO(tdanderson): Pass in the bounding box to GetEventHandlerForRect()
+    // once crbug.com/313392 is resolved.
+    gfx::Rect touch_rect(event->details().bounding_box());
+    touch_rect.set_origin(event->location());
+    touch_rect.Offset(-touch_rect.width() / 2, -touch_rect.height() / 2);
+    gesture_handler = GetEventHandlerForRect(touch_rect);
+  } else {
+    gesture_handler = GetEventHandlerForPoint(event->location());
+  }
+
   // Walk up the tree until we find a view that wants the gesture event.
-  for (gesture_handler_ = GetEventHandlerForPoint(event->location());
-      gesture_handler_ && (gesture_handler_ != this);
-      gesture_handler_ = gesture_handler_->parent()) {
+  for (gesture_handler_ = gesture_handler;
+       gesture_handler_ && (gesture_handler_ != this);
+       gesture_handler_ = gesture_handler_->parent()) {
     if (!gesture_handler_->enabled()) {
       // Disabled views eat events but are treated as not handled.
       return;
@@ -362,6 +386,11 @@ Widget* RootView::GetWidget() {
 
 bool RootView::IsDrawn() const {
   return visible();
+}
+
+void RootView::Layout() {
+  View::Layout();
+  widget_->OnRootViewLayout();
 }
 
 const char* RootView::GetClassName() const {
@@ -624,6 +653,7 @@ void RootView::VisibilityChanged(View* /*starting_from*/, bool is_visible) {
     // When the root view is being hidden (e.g. when widget is minimized)
     // handlers are reset, so that after it is reshown, events are not captured
     // by old handlers.
+    explicit_mouse_handler_ = false;
     mouse_pressed_handler_ = NULL;
     mouse_move_handler_ = NULL;
     touch_pressed_handler_ = NULL;
@@ -637,10 +667,6 @@ void RootView::OnPaint(gfx::Canvas* canvas) {
   if (!layer() || !layer()->fills_bounds_opaquely())
     canvas->DrawColor(SK_ColorBLACK, SkXfermode::kClear_Mode);
 
-  // TODO (pkotwicz): Remove this once we switch over to Aura desktop.
-  // This is needed so that we can set the background behind the RWHV when the
-  // RWHV is not visible. Not needed once there is a view between the RootView
-  // and RWHV.
   View::OnPaint(canvas);
 }
 
@@ -678,7 +704,8 @@ void RootView::SetMouseLocationAndFlags(const ui::MouseEvent& event) {
 void RootView::DispatchEventToTarget(View* target, ui::Event* event) {
   View* old_target = event_dispatch_target_;
   event_dispatch_target_ = target;
-  if (DispatchEvent(target, event))
+  ui::EventDispatchDetails details = DispatchEvent(target, event);
+  if (!details.dispatcher_destroyed)
     event_dispatch_target_ = old_target;
 }
 
@@ -696,6 +723,19 @@ void RootView::NotifyEnterExitOfDescendant(const ui::MouseEvent& event,
     // incorrect event dispatch.
     MouseEnterExitEvent notify_event(event, type);
     DispatchEventToTarget(p, &notify_event);
+  }
+}
+
+
+void RootView::DispatchKeyEventStartAt(View* view, ui::KeyEvent* event) {
+  if (event->handled() || !view)
+    return;
+
+  for (; view && view != this; view = view->parent()) {
+    DispatchEventToTarget(view, event);
+    // Do this check here rather than in the if as |view| may have been deleted.
+    if (event->handled())
+      return;
   }
 }
 

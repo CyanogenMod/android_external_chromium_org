@@ -8,20 +8,20 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
 #include "base/prefs/pref_registry_simple.h"
+#include "base/prefs/scoped_user_pref_update.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
-#include "chrome/browser/policy/configuration_policy_pref_store.h"
-#include "chrome/browser/policy/mock_configuration_policy_provider.h"
 #include "chrome/browser/prefs/browser_prefs.h"
 #include "chrome/browser/prefs/command_line_pref_store.h"
-#include "chrome/browser/prefs/pref_service_mock_builder.h"
-#include "chrome/browser/prefs/scoped_user_pref_update.h"
+#include "chrome/browser/prefs/pref_service_mock_factory.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "chrome/test/base/testing_pref_service_syncable.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/policy/core/browser/configuration_policy_pref_store.h"
+#include "components/policy/core/common/mock_configuration_policy_provider.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/test/web_contents_tester.h"
 #include "ui/base/test/data/resource.h"
@@ -87,59 +87,6 @@ class ChromePrefServiceUserFilePrefsTest : public testing::Test {
   // A message loop that we can use as the file thread message loop.
   base::MessageLoop message_loop_;
 };
-
-// Verifies that ListValue and DictionaryValue pref with non emtpy default
-// preserves its empty value.
-TEST_F(ChromePrefServiceUserFilePrefsTest, PreserveEmptyValue) {
-  base::FilePath pref_file = temp_dir_.path().AppendASCII("write.json");
-
-  ASSERT_TRUE(base::CopyFile(
-      data_dir_.AppendASCII("read.need_empty_value.json"),
-      pref_file));
-
-  PrefServiceMockBuilder builder;
-  builder.WithUserFilePrefs(pref_file,
-                            message_loop_.message_loop_proxy().get());
-  scoped_refptr<user_prefs::PrefRegistrySyncable> registry(
-      new user_prefs::PrefRegistrySyncable);
-  scoped_ptr<PrefServiceSyncable> prefs(builder.CreateSyncable(registry.get()));
-
-  // Register testing prefs.
-  registry->RegisterListPref("list",
-                             user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterDictionaryPref(
-      "dict",
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-
-  base::ListValue* non_empty_list = new base::ListValue;
-  non_empty_list->Append(base::Value::CreateStringValue("test"));
-  registry->RegisterListPref("list_needs_empty_value",
-                             non_empty_list,
-                             user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-
-  base::DictionaryValue* non_empty_dict = new base::DictionaryValue;
-  non_empty_dict->SetString("dummy", "whatever");
-  registry->RegisterDictionaryPref(
-      "dict_needs_empty_value",
-      non_empty_dict,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-
-  // Set all testing prefs to empty.
-  ClearListValue(prefs.get(), "list");
-  ClearListValue(prefs.get(), "list_needs_empty_value");
-  ClearDictionaryValue(prefs.get(), "dict");
-  ClearDictionaryValue(prefs.get(), "dict_needs_empty_value");
-
-  // Write to file.
-  prefs->CommitPendingWrite();
-  message_loop_.RunUntilIdle();
-
-  // Compare to expected output.
-  base::FilePath golden_output_file =
-      data_dir_.AppendASCII("write.golden.need_empty_value.json");
-  ASSERT_TRUE(base::PathExists(golden_output_file));
-  EXPECT_TRUE(base::TextContentsEqual(golden_output_file, pref_file));
-}
 
 class ChromePrefServiceWebKitPrefs : public ChromeRenderViewHostTestHarness {
  protected:

@@ -6,15 +6,15 @@
 
 #include "ash/wm/window_util.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/ui/ash/launcher/chrome_launcher_controller_per_app.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "content/public/browser/notification_service.h"
+#include "ui/events/event_constants.h"
 
 ChromeLauncherAppMenuItemBrowser::ChromeLauncherAppMenuItemBrowser(
-    const string16 title,
+    const base::string16 title,
     const gfx::Image* icon,
     Browser* browser,
     bool has_leading_separator)

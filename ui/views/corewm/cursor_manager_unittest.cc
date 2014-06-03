@@ -12,8 +12,6 @@ namespace {
 
 class TestingCursorManager : public views::corewm::NativeCursorManager {
  public:
-  gfx::NativeCursor current_cursor() { return cursor_; }
-
   // Overridden from views::corewm::NativeCursorManager:
   virtual void SetDisplay(
       const gfx::Display& display,
@@ -22,7 +20,6 @@ class TestingCursorManager : public views::corewm::NativeCursorManager {
   virtual void SetCursor(
       gfx::NativeCursor cursor,
       views::corewm::NativeCursorManagerDelegate* delegate) OVERRIDE {
-    cursor_ = cursor;
     delegate->CommitCursor(cursor);
   }
 
@@ -38,14 +35,17 @@ class TestingCursorManager : public views::corewm::NativeCursorManager {
     delegate->CommitMouseEventsEnabled(enabled);
   }
 
+  virtual void SetCursorSet(
+      ui::CursorSetType cursor_set,
+      views::corewm::NativeCursorManagerDelegate* delegate) OVERRIDE {
+    delegate->CommitCursorSet(cursor_set);
+  }
+
   virtual void SetScale(
       float scale,
       views::corewm::NativeCursorManagerDelegate* delegate) OVERRIDE {
     delegate->CommitScale(scale);
   }
-
- private:
-  gfx::NativeCursor cursor_;
 };
 
 }  // namespace
@@ -57,8 +57,6 @@ class CursorManagerTest : public views::ViewsTestBase {
         cursor_manager_(scoped_ptr<views::corewm::NativeCursorManager>(
             delegate_)) {
   }
-
-  gfx::NativeCursor current_cursor() { return delegate_->current_cursor(); }
 
   TestingCursorManager* delegate_;
   views::corewm::CursorManager cursor_manager_;
@@ -88,14 +86,14 @@ class TestingCursorClientObserver : public aura::client::CursorClientObserver {
 
 TEST_F(CursorManagerTest, ShowHideCursor) {
   cursor_manager_.SetCursor(ui::kCursorCopy);
-  EXPECT_EQ(ui::kCursorCopy, current_cursor().native_type());
+  EXPECT_EQ(ui::kCursorCopy, cursor_manager_.GetCursor().native_type());
 
   cursor_manager_.ShowCursor();
   EXPECT_TRUE(cursor_manager_.IsCursorVisible());
   cursor_manager_.HideCursor();
   EXPECT_FALSE(cursor_manager_.IsCursorVisible());
   // The current cursor does not change even when the cursor is not shown.
-  EXPECT_EQ(ui::kCursorCopy, current_cursor().native_type());
+  EXPECT_EQ(ui::kCursorCopy, cursor_manager_.GetCursor().native_type());
 
   // Check if cursor visibility is locked.
   cursor_manager_.LockCursor();
@@ -139,14 +137,14 @@ TEST_F(CursorManagerTest, ShowHideCursor) {
 // EnableMouseEvents and DisableMouseEvents
 TEST_F(CursorManagerTest, EnableDisableMouseEvents) {
   cursor_manager_.SetCursor(ui::kCursorCopy);
-  EXPECT_EQ(ui::kCursorCopy, current_cursor().native_type());
+  EXPECT_EQ(ui::kCursorCopy, cursor_manager_.GetCursor().native_type());
 
   cursor_manager_.EnableMouseEvents();
   EXPECT_TRUE(cursor_manager_.IsMouseEventsEnabled());
   cursor_manager_.DisableMouseEvents();
   EXPECT_FALSE(cursor_manager_.IsMouseEventsEnabled());
   // The current cursor does not change even when the cursor is not shown.
-  EXPECT_EQ(ui::kCursorCopy, current_cursor().native_type());
+  EXPECT_EQ(ui::kCursorCopy, cursor_manager_.GetCursor().native_type());
 
   // Check if cursor enable state is locked.
   cursor_manager_.LockCursor();
@@ -186,21 +184,34 @@ TEST_F(CursorManagerTest, EnableDisableMouseEvents) {
   EXPECT_FALSE(cursor_manager_.IsMouseEventsEnabled());
 }
 
+TEST_F(CursorManagerTest, SetCursorSet) {
+  EXPECT_EQ(ui::CURSOR_SET_NORMAL, cursor_manager_.GetCursorSet());
+
+  cursor_manager_.SetCursorSet(ui::CURSOR_SET_NORMAL);
+  EXPECT_EQ(ui::CURSOR_SET_NORMAL, cursor_manager_.GetCursorSet());
+
+  cursor_manager_.SetCursorSet(ui::CURSOR_SET_LARGE);
+  EXPECT_EQ(ui::CURSOR_SET_LARGE, cursor_manager_.GetCursorSet());
+
+  cursor_manager_.SetCursorSet(ui::CURSOR_SET_NORMAL);
+  EXPECT_EQ(ui::CURSOR_SET_NORMAL, cursor_manager_.GetCursorSet());
+}
+
 TEST_F(CursorManagerTest, SetScale) {
-  EXPECT_EQ(1.f, cursor_manager_.GetCurrentScale());
+  EXPECT_EQ(1.f, cursor_manager_.GetScale());
   cursor_manager_.SetScale(2.f);
-  EXPECT_EQ(2.f, cursor_manager_.GetCurrentScale());
+  EXPECT_EQ(2.f, cursor_manager_.GetScale());
 
   // Cusror scale does change even while cursor is locked.
   cursor_manager_.LockCursor();
-  EXPECT_EQ(2.f, cursor_manager_.GetCurrentScale());
+  EXPECT_EQ(2.f, cursor_manager_.GetScale());
   cursor_manager_.SetScale(2.5f);
-  EXPECT_EQ(2.5f, cursor_manager_.GetCurrentScale());
+  EXPECT_EQ(2.5f, cursor_manager_.GetScale());
   cursor_manager_.UnlockCursor();
 
-  EXPECT_EQ(2.5f, cursor_manager_.GetCurrentScale());
+  EXPECT_EQ(2.5f, cursor_manager_.GetScale());
   cursor_manager_.SetScale(1.f);
-  EXPECT_EQ(1.f, cursor_manager_.GetCurrentScale());
+  EXPECT_EQ(1.f, cursor_manager_.GetScale());
 }
 
 TEST_F(CursorManagerTest, IsMouseEventsEnabled) {

@@ -12,7 +12,6 @@ gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared)
 # Make sure our deps are built first.
 GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,skia_skia_gyp)/skia.stamp \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_ui_gyp)/ui_ui_gyp.a \
 	$(call intermediates-dir-for,GYP,media_media_android_jni_headers_gyp)/media_android_jni_headers.stamp \
 	$(call intermediates-dir-for,GYP,media_video_capture_android_jni_headers_gyp)/video_capture_android_jni_headers.stamp
 
@@ -28,9 +27,10 @@ GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 
 LOCAL_SRC_FILES := \
 	media/audio/android/audio_manager_android.cc \
+	media/audio/android/audio_record_input.cc \
 	media/audio/android/opensles_input.cc \
 	media/audio/android/opensles_output.cc \
-	media/audio/async_socket_io_handler_posix.cc \
+	media/audio/android/opensles_wrapper.cc \
 	media/audio/audio_buffers_state.cc \
 	media/audio/audio_device_name.cc \
 	media/audio/audio_device_thread.cc \
@@ -47,16 +47,19 @@ LOCAL_SRC_FILES := \
 	media/audio/audio_output_proxy.cc \
 	media/audio/audio_output_resampler.cc \
 	media/audio/audio_power_monitor.cc \
-	media/audio/audio_util.cc \
-	media/audio/cross_process_notification.cc \
-	media/audio/cross_process_notification_posix.cc \
+	media/audio/clockless_audio_sink.cc \
 	media/audio/fake_audio_consumer.cc \
 	media/audio/fake_audio_input_stream.cc \
+	media/audio/fake_audio_log_factory.cc \
+	media/audio/fake_audio_manager.cc \
 	media/audio/fake_audio_output_stream.cc \
 	media/audio/null_audio_sink.cc \
 	media/audio/sample_rates.cc \
 	media/audio/scoped_loop_observer.cc \
 	media/audio/simple_sources.cc \
+	media/audio/sounds/audio_stream_handler.cc \
+	media/audio/sounds/sounds_manager.cc \
+	media/audio/sounds/wav_audio_handler.cc \
 	media/audio/virtual_audio_input_stream.cc \
 	media/audio/virtual_audio_output_stream.cc \
 	media/base/android/demuxer_stream_player_params.cc \
@@ -83,8 +86,8 @@ LOCAL_SRC_FILES := \
 	media/base/data_source.cc \
 	media/base/decoder_buffer.cc \
 	media/base/decoder_buffer_queue.cc \
-	media/base/decryptor.cc \
 	media/base/decrypt_config.cc \
+	media/base/decryptor.cc \
 	media/base/demuxer.cc \
 	media/base/demuxer_stream.cc \
 	media/base/djb2.cc \
@@ -95,7 +98,6 @@ LOCAL_SRC_FILES := \
 	media/base/media_switches.cc \
 	media/base/multi_channel_resampler.cc \
 	media/base/pipeline.cc \
-	media/base/pipeline_status.cc \
 	media/base/ranges.cc \
 	media/base/sample_format.cc \
 	media/base/seekable_buffer.cc \
@@ -107,13 +109,20 @@ LOCAL_SRC_FILES := \
 	media/base/sinc_resampler.cc \
 	media/base/stream_parser.cc \
 	media/base/stream_parser_buffer.cc \
+	media/base/text_cue.cc \
+	media/base/text_renderer.cc \
+	media/base/text_track_config.cc \
+	media/base/user_input_monitor.cc \
 	media/base/video_decoder.cc \
 	media/base/video_decoder_config.cc \
 	media/base/video_frame.cc \
+	media/base/video_frame_pool.cc \
 	media/base/video_renderer.cc \
 	media/base/video_util.cc \
 	media/base/yuv_convert.cc \
 	media/cdm/aes_decryptor.cc \
+	media/cdm/json_web_key.cc \
+	media/cdm/key_system_names.cc \
 	media/filters/audio_decoder_selector.cc \
 	media/filters/audio_renderer_algorithm.cc \
 	media/filters/audio_renderer_impl.cc \
@@ -122,25 +131,30 @@ LOCAL_SRC_FILES := \
 	media/filters/decrypting_demuxer_stream.cc \
 	media/filters/decrypting_video_decoder.cc \
 	media/filters/file_data_source.cc \
+	media/filters/gpu_video_accelerator_factories.cc \
 	media/filters/gpu_video_decoder.cc \
-	media/filters/gpu_video_decoder_factories.cc \
 	media/filters/h264_to_annex_b_bitstream_converter.cc \
 	media/filters/in_memory_url_protocol.cc \
-	media/filters/opus_audio_decoder.cc \
 	media/filters/skcanvas_video_renderer.cc \
 	media/filters/source_buffer_stream.cc \
 	media/filters/stream_parser_factory.cc \
 	media/filters/video_decoder_selector.cc \
 	media/filters/video_frame_stream.cc \
-	media/filters/video_renderer_base.cc \
+	media/filters/video_renderer_impl.cc \
+	media/filters/wsola_internals.cc \
 	media/midi/midi_manager.cc \
+	media/midi/midi_message_queue.cc \
+	media/midi/midi_message_util.cc \
 	media/midi/midi_port_info.cc \
 	media/video/capture/android/video_capture_device_android.cc \
 	media/video/capture/fake_video_capture_device.cc \
+	media/video/capture/file_video_capture_device.cc \
 	media/video/capture/video_capture_device.cc \
 	media/video/capture/video_capture_proxy.cc \
+	media/video/capture/video_capture_types.cc \
 	media/video/picture.cc \
 	media/video/video_decode_accelerator.cc \
+	media/video/video_encode_accelerator.cc \
 	media/webm/webm_audio_client.cc \
 	media/webm/webm_cluster_parser.cc \
 	media/webm/webm_constants.cc \
@@ -154,6 +168,15 @@ LOCAL_SRC_FILES := \
 	media/webm/webm_video_client.cc \
 	media/webm/webm_webvtt_parser.cc \
 	media/base/media_stub.cc \
+	media/mp2t/es_parser_adts.cc \
+	media/mp2t/es_parser_h264.cc \
+	media/mp2t/mp2t_stream_parser.cc \
+	media/mp2t/ts_packet.cc \
+	media/mp2t/ts_section_pat.cc \
+	media/mp2t/ts_section_pes.cc \
+	media/mp2t/ts_section_pmt.cc \
+	media/mp2t/ts_section_psi.cc \
+	media/mp3/mp3_stream_parser.cc \
 	media/mp4/aac.cc \
 	media/mp4/avc.cc \
 	media/mp4/box_definitions.cc \
@@ -199,24 +222,26 @@ MY_CFLAGS_Debug := \
 	-ffunction-sections
 
 MY_DEFS_Debug := \
-	'-DANGLE_DX11' \
+	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
-	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
-	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DLOGGING_IS_OFFICIAL_BUILD=1' \
-	'-DTRACING_IS_OFFICIAL_BUILD=1' \
-	'-DENABLE_GPU=1' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
+	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
+	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-DMEDIA_IMPLEMENTATION' \
+	'-DDISABLE_USER_INPUT_MONITOR' \
 	'-DPOSIX_AVOID_MMAP' \
+	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DU_USING_ICU_NAMESPACE=0' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
@@ -232,14 +257,17 @@ MY_DEFS_Debug := \
 
 # Include paths placed before CFLAGS/CPPFLAGS
 LOCAL_C_INCLUDES_Debug := \
+	$(gyp_shared_intermediate_dir)/shim_headers/skia_library/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
-	$(gyp_shared_intermediate_dir)/shim_headers/skia_library/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
 	$(LOCAL_PATH) \
 	$(gyp_shared_intermediate_dir)/media \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
+	$(LOCAL_PATH)/skia/config \
+	$(PWD)/external/skia/include \
+	$(PWD)/external/skia/include/core \
 	$(LOCAL_PATH)/third_party/skia/src/core \
 	$(LOCAL_PATH)/skia/ext \
 	$(LOCAL_PATH)/third_party/opus/src/include \
@@ -296,24 +324,26 @@ MY_CFLAGS_Release := \
 	-fomit-frame-pointer
 
 MY_DEFS_Release := \
-	'-DANGLE_DX11' \
+	'-DV8_DEPRECATION_WARNINGS' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
-	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
-	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DLOGGING_IS_OFFICIAL_BUILD=1' \
-	'-DTRACING_IS_OFFICIAL_BUILD=1' \
-	'-DENABLE_GPU=1' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
+	'-DICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
+	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
+	'-DENABLE_MANAGED_USERS=1' \
 	'-DMEDIA_IMPLEMENTATION' \
+	'-DDISABLE_USER_INPUT_MONITOR' \
 	'-DPOSIX_AVOID_MMAP' \
+	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DU_USING_ICU_NAMESPACE=0' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
@@ -330,14 +360,17 @@ MY_DEFS_Release := \
 
 # Include paths placed before CFLAGS/CPPFLAGS
 LOCAL_C_INCLUDES_Release := \
+	$(gyp_shared_intermediate_dir)/shim_headers/skia_library/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
-	$(gyp_shared_intermediate_dir)/shim_headers/skia_library/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
 	$(LOCAL_PATH) \
 	$(gyp_shared_intermediate_dir)/media \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
+	$(LOCAL_PATH)/skia/config \
+	$(PWD)/external/skia/include \
+	$(PWD)/external/skia/include/core \
 	$(LOCAL_PATH)/third_party/skia/src/core \
 	$(LOCAL_PATH)/skia/ext \
 	$(LOCAL_PATH)/third_party/opus/src/include \
@@ -405,8 +438,7 @@ LOCAL_LDFLAGS_Release := \
 
 LOCAL_LDFLAGS := $(LOCAL_LDFLAGS_$(GYP_CONFIGURATION))
 
-LOCAL_STATIC_LIBRARIES := \
-	ui_ui_gyp
+LOCAL_STATIC_LIBRARIES :=
 
 # Enable grouping to fix circular references
 LOCAL_GROUP_STATIC_LIBRARIES := true

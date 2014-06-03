@@ -25,12 +25,12 @@
 #include "chrome/browser/ui/panels/test_panel_mouse_watcher.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/test/base/interactive_test_utils.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/test/web_contents_tester.h"
+#include "extensions/common/manifest_constants.h"
 #include "sync/api/string_ordinal.h"
 
 #if defined(OS_LINUX)
@@ -80,6 +80,7 @@ class MockDisplaySettingsProviderImpl :
       DesktopBarAlignment alignment) const OVERRIDE;
   virtual DesktopBarVisibility GetDesktopBarVisibility(
       DesktopBarAlignment alignment) const OVERRIDE;
+  virtual bool IsFullScreen() OVERRIDE;
 
   // Overridden from MockDisplaySettingsProvider:
   virtual void SetPrimaryDisplay(
@@ -93,6 +94,7 @@ class MockDisplaySettingsProviderImpl :
       DesktopBarAlignment alignment, DesktopBarVisibility visibility) OVERRIDE;
   virtual void SetDesktopBarThickness(DesktopBarAlignment alignment,
                                       int thickness) OVERRIDE;
+  virtual void EnableFullScreenMode(bool enabled) OVERRIDE;
 
  private:
   gfx::Rect primary_display_area_;
@@ -100,12 +102,14 @@ class MockDisplaySettingsProviderImpl :
   gfx::Rect secondary_display_area_;
   gfx::Rect secondary_work_area_;
   MockDesktopBar mock_desktop_bars[3];
+  bool full_screen_enabled_;
 
   DISALLOW_COPY_AND_ASSIGN(MockDisplaySettingsProviderImpl);
 };
 
 
-MockDisplaySettingsProviderImpl::MockDisplaySettingsProviderImpl() {
+MockDisplaySettingsProviderImpl::MockDisplaySettingsProviderImpl()
+    : full_screen_enabled_(false) {
   memset(mock_desktop_bars, 0, sizeof(mock_desktop_bars));
 }
 
@@ -171,6 +175,10 @@ MockDisplaySettingsProviderImpl::GetDesktopBarVisibility(
   return mock_desktop_bars[static_cast<int>(alignment)].visibility;
 }
 
+bool MockDisplaySettingsProviderImpl::IsFullScreen() {
+  return full_screen_enabled_;
+}
+
 void MockDisplaySettingsProviderImpl::EnableAutoHidingDesktopBar(
     DesktopBarAlignment alignment, bool enabled, int thickness) {
   MockDesktopBar* bar = &(mock_desktop_bars[static_cast<int>(alignment)]);
@@ -220,6 +228,11 @@ void MockDisplaySettingsProviderImpl::SetDesktopBarThickness(
       DesktopBarObserver,
       desktop_bar_observers(),
       OnAutoHidingDesktopBarThicknessChanged(alignment, thickness));
+}
+
+void MockDisplaySettingsProviderImpl::EnableFullScreenMode(bool enabled) {
+  full_screen_enabled_ = enabled;
+  CheckFullScreenMode(PERFORM_FULLSCREEN_CHECK);
 }
 
 }  // namespace
@@ -547,8 +560,8 @@ scoped_refptr<Extension> BasePanelBrowserTest::CreateExtension(
   base::FilePath full_path = extension_prefs->install_directory().Append(path);
 
   scoped_ptr<DictionaryValue> input_value(extra_value.DeepCopy());
-  input_value->SetString(extension_manifest_keys::kVersion, "1.0.0.0");
-  input_value->SetString(extension_manifest_keys::kName, "Sample Extension");
+  input_value->SetString(extensions::manifest_keys::kVersion, "1.0.0.0");
+  input_value->SetString(extensions::manifest_keys::kName, "Sample Extension");
 
   std::string error;
   scoped_refptr<Extension> extension = Extension::Create(

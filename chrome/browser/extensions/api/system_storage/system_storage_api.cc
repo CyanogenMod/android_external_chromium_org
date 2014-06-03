@@ -8,6 +8,7 @@ namespace extensions {
 
 using api::system_storage::StorageUnitInfo;
 namespace EjectDevice = api::system_storage::EjectDevice;
+namespace GetAvailableCapacity = api::system_storage::GetAvailableCapacity;
 
 SystemStorageGetInfoFunction::SystemStorageGetInfoFunction() {
 }
@@ -42,7 +43,7 @@ bool SystemStorageEjectDeviceFunction::RunImpl() {
   scoped_ptr<EjectDevice::Params> params(EjectDevice::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
 
-  chrome::StorageMonitor::GetInstance()->EnsureInitialized(base::Bind(
+  StorageMonitor::GetInstance()->EnsureInitialized(base::Bind(
       &SystemStorageEjectDeviceFunction::OnStorageMonitorInit,
       this,
       params->id));
@@ -51,14 +52,14 @@ bool SystemStorageEjectDeviceFunction::RunImpl() {
 
 void SystemStorageEjectDeviceFunction::OnStorageMonitorInit(
     const std::string& transient_device_id) {
-  DCHECK(chrome::StorageMonitor::GetInstance()->IsInitialized());
-  chrome::StorageMonitor* monitor = chrome::StorageMonitor::GetInstance();
+  DCHECK(StorageMonitor::GetInstance()->IsInitialized());
+  StorageMonitor* monitor = StorageMonitor::GetInstance();
   std::string device_id_str =
-      chrome::StorageMonitor::GetInstance()->GetDeviceIdForTransientId(
+      StorageMonitor::GetInstance()->GetDeviceIdForTransientId(
           transient_device_id);
 
   if (device_id_str == "") {
-    HandleResponse(chrome::StorageMonitor::EJECT_NO_SUCH_DEVICE);
+    HandleResponse(StorageMonitor::EJECT_NO_SUCH_DEVICE);
     return;
   }
 
@@ -69,27 +70,76 @@ void SystemStorageEjectDeviceFunction::OnStorageMonitorInit(
 }
 
 void SystemStorageEjectDeviceFunction::HandleResponse(
-    chrome::StorageMonitor::EjectStatus status) {
+    StorageMonitor::EjectStatus status) {
   api::system_storage:: EjectDeviceResultCode result =
       api::system_storage::EJECT_DEVICE_RESULT_CODE_FAILURE;
   switch (status) {
-    case chrome::StorageMonitor::EJECT_OK:
+    case StorageMonitor::EJECT_OK:
       result = api::system_storage::EJECT_DEVICE_RESULT_CODE_SUCCESS;
       break;
-    case chrome::StorageMonitor::EJECT_IN_USE:
+    case StorageMonitor::EJECT_IN_USE:
       result = api::system_storage::EJECT_DEVICE_RESULT_CODE_IN_USE;
       break;
-    case chrome::StorageMonitor::EJECT_NO_SUCH_DEVICE:
+    case StorageMonitor::EJECT_NO_SUCH_DEVICE:
       result = api::system_storage::
           EJECT_DEVICE_RESULT_CODE_NO_SUCH_DEVICE;
       break;
-    case chrome::StorageMonitor::EJECT_FAILURE:
+    case StorageMonitor::EJECT_FAILURE:
       result = api::system_storage::EJECT_DEVICE_RESULT_CODE_FAILURE;
   }
 
-  SetResult(base::StringValue::CreateStringValue(
+  SetResult(new base::StringValue(
       api::system_storage::ToString(result)));
   SendResponse(true);
+}
+
+SystemStorageGetAvailableCapacityFunction::
+    SystemStorageGetAvailableCapacityFunction() {
+}
+
+SystemStorageGetAvailableCapacityFunction::
+    ~SystemStorageGetAvailableCapacityFunction() {
+}
+
+bool SystemStorageGetAvailableCapacityFunction::RunImpl() {
+  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+
+  scoped_ptr<GetAvailableCapacity::Params> params(
+      GetAvailableCapacity::Params::Create(*args_));
+  EXTENSION_FUNCTION_VALIDATE(params.get());
+
+  StorageMonitor::GetInstance()->EnsureInitialized(base::Bind(
+      &SystemStorageGetAvailableCapacityFunction::OnStorageMonitorInit,
+      this,
+      params->id));
+  return true;
+}
+
+void SystemStorageGetAvailableCapacityFunction::OnStorageMonitorInit(
+    const std::string& transient_id) {
+  content::BrowserThread::PostTaskAndReplyWithResult(
+      content::BrowserThread::FILE,
+      FROM_HERE,
+      base::Bind(
+          &StorageInfoProvider::GetStorageFreeSpaceFromTransientIdOnFileThread,
+          StorageInfoProvider::Get(), transient_id),
+      base::Bind(
+          &SystemStorageGetAvailableCapacityFunction::OnQueryCompleted,
+          this, transient_id));
+}
+
+void SystemStorageGetAvailableCapacityFunction::OnQueryCompleted(
+    const std::string& transient_id, double available_capacity) {
+  bool success = available_capacity >= 0;
+  if (success) {
+    api::system_storage::StorageAvailableCapacityInfo result;
+    result.id = transient_id;
+    result.available_capacity = available_capacity;
+    SetResult(result.ToValue().release());
+  } else {
+    SetError("Error occurred when querying available capacity.");
+  }
+  SendResponse(success);
 }
 
 }  // namespace extensions

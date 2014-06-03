@@ -5,6 +5,7 @@
 #include "ash/system/chromeos/screen_security/screen_capture_tray_item.h"
 
 #include "ash/shell.h"
+#include "ash/system/system_notifier.h"
 #include "grit/ash_resources.h"
 #include "grit/ash_strings.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -35,7 +36,7 @@ ScreenCaptureTrayItem::~ScreenCaptureTrayItem() {
 
 views::View* ScreenCaptureTrayItem::CreateTrayView(user::LoginStatus status) {
   set_tray_view(
-      new tray::ScreenTrayView(this, IDR_AURA_UBER_TRAY_DISPLAY_LIGHT));
+      new tray::ScreenTrayView(this, IDR_AURA_UBER_TRAY_SCREENSHARE));
   return tray_view();
 }
 
@@ -43,7 +44,7 @@ views::View* ScreenCaptureTrayItem::CreateDefaultView(
     user::LoginStatus status) {
   set_default_view(new tray::ScreenStatusView(
       this,
-      IDR_AURA_UBER_TRAY_DISPLAY,
+      IDR_AURA_UBER_TRAY_SCREENSHARE_DARK,
       screen_capture_status_,
       l10n_util::GetStringUTF16(
           IDS_ASH_STATUS_TRAY_SCREEN_CAPTURE_STOP)));
@@ -60,9 +61,11 @@ void ScreenCaptureTrayItem::CreateOrUpdateNotification() {
       kScreenCaptureNotificationId,
       screen_capture_status_,
       base::string16() /* body is blank */,
-      resource_bundle.GetImageNamed(IDR_AURA_UBER_TRAY_DISPLAY),
+      resource_bundle.GetImageNamed(IDR_AURA_UBER_TRAY_SCREENSHARE_DARK),
       base::string16() /* display_source */,
-      std::string() /* extension_id */,
+      message_center::NotifierId(
+          message_center::NotifierId::SYSTEM_COMPONENT,
+          system_notifier::kNotifierScreenCapture),
       data,
       new tray::ScreenNotificationDelegate(this)));
   notification->SetSystemPriority();

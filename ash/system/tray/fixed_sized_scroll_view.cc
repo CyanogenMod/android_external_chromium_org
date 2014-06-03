@@ -53,9 +53,5 @@ void FixedSizedScrollView::OnBoundsChanged(const gfx::Rect& previous_bounds) {
   contents()->SetBoundsRect(bounds);
 }
 
-void FixedSizedScrollView::OnPaintFocusBorder(gfx::Canvas* canvas) {
-  // Do not paint the focus border.
-}
-
 }  // namespace internal
 }  // namespace ash

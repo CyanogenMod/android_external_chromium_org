@@ -22,8 +22,6 @@ class FileSystemOperationContext;
 class FileSystemURL;
 }
 
-namespace chrome {
-
 class DeviceMediaAsyncFileUtil : public fileapi::AsyncFileUtil {
  public:
   virtual ~DeviceMediaAsyncFileUtil();
@@ -72,11 +70,14 @@ class DeviceMediaAsyncFileUtil : public fileapi::AsyncFileUtil {
       scoped_ptr<fileapi::FileSystemOperationContext> context,
       const fileapi::FileSystemURL& src_url,
       const fileapi::FileSystemURL& dest_url,
+      CopyOrMoveOption option,
+      const CopyFileProgressCallback& progress_callback,
       const StatusCallback& callback) OVERRIDE;
   virtual void MoveFileLocal(
       scoped_ptr<fileapi::FileSystemOperationContext> context,
       const fileapi::FileSystemURL& src_url,
       const fileapi::FileSystemURL& dest_url,
+      CopyOrMoveOption option,
       const StatusCallback& callback) OVERRIDE;
   virtual void CopyInForeignFile(
       scoped_ptr<fileapi::FileSystemOperationContext> context,
@@ -184,7 +185,5 @@ class DeviceMediaAsyncFileUtil : public fileapi::AsyncFileUtil {
 
   DISALLOW_COPY_AND_ASSIGN(DeviceMediaAsyncFileUtil);
 };
-
-}  // namespace chrome
 
 #endif  // CHROME_BROWSER_MEDIA_GALLERIES_FILEAPI_DEVICE_MEDIA_ASYNC_FILE_UTIL_H_

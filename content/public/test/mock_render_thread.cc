@@ -6,6 +6,7 @@
 
 #include "base/message_loop/message_loop_proxy.h"
 #include "content/common/view_messages.h"
+#include "content/public/renderer/render_process_observer.h"
 #include "ipc/ipc_message_utils.h"
 #include "ipc/ipc_sync_message.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -25,7 +26,7 @@ MockRenderThread::~MockRenderThread() {
 }
 
 void MockRenderThread::VerifyRunJavaScriptMessageSend(
-    const string16& expected_alert_message) {
+    const base::string16& expected_alert_message) {
   const IPC::Message* alert_msg =
       sink_.GetUniqueMessageMatching(ViewHostMsg_RunJavaScriptMessage::ID);
   ASSERT_TRUE(alert_msg);
@@ -54,7 +55,10 @@ bool MockRenderThread::Send(IPC::Message* msg) {
       reply_deserializer_.reset(
           static_cast<IPC::SyncMessage*>(msg)->GetReplyDeserializer());
     }
-    OnMessageReceived(*msg);
+    if (msg->routing_id() == MSG_ROUTING_CONTROL)
+      OnControlMessageReceived(*msg);
+    else
+      OnMessageReceived(*msg);
   }
   delete msg;
   return true;
@@ -119,14 +123,12 @@ void MockRenderThread::RemoveFilter(IPC::ChannelProxy::MessageFilter* filter) {
   NOTREACHED() << "filter to be removed not found";
 }
 
-void MockRenderThread::SetOutgoingMessageFilter(
-    IPC::ChannelProxy::OutgoingMessageFilter* filter) {
-}
-
 void MockRenderThread::AddObserver(RenderProcessObserver* observer) {
+  observers_.AddObserver(observer);
 }
 
 void MockRenderThread::RemoveObserver(RenderProcessObserver* observer) {
+  observers_.RemoveObserver(observer);
 }
 
 void MockRenderThread::SetResourceDispatcherDelegate(
@@ -142,7 +144,10 @@ void MockRenderThread::WidgetRestored() {
 void MockRenderThread::EnsureWebKitInitialized() {
 }
 
-void MockRenderThread::RecordUserMetrics(const std::string& action) {
+void MockRenderThread::RecordAction(const UserMetricsAction& action) {
+}
+
+void MockRenderThread::RecordComputedAction(const std::string& action) {
 }
 
 scoped_ptr<base::SharedMemory>
@@ -158,7 +163,7 @@ scoped_ptr<base::SharedMemory>
 }
 
 void MockRenderThread::RegisterExtension(v8::Extension* extension) {
-  WebKit::WebScriptController::registerExtension(extension);
+  blink::WebScriptController::registerExtension(extension);
 }
 
 void MockRenderThread::ScheduleIdleHandler(int64 initial_delay_ms) {
@@ -205,7 +210,7 @@ void MockRenderThread::SendCloseMessage() {
 
 // The Widget expects to be returned valid route_id.
 void MockRenderThread::OnCreateWidget(int opener_id,
-                                      WebKit::WebPopupType popup_type,
+                                      blink::WebPopupType popup_type,
                                       int* route_id,
                                       int* surface_id) {
   opener_id_ = opener_id;
@@ -224,6 +229,16 @@ void MockRenderThread::OnCreateWindow(
   *main_frame_route_id = new_window_main_frame_routing_id_;
   *surface_id = surface_id_;
   *cloned_session_storage_namespace_id = 0;
+}
+
+bool MockRenderThread::OnControlMessageReceived(const IPC::Message& msg) {
+  ObserverListBase<RenderProcessObserver>::Iterator it(observers_);
+  RenderProcessObserver* observer;
+  while ((observer = it.GetNext()) != NULL) {
+    if (observer->OnControlMessageReceived(msg))
+      return true;
+  }
+  return OnMessageReceived(msg);
 }
 
 bool MockRenderThread::OnMessageReceived(const IPC::Message& msg) {

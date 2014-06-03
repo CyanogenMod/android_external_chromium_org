@@ -20,28 +20,32 @@
 #include "chrome/common/extensions/api/media_galleries_private/media_galleries_handler.h"
 #include "chrome/common/extensions/api/omnibox/omnibox_handler.h"
 #include "chrome/common/extensions/api/plugins/plugins_handler.h"
+#include "chrome/common/extensions/api/sockets/sockets_manifest_handler.h"
 #include "chrome/common/extensions/api/speech/tts_engine_manifest_handler.h"
 #include "chrome/common/extensions/api/spellcheck/spellcheck_handler.h"
 #include "chrome/common/extensions/api/system_indicator/system_indicator_handler.h"
-#include "chrome/common/extensions/background_info.h"
-#include "chrome/common/extensions/csp_handler.h"
-#include "chrome/common/extensions/incognito_handler.h"
+#include "chrome/common/extensions/api/url_handlers/url_handlers_parser.h"
 #include "chrome/common/extensions/manifest_handlers/app_isolation_info.h"
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "chrome/common/extensions/manifest_handlers/content_scripts_handler.h"
 #include "chrome/common/extensions/manifest_handlers/externally_connectable.h"
 #include "chrome/common/extensions/manifest_handlers/icons_handler.h"
-#include "chrome/common/extensions/manifest_handlers/kiosk_enabled_info.h"
 #include "chrome/common/extensions/manifest_handlers/minimum_chrome_version_checker.h"
 #include "chrome/common/extensions/manifest_handlers/nacl_modules_handler.h"
-#include "chrome/common/extensions/manifest_handlers/offline_enabled_info.h"
-#include "chrome/common/extensions/manifest_handlers/requirements_handler.h"
-#include "chrome/common/extensions/manifest_handlers/sandboxed_page_info.h"
-#include "chrome/common/extensions/manifest_handlers/shared_module_info.h"
+#include "chrome/common/extensions/manifest_handlers/settings_overrides_handler.h"
 #include "chrome/common/extensions/manifest_handlers/theme_handler.h"
 #include "chrome/common/extensions/manifest_url_handler.h"
 #include "chrome/common/extensions/mime_types_handler.h"
 #include "chrome/common/extensions/web_accessible_resources_handler.h"
+#include "chrome/common/extensions/webview_handler.h"
+#include "extensions/common/manifest_handlers/background_info.h"
+#include "extensions/common/manifest_handlers/csp_info.h"
+#include "extensions/common/manifest_handlers/incognito_info.h"
+#include "extensions/common/manifest_handlers/kiosk_mode_info.h"
+#include "extensions/common/manifest_handlers/offline_enabled_info.h"
+#include "extensions/common/manifest_handlers/requirements_info.h"
+#include "extensions/common/manifest_handlers/sandboxed_page_info.h"
+#include "extensions/common/manifest_handlers/shared_module_info.h"
 
 namespace extensions {
 
@@ -69,7 +73,7 @@ void RegisterChromeManifestHandlers() {
 #if defined(OS_CHROMEOS)
   (new InputComponentsHandler)->Register();
 #endif
-  (new KioskEnabledHandler)->Register();
+  (new KioskModeHandler)->Register();
   (new ManagedModeHandler)->Register();
   (new MediaGalleriesHandlerParser)->Register();
   (new MimeTypesHandlerParser)->Register();
@@ -83,16 +87,20 @@ void RegisterChromeManifestHandlers() {
   (new PluginsHandler)->Register();
   (new RequirementsHandler)->Register();
   (new SandboxedPageHandler)->Register();
+  (new SettingsOverridesHandler)->Register();
   (new ScriptBadgeHandler)->Register();
   (new SharedModuleHandler)->Register();
+  (new SocketsManifestHandler)->Register();
   (new SpellcheckHandler)->Register();
   (new StorageSchemaManifestHandler)->Register();
   (new SystemIndicatorHandler)->Register();
   (new ThemeHandler)->Register();
   (new TtsEngineManifestHandler)->Register();
   (new UpdateURLHandler)->Register();
+  (new UrlHandlersParser)->Register();
   (new URLOverridesHandler)->Register();
   (new WebAccessibleResourcesHandler)->Register();
+  (new WebviewHandler)->Register();
   ManifestHandler::FinalizeRegistration();
 #endif
 }

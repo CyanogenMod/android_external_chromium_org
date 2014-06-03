@@ -7,7 +7,7 @@
 
 #include "base/strings/utf_string_conversions.h"
 #include "ui/base/accelerators/accelerator.h"
-#include "ui/base/keycodes/keyboard_codes.h"
+#include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/views/accessible_pane_view.h"
 #include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/textfield/textfield.h"
@@ -53,7 +53,7 @@ class SimpleTestView : public View {
  public:
   SimpleTestView(std::vector<FocusTestEvent>* event_list, int view_id)
       : event_list_(event_list) {
-    set_focusable(true);
+    SetFocusable(true);
     set_id(view_id);
   }
 
@@ -103,9 +103,9 @@ TEST_F(FocusManagerTest, ViewFocusCallbacks) {
 
 TEST_F(FocusManagerTest, FocusChangeListener) {
   View* view1 = new View();
-  view1->set_focusable(true);
+  view1->SetFocusable(true);
   View* view2 = new View();
-  view2->set_focusable(true);
+  view2->SetFocusable(true);
   GetContentsView()->AddChildView(view1);
   GetContentsView()->AddChildView(view2);
 
@@ -630,17 +630,17 @@ TEST_F(FocusManagerTest, FocusInAboutToRequestFocusFromTabTraversal) {
   // Create 3 views focuses the 3 and advances to the second. The 2nd views
   // implementation of AboutToRequestFocusFromTabTraversal() focuses the first.
   views::View* v1 = new View;
-  v1->set_focusable(true);
+  v1->SetFocusable(true);
   GetContentsView()->AddChildView(v1);
 
   FocusInAboutToRequestFocusFromTabTraversalView* v2 =
       new FocusInAboutToRequestFocusFromTabTraversalView;
-  v2->set_focusable(true);
+  v2->SetFocusable(true);
   v2->set_view_to_focus(v1);
   GetContentsView()->AddChildView(v2);
 
   views::View* v3 = new View;
-  v3->set_focusable(true);
+  v3->SetFocusable(true);
   GetContentsView()->AddChildView(v3);
 
   v3->RequestFocus();
@@ -653,22 +653,22 @@ TEST_F(FocusManagerTest, RotatePaneFocus) {
   GetContentsView()->AddChildView(pane1);
 
   views::View* v1 = new View;
-  v1->set_focusable(true);
+  v1->SetFocusable(true);
   pane1->AddChildView(v1);
 
   views::View* v2 = new View;
-  v2->set_focusable(true);
+  v2->SetFocusable(true);
   pane1->AddChildView(v2);
 
   views::AccessiblePaneView* pane2 = new AccessiblePaneView();
   GetContentsView()->AddChildView(pane2);
 
   views::View* v3 = new View;
-  v3->set_focusable(true);
+  v3->SetFocusable(true);
   pane2->AddChildView(v3);
 
   views::View* v4 = new View;
-  v4->set_focusable(true);
+  v4->SetFocusable(true);
   pane2->AddChildView(v4);
 
   std::vector<views::View*> panes;
@@ -723,11 +723,11 @@ TEST_F(FocusManagerTest, RotatePaneFocus) {
 // Verifies the stored focus view tracks the focused view.
 TEST_F(FocusManagerTest, ImplicitlyStoresFocus) {
   views::View* v1 = new View;
-  v1->set_focusable(true);
+  v1->SetFocusable(true);
   GetContentsView()->AddChildView(v1);
 
   views::View* v2 = new View;
-  v2->set_focusable(true);
+  v2->SetFocusable(true);
   GetContentsView()->AddChildView(v2);
 
   // Verify a focus request on |v1| implicitly updates the stored focus view.
@@ -785,7 +785,7 @@ TEST_F(FocusManagerArrowKeyTraversalTest, ArrowKeyTraversal) {
   std::vector<views::View*> v;
   for (size_t i = 0; i < 2; ++i) {
     views::View* view = new View;
-    view->set_focusable(true);
+    view->SetFocusable(true);
     GetContentsView()->AddChildView(view);
     v.push_back(view);
   }
@@ -827,6 +827,87 @@ TEST_F(FocusManagerTest, StoreFocusedView) {
   GetFocusManager()->StoreFocusedView(true);
   EXPECT_TRUE(GetFocusManager()->RestoreFocusedView());
   EXPECT_EQ(&view, GetFocusManager()->GetStoredFocusView());
+}
+
+namespace {
+
+// Trivial WidgetDelegate implementation that allows setting return value of
+// ShouldAdvanceFocusToTopLevelWidget().
+class AdvanceFocusWidgetDelegate : public WidgetDelegate {
+ public:
+  explicit AdvanceFocusWidgetDelegate(Widget* widget)
+      : widget_(widget),
+        should_advance_focus_to_parent_(false) {}
+  virtual ~AdvanceFocusWidgetDelegate() {}
+
+  void set_should_advance_focus_to_parent(bool value) {
+    should_advance_focus_to_parent_ = value;
+  }
+
+  // WidgetDelegate overrides:
+  virtual bool ShouldAdvanceFocusToTopLevelWidget() const OVERRIDE {
+    return should_advance_focus_to_parent_;
+  }
+  virtual Widget* GetWidget() OVERRIDE { return widget_; }
+  virtual const Widget* GetWidget() const OVERRIDE { return widget_; }
+
+ private:
+  Widget* widget_;
+  bool should_advance_focus_to_parent_;
+
+  DISALLOW_COPY_AND_ASSIGN(AdvanceFocusWidgetDelegate);
+};
+
+}  // namespace
+
+// Verifies focus wrapping happens in the same widget.
+TEST_F(FocusManagerTest, AdvanceFocusStaysInWidget) {
+  // Add |widget_view| as a child of the Widget.
+  View* widget_view = new View;
+  widget_view->SetFocusable(true);
+  widget_view->SetBounds(20, 0, 20, 20);
+  GetContentsView()->AddChildView(widget_view);
+
+  // Create a widget with two views, focus the second.
+  scoped_ptr<AdvanceFocusWidgetDelegate> delegate;
+  Widget::InitParams params = CreateParams(Widget::InitParams::TYPE_WINDOW);
+  params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+  params.child = true;
+  params.bounds = gfx::Rect(10, 10, 100, 100);
+  params.parent = GetWidget()->GetNativeView();
+  Widget child_widget;
+  delegate.reset(new AdvanceFocusWidgetDelegate(&child_widget));
+  params.delegate = delegate.get();
+  child_widget.Init(params);
+  View* view1 = new View;
+  view1->SetFocusable(true);
+  view1->SetBounds(0, 0, 20, 20);
+  View* view2 = new View;
+  view2->SetFocusable(true);
+  view2->SetBounds(20, 0, 20, 20);
+  child_widget.client_view()->AddChildView(view1);
+  child_widget.client_view()->AddChildView(view2);
+  child_widget.Show();
+  view2->RequestFocus();
+  EXPECT_EQ(view2, GetFocusManager()->GetFocusedView());
+
+  // Advance focus backwards, which should focus the first.
+  GetFocusManager()->AdvanceFocus(false);
+  EXPECT_EQ(view1, GetFocusManager()->GetFocusedView());
+
+  // Focus forward to |view2|.
+  GetFocusManager()->AdvanceFocus(true);
+  EXPECT_EQ(view2, GetFocusManager()->GetFocusedView());
+
+  // And forward again, wrapping back to |view1|.
+  GetFocusManager()->AdvanceFocus(true);
+  EXPECT_EQ(view1, GetFocusManager()->GetFocusedView());
+
+  // Allow focus to go to the parent, and focus backwards which should now move
+  // up |widget_view| (in the parent).
+  delegate->set_should_advance_focus_to_parent(true);
+  GetFocusManager()->AdvanceFocus(true);
+  EXPECT_EQ(widget_view, GetFocusManager()->GetFocusedView());
 }
 
 }  // namespace views

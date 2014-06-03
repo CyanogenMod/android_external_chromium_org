@@ -22,10 +22,11 @@
 #include "grit/generated_resources.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/range/range.h"
 #include "ui/gfx/font.h"
 #include "ui/gfx/native_widget_types.h"
+#include "ui/gfx/range/range.h"
 #include "ui/views/background.h"
+#include "ui/views/border.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/controls/styled_label.h"
 #include "ui/views/layout/box_layout.h"
@@ -87,12 +88,12 @@ void ProfileSigninConfirmationDialogViews::Show(bool prompt_for_new_profile) {
       this, browser_->window()->GetNativeWindow())->Show();
 }
 
-string16 ProfileSigninConfirmationDialogViews::GetWindowTitle() const {
+base::string16 ProfileSigninConfirmationDialogViews::GetWindowTitle() const {
   return l10n_util::GetStringUTF16(
       IDS_ENTERPRISE_SIGNIN_TITLE_NEW_STYLE);
 }
 
-string16 ProfileSigninConfirmationDialogViews::GetDialogButtonLabel(
+base::string16 ProfileSigninConfirmationDialogViews::GetDialogButtonLabel(
     ui::DialogButton button) const {
   if (button == ui::DIALOG_BUTTON_OK) {
     // If we're giving the option to create a new profile, then OK is
@@ -111,12 +112,12 @@ int ProfileSigninConfirmationDialogViews::GetDefaultDialogButton() const {
 
 views::View* ProfileSigninConfirmationDialogViews::CreateExtraView() {
   if (prompt_for_new_profile_) {
-    const string16 continue_signin_text =
+    const base::string16 continue_signin_text =
         l10n_util::GetStringUTF16(IDS_ENTERPRISE_SIGNIN_CONTINUE_NEW_STYLE);
     continue_signin_button_ =
         new views::LabelButton(this, continue_signin_text);
     continue_signin_button_->SetStyle(views::Button::STYLE_NATIVE_TEXTBUTTON);
-    continue_signin_button_->set_focusable(true);
+    continue_signin_button_->SetFocusable(true);
   }
   return continue_signin_button_;
 }
@@ -159,9 +160,10 @@ void ProfileSigninConfirmationDialogViews::ViewHierarchyChanged(
 
   // Create the prompt label.
   size_t offset;
-  const string16 domain = ASCIIToUTF16(gaia::ExtractDomainName(username_));
-  const string16 username = ASCIIToUTF16(username_);
-  const string16 prompt_text =
+  const base::string16 domain =
+      ASCIIToUTF16(gaia::ExtractDomainName(username_));
+  const base::string16 username = ASCIIToUTF16(username_);
+  const base::string16 prompt_text =
       l10n_util::GetStringFUTF16(
           IDS_ENTERPRISE_SIGNIN_ALERT_NEW_STYLE,
           domain, &offset);
@@ -171,7 +173,7 @@ void ProfileSigninConfirmationDialogViews::ViewHierarchyChanged(
   views::StyledLabel::RangeStyleInfo bold_style;
   bold_style.font_style = gfx::Font::BOLD;
   prompt_label->AddStyleRange(
-      ui::Range(offset, offset + domain.size()), bold_style);
+      gfx::Range(offset, offset + domain.size()), bold_style);
 
   // Create the prompt bar.
   views::View* prompt_bar = new views::View;
@@ -185,17 +187,17 @@ void ProfileSigninConfirmationDialogViews::ViewHierarchyChanged(
 
   // Create the explanation label.
   std::vector<size_t> offsets;
-  const string16 learn_more_text =
+  const base::string16 learn_more_text =
       l10n_util::GetStringUTF16(
           IDS_ENTERPRISE_SIGNIN_PROFILE_LINK_LEARN_MORE);
-  const string16 signin_explanation_text =
+  const base::string16 signin_explanation_text =
       l10n_util::GetStringFUTF16(prompt_for_new_profile_ ?
           IDS_ENTERPRISE_SIGNIN_EXPLANATION_WITH_PROFILE_CREATION_NEW_STYLE :
           IDS_ENTERPRISE_SIGNIN_EXPLANATION_WITHOUT_PROFILE_CREATION_NEW_STYLE,
           username, learn_more_text, &offsets);
   explanation_label_ = new views::StyledLabel(signin_explanation_text, this);
   explanation_label_->AddStyleRange(
-      ui::Range(offsets[1], offsets[1] + learn_more_text.size()),
+      gfx::Range(offsets[1], offsets[1] + learn_more_text.size()),
       views::StyledLabel::RangeStyleInfo::CreateForLink());
 
   // Layout the components.
@@ -236,7 +238,7 @@ void ProfileSigninConfirmationDialogViews::ViewHierarchyChanged(
 }
 
 void ProfileSigninConfirmationDialogViews::StyledLabelLinkClicked(
-    const ui::Range& range,
+    const gfx::Range& range,
     int event_flags) {
   chrome::NavigateParams params(
       browser_,

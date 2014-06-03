@@ -8,12 +8,12 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
 #include "extensions/common/error_utils.h"
-
-namespace keys = extension_manifest_keys;
+#include "extensions/common/manifest_constants.h"
 
 namespace extensions {
+
+namespace keys = manifest_keys;
 
 ManagedModeInfo::ManagedModeInfo() {
 }
@@ -44,7 +44,7 @@ ManagedModeHandler::ManagedModeHandler() {
 ManagedModeHandler::~ManagedModeHandler() {
 }
 
-bool ManagedModeHandler::Parse(Extension* extension, string16* error) {
+bool ManagedModeHandler::Parse(Extension* extension, base::string16* error) {
   if (!extension->manifest()->HasKey(keys::kContentPack))
     return true;
 
@@ -52,7 +52,7 @@ bool ManagedModeHandler::Parse(Extension* extension, string16* error) {
   const base::DictionaryValue* content_pack_value = NULL;
   if (!extension->manifest()->GetDictionary(keys::kContentPack,
                                             &content_pack_value)) {
-    *error = ASCIIToUTF16(extension_manifest_errors::kInvalidContentPack);
+    *error = ASCIIToUTF16(manifest_errors::kInvalidContentPack);
     return false;
   }
 
@@ -72,14 +72,14 @@ const std::vector<std::string> ManagedModeHandler::Keys() const {
 bool ManagedModeHandler::LoadSites(
     ManagedModeInfo* info,
     const base::DictionaryValue* content_pack_value,
-    string16* error) {
+    base::string16* error) {
   if (!content_pack_value->HasKey(keys::kContentPackSites))
     return true;
 
   base::FilePath::StringType site_list_string;
   if (!content_pack_value->GetString(keys::kContentPackSites,
                                      &site_list_string)) {
-    *error = ASCIIToUTF16(extension_manifest_errors::kInvalidContentPackSites);
+    *error = ASCIIToUTF16(manifest_errors::kInvalidContentPackSites);
     return false;
   }
 
@@ -91,7 +91,7 @@ bool ManagedModeHandler::LoadSites(
 bool ManagedModeHandler::LoadConfigurations(
     ManagedModeInfo* info,
     const base::DictionaryValue* content_pack_value,
-    string16* error) {
+    base::string16* error) {
   NOTIMPLEMENTED();
   return true;
 }

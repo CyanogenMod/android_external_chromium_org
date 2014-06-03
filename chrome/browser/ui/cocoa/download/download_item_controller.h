@@ -22,7 +22,7 @@ class PageNavigator;
 }
 
 namespace gfx {
-class Font;
+class FontList;
 }
 
 namespace ui {
@@ -41,9 +41,10 @@ class MenuModel;
   IBOutlet NSTextField* dangerousDownloadLabel_;
   IBOutlet NSButton* dangerousDownloadConfirmButton_;
 
-  // Needed to find out how much the tweaker changed sizes to update the
-  // other views.
-  IBOutlet GTMWidthBasedTweaker* buttonTweaker_;
+  // Needed to find out how much the tweakers changed sizes to update the other
+  // views.
+  IBOutlet GTMWidthBasedTweaker* dangerousButtonTweaker_;
+  IBOutlet GTMWidthBasedTweaker* maliciousButtonTweaker_;
 
   // Because the confirm text and button for dangerous downloads are determined
   // at runtime, an outlet to the localizer is needed to construct the layout
@@ -62,8 +63,8 @@ class MenuModel;
   // The time at which this view was created.
   base::Time creationTime_;
 
-  // Default font to use for text metrics.
-  scoped_ptr<gfx::Font> font_;
+  // Default font list to use for text metrics.
+  scoped_ptr<gfx::FontList> font_list_;
 
   // The state of this item.
   enum DownoadItemState {
@@ -115,5 +116,6 @@ class MenuModel;
 - (BOOL)isDangerousMode;
 - (IBAction)saveDownload:(id)sender;
 - (IBAction)discardDownload:(id)sender;
-
+- (IBAction)dismissMaliciousDownload:(id)sender;
+- (IBAction)showContextMenu:(id)sender;
 @end

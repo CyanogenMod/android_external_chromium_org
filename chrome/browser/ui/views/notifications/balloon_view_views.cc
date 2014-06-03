@@ -23,9 +23,9 @@
 #include "content/public/browser/web_contents.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
-#include "ui/base/animation/slide_animation.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/gfx/animation/slide_animation.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/path.h"
@@ -74,9 +74,6 @@ const int kBottomShadowWidth = 6;
 // Optional animation.
 const bool kAnimateEnabled = true;
 
-// Menu commands
-const int kRevokePermissionCommand = 0;
-
 // Colors
 const SkColor kControlBarBackgroundColor = SkColorSetRGB(245, 245, 245);
 const SkColor kControlBarTextColor = SkColorSetRGB(125, 125, 125);
@@ -97,7 +94,8 @@ BalloonViewImpl::BalloonViewImpl(BalloonCollection* collection)
       close_button_(NULL),
       options_menu_button_(NULL),
       enable_web_ui_(false),
-      closed_by_user_(false) {
+      closed_by_user_(false),
+      closed_(false) {
   // We're owned by Balloon and don't want to be deleted by our parent View.
   set_owned_by_client();
 
@@ -109,6 +107,10 @@ BalloonViewImpl::~BalloonViewImpl() {
 }
 
 void BalloonViewImpl::Close(bool by_user) {
+  if (closed_)
+    return;
+
+  closed_ = true;
   animation_->Stop();
   html_contents_->Shutdown();
   // Detach contents from the widget before they close.
@@ -194,6 +196,9 @@ void BalloonViewImpl::SizeContentsWindow() {
 }
 
 void BalloonViewImpl::RepositionToBalloon() {
+  if (closed_)
+    return;
+
   DCHECK(frame_container_);
   DCHECK(html_container_);
   DCHECK(balloon_);
@@ -212,11 +217,14 @@ void BalloonViewImpl::RepositionToBalloon() {
 
   anim_frame_end_ = GetBoundsForFrameContainer();
   anim_frame_start_ = frame_container_->GetClientAreaBoundsInScreen();
-  animation_.reset(new ui::SlideAnimation(this));
+  animation_.reset(new gfx::SlideAnimation(this));
   animation_->Show();
 }
 
 void BalloonViewImpl::Update() {
+  if (closed_)
+    return;
+
   // Tls might get called before html_contents_ is set in Show() if more than
   // one update with the same replace_id occurs, or if an update occurs after
   // the ballon has been closed (e.g. during shutdown) but before this has been
@@ -228,7 +236,7 @@ void BalloonViewImpl::Update() {
       content::PAGE_TRANSITION_LINK, std::string());
 }
 
-void BalloonViewImpl::AnimationProgressed(const ui::Animation* animation) {
+void BalloonViewImpl::AnimationProgressed(const gfx::Animation* animation) {
   DCHECK_EQ(animation_.get(), animation);
 
   // Linear interpolation from start to end position.
@@ -282,17 +290,21 @@ gfx::Rect BalloonViewImpl::GetLabelBounds() const {
 }
 
 void BalloonViewImpl::Show(Balloon* balloon) {
+  if (closed_)
+    return;
+
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
 
   balloon_ = balloon;
 
-  const string16 source_label_text = l10n_util::GetStringFUTF16(
+  const base::string16 source_label_text = l10n_util::GetStringFUTF16(
       IDS_NOTIFICATION_BALLOON_SOURCE_LABEL,
       balloon->notification().display_source());
 
   source_label_ = new views::Label(source_label_text);
   AddChildView(source_label_);
-  options_menu_button_ = new views::MenuButton(NULL, string16(), this, false);
+  options_menu_button_ =
+      new views::MenuButton(NULL, base::string16(), this, false);
   AddChildView(options_menu_button_);
 #if defined(OS_CHROMEOS)
   // Disable and hide the options menu on ChromeOS. This is a short term fix

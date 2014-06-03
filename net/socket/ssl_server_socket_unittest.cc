@@ -56,9 +56,9 @@ class FakeDataChannel {
  public:
   FakeDataChannel()
       : read_buf_len_(0),
-        weak_factory_(this),
         closed_(false),
-        write_called_after_close_(false) {
+        write_called_after_close_(false),
+        weak_factory_(this) {
   }
 
   int Read(IOBuffer* buf, int buf_len, const CompletionCallback& callback) {
@@ -140,8 +140,6 @@ class FakeDataChannel {
 
   std::queue<scoped_refptr<net::DrainableIOBuffer> > data_;
 
-  base::WeakPtrFactory<FakeDataChannel> weak_factory_;
-
   // True if Close() has been called.
   bool closed_;
 
@@ -149,6 +147,8 @@ class FakeDataChannel {
   // After the FakeDataChannel is closed, the first Write() call completes
   // asynchronously.
   bool write_called_after_close_;
+
+  base::WeakPtrFactory<FakeDataChannel> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(FakeDataChannel);
 };
@@ -304,21 +304,24 @@ class SSLServerSocketTest : public PlatformTest {
 
  protected:
   void Initialize() {
-    FakeSocket* fake_client_socket = new FakeSocket(&channel_1_, &channel_2_);
-    FakeSocket* fake_server_socket = new FakeSocket(&channel_2_, &channel_1_);
+    scoped_ptr<ClientSocketHandle> client_connection(new ClientSocketHandle);
+    client_connection->SetSocket(
+        scoped_ptr<StreamSocket>(new FakeSocket(&channel_1_, &channel_2_)));
+    scoped_ptr<StreamSocket> server_socket(
+        new FakeSocket(&channel_2_, &channel_1_));
 
     base::FilePath certs_dir(GetTestCertsDirectory());
 
     base::FilePath cert_path = certs_dir.AppendASCII("unittest.selfsigned.der");
     std::string cert_der;
-    ASSERT_TRUE(file_util::ReadFileToString(cert_path, &cert_der));
+    ASSERT_TRUE(base::ReadFileToString(cert_path, &cert_der));
 
     scoped_refptr<net::X509Certificate> cert =
         X509Certificate::CreateFromBytes(cert_der.data(), cert_der.size());
 
     base::FilePath key_path = certs_dir.AppendASCII("unittest.key.bin");
     std::string key_string;
-    ASSERT_TRUE(file_util::ReadFileToString(key_path, &key_string));
+    ASSERT_TRUE(base::ReadFileToString(key_path, &key_string));
     std::vector<uint8> key_vector(
         reinterpret_cast<const uint8*>(key_string.data()),
         reinterpret_cast<const uint8*>(key_string.data() +
@@ -331,8 +334,6 @@ class SSLServerSocketTest : public PlatformTest {
     ssl_config.cached_info_enabled = false;
     ssl_config.false_start_enabled = false;
     ssl_config.channel_id_enabled = false;
-    ssl_config.version_min = SSL_PROTOCOL_VERSION_SSL3;
-    ssl_config.version_max = SSL_PROTOCOL_VERSION_TLS1_1;
 
     // Certificate provided by the host doesn't need authority.
     net::SSLConfig::CertAndStatus cert_and_status;
@@ -344,11 +345,12 @@ class SSLServerSocketTest : public PlatformTest {
     net::SSLClientSocketContext context;
     context.cert_verifier = cert_verifier_.get();
     context.transport_security_state = transport_security_state_.get();
-    client_socket_.reset(
+    client_socket_ =
         socket_factory_->CreateSSLClientSocket(
-            fake_client_socket, host_and_pair, ssl_config, context));
-    server_socket_.reset(net::CreateSSLServerSocket(
-        fake_server_socket, cert.get(), private_key.get(), net::SSLConfig()));
+            client_connection.Pass(), host_and_pair, ssl_config, context);
+    server_socket_ = net::CreateSSLServerSocket(
+        server_socket.Pass(),
+        cert.get(), private_key.get(), net::SSLConfig());
   }
 
   FakeDataChannel channel_1_;

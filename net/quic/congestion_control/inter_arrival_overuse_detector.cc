@@ -7,6 +7,8 @@
 #include <math.h>
 #include <stdlib.h>
 
+#include <algorithm>
+
 // Initial noise variance, equal to a standard deviation of 1 millisecond.
 static const float kInitialVarianceNoise = 1000000.0;
 
@@ -15,10 +17,6 @@ static const int kMinVarianceDelta = 10000;
 
 // Threshold for accumulated delta.
 static const int kThresholdAccumulatedDeltasUs = 1000;
-
-// The higher the beta parameter, the lower is the effect of the input and the
-// more damping of the noise. And the longer time for a detection.
-static const float kBeta = 0.98f;
 
 // Same as above, described as numerator and denominator.
 static const int kBetaNumerator = 49;
@@ -67,7 +65,7 @@ void InterArrivalOveruseDetector::OnAcknowledgedPacket(
     // This is an old packet and should be ignored.  Note that we are called
     // with a full 64 bit sequence number, even if the wire format may only
     // convey some low-order bits of that number.
-    DLOG(INFO) << "Skip old packet";
+    DVLOG(1) << "Skip old packet";
     return;
   }
 
@@ -158,7 +156,7 @@ void InterArrivalOveruseDetector::DetectDrift(int64 sigma_delta) {
   if (delta_overuse_counter_ > 0 &&
       accumulated_deltas_.ToMicroseconds() > kThresholdAccumulatedDeltasUs) {
     if (delta_estimate_ != kBandwidthDraining) {
-      DLOG(INFO) << "Bandwidth estimate drift: Draining buffer(s) "
+      DVLOG(1) << "Bandwidth estimate drift: Draining buffer(s) "
                  << accumulated_deltas_.ToMilliseconds() << " ms";
       delta_estimate_ = kBandwidthDraining;
     }
@@ -169,7 +167,7 @@ void InterArrivalOveruseDetector::DetectDrift(int64 sigma_delta) {
       (sigma_delta * kDetectDriftStandardDeviation >
           abs(accumulated_deltas_.ToMicroseconds()))) {
     if (delta_estimate_ != kBandwidthSteady) {
-      DLOG(INFO) << "Bandwidth estimate drift: Steady"
+      DVLOG(1) << "Bandwidth estimate drift: Steady"
                  << " mean:" << delta_mean_
                  << " sigma:" << sigma_delta
                  << " offset:" << send_receive_offset_.ToMicroseconds()
@@ -185,7 +183,7 @@ void InterArrivalOveruseDetector::DetectDrift(int64 sigma_delta) {
   if (accumulated_deltas_.ToMicroseconds() > 0) {
     if (delta_estimate_ != kBandwidthOverUsing) {
       ++delta_overuse_counter_;
-      DLOG(INFO) << "Bandwidth estimate drift: Over using"
+      DVLOG(1) << "Bandwidth estimate drift: Over using"
                  << " mean:" << delta_mean_
                  << " sigma:" << sigma_delta
                  << " offset:" << send_receive_offset_.ToMicroseconds()
@@ -196,7 +194,7 @@ void InterArrivalOveruseDetector::DetectDrift(int64 sigma_delta) {
   } else {
     if (delta_estimate_ != kBandwidthUnderUsing) {
       --delta_overuse_counter_;
-      DLOG(INFO) << "Bandwidth estimate drift: Under using"
+      DVLOG(1) << "Bandwidth estimate drift: Under using"
                  << " mean:" << delta_mean_
                  << " sigma:" << sigma_delta
                  << " offset:" << send_receive_offset_.ToMicroseconds()
@@ -221,14 +219,14 @@ void InterArrivalOveruseDetector::DetectSlope(int64 sigma_delta) {
   }
   if (slope_overuse_counter_ > 0 && delta_mean_ > 0) {
     if (slope_estimate_ != kBandwidthDraining) {
-      DLOG(INFO) << "Bandwidth estimate slope: Draining buffer(s)";
+      DVLOG(1) << "Bandwidth estimate slope: Draining buffer(s)";
     }
     slope_estimate_ = kBandwidthDraining;
     return;
   }
   if (sigma_delta > abs(delta_mean_) * kDetectSlopeFactor) {
     if (slope_estimate_ != kBandwidthSteady) {
-      DLOG(INFO) << "Bandwidth estimate slope: Steady"
+      DVLOG(1) << "Bandwidth estimate slope: Steady"
                  << " mean:" << delta_mean_
                  << " sigma:" << sigma_delta;
       slope_overuse_counter_ = 0;
@@ -239,7 +237,7 @@ void InterArrivalOveruseDetector::DetectSlope(int64 sigma_delta) {
   if (delta_mean_ > 0) {
     if (slope_estimate_ != kBandwidthOverUsing) {
       ++slope_overuse_counter_;
-      DLOG(INFO) << "Bandwidth estimate slope: Over using"
+      DVLOG(1) << "Bandwidth estimate slope: Over using"
                  << " mean:" << delta_mean_
                  << " sigma:" << sigma_delta;
       slope_estimate_ = kBandwidthOverUsing;
@@ -247,7 +245,7 @@ void InterArrivalOveruseDetector::DetectSlope(int64 sigma_delta) {
   } else {
     if (slope_estimate_ != kBandwidthUnderUsing) {
       --slope_overuse_counter_;
-      DLOG(INFO) << "Bandwidth estimate slope: Under using"
+      DVLOG(1) << "Bandwidth estimate slope: Under using"
                  << " mean:" << delta_mean_
                  << " sigma:" << sigma_delta;
       slope_estimate_ = kBandwidthUnderUsing;

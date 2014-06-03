@@ -6,7 +6,7 @@ import logging
 import os
 import sys
 
-from telemetry.core.chrome import android_browser_finder
+from telemetry.core.backends.chrome import android_browser_finder
 from telemetry.core.platform import profiler
 
 # Enviroment variables to (android properties, default value) mapping.
@@ -36,13 +36,9 @@ class _TCMallocHeapProfilerAndroid(object):
     # This profiler requires adb root to set properties.
     self._browser_backend.adb.Adb().EnableAdbRoot()
     for values in properties.itervalues():
-      device_property = self._browser_backend.adb.RunShellCommand(
-          'getprop ' + values[0])
-      if (not device_property or len(device_property) != 1 or
-          not device_property[0].strip()):
-        print 'Setting device property ', values[0], values[1]
-        self._browser_backend.adb.RunShellCommand(
-            'setprop ' + values[0] + ' ' + str(values[1]))
+      device_property = self._browser_backend.adb.system_properties[values[0]]
+      if not device_property or not device_property.strip():
+        self._browser_backend.adb.system_properties[values[0]] = values[1]
         device_configured = True
     if not self._browser_backend.adb.Adb().FileExistsOnDevice(
         self._DEFAULT_DEVICE_DIR):
@@ -98,9 +94,9 @@ class _TCMallocHeapProfilerLinux(object):
 
 class TCMallocHeapProfiler(profiler.Profiler):
   """A Factory to instantiate the platform-specific profiler."""
-  def __init__(self, browser_backend, platform_backend, output_path):
+  def __init__(self, browser_backend, platform_backend, output_path, state):
     super(TCMallocHeapProfiler, self).__init__(
-        browser_backend, platform_backend, output_path)
+        browser_backend, platform_backend, output_path, state)
     if platform_backend.GetOSName() == 'android':
       self._platform_profiler = _TCMallocHeapProfilerAndroid(
           browser_backend, output_path)
@@ -112,14 +108,18 @@ class TCMallocHeapProfiler(profiler.Profiler):
     return 'tcmalloc-heap'
 
   @classmethod
-  def is_supported(cls, options):
-    if options and options.browser_type.startswith('cros'):
+  def is_supported(cls, browser_type):
+    if browser_type.startswith('cros'):
       return False
     if sys.platform.startswith('linux'):
       return True
-    if not options:
+    if browser_type == 'any':
       return android_browser_finder.CanFindAvailableBrowsers()
-    return options.browser_type.startswith('android')
+    return browser_type.startswith('android')
+
+  @classmethod
+  def CustomizeBrowserOptions(cls, browser_type, options):
+    options.AppendExtraBrowserArgs('--no-sandbox')
 
   def CollectProfile(self):
     return self._platform_profiler.CollectProfile()

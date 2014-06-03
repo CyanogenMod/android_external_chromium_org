@@ -477,10 +477,10 @@ const LogSeverity LOG_0 = LOG_ERROR;
 // Official release builds always disable and remove DCHECK and DLOG.
 #undef LOGGING_IS_OFFICIAL_BUILD
 #define LOGGING_IS_OFFICIAL_BUILD 1
-#elif !defined(LOGGING_IS_OFFICIAL_BUILD)
-// Unless otherwise specified, unofficial release builds include
-// DCHECK and DLOG.
-#define LOGGING_IS_OFFICIAL_BUILD 0
+#else
+// WebView: Force logging off in Android release branch.
+#undef LOGGING_IS_OFFICIAL_BUILD
+#define LOGGING_IS_OFFICIAL_BUILD 1
 #endif
 
 // The actual stream used isn't important.
@@ -776,7 +776,12 @@ const LogSeverity LOG_DCHECK = LOG_INFO;
 #define DCHECK_GE(val1, val2) DCHECK_OP(GE, >=, val1, val2)
 #define DCHECK_GT(val1, val2) DCHECK_OP(GT, > , val1, val2)
 
+#if defined(NDEBUG) && defined(OS_CHROMEOS)
+#define NOTREACHED() LOG(ERROR) << "NOTREACHED() hit in " << \
+    __FUNCTION__ << ". "
+#else
 #define NOTREACHED() DCHECK(false)
+#endif
 
 // Redefine the standard assert to use our nice log files
 #undef assert

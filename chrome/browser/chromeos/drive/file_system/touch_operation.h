@@ -10,7 +10,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/chromeos/drive/file_errors.h"
-#include "chrome/browser/google_apis/gdata_errorcode.h"
+#include "google_apis/drive/gdata_errorcode.h"
 
 namespace base {
 class FilePath;
@@ -27,7 +27,6 @@ namespace internal {
 class ResourceMetadata;
 }  // namespace internal
 
-class JobScheduler;
 class ResourceEntry;
 
 namespace file_system {
@@ -38,7 +37,6 @@ class TouchOperation {
  public:
   TouchOperation(base::SequencedTaskRunner* blocking_task_runner,
                  OperationObserver* observer,
-                 JobScheduler* scheduler,
                  internal::ResourceMetadata* metadata);
   ~TouchOperation();
 
@@ -51,30 +49,14 @@ class TouchOperation {
                  const FileOperationCallback& callback);
 
  private:
-  // Part of TouchFile(). Runs after GetResourceEntry is completed.
-  void TouchFileAfterGetResourceEntry(const base::FilePath& file_path,
-                                      const base::Time& last_access_time,
-                                      const base::Time& last_modified_time,
+  // Part of TouchFile(). Runs after updating the local state.
+  void TouchFileAfterUpdateLocalState(const base::FilePath& file_path,
                                       const FileOperationCallback& callback,
-                                      ResourceEntry* entry,
+                                      const std::string* local_id,
                                       FileError error);
-
-  // Part of TouchFile(). Runs after the server side update for last access time
-  // and last modified time is completed.
-  void TouchFileAfterServerTimeStampUpdated(
-      const base::FilePath& file_path,
-      const FileOperationCallback& callback,
-      google_apis::GDataErrorCode gdata_error,
-      scoped_ptr<google_apis::ResourceEntry> resource_entry);
-
-  // Part of TouchFile(). Runs after refreshing the local metadata is completed.
-  void TouchFileAfterRefreshMetadata(const base::FilePath& file_path,
-                                     const FileOperationCallback& callback,
-                                     FileError error);
 
   scoped_refptr<base::SequencedTaskRunner> blocking_task_runner_;
   OperationObserver* observer_;
-  JobScheduler* scheduler_;
   internal::ResourceMetadata* metadata_;
 
   // Note: This should remain the last member so it'll be destroyed and

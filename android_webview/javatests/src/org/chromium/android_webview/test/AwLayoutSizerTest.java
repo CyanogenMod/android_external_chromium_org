@@ -1,13 +1,13 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 package org.chromium.android_webview.test;
 
-import android.view.View;
-import android.view.View.MeasureSpec;
 import android.test.InstrumentationTestCase;
 import android.test.suitebuilder.annotation.SmallTest;
+import android.view.View;
+import android.view.View.MeasureSpec;
 
 import org.chromium.android_webview.AwLayoutSizer;
 import org.chromium.base.test.util.Feature;

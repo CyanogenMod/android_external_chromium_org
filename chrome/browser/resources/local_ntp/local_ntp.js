@@ -63,7 +63,6 @@ var IDS = {
   NOTIFICATION_CLOSE_BUTTON: 'mv-notice-x',
   NOTIFICATION_MESSAGE: 'mv-msg',
   NTP_CONTENTS: 'ntp-contents',
-  RECENT_TABS: 'recent-tabs',
   RESTORE_ALL_LINK: 'mv-restore',
   TILES: 'mv-tiles',
   UNDO_LINK: 'mv-undo'
@@ -968,20 +967,6 @@ function init() {
     document.body.classList.add(CLASSES.NON_GOOGLE_PAGE);
   }
 
-  var recentTabsText = configData.translatedStrings.recentTabs;
-  if (recentTabsText) {
-    var recentTabsLink = document.createElement('span');
-    recentTabsLink.id = IDS.RECENT_TABS;
-    recentTabsLink.addEventListener('click', function(event) {
-      ntpApiHandle.navigateContentWindow(
-          'chrome://history', getDispositionFromClickButton(event.button));
-    });
-    recentTabsLink.textContent = recentTabsText;
-    ntpContents.appendChild(recentTabsLink);
-    // Move the attribution up to prevent it from overlapping.
-    attribution.style.bottom = '28px';
-  }
-
   var notificationMessage = $(IDS.NOTIFICATION_MESSAGE);
   notificationMessage.textContent =
       configData.translatedStrings.thumbnailRemovedNotification;
@@ -1052,6 +1037,9 @@ function init() {
         setFakeboxDragFocus(false);
       };
     }
+
+    // Update the fakebox style to match the current key capturing state.
+    setFakeboxFocus(searchboxApiHandle.isKeyCaptureEnabled);
   }
 
   if (searchboxApiHandle.rtl) {

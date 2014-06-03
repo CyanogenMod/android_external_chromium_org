@@ -13,9 +13,10 @@
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/extensions/extension_sync_data.h"
+#include "chrome/browser/extensions/sync_bundle.h"
 #include "sync/api/syncable_service.h"
 
-class ExtensionService;
+class ExtensionSyncService;
 class ExtensionSet;
 
 namespace syncer {
@@ -28,10 +29,10 @@ namespace extensions {
 class Extension;
 
 // Bundle of extension specific sync stuff.
-class ExtensionSyncBundle {
+class ExtensionSyncBundle : public SyncBundle {
  public:
-  explicit ExtensionSyncBundle(ExtensionService* extension_service);
-  ~ExtensionSyncBundle();
+  explicit ExtensionSyncBundle(ExtensionSyncService* extension_sync_service);
+  virtual ~ExtensionSyncBundle();
 
   // Setup this bundle to be sync extension data.
   void SetupSync(syncer::SyncChangeProcessor* sync_processor,
@@ -58,9 +59,6 @@ class ExtensionSyncBundle {
   // Process the given sync change and apply it.
   void ProcessSyncChange(ExtensionSyncData extension_sync_data);
 
-  // Sync a newly-installed extension or change an existing one.
-  void SyncChangeIfNeeded(const Extension& extension);
-
   // Process the list of sync changes.
   void ProcessSyncChangeList(syncer::SyncChangeList sync_change_list);
 
@@ -77,11 +75,15 @@ class ExtensionSyncBundle {
 
   // Appends sync data objects for every extension in |extensions|.
   void GetExtensionSyncDataListHelper(
-      const ExtensionSet& extensions,
+      const ExtensionSet* extensions,
       std::vector<extensions::ExtensionSyncData>* sync_data_list) const;
 
+  // Overrides for SyncBundle.
   // Returns true if SetupSync has been called, false otherwise.
-  bool IsSyncing() const;
+  virtual bool IsSyncing() const OVERRIDE;
+
+  // Sync a newly-installed extension or change an existing one.
+  virtual void SyncChangeIfNeeded(const Extension& extension) OVERRIDE;
 
  private:
   // Add a synced extension.
@@ -93,7 +95,7 @@ class ExtensionSyncBundle {
   // Change an extension from being pending to synced.
   void MarkPendingExtensionSynced(const std::string& id);
 
-  ExtensionService* extension_service_;  // Owns us.
+  ExtensionSyncService* extension_sync_service_;  // Owns us.
   scoped_ptr<syncer::SyncChangeProcessor> sync_processor_;
   scoped_ptr<syncer::SyncErrorFactory> sync_error_factory_;
 
