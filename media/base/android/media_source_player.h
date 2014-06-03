@@ -143,7 +143,6 @@ class MEDIA_EXPORT MediaSourcePlayer : public MediaPlayerAndroid {
   virtual void Start() OVERRIDE;
   virtual void Pause() OVERRIDE;
   virtual void SeekTo(base::TimeDelta timestamp) OVERRIDE;
-  virtual void Suspend() OVERRIDE;
   virtual void Release() OVERRIDE;
   virtual void SetVolume(double volume) OVERRIDE;
   virtual int GetVideoWidth() OVERRIDE;

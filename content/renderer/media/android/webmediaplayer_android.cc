@@ -762,8 +762,7 @@ void WebMediaPlayerAndroid::ReleaseMediaResources() {
     case WebMediaPlayer::NetworkStateDecodeError:
       break;
   }
-  // Use SuspendResources() to replace ReleaseResouce(), just release the decoder
-  proxy_->SuspendResources(player_id_);
+  proxy_->ReleaseResources(player_id_);
   OnPlayerReleased();
 }
 

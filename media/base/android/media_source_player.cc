@@ -433,10 +433,6 @@ base::TimeDelta MediaSourcePlayer::GetDuration() {
   return duration_;
 }
 
-void MediaSourcePlayer::Suspend() {
-    // Nothing need to do
-}
-
 void MediaSourcePlayer::Release() {
   ClearDecodingData();
   audio_decoder_job_.reset();
